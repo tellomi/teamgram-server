@@ -516,6 +516,9 @@ func (c *session) generateMessageSeqNo(increment bool) int32 {
 }
 
 func (c *session) sendRpcResultToQueue(ctx context.Context, gatewayId string, reqMsgId int64, result mtproto.TLObject) {
+	// Last filter before the bytes hit the socket: getDifference, getHistory,
+	// and any other RPC result.
+	mtproto.SanitizeOutgoingObject(result)
 	rpcResult := &mtproto.TLRpcResult{
 		ReqMsgId: reqMsgId,
 		Result:   result,
@@ -552,6 +555,7 @@ func (c *session) sendPushRpcResultToQueue(gatewayId string, reqMsgId int64, res
 }
 
 func (c *session) sendPushToQueue(ctx context.Context, gatewayId string, pushMsgId int64, pushMsg mtproto.TLObject) {
+	mtproto.SanitizeOutgoingObject(pushMsg)
 	rawBytes := func() []byte {
 		x := mtproto.GetEncodeBuf()
 		defer mtproto.PutEncodeBuf(x)

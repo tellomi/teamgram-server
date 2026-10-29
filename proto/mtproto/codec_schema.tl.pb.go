@@ -114234,7 +114234,7 @@ func (m *TLMediaAreaCoordinates) Decode(dBuf *DecodeBuf) error {
 //  + TL_MessageService
 //
 
-func (m *Message) Encode(x *EncodeBuf, layer int32) error {
+func (m *Message) encodeMessageBody(x *EncodeBuf, layer int32) error {
 	predicateName := m.PredicateName
 	if predicateName == "" {
 		if n, ok := clazzIdNameRegisters2[int32(m.Constructor)]; ok {
@@ -234580,7 +234580,7 @@ func (m *TLTrue) Decode(dBuf *DecodeBuf) error {
 //  + TL_UpdateBizDataRaw
 //
 
-func (m *Update) Encode(x *EncodeBuf, layer int32) error {
+func (m *Update) encodeUpdateBody(x *EncodeBuf, layer int32) error {
 	predicateName := m.PredicateName
 	if predicateName == "" {
 		if n, ok := clazzIdNameRegisters2[int32(m.Constructor)]; ok {
@@ -252317,7 +252317,7 @@ func (m *TLUpdateList) Decode(dBuf *DecodeBuf) error {
 //  + TL_UpdateAccountResetAuthorization
 //
 
-func (m *Updates) Encode(x *EncodeBuf, layer int32) error {
+func (m *Updates) encodeUpdatesBody(x *EncodeBuf, layer int32) error {
 	predicateName := m.PredicateName
 	if predicateName == "" {
 		if n, ok := clazzIdNameRegisters2[int32(m.Constructor)]; ok {

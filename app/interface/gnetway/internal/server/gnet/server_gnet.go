@@ -90,11 +90,20 @@ func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	return gnet.None
 }
 
-// OnShutdown fires when the engine is being shut down, it is called right after
-// all event-loops and connections are closed.
+// OnShutdown runs when Engine.Stop begins, before the event loops exit.
+// Close every accepted socket here so the client sees a FIN immediately
+// and opens a new connection, instead of waiting out the idle timer.
 func (s *Server) OnShutdown(eng gnet.Engine) {
 	_ = eng
-	logx.Infof("gnetway server shutdown")
+	n := 0
+	s.conns.Range(func(_, value any) bool {
+		if c, ok := value.(gnet.Conn); ok && c != nil {
+			_ = c.Close()
+			n++
+		}
+		return true
+	})
+	logx.Infof("gnetway shutdown: closing %d client sockets", n)
 }
 
 // OnOpen fires when a new connection has been opened.
@@ -123,6 +132,7 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	}
 	s.timeoutWheel.Add(c.ConnId(), ctx.closeDate)
 	c.SetContext(ctx)
+	s.conns.Store(c.ConnId(), c)
 
 	proto := "tcp"
 	if ctx.websocket {
@@ -138,6 +148,7 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 // OnClose fires when a connection has been closed.
 // The parameter err is the last known connection error.
 func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
+	s.conns.Delete(c.ConnId())
 	logx.Debugf("onConnClosed - conn(%s), err: %v", c, err)
 
 	ctx, _ := c.Context().(*connContext)

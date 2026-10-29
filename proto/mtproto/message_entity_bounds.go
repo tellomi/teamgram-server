@@ -192,3 +192,83 @@ func (m *DraftMessage) SanitizeEntities() {
 	}
 	m.Entities = SanitizeMessageEntities(m.GetMessage(), m.GetEntities())
 }
+
+// SanitizeOutgoing applies the same UTF-16 bounds to a short update
+// (updateShortMessage carries entities on Updates, not on Message).
+func (m *Updates) SanitizeOutgoing() {
+	if m == nil {
+		return
+	}
+	if m.Entities != nil || m.Message != "" {
+		m.Entities = SanitizeMessageEntities(m.Message, m.Entities)
+	}
+	if m.Update != nil {
+		m.Update.SanitizeEmbeddedEntities()
+	}
+	for _, update := range m.Updates {
+		if update != nil {
+			update.SanitizeEmbeddedEntities()
+		}
+	}
+}
+
+// SanitizeOutgoingObject filters entities on the objects official clients
+// receive from getDifference, getHistory, and push. Stored rows are also
+// cleaned when they are loaded; this is the last step before those objects
+// are serialized onto the connection.
+func SanitizeOutgoingObject(obj TLObject) {
+	switch o := obj.(type) {
+	case *Updates:
+		o.SanitizeOutgoing()
+	case *Update:
+		o.SanitizeEmbeddedEntities()
+	case *Message:
+		o.SanitizeEntities()
+	case *Updates_Difference:
+		if o == nil {
+			return
+		}
+		for _, msg := range o.NewMessages {
+			if msg != nil {
+				msg.SanitizeEntities()
+			}
+		}
+		for _, update := range o.OtherUpdates {
+			if update != nil {
+				update.SanitizeEmbeddedEntities()
+			}
+		}
+	case *Updates_ChannelDifference:
+		if o == nil {
+			return
+		}
+		for _, msg := range o.NewMessages {
+			if msg != nil {
+				msg.SanitizeEntities()
+			}
+		}
+		for _, msg := range o.Messages {
+			if msg != nil {
+				msg.SanitizeEntities()
+			}
+		}
+		for _, update := range o.OtherUpdates {
+			if update != nil {
+				update.SanitizeEmbeddedEntities()
+			}
+		}
+	case *Messages_Messages:
+		if o == nil {
+			return
+		}
+		for _, msg := range o.Messages {
+			if msg != nil {
+				msg.SanitizeEntities()
+			}
+		}
+	case *TLRpcResult:
+		if o != nil {
+			SanitizeOutgoingObject(o.Result)
+		}
+	}
+}

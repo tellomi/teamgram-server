@@ -66,6 +66,14 @@ func (s *Server) RunLoop() {
 }
 
 func (s *Server) Destroy() {
-	s.grpcSrv.Stop()
-	s.server.Close()
+	// FIN client sockets before stopping gRPC. grpc.Stop can wait on
+	// in-flight calls; phones should already be reconnecting to another
+	// instance instead of sitting on a half-open TCP connection until
+	// ping_delay_disconnect (often a few minutes after a deploy).
+	if s.server != nil {
+		s.server.Close()
+	}
+	if s.grpcSrv != nil {
+		s.grpcSrv.Stop()
+	}
 }

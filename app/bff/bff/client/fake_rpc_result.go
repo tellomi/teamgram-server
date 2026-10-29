@@ -278,6 +278,9 @@ func (c *BFFProxyClient) TryReturnFakeRpcResult(ctx context.Context, object mtpr
 		}).To_Account_WebAuthorizations(), nil
 	}
 
+	if r, ok := mtproto.StartupRPCResult(object); ok {
+		return r, nil
+	}
 	logx.WithContext(ctx).Errorf("%s blocked, License key from https://teamgram.net required to unlock enterprise features.", rt.Name())
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	return nil, mtproto.ErrMethodNotImpl
 }

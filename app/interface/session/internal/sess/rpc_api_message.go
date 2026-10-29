@@ -9,6 +9,7 @@ package sess
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/teamgram/proto/mtproto"
 	metadata "github.com/teamgram/proto/mtproto/rpc/metadata"
@@ -22,16 +23,34 @@ type rpcApiMessage struct {
 	reqMsgId  int64
 	reqMsg    mtproto.TLObject
 	takeout   *metadata.Takeout
+	mu        sync.Mutex
 	rpcResult *mtproto.TLRpcResult
 }
 
+// setResult keeps the first result. A deadline may already have stored
+// 500 INTERNAL while the handler is still running.
+func (m *rpcApiMessage) setResult(r *mtproto.TLRpcResult) {
+	if m == nil || r == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rpcResult == nil {
+		m.rpcResult = r
+	}
+}
+
 func (m *rpcApiMessage) MoveRpcResult() *mtproto.TLRpcResult {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	v := m.rpcResult
 	m.rpcResult = nil
 	return v
 }
 
 func (m *rpcApiMessage) TryGetRpcResultError() (*mtproto.TLRpcError, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.rpcResult != nil && m.rpcResult.Result != nil {
 		r := m.rpcResult.Result
 		switch t := r.(type) {
