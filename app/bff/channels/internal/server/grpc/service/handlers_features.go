@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 func (s *Service) MessagesGetPersonalChannelHistory(ctx context.Context, in *mtproto.TLMessagesGetPersonalChannelHistory) (*mtproto.Messages_Messages, error) {
@@ -125,7 +128,10 @@ func (s *Service) ChannelsGetFutureCreatorAfterLeave(ctx context.Context, in *mt
 	if len(users) > 0 {
 		return users[0], nil
 	}
-	return mtproto.MakeTLUser(&mtproto.User{Id: id, Premium: true}).To_User(), nil
+	return mtproto.MakeTLUser(&mtproto.User{
+		Id:      id,
+		Premium: premium.IsMember(false, 0, time.Now().Unix()),
+	}).To_User(), nil
 }
 
 func actor(ctx context.Context) (int64, int64) {

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -14,6 +16,9 @@ func (c *PremiumCore) AccountUpdateEmojiStatus(in *mtproto.TLAccountUpdateEmojiS
 		return nil, mtproto.ErrInternalServerError
 	}
 	documentID, until := emojiStatusParts(in.GetEmojiStatus())
+	if documentID != 0 && !premium.Allows(premium.FeatureEmojiStatus, c.member()) {
+		return nil, mtproto.ErrPremiumAccountRequired
+	}
 	ok, err := c.svcCtx.Dao.UserClient.UserUpdateEmojiStatus(c.ctx, &userpb.TLUserUpdateEmojiStatus{
 		UserId:                c.MD.UserId,
 		EmojiStatusDocumentId: documentID,
@@ -89,7 +94,14 @@ func (c *PremiumCore) AccountUpdateColor(in *mtproto.TLAccountUpdateColor) (*mtp
 	if c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || c.MD == nil {
 		return nil, mtproto.ErrInternalServerError
 	}
-	colorID, emoji, _ := selectedColor(in)
+	colorID, emoji, hasColor := selectedColor(in)
+	feature := premium.FeatureNameColor
+	if in.GetForProfile() {
+		feature = premium.FeatureProfileColor
+	}
+	if (hasColor || emoji != 0) && !premium.Allows(feature, c.member()) {
+		return nil, mtproto.ErrPremiumAccountRequired
+	}
 	ok, err := c.svcCtx.Dao.UserClient.UserSetColor(c.ctx, &userpb.TLUserSetColor{
 		UserId:            c.MD.UserId,
 		ForProfile:        in.GetForProfile(),
@@ -148,14 +160,29 @@ func emptyEmojiList(hash int64) *mtproto.EmojiList {
 	}).To_EmojiList()
 }
 
-// MessagesTranscribeAudio acknowledges a voice-to-text request without a
-// Premium check. Tellomi has no speech engine, so the transcription fails
-// instead of opening a purchase screen.
+// MessagesTranscribeAudio is gated like the other Premium features.
+// There is no speech engine, so an allowed call returns TRANSCRIPTION_FAILED
+// instead of a purchase error.
 func (c *PremiumCore) MessagesTranscribeAudio(in *mtproto.TLMessagesTranscribeAudio) (*mtproto.Messages_TranscribedAudio, error) {
 	if in.GetPeer() == nil || in.GetMsgId() == 0 {
 		return nil, mtproto.ErrMsgIdInvalid
 	}
+	if !premium.Allows(premium.FeatureVoiceToText, c.member()) {
+		return nil, mtproto.ErrPremiumAccountRequired
+	}
 	return nil, mtproto.ErrTranscriptionFailed
+}
+
+func (c *PremiumCore) member() bool {
+	now := time.Now().Unix()
+	if c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || c.MD == nil {
+		return premium.IsMember(false, 0, now)
+	}
+	me, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{Id: c.MD.UserId})
+	if err != nil || me == nil {
+		return premium.IsMember(false, 0, now)
+	}
+	return me.Premium()
 }
 
 func (c *PremiumCore) MessagesRateTranscribedAudio(in *mtproto.TLMessagesRateTranscribedAudio) (*mtproto.Bool, error) {

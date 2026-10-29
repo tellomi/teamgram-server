@@ -8,6 +8,12 @@ import (
 )
 
 func TestAppConfigPremiumPolicy(t *testing.T) {
+	t.Setenv(premium.EnvEveryone, "true")
+	t.Setenv(premium.EnvFreeFeatures, "")
+	t.Setenv(premium.EnvPurchaseBlocked, "true")
+	premium.Reload()
+	t.Cleanup(func() { premium.Reload() })
+
 	raw := mtproto.FromJSONValue(AppConfig())
 	obj, ok := raw.(map[string]any)
 	if !ok {
@@ -29,7 +35,7 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 		"stickers_faved_limit_premium":        float64(premium.FavedStickers),
 		"reactions_user_max_default":          float64(premium.ReactionsUserMax),
 		"upload_max_fileparts_premium":        float64(premium.UploadMaxFileParts),
-		"stickers_premium_by_emoji_num":       float64(premium.CustomEmojiPerMessage),
+		"stickers_premium_by_emoji_num":       float64(premium.CustomEmojiAllowance()),
 	}
 	for key, value := range want {
 		got, ok := obj[key].(float64)
@@ -37,7 +43,7 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 			t.Fatalf("%s = %#v, want %v", key, obj[key], value)
 		}
 	}
-	if AppConfigHash() != premium.AppConfigHash {
-		t.Fatal("app config hash drifted from the documented constant")
+	if AppConfigHash() != premium.AppConfigHash() || AppConfigHash() == 0 {
+		t.Fatal("app config hash did not follow the loaded policy")
 	}
 }

@@ -1,53 +1,73 @@
-# Premium for everyone
+# Premium membership
 
-Tellomi grants Telegram Premium to every non-deleted account. Official iOS and Android clients are unchanged. The server sets `user.premium` on every user object it returns, raises the limits those clients read from `help.getAppConfig`, and accepts the Premium-gated RPCs below.
+Official clients are unchanged. Tellomi keeps a real Premium membership: a per-user flag and expiry in MySQL, the limits clients read from `help.getAppConfig`, and a gate on each Premium feature. Nothing in the user object hard-codes `premium=true`.
 
-Purchases stay off. `premium_purchase_blocked` is true, `help.getPremiumPromo` has no subscription periods, and `payments.canPurchasePremium` / `payments.canPurchaseStore` return `boolFalse`. App Store and Play billing receipts return `PAYMENT_UNSUPPORTED`. `users.getFullUser` does not include gift prices.
+Who counts as a member, and which features a non-member may use, is server config. Turning a feature from free to paid, or turning off the global switch, is enough to start requiring a subscription. New features can use the same gate.
 
-## Who is Premium
+## Database
 
-`ImmutableUser.Premium()` is true for every user that is not deleted, including bots. `user.premium` on the MTProto `User` for self and for other users follows that. Deleted users stay `premium=false`.
+`users.premium` and `users.premium_expire_date` are the subscription.
 
-The `users.premium` and `users.premium_expire_date` columns are not consulted when building a user object. A row left at the old default still shows as Premium. Link-preview cards for users and bots do the same.
+- `premium=0` is not a subscription.
+- `premium=1` and `premium_expire_date=0` is a subscription with no end date.
+- `premium=1` and `premium_expire_date` in the future is a subscription until that Unix time.
+- A past `premium_expire_date` is expired even if the flag is still set.
 
-## App config
+`user.updatePremium` still writes those columns. The row is not rewritten just because the global switch is on.
 
-`help.getAppConfig` (both constructors) returns one JSON object. The hash is `0x544c5032`. A client that sends that hash back receives `help.appConfigNotModified`.
+## Config
 
-`premium_purchase_blocked` is true. Each limit is advertised twice, under the `_default` and `_premium` keys, and both values are the raised one. A client that still treats the account as non-Premium therefore applies the same cap.
+Environment variables. Unset values use the defaults. A process reads them at startup; tests can call `premium.Reload()`.
 
-| Key prefix | Value |
+| Variable | Default | Meaning |
+|---|---|---|
+| `TELLOMI_PREMIUM_EVERYONE` | `true` | When true, every non-deleted account is a Premium member. The database row is unchanged. When false, only an unexpired subscription is a member. |
+| `TELLOMI_PREMIUM_FREE_FEATURES` | empty | Comma-separated features that non-members may use. `*` marks every feature free. An unknown token is ignored. |
+| `TELLOMI_PREMIUM_PURCHASE_BLOCKED` | `true` | Sets `premium_purchase_blocked` in `help.getAppConfig`. |
+
+`user.premium` on every `User` the server returns (self and others) is the effective membership: the global switch, or an active subscription. Deleted users are never Premium. Link-preview cards for users and bots use the same rule. Channels are not marked Premium by the global switch.
+
+A paid feature is allowed when the account is an effective member. A free feature is allowed for everyone. The global switch makes every account a member, so paid features are included until that switch is turned off.
+
+Feature tokens:
+
+| Token | What it gates |
 |---|---|
-| `about_length_limit` | 140 characters |
-| `caption_length_limit` | 4096 |
-| `dialogs_pinned_limit` | 100 |
-| `dialogs_folder_pinned_limit` | 200 |
-| `dialog_filters_limit` | 20 |
-| `dialog_filters_chats_limit` | 200 |
-| `saved_gifs_limit` | 400 |
-| `stickers_faved_limit` | 200 |
-| `channels_limit` | 1000 |
-| `channels_public_limit` | 20 |
-| `reactions_user_max` | 3 |
-| `upload_max_fileparts` | 8000 |
-| `stickers_premium_by_emoji_num` | 100 |
+| `emoji_status` | `account.updateEmojiStatus` when setting a document. Clearing a status is always allowed. |
+| `about` | Biography length. Free cap 70 characters, Premium cap 140. |
+| `pinned_chats` | Main-list pins kept when chats leave the archive. Free cap 5, Premium cap 100. |
+| `folder_pins` | Archive pin cap advertised to clients. Free 100, Premium 200. |
+| `voice_to_text` | `messages.transcribeAudio`. There is no speech engine, so an allowed call returns `TRANSCRIPTION_FAILED`. A refused call returns `PREMIUM_ACCOUNT_REQUIRED`. |
+| `custom_emoji` | `stickers_premium_by_emoji_num` in app config. Free or global membership advertises 100. Paid and not a member advertises 0. The server still stores `messageEntityCustomEmoji`. |
+| `profile_color` | `account.updateColor` with `for_profile`. Clearing the color is always allowed. |
+| `name_color` | `account.updateColor` for the name color. |
+| `stories` | Daily story cap. Free 3, Premium 100. A non-member who hits the cap gets `PREMIUM_ACCOUNT_REQUIRED`. A member who hits it gets `STORIES_TOO_MUCH`. |
+| `saved_gifs` | Saved GIF cap advertised to clients. Free 200, Premium 400. |
+| `faved_stickers` | Favorite sticker cap advertised to clients. Free 5, Premium 200. |
+| `dialog_filters` | Chat-folder count and chats per folder. Free 10 folders / 100 chats, Premium 20 / 200. |
+| `upload` | `upload_max_fileparts`. Free 4000, Premium 8000. |
+| `caption` | Caption length advertised to clients. Free 1024, Premium 4096. |
+| `reactions` | Reactions one person may add. Free 1, Premium 3. |
+| `channels` | Channels and megagroups an account may join. Free 500, Premium 1000. |
+| `public_channels` | Public usernames. Free 10, Premium 20. |
 
-`reactions_uniq_max` is 11. `transcribe_audio_trial_weekly_number` is 100000 so a client does not open a trial paywall before calling transcription.
+Example: keep the badge off, give everyone emoji status, and charge for a longer biography and voice transcription.
 
-## What the server accepts
+```
+TELLOMI_PREMIUM_EVERYONE=false
+TELLOMI_PREMIUM_FREE_FEATURES=emoji_status
+```
 
-| Feature | Behavior |
-|---|---|
-| Biography | `account.updateProfile` allows 140 Unicode code points. Longer text returns `ABOUT_TOO_LONG`. |
-| Pinned chats | Moving chats out of the archive keeps up to 100 pins. The previous cap was 5. |
-| Emoji status | `account.updateEmojiStatus` stores any document id (or clears it) and pushes `updateUserEmojiStatus`. It does not check Premium. The default status catalog is empty until emoji documents are imported. |
-| Name and profile colors | `help.getPeerColors` and `help.getPeerProfileColors` return a palette. `account.updateColor` saves the color id and optional background emoji. Color id 0 is stored as `1` in `users.color` / `users.profile_color` because `0` in that column means "no color". |
-| Custom emoji in messages | `messageEntityCustomEmoji` is kept when a message is saved. The server does not reject it. Rendering still needs `messages.getCustomEmojiDocuments` from the sticker service. |
-| Stories | Hitting the story cap returns `STORIES_TOO_MUCH`, not `PREMIUM_ACCOUNT_REQUIRED`. |
-| Voice to text | `messages.transcribeAudio` is registered and does not return `PREMIUM_ACCOUNT_REQUIRED`. There is no speech engine in this server, so the call returns `TRANSCRIPTION_FAILED`. |
+Accounts with `premium=1` and an unexpired `premium_expire_date` still receive the paid features. Everyone else can set an emoji status and is limited to a 70-character biography.
 
-`messages.rateTranscribedAudio` returns `boolTrue`.
+## What clients see
+
+`help.getAppConfig` (both constructors) publishes each limit twice. The `_premium` value is always the raised cap. The `_default` value is the raised cap when the global switch is on or that feature is free, and the stock cap otherwise. The hash changes with the policy. A client that sends the current hash receives `help.appConfigNotModified`.
+
+`premium_purchase_blocked` follows `TELLOMI_PREMIUM_PURCHASE_BLOCKED`. While it is true, `help.getPremiumPromo` has no subscription periods, purchase checks return `boolFalse`, store receipts return `PAYMENT_UNSUPPORTED`, and `users.getFullUser` does not include gift prices.
+
+`help.getPeerColors` and `help.getPeerProfileColors` still return the palette. Saving a color or an emoji status checks the feature gate and then stores the value. Color id 0 is stored as `1` in `users.color` / `users.profile_color` because `0` in that column means "no color".
 
 ## Not stored yet
 
-Channel accent colors (`channels.updateColor`) and channel emoji status are not persisted. Those RPCs are still unimplemented. User name colors, user profile colors, and user emoji status are stored.
+Channel accent colors (`channels.updateColor`) and channel emoji status are not persisted. User name colors, user profile colors, and user emoji status are stored.

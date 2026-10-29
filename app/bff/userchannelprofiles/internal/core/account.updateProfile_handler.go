@@ -37,7 +37,7 @@ func (c *UserChannelProfilesCore) AccountUpdateProfile(in *mtproto.TLAccountUpda
 	}
 
 	if in.GetAbout() != nil {
-		if !premium.AboutWithinLimit(in.GetAbout().GetValue()) {
+		if !premium.AboutWithinLimit(in.GetAbout().GetValue(), me.Premium()) {
 			err = mtproto.ErrAboutTooLong
 			c.Logger.Errorf("account.updateProfile - error: %v", err)
 			return nil, err

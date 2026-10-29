@@ -19,6 +19,8 @@
 package mtproto
 
 import (
+	"time"
+
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -134,14 +136,14 @@ func (m *ImmutableUser) BotAttachMenu() bool {
 	return m.User.Bot.GetBotAttachMenu()
 }
 
-// Premium reports whether this account is Premium.
-// Tellomi grants Premium to every non-deleted user. The users.premium column
-// and premium_expire_date are ignored so a stale row cannot hide the flag.
+// Premium reports whether this account is a Premium member.
+// Deleted users are never Premium. Otherwise the stored users.premium flag
+// and users.premium_expire_date are passed to the process membership policy.
 func (m *ImmutableUser) Premium() bool {
 	if m == nil || m.User == nil || m.Deleted() {
 		return false
 	}
-	return true
+	return currentMembership()(m.User.Premium, m.User.PremiumExpireDate.GetValue(), time.Now().Unix())
 }
 
 func (m *ImmutableUser) AttachMenuEnabled() bool {

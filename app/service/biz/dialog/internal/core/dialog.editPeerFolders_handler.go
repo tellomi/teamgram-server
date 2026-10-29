@@ -11,6 +11,7 @@ package core
 
 import (
 	"sort"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -79,20 +80,38 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 	c.svcCtx.Dao.DialogsDAO.UpdatePeerDialogListFolderId(c.ctx, in.FolderId, in.UserId, in.PeerDialogList)
 
 	if in.FolderId == 0 {
-		// cut
-		if len(dialogPinnedList) > premium.PinnedDialogs {
-			unpinnedList := make([]int64, 0, len(dialogPinnedList)-premium.PinnedDialogs)
-			for i := premium.PinnedDialogs; i < len(dialogPinnedList); i++ {
+		cap := pinnedCap(c, in.UserId)
+		if len(dialogPinnedList) > cap {
+			unpinnedList := make([]int64, 0, len(dialogPinnedList)-cap)
+			for i := cap; i < len(dialogPinnedList); i++ {
 				unpinnedList = append(unpinnedList, mtproto.MakePeerDialogId(dialogPinnedList[i].PeerType, dialogPinnedList[i].PeerId))
 			}
 
-			//
 			c.svcCtx.Dao.DialogsDAO.UpdatePeerDialogListPinned(c.ctx, 0, in.UserId, unpinnedList)
-			dialogPinnedList = dialogPinnedList[:premium.PinnedDialogs]
+			dialogPinnedList = dialogPinnedList[:cap]
 		}
 	}
 
 	return &dialog.Vector_DialogPinnedExt{
 		Datas: dialogPinnedList,
 	}, nil
+}
+
+type userPremiumRow struct {
+	Premium           int   `db:"premium"`
+	PremiumExpireDate int64 `db:"premium_expire_date"`
+}
+
+func pinnedCap(c *DialogCore, userID int64) int {
+	now := time.Now().Unix()
+	member := premium.IsMember(false, 0, now)
+	if c != nil && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.DB != nil {
+		var row userPremiumRow
+		err := c.svcCtx.Dao.DB.QueryRowPartial(c.ctx, &row,
+			"select premium, premium_expire_date from users where id = ? limit 1", userID)
+		if err == nil {
+			member = premium.IsMember(row.Premium != 0, row.PremiumExpireDate, now)
+		}
+	}
+	return premium.Limit(premium.FeaturePinnedChats, member)
 }
