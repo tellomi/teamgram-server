@@ -1,0 +1,31 @@
+# Fails when docs/api-coverage.md or docs/api-coverage.csv drift from the
+# server tree. Client call sites stay in tools/apicoverage/data/clients.json;
+# this job does not clone Telegram.
+
+name: API coverage
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Test the generator
+        run: go test ./tools/apicoverage/
+
+      - name: Check generated docs
+        run: go run ./tools/apicoverage -check
