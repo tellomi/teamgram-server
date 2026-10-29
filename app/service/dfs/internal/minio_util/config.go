@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/teamgram/teamgram-server/pkg/redact"
 )
 
 // Env var names are part of the ops contract. Do not rename them.
@@ -80,6 +82,15 @@ type MinioConfig struct {
 	// Unexported for the same reason as pathStyleDisabled: go-zero 1.10 rejects
 	// duplicate json:"-" keys, and a RoundTripper cannot be loaded from yaml.
 	transport http.RoundTripper
+}
+
+// Redacted returns a copy safe to print at startup. AccessKeyID and
+// SecretAccessKey are masked. The receiver is not modified, so the client
+// still uses the real credentials.
+func (c MinioConfig) Redacted() MinioConfig {
+	c.AccessKeyID = redact.Credential(c.AccessKeyID)
+	c.SecretAccessKey = redact.Credential(c.SecretAccessKey)
+	return c
 }
 
 // ApplyEnv overlays the TELLOMI_S3_* variables onto c. Unset variables keep

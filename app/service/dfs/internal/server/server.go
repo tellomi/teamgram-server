@@ -42,9 +42,7 @@ func (s *Server) Initialize() error {
 		return err
 	}
 	logged := c
-	if logged.Minio.SecretAccessKey != "" {
-		logged.Minio.SecretAccessKey = "***"
-	}
+	logged.Minio = c.Minio.Redacted()
 	logx.Infov(logged)
 	ctx := svc.NewServiceContext(c)
 
