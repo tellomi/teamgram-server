@@ -21,8 +21,10 @@ package code
 import (
 	"context"
 
+	aliyunvc "github.com/teamgram/teamgram-server/pkg/code/aliyun"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/code/none"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 type VerifyCodeInterface interface {
@@ -35,6 +37,11 @@ func NewVerifyCode(c *conf.SmsVerifyCodeConfig) VerifyCodeInterface {
 		c = new(conf.SmsVerifyCodeConfig)
 	}
 
+	// TELLOMI_SMS_PROVIDER overrides the yaml name. Unset or "fixed" keeps the
+	// development code (FixedCode, default 12345). "aliyun" sends Dysmsapi SMS.
+	if verify.Load().SMS.Provider == verify.ProviderAliyun {
+		return aliyunvc.New(c)
+	}
 	switch c.Name {
 	// case "predefined":
 	// 	return predefined.New(c)

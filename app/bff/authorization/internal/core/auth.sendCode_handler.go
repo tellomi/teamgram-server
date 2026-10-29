@@ -345,6 +345,8 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 				return nil
 			}
 
+			c.prepareSMSCode(codeData2)
+
 			var (
 				needSendSms = true
 			)
@@ -373,18 +375,9 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 
 			if needSendSms {
 				c.Logger.Infof("send code by sms")
-				extraData, err2 := c.svcCtx.AuthLogic.VerifyCodeInterface.SendSmsVerifyCode(
-					context.Background(),
-					phoneNumber,
-					codeData2.PhoneCode,
-					codeData2.PhoneCodeHash)
-				if err2 != nil {
+				if err2 := c.sendSMS(phoneNumber, codeData2); err2 != nil {
 					c.Logger.Errorf("send sms code error: %v", err2)
 					return err2
-				} else {
-					// codeData2.SentCodeType = model.CodeTypeSms
-					codeData2.SentCodeType = model.SentCodeTypeSms
-					codeData2.PhoneCodeExtraData = extraData
 				}
 			}
 
