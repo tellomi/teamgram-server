@@ -130,10 +130,42 @@ func StartupRPCResult(object TLObject) (TLObject, bool) {
 	case *TLAccountGetContactSignUpNotification:
 		return BoolFalse, true
 	case *TLAccountGetReactionsNotifySettings:
-		return MakeTLReactionsNotifySettings(&ReactionsNotifySettings{
-			Sound:        MakeTLNotificationSoundNone(nil).To_NotificationSound(),
-			ShowPreviews: BoolFalse,
-		}).To_ReactionsNotifySettings(), true
+		return defaultReactionsNotifySettings(), true
+	case *TLAccountSetReactionsNotifySettings:
+		return reactionsNotifyReply(in.GetSettings()), true
+	case *TLAccountCancelPasswordEmail, *TLAccountConfirmPasswordEmail, *TLAccountResendPasswordEmail,
+		*TLAccountDeclinePasswordReset, *TLAccountUpdatePasswordSettings,
+		*TLMessagesUpdateDialogFilter, *TLMessagesUpdateDialogFiltersOrder, *TLMessagesToggleDialogFilterTags:
+		// No 2FA email, password reset, or saved folder is pending. BoolTrue
+		// acknowledges the call. Password and folder state are not stored.
+		return BoolTrue, true
+	case *TLAccountGetPasswordSettings:
+		// Matches account.getPassword reporting no cloud password: no recovery
+		// email and no secure settings.
+		return MakeTLAccountPasswordSettings(&Account_PasswordSettings{}).To_Account_PasswordSettings(), true
+	case *TLAccountGetTmpPassword:
+		period := in.GetPeriod()
+		if period < 0 {
+			period = 0
+		}
+		return MakeTLAccountTmpPassword(&Account_TmpPassword{
+			TmpPassword: []byte{},
+			ValidUntil:  int32(time.Now().Unix()) + period,
+		}).To_Account_TmpPassword(), true
+	case *TLAuthFinishPasskeyLogin:
+		// Passkey verification is not implemented. This constructor carries no
+		// user, so the reply cannot open a session.
+		return MakeTLAuthAuthorizationSignUpRequired(nil).To_Auth_Authorization(), true
+	case *TLMessagesGetDialogFiltersEFD48C89:
+		return MakeTLMessagesDialogFilters(&Messages_DialogFilters{
+			Filters: []*DialogFilter{},
+		}).To_Messages_DialogFilters(), true
+	case *TLMessagesGetDialogFiltersF19ED96D:
+		return &Vector_DialogFilter{Datas: []*DialogFilter{}}, true
+	case *TLMessagesGetSuggestedDialogFilters:
+		return &Vector_DialogFilterSuggested{Datas: []*DialogFilterSuggested{}}, true
+	case *TLMessagesGetPaidReactionPrivacy:
+		return paidReactionPrivacyUpdates(), true
 	case *TLUsersGetFullUser:
 		return MakeTLUsersUserFull(&Users_UserFull{
 			FullUser: MakeTLUserFull(&UserFull{
@@ -199,6 +231,41 @@ func emptyUpdates() *Updates {
 
 func disabledAutoDownload() *AutoDownloadSettings {
 	return MakeTLAutoDownloadSettings(&AutoDownloadSettings{Disabled: true}).To_AutoDownloadSettings()
+}
+
+func defaultReactionsNotifySettings() *ReactionsNotifySettings {
+	return MakeTLReactionsNotifySettings(&ReactionsNotifySettings{
+		Sound:        MakeTLNotificationSoundNone(nil).To_NotificationSound(),
+		ShowPreviews: BoolFalse,
+	}).To_ReactionsNotifySettings()
+}
+
+// reactionsNotifyReply echoes a complete settings object. An incomplete
+// request gets the same default as account.getReactionsNotifySettings.
+// Nothing is stored.
+func reactionsNotifyReply(in *ReactionsNotifySettings) *ReactionsNotifySettings {
+	if in == nil || in.Sound == nil || in.ShowPreviews == nil {
+		return defaultReactionsNotifySettings()
+	}
+	if in.PredicateName == "" {
+		in.PredicateName = Predicate_reactionsNotifySettings
+	}
+	return in
+}
+
+// paidReactionPrivacyUpdates is the default paid-reaction privacy. There is
+// no per-user setting, so the privacy is paidReactionPrivacyDefault.
+func paidReactionPrivacyUpdates() *Updates {
+	privacy := MakeTLPaidReactionPrivacyDefault(nil).To_PaidReactionPrivacy()
+	upd := MakeTLUpdatePaidReactionPrivacy(&Update{
+		Private_PAIDREACTIONPRIVACY: privacy,
+	}).To_Update()
+	return MakeTLUpdates(&Updates{
+		Date:    int32(time.Now().Unix()),
+		Updates: []*Update{upd},
+		Users:   []*User{},
+		Chats:   []*Chat{},
+	}).To_Updates()
 }
 
 func emptyStories() *Stories_Stories {

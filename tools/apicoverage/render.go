@@ -185,7 +185,7 @@ func writeMarkdown(snap Snapshot, schemaN, layer int, rows []Row) []byte {
 	b.WriteString("**Server status** is what a connected client gets from the `bff` process session actually routes to (`teamgramd/etc/session.yaml` `BFFProxyClients.IDMap`, same map in `teamgramd/etc2/session.yaml`).\n\n")
 	b.WriteString("| Status | Meaning |\n| --- | --- |\n")
 	b.WriteString("| `implemented` | IDMap routes the RPC service, `app/bff/bff/internal/server/server.go` registers it, and the handler reads or writes real state (or returns a filled static payload). |\n")
-	b.WriteString("| `stub` | The client gets a successful empty object, `Bool`, or `*NotModified`, either from a placeholder handler or from `TryReturnFakeRpcResult` when the service is not routed. |\n")
+	b.WriteString("| `stub` | The client gets a successful empty object, `Bool`, or `*NotModified`, from a placeholder handler, from `TryReturnFakeRpcResult`, or from `StartupRPCResult` when the service is not routed or the method is unimplemented. |\n")
 	b.WriteString("| `routed-but-unregistered` | IDMap routes the service, but the bff process does not register a handler for that method, so the call fails. |\n")
 	b.WriteString("| `missing` | No IDMap route and no empty proxy response. The session returns `ENTERPRISE_IS_BLOCKED`. A handler file may still exist; the notes say when it does. |\n\n")
 	b.WriteString("`effect=error` is a response that fails the RPC. `empty`, `bool`, and `not_modified` succeed with no data. `ok` is a real result.\n\n")

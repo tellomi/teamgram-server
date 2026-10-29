@@ -1,7 +1,9 @@
 package mtproto
 
 import (
+	"encoding/binary"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -93,6 +95,22 @@ func TestStartupFallbacksEncode(t *testing.T) {
 		&TLAccountGetNotifySettings{},
 		&TLAccountGetContactSignUpNotification{},
 		&TLAccountGetReactionsNotifySettings{},
+		&TLAccountSetReactionsNotifySettings{},
+		&TLAccountCancelPasswordEmail{},
+		&TLAccountConfirmPasswordEmail{},
+		&TLAccountResendPasswordEmail{},
+		&TLAccountDeclinePasswordReset{},
+		&TLAccountUpdatePasswordSettings{},
+		&TLAccountGetPasswordSettings{},
+		&TLAccountGetTmpPassword{Period: 60},
+		&TLAuthFinishPasskeyLogin{},
+		&TLMessagesGetDialogFiltersEFD48C89{},
+		&TLMessagesGetDialogFiltersF19ED96D{},
+		&TLMessagesGetSuggestedDialogFilters{},
+		&TLMessagesUpdateDialogFilter{},
+		&TLMessagesUpdateDialogFiltersOrder{},
+		&TLMessagesToggleDialogFilterTags{},
+		&TLMessagesGetPaidReactionPrivacy{},
 		&TLUsersGetFullUser{},
 		&TLContactsGetContacts{},
 		&TLMessagesGetUnreadMentions{},
@@ -110,6 +128,173 @@ func TestStartupFallbacksEncode(t *testing.T) {
 		}
 		mustEncodeTL(t, result)
 	}
+}
+
+func TestP0StartupMethods(t *testing.T) {
+	const (
+		crcBoolTrue                   = 0x997275b5
+		crcPasswordSettings           = 0x9a5c33e5
+		crcTmpPassword                = 0xdb64fd34
+		crcReactionsNotify            = 0x71e4ea58
+		crcAuthSignUpRequired         = 0x44747e9a
+		crcDialogFilters              = 0x2ad93719
+		crcVector                     = 0x1cb5c415
+		crcUpdates                    = 0x74ae4240
+		crcUpdatePaidReactionPrivacy  = 0x8b725fce
+		crcPaidReactionPrivacyDefault = 0x206ad49e
+	)
+	boolMethods := []TLObject{
+		&TLAccountCancelPasswordEmail{},
+		&TLAccountConfirmPasswordEmail{},
+		&TLAccountResendPasswordEmail{},
+		&TLAccountDeclinePasswordReset{},
+		&TLAccountUpdatePasswordSettings{},
+		&TLMessagesUpdateDialogFilter{},
+		&TLMessagesUpdateDialogFiltersOrder{},
+		&TLMessagesToggleDialogFilterTags{},
+	}
+	for _, sample := range boolMethods {
+		got := mustP0(t, sample)
+		if got.(*Bool).GetPredicateName() != Predicate_boolTrue {
+			t.Fatalf("%T predicate = %s", sample, got.(*Bool).GetPredicateName())
+		}
+		assertCtor(t, sample, got, crcBoolTrue)
+	}
+
+	settings := mustP0(t, &TLAccountGetPasswordSettings{})
+	if settings.(*Account_PasswordSettings).GetPredicateName() != Predicate_account_passwordSettings {
+		t.Fatal(settings.(*Account_PasswordSettings).GetPredicateName())
+	}
+	if settings.(*Account_PasswordSettings).GetEmail() != nil || settings.(*Account_PasswordSettings).GetSecureSettings() != nil {
+		t.Fatal("password settings should carry no email and no secure settings")
+	}
+	assertCtor(t, &TLAccountGetPasswordSettings{}, settings, crcPasswordSettings)
+
+	before := int32(time.Now().Unix())
+	tmp := mustP0(t, &TLAccountGetTmpPassword{Period: 120})
+	tmpPass := tmp.(*Account_TmpPassword)
+	if tmpPass.GetPredicateName() != Predicate_account_tmpPassword {
+		t.Fatal(tmpPass.GetPredicateName())
+	}
+	if len(tmpPass.GetTmpPassword()) != 0 {
+		t.Fatalf("tmp password = %q", tmpPass.GetTmpPassword())
+	}
+	if tmpPass.GetValidUntil() < before+120 || tmpPass.GetValidUntil() > before+130 {
+		t.Fatalf("valid_until = %d, now = %d", tmpPass.GetValidUntil(), before)
+	}
+	assertCtor(t, &TLAccountGetTmpPassword{}, tmp, crcTmpPassword)
+
+	notify := mustP0(t, &TLAccountGetReactionsNotifySettings{})
+	if notify.(*ReactionsNotifySettings).GetPredicateName() != Predicate_reactionsNotifySettings {
+		t.Fatal(notify.(*ReactionsNotifySettings).GetPredicateName())
+	}
+	assertCtor(t, &TLAccountGetReactionsNotifySettings{}, notify, crcReactionsNotify)
+
+	echoIn := MakeTLReactionsNotifySettings(&ReactionsNotifySettings{
+		Sound:              MakeTLNotificationSoundNone(nil).To_NotificationSound(),
+		ShowPreviews:       BoolTrue,
+		MessagesNotifyFrom: MakeTLReactionNotificationsFromAll(nil).To_ReactionNotificationsFrom(),
+	}).To_ReactionsNotifySettings()
+	echo := mustP0(t, &TLAccountSetReactionsNotifySettings{Settings: echoIn})
+	if !FromBool(echo.(*ReactionsNotifySettings).GetShowPreviews()) {
+		t.Fatal("setReactionsNotifySettings should echo show_previews")
+	}
+	assertCtor(t, &TLAccountSetReactionsNotifySettings{}, echo, crcReactionsNotify)
+	fallbackNotify := mustP0(t, &TLAccountSetReactionsNotifySettings{})
+	if FromBool(fallbackNotify.(*ReactionsNotifySettings).GetShowPreviews()) {
+		t.Fatal("incomplete settings should use the default")
+	}
+
+	auth := mustP0(t, &TLAuthFinishPasskeyLogin{})
+	if auth.(*Auth_Authorization).GetPredicateName() != Predicate_auth_authorizationSignUpRequired {
+		t.Fatal(auth.(*Auth_Authorization).GetPredicateName())
+	}
+	if auth.(*Auth_Authorization).GetUser() != nil {
+		t.Fatal("finishPasskeyLogin must not return a user")
+	}
+	assertCtor(t, &TLAuthFinishPasskeyLogin{}, auth, crcAuthSignUpRequired)
+
+	filters := mustP0(t, &TLMessagesGetDialogFiltersEFD48C89{})
+	dialogFilters := filters.(*Messages_DialogFilters)
+	if dialogFilters.GetPredicateName() != Predicate_messages_dialogFilters {
+		t.Fatal(dialogFilters.GetPredicateName())
+	}
+	if dialogFilters.GetTagsEnabled() || len(dialogFilters.GetFilters()) != 0 {
+		t.Fatalf("filters = tags %v len %d", dialogFilters.GetTagsEnabled(), len(dialogFilters.GetFilters()))
+	}
+	assertCtor(t, &TLMessagesGetDialogFiltersEFD48C89{}, filters, crcDialogFilters)
+
+	oldFilters := mustP0(t, &TLMessagesGetDialogFiltersF19ED96D{})
+	if len(oldFilters.(*Vector_DialogFilter).GetDatas()) != 0 {
+		t.Fatal("legacy getDialogFilters should be an empty vector")
+	}
+	assertCtor(t, &TLMessagesGetDialogFiltersF19ED96D{}, oldFilters, crcVector)
+
+	suggested := mustP0(t, &TLMessagesGetSuggestedDialogFilters{})
+	if len(suggested.(*Vector_DialogFilterSuggested).GetDatas()) != 0 {
+		t.Fatal("suggested filters should be empty")
+	}
+	assertCtor(t, &TLMessagesGetSuggestedDialogFilters{}, suggested, crcVector)
+
+	queue := mustP0(t, &TLMessagesReceivedQueue{MaxQts: 10})
+	if len(queue.(*Vector_Long).GetDatas()) != 0 {
+		t.Fatal("receivedQueue should be an empty vector")
+	}
+	assertCtor(t, &TLMessagesReceivedQueue{}, queue, crcVector)
+
+	privacy := mustP0(t, &TLMessagesGetPaidReactionPrivacy{})
+	up := privacy.(*Updates)
+	if up.GetPredicateName() != Predicate_updates {
+		t.Fatal(up.GetPredicateName())
+	}
+	if len(up.GetUpdates()) != 1 || up.GetUpdates()[0].GetPredicateName() != Predicate_updatePaidReactionPrivacy {
+		t.Fatalf("updates = %#v", up.GetUpdates())
+	}
+	if up.GetUpdates()[0].GetPrivate_PAIDREACTIONPRIVACY().GetPredicateName() != Predicate_paidReactionPrivacyDefault {
+		t.Fatal(up.GetUpdates()[0].GetPrivate_PAIDREACTIONPRIVACY().GetPredicateName())
+	}
+	buf := assertCtor(t, &TLMessagesGetPaidReactionPrivacy{}, privacy, crcUpdates)
+	if !containsCtor(buf, crcUpdatePaidReactionPrivacy) || !containsCtor(buf, crcPaidReactionPrivacyDefault) {
+		t.Fatal("paid reaction privacy update was not encoded")
+	}
+}
+
+func mustP0(t *testing.T, sample TLObject) TLObject {
+	t.Helper()
+	got, ok := StartupRPCResult(sample)
+	if !ok || got == nil {
+		t.Fatalf("%T: missing startup result", sample)
+	}
+	if _, isErr := got.(*TLRpcError); isErr {
+		t.Fatalf("%T: rpc error", sample)
+	}
+	mustEncodeTL(t, got)
+	return got
+}
+
+func assertCtor(t *testing.T, sample, got TLObject, want uint32) []byte {
+	t.Helper()
+	buf := NewEncodeBuf(256)
+	if err := got.Encode(buf, 232); err != nil {
+		t.Fatalf("%T: %v", sample, err)
+	}
+	raw := buf.GetBuf()
+	if len(raw) < 4 {
+		t.Fatalf("%T: short buffer", sample)
+	}
+	if gotCtor := binary.LittleEndian.Uint32(raw[:4]); gotCtor != want {
+		t.Fatalf("%T constructor = %#x, want %#x", sample, gotCtor, want)
+	}
+	return raw
+}
+
+func containsCtor(buf []byte, want uint32) bool {
+	for i := 0; i+4 <= len(buf); i++ {
+		if binary.LittleEndian.Uint32(buf[i:i+4]) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func mustEncodeTL(t *testing.T, obj TLObject) {

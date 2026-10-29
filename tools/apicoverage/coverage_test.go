@@ -143,6 +143,33 @@ func TestServerSamples(t *testing.T) {
 	assertStatus("messages.getAllStickers", statusImplemented, effectOK)
 	// Routed sticker method that returns an empty set.
 	assertStatus("messages.getMaskStickers", statusStub, effectEmpty)
+	// P0 methods that used to fail the RPC. StartupRPCResult answers them
+	// with a Bool or another layer-232 constructor.
+	for _, method := range []string{
+		"account.cancelPasswordEmail",
+		"account.confirmPasswordEmail",
+		"account.declinePasswordReset",
+		"account.resendPasswordEmail",
+		"account.updatePasswordSettings",
+		"messages.updateDialogFilter",
+		"messages.updateDialogFiltersOrder",
+		"messages.toggleDialogFilterTags",
+	} {
+		assertStatus(method, statusStub, effectBool)
+	}
+	for _, method := range []string{
+		"account.getPasswordSettings",
+		"account.getTmpPassword",
+		"account.getReactionsNotifySettings",
+		"account.setReactionsNotifySettings",
+		"auth.finishPasskeyLogin",
+		"messages.getDialogFilters",
+		"messages.getSuggestedDialogFilters",
+		"messages.getPaidReactionPrivacy",
+		"messages.receivedQueue",
+	} {
+		assertStatus(method, statusStub, effectEmpty)
+	}
 	// Passkeys are implemented as an enterprise error and the service is not routed.
 	st, ef, _, _, notes, _ := srv.resolve("account.getPasskeys")
 	if st != statusMissing || ef != effectError {

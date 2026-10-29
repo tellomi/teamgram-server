@@ -35,6 +35,7 @@ type serverModel struct {
 	Variants   map[string][]variant   // canonical method -> registrations
 	Fakes      map[string]bool        // canonical method -> proxy returns a value
 	Commented  map[string]bool        // RPC service commented out of session.yaml
+	Startup    map[string]string      // canonical method -> effect of StartupRPCResult
 }
 
 var (
@@ -52,6 +53,7 @@ func loadServer(root string) (*serverModel, error) {
 		Variants:   map[string][]variant{},
 		Fakes:      map[string]bool{},
 		Commented:  map[string]bool{},
+		Startup:    map[string]string{},
 	}
 	if err := m.parseIDMap(filepath.Join(root, "teamgramd/etc/session.yaml")); err != nil {
 		return nil, err
@@ -74,6 +76,9 @@ func loadServer(root string) (*serverModel, error) {
 		return nil, err
 	}
 	m.Handlers = handlers
+	if err := m.parseStartup(filepath.Join(root, "proto/mtproto/startup_rpc_fallback.go")); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -653,5 +658,160 @@ func (m *serverModel) resolve(method string) (status, effect, service, handler, 
 			best.notes = strings.TrimSpace(best.notes + " (layer variants disagree; best reachable status kept)")
 		}
 	}
+	// A routed handler is what the client runs. Below that, an unregistered
+	// or unrouted method is answered by StartupRPCResult instead of an RPC error.
+	if best.rank < 40 && best.effect == effectError {
+		if effect, ok := m.Startup[method]; ok {
+			note := "typed startup fallback"
+			if best.notes != "" {
+				note += "; " + best.notes
+			}
+			return statusStub, effect, best.service, "stub", strings.TrimSpace(note), best.routed
+		}
+	}
 	return best.status, best.effect, best.service, best.handler, strings.TrimSpace(best.notes), best.routed
+}
+
+// parseStartup records TL methods that StartupRPCResult answers with a typed
+// object. Effect follows the returned constructor: NotModified, Bool, or empty.
+func (m *serverModel) parseStartup(path string) error {
+	if m.Startup == nil {
+		m.Startup = map[string]string{}
+	}
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return err
+	}
+	byGo := map[string]string{}
+	for method, vars := range m.Variants {
+		for _, v := range vars {
+			byGo[v.GoName] = method
+		}
+	}
+	for _, d := range af.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "StartupRPCResult" || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSwitchStmt)
+			if !ok {
+				return true
+			}
+			for _, stmt := range ts.Body.List {
+				clause, ok := stmt.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				effect := effectOfStmts(clause.Body)
+				for _, name := range caseTypeNames(clause.List) {
+					method, ok := byGo[strings.TrimPrefix(name, "TL")]
+					if !ok {
+						continue
+					}
+					if prev, exists := m.Startup[method]; exists && prev != effect {
+						m.Startup[method] = preferEffect(prev, effect)
+						continue
+					}
+					m.Startup[method] = effect
+				}
+			}
+			return false
+		})
+	}
+	return nil
+}
+
+func caseTypeNames(list []ast.Expr) []string {
+	var names []string
+	for _, e := range list {
+		if star, ok := e.(*ast.StarExpr); ok {
+			e = star.X
+		}
+		id, ok := e.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		names = append(names, id.Name)
+	}
+	return names
+}
+
+func effectOfStmts(stmts []ast.Stmt) string {
+	sawNotMod, sawBool, sawOther := false, false, false
+	ast.Inspect(&ast.BlockStmt{List: stmts}, func(n ast.Node) bool {
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok {
+			return true
+		}
+		for _, r := range ret.Results {
+			if id, ok := r.(*ast.Ident); ok && (id.Name == "true" || id.Name == "false" || id.Name == "nil") {
+				continue
+			}
+			if isBoolResult(r) {
+				sawBool = true
+				continue
+			}
+			sawOther = true
+			if exprNotModified(r) {
+				sawNotMod = true
+			}
+		}
+		return true
+	})
+	switch {
+	case sawNotMod:
+		return effectNotModified
+	case sawBool && !sawOther:
+		return effectBool
+	default:
+		return effectEmpty
+	}
+}
+
+func isBoolResult(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name == "BoolTrue" || x.Name == "BoolFalse"
+	case *ast.SelectorExpr:
+		return x.Sel.Name == "BoolTrue" || x.Sel.Name == "BoolFalse"
+	default:
+		return false
+	}
+}
+
+func exprNotModified(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.Ident:
+			if strings.Contains(x.Name, "NotModified") {
+				found = true
+			}
+		case *ast.SelectorExpr:
+			if strings.Contains(x.Sel.Name, "NotModified") {
+				found = true
+			}
+		}
+		return true
+	})
+	return found
+}
+
+func preferEffect(a, b string) string {
+	rank := func(e string) int {
+		switch e {
+		case effectNotModified:
+			return 3
+		case effectBool:
+			return 2
+		default:
+			return 1
+		}
+	}
+	if rank(b) > rank(a) {
+		return b
+	}
+	return a
 }

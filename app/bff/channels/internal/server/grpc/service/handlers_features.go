@@ -374,6 +374,21 @@ func (ReactionsService) MessagesGetMessagesReactions(ctx context.Context, in *mt
 	return channel.Shared().ReactionsFor(ctx, self, channelID(in.GetPeer(), self), in.GetId())
 }
 
+// MessagesGetPaidReactionPrivacy
+// messages.getPaidReactionPrivacy#472455aa = Updates;
+func (ReactionsService) MessagesGetPaidReactionPrivacy(ctx context.Context, in *mtproto.TLMessagesGetPaidReactionPrivacy) (*mtproto.Updates, error) {
+	_ = ctx
+	r, ok := mtproto.StartupRPCResult(in)
+	if !ok {
+		return nil, mtproto.ErrMethodNotImpl
+	}
+	up, _ := r.(*mtproto.Updates)
+	if up == nil {
+		return nil, mtproto.ErrMethodNotImpl
+	}
+	return up, nil
+}
+
 func (ReactionsService) MessagesGetMessageReactionsList(ctx context.Context, in *mtproto.TLMessagesGetMessageReactionsList) (*mtproto.Messages_MessageReactionsList, error) {
 	self, _ := actor(ctx)
 	up, err := channel.Shared().ReactionsFor(ctx, self, channelID(in.GetPeer(), self), []int32{in.GetId()})

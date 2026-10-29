@@ -25,8 +25,15 @@ import (
 // AuthFinishPasskeyLogin
 // auth.finishPasskeyLogin#9857ad07 flags:# credential:InputPasskeyCredential from_dc_id:flags.0?int from_auth_key_id:flags.0?long = auth.Authorization;
 func (c *PasskeyCore) AuthFinishPasskeyLogin(in *mtproto.TLAuthFinishPasskeyLogin) (*mtproto.Auth_Authorization, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.finishPasskeyLogin blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	// Credential verification is not implemented. The startup fallback returns
+	// auth.authorizationSignUpRequired, which does not open a user session.
+	r, ok := mtproto.StartupRPCResult(in)
+	if !ok {
+		return nil, mtproto.ErrMethodNotImpl
+	}
+	auth, _ := r.(*mtproto.Auth_Authorization)
+	if auth == nil {
+		return nil, mtproto.ErrMethodNotImpl
+	}
+	return auth, nil
 }
