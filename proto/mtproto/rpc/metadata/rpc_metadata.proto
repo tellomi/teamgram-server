@@ -56,6 +56,9 @@ message RpcMetadata {
   // perm_auth_key_id
   int64 perm_auth_key_id = 22;
 
-  // lang_code
+  // lang_code is initConnection.lang_code (the app language).
   string lang_code = 23;
+
+  // system_lang_code is initConnection.system_lang_code (the device language).
+  string system_lang_code = 24;
 }
