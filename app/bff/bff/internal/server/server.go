@@ -45,6 +45,7 @@ import (
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
 	savedmessagedialogshelper "github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs"
 	sponsoredmessages_helper "github.com/teamgram/teamgram-server/app/bff/sponsoredmessages"
+	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
 	tos_helper "github.com/teamgram/teamgram-server/app/bff/tos"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
@@ -162,6 +163,20 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions())
 		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads())
 		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
+
+		storyMySQL := c.StoryMySQL
+		if storyMySQL == "" {
+			storyMySQL = c.ChannelMySQL
+		}
+		mtproto.RegisterRPCStoriesServer(
+			grpcServer,
+			stories_helper.New(stories_helper.Config{
+				RpcServerConf: c.RpcServerConf,
+				StoryMySQL:    storyMySQL,
+				UserClient:    c.BizServiceClient,
+				MediaClient:   c.MediaClient,
+				SyncClient:    c.SyncClient,
+			}))
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(
@@ -287,7 +302,7 @@ func (s *Server) Initialize() error {
 					ChatClient:    c.BizServiceClient,
 					DialogClient:  c.BizServiceClient,
 				},
-				nil,
+				stories_helper.Plugin{},
 				nil,
 				nil))
 

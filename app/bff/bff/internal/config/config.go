@@ -38,6 +38,7 @@ type Config struct {
 	DfsClient                 zrpc.RpcClientConf
 	StatusClient              zrpc.RpcClientConf
 	ChannelMySQL              string                     `json:",optional"`
+	StoryMySQL                string                     `json:",optional"`
 	SignInServiceNotification []conf.MessageEntityConfig `json:",optional"`
 	SignInMessage             []conf.MessageEntityConfig `json:",optional"`
 }
