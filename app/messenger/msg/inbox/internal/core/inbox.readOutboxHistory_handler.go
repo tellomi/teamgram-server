@@ -30,9 +30,27 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+// skipPrivateSelfOutbox is true when a private-chat read would mark the
+// reader's own outbox. Saved Messages is a private dialog with yourself and
+// is not a read receipt.
+func skipPrivateSelfOutbox(peerType int32, userId, peerId int64) bool {
+	switch peerType {
+	case mtproto.PEER_USER, mtproto.PEER_SELF:
+		return userId == peerId
+	default:
+		return false
+	}
+}
+
 // InboxReadOutboxHistory
 // inbox.readOutboxHistory user_id:long peer_type:int peer_id:long max_dialog_message_id:int64 = Void;
 func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (*mtproto.Void, error) {
+	// Reading one's own latest message used to call this with the reader as
+	// both the outbox owner and the peer, which marked that outbox read.
+	if skipPrivateSelfOutbox(in.PeerType, in.UserId, in.PeerId) {
+		return mtproto.EmptyVoid, nil
+	}
+
 	switch in.PeerType {
 	case mtproto.PEER_USER:
 		replyId, err := c.svcCtx.Dao.MessagesDAO.SelectByMessageDataId(
