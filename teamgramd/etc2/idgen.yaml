@@ -25,5 +25,13 @@ Telemetry:
   
 NodeId: 1
 
+# Sequence counters live in Redis. On startup idgen raises any missing or low
+# counter to MAX(id) in this database so a flushed Redis cannot issue box ids,
+# pts, or seq from 1 again.
+Mysql:
+  DSN: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Local
+  Active: 4
+  Idle: 2
+
 SeqIDGen:
   - Host: redis:6379

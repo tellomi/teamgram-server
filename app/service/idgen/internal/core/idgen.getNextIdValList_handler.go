@@ -46,7 +46,7 @@ func (c *IdgenCore) IdgenGetNextIdValList(in *idgen.TLIdgenGetNextIdValList) (*i
 				Id_VECTORINT64: ids,
 			}).To_IdVal()
 		case idgen.Predicate_inputSeqId:
-			sid, err := c.svcCtx.Dao.KV.IncrbyCtx(c.ctx, id.Key, 1)
+			sid, err := c.svcCtx.Dao.AllocSeq(c.ctx, id.Key, 1)
 			if err != nil {
 				c.Logger.Errorf("dgen.getNextIdValList(%s) error: %v", id.Key, err)
 				return nil, err
@@ -55,7 +55,7 @@ func (c *IdgenCore) IdgenGetNextIdValList(in *idgen.TLIdgenGetNextIdValList) (*i
 				Id_INT64: sid,
 			}).To_IdVal()
 		case idgen.Predicate_inputNSeqId:
-			sid, err := c.svcCtx.Dao.KV.IncrbyCtx(c.ctx, id.Key, int64(id.N))
+			sid, err := c.svcCtx.Dao.AllocSeq(c.ctx, id.Key, int64(id.N))
 			if err != nil {
 				c.Logger.Errorf("dgen.getNextIdValList(%s, %d) error: %v", id.Key, id.N, err)
 				return nil, err
