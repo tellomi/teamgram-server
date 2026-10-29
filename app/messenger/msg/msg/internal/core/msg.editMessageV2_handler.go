@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/plugin"
+	channelpb "github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
@@ -51,8 +52,24 @@ func (c *MsgCore) MsgEditMessageV2(in *msg.TLMsgEditMessageV2) (*mtproto.Updates
 	case mtproto.PEER_CHAT:
 		rUpdates, err = c.editChatOutgoingMessageV2(in.UserId, in.AuthKeyId, in.PeerId, newMessage, dstMessage)
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("msg.sendMessageV2 blocked, License key from https://teamgram.net required to unlock enterprise features.")
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		rUpdates, err = channelpb.Shared().Edit(c.ctx, in.UserId, in.PeerId, in.AuthKeyId, dstMessage.GetMessageId(), func(m *mtproto.Message) {
+			edited := newMessage.GetMessage()
+			if edited == nil {
+				return
+			}
+			if edited.Message != "" {
+				m.Message = edited.Message
+			}
+			if edited.Media != nil {
+				m.Media = edited.Media
+			}
+			if edited.Entities != nil {
+				m.Entities = edited.Entities
+			}
+			if edited.ReplyMarkup != nil {
+				m.ReplyMarkup = edited.ReplyMarkup
+			}
+		})
 	default:
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("msg.editMessage - error: %v", err)

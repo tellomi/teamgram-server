@@ -20,12 +20,16 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // AccountUpdatePersonalChannel
 // account.updatePersonalChannel#d94305e0 channel:InputChannel = Bool;
 func (c *UserChannelProfilesCore) AccountUpdatePersonalChannel(in *mtproto.TLAccountUpdatePersonalChannel) (*mtproto.Bool, error) {
+	if err := channel.Shared().SetPersonalChannel(c.ctx, c.MD.UserId, in.GetChannel()); err != nil {
+		c.Logger.Errorf("account.updatePersonalChannel - channel: %v", err)
+	}
 	rV, err := c.svcCtx.Dao.UserClient.UserUpdatePersonalChannel(c.ctx, &user.TLUserUpdatePersonalChannel{
 		UserId:    c.MD.UserId,
 		ChannelId: in.GetChannel().GetChannelId(),

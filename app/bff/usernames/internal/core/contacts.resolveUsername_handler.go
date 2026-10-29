@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -45,6 +46,13 @@ func (c *UsernamesCore) ContactsResolveUsername(in *mtproto.TLContactsResolveUse
 			Username: in.GetUsername(),
 		})
 		if err != nil {
+			if ch, chErr := channel.Shared().ResolveUsername(c.ctx, c.MD.UserId, in.GetUsername()); chErr == nil && ch != nil {
+				return mtproto.MakeTLContactsResolvedPeer(&mtproto.Contacts_ResolvedPeer{
+					Peer:  mtproto.MakePeerChannel(ch.GetId()),
+					Chats: []*mtproto.Chat{ch},
+					Users: []*mtproto.User{},
+				}).To_Contacts_ResolvedPeer(), nil
+			}
 			c.Logger.Errorf("contacts.resolveUsername - reply: {%v}", err)
 			return nil, err
 		}
@@ -76,10 +84,10 @@ func (c *UsernamesCore) ContactsResolveUsername(in *mtproto.TLContactsResolveUse
 			resolvedPeer.Chats = []*mtproto.Chat{chat.ToUnsafeChat(c.MD.UserId)}
 		}
 	case mtproto.PEER_CHANNEL:
-		if c.svcCtx.Plugin != nil {
+		if ch, err := channel.Shared().ResolveUsername(c.ctx, c.MD.UserId, in.GetUsername()); err == nil && ch != nil {
+			resolvedPeer.Chats = []*mtproto.Chat{ch}
+		} else if c.svcCtx.Plugin != nil {
 			resolvedPeer.Chats = c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, peer.PeerId)
-		} else {
-			c.Logger.Errorf("contacts.resolveUsername blocked, License key from https://teamgram.net required to unlock enterprise features.")
 		}
 	}
 

@@ -19,23 +19,31 @@
 package svc
 
 import (
+	"context"
+
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/marmota/pkg/stores/kv"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
+	"github.com/teamgram/proto/mtproto"
 	inbox_client "github.com/teamgram/teamgram-server/app/messenger/msg/inbox/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/internal/config"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/plugin"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	channelpb "github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/deduplication"
 
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/stores/redis"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type ServiceContext struct {
@@ -66,6 +74,42 @@ func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext
 	if plugin == nil {
 		svcCtx.MsgPlugin = svcCtx.Dao
 	}
-
+	installChannelHooks(c, svcCtx.Dao)
 	return svcCtx
+}
+
+func installChannelHooks(c config.Config, d *dao.Dao) {
+	if err := channelpb.UseDSN(c.Mysql.DSN); err != nil {
+		logx.Errorf("channel mysql: %v", err)
+	}
+	channelpb.Shared().SetHooks(channelpb.Hooks{
+		Push: func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates) {
+			if d.SyncClient == nil || updates == nil {
+				return
+			}
+			if len(excludeAuthKeys) > 0 {
+				_, _ = d.SyncClient.SyncPushUpdatesIfNot(ctx, &sync.TLSyncPushUpdatesIfNot{
+					UserId:   userID,
+					Excludes: excludeAuthKeys,
+					Updates:  updates,
+				})
+				return
+			}
+			_, _ = d.SyncClient.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{UserId: userID, Updates: updates})
+		},
+		Dialog: func(ctx context.Context, userID, channelID int64, top, readInbox, unread int32, date int64) {
+			if d.DialogClient == nil {
+				return
+			}
+			_, _ = d.DialogClient.DialogInsertOrUpdateDialog(ctx, &dialog.TLDialogInsertOrUpdateDialog{
+				UserId:         userID,
+				PeerType:       mtproto.PEER_CHANNEL,
+				PeerId:         channelID,
+				TopMessage:     &wrapperspb.Int32Value{Value: top},
+				ReadInboxMaxId: &wrapperspb.Int32Value{Value: readInbox},
+				UnreadCount:    &wrapperspb.Int32Value{Value: unread},
+				Date2:          &wrapperspb.Int64Value{Value: date},
+			})
+		},
+	})
 }
