@@ -16,6 +16,8 @@ type memoryStore struct {
 	messages map[int64]map[int32]*StoredMessage
 	events   map[int64][]*PtsEvent
 	reads    map[int64]map[int64]*ReadState
+	features map[int64]*Features
+	personal map[int64]int64
 }
 
 func NewMemoryStore() Store {
@@ -26,6 +28,8 @@ func NewMemoryStore() Store {
 		messages: map[int64]map[int32]*StoredMessage{},
 		events:   map[int64][]*PtsEvent{},
 		reads:    map[int64]map[int64]*ReadState{},
+		features: map[int64]*Features{},
+		personal: map[int64]int64{},
 	}
 }
 

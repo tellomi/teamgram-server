@@ -13,14 +13,16 @@ import (
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type ServiceContext struct {
-	Config     config.Config
-	UserClient user_client.UserClient
+	Config      config.Config
+	UserClient  user_client.UserClient
+	MediaClient media_client.MediaClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -31,8 +33,12 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if len(c.UserClient.Etcd.Hosts) > 0 {
 		users = user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient))
 	}
+	var mediaClient media_client.MediaClient
+	if len(c.MediaClient.Etcd.Hosts) > 0 {
+		mediaClient = media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient))
+	}
 	installChannelHooks(c)
-	return &ServiceContext{Config: c, UserClient: users}
+	return &ServiceContext{Config: c, UserClient: users, MediaClient: mediaClient}
 }
 
 func installChannelHooks(c config.Config) {

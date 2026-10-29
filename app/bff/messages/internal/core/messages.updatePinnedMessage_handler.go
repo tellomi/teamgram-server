@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 // MessagesUpdatePinnedMessage
@@ -31,6 +32,9 @@ func (c *MessagesCore) MessagesUpdatePinnedMessage(in *mtproto.TLMessagesUpdateP
 		rUpdates *mtproto.Updates
 	)
 
+	if peer.IsChannel() {
+		return channel.Shared().PinMessage(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId, in.Id, in.Unpin)
+	}
 	if !peer.IsChatOrUser() {
 		c.Logger.Errorf("invalid peer: %v", in.Peer)
 		err := mtproto.ErrPeerIdInvalid

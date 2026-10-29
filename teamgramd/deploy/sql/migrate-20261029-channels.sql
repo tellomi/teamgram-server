@@ -89,3 +89,15 @@ CREATE TABLE IF NOT EXISTS channel_id_counter (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO channel_id_counter (id, next_id) VALUES (1, 1073741824);
+
+CREATE TABLE IF NOT EXISTS channel_feature (
+  channel_id BIGINT NOT NULL,
+  data MEDIUMBLOB NOT NULL,
+  PRIMARY KEY (channel_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS channel_personal (
+  user_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  PRIMARY KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

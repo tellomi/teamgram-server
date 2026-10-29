@@ -32,4 +32,9 @@ type Store interface {
 
 	GetRead(ctx context.Context, channelID, userID int64) (*ReadState, error)
 	SaveRead(ctx context.Context, st *ReadState) error
+
+	GetFeatures(ctx context.Context, channelID int64) (*Features, error)
+	SaveFeatures(ctx context.Context, channelID int64, f *Features) error
+	GetPersonalChannel(ctx context.Context, userID int64) (int64, error)
+	SetPersonalChannel(ctx context.Context, userID, channelID int64) error
 }

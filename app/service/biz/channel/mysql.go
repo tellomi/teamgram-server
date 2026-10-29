@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -525,4 +526,51 @@ func splitInt32(s string) []int32 {
 		}
 	}
 	return out
+}
+
+func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
+	var data []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=?`, channelID).Scan(&data)
+	if err == sql.ErrNoRows || len(data) == 0 {
+		return &Features{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	f := &Features{}
+	if err := json.Unmarshal(data, f); err != nil {
+		return &Features{}, nil
+	}
+	return f, nil
+}
+
+func (s *mysqlStore) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
+	raw, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO channel_feature (channel_id, data) VALUES (?,?)
+ON DUPLICATE KEY UPDATE data=VALUES(data)`, channelID, raw)
+	return err
+}
+
+func (s *mysqlStore) GetPersonalChannel(ctx context.Context, userID int64) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT channel_id FROM channel_personal WHERE user_id=?`, userID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return id, err
+}
+
+func (s *mysqlStore) SetPersonalChannel(ctx context.Context, userID, channelID int64) error {
+	if channelID == 0 {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM channel_personal WHERE user_id=?`, userID)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO channel_personal (user_id, channel_id) VALUES (?,?)
+ON DUPLICATE KEY UPDATE channel_id=VALUES(channel_id)`, userID, channelID)
+	return err
 }

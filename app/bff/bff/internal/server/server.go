@@ -155,8 +155,13 @@ func (s *Server) Initialize() error {
 				ChannelMySQL:  c.ChannelMySQL,
 				UserClient:    c.BizServiceClient,
 				DialogClient:  c.BizServiceClient,
+				MediaClient:   c.MediaClient,
 				SyncClient:    c.SyncClient,
 			}))
+		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
+		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions())
+		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads())
+		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(

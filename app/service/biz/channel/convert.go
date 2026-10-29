@@ -50,7 +50,10 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		BannedRights:                banned,
 		DefaultBannedRights:         mtproto.BannedRights(ch.DefaultBanned).ToChatBannedRights(),
 		ParticipantsCount_FLAGINT32: &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
-		HasGeo:                      ch.Address != "",
+		HasGeo:                      ch.Address != "" || s.features(ctx, ch.ID).Lat != 0 || s.features(ctx, ch.ID).Long != 0,
+		SlowmodeEnabled:             s.features(ctx, ch.ID).SlowmodeSeconds > 0,
+		JoinRequest:                 s.features(ctx, ch.ID).JoinRequest,
+		Gigagroup:                   s.features(ctx, ch.ID).Gigagroup,
 	}).To_Chat()
 }
 
@@ -117,6 +120,28 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 	}
 	if ch.TtlPeriod != 0 {
 		full.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+	}
+	if feat := s.features(ctx, ch.ID); feat != nil {
+		full.HiddenPrehistory = feat.HiddenPrehistory
+		full.ParticipantsHidden = feat.ParticipantsHidden
+		if feat.SlowmodeSeconds > 0 {
+			full.SlowmodeSeconds = &wrapperspb.Int32Value{Value: feat.SlowmodeSeconds}
+		}
+		if feat.PinnedMsgID > 0 {
+			full.PinnedMsgId = &wrapperspb.Int32Value{Value: feat.PinnedMsgID}
+		}
+		if feat.LinkedChatID != 0 {
+			full.LinkedChatId = &wrapperspb.Int64Value{Value: feat.LinkedChatID}
+		}
+		if feat.AvailableMinID > 0 {
+			full.AvailableMinId = &wrapperspb.Int32Value{Value: feat.AvailableMinID}
+		}
+		if feat.Lat != 0 || feat.Long != 0 || ch.Address != "" {
+			full.Location = mtproto.MakeTLChannelLocation(&mtproto.ChannelLocation{
+				GeoPoint: mtproto.MakeTLGeoPoint(&mtproto.GeoPoint{Lat: feat.Lat, Long: feat.Long}).To_GeoPoint(),
+				Address:  ch.Address,
+			}).To_ChannelLocation()
+		}
 	}
 	if admins, kicked, banned, err := s.participantCounts(ctx, ch.ID); err == nil {
 		full.AdminsCount = &wrapperspb.Int32Value{Value: admins}

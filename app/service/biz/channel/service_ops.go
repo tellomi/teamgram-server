@@ -303,6 +303,20 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 	if err = s.canPost(ch, p); err != nil {
 		return nil, err
 	}
+	feat := s.features(ctx, channelID)
+	if feat.SlowmodeSeconds > 0 && p != nil && !p.IsAdmin() {
+		if len(batch) > 1 {
+			return nil, mtproto.ErrSlowmodeMultiMsgsDisabled
+		}
+		now := int32(time.Now().Unix())
+		if last := feat.LastSend[sender]; last != 0 && now-last < feat.SlowmodeSeconds {
+			return nil, mtproto.NewErrSlowModeWaitX(feat.SlowmodeSeconds - (now - last))
+		}
+		feat.LastSend[sender] = now
+		if err := s.saveFeatures(ctx, channelID, feat); err != nil {
+			return nil, err
+		}
+	}
 	if len(batch) == 0 {
 		return nil, mtproto.ErrMessageEmpty
 	}
@@ -508,6 +522,23 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		return nil, err
 	}
 	page, total := selectHistory(all, q)
+	feat := s.features(ctx, ch.ID)
+	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
+	minID := feat.AvailableMinID
+	if feat.UserMinID != nil && feat.UserMinID[user] > minID {
+		minID = feat.UserMinID[user]
+	}
+	filtered := page[:0]
+	for _, stored := range page {
+		if stored.ID <= minID {
+			continue
+		}
+		if feat.HiddenPrehistory && (viewer == nil || !viewer.IsAdmin()) && viewer != nil && stored.Date < viewer.Date {
+			continue
+		}
+		filtered = append(filtered, stored)
+	}
+	page = filtered
 	msgs := make([]*mtproto.Message, 0, len(page))
 	for _, stored := range page {
 		body, err := unmarshalMessage(stored.Data)

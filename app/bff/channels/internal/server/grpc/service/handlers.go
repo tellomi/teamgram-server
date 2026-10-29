@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/app/service/media/media"
 )
 
 func (s *Service) md(ctx context.Context) *metadata.RpcMetadata {
@@ -155,7 +156,31 @@ func (s *Service) ChannelsEditTitle(ctx context.Context, in *mtproto.TLChannelsE
 
 func (s *Service) ChannelsEditPhoto(ctx context.Context, in *mtproto.TLChannelsEditPhoto) (*mtproto.Updates, error) {
 	md := s.md(ctx)
-	return channel.Shared().EditPhoto(ctx, md.GetUserId(), md.GetPermAuthKeyId(), in.GetChannel(), in.GetPhoto())
+	photoID, photo, clear, err := channel.ResolveChatPhoto(ctx, md.GetPermAuthKeyId(), in.GetPhoto(),
+		func(file, video *mtproto.InputFile, videoStart float64) (*mtproto.Photo, error) {
+			if s.svcCtx.MediaClient == nil {
+				return nil, mtproto.ErrPhotoInvalid
+			}
+			return s.svcCtx.MediaClient.MediaUploadProfilePhotoFile(ctx, &media.TLMediaUploadProfilePhotoFile{
+				OwnerId:      md.GetPermAuthKeyId(),
+				File:         file,
+				Video:        video,
+				VideoStartTs: in.GetPhoto().GetVideoStartTs(),
+			})
+		},
+		func(photoID int64) (*mtproto.Photo, error) {
+			if s.svcCtx.MediaClient == nil {
+				return &mtproto.Photo{Id: photoID}, nil
+			}
+			return s.svcCtx.MediaClient.MediaGetPhoto(ctx, &media.TLMediaGetPhoto{PhotoId: photoID})
+		})
+	if err != nil {
+		return nil, err
+	}
+	if clear {
+		photoID = 0
+	}
+	return channel.Shared().ApplyPhoto(ctx, md.GetUserId(), md.GetPermAuthKeyId(), in.GetChannel(), photoID, photo)
 }
 
 func (s *Service) ChannelsToggleSignatures(ctx context.Context, in *mtproto.TLChannelsToggleSignatures) (*mtproto.Updates, error) {

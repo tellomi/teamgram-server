@@ -172,6 +172,14 @@ func (s *Service) GetParticipants(ctx context.Context, self int64, in *mtproto.I
 			return nil, mtproto.ErrChannelPrivate
 		}
 	}
+	if feat := s.features(ctx, ch.ID); feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) {
+		return mtproto.MakeTLChannelsChannelParticipants(&mtproto.Channels_ChannelParticipants{
+			Count:        ch.ParticipantsCount,
+			Participants: []*mtproto.ChannelParticipant{},
+			Chats:        []*mtproto.Chat{s.chatFor(ctx, self, ch, p)},
+			Users:        []*mtproto.User{},
+		}).To_Channels_ChannelParticipants(), nil
+	}
 	all, err := s.store.ListParticipants(ctx, ch.ID)
 	if err != nil {
 		return nil, err
@@ -328,6 +336,13 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	}
 	if p != nil && p.State == StateKicked {
 		return nil, mtproto.ErrUserBannedInChannel
+	}
+	if feat := s.features(ctx, ch.ID); feat.JoinRequest && (p == nil || !p.InChannel()) {
+		feat.JoinRequests = append(feat.JoinRequests, JoinReq{UserID: user, Date: int32(time.Now().Unix())})
+		if err := s.saveFeatures(ctx, ch.ID, feat); err != nil {
+			return nil, err
+		}
+		return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
 	}
 	if !ch.Public() {
 		return nil, mtproto.ErrChannelPrivate
@@ -494,6 +509,7 @@ func (s *Service) EditTitle(ctx context.Context, actor, actorAuth int64, in *mtp
 	if len(title) > 255 {
 		title = title[:255]
 	}
+	prevTitle := ch.Title
 	ch.Title = title
 	ch.Version++
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
@@ -503,6 +519,10 @@ func (s *Service) EditTitle(ctx context.Context, actor, actorAuth int64, in *mtp
 	if _, _, err = s.appendMessage(ctx, ch.ID, actor, 0, msg); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionChangeTitle(&mtproto.ChannelAdminLogEventAction{
+		PrevValue_STRING: prevTitle,
+		NewValue_STRING:  title,
+	}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, actor, actorAuth, ch.ID, KindNew)
 }
 

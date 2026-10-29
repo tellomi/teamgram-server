@@ -10,5 +10,6 @@ type Config struct {
 	ChannelMySQL string `json:",optional"`
 	UserClient   zrpc.RpcClientConf
 	DialogClient zrpc.RpcClientConf
+	MediaClient  zrpc.RpcClientConf
 	SyncClient   *kafka.KafkaProducerConf
 }
