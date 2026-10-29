@@ -22,17 +22,25 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 // HelpGetTermsOfServiceUpdate
 // help.getTermsOfServiceUpdate#2ca51fd1 = help.TermsOfServiceUpdate;
 func (c *TosCore) HelpGetTermsOfServiceUpdate(in *mtproto.TLHelpGetTermsOfServiceUpdate) (*mtproto.Help_TermsOfServiceUpdate, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getTermsOfServiceUpdate blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	rValue := mtproto.MakeTLHelpTermsOfServiceUpdateEmpty(&mtproto.Help_TermsOfServiceUpdate{
+	text := brand.TermsURL + "\n" + brand.PrivacyURL
+	termsLen := int32(len(brand.TermsURL))
+	privacyLen := int32(len(brand.PrivacyURL))
+	return mtproto.MakeTLHelpTermsOfServiceUpdate(&mtproto.Help_TermsOfServiceUpdate{
 		Expires: int32(time.Now().Unix() + 3600),
-	}).To_Help_TermsOfServiceUpdate()
-
-	return rValue, nil
+		TermsOfService: mtproto.MakeTLHelpTermsOfService(&mtproto.Help_TermsOfService{
+			Popup: false,
+			Id:    mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: `{"id":"tellomi-tos-1"}`}).To_DataJSON(),
+			Text:  text,
+			Entities: []*mtproto.MessageEntity{
+				mtproto.MakeTLMessageEntityUrl(&mtproto.MessageEntity{Offset: 0, Length: termsLen}).To_MessageEntity(),
+				mtproto.MakeTLMessageEntityUrl(&mtproto.MessageEntity{Offset: termsLen + 1, Length: privacyLen}).To_MessageEntity(),
+			},
+		}).To_Help_TermsOfService(),
+	}).To_Help_TermsOfServiceUpdate(), nil
 }

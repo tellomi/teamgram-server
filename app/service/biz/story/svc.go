@@ -3,10 +3,8 @@ package story
 import (
 	"context"
 	"hash/fnv"
-	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +13,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 // Hooks connect stories to contacts, usernames, and the update fanout.
@@ -455,10 +454,7 @@ func clampLimit(v, def, max int32) int32 {
 }
 
 func linkHost() string {
-	if h := strings.TrimRight(os.Getenv("TEAMGRAM_TME_HOST"), "/"); h != "" {
-		return h
-	}
-	return "https://t.me"
+	return brand.LinkBase()
 }
 
 func hashState(hidden bool, parts []string) string {

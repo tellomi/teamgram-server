@@ -2,10 +2,9 @@ package channel
 
 import (
 	"context"
-	"os"
-	"strings"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -271,8 +270,5 @@ func channelUpdate(channelID int64) *mtproto.Update {
 }
 
 func linkHost() string {
-	if h := strings.TrimRight(os.Getenv("TEAMGRAM_TME_HOST"), "/"); h != "" {
-		return h
-	}
-	return "https://t.me"
+	return brand.LinkBase()
 }

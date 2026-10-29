@@ -13,5 +13,5 @@ import "embed"
 
 // FS is data/langpack/<platform>/<lang>.json, loaded when the server starts.
 //
-//go:embed ios android
+//go:embed ios android tdesktop macos
 var FS embed.FS

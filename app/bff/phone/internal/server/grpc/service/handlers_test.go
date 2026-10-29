@@ -45,7 +45,7 @@ func testEngine(t *testing.T) (*engine.Engine, *captured) {
 			ReflectorPort: 3479, SFUPort: 3480, TurnHost: "203.0.113.10",
 			TurnPort: 3478, StunPort: 3478, TurnSecret: "tellomi-turn-secret",
 			TurnTTL: 3600, RingTimeout: 90, ConfirmTimeout: 30, EnableP2P: true,
-			CallLinkPrefix: "https://t.me/call/", RTMPURL: "rtmp://127.0.0.1:1935/live",
+			CallLinkPrefix: "https://tell.cc/call/", RTMPURL: "rtmp://127.0.0.1:1935/live",
 		},
 		Push:   func(n engine.Note) { capn.notes = append(capn.notes, n) },
 		OnCall: func(e engine.CallEnd) { capn.ends = append(capn.ends, e) },
@@ -285,7 +285,7 @@ func TestGroupCallAndDhConfig(t *testing.T) {
 	chat := created.Chats[0]
 	var binds []engine.Bind
 	eng := engine.New(engine.Options{
-		Config: config.Config{PublicIP: "203.0.113.10", SFUPort: 3480, TurnPort: 3478, StunPort: 3478, TurnSecret: "s", CallLinkPrefix: "https://t.me/call/", RTMPURL: "rtmp://127.0.0.1:1935/live"}.Normalized(),
+		Config: config.Config{PublicIP: "203.0.113.10", SFUPort: 3480, TurnPort: 3478, StunPort: 3478, TurnSecret: "s", CallLinkPrefix: "https://tell.cc/call/", RTMPURL: "rtmp://127.0.0.1:1935/live"}.Normalized(),
 		OnBind: func(b engine.Bind) { binds = append(binds, b) },
 		Now:    func() time.Time { return time.Unix(1_700_000_000, 0) },
 		Chats: func(viewer int64, peerType int32, peerID int64) []*mtproto.Chat {

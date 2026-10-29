@@ -11,7 +11,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
-	"github.com/teamgram/teamgram-server/pkg/env2"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 // MakeChatInviteExported
@@ -21,7 +21,7 @@ func (d *Dao) MakeChatInviteExported(ctx context.Context, chatInviteDO *dataobje
 		Revoked:       chatInviteDO.Revoked,
 		Permanent:     chatInviteDO.Permanent,
 		RequestNeeded: chatInviteDO.RequestNeeded,
-		Link:          "https://" + env2.TDotMe + "/+" + chatInviteDO.Link,
+		Link:          brand.LinkBase() + "/+" + chatInviteDO.Link,
 		AdminId:       chatInviteDO.AdminId,
 		Date:          int32(chatInviteDO.Date2),
 		StartDate:     mtproto.MakeFlagsInt32(int32(chatInviteDO.StartDate)),

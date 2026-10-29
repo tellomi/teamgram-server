@@ -30,7 +30,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from langpack_zh import brand, translate, unknown_summary
+try:
+    from langpack_zh import brand, translate, unknown_summary
+except ModuleNotFoundError:
+    brand = translate = unknown_summary = None
 
 IOS_FORMS = (
     ("3_10", "few"),
@@ -283,6 +286,77 @@ def write_pack(path: Path, doc: dict) -> None:
     path.write_text(json.dumps(doc, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
 
 
+OFFICIAL = [
+    ("en", "English", "English", "en", False),
+    ("ar", "Arabic", "العربية", "ar", True),
+    ("be", "Belarusian", "Беларуская", "be", False),
+    ("ca", "Catalan", "Català", "ca", False),
+    ("cs", "Czech", "Čeština", "cs", False),
+    ("de", "German", "Deutsch", "de", False),
+    ("el", "Greek", "Ελληνικά", "el", False),
+    ("es", "Spanish", "Español", "es", False),
+    ("fa", "Persian", "فارسی", "fa", True),
+    ("fi", "Finnish", "Suomi", "fi", False),
+    ("fr", "French", "Français", "fr", False),
+    ("he", "Hebrew", "עברית", "he", True),
+    ("id", "Indonesian", "Bahasa Indonesia", "id", False),
+    ("it", "Italian", "Italiano", "it", False),
+    ("ja", "Japanese", "日本語", "ja", False),
+    ("ko", "Korean", "한국어", "ko", False),
+    ("ms", "Malay", "Bahasa Melayu", "ms", False),
+    ("nb", "Norwegian", "Norsk", "nb", False),
+    ("nl", "Dutch", "Nederlands", "nl", False),
+    ("pl", "Polish", "Polski", "pl", False),
+    ("pt-br", "Portuguese (Brazil)", "Português (Brasil)", "pt", False),
+    ("ro", "Romanian", "Română", "ro", False),
+    ("ru", "Russian", "Русский", "ru", False),
+    ("sv", "Swedish", "Svenska", "sv", False),
+    ("tr", "Turkish", "Türkçe", "tr", False),
+    ("uk", "Ukrainian", "Українська", "uk", False),
+    ("uz", "Uzbek", "Oʻzbek", "uz", False),
+    ("vi", "Vietnamese", "Tiếng Việt", "vi", False),
+    ("zh-hans", "Chinese (Simplified)", "简体中文", "zh", False),
+    ("zh-hant", "Chinese (Traditional)", "繁體中文", "zh", False),
+]
+
+FULL_PACKS = {("ios", "en"), ("ios", "zh-hans"), ("ios", "zh-hant"), ("android", "en"), ("android", "zh-hans"), ("android", "zh-hant")}
+PLATFORMS = ("ios", "android", "tdesktop", "macos")
+
+
+def official_document(platform: str, code: str, name: str, native: str, plural: str, rtl: bool) -> dict:
+    doc = {
+        "lang_code": code,
+        "name": name,
+        "native_name": native,
+        "plural_code": plural,
+        "official": True,
+        "rtl": rtl,
+        "beta": False,
+        "translations_url": f"https://tellomi.cn/translations/{platform}/{code}",
+        "version": 1,
+        "strings": [],
+    }
+    if code != "en":
+        doc["base_lang_code"] = "en"
+    if platform in ("tdesktop", "macos") and code == "en":
+        doc["strings"] = [{"key": "AppName", "value": "Tellomi", "version": 1}]
+    return doc
+
+
+def write_official_languages(out: Path) -> None:
+    """Write fallback language files. Existing full en/zh packs are left in place.
+
+    Running this again writes the same JSON.
+    """
+    for platform in PLATFORMS:
+        for code, name, native, plural, rtl in OFFICIAL:
+            path = out / platform / f"{code}.json"
+            if (platform, code) in FULL_PACKS and path.exists():
+                continue
+            write_pack(path, official_document(platform, code, name, native, plural, rtl))
+            print(f"official {platform} {code}")
+
+
 def main() -> int:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Import Tellomi langpacks from client string catalogs")
@@ -292,9 +366,16 @@ def main() -> int:
     parser.add_argument("--android-extra", type=Path, action="append", default=[], help="extra Android strings.xml files")
     parser.add_argument("--out", type=Path, default=here.parent / "data" / "langpack")
     parser.add_argument("--report", type=Path, default=None, help="write untranslated keys here")
+    parser.add_argument("--languages-only", action="store_true", help="write official language metadata and exit")
     args = parser.parse_args()
+    if args.languages_only:
+        write_official_languages(args.out)
+        return 0
     if not args.ios and not args.android:
-        parser.error("pass --ios and/or --android")
+        parser.error("pass --ios and/or --android, or --languages-only")
+    if brand is None or translate is None or unknown_summary is None:
+        parser.error("pip install opencc-python-reimplemented to import string catalogs")
+    write_official_languages(args.out)
 
     report_lines = []
     if args.ios:

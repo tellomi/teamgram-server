@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/langpack"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
@@ -64,6 +65,7 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 	now := int32(time.Now().Unix())
 	rValue.SetDate(now)
 	rValue.SetExpires(now + expiresTimeout)
+	rValue.SetMeUrlPrefix(brand.LinkPrefix)
 
 	var langCode, systemLang, pack string
 	if c.MD != nil {
