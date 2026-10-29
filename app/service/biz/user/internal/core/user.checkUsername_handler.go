@@ -26,12 +26,16 @@ import (
 // user.checkUsername username:string = UsernameExist;
 func (c *UserCore) UserCheckUsername(in *user.TLUserCheckUsername) (*user.UsernameExist, error) {
 	var (
-		checked = usernameNotExisted
+		checked = usernameNotExisted()
 	)
 
-	usernameDO, _ := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, in.Username)
+	usernameDO, err := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, in.Username)
+	if err != nil {
+		c.Logger.Errorf("user.checkUsername - error: %v", err)
+		return nil, err
+	}
 	if usernameDO != nil {
-		checked = usernameExisted
+		checked = usernameExisted()
 	}
 
 	return checked, nil

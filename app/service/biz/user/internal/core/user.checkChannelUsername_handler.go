@@ -27,16 +27,19 @@ import (
 // user.checkChannelUsername channel_id:long username:string = UsernameExist;
 func (c *UserCore) UserCheckChannelUsername(in *user.TLUserCheckChannelUsername) (*user.UsernameExist, error) {
 	var (
-		checked = usernameNotExisted
+		checked = usernameNotExisted()
 	)
 
-	// TODO(@benqi): check len(username) >= 5
-	usernameDO, _ := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, in.Username)
+	usernameDO, err := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, in.Username)
+	if err != nil {
+		c.Logger.Errorf("user.checkChannelUsername - error: %v", err)
+		return nil, err
+	}
 	if usernameDO != nil {
 		if usernameDO.PeerType == mtproto.PEER_CHANNEL && usernameDO.PeerId == in.ChannelId {
-			checked = usernameExistedIsMe
+			checked = usernameExistedIsMe()
 		} else {
-			checked = usernameExistedNotMe
+			checked = usernameExistedNotMe()
 		}
 	}
 

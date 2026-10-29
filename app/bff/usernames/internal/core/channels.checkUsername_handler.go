@@ -12,7 +12,7 @@ func (c *UsernamesCore) ChannelsCheckUsername(in *mtproto.TLChannelsCheckUsernam
 	ok, err := channel.Shared().CheckUsername(c.ctx, c.MD.UserId, in.GetChannel(), in.GetUsername())
 	if err != nil {
 		c.Logger.Errorf("channels.checkUsername - error: %v", err)
-		return nil, err
+		return nil, usernameRPCError(err)
 	}
 	checked, err := c.svcCtx.Dao.UserClient.UserCheckChannelUsername(c.ctx, &user.TLUserCheckChannelUsername{
 		ChannelId: in.GetChannel().GetChannelId(),

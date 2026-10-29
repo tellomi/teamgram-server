@@ -27,16 +27,19 @@ import (
 // user.checkAccountUsername user_id:long username:string = UsernameExist;
 func (c *UserCore) UserCheckAccountUsername(in *user.TLUserCheckAccountUsername) (*user.UsernameExist, error) {
 	var (
-		checked = usernameNotExisted
+		checked = usernameNotExisted()
 	)
 
-	// TODO(@benqi): check len(username) >= 5
-	usernameDO, _ := c.svcCtx.UsernameDAO.SelectByUsername(c.ctx, in.Username)
+	usernameDO, err := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, in.Username)
+	if err != nil {
+		c.Logger.Errorf("user.checkAccountUsername - error: %v", err)
+		return nil, err
+	}
 	if usernameDO != nil {
 		if usernameDO.PeerType == mtproto.PEER_USER && usernameDO.PeerId == in.UserId {
-			checked = usernameExistedIsMe
+			checked = usernameExistedIsMe()
 		} else {
-			checked = usernameExistedNotMe
+			checked = usernameExistedNotMe()
 		}
 	}
 

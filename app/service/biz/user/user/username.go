@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	MinUsernameLen = 5
+	MinUsernameLen = 3
 	MaxUsernameLen = 32
 )
 
@@ -60,7 +60,7 @@ var ()
            }
        }
    }
-   if (name == null || name.length() < 5) {
+   if (name == null || name.length() < 3) {
        checkTextView.setText(LocaleController.getString("LinkInvalidShort", R.string.LinkInvalidShort));
        checkTextView.setTag(Theme.key_windowBackgroundWhiteRedText4);
        checkTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteRedText4));
@@ -74,23 +74,32 @@ var ()
    }
 */
 
+// CheckUsernameInvalid reports whether username matches the public username
+// rule. The name is historical: it returns true when the username is valid.
+// Valid usernames are 3–32 characters of [A-Za-z0-9_], start with a letter,
+// and do not end with an underscore.
 func CheckUsernameInvalid(username string) bool {
 	if len(username) < MinUsernameLen || len(username) > MaxUsernameLen {
 		return false
 	}
-
 	if strings.HasPrefix(username, "_") || strings.HasSuffix(username, "_") {
 		return false
 	}
-
-	if username[0] >= '0' && username[0] <= '9' {
+	if !isASCIILetter(username[0]) {
 		return false
 	}
-
 	for _, ch := range username {
-		if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_') {
+		if !isUsernameRune(ch) {
 			return false
 		}
 	}
 	return true
+}
+
+func isASCIILetter(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+}
+
+func isUsernameRune(ch rune) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
 }

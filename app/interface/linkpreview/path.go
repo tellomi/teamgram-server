@@ -32,7 +32,7 @@ const (
 )
 
 var (
-	usernameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{4,31}$`)
+	usernameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{2,31}$`)
 	hashRE     = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 	shortRE    = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
 	hostRE     = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]{1,253}$`)
