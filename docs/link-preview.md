@@ -32,27 +32,57 @@ and the binary is not started by `runall2.sh`.
 
 | Variable | Yaml field | Role |
 |---|---|---|
-| `TELLOMI_LINKPREVIEW_ADDR` | `Listen` | Listen address. Default `:8801`. |
-| `TELLOMI_LINKPREVIEW_MYSQL_DSN` | `MysqlDSN` | Teamgram MySQL DSN. Falls back to `TEAMGRAM_MYSQL_DSN`. Required for usernames, invites, posts, stories, and packs. |
-| `TELLOMI_LINKPREVIEW_TOKEN` | `Token` | Shared secret. When set, `/resolve` requires header `X-Tellomi-Linkpreview-Token` or `Authorization: Bearer <token>`. Empty disables the check. |
+| `TELLOMI_LINKPREVIEW_ADDR` | `Listen` | Listen address. Compose default `0.0.0.0:8801` (code default `:8801`). |
+| `TELLOMI_LINKPREVIEW_MYSQL_DSN` | `MysqlDSN` | Teamgram MySQL DSN. Falls back to `TEAMGRAM_MYSQL_DSN`. Required for usernames, invites, posts, stories, and packs. No Compose default. |
+| `TELLOMI_LINKPREVIEW_TOKEN` | `Token` | Shared secret. When set, `/resolve` requires header `X-Tellomi-Linkpreview-Token` or `Authorization: Bearer <token>`. Empty disables the check. No Compose default. |
 | `TELLOMI_S3_PUBLIC_MEDIA_BASE_URL` | `PublicMediaBaseURL` | Public origin for avatars and media thumbs. URLs are `{base}/{file_path}`. |
-| `TELLOMI_LINKPREVIEW_PUBLIC_URL` | `PublicURL` | Origin used for signed media URLs when the S3 base is unset. |
-| `TELLOMI_LINKPREVIEW_MEDIA_KEY` | `MediaKey` | HMAC key for signed media URLs. Defaults to a value derived from the token, or a per-process random key. |
-| `TELLOMI_LINK_BASE_URL` | `LinkBaseURL` | Prefix for the `link` field. Default `https://tell.cc`. |
-| `TELLOMI_LINKPREVIEW_RATE_PER_MIN` | `RatePerMin` | Sustained requests per client IP. Default `120`. |
-| `TELLOMI_LINKPREVIEW_RATE_BURST` | `RateBurst` | Burst size. Default `40`. |
-| `TELLOMI_LINKPREVIEW_CACHE_SECONDS` | `CacheSeconds` | `Cache-Control` max-age for hits, and the in-process TTL. Default `120`. Not-found responses use 30 seconds. |
-| `TELLOMI_LINKPREVIEW_TRUST_PROXY` | `TrustProxy` | When `1` / `true`, rate-limit by `CF-Connecting-IP` or the first `X-Forwarded-For` hop. |
-| `TELLOMI_MINIO_ENDPOINT` | `MinioEndpoint` | Optional MinIO endpoint for `GET /linkpreview/v1/media`. |
-| `TELLOMI_MINIO_ACCESS_KEY` | `MinioAccessKey` | MinIO access key. |
-| `TELLOMI_MINIO_SECRET_KEY` | `MinioSecretKey` | MinIO secret key. |
-| `TELLOMI_MINIO_USE_SSL` | `MinioSSL` | `1` / `true` to use TLS. |
-| `TELLOMI_MINIO_BUCKET_PHOTOS` | `MinioBucketPhotos` | Default `photos`. |
-| `TELLOMI_MINIO_BUCKET_DOCUMENTS` | `MinioBucketDocuments` | Default `documents`. |
-| `TELLOMI_MINIO_BUCKET_VIDEOS` | `MinioBucketVideos` | Default `videos`. |
+| `TELLOMI_LINKPREVIEW_PUBLIC_URL` | `PublicURL` | Origin used for signed media URLs when the S3 base is unset. Compose default empty. |
+| `TELLOMI_LINKPREVIEW_MEDIA_KEY` | `MediaKey` | HMAC key for signed media URLs. Empty uses a value derived from the token, or a per-process random key. No Compose default. |
+| `TELLOMI_LINK_BASE_URL` | `LinkBaseURL` | Prefix for the `link` field. Compose default `https://tell.cc`. |
+| `TELLOMI_LINKPREVIEW_RATE_PER_MIN` | `RatePerMin` | Sustained requests per client IP. Compose default `120`. |
+| `TELLOMI_LINKPREVIEW_RATE_BURST` | `RateBurst` | Burst size. Compose default `40`. |
+| `TELLOMI_LINKPREVIEW_CACHE_SECONDS` | `CacheSeconds` | `Cache-Control` max-age for hits, and the in-process TTL. Compose default `120`. Not-found responses use 30 seconds. |
+| `TELLOMI_LINKPREVIEW_TRUST_PROXY` | `TrustProxy` | When `1` / `true`, rate-limit by `CF-Connecting-IP` or the first `X-Forwarded-For` hop. Compose default `true`. |
+| `TELLOMI_MINIO_ENDPOINT` | `MinioEndpoint` | MinIO endpoint for `GET /linkpreview/v1/media`. Compose default `minio:9000`. |
+| `TELLOMI_MINIO_ACCESS_KEY` | `MinioAccessKey` | MinIO access key. No Compose default. |
+| `TELLOMI_MINIO_SECRET_KEY` | `MinioSecretKey` | MinIO secret key. No Compose default. |
+| `TELLOMI_MINIO_USE_SSL` | `MinioSSL` | `1` / `true` to use TLS. Compose default `false`. |
+| `TELLOMI_MINIO_BUCKET_PHOTOS` | `MinioBucketPhotos` | Compose default `photos`. |
+| `TELLOMI_MINIO_BUCKET_DOCUMENTS` | `MinioBucketDocuments` | Compose default `documents`. |
+| `TELLOMI_MINIO_BUCKET_VIDEOS` | `MinioBucketVideos` | Compose default `videos`. |
 
-Environment variables override `teamgramd/etc/linkpreview.yaml` (docker uses
-`teamgramd/etc2/linkpreview.yaml`). The process is `bin/linkpreview -f ../etc/linkpreview.yaml`.
+Environment variables override the yaml file. A non-empty variable replaces the
+yaml value; an empty variable leaves it. Outside Docker the process is
+`bin/linkpreview -f ../etc/linkpreview.yaml`.
+
+Docker starts linkpreview inside the `teamgram` container.
+`teamgramd/bin/runall-docker.sh` runs `bin/linkpreview -f ../etc2/linkpreview.yaml`.
+`docker-compose.yaml` passes the variables into that container. Put
+`TELLOMI_LINKPREVIEW_TOKEN` and `TELLOMI_LINKPREVIEW_MYSQL_DSN` in the shell
+or a gitignored `.env`, not in the compose file. When the DSN is empty, the
+image keeps the DSN in `teamgramd/etc2/linkpreview.yaml`
+(`teamgram:teamgram@tcp(mysql:3306)/teamgram?...`). Empty MinIO credentials
+likewise keep `minio` / `miniostorage` from that file.
+
+```yaml
+TELLOMI_LINKPREVIEW_ADDR: ${TELLOMI_LINKPREVIEW_ADDR:-0.0.0.0:8801}
+TELLOMI_LINKPREVIEW_MYSQL_DSN: ${TELLOMI_LINKPREVIEW_MYSQL_DSN:-}
+TELLOMI_LINKPREVIEW_TOKEN: ${TELLOMI_LINKPREVIEW_TOKEN:-}
+TELLOMI_LINKPREVIEW_PUBLIC_URL: ${TELLOMI_LINKPREVIEW_PUBLIC_URL:-}
+TELLOMI_LINKPREVIEW_MEDIA_KEY: ${TELLOMI_LINKPREVIEW_MEDIA_KEY:-}
+TELLOMI_LINK_BASE_URL: ${TELLOMI_LINK_BASE_URL:-https://tell.cc}
+TELLOMI_LINKPREVIEW_RATE_PER_MIN: ${TELLOMI_LINKPREVIEW_RATE_PER_MIN:-120}
+TELLOMI_LINKPREVIEW_RATE_BURST: ${TELLOMI_LINKPREVIEW_RATE_BURST:-40}
+TELLOMI_LINKPREVIEW_CACHE_SECONDS: ${TELLOMI_LINKPREVIEW_CACHE_SECONDS:-120}
+TELLOMI_LINKPREVIEW_TRUST_PROXY: ${TELLOMI_LINKPREVIEW_TRUST_PROXY:-true}
+TELLOMI_MINIO_ENDPOINT: ${TELLOMI_MINIO_ENDPOINT:-minio:9000}
+TELLOMI_MINIO_ACCESS_KEY: ${TELLOMI_MINIO_ACCESS_KEY:-}
+TELLOMI_MINIO_SECRET_KEY: ${TELLOMI_MINIO_SECRET_KEY:-}
+TELLOMI_MINIO_USE_SSL: ${TELLOMI_MINIO_USE_SSL:-false}
+TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-photos}
+TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-documents}
+TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-videos}
+```
 
 ## Auth, rate limit, cache
 
