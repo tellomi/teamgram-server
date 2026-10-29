@@ -59,11 +59,13 @@ type MinioConfig struct {
 	// ForcePathStyle defaults to true. Set TELLOMI_S3_FORCE_PATH_STYLE=false
 	// to use virtual-hosted-style requests.
 	ForcePathStyle bool `json:",default=true"`
-	// PathStyleDisabled is set only when TELLOMI_S3_FORCE_PATH_STYLE is
-	// explicitly false. The zero value keeps path-style on.
-	PathStyleDisabled bool `json:"-"`
-	// UseSSLExplicit is set when TELLOMI_S3_USE_SSL is present.
-	UseSSLExplicit bool `json:"-"`
+	// pathStyleDisabled is set only when TELLOMI_S3_FORCE_PATH_STYLE is
+	// explicitly false. Unexported so go-zero does not load it: several
+	// json:"-" fields become the same key and conf.Load fails with
+	// "conflict key minio.-".
+	pathStyleDisabled bool
+	// useSSLExplicit is set when TELLOMI_S3_USE_SSL is present.
+	useSSLExplicit bool
 
 	Bucket BucketConfig
 
@@ -74,9 +76,10 @@ type MinioConfig struct {
 	// Zero means the default. Tests set 1. Missing buckets are not created.
 	BucketProbeAttempts int `json:",optional"`
 
-	// Transport overrides the HTTP client. Tests use it to trust a local TLS server.
-	// Production leaves it nil.
-	Transport http.RoundTripper `json:"-"`
+	// transport overrides the HTTP client. Tests use it to trust a local TLS server.
+	// Unexported for the same reason as pathStyleDisabled: go-zero 1.10 rejects
+	// duplicate json:"-" keys, and a RoundTripper cannot be loaded from yaml.
+	transport http.RoundTripper
 }
 
 // ApplyEnv overlays the TELLOMI_S3_* variables onto c. Unset variables keep
@@ -103,7 +106,7 @@ func (c *MinioConfig) ApplyEnv() error {
 			return fmt.Errorf("%s: %w", EnvForcePathStyle, err)
 		}
 		c.ForcePathStyle = b
-		c.PathStyleDisabled = !b
+		c.pathStyleDisabled = !b
 	}
 	if v, ok := os.LookupEnv(EnvUseSSL); ok && strings.TrimSpace(v) != "" {
 		b, err := parseBool(v)
@@ -111,7 +114,7 @@ func (c *MinioConfig) ApplyEnv() error {
 			return fmt.Errorf("%s: %w", EnvUseSSL, err)
 		}
 		c.UseSSL = b
-		c.UseSSLExplicit = true
+		c.useSSLExplicit = true
 	}
 	if v := strings.TrimSpace(os.Getenv(EnvBucketAttachments)); v != "" {
 		c.Bucket.Attachments = v
@@ -135,14 +138,14 @@ func (c *MinioConfig) normalize() error {
 	if strings.TrimSpace(c.Region) == "" {
 		c.Region = "auto"
 	}
-	if !c.PathStyleDisabled {
+	if !c.pathStyleDisabled {
 		c.ForcePathStyle = true
 	}
 	host, scheme, err := splitEndpoint(c.Endpoint)
 	if err != nil {
 		return err
 	}
-	if !c.UseSSLExplicit {
+	if !c.useSSLExplicit {
 		switch scheme {
 		case "https":
 			c.UseSSL = true

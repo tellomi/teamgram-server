@@ -28,6 +28,14 @@ From the repository root:
 
 ```bash
 cp .env.example .env   # optional; defaults match the compose file
+docker compose -f docker-compose-env.yaml -f docker-compose.yaml up -d --build
+```
+
+That one command starts the dependencies and the app. `teamgram` waits until
+Kafka's healthcheck passes. Starting the two files as separate projects still
+works: msg, sync, and bff retry Kafka, MySQL, Redis, and etcd on their own.
+
+```bash
 docker compose -f docker-compose-env.yaml up -d
 docker compose up -d --build
 ```

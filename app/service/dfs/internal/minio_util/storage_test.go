@@ -46,8 +46,8 @@ func TestApplyEnvDefaultsAndR2Endpoint(t *testing.T) {
 	if cfg.Region != "auto" {
 		t.Fatalf("region %q, want auto", cfg.Region)
 	}
-	if !cfg.ForcePathStyle || cfg.PathStyleDisabled {
-		t.Fatalf("path style forced=%v disabled=%v", cfg.ForcePathStyle, cfg.PathStyleDisabled)
+	if !cfg.ForcePathStyle || cfg.pathStyleDisabled {
+		t.Fatalf("path style forced=%v disabled=%v", cfg.ForcePathStyle, cfg.pathStyleDisabled)
 	}
 	if cfg.Bucket.Backups != "" {
 		t.Fatalf("empty backups env should clear the bucket, got %q", cfg.Bucket.Backups)
@@ -369,7 +369,7 @@ func (s *s3fake) server(t *testing.T) (*httptest.Server, MinioConfig) {
 		Region:              "auto",
 		ForcePathStyle:      true,
 		BucketProbeAttempts: 1,
-		Transport:           tr,
+		transport:           tr,
 		PublicMediaBaseURL:  "https://media.tellomi.app",
 		AttachmentsBaseURL:  "https://cdn3.tellomi.app",
 	}

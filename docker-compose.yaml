@@ -37,6 +37,13 @@ services:
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
+    # Honored when this file is combined with docker-compose-env.yaml, which
+    # defines kafka and its healthcheck. required: false keeps `docker compose up`
+    # of this file alone from failing. msg, sync, and bff also retry in-process.
+    depends_on:
+      kafka:
+        condition: service_healthy
+        required: false
     networks:
       - teamgram_net
 

@@ -20,12 +20,11 @@ package svc
 
 import (
 	"context"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
-	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/marmota/pkg/stores/kv"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	inbox_client "github.com/teamgram/teamgram-server/app/messenger/msg/inbox/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
@@ -42,7 +41,6 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/deduplication"
 
 	"github.com/zeromicro/go-zero/core/logx"
-	"github.com/zeromicro/go-zero/core/stores/redis"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -53,7 +51,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext {
-	db := sqlx.NewMySQL(&c.Mysql)
+	db := bootstrap.MustMySQL(&c.Mysql)
 	svcCtx := &ServiceContext{
 		Config:    c,
 		MsgPlugin: plugin,
@@ -62,12 +60,12 @@ func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext
 			CachedConn:         sqlc.NewConn(db, c.Cache),
 			IDGenClient2:       idgen_client.NewIDGenClient2(rpcx.GetCachedRpcClient(c.IdgenClient)),
 			UserClient:         user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
-			InboxClient:        inbox_client.NewInboxMqClient(kafka.MustKafkaProducer(c.InboxClient)),
+			InboxClient:        inbox_client.NewInboxMqClient(bootstrap.MustKafkaProducer(c.InboxClient)),
 			ChatClient:         chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
-			SyncClient:         sync_client.NewSyncMqClient(kafka.GetCachedMQClient(c.SyncClient)),
+			SyncClient:         sync_client.NewSyncMqClient(bootstrap.GetCachedMQClient(c.SyncClient)),
 			DialogClient:       dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c.DialogClient)),
 			MessageDeDuplicate: deduplication.NewMessageDeDuplicate(kv.NewStore(c.KV)),
-			Redis:              redis.MustNewRedis(c.Redis2),
+			Redis:              bootstrap.MustRedis(c.Redis2),
 		},
 	}
 

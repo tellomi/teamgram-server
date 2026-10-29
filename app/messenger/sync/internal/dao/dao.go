@@ -10,11 +10,10 @@
 package dao
 
 import (
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"sync"
 
-	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/net/rpcx"
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/config"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
@@ -38,7 +37,7 @@ type Dao struct {
 }
 
 func New(c config.Config) *Dao {
-	db := sqlx.NewMySQL(&c.Mysql)
+	db := bootstrap.MustMySQL(&c.Mysql)
 	d := &Dao{
 		Mysql:            newMysqlDao(db),
 		kv:               kv.NewStore(c.KV),
@@ -50,7 +49,7 @@ func New(c config.Config) *Dao {
 		ChatClient:       chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
 	}
 	if c.PushClient != nil {
-		d.PushClient = sync_client.NewSyncMqClient(kafka.MustKafkaProducer(c.PushClient))
+		d.PushClient = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.PushClient))
 	}
 
 	go d.watch(c.SessionClient)

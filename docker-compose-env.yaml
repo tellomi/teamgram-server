@@ -32,6 +32,13 @@ services:
       # Named volume avoids host bind-mount permission errors (AccessDeniedException on
       # bootstrap.checkpoint.tmp when ./data/kafka/data is root-owned from sudo compose).
       - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      # 9094 is bound on 0.0.0.0 inside the container. 9092 is the in-network listener.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/9094'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
     networks:
       - teamgram_net
 
@@ -277,7 +284,8 @@ services:
     networks:
       - teamgram_net
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
 
   #消费kafka中filebeat收集的数据输出到es - The data output collected by FileBeat in Kafka is output to ES
   go-stash:
@@ -292,8 +300,10 @@ services:
     networks:
       - teamgram_net
     depends_on:
-      - elasticsearch
-      - kafka
+      elasticsearch:
+        condition: service_started
+      kafka:
+        condition: service_healthy
 
 volumes:
   kafka_data:

@@ -82,12 +82,12 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		region = "auto"
 	}
 	lookup := minio.BucketLookupPath
-	if cfg.PathStyleDisabled {
+	if cfg.pathStyleDisabled {
 		lookup = minio.BucketLookupDNS
 	}
 	var transport http.RoundTripper
-	if cfg.Transport != nil {
-		transport = cfg.Transport
+	if cfg.transport != nil {
+		transport = cfg.transport
 	} else {
 		base, err := minio.DefaultTransport(cfg.UseSSL)
 		if err != nil {
