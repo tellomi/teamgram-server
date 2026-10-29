@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 
@@ -30,8 +31,7 @@ import (
 )
 
 const (
-	phoneCodeTimeout int64 = 90 // salt timeout
-	cachePhonePrefix       = "phone_codes"
+	cachePhonePrefix = "phone_codes"
 )
 
 func genCachePhoneCodeKey(authKeyId int64, phoneNumber string) string {
@@ -58,7 +58,14 @@ func (d *Dao) PutCachePhoneCode(ctx context.Context, authKeyId int64, phoneNumbe
 	cacheKey := genCachePhoneCodeKey(authKeyId, phoneNumber)
 	b, _ := json.Marshal(codeData)
 
-	if err = d.kv.SetexCtx(ctx, cacheKey, string(b), int(phoneCodeTimeout)); err != nil {
+	ttl := int(codeData.PhoneCodeExpired - int32(time.Now().Unix()))
+	if ttl < 60 {
+		ttl = 60
+	}
+	if ttl > 24*60*60 {
+		ttl = 24 * 60 * 60
+	}
+	if err = d.kv.SetexCtx(ctx, cacheKey, string(b), ttl); err != nil {
 		logx.WithContext(ctx).Errorf("conn.SETEX(%s) error(%v)", cacheKey, err)
 	}
 	return

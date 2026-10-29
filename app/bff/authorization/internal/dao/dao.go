@@ -70,3 +70,11 @@ func New(c config.Config) *Dao {
 		MsgClient:         msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
 }
+
+// Cache is the authorization redis store.
+func (d *Dao) Cache() kv.Store {
+	if d == nil {
+		return nil
+	}
+	return d.kv
+}

@@ -45,6 +45,7 @@ type PhoneCodeTransaction struct {
 	FlashCallPattern      string `json:"flash_call_pattern"`
 	NextCodeType          int    `json:"next_code_type"`
 	State                 int    `json:"state"`
+	Attempts              int    `json:"attempts,omitempty"`
 }
 
 // ToAuthSentCode
