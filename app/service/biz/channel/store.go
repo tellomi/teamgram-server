@@ -29,6 +29,7 @@ type Store interface {
 	GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error)
 	ListMessages(ctx context.Context, channelID int64) ([]*StoredMessage, error)
 	ListPtsAfter(ctx context.Context, channelID int64, pts int32, limit int) ([]*PtsEvent, error)
+	AppendPts(ctx context.Context, channelID int64, kind string, messageID int32, payload []byte) (pts int32, err error)
 
 	GetRead(ctx context.Context, channelID, userID int64) (*ReadState, error)
 	SaveRead(ctx context.Context, st *ReadState) error

@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/reaction"
 )
 
 // 3–32 characters, [A-Za-z0-9_], starting with a letter. A trailing
@@ -57,7 +58,8 @@ type Hooks struct {
 
 // Service is the channel and supergroup implementation.
 type Service struct {
-	store Store
+	store     Store
+	reactions reaction.Store
 
 	mu     sync.Mutex
 	push   Hooks
@@ -65,7 +67,7 @@ type Service struct {
 }
 
 func New(store Store) *Service {
-	return &Service{store: store}
+	return &Service{store: store, reactions: reaction.NewMemory()}
 }
 
 func (s *Service) SetHooks(h Hooks) {

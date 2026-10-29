@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -48,9 +49,19 @@ func TestDefaultReactionsAlwaysAvailable(t *testing.T) {
 			t.Fatalf("%s static icon is not a downloadable webp", emo)
 		}
 	}
-	// 🥰 has no seeded art. It must still be present via the fallback files.
-	if _, ok := readAsset("assets/noto/1f970.tgs"); ok {
-		t.Fatal("test expected 🥰 to have no noto file")
+	for _, emo := range iosDefaultReactions {
+		r := got[emo]
+		body, _, ok := s.DocumentFile(r.GetActivateAnimation().GetId())
+		if !ok || bytes.Equal(body, fallbackTGS()) {
+			t.Fatalf("%s activate animation is the empty fallback", emo)
+		}
+		center, mime, ok := s.DocumentFile(r.GetCenterIcon().GetId())
+		if !ok || mime != "application/x-tgsticker" || !tgsCanvas512(center) || bytes.Equal(center, fallbackTGS()) {
+			t.Fatalf("%s center icon is not a real tgs", emo)
+		}
+		if r.GetAppearAnimation().GetId() == r.GetSelectAnimation().GetId() || r.GetStaticIcon().GetId() == r.GetCenterIcon().GetId() {
+			t.Fatalf("%s reuses one document id for different slots", emo)
+		}
 	}
 }
 
@@ -98,7 +109,7 @@ func assertIOSReactionDocuments(t *testing.T, emo string, r *mtproto.AvailableRe
 		{"activate_animation", r.GetActivateAnimation(), true},
 		{"effect_animation", r.GetEffectAnimation(), true},
 		{"around_animation", r.GetAroundAnimation(), true},
-		{"center_icon", r.GetCenterIcon(), false},
+		{"center_icon", r.GetCenterIcon(), true},
 	}
 	for _, item := range docs {
 		if item.doc == nil || item.doc.GetPredicateName() != mtproto.Predicate_document {

@@ -300,6 +300,25 @@ func (s *memoryStore) ListMessages(ctx context.Context, channelID int64) ([]*Sto
 	return out, nil
 }
 
+func (s *memoryStore) AppendPts(ctx context.Context, channelID int64, kind string, messageID int32, payload []byte) (int32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch := s.channels[channelID]
+	if ch == nil || ch.Deleted {
+		return 0, mtproto.ErrChannelInvalid
+	}
+	ch.Pts++
+	s.events[channelID] = append(s.events[channelID], &PtsEvent{
+		ChannelID: channelID,
+		Pts:       ch.Pts,
+		PtsCount:  1,
+		Kind:      kind,
+		MessageID: messageID,
+		Payload:   append([]byte(nil), payload...),
+	})
+	return ch.Pts, nil
+}
+
 func (s *memoryStore) ListPtsAfter(ctx context.Context, channelID int64, pts int32, limit int) ([]*PtsEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

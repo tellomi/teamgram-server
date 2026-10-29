@@ -329,29 +329,18 @@ func channelUpdate(id int64) *mtproto.Update {
 	return mtproto.MakeTLUpdateChannel(&mtproto.Update{ChannelId: id}).To_Update()
 }
 
-// ReactionsService stores emoji reactions on channel messages.
+// ReactionsService stores emoji reactions on channel, group, and private messages.
 type ReactionsService struct {
 	mtproto.UnimplementedRPCReactionsServer
+	deps reactionDeps
 }
 
 func (ReactionsService) MessagesGetAvailableReactions(ctx context.Context, in *mtproto.TLMessagesGetAvailableReactions) (*mtproto.Messages_AvailableReactions, error) {
 	return catalog.Must().Reactions(in.GetHash()), nil
 }
 
-func (ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TLMessagesSendReaction) (*mtproto.Updates, error) {
-	self, _ := actor(ctx)
-	var emos []string
-	for _, r := range in.GetReaction_FLAGVECTORREACTION() {
-		if r.GetEmoticon() != "" {
-			emos = append(emos, r.GetEmoticon())
-		}
-	}
-	up, err := channel.Shared().React(ctx, self, channelID(in.GetPeer(), self), in.GetMsgId(), emos, in.GetBig())
-	if err != nil {
-		return nil, err
-	}
-	catalog.Must().NoteReaction(self, emos)
-	return up, nil
+func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TLMessagesSendReaction) (*mtproto.Updates, error) {
+	return s.sendReaction(ctx, in)
 }
 
 func (ReactionsService) MessagesGetTopReactions(ctx context.Context, in *mtproto.TLMessagesGetTopReactions) (*mtproto.Messages_Reactions, error) {
@@ -369,23 +358,12 @@ func (ReactionsService) MessagesClearRecentReactions(ctx context.Context, in *mt
 	return mtproto.BoolTrue, nil
 }
 
-func (ReactionsService) MessagesGetMessagesReactions(ctx context.Context, in *mtproto.TLMessagesGetMessagesReactions) (*mtproto.Updates, error) {
-	self, _ := actor(ctx)
-	return channel.Shared().ReactionsFor(ctx, self, channelID(in.GetPeer(), self), in.GetId())
+func (s ReactionsService) MessagesGetMessagesReactions(ctx context.Context, in *mtproto.TLMessagesGetMessagesReactions) (*mtproto.Updates, error) {
+	return s.getMessagesReactions(ctx, in)
 }
 
-func (ReactionsService) MessagesGetMessageReactionsList(ctx context.Context, in *mtproto.TLMessagesGetMessageReactionsList) (*mtproto.Messages_MessageReactionsList, error) {
-	self, _ := actor(ctx)
-	up, err := channel.Shared().ReactionsFor(ctx, self, channelID(in.GetPeer(), self), []int32{in.GetId()})
-	if err != nil {
-		return nil, err
-	}
-	return mtproto.MakeTLMessagesMessageReactionsList(&mtproto.Messages_MessageReactionsList{
-		Count:     int32(len(up.Updates)),
-		Reactions: []*mtproto.MessagePeerReaction{},
-		Chats:     up.Chats,
-		Users:     []*mtproto.User{},
-	}).To_Messages_MessageReactionsList(), nil
+func (s ReactionsService) MessagesGetMessageReactionsList(ctx context.Context, in *mtproto.TLMessagesGetMessageReactionsList) (*mtproto.Messages_MessageReactionsList, error) {
+	return s.getMessageReactionsList(ctx, in)
 }
 
 // ThreadsService serves discussion replies for channel posts.

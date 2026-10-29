@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/reaction"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -642,6 +643,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		}
 		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
 	}
+	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
 		Pts:      ch.Pts,
 		Count:    total,
@@ -675,6 +677,7 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		}
 		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
 	}
+	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
 		Pts:      ch.Pts,
 		Count:    int32(len(msgs)),
@@ -740,11 +743,21 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 			other = append(other, editMessageUpdate(viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user), e.Pts, e.PtsCount))
 		case KindDelete:
 			other = append(other, deleteUpdate(ch.ID, e.MessageIDs, e.Pts, e.PtsCount))
+		case KindReact:
+			if s.reactions == nil {
+				continue
+			}
+			rows, err := s.reactions.List(ctx, reaction.ChannelKey(ch.ID, e.MessageID))
+			if err != nil {
+				return nil, err
+			}
+			other = append(other, reaction.Update(mtproto.MakePeerChannel(ch.ID), e.MessageID, reaction.Summary(rows, user)))
 		}
 	}
 	if newMessages == nil {
 		newMessages = []*mtproto.Message{}
 	}
+	s.attachReactions(ctx, user, ch.ID, newMessages)
 	if other == nil {
 		other = []*mtproto.Update{}
 	}
@@ -788,6 +801,7 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 			msgs = append(msgs, viewMessage(body, stored.SenderID, user))
 		}
 	}
+	s.attachReactions(ctx, user, ch.ID, msgs)
 	dlg := mtproto.MakeTLDialog(&mtproto.Dialog{
 		Peer:            mtproto.MakePeerChannel(ch.ID),
 		TopMessage:      ch.TopMessage,

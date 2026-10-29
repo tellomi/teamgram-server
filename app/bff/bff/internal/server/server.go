@@ -196,7 +196,15 @@ func (s *Server) Initialize() error {
 				SyncClient:    c.SyncClient,
 			}))
 		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
-		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions())
+		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions(channels_helper.Config{
+			RpcServerConf: c.RpcServerConf,
+			ChannelMySQL:  c.ChannelMySQL,
+			UserClient:    c.BizServiceClient,
+			ChatClient:    c.BizServiceClient,
+			MessageClient: c.BizServiceClient,
+			IdgenClient:   c.IdgenClient,
+			SyncClient:    c.SyncClient,
+		}))
 		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads())
 		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
 

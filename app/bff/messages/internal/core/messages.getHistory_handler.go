@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
+	"github.com/teamgram/teamgram-server/app/service/biz/reaction"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/zeromicro/go-zero/core/mr"
 )
@@ -200,6 +201,9 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 	//	}).To_Messages_Messages()
 	//}
 
+	if boxList != nil {
+		reaction.AttachBoxes(c.ctx, reaction.Shared(), c.MD.UserId, boxList.GetDatas(), messages)
+	}
 	mtproto.SanitizeOutgoingObject(rValues)
 	return rValues, nil
 }
