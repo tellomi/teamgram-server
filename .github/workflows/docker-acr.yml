@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY || 'registry.cn-chengdu.aliyuncs.com' }}
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY || 'crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com' }}
   ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE || 'tellomi' }}
 
 jobs:

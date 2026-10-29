@@ -16,14 +16,14 @@ SHA and `latest`.
 
 | Secret | Purpose | When unset |
 |---|---|---|
-| `ACR_REGISTRY` | Registry host the workflow pushes to | `registry.cn-chengdu.aliyuncs.com` |
+| `ACR_REGISTRY` | Registry host the workflow pushes to | `crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com` |
 | `ACR_NAMESPACE` | ACR namespace | `tellomi` |
 | `ACR_USERNAME` | Registry username | required |
 | `ACR_PASSWORD` | Registry password | required |
 
 GitHub-hosted runners are not on the VPC, so they push to the public regional
-endpoint `registry.cn-chengdu.aliyuncs.com`. The Chengdu server pulls the same
-repository through the VPC endpoint `registry-vpc.cn-chengdu.aliyuncs.com`.
+endpoint `crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com`. The Chengdu server pulls the same
+repository through the VPC endpoint `crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com`.
 Tags match. Only the host differs.
 
 `coturn` and `mediamtx` stay on their upstream images. This workflow does not
@@ -38,12 +38,12 @@ On the server, from a checkout that contains `docker-compose.yaml`. Log in once
 if the namespace is private. Use the VPC host, not the public one:
 
 ```bash
-docker login registry-vpc.cn-chengdu.aliyuncs.com
+docker login crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com
 docker compose pull && docker compose up -d
 ```
 
 `TELLOMI_IMAGE_REGISTRY` defaults to
-`registry-vpc.cn-chengdu.aliyuncs.com/tellomi` and `TELLOMI_IMAGE_TAG` defaults
+`crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com/tellomi` and `TELLOMI_IMAGE_TAG` defaults
 to `latest`, so a stock `.env` (see `.env.example`) needs no image settings.
 Do not pass `--build`. If `docker compose pull` fails, fix the login or the
 registry. Do not build on this machine.
