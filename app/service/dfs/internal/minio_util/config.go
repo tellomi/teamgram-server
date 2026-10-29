@@ -84,6 +84,14 @@ type MinioConfig struct {
 	transport http.RoundTripper
 }
 
+// SetTransportForTest installs an HTTP transport. Production leaves it nil
+// so the client uses the default TLS transport.
+func (c *MinioConfig) SetTransportForTest(rt http.RoundTripper) {
+	if c != nil {
+		c.transport = rt
+	}
+}
+
 // Redacted returns a copy safe to print at startup. AccessKeyID and
 // SecretAccessKey are masked. The receiver is not modified, so the client
 // still uses the real credentials.

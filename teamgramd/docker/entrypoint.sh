@@ -45,6 +45,5 @@ if ! /app/deploy/migrate.sh; then
 fi
 
 cd /app/bin
-./runall-docker.sh
-
-tail -f /dev/null
+# Replace this shell so runall is PID 1 and receives SIGTERM.
+exec ./runall-docker.sh

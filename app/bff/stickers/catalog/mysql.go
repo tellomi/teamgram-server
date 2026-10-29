@@ -77,6 +77,20 @@ CREATE TABLE IF NOT EXISTS tellomi_sticker_faved (
   date_ts INT NOT NULL,
   PRIMARY KEY (user_id, document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tellomi_reaction_counts (
+  emoticon VARCHAR(32) NOT NULL,
+  use_count BIGINT NOT NULL,
+  PRIMARY KEY (emoticon)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tellomi_reaction_recent (
+  user_id BIGINT NOT NULL,
+  emoticon VARCHAR(32) NOT NULL,
+  date_ts INT NOT NULL,
+  PRIMARY KEY (user_id, emoticon),
+  KEY tellomi_reaction_recent_user (user_id, date_ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `
 
 type mysqlPersist struct {
@@ -106,6 +120,10 @@ func (s *Service) attachMySQL(dsn string) error {
 		return err
 	}
 	if err = s.loadUserState(ctx, db); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err = s.loadReactionState(ctx, db); err != nil {
 		_ = db.Close()
 		return err
 	}
@@ -255,6 +273,66 @@ func (m mysqlPersist) saveFaved(userID, documentID int64, date int32, remove boo
 	_, err := m.db.Exec(`
 INSERT INTO tellomi_sticker_faved (user_id, document_id, date_ts) VALUES (?,?,?)
 ON DUPLICATE KEY UPDATE date_ts=VALUES(date_ts)`, userID, documentID, date)
+	return err
+}
+
+func (s *Service) loadReactionState(ctx context.Context, db *sql.DB) error {
+	if s.reactionUses == nil {
+		s.reactionUses = map[string]int64{}
+	}
+	counts, err := db.QueryContext(ctx, `SELECT emoticon, use_count FROM tellomi_reaction_counts`)
+	if err != nil {
+		return err
+	}
+	defer counts.Close()
+	for counts.Next() {
+		var emo string
+		var n int64
+		if err = counts.Scan(&emo, &n); err != nil {
+			return err
+		}
+		s.reactionUses[emo] = n
+	}
+	if err = counts.Err(); err != nil {
+		return err
+	}
+	recent, err := db.QueryContext(ctx, `SELECT user_id, emoticon, date_ts FROM tellomi_reaction_recent ORDER BY date_ts DESC`)
+	if err != nil {
+		return err
+	}
+	defer recent.Close()
+	for recent.Next() {
+		var userID int64
+		var emo string
+		var date int
+		if err = recent.Scan(&userID, &emo, &date); err != nil {
+			return err
+		}
+		st := s.state(userID)
+		if len(st.reactionRecent) >= maxRecentReactions {
+			continue
+		}
+		st.reactionRecent = append(st.reactionRecent, emo)
+	}
+	return recent.Err()
+}
+
+func (m mysqlPersist) saveReactionUse(emoticon string, count int64) error {
+	_, err := m.db.Exec(`
+INSERT INTO tellomi_reaction_counts (emoticon, use_count) VALUES (?, ?)
+ON DUPLICATE KEY UPDATE use_count=VALUES(use_count)`, emoticon, count)
+	return err
+}
+
+func (m mysqlPersist) saveReactionRecent(userID int64, emoticon string, date int32) error {
+	_, err := m.db.Exec(`
+INSERT INTO tellomi_reaction_recent (user_id, emoticon, date_ts) VALUES (?, ?, ?)
+ON DUPLICATE KEY UPDATE date_ts=VALUES(date_ts)`, userID, emoticon, date)
+	return err
+}
+
+func (m mysqlPersist) clearReactionRecent(userID int64) error {
+	_, err := m.db.Exec(`DELETE FROM tellomi_reaction_recent WHERE user_id=?`, userID)
 	return err
 }
 
