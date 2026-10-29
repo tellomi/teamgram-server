@@ -13,7 +13,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestInitConnectionInvokeWithLayer` | iOS and Android `initConnection` cannot read `help.getConfig`. |
 | `TestHelpGetConfig` | `help.getConfig` did not return a config. |
 | `TestHelpGetAppConfig` | `help.getAppConfig` returned 500, timed out, or did not decode. |
-| `TestHelpGetTermsOfServiceUpdate` | Accepting the terms once does not make the next call `help.termsOfServiceUpdateEmpty`. The popup comes back. |
+| `TestHelpGetTermsOfServiceUpdate` | The default config returns `help.termsOfServiceUpdateEmpty`, and a second call stays empty. If an update is returned, accepting its id does not make the next call empty. |
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |
 | `TestStartupRPCs` | One startup RPC returned 500, timed out, or did not decode. A 4xx is recorded and does not fail this test. Subtests are named `ios/<method>` and `android/<method>`. |
 | `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads. |
