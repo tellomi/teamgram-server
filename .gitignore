@@ -31,6 +31,8 @@ Thumbs.db
 
 # UI acceptance screenshots and downloaded clients
 ui-artifacts/
+__pycache__/
+*.pyc
 
 #deploy data
 
