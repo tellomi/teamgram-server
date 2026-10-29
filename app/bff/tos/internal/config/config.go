@@ -19,9 +19,14 @@
 package config
 
 import (
+	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type Config struct {
 	zrpc.RpcServerConf
+	// Mysql is the teamgram DSN for user_tos_acceptances. The bff process
+	// passes ChannelMySQL. TEAMGRAM_MYSQL_DSN overrides it.
+	Mysql string       `json:",optional"`
+	Tos   terms.Config `json:",optional"`
 }

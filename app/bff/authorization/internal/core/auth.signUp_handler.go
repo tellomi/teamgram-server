@@ -27,6 +27,7 @@ import (
 	"github.com/teamgram/proto/mtproto/crypto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
+	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -170,6 +171,11 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 		err = mtproto.ErrInternalServerError
 		return nil, err
 	}
+
+	// The client already showed terms_of_service from authorizationSignUpRequired.
+	// Record that id before returning so a matching Tos.UpdateId does not
+	// prompt this account on the next launch.
+	terms.Current().AcceptSignup(c.ctx, user.Id())
 
 	return threading2.WrapperGoFunc(
 		c.ctx,

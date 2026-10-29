@@ -20,14 +20,17 @@ package svc
 
 import (
 	"github.com/teamgram/teamgram-server/app/bff/tos/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
 )
 
 type ServiceContext struct {
 	Config config.Config
+	Terms  *terms.Service
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config: c,
+		Terms:  terms.Open(c.Mysql, c.Tos),
 	}
 }

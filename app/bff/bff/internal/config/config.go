@@ -21,6 +21,7 @@ package config
 import (
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
+	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/zeromicro/go-zero/core/stores/kv"
@@ -40,6 +41,7 @@ type Config struct {
 	DfsClient                 zrpc.RpcClientConf
 	StatusClient              zrpc.RpcClientConf
 	ChannelMySQL              string                       `json:",optional"`
+	Tos                       terms.Config                 `json:",optional"`
 	StoryMySQL                string                       `json:",optional"`
 	Phone                     phone_helper.Config          `json:",optional"`
 	SignInServiceNotification []conf.MessageEntityConfig   `json:",optional"`

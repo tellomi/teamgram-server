@@ -1,2 +1,11 @@
 Name: bff.tos
 ListenOn: 0.0.0.0:21200
+# Same database as bff ChannelMySQL. TEAMGRAM_MYSQL_DSN overrides it.
+# Acceptance is user_tos_acceptances (migrate-20261029-tos.sql).
+Mysql: root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai
+# UpdateId empty: no popup for existing users.
+Tos:
+  Id: tellomi-tos-1
+  UpdateId: ""
+  TermsURL: https://tellomi.cn/terms
+  PrivacyURL: https://tellomi.cn/privacy

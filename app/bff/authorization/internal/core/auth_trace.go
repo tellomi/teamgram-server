@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
 
 	"google.golang.org/grpc/status"
 )
@@ -33,10 +34,14 @@ func rpcErrorCode(err error) string {
 // newUserSignInResult is what auth.signIn returns when the phone has no user.
 // Layer 104 and later (including 232) must be authorizationSignUpRequired so
 // the client opens the name screen. Older layers get PHONE_NUMBER_UNOCCUPIED.
+//
+// terms_of_service is the same help.termsOfService document a later
+// help.getTermsOfServiceUpdate would carry. Layer 232 has no
+// help.getTermsOfService method. auth.signUp records acceptance of this id.
 func newUserSignInResult(layer int32) (*mtproto.Auth_Authorization, error) {
 	if layer >= 104 {
 		return mtproto.MakeTLAuthAuthorizationSignUpRequired(&mtproto.Auth_Authorization{
-			TermsOfService: nil,
+			TermsOfService: terms.Current().SignupTerms(),
 		}).To_Auth_Authorization(), nil
 	}
 	return nil, mtproto.ErrPhoneNumberUnoccupied

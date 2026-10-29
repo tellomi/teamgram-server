@@ -20,13 +20,35 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
 )
 
 // HelpAcceptTermsOfService
 // help.acceptTermsOfService#ee72f79a id:DataJSON = Bool;
+//
+// Persists acceptance for this user and terms id, then returns true.
 func (c *TosCore) HelpAcceptTermsOfService(in *mtproto.TLHelpAcceptTermsOfService) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.acceptTermsOfService blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	raw := ""
+	if in != nil && in.GetId() != nil {
+		raw = in.GetId().GetData()
+	}
+	if err := c.terms().Accept(c.ctx, c.userID(), raw); err != nil {
+		c.Logger.Errorf("help.acceptTermsOfService: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
 	return mtproto.BoolTrue, nil
+}
+
+func (c *TosCore) terms() *terms.Service {
+	if c != nil && c.svcCtx != nil && c.svcCtx.Terms != nil {
+		return c.svcCtx.Terms
+	}
+	return terms.Current()
+}
+
+func (c *TosCore) userID() int64 {
+	if c == nil || c.MD == nil {
+		return 0
+	}
+	return c.MD.GetUserId()
 }
