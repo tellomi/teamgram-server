@@ -24,8 +24,8 @@ const (
 	// clients append a username or invite hash to.
 	LinkPrefix = "https://tell.cc/"
 
-	PrivacyURL  = "https://tellomi.cn/privacy"
-	TermsURL    = "https://tellomi.cn/terms"
+	PrivacyURL  = "https://tellomi.cn/legal/privacy/"
+	TermsURL    = "https://tellomi.cn/legal/terms/"
 	FAQURL      = "https://tellomi.cn/faq"
 	SupportURL  = "https://tellomi.cn/support"
 	PremiumURL  = "https://tellomi.cn/premium"

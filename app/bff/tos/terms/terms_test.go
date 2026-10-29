@@ -31,7 +31,7 @@ func TestDefaultUpdateIsEmpty(t *testing.T) {
 }
 
 func TestUpdateShownUntilAccepted(t *testing.T) {
-	s := New(Config{UpdateId: "tellomi-tos-2"}, nil)
+	s := New(Config{UpdateId: "tellomi-tos-2", PopupEnabled: true}, nil)
 	ctx := context.Background()
 	now := int32(1_700_000_000)
 	const userID int64 = 7
@@ -98,18 +98,19 @@ func TestSignupDocumentMatchesSummary(t *testing.T) {
 
 func TestCustomTextAndAge(t *testing.T) {
 	s := New(Config{
-		Text:          "请先阅读服务条款，再看隐私政策。",
+		Text:          "请先阅读《用户协议》，再看《隐私政策》。",
 		TermsURL:      "https://example.com/terms",
 		PrivacyURL:    "https://example.com/privacy",
 		MinAgeConfirm: 16,
 		UpdateId:      "v2",
+		PopupEnabled:  true,
 	}, nil)
 	doc := s.TermsUpdate(context.Background(), 1, 50).GetTermsOfService()
 	if doc.GetMinAgeConfirm().GetValue() != 16 {
 		t.Fatalf("age %v", doc.GetMinAgeConfirm())
 	}
 	assertLinks(t, doc, "https://example.com/terms", "https://example.com/privacy")
-	if doc.GetText() != "请先阅读服务条款，再看隐私政策。" {
+	if doc.GetText() != "请先阅读《用户协议》，再看《隐私政策》。" {
 		t.Fatalf("text rewritten: %s", doc.GetText())
 	}
 }
@@ -117,7 +118,7 @@ func TestCustomTextAndAge(t *testing.T) {
 func TestTextWithoutLabelsAppendsLinks(t *testing.T) {
 	s := New(Config{Text: "继续使用即表示同意。", UpdateId: "v"}, nil)
 	doc := s.SignupTerms()
-	if !strings.Contains(doc.GetText(), "服务条款") || !strings.Contains(doc.GetText(), "隐私政策") {
+	if !strings.Contains(doc.GetText(), "用户协议") || !strings.Contains(doc.GetText(), "隐私政策") {
 		t.Fatalf("labels not appended: %s", doc.GetText())
 	}
 	assertLinks(t, doc, brand.TermsURL, brand.PrivacyURL)
@@ -145,7 +146,7 @@ func TestRawURLsInText(t *testing.T) {
 }
 
 func TestAcceptWithoutUser(t *testing.T) {
-	s := New(Config{UpdateId: "tellomi-tos-2"}, nil)
+	s := New(Config{UpdateId: "tellomi-tos-2", PopupEnabled: true}, nil)
 	if err := s.Accept(context.Background(), 0, `{"id":"tellomi-tos-2"}`); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestAcceptWithoutUser(t *testing.T) {
 }
 
 func TestStoreErrorDoesNotTrapClient(t *testing.T) {
-	s := New(Config{UpdateId: "tellomi-tos-2"}, errStore{})
+	s := New(Config{UpdateId: "tellomi-tos-2", PopupEnabled: true}, errStore{})
 	now := int32(1_700_000_000)
 	got := s.TermsUpdate(context.Background(), 4, now)
 	if got.GetPredicateName() != mtproto.Predicate_help_termsOfServiceUpdateEmpty || got.GetExpires() != now+retryTTL {
@@ -229,7 +230,7 @@ func (errStore) Accept(context.Context, int64, string) error {
 func assertLinks(t *testing.T, doc *mtproto.Help_TermsOfService, termsURL, privacyURL string) {
 	t.Helper()
 	text := doc.GetText()
-	if !strings.Contains(text, "服务条款") || !strings.Contains(text, "隐私政策") {
+	if !strings.Contains(text, "用户协议") || !strings.Contains(text, "隐私政策") {
 		t.Fatalf("summary %s", text)
 	}
 	ents := doc.GetEntities()
@@ -242,7 +243,7 @@ func assertLinks(t *testing.T, doc *mtproto.Help_TermsOfService, termsURL, priva
 	if ents[1].GetPredicateName() != mtproto.Predicate_messageEntityTextUrl || ents[1].GetUrl() != privacyURL {
 		t.Fatalf("privacy entity %+v", ents[1])
 	}
-	if span(text, ents[0]) != "服务条款" || span(text, ents[1]) != "隐私政策" {
+	if span(text, ents[0]) != "《用户协议》" || span(text, ents[1]) != "《隐私政策》" {
 		t.Fatalf("spans %q %q", span(text, ents[0]), span(text, ents[1]))
 	}
 	if n := mtproto.UTF16Len(text); int(ents[1].GetOffset()+ents[1].GetLength()) > n {
@@ -272,4 +273,29 @@ func roundTrip(in *mtproto.Help_TermsOfServiceUpdate) error {
 		return errors.New("round trip mismatch")
 	}
 	return nil
+}
+
+// Regression: with the default config the server never asks for a popup,
+// even when UpdateId is set and unaccepted. Signup terms carry the links.
+func TestNoPopupByDefault(t *testing.T) {
+	s := New(Config{UpdateId: "tellomi-tos-2"}, nil)
+	u := s.TermsUpdate(context.Background(), 42, 1000)
+	if u.GetPredicateName() != mtproto.Predicate_help_termsOfServiceUpdateEmpty {
+		t.Fatalf("want termsOfServiceUpdateEmpty, got %s", u.GetPredicateName())
+	}
+	doc := s.SignupTerms()
+	if doc.GetPopup() {
+		t.Fatal("signup terms must have popup=false by default")
+	}
+	urls := map[string]bool{}
+	for _, e := range doc.GetEntities() {
+		urls[e.GetUrl()] = true
+	}
+	if !urls["https://tellomi.cn/legal/terms/"] || !urls["https://tellomi.cn/legal/privacy/"] {
+		t.Fatalf("missing terms/privacy links: %v", urls)
+	}
+	p := New(Config{UpdateId: "tellomi-tos-2", PopupEnabled: true}, nil)
+	if p.TermsUpdate(context.Background(), 42, 1000).GetPredicateName() == mtproto.Predicate_help_termsOfServiceUpdateEmpty {
+		t.Fatal("PopupEnabled=true should still allow the update")
+	}
 }

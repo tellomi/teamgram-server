@@ -17,7 +17,7 @@ func TestNewUserSignInLayer232(t *testing.T) {
 		t.Fatalf("predicate %s", authz.GetPredicateName())
 	}
 	tos := authz.GetTermsOfService()
-	if tos == nil || !strings.Contains(tos.GetText(), "服务条款") || !strings.Contains(tos.GetText(), "隐私政策") {
+	if tos == nil || !strings.Contains(tos.GetText(), "用户协议") || !strings.Contains(tos.GetText(), "隐私政策") {
 		t.Fatalf("signup terms: %v", tos)
 	}
 	if strings.Contains(tos.GetText(), "https://") {
