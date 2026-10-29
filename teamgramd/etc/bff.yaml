@@ -35,6 +35,14 @@ Code:
   # Dev/test SMS provider. Any phone is accepted with this code. Change before production.
   FixedCode: "12345"
 
+# Dev login numbers, same shape as Telegram test DCs (99966XYYYY).
+# X is the datacenter digit; the login code is that digit five times (11111 on DC 1).
+# Omit TestPhones to use that built-in range. Set TestPhones: [] to disable it.
+# TestPhones:
+#   - Prefix: "99966"
+#     Length: 10
+#     CodeFromDigit: true
+
 BizServiceClient:
   Etcd:
     Hosts:
