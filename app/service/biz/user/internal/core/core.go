@@ -19,12 +19,21 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
-var (
-	usernameNotExisted   = user.MakeTLUsernameNotExisted(nil).To_UsernameExist()
-	usernameExisted      = user.MakeTLUsernameExisted(nil).To_UsernameExist()
-	usernameExistedNotMe = user.MakeTLUsernameExistedNotMe(nil).To_UsernameExist()
-	usernameExistedIsMe  = user.MakeTLUsernameExistedIsMe(nil).To_UsernameExist()
-)
+func usernameNotExisted() *user.UsernameExist {
+	return user.MakeTLUsernameNotExisted(nil).To_UsernameExist()
+}
+
+func usernameExisted() *user.UsernameExist {
+	return user.MakeTLUsernameExisted(nil).To_UsernameExist()
+}
+
+func usernameExistedNotMe() *user.UsernameExist {
+	return user.MakeTLUsernameExistedNotMe(nil).To_UsernameExist()
+}
+
+func usernameExistedIsMe() *user.UsernameExist {
+	return user.MakeTLUsernameExistedIsMe(nil).To_UsernameExist()
+}
 
 type UserCore struct {
 	ctx    context.Context

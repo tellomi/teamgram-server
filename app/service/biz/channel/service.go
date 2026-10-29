@@ -14,7 +14,13 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-var usernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{4,31}$`)
+// 3–32 characters, [A-Za-z0-9_], starting with a letter. A trailing
+// underscore is rejected by validChannelUsername.
+var usernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{2,31}$`)
+
+func validChannelUsername(username string) bool {
+	return usernamePattern.MatchString(username) && !strings.HasSuffix(username, "_")
+}
 
 func allAdminRights() int32 {
 	return int32(mtproto.MakeChatAdminRightsHelper(&mtproto.ChatAdminRights{
@@ -566,7 +572,7 @@ func (s *Service) CheckUsername(ctx context.Context, self int64, in *mtproto.Inp
 		return nil, err
 	}
 	username = strings.TrimSpace(username)
-	if !usernamePattern.MatchString(username) {
+	if !validChannelUsername(username) {
 		return nil, mtproto.ErrUsernameInvalid
 	}
 	other, err := s.store.FindByUsername(ctx, username)
@@ -591,7 +597,7 @@ func (s *Service) UpdateUsername(ctx context.Context, self, actorAuth int64, in 
 	if username == ch.Username {
 		return nil, mtproto.ErrUsernameNotModified
 	}
-	if username != "" && !usernamePattern.MatchString(username) {
+	if username != "" && !validChannelUsername(username) {
 		return nil, mtproto.ErrUsernameInvalid
 	}
 	if username != "" {

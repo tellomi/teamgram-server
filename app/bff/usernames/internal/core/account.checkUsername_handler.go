@@ -19,48 +19,58 @@
 package core
 
 import (
-	"github.com/teamgram/marmota/pkg/strings2"
-	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+
+	"google.golang.org/grpc/status"
 )
 
 // AccountCheckUsername
 // account.checkUsername#2714d86c username:string = Bool;
+//
+// A free name, including the caller's current name, returns boolTrue.
+// Occupied names return USERNAME_OCCUPIED. Names outside
+// 3–32 [A-Za-z0-9_], or that do not start with a letter, return
+// USERNAME_INVALID. Other failures are logged and returned as
+// USERNAME_INVALID so the client does not retry them as an internal error.
 func (c *UsernamesCore) AccountCheckUsername(in *mtproto.TLAccountCheckUsername) (*mtproto.Bool, error) {
-	// Check username format
-	// You can choose a username on Telegram.
-	// If you do, other people will be able to find
-	// you by this username and contact you
-	// without knowing your phone number.
-	//
-	// You can use a-z, 0-9 and underscores.
-	// Minimum length is 5 characters.";
-	//
-	if len(in.Username) < user.MinUsernameLen ||
-		!strings2.IsAlNumString(in.Username) ||
-		utils.IsNumber(in.Username[0]) {
-		err := mtproto.ErrUsernameInvalid
-		c.Logger.Errorf("account.checkUsername#2714d86c - format error: %v", err)
-		return nil, err
-	} else {
-		existed, err := c.svcCtx.Dao.UserClient.UserCheckAccountUsername(c.ctx, &user.TLUserCheckAccountUsername{
-			UserId:   c.MD.UserId,
-			Username: in.GetUsername(),
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		switch existed.GetPredicateName() {
-		case user.Predicate_usernameExistedNotMe:
-			err = mtproto.ErrUsernameOccupied
-			c.Logger.Errorf("account.checkUsername#2714d86c - exists username: %v", err)
-			return mtproto.BoolFalse, nil
-		default:
-			break
-		}
+	if c.MD == nil {
+		c.Logger.Errorf("account.checkUsername#2714d86c - missing metadata")
+		return nil, mtproto.ErrUsernameInvalid
+	}
+	if in == nil || !user.CheckUsernameInvalid(in.GetUsername()) {
+		c.Logger.Errorf("account.checkUsername#2714d86c - format error: %v", mtproto.ErrUsernameInvalid)
+		return nil, mtproto.ErrUsernameInvalid
 	}
 
-	return mtproto.BoolTrue, nil
+	existed, err := c.svcCtx.Dao.UserClient.UserCheckAccountUsername(c.ctx, &user.TLUserCheckAccountUsername{
+		UserId:   c.MD.UserId,
+		Username: in.GetUsername(),
+	})
+	if err != nil {
+		c.Logger.Errorf("account.checkUsername#2714d86c - error: %v", err)
+		return nil, usernameRPCError(err)
+	}
+
+	switch existed.GetPredicateName() {
+	case user.Predicate_usernameExisted, user.Predicate_usernameExistedNotMe:
+		c.Logger.Errorf("account.checkUsername#2714d86c - exists username: %v", mtproto.ErrUsernameOccupied)
+		return nil, mtproto.ErrUsernameOccupied
+	default:
+		return mtproto.BoolTrue, nil
+	}
+}
+
+// usernameRPCError passes client errors through (USERNAME_INVALID,
+// USERNAME_OCCUPIED, CHAT_ADMIN_REQUIRED, and the other 4xx codes).
+// Internal and unknown failures become USERNAME_INVALID. iOS retries 500s
+// and otherwise stays on "Checking username...".
+func usernameRPCError(err error) error {
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case mtproto.ErrBadRequest, mtproto.ErrUnauthorized, mtproto.ErrForbidden, mtproto.ErrNotFound, mtproto.ErrNotAcceptable, mtproto.ErrFlood:
+			return err
+		}
+	}
+	return mtproto.ErrUsernameInvalid
 }

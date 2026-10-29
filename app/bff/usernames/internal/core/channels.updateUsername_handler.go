@@ -12,7 +12,7 @@ func (c *UsernamesCore) ChannelsUpdateUsername(in *mtproto.TLChannelsUpdateUsern
 	ok, err := channel.Shared().UpdateUsername(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in.GetChannel(), in.GetUsername())
 	if err != nil {
 		c.Logger.Errorf("channels.updateUsername - error: %v", err)
-		return nil, err
+		return nil, usernameRPCError(err)
 	}
 	channelID := in.GetChannel().GetChannelId()
 	if in.GetUsername() == "" {

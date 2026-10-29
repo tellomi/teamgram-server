@@ -19,7 +19,6 @@
 package core
 
 import (
-	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -38,10 +37,7 @@ func (c *UserCore) UserResolveUsername(in *user.TLUserResolveUsername) (*mtproto
 	case "pic":
 	case "bing":
 	default:
-		if len(username) < 5 {
-			err = mtproto.ErrUsernameInvalid
-			return nil, err
-		} else if utils.IsLetter(username[0]) == false {
+		if !user.CheckUsernameInvalid(username) {
 			err = mtproto.ErrUsernameInvalid
 			return nil, err
 		}

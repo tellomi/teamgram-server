@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-var placeholderRe = regexp.MustCompile(`https?://[^\s<>()]+|t\.me/[^\s<>()]+|%%|%(?:\d+\$)?\d*[dfsiu@]|%(?:\d+\$)?\.\d+f|\{[A-Za-z0-9_]+\}|\bun\d+\b`)
+var placeholderRe = regexp.MustCompile(`https?://[^\s<>()]+|(?:t\.me|tell\.cc)/[^\s<>()]+|%%|%(?:\d+\$)?\d*[dfsiu@]|%(?:\d+\$)?\.\d+f|\{[A-Za-z0-9_]+\}|\bun\d+\b`)
 
 func fixtureCatalog() *Catalog {
 	one := "1 message"
@@ -273,13 +273,14 @@ func TestShippedPacks(t *testing.T) {
 	}
 
 	// Placeholders in the English pack must survive in both Chinese packs.
-	// Chinese packs are version 2 so getDifference delivers the rewrite.
+	// English packs are version 2 and Chinese packs version 3 so
+	// getDifference delivers the username-length and host rewrite.
 	for _, platform := range []string{"ios", "android"} {
 		en, err := cat.Difference(platform, "en", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if en.GetVersion() != 1 {
+		if en.GetVersion() != 2 {
 			t.Fatalf("%s english version %d", platform, en.GetVersion())
 		}
 		enTok := tokensByKey(en.GetStrings())
@@ -288,16 +289,16 @@ func TestShippedPacks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if zh.GetVersion() != 2 {
+			if zh.GetVersion() != 3 {
 				t.Fatalf("%s %s version %d", platform, lang, zh.GetVersion())
 			}
-			updated, err := cat.Difference(platform, lang, 1)
-			if err != nil || len(updated.GetStrings()) == 0 || updated.GetVersion() != 2 {
-				t.Fatalf("%s %s difference from 1: %d %v", platform, lang, len(updated.GetStrings()), err)
+			updated, err := cat.Difference(platform, lang, 2)
+			if err != nil || len(updated.GetStrings()) == 0 || updated.GetVersion() != 3 {
+				t.Fatalf("%s %s difference from 2: %d %v", platform, lang, len(updated.GetStrings()), err)
 			}
-			caughtUp, err := cat.Difference(platform, lang, 2)
+			caughtUp, err := cat.Difference(platform, lang, 3)
 			if err != nil || len(caughtUp.GetStrings()) != 0 {
-				t.Fatalf("%s %s difference from 2: %d %v", platform, lang, len(caughtUp.GetStrings()), err)
+				t.Fatalf("%s %s difference from 3: %d %v", platform, lang, len(caughtUp.GetStrings()), err)
 			}
 			zhTok := tokensByKey(zh.GetStrings())
 			if len(enTok) == 0 || len(enTok) != len(zhTok) {
@@ -402,7 +403,7 @@ func latinLeftovers(text string) []string {
 }
 
 var hyphenSlugRe = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$`)
-var stripRe = regexp.MustCompile(`(?i)https?://\S+|[\w.-]*telegram\.org\S*|t\.me/\S+|[\w.-]+\.(?:com|org|net)\S+|:[A-Za-z0-9_]+:|\]\([A-Za-z0-9_]+\)|\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b|\b(?:app store|google play|face id|apple watch|touch id)\b`)
+var stripRe = regexp.MustCompile(`(?i)https?://\S+|[\w.-]*(?:telegram\.org|tellomi\.cn)\S*|(?:t\.me|tell\.cc)(?:/\S+)?|[\w.-]+\.(?:com|org|net)\S+|:[A-Za-z0-9_]+:|\]\([A-Za-z0-9_]+\)|\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b|\b(?:app store|google play|face id|apple watch|touch id)\b`)
 var mentionRe = regexp.MustCompile(`@[A-Za-z0-9_]+`)
 
 func hasTelegramBrand(s string) bool {
