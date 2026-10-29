@@ -262,6 +262,7 @@ func (d *Dao) sendMessageToOutbox(ctx context.Context, fromId int64, peer *mtpro
 				return 0, 0, nil
 			},
 			dialog.GetDialogCacheKeyByPeer(fromId, peer.PeerType, peer.PeerId))
+		d.advanceSavedMessagesDialog(ctx, fromId, peer, dialogDO.TopMessage, dialogDO.Date2)
 
 		outBox = tR.Data.(*mtproto.MessageBox)
 		outBox.Pts = pts // d.IDGenClient2.NextPtsId(ctx, fromId)
@@ -662,6 +663,12 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		}
 	})
 
+	// Saved Messages may already exist as the other self peer type. Move that
+	// row forward before the dialog service drops its cache of this peer.
+	if tR.Err == nil {
+		d.advanceSavedMessagesDialog(ctx, fromId, peer, outBoxMsgId, int64(message.GetDate()))
+	}
+
 	_, err := d.DialogClient.DialogInsertOrUpdateDialog(
 		ctx,
 		&dialog.TLDialogInsertOrUpdateDialog{
@@ -674,13 +681,28 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 			UnreadCount:     &wrapperspb.Int32Value{Value: 0},
 			UnreadMark:      false,
 			PinnedMsgId:     nil,
-			Date2:           &wrapperspb.Int64Value{Value: int64(outMsgBox.Message.Date)},
+			Date2:           &wrapperspb.Int64Value{Value: int64(message.GetDate())},
 		})
 	if err != nil {
 		// return i
 	}
 
 	return tR.Err
+}
+
+// advanceSavedMessagesDialog sets top_message on the self dialog when a
+// message is saved. Update by user id alone so a peer_type 1 row is not left
+// at top_message 0 after a peer_type 2 send, or the reverse.
+func (d *Dao) advanceSavedMessagesDialog(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, topMessage int32, date2 int64) {
+	if peer == nil || fromId == 0 || peer.PeerId != fromId || topMessage <= 0 {
+		return
+	}
+	if peer.PeerType != mtproto.PEER_USER && peer.PeerType != mtproto.PEER_SELF {
+		return
+	}
+	if _, err := d.DialogsDAO.AdvanceSavedMessagesTop(ctx, topMessage, date2, fromId); err != nil {
+		logx.WithContext(ctx).Errorf("saved messages top_message - error: %v", err)
+	}
 }
 
 func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, outboxMessage *msg.OutboxMessage, out bool) (*mtproto.MessageBox, error) {
