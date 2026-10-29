@@ -31,12 +31,7 @@ import (
 )
 
 func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, ttlPeriod *wrapperspb.Int32Value) (*mtproto.Messages_InvitedUsers, error) {
-	var (
-		chatUserIdList  []int64
-		userAddList     = make([]int64, 0)
-		botAddList      = make([]int64, 0)
-		missingInvitees = make([]*mtproto.MissingInvitee, 0)
-	)
+	var chatUserIdList []int64
 
 	// check chat title
 	if chatTitle == "" {
@@ -45,95 +40,96 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 		return nil, err
 	}
 
-	if len(iUsers) == 0 {
-		err := mtproto.ErrUsersTooFew
-		c.Logger.Errorf("messages.createChat - error: %v", err)
-		return nil, err
-	}
-
-	// check user too much
+	// Official Telegram iOS (layer 232) calls messages.createChat with an empty
+	// users vector to create a group that contains only the creator. That client
+	// maps USERS_TOO_FEW to "you can't create a group with these users due to
+	// their privacy settings", so an empty list must succeed.
 	if len(iUsers) > 200-1 {
 		err := mtproto.ErrUsersTooMuch
 		c.Logger.Errorf("messages.createChat - error: %v", err)
 		return nil, err
 	}
 
-	// check len(users)
+	seen := map[int64]struct{}{c.MD.UserId: {}}
 	chatUserIdList = []int64{c.MD.UserId}
 	for _, u := range iUsers {
-		if u.PredicateName != mtproto.Predicate_inputUser {
+		if u == nil || u.PredicateName != mtproto.Predicate_inputUser {
 			err := mtproto.ErrPeerIdInvalid
 			c.Logger.Errorf("messages.createChat - error: %v", err)
 			return nil, err
-		} else {
-			chatUserIdList = append(chatUserIdList, u.UserId)
 		}
+		if _, ok := seen[u.UserId]; ok {
+			continue
+		}
+		seen[u.UserId] = struct{}{}
+		chatUserIdList = append(chatUserIdList, u.UserId)
 	}
 
 	users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
 		Id: chatUserIdList,
 	})
+	if users == nil {
+		err := mtproto.ErrPeerIdInvalid
+		c.Logger.Errorf("messages.createChat - error: %v", err)
+		return nil, err
+	}
 
-	if me, _ := users.GetImmutableUser(c.MD.UserId); me.Restricted() {
+	me, ok := users.GetImmutableUser(c.MD.UserId)
+	if !ok || me == nil {
+		err := mtproto.ErrPeerIdInvalid
+		c.Logger.Errorf("messages.createChat - error: %v", err)
+		return nil, err
+	}
+	if me.Restricted() {
 		err := mtproto.ErrUserRestricted
 		c.Logger.Errorf("messages.createChat - error: %v", err)
 		return nil, err
 	}
 
-	for _, u := range iUsers {
-		if addUser, ok := users.GetImmutableUser(u.UserId); !ok {
+	specs := make([]chatMemberSpec, 0, len(chatUserIdList)-1)
+	for _, id := range chatUserIdList[1:] {
+		addUser, found := users.GetImmutableUser(id)
+		if !found || addUser == nil {
 			err := mtproto.ErrInputUserDeactivated
 			c.Logger.Errorf("messages.createChat - error: %v", err)
 			return nil, err
-		} else {
-			if addUser.IsBot() {
-				if !addUser.BotNochats() {
-					c.Logger.Errorf("user is bot and nochats, ignore %d", u.UserId)
-					continue
-				} else {
-					botAddList = append(botAddList, addUser.Id())
-				}
-			} else {
-				rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-					UserId:  addUser.Id(),
-					KeyType: mtproto.CHAT_INVITE,
-				})
-				if len(rules.Datas) == 0 {
-					missingInvitees = append(missingInvitees, mtproto.MakeTLMissingInvitee(&mtproto.MissingInvitee{
-						PremiumWouldAllowInvite: false,
-						PremiumRequiredForPm:    false,
-						UserId:                  u.UserId,
-					}).To_MissingInvitee())
-				} else {
-					allowAddChat := mtproto.CheckPrivacyIsAllow(
-						addUser.Id(),
-						rules.Datas,
-						c.MD.UserId,
-						func(id, checkId int64) bool {
-							contact, _ := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{
-								UserId: id,
-								Id:     checkId,
-							})
-							return mtproto.FromBool(contact)
-						},
-						func(checkId int64, idList []int64) bool {
-							chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-							return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-						})
-					if !allowAddChat {
-						c.Logger.Errorf("chatInvite privacy, ignore %d", u.UserId)
-						continue
-					}
-				}
-				userAddList = append(userAddList, addUser.Id())
-			}
 		}
+		spec := chatMemberSpec{
+			UserID:     addUser.Id(),
+			IsBot:      addUser.IsBot(),
+			BotNoChats: addUser.BotNochats(),
+		}
+		if !spec.IsBot {
+			rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
+				UserId:  addUser.Id(),
+				KeyType: mtproto.CHAT_INVITE,
+			})
+			if rules != nil {
+				spec.Rules = rules.Datas
+			}
+		} else if !spec.BotNoChats {
+			c.Logger.Errorf("user is bot and nochats, ignore %d", id)
+		}
+		specs = append(specs, spec)
 	}
 
-	if len(userAddList) == 0 {
-		err := mtproto.ErrUsersTooFew
-		c.Logger.Errorf("messages.createChat - error: %v", err)
-		return nil, err
+	userAddList, botAddList, missingInvitees := planChatInvites(
+		c.MD.UserId,
+		specs,
+		func(id, checkId int64) bool {
+			contact, _ := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{
+				UserId: id,
+				Id:     checkId,
+			})
+			return mtproto.FromBool(contact)
+		},
+		func(checkId int64, idList []int64) bool {
+			chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
+			return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
+		},
+	)
+	for _, miss := range missingInvitees {
+		c.Logger.Errorf("chatInvite privacy, not adding %d", miss.GetUserId())
 	}
 
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatCreateChat2(c.ctx, &chatpb.TLChatCreateChat2{
@@ -217,8 +213,23 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 		Message:   outMessages,
 	})
 	if err != nil {
-		c.Logger.Errorf("messages.createChat - error: %v", err)
-		return nil, err
+		// The chat row is already committed. CHAT_WRITE_FORBIDDEN here means
+		// the participant list could not be loaded (production: missing
+		// chat_participants.rank2), not that a privacy rule blocked the create.
+		// Returning that 403 makes Telegram iOS show the privacy alert.
+		if sendFailureKeepsChat(err) {
+			c.Logger.Errorf("messages.createChat - chat %d was created but the service message was rejected (%v); returning the chat", chat.Id(), err)
+			msgs := make([]*mtproto.Message, 0, len(outMessages))
+			for _, box := range outMessages {
+				if box != nil && box.Message != nil {
+					msgs = append(msgs, box.Message)
+				}
+			}
+			rValue = updatesForUnsentCreate(c.MD.UserId, chat, msgs)
+		} else {
+			c.Logger.Errorf("messages.createChat - error: %v", err)
+			return nil, err
+		}
 	}
 
 	return mtproto.MakeTLMessagesInvitedUsers(&mtproto.Messages_InvitedUsers{

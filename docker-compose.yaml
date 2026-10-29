@@ -56,6 +56,13 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-photos}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-documents}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-videos}
+      # Schema migration on startup (teamgramd/deploy/migrate.sh). Root matches
+      # the MySQL service; the app processes still use the DSN in etc2/*.yaml.
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_MIGRATE_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-teamgram}
     volumes:
       - ./data/logs:/app/logs
     logging:
