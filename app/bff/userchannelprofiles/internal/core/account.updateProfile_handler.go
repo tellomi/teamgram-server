@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 // AccountUpdateProfile
@@ -36,8 +37,7 @@ func (c *UserChannelProfilesCore) AccountUpdateProfile(in *mtproto.TLAccountUpda
 	}
 
 	if in.GetAbout() != nil {
-		//// About长度 < 128 并且可以为 empty
-		if len(in.GetAbout().GetValue()) > 128 {
+		if !premium.AboutWithinLimit(in.GetAbout().GetValue()) {
 			err = mtproto.ErrAboutTooLong
 			c.Logger.Errorf("account.updateProfile - error: %v", err)
 			return nil, err

@@ -102,7 +102,7 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, 
 		if req.Owner.Kind == KindChannel {
 			return nil, errBoostsRequired
 		}
-		return nil, mtproto.ErrPremiumAccountRequired
+		return nil, errStoriesTooMuch
 	}
 	now := s.now()
 	rules := req.Rules

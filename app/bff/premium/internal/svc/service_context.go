@@ -20,14 +20,17 @@ package svc
 
 import (
 	"github.com/teamgram/teamgram-server/app/bff/premium/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/premium/internal/dao"
 )
 
 type ServiceContext struct {
 	Config config.Config
+	Dao    *dao.Dao
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config: c,
+		Dao:    dao.New(c),
 	}
 }

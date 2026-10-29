@@ -125,7 +125,7 @@ func (s *Service) ChannelsGetFutureCreatorAfterLeave(ctx context.Context, in *mt
 	if len(users) > 0 {
 		return users[0], nil
 	}
-	return mtproto.MakeTLUser(&mtproto.User{Id: id}).To_User(), nil
+	return mtproto.MakeTLUser(&mtproto.User{Id: id, Premium: true}).To_User(), nil
 }
 
 func actor(ctx context.Context) (int64, int64) {

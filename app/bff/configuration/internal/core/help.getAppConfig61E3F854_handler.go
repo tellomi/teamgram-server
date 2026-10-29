@@ -20,18 +20,17 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/appconfig"
 )
 
 // HelpGetAppConfig61E3F854
 // help.getAppConfig#61e3f854 hash:int = help.AppConfig;
 func (c *ConfigurationCore) HelpGetAppConfig61E3F854(in *mtproto.TLHelpGetAppConfig61E3F854) (*mtproto.Help_AppConfig, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getAppConfig blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	if in.GetHash() != 0 && in.GetHash() == appconfig.AppConfigHash() {
+		return mtproto.MakeTLHelpAppConfigNotModified(&mtproto.Help_AppConfig{}).To_Help_AppConfig(), nil
+	}
 	return mtproto.MakeTLHelpAppConfig(&mtproto.Help_AppConfig{
-		Hash: 0,
-		Config: mtproto.MakeTLJsonObject(&mtproto.JSONValue{
-			Value_VECTORJSONOBJECTVALUE: []*mtproto.JSONObjectValue{},
-		}).To_JSONValue(),
+		Hash:   appconfig.AppConfigHash(),
+		Config: appconfig.AppConfig(),
 	}).To_Help_AppConfig(), nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 // DialogEditPeerFolders
@@ -79,15 +80,15 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 
 	if in.FolderId == 0 {
 		// cut
-		if len(dialogPinnedList) > 5 {
-			unpinnedList := make([]int64, 0, len(dialogPinnedList)-5)
-			for i := 5; i < len(dialogPinnedList); i++ {
+		if len(dialogPinnedList) > premium.PinnedDialogs {
+			unpinnedList := make([]int64, 0, len(dialogPinnedList)-premium.PinnedDialogs)
+			for i := premium.PinnedDialogs; i < len(dialogPinnedList); i++ {
 				unpinnedList = append(unpinnedList, mtproto.MakePeerDialogId(dialogPinnedList[i].PeerType, dialogPinnedList[i].PeerId))
 			}
 
 			//
 			c.svcCtx.Dao.DialogsDAO.UpdatePeerDialogListPinned(c.ctx, 0, in.UserId, unpinnedList)
-			dialogPinnedList = dialogPinnedList[:5]
+			dialogPinnedList = dialogPinnedList[:premium.PinnedDialogs]
 		}
 	}
 

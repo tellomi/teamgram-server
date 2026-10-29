@@ -105,7 +105,7 @@ func (s *Service) peerJSON(ctx context.Context, p *storedPeer) *Peer {
 		Verified:    p.Verified,
 		Scam:        p.Scam,
 		Fake:        p.Fake,
-		Premium:     p.Premium,
+		Premium:     p.Kind == KindUser || p.Kind == KindBot || p.Premium,
 		MemberCount: p.MemberCount,
 		Broadcast:   p.Broadcast,
 		Megagroup:   p.Megagroup,
