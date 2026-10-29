@@ -7,8 +7,10 @@ wording used for zh-hant (訊息、設定、檔案) rather than a second machine
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
+from pathlib import Path
 
 import opencc
 
@@ -3071,6 +3073,12 @@ for src, dst in _PHRASES.items():
     _PHRASE_BY_LEN.setdefault(len(parts), {})[parts] = dst
 _MAX_PHRASE = max(_PHRASE_BY_LEN) if _PHRASE_BY_LEN else 1
 
+# Date/number format tokens that must stay literal, plus product names.
+_FORMAT_TOKENS = {
+    "mmm", "mmmm", "eee", "eeee", "yyyy", "yyy", "yy", "hh", "mm", "dd", "ss",
+    "mmm", "boc", "base64", "rtmp", "cvv", "usd", "fhd", "qhd", "2k", "4k",
+}
+
 _ALLOW = {
     "tellomi", "gram", "grams", "instagram", "yyyy", "mmm", "mm", "hh", "dd", "ss",
     "ok", "gif", "gifs", "sms", "qr", "pin", "wi-fi", "wifi", "bluetooth",
@@ -3083,6 +3091,36 @@ _ALLOW = {
     "png", "jpg", "jpeg", "webp", "apk", "iphone", "ipad", "safari", "chrome",
     "paypal", "visa", "github", "bot", "bots", "web", "pc", "tv", "4k", "hdr",
     "opus", "ogg", "wav", "heic", "emoji", "emojis", "beta", "alpha",
+    "dropbox", "icloud", "yandex", "waze", "apple",
+    "chromecast", "airplay", "youtube", "duckduckgo", "bing", "yahoo",
+    "wearos", "toncoin", "rnnoise", "latex", "roboto", "merriweather",
+    "courier", "cocoon", "lucio", "nox", "dino", "fragment", "socks5",
+    "mtproto", "hasselhoff", "suntory", "covid", "psa", "cvv", "boc",
+    "base64", "rtmp", "usd", "fhd", "qhd", "mono", "serif",
+    "telegramtips", "brave", "google",
+    # Onboarding personas and protocol names that stay in Latin inside sentences.
+    "reinhardt", "bob", "alice", "jennifer", "alicia", "torreaux", "roberto",
+    "veronica", "james", "emma", "gabriella", "beatrice", "jessica", "jennie",
+    "harris", "newman", "monika", "paul", "kate", "nick", "adler", "toberg",
+    "david", "eva", "summer", "mike", "bright", "lucio", "walt", "botfather",
+    "rove", "socks5", "camera2", "webview", "stateinit", "mnc", "led", "faq",
+    "passport", "icloud", "hasselhoff", "spotlight",
+    "harry", "helene", "dwayne", "roxanne",
+    "id", "qr", "pin", "sim", "gif", "sms", "bot", "bots", "app",
+    "web", "pc", "tv", "hd", "ip", "url", "api", "nft", "json",
+    "html", "sdk", "ssl", "tls", "http", "https", "www", "ios",
+    "android", "macos", "windows", "linux", "iphone", "ipad",
+    "safari", "chrome", "paypal", "visa", "github", "spotify",
+    "siri", "instagram", "twitter", "facebook", "whatsapp",
+    "premium", "tellomi", "gram", "grams", "ok", "beta", "alpha",
+}
+
+# Entire string is a product sound name (iOS), not prose.
+_SOUND_NAMES = {
+    "aurora", "bamboo", "chord", "circles", "input", "popcorn", "pulse", "synth",
+    "rebound", "antic", "cheers", "droplet", "handoff", "milestone", "passage",
+    "portal", "rattle", "tri-tone", "tremolo", "bell", "calypso", "chime", "glass",
+    "telegraph", "socks5", "led",
 }
 
 _UNKNOWN: Counter[str] = Counter()
@@ -3224,10 +3262,140 @@ def _translate_chunk(chunk: str, missing: list[str]) -> str:
     return "".join(out)
 
 
+def _exact_translations() -> dict[str, str]:
+    found: dict[str, str] = {}
+    root = Path(__file__).resolve().parent / "exact"
+    if not root.is_dir():
+        return found
+    for path in sorted(root.glob("*.py")):
+        ns: dict = {}
+        exec(path.read_text(encoding="utf-8"), ns)  # noqa: S102 - local translation tables
+        found.update(ns.get("PAIRS", {}))
+    # JSON tables override older glossary pairs when a string was rewritten.
+    for path in sorted(root.glob("*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            found.update(data)
+        elif isinstance(data, list):
+            for item in data:
+                found[item["en"]] = item["zh"]
+    return found
+
+
+_EXACT = _exact_translations()
+
+
+def leftover_words(text: str) -> list[str]:
+    """English words that are not placeholders, brands, or proper nouns."""
+    cleaned = text.replace("’", "'").replace("‘", "'").replace("ʼ", "'")
+    cleaned = re.sub(
+        r"https?://\S+|[\w.-]*telegram\.org\S*|t\.me/\S+|[\w.-]+\.(?:com|org|net)\S*",
+        " ",
+        cleaned,
+        flags=re.I,
+    )
+    cleaned = _TOKEN.sub(" ", cleaned)
+    cleaned = re.sub(r"@[A-Za-z0-9_]+", " ", cleaned)
+    cleaned = re.sub(
+        r"\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b",
+        " ",
+        cleaned,
+        flags=re.I,
+    )
+    # Markdown link targets such as [text](username) are client identifiers.
+    cleaned = re.sub(r"\]\([A-Za-z0-9_]+\)", " ", cleaned)
+    stripped = cleaned.strip()
+    # FAQ anchors (q-i-have-a-new-phone-number) and names like Tri-tone.
+    if re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+", stripped):
+        return []
+    if stripped.lower() in _SOUND_NAMES or stripped.lower() in _ALLOW:
+        return []
+    cleaned = re.sub(r"(?i)\b(?:app store|google play|face id|apple watch|touch id)\b", " ", cleaned)
+
+    def strip_known(match: re.Match[str]) -> str:
+        key = match.group(0).lower().strip("'")
+        if key in _ALLOW or key in _FORMAT_TOKENS:
+            return " "
+        return match.group(0)
+
+    cleaned = re.sub(r"[A-Za-z][A-Za-z0-9']*", strip_known, cleaned)
+    bad = []
+    for word in re.findall(r"[A-Za-z][A-Za-z']{2,}", cleaned):
+        key = word.lower().strip("'")
+        if key.endswith("'s") and key[:-2] in _ALLOW:
+            continue
+        if key in _ALLOW or key in _FORMAT_TOKENS:
+            continue
+        bad.append(key)
+    return bad
+
+
+def _pattern_natural(text: str) -> str | None:
+    """Natural Chinese for dates, durations, and a few fixed frames."""
+    months = {
+        "january": "1月", "february": "2月", "march": "3月", "april": "4月",
+        "june": "6月", "july": "7月", "august": "8月", "september": "9月",
+        "october": "10月", "november": "11月", "december": "12月",
+        "jan": "1月", "feb": "2月", "mar": "3月", "apr": "4月",
+        "jun": "6月", "jul": "7月", "aug": "8月", "sep": "9月",
+        "oct": "10月", "nov": "11月", "dec": "12月",
+    }
+    weeks = {
+        "mon": "周一", "tue": "周二", "wed": "周三", "thu": "周四",
+        "fri": "周五", "sat": "周六", "sun": "周日",
+    }
+    units = {"s": "秒", "m": "分钟", "h": "小时", "d": "天", "w": "周", "mo": "个月", "y": "年"}
+    stripped = text.strip()
+    low = stripped.lower()
+    if low in months:
+        return months[low]
+    if low in weeks:
+        return weeks[low]
+    letters = {"M": "一", "T": "二", "W": "三", "F": "五", "S": "六", "L": "大"}
+    if stripped in letters:
+        return letters[stripped]
+    unit_letters = {"s": "秒", "m": "分钟", "h": "小时", "d": "天", "w": "周", "y": "年", "mi": "英里"}
+    if stripped in unit_letters:
+        return unit_letters[stripped]
+    matched = re.fullmatch(r"(January|February|March|April|June|July|August|September|October|November|December) (%@)", stripped)
+    if matched:
+        return months[matched.group(1).lower()] + " " + matched.group(2)
+    matched = re.fullmatch(
+        r"(Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec) %1\$@, %2\$@ at %3\$@",
+        stripped,
+    )
+    if matched:
+        return f"{months[matched.group(1).lower()]}%1$@日 %2$@ %3$@"
+    matched = re.fullmatch(
+        r"(January|February|March|April|June|July|August|September|October|November|December) %1\$@, %2\$@",
+        stripped,
+    )
+    if matched:
+        return f"{months[matched.group(1).lower()]}%1$@日 %2$@"
+    matched = re.fullmatch(r"(%@|%\d+\$d|%d)(s|m|h|d|w|mo|y)", stripped)
+    if matched:
+        return matched.group(1) + units[matched.group(2)]
+    matched = re.fullmatch(r"(\d+)(s|m|h|d|w)", stripped)
+    if matched:
+        return matched.group(1) + units[matched.group(2)]
+    matched = re.fullmatch(r"(%@) (h|m)", stripped)
+    if matched:
+        return matched.group(1) + ("小时" if matched.group(2) == "h" else "米")
+    return None
+
+
 def translate(text: str, lang: str) -> tuple[str, list[str]]:
     if lang == "en":
         return text, []
-    simplified, missing = _translate_simplified(text)
+    exact = _EXACT.get(text)
+    patterned = None if exact is not None else _pattern_natural(text)
+    if exact is not None and _TOKEN.findall(text) == _TOKEN.findall(exact):
+        simplified, missing = exact, leftover_words(exact)
+    elif patterned is not None and _TOKEN.findall(text) == _TOKEN.findall(patterned):
+        simplified, missing = patterned, leftover_words(patterned)
+    else:
+        simplified, missing = _translate_simplified(text)
+        missing = leftover_words(simplified)
     if lang == "zh-hant":
         # Keep placeholders stable across OpenCC.
         slots = []

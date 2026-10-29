@@ -226,6 +226,10 @@ def translate_entry(entry: dict, lang: str) -> tuple[dict, list[str]]:
     return {"key": entry["key"], "value": one(entry["value"])}, unknown
 
 
+# Chinese packs are version 2 so clients that stored version 1 receive the rewrite.
+ZH_PACK_VERSION = 2
+
+
 def pack_document(platform: str, lang: str, entries: list[dict]) -> dict:
     meta = META[lang]
     strings = []
@@ -237,6 +241,8 @@ def pack_document(platform: str, lang: str, entries: list[dict]) -> dict:
                     item[form] = entry["plural"][form]
         else:
             item["value"] = entry["value"]
+        if lang != "en":
+            item["version"] = ZH_PACK_VERSION
         strings.append(item)
     doc = {
         "lang_code": lang,
@@ -247,7 +253,7 @@ def pack_document(platform: str, lang: str, entries: list[dict]) -> dict:
         "rtl": False,
         "beta": False,
         "translations_url": f"https://tellomi.app/translations/{platform}/{lang}",
-        "version": 1,
+        "version": 1 if lang == "en" else ZH_PACK_VERSION,
         "strings": strings,
     }
     if meta["base_lang_code"]:
