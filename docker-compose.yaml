@@ -56,6 +56,15 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-photos}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-documents}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-videos}
+      # APNs token auth (.p8). Leave the key unset to disable push.
+      # TestFlight and the App Store use production (TELLOMI_APNS_SANDBOX=false).
+      # Mount the key with TELLOMI_APNS_KEY_FILE=/path/AuthKey_XXXX.p8
+      # See docs/push.md.
+      TELLOMI_APNS_KEY_ID: ${TELLOMI_APNS_KEY_ID:-}
+      TELLOMI_APNS_TEAM_ID: ${TELLOMI_APNS_TEAM_ID:-}
+      TELLOMI_APNS_TOPIC: ${TELLOMI_APNS_TOPIC:-}
+      TELLOMI_APNS_KEY_PATH: ${TELLOMI_APNS_KEY_PATH:-/etc/tellomi/apns/AuthKey.p8}
+      TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
       # Schema migration on startup (teamgramd/deploy/migrate.sh). Root matches
       # the MySQL service; the app processes still use the DSN in etc2/*.yaml.
       MYSQL_HOST: ${MYSQL_HOST:-mysql}
@@ -65,6 +74,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-teamgram}
     volumes:
       - ./data/logs:/app/logs
+      - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
     logging:
       driver: json-file
       options:
