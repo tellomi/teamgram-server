@@ -40,6 +40,7 @@ import (
 	nsfw_helper "github.com/teamgram/teamgram-server/app/bff/nsfw"
 	passkeyhelper "github.com/teamgram/teamgram-server/app/bff/passkey"
 	passport_helper "github.com/teamgram/teamgram-server/app/bff/passport"
+	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
 	premium_helper "github.com/teamgram/teamgram-server/app/bff/premium"
 	privacysettingshelper "github.com/teamgram/teamgram-server/app/bff/privacysettings"
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
@@ -177,6 +178,20 @@ func (s *Server) Initialize() error {
 				MediaClient:   c.MediaClient,
 				SyncClient:    c.SyncClient,
 			}))
+
+		phoneCfg := c.Phone
+		if phoneCfg.MySQL == "" {
+			phoneCfg.MySQL = c.ChannelMySQL
+		}
+		phoneSvc := phone_helper.New(phoneCfg, phone_helper.Clients{
+			User: c.BizServiceClient,
+			Chat: c.BizServiceClient,
+			Msg:  c.MsgClient,
+			Sync: c.SyncClient,
+		})
+		mtproto.RegisterRPCVoipCallsServer(grpcServer, phoneSvc)
+		mtproto.RegisterRPCGroupCallsServer(grpcServer, phoneSvc)
+		mtproto.RegisterRPCSecretChatsServer(grpcServer, phoneSvc)
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(

@@ -79,3 +79,19 @@ SyncClient:
   Topic:   "Sync-T"
   Brokers:
     - kafka:9092
+
+Phone:
+  PublicIP: 127.0.0.1
+  ReflectorPort: 3479
+  SFUPort: 3480
+  TurnHost: 127.0.0.1
+  TurnPort: 3478
+  StunPort: 3478
+  TurnSecret: tellomi-turn-secret
+  TurnTTL: 86400
+  RingTimeout: 90
+  ConfirmTimeout: 30
+  CallLinkPrefix: "https://t.me/call/"
+  RTMPURL: "rtmp://127.0.0.1:1935/live"
+  RTMPKey: tellomi
+  EnableP2P: true
