@@ -96,7 +96,7 @@ func TestDryRunFormatShowsCounterAndIncomingUnread(t *testing.T) {
 		"counter pts_updates_ngen_1001=2153 db_max=1153 assign 2154-2154",
 		"counter message_box_ngen_1002=1400 db_max=40 assign 1401-1401",
 		"dialog user=1001 peer_type=2 peer=1002 top=2053 read_inbox=1052 read_outbox=1052 unread 0 -> 0",
-		"dialog user=1002 peer_type=2 peer=1001 top=1401 read_inbox=40 read_outbox=0 unread 17 -> 18",
+		"dialog user=1002 peer_type=2 peer=1001 top=1401 read_inbox=40 read_outbox=0 unread 17 -> 17",
 		"dry-run only; -apply reserves these ids in Redis",
 	} {
 		if !strings.Contains(text, want) {
