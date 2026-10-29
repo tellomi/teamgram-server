@@ -26,7 +26,7 @@ Teamgram 实现 [MTProto 2.0](https://core.telegram.org/mtproto)，支持以下�
 | [iOS (teamgram-ios)](../clients/teamgram-ios.md) | 配置连接自建服务器 |
 | [桌面端 (teamgram-tdesktop)](../clients/teamgram-tdesktop.md) | 配置连接自建服务器 |
 
-**重要**：默认登录验证码为 **12345**（仅开发用；生产环境请修改）。
+**重要**：未设置 `TELLOMI_SMS_PROVIDER` 时，默认登录验证码为 **12345**（仅开发用）。设为 `aliyun` 时发送真实短信。见 [docs/sms-email.md](../docs/sms-email.md)。
 
 ## 部署说明
 

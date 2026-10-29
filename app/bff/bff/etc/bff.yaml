@@ -17,6 +17,7 @@ Code:
   Key: ""
   Secret: ""
   RegionId: ""
+  # TELLOMI_SMS_PROVIDER=aliyun overrides Name. See docs/sms-email.md.
 
 BizServiceClient:
   Etcd:
