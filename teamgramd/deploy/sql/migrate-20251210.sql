@@ -1,4 +1,4 @@
-ALTER TABLE `users` ADD `saved_music_id` BIGINT NOT NULL DEFAULT '0' AFTER `authorization_ttl_days`;
+CALL teamgram_add_column('users', 'saved_music_id', 'ALTER TABLE `users` ADD `saved_music_id` BIGINT NOT NULL DEFAULT ''0'' AFTER `authorization_ttl_days`');
 
 CREATE TABLE IF NOT EXISTS `user_saved_music` (
   `id` int NOT NULL AUTO_INCREMENT,

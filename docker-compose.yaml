@@ -1,5 +1,8 @@
 services:
   teamgram:
+    # CI pushes this image (see docs/ci-acr.md). The server pulls it and must
+    # not build. `build` stays so local dev can still run `docker compose up --build`.
+    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
     build: .
     restart: always
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
@@ -62,6 +65,13 @@ services:
       TELLOMI_APNS_TOPIC: ${TELLOMI_APNS_TOPIC:-}
       TELLOMI_APNS_KEY_PATH: ${TELLOMI_APNS_KEY_PATH:-/etc/tellomi/apns/AuthKey.p8}
       TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
+      # Schema migration on startup (teamgramd/deploy/migrate.sh). Root matches
+      # the MySQL service; the app processes still use the DSN in etc2/*.yaml.
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_MIGRATE_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-teamgram}
     volumes:
       - ./data/logs:/app/logs
       - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
