@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/plugin"
 	"github.com/teamgram/teamgram-server/pkg/code"
+	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 )
 
 type ServiceContext struct {
@@ -34,6 +35,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin plugin.AuthorizationPlugin) *ServiceContext {
+	phonenumber.SetTestPhoneRanges(c.TestPhones)
 	d := dao.New(c)
 	if code2 == nil {
 		code2 = code.NewVerifyCode(c.Code)
