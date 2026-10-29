@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zeromicro/go-zero/core/conf"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // HeaderToken is the shared secret the Cloudflare Worker sends.
@@ -15,28 +16,39 @@ const HeaderToken = "X-Tellomi-Linkpreview-Token"
 
 // Config is the link preview listener. Environment variables override a yaml file.
 type Config struct {
-	Listen               string `json:",optional"`
-	MysqlDSN             string `json:",optional"`
-	LinkBaseURL          string `json:",optional"`
-	PublicURL            string `json:",optional"`
-	PublicMediaBaseURL   string `json:",optional"`
-	Token                string `json:",optional"`
-	MediaKey             string `json:",optional"`
-	RatePerMin           int    `json:",optional"`
-	RateBurst            int    `json:",optional"`
-	CacheSeconds         int    `json:",optional"`
-	NotFoundCacheSeconds int    `json:",optional"`
-	MediaTTLSeconds      int    `json:",optional"`
-	TrustProxy           bool   `json:",optional"`
-	MinioEndpoint        string `json:",optional"`
-	MinioAccessKey       string `json:",optional"`
-	MinioSecretKey       string `json:",optional"`
-	MinioSSL             bool   `json:",optional"`
-	MinioBucketPhotos    string `json:",optional"`
-	MinioBucketDocuments string `json:",optional"`
-	MinioBucketVideos    string `json:",optional"`
+	Listen               string    `json:",optional"`
+	MysqlDSN             string    `json:",optional"`
+	LinkBaseURL          string    `json:",optional"`
+	PublicURL            string    `json:",optional"`
+	PublicMediaBaseURL   string    `json:",optional"`
+	Token                string    `json:",optional"`
+	MediaKey             string    `json:",optional"`
+	RatePerMin           int       `json:",optional"`
+	RateBurst            int       `json:",optional"`
+	CacheSeconds         int       `json:",optional"`
+	NotFoundCacheSeconds int       `json:",optional"`
+	MediaTTLSeconds      int       `json:",optional"`
+	TrustProxy           bool      `json:",optional"`
+	MinioEndpoint        string    `json:",optional"`
+	MinioAccessKey       string    `json:",optional"`
+	MinioSecretKey       string    `json:",optional"`
+	MinioSSL             bool      `json:",optional"`
+	MinioBucketPhotos    string    `json:",optional"`
+	MinioBucketDocuments string    `json:",optional"`
+	MinioBucketVideos    string    `json:",optional"`
+	Log                  LogConfig `json:",optional"`
 
 	ephemeralKey []byte
+}
+
+// LogConfig is the go-zero file log used when Mode is "file".
+type LogConfig struct {
+	ServiceName string `json:",optional"`
+	Mode        string `json:",optional"`
+	Path        string `json:",optional"`
+	Level       string `json:",optional"`
+	KeepDays    int    `json:",optional"`
+	Rotation    string `json:",optional"`
 }
 
 // Load reads an optional yaml file and applies TELLOMI_* environment variables.
@@ -169,6 +181,43 @@ func (c *Config) applyEnv() {
 	c.LinkBaseURL = strings.TrimRight(c.LinkBaseURL, "/")
 	c.PublicURL = strings.TrimRight(c.PublicURL, "/")
 	c.PublicMediaBaseURL = strings.TrimRight(c.PublicMediaBaseURL, "/")
+}
+
+// SetupLog writes linkpreview logs to a rotated file when configured.
+// Docker mounts ./data/logs at /app/logs. An empty Mode keeps stderr.
+func (c Config) SetupLog() {
+	if c.Log.Mode != "file" {
+		return
+	}
+	path := c.Log.Path
+	if path == "" {
+		path = "/app/logs/linkpreview"
+	}
+	level := c.Log.Level
+	if level == "" {
+		level = "info"
+	}
+	keep := c.Log.KeepDays
+	if keep <= 0 {
+		keep = 7
+	}
+	rotation := c.Log.Rotation
+	if rotation == "" {
+		rotation = "daily"
+	}
+	name := c.Log.ServiceName
+	if name == "" {
+		name = "interface.linkpreview"
+	}
+	logx.MustSetup(logx.LogConf{
+		ServiceName: name,
+		Mode:        "file",
+		Encoding:    "json",
+		Path:        path,
+		Level:       level,
+		KeepDays:    keep,
+		Rotation:    rotation,
+	})
 }
 
 func (c Config) mediaTTL() time.Duration {

@@ -65,6 +65,9 @@ If you didn't request this code by trying to log in on another device, simply ig
 
 func (c *AuthorizationCore) pushSignInMessage(ctx context.Context, signInUserId int64, code string) {
 	time.AfterFunc(2*time.Second, func() {
+		// The signup RPC context is already finished. A cancelled ctx made
+		// the user lookup fail and the new account look deactivated.
+		ctx = context.Background()
 		message := mtproto.MakeTLMessage(&mtproto.Message{
 			Out:     true,
 			Date:    int32(time.Now().Unix()),

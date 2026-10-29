@@ -6,8 +6,10 @@ Etcd:
   Key: interface.gateway
 Log:
   ServiceName: interface.gateway
-  #Mode: file
-  #Path: ../logs/gnetway
+  Mode: file
+  Path: /app/logs/gnetway
+  KeepDays: 7
+  Rotation: daily
   Level: debug
 #监控
 Prometheus:

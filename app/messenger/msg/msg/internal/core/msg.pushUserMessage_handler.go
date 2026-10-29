@@ -62,8 +62,13 @@ func (c *MsgCore) MsgPushUserMessage(in *msg.TLMsgPushUserMessage) (*mtproto.Boo
 
 		sender, _ := users.GetImmutableUser(in.UserId)
 		if sender == nil || sender.Deleted() {
+			sender, _ = c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
+				Id: in.UserId,
+			})
+		}
+		if sender == nil || sender.Deleted() {
 			err = mtproto.ErrInputUserDeactivated
-			c.Logger.Errorf("msg.sendUserOutgoingMessageV2 - error: %v", err)
+			c.Logger.Errorf("msg.pushUserMessage - sender %d missing or deleted", in.UserId)
 			return nil, err
 		}
 
@@ -75,8 +80,15 @@ func (c *MsgCore) MsgPushUserMessage(in *msg.TLMsgPushUserMessage) (*mtproto.Boo
 
 		peerUser, _ := users.GetImmutableUser(peer.PeerId)
 		if peerUser == nil || peerUser.Deleted() {
+			// The batch cache can miss a user created a moment ago and the
+			// caller used to treat that as INPUT_USER_DEACTIVATED.
+			peerUser, _ = c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
+				Id: peer.PeerId,
+			})
+		}
+		if peerUser == nil || peerUser.Deleted() {
 			err = mtproto.ErrInputUserDeactivated
-			c.Logger.Errorf("msg.sendUserOutgoingMessage - error: %v", err)
+			c.Logger.Errorf("msg.pushUserMessage - peer %d missing or deleted", peer.PeerId)
 			return nil, err
 		}
 

@@ -433,11 +433,16 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 		})
 
 	if err2 != nil {
-		c.Logger.Errorf("auth.sendCode - error: %v", err2)
+		c.Logger.Errorf("auth.sendCode outcome phone=%s err=%s", maskPhone(phoneNumber), rpcErrorCode(err2))
 		err = err2
 		return
 	}
 
 	reply = codeData.ToAuthSentCode()
+	c.Logger.Infof("auth.sendCode outcome phone=%s hash=%s type=%s length=%d",
+		maskPhone(phoneNumber),
+		hashPrefix(codeData.PhoneCodeHash),
+		reply.GetType().GetPredicateName(),
+		reply.GetType().GetLength())
 	return
 }

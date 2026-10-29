@@ -53,6 +53,13 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-photos}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-documents}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-videos}
+    volumes:
+      - ./data/logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     ports:
       - "10443:10443"
       - "11443:11443"
