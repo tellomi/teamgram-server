@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -58,27 +59,31 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 			_ = chat
 		}
 	case mtproto.PEER_CHANNEL:
-		//// 400	CHANNEL_INVALID	The provided channel is invalid
-		//// 400	CHANNEL_PRIVATE	You haven't joined this channel/supergroup
-		//channel, err = c.svcCtx.Dao.ChannelClient.ChannelGetMutableChannel(
-		//	c.ctx,
-		//	&channelpb.TLChannelGetMutableChannel{
-		//		ChannelId: peer.PeerId,
-		//		Id:        []int64{c.MD.UserId},
-		//	})
-		//if err != nil {
-		//	err = mtproto.ErrChannelInvalid
-		//	c.Logger.Errorf("messages.getHistory - error: %v", err)
-		//	return nil, err
-		//}
-		//
-		//me := channel.GetImmutableChannelParticipant(c.MD.UserId)
-		//if me != nil {
-		//	// TODO
-		//	// minId = mathx.MaxInt(int(me.AvailableMinId), int(in.MinId))
-		//}
-		//
-		//isChannel = true
+		hist, err := channel.Shared().HistoryByID(c.ctx, c.MD.UserId, peer.PeerId, channel.HistoryQuery{
+			OffsetID:   in.OffsetId,
+			OffsetDate: in.OffsetDate,
+			AddOffset:  in.AddOffset,
+			Limit:      limit,
+			MaxID:      in.MaxId,
+			MinID:      in.MinId,
+		})
+		if err != nil {
+			c.Logger.Errorf("messages.getHistory - error: %v", err)
+			return nil, err
+		}
+		var userIDs []int64
+		for _, m := range hist.GetMessages() {
+			if m.GetFromId().GetUserId() != 0 {
+				userIDs = append(userIDs, m.GetFromId().GetUserId())
+			}
+		}
+		if len(userIDs) > 0 {
+			mUsers, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{Id: userIDs})
+			if mUsers != nil {
+				hist.Users = mUsers.GetUserListByIdList(c.MD.UserId, userIDs...)
+			}
+		}
+		return hist, nil
 	default:
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getHistory - error: %v", err)

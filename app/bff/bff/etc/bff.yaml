@@ -53,6 +53,9 @@ StatusClient:
     Hosts:
       - 127.0.0.1:2379
     Key: service.status
+# Same database as service.biz_service. The msg service uses its own Mysql.DSN;
+# both must point at this database. Override with TEAMGRAM_MYSQL_DSN.
+ChannelMySQL: root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai
 
 SyncClient:
   Topic:   "Sync-T"

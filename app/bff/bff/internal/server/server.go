@@ -26,6 +26,7 @@ import (
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
+	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
 	configuration_helper "github.com/teamgram/teamgram-server/app/bff/configuration"
@@ -72,8 +73,7 @@ func (s *Server) Initialize() error {
 	conf.MustLoad(*configFile, &c)
 
 	logx.Infov(c)
-	// ctx := svc.NewServiceContext(c)
-	// s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
+	channelBridge := channels_helper.Bridge{}
 
 	s.grpcSrv = zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
 		// tos_helper
@@ -148,6 +148,16 @@ func (s *Server) Initialize() error {
 				SyncClient:    c.SyncClient,
 			}))
 
+		mtproto.RegisterRPCChannelsServer(
+			grpcServer,
+			channels_helper.New(channels_helper.Config{
+				RpcServerConf: c.RpcServerConf,
+				ChannelMySQL:  c.ChannelMySQL,
+				UserClient:    c.BizServiceClient,
+				DialogClient:  c.BizServiceClient,
+				SyncClient:    c.SyncClient,
+			}))
+
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(
 			grpcServer,
@@ -204,7 +214,7 @@ func (s *Server) Initialize() error {
 					ChatClient:    c.BizServiceClient,
 					SyncClient:    c.SyncClient,
 				},
-				nil))
+				channelBridge))
 
 		// dialogs_helper
 		mtproto.RegisterRPCDialogsServer(
@@ -217,7 +227,7 @@ func (s *Server) Initialize() error {
 				DialogClient:  c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 				MessageClient: c.BizServiceClient,
-			}, nil))
+			}, channelBridge))
 
 		// drafts_helper
 		mtproto.RegisterRPCDraftsServer(
@@ -228,7 +238,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 				ChatClient:    c.BizServiceClient,
-			}, nil))
+			}, channelBridge))
 
 		// autodownload_helper
 		mtproto.RegisterRPCAutoDownloadServer(
@@ -260,7 +270,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				ChatClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
-			}, nil))
+			}, channelBridge))
 
 		// users_helper
 		mtproto.RegisterRPCUsersServer(
@@ -313,7 +323,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				ChatClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
-			}, nil))
+			}, channelBridge))
 
 		// privacysettingshelper
 		mtproto.RegisterRPCPrivacySettingsServer(

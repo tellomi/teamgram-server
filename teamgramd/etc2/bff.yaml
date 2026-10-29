@@ -73,6 +73,7 @@ StatusClient:
     Hosts:
       - etcd:2379
     Key: service.status
+ChannelMySQL: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true
 
 SyncClient:
   Topic:   "Sync-T"

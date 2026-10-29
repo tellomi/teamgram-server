@@ -37,6 +37,7 @@ type Config struct {
 	SyncClient                *kafka.KafkaProducerConf
 	DfsClient                 zrpc.RpcClientConf
 	StatusClient              zrpc.RpcClientConf
+	ChannelMySQL              string                     `json:",optional"`
 	SignInServiceNotification []conf.MessageEntityConfig `json:",optional"`
 	SignInMessage             []conf.MessageEntityConfig `json:",optional"`
 }
