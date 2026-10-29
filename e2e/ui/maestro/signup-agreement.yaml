@@ -1,0 +1,76 @@
+appId: app.tellomi.chat
+---
+# Checklist 5. Sign-up shows 我已阅读并同意. Continue does nothing until the
+# box is checked. There is no 服务条款 / "同意 & 继续" popup.
+- runFlow: sub/launch-fresh.yaml
+- extendedWaitUntil:
+    visible: "Start Messaging|开始聊天"
+    timeout: 60000
+- tapOn:
+    text: "Start Messaging|开始聊天"
+- runFlow:
+    file: sub/enter-phone.yaml
+    env:
+      PHONE_NATIONAL: ${PHONE_SIGNUP_NATIONAL}
+- runFlow:
+    file: sub/enter-code.yaml
+    env:
+      CODE: ${CODE_SIGNUP}
+- extendedWaitUntil:
+    visible: "我已阅读并同意"
+    timeout: 90000
+- tapOn:
+    id: "Auth.SetName.FirstNameField"
+    optional: true
+- tapOn:
+    text: "Your name|First name|你的名字|名字"
+    optional: true
+- inputText: ${NAME_SIGNUP}
+- runFlow:
+    when:
+      true: ${PLATFORM == 'android'}
+    commands:
+      - hideKeyboard
+      - tapOn:
+          text: "Done|完成"
+      - assertVisible: "我已阅读并同意"
+      - assertVisible: "☐"
+- runFlow:
+    when:
+      true: ${PLATFORM == 'ios'}
+    commands:
+      # Continue stays disabled until the box is checked.
+      - assertNotVisible:
+          id: "Auth.SetName.ContinueButton"
+          enabled: true
+      - assertVisible: "☐"
+- assertNotVisible: "服务条款"
+- assertNotVisible: "同意 & 继续"
+- takeScreenshot: signup-checkbox-blocks-continue
+- tapOn:
+    text: "我已阅读并同意.*"
+    point: "8%,50%"
+- extendedWaitUntil:
+    visible: "☑"
+    timeout: 5000
+- runFlow:
+    when:
+      true: ${PLATFORM == 'ios'}
+    commands:
+      - tapOn:
+          id: "Auth.SetName.ContinueButton"
+- runFlow:
+    when:
+      true: ${PLATFORM == 'android'}
+    commands:
+      - tapOn:
+          text: "Done|完成"
+- extendedWaitUntil:
+    notVisible: "我已阅读并同意"
+    timeout: 90000
+- extendedWaitUntil:
+    visible: "Search|搜索|New Message|新消息"
+    timeout: 90000
+- assertNotVisible: "服务条款"
+- assertNotVisible: "同意 & 继续"
+- takeScreenshot: signup-no-tos-popup

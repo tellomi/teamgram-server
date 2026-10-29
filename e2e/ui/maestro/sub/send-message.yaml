@@ -1,0 +1,11 @@
+appId: app.tellomi.chat
+---
+- tapOn:
+    text: "Message|消息"
+    optional: true
+- inputText: ${BODY}
+- tapOn:
+    text: "Send|发送"
+- extendedWaitUntil:
+    visible: ${BODY}
+    timeout: 20000

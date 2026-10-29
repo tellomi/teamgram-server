@@ -29,6 +29,9 @@ Thumbs.db
 !proto/schema/*.tl
 .vscode
 
+# UI acceptance screenshots and downloaded clients
+ui-artifacts/
+
 #deploy data
 
 data/*

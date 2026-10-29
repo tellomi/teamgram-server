@@ -1,0 +1,85 @@
+appId: app.tellomi.chat
+---
+# Checklist 1 (second half), 3, 4, and 6. Continues the logged-in session
+# from messages-before-read.yaml. Do not clear state.
+- runFlow:
+    when:
+      notVisible: ${MESSAGE_1}
+    commands:
+      - tapOn: ${NAME_B}
+- tapOn:
+    text: "Open navigation menu|打开导航菜单|Open menu|打开菜单"
+- tapOn: ${NAME_B}
+- tapOn: ${NAME_A}
+- extendedWaitUntil:
+    visible: ${RECEIPT}
+    timeout: 45000
+- takeScreenshot: peer-opened-chat
+- tapOn:
+    text: "Open navigation menu|打开导航菜单|Open menu|打开菜单"
+- tapOn: ${NAME_A}
+- runFlow:
+    when:
+      notVisible: ${RECEIPT}
+    commands:
+      - tapOn: ${NAME_B}
+- takeScreenshot: ticks-after-peer-read
+- extendedWaitUntil:
+    notVisible: "Not seen|未查看|对方未读"
+    timeout: 30000
+- assertVisible:
+    text: "Seen|已读|已查看"
+# Checklist 3. Double-tap applies the default reaction (👍).
+- doubleTapOn: ${MESSAGE_1}
+- extendedWaitUntil:
+    visible: "👍|Thumbs Up"
+    timeout: 20000
+- takeScreenshot: reaction-chip
+# Checklist 4. A restart must reach the chat list and must not sit on 正在更新.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Search|搜索|New Message|新消息"
+    timeout: 45000
+- assertNotVisible: "正在更新"
+- assertNotVisible:
+    text: 'Updating\.\.\.'
+- assertNotVisible: "服务条款"
+- assertNotVisible: "同意 & 继续"
+- takeScreenshot: after-restart
+# Checklist 6. Create a group with B and set an avatar.
+- tapOn:
+    text: "Open navigation menu|打开导航菜单|Open menu|打开菜单"
+- tapOn:
+    text: "New Group|新建群组"
+- tapOn: ${NAME_B}
+- tapOn:
+    text: "Next|下一步"
+- addMedia:
+    - "../fixtures/group-avatar.png"
+- tapOn:
+    text: "Set Photo|Add Photo|设置头像|添加照片|Set Photo or Video"
+    optional: true
+- tapOn:
+    text: "Choose from gallery|从相册中选择|Gallery|图库|相册|Photos|照片"
+    optional: true
+- takeScreenshot: group-photo-picker
+- tapOn:
+    text: "group-avatar\\.png"
+    optional: true
+- tapOn:
+    point: "20%,35%"
+    optional: true
+- tapOn:
+    text: "Done|完成|Add|添加"
+    optional: true
+- takeScreenshot: group-avatar-chosen
+- tapOn:
+    text: "Group name|群组名称|Enter group name|输入群组名称"
+- inputText: ${GROUP_NAME}
+- tapOn:
+    text: "Done|完成|Create|创建"
+- extendedWaitUntil:
+    visible: ${GROUP_NAME}
+    timeout: 30000
+- takeScreenshot: group-with-avatar

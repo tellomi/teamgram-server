@@ -1,0 +1,32 @@
+appId: app.tellomi.chat
+---
+# Country code 999 is Telegram's test country. The national number is the
+# rest of 99966XYYYY (6612345 for 9996612345). No SMS is sent.
+- runFlow:
+    when:
+      true: ${PLATFORM == 'ios'}
+    commands:
+      - tapOn:
+          id: "Auth.PhoneEntry.CountryCodeField"
+      - eraseText: 8
+      - inputText: "999"
+      - tapOn:
+          id: "Auth.PhoneEntry.PhoneNumberField"
+      - inputText: ${PHONE_NATIONAL}
+      - tapOn:
+          id: "Auth.PhoneEntry.ContinueButton"
+- runFlow:
+    when:
+      true: ${PLATFORM == 'android'}
+    commands:
+      - tapOn:
+          text: "Country code|国家代码|国家/地区代码"
+      - eraseText: 8
+      - inputText: "999"
+      - tapOn:
+          text: "Phone number|电话号码"
+      - inputText: ${PHONE_NATIONAL}
+      - hideKeyboard
+      - tapOn:
+          text: "Done|完成"
+- takeScreenshot: phone-entered
