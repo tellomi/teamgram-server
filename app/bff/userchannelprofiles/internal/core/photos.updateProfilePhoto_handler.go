@@ -79,6 +79,6 @@ func (c *UserChannelProfilesCore) PhotosUpdateProfilePhoto(in *mtproto.TLPhotosU
 
 	return mtproto.MakeTLPhotosPhoto(&mtproto.Photos_Photo{
 		Photo: photo,
-		Users: []*mtproto.User{},
+		Users: []*mtproto.User{me.ToSelfUser()},
 	}).To_Photos_Photo(), nil
 }
