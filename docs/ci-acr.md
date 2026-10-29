@@ -5,7 +5,8 @@ GitHub Actions builds the image `docker-compose.yaml` used to build itself
 (`teamgram`, from the root `Dockerfile`) and pushes it to ACR. Deploy is a pull.
 
 The workflow runs on every push to `master` and from the Actions tab
-(`workflow_dispatch`).
+(`workflow_dispatch`). A new push to the same ref cancels the in-progress
+build, so an older run cannot finish later and move `:latest` backwards.
 
 ## Secrets
 

@@ -97,6 +97,15 @@ A full handshake against the compose stack (req_pq through sendMessage) is
 not automated here. The codec test is the check that a layer-232
 `invokeWithLayer` no longer comes back as constructor 0.
 
+## Sticker import
+
+The `teamgram` image includes `/app/bin/importstickers`. It upserts the seeded packs and uploads their bytes using the container's `TELLOMI_S3_*` variables. Details are in [stickers.md](stickers.md).
+
+```bash
+docker compose exec teamgram /app/bin/importstickers \
+  -dsn 'teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true'
+```
+
 ## Object storage and RTMP
 
 Object storage is S3-compatible. Local compose keeps MinIO. Production can
