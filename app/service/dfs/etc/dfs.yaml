@@ -17,6 +17,12 @@ Minio:
    AccessKeyID: minio
    SecretAccessKey: miniostorage
    UseSSL: false
+   Region: us-east-1
+   ForcePathStyle: true
+   Bucket:
+     Attachments: tellomi-attachments
+     PublicMedia: tellomi-public-media
+     Backups: tellomi-backups
 IdGen:
   Etcd:
     Hosts:

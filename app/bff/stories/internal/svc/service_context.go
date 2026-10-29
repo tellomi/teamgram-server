@@ -2,9 +2,9 @@ package svc
 
 import (
 	"context"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"strings"
 
-	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stories/internal/config"
@@ -43,7 +43,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 func installHooks(users user_client.UserClient, c config.Config) {
 	var syncer sync_client.SyncClient
 	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
-		syncer = sync_client.NewSyncMqClient(kafka.MustKafkaProducer(c.SyncClient))
+		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
 	story.Shared().SetHooks(story.Hooks{
 		Push: func(ctx context.Context, userID int64, excludeAuth []int64, updates *mtproto.Updates) {

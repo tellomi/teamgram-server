@@ -173,12 +173,11 @@ chmod +x minio
 - 控制台：`http://<IP>:9001`（或终端提示的端口）
 - 默认账号：RootUser: minioadmin，RootPass: minioadmin（或 miniostorage，视版本而定）
 
-**创建存储桶（在 MinIO 控制台或 mc 命令行）：**
+**创建存储桶（在 MinIO 控制台或 mc 命令行），启动 dfs 之前完成。** 服务不会自动建桶。详见 `docs/storage.md`。
 
-- documents  
-- encryptedfiles  
-- photos  
-- videos  
+- tellomi-attachments
+- tellomi-public-media
+- tellomi-backups（可选）  
 
 若使用防火墙，需放行 MinIO 端口，例如：
 
@@ -305,6 +304,12 @@ Minio:
   AccessKeyID: minioadmin
   SecretAccessKey: miniostorage
   UseSSL: false
+  Region: us-east-1
+  ForcePathStyle: true
+  Bucket:
+    Attachments: tellomi-attachments
+    PublicMedia: tellomi-public-media
+    Backups: tellomi-backups
 SSDB:
   - Host: 127.0.0.1:9221   # 使用 Pika 时
   # - Host: 127.0.0.1:6379 # 使用 Redis 时

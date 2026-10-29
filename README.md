@@ -56,7 +56,7 @@ Requires Go 1.21+. You must install and configure dependencies (MySQL, Redis, et
 
 ## Docker installation
 
-For running the full stack with Docker. **No manual data initialization:** the dependency stack initializes the database (via mounted SQL) and MinIO buckets (via `minio-mc`) on first start.
+For running the full stack with Docker. **No manual data initialization:** the dependency stack initializes the database (via mounted SQL) and MinIO buckets (via `minio-mc`) on first start. Object storage is configured with `TELLOMI_S3_*` (MinIO locally, Cloudflare R2 in production); see [docs/storage.md](docs/storage.md). `TELLOMI_RTMP_URL` overrides the RTMP ingest URL returned by `phone.getGroupCallStreamRtmpUrl`.
 
 Step-by-step for a layer-232 dev login (fixed SMS code `12345`): [Local deployment](docs/local-docker.md).
 

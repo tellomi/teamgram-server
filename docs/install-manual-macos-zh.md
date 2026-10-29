@@ -124,12 +124,11 @@ brew services start minio
 - 控制台：http://localhost:9001  
 - 默认账号：minioadmin / minioadmin（或 miniostorage，视版本而定）
 
-**创建存储桶：** 在 MinIO 控制台创建以下 bucket：
+**创建存储桶：** 在 MinIO 控制台创建以下 bucket，启动 dfs 之前完成。服务不会自动建桶。详见 `docs/storage.md`。
 
-- documents  
-- encryptedfiles  
-- photos  
-- videos  
+- tellomi-attachments
+- tellomi-public-media
+- tellomi-backups（可选）  
 
 ### 2.6 安装 Pika（可选，端口 9221）
 
@@ -224,6 +223,12 @@ Minio:
   AccessKeyID: minioadmin
   SecretAccessKey: minioadmin
   UseSSL: false
+  Region: us-east-1
+  ForcePathStyle: true
+  Bucket:
+    Attachments: tellomi-attachments
+    PublicMedia: tellomi-public-media
+    Backups: tellomi-backups
 SSDB:
   - Host: 127.0.0.1:6379   # 未装 Pika 时用 Redis
 ```

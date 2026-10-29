@@ -173,12 +173,11 @@ chmod +x minio
 - Console: `http://<IP>:9001` (or the port shown in the terminal)
 - Default credentials: RootUser: minioadmin, RootPass: minioadmin (or miniostorage, depending on version)
 
-**Create buckets (via MinIO console or mc CLI):**
+**Create buckets (via MinIO console or mc CLI) before starting dfs.** The server does not create them. See `docs/storage.md`.
 
-- documents  
-- encryptedfiles  
-- photos  
-- videos  
+- tellomi-attachments
+- tellomi-public-media
+- tellomi-backups (optional)  
 
 If using a firewall, open the MinIO ports, for example:
 
@@ -305,6 +304,12 @@ Minio:
   AccessKeyID: minioadmin
   SecretAccessKey: miniostorage
   UseSSL: false
+  Region: us-east-1
+  ForcePathStyle: true
+  Bucket:
+    Attachments: tellomi-attachments
+    PublicMedia: tellomi-public-media
+    Backups: tellomi-backups
 SSDB:
   - Host: 127.0.0.1:9221   # when using Pika
   # - Host: 127.0.0.1:6379 # when using Redis

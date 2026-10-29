@@ -19,7 +19,6 @@
 package dao
 
 import (
-	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs/internal/config"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
@@ -28,6 +27,7 @@ import (
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	updates_client "github.com/teamgram/teamgram-server/app/service/biz/updates/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 )
 
 type Dao struct {
@@ -44,7 +44,7 @@ func New(c config.Config) *Dao {
 		DialogClient:  dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c.DialogClient)),
 		UpdatesClient: updates_client.NewUpdatesClient(rpcx.GetCachedRpcClient(c.UpdatesClient)),
 		UserClient:    user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
-		SyncClient:    sync_client.NewSyncMqClient(kafka.MustKafkaProducer(c.SyncClient)),
+		SyncClient:    sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient)),
 		MessageClient: message_client.NewMessageClient(rpcx.GetCachedRpcClient(c.MessageClient)),
 		ChatClient:    chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
 	}

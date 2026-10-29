@@ -10,13 +10,12 @@
 package svc
 
 import (
-	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/internal/config"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	// channel_client "github.com/teamgram/teamgram-server/app/service/biz/channel/client"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
@@ -30,7 +29,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
-	db := sqlx.NewMySQL(&c.Mysql)
+	db := bootstrap.MustMySQL(&c.Mysql)
 
 	dao := &dao.Dao{
 		Mysql:        dao.NewMysqlDao(db, c.MessageSharding),
@@ -38,11 +37,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		IDGenClient2: idgen_client.NewIDGenClient2(rpcx.GetCachedRpcClient(c.IdgenClient)),
 		UserClient:   user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		ChatClient:   chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
-		SyncClient:   sync_client.NewSyncMqClient(kafka.GetCachedMQClient(c.SyncClient)),
+		SyncClient:   sync_client.NewSyncMqClient(bootstrap.GetCachedMQClient(c.SyncClient)),
 		DialogClient: dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c.DialogClient)),
 	}
 	if c.BotSyncClient != nil {
-		dao.BotSyncClient = sync_client.NewSyncMqClient(kafka.GetCachedMQClient(c.BotSyncClient))
+		dao.BotSyncClient = sync_client.NewSyncMqClient(bootstrap.GetCachedMQClient(c.BotSyncClient))
 	}
 
 	return &ServiceContext{
