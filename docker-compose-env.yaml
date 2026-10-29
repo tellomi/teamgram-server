@@ -130,10 +130,9 @@ services:
       - |
         sleep 10
         mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minio} $${MINIO_ROOT_PASSWORD:-miniostorage}
-        mc mb myminio/documents --ignore-existing
-        mc mb myminio/encryptedfiles --ignore-existing
-        mc mb myminio/photos --ignore-existing
-        mc mb myminio/videos --ignore-existing
+        mc mb myminio/tellomi-attachments --ignore-existing
+        mc mb myminio/tellomi-public-media --ignore-existing
+        mc mb myminio/tellomi-backups --ignore-existing
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniostorage}

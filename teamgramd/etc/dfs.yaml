@@ -34,11 +34,13 @@ Minio:
   AccessKeyID: minio
   SecretAccessKey: miniostorage
   UseSSL: false
+  # Local MinIO signs as us-east-1. Cloudflare R2 must use auto (TELLOMI_S3_REGION).
+  Region: us-east-1
+  ForcePathStyle: true
   Bucket:
-    Documents: documents
-    Photos: photos
-    Videos: videos
-    EncryptedFiles: encryptedfiles
+    Attachments: tellomi-attachments
+    PublicMedia: tellomi-public-media
+    Backups: tellomi-backups
 IdGen:
   Etcd:
     Hosts:

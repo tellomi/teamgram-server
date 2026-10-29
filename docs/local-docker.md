@@ -9,7 +9,7 @@ The SMS provider accepts a fixed code and must not be used in production.
 
 | Piece | Role |
 |---|---|
-| `docker-compose-env.yaml` | MySQL, Redis, etcd, Kafka, MinIO, and the optional monitoring stack. First start loads SQL from `teamgramd/deploy/sql` and creates MinIO buckets. |
+| `docker-compose-env.yaml` | MySQL, Redis, etcd, Kafka, MinIO, and the optional monitoring stack. First start loads SQL from `teamgramd/deploy/sql` and creates the `tellomi-attachments`, `tellomi-public-media`, and `tellomi-backups` buckets. |
 | `docker-compose.yaml` | The Teamgram process image (gateway, session, bff, biz, msg, media, …). |
 | `teamgramd/etc2/bff.yaml` | Config the container actually runs (`runall-docker.sh`). |
 
@@ -81,6 +81,18 @@ go test ./clients/layer232 -count=1
 A full handshake against the compose stack (req_pq through sendMessage) is
 not automated here. The codec test is the check that a layer-232
 `invokeWithLayer` no longer comes back as constructor 0.
+
+## Object storage and RTMP
+
+Object storage is S3-compatible. Local compose keeps MinIO. Production can
+point the same variables at Cloudflare R2. The variable list, key prefixes,
+and the R2 settings (region `auto`, path-style) are in [storage.md](storage.md).
+
+`phone.getGroupCallStreamRtmpUrl` returns `TELLOMI_RTMP_URL` plus a stream
+key. The default is `rtmp://127.0.0.1:1935/live`, which is the MediaMTX
+service in `docker-compose.yaml`. Set `TELLOMI_RTMP_URL` when clients must
+push to a public ingest host. The stream is not bridged into the group-call
+SFU (`app/bff/phone/LIMITATIONS.md`).
 
 ## Stop
 

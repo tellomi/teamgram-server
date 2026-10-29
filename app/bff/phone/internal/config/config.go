@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 )
 
@@ -80,6 +81,12 @@ func (c Config) Normalized() Config {
 	}
 	if c.CallLinkPrefix == "" {
 		c.CallLinkPrefix = "https://t.me/call/"
+	}
+	// TELLOMI_RTMP_URL is the public ingest base returned by
+	// phone.getGroupCallStreamRtmpUrl. An empty value keeps the yaml
+	// setting, which itself defaults to the local MediaMTX address.
+	if url := strings.TrimSpace(os.Getenv("TELLOMI_RTMP_URL")); url != "" {
+		c.RTMPURL = url
 	}
 	if c.RTMPURL == "" {
 		c.RTMPURL = "rtmp://127.0.0.1:1935/live"

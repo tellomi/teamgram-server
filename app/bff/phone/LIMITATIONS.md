@@ -45,9 +45,11 @@ same address, and `static-auth-secret` must match `Phone.TurnSecret`.
 - `phone.getGroupCallStreamChannels` returns a channel descriptor.
   `upload.getFile` / `inputGroupCallStream` segment download is not
   implemented, so in-app live viewers do not receive media.
-- `phone.getGroupCallStreamRtmpUrl` returns a URL aimed at the MediaMTX
-  container. MediaMTX accepts the RTMP push. That ingest is not restreamed into
-  the SFU, so the group call does not show the RTMP stream.
+- `phone.getGroupCallStreamRtmpUrl` returns `Phone.RTMPURL` plus a stream key.
+  The yaml default is `rtmp://127.0.0.1:1935/live` (the MediaMTX container).
+  Set `TELLOMI_RTMP_URL` to the public ingest base clients should push to.
+  MediaMTX accepts the RTMP push. That ingest is not restreamed into the SFU,
+  so the group call does not show the RTMP stream.
 - `phone.saveCallLog` acknowledges the upload and does not store the file.
 - Call state is in memory in the bff process. The `phone_peer_call` table only
   publishes which chat has a live group call, so `chat.call` / `channelFull.call`
