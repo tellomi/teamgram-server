@@ -83,6 +83,7 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 				hist.Users = mUsers.GetUserListByIdList(c.MD.UserId, userIDs...)
 			}
 		}
+		mtproto.SanitizeOutgoingObject(hist)
 		return hist, nil
 	default:
 		err = mtproto.ErrPeerIdInvalid
@@ -199,5 +200,6 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 	//	}).To_Messages_Messages()
 	//}
 
+	mtproto.SanitizeOutgoingObject(rValues)
 	return rValues, nil
 }

@@ -157,23 +157,27 @@ func (c *BFFProxyClient) InvokeContext(ctx context.Context, rpcMetaData *metadat
 
 	var (
 		header, trailer metadata.MD
-		ctxWithTimeout  context.Context
 	)
 
-	// Fixed @LionPuChiPuChi, 2018-12-19
-	// hack
-	switch object.(type) {
-	case *mtproto.TLMessagesSendMedia:
-		ctxWithTimeout, _ = context.WithTimeout(context.Background(), 60*time.Second)
-	case *mtproto.TLMessagesSendMultiMedia:
-		ctxWithTimeout, _ = context.WithTimeout(context.Background(), 60*time.Second)
-	case *mtproto.TLMessagesUploadMedia:
-		ctxWithTimeout, _ = context.WithTimeout(context.Background(), 60*time.Second)
-	case *mtproto.TLMessagesEditMessage:
-		ctxWithTimeout, _ = context.WithTimeout(context.Background(), 60*time.Second)
-	default:
-		ctxWithTimeout, _ = context.WithTimeout(context.Background(), 5*time.Second)
+	// The session layer sets the deadline (10s, 12s for files, 60s for
+	// uploads). Honor that deadline as-is, including when it has already
+	// fired. A caller with no deadline gets the same caps so a handler
+	// cannot hang the RPC.
+	ctxWithTimeout := ctx
+	cancel := func() {}
+	if _, ok := ctx.Deadline(); !ok {
+		timeout := 10 * time.Second
+		switch object.(type) {
+		case *mtproto.TLMessagesSendMedia, *mtproto.TLMessagesSendMultiMedia, *mtproto.TLMessagesUploadMedia, *mtproto.TLMessagesEditMessage:
+			timeout = 60 * time.Second
+		case *mtproto.TLUploadGetFile, *mtproto.TLUploadGetFileHashes, *mtproto.TLUploadSaveFilePart, *mtproto.TLUploadSaveBigFilePart:
+			timeout = 12 * time.Second
+		}
+		var cancelFn context.CancelFunc
+		ctxWithTimeout, cancelFn = context.WithTimeout(ctx, timeout)
+		cancel = cancelFn
 	}
+	defer cancel()
 
 	ctx2, _ := metadata.RpcMetadataToOutgoing(ctxWithTimeout, rpcMetaData)
 	rt := time.Now()
@@ -198,6 +202,12 @@ func (c *BFFProxyClient) InvokeContext(ctx context.Context, rpcMetaData *metadat
 
 	if err != nil {
 		logger.Errorf("RPC Invoke error: {method: %s, metadata: %s, error: %s}", t.Method, rpcMetaData, err)
+		if mtproto.IsUnregisteredServiceError(err) {
+			return mtproto.FallbackForUnregisteredService(object), nil
+		}
+		if mtproto.IsDeadlineExceeded(err) {
+			return nil, mtproto.NewInternalError()
+		}
 		return nil, mtproto.NewRpcError(err)
 
 		//case *mysql.MySQLError:
