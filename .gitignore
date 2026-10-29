@@ -32,6 +32,7 @@ Thumbs.db
 #deploy data
 
 data/*
+data-staging/
 !data/.gitkeep
 !data/langpack/
 !data/langpack/**

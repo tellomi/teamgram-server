@@ -1,0 +1,69 @@
+# Client regression. Runs on every pull request. Branch protection must
+# require the check "Client regression / e2e" so a red run blocks merge.
+# See docs/e2e.md.
+
+name: Client regression
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - name: Start the compose stack
+        run: |
+          # e2e/docker-compose.ci.yaml only swaps the object-storage image
+          # and skips monitoring. See that file.
+          docker compose \
+            -f docker-compose-env.yaml \
+            -f docker-compose.yaml \
+            -f e2e/docker-compose.ci.yaml \
+            up -d --build
+          echo "waiting for MTProto on 10443"
+          for i in $(seq 1 120); do
+            if (echo >/dev/tcp/127.0.0.1/10443) >/dev/null 2>&1; then
+              echo "gnetway is accepting connections"
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml ps
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml logs --tail=200 teamgram || true
+          echo "teamgram did not open 10443"
+          exit 1
+
+      - name: Client regression
+        env:
+          TELLOMI_E2E: "1"
+          TELLOMI_E2E_ADDR: 127.0.0.1:10443
+          TELLOMI_E2E_RESTART: "1"
+          TELLOMI_E2E_ROOT: ${{ github.workspace }}
+          TELLOMI_E2E_COMPOSE_FILES: docker-compose-env.yaml,docker-compose.yaml,e2e/docker-compose.ci.yaml
+        run: |
+          cd e2e
+          go test -count=1 -timeout 40m -v .
+
+      - name: Stack logs
+        if: failure()
+        run: |
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml ps
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml logs --tail=300 teamgram || true
