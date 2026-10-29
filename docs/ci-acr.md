@@ -21,10 +21,10 @@ SHA and `latest`.
 | `ACR_USERNAME` | Registry username | required |
 | `ACR_PASSWORD` | Registry password | required |
 
-GitHub-hosted runners are not on the VPC, so they push to the public regional
-endpoint `crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com`. The Chengdu server pulls the same
-repository through the VPC endpoint `crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com`.
-Tags match. Only the host differs.
+The workflow pushes to the public endpoint
+`crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com`. The application
+server is not in the VPC, so Compose pulls that same host. The `-vpc` endpoint
+is not reachable there.
 
 `coturn` and `mediamtx` stay on their upstream images. This workflow does not
 build them.
@@ -35,10 +35,10 @@ attestations are off so ACR accepts the manifest.
 ## Deploy
 
 On the server, from a checkout that contains `docker-compose.yaml`. Log in once
-if the namespace is private. Use the VPC host, not the public one:
+if the namespace is private:
 
 ```bash
-docker login crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com
+docker login crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com
 docker compose pull && docker compose up -d
 ```
 
@@ -47,7 +47,7 @@ start. Pull this checkout as well so `docker-compose.yaml` passes
 `MYSQL_ROOT_PASSWORD` into that step. The app DSN in `etc2` is unchanged.
 
 `TELLOMI_IMAGE_REGISTRY` defaults to
-`crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com/tellomi` and `TELLOMI_IMAGE_TAG` defaults
+`crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi` and `TELLOMI_IMAGE_TAG` defaults
 to `latest`, so a stock `.env` (see `.env.example`) needs no image settings.
 Do not pass `--build`. If `docker compose pull` fails, fix the login or the
 registry. Do not build on this machine.
