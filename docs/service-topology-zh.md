@@ -19,6 +19,7 @@
 | 9    | bff        | `../etc/bff.yaml` |
 | 10   | session    | `../etc/session.yaml` |
 | 11   | gnetway    | `../etc/gnetway.yaml` |
+| 12   | linkpreview | `../etc/linkpreview.yaml` |
 | (可选) | httpserver | `../etc/httpserver.yaml` |
 
 ---
@@ -38,7 +39,8 @@
 | **bff**     | 127.0.0.1:20010         | —                        | bff.bff            |
 | **session** | 127.0.0.1:20120        | —                        | interface.session  |
 | **gnetway** | 127.0.0.1:20110 (内部)  | **10443** (TCP)、**5222** (TCP)、**11443** (WebSocket) | interface.gateway |
-| **httpserver** | —                     | **8801** (HTTP)          | —                  |
+| **linkpreview** | —                  | **8801** (HTTP)          | —                  |
+| **httpserver** | —                  | 可选；与 linkpreview 同时运行时不要占用 8801 | — |
 
 ---
 
@@ -57,6 +59,7 @@
 | **bff**     | ✓    | —     | ✓ (KV)            | ✓ (Sync-T 生产) | — |
 | **session** | ✓    | —     | ✓ (Cache)        | —            | —     |
 | **gnetway** | ✓    | —     | —                 | —            | —     |
+| **linkpreview** | — | ✓    | —                 | —            | 可选 |
 | **httpserver** | ✓  | —     | —                 | —            | —     |
 
 配置中默认端点：**etcd** 127.0.0.1:2379、**MySQL** 127.0.0.1:3306、**Redis** 127.0.0.1:6379、**Kafka** 127.0.0.1:9092、**MinIO** localhost:9000。
@@ -75,7 +78,7 @@
 - **dfs** → 调用 **idgen**；使用 MinIO 存储对象。
 - **authsession**、**idgen**、**status** 不调用其他 gRPC 服务（仅依赖 etcd、DB、Redis）。
 
-可选的 **httpserver** 仅与 **session** 通信。
+可选的 **httpserver** 仅与 **session** 通信。**linkpreview** 只读 MySQL 中的公开数据，不注册到 etcd。详见 `docs/link-preview.md`。
 
 ---
 
@@ -178,6 +181,7 @@ flowchart TB
 | `teamgramd/etc/bff.yaml`         | bff        |
 | `teamgramd/etc/session.yaml`     | session    |
 | `teamgramd/etc/gnetway.yaml`     | gnetway    |
-| `teamgramd/etc/httpserver.yaml`  | httpserver（可选） |
+| `teamgramd/etc/linkpreview.yaml` | linkpreview |
+| `teamgramd/etc/httpserver.yaml`  | httpserver（可选；与 linkpreview 同时运行时不要占用 8801） |
 
 各服务在 **etcd** 中按上表 Key 注册，调用方通过 etcd 发现。根据部署环境修改 `ListenOn`、`Etcd.Hosts` 及各类基础设施 DSN。

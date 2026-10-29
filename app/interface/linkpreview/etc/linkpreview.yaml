@@ -1,0 +1,14 @@
+Listen: 0.0.0.0:8801
+MysqlDSN: root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true
+LinkBaseURL: https://tell.cc
+PublicURL: ""
+PublicMediaBaseURL: ""
+Token: ""
+MediaKey: ""
+RatePerMin: 120
+RateBurst: 40
+CacheSeconds: 120
+TrustProxy: false
+MinioBucketPhotos: photos
+MinioBucketDocuments: documents
+MinioBucketVideos: videos
