@@ -53,7 +53,7 @@ func (s *Server) Initialize() error {
 	s.mq = mq.New(ctx, c.SyncConsumer)
 
 	// go s.grpcSrv.Start()
-	go s.mq.Start()
+	go bootstrap.KeepConsuming("sync", s.mq)
 
 	return nil
 }

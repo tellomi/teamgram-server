@@ -44,7 +44,7 @@ docker compose -f docker-compose-env.yaml up -d
 docker compose up -d --build
 ```
 
-Wait until MySQL is healthy and `teamgram` stays up (`docker compose ps`).
+Kafka runs in KRaft mode (no ZooKeeper) with `restart: unless-stopped` and a broker healthcheck. `teamgram` waits until that check passes, and also restarts unless it was stopped. If the broker drops later, msg, sync, and bff keep retrying Kafka with backoff capped at 30 seconds instead of exiting. Wait until MySQL and Kafka are healthy and `teamgram` stays up (`docker compose ps`).
 Logs from the processes are inside the app container (`/app/logs`).
 
 `--build` is for this machine. The Chengdu server must not compile the image.
