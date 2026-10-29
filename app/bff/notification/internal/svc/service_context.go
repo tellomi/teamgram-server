@@ -19,21 +19,42 @@
 package svc
 
 import (
+	"os"
+	"strings"
+
 	"github.com/teamgram/teamgram-server/app/bff/notification/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/notification/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/notification/plugin"
+	"github.com/teamgram/teamgram-server/pkg/push"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
 	Config config.Config
 	*dao.Dao
-	Plugin plugin.NotificationPlugin
+	Plugin  plugin.NotificationPlugin
+	Devices push.Store
 }
 
 func NewServiceContext(c config.Config, plugin plugin.NotificationPlugin) *ServiceContext {
-	return &ServiceContext{
+	sc := &ServiceContext{
 		Config: c,
 		Dao:    dao.New(c),
 		Plugin: plugin,
 	}
+	dsn := strings.TrimSpace(c.MysqlDSN)
+	if env := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN")); env != "" {
+		dsn = env
+	}
+	if dsn == "" {
+		logx.Errorf("push: no MySQL DSN; account.registerDevice will fail")
+		return sc
+	}
+	store, err := push.Open(dsn)
+	if err != nil {
+		logx.Errorf("push: open device store: %v", err)
+		return sc
+	}
+	sc.Devices = store
+	return sc
 }

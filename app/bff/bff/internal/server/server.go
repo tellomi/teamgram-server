@@ -320,6 +320,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				ChatClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
+				MysqlDSN:      c.ChannelMySQL,
 			}, channelBridge))
 
 		// users_helper

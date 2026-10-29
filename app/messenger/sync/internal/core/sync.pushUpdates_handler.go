@@ -10,8 +10,12 @@
 package core
 
 import (
+	"context"
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/pkg/push"
 )
 
 // SyncPushUpdates
@@ -29,6 +33,13 @@ func (c *SyncCore) SyncPushUpdates(in *sync.TLSyncPushUpdates) (*mtproto.Void, e
 	}
 
 	c.pushUpdatesToSession(syncTypeUser, userId, 0, nil, nil, nil, updates, notification)
+	if c.svcCtx.Push != nil && len(push.Messages(userId, updates)) > 0 {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(c.ctx), 20*time.Second)
+			defer cancel()
+			c.svcCtx.Push.Deliver(ctx, userId, updates)
+		}()
+	}
 
 	return mtproto.EmptyVoid, nil
 }
