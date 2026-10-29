@@ -115,7 +115,7 @@ func (c *MsgCore) msgReadHistoryV2(ctx context.Context, in *msg.TLMsgReadHistory
 			MaxId:          maxId,
 		})
 
-	c.markPeerOutboxRead(ctx, in, maxId, maxInboxMsg)
+	c.propagateOutboxReads(ctx, in, dlg.ReadInboxMaxId, maxId, maxInboxMsg)
 
 	return mtproto.MakeTLMessagesAffectedMessages(&mtproto.Messages_AffectedMessages{
 		Pts:      pts,
@@ -163,6 +163,6 @@ func (c *MsgCore) msgReadHistoryV3(ctx context.Context, in *msg.TLMsgReadHistory
 					ClientReqMsgId: mtproto.MakeFlagsInt64(c.MD.ClientMsgId),
 				})
 
-			c.markPeerOutboxRead(ctx, in, maxId, maxInboxMsg)
+			c.propagateOutboxReads(ctx, in, dlg.ReadInboxMaxId, maxId, maxInboxMsg)
 		}).(*mtproto.Messages_AffectedMessages), mtproto.ErrPushRpcClient
 }

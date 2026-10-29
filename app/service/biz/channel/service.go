@@ -52,7 +52,7 @@ func defaultChannelBanned() int64 {
 // Hooks fan out channel updates and dialog rows. Both are optional.
 type Hooks struct {
 	Push   func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates)
-	Dialog func(ctx context.Context, userID, channelID int64, top, readInbox, unread int32, date int64)
+	Dialog func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64)
 }
 
 // Service is the channel and supergroup implementation.
@@ -306,7 +306,13 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 			return nil, err
 		}
 		added = append(added, id)
-		st := &ReadState{ChannelID: ch.ID, UserID: id, ReadInboxMaxID: ch.TopMessage, ReadOutboxMaxID: ch.TopMessage}
+		// Joining sees history up to now. Keep any outbox cursor already
+		// earned; do not pretend the current top was read by someone else.
+		st, _ := s.store.GetRead(ctx, ch.ID, id)
+		if st == nil {
+			st = &ReadState{ChannelID: ch.ID, UserID: id}
+		}
+		st.ReadInboxMaxID = ch.TopMessage
 		_ = s.store.SaveRead(ctx, st)
 	}
 	if len(added) > 0 {

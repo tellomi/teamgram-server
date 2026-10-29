@@ -252,8 +252,11 @@ func (s *Service) noteNewMessage(ctx context.Context, channelID, sender int64, m
 			st = &ReadState{ChannelID: channelID, UserID: p.UserID}
 		}
 		if p.UserID == sender {
-			st.ReadInboxMaxID = messageID
-			st.ReadOutboxMaxID = messageID
+			// The author has seen their own message. That is the inbox cursor.
+			// read_outbox_max_id moves only when a different member reads.
+			if messageID > st.ReadInboxMaxID {
+				st.ReadInboxMaxID = messageID
+			}
 			st.UnreadCount = 0
 		} else if messageID > st.ReadInboxMaxID {
 			st.UnreadCount++
@@ -495,7 +498,91 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 		}
 	}
 	st.UnreadCount = unread
-	return s.store.SaveRead(ctx, st)
+	if err = s.store.SaveRead(ctx, st); err != nil {
+		return err
+	}
+	// The reader's own outbox stays put. Every other member's outbox moves
+	// to this id, which is "any other member has read up to here".
+	advanced, err := s.advanceOthersOutbox(ctx, ch.ID, user, maxID)
+	if err != nil {
+		return err
+	}
+	s.pushOutboxRead(ctx, ch.ID, maxID, advanced)
+	s.syncDialogRead(ctx, ch.ID, user)
+	for _, id := range advanced {
+		s.syncDialogRead(ctx, ch.ID, id)
+	}
+	return nil
+}
+
+// syncDialogRead copies one member's channel read cursors onto their dialog
+// row. messages.getPeerDialogs reads that row.
+func (s *Service) syncDialogRead(ctx context.Context, channelID, userID int64) {
+	h := s.hooks()
+	if h.Dialog == nil || userID == 0 {
+		return
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return
+	}
+	st, err := s.store.GetRead(ctx, channelID, userID)
+	if err != nil || st == nil {
+		return
+	}
+	date := int64(ch.Date)
+	if msg, _ := s.store.GetMessage(ctx, channelID, ch.TopMessage); msg != nil {
+		date = int64(msg.Date)
+	}
+	h.Dialog(ctx, userID, channelID, ch.TopMessage, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount, date)
+}
+
+// advanceOthersOutbox moves every other member's outbox up to maxID.
+// The member who just read is skipped: their own read is not a receipt.
+func (s *Service) advanceOthersOutbox(ctx context.Context, channelID, reader int64, maxID int32) ([]int64, error) {
+	if reader == 0 || maxID <= 0 {
+		return nil, nil
+	}
+	parts, err := s.store.ListParticipants(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	var advanced []int64
+	for _, p := range parts {
+		if p.State != StateNormal || p.UserID == 0 || p.UserID == reader {
+			continue
+		}
+		st, err := s.store.GetRead(ctx, channelID, p.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if st == nil {
+			st = &ReadState{ChannelID: channelID, UserID: p.UserID}
+		}
+		if maxID <= st.ReadOutboxMaxID {
+			continue
+		}
+		st.ReadOutboxMaxID = maxID
+		if err := s.store.SaveRead(ctx, st); err != nil {
+			return nil, err
+		}
+		advanced = append(advanced, p.UserID)
+	}
+	return advanced, nil
+}
+
+func (s *Service) pushOutboxRead(ctx context.Context, channelID int64, maxID int32, users []int64) {
+	h := s.hooks()
+	if h.Push == nil || len(users) == 0 {
+		return
+	}
+	for _, id := range users {
+		upd := mtproto.MakeTLUpdateReadChannelOutbox(&mtproto.Update{
+			ChannelId: channelID,
+			MaxId:     maxID,
+		}).To_Update()
+		h.Push(ctx, id, nil, s.pack(ctx, id, channelID, upd))
+	}
 }
 
 func (s *Service) History(ctx context.Context, user int64, in *mtproto.InputChannel, q HistoryQuery) (*mtproto.Messages_Messages, error) {
@@ -1001,7 +1088,7 @@ func (s *Service) emit(ctx context.Context, actor, actorAuth, channelID int64, b
 			if st == nil {
 				st = &ReadState{}
 			}
-			h.Dialog(ctx, p.UserID, channelID, ch.TopMessage, st.ReadInboxMaxID, st.UnreadCount, date)
+			h.Dialog(ctx, p.UserID, channelID, ch.TopMessage, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount, date)
 		}
 	}
 }

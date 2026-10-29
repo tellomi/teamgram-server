@@ -24,62 +24,53 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/readoutbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 )
 
-// chooseOutboxReadMessage picks the message whose sender should see a read
-// receipt. The message at max_id is often the reader's own; marking that
-// sender's outbox read draws double ticks before anyone else has read it.
-// newestOther is the newest message at or below max_id from somebody else.
-func chooseOutboxReadMessage(readerUserId int64, atMax, newestOther *dataobject.MessagesDO) *dataobject.MessagesDO {
-	if atMax == nil || atMax.SenderUserId == 0 {
-		return nil
-	}
-	if atMax.SenderUserId != readerUserId {
-		return atMax
-	}
-	if newestOther == nil || newestOther.SenderUserId == 0 || newestOther.SenderUserId == readerUserId {
-		return nil
-	}
-	return newestOther
-}
-
-func (c *MsgCore) markPeerOutboxRead(ctx context.Context, in *msg.TLMsgReadHistoryV2, maxId int32, atMax *dataobject.MessagesDO) {
-	var newestOther *dataobject.MessagesDO
-	if atMax != nil && atMax.SenderUserId == in.UserId {
-		other, err := c.svcCtx.Dao.MessagesDAO.SelectNewestIncoming(
-			ctx,
-			in.UserId,
-			atMax.DialogId1,
-			atMax.DialogId2,
-			in.UserId,
-			maxId)
-		if err != nil {
-			c.Logger.Errorf("msg.readHistoryV2 - incoming message: %v", err)
-			return
-		}
-		newestOther = other
-	}
-
-	target := chooseOutboxReadMessage(in.UserId, atMax, newestOther)
-	if target == nil {
+// propagateOutboxReads tells the authors of messages inside this read that
+// someone else has seen them. The reader is never one of those authors, so
+// messages.readHistory from the sender's own client (the chat is open on iOS)
+// does not move their read_outbox_max_id.
+func (c *MsgCore) propagateOutboxReads(ctx context.Context, in *msg.TLMsgReadHistoryV2, prevInbox, maxID int32, maxMsg *dataobject.MessagesDO) {
+	if in.PeerType != mtproto.PEER_USER && in.PeerType != mtproto.PEER_CHAT {
 		return
 	}
-
-	switch in.PeerType {
-	case mtproto.PEER_USER:
+	targets := readoutbox.Targets(in.UserId, c.messagesJustRead(ctx, in, prevInbox, maxID, maxMsg))
+	for _, target := range targets {
+		peerID := in.PeerId
+		if in.PeerType == mtproto.PEER_USER {
+			// For a private chat the outbox peer is the person who read.
+			peerID = in.UserId
+		}
 		_, _ = c.svcCtx.Dao.InboxClient.InboxReadOutboxHistory(ctx, &inbox.TLInboxReadOutboxHistory{
-			UserId:             target.SenderUserId,
+			UserId:             target.SenderID,
 			PeerType:           in.PeerType,
-			PeerId:             in.UserId,
-			MaxDialogMessageId: target.DialogMessageId,
-		})
-	case mtproto.PEER_CHAT:
-		_, _ = c.svcCtx.Dao.InboxClient.InboxReadOutboxHistory(ctx, &inbox.TLInboxReadOutboxHistory{
-			UserId:             target.SenderUserId,
-			PeerType:           in.PeerType,
-			PeerId:             in.PeerId,
-			MaxDialogMessageId: target.DialogMessageId,
+			PeerId:             peerID,
+			MaxDialogMessageId: target.DialogMessageID,
 		})
 	}
+}
+
+func (c *MsgCore) messagesJustRead(ctx context.Context, in *msg.TLMsgReadHistoryV2, prevInbox, maxID int32, maxMsg *dataobject.MessagesDO) []readoutbox.Message {
+	out := make([]readoutbox.Message, 0, 8)
+	add := func(sender, dialogID int64, boxID int32) {
+		if boxID <= prevInbox || boxID > maxID {
+			return
+		}
+		out = append(out, readoutbox.Message{SenderID: sender, DialogMessageID: dialogID})
+	}
+	if maxMsg != nil {
+		add(maxMsg.SenderUserId, maxMsg.DialogMessageId, maxMsg.UserMessageBoxId)
+	}
+	did := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
+	older, err := c.svcCtx.Dao.MessagesDAO.SelectBackwardByOffsetIdLimit(ctx, in.UserId, did.A, did.B, maxID, 200)
+	if err != nil {
+		c.Logger.Errorf("readHistory outbox window - error: %v", err)
+		return out
+	}
+	for i := range older {
+		add(older[i].SenderUserId, older[i].DialogMessageId, older[i].UserMessageBoxId)
+	}
+	return out
 }

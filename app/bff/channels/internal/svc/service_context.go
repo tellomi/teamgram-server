@@ -68,18 +68,19 @@ func installChannelHooks(c config.Config) {
 				Updates: updates,
 			})
 		},
-		Dialog: func(ctx context.Context, userID, channelID int64, top, readInbox, unread int32, date int64) {
+		Dialog: func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64) {
 			if dialogs == nil {
 				return
 			}
 			_, _ = dialogs.DialogInsertOrUpdateDialog(ctx, &dialog.TLDialogInsertOrUpdateDialog{
-				UserId:         userID,
-				PeerType:       mtproto.PEER_CHANNEL,
-				PeerId:         channelID,
-				TopMessage:     &wrapperspb.Int32Value{Value: top},
-				ReadInboxMaxId: &wrapperspb.Int32Value{Value: readInbox},
-				UnreadCount:    &wrapperspb.Int32Value{Value: unread},
-				Date2:          &wrapperspb.Int64Value{Value: date},
+				UserId:          userID,
+				PeerType:        mtproto.PEER_CHANNEL,
+				PeerId:          channelID,
+				TopMessage:      &wrapperspb.Int32Value{Value: top},
+				ReadInboxMaxId:  &wrapperspb.Int32Value{Value: readInbox},
+				ReadOutboxMaxId: &wrapperspb.Int32Value{Value: readOutbox},
+				UnreadCount:     &wrapperspb.Int32Value{Value: unread},
+				Date2:           &wrapperspb.Int64Value{Value: date},
 			})
 		},
 	})
