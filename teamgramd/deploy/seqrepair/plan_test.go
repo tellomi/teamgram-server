@@ -176,16 +176,18 @@ func TestIncidentRebuildsSwallowedMessagesAndPts(t *testing.T) {
 		t.Fatalf("mke read cursors = %d/%d, want 18/18", mkeDlg.ReadInbox, mkeDlg.ReadOutbox)
 	}
 	// Three of the six private messages are incoming. Erel's own three, and the
-	// group message he sent, must not add unread. Stored 2 stays plus the 3.
-	if erelDlg.UnreadCount != 5 {
-		t.Fatalf("erel private unread = %d, want 5 (stored 2 plus 3 incoming)", erelDlg.UnreadCount)
+	// group message he sent, must not add unread. Inbox delivery already
+	// counted the swallowed incoming rows, so the stored badge covers that
+	// many of them. Erel's 2 covers 2 of the 3, mke's 1 covers 1 of the 3.
+	if erelDlg.UnreadCount != 3 {
+		t.Fatalf("erel private unread = %d, want 3 (stored 2 already covers 2 of 3 incoming)", erelDlg.UnreadCount)
 	}
 	erelGroup := dialogOf(after, erel, peerChat, chat)
 	if erelGroup.UnreadCount != 4 {
 		t.Fatalf("erel group unread = %d, want 4 (own message does not add unread)", erelGroup.UnreadCount)
 	}
-	if mkeDlg.UnreadCount != 4 {
-		t.Fatalf("mke private unread = %d, want 4 (stored 1 plus 3 incoming)", mkeDlg.UnreadCount)
+	if mkeDlg.UnreadCount != 3 {
+		t.Fatalf("mke private unread = %d, want 3 (stored 1 already covers 1 of 3 incoming)", mkeDlg.UnreadCount)
 	}
 
 	if dups := DuplicatePts(after.Pts); len(dups) != 0 {
@@ -374,16 +376,226 @@ func TestUnreadIgnoresOutgoingAndDoesNotRecount(t *testing.T) {
 		t.Fatalf("erel group unread = %d, want 4", erelGroup.UnreadCount)
 	}
 	mkeGroup := findPlanDialog(plan, mke, peerChat, chat)
-	if mkeGroup.UnreadCount != 18 {
-		t.Fatalf("mke group unread = %d, want 18 (17 plus the one incoming), not a recount of 9", mkeGroup.UnreadCount)
+	if mkeGroup.UnreadCount != 17 {
+		t.Fatalf("mke group unread = %d, want 17 (badge already covers the swallowed send; not a recount of 9 and not 18)", mkeGroup.UnreadCount)
 	}
 	memberGroup := findPlanDialog(plan, member, peerChat, chat)
-	if memberGroup.UnreadCount != 26 {
-		t.Fatalf("member group unread = %d, want 26 (25 plus one incoming), not 9", memberGroup.UnreadCount)
+	if memberGroup.UnreadCount != 25 {
+		t.Fatalf("member group unread = %d, want 25 (badge already covers the swallowed send; not 9 and not 26)", memberGroup.UnreadCount)
 	}
 	if findPlanDialog(plan, member, peerUser, erel).UserID != 0 {
 		t.Fatal("private dialog with no swallowed message must not be rewritten")
 	}
+}
+
+// Mke's inbox copies of erel's private messages omit from_id (the server
+// clears it and points peer_id at the sender). Those six sends were
+// swallowed by the duplicate box id, but inbox delivery had already done
+// unread_count += 1, so the badge of 6 is those sends. Rebuilding them as
+// boxes 1042-1047 must not make the badge 12. Six further messages, with
+// six other incoming rows already explaining the badge, are additional and
+// do raise it to 12. A copy that is already stored above the read cursor
+// is the same send and is not inserted again.
+func TestMkePrivateSenderAndUnreadOnce(t *testing.T) {
+	const (
+		erel = int64(136907717)
+		mke  = int64(136907718)
+	)
+	old := int64(1000)
+	base := int64(1700000000)
+
+	t.Run("swallowed copies already in the badge", func(t *testing.T) {
+		var snap Snapshot
+		for box := int32(1); box <= 6; box++ {
+			snap.Messages = append(snap.Messages, Message{
+				UserID: mke, BoxID: box, SenderID: mke, PeerType: peerUser, PeerID: erel,
+				Message: "old", Date2: old,
+			})
+		}
+		snap.Messages = append(snap.Messages, Message{
+			UserID: mke, BoxID: 1041, SenderID: mke, PeerType: peerUser, PeerID: 9,
+			Message: "other", Date2: old,
+		})
+		snap.Dialogs = []Dialog{
+			{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 40, ReadInbox: 40, ReadOutbox: 40, UnreadCount: 6, Date2: old},
+			{UserID: erel, PeerType: peerUser, PeerID: mke, TopMessage: 50, ReadInbox: 50, ReadOutbox: 50, UnreadCount: 0, Date2: old},
+		}
+		snap.Pts = append(snap.Pts, PtsRow{
+			ID: 1, UserID: mke, Pts: 500, PtsCount: 1, Date2: old,
+			UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":500}`,
+		}, PtsRow{
+			ID: 2, UserID: erel, Pts: 800, PtsCount: 1, Date2: old,
+			UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":800}`,
+		})
+		for i := 0; i < 6; i++ {
+			at := base + int64(i)
+			text := "from-erel-" + string(rune('1'+i))
+			snap.Pts = append(snap.Pts, PtsRow{
+				ID: int64(10 + i), UserID: mke, Pts: int32(i + 1), PtsCount: 1,
+				UpdateType: ptsNewMessage, Date2: at,
+				UpdateData: newMessageJSONNoFrom(erel, peerUser, int32(i+1), at, text, false),
+			})
+		}
+		// Outgoing with no from_id stays the owner. A from_id is kept as written.
+		snap.Pts = append(snap.Pts, PtsRow{
+			ID: 20, UserID: erel, Pts: 1, PtsCount: 1, UpdateType: ptsNewMessage, Date2: base + 20,
+			UpdateData: newMessageJSONNoFrom(mke, peerUser, 1, base+20, "out-no-from", true),
+		}, PtsRow{
+			ID: 21, UserID: erel, Pts: 2, PtsCount: 1, UpdateType: ptsNewMessage, Date2: base + 21,
+			UpdateData: newMessageJSON(mke, mke, peerUser, 2, base+21, "from-kept", false),
+		})
+		// Erel needs an old row at the collided ids and a max below the new pts.
+		snap.Messages = append(snap.Messages,
+			Message{UserID: erel, BoxID: 1, SenderID: erel, PeerType: peerUser, PeerID: mke, Message: "old", Date2: old},
+			Message{UserID: erel, BoxID: 2, SenderID: erel, PeerType: peerUser, PeerID: mke, Message: "old", Date2: old},
+			Message{UserID: erel, BoxID: 50, SenderID: erel, PeerType: peerUser, PeerID: mke, Message: "top", Date2: old},
+		)
+
+		plan := BuildPlan(snap, Counters{Box: map[int64]int64{mke: 1041, erel: 50}})
+		mkePriv := boxes(plan.Inserts, mke, peerUser, erel)
+		if len(mkePriv) != 6 || mkePriv[0] != 1042 || mkePriv[5] != 1047 {
+			t.Fatalf("mke boxes = %v, want 1042-1047", mkePriv)
+		}
+		for _, m := range plan.Inserts {
+			if m.UserID != mke || m.PeerID != erel {
+				continue
+			}
+			if m.SenderID != erel {
+				t.Fatalf("box %d sender = %d, want %d (peer, not the row owner)", m.BoxID, m.SenderID, erel)
+			}
+		}
+		var sawOut, sawFrom bool
+		for _, m := range plan.Inserts {
+			if m.UserID != erel {
+				continue
+			}
+			if m.Message == "out-no-from" {
+				sawOut = true
+				if m.SenderID != erel {
+					t.Fatalf("outgoing without from_id sender = %d, want owner %d", m.SenderID, erel)
+				}
+			}
+			if m.Message == "from-kept" {
+				sawFrom = true
+				if m.SenderID != mke {
+					t.Fatalf("from_id sender = %d, want %d", m.SenderID, mke)
+				}
+			}
+		}
+		if !sawOut || !sawFrom {
+			t.Fatalf("missing out=%v from_id=%v inserts", sawOut, sawFrom)
+		}
+		dlg := findPlanDialog(plan, mke, peerUser, erel)
+		if dlg.UnreadCount != 6 {
+			t.Fatalf("mke unread = %d, want 6 (the swallowed sends are already the badge, not 12)", dlg.UnreadCount)
+		}
+		erelDlg := findPlanDialog(plan, erel, peerUser, mke)
+		if erelDlg.UnreadCount != 1 {
+			t.Fatalf("erel unread = %d, want 1 (only the incoming from_id row; his own out adds nothing)", erelDlg.UnreadCount)
+		}
+	})
+
+	t.Run("re-id copies already stored", func(t *testing.T) {
+		var snap Snapshot
+		for i := 0; i < 6; i++ {
+			at := base + int64(i)
+			text := "from-erel-" + string(rune('1'+i))
+			snap.Messages = append(snap.Messages,
+				Message{UserID: mke, BoxID: int32(i + 1), SenderID: mke, PeerType: peerUser, PeerID: erel, Message: "old", Date2: old},
+				Message{UserID: mke, BoxID: int32(1042 + i), SenderID: erel, PeerType: peerUser, PeerID: erel, Message: text, Date2: at},
+			)
+			snap.Pts = append(snap.Pts, PtsRow{
+				ID: int64(10 + i), UserID: mke, Pts: int32(i + 1), PtsCount: 1,
+				UpdateType: ptsNewMessage, Date2: at,
+				UpdateData: newMessageJSONNoFrom(erel, peerUser, int32(i+1), at, text, false),
+			})
+		}
+		snap.Messages = append(snap.Messages, Message{
+			UserID: mke, BoxID: 1048, SenderID: mke, PeerType: peerUser, PeerID: 9, Message: "other", Date2: old,
+		})
+		snap.Pts = append(snap.Pts, PtsRow{
+			ID: 1, UserID: mke, Pts: 500, PtsCount: 1, Date2: old,
+			UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":500}`,
+		})
+		snap.Dialogs = []Dialog{
+			{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 1047, ReadInbox: 40, UnreadCount: 6, Date2: old},
+		}
+		plan := BuildPlan(snap, Counters{})
+		if n := len(boxes(plan.Inserts, mke, peerUser, erel)); n != 0 {
+			t.Fatalf("re-id copies inserted again: %d", n)
+		}
+		if dlg := findPlanDialog(plan, mke, peerUser, erel); dlg.UserID != 0 {
+			t.Fatal("dialog must not be rewritten when nothing was swallowed")
+		}
+	})
+
+	t.Run("additional incoming rows", func(t *testing.T) {
+		var snap Snapshot
+		for i := 0; i < 6; i++ {
+			snap.Messages = append(snap.Messages, Message{
+				UserID: mke, BoxID: int32(100 + i), SenderID: erel, PeerType: peerUser, PeerID: erel,
+				Message: "already-" + string(rune('a'+i)), Date2: base - 100,
+			})
+		}
+		for box := int32(1); box <= 6; box++ {
+			snap.Messages = append(snap.Messages, Message{
+				UserID: mke, BoxID: box, SenderID: mke, PeerType: peerUser, PeerID: erel,
+				Message: "old", Date2: old,
+			})
+		}
+		snap.Messages = append(snap.Messages, Message{
+			UserID: mke, BoxID: 1041, SenderID: mke, PeerType: peerUser, PeerID: 9, Message: "other", Date2: old,
+		})
+		snap.Dialogs = []Dialog{
+			{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 105, ReadInbox: 40, UnreadCount: 6, Date2: old},
+		}
+		snap.Pts = append(snap.Pts, PtsRow{
+			ID: 1, UserID: mke, Pts: 500, PtsCount: 1, Date2: old,
+			UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":500}`,
+		})
+		for i := 0; i < 6; i++ {
+			at := base + int64(i)
+			text := "extra-" + string(rune('1'+i))
+			snap.Pts = append(snap.Pts, PtsRow{
+				ID: int64(10 + i), UserID: mke, Pts: int32(i + 1), PtsCount: 1,
+				UpdateType: ptsNewMessage, Date2: at,
+				UpdateData: newMessageJSONNoFrom(erel, peerUser, int32(i+1), at, text, false),
+			})
+		}
+		plan := BuildPlan(snap, Counters{Box: map[int64]int64{mke: 1041}})
+		if n := len(boxes(plan.Inserts, mke, peerUser, erel)); n != 6 {
+			t.Fatalf("additional swallowed rows = %d, want 6", n)
+		}
+		dlg := findPlanDialog(plan, mke, peerUser, erel)
+		if dlg.UnreadCount != 12 {
+			t.Fatalf("mke unread = %d, want 12 (6 stored rows plus 6 different swallowed sends)", dlg.UnreadCount)
+		}
+	})
+}
+
+func newMessageJSONNoFrom(peer int64, peerType, box int32, date int64, text string, out bool) string {
+	peerObj := map[string]any{"predicate_name": "peerUser", "user_id": peer}
+	if peerType == peerChat {
+		peerObj = map[string]any{"predicate_name": "peerChat", "chat_id": peer}
+	}
+	doc := map[string]any{
+		"predicate_name": updateNewMessage,
+		"pts_INT32":      box,
+		"pts_count":      1,
+		"message_MESSAGE": map[string]any{
+			"predicate_name": "message",
+			"id":             box,
+			"date":           date,
+			"message":        text,
+			"out":            out,
+			"peer_id":        peerObj,
+		},
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
 func findPlanDialog(p Plan, user int64, peerType int32, peer int64) Dialog {
