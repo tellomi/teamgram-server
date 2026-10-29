@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -93,6 +94,15 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		if err != nil {
 			return nil, fmt.Errorf("object storage transport: %w", err)
 		}
+		// Default dial is 30s and the header wait is a minute. upload.getFile's
+		// RPC deadline is shorter, so a dead endpoint becomes
+		// "context deadline exceeded" before the sticker fallback runs.
+		base.DialContext = (&net.Dialer{
+			Timeout:   3 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext
+		base.TLSHandshakeTimeout = 3 * time.Second
+		base.ResponseHeaderTimeout = 5 * time.Second
 		transport = base
 	}
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
@@ -177,6 +187,12 @@ func (m *MinioUtil) put(ctx context.Context, class, path string, r io.Reader, si
 
 func (m *MinioUtil) putBytes(ctx context.Context, class, path string, buf []byte) (minio.UploadInfo, error) {
 	return m.put(ctx, class, path, bytes.NewReader(buf), int64(len(buf)), contentTypeFor(path))
+}
+
+// PutClassBytes writes buf at the same bucket and key Get*File would read.
+// contentType may be empty; the client then uses the path extension.
+func (m *MinioUtil) PutClassBytes(ctx context.Context, class, path, contentType string, buf []byte) (minio.UploadInfo, error) {
+	return m.put(ctx, class, path, bytes.NewReader(buf), int64(len(buf)), contentType)
 }
 
 func (m *MinioUtil) getRange(ctx context.Context, class, path string, offset int64, limit int32) ([]byte, error) {

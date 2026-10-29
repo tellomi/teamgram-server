@@ -78,7 +78,8 @@ DfsClient:
     Hosts:
       - etcd:2379
     Key: service.dfs
-  Timeout: 0
+  # One sticker read. Longer than this and the client has already given up.
+  Timeout: 3000
 StatusClient:
   Etcd:
     Hosts:

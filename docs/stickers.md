@@ -20,6 +20,8 @@ The packs are openly licensed. Telegram's own sticker sets are not downloaded or
 | `messages.getCustomEmojiDocuments` / `messages.searchCustomEmoji` | Noto documents, marked free so they are not premium-gated. |
 | `messages.getEmojiStickers` | The installed Noto custom-emoji pack. |
 | `messages.getAvailableReactions` | Reaction buttons whose static icon is Twemoji and whose animation is the Noto TGS, when one exists. |
+| `messages.getTopReactions` | Those reactions sorted by how often they have been sent. Unused counts keep the catalog order. A matching hash returns `messages.reactionsNotModified`. |
+| `messages.getRecentReactions` | Emoji this user has sent, newest first, with the same hash. `messages.clearRecentReactions` empties the list. |
 
 A matching hash returns the `notModified` variant. `messages.getMaskStickers` returns an empty list; there is no mask pack.
 
@@ -41,16 +43,18 @@ There is no `.webm` video-sticker pack in this seed. `stickerSet.videos` is fals
 
 ## Storage
 
-Document bytes are written to the existing dfs/S3 layout:
+Document bytes are written through the dfs S3 client (`MinioConfig.ApplyEnv`, then the same `resolveLocation` path as `PutStickerBytes` / `GetStickerFile`). `importstickers` and the bff background upload do not open a second client. `upload.getFile` reads those objects back with `GetStickerFile` / `GetEmojiFile`. TLS, region, path style, bucket, and key all come from the `TELLOMI_S3_*` variables in `docs/storage.md`. The link-preview `TELLOMI_MINIO_*` settings are not used.
 
-| Class | Key |
-|---|---|
-| Twemoji and Fluent | `stickers/<document id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` |
-| Noto TGS | `emoji/<document id>.dat` in the same bucket |
+| Class | Bucket | Key |
+|---|---|---|
+| Twemoji and Fluent | `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` | `stickers/<document id>.dat` |
+| Noto TGS | the same bucket | `emoji/<document id>.dat` |
 
-`upload.getFile` reads `documents/<id>.dat` first, then `stickers/<id>.dat` and `emoji/<id>.dat`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
+`upload.getFile` serves a seeded document from the binary when the id matches, then dfs reads `stickers/<id>.dat` and `emoji/<id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
 
-The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT` and `TELLOMI_S3_ACCESS_KEY_ID` are set. Buckets must already exist. See `docs/storage.md`.
+Reaction icons are separate documents: `static_icon` and `center_icon` are WebP, and the animation fields are 512×512 `.tgs` with `DocumentAttributeSticker` and `DocumentAttributeImageSize`. They are not custom emoji and not paid reactions. A reaction without a 512×512 `.tgs` is left out of `messages.getAvailableReactions`. `MessageReactions` is an emoji plus a count.
+
+The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT`, the access keys, `TELLOMI_S3_BUCKET_ATTACHMENTS`, and `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` are set. Buckets must already exist. Leave `TELLOMI_S3_USE_SSL` unset for an `https://` R2 endpoint so dfs turns TLS on. An explicit `false` forces plain HTTP, and the read never reaches objects written over TLS. Set `TELLOMI_S3_REGION=auto` for R2.
 
 ## Database
 

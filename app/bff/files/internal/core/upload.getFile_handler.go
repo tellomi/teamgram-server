@@ -120,6 +120,10 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 		return nil, mtproto.ErrLocationInvalid
 	}
 
+	if file, ok := seededDocumentFile(location, offset, limit); ok {
+		return file, nil
+	}
+
 	uploadFile, err := c.svcCtx.Dao.DfsClient.DfsDownloadFile(c.ctx, &dfs.TLDfsDownloadFile{
 		Location: location,
 		Offset:   offset,
