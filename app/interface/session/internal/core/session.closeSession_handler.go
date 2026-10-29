@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/interface/session/internal/sess"
 	"github.com/teamgram/teamgram-server/app/interface/session/session"
 )
 
@@ -43,7 +44,8 @@ func (c *SessionCore) SessionCloseSession(in *session.TLSessionCloseSession) (*m
 		return mtproto.BoolTrue, nil
 	}
 
-	if err := mainAuth.SessionClientClosed(c.ctx, int(cli.KeyType), cli.AuthKeyId, cli.ServerId, cli.SessionId); err != nil {
+	_, closedAt := sess.SplitCloseStamp(cli.ClientIp)
+	if err := mainAuth.SessionClientClosed(c.ctx, int(cli.KeyType), cli.AuthKeyId, cli.ServerId, cli.SessionId, closedAt); err != nil {
 		// 将 ErrDataChannelFull 等错误传递给调用方，便于 gnetway 做重试或降级处理。
 		c.Logger.Errorf("session.closeSession - SessionClientClosed error: %v, client: %s", err, cli)
 		return nil, err

@@ -21,6 +21,9 @@ package sess
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -83,6 +86,7 @@ func (m *messageData) String() string {
 type serverIdCtx struct {
 	gatewayId       string
 	lastReceiveTime int64
+	boundAt         int64 // unix nano, compared with a gateway close stamp
 }
 
 func (c serverIdCtx) Equal(id string) bool {
@@ -120,6 +124,7 @@ type session struct {
 	pendingQueue    *sessionRpcResultWaitingQueue
 	pushQueue       *sessionPushQueue
 	sessList        *SessionList
+	gateMu          sync.Mutex
 	canSync         bool
 	isHttp          bool
 	httpQueue       *httpRequestQueue
@@ -151,38 +156,88 @@ func newSession(sessionId int64, sessList *SessionList) *session {
 }
 
 func (c *session) String() string {
+	c.gateMu.Lock()
+	gate := c.gatewayId
+	c.gateMu.Unlock()
 	return fmt.Sprintf("{user_id: %d, auth_key_id: %d, session_id: %d, state: %d, conn_state: %d, conn_id_list: %#v}",
 		c.sessList.cb.AuthUserId,
 		c.sessList.authId,
 		c.sessionId,
 		c.sessionState,
 		c.connState,
-		c.gatewayId)
+		gate)
 }
 
 func (c *session) setGatewayId(gateId string) {
-	if c.gatewayId == nil {
-		c.gatewayId = &serverIdCtx{gatewayId: gateId, lastReceiveTime: time.Now().Unix()}
-	} else {
-		c.gatewayId.gatewayId = gateId
-		c.gatewayId.lastReceiveTime = time.Now().Unix()
+	if gateId == "" {
+		return
 	}
+	now := time.Now()
+	c.gateMu.Lock()
+	defer c.gateMu.Unlock()
+	if c.gatewayId == nil {
+		c.gatewayId = &serverIdCtx{gatewayId: gateId, lastReceiveTime: now.Unix(), boundAt: now.UnixNano()}
+		return
+	}
+	c.gatewayId.gatewayId = gateId
+	c.gatewayId.lastReceiveTime = now.Unix()
+	c.gatewayId.boundAt = now.UnixNano()
 }
 
 func (c *session) getGatewayId() string {
+	c.gateMu.Lock()
+	defer c.gateMu.Unlock()
 	if c.gatewayId == nil {
 		return ""
-	} else {
-		return c.gatewayId.gatewayId
 	}
+	return c.gatewayId.gatewayId
 }
 
 func (c *session) checkGatewayIdExist(gateId string) bool {
+	c.gateMu.Lock()
+	defer c.gateMu.Unlock()
 	if c.gatewayId == nil {
 		return false
 	}
-
 	return c.gatewayId.Equal(gateId)
+}
+
+// releaseGateway drops the binding when this close still refers to it.
+// A close stamped before the current bind (the old gateway finishing its
+// shutdown after the client has already reconnected) is ignored. An unstamped
+// close is also ignored when the bind is only a couple of seconds old, which
+// is the same race during a rolling deploy.
+func (c *session) releaseGateway(id string, closedAt int64) bool {
+	if id == "" {
+		return false
+	}
+	c.gateMu.Lock()
+	defer c.gateMu.Unlock()
+	if c.gatewayId == nil || c.gatewayId.gatewayId != id {
+		return false
+	}
+	if closedAt > 0 && c.gatewayId.boundAt > closedAt {
+		return false
+	}
+	if closedAt == 0 && time.Now().UnixNano()-c.gatewayId.boundAt < int64(2*time.Second) {
+		return false
+	}
+	c.gatewayId = nil
+	return true
+}
+
+// SplitCloseStamp separates a gateway close address from the unix-nano stamp
+// appended by gnetway. Older gateways send the address alone.
+func SplitCloseStamp(clientIP string) (string, int64) {
+	ip, stamp, ok := strings.Cut(clientIP, "|")
+	if !ok || ip == "" {
+		return clientIP, 0
+	}
+	n, err := strconv.ParseInt(stamp, 10, 64)
+	if err != nil || n <= 0 {
+		return clientIP, 0
+	}
+	return ip, n
 }
 
 func (c *session) changeConnState(ctx context.Context, state int) {
@@ -201,6 +256,11 @@ func (c *session) onSessionConnNew(ctx context.Context, id string) {
 	c.setGatewayId(id)
 	if c.connState != kStateOnline {
 		c.changeConnState(ctx, kStateOnline)
+	}
+	// Deliver anything queued while the previous socket's close had cleared
+	// the gateway, which is what left clients reconnecting.
+	if id != "" {
+		c.sendQueueToGateway(ctx, id)
 	}
 }
 
@@ -381,9 +441,8 @@ func (c *session) processMsg(ctx context.Context, gatewayId, clientIp string, in
 	}
 }
 
-func (c *session) onSessionConnClose(ctx context.Context, id string) {
-	if c.checkGatewayIdExist(id) {
-		c.gatewayId = nil
+func (c *session) onSessionConnClose(ctx context.Context, id string, closedAt int64) {
+	if c.releaseGateway(id, closedAt) {
 		c.changeConnState(ctx, kStateOffline)
 	}
 }

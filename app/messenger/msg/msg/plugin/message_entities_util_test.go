@@ -54,18 +54,25 @@ func TestRemakeMessageDouyinShare(t *testing.T) {
 		}
 	})
 
-	t.Run("client formatting that covers the url blocks the auto url", func(t *testing.T) {
+	t.Run("client entities are not parsed again", func(t *testing.T) {
 		bold := mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{
 			Offset: 0,
-			Length: int32(mtproto.UTF16Len(douyinShare)),
+			Length: 4,
 		}).To_MessageEntity()
-		out := remake(douyinShare, []*mtproto.MessageEntity{bold}, nil)
+		bad := mtproto.MakeTLMessageEntityHashtag(&mtproto.MessageEntity{
+			Offset: utf16Index(douyinShare, "# "),
+			Length: 0,
+		}).To_MessageEntity()
+		out := remake(douyinShare, []*mtproto.MessageEntity{bold, bad, bad}, nil)
 		assertSafeEntities(t, douyinShare, out.GetEntities())
 		if n := countPred(out.GetEntities(), mtproto.Predicate_messageEntityUrl); n != 0 {
-			t.Fatalf("auto url overlapped a client entity")
+			t.Fatalf("server parsed a url even though the client sent entities")
+		}
+		if n := countPred(out.GetEntities(), mtproto.Predicate_messageEntityHashtag); n != 0 {
+			t.Fatalf("zero-length hashtag kept")
 		}
 		if n := countPred(out.GetEntities(), mtproto.Predicate_messageEntityBold); n != 1 {
-			t.Fatalf("bold missing")
+			t.Fatalf("bold = %d", n)
 		}
 	})
 }
@@ -154,14 +161,15 @@ func TestMentionLengthAndSort(t *testing.T) {
 	}
 
 	text := "4.30 https://t.me/telegram"
-	bold := mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{Offset: 0, Length: 4}).To_MessageEntity()
-	out = remake(text, []*mtproto.MessageEntity{bold}, nil)
-	assertSafeEntities(t, text, out.GetEntities())
-	if len(out.GetEntities()) < 2 {
-		t.Fatalf("entities = %v", describe(text, out.GetEntities()))
+	plain := remake(text, nil, nil)
+	assertSafeEntities(t, text, plain.GetEntities())
+	if findPred(plain.GetEntities(), mtproto.Predicate_messageEntityUrl) == nil {
+		t.Fatalf("plain text lost its url: %v", describe(text, plain.GetEntities()))
 	}
-	if out.GetEntities()[0].Offset > out.GetEntities()[1].Offset {
-		t.Fatalf("not sorted: %v", describe(text, out.GetEntities()))
+	bold := mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{Offset: 0, Length: 4}).To_MessageEntity()
+	withClient := remake(text, []*mtproto.MessageEntity{bold}, nil)
+	if findPred(withClient.GetEntities(), mtproto.Predicate_messageEntityUrl) != nil {
+		t.Fatalf("client entities were parsed again: %v", describe(text, withClient.GetEntities()))
 	}
 }
 

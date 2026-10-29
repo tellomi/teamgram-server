@@ -188,7 +188,9 @@ func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 				KeyType:       int32(ctx.authKey.AuthKeyType()),
 				PermAuthKeyId: ctx.authKey.PermAuthKeyId(),
 				SessionId:     ctx.sessionId,
-				ClientIp:      ctx.clientIp,
+				// Stamp the close so a delayed close from a restarted gateway
+				// cannot wipe a connection that already rebound.
+				ClientIp: fmt.Sprintf("%s|%d", ctx.clientIp, time.Now().UnixNano()),
 			}).To_SessionClientEvent(),
 		})
 		if err != nil {

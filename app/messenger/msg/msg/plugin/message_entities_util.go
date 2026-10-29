@@ -36,24 +36,28 @@ func RemakeMessage(ctx context.Context, plugin MsgPlugin, message *mtproto.Messa
 		}
 	}
 
-	// Client entities win. Invalid ones (length <= 0, out of range) are
-	// dropped before the overlap check so they cannot hide a real URL.
-	client := mtproto.SanitizeMessageEntities(message.Message, normalizeClientEntities(message.Entities, fromId))
+	// The client already parsed entities (official clients always do). Keep
+	// those, drop length <= 0 and duplicates, and do not scan the text again.
+	// Scanning again is what turned "# " into a zero-length hashtag and
+	// stored the client's URL a second time.
+	if len(message.Entities) > 0 {
+		message.Entities = mtproto.SanitizeMessageEntities(message.Message, normalizeClientEntities(message.Entities, fromId))
+		return message
+	}
 
 	var auto []*mtproto.MessageEntity
 	idxList := mention.EncodeStringToUTF16Index(message.Message)
-	auto = appendAuto(auto, client, urlEntities(message.Message, idxList, rIndexes)...)
-	auto = appendAuto(auto, client, mentionEntities(ctx, plugin, message.Message, idxList)...)
+	auto = appendAuto(auto, nil, urlEntities(message.Message, idxList, rIndexes)...)
+	auto = appendAuto(auto, nil, mentionEntities(ctx, plugin, message.Message, idxList)...)
 
 	indexed := indexText(message.Message)
-	auto = appendAuto(auto, client, findHashtags(indexed)...)
-	auto = appendAuto(auto, client, findCashtags(indexed)...)
+	auto = appendAuto(auto, nil, findHashtags(indexed)...)
+	auto = appendAuto(auto, nil, findCashtags(indexed)...)
 	if hasBot != nil && hasBot() {
-		auto = appendAuto(auto, client, findBotCommands(indexed)...)
+		auto = appendAuto(auto, nil, findBotCommands(indexed)...)
 	}
 
-	entities := make(mtproto.MessageEntitySlice, 0, len(client)+len(auto))
-	entities = append(entities, client...)
+	entities := make(mtproto.MessageEntitySlice, 0, len(auto))
 	entities = append(entities, auto...)
 	sort.Sort(entities)
 	message.Entities = entities
