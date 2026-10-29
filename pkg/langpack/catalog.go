@@ -20,6 +20,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	langpackdata "github.com/teamgram/teamgram-server/data/langpack"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -439,6 +440,19 @@ type fileString struct {
 	Version int32   `json:"version,omitempty"`
 }
 
+func rewritePlural(p *Plural) *Plural {
+	if p == nil {
+		return nil
+	}
+	p.Zero = brand.Rewrite(p.Zero)
+	p.One = brand.Rewrite(p.One)
+	p.Two = brand.Rewrite(p.Two)
+	p.Few = brand.Rewrite(p.Few)
+	p.Many = brand.Rewrite(p.Many)
+	p.Other = brand.Rewrite(p.Other)
+	return p
+}
+
 func (fs fileString) plural() *Plural {
 	if fs.Zero == nil && fs.One == nil && fs.Two == nil && fs.Few == nil && fs.Many == nil && fs.Other == nil {
 		return nil
@@ -520,14 +534,14 @@ func decodeLanguage(body []byte) (*Language, error) {
 		RTL:             raw.RTL,
 		Beta:            raw.Beta,
 		BaseLangCode:    raw.BaseLangCode,
-		TranslationsURL: raw.TranslationsURL,
+		TranslationsURL: brand.Rewrite(raw.TranslationsURL),
 		Version:         raw.Version,
 	}
 	if canon, ok := CanonicalLang(lang.Code); ok {
 		lang.Code = canon
 	}
 	for _, s := range raw.Strings {
-		e := Entry{Key: s.Key, Value: s.Value, Version: s.Version, Plural: s.plural()}
+		e := Entry{Key: s.Key, Value: brand.Rewrite(s.Value), Version: s.Version, Plural: rewritePlural(s.plural())}
 		if e.Plural != nil {
 			e.Value = ""
 		}

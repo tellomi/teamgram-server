@@ -22,7 +22,10 @@ func TestCanonicalAndSuggest(t *testing.T) {
 		{"HK", "zh-hant", true},
 		{"en", "en", true},
 		{"en-US", "en", true},
-		{"fr", "fr", false},
+		{"fr", "fr", true},
+		{"pt_BR", "pt-br", true},
+		{"iw", "he", true},
+		{"no", "nb", true},
 		{"", "", false},
 	}
 	for _, tc := range cases {
@@ -43,7 +46,8 @@ func TestCanonicalAndSuggest(t *testing.T) {
 		{"zh_CN", "en-US", "zh-hans"},
 		{"en", "en-US", "en"},
 		{"", "", "en"},
-		{"fr", "de", "en"},
+		{"fr", "de", "fr"},
+		{"xx", "de", "de"},
 	}
 	for _, tc := range suggests {
 		if got := SuggestLangCode(tc.lang, tc.system); got != tc.want {

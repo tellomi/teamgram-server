@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 // CallConfigJSON is returned by phone.getCallConfig. tgcalls ignores unknown
@@ -80,7 +82,7 @@ func (c Config) Normalized() Config {
 		c.ConfirmTimeout = 30
 	}
 	if c.CallLinkPrefix == "" {
-		c.CallLinkPrefix = "https://t.me/call/"
+		c.CallLinkPrefix = brand.CallPrefix
 	}
 	// TELLOMI_RTMP_URL is the public ingest base returned by
 	// phone.getGroupCallStreamRtmpUrl. An empty value keeps the yaml

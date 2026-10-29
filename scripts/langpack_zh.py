@@ -3135,7 +3135,7 @@ _URL = re.compile(r"https?://[^\s<>()]+|t\.me/[^\s<>()]+|www\.[^\s<>()]+", re.I)
 
 
 def brand(text: str) -> str:
-    """Replace the app name. Leave telegram.org, t.me, and @telegram alone."""
+    """Replace the app name and Telegram link hosts."""
     slots: list[str] = []
 
     def hold(match: re.Match[str]) -> str:
@@ -3154,8 +3154,16 @@ def brand(text: str) -> str:
 
     shielded = re.sub(r"(?<![@./\w])[Tt]elegram(?!\.org\b)(?!\w)|(?<![@./\w])TELEGRAM(?!\w)", repl, shielded)
     for i, url in enumerate(slots):
-        shielded = shielded.replace(f"\u0000{i}\u0000", url)
-    return shielded
+        shielded = shielded.replace(f"\u0000{i}\u0000", rewrite_link(url))
+    return rewrite_link(shielded)
+
+
+def rewrite_link(text: str) -> str:
+    text = re.sub(r"(?i)https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
+    text = re.sub(r"(?i)https?://(?:www\.)?((?:[a-z0-9-]+\.)*)telegram\.org", r"https://\1tellomi.cn", text)
+    text = re.sub(r"(?i)(?:t\.me|telegram\.me|telegram\.dog)", "tell.cc", text)
+    text = re.sub(r"(?i)telegram\.org", "tellomi.cn", text)
+    return text
 
 
 def _lookup_word(word: str) -> str | None:

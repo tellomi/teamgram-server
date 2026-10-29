@@ -1,7 +1,11 @@
 package appconfig
 
 import (
+	"fmt"
+	"hash/fnv"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
@@ -13,8 +17,15 @@ func AppConfig() *mtproto.JSONValue {
 }
 
 // AppConfigHash is the hash clients send back on help.getAppConfig.
+// It changes when the premium policy or the public link hosts change.
 func AppConfigHash() int32 {
-	return premium.AppConfigHash()
+	h := fnv.New32a()
+	fmt.Fprintf(h, "policy=%d brand=%s", premium.AppConfigHash(), brand.LinkPrefix)
+	sum := int32(h.Sum32() & 0x7fffffff)
+	if sum == 0 {
+		return 1
+	}
+	return sum
 }
 
 func appConfigPairs() []*mtproto.JSONObjectValue {
@@ -29,7 +40,17 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		}
 	}
 	chatsDef, chatsPrem := premium.DialogFilterChatLimit()
+	domains := jsonArray(jsonString(brand.ShortHost), jsonString(brand.SiteHost))
 	pairs := []*mtproto.JSONObjectValue{
+		jsonPair("autologin_domains", domains),
+		jsonPair("url_auth_domains", domains),
+		jsonPair("whitelisted_domains", domains),
+		jsonPair("premium_link", jsonString(brand.PremiumURL)),
+		jsonPair("support_link", jsonString(brand.SupportURL)),
+		jsonPair("faq_link", jsonString(brand.FAQURL)),
+		jsonPair("privacy_policy_url", jsonString(brand.PrivacyURL)),
+		jsonPair("tos_url", jsonString(brand.TermsURL)),
+		jsonPair("telegram_antispam", jsonString(brand.AntispamURL)),
 		jsonPair("premium_purchase_blocked", jsonBool(premium.Load().PurchaseBlocked)),
 		jsonPair("stickers_premium_by_emoji_num", n(premium.CustomEmojiAllowance())),
 		jsonPair("reactions_uniq_max", n(11)),
@@ -64,6 +85,10 @@ func jsonNumber(v float64) *mtproto.JSONValue {
 
 func jsonString(v string) *mtproto.JSONValue {
 	return mtproto.MakeTLJsonString(&mtproto.JSONValue{Value_STRING: v}).To_JSONValue()
+}
+
+func jsonArray(vals ...*mtproto.JSONValue) *mtproto.JSONValue {
+	return mtproto.MakeTLJsonArray(&mtproto.JSONValue{Value_VECTORJSONVALUE: vals}).To_JSONValue()
 }
 
 func jsonObject(pairs ...*mtproto.JSONObjectValue) *mtproto.JSONValue {

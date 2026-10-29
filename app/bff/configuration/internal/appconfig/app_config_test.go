@@ -1,6 +1,7 @@
 package appconfig
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -43,7 +44,17 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 			t.Fatalf("%s = %#v, want %v", key, obj[key], value)
 		}
 	}
-	if AppConfigHash() != premium.AppConfigHash() || AppConfigHash() == 0 {
-		t.Fatal("app config hash did not follow the loaded policy")
+	if AppConfigHash() == 0 {
+		t.Fatal("app config hash is zero")
+	}
+	for _, key := range []string{"premium_link", "support_link", "faq_link", "privacy_policy_url", "tos_url", "telegram_antispam"} {
+		s, _ := obj[key].(string)
+		if s == "" || strings.Contains(s, "t.me") || strings.Contains(s, "telegram.org") || strings.Contains(s, "telegram.me") {
+			t.Fatalf("%s = %q", key, s)
+		}
+	}
+	domains, _ := obj["autologin_domains"].([]any)
+	if len(domains) != 2 || domains[0] != "tell.cc" || domains[1] != "tellomi.cn" {
+		t.Fatalf("autologin_domains = %#v", domains)
 	}
 }

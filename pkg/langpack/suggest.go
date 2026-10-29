@@ -17,7 +17,8 @@ import (
 
 // CanonicalLang maps a client or system language tag onto a pack we serve.
 // zh and zh-CN become zh-hans. zh-Hant, zh-TW, zh-HK, and the bare region
-// tags TW/HK/MO become zh-hant. English tags become en.
+// tags TW/HK/MO become zh-hant. English tags become en. Other official
+// language codes, including pt_br and iw, map onto the pack code.
 // The boolean is false when the tag is not one of those languages.
 func CanonicalLang(code string) (string, bool) {
 	s := strings.ToLower(strings.TrimSpace(code))
@@ -33,6 +34,9 @@ func CanonicalLang(code string) (string, bool) {
 	}
 	if s == "en" || strings.HasPrefix(s, "en-") {
 		return "en", true
+	}
+	if code, ok := officialCode(s); ok {
+		return code, true
 	}
 	return s, false
 }
@@ -62,14 +66,18 @@ func isSimplifiedChinese(s string) bool {
 // SuggestLangCode is the value help.getConfig should return in suggested_lang_code.
 // The device language wins when it is Chinese, so a phone set to 简体中文 or
 // 繁體中文 is offered that pack even while the app language is still en.
-// Otherwise the app lang_code from initConnection is used. Anything else is en,
-// which keeps config's shared flag bit for suggested_lang_code / lang_pack_version valid.
+// Otherwise a served app language is used, then a served system language.
+// Anything else is en, which keeps config's shared flag bit for
+// suggested_lang_code / lang_pack_version valid.
 func SuggestLangCode(langCode, systemLangCode string) string {
 	if sys, ok := CanonicalLang(systemLangCode); ok && (sys == "zh-hans" || sys == "zh-hant") {
 		return sys
 	}
-	if lang, ok := CanonicalLang(langCode); ok && (lang == "zh-hans" || lang == "zh-hant") {
+	if lang, ok := CanonicalLang(langCode); ok {
 		return lang
+	}
+	if sys, ok := CanonicalLang(systemLangCode); ok {
+		return sys
 	}
 	return "en"
 }

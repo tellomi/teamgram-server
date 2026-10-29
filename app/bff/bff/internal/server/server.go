@@ -31,6 +31,7 @@ import (
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
 	configuration_helper "github.com/teamgram/teamgram-server/app/bff/configuration"
 	contacts_helper "github.com/teamgram/teamgram-server/app/bff/contacts"
+	deeplinks_helper "github.com/teamgram/teamgram-server/app/bff/deeplinks"
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
@@ -88,6 +89,12 @@ func (s *Server) Initialize() error {
 
 	s.grpcSrv = zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
 		// tos_helper
+		mtproto.RegisterRPCDeepLinksServer(
+			grpcServer,
+			deeplinks_helper.New(deeplinks_helper.Config{
+				RpcServerConf: c.RpcServerConf,
+			}))
+
 		mtproto.RegisterRPCTosServer(
 			grpcServer,
 			tos_helper.New(tos_helper.Config{
