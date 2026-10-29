@@ -54,9 +54,38 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			IdList: []int32{in.Id},
 		})
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("messages.editMessage blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		draft := mtproto.MakeTLMessage(&mtproto.Message{
+			Id:          in.Id,
+			Entities:    in.Entities,
+			ReplyMarkup: in.ReplyMarkup,
+		}).To_Message()
+		if in.Message != nil {
+			draft.Message = in.Message.Value
+		}
+		if in.Media != nil {
+			draft.Media, err = c.makeMediaByInputMedia(in.Media)
+			if err != nil {
+				c.Logger.Errorf("messages.editMessage - media error: %v", err)
+				return nil, err
+			}
+		}
+		rUpdates, err := c.svcCtx.Dao.MsgClient.MsgEditMessageV2(c.ctx, &msgpb.TLMsgEditMessageV2{
+			UserId:    c.MD.UserId,
+			AuthKeyId: c.MD.PermAuthKeyId,
+			PeerType:  mtproto.PEER_CHANNEL,
+			PeerId:    peer.PeerId,
+			EditType:  msgpb.EditTypeNormal,
+			NewMessage: msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
+				NoWebpage: in.NoWebpage,
+				Message:   draft,
+			}).To_OutboxMessage(),
+			DstMessage: &mtproto.MessageBox{MessageId: in.Id, PeerType: mtproto.PEER_CHANNEL, PeerId: peer.PeerId},
+		})
+		if err != nil {
+			c.Logger.Errorf("messages.editMessage - error: %v", err)
+			return nil, err
+		}
+		return rUpdates, nil
 	default:
 		c.Logger.Errorf("invalid peer: %v", in.Peer)
 		err = mtproto.ErrPeerIdInvalid

@@ -26,6 +26,7 @@ import (
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
+	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
 	configuration_helper "github.com/teamgram/teamgram-server/app/bff/configuration"
@@ -39,17 +40,20 @@ import (
 	nsfw_helper "github.com/teamgram/teamgram-server/app/bff/nsfw"
 	passkeyhelper "github.com/teamgram/teamgram-server/app/bff/passkey"
 	passport_helper "github.com/teamgram/teamgram-server/app/bff/passport"
+	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
 	premium_helper "github.com/teamgram/teamgram-server/app/bff/premium"
 	privacysettingshelper "github.com/teamgram/teamgram-server/app/bff/privacysettings"
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
 	savedmessagedialogshelper "github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs"
 	sponsoredmessages_helper "github.com/teamgram/teamgram-server/app/bff/sponsoredmessages"
+	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
 	tos_helper "github.com/teamgram/teamgram-server/app/bff/tos"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -70,10 +74,15 @@ func New() *Server {
 func (s *Server) Initialize() error {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
+	bootstrap.Wait("bff", bootstrap.Deps{
+		Kafka: bootstrap.ProducerBrokers(c.SyncClient),
+		MySQL: []string{c.ChannelMySQL, c.StoryMySQL},
+		Redis: bootstrap.RedisHosts(c.KV),
+		Etcd:  c.Etcd.Hosts,
+	})
 
 	logx.Infov(c)
-	// ctx := svc.NewServiceContext(c)
-	// s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
+	channelBridge := channels_helper.Bridge{}
 
 	s.grpcSrv = zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
 		// tos_helper
@@ -126,6 +135,7 @@ func (s *Server) Initialize() error {
 					MsgClient:                 c.MsgClient,
 					SignInMessage:             c.SignInMessage,
 					SignInServiceNotification: c.SignInServiceNotification,
+					TestPhones:                c.TestPhones,
 				},
 				nil,
 				nil))
@@ -147,6 +157,49 @@ func (s *Server) Initialize() error {
 				MsgClient:     c.MsgClient,
 				SyncClient:    c.SyncClient,
 			}))
+
+		mtproto.RegisterRPCChannelsServer(
+			grpcServer,
+			channels_helper.New(channels_helper.Config{
+				RpcServerConf: c.RpcServerConf,
+				ChannelMySQL:  c.ChannelMySQL,
+				UserClient:    c.BizServiceClient,
+				DialogClient:  c.BizServiceClient,
+				MediaClient:   c.MediaClient,
+				SyncClient:    c.SyncClient,
+			}))
+		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
+		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions())
+		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads())
+		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
+
+		storyMySQL := c.StoryMySQL
+		if storyMySQL == "" {
+			storyMySQL = c.ChannelMySQL
+		}
+		mtproto.RegisterRPCStoriesServer(
+			grpcServer,
+			stories_helper.New(stories_helper.Config{
+				RpcServerConf: c.RpcServerConf,
+				StoryMySQL:    storyMySQL,
+				UserClient:    c.BizServiceClient,
+				MediaClient:   c.MediaClient,
+				SyncClient:    c.SyncClient,
+			}))
+
+		phoneCfg := c.Phone
+		if phoneCfg.MySQL == "" {
+			phoneCfg.MySQL = c.ChannelMySQL
+		}
+		phoneSvc := phone_helper.New(phoneCfg, phone_helper.Clients{
+			User: c.BizServiceClient,
+			Chat: c.BizServiceClient,
+			Msg:  c.MsgClient,
+			Sync: c.SyncClient,
+		})
+		mtproto.RegisterRPCVoipCallsServer(grpcServer, phoneSvc)
+		mtproto.RegisterRPCGroupCallsServer(grpcServer, phoneSvc)
+		mtproto.RegisterRPCSecretChatsServer(grpcServer, phoneSvc)
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(
@@ -204,7 +257,7 @@ func (s *Server) Initialize() error {
 					ChatClient:    c.BizServiceClient,
 					SyncClient:    c.SyncClient,
 				},
-				nil))
+				channelBridge))
 
 		// dialogs_helper
 		mtproto.RegisterRPCDialogsServer(
@@ -217,7 +270,7 @@ func (s *Server) Initialize() error {
 				DialogClient:  c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 				MessageClient: c.BizServiceClient,
-			}, nil))
+			}, channelBridge))
 
 		// drafts_helper
 		mtproto.RegisterRPCDraftsServer(
@@ -228,7 +281,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 				ChatClient:    c.BizServiceClient,
-			}, nil))
+			}, channelBridge))
 
 		// autodownload_helper
 		mtproto.RegisterRPCAutoDownloadServer(
@@ -260,7 +313,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				ChatClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
-			}, nil))
+			}, channelBridge))
 
 		// users_helper
 		mtproto.RegisterRPCUsersServer(
@@ -272,7 +325,7 @@ func (s *Server) Initialize() error {
 					ChatClient:    c.BizServiceClient,
 					DialogClient:  c.BizServiceClient,
 				},
-				nil,
+				stories_helper.Plugin{},
 				nil,
 				nil))
 
@@ -313,7 +366,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				ChatClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
-			}, nil))
+			}, channelBridge))
 
 		// privacysettingshelper
 		mtproto.RegisterRPCPrivacySettingsServer(

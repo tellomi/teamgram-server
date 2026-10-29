@@ -19,6 +19,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/plugin"
+	channelpb "github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
@@ -88,8 +89,15 @@ func (c *MsgCore) MsgSendMessageV2(in *msg.TLMsgSendMessageV2) (*mtproto.Updates
 			}
 		}
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("msg.sendMessageV2 blocked, License key from https://teamgram.net required to unlock enterprise features.")
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		batch := make([]channelpb.Outgoing, 0, len(outBoxList))
+		for _, box := range outBoxList {
+			batch = append(batch, channelpb.Outgoing{RandomID: box.GetRandomId(), Message: box.GetMessage()})
+		}
+		rUpdates, err = channelpb.Shared().Send(c.ctx, in.UserId, in.PeerId, in.AuthKeyId, batch)
+		if err != nil {
+			c.Logger.Errorf("msg.sendMessageV2 - error: %v", err)
+			return nil, err
+		}
 	default:
 		c.Logger.Errorf("msg.sendMessageV2 - error: invalid peer(%v)", peer)
 		err = mtproto.ErrPeerIdInvalid

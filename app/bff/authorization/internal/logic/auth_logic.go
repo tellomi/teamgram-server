@@ -28,11 +28,15 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/code"
 
 	"github.com/zeromicro/go-zero/core/logx"
+	"google.golang.org/grpc/status"
 )
 
 type AuthLogic struct {
 	*dao.Dao
 	code.VerifyCodeInterface
+	// MaxAttempts is how many wrong codes are accepted before FLOOD_WAIT.
+	// Zero uses 5.
+	MaxAttempts int
 }
 
 func NewAuthSignLogic(dao *dao.Dao, code2 code.VerifyCodeInterface) *AuthLogic {
@@ -202,6 +206,15 @@ func (m *AuthLogic) DoAuthSignIn(ctx context.Context,
 		return
 	}
 
+	maxAttempts := m.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+	if codeData.Attempts >= maxAttempts {
+		err = mtproto.NewErrFloodWaitX(15 * 60)
+		return
+	}
+
 	// TODO(@benqi): check phone code valid, only number etc.
 	//if phoneCode != "12345" && codeData.PhoneCode != phoneCode {
 	//	err := mtproto.NewRpcError2(mtproto.TLRpcErrorCodes_PHONE_CODE_INVALID)
@@ -210,7 +223,11 @@ func (m *AuthLogic) DoAuthSignIn(ctx context.Context,
 
 	if cb != nil {
 		if err = cb(codeData); err != nil {
-			err = mtproto.ErrPhoneCodeInvalid
+			codeData.Attempts++
+			_ = m.Dao.UpdatePhoneCodeData(ctx, authKeyId, phoneNumber, phoneCodeHash, codeData)
+			if _, ok := status.FromError(err); !ok {
+				err = mtproto.ErrPhoneCodeInvalid
+			}
 			return
 		}
 	}

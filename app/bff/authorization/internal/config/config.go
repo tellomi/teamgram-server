@@ -21,6 +21,7 @@ package config
 import (
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
+	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/zeromicro/go-zero/core/stores/kv"
 	"github.com/zeromicro/go-zero/zrpc"
 )
@@ -37,4 +38,7 @@ type Config struct {
 	SyncClient                *kafka.KafkaProducerConf
 	SignInServiceNotification []conf.MessageEntityConfig `json:",optional"`
 	SignInMessage             []conf.MessageEntityConfig `json:",optional"`
+	// TestPhones are dev login ranges. Nil uses Telegram's 99966XYYYY
+	// pattern. An empty list disables test numbers.
+	TestPhones []phonenumber.TestPhoneRange `json:",optional"`
 }

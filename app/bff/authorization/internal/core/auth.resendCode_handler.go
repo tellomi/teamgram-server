@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
+	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 )
 
 /*
@@ -131,9 +132,17 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 			//	return
 			//}
 
+			if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
+				codeData2.PhoneCode = code
+				codeData2.PhoneCodeExtraData = code
+				codeData2.SentCodeType = model.SentCodeTypeSms
+				codeData2.NextCodeType = model.CodeTypeSms
+				codeData2.State = model.CodeStateSent
+				return nil
+			}
+
 			// 400	SMS_CODE_CREATE_FAILED	An error occurred while creating the SMS code
-			extraData, err2 := c.svcCtx.AuthLogic.VerifyCodeInterface.SendSmsVerifyCode(c.ctx, phoneNumber, codeData2.PhoneCode, codeData2.PhoneCodeHash)
-			if err2 != nil {
+			if err2 := c.sendSMS(phoneNumber, codeData2); err2 != nil {
 				c.Logger.Errorf("sendSmsVerifyCode error: %v", err2)
 				return err2
 			}
@@ -141,7 +150,6 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 			codeData2.SentCodeType = model.SentCodeTypeSms
 			codeData2.NextCodeType = model.CodeTypeSms
 			codeData2.State = model.CodeStateSent
-			codeData2.PhoneCodeExtraData = extraData
 
 			return nil
 

@@ -24,24 +24,34 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/plugin"
 	"github.com/teamgram/teamgram-server/pkg/code"
+	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 type ServiceContext struct {
 	Config config.Config
 	*dao.Dao
 	*logic.AuthLogic
-	Plugin plugin.AuthorizationPlugin
+	Plugin  plugin.AuthorizationPlugin
+	Verify  verify.Config
+	Limiter *verify.Limiter
 }
 
 func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin plugin.AuthorizationPlugin) *ServiceContext {
+	phonenumber.SetTestPhoneRanges(c.TestPhones)
 	d := dao.New(c)
 	if code2 == nil {
 		code2 = code.NewVerifyCode(c.Code)
 	}
+	cfg := verify.Load()
+	auth := logic.NewAuthSignLogic(d, code2)
+	auth.MaxAttempts = cfg.Limits.MaxAttempts
 	return &ServiceContext{
 		Config:    c,
 		Dao:       d,
-		AuthLogic: logic.NewAuthSignLogic(d, code2),
+		AuthLogic: auth,
 		Plugin:    plugin,
+		Verify:    cfg,
+		Limiter:   verify.NewLimiter(d.Cache(), cfg.Limits),
 	}
 }

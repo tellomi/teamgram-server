@@ -48,6 +48,10 @@ echo "build gnetway ..."
 cd ${TEAMGRAMAPP}/interface/gnetway/cmd/gnetway
 go build -o ${INSTALL}/bin/gnetway
 
+echo "build linkpreview ..."
+cd ${TEAMGRAMAPP}/interface/linkpreview/cmd/linkpreview
+go build -o ${INSTALL}/bin/linkpreview
+
 #echo "build httpserver ..."
 #cd ${TEAMGRAMAPP}/interface/httpserver/cmd/httpserver
 #go build -o ${INSTALL}/bin/httpserver

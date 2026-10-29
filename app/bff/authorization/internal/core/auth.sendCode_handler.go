@@ -29,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	statuspb "github.com/teamgram/teamgram-server/app/service/status/status"
+	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 
 	"google.golang.org/grpc/status"
 )
@@ -326,6 +327,26 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 				return nil
 			}
 
+			// Dev test ranges (99966XYYYY and any configured prefix) never hit
+			// an SMS gateway. The code is the DC digit repeated, or Code.
+			if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
+				codeData2.SentCodeType = model.SentCodeTypeSms
+				codeData2.PhoneCode = code
+				codeData2.PhoneCodeExtraData = code
+				codeData2.NextCodeType = model.CodeTypeSms
+				codeData2.State = model.CodeStateSent
+				codeData2.PhoneNumberRegistered = phoneRegistered
+				if phoneRegistered {
+					threading2.WrapperGoFunc(c.ctx, nil, func(ctx context.Context) {
+						c.pushSignInMessage(ctx, user.Id(), codeData2.PhoneCode)
+					})
+				}
+				c.Logger.Infof("auth.sendCode - test phone %s", phoneNumber)
+				return nil
+			}
+
+			c.prepareSMSCode(codeData2)
+
 			var (
 				needSendSms = true
 			)
@@ -354,18 +375,9 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 
 			if needSendSms {
 				c.Logger.Infof("send code by sms")
-				extraData, err2 := c.svcCtx.AuthLogic.VerifyCodeInterface.SendSmsVerifyCode(
-					context.Background(),
-					phoneNumber,
-					codeData2.PhoneCode,
-					codeData2.PhoneCodeHash)
-				if err2 != nil {
+				if err2 := c.sendSMS(phoneNumber, codeData2); err2 != nil {
 					c.Logger.Errorf("send sms code error: %v", err2)
 					return err2
-				} else {
-					// codeData2.SentCodeType = model.CodeTypeSms
-					codeData2.SentCodeType = model.SentCodeTypeSms
-					codeData2.PhoneCodeExtraData = extraData
 				}
 			}
 

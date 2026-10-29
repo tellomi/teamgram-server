@@ -19,6 +19,7 @@ Services must be started in this order (as in `runall2.sh`):
 | 9     | bff          | `../etc/bff.yaml` |
 | 10    | session      | `../etc/session.yaml` |
 | 11    | gnetway      | `../etc/gnetway.yaml` |
+| 12    | linkpreview  | `../etc/linkpreview.yaml` |
 | (opt) | httpserver   | `../etc/httpserver.yaml` |
 
 ---
@@ -38,7 +39,8 @@ Services must be started in this order (as in `runall2.sh`):
 | **bff**     | 127.0.0.1:20010       | —                       | bff.bff             |
 | **session** | 127.0.0.1:20120      | —                       | interface.session   |
 | **gnetway** | 127.0.0.1:20110 (internal) | **10443** (TCP), **5222** (TCP), **11443** (WebSocket) | interface.gateway |
-| **httpserver** | —                  | **8801** (HTTP)        | —                   |
+| **linkpreview** | —               | **8801** (HTTP)        | —                   |
+| **httpserver** | —               | optional; do not bind 8801 while linkpreview is running | — |
 
 ---
 
@@ -57,6 +59,7 @@ Services must be started in this order (as in `runall2.sh`):
 | **bff**     | ✓    | —     | ✓ (KV)            | ✓ (Sync-T producer) | — |
 | **session** | ✓    | —     | ✓ (Cache)        | —            | —     |
 | **gnetway** | ✓    | —     | —                 | —            | —     |
+| **linkpreview** | — | ✓    | —                 | —            | optional |
 | **httpserver** | ✓  | —     | —                 | —            | —     |
 
 Default endpoints in configs: **etcd** 127.0.0.1:2379, **MySQL** 127.0.0.1:3306, **Redis** 127.0.0.1:6379, **Kafka** 127.0.0.1:9092, **MinIO** localhost:9000.
@@ -75,7 +78,7 @@ Default endpoints in configs: **etcd** 127.0.0.1:2379, **MySQL** 127.0.0.1:3306,
 - **dfs** → **idgen**; uses MinIO for object storage.
 - **authsession**, **idgen**, **status** → no gRPC callouts (only etcd, DB, Redis).
 
-Optional **httpserver** talks to **session** only.
+Optional **httpserver** talks to **session** only. **linkpreview** reads MySQL directly (public rows only) and does not join the etcd RPC mesh. See `docs/link-preview.md`.
 
 ---
 
@@ -178,6 +181,7 @@ flowchart TB
 | `teamgramd/etc/bff.yaml`         | bff        |
 | `teamgramd/etc/session.yaml`     | session    |
 | `teamgramd/etc/gnetway.yaml`     | gnetway    |
-| `teamgramd/etc/httpserver.yaml`  | httpserver (optional) |
+| `teamgramd/etc/linkpreview.yaml` | linkpreview |
+| `teamgramd/etc/httpserver.yaml`  | httpserver (optional; not on 8801 if linkpreview is up) |
 
 All services register themselves in **etcd** under the key above; clients discover them via etcd. Change `ListenOn` and `Etcd.Hosts` (and infrastructure DSNs) to match your environment.

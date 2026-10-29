@@ -49,20 +49,34 @@ func MakePhoneNumberHelper(number, region string) (*phoneNumberHelper, error) {
 	}
 
 	// check phone invalid
-	pNumber, err = phonenumbers.Parse(number, region)
+	pNumber, err = parseValidPhoneNumber(number, region)
 	if err != nil {
-		err = fmt.Errorf("parse phone number %s err: %v", number, err)
-	} else {
-		if !phonenumbers.IsValidNumber(pNumber) {
-			err = fmt.Errorf("invalid phone number: %s - %v", number, pNumber)
+		return nil, err
+	}
+	return &phoneNumberHelper{pNumber}, nil
+}
+
+// parseValidPhoneNumber parses number and accepts it when libphonenumber
+// considers it valid. A leading international 00 prefix (common on mainland
+// China and much of Europe) is retried without the prefix when the first
+// form is not a valid number.
+func parseValidPhoneNumber(number, region string) (*phonenumbers.PhoneNumber, error) {
+	pNumber, err := phonenumbers.Parse(number, region)
+	if err == nil && phonenumbers.IsValidNumber(pNumber) {
+		return pNumber, nil
+	}
+
+	digits := NormalizeDigits(number)
+	if strings.HasPrefix(digits, "00") && len(digits) > 4 {
+		if p2, err2 := phonenumbers.Parse("+"+digits[2:], region); err2 == nil && phonenumbers.IsValidNumber(p2) {
+			return p2, nil
 		}
 	}
 
 	if err != nil {
-		return nil, err
-	} else {
-		return &phoneNumberHelper{pNumber}, nil
+		return nil, fmt.Errorf("parse phone number %s err: %v", number, err)
 	}
+	return nil, fmt.Errorf("invalid phone number: %s - %v", number, pNumber)
 }
 
 func (p *phoneNumberHelper) GetNormalizeDigits() string {
@@ -82,16 +96,19 @@ func (p *phoneNumberHelper) GetCountryCode() int32 {
 // Check number
 // receive from client : "+86 111 1111 1111", need normalize
 func CheckAndGetPhoneNumber(number string) (phoneNumber string, err error) {
-	var (
-		pNumber *phoneNumberHelper
-	)
+	_, phoneNumber, err = CheckPhoneNumberInvalid(number)
+	return
+}
 
-	pNumber, err = MakePhoneNumberHelper(number, "")
-	if err != nil {
-		return
+func legacyPhoneNumber(phone string) (string, bool) {
+	switch phone {
+	case "+42400", "+424000", "+424001", "+42401", "+42777":
+		return phone[1:], true
+	case "42400", "424000", "424001", "42401", "42777":
+		return phone, true
+	default:
+		return "", false
 	}
-
-	return pNumber.GetNormalizeDigits(), nil
 }
 
 func CheckPhoneNumberInvalid(phone string) (string, string, error) {
@@ -103,36 +120,26 @@ func CheckPhoneNumberInvalid(phone string) (string, string, error) {
 	}
 
 	phone = strings.ReplaceAll(phone, " ", "")
-	switch phone {
-	case "+42400":
-		return "", phone[1:], nil
-	case "+42401":
-		return "", phone[1:], nil
-	case "+42777":
-		return "", phone[1:], nil
-	case "42400":
-		return "", phone, nil
-	case "42401":
-		return "", phone, nil
-	case "42777":
-		return "", phone, nil
+	if digits, ok := legacyPhoneNumber(phone); ok {
+		return "", digits, nil
 	}
 
-	// fragment
+	// fragment anonymous numbers: +888 0888 0080
 	if strings.HasPrefix(phone, "+888") {
 		if len(phone) == 12 {
-			// +888 0888 0080
 			return "", phone[1:], nil
-		} else {
-			return "", "", mtproto.ErrPhoneNumberInvalid
 		}
+		return "", "", mtproto.ErrPhoneNumberInvalid
 	} else if strings.HasPrefix(phone, "888") {
 		if len(phone) == 11 {
-			// +888 0888 0080
 			return "", phone, nil
-		} else {
-			return "", "", mtproto.ErrPhoneNumberInvalid
 		}
+		return "", "", mtproto.ErrPhoneNumberInvalid
+	}
+
+	// Dev test ranges (Telegram 99966XYYYY and any configured prefix).
+	if digits, ok := MatchTestPhone(phone); ok {
+		return "", digits, nil
 	}
 
 	// 3.2. check phone_number

@@ -57,7 +57,7 @@ func (c *DfsCore) DfsUploadedProfilePhoto(in *dfs.TLDfsUploadedProfilePhoto) (*m
 		// secretId := int64(extType)<<32 | int64(rand.Uint32())
 		path := fmt.Sprintf("%s/%d.dat", szType, photoId)
 		// c.Logger.Debugf("path: %s", path)
-		fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
+		fileSize, err = c.putProfilePhoto(path, b)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 			return err

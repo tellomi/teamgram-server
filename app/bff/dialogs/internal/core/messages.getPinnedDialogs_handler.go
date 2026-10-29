@@ -106,9 +106,6 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())
 		peers = append(peers, peer2)
-		if peer2.IsChannel() {
-			c.Logger.Errorf("blocked, License key from https://teamgram.net required to unlock enterprise features.")
-		}
 	}
 
 	if len(peers) > 0 {
@@ -127,9 +124,6 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())
 		dialogEx.Dialog.NotifySettings = userpb.FindPeerPeerNotifySettings(notifySettingsList, peer2)
-		if peer2.IsChannel() {
-			c.Logger.Errorf("blocked, License key from https://teamgram.net required to unlock enterprise features.")
-		}
 	}
 
 	sort.Sort(sort.Reverse(dialogExtList))
@@ -142,13 +136,15 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 				msgList   = make([]*mtproto.Message, 0, len(id))
 				msgIdList = make([]int32, 0, len(id))
 			)
+			var channelIDs []dialog.TopMessageId
 			for _, id2 := range id {
 				if id2.Peer.IsChannel() {
-					c.Logger.Errorf("blocked, License key from https://teamgram.net required to unlock enterprise features.")
+					channelIDs = append(channelIDs, id2)
 				} else {
 					msgIdList = append(msgIdList, id2.TopMessage)
 				}
 			}
+			msgList = append(msgList, c.channelMessages(ctx, selfUserId, channelIDs)...)
 			if len(msgIdList) > 0 {
 				boxList, _ := c.svcCtx.Dao.MessageClient.MessageGetUserMessageList(c.ctx, &message.TLMessageGetUserMessageList{
 					UserId: c.MD.UserId,
@@ -178,8 +174,7 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 			return chats.GetChatListByIdList(c.MD.UserId, id...)
 		},
 		func(ctx context.Context, selfUserId int64, id ...int64) []*mtproto.Chat {
-			c.Logger.Errorf("blocked, License key from https://teamgram.net required to unlock enterprise features.")
-			return []*mtproto.Chat{}
+			return c.channelChats(ctx, selfUserId, id...)
 		})
 
 	return messageDialogs.ToMessagesPeerDialogs(state), nil

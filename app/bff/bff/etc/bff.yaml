@@ -17,6 +17,7 @@ Code:
   Key: ""
   Secret: ""
   RegionId: ""
+  # TELLOMI_SMS_PROVIDER=aliyun overrides Name. See docs/sms-email.md.
 
 BizServiceClient:
   Etcd:
@@ -53,8 +54,31 @@ StatusClient:
     Hosts:
       - 127.0.0.1:2379
     Key: service.status
+# Same database as service.biz_service. The msg service uses its own Mysql.DSN;
+# both must point at this database. Override with TEAMGRAM_MYSQL_DSN.
+ChannelMySQL: root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai
 
 SyncClient:
   Topic:   "Sync-T"
   Brokers:
     - 127.0.0.1:9092
+
+# 1:1 calls and group voice chats. TELLOMI_CALL_IP / TELLOMI_TURN_SECRET override these.
+# PublicIP is the address stock clients put in ICE candidates; it must be reachable
+# from the phone, not the docker bridge address.
+Phone:
+  PublicIP: 127.0.0.1
+  ReflectorPort: 3479
+  SFUPort: 3480
+  TurnHost: 127.0.0.1
+  TurnPort: 3478
+  StunPort: 3478
+  TurnSecret: tellomi-turn-secret
+  TurnTTL: 86400
+  RingTimeout: 90
+  ConfirmTimeout: 30
+  CallLinkPrefix: "https://t.me/call/"
+  # Overridden by TELLOMI_RTMP_URL when that variable is set.
+  RTMPURL: "rtmp://127.0.0.1:1935/live"
+  RTMPKey: tellomi
+  EnableP2P: true

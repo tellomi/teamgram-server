@@ -124,12 +124,11 @@ brew services start minio
 - Console: http://localhost:9001  
 - Default credentials: minioadmin / minioadmin (or miniostorage, depending on version)
 
-**Create buckets** in the MinIO console:
+**Create buckets** in the MinIO console before starting dfs. The server does not create them. See `docs/storage.md`.
 
-- documents  
-- encryptedfiles  
-- photos  
-- videos  
+- tellomi-attachments
+- tellomi-public-media
+- tellomi-backups (optional)  
 
 ### 2.6 Install Pika (optional, port 9221)
 
@@ -224,6 +223,12 @@ Minio:
   AccessKeyID: minioadmin
   SecretAccessKey: minioadmin
   UseSSL: false
+  Region: us-east-1
+  ForcePathStyle: true
+  Bucket:
+    Attachments: tellomi-attachments
+    PublicMedia: tellomi-public-media
+    Backups: tellomi-backups
 SSDB:
   - Host: 127.0.0.1:6379   # Redis when Pika is not installed
 ```
