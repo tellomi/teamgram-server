@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
@@ -46,6 +47,9 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 	}
 	if AppConfigHash() == 0 {
 		t.Fatal("app config hash is zero")
+	}
+	if obj["reactions_default"] != catalog.DefaultReactionEmoji || catalog.DefaultReactionEmoji != "👍" {
+		t.Fatalf("reactions_default = %#v", obj["reactions_default"])
 	}
 	for _, key := range []string{"premium_link", "support_link", "faq_link", "privacy_policy_url", "tos_url", "telegram_antispam"} {
 		s, _ := obj[key].(string)

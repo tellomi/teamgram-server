@@ -1,11 +1,181 @@
 package catalog
 
 import (
+	"bytes"
+	"compress/gzip"
 	"hash/fnv"
+	"sync"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/zeromicro/go-zero/core/logx"
 )
+
+// DefaultReactionEmoji is the double-tap reaction. It is always in
+// messages.getAvailableReactions and in help.getConfig reactions_default.
+const DefaultReactionEmoji = "\U0001F44D"
+
+// requiredReactions is the set official clients expect in the picker.
+// 👍 is first because it is the default quick reaction.
+var requiredReactions = []struct {
+	code  string
+	title string
+}{
+	{"1f44d", "Thumbs up"},
+	{"2764", "Red heart"},
+	{"1f525", "Fire"},
+	{"1f970", "Smiling face with hearts"},
+	{"1f44f", "Clapping hands"},
+	{"1f601", "Beaming face with smiling eyes"},
+	{"1f914", "Thinking face"},
+	{"1f622", "Crying face"},
+	{"1f389", "Party popper"},
+	{"1f64f", "Folded hands"},
+	{"1f44e", "Thumbs down"},
+	{"1f631", "Face screaming in fear"},
+}
+
+var (
+	fallbackOnce     sync.Once
+	fallbackTGSBytes []byte
+)
+
+// fallbackTGS is a 512×512 Lottie with one empty shape layer. iOS accepts it
+// as application/x-tgsticker when a real Noto file is missing.
+func fallbackTGS() []byte {
+	fallbackOnce.Do(func() {
+		raw := []byte(`{"v":"5.5.2","fr":60,"ip":0,"op":30,"w":512,"h":512,"nm":"fallback","ddd":0,"assets":[],"layers":[{"ddd":0,"ind":1,"ty":4,"nm":"s","sr":1,"ks":{"o":{"a":0,"k":100},"r":{"a":0,"k":0},"p":{"a":0,"k":[256,256,0]},"a":{"a":0,"k":[0,0,0]},"s":{"a":0,"k":[100,100,100]}},"ao":0,"shapes":[],"ip":0,"op":30,"st":0,"bm":0}],"markers":[]}`)
+		var buf bytes.Buffer
+		w := gzip.NewWriter(&buf)
+		_, _ = w.Write(raw)
+		_ = w.Close()
+		fallbackTGSBytes = buf.Bytes()
+	})
+	return fallbackTGSBytes
+}
+
+func fallbackWebP() []byte {
+	if b, ok := readAsset("assets/twemoji/1f44d.webp"); ok {
+		return b
+	}
+	return nil
+}
+
+func reactionArt(code string) (webp, tgs []byte) {
+	if b, ok := readAsset("assets/twemoji/" + code + ".webp"); ok {
+		webp = b
+	} else {
+		webp = fallbackWebP()
+	}
+	if b, ok := readAsset("assets/noto/" + code + ".tgs"); ok && tgsCanvas512(b) {
+		tgs = b
+	} else {
+		tgs = fallbackTGS()
+	}
+	return webp, tgs
+}
+
+func reactionSpecs() []struct {
+	code  string
+	title string
+} {
+	out := append([]struct {
+		code  string
+		title string
+	}{}, requiredReactions...)
+	seen := map[string]bool{}
+	for _, spec := range out {
+		seen[emojiFromCode(spec.code)] = true
+	}
+	for _, def := range emojiCatalog {
+		if def.Reaction == "" {
+			continue
+		}
+		alt := emojiFromCode(def.Code)
+		if alt == "" || seen[alt] {
+			continue
+		}
+		seen[alt] = true
+		out = append(out, struct {
+			code  string
+			title string
+		}{def.Code, def.Reaction})
+	}
+	return out
+}
+
+// Reactions is messages.getAvailableReactions. Every entry has the documents
+// TelegramCore requires: static icon, four animations, and the optional
+// around/center pair. A missing .tgs is replaced with a 512×512 fallback so
+// the picker is never empty.
+func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
+	var reactions []*mtproto.AvailableReaction
+	var ids []int64
+	for _, spec := range reactionSpecs() {
+		alt := emojiFromCode(spec.code)
+		webp, tgs := reactionArt(spec.code)
+		if len(webp) == 0 || len(tgs) == 0 || !tgsCanvas512(tgs) {
+			continue
+		}
+		staticID := stableID("reaction", "static", spec.code)
+		animID := stableID("reaction", "anim", spec.code)
+		staticDoc := reactionIconDocument(staticID, "image/webp", spec.code+".webp", alt, 72, 72, len(webp))
+		animDoc := reactionIconDocument(animID, "application/x-tgsticker", spec.code+".tgs", alt, 512, 512, len(tgs))
+		reactions = append(reactions, mtproto.MakeTLAvailableReaction(&mtproto.AvailableReaction{
+			Reaction:          alt,
+			Title:             spec.title,
+			StaticIcon:        staticDoc,
+			AppearAnimation:   animDoc,
+			SelectAnimation:   animDoc,
+			ActivateAnimation: animDoc,
+			EffectAnimation:   animDoc,
+			AroundAnimation:   animDoc,
+			CenterIcon:        staticDoc,
+		}).To_AvailableReaction())
+		ids = append(ids, animID)
+	}
+	sum := int32(hash64(ids))
+	if hash != 0 && hash == sum {
+		return mtproto.MakeTLMessagesAvailableReactionsNotModified(&mtproto.Messages_AvailableReactions{}).To_Messages_AvailableReactions()
+	}
+	if reactions == nil {
+		reactions = []*mtproto.AvailableReaction{}
+	}
+	return mtproto.MakeTLMessagesAvailableReactions(&mtproto.Messages_AvailableReactions{
+		Hash:      sum,
+		Reactions: reactions,
+	}).To_Messages_AvailableReactions()
+}
+
+// DocumentFile returns the bytes for a seeded sticker, emoji, or reaction icon.
+// upload.getFile serves these directly so a missing R2 object cannot stall the session.
+func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
+	s.mu.Lock()
+	link := s.docs[id]
+	s.mu.Unlock()
+	if link != nil {
+		b, err := assetFS.ReadFile(link.item.AssetPath)
+		if err != nil || len(b) == 0 {
+			return nil, "", false
+		}
+		return b, link.item.MIME, true
+	}
+	for _, spec := range reactionSpecs() {
+		webp, tgs := reactionArt(spec.code)
+		switch id {
+		case stableID("reaction", "static", spec.code):
+			if len(webp) == 0 {
+				return nil, "", false
+			}
+			return webp, "image/webp", true
+		case stableID("reaction", "anim", spec.code):
+			if len(tgs) == 0 || !tgsCanvas512(tgs) {
+				return nil, "", false
+			}
+			return tgs, "application/x-tgsticker", true
+		}
+	}
+	return nil, "", false
+}
 
 // reactionIconDocument is a sticker document with no custom-emoji attribute.
 // iOS draws a custom-emoji document that it cannot decode as a coin beside the emoji.
