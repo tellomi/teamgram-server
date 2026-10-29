@@ -22,25 +22,13 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 // HelpGetTermsOfServiceUpdate
 // help.getTermsOfServiceUpdate#2ca51fd1 = help.TermsOfServiceUpdate;
-func (c *TosCore) HelpGetTermsOfServiceUpdate(in *mtproto.TLHelpGetTermsOfServiceUpdate) (*mtproto.Help_TermsOfServiceUpdate, error) {
-	text := brand.TermsURL + "\n" + brand.PrivacyURL
-	termsLen := int32(len(brand.TermsURL))
-	privacyLen := int32(len(brand.PrivacyURL))
-	return mtproto.MakeTLHelpTermsOfServiceUpdate(&mtproto.Help_TermsOfServiceUpdate{
-		Expires: int32(time.Now().Unix() + 3600),
-		TermsOfService: mtproto.MakeTLHelpTermsOfService(&mtproto.Help_TermsOfService{
-			Popup: false,
-			Id:    mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: `{"id":"tellomi-tos-1"}`}).To_DataJSON(),
-			Text:  text,
-			Entities: []*mtproto.MessageEntity{
-				mtproto.MakeTLMessageEntityUrl(&mtproto.MessageEntity{Offset: 0, Length: termsLen}).To_MessageEntity(),
-				mtproto.MakeTLMessageEntityUrl(&mtproto.MessageEntity{Offset: termsLen + 1, Length: privacyLen}).To_MessageEntity(),
-			},
-		}).To_Help_TermsOfService(),
-	}).To_Help_TermsOfServiceUpdate(), nil
+//
+// Returns help.termsOfServiceUpdateEmpty unless Tos.UpdateId is a newer
+// terms id this user has not accepted. See app/bff/tos/terms.
+func (c *TosCore) HelpGetTermsOfServiceUpdate(_ *mtproto.TLHelpGetTermsOfServiceUpdate) (*mtproto.Help_TermsOfServiceUpdate, error) {
+	return c.terms().TermsUpdate(c.ctx, c.userID(), int32(time.Now().Unix())), nil
 }

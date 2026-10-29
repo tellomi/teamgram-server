@@ -99,6 +99,8 @@ func (s *Server) Initialize() error {
 			grpcServer,
 			tos_helper.New(tos_helper.Config{
 				RpcServerConf: c.RpcServerConf,
+				Mysql:         c.ChannelMySQL,
+				Tos:           c.Tos,
 			}))
 
 		mtproto.RegisterRPCLangpackServer(
