@@ -333,3 +333,114 @@ func TestEditTitleEncodes(t *testing.T) {
 	}
 	_ = wrapperspb.Int32(0)
 }
+
+func TestGroupOutboxWaitsForAnotherMember(t *testing.T) {
+	svc, ctx := newTest(t)
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Three", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2, 3}, nil); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 21,
+		Message:  &mtproto.Message{Message: "hello", Date: 30},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgID := messageID(sent)
+	if msgID == 0 {
+		t.Fatal("sent message has no id")
+	}
+
+	sender := dialogRead(t, svc, ctx, 1, ch.Id)
+	if sender.ReadOutbox >= msgID {
+		t.Fatalf("sender outbox %d marked read before anyone else read %d", sender.ReadOutbox, msgID)
+	}
+	full, err := svc.GetFullChannel(ctx, 1, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.FullChat.ReadOutboxMaxId >= msgID {
+		t.Fatalf("getFullChannel outbox %d", full.FullChat.ReadOutboxMaxId)
+	}
+
+	// The sender's own readHistory (what iOS sends while the chat is open) is not a receipt.
+	if err := svc.ReadHistory(ctx, 1, in, msgID); err != nil {
+		t.Fatal(err)
+	}
+	sender = dialogRead(t, svc, ctx, 1, ch.Id)
+	if sender.ReadOutbox >= msgID {
+		t.Fatalf("sender read their own message: outbox %d", sender.ReadOutbox)
+	}
+
+	if err := svc.ReadHistory(ctx, 2, in, msgID); err != nil {
+		t.Fatal(err)
+	}
+	sender = dialogRead(t, svc, ctx, 1, ch.Id)
+	if sender.ReadOutbox < msgID {
+		t.Fatalf("after member 2 read, sender outbox %d want >= %d", sender.ReadOutbox, msgID)
+	}
+	reader := dialogRead(t, svc, ctx, 2, ch.Id)
+	if reader.ReadInbox < msgID {
+		t.Fatalf("reader inbox %d", reader.ReadInbox)
+	}
+
+	// Member 2's own send stays unread until member 3 reads it.
+	sent, err = svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{
+		RandomID: 22,
+		Message:  &mtproto.Message{Message: "second", Date: 40},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := messageID(sent)
+	if second <= msgID {
+		t.Fatalf("second id %d", second)
+	}
+	if err := svc.ReadHistory(ctx, 2, in, second); err != nil {
+		t.Fatal(err)
+	}
+	reader = dialogRead(t, svc, ctx, 2, ch.Id)
+	if reader.ReadOutbox >= second {
+		t.Fatalf("member 2 outbox %d marked read by their own read", reader.ReadOutbox)
+	}
+	if err := svc.ReadHistory(ctx, 3, in, second); err != nil {
+		t.Fatal(err)
+	}
+	reader = dialogRead(t, svc, ctx, 2, ch.Id)
+	if reader.ReadOutbox < second {
+		t.Fatalf("after member 3 read, member 2 outbox %d want >= %d", reader.ReadOutbox, second)
+	}
+}
+
+func messageID(up *mtproto.Updates) int32 {
+	if up == nil {
+		return 0
+	}
+	for _, u := range up.Updates {
+		if u.Message_MESSAGE != nil && u.Message_MESSAGE.Id != 0 {
+			return u.Message_MESSAGE.Id
+		}
+	}
+	return 0
+}
+
+func dialogRead(t *testing.T, svc *Service, ctx context.Context, user, channelID int64) DialogRow {
+	t.Helper()
+	rows, err := svc.DialogsFor(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.ChannelID == channelID {
+			return row
+		}
+	}
+	t.Fatalf("no dialog for user %d channel %d", user, channelID)
+	return DialogRow{}
+}

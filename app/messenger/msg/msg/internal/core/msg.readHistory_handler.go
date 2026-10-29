@@ -130,7 +130,8 @@ func (c *MsgCore) MsgReadHistory(in *msg.TLMsgReadHistory) (*mtproto.Messages_Af
 				Updates:       syncUpdates,
 			})
 
-			if maxId > dlg.ReadOutboxMaxId {
+			// The reader's own message must not move their outbox. Only another member does.
+			if senderId != 0 && senderId != in.UserId {
 				c.svcCtx.Dao.InboxClient.InboxUpdateHistoryReaded(ctx, &inbox.TLInboxUpdateHistoryReaded{
 					FromId:   in.UserId,
 					PeerType: in.PeerType,

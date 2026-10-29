@@ -35,6 +35,10 @@ import (
 func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (*mtproto.Void, error) {
 	switch in.PeerType {
 	case mtproto.PEER_USER:
+		// PeerId is the member who read. Their own outbox is not what moved.
+		if in.UserId == 0 || in.UserId == in.PeerId {
+			break
+		}
 		replyId, err := c.svcCtx.Dao.MessagesDAO.SelectByMessageDataId(
 			c.ctx,
 			in.UserId,
