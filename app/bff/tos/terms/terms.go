@@ -3,7 +3,7 @@
 //
 // Default (PopupEnabled=false): no in-app popup ever. help.getTermsOfServiceUpdate
 // always returns termsOfServiceUpdateEmpty and the signup document has
-// popup=false; it only carries the 《用户协议》/《隐私政策》 links that the
+// popup=false; it only carries the 《用户服务协议》/《隐私政策》 links that the
 // clients' signup checkbox shows. With PopupEnabled=true:
 // help.getTermsOfServiceUpdate returns help.termsOfServiceUpdateEmpty
 // (expires = now + 86400) when Tos.UpdateId is empty, when this user has
@@ -48,9 +48,9 @@ const (
 	// shown a popup we may be unable to record, and it asks again soon.
 	retryTTL int32 = 300
 
-	defaultTermsLabel   = "《用户协议》"
+	defaultTermsLabel   = "《用户服务协议》"
 	defaultPrivacyLabel = "《隐私政策》"
-	defaultText         = "我已阅读并同意《用户协议》和《隐私政策》"
+	defaultText         = "我已阅读并同意《用户服务协议》和《隐私政策》"
 )
 
 // Config is the terms document and the optional update existing users must accept.
