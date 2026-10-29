@@ -32,6 +32,9 @@ import (
 // inbox.editMessageToInboxV2 flags:# user_id:long out:flags.0?true from_id:long fromAuthKeyId:long peer_type:int peer_id:long box:MessageBox users:flags.1?Vector<User> chats:flags.2?Vector<Chat> = Void;
 func (c *InboxCore) InboxEditMessageToInboxV2(in *inbox.TLInboxEditMessageToInboxV2) (*mtproto.Void, error) {
 	if in.Out {
+		if in.NewMessage != nil && in.NewMessage.Message != nil {
+			in.NewMessage.Message.SanitizeEntities()
+		}
 		var (
 			mData, _ = jsonx.Marshal(in.NewMessage.Message)
 		)
@@ -134,6 +137,7 @@ func (c *InboxCore) InboxEditMessageToInboxV2(in *inbox.TLInboxEditMessageToInbo
 			dstMessage.EditHide = newMessage.EditHide
 
 			newMessage = dstMessage
+			newMessage.SanitizeEntities()
 
 			mData, _ := jsonx.Marshal(newMessage)
 			_, err = c.svcCtx.Dao.MessagesDAO.UpdateEditMessageTx(tx, string(mData), newMessage.Message, in.UserId, newMessage.Id)

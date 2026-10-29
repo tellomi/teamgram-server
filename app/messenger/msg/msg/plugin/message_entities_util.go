@@ -8,63 +8,27 @@ package plugin
 
 import (
 	"context"
-	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"sort"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/mention"
 
 	"mvdan.cc/xurls/v2"
 )
 
 func RemakeMessage(ctx context.Context, plugin MsgPlugin, message *mtproto.Message, fromId int64, noWebpage bool, hasBot func() bool) *mtproto.Message {
-	var (
-		entities mtproto.MessageEntitySlice
-		idxList  []int
-	)
-
-	/*
-		fmt.Println(*update.ChannelPost.Entities)
-		// For each entity
-		for _, e := range *update.ChannelPost.Entities {
-			// Get the whole update Text
-			str := update.ChannelPost.Text
-			// Encode it into utf16
-			utfEncodedString := utf16.Encode([]rune(str))
-			// Decode just the piece of string I need
-			runeString := utf16.Decode(utfEncodedString[e.Offset : e.Offset+e.Length])
-			// Transform []rune into string
-			str = string(runeString)
-			fmt.Println(str)
-		}
-	*/
-	getIdxList := func() []int {
-		if len(idxList) == 0 {
-			idxList = mention.EncodeStringToUTF16Index(message.Message)
-		}
-		return idxList
+	if message == nil {
+		return nil
 	}
 
-	var firstUrl string
+	var firstURL string
 	rIndexes := xurls.Relaxed().FindAllStringIndex(message.Message, -1)
 	if len(rIndexes) > 0 {
-		if len(idxList) == 0 {
-			getIdxList()
-		}
-		for idx, v := range rIndexes {
-			if idx == 0 {
-				firstUrl = message.Message[v[0]:v[1]]
-			}
-			entityUrl := mtproto.MakeTLMessageEntityUrl(&mtproto.MessageEntity{
-				Offset: int32(idxList[v[0]]),
-				Length: int32(idxList[v[1]] - idxList[v[0]]),
-			}).To_MessageEntity()
-			entities = append(entities, entityUrl)
-		}
+		firstURL = message.Message[rIndexes[0][0]:rIndexes[0][1]]
 	}
-
-	if !noWebpage && firstUrl != "" && plugin != nil {
-		webpage, _ := plugin.GetWebpagePreview(ctx, firstUrl)
+	if !noWebpage && firstURL != "" && plugin != nil {
+		webpage, _ := plugin.GetWebpagePreview(ctx, firstURL)
 		if webpage != nil {
 			message.Media = mtproto.MakeTLMessageMediaWebPage(&mtproto.MessageMedia{
 				Webpage: webpage,
@@ -72,95 +36,142 @@ func RemakeMessage(ctx context.Context, plugin MsgPlugin, message *mtproto.Messa
 		}
 	}
 
-	for _, entity := range message.Entities {
-		switch entity.PredicateName {
-		case mtproto.Predicate_inputMessageEntityMentionName:
-			if entity.GetUserId_INPUTUSER().GetPredicateName() == mtproto.Predicate_inputUserSelf {
-				entity.UserId_INPUTUSER.UserId = fromId
-			}
+	// Client entities win. Invalid ones (length <= 0, out of range) are
+	// dropped before the overlap check so they cannot hide a real URL.
+	client := mtproto.SanitizeMessageEntities(message.Message, normalizeClientEntities(message.Entities, fromId))
 
-			if entity.UserId_INPUTUSER.UserId != 0 {
-				// TODO(@benqi): check user_id
-				entityMentionName := mtproto.MakeTLMessageEntityMentionName(&mtproto.MessageEntity{
-					Offset:       entity.Offset,
-					Length:       entity.Length,
-					UserId_INT64: entity.UserId_INPUTUSER.UserId,
-				})
+	var auto []*mtproto.MessageEntity
+	idxList := mention.EncodeStringToUTF16Index(message.Message)
+	auto = appendAuto(auto, client, urlEntities(message.Message, idxList, rIndexes)...)
+	auto = appendAuto(auto, client, mentionEntities(ctx, plugin, message.Message, idxList)...)
 
-				entities = append(entities, entityMentionName.To_MessageEntity())
-			}
-			// }
-		default:
-			entities = append(entities, entity)
-		}
-	}
-
-	tags := mention.GetTags('@', message.Message, '(', ')')
-	if len(tags) > 0 {
-		var nameList = make([]string, 0, len(tags))
-		for _, tag := range tags {
-			nameList = append(nameList, tag.Tag)
-		}
-
-		for _, tag := range tags {
-			if len(idxList) == 0 {
-				getIdxList()
-			}
-			mention2 := mtproto.MakeTLMessageEntityMention(&mtproto.MessageEntity{
-				Offset: int32(idxList[tag.Index]),
-				Length: int32(idxList[tag.Index+len(tag.Tag)+1] - idxList[tag.Index]),
-			}).To_MessageEntity()
-
-			// stole field UserId_5
-			if plugin != nil {
-				if v, _ := plugin.UsernameResolveUsername(ctx, &user.TLUserResolveUsername{
-					Username: tag.Tag,
-				}); v != nil {
-					if v.GetPredicateName() == mtproto.Predicate_peerUser {
-						mention2.UserId_INT64 = v.UserId
-					}
-				}
-			}
-			//for _, v := range names.Datas {
-			//	//
-			//	if uname, ok := names[tag.Tag]; ok {
-			//		if uname.PeerType == model.PEER_USER {
-			//			mention2.UserId_INT32 = uname.PeerId
-			//		}
-			//	}
-			//}
-			entities = append(entities, mention2)
-		}
-	}
-
-	tags = mention.GetTags('#', message.Message)
-	for _, tag := range tags {
-		if len(idxList) == 0 {
-			getIdxList()
-		}
-		hashtag := mtproto.MakeTLMessageEntityHashtag(&mtproto.MessageEntity{
-			Offset: int32(idxList[tag.Index]),
-			Length: int32(idxList[tag.Index+len(tag.Tag)+1] - idxList[tag.Index]),
-			Url:    "#" + tag.Tag, // NOTE: hack, steal url field
-		}).To_MessageEntity()
-		entities = append(entities, hashtag)
-	}
-
+	indexed := indexText(message.Message)
+	auto = appendAuto(auto, client, findHashtags(indexed)...)
+	auto = appendAuto(auto, client, findCashtags(indexed)...)
 	if hasBot != nil && hasBot() {
-		tags = mention.GetTags('/', message.Message)
-		for _, tag := range tags {
-			if len(idxList) == 0 {
-				getIdxList()
-			}
-			hashtag := mtproto.MakeTLMessageEntityBotCommand(&mtproto.MessageEntity{
-				Offset: int32(idxList[tag.Index]),
-				Length: int32(idxList[tag.Index+len(tag.Tag)+1] - idxList[tag.Index]),
-			}).To_MessageEntity()
-			entities = append(entities, hashtag)
-		}
+		auto = appendAuto(auto, client, findBotCommands(indexed)...)
 	}
 
+	entities := make(mtproto.MessageEntitySlice, 0, len(client)+len(auto))
+	entities = append(entities, client...)
+	entities = append(entities, auto...)
 	sort.Sort(entities)
 	message.Entities = entities
+	message.SanitizeEntities()
 	return message
+}
+
+func normalizeClientEntities(entities []*mtproto.MessageEntity, fromID int64) []*mtproto.MessageEntity {
+	if len(entities) == 0 {
+		return nil
+	}
+	out := make([]*mtproto.MessageEntity, 0, len(entities))
+	for _, entity := range entities {
+		if entity == nil {
+			continue
+		}
+		if entity.GetPredicateName() != mtproto.Predicate_inputMessageEntityMentionName {
+			out = append(out, entity)
+			continue
+		}
+		inputUser := entity.GetUserId_INPUTUSER()
+		if inputUser.GetPredicateName() == mtproto.Predicate_inputUserSelf && inputUser != nil {
+			inputUser.UserId = fromID
+		}
+		if inputUser.GetUserId() == 0 {
+			continue
+		}
+		out = append(out, mtproto.MakeTLMessageEntityMentionName(&mtproto.MessageEntity{
+			Offset:       entity.Offset,
+			Length:       entity.Length,
+			UserId_INT64: inputUser.GetUserId(),
+		}).To_MessageEntity())
+	}
+	return out
+}
+
+// appendAuto keeps server-detected entities that do not overlap a client
+// entity and that cover at least one UTF-16 code unit.
+func appendAuto(dst, client []*mtproto.MessageEntity, detected ...*mtproto.MessageEntity) []*mtproto.MessageEntity {
+	for _, entity := range detected {
+		if entity == nil || entity.Length <= 0 {
+			continue
+		}
+		if overlapsClient(entity, client) {
+			continue
+		}
+		dst = append(dst, entity)
+	}
+	return dst
+}
+
+func overlapsClient(entity *mtproto.MessageEntity, client []*mtproto.MessageEntity) bool {
+	for _, other := range client {
+		if mtproto.EntityOverlaps(entity, other) {
+			return true
+		}
+	}
+	return false
+}
+
+func urlEntities(text string, idxList []int, spans [][]int) []*mtproto.MessageEntity {
+	var out []*mtproto.MessageEntity
+	for _, span := range spans {
+		if len(span) != 2 {
+			continue
+		}
+		off, length, ok := utf16Span(idxList, span[0], span[1])
+		if !ok || length <= 0 {
+			continue
+		}
+		out = append(out, mtproto.MakeTLMessageEntityUrl(&mtproto.MessageEntity{
+			Offset: off,
+			Length: length,
+		}).To_MessageEntity())
+	}
+	return out
+}
+
+func mentionEntities(ctx context.Context, plugin MsgPlugin, text string, idxList []int) []*mtproto.MessageEntity {
+	tags := mention.GetTags('@', text, '(', ')')
+	var out []*mtproto.MessageEntity
+	for _, tag := range tags {
+		if tag.Tag == "" {
+			continue
+		}
+		end := tag.Index + len(tag.Tag) + 1
+		off, length, ok := utf16Span(idxList, tag.Index, end)
+		if !ok || length <= 0 {
+			continue
+		}
+		entity := mtproto.MakeTLMessageEntityMention(&mtproto.MessageEntity{
+			Offset: off,
+			Length: length,
+		}).To_MessageEntity()
+		if plugin != nil {
+			if v, _ := plugin.UsernameResolveUsername(ctx, &user.TLUserResolveUsername{
+				Username: tag.Tag,
+			}); v != nil {
+				if v.GetPredicateName() == mtproto.Predicate_peerUser {
+					entity.UserId_INT64 = v.UserId
+				}
+			}
+		}
+		out = append(out, entity)
+	}
+	return out
+}
+
+// utf16Span maps a byte range [start, end) onto UTF-16 offset and length.
+// A non-positive length is rejected so callers never build an empty entity.
+func utf16Span(idxList []int, start, end int) (int32, int32, bool) {
+	if start < 0 || end < start || end >= len(idxList) || start >= len(idxList) {
+		return 0, 0, false
+	}
+	off := idxList[start]
+	limit := idxList[end]
+	if limit <= off {
+		return 0, 0, false
+	}
+	return int32(off), int32(limit - off), true
 }

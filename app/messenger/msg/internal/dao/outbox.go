@@ -106,6 +106,7 @@ func (d *Dao) sendMessageToOutbox(ctx context.Context, fromId int64, peer *mtpro
 		// Pts:              pts,
 		// PtsCount:         ptsCount,
 		// mType, mData := mtproto.EncodeMessage(message)
+		message.SanitizeEntities()
 		mData, _ := jsonx.Marshal(message)
 		outMsgBox := &mtproto.MessageBox{
 			UserId:            fromId,
@@ -480,6 +481,9 @@ func (d *Dao) EditChatOutboxMessage(ctx context.Context, fromId, toId int64, mes
 }
 
 func (d *Dao) editOutboxMessage(ctx context.Context, fromId int64, peerType int32, peerId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
+	if message != nil {
+		message.SanitizeEntities()
+	}
 	var (
 		mData, _ = jsonx.Marshal(message)
 		did      = mtproto.MakeDialogId(fromId, peerType, peerId)
@@ -595,6 +599,9 @@ func (d *Dao) SendMessageToOutboxV1NoPts(ctx context.Context, fromId int64, peer
 
 func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, outMsgBox *mtproto.MessageBox, writePts bool) error {
 	message := outMsgBox.Message
+	if message != nil {
+		message.SanitizeEntities()
+	}
 	mData, _ := jsonx.Marshal(outMsgBox.GetMessage())
 	outBoxMsgId := outMsgBox.MessageId
 

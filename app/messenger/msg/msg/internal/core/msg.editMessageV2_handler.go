@@ -52,13 +52,18 @@ func (c *MsgCore) MsgEditMessageV2(in *msg.TLMsgEditMessageV2) (*mtproto.Updates
 	case mtproto.PEER_CHAT:
 		rUpdates, err = c.editChatOutgoingMessageV2(in.UserId, in.AuthKeyId, in.PeerId, newMessage, dstMessage)
 	case mtproto.PEER_CHANNEL:
+		edited := newMessage.GetMessage()
+		noWebpage := newMessage.GetNoWebpage()
 		rUpdates, err = channelpb.Shared().Edit(c.ctx, in.UserId, in.PeerId, in.AuthKeyId, dstMessage.GetMessageId(), func(m *mtproto.Message) {
-			edited := newMessage.GetMessage()
-			if edited == nil {
+			if edited == nil || m == nil {
 				return
 			}
+			reparse := edited.Message != "" || edited.Entities != nil
 			if edited.Message != "" {
 				m.Message = edited.Message
+				if edited.Entities == nil {
+					m.Entities = nil
+				}
 			}
 			if edited.Media != nil {
 				m.Media = edited.Media
@@ -69,6 +74,11 @@ func (c *MsgCore) MsgEditMessageV2(in *msg.TLMsgEditMessageV2) (*mtproto.Updates
 			if edited.ReplyMarkup != nil {
 				m.ReplyMarkup = edited.ReplyMarkup
 			}
+			if reparse {
+				plugin.RemakeMessage(c.ctx, c.svcCtx.MsgPlugin, m, in.UserId, noWebpage, nil)
+				return
+			}
+			m.SanitizeEntities()
 		})
 	default:
 		err = mtproto.ErrPeerIdInvalid

@@ -33,6 +33,9 @@ func (d *Dao) AddSeqToUpdatesQueue(ctx context.Context, authId, userId int64, up
 }
 
 func (d *Dao) AddToPtsQueue(ctx context.Context, userId int64, pts, ptsCount int32, update *mtproto.Update) int32 {
+	if update != nil {
+		update.SanitizeEmbeddedEntities()
+	}
 	updateData, err := jsonx.Marshal(update)
 	if err != nil {
 		logx.WithContext(ctx).Errorf("AddToPtsQueue - marshal update error: %v", err)

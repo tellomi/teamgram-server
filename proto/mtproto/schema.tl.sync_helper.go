@@ -171,11 +171,17 @@ func (m *Poll) FixData() *Poll {
 }
 
 func (m *Update) FixData() *Update {
+	if m == nil {
+		return nil
+	}
 	if m.GetMedia() != nil {
 		m.Media = m.Media.FixData()
 	}
 	if m.GetMessage_MESSAGE() != nil {
 		m.Message_MESSAGE = m.Message_MESSAGE.FixData()
+	}
+	if m.Entities != nil {
+		m.Entities = SanitizeMessageEntities(m.GetMessage_STRING(), m.Entities)
 	}
 
 	return m
@@ -198,6 +204,11 @@ func (m *MessageMedia) FixData() *MessageMedia {
 }
 
 func (m *Message) FixData() *Message {
+	if m == nil {
+		return nil
+	}
+	m.SanitizeEntities()
+
 	if m.GetMedia() != nil {
 		m.Media = m.Media.FixData()
 	}

@@ -43,6 +43,7 @@ func cloneRecord(r *Record) *Record {
 	cp := *r
 	if r.Item != nil {
 		cp.Item = proto.Clone(r.Item).(*mtproto.StoryItem)
+		cp.Item.SanitizeEntities()
 	}
 	return &cp
 }

@@ -237,6 +237,9 @@ func unmarshalMessage(data []byte) (*mtproto.Message, error) {
 	if err := proto.Unmarshal(data, msg); err != nil {
 		return nil, err
 	}
+	// Old rows may already contain a zero-length hashtag or a duplicated
+	// URL. Drop them before the message is returned to a client.
+	msg.SanitizeEntities()
 	return msg, nil
 }
 
