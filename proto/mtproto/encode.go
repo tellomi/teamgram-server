@@ -47,6 +47,16 @@ func (e *EncodeBuf) GetOffset() int {
 	return len(e.buf)
 }
 
+// Truncate drops anything written after n. Callers use it to roll back a
+// message that panicked or returned an error mid-encode, so the surrounding
+// vector stays aligned.
+func (e *EncodeBuf) Truncate(n int) {
+	if e == nil || n < 0 || n > len(e.buf) {
+		return
+	}
+	e.buf = e.buf[:n]
+}
+
 func (e *EncodeBuf) Int16(s int16) {
 	e.buf = append(e.buf, 0, 0)
 	binary.LittleEndian.PutUint16(e.buf[len(e.buf)-2:], uint16(s))

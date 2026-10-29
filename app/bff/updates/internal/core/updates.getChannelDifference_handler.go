@@ -31,5 +31,6 @@ func (c *UpdatesCore) UpdatesGetChannelDifference(in *mtproto.TLUpdatesGetChanne
 			diff.Users = users.GetUserListByIdList(c.MD.UserId, ids...)
 		}
 	}
+	mtproto.SanitizeOutgoingObject(diff)
 	return diff, nil
 }

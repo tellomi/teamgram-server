@@ -18,6 +18,7 @@ package gnet
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -49,6 +50,7 @@ type Server struct {
 	tickNumber     int64
 	cachedNow      atomic.Int64 // cached unix timestamp, updated every OnTick
 	timeoutWheel   *timeoutWheel
+	conns          sync.Map // connId -> gnet.Conn, closed on SIGTERM
 }
 
 // CachedNow returns the cached unix timestamp (updated every OnTick interval).

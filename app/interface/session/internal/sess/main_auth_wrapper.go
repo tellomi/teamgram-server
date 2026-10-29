@@ -690,6 +690,12 @@ func (m *MainAuthWrapper) rpcRunLoop() {
 						threading.GoSafe(func() {
 							ctx, cancel := context.WithTimeout(request.ctx, fileRPCTimeout)
 							defer cancel()
+							if !acquireFileSlot(ctx) {
+								request.setResult(internalRPCResult(request.reqMsgId))
+								m.rpcDataChan <- request
+								return
+							}
+							defer func() { <-fileRPCSlots }()
 							m.finishRPC(ctx, request)
 						})
 						continue
@@ -702,26 +708,62 @@ func (m *MainAuthWrapper) rpcRunLoop() {
 }
 
 func (m *MainAuthWrapper) finishRPC(ctx context.Context, request *rpcApiMessage) {
-	doRpcRequest(ctx,
-		m.cb.Dao,
-		&metadata.RpcMetadata{
-			ServerId:       m.cb.Dao.MyServerId,
-			ClientAddr:     request.clientIp,
-			AuthId:         request.sessList.authId,
-			SessionId:      request.sessionId,
-			ReceiveTime:    time.Now().Unix(),
-			UserId:         m.AuthUserId,
-			ClientMsgId:    request.reqMsgId,
-			Layer:          m.Layer(),
-			Client:         m.ClientName(),
-			Langpack:       m.LangPack(),
-			PermAuthKeyId:  m.authKeyId,
-			LangCode:       m.LangCode(),
-			SystemLangCode: m.SystemLangCode(),
-			Takeout:        request.takeout,
-		},
-		request)
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, rpcTimeout(request.reqMsg))
+		defer cancel()
+	}
+	md := &metadata.RpcMetadata{
+		ServerId:       m.cb.Dao.MyServerId,
+		ClientAddr:     request.clientIp,
+		AuthId:         request.sessList.authId,
+		SessionId:      request.sessionId,
+		ReceiveTime:    time.Now().Unix(),
+		UserId:         m.AuthUserId,
+		ClientMsgId:    request.reqMsgId,
+		Layer:          m.Layer(),
+		Client:         m.ClientName(),
+		Langpack:       m.LangPack(),
+		PermAuthKeyId:  m.authKeyId,
+		LangCode:       m.LangCode(),
+		SystemLangCode: m.SystemLangCode(),
+		Takeout:        request.takeout,
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = recover() }()
+		doRpcRequest(ctx, m.cb.Dao, md, request)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		// The handler ignored the deadline. Answer anyway.
+		request.setResult(internalRPCResult(request.reqMsgId))
+	}
 	m.rpcDataChan <- request
+}
+
+func rpcTimeout(msg mtproto.TLObject) time.Duration {
+	if isFileRPC(msg) {
+		return fileRPCTimeout
+	}
+	switch msg.(type) {
+	case *mtproto.TLMessagesSendMedia,
+		*mtproto.TLMessagesSendMultiMedia,
+		*mtproto.TLMessagesUploadMedia,
+		*mtproto.TLMessagesEditMessage:
+		return 60 * time.Second
+	default:
+		return defaultRPCTimeout
+	}
+}
+
+func internalRPCResult(reqMsgId int64) *mtproto.TLRpcResult {
+	return &mtproto.TLRpcResult{
+		ReqMsgId: reqMsgId,
+		Result:   mtproto.NewInternalError(),
+	}
 }
 
 func (m *MainAuthWrapper) sendToRpcQueue(ctx context.Context, rpcMessage []*rpcApiMessage) {
@@ -1128,11 +1170,20 @@ func doRpcRequest(ctx context.Context, dao *dao.Dao, md *metadata.RpcMetadata, r
 
 	if err != nil {
 		logx.WithContext(ctx).Error(err.Error())
-		reply.Result = mtproto.NewRpcError(err)
+		if mtproto.IsUnregisteredServiceError(err) {
+			// Typed empty / NotModified for startup RPCs, otherwise 400
+			// METHOD_NOT_IMPL. Never the gRPC "unknown service" 500.
+			reply.Result = mtproto.FallbackForUnregisteredService(request.reqMsg)
+		} else if mtproto.IsDeadlineExceeded(err) {
+			reply.Result = mtproto.NewInternalError()
+		} else {
+			reply.Result = mtproto.NewRpcError(err)
+		}
 	} else {
 		logx.WithContext(ctx).Infof("invokeRpcRequest - rpc_result: {%s}", reflect.TypeOf(rpcResult))
+		mtproto.SanitizeOutgoingObject(rpcResult)
 		reply.Result = rpcResult
 	}
 
-	request.rpcResult = reply
+	request.setResult(reply)
 }

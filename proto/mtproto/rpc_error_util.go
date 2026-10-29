@@ -19,8 +19,10 @@
 package mtproto
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -51,9 +53,53 @@ func toMTProtoErrorCod(code codes.Code) codes.Code {
 	}
 }
 
+// NewInternalError is rpc_error 500 INTERNAL. Clients retry it. A missing
+// reply does not get retried and leaves the UI on "Updating...".
+func NewInternalError() *TLRpcError {
+	return &TLRpcError{Data2: &RpcError{
+		ErrorCode:    int32(ErrInternal),
+		ErrorMessage: "INTERNAL",
+	}}
+}
+
+// IsDeadlineExceeded reports a context or gRPC deadline. Those must surface
+// as 500 INTERNAL rather than the transport's own text.
+func IsDeadlineExceeded(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if st, ok := status.FromError(err); ok && st.Code() == codes.DeadlineExceeded {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "deadline exceeded")
+}
+
+// IsUnregisteredServiceError reports a gRPC "unknown service" / unimplemented
+// method. toMTProtoErrorCod would otherwise turn that into 500, and official
+// clients retry 500 forever.
+func IsUnregisteredServiceError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if st, ok := status.FromError(err); ok && st.Code() == codes.Unimplemented {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unknown service") || strings.Contains(msg, "unknown method")
+}
+
 func NewRpcError(e error) *TLRpcError {
 	if e == nil {
 		return nil
+	}
+	if IsDeadlineExceeded(e) {
+		return NewInternalError()
+	}
+	if IsUnregisteredServiceError(e) {
+		return NewRpcError(ErrMethodNotImpl)
 	}
 
 	if rErr, ok := status.FromError(e); ok {

@@ -97,6 +97,11 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 	idHelper.PickByMessages(rDifference.NewMessages...)
 	idHelper.PickByUpdates(rDifference.OtherUpdates...)
 
+	// Drop zero-length and out-of-range entities before this reply is encoded.
+	// Encoding each message also recovers, so one bad row cannot fail the
+	// whole difference or freeze pts.
+	mtproto.SanitizeOutgoingObject(rDifference)
+
 	idHelper.Visit(
 		func(userIdList []int64) {
 			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
