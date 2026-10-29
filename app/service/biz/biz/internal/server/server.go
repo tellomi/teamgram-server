@@ -29,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	message_helper "github.com/teamgram/teamgram-server/app/service/biz/message"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
+	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
 	updates_helper "github.com/teamgram/teamgram-server/app/service/biz/updates"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 	user_helper "github.com/teamgram/teamgram-server/app/service/biz/user"
@@ -69,7 +70,7 @@ func (s *Server) Initialize() error {
 					Cache:         c.Cache,
 					MediaClient:   c.MediaClient,
 				},
-				nil))
+				phonecall.NewChatPlugin(c.Mysql.DSN)))
 
 		// code_helper
 		code.RegisterRPCCodeServer(

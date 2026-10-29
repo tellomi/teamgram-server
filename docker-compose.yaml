@@ -5,6 +5,8 @@ services:
     ports:
       - "10443:10443"
       - "11443:11443"
+      - "3479:3479/udp"
+      - "3480:3480/udp"
       - "20450:20450"
       - "20010:20010"
       - "20020:20020"
@@ -18,6 +20,29 @@ services:
       - "20120:20120"
       - "20670:20670"
       - "20420:20420"
+    networks:
+      - teamgram_net
+
+  # TURN/STUN for phoneConnectionWebrtc. Username is "<expiry>:<user>" and the
+  # password is base64(HMAC-SHA1(static-auth-secret, username)). The secret must
+  # match Phone.TurnSecret. Set external-ip to the address phones can reach.
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: always
+    network_mode: host
+    volumes:
+      - ./teamgramd/deploy/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    entrypoint: ["turnserver"]
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+  # RTMP ingest for phone.getGroupCallStreamRtmpUrl. This accepts the push;
+  # it is not bridged into the group-call SFU (see app/bff/phone/LIMITATIONS.md).
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    restart: always
+    ports:
+      - "1935:1935"
+      - "8889:8889"
     networks:
       - teamgram_net
 
