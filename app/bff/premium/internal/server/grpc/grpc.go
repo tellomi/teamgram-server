@@ -23,7 +23,11 @@ import (
 // New new a grpc server.
 func New(ctx *svc.ServiceContext, c zrpc.RpcServerConf) *zrpc.RpcServer {
 	s, err := zrpc.NewServer(c, func(grpcServer *grpc.Server) {
-		mtproto.RegisterRPCPremiumServer(grpcServer, service.New(ctx))
+		impl := service.New(ctx)
+		mtproto.RegisterRPCPremiumServer(grpcServer, impl)
+		mtproto.RegisterRPCEmojiStatusServer(grpcServer, impl)
+		mtproto.RegisterRPCAccentColorsServer(grpcServer, impl)
+		mtproto.RegisterRPCTranscriptionServer(grpcServer, impl)
 	})
 	logx.Must(err)
 	return s

@@ -19,10 +19,12 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
+	premiumlimits "github.com/teamgram/teamgram-server/pkg/premium"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/mr"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
@@ -131,14 +133,18 @@ func makeEmojiStatus(documentId int64, until int32) *mtproto.EmojiStatus {
 }
 
 func makePeerColor(color int32, backgroundEmojiId int64) *mtproto.PeerColor {
-	if color == 0 && backgroundEmojiId == 0 {
+	colorID, set := premiumlimits.LoadColor(color)
+	if !set && backgroundEmojiId == 0 {
 		return nil
 	}
-
-	return mtproto.MakeTLPeerColor(&mtproto.PeerColor{
-		Color:                       mtproto.MakeFlagsInt32(color),
+	out := &mtproto.PeerColor{
 		BackgroundEmojiId_FLAGINT64: mtproto.MakeFlagsInt64(backgroundEmojiId),
-	}).To_PeerColor()
+	}
+	if set {
+		// Color id 0 is a real palette entry. MakeFlagsInt32 drops zero.
+		out.Color = &wrapperspb.Int32Value{Value: colorID}
+	}
+	return mtproto.MakeTLPeerColor(out).To_PeerColor()
 }
 
 func getUsernames(usernames string) []*mtproto.Username {

@@ -29,6 +29,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	premiumlimits "github.com/teamgram/teamgram-server/pkg/premium"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -491,10 +492,11 @@ func (d *Dao) UpdateColor(ctx context.Context, id int64, forProfile bool, color 
 				rowsAffected int64
 			)
 
+			stored := premiumlimits.StoreColor(color)
 			if forProfile {
-				rowsAffected, err = d.UsersDAO.UpdateProfileColor(ctx, color, backgroundEmojiId, id)
+				rowsAffected, err = d.UsersDAO.UpdateProfileColor(ctx, stored, backgroundEmojiId, id)
 			} else {
-				rowsAffected, err = d.UsersDAO.UpdateColor(ctx, color, backgroundEmojiId, id)
+				rowsAffected, err = d.UsersDAO.UpdateColor(ctx, stored, backgroundEmojiId, id)
 			}
 
 			if err != nil {

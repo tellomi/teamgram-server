@@ -6,6 +6,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 // SendRequest is one stories.sendStory or stories.startLive.
@@ -67,11 +68,30 @@ func (s *Service) Remains(ctx context.Context, actor int64, owner Owner, accessH
 			n++
 		}
 	}
-	rem := dailyLimit - n
+	rem := s.storyQuota(ctx, actor) - n
 	if rem < 0 {
 		rem = 0
 	}
 	return rem, nil
+}
+
+func (s *Service) storyQuota(ctx context.Context, actor int64) int32 {
+	return int32(premium.Limit(premium.FeatureStories, s.premiumMember(ctx, actor)))
+}
+
+func (s *Service) premiumMember(ctx context.Context, userID int64) bool {
+	now := int64(s.now())
+	ms, ok := s.store.(*mysqlStore)
+	if !ok || ms == nil || ms.db == nil {
+		return premium.IsMember(false, 0, now)
+	}
+	var stored int
+	var expire int64
+	err := ms.db.QueryRowContext(ctx, `SELECT premium, premium_expire_date FROM users WHERE id=? LIMIT 1`, userID).Scan(&stored, &expire)
+	if err != nil {
+		return premium.IsMember(false, 0, now)
+	}
+	return premium.IsMember(stored != 0, expire, now)
 }
 
 func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, error) {
@@ -102,7 +122,10 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, 
 		if req.Owner.Kind == KindChannel {
 			return nil, errBoostsRequired
 		}
-		return nil, mtproto.ErrPremiumAccountRequired
+		if !premium.Allows(premium.FeatureStories, s.premiumMember(ctx, req.Actor)) {
+			return nil, mtproto.ErrPremiumAccountRequired
+		}
+		return nil, errStoriesTooMuch
 	}
 	now := s.now()
 	rules := req.Rules

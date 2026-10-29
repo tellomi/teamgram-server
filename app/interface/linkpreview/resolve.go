@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 const (
@@ -105,7 +106,7 @@ func (s *Service) peerJSON(ctx context.Context, p *storedPeer) *Peer {
 		Verified:    p.Verified,
 		Scam:        p.Scam,
 		Fake:        p.Fake,
-		Premium:     p.Premium,
+		Premium:     (p.Kind == KindUser || p.Kind == KindBot) && premium.IsMember(p.Premium, 0, time.Now().Unix()),
 		MemberCount: p.MemberCount,
 		Broadcast:   p.Broadcast,
 		Megagroup:   p.Megagroup,

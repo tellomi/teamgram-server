@@ -148,11 +148,15 @@ func (s *Server) Initialize() error {
 				nil))
 
 		// premium_helper
-		mtproto.RegisterRPCPremiumServer(
-			grpcServer,
-			premium_helper.New(premium_helper.Config{
-				RpcServerConf: c.RpcServerConf,
-			}))
+		premiumSvc := premium_helper.New(premium_helper.Config{
+			RpcServerConf: c.RpcServerConf,
+			UserClient:    c.BizServiceClient,
+			SyncClient:    c.SyncClient,
+		})
+		mtproto.RegisterRPCPremiumServer(grpcServer, premiumSvc)
+		mtproto.RegisterRPCEmojiStatusServer(grpcServer, premiumSvc)
+		mtproto.RegisterRPCAccentColorsServer(grpcServer, premiumSvc)
+		mtproto.RegisterRPCTranscriptionServer(grpcServer, premiumSvc)
 
 		// chatinvites_helper
 		mtproto.RegisterRPCChatInvitesServer(
