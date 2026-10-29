@@ -93,7 +93,11 @@ TELLOMI_S3_BUCKET_BACKUPS=tellomi-backups
 ```
 
 `us-east-1` is MinIO's signing region. Path-style is on, so the hostname does
-not need to be a bucket subdomain.
+not need to be a bucket subdomain. `TELLOMI_S3_USE_SSL=false` matches this
+`http://` endpoint. Do not copy that `false` onto an `https://` R2 endpoint:
+an explicit false turns TLS off and dfs then misses the objects. Omit the
+variable and the `https` scheme turns TLS on. Sticker import uses this same
+client, not a separate one.
 
 ## Cloudflare R2
 

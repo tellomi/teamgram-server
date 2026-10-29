@@ -41,16 +41,16 @@ There is no `.webm` video-sticker pack in this seed. `stickerSet.videos` is fals
 
 ## Storage
 
-Document bytes are written to the existing dfs/S3 layout:
+Document bytes are written through the dfs S3 client (`MinioConfig.ApplyEnv`, then the same `resolveLocation` path as `PutStickerBytes` / `GetStickerFile`). `importstickers` and the bff background upload do not open a second client. `upload.getFile` reads those objects back with `GetStickerFile` / `GetEmojiFile`. TLS, region, path style, bucket, and key all come from the `TELLOMI_S3_*` variables in `docs/storage.md`. The link-preview `TELLOMI_MINIO_*` settings are not used.
 
-| Class | Key |
-|---|---|
-| Twemoji and Fluent | `stickers/<document id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` |
-| Noto TGS | `emoji/<document id>.dat` in the same bucket |
+| Class | Bucket | Key |
+|---|---|---|
+| Twemoji and Fluent | `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` | `stickers/<document id>.dat` |
+| Noto TGS | the same bucket | `emoji/<document id>.dat` |
 
 `upload.getFile` reads `documents/<id>.dat` first, then `stickers/<id>.dat` and `emoji/<id>.dat`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
 
-The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT` and `TELLOMI_S3_ACCESS_KEY_ID` are set. Buckets must already exist. See `docs/storage.md`.
+The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT`, the access keys, `TELLOMI_S3_BUCKET_ATTACHMENTS`, and `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` are set. Buckets must already exist. Leave `TELLOMI_S3_USE_SSL` unset for an `https://` R2 endpoint so dfs turns TLS on. An explicit `false` forces plain HTTP, and the read never reaches objects written over TLS. Set `TELLOMI_S3_REGION=auto` for R2.
 
 ## Database
 
