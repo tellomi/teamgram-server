@@ -50,7 +50,9 @@ func (s *Server) Initialize() error {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
 
-	logx.Infov(c)
+	logged := c
+	logged.Minio = c.Minio.Redacted()
+	logx.Infov(logged)
 	s.dao = dao.New(c)
 	return nil
 }
