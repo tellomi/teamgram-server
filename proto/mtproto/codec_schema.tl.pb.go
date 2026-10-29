@@ -222768,32 +222768,18 @@ func (m *TLStickerSet) Encode(x *EncodeBuf, layer int32) error {
 		x.Long(m.GetAccessHash())
 		x.String(m.GetTitle())
 		x.String(m.GetShortName())
-		if m.GetThumbs() != nil {
-			x.Int(int32(CRC32_vector))
-			{
-				var (
-					sz     = int32(0)
-					offset = x.GetOffset()
-				)
-				list13 := m.GetThumbs()
-				x.Int(int32(len(list13)))
-				for _, v := range list13 {
-					err := v.Encode(x, layer)
-					if err == nil {
-						sz += 1
-					}
-				}
-				x.IntOffset(offset, sz)
+		if flags&(1<<4) != 0 {
+			writePhotoSizeVector(x, layer, m.GetThumbs())
+			var dc, ver int32
+			if m.GetThumbDcId() != nil {
+				dc = m.GetThumbDcId().Value
 			}
+			if m.GetThumbVersion() != nil {
+				ver = m.GetThumbVersion().Value
+			}
+			x.Int(dc)
+			x.Int(ver)
 		}
-		if m.GetThumbDcId() != nil {
-			x.Int(m.GetThumbDcId().Value)
-		}
-
-		if m.GetThumbVersion() != nil {
-			x.Int(m.GetThumbVersion().Value)
-		}
-
 		if m.GetThumbDocumentId() != nil {
 			x.Long(m.GetThumbDocumentId().Value)
 		}
@@ -222852,30 +222838,17 @@ func (m *TLStickerSet) Encode(x *EncodeBuf, layer int32) error {
 		x.Long(m.GetAccessHash())
 		x.String(m.GetTitle())
 		x.String(m.GetShortName())
-		if m.GetThumbs() != nil {
-			x.Int(int32(CRC32_vector))
-			{
-				var (
-					sz     = int32(0)
-					offset = x.GetOffset()
-				)
-				list13 := m.GetThumbs()
-				x.Int(int32(len(list13)))
-				for _, v := range list13 {
-					err := v.Encode(x, layer)
-					if err == nil {
-						sz += 1
-					}
-				}
-				x.IntOffset(offset, sz)
+		if flags&(1<<4) != 0 {
+			writePhotoSizeVector(x, layer, m.GetThumbs())
+			var dc, ver int32
+			if m.GetThumbDcId() != nil {
+				dc = m.GetThumbDcId().Value
 			}
-		}
-		if m.GetThumbDcId() != nil {
-			x.Int(m.GetThumbDcId().Value)
-		}
-
-		if m.GetThumbVersion() != nil {
-			x.Int(m.GetThumbVersion().Value)
+			if m.GetThumbVersion() != nil {
+				ver = m.GetThumbVersion().Value
+			}
+			x.Int(dc)
+			x.Int(ver)
 		}
 
 		x.Int(m.GetCount())
@@ -222929,7 +222902,7 @@ func (m *TLStickerSet) Decode(dBuf *DecodeBuf) error {
 		if (flags & (1 << 4)) != 0 {
 			c13 := dBuf.Int()
 			if c13 != int32(CRC32_vector) {
-				// dBuf.err = fmt.Errorf("invalid CRC32_vector, c%d: %d", 13, c13)
+				dBuf.SetError(fmt.Errorf("invalid CRC32_vector, c%d: %d", 13, c13))
 				return dBuf.GetError()
 			}
 			l13 := dBuf.Int()

@@ -124,6 +124,26 @@ func (e *EncodeBuf) Bytes(s []byte) {
 	e.buf = append(e.buf, s...)
 }
 
+// writePhotoSizeVector writes Vector<PhotoSize>, including a zero-length
+// vector. stickerSet flag 4 means thumbs, thumb_dc_id, and thumb_version are
+// all present. Omitting the vector makes clients treat the next constructor
+// as that vector and then fail DecodeVectorLong on messages.featuredStickers.
+func writePhotoSizeVector(e *EncodeBuf, layer int32, list []*PhotoSize) {
+	e.Int(int32(CRC32_vector))
+	offset := e.GetOffset()
+	e.Int(int32(len(list)))
+	var n int32
+	for _, v := range list {
+		if v == nil {
+			continue
+		}
+		if err := v.Encode(e, layer); err == nil {
+			n++
+		}
+	}
+	e.IntOffset(offset, n)
+}
+
 func (e *EncodeBuf) VectorInt(vList []int32) {
 	e.UInt(uint32(CRC32_vector))
 	e.Int(int32(len(vList)))

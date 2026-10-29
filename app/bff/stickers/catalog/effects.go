@@ -27,8 +27,8 @@ func (s *Service) AvailableEffects(hash int32) *mtproto.Messages_AvailableEffect
 		if len(webp) == 0 || len(tgs) == 0 || !tgsCanvas512(tgs) {
 			continue
 		}
-		staticID := stableID("reaction", "static", spec.code)
-		animID := stableID("reaction", "anim", spec.code)
+		staticID := reactionSlotID(spec.code, "static")
+		animID := reactionSlotID(spec.code, "effect")
 		effectID := stableID("effect", spec.code)
 		if !seenDoc[staticID] {
 			seenDoc[staticID] = true

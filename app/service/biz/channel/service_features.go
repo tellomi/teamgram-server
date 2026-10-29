@@ -1113,6 +1113,14 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}
+	// A pts event lets channels.getDifference replay the chip after the
+	// client already has the message. History reads the same feature rows.
+	if _, err = s.store.AppendPts(ctx, ch.ID, KindReact, msgID, nil); err != nil {
+		return nil, err
+	}
+	if reloaded, rerr := s.reload(ctx, ch.ID); rerr == nil && reloaded != nil {
+		ch = reloaded
+	}
 	canSee, readAt := reactionView(ch, f, self)
 	reactions := reactionSummary(f.Reactions, msgID, self, canSee, readAt)
 	upd := mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
@@ -1175,6 +1183,41 @@ func reactionSummary(all []ReactRec, msgID int32, self int64, canSee bool, readA
 		out.RecentReactions = recentChannelReactions(mine, self, readAt, 3)
 	}
 	return mtproto.MakeTLMessageReactions(out).To_MessageReactions()
+}
+
+// attachReactions copies stored channel reactions onto history and difference
+// messages. An empty summary is left unset so a cleared reaction does not
+// leave a chip on the bubble.
+func (s *Service) attachReactions(ctx context.Context, viewer, channelID int64, msgs []*mtproto.Message) {
+	if len(msgs) == 0 {
+		return
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil || ch == nil {
+		return
+	}
+	f := s.features(ctx, channelID)
+	canSee, readAt := reactionView(ch, f, viewer)
+	for _, m := range msgs {
+		if m == nil || m.GetId() == 0 {
+			continue
+		}
+		sum := reactionSummary(f.Reactions, m.GetId(), viewer, canSee, readAt)
+		if len(sum.GetResults()) == 0 {
+			continue
+		}
+		m.Reactions = sum
+	}
+}
+
+func (s *Service) channelReactionUpdate(ctx context.Context, viewer int64, ch *Channel, msgID int32) *mtproto.Update {
+	f := s.features(ctx, ch.ID)
+	canSee, readAt := reactionView(ch, f, viewer)
+	return mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
+		Peer_PEER:                  mtproto.MakePeerChannel(ch.ID),
+		MsgId_INT32:                msgID,
+		Reactions_MESSAGEREACTIONS: reactionSummary(f.Reactions, msgID, viewer, canSee, readAt),
+	}).To_Update()
 }
 
 func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids []int32) (*mtproto.Updates, error) {

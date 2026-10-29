@@ -25,6 +25,7 @@ const (
 	KindNew    = "new"
 	KindEdit   = "edit"
 	KindDelete = "delete"
+	KindReact  = "react"
 )
 
 // Channel is the stored channel or supergroup.
