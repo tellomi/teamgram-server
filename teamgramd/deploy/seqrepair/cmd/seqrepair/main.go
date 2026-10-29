@@ -44,6 +44,7 @@ import (
 
 func main() {
 	dsn := flag.String("dsn", os.Getenv("TEAMGRAM_MYSQL_DSN"), "MySQL DSN")
+	redisAddr := flag.String("redis", os.Getenv("TEAMGRAM_REDIS"), "idgen Redis host:port; required for -apply")
 	apply := flag.Bool("apply", false, "write the repair; without this flag the command only prints the plan")
 	flag.Parse()
 	if *dsn == "" {
@@ -61,42 +62,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	rep, err := seqrepair.Run(context.Background(), db, *apply)
-	if rep.Plan.Rebuilt == 0 && rep.Plan.PtsMoved == 0 {
-		fmt.Println("nothing to repair")
+	var seq seqrepair.Sequencer
+	if *redisAddr != "" {
+		seq = seqrepair.DialRedis(*redisAddr)
+	} else if *apply {
+		fmt.Fprintln(os.Stderr, "missing -redis or TEAMGRAM_REDIS; -apply will not run without the live id counters")
+		os.Exit(2)
 	} else {
-		mode := "dry-run"
-		if *apply {
-			mode = "applied"
-		}
-		fmt.Printf("%s: rebuild %d message rows, renumber %d pts rows, update %d dialogs\n",
-			mode, rep.Plan.Rebuilt, rep.Plan.PtsMoved, len(rep.Plan.Dialogs))
-		for _, m := range rep.Plan.Inserts {
-			fmt.Printf("  message user=%d box=%d peer_type=%d peer=%d date=%d %q\n",
-				m.UserID, m.BoxID, m.PeerType, m.PeerID, m.Date2, clip(m.Message))
-		}
-		for _, d := range rep.Plan.Dialogs {
-			fmt.Printf("  dialog user=%d peer_type=%d peer=%d top=%d read_inbox=%d read_outbox=%d unread=%d\n",
-				d.UserID, d.PeerType, d.PeerID, d.TopMessage, d.ReadInbox, d.ReadOutbox, d.UnreadCount)
-		}
+		fmt.Fprintln(os.Stderr, "warning: no -redis; ids are planned from the table max only and are not safe to apply")
 	}
+	rep, err := seqrepair.Run(context.Background(), db, seq, *apply)
+	mode := "dry-run"
+	if *apply {
+		mode = "applied"
+	}
+	fmt.Print(rep.Format(mode))
 	if *apply {
 		for _, name := range rep.Backups {
 			fmt.Printf("backup %s\n", name)
 		}
 		fmt.Printf("duplicate (user_id, pts) pairs: %d\n", rep.DupPairs)
-	} else if rep.Plan.Rebuilt != 0 || rep.Plan.PtsMoved != 0 {
-		fmt.Println("dry-run only; pass -apply to snapshot the tables and write")
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func clip(s string) string {
-	if len(s) > 60 {
-		return s[:60]
-	}
-	return s
 }

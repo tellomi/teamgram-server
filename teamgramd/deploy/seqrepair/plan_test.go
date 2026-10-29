@@ -63,10 +63,10 @@ func TestIncidentRebuildsSwallowedMessagesAndPts(t *testing.T) {
 		Message{UserID: mke, BoxID: 40, SenderID: mke, PeerType: peerUser, PeerID: 9, Message: "other", Date2: old},
 	)
 	snap.Dialogs = []Dialog{
-		{UserID: erel, PeerType: peerUser, PeerID: mke, TopMessage: 27, ReadInbox: 27, ReadOutbox: 5000, Date2: old},
-		{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 18, ReadInbox: 18, ReadOutbox: 18, Date2: old},
-		{UserID: erel, PeerType: peerChat, PeerID: chat, TopMessage: 0, ReadInbox: 0, ReadOutbox: 0, Date2: old},
-		{UserID: mke, PeerType: peerChat, PeerID: chat, TopMessage: 0, ReadInbox: 0, ReadOutbox: 0, Date2: old},
+		{UserID: erel, PeerType: peerUser, PeerID: mke, TopMessage: 27, ReadInbox: 27, ReadOutbox: 5000, UnreadCount: 2, Date2: old},
+		{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 18, ReadInbox: 18, ReadOutbox: 18, UnreadCount: 1, Date2: old},
+		{UserID: erel, PeerType: peerChat, PeerID: chat, TopMessage: 0, ReadInbox: 0, ReadOutbox: 0, UnreadCount: 4, Date2: old},
+		{UserID: mke, PeerType: peerChat, PeerID: chat, TopMessage: 0, ReadInbox: 0, ReadOutbox: 0, UnreadCount: 0, Date2: old},
 	}
 
 	var nextID int64 = 1
@@ -101,7 +101,7 @@ func TestIncidentRebuildsSwallowedMessagesAndPts(t *testing.T) {
 	addPts(erel, 7, groupAt, newMessageJSON(erel, chat, peerChat, 7, groupAt, "group", true))
 	addPts(mke, 7, groupAt, newMessageJSON(erel, chat, peerChat, 7, groupAt, "group", false))
 
-	plan := BuildPlan(snap)
+	plan := BuildPlan(snap, Counters{})
 	if plan.Rebuilt != 14 {
 		t.Fatalf("rebuilt rows = %d, want 14 (6 private x 2 boxes + 1 group x 2 boxes)", plan.Rebuilt)
 	}
@@ -175,8 +175,17 @@ func TestIncidentRebuildsSwallowedMessagesAndPts(t *testing.T) {
 	if mkeDlg.ReadInbox != 18 || mkeDlg.ReadOutbox != 18 {
 		t.Fatalf("mke read cursors = %d/%d, want 18/18", mkeDlg.ReadInbox, mkeDlg.ReadOutbox)
 	}
-	if erelDlg.UnreadCount < 6 {
-		t.Fatalf("erel unread_count = %d, want at least the 6 new private messages", erelDlg.UnreadCount)
+	// Three of the six private messages are incoming. Erel's own three, and the
+	// group message he sent, must not add unread. Stored 2 stays plus the 3.
+	if erelDlg.UnreadCount != 5 {
+		t.Fatalf("erel private unread = %d, want 5 (stored 2 plus 3 incoming)", erelDlg.UnreadCount)
+	}
+	erelGroup := dialogOf(after, erel, peerChat, chat)
+	if erelGroup.UnreadCount != 4 {
+		t.Fatalf("erel group unread = %d, want 4 (own message does not add unread)", erelGroup.UnreadCount)
+	}
+	if mkeDlg.UnreadCount != 4 {
+		t.Fatalf("mke private unread = %d, want 4 (stored 1 plus 3 incoming)", mkeDlg.UnreadCount)
 	}
 
 	if dups := DuplicatePts(after.Pts); len(dups) != 0 {
@@ -190,7 +199,7 @@ func TestIncidentRebuildsSwallowedMessagesAndPts(t *testing.T) {
 		t.Fatalf("mke post-reset pts were not moved above 150")
 	}
 
-	again := BuildPlan(after)
+	again := BuildPlan(after, Counters{})
 	if again.Rebuilt != 0 || again.PtsMoved != 0 || len(again.Dialogs) != 0 {
 		t.Fatalf("second plan is not empty: rebuilt %d pts %d dialogs %d", again.Rebuilt, again.PtsMoved, len(again.Dialogs))
 	}
@@ -286,6 +295,104 @@ func ptsAbove(rows []PtsRow, user int64, floor int32, want int) bool {
 		}
 	}
 	return true
+}
+
+func TestUnreadIgnoresOutgoingAndDoesNotRecount(t *testing.T) {
+	const (
+		erel   = int64(1001)
+		mke    = int64(1002)
+		member = int64(136907719)
+		chat   = int64(120034)
+	)
+	old := int64(100)
+	at := int64(200)
+	snap := Snapshot{
+		Messages: []Message{
+			{UserID: erel, BoxID: 1052, SenderID: erel, PeerType: peerUser, PeerID: mke, Message: "later", Date2: old},
+		},
+		Dialogs: []Dialog{
+			{UserID: erel, PeerType: peerUser, PeerID: mke, TopMessage: 1052, ReadInbox: 27, ReadOutbox: 27, UnreadCount: 2},
+			{UserID: erel, PeerType: peerChat, PeerID: chat, TopMessage: 10, ReadInbox: 10, UnreadCount: 4},
+			// Stored badges are higher than a naive count of messages above the
+			// read cursor. The dry-run must not replace 17 and 25 with that count.
+			{UserID: mke, PeerType: peerChat, PeerID: chat, TopMessage: 40, ReadInbox: 20, UnreadCount: 17},
+			{UserID: member, PeerType: peerChat, PeerID: chat, TopMessage: 40, ReadInbox: 20, UnreadCount: 25},
+			{UserID: member, PeerType: peerUser, PeerID: erel, TopMessage: 8, ReadInbox: 8, UnreadCount: 3},
+		},
+	}
+	for box := int32(21); box <= 29; box++ {
+		snap.Messages = append(snap.Messages,
+			Message{UserID: mke, BoxID: box, SenderID: erel, PeerType: peerChat, PeerID: chat, Message: "hist", Date2: old},
+			Message{UserID: member, BoxID: box, SenderID: erel, PeerType: peerChat, PeerID: chat, Message: "hist", Date2: old},
+		)
+	}
+	// Old pts so the new pts=1 rows are the post-reset duplicates.
+	snap.Pts = append(snap.Pts,
+		PtsRow{ID: 1, UserID: erel, Pts: 1, PtsCount: 1, UpdateType: ptsNewMessage, Date2: old, UpdateData: newMessageJSON(erel, mke, peerUser, 1, old, "old", true)},
+		PtsRow{ID: 2, UserID: erel, Pts: 1153, PtsCount: 1, UpdateType: ptsNewMessage, Date2: old, UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":1153}`},
+		PtsRow{ID: 3, UserID: mke, Pts: 1, PtsCount: 1, UpdateType: ptsNewMessage, Date2: old, UpdateData: newMessageJSON(mke, chat, peerChat, 1, old, "old", true)},
+		PtsRow{ID: 4, UserID: mke, Pts: 80, PtsCount: 1, Date2: old, UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":80}`},
+		PtsRow{ID: 5, UserID: member, Pts: 1, PtsCount: 1, UpdateType: ptsNewMessage, Date2: old, UpdateData: newMessageJSON(member, chat, peerChat, 1, old, "old", true)},
+		PtsRow{ID: 6, UserID: member, Pts: 90, PtsCount: 1, Date2: old, UpdateData: `{"predicate_name":"updateReadHistoryInbox","pts_INT32":90}`},
+	)
+	// Six outgoing private messages from erel, plus the group message fanout.
+	for i := 0; i < 6; i++ {
+		text := "out" + string(rune('a'+i))
+		snap.Pts = append(snap.Pts, PtsRow{
+			ID: 100 + int64(i), UserID: erel, Pts: int32(i + 1), PtsCount: 1, UpdateType: ptsNewMessage, Date2: at + int64(i),
+			UpdateData: newMessageJSON(erel, mke, peerUser, int32(i+1), at+int64(i), text, true),
+		})
+	}
+	snap.Pts = append(snap.Pts,
+		PtsRow{ID: 200, UserID: erel, Pts: 7, PtsCount: 1, UpdateType: ptsNewMessage, Date2: at + 10, UpdateData: newMessageJSON(erel, chat, peerChat, 7, at+10, "group", true)},
+		PtsRow{ID: 201, UserID: mke, Pts: 1, PtsCount: 1, UpdateType: ptsNewMessage, Date2: at + 10, UpdateData: newMessageJSON(erel, chat, peerChat, 1, at+10, "group", false)},
+		PtsRow{ID: 202, UserID: member, Pts: 1, PtsCount: 1, UpdateType: ptsNewMessage, Date2: at + 10, UpdateData: newMessageJSON(erel, chat, peerChat, 1, at+10, "group", false)},
+	)
+
+	plan := BuildPlan(snap, Counters{
+		Box: map[int64]int64{erel: 2052, mke: 1400, member: 900},
+		Pts: map[int64]int64{erel: 2153, mke: 1800, member: 1900},
+	})
+
+	erelPriv := boxes(plan.Inserts, erel, peerUser, mke)
+	if len(erelPriv) != 6 || erelPriv[0] != 2053 {
+		t.Fatalf("erel private boxes = %v, want 2053.. (above counter 2052, not 52)", erelPriv)
+	}
+	if plan.BoxTo[erel] != 2059 {
+		t.Fatalf("erel box counter target = %d, want 2059 (2053 plus 6 private and the group message)", plan.BoxTo[erel])
+	}
+	if plan.PtsTo[erel] != 2160 {
+		t.Fatalf("erel pts target = %d, want 2160 (above live counter 2153)", plan.PtsTo[erel])
+	}
+
+	erelDlg := findPlanDialog(plan, erel, peerUser, mke)
+	if erelDlg.UnreadCount != 2 {
+		t.Fatalf("erel private unread = %d, want 2 (six sends are his own)", erelDlg.UnreadCount)
+	}
+	erelGroup := findPlanDialog(plan, erel, peerChat, chat)
+	if erelGroup.UnreadCount != 4 {
+		t.Fatalf("erel group unread = %d, want 4", erelGroup.UnreadCount)
+	}
+	mkeGroup := findPlanDialog(plan, mke, peerChat, chat)
+	if mkeGroup.UnreadCount != 18 {
+		t.Fatalf("mke group unread = %d, want 18 (17 plus the one incoming), not a recount of 9", mkeGroup.UnreadCount)
+	}
+	memberGroup := findPlanDialog(plan, member, peerChat, chat)
+	if memberGroup.UnreadCount != 26 {
+		t.Fatalf("member group unread = %d, want 26 (25 plus one incoming), not 9", memberGroup.UnreadCount)
+	}
+	if findPlanDialog(plan, member, peerUser, erel).UserID != 0 {
+		t.Fatal("private dialog with no swallowed message must not be rewritten")
+	}
+}
+
+func findPlanDialog(p Plan, user int64, peerType int32, peer int64) Dialog {
+	for _, d := range p.Dialogs {
+		if d.UserID == user && d.PeerType == peerType && d.PeerID == peer {
+			return d
+		}
+	}
+	return Dialog{}
 }
 
 func TestMessageTableFor(t *testing.T) {

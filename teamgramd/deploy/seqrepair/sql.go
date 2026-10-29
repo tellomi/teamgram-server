@@ -22,6 +22,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -30,29 +32,46 @@ const backupSuffix = "_bak_20261030_idreset"
 // Report is what a dry-run or apply prints.
 type Report struct {
 	Plan     Plan
+	Read     Counters
 	DryRun   bool
 	Backups  []string
 	DupPairs int
+	Snap     Snapshot
 }
 
 // Run loads MySQL, builds the plan, and either prints it or writes it.
-// Apply snapshots messages, user_pts_updates, and dialogs first. A second
-// run keeps that snapshot and changes nothing once the plan is empty.
-func Run(ctx context.Context, db *sql.DB, apply bool) (Report, error) {
+// Apply snapshots messages, user_pts_updates, and dialogs first, then reserves
+// box and pts ids in Redis above the live counter and writes those ids.
+// A second run keeps the snapshot and does not insert or move the counter again.
+func Run(ctx context.Context, db *sql.DB, seq Sequencer, apply bool) (Report, error) {
 	snap, err := Load(ctx, db)
 	if err != nil {
 		return Report{}, err
 	}
-	plan := BuildPlan(snap)
-	rep := Report{Plan: plan, DryRun: !apply}
+	read, err := readCounters(ctx, seq, snap)
+	if err != nil {
+		return Report{}, err
+	}
+	plan := BuildPlan(snap, read)
+	rep := Report{Plan: plan, Read: read, DryRun: !apply, Snap: snap}
 	if !apply {
 		return rep, nil
+	}
+	if seq == nil && (len(plan.Inserts) > 0 || len(plan.Pts) > 0) {
+		return rep, fmt.Errorf("refusing to apply without Redis: new ids would sit under the live counter and the next send could reuse them")
 	}
 	backed, err := backupAll(ctx, db)
 	if err != nil {
 		return rep, err
 	}
 	rep.Backups = backed
+	if seq != nil {
+		plan, err = reserveAndPlan(ctx, seq, snap, read, plan)
+		if err != nil {
+			return rep, err
+		}
+		rep.Plan = plan
+	}
 	if err = writePlan(ctx, db, plan); err != nil {
 		return rep, err
 	}
@@ -65,6 +84,203 @@ func Run(ctx context.Context, db *sql.DB, apply bool) (Report, error) {
 		return rep, fmt.Errorf("acceptance failed: %d duplicate (user_id, pts) pairs remain", n)
 	}
 	return rep, nil
+}
+
+func readCounters(ctx context.Context, seq Sequencer, snap Snapshot) (Counters, error) {
+	out := Counters{Box: map[int64]int64{}, Pts: map[int64]int64{}}
+	if seq == nil {
+		return out, nil
+	}
+	users := map[int64]struct{}{}
+	for _, m := range snap.Messages {
+		users[m.UserID] = struct{}{}
+	}
+	for _, row := range snap.Pts {
+		users[row.UserID] = struct{}{}
+	}
+	for user := range users {
+		box, err := seq.Get(ctx, boxKey(user))
+		if err != nil {
+			return out, fmt.Errorf("get %s: %w", boxKey(user), err)
+		}
+		pts, err := seq.Get(ctx, ptsKey(user))
+		if err != nil {
+			return out, fmt.Errorf("get %s: %w", ptsKey(user), err)
+		}
+		out.Box[user] = parseCounter(box)
+		out.Pts[user] = parseCounter(pts)
+	}
+	return out, nil
+}
+
+func parseCounter(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// reserveAndPlan claims the id ranges in Redis, then rebuilds the plan from
+// the floors those claims started at. A send between the dry-run and apply
+// moves the claim upward instead of colliding with it.
+func reserveAndPlan(ctx context.Context, seq Sequencer, snap Snapshot, read Counters, preview Plan) (Plan, error) {
+	fresh := Counters{Box: map[int64]int64{}, Pts: map[int64]int64{}}
+	for user, n := range boxClaim(snap, read, preview) {
+		first, _, err := seq.Reserve(ctx, boxKey(user), int64(maxBoxID(snap, user)), n)
+		if err != nil {
+			return Plan{}, fmt.Errorf("reserve box ids for %d: %w", user, err)
+		}
+		fresh.Box[user] = first - 1
+	}
+	for user, n := range ptsClaim(snap, read, preview) {
+		first, _, err := seq.Reserve(ctx, ptsKey(user), int64(maxPtsID(snap, user)), n)
+		if err != nil {
+			return Plan{}, fmt.Errorf("reserve pts for %d: %w", user, err)
+		}
+		fresh.Pts[user] = first - 1
+	}
+	// Keep counters for users we did not reserve so a later id still clears them.
+	for user, v := range read.Box {
+		if _, ok := fresh.Box[user]; !ok {
+			fresh.Box[user] = v
+		}
+	}
+	for user, v := range read.Pts {
+		if _, ok := fresh.Pts[user]; !ok {
+			fresh.Pts[user] = v
+		}
+	}
+	return BuildPlan(snap, fresh), nil
+}
+
+func boxClaim(snap Snapshot, read Counters, plan Plan) map[int64]int64 {
+	db := map[int64]int64{}
+	for _, m := range snap.Messages {
+		if int64(m.BoxID) > db[m.UserID] {
+			db[m.UserID] = int64(m.BoxID)
+		}
+	}
+	out := map[int64]int64{}
+	for user, to := range plan.BoxTo {
+		base := db[user]
+		if read.Box[user] > base {
+			base = read.Box[user]
+		}
+		if to > base {
+			out[user] = to - base
+		}
+	}
+	return out
+}
+
+func ptsClaim(snap Snapshot, read Counters, plan Plan) map[int64]int64 {
+	out := map[int64]int64{}
+	for user, to := range plan.PtsTo {
+		base := int64(maxPtsID(snap, user))
+		if read.Pts[user] > base {
+			base = read.Pts[user]
+		}
+		if to > base {
+			out[user] = to - base
+		}
+	}
+	return out
+}
+
+func maxBoxID(snap Snapshot, user int64) int32 {
+	var max int32
+	for _, m := range snap.Messages {
+		if m.UserID == user && m.BoxID > max {
+			max = m.BoxID
+		}
+	}
+	return max
+}
+
+// Format is the dry-run / apply text.
+func (r Report) Format(mode string) string {
+	var b strings.Builder
+	if r.Plan.Rebuilt == 0 && r.Plan.PtsMoved == 0 {
+		b.WriteString("nothing to repair\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "%s: rebuild %d message rows, renumber %d pts rows, update %d dialogs\n",
+		mode, r.Plan.Rebuilt, r.Plan.PtsMoved, len(r.Plan.Dialogs))
+	users := map[int64]struct{}{}
+	for user := range r.Plan.BoxTo {
+		users[user] = struct{}{}
+	}
+	for user := range r.Plan.PtsTo {
+		users[user] = struct{}{}
+	}
+	ids := make([]int64, 0, len(users))
+	for user := range users {
+		ids = append(ids, user)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	for _, user := range ids {
+		if to, ok := r.Plan.BoxTo[user]; ok {
+			fmt.Fprintf(&b, "counter %s=%d db_max=%d assign %d-%d\n",
+				boxKey(user), r.Read.Box[user], maxBoxID(r.Snap, user), minBox(r.Plan, user), to)
+		}
+		if to, ok := r.Plan.PtsTo[user]; ok {
+			fmt.Fprintf(&b, "counter %s=%d db_max=%d assign %d-%d\n",
+				ptsKey(user), r.Read.Pts[user], maxPtsID(r.Snap, user), minPts(r.Plan, user), to)
+		}
+	}
+	for _, m := range r.Plan.Inserts {
+		fmt.Fprintf(&b, "  message user=%d box=%d sender=%d peer_type=%d peer=%d date=%d %q\n",
+			m.UserID, m.BoxID, m.SenderID, m.PeerType, m.PeerID, m.Date2, clipText(m.Message))
+	}
+	for _, d := range r.Plan.Dialogs {
+		fmt.Fprintf(&b, "  dialog user=%d peer_type=%d peer=%d top=%d read_inbox=%d read_outbox=%d unread %d -> %d\n",
+			d.UserID, d.PeerType, d.PeerID, d.TopMessage, d.ReadInbox, d.ReadOutbox, d.UnreadBefore, d.UnreadCount)
+	}
+	if r.DryRun {
+		b.WriteString("dry-run only; -apply reserves these ids in Redis and writes. A send before -apply moves the range up.\n")
+	}
+	return b.String()
+}
+
+func minBox(plan Plan, user int64) int32 {
+	var min int32
+	for _, m := range plan.Inserts {
+		if m.UserID == user && (min == 0 || m.BoxID < min) {
+			min = m.BoxID
+		}
+	}
+	return min
+}
+
+func minPts(plan Plan, user int64) int32 {
+	var min int32
+	for _, rw := range plan.Pts {
+		if rw.UserID == user && (min == 0 || rw.NewPts < min) {
+			min = rw.NewPts
+		}
+	}
+	return min
+}
+
+func clipText(s string) string {
+	if len(s) > 60 {
+		return s[:60]
+	}
+	return s
+}
+
+func maxPtsID(snap Snapshot, user int64) int32 {
+	var max int32
+	for _, row := range snap.Pts {
+		if row.UserID == user && row.Pts > max {
+			max = row.Pts
+		}
+	}
+	return max
 }
 
 // Load reads the rows the planner needs.
