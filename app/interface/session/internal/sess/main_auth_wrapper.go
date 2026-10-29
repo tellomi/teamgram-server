@@ -679,32 +679,49 @@ func (m *MainAuthWrapper) rpcRunLoop() {
 			logx.Infof("%s -> quit rpcRunLoop...", m)
 			return
 		} else {
+			batch := apiRequest.([]*rpcApiMessage)
 			threading.RunSafe(func() {
-				for _, request := range apiRequest.([]*rpcApiMessage) {
-					doRpcRequest(request.ctx,
-						m.cb.Dao,
-						&metadata.RpcMetadata{
-							ServerId:       m.cb.Dao.MyServerId,
-							ClientAddr:     request.clientIp,
-							AuthId:         request.sessList.authId,
-							SessionId:      request.sessionId,
-							ReceiveTime:    time.Now().Unix(),
-							UserId:         m.AuthUserId,
-							ClientMsgId:    request.reqMsgId,
-							Layer:          m.Layer(),
-							Client:         m.ClientName(),
-							Langpack:       m.LangPack(),
-							PermAuthKeyId:  m.authKeyId,
-							LangCode:       m.LangCode(),
-							SystemLangCode: m.SystemLangCode(),
-							Takeout:        request.takeout,
-						},
-						request)
-					m.rpcDataChan <- request
+				for _, request := range batch {
+					request := request
+					if isFileRPC(request.reqMsg) {
+						// upload.getFile used to run on this loop. A dfs read
+						// that waited on R2 blocked getDifference and sends,
+						// which is the client stuck on "Updating...".
+						threading.GoSafe(func() {
+							ctx, cancel := context.WithTimeout(request.ctx, fileRPCTimeout)
+							defer cancel()
+							m.finishRPC(ctx, request)
+						})
+						continue
+					}
+					m.finishRPC(request.ctx, request)
 				}
 			})
 		}
 	}
+}
+
+func (m *MainAuthWrapper) finishRPC(ctx context.Context, request *rpcApiMessage) {
+	doRpcRequest(ctx,
+		m.cb.Dao,
+		&metadata.RpcMetadata{
+			ServerId:       m.cb.Dao.MyServerId,
+			ClientAddr:     request.clientIp,
+			AuthId:         request.sessList.authId,
+			SessionId:      request.sessionId,
+			ReceiveTime:    time.Now().Unix(),
+			UserId:         m.AuthUserId,
+			ClientMsgId:    request.reqMsgId,
+			Layer:          m.Layer(),
+			Client:         m.ClientName(),
+			Langpack:       m.LangPack(),
+			PermAuthKeyId:  m.authKeyId,
+			LangCode:       m.LangCode(),
+			SystemLangCode: m.SystemLangCode(),
+			Takeout:        request.takeout,
+		},
+		request)
+	m.rpcDataChan <- request
 }
 
 func (m *MainAuthWrapper) sendToRpcQueue(ctx context.Context, rpcMessage []*rpcApiMessage) {

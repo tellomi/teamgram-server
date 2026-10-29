@@ -50,7 +50,9 @@ Document bytes are written through the dfs S3 client (`MinioConfig.ApplyEnv`, th
 | Twemoji and Fluent | `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` | `stickers/<document id>.dat` |
 | Noto TGS | the same bucket | `emoji/<document id>.dat` |
 
-`upload.getFile` reads `documents/<id>.dat` first, then `stickers/<id>.dat` and `emoji/<id>.dat`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
+`upload.getFile` serves a seeded document from the binary when the id matches, then dfs reads `stickers/<id>.dat` and `emoji/<id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
+
+Reaction icons are separate documents: `static_icon` and `center_icon` are WebP, and the animation fields are 512×512 `.tgs` with `DocumentAttributeSticker` and `DocumentAttributeImageSize`. They are not custom emoji and not paid reactions. A reaction without a 512×512 `.tgs` is left out of `messages.getAvailableReactions`. `MessageReactions` is an emoji plus a count.
 
 The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT`, the access keys, `TELLOMI_S3_BUCKET_ATTACHMENTS`, and `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` are set. Buckets must already exist. Leave `TELLOMI_S3_USE_SSL` unset for an `https://` R2 endpoint so dfs turns TLS on. An explicit `false` forces plain HTTP, and the read never reaches objects written over TLS. Set `TELLOMI_S3_REGION=auto` for R2.
 

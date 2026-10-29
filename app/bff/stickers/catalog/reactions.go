@@ -7,6 +7,37 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
+// reactionIconDocument is a sticker document with no custom-emoji attribute.
+// iOS draws a custom-emoji document that it cannot decode as a coin beside the emoji.
+func reactionIconDocument(id int64, mime, name, alt string, w, h int32, size int) *mtproto.Document {
+	set := mtproto.MakeTLInputStickerSetEmpty(&mtproto.InputStickerSet{}).To_InputStickerSet()
+	attrs := []*mtproto.DocumentAttribute{
+		mtproto.MakeTLDocumentAttributeImageSize(&mtproto.DocumentAttribute{
+			W: w,
+			H: h,
+		}).To_DocumentAttribute(),
+		mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{
+			FileName: name,
+		}).To_DocumentAttribute(),
+		mtproto.MakeTLDocumentAttributeSticker(&mtproto.DocumentAttribute{
+			Alt:        alt,
+			Stickerset: set,
+		}).To_DocumentAttribute(),
+	}
+	return mtproto.MakeTLDocument(&mtproto.Document{
+		Id:            id,
+		AccessHash:    stableID("reaction-access", mime, name),
+		FileReference: []byte{},
+		Date:          stickerDate,
+		MimeType:      mime,
+		Size2_INT32:   int32(size),
+		Size2_INT64:   int64(size),
+		Size2:         int64(size),
+		DcId:          1,
+		Attributes:    attrs,
+	}).To_Document()
+}
+
 const maxRecentReactions = 50
 
 type reactionStore interface {

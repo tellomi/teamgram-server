@@ -1057,6 +1057,7 @@ func reactionSummary(all []ReactRec, msgID int32, self int64) *mtproto.MessageRe
 	for _, emo := range order {
 		rc := mtproto.MakeTLReactionCount(&mtproto.ReactionCount{
 			Reaction_REACTION: mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: emo}).To_Reaction(),
+			Reaction_STRING:   emo,
 			Count:             counts[emo],
 		}).To_ReactionCount()
 		if chosen[emo] {

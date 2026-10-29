@@ -595,29 +595,31 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 			continue
 		}
 		alt := emojiFromCode(def.Code)
-		static := s.docByFamily(alt, "twemoji")
-		animated := s.docByFamily(alt, "noto")
-		if static == nil {
-			static = animated
-		}
-		if static == nil {
+		webp, webpOK := readAsset("assets/twemoji/" + def.Code + ".webp")
+		tgs, tgsOK := readAsset("assets/noto/" + def.Code + ".tgs")
+		// Animation fields have to be 512×512 .tgs. A webp there is what the
+		// iOS bubble draws as a coin next to the emoji. Omit the reaction.
+		if !webpOK || !tgsOK || !tgsCanvas512(tgs) {
 			continue
 		}
-		if animated == nil {
-			animated = static
-		}
+		staticID := stableID("reaction", "static", def.Code)
+		animID := stableID("reaction", "anim", def.Code)
+		staticDoc := reactionIconDocument(staticID, "image/webp", def.Code+".webp", alt, 72, 72, len(webp))
+		animDoc := reactionIconDocument(animID, "application/x-tgsticker", def.Code+".tgs", alt, 512, 512, len(tgs))
 		reactions = append(reactions, mtproto.MakeTLAvailableReaction(&mtproto.AvailableReaction{
+			Inactive:          false,
+			Premium:           false,
 			Reaction:          alt,
 			Title:             def.Reaction,
-			StaticIcon:        static.item.document(static.pack),
-			AppearAnimation:   animated.item.document(animated.pack),
-			SelectAnimation:   animated.item.document(animated.pack),
-			ActivateAnimation: animated.item.document(animated.pack),
-			EffectAnimation:   animated.item.document(animated.pack),
-			AroundAnimation:   animated.item.document(animated.pack),
-			CenterIcon:        static.item.document(static.pack),
+			StaticIcon:        staticDoc,
+			AppearAnimation:   animDoc,
+			SelectAnimation:   animDoc,
+			ActivateAnimation: animDoc,
+			EffectAnimation:   animDoc,
+			AroundAnimation:   animDoc,
+			CenterIcon:        staticDoc,
 		}).To_AvailableReaction())
-		ids = append(ids, static.item.DocumentID)
+		ids = append(ids, animID)
 	}
 	sum := int32(hash64(ids))
 	if hash != 0 && hash == sum {
@@ -630,6 +632,41 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 		Hash:      sum,
 		Reactions: reactions,
 	}).To_Messages_AvailableReactions()
+}
+
+// DocumentFile returns the bytes for a seeded sticker, emoji, or reaction icon.
+// upload.getFile serves these directly so a missing R2 object cannot stall the session.
+func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
+	s.mu.Lock()
+	link := s.docs[id]
+	s.mu.Unlock()
+	if link != nil {
+		b, err := assetFS.ReadFile(link.item.AssetPath)
+		if err != nil || len(b) == 0 {
+			return nil, "", false
+		}
+		return b, link.item.MIME, true
+	}
+	for _, def := range emojiCatalog {
+		if def.Reaction == "" {
+			continue
+		}
+		switch id {
+		case stableID("reaction", "static", def.Code):
+			b, readOK := readAsset("assets/twemoji/" + def.Code + ".webp")
+			if !readOK {
+				return nil, "", false
+			}
+			return b, "image/webp", true
+		case stableID("reaction", "anim", def.Code):
+			b, readOK := readAsset("assets/noto/" + def.Code + ".tgs")
+			if !readOK || !tgsCanvas512(b) {
+				return nil, "", false
+			}
+			return b, "application/x-tgsticker", true
+		}
+	}
+	return nil, "", false
 }
 
 func (s *Service) docByFamily(emoticon, family string) *linkedDoc {
