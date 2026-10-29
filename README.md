@@ -111,6 +111,8 @@ This builds the image on your machine. The Chengdu server pulls a prebuilt image
 
 - [Project specs](specs/README.md) — Architecture, protocol, dependencies, contributing, security, roadmap
 - [Service topology and configuration](docs/service-topology.md) — Ports, infrastructure, call graph ([中文](docs/service-topology-zh.md))
+- [Client regression](docs/e2e.md) — MTProto suite, required CI check, post-deploy smoke
+- [Staging](docs/staging.md) — second compose project on the same host
 - [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md)
 
 

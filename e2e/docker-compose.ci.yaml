@@ -1,0 +1,68 @@
+# GitHub-hosted runners cannot pull minio/minio or minio/mc (Docker Hub
+# 401, dl.min.io 410). This overlay keeps the service name `minio` and the
+# MINIO_ROOT_* credentials the app already uses, and runs RustFS, which
+# speaks the same S3 API and accepts those variables. Bucket setup uses the
+# AWS CLI because mc is not pullable. Monitoring, coturn, and MediaMTX are
+# left out so the job only needs MySQL, Redis, Kafka, etcd, and object storage.
+#
+# Production compose files are unchanged. Chengdu still pulls the image in
+# docker-compose-env.yaml.
+
+services:
+  minio:
+    image: rustfs/rustfs:latest
+    # The image user cannot write a root-owned bind mount. Root matches the
+    # MinIO image this service replaces.
+    user: "0:0"
+    # :9000 binds IPv6-only in this image, so other containers cannot connect.
+    command: ["server", "/data", "--address", "0.0.0.0:9000", "--console-address", "0.0.0.0:9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniostorage}
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-miniostorage}
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+
+  minio-mc:
+    image: amazon/aws-cli:2.22.35
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -eu
+        for i in $$(seq 1 30); do
+          aws --endpoint-url http://minio:9000 s3 ls >/dev/null 2>&1 && break
+          sleep 2
+        done
+        aws --endpoint-url http://minio:9000 s3 mb s3://tellomi-attachments || true
+        aws --endpoint-url http://minio:9000 s3 mb s3://tellomi-public-media || true
+        aws --endpoint-url http://minio:9000 s3 mb s3://tellomi-backups || true
+        aws --endpoint-url http://minio:9000 s3 mb s3://photos || true
+        aws --endpoint-url http://minio:9000 s3 mb s3://documents || true
+        aws --endpoint-url http://minio:9000 s3 mb s3://videos || true
+        aws --endpoint-url http://minio:9000 s3 ls
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniostorage}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+
+  coturn:
+    profiles: ["donotstart"]
+  mediamtx:
+    profiles: ["donotstart"]
+  jaeger:
+    profiles: ["donotstart"]
+  node-exporter:
+    profiles: ["donotstart"]
+  prometheus:
+    profiles: ["donotstart"]
+  grafana:
+    profiles: ["donotstart"]
+  elasticsearch:
+    profiles: ["donotstart"]
+  kibana:
+    profiles: ["donotstart"]
+  filebeat:
+    profiles: ["donotstart"]
+  go-stash:
+    profiles: ["donotstart"]
