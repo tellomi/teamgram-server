@@ -138,7 +138,7 @@ services:
 
   # --- 对象存储 ---
   minio:
-    image: minio/minio:latest
+    image: docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: minio
     ports:
       - "9000:9000"

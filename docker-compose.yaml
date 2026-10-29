@@ -2,7 +2,7 @@ services:
   teamgram:
     # CI pushes this image (see docs/ci-acr.md). The server pulls it and must
     # not build. `build` stays so local dev can still run `docker compose up --build`.
-    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
+    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
     build: .
     restart: always
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
