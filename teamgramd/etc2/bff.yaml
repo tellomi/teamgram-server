@@ -92,8 +92,10 @@ ChannelMySQL: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTi
 Tos:
   Id: tellomi-tos-1
   UpdateId: ""
-  TermsURL: https://tellomi.cn/terms
-  PrivacyURL: https://tellomi.cn/privacy
+  # false: no in-app popup; clients show a signup checkbox (TELLOMI_TOS_POPUP_ENABLED).
+  PopupEnabled: false
+  TermsURL: https://tellomi.cn/legal/terms/
+  PrivacyURL: https://tellomi.cn/legal/privacy/
 
 SyncClient:
   Topic:   "Sync-T"

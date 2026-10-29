@@ -1,6 +1,10 @@
 // Package terms builds help.termsOfService and decides when an already
 // signed-in client must be shown a terms update.
 //
+// Default (PopupEnabled=false): no in-app popup ever. help.getTermsOfServiceUpdate
+// always returns termsOfServiceUpdateEmpty and the signup document has
+// popup=false; it only carries the 《用户服务协议》/《隐私政策》 links that the
+// clients' signup checkbox shows. With PopupEnabled=true:
 // help.getTermsOfServiceUpdate returns help.termsOfServiceUpdateEmpty
 // (expires = now + 86400) when Tos.UpdateId is empty, when this user has
 // accepted that id, or when the user id is missing. The popup is returned
@@ -44,9 +48,9 @@ const (
 	// shown a popup we may be unable to record, and it asks again soon.
 	retryTTL int32 = 300
 
-	defaultTermsLabel   = "服务条款"
-	defaultPrivacyLabel = "隐私政策"
-	defaultText         = "欢迎使用 Tellomi。使用本服务即表示你同意以下内容，并了解我们如何处理账号信息与消息数据。请阅读服务条款和隐私政策。"
+	defaultTermsLabel   = "《用户服务协议》"
+	defaultPrivacyLabel = "《隐私政策》"
+	defaultText         = "我已阅读并同意《用户服务协议》和《隐私政策》"
 )
 
 // Config is the terms document and the optional update existing users must accept.
@@ -65,6 +69,10 @@ type Config struct {
 	TermsLabel    string `json:",optional"`
 	PrivacyLabel  string `json:",optional"`
 	MinAgeConfirm int32  `json:",optional"`
+	// PopupEnabled turns on the in-app terms popup: help.getTermsOfServiceUpdate
+	// may return UpdateId and documents carry popup=true. Default false: the
+	// clients show a signup checkbox instead, so the server never asks for a popup.
+	PopupEnabled bool `json:",optional"`
 }
 
 // Service is the in-process terms document and acceptance store.
@@ -158,6 +166,9 @@ func applyEnv(c Config) Config {
 	if v := strings.TrimSpace(os.Getenv("TELLOMI_TOS_PRIVACY_URL")); v != "" {
 		c.PrivacyURL = v
 	}
+	if v := strings.TrimSpace(os.Getenv("TELLOMI_TOS_POPUP_ENABLED")); v != "" {
+		c.PopupEnabled = v == "1" || strings.EqualFold(v, "true")
+	}
 	return c
 }
 
@@ -174,7 +185,7 @@ func (s *Service) SignupTerms() *mtproto.Help_TermsOfService {
 
 // TermsUpdate is the help.getTermsOfServiceUpdate result.
 func (s *Service) TermsUpdate(ctx context.Context, userID int64, now int32) *mtproto.Help_TermsOfServiceUpdate {
-	if s.cfg.UpdateId == "" || userID <= 0 {
+	if !s.cfg.PopupEnabled || s.cfg.UpdateId == "" || userID <= 0 {
 		return emptyUpdate(now)
 	}
 	ok, err := s.store.Accepted(ctx, userID, s.cfg.UpdateId)
@@ -222,7 +233,7 @@ func emptyUpdateAt(expires int32) *mtproto.Help_TermsOfServiceUpdate {
 func (s *Service) document(id string) *mtproto.Help_TermsOfService {
 	text, entities := s.body()
 	doc := &mtproto.Help_TermsOfService{
-		Popup:    true,
+		Popup:    s.cfg.PopupEnabled,
 		Id:       mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: idJSON(id)}).To_DataJSON(),
 		Text:     text,
 		Entities: entities,

@@ -12,7 +12,7 @@ import (
 )
 
 func TestHandlersAcceptThenEmpty(t *testing.T) {
-	svcCtx := &svc.ServiceContext{Terms: terms.New(terms.Config{UpdateId: "tellomi-tos-2"}, nil)}
+	svcCtx := &svc.ServiceContext{Terms: terms.New(terms.Config{UpdateId: "tellomi-tos-2", PopupEnabled: true}, nil)}
 	c := New(context.Background(), svcCtx)
 	c.MD = &metadata.RpcMetadata{UserId: 42}
 
