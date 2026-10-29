@@ -42,6 +42,10 @@ docker login crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com
 docker compose pull && docker compose up -d
 ```
 
+The new image applies `teamgramd/deploy/sql/migrate-*.sql` before the processes
+start. Pull this checkout as well so `docker-compose.yaml` passes
+`MYSQL_ROOT_PASSWORD` into that step. The app DSN in `etc2` is unchanged.
+
 `TELLOMI_IMAGE_REGISTRY` defaults to
 `crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com/tellomi` and `TELLOMI_IMAGE_TAG` defaults
 to `latest`, so a stock `.env` (see `.env.example`) needs no image settings.

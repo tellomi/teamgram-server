@@ -112,6 +112,30 @@ services:
     networks:
       - teamgram_net
 
+  # Applies teamgramd/deploy/sql/migrate-*.sql on every start. Idempotent, and
+  # recorded in schema_migrations, so an existing volume picks up files that
+  # were added after the data directory was first created.
+  mysql-migrate:
+    image: mysql:8.0
+    container_name: mysql-migrate
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-teamgram}
+      TEAMGRAM_SQL_DIR: /sql
+    volumes:
+      - ./teamgramd/deploy/sql:/sql:ro
+      - ./teamgramd/deploy/migrate.sh:/migrate.sh:ro
+    entrypoint: ["/bin/bash", "/migrate.sh"]
+    networks:
+      - teamgram_net
+
   # --- 对象存储 ---
   minio:
     image: minio/minio:latest

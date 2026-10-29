@@ -37,6 +37,13 @@
 
 # createConfigs
 
+# Apply SQL migrations before the processes start. A new image can ship a
+# migrate-*.sql that production never ran by hand (chat_participants.rank2).
+if ! /app/deploy/migrate.sh; then
+  echo "schema migration failed" >&2
+  exit 1
+fi
+
 cd /app/bin
 ./runall-docker.sh
 
