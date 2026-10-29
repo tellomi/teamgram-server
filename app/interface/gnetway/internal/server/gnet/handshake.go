@@ -452,20 +452,62 @@ func (s *Server) onReqDHParams(c gnet.Conn, ctx *HandshakeStateCtx, request *mtp
 			//
 			// log.Debugf("EncryptedData: len = %d, data: %s", len(request.EncryptedData), hex.EncodeToString(hack.Bytes(request.EncryptedData)))
 
-			// RSA_PAD ciphertext is exactly one modulus (256 bytes). A shorter
-			// buffer is not a modern client; a 256-byte buffer whose plaintext
-			// starts with 0x00 used to fail after big.Int.Bytes stripped it.
-			if len(request.EncryptedData) != 256 {
-				logx.Errorf("req_DH_params encrypted_data length %d, want 256", len(request.EncryptedData))
-				return fmt.Errorf("process Req_DHParams - len(encryptedPQInnerData) = %d, want 256", len(request.EncryptedData))
+			if len(request.EncryptedData) < 256 {
+				logx.Error("need len(encryptedPQInnerData) < 256")
+				return fmt.Errorf("process Req_DHParams - len(encryptedPQInnerData) != 256")
 			}
 
-			paddedDataWithHash, err := crypto.DecryptPQInner(rsa, []byte(request.EncryptedData))
+			//
+			// 1. 解密
+			innerData := rsa.Decrypt([]byte(request.EncryptedData))
+			if len(innerData) != 256 {
+				logx.Error("need len(encryptedPQInnerData) < 256")
+				return fmt.Errorf("process Req_DHParams - len(encryptedPQInnerData) != 256")
+			}
+			logx.WithDuration(timex.Since(since2)).Infof("innerData := rsa.Decrypt([]byte(request.EncryptedData))")
+
+			// void Datacenter::aesIgeEncryption(uint8_t *buffer, uint8_t *key, uint8_t *iv, bool encrypt, bool changeIv, uint32_t length) {
+			// Datacenter::aesIgeEncryption(
+			//	innerDataBuffer->bytes() + keySize,
+			//	innerDataBuffer->bytes(),
+			//	innerDataBuffer->bytes() + encryptedDataSize + paddedDataSize,
+			//	true,
+			//	true,
+			//	paddedDataSize + SHA256_DIGEST_LENGTH);
+			//
+
+			key := innerData[:32]
+			// log.Debugf("key1: %s", hex.EncodeToString(key))
+			hash := crypto.Sha256Digest(innerData[32:])
+			for i := 0; i < 32; i++ {
+				key[i] = key[i] ^ hash[i]
+			}
+			// log.Debugf("key2: %s", hex.EncodeToString(key))
+
+			paddedDataWithHash, err := crypto.NewAES256IGECryptor(key, zeroIV).Decrypt(innerData[32:])
 			if err != nil {
-				logx.Errorf("req_DH_params rsa_pad: %v", err)
+				err = fmt.Errorf("onReq_DHParams - decode P_Q_inner_data error")
+				logx.Error(err.Error())
 				return err
 			}
-			logx.WithDuration(timex.Since(since2)).Infof("rsa_pad decrypted pq inner data")
+
+			// log.Debugf("paddedDataWithHash1: %s", hex.EncodeToString(paddedDataWithHash))
+
+			//if !bytes.Equal(crypto.Sha256Digest(paddedDataWithHash[:192]), paddedDataWithHash[192:]) {
+			//	log.Error("process Req_DHParams - sha1Check error")
+			//	return nil, fmt.Errorf("process Req_DHParams - sha1Check error")
+			//}
+
+			for i, j := 0, 191; i < j; i, j = i+1, j-1 {
+				paddedDataWithHash[i], paddedDataWithHash[j] = paddedDataWithHash[j], paddedDataWithHash[i]
+			}
+			// log.Debugf("paddedDataWithHash2: %s", hex.EncodeToString(paddedDataWithHash))
+
+			// TODO
+			//if !checkSha1(encryptedPQInnerData, 256-SHA_DIGEST_LENGTH) {
+			//	log.Error("process Req_DHParams - sha1Check error")
+			//	return nil, fmt.Errorf("process Req_DHParams - sha1Check error")
+			//}
 
 			// 2. 反序列化出pqInnerData
 			dbuf := mtproto.GetDecodeBuf(paddedDataWithHash)

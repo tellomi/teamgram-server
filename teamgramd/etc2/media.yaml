@@ -7,10 +7,8 @@ Etcd:
 Timeout: 0
 Log:
   ServiceName: service.media
-  Mode: file
-  Path: /app/logs/media
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/media
   Level: debug
 #监控
 Prometheus:

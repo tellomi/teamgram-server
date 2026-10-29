@@ -164,8 +164,7 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 			//}()
 		})
 	if err2 != nil {
-		c.Logger.Errorf("auth.resendCode outcome phone=%s hash=%s err=%s",
-			maskPhone(phoneNumber), hashPrefix(in.PhoneCodeHash), rpcErrorCode(err2))
+		c.Logger.Errorf("auth.resendCode - error: %v", err2)
 		err = err2
 		return nil, err
 	}
@@ -180,11 +179,5 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 			"auth.resendCode")
 	}
 
-	sent := codeData.ToAuthSentCode()
-	c.Logger.Infof("auth.resendCode outcome phone=%s hash=%s type=%s length=%d",
-		maskPhone(phoneNumber),
-		hashPrefix(codeData.PhoneCodeHash),
-		sent.GetType().GetPredicateName(),
-		sent.GetType().GetLength())
-	return sent, nil
+	return codeData.ToAuthSentCode(), nil
 }

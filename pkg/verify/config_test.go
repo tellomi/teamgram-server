@@ -4,7 +4,6 @@ import "testing"
 
 func TestLoadDefaultsLeaveEmailDisabled(t *testing.T) {
 	t.Setenv("TELLOMI_SMS_PROVIDER", "")
-	t.Setenv("TELLOMI_SMS_CODE_LENGTH", "")
 	t.Setenv("TELLOMI_EMAIL_PROVIDER", "")
 	t.Setenv("ALIBABA_CLOUD_ACCESS_KEY_ID", "")
 	t.Setenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", "")
@@ -27,7 +26,7 @@ func TestLoadDefaultsLeaveEmailDisabled(t *testing.T) {
 	if cfg.SMS.AllowInternational {
 		t.Fatal("international SMS defaults off")
 	}
-	if cfg.SMS.CodeLength != 6 {
+	if cfg.SMS.CodeLength != 5 {
 		t.Fatalf("code length %d", cfg.SMS.CodeLength)
 	}
 	if cfg.SMS.SignName != DefaultSMSSignName || cfg.SMS.TemplateCode != DefaultSMSTemplateCode {

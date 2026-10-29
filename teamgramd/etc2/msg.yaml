@@ -7,10 +7,8 @@ Etcd:
 Timeout: 0
 Log:
   ServiceName: messenger.msg
-  Mode: file
-  Path: /app/logs/msg
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/msg
   Level: debug
 #监控
 Prometheus:

@@ -12,7 +12,6 @@ func main() {
 	flag.Parse()
 
 	cfg := linkpreview.Load(*configFile)
-	cfg.SetupLog()
 	var cat linkpreview.Catalog
 	if cfg.MysqlDSN != "" {
 		mysql, err := linkpreview.OpenMySQL(cfg.MysqlDSN)

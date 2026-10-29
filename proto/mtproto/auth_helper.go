@@ -46,20 +46,3 @@ func NewAuthKeyInfo(keyId int64, key []byte, keyType int) *AuthKeyInfo {
 
 	return keyData
 }
-
-// BoundPermAuthKeyId is the permanent key that owns this key's authorization.
-// A permanent key is its own owner (including legacy rows whose perm id was
-// left at 0). A temp or media-temp key uses the id written by
-// auth.bindTempAuthKey. Zero means the temp key is not bound yet.
-func (k *AuthKeyInfo) BoundPermAuthKeyId() int64 {
-	if k == nil {
-		return 0
-	}
-	if k.PermAuthKeyId != 0 {
-		return k.PermAuthKeyId
-	}
-	if k.AuthKeyType == AuthKeyTypePerm && k.AuthKeyId != 0 {
-		return k.AuthKeyId
-	}
-	return 0
-}

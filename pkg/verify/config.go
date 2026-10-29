@@ -94,7 +94,10 @@ func Load() Config {
 		emailProvider = ""
 	}
 
-	codeLen := NormalizeCodeLength(envInt("TELLOMI_SMS_CODE_LENGTH", 6))
+	codeLen := envInt("TELLOMI_SMS_CODE_LENGTH", 5)
+	if codeLen != 5 && codeLen != 6 {
+		codeLen = 5
+	}
 
 	return Config{
 		SMS: SMSConfig{

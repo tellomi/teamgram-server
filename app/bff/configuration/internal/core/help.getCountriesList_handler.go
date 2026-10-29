@@ -20,17 +20,16 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/countries"
 )
 
 // HelpGetCountriesList
 // help.getCountriesList#735787a8 lang_code:string hash:int = help.CountriesList;
 func (c *ConfigurationCore) HelpGetCountriesList(in *mtproto.TLHelpGetCountriesList) (*mtproto.Help_CountriesList, error) {
-	lang := ""
-	var hash int32
-	if in != nil {
-		lang = in.LangCode
-		hash = in.Hash
-	}
-	return countries.List(lang, hash), nil
+	// TODO: not impl
+	c.Logger.Errorf("help.getCountriesList blocked, License key from https://teamgram.net required to unlock enterprise features.")
+
+	return mtproto.MakeTLHelpCountriesList(&mtproto.Help_CountriesList{
+		Countries: []*mtproto.Help_Country{},
+		Hash:      0,
+	}).To_Help_CountriesList(), nil
 }

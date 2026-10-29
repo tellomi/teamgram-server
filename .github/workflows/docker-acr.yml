@@ -1,0 +1,62 @@
+# Builds every image docker-compose.yaml builds locally and pushes it to ACR.
+# The Chengdu server only pulls (docs/ci-acr.md). It must not compile images.
+
+name: Publish images
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY || 'crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com' }}
+  ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE || 'tellomi' }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: teamgram
+            context: .
+            dockerfile: Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          # GHA cache v1 was removed in April 2025. A current Buildx speaks v2.
+          version: latest
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Image tags
+        id: tags
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          # ACR rejects the default provenance attestation manifest.
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ matrix.image }}:${{ steps.tags.outputs.sha }}
+            ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

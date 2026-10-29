@@ -6,10 +6,8 @@ Etcd:
   Key: service.status
 Log:
   ServiceName: service.status
-  Mode: file
-  Path: /app/logs/status
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/status
   Level: debug
 #监控
 Prometheus:

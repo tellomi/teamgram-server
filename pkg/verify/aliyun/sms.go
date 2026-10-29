@@ -18,14 +18,8 @@ type SMSClient struct {
 	HTTP            *http.Client
 }
 
-// smsTemplateParam is a struct, not a number, so encoding/json quotes the
-// code. {"code":012345} is illegal JSON and a numeric code drops a leading zero.
-type smsTemplateParam struct {
-	Code string `json:"code"`
-}
-
 func (c *SMSClient) SendCode(ctx context.Context, phone, code string) error {
-	param, err := json.Marshal(smsTemplateParam{Code: code})
+	param, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
 		return err
 	}

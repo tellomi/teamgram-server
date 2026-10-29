@@ -358,18 +358,8 @@ func (d *Dao) GetCacheUserDataListByIdList(ctx context.Context, idList []int64) 
 				err error
 			)
 			err = jsonx.UnmarshalFromString(v, &c)
-			if err != nil || c == nil || c.GetUserData().GetId() == 0 {
-				// A corrupt cache entry must not look like a deleted user.
-				// Fall back to the row written at signup.
-				id := parseCacheUserDataCacheKey(k)
-				if fresh, ferr := d.GetNoCacheUserData(ctx, id); ferr == nil && fresh != nil {
-					cDataList = append(cDataList, fresh)
-					return fresh, nil
-				}
-				if err != nil {
-					return nil, err
-				}
-				return nil, fmt.Errorf("empty user cache %s", k)
+			if err != nil {
+				return nil, err
 			}
 
 			cDataList = append(cDataList, c)

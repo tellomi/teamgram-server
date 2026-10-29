@@ -2,11 +2,11 @@ package verify
 
 import "crypto/rand"
 
-// RandomDigits returns a numeric code of exactly n digits.
-// A leading zero is kept: the result is a string, never an integer.
-// n outside 4..8 becomes 6, the Telegram client default.
+// RandomDigits returns a numeric code of length n. n is 5 when it is not 5 or 6.
 func RandomDigits(n int) string {
-	n = NormalizeCodeLength(n)
+	if n != 5 && n != 6 {
+		n = 5
+	}
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
 		for i := range buf {
@@ -14,24 +14,8 @@ func RandomDigits(n int) string {
 		}
 		return string(buf)
 	}
-	return DigitsFromBytes(buf)
-}
-
-// NormalizeCodeLength clamps a configured SMS code length.
-// 6 matches current Telegram clients. 4..8 are accepted so an explicit
-// TELLOMI_SMS_CODE_LENGTH is not silently rewritten.
-func NormalizeCodeLength(n int) int {
-	if n < 4 || n > 8 {
-		return 6
+	for i := range buf {
+		buf[i] = '0' + buf[i]%10
 	}
-	return n
-}
-
-// DigitsFromBytes maps each byte to '0'..'9', preserving a leading zero.
-func DigitsFromBytes(buf []byte) string {
-	out := make([]byte, len(buf))
-	for i, b := range buf {
-		out[i] = '0' + b%10
-	}
-	return string(out)
+	return string(buf)
 }

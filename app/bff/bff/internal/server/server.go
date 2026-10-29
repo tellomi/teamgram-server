@@ -34,7 +34,6 @@ import (
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
-	langpack_helper "github.com/teamgram/teamgram-server/app/bff/langpack"
 	messages_helper "github.com/teamgram/teamgram-server/app/bff/messages"
 	miscellaneous_helper "github.com/teamgram/teamgram-server/app/bff/miscellaneous"
 	notification_helper "github.com/teamgram/teamgram-server/app/bff/notification"
@@ -90,12 +89,6 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCTosServer(
 			grpcServer,
 			tos_helper.New(tos_helper.Config{
-				RpcServerConf: c.RpcServerConf,
-			}))
-
-		mtproto.RegisterRPCLangpackServer(
-			grpcServer,
-			langpack_helper.New(langpack_helper.Config{
 				RpcServerConf: c.RpcServerConf,
 			}))
 

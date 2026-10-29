@@ -20,18 +20,13 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 )
 
 // AuthBindTempAuthKey
 // auth.bindTempAuthKey#cdd42a05 perm_auth_key_id:long nonce:long expires_at:int encrypted_message:bytes = Bool;
 func (c *AuthorizationCore) AuthBindTempAuthKey(in *mtproto.TLAuthBindTempAuthKey) (*mtproto.Bool, error) {
-	// The session service also calls authsession directly. This path stays
-	// correct if a request is routed through bff.
-	return c.svcCtx.Dao.AuthsessionClient.AuthsessionBindTempAuthKey(c.ctx, &authsession.TLAuthsessionBindTempAuthKey{
-		PermAuthKeyId:    in.PermAuthKeyId,
-		Nonce:            in.Nonce,
-		ExpiresAt:        in.ExpiresAt,
-		EncryptedMessage: in.EncryptedMessage,
-	})
+	// TODO: not impl
+	// c.Logger.Errorf("auth.bindTempAuthKey blocked, License key from https://teamgram.net required to unlock enterprise features.")
+
+	return mtproto.BoolTrue, nil
 }

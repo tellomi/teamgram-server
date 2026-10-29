@@ -103,8 +103,7 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 		})
 
 	if err2 != nil {
-		c.Logger.Errorf("auth.signIn outcome phone=%s hash=%s err=%s",
-			maskPhone(phoneNumber), hashPrefix(phoneCodeHash), rpcErrorCode(err2))
+		c.Logger.Error(err2.Error())
 		err = err2
 		return nil, err
 	}
@@ -121,15 +120,17 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 
 	// signIn successful, check phoneRegistered.
 	if !codeData.PhoneNumberRegistered {
-		authz, signErr := newUserSignInResult(c.MD.GetLayer())
-		if signErr != nil {
-			c.Logger.Errorf("auth.signIn - not registered, next step auth.signUp, phone=%s hash=%s err=%s",
-				maskPhone(phoneNumber), hashPrefix(phoneCodeHash), rpcErrorCode(signErr))
-			return nil, signErr
+		if c.MD.Layer >= 104 {
+			//  not register, next step: auth.singIn
+			return mtproto.MakeTLAuthAuthorizationSignUpRequired(&mtproto.Auth_Authorization{
+				// TermsOfService: model.MakeTermOfService(),
+				TermsOfService: nil,
+			}).To_Auth_Authorization(), nil
+		} else {
+			c.Logger.Errorf("auth.signIn - not registered, next step auth.signIn, %v", err)
+			err = mtproto.ErrPhoneNumberUnoccupied
+			return nil, err
 		}
-		c.Logger.Infof("auth.signIn outcome phone=%s hash=%s result=authorizationSignUpRequired",
-			maskPhone(phoneNumber), hashPrefix(phoneCodeHash))
-		return authz, nil
 	}
 
 	// TODO(@benqi): err handle
@@ -210,8 +211,6 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 			Updates:       mtproto.MakeUpdatesByUpdates(signInN),
 		})
 
-	c.Logger.Infof("auth.signIn outcome phone=%s hash=%s result=authorization user=%d",
-		maskPhone(phoneNumber), hashPrefix(phoneCodeHash), user.Id())
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 		SetupPasswordRequired: false,
 		OtherwiseReloginDays:  nil,

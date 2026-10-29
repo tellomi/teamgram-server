@@ -6,10 +6,8 @@ Etcd:
   Key: messenger.sync
 Log:
   ServiceName: messenger.sync
-  Mode: file
-  Path: /app/logs/sync
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/sync
   Level: debug
 # #监控
 # Prometheus:

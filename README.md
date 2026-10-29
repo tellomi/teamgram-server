@@ -78,8 +78,10 @@ docker compose -f docker-compose-env.yaml up -d
 ### 3. Start application
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
+
+This builds the image on your machine. The Chengdu server pulls a prebuilt image instead ([CI and ACR](docs/ci-acr.md)).
 
 ---
 

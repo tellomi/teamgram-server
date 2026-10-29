@@ -3,7 +3,6 @@ package aliyun
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/teamgram/teamgram-server/pkg/verify"
@@ -37,24 +36,6 @@ func TestMockSenderAndVerify(t *testing.T) {
 	}
 	if err := v.VerifySmsCode(context.Background(), "hash", "000000", extra); err == nil {
 		t.Fatal("expected invalid code")
-	}
-}
-
-func TestLeadingZeroCodeIsAString(t *testing.T) {
-	v := NewWithSender(&mockSender{})
-	extra, err := v.SendSmsVerifyCode(context.Background(), "8613800138000", "012345", "hash")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if extra != "012345" {
-		t.Fatalf("extra %q", extra)
-	}
-	if err := v.VerifySmsCode(context.Background(), "hash", "012345", extra); err != nil {
-		t.Fatal(err)
-	}
-	err = v.VerifySmsCode(context.Background(), "hash", "12345", extra)
-	if err == nil || !strings.Contains(err.Error(), "PHONE_CODE_INVALID") {
-		t.Fatalf("stripped leading zero must be PHONE_CODE_INVALID, got %v", err)
 	}
 }
 

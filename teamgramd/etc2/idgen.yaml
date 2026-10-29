@@ -6,10 +6,8 @@ Etcd:
   Key: service.idgen
 Log:
   ServiceName: service.idgen
-  Mode: file
-  Path: /app/logs/idgen
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/idgen
   Level: debug
 #监控
 Prometheus:

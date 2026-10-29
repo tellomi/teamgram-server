@@ -25,16 +25,12 @@ func (c *AuthsessionCore) AuthsessionBindAuthKeyUser(in *authsession.TLAuthsessi
 	if err != nil {
 		c.Logger.Errorf("queryAuthKeyV2(%d) is error: %v", inKeyId, err)
 		return nil, err
-	}
-	// signUp on a temp key must attach the user to the permanent key.
-	// Later requests on any bound temp key resolve back to that row.
-	permID := keyData.BoundPermAuthKeyId()
-	if permID == 0 {
+	} else if keyData.PermAuthKeyId == 0 {
 		c.Logger.Errorf("queryAuthKeyV2(%d) - PermAuthKeyId is empty", inKeyId)
 		return nil, mtproto.ErrAuthKeyPermEmpty
 	}
 
-	hash := c.svcCtx.Dao.BindAuthKeyUser(c.ctx, permID, in.GetUserId())
+	hash := c.svcCtx.Dao.BindAuthKeyUser(c.ctx, keyData.PermAuthKeyId, in.GetUserId())
 
 	return &mtproto.Int64{V: hash}, nil
 }

@@ -100,16 +100,16 @@ func (d *Dao) getFutureSaltList(ctx context.Context, authKeyId int64) ([]*mtprot
 
 func (d *Dao) GetOrFetchNewSalt(ctx context.Context, authKeyId int64) (salt, lastInvalidSalt *mtproto.TLFutureSalt, err error) {
 	cacheSalts, _ := d.getFutureSaltList(ctx, authKeyId)
-	// A handshake stores one salt. Requiring two made the first encrypted
-	// message look salt-less; the client then started a new handshake.
-	if len(cacheSalts) == 0 {
+	//TODO(@benqi): check len(cacheSalts) > 0
+	if len(cacheSalts) < 2 {
 		return nil, nil, fmt.Errorf("get salt error")
+	} else {
+		if cacheSalts[0].GetValidUntil() >= int32(time.Now().Unix()) {
+			return cacheSalts[0], nil, nil
+		} else {
+			return cacheSalts[1], cacheSalts[0], nil
+		}
 	}
-	now := int32(time.Now().Unix())
-	if cacheSalts[0].GetValidUntil() >= now || len(cacheSalts) == 1 {
-		return cacheSalts[0], nil, nil
-	}
-	return cacheSalts[1], cacheSalts[0], nil
 }
 
 func (d *Dao) GetFutureSalts(ctx context.Context, authKeyId int64, num int32) ([]*mtproto.TLFutureSalt, error) {

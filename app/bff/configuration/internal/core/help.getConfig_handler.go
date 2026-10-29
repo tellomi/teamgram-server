@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/pkg/langpack"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"google.golang.org/protobuf/proto"
@@ -64,16 +63,6 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 	now := int32(time.Now().Unix())
 	rValue.SetDate(now)
 	rValue.SetExpires(now + expiresTimeout)
-
-	var langCode, systemLang, pack string
-	if c.MD != nil {
-		langCode = c.MD.GetLangCode()
-		systemLang = c.MD.GetSystemLangCode()
-		pack = c.MD.GetLangpack()
-	}
-	// iOS reads suggested_lang_code from this config. Android shows its language
-	// chooser from the same field. Map the device/app language onto zh-hans or zh-hant.
-	langpack.ApplyConfigLanguage(rValue, langCode, systemLang, pack)
 
 	return rValue.To_Config(), nil
 }

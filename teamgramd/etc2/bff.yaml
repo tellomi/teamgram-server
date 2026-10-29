@@ -7,10 +7,8 @@ Etcd:
 Timeout: 0
 Log:
   ServiceName: bff.bff
-  Mode: file
-  Path: /app/logs/bff
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/bff
   Level: debug
 #监控
 Prometheus:

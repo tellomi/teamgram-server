@@ -33,8 +33,6 @@ Thumbs.db
 
 data/*
 !data/.gitkeep
-!data/langpack/
-!data/langpack/**
 
 teamgramd/bin/*
 !teamgramd/bin/config.json

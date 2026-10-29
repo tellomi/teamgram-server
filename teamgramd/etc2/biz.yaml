@@ -6,10 +6,8 @@ Etcd:
   Key: service.biz_service
 Log:
   ServiceName: service.biz_service
-  Mode: file
-  Path: /app/logs/biz
-  KeepDays: 7
-  Rotation: daily
+  #Mode: file
+  #Path: ../logs/biz
   Level: debug
 #监控
 Prometheus:
