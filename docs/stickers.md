@@ -20,6 +20,8 @@ The packs are openly licensed. Telegram's own sticker sets are not downloaded or
 | `messages.getCustomEmojiDocuments` / `messages.searchCustomEmoji` | Noto documents, marked free so they are not premium-gated. |
 | `messages.getEmojiStickers` | The installed Noto custom-emoji pack. |
 | `messages.getAvailableReactions` | Reaction buttons whose static icon is Twemoji and whose animation is the Noto TGS, when one exists. |
+| `messages.getTopReactions` | Those reactions sorted by how often they have been sent. Unused counts keep the catalog order. A matching hash returns `messages.reactionsNotModified`. |
+| `messages.getRecentReactions` | Emoji this user has sent, newest first, with the same hash. `messages.clearRecentReactions` empties the list. |
 
 A matching hash returns the `notModified` variant. `messages.getMaskStickers` returns an empty list; there is no mask pack.
 

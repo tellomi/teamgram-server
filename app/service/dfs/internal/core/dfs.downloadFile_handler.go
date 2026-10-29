@@ -64,15 +64,19 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 			bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, c.svcCtx.Dao.MinioUtil.GetDocumentFile)
 			if err != nil {
 				path := fmt.Sprintf("%d.dat", location.GetId())
+				// Seeded stickers and emoji live in the public bucket, not
+				// documents/. Try those keys first so a sticker download is one
+				// round trip. Probing documents first used up the RPC deadline
+				// on the misses and the call returned context deadline exceeded.
 				bytes, err = readFirst(
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetDocumentFile(c.ctx, path, offset, limit)
-					},
 					func() ([]byte, error) {
 						return c.svcCtx.Dao.GetStickerFile(c.ctx, path, offset, limit)
 					},
 					func() ([]byte, error) {
 						return c.svcCtx.Dao.GetEmojiFile(c.ctx, path, offset, limit)
+					},
+					func() ([]byte, error) {
+						return c.svcCtx.Dao.GetDocumentFile(c.ctx, path, offset, limit)
 					},
 					func() ([]byte, error) {
 						return c.svcCtx.Dao.GetWallpaperFile(c.ctx, path, offset, limit)

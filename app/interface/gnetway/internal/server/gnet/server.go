@@ -110,9 +110,12 @@ func classifyCodecError(err error) string {
 }
 
 func (s *Server) Close() {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Stop closes every client socket. Without that FIN, clients keep the
+	// half-open connection until the 300s idle timer and look disconnected
+	// for about five minutes after a deploy.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	logx.Debugf("stop engine... error: %v", s.eng.Stop(ctx))
+	logx.Infof("stop engine... error: %v", s.eng.Stop(ctx))
 }
 
 func (s *Server) Serve() {

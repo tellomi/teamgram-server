@@ -346,7 +346,27 @@ func (ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TL
 			emos = append(emos, r.GetEmoticon())
 		}
 	}
-	return channel.Shared().React(ctx, self, channelID(in.GetPeer(), self), in.GetMsgId(), emos, in.GetBig())
+	up, err := channel.Shared().React(ctx, self, channelID(in.GetPeer(), self), in.GetMsgId(), emos, in.GetBig())
+	if err != nil {
+		return nil, err
+	}
+	catalog.Must().NoteReaction(self, emos)
+	return up, nil
+}
+
+func (ReactionsService) MessagesGetTopReactions(ctx context.Context, in *mtproto.TLMessagesGetTopReactions) (*mtproto.Messages_Reactions, error) {
+	return catalog.Must().TopReactions(in.GetLimit(), in.GetHash()), nil
+}
+
+func (ReactionsService) MessagesGetRecentReactions(ctx context.Context, in *mtproto.TLMessagesGetRecentReactions) (*mtproto.Messages_Reactions, error) {
+	self, _ := actor(ctx)
+	return catalog.Must().RecentReactions(self, in.GetLimit(), in.GetHash()), nil
+}
+
+func (ReactionsService) MessagesClearRecentReactions(ctx context.Context, in *mtproto.TLMessagesClearRecentReactions) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	catalog.Must().ClearRecentReactions(self)
+	return mtproto.BoolTrue, nil
 }
 
 func (ReactionsService) MessagesGetMessagesReactions(ctx context.Context, in *mtproto.TLMessagesGetMessagesReactions) (*mtproto.Updates, error) {

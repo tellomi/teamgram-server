@@ -5,6 +5,10 @@ services:
     image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
     build: .
     restart: unless-stopped
+    # gnetway closes client sockets on SIGTERM. The default 10s grace kills
+    # the process before that FIN is sent, and clients wait out the 300s
+    # connection idle timer.
+    stop_grace_period: 25s
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
     # Set it to aliyun plus ALIBABA_CLOUD_ACCESS_KEY_* for Dysmsapi.
     # Leave TELLOMI_EMAIL_PROVIDER unset. Email auth is not wired up.

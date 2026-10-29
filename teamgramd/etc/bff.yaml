@@ -76,7 +76,9 @@ DfsClient:
     Hosts:
       - 127.0.0.1:2379
     Key: service.dfs
-  Timeout: 0
+  # Sticker reads try more than one object key. The 2s default cancels the
+  # call (context deadline exceeded) before a slow round trip returns.
+  Timeout: 10000
 StatusClient:
   Etcd:
     Hosts:

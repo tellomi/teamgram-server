@@ -28,6 +28,8 @@ BFFProxyClients:
         Hosts:
           - 127.0.0.1:2379
         Key: bff.bff
+      # upload.getFile calls dfs inside this RPC. The 2s default expires first.
+      Timeout: 10000
     - Etcd:
         Hosts:
           - 127.0.0.1:2379

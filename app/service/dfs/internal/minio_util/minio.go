@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -93,6 +94,15 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		if err != nil {
 			return nil, fmt.Errorf("object storage transport: %w", err)
 		}
+		// Default dial is 30s and the header wait is a minute. upload.getFile's
+		// RPC deadline is shorter, so a dead endpoint becomes
+		// "context deadline exceeded" before the sticker fallback runs.
+		base.DialContext = (&net.Dialer{
+			Timeout:   3 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext
+		base.TLSHandshakeTimeout = 3 * time.Second
+		base.ResponseHeaderTimeout = 5 * time.Second
 		transport = base
 	}
 	client, err := minio.New(cfg.Endpoint, &minio.Options{

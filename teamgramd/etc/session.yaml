@@ -46,7 +46,8 @@ BFFProxyClients:
         Hosts:
           - 127.0.0.1:2379
         Key: bff.bff
-      Timeout: 0
+      # upload.getFile calls dfs inside this RPC. The 2s default expires first.
+      Timeout: 10000
   IDMap:
     "/mtproto.RPCTos": "bff.bff"
     #"/mtproto.RPCReports": "bff.bff"

@@ -10,14 +10,15 @@ import (
 
 // Service answers the sticker and emoji RPCs from one in-memory catalog.
 type Service struct {
-	mu      sync.Mutex
-	packs   []*Pack
-	byID    map[int64]*Pack
-	byShort map[string]*Pack
-	docs    map[int64]*linkedDoc
-	users   map[int64]*userState
-	persist persister
-	now     func() int32
+	mu           sync.Mutex
+	packs        []*Pack
+	byID         map[int64]*Pack
+	byShort      map[string]*Pack
+	docs         map[int64]*linkedDoc
+	users        map[int64]*userState
+	reactionUses map[string]int64
+	persist      persister
+	now          func() int32
 }
 
 type linkedDoc struct {
@@ -26,9 +27,10 @@ type linkedDoc struct {
 }
 
 type userState struct {
-	install map[int64]installRow
-	recent  []recentRow
-	faved   []favedRow
+	install        map[int64]installRow
+	recent         []recentRow
+	faved          []favedRow
+	reactionRecent []string
 }
 
 type installRow struct {
@@ -56,11 +58,12 @@ type persister interface {
 
 func newService(packs []*Pack) *Service {
 	s := &Service{
-		byID:    map[int64]*Pack{},
-		byShort: map[string]*Pack{},
-		docs:    map[int64]*linkedDoc{},
-		users:   map[int64]*userState{},
-		now:     func() int32 { return int32(time.Now().Unix()) },
+		byID:         map[int64]*Pack{},
+		byShort:      map[string]*Pack{},
+		docs:         map[int64]*linkedDoc{},
+		users:        map[int64]*userState{},
+		reactionUses: map[string]int64{},
+		now:          func() int32 { return int32(time.Now().Unix()) },
 	}
 	s.packs = packs
 	for _, p := range packs {
