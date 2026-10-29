@@ -21,6 +21,9 @@ func (d *Dao) AddToPtsQueue(ctx context.Context, userId int64, pts, ptsCount int
 }
 
 func (d *Dao) AddToPtsQueueE(ctx context.Context, userId int64, pts, ptsCount int32, update *mtproto.Update) (int32, error) {
+	if update != nil {
+		update.SanitizeEmbeddedEntities()
+	}
 	updateData, err := jsonx.Marshal(update)
 	if err != nil {
 		return 0, err
@@ -44,6 +47,9 @@ func (d *Dao) AddToPtsQueueE(ctx context.Context, userId int64, pts, ptsCount in
 }
 
 func (d *Dao) AddToPtsQueueTx(tx *sqlx.Tx, userId int64, pts, ptsCount int32, update *mtproto.Update) (int32, error) {
+	if update != nil {
+		update.SanitizeEmbeddedEntities()
+	}
 	updateData, err := jsonx.Marshal(update)
 	if err != nil {
 		return 0, err

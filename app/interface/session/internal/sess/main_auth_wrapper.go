@@ -832,7 +832,7 @@ func (m *MainAuthWrapper) SessionHttpDataArrived(ctx context.Context, kType int,
 	}
 }
 
-func (m *MainAuthWrapper) SessionClientClosed(ctx context.Context, kType int, kId int64, gatewayId string, sessionId int64) error {
+func (m *MainAuthWrapper) SessionClientClosed(ctx context.Context, kType int, kId int64, gatewayId string, sessionId, closedAt int64) error {
 	cData := &connDataCtx{
 		ctx: contextx.ValueOnlyFrom(ctx),
 		connData: connData{
@@ -841,6 +841,7 @@ func (m *MainAuthWrapper) SessionClientClosed(ctx context.Context, kType int, kI
 			isNew:     false,
 			gatewayId: gatewayId,
 			sessionId: sessionId,
+			closedAt:  closedAt,
 		},
 	}
 
@@ -1027,7 +1028,7 @@ func (m *MainAuthWrapper) onSessionClosed(ctx context.Context, connMsg *connData
 		logx.WithContext(ctx).Errorf("onSessionClosed - session conn closed -  conn: %s", connMsg)
 	} else {
 		logx.WithContext(ctx).Infof("onSessionClosed - conn: %s, sess: %s", connMsg, sess)
-		sess.onSessionConnClose(ctx, connMsg.gatewayId)
+		sess.onSessionConnClose(ctx, connMsg.gatewayId, connMsg.closedAt)
 	}
 }
 

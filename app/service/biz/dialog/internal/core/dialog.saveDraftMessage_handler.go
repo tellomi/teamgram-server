@@ -20,6 +20,9 @@ import (
 // DialogSaveDraftMessage
 // dialog.saveDraftMessage user_id:long peer_type:int peer_id:long message:DraftMessage = Bool;
 func (c *DialogCore) DialogSaveDraftMessage(in *dialog.TLDialogSaveDraftMessage) (*mtproto.Bool, error) {
+	if in.Message != nil {
+		in.Message.SanitizeEntities()
+	}
 	draft, _ := jsonx.Marshal(in.Message)
 
 	_, err := c.svcCtx.Dao.DialogsDAO.SaveDraft(c.ctx,

@@ -60,6 +60,9 @@ func (s *mysqlStore) Save(ctx context.Context, rec *Record) error {
 }
 
 func (s *mysqlStore) upsert(ctx context.Context, rec *Record) error {
+	if rec.Item != nil {
+		rec.Item.SanitizeEntities()
+	}
 	body, err := proto.Marshal(rec.Item)
 	if err != nil {
 		return err
@@ -90,6 +93,7 @@ func scanRecord(row interface{ Scan(...any) error }) (*Record, error) {
 	if err := proto.Unmarshal(body, item); err != nil {
 		return nil, err
 	}
+	item.SanitizeEntities()
 	item.Id = id
 	item.Date = date
 	item.ExpireDate = expire

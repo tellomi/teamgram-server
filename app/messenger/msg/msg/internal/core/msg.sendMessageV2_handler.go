@@ -91,6 +91,9 @@ func (c *MsgCore) MsgSendMessageV2(in *msg.TLMsgSendMessageV2) (*mtproto.Updates
 	case mtproto.PEER_CHANNEL:
 		batch := make([]channelpb.Outgoing, 0, len(outBoxList))
 		for _, box := range outBoxList {
+			if box.GetMessage() != nil {
+				box.Message = plugin.RemakeMessage(c.ctx, c.svcCtx.MsgPlugin, box.Message, in.UserId, box.GetNoWebpage(), nil)
+			}
 			batch = append(batch, channelpb.Outgoing{RandomID: box.GetRandomId(), Message: box.GetMessage()})
 		}
 		rUpdates, err = channelpb.Shared().Send(c.ctx, in.UserId, in.PeerId, in.AuthKeyId, batch)

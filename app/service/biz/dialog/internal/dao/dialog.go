@@ -67,6 +67,7 @@ func (d *Dao) MakeDialog(dialogDO *dataobject.DialogsDO) *dialog.DialogExt {
 		draft := &mtproto.DraftMessage{}
 		err := jsonx.UnmarshalFromString(dialogDO.DraftMessageData, &draft)
 		if err == nil {
+			draft.SanitizeEntities()
 			dialog2.Draft = draft
 		} else {
 			dialog2.Draft = mtproto.MakeTLDraftMessageEmpty(draft).To_DraftMessage()

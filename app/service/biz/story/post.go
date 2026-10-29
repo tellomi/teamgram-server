@@ -152,6 +152,7 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, 
 	if len(req.Entities) > 0 {
 		item.Entities = req.Entities
 	}
+	item.SanitizeEntities()
 	if len(req.Areas) > 0 {
 		item.MediaAreas = req.Areas
 	}
@@ -208,6 +209,7 @@ func (s *Service) Edit(ctx context.Context, req EditRequest) (*mtproto.Updates, 
 			rec.Item.Caption = &wrapperspb.StringValue{Value: *req.Caption}
 		}
 		rec.Item.Entities = req.Entities
+		rec.Item.SanitizeEntities()
 		rec.Item.Edited = true
 	}
 	if req.Rules != nil {

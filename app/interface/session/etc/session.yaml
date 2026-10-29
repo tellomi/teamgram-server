@@ -63,6 +63,7 @@ BFFProxyClients:
     "/mtproto.RPCDialogs": "bff.bff"
     "/mtproto.RPCDrafts": "bff.bff"
     "/mtproto.RPCEmoji": "bff.bff"
+    "/mtproto.RPCEmojiCategories": "bff.bff"
     "/mtproto.RPCCustomEmojis": "bff.bff"
     #"/mtproto.RPCFolders": "bff.bff"
     #"/mtproto.RPCGames": "bff.bff"
@@ -89,7 +90,8 @@ BFFProxyClients:
     "/mtproto.RPCAccentColors": "bff.bff"
     "/mtproto.RPCTranscription": "bff.bff"
     "/mtproto.RPCAccount": "bff.bff"
-    "/mtproto.RPCPhotos": "bff.bff"
+    # RPCPhotos is not a bff service. Photo RPCs are RPCUserChannelProfiles.
+    "/mtproto.RPCUserChannelProfiles": "bff.bff"
     "/mtproto.RPCUsernames": "bff.bff"
     #"/mtproto.RPCWallpapers": "bff.bff"
     #"/mtproto.RPCTranslate": "bff.bff"

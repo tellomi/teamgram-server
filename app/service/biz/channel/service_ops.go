@@ -213,12 +213,16 @@ func (s *Service) appendMessage(ctx context.Context, channelID, sender, randomID
 	if msg.Date == 0 {
 		msg.Date = int32(time.Now().Unix())
 	}
+	if msg != nil {
+		msg.SanitizeEntities()
+	}
 	var stored *mtproto.Message
 	id, pts, reused, err := s.store.CommitNew(ctx, channelID, sender, randomID, msg.Date, func(messageID, pts int32) []byte {
 		m := proto.Clone(msg).(*mtproto.Message)
 		m.Id = messageID
 		m.Out = false
 		m.PeerId = mtproto.MakePeerChannel(channelID)
+		m.SanitizeEntities()
 		stored = m
 		b, _ := proto.Marshal(m)
 		return b
@@ -386,6 +390,7 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
 	s.prepareOutgoing(ch, stored.SenderID, body)
+	body.SanitizeEntities()
 	raw, err := proto.Marshal(body)
 	if err != nil {
 		return nil, err

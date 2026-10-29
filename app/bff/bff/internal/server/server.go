@@ -159,6 +159,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCStickersServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCEmojiServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCCustomEmojisServer(grpcServer, stickerSvc)
+		mtproto.RegisterRPCEmojiCategoriesServer(grpcServer, stickers_helper.NewEmojiCategories())
 
 		// premium_helper
 		premiumSvc := premium_helper.New(premium_helper.Config{

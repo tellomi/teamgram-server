@@ -13,3 +13,7 @@ func New(c Config) *service.Service {
 	catalog.Open(c.MySQL)
 	return service.New()
 }
+
+func NewEmojiCategories() *service.EmojiCategories {
+	return service.NewEmojiCategories()
+}

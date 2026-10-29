@@ -128,6 +128,9 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		}
 	}
 
+	if message != nil {
+		message.SanitizeEntities()
+	}
 	mData, _ := jsonx.Marshal(message)
 	// mType, mData := mtproto.EncodeMessage(message)
 	inBox := &mtproto.MessageBox{
@@ -485,6 +488,7 @@ func (d *Dao) EditUserInboxMessage(ctx context.Context, fromId, peerId int64, me
 	message.FromId = peerMessage.FromId
 	message.PeerId = peerMessage.PeerId
 	message.ReplyTo = peerMessage.ReplyTo
+	message.SanitizeEntities()
 	mData, _ := jsonx.Marshal(message)
 	if _, err = d.MessagesDAO.UpdateEditMessage(ctx, string(mData), message.Message, peerId, message.Id); err != nil {
 		return
@@ -530,6 +534,7 @@ func (d *Dao) EditChatInboxMessage(ctx context.Context, fromId int64, peerChatId
 		message.ReplyTo = peerMessage.ReplyTo
 	}
 
+	message.SanitizeEntities()
 	mData, _ := jsonx.Marshal(message)
 	if _, err = d.MessagesDAO.UpdateEditMessage(ctx, string(mData), message.Message, toId, message.Id); err != nil {
 		return

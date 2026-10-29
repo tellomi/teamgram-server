@@ -22,6 +22,7 @@ type connData struct {
 	isNew     bool
 	gatewayId string
 	sessionId int64
+	closedAt  int64
 }
 
 func (c *connData) DebugString() string {

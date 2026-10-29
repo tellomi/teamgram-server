@@ -44,17 +44,43 @@ func NewBFFProxyClients(cList []zrpc.RpcClientConf, idMap map[string]string) *BF
 
 	bizClients := make(map[string]zrpc.Client)
 	for m, ctx := range registers {
-		for k, _ := range idMap {
-			if strings.HasPrefix(ctx.Method, k) {
-				bizClients[m] = clients[k]
-				break
+		// Longest route wins. A bare prefix would send
+		// /mtproto.RPCEmojiCategories/... to the /mtproto.RPCEmoji client.
+		var best string
+		var bestCli zrpc.Client
+		for k := range idMap {
+			if !serviceRouteMatches(ctx.Method, k) || len(k) <= len(best) {
+				continue
 			}
+			cli := clients[k]
+			if cli == nil {
+				continue
+			}
+			best = k
+			bestCli = cli
+		}
+		if bestCli != nil {
+			bizClients[m] = bestCli
 		}
 	}
 
 	return &BFFProxyClient{
 		BFFClients: bizClients,
 	}
+}
+
+// serviceRouteMatches reports whether method belongs to the gRPC service
+// named by route. route is "/mtproto.RPCEmoji"; method is
+// "/mtproto.RPCEmoji/messages_getEmojiKeywords". A shorter name must not
+// match a longer service such as RPCEmojiCategories.
+func serviceRouteMatches(method, route string) bool {
+	if method == "" || route == "" {
+		return false
+	}
+	if method == route {
+		return true
+	}
+	return strings.HasPrefix(method, route+"/")
 }
 
 func (c *BFFProxyClient) GetRpcClientByRequest(t interface{}) (zrpc.Client, error) {
