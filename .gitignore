@@ -26,6 +26,7 @@ Thumbs.db
 *.swp
 *.swo
 *.tl
+!proto/schema/*.tl
 .vscode
 
 #deploy data

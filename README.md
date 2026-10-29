@@ -13,7 +13,7 @@ Unofficial open-source [MTProto](https://core.telegram.org/mtproto) server imple
   - **Intermediate**
   - **Padded intermediate**
   - **Full**
-- **API Layer: 228**
+- **API Layer: 232** (vendored `proto/`, see [proto/README.md](proto/README.md))
 - **Core features**
   - **private chat**
   - **basic group**
@@ -57,6 +57,8 @@ Requires Go 1.21+. You must install and configure dependencies (MySQL, Redis, et
 ## Docker installation
 
 For running the full stack with Docker. **No manual data initialization:** the dependency stack initializes the database (via mounted SQL) and MinIO buckets (via `minio-mc`) on first start.
+
+Step-by-step for a layer-232 dev login (fixed SMS code `12345`): [Local deployment](docs/local-docker.md).
 
 ### 1. Clone
 

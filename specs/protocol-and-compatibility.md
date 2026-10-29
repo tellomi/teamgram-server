@@ -15,8 +15,8 @@ Clients connect to gnetway over TCP or WebSocket and use one of the above for ha
 
 ## API Layer
 
-- Supported **API Layer** is **222** (see main README; may be updated with proto).
-- TL methods and types follow the project’s [teamgram/proto](https://github.com/teamgram/proto) dependency.
+- Supported **API Layer** is **232**. The codec is the vendored fork in [`proto/`](../proto/README.md) (upstream teamgram/proto stopped at layer 231).
+- TL methods and types follow that fork. Layer 232 constructor ids match Telegram Desktop `api.tl` (`// LAYER 232`), which is what current stock iOS and Android clients send.
 
 ## Compatible clients
 

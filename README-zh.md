@@ -13,7 +13,7 @@
   - **Intermediate**
   - **Padded intermediate**
   - **Full**
-- **API Layer: 228**
+- **API Layer: 232**（仓库内 `proto/`，见 [proto/README.md](proto/README.md)）
 - **Core features**
   - **private chat**
   - **basic group**
