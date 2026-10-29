@@ -4,7 +4,7 @@ services:
     # not build. `build` stays so local dev can still run `docker compose up --build`.
     image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
     build: .
-    restart: always
+    restart: unless-stopped
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
     # Set it to aliyun plus ALIBABA_CLOUD_ACCESS_KEY_* for Dysmsapi.
     # Leave TELLOMI_EMAIL_PROVIDER unset. Email auth is not wired up.
@@ -100,7 +100,8 @@ services:
       - "20420:20420"
     # Honored when this file is combined with docker-compose-env.yaml, which
     # defines kafka and its healthcheck. required: false keeps `docker compose up`
-    # of this file alone from failing. msg, sync, and bff also retry in-process.
+    # of this file alone from failing. The processes also keep retrying Kafka
+    # in-process if the broker drops later.
     depends_on:
       kafka:
         condition: service_healthy

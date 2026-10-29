@@ -44,7 +44,7 @@ docker compose -f docker-compose-env.yaml up -d
 docker compose up -d --build
 ```
 
-Wait until MySQL is healthy and `teamgram` stays up (`docker compose ps`).
+Kafka runs in KRaft mode (no ZooKeeper) with `restart: unless-stopped` and a broker healthcheck. `teamgram` waits until that check passes, and also restarts unless it was stopped. If the broker drops later, msg, sync, and bff keep retrying Kafka with backoff capped at 30 seconds instead of exiting. Wait until MySQL and Kafka are healthy and `teamgram` stays up (`docker compose ps`).
 Logs from the processes are inside the app container (`/app/logs`).
 
 `--build` is for this machine. The Chengdu server must not compile the image.
@@ -96,6 +96,15 @@ go test ./clients/layer232 -count=1
 A full handshake against the compose stack (req_pq through sendMessage) is
 not automated here. The codec test is the check that a layer-232
 `invokeWithLayer` no longer comes back as constructor 0.
+
+## Sticker import
+
+The `teamgram` image includes `/app/bin/importstickers`. It upserts the seeded packs and uploads their bytes using the container's `TELLOMI_S3_*` variables. Details are in [stickers.md](stickers.md).
+
+```bash
+docker compose exec teamgram /app/bin/importstickers \
+  -dsn 'teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true'
+```
 
 ## Object storage and RTMP
 

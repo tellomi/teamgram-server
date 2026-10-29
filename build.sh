@@ -40,6 +40,10 @@ echo "build bff ..."
 cd ${TEAMGRAMAPP}/bff/bff/cmd/bff
 go build -o ${INSTALL}/bin/bff
 
+echo "build importstickers ..."
+cd ${TEAMGRAMAPP}/bff/stickers/cmd/importstickers
+go build -o ${INSTALL}/bin/importstickers
+
 echo "build session ..."
 cd ${TEAMGRAMAPP}/interface/session/cmd/session
 go build -o ${INSTALL}/bin/session

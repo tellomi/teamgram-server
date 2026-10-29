@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -37,6 +38,67 @@ func TestWaitRetriesUntilAccept(t *testing.T) {
 	Wait("test", Deps{Etcd: []string{addr}})
 	if calls < 2 {
 		t.Fatalf("calls = %d", calls)
+	}
+}
+
+func TestNextDelayCapsAtThirtySeconds(t *testing.T) {
+	d := time.Second
+	var saw time.Duration
+	for i := 0; i < 8; i++ {
+		d = nextDelay(d)
+		saw = d
+	}
+	if saw != 30*time.Second {
+		t.Fatalf("backoff = %s", saw)
+	}
+}
+
+func TestKafkaWaitContinuesPastThirty(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	addr := ln.Addr().String()
+	calls := 0
+	restore := SetRetryForTest(5, func(time.Duration) {}, func(network, address string, timeout time.Duration) (net.Conn, error) {
+		calls++
+		if calls < 31 {
+			return nil, errClosed
+		}
+		return net.DialTimeout(network, address, timeout)
+	})
+	defer restore()
+	Wait("test", Deps{Kafka: []string{addr}})
+	if calls < 31 {
+		t.Fatalf("kafka wait stopped after %d attempts", calls)
+	}
+}
+
+func TestRetryUntilSuccess(t *testing.T) {
+	restore := SetRetryForTest(2, func(time.Duration) {}, nil)
+	defer restore()
+	n := 0
+	err := Retry(context.Background(), "kafka publish", func() error {
+		n++
+		if n < 3 {
+			return errClosed
+		}
+		return nil
+	})
+	if err != nil || n != 3 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+}
+
+func TestRetryStopsWhenContextEnds(t *testing.T) {
+	restore := SetRetryForTest(2, func(time.Duration) {}, nil)
+	defer restore()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := Retry(ctx, "kafka publish", func() error { return errClosed })
+	if err == nil {
+		t.Fatal("expected context error")
 	}
 }
 

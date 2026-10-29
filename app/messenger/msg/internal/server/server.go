@@ -100,7 +100,7 @@ func (s *Server) Initialize() error {
 	})
 
 	go func() {
-		s.mq.Start()
+		bootstrap.KeepConsuming("msg", s.mq)
 	}()
 
 	return nil

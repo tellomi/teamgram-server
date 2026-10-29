@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
 
+# An older master build must not finish after a newer one and move :latest backwards.
+concurrency:
+  group: docker-acr-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY || 'crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com' }}
   ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE || 'tellomi' }}

@@ -3,11 +3,14 @@
 package bootstrap
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
+	"github.com/IBM/sarama"
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -15,7 +18,10 @@ import (
 	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
-const defaultAttempts = 30
+const (
+	defaultAttempts = 30
+	maxBackoff      = 30 * time.Second
+)
 
 var (
 	attempts = defaultAttempts
@@ -41,12 +47,13 @@ func SetRetryForTest(n int, sleep func(time.Duration), dial func(string, string,
 	}
 }
 
-// MustKafkaProducer dials Kafka, backing off while the broker is down.
+// MustKafkaProducer dials Kafka until the broker accepts the client.
+// It does not give up while Kafka is down.
 func MustKafkaProducer(c *kafka.KafkaProducerConf) *kafka.Producer {
 	if c == nil {
 		logx.Must(fmt.Errorf("kafka producer config is nil"))
 	}
-	return mustValue("kafka producer "+strings.Join(c.Brokers, ","), func() (p *kafka.Producer, err error) {
+	return mustForever("kafka producer "+strings.Join(c.Brokers, ","), func() (p *kafka.Producer, err error) {
 		defer recoverErr(&err)
 		p = kafka.MustKafkaProducer(c)
 		return p, nil
@@ -59,15 +66,66 @@ func GetCachedMQClient(c *kafka.KafkaProducerConf) *kafka.Producer {
 }
 
 // MustKafkaConsumer joins a consumer group, backing off while Kafka is down.
+// It does not give up while Kafka is down.
 func MustKafkaConsumer(c *kafka.KafkaConsumerConf) *kafka.ConsumerGroup {
 	if c == nil {
 		logx.Must(fmt.Errorf("kafka consumer config is nil"))
 	}
-	return mustValue("kafka consumer "+strings.Join(c.Brokers, ","), func() (g *kafka.ConsumerGroup, err error) {
+	return mustForever("kafka consumer "+strings.Join(c.Brokers, ","), func() (g *kafka.ConsumerGroup, err error) {
 		defer recoverErr(&err)
 		g = kafka.MustKafkaConsumer(c)
 		return g, nil
 	})
+}
+
+// KeepConsuming runs the consumer until the group is closed. A broker outage
+// backs off and tries again instead of exiting the process.
+func KeepConsuming(name string, g *kafka.ConsumerGroup) {
+	if g == nil {
+		return
+	}
+	delay := time.Second
+	ctx := context.Background()
+	for {
+		err := g.Consume(ctx, g.Topics(), g)
+		if err == nil {
+			delay = time.Second
+			continue
+		}
+		if errors.Is(err, sarama.ErrClosedConsumerGroup) || errors.Is(err, context.Canceled) {
+			logx.Infof("%s: kafka consumer stopped: %v", name, err)
+			return
+		}
+		logx.Errorf("%s: kafka consume failed: %v; retry in %s", name, err, delay)
+		sleepFn(delay)
+		delay = nextDelay(delay)
+	}
+}
+
+// Retry calls fn until it succeeds or ctx is cancelled. The wait doubles from
+// one second and stays at 30 seconds. Use this for publishes while Kafka is down.
+func Retry(ctx context.Context, name string, fn func() error) error {
+	delay := time.Second
+	var last error
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			if last == nil {
+				return err
+			}
+			return fmt.Errorf("%s: %w", name, last)
+		}
+		err := fn()
+		if err == nil {
+			if attempt > 1 {
+				logx.Infof("%s recovered", name)
+			}
+			return nil
+		}
+		last = err
+		logx.Errorf("%s not ready (attempt %d): %v; retry in %s", name, attempt, err, delay)
+		sleepFn(delay)
+		delay = nextDelay(delay)
+	}
 }
 
 // MustMySQL opens MySQL, backing off while the server refuses connections.
@@ -96,7 +154,8 @@ type Deps struct {
 	Etcd  []string
 }
 
-// Wait dials every dependency until it accepts TCP or the attempt budget ends.
+// Wait dials every dependency. Kafka is retried until it accepts a connection.
+// MySQL, Redis, and etcd stop after the attempt budget.
 func Wait(name string, d Deps) {
 	var addrs []string
 	addrs = append(addrs, d.Kafka...)
@@ -108,6 +167,21 @@ func Wait(name string, d Deps) {
 	addrs = append(addrs, d.Redis...)
 	addrs = append(addrs, d.Etcd...)
 	seen := map[string]struct{}{}
+	var kafkaAddrs []string
+	for _, addr := range d.Kafka {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		if _, ok := seen[addr]; ok {
+			continue
+		}
+		seen[addr] = struct{}{}
+		kafkaAddrs = append(kafkaAddrs, addr)
+	}
+	for _, addr := range kafkaAddrs {
+		waitKafka(name, addr)
+	}
 	for _, addr := range addrs {
 		addr = strings.TrimSpace(addr)
 		if addr == "" {
@@ -161,6 +235,34 @@ func MySQLAddr(dsn string) string {
 	return rest[:end]
 }
 
+func nextDelay(d time.Duration) time.Duration {
+	if d < time.Second {
+		return time.Second
+	}
+	d *= 2
+	if d > maxBackoff {
+		return maxBackoff
+	}
+	return d
+}
+
+func waitKafka(name, addr string) {
+	delay := time.Second
+	for i := 1; ; i++ {
+		conn, err := dialFn("tcp", addr, 2*time.Second)
+		if err == nil {
+			conn.Close()
+			if i > 1 {
+				logx.Infof("%s: %s is accepting connections", name, addr)
+			}
+			return
+		}
+		logx.Errorf("%s: %s not ready (attempt %d): %v; retry in %s", name, addr, i, err, delay)
+		sleepFn(delay)
+		delay = nextDelay(delay)
+	}
+}
+
 func waitAddr(name, addr string) error {
 	delay := time.Second
 	var last error
@@ -183,6 +285,22 @@ func waitAddr(name, addr string) error {
 		}
 	}
 	return fmt.Errorf("%s: %s unavailable after %d attempts: %w", name, addr, attempts, last)
+}
+
+func mustForever[T any](name string, fn func() (T, error)) T {
+	delay := time.Second
+	for i := 1; ; i++ {
+		v, err := fn()
+		if err == nil {
+			if i > 1 {
+				logx.Infof("%s is ready", name)
+			}
+			return v
+		}
+		logx.Errorf("%s not ready (attempt %d): %v; retry in %s", name, i, err, delay)
+		sleepFn(delay)
+		delay = nextDelay(delay)
+	}
 }
 
 func mustValue[T any](name string, fn func() (T, error)) T {

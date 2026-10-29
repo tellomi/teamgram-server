@@ -25,6 +25,7 @@ import (
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"google.golang.org/protobuf/proto"
@@ -51,7 +52,10 @@ func (m *defaultInboxMqClient) sendMessage(ctx context.Context, method, k string
 		return nil, err
 	}
 
-	_, _, err = m.cli.SendMessageV2(ctx, method, k, b)
+	err = bootstrap.Retry(ctx, "inbox kafka publish", func() error {
+		_, _, err = m.cli.SendMessageV2(ctx, method, k, b)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

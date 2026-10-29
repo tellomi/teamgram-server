@@ -62,6 +62,10 @@ Without MySQL the catalog still serves from memory. Installs, recents, and favor
 
 ## Import
 
+The image builds `importstickers` in the Go stage and copies it to `/app/bin/importstickers`. The converted emoji are embedded in that binary. It does not fetch packs from the network. Running it again updates the same rows and objects.
+
+From a checkout, with MySQL and S3 credentials in the environment:
+
 ```
 TEAMGRAM_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true' \
 TELLOMI_S3_ENDPOINT=http://127.0.0.1:9000 \
@@ -72,7 +76,21 @@ TELLOMI_S3_BUCKET_PUBLIC_MEDIA=tellomi-public-media \
 go run ./app/bff/stickers/cmd/importstickers
 ```
 
-The command is idempotent. It does not fetch anything from the network; it uploads the files already converted into the repo.
+Inside the Compose stack, `docker compose exec` runs in the already-started `teamgram` container and inherits its `TELLOMI_S3_*` variables. Pass the same DSN the bff uses (`teamgramd/etc2/bff.yaml`):
+
+```
+docker compose exec teamgram /app/bin/importstickers \
+  -dsn 'teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true'
+```
+
+`docker compose run` starts a new container and would otherwise run the process entrypoint. Override it:
+
+```
+docker compose run --rm --no-deps --entrypoint /app/bin/importstickers teamgram \
+  -dsn 'teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true'
+```
+
+Session must route `/mtproto.RPCStickers`, `/mtproto.RPCEmoji`, and `/mtproto.RPCCustomEmojis` to `bff.bff` (`teamgramd/etc2/session.yaml` in this container). Without those routes the client never reaches this catalog.
 
 ## Still missing
 
