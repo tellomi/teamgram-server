@@ -47,6 +47,7 @@ import (
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
 	savedmessagedialogshelper "github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs"
 	sponsoredmessages_helper "github.com/teamgram/teamgram-server/app/bff/sponsoredmessages"
+	stickers_helper "github.com/teamgram/teamgram-server/app/bff/stickers"
 	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
 	tos_helper "github.com/teamgram/teamgram-server/app/bff/tos"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
@@ -147,6 +148,11 @@ func (s *Server) Initialize() error {
 				nil,
 				nil))
 
+		stickerSvc := stickers_helper.New(stickers_helper.Config{MySQL: c.ChannelMySQL})
+		mtproto.RegisterRPCStickersServer(grpcServer, stickerSvc)
+		mtproto.RegisterRPCEmojiServer(grpcServer, stickerSvc)
+		mtproto.RegisterRPCCustomEmojisServer(grpcServer, stickerSvc)
+
 		// premium_helper
 		premiumSvc := premium_helper.New(premium_helper.Config{
 			RpcServerConf: c.RpcServerConf,
@@ -236,7 +242,7 @@ func (s *Server) Initialize() error {
 				DfsClient:     c.DfsClient,
 				UserClient:    c.BizServiceClient,
 				MediaClient:   c.MediaClient,
-			}, nil, nil))
+			}, stickers_helper.Thumb{}, nil))
 
 		// passport_helper
 		mtproto.RegisterRPCPassportServer(

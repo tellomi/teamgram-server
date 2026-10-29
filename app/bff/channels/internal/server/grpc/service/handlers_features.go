@@ -7,6 +7,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
@@ -331,6 +332,10 @@ func channelUpdate(id int64) *mtproto.Update {
 // ReactionsService stores emoji reactions on channel messages.
 type ReactionsService struct {
 	mtproto.UnimplementedRPCReactionsServer
+}
+
+func (ReactionsService) MessagesGetAvailableReactions(ctx context.Context, in *mtproto.TLMessagesGetAvailableReactions) (*mtproto.Messages_AvailableReactions, error) {
+	return catalog.Must().Reactions(in.GetHash()), nil
 }
 
 func (ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TLMessagesSendReaction) (*mtproto.Updates, error) {
