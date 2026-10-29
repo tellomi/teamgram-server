@@ -69,6 +69,12 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 						return c.svcCtx.Dao.GetDocumentFile(c.ctx, path, offset, limit)
 					},
 					func() ([]byte, error) {
+						return c.svcCtx.Dao.GetStickerFile(c.ctx, path, offset, limit)
+					},
+					func() ([]byte, error) {
+						return c.svcCtx.Dao.GetEmojiFile(c.ctx, path, offset, limit)
+					},
+					func() ([]byte, error) {
 						return c.svcCtx.Dao.GetWallpaperFile(c.ctx, path, offset, limit)
 					},
 				)
