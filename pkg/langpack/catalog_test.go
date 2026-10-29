@@ -217,7 +217,7 @@ func TestShippedPacks(t *testing.T) {
 		if err != nil {
 			t.Fatal(platform, err)
 		}
-		if len(langs) != 3 {
+		if len(langs) != len(OfficialLanguages) {
 			t.Fatalf("%s languages %d", platform, len(langs))
 		}
 		byCode := map[string]*mtproto.LangPackLanguage{}
@@ -226,23 +226,38 @@ func TestShippedPacks(t *testing.T) {
 			if lang.GetNativeName() == "" || lang.GetPluralCode() == "" || lang.GetTranslationsUrl() == "" || !lang.GetOfficial() {
 				t.Fatalf("%s incomplete %+v", platform, lang)
 			}
-			if lang.GetStringsCount() < 1000 || lang.GetTranslatedCount() < 1000 {
+			full := lang.GetLangCode() == "en" || lang.GetLangCode() == "zh-hans" || lang.GetLangCode() == "zh-hant"
+			if lang.GetStringsCount() < 1000 {
 				t.Fatalf("%s %s counts %d/%d", platform, lang.GetLangCode(), lang.GetTranslatedCount(), lang.GetStringsCount())
 			}
+			if full && lang.GetTranslatedCount() < 1000 {
+				t.Fatalf("%s %s translated %d", platform, lang.GetLangCode(), lang.GetTranslatedCount())
+			}
 			diff, err := cat.Difference(platform, lang.GetLangCode(), 0)
-			if err != nil || diff.GetVersion() < 1 || len(diff.GetStrings()) < 1000 {
+			if err != nil || diff.GetVersion() < 1 {
 				t.Fatalf("%s %s diff %v %v", platform, lang.GetLangCode(), diff.GetVersion(), err)
+			}
+			if full && len(diff.GetStrings()) < 1000 {
+				t.Fatalf("%s %s diff strings %d", platform, lang.GetLangCode(), len(diff.GetStrings()))
 			}
 			buf := mtproto.NewEncodeBuf(256)
 			if err := lang.Encode(buf, 232); err != nil {
 				t.Fatal(err)
 			}
-			if err := diff.GetStrings()[0].Encode(buf, 232); err != nil {
-				t.Fatal(err)
+			if len(diff.GetStrings()) > 0 {
+				if err := diff.GetStrings()[0].Encode(buf, 232); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for _, s := range diff.GetStrings() {
 				if hasTelegramBrand(s.GetValue()) || hasTelegramBrand(s.GetOtherValue()) {
 					t.Fatalf("brand in %s %s %q", platform, s.GetKey(), s.GetValue()+s.GetOtherValue())
+				}
+				for _, part := range stringParts(s) {
+					low := strings.ToLower(part)
+					if strings.Contains(low, "t.me") || strings.Contains(low, "telegram.org") || strings.Contains(low, "telegram.me") || strings.Contains(low, "telegram.dog") {
+						t.Fatalf("telegram host in %s %s %q", platform, s.GetKey(), part)
+					}
 				}
 			}
 		}
@@ -403,7 +418,7 @@ func latinLeftovers(text string) []string {
 }
 
 var hyphenSlugRe = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$`)
-var stripRe = regexp.MustCompile(`(?i)https?://\S+|[\w.-]*(?:telegram\.org|tellomi\.cn)\S*|(?:t\.me|tell\.cc)(?:/\S+)?|[\w.-]+\.(?:com|org|net)\S+|:[A-Za-z0-9_]+:|\]\([A-Za-z0-9_]+\)|\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b|\b(?:app store|google play|face id|apple watch|touch id)\b`)
+var stripRe = regexp.MustCompile(`(?i)https?://\S+|[\w.-]*telegram\.org\S*|[\w.-]*tellomi\.cn\S*|t\.me\S*|tell\.cc\S*|[\w.-]+\.(?:com|org|net)\S+|:[A-Za-z0-9_]+:|\]\([A-Za-z0-9_]+\)|\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b|\b(?:app store|google play|face id|apple watch|touch id)\b`)
 var mentionRe = regexp.MustCompile(`@[A-Za-z0-9_]+`)
 
 func hasTelegramBrand(s string) bool {
@@ -440,7 +455,7 @@ func TestEmbeddedPacksLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(platform, err)
 		}
-		if len(langs) != 3 {
+		if len(langs) != len(OfficialLanguages) {
 			t.Fatalf("%s languages %d", platform, len(langs))
 		}
 		for _, lang := range langs {

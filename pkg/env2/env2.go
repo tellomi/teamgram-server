@@ -8,12 +8,13 @@ package env2
 
 import (
 	"flag"
+	"strings"
 )
 
 var (
 	MyAppName = "Teamgram"
 	MyWebSite = "teamgram.net"
-	TDotMe    = "t.me"
+	TDotMe    = "tell.cc"
 	// MyWebClientSite = "web.teamgram.net"
 	MyTgScheme = "tg"
 	// IosAppStoreId   = ""
@@ -31,7 +32,7 @@ var (
 func init() {
 	flag.StringVar(&MyAppName, "app_name", "Teamgram", "app_name")
 	flag.StringVar(&MyWebSite, "site_name", "teamgram.net", "site_name")
-	flag.StringVar(&TDotMe, "t.me", "t.me", "t.me")
+	flag.StringVar(&TDotMe, "t.me", "tell.cc", "public short-link host")
 	// flag.StringVar(&MyWebClientSite, "webclient", "web.teamgram.net", "web.teamgram.net")
 	flag.StringVar(&MyTgScheme, "tg", "tg", "tg")
 	// flag.StringVar(&IosAppStoreId, "app_store_id", "", "")
@@ -42,12 +43,10 @@ func init() {
 }
 
 func IsTDotMe(me string) bool {
-	switch me {
-	case "teamgram.me":
+	switch strings.ToLower(me) {
+	case "tell.cc", "t.me", "telegram.me", "telegram.dog", "teamgram.me":
 		return true
-	case "t.me":
-		return true
-	case TDotMe:
+	case strings.ToLower(TDotMe):
 		return true
 	}
 

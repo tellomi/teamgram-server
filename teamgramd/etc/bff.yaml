@@ -100,7 +100,7 @@ Phone:
   TurnTTL: 86400
   RingTimeout: 90
   ConfirmTimeout: 30
-  CallLinkPrefix: "https://t.me/call/"
+  CallLinkPrefix: "https://tell.cc/call/"
   # Overridden by TELLOMI_RTMP_URL when that variable is set.
   RTMPURL: "rtmp://127.0.0.1:1935/live"
   RTMPKey: tellomi

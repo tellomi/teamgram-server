@@ -7,12 +7,10 @@
 package chat
 
 import (
-	"strings"
-
 	"github.com/teamgram/marmota/pkg/random2"
 	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/pkg/env2"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 func GetChatTypeByInviteHash(hash string) int {
@@ -53,10 +51,7 @@ func GenChannelInviteHash() string {
 }
 
 func GetInviteHashByLink(link string) string {
-	if strings.HasPrefix(link, "https://"+env2.TDotMe+"/+") {
-		link = link[len("https://"+env2.TDotMe+"/+"):]
-	}
-	return link
+	return brand.InviteHash(link)
 }
 
 func (m *ChatInviteExt) ToChatInvite(selfId int64, cb func(idList []int64) []*mtproto.User) *mtproto.ChatInvite {

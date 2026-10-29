@@ -26,8 +26,8 @@ func TestGetLanguagesUsesConnectionLangPack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(langs.Datas) != 3 || langs.Datas[0].GetLangCode() != "zh-hans" {
-		t.Fatalf("%+v", langs.Datas)
+	if len(langs.Datas) != len(langpack.OfficialLanguages) || langs.Datas[0].GetLangCode() != "zh-hans" {
+		t.Fatalf("%d %+v", len(langs.Datas), langs.Datas[0])
 	}
 	if _, err := c.LangpackGetLanguages(&mtproto.TLLangpackGetLanguages{LangPack: "nope"}); err != mtproto.ErrLangPackInvalid {
 		t.Fatal(err)
@@ -55,8 +55,12 @@ func TestGetLangPackAliasesAndDifference(t *testing.T) {
 	if len(next.GetStrings()) != 0 || next.GetVersion() != diff.GetVersion() {
 		t.Fatalf("difference %+v", next)
 	}
-	if _, err := c.LangpackGetLanguage(&mtproto.TLLangpackGetLanguage{LangPack: "android", LangCode: "de"}); err != mtproto.ErrLangCodeNotSupported {
+	de, err := c.LangpackGetLanguage(&mtproto.TLLangpackGetLanguage{LangPack: "android", LangCode: "de"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if de.GetLangCode() != "de" || de.GetBaseLangCode().GetValue() != "en" || de.GetNativeName() != "Deutsch" {
+		t.Fatalf("%+v", de)
 	}
 }
 
