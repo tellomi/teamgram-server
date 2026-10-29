@@ -1,0 +1,15 @@
+{
+  "addr": "127.0.0.1:10443",
+  "api_id": 10840,
+  "api_hash": "0123456789abcdef0123456789abcdef",
+  "dc": 1,
+  "rsa_key_file": "../teamgramd/bin/server_pkcs1.key",
+  "phones": {
+    "alice": {"number": "9996610001", "code": "11111"},
+    "bob": {"number": "9996610002", "code": "11111"},
+    "terms": {"number": "9996610003", "code": "11111"},
+    "username": {"number": "9996610004", "code": "11111"},
+    "reconnect_a": {"number": "9996610005", "code": "11111"},
+    "reconnect_b": {"number": "9996610006", "code": "11111"}
+  }
+}

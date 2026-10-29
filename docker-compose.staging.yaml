@@ -1,0 +1,81 @@
+# Second stack on a host that already runs production.
+# Compose 2.24 or newer (the !override tag). See docs/staging.md.
+#
+#   COMPOSE_PROJECT_NAME=tellomi-staging \
+#   TELLOMI_IMAGE_TAG=<sha> \
+#   docker compose -f docker-compose-env.yaml -f docker-compose.yaml \
+#     -f docker-compose.staging.yaml up -d
+
+services:
+  kafka:
+    container_name: tellomi-staging-kafka
+    ports: !override []
+
+  etcd:
+    container_name: tellomi-staging-etcd
+    ports: !override []
+    volumes: !override
+      - ./data-staging/etcd:/etcd-data
+
+  redis:
+    container_name: tellomi-staging-redis
+    ports: !override []
+    volumes: !override
+      - ./data-staging/redis:/data
+
+  mysql:
+    container_name: tellomi-staging-mysql
+    ports: !override []
+    volumes: !override
+      - ./data-staging/mysql:/var/lib/mysql
+      - ./teamgramd/deploy/sql:/docker-entrypoint-initdb.d/
+
+  mysql-migrate:
+    container_name: tellomi-staging-mysql-migrate
+
+  minio:
+    container_name: tellomi-staging-minio
+    ports: !override []
+    volumes: !override
+      - ./data-staging/minio:/data
+
+  minio-mc:
+    container_name: tellomi-staging-minio-mc
+
+  teamgram:
+    container_name: tellomi-staging-teamgram
+    ports: !override
+      - "10444:10443"
+      - "11444:11443"
+    volumes: !override
+      - ./data-staging/logs:/app/logs
+      - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
+
+  # Host-network and monitoring ports belong to the production stack.
+  coturn:
+    profiles: ["donotstart"]
+  mediamtx:
+    profiles: ["donotstart"]
+  jaeger:
+    profiles: ["donotstart"]
+  node-exporter:
+    profiles: ["donotstart"]
+  prometheus:
+    profiles: ["donotstart"]
+  grafana:
+    profiles: ["donotstart"]
+  elasticsearch:
+    profiles: ["donotstart"]
+  kibana:
+    profiles: ["donotstart"]
+  filebeat:
+    profiles: ["donotstart"]
+  go-stash:
+    profiles: ["donotstart"]
+
+networks:
+  teamgram_net:
+    name: tellomi_staging_net
+    ipam:
+      config: !override
+        - subnet: 172.21.0.0/16

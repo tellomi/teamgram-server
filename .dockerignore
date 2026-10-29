@@ -1,0 +1,9 @@
+.git
+data/etcd
+data/mysql
+data/redis
+data/kafka
+data/minio
+data/logs
+data-staging
+*.log
