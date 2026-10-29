@@ -7,8 +7,10 @@ Etcd:
 Timeout: 0
 Log:
   ServiceName: service.dfs
-  #Mode: file
-  #Path: ../logs/dfs
+  Mode: file
+  Path: /app/logs/dfs
+  KeepDays: 7
+  Rotation: daily
   Level: debug
 #监控
 Prometheus:

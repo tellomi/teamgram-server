@@ -945,8 +945,9 @@ func (m *MainAuthWrapper) onSessionData(ctx context.Context, sessionMsg *session
 	}
 
 	if sList.cacheSalt == nil {
-		logx.WithContext(ctx).Infof("onSessionData - getOrFetchNewSalt nil error, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
-		return
+		// Leave it empty. checkBadServerSalt adopts the client's salt
+		// instead of ignoring the message, which made iOS handshake again.
+		logx.WithContext(ctx).Infof("onSessionData - no stored salt yet, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
 	}
 
 	sess, ok := sList.sessions[sessionMsg.sessionId]
@@ -986,8 +987,7 @@ func (m *MainAuthWrapper) onSessionHttpData(ctx context.Context, sessionMsg *ses
 	}
 
 	if sList.cacheSalt == nil {
-		logx.WithContext(ctx).Infof("onSessionHttpData - getOrFetchNewSalt nil error, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
-		return
+		logx.WithContext(ctx).Infof("onSessionHttpData - no stored salt yet, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
 	}
 
 	sess, ok := sList.sessions[sessionMsg.sessionId]

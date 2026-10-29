@@ -113,8 +113,9 @@ func (c *AuthsessionCore) AuthsessionBindTempAuthKey(in *authsession.TLAuthsessi
 		return nil, err
 	}
 
-	permAuthKey := crypto.NewAuthKey(in.PermAuthKeyId, keyData.AuthKey)
-	innerData, err := permAuthKey.AesIgeDecryptV1(in.EncryptedMessage[8:8+16], in.EncryptedMessage[8+16:])
+	// iOS seals this with MTProto 2.0. OpenEncryptedMessage tries SHA256
+	// then the legacy SHA1 msg_key.
+	innerData, err := crypto.OpenEncryptedMessage(in.PermAuthKeyId, keyData.AuthKey, in.EncryptedMessage)
 	if err != nil {
 		c.Logger.Errorf("auth.bindTempAuthKey - error: %v", err)
 		return nil, mtproto.ErrEncryptedMessageInvalid
@@ -136,12 +137,23 @@ func (c *AuthsessionCore) AuthsessionBindTempAuthKey(in *authsession.TLAuthsessi
 	} else {
 		mtproto.PutDecodeBuf(dbuf)
 		// bind_auth_key_inner#75a3f765 nonce:long temp_auth_key_id:long perm_auth_key_id:long temp_session_id:long expires_at:int = BindAuthKeyInner;
-		// bind
-		c.Logger.Infof("auth.bindTempAuthKey - bind_auth_key_inner: %s", bindAuthKeyInner)
+		if bindAuthKeyInner.GetPermAuthKeyId() != in.GetPermAuthKeyId() ||
+			bindAuthKeyInner.GetNonce() != in.GetNonce() ||
+			bindAuthKeyInner.GetExpiresAt() != in.GetExpiresAt() ||
+			bindAuthKeyInner.GetTempAuthKeyId() == 0 {
+			c.Logger.Errorf("auth.bindTempAuthKey - inner fields do not match the request")
+			return nil, mtproto.ErrEncryptedMessageInvalid
+		}
+		c.Logger.Infof("auth.bindTempAuthKey - bind_auth_key_inner temp=%d perm=%d expires_at=%d",
+			bindAuthKeyInner.GetTempAuthKeyId(), bindAuthKeyInner.GetPermAuthKeyId(), bindAuthKeyInner.GetExpiresAt())
 		tempKeyData, err2 := c.svcCtx.Dao.QueryAuthKeyV2(c.ctx, bindAuthKeyInner.GetTempAuthKeyId())
 		if err2 != nil {
 			c.Logger.Errorf("auth.bindTempAuthKey - invalid innerData")
 			return nil, mtproto.ErrEncryptedMessageInvalid
+		}
+		if bound := tempKeyData.BoundPermAuthKeyId(); bound != 0 && bound != bindAuthKeyInner.GetPermAuthKeyId() {
+			c.Logger.Errorf("auth.bindTempAuthKey - temp %d already bound to %d", bindAuthKeyInner.GetTempAuthKeyId(), bound)
+			return nil, mtproto.ErrTempAuthKeyAlreadyBound
 		}
 
 		// TODO: tx wrapper
@@ -152,11 +164,20 @@ func (c *AuthsessionCore) AuthsessionBindTempAuthKey(in *authsession.TLAuthsessi
 			bindAuthKeyInner.GetTempAuthKeyId())
 
 		// TODO: expiredIn int32
-		// bindPerm
+		// bindPerm — session lookup of the temp key follows this id to auth_users.
 		c.svcCtx.Dao.UnsafeBindKeyIdV2(c.ctx,
 			bindAuthKeyInner.GetTempAuthKeyId(),
 			mtproto.AuthKeyTypePerm,
 			bindAuthKeyInner.GetPermAuthKeyId())
+
+		// signUp may have attached the user to the temp key before bind.
+		// Move that authorization onto the permanent key so every later
+		// temp key that binds here stays logged in.
+		if uid := c.svcCtx.Dao.GetAuthKeyUserId(c.ctx, bindAuthKeyInner.GetTempAuthKeyId()); uid != 0 {
+			if exist := c.svcCtx.Dao.GetAuthKeyUserId(c.ctx, bindAuthKeyInner.GetPermAuthKeyId()); exist == 0 {
+				c.svcCtx.Dao.BindAuthKeyUser(c.ctx, bindAuthKeyInner.GetPermAuthKeyId(), uid)
+			}
+		}
 	}
 
 	return mtproto.BoolTrue, nil

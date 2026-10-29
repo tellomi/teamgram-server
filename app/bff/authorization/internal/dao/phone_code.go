@@ -22,13 +22,24 @@ import (
 	"context"
 	"time"
 
-	"github.com/teamgram/marmota/pkg/random2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/crypto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
+
+// phoneCodeLength is the number of digits stored and reported to the client.
+// Aliyun uses TELLOMI_SMS_CODE_LENGTH (default 6). Fixed mode stays 5 so the
+// dev code 12345 matches the boxes the client draws.
+func phoneCodeLength() int {
+	cfg := verify.Load()
+	if cfg.SMS.Provider == verify.ProviderAliyun {
+		return cfg.SMS.CodeLength
+	}
+	return 5
+}
 
 // CreatePhoneCode
 // for sendCode
@@ -45,7 +56,7 @@ func (d *Dao) CreatePhoneCode(ctx context.Context,
 			PhoneNumber:           phoneNumber,
 			SessionId:             sessionId,
 			PhoneNumberRegistered: phoneNumberRegistered,
-			PhoneCode:             random2.RandomNumeric(5),
+			PhoneCode:             verify.RandomDigits(phoneCodeLength()),
 			PhoneCodeHash:         crypto.GenerateStringNonce(16),
 			PhoneCodeExpired:      int32(time.Now().Unix() + 3*60),
 			SentCodeType:          sendCodeType,

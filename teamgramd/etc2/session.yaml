@@ -6,8 +6,10 @@ Etcd:
   Key: interface.session
 Log:
   ServiceName: interface.session
-  #Mode: file
-  #Path: ../logs/session
+  Mode: file
+  Path: /app/logs/session
+  KeepDays: 7
+  Rotation: daily
   Level: debug
 #监控
 Prometheus:

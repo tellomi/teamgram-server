@@ -56,6 +56,32 @@ func TestSendSmsSignsRequest(t *testing.T) {
 	}
 }
 
+func TestSendSmsKeepsLeadingZeroAsString(t *testing.T) {
+	var got url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got, _ = url.ParseQuery(string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Code":"OK","Message":"OK","RequestId":"req"}`))
+	}))
+	defer srv.Close()
+
+	c := &SMSClient{
+		AccessKeyID:     "id",
+		AccessKeySecret: "secret",
+		SignName:        "s",
+		TemplateCode:    "SMS_1",
+		Endpoint:        srv.URL,
+		HTTP:            srv.Client(),
+	}
+	if err := c.SendCode(context.Background(), "13800138000", "012345"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get("TemplateParam") != `{"code":"012345"}` {
+		t.Fatalf("template param %s", got.Get("TemplateParam"))
+	}
+}
+
 func TestSendSmsRequiresKeys(t *testing.T) {
 	c := &SMSClient{}
 	err := c.SendCode(context.Background(), "13800138000", "12345")

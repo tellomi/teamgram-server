@@ -72,7 +72,20 @@ func (c *session) checkBadServerSalt(ctx context.Context, gatewayId string, salt
 
 	valid := false
 
-	if c.sessList.cacheSalt != nil && salt == c.sessList.cacheSalt.GetSalt() {
+	if c.sessList.cacheSalt == nil {
+		// No stored salt. Remember the client's instead of answering with
+		// salt 0, which makes iOS drop the auth key and handshake again.
+		now := int32(time.Now().Unix())
+		c.sessList.cacheSalt = mtproto.MakeTLFutureSalt(&mtproto.FutureSalt{
+			ValidSince: now,
+			ValidUntil: now + 30*60,
+			Salt:       salt,
+		})
+		logx.WithContext(ctx).Infof("adopt client salt %d for authKey %d", salt, c.sessList.authId)
+		return true
+	}
+
+	if salt == c.sessList.cacheSalt.GetSalt() {
 		valid = true
 	} else if c.sessList.cacheLastSalt != nil {
 		// Accept the previous salt within a 300s grace period after its valid_until.
@@ -275,7 +288,10 @@ func (c *session) checkBadMsgNotification(ctx context.Context, gatewayId string,
 					badTime = true;
 				}
 			*/
-			if clientTime+60 < serverTime {
+			// Spec: reject a message more than 300s after it was created.
+			// A 60s window returned bad_msg 16, and clients treat that as
+			// "drop the temp auth key and handshake again".
+			if clientTime+300 < serverTime {
 				errorCode = kMsgIdTooLow
 				logx.WithContext(ctx).Errorf("bad server time - {msg_id: %d, clientTime: %d, serverTime: %d}", msg.MsgId, clientTime, serverTime)
 

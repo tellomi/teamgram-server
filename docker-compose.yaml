@@ -33,6 +33,13 @@ services:
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
+    volumes:
+      - ./data/logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     ports:
       - "10443:10443"
       - "11443:11443"

@@ -6,8 +6,10 @@ Http:
   MaxBytes: 67108864
   Log:
     ServiceName: interface.httpserver
-    #Mode: file
-    #Path: ../logs/httpserver
+    Mode: file
+    Path: /app/logs/httpserver
+    KeepDays: 7
+    Rotation: daily
     Level: debug
 #监控
 Prometheus:

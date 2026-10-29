@@ -69,13 +69,14 @@ func (c *CacheAuthData) ToAuthState() (state int) {
 		return
 	}
 
-	if c.Client == nil {
-		state = mtproto.AuthStateWaitInit
-	} else if c.BindUser == nil {
-		state = mtproto.AuthStateUnauthorized
-	} else {
-		// TODO: need session password
+	if c.BindUser != nil {
+		// A bound user stays authorized even when the client-session row
+		// has not been written yet (initConnection on a temp key).
 		state = mtproto.AuthStateNormal
+	} else if c.Client == nil {
+		state = mtproto.AuthStateWaitInit
+	} else {
+		state = mtproto.AuthStateUnauthorized
 	}
 
 	return
@@ -413,7 +414,10 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 						return err
 					}
 					if do == nil {
-						return sqlc.ErrNotFound
+						// No initConnection row yet. The auth_users binding
+						// below is still valid; missing client info is not
+						// "user not found".
+						return nil
 					}
 					cacheAuthData.Client = authsession.MakeTLClientSession(&authsession.ClientSession{
 						AuthKeyId:      authKeyId,
@@ -448,6 +452,9 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 
 			if err != nil {
 				return err
+			}
+			if cacheAuthData.Client == nil && cacheAuthData.BindUser == nil {
+				return sqlc.ErrNotFound
 			}
 			*v.(**CacheAuthData) = cacheAuthData
 
