@@ -23,5 +23,10 @@ Log:
 
 NodeId: 1
 
+Mysql:
+  DSN: teamgram:teamgram@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Local
+  Active: 4
+  Idle: 2
+
 SeqIDGen:
   - Host: 127.0.0.1:6379

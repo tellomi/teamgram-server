@@ -48,16 +48,22 @@ func (dao *MessagesDAO) CalcTableName(id int64) string {
 	return "messages_" + strconv.FormatInt(id%int64(dao.ShardingSize), 10)
 }
 
-// InsertOrReturnId
-// insert into messages(user_id, user_message_box_id, dialog_id1, dialog_id2, dialog_message_id, sender_user_id, peer_type, peer_id, random_id, message_filter_type, message_data, message, mentioned, media_unread, pinned, saved_peer_type, saved_peer_id, date2, ttl_period) values (:user_id, :user_message_box_id, :dialog_id1, :dialog_id2, :dialog_message_id, :sender_user_id, :peer_type, :peer_id, :random_id, :message_filter_type, :message_data, :message, :mentioned, :media_unread, :pinned, :saved_peer_type, :saved_peer_id, :date2, :ttl_period) on duplicate key update id = last_insert_id(id)
+// InsertOrReturnId inserts one message box row.
+// A duplicate (user_id, user_message_box_id) is not overwritten. Replaying the
+// same message returns the existing row id. A different message on that box
+// id is ErrMessageBoxCollision: the previous ON DUPLICATE KEY UPDATE kept the
+// old row and the new send disappeared.
 func (dao *MessagesDAO) InsertOrReturnId(ctx context.Context, do *dataobject.MessagesDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = strings.Replace("insert into __TABLE__(user_id, user_message_box_id, dialog_id1, dialog_id2, dialog_message_id, sender_user_id, peer_type, peer_id, random_id, message_filter_type, message_data, message, mentioned, media_unread, pinned, saved_peer_type, saved_peer_id, date2, ttl_period) values (:user_id, :user_message_box_id, :dialog_id1, :dialog_id2, :dialog_message_id, :sender_user_id, :peer_type, :peer_id, :random_id, :message_filter_type, :message_data, :message, :mentioned, :media_unread, :pinned, :saved_peer_type, :saved_peer_id, :date2, :ttl_period) on duplicate key update id = last_insert_id(id)", "__TABLE__", dao.CalcTableName(do.UserId), -1)
+	query = strings.Replace(messageInsertSQL, "__TABLE__", dao.CalcTableName(do.UserId), -1)
 
 	r, err = dao.db.NamedExec(ctx, query, do)
+	if isDuplicateKey(err) {
+		return dao.replayOrCollision(ctx, nil, do)
+	}
 	if err != nil {
 		logx.WithContext(ctx).Errorf("namedExec in InsertOrReturnId(%v), error: %v", do, err)
 		return
@@ -76,16 +82,18 @@ func (dao *MessagesDAO) InsertOrReturnId(ctx context.Context, do *dataobject.Mes
 	return
 }
 
-// InsertOrReturnIdTx
-// insert into messages(user_id, user_message_box_id, dialog_id1, dialog_id2, dialog_message_id, sender_user_id, peer_type, peer_id, random_id, message_filter_type, message_data, message, mentioned, media_unread, pinned, saved_peer_type, saved_peer_id, date2, ttl_period) values (:user_id, :user_message_box_id, :dialog_id1, :dialog_id2, :dialog_message_id, :sender_user_id, :peer_type, :peer_id, :random_id, :message_filter_type, :message_data, :message, :mentioned, :media_unread, :pinned, :saved_peer_type, :saved_peer_id, :date2, :ttl_period) on duplicate key update id = last_insert_id(id)
+// InsertOrReturnIdTx is the transactional form of InsertOrReturnId.
 func (dao *MessagesDAO) InsertOrReturnIdTx(tx *sqlx.Tx, do *dataobject.MessagesDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = strings.Replace("insert into __TABLE__(user_id, user_message_box_id, dialog_id1, dialog_id2, dialog_message_id, sender_user_id, peer_type, peer_id, random_id, message_filter_type, message_data, message, mentioned, media_unread, pinned, saved_peer_type, saved_peer_id, date2, ttl_period) values (:user_id, :user_message_box_id, :dialog_id1, :dialog_id2, :dialog_message_id, :sender_user_id, :peer_type, :peer_id, :random_id, :message_filter_type, :message_data, :message, :mentioned, :media_unread, :pinned, :saved_peer_type, :saved_peer_id, :date2, :ttl_period) on duplicate key update id = last_insert_id(id)", "__TABLE__", dao.CalcTableName(do.UserId), -1)
+	query = strings.Replace(messageInsertSQL, "__TABLE__", dao.CalcTableName(do.UserId), -1)
 
 	r, err = tx.NamedExec(query, do)
+	if isDuplicateKey(err) {
+		return dao.replayOrCollision(tx.Context(), tx, do)
+	}
 	if err != nil {
 		logx.WithContext(tx.Context()).Errorf("namedExec in InsertOrReturnId(%v), error: %v", do, err)
 		return
