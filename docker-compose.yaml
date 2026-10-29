@@ -17,6 +17,22 @@ services:
       TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-}
       TELLOMI_ALIYUN_DM_ACCOUNT_NAME: ${TELLOMI_ALIYUN_DM_ACCOUNT_NAME:-}
       TELLOMI_ALIYUN_DM_FROM_ALIAS: ${TELLOMI_ALIYUN_DM_FROM_ALIAS:-}
+      # S3-compatible object storage. Defaults talk to the MinIO service in
+      # docker-compose-env.yaml. Point these at Cloudflare R2 without rebuilding
+      # the image. See docs/storage.md.
+      TELLOMI_S3_ENDPOINT: ${TELLOMI_S3_ENDPOINT:-http://minio:9000}
+      TELLOMI_S3_REGION: ${TELLOMI_S3_REGION:-us-east-1}
+      TELLOMI_S3_ACCESS_KEY_ID: ${TELLOMI_S3_ACCESS_KEY_ID:-minio}
+      TELLOMI_S3_SECRET_ACCESS_KEY: ${TELLOMI_S3_SECRET_ACCESS_KEY:-miniostorage}
+      TELLOMI_S3_FORCE_PATH_STYLE: ${TELLOMI_S3_FORCE_PATH_STYLE:-true}
+      TELLOMI_S3_USE_SSL: ${TELLOMI_S3_USE_SSL:-false}
+      TELLOMI_S3_BUCKET_ATTACHMENTS: ${TELLOMI_S3_BUCKET_ATTACHMENTS:-tellomi-attachments}
+      TELLOMI_S3_BUCKET_PUBLIC_MEDIA: ${TELLOMI_S3_BUCKET_PUBLIC_MEDIA:-tellomi-public-media}
+      TELLOMI_S3_BUCKET_BACKUPS: ${TELLOMI_S3_BUCKET_BACKUPS-tellomi-backups}
+      TELLOMI_S3_PUBLIC_MEDIA_BASE_URL: ${TELLOMI_S3_PUBLIC_MEDIA_BASE_URL:-}
+      TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
+      # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
+      TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
     ports:
       - "10443:10443"
       - "11443:11443"
@@ -35,23 +51,6 @@ services:
       - "20120:20120"
       - "20670:20670"
       - "20420:20420"
-    environment:
-      # S3-compatible object storage. Defaults talk to the MinIO service in
-      # docker-compose-env.yaml. Point these at Cloudflare R2 without rebuilding
-      # the image. See docs/storage.md.
-      TELLOMI_S3_ENDPOINT: ${TELLOMI_S3_ENDPOINT:-http://minio:9000}
-      TELLOMI_S3_REGION: ${TELLOMI_S3_REGION:-us-east-1}
-      TELLOMI_S3_ACCESS_KEY_ID: ${TELLOMI_S3_ACCESS_KEY_ID:-minio}
-      TELLOMI_S3_SECRET_ACCESS_KEY: ${TELLOMI_S3_SECRET_ACCESS_KEY:-miniostorage}
-      TELLOMI_S3_FORCE_PATH_STYLE: ${TELLOMI_S3_FORCE_PATH_STYLE:-true}
-      TELLOMI_S3_USE_SSL: ${TELLOMI_S3_USE_SSL:-false}
-      TELLOMI_S3_BUCKET_ATTACHMENTS: ${TELLOMI_S3_BUCKET_ATTACHMENTS:-tellomi-attachments}
-      TELLOMI_S3_BUCKET_PUBLIC_MEDIA: ${TELLOMI_S3_BUCKET_PUBLIC_MEDIA:-tellomi-public-media}
-      TELLOMI_S3_BUCKET_BACKUPS: ${TELLOMI_S3_BUCKET_BACKUPS-tellomi-backups}
-      TELLOMI_S3_PUBLIC_MEDIA_BASE_URL: ${TELLOMI_S3_PUBLIC_MEDIA_BASE_URL:-}
-      TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
-      # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
-      TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
     # Honored when this file is combined with docker-compose-env.yaml, which
     # defines kafka and its healthcheck. required: false keeps `docker compose up`
     # of this file alone from failing. msg, sync, and bff also retry in-process.
