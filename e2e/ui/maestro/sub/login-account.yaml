@@ -1,0 +1,37 @@
+appId: app.tellomi.chat
+---
+- runFlow: dismiss-popups.yaml
+- runFlow:
+    when:
+      true: ${ENTRY == 'start'}
+    commands:
+      - extendedWaitUntil:
+          visible: "Start Messaging|开始聊天"
+          timeout: 60000
+      - tapOn:
+          text: "Start Messaging|开始聊天"
+- runFlow:
+    when:
+      true: ${ENTRY == 'add'}
+    commands:
+      - tapOn:
+          text: "Open navigation menu|打开导航菜单|Open menu|打开菜单"
+      - tapOn:
+          text: "Add Account|添加账号|添加帐户"
+- runFlow: dismiss-popups.yaml
+- runFlow: enter-phone.yaml
+- runFlow: enter-code.yaml
+- extendedWaitUntil:
+    visible: "我已阅读并同意|Search|搜索|New Message|新消息"
+    timeout: 90000
+- runFlow:
+    when:
+      visible: "我已阅读并同意"
+    file: accept-agreement.yaml
+- runFlow: dismiss-popups.yaml
+- extendedWaitUntil:
+    visible: "Search|搜索|New Message|新消息"
+    timeout: 90000
+- assertNotVisible: "服务条款"
+- assertNotVisible: "同意 & 继续"
+- takeScreenshot: logged-in

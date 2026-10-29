@@ -1,0 +1,9 @@
+appId: app.tellomi.chat
+---
+# Permission and promo sheets. Do not match Continue / Done / Next: those
+# advance login and the sign-up agreement.
+- tapOn:
+    text: "Not now|以后再说|稍后|Skip|跳过|Don't Allow|不允许|Later|Cancel|取消"
+    optional: true
+    repeat: 3
+    delay: 400

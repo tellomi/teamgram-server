@@ -1,0 +1,53 @@
+appId: app.tellomi.chat
+---
+# Checklist 1 (first half) and 2. Account A sends to B. Ticks stay single
+# (Not seen) because B has not opened the chat. The three order messages
+# stay on screen for the hierarchy check that runs before after-read.yaml.
+- runFlow: sub/launch-fresh.yaml
+- runFlow:
+    file: sub/login-account.yaml
+    env:
+      ENTRY: start
+      PHONE_NATIONAL: ${PHONE_A_NATIONAL}
+      CODE: ${CODE_A}
+      FIRST_NAME: ${NAME_A}
+- runFlow:
+    file: sub/login-account.yaml
+    env:
+      ENTRY: add
+      PHONE_NATIONAL: ${PHONE_B_NATIONAL}
+      CODE: ${CODE_B}
+      FIRST_NAME: ${NAME_B}
+# Adding an account switches to it. Send from A so the ticks are outgoing.
+- tapOn:
+    text: "Open navigation menu|打开导航菜单|Open menu|打开菜单"
+- tapOn: ${NAME_A}
+- tapOn:
+    text: "New Message|新消息"
+- extendedWaitUntil:
+    visible: ${NAME_B}
+    timeout: 60000
+- tapOn: ${NAME_B}
+- runFlow:
+    file: sub/send-message.yaml
+    env:
+      BODY: ${MESSAGE_1}
+- runFlow:
+    file: sub/send-message.yaml
+    env:
+      BODY: ${MESSAGE_2}
+- runFlow:
+    file: sub/send-message.yaml
+    env:
+      BODY: ${MESSAGE_3}
+- runFlow:
+    file: sub/send-message.yaml
+    env:
+      BODY: ${RECEIPT}
+- takeScreenshot: ticks-before-peer-read
+- assertVisible:
+    text: "Not seen|未查看|对方未读"
+- assertVisible: ${MESSAGE_1}
+- assertVisible: ${MESSAGE_2}
+- assertVisible: ${MESSAGE_3}
+- takeScreenshot: message-order
