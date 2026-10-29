@@ -27,10 +27,32 @@ server is not in the VPC, so Compose pulls that same host. The `-vpc` endpoint
 is not reachable there.
 
 `coturn` and `mediamtx` stay on their upstream images. This workflow does not
-build them.
+build them. MinIO is copied in by the mirror workflow below.
 
 Buildx stores layer cache in GitHub Actions (`type=gha`). Provenance
 attestations are off so ACR accepts the manifest.
+
+## Third-party images
+
+DaoCloud refused the MinIO pull. `.github/workflows/mirror-images.yml` copies
+each line of `.github/mirror-images.txt` from Docker Hub to
+`${ACR_REGISTRY}/${ACR_NAMESPACE}/<repository>:<same tag>`. It logs in with the
+secrets above (`docker/login-action`). It runs when that list changes on
+`master`, and from the Actions tab (`workflow_dispatch`) once the workflow is
+on the default branch.
+
+| Source | ACR repository |
+|---|---|
+| `docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` | `minio` |
+
+`docker-compose-env.yaml` pulls MinIO through the same `TELLOMI_IMAGE_REGISTRY`
+prefix as the app image, so the default is
+`crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi/minio:RELEASE.2025-09-07T16-13-09Z`.
+
+To mirror another image, add a line `<source> <repository>` (for example
+`docker.io/coturn/coturn:4.6.2 coturn`) and point that service at
+`${TELLOMI_IMAGE_REGISTRY}/<repository>:<tag>`. Pushing the list to `master`
+runs the copy.
 
 ## Deploy
 
@@ -52,7 +74,8 @@ to `latest`, so a stock `.env` (see `.env.example`) needs no image settings.
 Do not pass `--build`. If `docker compose pull` fails, fix the login or the
 registry. Do not build on this machine.
 
-Dependency images (MySQL, Kafka, and the rest) are unchanged:
+MinIO is the ACR copy, so the env stack needs the login above. MySQL, Kafka,
+and the other dependency images stay on their upstream registries:
 
 ```bash
 docker compose -f docker-compose-env.yaml up -d

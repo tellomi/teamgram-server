@@ -1,0 +1,8 @@
+# Third-party images copied into ${ACR_REGISTRY}/${ACR_NAMESPACE}.
+# One image per line. Blank lines and lines starting with # are ignored.
+#   <source image> <repository>
+# The destination tag is the source tag. A push of this file to master runs
+# .github/workflows/mirror-images.yml. Add coturn or mediamtx the same way:
+#   docker.io/coturn/coturn:4.6.2 coturn
+#   docker.io/bluenviron/mediamtx:1.9.3 mediamtx
+docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z minio
