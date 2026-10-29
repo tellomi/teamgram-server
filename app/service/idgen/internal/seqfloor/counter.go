@@ -66,6 +66,50 @@ end
 return 0
 `
 
+// reserveLua claims n ids above max(redis, floor) and stores the last id.
+// It never lowers a counter. ARGV[1] is the database max, ARGV[2] is how
+// many ids to claim. The return value is the last id now stored.
+const reserveLua = `
+local cur = redis.call('GET', KEYS[1])
+local floor = tonumber(ARGV[1])
+local n = tonumber(ARGV[2])
+local base = 0
+if cur and cur ~= false then
+  base = tonumber(cur)
+end
+if floor > base then
+  base = floor
+end
+if n <= 0 then
+  return base
+end
+local last = base + n
+redis.call('SET', KEYS[1], tostring(last))
+return last
+`
+
+// ReserveRange is the pure form of reserveLua.
+// current is the Redis string (empty means missing). floor is the highest id
+// already stored in MySQL. n is how many new ids to claim.
+// first is the first id in the claimed range. last is the value Redis must hold
+// afterwards. When n is 0, last is the current floor and first is last+1.
+func ReserveRange(current string, floor, n int64) (first, last int64) {
+	var base int64
+	if current != "" {
+		parsed, err := strconv.ParseInt(current, 10, 64)
+		if err == nil && parsed > base {
+			base = parsed
+		}
+	}
+	if floor > base {
+		base = floor
+	}
+	if n <= 0 {
+		return base + 1, base
+	}
+	return base + 1, base + n
+}
+
 // NextCounter is the pure form of allocLua.
 // current is the Redis string; empty means the key is missing.
 // floor is the last id already stored in MySQL.

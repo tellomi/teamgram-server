@@ -52,6 +52,26 @@ func TestNextCounterNeverGoesBackwards(t *testing.T) {
 	}
 }
 
+func TestReserveRangeStaysAboveTheLiveCounter(t *testing.T) {
+	// Erel already has box 1052 in MySQL and Redis was bumped again, so the
+	// counter is 2052. Three rebuilt messages must start at 2053, and the
+	// counter must land on the last of them.
+	first, last := ReserveRange("2052", 1052, 3)
+	if first != 2053 || last != 2055 {
+		t.Fatalf("ReserveRange(2052, 1052, 3) = %d..%d, want 2053..2055", first, last)
+	}
+	// A missing key still cannot start at 1 when the table already has ids.
+	first, last = ReserveRange("", 51, 2)
+	if first != 52 || last != 53 {
+		t.Fatalf("ReserveRange(missing, 51, 2) = %d..%d, want 52..53", first, last)
+	}
+	// Claiming nothing does not move the counter.
+	first, last = ReserveRange("2153", 1153, 0)
+	if last != 2153 || first != 2154 {
+		t.Fatalf("ReserveRange no-op = first %d last %d", first, last)
+	}
+}
+
 func TestShouldRaiseDoesNotLowerABump(t *testing.T) {
 	if ShouldRaise("1051", 51) {
 		t.Fatal("counter already at db max+1000 must not be rewritten")

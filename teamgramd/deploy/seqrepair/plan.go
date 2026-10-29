@@ -26,9 +26,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"sort"
 	"strconv"
 )
+
+const mathMaxInt32 = math.MaxInt32
 
 const (
 	peerUser = 2
@@ -74,7 +77,10 @@ type Dialog struct {
 	ReadInbox   int32
 	ReadOutbox  int32
 	UnreadCount int32
-	Date2       int64
+	// UnreadBefore is the stored unread_count. The repair adds incoming
+	// rebuilt messages only; it does not replace this with a fresh count.
+	UnreadBefore int32
+	Date2        int64
 }
 
 // Snapshot is the database state the planner reads.
@@ -101,11 +107,22 @@ type Plan struct {
 	Dialogs  []Dialog
 	Rebuilt  int
 	PtsMoved int
+	// BoxTo and PtsTo are the last id assigned for each user. Redis must be
+	// at least this value before any later send.
+	BoxTo map[int64]int64
+	PtsTo map[int64]int64
+}
+
+// Counters are the live Redis values (the last id already issued).
+// A zero value means the key was missing; the planner then uses the table max.
+type Counters struct {
+	Box map[int64]int64
+	Pts map[int64]int64
 }
 
 // BuildPlan decides which swallowed messages to insert and which duplicate
-// pts rows to move above the current per-user maximum.
-func BuildPlan(s Snapshot) Plan {
+// pts rows to move above max(database max, live counter).
+func BuildPlan(s Snapshot, counters Counters) Plan {
 	post := postResetPts(s.Pts)
 	maxBox := map[int64]int32{}
 	byBox := map[int64]map[int32]Message{}
@@ -117,6 +134,11 @@ func BuildPlan(s Snapshot) Plan {
 			byBox[m.UserID] = map[int32]Message{}
 		}
 		byBox[m.UserID][m.BoxID] = m
+	}
+	for user, cur := range counters.Box {
+		if cur > int64(maxBox[user]) && cur <= int64(mathMaxInt32) {
+			maxBox[user] = int32(cur)
+		}
 	}
 
 	type candidate struct {
@@ -205,6 +227,11 @@ func BuildPlan(s Snapshot) Plan {
 			maxPts[row.UserID] = row.Pts
 		}
 	}
+	for user, cur := range counters.Pts {
+		if cur > int64(maxPts[user]) && cur <= int64(mathMaxInt32) {
+			maxPts[user] = int32(cur)
+		}
+	}
 	var ptsRewrites []PtsRewrite
 	ordered := append([]PtsRow(nil), post...)
 	sort.Slice(ordered, func(i, j int) bool { return lessRow(ordered[i], ordered[j]) })
@@ -228,12 +255,26 @@ func BuildPlan(s Snapshot) Plan {
 	}
 
 	dialogs := fixDialogs(s, inserts)
+	boxTo := map[int64]int64{}
+	for _, m := range inserts {
+		if int64(m.BoxID) > boxTo[m.UserID] {
+			boxTo[m.UserID] = int64(m.BoxID)
+		}
+	}
+	ptsTo := map[int64]int64{}
+	for _, rw := range ptsRewrites {
+		if int64(rw.NewPts) > ptsTo[rw.UserID] {
+			ptsTo[rw.UserID] = int64(rw.NewPts)
+		}
+	}
 	return Plan{
 		Inserts:  inserts,
 		Pts:      ptsRewrites,
 		Dialogs:  dialogs,
 		Rebuilt:  len(inserts),
 		PtsMoved: len(ptsRewrites),
+		BoxTo:    boxTo,
+		PtsTo:    ptsTo,
 	}
 }
 
@@ -588,19 +629,24 @@ func fixDialogs(s Snapshot, inserts []Message) []Dialog {
 			}
 		}
 		next := d
+		next.UnreadBefore = d.UnreadCount
 		next.TopMessage = top
 		if topDate != 0 {
 			next.Date2 = topDate
 		}
 		next.ReadInbox = clampRead(d.ReadInbox, oldMax, keys(newIDs))
 		next.ReadOutbox = clampRead(d.ReadOutbox, oldMax, newOutgoing)
-		var unread int32
-		for _, m := range bucket.msgs {
-			if m.BoxID > next.ReadInbox {
-				unread++
+		// Same rule as inbox delivery: unread_count += 1 for each message
+		// someone else sent. UpdateOutboxDialog does not touch unread_count,
+		// so the sender's own copies add nothing. The stored total is kept;
+		// recounting the whole dialog would drop a drifted badge (the group
+		// chat dry-run turned 17 and 25 into 9).
+		next.UnreadCount = d.UnreadCount
+		for _, m := range inserted[k] {
+			if m.SenderID != d.UserID && m.BoxID > next.ReadInbox {
+				next.UnreadCount++
 			}
 		}
-		next.UnreadCount = unread
 		out = append(out, next)
 	}
 	sort.Slice(out, func(i, j int) bool {
