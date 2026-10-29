@@ -663,6 +663,9 @@ func (m *serverModel) resolve(method string) (status, effect, service, handler, 
 	if best.rank < 40 && best.effect == effectError {
 		if effect, ok := m.Startup[method]; ok {
 			note := "typed startup fallback"
+			if effect == effectError {
+				note = "startup fallback returns an RPC error"
+			}
 			if best.notes != "" {
 				note += "; " + best.notes
 			}
@@ -739,7 +742,7 @@ func caseTypeNames(list []ast.Expr) []string {
 }
 
 func effectOfStmts(stmts []ast.Stmt) string {
-	sawNotMod, sawBool, sawOther := false, false, false
+	sawNotMod, sawBool, sawOther, sawError := false, false, false, false
 	ast.Inspect(&ast.BlockStmt{List: stmts}, func(n ast.Node) bool {
 		ret, ok := n.(*ast.ReturnStmt)
 		if !ok {
@@ -753,6 +756,9 @@ func effectOfStmts(stmts []ast.Stmt) string {
 				sawBool = true
 				continue
 			}
+			if exprErrorCode(r) {
+				sawError = true
+			}
 			sawOther = true
 			if exprNotModified(r) {
 				sawNotMod = true
@@ -761,6 +767,8 @@ func effectOfStmts(stmts []ast.Stmt) string {
 		return true
 	})
 	switch {
+	case sawError:
+		return effectError
 	case sawNotMod:
 		return effectNotModified
 	case sawBool && !sawOther:
@@ -780,6 +788,24 @@ func isBoolResult(e ast.Expr) bool {
 		return false
 	}
 }
+
+func exprErrorCode(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		lit, ok := n.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
+		}
+		s := strings.Trim(lit.Value, `"`)
+		if errorCodeLit.MatchString(s) {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+var errorCodeLit = regexp.MustCompile(`^[A-Z][A-Z0-9_]{5,}$`)
 
 func exprNotModified(e ast.Expr) bool {
 	found := false

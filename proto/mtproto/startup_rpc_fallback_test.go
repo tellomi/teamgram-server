@@ -95,21 +95,12 @@ func TestStartupFallbacksEncode(t *testing.T) {
 		&TLAccountGetNotifySettings{},
 		&TLAccountGetContactSignUpNotification{},
 		&TLAccountGetReactionsNotifySettings{},
-		&TLAccountSetReactionsNotifySettings{},
-		&TLAccountCancelPasswordEmail{},
-		&TLAccountConfirmPasswordEmail{},
-		&TLAccountResendPasswordEmail{},
-		&TLAccountDeclinePasswordReset{},
-		&TLAccountUpdatePasswordSettings{},
 		&TLAccountGetPasswordSettings{},
 		&TLAccountGetTmpPassword{Period: 60},
 		&TLAuthFinishPasskeyLogin{},
 		&TLMessagesGetDialogFiltersEFD48C89{},
 		&TLMessagesGetDialogFiltersF19ED96D{},
 		&TLMessagesGetSuggestedDialogFilters{},
-		&TLMessagesUpdateDialogFilter{},
-		&TLMessagesUpdateDialogFiltersOrder{},
-		&TLMessagesToggleDialogFilterTags{},
 		&TLMessagesGetPaidReactionPrivacy{},
 		&TLUsersGetFullUser{},
 		&TLContactsGetContacts{},
@@ -132,7 +123,6 @@ func TestStartupFallbacksEncode(t *testing.T) {
 
 func TestP0StartupMethods(t *testing.T) {
 	const (
-		crcBoolTrue                   = 0x997275b5
 		crcPasswordSettings           = 0x9a5c33e5
 		crcTmpPassword                = 0xdb64fd34
 		crcReactionsNotify            = 0x71e4ea58
@@ -143,22 +133,35 @@ func TestP0StartupMethods(t *testing.T) {
 		crcUpdatePaidReactionPrivacy  = 0x8b725fce
 		crcPaidReactionPrivacyDefault = 0x206ad49e
 	)
-	boolMethods := []TLObject{
-		&TLAccountCancelPasswordEmail{},
-		&TLAccountConfirmPasswordEmail{},
-		&TLAccountResendPasswordEmail{},
-		&TLAccountDeclinePasswordReset{},
-		&TLAccountUpdatePasswordSettings{},
+	for _, sample := range []struct {
+		in  TLObject
+		msg string
+	}{
+		{&TLAccountUpdatePasswordSettings{}, "PASSWORD_SETTINGS_UNAVAILABLE"},
+		{&TLAccountConfirmPasswordEmail{}, "CODE_INVALID"},
+		{&TLAccountResendPasswordEmail{}, "EMAIL_NOT_SETUP"},
+		{&TLAccountCancelPasswordEmail{}, "EMAIL_NOT_SETUP"},
+		{&TLAccountDeclinePasswordReset{}, "PASSWORD_RECOVERY_NA"},
+	} {
+		got, ok := StartupRPCResult(sample.in)
+		if !ok {
+			t.Fatalf("%T: missing result", sample.in)
+		}
+		rpc, isErr := got.(*TLRpcError)
+		if !isErr || rpc.GetErrorCode() != 400 || rpc.GetErrorMessage() != sample.msg {
+			t.Fatalf("%T: %#v", sample.in, got)
+		}
+		mustEncodeTL(t, got)
+	}
+	for _, sample := range []TLObject{
 		&TLMessagesUpdateDialogFilter{},
 		&TLMessagesUpdateDialogFiltersOrder{},
 		&TLMessagesToggleDialogFilterTags{},
-	}
-	for _, sample := range boolMethods {
-		got := mustP0(t, sample)
-		if got.(*Bool).GetPredicateName() != Predicate_boolTrue {
-			t.Fatalf("%T predicate = %s", sample, got.(*Bool).GetPredicateName())
+		&TLAccountSetReactionsNotifySettings{},
+	} {
+		if _, ok := StartupRPCResult(sample); ok {
+			t.Fatalf("%T: unauthenticated fallback must not acknowledge a write", sample)
 		}
-		assertCtor(t, sample, got, crcBoolTrue)
 	}
 
 	settings := mustP0(t, &TLAccountGetPasswordSettings{})
@@ -189,21 +192,6 @@ func TestP0StartupMethods(t *testing.T) {
 		t.Fatal(notify.(*ReactionsNotifySettings).GetPredicateName())
 	}
 	assertCtor(t, &TLAccountGetReactionsNotifySettings{}, notify, crcReactionsNotify)
-
-	echoIn := MakeTLReactionsNotifySettings(&ReactionsNotifySettings{
-		Sound:              MakeTLNotificationSoundNone(nil).To_NotificationSound(),
-		ShowPreviews:       BoolTrue,
-		MessagesNotifyFrom: MakeTLReactionNotificationsFromAll(nil).To_ReactionNotificationsFrom(),
-	}).To_ReactionsNotifySettings()
-	echo := mustP0(t, &TLAccountSetReactionsNotifySettings{Settings: echoIn})
-	if !FromBool(echo.(*ReactionsNotifySettings).GetShowPreviews()) {
-		t.Fatal("setReactionsNotifySettings should echo show_previews")
-	}
-	assertCtor(t, &TLAccountSetReactionsNotifySettings{}, echo, crcReactionsNotify)
-	fallbackNotify := mustP0(t, &TLAccountSetReactionsNotifySettings{})
-	if FromBool(fallbackNotify.(*ReactionsNotifySettings).GetShowPreviews()) {
-		t.Fatal("incomplete settings should use the default")
-	}
 
 	auth := mustP0(t, &TLAuthFinishPasskeyLogin{})
 	if auth.(*Auth_Authorization).GetPredicateName() != Predicate_auth_authorizationSignUpRequired {

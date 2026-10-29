@@ -1,16 +1,16 @@
 method,module,phase,when,ios,android,desktop,macos,status,effect,routed,handler,rpc_service,notes
 account.acceptAuthorization,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
-account.cancelPasswordEmail,account,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCTwoFa,typed startup fallback; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.cancelPasswordEmail,account,P0,startup,yes,yes,yes,yes,stub,error,no,stub,RPCTwoFa,startup fallback returns an RPC error; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
 account.changeAuthorizationSettings,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 account.changePhone,account,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.checkUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
 account.clearRecentEmojiStatuses,account,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.confirmBotConnection,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
-account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCTwoFa,typed startup fallback; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,stub,error,no,stub,RPCTwoFa,startup fallback returns an RPC error; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
 account.confirmPhone,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.createBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
 account.createTheme,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCThemes,no route in session.yaml (RPCThemes is commented out) and no bff handler
-account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCTwoFa,typed startup fallback; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,stub,error,no,stub,RPCTwoFa,startup fallback returns an RPC error; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
 account.deleteAccount,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.deleteBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
 account.deletePasskey,account,P1,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCPasskey,no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed
@@ -47,7 +47,7 @@ account.getPasskeys,account,P1,interactive,yes,yes,yes,yes,missing,error,no,impl
 account.getPassword,account,P0,startup,yes,yes,yes,yes,stub,empty,no,absent,RPCTwoFa,session.yaml does not route RPCTwoFa; proxy returns an empty object (IDMap entry is commented out)
 account.getPasswordSettings,account,P0,startup,yes,yes,yes,yes,stub,empty,no,stub,RPCTwoFa,typed startup fallback; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
 account.getPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
-account.getReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,stub,empty,no,stub,RPCReactionNotification,typed startup fallback; no route in session.yaml and no bff handler
+account.getReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/reactionnotify/rpc/service.go
 account.getRecentEmojiStatuses,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.getRequirementsToContact,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 account.getSavedMusicIds,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
@@ -73,7 +73,7 @@ account.reorderProfileTabs,account,P1,interactive,no,yes,no,no,missing,error,no,
 account.reorderUsernames,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFragment,no route in session.yaml and no bff handler
 account.reportPeer,account,P1,interactive,yes,yes,no,yes,stub,empty,no,absent,RPCReports,session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out)
 account.reportProfilePhoto,account,P1,interactive,yes,yes,yes,no,stub,empty,no,absent,RPCReports,session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out)
-account.resendPasswordEmail,account,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCTwoFa,typed startup fallback; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.resendPasswordEmail,account,P0,startup,yes,yes,yes,yes,stub,error,no,stub,RPCTwoFa,startup fallback returns an RPC error; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
 account.resetAuthorization,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.resetNotifySettings,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.resetPassword,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
@@ -98,7 +98,7 @@ account.setContentSettings,account,P1,interactive,yes,yes,yes,yes,implemented,ok
 account.setGlobalPrivacySettings,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 account.setMainProfileTab,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.setPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
-account.setReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,stub,empty,no,stub,RPCReactionNotification,typed startup fallback; no route in session.yaml and no bff handler
+account.setReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/reactionnotify/rpc/service.go
 account.toggleConnectedBotPaused,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessConnectedBots,no route in session.yaml and no bff handler
 account.toggleNoPaidMessagesException,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPaidMessage,no route in session.yaml and no bff handler
 account.toggleSponsoredMessages,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
@@ -116,7 +116,7 @@ account.updateConnectedBot,account,P1,interactive,yes,yes,yes,yes,missing,error,
 account.updateDeviceLocked,account,P1,interactive,no,no,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.updateEmojiStatus,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.updateNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
-account.updatePasswordSettings,account,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCTwoFa,typed startup fallback; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.updatePasswordSettings,account,P0,startup,yes,yes,yes,yes,stub,error,no,stub,RPCTwoFa,startup fallback returns an RPC error; no route in session.yaml (RPCTwoFa is commented out) and no bff handler
 account.updatePersonalChannel,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.updateProfile,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.updateStatus,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
@@ -241,17 +241,17 @@ channels.updateColor,channels,P1,interactive,yes,yes,yes,yes,routed-but-unregist
 channels.updateEmojiStatus,channels,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCEmojiStatus,session.yaml routes RPCEmojiStatus but the bff process has no ChannelsUpdateEmojiStatus handler
 channels.updatePaidMessagesPrice,channels,P1,interactive,yes,no,yes,yes,missing,error,no,absent,RPCPaidMessage,no route in session.yaml and no bff handler
 channels.updateUsername,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
-chatlists.checkChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.deleteExportedInvite,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.editExportedInvite,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.exportChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.getChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.getExportedInvites,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.getLeaveChatlistSuggestions,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.hideChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.joinChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.joinChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
-chatlists.leaveChatlist,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
+chatlists.checkChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsCheckChatlistInvite handler
+chatlists.deleteExportedInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsDeleteExportedInvite handler
+chatlists.editExportedInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsEditExportedInvite handler
+chatlists.exportChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsExportChatlistInvite handler
+chatlists.getChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsGetChatlistUpdates handler
+chatlists.getExportedInvites,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsGetExportedInvites handler
+chatlists.getLeaveChatlistSuggestions,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsGetLeaveChatlistSuggestions handler
+chatlists.hideChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsHideChatlistUpdates handler
+chatlists.joinChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsJoinChatlistInvite handler
+chatlists.joinChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsJoinChatlistUpdates handler
+chatlists.leaveChatlist,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsLeaveChatlist handler
 communities.create,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
 communities.getJoinedCommunities,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
 communities.getParticipantJoinedChats,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
@@ -301,7 +301,7 @@ feed.getForYou,feed,P2,interactive,yes,no,no,yes,missing,error,no,absent,,no rou
 feed.getInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 feed.readFeed,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 feed.setInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-folders.editPeerFolders,folders,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
+folders.editPeerFolders,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no FoldersEditPeerFolders handler
 fragment.getCollectibleInfo,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCFragmentCollectibles,no route in session.yaml and no bff handler
 help.acceptTermsOfService,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTos,app/bff/tos/client/tos_client.go
 help.dismissSuggestion,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go
@@ -402,7 +402,7 @@ messages.getCustomEmojiDocuments,messages,P1,interactive,yes,yes,yes,yes,impleme
 messages.getDefaultHistoryTTL,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 messages.getDefaultTagReactions,messages,P1,interactive,yes,yes,yes,yes,stub,not_modified,no,stub,RPCSavedMessageTags,typed startup fallback; no route in session.yaml and no bff handler
 messages.getDhConfig,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/dh.go but the service is not routed
-messages.getDialogFilters,folders,P0,startup,yes,yes,yes,yes,stub,empty,no,stub,RPCFolders,typed startup fallback; no route in session.yaml (RPCFolders is commented out) and no bff handler
+messages.getDialogFilters,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/dialogfilter/rpc/service.go
 messages.getDialogUnreadMarks,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.getDialogs,messages,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.getDiscussionMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessageThreads,app/bff/channels/internal/server/grpc/service/handlers_features.go
@@ -471,7 +471,7 @@ messages.getSponsoredMessages,messages,P1,interactive,yes,yes,yes,yes,implemente
 messages.getStatsURL,messages,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 messages.getStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
-messages.getSuggestedDialogFilters,folders,P0,startup,yes,yes,yes,yes,stub,empty,no,stub,RPCFolders,typed startup fallback; no route in session.yaml (RPCFolders is commented out) and no bff handler
+messages.getSuggestedDialogFilters,folders,P0,startup,yes,yes,yes,yes,stub,empty,yes,stub,RPCFolders,typed startup fallback; session.yaml routes RPCFolders but the bff process has no MessagesGetSuggestedDialogFilters handler
 messages.getTopReactions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.getUnreadMentions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.getUnreadPollVotes,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPolls,no route in session.yaml (RPCPolls is commented out) and no bff handler
@@ -559,7 +559,7 @@ messages.startBot,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistere
 messages.startHistoryImport,messages,P1,interactive,yes,yes,no,no,missing,error,no,absent,RPCImportedChats,no route in session.yaml (RPCImportedChats is commented out) and no bff handler
 messages.summarizeText,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.toggleBotInAttachMenu,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBotMenu,no route in session.yaml and no bff handler
-messages.toggleDialogFilterTags,folders,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCFolderTags,typed startup fallback; no route in session.yaml and no bff handler
+messages.toggleDialogFilterTags,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolderTags,app/bff/dialogfilter/rpc/service.go
 messages.toggleDialogPin,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.toggleNoForwards,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.togglePaidReactionPrivacy,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesTogglePaidReactionPrivacy handler
@@ -573,8 +573,8 @@ messages.translateRichMessage,messages,P1,interactive,yes,yes,yes,yes,implemente
 messages.translateText,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCTranslation,no route in session.yaml and no bff handler
 messages.uninstallStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.unpinAllMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
-messages.updateDialogFilter,folders,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCFolders,typed startup fallback; no route in session.yaml (RPCFolders is commented out) and no bff handler
-messages.updateDialogFiltersOrder,folders,P0,startup,yes,yes,yes,yes,stub,bool,no,stub,RPCFolders,typed startup fallback; no route in session.yaml (RPCFolders is commented out) and no bff handler
+messages.updateDialogFilter,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/dialogfilter/rpc/service.go
+messages.updateDialogFiltersOrder,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/dialogfilter/rpc/service.go
 messages.updatePinnedForumTopic,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.updatePinnedMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.updateSavedReactionTag,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSavedMessageTags,no route in session.yaml and no bff handler

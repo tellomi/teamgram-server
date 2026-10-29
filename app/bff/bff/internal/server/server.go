@@ -32,6 +32,8 @@ import (
 	configuration_helper "github.com/teamgram/teamgram-server/app/bff/configuration"
 	contacts_helper "github.com/teamgram/teamgram-server/app/bff/contacts"
 	deeplinks_helper "github.com/teamgram/teamgram-server/app/bff/deeplinks"
+	"github.com/teamgram/teamgram-server/app/bff/dialogfilter"
+	dialogfilter_rpc "github.com/teamgram/teamgram-server/app/bff/dialogfilter/rpc"
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
@@ -46,6 +48,8 @@ import (
 	premium_helper "github.com/teamgram/teamgram-server/app/bff/premium"
 	privacysettingshelper "github.com/teamgram/teamgram-server/app/bff/privacysettings"
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
+	"github.com/teamgram/teamgram-server/app/bff/reactionnotify"
+	reactionnotify_rpc "github.com/teamgram/teamgram-server/app/bff/reactionnotify/rpc"
 	savedmessagedialogshelper "github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs"
 	sponsoredmessages_helper "github.com/teamgram/teamgram-server/app/bff/sponsoredmessages"
 	stickers_helper "github.com/teamgram/teamgram-server/app/bff/stickers"
@@ -429,6 +433,13 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 			}))
+
+		dialogfilter.Open(c.ChannelMySQL)
+		mtproto.RegisterRPCFoldersServer(grpcServer, dialogfilter_rpc.New())
+		mtproto.RegisterRPCFolderTagsServer(grpcServer, dialogfilter_rpc.New())
+
+		reactionnotify.Open(c.ChannelMySQL)
+		mtproto.RegisterRPCReactionNotificationServer(grpcServer, reactionnotify_rpc.New())
 
 		mtproto.RegisterRPCPasskeyServer(
 			grpcServer,

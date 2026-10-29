@@ -143,27 +143,31 @@ func TestServerSamples(t *testing.T) {
 	assertStatus("messages.getAllStickers", statusImplemented, effectOK)
 	// Routed sticker method that returns an empty set.
 	assertStatus("messages.getMaskStickers", statusStub, effectEmpty)
-	// P0 methods that used to fail the RPC. StartupRPCResult answers them
-	// with a Bool or another layer-232 constructor.
+	// Password writes must fail the RPC. A Bool success would tell the client
+	// that 2FA changed when nothing was stored.
 	for _, method := range []string{
 		"account.cancelPasswordEmail",
 		"account.confirmPasswordEmail",
 		"account.declinePasswordReset",
 		"account.resendPasswordEmail",
 		"account.updatePasswordSettings",
+	} {
+		assertStatus(method, statusStub, effectError)
+	}
+	for _, method := range []string{
 		"messages.updateDialogFilter",
 		"messages.updateDialogFiltersOrder",
 		"messages.toggleDialogFilterTags",
+		"messages.getDialogFilters",
+		"account.getReactionsNotifySettings",
+		"account.setReactionsNotifySettings",
 	} {
-		assertStatus(method, statusStub, effectBool)
+		assertStatus(method, statusImplemented, effectOK)
 	}
 	for _, method := range []string{
 		"account.getPasswordSettings",
 		"account.getTmpPassword",
-		"account.getReactionsNotifySettings",
-		"account.setReactionsNotifySettings",
 		"auth.finishPasskeyLogin",
-		"messages.getDialogFilters",
 		"messages.getSuggestedDialogFilters",
 		"messages.getPaidReactionPrivacy",
 		"messages.receivedQueue",

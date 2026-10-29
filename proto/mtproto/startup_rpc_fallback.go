@@ -131,14 +131,15 @@ func StartupRPCResult(object TLObject) (TLObject, bool) {
 		return BoolFalse, true
 	case *TLAccountGetReactionsNotifySettings:
 		return defaultReactionsNotifySettings(), true
-	case *TLAccountSetReactionsNotifySettings:
-		return reactionsNotifyReply(in.GetSettings()), true
-	case *TLAccountCancelPasswordEmail, *TLAccountConfirmPasswordEmail, *TLAccountResendPasswordEmail,
-		*TLAccountDeclinePasswordReset, *TLAccountUpdatePasswordSettings,
-		*TLMessagesUpdateDialogFilter, *TLMessagesUpdateDialogFiltersOrder, *TLMessagesToggleDialogFilterTags:
-		// No 2FA email, password reset, or saved folder is pending. BoolTrue
-		// acknowledges the call. Password and folder state are not stored.
-		return BoolTrue, true
+	case *TLAccountUpdatePasswordSettings:
+		// Saving a password without storing it would make the client show 2FA as on.
+		return rpcErr("PASSWORD_SETTINGS_UNAVAILABLE"), true
+	case *TLAccountConfirmPasswordEmail:
+		return rpcErr("CODE_INVALID"), true
+	case *TLAccountResendPasswordEmail, *TLAccountCancelPasswordEmail:
+		return rpcErr("EMAIL_NOT_SETUP"), true
+	case *TLAccountDeclinePasswordReset:
+		return rpcErr("PASSWORD_RECOVERY_NA"), true
 	case *TLAccountGetPasswordSettings:
 		// Matches account.getPassword reporting no cloud password: no recovery
 		// email and no secure settings.
@@ -240,17 +241,11 @@ func defaultReactionsNotifySettings() *ReactionsNotifySettings {
 	}).To_ReactionsNotifySettings()
 }
 
-// reactionsNotifyReply echoes a complete settings object. An incomplete
-// request gets the same default as account.getReactionsNotifySettings.
-// Nothing is stored.
-func reactionsNotifyReply(in *ReactionsNotifySettings) *ReactionsNotifySettings {
-	if in == nil || in.Sound == nil || in.ShowPreviews == nil {
-		return defaultReactionsNotifySettings()
-	}
-	if in.PredicateName == "" {
-		in.PredicateName = Predicate_reactionsNotifySettings
-	}
-	return in
+func rpcErr(code string) TLObject {
+	return MakeTLRpcError(&RpcError{
+		ErrorCode:    int32(ErrBadRequest),
+		ErrorMessage: code,
+	})
 }
 
 // paidReactionPrivacyUpdates is the default paid-reaction privacy. There is
