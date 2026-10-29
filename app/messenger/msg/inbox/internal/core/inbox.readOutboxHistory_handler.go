@@ -64,6 +64,9 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 			err = mtproto.ErrPeerIdInvalid
 			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err)
 			return nil, err
+		} else if replyId.SenderUserId != in.UserId {
+			// The row is not this user's outgoing message. Do not move their outbox.
+			return mtproto.EmptyVoid, nil
 		}
 		c.Logger.Infof("inbox.readOutboxHistory: %v", replyId)
 
@@ -125,6 +128,8 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 			err = mtproto.ErrPeerIdInvalid
 			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err)
 			return nil, err
+		} else if replyId.SenderUserId != in.UserId {
+			return mtproto.EmptyVoid, nil
 		}
 		c.Logger.Infof("inbox.readOutboxHistory: %v", replyId)
 

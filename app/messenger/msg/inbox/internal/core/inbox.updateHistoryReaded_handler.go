@@ -33,6 +33,10 @@ import (
 func (c *InboxCore) InboxUpdateHistoryReaded(in *inbox.TLInboxUpdateHistoryReaded) (*mtproto.Void, error) {
 	switch in.PeerType {
 	case mtproto.PEER_USER:
+		// FromId read PeerId's messages. A user reading their own chat is not a receipt.
+		if in.FromId == 0 || in.FromId == in.PeerId {
+			break
+		}
 		replyId, err := c.svcCtx.Dao.MessagesDAO.SelectPeerUserMessage(
 			c.ctx,
 			in.PeerId,
@@ -80,6 +84,10 @@ func (c *InboxCore) InboxUpdateHistoryReaded(in *inbox.TLInboxUpdateHistoryReade
 			Updates: mtproto.MakeUpdatesByUpdates(updateReadHistoryOutbox),
 		})
 	case mtproto.PEER_CHAT:
+		// Sender is the author. FromId is the member who read. Same user means no receipt.
+		if in.Sender == 0 || in.Sender == in.FromId {
+			break
+		}
 		replyId, err := c.svcCtx.Dao.MessagesDAO.SelectPeerUserMessage(
 			c.ctx,
 			in.Sender,
