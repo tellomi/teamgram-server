@@ -30,6 +30,9 @@ func allAdminRights() int32 {
 		Other:          true,
 		ManageTopics:   true,
 		ManageRanks:    true,
+		PostStories:    true,
+		EditStories:    true,
+		DeleteStories:  true,
 	}))
 }
 

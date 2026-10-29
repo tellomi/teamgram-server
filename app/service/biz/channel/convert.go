@@ -33,7 +33,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 	if p != nil && p.Role == RoleBanned && p.BannedRights != 0 {
 		banned = mtproto.BannedRights(p.BannedRights).ToChatBannedRights()
 	}
-	return mtproto.MakeTLChannel(&mtproto.Chat{
+	chat := mtproto.MakeTLChannel(&mtproto.Chat{
 		Creator:                     p.IsCreator(),
 		Left:                        !member,
 		Broadcast:                   ch.Broadcast,
@@ -55,6 +55,17 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		JoinRequest:                 s.features(ctx, ch.ID).JoinRequest,
 		Gigagroup:                   s.features(ctx, ch.ID).Gigagroup,
 	}).To_Chat()
+	if LookupStories != nil && ch != nil {
+		att := LookupStories(ctx, viewer, ch.ID)
+		if att.MaxID > 0 {
+			chat.StoriesMaxId_FLAGRECENTSTORY = mtproto.MakeTLRecentStory(&mtproto.RecentStory{
+				Live:  att.Live,
+				MaxId: &wrapperspb.Int32Value{Value: att.MaxID},
+			}).To_RecentStory()
+		}
+		chat.StoriesHidden = att.Hidden
+	}
+	return chat
 }
 
 func forbiddenChat(ch *Channel) *mtproto.Chat {
@@ -147,6 +158,11 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.AdminsCount = &wrapperspb.Int32Value{Value: admins}
 		full.KickedCount = &wrapperspb.Int32Value{Value: kicked}
 		full.BannedCount = &wrapperspb.Int32Value{Value: banned}
+	}
+	if LookupStories != nil {
+		att := LookupStories(ctx, viewer, ch.ID)
+		full.Stories = att.Stories
+		full.StoriesPinnedAvailable = att.Pinned
 	}
 	return full
 }
