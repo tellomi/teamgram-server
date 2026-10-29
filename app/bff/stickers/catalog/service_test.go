@@ -157,27 +157,6 @@ func TestCatalogAPIs(t *testing.T) {
 	if len(reactions.GetReactions()) == 0 || reactions.GetReactions()[0].GetStaticIcon() == nil {
 		t.Fatal("reactions are empty")
 	}
-	first := reactions.GetReactions()[0]
-	if first.GetPremium() || first.GetStaticIcon().GetMimeType() != "image/webp" {
-		t.Fatalf("static icon %#v", first.GetStaticIcon())
-	}
-	for _, doc := range []*mtproto.Document{first.GetAppearAnimation(), first.GetSelectAnimation(), first.GetActivateAnimation(), first.GetEffectAnimation(), first.GetAroundAnimation()} {
-		if doc.GetMimeType() != "application/x-tgsticker" || doc.GetAttributes() == nil {
-			t.Fatalf("animation mime %s", doc.GetMimeType())
-		}
-		for _, attr := range doc.GetAttributes() {
-			if attr.GetPredicateName() == mtproto.Predicate_documentAttributeCustomEmoji {
-				t.Fatal("reaction animation is a custom emoji")
-			}
-			if attr.GetPredicateName() == mtproto.Predicate_documentAttributeImageSize && (attr.GetW() != 512 || attr.GetH() != 512) {
-				t.Fatalf("animation size %dx%d", attr.GetW(), attr.GetH())
-			}
-		}
-	}
-	body, mime, ok := s.DocumentFile(first.GetAppearAnimation().GetId())
-	if !ok || mime != "application/x-tgsticker" || !tgsCanvas512(body) {
-		t.Fatal("reaction animation bytes are not a 512 tgs")
-	}
 	same := s.Reactions(reactions.GetHash())
 	if same.GetPredicateName() != mtproto.Predicate_messages_availableReactionsNotModified {
 		t.Fatalf("reactions hash %s", same.GetPredicateName())

@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
@@ -20,7 +21,7 @@ func AppConfig() *mtproto.JSONValue {
 // It changes when the premium policy or the public link hosts change.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
-	fmt.Fprintf(h, "policy=%d brand=%s", premium.AppConfigHash(), brand.LinkPrefix)
+	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -54,6 +55,7 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("premium_purchase_blocked", jsonBool(premium.Load().PurchaseBlocked)),
 		jsonPair("stickers_premium_by_emoji_num", n(premium.CustomEmojiAllowance())),
 		jsonPair("reactions_uniq_max", n(11)),
+		jsonPair("reactions_default", jsonString(catalog.DefaultReactionEmoji)),
 		jsonPair("transcribe_audio_trial_weekly_number", n(100000)),
 		jsonPair("transcribe_audio_trial_duration_max", n(300)),
 		jsonPair("transcribe_audio_trial_cooldown_until", n(0)),

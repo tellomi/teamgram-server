@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/langpack"
 
@@ -76,6 +77,10 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 	// iOS reads suggested_lang_code from this config. Android shows its language
 	// chooser from the same field. Map the device/app language onto zh-hans or zh-hant.
 	langpack.ApplyConfigLanguage(rValue, langCode, systemLang, pack)
+	// Double-tap sends this emoji. It has to be one of messages.getAvailableReactions.
+	rValue.SetReactionsDefault(mtproto.MakeTLReactionEmoji(&mtproto.Reaction{
+		Emoticon: catalog.DefaultReactionEmoji,
+	}).To_Reaction())
 
 	return rValue.To_Config(), nil
 }

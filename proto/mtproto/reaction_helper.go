@@ -113,6 +113,7 @@ func FromChatReactions(t int32, reactions []string) *ChatReactions {
 		}
 		return chatReactions
 	}
-
-	return nil
+	// Unset means every non-custom reaction, which is how a new chat behaves
+	// until someone restricts the list. nil here makes iOS hide the picker.
+	return defaultChatReactionsAllNotAllowCustom
 }

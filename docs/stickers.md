@@ -19,7 +19,7 @@ The packs are openly licensed. Telegram's own sticker sets are not downloaded or
 | `messages.getEmojiKeywords` / `Difference` / `Languages` | English keywords for the seeded emoji. Version is `1`. |
 | `messages.getCustomEmojiDocuments` / `messages.searchCustomEmoji` | Noto documents, marked free so they are not premium-gated. |
 | `messages.getEmojiStickers` | The installed Noto custom-emoji pack. |
-| `messages.getAvailableReactions` | Reaction buttons whose static icon is Twemoji and whose animation is the Noto TGS, when one exists. |
+| `messages.getAvailableReactions` | 👍❤️🔥🥰👏😁🤔😢🎉🙏👎😱 plus the other seeded reactions. Animations are 512×512 `.tgs`, with a small fallback Lottie when Noto has no file. |
 | `messages.getTopReactions` | Those reactions sorted by how often they have been sent. Unused counts keep the catalog order. A matching hash returns `messages.reactionsNotModified`. |
 | `messages.getRecentReactions` | Emoji this user has sent, newest first, with the same hash. `messages.clearRecentReactions` empties the list. |
 
@@ -52,7 +52,7 @@ Document bytes are written through the dfs S3 client (`MinioConfig.ApplyEnv`, th
 
 `upload.getFile` serves a seeded document from the binary when the id matches, then dfs reads `stickers/<id>.dat` and `emoji/<id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
 
-Reaction icons are separate documents: `static_icon` and `center_icon` are WebP, and the animation fields are 512×512 `.tgs` with `DocumentAttributeSticker` and `DocumentAttributeImageSize`. They are not custom emoji and not paid reactions. A reaction without a 512×512 `.tgs` is left out of `messages.getAvailableReactions`. `MessageReactions` is an emoji plus a count.
+`messages.getAvailableReactions` always includes 👍❤️🔥🥰👏😁🤔😢🎉🙏👎😱, with 👍 first. `static_icon` and `center_icon` are WebP. Every animation field is a 512×512 `.tgs` (`DocumentAttributeSticker` and `DocumentAttributeImageSize`, not a custom emoji). A missing Noto file is replaced with a small valid Lottie instead of dropping the reaction. `help.getConfig` `reactions_default` and app config `reactions_default` are 👍. `MessageReactions` is that emoji plus a count.
 
 The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT`, the access keys, `TELLOMI_S3_BUCKET_ATTACHMENTS`, and `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` are set. Buckets must already exist. Leave `TELLOMI_S3_USE_SSL` unset for an `https://` R2 endpoint so dfs turns TLS on. An explicit `false` forces plain HTTP, and the read never reaches objects written over TLS. Set `TELLOMI_S3_REGION=auto` for R2.
 
