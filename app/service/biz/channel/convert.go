@@ -55,6 +55,12 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		JoinRequest:                 s.features(ctx, ch.ID).JoinRequest,
 		Gigagroup:                   s.features(ctx, ch.ID).Gigagroup,
 	}).To_Chat()
+	if LookupGroupCall != nil && ch != nil {
+		if att := LookupGroupCall(ctx, ch.ID); att.Active && att.Call != nil {
+			chat.CallActive = true
+			chat.CallNotEmpty = att.NotEmpty
+		}
+	}
 	if LookupStories != nil && ch != nil {
 		att := LookupStories(ctx, viewer, ch.ID)
 		if att.MaxID > 0 {
@@ -158,6 +164,11 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.AdminsCount = &wrapperspb.Int32Value{Value: admins}
 		full.KickedCount = &wrapperspb.Int32Value{Value: kicked}
 		full.BannedCount = &wrapperspb.Int32Value{Value: banned}
+	}
+	if LookupGroupCall != nil {
+		if att := LookupGroupCall(ctx, ch.ID); att.Call != nil {
+			full.Call = att.Call
+		}
 	}
 	if LookupStories != nil {
 		att := LookupStories(ctx, viewer, ch.ID)

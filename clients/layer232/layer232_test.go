@@ -27,6 +27,22 @@ func TestServerSpeaksLayer232(t *testing.T) {
 		{mtproto.Predicate_channel, 0x7ad15240},
 		{mtproto.Predicate_auth_sendCode, 0xa677244f},
 		{mtproto.Predicate_messages_sendMessage, 0xfef48f62},
+		{mtproto.Predicate_phoneCallWaiting, 0xc5226f17},
+		{mtproto.Predicate_phoneCallRequested, 0x14b0ed0c},
+		{mtproto.Predicate_phoneCallAccepted, 0x3660c311},
+		{mtproto.Predicate_phoneCall, 0x30535af5},
+		{mtproto.Predicate_phoneCallDiscarded, 0x50ca4de1},
+		{mtproto.Predicate_phoneConnection, 0x9cc123c7},
+		{mtproto.Predicate_phoneConnectionWebrtc, 0x635fe375},
+		{mtproto.Predicate_updatePhoneCall, 0xab0f6b1e},
+		{mtproto.Predicate_updatePhoneCallSignalingData, 0x2661bf09},
+		{mtproto.Predicate_phone_getCallConfig, 0x55451fa9},
+		{mtproto.Predicate_phone_requestCall, 0x42ff96ed},
+		{mtproto.Predicate_groupCall, 0xefb2b617},
+		{mtproto.Predicate_updateGroupCall, 0x9d2216e0},
+		{mtproto.Predicate_updateGroupCallParticipants, 0xf2ebdb4e},
+		{mtproto.Predicate_updateGroupCallConnection, 0x0b783982},
+		{mtproto.Predicate_messages_dhConfig, 0x2c221edd},
 	}
 	for _, c := range checks {
 		got := uint32(mtproto.GetClazzID(c.name, mtproto.Layer))
