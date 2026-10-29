@@ -43,9 +43,6 @@ docker compose up -d --build
 Wait until MySQL is healthy and `teamgram` stays up (`docker compose ps`).
 Logs from the processes are inside the app container (`/app/logs`).
 
-`--build` is for this machine. The Chengdu server must not compile the image.
-It pulls the image GitHub Actions publishes. See [ci-acr.md](ci-acr.md).
-
 ## Phone login (fixed code)
 
 `teamgramd/etc2/bff.yaml` sets:

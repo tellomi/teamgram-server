@@ -1,4 +1,11 @@
 Listen: 0.0.0.0:8801
+Log:
+  ServiceName: interface.linkpreview
+  Mode: file
+  Path: /app/logs/linkpreview
+  Level: info
+  KeepDays: 7
+  Rotation: daily
 MysqlDSN: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true
 LinkBaseURL: https://tell.cc
 PublicURL: ""

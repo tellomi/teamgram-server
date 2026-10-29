@@ -28,12 +28,14 @@ func (c *AuthsessionCore) AuthsessionGetAuthStateData(in *authsession.TLAuthsess
 	if err != nil {
 		c.Logger.Errorf("queryAuthKeyV2(%d) is error: %v", inKeyId, err)
 		return nil, err
-	} else if keyData.PermAuthKeyId == 0 {
+	}
+	permID := keyData.BoundPermAuthKeyId()
+	if permID == 0 {
 		c.Logger.Errorf("queryAuthKeyV2(%d) - PermAuthKeyId is empty", inKeyId)
 		return nil, mtproto.ErrAuthKeyPermEmpty
 	}
 
-	cData, err := c.svcCtx.GetCacheAuthData(c.ctx, keyData.PermAuthKeyId)
+	cData, err := c.svcCtx.GetCacheAuthData(c.ctx, permID)
 	if err != nil {
 		if !errors.Is(err, sqlc.ErrNotFound) {
 			c.Logger.Errorf("authsession.getAuthStateData - error: %v", err)

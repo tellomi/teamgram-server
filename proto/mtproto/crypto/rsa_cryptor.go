@@ -39,6 +39,11 @@ func NewRSACryptor(keyFile string) (*RSACryptor, error) {
 	return NewRSACryptorByKeyData(pkcs1PemPrivateKey)
 }
 
+// NewRSACryptorFromKey wraps an already-parsed private key. Tests use it.
+func NewRSACryptorFromKey(key *rsa.PrivateKey) *RSACryptor {
+	return &RSACryptor{key: key}
+}
+
 func NewRSACryptorByKeyData(pkcs1PemPrivateKey []byte) (*RSACryptor, error) {
 	block, _ := pem.Decode(pkcs1PemPrivateKey)
 	if block == nil {
@@ -53,24 +58,44 @@ func NewRSACryptorByKeyData(pkcs1PemPrivateKey []byte) (*RSACryptor, error) {
 	return &RSACryptor{key}, nil
 }
 
+func (m *RSACryptor) modulusSize() int {
+	if m == nil || m.key == nil || m.key.N == nil {
+		return 256
+	}
+	n := (m.key.N.BitLen() + 7) / 8
+	if n <= 0 {
+		return 256
+	}
+	return n
+}
+
+func leftPad(b []byte, size int) []byte {
+	if len(b) >= size {
+		return append([]byte(nil), b...)
+	}
+	out := make([]byte, size)
+	copy(out[size-len(b):], b)
+	return out
+}
+
 func (m *RSACryptor) Encrypt(b []byte) []byte {
 	c := new(big.Int)
 	c.Exp(new(big.Int).SetBytes(b), big.NewInt(int64(m.key.E)), m.key.N)
-
-	e := c.Bytes()
-	var size = len(e)
-	if size < 256 {
-		size = 256
-	}
-
-	res := make([]byte, size)
-	copy(res, c.Bytes())
-
-	return res
+	// Big-endian, left-padded so a 2048-bit ciphertext is exactly 256 bytes.
+	// copy-to-front dropped the leading zeros and shifted the integer.
+	return leftPad(c.Bytes(), m.modulusSize())
 }
 
 func (m *RSACryptor) Decrypt(b []byte) []byte {
 	c := new(big.Int)
 	c.Exp(new(big.Int).SetBytes(b), m.key.D, m.key.N)
+	// big.Int.Bytes strips leading zeros. RSA_PAD plaintext is a 256-byte
+	// integer that often starts with 0x00; callers that require len==256
+	// must use DecryptBlock.
 	return c.Bytes()
+}
+
+// DecryptBlock is Decrypt left-padded to the modulus size (256 for a 2048-bit key).
+func (m *RSACryptor) DecryptBlock(b []byte) []byte {
+	return leftPad(m.Decrypt(b), m.modulusSize())
 }

@@ -6,8 +6,10 @@ Etcd:
   Key: service.authsession
 Log:
   ServiceName: service.authsession
-  #Mode: file
-  #Path: ../logs/authsession
+  Mode: file
+  Path: /app/logs/authsession
+  KeepDays: 7
+  Rotation: daily
   Level: debug
 #监控
 Prometheus:

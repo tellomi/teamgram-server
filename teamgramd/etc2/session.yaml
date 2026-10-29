@@ -6,8 +6,10 @@ Etcd:
   Key: interface.session
 Log:
   ServiceName: interface.session
-  #Mode: file
-  #Path: ../logs/session
+  Mode: file
+  Path: /app/logs/session
+  KeepDays: 7
+  Rotation: daily
   Level: debug
 #监控
 Prometheus:
@@ -83,7 +85,7 @@ BFFProxyClients:
     #"/mtproto.RPCGames": "bff.bff"
     #"/mtproto.RPCGroupCalls": "bff.bff"
     #"/mtproto.RPCImportedChats": "bff.bff"
-    #"/mtproto.RPCLangpack": "bff.bff"
+    "/mtproto.RPCLangpack": "bff.bff"
     "/mtproto.RPCAutoDownload": "bff.bff"
     "/mtproto.RPCMessageThreads": "bff.bff"
     "/mtproto.RPCReactions": "bff.bff"

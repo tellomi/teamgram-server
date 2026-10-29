@@ -1,8 +1,5 @@
 services:
   teamgram:
-    # CI pushes this image (see docs/ci-acr.md). The server pulls it and must
-    # not build. `build` stays so local dev can still run `docker compose up --build`.
-    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq-vpc.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
     build: .
     restart: always
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
@@ -36,6 +33,33 @@ services:
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
+      # Link preview runs in this container (teamgramd/bin/runall-docker.sh).
+      # Empty token, DSN, media key, and MinIO credentials keep the values in
+      # teamgramd/etc2/linkpreview.yaml. See docs/link-preview.md.
+      TELLOMI_LINKPREVIEW_ADDR: ${TELLOMI_LINKPREVIEW_ADDR:-0.0.0.0:8801}
+      TELLOMI_LINKPREVIEW_MYSQL_DSN: ${TELLOMI_LINKPREVIEW_MYSQL_DSN:-}
+      TELLOMI_LINKPREVIEW_TOKEN: ${TELLOMI_LINKPREVIEW_TOKEN:-}
+      TELLOMI_LINKPREVIEW_PUBLIC_URL: ${TELLOMI_LINKPREVIEW_PUBLIC_URL:-}
+      TELLOMI_LINKPREVIEW_MEDIA_KEY: ${TELLOMI_LINKPREVIEW_MEDIA_KEY:-}
+      TELLOMI_LINK_BASE_URL: ${TELLOMI_LINK_BASE_URL:-https://tell.cc}
+      TELLOMI_LINKPREVIEW_RATE_PER_MIN: ${TELLOMI_LINKPREVIEW_RATE_PER_MIN:-120}
+      TELLOMI_LINKPREVIEW_RATE_BURST: ${TELLOMI_LINKPREVIEW_RATE_BURST:-40}
+      TELLOMI_LINKPREVIEW_CACHE_SECONDS: ${TELLOMI_LINKPREVIEW_CACHE_SECONDS:-120}
+      TELLOMI_LINKPREVIEW_TRUST_PROXY: ${TELLOMI_LINKPREVIEW_TRUST_PROXY:-true}
+      TELLOMI_MINIO_ENDPOINT: ${TELLOMI_MINIO_ENDPOINT:-minio:9000}
+      TELLOMI_MINIO_ACCESS_KEY: ${TELLOMI_MINIO_ACCESS_KEY:-}
+      TELLOMI_MINIO_SECRET_KEY: ${TELLOMI_MINIO_SECRET_KEY:-}
+      TELLOMI_MINIO_USE_SSL: ${TELLOMI_MINIO_USE_SSL:-false}
+      TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-photos}
+      TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-documents}
+      TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-videos}
+    volumes:
+      - ./data/logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     ports:
       - "10443:10443"
       - "11443:11443"

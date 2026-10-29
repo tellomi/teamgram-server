@@ -296,61 +296,16 @@ func (s *handshake) OnReqDHParams(ctx *HandshakeStateCtx, request *mtproto.TLReq
 	//
 	logx.Infof("EncryptedData: len = %d, data: %s", len(request.EncryptedData), hex.EncodeToString(hack.Bytes(request.EncryptedData)))
 
-	if len(request.EncryptedData) < 256 {
-		logx.Error("need len(encryptedPQInnerData) < 256")
-		return nil, fmt.Errorf("process Req_DHParams - len(encryptedPQInnerData) != 256")
+	if len(request.EncryptedData) != 256 {
+		logx.Errorf("req_DH_params encrypted_data length %d, want 256", len(request.EncryptedData))
+		return nil, fmt.Errorf("process Req_DHParams - len(encryptedPQInnerData) = %d, want 256", len(request.EncryptedData))
 	}
 
-	//
-	// 1. 解密
-	innerData := s.rsa.Decrypt([]byte(request.EncryptedData))
-	if len(innerData) != 256 {
-		logx.Error("need len(encryptedPQInnerData) < 256")
-		return nil, fmt.Errorf("process Req_DHParams - len(encryptedPQInnerData) != 256")
-	}
-
-	// void Datacenter::aesIgeEncryption(uint8_t *buffer, uint8_t *key, uint8_t *iv, bool encrypt, bool changeIv, uint32_t length) {
-	// Datacenter::aesIgeEncryption(
-	//	innerDataBuffer->bytes() + keySize,
-	//	innerDataBuffer->bytes(),
-	//	innerDataBuffer->bytes() + encryptedDataSize + paddedDataSize,
-	//	true,
-	//	true,
-	//	paddedDataSize + SHA256_DIGEST_LENGTH);
-	//
-
-	key := innerData[:32]
-	logx.Infof("key1: %s", hex.EncodeToString(key))
-	hash := crypto.Sha256Digest(innerData[32:])
-	for i := 0; i < 32; i++ {
-		key[i] = key[i] ^ hash[i]
-	}
-	logx.Infof("key2: %s", hex.EncodeToString(key))
-
-	paddedDataWithHash, err := crypto.NewAES256IGECryptor(key, zeroIV).Decrypt(innerData[32:])
+	paddedDataWithHash, err := crypto.DecryptPQInner(s.rsa, []byte(request.EncryptedData))
 	if err != nil {
-		err = fmt.Errorf("onReq_DHParams - decode P_Q_inner_data error")
-		logx.Error(err.Error())
+		logx.Errorf("req_DH_params rsa_pad: %v", err)
 		return nil, err
 	}
-
-	logx.Infof("paddedDataWithHash1: %s", hex.EncodeToString(paddedDataWithHash))
-
-	//if !bytes.Equal(crypto.Sha256Digest(paddedDataWithHash[:192]), paddedDataWithHash[192:]) {
-	//	logx.Error("process Req_DHParams - sha1Check error")
-	//	return nil, fmt.Errorf("process Req_DHParams - sha1Check error")
-	//}
-
-	for i, j := 0, 191; i < j; i, j = i+1, j-1 {
-		paddedDataWithHash[i], paddedDataWithHash[j] = paddedDataWithHash[j], paddedDataWithHash[i]
-	}
-	logx.Infof("paddedDataWithHash2: %s", hex.EncodeToString(paddedDataWithHash))
-
-	// TODO
-	//if !checkSha1(encryptedPQInnerData, 256-SHA_DIGEST_LENGTH) {
-	//	logx.Error("process Req_DHParams - sha1Check error")
-	//	return nil, fmt.Errorf("process Req_DHParams - sha1Check error")
-	//}
 
 	// 2. 反序列化出pqInnerData
 	dbuf := mtproto.NewDecodeBuf(paddedDataWithHash)

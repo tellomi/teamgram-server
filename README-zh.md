@@ -85,10 +85,8 @@ docker compose -f docker-compose-env.yaml up -d
 ### 3. 启动应用
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
-
-该命令在本机构建镜像。成都服务器改为拉取已构建镜像，见 [CI 与 ACR](docs/ci-acr.md)。
 
 ---
 

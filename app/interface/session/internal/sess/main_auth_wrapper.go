@@ -381,7 +381,7 @@ func (m *MainAuthWrapper) onUpdateInitConnection(ctx context.Context, clientIp s
 			AppVersion:     initConnection.AppVersion,
 			SystemLangCode: initConnection.SystemLangCode,
 			LangPack:       initConnection.LangPack,
-			LangCode:       initConnection.LangPack,
+			LangCode:       initConnection.LangCode,
 			Proxy:          proxy,
 			Params:         params,
 		}).To_ClientSession()
@@ -684,19 +684,20 @@ func (m *MainAuthWrapper) rpcRunLoop() {
 					doRpcRequest(request.ctx,
 						m.cb.Dao,
 						&metadata.RpcMetadata{
-							ServerId:      m.cb.Dao.MyServerId,
-							ClientAddr:    request.clientIp,
-							AuthId:        request.sessList.authId,
-							SessionId:     request.sessionId,
-							ReceiveTime:   time.Now().Unix(),
-							UserId:        m.AuthUserId,
-							ClientMsgId:   request.reqMsgId,
-							Layer:         m.Layer(),
-							Client:        m.ClientName(),
-							Langpack:      m.LangPack(),
-							PermAuthKeyId: m.authKeyId,
-							LangCode:      m.LangCode(),
-							Takeout:       request.takeout,
+							ServerId:       m.cb.Dao.MyServerId,
+							ClientAddr:     request.clientIp,
+							AuthId:         request.sessList.authId,
+							SessionId:      request.sessionId,
+							ReceiveTime:    time.Now().Unix(),
+							UserId:         m.AuthUserId,
+							ClientMsgId:    request.reqMsgId,
+							Layer:          m.Layer(),
+							Client:         m.ClientName(),
+							Langpack:       m.LangPack(),
+							PermAuthKeyId:  m.authKeyId,
+							LangCode:       m.LangCode(),
+							SystemLangCode: m.SystemLangCode(),
+							Takeout:        request.takeout,
 						},
 						request)
 					m.rpcDataChan <- request
@@ -945,8 +946,9 @@ func (m *MainAuthWrapper) onSessionData(ctx context.Context, sessionMsg *session
 	}
 
 	if sList.cacheSalt == nil {
-		logx.WithContext(ctx).Infof("onSessionData - getOrFetchNewSalt nil error, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
-		return
+		// Leave it empty. checkBadServerSalt adopts the client's salt
+		// instead of ignoring the message, which made iOS handshake again.
+		logx.WithContext(ctx).Infof("onSessionData - no stored salt yet, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
 	}
 
 	sess, ok := sList.sessions[sessionMsg.sessionId]
@@ -986,8 +988,7 @@ func (m *MainAuthWrapper) onSessionHttpData(ctx context.Context, sessionMsg *ses
 	}
 
 	if sList.cacheSalt == nil {
-		logx.WithContext(ctx).Infof("onSessionHttpData - getOrFetchNewSalt nil error, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
-		return
+		logx.WithContext(ctx).Infof("onSessionHttpData - no stored salt yet, data: {sessions: %s, conn_id: %s}", m, sessionMsg.gatewayId)
 	}
 
 	sess, ok := sList.sessions[sessionMsg.sessionId]
