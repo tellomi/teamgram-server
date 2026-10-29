@@ -48,6 +48,10 @@ echo "run gnetway ..."
 ./gnetway -f=../etc2/gnetway.yaml &
 sleep 1
 
+echo "run linkpreview ..."
+./linkpreview -f=../etc2/linkpreview.yaml &
+sleep 1
+
 # echo "run httpserver ..."
 # ./httpserver -f=../etc/httpserver.yaml &
 # sleep 1

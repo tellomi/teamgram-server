@@ -1,0 +1,21 @@
+Listen: 0.0.0.0:8801
+MysqlDSN: root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true
+LinkBaseURL: https://tell.cc
+# PublicURL is the origin for signed /linkpreview/v1/media URLs when
+# PublicMediaBaseURL is empty. Set TELLOMI_S3_PUBLIC_MEDIA_BASE_URL in production.
+PublicURL: ""
+PublicMediaBaseURL: ""
+# Prefer TELLOMI_LINKPREVIEW_TOKEN over committing a secret here.
+Token: ""
+MediaKey: ""
+RatePerMin: 120
+RateBurst: 40
+CacheSeconds: 120
+TrustProxy: false
+MinioEndpoint: ""
+MinioAccessKey: ""
+MinioSecretKey: ""
+MinioSSL: false
+MinioBucketPhotos: photos
+MinioBucketDocuments: documents
+MinioBucketVideos: videos
