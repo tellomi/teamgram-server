@@ -183,8 +183,13 @@ func (d *Dao) PutUserContact(ctx context.Context, changeMutual bool, do *dataobj
 func (d *Dao) ClearContactCaches(ctx context.Context, userId int64, contactId ...int64) {
 	keys := []string{genCacheUserDataCacheKey(userId)}
 	for _, id := range contactId {
-		keys = append(keys, genContactCacheKey(userId, id))
-		keys = append(keys, genContactCacheKey(id, userId))
+		// Drop both contact rows and the other user's cached id lists so
+		// their reverse-contact view sees the new relationship.
+		keys = append(keys,
+			genContactCacheKey(userId, id),
+			genContactCacheKey(id, userId),
+			genCacheUserDataCacheKey(id),
+		)
 	}
 	_ = d.CachedConn.DelCache(ctx, keys...)
 }

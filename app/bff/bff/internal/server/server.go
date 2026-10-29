@@ -53,6 +53,7 @@ import (
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -73,6 +74,12 @@ func New() *Server {
 func (s *Server) Initialize() error {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
+	bootstrap.Wait("bff", bootstrap.Deps{
+		Kafka: bootstrap.ProducerBrokers(c.SyncClient),
+		MySQL: []string{c.ChannelMySQL, c.StoryMySQL},
+		Redis: bootstrap.RedisHosts(c.KV),
+		Etcd:  c.Etcd.Hosts,
+	})
 
 	logx.Infov(c)
 	channelBridge := channels_helper.Bridge{}
@@ -128,6 +135,7 @@ func (s *Server) Initialize() error {
 					MsgClient:                 c.MsgClient,
 					SignInMessage:             c.SignInMessage,
 					SignInServiceNotification: c.SignInServiceNotification,
+					TestPhones:                c.TestPhones,
 				},
 				nil,
 				nil))

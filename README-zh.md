@@ -65,7 +65,7 @@
 
 ## Docker 安装
 
-使用 Docker 一键运行完整栈。**无需手动初始化数据**：依赖栈首次启动时会自动初始化数据库（挂载 SQL）和 MinIO 桶（通过 `minio-mc`）。
+使用 Docker 一键运行完整栈。**无需手动初始化数据**：依赖栈首次启动时会自动初始化数据库（挂载 SQL）和 MinIO 桶（通过 `minio-mc`）。对象存储由 `TELLOMI_S3_*` 配置（本地 MinIO，生产可用 Cloudflare R2），见 [docs/storage.md](docs/storage.md)。`TELLOMI_RTMP_URL` 覆盖 `phone.getGroupCallStreamRtmpUrl` 返回的 RTMP 推流地址。
 
 ### 1. 克隆仓库
 

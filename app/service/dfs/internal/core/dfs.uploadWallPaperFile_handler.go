@@ -122,8 +122,12 @@ func (c *DfsCore) DfsUploadWallPaperFile(in *dfs.TLDfsUploadWallPaperFile) (*mtp
 
 	// upload thumb
 	path = fmt.Sprintf("%s/%d.dat", mtproto.PhotoSZMediumType, documentId)
-	// upload
+	// Canonical thumb stays on the photos prefix so document downloads keep working.
+	// The public copy is served from the wallpapers prefix.
 	c.svcCtx.Dao.PutPhotoFile(c.ctx, path, mThumbData.Bytes())
+	if _, err2 := c.svcCtx.Dao.PutWallpaperBytes(c.ctx, path, mThumbData.Bytes()); err2 != nil {
+		c.Logger.Errorf("dfs.uploadWallPaperFile - public thumb: %v", err2)
+	}
 
 	szList := []*mtproto.PhotoSize{
 		mtproto.MakeTLPhotoStrippedSize(&mtproto.PhotoSize{
@@ -141,12 +145,16 @@ func (c *DfsCore) DfsUploadWallPaperFile(in *dfs.TLDfsUploadWallPaperFile) (*mtp
 	c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
 
 	go func() {
+		name := fmt.Sprintf("%d.dat", documentId)
 		_, err2 := c.svcCtx.Dao.PutDocumentFile(
 			context.Background(),
-			fmt.Sprintf("%d.dat", documentId),
+			name,
 			bytes.NewReader(cacheData))
 		if err2 != nil {
 			c.Logger.Errorf("dfs.uploadWallPaperFile - error: %v", err2)
+		}
+		if _, err2 = c.svcCtx.Dao.PutWallpaperFile(context.Background(), name, bytes.NewReader(cacheData)); err2 != nil {
+			c.Logger.Errorf("dfs.uploadWallPaperFile - public object: %v", err2)
 		}
 	}()
 

@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
 )
@@ -66,7 +67,7 @@ func New(c config.Config, clients Clients) *ServiceContext {
 		sc.Msg = msgclient.NewMsgClient(rpcx.GetCachedRpcClient(clients.Msg))
 	}
 	if clients.Sync != nil && len(clients.Sync.Brokers) > 0 {
-		sc.Sync = sync_client.NewSyncMqClient(kafka.MustKafkaProducer(clients.Sync))
+		sc.Sync = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(clients.Sync))
 	}
 	return sc
 }

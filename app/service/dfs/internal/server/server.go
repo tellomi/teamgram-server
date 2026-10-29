@@ -37,8 +37,15 @@ func New() *Server {
 func (s *Server) Initialize() error {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
-
-	logx.Infov(c)
+	if err := c.Minio.ApplyEnv(); err != nil {
+		logx.Errorf("object storage config: %v", err)
+		return err
+	}
+	logged := c
+	if logged.Minio.SecretAccessKey != "" {
+		logged.Minio.SecretAccessKey = "***"
+	}
+	logx.Infov(logged)
 	ctx := svc.NewServiceContext(c)
 
 	s.grpcSrv = grpc.New(ctx, c.RpcServerConf)

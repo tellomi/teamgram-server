@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/core"
@@ -23,7 +24,7 @@ import (
 
 // New new a grpc server.
 func New(svcCtx *svc.ServiceContext, conf kafka.KafkaConsumerConf) *kafka.ConsumerGroup {
-	s := kafka.MustKafkaConsumer(&conf)
+	s := bootstrap.MustKafkaConsumer(&conf)
 	s.RegisterHandlers(
 		conf.Topics[0],
 		func(ctx context.Context, method, key string, value []byte) {

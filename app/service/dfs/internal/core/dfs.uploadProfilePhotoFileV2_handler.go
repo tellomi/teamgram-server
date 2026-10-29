@@ -147,7 +147,7 @@ func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFil
 		// secretId := int64(extType)<<32 | int64(rand.Uint32())
 		path := fmt.Sprintf("%s/%d.dat", szType, photoId)
 		// c.Logger.Debugf("path: %s", path)
-		fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
+		fileSize, err = c.putProfilePhoto(path, b)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 			return err
@@ -173,7 +173,7 @@ func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFil
 	// extType = model.GetStorageFileTypeConstructor(ext)
 	// secretId := int64(extType)<<32 | int64(rand.Uint32())
 	path := fmt.Sprintf("%s/%d.dat", mtproto.VideoSZVType, photoId)
-	_, err = c.svcCtx.Dao.PutVideoFile(c.ctx, path, videoMp4Data)
+	_, err = c.putProfileVideo(path, videoMp4Data)
 	if err != nil {
 		c.Logger.Errorf("uploadVideoSizeList - error: %v", err)
 		return nil, err
@@ -238,7 +238,7 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
 	)
 
-	_, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, fmt.Sprintf("0/%d.dat", photoId), cacheData)
+	_, err = c.putProfilePhoto(fmt.Sprintf("0/%d.dat", photoId), cacheData)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 	}
@@ -247,7 +247,7 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 		// secretId := int64(extType)<<32 | int64(rand.Uint32())
 		path := fmt.Sprintf("%s/%d.dat", szType, photoId)
 		// c.Logger.Debugf("path: %s", path)
-		fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
+		fileSize, err = c.putProfilePhoto(path, b)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 			return err

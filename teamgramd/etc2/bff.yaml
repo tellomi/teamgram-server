@@ -35,6 +35,14 @@ Code:
   # Dev/test SMS provider. Any phone is accepted with this code. Change before production.
   FixedCode: "12345"
 
+# Dev login numbers, same shape as Telegram test DCs (99966XYYYY).
+# X is the datacenter digit; the login code is that digit five times (11111 on DC 1).
+# Omit TestPhones to use that built-in range. Set TestPhones: [] to disable it.
+# TestPhones:
+#   - Prefix: "99966"
+#     Length: 10
+#     CodeFromDigit: true
+
 BizServiceClient:
   Etcd:
     Hosts:
@@ -92,6 +100,7 @@ Phone:
   RingTimeout: 90
   ConfirmTimeout: 30
   CallLinkPrefix: "https://t.me/call/"
+  # Overridden by TELLOMI_RTMP_URL when that variable is set.
   RTMPURL: "rtmp://127.0.0.1:1935/live"
   RTMPKey: tellomi
   EnableP2P: true
