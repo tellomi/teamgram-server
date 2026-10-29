@@ -3104,7 +3104,8 @@ _ALLOW = {
     "harris", "newman", "monika", "paul", "kate", "nick", "adler", "toberg",
     "david", "eva", "summer", "mike", "bright", "lucio", "walt", "botfather",
     "rove", "socks5", "camera2", "webview", "stateinit", "mnc", "led", "faq",
-    "passport", "icloud", "hasselhoff", "spotlight",
+    "passport", "icloud", "hasselhoff", "spotlight", "mtproxy",
+    "dapp", "p2plp", "fps",
     "harry", "helene", "dwayne", "roxanne",
     "id", "qr", "pin", "sim", "gif", "sms", "bot", "bots", "app",
     "web", "pc", "tv", "hd", "ip", "url", "api", "nft", "json",
@@ -3296,6 +3297,7 @@ def leftover_words(text: str) -> list[str]:
     )
     cleaned = _TOKEN.sub(" ", cleaned)
     cleaned = re.sub(r"@[A-Za-z0-9_]+", " ", cleaned)
+    cleaned = re.sub(r":[A-Za-z0-9_]+:", " ", cleaned)
     cleaned = re.sub(
         r"\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b",
         " ",

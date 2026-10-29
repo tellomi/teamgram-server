@@ -273,23 +273,50 @@ func TestShippedPacks(t *testing.T) {
 	}
 
 	// Placeholders in the English pack must survive in both Chinese packs.
+	// Chinese packs are version 2 so getDifference delivers the rewrite.
 	for _, platform := range []string{"ios", "android"} {
 		en, err := cat.Difference(platform, "en", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		zh, err := cat.Difference(platform, "zh-hans", 0)
-		if err != nil {
-			t.Fatal(err)
+		if en.GetVersion() != 1 {
+			t.Fatalf("%s english version %d", platform, en.GetVersion())
 		}
 		enTok := tokensByKey(en.GetStrings())
-		zhTok := tokensByKey(zh.GetStrings())
-		if len(enTok) == 0 || len(enTok) != len(zhTok) {
-			t.Fatalf("%s key mismatch %d %d", platform, len(enTok), len(zhTok))
-		}
-		for key, toks := range enTok {
-			if strings.Join(toks, "\n") != strings.Join(zhTok[key], "\n") {
-				t.Fatalf("%s placeholder drift %s\nen %q\nzh %q", platform, key, toks, zhTok[key])
+		for _, lang := range []string{"zh-hans", "zh-hant"} {
+			zh, err := cat.Difference(platform, lang, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if zh.GetVersion() != 2 {
+				t.Fatalf("%s %s version %d", platform, lang, zh.GetVersion())
+			}
+			updated, err := cat.Difference(platform, lang, 1)
+			if err != nil || len(updated.GetStrings()) == 0 || updated.GetVersion() != 2 {
+				t.Fatalf("%s %s difference from 1: %d %v", platform, lang, len(updated.GetStrings()), err)
+			}
+			caughtUp, err := cat.Difference(platform, lang, 2)
+			if err != nil || len(caughtUp.GetStrings()) != 0 {
+				t.Fatalf("%s %s difference from 2: %d %v", platform, lang, len(caughtUp.GetStrings()), err)
+			}
+			zhTok := tokensByKey(zh.GetStrings())
+			if len(enTok) == 0 || len(enTok) != len(zhTok) {
+				t.Fatalf("%s %s key mismatch %d %d", platform, lang, len(enTok), len(zhTok))
+			}
+			for key, toks := range enTok {
+				if strings.Join(toks, "\n") != strings.Join(zhTok[key], "\n") {
+					t.Fatalf("%s %s placeholder drift %s\nen %q\nzh %q", platform, lang, key, toks, zhTok[key])
+				}
+			}
+			for _, s := range zh.GetStrings() {
+				if s.GetKey() == "LanguageNameInEnglish" {
+					continue
+				}
+				for _, part := range stringParts(s) {
+					if words := latinLeftovers(part); len(words) > 0 {
+						t.Fatalf("%s %s leftover English in %s: %v\n%q", platform, lang, s.GetKey(), words, part)
+					}
+				}
 			}
 		}
 	}
@@ -316,6 +343,67 @@ func tokensByKey(stringsIn []*mtproto.LangPackString) map[string][]string {
 func placeholderTokens(s string) []string {
 	return placeholderRe.FindAllString(s, -1)
 }
+
+func stringParts(s *mtproto.LangPackString) []string {
+	parts := []string{s.GetValue(), s.GetOtherValue()}
+	for _, opt := range []*wrapperspb.StringValue{s.GetZeroValue(), s.GetOneValue(), s.GetTwoValue(), s.GetFewValue(), s.GetManyValue()} {
+		if opt != nil {
+			parts = append(parts, opt.Value)
+		}
+	}
+	return parts
+}
+
+var latinWordRe = regexp.MustCompile(`[A-Za-z][A-Za-z']{2,}`)
+var latinTokenRe = regexp.MustCompile(`[A-Za-z][A-Za-z0-9']*`)
+
+func latinLeftovers(text string) []string {
+	cleaned := strings.NewReplacer("’", "'", "‘", "'", "ʼ", "'").Replace(text)
+	// Strip link targets before placeholder matching, which stops at "(".
+	cleaned = stripRe.ReplaceAllString(cleaned, " ")
+	cleaned = mentionRe.ReplaceAllString(cleaned, " ")
+	cleaned = placeholderRe.ReplaceAllString(cleaned, " ")
+	trimmed := strings.TrimSpace(cleaned)
+	if hyphenSlugRe.MatchString(trimmed) {
+		return nil
+	}
+	if _, ok := allowedLatin[strings.ToLower(trimmed)]; ok {
+		return nil
+	}
+	if _, ok := soundNames[strings.ToLower(trimmed)]; ok {
+		return nil
+	}
+	cleaned = latinTokenRe.ReplaceAllStringFunc(cleaned, func(word string) string {
+		key := strings.ToLower(strings.Trim(word, "'"))
+		if _, ok := allowedLatin[key]; ok {
+			return " "
+		}
+		return word
+	})
+	var bad []string
+	seen := map[string]struct{}{}
+	for _, word := range latinWordRe.FindAllString(cleaned, -1) {
+		key := strings.ToLower(strings.Trim(word, "'"))
+		if strings.HasSuffix(key, "'s") {
+			if _, ok := allowedLatin[strings.TrimSuffix(key, "'s")]; ok {
+				continue
+			}
+		}
+		if _, ok := allowedLatin[key]; ok {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		bad = append(bad, key)
+	}
+	return bad
+}
+
+var hyphenSlugRe = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$`)
+var stripRe = regexp.MustCompile(`(?i)https?://\S+|[\w.-]*telegram\.org\S*|t\.me/\S+|[\w.-]+\.(?:com|org|net)\S+|:[A-Za-z0-9_]+:|\]\([A-Za-z0-9_]+\)|\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b|\b(?:app store|google play|face id|apple watch|touch id)\b`)
+var mentionRe = regexp.MustCompile(`@[A-Za-z0-9_]+`)
 
 func hasTelegramBrand(s string) bool {
 	low := strings.ToLower(s)
@@ -368,4 +456,231 @@ func TestEmbeddedPacksLoad(t *testing.T) {
 	if _, err := cat.Languages(""); err != ErrUnknownPack {
 		t.Fatal(err)
 	}
+}
+
+var allowedLatin = map[string]struct{}{
+	"2fa":          {},
+	"2k":           {},
+	"4k":           {},
+	"adler":        {},
+	"ai":           {},
+	"airplay":      {},
+	"alice":        {},
+	"alicia":       {},
+	"alpha":        {},
+	"am":           {},
+	"android":      {},
+	"api":          {},
+	"apk":          {},
+	"app":          {},
+	"apple":        {},
+	"base64":       {},
+	"beatrice":     {},
+	"beta":         {},
+	"bing":         {},
+	"bluetooth":    {},
+	"bob":          {},
+	"boc":          {},
+	"bot":          {},
+	"botfather":    {},
+	"bots":         {},
+	"brave":        {},
+	"bright":       {},
+	"btc":          {},
+	"camera2":      {},
+	"cdn":          {},
+	"chrome":       {},
+	"chromecast":   {},
+	"cocoon":       {},
+	"courier":      {},
+	"covid":        {},
+	"cvv":          {},
+	"dapp":         {},
+	"david":        {},
+	"dc":           {},
+	"dd":           {},
+	"dino":         {},
+	"dns":          {},
+	"dropbox":      {},
+	"duckduckgo":   {},
+	"dwayne":       {},
+	"eee":          {},
+	"eeee":         {},
+	"emma":         {},
+	"emoji":        {},
+	"emojis":       {},
+	"eva":          {},
+	"facebook":     {},
+	"faq":          {},
+	"fhd":          {},
+	"fps":          {},
+	"fragment":     {},
+	"gabriella":    {},
+	"gb":           {},
+	"gif":          {},
+	"gifs":         {},
+	"github":       {},
+	"google":       {},
+	"gps":          {},
+	"gram":         {},
+	"grams":        {},
+	"harris":       {},
+	"harry":        {},
+	"hasselhoff":   {},
+	"hd":           {},
+	"hdr":          {},
+	"heic":         {},
+	"helene":       {},
+	"hh":           {},
+	"html":         {},
+	"http":         {},
+	"https":        {},
+	"icloud":       {},
+	"id":           {},
+	"instagram":    {},
+	"ios":          {},
+	"ip":           {},
+	"ipad":         {},
+	"iphone":       {},
+	"james":        {},
+	"jennie":       {},
+	"jennifer":     {},
+	"jessica":      {},
+	"jpeg":         {},
+	"jpg":          {},
+	"json":         {},
+	"kate":         {},
+	"kb":           {},
+	"latex":        {},
+	"led":          {},
+	"linux":        {},
+	"lucio":        {},
+	"mac":          {},
+	"macos":        {},
+	"mb":           {},
+	"merriweather": {},
+	"mike":         {},
+	"mm":           {},
+	"mmm":          {},
+	"mmmm":         {},
+	"mnc":          {},
+	"monika":       {},
+	"mono":         {},
+	"mp3":          {},
+	"mp4":          {},
+	"mtproto":      {},
+	"mtproxy":      {},
+	"newman":       {},
+	"nfc":          {},
+	"nft":          {},
+	"nick":         {},
+	"nox":          {},
+	"ogg":          {},
+	"ok":           {},
+	"opus":         {},
+	"p2plp":        {},
+	"passport":     {},
+	"paul":         {},
+	"paypal":       {},
+	"pc":           {},
+	"pdf":          {},
+	"pin":          {},
+	"pm":           {},
+	"png":          {},
+	"premium":      {},
+	"psa":          {},
+	"qhd":          {},
+	"qr":           {},
+	"reinhardt":    {},
+	"rnnoise":      {},
+	"roberto":      {},
+	"roboto":       {},
+	"rove":         {},
+	"roxanne":      {},
+	"rtmp":         {},
+	"safari":       {},
+	"sdk":          {},
+	"serif":        {},
+	"sim":          {},
+	"siri":         {},
+	"sms":          {},
+	"socks5":       {},
+	"spotify":      {},
+	"spotlight":    {},
+	"ss":           {},
+	"ssl":          {},
+	"stateinit":    {},
+	"stun":         {},
+	"summer":       {},
+	"suntory":      {},
+	"tcp":          {},
+	"telegramtips": {},
+	"tellomi":      {},
+	"tls":          {},
+	"toberg":       {},
+	"ton":          {},
+	"toncoin":      {},
+	"torreaux":     {},
+	"turn":         {},
+	"tv":           {},
+	"twitter":      {},
+	"udp":          {},
+	"uid":          {},
+	"url":          {},
+	"usb":          {},
+	"usd":          {},
+	"usdt":         {},
+	"veronica":     {},
+	"vip":          {},
+	"visa":         {},
+	"vpn":          {},
+	"walt":         {},
+	"wav":          {},
+	"waze":         {},
+	"wearos":       {},
+	"web":          {},
+	"webp":         {},
+	"webrtc":       {},
+	"webview":      {},
+	"whatsapp":     {},
+	"wi-fi":        {},
+	"wifi":         {},
+	"windows":      {},
+	"www":          {},
+	"yahoo":        {},
+	"yandex":       {},
+	"youtube":      {},
+	"yy":           {},
+	"yyy":          {},
+	"yyyy":         {},
+	"zip":          {},
+}
+
+var soundNames = map[string]struct{}{
+	"antic":     {},
+	"aurora":    {},
+	"bamboo":    {},
+	"bell":      {},
+	"calypso":   {},
+	"cheers":    {},
+	"chime":     {},
+	"chord":     {},
+	"circles":   {},
+	"droplet":   {},
+	"glass":     {},
+	"handoff":   {},
+	"input":     {},
+	"led":       {},
+	"milestone": {},
+	"passage":   {},
+	"popcorn":   {},
+	"portal":    {},
+	"pulse":     {},
+	"rattle":    {},
+	"rebound":   {},
+	"socks5":    {},
+	"synth":     {},
+	"telegraph": {},
+	"tremolo":   {},
+	"tri-tone":  {},
 }
