@@ -15,8 +15,8 @@ Teamgram 实现 [MTProto 2.0](https://core.telegram.org/mtproto)，支持以下�
 
 ## API Layer
 
-- 当前支持的 **API Layer** 为 **222**（见主 README；随 proto 更新可能变动）。
-- TL 方法与类型以项目依赖的 [teamgram/proto](https://github.com/teamgram/proto) 为准。
+- 当前支持的 **API Layer** 为 **232**。编解码在仓库内的 [`proto/`](../proto/README.md)（上游 teamgram/proto 停在 layer 231）。
+- TL 方法与类型以该 fork 为准，layer 232 的 constructor 与 Telegram Desktop `api.tl`（`// LAYER 232`）一致。
 
 ## 兼容客户端
 

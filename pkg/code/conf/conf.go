@@ -25,4 +25,7 @@ type SmsVerifyCodeConfig struct {
 	Key           string
 	Secret        string
 	RegionId      string
+	// FixedCode is the code the "none" provider accepts. Empty means 12345.
+	// Development and tests only; do not use this provider in production.
+	FixedCode string `json:"FixedCode,optional"`
 }

@@ -39,8 +39,15 @@ func (m *noneVerifyCode) SendSmsVerifyCode(ctx context.Context, phoneNumber, cod
 	return code, nil
 }
 
+func (m *noneVerifyCode) fixedCode() string {
+	if m != nil && m.code != nil && m.code.FixedCode != "" {
+		return m.code.FixedCode
+	}
+	return "12345"
+}
+
 func (m *noneVerifyCode) VerifySmsCode(ctx context.Context, codeHash, code, extraData string) error {
-	if code != "12345" {
+	if code != m.fixedCode() {
 		return mtproto.ErrPhoneCodeInvalid
 	}
 	return nil

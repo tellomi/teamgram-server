@@ -32,6 +32,8 @@ Code:
   Key: ""
   Secret: ""
   RegionId: ""
+  # Dev/test SMS provider. Any phone is accepted with this code. Change before production.
+  FixedCode: "12345"
 
 BizServiceClient:
   Etcd:
