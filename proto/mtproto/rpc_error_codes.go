@@ -2093,6 +2093,30 @@ var (
 	// | 400 | ORDER_INVALID | The specified username order is invalid. |
 	ErrOrderInvalid = status.Error(ErrBadRequest, "ORDER_INVALID")
 
+	// ErrParentPeerInvalid
+	// | 400 | PARENT_PEER_INVALID | The specified parent_peer is invalid. |
+	ErrParentPeerInvalid = status.Error(ErrBadRequest, "PARENT_PEER_INVALID")
+
+	// ErrUnsupported
+	// | 400 | UNSUPPORTED | require_payment cannot be set by users, only by monoforums. |
+	ErrUnsupported = status.Error(ErrBadRequest, "UNSUPPORTED")
+
+	// ErrTakeoutInvalid
+	// | 400 | TAKEOUT_INVALID | The takeout session id is invalid. |
+	ErrTakeoutInvalid = status.Error(ErrBadRequest, "TAKEOUT_INVALID")
+
+	// ErrCredentialInvalid
+	// | 400 | CREDENTIAL_INVALID | The specified credential is invalid. |
+	ErrCredentialInvalid = status.Error(ErrBadRequest, "CREDENTIAL_INVALID")
+
+	// ErrPasskeyCredentialNotFound
+	// | 400 | PASSKEY_CREDENTIAL_NOT_FOUND | The specified passkey cannot be found. |
+	ErrPasskeyCredentialNotFound = status.Error(ErrBadRequest, "PASSKEY_CREDENTIAL_NOT_FOUND")
+
+	// ErrPasskeyOriginMismatch
+	// | 400 | PASSKEY_ORIGIN_MISMATCH | Third-party clients currently don't support passkeys even when changing the origin. |
+	ErrPasskeyOriginMismatch = status.Error(ErrBadRequest, "PASSKEY_ORIGIN_MISMATCH")
+
 	// ErrQueryIdInvalid
 	// | 400 | QUERY_ID_INVALID | The query ID is invalid. |
 	ErrQueryIdInvalid = status.Error(ErrBadRequest, "QUERY_ID_INVALID")

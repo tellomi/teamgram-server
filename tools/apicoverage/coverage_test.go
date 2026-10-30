@@ -202,10 +202,30 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCPasskey"] || !srv.Registered["RPCPasskey"] {
 		t.Fatal("passkey login must be routed and registered")
 	}
-	// Other passkey RPCs stay enterprise errors. Routing the service must not
-	// mark those wrappers as implemented.
-	assertStatus("account.getPasskeys", statusStub, effectError)
-	assertStatus("auth.initPasskeyLogin", statusStub, effectError)
+	if !srv.Routed["RPCWebBrowser"] || !srv.Registered["RPCWebBrowser"] {
+		t.Fatal("web browser settings must be routed and registered")
+	}
+	assertStatus("account.getPasskeys", statusImplemented, effectOK)
+	assertStatus("account.initPasskeyRegistration", statusImplemented, effectOK)
+	assertStatus("account.registerPasskey", statusImplemented, effectOK)
+	assertStatus("account.deletePasskey", statusImplemented, effectOK)
+	assertStatus("auth.initPasskeyLogin", statusImplemented, effectOK)
+	assertStatus("account.getWebBrowserSettings", statusImplemented, effectOK)
+	assertStatus("account.updateWebBrowserSettings", statusImplemented, effectOK)
+	assertStatus("account.toggleWebBrowserSettingsException", statusImplemented, effectOK)
+	assertStatus("account.deleteWebBrowserSettingsExceptions", statusImplemented, effectOK)
+	assertStatus("account.initTakeoutSession", statusImplemented, effectOK)
+	assertStatus("account.finishTakeoutSession", statusImplemented, effectOK)
+	assertStatus("account.reorderUsernames", statusImplemented, effectOK)
+	assertStatus("account.toggleUsername", statusImplemented, effectOK)
+	assertStatus("account.getPaidMessagesRevenue", statusImplemented, effectOK)
+	assertStatus("account.toggleNoPaidMessagesException", statusImplemented, effectOK)
+	if _, ok := canonicalClientMethod("account.reorderProfileTabs"); ok {
+		t.Fatal("commented profile-tab reorder must stay out of the matrix")
+	}
+	if got, ok := canonicalClientMethod("account.initPasskeyLogin"); !ok || got != "auth.initPasskeyLogin" {
+		t.Fatalf("android passkey login alias: %s %v", got, ok)
+	}
 	if !srv.Routed["RPCPromoData"] || !srv.Registered["RPCPromoData"] {
 		t.Fatal("promo data must be routed and registered")
 	}

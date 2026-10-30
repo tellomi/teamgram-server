@@ -4,13 +4,19 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/accountrest"
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/historysplit"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
-// FragmentService serves channel username order and activation.
+// FragmentService serves channel username order and activation, and the
+// account username order and activation methods on RPCFragment.
 type FragmentService struct {
 	mtproto.UnimplementedRPCFragmentServer
+	Users userclient.UserClient
 }
 
 func (FragmentService) ChannelsReorderUsernames(ctx context.Context, in *mtproto.TLChannelsReorderUsernames) (*mtproto.Bool, error) {
@@ -26,6 +32,62 @@ func (FragmentService) ChannelsToggleUsername(ctx context.Context, in *mtproto.T
 func (FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in *mtproto.TLChannelsDeactivateAllUsernames) (*mtproto.Bool, error) {
 	self, auth := actor(ctx)
 	return channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel())
+}
+
+// AccountReorderUsernames
+// account.reorderUsernames#ef500eab order:Vector<string> = Bool;
+// https://core.telegram.org/method/account.reorderUsernames
+func (s FragmentService) AccountReorderUsernames(ctx context.Context, in *mtproto.TLAccountReorderUsernames) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	s.seedPrimaryUsername(ctx, self)
+	var order []string
+	if in != nil {
+		order = in.GetOrder()
+	}
+	ok, err := accountrest.ReorderUsernames(self, order)
+	if err == nil && s.Users != nil {
+		_, _ = s.Users.UserReorderUsernames(ctx, &user.TLUserReorderUsernames{
+			PeerType:     mtproto.PEER_USER,
+			PeerId:       self,
+			UsernameList: order,
+		})
+	}
+	return ok, err
+}
+
+// AccountToggleUsername
+// account.toggleUsername#58d6b376 username:string active:Bool = Bool;
+// https://core.telegram.org/method/account.toggleUsername
+func (s FragmentService) AccountToggleUsername(ctx context.Context, in *mtproto.TLAccountToggleUsername) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	s.seedPrimaryUsername(ctx, self)
+	username := ""
+	var active *mtproto.Bool
+	if in != nil {
+		username = in.GetUsername()
+		active = in.GetActive()
+	}
+	ok, err := accountrest.ToggleUsername(self, username, mtproto.FromBool(active))
+	if err == nil && s.Users != nil {
+		_, _ = s.Users.UserToggleUsername(ctx, &user.TLUserToggleUsername{
+			PeerType: mtproto.PEER_USER,
+			PeerId:   self,
+			Username: username,
+			Active:   active,
+		})
+	}
+	return ok, err
+}
+
+func (s FragmentService) seedPrimaryUsername(ctx context.Context, self int64) {
+	if s.Users == nil || self == 0 {
+		return
+	}
+	data, err := s.Users.UserGetAccountUsername(ctx, &user.TLUserGetAccountUsername{UserId: self})
+	if err != nil || data.GetUsername() == "" {
+		return
+	}
+	accountrest.SeedPrimary(self, data.GetUsername(), data.GetActive())
 }
 
 // AntiSpamService serves native antispam toggles and false-positive reports.
@@ -64,7 +126,8 @@ func (RecommendationsService) ChannelsGetChannelRecommendations(ctx context.Cont
 	return channel.Shared().GetChannelRecommendations(ctx, self, in.GetChannel())
 }
 
-// TakeoutService serves channels.getLeftChannels and messages.getSplitRanges.
+// TakeoutService serves channels.getLeftChannels, messages.getSplitRanges,
+// and account takeout sessions.
 type TakeoutService struct {
 	mtproto.UnimplementedRPCTakeoutServer
 }
@@ -83,6 +146,30 @@ func (TakeoutService) MessagesGetSplitRanges(ctx context.Context, _ *mtproto.TLM
 	return historysplit.Ranges(), nil
 }
 
+// AccountInitTakeoutSession
+// account.initTakeoutSession#8ef3eab0 flags:# contacts:flags.0?true message_users:flags.1?true message_chats:flags.2?true message_megagroups:flags.3?true message_channels:flags.4?true files:flags.5?true file_max_size:flags.5?long = account.Takeout;
+// https://core.telegram.org/method/account.initTakeoutSession
+func (TakeoutService) AccountInitTakeoutSession(ctx context.Context, in *mtproto.TLAccountInitTakeoutSession) (*mtproto.Account_Takeout, error) {
+	self, _ := actor(ctx)
+	return accountrest.InitTakeoutSession(self, in)
+}
+
+// AccountFinishTakeoutSession
+// account.finishTakeoutSession#1d2652ee flags:# success:flags.0?true = Bool;
+// https://core.telegram.org/method/account.finishTakeoutSession
+func (TakeoutService) AccountFinishTakeoutSession(ctx context.Context, in *mtproto.TLAccountFinishTakeoutSession) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	var takeoutID int64
+	if md := metadata.RpcMetadataFromIncoming(ctx); md != nil {
+		takeoutID = md.GetTakeoutId()
+	}
+	success := false
+	if in != nil {
+		success = in.GetSuccess()
+	}
+	return accountrest.FinishTakeoutSession(self, takeoutID, success)
+}
+
 // TranslationService serves channels.toggleAutotranslation,
 // messages.translateText, and messages.togglePeerTranslations.
 type TranslationService struct {
@@ -95,7 +182,8 @@ func (TranslationService) ChannelsToggleAutotranslation(ctx context.Context, in 
 	return channel.Shared().ToggleAutotranslation(ctx, self, auth, in.GetChannel(), mtproto.FromBool(in.GetEnabled()))
 }
 
-// PaidMessageService serves channels.updatePaidMessagesPrice.
+// PaidMessageService serves channels.updatePaidMessagesPrice and the account
+// paid-message revenue methods.
 type PaidMessageService struct {
 	mtproto.UnimplementedRPCPaidMessageServer
 }
@@ -103,6 +191,28 @@ type PaidMessageService struct {
 func (PaidMessageService) ChannelsUpdatePaidMessagesPrice(ctx context.Context, in *mtproto.TLChannelsUpdatePaidMessagesPrice) (*mtproto.Updates, error) {
 	self, auth := actor(ctx)
 	return channel.Shared().UpdatePaidMessagesPrice(ctx, self, auth, in.GetChannel(), in.GetSendPaidMessagesStars(), in.GetBroadcastMessagesAllowed())
+}
+
+// AccountGetPaidMessagesRevenue
+// account.getPaidMessagesRevenue#19ba4a67 flags:# parent_peer:flags.0?InputPeer user_id:InputUser = account.PaidMessagesRevenue;
+// https://core.telegram.org/method/account.getPaidMessagesRevenue
+func (PaidMessageService) AccountGetPaidMessagesRevenue(ctx context.Context, in *mtproto.TLAccountGetPaidMessagesRevenue) (*mtproto.Account_PaidMessagesRevenue, error) {
+	self, _ := actor(ctx)
+	if in == nil {
+		in = &mtproto.TLAccountGetPaidMessagesRevenue{}
+	}
+	return accountrest.GetPaidMessagesRevenue(self, in.GetParentPeer(), in.GetUserId())
+}
+
+// AccountToggleNoPaidMessagesException
+// account.toggleNoPaidMessagesException#fe2eda76 flags:# refund_charged:flags.0?true require_payment:flags.2?true parent_peer:flags.1?InputPeer user_id:InputUser = Bool;
+// https://core.telegram.org/method/account.toggleNoPaidMessagesException
+func (PaidMessageService) AccountToggleNoPaidMessagesException(ctx context.Context, in *mtproto.TLAccountToggleNoPaidMessagesException) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	if in == nil {
+		in = &mtproto.TLAccountToggleNoPaidMessagesException{}
+	}
+	return accountrest.ToggleNoPaidMessagesException(self, in.GetParentPeer(), in.GetUserId(), in.GetRefundCharged(), in.GetRequirePayment())
 }
 
 // ReportsService serves channels.reportSpam and the report methods that the

@@ -1,32 +1,19 @@
-// Copyright 2025 Teamgram Authors
-//  All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: teamgramio (teamgram.io@gmail.com)
-//
-
 package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/accountrest"
 )
 
 // AuthInitPasskeyLogin
 // auth.initPasskeyLogin#518ad0b7 api_id:int api_hash:string = auth.PasskeyLoginOptions;
+// https://core.telegram.org/method/auth.initPasskeyLogin
+//
+// Android calls this constructor from TL_account.initPasskeyLogin. The layer-232
+// method is auth.initPasskeyLogin. There is no account.initPasskeyLogin.
 func (c *PasskeyCore) AuthInitPasskeyLogin(in *mtproto.TLAuthInitPasskeyLogin) (*mtproto.Auth_PasskeyLoginOptions, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.initPasskeyLogin - error: passkeys are not enabled")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if in == nil {
+		return nil, mtproto.ErrApiIdInvalid
+	}
+	return accountrest.InitPasskeyLogin(in.GetApiId(), in.GetApiHash())
 }
