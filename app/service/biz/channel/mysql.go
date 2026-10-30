@@ -406,6 +406,18 @@ VALUES (?,?,?,?,0,?,?)`, channelID, pts, len(deleted), KindDelete, idText, []byt
 	return pts, int32(len(deleted)), deleted, nil
 }
 
+func (s *mysqlStore) ReplaceMessageBody(ctx context.Context, channelID int64, id int32, data []byte) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE channel_messages SET message_data=? WHERE channel_id=? AND message_id=? AND deleted=0`, data, channelID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return mtproto.ErrMessageIdInvalid
+	}
+	return nil
+}
+
 func (s *mysqlStore) GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error) {
 	row := s.db.QueryRowContext(ctx, messageSelect+` WHERE channel_id=? AND message_id=?`, channelID, id)
 	m, err := scanMessage(row)

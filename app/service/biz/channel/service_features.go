@@ -27,6 +27,9 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	if f.MsgTopic == nil {
 		f.MsgTopic = map[int32]int32{}
 	}
+	if f.ReactionRead == nil {
+		f.ReactionRead = map[int64]int32{}
+	}
 	return f
 }
 
@@ -1011,6 +1014,9 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	f := s.features(ctx, ch.ID)
+	if err := allowReact(f, emoticons); err != nil {
+		return nil, err
+	}
 	kept := f.Reactions[:0]
 	for _, r := range f.Reactions {
 		if !(r.MsgID == msgID && r.UserID == self) {

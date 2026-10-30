@@ -357,6 +357,17 @@ func (s *memoryStore) CommitDelete(ctx context.Context, channelID int64, ids []i
 	return ch.Pts, int32(len(deleted)), deleted, nil
 }
 
+func (s *memoryStore) ReplaceMessageBody(ctx context.Context, channelID int64, id int32, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	msg := s.messages[channelID][id]
+	if msg == nil || msg.Deleted {
+		return mtproto.ErrMessageIdInvalid
+	}
+	msg.Data = append([]byte(nil), data...)
+	return nil
+}
+
 func (s *memoryStore) GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

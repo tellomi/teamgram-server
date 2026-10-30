@@ -28,6 +28,15 @@ type Features struct {
 	AdminLog           []AdminEvent
 	Topics             []TopicRec
 	Reactions          []ReactRec
+	// ReactionRead is the unix time through which each member has called
+	// messages.readReactions. Older reaction dates are unread.
+	ReactionRead map[int64]int32
+	// ReactionMode is "", "all", "none", or "some".
+	ReactionMode       string
+	AllowCustom        bool
+	ReactionLimit      int32
+	PaidReactions      bool
+	CustomReactionDocs []int64
 	JoinRequests       []JoinReq
 	LastSend           map[int64]int32
 	UserMinID          map[int64]int32

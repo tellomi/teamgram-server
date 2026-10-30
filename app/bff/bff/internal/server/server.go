@@ -340,19 +340,21 @@ func (s *Server) Initialize() error {
 			}))
 
 		// messages_helper
-		mtproto.RegisterRPCMessagesServer(
-			grpcServer,
-			messages_helper.New(messages_helper.Config{
-				RpcServerConf: c.RpcServerConf,
-				UserClient:    c.BizServiceClient,
-				ChatClient:    c.BizServiceClient,
-				MsgClient:     c.MsgClient,
-				DialogClient:  c.BizServiceClient,
-				IdgenClient:   c.IdgenClient,
-				MessageClient: c.BizServiceClient,
-				MediaClient:   c.MediaClient,
-				SyncClient:    c.SyncClient,
-			}, nil))
+		msgCfg := messages_helper.Config{
+			RpcServerConf: c.RpcServerConf,
+			UserClient:    c.BizServiceClient,
+			ChatClient:    c.BizServiceClient,
+			MsgClient:     c.MsgClient,
+			DialogClient:  c.BizServiceClient,
+			IdgenClient:   c.IdgenClient,
+			MessageClient: c.BizServiceClient,
+			MediaClient:   c.MediaClient,
+			SyncClient:    c.SyncClient,
+		}
+		mtproto.RegisterRPCMessagesServer(grpcServer, messages_helper.New(msgCfg, nil))
+		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls())
+		mtproto.RegisterRPCScheduledMessagesServer(grpcServer, messages_helper.NewScheduled(msgCfg))
+		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage())
 
 		// notification_helper
 		notifySvc := notification_helper.New(notification_helper.Config{

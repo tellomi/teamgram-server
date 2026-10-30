@@ -72,7 +72,8 @@ BFFProxyClients:
     "/mtproto.RPCChats": "bff.bff"
     "/mtproto.RPCDeepLinks": "bff.bff"
     "/mtproto.RPCFiles": "bff.bff"
-    #"/mtproto.RPCWebPage": "bff.bff"
+    # Link previews in the composer and when a message's webpage is missing.
+    "/mtproto.RPCWebPage": "bff.bff"
     # messages.getDhConfig (call DH) and a fast empty messages.receivedQueue.
     # Secret-chat encryption methods on this service are still unimplemented.
     "/mtproto.RPCSecretChats": "bff.bff"
@@ -109,8 +110,10 @@ BFFProxyClients:
     "/mtproto.RPCUsers": "bff.bff"
     # account.getTmpPassword. Other payment RPCs on this service stay unimplemented.
     "/mtproto.RPCPayments": "bff.bff"
-    #"/mtproto.RPCPolls": "bff.bff"
-    #"/mtproto.RPCScheduledMessages": "bff.bff"
+    # Poll votes, results, and unread votes inside a chat.
+    "/mtproto.RPCPolls": "bff.bff"
+    # Scheduled message history, send, and delete.
+    "/mtproto.RPCScheduledMessages": "bff.bff"
     "/mtproto.RPCNsfw": "bff.bff"
     "/mtproto.RPCSponsoredMessages": "bff.bff"
     #"/mtproto.RPCProxyData": "bff.bff"

@@ -24,6 +24,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/langpack"
 
@@ -78,9 +79,16 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 	// chooser from the same field. Map the device/app language onto zh-hans or zh-hant.
 	langpack.ApplyConfigLanguage(rValue, langCode, systemLang, pack)
 	// Double-tap sends this emoji. It has to be one of messages.getAvailableReactions.
-	rValue.SetReactionsDefault(mtproto.MakeTLReactionEmoji(&mtproto.Reaction{
+	// messages.setDefaultReaction replaces the account default.
+	reaction := mtproto.MakeTLReactionEmoji(&mtproto.Reaction{
 		Emoticon: catalog.DefaultReactionEmoji,
-	}).To_Reaction())
+	}).To_Reaction()
+	if c.MD != nil {
+		if chosen := chatbox.Shared().DefaultReaction(c.ctx, c.MD.GetUserId()); chosen != nil {
+			reaction = chosen
+		}
+	}
+	rValue.SetReactionsDefault(reaction)
 
 	return rValue.To_Config(), nil
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
@@ -340,13 +341,33 @@ func (ReactionsService) MessagesGetAvailableReactions(ctx context.Context, in *m
 
 func (ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TLMessagesSendReaction) (*mtproto.Updates, error) {
 	self, _ := actor(ctx)
+	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	var emos []string
+	var docs []int64
 	for _, r := range in.GetReaction_FLAGVECTORREACTION() {
-		if r.GetEmoticon() != "" {
-			emos = append(emos, r.GetEmoticon())
+		emo, doc, err := chatbox.ParseReaction(r)
+		if err != nil {
+			return nil, err
+		}
+		if emo != "" {
+			emos = append(emos, emo)
+		}
+		if doc != 0 {
+			docs = append(docs, doc)
 		}
 	}
-	up, err := channel.Shared().React(ctx, self, channelID(in.GetPeer(), self), in.GetMsgId(), emos, in.GetBig())
+	if peer.IsChannel() {
+		if len(docs) > 0 {
+			return nil, mtproto.ErrReactionInvalid
+		}
+		up, err := channel.Shared().React(ctx, self, peer.PeerId, in.GetMsgId(), emos, in.GetBig())
+		if err != nil {
+			return nil, err
+		}
+		catalog.Must().NoteReaction(self, emos)
+		return up, nil
+	}
+	up, err := chatbox.Shared().React(ctx, self, peer, in.GetMsgId(), emos, docs, in.GetBig())
 	if err != nil {
 		return nil, err
 	}

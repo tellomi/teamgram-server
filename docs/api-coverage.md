@@ -50,7 +50,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | account | 119 | 69 | 10 | 8 | 32 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
-| messages | 216 | 120 | 5 | 27 | 64 | 14 | 0 |
+| messages | 216 | 140 | 3 | 21 | 52 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **380** | **23** | **87** | **336** | **94** | **0** |
+| **total** | **826** | **400** | **21** | **81** | **324** | **94** | **0** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 355 | 22 | 83 | 295 | 91 | 0 |
-| android | 709 | 352 | 20 | 70 | 267 | 87 | 0 |
-| desktop | 692 | 334 | 21 | 68 | 269 | 79 | 0 |
-| macos | 677 | 341 | 22 | 71 | 243 | 90 | 0 |
+| ios | 755 | 375 | 20 | 77 | 283 | 91 | 0 |
+| android | 709 | 370 | 18 | 65 | 256 | 87 | 0 |
+| desktop | 692 | 354 | 19 | 62 | 257 | 79 | 0 |
+| macos | 677 | 361 | 20 | 65 | 231 | 90 | 0 |
 
 540 methods are called by all four clients.
 
@@ -99,14 +99,14 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-148 gaps (138 error, 10 empty or bool or not-modified).
+128 gaps (119 error, 9 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
 | account | 50 |
 | auth | 1 |
 | channels | 1 |
-| messages | 96 |
+| messages | 76 |
 
 ### P2
 
@@ -341,7 +341,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-216 called, 120 implemented, 5 stub, 27 routed-unregistered, 64 missing.
+216 called, 140 implemented, 3 stub, 21 routed-unregistered, 52 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -360,7 +360,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.receivedQueue` | yes | yes | no | yes | startup+background | implemented | ok |
 | `messages.reorderPinnedDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.addPollAnswer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.appendTodoList` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.checkHistoryImport` | yes | yes | no | no | interactive | missing | error |
 | `messages.checkHistoryImportPeer` | yes | yes | no | no | interactive | missing | error |
@@ -368,10 +367,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.composeMessageWithAI` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.declineUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteFactCheck` | yes | no | yes | yes | interactive | missing | error |
-| `messages.deletePollAnswer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteQuickReplyShortcut` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.deleteScheduledMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.editFactCheck` | yes | no | yes | yes | interactive | missing | error |
 | `messages.editQuickReplyShortcut` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getAttachMenuBot` | yes | yes | yes | yes | interactive | missing | error |
@@ -384,21 +381,14 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getExtendedMedia` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getFactCheck` | yes | no | yes | yes | interactive | missing | error |
 | `messages.getInlineBotResults` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getPollResults` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getPollVotes` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getPreparedInlineMessage` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getQuickReplies` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getSavedReactionTags` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getScheduledHistory` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getShareThemeBackdrops` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getStatsURL` | no | yes | no | no | interactive | missing | error |
-| `messages.getUnreadPollVotes` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getWebPage` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getWebPagePreview` | yes | no | yes | yes | interactive | missing | error |
 | `messages.initHistoryImport` | yes | yes | no | no | interactive | missing | error |
 | `messages.prolongWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.readPollVotes` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.reorderQuickReplies` | yes | yes | no | yes | interactive | missing | error |
 | `messages.reportMessagesDelivery` | yes | no | yes | yes | interactive | missing | error |
 | `messages.requestAppWebView` | yes | yes | yes | yes | interactive | missing | error |
@@ -411,8 +401,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendEncryptedMultiMedia` | no | yes | no | no | interactive | missing | error |
 | `messages.sendInlineBotResult` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.sendScheduledMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.sendVote` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendWebViewData` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatWallPaper` | yes | yes | yes | yes | interactive | missing | error |
@@ -424,15 +412,11 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.updateSavedReactionTag` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.uploadImportedMedia` | yes | yes | no | no | interactive | missing | error |
 | `messages.acceptEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.deleteParticipantReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.deleteParticipantReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.deletePhoneCallHistory` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
 | `messages.discardEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.getEmojiURL` | no | yes | no | no | interactive | routed-but-unregistered | error |
 | `messages.getSplitRanges` | no | no | yes | no | interactive | routed-but-unregistered | error |
-| `messages.getUnreadReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.readEncryptedHistory` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.readReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.report` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.reportEncryptedSpam` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.reportMusicListen` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
@@ -443,8 +427,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendEncryptedFile` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.sendEncryptedService` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.sendPaidReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.setChatAvailableReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.setDefaultReaction` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.setEncryptedTyping` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.startBot` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.togglePaidReactionPrivacy` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
@@ -453,9 +435,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getEmojiGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
 | `messages.getEmojiProfilePhotoGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
 | `messages.getEmojiStatusGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
-| `messages.getScheduledMessages` | yes | yes | yes | yes | interactive | stub | empty |
-| `messages.setHistoryTTL` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.addChatUser` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.addPollAnswer` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.checkChatInvite` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.clearAllDrafts` | no | yes | no | no | interactive | implemented | ok |
 | `messages.clearRecentReactions` | yes | yes | no | yes | interactive | implemented | ok |
@@ -468,8 +449,12 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.deleteExportedChatInvite` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteHistory` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteMessages` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.deleteParticipantReaction` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.deleteParticipantReactions` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.deletePollAnswer` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteRevokedExportedChatInvites` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteSavedHistory` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.deleteScheduledMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteTopicHistory` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.editChatAbout` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.editChatAdmin` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -509,17 +494,25 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getOnlines` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.getOutboxReadDate` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getPeerSettings` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getPollResults` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getPollVotes` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getRecentLocations` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.getRecentReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getReplies` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getRichMessage` | yes | no | yes | yes | interactive | implemented | ok |
 | `messages.getSavedHistory` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getScheduledHistory` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getScheduledMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getSearchCounters` | no | yes | no | no | interactive | implemented | ok |
 | `messages.getSearchResultsCalendar` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getSearchResultsPositions` | yes | yes | no | no | interactive | implemented | ok |
 | `messages.getSponsoredMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getTopReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getUnreadMentions` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getUnreadPollVotes` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getUnreadReactions` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getWebPage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getWebPagePreview` | yes | no | yes | yes | interactive | implemented | ok |
 | `messages.hideAllChatJoinRequests` | yes | no | no | yes | interactive | implemented | ok |
 | `messages.hideChatJoinRequest` | yes | yes | yes | no | interactive | implemented | ok |
 | `messages.hidePeerSettingsBar` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -531,6 +524,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.readHistory` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.readMentions` | no | yes | yes | no | interactive | implemented | ok |
 | `messages.readMessageContents` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.readPollVotes` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.readReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.readSavedHistory` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reorderPinnedForumTopics` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reorderPinnedSavedDialogs` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -546,8 +541,13 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMultiMedia` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendReaction` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.sendScheduledMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendScreenshotNotification` | yes | yes | no | yes | interactive | implemented | ok |
+| `messages.sendVote` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.setChatAvailableReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setDefaultHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.setDefaultReaction` | yes | no | yes | yes | interactive | implemented | ok |
+| `messages.setHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setTyping` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.summarizeText` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.toggleDialogPin` | no | yes | yes | no | interactive | implemented | ok |
@@ -1282,7 +1282,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `iv.getRichMessage` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `messages.acceptEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesAcceptEncryption handler |
 | `messages.acceptUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
-| `messages.addPollAnswer` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.appendTodoList` | missing | no route in session.yaml and no bff handler |
 | `messages.checkHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `messages.checkHistoryImportPeer` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
@@ -1290,13 +1289,9 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.composeMessageWithAI` | missing | no route in session.yaml and no bff handler |
 | `messages.declineUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.deleteFactCheck` | missing | no route in session.yaml and no bff handler |
-| `messages.deleteParticipantReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesDeleteParticipantReaction handler |
-| `messages.deleteParticipantReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesDeleteParticipantReactions handler |
 | `messages.deletePhoneCallHistory` | routed-but-unregistered | session.yaml routes RPCVoipCalls but the bff process has no MessagesDeletePhoneCallHistory handler |
-| `messages.deletePollAnswer` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.deleteQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
 | `messages.deleteQuickReplyShortcut` | missing | no route in session.yaml and no bff handler |
-| `messages.deleteScheduledMessages` | missing | no route in session.yaml (RPCScheduledMessages is commented out) and no bff handler |
 | `messages.discardEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesDiscardEncryption handler |
 | `messages.editFactCheck` | missing | no route in session.yaml and no bff handler |
 | `messages.editQuickReplyShortcut` | missing | no route in session.yaml and no bff handler |
@@ -1319,28 +1314,18 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getInlineBotResults` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.getMaskStickers` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.getMyStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetMyStickers handler |
-| `messages.getPollResults` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
-| `messages.getPollVotes` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.getPreparedInlineMessage` | missing | no route in session.yaml and no bff handler |
 | `messages.getQuickReplies` | missing | no route in session.yaml and no bff handler |
 | `messages.getQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
 | `messages.getSavedGifs` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
 | `messages.getSavedReactionTags` | missing | no route in session.yaml and no bff handler |
-| `messages.getScheduledHistory` | missing | no route in session.yaml (RPCScheduledMessages is commented out) and no bff handler |
-| `messages.getScheduledMessages` | stub | session.yaml does not route RPCScheduledMessages; proxy returns an empty object (IDMap entry is commented out) |
 | `messages.getShareThemeBackdrops` | missing | no route in session.yaml and no bff handler |
 | `messages.getSplitRanges` | routed-but-unregistered | session.yaml routes RPCTakeout but the bff process has no MessagesGetSplitRanges handler |
 | `messages.getStatsURL` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.getUnreadPollVotes` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
-| `messages.getUnreadReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesGetUnreadReactions handler |
-| `messages.getWebPage` | missing | no route in session.yaml (RPCWebPage is commented out) and no bff handler |
-| `messages.getWebPagePreview` | missing | no route in session.yaml (RPCWebPage is commented out) and no bff handler |
 | `messages.initHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `messages.prolongWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.readEncryptedHistory` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesReadEncryptedHistory handler |
 | `messages.readFeaturedStickers` | stub | returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go |
-| `messages.readPollVotes` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
-| `messages.readReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesReadReactions handler |
 | `messages.reorderQuickReplies` | missing | no route in session.yaml and no bff handler |
 | `messages.reorderStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesReorderStickerSets handler |
 | `messages.report` | routed-but-unregistered | session.yaml routes RPCReports but the bff process has no MessagesReportFC78AF9B handler |
@@ -1365,15 +1350,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendInlineBotResult` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.sendPaidReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSendPaidReaction handler |
 | `messages.sendQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
-| `messages.sendScheduledMessages` | missing | no route in session.yaml (RPCScheduledMessages is commented out) and no bff handler |
-| `messages.sendVote` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.sendWebViewData` | missing | no route in session.yaml and no bff handler |
-| `messages.setChatAvailableReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSetChatAvailableReactions handler |
 | `messages.setChatTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `messages.setChatWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
-| `messages.setDefaultReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSetDefaultReaction handler |
 | `messages.setEncryptedTyping` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSetEncryptedTyping handler |
-| `messages.setHistoryTTL` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/dialogs/internal/core/messages.setHistoryTTL_handler.go |
 | `messages.setShareTheme` | missing | no route in session.yaml and no bff handler |
 | `messages.startBot` | routed-but-unregistered | session.yaml routes RPCDeepLinks but the bff process has no MessagesStartBot handler |
 | `messages.startHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
