@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 )
 
 // Service answers the sticker and emoji RPCs from one in-memory catalog.
@@ -118,8 +119,12 @@ func (s *Service) listStickers(userID, hash int64, emoji bool) *mtproto.Messages
 		if !on || archived {
 			continue
 		}
+		var keep bool
+		ids, keep = appendPackKey(ids, p)
+		if !keep {
+			continue
+		}
 		sets = append(sets, p.tl(true, false))
-		ids = append(ids, p.ID)
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
@@ -143,8 +148,12 @@ func (s *Service) Featured(hash int64, emoji bool) *mtproto.Messages_FeaturedSti
 		if !p.Featured || p.system() || p.Emojis != emoji {
 			continue
 		}
+		var keep bool
+		ids, keep = appendPackKey(ids, p)
+		if !keep {
+			continue
+		}
 		sets = append(sets, p.covered(false, false))
-		ids = append(ids, p.ID)
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
@@ -271,8 +280,12 @@ func (s *Service) SearchSets(q string, hash int64, emojiOnly bool) *mtproto.Mess
 		if q != "" && !strings.Contains(strings.ToLower(p.Title), q) && !strings.Contains(strings.ToLower(p.ShortName), q) {
 			continue
 		}
+		var keep bool
+		ids, keep = appendPackKey(ids, p)
+		if !keep {
+			continue
+		}
 		sets = append(sets, p.covered(false, false))
-		ids = append(ids, p.ID)
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
@@ -293,6 +306,9 @@ func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtp
 	var docs []*mtproto.Document
 	var ids []int64
 	seen := map[int64]bool{}
+	if emojiblock.Blocked(emoticon) {
+		return stickersResult(nil, nil, hash)
+	}
 	for _, p := range s.packs {
 		if p.system() {
 			continue
@@ -301,7 +317,7 @@ func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtp
 			continue
 		}
 		for _, item := range p.Items {
-			if item.Emoticon != emoticon || seen[item.DocumentID] {
+			if item.Emoticon != emoticon || seen[item.DocumentID] || emojiblock.Blocked(item.Emoticon) {
 				continue
 			}
 			seen[item.DocumentID] = true
@@ -309,6 +325,10 @@ func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtp
 			ids = append(ids, item.DocumentID)
 		}
 	}
+	return stickersResult(docs, ids, hash)
+}
+
+func stickersResult(docs []*mtproto.Document, ids []int64, hash int64) *mtproto.Messages_Stickers {
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesStickersNotModified(&mtproto.Messages_Stickers{}).To_Messages_Stickers()
@@ -331,7 +351,7 @@ func (s *Service) SearchDocuments(q string, emoji bool, hash int64) *mtproto.Mes
 			continue
 		}
 		for _, item := range p.Items {
-			if seen[item.DocumentID] {
+			if seen[item.DocumentID] || emojiblock.Blocked(item.Emoticon) {
 				continue
 			}
 			if q != "" && item.Emoticon != q && !hasKeyword(item, q) {
@@ -380,7 +400,7 @@ func (s *Service) recentLocked(userID, hash int64, attached bool) *mtproto.Messa
 			continue
 		}
 		link := s.docs[row.DocumentID]
-		if link == nil {
+		if link == nil || emojiblock.Blocked(link.item.Emoticon) {
 			continue
 		}
 		docs = append(docs, link.item.document(link.pack))
@@ -466,7 +486,7 @@ func (s *Service) Faved(userID, hash int64) *mtproto.Messages_FavedStickers {
 	var ids []int64
 	for _, row := range s.state(userID).faved {
 		link := s.docs[row.DocumentID]
-		if link == nil {
+		if link == nil || emojiblock.Blocked(link.item.Emoticon) {
 			continue
 		}
 		docs = append(docs, link.item.document(link.pack))
@@ -526,7 +546,7 @@ func (s *Service) Documents(ids []int64) *mtproto.Vector_Document {
 	out := &mtproto.Vector_Document{Datas: []*mtproto.Document{}}
 	for _, id := range ids {
 		link := s.docs[id]
-		if link == nil {
+		if link == nil || emojiblock.Blocked(link.item.Emoticon) {
 			out.Datas = append(out.Datas, mtproto.MakeTLDocumentEmpty(&mtproto.Document{Id: id}).To_Document())
 			continue
 		}
@@ -538,7 +558,7 @@ func (s *Service) Documents(ids []int64) *mtproto.Vector_Document {
 func (s *Service) Keywords(lang string, from int32) *mtproto.EmojiKeywordsDifference {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	const version int32 = 1
+	version := emojiKeywordVersion()
 	diff := &mtproto.EmojiKeywordsDifference{
 		LangCode:    lang,
 		FromVersion: from,
@@ -551,6 +571,9 @@ func (s *Service) Keywords(lang string, from int32) *mtproto.EmojiKeywordsDiffer
 	grouped := map[string][]string{}
 	var order []string
 	for _, link := range s.docs {
+		if emojiblock.Blocked(link.item.Emoticon) {
+			continue
+		}
 		for _, word := range link.item.Keywords {
 			key := strings.ToLower(word)
 			if _, ok := grouped[key]; !ok {
@@ -604,7 +627,11 @@ func (s *Service) ThumbLocation(in *mtproto.InputStickerSet) (*mtproto.InputFile
 	if err != nil {
 		return nil, err
 	}
-	item := p.Items[0]
+	items := p.visibleItems()
+	if len(items) == 0 {
+		return nil, mtproto.ErrStickersetInvalid
+	}
+	item := items[0]
 	return mtproto.MakeTLInputDocumentFileLocation(&mtproto.InputFileLocation{
 		Id:         item.DocumentID,
 		AccessHash: item.AccessHash,
@@ -614,10 +641,13 @@ func (s *Service) ThumbLocation(in *mtproto.InputStickerSet) (*mtproto.InputFile
 func (s *Service) CustomEmojiIDs(emoticon string) []int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if emojiblock.Blocked(emoticon) {
+		return nil
+	}
 	var ids []int64
 	seen := map[int64]bool{}
 	for _, link := range s.docs {
-		if !link.item.CustomEmoji || link.item.Emoticon != emoticon || seen[link.item.DocumentID] {
+		if !link.item.CustomEmoji || link.item.Emoticon != emoticon || seen[link.item.DocumentID] || emojiblock.Blocked(link.item.Emoticon) {
 			continue
 		}
 		seen[link.item.DocumentID] = true

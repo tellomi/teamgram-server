@@ -6,10 +6,15 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 func TestAppConfigPremiumPolicy(t *testing.T) {
+	t.Cleanup(func() { emojiblock.Reload() })
+	t.Setenv(emojiblock.EnvExtra, "")
+	t.Setenv(emojiblock.EnvFile, "")
+	emojiblock.Reload()
 	t.Setenv(premium.EnvEveryone, "true")
 	t.Setenv(premium.EnvFreeFeatures, "")
 	t.Setenv(premium.EnvPurchaseBlocked, "true")
@@ -60,5 +65,32 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 	domains, _ := obj["autologin_domains"].([]any)
 	if len(domains) != 2 || domains[0] != "tell.cc" || domains[1] != "tellomi.cn" {
 		t.Fatalf("autologin_domains = %#v", domains)
+	}
+	blocklist, _ := obj["emoji_blocklist"].([]any)
+	if len(blocklist) != 1 || blocklist[0] != emojiblock.TaiwanFlag {
+		t.Fatalf("emoji_blocklist = %#v", blocklist)
+	}
+}
+
+func TestAppConfigEmojiBlocklistExtendsHash(t *testing.T) {
+	t.Cleanup(func() { emojiblock.Reload() })
+	t.Setenv(emojiblock.EnvExtra, "")
+	t.Setenv(emojiblock.EnvFile, "")
+	emojiblock.Reload()
+	base := AppConfigHash()
+
+	t.Setenv(emojiblock.EnvExtra, "1F44D")
+	emojiblock.Reload()
+	if AppConfigHash() == base {
+		t.Fatal("app config hash ignored the emoji blocklist")
+	}
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("app config is %T", raw)
+	}
+	blocklist, _ := obj["emoji_blocklist"].([]any)
+	if len(blocklist) != 2 || blocklist[0] != emojiblock.TaiwanFlag || blocklist[1] != "\U0001F44D" {
+		t.Fatalf("emoji_blocklist = %#v", blocklist)
 	}
 }

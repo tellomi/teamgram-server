@@ -3,25 +3,28 @@ package appconfig
 import (
 	"fmt"
 	"hash/fnv"
+	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 // AppConfig is the help.getAppConfig document official clients read for
-// Premium limits. The numbers follow the server policy: a feature that
-// non-members may use is advertised at the raised cap for both keys.
+// Premium limits and emoji_blocklist. The numbers follow the server policy:
+// a feature that non-members may use is advertised at the raised cap for both keys.
 func AppConfig() *mtproto.JSONValue {
 	return jsonObject(appConfigPairs()...)
 }
 
 // AppConfigHash is the hash clients send back on help.getAppConfig.
-// It changes when the premium policy or the public link hosts change.
+// It changes when the premium policy, the public link hosts, or the emoji
+// blocklist change.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
-	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji)
+	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"))
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -56,6 +59,7 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("stickers_premium_by_emoji_num", n(premium.CustomEmojiAllowance())),
 		jsonPair("reactions_uniq_max", n(11)),
 		jsonPair("reactions_default", jsonString(catalog.DefaultReactionEmoji)),
+		jsonPair("emoji_blocklist", emojiBlocklistValue()),
 		jsonPair("transcribe_audio_trial_weekly_number", n(100000)),
 		jsonPair("transcribe_audio_trial_duration_max", n(300)),
 		jsonPair("transcribe_audio_trial_cooldown_until", n(0)),
@@ -75,6 +79,15 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 	pairs = append(pairs, pair("reactions_user_max", premium.FeatureReactions)...)
 	pairs = append(pairs, pair("upload_max_fileparts", premium.FeatureUpload)...)
 	return pairs
+}
+
+func emojiBlocklistValue() *mtproto.JSONValue {
+	list := emojiblock.List()
+	vals := make([]*mtproto.JSONValue, len(list))
+	for i, emo := range list {
+		vals[i] = jsonString(emo)
+	}
+	return jsonArray(vals...)
 }
 
 func jsonBool(v bool) *mtproto.JSONValue {

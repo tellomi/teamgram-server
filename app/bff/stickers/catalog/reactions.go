@@ -7,11 +7,13 @@ import (
 	"sync"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
-// DefaultReactionEmoji is the double-tap reaction. It is always in
-// messages.getAvailableReactions and in help.getConfig reactions_default.
+// DefaultReactionEmoji is the double-tap reaction. help.getConfig
+// reactions_default is this emoji. messages.getAvailableReactions includes
+// it unless the emoji blocklist removes it.
 const DefaultReactionEmoji = "\U0001F44D"
 
 // requiredReactions is the set official clients expect in the picker.
@@ -112,6 +114,9 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 	var ids []int64
 	for _, spec := range reactionSpecs() {
 		alt := emojiFromCode(spec.code)
+		if emojiblock.Blocked(alt) {
+			continue
+		}
 		webp, tgs := reactionArt(spec.code)
 		if len(webp) == 0 || len(tgs) == 0 || !tgsCanvas512(tgs) {
 			continue
@@ -334,6 +339,7 @@ func (s *Service) ClearRecentReactions(userID int64) {
 }
 
 func reactionPage(emos []string, limit int32, hash int64) *mtproto.Messages_Reactions {
+	emos = withoutBlocked(emos)
 	if limit > 0 && int(limit) < len(emos) {
 		emos = emos[:limit]
 	}

@@ -25,6 +25,8 @@ The packs are openly licensed. Telegram's own sticker sets are not downloaded or
 
 A matching hash returns the `notModified` variant. `messages.getMaskStickers` returns an empty list; there is no mask pack.
 
+Sticker documents, custom-emoji documents, and reaction lists omit emoji on the blocklist below. A set that still has other emoji keeps those emoji. Its count, cover, and set hash follow what was returned. A set whose emoji are all blocked is left out of installed, featured, and search lists. `messages.getStickerSet` for that set returns an empty document list. `messages.getCustomEmojiDocuments` returns `documentEmpty` for a blocked id. `messages.getStickers`, `messages.searchStickers`, `messages.searchCustomEmoji`, recent stickers, and faved stickers drop blocked items. `messages.getAvailableReactions`, `messages.getTopReactions`, and `messages.getRecentReactions` do the same. Emoji keywords do too. A reaction already stored on a message is not rewritten.
+
 `inputStickerSetDice` is not seeded. Dice messages still show the emoji character.
 
 ## Packs in the seed
@@ -52,7 +54,7 @@ Document bytes are written through the dfs S3 client (`MinioConfig.ApplyEnv`, th
 
 `upload.getFile` serves a seeded document from the binary when the id matches, then dfs reads `stickers/<id>.dat` and `emoji/<id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
 
-`messages.getAvailableReactions` always includes 👍❤️🔥🥰👏😁🤔😢🎉🙏👎😱, with 👍 first. `static_icon` and `center_icon` are WebP. Every animation field is a 512×512 `.tgs` (`DocumentAttributeSticker` and `DocumentAttributeImageSize`, not a custom emoji). A missing Noto file is replaced with a small valid Lottie instead of dropping the reaction. `help.getConfig` `reactions_default` and app config `reactions_default` are 👍. `MessageReactions` is that emoji plus a count.
+`messages.getAvailableReactions` includes 👍❤️🔥🥰👏😁🤔😢🎉🙏👎😱, with 👍 first. An entry on `emoji_blocklist` is left out. `static_icon` and `center_icon` are WebP. Every animation field is a 512×512 `.tgs` (`DocumentAttributeSticker` and `DocumentAttributeImageSize`, not a custom emoji). A missing Noto file is replaced with a small valid Lottie instead of dropping the reaction. `help.getConfig` `reactions_default` and app config `reactions_default` stay 👍 even if that emoji is blocked. `MessageReactions` is that emoji plus a count. A chat's saved available-reactions list is not rewritten.
 
 The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT`, the access keys, `TELLOMI_S3_BUCKET_ATTACHMENTS`, and `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` are set. Buckets must already exist. Leave `TELLOMI_S3_USE_SSL` unset for an `https://` R2 endpoint so dfs turns TLS on. An explicit `false` forces plain HTTP, and the read never reaches objects written over TLS. Set `TELLOMI_S3_REGION=auto` for R2.
 
@@ -95,6 +97,29 @@ docker compose run --rm --no-deps --entrypoint /app/bin/importstickers teamgram 
 ```
 
 Session must route `/mtproto.RPCStickers`, `/mtproto.RPCEmoji`, and `/mtproto.RPCCustomEmojis` to `bff.bff` (`teamgramd/etc2/session.yaml` in this container). Without those routes the client never reaches this catalog.
+
+## Emoji blocklist
+
+`help.getAppConfig` (both constructors) includes `emoji_blocklist`, a JSON array of emoji strings. Clients hide those emoji in the sticker, custom-emoji, and reaction panels. The server applies the same list to the payloads in the section above, so a client that skips its own filter still does not receive them.
+
+The default array is one entry: the Taiwan flag 🇹🇼, regional indicators T + W (`U+1F1F9` `U+1F1FC`). That entry is always present. The app-config hash changes when the list changes. A client that sends the current hash receives `help.appConfigNotModified`.
+
+The bff reads the list at startup. Restart bff after changing it. Unset variables use the default.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TELLOMI_EMOJI_BLOCKLIST` | empty | Extra entries, separated by commas or newlines. Appended after the Taiwan flag. Duplicates are ignored. |
+| `TELLOMI_EMOJI_BLOCKLIST_FILE` | empty | Optional UTF-8 file. Same syntax, one group of entries per line. Blank lines and lines starting with `#` are ignored. Appended after the environment variable. A missing file is logged and skipped. |
+
+An entry is either the emoji itself or a code-point sequence. Commas separate entries. Spaces, hyphens, and underscores separate code points inside one entry. `U+` is optional. `U+FE0E` and `U+FE0F` are ignored when matching, so `❤` and `❤️` are the same emoji. The published string does not include those selectors.
+
+```
+TELLOMI_EMOJI_BLOCKLIST=1F44D, U+1F525
+```
+
+That blocks 👍 and 🔥 in addition to 🇹🇼. A code-point pair has to stay in one entry: `1F1E8-1F1F3` is one emoji, while `1F1E8,1F1F3` is two entries.
+
+With only the default, sticker and reaction hashes stay the same, because the seeded packs do not contain 🇹🇼. Adding an entry that removes an item changes that set's hash and the list hash, so clients refetch. The emoji-keyword version stays `1` until an extra entry is configured.
 
 ## Still missing
 
