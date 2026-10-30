@@ -5,7 +5,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/payments/internal/svc"
 )
 
-// New builds the Stars, gift, giveaway, and collectible RPC service.
+// New builds the Stars, gift, giveaway, collectible, and payment-form RPC service.
 func New() *service.Service {
 	return service.New(svc.New())
 }

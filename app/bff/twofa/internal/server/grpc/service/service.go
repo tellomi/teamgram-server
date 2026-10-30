@@ -4,10 +4,12 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-// Service implements cloud-password RPCs and account.getTmpPassword.
-// Both generated servers are embedded by value. Their testEmbeddedByValue
-// methods share a name, so the outer type does not promote that check.
-// Other RPCPayments methods stay unimplemented and fail as METHOD_NOT_IMPL.
+// Service implements cloud-password RPCs. account.getTmpPassword is on
+// RPCPayments, which the bff process registers on the payments service.
+// This type still implements that method so the two-factor core stays the
+// one place the temporary password is built. Both generated servers are
+// embedded by value. Their testEmbeddedByValue methods share a name, so
+// the outer type does not promote that check.
 type Service struct {
 	mtproto.UnimplementedRPCTwoFaServer
 	mtproto.UnimplementedRPCPaymentsServer

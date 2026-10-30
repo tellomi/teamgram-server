@@ -9,7 +9,9 @@ import (
 )
 
 // Service implements Stars balance, subscriptions, giveaways, gift codes,
-// and Star gift reads. Gift mutations that need an inventory return 400.
+// Star gift reads, payment forms, and on-ramp. Gift mutations that need an
+// inventory, and card charges, return 400. account.getTmpPassword is on
+// RPCPayments and is delegated to the two-factor core.
 type Service struct {
 	mtproto.UnimplementedRPCStarsServer
 	mtproto.UnimplementedRPCStarSubscriptionsServer
@@ -19,6 +21,7 @@ type Service struct {
 	mtproto.UnimplementedRPCGiftCollectionsServer
 	mtproto.UnimplementedRPCFragmentCollectiblesServer
 	mtproto.UnimplementedRPCStarGiftHostServer
+	mtproto.UnimplementedRPCPaymentsServer
 	svcCtx *svc.ServiceContext
 }
 

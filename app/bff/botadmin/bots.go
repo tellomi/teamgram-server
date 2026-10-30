@@ -116,6 +116,7 @@ type world struct {
 	buttons map[string]buttonHold
 	joins   map[int64]int64
 	verify  map[string]string
+	refs    map[string][]*starRefLink
 }
 
 var (
@@ -134,6 +135,7 @@ func newWorld() *world {
 		buttons: map[string]buttonHold{},
 		joins:   map[int64]int64{},
 		verify:  map[string]string{},
+		refs:    map[string][]*starRefLink{},
 	}
 }
 
