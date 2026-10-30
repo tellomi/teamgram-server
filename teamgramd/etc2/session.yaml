@@ -228,3 +228,14 @@ BFFProxyClients:
     "/mtproto.RPCGiveaways": "bff.bff"
     # Gift-code checks. No code is issued or applied.
     "/mtproto.RPCGiftCodes": "bff.bff"
+    # Star gift catalog, saved gifts, resale, auctions, and offers.
+    # There is no gift inventory. Android TL_stars.* uses these constructors.
+    "/mtproto.RPCGifts": "bff.bff"
+    # Star gift collection titles. Gifts are not attached to a collection.
+    "/mtproto.RPCGiftCollections": "bff.bff"
+    # fragment.getCollectibleInfo. No Fragment purchase record is stored.
+    # RPCFragment stays the username service.
+    "/mtproto.RPCFragmentCollectibles": "bff.bff"
+    # payments.deleteStarGift, withdrawStarGift, depositStarGift, displayStarGift.
+    # Constructors are layer 232. The vendored RPCGifts service does not include them.
+    "/mtproto.RPCStarGiftHost": "bff.bff"

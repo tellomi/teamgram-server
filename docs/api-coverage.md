@@ -27,6 +27,8 @@ This file is generated. Edit the generator, not the tables.
 
 Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `TL_wallet.getCurrencyRates` is constructor `0xd35983e8`, counted as `payments.getCurrencyRates`. `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.
 
+Android `TL_stars` (DrKLO `3de37c8`) uses the same layer-232 constructor ids as `payments.*StarGift*`, `payments.checkCanSendGift`, and `channels.updatePaidMessagesPrice` (`stars.updatePaidMessagesPrice` is `0x4b12327b`). Those `stars.*` names are not in the schema, so this matrix lists them separately. The server does not register a `stars` RPC namespace. The payments and paid-message handlers cover the constructors.
+
 ## Client sources
 
 | Client | Repository | Commit | What was counted |
@@ -64,7 +66,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | folders | 17 | 17 | 0 | 0 | 0 | 5 | 0 |
 | stats | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | stories | 32 | 32 | 0 | 0 | 0 | 0 | 0 |
-| premium/payments | 100 | 23 | 7 | 13 | 57 | 0 | 0 |
+| premium/payments | 100 | 57 | 7 | 13 | 23 | 0 | 0 |
 | bots | 23 | 23 | 0 | 0 | 0 | 0 | 0 |
 | business | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | aicompose | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
@@ -74,7 +76,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
 | toncenter | 4 | 2 | 0 | 0 | 2 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **818** | **738** | **7** | **13** | **60** | **94** | **0** |
+| **total** | **818** | **772** | **7** | **13** | **26** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +84,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 702 | 6 | 13 | 34 | 91 | 0 |
+| ios | 755 | 736 | 6 | 13 | 0 | 91 | 0 |
 | android | 707 | 668 | 6 | 7 | 26 | 89 | 0 |
-| desktop | 692 | 643 | 5 | 10 | 34 | 79 | 0 |
-| macos | 677 | 633 | 4 | 7 | 33 | 90 | 0 |
+| desktop | 692 | 677 | 5 | 10 | 0 | 79 | 0 |
+| macos | 677 | 666 | 4 | 7 | 0 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,11 +113,11 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-79 gaps (79 error, 0 empty or bool or not-modified).
+45 gaps (45 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
-| premium/payments | 77 |
+| premium/payments | 43 |
 | toncenter | 2 |
 
 ## Methods
@@ -862,44 +864,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### premium/payments
 
-100 called, 23 implemented, 7 stub, 13 routed-unregistered, 57 missing.
+100 called, 57 implemented, 7 stub, 13 routed-unregistered, 23 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `fragment.getCollectibleInfo` | yes | no | yes | yes | interactive | missing | error |
-| `payments.checkCanSendGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.convertStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.craftStarGift` | yes | no | yes | no | interactive | missing | error |
-| `payments.createStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
-| `payments.deleteStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.deleteStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
-| `payments.depositStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.displayStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getCraftStarGifts` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getResaleStarGifts` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getSavedStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getSavedStarGifts` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftActiveAuctions` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftAuctionAcquiredGifts` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftAuctionState` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftCollections` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftUpgradeAttributes` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftUpgradePreview` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGiftWithdrawalUrl` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getStarGifts` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getUniqueStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getUniqueStarGiftValueInfo` | yes | no | yes | yes | interactive | missing | error |
-| `payments.reorderStarGiftCollections` | yes | no | yes | yes | interactive | missing | error |
-| `payments.resolveStarGiftOffer` | yes | no | yes | yes | interactive | missing | error |
-| `payments.saveStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.sendStarGiftOffer` | yes | no | yes | yes | interactive | missing | error |
-| `payments.toggleChatStarGiftNotifications` | yes | no | yes | yes | interactive | missing | error |
-| `payments.toggleStarGiftsPinnedToTop` | yes | no | yes | yes | interactive | missing | error |
-| `payments.transferStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.updateStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
-| `payments.updateStarGiftPrice` | yes | no | yes | yes | interactive | missing | error |
-| `payments.upgradeStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.withdrawStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `stars.checkCanSendGift` | no | yes | no | no | interactive | missing | error |
 | `stars.convertStarGift` | no | yes | no | no | interactive | missing | error |
 | `stars.createStarGiftCollection` | no | yes | no | no | interactive | missing | error |
@@ -943,13 +911,34 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getConnectedStarRefBot` | yes | yes | yes | no | interactive | stub | error |
 | `payments.getConnectedStarRefBots` | yes | yes | yes | yes | interactive | stub | error |
 | `payments.getSuggestedStarRefBots` | yes | yes | yes | yes | interactive | stub | error |
+| `fragment.getCollectibleInfo` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.applyGiftCode` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.canPurchaseStore` | yes | yes | no | yes | interactive | implemented | ok |
 | `payments.changeStarsSubscription` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.checkCanSendGift` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.checkGiftCode` | yes | yes | yes | yes | interactive | implemented | ok |
+| `payments.convertStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.craftStarGift` | yes | no | yes | no | interactive | implemented | ok |
+| `payments.createStarGiftCollection` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.deleteStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.deleteStarGiftCollection` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.depositStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.displayStarGift` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.fulfillStarsSubscription` | yes | no | no | yes | interactive | implemented | ok |
+| `payments.getCraftStarGifts` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.getGiveawayInfo` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getPremiumGiftCodeOptions` | yes | yes | yes | yes | interactive | implemented | ok |
+| `payments.getResaleStarGifts` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getSavedStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getSavedStarGifts` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftActiveAuctions` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftAuctionAcquiredGifts` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftAuctionState` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftCollections` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftUpgradeAttributes` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftUpgradePreview` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGiftWithdrawalUrl` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getStarGifts` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.getStarsGiftOptions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getStarsGiveawayOptions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getStarsRevenueAdsAccountUrl` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -960,8 +949,21 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getStarsTopupOptions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getStarsTransactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getStarsTransactionsByID` | yes | no | no | yes | interactive | implemented | ok |
+| `payments.getUniqueStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getUniqueStarGiftValueInfo` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.launchPrepaidGiveaway` | yes | yes | yes | yes | interactive | implemented | ok |
+| `payments.reorderStarGiftCollections` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.resolveStarGiftOffer` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.saveStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.sendStarGiftOffer` | yes | no | yes | yes | interactive | implemented | ok |
 | `payments.sendStarsForm` | yes | yes | yes | yes | interactive | implemented | ok |
+| `payments.toggleChatStarGiftNotifications` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.toggleStarGiftsPinnedToTop` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.transferStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.updateStarGiftCollection` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.updateStarGiftPrice` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.upgradeStarGift` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.withdrawStarGift` | yes | no | yes | yes | interactive | implemented | ok |
 | `premium.applyBoost` | yes | yes | yes | yes | interactive | implemented | ok |
 | `premium.getBoostsList` | yes | yes | yes | yes | interactive | implemented | ok |
 | `premium.getBoostsStatus` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -1126,26 +1128,16 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 | Method | Status | Notes |
 | --- | --- | --- |
-| `fragment.getCollectibleInfo` | missing | no route in session.yaml and no bff handler |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `payments.assignAppStoreTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignAppStoreTransaction_handler.go |
 | `payments.assignPlayMarketTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignPlayMarketTransaction_handler.go |
-| `payments.checkCanSendGift` | missing | no route in session.yaml and no bff handler |
 | `payments.clearSavedInfo` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsClearSavedInfo handler |
 | `payments.connectStarRefBot` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
-| `payments.convertStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.craftStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.createOnrampSession` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsCreateOnrampSession handler |
-| `payments.createStarGiftCollection` | missing | no route in session.yaml and no bff handler |
-| `payments.deleteStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.deleteStarGiftCollection` | missing | no route in session.yaml and no bff handler |
-| `payments.depositStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.displayStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.editConnectedStarRefBot` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
 | `payments.getBankCardData` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetBankCardData handler |
 | `payments.getConnectedStarRefBot` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
 | `payments.getConnectedStarRefBots` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
-| `payments.getCraftStarGifts` | missing | no route in session.yaml and no bff handler |
 | `payments.getCurrencyRates` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler |
 | `payments.getOnrampAvailability` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampAvailability handler |
 | `payments.getOnrampBaseCurrencies` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampBaseCurrencies handler |
@@ -1154,33 +1146,9 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getOnrampQuote` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampQuote handler |
 | `payments.getPaymentForm` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetPaymentForm handler |
 | `payments.getPaymentReceipt` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetPaymentReceipt handler |
-| `payments.getResaleStarGifts` | missing | no route in session.yaml and no bff handler |
-| `payments.getSavedStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.getSavedStarGifts` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftActiveAuctions` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftAuctionAcquiredGifts` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftAuctionState` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftCollections` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftUpgradeAttributes` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftUpgradePreview` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGiftWithdrawalUrl` | missing | no route in session.yaml and no bff handler |
-| `payments.getStarGifts` | missing | no route in session.yaml and no bff handler |
 | `payments.getSuggestedStarRefBots` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
-| `payments.getUniqueStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.getUniqueStarGiftValueInfo` | missing | no route in session.yaml and no bff handler |
-| `payments.reorderStarGiftCollections` | missing | no route in session.yaml and no bff handler |
-| `payments.resolveStarGiftOffer` | missing | no route in session.yaml and no bff handler |
-| `payments.saveStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.sendPaymentForm` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsSendPaymentForm handler |
-| `payments.sendStarGiftOffer` | missing | no route in session.yaml and no bff handler |
-| `payments.toggleChatStarGiftNotifications` | missing | no route in session.yaml and no bff handler |
-| `payments.toggleStarGiftsPinnedToTop` | missing | no route in session.yaml and no bff handler |
-| `payments.transferStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.updateStarGiftCollection` | missing | no route in session.yaml and no bff handler |
-| `payments.updateStarGiftPrice` | missing | no route in session.yaml and no bff handler |
-| `payments.upgradeStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.validateRequestedInfo` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsValidateRequestedInfo handler |
-| `payments.withdrawStarGift` | missing | no route in session.yaml and no bff handler |
 | `stars.checkCanSendGift` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `stars.convertStarGift` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `stars.createStarGiftCollection` | missing | no route in session.yaml and no bff handler not in layer schema |

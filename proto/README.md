@@ -67,6 +67,13 @@ the rest of that namespace). They are registered in `feed_codec.go` and
 `schema.tl.feed.proto`. Android's `TL_iv.getRichMessage` is constructor
 `0x501569cf`, the same bytes as `messages.getRichMessage`.
 
+`payments.deleteStarGift#3cdaf8aa`, `payments.withdrawStarGift#ec2030ae`,
+`payments.depositStarGift#c0a2ea9f`, `payments.displayStarGift#4aa5f0fe`, and
+`payments.starGiftDepositPayload#725bb4eb` are in the layer-232 schema. The
+vendored codegen did not emit them. They are registered in
+`stargift_host_codec.go` and `schema.tl.stargift_host.proto` on
+`RPCStarGiftHost`. Android `TL_stars` uses those same constructor ids.
+
 ## Regenerating
 
 There is no published `mtprotoc`. This fork patches the generated Go from

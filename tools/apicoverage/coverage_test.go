@@ -446,6 +446,18 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCGiftCodes"] || !srv.Registered["RPCGiftCodes"] {
 		t.Fatal("gift codes must be routed and registered")
 	}
+	if !srv.Routed["RPCGifts"] || !srv.Registered["RPCGifts"] {
+		t.Fatal("star gifts must be routed and registered")
+	}
+	if !srv.Routed["RPCGiftCollections"] || !srv.Registered["RPCGiftCollections"] {
+		t.Fatal("star gift collections must be routed and registered")
+	}
+	if !srv.Routed["RPCFragmentCollectibles"] || !srv.Registered["RPCFragmentCollectibles"] {
+		t.Fatal("fragment collectibles must be routed and registered")
+	}
+	if !srv.Routed["RPCStarGiftHost"] || !srv.Registered["RPCStarGiftHost"] {
+		t.Fatal("star gift host methods must be routed and registered")
+	}
 	for _, method := range []string{
 		"aicompose.createTone",
 		"aicompose.deleteTone",
@@ -488,6 +500,40 @@ func TestServerSamples(t *testing.T) {
 		"premium.getMyBoosts",
 		"premium.applyBoost",
 		"premium.getBoostsStatus",
+		"fragment.getCollectibleInfo",
+		"payments.checkCanSendGift",
+		"payments.convertStarGift",
+		"payments.craftStarGift",
+		"payments.createStarGiftCollection",
+		"payments.deleteStarGift",
+		"payments.deleteStarGiftCollection",
+		"payments.depositStarGift",
+		"payments.displayStarGift",
+		"payments.getCraftStarGifts",
+		"payments.getResaleStarGifts",
+		"payments.getSavedStarGift",
+		"payments.getSavedStarGifts",
+		"payments.getStarGiftActiveAuctions",
+		"payments.getStarGiftAuctionAcquiredGifts",
+		"payments.getStarGiftAuctionState",
+		"payments.getStarGiftCollections",
+		"payments.getStarGiftUpgradeAttributes",
+		"payments.getStarGiftUpgradePreview",
+		"payments.getStarGiftWithdrawalUrl",
+		"payments.getStarGifts",
+		"payments.getUniqueStarGift",
+		"payments.getUniqueStarGiftValueInfo",
+		"payments.reorderStarGiftCollections",
+		"payments.resolveStarGiftOffer",
+		"payments.saveStarGift",
+		"payments.sendStarGiftOffer",
+		"payments.toggleChatStarGiftNotifications",
+		"payments.toggleStarGiftsPinnedToTop",
+		"payments.transferStarGift",
+		"payments.updateStarGiftCollection",
+		"payments.updateStarGiftPrice",
+		"payments.upgradeStarGift",
+		"payments.withdrawStarGift",
 	} {
 		assertStatus(method, statusImplemented, effectOK)
 		_, _, _, _, notes, _ := srv.resolve(method)
