@@ -10,6 +10,7 @@ import (
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -28,6 +29,9 @@ type ServiceContext struct {
 func NewServiceContext(c config.Config) *ServiceContext {
 	if err := channel.UseDSN(c.ChannelMySQL); err != nil {
 		logx.Errorf("channel mysql: %v", err)
+	}
+	if err := chatbox.UseDSN(c.ChannelMySQL); err != nil {
+		logx.Errorf("chatbox mysql: %v", err)
 	}
 	var users user_client.UserClient
 	if len(c.UserClient.Etcd.Hosts) > 0 {

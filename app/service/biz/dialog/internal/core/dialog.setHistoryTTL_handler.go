@@ -36,14 +36,18 @@ func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtp
 			in.UserId,
 			in.PeerType,
 			in.PeerId)
-		c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-			tx,
-			map[string]interface{}{
-				"ttl_period": in.TtlPeriod,
-			},
-			in.PeerId,
-			in.PeerType,
-			in.UserId)
+		// The other side of a private chat stores the same timer. A chat
+		// id is not a user id, so the reverse row is only written for users.
+		if in.PeerType == mtproto.PEER_USER {
+			c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
+				tx,
+				map[string]interface{}{
+					"ttl_period": in.TtlPeriod,
+				},
+				in.PeerId,
+				in.PeerType,
+				in.UserId)
+		}
 	})
 
 	return mtproto.BoolTrue, nil

@@ -21,6 +21,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/plugin"
 	channelpb "github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
 	"github.com/zeromicro/go-zero/core/mr"
@@ -45,11 +46,23 @@ func (c *MsgCore) MsgSendMessageV2(in *msg.TLMsgSendMessageV2) (*mtproto.Updates
 		return nil, err
 	}
 
+	var scheduleAt int32
 	for _, outBox := range outBoxList {
-		if outBox.GetScheduleDate().GetValue() != 0 {
-			c.Logger.Errorf("msg.sendMessageV2 blocked, License key from https://teamgram.net required to unlock enterprise features.")
-			return nil, mtproto.ErrEnterpriseIsBlocked
+		if v := outBox.GetScheduleDate().GetValue(); v != 0 {
+			scheduleAt = v
 		}
+	}
+	if scheduleAt != 0 {
+		// The BFF stores scheduled messages before calling here. If a date
+		// still arrives, keep the same chatbox so getScheduledHistory can see it.
+		msgs := make([]*mtproto.Message, 0, len(outBoxList))
+		for _, outBox := range outBoxList {
+			if outBox.GetMessage() == nil {
+				return nil, mtproto.ErrMessageEmpty
+			}
+			msgs = append(msgs, outBox.GetMessage())
+		}
+		return chatbox.Shared().Schedule(c.ctx, in.UserId, peer, scheduleAt, msgs)
 	}
 
 	switch peer.PeerType {

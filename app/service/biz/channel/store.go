@@ -32,6 +32,9 @@ type Store interface {
 	CommitEdit(ctx context.Context, channelID int64, messageID int32, editDate int32, data []byte) (pts int32, err error)
 	CommitDelete(ctx context.Context, channelID int64, ids []int32) (pts, ptsCount int32, deleted []int32, err error)
 	GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error)
+	// ReplaceMessageBody rewrites a message without a pts edit event.
+	// Poll results use it so the message is not marked edited.
+	ReplaceMessageBody(ctx context.Context, channelID int64, id int32, data []byte) error
 	ListMessages(ctx context.Context, channelID int64) ([]*StoredMessage, error)
 	ListPtsAfter(ctx context.Context, channelID int64, pts int32, limit int) ([]*PtsEvent, error)
 

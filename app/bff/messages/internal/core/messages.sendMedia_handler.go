@@ -165,20 +165,14 @@ func (c *MessagesCore) MessagesSendMedia(in *mtproto.TLMessagesSendMedia) (*mtpr
 	//
 	//	return hasBot
 	//})
-	rUpdate, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(c.ctx, &msgpb.TLMsgSendMessageV2{
-		UserId:    c.MD.UserId,
-		AuthKeyId: c.MD.PermAuthKeyId,
-		PeerType:  peer.PeerType,
-		PeerId:    peer.PeerId,
-		Message: []*msgpb.OutboxMessage{
-			msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
-				NoWebpage:    true,
-				Background:   in.Background,
-				RandomId:     in.RandomId,
-				Message:      outMessage,
-				ScheduleDate: in.ScheduleDate,
-			}).To_OutboxMessage(),
-		},
+	rUpdate, err := c.dispatchOutbox(peer, []*msgpb.OutboxMessage{
+		msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
+			NoWebpage:    true,
+			Background:   in.Background,
+			RandomId:     in.RandomId,
+			Message:      outMessage,
+			ScheduleDate: in.ScheduleDate,
+		}).To_OutboxMessage(),
 	})
 
 	if err != nil {

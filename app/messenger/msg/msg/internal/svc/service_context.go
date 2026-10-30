@@ -34,6 +34,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	channelpb "github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -79,6 +80,9 @@ func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext
 func installChannelHooks(c config.Config, d *dao.Dao) {
 	if err := channelpb.UseDSN(c.Mysql.DSN); err != nil {
 		logx.Errorf("channel mysql: %v", err)
+	}
+	if err := chatbox.UseDSN(c.Mysql.DSN); err != nil {
+		logx.Errorf("chatbox mysql: %v", err)
 	}
 	channelpb.Shared().SetHooks(channelpb.Hooks{
 		Push: func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates) {

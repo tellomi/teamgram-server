@@ -169,6 +169,13 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		if stars := paidStars(feat); stars != nil {
 			full.SendPaidMessagesStars = stars
 		}
+		if reactions := chatReactionsOf(feat); reactions != nil {
+			full.AvailableReactions_FLAGCHATREACTIONS = reactions
+		}
+		if feat.ReactionLimit > 0 {
+			full.ReactionsLimit = &wrapperspb.Int32Value{Value: feat.ReactionLimit}
+		}
+		full.PaidReactionsAvailable = feat.PaidReactions
 		if feat.Lat != 0 || feat.Long != 0 || ch.Address != "" {
 			full.Location = mtproto.MakeTLChannelLocation(&mtproto.ChannelLocation{
 				GeoPoint: mtproto.MakeTLGeoPoint(&mtproto.GeoPoint{Lat: feat.Lat, Long: feat.Long}).To_GeoPoint(),
