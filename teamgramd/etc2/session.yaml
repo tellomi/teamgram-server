@@ -62,10 +62,14 @@ BFFProxyClients:
     # In-app browser settings and domain exceptions.
     "/mtproto.RPCWebBrowser": "bff.bff"
     #"/mtproto.RPCGdpr": "bff.bff"
-    #"/mtproto.RPCGifs": "bff.bff"
+    # Saved GIFs: messages.getSavedGifs and messages.saveGif.
+    "/mtproto.RPCGifs": "bff.bff"
     # help.getPromoData and help.hidePromoData.
     "/mtproto.RPCPromoData": "bff.bff"
-    #"/mtproto.RPCTsf": "bff.bff"
+    # Support notes: help.getUserInfo and help.editUserInfo.
+    "/mtproto.RPCTsf": "bff.bff"
+    # help.getTimezonesList.
+    "/mtproto.RPCTimezones": "bff.bff"
     # Cloud password: account.getPassword and the other RPCTwoFa methods.
     "/mtproto.RPCTwoFa": "bff.bff"
     # Seamless login: messages.requestUrlAuth and the other RPCSeamless methods.

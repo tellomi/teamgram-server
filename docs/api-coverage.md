@@ -56,9 +56,9 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| help | 25 | 22 | 0 | 0 | 3 | 12 | 0 |
+| help | 25 | 25 | 0 | 0 | 0 | 12 | 0 |
 | channels | 58 | 58 | 0 | 0 | 0 | 1 | 0 |
-| stickers | 39 | 20 | 4 | 14 | 1 | 0 | 0 |
+| stickers | 39 | 38 | 0 | 0 | 1 | 0 | 0 |
 | phone/calls | 43 | 10 | 0 | 0 | 33 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 5 | 0 | 12 | 0 | 5 | 0 |
@@ -74,7 +74,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **819** | **521** | **6** | **71** | **221** | **94** | **0** |
+| **total** | **819** | **542** | **2** | **57** | **218** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 490 | 5 | 70 | 190 | 91 | 0 |
-| android | 707 | 485 | 5 | 59 | 158 | 89 | 0 |
-| desktop | 692 | 452 | 4 | 56 | 180 | 79 | 0 |
-| macos | 677 | 466 | 5 | 53 | 153 | 90 | 0 |
+| ios | 755 | 509 | 1 | 56 | 189 | 91 | 0 |
+| android | 707 | 504 | 1 | 45 | 157 | 89 | 0 |
+| desktop | 692 | 467 | 0 | 48 | 177 | 79 | 0 |
+| macos | 677 | 482 | 1 | 42 | 152 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,7 +111,7 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-297 gaps (293 error, 4 empty or bool or not-modified).
+276 gaps (276 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -122,12 +122,11 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | ephemeral | 8 |
 | feed | 5 |
 | folders | 12 |
-| help | 3 |
 | iv | 1 |
 | phone/calls | 33 |
 | premium/payments | 99 |
 | stats | 6 |
-| stickers | 19 |
+| stickers | 1 |
 | stories | 32 |
 | toncenter | 4 |
 | wallet | 26 |
@@ -593,7 +592,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### help
 
-25 called, 22 implemented, 0 stub, 0 routed-unregistered, 3 missing.
+25 called, 25 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -609,9 +608,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `help.getPromoData` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `help.getTermsOfServiceUpdate` | yes | yes | yes | yes | startup | implemented | ok |
 | `help.hidePromoData` | yes | yes | yes | yes | startup+background | implemented | ok |
-| `help.editUserInfo` | no | no | yes | no | interactive | missing | error |
-| `help.getTimezonesList` | yes | yes | yes | yes | interactive | missing | error |
-| `help.getUserInfo` | no | no | yes | no | interactive | missing | error |
+| `help.editUserInfo` | no | no | yes | no | interactive | implemented | ok |
 | `help.getAppChangelog` | no | no | yes | no | interactive | implemented | ok |
 | `help.getAppUpdate` | yes | yes | no | yes | interactive | implemented | ok |
 | `help.getCdnConfig` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -621,6 +618,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `help.getRecentMeUrls` | no | yes | no | no | interactive | implemented | ok |
 | `help.getSupport` | yes | yes | yes | yes | interactive | implemented | ok |
 | `help.getSupportName` | no | no | yes | no | interactive | implemented | ok |
+| `help.getTimezonesList` | yes | yes | yes | yes | interactive | implemented | ok |
+| `help.getUserInfo` | no | no | yes | no | interactive | implemented | ok |
 | `help.saveAppLog` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### channels
@@ -690,49 +689,49 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### stickers
 
-39 called, 20 implemented, 4 stub, 14 routed-unregistered, 1 missing.
+39 called, 38 implemented, 0 stub, 0 routed-unregistered, 1 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `wallet.setCardStickers` | yes | yes | yes | no | interactive | missing | error |
-| `messages.getArchivedStickers` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.getAttachedStickers` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
-| `messages.getMyStickers` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.reorderStickerSets` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.toggleStickerSets` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `stickers.addStickerToSet` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `stickers.changeStickerPosition` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `stickers.checkShortName` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `stickers.createStickerSet` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `stickers.deleteStickerSet` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `stickers.removeStickerFromSet` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `stickers.renameStickerSet` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `stickers.replaceSticker` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `stickers.suggestShortName` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `messages.getMaskStickers` | yes | yes | yes | yes | interactive | stub | empty |
-| `messages.getSavedGifs` | yes | yes | yes | yes | interactive | stub | empty |
-| `messages.readFeaturedStickers` | yes | yes | yes | yes | interactive | stub | bool |
-| `messages.saveGif` | yes | yes | yes | yes | interactive | stub | empty |
 | `channels.setEmojiStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.setStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.clearRecentStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.faveSticker` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getAllStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getArchivedStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getAttachedStickers` | yes | yes | yes | no | interactive | implemented | ok |
 | `messages.getEmojiStickerGroups` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getFavedStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getFeaturedEmojiStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getFeaturedStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getMaskStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getMyStickers` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.getOldFeaturedStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getRecentStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getSavedGifs` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getStickerSet` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.installStickerSet` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.readFeaturedStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.reorderStickerSets` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.saveGif` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.saveRecentSticker` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.searchEmojiStickerSets` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.searchStickerSets` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.searchStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.toggleStickerSets` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.uninstallStickerSet` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stickers.addStickerToSet` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stickers.changeStickerPosition` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stickers.checkShortName` | yes | yes | no | no | interactive | implemented | ok |
+| `stickers.createStickerSet` | yes | yes | no | yes | interactive | implemented | ok |
+| `stickers.deleteStickerSet` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stickers.removeStickerFromSet` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stickers.renameStickerSet` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stickers.replaceSticker` | yes | yes | no | yes | interactive | implemented | ok |
+| `stickers.suggestShortName` | yes | yes | no | no | interactive | implemented | ok |
 
 ### phone/calls
 
@@ -1216,20 +1215,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `feed.setInterestCategories` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `folders.editPeerFolders` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no FoldersEditPeerFolders handler |
 | `fragment.getCollectibleInfo` | missing | no route in session.yaml and no bff handler |
-| `help.editUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
-| `help.getTimezonesList` | missing | no route in session.yaml and no bff handler |
-| `help.getUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
 | `iv.getRichMessage` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.getArchivedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetArchivedStickers handler |
-| `messages.getAttachedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetAttachedStickers handler |
-| `messages.getMaskStickers` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
-| `messages.getMyStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetMyStickers handler |
-| `messages.getSavedGifs` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
-| `messages.readFeaturedStickers` | stub | returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go |
-| `messages.reorderStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesReorderStickerSets handler |
-| `messages.saveGif` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.toggleStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesToggleStickerSets handler |
 | `payments.applyGiftCode` | missing | no route in session.yaml and no bff handler |
 | `payments.assignAppStoreTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignAppStoreTransaction_handler.go |
 | `payments.assignPlayMarketTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignPlayMarketTransaction_handler.go |
@@ -1367,15 +1354,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stats.getStoryPublicForwards` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetStoryPublicForwards handler |
 | `stats.getStoryStats` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetStoryStats handler |
 | `stats.loadAsyncGraph` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsLoadAsyncGraph handler |
-| `stickers.addStickerToSet` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersAddStickerToSet handler |
-| `stickers.changeStickerPosition` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersChangeStickerPosition handler |
-| `stickers.checkShortName` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersCheckShortName handler |
-| `stickers.createStickerSet` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersCreateStickerSet handler |
-| `stickers.deleteStickerSet` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersDeleteStickerSet handler |
-| `stickers.removeStickerFromSet` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersRemoveStickerFromSet handler |
-| `stickers.renameStickerSet` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersRenameStickerSet handler |
-| `stickers.replaceSticker` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersReplaceSticker handler |
-| `stickers.suggestShortName` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no StickersSuggestShortName handler |
 | `stories.activateStealthMode` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
 | `stories.canSendStory` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
 | `stories.createAlbum` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |

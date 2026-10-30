@@ -120,6 +120,8 @@ func (s *Server) Initialize() error {
 		})
 		mtproto.RegisterRPCConfigurationServer(grpcServer, configSvc)
 		mtproto.RegisterRPCPromoDataServer(grpcServer, configSvc)
+		mtproto.RegisterRPCTimezonesServer(grpcServer, configSvc)
+		mtproto.RegisterRPCTsfServer(grpcServer, configSvc)
 
 		// qrcode_helper
 		mtproto.RegisterRPCQrCodeServer(
@@ -164,6 +166,7 @@ func (s *Server) Initialize() error {
 
 		stickerSvc := stickers_helper.New(stickers_helper.Config{MySQL: c.ChannelMySQL})
 		mtproto.RegisterRPCStickersServer(grpcServer, stickerSvc)
+		mtproto.RegisterRPCGifsServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCEmojiServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCCustomEmojisServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCMessageEffectsServer(grpcServer, stickerSvc)

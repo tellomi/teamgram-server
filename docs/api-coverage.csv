@@ -298,7 +298,7 @@ folders.editPeerFolders,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregi
 fragment.getCollectibleInfo,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCFragmentCollectibles,no route in session.yaml and no bff handler
 help.acceptTermsOfService,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTos,app/bff/tos/client/tos_client.go
 help.dismissSuggestion,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go
-help.editUserInfo,help,P2,interactive,no,no,yes,no,missing,error,no,absent,RPCTsf,no route in session.yaml (RPCTsf is commented out) and no bff handler
+help.editUserInfo,help,P2,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCTsf,app/bff/configuration/internal/server/grpc/service/help_p2.go
 help.getAppChangelog,help,P2,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go not in layer schema
 help.getAppConfig,help,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go
 help.getAppUpdate,help,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go
@@ -317,8 +317,8 @@ help.getRecentMeUrls,help,P2,interactive,no,yes,no,no,implemented,ok,yes,impleme
 help.getSupport,help,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go
 help.getSupportName,help,P2,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go
 help.getTermsOfServiceUpdate,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTos,app/bff/tos/client/tos_client.go
-help.getTimezonesList,help,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCTimezones,no route in session.yaml and no bff handler
-help.getUserInfo,help,P2,interactive,no,no,yes,no,missing,error,no,absent,RPCTsf,no route in session.yaml (RPCTsf is commented out) and no bff handler
+help.getTimezonesList,help,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTimezones,app/bff/configuration/internal/server/grpc/service/help_p2.go
+help.getUserInfo,help,P2,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCTsf,app/bff/configuration/internal/server/grpc/service/help_p2.go
 help.hidePromoData,help,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPromoData,app/bff/configuration/internal/server/grpc/service/promo_service.go
 help.saveAppLog,help,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiscellaneous,app/bff/miscellaneous/client/miscellaneous_client.go
 iv.getRichMessage,iv,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
@@ -380,10 +380,10 @@ messages.forwardMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,
 messages.getAdminsWithInvites,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.getAllDrafts,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCDrafts,app/bff/drafts/client/drafts_client.go
 messages.getAllStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
-messages.getArchivedStickers,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesGetArchivedStickers handler
+messages.getArchivedStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.getAttachMenuBot,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBotMenu,app/bff/messages/internal/server/grpc/service/bots.go
 messages.getAttachMenuBots,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBotMenu,app/bff/messages/internal/server/grpc/service/bots.go
-messages.getAttachedStickers,stickers,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesGetAttachedStickers handler
+messages.getAttachedStickers,stickers,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.getAvailableEffects,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessageEffects,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getAvailableReactions,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.getBotApp,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
@@ -422,14 +422,14 @@ messages.getFullChat,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 messages.getFutureChatCreatorAfterLeave,messages,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.getHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.getInlineBotResults,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCInlineBot,app/bff/messages/internal/server/grpc/service/bots.go
-messages.getMaskStickers,stickers,P2,interactive,yes,yes,yes,yes,stub,empty,yes,stub,RPCStickers,returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go
+messages.getMaskStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getMessageEditData,messages,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.getMessageReactionsList,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.getMessageReadParticipants,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.getMessages,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.getMessagesReactions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.getMessagesViews,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
-messages.getMyStickers,stickers,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesGetMyStickers handler
+messages.getMyStickers,stickers,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.getOldFeaturedStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getOnlines,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.getOutboxReadDate,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -450,7 +450,7 @@ messages.getReplies,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,i
 messages.getRichMessage,messages,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.getSavedDialogs,messages,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.getSavedDialogsByID,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
-messages.getSavedGifs,stickers,P2,interactive,yes,yes,yes,yes,stub,empty,no,absent,RPCGifs,session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out)
+messages.getSavedGifs,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifs,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.getSavedHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.getSavedReactionTags,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageTags,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.getScheduledHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCScheduledMessages,app/bff/messages/internal/server/grpc/service/chat_p1.go
@@ -483,7 +483,7 @@ messages.prolongWebView,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,y
 messages.rateTranscribedAudio,messages,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCTranscription,app/bff/premium/internal/server/grpc/service/features.go
 messages.readDiscussion,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessageThreads,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.readEncryptedHistory,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/secret_chats.go
-messages.readFeaturedStickers,stickers,P2,interactive,yes,yes,yes,yes,stub,bool,yes,stub,RPCStickers,returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go
+messages.readFeaturedStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.readHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.readMentions,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.readMessageContents,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -496,7 +496,7 @@ messages.reorderPinnedDialogs,messages,P0,startup+background,yes,yes,yes,yes,imp
 messages.reorderPinnedForumTopics,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.reorderPinnedSavedDialogs,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.reorderQuickReplies,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
-messages.reorderStickerSets,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesReorderStickerSets handler
+messages.reorderStickerSets,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.report,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_report.go
 messages.reportEncryptedSpam,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_report.go
 messages.reportMessagesDelivery,messages,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGatewayVerificationMessages,app/bff/messages/internal/server/grpc/service/inbox.go
@@ -514,7 +514,7 @@ messages.requestUrlAuth,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,y
 messages.requestWebView,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
 messages.saveDefaultSendAs,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.saveDraft,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDrafts,app/bff/drafts/client/drafts_client.go
-messages.saveGif,stickers,P2,interactive,yes,yes,yes,yes,stub,empty,no,absent,RPCGifs,session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out)
+messages.saveGif,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifs,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.saveRecentSticker,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.search,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.searchCustomEmoji,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCCustomEmojis,app/bff/stickers/internal/server/grpc/service/handlers.go
@@ -558,7 +558,7 @@ messages.toggleNoForwards,messages,P1,interactive,yes,yes,yes,yes,implemented,ok
 messages.togglePaidReactionPrivacy,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/paid_reaction_privacy.go
 messages.togglePeerTranslations,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranslation,app/bff/channels/internal/server/grpc/service/handlers_translate.go
 messages.toggleSavedDialogPin,messages,P1,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
-messages.toggleStickerSets,stickers,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesToggleStickerSets handler
+messages.toggleStickerSets,stickers,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.toggleSuggestedPostApproval,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSuggestedPosts,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.toggleTodoCompleted,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTodoLists,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.transcribeAudio,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranscription,app/bff/premium/internal/server/grpc/service/features.go
@@ -730,15 +730,15 @@ stats.getPollStats,stats,P2,interactive,yes,no,yes,no,routed-but-unregistered,er
 stats.getStoryPublicForwards,stats,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetStoryPublicForwards handler
 stats.getStoryStats,stats,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetStoryStats handler
 stats.loadAsyncGraph,stats,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsLoadAsyncGraph handler
-stickers.addStickerToSet,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersAddStickerToSet handler
-stickers.changeStickerPosition,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersChangeStickerPosition handler
-stickers.checkShortName,stickers,P2,interactive,yes,yes,no,no,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersCheckShortName handler
-stickers.createStickerSet,stickers,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersCreateStickerSet handler
-stickers.deleteStickerSet,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersDeleteStickerSet handler
-stickers.removeStickerFromSet,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersRemoveStickerFromSet handler
-stickers.renameStickerSet,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersRenameStickerSet handler
-stickers.replaceSticker,stickers,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersReplaceSticker handler
-stickers.suggestShortName,stickers,P2,interactive,yes,yes,no,no,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no StickersSuggestShortName handler
+stickers.addStickerToSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.changeStickerPosition,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.checkShortName,stickers,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.createStickerSet,stickers,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.deleteStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.removeStickerFromSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.renameStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.replaceSticker,stickers,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
+stickers.suggestShortName,stickers,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 stories.activateStealthMode,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
 stories.canSendStory,stories,P2,interactive,yes,yes,no,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
 stories.createAlbum,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed

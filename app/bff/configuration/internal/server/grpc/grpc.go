@@ -26,6 +26,8 @@ func New(ctx *svc.ServiceContext, c zrpc.RpcServerConf) *zrpc.RpcServer {
 		svc := service.New(ctx)
 		mtproto.RegisterRPCConfigurationServer(grpcServer, svc)
 		mtproto.RegisterRPCPromoDataServer(grpcServer, svc)
+		mtproto.RegisterRPCTimezonesServer(grpcServer, svc)
+		mtproto.RegisterRPCTsfServer(grpcServer, svc)
 	})
 	logx.Must(err)
 	return s

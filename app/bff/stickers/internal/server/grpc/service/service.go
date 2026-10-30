@@ -11,6 +11,8 @@ type Service struct {
 	mtproto.UnimplementedRPCMessageEffectsServer
 }
 
+var _ mtproto.RPCGifsServer = (*Service)(nil)
+
 func New() *Service {
 	return &Service{}
 }

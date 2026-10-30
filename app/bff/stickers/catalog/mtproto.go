@@ -10,8 +10,8 @@ const stickerDate int32 = 1700000000
 
 func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 	items := p.visibleItems()
-	var thumbID int64
-	if len(items) > 0 {
+	thumbID := p.ThumbID
+	if thumbID == 0 && len(items) > 0 {
 		thumbID = items[0].DocumentID
 	}
 	set := &mtproto.StickerSet{
@@ -117,6 +117,8 @@ func (item *Item) document(p *Pack) *mtproto.Document {
 	attrs = append(attrs, mtproto.MakeTLDocumentAttributeSticker(&mtproto.DocumentAttribute{
 		Alt:        item.Emoticon,
 		Stickerset: set,
+		Mask:       p.Masks,
+		MaskCoords: item.MaskCoords,
 	}).To_DocumentAttribute())
 	return mtproto.MakeTLDocument(&mtproto.Document{
 		Id:            item.DocumentID,

@@ -99,7 +99,7 @@ func TestCatalogAPIs(t *testing.T) {
 		}
 	}
 
-	featured := s.Featured(0, false)
+	featured := s.Featured(0, 0, false)
 	if len(featured.GetSets()) == 0 {
 		t.Fatal("no featured sticker sets")
 	}
