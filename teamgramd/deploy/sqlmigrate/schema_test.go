@@ -53,6 +53,13 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if cols["chat_participants"]["rank2"] && !strings.Contains(mustRead(t, filepath.Join(dir, "migrate-20260610.sql")), "rank2") {
 		t.Fatal("rank2 is not produced by migrate-20260610.sql")
 	}
+	if !cols["users"]["email"] {
+		t.Fatal("users.email missing after migrations")
+	}
+	emailMig := mustRead(t, filepath.Join(dir, "migrate-20261030-email.sql"))
+	if !strings.Contains(emailMig, "teamgram_add_column('users', 'email'") || !strings.Contains(emailMig, "MODIFY `phone`") {
+		t.Fatal("email migration does not add users.email or relax users.phone")
+	}
 }
 
 func TestMigrateFilesAreIdempotent(t *testing.T) {

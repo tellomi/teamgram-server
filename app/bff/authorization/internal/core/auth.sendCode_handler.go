@@ -30,6 +30,7 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	statuspb "github.com/teamgram/teamgram-server/app/service/status/status"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"google.golang.org/grpc/status"
 )
@@ -140,6 +141,12 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 	if err = c.svcCtx.Dao.CheckApiIdAndHash(request.ApiId, request.ApiHash); err != nil {
 		c.Logger.Errorf("invalid api: {api_id: %d, api_hash: %s}", request.ApiId, request.ApiHash)
 		return
+	}
+
+	// Email OTP uses the same RPC with the address in phone_number.
+	// Phone SMS below is unchanged.
+	if verify.IsEmail(request.PhoneNumber) {
+		return c.authSendEmailCode(authKeyId, sessionId, request)
 	}
 
 	// 2. check allow_flashcall and current_number

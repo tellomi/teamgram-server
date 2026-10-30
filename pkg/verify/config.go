@@ -10,11 +10,14 @@ const (
 	ProviderFixed    = "fixed"
 	ProviderAliyun   = "aliyun"
 	ProviderLog      = "log"
+	ProviderPostal   = "postal"
 	ProviderAliyunDM = "aliyun_dm"
 
 	DefaultRegion          = "cn-hangzhou"
 	DefaultSMSSignName     = "重庆半格智能"
 	DefaultSMSTemplateCode = "SMS_338570180"
+	DefaultEmailFrom       = "noreply@tellomi.app"
+	DefaultEmailFromName   = "Tellomi"
 	DefaultDMAccountName   = "noreply@mail.tellomi.cn"
 	DefaultDMFromAlias     = "Tellomi"
 	DefaultSMSEndpoint     = "https://dysmsapi.aliyuncs.com/"
@@ -27,9 +30,10 @@ const (
 // Config is process configuration for verification delivery.
 // Secrets are read from the environment at startup and are never given defaults.
 type Config struct {
-	SMS    SMSConfig
-	Email  EmailConfig
-	Limits Limits
+	SMS         SMSConfig
+	Email       EmailConfig
+	Limits      Limits
+	EmailLimits Limits
 }
 
 type SMSConfig struct {
@@ -46,9 +50,16 @@ type SMSConfig struct {
 }
 
 type EmailConfig struct {
-	// Provider is "" (disabled), "log", or "aliyun_dm".
-	Provider        string
-	SetupRequired   bool
+	// Provider is "log" (default), "postal", or "" (disabled).
+	// aliyun_dm is not a P0 sender.
+	Provider      string
+	SetupRequired bool
+	From          string
+	FromName      string
+	CodeLength    int
+	PostalBaseURL string
+	PostalAPIKey  string
+	// DirectMail fields are unused by auth.sendCode. P0 does not call Aliyun DM.
 	AccountName     string
 	FromAlias       string
 	Endpoint        string
@@ -59,7 +70,7 @@ type EmailConfig struct {
 
 func (e EmailConfig) Enabled() bool {
 	switch e.Provider {
-	case ProviderLog, ProviderAliyunDM:
+	case ProviderLog, ProviderPostal:
 		return true
 	default:
 		return false
@@ -75,8 +86,10 @@ type Limits struct {
 }
 
 // Load reads TELLOMI_* and the standard Aliyun credential variables.
-// Missing email configuration does not fail; an unset TELLOMI_EMAIL_PROVIDER
-// leaves email sign-in disabled.
+// An unset TELLOMI_EMAIL_PROVIDER selects the log sender so email OTP works
+// before Postal is deployed. "disabled", "none", and "off" refuse to send.
+// "aliyun_dm" is not a P0 provider and is treated as disabled.
+// Missing Postal URL or API key does not fail Load; SendCode fails later.
 func Load() Config {
 	smsProvider := strings.ToLower(strings.TrimSpace(os.Getenv("TELLOMI_SMS_PROVIDER")))
 	switch smsProvider {
@@ -89,7 +102,11 @@ func Load() Config {
 
 	emailProvider := strings.ToLower(strings.TrimSpace(os.Getenv("TELLOMI_EMAIL_PROVIDER")))
 	switch emailProvider {
-	case ProviderLog, ProviderAliyunDM:
+	case "", ProviderLog:
+		emailProvider = ProviderLog
+	case ProviderPostal:
+	case "disabled", "none", "off":
+		emailProvider = ""
 	default:
 		emailProvider = ""
 	}
@@ -111,6 +128,11 @@ func Load() Config {
 		Email: EmailConfig{
 			Provider:        emailProvider,
 			SetupRequired:   envBool("TELLOMI_EMAIL_SETUP_REQUIRED", false),
+			From:            envString("TELLOMI_EMAIL_FROM", DefaultEmailFrom),
+			FromName:        envString("TELLOMI_EMAIL_FROM_NAME", DefaultEmailFromName),
+			CodeLength:      NormalizeCodeLength(envInt("TELLOMI_EMAIL_CODE_LENGTH", 6)),
+			PostalBaseURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("TELLOMI_POSTAL_BASE_URL")), "/"),
+			PostalAPIKey:    strings.TrimSpace(os.Getenv("TELLOMI_POSTAL_API_KEY")),
 			AccountName:     envString("TELLOMI_ALIYUN_DM_ACCOUNT_NAME", DefaultDMAccountName),
 			FromAlias:       envString("TELLOMI_ALIYUN_DM_FROM_ALIAS", DefaultDMFromAlias),
 			Endpoint:        envString("TELLOMI_ALIYUN_DM_ENDPOINT", DefaultDMEndpoint),
@@ -124,6 +146,13 @@ func Load() Config {
 			DailyIP:       envInt("TELLOMI_SMS_IP_DAILY_LIMIT", 30),
 			MaxAttempts:   envInt("TELLOMI_SMS_MAX_ATTEMPTS", 5),
 			TTLSeconds:    envInt("TELLOMI_SMS_CODE_TTL_SECONDS", 180),
+		},
+		EmailLimits: Limits{
+			ResendSeconds: envInt("TELLOMI_EMAIL_RESEND_SECONDS", 60),
+			DailyPhone:    envInt("TELLOMI_EMAIL_DAILY_LIMIT", 10),
+			DailyIP:       envInt("TELLOMI_EMAIL_IP_DAILY_LIMIT", 30),
+			MaxAttempts:   envInt("TELLOMI_EMAIL_MAX_ATTEMPTS", 5),
+			TTLSeconds:    envInt("TELLOMI_EMAIL_CODE_TTL_SECONDS", 180),
 		},
 	}
 }

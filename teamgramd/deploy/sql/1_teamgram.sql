@@ -572,7 +572,8 @@ CREATE TABLE `users` (
   `first_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `last_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `username` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
-  `phone` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `phone` varchar(32) COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
   `country_code` varchar(3) COLLATE utf8mb4_unicode_ci NOT NULL,
   `verified` tinyint(1) NOT NULL DEFAULT '0',
   `support` tinyint(1) NOT NULL DEFAULT '0',
@@ -992,7 +993,8 @@ ALTER TABLE `username`
 --
 ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `phone` (`phone`);
+  ADD UNIQUE KEY `phone` (`phone`),
+  ADD UNIQUE KEY `email` (`email`);
 
 --
 -- 表的索引 `user_contacts`

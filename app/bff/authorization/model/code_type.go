@@ -159,7 +159,17 @@ func makeAuthSentCodeType(codeType, codeLength int, pattern string) (authSentCod
 			Pattern: pattern,
 		}).To_Auth_SentCodeType()
 	case SentCodeTypeMissedCall:
+		authSentCodeType = mtproto.MakeTLAuthSentCodeTypeSetUpEmailRequired(&mtproto.Auth_SentCodeType{
+			AppleSigninAllowed:  false,
+			GoogleSigninAllowed: false,
+		}).To_Auth_SentCodeType()
 	case SentCodeTypeEmailCode:
+		authSentCodeType = mtproto.MakeTLAuthSentCodeTypeEmailCode(&mtproto.Auth_SentCodeType{
+			AppleSigninAllowed:  false,
+			GoogleSigninAllowed: false,
+			EmailPattern:        pattern,
+			Length:              int32(codeLength),
+		}).To_Auth_SentCodeType()
 	case SentCodeTypeSetUpEmailRequired:
 		authSentCodeType = mtproto.MakeTLAuthSentCodeTypeSetUpEmailRequired(&mtproto.Auth_SentCodeType{
 			AppleSigninAllowed:  false,

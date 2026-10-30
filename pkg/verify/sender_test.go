@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/teamgram/teamgram-server/pkg/verify/aliyun"
+	"github.com/teamgram/teamgram-server/pkg/verify/postal"
 )
 
 func TestNewEmailSenderUnsetIsDisabled(t *testing.T) {
@@ -27,9 +27,25 @@ func TestNewEmailSenderLog(t *testing.T) {
 	}
 }
 
-func TestNewEmailSenderAliyunDMDoesNotDial(t *testing.T) {
+func TestNewEmailSenderAliyunDMIsDisabled(t *testing.T) {
 	s := NewEmailSender(EmailConfig{Provider: ProviderAliyunDM, AccountName: "noreply@mail.tellomi.cn"})
-	if _, ok := s.(*aliyun.DirectMailClient); !ok {
+	if _, ok := s.(DisabledEmail); !ok {
 		t.Fatalf("%T", s)
+	}
+}
+
+func TestNewEmailSenderPostalDoesNotDial(t *testing.T) {
+	s := NewEmailSender(EmailConfig{
+		Provider:      ProviderPostal,
+		From:          DefaultEmailFrom,
+		FromName:      DefaultEmailFromName,
+		PostalBaseURL: "https://postal.internal",
+	})
+	c, ok := s.(*postal.Client)
+	if !ok {
+		t.Fatalf("%T", s)
+	}
+	if err := c.SendCode(context.Background(), "a@b.cn", "123456"); err == nil {
+		t.Fatal("missing api key must fail before a successful send")
 	}
 }

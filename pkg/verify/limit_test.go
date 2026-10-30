@@ -58,3 +58,17 @@ func TestLimiterResendAndDailyCap(t *testing.T) {
 		t.Fatalf("daily: %#v", err)
 	}
 }
+
+func TestEmailAndSMSQuotasAreSeparate(t *testing.T) {
+	kv := &memKV{}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 1, DailyIP: 5})
+	lim.now = func() time.Time { return time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC) }
+	ctx := context.Background()
+
+	if err := lim.AllowSend(ctx, "sms", "8613800138000", "1.2.3.4"); err != nil {
+		t.Fatal(err)
+	}
+	if err := lim.AllowSend(ctx, "email", "user@tellomi.app", "1.2.3.4"); err != nil {
+		t.Fatal(err)
+	}
+}

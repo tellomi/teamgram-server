@@ -18,6 +18,7 @@ Code:
   Secret: ""
   RegionId: ""
   # TELLOMI_SMS_PROVIDER=aliyun overrides Name. See docs/sms-email.md.
+  # Email OTP: TELLOMI_EMAIL_PROVIDER defaults to log. See docs/email-signup.md.
 
 BizServiceClient:
   Etcd:

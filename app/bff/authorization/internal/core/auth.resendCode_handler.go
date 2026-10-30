@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 /*
@@ -56,10 +57,21 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 
 	// 3. check number
 	// client phone number format: "+86 111 1111 1111"
-	_, phoneNumber, err := checkPhoneNumberInvalid(in.PhoneNumber)
+	isEmail := verify.IsEmail(in.PhoneNumber)
+	var (
+		phoneNumber string
+		err         error
+	)
+	if isEmail {
+		phoneNumber, err = normalizeEmailLogin(in.PhoneNumber)
+	} else {
+		_, phoneNumber, err = checkPhoneNumberInvalid(in.PhoneNumber)
+		if err != nil {
+			err = mtproto.ErrPhoneNumberInvalid
+		}
+	}
 	if err != nil {
-		c.Logger.Errorf("check phone_number(%s) error - %v", in.PhoneNumber, err)
-		err = mtproto.ErrPhoneNumberInvalid
+		c.Logger.Errorf("check phone_number(%s) error - %v", maskPhone(in.PhoneNumber), err)
 		return nil, err
 	}
 
@@ -132,6 +144,10 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 			//	return
 			//}
 
+			if isEmail {
+				return c.sendEmail(phoneNumber, codeData2)
+			}
+
 			if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
 				codeData2.PhoneCode = code
 				codeData2.PhoneCodeExtraData = code
@@ -181,6 +197,9 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 	}
 
 	sent := codeData.ToAuthSentCode()
+	if isEmail {
+		sent = c.finishEmailSentCode(codeData)
+	}
 	c.Logger.Infof("auth.resendCode outcome phone=%s hash=%s type=%s length=%d",
 		maskPhone(phoneNumber),
 		hashPrefix(codeData.PhoneCodeHash),

@@ -11,7 +11,9 @@ services:
     stop_grace_period: 25s
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
     # Set it to aliyun plus ALIBABA_CLOUD_ACCESS_KEY_* for Dysmsapi.
-    # Leave TELLOMI_EMAIL_PROVIDER unset. Email auth is not wired up.
+    # Email OTP defaults to log (prints the code). Set postal plus
+    # TELLOMI_POSTAL_BASE_URL and TELLOMI_POSTAL_API_KEY when Postal is up.
+    # Phone SMS is unchanged. See docs/sms-email.md and docs/email-signup.md.
     # Put secrets in the environment or a gitignored .env, not in this file.
     environment:
       TELLOMI_SMS_PROVIDER: ${TELLOMI_SMS_PROVIDER:-}
@@ -21,9 +23,11 @@ services:
       TELLOMI_ALIYUN_SMS_SIGN_NAME: ${TELLOMI_ALIYUN_SMS_SIGN_NAME:-}
       TELLOMI_ALIYUN_SMS_TEMPLATE_CODE: ${TELLOMI_ALIYUN_SMS_TEMPLATE_CODE:-}
       TELLOMI_SMS_ALLOW_INTERNATIONAL: ${TELLOMI_SMS_ALLOW_INTERNATIONAL:-false}
-      TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-}
-      TELLOMI_ALIYUN_DM_ACCOUNT_NAME: ${TELLOMI_ALIYUN_DM_ACCOUNT_NAME:-}
-      TELLOMI_ALIYUN_DM_FROM_ALIAS: ${TELLOMI_ALIYUN_DM_FROM_ALIAS:-}
+      TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-log}
+      TELLOMI_EMAIL_FROM: ${TELLOMI_EMAIL_FROM:-noreply@tellomi.app}
+      TELLOMI_EMAIL_FROM_NAME: ${TELLOMI_EMAIL_FROM_NAME:-Tellomi}
+      TELLOMI_POSTAL_BASE_URL: ${TELLOMI_POSTAL_BASE_URL:-}
+      TELLOMI_POSTAL_API_KEY: ${TELLOMI_POSTAL_API_KEY:-}
       # S3-compatible object storage. Defaults talk to the MinIO service in
       # docker-compose-env.yaml. Point these at Cloudflare R2 without rebuilding
       # the image. See docs/storage.md.
