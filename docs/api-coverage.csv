@@ -8,23 +8,23 @@ account.clearRecentEmojiStatuses,account,P1,interactive,no,yes,no,no,implemented
 account.confirmBotConnection,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.confirmPhone,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
-account.createBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
+account.createBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
 account.createTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.deleteAccount,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
-account.deleteBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
+account.deleteBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
 account.deletePasskey,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 account.deleteSecureValue,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.deleteWebBrowserSettingsExceptions,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
 account.disablePeerConnectedBot,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessConnectedBots,app/bff/messages/internal/server/grpc/service/account_assets.go
-account.editBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
+account.editBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
 account.finishTakeoutSession,account,P1,interactive,no,no,yes,yes,implemented,ok,yes,implemented,RPCTakeout,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.getAccountTTL,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.getAllSecureValues,account,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.getAuthorizationForm,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.getAuthorizations,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.getAutoDownloadSettings,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAutoDownload,app/bff/autodownload/client/autodownload_client.go
-account.getBusinessChatLinks,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
+account.getBusinessChatLinks,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
 account.getChannelDefaultEmojiStatuses,account,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.getChannelRestrictedStatusEmojis,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.getChatThemes,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
@@ -74,7 +74,7 @@ account.resetPassword,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,impl
 account.resetWallPapers,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.resetWebAuthorization,account,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCSeamless,app/bff/seamless/service.go
 account.resetWebAuthorizations,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSeamless,app/bff/seamless/service.go
-account.resolveBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
+account.resolveBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
 account.saveAutoDownloadSettings,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAutoDownload,app/bff/autodownload/client/autodownload_client.go
 account.saveMusic,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.saveRingtone,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCRingtone,app/bff/messages/internal/server/grpc/service/account_assets.go
@@ -100,11 +100,11 @@ account.toggleUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes
 account.toggleWebBrowserSettingsException,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
 account.unregisterDevice,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.updateBirthday,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
-account.updateBusinessAwayMessage,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessGreeting,no route in session.yaml and no bff handler
-account.updateBusinessGreetingMessage,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessGreeting,no route in session.yaml and no bff handler
-account.updateBusinessIntro,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessIntro,no route in session.yaml and no bff handler
-account.updateBusinessLocation,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessLocation,no route in session.yaml and no bff handler
-account.updateBusinessWorkHours,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessOpeningHours,no route in session.yaml and no bff handler
+account.updateBusinessAwayMessage,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessGreeting,app/bff/business/internal/server/grpc/service/handlers.go
+account.updateBusinessGreetingMessage,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessGreeting,app/bff/business/internal/server/grpc/service/handlers.go
+account.updateBusinessIntro,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessIntro,app/bff/business/internal/server/grpc/service/handlers.go
+account.updateBusinessLocation,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessLocation,app/bff/business/internal/server/grpc/service/handlers.go
+account.updateBusinessWorkHours,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessOpeningHours,app/bff/business/internal/server/grpc/service/handlers.go
 account.updateColor,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccentColors,app/bff/premium/internal/server/grpc/service/features.go
 account.updateConnectedBot,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessConnectedBots,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.updateDeviceLocked,account,P1,interactive,no,no,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
@@ -245,15 +245,15 @@ chatlists.hideChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,implemented
 chatlists.joinChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 chatlists.joinChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 chatlists.leaveChatlist,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
-communities.create,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.getJoinedCommunities,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.getParticipantJoinedChats,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.getPeerLinkRequests,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.toggleAllPeerLinkRequestApproval,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.toggleCommunityCollapsedInDialogs,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.toggleParticipantBanned,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.togglePeerLink,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
-communities.togglePeerLinkRequestApproval,communities,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
+communities.create,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.getJoinedCommunities,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.getParticipantJoinedChats,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.getPeerLinkRequests,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.toggleAllPeerLinkRequestApproval,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.toggleCommunityCollapsedInDialogs,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.toggleParticipantBanned,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.togglePeerLink,communities,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
+communities.togglePeerLinkRequestApproval,communities,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCCommunities,app/bff/communities/internal/server/grpc/service/handlers.go
 contacts.acceptContact,contacts,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.addContact,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.block,contacts,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
@@ -281,14 +281,14 @@ contacts.setBlocked,contacts,P1,interactive,yes,yes,no,yes,implemented,ok,yes,im
 contacts.toggleTopPeers,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.unblock,contacts,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.updateContactNote,contacts,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
-ephemeral.deleteAllWelcomeMessages,ephemeral,P2,interactive,yes,no,yes,no,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.deleteMessage,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.deleteWelcomeMessage,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.editMessage,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.getCallbackAnswer,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.getWelcomeMessages,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.reportMessage,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
-ephemeral.sendMessage,ephemeral,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCEphemeral,no route in session.yaml and no bff handler
+ephemeral.deleteAllWelcomeMessages,ephemeral,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.deleteMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.deleteWelcomeMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.editMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.getCallbackAnswer,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.getWelcomeMessages,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.reportMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
+ephemeral.sendMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
 feed.getFeed,feed,P2,interactive,yes,no,no,yes,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 feed.getForYou,feed,P2,interactive,yes,no,no,yes,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 feed.getInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema

@@ -202,3 +202,12 @@ BFFProxyClients:
     "/mtproto.RPCWallet": "bff.bff"
     # wallet.setCardStickers. wallet.Card is a layer-232 extra type.
     "/mtproto.RPCWalletCard": "bff.bff"
+    # Business hours, location, greeting, away, intro, and chat links.
+    "/mtproto.RPCBusinessOpeningHours": "bff.bff"
+    "/mtproto.RPCBusinessLocation": "bff.bff"
+    "/mtproto.RPCBusinessGreeting": "bff.bff"
+    "/mtproto.RPCBusinessIntro": "bff.bff"
+    "/mtproto.RPCBusinessChatLinks": "bff.bff"
+    # Communities and ephemeral messages. Updates from these RPCs carry no pts.
+    "/mtproto.RPCCommunities": "bff.bff"
+    "/mtproto.RPCEphemeral": "bff.bff"

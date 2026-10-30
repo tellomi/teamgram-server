@@ -66,15 +66,15 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | stories | 32 | 32 | 0 | 0 | 0 | 0 | 0 |
 | premium/payments | 100 | 1 | 7 | 17 | 75 | 0 | 0 |
 | bots | 23 | 23 | 0 | 0 | 0 | 0 | 0 |
-| business | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
+| business | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
 | aicompose | 7 | 0 | 0 | 7 | 0 | 0 | 0 |
-| communities | 9 | 0 | 0 | 0 | 9 | 0 | 0 |
-| ephemeral | 8 | 0 | 0 | 0 | 8 | 0 | 0 |
+| communities | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
+| ephemeral | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | feed | 5 | 0 | 0 | 0 | 5 | 0 | 0 |
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 2 | 0 | 0 | 2 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **818** | **670** | **7** | **30** | **111** | **94** | **0** |
+| **total** | **818** | **697** | **7** | **30** | **84** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 635 | 6 | 30 | 84 | 91 | 0 |
-| android | 707 | 622 | 6 | 19 | 60 | 89 | 0 |
-| desktop | 692 | 583 | 5 | 27 | 77 | 79 | 0 |
-| macos | 677 | 576 | 4 | 20 | 77 | 90 | 0 |
+| ios | 755 | 662 | 6 | 30 | 57 | 91 | 0 |
+| android | 707 | 641 | 6 | 19 | 41 | 89 | 0 |
+| desktop | 692 | 610 | 5 | 27 | 50 | 79 | 0 |
+| macos | 677 | 601 | 4 | 20 | 52 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,14 +111,11 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-147 gaps (147 error, 0 empty or bool or not-modified).
+120 gaps (120 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
 | aicompose | 7 |
-| business | 10 |
-| communities | 9 |
-| ephemeral | 8 |
 | feed | 5 |
 | iv | 1 |
 | premium/payments | 99 |
@@ -1006,20 +1003,20 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### business
 
-10 called, 0 implemented, 0 stub, 0 routed-unregistered, 10 missing.
+10 called, 10 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `account.createBusinessChatLink` | yes | yes | yes | yes | interactive | missing | error |
-| `account.deleteBusinessChatLink` | yes | yes | yes | yes | interactive | missing | error |
-| `account.editBusinessChatLink` | yes | yes | yes | yes | interactive | missing | error |
-| `account.getBusinessChatLinks` | yes | yes | yes | yes | interactive | missing | error |
-| `account.resolveBusinessChatLink` | yes | yes | yes | yes | interactive | missing | error |
-| `account.updateBusinessAwayMessage` | yes | yes | yes | yes | interactive | missing | error |
-| `account.updateBusinessGreetingMessage` | yes | yes | yes | yes | interactive | missing | error |
-| `account.updateBusinessIntro` | yes | yes | yes | yes | interactive | missing | error |
-| `account.updateBusinessLocation` | yes | yes | yes | yes | interactive | missing | error |
-| `account.updateBusinessWorkHours` | yes | yes | yes | yes | interactive | missing | error |
+| `account.createBusinessChatLink` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.deleteBusinessChatLink` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.editBusinessChatLink` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getBusinessChatLinks` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.resolveBusinessChatLink` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateBusinessAwayMessage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateBusinessGreetingMessage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateBusinessIntro` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateBusinessLocation` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateBusinessWorkHours` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### aicompose
 
@@ -1037,34 +1034,34 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### communities
 
-9 called, 0 implemented, 0 stub, 0 routed-unregistered, 9 missing.
+9 called, 9 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `communities.create` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.getJoinedCommunities` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.getParticipantJoinedChats` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.getPeerLinkRequests` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.toggleAllPeerLinkRequestApproval` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.toggleCommunityCollapsedInDialogs` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.toggleParticipantBanned` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.togglePeerLink` | yes | yes | yes | yes | interactive | missing | error |
-| `communities.togglePeerLinkRequestApproval` | yes | yes | yes | no | interactive | missing | error |
+| `communities.create` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.getJoinedCommunities` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.getParticipantJoinedChats` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.getPeerLinkRequests` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.toggleAllPeerLinkRequestApproval` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.toggleCommunityCollapsedInDialogs` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.toggleParticipantBanned` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.togglePeerLink` | yes | yes | yes | yes | interactive | implemented | ok |
+| `communities.togglePeerLinkRequestApproval` | yes | yes | yes | no | interactive | implemented | ok |
 
 ### ephemeral
 
-8 called, 0 implemented, 0 stub, 0 routed-unregistered, 8 missing.
+8 called, 8 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ephemeral.deleteAllWelcomeMessages` | yes | no | yes | no | interactive | missing | error |
-| `ephemeral.deleteMessage` | yes | no | yes | yes | interactive | missing | error |
-| `ephemeral.deleteWelcomeMessage` | yes | no | yes | yes | interactive | missing | error |
-| `ephemeral.editMessage` | yes | no | yes | yes | interactive | missing | error |
-| `ephemeral.getCallbackAnswer` | yes | no | yes | yes | interactive | missing | error |
-| `ephemeral.getWelcomeMessages` | yes | no | yes | yes | interactive | missing | error |
-| `ephemeral.reportMessage` | yes | no | yes | yes | interactive | missing | error |
-| `ephemeral.sendMessage` | yes | no | yes | yes | interactive | missing | error |
+| `ephemeral.deleteAllWelcomeMessages` | yes | no | yes | no | interactive | implemented | ok |
+| `ephemeral.deleteMessage` | yes | no | yes | yes | interactive | implemented | ok |
+| `ephemeral.deleteWelcomeMessage` | yes | no | yes | yes | interactive | implemented | ok |
+| `ephemeral.editMessage` | yes | no | yes | yes | interactive | implemented | ok |
+| `ephemeral.getCallbackAnswer` | yes | no | yes | yes | interactive | implemented | ok |
+| `ephemeral.getWelcomeMessages` | yes | no | yes | yes | interactive | implemented | ok |
+| `ephemeral.reportMessage` | yes | no | yes | yes | interactive | implemented | ok |
+| `ephemeral.sendMessage` | yes | no | yes | yes | interactive | implemented | ok |
 
 ### feed
 
@@ -1133,16 +1130,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 | Method | Status | Notes |
 | --- | --- | --- |
-| `account.createBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.deleteBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.editBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.getBusinessChatLinks` | missing | no route in session.yaml and no bff handler |
-| `account.resolveBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.updateBusinessAwayMessage` | missing | no route in session.yaml and no bff handler |
-| `account.updateBusinessGreetingMessage` | missing | no route in session.yaml and no bff handler |
-| `account.updateBusinessIntro` | missing | no route in session.yaml and no bff handler |
-| `account.updateBusinessLocation` | missing | no route in session.yaml and no bff handler |
-| `account.updateBusinessWorkHours` | missing | no route in session.yaml and no bff handler |
 | `aicompose.createTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeCreateTone handler |
 | `aicompose.deleteTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeDeleteTone handler |
 | `aicompose.getTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTone handler |
@@ -1150,23 +1137,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `aicompose.getTones` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTones handler |
 | `aicompose.saveTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeSaveTone handler |
 | `aicompose.updateTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeUpdateTone handler |
-| `communities.create` | missing | no route in session.yaml and no bff handler |
-| `communities.getJoinedCommunities` | missing | no route in session.yaml and no bff handler |
-| `communities.getParticipantJoinedChats` | missing | no route in session.yaml and no bff handler |
-| `communities.getPeerLinkRequests` | missing | no route in session.yaml and no bff handler |
-| `communities.toggleAllPeerLinkRequestApproval` | missing | no route in session.yaml and no bff handler |
-| `communities.toggleCommunityCollapsedInDialogs` | missing | no route in session.yaml and no bff handler |
-| `communities.toggleParticipantBanned` | missing | no route in session.yaml and no bff handler |
-| `communities.togglePeerLink` | missing | no route in session.yaml and no bff handler |
-| `communities.togglePeerLinkRequestApproval` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.deleteAllWelcomeMessages` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.deleteMessage` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.deleteWelcomeMessage` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.editMessage` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.getCallbackAnswer` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.getWelcomeMessages` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.reportMessage` | missing | no route in session.yaml and no bff handler |
-| `ephemeral.sendMessage` | missing | no route in session.yaml and no bff handler |
 | `feed.getFeed` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `feed.getForYou` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `feed.getInterestCategories` | missing | no route in session.yaml and no bff handler not in layer schema |
