@@ -200,3 +200,7 @@ BFFProxyClients:
     "/mtproto.RPCSuggestedPosts": "bff.bff"
     # messages.composeMessageWithAI. Other aicompose RPCs stay unimplemented.
     "/mtproto.RPCAiComposeTone": "bff.bff"
+    # Wallet reads, Ton Connect sessions, and chain refusals. No TON broadcast.
+    "/mtproto.RPCWallet": "bff.bff"
+    # wallet.setCardStickers. wallet.Card is a layer-232 extra type.
+    "/mtproto.RPCWalletCard": "bff.bff"

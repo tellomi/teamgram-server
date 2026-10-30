@@ -25,7 +25,7 @@ This file is generated. Edit the generator, not the tables.
 
 **Phases.** P0: startup or background, and the server must not fail the RPC. P1: core chat (auth, account, users, contacts, messages, updates, photos, upload, channels) that is not already P0. P2: everything else.
 
-Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.
+Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `TL_wallet.getCurrencyRates` is constructor `0xd35983e8`, counted as `payments.getCurrencyRates`. `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.
 
 ## Client sources
 
@@ -58,7 +58,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | help | 25 | 25 | 0 | 0 | 0 | 12 | 0 |
 | channels | 58 | 58 | 0 | 0 | 0 | 1 | 0 |
-| stickers | 39 | 38 | 0 | 0 | 1 | 0 | 0 |
+| stickers | 39 | 39 | 0 | 0 | 0 | 0 | 0 |
 | phone/calls | 43 | 43 | 0 | 0 | 0 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 17 | 0 | 0 | 0 | 5 | 0 |
@@ -72,9 +72,9 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | ephemeral | 8 | 0 | 0 | 0 | 8 | 0 | 0 |
 | feed | 5 | 0 | 0 | 0 | 5 | 0 | 0 |
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
-| toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
-| wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **819** | **642** | **7** | **30** | **140** | **94** | **0** |
+| toncenter | 4 | 2 | 0 | 0 | 2 | 0 | 0 |
+| wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
+| **total** | **818** | **670** | **7** | **30** | **111** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 607 | 6 | 30 | 112 | 91 | 0 |
-| android | 707 | 595 | 6 | 18 | 88 | 89 | 0 |
-| desktop | 692 | 555 | 5 | 27 | 105 | 79 | 0 |
-| macos | 677 | 571 | 4 | 20 | 82 | 90 | 0 |
+| ios | 755 | 635 | 6 | 30 | 84 | 91 | 0 |
+| android | 707 | 622 | 6 | 19 | 60 | 89 | 0 |
+| desktop | 692 | 583 | 5 | 27 | 77 | 79 | 0 |
+| macos | 677 | 576 | 4 | 20 | 77 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,7 +111,7 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-176 gaps (176 error, 0 empty or bool or not-modified).
+147 gaps (147 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -123,9 +123,7 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | iv | 1 |
 | premium/payments | 99 |
 | stats | 6 |
-| stickers | 1 |
-| toncenter | 4 |
-| wallet | 26 |
+| toncenter | 2 |
 
 ## Methods
 
@@ -685,11 +683,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### stickers
 
-39 called, 38 implemented, 0 stub, 0 routed-unregistered, 1 missing.
+39 called, 39 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `wallet.setCardStickers` | yes | yes | yes | no | interactive | missing | error |
 | `channels.setEmojiStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.setStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.clearRecentStickers` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -728,6 +725,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stickers.renameStickerSet` | yes | yes | yes | yes | interactive | implemented | ok |
 | `stickers.replaceSticker` | yes | yes | no | yes | interactive | implemented | ok |
 | `stickers.suggestShortName` | yes | yes | no | no | interactive | implemented | ok |
+| `wallet.setCardStickers` | yes | yes | yes | no | interactive | implemented | ok |
 
 ### phone/calls
 
@@ -953,7 +951,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.clearSavedInfo` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
 | `payments.createOnrampSession` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
 | `payments.getBankCardData` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `payments.getCurrencyRates` | yes | no | yes | no | interactive | routed-but-unregistered | error |
+| `payments.getCurrencyRates` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
 | `payments.getOnrampAvailability` | yes | no | no | no | interactive | routed-but-unregistered | error |
 | `payments.getOnrampBaseCurrencies` | yes | no | yes | no | interactive | routed-but-unregistered | error |
 | `payments.getOnrampLimits` | yes | no | no | no | interactive | routed-but-unregistered | error |
@@ -1090,47 +1088,46 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### toncenter
 
-4 called, 0 implemented, 0 stub, 0 routed-unregistered, 4 missing.
+4 called, 2 implemented, 0 stub, 0 routed-unregistered, 2 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `toncenter.createOnrampSession` | no | yes | no | no | interactive | missing | error |
 | `toncenter.getOnrampProviders` | no | yes | no | no | interactive | missing | error |
-| `toncenter.getStreamingUrl` | yes | yes | yes | no | interactive | missing | error |
-| `toncenter.performApiRequest` | yes | yes | yes | no | interactive | missing | error |
+| `toncenter.getStreamingUrl` | yes | yes | yes | no | interactive | implemented | ok |
+| `toncenter.performApiRequest` | yes | yes | yes | no | interactive | implemented | ok |
 
 ### wallet
 
-26 called, 0 implemented, 0 stub, 0 routed-unregistered, 26 missing.
+25 called, 25 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `wallet.disableBackup` | yes | yes | yes | yes | interactive | missing | error |
-| `wallet.enableBackup` | yes | yes | yes | yes | interactive | missing | error |
-| `wallet.exportSecretPhrase` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.fetchEncryptedSecretPhrasePart` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getBackupHolderDcs` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getCurrencyRates` | no | yes | no | no | interactive | missing | error |
-| `wallet.getExistingWaltBalance` | yes | yes | yes | yes | interactive | missing | error |
-| `wallet.getGaslessInfo` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getNfts` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getProofChallenge` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getState` | yes | yes | yes | yes | interactive | missing | error |
-| `wallet.getTransactions` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getTransactionsByIDs` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getTransactionsByMsgHash` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.getUserAddresses` | yes | yes | yes | yes | interactive | missing | error |
-| `wallet.replaceWallet` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.sendTransfer` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectClaimRequest` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectCloseSession` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectCreateSession` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectGetPending` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectGetSessions` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectNextEventId` | yes | no | yes | no | interactive | missing | error |
-| `wallet.tonConnectRegisterKey` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectSubmitConnectResult` | yes | yes | yes | no | interactive | missing | error |
-| `wallet.tonConnectSubmitResponse` | yes | yes | yes | no | interactive | missing | error |
+| `wallet.disableBackup` | yes | yes | yes | yes | interactive | implemented | ok |
+| `wallet.enableBackup` | yes | yes | yes | yes | interactive | implemented | ok |
+| `wallet.exportSecretPhrase` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.fetchEncryptedSecretPhrasePart` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getBackupHolderDcs` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getExistingWaltBalance` | yes | yes | yes | yes | interactive | implemented | ok |
+| `wallet.getGaslessInfo` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getNfts` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getProofChallenge` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getState` | yes | yes | yes | yes | interactive | implemented | ok |
+| `wallet.getTransactions` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getTransactionsByIDs` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getTransactionsByMsgHash` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.getUserAddresses` | yes | yes | yes | yes | interactive | implemented | ok |
+| `wallet.replaceWallet` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.sendTransfer` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectClaimRequest` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectCloseSession` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectCreateSession` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectGetPending` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectGetSessions` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectNextEventId` | yes | no | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectRegisterKey` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectSubmitConnectResult` | yes | yes | yes | no | interactive | implemented | ok |
+| `wallet.tonConnectSubmitResponse` | yes | yes | yes | no | interactive | implemented | ok |
 
 ## Notes for non-implemented methods
 
@@ -1284,33 +1281,4 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stats.loadAsyncGraph` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsLoadAsyncGraph handler |
 | `toncenter.createOnrampSession` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `toncenter.getOnrampProviders` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `toncenter.getStreamingUrl` | missing | no route in session.yaml and no bff handler |
-| `toncenter.performApiRequest` | missing | no route in session.yaml and no bff handler |
-| `wallet.disableBackup` | missing | no route in session.yaml and no bff handler |
-| `wallet.enableBackup` | missing | no route in session.yaml and no bff handler |
-| `wallet.exportSecretPhrase` | missing | no route in session.yaml and no bff handler |
-| `wallet.fetchEncryptedSecretPhrasePart` | missing | no route in session.yaml and no bff handler |
-| `wallet.getBackupHolderDcs` | missing | no route in session.yaml and no bff handler |
-| `wallet.getCurrencyRates` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `wallet.getExistingWaltBalance` | missing | no route in session.yaml and no bff handler |
-| `wallet.getGaslessInfo` | missing | no route in session.yaml and no bff handler |
-| `wallet.getNfts` | missing | no route in session.yaml and no bff handler |
-| `wallet.getProofChallenge` | missing | no route in session.yaml and no bff handler |
-| `wallet.getState` | missing | no route in session.yaml and no bff handler |
-| `wallet.getTransactions` | missing | no route in session.yaml and no bff handler |
-| `wallet.getTransactionsByIDs` | missing | no route in session.yaml and no bff handler |
-| `wallet.getTransactionsByMsgHash` | missing | no route in session.yaml and no bff handler |
-| `wallet.getUserAddresses` | missing | no route in session.yaml and no bff handler |
-| `wallet.replaceWallet` | missing | no route in session.yaml and no bff handler |
-| `wallet.sendTransfer` | missing | no route in session.yaml and no bff handler |
-| `wallet.setCardStickers` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectClaimRequest` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectCloseSession` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectCreateSession` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectGetPending` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectGetSessions` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectNextEventId` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectRegisterKey` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectSubmitConnectResult` | missing | no route in session.yaml and no bff handler |
-| `wallet.tonConnectSubmitResponse` | missing | no route in session.yaml and no bff handler |
 
