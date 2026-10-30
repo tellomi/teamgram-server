@@ -26,7 +26,7 @@ import (
 // account.registerPasskey#55b41fd6 credential:InputPasskeyCredential = Passkey;
 func (c *PasskeyCore) AccountRegisterPasskey(in *mtproto.TLAccountRegisterPasskey) (*mtproto.Passkey, error) {
 	// TODO: not impl
-	c.Logger.Errorf("account.registerPasskey blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	c.Logger.Errorf("account.registerPasskey - error: passkeys are not enabled")
 
 	return nil, mtproto.ErrEnterpriseIsBlocked
 }

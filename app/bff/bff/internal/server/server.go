@@ -112,11 +112,12 @@ func (s *Server) Initialize() error {
 			}))
 
 		// configuration_helper
-		mtproto.RegisterRPCConfigurationServer(
-			grpcServer,
-			configuration_helper.New(configuration_helper.Config{
-				RpcServerConf: c.RpcServerConf,
-			}))
+		configSvc := configuration_helper.New(configuration_helper.Config{
+			RpcServerConf: c.RpcServerConf,
+			MysqlDSN:      c.ChannelMySQL,
+		})
+		mtproto.RegisterRPCConfigurationServer(grpcServer, configSvc)
+		mtproto.RegisterRPCPromoDataServer(grpcServer, configSvc)
 
 		// qrcode_helper
 		mtproto.RegisterRPCQrCodeServer(

@@ -46,15 +46,15 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 
 | Module | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| auth | 22 | 20 | 0 | 0 | 2 | 17 | 1 |
-| account | 119 | 67 | 8 | 2 | 42 | 31 | 0 |
+| auth | 22 | 21 | 1 | 0 | 0 | 17 | 0 |
+| account | 119 | 67 | 12 | 2 | 38 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 22 | 0 | 1 | 4 | 6 | 0 |
-| messages | 216 | 119 | 5 | 21 | 71 | 14 | 1 |
+| messages | 216 | 119 | 6 | 20 | 71 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| help | 25 | 20 | 2 | 0 | 3 | 12 | 0 |
+| help | 25 | 22 | 0 | 0 | 3 | 12 | 0 |
 | channels | 59 | 44 | 1 | 3 | 11 | 1 | 0 |
 | stickers | 39 | 19 | 5 | 14 | 1 | 0 | 0 |
 | phone/calls | 43 | 10 | 0 | 0 | 33 | 0 | 0 |
@@ -62,7 +62,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | folders | 17 | 5 | 0 | 12 | 0 | 5 | 0 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
 | stories | 32 | 0 | 0 | 0 | 32 | 0 | 0 |
-| premium/payments | 100 | 3 | 0 | 13 | 84 | 0 | 0 |
+| premium/payments | 100 | 1 | 2 | 13 | 84 | 0 | 0 |
 | bots | 23 | 0 | 0 | 1 | 22 | 0 | 0 |
 | business | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
 | aicompose | 7 | 0 | 0 | 0 | 7 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **357** | **21** | **73** | **375** | **94** | **2** |
+| **total** | **826** | **358** | **27** | **72** | **369** | **94** | **0** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 334 | 20 | 71 | 330 | 91 | 1 |
-| android | 709 | 331 | 20 | 59 | 299 | 87 | 1 |
-| desktop | 692 | 310 | 20 | 55 | 307 | 79 | 2 |
-| macos | 677 | 323 | 19 | 57 | 278 | 90 | 1 |
+| ios | 755 | 335 | 25 | 71 | 324 | 91 | 0 |
+| android | 709 | 332 | 24 | 58 | 295 | 87 | 0 |
+| desktop | 692 | 313 | 24 | 54 | 301 | 79 | 0 |
+| macos | 677 | 324 | 24 | 57 | 272 | 90 | 0 |
 
 540 methods are called by all four clients.
 
@@ -93,20 +93,13 @@ A method counts for a client when that client has at least one call site. Implem
 
 Startup and background calls. These run before the chat list is usable. `effect=error` drops the session or the login; empty stubs return success with no data and still break clients that require a config, difference, or langpack.
 
-4 gaps (2 error, 2 empty or bool or not-modified).
-
-| Method | Module | Effect | Status | Clients |
-| --- | --- | --- | --- | --- |
-| `auth.finishPasskeyLogin` | auth | error | missing | ios, desktop, macos |
-| `messages.getPaidReactionPrivacy` | messages | error | routed-but-unregistered | android, desktop |
-| `help.getPromoData` | help | empty | stub | ios, android, desktop, macos |
-| `help.hidePromoData` | help | empty | stub | ios, android, desktop, macos |
+No gaps.
 
 ### P1
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-169 gaps (155 error, 14 empty or bool or not-modified).
+170 gaps (156 error, 14 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -114,13 +107,13 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 | auth | 1 |
 | channels | 15 |
 | contacts | 5 |
-| messages | 96 |
+| messages | 97 |
 
 ### P2
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-296 gaps (291 error, 5 empty or bool or not-modified).
+298 gaps (293 error, 5 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -134,7 +127,7 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | help | 3 |
 | iv | 1 |
 | phone/calls | 33 |
-| premium/payments | 97 |
+| premium/payments | 99 |
 | stats | 6 |
 | stickers | 20 |
 | stories | 32 |
@@ -147,16 +140,16 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### auth
 
-22 called, 20 implemented, 0 stub, 0 routed-unregistered, 2 missing.
+22 called, 21 implemented, 1 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `auth.finishPasskeyLogin` | yes | no | yes | yes | startup | missing | error |
 | `auth.acceptLoginToken` | yes | yes | no | yes | startup | implemented | ok |
 | `auth.cancelCode` | no | yes | yes | no | startup | implemented | ok |
 | `auth.checkPassword` | yes | yes | yes | yes | startup | implemented | ok |
 | `auth.checkRecoveryPassword` | yes | yes | yes | yes | startup | implemented | ok |
 | `auth.exportLoginToken` | yes | no | yes | yes | startup | implemented | ok |
+| `auth.finishPasskeyLogin` | yes | no | yes | yes | startup | implemented | ok |
 | `auth.importAuthorization` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `auth.importLoginToken` | yes | no | yes | yes | startup | implemented | ok |
 | `auth.recoverPassword` | yes | yes | yes | yes | startup | implemented | ok |
@@ -168,7 +161,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `auth.sendCode` | yes | yes | yes | yes | startup | implemented | ok |
 | `auth.signIn` | yes | yes | yes | yes | startup | implemented | ok |
 | `auth.signUp` | yes | yes | yes | yes | startup | implemented | ok |
-| `auth.initPasskeyLogin` | yes | no | yes | yes | interactive | missing | error |
+| `auth.initPasskeyLogin` | yes | no | yes | yes | interactive | stub | error |
 | `auth.bindTempAuthKey` | no | yes | yes | no | interactive | implemented | ok |
 | `auth.exportAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
 | `auth.logOut` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -176,7 +169,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### account
 
-119 called, 67 implemented, 8 stub, 2 routed-unregistered, 42 missing.
+119 called, 67 implemented, 12 stub, 2 routed-unregistered, 38 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -212,7 +205,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.updateStatus` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.verifyEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.createTheme` | yes | yes | yes | yes | interactive | missing | error |
-| `account.deletePasskey` | yes | yes | yes | yes | interactive | missing | error |
 | `account.deleteWebBrowserSettingsExceptions` | yes | yes | no | no | interactive | missing | error |
 | `account.disablePeerConnectedBot` | yes | yes | yes | yes | interactive | missing | error |
 | `account.finishPasskeyLogin` | no | yes | no | no | interactive | missing | error |
@@ -221,7 +213,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getConnectedBots` | yes | yes | yes | yes | interactive | missing | error |
 | `account.getMultiWallPapers` | no | yes | no | no | interactive | missing | error |
 | `account.getPaidMessagesRevenue` | yes | yes | yes | yes | interactive | missing | error |
-| `account.getPasskeys` | yes | yes | yes | yes | interactive | missing | error |
 | `account.getRequirementsToContact` | no | yes | no | no | interactive | missing | error |
 | `account.getSavedRingtones` | yes | yes | yes | yes | interactive | missing | error |
 | `account.getTheme` | yes | yes | yes | yes | interactive | missing | error |
@@ -230,11 +221,9 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getWebBrowserSettings` | yes | yes | no | yes | interactive | missing | error |
 | `account.getWebPagePreview` | no | yes | no | no | interactive | missing | error |
 | `account.initPasskeyLogin` | no | yes | no | no | interactive | missing | error |
-| `account.initPasskeyRegistration` | yes | yes | yes | yes | interactive | missing | error |
 | `account.initTakeoutSession` | no | no | yes | yes | interactive | missing | error |
 | `account.installTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `account.installWallPaper` | yes | yes | yes | yes | interactive | missing | error |
-| `account.registerPasskey` | yes | yes | yes | yes | interactive | missing | error |
 | `account.reorderProfileTabs` | no | yes | no | no | interactive | missing | error |
 | `account.reorderUsernames` | yes | yes | yes | yes | interactive | missing | error |
 | `account.resetWallPapers` | yes | yes | no | no | interactive | missing | error |
@@ -255,12 +244,16 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.uploadWallPaper` | yes | yes | yes | yes | interactive | missing | error |
 | `account.getChannelRestrictedStatusEmojis` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.getCollectibleEmojiStatuses` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
+| `account.deletePasskey` | yes | yes | yes | yes | interactive | stub | error |
 | `account.getChatThemes` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.getDefaultGroupPhotoEmojis` | yes | no | yes | yes | interactive | stub | empty |
 | `account.getDefaultProfilePhotoEmojis` | yes | yes | yes | yes | interactive | stub | empty |
+| `account.getPasskeys` | yes | yes | yes | yes | interactive | stub | error |
 | `account.getThemes` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.getWallPapers` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.getWebAuthorizations` | yes | yes | yes | yes | interactive | stub | empty |
+| `account.initPasskeyRegistration` | yes | yes | yes | yes | interactive | stub | error |
+| `account.registerPasskey` | yes | yes | yes | yes | interactive | stub | error |
 | `account.reportPeer` | yes | yes | no | yes | interactive | stub | empty |
 | `account.reportProfilePhoto` | yes | yes | yes | no | interactive | stub | empty |
 | `account.acceptAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -349,16 +342,16 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-216 called, 119 implemented, 5 stub, 21 routed-unregistered, 71 missing.
+216 called, 119 implemented, 6 stub, 20 routed-unregistered, 71 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `messages.getPaidReactionPrivacy` | no | yes | yes | no | startup | routed-but-unregistered | error |
 | `messages.getAvailableReactions` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.getDefaultHistoryTTL` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.getDialogs` | yes | yes | yes | yes | startup | implemented | ok |
 | `messages.getForumTopicsByID` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.getMessages` | yes | yes | yes | yes | startup+background | implemented | ok |
+| `messages.getPaidReactionPrivacy` | no | yes | yes | no | startup | implemented | ok |
 | `messages.getPeerDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.getPinnedDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.getPinnedSavedDialogs` | yes | no | yes | yes | startup+background | implemented | ok |
@@ -463,6 +456,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getEmojiStatusGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
 | `messages.getScheduledMessages` | yes | yes | yes | yes | interactive | stub | empty |
 | `messages.reportSpam` | yes | yes | yes | yes | interactive | stub | empty |
+| `messages.setHistoryTTL` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.addChatUser` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.checkChatInvite` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.clearAllDrafts` | no | yes | no | no | interactive | implemented | ok |
@@ -555,7 +549,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendReaction` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendScreenshotNotification` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.setDefaultHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
-| `messages.setHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setTyping` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.summarizeText` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.toggleDialogPin` | no | yes | yes | no | interactive | implemented | ok |
@@ -608,12 +601,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### help
 
-25 called, 20 implemented, 2 stub, 0 routed-unregistered, 3 missing.
+25 called, 22 implemented, 0 stub, 0 routed-unregistered, 3 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `help.getPromoData` | yes | yes | yes | yes | startup+background | stub | empty |
-| `help.hidePromoData` | yes | yes | yes | yes | startup+background | stub | empty |
 | `help.acceptTermsOfService` | yes | yes | yes | yes | startup | implemented | ok |
 | `help.dismissSuggestion` | yes | yes | yes | yes | startup | implemented | ok |
 | `help.getAppConfig` | yes | yes | yes | yes | startup+background | implemented | ok |
@@ -623,7 +614,9 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `help.getPeerColors` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `help.getPeerProfileColors` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `help.getPremiumPromo` | yes | yes | yes | yes | startup+background | implemented | ok |
+| `help.getPromoData` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `help.getTermsOfServiceUpdate` | yes | yes | yes | yes | startup | implemented | ok |
+| `help.hidePromoData` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `help.editUserInfo` | no | no | yes | no | interactive | missing | error |
 | `help.getTimezonesList` | yes | yes | yes | yes | interactive | missing | error |
 | `help.getUserInfo` | no | no | yes | no | interactive | missing | error |
@@ -892,7 +885,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### premium/payments
 
-100 called, 3 implemented, 0 stub, 13 routed-unregistered, 84 missing.
+100 called, 1 implemented, 2 stub, 13 routed-unregistered, 84 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -993,8 +986,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getPaymentReceipt` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `payments.sendPaymentForm` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `payments.validateRequestedInfo` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `payments.assignAppStoreTransaction` | yes | no | no | yes | interactive | implemented | ok |
-| `payments.assignPlayMarketTransaction` | no | yes | no | no | interactive | implemented | ok |
+| `payments.assignAppStoreTransaction` | yes | no | no | yes | interactive | stub | error |
+| `payments.assignPlayMarketTransaction` | no | yes | no | no | interactive | stub | error |
 | `payments.canPurchaseStore` | yes | yes | no | yes | interactive | implemented | ok |
 
 ### bots
@@ -1160,7 +1153,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.createBusinessChatLink` | missing | no route in session.yaml and no bff handler |
 | `account.createTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.deleteBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.deletePasskey` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
+| `account.deletePasskey` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.deletePasskey_handler.go |
 | `account.deleteWebBrowserSettingsExceptions` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
 | `account.disablePeerConnectedBot` | missing | no route in session.yaml and no bff handler |
 | `account.editBusinessChatLink` | missing | no route in session.yaml and no bff handler |
@@ -1176,7 +1169,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getDefaultProfilePhotoEmojis` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `account.getMultiWallPapers` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `account.getPaidMessagesRevenue` | missing | no route in session.yaml and no bff handler |
-| `account.getPasskeys` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
+| `account.getPasskeys` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.getPasskeys_handler.go |
 | `account.getRequirementsToContact` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.getSavedRingtones` | missing | no route in session.yaml and no bff handler |
 | `account.getTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
@@ -1188,11 +1181,11 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getWebBrowserSettings` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
 | `account.getWebPagePreview` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.initPasskeyLogin` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `account.initPasskeyRegistration` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
+| `account.initPasskeyRegistration` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.initPasskeyRegistration_handler.go |
 | `account.initTakeoutSession` | missing | no route in session.yaml and no bff handler |
 | `account.installTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.installWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
-| `account.registerPasskey` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
+| `account.registerPasskey` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.registerPasskey_handler.go |
 | `account.reorderProfileTabs` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.reorderUsernames` | missing | no route in session.yaml and no bff handler |
 | `account.reportPeer` | stub | session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out) |
@@ -1226,8 +1219,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `aicompose.getTones` | missing | no route in session.yaml and no bff handler |
 | `aicompose.saveTone` | missing | no route in session.yaml and no bff handler |
 | `aicompose.updateTone` | missing | no route in session.yaml and no bff handler |
-| `auth.finishPasskeyLogin` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
-| `auth.initPasskeyLogin` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
+| `auth.initPasskeyLogin` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/auth.initPasskeyLogin_handler.go |
 | `bots.addPreviewMedia` | missing | no route in session.yaml and no bff handler |
 | `bots.allowSendMessage` | missing | no route in session.yaml and no bff handler |
 | `bots.canSendMessage` | missing | no route in session.yaml and no bff handler |
@@ -1307,10 +1299,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `folders.editPeerFolders` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no FoldersEditPeerFolders handler |
 | `fragment.getCollectibleInfo` | missing | no route in session.yaml and no bff handler |
 | `help.editUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
-| `help.getPromoData` | stub | session.yaml does not route RPCPromoData; proxy returns an empty object (IDMap entry is commented out) |
 | `help.getTimezonesList` | missing | no route in session.yaml and no bff handler |
 | `help.getUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
-| `help.hidePromoData` | stub | session.yaml does not route RPCPromoData; proxy returns an empty object (IDMap entry is commented out) |
 | `iv.getRichMessage` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `messages.acceptEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesAcceptEncryption handler |
 | `messages.acceptUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
@@ -1351,7 +1341,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getInlineBotResults` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.getMaskStickers` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.getMyStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetMyStickers handler |
-| `messages.getPaidReactionPrivacy` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesGetPaidReactionPrivacy handler |
 | `messages.getPollResults` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.getPollVotes` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.getPreparedInlineMessage` | missing | no route in session.yaml and no bff handler |
@@ -1407,6 +1396,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.setChatWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `messages.setDefaultReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSetDefaultReaction handler |
 | `messages.setEncryptedTyping` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSetEncryptedTyping handler |
+| `messages.setHistoryTTL` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/dialogs/internal/core/messages.setHistoryTTL_handler.go |
 | `messages.setShareTheme` | missing | no route in session.yaml and no bff handler |
 | `messages.startBot` | routed-but-unregistered | session.yaml routes RPCDeepLinks but the bff process has no MessagesStartBot handler |
 | `messages.startHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
@@ -1420,6 +1410,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.updateSavedReactionTag` | missing | no route in session.yaml and no bff handler |
 | `messages.uploadImportedMedia` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `payments.applyGiftCode` | missing | no route in session.yaml and no bff handler |
+| `payments.assignAppStoreTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignAppStoreTransaction_handler.go |
+| `payments.assignPlayMarketTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignPlayMarketTransaction_handler.go |
 | `payments.changeStarsSubscription` | missing | no route in session.yaml and no bff handler |
 | `payments.checkCanSendGift` | missing | no route in session.yaml and no bff handler |
 | `payments.checkGiftCode` | missing | no route in session.yaml and no bff handler |

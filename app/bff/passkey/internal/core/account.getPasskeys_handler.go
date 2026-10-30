@@ -26,7 +26,7 @@ import (
 // account.getPasskeys#ea1f0c52 = account.Passkeys;
 func (c *PasskeyCore) AccountGetPasskeys(in *mtproto.TLAccountGetPasskeys) (*mtproto.Account_Passkeys, error) {
 	// TODO: not impl
-	c.Logger.Errorf("account.getPasskeys blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	c.Logger.Errorf("account.getPasskeys - error: passkeys are not enabled")
 
 	return nil, mtproto.ErrEnterpriseIsBlocked
 }

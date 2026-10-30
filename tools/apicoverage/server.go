@@ -326,6 +326,31 @@ func classifyGroup(name string, group []fnBody, byName map[string][]fnBody) hand
 			best = handlerInfo{Status: st, Effect: effect, File: relBFF(fn.File), Note: note}
 		}
 	}
+	// A gRPC client wrapper always calls the network, so it looks implemented.
+	// If internal/core only returns an enterprise error, that is what the client gets.
+	if core := classifyCore(name, byName); core.Status == statusStub && core.Effect == effectError {
+		return core
+	}
+	return best
+}
+
+func classifyCore(name string, byName map[string][]fnBody) handlerInfo {
+	best := handlerInfo{}
+	seen := map[string]bool{}
+	for _, fn := range byName[name] {
+		if !strings.Contains(fn.File, "/internal/core/") || fn.Recv == "" || fn.Body == nil {
+			continue
+		}
+		key := fn.File + "#" + fn.Recv
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		st, effect, note := classifyFunc(fn, byName, map[string]bool{}, 0)
+		if best.File == "" || (st == statusStub && effect == effectError) {
+			best = handlerInfo{Status: st, Effect: effect, File: relBFF(fn.File), Note: note}
+		}
+	}
 	return best
 }
 
@@ -450,6 +475,10 @@ func classifyFunc(fn fnBody, byName map[string][]fnBody, seen map[string]bool, d
 			if ident, ok := r.(*ast.Ident); ok && ident.Name == "nil" {
 				continue
 			}
+			if isEnterpriseValue(r) {
+				enterprise = true
+				continue
+			}
 			hasValue = true
 			if !isBoolExpr(r) {
 				hasNonBoolValue = true
@@ -569,6 +598,19 @@ func isBoolExpr(e ast.Expr) bool {
 		return false
 	}
 	return s.Sel.Name == "BoolTrue" || s.Sel.Name == "BoolFalse"
+}
+
+func isEnterpriseValue(e ast.Expr) bool {
+	s, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	switch s.Sel.Name {
+	case "ErrEnterpriseIsBlocked", "ErrMethodNotImpl", "ErrPaymentUnsupported":
+		return true
+	default:
+		return false
+	}
 }
 
 // resolve picks the client-visible status for a canonical method.

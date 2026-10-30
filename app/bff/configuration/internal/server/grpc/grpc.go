@@ -23,7 +23,9 @@ import (
 // New new a grpc server.
 func New(ctx *svc.ServiceContext, c zrpc.RpcServerConf) *zrpc.RpcServer {
 	s, err := zrpc.NewServer(c, func(grpcServer *grpc.Server) {
-		mtproto.RegisterRPCConfigurationServer(grpcServer, service.New(ctx))
+		svc := service.New(ctx)
+		mtproto.RegisterRPCConfigurationServer(grpcServer, svc)
+		mtproto.RegisterRPCPromoDataServer(grpcServer, svc)
 	})
 	logx.Must(err)
 	return s

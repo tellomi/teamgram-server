@@ -19,15 +19,25 @@
 package svc
 
 import (
+	"os"
+	"strings"
+
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/promo"
 )
 
 type ServiceContext struct {
 	Config config.Config
+	Promo  *promo.Store
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	dsn := strings.TrimSpace(c.MysqlDSN)
+	if env := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN")); env != "" {
+		dsn = env
+	}
 	return &ServiceContext{
 		Config: c,
+		Promo:  promo.Open(dsn),
 	}
 }

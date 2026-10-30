@@ -1,32 +1,39 @@
-// Copyright 2025 Teamgram Authors
-//  All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: teamgramio (teamgram.io@gmail.com)
-//
-
 package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/grpc/status"
 )
 
 // AuthFinishPasskeyLogin
 // auth.finishPasskeyLogin#9857ad07 flags:# credential:InputPasskeyCredential from_dc_id:flags.0?int from_auth_key_id:flags.0?long = auth.Authorization;
+// https://core.telegram.org/method/auth.finishPasskeyLogin
+// https://core.telegram.org/api/passkeys
+//
+// Passkeys are not stored here, and this method never returns auth.authorization.
+// A missing credential is the documented 400 CREDENTIAL_INVALID.
+// Any other credential is 400 PASSKEY_CREDENTIAL_NOT_FOUND: the server has no
+// matching passkey. auth.initPasskeyLogin stays unimplemented so clients are
+// not handed WebAuthn options that cannot be finished.
 func (c *PasskeyCore) AuthFinishPasskeyLogin(in *mtproto.TLAuthFinishPasskeyLogin) (*mtproto.Auth_Authorization, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.finishPasskeyLogin blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	if !passkeyCredentialOK(in) {
+		c.Logger.Errorf("auth.finishPasskeyLogin - error: CREDENTIAL_INVALID")
+		return nil, status.Error(mtproto.ErrBadRequest, "CREDENTIAL_INVALID")
+	}
+	c.Logger.Errorf("auth.finishPasskeyLogin - error: PASSKEY_CREDENTIAL_NOT_FOUND")
+	return nil, status.Error(mtproto.ErrBadRequest, "PASSKEY_CREDENTIAL_NOT_FOUND")
+}
 
-	return nil, mtproto.ErrEnterpriseIsBlocked
+func passkeyCredentialOK(in *mtproto.TLAuthFinishPasskeyLogin) bool {
+	if in == nil || in.GetCredential() == nil {
+		return false
+	}
+	cred := in.GetCredential()
+	if cred.GetPredicateName() != mtproto.Predicate_inputPasskeyCredentialPublicKey {
+		return false
+	}
+	if cred.GetId() == "" || cred.GetRawId() == "" || cred.GetResponse() == nil {
+		return false
+	}
+	return true
 }
