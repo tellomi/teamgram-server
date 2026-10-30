@@ -47,7 +47,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | Module | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | auth | 22 | 21 | 1 | 0 | 0 | 17 | 0 |
-| account | 119 | 72 | 9 | 21 | 17 | 31 | 0 |
+| account | 119 | 99 | 4 | 6 | 10 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
 | messages | 216 | 215 | 0 | 0 | 1 | 14 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **479** | **16** | **92** | **239** | **94** | **0** |
+| **total** | **826** | **506** | **11** | **77** | **232** | **94** | **0** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 451 | 15 | 88 | 201 | 91 | 0 |
-| android | 709 | 444 | 13 | 76 | 176 | 87 | 0 |
-| desktop | 692 | 416 | 14 | 75 | 187 | 79 | 0 |
-| macos | 677 | 429 | 15 | 72 | 161 | 90 | 0 |
+| ios | 755 | 477 | 10 | 74 | 194 | 91 | 0 |
+| android | 709 | 468 | 9 | 63 | 169 | 87 | 0 |
+| desktop | 692 | 441 | 9 | 62 | 180 | 79 | 0 |
+| macos | 677 | 454 | 10 | 59 | 154 | 90 | 0 |
 
 540 methods are called by all four clients.
 
@@ -99,11 +99,11 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-50 gaps (45 error, 5 empty or bool or not-modified).
+23 gaps (23 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
-| account | 47 |
+| account | 20 |
 | auth | 1 |
 | channels | 1 |
 | messages | 1 |
@@ -168,7 +168,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### account
 
-119 called, 72 implemented, 9 stub, 21 routed-unregistered, 17 missing.
+119 called, 99 implemented, 4 stub, 6 routed-unregistered, 10 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -204,50 +204,23 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.updateStatus` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.verifyEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.deleteWebBrowserSettingsExceptions` | yes | yes | no | no | interactive | missing | error |
-| `account.disablePeerConnectedBot` | yes | yes | yes | yes | interactive | missing | error |
 | `account.finishPasskeyLogin` | no | yes | no | no | interactive | missing | error |
 | `account.getBirthdays` | no | yes | no | no | interactive | missing | error |
-| `account.getConnectedBots` | yes | yes | yes | yes | interactive | missing | error |
 | `account.getRequirementsToContact` | no | yes | no | no | interactive | missing | error |
-| `account.getSavedRingtones` | yes | yes | yes | yes | interactive | missing | error |
 | `account.getWebBrowserSettings` | yes | yes | no | yes | interactive | missing | error |
 | `account.getWebPagePreview` | no | yes | no | no | interactive | missing | error |
 | `account.initPasskeyLogin` | no | yes | no | no | interactive | missing | error |
 | `account.reorderProfileTabs` | no | yes | no | no | interactive | missing | error |
-| `account.saveRingtone` | yes | yes | yes | yes | interactive | missing | error |
-| `account.toggleConnectedBotPaused` | yes | yes | yes | yes | interactive | missing | error |
 | `account.toggleWebBrowserSettingsException` | yes | yes | no | no | interactive | missing | error |
-| `account.updateConnectedBot` | yes | yes | yes | yes | interactive | missing | error |
 | `account.updateWebBrowserSettings` | yes | yes | no | no | interactive | missing | error |
-| `account.uploadRingtone` | yes | yes | yes | yes | interactive | missing | error |
-| `account.createTheme` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.finishTakeoutSession` | no | no | yes | yes | interactive | routed-but-unregistered | error |
-| `account.getChannelRestrictedStatusEmojis` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.getCollectibleEmojiStatuses` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
-| `account.getMultiWallPapers` | no | yes | no | no | interactive | routed-but-unregistered | error |
 | `account.getPaidMessagesRevenue` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.getTheme` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.getUniqueGiftChatThemes` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
-| `account.getWallPaper` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.initTakeoutSession` | no | no | yes | yes | interactive | routed-but-unregistered | error |
-| `account.installTheme` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.installWallPaper` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.reorderUsernames` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.resetWallPapers` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `account.saveTheme` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.saveWallPaper` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.toggleNoPaidMessagesException` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.toggleUsername` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.updateTheme` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.uploadTheme` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `account.uploadWallPaper` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `account.deletePasskey` | yes | yes | yes | yes | interactive | stub | error |
-| `account.getChatThemes` | yes | yes | yes | yes | interactive | stub | empty |
-| `account.getDefaultGroupPhotoEmojis` | yes | no | yes | yes | interactive | stub | empty |
-| `account.getDefaultProfilePhotoEmojis` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.getPasskeys` | yes | yes | yes | yes | interactive | stub | error |
-| `account.getThemes` | yes | yes | yes | yes | interactive | stub | empty |
-| `account.getWallPapers` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.initPasskeyRegistration` | yes | yes | yes | yes | interactive | stub | error |
 | `account.registerPasskey` | yes | yes | yes | yes | interactive | stub | error |
 | `account.acceptAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -255,41 +228,68 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.checkUsername` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.clearRecentEmojiStatuses` | no | yes | no | no | interactive | implemented | ok |
 | `account.confirmBotConnection` | yes | yes | no | no | interactive | implemented | ok |
+| `account.createTheme` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.deleteSecureValue` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.disablePeerConnectedBot` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getAccountTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getAllSecureValues` | yes | yes | no | yes | interactive | implemented | ok |
 | `account.getAuthorizationForm` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getAuthorizations` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getChannelDefaultEmojiStatuses` | yes | yes | no | yes | interactive | implemented | ok |
+| `account.getChannelRestrictedStatusEmojis` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getChatThemes` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getCollectibleEmojiStatuses` | yes | no | yes | yes | interactive | implemented | ok |
+| `account.getConnectedBots` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getContentSettings` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getDefaultBackgroundEmojis` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getDefaultEmojiStatuses` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getDefaultGroupPhotoEmojis` | yes | no | yes | yes | interactive | implemented | ok |
+| `account.getDefaultProfilePhotoEmojis` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getMultiWallPapers` | no | yes | no | no | interactive | implemented | ok |
 | `account.getNotifyExceptions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getPrivacy` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getRecentEmojiStatuses` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getSavedMusicIds` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getSavedRingtones` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getTheme` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getThemes` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getUniqueGiftChatThemes` | yes | no | yes | yes | interactive | implemented | ok |
+| `account.getWallPaper` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getWallPapers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getWebAuthorizations` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.installTheme` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.installWallPaper` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.reportPeer` | yes | yes | no | yes | interactive | implemented | ok |
 | `account.reportProfilePhoto` | yes | yes | yes | no | interactive | implemented | ok |
 | `account.resetAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.resetWallPapers` | yes | yes | no | no | interactive | implemented | ok |
 | `account.resetWebAuthorization` | yes | yes | yes | no | interactive | implemented | ok |
 | `account.resetWebAuthorizations` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.saveMusic` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.saveRingtone` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.saveSecureValue` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.saveTheme` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.saveWallPaper` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.sendVerifyPhoneCode` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.setAccountTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.setAuthorizationTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.setContentSettings` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.setMainProfileTab` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.setPrivacy` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.toggleConnectedBotPaused` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.toggleSponsoredMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.updateBirthday` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.updateColor` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateConnectedBot` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.updateDeviceLocked` | no | no | no | yes | interactive | implemented | ok |
 | `account.updateEmojiStatus` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.updatePersonalChannel` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.updateProfile` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.updateTheme` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.updateUsername` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.uploadRingtone` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.uploadTheme` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.uploadWallPaper` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.verifyPhone` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### users
@@ -1150,48 +1150,26 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | Method | Status | Notes |
 | --- | --- | --- |
 | `account.createBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.createTheme` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountCreateTheme handler |
 | `account.deleteBusinessChatLink` | missing | no route in session.yaml and no bff handler |
 | `account.deletePasskey` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.deletePasskey_handler.go |
 | `account.deleteWebBrowserSettingsExceptions` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
-| `account.disablePeerConnectedBot` | missing | no route in session.yaml and no bff handler |
 | `account.editBusinessChatLink` | missing | no route in session.yaml and no bff handler |
 | `account.finishPasskeyLogin` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.finishTakeoutSession` | routed-but-unregistered | session.yaml routes RPCTakeout but the bff process has no AccountFinishTakeoutSession handler |
 | `account.getBirthdays` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.getBusinessChatLinks` | missing | no route in session.yaml and no bff handler |
-| `account.getChannelRestrictedStatusEmojis` | routed-but-unregistered | session.yaml routes RPCEmojiStatus but the bff process has no AccountGetChannelRestrictedStatusEmojis handler |
-| `account.getChatThemes` | stub | returns an empty object app/bff/messages/internal/server/grpc/service/p1_rest.go |
-| `account.getCollectibleEmojiStatuses` | routed-but-unregistered | session.yaml routes RPCEmojiStatus but the bff process has no AccountGetCollectibleEmojiStatuses handler |
-| `account.getConnectedBots` | missing | no route in session.yaml and no bff handler |
-| `account.getDefaultGroupPhotoEmojis` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
-| `account.getDefaultProfilePhotoEmojis` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
-| `account.getMultiWallPapers` | routed-but-unregistered | session.yaml routes RPCWallpapers but the bff process has no AccountGetMultiWallPapers handler |
 | `account.getPaidMessagesRevenue` | routed-but-unregistered | session.yaml routes RPCPaidMessage but the bff process has no AccountGetPaidMessagesRevenue handler |
 | `account.getPasskeys` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.getPasskeys_handler.go |
 | `account.getRequirementsToContact` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `account.getSavedRingtones` | missing | no route in session.yaml and no bff handler |
-| `account.getTheme` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountGetTheme handler |
-| `account.getThemes` | stub | returns an empty object app/bff/messages/internal/server/grpc/service/p1_rest.go |
-| `account.getUniqueGiftChatThemes` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountGetUniqueGiftChatThemes handler |
-| `account.getWallPaper` | routed-but-unregistered | session.yaml routes RPCWallpapers but the bff process has no AccountGetWallPaper handler |
-| `account.getWallPapers` | stub | returns an empty object app/bff/messages/internal/server/grpc/service/p1_rest.go |
 | `account.getWebBrowserSettings` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
 | `account.getWebPagePreview` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.initPasskeyLogin` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.initPasskeyRegistration` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.initPasskeyRegistration_handler.go |
 | `account.initTakeoutSession` | routed-but-unregistered | session.yaml routes RPCTakeout but the bff process has no AccountInitTakeoutSession handler |
-| `account.installTheme` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountInstallTheme handler |
-| `account.installWallPaper` | routed-but-unregistered | session.yaml routes RPCWallpapers but the bff process has no AccountInstallWallPaper handler |
 | `account.registerPasskey` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.registerPasskey_handler.go |
 | `account.reorderProfileTabs` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.reorderUsernames` | routed-but-unregistered | session.yaml routes RPCFragment but the bff process has no AccountReorderUsernames handler |
-| `account.resetWallPapers` | routed-but-unregistered | session.yaml routes RPCWallpapers but the bff process has no AccountResetWallPapers handler |
 | `account.resolveBusinessChatLink` | missing | no route in session.yaml and no bff handler |
-| `account.saveRingtone` | missing | no route in session.yaml and no bff handler |
-| `account.saveTheme` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountSaveTheme handler |
-| `account.saveWallPaper` | routed-but-unregistered | session.yaml routes RPCWallpapers but the bff process has no AccountSaveWallPaper handler |
-| `account.toggleConnectedBotPaused` | missing | no route in session.yaml and no bff handler |
 | `account.toggleNoPaidMessagesException` | routed-but-unregistered | session.yaml routes RPCPaidMessage but the bff process has no AccountToggleNoPaidMessagesException handler |
 | `account.toggleUsername` | routed-but-unregistered | session.yaml routes RPCFragment but the bff process has no AccountToggleUsername handler |
 | `account.toggleWebBrowserSettingsException` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
@@ -1200,12 +1178,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.updateBusinessIntro` | missing | no route in session.yaml and no bff handler |
 | `account.updateBusinessLocation` | missing | no route in session.yaml and no bff handler |
 | `account.updateBusinessWorkHours` | missing | no route in session.yaml and no bff handler |
-| `account.updateConnectedBot` | missing | no route in session.yaml and no bff handler |
-| `account.updateTheme` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountUpdateTheme handler |
 | `account.updateWebBrowserSettings` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
-| `account.uploadRingtone` | missing | no route in session.yaml and no bff handler |
-| `account.uploadTheme` | routed-but-unregistered | session.yaml routes RPCThemes but the bff process has no AccountUploadTheme handler |
-| `account.uploadWallPaper` | routed-but-unregistered | session.yaml routes RPCWallpapers but the bff process has no AccountUploadWallPaper handler |
 | `aicompose.createTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeCreateTone handler |
 | `aicompose.deleteTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeDeleteTone handler |
 | `aicompose.getTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTone handler |

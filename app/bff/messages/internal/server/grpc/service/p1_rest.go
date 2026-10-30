@@ -7,10 +7,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/p1rest"
 )
 
-// ThemesService serves messages.setChatTheme.
-// account.getThemes and account.getChatThemes stay empty catalogs, the same
-// objects the session proxy returned before this service was routed.
-// https://core.telegram.org/method/messages.setChatTheme
+// ThemesService serves messages.setChatTheme and the account theme RPCs.
+// https://core.telegram.org/api/themes
 type ThemesService struct {
 	mtproto.UnimplementedRPCThemesServer
 }
@@ -20,23 +18,8 @@ func (ThemesService) MessagesSetChatTheme(ctx context.Context, in *mtproto.TLMes
 	return p1rest.SetChatTheme(self, in)
 }
 
-func (ThemesService) AccountGetThemes(context.Context, *mtproto.TLAccountGetThemes) (*mtproto.Account_Themes, error) {
-	return mtproto.MakeTLAccountThemes(&mtproto.Account_Themes{
-		Hash:   0,
-		Themes: []*mtproto.Theme{},
-	}).To_Account_Themes(), nil
-}
-
-func (ThemesService) AccountGetChatThemes(context.Context, *mtproto.TLAccountGetChatThemes) (*mtproto.Account_Themes, error) {
-	return mtproto.MakeTLAccountThemes(&mtproto.Account_Themes{
-		Hash:   0,
-		Themes: []*mtproto.Theme{},
-	}).To_Account_Themes(), nil
-}
-
-// WallpapersService serves messages.setChatWallPaper.
-// account.getWallPapers stays an empty catalog.
-// https://core.telegram.org/method/messages.setChatWallPaper
+// WallpapersService serves messages.setChatWallPaper and the account wallpaper RPCs.
+// https://core.telegram.org/api/wallpapers
 type WallpapersService struct {
 	mtproto.UnimplementedRPCWallpapersServer
 }
@@ -44,13 +27,6 @@ type WallpapersService struct {
 func (WallpapersService) MessagesSetChatWallPaper(ctx context.Context, in *mtproto.TLMessagesSetChatWallPaper) (*mtproto.Updates, error) {
 	self, _ := selfID(ctx)
 	return p1rest.SetChatWallPaper(self, in)
-}
-
-func (WallpapersService) AccountGetWallPapers(context.Context, *mtproto.TLAccountGetWallPapers) (*mtproto.Account_WallPapers, error) {
-	return mtproto.MakeTLAccountWallPapers(&mtproto.Account_WallPapers{
-		Hash:       0,
-		Wallpapers: []*mtproto.WallPaper{},
-	}).To_Account_WallPapers(), nil
 }
 
 // ShareThemesService serves messages.setShareTheme and messages.getShareThemeBackdrops.

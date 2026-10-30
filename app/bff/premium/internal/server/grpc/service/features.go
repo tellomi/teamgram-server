@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	"github.com/teamgram/teamgram-server/app/bff/premium/internal/core"
 )
 
@@ -41,6 +42,14 @@ func (s *Service) ChannelsUpdateEmojiStatus(ctx context.Context, request *mtprot
 
 func (s *Service) AccountGetDefaultBackgroundEmojis(ctx context.Context, request *mtproto.TLAccountGetDefaultBackgroundEmojis) (*mtproto.EmojiList, error) {
 	return core.New(ctx, s.svcCtx).AccountGetDefaultBackgroundEmojis(request)
+}
+
+func (s *Service) AccountGetChannelRestrictedStatusEmojis(_ context.Context, request *mtproto.TLAccountGetChannelRestrictedStatusEmojis) (*mtproto.EmojiList, error) {
+	return accountassets.EmojiList(request.GetHash()), nil
+}
+
+func (s *Service) AccountGetCollectibleEmojiStatuses(_ context.Context, request *mtproto.TLAccountGetCollectibleEmojiStatuses) (*mtproto.Account_EmojiStatuses, error) {
+	return accountassets.CollectibleStatuses(request.GetHash()), nil
 }
 
 func (s *Service) HelpGetPeerColors(ctx context.Context, request *mtproto.TLHelpGetPeerColors) (*mtproto.Help_PeerColors, error) {

@@ -2148,6 +2148,36 @@ var (
 	// ErrMessageNotReadYet
 	// 400	MESSAGE_NOT_READ_YET	The specified message wasn't read yet.
 	ErrMessageNotReadYet = status.Error(ErrBadRequest, "MESSAGE_NOT_READ_YET")
+
+	// ErrRingtoneMimeInvalid
+	// | 400 | RINGTONE_MIME_INVALID | The MIME type for the ringtone is invalid. |
+	// https://core.telegram.org/method/account.uploadRingtone
+	ErrRingtoneMimeInvalid = status.Error(ErrBadRequest, "RINGTONE_MIME_INVALID")
+
+	// ErrRingtoneInvalid
+	// | 400 | RINGTONE_INVALID | The specified ringtone is invalid. |
+	// https://core.telegram.org/method/account.saveRingtone
+	ErrRingtoneInvalid = status.Error(ErrBadRequest, "RINGTONE_INVALID")
+
+	// ErrBotBusinessMissing
+	// | 400 | BOT_BUSINESS_MISSING | The specified bot is not a business bot (the user.bot_business flag is not set). |
+	// https://core.telegram.org/method/account.updateConnectedBot
+	ErrBotBusinessMissing = status.Error(ErrBadRequest, "BOT_BUSINESS_MISSING")
+
+	// ErrBusinessRecipientsEmpty
+	// | 400 | BUSINESS_RECIPIENTS_EMPTY | You didn't set any flag in inputBusinessBotRecipients, thus the bot cannot work with any peer. |
+	// https://core.telegram.org/method/account.updateConnectedBot
+	ErrBusinessRecipientsEmpty = status.Error(ErrBadRequest, "BUSINESS_RECIPIENTS_EMPTY")
+
+	// ErrBotAlreadyDisabled
+	// | 400 | BOT_ALREADY_DISABLED | The connected business bot was already disabled for the specified peer. |
+	// https://core.telegram.org/method/account.disablePeerConnectedBot
+	ErrBotAlreadyDisabled = status.Error(ErrBadRequest, "BOT_ALREADY_DISABLED")
+
+	// ErrBotNotConnectedYet
+	// | 400 | BOT_NOT_CONNECTED_YET | No business bot is connected to the currently logged in user. |
+	// https://core.telegram.org/method/account.disablePeerConnectedBot
+	ErrBotNotConnectedYet = status.Error(ErrBadRequest, "BOT_NOT_CONNECTED_YET")
 )
 
 // 401 UNAUTHORIZED

@@ -94,7 +94,7 @@ BFFProxyClients:
     "/mtproto.RPCPreparedInlineMessages": "bff.bff"
     #"/mtproto.RPCBots": "bff.bff"
     #"/mtproto.RPCInternalBot": "bff.bff"
-    # messages.setChatTheme. account.getThemes and account.getChatThemes stay empty catalogs.
+    # account theme catalogs and messages.setChatTheme.
     "/mtproto.RPCThemes": "bff.bff"
     "/mtproto.RPCContacts": "bff.bff"
     # Temporary profile links and free-message links.
@@ -154,8 +154,12 @@ BFFProxyClients:
     "/mtproto.RPCTranscription": "bff.bff"
     "/mtproto.RPCAccount": "bff.bff"
     "/mtproto.RPCUsernames": "bff.bff"
-    # messages.setChatWallPaper. account.getWallPapers stays an empty catalog.
+    # account wallpaper catalogs and messages.setChatWallPaper.
     "/mtproto.RPCWallpapers": "bff.bff"
+    # Saved notification sounds.
+    "/mtproto.RPCRingtone": "bff.bff"
+    # Connected business bots. account.getBotBusinessConnection stays unimplemented.
+    "/mtproto.RPCBusinessConnectedBots": "bff.bff"
     "/mtproto.RPCSavedMessageDialogs": "bff.bff"
     # Saved-message reaction tags.
     "/mtproto.RPCSavedMessageTags": "bff.bff"

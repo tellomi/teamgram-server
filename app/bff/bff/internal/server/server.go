@@ -374,6 +374,8 @@ func (s *Server) Initialize() error {
 		// fact-checks, AI compose, emoji games, stats URL, suggested posts.
 		mtproto.RegisterRPCThemesServer(grpcServer, messages_helper.NewThemes())
 		mtproto.RegisterRPCWallpapersServer(grpcServer, messages_helper.NewWallpapers())
+		mtproto.RegisterRPCRingtoneServer(grpcServer, messages_helper.NewRingtones())
+		mtproto.RegisterRPCBusinessConnectedBotsServer(grpcServer, messages_helper.NewConnectedBots())
 		mtproto.RegisterRPCShareThemesServer(grpcServer, messages_helper.NewShareThemes())
 		mtproto.RegisterRPCImportedChatsServer(grpcServer, messages_helper.NewImportedChats())
 		mtproto.RegisterRPCTodoListsServer(grpcServer, messages_helper.NewTodoLists())
