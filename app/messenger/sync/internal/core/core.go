@@ -137,6 +137,26 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 				// c.svcCtx.Dao.AddToPtsQueue(c.ctx, userId, update.Pts_INT32, update.PtsCount, update)
 				// removed in pure push mode
 			}
+			// pts_count 0: deliver the archive change without opening a difference gap.
+			needPush = true
+		},
+		mtproto.Predicate_updateDialogFilter: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateDialogFilterOrder: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
 		},
 		mtproto.Predicate_updatePinnedMessages: func(
 			userId int64,

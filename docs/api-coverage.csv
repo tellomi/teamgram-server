@@ -234,17 +234,17 @@ channels.updateColor,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 channels.updateEmojiStatus,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 channels.updatePaidMessagesPrice,channels,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPaidMessage,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.updateUsername,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
-chatlists.checkChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsCheckChatlistInvite handler
-chatlists.deleteExportedInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsDeleteExportedInvite handler
-chatlists.editExportedInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsEditExportedInvite handler
-chatlists.exportChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsExportChatlistInvite handler
-chatlists.getChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsGetChatlistUpdates handler
-chatlists.getExportedInvites,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsGetExportedInvites handler
-chatlists.getLeaveChatlistSuggestions,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsGetLeaveChatlistSuggestions handler
-chatlists.hideChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsHideChatlistUpdates handler
-chatlists.joinChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsJoinChatlistInvite handler
-chatlists.joinChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsJoinChatlistUpdates handler
-chatlists.leaveChatlist,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no ChatlistsLeaveChatlist handler
+chatlists.checkChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.deleteExportedInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.editExportedInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.exportChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.getChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.getExportedInvites,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.getLeaveChatlistSuggestions,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.hideChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.joinChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.joinChatlistUpdates,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
+chatlists.leaveChatlist,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 communities.create,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
 communities.getJoinedCommunities,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
 communities.getParticipantJoinedChats,communities,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCCommunities,no route in session.yaml and no bff handler
@@ -294,7 +294,7 @@ feed.getForYou,feed,P2,interactive,yes,no,no,yes,missing,error,no,absent,,no rou
 feed.getInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 feed.readFeed,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 feed.setInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-folders.editPeerFolders,folders,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFolders,session.yaml routes RPCFolders but the bff process has no FoldersEditPeerFolders handler
+folders.editPeerFolders,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 fragment.getCollectibleInfo,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCFragmentCollectibles,no route in session.yaml and no bff handler
 help.acceptTermsOfService,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTos,app/bff/tos/client/tos_client.go
 help.dismissSuggestion,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCConfiguration,app/bff/configuration/client/configuration_client.go

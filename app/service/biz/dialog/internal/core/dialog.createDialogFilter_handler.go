@@ -53,6 +53,8 @@ func (c *DialogCore) DialogCreateDialogFilter(in *dialog.TLDialogCreateDialogFil
 				func(sz, i int, v *dataobject.DialogFiltersDO) {
 					dialogFilter := &dialog.DialogFilterExt{
 						Id:           v.DialogFilterId,
+						JoinedBySlug: v.JoinedBySlug,
+						Slug:         v.Slug,
 						DialogFilter: nil,
 						Order:        v.OrderValue,
 					}

@@ -89,6 +89,8 @@ func prepareStoredFilter(filter *mtproto.DialogFilter) *mtproto.DialogFilter {
 			Entities: []*mtproto.MessageEntity{},
 		}).To_TextWithEntities()
 	}
+	// Invite JSON stays in the database. Clients receive the visible title.
+	mtproto.StripChatlistBlob(filter)
 	switch filter.GetPredicateName() {
 	case mtproto.Predicate_dialogFilterChatlist:
 		return mtproto.MakeTLDialogFilterChatlist(filter).To_DialogFilter()
