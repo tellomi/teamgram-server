@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"net"
 	"time"
@@ -80,8 +81,13 @@ func (c *AuthorizationCore) sendSMS(phone string, codeData *model.PhoneCodeTrans
 		return err
 	}
 	c.prepareSMSCode(codeData)
+	// Bound the provider call. Aliyun errors, missing keys, and a stalled
+	// TCP connection all become SMS_CODE_CREATE_FAILED inside this window
+	// so auth.sendCode does not leave the client spinning.
+	ctx, cancel := context.WithTimeout(c.requestCtx(), smsSendTimeout())
+	defer cancel()
 	extra, err := c.svcCtx.AuthLogic.VerifyCodeInterface.SendSmsVerifyCode(
-		c.ctx, phone, codeData.PhoneCode, codeData.PhoneCodeHash)
+		ctx, phone, codeData.PhoneCode, codeData.PhoneCodeHash)
 	if err != nil {
 		if errors.Is(err, verify.ErrInternationalDisabled) {
 			return mtproto.ErrPhoneNumberInvalid
@@ -92,4 +98,18 @@ func (c *AuthorizationCore) sendSMS(phone string, codeData *model.PhoneCodeTrans
 	codeData.SentCodeType = model.SentCodeTypeSms
 	codeData.PhoneCodeExtraData = extra
 	return nil
+}
+
+func (c *AuthorizationCore) requestCtx() context.Context {
+	if c != nil && c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
+}
+
+func smsSendTimeout() time.Duration {
+	if verify.SMSSendTimeout <= 0 {
+		return 10 * time.Second
+	}
+	return verify.SMSSendTimeout
 }

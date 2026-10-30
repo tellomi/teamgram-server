@@ -322,114 +322,7 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 		request.ApiId,
 		request.ApiHash,
 		func(codeData2 *model.PhoneCodeTransaction) error {
-			if codeData2.State == model.CodeStateSent {
-				c.Logger.Infof("codeSent")
-				return nil
-			}
-
-			// Dev test ranges (99966XYYYY and any configured prefix) never hit
-			// an SMS gateway. The code is the DC digit repeated, or Code.
-			if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
-				codeData2.SentCodeType = model.SentCodeTypeSms
-				codeData2.PhoneCode = code
-				codeData2.PhoneCodeExtraData = code
-				codeData2.NextCodeType = model.CodeTypeSms
-				codeData2.State = model.CodeStateSent
-				codeData2.PhoneNumberRegistered = phoneRegistered
-				if phoneRegistered {
-					threading2.WrapperGoFunc(c.ctx, nil, func(ctx context.Context) {
-						c.pushSignInMessage(ctx, user.Id(), codeData2.PhoneCode)
-					})
-				}
-				c.Logger.Infof("auth.sendCode - test phone %s", phoneNumber)
-				return nil
-			}
-
-			c.prepareSMSCode(codeData2)
-
-			var (
-				needSendSms = true
-			)
-
-			if phoneRegistered {
-				if user.GetUser().GetUserType() == userpb.UserTypeTest {
-					needSendSms = false
-					codeData2.SentCodeType = model.SentCodeTypeApp
-					codeData2.PhoneCode = "12345"
-					codeData2.PhoneCodeExtraData = "12345"
-					c.Logger.Infof("is test server: %v", codeData2)
-				} else {
-					if status2, _ := c.svcCtx.StatusClient.StatusGetUserOnlineSessions(c.ctx, &statuspb.TLStatusGetUserOnlineSessions{
-						UserId: user.User.Id,
-					}); len(status2.GetUserSessions()) > 0 {
-						c.Logger.Infof("user online")
-						needSendSms = false
-						codeData2.SentCodeType = model.SentCodeTypeApp
-						codeData2.PhoneCodeExtraData = codeData2.PhoneCode
-					}
-				}
-				threading2.WrapperGoFunc(c.ctx, nil, func(ctx context.Context) {
-					c.pushSignInMessage(ctx, user.Id(), codeData2.PhoneCode)
-				})
-			}
-
-			if needSendSms {
-				c.Logger.Infof("send code by sms")
-				if err2 := c.sendSMS(phoneNumber, codeData2); err2 != nil {
-					c.Logger.Errorf("send sms code error: %v", err2)
-					return err2
-				}
-			}
-
-			//if user.User.UserType == userpb.UserTypeTest {
-			//	c.Logger.Infof("test user: %s, %s", phoneNumber, user)
-			//	codeData2.SentCodeType = model.CodeTypeApp
-			//	codeData2.PhoneCode = "12345"
-			//	codeData2.PhoneCodeExtraData = "12345"
-			//	go func() {
-			//		// c.pushSignInMessage(context.Background(), user.Id, codeData2.PhoneCode)
-			//	}()
-			//} else {
-			//	var (
-			//		online = false
-			//	)
-			//
-			//	if phoneRegistered {
-			//		if status, _ := c.svcCtx.StatusClient.StatusGetUserOnlineSessions(c.ctx, &status.TLStatusGetUserOnlineSessions{
-			//			UserId: user.User.Id,
-			//		}); len(status.GetUserSessions()) > 0 {
-			//			c.Logger.Infof("user online")
-			//			online = true
-			//
-			//			codeData2.SentCodeType = model.CodeTypeApp
-			//			codeData2.PhoneCodeExtraData = codeData2.PhoneCode
-			//			go func() {
-			//				// s.pushSignInMessage(context.Background(), user.Id, codeData2.PhoneCode)
-			//			}()
-			//		}
-			//		// &&
-			//	}
-			//
-			//	if !phoneRegistered || !online {
-			//		c.Logger.Infof("send code by sms")
-			//		if extraData, err := c.svcCtx.AuthLogic.VerifyCodeInterface.SendSmsVerifyCode(
-			//			context.Background(),
-			//			phoneNumber,
-			//			codeData2.PhoneCode,
-			//			codeData2.PhoneCodeHash); err != nil {
-			//			return err
-			//		} else {
-			//			codeData2.SentCodeType = model.CodeTypeSms
-			//			codeData2.PhoneCodeExtraData = extraData
-			//		}
-			//	}
-			//}
-
-			codeData2.NextCodeType = model.CodeTypeSms
-			codeData2.State = model.CodeStateSent
-			codeData2.PhoneNumberRegistered = phoneRegistered
-
-			return nil
+			return c.finishSendCode(phoneNumber, phoneRegistered, user, codeData2)
 		})
 
 	if err2 != nil {
@@ -445,4 +338,70 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 		reply.GetType().GetPredicateName(),
 		reply.GetType().GetLength())
 	return
+}
+
+// finishSendCode fills codeData and, for a real number, sends SMS.
+// 99966XYYYY (and any configured test range) is answered here and never
+// reaches the provider, including when TELLOMI_SMS_PROVIDER=aliyun.
+func (c *AuthorizationCore) finishSendCode(phoneNumber string, phoneRegistered bool, user *mtproto.ImmutableUser, codeData2 *model.PhoneCodeTransaction) error {
+	if codeData2.State == model.CodeStateSent {
+		c.Logger.Infof("codeSent")
+		return nil
+	}
+
+	// Dev test ranges (99966XYYYY and any configured prefix) never hit
+	// an SMS gateway. The code is the DC digit repeated, or Code.
+	if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
+		codeData2.SentCodeType = model.SentCodeTypeSms
+		codeData2.PhoneCode = code
+		codeData2.PhoneCodeExtraData = code
+		codeData2.NextCodeType = model.CodeTypeSms
+		codeData2.State = model.CodeStateSent
+		codeData2.PhoneNumberRegistered = phoneRegistered
+		if phoneRegistered {
+			threading2.WrapperGoFunc(c.ctx, nil, func(ctx context.Context) {
+				c.pushSignInMessage(ctx, user.Id(), codeData2.PhoneCode)
+			})
+		}
+		c.Logger.Infof("auth.sendCode - test phone %s", phoneNumber)
+		return nil
+	}
+
+	c.prepareSMSCode(codeData2)
+
+	needSendSms := true
+	if phoneRegistered {
+		if user.GetUser().GetUserType() == userpb.UserTypeTest {
+			needSendSms = false
+			codeData2.SentCodeType = model.SentCodeTypeApp
+			codeData2.PhoneCode = "12345"
+			codeData2.PhoneCodeExtraData = "12345"
+			c.Logger.Infof("is test server: %v", codeData2)
+		} else {
+			if status2, _ := c.svcCtx.StatusClient.StatusGetUserOnlineSessions(c.ctx, &statuspb.TLStatusGetUserOnlineSessions{
+				UserId: user.User.Id,
+			}); len(status2.GetUserSessions()) > 0 {
+				c.Logger.Infof("user online")
+				needSendSms = false
+				codeData2.SentCodeType = model.SentCodeTypeApp
+				codeData2.PhoneCodeExtraData = codeData2.PhoneCode
+			}
+		}
+		threading2.WrapperGoFunc(c.ctx, nil, func(ctx context.Context) {
+			c.pushSignInMessage(ctx, user.Id(), codeData2.PhoneCode)
+		})
+	}
+
+	if needSendSms {
+		c.Logger.Infof("send code by sms")
+		if err2 := c.sendSMS(phoneNumber, codeData2); err2 != nil {
+			c.Logger.Errorf("send sms code error: %v", err2)
+			return err2
+		}
+	}
+
+	codeData2.NextCodeType = model.CodeTypeSms
+	codeData2.State = model.CodeStateSent
+	codeData2.PhoneNumberRegistered = phoneRegistered
+	return nil
 }
