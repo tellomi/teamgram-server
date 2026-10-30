@@ -11,14 +11,25 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 // UserGetImmutableUserByPhone
 // user.getImmutableUserByPhone phone:string = ImmutableUser;
 func (c *UserCore) UserGetImmutableUserByPhone(in *user.TLUserGetImmutableUserByPhone) (*mtproto.ImmutableUser, error) {
 	// TODO: performance optimization
-	do, err := c.svcCtx.Dao.UsersDAO.SelectByPhoneNumber(c.ctx, in.Phone)
+	// auth.sendCode passes an email in this field for email-only accounts.
+	var (
+		do  *dataobject.UsersDO
+		err error
+	)
+	if verify.IsEmail(in.Phone) {
+		do, err = c.svcCtx.Dao.UsersDAO.SelectByEmail(c.ctx, verify.NormalizeEmail(in.Phone))
+	} else {
+		do, err = c.svcCtx.Dao.UsersDAO.SelectByPhoneNumber(c.ctx, in.Phone)
+	}
 	if err != nil {
 		c.Logger.Errorf("user.getImmutableUserByPhone - error: %v", err)
 		return nil, err

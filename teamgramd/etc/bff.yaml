@@ -34,6 +34,7 @@ Code:
   RegionId: ""
   # Dev/test SMS provider. Any phone is accepted with this code.
   # TELLOMI_SMS_PROVIDER=aliyun overrides Name and sends Aliyun SMS. See docs/sms-email.md.
+  # Email OTP is env-only: TELLOMI_EMAIL_PROVIDER defaults to log. See docs/email-signup.md.
   FixedCode: "12345"
 
 # Dev login numbers, same shape as Telegram test DCs (99966XYYYY).

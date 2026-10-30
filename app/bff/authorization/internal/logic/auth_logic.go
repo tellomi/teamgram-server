@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 	"github.com/teamgram/teamgram-server/pkg/code"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/status"
@@ -34,9 +35,11 @@ import (
 type AuthLogic struct {
 	*dao.Dao
 	code.VerifyCodeInterface
-	// MaxAttempts is how many wrong codes are accepted before FLOOD_WAIT.
+	// MaxAttempts is how many wrong SMS codes are accepted before FLOOD_WAIT.
 	// Zero uses 5.
 	MaxAttempts int
+	// EmailMaxAttempts is the same cap for email codes. Zero uses MaxAttempts.
+	EmailMaxAttempts int
 }
 
 func NewAuthSignLogic(dao *dao.Dao, code2 code.VerifyCodeInterface) *AuthLogic {
@@ -207,6 +210,9 @@ func (m *AuthLogic) DoAuthSignIn(ctx context.Context,
 	}
 
 	maxAttempts := m.MaxAttempts
+	if verify.IsEmail(phoneNumber) && m.EmailMaxAttempts > 0 {
+		maxAttempts = m.EmailMaxAttempts
+	}
 	if maxAttempts <= 0 {
 		maxAttempts = 5
 	}

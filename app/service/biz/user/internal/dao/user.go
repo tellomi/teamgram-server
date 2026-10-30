@@ -80,30 +80,37 @@ func (d *Dao) CreateNewUserV2(
 		cacheUserData = NewCacheUserData()
 	)
 
-	//
-	//tR := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-	// var err error
-	// user
+	cols, err := loginColumnsForNewUser(phone, countryCode)
+	if err != nil {
+		return nil, err
+	}
 	userDO = &dataobject.UsersDO{
 		UserType:       user.UserTypeRegular,
 		AccessHash:     rand.Int63(),
-		Phone:          phone,
+		Phone:          cols.Phone,
+		Email:          cols.Email,
 		SecretKeyId:    secretKeyId,
 		FirstName:      firstName,
 		LastName:       lastName,
-		CountryCode:    countryCode,
+		CountryCode:    cols.CountryCode,
 		AccountDaysTtl: 548,
 	}
-	if lastInsertId, _, err2 := d.UsersDAO.Insert(ctx, userDO); err2 != nil {
+	var (
+		lastInsertId int64
+		err2         error
+	)
+	if cols.EmailOnly {
+		lastInsertId, _, err2 = d.UsersDAO.InsertEmailUser(ctx, userDO)
+	} else {
+		lastInsertId, _, err2 = d.UsersDAO.Insert(ctx, userDO)
+	}
+	if err2 != nil {
 		if sqlx.IsDuplicate(err2) {
 			err2 = mtproto.ErrPhoneNumberOccupied
 		}
 		return nil, err2
-		//result.Err = err2
-		//return
-	} else {
-		userDO.Id = lastInsertId
 	}
+	userDO.Id = lastInsertId
 
 	cacheUserData.UserData = d.MakeUserDataByDO(userDO)
 	cacheUserData.CachesPrivacyKeyRules = append(

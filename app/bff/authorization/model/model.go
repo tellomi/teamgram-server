@@ -43,6 +43,7 @@ type PhoneCodeTransaction struct {
 	PhoneCodeExtraData    string `json:"phone_code_extra_data"`
 	SentCodeType          int    `json:"sent_code_type"`
 	FlashCallPattern      string `json:"flash_call_pattern"`
+	EmailPattern          string `json:"email_pattern,omitempty"`
 	NextCodeType          int    `json:"next_code_type"`
 	State                 int    `json:"state"`
 	Attempts              int    `json:"attempts,omitempty"`
@@ -57,8 +58,12 @@ type PhoneCodeTransaction struct {
 func (m *PhoneCodeTransaction) ToAuthSentCode() *mtproto.Auth_SentCode {
 	// TODO(@benqi): only use sms
 
+	pattern := m.FlashCallPattern
+	if m.SentCodeType == SentCodeTypeEmailCode {
+		pattern = m.EmailPattern
+	}
 	authSentCode := mtproto.MakeTLAuthSentCode(&mtproto.Auth_SentCode{
-		Type:          makeAuthSentCodeType(m.SentCodeType, len(m.PhoneCode), m.FlashCallPattern),
+		Type:          makeAuthSentCodeType(m.SentCodeType, len(m.PhoneCode), pattern),
 		PhoneCodeHash: m.PhoneCodeHash,
 		NextType:      makeAuthCodeType(m.NextCodeType),
 		Timeout:       &wrapperspb.Int32Value{Value: 60}, // TODO(@benqi): 默认60s

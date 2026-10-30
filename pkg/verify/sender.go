@@ -4,25 +4,24 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/teamgram/teamgram-server/pkg/verify/aliyun"
+	"github.com/teamgram/teamgram-server/pkg/verify/postal"
 )
 
 // NewEmailSender returns the email CodeSender for cfg.
-// An unset provider returns DisabledEmail, which refuses to send.
-// "log" prints the code. "aliyun_dm" builds a DirectMail client but does not
-// dial until SendCode. Authorization RPCs do not call this yet.
+// An empty provider returns DisabledEmail.
+// "log" prints the code. "postal" builds an HTTP client and does not dial
+// until SendCode. Aliyun DirectMail is not selected.
 func NewEmailSender(cfg EmailConfig) CodeSender {
 	switch cfg.Provider {
 	case ProviderLog:
 		return LogEmail{}
-	case ProviderAliyunDM:
-		return &aliyun.DirectMailClient{
-			AccessKeyID:     cfg.AccessKeyID,
-			AccessKeySecret: cfg.AccessKeySecret,
-			AccountName:     cfg.AccountName,
-			FromAlias:       cfg.FromAlias,
-			Endpoint:        cfg.Endpoint,
-			HTTP:            &http.Client{Timeout: 10 * time.Second},
+	case ProviderPostal:
+		return &postal.Client{
+			BaseURL:  cfg.PostalBaseURL,
+			APIKey:   cfg.PostalAPIKey,
+			From:     cfg.From,
+			FromName: cfg.FromName,
+			HTTP:     &http.Client{Timeout: 10 * time.Second},
 		}
 	default:
 		return DisabledEmail{}

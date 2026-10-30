@@ -3,11 +3,15 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/tos/terms"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"google.golang.org/grpc/status"
 )
 
 func maskPhone(phone string) string {
+	if verify.IsEmail(phone) {
+		return verify.MaskEmail(phone)
+	}
 	if len(phone) <= 4 {
 		return "****"
 	}

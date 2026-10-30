@@ -30,6 +30,7 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"google.golang.org/grpc/status"
 )
@@ -57,26 +58,45 @@ import (
 // auth.signIn#bcd51581 phone_number:string phone_code_hash:string phone_code:string = auth.Authorization;
 func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_Authorization, error) {
 	var (
-		phoneCode     = in.GetPhoneCode_STRING()
+		phoneCode     string
 		phoneCodeHash = in.PhoneCodeHash
+		err           error
 	)
 
-	if phoneCode == "" {
-		phoneCode = in.GetPhoneCode_FLAGSTRING().GetValue()
+	isEmail := verify.IsEmail(in.PhoneNumber)
+	if isEmail {
+		phoneCode, err = emailLoginCode(in)
+		if err != nil {
+			c.Logger.Errorf("auth.signIn - email code: %v", err)
+			return nil, err
+		}
+	} else {
+		phoneCode = in.GetPhoneCode_STRING()
+		if phoneCode == "" {
+			phoneCode = in.GetPhoneCode_FLAGSTRING().GetValue()
+		}
 	}
 
 	if phoneCode == "" || phoneCodeHash == "" {
-		err := mtproto.ErrPhoneCodeEmpty
+		err = mtproto.ErrPhoneCodeEmpty
 		c.Logger.Errorf("auth.sendCode - error: %v", err)
 		return nil, err
 	}
 
 	// 3. check number
 	// client phone number format: "+86 111 1111 1111"
-	_, phoneNumber, err := checkPhoneNumberInvalid(in.PhoneNumber)
+	// An email in phone_number is the email OTP login id.
+	var phoneNumber string
+	if isEmail {
+		phoneNumber, err = normalizeEmailLogin(in.PhoneNumber)
+	} else {
+		_, phoneNumber, err = checkPhoneNumberInvalid(in.PhoneNumber)
+		if err != nil {
+			err = mtproto.ErrPhoneNumberInvalid
+		}
+	}
 	if err != nil {
-		c.Logger.Errorf("check phone_number(%s) error - %v", in.PhoneNumber, err)
-		err = mtproto.ErrPhoneNumberInvalid
+		c.Logger.Errorf("check phone_number(%s) error - %v", maskPhone(in.PhoneNumber), err)
 		return nil, err
 	}
 
@@ -93,6 +113,12 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 		phoneCode,
 		phoneCodeHash,
 		func(codeData2 *model.PhoneCodeTransaction) error {
+			if isEmail {
+				if !storedCodeMatches(codeData2.PhoneCode, phoneCode) {
+					return mtproto.ErrPhoneCodeInvalid
+				}
+				return nil
+			}
 			if phonenumber.AcceptsTestCode(phoneNumber, phoneCode) {
 				return nil
 			}

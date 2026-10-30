@@ -32,9 +32,11 @@ type ServiceContext struct {
 	Config config.Config
 	*dao.Dao
 	*logic.AuthLogic
-	Plugin  plugin.AuthorizationPlugin
-	Verify  verify.Config
-	Limiter *verify.Limiter
+	Plugin       plugin.AuthorizationPlugin
+	Verify       verify.Config
+	Limiter      *verify.Limiter
+	EmailLimiter *verify.Limiter
+	EmailSender  verify.CodeSender
 }
 
 func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin plugin.AuthorizationPlugin) *ServiceContext {
@@ -46,12 +48,15 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 	cfg := verify.Load()
 	auth := logic.NewAuthSignLogic(d, code2)
 	auth.MaxAttempts = cfg.Limits.MaxAttempts
+	auth.EmailMaxAttempts = cfg.EmailLimits.MaxAttempts
 	return &ServiceContext{
-		Config:    c,
-		Dao:       d,
-		AuthLogic: auth,
-		Plugin:    plugin,
-		Verify:    cfg,
-		Limiter:   verify.NewLimiter(d.Cache(), cfg.Limits),
+		Config:       c,
+		Dao:          d,
+		AuthLogic:    auth,
+		Plugin:       plugin,
+		Verify:       cfg,
+		Limiter:      verify.NewLimiter(d.Cache(), cfg.Limits),
+		EmailLimiter: verify.NewLimiter(d.Cache(), cfg.EmailLimits),
+		EmailSender:  verify.NewEmailSender(cfg.Email),
 	}
 }

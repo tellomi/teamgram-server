@@ -20,6 +20,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 	premiumlimits "github.com/teamgram/teamgram-server/pkg/premium"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -397,7 +398,15 @@ func (d *Dao) GetUserIdByPhone(ctx context.Context, phone string) (int64, error)
 		&id,
 		genCachePhoneUserKey(phone),
 		func(ctx context.Context, conn *sqlx.DB, v interface{}) error {
-			do, err := d.UsersDAO.SelectByPhoneNumber(ctx, phone)
+			var (
+				do  *dataobject.UsersDO
+				err error
+			)
+			if verify.IsEmail(phone) {
+				do, err = d.UsersDAO.SelectByEmail(ctx, verify.NormalizeEmail(phone))
+			} else {
+				do, err = d.UsersDAO.SelectByPhoneNumber(ctx, phone)
+			}
 			if err != nil {
 				return err
 			} else if do == nil {

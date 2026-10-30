@@ -19,8 +19,8 @@ type CodeSender interface {
 	SendCode(ctx context.Context, to, code string) error
 }
 
-// LogEmail prints the code and does not call a provider. It is selected only
-// when TELLOMI_EMAIL_PROVIDER=log.
+// LogEmail prints the code and does not call a provider. It is the default
+// when TELLOMI_EMAIL_PROVIDER is unset, and when it is explicitly "log".
 type LogEmail struct{}
 
 func (LogEmail) SendCode(ctx context.Context, to, code string) error {
@@ -28,7 +28,8 @@ func (LogEmail) SendCode(ctx context.Context, to, code string) error {
 	return nil
 }
 
-// DisabledEmail refuses to send. Used when TELLOMI_EMAIL_PROVIDER is unset.
+// DisabledEmail refuses to send. Used when TELLOMI_EMAIL_PROVIDER is
+// disabled, none, off, or an unknown value such as aliyun_dm.
 type DisabledEmail struct{}
 
 func (DisabledEmail) SendCode(context.Context, string, string) error {

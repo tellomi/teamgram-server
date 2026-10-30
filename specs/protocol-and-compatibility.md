@@ -26,7 +26,7 @@ Clients connect to gnetway over TCP or WebSocket and use one of the above for ha
 | [iOS (teamgram-ios)](../clients/teamgram-ios.md) | Configure to point to your server |
 | [Desktop (teamgram-tdesktop)](../clients/teamgram-tdesktop.md) | Configure to point to your server |
 
-**Important:** Default sign-in verification code is **12345** when `TELLOMI_SMS_PROVIDER` is unset (development only). `aliyun` sends a real SMS code. See [docs/sms-email.md](../docs/sms-email.md).
+**Important:** Phone sign-in stays **12345** when `TELLOMI_SMS_PROVIDER` is unset (development only). `aliyun` sends a real SMS code. Email sign-in uses the code from `auth.sendCode` (printed in the log when `TELLOMI_EMAIL_PROVIDER` is `log`, the default). See [docs/sms-email.md](../docs/sms-email.md) and [docs/email-signup.md](../docs/email-signup.md).
 
 ## Deployment notes
 

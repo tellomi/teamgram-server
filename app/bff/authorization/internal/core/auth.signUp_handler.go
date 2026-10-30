@@ -31,6 +31,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 /*
@@ -80,10 +81,22 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 	// 3.2. check phone_number
 	// 客户端发送的手机号格式为: "+86 111 1111 1111"，归一化
 	// We need getRegionCode from phone_number
-	reginCode, phoneNumber, err := checkPhoneNumberInvalid(in.PhoneNumber)
+	// Email-only accounts pass the address in phone_number and store no phone.
+	var (
+		reginCode   string
+		phoneNumber string
+		err         error
+	)
+	if verify.IsEmail(in.PhoneNumber) {
+		phoneNumber, err = normalizeEmailLogin(in.PhoneNumber)
+	} else {
+		reginCode, phoneNumber, err = checkPhoneNumberInvalid(in.PhoneNumber)
+		if err != nil {
+			err = mtproto.ErrPhoneNumberInvalid
+		}
+	}
 	if err != nil {
 		c.Logger.Errorf("check phone_number error - %v", err)
-		err = mtproto.ErrPhoneNumberInvalid
 		return nil, err
 	}
 
@@ -190,7 +203,9 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 			// on event
 			c.svcCtx.AuthLogic.DeletePhoneCode(ctx, c.MD.PermAuthKeyId, phoneNumber, in.PhoneCodeHash)
 			c.pushSignInMessage(ctx, user.Id(), codeData.PhoneCode)
-			c.onContactSignUp(ctx, c.MD.PermAuthKeyId, user.Id(), phoneNumber)
+			if !verify.IsEmail(phoneNumber) {
+				c.onContactSignUp(ctx, c.MD.PermAuthKeyId, user.Id(), phoneNumber)
+			}
 		},
 	).(*mtproto.Auth_Authorization), nil
 }

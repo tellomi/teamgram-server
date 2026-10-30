@@ -20,6 +20,32 @@ func TestToAuthSentCodeReportsRealLength(t *testing.T) {
 	}
 }
 
+func TestToAuthSentCodeEmailPattern(t *testing.T) {
+	tx := &PhoneCodeTransaction{
+		PhoneCode:     "012345",
+		PhoneCodeHash: "hashhashhashhash",
+		SentCodeType:  SentCodeTypeEmailCode,
+		EmailPattern:  "u***@tellomi.app",
+		NextCodeType:  CodeTypeNone,
+	}
+	sent := tx.ToAuthSentCode()
+	if sent.GetType().GetPredicateName() != "auth_sentCodeTypeEmailCode" {
+		t.Fatalf("type %s", sent.GetType().GetPredicateName())
+	}
+	if sent.GetType().GetEmailPattern() != "u***@tellomi.app" {
+		t.Fatalf("pattern %q", sent.GetType().GetEmailPattern())
+	}
+	if sent.GetType().GetLength() != 6 {
+		t.Fatalf("length %d", sent.GetType().GetLength())
+	}
+	if sent.GetType().GetAppleSigninAllowed() || sent.GetType().GetGoogleSigninAllowed() {
+		t.Fatal("apple and google sign-in stay off")
+	}
+	if sent.GetNextType() != nil {
+		t.Fatalf("next %v", sent.GetNextType())
+	}
+}
+
 func TestResendKeepsSmsLength(t *testing.T) {
 	tx := &PhoneCodeTransaction{
 		PhoneCode:     "012345",
