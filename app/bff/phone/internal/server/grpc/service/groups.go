@@ -8,6 +8,13 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/engine"
 )
 
+func (s *Service) callIDs(in *mtproto.InputGroupCall) (int64, int64, error) {
+	if s == nil || s.eng == nil {
+		return 0, 0, mtproto.ErrGroupcallInvalid
+	}
+	return s.eng.ResolveCall(in)
+}
+
 func (s *Service) PhoneCreateGroupCall(ctx context.Context, in *mtproto.TLPhoneCreateGroupCall) (*mtproto.Updates, error) {
 	md, err := s.md(ctx)
 	if err != nil {
@@ -53,6 +60,10 @@ func (s *Service) PhoneJoinGroupCall(ctx context.Context, in *mtproto.TLPhoneJoi
 			return nil, err
 		}
 	}
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
 	hash := ""
 	if in.GetInviteHash() != nil {
 		hash = in.GetInviteHash().GetValue()
@@ -63,7 +74,7 @@ func (s *Service) PhoneJoinGroupCall(ctx context.Context, in *mtproto.TLPhoneJoi
 	}
 	return s.eng.JoinGroup(engine.JoinGroup{
 		UserID: md.GetUserId(), Auth: md.GetPermAuthKeyId(),
-		CallID: in.GetCall().GetId(), Access: in.GetCall().GetAccessHash(),
+		CallID: id, Access: access,
 		Muted: in.GetMuted(), VideoStopped: in.GetVideoStopped(),
 		PeerType: join.PeerType, PeerID: join.PeerId, InviteHash: hash,
 		Params: params, Block: in.GetBlock(), Member: member, Manage: manage,
@@ -75,7 +86,11 @@ func (s *Service) PhoneLeaveGroupCall(ctx context.Context, in *mtproto.TLPhoneLe
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.LeaveGroup(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), in.GetSource())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.LeaveGroup(md.GetUserId(), id, access, in.GetSource())
 }
 
 func (s *Service) PhoneInviteToGroupCall(ctx context.Context, in *mtproto.TLPhoneInviteToGroupCall) (*mtproto.Updates, error) {
@@ -90,7 +105,11 @@ func (s *Service) PhoneInviteToGroupCall(ctx context.Context, in *mtproto.TLPhon
 			ids = append(ids, p.PeerId)
 		}
 	}
-	return s.eng.Invite(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), ids)
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.Invite(md.GetUserId(), id, access, ids)
 }
 
 func (s *Service) manageCall(ctx context.Context, user, id, access int64) bool {
@@ -107,11 +126,19 @@ func (s *Service) PhoneDiscardGroupCall(ctx context.Context, in *mtproto.TLPhone
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.DiscardGroup(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()))
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.DiscardGroup(md.GetUserId(), id, access, s.manageCall(ctx, md.GetUserId(), id, access))
 }
 
 func (s *Service) PhoneToggleGroupCallSettings(ctx context.Context, in *mtproto.TLPhoneToggleGroupCallSettings) (*mtproto.Updates, error) {
 	md, err := s.md(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, access, err := s.callIDs(in.GetCall())
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +147,7 @@ func (s *Service) PhoneToggleGroupCallSettings(ctx context.Context, in *mtproto.
 		v := in.GetSendPaidMessagesStars().GetValue()
 		stars = &v
 	}
-	return s.eng.ToggleSettings(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()), in.GetResetInviteHash(), boolp(in.GetJoinMuted()), boolp(in.GetMessagesEnabled()), stars)
+	return s.eng.ToggleSettings(md.GetUserId(), id, access, s.manageCall(ctx, md.GetUserId(), id, access), in.GetResetInviteHash(), boolp(in.GetJoinMuted()), boolp(in.GetMessagesEnabled()), stars)
 }
 
 func (s *Service) PhoneGetGroupCall(ctx context.Context, in *mtproto.TLPhoneGetGroupCall) (*mtproto.Phone_GroupCall, error) {
@@ -128,7 +155,11 @@ func (s *Service) PhoneGetGroupCall(ctx context.Context, in *mtproto.TLPhoneGetG
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.GetGroup(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), in.GetLimit())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.GetGroup(md.GetUserId(), id, access, in.GetLimit())
 }
 
 func (s *Service) PhoneGetGroupParticipants(ctx context.Context, in *mtproto.TLPhoneGetGroupParticipants) (*mtproto.Phone_GroupParticipants, error) {
@@ -147,14 +178,22 @@ func (s *Service) PhoneGetGroupParticipants(ctx context.Context, in *mtproto.TLP
 			peers = append(peers, fmt.Sprintf("%d:%d", u.PeerType, u.PeerId))
 		}
 	}
-	return s.eng.Participants(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), in.GetSources(), peers, in.GetOffset(), in.GetLimit())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.Participants(md.GetUserId(), id, access, in.GetSources(), peers, in.GetOffset(), in.GetLimit())
 }
 
 func (s *Service) PhoneCheckGroupCall(ctx context.Context, in *mtproto.TLPhoneCheckGroupCall) (*mtproto.Vector_Int, error) {
 	if _, err := s.md(ctx); err != nil {
 		return nil, err
 	}
-	sources, err := s.eng.CheckSources(in.GetCall().GetId(), in.GetCall().GetAccessHash(), in.GetSources())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	sources, err := s.eng.CheckSources(id, access, in.GetSources())
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +209,11 @@ func (s *Service) PhoneToggleGroupCallRecord(ctx context.Context, in *mtproto.TL
 	if in.GetTitle() != nil {
 		title = in.GetTitle().GetValue()
 	}
-	return s.eng.ToggleRecord(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()), in.GetStart(), in.GetVideo(), title)
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.ToggleRecord(md.GetUserId(), id, access, s.manageCall(ctx, md.GetUserId(), id, access), in.GetStart(), in.GetVideo(), title)
 }
 
 func (s *Service) PhoneEditGroupCallParticipant(ctx context.Context, in *mtproto.TLPhoneEditGroupCallParticipant) (*mtproto.Updates, error) {
@@ -188,9 +231,13 @@ func (s *Service) PhoneEditGroupCallParticipant(ctx context.Context, in *mtproto
 		v := in.GetVolume().GetValue()
 		volume = &v
 	}
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
 	return s.eng.EditParticipant(engine.EditPart{
-		UserID: md.GetUserId(), CallID: in.GetCall().GetId(), Access: in.GetCall().GetAccessHash(),
-		PeerType: p.PeerType, PeerID: p.PeerId, Manage: s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()),
+		UserID: md.GetUserId(), CallID: id, Access: access,
+		PeerType: p.PeerType, PeerID: p.PeerId, Manage: s.manageCall(ctx, md.GetUserId(), id, access),
 		Muted: boolp(in.GetMuted()), Volume: volume, Raise: boolp(in.GetRaiseHand()),
 		VideoStopped: boolp(in.GetVideoStopped()), VideoPaused: boolp(in.GetVideoPaused()),
 		PresentationPaused: boolp(in.GetPresentationPaused()),
@@ -202,7 +249,11 @@ func (s *Service) PhoneEditGroupCallTitle(ctx context.Context, in *mtproto.TLPho
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.EditTitle(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()), in.GetTitle())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.EditTitle(md.GetUserId(), id, access, s.manageCall(ctx, md.GetUserId(), id, access), in.GetTitle())
 }
 
 func (s *Service) PhoneGetGroupCallJoinAs(ctx context.Context, in *mtproto.TLPhoneGetGroupCallJoinAs) (*mtproto.Phone_JoinAsPeers, error) {
@@ -221,6 +272,9 @@ func (s *Service) PhoneGetGroupCallJoinAs(ctx context.Context, in *mtproto.TLPho
 			}
 		}
 	}
+	if saved := s.eng.JoinAs(md.GetUserId(), peer.PeerType, peer.PeerId); saved != nil {
+		peers = preferPeer(peers, saved)
+	}
 	if chats == nil {
 		chats = []*mtproto.Chat{}
 	}
@@ -234,7 +288,11 @@ func (s *Service) PhoneExportGroupCallInvite(ctx context.Context, in *mtproto.TL
 	if err != nil {
 		return nil, err
 	}
-	link, err := s.eng.ExportInvite(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()), in.GetCanSelfUnmute())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	link, err := s.eng.ExportInvite(md.GetUserId(), id, access, s.manageCall(ctx, md.GetUserId(), id, access), in.GetCanSelfUnmute())
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +304,11 @@ func (s *Service) PhoneToggleGroupCallStartSubscription(ctx context.Context, in 
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.Subscribe(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), mtproto.FromBool(in.GetSubscribed()))
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.Subscribe(md.GetUserId(), id, access, mtproto.FromBool(in.GetSubscribed()))
 }
 
 func (s *Service) PhoneStartScheduledGroupCall(ctx context.Context, in *mtproto.TLPhoneStartScheduledGroupCall) (*mtproto.Updates, error) {
@@ -254,16 +316,31 @@ func (s *Service) PhoneStartScheduledGroupCall(ctx context.Context, in *mtproto.
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.StartScheduled(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), s.manageCall(ctx, md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash()))
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.StartScheduled(md.GetUserId(), id, access, s.manageCall(ctx, md.GetUserId(), id, access))
 }
 
 func (s *Service) PhoneSaveDefaultGroupCallJoinAs(ctx context.Context, in *mtproto.TLPhoneSaveDefaultGroupCallJoinAs) (*mtproto.Bool, error) {
-	if _, err := s.md(ctx); err != nil {
+	md, err := s.md(ctx)
+	if err != nil {
 		return nil, err
 	}
 	if in.GetPeer() == nil || in.GetJoinAs() == nil {
 		return nil, mtproto.ErrPeerIdInvalid
 	}
+	chat := mtproto.FromInputPeer2(md.GetUserId(), in.GetPeer())
+	as := mtproto.FromInputPeer2(md.GetUserId(), in.GetJoinAs())
+	if as.PeerType == mtproto.PEER_SELF || as.PeerId == 0 {
+		as.PeerType = mtproto.PEER_USER
+		as.PeerId = md.GetUserId()
+	}
+	if chat.PeerId == 0 || as.PeerId == 0 {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	s.eng.SaveJoinAs(md.GetUserId(), chat.PeerType, chat.PeerId, peerOf(as.PeerType, as.PeerId))
 	return mtproto.BoolTrue, nil
 }
 
@@ -276,7 +353,11 @@ func (s *Service) PhoneJoinGroupCallPresentation(ctx context.Context, in *mtprot
 	if in.GetParams() != nil {
 		params = in.GetParams().GetData()
 	}
-	return s.eng.JoinPresentation(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash(), params)
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.JoinPresentation(md.GetUserId(), id, access, params)
 }
 
 func (s *Service) PhoneLeaveGroupCallPresentation(ctx context.Context, in *mtproto.TLPhoneLeaveGroupCallPresentation) (*mtproto.Updates, error) {
@@ -284,14 +365,22 @@ func (s *Service) PhoneLeaveGroupCallPresentation(ctx context.Context, in *mtpro
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.LeavePresentation(md.GetUserId(), in.GetCall().GetId(), in.GetCall().GetAccessHash())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.LeavePresentation(md.GetUserId(), id, access)
 }
 
 func (s *Service) PhoneGetGroupCallStreamChannels(ctx context.Context, in *mtproto.TLPhoneGetGroupCallStreamChannels) (*mtproto.Phone_GroupCallStreamChannels, error) {
 	if _, err := s.md(ctx); err != nil {
 		return nil, err
 	}
-	return s.eng.StreamChannels(in.GetCall().GetId(), in.GetCall().GetAccessHash())
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	return s.eng.StreamChannels(id, access)
 }
 
 func (s *Service) PhoneGetGroupCallStreamRtmpUrl(ctx context.Context, in *mtproto.TLPhoneGetGroupCallStreamRtmpUrl) (*mtproto.Phone_GroupCallStreamRtmpUrl, error) {
@@ -305,11 +394,24 @@ func (s *Service) PhoneGetGroupCallStreamRtmpUrl(ctx context.Context, in *mtprot
 }
 
 func (s *Service) PhoneSaveDefaultSendAs(ctx context.Context, in *mtproto.TLPhoneSaveDefaultSendAs) (*mtproto.Bool, error) {
-	if _, err := s.md(ctx); err != nil {
+	md, err := s.md(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if in.GetCall() == nil || in.GetSendAs() == nil {
+	if in.GetSendAs() == nil {
 		return nil, mtproto.ErrPeerIdInvalid
 	}
-	return mtproto.BoolTrue, nil
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	as := mtproto.FromInputPeer2(md.GetUserId(), in.GetSendAs())
+	if as.PeerType == mtproto.PEER_SELF || as.PeerId == 0 {
+		as.PeerType = mtproto.PEER_USER
+		as.PeerId = md.GetUserId()
+	}
+	if as.PeerId == 0 {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	return s.eng.SaveDefaultSendAs(md.GetUserId(), id, access, peerOf(as.PeerType, as.PeerId))
 }

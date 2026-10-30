@@ -525,6 +525,257 @@ func TestGroupCallAndDhConfig(t *testing.T) {
 	}
 }
 
+func TestConferenceMessagesAndChain(t *testing.T) {
+	eng, _ := testEngine(t)
+	svc := NewWithEngine(eng)
+	ctx := withUser(10, 100)
+	ctx2 := withUser(11, 110)
+	params := `{"ssrc":222,"ufrag":"cu","pwd":"cp","fingerprints":[{"hash":"sha-256","fingerprint":"AA:BB","setup":"passive"}]}`
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	block := []byte{9, 8, 7, 6}
+	up, err := svc.PhoneCreateConferenceCall7D0444BB(ctx, &mtproto.TLPhoneCreateConferenceCall7D0444BB{
+		Join: true, Muted: true, RandomId: 42, PublicKey: key, Block: block,
+		Params: mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: params}).To_DataJSON(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gcall *mtproto.GroupCall
+	var sawBlock bool
+	for _, u := range up.Updates {
+		if u.GetPredicateName() == mtproto.Predicate_updateGroupCall {
+			gcall = u.GetCall_GROUPCALL()
+		}
+		if u.GetPredicateName() == mtproto.Predicate_updateGroupCallChainBlocks {
+			sawBlock = true
+			roundTrip(t, u, 0xa477288f)
+			if len(u.GetBlocks()) != 1 || u.GetNextOffset() != -1 {
+				t.Fatalf("chain %+v", u.GetBlocks())
+			}
+		}
+	}
+	if gcall == nil || !gcall.GetConference() || !gcall.GetCreator() || !sawBlock {
+		t.Fatalf("conference %+v block=%v", gcall, sawBlock)
+	}
+	roundTrip(t, gcall, 0xefb2b617)
+	inCall := mtproto.MakeTLInputGroupCall(&mtproto.InputGroupCall{Id: gcall.GetId(), AccessHash: gcall.GetAccessHash()}).To_InputGroupCall()
+
+	again, err := svc.PhoneCreateConferenceCall7D0444BB(ctx, &mtproto.TLPhoneCreateConferenceCall7D0444BB{RandomId: 42, Join: true, PublicKey: key})
+	if err != nil || again.Updates[0].GetCall_GROUPCALL().GetId() != gcall.GetId() {
+		t.Fatal(again, err)
+	}
+	page, err := svc.PhoneGetGroupCallChainBlocks(ctx, &mtproto.TLPhoneGetGroupCallChainBlocks{Call: inCall, SubChainId: 0, Offset: 0, Limit: 10})
+	if err != nil || len(page.Updates) != 1 || len(page.Updates[0].GetBlocks()) != 1 {
+		t.Fatalf("%+v %v", page, err)
+	}
+	if _, err := svc.PhoneSendConferenceCallBroadcast(ctx, &mtproto.TLPhoneSendConferenceCallBroadcast{Call: inCall, Block: []byte{1}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PhoneSendConferenceCallBroadcast(ctx, &mtproto.TLPhoneSendConferenceCallBroadcast{Call: inCall}); err == nil {
+		t.Fatal("empty block accepted")
+	}
+
+	text := mtproto.MakeTLTextWithEntities(&mtproto.TextWithEntities{Text: "hello call"}).To_TextWithEntities()
+	sent, err := svc.PhoneSendGroupCallMessageB1D11410(ctx, &mtproto.TLPhoneSendGroupCallMessageB1D11410{
+		Call: inCall, RandomId: 7, Message: text,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg *mtproto.GroupCallMessage
+	for _, u := range sent.Updates {
+		if u.GetPredicateName() == mtproto.Predicate_updateGroupCallMessage {
+			msg = u.GetMessage_GROUPCALLMESSAGE()
+			roundTrip(t, u, 0xd8326f0d)
+		}
+	}
+	if msg == nil || msg.GetMessage().GetText() != "hello call" || !msg.GetFromAdmin() {
+		t.Fatalf("message %+v", msg)
+	}
+	roundTrip(t, msg, 0x1a8afc7e)
+	dup, err := svc.PhoneSendGroupCallMessageB1D11410(ctx, &mtproto.TLPhoneSendGroupCallMessageB1D11410{
+		Call: inCall, RandomId: 7, Message: text,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dupID int32
+	for _, u := range dup.Updates {
+		if u.GetMessage_GROUPCALLMESSAGE() != nil {
+			dupID = u.GetMessage_GROUPCALLMESSAGE().GetId()
+		}
+	}
+	if dupID != msg.GetId() {
+		t.Fatalf("random id not idempotent: %d vs %d", dupID, msg.GetId())
+	}
+	if ok, err := svc.PhoneSendGroupCallMessage87893014(ctx, &mtproto.TLPhoneSendGroupCallMessage87893014{
+		Call: inCall, RandomId: 8, Message: text,
+	}); err != nil || !mtproto.FromBool(ok) {
+		t.Fatal(ok, err)
+	}
+	if _, err := svc.PhoneSendGroupCallMessageB1D11410(ctx, &mtproto.TLPhoneSendGroupCallMessageB1D11410{
+		Call: inCall, RandomId: 9, Message: mtproto.MakeTLTextWithEntities(&mtproto.TextWithEntities{}).To_TextWithEntities(),
+	}); err == nil || !strings.Contains(err.Error(), "MESSAGE_EMPTY") {
+		t.Fatal(err)
+	}
+	deleted, err := svc.PhoneDeleteGroupCallMessages(ctx, &mtproto.TLPhoneDeleteGroupCallMessages{Call: inCall, Messages: []int32{msg.GetId()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var removed []int32
+	for _, u := range deleted.Updates {
+		if u.GetPredicateName() == mtproto.Predicate_updateDeleteGroupCallMessages {
+			removed = u.GetMessages()
+			roundTrip(t, u, 0x3e85e92c)
+		}
+	}
+	if len(removed) != 1 || removed[0] != msg.GetId() {
+		t.Fatalf("deleted %+v", removed)
+	}
+	if _, err := svc.PhoneDeleteGroupCallParticipantMessages(ctx, &mtproto.TLPhoneDeleteGroupCallParticipantMessages{
+		Call: inCall, Participant: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stars, err := svc.PhoneGetGroupCallStars(ctx, &mtproto.TLPhoneGetGroupCallStars{Call: inCall})
+	if err != nil || stars.GetTotalStars() != 0 {
+		t.Fatal(stars, err)
+	}
+	roundTrip(t, stars, 0x9d1dbd26)
+	if ok, err := svc.PhoneSendGroupCallEncryptedMessage(ctx, &mtproto.TLPhoneSendGroupCallEncryptedMessage{Call: inCall, EncryptedMessage: []byte{1, 2, 3}}); err != nil || !mtproto.FromBool(ok) {
+		t.Fatal(ok, err)
+	}
+	if _, err := svc.PhoneSaveDefaultSendAs(ctx, &mtproto.TLPhoneSaveDefaultSendAs{
+		Call: inCall, SendAs: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.PhoneGetGroupCall(ctx, &mtproto.TLPhoneGetGroupCall{Call: inCall, Limit: 5})
+	if err != nil || view.GetCall().GetDefaultSendAs().GetUserId() != 10 {
+		t.Fatalf("%+v %v", view.GetCall().GetDefaultSendAs(), err)
+	}
+
+	inv, err := svc.PhoneInviteConferenceCallParticipant(ctx, &mtproto.TLPhoneInviteConferenceCallParticipant{
+		Video: true, Call: inCall, UserId: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 11, AccessHash: 1}).To_InputUser(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inviteMsg int32
+	for _, u := range inv.Updates {
+		if m := u.GetMessage_MESSAGE(); m != nil && m.GetAction().GetPredicateName() == mtproto.Predicate_messageActionConferenceCall {
+			inviteMsg = m.GetId()
+			if !m.GetAction().GetActive() || !m.GetAction().GetVideo() || m.GetAction().GetCallId() != gcall.GetId() {
+				t.Fatalf("invite action %+v", m.GetAction())
+			}
+			roundTrip(t, m.GetAction(), 0x2ffe2f7a)
+		}
+	}
+	if inviteMsg == 0 {
+		t.Fatal("invite message missing")
+	}
+	declined, err := svc.PhoneDeclineConferenceCallInvite(ctx2, &mtproto.TLPhoneDeclineConferenceCallInvite{MsgId: inviteMsg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missed bool
+	for _, u := range declined.Updates {
+		if m := u.GetMessage_MESSAGE(); m != nil && m.GetAction().GetMissed() {
+			missed = true
+		}
+	}
+	if !missed {
+		t.Fatal("decline did not mark the invite missed")
+	}
+	if _, err := svc.PhoneDeclineConferenceCallInvite(ctx, &mtproto.TLPhoneDeclineConferenceCallInvite{MsgId: inviteMsg}); err == nil {
+		t.Fatal("inviter declined the invite")
+	}
+
+	params2 := strings.Replace(params, "222", "333", 1)
+	if _, err := svc.PhoneJoinGroupCall(ctx2, &mtproto.TLPhoneJoinGroupCall{
+		Call: inCall, JoinAs: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Params: mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: params2}).To_DataJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	kicked, err := svc.PhoneDeleteConferenceCallParticipants(ctx, &mtproto.TLPhoneDeleteConferenceCallParticipants{
+		Kick: true, Call: inCall, Ids: []int64{11}, Block: []byte{4, 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left bool
+	for _, u := range kicked.Updates {
+		if u.GetPredicateName() != mtproto.Predicate_updateGroupCallParticipants {
+			continue
+		}
+		for _, p := range u.GetParticipants_VECTORGROUPCALLPARTICIPANT() {
+			if p.GetPeer().GetUserId() == 11 && p.GetLeft() {
+				left = true
+			}
+		}
+	}
+	if !left {
+		t.Fatal("participant was not kicked")
+	}
+
+	link, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: inCall})
+	if err != nil || link.GetLink() == "" {
+		t.Fatal(link, err)
+	}
+	slug := link.GetLink()
+	if i := strings.LastIndex(slug, "/"); i >= 0 {
+		slug = slug[i+1:]
+	}
+	bySlug, err := svc.PhoneGetGroupCall(ctx, &mtproto.TLPhoneGetGroupCall{
+		Call:  mtproto.MakeTLInputGroupCallSlug(&mtproto.InputGroupCall{Slug: slug}).To_InputGroupCall(),
+		Limit: 1,
+	})
+	if err != nil || bySlug.GetCall().GetId() != gcall.GetId() {
+		t.Fatal(bySlug, err)
+	}
+	byInvite, err := svc.PhoneGetGroupCall(ctx2, &mtproto.TLPhoneGetGroupCall{
+		Call:  mtproto.MakeTLInputGroupCallInviteMessage(&mtproto.InputGroupCall{MsgId: inviteMsg}).To_InputGroupCall(),
+		Limit: 1,
+	})
+	if err != nil || byInvite.GetCall().GetId() != gcall.GetId() {
+		t.Fatal(byInvite, err)
+	}
+
+	// Legacy constructor marks a confirmed 1:1 call conference_supported.
+	a := secret()
+	b := secret()
+	ga := dh.Public(a)
+	gb := dh.Public(b)
+	sum := sha256.Sum256(ga)
+	fp := dh.Fingerprint(dh.Shared(gb, a))
+	req, err := svc.PhoneRequestCall(ctx, &mtproto.TLPhoneRequestCall{
+		RandomId: 3, UserId: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 11, AccessHash: 1}).To_InputUser(),
+		GAHash: sum[:], Protocol: callProto(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := mtproto.MakeTLInputPhoneCall(&mtproto.InputPhoneCall{Id: req.GetPhoneCall().GetId(), AccessHash: req.GetPhoneCall().GetAccessHash()}).To_InputPhoneCall()
+	if _, err := svc.PhoneAcceptCall(ctx2, &mtproto.TLPhoneAcceptCall{Peer: peer, GB: gb, Protocol: callProto()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PhoneConfirmCall(ctx, &mtproto.TLPhoneConfirmCall{Peer: peer, GA: ga, KeyFingerprint: fp, Protocol: callProto()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PhoneCreateConferenceCallDFC909AB(ctx, &mtproto.TLPhoneCreateConferenceCallDFC909AB{Peer: peer, KeyFingerprint: fp + 1}); err == nil {
+		t.Fatal("bad fingerprint accepted")
+	}
+	legacy, err := svc.PhoneCreateConferenceCallDFC909AB(ctx, &mtproto.TLPhoneCreateConferenceCallDFC909AB{Peer: peer, KeyFingerprint: fp})
+	if err != nil || !legacy.GetPhoneCall().GetConferenceSupported() {
+		t.Fatalf("%+v %v", legacy.GetPhoneCall(), err)
+	}
+	roundTrip(t, legacy.GetPhoneCall(), 0x30535af5)
+}
+
 func inputChannel(ch *mtproto.Chat) *mtproto.InputChannel {
 	return mtproto.MakeTLInputChannel(&mtproto.InputChannel{
 		ChannelId: ch.Id, AccessHash: ch.GetAccessHash_FLAGINT64().GetValue(),

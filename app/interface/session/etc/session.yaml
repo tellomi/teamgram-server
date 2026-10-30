@@ -82,7 +82,9 @@ BFFProxyClients:
     "/mtproto.RPCFolders": "bff.bff"
     "/mtproto.RPCFolderTags": "bff.bff"
     #"/mtproto.RPCGames": "bff.bff"
-    #"/mtproto.RPCGroupCalls": "bff.bff"
+    # Group and conference calls.
+    "/mtproto.RPCGroupCalls": "bff.bff"
+    "/mtproto.RPCConferenceCalls": "bff.bff"
     #"/mtproto.RPCImportedChats": "bff.bff"
     "/mtproto.RPCLangpack": "bff.bff"
     "/mtproto.RPCAutoDownload": "bff.bff"

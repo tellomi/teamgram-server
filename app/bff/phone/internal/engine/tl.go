@@ -161,6 +161,7 @@ func (e *Engine) phoneView(c *call, forAdmin bool) *mtproto.PhoneCall {
 			uid = c.admin
 		}
 		base.P2PAllowed = c.p2p
+		base.ConferenceSupported = c.conference
 		base.GAOrB = append([]byte(nil), other...)
 		base.KeyFingerprint = c.fingerprint
 		base.Connections = e.connections(uid, tag)

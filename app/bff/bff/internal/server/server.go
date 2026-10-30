@@ -244,6 +244,7 @@ func (s *Server) Initialize() error {
 		})
 		mtproto.RegisterRPCVoipCallsServer(grpcServer, phoneSvc)
 		mtproto.RegisterRPCGroupCallsServer(grpcServer, phoneSvc)
+		mtproto.RegisterRPCConferenceCallsServer(grpcServer, phoneSvc)
 		mtproto.RegisterRPCSecretChatsServer(grpcServer, phoneSvc)
 
 		// chats_helper

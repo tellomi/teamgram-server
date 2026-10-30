@@ -75,7 +75,7 @@ BFFProxyClients:
     # Seamless login: messages.requestUrlAuth and the other RPCSeamless methods.
     # This server has no bot OAuth catalog, so URL checks return urlAuthResultDefault.
     "/mtproto.RPCSeamless": "bff.bff"
-    # 1:1 voice and video. Group calls stay on RPCGroupCalls (still commented).
+    # 1:1 voice and video.
     "/mtproto.RPCVoipCalls": "bff.bff"
     "/mtproto.RPCChannels": "bff.bff"
     "/mtproto.RPCChatInvites": "bff.bff"
@@ -122,7 +122,9 @@ BFFProxyClients:
     "/mtproto.RPCFolderTags": "bff.bff"
     # messages.getEmojiGameInfo. Other game score RPCs stay unimplemented.
     "/mtproto.RPCGames": "bff.bff"
-    #"/mtproto.RPCGroupCalls": "bff.bff"
+    # Group and conference calls.
+    "/mtproto.RPCGroupCalls": "bff.bff"
+    "/mtproto.RPCConferenceCalls": "bff.bff"
     # History import: init, check, upload, and start.
     "/mtproto.RPCImportedChats": "bff.bff"
     "/mtproto.RPCLangpack": "bff.bff"

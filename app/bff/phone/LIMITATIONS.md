@@ -34,14 +34,21 @@ match `TELLOMI_TURN_SECRET` / `Phone.TurnSecret`. Session routes
 `teamgramd/etc2/session.yaml`. Deploy steps for the Chengdu host are in
 `docs/calls.md`.
 
-`RPCGroupCalls` stays unrouted. 1:1 video uses the same `phone.requestCall`
-path as voice (`video:true`). Group voice still needs the SFU described below.
+`RPCGroupCalls` and `RPCConferenceCalls` are routed. 1:1 video uses the same
+`phone.requestCall` path as voice (`video:true`). Group voice uses the SFU
+described below.
 
 ## What is not equivalent to Telegram
 
-- Conference calls (`phone.createConferenceCall` and the E2EE blockchain) are
-  not implemented. A `block` sent on `phone.joinGroupCall` is stored and pushed
-  as `updateGroupCallChainBlocks`, which is not a full chain.
+- Conference calls (`phone.createConferenceCall`) create an in-memory room
+  with `groupCall.conference`. Chain blocks from join, broadcast, and
+  `phone.getGroupCallChainBlocks` are stored and returned. That store is not a
+  validated E2EE blockchain. The legacy constructor returns the active 1:1
+  `phoneCall` with `conference_supported`. `phone.getGroupCallStars` reports
+  recorded totals and does not debit Stars. A group call with
+  `send_paid_messages_stars` set rejects a text send with
+  `ALLOW_PAYMENT_REQUIRED_<amount>` unless `allow_paid_stars` is at least that
+  amount; the server still does not charge a balance.
 - The SFU does not speak tgcalls colibri (simulcast layer selection, receiver
   video constraints, or transport-cc feedback). Video payload types are H264
   baseline in the join answer, and video RTP is forwarded on the same socket as
