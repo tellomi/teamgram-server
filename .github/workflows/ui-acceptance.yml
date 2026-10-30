@@ -52,7 +52,7 @@ concurrency:
 
 env:
   E2E_API_HOST: ${{ inputs.api_host || 'staging-api.tellomi.cn' }}
-  E2E_API_PORT: "10443"
+  E2E_API_PORT: "11443"
 
 jobs:
   check:
@@ -202,5 +202,5 @@ jobs:
 
           可以继续部署 staging。在本作业成功之前，不要在 staging 主机上执行 `docker compose pull`。
 
-          Host: staging-api.tellomi.cn. Screenshots are the `ui-android-screenshots` and `ui-ios-screenshots` artifacts.
+          Host: staging-api.tellomi.cn (TCP 11443). Screenshots are the `ui-android-screenshots` and `ui-ios-screenshots` artifacts.
           EOF

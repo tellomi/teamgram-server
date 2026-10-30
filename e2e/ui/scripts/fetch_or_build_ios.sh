@@ -7,6 +7,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
 host="${E2E_API_HOST:-staging-api.tellomi.cn}"
+port="${E2E_API_PORT:-11443}"
 work="${RUNNER_TEMP:-/tmp}/tellomi-ios-fetch"
 mkdir -p "$work"
 
@@ -55,7 +56,7 @@ fi
 src="${IOS_SRC:-${RUNNER_TEMP:-/tmp}/Telegram-iOS}"
 {
   ref="${IOS_GIT_REF:-master}"
-  echo "building tellomi/Telegram-iOS ${ref} (${host}) at ${src}"
+  echo "building tellomi/Telegram-iOS ${ref} (${host}:${port}) at ${src}"
   rm -rf "$src"
   git clone --depth 1 --branch "$ref" https://github.com/tellomi/Telegram-iOS.git "$src"
   cd "$src"
@@ -64,7 +65,10 @@ src="${IOS_SRC:-${RUNNER_TEMP:-/tmp}/Telegram-iOS}"
   else
     git submodule update --init --recursive
   fi
-  python3 "${root}/e2e/ui/scripts/seeds.py" "${src}/Tellomi/tellomi-server.json" "$host"
+  python3 "${root}/e2e/ui/scripts/seeds.py" "${src}/Tellomi/tellomi-server.json" "$host" "$port"
+  # The committed checker locks production host api.tellomi.cn and TCP 10443.
+  # Rewrite those two assertions in this checkout so seed_port can be staging.
+  python3 "${root}/e2e/ui/scripts/seeds.py" --allow-staging-check "${src}/Tellomi/check_server_config.py" "$host" "$port"
   python3 Tellomi/generate_server_config.py
   python3 Tellomi/check_server_config.py
   xcode_version="$(python3 -c 'import json; print(json.load(open("versions.json"))["xcode"])')"

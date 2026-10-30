@@ -4,7 +4,7 @@ English below. [中文](#中文).
 
 These flows are the gate before a staging deploy. GitHub Actions runs them on
 `workflow_dispatch` and when a pull request is labeled `deploy-staging`.
-They talk to `staging-api.tellomi.cn` (TCP `10443`). The `ready-for-deploy`
+They talk to `staging-api.tellomi.cn` (TCP `11443`). The `ready-for-deploy`
 job is green only after the flows pass. Do not `docker compose pull` on the
 staging host until that job is green.
 
@@ -52,19 +52,24 @@ screen can show `正在更新`.
 
 The clients are not rebuilt to embed a new Android IP, and a hosts file
 cannot change the Android release: that APK dials an IPv4 literal
-(`TELLOMI_PROFILE_DEV` in `tellomi/Telegram`, port `10443`). The emulator is
-`google_apis` so `adb root` works, and `iptables` DNAT sends every TCP
-connection to that port to the staging address.
+(`TELLOMI_PROFILE_DEV` in `tellomi/Telegram`, production port `10443`). The
+emulator is `google_apis` so `adb root` works, and `iptables` DNAT sends
+every TCP connection to that production port to the staging address on TCP
+`11443`.
 
 iOS dials a hostname. A downloaded simulator `.app` still has
-`api.tellomi.cn`, so the macOS runner maps that name to the staging IP. A
-from-source build rewrites `Tellomi/tellomi-server.json` in the CI checkout
-only, regenerates the header, and builds `debug_sim_arm64`. The checkout is
-never pushed. A device IPA is rejected: it cannot boot in the Simulator.
+`api.tellomi.cn` and production port `10443`, so the macOS runner maps that
+name to the staging IP. The hosts entry remaps the name. The prebuilt app
+keeps production port `10443`. A from-source build rewrites
+`Tellomi/tellomi-server.json` in the CI checkout only (seeds pointed at
+staging, `seed_port` `11443`), relaxes the production host and port
+assertions in that checkout's `Tellomi/check_server_config.py`, regenerates
+the header, and builds `debug_sim_arm64`. The checkout is never pushed. A
+device IPA is rejected: it cannot boot in the Simulator.
 
 Staging must present the same development RSA key the clients ship
 (fingerprint `12240908862933197005`). The runner must be able to open TCP
-`10443` on the host. If GitHub-hosted runners cannot, set
+`11443` on the host. If GitHub-hosted runners cannot, set
 `E2E_ANDROID_RUNNER` and `E2E_IOS_RUNNER` to self-hosted runners that can.
 
 ## Runners
@@ -95,7 +100,7 @@ workflow.
 | `E2E_PHONE_B` | secret | no | Stable number for account B. |
 | `E2E_PHONE_SIGNUP` | secret | no | Stable number for the sign-up checkbox flow. Reuse only after the account is deleted, or the sign-up screen will not appear. |
 | `E2E_API_HOST` | env / dispatch `api_host` | no | Default `staging-api.tellomi.cn`. |
-| `E2E_API_PORT` | env | no | Default `10443`. |
+| `E2E_API_PORT` | env | no | Default `11443` (staging). Release clients still dial production `10443`; Android DNAT rewrites that to this port. |
 | `E2E_DC_DIGIT` | env | no | Default `1` (code `11111`). |
 | `E2E_ANDROID_RUNNER` | variable | no | Default `ubuntu-latest`. |
 | `E2E_IOS_RUNNER` | variable | no | Default `xcode-27`. |
@@ -111,7 +116,7 @@ That does not boot an emulator. The shell scripts are parsed with `bash -n`.
 
 ## 中文
 
-这是 staging 部署前的界面验收。Actions 里手动运行（`workflow_dispatch`），或给 pull request 打上 `deploy-staging` 标签时，会在模拟器里跑 Maestro。目标是 `staging-api.tellomi.cn` 的 TCP `10443`。`ready-for-deploy` 成功之后，才能在 staging 主机上 `docker compose pull`。
+这是 staging 部署前的界面验收。Actions 里手动运行（`workflow_dispatch`），或给 pull request 打上 `deploy-staging` 标签时，会在模拟器里跑 Maestro。目标是 `staging-api.tellomi.cn` 的 TCP `11443`。`ready-for-deploy` 成功之后，才能在 staging 主机上 `docker compose pull`。
 
 镜像发布（`.github/workflows/docker-acr.yml`）不跑这套测试。
 
@@ -134,11 +139,11 @@ That does not boot an emulator. The shell scripts are parsed with `bash -n`.
 
 登录用测试号 `99966XYYYY`。`X` 是数据中心数字，验证码是这个数字重复五次（`9996612345` → `11111`）。不发短信。说明见 `docs/sms-email.md`。没设置下面的号码 secret 时，每次运行换新号。系统语言是简体中文，这样卡住的更新页才会显示 `正在更新`。
 
-Android 发布包拨的是写死的 IPv4（`tellomi/Telegram` 的 `TELLOMI_PROFILE_DEV`，端口 `10443`），改 hosts 没用。模拟器使用 `google_apis` 镜像，`adb root` 之后用 `iptables` DNAT，把连向该端口的 TCP 转到 staging 的地址。
+Android 发布包拨的是写死的 IPv4（`tellomi/Telegram` 的 `TELLOMI_PROFILE_DEV`，生产端口 `10443`），改 hosts 没用。模拟器使用 `google_apis` 镜像，`adb root` 之后用 `iptables` DNAT，把连向该端口的 TCP 转到 staging 的 TCP `11443`。
 
-iOS 拨的是主机名。下载的模拟器包如果仍是 `api.tellomi.cn`，macOS runner 会把这个名字指到 staging 的 IP。从源码构建时，只改 CI 工作副本里的 `Tellomi/tellomi-server.json`，重新生成头文件，再编 `debug_sim_arm64`。不会推回客户端仓库。设备用的 IPA 不能在模拟器里启动，脚本会拒绝。
+iOS 拨的是主机名。下载的模拟器包如果仍是 `api.tellomi.cn`，并且仍是生产端口 `10443`，macOS runner 会把这个名字指到 staging 的 IP。hosts 只改名字，预编译包仍拨生产端口 `10443`。从源码构建时，只改 CI 工作副本里的 `Tellomi/tellomi-server.json`（种子指向 staging，`seed_port` 为 `11443`），并放宽该副本里 `Tellomi/check_server_config.py` 对生产主机和端口的断言，然后重新生成头文件，再编 `debug_sim_arm64`。不会推回客户端仓库。设备用的 IPA 不能在模拟器里启动，脚本会拒绝。
 
-staging 必须使用客户端自带的同一把开发 RSA 公钥（指纹 `12240908862933197005`）。runner 必须能连上该主机的 TCP `10443`。GitHub 托管 runner 连不上时，把变量 `E2E_ANDROID_RUNNER` 和 `E2E_IOS_RUNNER` 设成能连上的 self-hosted runner。
+staging 必须使用客户端自带的同一把开发 RSA 公钥（指纹 `12240908862933197005`）。runner 必须能连上该主机的 TCP `11443`。GitHub 托管 runner 连不上时，把变量 `E2E_ANDROID_RUNNER` 和 `E2E_IOS_RUNNER` 设成能连上的 self-hosted runner。
 
 ### Runner
 
@@ -164,7 +169,7 @@ Android 和 iOS 都跳过时，`ready-for-deploy` 失败。
 | `E2E_PHONE_B` | secret | 否 | 账号 B 的固定号码。 |
 | `E2E_PHONE_SIGNUP` | secret | 否 | 注册勾选框用的固定号码。账号还在时不会再进入注册页，所以不要复用没删掉的号。 |
 | `E2E_API_HOST` | 环境变量 / 手动输入 `api_host` | 否 | 默认 `staging-api.tellomi.cn`。 |
-| `E2E_API_PORT` | 环境变量 | 否 | 默认 `10443`。 |
+| `E2E_API_PORT` | 环境变量 | 否 | 默认 `11443`（staging）。发布版客户端仍拨生产端口 `10443`；Android DNAT 把该端口转到这个端口。 |
 | `E2E_DC_DIGIT` | 环境变量 | 否 | 默认 `1`（验证码 `11111`）。 |
 | `E2E_ANDROID_RUNNER` | 变量 | 否 | 默认 `ubuntu-latest`。 |
 | `E2E_IOS_RUNNER` | 变量 | 否 | 默认 `xcode-27`。 |

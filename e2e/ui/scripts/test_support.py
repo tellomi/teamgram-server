@@ -69,9 +69,11 @@ class AccountsTest(unittest.TestCase):
 
 
 class RedirectTest(unittest.TestCase):
-    def test_dnat_sends_the_mtproto_port_to_staging(self) -> None:
+    def test_dnat_sends_the_apk_dial_port_to_the_staging_port(self) -> None:
+        self.assertEqual(redirect.CLIENT_DIAL_PORT, "10443")
+        self.assertEqual(redirect.DEFAULT_STAGING_PORT, "11443")
         self.assertEqual(
-            redirect.dnat_arguments("203.0.113.10", "10443"),
+            redirect.dnat_arguments("203.0.113.10", "11443"),
             [
                 "iptables",
                 "-t",
@@ -85,13 +87,13 @@ class RedirectTest(unittest.TestCase):
                 "-j",
                 "DNAT",
                 "--to-destination",
-                "203.0.113.10:10443",
+                "203.0.113.10:11443",
             ],
         )
 
     def test_dnat_rejects_a_hostname(self) -> None:
         with self.assertRaises(ValueError):
-            redirect.dnat_arguments("staging-api.tellomi.cn", "10443")
+            redirect.dnat_arguments("staging-api.tellomi.cn", "11443")
 
 
 class SeedsTest(unittest.TestCase):
@@ -108,7 +110,39 @@ class SeedsTest(unittest.TestCase):
             cfg = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(cfg["seeds"]["production"]["1"], ["staging-api.tellomi.cn"])
             self.assertEqual(cfg["seeds"]["testing"]["1"], ["staging-api.tellomi.cn"])
+            self.assertEqual(cfg["seed_port"], 11443)
             self.assertEqual(cfg["note"], "keep")
+
+    def test_staging_seed_port_replaces_the_production_port(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tellomi-server.json"
+            path.write_text(
+                '{"seed_port": 10443, "seeds": {"production": {"1": ["api.tellomi.cn"]}}}\n',
+                encoding="utf-8",
+            )
+            seeds.point_ios_seeds(path, "staging-api.tellomi.cn", 11443)
+            import json
+
+            cfg = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(cfg["seed_port"], 11443)
+            self.assertEqual(cfg["seeds"]["production"]["1"], ["staging-api.tellomi.cn"])
+
+    def test_staging_check_accepts_port_11443(self) -> None:
+        source = (
+            'def check_keys(config):\n'
+            '    if config["seed_port"] != 10443:\n'
+            '        fail("seed port is not Teamgram\'s published 10443")\n'
+            '    for environment in ("production", "testing"):\n'
+            '        hosts = config["seeds"][environment]["1"]\n'
+            '        if hosts != ["api.tellomi.cn"]:\n'
+            '            fail(f"{environment} seeds are not api.tellomi.cn")\n'
+        )
+        updated = seeds.allow_staging_in_server_check(source, "staging-api.tellomi.cn", 11443)
+        self.assertIn("!= 11443", updated)
+        self.assertNotIn("10443", updated)
+        self.assertIn('["staging-api.tellomi.cn"]', updated)
+        self.assertNotIn('["api.tellomi.cn"]', updated)
+        compile(updated, "<check>", "exec")
 
 
 class HierarchyTest(unittest.TestCase):
@@ -207,11 +241,15 @@ class ChecklistTest(unittest.TestCase):
             self.assertIn(phrase, text)
         self.assertEqual(hierarchy.ORDER, ("e2e-order-1", "e2e-order-2", "e2e-order-3"))
         self.assertEqual(hierarchy.RECEIPT, "e2e-receipt")
-        self.assertIn("staging-api.tellomi.cn", (ROOT / "e2e/ui/README.md").read_text(encoding="utf-8"))
+        readme = (ROOT / "e2e/ui/README.md").read_text(encoding="utf-8")
+        self.assertIn("staging-api.tellomi.cn", readme)
+        self.assertIn("TCP `11443`", readme)
+        self.assertIn("端口 `10443`", readme)
         workflow = (ROOT / ".github/workflows/ui-acceptance.yml").read_text(encoding="utf-8")
         self.assertIn("deploy-staging", workflow)
         self.assertIn("workflow_dispatch", workflow)
         self.assertIn("reactivecircus/android-emulator-runner", workflow)
+        self.assertIn('E2E_API_PORT: "11443"', workflow)
 
 
 class ShellSyntaxTest(unittest.TestCase):
