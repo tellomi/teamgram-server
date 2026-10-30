@@ -3,6 +3,7 @@ package aliyun
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -25,6 +26,14 @@ type smsTemplateParam struct {
 }
 
 func (c *SMSClient) SendCode(ctx context.Context, phone, code string) error {
+	if c.AccessKeyID == "" || c.AccessKeySecret == "" {
+		return fmt.Errorf("aliyun access key is not configured")
+	}
+	// Defaults in verify.Load fill these. An explicit empty value is incomplete
+	// SMS config and must fail before any dial, not wait on Dysmsapi.
+	if strings.TrimSpace(c.SignName) == "" || strings.TrimSpace(c.TemplateCode) == "" {
+		return fmt.Errorf("aliyun sms sign or template is not configured")
+	}
 	param, err := json.Marshal(smsTemplateParam{Code: code})
 	if err != nil {
 		return err

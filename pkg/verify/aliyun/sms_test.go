@@ -3,11 +3,13 @@ package aliyun
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSendSmsSignsRequest(t *testing.T) {
@@ -79,6 +81,81 @@ func TestSendSmsKeepsLeadingZeroAsString(t *testing.T) {
 	}
 	if got.Get("TemplateParam") != `{"code":"012345"}` {
 		t.Fatalf("template param %s", got.Get("TemplateParam"))
+	}
+}
+
+func TestSendSmsStalledPeerFailsFast(t *testing.T) {
+	old := rpcTimeout
+	rpcTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { rpcTimeout = old })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				_, _ = io.Copy(io.Discard, c)
+			}(conn)
+		}
+	}()
+
+	c := &SMSClient{
+		AccessKeyID:     "id",
+		AccessKeySecret: "secret",
+		SignName:        "重庆半格智能",
+		TemplateCode:    "SMS_338570180",
+		Endpoint:        "http://" + ln.Addr().String() + "/",
+	}
+	start := time.Now()
+	err = c.SendCode(context.Background(), "13800138000", "123456")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("stalled Aliyun peer returned success")
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("auth SMS wait was %s, want a fast error: %v", elapsed, err)
+	}
+}
+
+func TestSendSmsMissingSignDoesNotDial(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	c := &SMSClient{
+		AccessKeyID:     "id",
+		AccessKeySecret: "secret",
+		SignName:        "",
+		TemplateCode:    "SMS_338570180",
+		Endpoint:        "http://" + ln.Addr().String() + "/",
+	}
+	err = c.SendCode(context.Background(), "13800138000", "123456")
+	if err == nil || !strings.Contains(err.Error(), "sign or template") {
+		t.Fatal(err)
+	}
+	if tc, ok := ln.(*net.TCPListener); ok {
+		_ = tc.SetDeadline(time.Now().Add(50 * time.Millisecond))
+	}
+	if conn, aerr := ln.Accept(); aerr == nil {
+		conn.Close()
+		t.Fatal("incomplete SMS config dialed Aliyun")
+	}
+
+	c.SignName = "重庆半格智能"
+	c.TemplateCode = "  "
+	err = c.SendCode(context.Background(), "13800138000", "123456")
+	if err == nil || !strings.Contains(err.Error(), "sign or template") {
+		t.Fatal(err)
 	}
 }
 
