@@ -82,6 +82,8 @@ type Engine struct {
 	groups   map[int64]*group
 	byPeer   map[string]int64
 	rtmpKeys map[string]string
+	invites  map[int32]*confInvite
+	joinAs   map[string]*mtproto.Peer
 }
 
 type call struct {
@@ -105,6 +107,8 @@ type call struct {
 	randomID             int32
 	adminTag, partTag    []byte
 	cancel               func()
+	conference           bool
+	conferenceID         int64
 }
 
 // Options builds an Engine. Nil hooks are skipped.
@@ -133,6 +137,7 @@ func New(o Options) *Engine {
 		now: o.Now, after: o.After,
 		calls: map[int64]*call{}, byUser: map[int64]int64{}, byRandom: map[string]int64{},
 		groups: map[int64]*group{}, byPeer: map[string]int64{}, rtmpKeys: map[string]string{},
+		invites: map[int32]*confInvite{}, joinAs: map[string]*mtproto.Peer{},
 	}
 	if e.now == nil {
 		e.now = time.Now

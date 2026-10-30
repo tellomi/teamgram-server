@@ -24,9 +24,10 @@ out. Android `VoIPService` calls it from `startOutgoingCall` and
 `acceptIncomingCall`. iOS loads the same prime from
 `SecretChatEncryptionConfig` before it can build `g_a`.
 
-Both services are routed to `bff.bff` in `teamgramd/etc/session.yaml` and
-`teamgramd/etc2/session.yaml`. `RPCGroupCalls` stays commented out. Group
-voice is a later slice. 1:1 video is the same methods with `video:true`.
+`RPCVoipCalls`, `RPCGroupCalls`, and `RPCConferenceCalls` are routed to
+`bff.bff` in `teamgramd/etc/session.yaml` and `teamgramd/etc2/session.yaml`.
+1:1 video is the same methods with `video:true`. Group and conference calls
+use the in-process SFU.
 
 ## What the clients call
 
@@ -192,5 +193,5 @@ Signaling can succeed and the call can still have no audio.
   push, so a suspended iOS app does not get a CallKit ring. Both clients
   in the foreground complete signaling. Wiring the VoIP push is a separate
   change.
-- **Group calls.** `RPCGroupCalls` is not routed. The in-process SFU does
-  not speak tgcalls colibri. That does not affect 1:1.
+- **Group calls.** `RPCGroupCalls` and `RPCConferenceCalls` are routed. The
+  in-process SFU does not speak tgcalls colibri. That does not affect 1:1.

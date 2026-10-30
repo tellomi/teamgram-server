@@ -59,7 +59,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | help | 25 | 25 | 0 | 0 | 0 | 12 | 0 |
 | channels | 58 | 58 | 0 | 0 | 0 | 1 | 0 |
 | stickers | 39 | 38 | 0 | 0 | 1 | 0 | 0 |
-| phone/calls | 43 | 10 | 0 | 0 | 33 | 0 | 0 |
+| phone/calls | 43 | 43 | 0 | 0 | 0 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 17 | 0 | 0 | 0 | 5 | 0 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
@@ -74,7 +74,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **819** | **609** | **7** | **30** | **173** | **94** | **0** |
+| **total** | **819** | **642** | **7** | **30** | **140** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 575 | 6 | 30 | 144 | 91 | 0 |
-| android | 707 | 562 | 6 | 18 | 121 | 89 | 0 |
-| desktop | 692 | 522 | 5 | 27 | 138 | 79 | 0 |
-| macos | 677 | 542 | 4 | 20 | 111 | 90 | 0 |
+| ios | 755 | 607 | 6 | 30 | 112 | 91 | 0 |
+| android | 707 | 595 | 6 | 18 | 88 | 89 | 0 |
+| desktop | 692 | 555 | 5 | 27 | 105 | 79 | 0 |
+| macos | 677 | 571 | 4 | 20 | 82 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,7 +111,7 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-209 gaps (209 error, 0 empty or bool or not-modified).
+176 gaps (176 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -121,7 +121,6 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | ephemeral | 8 |
 | feed | 5 |
 | iv | 1 |
-| phone/calls | 33 |
 | premium/payments | 99 |
 | stats | 6 |
 | stickers | 1 |
@@ -732,53 +731,53 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### phone/calls
 
-43 called, 10 implemented, 0 stub, 0 routed-unregistered, 33 missing.
+43 called, 43 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `phone.checkGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.createConferenceCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.createGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.declineConferenceCallInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.deleteConferenceCallParticipants` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.deleteGroupCallMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.deleteGroupCallParticipantMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.discardGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.editGroupCallParticipant` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.editGroupCallTitle` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.exportGroupCallInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.getGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.getGroupCallChainBlocks` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.getGroupCallJoinAs` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.getGroupCallStars` | yes | yes | yes | no | interactive | missing | error |
-| `phone.getGroupCallStreamChannels` | yes | yes | yes | no | interactive | missing | error |
-| `phone.getGroupCallStreamRtmpUrl` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.getGroupParticipants` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.inviteConferenceCallParticipant` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.inviteToGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.joinGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.joinGroupCallPresentation` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.leaveGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.leaveGroupCallPresentation` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.saveDefaultGroupCallJoinAs` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.saveDefaultSendAs` | no | yes | yes | no | interactive | missing | error |
-| `phone.sendConferenceCallBroadcast` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.sendGroupCallEncryptedMessage` | yes | yes | yes | no | interactive | missing | error |
-| `phone.sendGroupCallMessage` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.startScheduledGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.toggleGroupCallRecord` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.toggleGroupCallSettings` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.toggleGroupCallStartSubscription` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.acceptCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.checkGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.confirmCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.createConferenceCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.createGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.declineConferenceCallInvite` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.deleteConferenceCallParticipants` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.deleteGroupCallMessages` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.deleteGroupCallParticipantMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.discardCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.discardGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.editGroupCallParticipant` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.editGroupCallTitle` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.exportGroupCallInvite` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.getCallConfig` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.getGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.getGroupCallChainBlocks` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.getGroupCallJoinAs` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.getGroupCallStars` | yes | yes | yes | no | interactive | implemented | ok |
+| `phone.getGroupCallStreamChannels` | yes | yes | yes | no | interactive | implemented | ok |
+| `phone.getGroupCallStreamRtmpUrl` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.getGroupParticipants` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.inviteConferenceCallParticipant` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.inviteToGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.joinGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.joinGroupCallPresentation` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.leaveGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.leaveGroupCallPresentation` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.receivedCall` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.requestCall` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.saveCallDebug` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.saveCallLog` | yes | yes | no | no | interactive | implemented | ok |
+| `phone.saveDefaultGroupCallJoinAs` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.saveDefaultSendAs` | no | yes | yes | no | interactive | implemented | ok |
+| `phone.sendConferenceCallBroadcast` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.sendGroupCallEncryptedMessage` | yes | yes | yes | no | interactive | implemented | ok |
+| `phone.sendGroupCallMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.sendSignalingData` | yes | yes | yes | yes | interactive | implemented | ok |
 | `phone.setCallRating` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.startScheduledGroupCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.toggleGroupCallRecord` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.toggleGroupCallSettings` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.toggleGroupCallStartSubscription` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### langpack
 
@@ -1250,39 +1249,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.upgradeStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.validateRequestedInfo` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsValidateRequestedInfo handler |
 | `payments.withdrawStarGift` | missing | no route in session.yaml and no bff handler |
-| `phone.checkGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.createConferenceCall` | missing | no route in session.yaml and no bff handler |
-| `phone.createGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.declineConferenceCallInvite` | missing | no route in session.yaml and no bff handler |
-| `phone.deleteConferenceCallParticipants` | missing | no route in session.yaml and no bff handler |
-| `phone.deleteGroupCallMessages` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
-| `phone.deleteGroupCallParticipantMessages` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
-| `phone.discardGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.editGroupCallParticipant` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.editGroupCallTitle` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.exportGroupCallInvite` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.getGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.getGroupCallChainBlocks` | missing | no route in session.yaml and no bff handler |
-| `phone.getGroupCallJoinAs` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.getGroupCallStars` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
-| `phone.getGroupCallStreamChannels` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.getGroupCallStreamRtmpUrl` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.getGroupParticipants` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.inviteConferenceCallParticipant` | missing | no route in session.yaml and no bff handler |
-| `phone.inviteToGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.joinGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.joinGroupCallPresentation` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.leaveGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.leaveGroupCallPresentation` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.saveDefaultGroupCallJoinAs` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.saveDefaultSendAs` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.sendConferenceCallBroadcast` | missing | no route in session.yaml and no bff handler |
-| `phone.sendGroupCallEncryptedMessage` | missing | no route in session.yaml and no bff handler |
-| `phone.sendGroupCallMessage` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
-| `phone.startScheduledGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.toggleGroupCallRecord` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.toggleGroupCallSettings` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.toggleGroupCallStartSubscription` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `premium.applyBoost` | routed-but-unregistered | session.yaml routes RPCBoosts but the bff process has no PremiumApplyBoost handler |
 | `premium.getBoostsList` | routed-but-unregistered | session.yaml routes RPCBoosts but the bff process has no PremiumGetBoostsList handler |
 | `premium.getBoostsStatus` | routed-but-unregistered | session.yaml routes RPCBoosts but the bff process has no PremiumGetBoostsStatus handler |

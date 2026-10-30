@@ -129,8 +129,11 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCSeamless"] || !srv.Registered["RPCSeamless"] {
 		t.Fatal("seamless URL auth must be routed and registered")
 	}
-	if srv.Routed["RPCGroupCalls"] {
-		t.Fatal("group calls stay unrouted until the SFU path is a separate slice")
+	if !srv.Routed["RPCGroupCalls"] || !srv.Registered["RPCGroupCalls"] {
+		t.Fatal("group calls must be routed and registered")
+	}
+	if !srv.Routed["RPCConferenceCalls"] || !srv.Registered["RPCConferenceCalls"] {
+		t.Fatal("conference calls must be routed and registered")
 	}
 	if !srv.Routed["RPCStories"] || !srv.Registered["RPCStories"] {
 		t.Fatal("stories must be routed and registered")
@@ -282,5 +285,46 @@ func TestServerSamples(t *testing.T) {
 	}
 	if !srv.Routed["RPCPromoData"] || !srv.Registered["RPCPromoData"] {
 		t.Fatal("promo data must be routed and registered")
+	}
+	for _, method := range []string{
+		"phone.checkGroupCall",
+		"phone.createConferenceCall",
+		"phone.createGroupCall",
+		"phone.declineConferenceCallInvite",
+		"phone.deleteConferenceCallParticipants",
+		"phone.deleteGroupCallMessages",
+		"phone.deleteGroupCallParticipantMessages",
+		"phone.discardGroupCall",
+		"phone.editGroupCallParticipant",
+		"phone.editGroupCallTitle",
+		"phone.exportGroupCallInvite",
+		"phone.getGroupCall",
+		"phone.getGroupCallChainBlocks",
+		"phone.getGroupCallJoinAs",
+		"phone.getGroupCallStars",
+		"phone.getGroupCallStreamChannels",
+		"phone.getGroupCallStreamRtmpUrl",
+		"phone.getGroupParticipants",
+		"phone.inviteConferenceCallParticipant",
+		"phone.inviteToGroupCall",
+		"phone.joinGroupCall",
+		"phone.joinGroupCallPresentation",
+		"phone.leaveGroupCall",
+		"phone.leaveGroupCallPresentation",
+		"phone.saveDefaultGroupCallJoinAs",
+		"phone.saveDefaultSendAs",
+		"phone.sendConferenceCallBroadcast",
+		"phone.sendGroupCallEncryptedMessage",
+		"phone.sendGroupCallMessage",
+		"phone.startScheduledGroupCall",
+		"phone.toggleGroupCallRecord",
+		"phone.toggleGroupCallSettings",
+		"phone.toggleGroupCallStartSubscription",
+	} {
+		assertStatus(method, statusImplemented, effectOK)
+		_, _, _, _, notes, _ := srv.resolve(method)
+		if strings.Contains(notes, "layer variants disagree") || strings.Contains(notes, "ENTERPRISE_IS_BLOCKED") {
+			t.Errorf("%s notes=%s", method, notes)
+		}
 	}
 }

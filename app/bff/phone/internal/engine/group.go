@@ -54,7 +54,13 @@ type group struct {
 	parts           []*part
 	byKey           map[string]*part
 	subs            map[int64]bool
-	blocks          [][]byte
+	chains          map[int32][][]byte
+	msgs            []*gmsg
+	msgByID         map[int32]*gmsg
+	msgByRandom     map[string]int32
+	nextMsg         int32
+	defaultSendAs   *mtproto.Peer
+	conference      bool
 	randomID        int32
 	rtmpKey         string
 	paidStars       *int64
@@ -66,6 +72,15 @@ func canAdmin(g *group, user int64, manage bool) bool {
 
 func partKey(peerType int32, id int64) string {
 	return fmt.Sprintf("%d:%d", peerType, id)
+}
+
+// bindIfChat publishes a chat or channel call. A conference has no chat.
+func bindIfChat(g *group) *Bind {
+	if g == nil || g.peerID == 0 {
+		return nil
+	}
+	b := g.binding()
+	return &b
 }
 
 func (g *group) binding() Bind {
@@ -150,8 +165,9 @@ func (e *Engine) CreateGroup(in CreateGroup) (*mtproto.Updates, error) {
 		creator: in.UserID, creatorAuth: in.Auth, title: in.Title, date: now,
 		joinMuted: true, messagesEnabled: true, rtmp: in.RTMP, schedule: in.Schedule,
 		version: 1, invite: randHex(8), speakerInvite: randHex(8),
-		byKey: map[string]*part{}, subs: map[int64]bool{}, randomID: in.RandomID,
-		rtmpKey: randHex(8),
+		byKey: map[string]*part{}, subs: map[int64]bool{},
+		chains: map[int32][][]byte{}, msgByID: map[int32]*gmsg{}, msgByRandom: map[string]int32{},
+		randomID: in.RandomID, rtmpKey: randHex(8),
 	}
 	e.groups[g.id] = g
 	e.byPeer[pkey] = g.id
@@ -218,8 +234,12 @@ func (e *Engine) recipients(g *group) []int64 {
 
 func (e *Engine) groupUpdates(viewer int64, g *group, changed []*part, extra []*mtproto.Update) *mtproto.Updates {
 	var ups []*mtproto.Update
+	var peer *mtproto.Peer
+	if g.peerID != 0 {
+		peer = peerOf(g.peerType, g.peerID)
+	}
 	ups = append(ups, mtproto.MakeTLUpdateGroupCall(&mtproto.Update{
-		Peer_PEER:      peerOf(g.peerType, g.peerID),
+		Peer_PEER:      peer,
 		Call_GROUPCALL: e.groupTL(g, viewer),
 	}).To_Update())
 	if len(changed) > 0 {
@@ -241,7 +261,7 @@ func (e *Engine) groupUpdates(viewer int64, g *group, changed []*part, extra []*
 		}
 	}
 	up := e.ups(viewer, userIDs, ups...)
-	if e.chats != nil {
+	if e.chats != nil && g.peerID != 0 {
 		if chats := e.chats(viewer, g.peerType, g.peerID); len(chats) > 0 {
 			up.Chats = chats
 		}
@@ -271,7 +291,7 @@ func (e *Engine) groupTL(g *group, viewer int64) *mtproto.GroupCall {
 	gc := &mtproto.GroupCall{
 		JoinMuted: g.joinMuted, CanChangeJoinMuted: viewer == g.creator,
 		CanStartVideo: true, RecordVideoActive: g.recordStart != 0 && g.recordVideo,
-		RtmpStream: g.rtmp, Creator: viewer == g.creator,
+		RtmpStream: g.rtmp, Conference: g.conference, Creator: viewer == g.creator,
 		MessagesEnabled: g.messagesEnabled, CanChangeMessagesEnabled: viewer == g.creator,
 		ParticipantsCount: g.liveCount(), UnmutedVideoLimit: 30, Version: g.version,
 		ScheduleStartSubscribed: g.subs[viewer],
@@ -295,6 +315,9 @@ func (e *Engine) groupTL(g *group, viewer int64) *mtproto.GroupCall {
 	}
 	if g.paidStars != nil {
 		gc.SendPaidMessagesStars = wrapperspb.Int64(*g.paidStars)
+	}
+	if g.defaultSendAs != nil {
+		gc.DefaultSendAs = g.defaultSendAs
 	}
 	return mtproto.MakeTLGroupCall(gc).To_GroupCall()
 }
@@ -378,7 +401,7 @@ func (e *Engine) JoinGroup(in JoinGroup) (*mtproto.Updates, error) {
 	}
 	speaker := in.InviteHash != "" && in.InviteHash == g.speakerInvite
 	listener := in.InviteHash != "" && in.InviteHash == g.invite
-	if !in.Member && !speaker && !listener && in.UserID != g.creator {
+	if !g.conference && !in.Member && !speaker && !listener && in.UserID != g.creator {
 		e.mu.Unlock()
 		return nil, mtproto.ErrInviteHashInvalid
 	}
@@ -413,17 +436,14 @@ func (e *Engine) JoinGroup(in JoinGroup) (*mtproto.Updates, error) {
 		Params: dataJSON(answer),
 	}).To_Update())
 	if len(in.Block) > 0 {
-		g.blocks = append(g.blocks, append([]byte(nil), in.Block...))
-		extra = append(extra, mtproto.MakeTLUpdateGroupCallChainBlocks(&mtproto.Update{
-			Call_INPUTGROUPCALL: inputCall(g.id, g.access),
-			Blocks:              [][]byte{append([]byte(nil), in.Block...)},
-			NextOffset:          -1,
-		}).To_Update())
+		blk := append([]byte(nil), in.Block...)
+		e.appendBlock(g, 0, blk)
+		extra = append(extra, chainUpdate(g, 0, [][]byte{blk}, -1))
 	}
 	up := e.fanout(g, in.UserID, in.Auth, []*part{p}, extra)
-	bind := g.binding()
+	bind := bindIfChat(g)
 	e.mu.Unlock()
-	e.finishGroup(nil, &bind)
+	e.finishGroup(nil, bind)
 	return up, nil
 }
 
@@ -451,9 +471,9 @@ func (e *Engine) LeaveGroup(user, id, access int64, source int32) (*mtproto.Upda
 		e.media.Leave(g.id, partKey(found.peerType, found.peerID))
 	}
 	up := e.fanout(g, user, found.auth, []*part{found}, nil)
-	bind := g.binding()
+	bind := bindIfChat(g)
 	e.mu.Unlock()
-	e.finishGroup(nil, &bind)
+	e.finishGroup(nil, bind)
 	return up, nil
 }
 
@@ -485,13 +505,16 @@ func (e *Engine) DiscardGroup(user, id, access int64, manage bool) (*mtproto.Upd
 		}
 	}
 	up := e.fanout(g, user, g.creatorAuth, nil, nil)
-	ev := &GroupEnd{
-		From: user, PeerType: g.peerType, PeerID: g.peerID, RandomID: newID(),
-		Action: mtproto.MakeMessageActionGroupCall(inputCall(g.id, g.access), dur),
+	var ev *GroupEnd
+	if g.peerID != 0 {
+		ev = &GroupEnd{
+			From: user, PeerType: g.peerType, PeerID: g.peerID, RandomID: newID(),
+			Action: mtproto.MakeMessageActionGroupCall(inputCall(g.id, g.access), dur),
+		}
 	}
-	bind := g.binding()
+	bind := bindIfChat(g)
 	e.mu.Unlock()
-	e.finishGroup(ev, &bind)
+	e.finishGroup(ev, bind)
 	return up, nil
 }
 

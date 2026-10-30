@@ -23,6 +23,7 @@ import (
 type Service struct {
 	mtproto.UnimplementedRPCVoipCallsServer
 	mtproto.UnimplementedRPCGroupCallsServer
+	mtproto.UnimplementedRPCConferenceCallsServer
 	mtproto.UnimplementedRPCSecretChatsServer
 	svc        *svc.ServiceContext
 	eng        *engine.Engine
