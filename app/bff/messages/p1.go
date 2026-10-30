@@ -45,11 +45,17 @@ func NewPaidMedia() *service.PaidMediaService { return &service.PaidMediaService
 // NewDelivery serves messages.reportMessagesDelivery.
 func NewDelivery() *service.DeliveryService { return &service.DeliveryService{} }
 
-// NewThemes serves messages.setChatTheme. Theme catalogs stay empty.
+// NewThemes serves messages.setChatTheme and the account theme RPCs.
 func NewThemes() *service.ThemesService { return &service.ThemesService{} }
 
-// NewWallpapers serves messages.setChatWallPaper. Wallpaper catalogs stay empty.
+// NewWallpapers serves messages.setChatWallPaper and the account wallpaper RPCs.
 func NewWallpapers() *service.WallpapersService { return &service.WallpapersService{} }
+
+// NewRingtones serves account.getSavedRingtones, account.saveRingtone, and account.uploadRingtone.
+func NewRingtones() *service.RingtoneService { return &service.RingtoneService{} }
+
+// NewConnectedBots serves the connected business-bot RPCs.
+func NewConnectedBots() *service.ConnectedBotsService { return &service.ConnectedBotsService{} }
 
 // NewShareThemes serves messages.setShareTheme and messages.getShareThemeBackdrops.
 func NewShareThemes() *service.ShareThemesService { return &service.ShareThemesService{} }
