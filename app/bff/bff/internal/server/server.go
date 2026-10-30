@@ -95,6 +95,7 @@ func (s *Server) Initialize() error {
 			grpcServer,
 			deeplinks_helper.New(deeplinks_helper.Config{
 				RpcServerConf: c.RpcServerConf,
+				MsgClient:     c.MsgClient,
 			}))
 
 		mtproto.RegisterRPCTosServer(
@@ -355,6 +356,13 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls())
 		mtproto.RegisterRPCScheduledMessagesServer(grpcServer, messages_helper.NewScheduled(msgCfg))
 		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage())
+		// Inline bots, callback buttons, attach menu, mini apps, prepared messages.
+		botChat := messages_helper.NewBotChat(msgCfg)
+		mtproto.RegisterRPCInlineBotServer(grpcServer, botChat)
+		mtproto.RegisterRPCBotMenuServer(grpcServer, botChat)
+		mtproto.RegisterRPCMiniBotAppsServer(grpcServer, botChat)
+		mtproto.RegisterRPCMainMiniBotAppsServer(grpcServer, botChat)
+		mtproto.RegisterRPCPreparedInlineMessagesServer(grpcServer, botChat)
 
 		// notification_helper
 		notifySvc := notification_helper.New(notification_helper.Config{

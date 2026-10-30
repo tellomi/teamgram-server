@@ -50,7 +50,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | account | 119 | 69 | 10 | 8 | 32 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
-| messages | 216 | 140 | 3 | 21 | 52 | 14 | 0 |
+| messages | 216 | 157 | 3 | 20 | 36 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
@@ -63,7 +63,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
 | stories | 32 | 0 | 0 | 0 | 32 | 0 | 0 |
 | premium/payments | 100 | 1 | 2 | 17 | 80 | 0 | 0 |
-| bots | 23 | 0 | 0 | 3 | 20 | 0 | 0 |
+| bots | 23 | 0 | 0 | 15 | 8 | 0 | 0 |
 | business | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
 | aicompose | 7 | 0 | 0 | 0 | 7 | 0 | 0 |
 | communities | 9 | 0 | 0 | 0 | 9 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **400** | **21** | **81** | **324** | **94** | **0** |
+| **total** | **826** | **417** | **21** | **92** | **296** | **94** | **0** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 375 | 20 | 77 | 283 | 91 | 0 |
-| android | 709 | 370 | 18 | 65 | 256 | 87 | 0 |
-| desktop | 692 | 354 | 19 | 62 | 257 | 79 | 0 |
-| macos | 677 | 361 | 20 | 65 | 231 | 90 | 0 |
+| ios | 755 | 392 | 20 | 87 | 256 | 91 | 0 |
+| android | 709 | 387 | 18 | 76 | 228 | 87 | 0 |
+| desktop | 692 | 371 | 19 | 67 | 235 | 79 | 0 |
+| macos | 677 | 378 | 20 | 71 | 208 | 90 | 0 |
 
 540 methods are called by all four clients.
 
@@ -99,14 +99,14 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-128 gaps (119 error, 9 empty or bool or not-modified).
+111 gaps (102 error, 9 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
 | account | 50 |
 | auth | 1 |
 | channels | 1 |
-| messages | 76 |
+| messages | 59 |
 
 ### P2
 
@@ -341,7 +341,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-216 called, 140 implemented, 3 stub, 21 routed-unregistered, 52 missing.
+216 called, 157 implemented, 3 stub, 20 routed-unregistered, 36 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -371,42 +371,26 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.deleteQuickReplyShortcut` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.editFactCheck` | yes | no | yes | yes | interactive | missing | error |
 | `messages.editQuickReplyShortcut` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getAttachMenuBot` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getAttachMenuBots` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getAvailableEffects` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getBotApp` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getBotCallbackAnswer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getDefaultTagReactions` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getEmojiGameInfo` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getExtendedMedia` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getFactCheck` | yes | no | yes | yes | interactive | missing | error |
-| `messages.getInlineBotResults` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getPreparedInlineMessage` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getQuickReplies` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getSavedReactionTags` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getShareThemeBackdrops` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getStatsURL` | no | yes | no | no | interactive | missing | error |
 | `messages.initHistoryImport` | yes | yes | no | no | interactive | missing | error |
-| `messages.prolongWebView` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.reorderQuickReplies` | yes | yes | no | yes | interactive | missing | error |
 | `messages.reportMessagesDelivery` | yes | no | yes | yes | interactive | missing | error |
-| `messages.requestAppWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.requestChatJoinWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.requestMainWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.requestSimpleWebView` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.requestUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.requestWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.sendBotRequestedPeer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendEncryptedMultiMedia` | no | yes | no | no | interactive | missing | error |
-| `messages.sendInlineBotResult` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.sendWebViewData` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatWallPaper` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setShareTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.startHistoryImport` | yes | yes | no | no | interactive | missing | error |
-| `messages.toggleBotInAttachMenu` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.toggleSuggestedPostApproval` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.toggleTodoCompleted` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.updateSavedReactionTag` | yes | yes | yes | yes | interactive | missing | error |
@@ -428,7 +412,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendEncryptedService` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.sendPaidReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.setEncryptedTyping` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.startBot` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.togglePaidReactionPrivacy` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.togglePeerTranslations` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.translateText` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
@@ -470,6 +453,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.forwardMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getAdminsWithInvites` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getAllDrafts` | yes | yes | no | yes | interactive | implemented | ok |
+| `messages.getAttachMenuBot` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getAttachMenuBots` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getBotApp` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getBotCallbackAnswer` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getChatInviteImporters` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getChats` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getCommonChats` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -486,6 +473,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getFullChat` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getFutureChatCreatorAfterLeave` | yes | no | yes | yes | interactive | implemented | ok |
 | `messages.getHistory` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getInlineBotResults` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getMessageEditData` | no | yes | no | no | interactive | implemented | ok |
 | `messages.getMessageReactionsList` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getMessageReadParticipants` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -496,6 +484,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getPeerSettings` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getPollResults` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getPollVotes` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getPreparedInlineMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getRecentLocations` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.getRecentReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getReplies` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -519,6 +508,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.importChatInvite` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.markDialogUnread` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.migrateChat` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.prolongWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.rateTranscribedAudio` | yes | yes | yes | no | interactive | implemented | ok |
 | `messages.readDiscussion` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.readHistory` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -531,12 +521,19 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reorderPinnedSavedDialogs` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reportSpam` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reportSponsoredMessage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestAppWebView` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestChatJoinWebView` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestMainWebView` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestSimpleWebView` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.saveDefaultSendAs` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.saveDraft` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.search` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.searchCustomEmoji` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.searchGlobal` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.searchSentMedia` | yes | no | no | yes | interactive | implemented | ok |
+| `messages.sendBotRequestedPeer` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.sendInlineBotResult` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMedia` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMultiMedia` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -544,12 +541,15 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendScheduledMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendScreenshotNotification` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.sendVote` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.sendWebViewData` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setChatAvailableReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setDefaultHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setDefaultReaction` | yes | no | yes | yes | interactive | implemented | ok |
 | `messages.setHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setTyping` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.startBot` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.summarizeText` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.toggleBotInAttachMenu` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.toggleDialogPin` | no | yes | yes | no | interactive | implemented | ok |
 | `messages.toggleNoForwards` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.toggleSavedDialogPin` | no | no | yes | no | interactive | implemented | ok |
@@ -991,30 +991,30 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### bots
 
-23 called, 0 implemented, 0 stub, 3 routed-unregistered, 20 missing.
+23 called, 0 implemented, 0 stub, 15 routed-unregistered, 8 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `bots.addPreviewMedia` | yes | yes | no | no | interactive | missing | error |
-| `bots.allowSendMessage` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.canSendMessage` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.checkDownloadFileParams` | yes | yes | yes | no | interactive | missing | error |
 | `bots.checkUsername` | yes | yes | yes | yes | interactive | missing | error |
 | `bots.createBot` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.deletePreviewMedia` | yes | yes | no | no | interactive | missing | error |
-| `bots.editPreviewMedia` | no | yes | no | no | interactive | missing | error |
 | `bots.getAdminedBots` | yes | yes | yes | yes | interactive | missing | error |
 | `bots.getBotInfo` | yes | no | yes | yes | interactive | missing | error |
 | `bots.getBotRecommendations` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.getPopularAppBots` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.getPreviewInfo` | yes | yes | no | yes | interactive | missing | error |
-| `bots.getPreviewMedias` | yes | yes | no | yes | interactive | missing | error |
-| `bots.getRequestedWebViewButton` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.invokeWebViewCustomMethod` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.reorderPreviewMedias` | yes | yes | no | no | interactive | missing | error |
 | `bots.setBotInfo` | yes | yes | yes | yes | interactive | missing | error |
 | `bots.setCustomVerification` | yes | yes | yes | yes | interactive | missing | error |
 | `bots.updateStarRefProgram` | yes | yes | yes | yes | interactive | missing | error |
+| `bots.addPreviewMedia` | yes | yes | no | no | interactive | routed-but-unregistered | error |
+| `bots.allowSendMessage` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `bots.canSendMessage` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `bots.checkDownloadFileParams` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
+| `bots.deletePreviewMedia` | yes | yes | no | no | interactive | routed-but-unregistered | error |
+| `bots.editPreviewMedia` | no | yes | no | no | interactive | routed-but-unregistered | error |
+| `bots.getPopularAppBots` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `bots.getPreviewInfo` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
+| `bots.getPreviewMedias` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
+| `bots.getRequestedWebViewButton` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `bots.invokeWebViewCustomMethod` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `bots.reorderPreviewMedias` | yes | yes | no | no | interactive | routed-but-unregistered | error |
 | `bots.reorderUsernames` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `bots.toggleUserEmojiStatusPermission` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `bots.toggleUsername` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
@@ -1217,23 +1217,23 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `aicompose.saveTone` | missing | no route in session.yaml and no bff handler |
 | `aicompose.updateTone` | missing | no route in session.yaml and no bff handler |
 | `auth.initPasskeyLogin` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/auth.initPasskeyLogin_handler.go |
-| `bots.addPreviewMedia` | missing | no route in session.yaml and no bff handler |
-| `bots.allowSendMessage` | missing | no route in session.yaml and no bff handler |
-| `bots.canSendMessage` | missing | no route in session.yaml and no bff handler |
-| `bots.checkDownloadFileParams` | missing | no route in session.yaml and no bff handler |
+| `bots.addPreviewMedia` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsAddPreviewMedia handler |
+| `bots.allowSendMessage` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsAllowSendMessage handler |
+| `bots.canSendMessage` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsCanSendMessage handler |
+| `bots.checkDownloadFileParams` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsCheckDownloadFileParams handler |
 | `bots.checkUsername` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
 | `bots.createBot` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
-| `bots.deletePreviewMedia` | missing | no route in session.yaml and no bff handler |
-| `bots.editPreviewMedia` | missing | no route in session.yaml and no bff handler |
+| `bots.deletePreviewMedia` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsDeletePreviewMedia handler |
+| `bots.editPreviewMedia` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsEditPreviewMedia handler |
 | `bots.getAdminedBots` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
 | `bots.getBotInfo` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
 | `bots.getBotRecommendations` | missing | no route in session.yaml and no bff handler |
-| `bots.getPopularAppBots` | missing | no route in session.yaml and no bff handler |
-| `bots.getPreviewInfo` | missing | no route in session.yaml and no bff handler |
-| `bots.getPreviewMedias` | missing | no route in session.yaml and no bff handler |
-| `bots.getRequestedWebViewButton` | missing | no route in session.yaml and no bff handler |
-| `bots.invokeWebViewCustomMethod` | missing | no route in session.yaml and no bff handler |
-| `bots.reorderPreviewMedias` | missing | no route in session.yaml and no bff handler |
+| `bots.getPopularAppBots` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPopularAppBots handler |
+| `bots.getPreviewInfo` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPreviewInfo handler |
+| `bots.getPreviewMedias` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPreviewMedias handler |
+| `bots.getRequestedWebViewButton` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsGetRequestedWebViewButton handler |
+| `bots.invokeWebViewCustomMethod` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsInvokeWebViewCustomMethod handler |
+| `bots.reorderPreviewMedias` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsReorderPreviewMedias handler |
 | `bots.reorderUsernames` | routed-but-unregistered | session.yaml routes RPCFragment but the bff process has no BotsReorderUsernames handler |
 | `bots.setBotInfo` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
 | `bots.setCustomVerification` | missing | no route in session.yaml and no bff handler |
@@ -1296,12 +1296,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.editFactCheck` | missing | no route in session.yaml and no bff handler |
 | `messages.editQuickReplyShortcut` | missing | no route in session.yaml and no bff handler |
 | `messages.getArchivedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetArchivedStickers handler |
-| `messages.getAttachMenuBot` | missing | no route in session.yaml and no bff handler |
-| `messages.getAttachMenuBots` | missing | no route in session.yaml and no bff handler |
 | `messages.getAttachedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetAttachedStickers handler |
 | `messages.getAvailableEffects` | missing | no route in session.yaml and no bff handler |
-| `messages.getBotApp` | missing | no route in session.yaml and no bff handler |
-| `messages.getBotCallbackAnswer` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.getDefaultTagReactions` | missing | no route in session.yaml and no bff handler |
 | `messages.getEmojiGameInfo` | missing | no route in session.yaml (RPCGames is commented out) and no bff handler |
 | `messages.getEmojiGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
@@ -1311,10 +1307,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getEmojiURL` | routed-but-unregistered | session.yaml routes RPCEmoji but the bff process has no MessagesGetEmojiURL handler |
 | `messages.getExtendedMedia` | missing | no route in session.yaml and no bff handler |
 | `messages.getFactCheck` | missing | no route in session.yaml and no bff handler |
-| `messages.getInlineBotResults` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.getMaskStickers` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.getMyStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetMyStickers handler |
-| `messages.getPreparedInlineMessage` | missing | no route in session.yaml and no bff handler |
 | `messages.getQuickReplies` | missing | no route in session.yaml and no bff handler |
 | `messages.getQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
 | `messages.getSavedGifs` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
@@ -1323,7 +1317,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getSplitRanges` | routed-but-unregistered | session.yaml routes RPCTakeout but the bff process has no MessagesGetSplitRanges handler |
 | `messages.getStatsURL` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `messages.initHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
-| `messages.prolongWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.readEncryptedHistory` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesReadEncryptedHistory handler |
 | `messages.readFeaturedStickers` | stub | returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.reorderQuickReplies` | missing | no route in session.yaml and no bff handler |
@@ -1334,30 +1327,20 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reportMusicListen` | routed-but-unregistered | session.yaml routes RPCReports but the bff process has no MessagesReportMusicListen handler |
 | `messages.reportReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesReportReaction handler |
 | `messages.reportReadMetrics` | routed-but-unregistered | session.yaml routes RPCReports but the bff process has no MessagesReportReadMetrics handler |
-| `messages.requestAppWebView` | missing | no route in session.yaml and no bff handler |
-| `messages.requestChatJoinWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.requestEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesRequestEncryption handler |
-| `messages.requestMainWebView` | missing | no route in session.yaml and no bff handler |
-| `messages.requestSimpleWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.requestUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
-| `messages.requestWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.saveGif` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
-| `messages.sendBotRequestedPeer` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.sendEncrypted` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncrypted handler |
 | `messages.sendEncryptedFile` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedFile handler |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `messages.sendEncryptedService` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedService handler |
-| `messages.sendInlineBotResult` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.sendPaidReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSendPaidReaction handler |
 | `messages.sendQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
-| `messages.sendWebViewData` | missing | no route in session.yaml and no bff handler |
 | `messages.setChatTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `messages.setChatWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `messages.setEncryptedTyping` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSetEncryptedTyping handler |
 | `messages.setShareTheme` | missing | no route in session.yaml and no bff handler |
-| `messages.startBot` | routed-but-unregistered | session.yaml routes RPCDeepLinks but the bff process has no MessagesStartBot handler |
 | `messages.startHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
-| `messages.toggleBotInAttachMenu` | missing | no route in session.yaml and no bff handler |
 | `messages.togglePaidReactionPrivacy` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesTogglePaidReactionPrivacy handler |
 | `messages.togglePeerTranslations` | routed-but-unregistered | session.yaml routes RPCTranslation but the bff process has no MessagesTogglePeerTranslations handler |
 | `messages.toggleStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesToggleStickerSets handler |
