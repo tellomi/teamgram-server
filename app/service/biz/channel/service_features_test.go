@@ -295,6 +295,62 @@ func TestResolveUploadedAndExistingPhoto(t *testing.T) {
 	}
 }
 
+func TestReactionChipOnHistoryAndDifference(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Reactions")
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{RandomID: 5, Message: &mtproto.Message{Message: "hi", Date: 3}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgID := sent.Updates[0].Message_MESSAGE.Id
+	react, err := svc.React(ctx, 1, ch.Id, msgID, []string{"👍"}, false)
+	if err != nil || len(react.Updates) == 0 {
+		t.Fatalf("react %#v %v", react, err)
+	}
+	sum := react.Updates[0].GetReactions_MESSAGEREACTIONS()
+	if sum == nil || len(sum.GetResults()) != 1 || sum.GetResults()[0].GetChosenOrder() == nil || len(sum.GetRecentReactions()) != 1 {
+		t.Fatalf("update reactions %#v", sum)
+	}
+	hist, err := svc.History(ctx, 1, inCh(ch), HistoryQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, m := range hist.GetMessages() {
+		if m.GetId() == msgID && m.GetReactions().GetResults()[0].GetCount() == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("history missing chip %#v", hist.GetMessages())
+	}
+	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, u := range diff.GetOtherUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateMessageReactions && u.GetMsgId_INT32() == msgID {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("difference missing reaction update %#v", diff.GetOtherUpdates())
+	}
+	if _, err = svc.React(ctx, 1, ch.Id, msgID, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	hist, err = svc.History(ctx, 1, inCh(ch), HistoryQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range hist.GetMessages() {
+		if m.GetId() == msgID && m.GetReactions() != nil {
+			t.Fatalf("chip remained %#v", m.GetReactions())
+		}
+	}
+}
+
 func mustChannel(t *testing.T, svc *Service, ctx context.Context, id int64) *Channel {
 	t.Helper()
 	ch, err := svc.reload(ctx, id)

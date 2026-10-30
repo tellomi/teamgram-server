@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/app/service/biz/reaction"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -71,5 +73,11 @@ func OpenMySQL(dsn string) (*Service, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return New(newMySQLStore(db)), nil
+	if err = reaction.EnsureSchema(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	svc := New(newMySQLStore(db))
+	svc.reactions = reaction.NewMySQL(db)
+	return svc, nil
 }

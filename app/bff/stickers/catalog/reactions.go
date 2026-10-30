@@ -60,6 +60,25 @@ func fallbackWebP() []byte {
 	return nil
 }
 
+// reactionSlots are the documents on availableReaction. static_icon is a
+// WebP (the chip). The other six are gzipped Lottie, matching Telegram.
+var reactionSlots = []struct {
+	name string
+	tgs  bool
+}{
+	{"static", false},
+	{"appear", true},
+	{"select", true},
+	{"activate", true},
+	{"effect", true},
+	{"around", true},
+	{"center", true},
+}
+
+func reactionSlotID(code, slot string) int64 {
+	return stableID("reaction", slot, code)
+}
+
 func reactionArt(code string) (webp, tgs []byte) {
 	if b, ok := readAsset("assets/twemoji/" + code + ".webp"); ok {
 		webp = b
@@ -72,6 +91,14 @@ func reactionArt(code string) (webp, tgs []byte) {
 		tgs = fallbackTGS()
 	}
 	return webp, tgs
+}
+
+func reactionSlotBytes(code, slot string, tgs bool) (body []byte, mime string) {
+	webp, anim := reactionArt(code)
+	if tgs {
+		return anim, "application/x-tgsticker"
+	}
+	return webp, "image/webp"
 }
 
 func reactionSpecs() []struct {
@@ -112,26 +139,37 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 	var ids []int64
 	for _, spec := range reactionSpecs() {
 		alt := emojiFromCode(spec.code)
-		webp, tgs := reactionArt(spec.code)
-		if len(webp) == 0 || len(tgs) == 0 || !tgsCanvas512(tgs) {
+		docs := map[string]*mtproto.Document{}
+		okDocs := true
+		for _, slot := range reactionSlots {
+			body, mime := reactionSlotBytes(spec.code, slot.name, slot.tgs)
+			if len(body) == 0 || (slot.tgs && !tgsCanvas512(body)) {
+				okDocs = false
+				break
+			}
+			w, h := int32(72), int32(72)
+			name := spec.code + ".webp"
+			if slot.tgs {
+				w, h = 512, 512
+				name = spec.code + "-" + slot.name + ".tgs"
+			}
+			docs[slot.name] = reactionIconDocument(reactionSlotID(spec.code, slot.name), mime, name, alt, w, h, len(body))
+		}
+		if !okDocs {
 			continue
 		}
-		staticID := stableID("reaction", "static", spec.code)
-		animID := stableID("reaction", "anim", spec.code)
-		staticDoc := reactionIconDocument(staticID, "image/webp", spec.code+".webp", alt, 72, 72, len(webp))
-		animDoc := reactionIconDocument(animID, "application/x-tgsticker", spec.code+".tgs", alt, 512, 512, len(tgs))
 		reactions = append(reactions, mtproto.MakeTLAvailableReaction(&mtproto.AvailableReaction{
 			Reaction:          alt,
 			Title:             spec.title,
-			StaticIcon:        staticDoc,
-			AppearAnimation:   animDoc,
-			SelectAnimation:   animDoc,
-			ActivateAnimation: animDoc,
-			EffectAnimation:   animDoc,
-			AroundAnimation:   animDoc,
-			CenterIcon:        staticDoc,
+			StaticIcon:        docs["static"],
+			AppearAnimation:   docs["appear"],
+			SelectAnimation:   docs["select"],
+			ActivateAnimation: docs["activate"],
+			EffectAnimation:   docs["effect"],
+			AroundAnimation:   docs["around"],
+			CenterIcon:        docs["center"],
 		}).To_AvailableReaction())
-		ids = append(ids, animID)
+		ids = append(ids, reactionSlotID(spec.code, "activate"))
 	}
 	sum := int32(hash64(ids))
 	if hash != 0 && hash == sum {
@@ -160,18 +198,15 @@ func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
 		return b, link.item.MIME, true
 	}
 	for _, spec := range reactionSpecs() {
-		webp, tgs := reactionArt(spec.code)
-		switch id {
-		case stableID("reaction", "static", spec.code):
-			if len(webp) == 0 {
+		for _, slot := range reactionSlots {
+			if id != reactionSlotID(spec.code, slot.name) {
+				continue
+			}
+			body, mime := reactionSlotBytes(spec.code, slot.name, slot.tgs)
+			if len(body) == 0 || (slot.tgs && !tgsCanvas512(body)) {
 				return nil, "", false
 			}
-			return webp, "image/webp", true
-		case stableID("reaction", "anim", spec.code):
-			if len(tgs) == 0 || !tgsCanvas512(tgs) {
-				return nil, "", false
-			}
-			return tgs, "application/x-tgsticker", true
+			return body, mime, true
 		}
 	}
 	return nil, "", false

@@ -171,6 +171,53 @@ func TestCatalogAPIs(t *testing.T) {
 	}
 }
 
+func TestFeaturedAndStickerSetRoundTrip(t *testing.T) {
+	s := newService(builtinPacks())
+	for _, emoji := range []bool{false, true} {
+		msg := s.Featured(0, emoji)
+		buf := mtproto.NewEncodeBuf(1 << 20)
+		if err := msg.Encode(buf, 232); err != nil {
+			t.Fatal(err)
+		}
+		dbuf := mtproto.NewDecodeBuf(buf.GetBuf())
+		obj := dbuf.Object()
+		if err := dbuf.GetError(); err != nil {
+			t.Fatalf("featured emoji=%v: %v", emoji, err)
+		}
+		got, ok := obj.(*mtproto.TLMessagesFeaturedStickers)
+		if !ok {
+			t.Fatalf("featured emoji=%v decoded %T", emoji, obj)
+		}
+		if int(got.GetCount()) != len(got.GetSets()) || got.GetUnread() == nil {
+			t.Fatalf("featured count=%d sets=%d unread=%v", got.GetCount(), len(got.GetSets()), got.GetUnread())
+		}
+	}
+	sets := []*mtproto.InputStickerSet{
+		mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: ShortTwemoji}).To_InputStickerSet(),
+		mtproto.MakeTLInputStickerSetAnimatedEmoji(nil).To_InputStickerSet(),
+		mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: ShortAnimatedEmoji}).To_InputStickerSet(),
+	}
+	for _, in := range sets {
+		full, err := s.GetSet(1, in, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf := mtproto.NewEncodeBuf(1 << 22)
+		if err := full.Encode(buf, 232); err != nil {
+			t.Fatal(err)
+		}
+		dbuf := mtproto.NewDecodeBuf(buf.GetBuf())
+		obj := dbuf.Object()
+		if err := dbuf.GetError(); err != nil {
+			t.Fatalf("getStickerSet %s: %v", in.GetShortName(), err)
+		}
+		got, ok := obj.(*mtproto.TLMessagesStickerSet)
+		if !ok || len(got.GetDocuments()) == 0 {
+			t.Fatalf("getStickerSet %s decoded %T with %d documents", in.GetShortName(), obj, len(got.GetDocuments()))
+		}
+	}
+}
+
 func listed(all *mtproto.Messages_AllStickers, short string) bool {
 	for _, set := range all.GetSets() {
 		if set.GetShortName() == short {

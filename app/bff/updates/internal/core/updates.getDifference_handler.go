@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/reaction"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -94,6 +95,9 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 	default:
 	}
 
+	if rDifference != nil {
+		reaction.AttachMessages(c.ctx, reaction.Shared(), c.MD.UserId, rDifference.NewMessages)
+	}
 	idHelper.PickByMessages(rDifference.NewMessages...)
 	idHelper.PickByUpdates(rDifference.OtherUpdates...)
 

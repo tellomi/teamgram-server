@@ -358,6 +358,37 @@ func (s *mysqlStore) ListMessages(ctx context.Context, channelID int64) ([]*Stor
 	return out, rows.Err()
 }
 
+func (s *mysqlStore) AppendPts(ctx context.Context, channelID int64, kind string, messageID int32, payload []byte) (int32, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	var pts, deleted int32
+	err = tx.QueryRowContext(ctx, `SELECT pts, deleted FROM channels WHERE id=? FOR UPDATE`, channelID).Scan(&pts, &deleted)
+	if err == sql.ErrNoRows || deleted != 0 {
+		return 0, mtproto.ErrChannelInvalid
+	}
+	if err != nil {
+		return 0, err
+	}
+	pts++
+	if payload == nil {
+		payload = []byte{}
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE channels SET pts=? WHERE id=?`, pts, channelID); err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO channel_pts_updates (channel_id, pts, pts_count, kind, message_id, message_ids, payload) VALUES (?,?,?,?,?,?,?)`,
+		channelID, pts, 1, kind, messageID, "", payload); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return pts, nil
+}
+
 func (s *mysqlStore) ListPtsAfter(ctx context.Context, channelID int64, pts int32, limit int) ([]*PtsEvent, error) {
 	q := `SELECT channel_id, pts, pts_count, kind, message_id, message_ids, payload FROM channel_pts_updates WHERE channel_id=? AND pts>? ORDER BY pts`
 	args := []any{channelID, pts}

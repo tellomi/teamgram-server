@@ -154,9 +154,10 @@ func (s *Service) Featured(hash int64, emoji bool) *mtproto.Messages_FeaturedSti
 		sets = []*mtproto.StickerSetCovered{}
 	}
 	return mtproto.MakeTLMessagesFeaturedStickers(&mtproto.Messages_FeaturedStickers{
-		Count: int32(len(sets)),
-		Hash:  sum,
-		Sets:  sets,
+		Count:  int32(len(sets)),
+		Hash:   sum,
+		Sets:   sets,
+		Unread: []int64{},
 	}).To_Messages_FeaturedStickers()
 }
 

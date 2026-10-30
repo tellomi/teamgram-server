@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/reaction"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -1010,68 +1011,60 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 	if err != nil || stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
-	f := s.features(ctx, ch.ID)
-	kept := f.Reactions[:0]
-	for _, r := range f.Reactions {
-		if !(r.MsgID == msgID && r.UserID == self) {
-			kept = append(kept, r)
-		}
-	}
-	f.Reactions = kept
-	now := int32(time.Now().Unix())
-	for _, emo := range emoticons {
-		if emo == "" {
+	key := reaction.ChannelKey(ch.ID, msgID)
+	parts, _ := s.store.ListParticipants(ctx, ch.ID)
+	boxes := make([]reaction.Box, 0, len(parts))
+	for _, p := range parts {
+		if p == nil || p.State != StateNormal {
 			continue
 		}
-		f.Reactions = append(f.Reactions, ReactRec{MsgID: msgID, UserID: self, Emoticon: emo, Date: now, Big: big})
+		boxes = append(boxes, reaction.Box{
+			UserID: p.UserID, PeerType: mtproto.PEER_CHANNEL, PeerID: ch.ID, MsgID: msgID,
+		})
 	}
-	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+	if len(boxes) == 0 {
+		boxes = []reaction.Box{{UserID: self, PeerType: mtproto.PEER_CHANNEL, PeerID: ch.ID, MsgID: msgID}}
+	}
+	rows, err := s.reactions.Replace(ctx, key, self, emoticons, big, boxes)
+	if err != nil {
 		return nil, err
 	}
-	reactions := reactionSummary(f.Reactions, msgID, self)
-	upd := mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
-		Peer_PEER:                  mtproto.MakePeerChannel(channelID),
-		MsgId_INT32:                msgID,
-		Reactions_MESSAGEREACTIONS: reactions,
-	}).To_Update()
+	if _, err = s.store.AppendPts(ctx, ch.ID, KindReact, msgID, nil); err != nil {
+		return nil, err
+	}
+	ch, _ = s.reload(ctx, ch.ID)
+	upd := reaction.Update(mtproto.MakePeerChannel(ch.ID), msgID, reaction.Summary(rows, self))
+	s.pushReaction(ctx, self, ch, msgID, rows)
 	return s.updatesWith(ctx, self, ch, upd), nil
 }
 
+func (s *Service) pushReaction(ctx context.Context, self int64, ch *Channel, msgID int32, rows []reaction.Row) {
+	h := s.hooks()
+	if h.Push == nil || ch == nil {
+		return
+	}
+	parts, err := s.store.ListParticipants(ctx, ch.ID)
+	if err != nil {
+		return
+	}
+	for _, p := range parts {
+		if p == nil || p.State != StateNormal || p.UserID == self {
+			continue
+		}
+		upd := reaction.Update(mtproto.MakePeerChannel(ch.ID), msgID, reaction.Summary(rows, p.UserID))
+		h.Push(ctx, p.UserID, nil, s.updatesWith(ctx, p.UserID, ch, upd))
+	}
+}
+
 func reactionSummary(all []ReactRec, msgID int32, self int64) *mtproto.MessageReactions {
-	counts := map[string]int32{}
-	chosen := map[string]bool{}
-	var order []string
+	var rows []reaction.Row
 	for _, r := range all {
 		if r.MsgID != msgID {
 			continue
 		}
-		if _, ok := counts[r.Emoticon]; !ok {
-			order = append(order, r.Emoticon)
-		}
-		counts[r.Emoticon]++
-		if r.UserID == self {
-			chosen[r.Emoticon] = true
-		}
+		rows = append(rows, reaction.Row{UserID: r.UserID, Emoticon: r.Emoticon, Big: r.Big, Date: r.Date})
 	}
-	var results []*mtproto.ReactionCount
-	for _, emo := range order {
-		rc := mtproto.MakeTLReactionCount(&mtproto.ReactionCount{
-			Reaction_REACTION: mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: emo}).To_Reaction(),
-			Reaction_STRING:   emo,
-			Count:             counts[emo],
-		}).To_ReactionCount()
-		if chosen[emo] {
-			rc.ChosenOrder = &wrapperspb.Int32Value{Value: 0}
-		}
-		results = append(results, rc)
-	}
-	if results == nil {
-		results = []*mtproto.ReactionCount{}
-	}
-	return mtproto.MakeTLMessageReactions(&mtproto.MessageReactions{
-		CanSeeList: true,
-		Results:    results,
-	}).To_MessageReactions()
+	return reaction.Summary(rows, self)
 }
 
 func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids []int32) (*mtproto.Updates, error) {
@@ -1079,16 +1072,48 @@ func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids [
 	if err != nil {
 		return nil, err
 	}
-	f := s.features(ctx, ch.ID)
 	var ups []*mtproto.Update
 	for _, id := range ids {
-		ups = append(ups, mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
-			Peer_PEER:                  mtproto.MakePeerChannel(channelID),
-			MsgId_INT32:                id,
-			Reactions_MESSAGEREACTIONS: reactionSummary(f.Reactions, id, self),
-		}).To_Update())
+		rows, err := s.reactions.List(ctx, reaction.ChannelKey(ch.ID, id))
+		if err != nil {
+			return nil, err
+		}
+		ups = append(ups, reaction.Update(mtproto.MakePeerChannel(ch.ID), id, reaction.Summary(rows, self)))
 	}
 	return s.updatesWith(ctx, self, ch, ups...), nil
+}
+
+func (s *Service) ReactionRows(ctx context.Context, channelID int64, msgID int32) ([]reaction.Row, error) {
+	if s.reactions == nil {
+		return nil, nil
+	}
+	return s.reactions.List(ctx, reaction.ChannelKey(channelID, msgID))
+}
+
+func (s *Service) attachReactions(ctx context.Context, viewer, channelID int64, msgs []*mtproto.Message) {
+	if s.reactions == nil || len(msgs) == 0 {
+		return
+	}
+	keys := make([]reaction.Key, 0, len(msgs))
+	for _, m := range msgs {
+		if m != nil && m.Id != 0 {
+			keys = append(keys, reaction.ChannelKey(channelID, m.Id))
+		}
+	}
+	grouped, err := s.reactions.ListMany(ctx, keys)
+	if err != nil {
+		return
+	}
+	for _, m := range msgs {
+		if m == nil {
+			continue
+		}
+		rows := grouped[reaction.ChannelKey(channelID, m.Id)]
+		if len(rows) == 0 {
+			continue
+		}
+		m.Reactions = reaction.Summary(rows, viewer)
+	}
 }
 
 func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID, offsetID, limit int32) (*mtproto.Messages_Messages, error) {
