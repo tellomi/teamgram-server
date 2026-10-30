@@ -2,7 +2,6 @@ package main
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -154,12 +153,19 @@ func TestServerSamples(t *testing.T) {
 	assertStatus("messages.getAllStickers", statusImplemented, effectOK)
 	// Routed sticker method that returns an empty set.
 	assertStatus("messages.getMaskStickers", statusStub, effectEmpty)
-	// Passkeys are implemented as an enterprise error and the service is not routed.
-	st, ef, _, _, notes, _ := srv.resolve("account.getPasskeys")
-	if st != statusMissing || ef != effectError {
-		t.Fatalf("getPasskeys %s %s %s", st, ef, notes)
+	// P0 startup calls that must not come back as ENTERPRISE_IS_BLOCKED.
+	assertStatus("auth.finishPasskeyLogin", statusImplemented, effectOK)
+	assertStatus("messages.getPaidReactionPrivacy", statusImplemented, effectOK)
+	assertStatus("help.getPromoData", statusImplemented, effectOK)
+	assertStatus("help.hidePromoData", statusImplemented, effectOK)
+	if !srv.Routed["RPCPasskey"] || !srv.Registered["RPCPasskey"] {
+		t.Fatal("passkey login must be routed and registered")
 	}
-	if !strings.Contains(notes, "not routed") && !strings.Contains(notes, "no route") {
-		t.Fatalf("notes should mention the missing route: %s", notes)
+	// Other passkey RPCs stay enterprise errors. Routing the service must not
+	// mark those wrappers as implemented.
+	assertStatus("account.getPasskeys", statusStub, effectError)
+	assertStatus("auth.initPasskeyLogin", statusStub, effectError)
+	if !srv.Routed["RPCPromoData"] || !srv.Registered["RPCPromoData"] {
+		t.Fatal("promo data must be routed and registered")
 	}
 }

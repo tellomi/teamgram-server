@@ -24,4 +24,8 @@ import (
 
 type Config struct {
 	zrpc.RpcServerConf
+	// MysqlDSN is the teamgram database that holds user_settings. The bff
+	// process passes ChannelMySQL. TEAMGRAM_MYSQL_DSN overrides it.
+	// help.hidePromoData falls back to memory when this is empty.
+	MysqlDSN string `json:",optional"`
 }

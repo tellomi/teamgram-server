@@ -54,9 +54,12 @@ BFFProxyClients:
     "/mtproto.RPCQrCode": "bff.bff"
     "/mtproto.RPCMiscellaneous": "bff.bff"
     "/mtproto.RPCAuthorization": "bff.bff"
+    # auth.finishPasskeyLogin. Passkeys are not issued; the method returns PASSKEY_CREDENTIAL_NOT_FOUND.
+    "/mtproto.RPCPasskey": "bff.bff"
     #"/mtproto.RPCGdpr": "bff.bff"
     #"/mtproto.RPCGifs": "bff.bff"
-    #"/mtproto.RPCPromoData": "bff.bff"
+    # help.getPromoData and help.hidePromoData.
+    "/mtproto.RPCPromoData": "bff.bff"
     #"/mtproto.RPCTsf": "bff.bff"
     # Cloud password: account.getPassword and the other RPCTwoFa methods.
     "/mtproto.RPCTwoFa": "bff.bff"

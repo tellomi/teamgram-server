@@ -26,7 +26,7 @@ import (
 // account.deletePasskey#f5b5563f id:string = Bool;
 func (c *PasskeyCore) AccountDeletePasskey(in *mtproto.TLAccountDeletePasskey) (*mtproto.Bool, error) {
 	// TODO: not impl
-	c.Logger.Errorf("account.deletePasskey blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	c.Logger.Errorf("account.deletePasskey - error: passkeys are not enabled")
 
 	return nil, mtproto.ErrEnterpriseIsBlocked
 }

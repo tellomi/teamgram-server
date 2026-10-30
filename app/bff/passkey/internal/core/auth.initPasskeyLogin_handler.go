@@ -26,7 +26,7 @@ import (
 // auth.initPasskeyLogin#518ad0b7 api_id:int api_hash:string = auth.PasskeyLoginOptions;
 func (c *PasskeyCore) AuthInitPasskeyLogin(in *mtproto.TLAuthInitPasskeyLogin) (*mtproto.Auth_PasskeyLoginOptions, error) {
 	// TODO: not impl
-	c.Logger.Errorf("auth.initPasskeyLogin blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	c.Logger.Errorf("auth.initPasskeyLogin - error: passkeys are not enabled")
 
 	return nil, mtproto.ErrEnterpriseIsBlocked
 }
