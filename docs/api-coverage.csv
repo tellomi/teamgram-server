@@ -334,7 +334,7 @@ langpack.getLangPack,langpack,P0,startup+background,yes,yes,yes,yes,implemented,
 langpack.getLanguage,langpack,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCLangpack,app/bff/langpack/internal/server/grpc/service/langpack_service_impl.go
 langpack.getLanguages,langpack,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCLangpack,app/bff/langpack/internal/server/grpc/service/langpack_service_impl.go
 langpack.getStrings,langpack,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCLangpack,app/bff/langpack/internal/server/grpc/service/langpack_service_impl.go
-messages.acceptEncryption,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.acceptEncryption,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesAcceptEncryption handler
 messages.acceptUrlAuth,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSeamless,no route in session.yaml (RPCSeamless is commented out) and no bff handler
 messages.addChatUser,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.addPollAnswer,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPolls,no route in session.yaml (RPCPolls is commented out) and no bff handler
@@ -360,7 +360,7 @@ messages.deleteHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,ye
 messages.deleteMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.deleteParticipantReaction,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesDeleteParticipantReaction handler
 messages.deleteParticipantReactions,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesDeleteParticipantReactions handler
-messages.deletePhoneCallHistory,messages,P1,interactive,yes,yes,yes,no,missing,error,no,absent,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out) and no bff handler
+messages.deletePhoneCallHistory,messages,P1,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCVoipCalls,session.yaml routes RPCVoipCalls but the bff process has no MessagesDeletePhoneCallHistory handler
 messages.deletePollAnswer,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPolls,no route in session.yaml (RPCPolls is commented out) and no bff handler
 messages.deleteQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
 messages.deleteQuickReplyShortcut,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
@@ -368,7 +368,7 @@ messages.deleteRevokedExportedChatInvites,messages,P1,interactive,yes,yes,yes,ye
 messages.deleteSavedHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.deleteScheduledMessages,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCScheduledMessages,no route in session.yaml (RPCScheduledMessages is commented out) and no bff handler
 messages.deleteTopicHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
-messages.discardEncryption,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.discardEncryption,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesDiscardEncryption handler
 messages.editChatAbout,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.editChatAdmin,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.editChatCreator,messages,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
@@ -401,7 +401,7 @@ messages.getCommonChats,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,y
 messages.getCustomEmojiDocuments,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCustomEmojis,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getDefaultHistoryTTL,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 messages.getDefaultTagReactions,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSavedMessageTags,no route in session.yaml and no bff handler
-messages.getDhConfig,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/dh.go but the service is not routed
+messages.getDhConfig,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/dh.go
 messages.getDialogFilters,folders,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCFolders,no route in session.yaml (RPCFolders is commented out) and no bff handler
 messages.getDialogUnreadMarks,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.getDialogs,messages,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
@@ -489,7 +489,7 @@ messages.migrateChat,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 messages.prolongWebView,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCMiniBotApps,no route in session.yaml and no bff handler
 messages.rateTranscribedAudio,messages,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCTranscription,app/bff/premium/internal/server/grpc/service/features.go
 messages.readDiscussion,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessageThreads,app/bff/channels/internal/server/grpc/service/handlers_features.go
-messages.readEncryptedHistory,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.readEncryptedHistory,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesReadEncryptedHistory handler
 messages.readFeaturedStickers,stickers,P2,interactive,yes,yes,yes,yes,stub,bool,yes,stub,RPCStickers,returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.readHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.readMentions,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -498,7 +498,7 @@ messages.readPollVotes,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,
 messages.readReactions,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesReadReactions handler
 messages.readSavedHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.receivedMessages,messages,P0,startup+background,yes,no,no,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
-messages.receivedQueue,messages,P0,startup+background,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.receivedQueue,messages,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/secret.go
 messages.reorderPinnedDialogs,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.reorderPinnedForumTopics,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.reorderPinnedSavedDialogs,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
@@ -514,7 +514,7 @@ messages.reportSpam,messages,P1,interactive,yes,yes,yes,yes,stub,empty,no,absent
 messages.reportSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 messages.requestAppWebView,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCMiniBotApps,no route in session.yaml and no bff handler
 messages.requestChatJoinWebView,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCMiniBotApps,no route in session.yaml and no bff handler
-messages.requestEncryption,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.requestEncryption,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesRequestEncryption handler
 messages.requestMainWebView,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCMainMiniBotApps,no route in session.yaml and no bff handler
 messages.requestSimpleWebView,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCMiniBotApps,no route in session.yaml and no bff handler
 messages.requestUrlAuth,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSeamless,no route in session.yaml (RPCSeamless is commented out) and no bff handler
@@ -531,10 +531,10 @@ messages.searchSentMedia,messages,P1,interactive,yes,no,no,yes,implemented,ok,ye
 messages.searchStickerSets,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.searchStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.sendBotRequestedPeer,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCInlineBot,no route in session.yaml (RPCInlineBot is commented out) and no bff handler
-messages.sendEncrypted,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
-messages.sendEncryptedFile,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.sendEncrypted,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncrypted handler
+messages.sendEncryptedFile,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedFile handler
 messages.sendEncryptedMultiMedia,messages,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-messages.sendEncryptedService,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.sendEncryptedService,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedService handler
 messages.sendInlineBotResult,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCInlineBot,no route in session.yaml (RPCInlineBot is commented out) and no bff handler
 messages.sendMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.sendMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -551,7 +551,7 @@ messages.setChatTheme,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,a
 messages.setChatWallPaper,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallpapers,no route in session.yaml (RPCWallpapers is commented out) and no bff handler
 messages.setDefaultHistoryTTL,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 messages.setDefaultReaction,messages,P1,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesSetDefaultReaction handler
-messages.setEncryptedTyping,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCSecretChats,no route in session.yaml (RPCSecretChats is commented out) and no bff handler
+messages.setEncryptedTyping,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCSecretChats,session.yaml routes RPCSecretChats but the bff process has no MessagesSetEncryptedTyping handler
 messages.setHistoryTTL,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.setShareTheme,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
 messages.setTyping,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
@@ -654,21 +654,21 @@ payments.updateStarGiftPrice,premium/payments,P2,interactive,yes,no,yes,yes,miss
 payments.upgradeStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.validateRequestedInfo,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
 payments.withdrawStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
-phone.acceptCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
+phone.acceptCall,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.checkGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
-phone.confirmCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
+phone.confirmCall,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.createConferenceCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCConferenceCalls,no route in session.yaml and no bff handler
 phone.createGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.declineConferenceCallInvite,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCConferenceCalls,no route in session.yaml and no bff handler
 phone.deleteConferenceCallParticipants,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCConferenceCalls,no route in session.yaml and no bff handler
 phone.deleteGroupCallMessages,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out) and no bff handler
 phone.deleteGroupCallParticipantMessages,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out) and no bff handler
-phone.discardCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
+phone.discardCall,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.discardGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.editGroupCallParticipant,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.editGroupCallTitle,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.exportGroupCallInvite,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
-phone.getCallConfig,phone/calls,P2,interactive,yes,yes,yes,yes,stub,empty,no,implemented,RPCVoipCalls,session.yaml does not route RPCVoipCalls; proxy returns an empty object (IDMap entry is commented out)
+phone.getCallConfig,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.getGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.getGroupCallChainBlocks,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCConferenceCalls,no route in session.yaml and no bff handler
 phone.getGroupCallJoinAs,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
@@ -682,17 +682,17 @@ phone.joinGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,
 phone.joinGroupCallPresentation,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.leaveGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.leaveGroupCallPresentation,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
-phone.receivedCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
-phone.requestCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
-phone.saveCallDebug,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
-phone.saveCallLog,phone/calls,P2,interactive,yes,yes,no,no,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
+phone.receivedCall,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
+phone.requestCall,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
+phone.saveCallDebug,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
+phone.saveCallLog,phone/calls,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.saveDefaultGroupCallJoinAs,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.saveDefaultSendAs,phone/calls,P2,interactive,no,yes,yes,no,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.sendConferenceCallBroadcast,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCConferenceCalls,no route in session.yaml and no bff handler
 phone.sendGroupCallEncryptedMessage,phone/calls,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCConferenceCalls,no route in session.yaml and no bff handler
 phone.sendGroupCallMessage,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out) and no bff handler
-phone.sendSignalingData,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
-phone.setCallRating,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCVoipCalls,no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed
+phone.sendSignalingData,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
+phone.setCallRating,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.startScheduledGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.toggleGroupCallRecord,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
 phone.toggleGroupCallSettings,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed

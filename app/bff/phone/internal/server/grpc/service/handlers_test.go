@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/dh"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/engine"
+	"github.com/teamgram/teamgram-server/app/bff/phone/internal/relay"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -224,6 +226,101 @@ func TestOneToOneCallAndLayer232(t *testing.T) {
 	}
 	if eng.DebugLog(call.GetId()) != `{"ok":true}` {
 		t.Fatal(eng.DebugLog(call.GetId()))
+	}
+}
+
+func TestConfiguredICEServersAndCallConfig(t *testing.T) {
+	t.Setenv("TELLOMI_CALL_IP", "")
+	t.Setenv("TELLOMI_CALL_IPV6", "")
+	t.Setenv("TELLOMI_TURN_HOST", "")
+	t.Setenv("TELLOMI_STUN_HOST", "")
+	t.Setenv("TELLOMI_TURN_SERVERS", "")
+	t.Setenv("TELLOMI_STUN_SERVERS", "")
+	t.Setenv("TELLOMI_TURN_SECRET", "")
+	t.Setenv("TELLOMI_TURN_PORT", "")
+	t.Setenv("TELLOMI_STUN_PORT", "")
+	t.Setenv("TELLOMI_ENABLE_P2P", "")
+	t.Setenv("TELLOMI_CALL_FORCE_TCP", "")
+	cfg := config.Config{
+		PublicIP: "8.137.39.82", PublicIPv6: "2001:db8::20",
+		ReflectorPort: 3479, TurnSecret: "chengdu-secret", TurnTTL: 3600,
+		TurnServers: []string{"198.51.100.8:3478"},
+		StunServers: []string{"198.51.100.8:3478", "203.0.113.9:19302"},
+		EnableP2P:   true,
+	}.Normalized()
+	eng := engine.New(engine.Options{
+		Config: cfg,
+		Now:    func() time.Time { return time.Unix(1_700_000_000, 0) },
+		After:  func(time.Duration, func()) func() { return func() {} },
+	})
+	svc := NewWithEngine(eng)
+	ctx := withUser(1, 11)
+	raw, err := svc.PhoneGetCallConfig(ctx, &mtproto.TLPhoneGetCallConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw.GetData() == "{}" || raw.GetData() == "" {
+		t.Fatalf("call config %q", raw.GetData())
+	}
+	if !strings.Contains(raw.GetData(), `"enable_p2p":true`) {
+		t.Fatal(raw.GetData())
+	}
+
+	ga := dh.Public(secret())
+	sum := sha256.Sum256(ga)
+	res, err := svc.PhoneRequestCall(ctx, &mtproto.TLPhoneRequestCall{
+		Video: true, RandomId: 9,
+		UserId:   mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 2}).To_InputUser(),
+		GAHash:   sum[:],
+		Protocol: callProto(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := mtproto.MakeTLInputPhoneCall(&mtproto.InputPhoneCall{
+		Id: res.GetPhoneCall().GetId(), AccessHash: res.GetPhoneCall().GetAccessHash(),
+	}).To_InputPhoneCall()
+	gb := dh.Public(secret())
+	if _, err := svc.PhoneAcceptCall(withUser(2, 22), &mtproto.TLPhoneAcceptCall{Peer: peer, GB: gb, Protocol: callProto()}); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := svc.PhoneConfirmCall(ctx, &mtproto.TLPhoneConfirmCall{
+		Peer: peer, GA: ga, KeyFingerprint: 1, Protocol: callProto(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var turns, stuns int
+	user := relay.TURNUsername("1", time.Hour, time.Unix(1_700_000_000, 0))
+	pass := relay.TURNPassword("chengdu-secret", user)
+	for _, c := range conf.GetPhoneCall().GetConnections() {
+		if c.GetIpv6() != "2001:db8::20" {
+			t.Fatalf("ipv6 %q", c.GetIpv6())
+		}
+		switch {
+		case c.GetTurn():
+			turns++
+			if c.GetIp() != "198.51.100.8" || c.GetPort() != 3478 || c.GetUsername() != user || c.GetPassword() != pass {
+				t.Fatalf("turn %+v", c)
+			}
+		case c.GetStun():
+			stuns++
+		case c.GetPredicateName() == mtproto.Predicate_phoneConnection:
+			if c.GetIp() != "8.137.39.82" || c.GetPort() != 3479 || len(c.GetPeerTag()) != 16 {
+				t.Fatalf("reflector %+v", c)
+			}
+		}
+	}
+	if turns != 1 || stuns != 2 {
+		t.Fatalf("turns=%d stuns=%d %+v", turns, stuns, conf.GetPhoneCall().GetConnections())
+	}
+
+	q, err := svc.MessagesReceivedQueue(ctx, &mtproto.TLMessagesReceivedQueue{MaxQts: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q == nil || len(q.Datas) != 0 {
+		t.Fatalf("receivedQueue %+v", q)
 	}
 }
 

@@ -101,6 +101,7 @@ func (e *Engine) connections(userID int64, tag []byte) []*mtproto.PhoneConnectio
 	now := e.now()
 	user := relay.TURNUsername(strconv.FormatInt(userID, 10), time.Duration(cfg.TurnTTL)*time.Second, now)
 	pass := relay.TURNPassword(cfg.TurnSecret, user)
+	ipv6 := cfg.IPv6()
 	var out []*mtproto.PhoneConnection
 	port := cfg.ReflectorPort
 	if e.relay != nil && e.relay.Addr() != nil {
@@ -108,18 +109,18 @@ func (e *Engine) connections(userID int64, tag []byte) []*mtproto.PhoneConnectio
 	}
 	if port > 0 && len(tag) == 16 {
 		out = append(out, mtproto.MakeTLPhoneConnection(&mtproto.PhoneConnection{
-			Id: newID(), Ip: cfg.PublicIP, Ipv6: cfg.PublicIPv6, Port: int32(port), PeerTag: append([]byte(nil), tag...),
+			Id: newID(), Ip: cfg.PublicIP, Ipv6: ipv6, Port: int32(port), PeerTag: append([]byte(nil), tag...),
 		}).To_PhoneConnection())
 	}
-	if cfg.TurnPort > 0 {
+	for _, ep := range cfg.TURNEndpoints() {
 		out = append(out, mtproto.MakeTLPhoneConnectionWebrtc(&mtproto.PhoneConnection{
-			Turn: true, Id: newID(), Ip: cfg.TurnHost, Ipv6: cfg.PublicIPv6, Port: int32(cfg.TurnPort),
+			Turn: true, Id: newID(), Ip: ep.Host, Ipv6: ipv6, Port: int32(ep.Port),
 			Username: user, Password: pass,
 		}).To_PhoneConnection())
 	}
-	if cfg.StunPort > 0 {
+	for _, ep := range cfg.STUNEndpoints() {
 		out = append(out, mtproto.MakeTLPhoneConnectionWebrtc(&mtproto.PhoneConnection{
-			Stun: true, Id: newID(), Ip: cfg.TurnHost, Ipv6: cfg.PublicIPv6, Port: int32(cfg.StunPort),
+			Stun: true, Id: newID(), Ip: ep.Host, Ipv6: ipv6, Port: int32(ep.Port),
 			Username: user, Password: pass,
 		}).To_PhoneConnection())
 	}

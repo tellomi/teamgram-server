@@ -42,6 +42,21 @@ services:
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
+      # 1:1 call addresses written into phoneCall.connections. Empty keeps
+      # the 127.0.0.1 defaults in teamgramd/etc2/bff.yaml. See docs/calls.md.
+      TELLOMI_CALL_IP: ${TELLOMI_CALL_IP:-}
+      TELLOMI_CALL_IPV6: ${TELLOMI_CALL_IPV6:-}
+      TELLOMI_TURN_HOST: ${TELLOMI_TURN_HOST:-}
+      TELLOMI_TURN_PORT: ${TELLOMI_TURN_PORT:-}
+      TELLOMI_STUN_HOST: ${TELLOMI_STUN_HOST:-}
+      TELLOMI_STUN_PORT: ${TELLOMI_STUN_PORT:-}
+      TELLOMI_TURN_SECRET: ${TELLOMI_TURN_SECRET:-}
+      TELLOMI_TURN_TTL: ${TELLOMI_TURN_TTL:-}
+      TELLOMI_TURN_SERVERS: ${TELLOMI_TURN_SERVERS:-}
+      TELLOMI_STUN_SERVERS: ${TELLOMI_STUN_SERVERS:-}
+      TELLOMI_REFLECTOR_PORT: ${TELLOMI_REFLECTOR_PORT:-}
+      TELLOMI_ENABLE_P2P: ${TELLOMI_ENABLE_P2P:-}
+      TELLOMI_CALL_FORCE_TCP: ${TELLOMI_CALL_FORCE_TCP:-}
       # Link preview runs in this container (teamgramd/bin/runall-docker.sh).
       # Empty token, DSN, media key, and MinIO credentials keep the values in
       # teamgramd/etc2/linkpreview.yaml. See docs/link-preview.md.
@@ -117,15 +132,24 @@ services:
 
   # TURN/STUN for phoneConnectionWebrtc. Username is "<expiry>:<user>" and the
   # password is base64(HMAC-SHA1(static-auth-secret, username)). The secret must
-  # match Phone.TurnSecret. Set external-ip to the address phones can reach.
+  # match TELLOMI_TURN_SECRET. Host networking so relay candidates use the
+  # public address. See docs/calls.md.
   coturn:
     image: coturn/coturn:4.6.2
     restart: always
     network_mode: host
+    environment:
+      TURN_EXTERNAL_IP: ${TELLOMI_TURN_EXTERNAL_IP:-${TELLOMI_CALL_IP:-127.0.0.1}}
+      TURN_RELAY_IP: ${TELLOMI_TURN_RELAY_IP:-}
+      TURN_SECRET: ${TELLOMI_TURN_SECRET:-tellomi-turn-secret}
+      TURN_REALM: ${TELLOMI_TURN_REALM:-tellomi}
+      TURN_MIN_PORT: ${TELLOMI_TURN_MIN_PORT:-49160}
+      TURN_MAX_PORT: ${TELLOMI_TURN_MAX_PORT:-49200}
+      TURN_LISTEN_PORT: ${TELLOMI_TURN_PORT:-3478}
+      TURN_TLS_PORT: ${TELLOMI_TURN_TLS_PORT:-5349}
     volumes:
-      - ./teamgramd/deploy/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-    entrypoint: ["turnserver"]
-    command: ["-c", "/etc/coturn/turnserver.conf"]
+      - ./teamgramd/deploy/coturn/entrypoint.sh:/opt/coturn/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/opt/coturn/entrypoint.sh"]
 
   # RTMP ingest for phone.getGroupCallStreamRtmpUrl. This accepts the push;
   # it is not bridged into the group-call SFU (see app/bff/phone/LIMITATIONS.md).

@@ -100,12 +100,16 @@ SyncClient:
   Brokers:
     - 127.0.0.1:9092
 
+# 1:1 call addresses. Env overrides yaml: TELLOMI_CALL_IP, TELLOMI_TURN_HOST,
+# TELLOMI_TURN_PORT, TELLOMI_STUN_HOST, TELLOMI_STUN_PORT, TELLOMI_TURN_SECRET,
+# TELLOMI_TURN_SERVERS, TELLOMI_STUN_SERVERS. See docs/calls.md.
 Phone:
   PublicIP: 127.0.0.1
   ReflectorPort: 3479
   SFUPort: 3480
   TurnHost: 127.0.0.1
   TurnPort: 3478
+  StunHost: 127.0.0.1
   StunPort: 3478
   TurnSecret: tellomi-turn-secret
   TurnTTL: 86400
