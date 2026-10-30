@@ -65,7 +65,9 @@ BFFProxyClients:
     "/mtproto.RPCEmoji": "bff.bff"
     "/mtproto.RPCEmojiCategories": "bff.bff"
     "/mtproto.RPCCustomEmojis": "bff.bff"
-    #"/mtproto.RPCFolders": "bff.bff"
+    # Dialog folders (messages.getDialogFilters and the other folder RPCs).
+    "/mtproto.RPCFolders": "bff.bff"
+    "/mtproto.RPCFolderTags": "bff.bff"
     #"/mtproto.RPCGames": "bff.bff"
     #"/mtproto.RPCGroupCalls": "bff.bff"
     #"/mtproto.RPCImportedChats": "bff.bff"

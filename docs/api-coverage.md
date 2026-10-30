@@ -59,7 +59,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | stickers | 39 | 19 | 5 | 14 | 1 | 0 | 0 |
 | phone/calls | 43 | 10 | 0 | 0 | 33 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
-| folders | 17 | 0 | 0 | 0 | 17 | 5 | 5 |
+| folders | 17 | 5 | 0 | 12 | 0 | 5 | 0 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
 | stories | 32 | 0 | 0 | 0 | 32 | 0 | 0 |
 | premium/payments | 100 | 3 | 0 | 0 | 97 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **342** | **22** | **48** | **414** | **94** | **16** |
+| **total** | **826** | **347** | **22** | **60** | **397** | **94** | **11** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 319 | 21 | 46 | 369 | 91 | 15 |
-| android | 709 | 316 | 21 | 41 | 331 | 87 | 15 |
-| desktop | 692 | 295 | 21 | 33 | 343 | 79 | 16 |
-| macos | 677 | 308 | 20 | 38 | 311 | 90 | 15 |
+| ios | 755 | 324 | 21 | 58 | 352 | 91 | 10 |
+| android | 709 | 321 | 21 | 53 | 314 | 87 | 10 |
+| desktop | 692 | 300 | 21 | 45 | 326 | 79 | 11 |
+| macos | 677 | 313 | 20 | 50 | 294 | 90 | 10 |
 
 540 methods are called by all four clients.
 
@@ -93,7 +93,7 @@ A method counts for a client when that client has at least one call site. Implem
 
 Startup and background calls. These run before the chat list is usable. `effect=error` drops the session or the login; empty stubs return success with no data and still break clients that require a config, difference, or langpack.
 
-19 gaps (16 error, 3 empty or bool or not-modified).
+14 gaps (11 error, 3 empty or bool or not-modified).
 
 | Method | Module | Effect | Status | Clients |
 | --- | --- | --- | --- | --- |
@@ -107,11 +107,6 @@ Startup and background calls. These run before the chat list is usable. `effect=
 | `account.setReactionsNotifySettings` | account | error | missing | ios, android, desktop, macos |
 | `account.updatePasswordSettings` | account | error | missing | ios, android, desktop, macos |
 | `auth.finishPasskeyLogin` | auth | error | missing | ios, desktop, macos |
-| `messages.getDialogFilters` | folders | error | missing | ios, android, desktop, macos |
-| `messages.getSuggestedDialogFilters` | folders | error | missing | ios, android, desktop, macos |
-| `messages.toggleDialogFilterTags` | folders | error | missing | ios, android, desktop, macos |
-| `messages.updateDialogFilter` | folders | error | missing | ios, android, desktop, macos |
-| `messages.updateDialogFiltersOrder` | folders | error | missing | ios, android, desktop, macos |
 | `messages.getPaidReactionPrivacy` | messages | error | routed-but-unregistered | android, desktop |
 | `account.getPassword` | account | empty | stub | ios, android, desktop, macos |
 | `help.getPromoData` | help | empty | stub | ios, android, desktop, macos |
@@ -829,27 +824,27 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### folders
 
-17 called, 0 implemented, 0 stub, 0 routed-unregistered, 17 missing.
+17 called, 5 implemented, 0 stub, 12 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `messages.getDialogFilters` | yes | yes | yes | yes | startup | missing | error |
-| `messages.getSuggestedDialogFilters` | yes | yes | yes | yes | startup | missing | error |
-| `messages.toggleDialogFilterTags` | yes | yes | yes | yes | startup | missing | error |
-| `messages.updateDialogFilter` | yes | yes | yes | yes | startup | missing | error |
-| `messages.updateDialogFiltersOrder` | yes | yes | yes | yes | startup | missing | error |
-| `chatlists.checkChatlistInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.deleteExportedInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.editExportedInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.exportChatlistInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.getChatlistUpdates` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.getExportedInvites` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.getLeaveChatlistSuggestions` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.hideChatlistUpdates` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.joinChatlistInvite` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.joinChatlistUpdates` | yes | yes | yes | yes | interactive | missing | error |
-| `chatlists.leaveChatlist` | yes | yes | yes | yes | interactive | missing | error |
-| `folders.editPeerFolders` | yes | yes | yes | yes | interactive | missing | error |
+| `messages.getDialogFilters` | yes | yes | yes | yes | startup | implemented | ok |
+| `messages.getSuggestedDialogFilters` | yes | yes | yes | yes | startup | implemented | ok |
+| `messages.toggleDialogFilterTags` | yes | yes | yes | yes | startup | implemented | ok |
+| `messages.updateDialogFilter` | yes | yes | yes | yes | startup | implemented | ok |
+| `messages.updateDialogFiltersOrder` | yes | yes | yes | yes | startup | implemented | ok |
+| `chatlists.checkChatlistInvite` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.deleteExportedInvite` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.editExportedInvite` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.exportChatlistInvite` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.getChatlistUpdates` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.getExportedInvites` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.getLeaveChatlistSuggestions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.hideChatlistUpdates` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.joinChatlistInvite` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.joinChatlistUpdates` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `chatlists.leaveChatlist` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `folders.editPeerFolders` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 
 ### stats
 
@@ -1291,17 +1286,17 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `channels.updateColor` | routed-but-unregistered | session.yaml routes RPCAccentColors but the bff process has no ChannelsUpdateColor handler |
 | `channels.updateEmojiStatus` | routed-but-unregistered | session.yaml routes RPCEmojiStatus but the bff process has no ChannelsUpdateEmojiStatus handler |
 | `channels.updatePaidMessagesPrice` | missing | no route in session.yaml and no bff handler |
-| `chatlists.checkChatlistInvite` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.deleteExportedInvite` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.editExportedInvite` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.exportChatlistInvite` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.getChatlistUpdates` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.getExportedInvites` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.getLeaveChatlistSuggestions` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.hideChatlistUpdates` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.joinChatlistInvite` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.joinChatlistUpdates` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `chatlists.leaveChatlist` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
+| `chatlists.checkChatlistInvite` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsCheckChatlistInvite handler |
+| `chatlists.deleteExportedInvite` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsDeleteExportedInvite handler |
+| `chatlists.editExportedInvite` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsEditExportedInvite handler |
+| `chatlists.exportChatlistInvite` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsExportChatlistInvite handler |
+| `chatlists.getChatlistUpdates` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsGetChatlistUpdates handler |
+| `chatlists.getExportedInvites` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsGetExportedInvites handler |
+| `chatlists.getLeaveChatlistSuggestions` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsGetLeaveChatlistSuggestions handler |
+| `chatlists.hideChatlistUpdates` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsHideChatlistUpdates handler |
+| `chatlists.joinChatlistInvite` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsJoinChatlistInvite handler |
+| `chatlists.joinChatlistUpdates` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsJoinChatlistUpdates handler |
+| `chatlists.leaveChatlist` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no ChatlistsLeaveChatlist handler |
 | `communities.create` | missing | no route in session.yaml and no bff handler |
 | `communities.getJoinedCommunities` | missing | no route in session.yaml and no bff handler |
 | `communities.getParticipantJoinedChats` | missing | no route in session.yaml and no bff handler |
@@ -1329,7 +1324,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `feed.getInterestCategories` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `feed.readFeed` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `feed.setInterestCategories` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `folders.editPeerFolders` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
+| `folders.editPeerFolders` | routed-but-unregistered | session.yaml routes RPCFolders but the bff process has no FoldersEditPeerFolders handler |
 | `fragment.getCollectibleInfo` | missing | no route in session.yaml and no bff handler |
 | `help.editUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
 | `help.getPromoData` | stub | session.yaml does not route RPCPromoData; proxy returns an empty object (IDMap entry is commented out) |
@@ -1365,7 +1360,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getBotApp` | missing | no route in session.yaml and no bff handler |
 | `messages.getBotCallbackAnswer` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.getDefaultTagReactions` | missing | no route in session.yaml and no bff handler |
-| `messages.getDialogFilters` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
 | `messages.getEmojiGameInfo` | missing | no route in session.yaml (RPCGames is commented out) and no bff handler |
 | `messages.getEmojiGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
 | `messages.getEmojiProfilePhotoGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
@@ -1390,7 +1384,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getShareThemeBackdrops` | missing | no route in session.yaml and no bff handler |
 | `messages.getSplitRanges` | missing | no route in session.yaml and no bff handler |
 | `messages.getStatsURL` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.getSuggestedDialogFilters` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
 | `messages.getUnreadPollVotes` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.getUnreadReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesGetUnreadReactions handler |
 | `messages.getWebPage` | missing | no route in session.yaml (RPCWebPage is commented out) and no bff handler |
@@ -1438,15 +1431,12 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.startBot` | routed-but-unregistered | session.yaml routes RPCDeepLinks but the bff process has no MessagesStartBot handler |
 | `messages.startHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `messages.toggleBotInAttachMenu` | missing | no route in session.yaml and no bff handler |
-| `messages.toggleDialogFilterTags` | missing | no route in session.yaml and no bff handler |
 | `messages.togglePaidReactionPrivacy` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesTogglePaidReactionPrivacy handler |
 | `messages.togglePeerTranslations` | missing | no route in session.yaml and no bff handler |
 | `messages.toggleStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesToggleStickerSets handler |
 | `messages.toggleSuggestedPostApproval` | missing | no route in session.yaml and no bff handler |
 | `messages.toggleTodoCompleted` | missing | no route in session.yaml and no bff handler |
 | `messages.translateText` | missing | no route in session.yaml and no bff handler |
-| `messages.updateDialogFilter` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
-| `messages.updateDialogFiltersOrder` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
 | `messages.updateSavedReactionTag` | missing | no route in session.yaml and no bff handler |
 | `messages.uploadImportedMedia` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `payments.applyGiftCode` | missing | no route in session.yaml and no bff handler |
