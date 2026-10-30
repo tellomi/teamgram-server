@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -394,6 +395,24 @@ func TestGroupOutboxWaitsForAnotherMember(t *testing.T) {
 	reader := dialogRead(t, svc, ctx, 2, ch.Id)
 	if reader.ReadInbox < msgID {
 		t.Fatalf("reader inbox %d", reader.ReadInbox)
+	}
+	marks, err := svc.ListReadMarks(ctx, ch.Id, msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var readerMark *ReadMark
+	for i := range marks {
+		if marks[i].UserID == 2 {
+			readerMark = &marks[i]
+			break
+		}
+	}
+	if readerMark == nil || readerMark.Date == 0 {
+		t.Fatalf("member 2 read date missing: %#v", marks)
+	}
+	now := time.Now().Unix()
+	if readerMark.Date < now-120 || readerMark.Date > now+120 {
+		t.Fatalf("read date %d is not a real unix time", readerMark.Date)
 	}
 
 	// Member 2's own send stays unread until member 3 reads it.

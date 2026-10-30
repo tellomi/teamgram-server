@@ -99,4 +99,17 @@ CREATE TABLE IF NOT EXISTS channel_personal (
   channel_id BIGINT NOT NULL,
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS message_read_outbox (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  peer_dialog_id BIGINT NOT NULL,
+  read_user_id BIGINT NOT NULL,
+  read_outbox_max_id INT NOT NULL,
+  read_outbox_max_date BIGINT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY user_id (user_id, peer_dialog_id, read_user_id, read_outbox_max_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `
