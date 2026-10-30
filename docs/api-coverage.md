@@ -47,16 +47,16 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | Module | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | auth | 22 | 21 | 1 | 0 | 0 | 17 | 0 |
-| account | 119 | 69 | 10 | 8 | 32 | 31 | 0 |
+| account | 119 | 72 | 9 | 8 | 30 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
-| messages | 216 | 177 | 3 | 13 | 23 | 14 | 0 |
+| messages | 216 | 197 | 0 | 0 | 19 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | help | 25 | 22 | 0 | 0 | 3 | 12 | 0 |
 | channels | 59 | 58 | 0 | 0 | 1 | 1 | 0 |
-| stickers | 39 | 19 | 5 | 14 | 1 | 0 | 0 |
+| stickers | 39 | 20 | 4 | 14 | 1 | 0 | 0 |
 | phone/calls | 43 | 10 | 0 | 0 | 33 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 5 | 0 | 12 | 0 | 5 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **437** | **21** | **85** | **283** | **94** | **0** |
+| **total** | **826** | **461** | **16** | **72** | **277** | **94** | **0** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 411 | 20 | 81 | 243 | 91 | 0 |
-| android | 709 | 406 | 18 | 69 | 216 | 87 | 0 |
-| desktop | 692 | 389 | 19 | 61 | 223 | 79 | 0 |
-| macos | 677 | 396 | 20 | 66 | 195 | 90 | 0 |
+| ios | 755 | 434 | 15 | 69 | 237 | 91 | 0 |
+| android | 709 | 429 | 13 | 57 | 210 | 87 | 0 |
+| desktop | 692 | 404 | 14 | 57 | 217 | 79 | 0 |
+| macos | 677 | 417 | 15 | 55 | 190 | 90 | 0 |
 
 540 methods are called by all four clients.
 
@@ -99,20 +99,20 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-91 gaps (82 error, 9 empty or bool or not-modified).
+68 gaps (63 error, 5 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
-| account | 50 |
+| account | 47 |
 | auth | 1 |
 | channels | 1 |
-| messages | 39 |
+| messages | 19 |
 
 ### P2
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-298 gaps (293 error, 5 empty or bool or not-modified).
+297 gaps (293 error, 4 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -128,7 +128,7 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | phone/calls | 33 |
 | premium/payments | 99 |
 | stats | 6 |
-| stickers | 20 |
+| stickers | 19 |
 | stories | 32 |
 | toncenter | 4 |
 | wallet | 26 |
@@ -168,7 +168,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### account
 
-119 called, 69 implemented, 10 stub, 8 routed-unregistered, 32 missing.
+119 called, 72 implemented, 9 stub, 8 routed-unregistered, 30 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -222,8 +222,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.installWallPaper` | yes | yes | yes | yes | interactive | missing | error |
 | `account.reorderProfileTabs` | no | yes | no | no | interactive | missing | error |
 | `account.resetWallPapers` | yes | yes | no | no | interactive | missing | error |
-| `account.resetWebAuthorization` | yes | yes | yes | no | interactive | missing | error |
-| `account.resetWebAuthorizations` | yes | yes | yes | yes | interactive | missing | error |
 | `account.saveRingtone` | yes | yes | yes | yes | interactive | missing | error |
 | `account.saveTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `account.saveWallPaper` | yes | yes | yes | yes | interactive | missing | error |
@@ -250,7 +248,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getPasskeys` | yes | yes | yes | yes | interactive | stub | error |
 | `account.getThemes` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.getWallPapers` | yes | yes | yes | yes | interactive | stub | empty |
-| `account.getWebAuthorizations` | yes | yes | yes | yes | interactive | stub | empty |
 | `account.initPasskeyRegistration` | yes | yes | yes | yes | interactive | stub | error |
 | `account.registerPasskey` | yes | yes | yes | yes | interactive | stub | error |
 | `account.acceptAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -271,9 +268,12 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getPrivacy` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getRecentEmojiStatuses` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.getSavedMusicIds` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.getWebAuthorizations` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.reportPeer` | yes | yes | no | yes | interactive | implemented | ok |
 | `account.reportProfilePhoto` | yes | yes | yes | no | interactive | implemented | ok |
 | `account.resetAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.resetWebAuthorization` | yes | yes | yes | no | interactive | implemented | ok |
+| `account.resetWebAuthorizations` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.saveMusic` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.saveSecureValue` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.sendVerifyPhoneCode` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -341,7 +341,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-216 called, 177 implemented, 3 stub, 13 routed-unregistered, 23 missing.
+216 called, 197 implemented, 0 stub, 0 routed-unregistered, 19 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -359,13 +359,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.receivedMessages` | yes | no | no | yes | startup+background | implemented | ok |
 | `messages.receivedQueue` | yes | yes | no | yes | startup+background | implemented | ok |
 | `messages.reorderPinnedDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
-| `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.appendTodoList` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.checkHistoryImport` | yes | yes | no | no | interactive | missing | error |
 | `messages.checkHistoryImportPeer` | yes | yes | no | no | interactive | missing | error |
-| `messages.checkUrlAuthMatchCode` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.composeMessageWithAI` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.declineUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteFactCheck` | yes | no | yes | yes | interactive | missing | error |
 | `messages.editFactCheck` | yes | no | yes | yes | interactive | missing | error |
 | `messages.getEmojiGameInfo` | yes | yes | yes | yes | interactive | missing | error |
@@ -373,7 +370,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getShareThemeBackdrops` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getStatsURL` | no | yes | no | no | interactive | missing | error |
 | `messages.initHistoryImport` | yes | yes | no | no | interactive | missing | error |
-| `messages.requestUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendEncryptedMultiMedia` | no | yes | no | no | interactive | missing | error |
 | `messages.setChatTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatWallPaper` | yes | yes | yes | yes | interactive | missing | error |
@@ -382,31 +378,19 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.toggleSuggestedPostApproval` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.toggleTodoCompleted` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.uploadImportedMedia` | yes | yes | no | no | interactive | missing | error |
-| `messages.acceptEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.deletePhoneCallHistory` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
-| `messages.discardEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.getSplitRanges` | no | no | yes | no | interactive | routed-but-unregistered | error |
-| `messages.readEncryptedHistory` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.reportEncryptedSpam` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.requestEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.sendEncrypted` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.sendEncryptedFile` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.sendEncryptedService` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.sendPaidReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.setEncryptedTyping` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `messages.togglePaidReactionPrivacy` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `messages.getEmojiGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
-| `messages.getEmojiProfilePhotoGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
-| `messages.getEmojiStatusGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
+| `messages.acceptEncryption` | yes | yes | no | yes | interactive | implemented | ok |
+| `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.addChatUser` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.addPollAnswer` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.checkChatInvite` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.checkUrlAuthMatchCode` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.clearAllDrafts` | no | yes | no | no | interactive | implemented | ok |
 | `messages.clearRecentReactions` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.clickSponsoredMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.composeRichMessageWithAI` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.createChat` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.createForumTopic` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.declineUrlAuth` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteChat` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteChatUser` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteExportedChatInvite` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -414,6 +398,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.deleteMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteParticipantReaction` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteParticipantReactions` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.deletePhoneCallHistory` | yes | yes | yes | no | interactive | implemented | ok |
 | `messages.deletePollAnswer` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteQuickReplyMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteQuickReplyShortcut` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -421,6 +406,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.deleteSavedHistory` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteScheduledMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.deleteTopicHistory` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.discardEncryption` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.editChatAbout` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.editChatAdmin` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.editChatCreator` | yes | no | yes | yes | interactive | implemented | ok |
@@ -449,9 +435,12 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getDhConfig` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getDialogUnreadMarks` | yes | yes | no | no | interactive | implemented | ok |
 | `messages.getDiscussionMessage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getEmojiGroups` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiKeywords` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiKeywordsDifference` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiKeywordsLanguages` | no | no | yes | no | interactive | implemented | ok |
+| `messages.getEmojiProfilePhotoGroups` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getEmojiStatusGroups` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiURL` | no | yes | no | no | interactive | implemented | ok |
 | `messages.getExportedChatInvite` | no | yes | no | no | interactive | implemented | ok |
 | `messages.getExportedChatInvites` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -485,6 +474,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getSearchCounters` | no | yes | no | no | interactive | implemented | ok |
 | `messages.getSearchResultsCalendar` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getSearchResultsPositions` | yes | yes | no | no | interactive | implemented | ok |
+| `messages.getSplitRanges` | no | no | yes | no | interactive | implemented | ok |
 | `messages.getSponsoredMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getTopReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getUnreadMentions` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -501,6 +491,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.prolongWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.rateTranscribedAudio` | yes | yes | yes | no | interactive | implemented | ok |
 | `messages.readDiscussion` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.readEncryptedHistory` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.readHistory` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.readMentions` | no | yes | yes | no | interactive | implemented | ok |
 | `messages.readMessageContents` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -511,6 +502,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reorderPinnedSavedDialogs` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reorderQuickReplies` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.report` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.reportEncryptedSpam` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.reportMessagesDelivery` | yes | no | yes | yes | interactive | implemented | ok |
 | `messages.reportMusicListen` | yes | yes | yes | no | interactive | implemented | ok |
 | `messages.reportReaction` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -519,8 +511,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reportSponsoredMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestAppWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestChatJoinWebView` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestEncryption` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.requestMainWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestSimpleWebView` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.requestUrlAuth` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.saveDefaultSendAs` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.saveDraft` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -529,10 +523,14 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.searchGlobal` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.searchSentMedia` | yes | no | no | yes | interactive | implemented | ok |
 | `messages.sendBotRequestedPeer` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.sendEncrypted` | yes | yes | no | yes | interactive | implemented | ok |
+| `messages.sendEncryptedFile` | yes | yes | no | yes | interactive | implemented | ok |
+| `messages.sendEncryptedService` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.sendInlineBotResult` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMedia` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendMultiMedia` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.sendPaidReaction` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendQuickReplyMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendReaction` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.sendScheduledMessages` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -542,6 +540,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.setChatAvailableReactions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setDefaultHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setDefaultReaction` | yes | no | yes | yes | interactive | implemented | ok |
+| `messages.setEncryptedTyping` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.setHistoryTTL` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.setTyping` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.startBot` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -549,6 +548,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.toggleBotInAttachMenu` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.toggleDialogPin` | no | yes | yes | no | interactive | implemented | ok |
 | `messages.toggleNoForwards` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.togglePaidReactionPrivacy` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.togglePeerTranslations` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.toggleSavedDialogPin` | no | no | yes | no | interactive | implemented | ok |
 | `messages.transcribeAudio` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -698,7 +698,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### stickers
 
-39 called, 19 implemented, 5 stub, 14 routed-unregistered, 1 missing.
+39 called, 20 implemented, 4 stub, 14 routed-unregistered, 1 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -717,7 +717,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stickers.renameStickerSet` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `stickers.replaceSticker` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `stickers.suggestShortName` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `messages.getEmojiStickerGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
 | `messages.getMaskStickers` | yes | yes | yes | yes | interactive | stub | empty |
 | `messages.getSavedGifs` | yes | yes | yes | yes | interactive | stub | empty |
 | `messages.readFeaturedStickers` | yes | yes | yes | yes | interactive | stub | bool |
@@ -727,6 +726,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.clearRecentStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.faveSticker` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getAllStickers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getEmojiStickerGroups` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getFavedStickers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getFeaturedEmojiStickers` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -1176,7 +1176,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getUniqueGiftChatThemes` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.getWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `account.getWallPapers` | stub | session.yaml does not route RPCWallpapers; proxy returns an empty object (IDMap entry is commented out) |
-| `account.getWebAuthorizations` | stub | session.yaml does not route RPCSeamless; proxy returns an empty object (IDMap entry is commented out) |
 | `account.getWebBrowserSettings` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
 | `account.getWebPagePreview` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.initPasskeyLogin` | missing | no route in session.yaml and no bff handler not in layer schema |
@@ -1188,8 +1187,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.reorderProfileTabs` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.reorderUsernames` | routed-but-unregistered | session.yaml routes RPCFragment but the bff process has no AccountReorderUsernames handler |
 | `account.resetWallPapers` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
-| `account.resetWebAuthorization` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
-| `account.resetWebAuthorizations` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `account.resolveBusinessChatLink` | missing | no route in session.yaml and no bff handler |
 | `account.saveRingtone` | missing | no route in session.yaml and no bff handler |
 | `account.saveTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
@@ -1280,51 +1277,30 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `help.getTimezonesList` | missing | no route in session.yaml and no bff handler |
 | `help.getUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
 | `iv.getRichMessage` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.acceptEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesAcceptEncryption handler |
-| `messages.acceptUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.appendTodoList` | missing | no route in session.yaml and no bff handler |
 | `messages.checkHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `messages.checkHistoryImportPeer` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
-| `messages.checkUrlAuthMatchCode` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.composeMessageWithAI` | missing | no route in session.yaml and no bff handler |
-| `messages.declineUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.deleteFactCheck` | missing | no route in session.yaml and no bff handler |
-| `messages.deletePhoneCallHistory` | routed-but-unregistered | session.yaml routes RPCVoipCalls but the bff process has no MessagesDeletePhoneCallHistory handler |
-| `messages.discardEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesDiscardEncryption handler |
 | `messages.editFactCheck` | missing | no route in session.yaml and no bff handler |
 | `messages.getArchivedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetArchivedStickers handler |
 | `messages.getAttachedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetAttachedStickers handler |
 | `messages.getEmojiGameInfo` | missing | no route in session.yaml (RPCGames is commented out) and no bff handler |
-| `messages.getEmojiGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
-| `messages.getEmojiProfilePhotoGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
-| `messages.getEmojiStatusGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
-| `messages.getEmojiStickerGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
 | `messages.getFactCheck` | missing | no route in session.yaml and no bff handler |
 | `messages.getMaskStickers` | stub | returns an empty object app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.getMyStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetMyStickers handler |
 | `messages.getSavedGifs` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
 | `messages.getShareThemeBackdrops` | missing | no route in session.yaml and no bff handler |
-| `messages.getSplitRanges` | routed-but-unregistered | session.yaml routes RPCTakeout but the bff process has no MessagesGetSplitRanges handler |
 | `messages.getStatsURL` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `messages.initHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
-| `messages.readEncryptedHistory` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesReadEncryptedHistory handler |
 | `messages.readFeaturedStickers` | stub | returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.reorderStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesReorderStickerSets handler |
-| `messages.reportEncryptedSpam` | routed-but-unregistered | session.yaml routes RPCReports but the bff process has no MessagesReportEncryptedSpam handler |
-| `messages.requestEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesRequestEncryption handler |
-| `messages.requestUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.saveGif` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
-| `messages.sendEncrypted` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncrypted handler |
-| `messages.sendEncryptedFile` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedFile handler |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.sendEncryptedService` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedService handler |
-| `messages.sendPaidReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSendPaidReaction handler |
 | `messages.setChatTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `messages.setChatWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
-| `messages.setEncryptedTyping` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSetEncryptedTyping handler |
 | `messages.setShareTheme` | missing | no route in session.yaml and no bff handler |
 | `messages.startHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
-| `messages.togglePaidReactionPrivacy` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesTogglePaidReactionPrivacy handler |
 | `messages.toggleStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesToggleStickerSets handler |
 | `messages.toggleSuggestedPostApproval` | missing | no route in session.yaml and no bff handler |
 | `messages.toggleTodoCompleted` | missing | no route in session.yaml and no bff handler |

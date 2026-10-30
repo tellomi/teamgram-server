@@ -66,7 +66,9 @@ BFFProxyClients:
     #"/mtproto.RPCTsf": "bff.bff"
     # Cloud password: account.getPassword and the other RPCTwoFa methods.
     "/mtproto.RPCTwoFa": "bff.bff"
-    #"/mtproto.RPCSeamless": "bff.bff"
+    # Seamless login: messages.requestUrlAuth and the other RPCSeamless methods.
+    # This server has no bot OAuth catalog, so URL checks return urlAuthResultDefault.
+    "/mtproto.RPCSeamless": "bff.bff"
     # 1:1 voice and video. Group calls stay on RPCGroupCalls (still commented).
     "/mtproto.RPCVoipCalls": "bff.bff"
     "/mtproto.RPCChannels": "bff.bff"
@@ -76,8 +78,8 @@ BFFProxyClients:
     "/mtproto.RPCFiles": "bff.bff"
     # Link previews in the composer and when a message's webpage is missing.
     "/mtproto.RPCWebPage": "bff.bff"
-    # messages.getDhConfig (call DH) and a fast empty messages.receivedQueue.
-    # Secret-chat encryption methods on this service are still unimplemented.
+    # messages.getDhConfig, messages.receivedQueue, and secret-chat RPCs.
+    # Secret chats keep ciphertext in memory and forward it; the server does not decrypt.
     "/mtproto.RPCSecretChats": "bff.bff"
     "/mtproto.RPCPassport": "bff.bff"
     "/mtproto.RPCUpdates": "bff.bff"

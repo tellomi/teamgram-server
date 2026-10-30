@@ -24,8 +24,9 @@ type Service struct {
 	mtproto.UnimplementedRPCVoipCallsServer
 	mtproto.UnimplementedRPCGroupCallsServer
 	mtproto.UnimplementedRPCSecretChatsServer
-	svc *svc.ServiceContext
-	eng *engine.Engine
+	svc        *svc.ServiceContext
+	eng        *engine.Engine
+	secretPush func(userID int64, upd *mtproto.Updates)
 }
 
 func New(sc *svc.ServiceContext) *Service {

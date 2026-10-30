@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/channels/internal/historysplit"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
@@ -63,7 +64,7 @@ func (RecommendationsService) ChannelsGetChannelRecommendations(ctx context.Cont
 	return channel.Shared().GetChannelRecommendations(ctx, self, in.GetChannel())
 }
 
-// TakeoutService serves channels.getLeftChannels. Other takeout RPCs stay unimplemented.
+// TakeoutService serves channels.getLeftChannels and messages.getSplitRanges.
 type TakeoutService struct {
 	mtproto.UnimplementedRPCTakeoutServer
 }
@@ -71,6 +72,15 @@ type TakeoutService struct {
 func (TakeoutService) ChannelsGetLeftChannels(ctx context.Context, in *mtproto.TLChannelsGetLeftChannels) (*mtproto.Messages_Chats, error) {
 	self, _ := actor(ctx)
 	return channel.Shared().GetLeftChannels(ctx, self, in.GetOffset())
+}
+
+// MessagesGetSplitRanges
+// messages.getSplitRanges#1cff7e08 = Vector<MessageRange>;
+func (TakeoutService) MessagesGetSplitRanges(ctx context.Context, _ *mtproto.TLMessagesGetSplitRanges) (*mtproto.Vector_MessageRange, error) {
+	if self, _ := actor(ctx); self == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	return historysplit.Ranges(), nil
 }
 
 // TranslationService serves channels.toggleAutotranslation,

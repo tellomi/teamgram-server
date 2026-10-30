@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 )
 
@@ -43,6 +44,20 @@ func (ReportsService) MessagesReportReadMetrics(ctx context.Context, in *mtproto
 func (ReportsService) MessagesReportMusicListen(ctx context.Context, in *mtproto.TLMessagesReportMusicListen) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
 	if err := chatbox.Shared().ReportMusicListen(ctx, self, in.GetId(), in.GetListenedDuration()); err != nil {
+		return nil, err
+	}
+	return mtproto.BoolTrue, nil
+}
+
+// MessagesReportEncryptedSpam
+// messages.reportEncryptedSpam#4b0c8c0f peer:InputEncryptedChat = Bool;
+// https://core.telegram.org/method/messages.reportEncryptedSpam
+func (ReportsService) MessagesReportEncryptedSpam(ctx context.Context, in *mtproto.TLMessagesReportEncryptedSpam) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	if self == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	if err := secretchat.Default().Report(self, in.GetPeer()); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil

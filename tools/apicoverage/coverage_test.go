@@ -125,6 +125,9 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCSecretChats"] {
 		t.Fatal("secret chats should be routed so messages.getDhConfig reaches the phone handler")
 	}
+	if !srv.Routed["RPCSeamless"] || !srv.Registered["RPCSeamless"] {
+		t.Fatal("seamless URL auth must be routed and registered")
+	}
 	if srv.Routed["RPCGroupCalls"] {
 		t.Fatal("group calls stay unrouted until the SFU path is a separate slice")
 	}
@@ -156,6 +159,25 @@ func TestServerSamples(t *testing.T) {
 	// P0 startup calls that must not come back as ENTERPRISE_IS_BLOCKED.
 	assertStatus("auth.finishPasskeyLogin", statusImplemented, effectOK)
 	assertStatus("messages.getPaidReactionPrivacy", statusImplemented, effectOK)
+	assertStatus("messages.requestEncryption", statusImplemented, effectOK)
+	assertStatus("messages.acceptEncryption", statusImplemented, effectOK)
+	assertStatus("messages.sendEncrypted", statusImplemented, effectOK)
+	assertStatus("messages.sendEncryptedFile", statusImplemented, effectOK)
+	assertStatus("messages.requestUrlAuth", statusImplemented, effectOK)
+	assertStatus("messages.acceptUrlAuth", statusImplemented, effectOK)
+	assertStatus("messages.sendPaidReaction", statusImplemented, effectOK)
+	assertStatus("messages.getSplitRanges", statusImplemented, effectOK)
+	assertStatus("messages.deletePhoneCallHistory", statusImplemented, effectOK)
+	assertStatus("messages.getEmojiGroups", statusImplemented, effectOK)
+	assertStatus("messages.discardEncryption", statusImplemented, effectOK)
+	assertStatus("messages.setEncryptedTyping", statusImplemented, effectOK)
+	assertStatus("messages.readEncryptedHistory", statusImplemented, effectOK)
+	assertStatus("messages.sendEncryptedService", statusImplemented, effectOK)
+	assertStatus("messages.reportEncryptedSpam", statusImplemented, effectOK)
+	assertStatus("messages.togglePaidReactionPrivacy", statusImplemented, effectOK)
+	assertStatus("messages.declineUrlAuth", statusImplemented, effectOK)
+	assertStatus("messages.checkUrlAuthMatchCode", statusImplemented, effectOK)
+	assertStatus("account.getWebAuthorizations", statusImplemented, effectOK)
 	assertStatus("help.getPromoData", statusImplemented, effectOK)
 	assertStatus("help.hidePromoData", statusImplemented, effectOK)
 	if !srv.Routed["RPCPasskey"] || !srv.Registered["RPCPasskey"] {
