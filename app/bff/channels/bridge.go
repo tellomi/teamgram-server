@@ -60,13 +60,14 @@ func dialogExt(row channel.DialogRow) *dialog.DialogExt {
 		Order: int64(row.Date),
 		Date:  int64(row.Date),
 		Dialog: mtproto.MakeTLDialog(&mtproto.Dialog{
-			Peer:            mtproto.MakePeerChannel(row.ChannelID),
-			TopMessage:      row.TopMessage,
-			ReadInboxMaxId:  row.ReadInbox,
-			ReadOutboxMaxId: row.ReadOutbox,
-			UnreadCount:     row.Unread,
-			NotifySettings:  mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{ShowPreviews: mtproto.BoolTrue, Silent: mtproto.BoolFalse}).To_PeerNotifySettings(),
-			Pts:             &wrapperspb.Int32Value{Value: row.Pts},
+			Peer:                mtproto.MakePeerChannel(row.ChannelID),
+			TopMessage:          row.TopMessage,
+			ReadInboxMaxId:      row.ReadInbox,
+			ReadOutboxMaxId:     row.ReadOutbox,
+			UnreadCount:         row.Unread,
+			NotifySettings:      mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{ShowPreviews: mtproto.BoolTrue, Silent: mtproto.BoolFalse}).To_PeerNotifySettings(),
+			Pts:                 &wrapperspb.Int32Value{Value: row.Pts},
+			ViewForumAsMessages: row.ViewForumAsMessages,
 		}).To_Dialog(),
 	}).To_DialogExt()
 }

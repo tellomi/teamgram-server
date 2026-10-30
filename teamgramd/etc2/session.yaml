@@ -51,7 +51,8 @@ BFFProxyClients:
       Timeout: 0
   IDMap:
     "/mtproto.RPCTos": "bff.bff"
-    #"/mtproto.RPCReports": "bff.bff"
+    # Spam and peer reports, including channels.reportSpam.
+    "/mtproto.RPCReports": "bff.bff"
     "/mtproto.RPCConfiguration": "bff.bff"
     "/mtproto.RPCQrCode": "bff.bff"
     "/mtproto.RPCMiscellaneous": "bff.bff"
@@ -117,6 +118,19 @@ BFFProxyClients:
     #"/mtproto.RPCProxyData": "bff.bff"
     "/mtproto.RPCStatistics": "bff.bff"
     "/mtproto.RPCForums": "bff.bff"
+    # Channel usernames: reorder, toggle, and deactivate collectible names.
+    "/mtproto.RPCFragment": "bff.bff"
+    # Supergroup native antispam.
+    "/mtproto.RPCAntiSpam": "bff.bff"
+    # channels.setBoostsToUnblockRestrictions. Other boost RPCs stay unimplemented.
+    "/mtproto.RPCBoosts": "bff.bff"
+    "/mtproto.RPCChannelRecommendations": "bff.bff"
+    # channels.getLeftChannels. Other takeout RPCs stay unimplemented.
+    "/mtproto.RPCTakeout": "bff.bff"
+    # channels.toggleAutotranslation. Translation RPCs stay unimplemented.
+    "/mtproto.RPCTranslation": "bff.bff"
+    # channels.updatePaidMessagesPrice. Other paid-message RPCs stay unimplemented.
+    "/mtproto.RPCPaidMessage": "bff.bff"
     "/mtproto.RPCStickers": "bff.bff"
     "/mtproto.RPCPremium": "bff.bff"
     "/mtproto.RPCEmojiStatus": "bff.bff"

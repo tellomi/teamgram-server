@@ -789,13 +789,14 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 		}
 	}
 	dlg := mtproto.MakeTLDialog(&mtproto.Dialog{
-		Peer:            mtproto.MakePeerChannel(ch.ID),
-		TopMessage:      ch.TopMessage,
-		ReadInboxMaxId:  st.ReadInboxMaxID,
-		ReadOutboxMaxId: st.ReadOutboxMaxID,
-		UnreadCount:     st.UnreadCount,
-		NotifySettings:  defaultNotify(),
-		Pts:             &wrapperspb.Int32Value{Value: ch.Pts},
+		Peer:                mtproto.MakePeerChannel(ch.ID),
+		TopMessage:          ch.TopMessage,
+		ReadInboxMaxId:      st.ReadInboxMaxID,
+		ReadOutboxMaxId:     st.ReadOutboxMaxID,
+		UnreadCount:         st.UnreadCount,
+		NotifySettings:      defaultNotify(),
+		Pts:                 &wrapperspb.Int32Value{Value: ch.Pts},
+		ViewForumAsMessages: s.features(ctx, ch.ID).ViewForumAsMessages[user],
 	}).To_Dialog()
 	return mtproto.MakeTLUpdatesChannelDifferenceTooLong(&mtproto.Updates_ChannelDifference{
 		Final:    true,
@@ -915,13 +916,14 @@ func (s *Service) Migrate(ctx context.Context, in MigrateRequest) (*MigrateResul
 
 // DialogRow is one channel dialog for messages.getDialogs.
 type DialogRow struct {
-	ChannelID  int64
-	TopMessage int32
-	ReadInbox  int32
-	ReadOutbox int32
-	Unread     int32
-	Date       int32
-	Pts        int32
+	ChannelID           int64
+	TopMessage          int32
+	ReadInbox           int32
+	ReadOutbox          int32
+	Unread              int32
+	Date                int32
+	Pts                 int32
+	ViewForumAsMessages bool
 }
 
 func (s *Service) DialogsFor(ctx context.Context, userID int64) ([]DialogRow, error) {
@@ -940,13 +942,14 @@ func (s *Service) DialogsFor(ctx context.Context, userID int64) ([]DialogRow, er
 			date = msg.Date
 		}
 		out = append(out, DialogRow{
-			ChannelID:  ch.ID,
-			TopMessage: ch.TopMessage,
-			ReadInbox:  st.ReadInboxMaxID,
-			ReadOutbox: st.ReadOutboxMaxID,
-			Unread:     st.UnreadCount,
-			Date:       date,
-			Pts:        ch.Pts,
+			ChannelID:           ch.ID,
+			TopMessage:          ch.TopMessage,
+			ReadInbox:           st.ReadInboxMaxID,
+			ReadOutbox:          st.ReadOutboxMaxID,
+			Unread:              st.UnreadCount,
+			Date:                date,
+			Pts:                 ch.Pts,
+			ViewForumAsMessages: s.features(ctx, ch.ID).ViewForumAsMessages[userID],
 		})
 	}
 	return out, nil

@@ -31,6 +31,14 @@ func (s *Service) AccountUpdateColor(ctx context.Context, request *mtproto.TLAcc
 	return core.New(ctx, s.svcCtx).AccountUpdateColor(request)
 }
 
+func (s *Service) ChannelsUpdateColor(ctx context.Context, request *mtproto.TLChannelsUpdateColor) (*mtproto.Updates, error) {
+	return core.New(ctx, s.svcCtx).ChannelsUpdateColor(request)
+}
+
+func (s *Service) ChannelsUpdateEmojiStatus(ctx context.Context, request *mtproto.TLChannelsUpdateEmojiStatus) (*mtproto.Updates, error) {
+	return core.New(ctx, s.svcCtx).ChannelsUpdateEmojiStatus(request)
+}
+
 func (s *Service) AccountGetDefaultBackgroundEmojis(ctx context.Context, request *mtproto.TLAccountGetDefaultBackgroundEmojis) (*mtproto.EmojiList, error) {
 	return core.New(ctx, s.svcCtx).AccountGetDefaultBackgroundEmojis(request)
 }

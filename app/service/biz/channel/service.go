@@ -62,6 +62,9 @@ type Service struct {
 	mu     sync.Mutex
 	push   Hooks
 	loaded bool
+
+	reportMu    sync.Mutex
+	peerReports []PeerReport
 }
 
 func New(store Store) *Service {
@@ -606,18 +609,7 @@ func (s *Service) UpdateUsername(ctx context.Context, self, actorAuth int64, in 
 	if username != "" && !validChannelUsername(username) {
 		return nil, mtproto.ErrUsernameInvalid
 	}
-	if username != "" {
-		other, err := s.store.FindByUsername(ctx, username)
-		if err != nil {
-			return nil, err
-		}
-		if other != nil && other.ID != ch.ID {
-			return nil, mtproto.ErrUsernameOccupied
-		}
-	}
-	ch.Username = username
-	ch.Version++
-	if err := s.store.SaveChannel(ctx, ch); err != nil {
+	if err := s.assignEditableUsername(ctx, self, ch, username); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, self, actorAuth, ch.ID, func(viewer int64) *mtproto.Updates {

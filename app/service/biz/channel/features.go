@@ -34,6 +34,72 @@ type Features struct {
 	ReadContents       map[int64][]int32
 	MsgTopic           map[int32]int32
 	AvailableReactions []string
+
+	// Usernames is the ordered public-link list. The first active name is
+	// also stored on Channel.Username. Editable is the name set by
+	// channels.updateUsername; the others are collectible names.
+	Usernames []UsernameRec
+
+	ColorSet          bool
+	ColorID           int32
+	ColorEmoji        int64
+	ProfileColorSet   bool
+	ProfileColorID    int32
+	ProfileColorEmoji int64
+	Emoji             StoredEmojiStatus
+
+	Antispam                 bool
+	Autotranslation          bool
+	BoostsUnrestrict         int32
+	PaidMessagesSet          bool
+	SendPaidMessagesStars    int64
+	BroadcastMessagesAllowed bool
+	MainProfileTab           int32
+	// ViewForumAsMessages is per viewer: user id -> enabled.
+	ViewForumAsMessages    map[int64]bool
+	SpamReports            []SpamReport
+	AntispamFalsePositives []FalsePositive
+}
+
+// UsernameRec is one channel username.
+type UsernameRec struct {
+	Username string
+	Active   bool
+	Editable bool
+}
+
+// StoredEmojiStatus is channel emoji status. A zero value means unset.
+type StoredEmojiStatus struct {
+	DocumentID        int64
+	Until             int32
+	Collectible       bool
+	CollectibleID     int64
+	Title             string
+	Slug              string
+	PatternDocumentID int64
+	CenterColor       int32
+	EdgeColor         int32
+	PatternColor      int32
+	TextColor         int32
+}
+
+func (e StoredEmojiStatus) unset() bool {
+	return !e.Collectible && e.DocumentID == 0
+}
+
+// SpamReport is one channels.reportSpam record.
+type SpamReport struct {
+	ReporterID int64
+	UserID     int64
+	MsgIDs     []int32
+	Date       int32
+}
+
+// FalsePositive is one channels.reportAntiSpamFalsePositive record.
+type FalsePositive struct {
+	ReporterID int64
+	MsgID      int32
+	Date       int32
 }
 
 type AdminEvent struct {

@@ -14,6 +14,11 @@ type Store interface {
 	GetChannel(ctx context.Context, id int64) (*Channel, error)
 	SaveChannel(ctx context.Context, ch *Channel) error
 	FindByUsername(ctx context.Context, username string) (*Channel, error)
+	// LookupUsername reports whether username is reserved by a channel.
+	// active is false when the name is kept but not the public link.
+	LookupUsername(ctx context.Context, username string) (channelID int64, active, found bool, err error)
+	ListPublic(ctx context.Context) ([]*Channel, error)
+	ListLeftByUser(ctx context.Context, userID int64) ([]*Channel, error)
 	FindByMigratedChat(ctx context.Context, chatID int64) (*Channel, error)
 	ListChannels(ctx context.Context, ids []int64) ([]*Channel, error)
 	ListByUser(ctx context.Context, userID int64) ([]*Channel, error)
