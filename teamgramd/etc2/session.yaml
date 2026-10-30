@@ -198,7 +198,7 @@ BFFProxyClients:
     "/mtproto.RPCTodoLists": "bff.bff"
     # messages.toggleSuggestedPostApproval.
     "/mtproto.RPCSuggestedPosts": "bff.bff"
-    # messages.composeMessageWithAI. Other aicompose RPCs stay unimplemented.
+    # messages.composeMessageWithAI and the aicompose tone RPCs.
     "/mtproto.RPCAiComposeTone": "bff.bff"
     # Wallet reads, Ton Connect sessions, and chain refusals. No TON broadcast.
     "/mtproto.RPCWallet": "bff.bff"
@@ -213,3 +213,9 @@ BFFProxyClients:
     # Communities and ephemeral messages. Updates from these RPCs carry no pts.
     "/mtproto.RPCCommunities": "bff.bff"
     "/mtproto.RPCEphemeral": "bff.bff"
+    # Feed reads. Constructors are layer 233; iOS already sends them.
+    # feed.readFeed returns updates with seq 0.
+    "/mtproto.RPCFeed": "bff.bff"
+    # Android TL_iv.getRichMessage is messages.getRichMessage#501569cf.
+    # This registration covers the coverage name. The constructor is RPCMessages.
+    "/mtproto.RPCIv": "bff.bff"

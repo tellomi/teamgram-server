@@ -62,19 +62,19 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | phone/calls | 43 | 43 | 0 | 0 | 0 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 17 | 0 | 0 | 0 | 5 | 0 |
-| stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
+| stats | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | stories | 32 | 32 | 0 | 0 | 0 | 0 | 0 |
 | premium/payments | 100 | 1 | 7 | 17 | 75 | 0 | 0 |
 | bots | 23 | 23 | 0 | 0 | 0 | 0 | 0 |
 | business | 10 | 10 | 0 | 0 | 0 | 0 | 0 |
-| aicompose | 7 | 0 | 0 | 7 | 0 | 0 | 0 |
+| aicompose | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | communities | 9 | 9 | 0 | 0 | 0 | 0 | 0 |
 | ephemeral | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
-| feed | 5 | 0 | 0 | 0 | 5 | 0 | 0 |
-| iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
+| feed | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
+| iv | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
 | toncenter | 4 | 2 | 0 | 0 | 2 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **818** | **697** | **7** | **30** | **84** | **94** | **0** |
+| **total** | **818** | **716** | **7** | **17** | **78** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 662 | 6 | 30 | 57 | 91 | 0 |
-| android | 707 | 641 | 6 | 19 | 41 | 89 | 0 |
-| desktop | 692 | 610 | 5 | 27 | 50 | 79 | 0 |
-| macos | 677 | 601 | 4 | 20 | 52 | 90 | 0 |
+| ios | 755 | 680 | 6 | 17 | 52 | 91 | 0 |
+| android | 707 | 650 | 6 | 11 | 40 | 89 | 0 |
+| desktop | 692 | 623 | 5 | 14 | 50 | 79 | 0 |
+| macos | 677 | 612 | 4 | 11 | 50 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,15 +111,11 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-120 gaps (120 error, 0 empty or bool or not-modified).
+101 gaps (101 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
-| aicompose | 7 |
-| feed | 5 |
-| iv | 1 |
 | premium/payments | 99 |
-| stats | 6 |
 | toncenter | 2 |
 
 ## Methods
@@ -812,18 +808,18 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### stats
 
-8 called, 2 implemented, 0 stub, 6 routed-unregistered, 0 missing.
+8 called, 8 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `stats.getMessagePublicForwards` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
-| `stats.getMessageStats` | yes | no | yes | no | interactive | routed-but-unregistered | error |
-| `stats.getPollStats` | yes | no | yes | no | interactive | routed-but-unregistered | error |
-| `stats.getStoryPublicForwards` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
-| `stats.getStoryStats` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
-| `stats.loadAsyncGraph` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
 | `stats.getBroadcastStats` | yes | no | yes | no | interactive | implemented | ok |
 | `stats.getMegagroupStats` | yes | no | yes | no | interactive | implemented | ok |
+| `stats.getMessagePublicForwards` | yes | no | yes | yes | interactive | implemented | ok |
+| `stats.getMessageStats` | yes | no | yes | no | interactive | implemented | ok |
+| `stats.getPollStats` | yes | no | yes | no | interactive | implemented | ok |
+| `stats.getStoryPublicForwards` | yes | no | yes | yes | interactive | implemented | ok |
+| `stats.getStoryStats` | yes | yes | yes | no | interactive | implemented | ok |
+| `stats.loadAsyncGraph` | yes | no | yes | yes | interactive | implemented | ok |
 
 ### stories
 
@@ -1020,17 +1016,17 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### aicompose
 
-7 called, 0 implemented, 0 stub, 7 routed-unregistered, 0 missing.
+7 called, 7 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `aicompose.createTone` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `aicompose.deleteTone` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `aicompose.getTone` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
-| `aicompose.getToneExample` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `aicompose.getTones` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `aicompose.saveTone` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `aicompose.updateTone` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `aicompose.createTone` | yes | yes | yes | yes | interactive | implemented | ok |
+| `aicompose.deleteTone` | yes | yes | yes | yes | interactive | implemented | ok |
+| `aicompose.getTone` | yes | yes | yes | no | interactive | implemented | ok |
+| `aicompose.getToneExample` | yes | yes | yes | yes | interactive | implemented | ok |
+| `aicompose.getTones` | yes | yes | yes | yes | interactive | implemented | ok |
+| `aicompose.saveTone` | yes | yes | yes | yes | interactive | implemented | ok |
+| `aicompose.updateTone` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### communities
 
@@ -1065,23 +1061,23 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### feed
 
-5 called, 0 implemented, 0 stub, 0 routed-unregistered, 5 missing.
+5 called, 5 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `feed.getFeed` | yes | no | no | yes | interactive | missing | error |
-| `feed.getForYou` | yes | no | no | yes | interactive | missing | error |
-| `feed.getInterestCategories` | yes | no | no | no | interactive | missing | error |
-| `feed.readFeed` | yes | no | no | no | interactive | missing | error |
-| `feed.setInterestCategories` | yes | no | no | no | interactive | missing | error |
+| `feed.getFeed` | yes | no | no | yes | interactive | implemented | ok |
+| `feed.getForYou` | yes | no | no | yes | interactive | implemented | ok |
+| `feed.getInterestCategories` | yes | no | no | no | interactive | implemented | ok |
+| `feed.readFeed` | yes | no | no | no | interactive | implemented | ok |
+| `feed.setInterestCategories` | yes | no | no | no | interactive | implemented | ok |
 
 ### iv
 
-1 called, 0 implemented, 0 stub, 0 routed-unregistered, 1 missing.
+1 called, 1 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `iv.getRichMessage` | no | yes | no | no | interactive | missing | error |
+| `iv.getRichMessage` | no | yes | no | no | interactive | implemented | ok |
 
 ### toncenter
 
@@ -1130,20 +1126,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 | Method | Status | Notes |
 | --- | --- | --- |
-| `aicompose.createTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeCreateTone handler |
-| `aicompose.deleteTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeDeleteTone handler |
-| `aicompose.getTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTone handler |
-| `aicompose.getToneExample` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetToneExample handler |
-| `aicompose.getTones` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTones handler |
-| `aicompose.saveTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeSaveTone handler |
-| `aicompose.updateTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeUpdateTone handler |
-| `feed.getFeed` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `feed.getForYou` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `feed.getInterestCategories` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `feed.readFeed` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `feed.setInterestCategories` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `fragment.getCollectibleInfo` | missing | no route in session.yaml and no bff handler |
-| `iv.getRichMessage` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `payments.applyGiftCode` | missing | no route in session.yaml and no bff handler |
 | `payments.assignAppStoreTransaction` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/premium/internal/core/payments.assignAppStoreTransaction_handler.go |
@@ -1243,12 +1226,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stars.updatePaidMessagesPrice` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `stars.updateStarGiftCollection` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `stars.updateStarGiftPrice` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `stats.getMessagePublicForwards` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetMessagePublicForwards5F150144 handler |
-| `stats.getMessageStats` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetMessageStats handler |
-| `stats.getPollStats` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetPollStats handler |
-| `stats.getStoryPublicForwards` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetStoryPublicForwards handler |
-| `stats.getStoryStats` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetStoryStats handler |
-| `stats.loadAsyncGraph` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsLoadAsyncGraph handler |
 | `toncenter.createOnrampSession` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `toncenter.getOnrampProviders` | missing | no route in session.yaml and no bff handler not in layer schema |
 

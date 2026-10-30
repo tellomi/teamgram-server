@@ -61,6 +61,12 @@ in `layer232_extra_codec.go` and `schema.tl.layer232extra.proto`.
 `contacts.importNoPaidMessagesToken` are registered in `nopaid_codec.go` and
 `schema.tl.nopaid.proto` (the result type is `exportedNoPaidMessagesToken`).
 
+`feed.*` constructors are not in layer 232. iOS and macOS at the pinned
+coverage commits already send the layer-233 ids (`feed.getFeed#7e76d7d3` and
+the rest of that namespace). They are registered in `feed_codec.go` and
+`schema.tl.feed.proto`. Android's `TL_iv.getRichMessage` is constructor
+`0x501569cf`, the same bytes as `messages.getRichMessage`.
+
 ## Regenerating
 
 There is no published `mtprotoc`. This fork patches the generated Go from
