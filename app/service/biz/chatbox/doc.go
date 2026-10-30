@@ -47,29 +47,46 @@ CREATE TABLE IF NOT EXISTS chatbox_doc (
 `
 
 // Book is the process-wide store for polls, scheduled messages, private-chat
-// reactions, and the default double-tap reaction.
+// reactions, the default double-tap reaction, and in-chat bot state
+// (inline results, attach menu, web apps, prepared messages).
 type Book struct {
-	mu       sync.Mutex
-	db       docDB
-	sched    map[string]*schedDoc
-	polls    map[int64]*pollDoc
-	pollIdx  map[string]int64
-	pollPeer map[string][]int64
-	react    map[string]*reactDoc
-	def      map[int64]string
-	now      func() time.Time
+	mu        sync.Mutex
+	db        docDB
+	sched     map[string]*schedDoc
+	polls     map[int64]*pollDoc
+	pollIdx   map[string]int64
+	pollPeer  map[string][]int64
+	react     map[string]*reactDoc
+	def       map[int64]string
+	bots      map[int64]*botState
+	queries   map[int64]*inlineQuery
+	attach    map[int64]*attachDoc
+	prepared  map[string]*preparedDoc
+	webviews  map[int64]*webSession
+	callbacks map[string]*callbackAnswer
+	cbBind    map[int64]*callbackBind
+	sent      map[string][]byte
+	now       func() time.Time
 }
 
 func newBook(db docDB) *Book {
 	return &Book{
-		db:       db,
-		sched:    map[string]*schedDoc{},
-		polls:    map[int64]*pollDoc{},
-		pollIdx:  map[string]int64{},
-		pollPeer: map[string][]int64{},
-		react:    map[string]*reactDoc{},
-		def:      map[int64]string{},
-		now:      time.Now,
+		db:        db,
+		sched:     map[string]*schedDoc{},
+		polls:     map[int64]*pollDoc{},
+		pollIdx:   map[string]int64{},
+		pollPeer:  map[string][]int64{},
+		react:     map[string]*reactDoc{},
+		def:       map[int64]string{},
+		bots:      map[int64]*botState{},
+		queries:   map[int64]*inlineQuery{},
+		attach:    map[int64]*attachDoc{},
+		prepared:  map[string]*preparedDoc{},
+		webviews:  map[int64]*webSession{},
+		callbacks: map[string]*callbackAnswer{},
+		cbBind:    map[int64]*callbackBind{},
+		sent:      map[string][]byte{},
+		now:       time.Now,
 	}
 }
 

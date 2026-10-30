@@ -19,3 +19,11 @@ func NewScheduled(c Config) *service.ScheduledService {
 		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
 }
+
+// NewBotChat serves inline queries, callback buttons, the attach menu,
+// mini apps, and prepared inline messages. Sends go through messenger.msg.
+func NewBotChat(c Config) *service.BotChatService {
+	return &service.BotChatService{
+		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
+	}
+}

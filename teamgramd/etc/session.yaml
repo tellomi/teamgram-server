@@ -79,7 +79,15 @@ BFFProxyClients:
     "/mtproto.RPCSecretChats": "bff.bff"
     "/mtproto.RPCPassport": "bff.bff"
     "/mtproto.RPCUpdates": "bff.bff"
-    #"/mtproto.RPCInlineBot": "bff.bff"
+    # Inline queries, callback buttons, and requested-peer replies.
+    "/mtproto.RPCInlineBot": "bff.bff"
+    # Bots the user pinned to the attachment menu.
+    "/mtproto.RPCBotMenu": "bff.bff"
+    # Mini apps opened from a chat, a bot menu, or an inline result.
+    "/mtproto.RPCMiniBotApps": "bff.bff"
+    "/mtproto.RPCMainMiniBotApps": "bff.bff"
+    # messages.getPreparedInlineMessage.
+    "/mtproto.RPCPreparedInlineMessages": "bff.bff"
     #"/mtproto.RPCBots": "bff.bff"
     #"/mtproto.RPCInternalBot": "bff.bff"
     #"/mtproto.RPCThemes": "bff.bff"
