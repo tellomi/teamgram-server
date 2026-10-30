@@ -118,6 +118,12 @@ service in `docker-compose.yaml`. Set `TELLOMI_RTMP_URL` when clients must
 push to a public ingest host. The stream is not bridged into the group-call
 SFU (`app/bff/phone/LIMITATIONS.md`).
 
+## Voice and video
+
+1:1 calls use `phone.*` on the MTProto connection. Media uses the `coturn`
+service. Local compose advertises `127.0.0.1`, which a handset cannot reach.
+The Chengdu host, ports, and environment variables are in [calls.md](calls.md).
+
 ## Stop
 
 ```bash

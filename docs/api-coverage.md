@@ -50,14 +50,14 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | account | 119 | 57 | 9 | 2 | 51 | 31 | 9 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 22 | 0 | 1 | 4 | 6 | 0 |
-| messages | 216 | 117 | 5 | 12 | 82 | 14 | 2 |
+| messages | 216 | 119 | 5 | 21 | 71 | 14 | 1 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | help | 25 | 20 | 2 | 0 | 3 | 12 | 0 |
 | channels | 59 | 44 | 1 | 3 | 11 | 1 | 0 |
 | stickers | 39 | 19 | 5 | 14 | 1 | 0 | 0 |
-| phone/calls | 43 | 0 | 1 | 0 | 42 | 0 | 0 |
+| phone/calls | 43 | 10 | 0 | 0 | 33 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 0 | 0 | 0 | 17 | 5 | 5 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **330** | **23** | **39** | **434** | **94** | **17** |
+| **total** | **826** | **342** | **22** | **48** | **414** | **94** | **16** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 307 | 22 | 37 | 389 | 91 | 16 |
-| android | 709 | 304 | 22 | 32 | 351 | 87 | 16 |
-| desktop | 692 | 285 | 22 | 32 | 353 | 79 | 16 |
-| macos | 677 | 297 | 21 | 30 | 329 | 90 | 16 |
+| ios | 755 | 319 | 21 | 46 | 369 | 91 | 15 |
+| android | 709 | 316 | 21 | 41 | 331 | 87 | 15 |
+| desktop | 692 | 295 | 21 | 33 | 343 | 79 | 16 |
+| macos | 677 | 308 | 20 | 38 | 311 | 90 | 15 |
 
 540 methods are called by all four clients.
 
@@ -93,7 +93,7 @@ A method counts for a client when that client has at least one call site. Implem
 
 Startup and background calls. These run before the chat list is usable. `effect=error` drops the session or the login; empty stubs return success with no data and still break clients that require a config, difference, or langpack.
 
-20 gaps (17 error, 3 empty or bool or not-modified).
+19 gaps (16 error, 3 empty or bool or not-modified).
 
 | Method | Module | Effect | Status | Clients |
 | --- | --- | --- | --- | --- |
@@ -113,7 +113,6 @@ Startup and background calls. These run before the chat list is usable. `effect=
 | `messages.updateDialogFilter` | folders | error | missing | ios, android, desktop, macos |
 | `messages.updateDialogFiltersOrder` | folders | error | missing | ios, android, desktop, macos |
 | `messages.getPaidReactionPrivacy` | messages | error | routed-but-unregistered | android, desktop |
-| `messages.receivedQueue` | messages | error | missing | ios, android, macos |
 | `account.getPassword` | account | empty | stub | ios, android, desktop, macos |
 | `help.getPromoData` | help | empty | stub | ios, android, desktop, macos |
 | `help.hidePromoData` | help | empty | stub | ios, android, desktop, macos |
@@ -122,7 +121,7 @@ Startup and background calls. These run before the chat list is usable. `effect=
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-170 gaps (156 error, 14 empty or bool or not-modified).
+169 gaps (155 error, 14 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -130,13 +129,13 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 | auth | 1 |
 | channels | 15 |
 | contacts | 5 |
-| messages | 97 |
+| messages | 96 |
 
 ### P2
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-306 gaps (300 error, 6 empty or bool or not-modified).
+296 gaps (291 error, 5 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -149,7 +148,7 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | folders | 12 |
 | help | 3 |
 | iv | 1 |
-| phone/calls | 43 |
+| phone/calls | 33 |
 | premium/payments | 97 |
 | stats | 6 |
 | stickers | 20 |
@@ -365,11 +364,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-216 called, 117 implemented, 5 stub, 12 routed-unregistered, 82 missing.
+216 called, 119 implemented, 5 stub, 21 routed-unregistered, 71 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `messages.receivedQueue` | yes | yes | no | yes | startup+background | missing | error |
 | `messages.getPaidReactionPrivacy` | no | yes | yes | no | startup | routed-but-unregistered | error |
 | `messages.getAvailableReactions` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.getDefaultHistoryTTL` | yes | yes | yes | yes | startup+background | implemented | ok |
@@ -382,8 +380,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getSavedDialogs` | yes | yes | yes | yes | startup | implemented | ok |
 | `messages.getSavedDialogsByID` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `messages.receivedMessages` | yes | no | no | yes | startup+background | implemented | ok |
+| `messages.receivedQueue` | yes | yes | no | yes | startup+background | implemented | ok |
 | `messages.reorderPinnedDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
-| `messages.acceptEncryption` | yes | yes | no | yes | interactive | missing | error |
 | `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.addPollAnswer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.appendTodoList` | yes | yes | yes | yes | interactive | missing | error |
@@ -393,12 +391,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.composeMessageWithAI` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.declineUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteFactCheck` | yes | no | yes | yes | interactive | missing | error |
-| `messages.deletePhoneCallHistory` | yes | yes | yes | no | interactive | missing | error |
 | `messages.deletePollAnswer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteQuickReplyShortcut` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.deleteScheduledMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.discardEncryption` | yes | yes | no | yes | interactive | missing | error |
 | `messages.editFactCheck` | yes | no | yes | yes | interactive | missing | error |
 | `messages.editQuickReplyShortcut` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getAttachMenuBot` | yes | yes | yes | yes | interactive | missing | error |
@@ -407,7 +403,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getBotApp` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getBotCallbackAnswer` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getDefaultTagReactions` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.getDhConfig` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getEmojiGameInfo` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getExtendedMedia` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.getFactCheck` | yes | no | yes | yes | interactive | missing | error |
@@ -427,7 +422,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getWebPagePreview` | yes | no | yes | yes | interactive | missing | error |
 | `messages.initHistoryImport` | yes | yes | no | no | interactive | missing | error |
 | `messages.prolongWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.readEncryptedHistory` | yes | yes | no | yes | interactive | missing | error |
 | `messages.readPollVotes` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.reorderQuickReplies` | yes | yes | no | yes | interactive | missing | error |
 | `messages.report` | yes | yes | yes | yes | interactive | missing | error |
@@ -437,16 +431,12 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reportReadMetrics` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.requestAppWebView` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.requestChatJoinWebView` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.requestEncryption` | yes | yes | no | yes | interactive | missing | error |
 | `messages.requestMainWebView` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.requestSimpleWebView` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.requestUrlAuth` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.requestWebView` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendBotRequestedPeer` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.sendEncrypted` | yes | yes | no | yes | interactive | missing | error |
-| `messages.sendEncryptedFile` | yes | yes | no | yes | interactive | missing | error |
 | `messages.sendEncryptedMultiMedia` | no | yes | no | no | interactive | missing | error |
-| `messages.sendEncryptedService` | yes | yes | no | yes | interactive | missing | error |
 | `messages.sendInlineBotResult` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendQuickReplyMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.sendScheduledMessages` | yes | yes | yes | yes | interactive | missing | error |
@@ -454,7 +444,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.sendWebViewData` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.setChatWallPaper` | yes | yes | yes | yes | interactive | missing | error |
-| `messages.setEncryptedTyping` | yes | yes | no | yes | interactive | missing | error |
 | `messages.setShareTheme` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.startHistoryImport` | yes | yes | no | no | interactive | missing | error |
 | `messages.toggleBotInAttachMenu` | yes | yes | yes | yes | interactive | missing | error |
@@ -464,15 +453,24 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.translateText` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.updateSavedReactionTag` | yes | yes | yes | yes | interactive | missing | error |
 | `messages.uploadImportedMedia` | yes | yes | no | no | interactive | missing | error |
+| `messages.acceptEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.deleteParticipantReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.deleteParticipantReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `messages.deletePhoneCallHistory` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
+| `messages.discardEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.getEmojiURL` | no | yes | no | no | interactive | routed-but-unregistered | error |
 | `messages.getUnreadReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `messages.readEncryptedHistory` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.readReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.reportReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `messages.requestEncryption` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
+| `messages.sendEncrypted` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
+| `messages.sendEncryptedFile` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
+| `messages.sendEncryptedService` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.sendPaidReaction` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.setChatAvailableReactions` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.setDefaultReaction` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
+| `messages.setEncryptedTyping` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
 | `messages.startBot` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.togglePaidReactionPrivacy` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `messages.getEmojiGroups` | yes | yes | yes | yes | interactive | stub | not_modified |
@@ -514,6 +512,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getChats` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getCommonChats` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getCustomEmojiDocuments` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.getDhConfig` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getDialogUnreadMarks` | yes | yes | no | no | interactive | implemented | ok |
 | `messages.getDiscussionMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.getEmojiKeywords` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -768,20 +767,17 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### phone/calls
 
-43 called, 0 implemented, 1 stub, 0 routed-unregistered, 42 missing.
+43 called, 10 implemented, 0 stub, 0 routed-unregistered, 33 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `phone.acceptCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.checkGroupCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.confirmCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.createConferenceCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.createGroupCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.declineConferenceCallInvite` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.deleteConferenceCallParticipants` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.deleteGroupCallMessages` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.deleteGroupCallParticipantMessages` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.discardCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.discardGroupCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.editGroupCallParticipant` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.editGroupCallTitle` | yes | yes | yes | yes | interactive | missing | error |
@@ -799,22 +795,25 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `phone.joinGroupCallPresentation` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.leaveGroupCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.leaveGroupCallPresentation` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.receivedCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.requestCall` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.saveCallDebug` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.saveCallLog` | yes | yes | no | no | interactive | missing | error |
 | `phone.saveDefaultGroupCallJoinAs` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.saveDefaultSendAs` | no | yes | yes | no | interactive | missing | error |
 | `phone.sendConferenceCallBroadcast` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.sendGroupCallEncryptedMessage` | yes | yes | yes | no | interactive | missing | error |
 | `phone.sendGroupCallMessage` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.sendSignalingData` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.setCallRating` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.startScheduledGroupCall` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.toggleGroupCallRecord` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.toggleGroupCallSettings` | yes | yes | yes | yes | interactive | missing | error |
 | `phone.toggleGroupCallStartSubscription` | yes | yes | yes | yes | interactive | missing | error |
-| `phone.getCallConfig` | yes | yes | yes | yes | interactive | stub | empty |
+| `phone.acceptCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.confirmCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.discardCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.getCallConfig` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.receivedCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.requestCall` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.saveCallDebug` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.saveCallLog` | yes | yes | no | no | interactive | implemented | ok |
+| `phone.sendSignalingData` | yes | yes | yes | yes | interactive | implemented | ok |
+| `phone.setCallRating` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### langpack
 
@@ -1338,7 +1337,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `help.getUserInfo` | missing | no route in session.yaml (RPCTsf is commented out) and no bff handler |
 | `help.hidePromoData` | stub | session.yaml does not route RPCPromoData; proxy returns an empty object (IDMap entry is commented out) |
 | `iv.getRichMessage` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.acceptEncryption` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.acceptEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesAcceptEncryption handler |
 | `messages.acceptUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.addPollAnswer` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.appendTodoList` | missing | no route in session.yaml and no bff handler |
@@ -1350,12 +1349,12 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.deleteFactCheck` | missing | no route in session.yaml and no bff handler |
 | `messages.deleteParticipantReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesDeleteParticipantReaction handler |
 | `messages.deleteParticipantReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesDeleteParticipantReactions handler |
-| `messages.deletePhoneCallHistory` | missing | no route in session.yaml (RPCVoipCalls is commented out) and no bff handler |
+| `messages.deletePhoneCallHistory` | routed-but-unregistered | session.yaml routes RPCVoipCalls but the bff process has no MessagesDeletePhoneCallHistory handler |
 | `messages.deletePollAnswer` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.deleteQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
 | `messages.deleteQuickReplyShortcut` | missing | no route in session.yaml and no bff handler |
 | `messages.deleteScheduledMessages` | missing | no route in session.yaml (RPCScheduledMessages is commented out) and no bff handler |
-| `messages.discardEncryption` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.discardEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesDiscardEncryption handler |
 | `messages.editFactCheck` | missing | no route in session.yaml and no bff handler |
 | `messages.editQuickReplyShortcut` | missing | no route in session.yaml and no bff handler |
 | `messages.getArchivedStickers` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesGetArchivedStickers handler |
@@ -1366,7 +1365,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getBotApp` | missing | no route in session.yaml and no bff handler |
 | `messages.getBotCallbackAnswer` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.getDefaultTagReactions` | missing | no route in session.yaml and no bff handler |
-| `messages.getDhConfig` | missing | no route in session.yaml (RPCSecretChats is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/dh.go but the service is not routed |
 | `messages.getDialogFilters` | missing | no route in session.yaml (RPCFolders is commented out) and no bff handler |
 | `messages.getEmojiGameInfo` | missing | no route in session.yaml (RPCGames is commented out) and no bff handler |
 | `messages.getEmojiGroups` | stub | returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go |
@@ -1399,11 +1397,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.getWebPagePreview` | missing | no route in session.yaml (RPCWebPage is commented out) and no bff handler |
 | `messages.initHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
 | `messages.prolongWebView` | missing | no route in session.yaml and no bff handler |
-| `messages.readEncryptedHistory` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.readEncryptedHistory` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesReadEncryptedHistory handler |
 | `messages.readFeaturedStickers` | stub | returns Bool only app/bff/stickers/internal/server/grpc/service/handlers.go |
 | `messages.readPollVotes` | missing | no route in session.yaml (RPCPolls is commented out) and no bff handler |
 | `messages.readReactions` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesReadReactions handler |
-| `messages.receivedQueue` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
 | `messages.reorderQuickReplies` | missing | no route in session.yaml and no bff handler |
 | `messages.reorderStickerSets` | routed-but-unregistered | session.yaml routes RPCStickers but the bff process has no MessagesReorderStickerSets handler |
 | `messages.report` | missing | no route in session.yaml (RPCReports is commented out) and no bff handler |
@@ -1415,17 +1412,17 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reportSpam` | stub | session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out) |
 | `messages.requestAppWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.requestChatJoinWebView` | missing | no route in session.yaml and no bff handler |
-| `messages.requestEncryption` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.requestEncryption` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesRequestEncryption handler |
 | `messages.requestMainWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.requestSimpleWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.requestUrlAuth` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `messages.requestWebView` | missing | no route in session.yaml and no bff handler |
 | `messages.saveGif` | stub | session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out) |
 | `messages.sendBotRequestedPeer` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
-| `messages.sendEncrypted` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
-| `messages.sendEncryptedFile` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.sendEncrypted` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncrypted handler |
+| `messages.sendEncryptedFile` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedFile handler |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `messages.sendEncryptedService` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.sendEncryptedService` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSendEncryptedService handler |
 | `messages.sendInlineBotResult` | missing | no route in session.yaml (RPCInlineBot is commented out) and no bff handler |
 | `messages.sendPaidReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSendPaidReaction handler |
 | `messages.sendQuickReplyMessages` | missing | no route in session.yaml and no bff handler |
@@ -1436,7 +1433,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.setChatTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `messages.setChatWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `messages.setDefaultReaction` | routed-but-unregistered | session.yaml routes RPCReactions but the bff process has no MessagesSetDefaultReaction handler |
-| `messages.setEncryptedTyping` | missing | no route in session.yaml (RPCSecretChats is commented out) and no bff handler |
+| `messages.setEncryptedTyping` | routed-but-unregistered | session.yaml routes RPCSecretChats but the bff process has no MessagesSetEncryptedTyping handler |
 | `messages.setShareTheme` | missing | no route in session.yaml and no bff handler |
 | `messages.startBot` | routed-but-unregistered | session.yaml routes RPCDeepLinks but the bff process has no MessagesStartBot handler |
 | `messages.startHistoryImport` | missing | no route in session.yaml (RPCImportedChats is commented out) and no bff handler |
@@ -1521,21 +1518,17 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.upgradeStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.validateRequestedInfo` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
 | `payments.withdrawStarGift` | missing | no route in session.yaml and no bff handler |
-| `phone.acceptCall` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
 | `phone.checkGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.confirmCall` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
 | `phone.createConferenceCall` | missing | no route in session.yaml and no bff handler |
 | `phone.createGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.declineConferenceCallInvite` | missing | no route in session.yaml and no bff handler |
 | `phone.deleteConferenceCallParticipants` | missing | no route in session.yaml and no bff handler |
 | `phone.deleteGroupCallMessages` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
 | `phone.deleteGroupCallParticipantMessages` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
-| `phone.discardCall` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
 | `phone.discardGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.editGroupCallParticipant` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.editGroupCallTitle` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.exportGroupCallInvite` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.getCallConfig` | stub | session.yaml does not route RPCVoipCalls; proxy returns an empty object (IDMap entry is commented out) |
 | `phone.getGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.getGroupCallChainBlocks` | missing | no route in session.yaml and no bff handler |
 | `phone.getGroupCallJoinAs` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
@@ -1549,17 +1542,11 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `phone.joinGroupCallPresentation` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.leaveGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.leaveGroupCallPresentation` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
-| `phone.receivedCall` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
-| `phone.requestCall` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
-| `phone.saveCallDebug` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
-| `phone.saveCallLog` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
 | `phone.saveDefaultGroupCallJoinAs` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.saveDefaultSendAs` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.sendConferenceCallBroadcast` | missing | no route in session.yaml and no bff handler |
 | `phone.sendGroupCallEncryptedMessage` | missing | no route in session.yaml and no bff handler |
 | `phone.sendGroupCallMessage` | missing | no route in session.yaml (RPCGroupCalls is commented out) and no bff handler |
-| `phone.sendSignalingData` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
-| `phone.setCallRating` | missing | no route in session.yaml (RPCVoipCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/calls.go but the service is not routed |
 | `phone.startScheduledGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.toggleGroupCallRecord` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.toggleGroupCallSettings` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |

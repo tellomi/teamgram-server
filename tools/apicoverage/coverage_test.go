@@ -120,8 +120,14 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCConfiguration"] {
 		t.Fatal("configuration should be routed")
 	}
-	if srv.Routed["RPCVoipCalls"] {
-		t.Fatal("voip calls are commented out of session.yaml")
+	if !srv.Routed["RPCVoipCalls"] {
+		t.Fatal("voip calls should be routed so phone.* reaches the bff")
+	}
+	if !srv.Routed["RPCSecretChats"] {
+		t.Fatal("secret chats should be routed so messages.getDhConfig reaches the phone handler")
+	}
+	if srv.Routed["RPCGroupCalls"] {
+		t.Fatal("group calls stay unrouted until the SFU path is a separate slice")
 	}
 	if !srv.Registered["RPCStories"] {
 		t.Fatal("stories handler is registered on the bff process")
@@ -137,6 +143,11 @@ func TestServerSamples(t *testing.T) {
 		}
 	}
 	assertStatus("help.getConfig", statusImplemented, effectOK)
+	assertStatus("phone.getCallConfig", statusImplemented, effectOK)
+	assertStatus("phone.requestCall", statusImplemented, effectOK)
+	assertStatus("phone.sendSignalingData", statusImplemented, effectOK)
+	assertStatus("messages.getDhConfig", statusImplemented, effectOK)
+	assertStatus("messages.receivedQueue", statusImplemented, effectOK)
 	assertStatus("messages.getDialogs", statusImplemented, effectOK)
 	assertStatus("messages.getHistory", statusImplemented, effectOK)
 	// Routed sticker method with a real catalog read.

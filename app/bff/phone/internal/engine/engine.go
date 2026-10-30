@@ -188,9 +188,10 @@ func (e *Engine) finishGroup(ev *GroupEnd, bind *Bind) {
 	}
 }
 
-// CallConfig is phone.getCallConfig.
+// CallConfig is phone.getCallConfig. The JSON carries codec and p2p toggles.
+// STUN and TURN addresses are on the confirmed phoneCall, not in this object.
 func (e *Engine) CallConfig() *mtproto.DataJSON {
-	return dataJSON(config.CallConfigJSON)
+	return dataJSON(e.cfg.CallConfigBody())
 }
 
 // Request is phone.requestCall after the handler has resolved the callee.
