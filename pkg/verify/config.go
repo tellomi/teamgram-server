@@ -4,7 +4,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// SMSSendTimeout is how long auth.sendCode and auth.resendCode wait on the
+// SMS provider. A stalled Aliyun call returns SMS_CODE_CREATE_FAILED instead
+// of leaving the client spinning. Tests may shorten it.
+var SMSSendTimeout = 10 * time.Second
 
 const (
 	ProviderFixed    = "fixed"

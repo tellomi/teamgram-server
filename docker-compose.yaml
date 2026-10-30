@@ -9,8 +9,13 @@ services:
     # the process before that FIN is sent, and clients wait out the 300s
     # connection idle timer.
     stop_grace_period: 25s
-    # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
-    # Set it to aliyun plus ALIBABA_CLOUD_ACCESS_KEY_* for Dysmsapi.
+    # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345 and does not
+    # dial Aliyun. Staging stays that way. 99966XYYYY is 11111 and never
+    # calls Aliyun even if the provider is aliyun.
+    # Production: aliyun plus ALIBABA_CLOUD_ACCESS_KEY_*. The sign
+    # (default 重庆半格智能) and template (default SMS_338570180) must be
+    # approved on that account. A failed or stalled SendSms returns
+    # SMS_CODE_CREATE_FAILED within 10s. See docs/sms-email.md.
     # Leave TELLOMI_EMAIL_PROVIDER unset. Email auth is not wired up.
     # Put secrets in the environment or a gitignored .env, not in this file.
     environment:
