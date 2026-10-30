@@ -47,7 +47,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | Module | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | auth | 22 | 20 | 0 | 0 | 2 | 17 | 1 |
-| account | 119 | 57 | 9 | 2 | 51 | 31 | 9 |
+| account | 119 | 67 | 8 | 2 | 42 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 22 | 0 | 1 | 4 | 6 | 0 |
 | messages | 216 | 119 | 5 | 21 | 71 | 14 | 1 |
@@ -62,7 +62,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | folders | 17 | 5 | 0 | 12 | 0 | 5 | 0 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
 | stories | 32 | 0 | 0 | 0 | 32 | 0 | 0 |
-| premium/payments | 100 | 3 | 0 | 0 | 97 | 0 | 0 |
+| premium/payments | 100 | 3 | 0 | 13 | 84 | 0 | 0 |
 | bots | 23 | 0 | 0 | 1 | 22 | 0 | 0 |
 | business | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
 | aicompose | 7 | 0 | 0 | 0 | 7 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **347** | **22** | **60** | **397** | **94** | **11** |
+| **total** | **826** | **357** | **21** | **73** | **375** | **94** | **2** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 324 | 21 | 58 | 352 | 91 | 10 |
-| android | 709 | 321 | 21 | 53 | 314 | 87 | 10 |
-| desktop | 692 | 300 | 21 | 45 | 326 | 79 | 11 |
-| macos | 677 | 313 | 20 | 50 | 294 | 90 | 10 |
+| ios | 755 | 334 | 20 | 71 | 330 | 91 | 1 |
+| android | 709 | 331 | 20 | 59 | 299 | 87 | 1 |
+| desktop | 692 | 310 | 20 | 55 | 307 | 79 | 2 |
+| macos | 677 | 323 | 19 | 57 | 278 | 90 | 1 |
 
 540 methods are called by all four clients.
 
@@ -93,22 +93,12 @@ A method counts for a client when that client has at least one call site. Implem
 
 Startup and background calls. These run before the chat list is usable. `effect=error` drops the session or the login; empty stubs return success with no data and still break clients that require a config, difference, or langpack.
 
-14 gaps (11 error, 3 empty or bool or not-modified).
+4 gaps (2 error, 2 empty or bool or not-modified).
 
 | Method | Module | Effect | Status | Clients |
 | --- | --- | --- | --- | --- |
-| `account.cancelPasswordEmail` | account | error | missing | ios, android, desktop, macos |
-| `account.confirmPasswordEmail` | account | error | missing | ios, android, desktop, macos |
-| `account.declinePasswordReset` | account | error | missing | ios, android, desktop, macos |
-| `account.getPasswordSettings` | account | error | missing | ios, android, desktop, macos |
-| `account.getReactionsNotifySettings` | account | error | missing | ios, android, desktop, macos |
-| `account.getTmpPassword` | account | error | missing | ios, android, desktop, macos |
-| `account.resendPasswordEmail` | account | error | missing | ios, android, desktop, macos |
-| `account.setReactionsNotifySettings` | account | error | missing | ios, android, desktop, macos |
-| `account.updatePasswordSettings` | account | error | missing | ios, android, desktop, macos |
 | `auth.finishPasskeyLogin` | auth | error | missing | ios, desktop, macos |
 | `messages.getPaidReactionPrivacy` | messages | error | routed-but-unregistered | android, desktop |
-| `account.getPassword` | account | empty | stub | ios, android, desktop, macos |
 | `help.getPromoData` | help | empty | stub | ios, android, desktop, macos |
 | `help.hidePromoData` | help | empty | stub | ios, android, desktop, macos |
 
@@ -186,29 +176,27 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### account
 
-119 called, 57 implemented, 9 stub, 2 routed-unregistered, 51 missing.
+119 called, 67 implemented, 8 stub, 2 routed-unregistered, 42 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `account.cancelPasswordEmail` | yes | yes | yes | yes | startup | missing | error |
-| `account.confirmPasswordEmail` | yes | yes | yes | yes | startup | missing | error |
-| `account.declinePasswordReset` | yes | yes | yes | yes | startup | missing | error |
-| `account.getPasswordSettings` | yes | yes | yes | yes | startup | missing | error |
-| `account.getReactionsNotifySettings` | yes | yes | yes | yes | startup+background | missing | error |
-| `account.getTmpPassword` | yes | yes | yes | yes | startup | missing | error |
-| `account.resendPasswordEmail` | yes | yes | yes | yes | startup | missing | error |
-| `account.setReactionsNotifySettings` | yes | yes | yes | yes | startup+background | missing | error |
-| `account.updatePasswordSettings` | yes | yes | yes | yes | startup | missing | error |
-| `account.getPassword` | yes | yes | yes | yes | startup | stub | empty |
+| `account.cancelPasswordEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.changePhone` | yes | yes | no | yes | startup | implemented | ok |
+| `account.confirmPasswordEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.confirmPhone` | yes | yes | yes | yes | startup | implemented | ok |
+| `account.declinePasswordReset` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.deleteAccount` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.getAutoDownloadSettings` | yes | yes | no | yes | startup+background | implemented | ok |
 | `account.getContactSignUpNotification` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.getGlobalPrivacySettings` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.getNotifySettings` | yes | yes | yes | yes | startup+background | implemented | ok |
+| `account.getPassword` | yes | yes | yes | yes | startup | implemented | ok |
+| `account.getPasswordSettings` | yes | yes | yes | yes | startup | implemented | ok |
+| `account.getReactionsNotifySettings` | yes | yes | yes | yes | startup+background | implemented | ok |
+| `account.getTmpPassword` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.invalidateSignInCodes` | yes | no | no | yes | startup | implemented | ok |
 | `account.registerDevice` | yes | yes | no | yes | startup+background | implemented | ok |
+| `account.resendPasswordEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.resetNotifySettings` | yes | yes | no | yes | startup+background | implemented | ok |
 | `account.resetPassword` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.saveAutoDownloadSettings` | yes | yes | no | yes | startup+background | implemented | ok |
@@ -217,8 +205,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.sendVerifyEmailCode` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.setContactSignUpNotification` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.setGlobalPrivacySettings` | yes | yes | yes | yes | startup | implemented | ok |
+| `account.setReactionsNotifySettings` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.unregisterDevice` | yes | yes | no | yes | startup+background | implemented | ok |
 | `account.updateNotifySettings` | yes | yes | yes | yes | startup+background | implemented | ok |
+| `account.updatePasswordSettings` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.updateStatus` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.verifyEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.createTheme` | yes | yes | yes | yes | interactive | missing | error |
@@ -902,7 +892,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### premium/payments
 
-100 called, 3 implemented, 0 stub, 0 routed-unregistered, 97 missing.
+100 called, 3 implemented, 0 stub, 13 routed-unregistered, 84 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -911,11 +901,9 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.changeStarsSubscription` | yes | no | yes | yes | interactive | missing | error |
 | `payments.checkCanSendGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.checkGiftCode` | yes | yes | yes | yes | interactive | missing | error |
-| `payments.clearSavedInfo` | yes | yes | yes | no | interactive | missing | error |
 | `payments.connectStarRefBot` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.convertStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.craftStarGift` | yes | no | yes | no | interactive | missing | error |
-| `payments.createOnrampSession` | yes | no | yes | yes | interactive | missing | error |
 | `payments.createStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
 | `payments.deleteStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.deleteStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
@@ -923,19 +911,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.displayStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.editConnectedStarRefBot` | yes | yes | yes | no | interactive | missing | error |
 | `payments.fulfillStarsSubscription` | yes | no | no | yes | interactive | missing | error |
-| `payments.getBankCardData` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getConnectedStarRefBot` | yes | yes | yes | no | interactive | missing | error |
 | `payments.getConnectedStarRefBots` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getCraftStarGifts` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getCurrencyRates` | yes | no | yes | no | interactive | missing | error |
 | `payments.getGiveawayInfo` | yes | yes | yes | yes | interactive | missing | error |
-| `payments.getOnrampAvailability` | yes | no | no | no | interactive | missing | error |
-| `payments.getOnrampBaseCurrencies` | yes | no | yes | no | interactive | missing | error |
-| `payments.getOnrampLimits` | yes | no | no | no | interactive | missing | error |
-| `payments.getOnrampProviders` | yes | no | yes | yes | interactive | missing | error |
-| `payments.getOnrampQuote` | yes | no | no | no | interactive | missing | error |
-| `payments.getPaymentForm` | yes | yes | yes | yes | interactive | missing | error |
-| `payments.getPaymentReceipt` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getPremiumGiftCodeOptions` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getResaleStarGifts` | yes | no | yes | yes | interactive | missing | error |
 | `payments.getSavedStarGift` | yes | no | yes | yes | interactive | missing | error |
@@ -965,7 +944,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.reorderStarGiftCollections` | yes | no | yes | yes | interactive | missing | error |
 | `payments.resolveStarGiftOffer` | yes | no | yes | yes | interactive | missing | error |
 | `payments.saveStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.sendPaymentForm` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.sendStarGiftOffer` | yes | no | yes | yes | interactive | missing | error |
 | `payments.sendStarsForm` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.toggleChatStarGiftNotifications` | yes | no | yes | yes | interactive | missing | error |
@@ -974,7 +952,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.updateStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
 | `payments.updateStarGiftPrice` | yes | no | yes | yes | interactive | missing | error |
 | `payments.upgradeStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.validateRequestedInfo` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.withdrawStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `premium.applyBoost` | yes | yes | yes | yes | interactive | missing | error |
 | `premium.getBoostsList` | yes | yes | yes | yes | interactive | missing | error |
@@ -1003,6 +980,19 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stars.updatePaidMessagesPrice` | no | yes | no | no | interactive | missing | error |
 | `stars.updateStarGiftCollection` | no | yes | no | no | interactive | missing | error |
 | `stars.updateStarGiftPrice` | no | yes | no | no | interactive | missing | error |
+| `payments.clearSavedInfo` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
+| `payments.createOnrampSession` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
+| `payments.getBankCardData` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `payments.getCurrencyRates` | yes | no | yes | no | interactive | routed-but-unregistered | error |
+| `payments.getOnrampAvailability` | yes | no | no | no | interactive | routed-but-unregistered | error |
+| `payments.getOnrampBaseCurrencies` | yes | no | yes | no | interactive | routed-but-unregistered | error |
+| `payments.getOnrampLimits` | yes | no | no | no | interactive | routed-but-unregistered | error |
+| `payments.getOnrampProviders` | yes | no | yes | yes | interactive | routed-but-unregistered | error |
+| `payments.getOnrampQuote` | yes | no | no | no | interactive | routed-but-unregistered | error |
+| `payments.getPaymentForm` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `payments.getPaymentReceipt` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `payments.sendPaymentForm` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `payments.validateRequestedInfo` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `payments.assignAppStoreTransaction` | yes | no | no | yes | interactive | implemented | ok |
 | `payments.assignPlayMarketTransaction` | no | yes | no | no | interactive | implemented | ok |
 | `payments.canPurchaseStore` | yes | yes | no | yes | interactive | implemented | ok |
@@ -1167,11 +1157,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 | Method | Status | Notes |
 | --- | --- | --- |
-| `account.cancelPasswordEmail` | missing | no route in session.yaml (RPCTwoFa is commented out) and no bff handler |
-| `account.confirmPasswordEmail` | missing | no route in session.yaml (RPCTwoFa is commented out) and no bff handler |
 | `account.createBusinessChatLink` | missing | no route in session.yaml and no bff handler |
 | `account.createTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
-| `account.declinePasswordReset` | missing | no route in session.yaml (RPCTwoFa is commented out) and no bff handler |
 | `account.deleteBusinessChatLink` | missing | no route in session.yaml and no bff handler |
 | `account.deletePasskey` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
 | `account.deleteWebBrowserSettingsExceptions` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
@@ -1190,14 +1177,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.getMultiWallPapers` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `account.getPaidMessagesRevenue` | missing | no route in session.yaml and no bff handler |
 | `account.getPasskeys` | missing | no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed |
-| `account.getPassword` | stub | session.yaml does not route RPCTwoFa; proxy returns an empty object (IDMap entry is commented out) |
-| `account.getPasswordSettings` | missing | no route in session.yaml (RPCTwoFa is commented out) and no bff handler |
-| `account.getReactionsNotifySettings` | missing | no route in session.yaml and no bff handler |
 | `account.getRequirementsToContact` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `account.getSavedRingtones` | missing | no route in session.yaml and no bff handler |
 | `account.getTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.getThemes` | stub | session.yaml does not route RPCThemes; proxy returns an empty object (IDMap entry is commented out) |
-| `account.getTmpPassword` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
 | `account.getUniqueGiftChatThemes` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.getWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `account.getWallPapers` | stub | session.yaml does not route RPCWallpapers; proxy returns an empty object (IDMap entry is commented out) |
@@ -1214,7 +1197,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.reorderUsernames` | missing | no route in session.yaml and no bff handler |
 | `account.reportPeer` | stub | session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out) |
 | `account.reportProfilePhoto` | stub | session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out) |
-| `account.resendPasswordEmail` | missing | no route in session.yaml (RPCTwoFa is commented out) and no bff handler |
 | `account.resetWallPapers` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
 | `account.resetWebAuthorization` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
 | `account.resetWebAuthorizations` | missing | no route in session.yaml (RPCSeamless is commented out) and no bff handler |
@@ -1222,7 +1204,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.saveRingtone` | missing | no route in session.yaml and no bff handler |
 | `account.saveTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.saveWallPaper` | missing | no route in session.yaml (RPCWallpapers is commented out) and no bff handler |
-| `account.setReactionsNotifySettings` | missing | no route in session.yaml and no bff handler |
 | `account.toggleConnectedBotPaused` | missing | no route in session.yaml and no bff handler |
 | `account.toggleNoPaidMessagesException` | missing | no route in session.yaml and no bff handler |
 | `account.toggleUsername` | missing | no route in session.yaml and no bff handler |
@@ -1233,7 +1214,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.updateBusinessLocation` | missing | no route in session.yaml and no bff handler |
 | `account.updateBusinessWorkHours` | missing | no route in session.yaml and no bff handler |
 | `account.updateConnectedBot` | missing | no route in session.yaml and no bff handler |
-| `account.updatePasswordSettings` | missing | no route in session.yaml (RPCTwoFa is commented out) and no bff handler |
 | `account.updateTheme` | missing | no route in session.yaml (RPCThemes is commented out) and no bff handler |
 | `account.updateWebBrowserSettings` | missing | no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed |
 | `account.uploadRingtone` | missing | no route in session.yaml and no bff handler |
@@ -1443,11 +1423,11 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.changeStarsSubscription` | missing | no route in session.yaml and no bff handler |
 | `payments.checkCanSendGift` | missing | no route in session.yaml and no bff handler |
 | `payments.checkGiftCode` | missing | no route in session.yaml and no bff handler |
-| `payments.clearSavedInfo` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.clearSavedInfo` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsClearSavedInfo handler |
 | `payments.connectStarRefBot` | missing | no route in session.yaml and no bff handler |
 | `payments.convertStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.craftStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.createOnrampSession` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.createOnrampSession` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsCreateOnrampSession handler |
 | `payments.createStarGiftCollection` | missing | no route in session.yaml and no bff handler |
 | `payments.deleteStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.deleteStarGiftCollection` | missing | no route in session.yaml and no bff handler |
@@ -1455,19 +1435,19 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.displayStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.editConnectedStarRefBot` | missing | no route in session.yaml and no bff handler |
 | `payments.fulfillStarsSubscription` | missing | no route in session.yaml and no bff handler |
-| `payments.getBankCardData` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.getBankCardData` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetBankCardData handler |
 | `payments.getConnectedStarRefBot` | missing | no route in session.yaml and no bff handler |
 | `payments.getConnectedStarRefBots` | missing | no route in session.yaml and no bff handler |
 | `payments.getCraftStarGifts` | missing | no route in session.yaml and no bff handler |
-| `payments.getCurrencyRates` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.getCurrencyRates` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler |
 | `payments.getGiveawayInfo` | missing | no route in session.yaml and no bff handler |
-| `payments.getOnrampAvailability` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
-| `payments.getOnrampBaseCurrencies` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
-| `payments.getOnrampLimits` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
-| `payments.getOnrampProviders` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
-| `payments.getOnrampQuote` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
-| `payments.getPaymentForm` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
-| `payments.getPaymentReceipt` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.getOnrampAvailability` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampAvailability handler |
+| `payments.getOnrampBaseCurrencies` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampBaseCurrencies handler |
+| `payments.getOnrampLimits` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampLimits handler |
+| `payments.getOnrampProviders` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampProviders handler |
+| `payments.getOnrampQuote` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampQuote handler |
+| `payments.getPaymentForm` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetPaymentForm handler |
+| `payments.getPaymentReceipt` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetPaymentReceipt handler |
 | `payments.getPremiumGiftCodeOptions` | missing | no route in session.yaml and no bff handler |
 | `payments.getResaleStarGifts` | missing | no route in session.yaml and no bff handler |
 | `payments.getSavedStarGift` | missing | no route in session.yaml and no bff handler |
@@ -1497,7 +1477,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.reorderStarGiftCollections` | missing | no route in session.yaml and no bff handler |
 | `payments.resolveStarGiftOffer` | missing | no route in session.yaml and no bff handler |
 | `payments.saveStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.sendPaymentForm` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.sendPaymentForm` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsSendPaymentForm handler |
 | `payments.sendStarGiftOffer` | missing | no route in session.yaml and no bff handler |
 | `payments.sendStarsForm` | missing | no route in session.yaml and no bff handler |
 | `payments.toggleChatStarGiftNotifications` | missing | no route in session.yaml and no bff handler |
@@ -1506,7 +1486,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.updateStarGiftCollection` | missing | no route in session.yaml and no bff handler |
 | `payments.updateStarGiftPrice` | missing | no route in session.yaml and no bff handler |
 | `payments.upgradeStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.validateRequestedInfo` | missing | no route in session.yaml (RPCPayments is commented out) and no bff handler |
+| `payments.validateRequestedInfo` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsValidateRequestedInfo handler |
 | `payments.withdrawStarGift` | missing | no route in session.yaml and no bff handler |
 | `phone.checkGroupCall` | missing | no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed |
 | `phone.createConferenceCall` | missing | no route in session.yaml and no bff handler |

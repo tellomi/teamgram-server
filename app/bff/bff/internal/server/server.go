@@ -52,6 +52,7 @@ import (
 	stickers_helper "github.com/teamgram/teamgram-server/app/bff/stickers"
 	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
 	tos_helper "github.com/teamgram/teamgram-server/app/bff/tos"
+	twofa_helper "github.com/teamgram/teamgram-server/app/bff/twofa"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
@@ -343,15 +344,19 @@ func (s *Server) Initialize() error {
 			}, nil))
 
 		// notification_helper
-		mtproto.RegisterRPCNotificationServer(
-			grpcServer,
-			notification_helper.New(notification_helper.Config{
-				RpcServerConf: c.RpcServerConf,
-				UserClient:    c.BizServiceClient,
-				ChatClient:    c.BizServiceClient,
-				SyncClient:    c.SyncClient,
-				MysqlDSN:      c.ChannelMySQL,
-			}, channelBridge))
+		notifySvc := notification_helper.New(notification_helper.Config{
+			RpcServerConf: c.RpcServerConf,
+			UserClient:    c.BizServiceClient,
+			ChatClient:    c.BizServiceClient,
+			SyncClient:    c.SyncClient,
+			MysqlDSN:      c.ChannelMySQL,
+		}, channelBridge)
+		mtproto.RegisterRPCNotificationServer(grpcServer, notifySvc)
+		mtproto.RegisterRPCReactionNotificationServer(grpcServer, notifySvc)
+
+		twofaSvc := twofa_helper.New()
+		mtproto.RegisterRPCTwoFaServer(grpcServer, twofaSvc)
+		mtproto.RegisterRPCPaymentsServer(grpcServer, twofaSvc)
 
 		// users_helper
 		mtproto.RegisterRPCUsersServer(

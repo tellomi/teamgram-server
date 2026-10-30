@@ -58,7 +58,8 @@ BFFProxyClients:
     #"/mtproto.RPCGifs": "bff.bff"
     #"/mtproto.RPCPromoData": "bff.bff"
     #"/mtproto.RPCTsf": "bff.bff"
-    #"/mtproto.RPCTwoFa": "bff.bff"
+    # Cloud password: account.getPassword and the other RPCTwoFa methods.
+    "/mtproto.RPCTwoFa": "bff.bff"
     #"/mtproto.RPCSeamless": "bff.bff"
     # 1:1 voice and video. Group calls stay on RPCGroupCalls (still commented).
     "/mtproto.RPCVoipCalls": "bff.bff"
@@ -96,8 +97,11 @@ BFFProxyClients:
     "/mtproto.RPCReactions": "bff.bff"
     "/mtproto.RPCMessages": "bff.bff"
     "/mtproto.RPCNotification": "bff.bff"
+    # account.getReactionsNotifySettings and account.setReactionsNotifySettings.
+    "/mtproto.RPCReactionNotification": "bff.bff"
     "/mtproto.RPCUsers": "bff.bff"
-    #"/mtproto.RPCPayments": "bff.bff"
+    # account.getTmpPassword. Other payment RPCs on this service stay unimplemented.
+    "/mtproto.RPCPayments": "bff.bff"
     #"/mtproto.RPCPolls": "bff.bff"
     #"/mtproto.RPCScheduledMessages": "bff.bff"
     "/mtproto.RPCNsfw": "bff.bff"

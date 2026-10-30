@@ -1,16 +1,16 @@
 method,module,phase,when,ios,android,desktop,macos,status,effect,routed,handler,rpc_service,notes
 account.acceptAuthorization,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
-account.cancelPasswordEmail,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCTwoFa,no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.cancelPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.changeAuthorizationSettings,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 account.changePhone,account,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.checkUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
 account.clearRecentEmojiStatuses,account,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.confirmBotConnection,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
-account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCTwoFa,no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.confirmPhone,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.createBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
 account.createTheme,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCThemes,no route in session.yaml (RPCThemes is commented out) and no bff handler
-account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCTwoFa,no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.deleteAccount,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.deleteBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
 account.deletePasskey,account,P1,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCPasskey,no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed
@@ -44,17 +44,17 @@ account.getNotifyExceptions,account,P1,interactive,yes,yes,yes,yes,implemented,o
 account.getNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.getPaidMessagesRevenue,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPaidMessage,no route in session.yaml and no bff handler
 account.getPasskeys,account,P1,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCPasskey,no route in session.yaml; handler source is implemented at app/bff/passkey/client/passkey_client.go but the service is not routed
-account.getPassword,account,P0,startup,yes,yes,yes,yes,stub,empty,no,absent,RPCTwoFa,session.yaml does not route RPCTwoFa; proxy returns an empty object (IDMap entry is commented out)
-account.getPasswordSettings,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCTwoFa,no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.getPassword,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
+account.getPasswordSettings,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.getPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
-account.getReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,missing,error,no,absent,RPCReactionNotification,no route in session.yaml and no bff handler
+account.getReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/notification/internal/server/grpc/service/reactions_notify_service.go
 account.getRecentEmojiStatuses,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.getRequirementsToContact,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 account.getSavedMusicIds,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.getSavedRingtones,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCRingtone,no route in session.yaml and no bff handler
 account.getTheme,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCThemes,no route in session.yaml (RPCThemes is commented out) and no bff handler
 account.getThemes,account,P1,interactive,yes,yes,yes,yes,stub,empty,no,absent,RPCThemes,session.yaml does not route RPCThemes; proxy returns an empty object (IDMap entry is commented out)
-account.getTmpPassword,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+account.getTmpPassword,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.getUniqueGiftChatThemes,account,P1,interactive,yes,no,yes,yes,missing,error,no,absent,RPCThemes,no route in session.yaml (RPCThemes is commented out) and no bff handler
 account.getWallPaper,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallpapers,no route in session.yaml (RPCWallpapers is commented out) and no bff handler
 account.getWallPapers,account,P1,interactive,yes,yes,yes,yes,stub,empty,no,absent,RPCWallpapers,session.yaml does not route RPCWallpapers; proxy returns an empty object (IDMap entry is commented out)
@@ -73,7 +73,7 @@ account.reorderProfileTabs,account,P1,interactive,no,yes,no,no,missing,error,no,
 account.reorderUsernames,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCFragment,no route in session.yaml and no bff handler
 account.reportPeer,account,P1,interactive,yes,yes,no,yes,stub,empty,no,absent,RPCReports,session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out)
 account.reportProfilePhoto,account,P1,interactive,yes,yes,yes,no,stub,empty,no,absent,RPCReports,session.yaml does not route RPCReports; proxy returns an empty object (IDMap entry is commented out)
-account.resendPasswordEmail,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCTwoFa,no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.resendPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.resetAuthorization,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.resetNotifySettings,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.resetPassword,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
@@ -98,7 +98,7 @@ account.setContentSettings,account,P1,interactive,yes,yes,yes,yes,implemented,ok
 account.setGlobalPrivacySettings,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 account.setMainProfileTab,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.setPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
-account.setReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,missing,error,no,absent,RPCReactionNotification,no route in session.yaml and no bff handler
+account.setReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/notification/internal/server/grpc/service/reactions_notify_service.go
 account.toggleConnectedBotPaused,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessConnectedBots,no route in session.yaml and no bff handler
 account.toggleNoPaidMessagesException,account,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPaidMessage,no route in session.yaml and no bff handler
 account.toggleSponsoredMessages,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
@@ -116,7 +116,7 @@ account.updateConnectedBot,account,P1,interactive,yes,yes,yes,yes,missing,error,
 account.updateDeviceLocked,account,P1,interactive,no,no,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.updateEmojiStatus,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.updateNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
-account.updatePasswordSettings,account,P0,startup,yes,yes,yes,yes,missing,error,no,absent,RPCTwoFa,no route in session.yaml (RPCTwoFa is commented out) and no bff handler
+account.updatePasswordSettings,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.updatePersonalChannel,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.updateProfile,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.updateStatus,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
@@ -589,11 +589,11 @@ payments.canPurchaseStore,premium/payments,P2,interactive,yes,yes,no,yes,impleme
 payments.changeStarsSubscription,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCStarSubscriptions,no route in session.yaml and no bff handler
 payments.checkCanSendGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.checkGiftCode,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiftCodes,no route in session.yaml and no bff handler
-payments.clearSavedInfo,premium/payments,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.clearSavedInfo,premium/payments,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsClearSavedInfo handler
 payments.connectStarRefBot,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
 payments.convertStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.craftStarGift,premium/payments,P2,interactive,yes,no,yes,no,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
-payments.createOnrampSession,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.createOnrampSession,premium/payments,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsCreateOnrampSession handler
 payments.createStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGiftCollections,no route in session.yaml and no bff handler
 payments.deleteStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
 payments.deleteStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGiftCollections,no route in session.yaml and no bff handler
@@ -601,19 +601,19 @@ payments.depositStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,
 payments.displayStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
 payments.editConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
 payments.fulfillStarsSubscription,premium/payments,P2,interactive,yes,no,no,yes,missing,error,no,absent,RPCStarSubscriptions,no route in session.yaml and no bff handler
-payments.getBankCardData,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.getBankCardData,premium/payments,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetBankCardData handler
 payments.getConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
 payments.getConnectedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
 payments.getCraftStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
-payments.getCurrencyRates,premium/payments,P2,interactive,yes,no,yes,no,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.getCurrencyRates,premium/payments,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler
 payments.getGiveawayInfo,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiveaways,no route in session.yaml and no bff handler
-payments.getOnrampAvailability,premium/payments,P2,interactive,yes,no,no,no,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
-payments.getOnrampBaseCurrencies,premium/payments,P2,interactive,yes,no,yes,no,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
-payments.getOnrampLimits,premium/payments,P2,interactive,yes,no,no,no,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
-payments.getOnrampProviders,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
-payments.getOnrampQuote,premium/payments,P2,interactive,yes,no,no,no,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
-payments.getPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
-payments.getPaymentReceipt,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.getOnrampAvailability,premium/payments,P2,interactive,yes,no,no,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampAvailability handler
+payments.getOnrampBaseCurrencies,premium/payments,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampBaseCurrencies handler
+payments.getOnrampLimits,premium/payments,P2,interactive,yes,no,no,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampLimits handler
+payments.getOnrampProviders,premium/payments,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampProviders handler
+payments.getOnrampQuote,premium/payments,P2,interactive,yes,no,no,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampQuote handler
+payments.getPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetPaymentForm handler
+payments.getPaymentReceipt,premium/payments,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetPaymentReceipt handler
 payments.getPremiumGiftCodeOptions,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiveaways,no route in session.yaml and no bff handler
 payments.getResaleStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.getSavedStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
@@ -643,7 +643,7 @@ payments.launchPrepaidGiveaway,premium/payments,P2,interactive,yes,yes,yes,yes,m
 payments.reorderStarGiftCollections,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGiftCollections,no route in session.yaml and no bff handler
 payments.resolveStarGiftOffer,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.saveStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
-payments.sendPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.sendPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsSendPaymentForm handler
 payments.sendStarGiftOffer,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.sendStarsForm,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCStars,no route in session.yaml and no bff handler
 payments.toggleChatStarGiftNotifications,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
@@ -652,7 +652,7 @@ payments.transferStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing
 payments.updateStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGiftCollections,no route in session.yaml and no bff handler
 payments.updateStarGiftPrice,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.upgradeStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
-payments.validateRequestedInfo,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPayments,no route in session.yaml (RPCPayments is commented out) and no bff handler
+payments.validateRequestedInfo,premium/payments,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsValidateRequestedInfo handler
 payments.withdrawStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
 phone.acceptCall,phone/calls,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCVoipCalls,app/bff/phone/internal/server/grpc/service/calls.go
 phone.checkGroupCall,phone/calls,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCGroupCalls,no route in session.yaml (RPCGroupCalls is commented out); handler source is implemented at app/bff/phone/internal/server/grpc/service/groups.go but the service is not routed
