@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/readtime"
 )
 
 type mysqlStore struct {
@@ -400,6 +401,38 @@ VALUES (?,?,?,?,?)
 ON DUPLICATE KEY UPDATE read_inbox_max_id=VALUES(read_inbox_max_id), read_outbox_max_id=VALUES(read_outbox_max_id), unread_count=VALUES(unread_count)`,
 		st.ChannelID, st.UserID, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount)
 	return err
+}
+
+func (s *mysqlStore) SaveReadMark(ctx context.Context, ownerUserID, peerDialogID, readerUserID int64, maxID int32, date int64) error {
+	if ownerUserID == 0 || readerUserID == 0 || ownerUserID == readerUserID || maxID <= 0 || date <= 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, readtime.PositionalUpsert(), ownerUserID, peerDialogID, readerUserID, maxID, date)
+	return err
+}
+
+func (s *mysqlStore) ListReadMarks(ctx context.Context, ownerUserID, peerDialogID int64, msgID int32) ([]ReadMark, error) {
+	rows, err := s.db.QueryContext(ctx, readtime.SelectHitsSQL(false, true), ownerUserID, peerDialogID, msgID)
+	if err != nil {
+		rows, err = s.db.QueryContext(ctx, readtime.SelectHitsSQL(false, false), ownerUserID, peerDialogID, msgID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReadMark
+	for rows.Next() {
+		var userID, date int64
+		if err := rows.Scan(&userID, &date); err != nil {
+			return nil, err
+		}
+		picked := readtime.Pick(date)
+		if userID == 0 || picked == 0 {
+			continue
+		}
+		out = append(out, ReadMark{UserID: userID, MaxID: msgID, Date: int64(picked)})
+	}
+	return out, rows.Err()
 }
 
 const channelSelect = `SELECT id, access_hash, creator_user_id, title, about, username, photo_id, broadcast, megagroup, forum, signatures, pts, top_message, participants_count, date2, migrated_from_chat_id, migrated_from_max_id, ttl_period, address, default_banned_rights, deleted, version FROM channels`

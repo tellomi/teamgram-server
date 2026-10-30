@@ -20,40 +20,54 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 )
 
 // MessageGetOutboxReadDate
 // message.getOutboxReadDate user_id:long peer_type:int peer_id:long msg_id:int = Vector<ReadParticipantDate>;
 func (c *MessageCore) MessageGetOutboxReadDate(in *message.TLMessageGetOutboxReadDate) (*message.Vector_ReadParticipantDate, error) {
-	var (
-		dateList []*mtproto.ReadParticipantDate
-	)
+	out := &message.Vector_ReadParticipantDate{
+		Datas: []*mtproto.ReadParticipantDate{},
+	}
+	if in.MsgId <= 0 || in.PeerId == 0 {
+		return out, nil
+	}
 
-	_, err := c.svcCtx.Dao.MessageReadOutboxDAO.SelectListWithCB(
+	owner := in.UserId
+	oneReader := false
+	reader := int64(0)
+	switch in.PeerType {
+	case mtproto.PEER_USER:
+		oneReader = true
+		reader = in.PeerId
+	case mtproto.PEER_CHAT:
+	case mtproto.PEER_CHANNEL:
+		// Channel checkpoints are stored under the channel id. The request
+		// user_id is the member asking, not the outbox owner.
+		owner = in.PeerId
+	default:
+		return out, nil
+	}
+	if owner == 0 {
+		return out, nil
+	}
+
+	hits, err := c.svcCtx.Dao.MessageReadOutboxDAO.SelectOutboxReadHits(
 		c.ctx,
-		in.UserId,
-		in.PeerId,
+		owner,
+		mtproto.MakePeerDialogId(in.PeerType, in.PeerId),
+		reader,
 		in.MsgId,
-		func(sz, i int, v *dataobject.MessageReadOutboxDO) {
-			if i == 0 {
-				dateList = []*mtproto.ReadParticipantDate{
-					mtproto.MakeTLReadParticipantDate(&mtproto.ReadParticipantDate{
-						UserId: v.ReadUserId,
-						Date:   int32(v.ReadOutboxMaxDate),
-					}).To_ReadParticipantDate(),
-				}
-			}
-		})
+		oneReader,
+	)
 	if err != nil {
 		c.Logger.Errorf("message.getOutboxReadDate - error: %v", err)
 		return nil, err
-	} else if dateList == nil {
-		dateList = []*mtproto.ReadParticipantDate{}
 	}
-
-	return &message.Vector_ReadParticipantDate{
-		Datas: dateList,
-	}, nil
+	mapped := make([]readHit, 0, len(hits))
+	for _, h := range hits {
+		mapped = append(mapped, readHit{UserID: h.ReadUserId, Date: h.ReadDate})
+	}
+	out.Datas = datesFromHits(mapped, in.UserId)
+	return out, nil
 }

@@ -32,6 +32,10 @@ type Store interface {
 
 	GetRead(ctx context.Context, channelID, userID int64) (*ReadState, error)
 	SaveRead(ctx context.Context, st *ReadState) error
+	// SaveReadMark records when reader covered messages up to maxID.
+	// ownerUserID is the channel id; peerDialogID is its dialog id.
+	SaveReadMark(ctx context.Context, ownerUserID, peerDialogID, readerUserID int64, maxID int32, date int64) error
+	ListReadMarks(ctx context.Context, ownerUserID, peerDialogID int64, msgID int32) ([]ReadMark, error)
 
 	GetFeatures(ctx context.Context, channelID int64) (*Features, error)
 	SaveFeatures(ctx context.Context, channelID int64, f *Features) error

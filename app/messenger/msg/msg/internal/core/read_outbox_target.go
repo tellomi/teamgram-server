@@ -20,12 +20,14 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/readoutbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/pkg/readtime"
 )
 
 // propagateOutboxReads tells the authors of messages inside this read that
@@ -43,12 +45,51 @@ func (c *MsgCore) propagateOutboxReads(ctx context.Context, in *msg.TLMsgReadHis
 			// For a private chat the outbox peer is the person who read.
 			peerID = in.UserId
 		}
+		// Private receipts are written in inbox.readOutboxHistory, where the
+		// peer is the reader. Groups do not carry the reader on that call.
+		if in.PeerType == mtproto.PEER_CHAT {
+			c.rememberOutboxRead(ctx, in.UserId, target)
+		}
 		_, _ = c.svcCtx.Dao.InboxClient.InboxReadOutboxHistory(ctx, &inbox.TLInboxReadOutboxHistory{
 			UserId:             target.SenderID,
 			PeerType:           in.PeerType,
 			PeerId:             peerID,
 			MaxDialogMessageId: target.DialogMessageID,
 		})
+	}
+}
+
+// rememberOutboxRead writes the reader's checkpoint on the sender's outbox
+// before the inbox fan-out. Groups have no reader id on that fan-out, so this
+// is the copy getMessageReadParticipants reads. A lookup or insert failure
+// does not stop the read.
+func (c *MsgCore) rememberOutboxRead(ctx context.Context, reader int64, target readoutbox.Target) {
+	row, err := c.svcCtx.Dao.MessagesDAO.SelectByMessageDataId(ctx, target.SenderID, target.DialogMessageID)
+	if err != nil {
+		c.Logger.Errorf("readHistory outbox date - error: %v", err)
+		return
+	}
+	if row == nil || row.UserMessageBoxId <= 0 || row.SenderUserId != target.SenderID {
+		return
+	}
+	when := readtime.Stamp(time.Now().Unix())
+	if reader == 0 || target.SenderID == 0 || reader == target.SenderID || when <= 0 {
+		return
+	}
+	// Peer dialog id is filled by the caller via the message row's peer.
+	peerDialog := mtproto.MakePeerDialogId(row.PeerType, row.PeerId)
+	if row.PeerType == mtproto.PEER_USER {
+		peerDialog = mtproto.MakePeerDialogId(mtproto.PEER_USER, reader)
+	}
+	_, _, err = c.svcCtx.Dao.MessageReadOutboxDAO.InsertOrUpdate(ctx, &dataobject.MessageReadOutboxDO{
+		UserId:            target.SenderID,
+		PeerDialogId:      peerDialog,
+		ReadUserId:        reader,
+		ReadOutboxMaxId:   row.UserMessageBoxId,
+		ReadOutboxMaxDate: when,
+	})
+	if err != nil {
+		c.Logger.Errorf("readHistory outbox date - error: %v", err)
 	}
 }
 

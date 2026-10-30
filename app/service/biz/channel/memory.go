@@ -16,8 +16,17 @@ type memoryStore struct {
 	messages map[int64]map[int32]*StoredMessage
 	events   map[int64][]*PtsEvent
 	reads    map[int64]map[int64]*ReadState
+	marks    []memReadMark
 	features map[int64]*Features
 	personal map[int64]int64
+}
+
+type memReadMark struct {
+	owner      int64
+	peerDialog int64
+	reader     int64
+	maxID      int32
+	date       int64
 }
 
 func NewMemoryStore() Store {
@@ -337,6 +346,47 @@ func (s *memoryStore) SaveRead(ctx context.Context, st *ReadState) error {
 	}
 	s.reads[st.ChannelID][st.UserID] = st.clone()
 	return nil
+}
+
+func (s *memoryStore) SaveReadMark(ctx context.Context, ownerUserID, peerDialogID, readerUserID int64, maxID int32, date int64) error {
+	if ownerUserID == 0 || readerUserID == 0 || ownerUserID == readerUserID || maxID <= 0 || date <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.marks {
+		m := &s.marks[i]
+		if m.owner == ownerUserID && m.peerDialog == peerDialogID && m.reader == readerUserID && m.maxID == maxID {
+			if m.date <= 0 {
+				m.date = date
+			}
+			return nil
+		}
+	}
+	s.marks = append(s.marks, memReadMark{
+		owner: ownerUserID, peerDialog: peerDialogID, reader: readerUserID, maxID: maxID, date: date,
+	})
+	return nil
+}
+
+func (s *memoryStore) ListReadMarks(ctx context.Context, ownerUserID, peerDialogID int64, msgID int32) ([]ReadMark, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []ReadMark
+	best := map[int64]ReadMark{}
+	for _, m := range s.marks {
+		if m.owner != ownerUserID || m.peerDialog != peerDialogID || m.maxID < msgID || m.date <= 0 || m.reader == 0 {
+			continue
+		}
+		prev, ok := best[m.reader]
+		if !ok || m.maxID < prev.MaxID || (m.maxID == prev.MaxID && m.date < prev.Date) {
+			best[m.reader] = ReadMark{UserID: m.reader, MaxID: m.maxID, Date: m.date}
+		}
+	}
+	for _, m := range best {
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 func equalFold(a, b string) bool {

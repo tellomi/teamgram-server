@@ -16,6 +16,7 @@ import (
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/pkg/readtime"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -31,13 +32,13 @@ func NewMessageReadOutboxDAO(db *sqlx.DB) *MessageReadOutboxDAO {
 }
 
 // InsertOrUpdate
-// insert into message_read_outbox(user_id, peer_dialog_id, read_user_id, read_outbox_max_id, read_outbox_max_date) values (:user_id, :peer_dialog_id, :read_user_id, :read_outbox_max_id, :read_outbox_max_date) on duplicate key update read_outbox_max_date = values(read_outbox_max_date)
+// insert into message_read_outbox(...) values (...) on duplicate key update read_outbox_max_date = if(read_outbox_max_date > 0, read_outbox_max_date, values(read_outbox_max_date))
 func (dao *MessageReadOutboxDAO) InsertOrUpdate(ctx context.Context, do *dataobject.MessageReadOutboxDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into message_read_outbox(user_id, peer_dialog_id, read_user_id, read_outbox_max_id, read_outbox_max_date) values (:user_id, :peer_dialog_id, :read_user_id, :read_outbox_max_id, :read_outbox_max_date) on duplicate key update read_outbox_max_date = values(read_outbox_max_date)"
+	query = readtime.NamedUpsert()
 
 	r, err = dao.db.NamedExec(ctx, query, do)
 	if err != nil {
@@ -59,13 +60,13 @@ func (dao *MessageReadOutboxDAO) InsertOrUpdate(ctx context.Context, do *dataobj
 }
 
 // InsertOrUpdateTx
-// insert into message_read_outbox(user_id, peer_dialog_id, read_user_id, read_outbox_max_id, read_outbox_max_date) values (:user_id, :peer_dialog_id, :read_user_id, :read_outbox_max_id, :read_outbox_max_date) on duplicate key update read_outbox_max_date = values(read_outbox_max_date)
+// insert into message_read_outbox(...) values (...) on duplicate key update read_outbox_max_date = if(read_outbox_max_date > 0, read_outbox_max_date, values(read_outbox_max_date))
 func (dao *MessageReadOutboxDAO) InsertOrUpdateTx(tx *sqlx.Tx, do *dataobject.MessageReadOutboxDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into message_read_outbox(user_id, peer_dialog_id, read_user_id, read_outbox_max_id, read_outbox_max_date) values (:user_id, :peer_dialog_id, :read_user_id, :read_outbox_max_id, :read_outbox_max_date) on duplicate key update read_outbox_max_date = values(read_outbox_max_date)"
+	query = readtime.NamedUpsert()
 
 	r, err = tx.NamedExec(query, do)
 	if err != nil {

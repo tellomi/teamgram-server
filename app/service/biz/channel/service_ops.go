@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/readtime"
+	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -512,7 +514,17 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 	for _, id := range advanced {
 		s.syncDialogRead(ctx, ch.ID, id)
 	}
+	// Best-effort. A missing receipt table must not fail channels.readHistory.
+	when := readtime.Stamp(time.Now().Unix())
+	if markErr := s.store.SaveReadMark(ctx, ch.ID, mtproto.MakePeerDialogId(mtproto.PEER_CHANNEL, ch.ID), user, maxID, when); markErr != nil {
+		logx.WithContext(ctx).Errorf("channel.readHistory read date - error: %v", markErr)
+	}
 	return nil
+}
+
+// ListReadMarks returns members who have a real read time for msgID.
+func (s *Service) ListReadMarks(ctx context.Context, channelID int64, msgID int32) ([]ReadMark, error) {
+	return s.store.ListReadMarks(ctx, channelID, mtproto.MakePeerDialogId(mtproto.PEER_CHANNEL, channelID), msgID)
 }
 
 // syncDialogRead copies one member's channel read cursors onto their dialog

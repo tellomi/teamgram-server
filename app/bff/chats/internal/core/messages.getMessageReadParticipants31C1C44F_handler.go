@@ -21,29 +21,17 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
-	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 )
 
 // MessagesGetMessageReadParticipants31C1C44F
 // messages.getMessageReadParticipants#31c1c44f peer:InputPeer msg_id:int = Vector<ReadParticipantDate>;
 func (c *ChatsCore) MessagesGetMessageReadParticipants31C1C44F(in *mtproto.TLMessagesGetMessageReadParticipants31C1C44F) (*mtproto.Vector_ReadParticipantDate, error) {
-	var (
-		peer                 = mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
-		readParticipantDates = make([]*mtproto.ReadParticipantDate, 0)
-	)
+	peer := mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
+	empty := &mtproto.Vector_ReadParticipantDate{Datas: []*mtproto.ReadParticipantDate{}}
 
 	switch peer.PeerType {
 	case mtproto.PEER_CHAT:
-		msgBox, err := c.svcCtx.Dao.MessageClient.MessageGetUserMessage(c.ctx, &message.TLMessageGetUserMessage{
-			UserId: c.MD.UserId,
-			Id:     in.MsgId,
-		})
-		if err != nil {
-			c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)
-			return nil, err
-		}
-
 		pIdList, err := c.svcCtx.Dao.ChatClient.Client().ChatGetChatParticipantIdList(c.ctx, &chatpb.TLChatGetChatParticipantIdList{
 			ChatId: peer.PeerId,
 		})
@@ -51,48 +39,93 @@ func (c *ChatsCore) MessagesGetMessageReadParticipants31C1C44F(in *mtproto.TLMes
 			c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)
 			return nil, err
 		}
-
-		boxList, err := c.svcCtx.Dao.MessageClient.MessageGetUserMessageListByDataIdUserIdList(c.ctx, &message.TLMessageGetUserMessageListByDataIdUserIdList{
-			Id:         msgBox.DialogMessageId,
-			UserIdList: pIdList.GetDatas(),
-		})
-		if err != nil {
-			c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)
-			return nil, err
+		if !participantListHas(pIdList.GetDatas(), c.MD.UserId) {
+			return nil, mtproto.ErrPeerIdInvalid
 		}
-
-		// TODO: 性能优化
-		boxList.Walk(func(idx int, v *mtproto.MessageBox) {
-			if v.UserId == c.MD.UserId {
-				return
-			}
-
-			dialogList, _ := c.svcCtx.Dao.DialogClient.DialogGetDialogsByIdList(c.ctx, &dialog.TLDialogGetDialogsByIdList{
-				UserId: v.UserId,
-				IdList: []int64{mtproto.MakePeerDialogId(peer.PeerType, peer.PeerId)},
-			})
-			for _, d := range dialogList.GetDatas() {
-				// c.Logger.Infof("messages.getMessageReadParticipants - dialog: %s", d)
-				if d.GetDialog().GetReadInboxMaxId() >= v.MessageId {
-					readParticipantDates = append(readParticipantDates, mtproto.MakeTLReadParticipantDate(&mtproto.ReadParticipantDate{
-						UserId: v.UserId,
-						Date:   0,
-					}).To_ReadParticipantDate())
-				}
-			}
-		})
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("messages.getMessageReadParticipants blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
 	default:
-		err := mtproto.ErrPeerIdInvalid
+		c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", mtproto.ErrPeerIdInvalid)
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if in.MsgId <= 0 {
+		return empty, nil
+	}
+
+	ownerID, msgID, err := c.outboxReadOwner(peer.PeerType, in.MsgId)
+	if err != nil {
 		c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)
 		return nil, err
 	}
+	if ownerID == 0 || msgID <= 0 {
+		return empty, nil
+	}
 
-	// TODO: add readParticipantDates
-	return &mtproto.Vector_ReadParticipantDate{
-		Datas: readParticipantDates,
-	}, nil
+	// One indexed lookup. A failure returns an empty list so this RPC cannot
+	// block the session the way a stuck getDifference does, and it never
+	// returns the epoch (clients in UTC+8 show that as 08:00).
+	got, err := c.svcCtx.Dao.MessageClient.MessageGetOutboxReadDate(c.ctx, &message.TLMessageGetOutboxReadDate{
+		UserId:   ownerID,
+		PeerType: peer.PeerType,
+		PeerId:   peer.PeerId,
+		MsgId:    msgID,
+	})
+	if err != nil {
+		c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)
+		return empty, nil
+	}
+	out := make([]*mtproto.ReadParticipantDate, 0, len(got.GetDatas()))
+	for _, d := range got.GetDatas() {
+		if d.GetUserId() == 0 || d.GetUserId() == c.MD.UserId || d.GetDate() <= 0 {
+			continue
+		}
+		out = append(out, d)
+	}
+	return &mtproto.Vector_ReadParticipantDate{Datas: out}, nil
+}
+
+// outboxReadOwner is the user (or channel) the receipt was stored under,
+// and the message id in that user's box. Channel ids are already global.
+func (c *ChatsCore) outboxReadOwner(peerType, msgID int32) (int64, int32, error) {
+	if peerType == mtproto.PEER_CHANNEL {
+		return c.MD.UserId, msgID, nil
+	}
+	msgBox, err := c.svcCtx.Dao.MessageClient.MessageGetUserMessage(c.ctx, &message.TLMessageGetUserMessage{
+		UserId: c.MD.UserId,
+		Id:     msgID,
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	if msgBox.GetSenderUserId() == 0 || msgBox.GetSenderUserId() == c.MD.UserId || msgBox.GetDialogMessageId() == 0 {
+		return c.MD.UserId, msgID, nil
+	}
+	boxes, err := c.svcCtx.Dao.MessageClient.MessageGetUserMessageListByDataIdUserIdList(c.ctx, &message.TLMessageGetUserMessageListByDataIdUserIdList{
+		Id:         msgBox.GetDialogMessageId(),
+		UserIdList: []int64{msgBox.GetSenderUserId()},
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	var senderBox int32
+	if boxes == nil {
+		return msgBox.GetSenderUserId(), msgID, nil
+	}
+	boxes.Walk(func(idx int, v *mtproto.MessageBox) {
+		if v.GetUserId() == msgBox.GetSenderUserId() {
+			senderBox = v.GetMessageId()
+		}
+	})
+	if senderBox <= 0 {
+		return msgBox.GetSenderUserId(), msgID, nil
+	}
+	return msgBox.GetSenderUserId(), senderBox, nil
+}
+
+func participantListHas(ids []int64, userID int64) bool {
+	for _, id := range ids {
+		if id == userID {
+			return true
+		}
+	}
+	return false
 }

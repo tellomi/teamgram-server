@@ -88,6 +88,10 @@ func (c *MessagesCore) MessagesGetOutboxReadDate(in *mtproto.TLMessagesGetOutbox
 			if len(rList.GetDatas()) != 1 {
 				c.Logger.Errorf("messages.getOutboxReadDate - len(rList) == 0")
 				return mtproto.ErrMessageNotReadYet
+			} else if rList.GetDatas()[0].GetDate() <= 0 {
+				// Epoch renders as 08:00 in China. Treat it as unknown.
+				c.Logger.Errorf("messages.getOutboxReadDate - date is 0")
+				return mtproto.ErrMessageNotReadYet
 			} else {
 				rV = mtproto.MakeTLOutboxReadDate(&mtproto.OutboxReadDate{
 					Date: rList.GetDatas()[0].GetDate(),

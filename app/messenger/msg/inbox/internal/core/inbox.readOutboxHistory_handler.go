@@ -19,8 +19,6 @@
 package core
 
 import (
-	"time"
-
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
@@ -70,20 +68,14 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 		}
 		c.Logger.Infof("inbox.readOutboxHistory: %v", replyId)
 
-		// TODO: check if the message is already read
-		_, _, err2 := c.svcCtx.Dao.MessageReadOutboxDAO.InsertOrUpdate(
-			c.ctx,
-			&dataobject.MessageReadOutboxDO{
-				UserId:            in.UserId,
-				PeerDialogId:      mtproto.MakePeerDialogId(in.PeerType, in.PeerId),
-				ReadUserId:        in.PeerId,
-				ReadOutboxMaxId:   replyId.UserMessageBoxId,
-				ReadOutboxMaxDate: time.Now().Unix(),
-			})
-		if err2 != nil {
-			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err2)
-			return nil, err2
-		}
+		// The reader is the private-chat peer. A failed insert must not skip
+		// the dialog update: checkmarks still move, and the date write is
+		// best-effort.
+		c.rememberOutboxRead(
+			in.UserId,
+			in.PeerId,
+			mtproto.MakePeerDialogId(in.PeerType, in.PeerId),
+			replyId.UserMessageBoxId)
 
 		_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(
 			c.ctx,
