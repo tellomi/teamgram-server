@@ -32,6 +32,37 @@ func (c *DialogCore) DialogInsertOrUpdateDialogFilter(in *dialog.TLDialogInsertO
 		return nil, err
 	}
 
+	existing, selErr := c.svcCtx.Dao.DialogFiltersDAO.Select(c.ctx, in.UserId, in.Id)
+	if selErr != nil {
+		c.Logger.Errorf("dialog.insertOrUpdateDialogFilter - select error: %v", selErr)
+	}
+	orderValue := time.Now().Unix() << 32
+	slug := ""
+	joinedBySlug := false
+	if existing != nil {
+		orderValue = existing.OrderValue
+		slug = existing.Slug
+		joinedBySlug = existing.JoinedBySlug
+	} else if selErr == nil {
+		// New folders sort after the ones already stored (list is order_value DESC).
+		found := false
+		var minOrder int64
+		_, listErr := c.svcCtx.Dao.DialogFiltersDAO.SelectListWithCB(
+			c.ctx,
+			in.UserId,
+			func(sz, i int, v *dataobject.DialogFiltersDO) {
+				if !found || v.OrderValue < minOrder {
+					minOrder = v.OrderValue
+					found = true
+				}
+			})
+		if listErr != nil {
+			c.Logger.Errorf("dialog.insertOrUpdateDialogFilter - list error: %v", listErr)
+		} else if found {
+			orderValue = minOrder - 1
+		}
+	}
+
 	c.svcCtx.Dao.CachedConn.Exec(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
@@ -41,8 +72,10 @@ func (c *DialogCore) DialogInsertOrUpdateDialogFilter(in *dialog.TLDialogInsertO
 					UserId:         in.UserId,
 					DialogFilterId: in.Id,
 					IsChatlist:     isChatlist,
+					JoinedBySlug:   joinedBySlug,
+					Slug:           slug,
 					DialogFilter:   string(dialogFilterData),
-					OrderValue:     time.Now().Unix() << 32,
+					OrderValue:     orderValue,
 					FromSuggested:  -1,
 					Deleted:        false,
 				})

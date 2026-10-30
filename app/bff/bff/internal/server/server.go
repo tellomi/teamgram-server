@@ -35,6 +35,7 @@ import (
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
+	folders_helper "github.com/teamgram/teamgram-server/app/bff/folders"
 	langpack_helper "github.com/teamgram/teamgram-server/app/bff/langpack"
 	messages_helper "github.com/teamgram/teamgram-server/app/bff/messages"
 	miscellaneous_helper "github.com/teamgram/teamgram-server/app/bff/miscellaneous"
@@ -298,6 +299,15 @@ func (s *Server) Initialize() error {
 				SyncClient:    c.SyncClient,
 				MessageClient: c.BizServiceClient,
 			}, channelBridge))
+
+		folderSvc := folders_helper.New(folders_helper.Config{
+			RpcServerConf: c.RpcServerConf,
+			DialogClient:  c.BizServiceClient,
+			UserClient:    c.BizServiceClient,
+			SyncClient:    c.SyncClient,
+		})
+		mtproto.RegisterRPCFoldersServer(grpcServer, folderSvc)
+		mtproto.RegisterRPCFolderTagsServer(grpcServer, folderSvc)
 
 		// drafts_helper
 		mtproto.RegisterRPCDraftsServer(
