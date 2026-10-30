@@ -1,5 +1,7 @@
 package catalog
 
+import "github.com/teamgram/proto/mtproto"
+
 // Pack kinds. System kinds are fetched by inputStickerSet* constructors.
 // They are not mixed into messages.getAllStickers.
 const (
@@ -45,7 +47,10 @@ type Pack struct {
 	License          string
 	Attribution      string
 	SourceURL        string
-	Items            []*Item
+	// Owner is the user who created the pack. Zero means an official pack.
+	Owner   int64
+	ThumbID int64
+	Items   []*Item
 }
 
 // Item is one document inside a pack. The same document may be linked from
@@ -66,6 +71,7 @@ type Item struct {
 	AssetPath    string
 	Keywords     []string
 	Size         int32
+	MaskCoords   *mtproto.MaskCoords
 }
 
 func (p *Pack) system() bool {

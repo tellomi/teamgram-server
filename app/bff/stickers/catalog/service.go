@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,8 @@ type userState struct {
 	recent         []recentRow
 	faved          []favedRow
 	reactionRecent []string
+	featuredRead   map[int64]bool
+	gifs           []gifRow
 }
 
 type installRow struct {
@@ -107,24 +110,48 @@ func (s *Service) EmojiStickers(userID, hash int64) *mtproto.Messages_AllSticker
 }
 
 func (s *Service) listStickers(userID, hash int64, emoji bool) *mtproto.Messages_AllStickers {
+	return s.listInstalled(userID, hash, func(p *Pack) bool {
+		return !p.system() && p.Emojis == emoji && !p.Masks
+	})
+}
+
+func (s *Service) listInstalled(userID, hash int64, match func(*Pack) bool) *mtproto.Messages_AllStickers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var sets []*mtproto.StickerSet
-	var ids []int64
+	return s.listInstalledLocked(userID, hash, match)
+}
+
+func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool) *mtproto.Messages_AllStickers {
+	type row struct {
+		p     *Pack
+		order int32
+	}
+	var rows []row
 	for _, p := range s.packs {
-		if p.system() || p.Emojis != emoji {
+		if !match(p) {
 			continue
 		}
-		on, archived, _ := s.installed(userID, p)
+		on, archived, order := s.installed(userID, p)
 		if !on || archived {
 			continue
 		}
+		rows = append(rows, row{p: p, order: order})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].order != rows[j].order {
+			return rows[i].order < rows[j].order
+		}
+		return rows[i].p.ID < rows[j].p.ID
+	})
+	var sets []*mtproto.StickerSet
+	var ids []int64
+	for _, row := range rows {
 		var keep bool
-		ids, keep = appendPackKey(ids, p)
+		ids, keep = appendPackKey(ids, row.p)
 		if !keep {
 			continue
 		}
-		sets = append(sets, p.tl(true, false))
+		sets = append(sets, row.p.tl(true, false))
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
@@ -139,11 +166,13 @@ func (s *Service) listStickers(userID, hash int64, emoji bool) *mtproto.Messages
 	}).To_Messages_AllStickers()
 }
 
-func (s *Service) Featured(hash int64, emoji bool) *mtproto.Messages_FeaturedStickers {
+func (s *Service) Featured(userID, hash int64, emoji bool) *mtproto.Messages_FeaturedStickers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var sets []*mtproto.StickerSetCovered
 	var ids []int64
+	var unread []int64
+	seen := s.state(userID).featuredRead
 	for _, p := range s.packs {
 		if !p.Featured || p.system() || p.Emojis != emoji {
 			continue
@@ -154,6 +183,10 @@ func (s *Service) Featured(hash int64, emoji bool) *mtproto.Messages_FeaturedSti
 			continue
 		}
 		sets = append(sets, p.covered(false, false))
+		if seen == nil || !seen[p.ID] {
+			unread = append(unread, p.ID)
+			ids = append(ids, p.ID)
+		}
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
@@ -162,10 +195,14 @@ func (s *Service) Featured(hash int64, emoji bool) *mtproto.Messages_FeaturedSti
 	if sets == nil {
 		sets = []*mtproto.StickerSetCovered{}
 	}
+	if unread == nil {
+		unread = []int64{}
+	}
 	return mtproto.MakeTLMessagesFeaturedStickers(&mtproto.Messages_FeaturedStickers{
-		Count: int32(len(sets)),
-		Hash:  sum,
-		Sets:  sets,
+		Count:  int32(len(sets)),
+		Hash:   sum,
+		Sets:   sets,
+		Unread: unread,
 	}).To_Messages_FeaturedStickers()
 }
 

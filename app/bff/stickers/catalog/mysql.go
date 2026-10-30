@@ -91,6 +91,34 @@ CREATE TABLE IF NOT EXISTS tellomi_reaction_recent (
   PRIMARY KEY (user_id, emoticon),
   KEY tellomi_reaction_recent_user (user_id, date_ts)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tellomi_sticker_owners (
+  pack_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  thumb_document_id BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (pack_id),
+  KEY tellomi_sticker_owners_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tellomi_featured_reads (
+  user_id BIGINT NOT NULL,
+  pack_id BIGINT NOT NULL,
+  PRIMARY KEY (user_id, pack_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tellomi_saved_gifs (
+  user_id BIGINT NOT NULL,
+  document_id BIGINT NOT NULL,
+  access_hash BIGINT NOT NULL,
+  date_ts INT NOT NULL,
+  mime_type VARCHAR(64) NOT NULL,
+  file_size INT NOT NULL,
+  width INT NOT NULL,
+  height INT NOT NULL,
+  file_name VARCHAR(128) NOT NULL,
+  video TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, document_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `
 
 type mysqlPersist struct {
@@ -128,6 +156,11 @@ func (s *Service) attachMySQL(dsn string) error {
 		return err
 	}
 	s.persist = mysqlPersist{db: db}
+	if err = s.loadManageState(ctx, db); err != nil {
+		_ = db.Close()
+		s.persist = nil
+		return err
+	}
 	return nil
 }
 
@@ -341,4 +374,212 @@ func b(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (s *Service) loadManageState(ctx context.Context, db *sql.DB) error {
+	if err := s.loadOwnedPacks(ctx, db); err != nil {
+		return err
+	}
+	reads, err := db.QueryContext(ctx, `SELECT user_id, pack_id FROM tellomi_featured_reads`)
+	if err != nil {
+		return err
+	}
+	defer reads.Close()
+	for reads.Next() {
+		var userID, packID int64
+		if err = reads.Scan(&userID, &packID); err != nil {
+			return err
+		}
+		st := s.state(userID)
+		if st.featuredRead == nil {
+			st.featuredRead = map[int64]bool{}
+		}
+		st.featuredRead[packID] = true
+	}
+	if err = reads.Err(); err != nil {
+		return err
+	}
+	gifs, err := db.QueryContext(ctx, `SELECT user_id, document_id, access_hash, date_ts, mime_type, file_size, width, height, file_name, video FROM tellomi_saved_gifs ORDER BY date_ts DESC`)
+	if err != nil {
+		return err
+	}
+	defer gifs.Close()
+	for gifs.Next() {
+		var userID int64
+		var row gifRow
+		var video int
+		if err = gifs.Scan(&userID, &row.DocumentID, &row.AccessHash, &row.Date, &row.MIME, &row.Size, &row.Width, &row.Height, &row.FileName, &video); err != nil {
+			return err
+		}
+		row.Video = video != 0
+		st := s.state(userID)
+		if len(st.gifs) >= maxSavedGifs {
+			continue
+		}
+		st.gifs = append(st.gifs, row)
+	}
+	return gifs.Err()
+}
+
+func (s *Service) loadOwnedPacks(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `
+SELECT p.id, p.access_hash, p.short_name, p.title, p.kind, p.official, p.masks, p.emojis, p.animated, p.videos, p.text_color, p.featured, p.installed_default, p.license, p.attribution, p.source_url, o.user_id, o.thumb_document_id
+FROM tellomi_sticker_owners o
+JOIN tellomi_sticker_packs p ON p.id = o.pack_id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p Pack
+		var official, masks, emojis, animated, videos, textColor, featured, installed int
+		if err = rows.Scan(&p.ID, &p.AccessHash, &p.ShortName, &p.Title, &p.Kind, &official, &masks, &emojis, &animated, &videos, &textColor, &featured, &installed, &p.License, &p.Attribution, &p.SourceURL, &p.Owner, &p.ThumbID); err != nil {
+			return err
+		}
+		p.Official = official != 0
+		p.Masks = masks != 0
+		p.Emojis = emojis != 0
+		p.Animated = animated != 0
+		p.Videos = videos != 0
+		p.TextColor = textColor != 0
+		p.Featured = featured != 0
+		p.InstalledDefault = installed != 0
+		items, err := loadPackItems(ctx, db, p.ID)
+		if err != nil {
+			return err
+		}
+		p.Items = items
+		if cur := s.byID[p.ID]; cur != nil {
+			cur.Owner = p.Owner
+			cur.ThumbID = p.ThumbID
+			continue
+		}
+		key := strings.ToLower(p.ShortName)
+		if _, taken := s.byShort[key]; taken {
+			logx.Errorf("stickers skip owned pack %s: short name is taken", p.ShortName)
+			continue
+		}
+		owned := p
+		s.addPack(&owned)
+	}
+	return rows.Err()
+}
+
+func loadPackItems(ctx context.Context, db *sql.DB, packID int64) ([]*Item, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT document_id, access_hash, emoticon, mime_type, file_size, width, height, animated, video, custom_emoji, file_name, storage_class, object_path, asset_path, keywords
+FROM tellomi_sticker_items WHERE pack_id=? ORDER BY sort_order`, packID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Item
+	for rows.Next() {
+		item := &Item{}
+		var animated, video, custom int
+		var keywords string
+		if err = rows.Scan(&item.DocumentID, &item.AccessHash, &item.Emoticon, &item.MIME, &item.Size, &item.Width, &item.Height, &animated, &video, &custom, &item.FileName, &item.StorageClass, &item.ObjectPath, &item.AssetPath, &keywords); err != nil {
+			return nil, err
+		}
+		item.Animated = animated != 0
+		item.Video = video != 0
+		item.CustomEmoji = custom != 0
+		if keywords != "" {
+			item.Keywords = strings.Split(keywords, "\n")
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (m mysqlPersist) saveOwnedPack(p *Pack) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := upsertPacks(ctx, m.db, []*Pack{p}); err != nil {
+		return err
+	}
+	if _, err := m.db.ExecContext(ctx, `
+INSERT INTO tellomi_sticker_owners (pack_id, user_id, thumb_document_id) VALUES (?,?,?)
+ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), thumb_document_id=VALUES(thumb_document_id)`,
+		p.ID, p.Owner, p.ThumbID); err != nil {
+		return err
+	}
+	if _, err := m.db.ExecContext(ctx, `DELETE FROM tellomi_sticker_items WHERE pack_id=?`, p.ID); err != nil {
+		return err
+	}
+	for i, item := range p.Items {
+		if _, err := m.db.ExecContext(ctx, `
+INSERT INTO tellomi_sticker_items
+  (pack_id, document_id, access_hash, emoticon, sort_order, mime_type, file_size, width, height, animated, video, custom_emoji, file_name, storage_class, object_path, asset_path, keywords)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.ID, item.DocumentID, item.AccessHash, item.Emoticon, i, item.MIME, item.Size, item.Width, item.Height,
+			b(item.Animated), b(item.Video), b(item.CustomEmoji), item.FileName, item.StorageClass, item.ObjectPath,
+			item.AssetPath, strings.Join(item.Keywords, "\n")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m mysqlPersist) deleteOwnedPack(packID int64) error {
+	for _, stmt := range []string{
+		`DELETE FROM tellomi_sticker_items WHERE pack_id=?`,
+		`DELETE FROM tellomi_sticker_owners WHERE pack_id=?`,
+		`DELETE FROM tellomi_sticker_installs WHERE pack_id=?`,
+		`DELETE FROM tellomi_featured_reads WHERE pack_id=?`,
+		`DELETE FROM tellomi_sticker_packs WHERE id=?`,
+	} {
+		if _, err := m.db.Exec(stmt, packID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m mysqlPersist) saveFeaturedRead(userID, packID int64) error {
+	_, err := m.db.Exec(`INSERT IGNORE INTO tellomi_featured_reads (user_id, pack_id) VALUES (?,?)`, userID, packID)
+	return err
+}
+
+func (m mysqlPersist) saveGif(userID int64, row gifRow) error {
+	_, err := m.db.Exec(`
+INSERT INTO tellomi_saved_gifs (user_id, document_id, access_hash, date_ts, mime_type, file_size, width, height, file_name, video)
+VALUES (?,?,?,?,?,?,?,?,?,?)
+ON DUPLICATE KEY UPDATE access_hash=VALUES(access_hash), date_ts=VALUES(date_ts), mime_type=VALUES(mime_type), file_size=VALUES(file_size), width=VALUES(width), height=VALUES(height), file_name=VALUES(file_name), video=VALUES(video)`,
+		userID, row.DocumentID, row.AccessHash, row.Date, row.MIME, row.Size, row.Width, row.Height, row.FileName, b(row.Video))
+	return err
+}
+
+func (m mysqlPersist) deleteGif(userID, documentID int64) error {
+	_, err := m.db.Exec(`DELETE FROM tellomi_saved_gifs WHERE user_id=? AND document_id=?`, userID, documentID)
+	return err
+}
+
+func (m mysqlPersist) findDocument(id int64) (*Item, bool) {
+	var access int64
+	var size int
+	var mime, name string
+	err := m.db.QueryRow(`SELECT access_hash, file_size, mime_type, uploaded_file_name FROM documents WHERE document_id=? LIMIT 1`, id).Scan(&access, &size, &mime, &name)
+	if err != nil {
+		return nil, false
+	}
+	if name == "" {
+		name = "sticker"
+	}
+	item := &Item{
+		DocumentID: id,
+		AccessHash: access,
+		MIME:       mime,
+		FileName:   name,
+		Size:       int32(size),
+		Width:      512,
+		Height:     512,
+	}
+	switch strings.ToLower(mime) {
+	case "application/x-tgsticker":
+		item.Animated = true
+	case "video/webm", "video/mp4":
+		item.Video = true
+	}
+	return item, true
 }

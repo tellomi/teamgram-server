@@ -154,8 +154,24 @@ func TestServerSamples(t *testing.T) {
 	assertStatus("messages.getHistory", statusImplemented, effectOK)
 	// Routed sticker method with a real catalog read.
 	assertStatus("messages.getAllStickers", statusImplemented, effectOK)
-	// Routed sticker method that returns an empty set.
-	assertStatus("messages.getMaskStickers", statusStub, effectEmpty)
+	assertStatus("messages.getMaskStickers", statusImplemented, effectOK)
+	assertStatus("messages.getArchivedStickers", statusImplemented, effectOK)
+	assertStatus("messages.getSavedGifs", statusImplemented, effectOK)
+	assertStatus("messages.saveGif", statusImplemented, effectOK)
+	assertStatus("stickers.createStickerSet", statusImplemented, effectOK)
+	assertStatus("stickers.checkShortName", statusImplemented, effectOK)
+	assertStatus("help.getTimezonesList", statusImplemented, effectOK)
+	assertStatus("help.getUserInfo", statusImplemented, effectOK)
+	assertStatus("help.editUserInfo", statusImplemented, effectOK)
+	if !srv.Routed["RPCGifs"] || !srv.Registered["RPCGifs"] {
+		t.Fatal("saved gifs must be routed and registered")
+	}
+	if !srv.Routed["RPCTimezones"] || !srv.Registered["RPCTimezones"] {
+		t.Fatal("timezones must be routed and registered")
+	}
+	if !srv.Routed["RPCTsf"] || !srv.Registered["RPCTsf"] {
+		t.Fatal("support user info must be routed and registered")
+	}
 	// P0 startup calls that must not come back as ENTERPRISE_IS_BLOCKED.
 	assertStatus("auth.finishPasskeyLogin", statusImplemented, effectOK)
 	assertStatus("messages.getPaidReactionPrivacy", statusImplemented, effectOK)

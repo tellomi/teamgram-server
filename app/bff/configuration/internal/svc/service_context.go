@@ -24,11 +24,13 @@ import (
 
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/promo"
+	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/userinfo"
 )
 
 type ServiceContext struct {
-	Config config.Config
-	Promo  *promo.Store
+	Config   config.Config
+	Promo    *promo.Store
+	UserInfo *userinfo.Store
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -37,7 +39,8 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		dsn = env
 	}
 	return &ServiceContext{
-		Config: c,
-		Promo:  promo.Open(dsn),
+		Config:   c,
+		Promo:    promo.Open(dsn),
+		UserInfo: userinfo.Open(dsn),
 	}
 }

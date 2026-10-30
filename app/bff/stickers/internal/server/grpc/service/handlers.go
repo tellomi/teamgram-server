@@ -24,10 +24,7 @@ func (s *Service) MessagesGetAllStickers(ctx context.Context, in *mtproto.TLMess
 }
 
 func (s *Service) MessagesGetMaskStickers(ctx context.Context, in *mtproto.TLMessagesGetMaskStickers) (*mtproto.Messages_AllStickers, error) {
-	return mtproto.MakeTLMessagesAllStickers(&mtproto.Messages_AllStickers{
-		Hash: 1,
-		Sets: []*mtproto.StickerSet{},
-	}).To_Messages_AllStickers(), nil
+	return cat().MaskStickers(userID(ctx), in.GetHash()), nil
 }
 
 func (s *Service) MessagesGetStickerSet(ctx context.Context, in *mtproto.TLMessagesGetStickerSet) (*mtproto.Messages_StickerSet, error) {
@@ -46,14 +43,17 @@ func (s *Service) MessagesUninstallStickerSet(ctx context.Context, in *mtproto.T
 }
 
 func (s *Service) MessagesGetFeaturedStickers(ctx context.Context, in *mtproto.TLMessagesGetFeaturedStickers) (*mtproto.Messages_FeaturedStickers, error) {
-	return cat().Featured(in.GetHash(), false), nil
+	return cat().Featured(userID(ctx), in.GetHash(), false), nil
 }
 
 func (s *Service) MessagesGetOldFeaturedStickers(ctx context.Context, in *mtproto.TLMessagesGetOldFeaturedStickers) (*mtproto.Messages_FeaturedStickers, error) {
-	return cat().Featured(in.GetHash(), false), nil
+	return cat().Featured(userID(ctx), in.GetHash(), false), nil
 }
 
 func (s *Service) MessagesReadFeaturedStickers(ctx context.Context, in *mtproto.TLMessagesReadFeaturedStickers) (*mtproto.Bool, error) {
+	if err := cat().ReadFeatured(userID(ctx), in.GetId()); err != nil {
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }
 
@@ -135,7 +135,7 @@ func (s *Service) MessagesGetEmojiStickers(ctx context.Context, in *mtproto.TLMe
 }
 
 func (s *Service) MessagesGetFeaturedEmojiStickers(ctx context.Context, in *mtproto.TLMessagesGetFeaturedEmojiStickers) (*mtproto.Messages_FeaturedStickers, error) {
-	return cat().Featured(in.GetHash(), true), nil
+	return cat().Featured(userID(ctx), in.GetHash(), true), nil
 }
 
 func (s *Service) MessagesSearchCustomEmoji(ctx context.Context, in *mtproto.TLMessagesSearchCustomEmoji) (*mtproto.EmojiList, error) {

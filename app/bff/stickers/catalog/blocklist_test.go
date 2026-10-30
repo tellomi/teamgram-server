@@ -47,7 +47,7 @@ func TestBlocklistDropsTaiwanFlagFromListings(t *testing.T) {
 		t.Fatalf("filtered set hash %#v %v", again, err)
 	}
 
-	featured := s.Featured(0, true)
+	featured := s.Featured(0, 0, true)
 	if len(featured.GetSets()) != 1 || docAlt(featured.GetSets()[0].GetCover()) != grin {
 		t.Fatalf("featured cover %#v", featured.GetSets())
 	}
