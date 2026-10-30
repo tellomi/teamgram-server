@@ -73,9 +73,11 @@ func (TakeoutService) ChannelsGetLeftChannels(ctx context.Context, in *mtproto.T
 	return channel.Shared().GetLeftChannels(ctx, self, in.GetOffset())
 }
 
-// TranslationService serves channels.toggleAutotranslation.
+// TranslationService serves channels.toggleAutotranslation,
+// messages.translateText, and messages.togglePeerTranslations.
 type TranslationService struct {
 	mtproto.UnimplementedRPCTranslationServer
+	Messages messageReader
 }
 
 func (TranslationService) ChannelsToggleAutotranslation(ctx context.Context, in *mtproto.TLChannelsToggleAutotranslation) (*mtproto.Updates, error) {

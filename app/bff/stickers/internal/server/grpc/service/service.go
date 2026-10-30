@@ -2,11 +2,13 @@ package service
 
 import "github.com/teamgram/proto/mtproto"
 
-// Service implements the sticker, emoji-keyword, and custom-emoji RPCs.
+// Service implements the sticker, emoji-keyword, custom-emoji, and
+// message-effect RPCs.
 type Service struct {
 	mtproto.UnimplementedRPCStickersServer
 	mtproto.UnimplementedRPCEmojiServer
 	mtproto.UnimplementedRPCCustomEmojisServer
+	mtproto.UnimplementedRPCMessageEffectsServer
 }
 
 func New() *Service {

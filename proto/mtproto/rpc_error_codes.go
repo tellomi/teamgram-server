@@ -1452,6 +1452,15 @@ var (
 	// | 400 | STICKERS_TOO_MUCH | There are too many stickers in this stickerpack, you can't add any more. |
 	ErrStickersTooMuch = status.Error(ErrBadRequest, "STICKERS_TOO_MUCH")
 
+	// ErrShortcutInvalid
+	// | 400 | SHORTCUT_INVALID | The specified shortcut is invalid.
+	// https://core.telegram.org/method/messages.editQuickReplyShortcut
+	ErrShortcutInvalid = status.Error(ErrBadRequest, "SHORTCUT_INVALID")
+
+	// ErrQuickRepliesTooMuch
+	// | 400 | QUICK_REPLIES_TOO_MUCH | A maximum of 100 quick replies is allowed.
+	ErrQuickRepliesTooMuch = status.Error(ErrBadRequest, "QUICK_REPLIES_TOO_MUCH")
+
 	// ErrEncryptionIdInvalid
 	// | 400 | ENCRYPTION_ID_INVALID | The provided secret chat ID is invalid. |
 	ErrEncryptionIdInvalid = status.Error(ErrBadRequest, "ENCRYPTION_ID_INVALID")

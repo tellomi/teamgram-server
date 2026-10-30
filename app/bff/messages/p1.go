@@ -27,3 +27,20 @@ func NewBotChat(c Config) *service.BotChatService {
 		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
 }
+
+// NewQuickReply serves quick-reply shortcuts. Sending a shortcut goes
+// through messenger.msg, same as messages.sendMessage.
+func NewQuickReply(c Config) *service.QuickReplyService {
+	return &service.QuickReplyService{
+		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
+	}
+}
+
+// NewSavedTags serves saved-message reaction tags.
+func NewSavedTags() *service.SavedTagService { return &service.SavedTagService{} }
+
+// NewPaidMedia serves messages.getExtendedMedia.
+func NewPaidMedia() *service.PaidMediaService { return &service.PaidMediaService{} }
+
+// NewDelivery serves messages.reportMessagesDelivery.
+func NewDelivery() *service.DeliveryService { return &service.DeliveryService{} }

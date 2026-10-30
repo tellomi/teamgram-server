@@ -138,7 +138,7 @@ BFFProxyClients:
     "/mtproto.RPCChannelRecommendations": "bff.bff"
     # channels.getLeftChannels. Other takeout RPCs stay unimplemented.
     "/mtproto.RPCTakeout": "bff.bff"
-    # channels.toggleAutotranslation. Translation RPCs stay unimplemented.
+    # messages.translateText, messages.togglePeerTranslations, channels.toggleAutotranslation.
     "/mtproto.RPCTranslation": "bff.bff"
     # channels.updatePaidMessagesPrice. Other paid-message RPCs stay unimplemented.
     "/mtproto.RPCPaidMessage": "bff.bff"
@@ -151,5 +151,15 @@ BFFProxyClients:
     "/mtproto.RPCUsernames": "bff.bff"
     #"/mtproto.RPCWallpapers": "bff.bff"
     "/mtproto.RPCSavedMessageDialogs": "bff.bff"
+    # Saved-message reaction tags.
+    "/mtproto.RPCSavedMessageTags": "bff.bff"
+    # Quick-reply shortcuts.
+    "/mtproto.RPCBusinessQuickReply": "bff.bff"
+    # messages.getAvailableEffects.
+    "/mtproto.RPCMessageEffects": "bff.bff"
+    # messages.getExtendedMedia.
+    "/mtproto.RPCPaidMedia": "bff.bff"
+    # messages.reportMessagesDelivery.
+    "/mtproto.RPCGatewayVerificationMessages": "bff.bff"
     "/mtproto.RPCPrivacySettings": "bff.bff"
     "/mtproto.RPCUserChannelProfiles": "bff.bff"

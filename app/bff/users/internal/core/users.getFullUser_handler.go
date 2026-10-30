@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
@@ -80,7 +81,7 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		HasScheduled:             false,
 		VideoCallsAvailable:      c.MD.UserId != peerId,
 		VoiceMessagesForbidden:   false,
-		TranslationsDisabled:     false,
+		TranslationsDisabled:     chatbox.Shared().TranslationsDisabled(c.MD.UserId, mtproto.MakePeerUtil(mtproto.PEER_USER, peerId)),
 		StoriesPinnedAvailable:   false,
 		BlockedMyStoriesFrom:     false,
 		WallpaperOverridden:      false,

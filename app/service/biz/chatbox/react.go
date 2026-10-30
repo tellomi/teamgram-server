@@ -165,6 +165,9 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 	if err := b.storeReact(ctx, peer, doc); err != nil {
 		return nil, err
 	}
+	if savedDialog(self, peer) {
+		b.syncSavedTagsLocked(ctx, self, doc)
+	}
 	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, doc, self)), nil
 }
 
@@ -272,6 +275,9 @@ func (b *Book) DeleteParticipantReaction(ctx context.Context, self int64, peer *
 	if err := b.storeReact(ctx, peer, doc); err != nil {
 		return nil, err
 	}
+	if savedDialog(self, peer) {
+		b.syncSavedTagsLocked(ctx, self, doc)
+	}
 	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, doc, self)), nil
 }
 
@@ -297,7 +303,13 @@ func (b *Book) DeleteParticipantReactions(ctx context.Context, self int64, peer 
 		kept = append(kept, item)
 	}
 	doc.Items = kept
-	return b.storeReact(ctx, peer, doc)
+	if err := b.storeReact(ctx, peer, doc); err != nil {
+		return err
+	}
+	if savedDialog(self, peer) {
+		b.syncSavedTagsLocked(ctx, self, doc)
+	}
+	return nil
 }
 
 func (b *Book) loadReact(ctx context.Context, peer *mtproto.PeerUtil) (*reactDoc, error) {

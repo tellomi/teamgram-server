@@ -23,6 +23,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -206,6 +207,10 @@ func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*
 	//	return hasBot
 	//})
 
+	if in.GetQuickReplyShortcut() != nil {
+		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+	}
+
 	rUpdate, err := c.dispatchOutbox(peer, []*msgpb.OutboxMessage{
 		msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
 			NoWebpage:    in.NoWebpage,
@@ -220,6 +225,7 @@ func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*
 		c.Logger.Errorf("messages.sendMessage#fa88427a - error: %v", err)
 		return nil, err
 	}
+	chatbox.Shared().NoteSent(c.ctx, c.MD.UserId, peer, rUpdate)
 
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
