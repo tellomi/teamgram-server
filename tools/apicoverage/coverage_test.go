@@ -336,6 +336,62 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCWalletCard"] || !srv.Registered["RPCWalletCard"] {
 		t.Fatal("wallet card stickers must be routed and registered")
 	}
+	if !srv.Routed["RPCBusinessChatLinks"] || !srv.Registered["RPCBusinessChatLinks"] {
+		t.Fatal("business chat links must be routed and registered")
+	}
+	if !srv.Routed["RPCBusinessGreeting"] || !srv.Registered["RPCBusinessGreeting"] {
+		t.Fatal("business greeting must be routed and registered")
+	}
+	if !srv.Routed["RPCBusinessIntro"] || !srv.Registered["RPCBusinessIntro"] {
+		t.Fatal("business intro must be routed and registered")
+	}
+	if !srv.Routed["RPCBusinessLocation"] || !srv.Registered["RPCBusinessLocation"] {
+		t.Fatal("business location must be routed and registered")
+	}
+	if !srv.Routed["RPCBusinessOpeningHours"] || !srv.Registered["RPCBusinessOpeningHours"] {
+		t.Fatal("business opening hours must be routed and registered")
+	}
+	if !srv.Routed["RPCCommunities"] || !srv.Registered["RPCCommunities"] {
+		t.Fatal("communities must be routed and registered")
+	}
+	if !srv.Routed["RPCEphemeral"] || !srv.Registered["RPCEphemeral"] {
+		t.Fatal("ephemeral messages must be routed and registered")
+	}
+	for _, method := range []string{
+		"account.createBusinessChatLink",
+		"account.deleteBusinessChatLink",
+		"account.editBusinessChatLink",
+		"account.getBusinessChatLinks",
+		"account.resolveBusinessChatLink",
+		"account.updateBusinessAwayMessage",
+		"account.updateBusinessGreetingMessage",
+		"account.updateBusinessIntro",
+		"account.updateBusinessLocation",
+		"account.updateBusinessWorkHours",
+		"communities.create",
+		"communities.getJoinedCommunities",
+		"communities.getParticipantJoinedChats",
+		"communities.getPeerLinkRequests",
+		"communities.toggleAllPeerLinkRequestApproval",
+		"communities.toggleCommunityCollapsedInDialogs",
+		"communities.toggleParticipantBanned",
+		"communities.togglePeerLink",
+		"communities.togglePeerLinkRequestApproval",
+		"ephemeral.deleteAllWelcomeMessages",
+		"ephemeral.deleteMessage",
+		"ephemeral.deleteWelcomeMessage",
+		"ephemeral.editMessage",
+		"ephemeral.getCallbackAnswer",
+		"ephemeral.getWelcomeMessages",
+		"ephemeral.reportMessage",
+		"ephemeral.sendMessage",
+	} {
+		assertStatus(method, statusImplemented, effectOK)
+		_, _, _, _, notes, _ := srv.resolve(method)
+		if strings.Contains(notes, "layer variants disagree") || strings.Contains(notes, "ENTERPRISE_IS_BLOCKED") {
+			t.Errorf("%s notes=%s", method, notes)
+		}
+	}
 	for _, method := range []string{
 		"wallet.disableBackup",
 		"wallet.enableBackup",

@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
+	profile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -128,6 +129,15 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 	// Premium is included. Gift prices would open a purchase flow, so they stay empty.
 	userFull.PremiumGifts = nil
+	// Business hours, location, greeting, away message, and intro are public
+	// profile fields. The business RPCs write the same process-local book.
+	if card := profile.Shared().Card(peerId); card != nil {
+		userFull.BusinessWorkHours = card.WorkHours
+		userFull.BusinessLocation = card.Location
+		userFull.BusinessGreetingMessage = card.Greeting
+		userFull.BusinessAwayMessage = card.Away
+		userFull.BusinessIntro = card.Intro
+	}
 	mr.FinishVoid(
 		func() {
 			// blocked

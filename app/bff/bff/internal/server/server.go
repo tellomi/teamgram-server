@@ -27,14 +27,17 @@ import (
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
+	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
+	communities_helper "github.com/teamgram/teamgram-server/app/bff/communities"
 	configuration_helper "github.com/teamgram/teamgram-server/app/bff/configuration"
 	contacts_helper "github.com/teamgram/teamgram-server/app/bff/contacts"
 	deeplinks_helper "github.com/teamgram/teamgram-server/app/bff/deeplinks"
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
+	ephemeral_helper "github.com/teamgram/teamgram-server/app/bff/ephemeral"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
 	folders_helper "github.com/teamgram/teamgram-server/app/bff/folders"
 	langpack_helper "github.com/teamgram/teamgram-server/app/bff/langpack"
@@ -251,6 +254,15 @@ func (s *Server) Initialize() error {
 		walletSvc := wallet_helper.New()
 		mtproto.RegisterRPCWalletServer(grpcServer, walletSvc)
 		mtproto.RegisterRPCWalletCardServer(grpcServer, walletSvc)
+
+		businessSvc := business_helper.New()
+		mtproto.RegisterRPCBusinessChatLinksServer(grpcServer, businessSvc)
+		mtproto.RegisterRPCBusinessGreetingServer(grpcServer, businessSvc)
+		mtproto.RegisterRPCBusinessIntroServer(grpcServer, businessSvc)
+		mtproto.RegisterRPCBusinessLocationServer(grpcServer, businessSvc)
+		mtproto.RegisterRPCBusinessOpeningHoursServer(grpcServer, businessSvc)
+		mtproto.RegisterRPCCommunitiesServer(grpcServer, communities_helper.New())
+		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(
