@@ -434,6 +434,18 @@ func TestServerSamples(t *testing.T) {
 	if !srv.Routed["RPCIv"] || !srv.Registered["RPCIv"] {
 		t.Fatal("iv must be routed and registered")
 	}
+	if !srv.Routed["RPCStars"] || !srv.Registered["RPCStars"] {
+		t.Fatal("stars must be routed and registered")
+	}
+	if !srv.Routed["RPCStarSubscriptions"] || !srv.Registered["RPCStarSubscriptions"] {
+		t.Fatal("star subscriptions must be routed and registered")
+	}
+	if !srv.Routed["RPCGiveaways"] || !srv.Registered["RPCGiveaways"] {
+		t.Fatal("giveaways must be routed and registered")
+	}
+	if !srv.Routed["RPCGiftCodes"] || !srv.Registered["RPCGiftCodes"] {
+		t.Fatal("gift codes must be routed and registered")
+	}
 	for _, method := range []string{
 		"aicompose.createTone",
 		"aicompose.deleteTone",
@@ -454,6 +466,28 @@ func TestServerSamples(t *testing.T) {
 		"stats.getStoryPublicForwards",
 		"stats.getStoryStats",
 		"stats.loadAsyncGraph",
+		"payments.getStarsStatus",
+		"payments.getStarsTransactions",
+		"payments.getStarsTransactionsByID",
+		"payments.getStarsSubscriptions",
+		"payments.changeStarsSubscription",
+		"payments.fulfillStarsSubscription",
+		"payments.getStarsTopupOptions",
+		"payments.getStarsGiftOptions",
+		"payments.sendStarsForm",
+		"payments.getStarsRevenueStats",
+		"payments.getStarsRevenueWithdrawalUrl",
+		"payments.getStarsRevenueAdsAccountUrl",
+		"payments.getPremiumGiftCodeOptions",
+		"payments.getStarsGiveawayOptions",
+		"payments.getGiveawayInfo",
+		"payments.launchPrepaidGiveaway",
+		"payments.checkGiftCode",
+		"payments.applyGiftCode",
+		"premium.getBoostsList",
+		"premium.getMyBoosts",
+		"premium.applyBoost",
+		"premium.getBoostsStatus",
 	} {
 		assertStatus(method, statusImplemented, effectOK)
 		_, _, _, _, notes, _ := srv.resolve(method)

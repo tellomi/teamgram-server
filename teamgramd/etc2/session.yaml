@@ -151,7 +151,8 @@ BFFProxyClients:
     "/mtproto.RPCFragment": "bff.bff"
     # Supergroup native antispam.
     "/mtproto.RPCAntiSpam": "bff.bff"
-    # channels.setBoostsToUnblockRestrictions. Other boost RPCs stay unimplemented.
+    # channels.setBoostsToUnblockRestrictions and premium boost slots.
+    # Story boost RPCs on this service stay unimplemented.
     "/mtproto.RPCBoosts": "bff.bff"
     "/mtproto.RPCChannelRecommendations": "bff.bff"
     # Takeout sessions, left channels, and message split ranges.
@@ -219,3 +220,11 @@ BFFProxyClients:
     # Android TL_iv.getRichMessage is messages.getRichMessage#501569cf.
     # This registration covers the coverage name. The constructor is RPCMessages.
     "/mtproto.RPCIv": "bff.bff"
+    # Stars balance, top-up options, and revenue reads. No Stars are minted.
+    "/mtproto.RPCStars": "bff.bff"
+    # Stars subscriptions. There is no stored subscription to change or fulfill.
+    "/mtproto.RPCStarSubscriptions": "bff.bff"
+    # Giveaway options and lookups. No prepaid giveaway is launched.
+    "/mtproto.RPCGiveaways": "bff.bff"
+    # Gift-code checks. No code is issued or applied.
+    "/mtproto.RPCGiftCodes": "bff.bff"

@@ -39,9 +39,9 @@ import (
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	ephemeral_helper "github.com/teamgram/teamgram-server/app/bff/ephemeral"
 	feed_helper "github.com/teamgram/teamgram-server/app/bff/feed"
-	iv_helper "github.com/teamgram/teamgram-server/app/bff/iv"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
 	folders_helper "github.com/teamgram/teamgram-server/app/bff/folders"
+	iv_helper "github.com/teamgram/teamgram-server/app/bff/iv"
 	langpack_helper "github.com/teamgram/teamgram-server/app/bff/langpack"
 	messages_helper "github.com/teamgram/teamgram-server/app/bff/messages"
 	miscellaneous_helper "github.com/teamgram/teamgram-server/app/bff/miscellaneous"
@@ -49,6 +49,7 @@ import (
 	nsfw_helper "github.com/teamgram/teamgram-server/app/bff/nsfw"
 	passkeyhelper "github.com/teamgram/teamgram-server/app/bff/passkey"
 	passport_helper "github.com/teamgram/teamgram-server/app/bff/passport"
+	payments_helper "github.com/teamgram/teamgram-server/app/bff/payments"
 	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
 	premium_helper "github.com/teamgram/teamgram-server/app/bff/premium"
 	privacysettingshelper "github.com/teamgram/teamgram-server/app/bff/privacysettings"
@@ -256,6 +257,13 @@ func (s *Server) Initialize() error {
 		walletSvc := wallet_helper.New()
 		mtproto.RegisterRPCWalletServer(grpcServer, walletSvc)
 		mtproto.RegisterRPCWalletCardServer(grpcServer, walletSvc)
+
+		// Stars balance, subscriptions, giveaways, and gift codes. No store charge.
+		paymentsSvc := payments_helper.New()
+		mtproto.RegisterRPCStarsServer(grpcServer, paymentsSvc)
+		mtproto.RegisterRPCStarSubscriptionsServer(grpcServer, paymentsSvc)
+		mtproto.RegisterRPCGiveawaysServer(grpcServer, paymentsSvc)
+		mtproto.RegisterRPCGiftCodesServer(grpcServer, paymentsSvc)
 
 		businessSvc := business_helper.New()
 		mtproto.RegisterRPCBusinessChatLinksServer(grpcServer, businessSvc)

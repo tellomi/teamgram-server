@@ -116,8 +116,8 @@ func (AntiSpamService) ChannelsReportAntiSpamFalsePositive(ctx context.Context, 
 	return channel.Shared().ReportAntiSpamFalsePositive(ctx, self, in.GetChannel(), in.GetMsgId())
 }
 
-// BoostsService serves the channel boost threshold. Other boost RPCs on this
-// service stay unimplemented.
+// BoostsService serves the channel boost threshold and premium.getBoosts*
+// plus premium.applyBoost. Story boost RPCs on this service stay unimplemented.
 type BoostsService struct {
 	mtproto.UnimplementedRPCBoostsServer
 }
