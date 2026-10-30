@@ -151,29 +151,29 @@ auth.resetLoginEmail,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implement
 auth.sendCode,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.signIn,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.signUp,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
-bots.addPreviewMedia,bots,P2,interactive,yes,yes,no,no,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsAddPreviewMedia handler
-bots.allowSendMessage,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCMiniBotApps,session.yaml routes RPCMiniBotApps but the bff process has no BotsAllowSendMessage handler
-bots.canSendMessage,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCMiniBotApps,session.yaml routes RPCMiniBotApps but the bff process has no BotsCanSendMessage handler
-bots.checkDownloadFileParams,bots,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCMiniBotApps,session.yaml routes RPCMiniBotApps but the bff process has no BotsCheckDownloadFileParams handler
-bots.checkUsername,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBots,no route in session.yaml (RPCBots is commented out) and no bff handler
-bots.createBot,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBots,no route in session.yaml (RPCBots is commented out) and no bff handler
-bots.deletePreviewMedia,bots,P2,interactive,yes,yes,no,no,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsDeletePreviewMedia handler
-bots.editPreviewMedia,bots,P2,interactive,no,yes,no,no,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsEditPreviewMedia handler
-bots.getAdminedBots,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBots,no route in session.yaml (RPCBots is commented out) and no bff handler
-bots.getBotInfo,bots,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCBots,no route in session.yaml (RPCBots is commented out) and no bff handler
-bots.getBotRecommendations,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBotVerificationIcons,no route in session.yaml and no bff handler
-bots.getPopularAppBots,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPopularAppBots handler
-bots.getPreviewInfo,bots,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPreviewInfo handler
-bots.getPreviewMedias,bots,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPreviewMedias handler
-bots.getRequestedWebViewButton,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCMiniBotApps,session.yaml routes RPCMiniBotApps but the bff process has no BotsGetRequestedWebViewButton handler
-bots.invokeWebViewCustomMethod,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCMiniBotApps,session.yaml routes RPCMiniBotApps but the bff process has no BotsInvokeWebViewCustomMethod handler
-bots.reorderPreviewMedias,bots,P2,interactive,yes,yes,no,no,routed-but-unregistered,error,yes,absent,RPCMainMiniBotApps,session.yaml routes RPCMainMiniBotApps but the bff process has no BotsReorderPreviewMedias handler
-bots.reorderUsernames,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFragment,session.yaml routes RPCFragment but the bff process has no BotsReorderUsernames handler
-bots.setBotInfo,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBots,no route in session.yaml (RPCBots is commented out) and no bff handler
-bots.setCustomVerification,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBotVerificationIcons,no route in session.yaml and no bff handler
-bots.toggleUserEmojiStatusPermission,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCEmojiStatus,session.yaml routes RPCEmojiStatus but the bff process has no BotsToggleUserEmojiStatusPermission handler
-bots.toggleUsername,bots,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFragment,session.yaml routes RPCFragment but the bff process has no BotsToggleUsername handler
-bots.updateStarRefProgram,bots,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
+bots.addPreviewMedia,bots,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.allowSendMessage,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.canSendMessage,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.checkDownloadFileParams,bots,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.checkUsername,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBots,app/bff/bots/service.go
+bots.createBot,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBots,app/bff/bots/service.go
+bots.deletePreviewMedia,bots,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.editPreviewMedia,bots,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.getAdminedBots,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBots,app/bff/bots/service.go
+bots.getBotInfo,bots,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCBots,app/bff/bots/service.go
+bots.getBotRecommendations,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBotVerificationIcons,app/bff/bots/service.go
+bots.getPopularAppBots,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.getPreviewInfo,bots,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.getPreviewMedias,bots,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.getRequestedWebViewButton,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.invokeWebViewCustomMethod,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.reorderPreviewMedias,bots,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCMainMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
+bots.reorderUsernames,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
+bots.setBotInfo,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBots,app/bff/bots/service.go
+bots.setCustomVerification,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBotVerificationIcons,app/bff/bots/service.go
+bots.toggleUserEmojiStatusPermission,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
+bots.toggleUsername,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
+bots.updateStarRefProgram,bots,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
 channels.checkSearchPostsFlood,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 channels.checkUsername,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
 channels.convertToGigagroup,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
@@ -583,7 +583,7 @@ payments.changeStarsSubscription,premium/payments,P2,interactive,yes,no,yes,yes,
 payments.checkCanSendGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.checkGiftCode,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiftCodes,no route in session.yaml and no bff handler
 payments.clearSavedInfo,premium/payments,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsClearSavedInfo handler
-payments.connectStarRefBot,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
+payments.connectStarRefBot,premium/payments,P2,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
 payments.convertStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.craftStarGift,premium/payments,P2,interactive,yes,no,yes,no,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.createOnrampSession,premium/payments,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsCreateOnrampSession handler
@@ -592,11 +592,11 @@ payments.deleteStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,e
 payments.deleteStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGiftCollections,no route in session.yaml and no bff handler
 payments.depositStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
 payments.displayStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
-payments.editConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
+payments.editConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
 payments.fulfillStarsSubscription,premium/payments,P2,interactive,yes,no,no,yes,missing,error,no,absent,RPCStarSubscriptions,no route in session.yaml and no bff handler
 payments.getBankCardData,premium/payments,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetBankCardData handler
-payments.getConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
-payments.getConnectedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
+payments.getConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
+payments.getConnectedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
 payments.getCraftStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.getCurrencyRates,premium/payments,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler
 payments.getGiveawayInfo,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiveaways,no route in session.yaml and no bff handler
@@ -629,7 +629,7 @@ payments.getStarsSubscriptions,premium/payments,P2,interactive,yes,no,yes,yes,mi
 payments.getStarsTopupOptions,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCStars,no route in session.yaml and no bff handler
 payments.getStarsTransactions,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCStars,no route in session.yaml and no bff handler
 payments.getStarsTransactionsByID,premium/payments,P2,interactive,yes,no,no,yes,missing,error,no,absent,RPCStars,no route in session.yaml and no bff handler
-payments.getSuggestedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCAffiliatePrograms,no route in session.yaml and no bff handler
+payments.getSuggestedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
 payments.getUniqueStarGift,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.getUniqueStarGiftValueInfo,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
 payments.launchPrepaidGiveaway,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiveaways,no route in session.yaml and no bff handler

@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/accountrest"
+	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/historysplit"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -77,6 +78,16 @@ func (s FragmentService) AccountToggleUsername(ctx context.Context, in *mtproto.
 		})
 	}
 	return ok, err
+}
+
+func (s FragmentService) BotsReorderUsernames(ctx context.Context, in *mtproto.TLBotsReorderUsernames) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	return botadmin.ReorderUsernames(ctx, self, in.GetBot(), in.GetOrder())
+}
+
+func (s FragmentService) BotsToggleUsername(ctx context.Context, in *mtproto.TLBotsToggleUsername) (*mtproto.Bool, error) {
+	self, _ := actor(ctx)
+	return botadmin.ToggleUsername(ctx, self, in.GetBot(), in.GetUsername(), mtproto.FromBool(in.GetActive()))
 }
 
 func (s FragmentService) seedPrimaryUsername(ctx context.Context, self int64) {
