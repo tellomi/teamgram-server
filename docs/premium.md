@@ -64,6 +64,8 @@ Accounts with `premium=1` and an unexpired `premium_expire_date` still receive t
 
 `help.getAppConfig` (both constructors) publishes each limit twice. The `_premium` value is always the raised cap. The `_default` value is the raised cap when the global switch is on or that feature is free, and the stock cap otherwise. The hash changes with the policy. A client that sends the current hash receives `help.appConfigNotModified`.
 
+`emoji_blocklist` in that document is a JSON array of emoji to hide. The default is the Taiwan flag 🇹🇼 (`U+1F1F9` `U+1F1FC`). The hash also changes when the list changes. See [Stickers and emoji](stickers.md#emoji-blocklist).
+
 `premium_purchase_blocked` follows `TELLOMI_PREMIUM_PURCHASE_BLOCKED`. While it is true, `help.getPremiumPromo` has no subscription periods, purchase checks return `boolFalse`, store receipts return `PAYMENT_UNSUPPORTED`, and `users.getFullUser` does not include gift prices.
 
 `help.getPeerColors` and `help.getPeerProfileColors` still return the palette. Saving a color or an emoji status checks the feature gate and then stores the value. Color id 0 is stored as `1` in `users.color` / `users.profile_color` because `0` in that column means "no color".

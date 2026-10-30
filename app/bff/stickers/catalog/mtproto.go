@@ -9,9 +9,10 @@ import (
 const stickerDate int32 = 1700000000
 
 func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
+	items := p.visibleItems()
 	var thumbID int64
-	if len(p.Items) > 0 {
-		thumbID = p.Items[0].DocumentID
+	if len(items) > 0 {
+		thumbID = items[0].DocumentID
 	}
 	set := &mtproto.StickerSet{
 		Archived:   archived,
@@ -25,8 +26,8 @@ func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 		AccessHash: p.AccessHash,
 		Title:      p.Title,
 		ShortName:  p.ShortName,
-		Count:      int32(len(p.Items)),
-		Hash:       int32(hash64(p.docIDs())),
+		Count:      int32(len(items)),
+		Hash:       int32(hash64(documentIDs(items))),
 		ThumbDcId:  wrapperspb.Int32(1),
 	}
 	if thumbID != 0 {
@@ -40,16 +41,13 @@ func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 }
 
 func (p *Pack) docIDs() []int64 {
-	ids := make([]int64, 0, len(p.Items))
-	for _, item := range p.Items {
-		ids = append(ids, item.DocumentID)
-	}
-	return ids
+	return documentIDs(p.visibleItems())
 }
 
 func (p *Pack) documents() []*mtproto.Document {
-	out := make([]*mtproto.Document, 0, len(p.Items))
-	for _, item := range p.Items {
+	items := p.visibleItems()
+	out := make([]*mtproto.Document, 0, len(items))
+	for _, item := range items {
 		out = append(out, item.document(p))
 	}
 	return out
@@ -58,7 +56,7 @@ func (p *Pack) documents() []*mtproto.Document {
 func (p *Pack) packs() []*mtproto.StickerPack {
 	groups := map[string][]int64{}
 	var order []string
-	for _, item := range p.Items {
+	for _, item := range p.visibleItems() {
 		if _, ok := groups[item.Emoticon]; !ok {
 			order = append(order, item.Emoticon)
 		}
@@ -75,9 +73,10 @@ func (p *Pack) packs() []*mtproto.StickerPack {
 }
 
 func (p *Pack) covered(installed, archived bool) *mtproto.StickerSetCovered {
+	items := p.visibleItems()
 	cover := (*mtproto.Document)(nil)
-	if len(p.Items) > 0 {
-		cover = p.Items[0].document(p)
+	if len(items) > 0 {
+		cover = items[0].document(p)
 	}
 	return mtproto.MakeTLStickerSetCovered(&mtproto.StickerSetCovered{
 		Set:   p.tl(installed, archived),
