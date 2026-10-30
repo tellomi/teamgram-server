@@ -1,0 +1,66 @@
+// payments.deleteStarGift, payments.withdrawStarGift, payments.depositStarGift,
+// and payments.displayStarGift are in telegram_api_layer232.tl. The vendored
+// layer-231 codegen did not emit them. TL encode/decode lives in
+// stargift_host_codec.go.
+//
+// payments.deleteStarGift#3cdaf8aa stargift:InputSavedStarGift = Bool;
+// payments.withdrawStarGift#ec2030ae flags:# keep_on_profile:flags.0?true stargift:InputSavedStarGift tmp_password:bytes = Bool;
+// payments.depositStarGift#c0a2ea9f flags:# hide_sender:flags.0?true peer:InputPeer slug:string = payments.StarGiftDepositPayload;
+// payments.displayStarGift#4aa5f0fe flags:# peer:flags.0?InputPeer slug:string = Bool;
+// payments.starGiftDepositPayload#725bb4eb nft_address:string payload:bytes amount:long = payments.StarGiftDepositPayload;
+
+syntax = "proto3";
+
+package mtproto;
+
+import "schema.tl.core_types.proto";
+import "schema.tl.crc32.proto";
+import "schema.tl.sync.proto";
+
+option go_package = "github.com/teamgram/proto/mtproto";
+
+// Payments_StarGiftDepositPayload is payments.starGiftDepositPayload.
+message Payments_StarGiftDepositPayload {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  string nft_address = 3;
+  bytes payload = 4;
+  int64 amount = 5;
+}
+
+// TL_payments_deleteStarGift is payments.deleteStarGift#3cdaf8aa.
+message TL_payments_deleteStarGift {
+  TLConstructor constructor = 1;
+  InputSavedStarGift stargift = 3;
+}
+
+// TL_payments_withdrawStarGift is payments.withdrawStarGift#ec2030ae.
+message TL_payments_withdrawStarGift {
+  TLConstructor constructor = 1;
+  bool keep_on_profile = 3;
+  InputSavedStarGift stargift = 4;
+  bytes tmp_password = 5;
+}
+
+// TL_payments_depositStarGift is payments.depositStarGift#c0a2ea9f.
+message TL_payments_depositStarGift {
+  TLConstructor constructor = 1;
+  bool hide_sender = 3;
+  InputPeer peer = 4;
+  string slug = 5;
+}
+
+// TL_payments_displayStarGift is payments.displayStarGift#4aa5f0fe.
+message TL_payments_displayStarGift {
+  TLConstructor constructor = 1;
+  bool has_peer = 3;
+  InputPeer peer = 4;
+  string slug = 5;
+}
+
+service RPCStarGiftHost {
+  rpc payments_deleteStarGift(TL_payments_deleteStarGift) returns (Bool);
+  rpc payments_withdrawStarGift(TL_payments_withdrawStarGift) returns (Bool);
+  rpc payments_depositStarGift(TL_payments_depositStarGift) returns (Payments_StarGiftDepositPayload);
+  rpc payments_displayStarGift(TL_payments_displayStarGift) returns (Bool);
+}

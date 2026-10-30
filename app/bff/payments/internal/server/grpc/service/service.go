@@ -8,12 +8,17 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/payments/internal/svc"
 )
 
-// Service implements Stars balance, subscriptions, giveaways, and gift codes.
+// Service implements Stars balance, subscriptions, giveaways, gift codes,
+// and Star gift reads. Gift mutations that need an inventory return 400.
 type Service struct {
 	mtproto.UnimplementedRPCStarsServer
 	mtproto.UnimplementedRPCStarSubscriptionsServer
 	mtproto.UnimplementedRPCGiveawaysServer
 	mtproto.UnimplementedRPCGiftCodesServer
+	mtproto.UnimplementedRPCGiftsServer
+	mtproto.UnimplementedRPCGiftCollectionsServer
+	mtproto.UnimplementedRPCFragmentCollectiblesServer
+	mtproto.UnimplementedRPCStarGiftHostServer
 	svcCtx *svc.ServiceContext
 }
 

@@ -1,7 +1,8 @@
-// Package book is the in-process Stars balance and Premium boost book.
+// Package book is the in-process Stars, gift, and Premium boost book.
 //
 // Balances stay at zero. Nothing here charges a card, talks to a store, or
-// mints Stars. Boost slots are remembered for the life of the process.
+// mints Stars. Boost slots and gift-collection titles are remembered for the
+// life of the process. There is no gift inventory.
 package book
 
 import (
@@ -51,12 +52,29 @@ const (
 	CodeBoostCooldown       = "BOOST_COOLDOWN"
 	CodePremiumRequired     = "PREMIUM_ACCOUNT_REQUIRED"
 	CodeAuthKeyUnregistered = "AUTH_KEY_UNREGISTERED"
+	CodeStarGiftInvalid     = "STARGIFT_INVALID"
+	CodeStarGiftMissing     = "STARGIFT_NOT_FOUND"
+	CodeStarGiftSlugInvalid = "STARGIFT_SLUG_INVALID"
+	CodeSavedIDEmpty        = "SAVED_ID_EMPTY"
+	CodeCollectionInvalid   = "COLLECTION_ID_INVALID"
+	CodeTitleInvalid        = "TITLE_INVALID"
+	CodeCollectionsTooMuch  = "COLLECTIONS_TOO_MUCH"
+	CodeCollectibleInvalid  = "COLLECTIBLE_INVALID"
+	CodeCollectibleMissing  = "COLLECTIBLE_NOT_FOUND"
+	CodeRandomIDEmpty       = "RANDOM_ID_EMPTY"
 )
 
-// Book stores boost slots. Stars reads do not write it.
+const (
+	maxTitleRunes  = 64
+	maxGiftRefs    = 100
+	maxCollections = 100
+)
+
+// Book stores boost slots and gift-collection titles. Stars reads do not write it.
 type Book struct {
 	mu      sync.Mutex
 	users   map[int64]*account
+	gifts   *giftState
 	now     func() int32
 	premium func() bool
 }
@@ -78,6 +96,7 @@ type slotState struct {
 func New() *Book {
 	return &Book{
 		users:   map[int64]*account{},
+		gifts:   newGiftState(),
 		now:     func() int32 { return int32(time.Now().Unix()) },
 		premium: func() bool { return premium.Load().Everyone },
 	}

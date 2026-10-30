@@ -258,12 +258,19 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCWalletServer(grpcServer, walletSvc)
 		mtproto.RegisterRPCWalletCardServer(grpcServer, walletSvc)
 
-		// Stars balance, subscriptions, giveaways, and gift codes. No store charge.
+		// Stars balance, subscriptions, giveaways, gift codes, and Star gifts.
+		// No store charge and no gift inventory.
 		paymentsSvc := payments_helper.New()
 		mtproto.RegisterRPCStarsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarSubscriptionsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCGiveawaysServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCGiftCodesServer(grpcServer, paymentsSvc)
+		mtproto.RegisterRPCGiftsServer(grpcServer, paymentsSvc)
+		mtproto.RegisterRPCGiftCollectionsServer(grpcServer, paymentsSvc)
+		mtproto.RegisterRPCFragmentCollectiblesServer(grpcServer, paymentsSvc)
+		// delete, withdraw, deposit, and display are layer 232 but were not
+		// in the vendored RPCGifts service.
+		mtproto.RegisterRPCStarGiftHostServer(grpcServer, paymentsSvc)
 
 		businessSvc := business_helper.New()
 		mtproto.RegisterRPCBusinessChatLinksServer(grpcServer, businessSvc)
