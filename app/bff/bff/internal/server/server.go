@@ -48,6 +48,7 @@ import (
 	privacysettingshelper "github.com/teamgram/teamgram-server/app/bff/privacysettings"
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
 	savedmessagedialogshelper "github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs"
+	seamlesshelper "github.com/teamgram/teamgram-server/app/bff/seamless"
 	sponsoredmessages_helper "github.com/teamgram/teamgram-server/app/bff/sponsoredmessages"
 	stickers_helper "github.com/teamgram/teamgram-server/app/bff/stickers"
 	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
@@ -483,6 +484,8 @@ func (s *Server) Initialize() error {
 			webbrowserhelper.New(webbrowserhelper.Config{
 				RpcServerConf: c.RpcServerConf,
 			}))
+
+		mtproto.RegisterRPCSeamlessServer(grpcServer, seamlesshelper.New())
 	})
 
 	// logx.Must(err)

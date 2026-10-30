@@ -1416,6 +1416,10 @@ var (
 	// | 400 | REACTION_EMPTY | Empty reaction provided. |
 	ErrReactionEmpty = status.Error(ErrBadRequest, "REACTION_EMPTY")
 
+	// ErrReactionsCountInvalid
+	// | 400 | REACTIONS_COUNT_INVALID | The specified number of reactions is invalid. |
+	ErrReactionsCountInvalid = status.Error(ErrBadRequest, "REACTIONS_COUNT_INVALID")
+
 	// ErrAuthBytesInvalid
 	// | 400 | AUTH_BYTES_INVALID | The provided authorization is invalid. |
 	ErrAuthBytesInvalid = status.Error(ErrBadRequest, "AUTH_BYTES_INVALID")
@@ -1532,6 +1536,10 @@ var (
 	// ErrRandomIdEmpty
 	// | 400 | RANDOM_ID_EMPTY | Random ID empty. |
 	ErrRandomIdEmpty = status.Error(ErrBadRequest, "RANDOM_ID_EMPTY")
+
+	// ErrRandomIdExpired
+	// | 400 | RANDOM_ID_EXPIRED | The random_id is expired or does not use the required unix-time prefix. |
+	ErrRandomIdExpired = status.Error(ErrBadRequest, "RANDOM_ID_EXPIRED")
 
 	// ErrMediaEmpty
 	// | 400 | MEDIA_EMPTY | The provided media object is invalid. |
