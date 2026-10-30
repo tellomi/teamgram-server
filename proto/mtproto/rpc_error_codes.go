@@ -919,6 +919,22 @@ var (
 	// | 400 | IMPORT_ID_INVALID | The specified import ID is invalid. |
 	ErrImportIdInvalid = status.Error(ErrBadRequest, "IMPORT_ID_INVALID")
 
+	// ErrWallpaperNotFound
+	// | 400 | WALLPAPER_NOT_FOUND | The specified wallpaper could not be found. |
+	ErrWallpaperNotFound = status.Error(ErrBadRequest, "WALLPAPER_NOT_FOUND")
+
+	// ErrTodoItemDuplicate
+	// | 400 | TODO_ITEM_DUPLICATE | Duplicate checklist items detected. |
+	ErrTodoItemDuplicate = status.Error(ErrBadRequest, "TODO_ITEM_DUPLICATE")
+
+	// ErrTodoNotModified
+	// | 400 | TODO_NOT_MODIFIED | No todo items were specified, so no changes were made to the todo list. |
+	ErrTodoNotModified = status.Error(ErrBadRequest, "TODO_NOT_MODIFIED")
+
+	// ErrAiComposeTaskMissing
+	// | 400 | AI_COMPOSE_TASK_MISSING | No AI task was specified. The caller must provide at least one of: proofread, translate (with a target language), tone, or emojify. |
+	ErrAiComposeTaskMissing = status.Error(ErrBadRequest, "AI_COMPOSE_TASK_MISSING")
+
 	// ErrInviteForbiddenWithJoinas
 	// | 400 | INVITE_FORBIDDEN_WITH_JOINAS | If the user has anonymously joined a group call as a channel, they can't invite other users to the group call because that would cause deanonymization, because the invite would be sent using the original user ID, not the anonymized channel ID. |
 	ErrInviteForbiddenWithJoinas = status.Error(ErrBadRequest, "INVITE_FORBIDDEN_WITH_JOINAS")
@@ -2219,6 +2235,10 @@ var (
 	// ErrForbiddenChatAdminRequired
 	// | 403 | CHAT_ADMIN_REQUIRED | You must be an admin in this chat to do this. |
 	ErrForbiddenChatAdminRequired = status.Error(ErrForbidden, "CHAT_ADMIN_REQUIRED")
+
+	// ErrChatActionForbidden
+	// | 403 | CHAT_ACTION_FORBIDDEN | You cannot execute this action. |
+	ErrChatActionForbidden = status.Error(ErrForbidden, "CHAT_ACTION_FORBIDDEN")
 
 	// ErrChatSendPollForbidden
 	// | 403 | CHAT_SEND_POLL_FORBIDDEN | You can't send polls in this chat. |

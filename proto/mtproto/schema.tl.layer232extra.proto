@@ -1,0 +1,91 @@
+// Layer 232 constructors that are not in the upstream teamgram/proto
+// generated service.
+//
+// shareThemeDefault#95ace84f = ShareTheme;
+// shareThemeEmojiBackdrop#64b334e1 flags:# backdrop_id:flags.0?int emojis:flags.1?Vector<Reaction> = ShareTheme;
+// shareThemeGift#ebece66d stargift:StarGift = ShareTheme;
+// inputShareThemeGift#3fb92b5b stargift:InputSavedStarGift = ShareTheme;
+// shareThemeBackdropOption#45c1d652 backdrop_id:int name:string center_color:int edge_color:int pattern_color:int text_color:int = ShareThemeBackdropOption;
+// shareThemeBackdropsNotModified#7a3f6dff = ShareThemeBackdrops;
+// shareThemeBackdrops#aaeadce0 hash:int backdrops:Vector<ShareThemeBackdropOption> = ShareThemeBackdrops;
+// messages.setShareTheme#698a9b1a peer:InputPeer theme:ShareTheme = Bool;
+// messages.getShareThemeBackdrops#f4599ef2 hash:int = ShareThemeBackdrops;
+//
+// messages.getStatsURL is not in telegram_api_layer232.tl. Android
+// 3de37c8 still sends constructor 0x812c2ae6:
+// messages.getStatsURL#812c2ae6 flags:# dark:flags.0?true peer:InputPeer params:string = StatsURL;
+//
+// TL encode/decode lives in layer232_extra_codec.go.
+
+syntax = "proto3";
+
+package mtproto;
+
+import "schema.tl.core_types.proto";
+import "schema.tl.crc32.proto";
+import "schema.tl.sync.proto";
+
+option go_package = "github.com/teamgram/proto/mtproto";
+
+// ShareTheme is the ShareTheme union.
+message ShareTheme {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  // BackdropId is set for shareThemeEmojiBackdrop when flags.0 is set.
+  // Zero with the flag unset means no backdrop.
+  int32 backdrop_id = 3;
+  bool has_backdrop = 4;
+  repeated Reaction emojis = 5;
+  StarGift stargift = 6;
+  InputSavedStarGift input_gift = 7;
+}
+
+// ShareThemeBackdropOption is shareThemeBackdropOption#45c1d652.
+message ShareThemeBackdropOption {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  int32 backdrop_id = 3;
+  string name = 4;
+  int32 center_color = 5;
+  int32 edge_color = 6;
+  int32 pattern_color = 7;
+  int32 text_color = 8;
+}
+
+// ShareThemeBackdrops is shareThemeBackdrops or shareThemeBackdropsNotModified.
+message ShareThemeBackdrops {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  int32 hash = 3;
+  repeated ShareThemeBackdropOption backdrops = 4;
+}
+
+// TL_messages_setShareTheme is messages.setShareTheme#698a9b1a.
+message TL_messages_setShareTheme {
+  TLConstructor constructor = 1;
+  InputPeer peer = 3;
+  ShareTheme theme = 4;
+}
+
+// TL_messages_getShareThemeBackdrops is messages.getShareThemeBackdrops#f4599ef2.
+message TL_messages_getShareThemeBackdrops {
+  TLConstructor constructor = 1;
+  int32 hash = 3;
+}
+
+// TL_messages_getStatsURL is the Android messages.getStatsURL#812c2ae6 body.
+message TL_messages_getStatsURL {
+  TLConstructor constructor = 1;
+  bool dark = 3;
+  InputPeer peer = 4;
+  string params = 5;
+}
+
+service RPCShareThemes {
+  rpc messages_setShareTheme(TL_messages_setShareTheme) returns (Bool);
+  rpc messages_getShareThemeBackdrops(TL_messages_getShareThemeBackdrops) returns (ShareThemeBackdrops);
+}
+
+service RPCStatsURL {
+  rpc messages_getStatsURL(TL_messages_getStatsURL) returns (StatsURL);
+}

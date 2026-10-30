@@ -936,6 +936,9 @@ var rpcContextRegisters = map[string]RPCContextTuple{
 	"TLMessagesGetWebPage8D9692A3":                       RPCContextTuple{"/mtproto.RPCWebPage/messages_getWebPage8D9692A3", func() interface{} { return new(Messages_WebPage) }},
 	"TLMessagesGetWebPagePreview8B68B0CC":                RPCContextTuple{"/mtproto.RPCWebPage/messages_getWebPagePreview8B68B0CC", func() interface{} { return new(MessageMedia) }},
 	"TLMessagesGetWebPage32CA8F91":                       RPCContextTuple{"/mtproto.RPCWebPage/messages_getWebPage32CA8F91", func() interface{} { return new(WebPage) }},
+	"TLMessagesSetShareTheme":                            RPCContextTuple{"/mtproto.RPCShareThemes/messages_setShareTheme", func() interface{} { return new(Bool) }},
+	"TLMessagesGetShareThemeBackdrops":                   RPCContextTuple{"/mtproto.RPCShareThemes/messages_getShareThemeBackdrops", func() interface{} { return new(ShareThemeBackdrops) }},
+	"TLMessagesGetStatsURL":                              RPCContextTuple{"/mtproto.RPCStatsURL/messages_getStatsURL", func() interface{} { return new(StatsURL) }},
 	"TLBizInvokeBizDataRaw":                              RPCContextTuple{"/mtproto.RPCBiz/biz_invokeBizDataRaw", func() interface{} { return new(BizDataRaw) }},
 }
 

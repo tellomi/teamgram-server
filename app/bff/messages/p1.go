@@ -44,3 +44,35 @@ func NewPaidMedia() *service.PaidMediaService { return &service.PaidMediaService
 
 // NewDelivery serves messages.reportMessagesDelivery.
 func NewDelivery() *service.DeliveryService { return &service.DeliveryService{} }
+
+// NewThemes serves messages.setChatTheme. Theme catalogs stay empty.
+func NewThemes() *service.ThemesService { return &service.ThemesService{} }
+
+// NewWallpapers serves messages.setChatWallPaper. Wallpaper catalogs stay empty.
+func NewWallpapers() *service.WallpapersService { return &service.WallpapersService{} }
+
+// NewShareThemes serves messages.setShareTheme and messages.getShareThemeBackdrops.
+func NewShareThemes() *service.ShareThemesService { return &service.ShareThemesService{} }
+
+// NewImportedChats serves the history-import RPCs.
+func NewImportedChats() *service.ImportedChatsService { return &service.ImportedChatsService{} }
+
+// NewTodoLists serves checklist append and completion toggles.
+func NewTodoLists() *service.TodoListsService { return &service.TodoListsService{} }
+
+// NewFactChecks serves fact-check reads and edits.
+func NewFactChecks() *service.FactChecksService { return &service.FactChecksService{} }
+
+// NewAICompose serves messages.composeMessageWithAI.
+func NewAICompose() *service.AIComposeService { return &service.AIComposeService{} }
+
+// NewGames serves messages.getEmojiGameInfo.
+func NewGames() *service.GamesService { return &service.GamesService{} }
+
+// NewStatsURL serves the Android messages.getStatsURL constructor.
+func NewStatsURL() *service.StatsURLService { return &service.StatsURLService{} }
+
+// NewSuggestedPosts serves messages.toggleSuggestedPostApproval.
+func NewSuggestedPosts() *service.SuggestedPostsService {
+	return &service.SuggestedPostsService{}
+}
