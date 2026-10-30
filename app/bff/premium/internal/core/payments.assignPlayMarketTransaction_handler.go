@@ -25,5 +25,14 @@ import (
 // PaymentsAssignPlayMarketTransaction
 // payments.assignPlayMarketTransaction#dffd50d3 receipt:DataJSON purpose:InputStorePaymentPurpose = Updates;
 func (c *PremiumCore) PaymentsAssignPlayMarketTransaction(in *mtproto.TLPaymentsAssignPlayMarketTransaction) (*mtproto.Updates, error) {
-	return nil, mtproto.ErrPaymentUnsupported
+	if c == nil || c.MD == nil || c.MD.GetUserId() == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	var receipt *mtproto.DataJSON
+	var purpose *mtproto.InputStorePaymentPurpose
+	if in != nil {
+		receipt = in.GetReceipt()
+		purpose = in.GetPurpose()
+	}
+	return nil, assignPlayMarket(receipt, purpose)
 }

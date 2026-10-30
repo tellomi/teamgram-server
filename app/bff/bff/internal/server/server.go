@@ -258,9 +258,12 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCWalletServer(grpcServer, walletSvc)
 		mtproto.RegisterRPCWalletCardServer(grpcServer, walletSvc)
 
-		// Stars balance, subscriptions, giveaways, gift codes, and Star gifts.
-		// No store charge and no gift inventory.
+		// Stars balance, subscriptions, giveaways, gift codes, Star gifts,
+		// payment forms, and on-ramp. No card charge and no gift inventory.
+		// RPCPayments also serves account.getTmpPassword; that method is
+		// delegated to the two-factor core.
 		paymentsSvc := payments_helper.New()
+		mtproto.RegisterRPCPaymentsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarSubscriptionsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCGiveawaysServer(grpcServer, paymentsSvc)
@@ -445,7 +448,6 @@ func (s *Server) Initialize() error {
 
 		twofaSvc := twofa_helper.New()
 		mtproto.RegisterRPCTwoFaServer(grpcServer, twofaSvc)
-		mtproto.RegisterRPCPaymentsServer(grpcServer, twofaSvc)
 
 		// users_helper
 		mtproto.RegisterRPCUsersServer(

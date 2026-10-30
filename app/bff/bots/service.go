@@ -110,26 +110,44 @@ func (s *Service) BotsUpdateStarRefProgram(ctx context.Context, in *mtproto.TLBo
 	return botadmin.UpdateStarRefProgram(ctx, selfID(ctx), in.GetBot(), in.GetCommissionPermille(), in.GetDurationMonths())
 }
 
-// The rest of RPCAffiliatePrograms is payments. Those methods stay
-// METHOD_NOT_IMPL, the same 400 the session returned when the service was
-// not routed. Payments are outside this change.
+// Affiliate connections live next to the bot's star ref program.
 
-func (s *Service) PaymentsGetConnectedStarRefBots(context.Context, *mtproto.TLPaymentsGetConnectedStarRefBots) (*mtproto.Payments_ConnectedStarRefBots, error) {
-	return nil, mtproto.ErrMethodNotImpl
+func (s *Service) PaymentsGetConnectedStarRefBots(ctx context.Context, in *mtproto.TLPaymentsGetConnectedStarRefBots) (*mtproto.Payments_ConnectedStarRefBots, error) {
+	return botadmin.ConnectedStarRefBots(selfID(ctx), in)
 }
 
-func (s *Service) PaymentsGetConnectedStarRefBot(context.Context, *mtproto.TLPaymentsGetConnectedStarRefBot) (*mtproto.Payments_ConnectedStarRefBots, error) {
-	return nil, mtproto.ErrMethodNotImpl
+func (s *Service) PaymentsGetConnectedStarRefBot(ctx context.Context, in *mtproto.TLPaymentsGetConnectedStarRefBot) (*mtproto.Payments_ConnectedStarRefBots, error) {
+	var peer *mtproto.InputPeer
+	var bot *mtproto.InputUser
+	if in != nil {
+		peer = in.GetPeer()
+		bot = in.GetBot()
+	}
+	return botadmin.ConnectedStarRefBot(selfID(ctx), peer, bot)
 }
 
-func (s *Service) PaymentsGetSuggestedStarRefBots(context.Context, *mtproto.TLPaymentsGetSuggestedStarRefBots) (*mtproto.Payments_SuggestedStarRefBots, error) {
-	return nil, mtproto.ErrMethodNotImpl
+func (s *Service) PaymentsGetSuggestedStarRefBots(ctx context.Context, in *mtproto.TLPaymentsGetSuggestedStarRefBots) (*mtproto.Payments_SuggestedStarRefBots, error) {
+	return botadmin.SuggestedStarRefBots(selfID(ctx), in)
 }
 
-func (s *Service) PaymentsConnectStarRefBot(context.Context, *mtproto.TLPaymentsConnectStarRefBot) (*mtproto.Payments_ConnectedStarRefBots, error) {
-	return nil, mtproto.ErrMethodNotImpl
+func (s *Service) PaymentsConnectStarRefBot(ctx context.Context, in *mtproto.TLPaymentsConnectStarRefBot) (*mtproto.Payments_ConnectedStarRefBots, error) {
+	var peer *mtproto.InputPeer
+	var bot *mtproto.InputUser
+	if in != nil {
+		peer = in.GetPeer()
+		bot = in.GetBot()
+	}
+	return botadmin.ConnectStarRefBot(selfID(ctx), peer, bot)
 }
 
-func (s *Service) PaymentsEditConnectedStarRefBot(context.Context, *mtproto.TLPaymentsEditConnectedStarRefBot) (*mtproto.Payments_ConnectedStarRefBots, error) {
-	return nil, mtproto.ErrMethodNotImpl
+func (s *Service) PaymentsEditConnectedStarRefBot(ctx context.Context, in *mtproto.TLPaymentsEditConnectedStarRefBot) (*mtproto.Payments_ConnectedStarRefBots, error) {
+	var peer *mtproto.InputPeer
+	link := ""
+	revoked := false
+	if in != nil {
+		peer = in.GetPeer()
+		link = in.GetLink()
+		revoked = in.GetRevoked()
+	}
+	return botadmin.EditConnectedStarRefBot(selfID(ctx), peer, link, revoked)
 }

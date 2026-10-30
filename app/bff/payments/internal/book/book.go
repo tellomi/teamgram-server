@@ -70,11 +70,13 @@ const (
 	maxCollections = 100
 )
 
-// Book stores boost slots and gift-collection titles. Stars reads do not write it.
+// Book stores boost slots, gift-collection titles, and saved checkout info.
+// Stars reads do not write it. Nothing here charges a card.
 type Book struct {
 	mu      sync.Mutex
 	users   map[int64]*account
 	gifts   *giftState
+	payers  map[int64]*payerState
 	now     func() int32
 	premium func() bool
 }
@@ -97,6 +99,7 @@ func New() *Book {
 	return &Book{
 		users:   map[int64]*account{},
 		gifts:   newGiftState(),
+		payers:  map[int64]*payerState{},
 		now:     func() int32 { return int32(time.Now().Unix()) },
 		premium: func() bool { return premium.Load().Everyone },
 	}
