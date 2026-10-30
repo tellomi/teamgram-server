@@ -92,7 +92,8 @@ BFFProxyClients:
     "/mtproto.RPCPreparedInlineMessages": "bff.bff"
     #"/mtproto.RPCBots": "bff.bff"
     #"/mtproto.RPCInternalBot": "bff.bff"
-    #"/mtproto.RPCThemes": "bff.bff"
+    # messages.setChatTheme. account.getThemes and account.getChatThemes stay empty catalogs.
+    "/mtproto.RPCThemes": "bff.bff"
     "/mtproto.RPCContacts": "bff.bff"
     # Temporary profile links and free-message links.
     "/mtproto.RPCProfileLinks": "bff.bff"
@@ -106,9 +107,11 @@ BFFProxyClients:
     # Dialog folders (messages.getDialogFilters and the other folder RPCs).
     "/mtproto.RPCFolders": "bff.bff"
     "/mtproto.RPCFolderTags": "bff.bff"
-    #"/mtproto.RPCGames": "bff.bff"
+    # messages.getEmojiGameInfo. Other game score RPCs stay unimplemented.
+    "/mtproto.RPCGames": "bff.bff"
     #"/mtproto.RPCGroupCalls": "bff.bff"
-    #"/mtproto.RPCImportedChats": "bff.bff"
+    # History import: init, check, upload, and start.
+    "/mtproto.RPCImportedChats": "bff.bff"
     "/mtproto.RPCLangpack": "bff.bff"
     "/mtproto.RPCAutoDownload": "bff.bff"
     "/mtproto.RPCMessageThreads": "bff.bff"
@@ -149,7 +152,8 @@ BFFProxyClients:
     "/mtproto.RPCTranscription": "bff.bff"
     "/mtproto.RPCAccount": "bff.bff"
     "/mtproto.RPCUsernames": "bff.bff"
-    #"/mtproto.RPCWallpapers": "bff.bff"
+    # messages.setChatWallPaper. account.getWallPapers stays an empty catalog.
+    "/mtproto.RPCWallpapers": "bff.bff"
     "/mtproto.RPCSavedMessageDialogs": "bff.bff"
     # Saved-message reaction tags.
     "/mtproto.RPCSavedMessageTags": "bff.bff"
@@ -163,3 +167,15 @@ BFFProxyClients:
     "/mtproto.RPCGatewayVerificationMessages": "bff.bff"
     "/mtproto.RPCPrivacySettings": "bff.bff"
     "/mtproto.RPCUserChannelProfiles": "bff.bff"
+    # messages.setShareTheme and messages.getShareThemeBackdrops.
+    "/mtproto.RPCShareThemes": "bff.bff"
+    # Android messages.getStatsURL. Not in the layer-232 schema.
+    "/mtproto.RPCStatsURL": "bff.bff"
+    # messages.getFactCheck, messages.editFactCheck, messages.deleteFactCheck.
+    "/mtproto.RPCFactChecks": "bff.bff"
+    # messages.appendTodoList and messages.toggleTodoCompleted.
+    "/mtproto.RPCTodoLists": "bff.bff"
+    # messages.toggleSuggestedPostApproval.
+    "/mtproto.RPCSuggestedPosts": "bff.bff"
+    # messages.composeMessageWithAI. Other aicompose RPCs stay unimplemented.
+    "/mtproto.RPCAiComposeTone": "bff.bff"

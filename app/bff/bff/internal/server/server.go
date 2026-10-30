@@ -370,6 +370,18 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCSavedMessageTagsServer(grpcServer, messages_helper.NewSavedTags())
 		mtproto.RegisterRPCPaidMediaServer(grpcServer, messages_helper.NewPaidMedia())
 		mtproto.RegisterRPCGatewayVerificationMessagesServer(grpcServer, messages_helper.NewDelivery())
+		// Chat themes, wallpapers, share themes, history import, todos,
+		// fact-checks, AI compose, emoji games, stats URL, suggested posts.
+		mtproto.RegisterRPCThemesServer(grpcServer, messages_helper.NewThemes())
+		mtproto.RegisterRPCWallpapersServer(grpcServer, messages_helper.NewWallpapers())
+		mtproto.RegisterRPCShareThemesServer(grpcServer, messages_helper.NewShareThemes())
+		mtproto.RegisterRPCImportedChatsServer(grpcServer, messages_helper.NewImportedChats())
+		mtproto.RegisterRPCTodoListsServer(grpcServer, messages_helper.NewTodoLists())
+		mtproto.RegisterRPCFactChecksServer(grpcServer, messages_helper.NewFactChecks())
+		mtproto.RegisterRPCAiComposeToneServer(grpcServer, messages_helper.NewAICompose())
+		mtproto.RegisterRPCGamesServer(grpcServer, messages_helper.NewGames())
+		mtproto.RegisterRPCStatsURLServer(grpcServer, messages_helper.NewStatsURL())
+		mtproto.RegisterRPCSuggestedPostsServer(grpcServer, messages_helper.NewSuggestedPosts())
 
 		// notification_helper
 		notifySvc := notification_helper.New(notification_helper.Config{
