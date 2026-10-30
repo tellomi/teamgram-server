@@ -1007,6 +1007,10 @@ var (
 	// | 400 | CHATLIST_EXCLUDE_INVALID |  |
 	ErrChatlistExcludeInvalid = status.Error(ErrBadRequest, "CHATLIST_EXCLUDE_INVALID")
 
+	// ErrChatlistsTooMuch
+	// | 400 | CHATLISTS_TOO_MUCH | You have created too many folder links, hitting the `chatlist_invites_limit_default`/`chatlist_invites_limit_premium` limits, or joined too many shared folders.
+	ErrChatlistsTooMuch = status.Error(ErrBadRequest, "CHATLISTS_TOO_MUCH")
+
 	// ErrDcIdInvalid
 	// | 400 | DC_ID_INVALID | The provided DC ID is invalid. |
 	ErrDcIdInvalid = status.Error(ErrBadRequest, "DC_ID_INVALID")

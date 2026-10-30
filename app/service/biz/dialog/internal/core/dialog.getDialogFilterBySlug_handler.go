@@ -42,8 +42,8 @@ func (c *DialogCore) DialogGetDialogFilterBySlug(in *dialog.TLDialogGetDialogFil
 	} else {
 		dialogFilter = &dialog.DialogFilterExt{
 			Id:           v.DialogFilterId,
-			JoinedBySlug: true,
-			Slug:         in.Slug,
+			JoinedBySlug: v.JoinedBySlug,
+			Slug:         v.Slug,
 			DialogFilter: nil,
 			Order:        v.OrderValue,
 		}

@@ -322,6 +322,7 @@ func (s *Server) Initialize() error {
 			RpcServerConf: c.RpcServerConf,
 			DialogClient:  c.BizServiceClient,
 			UserClient:    c.BizServiceClient,
+			ChatClient:    c.BizServiceClient,
 			SyncClient:    c.SyncClient,
 		})
 		mtproto.RegisterRPCFoldersServer(grpcServer, folderSvc)

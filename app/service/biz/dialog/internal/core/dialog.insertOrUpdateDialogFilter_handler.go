@@ -24,12 +24,9 @@ import (
 // DialogInsertOrUpdateDialogFilter
 // dialog.insertOrUpdateDialogFilter user_id:long id:int dialog_filter:DialogFilter = Bool;
 func (c *DialogCore) DialogInsertOrUpdateDialogFilter(in *dialog.TLDialogInsertOrUpdateDialogFilter) (*mtproto.Bool, error) {
-	dialogFilterData, err := jsonx.Marshal(in.GetDialogFilter())
-	isChatlist := in.GetDialogFilter().GetPredicateName() == mtproto.Predicate_dialogFilterChatlist
-
-	if err != nil {
-		c.Logger.Errorf("dialog.insertOrUpdateDialogFilter - error: %v", err)
-		return nil, err
+	filter := in.GetDialogFilter()
+	if filter == nil {
+		return nil, mtproto.ErrFilterIdInvalid
 	}
 
 	existing, selErr := c.svcCtx.Dao.DialogFiltersDAO.Select(c.ctx, in.UserId, in.Id)
@@ -62,6 +59,18 @@ func (c *DialogCore) DialogInsertOrUpdateDialogFilter(in *dialog.TLDialogInsertO
 			orderValue = minOrder - 1
 		}
 	}
+	if existing != nil && existing.DialogFilter != "" && existing.DialogFilter != "null" {
+		if old, err := mtproto.UnmarshalDialogFilter(existing.DialogFilter); err == nil {
+			mtproto.PreserveChatlistBlob(filter, old)
+		}
+	}
+
+	dialogFilterData, err := jsonx.Marshal(filter)
+	if err != nil {
+		c.Logger.Errorf("dialog.insertOrUpdateDialogFilter - error: %v", err)
+		return nil, err
+	}
+	isChatlist := filter.GetPredicateName() == mtproto.Predicate_dialogFilterChatlist
 
 	c.svcCtx.Dao.CachedConn.Exec(
 		c.ctx,
