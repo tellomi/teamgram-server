@@ -630,6 +630,8 @@ var rpcContextRegisters = map[string]RPCContextTuple{
 	"TLUsersGetIsPremiumRequiredToContact":               RPCContextTuple{"/mtproto.RPCPrivacySettings/users_getIsPremiumRequiredToContact", func() interface{} { return new(Vector_Bool) }},
 	"TLContactsExportContactToken":                       RPCContextTuple{"/mtproto.RPCProfileLinks/contacts_exportContactToken", func() interface{} { return new(ExportedContactToken) }},
 	"TLContactsImportContactToken":                       RPCContextTuple{"/mtproto.RPCProfileLinks/contacts_importContactToken", func() interface{} { return new(User) }},
+	"TLContactsExportNoPaidMessagesToken":                RPCContextTuple{"/mtproto.RPCNoPaidMessages/contacts_exportNoPaidMessagesToken", func() interface{} { return new(ExportedNoPaidMessagesToken) }},
+	"TLContactsImportNoPaidMessagesToken":                RPCContextTuple{"/mtproto.RPCNoPaidMessages/contacts_importNoPaidMessagesToken", func() interface{} { return new(User) }},
 	"TLHelpGetPromoData":                                 RPCContextTuple{"/mtproto.RPCPromoData/help_getPromoData", func() interface{} { return new(Help_PromoData) }},
 	"TLHelpHidePromoData":                                RPCContextTuple{"/mtproto.RPCPromoData/help_hidePromoData", func() interface{} { return new(Bool) }},
 	"TLAuthExportLoginToken":                             RPCContextTuple{"/mtproto.RPCQrCode/auth_exportLoginToken", func() interface{} { return new(Auth_LoginToken) }},

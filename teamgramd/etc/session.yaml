@@ -82,6 +82,9 @@ BFFProxyClients:
     #"/mtproto.RPCInternalBot": "bff.bff"
     #"/mtproto.RPCThemes": "bff.bff"
     "/mtproto.RPCContacts": "bff.bff"
+    # Temporary profile links and free-message links.
+    "/mtproto.RPCProfileLinks": "bff.bff"
+    "/mtproto.RPCNoPaidMessages": "bff.bff"
     #"/mtproto.RPCCreditCards": "bff.bff"
     "/mtproto.RPCDialogs": "bff.bff"
     "/mtproto.RPCDrafts": "bff.bff"

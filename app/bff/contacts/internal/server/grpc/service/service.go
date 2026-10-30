@@ -11,11 +11,13 @@
 package service
 
 import (
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/internal/svc"
 )
 
 type Service struct {
 	svcCtx *svc.ServiceContext
+	mtproto.UnimplementedRPCNoPaidMessagesServer
 }
 
 func (s *Service) GetServiceContext() *svc.ServiceContext {

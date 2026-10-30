@@ -49,7 +49,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | auth | 22 | 21 | 1 | 0 | 0 | 17 | 0 |
 | account | 119 | 67 | 12 | 2 | 38 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
-| contacts | 27 | 22 | 0 | 1 | 4 | 6 | 0 |
+| contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
 | messages | 216 | 119 | 6 | 20 | 71 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
@@ -72,7 +72,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **826** | **358** | **27** | **72** | **369** | **94** | **0** |
+| **total** | **826** | **363** | **27** | **71** | **365** | **94** | **0** |
 
 ## Counts by client
 
@@ -80,10 +80,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 335 | 25 | 71 | 324 | 91 | 0 |
-| android | 709 | 332 | 24 | 58 | 295 | 87 | 0 |
-| desktop | 692 | 313 | 24 | 54 | 301 | 79 | 0 |
-| macos | 677 | 324 | 24 | 57 | 272 | 90 | 0 |
+| ios | 755 | 340 | 25 | 70 | 320 | 91 | 0 |
+| android | 709 | 337 | 24 | 57 | 291 | 87 | 0 |
+| desktop | 692 | 318 | 24 | 53 | 297 | 79 | 0 |
+| macos | 677 | 328 | 24 | 57 | 268 | 90 | 0 |
 
 540 methods are called by all four clients.
 
@@ -99,14 +99,13 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-170 gaps (156 error, 14 empty or bool or not-modified).
+165 gaps (151 error, 14 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
 | account | 52 |
 | auth | 1 |
 | channels | 15 |
-| contacts | 5 |
 | messages | 97 |
 
 ### P2
@@ -308,7 +307,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### contacts
 
-27 called, 22 implemented, 0 stub, 1 routed-unregistered, 4 missing.
+27 called, 27 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -318,19 +317,19 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `contacts.getStatuses` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `contacts.importContacts` | yes | yes | yes | yes | startup | implemented | ok |
 | `contacts.resetSaved` | yes | yes | no | yes | startup | implemented | ok |
-| `contacts.exportContactToken` | yes | yes | yes | yes | interactive | missing | error |
-| `contacts.exportNoPaidMessagesToken` | yes | yes | yes | yes | interactive | missing | error |
-| `contacts.importContactToken` | yes | yes | yes | yes | interactive | missing | error |
-| `contacts.importNoPaidMessagesToken` | yes | yes | yes | yes | interactive | missing | error |
-| `contacts.blockFromReplies` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
 | `contacts.acceptContact` | yes | yes | yes | no | interactive | implemented | ok |
 | `contacts.addContact` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.block` | yes | yes | yes | no | interactive | implemented | ok |
+| `contacts.blockFromReplies` | yes | yes | yes | no | interactive | implemented | ok |
 | `contacts.editCloseFriends` | yes | no | no | yes | interactive | implemented | ok |
+| `contacts.exportContactToken` | yes | yes | yes | yes | interactive | implemented | ok |
+| `contacts.exportNoPaidMessagesToken` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.getBlocked` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.getSaved` | no | no | yes | no | interactive | implemented | ok |
 | `contacts.getSponsoredPeers` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.getTopPeers` | yes | yes | yes | yes | interactive | implemented | ok |
+| `contacts.importContactToken` | yes | yes | yes | yes | interactive | implemented | ok |
+| `contacts.importNoPaidMessagesToken` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.resetTopPeerRating` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.resolvePhone` | yes | yes | yes | yes | interactive | implemented | ok |
 | `contacts.resolveUsername` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -1278,11 +1277,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `communities.toggleParticipantBanned` | missing | no route in session.yaml and no bff handler |
 | `communities.togglePeerLink` | missing | no route in session.yaml and no bff handler |
 | `communities.togglePeerLinkRequestApproval` | missing | no route in session.yaml and no bff handler |
-| `contacts.blockFromReplies` | routed-but-unregistered | session.yaml routes RPCMessageThreads but the bff process has no ContactsBlockFromReplies handler |
-| `contacts.exportContactToken` | missing | no route in session.yaml and no bff handler |
-| `contacts.exportNoPaidMessagesToken` | missing | no route in session.yaml and no bff handler |
-| `contacts.importContactToken` | missing | no route in session.yaml and no bff handler |
-| `contacts.importNoPaidMessagesToken` | missing | no route in session.yaml and no bff handler |
 | `ephemeral.deleteAllWelcomeMessages` | missing | no route in session.yaml and no bff handler |
 | `ephemeral.deleteMessage` | missing | no route in session.yaml and no bff handler |
 | `ephemeral.deleteWelcomeMessage` | missing | no route in session.yaml and no bff handler |
