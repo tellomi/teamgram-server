@@ -13,19 +13,17 @@ account.createTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,im
 account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.deleteAccount,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.deleteBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
-account.deletePasskey,account,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCPasskey,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.deletePasskey_handler.go
+account.deletePasskey,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 account.deleteSecureValue,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
-account.deleteWebBrowserSettingsExceptions,account,P1,interactive,yes,yes,no,no,missing,error,no,implemented,RPCWebBrowser,no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed
+account.deleteWebBrowserSettingsExceptions,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
 account.disablePeerConnectedBot,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessConnectedBots,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.editBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
-account.finishPasskeyLogin,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-account.finishTakeoutSession,account,P1,interactive,no,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCTakeout,session.yaml routes RPCTakeout but the bff process has no AccountFinishTakeoutSession handler
+account.finishTakeoutSession,account,P1,interactive,no,no,yes,yes,implemented,ok,yes,implemented,RPCTakeout,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.getAccountTTL,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.getAllSecureValues,account,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.getAuthorizationForm,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.getAuthorizations,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.getAutoDownloadSettings,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAutoDownload,app/bff/autodownload/client/autodownload_client.go
-account.getBirthdays,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 account.getBusinessChatLinks,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessChatLinks,no route in session.yaml and no bff handler
 account.getChannelDefaultEmojiStatuses,account,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.getChannelRestrictedStatusEmojis,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
@@ -42,14 +40,13 @@ account.getGlobalPrivacySettings,account,P0,startup,yes,yes,yes,yes,implemented,
 account.getMultiWallPapers,account,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.getNotifyExceptions,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.getNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
-account.getPaidMessagesRevenue,account,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPaidMessage,session.yaml routes RPCPaidMessage but the bff process has no AccountGetPaidMessagesRevenue handler
-account.getPasskeys,account,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCPasskey,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.getPasskeys_handler.go
+account.getPaidMessagesRevenue,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPaidMessage,app/bff/channels/internal/server/grpc/service/handlers_p1.go
+account.getPasskeys,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 account.getPassword,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.getPasswordSettings,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.getPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 account.getReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/notification/internal/server/grpc/service/reactions_notify_service.go
 account.getRecentEmojiStatuses,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
-account.getRequirementsToContact,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 account.getSavedMusicIds,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.getSavedRingtones,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCRingtone,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.getTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
@@ -59,18 +56,15 @@ account.getUniqueGiftChatThemes,account,P1,interactive,yes,no,yes,yes,implemente
 account.getWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.getWallPapers,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.getWebAuthorizations,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSeamless,app/bff/seamless/service.go
-account.getWebBrowserSettings,account,P1,interactive,yes,yes,no,yes,missing,error,no,implemented,RPCWebBrowser,no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed
-account.getWebPagePreview,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-account.initPasskeyLogin,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-account.initPasskeyRegistration,account,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCPasskey,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.initPasskeyRegistration_handler.go
-account.initTakeoutSession,account,P1,interactive,no,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCTakeout,session.yaml routes RPCTakeout but the bff process has no AccountInitTakeoutSession handler
+account.getWebBrowserSettings,account,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
+account.initPasskeyRegistration,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
+account.initTakeoutSession,account,P1,interactive,no,no,yes,yes,implemented,ok,yes,implemented,RPCTakeout,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.installTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.installWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.invalidateSignInCodes,account,P0,startup,yes,no,no,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 account.registerDevice,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
-account.registerPasskey,account,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCPasskey,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/account.registerPasskey_handler.go
-account.reorderProfileTabs,account,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-account.reorderUsernames,account,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFragment,session.yaml routes RPCFragment but the bff process has no AccountReorderUsernames handler
+account.registerPasskey,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
+account.reorderUsernames,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.reportPeer,account,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.reportProfilePhoto,account,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.resendPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
@@ -100,10 +94,10 @@ account.setMainProfileTab,account,P1,interactive,yes,yes,yes,yes,implemented,ok,
 account.setPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 account.setReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/notification/internal/server/grpc/service/reactions_notify_service.go
 account.toggleConnectedBotPaused,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessConnectedBots,app/bff/messages/internal/server/grpc/service/account_assets.go
-account.toggleNoPaidMessagesException,account,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCPaidMessage,session.yaml routes RPCPaidMessage but the bff process has no AccountToggleNoPaidMessagesException handler
+account.toggleNoPaidMessagesException,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPaidMessage,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.toggleSponsoredMessages,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
-account.toggleUsername,account,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCFragment,session.yaml routes RPCFragment but the bff process has no AccountToggleUsername handler
-account.toggleWebBrowserSettingsException,account,P1,interactive,yes,yes,no,no,missing,error,no,implemented,RPCWebBrowser,no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed
+account.toggleUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
+account.toggleWebBrowserSettingsException,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
 account.unregisterDevice,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.updateBirthday,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.updateBusinessAwayMessage,business,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessGreeting,no route in session.yaml and no bff handler
@@ -122,7 +116,7 @@ account.updateProfile,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 account.updateStatus,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 account.updateTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.updateUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
-account.updateWebBrowserSettings,account,P1,interactive,yes,yes,no,no,missing,error,no,implemented,RPCWebBrowser,no route in session.yaml; handler source is implemented at app/bff/webbrowser/client/webbrowser_client.go but the service is not routed
+account.updateWebBrowserSettings,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
 account.uploadRingtone,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCRingtone,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.uploadTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.uploadWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
@@ -142,10 +136,10 @@ auth.checkPassword,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemente
 auth.checkRecoveryPassword,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.exportAuthorization,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.exportLoginToken,auth,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCQrCode,app/bff/qrcode/client/qrcode_client.go
-auth.finishPasskeyLogin,auth,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
+auth.finishPasskeyLogin,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 auth.importAuthorization,auth,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.importLoginToken,auth,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCQrCode,app/bff/qrcode/client/qrcode_client.go
-auth.initPasskeyLogin,auth,P1,interactive,yes,no,yes,yes,stub,error,yes,stub,RPCPasskey,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/passkey/internal/core/auth.initPasskeyLogin_handler.go
+auth.initPasskeyLogin,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 auth.logOut,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.recoverPassword,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.reportMissingCode,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
@@ -215,7 +209,6 @@ channels.joinChannel,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 channels.leaveChannel,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChannels,app/bff/channels/internal/server/grpc/service/handlers.go
 channels.readHistory,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChannels,app/bff/channels/internal/server/grpc/service/handlers.go
 channels.readMessageContents,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChannels,app/bff/channels/internal/server/grpc/service/handlers_features.go
-channels.reorderProfileTabs,channels,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 channels.reorderUsernames,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.reportAntiSpamFalsePositive,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAntiSpam,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.reportSpam,channels,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_p1.go
@@ -269,7 +262,7 @@ contacts.deleteContacts,contacts,P0,startup,yes,yes,yes,yes,implemented,ok,yes,i
 contacts.editCloseFriends,contacts,P1,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.exportContactToken,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCProfileLinks,app/bff/contacts/internal/server/grpc/service/profile_links_service.go
 contacts.exportNoPaidMessagesToken,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNoPaidMessages,app/bff/contacts/internal/server/grpc/service/profile_links_service.go
-contacts.getBirthdays,contacts,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
+contacts.getBirthdays,contacts,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 contacts.getBlocked,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.getContacts,contacts,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.getSaved,contacts,P1,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
@@ -477,7 +470,7 @@ messages.getUnreadMentions,messages,P1,interactive,yes,yes,yes,yes,implemented,o
 messages.getUnreadPollVotes,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPolls,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.getUnreadReactions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_chat_p1.go
 messages.getWebPage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWebPage,app/bff/messages/internal/server/grpc/service/chat_p1.go
-messages.getWebPagePreview,messages,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCWebPage,app/bff/messages/internal/server/grpc/service/chat_p1.go
+messages.getWebPagePreview,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWebPage,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.hideAllChatJoinRequests,messages,P1,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.hideChatJoinRequest,messages,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.hidePeerSettingsBar,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
@@ -793,7 +786,7 @@ upload.reuploadCdnFile,upload,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 upload.saveBigFilePart,upload,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
 upload.saveFilePart,upload,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
 users.getFullUser,users,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsers,app/bff/users/client/users_client.go
-users.getRequirementsToContact,users,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
+users.getRequirementsToContact,users,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
 users.getSavedMusic,users,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 users.getSavedMusicByID,users,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 users.getUsers,users,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsers,app/bff/users/client/users_client.go

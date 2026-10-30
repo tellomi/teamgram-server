@@ -202,7 +202,7 @@ func (s *Server) Initialize() error {
 				SyncClient:    c.SyncClient,
 			}))
 		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
-		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment())
+		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment(c.BizServiceClient))
 		mtproto.RegisterRPCAntiSpamServer(grpcServer, channels_helper.NewAntiSpam())
 		mtproto.RegisterRPCBoostsServer(grpcServer, channels_helper.NewBoosts())
 		mtproto.RegisterRPCChannelRecommendationsServer(grpcServer, channels_helper.NewRecommendations())

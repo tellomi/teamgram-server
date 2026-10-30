@@ -55,8 +55,10 @@ BFFProxyClients:
     "/mtproto.RPCQrCode": "bff.bff"
     "/mtproto.RPCMiscellaneous": "bff.bff"
     "/mtproto.RPCAuthorization": "bff.bff"
-    # auth.finishPasskeyLogin. Passkeys are not issued; the method returns PASSKEY_CREDENTIAL_NOT_FOUND.
+    # Passkeys. Signatures are not verified, so finishPasskeyLogin does not return auth.authorization.
     "/mtproto.RPCPasskey": "bff.bff"
+    # In-app browser settings and domain exceptions.
+    "/mtproto.RPCWebBrowser": "bff.bff"
     #"/mtproto.RPCGdpr": "bff.bff"
     #"/mtproto.RPCGifs": "bff.bff"
     # help.getPromoData and help.hidePromoData.
@@ -132,18 +134,18 @@ BFFProxyClients:
     #"/mtproto.RPCProxyData": "bff.bff"
     "/mtproto.RPCStatistics": "bff.bff"
     "/mtproto.RPCForums": "bff.bff"
-    # Channel usernames: reorder, toggle, and deactivate collectible names.
+    # Channel and account username order and activation.
     "/mtproto.RPCFragment": "bff.bff"
     # Supergroup native antispam.
     "/mtproto.RPCAntiSpam": "bff.bff"
     # channels.setBoostsToUnblockRestrictions. Other boost RPCs stay unimplemented.
     "/mtproto.RPCBoosts": "bff.bff"
     "/mtproto.RPCChannelRecommendations": "bff.bff"
-    # channels.getLeftChannels. Other takeout RPCs stay unimplemented.
+    # Takeout sessions, left channels, and message split ranges.
     "/mtproto.RPCTakeout": "bff.bff"
     # messages.translateText, messages.togglePeerTranslations, channels.toggleAutotranslation.
     "/mtproto.RPCTranslation": "bff.bff"
-    # channels.updatePaidMessagesPrice. Other paid-message RPCs stay unimplemented.
+    # Paid-message revenue, exemptions, and channels.updatePaidMessagesPrice.
     "/mtproto.RPCPaidMessage": "bff.bff"
     "/mtproto.RPCStickers": "bff.bff"
     "/mtproto.RPCPremium": "bff.bff"

@@ -22,9 +22,13 @@ func New(c Config) *service.Service {
 
 func NewForums() *service.ForumsService       { return &service.ForumsService{} }
 func NewReactions() *service.ReactionsService { return &service.ReactionsService{} }
-func NewFragment() *service.FragmentService   { return &service.FragmentService{} }
-func NewAntiSpam() *service.AntiSpamService   { return &service.AntiSpamService{} }
-func NewBoosts() *service.BoostsService       { return &service.BoostsService{} }
+func NewFragment(userConf zrpc.RpcClientConf) *service.FragmentService {
+	return &service.FragmentService{
+		Users: user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
+	}
+}
+func NewAntiSpam() *service.AntiSpamService { return &service.AntiSpamService{} }
+func NewBoosts() *service.BoostsService     { return &service.BoostsService{} }
 func NewRecommendations() *service.RecommendationsService {
 	return &service.RecommendationsService{}
 }
