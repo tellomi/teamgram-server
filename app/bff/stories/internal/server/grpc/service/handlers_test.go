@@ -118,3 +118,86 @@ func (f *fakeMedia) MediaUploadedDocumentMedia(ctx context.Context, in *mediapb.
 func (f *fakeMedia) MediaGetDocument(ctx context.Context, in *mediapb.TLMediaGetDocument) (*mtproto.Document, error) {
 	return nil, nil
 }
+
+func TestLegacyConstructorsAndPeerSearch(t *testing.T) {
+	story.Use(story.New(story.NewMemoryStore()))
+	svc := New(&svc.ServiceContext{})
+	ctx := withUser(3, 30)
+	if _, err := svc.StoriesSendStory(ctx, &mtproto.TLStoriesSendStory{
+		Peer: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Media: mtproto.MakeTLInputMediaPhoto(&mtproto.InputMedia{
+			Id_INPUTPHOTO: mtproto.MakeTLInputPhoto(&mtproto.InputPhoto{Id: 4, AccessHash: 5}).To_InputPhoto(),
+		}).To_InputMedia(),
+		PrivacyRules: []*mtproto.InputPrivacyRule{
+			mtproto.MakeTLInputPrivacyValueAllowAll(nil).To_InputPrivacyRule(),
+		},
+		Caption:  &wrapperspb.StringValue{Value: "harbor"},
+		RandomId: 78,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := svc.StoriesCanSendStoryC7DFDFDD(ctx, &mtproto.TLStoriesCanSendStoryC7DFDFDD{
+		Peer: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+	})
+	if err != nil || !mtproto.FromBool(ok) {
+		t.Fatalf("old canSend %+v %v", ok, err)
+	}
+	selfOK, err := svc.StoriesCanSendStoryB100D45D(ctx, &mtproto.TLStoriesCanSendStoryB100D45D{})
+	if err != nil || !mtproto.FromBool(selfOK) {
+		t.Fatalf("self canSend %+v %v", selfOK, err)
+	}
+	maxes, err := svc.StoriesGetPeerMaxIDs535983C3(ctx, &mtproto.TLStoriesGetPeerMaxIDs535983C3{
+		Id: []*mtproto.InputPeer{mtproto.MakeTLInputPeerSelf(nil).To_InputPeer()},
+	})
+	if err != nil || len(maxes.Datas) != 1 || maxes.Datas[0] == 0 {
+		t.Fatalf("old max ids %+v %v", maxes, err)
+	}
+	users, err := svc.UsersGetStoriesMaxIDs(ctx, &mtproto.TLUsersGetStoriesMaxIDs{
+		Id: []*mtproto.InputUser{mtproto.MakeTLInputUserSelf(nil).To_InputUser()},
+	})
+	if err != nil || len(users.Datas) != 1 || users.Datas[0] != maxes.Datas[0] {
+		t.Fatalf("users max %+v %v", users, err)
+	}
+	reported, err := svc.StoriesReport1923FA8C(ctx, &mtproto.TLStoriesReport1923FA8C{
+		Peer:    mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Id:      []int32{maxes.Datas[0]},
+		Reason:  mtproto.MakeTLInputReportReasonSpam(nil).To_ReportReason(),
+		Message: "spam",
+	})
+	if err != nil || !mtproto.FromBool(reported) {
+		t.Fatalf("old report %+v %v", reported, err)
+	}
+	hidden, err := svc.ContactsToggleStoriesHidden(ctx, &mtproto.TLContactsToggleStoriesHidden{
+		Id:     mtproto.MakeTLInputUserSelf(nil).To_InputUser(),
+		Hidden: mtproto.BoolTrue,
+	})
+	if err != nil || !mtproto.FromBool(hidden) {
+		t.Fatalf("toggle hidden %+v %v", hidden, err)
+	}
+	userStories, err := svc.StoriesGetUserStories(ctx, &mtproto.TLStoriesGetUserStories{
+		UserId: mtproto.MakeTLInputUserSelf(nil).To_InputUser(),
+	})
+	if err != nil || len(userStories.GetStories().GetStories()) != 1 {
+		t.Fatalf("user stories %+v %v", userStories, err)
+	}
+	reads, err := svc.StoriesGetAllReadUserStories(ctx, &mtproto.TLStoriesGetAllReadUserStories{})
+	if err != nil || reads.GetPredicateName() != mtproto.Predicate_updates {
+		t.Fatalf("read stories %+v %v", reads, err)
+	}
+	found, err := svc.StoriesSearchPosts(ctx, &mtproto.TLStoriesSearchPosts{
+		Peer:   mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Offset: "",
+		Limit:  10,
+	})
+	if err != nil || found.Count != 1 || found.Stories[0].GetStory().GetCaption().GetValue() != "harbor" {
+		t.Fatalf("peer search %+v %v", found, err)
+	}
+	areaOnly, err := svc.StoriesSearchPosts(ctx, &mtproto.TLStoriesSearchPosts{
+		Area:   mtproto.MakeTLMediaAreaVenue(&mtproto.MediaArea{}).To_MediaArea(),
+		Offset: "",
+		Limit:  5,
+	})
+	if err != nil || areaOnly.Count != 0 || areaOnly.Stories == nil {
+		t.Fatalf("area search %+v %v", areaOnly, err)
+	}
+}

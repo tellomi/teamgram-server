@@ -63,7 +63,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
 | folders | 17 | 17 | 0 | 0 | 0 | 5 | 0 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
-| stories | 32 | 0 | 0 | 0 | 32 | 0 | 0 |
+| stories | 32 | 32 | 0 | 0 | 0 | 0 | 0 |
 | premium/payments | 100 | 1 | 7 | 17 | 75 | 0 | 0 |
 | bots | 23 | 23 | 0 | 0 | 0 | 0 | 0 |
 | business | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
@@ -74,7 +74,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **819** | **577** | **7** | **30** | **205** | **94** | **0** |
+| **total** | **819** | **609** | **7** | **30** | **173** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 543 | 6 | 30 | 176 | 91 | 0 |
-| android | 707 | 538 | 6 | 18 | 145 | 89 | 0 |
-| desktop | 692 | 496 | 5 | 27 | 164 | 79 | 0 |
-| macos | 677 | 512 | 4 | 20 | 141 | 90 | 0 |
+| ios | 755 | 575 | 6 | 30 | 144 | 91 | 0 |
+| android | 707 | 562 | 6 | 18 | 121 | 89 | 0 |
+| desktop | 692 | 522 | 5 | 27 | 138 | 79 | 0 |
+| macos | 677 | 542 | 4 | 20 | 111 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,7 +111,7 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-241 gaps (241 error, 0 empty or bool or not-modified).
+209 gaps (209 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
@@ -125,7 +125,6 @@ Everything else the official clients call: stories, payments, bots, folders, bus
 | premium/payments | 99 |
 | stats | 6 |
 | stickers | 1 |
-| stories | 32 |
 | toncenter | 4 |
 | wallet | 26 |
 
@@ -834,42 +833,42 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### stories
 
-32 called, 0 implemented, 0 stub, 0 routed-unregistered, 32 missing.
+32 called, 32 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `stories.activateStealthMode` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.canSendStory` | yes | yes | no | yes | interactive | missing | error |
-| `stories.createAlbum` | yes | no | yes | yes | interactive | missing | error |
-| `stories.deleteAlbum` | yes | no | yes | yes | interactive | missing | error |
-| `stories.deleteStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.editStory` | yes | yes | no | yes | interactive | missing | error |
-| `stories.exportStoryLink` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getAlbumStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getAlbums` | yes | no | yes | yes | interactive | missing | error |
-| `stories.getAllReadPeerStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getAllStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getChatsToSend` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getPeerMaxIDs` | yes | yes | no | yes | interactive | missing | error |
-| `stories.getPeerStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getPinnedStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getStoriesArchive` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getStoriesByID` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getStoriesViews` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.getStoryReactionsList` | yes | no | yes | yes | interactive | missing | error |
-| `stories.getStoryViewsList` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.incrementStoryViews` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.readStories` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.reorderAlbums` | yes | no | yes | yes | interactive | missing | error |
-| `stories.report` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.searchPosts` | yes | yes | no | yes | interactive | missing | error |
-| `stories.sendReaction` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.sendStory` | yes | yes | no | no | interactive | missing | error |
-| `stories.startLive` | yes | no | no | no | interactive | missing | error |
-| `stories.togglePeerStoriesHidden` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.togglePinned` | yes | yes | yes | yes | interactive | missing | error |
-| `stories.togglePinnedToTop` | yes | no | yes | yes | interactive | missing | error |
-| `stories.updateAlbum` | yes | no | yes | yes | interactive | missing | error |
+| `stories.activateStealthMode` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.canSendStory` | yes | yes | no | yes | interactive | implemented | ok |
+| `stories.createAlbum` | yes | no | yes | yes | interactive | implemented | ok |
+| `stories.deleteAlbum` | yes | no | yes | yes | interactive | implemented | ok |
+| `stories.deleteStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.editStory` | yes | yes | no | yes | interactive | implemented | ok |
+| `stories.exportStoryLink` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getAlbumStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getAlbums` | yes | no | yes | yes | interactive | implemented | ok |
+| `stories.getAllReadPeerStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getAllStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getChatsToSend` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getPeerMaxIDs` | yes | yes | no | yes | interactive | implemented | ok |
+| `stories.getPeerStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getPinnedStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getStoriesArchive` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getStoriesByID` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getStoriesViews` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.getStoryReactionsList` | yes | no | yes | yes | interactive | implemented | ok |
+| `stories.getStoryViewsList` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.incrementStoryViews` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.readStories` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.reorderAlbums` | yes | no | yes | yes | interactive | implemented | ok |
+| `stories.report` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.searchPosts` | yes | yes | no | yes | interactive | implemented | ok |
+| `stories.sendReaction` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.sendStory` | yes | yes | no | no | interactive | implemented | ok |
+| `stories.startLive` | yes | no | no | no | interactive | implemented | ok |
+| `stories.togglePeerStoriesHidden` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.togglePinned` | yes | yes | yes | yes | interactive | implemented | ok |
+| `stories.togglePinnedToTop` | yes | no | yes | yes | interactive | implemented | ok |
+| `stories.updateAlbum` | yes | no | yes | yes | interactive | implemented | ok |
 
 ### premium/payments
 
@@ -1317,38 +1316,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `stats.getStoryPublicForwards` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetStoryPublicForwards handler |
 | `stats.getStoryStats` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsGetStoryStats handler |
 | `stats.loadAsyncGraph` | routed-but-unregistered | session.yaml routes RPCStatistics but the bff process has no StatsLoadAsyncGraph handler |
-| `stories.activateStealthMode` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.canSendStory` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.createAlbum` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.deleteAlbum` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.deleteStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.editStory` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.exportStoryLink` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getAlbumStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getAlbums` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getAllReadPeerStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getAllStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getChatsToSend` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getPeerMaxIDs` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getPeerStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getPinnedStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getStoriesArchive` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getStoriesByID` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getStoriesViews` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getStoryReactionsList` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.getStoryViewsList` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.incrementStoryViews` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.readStories` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.reorderAlbums` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.report` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.searchPosts` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.sendReaction` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.sendStory` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.startLive` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.togglePeerStoriesHidden` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.togglePinned` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.togglePinnedToTop` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
-| `stories.updateAlbum` | missing | no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed |
 | `toncenter.createOnrampSession` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `toncenter.getOnrampProviders` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `toncenter.getStreamingUrl` | missing | no route in session.yaml and no bff handler |

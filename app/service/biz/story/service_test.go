@@ -231,9 +231,22 @@ func TestPrivacyExpiryPinnedAlbums(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	found, err := svc.Search(ctx, 9, "trip", "", 10)
+	found, err := svc.Search(ctx, 9, "trip", "", 10, nil)
 	if err != nil || found.Count != 1 || found.Stories[0].GetStory().GetId() != eID {
 		t.Fatalf("search %+v %v", found, err)
+	}
+	only, err := svc.Search(ctx, 9, "", "", 10, &Owner{Kind: KindUser, ID: 1})
+	if err != nil || only.Count < 1 {
+		t.Fatalf("peer search %+v %v", only, err)
+	}
+	for _, one := range only.Stories {
+		if one.GetPeer().GetUserId() != 1 {
+			t.Fatalf("peer search returned %d", one.GetPeer().GetUserId())
+		}
+	}
+	other, err := svc.Search(ctx, 9, "trip", "", 10, &Owner{Kind: KindUser, ID: 9})
+	if err != nil || other.Count != 0 {
+		t.Fatalf("other peer %+v %v", other, err)
 	}
 
 	*now += defaultPeriod + 1
@@ -426,6 +439,33 @@ func TestLayer232StoryConstructors(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestGetAllStateStable(t *testing.T) {
+	svc, ctx, _ := newSvc(t)
+	svc.MarkContact(10, 2)
+	svc.MarkContact(10, 3)
+	svc.MarkContact(10, 4)
+	send(t, svc, ctx, 2, photoMedia(), rules("all"), 1, "a", false)
+	send(t, svc, ctx, 3, photoMedia(), rules("all"), 2, "b", false)
+	send(t, svc, ctx, 4, photoMedia(), rules("all"), 3, "c", false)
+	first, err := svc.GetAll(ctx, 10, false, false, "")
+	if err != nil || first.Count != 3 || first.State == "" {
+		t.Fatalf("tray %+v %v", first, err)
+	}
+	for i := 0; i < 30; i++ {
+		again, err := svc.GetAll(ctx, 10, false, false, "")
+		if err != nil || again.State != first.State || again.Count != 3 {
+			t.Fatalf("unstable state %q vs %q count=%d %v", first.State, again.GetState(), again.GetCount(), err)
+		}
+	}
+	same, err := svc.GetAll(ctx, 10, false, false, first.State)
+	if err != nil || same.GetPredicateName() != mtproto.Predicate_stories_allStoriesNotModified {
+		t.Fatalf("not modified %+v %v", same, err)
+	}
+	if len(same.GetState()) == 0 || same.GetStealthMode() == nil {
+		t.Fatalf("not modified payload %+v", same)
+	}
+}
 
 func hasStory(items []*mtproto.StoryItem, id int32) bool {
 	for _, item := range items {

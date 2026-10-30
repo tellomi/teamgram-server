@@ -477,7 +477,15 @@ func (s *Service) StoriesSearchPosts(ctx context.Context, in *mtproto.TLStoriesS
 	if in.GetHashtag() != nil {
 		tag = in.GetHashtag().GetValue()
 	}
-	res, err := story.Shared().Search(ctx, md.GetUserId(), tag, in.GetOffset(), in.GetLimit())
+	var peer *story.Owner
+	if in.GetPeer() != nil {
+		owner, _, err := resolvePeer(md.GetUserId(), in.GetPeer())
+		if err != nil {
+			return nil, err
+		}
+		peer = &owner
+	}
+	res, err := story.Shared().Search(ctx, md.GetUserId(), tag, in.GetOffset(), in.GetLimit(), peer)
 	if err != nil {
 		return nil, err
 	}

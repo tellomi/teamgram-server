@@ -739,38 +739,38 @@ stickers.removeStickerFromSet,stickers,P2,interactive,yes,yes,yes,yes,implemente
 stickers.renameStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 stickers.replaceSticker,stickers,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 stickers.suggestShortName,stickers,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
-stories.activateStealthMode,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.canSendStory,stories,P2,interactive,yes,yes,no,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.createAlbum,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.deleteAlbum,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.deleteStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.editStory,stories,P2,interactive,yes,yes,no,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.exportStoryLink,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getAlbumStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getAlbums,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getAllReadPeerStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getAllStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getChatsToSend,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getPeerMaxIDs,stories,P2,interactive,yes,yes,no,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getPeerStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getPinnedStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getStoriesArchive,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getStoriesByID,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getStoriesViews,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getStoryReactionsList,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.getStoryViewsList,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.incrementStoryViews,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.readStories,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.reorderAlbums,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.report,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.searchPosts,stories,P2,interactive,yes,yes,no,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.sendReaction,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.sendStory,stories,P2,interactive,yes,yes,no,no,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.startLive,stories,P2,interactive,yes,no,no,no,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.togglePeerStoriesHidden,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.togglePinned,stories,P2,interactive,yes,yes,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.togglePinnedToTop,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
-stories.updateAlbum,stories,P2,interactive,yes,no,yes,yes,missing,error,no,implemented,RPCStories,no route in session.yaml; handler source is implemented at app/bff/stories/internal/server/grpc/service/handlers.go but the service is not routed
+stories.activateStealthMode,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.canSendStory,stories,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.createAlbum,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.deleteAlbum,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.deleteStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.editStory,stories,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.exportStoryLink,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getAlbumStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getAlbums,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getAllReadPeerStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getAllStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getChatsToSend,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getPeerMaxIDs,stories,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getPeerStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getPinnedStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getStoriesArchive,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getStoriesByID,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getStoriesViews,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getStoryReactionsList,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.getStoryViewsList,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.incrementStoryViews,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.readStories,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.reorderAlbums,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.report,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.searchPosts,stories,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.sendReaction,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.sendStory,stories,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.startLive,stories,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.togglePeerStoriesHidden,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.togglePinned,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.togglePinnedToTop,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
+stories.updateAlbum,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
 toncenter.createOnrampSession,toncenter,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 toncenter.getOnrampProviders,toncenter,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 toncenter.getStreamingUrl,toncenter,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
