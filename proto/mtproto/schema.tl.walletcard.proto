@@ -1,0 +1,56 @@
+// Layer 232 wallet card constructors. Upstream teamgram/proto does not
+// generate wallet.Card. TL encode/decode lives in wallet_card_codec.go.
+//
+// inputWalletCardSticker#57df45a7 coordinates:MediaAreaCoordinates nft_address:string = InputWalletCardSticker;
+// wallet.cardSticker#f3010cba coordinates:MediaAreaCoordinates nft:wallet.NftItem = wallet.CardSticker;
+// wallet.card#8ed043b1 flags:# stickers:flags.0?Vector<wallet.CardSticker> bg_nft_item:flags.1?wallet.NftItem address:string balance:long = wallet.Card;
+// wallet.setCardStickers#68509ac flags:# stickers:Vector<InputWalletCardSticker> bg_nft_address:flags.0?string = wallet.Card;
+
+syntax = "proto3";
+
+package mtproto;
+
+import "google/protobuf/wrappers.proto";
+import "schema.tl.crc32.proto";
+import "schema.tl.sync.proto";
+
+option go_package = "github.com/teamgram/proto/mtproto";
+
+// InputWalletCardSticker is inputWalletCardSticker#57df45a7.
+message InputWalletCardSticker {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  MediaAreaCoordinates coordinates = 3;
+  string nft_address = 4;
+}
+
+// wallet_CardSticker is wallet.cardSticker#f3010cba.
+message wallet_CardSticker {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  MediaAreaCoordinates coordinates = 3;
+  wallet_NftItem nft = 4;
+}
+
+// wallet_Card is wallet.card#8ed043b1.
+message wallet_Card {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  repeated wallet_CardSticker stickers = 3;
+  wallet_NftItem bg_nft_item = 4;
+  string address = 5;
+  int64 balance = 6;
+  bool has_stickers = 7;
+  bool has_bg = 8;
+}
+
+// TL_wallet_setCardStickers is wallet.setCardStickers#68509ac.
+message TL_wallet_setCardStickers {
+  TLConstructor constructor = 1;
+  repeated InputWalletCardSticker stickers = 3;
+  google.protobuf.StringValue bg_nft_address = 4;
+}
+
+service RPCWalletCard {
+  rpc wallet_setCardStickers(TL_wallet_setCardStickers) returns (wallet_Card);
+}

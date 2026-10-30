@@ -47,12 +47,14 @@ Every other predicate keeps its layer 231 constructor id at layer 232, which
 matches this schema. `GetClazzID` still returns the historical id for layers
 ≤ 231.
 
-`wallet.Card` is not a generated type yet. The server does not set
-`wallet_card` or `share_theme` on `userFull` / `channelFull`. A payload that
-sets those flags is rejected instead of being parsed out of alignment.
-`quote_rich` and `channel.pinned_msg_id` are consumed so the rest of the
-object stays aligned; they are not stored. Wallet-card methods that exist
-only in layer 232 are not registered as RPC handlers.
+`wallet.Card`, `wallet.cardSticker`, `inputWalletCardSticker`, and
+`wallet.setCardStickers` are registered in `wallet_card_codec.go` and
+`schema.tl.walletcard.proto`. The server still does not set `wallet_card` or
+`share_theme` on `userFull` / `channelFull`. A payload that sets those flags
+is rejected instead of being parsed out of alignment. `quote_rich` and
+`channel.pinned_msg_id` are consumed so the rest of the object stays aligned;
+they are not stored. The card is returned by `wallet.setCardStickers` and is
+not embedded in `userFull`.
 `messages.setShareTheme` and `messages.getShareThemeBackdrops` are registered
 in `layer232_extra_codec.go` and `schema.tl.layer232extra.proto`.
 `contacts.exportNoPaidMessagesToken` and

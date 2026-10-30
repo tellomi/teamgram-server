@@ -598,7 +598,7 @@ payments.getBankCardData,premium/payments,P2,interactive,yes,yes,yes,yes,routed-
 payments.getConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
 payments.getConnectedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCAffiliatePrograms,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go
 payments.getCraftStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGifts,no route in session.yaml and no bff handler
-payments.getCurrencyRates,premium/payments,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler
+payments.getCurrencyRates,premium/payments,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler
 payments.getGiveawayInfo,premium/payments,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCGiveaways,no route in session.yaml and no bff handler
 payments.getOnrampAvailability,premium/payments,P2,interactive,yes,no,no,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampAvailability handler
 payments.getOnrampBaseCurrencies,premium/payments,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCPayments,session.yaml routes RPCPayments but the bff process has no PaymentsGetOnrampBaseCurrencies handler
@@ -773,8 +773,8 @@ stories.togglePinnedToTop,stories,P2,interactive,yes,no,yes,yes,implemented,ok,y
 stories.updateAlbum,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
 toncenter.createOnrampSession,toncenter,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 toncenter.getOnrampProviders,toncenter,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-toncenter.getStreamingUrl,toncenter,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-toncenter.performApiRequest,toncenter,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
+toncenter.getStreamingUrl,toncenter,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/card.go
+toncenter.performApiRequest,toncenter,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/card.go
 updates.getChannelDifference,updates,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUpdates,app/bff/updates/client/updates_client.go
 updates.getDifference,updates,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUpdates,app/bff/updates/client/updates_client.go
 updates.getState,updates,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUpdates,app/bff/updates/client/updates_client.go
@@ -791,30 +791,29 @@ users.getSavedMusic,users,P1,interactive,yes,no,yes,yes,implemented,ok,yes,imple
 users.getSavedMusicByID,users,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 users.getUsers,users,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsers,app/bff/users/client/users_client.go
 users.suggestBirthday,users,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
-wallet.disableBackup,wallet,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.enableBackup,wallet,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.exportSecretPhrase,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.fetchEncryptedSecretPhrasePart,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getBackupHolderDcs,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getCurrencyRates,wallet,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-wallet.getExistingWaltBalance,wallet,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getGaslessInfo,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getNfts,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getProofChallenge,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getState,wallet,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getTransactions,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getTransactionsByIDs,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getTransactionsByMsgHash,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.getUserAddresses,wallet,P2,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.replaceWallet,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.sendTransfer,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.setCardStickers,stickers,P2,interactive,yes,yes,yes,no,missing,error,no,absent,,no route in session.yaml and no bff handler
-wallet.tonConnectClaimRequest,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectCloseSession,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectCreateSession,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectGetPending,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectGetSessions,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectNextEventId,wallet,P2,interactive,yes,no,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectRegisterKey,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectSubmitConnectResult,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
-wallet.tonConnectSubmitResponse,wallet,P2,interactive,yes,yes,yes,no,missing,error,no,absent,RPCWallet,no route in session.yaml and no bff handler
+wallet.disableBackup,wallet,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.enableBackup,wallet,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.exportSecretPhrase,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.fetchEncryptedSecretPhrasePart,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getBackupHolderDcs,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getExistingWaltBalance,wallet,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getGaslessInfo,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getNfts,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getProofChallenge,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getState,wallet,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getTransactions,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getTransactionsByIDs,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getTransactionsByMsgHash,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.getUserAddresses,wallet,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.replaceWallet,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.sendTransfer,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/handlers.go
+wallet.setCardStickers,stickers,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWalletCard,app/bff/wallet/internal/server/grpc/service/card.go
+wallet.tonConnectClaimRequest,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectCloseSession,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectCreateSession,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectGetPending,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectGetSessions,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectNextEventId,wallet,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectRegisterKey,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectSubmitConnectResult,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go
+wallet.tonConnectSubmitResponse,wallet,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/tonconnect.go

@@ -919,6 +919,7 @@ var rpcContextRegisters = map[string]RPCContextTuple{
 	"TLWalletTonConnectNextEventId":                      RPCContextTuple{"/mtproto.RPCWallet/wallet_tonConnectNextEventId", func() interface{} { return new(TonConnectNextEventId) }},
 	"TLWalletTonConnectCloseSession":                     RPCContextTuple{"/mtproto.RPCWallet/wallet_tonConnectCloseSession", func() interface{} { return new(Bool) }},
 	"TLWalletTonConnectGetSessions":                      RPCContextTuple{"/mtproto.RPCWallet/wallet_tonConnectGetSessions", func() interface{} { return new(Wallet_TonConnectSessions) }},
+	"TLWalletSetCardStickers":                            RPCContextTuple{"/mtproto.RPCWalletCard/wallet_setCardStickers", func() interface{} { return new(Wallet_Card) }},
 	"TLAccountGetWallPapers":                             RPCContextTuple{"/mtproto.RPCWallpapers/account_getWallPapers", func() interface{} { return new(Account_WallPapers) }},
 	"TLAccountGetWallPaper":                              RPCContextTuple{"/mtproto.RPCWallpapers/account_getWallPaper", func() interface{} { return new(WallPaper) }},
 	"TLAccountUploadWallPaper":                           RPCContextTuple{"/mtproto.RPCWallpapers/account_uploadWallPaper", func() interface{} { return new(WallPaper) }},

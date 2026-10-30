@@ -18,12 +18,17 @@ import (
 //	account.getWebPagePreview            0x570d6f6f messages.getWebPagePreview
 //	account.initPasskeyLogin             0x518ad0b7 auth.initPasskeyLogin
 //	account.finishPasskeyLogin           0x9857ad07 auth.finishPasskeyLogin
+//	wallet.getCurrencyRates              0xd35983e8 payments.getCurrencyRates
+//
+// Android TL_wallet.getCurrencyRates (DrKLO 3de37c8) lives in TL_wallet.java
+// but its constructor is payments.getCurrencyRates from layer 232.
 var androidConstructorAlias = map[string]string{
 	"account.getBirthdays":             "contacts.getBirthdays",
 	"account.getRequirementsToContact": "users.getRequirementsToContact",
 	"account.getWebPagePreview":        "messages.getWebPagePreview",
 	"account.initPasskeyLogin":         "auth.initPasskeyLogin",
 	"account.finishPasskeyLogin":       "auth.finishPasskeyLogin",
+	"wallet.getCurrencyRates":          "payments.getCurrencyRates",
 }
 
 // skippedClientMethods are call sites that are commented out in the client
@@ -232,7 +237,7 @@ func writeMarkdown(snap Snapshot, schemaN, layer int, rows []Row) []byte {
 	b.WriteString("`effect=error` is a response that fails the RPC. `empty`, `bool`, and `not_modified` succeed with no data. `ok` is a real result.\n\n")
 	b.WriteString("**When** is `startup`, `background`, `startup+background`, or `interactive`. Startup and background sites are the ones that run from session bootstrap (config, updates difference, presence, langpack, login, push registration) rather than from a screen the user opened. Any such site makes the method **P0**.\n\n")
 	b.WriteString("**Phases.** P0: startup or background, and the server must not fail the RPC. P1: core chat (auth, account, users, contacts, messages, updates, photos, upload, channels) that is not already P0. P2: everything else.\n\n")
-	b.WriteString("Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.\n\n")
+	b.WriteString("Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `TL_wallet.getCurrencyRates` is constructor `0xd35983e8`, counted as `payments.getCurrencyRates`. `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.\n\n")
 
 	b.WriteString("## Client sources\n\n")
 	b.WriteString("| Client | Repository | Commit | What was counted |\n| --- | --- | --- | --- |\n")

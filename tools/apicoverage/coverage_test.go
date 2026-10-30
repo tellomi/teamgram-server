@@ -283,6 +283,9 @@ func TestServerSamples(t *testing.T) {
 	if got, ok := canonicalClientMethod("account.initPasskeyLogin"); !ok || got != "auth.initPasskeyLogin" {
 		t.Fatalf("android passkey login alias: %s %v", got, ok)
 	}
+	if got, ok := canonicalClientMethod("wallet.getCurrencyRates"); !ok || got != "payments.getCurrencyRates" {
+		t.Fatalf("android wallet currency rates alias: %s %v", got, ok)
+	}
 	if !srv.Routed["RPCPromoData"] || !srv.Registered["RPCPromoData"] {
 		t.Fatal("promo data must be routed and registered")
 	}
@@ -320,6 +323,48 @@ func TestServerSamples(t *testing.T) {
 		"phone.toggleGroupCallRecord",
 		"phone.toggleGroupCallSettings",
 		"phone.toggleGroupCallStartSubscription",
+	} {
+		assertStatus(method, statusImplemented, effectOK)
+		_, _, _, _, notes, _ := srv.resolve(method)
+		if strings.Contains(notes, "layer variants disagree") || strings.Contains(notes, "ENTERPRISE_IS_BLOCKED") {
+			t.Errorf("%s notes=%s", method, notes)
+		}
+	}
+	if !srv.Routed["RPCWallet"] || !srv.Registered["RPCWallet"] {
+		t.Fatal("wallet must be routed and registered")
+	}
+	if !srv.Routed["RPCWalletCard"] || !srv.Registered["RPCWalletCard"] {
+		t.Fatal("wallet card stickers must be routed and registered")
+	}
+	for _, method := range []string{
+		"wallet.disableBackup",
+		"wallet.enableBackup",
+		"wallet.exportSecretPhrase",
+		"wallet.fetchEncryptedSecretPhrasePart",
+		"wallet.getBackupHolderDcs",
+		"wallet.getExistingWaltBalance",
+		"wallet.getGaslessInfo",
+		"wallet.getNfts",
+		"wallet.getProofChallenge",
+		"wallet.getState",
+		"wallet.getTransactions",
+		"wallet.getTransactionsByIDs",
+		"wallet.getTransactionsByMsgHash",
+		"wallet.getUserAddresses",
+		"wallet.replaceWallet",
+		"wallet.sendTransfer",
+		"wallet.setCardStickers",
+		"wallet.tonConnectClaimRequest",
+		"wallet.tonConnectCloseSession",
+		"wallet.tonConnectCreateSession",
+		"wallet.tonConnectGetPending",
+		"wallet.tonConnectGetSessions",
+		"wallet.tonConnectNextEventId",
+		"wallet.tonConnectRegisterKey",
+		"wallet.tonConnectSubmitConnectResult",
+		"wallet.tonConnectSubmitResponse",
+		"toncenter.performApiRequest",
+		"toncenter.getStreamingUrl",
 	} {
 		assertStatus(method, statusImplemented, effectOK)
 		_, _, _, _, notes, _ := srv.resolve(method)
