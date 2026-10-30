@@ -1300,6 +1300,38 @@ var (
 	// | 400 | BOT_INVALID | This is not a valid bot. |
 	ErrBotInvalid = status.Error(ErrBadRequest, "BOT_INVALID")
 
+	// ErrBotCreateLimitExceeded
+	// | 400 | BOT_CREATE_LIMIT_EXCEEDED | The current user already owns the maximum allowed number of owned bots, as specified by bots_create_limit_default and bots_create_limit_premium.
+	ErrBotCreateLimitExceeded = status.Error(ErrBadRequest, "BOT_CREATE_LIMIT_EXCEEDED")
+
+	// ErrManagerInvalid
+	// | 400 | MANAGER_INVALID | The specified manager bot is invalid.
+	ErrManagerInvalid = status.Error(ErrBadRequest, "MANAGER_INVALID")
+
+	// ErrManagerPermissionMissing
+	// | 400 | MANAGER_PERMISSION_MISSING | The specified manager bot does not have the user.bot_can_manage_bots flag set.
+	ErrManagerPermissionMissing = status.Error(ErrBadRequest, "MANAGER_PERMISSION_MISSING")
+
+	// ErrNameInvalid
+	// | 400 | NAME_INVALID | The specified bot name is invalid.
+	ErrNameInvalid = status.Error(ErrBadRequest, "NAME_INVALID")
+
+	// ErrUsernameSuffixMissing
+	// | 400 | USERNAME_SUFFIX_MISSING | The required bot suffix is missing from the passed username.
+	ErrUsernameSuffixMissing = status.Error(ErrBadRequest, "USERNAME_SUFFIX_MISSING")
+
+	// ErrStarrefAwaitingEnd
+	// | 400 | STARREF_AWAITING_END | The previous referral program was terminated less than 24 hours ago.
+	ErrStarrefAwaitingEnd = status.Error(ErrBadRequest, "STARREF_AWAITING_END")
+
+	// ErrStarrefPermilleInvalid
+	// | 400 | STARREF_PERMILLE_INVALID | The specified commission_permille is invalid.
+	ErrStarrefPermilleInvalid = status.Error(ErrBadRequest, "STARREF_PERMILLE_INVALID")
+
+	// ErrStarrefPermilleTooLow
+	// | 400 | STARREF_PERMILLE_TOO_LOW | The specified commission_permille is too low.
+	ErrStarrefPermilleTooLow = status.Error(ErrBadRequest, "STARREF_PERMILLE_TOO_LOW")
+
 	// ErrPhoneCodeExpired
 	// | 400 | PHONE_CODE_EXPIRED | The phone code you provided has expired. |
 	ErrPhoneCodeExpired = status.Error(ErrBadRequest, "PHONE_CODE_EXPIRED")
@@ -2265,6 +2297,10 @@ var (
 	// ErrForbiddenUserBotInvalid
 	// | 403 | USER_BOT_INVALID | User accounts must provide the `bot` method parameter when calling this method. If there is no such method parameter, this method can only be invoked by bot accounts. |
 	ErrForbiddenUserBotInvalid = status.Error(ErrForbidden, "USER_BOT_INVALID")
+
+	// ErrBotVerifierForbidden
+	// | 403 | BOT_VERIFIER_FORBIDDEN | This bot cannot assign verification icons.
+	ErrBotVerifierForbidden = status.Error(ErrForbidden, "BOT_VERIFIER_FORBIDDEN")
 
 	// ErrForbiddenUserIsBlocked
 	// | 403 | USER_IS_BLOCKED | You were blocked by this user. |

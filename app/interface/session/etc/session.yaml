@@ -63,7 +63,12 @@ BFFProxyClients:
     #"/mtproto.RPCPassport": "bff.bff"
     "/mtproto.RPCUpdates": "bff.bff"
     #"/mtproto.RPCInlineBot": "bff.bff"
-    #"/mtproto.RPCBots": "bff.bff"
+    # Managed bots: bots.createBot, bots.getBotInfo, and the other RPCBots methods.
+    "/mtproto.RPCBots": "bff.bff"
+    # bots.getBotRecommendations and bots.setCustomVerification.
+    "/mtproto.RPCBotVerificationIcons": "bff.bff"
+    # bots.updateStarRefProgram. Other methods on this service are payments and stay unimplemented.
+    "/mtproto.RPCAffiliatePrograms": "bff.bff"
     #"/mtproto.RPCInternalBot": "bff.bff"
     #"/mtproto.RPCThemes": "bff.bff"
     "/mtproto.RPCContacts": "bff.bff"

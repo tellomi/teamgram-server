@@ -64,8 +64,8 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | folders | 17 | 17 | 0 | 0 | 0 | 5 | 0 |
 | stats | 8 | 2 | 0 | 6 | 0 | 0 | 0 |
 | stories | 32 | 0 | 0 | 0 | 32 | 0 | 0 |
-| premium/payments | 100 | 1 | 2 | 17 | 80 | 0 | 0 |
-| bots | 23 | 0 | 0 | 15 | 8 | 0 | 0 |
+| premium/payments | 100 | 1 | 7 | 17 | 75 | 0 | 0 |
+| bots | 23 | 23 | 0 | 0 | 0 | 0 | 0 |
 | business | 10 | 0 | 0 | 0 | 10 | 0 | 0 |
 | aicompose | 7 | 0 | 0 | 7 | 0 | 0 | 0 |
 | communities | 9 | 0 | 0 | 0 | 9 | 0 | 0 |
@@ -74,7 +74,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | iv | 1 | 0 | 0 | 0 | 1 | 0 | 0 |
 | toncenter | 4 | 0 | 0 | 0 | 4 | 0 | 0 |
 | wallet | 26 | 0 | 0 | 0 | 26 | 0 | 0 |
-| **total** | **819** | **554** | **2** | **45** | **218** | **94** | **0** |
+| **total** | **819** | **577** | **7** | **30** | **205** | **94** | **0** |
 
 ## Counts by client
 
@@ -82,10 +82,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 521 | 1 | 44 | 189 | 91 | 0 |
-| android | 707 | 516 | 1 | 33 | 157 | 89 | 0 |
-| desktop | 692 | 479 | 0 | 36 | 177 | 79 | 0 |
-| macos | 677 | 494 | 1 | 30 | 152 | 90 | 0 |
+| ios | 755 | 543 | 6 | 30 | 176 | 91 | 0 |
+| android | 707 | 538 | 6 | 18 | 145 | 89 | 0 |
+| desktop | 692 | 496 | 5 | 27 | 164 | 79 | 0 |
+| macos | 677 | 512 | 4 | 20 | 141 | 90 | 0 |
 
 545 methods are called by all four clients.
 
@@ -111,12 +111,11 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-264 gaps (264 error, 0 empty or bool or not-modified).
+241 gaps (241 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
 | aicompose | 7 |
-| bots | 23 |
 | business | 10 |
 | communities | 9 |
 | ephemeral | 8 |
@@ -874,7 +873,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### premium/payments
 
-100 called, 1 implemented, 2 stub, 17 routed-unregistered, 80 missing.
+100 called, 1 implemented, 7 stub, 17 routed-unregistered, 75 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -883,7 +882,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.changeStarsSubscription` | yes | no | yes | yes | interactive | missing | error |
 | `payments.checkCanSendGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.checkGiftCode` | yes | yes | yes | yes | interactive | missing | error |
-| `payments.connectStarRefBot` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.convertStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.craftStarGift` | yes | no | yes | no | interactive | missing | error |
 | `payments.createStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
@@ -891,10 +889,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.deleteStarGiftCollection` | yes | no | yes | yes | interactive | missing | error |
 | `payments.depositStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.displayStarGift` | yes | no | yes | yes | interactive | missing | error |
-| `payments.editConnectedStarRefBot` | yes | yes | yes | no | interactive | missing | error |
 | `payments.fulfillStarsSubscription` | yes | no | no | yes | interactive | missing | error |
-| `payments.getConnectedStarRefBot` | yes | yes | yes | no | interactive | missing | error |
-| `payments.getConnectedStarRefBots` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getCraftStarGifts` | yes | no | yes | yes | interactive | missing | error |
 | `payments.getGiveawayInfo` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getPremiumGiftCodeOptions` | yes | yes | yes | yes | interactive | missing | error |
@@ -919,7 +914,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getStarsTopupOptions` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getStarsTransactions` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getStarsTransactionsByID` | yes | no | no | yes | interactive | missing | error |
-| `payments.getSuggestedStarRefBots` | yes | yes | yes | yes | interactive | missing | error |
 | `payments.getUniqueStarGift` | yes | no | yes | yes | interactive | missing | error |
 | `payments.getUniqueStarGiftValueInfo` | yes | no | yes | yes | interactive | missing | error |
 | `payments.launchPrepaidGiveaway` | yes | yes | yes | yes | interactive | missing | error |
@@ -977,37 +971,42 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `premium.getMyBoosts` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
 | `payments.assignAppStoreTransaction` | yes | no | no | yes | interactive | stub | error |
 | `payments.assignPlayMarketTransaction` | no | yes | no | no | interactive | stub | error |
+| `payments.connectStarRefBot` | yes | yes | yes | yes | interactive | stub | error |
+| `payments.editConnectedStarRefBot` | yes | yes | yes | no | interactive | stub | error |
+| `payments.getConnectedStarRefBot` | yes | yes | yes | no | interactive | stub | error |
+| `payments.getConnectedStarRefBots` | yes | yes | yes | yes | interactive | stub | error |
+| `payments.getSuggestedStarRefBots` | yes | yes | yes | yes | interactive | stub | error |
 | `payments.canPurchaseStore` | yes | yes | no | yes | interactive | implemented | ok |
 
 ### bots
 
-23 called, 0 implemented, 0 stub, 15 routed-unregistered, 8 missing.
+23 called, 23 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `bots.checkUsername` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.createBot` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.getAdminedBots` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.getBotInfo` | yes | no | yes | yes | interactive | missing | error |
-| `bots.getBotRecommendations` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.setBotInfo` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.setCustomVerification` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.updateStarRefProgram` | yes | yes | yes | yes | interactive | missing | error |
-| `bots.addPreviewMedia` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `bots.allowSendMessage` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.canSendMessage` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.checkDownloadFileParams` | yes | yes | yes | no | interactive | routed-but-unregistered | error |
-| `bots.deletePreviewMedia` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `bots.editPreviewMedia` | no | yes | no | no | interactive | routed-but-unregistered | error |
-| `bots.getPopularAppBots` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.getPreviewInfo` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `bots.getPreviewMedias` | yes | yes | no | yes | interactive | routed-but-unregistered | error |
-| `bots.getRequestedWebViewButton` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.invokeWebViewCustomMethod` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.reorderPreviewMedias` | yes | yes | no | no | interactive | routed-but-unregistered | error |
-| `bots.reorderUsernames` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.toggleUserEmojiStatusPermission` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
-| `bots.toggleUsername` | yes | yes | yes | yes | interactive | routed-but-unregistered | error |
+| `bots.addPreviewMedia` | yes | yes | no | no | interactive | implemented | ok |
+| `bots.allowSendMessage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.canSendMessage` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.checkDownloadFileParams` | yes | yes | yes | no | interactive | implemented | ok |
+| `bots.checkUsername` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.createBot` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.deletePreviewMedia` | yes | yes | no | no | interactive | implemented | ok |
+| `bots.editPreviewMedia` | no | yes | no | no | interactive | implemented | ok |
+| `bots.getAdminedBots` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.getBotInfo` | yes | no | yes | yes | interactive | implemented | ok |
+| `bots.getBotRecommendations` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.getPopularAppBots` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.getPreviewInfo` | yes | yes | no | yes | interactive | implemented | ok |
+| `bots.getPreviewMedias` | yes | yes | no | yes | interactive | implemented | ok |
+| `bots.getRequestedWebViewButton` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.invokeWebViewCustomMethod` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.reorderPreviewMedias` | yes | yes | no | no | interactive | implemented | ok |
+| `bots.reorderUsernames` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.setBotInfo` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.setCustomVerification` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.toggleUserEmojiStatusPermission` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.toggleUsername` | yes | yes | yes | yes | interactive | implemented | ok |
+| `bots.updateStarRefProgram` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### business
 
@@ -1156,29 +1155,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `aicompose.getTones` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTones handler |
 | `aicompose.saveTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeSaveTone handler |
 | `aicompose.updateTone` | routed-but-unregistered | session.yaml routes RPCAiComposeTone but the bff process has no AicomposeUpdateTone handler |
-| `bots.addPreviewMedia` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsAddPreviewMedia handler |
-| `bots.allowSendMessage` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsAllowSendMessage handler |
-| `bots.canSendMessage` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsCanSendMessage handler |
-| `bots.checkDownloadFileParams` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsCheckDownloadFileParams handler |
-| `bots.checkUsername` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
-| `bots.createBot` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
-| `bots.deletePreviewMedia` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsDeletePreviewMedia handler |
-| `bots.editPreviewMedia` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsEditPreviewMedia handler |
-| `bots.getAdminedBots` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
-| `bots.getBotInfo` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
-| `bots.getBotRecommendations` | missing | no route in session.yaml and no bff handler |
-| `bots.getPopularAppBots` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPopularAppBots handler |
-| `bots.getPreviewInfo` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPreviewInfo handler |
-| `bots.getPreviewMedias` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsGetPreviewMedias handler |
-| `bots.getRequestedWebViewButton` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsGetRequestedWebViewButton handler |
-| `bots.invokeWebViewCustomMethod` | routed-but-unregistered | session.yaml routes RPCMiniBotApps but the bff process has no BotsInvokeWebViewCustomMethod handler |
-| `bots.reorderPreviewMedias` | routed-but-unregistered | session.yaml routes RPCMainMiniBotApps but the bff process has no BotsReorderPreviewMedias handler |
-| `bots.reorderUsernames` | routed-but-unregistered | session.yaml routes RPCFragment but the bff process has no BotsReorderUsernames handler |
-| `bots.setBotInfo` | missing | no route in session.yaml (RPCBots is commented out) and no bff handler |
-| `bots.setCustomVerification` | missing | no route in session.yaml and no bff handler |
-| `bots.toggleUserEmojiStatusPermission` | routed-but-unregistered | session.yaml routes RPCEmojiStatus but the bff process has no BotsToggleUserEmojiStatusPermission handler |
-| `bots.toggleUsername` | routed-but-unregistered | session.yaml routes RPCFragment but the bff process has no BotsToggleUsername handler |
-| `bots.updateStarRefProgram` | missing | no route in session.yaml and no bff handler |
 | `communities.create` | missing | no route in session.yaml and no bff handler |
 | `communities.getJoinedCommunities` | missing | no route in session.yaml and no bff handler |
 | `communities.getParticipantJoinedChats` | missing | no route in session.yaml and no bff handler |
@@ -1211,7 +1187,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.checkCanSendGift` | missing | no route in session.yaml and no bff handler |
 | `payments.checkGiftCode` | missing | no route in session.yaml and no bff handler |
 | `payments.clearSavedInfo` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsClearSavedInfo handler |
-| `payments.connectStarRefBot` | missing | no route in session.yaml and no bff handler |
+| `payments.connectStarRefBot` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
 | `payments.convertStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.craftStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.createOnrampSession` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsCreateOnrampSession handler |
@@ -1220,11 +1196,11 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.deleteStarGiftCollection` | missing | no route in session.yaml and no bff handler |
 | `payments.depositStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.displayStarGift` | missing | no route in session.yaml and no bff handler |
-| `payments.editConnectedStarRefBot` | missing | no route in session.yaml and no bff handler |
+| `payments.editConnectedStarRefBot` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
 | `payments.fulfillStarsSubscription` | missing | no route in session.yaml and no bff handler |
 | `payments.getBankCardData` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetBankCardData handler |
-| `payments.getConnectedStarRefBot` | missing | no route in session.yaml and no bff handler |
-| `payments.getConnectedStarRefBots` | missing | no route in session.yaml and no bff handler |
+| `payments.getConnectedStarRefBot` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
+| `payments.getConnectedStarRefBots` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
 | `payments.getCraftStarGifts` | missing | no route in session.yaml and no bff handler |
 | `payments.getCurrencyRates` | routed-but-unregistered | session.yaml routes RPCPayments but the bff process has no PaymentsGetCurrencyRates handler |
 | `payments.getGiveawayInfo` | missing | no route in session.yaml and no bff handler |
@@ -1257,7 +1233,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getStarsTopupOptions` | missing | no route in session.yaml and no bff handler |
 | `payments.getStarsTransactions` | missing | no route in session.yaml and no bff handler |
 | `payments.getStarsTransactionsByID` | missing | no route in session.yaml and no bff handler |
-| `payments.getSuggestedStarRefBots` | missing | no route in session.yaml and no bff handler |
+| `payments.getSuggestedStarRefBots` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/bots/service.go |
 | `payments.getUniqueStarGift` | missing | no route in session.yaml and no bff handler |
 | `payments.getUniqueStarGiftValueInfo` | missing | no route in session.yaml and no bff handler |
 | `payments.launchPrepaidGiveaway` | missing | no route in session.yaml and no bff handler |

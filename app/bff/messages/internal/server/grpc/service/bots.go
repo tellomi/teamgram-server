@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
@@ -264,6 +265,71 @@ func inputPeer(self int64, in *mtproto.InputPeer) (*mtproto.PeerUtil, error) {
 		return nil, mtproto.ErrPeerIdInvalid
 	}
 	return p, nil
+}
+
+func (s BotChatService) BotsCanSendMessage(ctx context.Context, in *mtproto.TLBotsCanSendMessage) (*mtproto.Bool, error) {
+	self, _ := selfID(ctx)
+	return botadmin.CanSendMessage(ctx, self, in.GetBot())
+}
+
+func (s BotChatService) BotsAllowSendMessage(ctx context.Context, in *mtproto.TLBotsAllowSendMessage) (*mtproto.Updates, error) {
+	self, _ := selfID(ctx)
+	return botadmin.AllowSendMessage(ctx, self, in.GetBot())
+}
+
+func (s BotChatService) BotsInvokeWebViewCustomMethod(ctx context.Context, in *mtproto.TLBotsInvokeWebViewCustomMethod) (*mtproto.DataJSON, error) {
+	self, _ := selfID(ctx)
+	return botadmin.InvokeWebViewCustomMethod(ctx, self, in.GetBot(), in.GetCustomMethod(), in.GetParams())
+}
+
+func (s BotChatService) BotsCheckDownloadFileParams(ctx context.Context, in *mtproto.TLBotsCheckDownloadFileParams) (*mtproto.Bool, error) {
+	self, _ := selfID(ctx)
+	return botadmin.CheckDownloadFileParams(ctx, self, in.GetBot(), in.GetFileName(), in.GetUrl())
+}
+
+func (s BotChatService) BotsRequestWebViewButton(ctx context.Context, in *mtproto.TLBotsRequestWebViewButton) (*mtproto.Bots_RequestedButton, error) {
+	self, _ := selfID(ctx)
+	return botadmin.RequestWebViewButton(ctx, self, in.GetUserId(), in.GetButton())
+}
+
+func (s BotChatService) BotsGetRequestedWebViewButton(ctx context.Context, in *mtproto.TLBotsGetRequestedWebViewButton) (*mtproto.KeyboardButton, error) {
+	self, _ := selfID(ctx)
+	return botadmin.RequestedWebViewButton(ctx, self, in.GetBot(), in.GetWebappReqId())
+}
+
+func (s BotChatService) BotsGetPopularAppBots(ctx context.Context, in *mtproto.TLBotsGetPopularAppBots) (*mtproto.Bots_PopularAppBots, error) {
+	self, _ := selfID(ctx)
+	return botadmin.PopularAppBots(self, in.GetOffset(), in.GetLimit())
+}
+
+func (s BotChatService) BotsAddPreviewMedia(ctx context.Context, in *mtproto.TLBotsAddPreviewMedia) (*mtproto.BotPreviewMedia, error) {
+	self, _ := selfID(ctx)
+	return botadmin.AddPreviewMedia(ctx, self, in.GetBot(), in.GetLangCode(), in.GetMedia())
+}
+
+func (s BotChatService) BotsEditPreviewMedia(ctx context.Context, in *mtproto.TLBotsEditPreviewMedia) (*mtproto.BotPreviewMedia, error) {
+	self, _ := selfID(ctx)
+	return botadmin.EditPreviewMedia(ctx, self, in.GetBot(), in.GetLangCode(), in.GetMedia(), in.GetNewMedia())
+}
+
+func (s BotChatService) BotsDeletePreviewMedia(ctx context.Context, in *mtproto.TLBotsDeletePreviewMedia) (*mtproto.Bool, error) {
+	self, _ := selfID(ctx)
+	return botadmin.DeletePreviewMedia(ctx, self, in.GetBot(), in.GetLangCode(), in.GetMedia())
+}
+
+func (s BotChatService) BotsReorderPreviewMedias(ctx context.Context, in *mtproto.TLBotsReorderPreviewMedias) (*mtproto.Bool, error) {
+	self, _ := selfID(ctx)
+	return botadmin.ReorderPreviewMedias(ctx, self, in.GetBot(), in.GetLangCode(), in.GetOrder())
+}
+
+func (s BotChatService) BotsGetPreviewInfo(ctx context.Context, in *mtproto.TLBotsGetPreviewInfo) (*mtproto.Bots_PreviewInfo, error) {
+	self, _ := selfID(ctx)
+	return botadmin.PreviewInfo(ctx, self, in.GetBot(), in.GetLangCode())
+}
+
+func (s BotChatService) BotsGetPreviewMedias(ctx context.Context, in *mtproto.TLBotsGetPreviewMedias) (*mtproto.Vector_BotPreviewMedia, error) {
+	self, _ := selfID(ctx)
+	return botadmin.PreviewMedias(ctx, self, in.GetBot())
 }
 
 func chatboxOpen(self, botID int64, peer *mtproto.PeerUtil, fullscreen, compact bool, start, raw, kind string) chatbox.WebOpen {

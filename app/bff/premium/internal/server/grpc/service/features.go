@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/accountassets"
+	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	"github.com/teamgram/teamgram-server/app/bff/premium/internal/core"
 )
 
@@ -62,6 +64,22 @@ func (s *Service) HelpGetPeerProfileColors(ctx context.Context, request *mtproto
 
 func (s *Service) MessagesTranscribeAudio(ctx context.Context, request *mtproto.TLMessagesTranscribeAudio) (*mtproto.Messages_TranscribedAudio, error) {
 	return core.New(ctx, s.svcCtx).MessagesTranscribeAudio(request)
+}
+
+func (s *Service) BotsToggleUserEmojiStatusPermission(ctx context.Context, in *mtproto.TLBotsToggleUserEmojiStatusPermission) (*mtproto.Bool, error) {
+	return botadmin.ToggleEmojiPermission(ctx, emojiActor(ctx), in.GetBot(), mtproto.FromBool(in.GetEnabled()))
+}
+
+func (s *Service) BotsUpdateUserEmojiStatus(ctx context.Context, in *mtproto.TLBotsUpdateUserEmojiStatus) (*mtproto.Bool, error) {
+	return botadmin.UpdateUserEmojiStatus(ctx, emojiActor(ctx), in.GetUserId(), in.GetEmojiStatus())
+}
+
+func emojiActor(ctx context.Context) int64 {
+	md := metadata.RpcMetadataFromIncoming(ctx)
+	if md == nil {
+		return 0
+	}
+	return md.GetUserId()
 }
 
 func (s *Service) MessagesRateTranscribedAudio(ctx context.Context, request *mtproto.TLMessagesRateTranscribedAudio) (*mtproto.Bool, error) {

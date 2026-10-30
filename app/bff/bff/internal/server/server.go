@@ -26,6 +26,7 @@ import (
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
+	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
@@ -369,6 +370,11 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCMiniBotAppsServer(grpcServer, botChat)
 		mtproto.RegisterRPCMainMiniBotAppsServer(grpcServer, botChat)
 		mtproto.RegisterRPCPreparedInlineMessagesServer(grpcServer, botChat)
+		// Managed bots: create, profile, usernames, verification, and affiliate programs.
+		botAdmin := bots_helper.New(c.BizServiceClient)
+		mtproto.RegisterRPCBotsServer(grpcServer, botAdmin)
+		mtproto.RegisterRPCBotVerificationIconsServer(grpcServer, botAdmin)
+		mtproto.RegisterRPCAffiliateProgramsServer(grpcServer, botAdmin)
 		// Quick replies, saved-message tags, paid-media reveal, and delivery acks.
 		mtproto.RegisterRPCBusinessQuickReplyServer(grpcServer, messages_helper.NewQuickReply(msgCfg))
 		mtproto.RegisterRPCSavedMessageTagsServer(grpcServer, messages_helper.NewSavedTags())
