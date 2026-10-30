@@ -1,0 +1,50 @@
+// Layer 232 contacts no-paid-messages tokens.
+//
+// contacts.exportNoPaidMessagesToken#83c586ae flags:# revoke:flags.0?true temporary:flags.1?true = ExportedNoPaidMessagesToken;
+// contacts.importNoPaidMessagesToken#35a7c6ca user_id:InputUser token:string = User;
+// exportedNoPaidMessagesToken#695dd042 flags:# token:string url:string expires:flags.0?int = ExportedNoPaidMessagesToken;
+//
+// These constructors are in telegram_api_layer232.tl and are not in the
+// upstream teamgram/proto v0.231.0 generated service. This file is the
+// gRPC surface; TL encode/decode lives in nopaid_codec.go.
+
+syntax = "proto3";
+
+package mtproto;
+
+import "schema.tl.crc32.proto";
+import "schema.tl.sync.proto";
+
+option go_package = "github.com/teamgram/proto/mtproto";
+
+// ExportedNoPaidMessagesToken is exportedNoPaidMessagesToken#695dd042.
+message ExportedNoPaidMessagesToken {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  string token = 3;
+  string url = 4;
+  // Expires is the unix time when a temporary token stops working.
+  // Zero means the expires flag is unset (a permanent token).
+  int32 expires = 5;
+}
+
+// TL_contacts_exportNoPaidMessagesToken is contacts.exportNoPaidMessagesToken#83c586ae.
+message TL_contacts_exportNoPaidMessagesToken {
+  TLConstructor constructor = 1;
+  bool revoke = 3;
+  bool temporary = 4;
+}
+
+// TL_contacts_importNoPaidMessagesToken is contacts.importNoPaidMessagesToken#35a7c6ca.
+message TL_contacts_importNoPaidMessagesToken {
+  TLConstructor constructor = 1;
+  InputUser user_id = 3;
+  string token = 4;
+}
+
+service RPCNoPaidMessages {
+  rpc contacts_exportNoPaidMessagesToken(TL_contacts_exportNoPaidMessagesToken)
+      returns (ExportedNoPaidMessagesToken);
+  rpc contacts_importNoPaidMessagesToken(TL_contacts_importNoPaidMessagesToken)
+      returns (User);
+}

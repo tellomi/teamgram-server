@@ -200,7 +200,7 @@ func (s *Server) Initialize() error {
 			}))
 		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
 		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions())
-		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads())
+		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads(c.BizServiceClient, c.BizServiceClient, c.MsgClient, c.SyncClient))
 		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
 
 		storyMySQL := c.StoryMySQL
@@ -278,16 +278,18 @@ func (s *Server) Initialize() error {
 			}))
 
 		// contacts_helper
-		mtproto.RegisterRPCContactsServer(
-			grpcServer,
-			contacts_helper.New(
-				contacts_helper.Config{
-					RpcServerConf: c.RpcServerConf,
-					UserClient:    c.BizServiceClient,
-					ChatClient:    c.BizServiceClient,
-					SyncClient:    c.SyncClient,
-				},
-				channelBridge))
+		contactsSvc := contacts_helper.New(
+			contacts_helper.Config{
+				RpcServerConf: c.RpcServerConf,
+				KV:            c.KV,
+				UserClient:    c.BizServiceClient,
+				ChatClient:    c.BizServiceClient,
+				SyncClient:    c.SyncClient,
+			},
+			channelBridge)
+		mtproto.RegisterRPCContactsServer(grpcServer, contactsSvc)
+		mtproto.RegisterRPCProfileLinksServer(grpcServer, contactsSvc)
+		mtproto.RegisterRPCNoPaidMessagesServer(grpcServer, contactsSvc)
 
 		// dialogs_helper
 		mtproto.RegisterRPCDialogsServer(

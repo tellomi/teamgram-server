@@ -264,11 +264,11 @@ communities.togglePeerLinkRequestApproval,communities,P2,interactive,yes,yes,yes
 contacts.acceptContact,contacts,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.addContact,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.block,contacts,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
-contacts.blockFromReplies,contacts,P1,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCMessageThreads,session.yaml routes RPCMessageThreads but the bff process has no ContactsBlockFromReplies handler
+contacts.blockFromReplies,contacts,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCMessageThreads,app/bff/channels/internal/server/grpc/service/contacts.blockFromReplies_handler.go
 contacts.deleteContacts,contacts,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.editCloseFriends,contacts,P1,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
-contacts.exportContactToken,contacts,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCProfileLinks,no route in session.yaml and no bff handler
-contacts.exportNoPaidMessagesToken,contacts,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
+contacts.exportContactToken,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCProfileLinks,app/bff/contacts/internal/server/grpc/service/profile_links_service.go
+contacts.exportNoPaidMessagesToken,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNoPaidMessages,app/bff/contacts/internal/server/grpc/service/profile_links_service.go
 contacts.getBirthdays,contacts,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCUserChannelProfiles,app/bff/userchannelprofiles/client/userchannelprofiles_client.go
 contacts.getBlocked,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.getContacts,contacts,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
@@ -276,9 +276,9 @@ contacts.getSaved,contacts,P1,interactive,no,no,yes,no,implemented,ok,yes,implem
 contacts.getSponsoredPeers,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 contacts.getStatuses,contacts,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.getTopPeers,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
-contacts.importContactToken,contacts,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCProfileLinks,no route in session.yaml and no bff handler
+contacts.importContactToken,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCProfileLinks,app/bff/contacts/internal/server/grpc/service/profile_links_service.go
 contacts.importContacts,contacts,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
-contacts.importNoPaidMessagesToken,contacts,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,,no route in session.yaml and no bff handler
+contacts.importNoPaidMessagesToken,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCNoPaidMessages,app/bff/contacts/internal/server/grpc/service/profile_links_service.go
 contacts.resetSaved,contacts,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.resetTopPeerRating,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCContacts,app/bff/contacts/client/contacts_client.go
 contacts.resolvePhone,contacts,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsers,app/bff/users/client/users_client.go

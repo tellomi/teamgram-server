@@ -388,9 +388,14 @@ func (ReactionsService) MessagesGetMessageReactionsList(ctx context.Context, in 
 	}).To_Messages_MessageReactionsList(), nil
 }
 
-// ThreadsService serves discussion replies for channel posts.
+// ThreadsService serves discussion replies for channel posts and
+// contacts.blockFromReplies (the @replies inbox lives on this RPC service).
 type ThreadsService struct {
 	mtproto.UnimplementedRPCMessageThreadsServer
+	Users    repliesUsers
+	Messages repliesMessages
+	Outbox   repliesOutbox
+	Sync     repliesSync
 }
 
 func (ThreadsService) MessagesGetReplies(ctx context.Context, in *mtproto.TLMessagesGetReplies) (*mtproto.Messages_Messages, error) {

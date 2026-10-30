@@ -1051,6 +1051,11 @@ var (
 	// | 400 | IMPORT_TOKEN_INVALID | The specified token is invalid. |
 	ErrImportTokenInvalid = status.Error(ErrBadRequest, "IMPORT_TOKEN_INVALID")
 
+	// ErrNoPaidMessagesTokenInvalid
+	// | 400 | NO_PAID_MESSAGES_TOKEN_INVALID | The free-message link is invalid or has expired. |
+	// Clients show "This free messages link is invalid or has expired."
+	ErrNoPaidMessagesTokenInvalid = status.Error(ErrBadRequest, "NO_PAID_MESSAGES_TOKEN_INVALID")
+
 	// ErrLimitInvalid
 	// | 400 | LIMIT_INVALID | The provided limit is invalid. |
 	ErrLimitInvalid = status.Error(ErrBadRequest, "LIMIT_INVALID")

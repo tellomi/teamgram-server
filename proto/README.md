@@ -50,9 +50,11 @@ matches this schema. `GetClazzID` still returns the historical id for layers
 `wallet.Card` and `ShareTheme` are not generated types yet. The server does
 not set those flags. A payload that sets them is rejected instead of being
 parsed out of alignment. `quote_rich` and `channel.pinned_msg_id` are consumed
-so the rest of the object stays aligned; they are not stored. New methods that
-exist only in layer 232 (share themes, no-paid-messages tokens, wallet cards)
-are not registered as RPC handlers.
+so the rest of the object stays aligned; they are not stored. Share-theme and
+wallet-card methods that exist only in layer 232 are not registered as RPC
+handlers. `contacts.exportNoPaidMessagesToken` and
+`contacts.importNoPaidMessagesToken` are registered in `nopaid_codec.go` and
+`schema.tl.nopaid.proto` (the result type is `exportedNoPaidMessagesToken`).
 
 ## Regenerating
 

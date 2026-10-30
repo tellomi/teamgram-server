@@ -31,6 +31,7 @@ type Dao struct {
 	user_client.UserClient
 	chat_client.ChatClient
 	sync_client.SyncClient
+	Tokens *TokenBook
 }
 
 func New(c config.Config) *Dao {
@@ -38,5 +39,6 @@ func New(c config.Config) *Dao {
 		UserClient: user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		ChatClient: chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
 		SyncClient: sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient)),
+		Tokens:     NewTokenBook(c.KV),
 	}
 }
