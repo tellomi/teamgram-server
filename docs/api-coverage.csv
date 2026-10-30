@@ -122,13 +122,13 @@ account.uploadTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,im
 account.uploadWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.verifyEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 account.verifyPhone,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
-aicompose.createTone,aicompose,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeCreateTone handler
-aicompose.deleteTone,aicompose,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeDeleteTone handler
-aicompose.getTone,aicompose,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTone handler
-aicompose.getToneExample,aicompose,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetToneExample handler
-aicompose.getTones,aicompose,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeGetTones handler
-aicompose.saveTone,aicompose,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeSaveTone handler
-aicompose.updateTone,aicompose,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCAiComposeTone,session.yaml routes RPCAiComposeTone but the bff process has no AicomposeUpdateTone handler
+aicompose.createTone,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
+aicompose.deleteTone,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
+aicompose.getTone,aicompose,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
+aicompose.getToneExample,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
+aicompose.getTones,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
+aicompose.saveTone,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
+aicompose.updateTone,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
 auth.acceptLoginToken,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCQrCode,app/bff/qrcode/client/qrcode_client.go
 auth.bindTempAuthKey,auth,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.cancelCode,auth,P0,startup,no,yes,yes,no,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
@@ -289,11 +289,11 @@ ephemeral.getCallbackAnswer,ephemeral,P2,interactive,yes,no,yes,yes,implemented,
 ephemeral.getWelcomeMessages,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
 ephemeral.reportMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
 ephemeral.sendMessage,ephemeral,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCEphemeral,app/bff/ephemeral/internal/server/grpc/service/handlers.go
-feed.getFeed,feed,P2,interactive,yes,no,no,yes,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-feed.getForYou,feed,P2,interactive,yes,no,no,yes,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-feed.getInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-feed.readFeed,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-feed.setInterestCategories,feed,P2,interactive,yes,no,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
+feed.getFeed,feed,P2,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCFeed,app/bff/feed/internal/server/grpc/service/handlers.go not in layer schema
+feed.getForYou,feed,P2,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCFeed,app/bff/feed/internal/server/grpc/service/handlers.go not in layer schema
+feed.getInterestCategories,feed,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCFeed,app/bff/feed/internal/server/grpc/service/handlers.go not in layer schema
+feed.readFeed,feed,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCFeed,app/bff/feed/internal/server/grpc/service/handlers.go not in layer schema
+feed.setInterestCategories,feed,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCFeed,app/bff/feed/internal/server/grpc/service/handlers.go not in layer schema
 folders.editPeerFolders,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 fragment.getCollectibleInfo,premium/payments,P2,interactive,yes,no,yes,yes,missing,error,no,absent,RPCFragmentCollectibles,no route in session.yaml and no bff handler
 help.acceptTermsOfService,help,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTos,app/bff/tos/client/tos_client.go
@@ -321,7 +321,7 @@ help.getTimezonesList,help,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,imp
 help.getUserInfo,help,P2,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCTsf,app/bff/configuration/internal/server/grpc/service/help_p2.go
 help.hidePromoData,help,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPromoData,app/bff/configuration/internal/server/grpc/service/promo_service.go
 help.saveAppLog,help,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiscellaneous,app/bff/miscellaneous/client/miscellaneous_client.go
-iv.getRichMessage,iv,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
+iv.getRichMessage,iv,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCIv,app/bff/iv/internal/server/grpc/service/service.go not in layer schema
 langpack.getDifference,langpack,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCLangpack,app/bff/langpack/internal/server/grpc/service/langpack_service_impl.go
 langpack.getLangPack,langpack,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCLangpack,app/bff/langpack/internal/server/grpc/service/langpack_service_impl.go
 langpack.getLanguage,langpack,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCLangpack,app/bff/langpack/internal/server/grpc/service/langpack_service_impl.go
@@ -724,12 +724,12 @@ stars.updateStarGiftCollection,premium/payments,P2,interactive,no,yes,no,no,miss
 stars.updateStarGiftPrice,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 stats.getBroadcastStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMegagroupStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
-stats.getMessagePublicForwards,stats,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetMessagePublicForwards5F150144 handler
-stats.getMessageStats,stats,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetMessageStats handler
-stats.getPollStats,stats,P2,interactive,yes,no,yes,no,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetPollStats handler
-stats.getStoryPublicForwards,stats,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetStoryPublicForwards handler
-stats.getStoryStats,stats,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsGetStoryStats handler
-stats.loadAsyncGraph,stats,P2,interactive,yes,no,yes,yes,routed-but-unregistered,error,yes,absent,RPCStatistics,session.yaml routes RPCStatistics but the bff process has no StatsLoadAsyncGraph handler
+stats.getMessagePublicForwards,stats,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
+stats.getMessageStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
+stats.getPollStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
+stats.getStoryPublicForwards,stats,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
+stats.getStoryStats,stats,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
+stats.loadAsyncGraph,stats,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
 stickers.addStickerToSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 stickers.changeStickerPosition,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 stickers.checkShortName,stickers,P2,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go

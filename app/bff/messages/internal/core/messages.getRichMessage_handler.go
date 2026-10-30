@@ -19,13 +19,16 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/iv/rich"
 )
 
 // MessagesGetRichMessage
 // messages.getRichMessage#501569cf peer:InputPeer id:int = messages.Messages;
+// Android sends the same constructor as TL_iv.getRichMessage.
 func (c *MessagesCore) MessagesGetRichMessage(in *mtproto.TLMessagesGetRichMessage) (*mtproto.Messages_Messages, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.getRichMessage blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	var self int64
+	if c.MD != nil {
+		self = c.MD.GetUserId()
+	}
+	return rich.Load(c.ctx, self, in.GetPeer(), in.GetId())
 }

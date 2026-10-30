@@ -428,4 +428,37 @@ func TestServerSamples(t *testing.T) {
 			t.Errorf("%s notes=%s", method, notes)
 		}
 	}
+	if !srv.Routed["RPCFeed"] || !srv.Registered["RPCFeed"] {
+		t.Fatal("feed must be routed and registered")
+	}
+	if !srv.Routed["RPCIv"] || !srv.Registered["RPCIv"] {
+		t.Fatal("iv must be routed and registered")
+	}
+	for _, method := range []string{
+		"aicompose.createTone",
+		"aicompose.deleteTone",
+		"aicompose.getTone",
+		"aicompose.getToneExample",
+		"aicompose.getTones",
+		"aicompose.saveTone",
+		"aicompose.updateTone",
+		"feed.getFeed",
+		"feed.getForYou",
+		"feed.getInterestCategories",
+		"feed.readFeed",
+		"feed.setInterestCategories",
+		"iv.getRichMessage",
+		"stats.getMessagePublicForwards",
+		"stats.getMessageStats",
+		"stats.getPollStats",
+		"stats.getStoryPublicForwards",
+		"stats.getStoryStats",
+		"stats.loadAsyncGraph",
+	} {
+		assertStatus(method, statusImplemented, effectOK)
+		_, _, _, _, notes, _ := srv.resolve(method)
+		if strings.Contains(notes, "layer variants disagree") || strings.Contains(notes, "ENTERPRISE_IS_BLOCKED") {
+			t.Errorf("%s notes=%s", method, notes)
+		}
+	}
 }

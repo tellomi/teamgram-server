@@ -38,6 +38,8 @@ import (
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	ephemeral_helper "github.com/teamgram/teamgram-server/app/bff/ephemeral"
+	feed_helper "github.com/teamgram/teamgram-server/app/bff/feed"
+	iv_helper "github.com/teamgram/teamgram-server/app/bff/iv"
 	files_helper "github.com/teamgram/teamgram-server/app/bff/files"
 	folders_helper "github.com/teamgram/teamgram-server/app/bff/folders"
 	langpack_helper "github.com/teamgram/teamgram-server/app/bff/langpack"
@@ -263,6 +265,8 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBusinessOpeningHoursServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCCommunitiesServer(grpcServer, communities_helper.New())
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
+		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
+		mtproto.RegisterRPCIvServer(grpcServer, iv_helper.New())
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(

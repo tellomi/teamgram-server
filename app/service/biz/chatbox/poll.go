@@ -396,6 +396,17 @@ func (b *Book) ReadPollVotes(ctx context.Context, viewer int64, peerType int32, 
 	return nil
 }
 
+// PollByMessage returns the stored poll for a dialog message.
+func (b *Book) PollByMessage(ctx context.Context, peerType int32, peerID int64, msgID int32) (*mtproto.Poll, *mtproto.PollResults, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc.poll(), doc.results(0), nil
+}
+
 // PublicResults is the poll media to store on the message (no per-user chosen bit).
 func (b *Book) PublicResults(ctx context.Context, pollID int64) (*mtproto.Poll, *mtproto.PollResults) {
 	b.mu.Lock()

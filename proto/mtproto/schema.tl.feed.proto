@@ -1,0 +1,153 @@
+// Feed constructors are not in telegram_api_layer232.tl. iOS and macOS
+// clients at the pinned coverage commits already send the layer-233
+// constructors. TL encode/decode lives in feed_codec.go.
+//
+// feedPosition#5059dc73 date:int peer:Peer id:int = FeedPosition;
+// feedItemMessage#7e73b3a5 message:Message = FeedItem;
+// feedItemMessageGroup#652f4c71 messages:Vector<Message> = FeedItem;
+// feedItemInterestCategories#6be7187b = FeedItem;
+// feed.feedMessagesNotModified#db1a3503 = feed.FeedMessages;
+// feed.feedMessages#dcf754b9 flags:# max_position:flags.0?FeedPosition min_position:flags.1?FeedPosition read_max_position:flags.2?FeedPosition messages:Vector<Message> chats:Vector<Chat> users:Vector<User> = feed.FeedMessages;
+// feed.forYouFeed#52577805 flags:# items:Vector<FeedItem> chats:Vector<Chat> users:Vector<User> = feed.ForYouFeed;
+// feed.interestCategory#6c4666e3 flags:# id:int title:string emoji:flags.0?string emoji_document_id:flags.1?long = feed.InterestCategory;
+// feed.interestCategoriesNotModified#79cf2195 = feed.InterestCategories;
+// feed.interestCategories#ecb62fa0 categories:Vector<feed.InterestCategory> selected:Vector<int> = feed.InterestCategories;
+// feed.getFeed#7e76d7d3 flags:# offset_to_max_read:flags.3?true filter_id:int offset_position:flags.0?FeedPosition add_offset:int limit:int max_position:flags.1?FeedPosition min_position:flags.2?FeedPosition hash:long = feed.FeedMessages;
+// feed.getForYou#33b8e5eb flags:# query:flags.0?string limit:int = feed.ForYouFeed;
+// feed.getInterestCategories#ba7a1dba hash:long = feed.InterestCategories;
+// feed.readFeed#b436c1ff filter_id:int max_position:FeedPosition = Updates;
+// feed.setInterestCategories#9f2958dc category_ids:Vector<int> = Bool;
+//
+// iv.getRichMessage is Android's name for messages.getRichMessage#501569cf.
+// The constructor stays on TL_messages_getRichMessage. This request type
+// exists so the coverage name has an RPC registration.
+
+syntax = "proto3";
+
+package mtproto;
+
+import "schema.tl.core_types.proto";
+import "schema.tl.crc32.proto";
+import "schema.tl.sync.proto";
+
+option go_package = "github.com/teamgram/proto/mtproto";
+
+// FeedPosition is feedPosition#5059dc73.
+message FeedPosition {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  int32 date = 3;
+  Peer peer = 4;
+  int32 id = 5;
+}
+
+// FeedItem is feedItemMessage, feedItemMessageGroup, or feedItemInterestCategories.
+message FeedItem {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  Message message = 3;
+  repeated Message messages = 4;
+}
+
+// Feed_FeedMessages is feed.feedMessages or feed.feedMessagesNotModified.
+message Feed_FeedMessages {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  FeedPosition max_position = 3;
+  FeedPosition min_position = 4;
+  FeedPosition read_max_position = 5;
+  bool has_max = 6;
+  bool has_min = 7;
+  bool has_read = 8;
+  repeated Message messages = 9;
+  repeated Chat chats = 10;
+  repeated User users = 11;
+}
+
+// Feed_ForYouFeed is feed.forYouFeed#52577805.
+message Feed_ForYouFeed {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  repeated FeedItem items = 3;
+  repeated Chat chats = 4;
+  repeated User users = 5;
+}
+
+// Feed_InterestCategory is feed.interestCategory#6c4666e3.
+message Feed_InterestCategory {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  int32 id = 3;
+  string title = 4;
+  string emoji = 5;
+  int64 emoji_document_id = 6;
+  bool has_emoji = 7;
+  bool has_emoji_document = 8;
+}
+
+// Feed_InterestCategories is feed.interestCategories or feed.interestCategoriesNotModified.
+message Feed_InterestCategories {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  repeated Feed_InterestCategory categories = 3;
+  repeated int32 selected = 4;
+}
+
+// TL_feed_getFeed is feed.getFeed#7e76d7d3.
+message TL_feed_getFeed {
+  TLConstructor constructor = 1;
+  bool offset_to_max_read = 3;
+  int32 filter_id = 4;
+  FeedPosition offset_position = 5;
+  int32 add_offset = 6;
+  int32 limit = 7;
+  FeedPosition max_position = 8;
+  FeedPosition min_position = 9;
+  int64 hash = 10;
+}
+
+// TL_feed_getForYou is feed.getForYou#33b8e5eb.
+message TL_feed_getForYou {
+  TLConstructor constructor = 1;
+  string query = 3;
+  bool has_query = 4;
+  int32 limit = 5;
+}
+
+// TL_feed_getInterestCategories is feed.getInterestCategories#ba7a1dba.
+message TL_feed_getInterestCategories {
+  TLConstructor constructor = 1;
+  int64 hash = 3;
+}
+
+// TL_feed_readFeed is feed.readFeed#b436c1ff.
+message TL_feed_readFeed {
+  TLConstructor constructor = 1;
+  int32 filter_id = 3;
+  FeedPosition max_position = 4;
+}
+
+// TL_feed_setInterestCategories is feed.setInterestCategories#9f2958dc.
+message TL_feed_setInterestCategories {
+  TLConstructor constructor = 1;
+  repeated int32 category_ids = 3;
+}
+
+// TL_iv_getRichMessage mirrors messages.getRichMessage for the iv coverage name.
+message TL_iv_getRichMessage {
+  TLConstructor constructor = 1;
+  InputPeer peer = 3;
+  int32 id = 4;
+}
+
+service RPCFeed {
+  rpc feed_getFeed(TL_feed_getFeed) returns (Feed_FeedMessages);
+  rpc feed_getForYou(TL_feed_getForYou) returns (Feed_ForYouFeed);
+  rpc feed_readFeed(TL_feed_readFeed) returns (Updates);
+  rpc feed_getInterestCategories(TL_feed_getInterestCategories) returns (Feed_InterestCategories);
+  rpc feed_setInterestCategories(TL_feed_setInterestCategories) returns (Bool);
+}
+
+service RPCIv {
+  rpc iv_getRichMessage(TL_iv_getRichMessage) returns (messages_Messages);
+}

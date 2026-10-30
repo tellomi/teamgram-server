@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/aicompose"
 	"github.com/teamgram/teamgram-server/app/bff/messages/p1rest"
 )
 
@@ -118,6 +119,45 @@ type AIComposeService struct {
 
 func (AIComposeService) MessagesComposeMessageWithAI(_ context.Context, in *mtproto.TLMessagesComposeMessageWithAI) (*mtproto.Messages_ComposedMessageWithAI, error) {
 	return p1rest.ComposeMessageWithAI(in)
+}
+
+func (AIComposeService) AicomposeCreateTone(ctx context.Context, in *mtproto.TLAicomposeCreateTone) (*mtproto.AiComposeTone, error) {
+	self, _ := selfID(ctx)
+	return aicompose.Create(self, in)
+}
+
+func (AIComposeService) AicomposeUpdateTone(ctx context.Context, in *mtproto.TLAicomposeUpdateTone) (*mtproto.AiComposeTone, error) {
+	self, _ := selfID(ctx)
+	return aicompose.Update(self, in)
+}
+
+func (AIComposeService) AicomposeSaveTone(ctx context.Context, in *mtproto.TLAicomposeSaveTone) (*mtproto.Bool, error) {
+	self, _ := selfID(ctx)
+	return aicompose.Save(self, in)
+}
+
+func (AIComposeService) AicomposeDeleteTone(ctx context.Context, in *mtproto.TLAicomposeDeleteTone) (*mtproto.Bool, error) {
+	self, _ := selfID(ctx)
+	return aicompose.Delete(self, in)
+}
+
+func (AIComposeService) AicomposeGetTone(ctx context.Context, in *mtproto.TLAicomposeGetTone) (*mtproto.Aicompose_Tones, error) {
+	self, _ := selfID(ctx)
+	return aicompose.Get(self, in)
+}
+
+func (AIComposeService) AicomposeGetTones(ctx context.Context, in *mtproto.TLAicomposeGetTones) (*mtproto.Aicompose_Tones, error) {
+	self, _ := selfID(ctx)
+	hash := int64(0)
+	if in != nil {
+		hash = in.GetHash()
+	}
+	return aicompose.List(self, hash)
+}
+
+func (AIComposeService) AicomposeGetToneExample(ctx context.Context, in *mtproto.TLAicomposeGetToneExample) (*mtproto.AiComposeToneExample, error) {
+	self, _ := selfID(ctx)
+	return aicompose.Example(self, in)
 }
 
 // GamesService serves messages.getEmojiGameInfo.

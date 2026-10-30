@@ -935,6 +935,22 @@ var (
 	// | 400 | AI_COMPOSE_TASK_MISSING | No AI task was specified. The caller must provide at least one of: proofread, translate (with a target language), tone, or emojify. |
 	ErrAiComposeTaskMissing = status.Error(ErrBadRequest, "AI_COMPOSE_TASK_MISSING")
 
+	// ErrAiComposeToneInvalid
+	// | 400 | AICOMPOSE_TONE_INVALID | The specified tone is invalid. |
+	ErrAiComposeToneInvalid = status.Error(ErrBadRequest, "AICOMPOSE_TONE_INVALID")
+
+	// ErrAiComposeToneTitleInvalid
+	// | 400 | AICOMPOSE_TONE_TITLE_INVALID | The specified tone title is invalid. |
+	ErrAiComposeToneTitleInvalid = status.Error(ErrBadRequest, "AICOMPOSE_TONE_TITLE_INVALID")
+
+	// ErrInterestCategoryInvalid
+	// | 400 | INTEREST_CATEGORY_INVALID | An interest category id is not in the catalog. |
+	ErrInterestCategoryInvalid = status.Error(ErrBadRequest, "INTEREST_CATEGORY_INVALID")
+
+	// ErrStoryIdInvalid
+	// | 400 | STORY_ID_INVALID | The specified story id is invalid. |
+	ErrStoryIdInvalid = status.Error(ErrBadRequest, "STORY_ID_INVALID")
+
 	// ErrInviteForbiddenWithJoinas
 	// | 400 | INVITE_FORBIDDEN_WITH_JOINAS | If the user has anonymously joined a group call as a channel, they can't invite other users to the group call because that would cause deanonymization, because the invite would be sent using the original user ID, not the anonymized channel ID. |
 	ErrInviteForbiddenWithJoinas = status.Error(ErrBadRequest, "INVITE_FORBIDDEN_WITH_JOINAS")
