@@ -7,7 +7,7 @@ cd "$root"
 artifact_dir="${ARTIFACT_DIR:-${root}/ui-artifacts/android}"
 mkdir -p "$artifact_dir"
 export E2E_API_HOST="${E2E_API_HOST:-staging-api.tellomi.cn}"
-export E2E_API_PORT="${E2E_API_PORT:-10443}"
+export E2E_API_PORT="${E2E_API_PORT:-11443}"
 export PATH="${PATH}:${HOME}/.maestro/bin"
 
 bash e2e/ui/scripts/install_maestro.sh

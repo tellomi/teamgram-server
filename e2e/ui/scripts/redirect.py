@@ -2,8 +2,9 @@
 
 tellomi/Telegram release APKs dial an IPv4 literal (gradle TELLOMI_PROFILE_DEV,
 currently 8.137.39.82:10443). A hosts entry cannot change that. On a rooted
-emulator, DNAT sends every TCP connection to the MTProto port to
-staging-api.tellomi.cn. The client repositories are not modified.
+emulator, DNAT sends every TCP connection to that production port to
+staging-api.tellomi.cn on the staging MTProto port (default 11443).
+The client repositories are not modified.
 """
 
 from __future__ import annotations
@@ -13,6 +14,11 @@ import os
 import socket
 import subprocess
 import sys
+
+# Port baked into release clients (TELLOMI_PROFILE_DEV / iOS seed_port).
+CLIENT_DIAL_PORT = "10443"
+# TCP port staging-api.tellomi.cn listens on.
+DEFAULT_STAGING_PORT = "11443"
 
 
 def resolve_host(host: str) -> str:
@@ -35,11 +41,15 @@ def _is_ipv4(value: str) -> bool:
     return True
 
 
-def dnat_arguments(staging_ip: str, port: str) -> list[str]:
+def dnat_arguments(
+    staging_ip: str,
+    staging_port: str,
+    client_port: str = CLIENT_DIAL_PORT,
+) -> list[str]:
     if not _is_ipv4(staging_ip):
         raise ValueError(f"expected an IPv4 address, got {staging_ip!r}")
-    if not port.isdigit():
-        raise ValueError(port)
+    if not str(staging_port).isdigit() or not str(client_port).isdigit():
+        raise ValueError(staging_port if not str(staging_port).isdigit() else client_port)
     return [
         "iptables",
         "-t",
@@ -49,11 +59,11 @@ def dnat_arguments(staging_ip: str, port: str) -> list[str]:
         "-p",
         "tcp",
         "--dport",
-        port,
+        str(client_port),
         "-j",
         "DNAT",
         "--to-destination",
-        f"{staging_ip}:{port}",
+        f"{staging_ip}:{staging_port}",
     ]
 
 
@@ -61,8 +71,12 @@ def _adb(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str
     return subprocess.run(["adb", *args], check=check, text=True, capture_output=True)
 
 
-def apply_dnat(staging_ip: str, port: str) -> None:
-    rule = dnat_arguments(staging_ip, port)
+def apply_dnat(
+    staging_ip: str,
+    staging_port: str,
+    client_port: str = CLIENT_DIAL_PORT,
+) -> None:
+    rule = dnat_arguments(staging_ip, staging_port, client_port)
     probe = _adb(["shell", "iptables", "-t", "nat", "-S", "OUTPUT"], check=False)
     if probe.returncode != 0:
         probe = _adb(["shell", "su", "0", "iptables", "-t", "nat", "-S", "OUTPUT"], check=False)
@@ -75,15 +89,17 @@ def apply_dnat(staging_ip: str, port: str) -> None:
         prefix = ["shell", "su", "0"]
     else:
         prefix = ["shell"]
-    needle = f"--dport {port} -j DNAT --to-destination {staging_ip}:{port}"
+    needle = (
+        f"--dport {client_port} -j DNAT --to-destination {staging_ip}:{staging_port}"
+    )
     if needle in (probe.stdout or ""):
-        print(f"DNAT already sends port {port} to {staging_ip}")
+        print(f"DNAT already sends port {client_port} to {staging_ip}:{staging_port}")
         return
     completed = _adb([*prefix, *rule], check=False)
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip()
         raise SystemExit(f"iptables DNAT failed: {detail}")
-    print(f"DNAT: tcp/{port} -> {staging_ip}:{port}")
+    print(f"DNAT: tcp/{client_port} -> {staging_ip}:{staging_port}")
 
 
 def preflight(host: str, port: int, timeout: float = 20.0) -> str:
@@ -107,7 +123,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     host = os.environ.get("E2E_API_HOST", "staging-api.tellomi.cn").strip()
-    port = os.environ.get("E2E_API_PORT", "10443").strip()
+    port = os.environ.get("E2E_API_PORT", DEFAULT_STAGING_PORT).strip()
     if args.preflight:
         preflight(host, int(port))
     if args.apply:
