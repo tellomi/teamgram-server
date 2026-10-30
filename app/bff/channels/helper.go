@@ -22,6 +22,16 @@ func New(c Config) *service.Service {
 
 func NewForums() *service.ForumsService       { return &service.ForumsService{} }
 func NewReactions() *service.ReactionsService { return &service.ReactionsService{} }
+func NewFragment() *service.FragmentService   { return &service.FragmentService{} }
+func NewAntiSpam() *service.AntiSpamService   { return &service.AntiSpamService{} }
+func NewBoosts() *service.BoostsService       { return &service.BoostsService{} }
+func NewRecommendations() *service.RecommendationsService {
+	return &service.RecommendationsService{}
+}
+func NewTakeout() *service.TakeoutService          { return &service.TakeoutService{} }
+func NewTranslation() *service.TranslationService  { return &service.TranslationService{} }
+func NewPaidMessages() *service.PaidMessageService { return &service.PaidMessageService{} }
+func NewReports() *service.ReportsService          { return &service.ReportsService{} }
 
 // NewThreads serves discussion-thread RPCs and contacts.blockFromReplies.
 // userConf and messageConf are the biz service. msgConf is messenger.msg.

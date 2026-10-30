@@ -24,6 +24,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 	if !member && !ch.Public() {
 		return forbiddenChat(ch)
 	}
+	feat := s.features(ctx, ch.ID)
 	var admin *mtproto.ChatAdminRights
 	var banned *mtproto.ChatBannedRights
 	if p != nil && p.IsAdmin() {
@@ -49,10 +50,17 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		BannedRights:                banned,
 		DefaultBannedRights:         mtproto.BannedRights(ch.DefaultBanned).ToChatBannedRights(),
 		ParticipantsCount_FLAGINT32: &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
-		HasGeo:                      ch.Address != "" || s.features(ctx, ch.ID).Lat != 0 || s.features(ctx, ch.ID).Long != 0,
-		SlowmodeEnabled:             s.features(ctx, ch.ID).SlowmodeSeconds > 0,
-		JoinRequest:                 s.features(ctx, ch.ID).JoinRequest,
-		Gigagroup:                   s.features(ctx, ch.ID).Gigagroup,
+		HasGeo:                      ch.Address != "" || feat.Lat != 0 || feat.Long != 0,
+		SlowmodeEnabled:             feat.SlowmodeSeconds > 0,
+		JoinRequest:                 feat.JoinRequest,
+		Gigagroup:                   feat.Gigagroup,
+		Autotranslation:             feat.Autotranslation,
+		BroadcastMessagesAllowed:    feat.BroadcastMessagesAllowed,
+		Usernames:                   usernameVector(listedUsernames(ch, feat)),
+		Color_FLAGPEERCOLOR:         peerColorValue(feat.ColorSet, feat.ColorID, feat.ColorEmoji),
+		ProfileColor:                peerColorValue(feat.ProfileColorSet, feat.ProfileColorID, feat.ProfileColorEmoji),
+		EmojiStatus:                 emojiStatusValue(feat.Emoji),
+		SendPaidMessagesStars:       paidStars(feat),
 	}).To_Chat()
 	if LookupGroupCall != nil && ch != nil {
 		if att := LookupGroupCall(ctx, ch.ID); att.Active && att.Call != nil {
@@ -140,6 +148,9 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 	if feat := s.features(ctx, ch.ID); feat != nil {
 		full.HiddenPrehistory = feat.HiddenPrehistory
 		full.ParticipantsHidden = feat.ParticipantsHidden
+		full.Antispam = feat.Antispam
+		full.ViewForumAsMessages = feat.ViewForumAsMessages[viewer]
+		full.MainTab = mtproto.ToProfileTabByType(feat.MainProfileTab)
 		if feat.SlowmodeSeconds > 0 {
 			full.SlowmodeSeconds = &wrapperspb.Int32Value{Value: feat.SlowmodeSeconds}
 		}
@@ -151,6 +162,12 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		}
 		if feat.AvailableMinID > 0 {
 			full.AvailableMinId = &wrapperspb.Int32Value{Value: feat.AvailableMinID}
+		}
+		if feat.BoostsUnrestrict > 0 {
+			full.BoostsUnrestrict = &wrapperspb.Int32Value{Value: feat.BoostsUnrestrict}
+		}
+		if stars := paidStars(feat); stars != nil {
+			full.SendPaidMessagesStars = stars
 		}
 		if feat.Lat != 0 || feat.Long != 0 || ch.Address != "" {
 			full.Location = mtproto.MakeTLChannelLocation(&mtproto.ChannelLocation{

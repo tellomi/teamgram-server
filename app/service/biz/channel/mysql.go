@@ -112,12 +112,86 @@ UPDATE channels SET access_hash=?, creator_user_id=?, title=?, about=?, username
 }
 
 func (s *mysqlStore) FindByUsername(ctx context.Context, username string) (*Channel, error) {
-	row := s.db.QueryRowContext(ctx, channelSelect+` WHERE username=? AND deleted=0`, username)
-	ch, err := scanChannel(row)
-	if err == sql.ErrNoRows {
-		return nil, nil
+	id, active, found, err := s.LookupUsername(ctx, username)
+	if err != nil || !found || !active {
+		return nil, err
 	}
-	return ch, err
+	ch, err := s.GetChannel(ctx, id)
+	if err != nil || ch == nil || ch.Deleted {
+		return nil, err
+	}
+	return ch, nil
+}
+
+func (s *mysqlStore) LookupUsername(ctx context.Context, username string) (int64, bool, bool, error) {
+	if username == "" {
+		return 0, false, false, nil
+	}
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM channels WHERE username=? AND deleted=0`, username).Scan(&id)
+	if err == nil {
+		return id, true, true, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, false, false, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT channel_id, data FROM channel_feature`)
+	if err != nil {
+		return 0, false, false, err
+	}
+	defer rows.Close()
+	var inactiveID int64
+	var inactive bool
+	for rows.Next() {
+		var channelID int64
+		var data []byte
+		if err := rows.Scan(&channelID, &data); err != nil {
+			return 0, false, false, err
+		}
+		var f Features
+		if json.Unmarshal(data, &f) != nil {
+			continue
+		}
+		for _, u := range f.Usernames {
+			if !equalFold(u.Username, username) {
+				continue
+			}
+			if u.Active {
+				return channelID, true, true, nil
+			}
+			inactiveID = channelID
+			inactive = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, false, false, err
+	}
+	if inactive {
+		return inactiveID, false, true, nil
+	}
+	return 0, false, false, nil
+}
+
+func (s *mysqlStore) ListPublic(ctx context.Context) ([]*Channel, error) {
+	rows, err := s.db.QueryContext(ctx, channelSelect+`
+ WHERE deleted=0 AND username IS NOT NULL AND username <> ''
+ ORDER BY participants_count DESC, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanChannels(rows)
+}
+
+func (s *mysqlStore) ListLeftByUser(ctx context.Context, userID int64) ([]*Channel, error) {
+	rows, err := s.db.QueryContext(ctx, channelSelect+`
+ WHERE id IN (SELECT channel_id FROM channel_participants WHERE user_id=? AND state=?) AND deleted=0
+ ORDER BY id`, userID, StateLeft)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanChannels(rows)
 }
 
 func (s *mysqlStore) FindByMigratedChat(ctx context.Context, chatID int64) (*Channel, error) {

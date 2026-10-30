@@ -20,13 +20,14 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 // ChannelsSetMainProfileTab
 // channels.setMainProfileTab#3583fcb1 channel:InputChannel tab:ProfileTab = Bool;
 func (c *UserChannelProfilesCore) ChannelsSetMainProfileTab(in *mtproto.TLChannelsSetMainProfileTab) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("channels.setMainProfileTab blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if c.MD == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
+	return channel.Shared().SetMainProfileTab(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in.GetChannel(), in.GetTab())
 }

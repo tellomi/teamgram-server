@@ -89,12 +89,88 @@ func (s *memoryStore) SaveChannel(ctx context.Context, ch *Channel) error {
 func (s *memoryStore) FindByUsername(ctx context.Context, username string) (*Channel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	id, active, found := s.lookupUsernameLocked(username)
+	if !found || !active {
+		return nil, nil
+	}
+	ch := s.channels[id]
+	if ch == nil || ch.Deleted {
+		return nil, nil
+	}
+	return ch.clone(), nil
+}
+
+func (s *memoryStore) LookupUsername(ctx context.Context, username string) (int64, bool, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, active, found := s.lookupUsernameLocked(username)
+	return id, active, found, nil
+}
+
+func (s *memoryStore) lookupUsernameLocked(username string) (int64, bool, bool) {
+	if username == "" {
+		return 0, false, false
+	}
+	var inactiveID int64
+	var inactive bool
 	for _, ch := range s.channels {
-		if !ch.Deleted && ch.Username != "" && equalFold(ch.Username, username) {
-			return ch.clone(), nil
+		if ch.Deleted {
+			continue
+		}
+		if ch.Username != "" && equalFold(ch.Username, username) {
+			return ch.ID, true, true
+		}
+		if f := s.features[ch.ID]; f != nil {
+			for _, u := range f.Usernames {
+				if !equalFold(u.Username, username) {
+					continue
+				}
+				if u.Active {
+					return ch.ID, true, true
+				}
+				inactiveID = ch.ID
+				inactive = true
+			}
 		}
 	}
-	return nil, nil
+	if inactive {
+		return inactiveID, false, true
+	}
+	return 0, false, false
+}
+
+func (s *memoryStore) ListPublic(ctx context.Context) ([]*Channel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Channel
+	for _, ch := range s.channels {
+		if !ch.Deleted && ch.Username != "" {
+			out = append(out, ch.clone())
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ParticipantsCount != out[j].ParticipantsCount {
+			return out[i].ParticipantsCount > out[j].ParticipantsCount
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *memoryStore) ListLeftByUser(ctx context.Context, userID int64) ([]*Channel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Channel
+	for id, parts := range s.parts {
+		p := parts[userID]
+		if p != nil && p.State == StateLeft {
+			if ch := s.channels[id]; ch != nil && !ch.Deleted {
+				out = append(out, ch.clone())
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
 }
 
 func (s *memoryStore) FindByMigratedChat(ctx context.Context, chatID int64) (*Channel, error) {
