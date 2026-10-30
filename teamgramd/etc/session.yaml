@@ -157,6 +157,8 @@ BFFProxyClients:
     # Paid-message revenue, exemptions, and channels.updatePaidMessagesPrice.
     "/mtproto.RPCPaidMessage": "bff.bff"
     "/mtproto.RPCStickers": "bff.bff"
+    # Stories: stories.getAllStories, stories.sendStory, and the other RPCStories methods.
+    "/mtproto.RPCStories": "bff.bff"
     "/mtproto.RPCPremium": "bff.bff"
     "/mtproto.RPCEmojiStatus": "bff.bff"
     "/mtproto.RPCAccentColors": "bff.bff"

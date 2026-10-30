@@ -184,7 +184,25 @@ func (s *Service) GetAll(ctx context.Context, viewer int64, hidden, next bool, s
 			continue
 		}
 		blocks = append(blocks, peerBlock{owner: owner, recs: recs})
-		parts = append(parts, owner.Peer().PredicateName+":"+strconv.FormatInt(owner.ID, 10)+":"+strconv.Itoa(len(recs))+":"+strconv.Itoa(int(recs[len(recs)-1].id())))
+	}
+	// Contact and channel lists come from maps. Sort before hashing so two
+	// identical trays produce the same state and the client can stop on
+	// stories.allStoriesNotModified instead of refetching forever.
+	sort.Slice(blocks, func(i, j int) bool {
+		if blocks[i].owner.Kind != blocks[j].owner.Kind {
+			return blocks[i].owner.Kind < blocks[j].owner.Kind
+		}
+		return blocks[i].owner.ID < blocks[j].owner.ID
+	})
+	parts = make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		var max int32
+		for _, rec := range b.recs {
+			if rec.id() > max {
+				max = rec.id()
+			}
+		}
+		parts = append(parts, strconv.Itoa(int(b.owner.Kind))+":"+strconv.FormatInt(b.owner.ID, 10)+":"+strconv.Itoa(len(b.recs))+":"+strconv.Itoa(int(max)))
 	}
 	sum := hashState(hidden, parts)
 	if state != "" && state == sum {
@@ -766,14 +784,15 @@ func (s *Service) Stealth(ctx context.Context, viewer, auth int64, past, future 
 	return up, nil
 }
 
-func (s *Service) Search(ctx context.Context, viewer int64, hashtag, offset string, limit int32) (*mtproto.Stories_FoundStories, error) {
+func (s *Service) Search(ctx context.Context, viewer int64, hashtag, offset string, limit int32, peer *Owner) (*mtproto.Stories_FoundStories, error) {
 	hashtag = strings.TrimPrefix(strings.TrimSpace(hashtag), "#")
 	res := mtproto.MakeTLStoriesFoundStories(&mtproto.Stories_FoundStories{
 		Stories: []*mtproto.FoundStory{},
 		Chats:   []*mtproto.Chat{},
 		Users:   []*mtproto.User{},
 	}).To_Stories_FoundStories()
-	if hashtag == "" {
+	// Location-only search has no geo index. An empty page is schema-valid.
+	if hashtag == "" && peer == nil {
 		return res, nil
 	}
 	all, err := s.store.ListAll(ctx)
@@ -786,7 +805,10 @@ func (s *Service) Search(ctx context.Context, viewer int64, hashtag, offset stri
 		if rec.Deleted || rec.Item == nil || !rec.Item.Public {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(rec.Item.GetCaption().GetValue()), needle) {
+		if peer != nil && rec.Owner != *peer {
+			continue
+		}
+		if needle != "" && !strings.Contains(strings.ToLower(rec.Item.GetCaption().GetValue()), needle) {
 			continue
 		}
 		if err := s.canViewPeer(ctx, viewer, rec.Owner, 0); err != nil {

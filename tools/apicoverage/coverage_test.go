@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -131,11 +132,8 @@ func TestServerSamples(t *testing.T) {
 	if srv.Routed["RPCGroupCalls"] {
 		t.Fatal("group calls stay unrouted until the SFU path is a separate slice")
 	}
-	if !srv.Registered["RPCStories"] {
-		t.Fatal("stories handler is registered on the bff process")
-	}
-	if srv.Routed["RPCStories"] {
-		t.Fatal("stories are not in the session IDMap")
+	if !srv.Routed["RPCStories"] || !srv.Registered["RPCStories"] {
+		t.Fatal("stories must be routed and registered")
 	}
 	assertStatus := func(method, status, effect string) {
 		t.Helper()
@@ -215,6 +213,46 @@ func TestServerSamples(t *testing.T) {
 	assertStatus("account.getWebAuthorizations", statusImplemented, effectOK)
 	assertStatus("help.getPromoData", statusImplemented, effectOK)
 	assertStatus("help.hidePromoData", statusImplemented, effectOK)
+	for _, method := range []string{
+		"stories.activateStealthMode",
+		"stories.canSendStory",
+		"stories.createAlbum",
+		"stories.deleteAlbum",
+		"stories.deleteStories",
+		"stories.editStory",
+		"stories.exportStoryLink",
+		"stories.getAlbumStories",
+		"stories.getAlbums",
+		"stories.getAllReadPeerStories",
+		"stories.getAllStories",
+		"stories.getChatsToSend",
+		"stories.getPeerMaxIDs",
+		"stories.getPeerStories",
+		"stories.getPinnedStories",
+		"stories.getStoriesArchive",
+		"stories.getStoriesByID",
+		"stories.getStoriesViews",
+		"stories.getStoryReactionsList",
+		"stories.getStoryViewsList",
+		"stories.incrementStoryViews",
+		"stories.readStories",
+		"stories.reorderAlbums",
+		"stories.report",
+		"stories.searchPosts",
+		"stories.sendReaction",
+		"stories.sendStory",
+		"stories.startLive",
+		"stories.togglePeerStoriesHidden",
+		"stories.togglePinned",
+		"stories.togglePinnedToTop",
+		"stories.updateAlbum",
+	} {
+		assertStatus(method, statusImplemented, effectOK)
+		_, _, _, _, notes, _ := srv.resolve(method)
+		if strings.Contains(notes, "layer variants disagree") || strings.Contains(notes, "ENTERPRISE_IS_BLOCKED") {
+			t.Errorf("%s notes=%s", method, notes)
+		}
+	}
 	if !srv.Routed["RPCPasskey"] || !srv.Registered["RPCPasskey"] {
 		t.Fatal("passkey login must be routed and registered")
 	}
