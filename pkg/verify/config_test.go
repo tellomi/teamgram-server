@@ -14,6 +14,7 @@ func TestLoadDefaultsUseLogEmail(t *testing.T) {
 	t.Setenv("TELLOMI_EMAIL_IP_DAILY_LIMIT", "")
 	t.Setenv("TELLOMI_EMAIL_MAX_ATTEMPTS", "")
 	t.Setenv("TELLOMI_EMAIL_CODE_TTL_SECONDS", "")
+	t.Setenv("TELLOMI_RESEND_API_KEY", "")
 	t.Setenv("TELLOMI_POSTAL_BASE_URL", "")
 	t.Setenv("TELLOMI_POSTAL_API_KEY", "")
 	t.Setenv("ALIBABA_CLOUD_ACCESS_KEY_ID", "")
@@ -36,6 +37,9 @@ func TestLoadDefaultsUseLogEmail(t *testing.T) {
 	}
 	if cfg.Email.CodeLength != 6 {
 		t.Fatalf("email code length %d", cfg.Email.CodeLength)
+	}
+	if cfg.Email.ResendAPIKey != "" {
+		t.Fatal("resend api key must come from the environment")
 	}
 	if cfg.Email.PostalBaseURL != "" || cfg.Email.PostalAPIKey != "" {
 		t.Fatal("postal credentials must come from the environment")
@@ -89,6 +93,35 @@ func TestLoadUnknownEmailProviderDisablesEmail(t *testing.T) {
 	cfg := Load()
 	if cfg.Email.Enabled() || cfg.Email.Provider != "" {
 		t.Fatalf("unknown provider must disable email, got %+v", cfg.Email)
+	}
+}
+
+func TestLoadResendDoesNotRequireCredentialsAtStartup(t *testing.T) {
+	t.Setenv("TELLOMI_EMAIL_PROVIDER", "resend")
+	t.Setenv("TELLOMI_RESEND_API_KEY", "")
+	t.Setenv("TELLOMI_EMAIL_FROM", "")
+	t.Setenv("TELLOMI_EMAIL_FROM_NAME", "")
+	cfg := Load()
+	if !cfg.Email.Enabled() || cfg.Email.Provider != ProviderResend {
+		t.Fatalf("resend %+v", cfg.Email)
+	}
+	if cfg.Email.From != DefaultEmailFrom || cfg.Email.FromName != DefaultEmailFromName {
+		t.Fatalf("from %+v", cfg.Email)
+	}
+	if cfg.Email.ResendAPIKey != "" {
+		t.Fatal("empty resend api key must not be invented")
+	}
+}
+
+func TestLoadResendReadsAPIKey(t *testing.T) {
+	t.Setenv("TELLOMI_EMAIL_PROVIDER", "Resend")
+	t.Setenv("TELLOMI_RESEND_API_KEY", " re_test_key ")
+	cfg := Load()
+	if !cfg.Email.Enabled() || cfg.Email.Provider != ProviderResend {
+		t.Fatalf("resend %+v", cfg.Email)
+	}
+	if cfg.Email.ResendAPIKey != "re_test_key" {
+		t.Fatalf("api key %q", cfg.Email.ResendAPIKey)
 	}
 }
 

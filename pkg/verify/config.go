@@ -11,6 +11,7 @@ const (
 	ProviderAliyun   = "aliyun"
 	ProviderLog      = "log"
 	ProviderPostal   = "postal"
+	ProviderResend   = "resend"
 	ProviderAliyunDM = "aliyun_dm"
 
 	DefaultRegion          = "cn-hangzhou"
@@ -50,13 +51,14 @@ type SMSConfig struct {
 }
 
 type EmailConfig struct {
-	// Provider is "log" (default), "postal", or "" (disabled).
+	// Provider is "log" (default), "resend" (production OTP), "postal" (legacy), or "" (disabled).
 	// aliyun_dm is not a P0 sender.
 	Provider      string
 	SetupRequired bool
 	From          string
 	FromName      string
 	CodeLength    int
+	ResendAPIKey  string
 	PostalBaseURL string
 	PostalAPIKey  string
 	// DirectMail fields are unused by auth.sendCode. P0 does not call Aliyun DM.
@@ -70,7 +72,7 @@ type EmailConfig struct {
 
 func (e EmailConfig) Enabled() bool {
 	switch e.Provider {
-	case ProviderLog, ProviderPostal:
+	case ProviderLog, ProviderPostal, ProviderResend:
 		return true
 	default:
 		return false
@@ -87,9 +89,9 @@ type Limits struct {
 
 // Load reads TELLOMI_* and the standard Aliyun credential variables.
 // An unset TELLOMI_EMAIL_PROVIDER selects the log sender so email OTP works
-// before Postal is deployed. "disabled", "none", and "off" refuse to send.
+// without a third-party account. "disabled", "none", and "off" refuse to send.
 // "aliyun_dm" is not a P0 provider and is treated as disabled.
-// Missing Postal URL or API key does not fail Load; SendCode fails later.
+// Missing Resend or Postal credentials do not fail Load; SendCode fails later.
 func Load() Config {
 	smsProvider := strings.ToLower(strings.TrimSpace(os.Getenv("TELLOMI_SMS_PROVIDER")))
 	switch smsProvider {
@@ -104,7 +106,7 @@ func Load() Config {
 	switch emailProvider {
 	case "", ProviderLog:
 		emailProvider = ProviderLog
-	case ProviderPostal:
+	case ProviderPostal, ProviderResend:
 	case "disabled", "none", "off":
 		emailProvider = ""
 	default:
@@ -131,6 +133,7 @@ func Load() Config {
 			From:            envString("TELLOMI_EMAIL_FROM", DefaultEmailFrom),
 			FromName:        envString("TELLOMI_EMAIL_FROM_NAME", DefaultEmailFromName),
 			CodeLength:      NormalizeCodeLength(envInt("TELLOMI_EMAIL_CODE_LENGTH", 6)),
+			ResendAPIKey:    strings.TrimSpace(os.Getenv("TELLOMI_RESEND_API_KEY")),
 			PostalBaseURL:   strings.TrimRight(strings.TrimSpace(os.Getenv("TELLOMI_POSTAL_BASE_URL")), "/"),
 			PostalAPIKey:    strings.TrimSpace(os.Getenv("TELLOMI_POSTAL_API_KEY")),
 			AccountName:     envString("TELLOMI_ALIYUN_DM_ACCOUNT_NAME", DefaultDMAccountName),

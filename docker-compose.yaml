@@ -11,8 +11,9 @@ services:
     stop_grace_period: 25s
     # SMS: unset TELLOMI_SMS_PROVIDER keeps the dev code 12345.
     # Set it to aliyun plus ALIBABA_CLOUD_ACCESS_KEY_* for Dysmsapi.
-    # Email OTP defaults to log (prints the code). Set postal plus
-    # TELLOMI_POSTAL_BASE_URL and TELLOMI_POSTAL_API_KEY when Postal is up.
+    # Email OTP defaults to log (prints the code). Production OTP uses
+    # TELLOMI_EMAIL_PROVIDER=resend and TELLOMI_RESEND_API_KEY.
+    # postal plus TELLOMI_POSTAL_* is a legacy optional sender.
     # Phone SMS is unchanged. See docs/sms-email.md and docs/email-signup.md.
     # Put secrets in the environment or a gitignored .env, not in this file.
     environment:
@@ -26,6 +27,7 @@ services:
       TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-log}
       TELLOMI_EMAIL_FROM: ${TELLOMI_EMAIL_FROM:-noreply@tellomi.app}
       TELLOMI_EMAIL_FROM_NAME: ${TELLOMI_EMAIL_FROM_NAME:-Tellomi}
+      TELLOMI_RESEND_API_KEY: ${TELLOMI_RESEND_API_KEY:-}
       TELLOMI_POSTAL_BASE_URL: ${TELLOMI_POSTAL_BASE_URL:-}
       TELLOMI_POSTAL_API_KEY: ${TELLOMI_POSTAL_API_KEY:-}
       # S3-compatible object storage. Defaults talk to the MinIO service in

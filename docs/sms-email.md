@@ -33,13 +33,36 @@ Credentials use the standard Aliyun variables. Do not put secrets in git or in y
 | Value | Behavior |
 | --- | --- |
 | unset or `log` | Default for dev and staging. A random code is stored and printed: `tellomi email verification code to=<email> code=<digits>`. Nothing is delivered to a mailbox. |
-| `postal` | Same code, sent with Postal's HTTP API. Use this when Postal is actually up. |
+| `resend` | Production OTP path. The same code is sent with the Resend HTTP API. |
+| `postal` | Legacy optional sender. The same code is sent with Postal's HTTP API when a self-hosted Postal server is up. |
 | `disabled`, `none`, `off` | Email `auth.sendCode` returns `EMAIL_NOT_SETUP`. Phone SMS is unchanged. |
 | anything else, including `aliyun_dm` | Treated as disabled. Aliyun DirectMail is not the P0 sender. |
 
 The code length is `TELLOMI_EMAIL_CODE_LENGTH` (4 through 8, default 6). `auth.sentCodeTypeEmailCode` reports that length and a masked `email_pattern`. Sign-in compares the submitted `phone_code` or `emailVerificationCode` to the stored code. Quotas use a separate redis prefix from SMS, so an email send does not consume the SMS daily cap.
 
-Postal is HTTP, not SMTP. Outbound TCP 25 and 587 are blocked, and the Postal host is not required for this process to start.
+Production mail is Resend over HTTPS. SMTP is not used. Outbound TCP 25 and 587 stay unused. The process starts without a Resend API key; the key is required only when a send runs.
+
+### Resend
+
+`POST https://api.resend.com/emails`
+
+| Header | Value |
+| --- | --- |
+| `Content-Type` | `application/json` |
+| `Authorization` | `Bearer <TELLOMI_RESEND_API_KEY>` |
+
+JSON body: `from` (`Tellomi <noreply@tellomi.app>` by default), `to` (one address), `subject` `Tellomi 验证码 / Verification code`, `text`:
+
+```text
+您的验证码为：<code>，请勿泄露于他人！
+Your verification code is <code>. Do not share it.
+```
+
+`TELLOMI_RESEND_API_KEY` is read from the environment only. It is not stored in the repo. If the key is empty, startup still succeeds and `auth.sendCode` returns `SMS_CODE_CREATE_FAILED`. The from domain must be verified in Resend. `TELLOMI_EMAIL_FROM` and `TELLOMI_EMAIL_FROM_NAME` set the From header.
+
+### Postal (legacy)
+
+Postal remains available as an optional sender. It is not the production OTP path. Delivery is HTTP, not SMTP, and the Postal host is not required for this process to start.
 
 `POST {TELLOMI_POSTAL_BASE_URL}/api/v1/send/message`
 
@@ -50,7 +73,7 @@ Postal is HTTP, not SMTP. Outbound TCP 25 and 587 are blocked, and the Postal ho
 
 JSON body: `to` (one address), `from` (`Tellomi <noreply@tellomi.app>` by default), `sender` (the bare address), `subject` `Tellomi 验证码`, `plain_body` `您的验证码为：<code>，请勿泄露于他人！`.
 
-`TELLOMI_POSTAL_BASE_URL` is the origin, for example `https://postal.internal`. A value that already ends in `/api/v1/send/message` is used as-is. If the URL or API key is empty, startup still succeeds and `auth.sendCode` returns `SMS_CODE_CREATE_FAILED`. Leave the provider on `log` until Postal answers.
+`TELLOMI_POSTAL_BASE_URL` is the origin, for example `https://postal.internal`. A value that already ends in `/api/v1/send/message` is used as-is. If the URL or API key is empty, startup still succeeds and `auth.sendCode` returns `SMS_CODE_CREATE_FAILED`. Use `resend` for production OTP. Leave the provider on `log` for local development.
 
 ## Environment variables
 
@@ -70,17 +93,18 @@ JSON body: `to` (one address), `from` (`Tellomi <noreply@tellomi.app>` by defaul
 | `TELLOMI_SMS_IP_DAILY_LIMIT` | `30` | Per-IP daily cap for SMS |
 | `TELLOMI_SMS_MAX_ATTEMPTS` | `5` | Wrong SMS code attempts |
 | `TELLOMI_SMS_CODE_TTL_SECONDS` | `180` | Redis TTL / SMS code expiry |
-| `TELLOMI_EMAIL_PROVIDER` | `log` | `log`, `postal`, or `disabled` |
+| `TELLOMI_EMAIL_PROVIDER` | `log` | `log`, `resend`, `postal`, or `disabled` |
 | `TELLOMI_EMAIL_FROM` | `noreply@tellomi.app` | From address |
 | `TELLOMI_EMAIL_FROM_NAME` | `Tellomi` | Display name |
+| `TELLOMI_RESEND_API_KEY` | empty | Resend API key. Required only when provider is `resend` |
 | `TELLOMI_EMAIL_CODE_LENGTH` | `6` | `4`–`8` |
 | `TELLOMI_EMAIL_RESEND_SECONDS` | `60` | Per-address resend cooldown |
 | `TELLOMI_EMAIL_DAILY_LIMIT` | `10` | Per-address daily cap |
 | `TELLOMI_EMAIL_IP_DAILY_LIMIT` | `30` | Per-IP daily cap for email |
 | `TELLOMI_EMAIL_MAX_ATTEMPTS` | `5` | Wrong email code attempts |
 | `TELLOMI_EMAIL_CODE_TTL_SECONDS` | `180` | Email code expiry |
-| `TELLOMI_POSTAL_BASE_URL` | empty | Postal HTTP origin. Required only when provider is `postal` |
-| `TELLOMI_POSTAL_API_KEY` | empty | Postal `X-Server-API-Key`. Required only when provider is `postal` |
+| `TELLOMI_POSTAL_BASE_URL` | empty | Legacy Postal HTTP origin. Required only when provider is `postal` |
+| `TELLOMI_POSTAL_API_KEY` | empty | Legacy Postal `X-Server-API-Key`. Required only when provider is `postal` |
 | `TELLOMI_EMAIL_SETUP_REQUIRED` | `false` | Read at startup. Not used by the P0 login RPCs |
 
 `Code.Name: none` in `teamgramd/etc/bff.yaml` is the yaml fallback for SMS. `TELLOMI_SMS_PROVIDER` overrides it when set to `aliyun`. Email does not use that yaml block.
@@ -89,7 +113,7 @@ JSON body: `to` (one address), `from` (`Tellomi <noreply@tellomi.app>` by defaul
 
 ## docker-compose
 
-`docker-compose.yaml` passes the variables into the `teamgram` service. Export secrets in the shell or a `.env` file that is not committed. The email provider defaults to `log`, so a stack without Postal still issues email codes.
+`docker-compose.yaml` passes the variables into the `teamgram` service. Export secrets in the shell or a `.env` file that is not committed. The email provider defaults to `log`, so a stack without Resend still issues email codes.
 
 ```yaml
 environment:
@@ -103,6 +127,7 @@ environment:
   TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-log}
   TELLOMI_EMAIL_FROM: ${TELLOMI_EMAIL_FROM:-noreply@tellomi.app}
   TELLOMI_EMAIL_FROM_NAME: ${TELLOMI_EMAIL_FROM_NAME:-Tellomi}
+  TELLOMI_RESEND_API_KEY: ${TELLOMI_RESEND_API_KEY:-}
   TELLOMI_POSTAL_BASE_URL: ${TELLOMI_POSTAL_BASE_URL:-}
   TELLOMI_POSTAL_API_KEY: ${TELLOMI_POSTAL_API_KEY:-}
 ```
@@ -111,14 +136,22 @@ An empty `TELLOMI_SMS_PROVIDER` keeps the fixed phone code `12345`. An empty `TE
 
 ## Checks
 
-Log mode, no Postal:
+Log mode (no Resend key and no Postal host):
 
 - `auth.sendCode` for an email returns `sentCodeTypeEmailCode` and the log line above.
 - `auth.signIn` accepts that code, not `12345`.
 - A new address then `auth.signUp` inserts `users.email` and a NULL `users.phone`.
 - `auth.sendCode` for `+86` still uses the SMS provider rules.
 
-Postal, when the server exists:
+Resend (production OTP):
+
+- `TELLOMI_EMAIL_PROVIDER=resend`
+- `TELLOMI_RESEND_API_KEY=<api key>`
+- `TELLOMI_EMAIL_FROM=noreply@tellomi.app`
+- `TELLOMI_EMAIL_FROM_NAME=Tellomi`
+- The same RPCs. Mail is the Resend HTTP call. See [Verify with Resend](email-signup.md#verify-with-resend).
+
+Postal (legacy, when that server exists):
 
 - `TELLOMI_EMAIL_PROVIDER=postal`
 - `TELLOMI_POSTAL_BASE_URL=https://<postal-host>`
