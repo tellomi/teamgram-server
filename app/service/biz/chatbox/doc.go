@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/proto/mtproto"
 )
 
 // docDB is the optional MySQL backing for chatbox aggregates. BFF and the
@@ -47,8 +48,9 @@ CREATE TABLE IF NOT EXISTS chatbox_doc (
 `
 
 // Book is the process-wide store for polls, scheduled messages, private-chat
-// reactions, the default double-tap reaction, and in-chat bot state
-// (inline results, attach menu, web apps, prepared messages).
+// reactions, the default double-tap reaction, in-chat bot state (inline
+// results, attach menu, web apps, prepared messages), quick replies,
+// translation flags, saved-message reaction tags, and message reports.
 type Book struct {
 	mu        sync.Mutex
 	db        docDB
@@ -66,6 +68,12 @@ type Book struct {
 	callbacks map[string]*callbackAnswer
 	cbBind    map[int64]*callbackBind
 	sent      map[string][]byte
+	quick     map[int64]*quickDoc
+	plain     map[string]*plainDoc
+	transOff  map[string]bool
+	tags      map[int64]*tagDoc
+	paid      map[string][]*mtproto.MessageExtendedMedia
+	reports   []reportItem
 	now       func() time.Time
 }
 
@@ -86,6 +94,11 @@ func newBook(db docDB) *Book {
 		callbacks: map[string]*callbackAnswer{},
 		cbBind:    map[int64]*callbackBind{},
 		sent:      map[string][]byte{},
+		quick:     map[int64]*quickDoc{},
+		plain:     map[string]*plainDoc{},
+		transOff:  map[string]bool{},
+		tags:      map[int64]*tagDoc{},
+		paid:      map[string][]*mtproto.MessageExtendedMedia{},
 		now:       time.Now,
 	}
 }

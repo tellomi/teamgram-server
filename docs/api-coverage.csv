@@ -362,8 +362,8 @@ messages.deleteParticipantReaction,messages,P1,interactive,yes,yes,yes,yes,imple
 messages.deleteParticipantReactions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_chat_p1.go
 messages.deletePhoneCallHistory,messages,P1,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCVoipCalls,session.yaml routes RPCVoipCalls but the bff process has no MessagesDeletePhoneCallHistory handler
 messages.deletePollAnswer,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPolls,app/bff/messages/internal/server/grpc/service/chat_p1.go
-messages.deleteQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
-messages.deleteQuickReplyShortcut,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
+messages.deleteQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
+messages.deleteQuickReplyShortcut,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.deleteRevokedExportedChatInvites,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.deleteSavedHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.deleteScheduledMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCScheduledMessages,app/bff/messages/internal/server/grpc/service/chat_p1.go
@@ -380,7 +380,7 @@ messages.editExportedChatInvite,messages,P1,interactive,yes,yes,yes,yes,implemen
 messages.editFactCheck,messages,P1,interactive,yes,no,yes,yes,missing,error,no,absent,RPCFactChecks,no route in session.yaml and no bff handler
 messages.editForumTopic,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.editMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
-messages.editQuickReplyShortcut,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
+messages.editQuickReplyShortcut,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.exportChatInvite,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.faveSticker,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.forwardMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -391,7 +391,7 @@ messages.getArchivedStickers,stickers,P2,interactive,yes,yes,yes,yes,routed-but-
 messages.getAttachMenuBot,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBotMenu,app/bff/messages/internal/server/grpc/service/bots.go
 messages.getAttachMenuBots,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBotMenu,app/bff/messages/internal/server/grpc/service/bots.go
 messages.getAttachedStickers,stickers,P2,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesGetAttachedStickers handler
-messages.getAvailableEffects,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCMessageEffects,no route in session.yaml and no bff handler
+messages.getAvailableEffects,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessageEffects,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getAvailableReactions,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.getBotApp,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
 messages.getBotCallbackAnswer,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCInlineBot,app/bff/messages/internal/server/grpc/service/bots.go
@@ -400,7 +400,7 @@ messages.getChats,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,imp
 messages.getCommonChats,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.getCustomEmojiDocuments,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCustomEmojis,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getDefaultHistoryTTL,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPrivacySettings,app/bff/privacysettings/client/privacysettings_client.go
-messages.getDefaultTagReactions,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSavedMessageTags,no route in session.yaml and no bff handler
+messages.getDefaultTagReactions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageTags,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.getDhConfig,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/dh.go
 messages.getDialogFilters,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 messages.getDialogUnreadMarks,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
@@ -415,10 +415,10 @@ messages.getEmojiProfilePhotoGroups,messages,P1,interactive,yes,yes,yes,yes,stub
 messages.getEmojiStatusGroups,messages,P1,interactive,yes,yes,yes,yes,stub,not_modified,yes,stub,RPCEmojiCategories,returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go
 messages.getEmojiStickerGroups,stickers,P2,interactive,yes,yes,yes,yes,stub,not_modified,yes,stub,RPCEmojiCategories,returns NotModified app/bff/stickers/internal/server/grpc/service/emoji_groups.go
 messages.getEmojiStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCustomEmojis,app/bff/stickers/internal/server/grpc/service/handlers.go
-messages.getEmojiURL,messages,P1,interactive,no,yes,no,no,routed-but-unregistered,error,yes,absent,RPCEmoji,session.yaml routes RPCEmoji but the bff process has no MessagesGetEmojiURL handler
+messages.getEmojiURL,messages,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCEmoji,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getExportedChatInvite,messages,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.getExportedChatInvites,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
-messages.getExtendedMedia,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCPaidMedia,no route in session.yaml and no bff handler
+messages.getExtendedMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPaidMedia,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.getFactCheck,messages,P1,interactive,yes,no,yes,yes,missing,error,no,absent,RPCFactChecks,no route in session.yaml and no bff handler
 messages.getFavedStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.getFeaturedEmojiStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCCustomEmojis,app/bff/stickers/internal/server/grpc/service/handlers.go
@@ -448,8 +448,8 @@ messages.getPinnedSavedDialogs,messages,P0,startup+background,yes,no,yes,yes,imp
 messages.getPollResults,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPolls,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.getPollVotes,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPolls,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.getPreparedInlineMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPreparedInlineMessages,app/bff/messages/internal/server/grpc/service/bots.go
-messages.getQuickReplies,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
-messages.getQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
+messages.getQuickReplies,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
+messages.getQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.getRecentLocations,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.getRecentReactions,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.getRecentStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
@@ -459,7 +459,7 @@ messages.getSavedDialogs,messages,P0,startup,yes,yes,yes,yes,implemented,ok,yes,
 messages.getSavedDialogsByID,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.getSavedGifs,stickers,P2,interactive,yes,yes,yes,yes,stub,empty,no,absent,RPCGifs,session.yaml does not route RPCGifs; proxy returns an empty object (IDMap entry is commented out)
 messages.getSavedHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
-messages.getSavedReactionTags,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSavedMessageTags,no route in session.yaml and no bff handler
+messages.getSavedReactionTags,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageTags,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.getScheduledHistory,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCScheduledMessages,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.getScheduledMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCScheduledMessages,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.getSearchCounters,messages,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -502,14 +502,14 @@ messages.receivedQueue,messages,P0,startup+background,yes,yes,no,yes,implemented
 messages.reorderPinnedDialogs,messages,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.reorderPinnedForumTopics,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.reorderPinnedSavedDialogs,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
-messages.reorderQuickReplies,messages,P1,interactive,yes,yes,no,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
+messages.reorderQuickReplies,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.reorderStickerSets,stickers,P2,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesReorderStickerSets handler
-messages.report,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReports,session.yaml routes RPCReports but the bff process has no MessagesReportFC78AF9B handler
+messages.report,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_report.go
 messages.reportEncryptedSpam,messages,P1,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCReports,session.yaml routes RPCReports but the bff process has no MessagesReportEncryptedSpam handler
-messages.reportMessagesDelivery,messages,P1,interactive,yes,no,yes,yes,missing,error,no,absent,RPCGatewayVerificationMessages,no route in session.yaml and no bff handler
-messages.reportMusicListen,messages,P1,interactive,yes,yes,yes,no,routed-but-unregistered,error,yes,absent,RPCReports,session.yaml routes RPCReports but the bff process has no MessagesReportMusicListen handler
-messages.reportReaction,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesReportReaction handler
-messages.reportReadMetrics,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReports,session.yaml routes RPCReports but the bff process has no MessagesReportReadMetrics handler
+messages.reportMessagesDelivery,messages,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGatewayVerificationMessages,app/bff/messages/internal/server/grpc/service/inbox.go
+messages.reportMusicListen,messages,P1,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_report.go
+messages.reportReaction,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_report.go
+messages.reportReadMetrics,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_report.go
 messages.reportSpam,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 messages.reportSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 messages.requestAppWebView,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go (layer variants disagree; best reachable status kept)
@@ -540,7 +540,7 @@ messages.sendMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,im
 messages.sendMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.sendMultiMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.sendPaidReaction,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesSendPaidReaction handler
-messages.sendQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCBusinessQuickReply,no route in session.yaml and no bff handler
+messages.sendQuickReplyMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessQuickReply,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.sendReaction,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.sendScheduledMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCScheduledMessages,app/bff/messages/internal/server/grpc/service/chat_p1.go
 messages.sendScreenshotNotification,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
@@ -563,21 +563,21 @@ messages.toggleDialogFilterTags,folders,P0,startup,yes,yes,yes,yes,implemented,o
 messages.toggleDialogPin,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCDialogs,app/bff/dialogs/client/dialogs_client.go
 messages.toggleNoForwards,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.togglePaidReactionPrivacy,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCReactions,session.yaml routes RPCReactions but the bff process has no MessagesTogglePaidReactionPrivacy handler
-messages.togglePeerTranslations,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCTranslation,session.yaml routes RPCTranslation but the bff process has no MessagesTogglePeerTranslations handler
+messages.togglePeerTranslations,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranslation,app/bff/channels/internal/server/grpc/service/handlers_translate.go
 messages.toggleSavedDialogPin,messages,P1,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.toggleStickerSets,stickers,P2,interactive,yes,yes,no,yes,routed-but-unregistered,error,yes,absent,RPCStickers,session.yaml routes RPCStickers but the bff process has no MessagesToggleStickerSets handler
 messages.toggleSuggestedPostApproval,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSuggestedPosts,no route in session.yaml and no bff handler
 messages.toggleTodoCompleted,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCTodoLists,no route in session.yaml and no bff handler
 messages.transcribeAudio,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranscription,app/bff/premium/internal/server/grpc/service/features.go
 messages.translateRichMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
-messages.translateText,messages,P1,interactive,yes,yes,yes,yes,routed-but-unregistered,error,yes,absent,RPCTranslation,session.yaml routes RPCTranslation but the bff process has no MessagesTranslateText handler
+messages.translateText,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranslation,app/bff/channels/internal/server/grpc/service/handlers_translate.go
 messages.uninstallStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.unpinAllMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.updateDialogFilter,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 messages.updateDialogFiltersOrder,folders,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 messages.updatePinnedForumTopic,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.updatePinnedMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
-messages.updateSavedReactionTag,messages,P1,interactive,yes,yes,yes,yes,missing,error,no,absent,RPCSavedMessageTags,no route in session.yaml and no bff handler
+messages.updateSavedReactionTag,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageTags,app/bff/messages/internal/server/grpc/service/inbox.go
 messages.uploadEncryptedFile,messages,P1,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
 messages.uploadImportedMedia,messages,P1,interactive,yes,yes,no,no,missing,error,no,absent,RPCImportedChats,no route in session.yaml (RPCImportedChats is commented out) and no bff handler
 messages.uploadMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go

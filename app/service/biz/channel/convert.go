@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -122,21 +123,22 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 	}
 	member := p != nil && p.InChannel()
 	full := mtproto.MakeTLChannelFull(&mtproto.ChatFull{
-		CanViewParticipants: member || ch.Public(),
-		CanSetUsername:      p.IsCreator(),
-		CanSetStickers:      p.IsCreator(),
-		CanViewStats:        p.IsCreator(),
-		CanDeleteChannel:    p.IsCreator(),
-		Id:                  ch.ID,
-		About:               ch.About,
-		ParticipantsCount:   &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
-		ReadInboxMaxId:      st.ReadInboxMaxID,
-		ReadOutboxMaxId:     st.ReadOutboxMaxID,
-		UnreadCount:         st.UnreadCount,
-		ChatPhoto:           mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
-		NotifySettings:      defaultNotify(),
-		BotInfo:             []*mtproto.BotInfo{},
-		Pts:                 ch.Pts,
+		CanViewParticipants:  member || ch.Public(),
+		CanSetUsername:       p.IsCreator(),
+		CanSetStickers:       p.IsCreator(),
+		CanViewStats:         p.IsCreator(),
+		CanDeleteChannel:     p.IsCreator(),
+		TranslationsDisabled: chatbox.Shared().TranslationsDisabled(viewer, mtproto.MakePeerUtil(mtproto.PEER_CHANNEL, ch.ID)),
+		Id:                   ch.ID,
+		About:                ch.About,
+		ParticipantsCount:    &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
+		ReadInboxMaxId:       st.ReadInboxMaxID,
+		ReadOutboxMaxId:      st.ReadOutboxMaxID,
+		UnreadCount:          st.UnreadCount,
+		ChatPhoto:            mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
+		NotifySettings:       defaultNotify(),
+		BotInfo:              []*mtproto.BotInfo{},
+		Pts:                  ch.Pts,
 	}).To_ChatFull()
 	if ch.MigratedFromChatID != 0 {
 		full.MigratedFromChatId = &wrapperspb.Int64Value{Value: ch.MigratedFromChatID}

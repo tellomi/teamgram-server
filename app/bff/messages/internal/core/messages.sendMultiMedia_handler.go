@@ -23,6 +23,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -87,6 +88,7 @@ func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMed
 	//	XXX_sizecache:        0,
 	//}) & types.Int64Value{Value: idgen.GetUUID()}
 	outboxMultiMedia := make([]*msgpb.OutboxMessage, 0, len(in.MultiMedia))
+	quickMsgs := make([]*mtproto.Message, 0, len(in.MultiMedia))
 	for _, media := range in.MultiMedia {
 		/*
 			inputSingleMedia
@@ -203,6 +205,7 @@ func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMed
 		//
 		//	return hasBot
 		//})
+		quickMsgs = append(quickMsgs, outMessage)
 		outboxMultiMedia = append(outboxMultiMedia, msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
 			NoWebpage:    true,
 			Background:   in.Background,
@@ -212,12 +215,17 @@ func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMed
 		}).To_OutboxMessage())
 	}
 
+	if in.GetQuickReplyShortcut() != nil {
+		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+	}
+
 	rUpdate, err := c.dispatchOutbox(peer, outboxMultiMedia)
 
 	if err != nil {
 		c.Logger.Errorf("messages.sendMedia#c8f16791 - error: %v", err)
 		return nil, err
 	}
+	chatbox.Shared().NoteSent(c.ctx, c.MD.UserId, peer, rUpdate)
 
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)

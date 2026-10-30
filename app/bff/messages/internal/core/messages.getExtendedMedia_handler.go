@@ -20,13 +20,17 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 )
 
 // MessagesGetExtendedMedia
 // messages.getExtendedMedia#84f80814 peer:InputPeer id:Vector<int> = Updates;
+// https://core.telegram.org/method/messages.getExtendedMedia
 func (c *MessagesCore) MessagesGetExtendedMedia(in *mtproto.TLMessagesGetExtendedMedia) (*mtproto.Updates, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.getExtendedMedia blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	self := int64(0)
+	if c.MD != nil {
+		self = c.MD.UserId
+	}
+	peer := mtproto.FromInputPeer2(self, in.GetPeer())
+	return chatbox.Shared().ExtendedMedia(c.ctx, self, peer, in.GetId())
 }

@@ -28,8 +28,12 @@ func NewBoosts() *service.BoostsService       { return &service.BoostsService{} 
 func NewRecommendations() *service.RecommendationsService {
 	return &service.RecommendationsService{}
 }
-func NewTakeout() *service.TakeoutService          { return &service.TakeoutService{} }
-func NewTranslation() *service.TranslationService  { return &service.TranslationService{} }
+func NewTakeout() *service.TakeoutService { return &service.TakeoutService{} }
+func NewTranslation(messageConf zrpc.RpcClientConf) *service.TranslationService {
+	return &service.TranslationService{
+		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(messageConf)),
+	}
+}
 func NewPaidMessages() *service.PaidMessageService { return &service.PaidMessageService{} }
 func NewReports() *service.ReportsService          { return &service.ReportsService{} }
 

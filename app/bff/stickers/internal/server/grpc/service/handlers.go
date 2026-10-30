@@ -117,6 +117,14 @@ func (s *Service) MessagesGetEmojiKeywordsLanguages(ctx context.Context, in *mtp
 	return cat().Languages(), nil
 }
 
+func (s *Service) MessagesGetEmojiURL(ctx context.Context, in *mtproto.TLMessagesGetEmojiURL) (*mtproto.EmojiURL, error) {
+	return cat().EmojiURL(in.GetLangCode())
+}
+
+func (s *Service) MessagesGetAvailableEffects(ctx context.Context, in *mtproto.TLMessagesGetAvailableEffects) (*mtproto.Messages_AvailableEffects, error) {
+	return cat().AvailableEffects(in.GetHash()), nil
+}
+
 func (s *Service) MessagesGetCustomEmojiDocuments(ctx context.Context, in *mtproto.TLMessagesGetCustomEmojiDocuments) (*mtproto.Vector_Document, error) {
 	return cat().Documents(in.GetDocumentId()), nil
 }

@@ -165,6 +165,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCStickersServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCEmojiServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCCustomEmojisServer(grpcServer, stickerSvc)
+		mtproto.RegisterRPCMessageEffectsServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCEmojiCategoriesServer(grpcServer, stickers_helper.NewEmojiCategories())
 
 		// premium_helper
@@ -205,7 +206,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBoostsServer(grpcServer, channels_helper.NewBoosts())
 		mtproto.RegisterRPCChannelRecommendationsServer(grpcServer, channels_helper.NewRecommendations())
 		mtproto.RegisterRPCTakeoutServer(grpcServer, channels_helper.NewTakeout())
-		mtproto.RegisterRPCTranslationServer(grpcServer, channels_helper.NewTranslation())
+		mtproto.RegisterRPCTranslationServer(grpcServer, channels_helper.NewTranslation(c.BizServiceClient))
 		mtproto.RegisterRPCPaidMessageServer(grpcServer, channels_helper.NewPaidMessages())
 		mtproto.RegisterRPCReportsServer(grpcServer, channels_helper.NewReports())
 		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions())
@@ -363,6 +364,11 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCMiniBotAppsServer(grpcServer, botChat)
 		mtproto.RegisterRPCMainMiniBotAppsServer(grpcServer, botChat)
 		mtproto.RegisterRPCPreparedInlineMessagesServer(grpcServer, botChat)
+		// Quick replies, saved-message tags, paid-media reveal, and delivery acks.
+		mtproto.RegisterRPCBusinessQuickReplyServer(grpcServer, messages_helper.NewQuickReply(msgCfg))
+		mtproto.RegisterRPCSavedMessageTagsServer(grpcServer, messages_helper.NewSavedTags())
+		mtproto.RegisterRPCPaidMediaServer(grpcServer, messages_helper.NewPaidMedia())
+		mtproto.RegisterRPCGatewayVerificationMessagesServer(grpcServer, messages_helper.NewDelivery())
 
 		// notification_helper
 		notifySvc := notification_helper.New(notification_helper.Config{
