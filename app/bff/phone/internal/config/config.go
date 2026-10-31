@@ -39,6 +39,12 @@ type Endpoint struct {
 //	TELLOMI_TURN_SERVERS, TELLOMI_STUN_SERVERS  (comma-separated host:port)
 //	TELLOMI_REFLECTOR_PORT, TELLOMI_ENABLE_P2P, TELLOMI_CALL_FORCE_TCP
 //
+// Leave PublicIP, TurnHost, and StunHost empty in shipped yaml. A non-empty
+// yaml host is kept when its own variable is unset, so StunHost: 127.0.0.1
+// stays loopback even after TELLOMI_TURN_HOST is the public host. Empty
+// StunHost copies TurnHost, empty TurnHost copies PublicIP, and empty
+// PublicIP becomes 127.0.0.1 (localhost only).
+//
 // TELLOMI_TURN_SERVERS / TELLOMI_STUN_SERVERS replace the single host/port
 // pair when set. IPv6 literals use brackets: [2001:db8::1]:3478.
 type Config struct {

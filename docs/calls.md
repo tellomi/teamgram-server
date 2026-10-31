@@ -71,9 +71,22 @@ privacy rule. `phone.getCallConfig` uses the same `enable_p2p` flag, and
 
 ## Environment
 
-Yaml defaults live in `teamgramd/etc2/bff.yaml` (`Phone:`). The `teamgram`
-service in `docker-compose.yaml` passes these through. An empty variable
-keeps the yaml value.
+`Phone.PublicIP`, `TurnHost`, and `StunHost` are empty in
+`teamgramd/etc/bff.yaml`, `teamgramd/etc2/bff.yaml` (the file the image
+runs), and `app/bff/bff/etc/bff.yaml`. The `teamgram` service in
+`docker-compose.yaml` passes the variables below through. An empty variable
+does not clear a non-empty yaml host. With those three hosts empty,
+`Config.Normalized()` fills them:
+
+- unset `TELLOMI_CALL_IP` → `PublicIP` `127.0.0.1` (localhost only)
+- unset `TELLOMI_TURN_HOST` → `TurnHost` = `PublicIP`
+- unset `TELLOMI_STUN_HOST` → `StunHost` = `TurnHost`
+
+Production must set `TELLOMI_CALL_IP`. Set `TELLOMI_TURN_HOST` when TURN is
+a different name; `TELLOMI_STUN_HOST` is optional when STUN and TURN share a
+host. A yaml `StunHost` of `127.0.0.1` is not replaced by `TELLOMI_TURN_HOST`,
+which is how confirmCall advertised STUN on loopback while TURN used the
+public host.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

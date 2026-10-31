@@ -106,13 +106,20 @@ SyncClient:
 # 1:1 call addresses. Env overrides yaml: TELLOMI_CALL_IP, TELLOMI_TURN_HOST,
 # TELLOMI_TURN_PORT, TELLOMI_STUN_HOST, TELLOMI_STUN_PORT, TELLOMI_TURN_SECRET,
 # TELLOMI_TURN_SERVERS, TELLOMI_STUN_SERVERS. See docs/calls.md.
+# Leave PublicIP, TurnHost, and StunHost empty. This file is copied into the
+# image and is what runall-docker.sh loads. Normalized() uses 127.0.0.1 for
+# PublicIP only when TELLOMI_CALL_IP is unset (localhost). TurnHost then
+# follows PublicIP, and StunHost follows TurnHost. A literal loopback StunHost
+# is kept when only TELLOMI_TURN_HOST is set, so confirmCall advertises STUN
+# on 127.0.0.1 while TURN uses the public host. Production must set
+# TELLOMI_CALL_IP (and TELLOMI_TURN_HOST when TURN is a different name).
 Phone:
-  PublicIP: 127.0.0.1
+  PublicIP: ""
   ReflectorPort: 3479
   SFUPort: 3480
-  TurnHost: 127.0.0.1
+  TurnHost: ""
   TurnPort: 3478
-  StunHost: 127.0.0.1
+  StunHost: ""
   StunPort: 3478
   TurnSecret: tellomi-turn-secret
   TurnTTL: 86400

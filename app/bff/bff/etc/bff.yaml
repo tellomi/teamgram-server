@@ -81,15 +81,20 @@ SyncClient:
   Brokers:
     - 127.0.0.1:9092
 
-# 1:1 calls and group voice chats. TELLOMI_CALL_IP / TELLOMI_TURN_SECRET override these.
-# PublicIP is the address stock clients put in ICE candidates; it must be reachable
-# from the phone, not the docker bridge address.
+# 1:1 calls and group voice chats. Leave PublicIP, TurnHost, and StunHost
+# empty. TELLOMI_CALL_IP / TELLOMI_TURN_HOST / TELLOMI_STUN_HOST fill them.
+# Unset TELLOMI_CALL_IP becomes 127.0.0.1 (localhost only). TurnHost follows
+# that address, and StunHost follows TurnHost. Do not pin StunHost to
+# loopback: TELLOMI_TURN_HOST does not replace a non-empty StunHost, so
+# confirmCall would advertise STUN on 127.0.0.1. The address clients put in
+# ICE candidates must be reachable from the phone. See docs/calls.md.
 Phone:
-  PublicIP: 127.0.0.1
+  PublicIP: ""
   ReflectorPort: 3479
   SFUPort: 3480
-  TurnHost: 127.0.0.1
+  TurnHost: ""
   TurnPort: 3478
+  StunHost: ""
   StunPort: 3478
   TurnSecret: tellomi-turn-secret
   TurnTTL: 86400
