@@ -52,6 +52,12 @@ func (c *InboxCore) InboxUpdateHistoryReaded(in *inbox.TLInboxUpdateHistoryReade
 		}
 		c.Logger.Infof("inbox.updateHistoryReaded: %v", replyId)
 
+		c.rememberOutboxRead(
+			in.PeerId,
+			in.FromId,
+			mtproto.MakePeerDialogId(mtproto.PEER_USER, in.FromId),
+			replyId.UserMessageBoxId)
+
 		_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(
 			c.ctx,
 			&dialog.TLDialogInsertOrUpdateDialog{
@@ -102,6 +108,12 @@ func (c *InboxCore) InboxUpdateHistoryReaded(in *inbox.TLInboxUpdateHistoryReade
 			return nil, err
 		}
 		c.Logger.Infof("inbox.updateHistoryReaded: %v", replyId)
+
+		c.rememberOutboxRead(
+			replyId.UserId,
+			in.FromId,
+			mtproto.MakePeerDialogId(in.PeerType, in.PeerId),
+			replyId.UserMessageBoxId)
 
 		_, _ = c.svcCtx.Dao.DialogsDAO.SelectPeerDialogListWithCB(
 			c.ctx,

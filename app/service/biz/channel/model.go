@@ -159,6 +159,13 @@ func (e *PtsEvent) clone() *PtsEvent {
 	return &cp
 }
 
+// ReadMark is one member's read time for messages up to MaxID.
+type ReadMark struct {
+	UserID int64
+	MaxID  int32
+	Date   int64
+}
+
 // ReadState is one user's read cursor inside a channel.
 type ReadState struct {
 	UserID          int64
