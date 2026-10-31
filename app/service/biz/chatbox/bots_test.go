@@ -2,6 +2,7 @@ package chatbox
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -180,6 +181,50 @@ func TestStartCallbackAttachAndWeb(t *testing.T) {
 	if _, err := b.OpenWebView(ctx, WebOpen{Self: 3, BotID: 72, Kind: "main"}); err != mtproto.ErrBotAppInvalid {
 		t.Fatalf("no main: %v", err)
 	}
+}
+
+func TestWebViewResultMessage(t *testing.T) {
+	b := newBook(nil)
+	b.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
+	ctx := context.Background()
+	if err := b.PutBot(ctx, testBot()); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := b.OpenWebView(ctx, WebOpen{Self: 3, BotID: 70, Peer: mtproto.MakePeerUtil(mtproto.PEER_USER, 9), Kind: "menu"})
+	if err != nil || opened.GetQueryId_FLAGINT64() == nil {
+		t.Fatalf("open %+v %v", opened, err)
+	}
+	id := opened.GetQueryId_FLAGINT64().GetValue()
+	result := mtproto.MakeTLInputBotInlineResult(&mtproto.InputBotInlineResult{
+		Id:   "w",
+		Type: "article",
+		SendMessage: mtproto.MakeTLInputBotInlineMessageText(&mtproto.InputBotInlineMessage{
+			Message: "from web",
+		}).To_InputBotInlineMessage(),
+	}).To_InputBotInlineResult()
+	req, sent, err := b.TakeWebViewResult(ctx, 3, "", result)
+	if err != mtproto.ErrQueryIdEmpty {
+		t.Fatalf("empty query: %v", err)
+	}
+	req, sent, err = b.TakeWebViewResult(ctx, 3, "12", result)
+	if err != mtproto.ErrQueryIdInvalid {
+		t.Fatalf("unknown query: %v", err)
+	}
+	req, sent, err = b.TakeWebViewResult(ctx, 4, fmtQuery(id), result)
+	if err != mtproto.ErrQueryIdInvalid {
+		t.Fatalf("other user: %v", err)
+	}
+	req, sent, err = b.TakeWebViewResult(ctx, 3, fmtQuery(id), result)
+	if err != nil || req.Message.GetMessage() != "from web" || req.Message.GetViaBotId().GetValue() != 70 || sent.GetMsgId() == nil {
+		t.Fatalf("send %+v %+v %v", req, sent, err)
+	}
+	if _, _, err = b.TakeWebViewResult(ctx, 3, fmtQuery(id), result); err != mtproto.ErrQueryIdInvalid {
+		t.Fatalf("spent: %v", err)
+	}
+}
+
+func fmtQuery(id int64) string {
+	return strconv.FormatInt(id, 10)
 }
 
 func TestPreparedRequestedAndWebData(t *testing.T) {

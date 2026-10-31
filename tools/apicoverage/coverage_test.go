@@ -282,6 +282,15 @@ func TestServerSamples(t *testing.T) {
 	if _, ok := canonicalClientMethod("account.reorderProfileTabs"); ok {
 		t.Fatal("commented profile-tab reorder must stay out of the matrix")
 	}
+	if _, ok := canonicalClientMethod("messages.sendEncryptedMultiMedia"); ok {
+		t.Fatal("local secret-chat album holder must stay out of the matrix")
+	}
+	if got, ok := canonicalClientMethod("toncenter.getOnrampProviders"); !ok || got != "payments.getOnrampProviders" {
+		t.Fatalf("android toncenter providers alias: %s %v", got, ok)
+	}
+	if got, ok := canonicalClientMethod("toncenter.createOnrampSession"); !ok || got != "payments.createOnrampSession" {
+		t.Fatalf("android toncenter session alias: %s %v", got, ok)
+	}
 	if got, ok := canonicalClientMethod("account.initPasskeyLogin"); !ok || got != "auth.initPasskeyLogin" {
 		t.Fatalf("android passkey login alias: %s %v", got, ok)
 	}
@@ -608,17 +617,25 @@ func TestAndroidStarsCountedOnSchemaMethods(t *testing.T) {
 		}
 		byName[r.Method] = r
 	}
-	if missing != 3 {
-		t.Fatalf("missing methods = %d, want 3 (sendEncryptedMultiMedia and two toncenter on-ramp names)", missing)
+	if missing != 0 {
+		t.Fatalf("missing methods = %d, want 0", missing)
 	}
 	for _, method := range []string{
 		"messages.sendEncryptedMultiMedia",
 		"toncenter.createOnrampSession",
 		"toncenter.getOnrampProviders",
 	} {
+		if _, ok := byName[method]; ok {
+			t.Fatalf("%s still listed separately", method)
+		}
+	}
+	for _, method := range []string{
+		"payments.getOnrampProviders",
+		"payments.createOnrampSession",
+	} {
 		r, ok := byName[method]
-		if !ok || r.Status != statusMissing {
-			t.Fatalf("%s status=%s present=%v", method, r.Status, ok)
+		if !ok || !r.Android || r.Status != statusImplemented {
+			t.Fatalf("%s android=%v status=%s present=%v", method, r.Android, r.Status, ok)
 		}
 	}
 	for _, method := range []string{

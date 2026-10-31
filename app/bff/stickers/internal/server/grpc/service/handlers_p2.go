@@ -72,6 +72,20 @@ func (s *Service) StickersChangeStickerPosition(ctx context.Context, in *mtproto
 	return cat().ChangePosition(userID(ctx), in.GetSticker(), in.GetPosition())
 }
 
+func (s *Service) StickersSetStickerSetThumb(ctx context.Context, in *mtproto.TLStickersSetStickerSetThumb) (*mtproto.Messages_StickerSet, error) {
+	if in == nil {
+		return nil, mtproto.ErrStickersetInvalid
+	}
+	return cat().SetThumb(userID(ctx), in.GetStickerset(), in.GetThumb(), in.GetThumbDocumentId())
+}
+
+func (s *Service) StickersChangeSticker(ctx context.Context, in *mtproto.TLStickersChangeSticker) (*mtproto.Messages_StickerSet, error) {
+	if in == nil {
+		return nil, mtproto.ErrStickerDocumentInvalid
+	}
+	return cat().ChangeSticker(userID(ctx), in.GetSticker(), in.GetEmoji(), in.GetMaskCoords(), in.GetKeywords())
+}
+
 func (s *Service) StickersReplaceSticker(ctx context.Context, in *mtproto.TLStickersReplaceSticker) (*mtproto.Messages_StickerSet, error) {
 	return cat().ReplaceSticker(userID(ctx), in.GetSticker(), in.GetNewSticker())
 }

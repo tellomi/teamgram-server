@@ -107,7 +107,6 @@ func (RingtoneService) AccountUploadRingtone(ctx context.Context, in *mtproto.TL
 }
 
 // ConnectedBotsService serves the business-bot connection RPCs.
-// account.getBotBusinessConnection stays unimplemented.
 // https://core.telegram.org/api/business
 type ConnectedBotsService struct {
 	mtproto.UnimplementedRPCBusinessConnectedBotsServer

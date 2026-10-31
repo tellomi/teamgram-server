@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestManageStickersAndGifs(t *testing.T) {
@@ -222,6 +224,58 @@ func TestManageStickersAndGifs(t *testing.T) {
 	}
 	if err = gs.SaveGif(user, mtproto.MakeTLInputDocument(&mtproto.InputDocument{}).To_InputDocument(), false); err != mtproto.ErrGifIdInvalid {
 		t.Fatalf("missing gif: %v", err)
+	}
+}
+
+func TestSetThumbAndChangeSticker(t *testing.T) {
+	s := newService(builtinPacks())
+	const user int64 = 42
+	base, err := s.GetSet(user, shortName(ShortTwemoji), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := base.GetDocuments()
+	created, err := s.CreateSet(CreateInput{
+		Self: user, Title: "Mine", ShortName: "MineThumb",
+		Stickers: []*mtproto.InputStickerSetItem{
+			stickerInput(docs[0], "😀"),
+			stickerInput(docs[1], "😁"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := mtproto.MakeTLInputStickerSetID(&mtproto.InputStickerSet{
+		Id: created.GetSet().GetId(), AccessHash: created.GetSet().GetAccessHash(),
+	}).To_InputStickerSet()
+	thumb := inputDoc(docs[1])
+	updated, err := s.SetThumb(user, set, thumb, nil)
+	if err != nil || updated.GetSet().GetThumbDocumentId().GetValue() != docs[1].GetId() {
+		t.Fatalf("thumb %#v %v", updated.GetSet(), err)
+	}
+	// No explicit thumb falls back to the first sticker, which is the cover.
+	cleared, err := s.SetThumb(user, set, nil, nil)
+	if err != nil || cleared.GetSet().GetThumbDocumentId().GetValue() != docs[0].GetId() {
+		t.Fatalf("clear %#v %v", cleared.GetSet(), err)
+	}
+	if _, err := s.SetThumb(user, set, nil, wrapperspb.Int64(99)); status.Convert(err).Message() != "STICKER_DOCUMENT_INVALID" {
+		t.Fatal(err)
+	}
+	changed, err := s.ChangeSticker(user, inputDoc(docs[0]), wrapperspb.String("🎉"), nil, wrapperspb.String("party, fun"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, pack := range changed.GetPacks() {
+		if pack.GetEmoticon() == "🎉" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("emoji not updated %#v", changed.GetPacks())
+	}
+	if _, err := s.ChangeSticker(user, inputDoc(docs[0]), nil, &mtproto.MaskCoords{N: 9}, nil); status.Convert(err).Message() != "STICKER_INVALID" {
+		t.Fatal(err)
 	}
 }
 

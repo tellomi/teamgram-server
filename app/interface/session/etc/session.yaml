@@ -69,7 +69,12 @@ BFFProxyClients:
     "/mtproto.RPCBotVerificationIcons": "bff.bff"
     # bots.updateStarRefProgram. Other methods on this service are payments and stay unimplemented.
     "/mtproto.RPCAffiliatePrograms": "bff.bff"
-    #"/mtproto.RPCInternalBot": "bff.bff"
+    # help.setBotUpdatesStatus, bots.sendCustomRequest, bots.answerWebhookJSONQuery.
+    "/mtproto.RPCInternalBot": "bff.bff"
+    # bots.setBotMenuButton and bots.getBotMenuButton.
+    "/mtproto.RPCBotMenuButton": "bff.bff"
+    # bots.setBotGroupDefaultAdminRights and bots.setBotBroadcastDefaultAdminRights.
+    "/mtproto.RPCBotAdminRight": "bff.bff"
     #"/mtproto.RPCThemes": "bff.bff"
     "/mtproto.RPCContacts": "bff.bff"
     #"/mtproto.RPCCreditCards": "bff.bff"
@@ -81,13 +86,16 @@ BFFProxyClients:
     # Dialog folders (messages.getDialogFilters and the other folder RPCs).
     "/mtproto.RPCFolders": "bff.bff"
     "/mtproto.RPCFolderTags": "bff.bff"
-    #"/mtproto.RPCGames": "bff.bff"
+    # messages.getEmojiGameInfo and the game score RPCs.
+    "/mtproto.RPCGames": "bff.bff"
     # Group and conference calls.
     "/mtproto.RPCGroupCalls": "bff.bff"
     "/mtproto.RPCConferenceCalls": "bff.bff"
     #"/mtproto.RPCImportedChats": "bff.bff"
     "/mtproto.RPCLangpack": "bff.bff"
     "/mtproto.RPCAutoDownload": "bff.bff"
+    # account.getAutoSaveSettings, account.saveAutoSaveSettings, account.deleteAutoSaveExceptions.
+    "/mtproto.RPCAutosave": "bff.bff"
     "/mtproto.RPCMessageThreads": "bff.bff"
     "/mtproto.RPCReactions": "bff.bff"
     "/mtproto.RPCMessages": "bff.bff"

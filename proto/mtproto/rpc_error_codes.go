@@ -2240,6 +2240,11 @@ var (
 	// https://core.telegram.org/method/account.updateConnectedBot
 	ErrBotBusinessMissing = status.Error(ErrBadRequest, "BOT_BUSINESS_MISSING")
 
+	// ErrConnectionIdInvalid
+	// | 400 | CONNECTION_ID_INVALID | The specified connection ID is invalid. |
+	// https://core.telegram.org/method/account.getBotBusinessConnection
+	ErrConnectionIdInvalid = status.Error(ErrBadRequest, "CONNECTION_ID_INVALID")
+
 	// ErrBusinessRecipientsEmpty
 	// | 400 | BUSINESS_RECIPIENTS_EMPTY | You didn't set any flag in inputBusinessBotRecipients, thus the bot cannot work with any peer. |
 	// https://core.telegram.org/method/account.updateConnectedBot

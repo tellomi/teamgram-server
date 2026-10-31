@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -1453,6 +1454,82 @@ func (b *Book) webLocked(ctx context.Context, id int64) *webSession {
 	}
 	b.webviews[id] = &s
 	return &s
+}
+
+// TakeWebViewResult implements messages.sendWebViewResultMessage.
+// bot_query_id is the decimal query_id from messages.request*WebView.
+// https://core.telegram.org/method/messages.sendWebViewResultMessage
+func (b *Book) TakeWebViewResult(ctx context.Context, self int64, queryRaw string, result *mtproto.InputBotInlineResult) (*SendReq, *mtproto.WebViewMessageSent, error) {
+	queryRaw = strings.TrimSpace(queryRaw)
+	if queryRaw == "" {
+		return nil, nil, mtproto.ErrQueryIdEmpty
+	}
+	queryID, err := strconv.ParseInt(queryRaw, 10, 64)
+	if err != nil || queryID == 0 {
+		return nil, nil, mtproto.ErrQueryIdInvalid
+	}
+	if result == nil || result.GetPredicateName() == "" {
+		return nil, nil, mtproto.ErrResultIdInvalid
+	}
+	if result.GetId() == "" {
+		return nil, nil, mtproto.ErrResultIdEmpty
+	}
+	text, noWeb, entities, markup, invert, err := webResultText(result)
+	if err != nil {
+		return nil, nil, err
+	}
+	b.mu.Lock()
+	sess := b.webLocked(ctx, queryID)
+	if sess == nil || sess.UserID != self || b.now().Unix() > sess.Expires {
+		b.mu.Unlock()
+		return nil, nil, mtproto.ErrQueryIdInvalid
+	}
+	botID := sess.BotID
+	peer := mtproto.MakePeerUtil(sess.PeerType, sess.PeerID)
+	sess.Expires = 0
+	if err = b.save(ctx, webKey(sess.ID), sess); err != nil {
+		b.mu.Unlock()
+		return nil, nil, err
+	}
+	delete(b.webviews, sess.ID)
+	b.mu.Unlock()
+	msg := b.textMessage(self, peer, text, false)
+	msg.Entities = entities
+	msg.ReplyMarkup = markup
+	msg.InvertMedia = invert
+	msg.ViaBotId = wrapperspb.Int64(botID)
+	sent := mtproto.MakeTLWebViewMessageSent(&mtproto.WebViewMessageSent{
+		MsgId: mtproto.MakeTLInputBotInlineMessageID64(&mtproto.InputBotInlineMessageID{
+			DcId:       1,
+			OwnerId:    self,
+			Id_INT32:   int32(b.freshID() & 0x7fffffff),
+			AccessHash: b.freshID(),
+		}).To_InputBotInlineMessageID(),
+	}).To_WebViewMessageSent()
+	return &SendReq{
+		Peer: peer, RandomID: b.freshID(), NoWebpage: noWeb, Message: msg,
+		Fallback: localUpdates(msg, nil),
+	}, sent, nil
+}
+
+func webResultText(result *mtproto.InputBotInlineResult) (string, bool, []*mtproto.MessageEntity, *mtproto.ReplyMarkup, bool, error) {
+	send := result.GetSendMessage()
+	if send == nil {
+		return "", false, nil, nil, false, mtproto.ErrMessageEmpty
+	}
+	switch send.GetPredicateName() {
+	case mtproto.Predicate_inputBotInlineMessageText, mtproto.Predicate_inputBotInlineMessageMediaAuto:
+	default:
+		return "", false, nil, nil, false, mtproto.ErrResultTypeInvalid
+	}
+	text := send.GetMessage()
+	if strings.TrimSpace(text) == "" {
+		return "", false, nil, nil, false, mtproto.ErrMessageEmpty
+	}
+	if utf16Len(text) > maxMessageLen {
+		return "", false, nil, nil, false, mtproto.ErrMessageTooLong
+	}
+	return text, send.GetNoWebpage(), send.GetEntities(), send.GetReplyMarkup(), send.GetInvertMedia(), nil
 }
 
 // ProlongWebView implements messages.prolongWebView.

@@ -295,6 +295,17 @@ func TestConnectedBots(t *testing.T) {
 	if len(listed.GetConnectedBots()) != 1 || listed.GetConnectedBots()[0].GetBotId() != 42 {
 		t.Fatalf("list: %#v", listed)
 	}
+	if _, err := BotBusinessConnection(1, ""); status.Convert(err).Message() != "CONNECTION_ID_INVALID" {
+		t.Fatal(err)
+	}
+	if _, err := BotBusinessConnection(9, "nope"); status.Convert(err).Message() != "CONNECTION_ID_INVALID" {
+		t.Fatal(err)
+	}
+	conn, err := BotBusinessConnection(42, "1-2a")
+	if err != nil || len(conn.GetUpdates()) != 1 || conn.GetUpdates()[0].GetConnection().GetUserId() != 1 || !conn.GetUpdates()[0].GetConnection().GetCanReply() {
+		t.Fatalf("connection: %v %#v", err, conn)
+	}
+	mustEncode(t, conn.GetUpdates()[0])
 	mustEncode(t, listed)
 	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 9}).To_InputPeer()
 	if _, err := ToggleConnectedBotPaused(1, nil, true); status.Convert(err).Message() != "PEER_ID_INVALID" {

@@ -80,24 +80,31 @@ type starProg struct {
 }
 
 type botRec struct {
-	id         int64
-	hash       int64
-	owner      int64
-	manager    int64
-	display    string
-	token      string
-	viaLink    bool
-	canManage  bool
-	verifier   bool
-	mainApp    bool
-	infoVer    int32
-	names      []uname
-	info       map[string]texts
-	previews   map[string][]preview
-	star       *starProg
-	restricted bool
-	access     []int64
-	commands   map[string][]*mtproto.BotCommand
+	id             int64
+	hash           int64
+	owner          int64
+	manager        int64
+	display        string
+	token          string
+	viaLink        bool
+	canManage      bool
+	verifier       bool
+	mainApp        bool
+	infoVer        int32
+	names          []uname
+	info           map[string]texts
+	previews       map[string][]preview
+	star           *starProg
+	restricted     bool
+	access         []int64
+	commands       map[string][]*mtproto.BotCommand
+	menuDefault    menuHold
+	menuUsers      map[int64]menuHold
+	groupRights    *mtproto.ChatAdminRights
+	channelRights  *mtproto.ChatAdminRights
+	pendingUpdates int32
+	pendingMessage string
+	pendingSet     bool
 }
 
 type buttonHold struct {
