@@ -21,6 +21,7 @@ package dao
 import (
 	"context"
 	"net"
+	"strings"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
@@ -29,6 +30,19 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/mr"
 )
+
+// tellomiAPIID is the api_id Tellomi clients send in initConnection.
+const tellomiAPIID int32 = 100001
+
+// appNameForSession is authorization.app_name (account.getAuthorizations).
+// Tellomi's api_id is labeled Tellomi. A stored lang_pack of "teamgram" is
+// the same label and is rewritten. Other clients keep the lang_pack they sent.
+func appNameForSession(apiID int32, langPack string) string {
+	if apiID == tellomiAPIID || strings.EqualFold(langPack, "teamgram") {
+		return "Tellomi"
+	}
+	return langPack
+}
 
 func (d *Dao) getCountryAndRegionByIp(ip string) (string, string) {
 	if d.MMDB == nil {
@@ -44,10 +58,6 @@ func (d *Dao) getCountryAndRegionByIp(ip string) (string, string) {
 	}
 }
 
-//func getAppNameByAppId(appId int32) string {
-//	return "tdesktop"
-//}
-
 func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.Authorization, error) {
 	cData, err := d.GetCacheAuthData(ctx, authKeyId)
 	if err != nil {
@@ -56,7 +66,7 @@ func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.A
 
 	country, region := d.getCountryAndRegionByIp(cData.ClientIp())
 
-	// TODO(@benqi): fill plat_form, app_name, (country, region)
+	// TODO(@benqi): fill platform and (country, region)
 	return mtproto.MakeTLAuthorization(&mtproto.Authorization{
 		Current:         false,
 		OfficialApp:     true,
@@ -66,7 +76,7 @@ func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.A
 		Platform:        "",
 		SystemVersion:   cData.SystemVersion(),
 		ApiId:           cData.ApiId(),
-		AppName:         cData.LangPack(),
+		AppName:         appNameForSession(cData.ApiId(), cData.LangPack()),
 		AppVersion:      cData.AppVersion(),
 		DateCreated:     0,
 		DateActive:      0,
@@ -100,7 +110,7 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 			cData, _ := d.GetCacheAuthData(ctx, idx.id)
 			if cData != nil {
 				country, region := d.getCountryAndRegionByIp(cData.ClientIp())
-				// TODO(@benqi): fill plat_form, app_name, (country, region)
+				// TODO(@benqi): fill platform and (country, region)
 				authorization := mtproto.MakeTLAuthorization(&mtproto.Authorization{
 					Current:         false,
 					OfficialApp:     true,
@@ -110,7 +120,7 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 					Platform:        "",
 					SystemVersion:   cData.SystemVersion(),
 					ApiId:           cData.ApiId(),
-					AppName:         cData.LangPack(),
+					AppName:         appNameForSession(cData.ApiId(), cData.LangPack()),
 					AppVersion:      cData.AppVersion(),
 					DateCreated:     int32(cData.DateCreated()),
 					DateActive:      int32(cData.DateActivated()),
