@@ -35,6 +35,14 @@ attestations are off so ACR accepts the manifest.
 
 ## Deploy
 
+Staging deploys wait for the simulator UI acceptance workflow
+(`.github/workflows/ui-acceptance.yml`). It runs from the Actions tab
+(`workflow_dispatch`) and when a pull request is labeled `deploy-staging`,
+against `staging-api.tellomi.cn`. Do not pull a new image onto the staging
+host until that workflow's `ready-for-deploy` job is green. The checklist,
+screenshots, and secrets are in [e2e/ui/README.md](../e2e/ui/README.md).
+This image-publish workflow is not that gate.
+
 On the server, from a checkout that contains `docker-compose.yaml`. Log in once
 if the namespace is private:
 

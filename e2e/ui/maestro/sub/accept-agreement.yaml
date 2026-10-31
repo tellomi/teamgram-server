@@ -1,0 +1,36 @@
+appId: app.tellomi.chat
+---
+# Used when a brand-new test number must finish sign-up. The strict
+# "checkbox blocks Continue" check is signup-agreement.yaml.
+- tapOn:
+    id: "Auth.SetName.FirstNameField"
+    optional: true
+- tapOn:
+    text: "Your name|First name|你的名字|名字"
+    optional: true
+- inputText: ${FIRST_NAME}
+- tapOn:
+    text: "我已阅读并同意.*"
+    point: "8%,50%"
+- extendedWaitUntil:
+    visible: "☑"
+    timeout: 5000
+- runFlow:
+    when:
+      true: ${PLATFORM == 'ios'}
+    commands:
+      - tapOn:
+          id: "Auth.SetName.ContinueButton"
+- runFlow:
+    when:
+      true: ${PLATFORM == 'android'}
+    commands:
+      - hideKeyboard
+      - tapOn:
+          text: "Done|完成"
+- extendedWaitUntil:
+    notVisible: "我已阅读并同意"
+    timeout: 90000
+- assertNotVisible: "服务条款"
+- assertNotVisible: "同意 & 继续"
+- takeScreenshot: signed-up-no-tos-popup

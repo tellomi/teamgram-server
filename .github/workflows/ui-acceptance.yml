@@ -1,0 +1,206 @@
+# Simulator UI acceptance. This is the gate before a staging deploy.
+# It runs from the Actions tab and when a pull request is labeled
+# deploy-staging. ready-for-deploy is green only after the flows pass.
+# Secrets and the checklist: e2e/ui/README.md.
+
+name: UI acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_host:
+        description: MTProto host the simulators must reach
+        type: string
+        default: staging-api.tellomi.cn
+      android:
+        description: Run the Android emulator flows
+        type: boolean
+        default: true
+      ios:
+        description: Run the iOS Simulator flows
+        type: boolean
+        default: true
+      ios_app_url:
+        description: Optional URL of a simulator Tellomi.app zip. Empty builds tellomi/Telegram-iOS.
+        type: string
+        default: ""
+      ios_git_ref:
+        description: tellomi/Telegram-iOS branch or tag when no simulator zip is set
+        type: string
+        default: master
+  pull_request:
+    types: [labeled]
+  workflow_call:
+    inputs:
+      api_host:
+        type: string
+        default: staging-api.tellomi.cn
+      android:
+        type: boolean
+        default: true
+      ios:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ui-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  E2E_API_HOST: ${{ inputs.api_host || 'staging-api.tellomi.cn' }}
+  E2E_API_PORT: "11443"
+
+jobs:
+  check:
+    name: Flow checks
+    if: >-
+      github.event_name == 'workflow_call'
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && github.event.label.name == 'deploy-staging')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unit-test the harness
+        run: python3 e2e/ui/scripts/test_support.py
+
+  android:
+    name: Android emulator
+    needs: check
+    if: >-
+      needs.check.result == 'success' &&
+      (github.event_name == 'pull_request'
+        || inputs.android == true
+        || inputs.android == 'true')
+    runs-on: ${{ vars.E2E_ANDROID_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    env:
+      TELLOMI_GH_TOKEN: ${{ secrets.TELLOMI_GH_TOKEN }}
+      TELLOMI_ANDROID_APK_URL: ${{ secrets.TELLOMI_ANDROID_APK_URL }}
+      E2E_PHONE_A: ${{ secrets.E2E_PHONE_A }}
+      E2E_PHONE_B: ${{ secrets.E2E_PHONE_B }}
+      E2E_PHONE_SIGNUP: ${{ secrets.E2E_PHONE_SIGNUP }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Staging TCP preflight
+        run: python3 e2e/ui/scripts/redirect.py --preflight
+
+      - name: Download latest Tellomi APK
+        run: |
+          mkdir -p ui-artifacts
+          python3 e2e/ui/scripts/fetch_android_apk.py "$GITHUB_WORKSPACE/ui-artifacts/tellomi.apk"
+          echo "APK_PATH=$GITHUB_WORKSPACE/ui-artifacts/tellomi.apk" >> "$GITHUB_ENV"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Maestro flows
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 2048M
+          disable-animations: true
+          disable-spellchecker: true
+          enable-hw-keyboard: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash e2e/ui/scripts/android-acceptance.sh
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-android-screenshots
+          path: ui-artifacts/android/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  ios:
+    name: iOS Simulator
+    needs: check
+    if: >-
+      needs.check.result == 'success' &&
+      (github.event_name == 'pull_request'
+        || inputs.ios == true
+        || inputs.ios == 'true')
+    runs-on: ${{ vars.E2E_IOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 360
+    env:
+      TELLOMI_GH_TOKEN: ${{ secrets.TELLOMI_GH_TOKEN }}
+      IOS_SIMULATOR_APP_URL: ${{ inputs.ios_app_url || secrets.IOS_SIMULATOR_APP_URL }}
+      IOS_GIT_REF: ${{ inputs.ios_git_ref || 'master' }}
+      E2E_PHONE_A: ${{ secrets.E2E_PHONE_A }}
+      E2E_PHONE_B: ${{ secrets.E2E_PHONE_B }}
+      E2E_PHONE_SIGNUP: ${{ secrets.E2E_PHONE_SIGNUP }}
+      BAZEL_CACHE: ${{ runner.temp }}/telegram-bazel-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/telegram-bazel-cache
+          key: tellomi-ios-sim-none
+          restore-keys: tellomi-ios-sim-
+
+      - name: Maestro flows
+        run: bash e2e/ui/scripts/ios-acceptance.sh
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-ios-screenshots
+          path: ui-artifacts/ios/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Save Bazel cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/telegram-bazel-cache
+          key: tellomi-ios-sim-${{ github.run_id }}-${{ github.run_attempt }}
+
+  ready-for-deploy:
+    name: Ready for staging deploy
+    needs: [check, android, ios]
+    if: >-
+      always() &&
+      needs.check.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+      (needs.ios.result == 'success' || needs.ios.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a passing simulator run
+        run: |
+          android="${{ needs.android.result }}"
+          ios="${{ needs.ios.result }}"
+          if [[ "$android" != success && "$ios" != success ]]; then
+            echo "Neither Android nor iOS acceptance passed." >&2
+            exit 1
+          fi
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## UI acceptance passed / 界面验收已通过
+
+          Staging deploy may proceed. Do not pull a new image onto the staging host until this job is green.
+
+          可以继续部署 staging。在本作业成功之前，不要在 staging 主机上执行 `docker compose pull`。
+
+          Host: staging-api.tellomi.cn (TCP 11443). Screenshots are the `ui-android-screenshots` and `ui-ios-screenshots` artifacts.
+          EOF

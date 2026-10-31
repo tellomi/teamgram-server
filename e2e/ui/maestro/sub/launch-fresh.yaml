@@ -1,0 +1,21 @@
+appId: app.tellomi.chat
+---
+- runFlow:
+    when:
+      true: ${PLATFORM == 'android'}
+    commands:
+      - launchApp:
+          clearState: true
+          permissions:
+            contacts: allow
+            notifications: deny
+- runFlow:
+    when:
+      true: ${PLATFORM == 'ios'}
+    commands:
+      - launchApp:
+          clearState: true
+- runFlow: dismiss-popups.yaml
+- tapOn:
+    text: "Continue in English"
+    optional: true
