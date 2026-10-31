@@ -56,6 +56,7 @@ import (
 	qrcode_helper "github.com/teamgram/teamgram-server/app/bff/qrcode"
 	savedmessagedialogshelper "github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs"
 	seamlesshelper "github.com/teamgram/teamgram-server/app/bff/seamless"
+	smsjobs_helper "github.com/teamgram/teamgram-server/app/bff/smsjobs"
 	sponsoredmessages_helper "github.com/teamgram/teamgram-server/app/bff/sponsoredmessages"
 	stickers_helper "github.com/teamgram/teamgram-server/app/bff/stickers"
 	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
@@ -285,6 +286,8 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
 		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
 		mtproto.RegisterRPCIvServer(grpcServer, iv_helper.New())
+		// Peer-to-Peer Login Program. The ledger is closed: no SMS job is dispatched.
+		mtproto.RegisterRPCSmsjobsServer(grpcServer, smsjobs_helper.New())
 
 		// chats_helper
 		mtproto.RegisterRPCChatsServer(

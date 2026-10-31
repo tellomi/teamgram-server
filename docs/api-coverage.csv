@@ -699,6 +699,13 @@ premium.applyBoost,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,o
 premium.getBoostsList,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
 premium.getBoostsStatus,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
 premium.getMyBoosts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
+smsjobs.finishJob,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
+smsjobs.getSmsJob,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
+smsjobs.getStatus,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
+smsjobs.isEligibleToJoin,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
+smsjobs.join,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
+smsjobs.leave,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
+smsjobs.updateSettings,smsjobs,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCSmsjobs,app/bff/smsjobs/internal/server/grpc/service/handlers.go
 stats.getBroadcastStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMegagroupStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMessagePublicForwards,stats,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go

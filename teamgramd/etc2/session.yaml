@@ -220,6 +220,10 @@ BFFProxyClients:
     # Android TL_iv.getRichMessage is messages.getRichMessage#501569cf.
     # This registration covers the coverage name. The constructor is RPCMessages.
     "/mtproto.RPCIv": "bff.bff"
+    # smsjobs.* Peer-to-Peer Login Program. The ledger is closed, so the
+    # handlers return the documented NOT_ELIGIBLE, NOT_JOINED, and
+    # SMSJOB_ID_INVALID errors. No SMS job is dispatched.
+    "/mtproto.RPCSmsjobs": "bff.bff"
     # Stars balance, top-up options, and revenue reads. No Stars are minted.
     "/mtproto.RPCStars": "bff.bff"
     # Stars subscriptions. There is no stored subscription to change or fulfill.
