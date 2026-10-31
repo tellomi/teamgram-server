@@ -232,7 +232,7 @@ channels.toggleUsername,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,y
 channels.toggleViewForumAsMessages,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.updateColor,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccentColors,app/bff/premium/internal/server/grpc/service/features.go
 channels.updateEmojiStatus,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
-channels.updatePaidMessagesPrice,channels,P1,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPaidMessage,app/bff/channels/internal/server/grpc/service/handlers_p1.go
+channels.updatePaidMessagesPrice,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPaidMessage,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.updateUsername,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
 chatlists.checkChatlistInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
 chatlists.deleteExportedInvite,folders,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFolders,app/bff/folders/internal/server/grpc/service/folders_service_impl.go
@@ -580,16 +580,16 @@ payments.assignAppStoreTransaction,premium/payments,P2,interactive,yes,no,no,yes
 payments.assignPlayMarketTransaction,premium/payments,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCPremium,app/bff/premium/client/premium_client.go
 payments.canPurchaseStore,premium/payments,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCPremium,app/bff/premium/client/premium_client.go
 payments.changeStarsSubscription,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStarSubscriptions,app/bff/payments/internal/server/grpc/service/handlers.go
-payments.checkCanSendGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.checkCanSendGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.checkGiftCode,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCodes,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.clearSavedInfo,premium/payments,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.connectStarRefBot,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
-payments.convertStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.convertStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.craftStarGift,premium/payments,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.createOnrampSession,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
-payments.createStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.deleteStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStarGiftHost,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.deleteStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.createStarGiftCollection,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.deleteStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStarGiftHost,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.deleteStarGiftCollection,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.depositStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStarGiftHost,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.displayStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStarGiftHost,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.editConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
@@ -597,7 +597,7 @@ payments.fulfillStarsSubscription,premium/payments,P2,interactive,yes,no,no,yes,
 payments.getBankCardData,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getConnectedStarRefBot,premium/payments,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
 payments.getConnectedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
-payments.getCraftStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getCraftStarGifts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.getCurrencyRates,premium/payments,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getGiveawayInfo,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiveaways,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.getOnrampAvailability,premium/payments,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
@@ -608,17 +608,17 @@ payments.getOnrampQuote,premium/payments,P2,interactive,yes,no,no,no,implemented
 payments.getPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getPaymentReceipt,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getPremiumGiftCodeOptions,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiveaways,app/bff/payments/internal/server/grpc/service/handlers.go
-payments.getResaleStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getSavedStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getSavedStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getResaleStarGifts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getSavedStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getSavedStarGifts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.getStarGiftActiveAuctions,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.getStarGiftAuctionAcquiredGifts,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.getStarGiftAuctionState,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getStarGiftCollections,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getStarGiftUpgradeAttributes,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getStarGiftUpgradePreview,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getStarGiftWithdrawalUrl,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getStarGifts,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getStarGiftCollections,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getStarGiftUpgradeAttributes,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getStarGiftUpgradePreview,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getStarGiftWithdrawalUrl,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getStarGifts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.getStarsGiftOptions,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStars,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.getStarsGiveawayOptions,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiveaways,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.getStarsRevenueAdsAccountUrl,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStars,app/bff/payments/internal/server/grpc/service/handlers.go
@@ -630,20 +630,20 @@ payments.getStarsTopupOptions,premium/payments,P2,interactive,yes,yes,yes,yes,im
 payments.getStarsTransactions,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStars,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.getStarsTransactionsByID,premium/payments,P2,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCStars,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.getSuggestedStarRefBots,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
-payments.getUniqueStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.getUniqueStarGiftValueInfo,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getUniqueStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.getUniqueStarGiftValueInfo,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.launchPrepaidGiveaway,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiveaways,app/bff/payments/internal/server/grpc/service/handlers.go
-payments.reorderStarGiftCollections,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.reorderStarGiftCollections,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.resolveStarGiftOffer,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.saveStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.saveStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.sendPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.sendStarGiftOffer,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.sendStarsForm,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStars,app/bff/payments/internal/server/grpc/service/handlers.go
-payments.toggleChatStarGiftNotifications,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.toggleStarGiftsPinnedToTop,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.toggleChatStarGiftNotifications,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.toggleStarGiftsPinnedToTop,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.transferStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.updateStarGiftCollection,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.updateStarGiftPrice,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.updateStarGiftCollection,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
+payments.updateStarGiftPrice,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.upgradeStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.validateRequestedInfo,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.withdrawStarGift,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStarGiftHost,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
@@ -699,29 +699,6 @@ premium.applyBoost,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,o
 premium.getBoostsList,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
 premium.getBoostsStatus,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
 premium.getMyBoosts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
-stars.checkCanSendGift,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.convertStarGift,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.createStarGiftCollection,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.deleteStarGift,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.deleteStarGiftCollection,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getCraftStarGifts,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getResaleStarGifts,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getSavedStarGift,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getSavedStarGifts,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getStarGiftCollections,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getStarGiftUpgradeAttributes,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getStarGiftUpgradePreview,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getStarGiftWithdrawalUrl,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getStarGifts,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getUniqueStarGift,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.getUniqueStarGiftValueInfo,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.reorderStarGiftCollections,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.saveStarGift,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.toggleChatStarGiftNotifications,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.toggleStarGiftsPinnedToTop,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.updatePaidMessagesPrice,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.updateStarGiftCollection,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-stars.updateStarGiftPrice,premium/payments,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 stats.getBroadcastStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMegagroupStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMessagePublicForwards,stats,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go
