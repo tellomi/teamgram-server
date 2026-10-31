@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	MyAppName = "Teamgram"
+	MyAppName = "Tellomi"
 	MyWebSite = "teamgram.net"
 	TDotMe    = "tell.cc"
 	// MyWebClientSite = "web.teamgram.net"
@@ -30,7 +30,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&MyAppName, "app_name", "Teamgram", "app_name")
+	flag.StringVar(&MyAppName, "app_name", "Tellomi", "app_name")
 	flag.StringVar(&MyWebSite, "site_name", "teamgram.net", "site_name")
 	flag.StringVar(&TDotMe, "t.me", "tell.cc", "public short-link host")
 	// flag.StringVar(&MyWebClientSite, "webclient", "web.teamgram.net", "web.teamgram.net")
