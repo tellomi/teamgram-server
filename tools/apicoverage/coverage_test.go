@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -286,6 +288,16 @@ func TestServerSamples(t *testing.T) {
 	if got, ok := canonicalClientMethod("wallet.getCurrencyRates"); !ok || got != "payments.getCurrencyRates" {
 		t.Fatalf("android wallet currency rates alias: %s %v", got, ok)
 	}
+	for from, to := range androidConstructorAlias {
+		got, ok := canonicalClientMethod(from)
+		if !ok || got != to {
+			t.Fatalf("android constructor alias %s -> %s, got %s %v", from, to, got, ok)
+		}
+		if !strings.HasPrefix(from, "stars.") {
+			continue
+		}
+		assertStatus(to, statusImplemented, effectOK)
+	}
 	if !srv.Routed["RPCPromoData"] || !srv.Registered["RPCPromoData"] {
 		t.Fatal("promo data must be routed and registered")
 	}
@@ -559,6 +571,65 @@ func TestServerSamples(t *testing.T) {
 		_, _, _, _, notes, _ := srv.resolve(method)
 		if strings.Contains(notes, "layer variants disagree") || strings.Contains(notes, "ENTERPRISE_IS_BLOCKED") {
 			t.Errorf("%s notes=%s", method, notes)
+		}
+	}
+}
+
+func TestAndroidStarsCountedOnSchemaMethods(t *testing.T) {
+	root, err := findRoot("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, schema, err := parseSchema(filepath.Join(root, "proto/schema/telegram_api_layer232.tl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "tools/apicoverage/data/clients.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := loadServer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := buildRows(snap, schema, srv)
+	byName := map[string]Row{}
+	missing := 0
+	for _, r := range rows {
+		if strings.HasPrefix(r.Method, "stars.") {
+			t.Errorf("stars call site still listed separately: %s %s", r.Method, r.Status)
+		}
+		if r.Status == statusMissing {
+			missing++
+		}
+		byName[r.Method] = r
+	}
+	if missing != 3 {
+		t.Fatalf("missing methods = %d, want 3 (sendEncryptedMultiMedia and two toncenter on-ramp names)", missing)
+	}
+	for _, method := range []string{
+		"messages.sendEncryptedMultiMedia",
+		"toncenter.createOnrampSession",
+		"toncenter.getOnrampProviders",
+	} {
+		r, ok := byName[method]
+		if !ok || r.Status != statusMissing {
+			t.Fatalf("%s status=%s present=%v", method, r.Status, ok)
+		}
+	}
+	for _, method := range []string{
+		"payments.getStarGifts",
+		"payments.checkCanSendGift",
+		"payments.getStarGiftWithdrawalUrl",
+		"channels.updatePaidMessagesPrice",
+	} {
+		r, ok := byName[method]
+		if !ok || !r.Android || r.Status != statusImplemented {
+			t.Fatalf("%s android=%v status=%s present=%v", method, r.Android, r.Status, ok)
 		}
 	}
 }

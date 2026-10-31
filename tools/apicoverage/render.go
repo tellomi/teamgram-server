@@ -8,10 +8,12 @@ import (
 	"strings"
 )
 
-// androidConstructorAlias maps DrKLO/Telegram TL_account class names onto the
-// layer-232 method that uses the same constructor. The Java types live in
-// org.telegram.tgnet.tl.TL_account even when the schema namespace differs.
-// Checked against Telegram Android 3de37c8cfb03:
+// androidConstructorAlias maps DrKLO/Telegram class names onto the layer-232
+// method that uses the same constructor. The Java types live in TL_account,
+// TL_wallet, or TL_stars even when the schema namespace differs.
+// Checked against Telegram Android 3de37c8cfb039452 (TL_stars.java request
+// classes) and proto/schema/telegram_api_layer232.tl. Session dispatch is by
+// constructor id, so these calls already decode to the schema type.
 //
 //	account.getBirthdays                 0xdaeda864 contacts.getBirthdays
 //	account.getRequirementsToContact     0xd89a83a3 users.getRequirementsToContact
@@ -19,16 +21,66 @@ import (
 //	account.initPasskeyLogin             0x518ad0b7 auth.initPasskeyLogin
 //	account.finishPasskeyLogin           0x9857ad07 auth.finishPasskeyLogin
 //	wallet.getCurrencyRates              0xd35983e8 payments.getCurrencyRates
+//	stars.checkCanSendGift               0xc0c4edc9 payments.checkCanSendGift
+//	stars.convertStarGift                0x74bf076b payments.convertStarGift
+//	stars.createStarGiftCollection       0x1f4a0e87 payments.createStarGiftCollection
+//	stars.deleteStarGift                 0x3cdaf8aa payments.deleteStarGift
+//	stars.deleteStarGiftCollection       0xad5648e8 payments.deleteStarGiftCollection
+//	stars.getCraftStarGifts              0xfd05dd00 payments.getCraftStarGifts
+//	stars.getResaleStarGifts             0x7a5fa236 payments.getResaleStarGifts
+//	stars.getSavedStarGift               0xb455a106 payments.getSavedStarGift
+//	stars.getSavedStarGifts              0xa319e569 payments.getSavedStarGifts
+//	stars.getStarGiftCollections         0x981b91dd payments.getStarGiftCollections
+//	stars.getStarGiftUpgradeAttributes   0x6d038b58 payments.getStarGiftUpgradeAttributes
+//	stars.getStarGiftUpgradePreview      0x9c9abcb1 payments.getStarGiftUpgradePreview
+//	stars.getStarGiftWithdrawalUrl       0xc8ca817b payments.getStarGiftWithdrawalUrl
+//	stars.getStarGifts                   0xc4563590 payments.getStarGifts
+//	stars.getUniqueStarGift              0xa1974d72 payments.getUniqueStarGift
+//	stars.getUniqueStarGiftValueInfo     0x4365af6b payments.getUniqueStarGiftValueInfo
+//	stars.reorderStarGiftCollections     0xc32af4cc payments.reorderStarGiftCollections
+//	stars.saveStarGift                   0x2a2a697c payments.saveStarGift
+//	stars.toggleChatStarGiftNotifications 0x60eaefa1 payments.toggleChatStarGiftNotifications
+//	stars.toggleStarGiftsPinnedToTop     0x1513e7b0 payments.toggleStarGiftsPinnedToTop
+//	stars.updatePaidMessagesPrice        0x4b12327b channels.updatePaidMessagesPrice
+//	stars.updateStarGiftCollection       0x4fddbee7 payments.updateStarGiftCollection
+//	stars.updateStarGiftPrice            0xedbe6ccb payments.updateStarGiftPrice
 //
-// Android TL_wallet.getCurrencyRates (DrKLO 3de37c8) lives in TL_wallet.java
-// but its constructor is payments.getCurrencyRates from layer 232.
+// core.telegram.org still publishes payments.getStarGiftWithdrawalUrl#d06e93a8
+// (password:InputCheckPasswordSRP). Layer 232 and this Android checkout send
+// #c8ca817b (flags:# and tmp_password:bytes). Both ids decode to
+// TLPaymentsGetStarGiftWithdrawalUrl. Android names flags.0 on
+// updatePaidMessagesPrice suggestions_allowed; the schema and
+// core.telegram.org call that bit broadcast_messages_allowed. The bytes match.
 var androidConstructorAlias = map[string]string{
-	"account.getBirthdays":             "contacts.getBirthdays",
-	"account.getRequirementsToContact": "users.getRequirementsToContact",
-	"account.getWebPagePreview":        "messages.getWebPagePreview",
-	"account.initPasskeyLogin":         "auth.initPasskeyLogin",
-	"account.finishPasskeyLogin":       "auth.finishPasskeyLogin",
-	"wallet.getCurrencyRates":          "payments.getCurrencyRates",
+	"account.getBirthdays":                  "contacts.getBirthdays",
+	"account.getRequirementsToContact":      "users.getRequirementsToContact",
+	"account.getWebPagePreview":             "messages.getWebPagePreview",
+	"account.initPasskeyLogin":              "auth.initPasskeyLogin",
+	"account.finishPasskeyLogin":            "auth.finishPasskeyLogin",
+	"wallet.getCurrencyRates":               "payments.getCurrencyRates",
+	"stars.checkCanSendGift":                "payments.checkCanSendGift",
+	"stars.convertStarGift":                 "payments.convertStarGift",
+	"stars.createStarGiftCollection":        "payments.createStarGiftCollection",
+	"stars.deleteStarGift":                  "payments.deleteStarGift",
+	"stars.deleteStarGiftCollection":        "payments.deleteStarGiftCollection",
+	"stars.getCraftStarGifts":               "payments.getCraftStarGifts",
+	"stars.getResaleStarGifts":              "payments.getResaleStarGifts",
+	"stars.getSavedStarGift":                "payments.getSavedStarGift",
+	"stars.getSavedStarGifts":               "payments.getSavedStarGifts",
+	"stars.getStarGiftCollections":          "payments.getStarGiftCollections",
+	"stars.getStarGiftUpgradeAttributes":    "payments.getStarGiftUpgradeAttributes",
+	"stars.getStarGiftUpgradePreview":       "payments.getStarGiftUpgradePreview",
+	"stars.getStarGiftWithdrawalUrl":        "payments.getStarGiftWithdrawalUrl",
+	"stars.getStarGifts":                    "payments.getStarGifts",
+	"stars.getUniqueStarGift":               "payments.getUniqueStarGift",
+	"stars.getUniqueStarGiftValueInfo":      "payments.getUniqueStarGiftValueInfo",
+	"stars.reorderStarGiftCollections":      "payments.reorderStarGiftCollections",
+	"stars.saveStarGift":                    "payments.saveStarGift",
+	"stars.toggleChatStarGiftNotifications": "payments.toggleChatStarGiftNotifications",
+	"stars.toggleStarGiftsPinnedToTop":      "payments.toggleStarGiftsPinnedToTop",
+	"stars.updatePaidMessagesPrice":         "channels.updatePaidMessagesPrice",
+	"stars.updateStarGiftCollection":        "payments.updateStarGiftCollection",
+	"stars.updateStarGiftPrice":             "payments.updateStarGiftPrice",
 }
 
 // skippedClientMethods are call sites that are commented out in the client
@@ -238,7 +290,7 @@ func writeMarkdown(snap Snapshot, schemaN, layer int, rows []Row) []byte {
 	b.WriteString("**When** is `startup`, `background`, `startup+background`, or `interactive`. Startup and background sites are the ones that run from session bootstrap (config, updates difference, presence, langpack, login, push registration) rather than from a screen the user opened. Any such site makes the method **P0**.\n\n")
 	b.WriteString("**Phases.** P0: startup or background, and the server must not fail the RPC. P1: core chat (auth, account, users, contacts, messages, updates, photos, upload, channels) that is not already P0. P2: everything else.\n\n")
 	b.WriteString("Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `TL_wallet.getCurrencyRates` is constructor `0xd35983e8`, counted as `payments.getCurrencyRates`. `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.\n\n")
-	b.WriteString("Android `TL_stars` (DrKLO `3de37c8`) uses the same layer-232 constructor ids as `payments.*StarGift*`, `payments.checkCanSendGift`, and `channels.updatePaidMessagesPrice` (`stars.updatePaidMessagesPrice` is `0x4b12327b`). Those `stars.*` names are not in the schema, so this matrix lists them separately. The server does not register a `stars` RPC namespace. The payments and paid-message handlers cover the constructors.\n\n")
+	b.WriteString("Android `TL_stars` (DrKLO `3de37c8`) uses the same layer-232 constructor ids as `payments.*StarGift*`, `payments.checkCanSendGift`, and `channels.updatePaidMessagesPrice` (`stars.updatePaidMessagesPrice` is `0x4b12327b`). Those call sites are counted on the layer-232 method. The server does not register a `stars` RPC namespace: the session decodes the constructor id into the payments or channels type that is already routed. `payments.getStarGiftWithdrawalUrl` is `#c8ca817b` in layer 232 (`tmp_password:bytes`); `core.telegram.org` still shows the layer-231 id `#d06e93a8`, and both ids decode to the same handler.\n\n")
 
 	b.WriteString("## Client sources\n\n")
 	b.WriteString("| Client | Repository | Commit | What was counted |\n| --- | --- | --- | --- |\n")

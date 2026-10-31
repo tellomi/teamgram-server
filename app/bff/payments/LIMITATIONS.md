@@ -114,11 +114,11 @@ did not emit them, so they live on `RPCStarGiftHost` (`stargift_host_codec.go`).
 
 Android `org.telegram.tgnet.tl.TL_stars` (DrKLO `3de37c8`) sends the same
 constructor ids under `stars.*` names. Those names are not in the layer-232
-schema, so `docs/api-coverage.md` lists them as separate rows. There is no
-`stars` RPC service. `stars.updatePaidMessagesPrice` is constructor
-`0x4b12327b`, which is `channels.updatePaidMessagesPrice` and is already
-handled. The other `stars.*` rows in the premium/payments section are the
-gift constructors implemented here.
+schema. `docs/api-coverage.md` counts the call sites on the payments and
+channels methods, the same way it counts `TL_account` cross-namespace calls.
+There is no `stars` RPC service. `stars.updatePaidMessagesPrice` is
+constructor `0x4b12327b`, which is `channels.updatePaidMessagesPrice`. The
+other names are the gift constructors implemented here.
 
 ### Schema-valid results
 
@@ -199,7 +199,8 @@ checkout info is kept in memory and dropped on restart. Credentials are not
 stored. Affiliate links live next to the in-memory bot star-ref program and
 are also dropped on restart. App Store and Play receipts are not verified.
 
-Android `stars.*` rows stay separate. There is still no `stars` RPC service.
+Android `stars.*` gift call sites are counted on the payments methods above.
+There is still no `stars` RPC service.
 `toncenter.createOnrampSession` and `toncenter.getOnrampProviders` are not in
 the layer-232 schema and are unchanged.
 
