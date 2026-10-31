@@ -27,6 +27,12 @@ chats additionally need an SFU that speaks the tgcalls join JSON.
 
 `Phone.PublicIP` (or `TELLOMI_CALL_IP`) is the address written into ICE
 candidates and phone connections. It has to be reachable from the handset.
+Shipped `Phone` blocks leave `PublicIP`, `TurnHost`, and `StunHost` empty.
+`Normalized()` uses `127.0.0.1` for `PublicIP` only when `TELLOMI_CALL_IP`
+is unset, then copies that into `TurnHost` and `StunHost` when those are
+empty. Set `TELLOMI_CALL_IP` and `TELLOMI_TURN_HOST` on any host phones can
+reach. Do not set `StunHost` to `127.0.0.1` in yaml: that value is kept when
+only `TELLOMI_TURN_HOST` is set, so confirmCall advertises STUN on loopback.
 coturn's `external-ip` (env `TELLOMI_TURN_EXTERNAL_IP`, otherwise
 `TELLOMI_CALL_IP`) must be that same address, and `static-auth-secret` must
 match `TELLOMI_TURN_SECRET` / `Phone.TurnSecret`. Session routes

@@ -48,8 +48,11 @@ services:
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
-      # 1:1 call addresses written into phoneCall.connections. Empty keeps
-      # the 127.0.0.1 defaults in teamgramd/etc2/bff.yaml. See docs/calls.md.
+      # 1:1 call addresses written into phoneCall.connections. Phone hosts in
+      # teamgramd/etc2/bff.yaml are empty. Unset TELLOMI_CALL_IP falls back to
+      # 127.0.0.1 (localhost only). Unset TELLOMI_TURN_HOST follows that
+      # address; unset TELLOMI_STUN_HOST follows TURN. Do not put 127.0.0.1
+      # in yaml StunHost: TELLOMI_TURN_HOST would not replace it. See docs/calls.md.
       TELLOMI_CALL_IP: ${TELLOMI_CALL_IP:-}
       TELLOMI_CALL_IPV6: ${TELLOMI_CALL_IPV6:-}
       TELLOMI_TURN_HOST: ${TELLOMI_TURN_HOST:-}
