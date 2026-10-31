@@ -2,7 +2,7 @@
 
 Methods **called by at least one official client**, classified against Tellomi `main`.
 
-Layer **232** schema (`proto/schema/telegram_api_layer232.tl`, 848 functions). 782 of those functions are called by a client. Methods below include client calls that are not in the schema.
+Layer **232** schema (`proto/schema/telegram_api_layer232.tl`, 848 functions). 789 of those functions are called by a client. Methods below include client calls that are not in the schema.
 
 Regenerate with `go run ./tools/apicoverage`. Refresh client call sites with `go run ./tools/apicoverage -extract` (see the source notes). CI runs `go run ./tools/apicoverage -check` and fails when this file or `docs/api-coverage.csv` drifts from the server tree.
 
@@ -34,9 +34,9 @@ Android `TL_stars` (DrKLO `3de37c8`) uses the same layer-232 constructor ids as 
 | Client | Repository | Commit | What was counted |
 | --- | --- | --- | --- |
 | android | `https://github.com/DrKLO/Telegram` | `3de37c8cfb03` | TL_* request constructions in Java and jni/tgnet |
-| desktop | `https://github.com/telegramdesktop/tdesktop` | `f985723b552b` | MTPnamespace_Method requests in Telegram/SourceFiles |
-| ios | `https://github.com/TelegramMessenger/Telegram-iOS` | `fb0e62ba8a14` | TelegramCore Api.functions call sites, excluding Sources/MacOS |
-| macos | `https://github.com/TelegramMessenger/telegram-macos` | `de608bb0d6b5` | TelegramCore methods reached by telegram-macos (overtake/TelegramSwift is not published) |
+| desktop | `https://github.com/telegramdesktop/tdesktop` | `5ff615713d21` | MTPnamespace_Method requests in Telegram/SourceFiles |
+| ios | `https://github.com/TelegramMessenger/Telegram-iOS` | `279f89e4d4f6` | TelegramCore Api.functions call sites, excluding Sources/MacOS |
+| macos | `https://github.com/TelegramMessenger/telegram-macos` | `7b3a0836dc8f` | TelegramCore methods reached by telegram-macos (overtake/TelegramSwift is not published) |
 
 iOS is `Api.functions` call sites in TelegramCore, excluding `Sources/MacOS`.
 
@@ -74,9 +74,10 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | ephemeral | 8 | 8 | 0 | 0 | 0 | 0 | 0 |
 | feed | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | iv | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
+| smsjobs | 7 | 0 | 0 | 0 | 7 | 0 | 0 |
 | toncenter | 4 | 2 | 0 | 0 | 2 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **795** | **792** | **0** | **0** | **3** | **94** | **0** |
+| **total** | **802** | **792** | **0** | **0** | **10** | **94** | **0** |
 
 ## Counts by client
 
@@ -85,7 +86,7 @@ A method counts for a client when that client has at least one call site. Implem
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | ios | 755 | 755 | 0 | 0 | 0 | 91 | 0 |
-| android | 707 | 704 | 0 | 0 | 3 | 89 | 0 |
+| android | 714 | 704 | 0 | 0 | 10 | 89 | 0 |
 | desktop | 692 | 692 | 0 | 0 | 0 | 79 | 0 |
 | macos | 677 | 677 | 0 | 0 | 0 | 90 | 0 |
 
@@ -113,10 +114,11 @@ Core chat that is not already covered by P0: sign-in extras, profiles, contacts,
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-2 gaps (2 error, 0 empty or bool or not-modified).
+9 gaps (9 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
+| smsjobs | 7 |
 | toncenter | 2 |
 
 ## Methods
@@ -1057,6 +1059,20 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `iv.getRichMessage` | no | yes | no | no | interactive | implemented | ok |
 
+### smsjobs
+
+7 called, 0 implemented, 0 stub, 0 routed-unregistered, 7 missing.
+
+| Method | iOS | Android | Desktop | macOS | When | Status | Effect |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `smsjobs.finishJob` | no | yes | no | no | interactive | missing | error |
+| `smsjobs.getSmsJob` | no | yes | no | no | interactive | missing | error |
+| `smsjobs.getStatus` | no | yes | no | no | interactive | missing | error |
+| `smsjobs.isEligibleToJoin` | no | yes | no | no | interactive | missing | error |
+| `smsjobs.join` | no | yes | no | no | interactive | missing | error |
+| `smsjobs.leave` | no | yes | no | no | interactive | missing | error |
+| `smsjobs.updateSettings` | no | yes | no | no | interactive | missing | error |
+
 ### toncenter
 
 4 called, 2 implemented, 0 stub, 0 routed-unregistered, 2 missing.
@@ -1105,6 +1121,13 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | Method | Status | Notes |
 | --- | --- | --- |
 | `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
+| `smsjobs.finishJob` | missing | no route in session.yaml and no bff handler |
+| `smsjobs.getSmsJob` | missing | no route in session.yaml and no bff handler |
+| `smsjobs.getStatus` | missing | no route in session.yaml and no bff handler |
+| `smsjobs.isEligibleToJoin` | missing | no route in session.yaml and no bff handler |
+| `smsjobs.join` | missing | no route in session.yaml and no bff handler |
+| `smsjobs.leave` | missing | no route in session.yaml and no bff handler |
+| `smsjobs.updateSettings` | missing | no route in session.yaml and no bff handler |
 | `toncenter.createOnrampSession` | missing | no route in session.yaml and no bff handler not in layer schema |
 | `toncenter.getOnrampProviders` | missing | no route in session.yaml and no bff handler not in layer schema |
 

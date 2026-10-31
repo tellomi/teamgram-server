@@ -699,6 +699,13 @@ premium.applyBoost,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,o
 premium.getBoostsList,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
 premium.getBoostsStatus,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
 premium.getMyBoosts,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/boosts_premium.go
+smsjobs.finishJob,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
+smsjobs.getSmsJob,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
+smsjobs.getStatus,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
+smsjobs.isEligibleToJoin,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
+smsjobs.join,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
+smsjobs.leave,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
+smsjobs.updateSettings,smsjobs,P2,interactive,no,yes,no,no,missing,error,no,absent,RPCSmsjobs,no route in session.yaml and no bff handler
 stats.getBroadcastStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMegagroupStats,stats,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/handlers_features.go
 stats.getMessagePublicForwards,stats,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStatistics,app/bff/channels/internal/server/grpc/service/stats_rest.go

@@ -11,22 +11,22 @@
     {
       "client": "desktop",
       "repo": "https://github.com/telegramdesktop/tdesktop",
-      "commit": "f985723b552b",
-      "date": "2026-10-26T21:17:45+03:00",
+      "commit": "5ff615713d21",
+      "date": "2026-10-30T23:09:59+04:00",
       "note": "MTPnamespace_Method requests in Telegram/SourceFiles"
     },
     {
       "client": "ios",
       "repo": "https://github.com/TelegramMessenger/Telegram-iOS",
-      "commit": "fb0e62ba8a14",
-      "date": "2026-10-22T16:11:01+04:00",
+      "commit": "279f89e4d4f6",
+      "date": "2026-10-28T11:14:02+04:00",
       "note": "TelegramCore Api.functions call sites, excluding Sources/MacOS"
     },
     {
       "client": "macos",
       "repo": "https://github.com/TelegramMessenger/telegram-macos",
-      "commit": "de608bb0d6b5",
-      "date": "2026-10-29T21:04:30+05:00",
+      "commit": "7b3a0836dc8f",
+      "date": "2026-10-30T20:09:25+05:00",
       "note": "TelegramCore methods reached by telegram-macos (overtake/TelegramSwift is not published)"
     }
   ],
@@ -19237,22 +19237,17 @@
         {
           "client": "desktop",
           "file": "api/api_polls.cpp",
-          "func": "Flags"
-        },
-        {
-          "client": "desktop",
-          "file": "api/api_polls.cpp",
           "func": "sendPreparedMessage"
-        },
-        {
-          "client": "desktop",
-          "file": "api/api_polls.cpp",
-          "func": "starsPerMessageChecked"
         },
         {
           "client": "desktop",
           "file": "api/api_sending.cpp",
           "func": "EntitiesToMTP"
+        },
+        {
+          "client": "desktop",
+          "file": "api/api_sending.cpp",
+          "func": "FillSendMediaOptionFlags"
         },
         {
           "client": "desktop",
@@ -19267,6 +19262,11 @@
         {
           "client": "desktop",
           "file": "api/api_sending.cpp",
+          "func": "PrepareSendMedia"
+        },
+        {
+          "client": "desktop",
+          "file": "api/api_sending.cpp",
           "func": "sendPreparedMessage"
         },
         {
@@ -19276,18 +19276,13 @@
         },
         {
           "client": "desktop",
-          "file": "api/api_todo_lists.cpp",
-          "func": "Flags"
+          "file": "api/api_sending.h",
+          "func": "PrepareSendMedia"
         },
         {
           "client": "desktop",
           "file": "api/api_todo_lists.cpp",
           "func": "sendPreparedMessage"
-        },
-        {
-          "client": "desktop",
-          "file": "api/api_todo_lists.cpp",
-          "func": "starsPerMessageChecked"
         },
         {
           "client": "desktop",
@@ -23107,12 +23102,7 @@
         {
           "client": "desktop",
           "file": "info/peer_gifts/info_peer_gifts_widget.cpp",
-          "func": "addGiftToCollection"
-        },
-        {
-          "client": "desktop",
-          "file": "info/peer_gifts/info_peer_gifts_widget.cpp",
-          "func": "removeGiftFromCollection"
+          "func": "make_weak"
         },
         {
           "client": "desktop",
@@ -23908,11 +23898,6 @@
           "client": "android",
           "file": "TMessagesProj/src/main/java/org/telegram/ui/Stories/LivePlayer.java",
           "func": "poll2"
-        },
-        {
-          "client": "desktop",
-          "file": "calls/calls_call.cpp",
-          "func": "api"
         },
         {
           "client": "desktop",
@@ -25228,6 +25213,96 @@
           "client": "macos",
           "file": "State/ChannelBoost.swift",
           "func": "lifecycle"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.finishJob",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "finishJob"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.getSmsJob",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "processJobUpdate"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.getStatus",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "loadStatus"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.isEligibleToJoin",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "checkIsEligible"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.join",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/ApplicationLoaderImpl.java",
+          "func": "addItemOptions"
+        },
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "checkSelectedSIMCard"
+        },
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/ui/SMSStatsActivity.java",
+          "func": "createView"
+        },
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/ui/SMSStatsActivity.java",
+          "func": "update"
+        },
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/ui/SMSSubscribeSheet.java",
+          "func": "?"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.leave",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "leave"
+        }
+      ]
+    },
+    {
+      "method": "smsjobs.updateSettings",
+      "sites": [
+        {
+          "client": "android",
+          "file": "TMessagesProj_AppStandalone/src/main/java/org/telegram/messenger/SMSJobController.java",
+          "func": "toggleAllowInternational"
         }
       ]
     },
