@@ -29,6 +29,8 @@ Android keeps some requests in `TL_account` even when the constructor belongs to
 
 Android `TL_stars` (DrKLO `3de37c8`) uses the same layer-232 constructor ids as `payments.*StarGift*`, `payments.checkCanSendGift`, and `channels.updatePaidMessagesPrice` (`stars.updatePaidMessagesPrice` is `0x4b12327b`). Those call sites are counted on the layer-232 method. The server does not register a `stars` RPC namespace: the session decodes the constructor id into the payments or channels type that is already routed. `payments.getStarGiftWithdrawalUrl` is `#c8ca817b` in layer 232 (`tmp_password:bytes`); `core.telegram.org` still shows the layer-231 id `#d06e93a8`, and both ids decode to the same handler.
 
+Android `TL_toncenter.getOnrampProviders` is constructor `0x3f3e00dc` and `TL_toncenter.createOnrampSession` is `0xa2197cf6`, the same ids as `payments.getOnrampProviders` and `payments.createOnrampSession`. Those call sites are counted on the payments methods. `messages.sendEncryptedMultiMedia` is not sent: Android keeps the album in a local `TL_messages_sendEncryptedMultiMedia` and `SecretChatHelper` turns each item into `messages.sendEncrypted` or `messages.sendEncryptedFile`. It is not in layer 232 and has no method page on core.telegram.org, so it is left out of this matrix.
+
 ## Client sources
 
 | Client | Repository | Commit | What was counted |
@@ -54,7 +56,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | account | 113 | 113 | 0 | 0 | 0 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
-| messages | 216 | 215 | 0 | 0 | 1 | 14 | 0 |
+| messages | 215 | 215 | 0 | 0 | 0 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
@@ -75,9 +77,9 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | feed | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | iv | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
 | smsjobs | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
-| toncenter | 4 | 2 | 0 | 0 | 2 | 0 | 0 |
+| toncenter | 2 | 2 | 0 | 0 | 0 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **802** | **799** | **0** | **0** | **3** | **94** | **0** |
+| **total** | **799** | **799** | **0** | **0** | **0** | **94** | **0** |
 
 ## Counts by client
 
@@ -86,11 +88,11 @@ A method counts for a client when that client has at least one call site. Implem
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | ios | 755 | 755 | 0 | 0 | 0 | 91 | 0 |
-| android | 714 | 711 | 0 | 0 | 3 | 89 | 0 |
+| android | 713 | 713 | 0 | 0 | 0 | 89 | 0 |
 | desktop | 692 | 692 | 0 | 0 | 0 | 79 | 0 |
 | macos | 677 | 677 | 0 | 0 | 0 | 90 | 0 |
 
-568 methods are called by all four clients.
+570 methods are called by all four clients.
 
 ## Phase proposal
 
@@ -104,21 +106,13 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-1 gaps (1 error, 0 empty or bool or not-modified).
-
-| Module | Gaps |
-| --- | ---: |
-| messages | 1 |
+No gaps.
 
 ### P2
 
 Everything else the official clients call: stories, payments, bots, folders, business, stats, and similar.
 
-2 gaps (2 error, 0 empty or bool or not-modified).
-
-| Module | Gaps |
-| --- | ---: |
-| toncenter | 2 |
+No gaps.
 
 ## Methods
 
@@ -322,7 +316,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-216 called, 215 implemented, 0 stub, 0 routed-unregistered, 1 missing.
+215 called, 215 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -340,7 +334,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.receivedMessages` | yes | no | no | yes | startup+background | implemented | ok |
 | `messages.receivedQueue` | yes | yes | no | yes | startup+background | implemented | ok |
 | `messages.reorderPinnedDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
-| `messages.sendEncryptedMultiMedia` | no | yes | no | no | interactive | missing | error |
 | `messages.acceptEncryption` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.addChatUser` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -880,7 +873,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.connectStarRefBot` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.convertStarGift` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.craftStarGift` | yes | no | yes | no | interactive | implemented | ok |
-| `payments.createOnrampSession` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.createOnrampSession` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.createStarGiftCollection` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.deleteStarGift` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.deleteStarGiftCollection` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -897,7 +890,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `payments.getOnrampAvailability` | yes | no | no | no | interactive | implemented | ok |
 | `payments.getOnrampBaseCurrencies` | yes | no | yes | no | interactive | implemented | ok |
 | `payments.getOnrampLimits` | yes | no | no | no | interactive | implemented | ok |
-| `payments.getOnrampProviders` | yes | no | yes | yes | interactive | implemented | ok |
+| `payments.getOnrampProviders` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getOnrampQuote` | yes | no | no | no | interactive | implemented | ok |
 | `payments.getPaymentForm` | yes | yes | yes | yes | interactive | implemented | ok |
 | `payments.getPaymentReceipt` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -1074,12 +1067,10 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### toncenter
 
-4 called, 2 implemented, 0 stub, 0 routed-unregistered, 2 missing.
+2 called, 2 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `toncenter.createOnrampSession` | no | yes | no | no | interactive | missing | error |
-| `toncenter.getOnrampProviders` | no | yes | no | no | interactive | missing | error |
 | `toncenter.getStreamingUrl` | yes | yes | yes | no | interactive | implemented | ok |
 | `toncenter.performApiRequest` | yes | yes | yes | no | interactive | implemented | ok |
 
@@ -1119,7 +1110,4 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 | Method | Status | Notes |
 | --- | --- | --- |
-| `messages.sendEncryptedMultiMedia` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `toncenter.createOnrampSession` | missing | no route in session.yaml and no bff handler not in layer schema |
-| `toncenter.getOnrampProviders` | missing | no route in session.yaml and no bff handler not in layer schema |
 

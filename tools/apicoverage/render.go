@@ -44,6 +44,8 @@ import (
 //	stars.updatePaidMessagesPrice        0x4b12327b channels.updatePaidMessagesPrice
 //	stars.updateStarGiftCollection       0x4fddbee7 payments.updateStarGiftCollection
 //	stars.updateStarGiftPrice            0xedbe6ccb payments.updateStarGiftPrice
+//	toncenter.getOnrampProviders         0x3f3e00dc payments.getOnrampProviders
+//	toncenter.createOnrampSession        0xa2197cf6 payments.createOnrampSession
 //
 // core.telegram.org still publishes payments.getStarGiftWithdrawalUrl#d06e93a8
 // (password:InputCheckPasswordSRP). Layer 232 and this Android checkout send
@@ -81,15 +83,26 @@ var androidConstructorAlias = map[string]string{
 	"stars.updatePaidMessagesPrice":         "channels.updatePaidMessagesPrice",
 	"stars.updateStarGiftCollection":        "payments.updateStarGiftCollection",
 	"stars.updateStarGiftPrice":             "payments.updateStarGiftPrice",
+	// DrKLO TL_toncenter.java at 3de37c8. The class names are toncenter, the
+	// constructor ids are the layer-232 payments methods.
+	"toncenter.getOnrampProviders":  "payments.getOnrampProviders",
+	"toncenter.createOnrampSession": "payments.createOnrampSession",
 }
 
-// skippedClientMethods are call sites that are commented out in the client
-// and have no constructor in layer 232. Android SharedMediaLayout.sendTabsOrder
-// leaves TL_account_reorderProfileTabs and TL_channels_reorderProfileTabs
-// commented. Layer 232 has account.setMainProfileTab and channels.setMainProfileTab.
+// skippedClientMethods are call sites that are not MTProto requests.
+// Android SharedMediaLayout.sendTabsOrder leaves TL_account_reorderProfileTabs
+// and TL_channels_reorderProfileTabs commented. Layer 232 has
+// account.setMainProfileTab and channels.setMainProfileTab.
+//
+// messages.sendEncryptedMultiMedia is a local album holder in
+// TLRPC.TL_messages_sendEncryptedMultiMedia. SecretChatHelper splits it into
+// messages.sendEncrypted and messages.sendEncryptedFile before anything is
+// written to the connection. It has no constructor in layer 232 or on
+// core.telegram.org.
 var skippedClientMethods = map[string]bool{
-	"account.reorderProfileTabs":  true,
-	"channels.reorderProfileTabs": true,
+	"account.reorderProfileTabs":       true,
+	"channels.reorderProfileTabs":      true,
+	"messages.sendEncryptedMultiMedia": true,
 }
 
 func canonicalClientMethod(name string) (string, bool) {
@@ -291,6 +304,7 @@ func writeMarkdown(snap Snapshot, schemaN, layer int, rows []Row) []byte {
 	b.WriteString("**Phases.** P0: startup or background, and the server must not fail the RPC. P1: core chat (auth, account, users, contacts, messages, updates, photos, upload, channels) that is not already P0. P2: everything else.\n\n")
 	b.WriteString("Android keeps some requests in `TL_account` even when the constructor belongs to another namespace. Those call sites are counted on the layer-232 method (`contacts.getBirthdays`, `users.getRequirementsToContact`, `messages.getWebPagePreview`, `auth.initPasskeyLogin`, `auth.finishPasskeyLogin`). `TL_wallet.getCurrencyRates` is constructor `0xd35983e8`, counted as `payments.getCurrencyRates`. `account.reorderProfileTabs` and `channels.reorderProfileTabs` are commented out in Android and are not in layer 232; `account.setMainProfileTab` and `channels.setMainProfileTab` are the schema methods.\n\n")
 	b.WriteString("Android `TL_stars` (DrKLO `3de37c8`) uses the same layer-232 constructor ids as `payments.*StarGift*`, `payments.checkCanSendGift`, and `channels.updatePaidMessagesPrice` (`stars.updatePaidMessagesPrice` is `0x4b12327b`). Those call sites are counted on the layer-232 method. The server does not register a `stars` RPC namespace: the session decodes the constructor id into the payments or channels type that is already routed. `payments.getStarGiftWithdrawalUrl` is `#c8ca817b` in layer 232 (`tmp_password:bytes`); `core.telegram.org` still shows the layer-231 id `#d06e93a8`, and both ids decode to the same handler.\n\n")
+	b.WriteString("Android `TL_toncenter.getOnrampProviders` is constructor `0x3f3e00dc` and `TL_toncenter.createOnrampSession` is `0xa2197cf6`, the same ids as `payments.getOnrampProviders` and `payments.createOnrampSession`. Those call sites are counted on the payments methods. `messages.sendEncryptedMultiMedia` is not sent: Android keeps the album in a local `TL_messages_sendEncryptedMultiMedia` and `SecretChatHelper` turns each item into `messages.sendEncrypted` or `messages.sendEncryptedFile`. It is not in layer 232 and has no method page on core.telegram.org, so it is left out of this matrix.\n\n")
 
 	b.WriteString("## Client sources\n\n")
 	b.WriteString("| Client | Repository | Commit | What was counted |\n| --- | --- | --- | --- |\n")

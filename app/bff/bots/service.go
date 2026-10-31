@@ -5,6 +5,8 @@ package bots
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
@@ -21,6 +23,9 @@ type Service struct {
 	mtproto.UnimplementedRPCBotsServer
 	mtproto.UnimplementedRPCBotVerificationIconsServer
 	mtproto.UnimplementedRPCAffiliateProgramsServer
+	mtproto.UnimplementedRPCBotMenuButtonServer
+	mtproto.UnimplementedRPCBotAdminRightServer
+	mtproto.UnimplementedRPCInternalBotServer
 }
 
 // New serves bot administration. userConf is the user service, used to see
@@ -36,6 +41,108 @@ func selfID(ctx context.Context) int64 {
 		return 0
 	}
 	return md.GetUserId()
+}
+
+func (s *Service) BotsSetBotMenuButton(ctx context.Context, in *mtproto.TLBotsSetBotMenuButton) (*mtproto.Bool, error) {
+	var user *mtproto.InputUser
+	var button *mtproto.BotMenuButton
+	if in != nil {
+		user = in.GetUserId()
+		button = in.GetButton()
+	}
+	return botadmin.SetMenuButton(ctx, selfID(ctx), user, button)
+}
+
+func (s *Service) BotsGetBotMenuButton(ctx context.Context, in *mtproto.TLBotsGetBotMenuButton) (*mtproto.BotMenuButton, error) {
+	var user *mtproto.InputUser
+	if in != nil {
+		user = in.GetUserId()
+	}
+	return botadmin.MenuButton(ctx, selfID(ctx), user)
+}
+
+func (s *Service) BotsSetBotGroupDefaultAdminRights(ctx context.Context, in *mtproto.TLBotsSetBotGroupDefaultAdminRights) (*mtproto.Bool, error) {
+	var rights *mtproto.ChatAdminRights
+	if in != nil {
+		rights = in.GetAdminRights()
+	}
+	return botadmin.SetDefaultAdminRights(ctx, selfID(ctx), false, rights)
+}
+
+func (s *Service) BotsSetBotBroadcastDefaultAdminRights(ctx context.Context, in *mtproto.TLBotsSetBotBroadcastDefaultAdminRights) (*mtproto.Bool, error) {
+	var rights *mtproto.ChatAdminRights
+	if in != nil {
+		rights = in.GetAdminRights()
+	}
+	return botadmin.SetDefaultAdminRights(ctx, selfID(ctx), true, rights)
+}
+
+func (s *Service) HelpSetBotUpdatesStatus(ctx context.Context, in *mtproto.TLHelpSetBotUpdatesStatus) (*mtproto.Bool, error) {
+	pending := int32(0)
+	message := ""
+	if in != nil {
+		pending = in.GetPendingUpdatesCount()
+		message = in.GetMessage()
+	}
+	return botadmin.SetUpdatesStatus(ctx, selfID(ctx), pending, message)
+}
+
+// BotsSendCustomRequest implements bots.sendCustomRequest.
+// No custom method is registered, so a well-formed call is METHOD_INVALID.
+// https://core.telegram.org/method/bots.sendCustomRequest
+func (s *Service) BotsSendCustomRequest(ctx context.Context, in *mtproto.TLBotsSendCustomRequest) (*mtproto.DataJSON, error) {
+	if selfID(ctx) == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	method, raw := "", ""
+	if in != nil {
+		method = strings.TrimSpace(in.GetCustomMethod())
+		if in.GetParams() != nil {
+			raw = in.GetParams().GetData()
+		}
+	}
+	if method == "" {
+		return nil, mtproto.ErrMethodInvalid
+	}
+	if !json.Valid([]byte(raw)) {
+		return nil, mtproto.ErrDataJsonInvalid
+	}
+	return nil, mtproto.ErrMethodInvalid
+}
+
+// BotsAnswerWebhookJSONQuery implements bots.answerWebhookJSONQuery.
+// Webhook queries are not issued here.
+// https://core.telegram.org/method/bots.answerWebhookJSONQuery
+func (s *Service) BotsAnswerWebhookJSONQuery(ctx context.Context, in *mtproto.TLBotsAnswerWebhookJSONQuery) (*mtproto.Bool, error) {
+	self := selfID(ctx)
+	if err := botCaller(ctx, self); err != nil {
+		return nil, err
+	}
+	raw := ""
+	query := int64(0)
+	if in != nil {
+		query = in.GetQueryId()
+		if in.GetData() != nil {
+			raw = in.GetData().GetData()
+		}
+	}
+	if !json.Valid([]byte(raw)) {
+		return nil, mtproto.ErrDataJsonInvalid
+	}
+	if query == 0 {
+		return nil, mtproto.ErrQueryIdInvalid
+	}
+	return nil, mtproto.ErrQueryIdInvalid
+}
+
+func botCaller(ctx context.Context, self int64) error {
+	if self == 0 {
+		return mtproto.ErrAuthKeyUnregistered
+	}
+	if !botadmin.CallerIsBot(ctx, self) {
+		return mtproto.ErrUserBotRequired
+	}
+	return nil
 }
 
 func (s *Service) BotsSetBotCommands(ctx context.Context, in *mtproto.TLBotsSetBotCommands) (*mtproto.Bool, error) {

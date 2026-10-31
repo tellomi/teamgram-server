@@ -1,6 +1,7 @@
 package accountassets
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -11,6 +12,7 @@ import (
 type botLink struct {
 	id         int64
 	access     int64
+	conn       string
 	recipients *mtproto.BusinessBotRecipients
 	rights     *mtproto.BusinessBotRights
 	date       int32
@@ -78,9 +80,15 @@ func (s *store) updateBot(self int64, in *mtproto.TLAccountUpdateConnectedBot) (
 	rights := copyRights(in.GetRights())
 	link := u.bots[botID]
 	if link == nil {
-		link = &botLink{id: botID, access: access, date: int32(time.Now().Unix())}
+		link = &botLink{
+			id: botID, access: access, date: int32(time.Now().Unix()),
+			conn: connectionID(self, botID),
+		}
 		u.bots[botID] = link
 		u.botOrder = append(u.botOrder, botID)
+	}
+	if link.conn == "" {
+		link.conn = connectionID(self, botID)
 	}
 	if access != 0 {
 		link.access = access
@@ -245,6 +253,70 @@ func botUser(id, access int64) *mtproto.User {
 		AccessHash:  wrapperspb.Int64(access),
 		FirstName:   wrapperspb.String("Bot"),
 	}).To_User()
+}
+
+func connectionID(user, bot int64) string {
+	return fmt.Sprintf("%x-%x", user, bot)
+}
+
+// BotBusinessConnection implements account.getBotBusinessConnection.
+// The caller may be the connected bot or the user who connected it.
+// https://core.telegram.org/method/account.getBotBusinessConnection
+func BotBusinessConnection(self int64, id string) (*mtproto.Updates, error) {
+	if self == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	id = stringsTrim(id)
+	if id == "" {
+		return nil, mtproto.ErrConnectionIdInvalid
+	}
+	s := shared()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for userID, u := range s.users {
+		if u == nil {
+			continue
+		}
+		for _, link := range u.bots {
+			if link == nil || link.conn != id {
+				continue
+			}
+			if self != userID && self != link.id {
+				return nil, mtproto.ErrConnectionIdInvalid
+			}
+			return businessUpdates(userID, link), nil
+		}
+	}
+	return nil, mtproto.ErrConnectionIdInvalid
+}
+
+func stringsTrim(s string) string {
+	for len(s) > 0 && (s[0] == ' ' || s[0] == '\n' || s[0] == '\t') {
+		s = s[1:]
+	}
+	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\n' || s[len(s)-1] == '\t') {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+func businessUpdates(userID int64, link *botLink) *mtproto.Updates {
+	rights := copyRights(link.rights)
+	conn := mtproto.MakeTLBotBusinessConnection(&mtproto.BotBusinessConnection{
+		ConnectionId: link.conn,
+		UserId:       userID,
+		DcId:         1,
+		Date:         link.date,
+		Rights:       rights,
+		CanReply:     rights.GetReply(),
+	}).To_BotBusinessConnection()
+	upd := mtproto.MakeTLUpdateBotBusinessConnect(&mtproto.Update{
+		Connection: conn,
+		Qts:        1,
+	}).To_Update()
+	user := mtproto.MakeTLUser(&mtproto.User{Id: userID, Min: true}).To_User()
+	bot := botUser(link.id, link.access)
+	return mtproto.MakeUpdatesByUpdatesUsers([]*mtproto.User{user, bot}, upd)
 }
 
 func botUpdates(id, access int64) *mtproto.Updates {

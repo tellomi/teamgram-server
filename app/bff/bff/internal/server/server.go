@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	account_helper "github.com/teamgram/teamgram-server/app/bff/account"
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
+	autosave_helper "github.com/teamgram/teamgram-server/app/bff/autosave"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
@@ -383,6 +384,9 @@ func (s *Server) Initialize() error {
 				ChatClient:    c.BizServiceClient,
 			}, channelBridge))
 
+		// account.getAutoSaveSettings, account.saveAutoSaveSettings, account.deleteAutoSaveExceptions.
+		mtproto.RegisterRPCAutosaveServer(grpcServer, autosave_helper.New())
+
 		// autodownload_helper
 		mtproto.RegisterRPCAutoDownloadServer(
 			grpcServer,
@@ -418,6 +422,9 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBotsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCBotVerificationIconsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCAffiliateProgramsServer(grpcServer, botAdmin)
+		mtproto.RegisterRPCBotMenuButtonServer(grpcServer, botAdmin)
+		mtproto.RegisterRPCBotAdminRightServer(grpcServer, botAdmin)
+		mtproto.RegisterRPCInternalBotServer(grpcServer, botAdmin)
 		// Quick replies, saved-message tags, paid-media reveal, and delivery acks.
 		mtproto.RegisterRPCBusinessQuickReplyServer(grpcServer, messages_helper.NewQuickReply(msgCfg))
 		mtproto.RegisterRPCSavedMessageTagsServer(grpcServer, messages_helper.NewSavedTags())

@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
@@ -429,6 +430,85 @@ func (s *Service) RemoveSticker(userID int64, doc *mtproto.InputDocument) (*mtpr
 		p.ThumbID = 0
 	}
 	return s.commitPack(userID, p)
+}
+
+// SetThumb implements stickers.setStickerSetThumb.
+// Neither thumb nor thumb_document_id clears the thumbnail.
+// https://core.telegram.org/method/stickers.setStickerSetThumb
+func (s *Service) SetThumb(userID int64, set *mtproto.InputStickerSet, thumb *mtproto.InputDocument, thumbID *wrapperspb.Int64Value) (*mtproto.Messages_StickerSet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, err := s.ownedPack(userID, set)
+	if err != nil {
+		return nil, err
+	}
+	var id int64
+	switch {
+	case thumbID != nil:
+		id = thumbID.GetValue()
+	case thumb != nil && thumb.GetPredicateName() != mtproto.Predicate_inputDocumentEmpty:
+		id = thumb.GetId()
+	}
+	if id == 0 {
+		p.ThumbID = 0
+		return s.commitPack(userID, p)
+	}
+	var access int64
+	if thumb != nil && thumb.GetId() == id {
+		access = thumb.GetAccessHash()
+	}
+	if !packHasDoc(p, id, access) {
+		return nil, mtproto.ErrStickerDocumentInvalid
+	}
+	p.ThumbID = id
+	return s.commitPack(userID, p)
+}
+
+// ChangeSticker implements stickers.changeSticker.
+// https://core.telegram.org/method/stickers.changeSticker
+func (s *Service) ChangeSticker(userID int64, doc *mtproto.InputDocument, emoji *wrapperspb.StringValue, coords *mtproto.MaskCoords, keywords *wrapperspb.StringValue) (*mtproto.Messages_StickerSet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, idx, err := s.ownedByDocument(userID, doc)
+	if err != nil {
+		return nil, err
+	}
+	item := p.Items[idx]
+	if emoji != nil {
+		clean, err := cleanEmoji(emoji.GetValue())
+		if err != nil {
+			return nil, err
+		}
+		item.Emoticon = clean
+	}
+	if coords != nil {
+		if coords.GetN() < 0 || coords.GetN() > 3 || coords.GetZoom() < 0 {
+			return nil, mtproto.ErrStickerInvalid
+		}
+		item.MaskCoords = mtproto.MakeTLMaskCoords(&mtproto.MaskCoords{
+			N: coords.GetN(), X: coords.GetX(), Y: coords.GetY(), Zoom: coords.GetZoom(),
+		}).To_MaskCoords()
+	}
+	if keywords != nil {
+		item.Keywords = splitKeywords(keywords.GetValue())
+	}
+	return s.commitPack(userID, p)
+}
+
+func packHasDoc(p *Pack, id, access int64) bool {
+	if p == nil || id == 0 {
+		return false
+	}
+	for _, item := range p.Items {
+		if item.DocumentID != id {
+			continue
+		}
+		if access != 0 && access != item.AccessHash {
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 func (s *Service) ChangePosition(userID int64, doc *mtproto.InputDocument, position int32) (*mtproto.Messages_StickerSet, error) {

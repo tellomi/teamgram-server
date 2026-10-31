@@ -526,7 +526,6 @@ messages.searchStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,y
 messages.sendBotRequestedPeer,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCInlineBot,app/bff/messages/internal/server/grpc/service/bots.go
 messages.sendEncrypted,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/secret_chats.go
 messages.sendEncryptedFile,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/secret_chats.go
-messages.sendEncryptedMultiMedia,messages,P1,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 messages.sendEncryptedService,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/secret_chats.go
 messages.sendInlineBotResult,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCInlineBot,app/bff/messages/internal/server/grpc/service/bots.go
 messages.sendMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
@@ -586,7 +585,7 @@ payments.clearSavedInfo,premium/payments,P2,interactive,yes,yes,yes,no,implement
 payments.connectStarRefBot,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAffiliatePrograms,app/bff/bots/service.go
 payments.convertStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.craftStarGift,premium/payments,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCGifts,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
-payments.createOnrampSession,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
+payments.createOnrampSession,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.createStarGiftCollection,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.deleteStarGift,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStarGiftHost,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
 payments.deleteStarGiftCollection,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCollections,app/bff/payments/internal/server/grpc/service/handlers_gifts.go
@@ -603,7 +602,7 @@ payments.getGiveawayInfo,premium/payments,P2,interactive,yes,yes,yes,yes,impleme
 payments.getOnrampAvailability,premium/payments,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getOnrampBaseCurrencies,premium/payments,P2,interactive,yes,no,yes,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getOnrampLimits,premium/payments,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
-payments.getOnrampProviders,premium/payments,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
+payments.getOnrampProviders,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getOnrampQuote,premium/payments,P2,interactive,yes,no,no,no,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getPaymentForm,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
 payments.getPaymentReceipt,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPayments,app/bff/payments/internal/server/grpc/service/handlers_forms.go
@@ -755,8 +754,6 @@ stories.togglePeerStoriesHidden,stories,P2,interactive,yes,yes,yes,yes,implement
 stories.togglePinned,stories,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
 stories.togglePinnedToTop,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
 stories.updateAlbum,stories,P2,interactive,yes,no,yes,yes,implemented,ok,yes,implemented,RPCStories,app/bff/stories/internal/server/grpc/service/handlers.go
-toncenter.createOnrampSession,toncenter,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
-toncenter.getOnrampProviders,toncenter,P2,interactive,no,yes,no,no,missing,error,no,absent,,no route in session.yaml and no bff handler not in layer schema
 toncenter.getStreamingUrl,toncenter,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/card.go
 toncenter.performApiRequest,toncenter,P2,interactive,yes,yes,yes,no,implemented,ok,yes,implemented,RPCWallet,app/bff/wallet/internal/server/grpc/service/card.go
 updates.getChannelDifference,updates,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUpdates,app/bff/updates/client/updates_client.go

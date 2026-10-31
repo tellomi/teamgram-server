@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	profile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
@@ -131,6 +132,12 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 	userFull.PremiumGifts = nil
 	// Business hours, location, greeting, away message, and intro are public
 	// profile fields. The business RPCs write the same process-local book.
+	// Default admin rights a bot asks for when it is added to a group or channel.
+	// https://core.telegram.org/method/bots.setBotGroupDefaultAdminRights
+	if group, channel := botadmin.DefaultAdminRights(peerId); group != nil || channel != nil {
+		userFull.BotGroupAdminRights = group
+		userFull.BotBroadcastAdminRights = channel
+	}
 	if card := profile.Shared().Card(peerId); card != nil {
 		userFull.BusinessWorkHours = card.WorkHours
 		userFull.BusinessLocation = card.Location
