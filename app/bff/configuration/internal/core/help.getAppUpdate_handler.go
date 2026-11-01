@@ -20,15 +20,34 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 )
 
 // HelpGetAppUpdate
 // help.getAppUpdate#522d5a7d source:string = help.AppUpdate;
+// https://core.telegram.org/method/help.getAppUpdate
+//
+// Compares the signed-in client's app version with the published release.
+// help.noAppUpdate means the client is current or no release is published.
+// The version is the initConnection app_version when the session has it,
+// otherwise a version embedded in source.
 func (c *ConfigurationCore) HelpGetAppUpdate(in *mtproto.TLHelpGetAppUpdate) (*mtproto.Help_AppUpdate, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getAppUpdate blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	return helpdesk.AppUpdate(c.clientVersion(in.GetSource()), in.GetSource(), helpdesk.LoadRelease()), nil
+}
 
-	rValue := mtproto.MakeTLHelpNoAppUpdate(nil).To_Help_AppUpdate()
-
-	return rValue, nil
+func (c *ConfigurationCore) clientVersion(source string) string {
+	if v := helpdesk.VersionInSource(source); v != "" {
+		return v
+	}
+	if c.MD == nil || c.MD.GetPermAuthKeyId() == 0 || c.svcCtx == nil || c.svcCtx.AuthSession == nil {
+		return ""
+	}
+	auth, err := c.svcCtx.AuthSession.AuthsessionGetAuthorization(c.ctx, &authsession.TLAuthsessionGetAuthorization{
+		AuthKeyId: c.MD.GetPermAuthKeyId(),
+	})
+	if err != nil || auth == nil {
+		return ""
+	}
+	return auth.GetAppVersion()
 }

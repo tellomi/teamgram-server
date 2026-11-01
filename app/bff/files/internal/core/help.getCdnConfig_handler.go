@@ -20,17 +20,24 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 )
 
 // HelpGetCdnConfig
 // help.getCdnConfig#52029342 = CdnConfig;
+// https://core.telegram.org/method/help.getCdnConfig
+//
+// Returns the RSA public keys for secondary CDN datacenters. An empty vector
+// means this server does not publish a CDN, so clients download from the main DC.
 func (c *FilesCore) HelpGetCdnConfig(in *mtproto.TLHelpGetCdnConfig) (*mtproto.CdnConfig, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getCdnConfig blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	rValue := mtproto.MakeTLCdnConfig(&mtproto.CdnConfig{
-		PublicKeys: []*mtproto.CdnPublicKey{},
-	}).To_CdnConfig()
-
-	return rValue, nil
+	_ = in
+	keys := helpdesk.PublicKeys()
+	out := make([]*mtproto.CdnPublicKey, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, mtproto.MakeTLCdnPublicKey(&mtproto.CdnPublicKey{
+			DcId:      key.DC,
+			PublicKey: key.PEM,
+		}).To_CdnPublicKey())
+	}
+	return mtproto.MakeTLCdnConfig(&mtproto.CdnConfig{PublicKeys: out}).To_CdnConfig(), nil
 }

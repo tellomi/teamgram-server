@@ -125,8 +125,10 @@ func (s *Server) Initialize() error {
 
 		// configuration_helper
 		configSvc := configuration_helper.New(configuration_helper.Config{
-			RpcServerConf: c.RpcServerConf,
-			MysqlDSN:      c.ChannelMySQL,
+			RpcServerConf:     c.RpcServerConf,
+			MysqlDSN:          c.ChannelMySQL,
+			UserClient:        c.BizServiceClient,
+			AuthSessionClient: c.AuthSessionClient,
 		})
 		mtproto.RegisterRPCConfigurationServer(grpcServer, configSvc)
 		mtproto.RegisterRPCPromoDataServer(grpcServer, configSvc)

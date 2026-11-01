@@ -22,23 +22,17 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 )
 
 // HelpGetAppChangelog
 // help.getAppChangelog#9010ef6f prev_app_version:string = Updates;
+// https://core.telegram.org/method/help.getAppChangelog
+//
+// Returns updateServiceNotification entries for changelog notes newer than
+// prev_app_version. The client stores them on user 777000. An empty previous
+// version, or a client that already has every note, returns updates with no
+// entries.
 func (c *ConfigurationCore) HelpGetAppChangelog(in *mtproto.TLHelpGetAppChangelog) (*mtproto.Updates, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getAppChangelog blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	_ = in.GetPrevAppVersion()
-
-	rValue := mtproto.MakeTLUpdates(&mtproto.Updates{
-		Updates: []*mtproto.Update{},
-		Users:   []*mtproto.User{},
-		Chats:   []*mtproto.Chat{},
-		Date:    int32(time.Now().Unix()),
-		Seq:     0,
-	}).To_Updates()
-
-	return rValue, nil
+	return helpdesk.Changelog(in.GetPrevAppVersion(), helpdesk.LoadNotes(), int32(time.Now().Unix())), nil
 }

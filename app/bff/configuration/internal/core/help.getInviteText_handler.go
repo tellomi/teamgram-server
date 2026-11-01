@@ -20,13 +20,25 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 )
 
 // HelpGetInviteText
 // help.getInviteText#4d392343 = help.InviteText;
+// https://core.telegram.org/method/help.getInviteText
+//
+// Returns the invitation sentence in the client's language, with the Tellomi
+// short-link host.
 func (c *ConfigurationCore) HelpGetInviteText(in *mtproto.TLHelpGetInviteText) (*mtproto.Help_InviteText, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getInviteText blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	_ = in
+	lang := ""
+	if c.MD != nil {
+		lang = c.MD.GetLangCode()
+		if lang == "" {
+			lang = c.MD.GetSystemLangCode()
+		}
+	}
+	return mtproto.MakeTLHelpInviteText(&mtproto.Help_InviteText{
+		Message: helpdesk.InviteText(lang),
+	}).To_Help_InviteText(), nil
 }
