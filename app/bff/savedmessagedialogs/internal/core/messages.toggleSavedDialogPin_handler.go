@@ -83,7 +83,7 @@ func (c *SavedMessageDialogsCore) MessagesToggleSavedDialogPin(in *mtproto.TLMes
 			syncUpdates.PushChat(chats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 		},
 		func(channelIdList []int64) {
-			// TODO
+			syncUpdates.PushChat(c.channelChats(channelIdList)...)
 		})
 	c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 		UserId:        c.MD.UserId,

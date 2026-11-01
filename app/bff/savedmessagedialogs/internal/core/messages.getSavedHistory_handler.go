@@ -1,49 +1,32 @@
-// Copyright 2024 Teamgram Authors
-//  All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: teamgramio (teamgram.io@gmail.com)
-//
-
 package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
-	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/bff/savedmessagedialogs/saved"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
-	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // MessagesGetSavedHistory
-// messages.getSavedHistory#3d9a414d peer:InputPeer offset_id:int offset_date:int add_offset:int limit:int max_id:int min_id:int hash:long = messages.Messages;
+// messages.getSavedHistory#998ab009 flags:# parent_peer:flags.0?InputPeer peer:InputPeer offset_id:int offset_date:int add_offset:int limit:int max_id:int min_id:int hash:long = messages.Messages;
+// https://core.telegram.org/method/messages.getSavedHistory
 func (c *SavedMessageDialogsCore) MessagesGetSavedHistory(in *mtproto.TLMessagesGetSavedHistory) (*mtproto.Messages_Messages, error) {
-	// TODO(@benqi): 重复FromInputPeer2
-	var (
-		err   error
-		peer  = mtproto.FromInputPeer2(c.MD.UserId, in.GetPeer())
-		limit = in.Limit
-	)
-
-	if limit > 50 {
-		limit = 50
+	if err := c.requireUser(); err != nil {
+		return nil, err
 	}
-
-	var (
-		boxList *mtproto.MessageBoxList
-	)
-
-	boxList, err = c.svcCtx.Dao.MessageClient.MessageGetSavedHistoryMessages(c.ctx, &message.TLMessageGetSavedHistoryMessages{
+	if saved.ParentSpecified(in.GetParentPeer()) {
+		if err := c.requireMonoforum(in.GetParentPeer()); err != nil {
+			c.Logger.Errorf("messages.getSavedHistory - error: %v", err)
+			return nil, err
+		}
+		return emptyMessages(), nil
+	}
+	peer, err := c.savedPeer(in.GetPeer())
+	if err != nil {
+		c.Logger.Errorf("messages.getSavedHistory - error: %v", err)
+		return nil, err
+	}
+	limit := saved.NormalizeLimit(in.GetLimit(), saved.HistoryCap)
+	boxList, err := c.svcCtx.Dao.MessageGetSavedHistoryMessages(c.ctx, &message.TLMessageGetSavedHistoryMessages{
 		UserId:     c.MD.UserId,
 		PeerType:   peer.PeerType,
 		PeerId:     peer.PeerId,
@@ -56,62 +39,98 @@ func (c *SavedMessageDialogsCore) MessagesGetSavedHistory(in *mtproto.TLMessages
 		Hash:       in.Hash,
 	})
 	if err != nil {
-		c.Logger.Errorf("messages.getHistory - error: %v", err)
+		c.Logger.Errorf("messages.getSavedHistory - error: %v", err)
 		return nil, err
 	}
-
+	if boxList == nil {
+		boxList = &mtproto.MessageBoxList{}
+	}
 	var (
 		messages []*mtproto.Message
 		users    []*mtproto.User
 		chats    []*mtproto.Chat
 	)
+	userSet := map[int64]struct{}{}
+	chatSet := map[int64]struct{}{}
+	channelSet := map[int64]struct{}{}
+	addPeer(peer, c.MD.UserId, userSet, chatSet, channelSet)
 	boxList.Visit(c.MD.UserId,
-		func(messageList []*mtproto.Message) {
-			messages = messageList
+		func(messageList []*mtproto.Message) { messages = messageList },
+		func(ids []int64) {
+			for _, id := range ids {
+				userSet[id] = struct{}{}
+			}
 		},
-		func(userIdList []int64) {
-			mUsers, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
-				&userpb.TLUserGetMutableUsers{
-					Id: userIdList,
-				})
-			users = append(users, mUsers.GetUserListByIdList(c.MD.UserId, userIdList...)...)
+		func(ids []int64) {
+			for _, id := range ids {
+				chatSet[id] = struct{}{}
+			}
 		},
-		func(chatIdList []int64) {
-			mChats, _ := c.svcCtx.Dao.ChatClient.ChatGetChatListByIdList(c.ctx,
-				&chatpb.TLChatGetChatListByIdList{
-					IdList: chatIdList,
-				})
-			chats = append(chats, mChats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
-		},
-		func(channelIdList []int64) {
-			//// TODO: handler other...
-			//if channel != nil {
-			//	chats = append(chats, channel.ToUnsafeChat(c.MD.UserId))
-			//}
+		func(ids []int64) {
+			for _, id := range ids {
+				channelSet[id] = struct{}{}
+			}
 		})
-
-	var (
-		rValues *mtproto.Messages_Messages
-	)
-
-	//if !isChannel {
-	if boxList.Length() == limit {
-		rValues = mtproto.MakeTLMessagesMessagesSlice(&mtproto.Messages_Messages{
-			Inexact:        false, // TODO: ???
-			Count:          boxList.Count,
-			NextRate:       nil, // TODO: ???
-			OffsetIdOffset: nil, // TODO: ???
-			Messages:       messages,
-			Users:          mtproto.ToSafeUsers(users),
-			Chats:          mtproto.ToSafeChats(chats),
-		}).To_Messages_Messages()
-	} else {
-		rValues = mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{
-			Messages: messages,
-			Users:    mtproto.ToSafeUsers(users),
-			Chats:    mtproto.ToSafeChats(chats),
-		}).To_Messages_Messages()
+	ids := make([]int32, 0, len(messages))
+	for _, msg := range messages {
+		if msg != nil {
+			ids = append(ids, msg.GetId())
+		}
 	}
+	if in.GetHash() != 0 && in.GetHash() == saved.HashIDs(ids) {
+		return mtproto.MakeTLMessagesMessagesNotModified(&mtproto.Messages_Messages{
+			Count: boxList.Count,
+		}).To_Messages_Messages(), nil
+	}
+	users = c.usersByID(keys(userSet))
+	chats = append(c.chatsByID(keys(chatSet)), c.channelChats(keys(channelSet))...)
+	if messages == nil {
+		messages = []*mtproto.Message{}
+	}
+	if chats == nil {
+		chats = []*mtproto.Chat{}
+	}
+	if int32(len(messages)) == limit {
+		return mtproto.MakeTLMessagesMessagesSlice(&mtproto.Messages_Messages{
+			Count:    boxList.Count,
+			Messages: messages,
+			Users:    users,
+			Chats:    chats,
+		}).To_Messages_Messages(), nil
+	}
+	return mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{
+		Messages: messages,
+		Users:    users,
+		Chats:    chats,
+	}).To_Messages_Messages(), nil
+}
 
-	return rValues, nil
+func emptyMessages() *mtproto.Messages_Messages {
+	return mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{
+		Messages: []*mtproto.Message{},
+		Users:    []*mtproto.User{},
+		Chats:    []*mtproto.Chat{},
+	}).To_Messages_Messages()
+}
+
+func addPeer(p *mtproto.PeerUtil, self int64, users, chats, channels map[int64]struct{}) {
+	if p == nil {
+		return
+	}
+	switch p.PeerType {
+	case mtproto.PEER_SELF:
+		users[self] = struct{}{}
+	case mtproto.PEER_USER:
+		if p.PeerId != 0 {
+			users[p.PeerId] = struct{}{}
+		}
+	case mtproto.PEER_CHAT:
+		if p.PeerId != 0 {
+			chats[p.PeerId] = struct{}{}
+		}
+	case mtproto.PEER_CHANNEL:
+		if p.PeerId != 0 {
+			channels[p.PeerId] = struct{}{}
+		}
+	}
 }
