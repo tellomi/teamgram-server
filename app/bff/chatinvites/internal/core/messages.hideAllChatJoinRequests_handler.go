@@ -1,32 +1,61 @@
-// Copyright 2022 Teamgram Authors
-//  All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: teamgramio (teamgram.io@gmail.com)
-//
-
 package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/chatinvites/joinhide"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // MessagesHideAllChatJoinRequests
 // messages.hideAllChatJoinRequests#e085f4ea flags:# approved:flags.0?true peer:InputPeer link:flags.1?string = Updates;
+// https://core.telegram.org/method/messages.hideAllChatJoinRequests
 func (c *ChatInvitesCore) MessagesHideAllChatJoinRequests(in *mtproto.TLMessagesHideAllChatJoinRequests) (*mtproto.Updates, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.hideAllChatJoinRequests blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	if in == nil || in.GetPeer() == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	peer := mtproto.FromInputPeer2(c.MD.UserId, in.GetPeer())
+	link := ""
+	if in.GetLink() != nil {
+		link = in.GetLink().GetValue()
+	}
+	if peer.IsChannel() {
+		return joinhide.HideChannel(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, in.GetApproved(), link)
+	}
+	if !peer.IsChat() || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.ChatClient == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	mChat, err := c.svcCtx.Dao.ChatClient.ChatGetMutableChat(c.ctx, &chatpb.TLChatGetMutableChat{ChatId: peer.PeerId})
+	if err != nil || mChat == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	me, _ := mChat.GetImmutableChatParticipant(c.MD.UserId)
+	if me == nil || !me.CanInviteUsers() {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	var linkVal *wrapperspb.StringValue
+	if link != "" {
+		linkVal = &wrapperspb.StringValue{Value: link}
+	}
+	pending, err := c.svcCtx.Dao.ChatClient.ChatHideChatJoinRequests(c.ctx, &chatpb.TLChatHideChatJoinRequests{
+		SelfId:   c.MD.UserId,
+		ChatId:   peer.PeerId,
+		Approved: in.GetApproved(),
+		Link:     linkVal,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pending == nil {
+		pending = &chatpb.RecentChatInviteRequesters{}
+	}
+	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdatePendingJoinRequests(&mtproto.Update{
+		Peer_PEER:        mtproto.MakePeerChat(peer.PeerId),
+		RequestsPending:  pending.GetRequestsPending(),
+		RecentRequesters: pending.GetRecentRequesters(),
+	}).To_Update()), nil
 }

@@ -417,6 +417,75 @@ func (s *Service) ApproveJoin(ctx context.Context, self, actorAuth int64, in *mt
 	return nil
 }
 
+// HideAllJoins implements messages.hideAllChatJoinRequests for a channel.
+// link limits the dismiss to requests that arrived through that invite.
+// https://core.telegram.org/method/messages.hideAllChatJoinRequests
+func (s *Service) HideAllJoins(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, approved bool, link string) (*mtproto.Updates, error) {
+	ch, p, err := s.requireMember(ctx, self, in)
+	if err != nil {
+		return nil, err
+	}
+	if !p.IsAdmin() && !p.adminRights().CanInviteUsers() {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	f := s.features(ctx, ch.ID)
+	kept := make([]JoinReq, 0, len(f.JoinRequests))
+	var hit []int64
+	for _, req := range f.JoinRequests {
+		if link != "" && req.Link != link {
+			kept = append(kept, req)
+			continue
+		}
+		hit = append(hit, req.UserID)
+	}
+	f.JoinRequests = kept
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	if approved && len(hit) > 0 {
+		if _, err := s.Invite(ctx, self, actorAuth, in, hit, nil); err != nil {
+			return nil, err
+		}
+	}
+	recent := make([]int64, 0, len(kept))
+	for _, req := range kept {
+		recent = append(recent, req.UserID)
+		if len(recent) == 5 {
+			break
+		}
+	}
+	up := mtproto.MakeTLUpdatePendingJoinRequests(&mtproto.Update{
+		Peer_PEER:        mtproto.MakePeerChannel(ch.ID),
+		RequestsPending:  int32(len(kept)),
+		RecentRequesters: recent,
+	}).To_Update()
+	return s.pack(ctx, self, ch.ID, up), nil
+}
+
+// SetSponsoredRestricted stores channels.restrictSponsoredMessages.
+// https://core.telegram.org/method/channels.restrictSponsoredMessages
+func (s *Service) SetSponsoredRestricted(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, restricted bool) (*mtproto.Updates, error) {
+	ch, p, err := s.requireMember(ctx, self, in)
+	if err != nil {
+		return nil, err
+	}
+	if !p.IsCreator() && !p.IsAdmin() {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	_ = actorAuth
+	f := s.features(ctx, ch.ID)
+	f.SponsoredRestricted = restricted
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
+}
+
+// SponsoredRestricted reports the flag stored by SetSponsoredRestricted.
+func (s *Service) SponsoredRestricted(ctx context.Context, channelID int64) bool {
+	return s.features(ctx, channelID).SponsoredRestricted
+}
+
 func (s *Service) EditLocation(ctx context.Context, self int64, in *mtproto.InputChannel, lat, long float64, address string) error {
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
@@ -447,8 +516,12 @@ func (s *Service) EditLocation(ctx context.Context, self int64, in *mtproto.Inpu
 }
 
 func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, userID int64, password *mtproto.InputCheckPasswordSRP) (*mtproto.Updates, error) {
-	if password == nil || len(password.GetA()) == 0 {
-		return nil, mtproto.ErrPasswordHashInvalid
+	// Cloud password verifiers are not stored. An empty proof is the
+	// documented PASSWORD_MISSING (2FA required). A submitted SRP A is the
+	// same acceptance this method already used.
+	// https://core.telegram.org/method/messages.editChatCreator
+	if password == nil || len(password.GetA()) == 0 || password.GetPredicateName() == mtproto.Predicate_inputCheckPasswordEmpty {
+		return nil, mtproto.ErrPasswordMissing
 	}
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {

@@ -1,31 +1,55 @@
-// Copyright (c) 2026 The Teamgram Authors (https://teamgram.net).
-//  All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: teamgramio (teamgram.io@gmail.com)
-
 package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/chats/owner"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 )
 
 // MessagesGetFutureChatCreatorAfterLeave
 // messages.getFutureChatCreatorAfterLeave#3b7d0ea6 peer:InputPeer = User;
+// https://core.telegram.org/method/messages.getFutureChatCreatorAfterLeave
 func (c *ChatsCore) MessagesGetFutureChatCreatorAfterLeave(in *mtproto.TLMessagesGetFutureChatCreatorAfterLeave) (*mtproto.User, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.getFutureChatCreatorAfterLeave blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	if in == nil || in.GetPeer() == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	peer := mtproto.FromInputPeer2(c.MD.UserId, in.GetPeer())
+	if peer.IsChannel() {
+		id, err := owner.FutureChannel(c.ctx, c.MD.UserId, peer)
+		if err != nil {
+			return nil, err
+		}
+		return owner.User(c.MD.UserId, id), nil
+	}
+	if !peer.IsChat() || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.ChatClient == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatGetMutableChat(c.ctx, &chatpb.TLChatGetMutableChat{ChatId: peer.PeerId})
+	if err != nil || chat == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if chat.Creator() != c.MD.UserId {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	var seats []owner.Seat
+	chat.Walk(func(userID int64, p *mtproto.ImmutableChatParticipant) error {
+		if p == nil {
+			return nil
+		}
+		seats = append(seats, owner.Seat{
+			UserID: userID,
+			Admin:  p.IsChatMemberAdmin() || p.IsChatMemberCreator(),
+			Date:   p.GetDate(),
+			Active: p.IsChatMemberStateNormal(),
+		})
+		return nil
+	})
+	id, err := owner.Successor(c.MD.UserId, seats)
+	if err != nil {
+		return nil, err
+	}
+	return owner.User(c.MD.UserId, id), nil
 }
