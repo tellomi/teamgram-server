@@ -27,5 +27,7 @@ type Config struct {
 	// MysqlDSN is the teamgram database that holds user_settings. The bff
 	// process passes ChannelMySQL. TEAMGRAM_MYSQL_DSN overrides it.
 	// help.hidePromoData falls back to memory when this is empty.
-	MysqlDSN string `json:",optional"`
+	MysqlDSN          string             `json:",optional"`
+	UserClient        zrpc.RpcClientConf `json:",optional"`
+	AuthSessionClient zrpc.RpcClientConf `json:",optional"`
 }

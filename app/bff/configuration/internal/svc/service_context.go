@@ -22,15 +22,23 @@ import (
 	"os"
 	"strings"
 
+	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/promo"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/userinfo"
+	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
+	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type ServiceContext struct {
-	Config   config.Config
-	Promo    *promo.Store
-	UserInfo *userinfo.Store
+	Config      config.Config
+	Promo       *promo.Store
+	UserInfo    *userinfo.Store
+	Suggestions *helpdesk.Suggestions
+	UserClient  user_client.UserClient
+	AuthSession authsession_client.AuthsessionClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -39,8 +47,25 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		dsn = env
 	}
 	return &ServiceContext{
-		Config:   c,
-		Promo:    promo.Open(dsn),
-		UserInfo: userinfo.Open(dsn),
+		Config:      c,
+		Promo:       promo.Open(dsn),
+		UserInfo:    userinfo.Open(dsn),
+		Suggestions: helpdesk.Open(dsn, helpdesk.LoadOffer()),
+		UserClient:  userClient(c.UserClient),
+		AuthSession: authClient(c.AuthSessionClient),
 	}
+}
+
+func userClient(c zrpc.RpcClientConf) user_client.UserClient {
+	if c.Etcd.Key == "" && len(c.Endpoints) == 0 && c.Target == "" {
+		return nil
+	}
+	return user_client.NewUserClient(rpcx.GetCachedRpcClient(c))
+}
+
+func authClient(c zrpc.RpcClientConf) authsession_client.AuthsessionClient {
+	if c.Etcd.Key == "" && len(c.Endpoints) == 0 && c.Target == "" {
+		return nil
+	}
+	return authsession_client.NewAuthsessionClient(rpcx.GetCachedRpcClient(c))
 }

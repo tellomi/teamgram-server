@@ -24,9 +24,21 @@ import (
 
 // HelpDismissSuggestion
 // help.dismissSuggestion#f50dbaa1 peer:InputPeer suggestion:string = Bool;
+// https://core.telegram.org/method/help.dismissSuggestion
+// https://core.telegram.org/api/config#suggestions
+//
+// Remembers that this user dismissed suggestion on peer. help.getPromoData
+// then lists it under dismissed_suggestions and omits it from pending_suggestions.
 func (c *ConfigurationCore) HelpDismissSuggestion(in *mtproto.TLHelpDismissSuggestion) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.dismissSuggestion blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrUserIdInvalid
+	}
+	if c.svcCtx == nil || c.svcCtx.Suggestions == nil {
+		return nil, mtproto.ErrInputRequestInvalid
+	}
+	if err := c.svcCtx.Suggestions.Dismiss(c.ctx, c.MD.UserId, in.GetPeer(), in.GetSuggestion()); err != nil {
+		c.Logger.Errorf("help.dismissSuggestion - error: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }
