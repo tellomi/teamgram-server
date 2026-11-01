@@ -9,6 +9,7 @@ RatePerMin: 120
 RateBurst: 40
 CacheSeconds: 120
 TrustProxy: false
+MinioRegion: auto
 MinioBucketPhotos: photos
 MinioBucketDocuments: documents
 MinioBucketVideos: videos

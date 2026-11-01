@@ -76,10 +76,10 @@ cd teamgram-server
 
 ### 2. 启动依赖栈
 
-将启动 MySQL、Redis、etcd、Kafka、MinIO 及可选监控组件。数据库与 MinIO 桶会自动完成初始化。
+将启动 MySQL、Redis、etcd、Kafka 及可选监控组件。加上 `--profile local-minio` 才会启动 MinIO 并创建桶。生产环境不要加这个 profile，对象存储用 Cloudflare R2。
 
 ```bash
-docker compose -f docker-compose-env.yaml up -d
+docker compose -f docker-compose-env.yaml --profile local-minio up -d
 ```
 
 ### 3. 启动应用

@@ -43,13 +43,14 @@ and the binary is not started by `runall2.sh`.
 | `TELLOMI_LINKPREVIEW_RATE_BURST` | `RateBurst` | Burst size. Compose default `40`. |
 | `TELLOMI_LINKPREVIEW_CACHE_SECONDS` | `CacheSeconds` | `Cache-Control` max-age for hits, and the in-process TTL. Compose default `120`. Not-found responses use 30 seconds. |
 | `TELLOMI_LINKPREVIEW_TRUST_PROXY` | `TrustProxy` | When `1` / `true`, rate-limit by `CF-Connecting-IP` or the first `X-Forwarded-For` hop. Compose default `true`. |
-| `TELLOMI_MINIO_ENDPOINT` | `MinioEndpoint` | MinIO endpoint for `GET /linkpreview/v1/media`. Compose default `minio:9000`. |
-| `TELLOMI_MINIO_ACCESS_KEY` | `MinioAccessKey` | MinIO access key. No Compose default. |
-| `TELLOMI_MINIO_SECRET_KEY` | `MinioSecretKey` | MinIO secret key. No Compose default. |
-| `TELLOMI_MINIO_USE_SSL` | `MinioSSL` | `1` / `true` to use TLS. Compose default `false`. |
-| `TELLOMI_MINIO_BUCKET_PHOTOS` | `MinioBucketPhotos` | Compose default `photos`. |
-| `TELLOMI_MINIO_BUCKET_DOCUMENTS` | `MinioBucketDocuments` | Compose default `documents`. |
-| `TELLOMI_MINIO_BUCKET_VIDEOS` | `MinioBucketVideos` | Compose default `videos`. |
+| `TELLOMI_MINIO_ENDPOINT` | `MinioEndpoint` | Host (and optional port) for `GET /linkpreview/v1/media`. No scheme and no path. Compose default `minio:9000`. R2: `<accountid>.r2.cloudflarestorage.com`. |
+| `TELLOMI_MINIO_REGION` | `MinioRegion` | Signing region. Compose default `auto`. **R2 must be `auto`.** An empty value is also `auto`. |
+| `TELLOMI_MINIO_ACCESS_KEY` | `MinioAccessKey` | Access key. No Compose default. |
+| `TELLOMI_MINIO_SECRET_KEY` | `MinioSecretKey` | Secret key. No Compose default. |
+| `TELLOMI_MINIO_USE_SSL` | `MinioSSL` | `1` / `true` to use TLS. Compose default `false`. R2 must be `true`. |
+| `TELLOMI_MINIO_BUCKET_PHOTOS` | `MinioBucketPhotos` | Compose default `tellomi-attachments`. |
+| `TELLOMI_MINIO_BUCKET_DOCUMENTS` | `MinioBucketDocuments` | Compose default `tellomi-attachments`. |
+| `TELLOMI_MINIO_BUCKET_VIDEOS` | `MinioBucketVideos` | Compose default `tellomi-attachments`. |
 
 Environment variables override the yaml file. A non-empty variable replaces the
 yaml value; an empty variable leaves it. Outside Docker the process is
@@ -64,6 +65,16 @@ image keeps the DSN in `teamgramd/etc2/linkpreview.yaml`
 (`teamgram:teamgram@tcp(mysql:3306)/teamgram?...`). Empty MinIO credentials
 likewise keep `minio` / `miniostorage` from that file.
 
+The client is `github.com/minio/minio-go/v7`. It takes a host, `Secure`, and
+`Region`. R2 needs `Region=auto` so the client does not call GetBucketLocation
+(Cloudflare returns NotImplemented, and the library would then sign as
+`us-east-1`, which R2 rejects). Requests are path-style. When the three bucket
+variables name the same bucket, the object key is `<class>/<file_path>`
+(`photos/`, `documents/`, or `videos/`), which is where dfs writes inside
+`tellomi-attachments`. Separate bucket names keep the historical key (the file
+path alone). Production values are in [ci-acr.md](ci-acr.md). Do not put the
+access key or secret in git.
+
 ```yaml
 TELLOMI_LINKPREVIEW_ADDR: ${TELLOMI_LINKPREVIEW_ADDR:-0.0.0.0:8801}
 TELLOMI_LINKPREVIEW_MYSQL_DSN: ${TELLOMI_LINKPREVIEW_MYSQL_DSN:-}
@@ -76,12 +87,13 @@ TELLOMI_LINKPREVIEW_RATE_BURST: ${TELLOMI_LINKPREVIEW_RATE_BURST:-40}
 TELLOMI_LINKPREVIEW_CACHE_SECONDS: ${TELLOMI_LINKPREVIEW_CACHE_SECONDS:-120}
 TELLOMI_LINKPREVIEW_TRUST_PROXY: ${TELLOMI_LINKPREVIEW_TRUST_PROXY:-true}
 TELLOMI_MINIO_ENDPOINT: ${TELLOMI_MINIO_ENDPOINT:-minio:9000}
+TELLOMI_MINIO_REGION: ${TELLOMI_MINIO_REGION:-auto}
 TELLOMI_MINIO_ACCESS_KEY: ${TELLOMI_MINIO_ACCESS_KEY:-}
 TELLOMI_MINIO_SECRET_KEY: ${TELLOMI_MINIO_SECRET_KEY:-}
 TELLOMI_MINIO_USE_SSL: ${TELLOMI_MINIO_USE_SSL:-false}
-TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-photos}
-TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-documents}
-TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-videos}
+TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-tellomi-attachments}
+TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-tellomi-attachments}
+TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-tellomi-attachments}
 ```
 
 ## Auth, rate limit, cache
@@ -123,7 +135,7 @@ Otherwise they are signed URLs on this service:
 GET /linkpreview/v1/media?p=<file path>&exp=<unix>&sig=<hex hmac-sha256>
 ```
 
-The signature is HMAC-SHA256 over `path || 0x00 || exp` with `TELLOMI_LINKPREVIEW_MEDIA_KEY`, or a key derived from the link-preview token. Expiry is 24 hours. A valid signature with MinIO configured streams the object from the photos, documents, or videos bucket. A valid signature with no backend returns **404** `media_unavailable`. A bad signature is **404** `not_found`.
+The signature is HMAC-SHA256 over `path || 0x00 || exp` with `TELLOMI_LINKPREVIEW_MEDIA_KEY`, or a key derived from the link-preview token. Expiry is 24 hours. A valid signature with object storage configured reads the photos, documents, or videos object (class prefix inside one bucket, or the historical per-class buckets). A valid signature with no backend returns **404** `media_unavailable`. A bad signature is **404** `not_found`.
 
 The object key is `photo_sizes.file_path` (preview size `m`, then `x`, `y`, `b`, `a`, `c`, `s`, `w`) or, for an image document with no thumb, `documents.file_path`.
 

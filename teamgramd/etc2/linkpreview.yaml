@@ -20,6 +20,10 @@ MinioEndpoint: minio:9000
 MinioAccessKey: minio
 MinioSecretKey: miniostorage
 MinioSSL: false
-MinioBucketPhotos: photos
-MinioBucketDocuments: documents
-MinioBucketVideos: videos
+# R2 signs as auto. Override the endpoint, keys, SSL, and buckets with
+# TELLOMI_MINIO_* (docs/ci-acr.md). Objects are photos|documents|videos/<file_path>
+# inside the attachments bucket.
+MinioRegion: auto
+MinioBucketPhotos: tellomi-attachments
+MinioBucketDocuments: tellomi-attachments
+MinioBucketVideos: tellomi-attachments

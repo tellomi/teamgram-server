@@ -40,8 +40,27 @@ if the namespace is private:
 
 ```bash
 docker login crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com
-docker compose pull && docker compose up -d
+./deploy-pull.sh
 ```
+
+`deploy-pull.sh` is the full deploy. It pulls `teamgram`, `coturn`, and
+`mediamtx`, then recreates the stack from all three compose files. `teamgram`
+depends on `kafka`, which is defined in `docker-compose-env.yaml`, so the app
+file is not composed by itself. MinIO is profile `local-minio` and is not
+started.
+
+```bash
+docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml pull teamgram coturn mediamtx
+docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml up -d
+```
+
+`docker-compose.geoip.yaml` bind-mounts the DB-IP Lite city MMDB into
+`teamgram`. Omit that `-f` and the next `up` drops the mount. The database
+file is not in git. Before the first deploy with this script, set
+`TELLOMI_GEOIP_MMDB_HOST` in `.env` to the mmdb already on the server. The
+script exits if that file is missing. The container path defaults to
+`/app/bin/GeoLite2-City.mmdb` (`TELLOMI_GEOIP_MMDB`). Leave it there: both
+authsession and bff open `./GeoLite2-City.mmdb` from `/app/bin`.
 
 The new image applies `teamgramd/deploy/sql/migrate-*.sql` before the processes
 start. Pull this checkout as well so `docker-compose.yaml` passes
@@ -53,12 +72,46 @@ to `latest`, so a stock `.env` (see `.env.example`) needs no image settings.
 Do not pass `--build`. If `docker compose pull` fails, fix the login or the
 registry. Do not build on this machine.
 
-Dependency images (MySQL, Kafka, and the rest) are unchanged:
+Dependency images (MySQL, Kafka, and the rest) are unchanged. MinIO is not
+one of them. `minio` and `minio-mc` are Compose profile `local-minio`, so this
+command does not pull or start them:
 
 ```bash
-docker compose -f docker-compose-env.yaml up -d
-docker compose pull && docker compose up -d
+./deploy-pull.sh
 ```
+
+Do not pass `--profile local-minio`. If an older copy of the script names
+`minio` or `minio-mc`, remove those names. Nothing in the default project
+`depends_on` MinIO. `teamgram` does not either. Keep
+`-f docker-compose.geoip.yaml` on the same command as `up`.
+
+## Link preview on Cloudflare R2
+
+dfs already uses R2 through `TELLOMI_S3_*` ([storage.md](storage.md)).
+linkpreview uses a separate client and will not follow those variables.
+Set the keys below in the server `.env` before the next deploy. The endpoint
+is the host only. `minio-go` adds `https` from `TELLOMI_MINIO_USE_SSL`.
+Region `auto` is required. The three buckets are the same R2 bucket dfs
+writes; object keys are `photos/<file_path>`, `documents/<file_path>`, and
+`videos/<file_path>`. Use the same key pair as `TELLOMI_S3_ACCESS_KEY_ID` /
+`TELLOMI_S3_SECRET_ACCESS_KEY`. Do not commit the secret.
+
+```
+TELLOMI_MINIO_ENDPOINT=<accountid>.r2.cloudflarestorage.com
+TELLOMI_MINIO_REGION=auto
+TELLOMI_MINIO_USE_SSL=true
+TELLOMI_MINIO_ACCESS_KEY=<R2 access key id>
+TELLOMI_MINIO_SECRET_KEY=<R2 secret access key>
+TELLOMI_MINIO_BUCKET_PHOTOS=tellomi-attachments
+TELLOMI_MINIO_BUCKET_DOCUMENTS=tellomi-attachments
+TELLOMI_MINIO_BUCKET_VIDEOS=tellomi-attachments
+```
+
+`TELLOMI_MINIO_REGION` is read by the image from this change. Endpoint, SSL,
+keys, and bucket names are read by older images too, but without `auto` those
+images sign as `us-east-1` and R2 rejects the request. Pull the new image
+before expecting `/linkpreview/v1/media` to read R2. Leave
+`TELLOMI_S3_PUBLIC_MEDIA_BASE_URL` set when card URLs should be the public CDN.
 
 ## Rollback
 
@@ -73,11 +126,12 @@ TELLOMI_IMAGE_TAG=9deb01f
 ```
 
 ```bash
-docker compose pull && docker compose up -d
+./deploy-pull.sh
 ```
 
 To return to the newest build, set `TELLOMI_IMAGE_TAG=latest` (or remove it)
-and run the same pull and up.
+and run `./deploy-pull.sh` again. Keep `-f docker-compose.geoip.yaml` on every
+pull and up so the GeoIP mount stays.
 
 ## Local development
 

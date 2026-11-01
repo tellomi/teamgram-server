@@ -69,10 +69,10 @@ cd teamgram-server
 
 ### 2. Start dependency stack
 
-This starts MySQL, Redis, etcd, Kafka, MinIO (and optional monitoring). The database and MinIO buckets are initialized automatically.
+This starts MySQL, Redis, etcd, Kafka (and optional monitoring). `--profile local-minio` also starts MinIO and creates its buckets. Production omits that profile and uses Cloudflare R2.
 
 ```bash
-docker compose -f docker-compose-env.yaml up -d
+docker compose -f docker-compose-env.yaml --profile local-minio up -d
 ```
 
 ### 3. Start application

@@ -16,6 +16,8 @@ MinioEndpoint: ""
 MinioAccessKey: ""
 MinioSecretKey: ""
 MinioSSL: false
+# Empty MinioRegion is signed as auto. R2 requires auto (TELLOMI_MINIO_REGION).
+MinioRegion: auto
 MinioBucketPhotos: photos
 MinioBucketDocuments: documents
 MinioBucketVideos: videos

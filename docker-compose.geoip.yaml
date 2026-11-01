@@ -1,0 +1,18 @@
+# DB-IP Lite city MMDB for the teamgram container.
+# Full deploys must merge this file so `up` recreates the mount:
+#   docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml up -d
+# deploy-pull.sh does that. The database is not in git.
+#
+# TELLOMI_GEOIP_MMDB_HOST is the file on the host (Chengdu: the existing
+# DB-IP Lite mmdb). TELLOMI_GEOIP_MMDB is the path inside the container.
+# Leave the container path at /app/bin/GeoLite2-City.mmdb: authsession and
+# bff both open ./GeoLite2-City.mmdb from /app/bin. Authsession also reads
+# MMDB and GEOIP_MMDB, which this file sets to the same path.
+
+services:
+  teamgram:
+    environment:
+      MMDB: ${TELLOMI_GEOIP_MMDB:-/app/bin/GeoLite2-City.mmdb}
+      GEOIP_MMDB: ${TELLOMI_GEOIP_MMDB:-/app/bin/GeoLite2-City.mmdb}
+    volumes:
+      - ${TELLOMI_GEOIP_MMDB_HOST:-./data/geoip/dbip-city-lite.mmdb}:${TELLOMI_GEOIP_MMDB:-/app/bin/GeoLite2-City.mmdb}:ro

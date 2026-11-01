@@ -30,6 +30,8 @@ Thumbs.db
 .vscode
 
 #deploy data
+# DB-IP / GeoIP databases stay on the host. docker-compose.geoip.yaml bind-mounts one.
+*.mmdb
 
 data/*
 !data/.gitkeep
