@@ -368,8 +368,12 @@ var (
 	ErrUserBlocked = status.Error(ErrBadRequest, "USER_BLOCKED")
 
 	// ErrFileTokenInvalid
-	// | 400 | FILE_TOKEN_INVALID | The specified file token is invalid. |
+	// | 400 | FILE_TOKEN_INVALID | The master DC did not accept the file_token (e.g., the token has expired). Continue downloading the file from the master DC using upload.getFile. |
 	ErrFileTokenInvalid = status.Error(ErrBadRequest, "FILE_TOKEN_INVALID")
+
+	// ErrRequestTokenInvalid
+	// | 400 | REQUEST_TOKEN_INVALID | The master DC did not accept the request_token from the CDN DC. Continue downloading the file from the master DC using upload.getFile. |
+	ErrRequestTokenInvalid = status.Error(ErrBadRequest, "REQUEST_TOKEN_INVALID")
 
 	// ErrMessageNotModified
 	// | 400 | MESSAGE_NOT_MODIFIED | The provided message data is identical to the previous message data, the message wasn't modified. |

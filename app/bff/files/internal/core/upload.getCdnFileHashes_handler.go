@@ -20,15 +20,26 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 )
 
 // UploadGetCdnFileHashes
-// upload.getCdnFileHashes#4da54231 file_token:bytes offset:int = Vector<FileHash>;
+// upload.getCdnFileHashes#91dc3f31 file_token:bytes offset:long = Vector<FileHash>;
+// https://core.telegram.org/method/upload.getCdnFileHashes
+//
+// Master DC method. Returns SHA-256 hashes of ciphertext parts at or after
+// offset. An unpublished CDN (empty help.getCdnConfig) has no tokens.
 func (c *FilesCore) UploadGetCdnFileHashes(in *mtproto.TLUploadGetCdnFileHashes) (*mtproto.Vector_FileHash, error) {
-	// TODO: not impl
-	c.Logger.Errorf("upload.getCdnFileHashes blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return &mtproto.Vector_FileHash{
-		Datas: []*mtproto.FileHash{},
-	}, nil
+	offset := cdnOffset(in.GetOffset_INT64(), in.GetOffset_INT32())
+	if len(helpdesk.PublicKeys()) == 0 {
+		c.Logger.Errorf("upload.getCdnFileHashes - error: CDN is not published")
+		return nil, mtproto.ErrFileTokenInvalid
+	}
+	hashes, err := cdn.Shared().Hashes(in.GetFileToken(), offset)
+	if err != nil {
+		c.Logger.Errorf("upload.getCdnFileHashes - error: %v", err)
+		return nil, err
+	}
+	return &mtproto.Vector_FileHash{Datas: hashes}, nil
 }
