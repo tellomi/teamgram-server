@@ -7,7 +7,7 @@
 #
 # The server must accept the default 99966 test-phone range (docs/e2e.md).
 # TELLOMI_E2E_ADDR, TELLOMI_E2E_PHONE_*, and TELLOMI_E2E_CODE_* override
-# e2e/config.json. This script does not set TELLOMI_E2E_RESTART.
+# e2e/client/config.json. This script does not set TELLOMI_E2E_RESTART.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -15,7 +15,7 @@ export TELLOMI_E2E=1
 export TELLOMI_E2E_ROOT="$root"
 unset TELLOMI_E2E_RESTART
 
-cd "$root/e2e"
+cd "$root/e2e/client"
 exec go test -count=1 -timeout 20m -v \
   -run 'TestInitConnectionInvokeWithLayer|TestHelpGetConfig|TestHelpGetAppConfig|TestHelpGetTermsOfServiceUpdate|TestUpdatesGetStateAndDifference|TestStartupRPCs|TestPrivateChatReadOutbox|TestSendReactionThumbsUp|TestLinksUseTellCC|TestAvailableReactionsDownloadable|TestStickerSetUploadGetFile|TestUsernameThreeCharacters' \
   .

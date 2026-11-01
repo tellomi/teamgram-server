@@ -80,7 +80,7 @@ func (ReactionsService) MessagesSetChatAvailableReactions(ctx context.Context, i
 	if peer.IsChannel() {
 		return channel.Shared().SetAvailableReactions(ctx, self, peer.PeerId, mode, allow, emos, docs, limit, paid)
 	}
-	if err := chatbox.Shared().SetAvailableReactions(ctx, peer, mode, allow, emos, docs, limit, paid); err != nil {
+	if err := chatbox.Shared().SetAvailableReactions(ctx, self, peer, mode, allow, emos, docs, limit, paid); err != nil {
 		return nil, err
 	}
 	return mtproto.MakeEmptyUpdates(), nil

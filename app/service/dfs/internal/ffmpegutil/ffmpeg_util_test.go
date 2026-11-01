@@ -20,12 +20,20 @@ package ffmpegutil
 
 import (
 	"io/ioutil"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
 func TestConvertGifToMp4(t *testing.T) {
+	if _, err := os.Stat("./gsmarena_003.gif"); err != nil {
+		t.Skip("gif fixture is not present")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg binary is not installed")
+	}
 	ffmpegUtil := NewFFmpegUtil()
 	data, duration, err := ffmpegUtil.ConvertToMp4ByPipe("./gsmarena_003.gif", -1, 320)
 	if err != nil {

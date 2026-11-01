@@ -28,11 +28,13 @@ func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 		ShortName:  p.ShortName,
 		Count:      int32(len(items)),
 		Hash:       int32(hash64(documentIDs(items))),
-		ThumbDcId:  wrapperspb.Int32(1),
 	}
+	// thumb_dc_id, thumb_version, and thumbs share flags.4. Writing only the
+	// ints makes a client read the next field as a vector and fail with
+	// DecodeVectorLong on messages.featuredStickers. thumb_document_id is
+	// flags.8 and is the cover the panel actually uses.
 	if thumbID != 0 {
 		set.ThumbDocumentId = wrapperspb.Int64(thumbID)
-		set.ThumbVersion = wrapperspb.Int32(1)
 	}
 	if installed {
 		set.InstalledDate = wrapperspb.Int32(stickerDate)

@@ -128,6 +128,7 @@ func readPng(filename string) (image.Image, error) {
 }
 
 func TestWriter(t *testing.T) {
+	skipWithoutJPEGFixtures(t)
 	for _, tc := range testCase {
 		// Read the image.
 		m0, err := readPng(tc.filename)

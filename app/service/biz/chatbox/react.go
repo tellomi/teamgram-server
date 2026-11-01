@@ -44,6 +44,29 @@ func reactKey(peerType int32, peerID int64) string {
 	return "react:" + peerKey(peerType, peerID)
 }
 
+// dialogReactKey is the store key for one dialog.
+//
+// A private chat is one conversation. User A addressing B and user B
+// addressing A must read the same reactions. Basic groups and channels are
+// already identified by the shared peer id.
+func dialogReactKey(self int64, peer *mtproto.PeerUtil) string {
+	if peer == nil {
+		return reactKey(0, 0)
+	}
+	if peer.PeerType == mtproto.PEER_USER || peer.PeerType == mtproto.PEER_SELF {
+		other := peer.PeerId
+		if peer.PeerType == mtproto.PEER_SELF || other == 0 {
+			other = self
+		}
+		a, b := self, other
+		if a > b {
+			a, b = b, a
+		}
+		return "react:dm:" + strconv.FormatInt(a, 10) + ":" + strconv.FormatInt(b, 10)
+	}
+	return reactKey(peer.PeerType, peer.PeerId)
+}
+
 // ParseReaction reads a Reaction constructor.
 // https://core.telegram.org/constructor/reactionEmoji
 func ParseReaction(r *mtproto.Reaction) (emo string, doc int64, err error) {
@@ -140,7 +163,7 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +185,7 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 	for _, id := range docs {
 		doc.Items = append(doc.Items, reactionItem{MsgID: msgID, UserID: self, DocumentID: id, Date: now, Big: big})
 	}
-	if err := b.storeReact(ctx, peer, doc); err != nil {
+	if err := b.storeReact(ctx, self, peer, doc); err != nil {
 		return nil, err
 	}
 	if savedDialog(self, peer) {
@@ -180,7 +203,7 @@ func (b *Book) UnreadReactions(ctx context.Context, self int64, peer *mtproto.Pe
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +238,7 @@ func (b *Book) ReadReactions(ctx context.Context, self int64, peer *mtproto.Peer
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return err
 	}
@@ -223,17 +246,17 @@ func (b *Book) ReadReactions(ctx context.Context, self int64, peer *mtproto.Peer
 		doc.Read = map[int64]int32{}
 	}
 	doc.Read[self] = int32(b.now().Unix())
-	return b.storeReact(ctx, peer, doc)
+	return b.storeReact(ctx, self, peer, doc)
 }
 
 // SetAvailableReactions stores which reactions a private chat or basic group accepts.
-func (b *Book) SetAvailableReactions(ctx context.Context, peer *mtproto.PeerUtil, mode string, allowCustom bool, emos []string, docs []int64, limit int32, paid *bool) error {
+func (b *Book) SetAvailableReactions(ctx context.Context, self int64, peer *mtproto.PeerUtil, mode string, allowCustom bool, emos []string, docs []int64, limit int32, paid *bool) error {
 	if peer == nil || peer.IsChannel() {
 		return mtproto.ErrPeerIdInvalid
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return err
 	}
@@ -247,7 +270,7 @@ func (b *Book) SetAvailableReactions(ctx context.Context, peer *mtproto.PeerUtil
 	if paid != nil {
 		doc.Paid = *paid
 	}
-	return b.storeReact(ctx, peer, doc)
+	return b.storeReact(ctx, self, peer, doc)
 }
 
 // DeleteParticipantReaction removes one user's reactions on a message.
@@ -260,7 +283,7 @@ func (b *Book) DeleteParticipantReaction(ctx context.Context, self int64, peer *
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +295,7 @@ func (b *Book) DeleteParticipantReaction(ctx context.Context, self int64, peer *
 		kept = append(kept, item)
 	}
 	doc.Items = kept
-	if err := b.storeReact(ctx, peer, doc); err != nil {
+	if err := b.storeReact(ctx, self, peer, doc); err != nil {
 		return nil, err
 	}
 	if savedDialog(self, peer) {
@@ -291,7 +314,7 @@ func (b *Book) DeleteParticipantReactions(ctx context.Context, self int64, peer 
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return err
 	}
@@ -303,7 +326,7 @@ func (b *Book) DeleteParticipantReactions(ctx context.Context, self int64, peer 
 		kept = append(kept, item)
 	}
 	doc.Items = kept
-	if err := b.storeReact(ctx, peer, doc); err != nil {
+	if err := b.storeReact(ctx, self, peer, doc); err != nil {
 		return err
 	}
 	if savedDialog(self, peer) {
@@ -312,8 +335,8 @@ func (b *Book) DeleteParticipantReactions(ctx context.Context, self int64, peer 
 	return nil
 }
 
-func (b *Book) loadReact(ctx context.Context, peer *mtproto.PeerUtil) (*reactDoc, error) {
-	key := reactKey(peer.PeerType, peer.PeerId)
+func (b *Book) loadReact(ctx context.Context, self int64, peer *mtproto.PeerUtil) (*reactDoc, error) {
+	key := dialogReactKey(self, peer)
 	doc := b.react[key]
 	if doc == nil {
 		doc = &reactDoc{}
@@ -328,8 +351,34 @@ func (b *Book) loadReact(ctx context.Context, peer *mtproto.PeerUtil) (*reactDoc
 	return doc, nil
 }
 
-func (b *Book) storeReact(ctx context.Context, peer *mtproto.PeerUtil, doc *reactDoc) error {
-	key := reactKey(peer.PeerType, peer.PeerId)
+// ApplyReactions copies stored reactions onto messages.getHistory rows.
+// The reaction RPC returns updateMessageReactions; a later history fetch
+// has to carry the same MessageReactions or the bubble disappears.
+func (b *Book) ApplyReactions(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgs []*mtproto.Message) {
+	if b == nil || peer == nil || peer.IsChannel() || len(msgs) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, self, peer)
+	if err != nil || doc == nil || len(doc.Items) == 0 {
+		return
+	}
+	tags := savedDialog(self, peer)
+	for _, m := range msgs {
+		if m == nil || m.GetId() == 0 {
+			continue
+		}
+		sum := summary(doc, m.GetId(), self, tags)
+		if len(sum.GetResults()) == 0 {
+			continue
+		}
+		m.Reactions = sum
+	}
+}
+
+func (b *Book) storeReact(ctx context.Context, self int64, peer *mtproto.PeerUtil, doc *reactDoc) error {
+	key := dialogReactKey(self, peer)
 	b.react[key] = doc
 	return b.save(ctx, key, doc)
 }

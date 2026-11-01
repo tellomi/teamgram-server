@@ -12,6 +12,7 @@ Thank you for your interest in contributing. Please read the full guidelines bef
 1. Work on a branch (do not push directly to the default branch).
 2. Open a Pull Request with a clear title; link related issues if any.
 3. Ensure code is formatted with `gofmt` and passes `go test ./...` (and any CI checks once enabled).
+4. A pull request that adds or changes an RPC includes an e2e case and regenerates `docs/api-coverage.csv`. See [docs/testing.md](docs/testing.md).
 4. Follow the commit message conventions described in [specs/contributing.md](specs/contributing.md).
 
 For security issues, do **not** open a public issue; see [SECURITY.md](SECURITY.md) and [specs/security.md](specs/security.md).

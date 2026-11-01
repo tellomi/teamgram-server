@@ -59,7 +59,7 @@ jobs:
           TELLOMI_E2E_ROOT: ${{ github.workspace }}
           TELLOMI_E2E_COMPOSE_FILES: docker-compose-env.yaml,docker-compose.yaml,e2e/docker-compose.ci.yaml
         run: |
-          cd e2e
+          cd e2e/client
           go test -count=1 -timeout 40m -v .
 
       - name: Stack logs

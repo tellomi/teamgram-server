@@ -1,4 +1,4 @@
-module github.com/teamgram/teamgram-server/e2e
+module github.com/teamgram/teamgram-server/e2e/client
 
 go 1.25.0
 
@@ -49,4 +49,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/teamgram/proto => ../proto
+replace github.com/teamgram/proto => ../../proto

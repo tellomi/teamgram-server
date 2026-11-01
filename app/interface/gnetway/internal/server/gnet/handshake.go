@@ -645,7 +645,7 @@ func (s *Server) onSetClientDHParams(c gnet.Conn, ctx *HandshakeStateCtx, reques
 		logx.WithDuration(timex.Since(since)).Infof("onSetClientDHParams: %s", c)
 	}()
 
-	logx.Infof("set_client_DH_params#f5045f1f conn(%s) - state: {%s}, request: %s", c, ctx, request)
+	logx.Infof("set_client_DH_params#f5045f1f conn(%s) - state: {%v}, request: %s", c, ctx, request)
 
 	// TODO(@benqi): Impl SetClient_DHParams logic
 	// 客户端传输数据解析
@@ -762,7 +762,7 @@ func (s *Server) onSetClientDHParams(c gnet.Conn, ctx *HandshakeStateCtx, reques
 				//ctx.AuthKeyId = authKeyId
 				//ctx.AuthKey = authKey
 
-				logx.Infof("onSetClient_DHParams conn(%s) - ctx: {%s}, reply: %s", c, ctx, dhGen)
+				logx.Infof("onSetClient_DHParams conn(%s) - ctx: {%v}, reply: %s", c, ctx, dhGen)
 				return nil
 			} else {
 				// TODO(@benqi): dhGenFail
@@ -800,7 +800,7 @@ func (s *Server) onMsgsAck(c gnet.Conn, state *HandshakeStateCtx, request *mtpro
 		logx.WithDuration(timex.Since(since)).Infof("onMsgsAck: %s", c)
 	}()
 
-	logx.Infof("msgs_ack#62d6b459 conn(%s) - state: {%s}, request: %s", c, state, request)
+	logx.Infof("msgs_ack#62d6b459 conn(%s) - state: {%v}, request: %s", c, state, request)
 
 	switch state.State {
 	case STATE_pq_res:

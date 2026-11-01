@@ -112,10 +112,11 @@ func TestPrivateUnreadReactionsAndDefault(t *testing.T) {
 	b.now = func() time.Time { return time.Unix(1_700_000_100, 0) }
 	ctx := context.Background()
 	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 8)
+	other := mtproto.MakePeerUtil(mtproto.PEER_USER, 2)
 	if _, err := b.React(ctx, 2, peer, 4, []string{"👍"}, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	unread, err := b.UnreadReactions(ctx, 1, peer, 0, 0, 10, 0, 0)
+	unread, err := b.UnreadReactions(ctx, 8, other, 0, 0, 10, 0, 0)
 	if err != nil || len(unread) != 1 || unread[0].GetReactions().GetResults()[0].GetCount() != 1 {
 		t.Fatalf("unread %+v %v", unread, err)
 	}
@@ -123,10 +124,10 @@ func TestPrivateUnreadReactionsAndDefault(t *testing.T) {
 	if len(own) != 0 {
 		t.Fatalf("own reaction counted as unread %+v", own)
 	}
-	if err := b.ReadReactions(ctx, 1, peer); err != nil {
+	if err := b.ReadReactions(ctx, 8, other); err != nil {
 		t.Fatal(err)
 	}
-	unread, _ = b.UnreadReactions(ctx, 1, peer, 0, 0, 10, 0, 0)
+	unread, _ = b.UnreadReactions(ctx, 8, other, 0, 0, 10, 0, 0)
 	if len(unread) != 0 {
 		t.Fatalf("read did not clear %+v", unread)
 	}

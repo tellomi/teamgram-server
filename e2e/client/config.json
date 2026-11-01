@@ -3,7 +3,7 @@
   "api_id": 10840,
   "api_hash": "0123456789abcdef0123456789abcdef",
   "dc": 1,
-  "rsa_key_file": "../teamgramd/bin/server_pkcs1.key",
+  "rsa_key_file": "../../teamgramd/bin/server_pkcs1.key",
   "phones": {
     "alice": {"number": "9996610001", "code": "11111"},
     "bob": {"number": "9996610002", "code": "11111"},

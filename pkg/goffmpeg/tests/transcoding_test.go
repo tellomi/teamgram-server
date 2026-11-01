@@ -2,6 +2,7 @@ package test
 
 import (
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"sync"
 	"testing"
@@ -22,7 +23,18 @@ func TestInputNotFound(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+func skipWithoutFFmpegFixtures(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg binary is not installed")
+	}
+	if _, err := os.Stat("/tmp/ffmpeg/3gp"); err != nil {
+		t.Skip("ffmpeg fixtures are not installed under /tmp/ffmpeg")
+	}
+}
+
 func TestTranscoding3GP(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/3gp"
 	var outputPath = "/tmp/ffmpeg/out/3gp.mp4"
@@ -38,6 +50,7 @@ func TestTranscoding3GP(t *testing.T) {
 }
 
 func TestTranscodingAVI(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/avi"
 	var outputPath = "/tmp/ffmpeg/out/avi.mp4"
@@ -53,6 +66,7 @@ func TestTranscodingAVI(t *testing.T) {
 }
 
 func TestTranscodingFLV(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/flv"
 	var outputPath = "/tmp/ffmpeg/out/flv.mp4"
@@ -68,6 +82,7 @@ func TestTranscodingFLV(t *testing.T) {
 }
 
 func TestTranscodingMKV(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/mkv"
 	var outputPath = "/tmp/ffmpeg/out/mkv.mp4"
@@ -83,6 +98,7 @@ func TestTranscodingMKV(t *testing.T) {
 }
 
 func TestTranscodingMOV(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/mov"
 	var outputPath = "/tmp/ffmpeg/out/mov.mp4"
@@ -98,6 +114,7 @@ func TestTranscodingMOV(t *testing.T) {
 }
 
 func TestTranscodingMPEG(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/mpeg"
 	var outputPath = "/tmp/ffmpeg/out/mpeg.mp4"
@@ -113,6 +130,7 @@ func TestTranscodingMPEG(t *testing.T) {
 }
 
 func TestTranscodingOGG(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/ogg"
 	var outputPath = "/tmp/ffmpeg/out/ogg.mp4"
@@ -128,6 +146,7 @@ func TestTranscodingOGG(t *testing.T) {
 }
 
 func TestTranscodingWAV(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/wav"
 	var outputPath = "/tmp/ffmpeg/out/wav.mp4"
@@ -143,6 +162,7 @@ func TestTranscodingWAV(t *testing.T) {
 }
 
 func TestTranscodingWEBM(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/webm"
 	var outputPath = "/tmp/ffmpeg/out/webm.mp4"
@@ -158,6 +178,7 @@ func TestTranscodingWEBM(t *testing.T) {
 }
 
 func TestTranscodingWMV(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/wmv"
 	var outputPath = "/tmp/ffmpeg/out/wmv.mp4"
@@ -173,6 +194,7 @@ func TestTranscodingWMV(t *testing.T) {
 }
 
 func TestTranscodingProgress(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 
 	var inputPath = "/tmp/ffmpeg/avi"
 	var outputPath = "/tmp/ffmpeg/out/avi.mp4"
@@ -194,6 +216,7 @@ func TestTranscodingProgress(t *testing.T) {
 }
 
 func TestTranscodePipes(t *testing.T) {
+	skipWithoutFFmpegFixtures(t)
 	c1 := exec.Command("cat", "/tmp/ffmpeg/mkv")
 
 	trans := new(transcoder.Transcoder)

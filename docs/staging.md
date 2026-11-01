@@ -65,7 +65,7 @@ To go back to the previous build, set `TELLOMI_IMAGE_TAG` to the older
 ## Smoke
 
 Wait until `10444` accepts TCP, then run the post-deploy subset. The script
-uses the test phones in `e2e/config.json` and does not restart the container.
+uses the test phones in `e2e/client/config.json` and does not restart the container.
 
 ```bash
 TELLOMI_E2E_ADDR=127.0.0.1:10444 ./scripts/smoke-e2e.sh

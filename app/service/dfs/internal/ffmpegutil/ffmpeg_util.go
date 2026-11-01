@@ -126,7 +126,7 @@ func (trans *FFmpegUtil) ConvertToMp4ByPipe(gifPath string, dstW, dstH int) (byt
 	// Initialize transcoder passing the input file path and output file path
 	err = trans.InitializeEmptyTranscoder()
 	if err != nil {
-		logx.Errorf("InitializeEmptyTranscoder - error: %v")
+		logx.Errorf("InitializeEmptyTranscoder - error: %v", err)
 		return
 	}
 
@@ -255,7 +255,7 @@ func (trans *FFmpegUtil) GetFirstFrameByPipe(iPipeData []byte) (bytes []byte, er
 	// Initialize transcoder passing the input file path and output file path
 	err = trans.InitializeEmptyTranscoder()
 	if err != nil {
-		logx.Errorf("InitializeEmptyTranscoder - error: %v")
+		logx.Errorf("InitializeEmptyTranscoder - error: %v", err)
 		return
 	}
 
@@ -402,7 +402,7 @@ func (trans *FFmpegUtil) ConvertPngToMp4ByPipe(filePath string, dstW, dstH int) 
 	// Initialize transcoder passing the input file path and output file path
 	err = trans.InitializeEmptyTranscoder()
 	if err != nil {
-		logx.Errorf("InitializeEmptyTranscoder - error: %v")
+		logx.Errorf("InitializeEmptyTranscoder - error: %v", err)
 		return
 	}
 

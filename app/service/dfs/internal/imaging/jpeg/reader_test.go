@@ -21,6 +21,7 @@ import (
 // versions of the same image result in exactly the same pixel data, in YCbCr
 // space for color images, and Y space for grayscale images.
 func TestDecodeProgressive(t *testing.T) {
+	skipWithoutJPEGFixtures(t)
 	testCases := []string{
 		"../testdata/video-001",
 		"../testdata/video-001.q50.410",
@@ -115,6 +116,7 @@ func (r *eofReader) Read(b []byte) (n int, err error) {
 }
 
 func TestDecodeEOF(t *testing.T) {
+	skipWithoutJPEGFixtures(t)
 	// Check that if reader returns final data and EOF at same time, jpeg handles it.
 	data, err := os.ReadFile("../testdata/video-001.jpeg")
 	if err != nil {
@@ -187,6 +189,7 @@ func pixString(pix []byte, stride, x, y int) string {
 }
 
 func TestTruncatedSOSDataDoesntPanic(t *testing.T) {
+	skipWithoutJPEGFixtures(t)
 	b, err := os.ReadFile("../testdata/video-005.gray.q50.jpeg")
 	if err != nil {
 		t.Fatal(err)

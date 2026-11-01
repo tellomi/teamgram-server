@@ -35,7 +35,7 @@ func (b *Book) ReactionList(ctx context.Context, self int64, peer *mtproto.PeerU
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (b *Book) ReactionsFor(ctx context.Context, self int64, peer *mtproto.PeerU
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadReact(ctx, peer)
+	doc, err := b.loadReact(ctx, self, peer)
 	if err != nil {
 		return nil, err
 	}

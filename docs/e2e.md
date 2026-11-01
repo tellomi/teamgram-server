@@ -1,6 +1,7 @@
 # Client regression
 
-The suite in `e2e/` speaks MTProto the way Telegram iOS and Android do.
+The suite in `e2e/client` speaks MTProto the way Telegram iOS and Android do.
+In-memory handler tests live in `e2e/inmem` and run with `go test ./...`.
 [gotd](https://github.com/gotd/td) does the obfuscated padded-intermediate
 transport and the DH exchange against `teamgramd/bin/server_pkcs1.key`.
 Every RPC is `invokeWithLayer` + `initConnection` at layer 232, encoded with
@@ -27,8 +28,14 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestLinksUseTellCC` | `help.getConfig` `me_url_prefix` is not a `tell.cc` URL. |
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
 
-Add a `Test...` function in `e2e/` when a client bug shows up again. Keep the
+Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).
+
+`TestZZImplementedSmoke` calls every method marked implemented at P0 or P1 in
+`docs/api-coverage.csv`. It fails on `*_NOT_IMPLEMENTED` and on a decode error.
+A business error from the dummy params is allowed. Regenerate the list with
+`python3 e2e/client/gen_smoke.py` when coverage changes. How to add a case is
+in `docs/testing.md`.
 
 `TestStartupRPCs` is the list official clients issue while the chat list still
 says Updating: `help.getConfig`, `help.getAppConfig`, `help.getTermsOfServiceUpdate`,
@@ -39,11 +46,11 @@ says Updating: `help.getConfig`, `help.getAppConfig`, `help.getTermsOfServiceUpd
 `messages.getAvailableReactions`, `messages.getTopReactions`,
 `messages.getRecentReactions`, `account.getDefaultEmojiStatuses`, `stories.getAllStories`,
 `stories.getPeerMaxIDs`, and the rest of the no-argument calls in
-`e2e/startup.go` (langpack, privacy, themes, effects, saved dialogs, phone config).
+`e2e/client/startup.go` (langpack, privacy, themes, effects, saved dialogs, phone config).
 
 ## Accounts
 
-`e2e/config.json` is the test config. Numbers are Telegram's `99966XYYYY`
+`e2e/client/config.json` is the test config. Numbers are Telegram's `99966XYYYY`
 shape. The code is the digit after `99966` five times, which is what
 `teamgramd/etc2/bff.yaml` does when `TestPhones` is omitted:
 
@@ -68,8 +75,9 @@ Overrides: `TELLOMI_E2E_ADDR`, `TELLOMI_E2E_API_ID`, `TELLOMI_E2E_API_HASH`,
 Start the stack (`docs/local-docker.md`), then:
 
 ```bash
+cd e2e/client
 TELLOMI_E2E=1 TELLOMI_E2E_ADDR=127.0.0.1:10443 \
-  go test -count=1 -timeout 40m ./e2e/
+  go test -count=1 -timeout 40m .
 ```
 
 `TELLOMI_E2E_RESTART=1` includes `TestReconnectAfterGatewayRestart`, which
@@ -84,7 +92,7 @@ server key fingerprint).
 `.github/workflows/e2e.yml` runs on every pull request. It starts
 `docker-compose-env.yaml` and `docker-compose.yaml` (MySQL, Redis, Kafka in
 KRaft, etcd, object storage, and the Teamgram image built in the job), then
-`go test ./e2e/` with `TELLOMI_E2E_RESTART=1`.
+`go test` in `e2e/client` with `TELLOMI_E2E_RESTART=1`.
 
 Docker Hub no longer serves `minio/minio` or `minio/mc` without credentials,
 and `dl.min.io` returns 410. `e2e/docker-compose.ci.yaml` is the CI overlay:

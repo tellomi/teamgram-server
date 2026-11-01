@@ -26,14 +26,23 @@ func TestPatchBotUsernameFromImmutableAddsUsername(t *testing.T) {
 	}).To_ImmutableUser()
 
 	unsafeBot := bot.ToUnsafeUser(me)
-	if unsafeBot.GetUsername() != nil {
-		t.Fatalf("expected bot username to be missing before patch, got %q", unsafeBot.GetUsername().GetValue())
+	// A bot username is public. ToUnsafeUser copies the single username, and
+	// users.getFullUser must still have it after the patch. The patch is what
+	// fills the field when a caller hands in a user object that omitted it.
+	if unsafeBot.GetUsername().GetValue() != "bot_username" {
+		t.Fatalf("expected username on the unsafe bot, got %v", unsafeBot.GetUsername())
 	}
 
 	patchBotUsernameFromImmutable(unsafeBot, bot)
 
 	if unsafeBot.GetUsername().GetValue() != "bot_username" {
 		t.Fatalf("expected patched username %q, got %v", "bot_username", unsafeBot.GetUsername())
+	}
+
+	stripped := &mtproto.User{Bot: true, Id: bot.Id()}
+	patchBotUsernameFromImmutable(stripped, bot)
+	if stripped.GetUsername().GetValue() != "bot_username" {
+		t.Fatalf("patch did not add a missing username, got %v", stripped.GetUsername())
 	}
 }
 

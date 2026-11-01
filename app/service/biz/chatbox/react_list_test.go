@@ -14,17 +14,19 @@ func TestPrivateReactionListAndRefresh(t *testing.T) {
 	now := time.Unix(1_700_000_100, 0)
 	b.now = func() time.Time { return now }
 	ctx := context.Background()
-	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	// 4 and 9 are the two sides of one private chat. Both must see the reactions.
+	peer4 := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	peer9 := mtproto.MakePeerUtil(mtproto.PEER_USER, 4)
 
-	if _, err := b.React(ctx, 4, peer, 10, []string{"👍"}, nil, false); err != nil {
+	if _, err := b.React(ctx, 4, peer4, 10, []string{"👍"}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Second)
-	if _, err := b.React(ctx, 3, peer, 10, []string{"👍", "❤️"}, nil, true); err != nil {
+	if _, err := b.React(ctx, 9, peer9, 10, []string{"👍", "❤️"}, nil, true); err != nil {
 		t.Fatal(err)
 	}
 
-	up, err := b.ReactionsFor(ctx, 3, peer, []int32{10})
+	up, err := b.ReactionsFor(ctx, 9, peer9, []int32{10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,32 +54,32 @@ func TestPrivateReactionListAndRefresh(t *testing.T) {
 	}
 
 	emoji := mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "❤️"}).To_Reaction()
-	filtered, err := b.ReactionList(ctx, 3, peer, 10, emoji, "", 10)
-	if err != nil || filtered.Count != 1 || filtered.Reactions[0].GetPeerId().GetUserId() != 3 || !filtered.Reactions[0].GetMy() || !filtered.Reactions[0].GetBig() {
+	filtered, err := b.ReactionList(ctx, 9, peer9, 10, emoji, "", 10)
+	if err != nil || filtered.Count != 1 || filtered.Reactions[0].GetPeerId().GetUserId() != 9 || !filtered.Reactions[0].GetMy() || !filtered.Reactions[0].GetBig() {
 		t.Fatalf("filter %#v %v", filtered, err)
 	}
 
-	page, err := b.ReactionList(ctx, 4, peer, 10, nil, "", 1)
+	page, err := b.ReactionList(ctx, 4, peer4, 10, nil, "", 1)
 	if err != nil || page.Count != 3 || page.GetNextOffset().GetValue() != "1" || len(page.Reactions) != 1 {
 		t.Fatalf("page %#v %v", page, err)
 	}
-	if page.Reactions[0].GetPeerId().GetUserId() != 3 || !page.Reactions[0].GetUnread() {
+	if page.Reactions[0].GetPeerId().GetUserId() != 9 || !page.Reactions[0].GetUnread() {
 		t.Fatalf("first row %#v", page.Reactions[0])
 	}
-	rest, err := b.ReactionList(ctx, 4, peer, 10, nil, page.GetNextOffset().GetValue(), 10)
+	rest, err := b.ReactionList(ctx, 4, peer4, 10, nil, page.GetNextOffset().GetValue(), 10)
 	if err != nil || rest.Count != 3 || rest.NextOffset != nil || len(rest.Reactions) != 2 {
 		t.Fatalf("rest %#v %v", rest, err)
 	}
-	if _, err := b.ReactionList(ctx, 4, peer, 10, nil, "nope", 10); err != mtproto.ErrOffsetInvalid {
+	if _, err := b.ReactionList(ctx, 4, peer4, 10, nil, "nope", 10); err != mtproto.ErrOffsetInvalid {
 		t.Fatalf("offset: %v", err)
 	}
-	if _, err := b.ReactionList(ctx, 4, peer, 10, nil, strings.Repeat("1", 65), 10); err != mtproto.ErrNextOffsetInvalid {
+	if _, err := b.ReactionList(ctx, 4, peer4, 10, nil, strings.Repeat("1", 65), 10); err != mtproto.ErrNextOffsetInvalid {
 		t.Fatalf("long offset: %v", err)
 	}
-	if _, err := b.ReactionList(ctx, 4, peer, 0, nil, "", 10); err != mtproto.ErrMsgIdInvalid {
+	if _, err := b.ReactionList(ctx, 4, peer4, 0, nil, "", 10); err != mtproto.ErrMsgIdInvalid {
 		t.Fatalf("msg: %v", err)
 	}
-	if _, err := b.ReactionsFor(ctx, 4, peer, nil); err != mtproto.ErrMsgIdInvalid {
+	if _, err := b.ReactionsFor(ctx, 4, peer4, nil); err != mtproto.ErrMsgIdInvalid {
 		t.Fatalf("empty ids: %v", err)
 	}
 

@@ -106,14 +106,14 @@ func (c Config) Phone(name string) (Phone, error) {
 func (c Config) PublicKey() (exchange.PublicKey, error) {
 	path := c.RSAKeyFile
 	if path == "" {
-		path = filepath.Join(configDir(), "..", "teamgramd", "bin", "server_pkcs1.key")
+		path = filepath.Join(configDir(), "..", "..", "teamgramd", "bin", "server_pkcs1.key")
 	}
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(configDir(), path)
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		alt := filepath.Join(configDir(), "..", "teamgramd", "bin", "server_pkcs1.key")
+		alt := filepath.Join(configDir(), "..", "..", "teamgramd", "bin", "server_pkcs1.key")
 		raw, err = os.ReadFile(alt)
 		if err != nil {
 			return exchange.PublicKey{}, fmt.Errorf("server RSA key: %w", err)
@@ -161,11 +161,11 @@ func digitsOnly(phone string) string {
 
 func configDir() string {
 	if root := os.Getenv("TELLOMI_E2E_ROOT"); root != "" {
-		return filepath.Join(root, "e2e")
+		return filepath.Join(root, "e2e", "client")
 	}
 	// go test runs with the package directory as the working directory.
 	if st, err := os.Stat("config.json"); err == nil && !st.IsDir() {
 		return "."
 	}
-	return "e2e"
+	return filepath.Join("e2e", "client")
 }

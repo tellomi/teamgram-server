@@ -68,3 +68,19 @@ Other touched upstream files:
 ## Trace export endpoint
 
 `teamgramd/etc2/*.yaml` sets `Telemetry.Endpoint` to `${TELLOMI_OTEL_ENDPOINT}`. Service entrypoints load that yaml through `pkg/configload.MustLoad` (`conf.UseEnv`). When the variable is unset or empty, `Telemetry.Disabled` is set so go-zero does not install an exporter. Upstream files: each `internal/server/server.go` that called `conf.MustLoad`.
+
+## Logging that `go vet` rejected
+
+Handshake logs in `app/interface/gnetway` and `app/interface/httpserver` passed a `HandshakeStateCtx` to `%s`. The type has no `String` method. The format is `%v`.
+
+`httpserver` session discovery called `logx.Error` with a format string. That is `logx.Errorf`.
+
+`app/service/dfs/internal/ffmpegutil` logged `InitializeEmptyTranscoder` with `%v` and no error value. The error is the second argument. The dfs example programs under `internal/dao/examples` used `logx.Error` / `logx.Infof` with the wrong arity.
+
+## Tests that need fixtures
+
+JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. `pkg/goffmpeg/tests` skips when `/tmp/ffmpeg/3gp` or the `ffmpeg` binary is missing. `TestInputNotFound` still runs: a missing input is what it asserts. `ffmpegutil`'s gif test skips the same way.
+
+## Sticker wire format
+
+`stickerSet` flags bit 4 is `thumbs`, `thumb_dc_id`, and `thumb_version` together. The catalog used to set the ints without a thumbs vector, so `messages.featuredStickers` did not round-trip (`DecodeVectorLong`). The catalog now sends `thumb_document_id` (flags bit 8) and leaves bit 4 unset. The generated codec in `proto/mtproto` is unchanged.
