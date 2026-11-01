@@ -20,13 +20,41 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/codelogin"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // AuthRecoverPassword
 // auth.recoverPassword#37096c70 flags:# code:string new_settings:flags.0?account.PasswordInputSettings = auth.Authorization;
+// https://core.telegram.org/method/auth.recoverPassword
 func (c *AuthorizationCore) AuthRecoverPassword(in *mtproto.TLAuthRecoverPassword) (*mtproto.Auth_Authorization, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.recoverPassword blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	var (
+		code     string
+		settings *mtproto.Account_PasswordInputSettings
+	)
+	if in != nil {
+		code = in.Code
+		settings = in.NewSettings
+	}
+	if err := c.codes().RecoverPassword(c.ctx, c.userID(), code, settings); err != nil {
+		c.Logger.Errorf("auth.recoverPassword - error: %v", err)
+		return nil, err
+	}
+	user, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
+		Id: c.userID(),
+	})
+	if err != nil {
+		c.Logger.Errorf("auth.recoverPassword - user: %v", err)
+		return nil, err
+	}
+	if user == nil {
+		c.Logger.Errorf("auth.recoverPassword - user is nil")
+		return nil, mtproto.ErrInternalServerError
+	}
+	_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
+		AuthKeyId: c.authKey(),
+		UserId:    user.Id(),
+	})
+	return codelogin.Authorization(user.ToSelfUser()), nil
 }

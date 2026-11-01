@@ -24,9 +24,16 @@ import (
 
 // AuthCheckRecoveryPassword
 // auth.checkRecoveryPassword#d36bf79 code:string = Bool;
+// https://core.telegram.org/method/auth.checkRecoveryPassword
 func (c *AuthorizationCore) AuthCheckRecoveryPassword(in *mtproto.TLAuthCheckRecoveryPassword) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.checkRecoveryPassword blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	code := ""
+	if in != nil {
+		code = in.Code
+	}
+	ok, err := c.codes().CheckRecoveryPassword(c.ctx, c.userID(), code)
+	if err != nil {
+		c.Logger.Errorf("auth.checkRecoveryPassword - error: %v", err)
+		return nil, err
+	}
+	return ok, nil
 }

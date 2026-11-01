@@ -24,9 +24,13 @@ import (
 
 // AuthRequestPasswordRecovery
 // auth.requestPasswordRecovery#d897bc66 = auth.PasswordRecovery;
+// https://core.telegram.org/method/auth.requestPasswordRecovery
 func (c *AuthorizationCore) AuthRequestPasswordRecovery(in *mtproto.TLAuthRequestPasswordRecovery) (*mtproto.Auth_PasswordRecovery, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.requestPasswordRecovery blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	_ = in
+	recovery, err := c.codes().RequestPasswordRecovery(c.ctx, c.userID())
+	if err != nil {
+		c.Logger.Errorf("auth.requestPasswordRecovery - error: %v", err)
+		return nil, err
+	}
+	return recovery, nil
 }

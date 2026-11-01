@@ -24,9 +24,17 @@ import (
 
 // AccountConfirmPhone
 // account.confirmPhone#5f2178c3 phone_code_hash:string phone_code:string = Bool;
+// https://core.telegram.org/method/account.confirmPhone
 func (c *AccountCore) AccountConfirmPhone(in *mtproto.TLAccountConfirmPhone) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.confirmPhone blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	hash, code := "", ""
+	if in != nil {
+		hash = in.PhoneCodeHash
+		code = in.PhoneCode
+	}
+	ok, err := c.confirmCodes().ConfirmPhone(c.ctx, hash, code)
+	if err != nil {
+		c.Logger.Errorf("account.confirmPhone - error: %v", err)
+		return nil, err
+	}
+	return ok, nil
 }

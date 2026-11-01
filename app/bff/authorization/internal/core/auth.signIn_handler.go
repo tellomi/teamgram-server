@@ -113,7 +113,9 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 		phoneCode,
 		phoneCodeHash,
 		func(codeData2 *model.PhoneCodeTransaction) error {
-			if isEmail {
+			// Email login and auth.resetLoginEmail both store an email code
+			// on the phone-code record. Compare that code, not the SMS verifier.
+			if isEmail || codeData2.SentCodeType == model.SentCodeTypeEmailCode {
 				if !storedCodeMatches(codeData2.PhoneCode, phoneCode) {
 					return mtproto.ErrPhoneCodeInvalid
 				}

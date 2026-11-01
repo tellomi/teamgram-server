@@ -228,6 +228,8 @@ func (c *AuthorizationCore) authSendEmailCode(authKeyId, sessionId int64, reques
 			}
 			codeData2.PhoneNumberRegistered = registered
 			if registered && user != nil {
+				c.rememberLoginEmail(user.Id(), email)
+				c.rememberLoginCode(user.Id(), codeData2)
 				uid := user.Id()
 				code := codeData2.PhoneCode
 				threading2.WrapperGoFunc(c.ctx, nil, func(ctx context.Context) {

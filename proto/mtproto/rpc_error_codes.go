@@ -1653,6 +1653,14 @@ var (
 	// | 400 | EMAIL_NOT_SETUP | In order to change the login email with emailVerifyPurposeLoginChange, an existing login email must already be set using emailVerifyPurposeLoginSetup. |
 	ErrEmailNotSetup = status.Error(ErrBadRequest, "EMAIL_NOT_SETUP")
 
+	// ErrEmailNotAllowed
+	// | 400 | EMAIL_NOT_ALLOWED | The specified email cannot be used to complete the operation. |
+	ErrEmailNotAllowed = status.Error(ErrBadRequest, "EMAIL_NOT_ALLOWED")
+
+	// ErrEmailInstallMissing
+	// | 400 | EMAIL_INSTALL_MISSING | Attempting to send a code to the recovery email, but no email is configured. |
+	ErrEmailInstallMissing = status.Error(ErrBadRequest, "EMAIL_INSTALL_MISSING")
+
 	// ErrPhotoContentTypeInvalid
 	// | 400 | PHOTO_CONTENT_TYPE_INVALID | Photo mime-type invalid. |
 	ErrPhotoContentTypeInvalid = status.Error(ErrBadRequest, "PHOTO_CONTENT_TYPE_INVALID")

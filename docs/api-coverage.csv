@@ -7,7 +7,7 @@ account.checkUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,
 account.clearRecentEmojiStatuses,account,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
 account.confirmBotConnection,account,P1,interactive,yes,yes,no,no,stub,error,yes,stub,RPCAccount,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/account/internal/core/account.confirmBotConnection_handler.go
 account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
-account.confirmPhone,account,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAccount,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/account/internal/core/account.confirmPhone_handler.go
+account.confirmPhone,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.createBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
 account.createTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.declinePasswordReset,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
@@ -61,7 +61,7 @@ account.initPasskeyRegistration,account,P1,interactive,yes,yes,yes,yes,implement
 account.initTakeoutSession,account,P1,interactive,no,no,yes,yes,implemented,ok,yes,implemented,RPCTakeout,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.installTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.installWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
-account.invalidateSignInCodes,account,P0,startup,yes,no,no,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/account.invalidateSignInCodes_handler.go
+account.invalidateSignInCodes,account,P0,startup,yes,no,no,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 account.registerDevice,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
 account.registerPasskey,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 account.reorderUsernames,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
@@ -82,8 +82,8 @@ account.saveSecureValue,account,P1,interactive,yes,yes,yes,yes,implemented,ok,ye
 account.saveTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.saveWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.sendChangePhoneCode,account,P0,startup,yes,yes,no,no,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
-account.sendConfirmPhoneCode,account,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAccount,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/account/internal/core/account.sendConfirmPhoneCode_handler.go
-account.sendVerifyEmailCode,account,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/account.sendVerifyEmailCode_handler.go
+account.sendConfirmPhoneCode,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
+account.sendVerifyEmailCode,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 account.sendVerifyPhoneCode,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 account.setAccountTTL,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.setAuthorizationTTL,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
@@ -120,7 +120,7 @@ account.updateWebBrowserSettings,account,P1,interactive,yes,yes,no,no,implemente
 account.uploadRingtone,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCRingtone,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.uploadTheme,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCThemes,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.uploadWallPaper,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCWallpapers,app/bff/messages/internal/server/grpc/service/account_assets.go
-account.verifyEmail,account,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/account.verifyEmail32DA4CF_handler.go
+account.verifyEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go (layer variants disagree; best reachable status kept)
 account.verifyPhone,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPassport,app/bff/passport/client/passport_client.go
 aicompose.createTone,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
 aicompose.deleteTone,aicompose,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
@@ -133,7 +133,7 @@ auth.acceptLoginToken,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemen
 auth.bindTempAuthKey,auth,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.cancelCode,auth,P0,startup,no,yes,yes,no,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.checkPassword,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
-auth.checkRecoveryPassword,auth,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/auth.checkRecoveryPassword_handler.go
+auth.checkRecoveryPassword,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.exportAuthorization,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.exportLoginToken,auth,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCQrCode,app/bff/qrcode/client/qrcode_client.go
 auth.finishPasskeyLogin,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
@@ -141,13 +141,13 @@ auth.importAuthorization,auth,P0,startup+background,yes,yes,yes,yes,implemented,
 auth.importLoginToken,auth,P0,startup,yes,no,yes,yes,implemented,ok,yes,implemented,RPCQrCode,app/bff/qrcode/client/qrcode_client.go
 auth.initPasskeyLogin,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPasskey,app/bff/passkey/client/passkey_client.go
 auth.logOut,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
-auth.recoverPassword,auth,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/auth.recoverPassword_handler.go
-auth.reportMissingCode,auth,P0,startup,yes,yes,no,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/auth.reportMissingCode_handler.go
-auth.requestFirebaseSms,auth,P0,startup,yes,yes,no,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/auth.requestFirebaseSms_handler.go
-auth.requestPasswordRecovery,auth,P0,startup,yes,yes,yes,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/auth.requestPasswordRecovery_handler.go
+auth.recoverPassword,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
+auth.reportMissingCode,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
+auth.requestFirebaseSms,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
+auth.requestPasswordRecovery,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.resendCode,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.resetAuthorizations,auth,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
-auth.resetLoginEmail,auth,P0,startup,yes,yes,no,yes,stub,error,yes,stub,RPCAuthorization,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/authorization/internal/core/auth.resetLoginEmail_handler.go
+auth.resetLoginEmail,auth,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.sendCode,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.signIn,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go
 auth.signUp,auth,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAuthorization,app/bff/authorization/client/authorization_client.go

@@ -410,5 +410,8 @@ func (c *AuthorizationCore) finishSendCode(phoneNumber string, phoneRegistered b
 	codeData2.NextCodeType = model.CodeTypeSms
 	codeData2.State = model.CodeStateSent
 	codeData2.PhoneNumberRegistered = phoneRegistered
+	if phoneRegistered && user != nil {
+		c.rememberLoginCode(user.Id(), codeData2)
+	}
 	return nil
 }

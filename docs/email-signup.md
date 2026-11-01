@@ -1,6 +1,6 @@
 # Email sign-up and login
 
-Email OTP is implemented on the existing phone RPCs. The client puts the email address in `phone_number`. There is no mandatory password. `account.sendVerifyEmailCode` and `account.verifyEmail` stay on the enterprise-blocked error; P0 does not need them.
+Email OTP is implemented on the existing phone RPCs. The client puts the email address in `phone_number`. There is no mandatory password. `account.sendVerifyEmailCode` and `account.verifyEmail` also send and check a code through the same email sender (Resend in production, log in development). Apple and Google ID tokens are rejected with `EMAIL_INVALID`. Passport email verification returns `EMAIL_NOT_ALLOWED`.
 
 Phone SMS is unchanged. See [sms-email.md](sms-email.md).
 

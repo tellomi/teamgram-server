@@ -24,10 +24,12 @@ import (
 
 // AccountSendVerifyEmailCode
 // account.sendVerifyEmailCode#98e037bb purpose:EmailVerifyPurpose email:string = account.SentEmailCode;
+// https://core.telegram.org/method/account.sendVerifyEmailCode
 func (c *AuthorizationCore) AccountSendVerifyEmailCode(in *mtproto.TLAccountSendVerifyEmailCode) (*mtproto.Account_SentEmailCode, error) {
-	// P0 email login is auth.sendCode with the address in phone_number.
-	// This account.* RPC stays blocked.
-	c.Logger.Errorf("account.sendVerifyEmailCode blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	sent, err := c.codes().SendVerifyEmailCode(c.ctx, c.authKey(), c.userID(), in)
+	if err != nil {
+		c.Logger.Errorf("account.sendVerifyEmailCode - error: %v", err)
+		return nil, err
+	}
+	return sent, nil
 }
