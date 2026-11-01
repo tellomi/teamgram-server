@@ -19,12 +19,26 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 )
 
+// downloadFile is set by tests. Production uses DFS.
+var downloadFile func(ctx context.Context, location *mtproto.InputFileLocation, offset int64, limit int32) (*mtproto.Upload_File, error)
+
 // UploadGetFile
-// upload.getFile#b15a9afc flags:# precise:flags.0?true cdn_supported:flags.1?true location:InputFileLocation offset:int limit:int = upload.File;
+// upload.getFile#be5335be flags:# precise:flags.0?true cdn_supported:flags.1?true location:InputFileLocation offset:long limit:int = upload.File;
+// https://core.telegram.org/method/upload.getFile
+// https://core.telegram.org/cdn
+//
+// When TELLOMI_CDN_PUBLIC_KEYS is empty, the bytes come from the master DFS
+// as before. When keys are published and the client set cdn_supported, a
+// public file that fits in the CDN cache is returned as upload.fileCdnRedirect
+// with a file_token the getCdnFile / reuploadCdnFile cache already accepts.
 func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_File, error) {
 	var (
 		location = in.GetLocation()
@@ -120,18 +134,35 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 		return nil, mtproto.ErrLocationInvalid
 	}
 
+	if c.wantsCDN(in) {
+		if full, ok := fullSeeded(location); ok {
+			if redir, ok := c.cdnRedirect(location, full); ok {
+				return redir, nil
+			}
+		}
+	}
 	if file, ok := seededDocumentFile(location, offset, limit); ok {
 		return file, nil
 	}
 
-	uploadFile, err := c.svcCtx.Dao.DfsClient.DfsDownloadFile(c.ctx, &dfs.TLDfsDownloadFile{
-		Location: location,
-		Offset:   offset,
-		Limit:    limit,
-	})
+	if c.wantsCDN(in) && cdnLocation(location) {
+		if redir, ok := c.cachedRedirect(location); ok {
+			return redir, nil
+		}
+		probe, err := c.download(location, 0, cdn.MaxPlain+1)
+		if err == nil && probe != nil {
+			body := probe.GetBytes()
+			if len(body) > 0 && len(body) <= cdn.MaxPlain {
+				if redir, ok := c.cdnRedirect(location, body); ok {
+					return redir, nil
+				}
+			}
+		}
+	}
+
+	uploadFile, err := c.download(location, offset, limit)
 	if err != nil {
 		c.Logger.Errorf("upload.getFile - error: %v", err.Error())
-		// err = mtproto.ErrOffsetInvalid
 		return nil, err
 	}
 	if uploadFile.GetType().GetPredicateName() == mtproto.Predicate_storage_fileUnknown {
@@ -139,4 +170,65 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 	}
 
 	return uploadFile, nil
+}
+
+func (c *FilesCore) wantsCDN(in *mtproto.TLUploadGetFile) bool {
+	return in.GetCdnSupported() && len(helpdesk.PublicKeys()) > 0
+}
+
+func cdnLocation(location *mtproto.InputFileLocation) bool {
+	switch location.GetPredicateName() {
+	case mtproto.Predicate_inputDocumentFileLocation,
+		mtproto.Predicate_inputPhotoFileLocation,
+		mtproto.Predicate_inputStickerSetThumb:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *FilesCore) cdnRedirect(location *mtproto.InputFileLocation, plain []byte) (*mtproto.Upload_File, bool) {
+	keys := helpdesk.PublicKeys()
+	if len(keys) == 0 {
+		return nil, false
+	}
+	issued, err := cdn.Shared().Issue(cdn.LocationKey(location), plain)
+	if err != nil || issued == nil || len(issued.FileToken) == 0 {
+		c.Logger.Errorf("upload.getFile - cdn stage: %v", err)
+		return nil, false
+	}
+	return redirectFile(keys[0].DC, issued), true
+}
+
+func (c *FilesCore) cachedRedirect(location *mtproto.InputFileLocation) (*mtproto.Upload_File, bool) {
+	keys := helpdesk.PublicKeys()
+	if len(keys) == 0 {
+		return nil, false
+	}
+	issued, ok := cdn.Shared().Lookup(cdn.LocationKey(location))
+	if !ok {
+		return nil, false
+	}
+	return redirectFile(keys[0].DC, issued), true
+}
+
+func redirectFile(dc int32, issued *cdn.Issued) *mtproto.Upload_File {
+	return mtproto.MakeTLUploadFileCdnRedirect(&mtproto.Upload_File{
+		DcId:          dc,
+		FileToken:     issued.FileToken,
+		EncryptionKey: issued.Key,
+		EncryptionIv:  issued.IV,
+		FileHashes:    issued.Hashes,
+	}).To_Upload_File()
+}
+
+func (c *FilesCore) download(location *mtproto.InputFileLocation, offset int64, limit int32) (*mtproto.Upload_File, error) {
+	if downloadFile != nil {
+		return downloadFile(c.ctx, location, offset, limit)
+	}
+	return c.svcCtx.Dao.DfsClient.DfsDownloadFile(c.ctx, &dfs.TLDfsDownloadFile{
+		Location: location,
+		Offset:   offset,
+		Limit:    limit,
+	})
 }

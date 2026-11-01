@@ -13,6 +13,26 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestIssueReusesLocation(t *testing.T) {
+	b := New()
+	loc := mtproto.MakeTLInputDocumentFileLocation(&mtproto.InputFileLocation{Id: 5, AccessHash: 6}).To_InputFileLocation()
+	key := LocationKey(loc)
+	first, err := b.Issue(key, []byte("same-file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := b.Issue(key, []byte("same-file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.FileToken, second.FileToken) || !bytes.Equal(first.Key, second.Key) {
+		t.Fatal("token changed")
+	}
+	if LocationKey(nil) != "" {
+		t.Fatal("nil location")
+	}
+}
+
 func TestRangeRules(t *testing.T) {
 	if err := CheckRange(0, 4096); err != nil {
 		t.Fatal(err)

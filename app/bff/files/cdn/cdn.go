@@ -13,8 +13,10 @@
 // accepts the CDN's request_token. Hashes are SHA-256 of the ciphertext in
 // 128 KiB parts, which is what the client checks before it decrypts.
 //
-// upload.getFile does not redirect here. No file_token is issued for a live
-// download, so clients keep using the master DC.
+// upload.getFile emits upload.fileCdnRedirect for a file that fits in this
+// cache when the client sets cdn_supported and TELLOMI_CDN_PUBLIC_KEYS is set.
+// The file_token from that redirect is the one getCdnFile and reuploadCdnFile
+// already accept.
 package cdn
 
 import (
@@ -24,6 +26,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"sync"
 	"time"
 
@@ -36,9 +39,11 @@ const (
 	hashChunk = 128 * 1024
 	tokenLen  = 32
 	maxToken  = 256
-	maxPlain  = 8 << 20
-	maxFiles  = 32
-	ttl       = time.Hour
+	// MaxPlain is the largest plaintext this process will encrypt for a CDN
+	// redirect. Bigger files stay on the master DC.
+	MaxPlain = 8 << 20
+	maxFiles = 32
+	ttl      = time.Hour
 )
 
 // CheckRange applies the CDN download limits from https://core.telegram.org/cdn.
@@ -62,9 +67,11 @@ type Book struct {
 	mu    sync.Mutex
 	now   func() time.Time
 	files map[string]*object
+	byLoc map[string]*object
 }
 
 type object struct {
+	loc      string
 	token    []byte
 	request  []byte
 	key      []byte
@@ -75,9 +82,21 @@ type object struct {
 	exp      time.Time
 }
 
+// Issued is the upload.fileCdnRedirect material for one staged file.
+type Issued struct {
+	FileToken []byte
+	Key       []byte
+	IV        []byte
+	Hashes    []*mtproto.FileHash
+}
+
 // New returns an empty cache.
 func New() *Book {
-	return &Book{now: time.Now, files: map[string]*object{}}
+	return &Book{
+		now:   time.Now,
+		files: map[string]*object{},
+		byLoc: map[string]*object{},
+	}
 }
 
 var (
@@ -105,38 +124,109 @@ func Install(b *Book) {
 // Stage encrypts plain and remembers it until reupload. The returned request
 // token is what upload.getCdnFile reports in cdnFileReuploadNeeded.
 func (b *Book) Stage(plain []byte) (fileToken, requestToken []byte, err error) {
-	if len(plain) > maxPlain {
-		return nil, nil, mtproto.ErrFilePartInvalid
-	}
-	key, iv, err := randomPair()
+	obj, err := b.put("", plain)
 	if err != nil {
 		return nil, nil, err
 	}
-	fileToken, err = random(tokenLen)
+	return append([]byte(nil), obj.token...), append([]byte(nil), obj.request...), nil
+}
+
+// Issue encrypts plain for upload.getFile's fileCdnRedirect. loc ties repeat
+// downloads of the same file to one token, key, and hash list until it expires.
+func (b *Book) Issue(loc string, plain []byte) (*Issued, error) {
+	obj, err := b.put(loc, plain)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	requestToken, err = random(tokenLen)
-	if err != nil {
-		return nil, nil, err
+	return issuedCopy(obj), nil
+}
+
+// Lookup returns the redirect already issued for loc.
+func (b *Book) Lookup(loc string) (*Issued, bool) {
+	if loc == "" {
+		return nil, false
 	}
-	body := encrypt(plain, key, iv)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.dropExpired()
+	old := b.byLoc[loc]
+	if old == nil || !b.now().Before(old.exp) {
+		return nil, false
+	}
+	return issuedCopy(old), true
+}
+
+func issuedCopy(obj *object) *Issued {
+	hashes := make([]*mtproto.FileHash, len(obj.hashes))
+	for i, hash := range obj.hashes {
+		hashes[i] = cloneHash(hash)
+	}
+	return &Issued{
+		FileToken: append([]byte(nil), obj.token...),
+		Key:       append([]byte(nil), obj.key...),
+		IV:        append([]byte(nil), obj.iv...),
+		Hashes:    hashes,
+	}
+}
+
+// LocationKey identifies one inputFileLocation for the CDN cache.
+func LocationKey(loc *mtproto.InputFileLocation) string {
+	if loc == nil || loc.GetPredicateName() == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s|%d|%d|%s|%d|%t|%d",
+		loc.GetPredicateName(),
+		loc.GetId(),
+		loc.GetAccessHash(),
+		loc.GetThumbSize(),
+		loc.GetPhotoId(),
+		loc.GetBig(),
+		loc.GetThumbVersion(),
+	)
+}
+
+func (b *Book) put(loc string, plain []byte) (*object, error) {
+	if len(plain) == 0 || len(plain) > MaxPlain {
+		return nil, mtproto.ErrFilePartInvalid
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.dropExpired()
+	if loc != "" {
+		if old := b.byLoc[loc]; old != nil && b.now().Before(old.exp) {
+			return old, nil
+		}
+	}
+	key, iv, err := randomPair()
+	if err != nil {
+		return nil, err
+	}
+	fileToken, err := random(tokenLen)
+	if err != nil {
+		return nil, err
+	}
+	requestToken, err := random(tokenLen)
+	if err != nil {
+		return nil, err
+	}
 	if len(b.files) >= maxFiles {
 		b.dropOldest()
 	}
-	b.files[hex.EncodeToString(fileToken)] = &object{
-		token:   append([]byte(nil), fileToken...),
-		request: append([]byte(nil), requestToken...),
+	obj := &object{
+		loc:     loc,
+		token:   fileToken,
+		request: requestToken,
 		key:     key,
 		iv:      iv,
-		cipher:  body,
-		hashes:  fileHashes(body),
+		cipher:  encrypt(plain, key, iv),
 		exp:     b.now().Add(ttl),
 	}
-	return fileToken, requestToken, nil
+	obj.hashes = fileHashes(obj.cipher)
+	b.files[hex.EncodeToString(fileToken)] = obj
+	if loc != "" {
+		b.byLoc[loc] = obj
+	}
+	return obj, nil
 }
 
 // Get is upload.getCdnFile. A staged file that the master has not reuploaded
@@ -215,7 +305,7 @@ func (b *Book) lookup(token []byte) (*object, error) {
 	obj := b.files[hex.EncodeToString(token)]
 	if obj == nil || !b.now().Before(obj.exp) {
 		if obj != nil {
-			delete(b.files, hex.EncodeToString(token))
+			b.forget(obj)
 		}
 		return nil, mtproto.ErrFileTokenInvalid
 	}
@@ -224,24 +314,32 @@ func (b *Book) lookup(token []byte) (*object, error) {
 
 func (b *Book) dropExpired() {
 	now := b.now()
-	for key, obj := range b.files {
+	for _, obj := range b.files {
 		if !now.Before(obj.exp) {
-			delete(b.files, key)
+			b.forget(obj)
 		}
 	}
 }
 
 func (b *Book) dropOldest() {
-	var oldest string
-	var when time.Time
-	for key, obj := range b.files {
-		if oldest == "" || obj.exp.Before(when) {
-			oldest = key
-			when = obj.exp
+	var oldest *object
+	for _, obj := range b.files {
+		if oldest == nil || obj.exp.Before(oldest.exp) {
+			oldest = obj
 		}
 	}
-	if oldest != "" {
-		delete(b.files, oldest)
+	if oldest != nil {
+		b.forget(oldest)
+	}
+}
+
+func (b *Book) forget(obj *object) {
+	if obj == nil {
+		return
+	}
+	delete(b.files, hex.EncodeToString(obj.token))
+	if obj.loc != "" {
+		delete(b.byLoc, obj.loc)
 	}
 }
 
