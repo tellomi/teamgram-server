@@ -147,9 +147,14 @@ func TestThemes(t *testing.T) {
 		t.Fatalf("stable hash: %v %s", err, got.GetPredicateName())
 	}
 	chats := GetChatThemes(0)
-	if chats.GetPredicateName() != mtproto.Predicate_account_themes || chats.GetHash() == 0 {
+	if chats.GetPredicateName() != mtproto.Predicate_account_themes || len(chats.GetThemes()) != len(chatThemeCatalog) || chats.GetHash() == 0 {
 		t.Fatalf("chat themes: %#v", chats)
 	}
+	first := chats.GetThemes()[0]
+	if !first.GetForChat() || !first.GetDefault() || first.GetEmoticon().GetValue() == "" || len(first.GetSettings()) != 2 {
+		t.Fatalf("first chat theme: %#v", first)
+	}
+	mustEncode(t, chats)
 	if GetChatThemes(chats.GetHash()).GetPredicateName() != mtproto.Predicate_account_themesNotModified {
 		t.Fatal("chat themes not modified")
 	}
@@ -196,8 +201,8 @@ func TestWallpapers(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed := GetWallPapers(1, 0)
-	if len(listed.GetWallpapers()) != 1 {
-		t.Fatalf("saved: %#v", listed)
+	if len(listed.GetWallpapers()) != len(builtinWallpapers())+1 {
+		t.Fatalf("saved: got %d", len(listed.GetWallpapers()))
 	}
 	mustEncode(t, listed)
 	got, err := GetWallPaper(1, mtproto.MakeTLInputWallPaperSlug(&mtproto.InputWallPaper{Slug: paper.GetSlug()}).To_InputWallPaper())
@@ -215,8 +220,8 @@ func TestWallpapers(t *testing.T) {
 	if ResetWallPapers(1).GetPredicateName() != mtproto.Predicate_boolTrue {
 		t.Fatal("reset")
 	}
-	if len(GetWallPapers(1, 0).GetWallpapers()) != 0 {
-		t.Fatal("reset kept wallpapers")
+	if len(GetWallPapers(1, 0).GetWallpapers()) != len(builtinWallpapers()) {
+		t.Fatal("reset dropped the solid catalog")
 	}
 }
 

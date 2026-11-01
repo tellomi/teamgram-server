@@ -232,12 +232,8 @@ func (s *store) getThemes(self int64, format string, hash int64) (*mtproto.Accou
 
 // GetChatThemes implements account.getChatThemes.
 // https://core.telegram.org/method/account.getChatThemes
-// Chat themes are the server emoticon catalog. This process has none.
 func GetChatThemes(hash int64) *mtproto.Account_Themes {
-	if notModified(hash, EmptyHash) {
-		return themesNotModified()
-	}
-	return themesReply(EmptyHash, nil)
+	return chatThemes(hash)
 }
 
 // SaveTheme implements account.saveTheme.

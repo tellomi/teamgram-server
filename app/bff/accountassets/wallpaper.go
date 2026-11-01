@@ -77,8 +77,12 @@ func GetWallPapers(self int64, hash int64) *mtproto.Account_WallPapers {
 func (s *store) wallList(self int64, hash int64) *mtproto.Account_WallPapers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	builtins := builtinWallpapers()
+	pairs := make([]idVer, 0, len(builtins))
+	for _, paper := range builtins {
+		pairs = append(pairs, idVer{id: paper.GetId(), ver: 1})
+	}
 	u := s.users[self]
-	var pairs []idVer
 	var rows []*wallRec
 	if u != nil {
 		for id := range u.savedWalls {
@@ -95,7 +99,8 @@ func (s *store) wallList(self int64, hash int64) *mtproto.Account_WallPapers {
 		return mtproto.MakeTLAccountWallPapersNotModified(&mtproto.Account_WallPapers{}).To_Account_WallPapers()
 	}
 	sortWalls(rows)
-	out := make([]*mtproto.WallPaper, 0, len(rows))
+	out := make([]*mtproto.WallPaper, 0, len(builtins)+len(rows))
+	out = append(out, builtins...)
 	for _, w := range rows {
 		out = append(out, w.view(self))
 	}
@@ -122,6 +127,9 @@ func GetWallPaper(self int64, in *mtproto.InputWallPaper) (*mtproto.WallPaper, e
 }
 
 func (s *store) getWall(self int64, in *mtproto.InputWallPaper) (*mtproto.WallPaper, error) {
+	if paper, ok, err := builtinInput(in); ok {
+		return paper, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w, err := s.wallByInput(in)
@@ -142,6 +150,13 @@ func (s *store) multiWalls(self int64, in []*mtproto.InputWallPaper) (*mtproto.V
 	defer s.mu.Unlock()
 	out := make([]*mtproto.WallPaper, 0, len(in))
 	for _, item := range in {
+		if paper, ok, err := builtinInput(item); ok {
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, paper)
+			continue
+		}
 		w, err := s.wallByInput(item)
 		if err != nil {
 			return nil, err
@@ -186,7 +201,15 @@ func (s *store) installWall(self int64, in *mtproto.TLAccountInstallWallPaper) (
 
 func (s *store) rememberWall(self int64, in *mtproto.InputWallPaper, settings *mtproto.WallPaperSettings, unsave, install bool) (*mtproto.Bool, error) {
 	if in != nil && in.GetPredicateName() == mtproto.Predicate_inputWallPaperNoFile {
-		return nil, mtproto.ErrWallpaperInvalid
+		if builtinWall(in.GetId()) == nil {
+			return nil, mtproto.ErrWallpaperInvalid
+		}
+		// The solid catalog is always listed. Install and unsave do not
+		// remove it; the chat wallpaper itself is messages.setChatWallPaper.
+		_ = settings
+		_ = unsave
+		_ = install
+		return mtproto.BoolTrue, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
