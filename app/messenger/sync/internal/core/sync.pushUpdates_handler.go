@@ -42,7 +42,7 @@ func (c *SyncCore) SyncPushUpdates(in *sync.TLSyncPushUpdates) (*mtproto.Void, e
 		// messages.receivedMessages drops these once the client confirms them.
 		_ = notifyack.Shared().Note(c.ctx, userId, ids)
 	}
-	if c.svcCtx.Push != nil && len(push.Messages(userId, updates)) > 0 {
+	if c.svcCtx.Push != nil && push.ShouldDeliver(userId, updates) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(c.ctx), 20*time.Second)
 			defer cancel()
