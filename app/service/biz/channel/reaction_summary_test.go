@@ -8,10 +8,10 @@ import (
 
 func TestReactionSummaryIsEmojiAndCount(t *testing.T) {
 	summary := reactionSummary([]ReactRec{
-		{MsgID: 4, UserID: 9, Emoticon: "👍"},
-		{MsgID: 4, UserID: 3, Emoticon: "👍"},
+		{MsgID: 4, UserID: 9, Emoticon: "👍", Date: 1},
+		{MsgID: 4, UserID: 3, Emoticon: "👍", Date: 2},
 		{MsgID: 8, UserID: 9, Emoticon: "🔥"},
-	}, 4, 9)
+	}, 4, 9, true, 0)
 	if summary.GetPredicateName() != mtproto.Predicate_messageReactions {
 		t.Fatalf("predicate %s", summary.GetPredicateName())
 	}
@@ -32,5 +32,17 @@ func TestReactionSummaryIsEmojiAndCount(t *testing.T) {
 	}
 	if rc.GetChosenOrder() == nil || rc.GetChosenOrder().GetValue() != 0 {
 		t.Fatal("chooser should be marked without a star count")
+	}
+	if !summary.GetCanSeeList() || len(summary.GetRecentReactions()) != 2 {
+		t.Fatalf("recent %#v", summary)
+	}
+	if summary.GetRecentReactions()[0].GetPeerId().GetUserId() != 3 {
+		t.Fatalf("newest reactor %#v", summary.GetRecentReactions()[0])
+	}
+	hidden := reactionSummary([]ReactRec{
+		{MsgID: 4, UserID: 9, Emoticon: "👍"},
+	}, 4, 9, false, 0)
+	if hidden.GetCanSeeList() || len(hidden.GetRecentReactions()) != 0 {
+		t.Fatalf("broadcast summary %#v", hidden)
 	}
 }

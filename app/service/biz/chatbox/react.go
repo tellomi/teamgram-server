@@ -202,7 +202,7 @@ func (b *Book) UnreadReactions(ctx context.Context, self int64, peer *mtproto.Pe
 			Id:        item.MsgID,
 			PeerId:    peer.ToPeer(),
 			Date:      item.Date,
-			Reactions: summary(doc, item.MsgID, self),
+			Reactions: summary(doc, item.MsgID, self, savedDialog(self, peer)),
 		}).To_Message())
 	}
 	return paginateMessages(msgs, offsetID, addOffset, limit), nil
@@ -382,18 +382,21 @@ func reactionUpdate(peer *mtproto.PeerUtil, msgID int32, doc *reactDoc, self int
 	return mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
 		Peer_PEER:                  peer.ToPeer(),
 		MsgId_INT32:                msgID,
-		Reactions_MESSAGEREACTIONS: summary(doc, msgID, self),
+		Reactions_MESSAGEREACTIONS: summary(doc, msgID, self, savedDialog(self, peer)),
 	}).To_Update()
 }
 
-func summary(doc *reactDoc, msgID int32, self int64) *mtproto.MessageReactions {
+func summary(doc *reactDoc, msgID int32, self int64, tags bool) *mtproto.MessageReactions {
 	type key struct {
 		emo string
 		doc int64
 	}
 	counts := map[key]int32{}
-	chosen := map[key]bool{}
+	chosen := map[key]int32{}
+	chosenSet := map[key]bool{}
 	var order []key
+	var selfN int32
+	var mine []reactionItem
 	for _, item := range doc.Items {
 		if item.MsgID != msgID {
 			continue
@@ -403,32 +406,38 @@ func summary(doc *reactDoc, msgID int32, self int64) *mtproto.MessageReactions {
 			order = append(order, k)
 		}
 		counts[k]++
-		if item.UserID == self {
-			chosen[k] = true
+		if item.UserID == self && !chosenSet[k] {
+			chosenSet[k] = true
+			chosen[k] = selfN
+			selfN++
 		}
+		mine = append(mine, item)
 	}
 	var results []*mtproto.ReactionCount
 	for _, k := range order {
-		var reaction *mtproto.Reaction
-		if k.doc != 0 {
-			reaction = mtproto.MakeTLReactionCustomEmoji(&mtproto.Reaction{DocumentId: k.doc}).To_Reaction()
-		} else {
-			reaction = mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: k.emo}).To_Reaction()
-		}
 		rc := mtproto.MakeTLReactionCount(&mtproto.ReactionCount{
-			Reaction_REACTION: reaction,
+			Reaction_REACTION: reactionOf(k.emo, k.doc),
 			Reaction_STRING:   k.emo,
 			Count:             counts[k],
 		}).To_ReactionCount()
-		if chosen[k] {
-			rc.ChosenOrder = &wrapperspb.Int32Value{Value: 0}
+		if chosenSet[k] {
+			// Bigger chosen_order is the newer reaction from this user.
+			// https://core.telegram.org/api/reactions
+			rc.ChosenOrder = &wrapperspb.Int32Value{Value: chosen[k]}
 		}
 		results = append(results, rc)
 	}
 	if results == nil {
 		results = []*mtproto.ReactionCount{}
 	}
-	return mtproto.MakeTLMessageReactions(&mtproto.MessageReactions{
-		Results: results,
-	}).To_MessageReactions()
+	out := &mtproto.MessageReactions{Results: results}
+	if len(results) > 0 {
+		// Private chats and basic groups can open the reactor list.
+		out.CanSeeList = true
+		out.RecentReactions = recentPeerReactions(mine, self, doc.Read[self], recentReactionCap)
+		if tags {
+			out.ReactionsAsTags = true
+		}
+	}
+	return mtproto.MakeTLMessageReactions(out).To_MessageReactions()
 }

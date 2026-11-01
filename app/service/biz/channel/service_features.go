@@ -1034,7 +1034,8 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}
-	reactions := reactionSummary(f.Reactions, msgID, self)
+	canSee, readAt := reactionView(ch, f, self)
+	reactions := reactionSummary(f.Reactions, msgID, self, canSee, readAt)
 	upd := mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
 		Peer_PEER:                  mtproto.MakePeerChannel(channelID),
 		MsgId_INT32:                msgID,
@@ -1043,10 +1044,20 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 	return s.updatesWith(ctx, self, ch, upd), nil
 }
 
-func reactionSummary(all []ReactRec, msgID int32, self int64) *mtproto.MessageReactions {
+func reactionView(ch *Channel, f *Features, self int64) (canSee bool, readAt int32) {
+	if f != nil && f.ReactionRead != nil {
+		readAt = f.ReactionRead[self]
+	}
+	return ch != nil && ch.Megagroup, readAt
+}
+
+func reactionSummary(all []ReactRec, msgID int32, self int64, canSee bool, readAt int32) *mtproto.MessageReactions {
 	counts := map[string]int32{}
-	chosen := map[string]bool{}
+	chosen := map[string]int32{}
+	chosenSet := map[string]bool{}
 	var order []string
+	var selfN int32
+	var mine []ReactRec
 	for _, r := range all {
 		if r.MsgID != msgID {
 			continue
@@ -1055,9 +1066,12 @@ func reactionSummary(all []ReactRec, msgID int32, self int64) *mtproto.MessageRe
 			order = append(order, r.Emoticon)
 		}
 		counts[r.Emoticon]++
-		if r.UserID == self {
-			chosen[r.Emoticon] = true
+		if r.UserID == self && !chosenSet[r.Emoticon] {
+			chosenSet[r.Emoticon] = true
+			chosen[r.Emoticon] = selfN
+			selfN++
 		}
+		mine = append(mine, r)
 	}
 	var results []*mtproto.ReactionCount
 	for _, emo := range order {
@@ -1066,18 +1080,22 @@ func reactionSummary(all []ReactRec, msgID int32, self int64) *mtproto.MessageRe
 			Reaction_STRING:   emo,
 			Count:             counts[emo],
 		}).To_ReactionCount()
-		if chosen[emo] {
-			rc.ChosenOrder = &wrapperspb.Int32Value{Value: 0}
+		if chosenSet[emo] {
+			rc.ChosenOrder = &wrapperspb.Int32Value{Value: chosen[emo]}
 		}
 		results = append(results, rc)
 	}
 	if results == nil {
 		results = []*mtproto.ReactionCount{}
 	}
-	return mtproto.MakeTLMessageReactions(&mtproto.MessageReactions{
-		CanSeeList: true,
-		Results:    results,
-	}).To_MessageReactions()
+	out := &mtproto.MessageReactions{Results: results}
+	// Broadcast channels must not name reactors. Megagroups can.
+	// https://core.telegram.org/method/messages.getMessageReactionsList
+	if canSee && len(results) > 0 {
+		out.CanSeeList = true
+		out.RecentReactions = recentChannelReactions(mine, self, readAt, 3)
+	}
+	return mtproto.MakeTLMessageReactions(out).To_MessageReactions()
 }
 
 func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids []int32) (*mtproto.Updates, error) {
@@ -1085,14 +1103,31 @@ func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids [
 	if err != nil {
 		return nil, err
 	}
+	if len(ids) == 0 {
+		return nil, mtproto.ErrMsgIdInvalid
+	}
 	f := s.features(ctx, ch.ID)
+	canSee, readAt := reactionView(ch, f, self)
 	var ups []*mtproto.Update
 	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		stored, err := s.store.GetMessage(ctx, ch.ID, id)
+		if err != nil {
+			return nil, err
+		}
+		if stored == nil || stored.Deleted {
+			continue
+		}
 		ups = append(ups, mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
 			Peer_PEER:                  mtproto.MakePeerChannel(channelID),
 			MsgId_INT32:                id,
-			Reactions_MESSAGEREACTIONS: reactionSummary(f.Reactions, id, self),
+			Reactions_MESSAGEREACTIONS: reactionSummary(f.Reactions, id, self, canSee, readAt),
 		}).To_Update())
+	}
+	if len(ups) == 0 {
+		return nil, mtproto.ErrMsgIdInvalid
 	}
 	return s.updatesWith(ctx, self, ch, ups...), nil
 }
