@@ -26,6 +26,9 @@ import (
 // ContactsGetBlocked
 // contacts.getBlocked#9a868f80 flags:# my_stories_from:flags.0?true offset:int limit:int = contacts.Blocked;
 func (c *ContactsCore) ContactsGetBlocked(in *mtproto.TLContactsGetBlocked) (*mtproto.Contacts_Blocked, error) {
+	if in.GetMyStoriesFrom() {
+		return c.storyBlockedPage(in)
+	}
 	var (
 		limit           = in.Limit
 		contactsBlocked *mtproto.Contacts_Blocked

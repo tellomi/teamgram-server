@@ -20,13 +20,67 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // ContactsAcceptContact
 // contacts.acceptContact#f831a20f id:InputUser = Updates;
+// https://core.telegram.org/method/contacts.acceptContact
+//
+// If the add-contact action bar is active (peerSettings.add_contact), add that
+// user as a contact and clear the bar. The returned Updates carry the user as
+// the caller now sees them.
 func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact) (*mtproto.Updates, error) {
-	// TODO: not impl
-	c.Logger.Errorf("contacts.acceptContact blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	id, err := userPeer(c.MD.UserId, in.GetId())
+	if err != nil {
+		c.Logger.Errorf("contacts.acceptContact - error: %v", err)
+		return nil, err
+	}
+	settings, err := c.svcCtx.Dao.UserGetPeerSettings(c.ctx, &userpb.TLUserGetPeerSettings{
+		UserId:   c.MD.UserId,
+		PeerType: mtproto.PEER_USER,
+		PeerId:   id.PeerId,
+	})
+	if err != nil || settings == nil || !settings.GetAddContact() {
+		c.Logger.Errorf("contacts.acceptContact - add_contact is not set")
+		return nil, mtproto.ErrContactAddMissing
+	}
+	user, err := c.loadUser(c.MD.UserId, id.PeerId)
+	if err != nil {
+		c.Logger.Errorf("contacts.acceptContact - error: %v", err)
+		return nil, mtproto.ErrContactIdInvalid
+	}
+	mutual, err := c.svcCtx.Dao.UserAddContact(c.ctx, &userpb.TLUserAddContact{
+		UserId:    c.MD.UserId,
+		Id:        id.PeerId,
+		FirstName: flagString(user.GetFirstName()),
+		LastName:  flagString(user.GetLastName()),
+		Phone:     flagString(user.GetPhone()),
+	})
+	if err != nil {
+		c.Logger.Errorf("contacts.acceptContact - error: %v", err)
+		return nil, mtproto.ErrContactIdInvalid
+	}
+	settings.AddContact = false
+	_, _ = c.svcCtx.Dao.UserAddPeerSettings(c.ctx, &userpb.TLUserAddPeerSettings{
+		UserId:   c.MD.UserId,
+		PeerType: mtproto.PEER_USER,
+		PeerId:   id.PeerId,
+		Settings: settings,
+	})
 
-	return mtproto.MakeEmptyUpdates(), nil
+	user.Contact = true
+	user.MutualContact = mtproto.FromBool(mutual)
+	me, meErr := c.loadUser(c.MD.UserId, c.MD.UserId)
+	users := []*mtproto.User{user}
+	if meErr == nil && me != nil {
+		users = []*mtproto.User{me, user}
+	}
+	return mtproto.MakeUpdatesByUpdatesUsers(users, mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{
+		Peer_PEER: id.ToPeer(),
+		Settings:  settings,
+	}).To_Update()), nil
 }

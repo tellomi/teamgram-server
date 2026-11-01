@@ -20,14 +20,47 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/accountrest"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/internal/dao"
 )
 
 // ContactsGetSaved
 // contacts.getSaved#82f1e39f = Vector<SavedContact>;
+// https://core.telegram.org/method/contacts.getSaved
+// https://core.telegram.org/api/takeout
+//
+// Exports the phone book (matched contacts plus numbers that never matched a
+// Telegram account). The call has to be wrapped in invokeWithTakeout for a
+// session opened with the contacts flag.
 func (c *ContactsCore) ContactsGetSaved(in *mtproto.TLContactsGetSaved) (*mtproto.Vector_SavedContact, error) {
-	// TODO: not impl
+	_ = in
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	takeoutID := int64(0)
+	if c.MD.HasTakeout() {
+		takeoutID = c.MD.GetTakeoutId()
+	}
+	if err := accountrest.RequireContactsExport(c.MD.UserId, takeoutID); err != nil {
+		c.Logger.Errorf("contacts.getSaved - error: %v", err)
+		return nil, err
+	}
+	rows, err := c.listSaved()
+	if err != nil {
+		c.Logger.Errorf("contacts.getSaved - error: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+	out := &mtproto.Vector_SavedContact{Datas: make([]*mtproto.SavedContact, 0, len(rows))}
+	for _, row := range rows {
+		out.Datas = append(out.Datas, dao.ToSavedContact(row))
+	}
+	return out, nil
+}
 
-	return &mtproto.Vector_SavedContact{
-		Datas: []*mtproto.SavedContact{},
-	}, nil
+func (c *ContactsCore) listSaved() ([]dao.SavedPhone, error) {
+	store := c.savedBook()
+	if store == nil {
+		return nil, nil
+	}
+	return store.List(c.ctx, c.MD.UserId)
 }

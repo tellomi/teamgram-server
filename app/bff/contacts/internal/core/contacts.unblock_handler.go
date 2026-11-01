@@ -27,6 +27,9 @@ import (
 // ContactsUnblock
 // contacts.unblock#bea65d50 id:InputPeer = Bool;
 func (c *ContactsCore) ContactsUnblock(in *mtproto.TLContactsUnblock) (*mtproto.Bool, error) {
+	if in.GetMyStoriesFrom() {
+		return c.unblockFromStories(in)
+	}
 	var (
 		mUsers    *userpb.Vector_ImmutableUser
 		err       error

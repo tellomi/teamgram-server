@@ -20,13 +20,113 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // ContactsSetBlocked
 // contacts.setBlocked#94c65c76 flags:# my_stories_from:flags.0?true id:Vector<InputPeer> limit:int = Bool;
+// https://core.telegram.org/method/contacts.setBlocked
+// https://core.telegram.org/api/block
+//
+// Replaces one whole blocklist. my_stories_from selects the story blocklist;
+// otherwise the main blocklist is replaced. id is the full new list. limit is
+// the length the client loaded; the stored list is id.
 func (c *ContactsCore) ContactsSetBlocked(in *mtproto.TLContactsSetBlocked) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("contacts.setBlocked blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	peers := make([]*mtproto.PeerUtil, 0, len(in.GetId()))
+	ids := make([]int64, 0, len(in.GetId()))
+	seen := map[int64]bool{}
+	for _, raw := range in.GetId() {
+		peer, err := inputPeerUser(c.MD.UserId, raw)
+		if err != nil {
+			c.Logger.Errorf("contacts.setBlocked - error: %v", err)
+			return nil, err
+		}
+		if seen[peer.PeerId] {
+			continue
+		}
+		seen[peer.PeerId] = true
+		peers = append(peers, peer)
+		ids = append(ids, peer.PeerId)
+	}
+	if err := c.ensureUsers(ids); err != nil {
+		c.Logger.Errorf("contacts.setBlocked - error: %v", err)
+		return nil, err
+	}
+	if in.GetMyStoriesFrom() {
+		return c.replaceStoryBlocks(peers)
+	}
+	return c.replaceMainBlocks(peers)
+}
 
-	return nil, mtproto.ErrEnterpriseIsBlocked
+func (c *ContactsCore) replaceStoryBlocks(peers []*mtproto.PeerUtil) (*mtproto.Bool, error) {
+	want := make([]book.Peer, 0, len(peers))
+	for _, peer := range peers {
+		want = append(want, book.Peer{Type: mtproto.PEER_USER, ID: peer.PeerId})
+	}
+	added, removed, err := c.relBook().ReplaceStories(c.ctx, c.MD.UserId, want, nowUnix())
+	if err != nil {
+		c.Logger.Errorf("contacts.setBlocked - error: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+	for _, peer := range added {
+		c.pushStory(peer, true)
+	}
+	for _, peer := range removed {
+		c.pushStory(peer, false)
+	}
+	return mtproto.BoolTrue, nil
+}
+
+func (c *ContactsCore) replaceMainBlocks(peers []*mtproto.PeerUtil) (*mtproto.Bool, error) {
+	current, err := c.svcCtx.Dao.UserGetBlockedList(c.ctx, &userpb.TLUserGetBlockedList{
+		UserId: c.MD.UserId,
+		Offset: 0,
+		Limit:  10000,
+	})
+	if err != nil {
+		c.Logger.Errorf("contacts.setBlocked - error: %v", err)
+		return nil, err
+	}
+	if current == nil {
+		current = &userpb.Vector_PeerBlocked{}
+	}
+	have := map[int64]bool{}
+	for _, row := range current.GetDatas() {
+		peer := row.GetPeerId()
+		if peer == nil || peer.GetPredicateName() != mtproto.Predicate_peerUser || peer.GetUserId() == 0 {
+			continue
+		}
+		have[peer.GetUserId()] = true
+	}
+	want := map[int64]*mtproto.PeerUtil{}
+	for _, peer := range peers {
+		want[peer.PeerId] = peer
+	}
+	for id := range have {
+		if _, ok := want[id]; ok {
+			continue
+		}
+		_, _ = c.svcCtx.Dao.UserUnBlockPeer(c.ctx, &userpb.TLUserUnBlockPeer{
+			UserId:   c.MD.UserId,
+			PeerType: mtproto.PEER_USER,
+			PeerId:   id,
+		})
+		c.pushBlocked(&mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: id}, false, false)
+	}
+	for id, peer := range want {
+		if have[id] {
+			continue
+		}
+		_, _ = c.svcCtx.Dao.UserBlockPeer(c.ctx, &userpb.TLUserBlockPeer{
+			UserId:   c.MD.UserId,
+			PeerType: mtproto.PEER_USER,
+			PeerId:   id,
+		})
+		c.pushBlocked(peer, true, false)
+	}
+	return mtproto.BoolTrue, nil
 }

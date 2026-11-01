@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	profile "github.com/teamgram/teamgram-server/app/bff/business/profile"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -278,6 +279,16 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		userFull.StoriesPinnedAvailable = c.svcCtx.Dao.StoryPlugin.GetStoriesPinnedAvailable(c.ctx, peerId, c.MD.UserId)
 		userFull.BlockedMyStoriesFrom = c.svcCtx.Dao.StoryPlugin.GetBlockedMyStoriesFrom(c.ctx, peerId, c.MD.UserId)
 		userFull.Stories_FLAGPEERSTORIES = c.svcCtx.Dao.StoryPlugin.GetActiveStories(c.ctx, peerId, c.MD.UserId)
+	}
+	// Private contact note and the story blocklist written by contacts.updateContactNote
+	// and contacts.setBlocked(my_stories_from). https://core.telegram.org/method/contacts.updateContactNote
+	if c.MD.UserId != peerId {
+		if note := book.Shared().Note(c.ctx, c.MD.UserId, peerId); note != nil {
+			userFull.Note = note
+		}
+		if book.Shared().StoryBlocked(c.ctx, c.MD.UserId, peerId) {
+			userFull.BlockedMyStoriesFrom = true
+		}
 	}
 
 	chats := make([]*mtproto.Chat, 0)

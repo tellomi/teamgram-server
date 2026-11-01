@@ -189,6 +189,26 @@ func TestTakeout(t *testing.T) {
 		t.Fatalf("init: %v %#v", err, opened)
 	}
 	mustEncode(t, opened)
+	if err := RequireContactsExport(9, 0); codeOf(err) != "TAKEOUT_REQUIRED" {
+		t.Fatal(err)
+	}
+	if err := RequireContactsExport(9, opened.GetId()); err != nil {
+		t.Fatal(err)
+	}
+	if err := RequireContactsExport(9, opened.GetId()+1); codeOf(err) != "TAKEOUT_INVALID" {
+		t.Fatal(err)
+	}
+	messagesOnly, err := InitTakeoutSession(9, &mtproto.TLAccountInitTakeoutSession{MessageUsers: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RequireContactsExport(9, messagesOnly.GetId()); codeOf(err) != "TAKEOUT_REQUIRED" {
+		t.Fatal(err)
+	}
+	opened, err = InitTakeoutSession(9, &mtproto.TLAccountInitTakeoutSession{Contacts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := FinishTakeoutSession(9, opened.GetId()+1, true); codeOf(err) != "TAKEOUT_INVALID" {
 		t.Fatal(err)
 	}

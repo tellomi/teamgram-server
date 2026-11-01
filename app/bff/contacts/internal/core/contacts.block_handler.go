@@ -27,6 +27,9 @@ import (
 // ContactsBlock
 // contacts.block#2e2e8734 flags:# my_stories_from:flags.0?true id:InputPeer = Bool;
 func (c *ContactsCore) ContactsBlock(in *mtproto.TLContactsBlock) (*mtproto.Bool, error) {
+	if in.GetMyStoriesFrom() {
+		return c.blockFromStories(in)
+	}
 	var (
 		err    error
 		mUsers *userpb.Vector_ImmutableUser

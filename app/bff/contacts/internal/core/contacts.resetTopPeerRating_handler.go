@@ -20,13 +20,29 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 )
 
 // ContactsResetTopPeerRating
 // contacts.resetTopPeerRating#1ae373ac category:TopPeerCategory peer:InputPeer = Bool;
+// https://core.telegram.org/method/contacts.resetTopPeerRating
+//
+// Forces the peer's rating in that category to zero until the next recorded use.
 func (c *ContactsCore) ContactsResetTopPeerRating(in *mtproto.TLContactsResetTopPeerRating) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("contacts.resetTopPeerRating blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	cat := book.CategoryOf(in.GetCategory())
+	if cat == "" {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	peer := mtproto.FromInputPeer2(c.MD.UserId, in.GetPeer())
+	if peer == nil || peer.IsEmpty() || peer.PeerId == 0 || !(peer.IsUser() || peer.IsChat() || peer.IsChannel()) {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if err := c.relBook().ResetTop(c.ctx, c.MD.UserId, cat, book.Peer{Type: peer.PeerType, ID: peer.PeerId}); err != nil {
+		c.Logger.Errorf("contacts.resetTopPeerRating - error: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }
