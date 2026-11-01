@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 // Handler is the public HTTP API.
@@ -37,10 +36,7 @@ func NewHandler(cfg Config, cat Catalog) *Handler {
 		cache: newRespCache(),
 	}
 	if cfg.MinioEndpoint != "" && cfg.MinioAccessKey != "" {
-		cl, err := minio.New(cfg.MinioEndpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
-			Secure: cfg.MinioSSL,
-		})
+		cl, err := newMinioClient(cfg)
 		if err != nil {
 			log.Printf("linkpreview: minio: %v", err)
 		} else {
@@ -139,13 +135,9 @@ func (h *Handler) media(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) openObject(ctx context.Context, path string) (*minio.Object, minio.ObjectInfo, error) {
-	buckets := []string{h.cfg.MinioBucketPhotos, h.cfg.MinioBucketDocuments, h.cfg.MinioBucketVideos}
 	var last error
-	for _, b := range buckets {
-		if b == "" {
-			continue
-		}
-		obj, err := h.minio.GetObject(ctx, b, path, minio.GetObjectOptions{})
+	for _, loc := range objectCandidates(h.cfg, path) {
+		obj, err := h.minio.GetObject(ctx, loc.bucket, loc.key, minio.GetObjectOptions{})
 		if err != nil {
 			last = err
 			continue

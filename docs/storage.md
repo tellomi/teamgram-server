@@ -71,7 +71,14 @@ Public URLs, when the base is set, are
 
 ## Local MinIO
 
-`docker-compose-env.yaml` starts MinIO and `minio-mc` creates:
+`docker-compose-env.yaml` keeps MinIO behind Compose profile `local-minio`.
+A default `up` does not pull or start it (production uses R2). Local buckets:
+
+```bash
+docker compose -f docker-compose-env.yaml --profile local-minio up -d
+```
+
+`minio-mc` creates:
 
 - `tellomi-attachments`
 - `tellomi-public-media`

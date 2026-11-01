@@ -9,7 +9,7 @@ The SMS provider accepts a fixed code and must not be used in production.
 
 | Piece | Role |
 |---|---|
-| `docker-compose-env.yaml` | MySQL, Redis, etcd, Kafka, MinIO, and the optional monitoring stack. First start loads SQL from `teamgramd/deploy/sql` and creates the `tellomi-attachments`, `tellomi-public-media`, and `tellomi-backups` buckets. |
+| `docker-compose-env.yaml` | MySQL, Redis, etcd, Kafka, and the optional monitoring stack. MinIO is profile `local-minio`. With that profile, first start creates the `tellomi-attachments`, `tellomi-public-media`, and `tellomi-backups` buckets. |
 | `docker-compose.yaml` | The Teamgram process image (gateway, session, bff, biz, msg, media, …). |
 | `teamgramd/etc2/bff.yaml` | Config the container actually runs (`runall-docker.sh`). |
 
@@ -28,8 +28,11 @@ From the repository root:
 
 ```bash
 cp .env.example .env   # optional; defaults match the compose file
-docker compose -f docker-compose-env.yaml -f docker-compose.yaml up -d --build
+docker compose --profile local-minio -f docker-compose-env.yaml -f docker-compose.yaml up -d --build
 ```
+
+`--profile local-minio` starts the local object store. Omit it when `.env`
+points `TELLOMI_S3_*` at Cloudflare R2. A default `up` does not pull MinIO.
 
 That one command starts the dependencies and the app. `mysql-migrate` applies
 `teamgramd/deploy/sql/migrate-*.sql` after MySQL is healthy and records them in
@@ -40,7 +43,7 @@ migrations finish, then the app. msg, sync, and bff retry Kafka, MySQL, Redis,
 and etcd on their own.
 
 ```bash
-docker compose -f docker-compose-env.yaml up -d
+docker compose -f docker-compose-env.yaml --profile local-minio up -d
 docker compose up -d --build
 ```
 

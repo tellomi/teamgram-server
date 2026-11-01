@@ -1,0 +1,23 @@
+# Fails when a default `docker compose -f docker-compose-env.yaml config`
+# includes minio or minio-mc. Those services stay on profile local-minio so
+# production `up` does not pull them.
+
+name: Compose config
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  minio-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Default env compose excludes minio
+        run: bash scripts/check-compose-minio-profile.sh

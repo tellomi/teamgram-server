@@ -1,7 +1,9 @@
 # docker-compose-env2: 高性能组件栈（独立方案，不依赖 docker-compose-env.yaml）
 # 组件: jaeger, prometheus, grafana, elasticsearch, kibana,
-#       go-stash, filebeat, kafka, mysql, redis, etcd, minio, minio-mc, node-exporter
-# 启动: docker compose -f docker-compose-env2.yaml up -d
+#       go-stash, filebeat, kafka, mysql, redis, etcd, node-exporter
+#       minio and minio-mc are profile local-minio (not started by a default up)
+# 启动: docker compose -f docker-compose-env.yaml up -d
+# 本地 MinIO: docker compose -f docker-compose-env.yaml --profile local-minio up -d
 
 services:
   # --- 消息队列 (Bitnami Kafka KRaft 模式，无需 Zookeeper) ---
@@ -139,9 +141,15 @@ services:
     networks:
       - teamgram_net
 
-  # --- 对象存储 ---
+  # --- 对象存储（profile local-minio；默认 up 不拉取、不启动）---
+  # Production media is Cloudflare R2. These two services exist for a local
+  # bucket only. docker.io/minio/minio and quay.io/minio/minio no longer pull
+  # anonymously, and docker.m.daocloud.io/minio/minio failed in deploy.
+  # pgsty/silo and pgsty/mc are pinned MinIO-compatible images (same
+  # `minio server` / `mc` commands). Override with MINIO_IMAGE / MINIO_MC_IMAGE.
   minio:
-    image: docker.m.daocloud.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    profiles: ["local-minio"]
+    image: ${MINIO_IMAGE:-docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z}
     container_name: minio
     ports:
       - "9000:9000"
@@ -157,7 +165,8 @@ services:
       - teamgram_net
 
   minio-mc:
-    image: minio/mc:latest
+    profiles: ["local-minio"]
+    image: ${MINIO_MC_IMAGE:-docker.io/pgsty/mc:RELEASE.2026-10-26T00-00-00Z}
     container_name: minio-mc
     entrypoint: ["/bin/sh", "-c"]
     command:

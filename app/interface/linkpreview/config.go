@@ -33,12 +33,15 @@ type Config struct {
 	MinioAccessKey       string    `json:",optional"`
 	MinioSecretKey       string    `json:",optional"`
 	MinioSSL             bool      `json:",optional"`
+	MinioRegion          string    `json:",optional"`
 	MinioBucketPhotos    string    `json:",optional"`
 	MinioBucketDocuments string    `json:",optional"`
 	MinioBucketVideos    string    `json:",optional"`
 	Log                  LogConfig `json:",optional"`
 
 	ephemeralKey []byte
+	// minioSSLSet is true when TELLOMI_MINIO_USE_SSL is present.
+	minioSSLSet bool
 }
 
 // LogConfig is the go-zero file log used when Mode is "file".
@@ -148,6 +151,7 @@ func (c *Config) applyEnv() {
 	set("TELLOMI_MINIO_ENDPOINT", &c.MinioEndpoint)
 	set("TELLOMI_MINIO_ACCESS_KEY", &c.MinioAccessKey)
 	set("TELLOMI_MINIO_SECRET_KEY", &c.MinioSecretKey)
+	set("TELLOMI_MINIO_REGION", &c.MinioRegion)
 	set("TELLOMI_MINIO_BUCKET_PHOTOS", &c.MinioBucketPhotos)
 	set("TELLOMI_MINIO_BUCKET_DOCUMENTS", &c.MinioBucketDocuments)
 	set("TELLOMI_MINIO_BUCKET_VIDEOS", &c.MinioBucketVideos)
@@ -177,6 +181,7 @@ func (c *Config) applyEnv() {
 	}
 	if v, ok := os.LookupEnv("TELLOMI_MINIO_USE_SSL"); ok && v != "" {
 		c.MinioSSL = v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
+		c.minioSSLSet = true
 	}
 	c.LinkBaseURL = strings.TrimRight(c.LinkBaseURL, "/")
 	c.PublicURL = strings.TrimRight(c.PublicURL, "/")
