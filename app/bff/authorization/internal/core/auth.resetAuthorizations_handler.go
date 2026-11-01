@@ -20,13 +20,66 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 )
 
 // AuthResetAuthorizations
 // auth.resetAuthorizations#9fab0d1a = Bool;
+//
+// Terminates every authorization except the current one (auth_users rows
+// soft-deleted, cache dropped). Each other key is then told to drop its
+// in-memory session. A later RPC on those keys loads the deleted binding
+// and fails as logged out (401 AUTH_KEY_UNREGISTERED).
+//
+// Official Telegram may also return 406 FRESH_RESET_AUTHORISATION_FORBIDDEN
+// when the current session is younger than 24 hours. This server does not:
+// account.resetAuthorization has no such gate, and the Devices action has
+// to work for a session that just signed in.
 func (c *AuthorizationCore) AuthResetAuthorizations(in *mtproto.TLAuthResetAuthorizations) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.resetAuthorizations blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	_ = in
 
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if c.MD == nil || c.MD.UserId == 0 || c.MD.PermAuthKeyId == 0 {
+		c.Logger.Errorf("auth.resetAuthorizations - missing user or perm auth key")
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+
+	tKeyIdList, err := c.svcCtx.Dao.AuthsessionClient.AuthsessionResetAuthorization(c.ctx, &authsession.TLAuthsessionResetAuthorization{
+		UserId:    c.MD.UserId,
+		AuthKeyId: c.MD.PermAuthKeyId,
+		Hash:      0,
+	})
+	if err != nil {
+		c.Logger.Errorf("auth.resetAuthorizations - error: %v", err)
+		return nil, err
+	}
+
+	for _, id := range tKeyIdList.GetDatas() {
+		if id == 0 || id == c.MD.PermAuthKeyId {
+			continue
+		}
+		// Same signals as account.resetAuthorization: refresh the other
+		// client, then drop that auth key's session.
+		_, _ = c.svcCtx.Dao.SyncClient.SyncUpdatesMe(c.ctx, &sync.TLSyncUpdatesMe{
+			UserId:        c.MD.UserId,
+			PermAuthKeyId: id,
+			ServerId:      nil,
+			AuthKeyId:     nil,
+			SessionId:     nil,
+			Updates:       mtproto.MakeTLUpdatesTooLong(nil).To_Updates(),
+		})
+		_, _ = c.svcCtx.Dao.SyncClient.SyncUpdatesMe(c.ctx, &sync.TLSyncUpdatesMe{
+			UserId:        c.MD.UserId,
+			PermAuthKeyId: id,
+			ServerId:      nil,
+			AuthKeyId:     nil,
+			SessionId:     nil,
+			Updates: mtproto.MakeTLUpdateAccountResetAuthorization(&mtproto.Updates{
+				UserId:    c.MD.UserId,
+				AuthKeyId: id,
+			}).To_Updates(),
+		})
+	}
+
+	return mtproto.BoolTrue, nil
 }

@@ -20,6 +20,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 
@@ -44,18 +45,133 @@ func appNameForSession(apiID int32, langPack string) string {
 	return langPack
 }
 
-func (d *Dao) getCountryAndRegionByIp(ip string) (string, string) {
-	if d.MMDB == nil {
-		return "UNKNOWN", ""
-	} else {
-		r, err := d.MMDB.City(net.ParseIP(ip))
-		if err != nil {
-			logx.Errorf("getCountryAndRegionByIp - error: %v", err)
-			return "UNKNOWN", ""
-		}
-
-		return r.City.Names["en"] + ", " + r.Country.Names["en"], r.Country.IsoCode
+// normalizeClientIP accepts a host, host:port, [ipv6]:port, or the
+// "ip|stamp" close marker and returns a parsed address.
+func normalizeClientIP(ip string) net.IP {
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return nil
 	}
+	if i := strings.IndexByte(ip, '|'); i >= 0 {
+		ip = strings.TrimSpace(ip[:i])
+	}
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	return net.ParseIP(strings.Trim(ip, "[]"))
+}
+
+func normalizedIPString(ip string) string {
+	if parsed := normalizeClientIP(ip); parsed != nil {
+		return parsed.String()
+	}
+	return ""
+}
+
+// countryAndRegionFromNames maps a GeoLite2 city record onto
+// authorization.country and authorization.region. Empty names stay empty.
+// The historical stub "UNKNOWN" is never returned; clients print that
+// string on the device line.
+func countryAndRegionFromNames(countryName, countryISO, regionName, cityName string) (string, string) {
+	country := strings.TrimSpace(countryName)
+	if country == "" {
+		country = strings.TrimSpace(countryISO)
+	}
+	region := strings.TrimSpace(regionName)
+	if region == "" {
+		region = strings.TrimSpace(cityName)
+	}
+	if region == "" {
+		region = strings.TrimSpace(countryISO)
+	}
+	if country == "" {
+		country = strings.TrimSpace(cityName)
+	}
+	if strings.EqualFold(country, "UNKNOWN") {
+		country = ""
+	}
+	if strings.EqualFold(region, "UNKNOWN") {
+		region = ""
+	}
+	return country, region
+}
+
+func (d *Dao) lookupCountryRegion(ip string) (string, string) {
+	if d == nil || d.MMDB == nil {
+		return "", ""
+	}
+	parsed := normalizeClientIP(ip)
+	if parsed == nil {
+		return "", ""
+	}
+	r, err := d.MMDB.City(parsed)
+	if err != nil || r == nil {
+		return "", ""
+	}
+	regionName := ""
+	if len(r.Subdivisions) > 0 {
+		regionName = r.Subdivisions[0].Names["en"]
+		if regionName == "" {
+			regionName = r.Subdivisions[0].IsoCode
+		}
+	}
+	return countryAndRegionFromNames(r.Country.Names["en"], r.Country.IsoCode, regionName, r.City.Names["en"])
+}
+
+// fillAuthorizationPlace keeps a resolved country. When GeoIP has nothing,
+// a known IP is used as country so clients do not render the stub UNKNOWN.
+func fillAuthorizationPlace(ip, country, region string) (string, string, string) {
+	if country == "" && ip != "" {
+		country = ip
+	}
+	return ip, country, region
+}
+
+// authorizationPlace is the ip/country/region triple for one session.
+func (d *Dao) authorizationPlace(raw string) (string, string, string) {
+	country, region := d.lookupCountryRegion(raw)
+	return fillAuthorizationPlace(normalizedIPString(raw), country, region)
+}
+
+// authUserRef is one live auth_users row considered by reset.
+type authUserRef struct {
+	RowID     int64
+	AuthKeyID int64
+	Hash      int64
+}
+
+// authUsersToReset selects rows to soft-delete.
+// hash 0 drops every key except excludeAuthKeyID (0 excludes nobody, used
+// when deleting the account). A non-zero hash drops that single other key.
+func authUsersToReset(rows []authUserRef, excludeAuthKeyID, hash int64) (rowIDs, keyIDs []int64) {
+	for _, v := range rows {
+		if hash == 0 {
+			if excludeAuthKeyID != 0 && excludeAuthKeyID == v.AuthKeyID {
+				continue
+			}
+		} else if hash != v.Hash || excludeAuthKeyID == v.AuthKeyID {
+			continue
+		}
+		rowIDs = append(rowIDs, v.RowID)
+		keyIDs = append(keyIDs, v.AuthKeyID)
+	}
+	return rowIDs, keyIDs
+}
+
+// authUserDeleted reports a soft-deleted auth_users binding. A later RPC on
+// that key must fail as logged out rather than as a fresh unauthorized key.
+func (d *Dao) authUserDeleted(ctx context.Context, authKeyId int64) bool {
+	var row struct {
+		Id int64 `db:"id"`
+	}
+	err := d.QueryRowPartial(ctx, &row, "select id from auth_users where auth_key_id = ? and deleted = 1 limit 1", authKeyId)
+	if err != nil {
+		if !errors.Is(err, sqlx.ErrNotFound) {
+			logx.WithContext(ctx).Errorf("authUserDeleted(%d) error: %v", authKeyId, err)
+		}
+		return false
+	}
+	return row.Id != 0
 }
 
 func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.Authorization, error) {
@@ -64,9 +180,8 @@ func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.A
 		return nil, err
 	}
 
-	country, region := d.getCountryAndRegionByIp(cData.ClientIp())
+	ip, country, region := d.authorizationPlace(cData.ClientIp())
 
-	// TODO(@benqi): fill platform and (country, region)
 	return mtproto.MakeTLAuthorization(&mtproto.Authorization{
 		Current:         false,
 		OfficialApp:     true,
@@ -80,7 +195,7 @@ func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.A
 		AppVersion:      cData.AppVersion(),
 		DateCreated:     0,
 		DateActive:      0,
-		Ip:              cData.ClientIp(),
+		Ip:              ip,
 		Country:         country,
 		Region:          region,
 	}).To_Authorization(), nil
@@ -109,8 +224,7 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 			//kId := item.(int64)
 			cData, _ := d.GetCacheAuthData(ctx, idx.id)
 			if cData != nil {
-				country, region := d.getCountryAndRegionByIp(cData.ClientIp())
-				// TODO(@benqi): fill platform and (country, region)
+				ip, country, region := d.authorizationPlace(cData.ClientIp())
 				authorization := mtproto.MakeTLAuthorization(&mtproto.Authorization{
 					Current:         false,
 					OfficialApp:     true,
@@ -124,7 +238,7 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 					AppVersion:      cData.AppVersion(),
 					DateCreated:     int32(cData.DateCreated()),
 					DateActive:      int32(cData.DateActivated()),
-					Ip:              cData.ClientIp(),
+					Ip:              ip,
 					Country:         country,
 					Region:          region,
 				}).To_Authorization()
@@ -149,25 +263,17 @@ func (d *Dao) ResetAuthorization(ctx context.Context, userId int64, authKeyId, h
 		keyIdList      []int64
 	)
 
+	var refs []authUserRef
 	_, _ = d.AuthUsersDAO.SelectListByUserIdWithCB(
 		ctx,
 		userId,
 		func(sz, i int, v *dataobject.AuthUsersDO) {
-			if hash == 0 {
-				if authKeyId == v.AuthKeyId {
-					return
-				}
-				cacheKeyIdList = append(cacheKeyIdList, genAuthDataCacheKey(v.AuthKeyId))
-				hashList = append(hashList, v.Id)
-				keyIdList = append(keyIdList, v.AuthKeyId)
-			} else {
-				if hash == v.Hash && authKeyId != v.AuthKeyId {
-					cacheKeyIdList = append(cacheKeyIdList, genAuthDataCacheKey(v.AuthKeyId))
-					hashList = append(hashList, v.Id)
-					keyIdList = append(keyIdList, v.AuthKeyId)
-				}
-			}
+			refs = append(refs, authUserRef{RowID: v.Id, AuthKeyID: v.AuthKeyId, Hash: v.Hash})
 		})
+	hashList, keyIdList = authUsersToReset(refs, authKeyId, hash)
+	for _, id := range keyIdList {
+		cacheKeyIdList = append(cacheKeyIdList, genAuthDataCacheKey(id))
+	}
 	if len(keyIdList) == 0 {
 		return keyIdList
 	}

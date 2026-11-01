@@ -59,6 +59,9 @@ type BindUser struct {
 type CacheAuthData struct {
 	Client   *authsession.ClientSession `json:"client"`
 	BindUser *BindUser                  `json:"bind_user,omitempty"`
+	// Revoked is set when auth_users was soft-deleted (reset or logout).
+	// The key must not come back as a fresh unauthorized session.
+	Revoked bool `json:"revoked,omitempty"`
 }
 
 func (c *CacheAuthData) ToAuthState() (state int) {
@@ -73,6 +76,10 @@ func (c *CacheAuthData) ToAuthState() (state int) {
 		// A bound user stays authorized even when the client-session row
 		// has not been written yet (initConnection on a temp key).
 		state = mtproto.AuthStateNormal
+	} else if c.Revoked {
+		// auth.resetAuthorizations / account.resetAuthorization / logOut
+		// soft-delete the binding. The next RPC must fail as logged out.
+		state = mtproto.AuthStateLogout
 	} else if c.Client == nil {
 		state = mtproto.AuthStateWaitInit
 	} else {
@@ -446,6 +453,8 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 							DateActivated:        do.DateActive,
 							AndroidPushSessionId: do.AndroidPushSessionId,
 						}
+					} else if d.authUserDeleted(ctx, authKeyId) {
+						cacheAuthData.Revoked = true
 					}
 					return nil
 				})
@@ -453,7 +462,7 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 			if err != nil {
 				return err
 			}
-			if cacheAuthData.Client == nil && cacheAuthData.BindUser == nil {
+			if cacheAuthData.Client == nil && cacheAuthData.BindUser == nil && !cacheAuthData.Revoked {
 				return sqlc.ErrNotFound
 			}
 			*v.(**CacheAuthData) = cacheAuthData

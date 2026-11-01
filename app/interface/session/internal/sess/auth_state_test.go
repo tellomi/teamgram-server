@@ -11,6 +11,18 @@ import (
 	authsessionclient "github.com/teamgram/teamgram-server/app/service/authsession/client"
 )
 
+func TestAuthorizationResetTargetsOnlyTheNamedKey(t *testing.T) {
+	if authorizationResetTargets(11, 11) != true {
+		t.Fatal("named key should be logged out")
+	}
+	if authorizationResetTargets(11, 22) {
+		t.Fatal("another online session must stay signed in")
+	}
+	if authorizationResetTargets(11, 0) {
+		t.Fatal("a zero auth key must not log every connection out")
+	}
+}
+
 func TestRPCErrorForAuthStateUsesRestartForTransientStates(t *testing.T) {
 	for _, state := range []int{
 		mtproto.AuthStateNew,

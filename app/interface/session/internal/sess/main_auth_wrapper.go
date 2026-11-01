@@ -330,10 +330,18 @@ func (m *MainAuthWrapper) onUpdateLayer(ctx context.Context, layer int32) {
 		return
 	}
 
+	// Keep the IP already stored for this key. SetLayer's upsert writes
+	// client_ip, and an empty value here wipes the address that
+	// account.getAuthorizations uses for country.
+	ip := ""
+	if m.client != nil {
+		ip = m.client.Ip
+	}
+
 	if m.client == nil {
 		m.client = authsession.MakeTLClientSession(&authsession.ClientSession{
 			AuthKeyId:      m.authKeyId,
-			Ip:             "",
+			Ip:             ip,
 			Layer:          layer,
 			ApiId:          0,
 			DeviceModel:    "",
@@ -351,7 +359,7 @@ func (m *MainAuthWrapper) onUpdateLayer(ctx context.Context, layer int32) {
 
 	_, _ = m.cb.Dao.AuthsessionClient.AuthsessionSetLayer(ctx, &authsession.TLAuthsessionSetLayer{
 		AuthKeyId: m.authKeyId,
-		Ip:        "",
+		Ip:        ip,
 		Layer:     layer,
 	})
 }
@@ -1120,14 +1128,12 @@ func (m *MainAuthWrapper) onSyncData(ctx context.Context, syncMsg *syncData) {
 
 	if upds, ok := syncMsg.data.obj.(*mtproto.Updates); ok {
 		if upds.PredicateName == mtproto.Predicate_updateAccountResetAuthorization {
-			logx.WithContext(ctx).Info("recv updateAccountResetAuthorization - ", reflect.TypeOf(syncMsg.data.obj))
-			if m.AuthUserId != upds.GetUserId() {
-				logx.WithContext(ctx).Error("upds -- ", upds)
+			if !authorizationResetTargets(m.authKeyId, upds.GetAuthKeyId()) {
+				// Another device was reset. This connection stays signed in.
+				return
 			}
-			// m.cb.Dao.PutCacheUserId(context.Background(), m.authKeyId, 0)
-			// m.cb.DeleteByAuthKeyId(m.authKeyId)
+			logx.WithContext(ctx).Infof("recv updateAccountResetAuthorization - authKeyId: %d", m.authKeyId)
 			m.changeAuthState(ctx, mtproto.AuthStateDeleted, 0)
-			// m.AuthUserId = 0
 			return
 		}
 	}
