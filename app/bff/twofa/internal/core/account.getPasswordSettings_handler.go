@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 )
 
 // AccountGetPasswordSettings
@@ -9,14 +10,14 @@ import (
 // https://core.telegram.org/method/account.getPasswordSettings
 // https://core.telegram.org/constructor/account.passwordSettings
 func (c *TwoFaCore) AccountGetPasswordSettings(in *mtproto.TLAccountGetPasswordSettings) (*mtproto.Account_PasswordSettings, error) {
-	var password *mtproto.InputCheckPasswordSRP
+	var proof *mtproto.InputCheckPasswordSRP
 	if in != nil {
-		password = in.GetPassword()
+		proof = in.GetPassword()
 	}
-	// This method's documented failure for a bad proof is PASSWORD_HASH_INVALID.
-	if err := c.checkEmptyPassword(password); err != nil {
+	settings, err := password.Settings(c.ctx, c.userID(), c.authKey(), proof)
+	if err != nil {
 		c.Logger.Errorf("account.getPasswordSettings - error: %v", err)
-		return nil, mtproto.ErrPasswordHashInvalid
+		return nil, err
 	}
-	return emptyPasswordSettings(), nil
+	return settings, nil
 }

@@ -25,6 +25,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/model"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -92,6 +93,18 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 	if err != nil {
 		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
 		return nil, err
+	}
+
+	// Write the password step before the new device's auth key is bound.
+	// exportLoginToken then returns SESSION_PASSWORD_NEEDED instead of a login.
+	if has, hasErr := password.HasPassword(c.ctx, user.Id()); hasErr != nil {
+		c.Logger.Errorf("auth.acceptLoginToken - password: %v", hasErr)
+		return nil, hasErr
+	} else if has || (c.svcCtx.Plugin != nil && c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.Id())) {
+		if err = password.NoteLogin(c.ctx, qrCode.PermAuthKeyId, user.Id()); err != nil {
+			c.Logger.Errorf("auth.acceptLoginToken - password: %v", err)
+			return nil, err
+		}
 	}
 
 	// Bind authKeyId and userId

@@ -19,15 +19,13 @@
 package core
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/crypto"
 	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/model"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
-
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -89,14 +87,14 @@ func (c *QrCodeCore) AuthExportLoginToken(in *mtproto.TLAuthExportLoginToken) (*
 			c.Logger.Errorf("auth.exportLoginToken - error: %v", err)
 			return nil, err
 		}
-		if c.svcCtx.Plugin != nil {
-			if c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.User.Id) {
-				// hack
-				// err = mtproto.ErrSessionPasswordNeeded
-				err = status.Error(mtproto.ErrUnauthorized, fmt.Sprintf("SESSION_PASSWORD_NEEDED_%d", user.Id()))
-				c.Logger.Infof("auth.exportLoginToken - registered, next step auth.checkPassword: %v", err)
-				return nil, err
-			}
+		has, hasErr := password.HasPassword(c.ctx, user.Id())
+		if hasErr != nil {
+			c.Logger.Errorf("auth.exportLoginToken - password: %v", hasErr)
+			return nil, hasErr
+		}
+		if has || (c.svcCtx.Plugin != nil && c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.Id())) {
+			c.Logger.Infof("auth.exportLoginToken - registered, next step auth.checkPassword: SESSION_PASSWORD_NEEDED")
+			return nil, mtproto.ErrSessionPasswordNeeded
 		}
 
 		rQRLoginToken = mtproto.MakeTLAuthLoginTokenSuccess(&mtproto.Auth_LoginToken{

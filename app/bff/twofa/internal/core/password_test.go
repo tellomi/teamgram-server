@@ -102,9 +102,11 @@ func TestPasswordSettingsAndEmailFlows(t *testing.T) {
 		t.Fatalf("empty update: %v", err)
 	}
 
+	hash := make([]byte, passwordHashLen)
+	hash[0] = 1
 	badEmail := &mtproto.Account_PasswordInputSettings{
 		NewAlgo:         c.accountPassword().GetNewAlgo(),
-		NewPasswordHash: make([]byte, passwordHashLen),
+		NewPasswordHash: hash,
 		Email:           &wrapperspb.StringValue{Value: "not-an-email"},
 	}
 	if _, err := c.AccountUpdatePasswordSettings(&mtproto.TLAccountUpdatePasswordSettings{

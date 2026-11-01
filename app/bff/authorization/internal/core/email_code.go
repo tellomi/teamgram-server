@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/teamgram/marmota/pkg/threading2"
@@ -190,16 +189,24 @@ func (c *AuthorizationCore) authSendEmailCode(authKeyId, sessionId int64, reques
 			if id != user.Id() {
 				continue
 			}
+			if c.needsCloudPassword(user.Id()) {
+				if err = c.passwordNeeded(user.Id()); err != nil {
+					c.Logger.Errorf("auth.sendCode - email password: %v", err)
+					return nil, err
+				}
+				_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
+					AuthKeyId: c.MD.PermAuthKeyId,
+					UserId:    user.User.Id,
+				})
+				_ = c.svcCtx.Dao.DelFutureAuthToken(c.ctx, v)
+				c.Logger.Infof("auth.sendCode - email future-auth-token needs password: SESSION_PASSWORD_NEEDED")
+				return nil, mtproto.ErrSessionPasswordNeeded
+			}
 			_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
 				AuthKeyId: c.MD.PermAuthKeyId,
 				UserId:    user.User.Id,
 			})
 			_ = c.svcCtx.Dao.DelFutureAuthToken(c.ctx, v)
-			if c.svcCtx.Plugin != nil && c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.User.Id) {
-				err = status.Error(mtproto.ErrUnauthorized, fmt.Sprintf("SESSION_PASSWORD_NEEDED_%d", user.Id()))
-				c.Logger.Infof("auth.sendCode - email future-auth-token needs password: %v", err)
-				return nil, err
-			}
 			return mtproto.MakeTLAuthSentCodeSuccess(&mtproto.Auth_SentCode{
 				Authorization: mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 					SetupPasswordRequired: false,

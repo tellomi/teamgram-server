@@ -2,6 +2,36 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Cloud password (SRP)
+
+`account.getPassword` used to report that no password was set, and `account.updatePasswordSettings` did not store a verifier. `auth.checkPassword` did not check one. Login copied the user id into `SESSION_PASSWORD_NEEDED_<id>` so the session process could enter the password step; upstream iOS compares the error text exactly.
+
+The verifier, salts, hint, recovery email, secure settings, and pending reset now live in MySQL (`user_passwords`, `user_password_srp`, `user_password_login`; `teamgramd/deploy/sql/migrate-20261101-cloud-password.sql`). SRP is `passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow` with the standard 2048-bit parameters. Each `srp_id` / `B` is deleted when it is used. Recovery mail uses the existing email sender (`TELLOMI_EMAIL_PROVIDER`).
+
+`auth.signIn`, the email and future-auth-token paths, and `auth.exportLoginToken` return `SESSION_PASSWORD_NEEDED` with no suffix. The user id is stored on `user_password_login` before the auth key is bound. The session process still accepts the old suffixed form.
+
+| Method | File |
+| --- | --- |
+| `account.getPassword` | `app/bff/twofa/internal/core/account.getPassword_handler.go` |
+| `account.getPasswordSettings` | `app/bff/twofa/internal/core/account.getPasswordSettings_handler.go` |
+| `account.updatePasswordSettings` | `app/bff/twofa/internal/core/account.updatePasswordSettings_handler.go` |
+| `account.confirmPasswordEmail` | `app/bff/twofa/internal/core/account.confirmPasswordEmail_handler.go` |
+| `account.resendPasswordEmail` | `app/bff/twofa/internal/core/account.resendPasswordEmail_handler.go` |
+| `account.cancelPasswordEmail` | `app/bff/twofa/internal/core/account.cancelPasswordEmail_handler.go` |
+| `account.declinePasswordReset` | `app/bff/twofa/internal/core/account.declinePasswordReset_handler.go` |
+| `account.getTmpPassword` | `app/bff/twofa/internal/core/account.getTmpPassword_handler.go` |
+| `auth.checkPassword` | `app/bff/authorization/internal/core/auth.checkPassword_handler.go` |
+| `account.resetPassword` | `app/bff/authorization/internal/core/account.resetPassword_handler.go` |
+
+Other touched upstream files:
+
+- `app/bff/authorization/internal/core/auth.signIn_handler.go`, `auth.sendCode_handler.go`, `email_code.go` — exact `SESSION_PASSWORD_NEEDED` after the phone or email code is accepted.
+- `app/bff/qrcode/internal/core/auth.acceptLoginToken_handler.go`, `auth.exportLoginToken_handler.go` — same for QR login.
+- `app/bff/codelogin/methods.go` — `auth.requestPasswordRecovery` / `auth.recoverPassword` read and write the stored recovery email and verifier instead of a second copy.
+- `app/interface/session/internal/sess/session_invoke.go` — exact error, user id from the auth-key binding.
+- `app/service/authsession/internal/core/authsession.getAuthStateData_handler.go` — a pending password login stays `AuthStateNeedPassword` after a restart.
+- `app/bff/bff/internal/server/server.go` — opens the password store from the existing MySQL DSN.
+
 ## P0 login, email, and phone-confirmation RPCs
 
 The generated handlers below were enterprise stubs (`ERR_ENTERPRISE_IS_BLOCKED`). They now follow the current method pages on core.telegram.org. Delivery reuses the existing Aliyun SMS sender (one sign name, one login template) and the existing email sender (`TELLOMI_EMAIL_PROVIDER`, Resend in production). No new environment variables and no new SMS template.

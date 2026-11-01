@@ -20,28 +20,51 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // AuthCheckPassword
 // auth.checkPassword#d18b4d16 password:InputCheckPasswordSRP = auth.Authorization;
+// https://core.telegram.org/method/auth.checkPassword
 func (c *AuthorizationCore) AuthCheckPassword(in *mtproto.TLAuthCheckPassword) (*mtproto.Auth_Authorization, error) {
-	// TODO: check password
-	c.Logger.Errorf("auth.checkPassword blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	user, err := c.svcCtx.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
-		Id: c.MD.UserId,
-	})
-	if err != nil {
+	var proof *mtproto.InputCheckPasswordSRP
+	if in != nil {
+		proof = in.Password
+	}
+	userID := c.userID()
+	if userID == 0 {
+		id, err := password.PendingUser(c.ctx, c.authKey())
+		if err != nil {
+			c.Logger.Errorf("auth.checkPassword - pending: %v", err)
+			return nil, err
+		}
+		userID = id
+	}
+	if userID == 0 {
+		c.Logger.Errorf("auth.checkPassword - error: %v", mtproto.ErrPasswordMissing)
+		return nil, mtproto.ErrPasswordMissing
+	}
+	if err := password.Verify(c.ctx, userID, c.authKey(), proof); err != nil {
 		c.Logger.Errorf("auth.checkPassword - error: %v", err)
 		return nil, err
 	}
-
+	if err := password.ClearLogin(c.ctx, c.authKey()); err != nil {
+		c.Logger.Errorf("auth.checkPassword - clear login: %v", err)
+		return nil, err
+	}
+	user, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
+		Id: userID,
+	})
+	if err != nil {
+		c.Logger.Errorf("auth.checkPassword - user: %v", err)
+		return nil, err
+	}
+	if user == nil {
+		c.Logger.Errorf("auth.checkPassword - user is nil")
+		return nil, mtproto.ErrInternalServerError
+	}
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
-		SetupPasswordRequired: false,
-		OtherwiseReloginDays:  nil,
-		TmpSessions:           nil,
-		FutureAuthToken:       nil,
-		User:                  user.ToSelfUser(),
+		User: user.ToSelfUser(),
 	}).To_Auth_Authorization(), nil
 }

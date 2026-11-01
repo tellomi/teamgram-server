@@ -1,6 +1,7 @@
 package codelogin
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
+	"github.com/teamgram/teamgram-server/pkg/srp"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -497,5 +500,57 @@ func TestDeliverEmailDisabled(t *testing.T) {
 	_, err := svc.RequestPasswordRecovery(context.Background(), 1)
 	if err == nil || rpcText(err) == "PASSWORD_RECOVERY_NA" {
 		t.Fatal(err)
+	}
+}
+
+func TestRecoveryUsesCloudPasswordEmail(t *testing.T) {
+	ctx := context.Background()
+	var code string
+	pw := password.New(password.Options{
+		SendEmail: func(_ context.Context, to, c string) (string, error) {
+			if to != "cloud@tellomi.app" {
+				t.Fatalf("confirmation sent to %s", to)
+			}
+			code = c
+			return c, nil
+		},
+	})
+	prev := password.Swap(pw)
+	t.Cleanup(func() { password.Swap(prev) })
+
+	issued, err := password.AccountPassword(ctx, 9, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt1 := append(append([]byte{}, issued.GetNewAlgo().GetSalt1()...), bytes.Repeat([]byte{1}, 32)...)
+	n, err := password.Update(ctx, 9, 1,
+		mtproto.MakeTLInputCheckPasswordEmpty(&mtproto.InputCheckPasswordSRP{}).To_InputCheckPasswordSRP(),
+		&mtproto.Account_PasswordInputSettings{
+			NewAlgo: mtproto.MakeTLPasswordKdfAlgoModPow(&mtproto.PasswordKdfAlgo{
+				Salt1: salt1,
+				Salt2: append([]byte{}, issued.GetNewAlgo().GetSalt2()...),
+				G:     issued.GetNewAlgo().GetG(),
+				P:     append([]byte{}, issued.GetNewAlgo().GetP()...),
+			}).To_PasswordKdfAlgo(),
+			NewPasswordHash: srp.Verifier([]byte("pw"), salt1, issued.GetNewAlgo().GetSalt2()),
+			Email:           &wrapperspb.StringValue{Value: "cloud@tellomi.app"},
+		})
+	if err != nil || n != 6 {
+		t.Fatalf("update n=%d err=%v", n, err)
+	}
+	if err = password.ConfirmEmail(ctx, 9, code); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, _, emails, _, _ := harness(t)
+	if err = svc.SaveLoginEmail(ctx, 9, "login@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.RequestPasswordRecovery(ctx, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetEmailPattern() != "c***@tellomi.app" || len(*emails) != 1 || (*emails)[0].to != "cloud@tellomi.app" {
+		t.Fatalf("%#v %#v", got, *emails)
 	}
 }

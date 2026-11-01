@@ -49,6 +49,24 @@ func TestRPCErrorForAuthStateUsesAuthKeyUnregisteredForTerminalStates(t *testing
 	}
 }
 
+func TestPasswordNeededUser(t *testing.T) {
+	id, ok := passwordNeededUser("SESSION_PASSWORD_NEEDED_42", 0)
+	if !ok || id != 42 {
+		t.Fatalf("suffix %d %v", id, ok)
+	}
+	id, ok = passwordNeededUser("SESSION_PASSWORD_NEEDED", 99)
+	if !ok || id != 99 {
+		t.Fatalf("exact %d %v", id, ok)
+	}
+	id, ok = passwordNeededUser("SESSION_PASSWORD_NEEDED_X", 1)
+	if !ok || id != 0 {
+		t.Fatalf("bad suffix %d %v", id, ok)
+	}
+	if _, ok = passwordNeededUser("AUTH_KEY_UNREGISTERED", 1); ok {
+		t.Fatal("unrelated error")
+	}
+}
+
 func TestShouldRefreshAuthState(t *testing.T) {
 	cases := []struct {
 		state int
