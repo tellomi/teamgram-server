@@ -47,7 +47,7 @@ func TestThemes(t *testing.T) {
 		t.Fatal(err)
 	}
 	empty, err := GetThemes(1, "android", 0)
-	if err != nil || empty.GetPredicateName() != mtproto.Predicate_account_themes || len(empty.GetThemes()) != 0 || empty.GetHash() == 0 {
+	if err != nil || empty.GetPredicateName() != mtproto.Predicate_account_themes || len(empty.GetThemes()) != len(appThemes("android")) || empty.GetHash() == 0 {
 		t.Fatalf("empty catalog: %v %#v", err, empty)
 	}
 	mustEncode(t, empty)
@@ -88,7 +88,7 @@ func TestThemes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh, err := GetThemes(1, "android", 0)
-	if err != nil || len(fresh.GetThemes()) != 0 {
+	if err != nil || len(fresh.GetThemes()) != len(appThemes("android")) {
 		t.Fatalf("unsaved catalog: %#v", fresh)
 	}
 	inTheme := mtproto.MakeTLInputTheme(&mtproto.InputTheme{Id: created.GetId(), AccessHash: created.GetAccessHash()}).To_InputTheme()
@@ -96,11 +96,11 @@ func TestThemes(t *testing.T) {
 		t.Fatal(err)
 	}
 	listed, err := GetThemes(1, "android", 0)
-	if err != nil || len(listed.GetThemes()) != 1 || listed.GetThemes()[0].GetTitle() != "Day" {
+	if err != nil || len(listed.GetThemes()) != len(appThemes("android"))+1 || !hasCreatedTheme(listed.GetThemes(), "Day") {
 		t.Fatalf("saved: %v %#v", err, listed)
 	}
 	mustEncode(t, listed)
-	if ios, err := GetThemes(1, "ios", 0); err != nil || len(ios.GetThemes()) != 0 {
+	if ios, err := GetThemes(1, "ios", 0); err != nil || len(ios.GetThemes()) != len(appThemes("ios")) || hasCreatedTheme(ios.GetThemes(), "Day") {
 		t.Fatalf("ios filter: %#v", ios)
 	}
 	got, err := GetTheme(1, "android", mtproto.MakeTLInputThemeSlug(&mtproto.InputTheme{Slug: created.GetSlug()}).To_InputTheme())
@@ -140,7 +140,7 @@ func TestThemes(t *testing.T) {
 		t.Fatal(err)
 	}
 	two, err := GetThemes(1, "android", 0)
-	if err != nil || len(two.GetThemes()) != 2 {
+	if err != nil || len(two.GetThemes()) != len(appThemes("android"))+2 {
 		t.Fatalf("two themes: %v %#v", err, two)
 	}
 	if got, err := GetThemes(1, "android", two.GetHash()); err != nil || got.GetPredicateName() != mtproto.Predicate_account_themesNotModified {
@@ -353,6 +353,15 @@ func TestEmojiCatalogs(t *testing.T) {
 	if CollectibleStatuses(statuses.GetHash()).GetPredicateName() != mtproto.Predicate_account_emojiStatusesNotModified {
 		t.Fatal("statuses not modified")
 	}
+}
+
+func hasCreatedTheme(themes []*mtproto.Theme, title string) bool {
+	for _, th := range themes {
+		if th.GetCreator() && th.GetTitle() == title {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHashZeroReturnsTheList(t *testing.T) {

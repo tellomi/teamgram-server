@@ -15,6 +15,17 @@ func TestChatThemeAndWallpaperCatalog(t *testing.T) {
 	ctx := context.Background()
 	p1rest.Reset()
 
+	appThemes, err := messages.NewThemes().AccountGetThemes(ctx, &mtproto.TLAccountGetThemes{Format: "android"})
+	if err != nil || len(appThemes.GetThemes()) < 2 || appThemes.GetThemes()[0].GetSlug() == "" {
+		t.Fatalf("app themes: %v %#v", err, appThemes)
+	}
+	if err := appThemes.Encode(mtproto.NewEncodeBuf(4096), 232); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := messages.NewThemes().AccountGetThemes(ctx, &mtproto.TLAccountGetThemes{Format: "desktop"}); err == nil {
+		t.Fatal("desktop format was accepted")
+	}
+
 	themes, err := messages.NewThemes().AccountGetChatThemes(ctx, &mtproto.TLAccountGetChatThemes{})
 	if err != nil {
 		t.Fatal(err)
