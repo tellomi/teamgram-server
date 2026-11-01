@@ -10,9 +10,11 @@
 package server
 
 import (
+	"context"
 	"flag"
 
 	"github.com/teamgram/teamgram-server/app/service/idgen/internal/config"
+	"github.com/teamgram/teamgram-server/app/service/idgen/internal/seqfloor"
 	"github.com/teamgram/teamgram-server/app/service/idgen/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/service/idgen/internal/svc"
 
@@ -25,6 +27,7 @@ var configFile = flag.String("f", "etc/idgen.yaml", "the config file")
 
 type Server struct {
 	grpcSrv *zrpc.RpcServer
+	floors  *seqfloor.Cache
 }
 
 func New() *Server {
@@ -37,6 +40,12 @@ func (s *Server) Initialize() error {
 
 	logx.Infov(c)
 	ctx := svc.NewServiceContext(c)
+	floors, err := seqfloor.Heal(context.Background(), c.Mysql.DSN, ctx.Dao.KV)
+	if err != nil {
+		return err
+	}
+	ctx.Dao.Floors = floors
+	s.floors = floors
 	s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
 
 	go func() {
@@ -50,4 +59,7 @@ func (s *Server) RunLoop() {
 
 func (s *Server) Destroy() {
 	s.grpcSrv.Stop()
+	if s.floors != nil {
+		_ = s.floors.Close()
+	}
 }
