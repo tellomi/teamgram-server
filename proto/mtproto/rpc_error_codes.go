@@ -1296,6 +1296,10 @@ var (
 	// | 400 | USER_ID_INVALID | The provided user ID is invalid. |
 	ErrUserIdInvalid = status.Error(ErrBadRequest, "USER_ID_INVALID")
 
+	// ErrBirthdayInvalid
+	// | 400 | BIRTHDAY_INVALID | An invalid age was specified, for example in users.suggestBirthday.
+	ErrBirthdayInvalid = status.Error(ErrBadRequest, "BIRTHDAY_INVALID")
+
 	// ErrAdminRankInvalid
 	// | 400 | ADMIN_RANK_INVALID | The specified admin rank is invalid. |
 	ErrAdminRankInvalid = status.Error(ErrBadRequest, "ADMIN_RANK_INVALID")

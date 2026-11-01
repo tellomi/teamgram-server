@@ -18,9 +18,15 @@
 
 package dao
 
+import (
+	"github.com/teamgram/teamgram-server/app/bff/autodownload/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/autodownload/presets"
+)
+
 type Dao struct {
 }
 
-func New() *Dao {
+func New(c config.Config) *Dao {
+	presets.Install(presets.New(c.KV))
 	return new(Dao)
 }

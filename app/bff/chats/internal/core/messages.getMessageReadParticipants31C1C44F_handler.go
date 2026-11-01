@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -82,9 +83,18 @@ func (c *ChatsCore) MessagesGetMessageReadParticipants31C1C44F(in *mtproto.TLMes
 			}
 		})
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("messages.getMessageReadParticipants blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		// https://core.telegram.org/method/messages.getMessageReadParticipants
+		readers, err := channel.Shared().ReadParticipants(c.ctx, c.MD.UserId, peer.PeerId, in.MsgId)
+		if err != nil {
+			c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)
+			return nil, err
+		}
+		for _, r := range readers {
+			readParticipantDates = append(readParticipantDates, mtproto.MakeTLReadParticipantDate(&mtproto.ReadParticipantDate{
+				UserId: r.UserID,
+				Date:   r.Date,
+			}).To_ReadParticipantDate())
+		}
 	default:
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getMessageReadParticipants - error: %v", err)

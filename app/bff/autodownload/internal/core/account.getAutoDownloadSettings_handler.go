@@ -20,49 +20,26 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/autodownload/presets"
 )
 
 // AccountGetAutoDownloadSettings
 // account.getAutoDownloadSettings#56da0b3f = account.AutoDownloadSettings;
+//
+// https://core.telegram.org/method/account.getAutoDownloadSettings
+//
+// Returns the low, medium, and high presets. A preset the user has saved
+// with account.saveAutoDownloadSettings is returned as saved. The others
+// stay at the fresh-account defaults.
 func (c *AutoDownloadCore) AccountGetAutoDownloadSettings(in *mtproto.TLAccountGetAutoDownloadSettings) (*mtproto.Account_AutoDownloadSettings, error) {
-	makeAutoDownloadSettings := func(disabled, videoPreloadLarge, audioPreloadNext, phonecallsLessData bool, photoSizeMax, videoSizeMax, fileSizeMax int32) *mtproto.AutoDownloadSettings {
-		return mtproto.MakeTLAutoDownloadSettings(&mtproto.AutoDownloadSettings{
-			Disabled:           disabled,
-			VideoPreloadLarge:  videoPreloadLarge,
-			AudioPreloadNext:   audioPreloadNext,
-			PhonecallsLessData: phonecallsLessData,
-			PhotoSizeMax:       photoSizeMax,
-			VideoSizeMax_INT32: videoSizeMax,
-			VideoSizeMax_INT64: int64(videoSizeMax),
-			FileSizeMax_INT32:  fileSizeMax,
-			FileSizeMax_INT64:  int64(fileSizeMax),
-		}).To_AutoDownloadSettings()
+	userID := int64(0)
+	if c.MD != nil {
+		userID = c.MD.UserId
 	}
-
-	return mtproto.MakeTLAccountAutoDownloadSettings(&mtproto.Account_AutoDownloadSettings{
-		Low: makeAutoDownloadSettings(
-			false,
-			true,
-			true,
-			true,
-			1048576,
-			512000,
-			512000),
-		Medium: makeAutoDownloadSettings(
-			false,
-			true,
-			true,
-			false,
-			1048576,
-			10485760,
-			1048576),
-		High: makeAutoDownloadSettings(
-			false,
-			true,
-			true,
-			false,
-			1048576,
-			15728640,
-			3145728),
-	}).To_Account_AutoDownloadSettings(), nil
+	got, err := presets.Shared().Get(c.ctx, userID)
+	if err != nil {
+		c.Logger.Errorf("account.getAutoDownloadSettings - error: %v", err)
+		return nil, err
+	}
+	return got, nil
 }

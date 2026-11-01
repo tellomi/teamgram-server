@@ -24,9 +24,33 @@ import (
 
 // AccountUpdateDeviceLocked
 // account.updateDeviceLocked#38df3532 period:int = Bool;
+//
+// https://core.telegram.org/method/account.updateDeviceLocked
+//
+// The client sends the passcode auto-lock period in seconds. period 0 means
+// the passcode is off. Any positive period means the passcode is on, and
+// incoming pushes for this auth key omit the message text. The period is
+// stored on the devices registered for this auth key.
 func (c *NotificationCore) AccountUpdateDeviceLocked(in *mtproto.TLAccountUpdateDeviceLocked) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.updateDeviceLocked blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	period := in.GetPeriod()
+	if period < 0 {
+		period = 0
+	}
+	if c.svcCtx == nil || c.svcCtx.Devices == nil {
+		// Nothing is registered, so there is no push that could include text.
+		c.Logger.Errorf("account.updateDeviceLocked: device store is not configured")
+		return mtproto.BoolTrue, nil
+	}
+	authKeyID := c.MD.PermAuthKeyId
+	if authKeyID == 0 {
+		authKeyID = c.MD.AuthId
+	}
+	if err := c.svcCtx.Devices.SetLockedPeriod(c.ctx, c.MD.UserId, authKeyID, period); err != nil {
+		c.Logger.Errorf("account.updateDeviceLocked - error: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }

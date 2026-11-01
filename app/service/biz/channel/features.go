@@ -73,6 +73,19 @@ type Features struct {
 	SavedRead              map[string]int32
 	SpamReports            []SpamReport
 	AntispamFalsePositives []FalsePositive
+
+	// Views is the per-post view counter. Seen is the user ids already
+	// counted, so messages.getMessagesViews increment is once per user.
+	Views map[int32]ViewRec
+	// InboxReadAt is the unix time a member last advanced their inbox cursor.
+	// messages.getMessageReadParticipants uses it as the read date.
+	InboxReadAt map[int64]int32
+}
+
+// ViewRec is one channel post's view counter.
+type ViewRec struct {
+	Count int32
+	Seen  []int64
 }
 
 // UsernameRec is one channel username.
