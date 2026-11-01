@@ -93,6 +93,8 @@ services:
       TELLOMI_APNS_KEY_ID: ${TELLOMI_APNS_KEY_ID:-}
       TELLOMI_APNS_TEAM_ID: ${TELLOMI_APNS_TEAM_ID:-}
       TELLOMI_APNS_TOPIC: ${TELLOMI_APNS_TOPIC:-}
+      # Empty → <TELLOMI_APNS_TOPIC>.voip. Same .p8. Chengdu: app.tellomi.chat.voip.
+      TELLOMI_APNS_VOIP_TOPIC: ${TELLOMI_APNS_VOIP_TOPIC:-}
       TELLOMI_APNS_KEY_PATH: ${TELLOMI_APNS_KEY_PATH:-/etc/tellomi/apns/AuthKey.p8}
       TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
       # Schema migration on startup (teamgramd/deploy/migrate.sh). Root matches

@@ -57,16 +57,18 @@ func (s *Service) SetFCM(sender FCMSender) {
 	s.fcm = sender
 }
 
-// Deliver sends a push for each new incoming message in updates.
-// Telegram delivers pushes even when another session is online; the iOS client
-// suppresses the banner while the app is in the foreground. Muted chats are skipped
-// unless the message mentions the recipient.
+// Deliver sends a push for each new incoming message in updates, and a PushKit
+// ring for phoneCallRequested. Telegram delivers pushes even when another
+// session is online; a locked iOS app is often still marked online, so the
+// VoIP push is sent as well as updatePhoneCall. Muted chats are skipped
+// unless the message mentions the recipient. Call rings are not muted here.
 func (s *Service) Deliver(ctx context.Context, userID int64, updates *mtproto.Updates) {
 	if s == nil || s.store == nil || userID == 0 {
 		return
 	}
 	messages := Messages(userID, updates)
-	if len(messages) == 0 {
+	call, skip := prepareCall(userID, updates)
+	if len(messages) == 0 && phoneRequested(updates) == nil {
 		return
 	}
 	devices, err := s.store.ListByUser(ctx, userID)
@@ -84,6 +86,13 @@ func (s *Service) Deliver(ctx context.Context, userID int64, updates *mtproto.Up
 			continue
 		}
 		s.send(ctx, devices, messages[i], decision)
+	}
+	if skip != "" {
+		logx.WithContext(ctx).Errorf("push: voip skipped user=%d: %s", userID, skip)
+		return
+	}
+	if call.CallID != 0 {
+		s.sendVoIP(ctx, devices, call)
 	}
 }
 
@@ -135,7 +144,7 @@ func (s *Service) send(ctx context.Context, devices []Device, m Incoming, d Deci
 		case TokenFCM:
 			s.sendFCM(ctx, dev, m, d)
 		case TokenAPNSVoIP:
-			// VoIP tokens are stored for calls. Message alerts use token type 1.
+			// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
 		default:
 		}
 	}
@@ -154,13 +163,43 @@ func (s *Service) sendAPNS(ctx context.Context, dev Device, m Incoming, d Decisi
 	if err == nil {
 		return
 	}
-	var ae *APNSError
-	if errors.As(err, &ae) && ae.DropDevice() {
-		if delErr := s.store.Delete(ctx, dev.UserID, dev.TokenType, dev.Token, nil); delErr != nil {
-			logx.WithContext(ctx).Errorf("push: drop token user=%d: %v", dev.UserID, delErr)
-		}
-	}
+	s.forgetIfUnregistered(ctx, dev, err)
 	logx.WithContext(ctx).Errorf("push: apns user=%d msg=%d token=%s: %v", m.UserID, m.MsgID, tokenTail(dev.Token), err)
+}
+
+// sendVoIP rings token_type 9 devices. A locked iOS session is often still
+// marked online, so this runs even when sync also delivered updatePhoneCall.
+// The client dedupes CallKit by call id.
+func (s *Service) sendVoIP(ctx context.Context, devices []Device, c Call) {
+	if s.apns == nil {
+		return
+	}
+	for _, dev := range devices {
+		if dev.TokenType != TokenAPNSVoIP {
+			continue
+		}
+		body, err := BuildCall(c, dev.Secret)
+		if err != nil {
+			logx.WithContext(ctx).Errorf("push: build voip user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
+			continue
+		}
+		err = s.apns.SendVoIP(ctx, dev.Token, dev.AppSandbox, body)
+		if err == nil {
+			continue
+		}
+		s.forgetIfUnregistered(ctx, dev, err)
+		logx.WithContext(ctx).Errorf("push: voip user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
+	}
+}
+
+func (s *Service) forgetIfUnregistered(ctx context.Context, dev Device, err error) {
+	var ae *APNSError
+	if !errors.As(err, &ae) || !ae.DropDevice() {
+		return
+	}
+	if delErr := s.store.Delete(ctx, dev.UserID, dev.TokenType, dev.Token, nil); delErr != nil {
+		logx.WithContext(ctx).Errorf("push: drop token user=%d: %v", dev.UserID, delErr)
+	}
 }
 
 func (s *Service) sendFCM(ctx context.Context, dev Device, m Incoming, d Decision) {

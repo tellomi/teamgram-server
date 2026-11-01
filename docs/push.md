@@ -19,7 +19,8 @@ Without the key, registration still stores the token and no request is sent to A
 | --- | --- | --- |
 | `TELLOMI_APNS_KEY_ID` | empty | Key ID of the `.p8` (Apple's 10-character id) |
 | `TELLOMI_APNS_TEAM_ID` | empty | Apple Team ID, the JWT `iss` |
-| `TELLOMI_APNS_TOPIC` | empty | Bundle id, sent as `apns-topic` |
+| `TELLOMI_APNS_TOPIC` | empty | Bundle id, sent as `apns-topic` for message alerts |
+| `TELLOMI_APNS_VOIP_TOPIC` | `<TELLOMI_APNS_TOPIC>.voip` | PushKit topic for `token_type` 9. Leave unset. The same `.p8` signs it. |
 | `TELLOMI_APNS_KEY_PATH` | `/etc/tellomi/apns/AuthKey.p8` | Path inside the container |
 | `TELLOMI_APNS_SANDBOX` | `false` | `true` forces every push to `api.sandbox.push.apple.com`. Leave `false` for TestFlight. A device that registered `app_sandbox=true` still uses the sandbox host when this is false. |
 
@@ -30,6 +31,7 @@ environment:
   TELLOMI_APNS_KEY_ID: ${TELLOMI_APNS_KEY_ID:-}
   TELLOMI_APNS_TEAM_ID: ${TELLOMI_APNS_TEAM_ID:-}
   TELLOMI_APNS_TOPIC: ${TELLOMI_APNS_TOPIC:-}
+  TELLOMI_APNS_VOIP_TOPIC: ${TELLOMI_APNS_VOIP_TOPIC:-}
   TELLOMI_APNS_KEY_PATH: ${TELLOMI_APNS_KEY_PATH:-/etc/tellomi/apns/AuthKey.p8}
   TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
 volumes:
@@ -55,7 +57,7 @@ Devices and notify settings live in the existing teamgram MySQL database (`devic
 
 `account.unregisterDevice` deletes that token for the current user and `other_uids`.
 
-Telegram-iOS sends the 256-byte master notification key as `secret` when APNs encryption is on, and always for VoIP (`token_type` 9). The key id the extension looks up is the last 8 bytes of SHA1 of that secret. VoIP tokens are stored for calls and are not used for message alerts.
+Telegram-iOS sends the 256-byte master notification key as `secret` when APNs encryption is on, and always for VoIP (`token_type` 9). The key id the extension looks up is the last 8 bytes of SHA1 of that secret. Message alerts skip VoIP tokens. An incoming call uses them.
 
 ## When a message is pushed
 
@@ -103,6 +105,16 @@ Groups use `chat_id` (not `from_id`). Channels use `channel_id`. The ids are str
 ```
 
 The extension copies those string ids into the notification and shows the alert, then polls for the message.
+
+## Incoming calls (PushKit)
+
+`sync.pushUpdates` of `updatePhoneCall` / `phoneCallRequested` also sends each `token_type` 9 row. A locked iOS app is often still an online MTProto session, so the VoIP push is sent as well as the online `updatePhoneCall`. The client dedupes CallKit by call id. `phoneCallWaiting` (the caller) is not a VoIP push. A request whose `updates` have no user for `admin_id` is not sent: PushKit would wake the app and the app would not be able to report the real call.
+
+The request uses the same `.p8`, key id, team id, and sandbox flag as message alerts. The topic is `TELLOMI_APNS_VOIP_TOPIC`, or `<TELLOMI_APNS_TOPIC>.voip` when that is empty. On Chengdu that is `app.tellomi.chat` → `app.tellomi.chat.voip`. There is no second key and no `.p12`.
+
+Headers: `apns-push-type: voip`, `apns-priority: 10`, `apns-expiration: 0`. Expiration stays 0 so APNs does not store the push.
+
+The JSON is the official `PHONE_CALL_REQUEST` shape. `call_id`, `call_ah`, and `from_id` are strings. `custom.updates` and top-level `updates` are the unpadded base64url of a layer-232 `updates#74ae4240` containing `updatePhoneCall` / `phoneCallRequested` and the caller in `users`. `p` is that same JSON sealed with the device secret, the same MTProto 2.0 seal as a message push. Telegram-iOS decrypts `p`, parses `updates`, and reports CallKit only when the caller user is present. A token with no secret is skipped, because a VoIP push the app cannot decrypt is not reported to CallKit.
 
 ## FCM
 

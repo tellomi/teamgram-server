@@ -59,9 +59,45 @@ func NewAPNS(cfg Config) (*APNS, error) {
 	}, nil
 }
 
-// Send posts payload to deviceToken. deviceSandbox selects the sandbox host
+type apnsHeaders struct {
+	topic      string
+	pushType   string
+	priority   string
+	expiration string
+}
+
+// Send posts an alert to the app topic. deviceSandbox selects the sandbox host
 // unless Config.Sandbox forces it for every device.
 func (a *APNS) Send(ctx context.Context, deviceToken string, deviceSandbox bool, payload []byte) error {
+	// A zero expiration tells APNs to drop the notification when the device is
+	// offline. Store an alert for a day so a suspended iOS client still gets it.
+	// VoIP pushes use expiration 0; see SendVoIP.
+	return a.post(ctx, deviceToken, deviceSandbox, payload, apnsHeaders{
+		topic:      a.cfg.Topic,
+		pushType:   "alert",
+		priority:   "10",
+		expiration: fmt.Sprintf("%d", time.Now().Add(24*time.Hour).Unix()),
+	})
+}
+
+// SendVoIP posts a PushKit notification. Apple delivers it only when the topic
+// is <bundle-id>.voip, the push type is voip, the priority is 10, and the
+// expiration is 0 (a stored VoIP push is not a ring, and iOS 13+ revokes the
+// entitlement if the app does not report CallKit immediately).
+func (a *APNS) SendVoIP(ctx context.Context, deviceToken string, deviceSandbox bool, payload []byte) error {
+	topic := a.cfg.ResolvedVoIPTopic()
+	if topic == "" {
+		return fmt.Errorf("apns voip topic is empty")
+	}
+	return a.post(ctx, deviceToken, deviceSandbox, payload, apnsHeaders{
+		topic:      topic,
+		pushType:   "voip",
+		priority:   "10",
+		expiration: "0",
+	})
+}
+
+func (a *APNS) post(ctx context.Context, deviceToken string, deviceSandbox bool, payload []byte, h apnsHeaders) error {
 	token := normalizeToken(deviceToken)
 	if token == "" {
 		return fmt.Errorf("empty device token")
@@ -76,12 +112,10 @@ func (a *APNS) Send(ctx context.Context, deviceToken string, deviceSandbox bool,
 		return err
 	}
 	req.Header.Set("authorization", "bearer "+jwt)
-	req.Header.Set("apns-topic", a.cfg.Topic)
-	req.Header.Set("apns-push-type", "alert")
-	req.Header.Set("apns-priority", "10")
-	// A zero expiration tells APNs to drop the notification when the device is
-	// offline. Store it for a day so a suspended iOS client still gets it.
-	req.Header.Set("apns-expiration", fmt.Sprintf("%d", time.Now().Add(24*time.Hour).Unix()))
+	req.Header.Set("apns-topic", h.topic)
+	req.Header.Set("apns-push-type", h.pushType)
+	req.Header.Set("apns-priority", h.priority)
+	req.Header.Set("apns-expiration", h.expiration)
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return err

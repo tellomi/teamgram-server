@@ -6,11 +6,12 @@ import (
 )
 
 const (
-	EnvKeyID   = "TELLOMI_APNS_KEY_ID"
-	EnvTeamID  = "TELLOMI_APNS_TEAM_ID"
-	EnvTopic   = "TELLOMI_APNS_TOPIC"
-	EnvKeyPath = "TELLOMI_APNS_KEY_PATH"
-	EnvSandbox = "TELLOMI_APNS_SANDBOX"
+	EnvKeyID     = "TELLOMI_APNS_KEY_ID"
+	EnvTeamID    = "TELLOMI_APNS_TEAM_ID"
+	EnvTopic     = "TELLOMI_APNS_TOPIC"
+	EnvVoIPTopic = "TELLOMI_APNS_VOIP_TOPIC"
+	EnvKeyPath   = "TELLOMI_APNS_KEY_PATH"
+	EnvSandbox   = "TELLOMI_APNS_SANDBOX"
 
 	productionHost = "https://api.push.apple.com"
 	sandboxHost    = "https://api.sandbox.push.apple.com"
@@ -21,21 +22,25 @@ const (
 // Xcode debug builds, or leave it false and let each device's app_sandbox flag
 // select the host.
 type Config struct {
-	KeyID   string
-	TeamID  string
-	Topic   string
-	KeyPath string
-	Sandbox bool
-	KeyPEM  []byte // optional in-memory key, used by tests
+	KeyID  string
+	TeamID string
+	Topic  string
+	// VoIPTopic overrides the PushKit topic. Empty means Topic + ".voip".
+	// The same .p8 signs both topics; this is not a second key.
+	VoIPTopic string
+	KeyPath   string
+	Sandbox   bool
+	KeyPEM    []byte // optional in-memory key, used by tests
 }
 
 func LoadConfig() Config {
 	return Config{
-		KeyID:   strings.TrimSpace(os.Getenv(EnvKeyID)),
-		TeamID:  strings.TrimSpace(os.Getenv(EnvTeamID)),
-		Topic:   strings.TrimSpace(os.Getenv(EnvTopic)),
-		KeyPath: strings.TrimSpace(os.Getenv(EnvKeyPath)),
-		Sandbox: envBool(os.Getenv(EnvSandbox)),
+		KeyID:     strings.TrimSpace(os.Getenv(EnvKeyID)),
+		TeamID:    strings.TrimSpace(os.Getenv(EnvTeamID)),
+		Topic:     strings.TrimSpace(os.Getenv(EnvTopic)),
+		VoIPTopic: strings.TrimSpace(os.Getenv(EnvVoIPTopic)),
+		KeyPath:   strings.TrimSpace(os.Getenv(EnvKeyPath)),
+		Sandbox:   envBool(os.Getenv(EnvSandbox)),
 	}
 }
 
@@ -45,6 +50,23 @@ func (c Config) Enabled() bool {
 		return false
 	}
 	return c.KeyPath != "" || len(c.KeyPEM) > 0
+}
+
+// ResolvedVoIPTopic is the apns-topic for token_type 9.
+// TELLOMI_APNS_TOPIC=app.tellomi.chat becomes app.tellomi.chat.voip.
+// Set TELLOMI_APNS_VOIP_TOPIC only to override that.
+func (c Config) ResolvedVoIPTopic() string {
+	if t := strings.TrimSpace(c.VoIPTopic); t != "" {
+		return t
+	}
+	topic := strings.TrimSpace(c.Topic)
+	if topic == "" {
+		return ""
+	}
+	if strings.HasSuffix(topic, ".voip") {
+		return topic
+	}
+	return topic + ".voip"
 }
 
 func (c Config) host(deviceSandbox bool) string {

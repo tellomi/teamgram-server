@@ -201,10 +201,11 @@ Signaling can succeed and the call can still have no audio.
 - **One bff process.** Call state is in memory. A second bff replica does
   not see the call. The Chengdu compose file runs one `teamgram` container,
   which is one bff. Restarting it drops live calls.
-- **Background iOS.** `updatePhoneCall` reaches a connected session. VoIP
-  device tokens (`token_type` 9) are stored and are not sent a PushKit
-  push, so a suspended iOS app does not get a CallKit ring. Both clients
-  in the foreground complete signaling. Wiring the VoIP push is a separate
-  change.
+- **Background iOS.** `updatePhoneCall` still reaches a connected session.
+  `phone.requestCall` also sends `PHONE_CALL_REQUEST` to `token_type` 9
+  (PushKit) on `<bundle-id>.voip`, so a locked callee rings. See
+  [push.md](push.md). The phone needs the PushKit entitlement and a
+  registered VoIP token. Foreground clients still complete signaling
+  without that push.
 - **Group calls.** `RPCGroupCalls` and `RPCConferenceCalls` are routed. The
   in-process SFU does not speak tgcalls colibri. That does not affect 1:1.

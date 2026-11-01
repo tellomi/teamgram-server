@@ -125,6 +125,27 @@ func TestAPNSRequestShape(t *testing.T) {
 	}
 }
 
+func TestAPNSVoIPRequestShape(t *testing.T) {
+	client, srv, got := newAPNSCapture(t, "app.tellomi.chat")
+	defer srv.Close()
+	payload := []byte(`{"loc-key":"PHONE_CALL_REQUEST"}`)
+	if err := client.SendVoIP(context.Background(), "<AABB>", false, payload); err != nil {
+		t.Fatal(err)
+	}
+	if got.path != "/3/device/aabb" {
+		t.Fatal(got.path)
+	}
+	if got.header.Get("apns-topic") != "app.tellomi.chat.voip" {
+		t.Fatal(got.header.Get("apns-topic"))
+	}
+	if got.header.Get("apns-push-type") != "voip" || got.header.Get("apns-priority") != "10" || got.header.Get("apns-expiration") != "0" {
+		t.Fatalf("%v", got.header)
+	}
+	if got.body != string(payload) {
+		t.Fatal(got.body)
+	}
+}
+
 func TestSandboxHost(t *testing.T) {
 	c := Config{}
 	if c.host(false) != productionHost || c.host(true) != sandboxHost {
@@ -142,14 +163,65 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv(EnvTopic, "app.tellomi.ios")
 	t.Setenv(EnvKeyPath, "/keys/AuthKey.p8")
 	t.Setenv(EnvSandbox, "false")
+	t.Setenv(EnvVoIPTopic, "")
 	cfg := LoadConfig()
 	if !cfg.Enabled() || cfg.Sandbox || cfg.Topic != "app.tellomi.ios" {
 		t.Fatalf("%+v", cfg)
+	}
+	if cfg.ResolvedVoIPTopic() != "app.tellomi.ios.voip" {
+		t.Fatal(cfg.ResolvedVoIPTopic())
+	}
+	t.Setenv(EnvVoIPTopic, "app.tellomi.chat.voip")
+	if LoadConfig().ResolvedVoIPTopic() != "app.tellomi.chat.voip" {
+		t.Fatal(LoadConfig().ResolvedVoIPTopic())
 	}
 	t.Setenv(EnvSandbox, "true")
 	if !LoadConfig().Sandbox {
 		t.Fatal("sandbox")
 	}
+}
+
+type apnsCapture struct {
+	path   string
+	header http.Header
+	body   string
+}
+
+func newAPNSCapture(t *testing.T, topic string) (*APNS, *httptest.Server, *apnsCapture) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	got := &apnsCapture{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.header = r.Header.Clone()
+		got.path = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		got.body = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	client, err := NewAPNS(Config{
+		KeyID:  "KEYID12345",
+		TeamID: "TEAMID1234",
+		Topic:  topic,
+		KeyPEM: pemBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = srv.Client()
+	base := srv.Client().Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	client.httpClient.Transport = rewriteHost{base: base, dst: srv.URL}
+	return client, srv, got
 }
 
 type rewriteHost struct {
