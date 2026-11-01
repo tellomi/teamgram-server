@@ -416,21 +416,26 @@ func classifyFunc(fn fnBody, byName map[string][]fnBody, seen map[string]bool, d
 		boolOnly   = true
 		hasValue   bool
 		longString bool
+		work       bool
 		followed   []fnBody
 	)
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			pkg, sel := callPkg(x.Fun)
+			if logFuncs[sel] {
+				// c.Logger.Errorf("… License key …") is not a payload.
+				return false
+			}
+			if sel != "" {
+				work = true
+			}
 			if pkg != "" {
 				if path, isImport := fn.Imports[pkg]; isImport && !allowPkg[pkg] && !stdlibImport(path) {
 					external = true
 				}
 				if strings.Contains(sel, "NotModified") {
 					notMod = true
-				}
-				if logFuncs[sel] {
-					return true
 				}
 			}
 			if selectorExternal(x.Fun) {
@@ -456,7 +461,7 @@ func classifyFunc(fn fnBody, byName map[string][]fnBody, seen map[string]bool, d
 		case *ast.BasicLit:
 			if x.Kind == token.STRING {
 				s := strings.Trim(x.Value, `"`)
-				if len(s) >= 16 && !strings.Contains(s, "error:") {
+				if len(s) >= 16 && !strings.Contains(s, "error:") && !strings.Contains(s, "License key") && !strings.Contains(s, "enterprise features") {
 					longString = true
 				}
 			}
@@ -510,7 +515,14 @@ func classifyFunc(fn fnBody, byName map[string][]fnBody, seen map[string]bool, d
 		}
 	}
 
+	// A returned value plus a non-log call is real work. A license-key log
+	// plus ErrEnterpriseIsBlocked is not: the log text is skipped above.
+	if hasNonBoolValue && work {
+		external = true
+	}
 	switch {
+	case enterprise && !hasNonBoolValue && !external:
+		return statusStub, effectError, "returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL"
 	case external || longString:
 		note := ""
 		if enterprise {

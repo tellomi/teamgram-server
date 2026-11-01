@@ -1,31 +1,74 @@
-// Copyright (c) 2026 The Teamgram Authors (https://teamgram.net).
-//  All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: teamgramio (teamgram.io@gmail.com)
-
 package core
 
 import (
+	"math/rand"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/chats/owner"
+	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 )
 
 // MessagesEditChatCreator
 // messages.editChatCreator#f743b857 peer:InputPeer user_id:InputUser password:InputCheckPasswordSRP = Updates;
+// https://core.telegram.org/method/messages.editChatCreator
 func (c *ChatsCore) MessagesEditChatCreator(in *mtproto.TLMessagesEditChatCreator) (*mtproto.Updates, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.editChatCreator blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	if in == nil || in.GetPeer() == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	peer := mtproto.FromInputPeer2(c.MD.UserId, in.GetPeer())
+	if in.GetUserId() == nil {
+		return nil, mtproto.ErrUserIdInvalid
+	}
+	user := mtproto.FromInputUser(c.MD.UserId, in.GetUserId())
+	if peer.IsChannel() {
+		return owner.EditChannel(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, user.PeerId, in.GetPassword())
+	}
+	if !peer.IsChat() {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if user.PeerType != mtproto.PEER_USER || user.PeerId == 0 || user.PeerId == c.MD.UserId {
+		return nil, mtproto.ErrUserIdInvalid
+	}
+	if owner.PasswordMissing(in.GetPassword()) {
+		return nil, mtproto.ErrPasswordMissing
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.ChatClient == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	chat, err := chat_client.EditChatCreator(c.ctx, c.svcCtx.Dao.ChatClient.Client(), &chatpb.TLChatEditChatAdmin{
+		ChatId:          peer.PeerId,
+		OperatorId:      c.MD.UserId,
+		EditChatAdminId: user.PeerId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	action := mtproto.MakeTLMessageActionChangeCreator(&mtproto.MessageAction{NewCreatorId: user.PeerId}).To_MessageAction()
+	if c.svcCtx.Dao.MsgClient != nil {
+		ups, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(c.ctx, &msgpb.TLMsgSendMessageV2{
+			UserId:    c.MD.UserId,
+			AuthKeyId: c.MD.PermAuthKeyId,
+			PeerType:  mtproto.PEER_CHAT,
+			PeerId:    peer.PeerId,
+			Message: []*msgpb.OutboxMessage{
+				msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
+					NoWebpage: true,
+					RandomId:  rand.Int63(),
+					Message:   chat.MakeMessageService(c.MD.UserId, action),
+				}).To_OutboxMessage(),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return ups, nil
+	}
+	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateChatParticipants(&mtproto.Update{
+		Participants_CHATPARTICIPANTS: chat.ToChatParticipants(c.MD.UserId),
+	}).To_Update()), nil
 }

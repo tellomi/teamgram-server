@@ -57,6 +57,7 @@ type Features struct {
 	ProfileColorEmoji int64
 	Emoji             StoredEmojiStatus
 
+	SponsoredRestricted      bool
 	Antispam                 bool
 	Autotranslation          bool
 	BoostsUnrestrict         int32
@@ -161,6 +162,7 @@ type JoinReq struct {
 	UserID int64
 	Date   int32
 	About  string
+	Link   string
 }
 
 func (f *Features) clone() *Features {

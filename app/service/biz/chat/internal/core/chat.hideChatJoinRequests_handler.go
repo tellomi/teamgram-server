@@ -22,15 +22,16 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
+
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // ChatHideChatJoinRequests
 // chat.hideChatJoinRequests flags:# self_id:long chat_id:long approved:flags.0?true link:flags.1?string user_id:flags.2?long = RecentChatInviteRequesters;
 func (c *ChatCore) ChatHideChatJoinRequests(in *chat.TLChatHideChatJoinRequests) (*chat.RecentChatInviteRequesters, error) {
 	if in.GetUserId() == nil {
-		// TODO: not impl
-		c.Logger.Errorf("chat.hideChatJoinRequests - error: method ChatHideChatJoinRequests not impl")
-		return nil, mtproto.ErrMethodNotImpl
+		return c.hideAllJoinRequests(in)
 	}
 
 	var (
@@ -68,4 +69,40 @@ func (c *ChatCore) ChatHideChatJoinRequests(in *chat.TLChatHideChatJoinRequests)
 		})
 
 	return requesters, nil
+}
+
+// hideAllJoinRequests is messages.hideAllChatJoinRequests. link, when set,
+// only dismisses requests that used that invite.
+func (c *ChatCore) hideAllJoinRequests(in *chat.TLChatHideChatJoinRequests) (*chat.RecentChatInviteRequesters, error) {
+	rows, err := c.svcCtx.Dao.ChatInviteParticipantsDAO.SelectRecentRequestedList(c.ctx, in.ChatId)
+	if err != nil {
+		c.Logger.Errorf("chat.hideChatJoinRequests - error: %v", err)
+		return nil, err
+	}
+	link := ""
+	if in.GetLink() != nil {
+		link = in.GetLink().GetValue()
+	}
+	var last *chat.RecentChatInviteRequesters
+	for _, row := range rows {
+		if link != "" && row.Link != link {
+			continue
+		}
+		one, ok := proto.Clone(in).(*chat.TLChatHideChatJoinRequests)
+		if !ok || one == nil {
+			return nil, mtproto.ErrInternalServerError
+		}
+		one.UserId = wrapperspb.Int64(row.UserId)
+		last, err = c.ChatHideChatJoinRequests(one)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if last == nil {
+		return chat.MakeTLRecentChatInviteRequesters(&chat.RecentChatInviteRequesters{
+			RequestsPending:  0,
+			RecentRequesters: []int64{},
+		}).To_RecentChatInviteRequesters(), nil
+	}
+	return last, nil
 }
