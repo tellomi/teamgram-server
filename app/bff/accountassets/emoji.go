@@ -2,11 +2,9 @@ package accountassets
 
 import "github.com/teamgram/proto/mtproto"
 
-// EmojiList implements the empty emoji catalogs:
-// account.getDefaultProfilePhotoEmojis, account.getDefaultGroupPhotoEmojis,
-// and account.getChannelRestrictedStatusEmojis.
-// No sticker documents are suggested or restricted, so the list is empty.
-// https://core.telegram.org/method/account.getDefaultProfilePhotoEmojis
+// EmojiList implements account.getChannelRestrictedStatusEmojis.
+// No status emoji is banned, so the list is empty.
+// Profile and group photo suggestions come from the sticker catalog.
 // https://core.telegram.org/method/account.getChannelRestrictedStatusEmojis
 func EmojiList(hash int64) *mtproto.EmojiList {
 	if notModified(hash, EmptyHash) {
