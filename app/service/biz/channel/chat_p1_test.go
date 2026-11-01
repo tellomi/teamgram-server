@@ -45,10 +45,10 @@ func TestUnreadReactionsTTLAndPolicy(t *testing.T) {
 	if _, err := svc.DeleteParticipantReaction(ctx, 1, ch.Id, msgID, 2); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SetHistoryTTL(ctx, 1, ch.Id, 86400); err != nil {
+	if _, err := svc.SetHistoryTTL(ctx, 1, 0, ch.Id, 86400); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SetHistoryTTL(ctx, 1, ch.Id, -1); err != mtproto.ErrTtlPeriodInvalid {
+	if _, err := svc.SetHistoryTTL(ctx, 1, 0, ch.Id, -1); err != mtproto.ErrTtlPeriodInvalid {
 		t.Fatal("negative ttl accepted")
 	}
 	full, err := svc.GetFullChannel(ctx, 1, in)
@@ -58,7 +58,7 @@ func TestUnreadReactionsTTLAndPolicy(t *testing.T) {
 	if full.FullChat.GetAvailableReactions_FLAGCHATREACTIONS().GetPredicateName() != mtproto.Predicate_chatReactionsNone {
 		t.Fatalf("reactions %#v", full.FullChat.GetAvailableReactions_FLAGCHATREACTIONS())
 	}
-	if _, err := svc.SetHistoryTTL(ctx, 2, ch.Id, 0); err != mtproto.ErrChatAdminRequired {
+	if _, err := svc.SetHistoryTTL(ctx, 2, 0, ch.Id, 0); err != mtproto.ErrChatAdminRequired {
 		t.Fatalf("member ttl: %v", err)
 	}
 }
