@@ -203,6 +203,9 @@ func (s *store) getTheme(self int64, format string, in *mtproto.InputTheme) (*mt
 	if in != nil && in.GetPredicateName() == mtproto.Predicate_inputThemeSlug && !slugOK(in.GetSlug()) {
 		return nil, mtproto.ErrThemeSlugInvalid
 	}
+	if theme, ok, err := appThemeInput(format, in); ok {
+		return theme, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	th, err := s.themeByInput(in)
@@ -232,12 +235,8 @@ func (s *store) getThemes(self int64, format string, hash int64) (*mtproto.Accou
 
 // GetChatThemes implements account.getChatThemes.
 // https://core.telegram.org/method/account.getChatThemes
-// Chat themes are the server emoticon catalog. This process has none.
 func GetChatThemes(hash int64) *mtproto.Account_Themes {
-	if notModified(hash, EmptyHash) {
-		return themesNotModified()
-	}
-	return themesReply(EmptyHash, nil)
+	return chatThemes(hash)
 }
 
 // SaveTheme implements account.saveTheme.
@@ -335,8 +334,12 @@ func UniqueGiftChatThemes(offset string, limit int32, hash int64) *mtproto.Accou
 }
 
 func (s *store) themeList(self int64, format string, hash int64) *mtproto.Account_Themes {
+	builtins := appThemes(format)
+	pairs := make([]idVer, 0, len(builtins))
+	for _, th := range builtins {
+		pairs = append(pairs, idVer{id: th.GetId(), ver: 1})
+	}
 	u := s.users[self]
-	var pairs []idVer
 	var rows []*themeRec
 	if u != nil {
 		for id := range u.savedThemes {
@@ -353,7 +356,8 @@ func (s *store) themeList(self int64, format string, hash int64) *mtproto.Accoun
 		return themesNotModified()
 	}
 	sortThemes(rows)
-	out := make([]*mtproto.Theme, 0, len(rows))
+	out := make([]*mtproto.Theme, 0, len(builtins)+len(rows))
+	out = append(out, builtins...)
 	for _, th := range rows {
 		out = append(out, th.view(self))
 	}
