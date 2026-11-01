@@ -24,9 +24,16 @@ import (
 
 // AccountDeleteSecureValue
 // account.deleteSecureValue#b880bc4b types:Vector<SecureValueType> = Bool;
+// https://core.telegram.org/method/account.deleteSecureValue
 func (c *PassportCore) AccountDeleteSecureValue(in *mtproto.TLAccountDeleteSecureValue) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.deleteSecureValue blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.deleteSecureValue - error: %v", err)
+		return nil, err
+	}
+	if err = c.book().Delete(c.ctx, user, in.GetTypes()); err != nil {
+		c.Logger.Errorf("account.deleteSecureValue - error: %v", err)
+		return nil, err
+	}
+	return mtproto.BoolTrue, nil
 }

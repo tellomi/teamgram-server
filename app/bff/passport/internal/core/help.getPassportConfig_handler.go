@@ -20,13 +20,27 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/passport/book"
 )
 
 // HelpGetPassportConfig
 // help.getPassportConfig#c661ad08 hash:int = help.PassportConfig;
+// https://core.telegram.org/method/help.getPassportConfig
+//
+// Returns the country-to-language map, or passportConfigNotModified when
+// the client already has the same hash.
 func (c *PassportCore) HelpGetPassportConfig(in *mtproto.TLHelpGetPassportConfig) (*mtproto.Help_PassportConfig, error) {
-	// TODO: not impl
-	c.Logger.Errorf("help.getPassportConfig blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if _, err := c.requireUser(); err != nil {
+		c.Logger.Errorf("help.getPassportConfig - error: %v", err)
+		return nil, err
+	}
+	if in.GetHash() != 0 && in.GetHash() == book.ConfigHash() {
+		return mtproto.MakeTLHelpPassportConfigNotModified(&mtproto.Help_PassportConfig{}).To_Help_PassportConfig(), nil
+	}
+	return mtproto.MakeTLHelpPassportConfig(&mtproto.Help_PassportConfig{
+		Hash: book.ConfigHash(),
+		CountriesLangs: mtproto.MakeTLDataJSON(&mtproto.DataJSON{
+			Data: book.CountriesLangs(),
+		}).To_DataJSON(),
+	}).To_Help_PassportConfig(), nil
 }

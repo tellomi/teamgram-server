@@ -1140,6 +1140,18 @@ var (
 	// | 400 | PASSWORD_REQUIRED | A [2FA password](https://core.telegram.org/api/srp) must be configured to use Telegram Passport. |
 	ErrPasswordRequired = status.Error(ErrBadRequest, "PASSWORD_REQUIRED")
 
+	// ErrSecureSecretRequired
+	// | 400 | SECURE_SECRET_REQUIRED | A secure secret is required. |
+	ErrSecureSecretRequired = status.Error(ErrBadRequest, "SECURE_SECRET_REQUIRED")
+
+	// ErrDataHashSizeInvalid
+	// | 400 | DATA_HASH_SIZE_INVALID | The size of the specified secureValueErrorData.data_hash is invalid. |
+	ErrDataHashSizeInvalid = status.Error(ErrBadRequest, "DATA_HASH_SIZE_INVALID")
+
+	// ErrHashSizeInvalid
+	// | 400 | HASH_SIZE_INVALID | The size of the specified secureValueError.hash is invalid. |
+	ErrHashSizeInvalid = status.Error(ErrBadRequest, "HASH_SIZE_INVALID")
+
 	// ErrSessionTooFresh_%d
 	// | 400 | SESSION_TOO_FRESH_%d | This session was created less than 24 hours ago, try again in %d seconds. |
 	// ErrSessionTooFresh_%d = status.Error(ErrBadRequest, "SESSION_TOO_FRESH_%d")

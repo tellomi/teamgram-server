@@ -24,9 +24,20 @@ import (
 
 // AccountAcceptAuthorization
 // account.acceptAuthorization#f3ed4c73 bot_id:long scope:string public_key:string value_hashes:Vector<SecureValueHash> credentials:SecureCredentialsEncrypted = Bool;
+// https://core.telegram.org/method/account.acceptAuthorization
 func (c *PassportCore) AccountAcceptAuthorization(in *mtproto.TLAccountAcceptAuthorization) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.acceptAuthorization blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.acceptAuthorization - error: %v", err)
+		return nil, err
+	}
+	if _, _, err = c.loadBot(in.GetBotId()); err != nil {
+		c.Logger.Errorf("account.acceptAuthorization - error: %v", err)
+		return nil, err
+	}
+	if err = c.book().Accept(c.ctx, user, in.GetBotId(), in.GetScope(), in.GetPublicKey(), in.GetValueHashes(), in.GetCredentials()); err != nil {
+		c.Logger.Errorf("account.acceptAuthorization - error: %v", err)
+		return nil, err
+	}
+	return mtproto.BoolTrue, nil
 }

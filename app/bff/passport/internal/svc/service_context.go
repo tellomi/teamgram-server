@@ -19,6 +19,7 @@
 package svc
 
 import (
+	"github.com/teamgram/teamgram-server/app/bff/passport/book"
 	"github.com/teamgram/teamgram-server/app/bff/passport/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/passport/internal/dao"
 )
@@ -26,11 +27,15 @@ import (
 type ServiceContext struct {
 	Config config.Config
 	*dao.Dao
+	Book *book.Book
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	b := book.New(c.KV)
+	book.Install(b)
 	return &ServiceContext{
 		Config: c,
 		Dao:    dao.New(c),
+		Book:   b,
 	}
 }
