@@ -294,7 +294,8 @@ func (s *Service) UnreadReactions(ctx context.Context, self, channelID int64, to
 		if err != nil {
 			continue
 		}
-		body.Reactions = reactionSummary(f.Reactions, id, self)
+		canSee, readAt := reactionView(ch, f, self)
+		body.Reactions = reactionSummary(f.Reactions, id, self, canSee, readAt)
 		msgs = append(msgs, body)
 	}
 	msgs = pageDesc(msgs, offsetID, addOffset, limit)
@@ -363,10 +364,11 @@ func (s *Service) DeleteParticipantReaction(ctx context.Context, self, channelID
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}
+	canSee, readAt := reactionView(ch, f, self)
 	up := mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
 		Peer_PEER:                  mtproto.MakePeerChannel(ch.ID),
 		MsgId_INT32:                msgID,
-		Reactions_MESSAGEREACTIONS: reactionSummary(f.Reactions, msgID, self),
+		Reactions_MESSAGEREACTIONS: reactionSummary(f.Reactions, msgID, self, canSee, readAt),
 	}).To_Update()
 	return s.updatesWith(ctx, self, ch, up), nil
 }

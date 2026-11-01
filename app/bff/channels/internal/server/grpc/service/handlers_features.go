@@ -330,9 +330,11 @@ func channelUpdate(id int64) *mtproto.Update {
 	return mtproto.MakeTLUpdateChannel(&mtproto.Update{ChannelId: id}).To_Update()
 }
 
-// ReactionsService stores emoji reactions on channel messages.
+// ReactionsService stores emoji reactions on messages.
 type ReactionsService struct {
 	mtproto.UnimplementedRPCReactionsServer
+	Users    reactionUserAPI
+	Messages reactionMessageAPI
 }
 
 func (ReactionsService) MessagesGetAvailableReactions(ctx context.Context, in *mtproto.TLMessagesGetAvailableReactions) (*mtproto.Messages_AvailableReactions, error) {
@@ -390,23 +392,12 @@ func (ReactionsService) MessagesClearRecentReactions(ctx context.Context, in *mt
 	return mtproto.BoolTrue, nil
 }
 
-func (ReactionsService) MessagesGetMessagesReactions(ctx context.Context, in *mtproto.TLMessagesGetMessagesReactions) (*mtproto.Updates, error) {
-	self, _ := actor(ctx)
-	return channel.Shared().ReactionsFor(ctx, self, channelID(in.GetPeer(), self), in.GetId())
+func (s ReactionsService) MessagesGetMessagesReactions(ctx context.Context, in *mtproto.TLMessagesGetMessagesReactions) (*mtproto.Updates, error) {
+	return s.messagesReactions(ctx, in)
 }
 
-func (ReactionsService) MessagesGetMessageReactionsList(ctx context.Context, in *mtproto.TLMessagesGetMessageReactionsList) (*mtproto.Messages_MessageReactionsList, error) {
-	self, _ := actor(ctx)
-	up, err := channel.Shared().ReactionsFor(ctx, self, channelID(in.GetPeer(), self), []int32{in.GetId()})
-	if err != nil {
-		return nil, err
-	}
-	return mtproto.MakeTLMessagesMessageReactionsList(&mtproto.Messages_MessageReactionsList{
-		Count:     int32(len(up.Updates)),
-		Reactions: []*mtproto.MessagePeerReaction{},
-		Chats:     up.Chats,
-		Users:     []*mtproto.User{},
-	}).To_Messages_MessageReactionsList(), nil
+func (s ReactionsService) MessagesGetMessageReactionsList(ctx context.Context, in *mtproto.TLMessagesGetMessageReactionsList) (*mtproto.Messages_MessageReactionsList, error) {
+	return s.messageReactionsList(ctx, in)
 }
 
 // ThreadsService serves discussion replies for channel posts and

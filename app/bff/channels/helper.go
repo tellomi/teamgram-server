@@ -20,8 +20,13 @@ func New(c Config) *service.Service {
 	return service.New(svc.NewServiceContext(c))
 }
 
-func NewForums() *service.ForumsService       { return &service.ForumsService{} }
-func NewReactions() *service.ReactionsService { return &service.ReactionsService{} }
+func NewForums() *service.ForumsService { return &service.ForumsService{} }
+func NewReactions(userConf, messageConf zrpc.RpcClientConf) *service.ReactionsService {
+	return &service.ReactionsService{
+		Users:    user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
+		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(messageConf)),
+	}
+}
 func NewFragment(userConf zrpc.RpcClientConf) *service.FragmentService {
 	return &service.FragmentService{
 		Users: user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
