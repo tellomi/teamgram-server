@@ -65,33 +65,35 @@ func MakeSignInServiceNotification(user *User, authId int64, client, region, cli
 		Entities:       nil,
 	}).To_Update()
 
+	// Simplified Chinese default, same shape as Telegram's service notice:
+	// bold title, the IP as a link, and the two settings paths in bold.
 	notification.Message_STRING, notification.Entities = MakeTextAndMessageEntities([]MessageBuildEntry{
 		{
 			Text:       "",
-			Param:      "New login.",
+			Param:      "新登录。",
 			EntityType: Predicate_messageEntityBold,
 		},
 		{
-			Text: fmt.Sprintf("Dear %s, we detected a login into your account from a new device on %s.\n\nDevice: %s\nLocation: %s (IP = ",
+			Text: fmt.Sprintf("亲爱的 %s，我们检测到你的账号于 %s 在一台新设备上登录。\n\n设备：%s\n位置：%s（IP = ",
 				GetUserName(user),
-				now.UTC(),
+				now.UTC().Format("2006-01-02 15:04:05 UTC"),
 				client,
 				region),
 			Param:      clientIp,
 			EntityType: Predicate_messageEntityTextUrl,
 		},
 		{
-			Text:       ")\n\nIf this wasn't you, you can terminate that session in ",
-			Param:      "Settings > Devices",
+			Text:       "）\n\n如果这不是你本人，你可以在",
+			Param:      "设置 > 设备",
 			EntityType: Predicate_messageEntityBold,
 		},
 		{
-			Text:       " (or ",
-			Param:      "Privacy & Security > Active Sessions",
+			Text:       "（或",
+			Param:      "隐私与安全 > 活动会话",
 			EntityType: Predicate_messageEntityBold,
 		},
 		{
-			Text: ").",
+			Text: "）中终止该会话。",
 		},
 	})
 

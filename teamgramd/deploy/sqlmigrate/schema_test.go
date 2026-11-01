@@ -105,6 +105,21 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestServiceUserRenameMigration(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261101-service-user.sql"))
+	for _, s := range []string{"777000", "Tellomi", "Telegram", "Teamgram", "tellomi"} {
+		if !strings.Contains(raw, s) {
+			t.Fatalf("service-user migration missing %s", s)
+		}
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToUpper(s), "UPDATE ") {
+			t.Fatalf("raw UPDATE is not idempotent under the migration check: %s", s)
+		}
+	}
+}
+
 func TestMigrateScriptParsesDSN(t *testing.T) {
 	script := filepath.Join("..", "migrate.sh")
 	if _, err := os.Stat(script); err != nil {

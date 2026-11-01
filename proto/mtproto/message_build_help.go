@@ -63,8 +63,10 @@ func MakeTextAndMessageEntities(m MessageBuildHelper) (text string, entities []*
 	)
 	for i := 0; i < len(m); i++ {
 		text += m[i].Text
-		offset = len(text)
-		length = len(m[i].Param)
+		// Entity offset and length are UTF-16 code units. Byte length
+		// mis-applies bold and links once the notice is not ASCII.
+		offset = UTF16Len(text)
+		length = UTF16Len(m[i].Param)
 		if length > 0 {
 			switch m[i].EntityType {
 			case Predicate_messageEntityUnknown:
