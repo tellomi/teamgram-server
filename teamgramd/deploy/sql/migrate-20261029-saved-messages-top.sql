@@ -9,7 +9,7 @@
 
 -- Each change is one prepared statement so a second run is a no-op
 -- and the migration checker does not see a raw UPDATE or DELETE.
-SET @teamgram_stmt = 'UPDATE dialogs d INNER JOIN ( SELECT m.user_id, m.user_message_box_id AS top_message, m.date2 FROM messages m INNER JOIN ( SELECT user_id, MAX(user_message_box_id) AS top_message FROM messages WHERE deleted = 0 AND peer_id = user_id AND peer_type IN (1, 2) GROUP BY user_id ) newest ON newest.user_id = m.user_id AND newest.top_message = m.user_message_box_id WHERE m.deleted = 0 AND m.peer_id = m.user_id AND m.peer_type IN (1, 2) ) src ON src.user_id = d.user_id SET d.top_message = src.top_message, d.date2 = src.date2 WHERE d.user_id = d.peer_id AND d.peer_type IN (1, 2) AND (d.top_message <> src.top_message OR d.date2 <> src.date2);'
+SET @teamgram_stmt = 'UPDATE dialogs d INNER JOIN ( SELECT m.user_id, m.user_message_box_id AS top_message, m.date2 FROM messages m INNER JOIN ( SELECT user_id, MAX(user_message_box_id) AS top_message FROM messages WHERE deleted = 0 AND peer_id = user_id AND peer_type IN (1, 2) GROUP BY user_id ) newest ON newest.user_id = m.user_id AND newest.top_message = m.user_message_box_id WHERE m.deleted = 0 AND m.peer_id = m.user_id AND m.peer_type IN (1, 2) ) src ON src.user_id = d.user_id SET d.top_message = src.top_message, d.date2 = src.date2 WHERE d.user_id = d.peer_id AND d.peer_type IN (1, 2) AND (d.top_message <> src.top_message OR d.date2 <> src.date2)';
 PREPARE teamgram_ps FROM @teamgram_stmt;
 EXECUTE teamgram_ps;
 DEALLOCATE PREPARE teamgram_ps;

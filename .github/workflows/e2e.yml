@@ -39,8 +39,14 @@ jobs:
             -f e2e/docker-compose.ci.yaml \
             up -d --build
           echo "waiting for MTProto on 10443"
+          # Probe inside the container. A host /dev/tcp check succeeds as soon
+          # as Docker publishes the port, before gnetway is listening.
           for i in $(seq 1 120); do
-            if (echo >/dev/tcp/127.0.0.1/10443) >/dev/null 2>&1; then
+            if docker compose \
+              -f docker-compose-env.yaml \
+              -f docker-compose.yaml \
+              -f e2e/docker-compose.ci.yaml \
+              exec -T teamgram bash -c 'echo >/dev/tcp/127.0.0.1/10443' >/dev/null 2>&1; then
               echo "gnetway is accepting connections"
               exit 0
             fi
