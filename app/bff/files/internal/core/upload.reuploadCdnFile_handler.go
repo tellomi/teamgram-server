@@ -20,15 +20,33 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 )
 
 // UploadReuploadCdnFile
 // upload.reuploadCdnFile#9b2754a8 file_token:bytes request_token:bytes = Vector<FileHash>;
+// https://core.telegram.org/method/upload.reuploadCdnFile
+//
+// Master DC method. The request_token is the one upload.getCdnFile returned
+// in cdnFileReuploadNeeded. A match makes the ciphertext readable and returns
+// its file hashes. A mismatch is REQUEST_TOKEN_INVALID.
 func (c *FilesCore) UploadReuploadCdnFile(in *mtproto.TLUploadReuploadCdnFile) (*mtproto.Vector_FileHash, error) {
-	// TODO: not impl
-	c.Logger.Errorf("upload.reuploadCdnFile blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	if len(helpdesk.PublicKeys()) == 0 {
+		c.Logger.Errorf("upload.reuploadCdnFile - error: CDN is not published")
+		return nil, mtproto.ErrFileTokenInvalid
+	}
+	hashes, err := cdn.Shared().Reupload(in.GetFileToken(), in.GetRequestToken())
+	if err != nil {
+		c.Logger.Errorf("upload.reuploadCdnFile - error: %v", err)
+		return nil, err
+	}
+	return &mtproto.Vector_FileHash{Datas: hashes}, nil
+}
 
-	return &mtproto.Vector_FileHash{
-		Datas: []*mtproto.FileHash{},
-	}, nil
+func cdnOffset(wide int64, narrow int32) int64 {
+	if wide != 0 {
+		return wide
+	}
+	return int64(narrow)
 }

@@ -20,15 +20,38 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 )
 
 // UploadGetCdnFile
-// upload.getCdnFile#2000bcc3 file_token:bytes offset:int limit:int = upload.CdnFile;
+// upload.getCdnFile#395f69da file_token:bytes offset:long limit:int = upload.CdnFile;
+// https://core.telegram.org/method/upload.getCdnFile
+// https://core.telegram.org/cdn
+//
+// CDN DCs answer this. This process is the master DC. With no
+// TELLOMI_CDN_PUBLIC_KEYS it is not a CDN, so every token is
+// FILE_TOKEN_INVALID and the client continues with upload.getFile.
+// A published CDN returns cdnFileReuploadNeeded until reuploadCdnFile,
+// then the AES-256-CTR ciphertext for that range.
 func (c *FilesCore) UploadGetCdnFile(in *mtproto.TLUploadGetCdnFile) (*mtproto.Upload_CdnFile, error) {
-	// TODO: not impl
-	c.Logger.Errorf("upload.getCdnFile blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return mtproto.MakeTLUploadCdnFile(&mtproto.Upload_CdnFile{
-		Bytes: []byte{},
-	}).To_Upload_CdnFile(), nil
+	if c.MD != nil && c.MD.IsBot {
+		c.Logger.Errorf("upload.getCdnFile - error: bot")
+		return nil, mtproto.ErrBotMethodInvalid
+	}
+	offset := cdnOffset(in.GetOffset_INT64(), in.GetOffset_INT32())
+	if len(helpdesk.PublicKeys()) == 0 {
+		if err := cdn.CheckRange(offset, in.GetLimit()); err != nil {
+			c.Logger.Errorf("upload.getCdnFile - error: %v", err)
+			return nil, err
+		}
+		c.Logger.Errorf("upload.getCdnFile - error: CDN is not published")
+		return nil, mtproto.ErrFileTokenInvalid
+	}
+	out, err := cdn.Shared().Get(in.GetFileToken(), offset, in.GetLimit())
+	if err != nil {
+		c.Logger.Errorf("upload.getCdnFile - error: %v", err)
+		return nil, err
+	}
+	return out, nil
 }
