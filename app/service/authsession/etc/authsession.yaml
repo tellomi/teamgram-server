@@ -17,3 +17,7 @@ Cache:
   - Host: 127.0.0.1:6379
 KV:
   - Host: 127.0.0.1:6379
+# Session region: ip2region for mainland China, city mmdb
+# (MMDB / GEOIP_MMDB / TELLOMI_GEOIP_MMDB / -mmdb, default
+# ./GeoLite2-City.mmdb) for every other address. Either file may be
+# missing. See docs/ip2region.md.

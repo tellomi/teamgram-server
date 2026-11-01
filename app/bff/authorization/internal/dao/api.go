@@ -7,9 +7,9 @@
 package dao
 
 import (
-	"net"
+	"strings"
 
-	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/teamgram/teamgram-server/pkg/geoip"
 )
 
 func (d *Dao) CheckApiIdAndHash(apiId int32, apiHash string) error {
@@ -23,16 +23,24 @@ func (d *Dao) CheckApiIdAndHash(apiId int32, apiHash string) error {
 	return nil
 }
 
+// GetCountryAndRegionByIp is the location line on the sign-in service
+// notice. The first string is the place ("中国 四川 成都", or the country
+// alone when the address is abroad). The second string is authorization.region.
+// A missing database or an unknown address returns the client IP and an
+// empty region. The call does not fail sign-in.
 func (d *Dao) GetCountryAndRegionByIp(ip string) (string, string) {
-	if d.MMDB == nil {
-		return "UNKNOWN", ""
-	} else {
-		r, err := d.MMDB.City(net.ParseIP(ip))
-		if err != nil {
-			logx.Errorf("getCountryAndRegionByIp - error: %v", err)
-			return "UNKNOWN", ""
+	if d != nil && d.geo != nil {
+		country, region := d.geo.Lookup(ip)
+		if country != "" && !strings.EqualFold(country, "UNKNOWN") {
+			return geoip.LocationLine(country, region), region
 		}
-
-		return r.City.Names["en"] + ", " + r.Country.Names["en"], r.Country.IsoCode
 	}
+	fallback := ""
+	if parsed := geoip.ParseClientIP(ip); parsed != nil {
+		fallback = parsed.String()
+	}
+	if strings.EqualFold(fallback, "UNKNOWN") {
+		fallback = ""
+	}
+	return fallback, ""
 }

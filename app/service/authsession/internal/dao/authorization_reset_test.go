@@ -8,6 +8,7 @@ import (
 )
 
 func TestGeoIPPathPrefersEnv(t *testing.T) {
+	t.Setenv("TELLOMI_GEOIP_MMDB", "")
 	t.Setenv("MMDB", "/var/lib/tellomi/GeoLite2-City.mmdb")
 	t.Setenv("GEOIP_MMDB", "/tmp/other.mmdb")
 	if got := geoIPPath(); got != "/var/lib/tellomi/GeoLite2-City.mmdb" {
@@ -78,23 +79,6 @@ func TestAuthorizationPlaceUsesIPWhenGeoIPMissing(t *testing.T) {
 	ip, country, region = d.authorizationPlace("")
 	if ip != "" || country != "" || region != "" || country == "UNKNOWN" {
 		t.Fatalf("empty place = %q %q %q", ip, country, region)
-	}
-}
-
-func TestCountryAndRegionFromNames(t *testing.T) {
-	country, region := countryAndRegionFromNames("China", "CN", "Shanghai", "Shanghai")
-	if country != "China" || region != "Shanghai" {
-		t.Fatalf("got %q %q", country, region)
-	}
-
-	country, region = countryAndRegionFromNames("", "CN", "", "Beijing")
-	if country != "CN" || region != "Beijing" {
-		t.Fatalf("fallback got %q %q", country, region)
-	}
-
-	country, region = countryAndRegionFromNames("UNKNOWN", "", "UNKNOWN", "")
-	if country != "" || region != "" {
-		t.Fatalf("stub leaked: %q %q", country, region)
 	}
 }
 

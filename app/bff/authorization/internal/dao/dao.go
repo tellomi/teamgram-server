@@ -20,7 +20,9 @@ package dao
 
 import (
 	"flag"
+
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/teamgram/teamgram-server/pkg/geoip"
 
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/config"
@@ -31,7 +33,6 @@ import (
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
 
-	"github.com/oschwald/geoip2-golang"
 	"github.com/zeromicro/go-zero/core/stores/kv"
 )
 
@@ -40,12 +41,14 @@ var (
 )
 
 func init() {
+	// -mmdb is the city database for addresses outside mainland China.
+	// ip2region is loaded as well. Either file may be missing. See docs/ip2region.md.
 	flag.StringVar(&mmdb, "mmdb", "./GeoLite2-City.mmdb", "mmdb")
 }
 
 type Dao struct {
-	kv   kv.Store
-	MMDB *geoip2.Reader
+	kv  kv.Store
+	geo *geoip.Resolver
 	authsession_client.AuthsessionClient
 	user_client.UserClient
 	sync_client.SyncClient
@@ -55,13 +58,9 @@ type Dao struct {
 }
 
 func New(c config.Config) *Dao {
-	MMDB, err := geoip2.Open(mmdb)
-	if err != nil {
-		// panic(err)
-	}
 	return &Dao{
 		kv:                kv.NewStore(c.KV),
-		MMDB:              MMDB,
+		geo:               geoip.Load(mmdb),
 		UserClient:        user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		AuthsessionClient: authsession_client.NewAuthsessionClient(rpcx.GetCachedRpcClient(c.AuthsessionClient)),
 		ChatClient:        chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),

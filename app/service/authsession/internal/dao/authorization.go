@@ -27,6 +27,7 @@ import (
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/authsession/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/pkg/geoip"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/mr"
@@ -48,17 +49,7 @@ func appNameForSession(apiID int32, langPack string) string {
 // normalizeClientIP accepts a host, host:port, [ipv6]:port, or the
 // "ip|stamp" close marker and returns a parsed address.
 func normalizeClientIP(ip string) net.IP {
-	ip = strings.TrimSpace(ip)
-	if ip == "" {
-		return nil
-	}
-	if i := strings.IndexByte(ip, '|'); i >= 0 {
-		ip = strings.TrimSpace(ip[:i])
-	}
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
-	return net.ParseIP(strings.Trim(ip, "[]"))
+	return geoip.ParseClientIP(ip)
 }
 
 func normalizedIPString(ip string) string {
@@ -68,54 +59,11 @@ func normalizedIPString(ip string) string {
 	return ""
 }
 
-// countryAndRegionFromNames maps a GeoLite2 city record onto
-// authorization.country and authorization.region. Empty names stay empty.
-// The historical stub "UNKNOWN" is never returned; clients print that
-// string on the device line.
-func countryAndRegionFromNames(countryName, countryISO, regionName, cityName string) (string, string) {
-	country := strings.TrimSpace(countryName)
-	if country == "" {
-		country = strings.TrimSpace(countryISO)
-	}
-	region := strings.TrimSpace(regionName)
-	if region == "" {
-		region = strings.TrimSpace(cityName)
-	}
-	if region == "" {
-		region = strings.TrimSpace(countryISO)
-	}
-	if country == "" {
-		country = strings.TrimSpace(cityName)
-	}
-	if strings.EqualFold(country, "UNKNOWN") {
-		country = ""
-	}
-	if strings.EqualFold(region, "UNKNOWN") {
-		region = ""
-	}
-	return country, region
-}
-
 func (d *Dao) lookupCountryRegion(ip string) (string, string) {
-	if d == nil || d.MMDB == nil {
+	if d == nil || d.geo == nil {
 		return "", ""
 	}
-	parsed := normalizeClientIP(ip)
-	if parsed == nil {
-		return "", ""
-	}
-	r, err := d.MMDB.City(parsed)
-	if err != nil || r == nil {
-		return "", ""
-	}
-	regionName := ""
-	if len(r.Subdivisions) > 0 {
-		regionName = r.Subdivisions[0].Names["en"]
-		if regionName == "" {
-			regionName = r.Subdivisions[0].IsoCode
-		}
-	}
-	return countryAndRegionFromNames(r.Country.Names["en"], r.Country.IsoCode, regionName, r.City.Names["en"])
+	return d.geo.Lookup(ip)
 }
 
 // fillAuthorizationPlace keeps a resolved country. When GeoIP has nothing,
