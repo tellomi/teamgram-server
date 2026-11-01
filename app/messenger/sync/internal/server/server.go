@@ -17,8 +17,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/server/mq"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/svc"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/teamgram/teamgram-server/pkg/configload"
 
-	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -35,7 +35,7 @@ func New() *Server {
 
 func (s *Server) Initialize() error {
 	var c config.Config
-	conf.MustLoad(*configFile, &c)
+	configload.MustLoad(*configFile, &c)
 	bootstrap.Wait("sync", bootstrap.Deps{
 		Kafka: append(append([]string{}, c.SyncConsumer.Brokers...), bootstrap.ProducerBrokers(c.PushClient)...),
 		MySQL: []string{c.Mysql.DSN},

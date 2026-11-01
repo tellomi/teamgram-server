@@ -70,8 +70,8 @@ import (
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/teamgram/teamgram-server/pkg/configload"
 
-	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
 	"google.golang.org/grpc"
@@ -89,7 +89,7 @@ func New() *Server {
 
 func (s *Server) Initialize() error {
 	var c config.Config
-	conf.MustLoad(*configFile, &c)
+	configload.MustLoad(*configFile, &c)
 	bootstrap.Wait("bff", bootstrap.Deps{
 		Kafka: bootstrap.ProducerBrokers(c.SyncClient),
 		MySQL: []string{c.ChannelMySQL, c.StoryMySQL},

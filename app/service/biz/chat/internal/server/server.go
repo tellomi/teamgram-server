@@ -15,8 +15,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/config"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/svc"
+	"github.com/teamgram/teamgram-server/pkg/configload"
 
-	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
 )
@@ -33,7 +33,7 @@ func New() *Server {
 
 func (s *Server) Initialize() error {
 	var c config.Config
-	conf.MustLoad(*configFile, &c)
+	configload.MustLoad(*configFile, &c)
 
 	logx.Infov(c)
 	ctx := svc.NewServiceContext(c, nil)

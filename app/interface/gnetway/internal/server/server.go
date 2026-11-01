@@ -25,8 +25,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/server/gnet"
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/svc"
+	"github.com/teamgram/teamgram-server/pkg/configload"
 
-	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
 )
@@ -42,7 +42,7 @@ type Server struct {
 
 func (s *Server) Initialize() error {
 	var c config.Config
-	conf.MustLoad(*configFile, &c)
+	configload.MustLoad(*configFile, &c)
 
 	logx.Infov(c)
 
