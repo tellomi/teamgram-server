@@ -29,6 +29,16 @@ import (
 
 const backupSuffix = "_bak_20261030_idreset"
 
+// VerificationSQL is the acceptance query. It must return no rows.
+const VerificationSQL = `SELECT user_id, pts, COUNT(*) c FROM user_pts_updates GROUP BY user_id, pts HAVING c > 1`
+
+// DupGroup is one (user_id, pts) that still has more than one row.
+type DupGroup struct {
+	UserID int64
+	Pts    int32
+	Count  int
+}
+
 // Report is what a dry-run or apply prints.
 type Report struct {
 	Plan     Plan
@@ -36,6 +46,7 @@ type Report struct {
 	DryRun   bool
 	Backups  []string
 	DupPairs int
+	Dups     []DupGroup
 	Snap     Snapshot
 }
 
@@ -53,7 +64,11 @@ func Run(ctx context.Context, db *sql.DB, seq Sequencer, apply bool) (Report, er
 		return Report{}, err
 	}
 	plan := BuildPlan(snap, read)
-	rep := Report{Plan: plan, Read: read, DryRun: !apply, Snap: snap}
+	dups, err := listDuplicatePts(ctx, db)
+	if err != nil {
+		return Report{}, err
+	}
+	rep := Report{Plan: plan, Read: read, DryRun: !apply, Snap: snap, Dups: dups, DupPairs: len(dups)}
 	if !apply {
 		return rep, nil
 	}
@@ -75,13 +90,14 @@ func Run(ctx context.Context, db *sql.DB, seq Sequencer, apply bool) (Report, er
 	if err = writePlan(ctx, db, plan); err != nil {
 		return rep, err
 	}
-	n, err := countDuplicatePts(ctx, db)
+	dups, err = listDuplicatePts(ctx, db)
 	if err != nil {
 		return rep, err
 	}
-	rep.DupPairs = n
-	if n != 0 {
-		return rep, fmt.Errorf("acceptance failed: %d duplicate (user_id, pts) pairs remain", n)
+	rep.Dups = dups
+	rep.DupPairs = len(dups)
+	if len(dups) != 0 {
+		return rep, fmt.Errorf("acceptance failed: %d duplicate (user_id, pts) pairs remain", len(dups))
 	}
 	return rep, nil
 }
@@ -206,6 +222,7 @@ func (r Report) Format(mode string) string {
 	var b strings.Builder
 	if r.Plan.Rebuilt == 0 && r.Plan.PtsMoved == 0 {
 		b.WriteString("nothing to repair\n")
+		b.WriteString(formatVerification(r.Dups))
 		return b.String()
 	}
 	fmt.Fprintf(&b, "%s: rebuild %d message rows, renumber %d pts rows, update %d dialogs\n",
@@ -242,6 +259,23 @@ func (r Report) Format(mode string) string {
 	}
 	if r.DryRun {
 		b.WriteString("dry-run only; -apply reserves these ids in Redis and writes. A send before -apply moves the range up.\n")
+	}
+	b.WriteString(formatVerification(r.Dups))
+	return b.String()
+}
+
+func formatVerification(dups []DupGroup) string {
+	var b strings.Builder
+	b.WriteString("verification:\n")
+	b.WriteString(VerificationSQL)
+	b.WriteByte('\n')
+	if len(dups) == 0 {
+		b.WriteString("0 rows\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "%d rows\n", len(dups))
+	for _, d := range dups {
+		fmt.Fprintf(&b, "  user_id=%d pts=%d c=%d\n", d.UserID, d.Pts, d.Count)
 	}
 	return b.String()
 }
@@ -443,13 +477,21 @@ func backupTable(ctx context.Context, db *sql.DB, src, dst string) error {
 	return nil
 }
 
-func countDuplicatePts(ctx context.Context, db *sql.DB) (int, error) {
-	var n int
-	err := db.QueryRowContext(ctx, `
-SELECT COUNT(*) FROM (
-  SELECT user_id, pts FROM user_pts_updates GROUP BY user_id, pts HAVING COUNT(*) > 1
-) d`).Scan(&n)
-	return n, err
+func listDuplicatePts(ctx context.Context, db *sql.DB) ([]DupGroup, error) {
+	rows, err := db.QueryContext(ctx, VerificationSQL)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DupGroup
+	for rows.Next() {
+		var d DupGroup
+		if err = rows.Scan(&d.UserID, &d.Pts, &d.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func messageTables(ctx context.Context, db *sql.DB) ([]string, error) {

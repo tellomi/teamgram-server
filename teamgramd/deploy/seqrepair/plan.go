@@ -77,10 +77,10 @@ type Dialog struct {
 	ReadInbox   int32
 	ReadOutbox  int32
 	UnreadCount int32
-	// UnreadBefore is the stored unread_count. A rebuilt incoming message
-	// raises it only when that send is not already covered. Swallowed
-	// inbox deliveries were counted before the row was dropped, and a
-	// drifted badge is not replaced with a fresh recount.
+	// UnreadBefore is the badge stored on the dialog row before this plan.
+	// UnreadCount is recomputed from the messages that will exist after the
+	// repair: incoming rows whose box id is above the read cursor. The
+	// incident-day badges (17, 25, 6) are not written back.
 	UnreadBefore int32
 	Date2        int64
 }
@@ -646,28 +646,13 @@ func fixDialogs(s Snapshot, inserts []Message) []Dialog {
 		}
 		next.ReadInbox = clampRead(d.ReadInbox, oldMax, keys(newIDs))
 		next.ReadOutbox = clampRead(d.ReadOutbox, oldMax, newOutgoing)
-		// Inbox delivery does unread_count += 1 and then writes the pts row,
-		// and the old ON DUPLICATE KEY insert still returned success. A
-		// swallowed incoming message is already in the stored badge. Its new
-		// id is above read_inbox_max_id, but it is the same send, not another
-		// one. Outgoing copies add nothing (UpdateOutboxDialog does not touch
-		// unread_count). A badge higher than the rows is kept: recounting
-		// chat 120034 turned 17 and 25 into 9.
-		var existingIncoming, newIncoming int32
-		for _, m := range bucket.msgs {
-			if m.SenderID == d.UserID || m.BoxID <= next.ReadInbox || m.Deleted {
-				continue
-			}
-			if !newIDs[m.BoxID] {
-				existingIncoming++
-				continue
-			}
-			if alreadyIncoming(bucket.msgs, newIDs, next.ReadInbox, m) {
-				continue
-			}
-			newIncoming++
-		}
-		next.UnreadCount = incomingUnread(d.UnreadCount, existingIncoming, newIncoming)
+		// The badge is the incoming rows above the cursor after the repair.
+		// Restored sends get box ids above max(table, Redis), so they sit at
+		// the top of the chat and count as unread. Their date2 stays the
+		// original send time. The stored badge is not an input: it can be
+		// stale (the private chat between the two affected users is 2 now,
+		// not the 6 recorded on the day of the flush).
+		next.UnreadCount = unreadAbove(bucket.msgs, d.UserID, next.ReadInbox)
 		out = append(out, next)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -682,47 +667,17 @@ func fixDialogs(s Snapshot, inserts []Message) []Dialog {
 	return out
 }
 
-// alreadyIncoming reports a rebuilt row that is a second copy of an
-// incoming message already stored above the read cursor.
-func alreadyIncoming(msgs []Message, newIDs map[int32]bool, readInbox int32, rebuilt Message) bool {
+// unreadAbove counts incoming messages the client will treat as unread:
+// box id above the read cursor, sender is not the dialog owner.
+func unreadAbove(msgs []Message, owner int64, readInbox int32) int32 {
+	var n int32
 	for _, m := range msgs {
-		if newIDs[m.BoxID] || m.Deleted || m.BoxID <= readInbox || m.BoxID == rebuilt.BoxID {
+		if m.Deleted || m.SenderID == owner || m.BoxID <= readInbox {
 			continue
 		}
-		if m.SenderID != rebuilt.SenderID || m.PeerType != rebuilt.PeerType || m.PeerID != rebuilt.PeerID {
-			continue
-		}
-		if m.Date2 == rebuilt.Date2 && m.Message == rebuilt.Message {
-			return true
-		}
-		if m.DialogMessageID != 0 && m.DialogMessageID == rebuilt.DialogMessageID {
-			return true
-		}
+		n++
 	}
-	return false
-}
-
-// incomingUnread counts each distinct incoming message above the read
-// cursor once. existingIncoming rows are already covered by the stored
-// badge. The remainder of the badge (stored - existing) is swallowed
-// deliveries that incremented unread and left no row. Only new sends
-// beyond that remainder are additional.
-func incomingUnread(stored, existingIncoming, newIncoming int32) int32 {
-	if existingIncoming < 0 {
-		existingIncoming = 0
-	}
-	if newIncoming < 0 {
-		newIncoming = 0
-	}
-	covered := stored - existingIncoming
-	if covered < 0 {
-		covered = 0
-	}
-	add := newIncoming - covered
-	if add < 0 {
-		add = 0
-	}
-	return stored + add
+	return n
 }
 
 func keys(m map[int32]bool) []int32 {

@@ -175,19 +175,19 @@ func TestIncidentRebuildsSwallowedMessagesAndPts(t *testing.T) {
 	if mkeDlg.ReadInbox != 18 || mkeDlg.ReadOutbox != 18 {
 		t.Fatalf("mke read cursors = %d/%d, want 18/18", mkeDlg.ReadInbox, mkeDlg.ReadOutbox)
 	}
-	// Three of the six private messages are incoming. Erel's own three, and the
-	// group message he sent, must not add unread. Inbox delivery already
-	// counted the swallowed incoming rows, so the stored badge covers that
-	// many of them. Erel's 2 covers 2 of the 3, mke's 1 covers 1 of the 3.
+	// Unread is incoming rows above the read cursor, not the stored badge.
+	// Three of the six private messages are incoming. Erel's own three, and
+	// the group message he sent, are not. The group dialog has no incoming
+	// row, so its stored 4 is not written back.
 	if erelDlg.UnreadCount != 3 {
-		t.Fatalf("erel private unread = %d, want 3 (stored 2 already covers 2 of 3 incoming)", erelDlg.UnreadCount)
+		t.Fatalf("erel private unread = %d, want 3 incoming rebuilt rows", erelDlg.UnreadCount)
 	}
 	erelGroup := dialogOf(after, erel, peerChat, chat)
-	if erelGroup.UnreadCount != 4 {
-		t.Fatalf("erel group unread = %d, want 4 (own message does not add unread)", erelGroup.UnreadCount)
+	if erelGroup.UnreadCount != 0 {
+		t.Fatalf("erel group unread = %d, want 0 (own message, no incoming rows)", erelGroup.UnreadCount)
 	}
 	if mkeDlg.UnreadCount != 3 {
-		t.Fatalf("mke private unread = %d, want 3 (stored 1 already covers 1 of 3 incoming)", mkeDlg.UnreadCount)
+		t.Fatalf("mke private unread = %d, want 3 incoming rebuilt rows", mkeDlg.UnreadCount)
 	}
 
 	if dups := DuplicatePts(after.Pts); len(dups) != 0 {
@@ -315,8 +315,8 @@ func TestUnreadIgnoresOutgoingAndDoesNotRecount(t *testing.T) {
 		Dialogs: []Dialog{
 			{UserID: erel, PeerType: peerUser, PeerID: mke, TopMessage: 1052, ReadInbox: 27, ReadOutbox: 27, UnreadCount: 2},
 			{UserID: erel, PeerType: peerChat, PeerID: chat, TopMessage: 10, ReadInbox: 10, UnreadCount: 4},
-			// Stored badges are higher than a naive count of messages above the
-			// read cursor. The dry-run must not replace 17 and 25 with that count.
+			// Stale badges. Boxes 21-29 are the incoming rows above the cursor.
+			// The rebuilt group message is one more. 17 and 25 are not kept.
 			{UserID: mke, PeerType: peerChat, PeerID: chat, TopMessage: 40, ReadInbox: 20, UnreadCount: 17},
 			{UserID: member, PeerType: peerChat, PeerID: chat, TopMessage: 40, ReadInbox: 20, UnreadCount: 25},
 			{UserID: member, PeerType: peerUser, PeerID: erel, TopMessage: 8, ReadInbox: 8, UnreadCount: 3},
@@ -368,20 +368,20 @@ func TestUnreadIgnoresOutgoingAndDoesNotRecount(t *testing.T) {
 	}
 
 	erelDlg := findPlanDialog(plan, erel, peerUser, mke)
-	if erelDlg.UnreadCount != 2 {
-		t.Fatalf("erel private unread = %d, want 2 (six sends are his own)", erelDlg.UnreadCount)
+	if erelDlg.UnreadCount != 0 {
+		t.Fatalf("erel private unread = %d, want 0 (six sends are his own, no incoming rows above the cursor)", erelDlg.UnreadCount)
 	}
 	erelGroup := findPlanDialog(plan, erel, peerChat, chat)
-	if erelGroup.UnreadCount != 4 {
-		t.Fatalf("erel group unread = %d, want 4", erelGroup.UnreadCount)
+	if erelGroup.UnreadCount != 0 {
+		t.Fatalf("erel group unread = %d, want 0 (own message)", erelGroup.UnreadCount)
 	}
 	mkeGroup := findPlanDialog(plan, mke, peerChat, chat)
-	if mkeGroup.UnreadCount != 17 {
-		t.Fatalf("mke group unread = %d, want 17 (badge already covers the swallowed send; not a recount of 9 and not 18)", mkeGroup.UnreadCount)
+	if mkeGroup.UnreadCount != 10 {
+		t.Fatalf("mke group unread = %d, want 10 (boxes 21-29 plus the rebuilt group message, not the stale badge 17)", mkeGroup.UnreadCount)
 	}
 	memberGroup := findPlanDialog(plan, member, peerChat, chat)
-	if memberGroup.UnreadCount != 25 {
-		t.Fatalf("member group unread = %d, want 25 (badge already covers the swallowed send; not 9 and not 26)", memberGroup.UnreadCount)
+	if memberGroup.UnreadCount != 10 {
+		t.Fatalf("member group unread = %d, want 10 (boxes 21-29 plus the rebuilt group message, not the stale badge 25)", memberGroup.UnreadCount)
 	}
 	if findPlanDialog(plan, member, peerUser, erel).UserID != 0 {
 		t.Fatal("private dialog with no swallowed message must not be rewritten")
@@ -390,12 +390,13 @@ func TestUnreadIgnoresOutgoingAndDoesNotRecount(t *testing.T) {
 
 // Mke's inbox copies of erel's private messages omit from_id (the server
 // clears it and points peer_id at the sender). Those six sends were
-// swallowed by the duplicate box id, but inbox delivery had already done
-// unread_count += 1, so the badge of 6 is those sends. Rebuilding them as
-// boxes 1042-1047 must not make the badge 12. Six further messages, with
-// six other incoming rows already explaining the badge, are additional and
-// do raise it to 12. A copy that is already stored above the read cursor
-// is the same send and is not inserted again.
+// swallowed by the duplicate box id. Rebuilding them as boxes 1042-1047
+// counts each incoming row above the read cursor. A stored badge of 2 is
+// not kept and is not replaced with a hard-coded 6: 6 is the number of
+// rebuilt incoming rows. Six further messages that are already stored
+// above the cursor are additional, so the badge is 12. A copy that is
+// already stored above the read cursor is the same send and is not
+// inserted again.
 func TestMkePrivateSenderAndUnreadOnce(t *testing.T) {
 	const (
 		erel = int64(136907717)
@@ -417,7 +418,7 @@ func TestMkePrivateSenderAndUnreadOnce(t *testing.T) {
 			Message: "other", Date2: old,
 		})
 		snap.Dialogs = []Dialog{
-			{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 40, ReadInbox: 40, ReadOutbox: 40, UnreadCount: 6, Date2: old},
+			{UserID: mke, PeerType: peerUser, PeerID: erel, TopMessage: 40, ReadInbox: 40, ReadOutbox: 40, UnreadCount: 2, Date2: old},
 			{UserID: erel, PeerType: peerUser, PeerID: mke, TopMessage: 50, ReadInbox: 50, ReadOutbox: 50, UnreadCount: 0, Date2: old},
 		}
 		snap.Pts = append(snap.Pts, PtsRow{
@@ -486,8 +487,11 @@ func TestMkePrivateSenderAndUnreadOnce(t *testing.T) {
 			t.Fatalf("missing out=%v from_id=%v inserts", sawOut, sawFrom)
 		}
 		dlg := findPlanDialog(plan, mke, peerUser, erel)
+		if dlg.UnreadBefore != 2 {
+			t.Fatalf("mke unread before = %d, want the current badge 2", dlg.UnreadBefore)
+		}
 		if dlg.UnreadCount != 6 {
-			t.Fatalf("mke unread = %d, want 6 (the swallowed sends are already the badge, not 12)", dlg.UnreadCount)
+			t.Fatalf("mke unread = %d, want 6 rebuilt incoming rows (not the stale badge 2, and not 2+6)", dlg.UnreadCount)
 		}
 		erelDlg := findPlanDialog(plan, erel, peerUser, mke)
 		if erelDlg.UnreadCount != 1 {

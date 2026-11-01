@@ -81,7 +81,6 @@ func main() {
 		for _, name := range rep.Backups {
 			fmt.Printf("backup %s\n", name)
 		}
-		fmt.Printf("duplicate (user_id, pts) pairs: %d\n", rep.DupPairs)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
