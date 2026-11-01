@@ -14,6 +14,8 @@ const (
 	KindDefaultStatuses    = "emoji_default_statuses"
 	KindTopicIcons         = "emoji_default_topic_icons"
 	KindChannelStatuses    = "emoji_channel_default_statuses"
+	KindDice               = "dice"
+	KindTonGifts           = "ton_gifts"
 )
 
 const (
@@ -24,6 +26,8 @@ const (
 	ShortDefaultStatuses    = "EmojiDefaultStatuses"
 	ShortTopicIcons         = "EmojiDefaultTopicIcons"
 	ShortChannelStatuses    = "EmojiChannelDefaultStatuses"
+	ShortDice               = "DiceAnimated"
+	ShortTonGifts           = "TonGifts"
 	ShortTwemoji            = "Twemoji"
 	ShortFluent             = "FluentEmoji"
 	ShortNoto               = "NotoEmoji"

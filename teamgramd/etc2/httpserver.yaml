@@ -19,7 +19,8 @@ Prometheus:
 #链路追踪
 Telemetry:
   Name: interface.httpserver
-  Endpoint: jaeger:4317
+  # Empty unless TELLOMI_OTEL_ENDPOINT is set. No exporter, no export errors.
+  Endpoint: ${TELLOMI_OTEL_ENDPOINT}
   Sampler: 1.0
   Batcher: otlpgrpc
   

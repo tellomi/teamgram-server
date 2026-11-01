@@ -109,6 +109,12 @@ func builtinPacks() []*Pack {
 		newPack(ShortChannelStatuses, "Emoji Channel Default Statuses", KindChannelStatuses, true, true, false, false,
 			"OFL-1.1 AND Apache-2.0", "Noto Emoji Animation by Google",
 			"https://github.com/googlefonts/noto-emoji", channels),
+		newPack(ShortDice, "Dice", KindDice, true, true, false, false,
+			"OFL-1.1 AND Apache-2.0", "Noto Emoji Animation by Google",
+			"https://github.com/googlefonts/noto-emoji", noto),
+		newPack(ShortTonGifts, "TON Gifts", KindTonGifts, true, true, false, false,
+			"OFL-1.1 AND Apache-2.0", "Noto Emoji Animation by Google",
+			"https://github.com/googlefonts/noto-emoji", gifts),
 	}
 	var out []*Pack
 	for _, p := range packs {

@@ -51,6 +51,8 @@ services:
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
+      # Empty disables the OTLP exporter. Set jaeger:4317 only when a collector is up.
+      TELLOMI_OTEL_ENDPOINT: ${TELLOMI_OTEL_ENDPOINT:-}
       # 1:1 call addresses written into phoneCall.connections. Phone hosts in
       # teamgramd/etc2/bff.yaml are empty. Unset TELLOMI_CALL_IP falls back to
       # 127.0.0.1 (localhost only). Unset TELLOMI_TURN_HOST follows that

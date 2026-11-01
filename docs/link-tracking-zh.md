@@ -8,6 +8,8 @@ Teamgram 使用 go-zero 内置的分布式追踪能力，可对接 [Jaeger](http
 
 ## 启用方式
 
+`teamgramd/etc2/` 里的 `Telemetry.Endpoint` 是 `${TELLOMI_OTEL_ENDPOINT}`。变量为空时不安装导出器，没有采集器也不会每条 span 打 `[otel] error`。只有 Jaeger 在跑时才设置 `TELLOMI_OTEL_ENDPOINT=jaeger:4317`（OTLP gRPC）。
+
 ### 1. 配置 Telemetry
 
 在 `teamgramd/etc2/` 下各服务配置（如 `bff.yaml`、`gateway.yaml`）中增加或修改 `Telemetry` 块：

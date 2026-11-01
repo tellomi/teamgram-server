@@ -8,6 +8,12 @@ Each service reports spans to the tracing backend (Jaeger or Zipkin). The backen
 
 ## Enabling tracing
 
+Docker configs under `teamgramd/etc2/` leave `Telemetry.Endpoint` as
+`${TELLOMI_OTEL_ENDPOINT}`. When that variable is empty, go-zero does not
+install an exporter, so a missing collector does not log `[otel] error` on
+every span. Set `TELLOMI_OTEL_ENDPOINT=jaeger:4317` (OTLP gRPC) before
+starting the stack when Jaeger is actually running.
+
 ### 1. Configure the Telemetry block
 
 In each service config under `teamgramd/etc2/` (e.g. `bff.yaml`, `gateway.yaml`), add or adjust the `Telemetry` block:

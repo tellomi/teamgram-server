@@ -10,13 +10,8 @@
 package core
 
 import (
-	"context"
-	"time"
-
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
-	"github.com/teamgram/teamgram-server/pkg/notifyack"
-	"github.com/teamgram/teamgram-server/pkg/push"
 )
 
 // SyncPushUpdates
@@ -34,21 +29,9 @@ func (c *SyncCore) SyncPushUpdates(in *sync.TLSyncPushUpdates) (*mtproto.Void, e
 	}
 
 	c.pushUpdatesToSession(syncTypeUser, userId, 0, nil, nil, nil, updates, notification)
-	if incoming := push.Messages(userId, updates); len(incoming) > 0 {
-		ids := make([]int32, 0, len(incoming))
-		for _, msg := range incoming {
-			ids = append(ids, msg.MsgID)
-		}
-		// messages.receivedMessages drops these once the client confirms them.
-		_ = notifyack.Shared().Note(c.ctx, userId, ids)
-	}
-	if c.svcCtx.Push != nil && push.ShouldDeliver(userId, updates) {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(c.ctx), 20*time.Second)
-			defer cancel()
-			c.svcCtx.Push.Deliver(ctx, userId, updates)
-		}()
-	}
+	// messages.receivedMessages drops these once the client confirms them.
+	noteIncoming(c, userId, updates)
+	c.deliverPush(userId, updates)
 
 	return mtproto.EmptyVoid, nil
 }

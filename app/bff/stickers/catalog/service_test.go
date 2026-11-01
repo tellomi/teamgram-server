@@ -92,6 +92,8 @@ func TestCatalogAPIs(t *testing.T) {
 		mtproto.Predicate_inputStickerSetEmojiDefaultStatuses,
 		mtproto.Predicate_inputStickerSetEmojiDefaultTopicIcons,
 		mtproto.Predicate_inputStickerSetEmojiChannelDefaultStatuses,
+		mtproto.Predicate_inputStickerSetDice,
+		mtproto.Predicate_inputStickerSetTonGifts,
 	} {
 		in := &mtproto.InputStickerSet{PredicateName: name}
 		if _, err = s.GetSet(user, in, 0); err != nil {

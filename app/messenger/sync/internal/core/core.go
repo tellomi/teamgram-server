@@ -269,3 +269,34 @@ func (c *SyncCore) pushUpdatesToSession(syncType SyncType, userId, permAuthKeyId
 		}
 	}
 }
+
+// pushUpdatesExcept delivers to every online session whose auth key or
+// permanent auth key is not in excludes. It does not publish another
+// pushUpdatesIfNot, so a consumer of that method cannot loop.
+func (c *SyncCore) pushUpdatesExcept(userId int64, excludes []int64, pushData *mtproto.Updates, notification bool) {
+	skip := make(map[int64]struct{}, len(excludes))
+	for _, id := range excludes {
+		if id != 0 {
+			skip[id] = struct{}{}
+		}
+	}
+	statusList, _ := c.svcCtx.Dao.StatusClient.StatusGetUserOnlineSessions(c.ctx, &status.TLStatusGetUserOnlineSessions{
+		UserId: userId,
+	})
+	for _, sess := range statusList.GetUserSessions() {
+		if _, ok := skip[sess.AuthKeyId]; ok {
+			continue
+		}
+		if _, ok := skip[sess.PermAuthKeyId]; ok {
+			continue
+		}
+		_ = c.svcCtx.Dao.PushUpdatesToSession(
+			c.ctx,
+			sess.Gateway,
+			&session.TLSessionPushUpdatesData{
+				PermAuthKeyId: sess.AuthKeyId,
+				Notification:  notification,
+				Updates:       pushData,
+			})
+	}
+}

@@ -17,9 +17,10 @@ Log:
 #   Port: 20421
 #   Path: /metrics
 # #链路追踪
+# Telemetry is off unless TELLOMI_OTEL_ENDPOINT is set on the other services.
 # Telemetry:
 #   Name: messenger.sync
-#   Endpoint: jaeger:4317
+#   Endpoint: ${TELLOMI_OTEL_ENDPOINT}
 #   Sampler: 1.0
 #   Batcher: otlpgrpc
   

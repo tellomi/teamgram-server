@@ -61,9 +61,11 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err)
 			return nil, err
 		} else if replyId == nil {
-			err = mtproto.ErrPeerIdInvalid
-			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err)
-			return nil, err
+			// The peer is valid. The row is gone: deleted, or dropped when a
+			// reused box id kept the older message. That is not PEER_ID_INVALID.
+			c.Logger.Infof("inbox.readOutboxHistory: no message user=%d peer_type=%d peer=%d dialog_message_id=%d",
+				in.UserId, in.PeerType, in.PeerId, in.MaxDialogMessageId)
+			return mtproto.EmptyVoid, nil
 		} else if replyId.SenderUserId != in.UserId {
 			// The row is not this user's outgoing message. Do not move their outbox.
 			return mtproto.EmptyVoid, nil
@@ -125,9 +127,9 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err)
 			return nil, err
 		} else if replyId == nil {
-			err = mtproto.ErrPeerIdInvalid
-			c.Logger.Errorf("inbox.readOutboxHistory - error: %v", err)
-			return nil, err
+			c.Logger.Infof("inbox.readOutboxHistory: no message user=%d peer_type=%d peer=%d dialog_message_id=%d",
+				in.UserId, in.PeerType, in.PeerId, in.MaxDialogMessageId)
+			return mtproto.EmptyVoid, nil
 		} else if replyId.SenderUserId != in.UserId {
 			return mtproto.EmptyVoid, nil
 		}
