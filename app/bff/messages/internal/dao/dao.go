@@ -21,6 +21,7 @@ package dao
 import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/messages/sendas"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
@@ -30,6 +31,7 @@ import (
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/teamgram/teamgram-server/pkg/notifyack"
 )
 
 type Dao struct {
@@ -44,6 +46,8 @@ type Dao struct {
 }
 
 func New(c config.Config) *Dao {
+	sendas.Install(sendas.New(c.KV))
+	notifyack.Install(notifyack.New(c.KV))
 	return &Dao{
 		MsgClient:     msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 		UserClient:    user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),

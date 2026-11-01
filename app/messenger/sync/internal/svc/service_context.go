@@ -15,6 +15,7 @@ import (
 
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/config"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/dao"
+	"github.com/teamgram/teamgram-server/pkg/notifyack"
 	"github.com/teamgram/teamgram-server/pkg/push"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -30,6 +31,7 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		Config: c,
 		Dao:    dao.New(c),
 	}
+	notifyack.Install(notifyack.New(c.KV))
 	sc.Push = newPushService(c.Mysql.DSN)
 	return sc
 }

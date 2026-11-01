@@ -20,13 +20,62 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/sendas"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 // MessagesSaveDefaultSendAs
 // messages.saveDefaultSendAs#ccfddf96 peer:InputPeer send_as:InputPeer = Bool;
+// https://core.telegram.org/method/messages.saveDefaultSendAs
+//
+// Stores the peer that should be used when sending into a group or channel.
+// send_as must be the current user or a channel returned by channels.getSendAs.
+// channels.getSendAs then lists that peer first.
 func (c *MessagesCore) MessagesSaveDefaultSendAs(in *mtproto.TLMessagesSaveDefaultSendAs) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.saveDefaultSendAs blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	if err := c.requireUser(); err != nil {
+		return nil, err
+	}
+	peer, err := c.peerOrInvalid(in.GetPeer())
+	if err != nil {
+		c.Logger.Errorf("messages.saveDefaultSendAs - error: %v", err)
+		return nil, err
+	}
+	if !peer.IsChat() && !peer.IsChannel() {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if peer.IsChannel() {
+		if chat := channel.Shared().VisibleChat(c.ctx, c.MD.UserId, peer.PeerId); chat != nil && chat.GetLeft() {
+			return nil, mtproto.ErrChannelInvalid
+		}
+	}
+	sendAs, err := c.peerOrInvalid(in.GetSendAs())
+	if err != nil {
+		return nil, mtproto.ErrSendAsPeerInvalid
+	}
+	choice := sendas.Choice{Type: sendAs.PeerType, ID: sendAs.PeerId}
+	switch {
+	case sendAs.IsUser() && (sendAs.IsSelf() || sendAs.PeerId == c.MD.UserId):
+		choice = sendas.Choice{Type: mtproto.PEER_USER, ID: c.MD.UserId}
+	case sendAs.IsChannel() && c.canSendAsChannel(sendAs.PeerId):
+	default:
+		return nil, mtproto.ErrSendAsPeerInvalid
+	}
+	if err := sendas.Shared().Set(c.ctx, c.MD.UserId, peer.PeerType, peer.PeerId, choice); err != nil {
+		c.Logger.Errorf("messages.saveDefaultSendAs - error: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+	return mtproto.BoolTrue, nil
+}
 
-	return nil, mtproto.ErrEnterpriseIsBlocked
+func (c *MessagesCore) canSendAsChannel(channelID int64) bool {
+	_, ids, err := channel.Shared().SendAs(c.ctx, c.MD.UserId)
+	if err != nil {
+		return false
+	}
+	for _, id := range ids {
+		if id == channelID {
+			return true
+		}
+	}
+	return false
 }
