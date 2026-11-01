@@ -13,6 +13,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
@@ -251,8 +252,10 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
 	case mtproto.Predicate_inputMediaWebPage:
 		// inputMediaWebPage#c21b8849 flags:# force_large_media:flags.0?true force_small_media:flags.1?true optional:flags.2?true url:string = InputMedia;
-
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+		// https://core.telegram.org/api/link-preview
+		// A https link is sent as this media. messageMediaUnsupported#9f84f49e
+		// is what the client draws as the paper-plane "unsupported message" bubble.
+		messageMedia, err = chatbox.MediaForInputWebPage(media)
 	case mtproto.Predicate_inputMediaPaidMedia:
 		// inputMediaPaidMedia#c4103386 flags:# stars_amount:long extended_media:Vector<InputMedia> payload:flags.0?string = InputMedia;
 
