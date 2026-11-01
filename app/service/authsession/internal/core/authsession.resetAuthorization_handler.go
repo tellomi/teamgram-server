@@ -30,8 +30,10 @@ func (c *AuthsessionCore) AuthsessionResetAuthorization(in *authsession.TLAuthse
 			c.Logger.Errorf("session.getAuthorizations - error: %v", err)
 			err = mtproto.ErrAuthKeyInvalid
 			return nil, err
-		} else {
-			excludeKeyId = myKeyData.PermAuthKeyId
+		} else if bound := myKeyData.BoundPermAuthKeyId(); bound != 0 {
+			// A legacy perm row can leave PermAuthKeyId at 0. Treating that
+			// as "exclude nobody" would delete the caller when hash is 0.
+			excludeKeyId = bound
 		}
 	}
 
