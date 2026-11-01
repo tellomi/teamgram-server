@@ -153,7 +153,12 @@ func (s *Service) SetAvailableReactions(ctx context.Context, self int64, channel
 
 // SetHistoryTTL sets the auto-delete timer for a channel or supergroup.
 // https://core.telegram.org/method/messages.setHistoryTTL
-func (s *Service) SetHistoryTTL(ctx context.Context, self int64, channelID int64, period int32) (*mtproto.Updates, error) {
+//
+// The timer is stored on the channel and announced with
+// messageActionSetMessagesTTL so getHistory shows the same notice as a
+// private chat. period 0 is a real action (the timer was turned off).
+// actorAuth is the caller's perm auth key, excluded from the fanout.
+func (s *Service) SetHistoryTTL(ctx context.Context, self, actorAuth, channelID int64, period int32) (*mtproto.Updates, error) {
 	if period < 0 || period > 366*86400 {
 		return nil, mtproto.ErrTtlPeriodInvalid
 	}
@@ -170,15 +175,56 @@ func (s *Service) SetHistoryTTL(ctx context.Context, self int64, channelID int64
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
 		return nil, err
 	}
+	msg := serviceMessage(self, channelID, mtproto.MakeMessageActionSetMessagesTTL(period))
+	if _, _, err = s.appendMessage(ctx, channelID, self, 0, msg); err != nil {
+		return nil, err
+	}
+	updates, err := s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
+	if err != nil {
+		return nil, err
+	}
+	ttlUp := channelHistoryTTLUpdate(channelID, period)
+	if updates == nil {
+		updates = s.pack(ctx, self, channelID, ttlUp)
+	} else {
+		updates.PushBackUpdate(ttlUp)
+	}
+	s.fanoutUpdate(ctx, self, actorAuth, channelID, ttlUp)
+	return updates, nil
+}
+
+func channelHistoryTTLUpdate(channelID int64, period int32) *mtproto.Update {
 	var ttl *wrapperspb.Int32Value
 	if period > 0 {
 		ttl = &wrapperspb.Int32Value{Value: period}
 	}
-	up := mtproto.MakeTLUpdatePeerHistoryTTL(&mtproto.Update{
-		Peer_PEER: mtproto.MakePeerChannel(ch.ID),
+	return mtproto.MakeTLUpdatePeerHistoryTTL(&mtproto.Update{
+		Peer_PEER: mtproto.MakePeerChannel(channelID),
 		TtlPeriod: ttl,
 	}).To_Update()
-	return s.updatesWith(ctx, self, ch, up, channelUpdate(ch.ID)), nil
+}
+
+// fanoutUpdate pushes one non-pts update to current members. The actor's
+// requesting auth key is left out because that session already has the RPC result.
+func (s *Service) fanoutUpdate(ctx context.Context, actor, actorAuth, channelID int64, up *mtproto.Update) {
+	h := s.hooks()
+	if h.Push == nil || up == nil {
+		return
+	}
+	parts, err := s.store.ListParticipants(ctx, channelID)
+	if err != nil {
+		return
+	}
+	for _, p := range parts {
+		if p.State != StateNormal {
+			continue
+		}
+		var excl []int64
+		if p.UserID == actor && actorAuth != 0 {
+			excl = []int64{actorAuth}
+		}
+		h.Push(ctx, p.UserID, excl, s.pack(ctx, p.UserID, channelID, up))
+	}
 }
 
 // Card is the channel pts and chat object for a viewer who can see it.

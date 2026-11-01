@@ -366,6 +366,7 @@ func (s *Server) Initialize() error {
 				DialogClient:  c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 				MessageClient: c.BizServiceClient,
+				MsgClient:     c.MsgClient,
 			}, channelBridge))
 
 		folderSvc := folders_helper.New(folders_helper.Config{
