@@ -28,6 +28,35 @@ func WebPage(raw string, hash int32) (*mtproto.WebPage, error) {
 	return page, nil
 }
 
+// MediaForInputWebPage maps inputMediaWebPage to a client-decodable card.
+//
+// https://core.telegram.org/api/link-preview
+// https://core.telegram.org/constructor/inputMediaWebPage
+// Official clients send an https link with messages.sendMedia and
+// inputMediaWebPage#c21b8849. The card is messageMediaWebPage#ddf10c3b
+// wrapping webPage#e89c45b2, built from the URL with no remote fetch.
+// optional:flags.2 sends the text with no media when the URL cannot be
+// described. Otherwise the error is WEBPAGE_CURL_FAILED.
+// messageMediaUnsupported#9f84f49e is never returned: clients render that
+// constructor as the "unsupported message" placeholder.
+func MediaForInputWebPage(media *mtproto.InputMedia) (*mtproto.MessageMedia, error) {
+	if media.GetPredicateName() != mtproto.Predicate_inputMediaWebPage {
+		return nil, mtproto.ErrMediaInvalid
+	}
+	page, err := describe(media.GetUrl())
+	if err != nil {
+		if media.GetOptional() {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mtproto.MakeTLMessageMediaWebPage(&mtproto.MessageMedia{
+		ForceLargeMedia: media.GetForceLargeMedia(),
+		ForceSmallMedia: media.GetForceSmallMedia(),
+		Webpage:         page,
+	}).To_MessageMedia(), nil
+}
+
 // WebPagePreview returns the composer preview for the first link in text.
 // No link yields messageMediaEmpty, which is what clients render as "no preview".
 // https://core.telegram.org/method/messages.getWebPagePreview

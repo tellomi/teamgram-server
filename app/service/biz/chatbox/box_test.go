@@ -2,6 +2,7 @@ package chatbox
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 	"time"
 
@@ -159,5 +160,65 @@ func TestWebPagePreview(t *testing.T) {
 	empty := WebPagePreview("no link", nil)
 	if empty.GetPredicateName() != mtproto.Predicate_messageMediaEmpty {
 		t.Fatalf("empty preview %#v", empty)
+	}
+}
+
+func TestInputWebPageIsDecodableCard(t *testing.T) {
+	in := mtproto.MakeTLInputMediaWebPage(&mtproto.InputMedia{
+		Url:             "https://apple.com",
+		ForceLargeMedia: true,
+	}).To_InputMedia()
+	media, err := MediaForInputWebPage(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if media.GetPredicateName() != mtproto.Predicate_messageMediaWebPage {
+		t.Fatalf("predicate %s", media.GetPredicateName())
+	}
+	if mtproto.GetClazzID(media.GetPredicateName(), mtproto.Layer) == 0 {
+		t.Fatal("layer 232 would rewrite this media to messageMediaUnsupported")
+	}
+	buf := mtproto.NewEncodeBuf(256)
+	if err := media.Encode(buf, mtproto.Layer); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	if len(raw) < 12 {
+		t.Fatalf("short encode %d", len(raw))
+	}
+	mediaCtor := binary.LittleEndian.Uint32(raw[0:4])
+	if mediaCtor != 0xddf10c3b {
+		t.Fatalf("messageMedia constructor %08x, want messageMediaWebPage#ddf10c3b (not messageMediaUnsupported#9f84f49e)", mediaCtor)
+	}
+	pageCtor := binary.LittleEndian.Uint32(raw[8:12])
+	if pageCtor != 0xe89c45b2 {
+		t.Fatalf("webPage constructor %08x, want webPage#e89c45b2", pageCtor)
+	}
+	decoded := &mtproto.MessageMedia{}
+	if err := decoded.Decode(mtproto.NewDecodeBuf(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.GetPredicateName() != mtproto.Predicate_messageMediaWebPage {
+		t.Fatalf("decoded %s", decoded.GetPredicateName())
+	}
+	page := decoded.GetWebpage()
+	if page.GetPredicateName() != mtproto.Predicate_webPage || page.GetUrl_STRING() != "https://apple.com" {
+		t.Fatalf("page %+v", page)
+	}
+	if !decoded.GetForceLargeMedia() {
+		t.Fatal("force_large_media dropped")
+	}
+
+	skipped, err := MediaForInputWebPage(mtproto.MakeTLInputMediaWebPage(&mtproto.InputMedia{
+		Url:      "not a url",
+		Optional: true,
+	}).To_InputMedia())
+	if err != nil || skipped != nil {
+		t.Fatalf("optional skip %+v %v", skipped, err)
+	}
+	if _, err := MediaForInputWebPage(mtproto.MakeTLInputMediaWebPage(&mtproto.InputMedia{
+		Url: "not a url",
+	}).To_InputMedia()); err != mtproto.ErrWebpageCurlFailed {
+		t.Fatalf("required bad url: %v", err)
 	}
 }
