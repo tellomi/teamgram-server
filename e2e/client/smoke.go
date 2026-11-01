@@ -29,11 +29,16 @@ func smokeRequest(m smokeMethod) (mtproto.TLObject, error) {
 		return nil, fmt.Errorf("constructor %d is not registered for %s", m.CRC, m.Name)
 	}
 	fillSmoke(reflect.ValueOf(obj), 0)
+	// Some layer-232 constructors put several fields behind one flag bit.
+	// Setting only one of them encodes a payload the server drops, and the
+	// client then waits until the ack retry limit. Drop the field that
+	// breaks a round trip; a business error is still a successful smoke call.
+	repairSmoke(obj)
 	return obj, nil
 }
 
 func fillSmoke(v reflect.Value, depth int) {
-	if !v.IsValid() || depth > 4 {
+	if !v.IsValid() || depth > 8 {
 		return
 	}
 	switch v.Kind() {
@@ -51,18 +56,19 @@ func fillSmoke(v reflect.Value, depth int) {
 			}
 			switch f.Kind() {
 			case reflect.Pointer:
-				if !f.IsNil() || isWrapper(f.Type().Elem()) {
+				if isWrapper(f.Type().Elem()) {
+					continue
+				}
+				if !f.IsNil() {
 					fillSmoke(f, depth+1)
 					continue
 				}
+				// Only a real constructor is safe. A zero object still sets the
+				// presence flag and then writes no bytes, which desyncs the session.
 				if sample, ok := smokeSample(f.Type()); ok {
 					f.Set(sample)
 					fillSmoke(f, depth+1)
-					continue
 				}
-				created := reflect.New(f.Type().Elem())
-				fillSmoke(created.Elem(), depth+1)
-				f.Set(created)
 			case reflect.Slice:
 				if f.IsNil() {
 					f.Set(reflect.MakeSlice(f.Type(), 0, 0))
@@ -82,6 +88,90 @@ func fillSmoke(v reflect.Value, depth int) {
 
 func isWrapper(t reflect.Type) bool {
 	return t.PkgPath() == reflect.TypeOf(wrapperspb.Int32Value{}).PkgPath()
+}
+
+// repairSmoke clears the optional field that stops a request from decoding
+// back. One pass is enough: the broken payloads set a single shared flag.
+func repairSmoke(obj mtproto.TLObject) {
+	if smokeEncodes(obj) {
+		return
+	}
+	var fields []reflect.Value
+	collectSmokeFields(reflect.ValueOf(obj), &fields)
+	for _, f := range fields {
+		if !f.IsValid() || !f.CanSet() || f.IsNil() {
+			continue
+		}
+		prev := f.Interface()
+		f.Set(reflect.Zero(f.Type()))
+		if smokeEncodes(obj) {
+			return
+		}
+		f.Set(reflect.ValueOf(prev))
+	}
+}
+
+func collectSmokeFields(v reflect.Value, out *[]reflect.Value) {
+	if !v.IsValid() {
+		return
+	}
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return
+		}
+		collectSmokeFields(v.Elem(), out)
+		return
+	}
+	if v.Kind() != reflect.Struct {
+		return
+	}
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		sf := v.Type().Field(i)
+		if !sf.IsExported() || !f.CanSet() {
+			continue
+		}
+		switch f.Kind() {
+		case reflect.Pointer, reflect.Slice:
+			if f.IsNil() {
+				continue
+			}
+			if f.Kind() == reflect.Pointer && !isWrapper(f.Type().Elem()) {
+				collectSmokeFields(f, out)
+			}
+			*out = append(*out, f)
+		case reflect.Struct:
+			collectSmokeFields(f, out)
+		}
+	}
+}
+
+func smokeEncodes(obj mtproto.TLObject) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	raw, err := encodeTL(obj)
+	if err != nil {
+		return false
+	}
+	return smokeDecodeExact(raw) == nil
+}
+
+func smokeDecodeExact(raw []byte) error {
+	d := mtproto.NewDecodeBuf(raw)
+	decoded := d.Object()
+	if err := d.GetError(); err != nil {
+		return err
+	}
+	if decoded == nil {
+		return fmt.Errorf("decoded nil")
+	}
+	if d.GetOffset() != len(raw) {
+		return fmt.Errorf("decoded %T but left %d bytes", decoded, len(raw)-d.GetOffset())
+	}
+	return nil
 }
 
 func smokeSample(ptr reflect.Type) (reflect.Value, bool) {

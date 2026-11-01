@@ -81,6 +81,14 @@ Handshake logs in `app/interface/gnetway` and `app/interface/httpserver` passed 
 
 JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. `pkg/goffmpeg/tests` skips when `/tmp/ffmpeg/3gp` or the `ffmpeg` binary is missing. `TestInputNotFound` still runs: a missing input is what it asserts. `ffmpegutil`'s gif test skips the same way.
 
+## Group read receipts
+
+`messages.readHistory` looks up `user_message_box_id` without a peer. Those ids are per user, so a basic-group read can hit an older private message that reused the number. The read then succeeds and the group's `read_outbox_max_id` stays 0. `messageForRead` keeps a row only when its peer is the chat being read, and otherwise maps the id through `dialog_message_id` from another participant.
+
+## Dialog unread marks
+
+`dialog.markDialogUnread` and `dialog.getDialogUnreadMarkList` were stubs (`METHOD_NOT_IMPL`). `messages.markDialogUnread` and `messages.getDialogUnreadMarks` already called them. The dialog rows now store the flag in `dialogs.unread_mark`.
+
 ## Sticker wire format
 
 `stickerSet` flags bit 4 is `thumbs`, `thumb_dc_id`, and `thumb_version` together. The catalog used to set the ints without a thumbs vector, so `messages.featuredStickers` did not round-trip (`DecodeVectorLong`). The catalog now sends `thumb_document_id` (flags bit 8) and leaves bit 4 unset. The generated codec in `proto/mtproto` is unchanged.

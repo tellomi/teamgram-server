@@ -28,7 +28,7 @@ A pull request that adds or changes an RPC does three things:
 
    `TestZZImplementedSmoke` calls every row once with the smallest params that still encode. It fails when the server replies `*_NOT_IMPLEMENTED` or the response does not decode. A 400 from those dummy params is expected and does not fail the test.
 
-   `cd e2e/client && go test -run TestSmokeRequestsEncode` checks the request encodes without a server. If a new param type panics or returns "invalid predicate", add that type to `smokeEmptyClass` in `e2e/client/smoke_empty.go` with a constructor that has no required nested objects (an `*Empty` constructor when the schema has one).
+   `cd e2e/client && go test -run TestSmokeRequestsEncode` checks the request encodes and decodes again without a server. The session service drops a payload it cannot decode and the client reports that as a missing ack. If a new param type panics or returns "invalid predicate", add that type to `smokeEmptyClass` in `e2e/client/smoke_empty.go` with a constructor that has no required nested objects (an `*Empty` constructor when the schema has one). A field that shares its flag bit with another field is left unset when setting it alone does not decode.
 
    A behavior a client can see — a decode bug, a missing field, a wrong error — also gets a named `Test...` next to the existing cases, not only a smoke row. `TestStartupRPCs` stays the list clients send while the chat list says Updating.
 

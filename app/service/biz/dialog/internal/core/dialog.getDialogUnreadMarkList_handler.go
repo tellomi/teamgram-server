@@ -1,12 +1,3 @@
-/*
- * Created from 'scheme.tl' by 'mtprotoc'
- *
- * Copyright (c) 2021-present,  Teamgram Studio (https://teamgram.io).
- *  All rights reserved.
- *
- * Author: teamgramio (teamgram.io@gmail.com)
- */
-
 package core
 
 import (
@@ -17,8 +8,25 @@ import (
 // DialogGetDialogUnreadMarkList
 // dialog.getDialogUnreadMarkList user_id:long = Vector<DialogPeer>;
 func (c *DialogCore) DialogGetDialogUnreadMarkList(in *dialog.TLDialogGetDialogUnreadMarkList) (*dialog.Vector_DialogPeer, error) {
-	// TODO: not impl
-	c.Logger.Errorf("dialog.getDialogUnreadMarkList - error: method DialogGetDialogUnreadMarkList not impl")
-
-	return nil, mtproto.ErrMethodNotImpl
+	rows, err := c.svcCtx.Dao.ListUnreadMarks(c.ctx, in.GetUserId())
+	if err != nil {
+		c.Logger.Errorf("dialog.getDialogUnreadMarkList - error: %v", err)
+		return nil, err
+	}
+	out := &dialog.Vector_DialogPeer{Datas: make([]*mtproto.DialogPeer, 0, len(rows))}
+	for _, row := range rows {
+		var peer *mtproto.Peer
+		switch row.PeerType {
+		case mtproto.PEER_SELF, mtproto.PEER_USER:
+			peer = mtproto.MakePeerUser(row.PeerId)
+		case mtproto.PEER_CHAT:
+			peer = mtproto.MakePeerChat(row.PeerId)
+		case mtproto.PEER_CHANNEL:
+			peer = mtproto.MakePeerChannel(row.PeerId)
+		default:
+			continue
+		}
+		out.Datas = append(out.Datas, mtproto.MakeTLDialogPeer(&mtproto.DialogPeer{Peer: peer}).To_DialogPeer())
+	}
+	return out, nil
 }
