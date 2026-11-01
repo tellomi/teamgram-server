@@ -29,6 +29,13 @@ import (
 // DialogGetSavedDialogs
 // dialog.getSavedDialogs user_id:long exclude_pinned:Bool offset_date:int offset_id:int offset_peer:PeerUtil limit:int = SavedDialogList;
 func (c *DialogCore) DialogGetSavedDialogs(in *dialog.TLDialogGetSavedDialogs) (*dialog.SavedDialogList, error) {
+	switch in.GetLimit() {
+	case dialog.SavedLookupLimit:
+		return c.lookupSavedDialog(in)
+	case dialog.SavedTouchLimit:
+		return c.touchSavedDialog(in)
+	}
+
 	var (
 		excludePinned = mtproto.FromBool(in.GetExcludePinned())
 		meId          = in.GetUserId()
@@ -84,4 +91,54 @@ func (c *DialogCore) DialogGetSavedDialogs(in *dialog.TLDialogGetSavedDialogs) (
 	}
 
 	return dList, nil
+}
+
+func emptySavedList() *dialog.SavedDialogList {
+	return dialog.MakeTLSavedDialogList(&dialog.SavedDialogList{
+		Count:   0,
+		Dialogs: []*mtproto.SavedDialog{},
+	}).To_SavedDialogList()
+}
+
+// lookupSavedDialog is messages.getSavedDialogsByID for one peer.
+func (c *DialogCore) lookupSavedDialog(in *dialog.TLDialogGetSavedDialogs) (*dialog.SavedDialogList, error) {
+	out := emptySavedList()
+	peer := in.GetOffsetPeer()
+	if peer == nil || peer.PeerId == 0 && peer.PeerType != mtproto.PEER_SELF {
+		return out, nil
+	}
+	row, err := c.svcCtx.Dao.SavedDialogsDAO.Select(c.ctx, in.GetUserId(), peer.PeerType, peer.PeerId)
+	if err != nil {
+		c.Logger.Errorf("dialog.getSavedDialogs lookup - error: %v", err)
+		return nil, err
+	}
+	if row == nil {
+		return out, nil
+	}
+	out.Dialogs = append(out.Dialogs, c.svcCtx.Dao.MakeSavedDialog(row))
+	out.Count = 1
+	return out, nil
+}
+
+// touchSavedDialog updates the saved-dialog row after messages were deleted.
+func (c *DialogCore) touchSavedDialog(in *dialog.TLDialogGetSavedDialogs) (*dialog.SavedDialogList, error) {
+	peer := in.GetOffsetPeer()
+	if peer == nil || (peer.PeerId == 0 && peer.PeerType != mtproto.PEER_SELF) {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	var err error
+	if in.GetOffsetId() <= 0 {
+		_, err = c.svcCtx.Dao.Mysql.Exec(c.ctx,
+			"update saved_dialogs set deleted = 1, top_message = 0 where user_id = ? and peer_type = ? and peer_id = ?",
+			in.GetUserId(), peer.PeerType, peer.PeerId)
+	} else {
+		_, err = c.svcCtx.Dao.Mysql.Exec(c.ctx,
+			"update saved_dialogs set top_message = ?, deleted = 0 where user_id = ? and peer_type = ? and peer_id = ?",
+			in.GetOffsetId(), in.GetUserId(), peer.PeerType, peer.PeerId)
+	}
+	if err != nil {
+		c.Logger.Errorf("dialog.getSavedDialogs touch - error: %v", err)
+		return nil, err
+	}
+	return emptySavedList(), nil
 }

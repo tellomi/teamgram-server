@@ -65,7 +65,12 @@ type Features struct {
 	BroadcastMessagesAllowed bool
 	MainProfileTab           int32
 	// ViewForumAsMessages is per viewer: user id -> enabled.
-	ViewForumAsMessages    map[int64]bool
+	ViewForumAsMessages map[int64]bool
+	// Monoforum is a direct-messages channel. channels.getMessageAuthor and
+	// messages.readSavedHistory apply only when this is set.
+	Monoforum bool
+	// SavedRead is messages.readSavedHistory: "user:topicType:topicId" -> max id.
+	SavedRead              map[string]int32
 	SpamReports            []SpamReport
 	AntispamFalsePositives []FalsePositive
 }

@@ -28,6 +28,19 @@ import (
 // MessageGetSavedHistoryMessages
 // message.getSavedHistoryMessages user_id:long peer_type:int peer_id:long offset_id:int offset_date:int add_offset:int limit:int max_id:int min_id:int hash:long = MessageBoxList;
 func (c *MessageCore) MessageGetSavedHistoryMessages(in *message.TLMessageGetSavedHistoryMessages) (*mtproto.MessageBoxList, error) {
+	if in.GetLimit() == message.SavedHistoryDeleteList {
+		// offset_date is min_date and add_offset is max_date for this internal list.
+		boxes, err := c.svcCtx.Dao.ListSavedForDelete(c.ctx, in.UserId, in.PeerType, in.PeerId, in.MaxId, in.OffsetDate, in.AddOffset)
+		if err != nil {
+			c.Logger.Errorf("message.getSavedHistoryMessages delete-list - error: %v", err)
+			return nil, err
+		}
+		return mtproto.MakeTLMessageBoxListSlice(&mtproto.MessageBoxList{
+			BoxList: boxes,
+			Count:   int32(len(boxes)),
+		}).To_MessageBoxList(), nil
+	}
+
 	var (
 		selfUserId = in.UserId
 		peer       = mtproto.MakePeerUtil(in.PeerType, in.PeerId)
@@ -38,7 +51,12 @@ func (c *MessageCore) MessageGetSavedHistoryMessages(in *message.TLMessageGetSav
 		maxId      = in.MaxId
 		hash       = in.Hash
 		boxList    []*mtproto.MessageBox
+		// Date pagination applies when the client did not pass an id cursor.
+		offsetDate int32
 	)
+	if in.OffsetId == 0 {
+		offsetDate = in.OffsetDate
+	}
 
 	loadType := loadTypeBackward
 	if addOffset >= 0 {
@@ -55,20 +73,14 @@ func (c *MessageCore) MessageGetSavedHistoryMessages(in *message.TLMessageGetSav
 
 	switch loadType {
 	case loadTypeBackward:
-		if offsetId == 0 {
-			offsetId = math.MaxInt32
-		}
-		// c.svcCtx.Dao.MessageClient.MessageGet
-		boxList = c.svcCtx.Dao.GetOffsetIdBackwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, addOffset+limit, hash)
+		boxList = c.svcCtx.Dao.GetOffsetIdBackwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, offsetDate, addOffset+limit, hash)
 	case loadTypeFirstAroundDate:
 		boxList1 := c.svcCtx.GetOffsetIdForwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, -addOffset, hash)
 		for i, j := 0, len(boxList1)-1; i < j; i, j = i+1, j-1 {
 			boxList1[i], boxList1[j] = boxList1[j], boxList1[i]
 		}
 		boxList = append(boxList, boxList1...)
-		// 降序
-		boxList2 := c.svcCtx.Dao.GetOffsetIdBackwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, limit+addOffset, hash)
-		// log.Infof("%v", messages2)
+		boxList2 := c.svcCtx.Dao.GetOffsetIdBackwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, offsetDate, limit+addOffset, hash)
 		boxList = append(boxList, boxList2...)
 	case loadTypeForward:
 		boxList = c.svcCtx.Dao.GetOffsetIdForwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, -addOffset, hash)

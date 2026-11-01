@@ -541,6 +541,7 @@ func (s *Server) Initialize() error {
 				DialogClient:  c.BizServiceClient,
 				SyncClient:    c.SyncClient,
 				MessageClient: c.BizServiceClient,
+				MsgClient:     c.MsgClient,
 			}))
 
 		// userchannelprofileshelper
