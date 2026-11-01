@@ -1,9 +1,11 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestSmokeRequestsEncode checks that every implemented P0/P1 method has a
@@ -39,20 +41,33 @@ func TestSmokeRequestsEncode(t *testing.T) {
 // TestZZImplementedSmoke calls every implemented P0/P1 method once.
 // A 4xx or a 500 from dummy parameters is allowed. RPC_NOT_IMPLEMENTED and a
 // decode error are not: those are the failures that leave a client on Updating.
-// The name sorts after the other scenarios so a logout inside this test does
-// not drop the shared session those tests use.
+// It logs in as its own test phone. account.deleteAccount and auth.logOut run
+// last so they do not drop the session the earlier calls still need, and they
+// do not touch the shared Alice/Bob pair.
 func TestZZImplementedSmoke(t *testing.T) {
-	a, _, _, _ := sharedPair(t)
-	a.SetProfile(ProfileIOS)
-	for _, m := range smokeMethods {
+	cfg := requireE2E(t)
+	loginCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	c, err := Dial(loginCtx, cfg, ProfileIOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	phone := Phone{Number: "9996610009", Code: TestPhoneCode("9996610009")}
+	if _, err = c.Login(loginCtx, phone, "Smoke"); err != nil {
+		t.Fatal(err)
+	}
+
+	call := func(m smokeMethod) {
+		t.Helper()
 		t.Run(m.Name, func(t *testing.T) {
 			req, err := smokeRequest(m)
 			if err != nil {
 				t.Fatal(err)
 			}
-			c, cancel := ctx()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, err = a.Invoke(c, req)
+			_, err = c.Invoke(ctx, req)
 			if err == nil {
 				return
 			}
@@ -65,5 +80,17 @@ func TestZZImplementedSmoke(t *testing.T) {
 			}
 			t.Fatalf("decode or transport: %v", err)
 		})
+	}
+
+	var tail []smokeMethod
+	for _, m := range smokeMethods {
+		if m.Name == "account.deleteAccount" || m.Name == "auth.logOut" {
+			tail = append(tail, m)
+			continue
+		}
+		call(m)
+	}
+	for _, m := range tail {
+		call(m)
 	}
 }
