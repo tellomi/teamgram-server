@@ -81,7 +81,7 @@ docker compose -f docker-compose-env.yaml --profile local-minio up -d
 docker compose up -d --build
 ```
 
-This builds the image on your machine. The Chengdu server pulls a prebuilt image instead ([CI and ACR](docs/ci-acr.md)).
+This builds the image on your machine and tags it `local` unless `TELLOMI_IMAGE_TAG` is set. The Chengdu server pulls a prebuilt image by the 7-character commit SHA instead ([CI and ACR](docs/ci-acr.md)). `deploy-pull.sh` does not pull `latest`.
 
 ---
 
