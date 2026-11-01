@@ -37,8 +37,16 @@ const (
 	peerUser = 2
 	peerChat = 3
 
-	updateNewMessage = "updateNewMessage"
-	ptsNewMessage    = 1
+	updateNewMessage            = "updateNewMessage"
+	updateEditMessage           = "updateEditMessage"
+	updateDeleteMessages        = "updateDeleteMessages"
+	updateDeleteChannelMessages = "updateDeleteChannelMessages"
+
+	ptsNewMessage            = 1
+	ptsDeleteMessages        = 2
+	ptsEditMessage           = 7
+	ptsDeleteChannelMessages = 10
+	ptsEditChannelMessage    = 11
 )
 
 // Message is one messages-table row.
@@ -124,8 +132,14 @@ type Counters struct {
 
 // BuildPlan decides which swallowed messages to insert and which duplicate
 // pts rows to move above max(database max, live counter).
+//
+// Only updateNewMessage rows are restored. updateEditMessage (and any other
+// non-new pts type) is an edit of a message that already exists, and
+// updateDeleteMessages means that message is gone. A second call sees the
+// renumbered pts as already repaired and returns an empty plan.
 func BuildPlan(s Snapshot, counters Counters) Plan {
 	post := postResetPts(s.Pts)
+	deleted := deletedBoxes(s.Pts)
 	maxBox := map[int64]int32{}
 	byBox := map[int64]map[int32]Message{}
 	for _, m := range s.Messages {
@@ -175,8 +189,17 @@ func BuildPlan(s Snapshot, counters Counters) Plan {
 
 	for _, c := range candidates {
 		p := c.parsed
+		if _, gone := deleted[p.Owner][p.BoxID]; gone {
+			// A delete update names the box id. The message was removed, not lost.
+			continue
+		}
 		stored, exists := byBox[p.Owner][p.BoxID]
-		swallowed := !exists || stored.Date2 != p.Date2 || stored.Message != p.Text || stored.SenderID != p.Sender
+		// Same sender and date is the same send. An edit changes the text in
+		// place; that mismatch is not a swallowed duplicate-key insert.
+		if exists && stored.Date2 == p.Date2 && stored.SenderID == p.Sender {
+			continue
+		}
+		swallowed := !exists || stored.Date2 != p.Date2 || stored.SenderID != p.Sender
 		if !swallowed {
 			continue
 		}
@@ -236,7 +259,14 @@ func BuildPlan(s Snapshot, counters Counters) Plan {
 	}
 	var ptsRewrites []PtsRewrite
 	ordered := append([]PtsRow(nil), post...)
-	sort.Slice(ordered, func(i, j int) bool { return lessRow(ordered[i], ordered[j]) })
+	// Id order, not send time. New pts then increase with id, so a later pass
+	// can tell these lifted rows from the continuation that still sits under them.
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].UserID != ordered[j].UserID {
+			return ordered[i].UserID < ordered[j].UserID
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
 	for _, row := range ordered {
 		count := row.PtsCount
 		if count <= 0 {
@@ -353,22 +383,73 @@ func postResetPts(rows []PtsRow) []PtsRow {
 	var out []PtsRow
 	for _, list := range byUser {
 		sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
-		first := map[int32]int64{}
-		var maxPts int32
-		for _, row := range list {
-			if id, ok := first[row.Pts]; ok && id != row.ID {
-				out = append(out, row)
-				continue
-			}
-			if _, ok := first[row.Pts]; !ok && maxPts > 0 && row.Pts < maxPts {
-				out = append(out, row)
-				continue
-			}
-			first[row.Pts] = row.ID
-			if row.Pts > maxPts {
-				maxPts = row.Pts
-			}
+		out = append(out, resetRows(list)...)
+	}
+	return out
+}
+
+// resetRows is the post-flush segment for one user, in id order.
+//
+// A Redis restart writes a later row with a pts that already exists or that
+// falls behind the high water. Those rows are moved above the current max.
+// Doing that leaves them sitting above older rows that were inserted after
+// the restart (higher ids, lower pts). A later pass must treat that shape as
+// already repaired: the lifted rows stay, and the continuation is not moved
+// again. A real restart still begins with a duplicate or a drop to a value
+// that does not resume the pre-spike high water.
+func resetRows(list []PtsRow) []PtsRow {
+	seen := map[int32]bool{}
+	var running int32
+	var anchor int32
+	var spikeHeight int32
+	inSpike := false
+	inCluster := false
+	var out []PtsRow
+	for _, row := range list {
+		count := row.PtsCount
+		if count <= 0 {
+			count = 1
 		}
+		if seen[row.Pts] || (inCluster && row.Pts <= spikeHeight) {
+			if !inCluster {
+				spikeHeight = running
+			}
+			inCluster = true
+			seen[row.Pts] = true
+			out = append(out, row)
+			continue
+		}
+		if inCluster && row.Pts > spikeHeight {
+			inCluster = false
+		}
+		if running > 0 && row.Pts < running {
+			// Continuation under rows that were already lifted above the max.
+			// The value resumes the sequence from before that spike.
+			if inSpike && anchor > 0 && row.Pts > anchor {
+				inSpike = false
+				seen[row.Pts] = true
+				running = row.Pts
+				anchor = row.Pts
+				continue
+			}
+			spikeHeight = running
+			inCluster = true
+			seen[row.Pts] = true
+			out = append(out, row)
+			continue
+		}
+		if running > 0 && row.Pts > running+count {
+			if !inSpike {
+				anchor = running
+				inSpike = true
+			}
+		} else if !inSpike {
+			anchor = row.Pts
+		}
+		if row.Pts > running {
+			running = row.Pts
+		}
+		seen[row.Pts] = true
 	}
 	return out
 }
@@ -397,10 +478,84 @@ type parsedMessage struct {
 }
 
 func isNewMessage(row PtsRow, p parsedMessage) bool {
-	if p.Predicate != updateNewMessage && row.UpdateType != ptsNewMessage {
+	// update_type 1 is not enough: an edit can be stored with that column
+	// while predicate_name is updateEditMessage. The predicate is the update
+	// the client applied. A known non-new type (edit, delete, read) is never
+	// a lost send, even if the JSON says updateNewMessage.
+	switch p.Predicate {
+	case updateEditMessage, updateDeleteMessages, updateDeleteChannelMessages:
 		return false
 	}
-	return p.BoxID != 0 || p.Text != "" || p.Date2 != 0
+	if p.Predicate != updateNewMessage {
+		return false
+	}
+	switch row.UpdateType {
+	case ptsEditMessage, ptsEditChannelMessage, ptsDeleteMessages, ptsDeleteChannelMessages:
+		return false
+	case 0, ptsNewMessage:
+		return p.BoxID != 0 || p.Text != "" || p.Date2 != 0
+	default:
+		return false
+	}
+}
+
+func isDeleteUpdate(row PtsRow) bool {
+	switch row.UpdateType {
+	case ptsDeleteMessages, ptsDeleteChannelMessages:
+		return true
+	}
+	switch predicateName(row.UpdateData) {
+	case updateDeleteMessages, updateDeleteChannelMessages:
+		return true
+	}
+	return false
+}
+
+func deletedBoxes(rows []PtsRow) map[int64]map[int32]struct{} {
+	out := map[int64]map[int32]struct{}{}
+	for _, row := range rows {
+		if !isDeleteUpdate(row) {
+			continue
+		}
+		for _, id := range deletedMessageIDs(row.UpdateData) {
+			if id == 0 {
+				continue
+			}
+			if out[row.UserID] == nil {
+				out[row.UserID] = map[int32]struct{}{}
+			}
+			out[row.UserID][id] = struct{}{}
+		}
+	}
+	return out
+}
+
+func predicateName(data string) string {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(data), &doc); err != nil {
+		return ""
+	}
+	name, _ := doc["predicate_name"].(string)
+	return name
+}
+
+func deletedMessageIDs(data string) []int32 {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(data), &doc); err != nil {
+		return nil
+	}
+	var ids []int32
+	if arr, ok := doc["messages"].([]any); ok {
+		for _, v := range arr {
+			if n := num(v); n != 0 {
+				ids = append(ids, int32(n))
+			}
+		}
+	}
+	if n := num(doc["id_INT32"]); n != 0 {
+		ids = append(ids, int32(n))
+	}
+	return ids
 }
 
 func parseUpdate(data string) (parsedMessage, bool) {

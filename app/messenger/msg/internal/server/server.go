@@ -27,8 +27,8 @@ import (
 	msg_helper "github.com/teamgram/teamgram-server/app/messenger/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/teamgram/teamgram-server/pkg/configload"
 
-	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
 	"google.golang.org/grpc"
@@ -47,7 +47,7 @@ func New() *Server {
 
 func (s *Server) Initialize() error {
 	var c config.Config
-	conf.MustLoad(*configFile, &c)
+	configload.MustLoad(*configFile, &c)
 	bootstrap.Wait("msg", bootstrap.Deps{
 		Kafka: append(append([]string{}, c.InboxConsumer.Brokers...), bootstrap.ProducerBrokers(c.InboxClient, c.SyncClient, c.BotSyncClient)...),
 		MySQL: []string{c.Mysql.DSN},
