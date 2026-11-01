@@ -24,9 +24,16 @@ import (
 
 // AccountVerifyPhone
 // account.verifyPhone#4dd3a7f6 phone_number:string phone_code_hash:string phone_code:string = Bool;
+// https://core.telegram.org/method/account.verifyPhone
 func (c *PassportCore) AccountVerifyPhone(in *mtproto.TLAccountVerifyPhone) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.verifyPhone blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.verifyPhone - error: %v", err)
+		return nil, err
+	}
+	if err = c.book().VerifyPhone(c.ctx, user, in.GetPhoneNumber(), in.GetPhoneCodeHash(), in.GetPhoneCode()); err != nil {
+		c.Logger.Errorf("account.verifyPhone - error: %v", err)
+		return nil, err
+	}
+	return mtproto.BoolTrue, nil
 }

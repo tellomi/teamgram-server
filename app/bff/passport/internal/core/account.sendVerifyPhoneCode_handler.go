@@ -19,14 +19,42 @@
 package core
 
 import (
+	"os"
+
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // AccountSendVerifyPhoneCode
 // account.sendVerifyPhoneCode#a5a356f9 phone_number:string settings:CodeSettings = auth.SentCode;
+// https://core.telegram.org/method/account.sendVerifyPhoneCode
+//
+// Issues an SMS-shaped auth.sentCode for Telegram Passport. Test-range
+// numbers use the dev code. Other numbers are stored for account.verifyPhone;
+// SMS transport is not connected. Set TELLOMI_PASSPORT_PHONE_CODE_LOG=1 to
+// print the code while bringing a sender up.
 func (c *PassportCore) AccountSendVerifyPhoneCode(in *mtproto.TLAccountSendVerifyPhoneCode) (*mtproto.Auth_SentCode, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.sendVerifyPhoneCode blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.sendVerifyPhoneCode - error: %v", err)
+		return nil, err
+	}
+	hash, code, err := c.book().SendPhoneCode(c.ctx, user, in.GetPhoneNumber())
+	if err != nil {
+		c.Logger.Errorf("account.sendVerifyPhoneCode - error: %v", err)
+		return nil, err
+	}
+	if os.Getenv("TELLOMI_PASSPORT_PHONE_CODE_LOG") == "1" {
+		c.Logger.Infof("passport verify code user=%d phone=%s code=%s", user, in.GetPhoneNumber(), code)
+	} else {
+		c.Logger.Infof("passport verify code issued user=%d phone=%s", user, in.GetPhoneNumber())
+	}
+	_ = code
+	return mtproto.MakeTLAuthSentCode(&mtproto.Auth_SentCode{
+		Type: mtproto.MakeTLAuthSentCodeTypeSms(&mtproto.Auth_SentCodeType{
+			Length: 5,
+		}).To_Auth_SentCodeType(),
+		PhoneCodeHash: hash,
+		Timeout:       wrapperspb.Int32(180),
+	}).To_Auth_SentCode(), nil
 }

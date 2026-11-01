@@ -20,13 +20,36 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // AccountGetAuthorizationForm
 // account.getAuthorizationForm#a929597a bot_id:long scope:string public_key:string = account.AuthorizationForm;
+// https://core.telegram.org/method/account.getAuthorizationForm
 func (c *PassportCore) AccountGetAuthorizationForm(in *mtproto.TLAccountGetAuthorizationForm) (*mtproto.Account_AuthorizationForm, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.getAuthorizationForm blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.getAuthorizationForm - error: %v", err)
+		return nil, err
+	}
+	bot, policy, err := c.loadBot(in.GetBotId())
+	if err != nil {
+		c.Logger.Errorf("account.getAuthorizationForm - error: %v", err)
+		return nil, err
+	}
+	form, err := c.book().AuthorizationForm(c.ctx, user, in.GetBotId(), in.GetScope(), in.GetPublicKey())
+	if err != nil {
+		c.Logger.Errorf("account.getAuthorizationForm - error: %v", err)
+		return nil, err
+	}
+	out := mtproto.MakeTLAccountAuthorizationForm(&mtproto.Account_AuthorizationForm{
+		RequiredTypes: form.Required,
+		Values:        form.Values,
+		Errors:        form.Errors,
+		Users:         []*mtproto.User{bot},
+	})
+	if policy != "" {
+		out.SetPrivacyPolicyUrl(wrapperspb.String(policy))
+	}
+	return out.To_Account_AuthorizationForm(), nil
 }

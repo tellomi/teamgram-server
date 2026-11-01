@@ -24,9 +24,17 @@ import (
 
 // AccountSaveSecureValue
 // account.saveSecureValue#899fe31d value:InputSecureValue secure_secret_id:long = SecureValue;
+// https://core.telegram.org/method/account.saveSecureValue
 func (c *PassportCore) AccountSaveSecureValue(in *mtproto.TLAccountSaveSecureValue) (*mtproto.SecureValue, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.saveSecureValue blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.saveSecureValue - error: %v", err)
+		return nil, err
+	}
+	out, err := c.book().Save(c.ctx, user, in.GetSecureSecretId(), in.GetValue())
+	if err != nil {
+		c.Logger.Errorf("account.saveSecureValue - error: %v", err)
+		return nil, err
+	}
+	return out, nil
 }

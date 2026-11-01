@@ -323,6 +323,7 @@ func (s *Server) Initialize() error {
 			grpcServer,
 			passport_helper.New(passport_helper.Config{
 				RpcServerConf:     c.RpcServerConf,
+				KV:                c.KV,
 				AuthsessionClient: c.AuthSessionClient,
 				UserClient:        c.BizServiceClient,
 			}))

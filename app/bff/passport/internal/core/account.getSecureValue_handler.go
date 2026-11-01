@@ -24,9 +24,17 @@ import (
 
 // AccountGetSecureValue
 // account.getSecureValue#73665bc2 types:Vector<SecureValueType> = Vector<SecureValue>;
+// https://core.telegram.org/method/account.getSecureValue
 func (c *PassportCore) AccountGetSecureValue(in *mtproto.TLAccountGetSecureValue) (*mtproto.Vector_SecureValue, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.getSecureValue blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	user, err := c.requireUser()
+	if err != nil {
+		c.Logger.Errorf("account.getSecureValue - error: %v", err)
+		return nil, err
+	}
+	values, err := c.book().Get(c.ctx, user, in.GetTypes())
+	if err != nil {
+		c.Logger.Errorf("account.getSecureValue - error: %v", err)
+		return nil, err
+	}
+	return &mtproto.Vector_SecureValue{Datas: values}, nil
 }

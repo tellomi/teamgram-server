@@ -24,9 +24,24 @@ import (
 
 // UsersSetSecureValueErrors
 // users.setSecureValueErrors#90c894b5 id:InputUser errors:Vector<SecureValueError> = Bool;
+// https://core.telegram.org/method/users.setSecureValueErrors
+//
+// Only bots. The errors are returned on the user's next authorization form
+// for this bot, until the cited field hash changes.
 func (c *PassportCore) UsersSetSecureValueErrors(in *mtproto.TLUsersSetSecureValueErrors) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("users.setSecureValueErrors blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	bot, err := c.requireBot()
+	if err != nil {
+		c.Logger.Errorf("users.setSecureValueErrors - error: %v", err)
+		return nil, err
+	}
+	user, err := resolveTarget(in.GetId(), bot)
+	if err != nil {
+		c.Logger.Errorf("users.setSecureValueErrors - error: %v", err)
+		return nil, err
+	}
+	if err = c.book().SetErrors(c.ctx, user, bot, in.GetErrors()); err != nil {
+		c.Logger.Errorf("users.setSecureValueErrors - error: %v", err)
+		return nil, err
+	}
+	return mtproto.BoolTrue, nil
 }

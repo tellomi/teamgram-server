@@ -19,11 +19,14 @@
 package config
 
 import (
+	gokv "github.com/zeromicro/go-zero/core/stores/kv"
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type Config struct {
 	zrpc.RpcServerConf
+	// KV keeps passport ciphertext across restarts. Empty uses process memory.
+	KV                gokv.KvConf `json:",optional"`
 	AuthsessionClient zrpc.RpcClientConf
 	UserClient        zrpc.RpcClientConf
 }
