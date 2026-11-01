@@ -20,13 +20,35 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/searchbox"
 )
 
 // MessagesSearchSentMedia
 // messages.searchSentMedia#107e31a0 q:string filter:MessagesFilter limit:int = messages.Messages;
+// https://core.telegram.org/method/messages.searchSentMedia
+//
+// Returns media the current user sent, newest first. q matches the message
+// text. There is no pagination; limit is capped at 100.
 func (c *MessagesCore) MessagesSearchSentMedia(in *mtproto.TLMessagesSearchSentMedia) (*mtproto.Messages_Messages, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.searchSentMedia blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if err := c.requireUser(); err != nil {
+		return nil, err
+	}
+	kind, err := searchbox.MediaFor(in.GetFilter())
+	if err != nil {
+		c.Logger.Errorf("messages.searchSentMedia - error: %v", err)
+		return nil, err
+	}
+	rows, err := c.scanSent(kind)
+	if err != nil {
+		c.Logger.Errorf("messages.searchSentMedia - error: %v", err)
+		return nil, err
+	}
+	picked := searchbox.SentMedia(rows, in.GetQ(), in.GetLimit())
+	msgs := messagesOf(picked)
+	users, chats := c.peersOf(msgs)
+	return mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{
+		Messages: msgs,
+		Chats:    chats,
+		Users:    users,
+	}).To_Messages_Messages(), nil
 }

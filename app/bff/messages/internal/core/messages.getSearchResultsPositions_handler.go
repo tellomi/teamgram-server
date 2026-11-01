@@ -20,15 +20,45 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/searchbox"
 )
 
 // MessagesGetSearchResultsPositions
-// messages.getSearchResultsPositions#6e9583a3 peer:InputPeer filter:MessagesFilter offset_id:int limit:int = messages.SearchResultsPositions;
+// messages.getSearchResultsPositions#9c7f2f10 flags:# peer:InputPeer saved_peer_id:flags.2?InputPeer filter:MessagesFilter offset_id:int limit:int = messages.SearchResultsPositions;
+// https://core.telegram.org/method/messages.getSearchResultsPositions
+//
+// Returns sparse scrollbar positions for one media filter, newest first.
+// offset is the index from the newest match. Empty and mention filters are rejected.
 func (c *MessagesCore) MessagesGetSearchResultsPositions(in *mtproto.TLMessagesGetSearchResultsPositions) (*mtproto.Messages_SearchResultsPositions, error) {
-	// TODO: not impl
-
+	if err := c.requireUser(); err != nil {
+		return nil, err
+	}
+	peer, err := c.peerOrInvalid(in.GetPeer())
+	if err != nil {
+		c.Logger.Errorf("messages.getSearchResultsPositions - error: %v", err)
+		return nil, err
+	}
+	kind, err := searchbox.MediaFor(in.GetFilter())
+	if err != nil {
+		c.Logger.Errorf("messages.getSearchResultsPositions - error: %v", err)
+		return nil, err
+	}
+	rows, _, err := c.scanMedia(peer, kind, c.savedPeer(in.GetSavedPeerId()))
+	if err != nil {
+		c.Logger.Errorf("messages.getSearchResultsPositions - error: %v", err)
+		return nil, err
+	}
+	count, samples := searchbox.BuildPositions(rows, in.GetOffsetId(), in.GetLimit())
+	positions := make([]*mtproto.SearchResultsPosition, 0, len(samples))
+	for _, sample := range samples {
+		positions = append(positions, mtproto.MakeTLSearchResultPosition(&mtproto.SearchResultsPosition{
+			MsgId:  sample.MsgID,
+			Date:   sample.Date,
+			Offset: sample.Offset,
+		}).To_SearchResultsPosition())
+	}
 	return mtproto.MakeTLMessagesSearchResultsPositions(&mtproto.Messages_SearchResultsPositions{
-		Count:     0,
-		Positions: []*mtproto.SearchResultsPosition{},
+		Count:     count,
+		Positions: positions,
 	}).To_Messages_SearchResultsPositions(), nil
 }

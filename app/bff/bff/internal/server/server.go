@@ -399,6 +399,7 @@ func (s *Server) Initialize() error {
 		// messages_helper
 		msgCfg := messages_helper.Config{
 			RpcServerConf: c.RpcServerConf,
+			KV:            c.KV,
 			UserClient:    c.BizServiceClient,
 			ChatClient:    c.BizServiceClient,
 			MsgClient:     c.MsgClient,
