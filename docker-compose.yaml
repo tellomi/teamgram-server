@@ -87,6 +87,14 @@ services:
       TELLOMI_LINKPREVIEW_TRUST_PROXY: ${TELLOMI_LINKPREVIEW_TRUST_PROXY:-true}
       # Host only (no scheme). R2: <accountid>.r2.cloudflarestorage.com,
       # TELLOMI_MINIO_USE_SSL=true, TELLOMI_MINIO_REGION=auto. See docs/ci-acr.md.
+      # Session region. ip2region (in the image) is used for mainland China.
+      # The DB-IP Lite city mmdb is mounted by docker-compose.geoip.yaml at
+      # /app/bin/GeoLite2-City.mmdb and is used for every other address.
+      # Either file may be absent; RPCs still succeed. See docs/ip2region.md.
+      IP2REGION_V4_XDB: ${IP2REGION_V4_XDB:-/app/data/ip2region/ip2region_v4.xdb}
+      IP2REGION_V6_XDB: ${IP2REGION_V6_XDB:-/app/data/ip2region/ip2region_v6.xdb}
+      MMDB: ${MMDB:-${TELLOMI_GEOIP_MMDB:-/app/bin/GeoLite2-City.mmdb}}
+      GEOIP_MMDB: ${GEOIP_MMDB:-${TELLOMI_GEOIP_MMDB:-/app/bin/GeoLite2-City.mmdb}}
       TELLOMI_MINIO_ENDPOINT: ${TELLOMI_MINIO_ENDPOINT:-minio:9000}
       TELLOMI_MINIO_REGION: ${TELLOMI_MINIO_REGION:-auto}
       TELLOMI_MINIO_ACCESS_KEY: ${TELLOMI_MINIO_ACCESS_KEY:-}

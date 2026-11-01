@@ -8,6 +8,12 @@ The workflow runs on every push to `master` and from the Actions tab
 (`workflow_dispatch`). A new push to the same ref cancels the in-progress
 build, so an older run cannot finish later and move `:latest` backwards.
 
+The image build downloads the ip2region v4 and v6 xdb from the official
+`v3.18.0` tag, checks `deploy/ip2region/SHA256SUMS`, and copies them to
+`/app/data/ip2region/`. A checksum mismatch fails the build. The DB-IP Lite
+city mmdb is not in the image; `docker-compose.geoip.yaml` mounts it at
+`/app/bin/GeoLite2-City.mmdb`. See `docs/ip2region.md`.
+
 ## Secrets
 
 Set these as repository Actions secrets. The workflow logs in with

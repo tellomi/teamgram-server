@@ -1,0 +1,25 @@
+ip2region offline IP database (xdb) and the Go query client
+
+Source: https://github.com/lionsoul2014/ip2region
+Release: v3.18.0
+Commit: c1a1fc7d5941760db3f8431dc05c48cf7f0e30a1
+Go binding: github.com/lionsoul2014/ip2region/binding/golang v0.0.0-20260901011515-c1a1fc7d5941
+
+License: Apache-2.0 OR MIT
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Tellomi uses this distribution under the Apache License, Version 2.0.
+License text: https://github.com/lionsoul2014/ip2region/blob/v3.18.0/LICENSE.md
+Copyright: The Ip2Region Authors
+
+Files taken from the v3.18.0 tag tree (data/):
+  ip2region_v4.xdb  11122036 bytes
+  ip2region_v6.xdb  37277813 bytes
+SHA256: see SHA256SUMS in this directory.
+
+Download:
+  https://github.com/lionsoul2014/ip2region/raw/refs/tags/v3.18.0/data/ip2region_v4.xdb
+  https://github.com/lionsoul2014/ip2region/raw/refs/tags/v3.18.0/data/ip2region_v6.xdb
+
+The v3.18.0 GitHub release does not attach the xdb files as extra assets.
+They are the data files in that release tag. scripts/fetch-ip2region-xdb.sh
+downloads those two URLs and refuses a checksum mismatch.

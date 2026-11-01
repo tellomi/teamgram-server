@@ -34,3 +34,6 @@ Cache:
   - Host: redis:6379
 KV:
   - Host: redis:6379
+# Session region: ip2region xdb at /app/data/ip2region for mainland China.
+# DB-IP Lite city mmdb at /app/bin/GeoLite2-City.mmdb (MMDB / GEOIP_MMDB)
+# for every other address. Either file may be missing. See docs/ip2region.md.
