@@ -5,7 +5,6 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
-	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 )
 
@@ -147,9 +146,9 @@ func (s *Service) MessagesSearchCustomEmoji(ctx context.Context, in *mtproto.TLM
 }
 
 func (s *Service) AccountGetDefaultProfilePhotoEmojis(_ context.Context, in *mtproto.TLAccountGetDefaultProfilePhotoEmojis) (*mtproto.EmojiList, error) {
-	return accountassets.EmojiList(in.GetHash()), nil
+	return cat().PhotoEmojis(false, in.GetHash()), nil
 }
 
 func (s *Service) AccountGetDefaultGroupPhotoEmojis(_ context.Context, in *mtproto.TLAccountGetDefaultGroupPhotoEmojis) (*mtproto.EmojiList, error) {
-	return accountassets.EmojiList(in.GetHash()), nil
+	return cat().PhotoEmojis(true, in.GetHash()), nil
 }
