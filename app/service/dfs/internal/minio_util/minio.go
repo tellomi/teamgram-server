@@ -18,11 +18,13 @@ package minio_util
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
@@ -56,6 +58,10 @@ func (e *BucketError) Error() string {
 }
 
 func (e *BucketError) Unwrap() error { return e.Err }
+
+// ErrNotFound is a missing object. Callers that try another prefix should
+// not log it; a photo often lives under only one of photos/ and avatars/.
+var ErrNotFound = errors.New("object does not exist")
 
 func MustNewMinioClient(c *MinioConfig) *MinioUtil {
 	u, err := NewMinioClient(c)
@@ -200,26 +206,42 @@ func (m *MinioUtil) getRange(ctx context.Context, class, path string, offset int
 	if err != nil {
 		return nil, err
 	}
-	if limit < 0 {
-		return nil, fmt.Errorf("invalid read limit %d", limit)
-	}
 	object, err := m.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
 	if err != nil {
+		if isNotFound(err) {
+			return nil, ErrNotFound
+		}
 		logx.WithContext(ctx).Errorf("GetObject %s/%s error: %v", bucket, key, err)
 		return nil, err
 	}
 	defer object.Close()
+	// R2 answers 416 when the requested range runs past the object. Clients
+	// ask for a fixed chunk (often larger than an avatar). readClamped
+	// shortens the range to the bytes that exist.
+	return readClamped(ctx, object, offset, limit, bucket+"/"+key)
+}
 
-	buf := make([]byte, limit)
-	n, err := object.ReadAt(buf, offset)
-	buf = buf[:n]
-	if n > 0 {
-		return buf, nil
+func isNotFound(err error) bool {
+	if err == nil || errors.Is(err, ErrNotFound) {
+		return err != nil
 	}
-	if err != nil {
-		logx.WithContext(ctx).Errorf("GetObject %s/%s (%s) error: %v", bucket, key, path, err)
+	resp := minio.ToErrorResponse(err)
+	if resp.Code == "NoSuchKey" || resp.StatusCode == http.StatusNotFound {
+		return true
 	}
-	return buf, err
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "key does not exist") || strings.Contains(msg, "nosuchkey")
+}
+
+func isUnsatisfiable(err error) bool {
+	if err == nil {
+		return false
+	}
+	resp := minio.ToErrorResponse(err)
+	if resp.Code == "InvalidRange" || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "range not satisfiable")
 }
 
 func (m *MinioUtil) readAll(ctx context.Context, class, path string) ([]byte, error) {
@@ -310,14 +332,45 @@ func (m *MinioUtil) GetFile(ctx context.Context, bucket, path string, offset int
 	}
 	defer object.Close()
 
-	buf := make([]byte, limit)
+	return readClamped(ctx, object, offset, limit, path)
+}
+
+func readClamped(ctx context.Context, object *minio.Object, offset int64, limit int32, label string) ([]byte, error) {
+	if limit < 0 {
+		return nil, fmt.Errorf("invalid read limit %d", limit)
+	}
+	if limit == 0 {
+		return []byte{}, nil
+	}
+	stat, err := object.Stat()
+	if err != nil {
+		if isNotFound(err) {
+			return nil, ErrNotFound
+		}
+		logx.WithContext(ctx).Errorf("StatObject (%s) error: %v", label, err)
+		return nil, err
+	}
+	if offset >= stat.Size {
+		return []byte{}, io.EOF
+	}
+	remain := stat.Size - offset
+	if int64(limit) < remain {
+		remain = int64(limit)
+	}
+	buf := make([]byte, remain)
 	n, err := object.ReadAt(buf, offset)
 	buf = buf[:n]
 	if n > 0 {
 		return buf, nil
 	}
+	if isNotFound(err) {
+		return nil, ErrNotFound
+	}
+	if isUnsatisfiable(err) {
+		return []byte{}, io.EOF
+	}
 	if err != nil {
-		logx.WithContext(ctx).Errorf("GetFile (%s) error: %v", path, err)
+		logx.WithContext(ctx).Errorf("GetObject (%s) error: %v", label, err)
 	}
 	return buf, err
 }

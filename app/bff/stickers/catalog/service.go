@@ -251,6 +251,13 @@ func (s *Service) lookup(in *mtproto.InputStickerSet) (*Pack, error) {
 		p = s.byShort[strings.ToLower(ShortTopicIcons)]
 	case mtproto.Predicate_inputStickerSetEmojiChannelDefaultStatuses:
 		p = s.byShort[strings.ToLower(ShortChannelStatuses)]
+	case mtproto.Predicate_inputStickerSetDice:
+		// Clients request this while rendering 🎲 and the other dice.
+		// A dedicated face sheet is not shipped; the animated emoji set
+		// answers the RPC so session does not fail it as STICKERSET_INVALID.
+		p = s.byShort[strings.ToLower(ShortDice)]
+	case mtproto.Predicate_inputStickerSetTonGifts:
+		p = s.byShort[strings.ToLower(ShortTonGifts)]
 	default:
 		return nil, mtproto.ErrStickersetInvalid
 	}

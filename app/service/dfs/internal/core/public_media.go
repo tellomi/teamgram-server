@@ -1,19 +1,34 @@
 package core
 
 import (
+	"errors"
+	"io"
+
 	"github.com/minio/minio-go/v7"
+	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 )
 
 // readFirst returns the first non-empty object. Later readers cover public
 // copies (avatars, wallpapers, stickers) when the canonical prefix misses.
+// A short read at the end of an object that does exist stops the search:
+// the next prefix is a different file, not the rest of this one.
 func readFirst(reads ...func() ([]byte, error)) ([]byte, error) {
 	var last error
 	for _, read := range reads {
 		b, err := read()
+		if errors.Is(err, io.EOF) {
+			if b == nil {
+				b = []byte{}
+			}
+			return b, nil
+		}
 		if err == nil && len(b) > 0 {
 			return b, nil
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, minio_util.ErrNotFound) {
+			last = err
+		}
+		if errors.Is(err, minio_util.ErrNotFound) {
 			last = err
 		}
 	}

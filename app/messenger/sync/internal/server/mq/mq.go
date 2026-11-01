@@ -9,7 +9,7 @@ package mq
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
 	kafka "github.com/teamgram/marmota/pkg/mq"
@@ -28,7 +28,7 @@ func New(svcCtx *svc.ServiceContext, conf kafka.KafkaConsumerConf) *kafka.Consum
 	s.RegisterHandlers(
 		conf.Topics[0],
 		func(ctx context.Context, method, key string, value []byte) {
-			logx.WithContext(ctx).Debugf("method: %s, key: %s, value: %s", key, value)
+			logx.WithContext(ctx).Debugf("method: %s, key: %s", method, key)
 
 			switch protoreflect.FullName(method) {
 			case proto.MessageName((*sync.TLSyncUpdatesMe)(nil)):
@@ -64,6 +64,28 @@ func New(svcCtx *svc.ServiceContext, conf kafka.KafkaConsumerConf) *kafka.Consum
 				c.Logger.Debugf("sync.pushUpdates - request: %s", r)
 
 				c.SyncPushUpdates(r)
+			case proto.MessageName((*sync.TLSyncPushUpdatesIfNot)(nil)):
+				c := core.New(ctx, svcCtx)
+
+				r := new(sync.TLSyncPushUpdatesIfNot)
+				if err := json.Unmarshal(value, r); err != nil {
+					c.Logger.Error(err.Error())
+					return
+				}
+				c.Logger.Debugf("sync.pushUpdatesIfNot - request: %s", r)
+
+				c.SyncPushUpdatesIfNot(r)
+			case proto.MessageName((*sync.TLSyncPushBotUpdates)(nil)):
+				c := core.New(ctx, svcCtx)
+
+				r := new(sync.TLSyncPushBotUpdates)
+				if err := json.Unmarshal(value, r); err != nil {
+					c.Logger.Error(err.Error())
+					return
+				}
+				c.Logger.Debugf("sync.pushBotUpdates - request: %s", r)
+
+				c.SyncPushBotUpdates(r)
 			case proto.MessageName((*sync.TLSyncPushRpcResult)(nil)):
 				c := core.New(ctx, svcCtx)
 
@@ -87,8 +109,7 @@ func New(svcCtx *svc.ServiceContext, conf kafka.KafkaConsumerConf) *kafka.Consum
 
 				c.SyncBroadcastUpdates(r)
 			default:
-				err := fmt.Errorf("invalid key: %s", key)
-				logx.Error(err.Error())
+				logx.Errorf("sync mq: unhandled method %q key %s", method, key)
 			}
 		})
 	return s

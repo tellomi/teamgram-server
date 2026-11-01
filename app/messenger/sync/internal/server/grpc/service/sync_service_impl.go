@@ -84,9 +84,13 @@ func (s *Service) SyncPushBotUpdates(ctx context.Context, request *sync.TLSyncPu
 	c := core.New(ctx, s.svcCtx)
 	c.Logger.Debugf("sync.pushBotUpdates - metadata: %s, request: %s", c.MD, request)
 
-	c.Logger.Errorf("sync.pushBotUpdates blocked, License key from https://teamgram.net required to unlock enterprise features.")
+	r, err := c.SyncPushBotUpdates(request)
+	if err != nil {
+		return nil, err
+	}
 
-	return mtproto.EmptyVoid, nil
+	c.Logger.Debugf("sync.pushBotUpdates - reply: %s", r)
+	return r, err
 }
 
 // SyncPushRpcResult

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -177,6 +178,13 @@ func TestPrecreatedBucketsRoundTrip(t *testing.T) {
 	part, err := client.GetPhotoFile(ctx, "m/7.dat", 6, 5)
 	if err != nil || string(part) != "photo" {
 		t.Fatalf("range %q %v", part, err)
+	}
+	past, err := client.GetPhotoFile(ctx, "m/7.dat", 100, 16)
+	if !errors.Is(err, io.EOF) || len(past) != 0 {
+		t.Fatalf("offset past end %q %v", past, err)
+	}
+	if _, err = client.GetPhotoFile(ctx, "missing.dat", 0, 16); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing object err = %v", err)
 	}
 
 	if _, err := client.PutDocumentFile(ctx, "voice.dat", bytes.NewReader([]byte("voice-note"))); err != nil {
@@ -498,7 +506,9 @@ func (s *s3fake) get(w http.ResponseWriter, r *http.Request, bucket, key string)
 		if end >= len(body) {
 			end = len(body) - 1
 		}
-		if start < 0 || start > end {
+		// R2 rejects a range that extends past the object instead of
+		// truncating it. Readers must clamp before they send Range.
+		if start < 0 || start >= len(body) || end >= len(body) || start > end {
 			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 			return
 		}

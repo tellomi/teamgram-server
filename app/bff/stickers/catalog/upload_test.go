@@ -157,6 +157,20 @@ func (s *stickerS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodHead && key == "":
 		w.WriteHeader(http.StatusOK)
+	case r.Method == http.MethodHead && key != "":
+		s.mu.Lock()
+		body, ok := s.objects[bucket][key]
+		s.mu.Unlock()
+		if !ok {
+			w.Header().Set("Content-Type", "application/xml")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, "<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>%s</Key></Error>", key)
+			return
+		}
+		w.Header().Set("Content-Length", fmt.Sprint(len(body)))
+		w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+		w.Header().Set("ETag", `"obj"`)
+		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodGet && key == "" && r.URL.Query().Has("location"):
 		fmt.Fprint(w, "<LocationConstraint>auto</LocationConstraint>")
 	case r.Method == http.MethodPut && key != "":
