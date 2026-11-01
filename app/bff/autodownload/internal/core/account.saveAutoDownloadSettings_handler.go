@@ -20,13 +20,23 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/autodownload/presets"
 )
 
 // AccountSaveAutoDownloadSettings
 // account.saveAutoDownloadSettings#76f36233 flags:# low:flags.0?true high:flags.1?true settings:AutoDownloadSettings = Bool;
+//
+// https://core.telegram.org/method/account.saveAutoDownloadSettings
+//
+// low saves the low preset, high saves the high preset, and neither saves
+// medium. account.getAutoDownloadSettings returns the saved preset.
 func (c *AutoDownloadCore) AccountSaveAutoDownloadSettings(in *mtproto.TLAccountSaveAutoDownloadSettings) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.saveAutoDownloadSettings blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrInputRequestInvalid
+	}
+	if err := presets.Shared().Save(c.ctx, c.MD.UserId, in.GetLow(), in.GetHigh(), in.GetSettings()); err != nil {
+		c.Logger.Errorf("account.saveAutoDownloadSettings - error: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }

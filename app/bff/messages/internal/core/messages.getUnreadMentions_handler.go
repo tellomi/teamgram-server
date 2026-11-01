@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	messagepb "github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -73,41 +74,14 @@ func (c *MessagesCore) MessagesGetUnreadMentions(in *mtproto.TLMessagesGetUnread
 			Users:    []*mtproto.User{},
 		}).To_Messages_Messages()
 	case mtproto.PEER_CHANNEL:
-		//// 400	CHANNEL_INVALID	The provided channel is invalid
-		//// 400	CHANNEL_PRIVATE	You haven't joined this channel/supergroup
-		//channel, err = c.svcCtx.Dao.ChannelClient.ChannelGetMutableChannel(
-		//	c.ctx,
-		//	&channelpb.TLChannelGetMutableChannel{
-		//		ChannelId: peer.PeerId,
-		//		Id:        []int64{c.MD.UserId},
-		//	})
-		//if err != nil {
-		//	err = mtproto.ErrPeerIdInvalid
-		//	c.Logger.Errorf("messages.getHistory - error: %v", err)
-		//	return nil, err
-		//}
-		//
-		//me := channel.GetImmutableChannelParticipant(c.MD.UserId)
-		//if me != nil {
-		//	minId = int32(mathx.MaxInt(int(me.AvailableMinId), int(in.MinId)))
-		//}
-		//
-		//isChannel = true
-		//// TODO(@benqi): check kicked
-		//_ = channel
-		//
-		//rValues = mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
-		//	Messages: []*mtproto.Message{},
-		//	Chats:    []*mtproto.Chat{},
-		//	Users:    []*mtproto.User{},
-		//	Inexact:  false,
-		//	Count:    0,
-		//	NextRate: nil,
-		//	Pts:      channel.Pts(),
-		//}).To_Messages_Messages()
-		c.Logger.Errorf("messages.readHistory blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		// https://core.telegram.org/method/messages.getUnreadMentions
+		res, err := channel.Shared().UnreadMentions(c.ctx, c.MD.UserId, peer.PeerId, in.OffsetId, in.AddOffset, limit, in.MaxId, minId)
+		if err != nil {
+			c.Logger.Errorf("messages.getUnreadMentions - error: %v", err)
+			return nil, err
+		}
+		c.attachMentionUsers(res)
+		return res, nil
 	default:
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getHistory - error: %v", err)
@@ -162,4 +136,34 @@ func (c *MessagesCore) MessagesGetUnreadMentions(in *mtproto.TLMessagesGetUnread
 		})
 
 	return rValues, nil
+}
+
+func (c *MessagesCore) attachMentionUsers(res *mtproto.Messages_Messages) {
+	if res == nil {
+		return
+	}
+	if res.Users == nil {
+		res.Users = []*mtproto.User{}
+	}
+	ids := make([]int64, 0, len(res.GetMessages()))
+	seen := map[int64]struct{}{}
+	for _, m := range res.GetMessages() {
+		id := m.GetFromId().GetUserId()
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return
+	}
+	users, err := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{Id: ids})
+	if err != nil || users == nil {
+		return
+	}
+	res.Users = users.GetUserListByIdList(c.MD.UserId, ids...)
 }

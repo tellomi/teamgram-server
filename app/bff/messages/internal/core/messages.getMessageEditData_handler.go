@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 )
@@ -127,18 +128,25 @@ func (c *MessagesCore) MessagesGetMessageEditData(in *mtproto.TLMessagesGetMessa
 			}
 		}
 	case mtproto.PEER_CHANNEL:
-		// TODO: not impl
-		c.Logger.Errorf("messages.getMessageEditData blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		caption, err := channel.Shared().MessageEditData(c.ctx, c.MD.UserId, peer.PeerId, in.Id)
+		if err != nil {
+			c.Logger.Errorf("messages.getMessageEditData - error: %v", err)
+			return nil, err
+		}
+		return mtproto.MakeTLMessagesMessageEditData(&mtproto.Messages_MessageEditData{
+			Caption: caption,
+		}).To_Messages_MessageEditData(), nil
 	default:
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getMessageEditData - error: %v", err)
 		return nil, err
 	}
 
-	_ = boxMsg
+	caption := false
+	if boxMsg != nil {
+		caption = mtproto.CaptionEditable(boxMsg.GetMessage())
+	}
 	return mtproto.MakeTLMessagesMessageEditData(&mtproto.Messages_MessageEditData{
-		Caption: false,
+		Caption: caption,
 	}).To_Messages_MessageEditData(), nil
 }

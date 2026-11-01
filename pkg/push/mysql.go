@@ -89,7 +89,7 @@ func (m *MySQL) Delete(ctx context.Context, userID int64, tokenType int32, token
 
 func (m *MySQL) ListByUser(ctx context.Context, userID int64) ([]Device, error) {
 	rows, err := m.db.QueryContext(ctx, `
-SELECT auth_key_id, user_id, token_type, token, no_muted, app_sandbox, secret, other_uids
+SELECT auth_key_id, user_id, token_type, token, no_muted, app_sandbox, secret, other_uids, locked_period
 FROM devices WHERE user_id = ? AND state = 0`, userID)
 	if err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ FROM devices WHERE user_id = ? AND state = 0`, userID)
 			secret  string
 			other   string
 		)
-		if err := rows.Scan(&d.AuthKeyID, &d.UserID, &d.TokenType, &d.Token, &noMuted, &sandbox, &secret, &other); err != nil {
+		if err := rows.Scan(&d.AuthKeyID, &d.UserID, &d.TokenType, &d.Token, &noMuted, &sandbox, &secret, &other, &d.LockedPeriod); err != nil {
 			return nil, err
 		}
 		d.NoMuted = noMuted != 0
@@ -120,6 +120,13 @@ FROM devices WHERE user_id = ? AND state = 0`, userID)
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+func (m *MySQL) SetLockedPeriod(ctx context.Context, userID, authKeyID int64, period int32) error {
+	_, err := m.db.ExecContext(ctx, `
+UPDATE devices SET locked_period = ? WHERE user_id = ? AND auth_key_id = ? AND state = 0`,
+		period, userID, authKeyID)
+	return err
 }
 
 func (m *MySQL) NotifySettings(ctx context.Context, userID int64, peerType int32, peerID int64) (NotifySettings, error) {

@@ -27,5 +27,6 @@ type Config struct {
 	zrpc.RpcServerConf
 	MediaClient zrpc.RpcClientConf
 	UserClient  zrpc.RpcClientConf
+	MsgClient   zrpc.RpcClientConf
 	SyncClient  *kafka.KafkaProducerConf
 }

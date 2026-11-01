@@ -20,6 +20,7 @@ package svc
 
 import (
 	"github.com/teamgram/teamgram-server/app/bff/autodownload/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/autodownload/presets"
 )
 
 type ServiceContext struct {
@@ -27,6 +28,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	presets.Install(presets.New(c.KV))
 	return &ServiceContext{
 		Config: c,
 	}

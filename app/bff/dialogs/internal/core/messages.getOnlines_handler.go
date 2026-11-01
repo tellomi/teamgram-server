@@ -19,19 +19,72 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // MessagesGetOnlines
 // messages.getOnlines#6e2be050 peer:InputPeer = ChatOnlines;
+//
+// https://core.telegram.org/method/messages.getOnlines
+//
+// Returns how many members of a basic group or channel are online right now.
+// account.updateStatus stores last_seen_at and an expires window (300s while
+// the app is in the foreground, 0 once it goes offline). A member counts
+// while that window is still open. Private chats are PEER_ID_INVALID.
 func (c *DialogsCore) MessagesGetOnlines(in *mtproto.TLMessagesGetOnlines) (*mtproto.ChatOnlines, error) {
-	// TODO:
-	onlines := mtproto.MakeTLChatOnlines(&mtproto.ChatOnlines{
-		Onlines: 1,
-	}).To_ChatOnlines()
+	peer := mtproto.FromInputPeer2(c.MD.UserId, in.GetPeer())
+	var ids []int64
+	switch peer.PeerType {
+	case mtproto.PEER_CHAT:
+		pIDList, err := c.svcCtx.Dao.ChatClient.ChatGetChatParticipantIdList(c.ctx, &chatpb.TLChatGetChatParticipantIdList{
+			ChatId: peer.PeerId,
+		})
+		if err != nil {
+			c.Logger.Errorf("messages.getOnlines - error: %v", err)
+			return nil, err
+		}
+		ids = pIDList.GetDatas()
+	case mtproto.PEER_CHANNEL:
+		var err error
+		ids, err = channel.Shared().VisibleMemberIDs(c.ctx, c.MD.UserId, peer.PeerId)
+		if err != nil {
+			c.Logger.Errorf("messages.getOnlines - error: %v", err)
+			return nil, err
+		}
+	default:
+		c.Logger.Errorf("messages.getOnlines - error: peer %v", peer)
+		return nil, mtproto.ErrPeerIdInvalid
+	}
 
-	// TODO: not impl
-	c.Logger.Errorf("messages.getOnlines - error: method MessagesGetOnlines not impl")
+	now := time.Now().Unix()
+	var n int32
+	if len(ids) > 0 {
+		seen, err := c.svcCtx.Dao.UserGetLastSeens(c.ctx, &userpb.TLUserGetLastSeens{Id: ids})
+		if err != nil {
+			c.Logger.Errorf("messages.getOnlines - error: %v", err)
+			return nil, err
+		}
+		n = countOnline(now, seen.GetDatas())
+	}
+	return mtproto.MakeTLChatOnlines(&mtproto.ChatOnlines{Onlines: n}).To_ChatOnlines(), nil
+}
 
-	return onlines, nil
+// countOnline applies the same window account.updateStatus writes:
+// expires > 0 and now < last_seen_at+expires.
+func countOnline(now int64, rows []*userpb.LastSeenData) int32 {
+	var n int32
+	for _, row := range rows {
+		if row == nil || row.LastSeenAt <= 0 || row.Expires <= 0 {
+			continue
+		}
+		if now < row.LastSeenAt+int64(row.Expires) {
+			n++
+		}
+	}
+	return n
 }

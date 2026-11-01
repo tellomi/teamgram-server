@@ -398,6 +398,7 @@ func (s *Server) Initialize() error {
 			grpcServer,
 			autodownload_helper.New(autodownload_helper.Config{
 				RpcServerConf: c.RpcServerConf,
+				KV:            c.KV,
 			}))
 
 		// messages_helper
@@ -551,6 +552,7 @@ func (s *Server) Initialize() error {
 				RpcServerConf: c.RpcServerConf,
 				MediaClient:   c.MediaClient,
 				UserClient:    c.BizServiceClient,
+				MsgClient:     c.MsgClient,
 				SyncClient:    c.SyncClient,
 			}))
 

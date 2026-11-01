@@ -30,6 +30,12 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	if f.ReactionRead == nil {
 		f.ReactionRead = map[int64]int32{}
 	}
+	if f.Views == nil {
+		f.Views = map[int32]ViewRec{}
+	}
+	if f.InboxReadAt == nil {
+		f.InboxReadAt = map[int64]int32{}
+	}
 	return f
 }
 

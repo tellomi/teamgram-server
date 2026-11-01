@@ -15,14 +15,24 @@ func (s *MemoryStore) Upsert(_ context.Context, d Device) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	kept := make([]Device, 0, len(s.devices)+1)
+	// account.registerDevice does not carry the passcode period. Keep the
+	// period already stored for this auth key, matching the MySQL upsert
+	// which leaves locked_period alone.
+	var locked int32
 	for _, old := range s.devices {
 		if old.UserID == d.UserID && old.TokenType == d.TokenType && old.Token == d.Token && old.AuthKeyID != d.AuthKeyID {
 			continue
 		}
 		if old.AuthKeyID == d.AuthKeyID && old.UserID == d.UserID && old.TokenType == d.TokenType {
+			if locked == 0 {
+				locked = old.LockedPeriod
+			}
 			continue
 		}
 		kept = append(kept, old)
+	}
+	if d.LockedPeriod == 0 {
+		d.LockedPeriod = locked
 	}
 	s.devices = append(kept, cloneDevice(d))
 	return nil
@@ -43,6 +53,17 @@ func (s *MemoryStore) Delete(_ context.Context, userID int64, tokenType int32, t
 		kept = append(kept, old)
 	}
 	s.devices = kept
+	return nil
+}
+
+func (s *MemoryStore) SetLockedPeriod(_ context.Context, userID, authKeyID int64, period int32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.devices {
+		if s.devices[i].UserID == userID && s.devices[i].AuthKeyID == authKeyID {
+			s.devices[i].LockedPeriod = period
+		}
+	}
 	return nil
 }
 

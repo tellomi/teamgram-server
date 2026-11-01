@@ -484,6 +484,7 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 	if err != nil {
 		return err
 	}
+	prevInbox := st.ReadInboxMaxID
 	if maxID > st.ReadInboxMaxID {
 		st.ReadInboxMaxID = maxID
 	}
@@ -500,6 +501,13 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 	st.UnreadCount = unread
 	if err = s.store.SaveRead(ctx, st); err != nil {
 		return err
+	}
+	if st.ReadInboxMaxID > prevInbox {
+		f := s.features(ctx, ch.ID)
+		f.InboxReadAt[user] = int32(time.Now().Unix())
+		if err = s.saveFeatures(ctx, ch.ID, f); err != nil {
+			return err
+		}
 	}
 	// The reader's own outbox stays put. Every other member's outbox moves
 	// to this id, which is "any other member has read up to here".

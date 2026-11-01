@@ -12,8 +12,11 @@ type Device struct {
 	AppSandbox bool
 	// Secret is the raw registerDevice secret. Telegram-iOS sends the 256-byte
 	// master notification key when encryption is enabled (APNs) and always for VoIP.
-	Secret    []byte
-	OtherUIDs []int64
+	Secret []byte
+	// LockedPeriod is account.updateDeviceLocked. A positive value means the
+	// passcode is on, so pushes for this auth key omit the message text.
+	LockedPeriod int32
+	OtherUIDs    []int64
 }
 
 // Store persists push devices. Implementations must be safe for concurrent use.
@@ -22,4 +25,7 @@ type Store interface {
 	// Delete removes the token for userID and otherUserIDs.
 	Delete(ctx context.Context, userID int64, tokenType int32, token string, otherUserIDs []int64) error
 	ListByUser(ctx context.Context, userID int64) ([]Device, error)
+	// SetLockedPeriod stores account.updateDeviceLocked for every device of
+	// this user and auth key. period 0 clears the passcode.
+	SetLockedPeriod(ctx context.Context, userID, authKeyID int64, period int32) error
 }

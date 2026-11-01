@@ -2,6 +2,8 @@ package push
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 
@@ -60,6 +62,46 @@ func TestDeliverRespectsMuteAndSendsFCM(t *testing.T) {
 	svc.Deliver(context.Background(), 9, textUpdate())
 	if fcm.token != "" {
 		t.Fatal("muted chat was pushed")
+	}
+}
+
+func TestLockedDeviceHidesMessageText(t *testing.T) {
+	store := &memSettings{
+		peer: NotifySettings{Found: true, ShowPreviews: 1, Silent: 0, MuteUntil: 0},
+	}
+	ctx := context.Background()
+	_ = store.Upsert(ctx, Device{
+		AuthKeyID: 10, UserID: 9, TokenType: TokenFCM, Token: "fcm-token", Secret: bytesRepeat(256),
+	})
+	if err := store.SetLockedPeriod(ctx, 9, 10, 60); err != nil {
+		t.Fatal(err)
+	}
+	fcm := &captureFCM{}
+	svc := NewService(store, Config{})
+	svc.SetFCM(fcm)
+	svc.Deliver(ctx, 9, textUpdate())
+	if fcm.token != "fcm-token" {
+		t.Fatalf("token %q", fcm.token)
+	}
+	var outer map[string]any
+	if err := json.Unmarshal(fcm.body, &outer); err != nil {
+		t.Fatal(err)
+	}
+	alert := outer["aps"].(map[string]any)["alert"].(map[string]any)
+	if key, _ := alert["loc-key"].(string); !strings.Contains(key, "NOTEXT") {
+		t.Fatalf("loc-key %v", alert["loc-key"])
+	}
+	if strings.Contains(string(fcm.body), "ping") {
+		t.Fatalf("locked push included the message text: %s", fcm.body)
+	}
+
+	if err := store.SetLockedPeriod(ctx, 9, 10, 0); err != nil {
+		t.Fatal(err)
+	}
+	fcm.body = nil
+	svc.Deliver(ctx, 9, textUpdate())
+	if !strings.Contains(string(fcm.body), "ping") {
+		t.Fatalf("unlocked push hid the text: %s", fcm.body)
 	}
 }
 

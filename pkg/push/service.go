@@ -138,11 +138,16 @@ func (s *Service) fillNames(ctx context.Context, m *Incoming) {
 
 func (s *Service) send(ctx context.Context, devices []Device, m Incoming, d Decision) {
 	for _, dev := range devices {
+		// account.updateDeviceLocked: a passcode hides the message text.
+		dd := d
+		if dev.LockedPeriod > 0 {
+			dd.Preview = false
+		}
 		switch dev.TokenType {
 		case TokenAPNS:
-			s.sendAPNS(ctx, dev, m, d)
+			s.sendAPNS(ctx, dev, m, dd)
 		case TokenFCM:
-			s.sendFCM(ctx, dev, m, d)
+			s.sendFCM(ctx, dev, m, dd)
 		case TokenAPNSVoIP:
 			// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
 		default:
