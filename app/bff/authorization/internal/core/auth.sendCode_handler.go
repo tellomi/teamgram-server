@@ -20,7 +20,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
@@ -284,6 +283,19 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 		for _, v := range request.Settings.GetLogoutTokens() {
 			id, _ := c.svcCtx.Dao.GetFutureAuthToken(c.ctx, v)
 			if id == user.Id() {
+				if c.needsCloudPassword(user.Id()) {
+					if err = c.passwordNeeded(user.Id()); err != nil {
+						c.Logger.Errorf("auth.sendCode - password: %v", err)
+						return nil, err
+					}
+					_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
+						AuthKeyId: c.MD.PermAuthKeyId,
+						UserId:    user.User.Id,
+					})
+					_ = c.svcCtx.Dao.DelFutureAuthToken(c.ctx, v)
+					c.Logger.Infof("auth.sendCode - future-auth-tokens, next step auth.checkPassword: SESSION_PASSWORD_NEEDED")
+					return nil, mtproto.ErrSessionPasswordNeeded
+				}
 				// Bind authKeyId and userId
 				_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
 					AuthKeyId: c.MD.PermAuthKeyId,
@@ -292,17 +304,6 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 
 				// Del
 				_ = c.svcCtx.Dao.DelFutureAuthToken(c.ctx, v)
-
-				// Check SESSION_PASSWORD_NEEDED
-				if c.svcCtx.Plugin != nil {
-					if c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.User.Id) {
-						// hack
-						// err = mtproto.ErrSessionPasswordNeeded
-						err = status.Error(mtproto.ErrUnauthorized, fmt.Sprintf("SESSION_PASSWORD_NEEDED_%d", user.Id()))
-						c.Logger.Infof("auth.sendCode - future-auth-tokens, next step auth.checkPassword: %v", err)
-						return nil, err
-					}
-				}
 
 				return mtproto.MakeTLAuthSentCodeSuccess(&mtproto.Auth_SentCode{
 					Authorization: mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{

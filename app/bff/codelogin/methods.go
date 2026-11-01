@@ -7,6 +7,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
@@ -17,9 +18,15 @@ func (s *Service) RequestPasswordRecovery(ctx context.Context, userID int64) (*m
 	if userID == 0 {
 		return nil, mtproto.ErrPasswordRecoveryNa
 	}
-	email, err := s.LoginEmail(ctx, userID)
+	email, hasPassword, err := password.RecoveryEmail(ctx, userID)
 	if err != nil {
 		return nil, err
+	}
+	if !hasPassword {
+		email, err = s.LoginEmail(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if email == "" {
 		return nil, mtproto.ErrPasswordRecoveryNa
@@ -64,6 +71,9 @@ func (s *Service) RecoverPassword(ctx context.Context, userID int64, code string
 		if err := validateNewSettings(settings); err != nil {
 			return err
 		}
+		if err := password.CheckRecoverySettings(ctx, userID, settings); err != nil {
+			return err
+		}
 	}
 	rec, err := s.touchRecovery(ctx, userID, code, true)
 	if err != nil {
@@ -73,6 +83,9 @@ func (s *Service) RecoverPassword(ctx context.Context, userID int64, code string
 		if err = s.SaveLoginEmail(ctx, userID, settings.GetEmail().GetValue()); err != nil {
 			return err
 		}
+	}
+	if err = password.CommitRecovery(ctx, userID, settings); err != nil {
+		return err
 	}
 	_ = rec
 	return nil

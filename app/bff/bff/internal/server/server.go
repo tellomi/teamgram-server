@@ -63,6 +63,7 @@ import (
 	stories_helper "github.com/teamgram/teamgram-server/app/bff/stories"
 	tos_helper "github.com/teamgram/teamgram-server/app/bff/tos"
 	twofa_helper "github.com/teamgram/teamgram-server/app/bff/twofa"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
@@ -98,6 +99,7 @@ func (s *Server) Initialize() error {
 	})
 
 	logx.Infov(c)
+	password.ConfigureFromEnv(c.ChannelMySQL)
 	channelBridge := channels_helper.Bridge{}
 
 	s.grpcSrv = zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {

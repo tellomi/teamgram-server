@@ -20,3 +20,17 @@ func New(ctx context.Context) *TwoFaCore {
 		MD:     metadata.RpcMetadataFromIncoming(ctx),
 	}
 }
+
+func (c *TwoFaCore) userID() int64 {
+	if c == nil || c.MD == nil {
+		return 0
+	}
+	return c.MD.UserId
+}
+
+func (c *TwoFaCore) authKey() int64 {
+	if c == nil || c.MD == nil {
+		return 0
+	}
+	return c.MD.PermAuthKeyId
+}

@@ -43,10 +43,21 @@ func (c *AuthsessionCore) AuthsessionGetAuthStateData(in *authsession.TLAuthsess
 		}
 	}
 
+	state := cData.ToAuthState()
+	userID := cData.UserId()
+	// A cloud-password login binds the key and records the user here so the
+	// session stays on the password step across a process restart.
+	if pending, ok := c.svcCtx.Dao.PasswordLoginUser(c.ctx, permID); ok && (userID == 0 || userID == pending) {
+		state = mtproto.AuthStateNeedPassword
+		if userID == 0 {
+			userID = pending
+		}
+	}
+
 	return authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
 		AuthKeyId:            inKeyId,
-		KeyState:             int32(cData.ToAuthState()),
-		UserId:               cData.UserId(),
+		KeyState:             int32(state),
+		UserId:               userID,
 		AccessHash:           0,
 		Client:               cData.GetClient(),
 		AndroidPushSessionId: mtproto.MakeFlagsInt64(cData.AndroidPushSessionId()),

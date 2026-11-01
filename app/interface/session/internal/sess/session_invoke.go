@@ -26,6 +26,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	rpcmetadata "github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -517,6 +518,59 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 	return true
 }
 
+// passwordNeededUser reads a legacy SESSION_PASSWORD_NEEDED_<id> suffix.
+// An exact SESSION_PASSWORD_NEEDED carries no id; boundUser is the id already
+// stored on the auth key.
+func passwordNeededUser(message string, boundUser int64) (int64, bool) {
+	const prefix = "SESSION_PASSWORD_NEEDED_"
+	switch {
+	case strings.HasPrefix(message, prefix):
+		id, _ := strconv.ParseInt(message[len(prefix):], 10, 64)
+		return id, true
+	case message == "SESSION_PASSWORD_NEEDED":
+		return boundUser, true
+	default:
+		return 0, false
+	}
+}
+
+// acceptPasswordNeeded rewrites the legacy suffixed error and puts the session
+// in the password step. The user id comes from the suffix or from the auth-key
+// binding written before the RPC returned.
+func (c *session) acceptPasswordNeeded(ctx context.Context, rpcErr *mtproto.TLRpcError) {
+	if rpcErr == nil {
+		return
+	}
+	msg := rpcErr.Message()
+	id, ok := passwordNeededUser(msg, 0)
+	if !ok {
+		return
+	}
+	if id == 0 && msg == "SESSION_PASSWORD_NEEDED" {
+		id = c.boundUserID(ctx)
+	}
+	rpcErr.SetErrorMessage("SESSION_PASSWORD_NEEDED")
+	if id != 0 {
+		c.onlySetNeedPasswordFromError(ctx, id)
+	}
+}
+
+func (c *session) boundUserID(ctx context.Context) int64 {
+	if c == nil || c.sessList == nil || c.sessList.cb == nil || c.sessList.cb.cb == nil || c.sessList.cb.cb.Dao == nil {
+		return 0
+	}
+	if c.sessList.cb.cb.Dao.AuthsessionClient == nil {
+		return 0
+	}
+	got, err := c.sessList.cb.cb.Dao.AuthsessionGetUserId(ctx, &authsession.TLAuthsessionGetUserId{
+		AuthKeyId: c.sessList.cb.authKeyId,
+	})
+	if err != nil || got == nil {
+		return 0
+	}
+	return got.GetV()
+}
+
 // onlySetNeedPasswordFromError avoids overwriting Normal/Logout/Deleted with NeedPassword
 // when RPC results arrive out of order (e.g. delayed auth error after successful checkPassword).
 func (c *session) onlySetNeedPasswordFromError(ctx context.Context, hackId int64) {
@@ -557,13 +611,7 @@ func (c *session) onRpcResult(ctx context.Context, rpcResult *rpcApiMessage) {
 				}
 			}
 		} else if rpcErr != nil {
-			errMsg := rpcErr.Message()
-			if strings.HasPrefix(errMsg, "SESSION_PASSWORD_NEEDED_") {
-				vId := errMsg[len("SESSION_PASSWORD_NEEDED_"):]
-				hackId, _ := strconv.ParseInt(vId, 10, 64)
-				rpcErr.SetErrorMessage("SESSION_PASSWORD_NEEDED")
-				c.onlySetNeedPasswordFromError(ctx, hackId)
-			}
+			c.acceptPasswordNeeded(ctx, rpcErr)
 		}
 	case *mtproto.TLAuthExportLoginToken:
 		if rpcErr == nil && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {
@@ -574,13 +622,7 @@ func (c *session) onRpcResult(ctx context.Context, rpcResult *rpcApiMessage) {
 				}
 			}
 		} else if rpcErr != nil {
-			errMsg := rpcErr.Message()
-			if strings.HasPrefix(errMsg, "SESSION_PASSWORD_NEEDED_") {
-				vId := errMsg[len("SESSION_PASSWORD_NEEDED_"):]
-				hackId, _ := strconv.ParseInt(vId, 10, 64)
-				rpcErr.SetErrorMessage("SESSION_PASSWORD_NEEDED")
-				c.onlySetNeedPasswordFromError(ctx, hackId)
-			}
+			c.acceptPasswordNeeded(ctx, rpcErr)
 		}
 	case *mtproto.TLAuthSignIn:
 		if rpcErr == nil && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {
@@ -589,13 +631,7 @@ func (c *session) onRpcResult(ctx context.Context, rpcResult *rpcApiMessage) {
 				c.sessList.cb.changeAuthState(ctx, mtproto.AuthStateNormal, authAuthorization.GetUser().GetId())
 			}
 		} else if rpcErr != nil {
-			errMsg := rpcErr.Message()
-			if strings.HasPrefix(errMsg, "SESSION_PASSWORD_NEEDED_") {
-				vId := errMsg[len("SESSION_PASSWORD_NEEDED_"):]
-				hackId, _ := strconv.ParseInt(vId, 10, 64)
-				rpcErr.SetErrorMessage("SESSION_PASSWORD_NEEDED")
-				c.onlySetNeedPasswordFromError(ctx, hackId)
-			}
+			c.acceptPasswordNeeded(ctx, rpcErr)
 		}
 	case *mtproto.TLAuthSignUp:
 		if rpcErr == nil && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {

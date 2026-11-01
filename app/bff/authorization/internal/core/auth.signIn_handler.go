@@ -31,8 +31,6 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/teamgram/teamgram-server/pkg/verify"
-
-	"google.golang.org/grpc/status"
 )
 
 /*
@@ -178,22 +176,27 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 		return nil, err
 	}
 
+	// The pending-login row is written before the auth key is bound. A session
+	// that reloads after the bind then stays on the password step.
+	if c.needsCloudPassword(user.Id()) {
+		if err = c.passwordNeeded(user.Id()); err != nil {
+			c.Logger.Errorf("auth.signIn - password: %v", err)
+			return nil, err
+		}
+		_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
+			AuthKeyId: c.MD.PermAuthKeyId,
+			UserId:    user.User.Id,
+		})
+		c.svcCtx.AuthLogic.DeletePhoneCode(c.ctx, c.MD.PermAuthKeyId, in.PhoneNumber, phoneCodeHash)
+		c.Logger.Infof("auth.signIn - registered, next step auth.checkPassword: SESSION_PASSWORD_NEEDED")
+		return nil, mtproto.ErrSessionPasswordNeeded
+	}
+
 	// Bind authKeyId and userId
-	c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
+	_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
 		AuthKeyId: c.MD.PermAuthKeyId,
 		UserId:    user.User.Id,
 	})
-
-	// Check SESSION_PASSWORD_NEEDED
-	if c.svcCtx.Plugin != nil {
-		if c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.User.Id) {
-			// hack
-			// err = mtproto.ErrSessionPasswordNeeded
-			err = status.Error(mtproto.ErrUnauthorized, fmt.Sprintf("SESSION_PASSWORD_NEEDED_%d", user.Id()))
-			c.Logger.Infof("auth.signIn - registered, next step auth.checkPassword: %v", err)
-			return nil, err
-		}
-	}
 
 	selfUser := user.ToSelfUser()
 
