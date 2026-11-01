@@ -4,12 +4,24 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 )
 
 // seededDocumentFile serves a built-in sticker, emoji, or reaction icon from
 // the process. Those bytes never go through dfs, so a missing R2 object cannot
 // hold upload.getFile until the RPC deadline.
+func fullSeeded(location *mtproto.InputFileLocation) ([]byte, bool) {
+	if location.GetPredicateName() != mtproto.Predicate_inputDocumentFileLocation || location.GetThumbSize() != "" {
+		return nil, false
+	}
+	body, _, ok := catalog.Must().DocumentFile(location.GetId())
+	if !ok || len(body) == 0 || len(body) > cdn.MaxPlain {
+		return nil, false
+	}
+	return body, true
+}
+
 func seededDocumentFile(location *mtproto.InputFileLocation, offset int64, limit int32) (*mtproto.Upload_File, bool) {
 	if location.GetPredicateName() != mtproto.Predicate_inputDocumentFileLocation {
 		return nil, false
