@@ -24,9 +24,12 @@ import (
 
 // AccountVerifyEmail32DA4CF
 // account.verifyEmail#32da4cf purpose:EmailVerifyPurpose verification:EmailVerification = account.EmailVerified;
+// https://core.telegram.org/method/account.verifyEmail
 func (c *AuthorizationCore) AccountVerifyEmail32DA4CF(in *mtproto.TLAccountVerifyEmail32DA4CF) (*mtproto.Account_EmailVerified, error) {
-	// P0 email login does not use account.verifyEmail. auth.signIn takes the code.
-	c.Logger.Errorf("account.verifyEmail32DA4CF blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	verified, err := c.codes().VerifyEmail(c.ctx, c.authKey(), c.userID(), in)
+	if err != nil {
+		c.Logger.Errorf("account.verifyEmail - error: %v", err)
+		return nil, err
+	}
+	return verified, nil
 }

@@ -24,9 +24,17 @@ import (
 
 // AuthResetLoginEmail
 // auth.resetLoginEmail#7e960193 phone_number:string phone_code_hash:string = auth.SentCode;
+// https://core.telegram.org/method/auth.resetLoginEmail
 func (c *AuthorizationCore) AuthResetLoginEmail(in *mtproto.TLAuthResetLoginEmail) (*mtproto.Auth_SentCode, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.resetLoginEmail blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	phone, hash := "", ""
+	if in != nil {
+		phone = in.PhoneNumber
+		hash = in.PhoneCodeHash
+	}
+	sent, err := c.codes().ResetLoginEmail(c.ctx, c.authKey(), phone, hash, c.userID())
+	if err != nil {
+		c.Logger.Errorf("auth.resetLoginEmail - error: %v", err)
+		return nil, err
+	}
+	return sent, nil
 }

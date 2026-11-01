@@ -37,6 +37,14 @@ type Dao struct {
 	chat_client.ChatClient
 }
 
+// Cache is the account redis store. Confirm-phone codes live here.
+func (d *Dao) Cache() kv.Store {
+	if d == nil {
+		return nil
+	}
+	return d.kv
+}
+
 func New(c config.Config) *Dao {
 	return &Dao{
 		kv:                kv.NewStore(c.KV),

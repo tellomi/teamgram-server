@@ -20,13 +20,31 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 // AuthReportMissingCode
 // auth.reportMissingCode#cb9deff6 phone_number:string phone_code_hash:string mnc:string = Bool;
+// https://core.telegram.org/method/auth.reportMissingCode
 func (c *AuthorizationCore) AuthReportMissingCode(in *mtproto.TLAuthReportMissingCode) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("auth.reportMissingCode blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	phone, hash, mnc := "", "", ""
+	if in != nil {
+		phone = in.PhoneNumber
+		hash = in.PhoneCodeHash
+		mnc = in.Mnc
+	}
+	ok, err := c.codes().ReportMissingCode(phone, hash, mnc, func(phone, hash, mnc string) {
+		shown := phone
+		if verify.IsEmail(phone) {
+			shown = verify.MaskEmail(phone)
+		} else {
+			shown = maskPhone(phone)
+		}
+		c.Logger.Infof("auth.reportMissingCode phone=%s hash=%s mnc=%s", shown, hashPrefix(hash), mnc)
+	})
+	if err != nil {
+		c.Logger.Errorf("auth.reportMissingCode - error: %v", err)
+		return nil, err
+	}
+	return ok, nil
 }

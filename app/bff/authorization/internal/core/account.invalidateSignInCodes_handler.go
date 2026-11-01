@@ -24,9 +24,16 @@ import (
 
 // AccountInvalidateSignInCodes
 // account.invalidateSignInCodes#ca8ae8ba codes:Vector<string> = Bool;
+// https://core.telegram.org/method/account.invalidateSignInCodes
 func (c *AuthorizationCore) AccountInvalidateSignInCodes(in *mtproto.TLAccountInvalidateSignInCodes) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("account.invalidateSignInCodes blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	var codes []string
+	if in != nil {
+		codes = in.Codes
+	}
+	ok, err := c.codes().InvalidateSignInCodes(c.ctx, c.userID(), codes)
+	if err != nil {
+		c.Logger.Errorf("account.invalidateSignInCodes - error: %v", err)
+		return nil, err
+	}
+	return ok, nil
 }
