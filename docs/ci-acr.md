@@ -67,10 +67,12 @@ start. Pull this checkout as well so `docker-compose.yaml` passes
 `MYSQL_ROOT_PASSWORD` into that step. The app DSN in `etc2` is unchanged.
 
 `TELLOMI_IMAGE_REGISTRY` defaults to
-`crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi` and `TELLOMI_IMAGE_TAG` defaults
-to `latest`, so a stock `.env` (see `.env.example`) needs no image settings.
-Do not pass `--build`. If `docker compose pull` fails, fix the login or the
-registry. Do not build on this machine.
+`crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi`.
+`TELLOMI_IMAGE_TAG` is the 7-character commit SHA. `deploy-pull.sh` sets it
+from `git rev-parse --short=7 HEAD` when `.env` has it empty, `local`, or
+`latest`. Do not deploy `latest`: that tag moves, and the running checkout
+would not match the image. Do not pass `--build`. If `docker compose pull`
+fails, fix the login or the registry. Do not build on this machine.
 
 Dependency images (MySQL, Kafka, and the rest) are unchanged. MinIO is not
 one of them. `minio` and `minio-mc` are Compose profile `local-minio`, so this
@@ -116,7 +118,9 @@ before expecting `/linkpreview/v1/media` to read R2. Leave
 ## Rollback
 
 Each push is tagged with the first 7 characters of the commit SHA (the short
-SHA on the commit and on the Actions run) and `latest` moves to that build.
+SHA on the commit and on the Actions run). CI also moves `latest`, but deploy
+does not pull `latest`.
+
 To run an older build, set `TELLOMI_IMAGE_TAG` to that prefix and pull again.
 For commit `9deb01fc…` the tag is `9deb01f`:
 
@@ -129,8 +133,9 @@ TELLOMI_IMAGE_TAG=9deb01f
 ./deploy-pull.sh
 ```
 
-To return to the newest build, set `TELLOMI_IMAGE_TAG=latest` (or remove it)
-and run `./deploy-pull.sh` again. Keep `-f docker-compose.geoip.yaml` on every
+To run the checkout you have, remove `TELLOMI_IMAGE_TAG` or set it to
+`local` and run `./deploy-pull.sh` again. The script replaces that with
+`git rev-parse --short=7 HEAD`. Keep `-f docker-compose.geoip.yaml` on every
 pull and up so the GeoIP mount stays.
 
 ## Local development

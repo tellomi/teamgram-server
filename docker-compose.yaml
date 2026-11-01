@@ -2,7 +2,10 @@ services:
   teamgram:
     # CI pushes this image (see docs/ci-acr.md). The server pulls it and must
     # not build. `build` stays so local dev can still run `docker compose up --build`.
-    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-latest}"
+    # Deploy pins this to the 7-character commit SHA. deploy-pull.sh replaces
+    # an empty tag, "local", or "latest". Do not default to latest: that tag
+    # moves, and a pull can start a different build than this checkout.
+    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/teamgram:${TELLOMI_IMAGE_TAG:-local}"
     build: .
     restart: unless-stopped
     # gnetway closes client sockets on SIGTERM. The default 10s grace kills
