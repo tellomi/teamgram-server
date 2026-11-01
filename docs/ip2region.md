@@ -3,7 +3,8 @@
 `account.getAuthorizations` 的 `country` / `region`，以及登录服务通知里的位置，按地址选库：
 
 - **中国大陆**：用离线库 [ip2region](https://github.com/lionsoul2014/ip2region)。省、市比通用城市库更准，输出中文，例如 country `中国`、region `四川 成都`。
-- **其他地址**（境外，以及香港、澳门、台湾）：用 DB-IP Lite 城市库。运维把它挂在 `/app/bin/GeoLite2-City.mmdb`（`docker-compose.geoip.yaml`）。读的是 MMDB 城市记录里的英文名。
+- **其他地址**（境外）：用 DB-IP Lite 城市库。运维把它挂在 `/app/bin/GeoLite2-City.mmdb`（`docker-compose.geoip.yaml`）。读的是 MMDB 城市记录里的英文名。
+- **香港、澳门、台湾**不是国家。有 ip2region 记录时用它；否则把城市库里的 ISO `HK` / `MO` / `TW`（或英文国名）写成 country `中国`，region 为 `香港` / `澳门` / `台湾`，后面可以带城市，例如 `中国 台湾 台北`。
 - 只剩其中一个库时，用还在的那个。两个都没有时，`country` 回退成客户端 IP，不写 `UNKNOWN`。RPC 不失败。
 
 以前启动日志里的 `GeoIP not loaded` 是因为进程只打开 `./GeoLite2-City.mmdb`，镜像里没有这个文件。现在 ip2region 打进镜像；城市库仍然是宿主机挂载，缺了只记一条说明，不让进程退出。
@@ -69,8 +70,10 @@ ip2region 原文是 `国家|省份|城市|ISP|ISO`。ISP 不进地区。`0`、`R
 |---|---|---|---|---|
 | 成都 | 中国 | 四川 成都 | 中国, 四川 成都 | 中国 四川 成都 |
 | 北京、上海（省市同名） | 中国 | 北京 | 中国, 北京 | 中国 北京 |
-| 香港（城市库没有记录时） | 中国 | 香港 | 中国, 香港 | 中国 香港 |
+| 台北 | 中国 | 台湾 台北 | 中国, 台湾 台北 | 中国 台湾 台北 |
+| 香港 | 中国 | 香港 | 中国, 香港 | 中国 香港 |
+| 澳门 | 中国 | 澳门 | 中国, 澳门 | 中国 澳门 |
 
-非大陆地址用城市库的英文国家名和一级行政区，例如 `8.8.8.8` 在 DB-IP / GeoLite2 里是 country `United States`、region `California`。城市库没有这份记录时，改用 ip2region：境外通常只剩国家名，`region` 为空；香港在 ip2region 里是 country `中国`、region `香港`。
+境外地址用城市库的英文国家名和一级行政区，例如 `8.8.8.8` 在 DB-IP / GeoLite2 里是 country `United States`、region `California`。城市库没有这份记录时，改用 ip2region：境外通常只剩国家名，`region` 为空。香港、澳门、台湾即使城市库把它们写成国家，输出仍然是 `中国` 加对应地区。
 
 私网、保留地址和两边都查不到的地址不写「Reserved」。`country` 回退为规范化后的客户端 IP，`region` 为空。

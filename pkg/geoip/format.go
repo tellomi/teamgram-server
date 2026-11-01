@@ -58,6 +58,13 @@ func FormatIP2Region(raw string) (country, region string) {
 	}
 	country = cleanToken(field(0))
 	iso := strings.TrimSpace(field(4))
+	if label, ok := chinaRegionLabel(iso, field(0), field(1), field(2)); ok {
+		city := field(2)
+		if cleanToken(city) == "" {
+			city = field(1)
+		}
+		return "中国", joinChinaRegion(label, city)
+	}
 	if country == "" && !strings.EqualFold(iso, "CN") {
 		return "", ""
 	}
@@ -81,8 +88,8 @@ func FormatIP2Region(raw string) (country, region string) {
 }
 
 // MainlandChina reports whether an ip2region line is mainland China.
-// Hong Kong, Macao, and Taiwan are not mainland; those addresses use the
-// city mmdb. An empty or reserved line is not mainland.
+// Hong Kong, Macao, and Taiwan are not mainland. They are still shown as
+// country 中国. An empty or reserved line is not mainland.
 func MainlandChina(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -108,29 +115,141 @@ func MainlandChina(raw string) bool {
 }
 
 // ChoosePlace picks authorization.country and authorization.region.
-// A mainland China ip2region hit wins, because its province and city are
-// more accurate. Any other address uses the city mmdb (DB-IP Lite or
-// GeoLite2). When that database has nothing, the ip2region country is used.
-// Both inputs may be empty.
+// Mainland China and Hong Kong, Macao, and Taiwan prefer ip2region when
+// that line identifies them. Taiwan, Hong Kong, and Macao are never returned
+// as the country; they are regions under 中国. Any other address uses the
+// city mmdb. When that database has nothing, the ip2region country is used.
 func ChoosePlace(ip2Raw, mmdbCountry, mmdbRegion string) (string, string) {
-	if MainlandChina(ip2Raw) {
+	if MainlandChina(ip2Raw) || ip2RegionChinaRegion(ip2Raw) {
 		country, region := FormatIP2Region(ip2Raw)
 		if country != "" {
 			return country, region
 		}
 	}
-	mmdbCountry = strings.TrimSpace(mmdbCountry)
-	mmdbRegion = strings.TrimSpace(mmdbRegion)
-	if strings.EqualFold(mmdbCountry, "UNKNOWN") {
-		mmdbCountry = ""
-	}
-	if strings.EqualFold(mmdbRegion, "UNKNOWN") {
-		mmdbRegion = ""
-	}
+	mmdbCountry, mmdbRegion = normalizeCityFields(mmdbCountry, mmdbRegion)
 	if mmdbCountry != "" {
 		return mmdbCountry, mmdbRegion
 	}
 	return FormatIP2Region(ip2Raw)
+}
+
+// FormatCityDB maps one city-database record. ISO TW, HK, and MO, and the
+// English country names Taiwan, Hong Kong, and Macao, become country 中国.
+func FormatCityDB(countryName, countryISO, regionName, cityName string) (string, string) {
+	if label, ok := chinaRegionLabel(countryISO, countryName, regionName, cityName); ok {
+		city := cityName
+		if cleanToken(city) == "" {
+			city = regionName
+		}
+		return "中国", joinChinaRegion(label, city)
+	}
+	return FormatMaxMind(countryName, countryISO, regionName, cityName)
+}
+
+func ip2RegionChinaRegion(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	parts := strings.Split(raw, "|")
+	field := func(i int) string {
+		if i < 0 || i >= len(parts) {
+			return ""
+		}
+		return parts[i]
+	}
+	_, ok := chinaRegionLabel(field(4), field(0), field(1), field(2))
+	return ok
+}
+
+func normalizeCityFields(country, region string) (string, string) {
+	country = strings.TrimSpace(country)
+	region = strings.TrimSpace(region)
+	if strings.EqualFold(country, "UNKNOWN") {
+		country = ""
+	}
+	if strings.EqualFold(region, "UNKNOWN") {
+		region = ""
+	}
+	if label, ok := chinaRegionLabel("", country, region); ok {
+		return "中国", joinChinaRegion(label, region)
+	}
+	return country, region
+}
+
+func chinaRegionLabel(iso string, names ...string) (string, bool) {
+	switch strings.ToUpper(strings.TrimSpace(iso)) {
+	case "TW":
+		return "台湾", true
+	case "HK":
+		return "香港", true
+	case "MO":
+		return "澳门", true
+	}
+	for _, name := range names {
+		if label, ok := chinaRegionName(name); ok {
+			return label, true
+		}
+	}
+	return "", false
+}
+
+func chinaRegionName(name string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "tw", "taiwan", "taiwan province", "taiwan, province of china":
+		return "台湾", true
+	case "hk", "hong kong", "hong kong sar", "hongkong":
+		return "香港", true
+	case "mo", "macao", "macau", "macao sar", "macau sar":
+		return "澳门", true
+	}
+	switch cleanAdmin(name) {
+	case "台湾", "台灣":
+		return "台湾", true
+	case "香港":
+		return "香港", true
+	case "澳门", "澳門":
+		return "澳门", true
+	}
+	return "", false
+}
+
+func joinChinaRegion(label, city string) string {
+	if area, ok := chinaRegionName(city); ok && area == label {
+		return label
+	}
+	shown := displayCity(city)
+	if shown == "" || shown == label {
+		return label
+	}
+	return label + " " + shown
+}
+
+func displayCity(city string) string {
+	if area, ok := chinaRegionName(city); ok {
+		return area
+	}
+	switch strings.ToLower(strings.TrimSpace(city)) {
+	case "taipei", "taipei city":
+		return "台北"
+	case "new taipei", "new taipei city":
+		return "新北"
+	case "kaohsiung":
+		return "高雄"
+	case "taichung":
+		return "台中"
+	case "tainan":
+		return "台南"
+	case "taoyuan":
+		return "桃园"
+	case "hsinchu":
+		return "新竹"
+	case "keelung":
+		return "基隆"
+	case "kowloon":
+		return "九龙"
+	}
+	return cleanAdmin(city)
 }
 
 // FormatMaxMind maps a city mmdb record (DB-IP Lite or GeoLite2-City) onto

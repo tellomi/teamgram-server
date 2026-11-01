@@ -1,6 +1,9 @@
 package geoip
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFormatIP2RegionDomestic(t *testing.T) {
 	country, region := FormatIP2Region("中国|四川省|成都市|电信|CN")
@@ -88,8 +91,8 @@ func TestChoosePlace(t *testing.T) {
 	}
 
 	country, region = ChoosePlace("中国|香港特别行政区|0|0|CN", "Hong Kong", "Hong Kong")
-	if country != "Hong Kong" || region != "Hong Kong" {
-		t.Fatalf("hong kong uses mmdb: %q %q", country, region)
+	if country != "中国" || region != "香港" {
+		t.Fatalf("hong kong prefers ip2region: %q %q", country, region)
 	}
 	if MainlandChina("中国|香港特别行政区|0|0|CN") || MainlandChina("中国|台湾省|0|中华电信|CN") || MainlandChina("中国|澳门特别行政区|0|0|CN") {
 		t.Fatal("HK/MO/TW are not mainland")
@@ -115,6 +118,84 @@ func TestChoosePlace(t *testing.T) {
 	country, region = ChoosePlace("Reserved|Reserved|Reserved|0|0", "UNKNOWN", "UNKNOWN")
 	if country != "" || region != "" {
 		t.Fatalf("neither database: %q %q", country, region)
+	}
+}
+
+func TestTaiwanHongKongMacaoAreNotCountries(t *testing.T) {
+	add := func(country, region string) {
+		t.Helper()
+		for _, banned := range []string{"Taiwan", "Hong Kong", "Macao", "Macau", "TW", "HK", "MO"} {
+			if strings.EqualFold(country, banned) || strings.EqualFold(region, banned) {
+				t.Fatalf("displayed as its own country: %q %q", country, region)
+			}
+		}
+		if country != "中国" {
+			t.Fatalf("country = %q, want 中国 (region %q)", country, region)
+		}
+	}
+
+	country, region := FormatIP2Region("中国|台湾省|台北市|中华电信|CN")
+	add(country, region)
+	if region != "台湾 台北" || LocationLine(country, region) != "中国 台湾 台北" {
+		t.Fatalf("taipei = %q %q", country, region)
+	}
+	if stringsContainsISP(region) {
+		t.Fatalf("isp leaked: %q", region)
+	}
+
+	country, region = FormatIP2Region("Taiwan|0|Taipei|0|TW")
+	add(country, region)
+	if region != "台湾 台北" {
+		t.Fatalf("iso TW = %q %q", country, region)
+	}
+
+	country, region = FormatIP2Region("中国|香港特别行政区|九龙|0|HK")
+	add(country, region)
+	if region != "香港 九龙" {
+		t.Fatalf("kowloon = %q %q", country, region)
+	}
+
+	country, region = FormatIP2Region("中国|澳门特别行政区|0|0|MO")
+	add(country, region)
+	if region != "澳门" {
+		t.Fatalf("macao = %q %q", country, region)
+	}
+
+	country, region = FormatCityDB("Taiwan", "TW", "", "Taipei")
+	add(country, region)
+	if region != "台湾 台北" {
+		t.Fatalf("mmdb taipei = %q %q", country, region)
+	}
+	country, region = FormatCityDB("Hong Kong", "HK", "Hong Kong", "Hong Kong")
+	add(country, region)
+	if region != "香港" {
+		t.Fatalf("mmdb hong kong = %q %q", country, region)
+	}
+	country, region = FormatCityDB("Macao", "MO", "", "Macau")
+	add(country, region)
+	if region != "澳门" {
+		t.Fatalf("mmdb macao = %q %q", country, region)
+	}
+	country, region = FormatCityDB("", "HK", "", "")
+	add(country, region)
+	if region != "香港" {
+		t.Fatalf("iso only = %q %q", country, region)
+	}
+
+	country, region = ChoosePlace("中国|台湾省|台北市|中华电信|TW", "Taiwan", "Taipei")
+	add(country, region)
+	if region != "台湾 台北" {
+		t.Fatalf("ip2region wins over mmdb: %q %q", country, region)
+	}
+	country, region = ChoosePlace("", "Taiwan", "Taipei")
+	add(country, region)
+	if region != "台湾 台北" {
+		t.Fatalf("mmdb only taipei = %q %q", country, region)
+	}
+	country, region = ChoosePlace("0|0|0|0|0", "HK", "")
+	add(country, region)
+	if region != "香港" {
+		t.Fatalf("mmdb iso country = %q %q", country, region)
 	}
 }
 

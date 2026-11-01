@@ -215,7 +215,7 @@ func lookupMaxMind(reader *geoip2.Reader, ip net.IP) (string, string) {
 			regionName = record.Subdivisions[0].IsoCode
 		}
 	}
-	return FormatMaxMind(record.Country.Names["en"], record.Country.IsoCode, regionName, record.City.Names["en"])
+	return FormatCityDB(record.Country.Names["en"], record.Country.IsoCode, regionName, record.City.Names["en"])
 }
 
 func fileExists(path string) bool {
