@@ -109,6 +109,33 @@ func FinishTakeoutSession(userID, takeoutID int64, success bool) (*mtproto.Bool,
 	return mtproto.BoolTrue, nil
 }
 
+// RequireContactsExport is the gate for contacts.getSaved.
+// https://core.telegram.org/method/contacts.getSaved
+// https://core.telegram.org/api/takeout
+//
+// The call has to arrive inside invokeWithTakeout, and the session opened by
+// account.initTakeoutSession has to include the contacts flag. A missing
+// session is 403 TAKEOUT_REQUIRED. A wrapped id that is not this user's open
+// session is 400 TAKEOUT_INVALID.
+func RequireContactsExport(userID, takeoutID int64) error {
+	if userID == 0 {
+		return mtproto.ErrAuthKeyUnregistered
+	}
+	takeouts.mu.Lock()
+	defer takeouts.mu.Unlock()
+	if takeoutID == 0 {
+		return mtproto.ErrForbiddenTakeoutRequired
+	}
+	rec := takeouts.byID[takeoutID]
+	if rec == nil || rec.done || rec.userID != userID {
+		return mtproto.ErrTakeoutInvalid
+	}
+	if !rec.contacts {
+		return mtproto.ErrForbiddenTakeoutRequired
+	}
+	return nil
+}
+
 func fileMaxSize(in *mtproto.TLAccountInitTakeoutSession) int64 {
 	if !in.GetFiles() {
 		return 0

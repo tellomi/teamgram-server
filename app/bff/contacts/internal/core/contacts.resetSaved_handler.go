@@ -24,9 +24,20 @@ import (
 
 // ContactsResetSaved
 // contacts.resetSaved#879537f1 = Bool;
+// https://core.telegram.org/method/contacts.resetSaved
+//
+// Removes every saved phone-book row that has no Telegram account.
+// Matched contacts are left in place. Clients call this during startup, so a
+// store error is logged and the RPC still succeeds.
 func (c *ContactsCore) ContactsResetSaved(in *mtproto.TLContactsResetSaved) (*mtproto.Bool, error) {
-	// TODO: not impl
-	// c.Logger.Errorf("contacts.resetSaved blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	_ = in
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	if store := c.savedBook(); store != nil {
+		if err := store.ResetUnregistered(c.ctx, c.MD.UserId); err != nil {
+			c.Logger.Errorf("contacts.resetSaved - error: %v", err)
+		}
+	}
 	return mtproto.BoolTrue, nil
 }

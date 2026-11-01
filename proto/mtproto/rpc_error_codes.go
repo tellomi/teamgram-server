@@ -1388,6 +1388,14 @@ var (
 	// | 400 | CONTACT_ADD_MISSING | Contact to add is missing. |
 	ErrContactAddMissing = status.Error(ErrBadRequest, "CONTACT_ADD_MISSING")
 
+	// ErrContactMissing
+	// | 400 | CONTACT_MISSING | The specified user is not a contact. |
+	ErrContactMissing = status.Error(ErrBadRequest, "CONTACT_MISSING")
+
+	// ErrBusinessAddressActive
+	// | 406 | BUSINESS_ADDRESS_ACTIVE | The user is currently advertising a Business Location, the location may only be changed (or removed) using account.updateBusinessLocation. |
+	ErrBusinessAddressActive = status.Error(ErrNotAcceptable, "BUSINESS_ADDRESS_ACTIVE")
+
 	// ErrFilePartTooBig
 	// | 400 | FILE_PART_TOO_BIG | The uploaded file part is too big. |
 	ErrFilePartTooBig = status.Error(ErrBadRequest, "FILE_PART_TOO_BIG")

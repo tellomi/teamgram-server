@@ -24,9 +24,17 @@ import (
 
 // ContactsToggleTopPeers
 // contacts.toggleTopPeers#8514bdda enabled:Bool = Bool;
+// https://core.telegram.org/method/contacts.toggleTopPeers
+//
+// Turns the top-peer rating on or off. When it is off, contacts.getTopPeers
+// returns contacts.topPeersDisabled.
 func (c *ContactsCore) ContactsToggleTopPeers(in *mtproto.TLContactsToggleTopPeers) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("contacts.toggleTopPeers blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	if err := c.relBook().SetTopEnabled(c.ctx, c.MD.UserId, mtproto.FromBool(in.GetEnabled())); err != nil {
+		c.Logger.Errorf("contacts.toggleTopPeers - error: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
 	return mtproto.BoolTrue, nil
 }

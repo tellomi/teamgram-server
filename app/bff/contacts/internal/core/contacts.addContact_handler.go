@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -33,6 +34,10 @@ import (
 // contacts.addContact#e8f463d0 flags:# add_phone_privacy_exception:flags.0?true id:InputUser first_name:string last_name:string phone:string = Updates;
 func (c *ContactsCore) ContactsAddContact(in *mtproto.TLContactsAddContact) (*mtproto.Updates, error) {
 	// 400	CONTACT_NAME_EMPTY	Contact name empty.
+	if err := book.ValidateNote(in.GetNote()); err != nil {
+		c.Logger.Errorf("contacts.addContact - error: %v", err)
+		return nil, err
+	}
 	if in.FirstName == "" && in.LastName == "" {
 		err := mtproto.ErrContactNameEmpty
 		c.Logger.Errorf("contacts.addContact - error: %v", err)
@@ -88,6 +93,11 @@ func (c *ContactsCore) ContactsAddContact(in *mtproto.TLContactsAddContact) (*mt
 	cUser.Phone = mtproto.MakeFlagsString(in.Phone)
 
 	me, _ := users.GetUnsafeUserSelf(c.MD.UserId)
+	if in.GetNote() != nil {
+		if err := c.relBook().PutNote(c.ctx, c.MD.UserId, id.PeerId, in.GetNote()); err != nil {
+			c.Logger.Errorf("contacts.addContact - note: %v", err)
+		}
+	}
 
 	// TODO(@benqi): 性能优化，复用users
 	rUpdates := mtproto.MakeUpdatesByUpdatesUsers(

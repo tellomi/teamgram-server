@@ -74,16 +74,31 @@ func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*
 		})
 		contacts = mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
 			Contacts:   contactList.ToContacts(),
-			SavedCount: 0,
+			SavedCount: c.savedCount(),
 			Users:      users.GetUserListByIdList(c.MD.UserId, idList...),
 		}).To_Contacts_Contacts()
 	} else {
 		contacts = mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
 			Contacts:   []*mtproto.Contact{},
-			SavedCount: 0,
+			SavedCount: c.savedCount(),
 			Users:      []*mtproto.User{},
 		}).To_Contacts_Contacts()
 	}
 
 	return contacts, nil
+}
+
+// savedCount is the number of phone-book rows that have no Telegram account.
+// contacts.resetSaved deletes those rows.
+func (c *ContactsCore) savedCount() int32 {
+	store := c.savedBook()
+	if store == nil || c.MD == nil {
+		return 0
+	}
+	n, err := store.UnregisteredCount(c.ctx, c.MD.UserId)
+	if err != nil {
+		c.Logger.Errorf("contacts.getContacts - saved_count: %v", err)
+		return 0
+	}
+	return n
 }

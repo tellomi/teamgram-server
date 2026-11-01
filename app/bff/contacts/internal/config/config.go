@@ -26,8 +26,13 @@ import (
 
 type Config struct {
 	zrpc.RpcServerConf
-	KV         gokv.KvConf `json:",optional"`
-	UserClient zrpc.RpcClientConf
-	ChatClient zrpc.RpcClientConf
-	SyncClient *kafka.KafkaProducerConf
+	KV           gokv.KvConf `json:",optional"`
+	UserClient   zrpc.RpcClientConf
+	ChatClient   zrpc.RpcClientConf
+	DialogClient zrpc.RpcClientConf `json:",optional"`
+	SyncClient   *kafka.KafkaProducerConf
+	// Mysql is the teamgram database that holds user_contacts and
+	// unregistered_contacts. Empty leaves contacts.getSaved empty and
+	// contacts.resetSaved a no-op success.
+	Mysql string `json:",optional"`
 }

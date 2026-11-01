@@ -24,8 +24,8 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	account_helper "github.com/teamgram/teamgram-server/app/bff/account"
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
-	autosave_helper "github.com/teamgram/teamgram-server/app/bff/autosave"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
+	autosave_helper "github.com/teamgram/teamgram-server/app/bff/autosave"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
@@ -343,7 +343,9 @@ func (s *Server) Initialize() error {
 				KV:            c.KV,
 				UserClient:    c.BizServiceClient,
 				ChatClient:    c.BizServiceClient,
+				DialogClient:  c.BizServiceClient,
 				SyncClient:    c.SyncClient,
+				Mysql:         c.ChannelMySQL,
 			},
 			channelBridge)
 		mtproto.RegisterRPCContactsServer(grpcServer, contactsSvc)

@@ -20,13 +20,41 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 )
 
 // ContactsUpdateContactNote
 // contacts.updateContactNote#139f63fb id:InputUser note:TextWithEntities = Bool;
+// https://core.telegram.org/method/contacts.updateContactNote
+//
+// Stores a private note on a contact. An empty note clears it. The same note
+// is returned on userFull.note. The peer has to already be a contact.
 func (c *ContactsCore) ContactsUpdateContactNote(in *mtproto.TLContactsUpdateContactNote) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("contacts.updateContactNote blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if err := c.requireSelf(); err != nil {
+		return nil, err
+	}
+	if err := book.ValidateNote(in.GetNote()); err != nil {
+		return nil, err
+	}
+	id, err := userPeer(c.MD.UserId, in.GetId())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.loadUser(c.MD.UserId, id.PeerId); err != nil {
+		c.Logger.Errorf("contacts.updateContactNote - error: %v", err)
+		return nil, mtproto.ErrContactIdInvalid
+	}
+	ok, err := c.isContact(c.MD.UserId, id.PeerId)
+	if err != nil {
+		c.Logger.Errorf("contacts.updateContactNote - error: %v", err)
+		return nil, err
+	}
+	if !ok {
+		return nil, mtproto.ErrContactMissing
+	}
+	if err := c.relBook().PutNote(c.ctx, c.MD.UserId, id.PeerId, in.GetNote()); err != nil {
+		c.Logger.Errorf("contacts.updateContactNote - error: %v", err)
+		return nil, err
+	}
+	return mtproto.BoolTrue, nil
 }
