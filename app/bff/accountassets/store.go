@@ -112,6 +112,13 @@ type idVer struct {
 	ver int64
 }
 
+// builtinCatalogVer is mixed into the hashes of the built-in wallpaper,
+// app-theme, and chat-theme catalogs. Generation 1 was the colored set
+// (Telegram blue accents, tinted gradients). Generation 2 is monochrome.
+// Bump it when those colors change so a client holding
+// account.wallPapersNotModified or account.themesNotModified refetches.
+const builtinCatalogVer int64 = 2
+
 func hashPairs(pairs []idVer) int64 {
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].id == pairs[j].id {

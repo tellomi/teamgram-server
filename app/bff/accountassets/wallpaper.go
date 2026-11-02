@@ -80,7 +80,7 @@ func (s *store) wallList(self int64, hash int64) *mtproto.Account_WallPapers {
 	builtins := builtinWallpapers()
 	pairs := make([]idVer, 0, len(builtins))
 	for _, paper := range builtins {
-		pairs = append(pairs, idVer{id: paper.GetId(), ver: 1})
+		pairs = append(pairs, idVer{id: paper.GetId(), ver: builtinCatalogVer})
 	}
 	u := s.users[self]
 	var rows []*wallRec

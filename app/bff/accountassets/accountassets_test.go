@@ -76,7 +76,7 @@ func TestThemes(t *testing.T) {
 		Settings: []*mtproto.InputThemeSettings{
 			mtproto.MakeTLInputThemeSettings(&mtproto.InputThemeSettings{
 				BaseTheme:   mtproto.MakeTLBaseThemeDay(&mtproto.BaseTheme{}).To_BaseTheme(),
-				AccentColor: 0x2481cc,
+				AccentColor: 0x111111,
 			}).To_InputThemeSettings(),
 		},
 	})
