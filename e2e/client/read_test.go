@@ -12,8 +12,23 @@ import (
 func TestPrivateChatReadOutbox(t *testing.T) {
 	a, b, _, bSelf := sharedPair(t)
 	peer := inputPeerUser(bSelf.ID, bSelf.AccessHash)
-	assertReadOutbox(t, a, "user", bSelf.ID, peer, func(ctx context.Context, id int32) error {
-		return b.ReadHistory(ctx, inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash), id)
+	assertReadOutbox(t, a, "user", bSelf.ID, peer, func(ctx context.Context, _ int32, text string) error {
+		// Private chats number messages per user: the recipient has to read up
+		// to its own id for this message, not the sender's.
+		peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
+		var own int32
+		err := waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
+			msgs, err := b.History(ctx, peerForB, 30)
+			if err != nil {
+				return false, err
+			}
+			own = idOfText(msgs, text)
+			return own != 0, nil
+		})
+		if err != nil {
+			return fmt.Errorf("recipient never got %q: %w", text, err)
+		}
+		return b.ReadHistory(ctx, peerForB, own)
 	})
 }
 
@@ -26,7 +41,7 @@ func TestBasicGroupReadOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := inputPeerChat(chatID)
-	assertReadOutbox(t, a, "chat", chatID, peer, func(ctx context.Context, id int32) error {
+	assertReadOutbox(t, a, "chat", chatID, peer, func(ctx context.Context, id int32, _ string) error {
 		return b.ReadHistory(ctx, peer, id)
 	})
 }
@@ -44,7 +59,7 @@ func TestSupergroupReadOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	peer := inputPeerChannel(chID, chHash)
-	assertReadOutbox(t, a, "channel", chID, peer, func(ctx context.Context, id int32) error {
+	assertReadOutbox(t, a, "channel", chID, peer, func(ctx context.Context, id int32, _ string) error {
 		var hash int64
 		err := waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
 			got, ok, err := b.ChatAccess(ctx, chID)
@@ -61,7 +76,7 @@ func TestSupergroupReadOutbox(t *testing.T) {
 	})
 }
 
-func assertReadOutbox(t *testing.T, sender *Client, kind string, peerID int64, peer *mtproto.InputPeer, mark func(context.Context, int32) error) {
+func assertReadOutbox(t *testing.T, sender *Client, kind string, peerID int64, peer *mtproto.InputPeer, mark func(context.Context, int32, string) error) {
 	t.Helper()
 	c, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -90,7 +105,7 @@ func assertReadOutbox(t *testing.T, sender *Client, kind string, peerID int64, p
 	if before >= msgID {
 		t.Fatalf("read_outbox_max_id=%d already covers message %d before the other side read it (false double tick)", before, msgID)
 	}
-	if err := mark(c, msgID); err != nil {
+	if err := mark(c, msgID, text); err != nil {
 		t.Fatal(err)
 	}
 	err = waitUntil(c, 400*time.Millisecond, func() (bool, error) {
