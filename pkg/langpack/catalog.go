@@ -9,8 +9,11 @@
 package langpack
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -162,23 +165,40 @@ type suffix struct {
 }
 
 func suffixTable(platform string) []suffix {
-	if platform == "ios" || platform == "macos" {
-		return []suffix{
-			{"_3_10", "few"},
-			{"_many", "many"},
-			{"_any", "other"},
-			{"_0", "zero"},
-			{"_1", "one"},
-			{"_2", "two"},
-		}
+	ios := []suffix{
+		{"_3_10", "few"},
+		{"_many", "many"},
+		{"_any", "other"},
+		{"_0", "zero"},
+		{"_1", "one"},
+		{"_2", "two"},
 	}
-	return []suffix{
+	android := []suffix{
 		{"_zero", "zero"},
 		{"_one", "one"},
 		{"_two", "two"},
 		{"_few", "few"},
 		{"_many", "many"},
 		{"_other", "other"},
+	}
+	switch platform {
+	case "ios":
+		return ios
+	case "macos":
+		// The macOS export uses both iOS suffixes (_1, _any) and Android suffixes (_one, _other).
+		return append(append([]suffix{}, ios...), android...)
+	case "tdesktop":
+		// Desktop plural keys are lng_key#one. A few keys still use _one.
+		return append([]suffix{
+			{"#zero", "zero"},
+			{"#one", "one"},
+			{"#two", "two"},
+			{"#few", "few"},
+			{"#many", "many"},
+			{"#other", "other"},
+		}, android...)
+	default:
+		return android
 	}
 }
 
@@ -482,7 +502,8 @@ func (fs fileString) plural() *Plural {
 	return p
 }
 
-// Load reads platform directories of <lang>.json from fsys.
+// Load reads platform directories of <lang>.json or <lang>.json.gz from fsys.
+// overrides/ and other non-platform directories are ignored.
 func Load(fsys fs.FS) (*Catalog, error) {
 	platforms := map[string]map[string]*Language{}
 	entries, err := fs.ReadDir(fsys, ".")
@@ -490,7 +511,7 @@ func Load(fsys fs.FS) (*Catalog, error) {
 		return nil, err
 	}
 	for _, ent := range entries {
-		if !ent.IsDir() {
+		if !ent.IsDir() || !knownPlatformDir(ent.Name()) {
 			continue
 		}
 		platform := NormalizePlatform(ent.Name())
@@ -500,10 +521,10 @@ func Load(fsys fs.FS) (*Catalog, error) {
 		}
 		langs := map[string]*Language{}
 		for _, f := range files {
-			if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+			if f.IsDir() || !isPackFile(f.Name()) {
 				continue
 			}
-			body, err := fs.ReadFile(fsys, path.Join(ent.Name(), f.Name()))
+			body, err := readPackFile(fsys, path.Join(ent.Name(), f.Name()))
 			if err != nil {
 				return nil, err
 			}
@@ -518,6 +539,35 @@ func Load(fsys fs.FS) (*Catalog, error) {
 		}
 	}
 	return NewCatalog(platforms), nil
+}
+
+func knownPlatformDir(name string) bool {
+	switch name {
+	case "ios", "android", "tdesktop", "macos":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPackFile(name string) bool {
+	return strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".json.gz")
+}
+
+func readPackFile(fsys fs.FS, name string) ([]byte, error) {
+	body, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(name, ".gz") {
+		return body, nil
+	}
+	r, err := gzip.NewReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }
 
 func decodeLanguage(body []byte) (*Language, error) {

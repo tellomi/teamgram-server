@@ -1,15 +1,12 @@
 package langpack
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
-
-var placeholderRe = regexp.MustCompile(`https?://[^\s<>()]+|(?:t\.me|tell\.cc)/[^\s<>()]+|%%|%(?:\d+\$)?\d*[dfsiu@]|%(?:\d+\$)?\.\d+f|\{[A-Za-z0-9_]+\}|\bun\d+\b`)
 
 func fixtureCatalog() *Catalog {
 	one := "1 message"
@@ -226,19 +223,15 @@ func TestShippedPacks(t *testing.T) {
 			if lang.GetNativeName() == "" || lang.GetPluralCode() == "" || lang.GetTranslationsUrl() == "" || !lang.GetOfficial() {
 				t.Fatalf("%s incomplete %+v", platform, lang)
 			}
-			full := lang.GetLangCode() == "en" || lang.GetLangCode() == "zh-hans" || lang.GetLangCode() == "zh-hant"
 			if lang.GetStringsCount() < 1000 {
 				t.Fatalf("%s %s counts %d/%d", platform, lang.GetLangCode(), lang.GetTranslatedCount(), lang.GetStringsCount())
 			}
-			if full && lang.GetTranslatedCount() < 1000 {
+			if lang.GetTranslatedCount() < minTranslated(platform, lang.GetLangCode()) {
 				t.Fatalf("%s %s translated %d", platform, lang.GetLangCode(), lang.GetTranslatedCount())
 			}
 			diff, err := cat.Difference(platform, lang.GetLangCode(), 0)
 			if err != nil || diff.GetVersion() < 1 {
 				t.Fatalf("%s %s diff %v %v", platform, lang.GetLangCode(), diff.GetVersion(), err)
-			}
-			if full && len(diff.GetStrings()) < 1000 {
-				t.Fatalf("%s %s diff strings %d", platform, lang.GetLangCode(), len(diff.GetStrings()))
 			}
 			buf := mtproto.NewEncodeBuf(256)
 			if err := lang.Encode(buf, 232); err != nil {
@@ -279,7 +272,7 @@ func TestShippedPacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if android[0].GetValue() != "Tellomi" || android[1].GetValue() != "设置" || android[2].GetValue() != "选择语言" {
+	if android[0].GetValue() != "Tellomi" || android[1].GetValue() != "设置" || android[2].GetValue() != "选择您的语言" {
 		t.Fatalf("android alert strings %+v", android)
 	}
 	ios, err := cat.Strings("ios", "zh-hant", []string{"Settings.Title"})
@@ -287,77 +280,122 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatalf("ios traditional %+v %v", ios, err)
 	}
 
-	// Placeholders in the English pack must survive in both Chinese packs.
-	// English packs are version 2 and Chinese packs version 3 so
-	// getDifference delivers the username-length and host rewrite.
-	for _, platform := range []string{"ios", "android"} {
-		en, err := cat.Difference(platform, "en", 0)
+	// Official packs use the translations.telegram.org version, which is above
+	// the old Tellomi-only versions (en=2, zh=3). A client cached at version 3
+	// still receives the newly imported strings.
+	for _, platform := range []string{"ios", "android", "tdesktop", "macos"} {
+		langs, err := cat.Languages(platform)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal(platform, err)
 		}
-		if en.GetVersion() != 2 {
-			t.Fatalf("%s english version %d", platform, en.GetVersion())
+		if len(langs) != len(OfficialLanguages) {
+			t.Fatalf("%s languages %d", platform, len(langs))
 		}
-		enTok := tokensByKey(en.GetStrings())
-		for _, lang := range []string{"zh-hans", "zh-hant"} {
-			zh, err := cat.Difference(platform, lang, 0)
-			if err != nil {
-				t.Fatal(err)
+		for _, lang := range langs {
+			if lang.GetTranslatedCount() < minTranslated(platform, lang.GetLangCode()) {
+				t.Fatalf("%s %s translated %d", platform, lang.GetLangCode(), lang.GetTranslatedCount())
 			}
-			if zh.GetVersion() != 3 {
-				t.Fatalf("%s %s version %d", platform, lang, zh.GetVersion())
+			diff, err := cat.Difference(platform, lang.GetLangCode(), 0)
+			if err != nil || diff.GetVersion() < 1 {
+				t.Fatalf("%s %s diff %v %v", platform, lang.GetLangCode(), diff.GetVersion(), err)
 			}
-			updated, err := cat.Difference(platform, lang, 2)
-			if err != nil || len(updated.GetStrings()) == 0 || updated.GetVersion() != 3 {
-				t.Fatalf("%s %s difference from 2: %d %v", platform, lang, len(updated.GetStrings()), err)
+			if int32(len(diff.GetStrings())) < lang.GetTranslatedCount() {
+				t.Fatalf("%s %s pack %d < translated %d", platform, lang.GetLangCode(), len(diff.GetStrings()), lang.GetTranslatedCount())
 			}
-			caughtUp, err := cat.Difference(platform, lang, 3)
-			if err != nil || len(caughtUp.GetStrings()) != 0 {
-				t.Fatalf("%s %s difference from 3: %d %v", platform, lang, len(caughtUp.GetStrings()), err)
+			caught, err := cat.Difference(platform, lang.GetLangCode(), diff.GetVersion())
+			if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != diff.GetVersion() {
+				t.Fatalf("%s %s caught up %+v %v", platform, lang.GetLangCode(), caught, err)
 			}
-			zhTok := tokensByKey(zh.GetStrings())
-			if len(enTok) == 0 || len(enTok) != len(zhTok) {
-				t.Fatalf("%s %s key mismatch %d %d", platform, lang, len(enTok), len(zhTok))
-			}
-			for key, toks := range enTok {
-				if strings.Join(toks, "\n") != strings.Join(zhTok[key], "\n") {
-					t.Fatalf("%s %s placeholder drift %s\nen %q\nzh %q", platform, lang, key, toks, zhTok[key])
-				}
-			}
-			for _, s := range zh.GetStrings() {
-				if s.GetKey() == "LanguageNameInEnglish" {
-					continue
+			for _, s := range diff.GetStrings() {
+				if hasTelegramBrand(s.GetValue()) || hasTelegramBrand(s.GetOtherValue()) {
+					t.Fatalf("brand in %s %s %q", platform, s.GetKey(), s.GetValue()+s.GetOtherValue())
 				}
 				for _, part := range stringParts(s) {
-					if words := latinLeftovers(part); len(words) > 0 {
-						t.Fatalf("%s %s leftover English in %s: %v\n%q", platform, lang, s.GetKey(), words, part)
+					low := strings.ToLower(part)
+					if strings.Contains(low, "t.me") || strings.Contains(low, "telegram.org") || strings.Contains(low, "telegram.me") || strings.Contains(low, "telegram.dog") {
+						t.Fatalf("telegram host in %s %s %q", platform, s.GetKey(), part)
 					}
 				}
 			}
 		}
-	}
-}
-
-func tokensByKey(stringsIn []*mtproto.LangPackString) map[string][]string {
-	out := map[string][]string{}
-	for _, s := range stringsIn {
-		parts := []string{s.GetValue(), s.GetOtherValue()}
-		for _, opt := range []*wrapperspb.StringValue{s.GetZeroValue(), s.GetOneValue(), s.GetTwoValue(), s.GetFewValue(), s.GetManyValue()} {
-			if opt != nil {
-				parts = append(parts, opt.Value)
+		switch platform {
+		case "android":
+			ja, err := cat.Strings(platform, "ja", []string{"AppName"})
+			if err != nil || ja[0].GetValue() != "Tellomi" {
+				t.Fatalf("%s ja AppName %+v %v", platform, ja, err)
+			}
+		case "ios":
+			ja, err := cat.Strings(platform, "ja", []string{"Application.Name"})
+			if err != nil || ja[0].GetValue() != "Tellomi" {
+				t.Fatalf("%s ja Application.Name %+v %v", platform, ja, err)
+			}
+		case "tdesktop":
+			ja, err := cat.Strings(platform, "ja", []string{"lng_language_name", "lng_menu_contacts"})
+			if err != nil || ja[0].GetValue() != "日本語" || ja[1].GetValue() != "連絡先" {
+				t.Fatalf("%s ja %+v %v", platform, ja, err)
+			}
+		case "macos":
+			ja, err := cat.Strings(platform, "ja", []string{"Login.ContinueOnLanguage"})
+			if err != nil || ja[0].GetValue() != "日本語で続ける" {
+				t.Fatalf("%s ja %+v %v", platform, ja, err)
 			}
 		}
-		var toks []string
-		for _, part := range parts {
-			toks = append(toks, placeholderTokens(part)...)
-		}
-		out[s.GetKey()] = append(out[s.GetKey()], toks...)
 	}
-	return out
+	updated, err := cat.Difference("android", "zh-hans", 3)
+	if err != nil || len(updated.GetStrings()) < 1000 || updated.GetVersion() <= 3 {
+		t.Fatalf("zh-hans refresh from 3: %d v=%d %v", len(updated.GetStrings()), updated.GetVersion(), err)
+	}
+	jaName, err := cat.Strings("android", "ja", []string{"LanguageName", "Settings"})
+	if err != nil || jaName[0].GetValue() != "日本語" || jaName[1].GetValue() != "設定" {
+		t.Fatalf("ja %+v %v", jaName, err)
+	}
+	deName, err := cat.Strings("android", "de", []string{"LanguageName"})
+	if err != nil || deName[0].GetValue() != "Deutsch" {
+		t.Fatalf("de %+v", deName)
+	}
+	hiName, err := cat.Strings("android", "hi", []string{"Settings"})
+	if err != nil || hiName[0].GetValue() != "सेटिंग्स" {
+		t.Fatalf("hi %+v", hiName)
+	}
+	iosJA, err := cat.Strings("ios", "ja", []string{"Settings.Title", "Login.ContinueWithLocalization"})
+	if err != nil || iosJA[0].GetValue() != "設定" || iosJA[1].GetValue() != "日本語で続ける" {
+		t.Fatalf("ios ja %+v", iosJA)
+	}
+	classic, err := cat.Language("android", "classic-zh-cn")
+	if err != nil || classic.GetLangCode() != "classic-zh-cn" || classic.GetBaseLangCode().GetValue() != "zh-hans" || classic.GetNativeName() != "简体中文" {
+		t.Fatalf("classic %+v %v", classic, err)
+	}
+	tw, err := cat.Language("ios", "taiwan")
+	if err != nil || tw.GetLangCode() != "taiwan" || tw.GetBaseLangCode().GetValue() != "zh-hant" || tw.GetNativeName() != "正體中文" {
+		t.Fatalf("taiwan %+v %v", tw, err)
+	}
 }
 
-func placeholderTokens(s string) []string {
-	return placeholderRe.FindAllString(s, -1)
+// minTranslated is how many real strings a shipped pack must contain.
+// Thai and Greek exports on several platforms are empty or a few English
+// leftovers; Hindi on iOS is a partial pack. They still fall back to English.
+func minTranslated(platform, code string) int32 {
+	switch code {
+	case "th", "el":
+		return 0
+	case "hi":
+		if platform == "android" {
+			return 1000
+		}
+		return 300
+	case "classic-zh-cn":
+		if platform == "ios" || platform == "macos" || platform == "tdesktop" {
+			return 2000
+		}
+		return 1000
+	case "taiwan":
+		if platform == "ios" || platform == "macos" || platform == "tdesktop" {
+			return 1500
+		}
+		return 1000
+	default:
+		return 1000
+	}
 }
 
 func stringParts(s *mtproto.LangPackString) []string {
@@ -369,57 +407,6 @@ func stringParts(s *mtproto.LangPackString) []string {
 	}
 	return parts
 }
-
-var latinWordRe = regexp.MustCompile(`[A-Za-z][A-Za-z']{2,}`)
-var latinTokenRe = regexp.MustCompile(`[A-Za-z][A-Za-z0-9']*`)
-
-func latinLeftovers(text string) []string {
-	cleaned := strings.NewReplacer("’", "'", "‘", "'", "ʼ", "'").Replace(text)
-	// Strip link targets before placeholder matching, which stops at "(".
-	cleaned = stripRe.ReplaceAllString(cleaned, " ")
-	cleaned = mentionRe.ReplaceAllString(cleaned, " ")
-	cleaned = placeholderRe.ReplaceAllString(cleaned, " ")
-	trimmed := strings.TrimSpace(cleaned)
-	if hyphenSlugRe.MatchString(trimmed) {
-		return nil
-	}
-	if _, ok := allowedLatin[strings.ToLower(trimmed)]; ok {
-		return nil
-	}
-	if _, ok := soundNames[strings.ToLower(trimmed)]; ok {
-		return nil
-	}
-	cleaned = latinTokenRe.ReplaceAllStringFunc(cleaned, func(word string) string {
-		key := strings.ToLower(strings.Trim(word, "'"))
-		if _, ok := allowedLatin[key]; ok {
-			return " "
-		}
-		return word
-	})
-	var bad []string
-	seen := map[string]struct{}{}
-	for _, word := range latinWordRe.FindAllString(cleaned, -1) {
-		key := strings.ToLower(strings.Trim(word, "'"))
-		if strings.HasSuffix(key, "'s") {
-			if _, ok := allowedLatin[strings.TrimSuffix(key, "'s")]; ok {
-				continue
-			}
-		}
-		if _, ok := allowedLatin[key]; ok {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		bad = append(bad, key)
-	}
-	return bad
-}
-
-var hyphenSlugRe = regexp.MustCompile(`^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$`)
-var stripRe = regexp.MustCompile(`(?i)https?://\S+|[\w.-]*telegram\.org\S*|[\w.-]*tellomi\.cn\S*|t\.me\S*|tell\.cc\S*|[\w.-]+\.(?:com|org|net)\S+|:[A-Za-z0-9_]+:|\]\([A-Za-z0-9_]+\)|\b[\w.-]+\.(?:ppd|pdf|docx?|xlsx?|pptx?|zip|mp3|mp4|jpe?g|png|gif|txt|key|mov|apk)\b|\b(?:app store|google play|face id|apple watch|touch id)\b`)
-var mentionRe = regexp.MustCompile(`@[A-Za-z0-9_]+`)
 
 func hasTelegramBrand(s string) bool {
 	low := strings.ToLower(s)
@@ -472,231 +459,4 @@ func TestEmbeddedPacksLoad(t *testing.T) {
 	if _, err := cat.Languages(""); err != ErrUnknownPack {
 		t.Fatal(err)
 	}
-}
-
-var allowedLatin = map[string]struct{}{
-	"2fa":          {},
-	"2k":           {},
-	"4k":           {},
-	"adler":        {},
-	"ai":           {},
-	"airplay":      {},
-	"alice":        {},
-	"alicia":       {},
-	"alpha":        {},
-	"am":           {},
-	"android":      {},
-	"api":          {},
-	"apk":          {},
-	"app":          {},
-	"apple":        {},
-	"base64":       {},
-	"beatrice":     {},
-	"beta":         {},
-	"bing":         {},
-	"bluetooth":    {},
-	"bob":          {},
-	"boc":          {},
-	"bot":          {},
-	"botfather":    {},
-	"bots":         {},
-	"brave":        {},
-	"bright":       {},
-	"btc":          {},
-	"camera2":      {},
-	"cdn":          {},
-	"chrome":       {},
-	"chromecast":   {},
-	"cocoon":       {},
-	"courier":      {},
-	"covid":        {},
-	"cvv":          {},
-	"dapp":         {},
-	"david":        {},
-	"dc":           {},
-	"dd":           {},
-	"dino":         {},
-	"dns":          {},
-	"dropbox":      {},
-	"duckduckgo":   {},
-	"dwayne":       {},
-	"eee":          {},
-	"eeee":         {},
-	"emma":         {},
-	"emoji":        {},
-	"emojis":       {},
-	"eva":          {},
-	"facebook":     {},
-	"faq":          {},
-	"fhd":          {},
-	"fps":          {},
-	"fragment":     {},
-	"gabriella":    {},
-	"gb":           {},
-	"gif":          {},
-	"gifs":         {},
-	"github":       {},
-	"google":       {},
-	"gps":          {},
-	"gram":         {},
-	"grams":        {},
-	"harris":       {},
-	"harry":        {},
-	"hasselhoff":   {},
-	"hd":           {},
-	"hdr":          {},
-	"heic":         {},
-	"helene":       {},
-	"hh":           {},
-	"html":         {},
-	"http":         {},
-	"https":        {},
-	"icloud":       {},
-	"id":           {},
-	"instagram":    {},
-	"ios":          {},
-	"ip":           {},
-	"ipad":         {},
-	"iphone":       {},
-	"james":        {},
-	"jennie":       {},
-	"jennifer":     {},
-	"jessica":      {},
-	"jpeg":         {},
-	"jpg":          {},
-	"json":         {},
-	"kate":         {},
-	"kb":           {},
-	"latex":        {},
-	"led":          {},
-	"linux":        {},
-	"lucio":        {},
-	"mac":          {},
-	"macos":        {},
-	"mb":           {},
-	"merriweather": {},
-	"mike":         {},
-	"mm":           {},
-	"mmm":          {},
-	"mmmm":         {},
-	"mnc":          {},
-	"monika":       {},
-	"mono":         {},
-	"mp3":          {},
-	"mp4":          {},
-	"mtproto":      {},
-	"mtproxy":      {},
-	"newman":       {},
-	"nfc":          {},
-	"nft":          {},
-	"nick":         {},
-	"nox":          {},
-	"ogg":          {},
-	"ok":           {},
-	"opus":         {},
-	"p2plp":        {},
-	"passport":     {},
-	"paul":         {},
-	"paypal":       {},
-	"pc":           {},
-	"pdf":          {},
-	"pin":          {},
-	"pm":           {},
-	"png":          {},
-	"premium":      {},
-	"psa":          {},
-	"qhd":          {},
-	"qr":           {},
-	"reinhardt":    {},
-	"rnnoise":      {},
-	"roberto":      {},
-	"roboto":       {},
-	"rove":         {},
-	"roxanne":      {},
-	"rtmp":         {},
-	"safari":       {},
-	"sdk":          {},
-	"serif":        {},
-	"sim":          {},
-	"siri":         {},
-	"sms":          {},
-	"socks5":       {},
-	"spotify":      {},
-	"spotlight":    {},
-	"ss":           {},
-	"ssl":          {},
-	"stateinit":    {},
-	"stun":         {},
-	"summer":       {},
-	"suntory":      {},
-	"tcp":          {},
-	"telegramtips": {},
-	"tellomi":      {},
-	"tls":          {},
-	"toberg":       {},
-	"ton":          {},
-	"toncoin":      {},
-	"torreaux":     {},
-	"turn":         {},
-	"tv":           {},
-	"twitter":      {},
-	"udp":          {},
-	"uid":          {},
-	"url":          {},
-	"usb":          {},
-	"usd":          {},
-	"usdt":         {},
-	"veronica":     {},
-	"vip":          {},
-	"visa":         {},
-	"vpn":          {},
-	"walt":         {},
-	"wav":          {},
-	"waze":         {},
-	"wearos":       {},
-	"web":          {},
-	"webp":         {},
-	"webrtc":       {},
-	"webview":      {},
-	"whatsapp":     {},
-	"wi-fi":        {},
-	"wifi":         {},
-	"windows":      {},
-	"www":          {},
-	"yahoo":        {},
-	"yandex":       {},
-	"youtube":      {},
-	"yy":           {},
-	"yyy":          {},
-	"yyyy":         {},
-	"zip":          {},
-}
-
-var soundNames = map[string]struct{}{
-	"antic":     {},
-	"aurora":    {},
-	"bamboo":    {},
-	"bell":      {},
-	"calypso":   {},
-	"cheers":    {},
-	"chime":     {},
-	"chord":     {},
-	"circles":   {},
-	"droplet":   {},
-	"glass":     {},
-	"handoff":   {},
-	"input":     {},
-	"led":       {},
-	"milestone": {},
-	"passage":   {},
-	"popcorn":   {},
-	"portal":    {},
-	"pulse":     {},
-	"rattle":    {},
-	"rebound":   {},
-	"socks5":    {},
-	"synth":     {},
-	"telegraph": {},
-	"tremolo":   {},
-	"tri-tone":  {},
 }

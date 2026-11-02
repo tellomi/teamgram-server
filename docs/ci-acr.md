@@ -49,6 +49,13 @@ docker login crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com
 ./deploy-pull.sh
 ```
 
+On the production host the same script is `/opt/tellomi/deploy-pull.sh`.
+A 7-character SHA argument pins the image and wins over `.env`:
+
+```bash
+/opt/tellomi/deploy-pull.sh <shortSHA>
+```
+
 `deploy-pull.sh` is the full deploy. It pulls `teamgram`, `coturn`, and
 `mediamtx`, then recreates the stack from all three compose files. `teamgram`
 depends on `kafka`, which is defined in `docker-compose-env.yaml`, so the app

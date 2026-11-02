@@ -1,0 +1,2 @@
+data/langpack/**/*.json.gz linguist-generated=true
+data/langpack/overrides/** linguist-generated=true
