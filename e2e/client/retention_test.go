@@ -68,6 +68,9 @@ UPDATE users SET premium = 1, premium_expire_date = %d WHERE id = %d;`,
 			now-60*86400, dave.ID))
 	}
 	setPremium()
+	// The previous test restarts the teamgram container; wait until the
+	// dfs/media backends are registered again before sending media.
+	waitMediaReady(t, a, aToDave)
 	t.Cleanup(func() {
 		_, _ = runSQL(fmt.Sprintf(`UPDATE users SET premium = 0, premium_expire_date = 0 WHERE id IN (%d, %d, %d, %d, %d)`,
 			alice.ID, bob.ID, carol.ID, dave.ID, erin.ID))
@@ -347,4 +350,38 @@ func sweep(t *testing.T, dryRun bool) string {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// waitMediaReady retries a small document send while the gRPC backends are
+// still re-registering after a container restart ("produced zero addresses").
+func waitMediaReady(t *testing.T, c *Client, to *mtproto.InputPeer) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	var last error
+	for time.Now().Before(deadline) {
+		fileID := randomID()
+		cx, cancel := ctx()
+		_, err := c.Invoke(cx, &mtproto.TLUploadSaveFilePart{Constructor: mtproto.CRC32_upload_saveFilePart, FileId: fileID, FilePart: 0, Bytes: []byte("ready")})
+		if err == nil {
+			_, err = c.Invoke(cx, &mtproto.TLMessagesSendMedia{
+				Constructor: mtproto.CRC32_messages_sendMedia_7852834e,
+				Peer:        to,
+				Media: mtproto.MakeTLInputMediaUploadedDocument(&mtproto.InputMedia{
+					File:     mtproto.MakeTLInputFile(&mtproto.InputFile{Id_INT64: fileID, Parts: 1, Name: "ready.txt"}).To_InputFile(),
+					MimeType: "text/plain",
+					Attributes: []*mtproto.DocumentAttribute{
+						mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{FileName: "ready.txt"}).To_DocumentAttribute(),
+					},
+				}).To_InputMedia(),
+				RandomId: randomID(),
+			})
+		}
+		cancel()
+		if err == nil {
+			return
+		}
+		last = err
+		time.Sleep(2 * time.Second)
+	}
+	t.Fatalf("media backends not ready after restart: %v", last)
 }
