@@ -376,3 +376,56 @@ func waitUntil(ctx context.Context, every time.Duration, fn func() (bool, error)
 func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
+
+// SendVoice uploads an OGG/Opus clip and sends it as a voice note with caption
+// as the message text, so the recipient can find its own copy by text.
+func (c *Client) SendVoice(ctx context.Context, peer *mtproto.InputPeer, audio []byte, duration int32, caption string) (int32, error) {
+	fileID := randomID()
+	const part = 512 * 1024
+	parts := int32(0)
+	for off := 0; off < len(audio) || parts == 0; off += part {
+		end := off + part
+		if end > len(audio) {
+			end = len(audio)
+		}
+		_, err := c.Invoke(ctx, &mtproto.TLUploadSaveFilePart{
+			Constructor: mtproto.CRC32_upload_saveFilePart,
+			FileId:      fileID,
+			FilePart:    parts,
+			Bytes:       audio[off:end],
+		})
+		if err != nil {
+			return 0, fmt.Errorf("upload.saveFilePart: %w", err)
+		}
+		parts++
+	}
+	media := mtproto.MakeTLInputMediaUploadedDocument(&mtproto.InputMedia{
+		File: mtproto.MakeTLInputFile(&mtproto.InputFile{
+			Id_INT64: fileID,
+			Parts:    parts,
+			Name:     "voice.ogg",
+		}).To_InputFile(),
+		MimeType: "audio/ogg",
+		Attributes: []*mtproto.DocumentAttribute{
+			mtproto.MakeTLDocumentAttributeAudio(&mtproto.DocumentAttribute{
+				Voice:          true,
+				Duration_INT32: duration,
+			}).To_DocumentAttribute(),
+		},
+	}).To_InputMedia()
+	res, err := c.Invoke(ctx, &mtproto.TLMessagesSendMedia{
+		Constructor: mtproto.CRC32_messages_sendMedia_ac55d9c1,
+		Peer:        peer,
+		Media:       media,
+		Message:     caption,
+		RandomId:    randomID(),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("messages.sendMedia: %w", err)
+	}
+	id := messageID(res)
+	if id == 0 {
+		return 0, fmt.Errorf("messages.sendMedia returned %T without a message id", res)
+	}
+	return id, nil
+}

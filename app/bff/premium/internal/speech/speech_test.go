@@ -10,6 +10,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	messagepb "github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	dfspb "github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 	"google.golang.org/grpc/status"
@@ -245,4 +246,88 @@ type notifierFunc func(context.Context, *sync.TLSyncUpdatesNotMe) (*mtproto.Void
 
 func (f notifierFunc) SyncUpdatesNotMe(ctx context.Context, in *sync.TLSyncUpdatesNotMe) (*mtproto.Void, error) {
 	return f(ctx, in)
+}
+
+type boxStore struct{ box *mtproto.MessageBox }
+
+func (s boxStore) MessageGetUserMessage(_ context.Context, in *messagepb.TLMessageGetUserMessage) (*mtproto.MessageBox, error) {
+	if s.box == nil || s.box.GetMessageId() != in.GetId() {
+		return nil, mtproto.ErrMsgIdInvalid
+	}
+	return s.box, nil
+}
+
+func voiceMessage(id int32) *mtproto.Message {
+	return mtproto.MakeTLMessage(&mtproto.Message{
+		Id: id,
+		Media: mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{
+			Voice: true,
+			Document: mtproto.MakeTLDocument(&mtproto.Document{
+				Id:         99,
+				AccessHash: 5,
+				Attributes: []*mtproto.DocumentAttribute{
+					mtproto.MakeTLDocumentAttributeAudio(&mtproto.DocumentAttribute{Voice: true, Duration_INT32: 3}).To_DocumentAttribute(),
+				},
+			}).To_Document(),
+		}).To_MessageMedia(),
+	}).To_Message()
+}
+
+// TestLoadClipIncomingPrivateVoice is the owner's report: a voice note the
+// other side sent could not be transcribed. Prod rows for the recipient store
+// peer_id = the recipient itself and sender = the partner (messages
+// user_id=136907717 box 2756: sender 136907723, peer_id 136907717).
+func TestLoadClipIncomingPrivateVoice(t *testing.T) {
+	const me, them = int64(136907717), int64(136907723)
+	partner := mtproto.MakePeerUtil(mtproto.PEER_USER, them)
+	rows := map[string]*mtproto.MessageBox{
+		"incoming":        {MessageId: 2756, PeerType: mtproto.PEER_USER, PeerId: me, SenderUserId: them, DialogId1: me, DialogId2: them, Message: voiceMessage(2756)},
+		"incoming legacy": {MessageId: 2756, PeerType: mtproto.PEER_USER, PeerId: me, SenderUserId: them, Message: voiceMessage(2756)},
+		"outgoing":        {MessageId: 2756, PeerType: mtproto.PEER_USER, PeerId: them, SenderUserId: me, DialogId1: me, DialogId2: them, Message: voiceMessage(2756)},
+	}
+	for name, box := range rows {
+		clip, err := loadClip(context.Background(), boxStore{box}, me, partner, 2756)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if clip.DocumentID != 99 || clip.AccessHash != 5 || clip.Filename != "voice.ogg" {
+			t.Fatalf("%s: clip %+v", name, clip)
+		}
+	}
+	other := &mtproto.MessageBox{MessageId: 2756, PeerType: mtproto.PEER_USER, PeerId: me, SenderUserId: 42, DialogId1: 42, DialogId2: me, Message: voiceMessage(2756)}
+	if _, err := loadClip(context.Background(), boxStore{other}, me, partner, 2756); err != mtproto.ErrMsgIdInvalid {
+		t.Fatalf("message from another chat: %v", err)
+	}
+}
+
+func TestLoadClipGroupVoice(t *testing.T) {
+	const me, them, chat = int64(1), int64(2), int64(120037)
+	box := &mtproto.MessageBox{MessageId: 153, PeerType: mtproto.PEER_CHAT, PeerId: chat, SenderUserId: them, Message: voiceMessage(153)}
+	if _, err := loadClip(context.Background(), boxStore{box}, me, mtproto.MakePeerUtil(mtproto.PEER_CHAT, chat), 153); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadClip(context.Background(), boxStore{box}, me, mtproto.MakePeerUtil(mtproto.PEER_CHAT, chat+1), 153); err != mtproto.ErrMsgIdInvalid {
+		t.Fatalf("other group: %v", err)
+	}
+}
+
+// A recognizer outage is not "no speech".
+func TestRecognizerErrorIsUnavailable(t *testing.T) {
+	h := NewHandler(
+		func(context.Context, int64, *mtproto.PeerUtil, int32) (Clip, error) {
+			return Clip{DocumentID: 1, Filename: "voice.ogg", Duration: 1}, nil
+		},
+		func(context.Context, Clip) ([]byte, error) { return []byte("OggS"), nil },
+		RecognizerFunc(func(context.Context, []byte, string) (string, error) {
+			return "", errors.New("dial tcp: connection refused")
+		}),
+		nil,
+	)
+	_, err := h.Transcribe(context.Background(), &metadata.RpcMetadata{UserId: 1}, &mtproto.TLMessagesTranscribeAudio{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 2}).To_InputPeer(),
+		MsgId: 1,
+	})
+	if status.Convert(err).Message() != "TRANSCRIPTION_UNAVAILABLE" {
+		t.Fatalf("err %v", err)
+	}
 }

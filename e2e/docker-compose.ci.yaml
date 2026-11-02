@@ -10,6 +10,10 @@
 
 services:
   minio:
+    # docker-compose-env.yaml puts minio on profile local-minio, so a plain
+    # `up` never starts it and dfs exits on the bucket check: every upload
+    # in e2e failed with "produced zero addresses". CI always needs it.
+    profiles: !reset []
     image: rustfs/rustfs:latest
     # The image user cannot write a root-owned bind mount. Root matches the
     # MinIO image this service replaces.
@@ -24,6 +28,7 @@ services:
       RUSTFS_ADDRESS: 0.0.0.0:9000
 
   minio-mc:
+    profiles: !reset []
     image: amazon/aws-cli:2.22.35
     entrypoint: ["/bin/bash", "-c"]
     command:
