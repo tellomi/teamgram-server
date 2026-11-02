@@ -25,6 +25,8 @@ import (
 
 type Config struct {
 	zrpc.RpcServerConf
-	UserClient zrpc.RpcClientConf       `json:",optional"`
-	SyncClient *kafka.KafkaProducerConf `json:",optional"`
+	UserClient    zrpc.RpcClientConf       `json:",optional"`
+	MessageClient zrpc.RpcClientConf       `json:",optional"`
+	DfsClient     zrpc.RpcClientConf       `json:",optional"`
+	SyncClient    *kafka.KafkaProducerConf `json:",optional"`
 }

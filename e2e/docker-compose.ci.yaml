@@ -46,6 +46,13 @@ services:
       AWS_DEFAULT_REGION: us-east-1
       AWS_EC2_METADATA_DISABLED: "true"
 
+  # The SenseVoice image downloads the model at build time. CI does not
+  # start it. The trial quota stays 0 so clients hide the button.
+  asr:
+    profiles: ["donotstart"]
+  teamgram:
+    environment:
+      TELLOMI_TRANSCRIBE_ENABLED: "false"
   coturn:
     profiles: ["donotstart"]
   mediamtx:

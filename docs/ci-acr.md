@@ -1,8 +1,9 @@
 # CI images on Aliyun Container Registry
 
 The Chengdu server must not compile images. Two local builds hung the machine.
-GitHub Actions builds the image `docker-compose.yaml` used to build itself
-(`teamgram`, from the root `Dockerfile`) and pushes it to ACR. Deploy is a pull.
+GitHub Actions builds the images `docker-compose.yaml` builds itself
+(`teamgram` from the root `Dockerfile`, and `asr` from `services/asr`) and
+pushes them to ACR. Deploy is a pull.
 
 The workflow runs on every push to `master` and from the Actions tab
 (`workflow_dispatch`). A new push to the same ref cancels the in-progress
@@ -18,8 +19,8 @@ city mmdb is not in the image; `docker-compose.geoip.yaml` mounts it at
 
 Set these as repository Actions secrets. The workflow logs in with
 `docker/login-action` and pushes
-`${ACR_REGISTRY}/${ACR_NAMESPACE}/teamgram`, tagged with the 7-character commit
-SHA and `latest`.
+`${ACR_REGISTRY}/${ACR_NAMESPACE}/teamgram` and `.../asr`, each tagged with the
+7-character commit SHA and `latest`.
 
 | Secret | Purpose | When unset |
 |---|---|---|
@@ -56,16 +57,23 @@ A 7-character SHA argument pins the image and wins over `.env`:
 /opt/tellomi/deploy-pull.sh <shortSHA>
 ```
 
-`deploy-pull.sh` is the full deploy. It pulls `teamgram`, `coturn`, and
+`deploy-pull.sh` is the full deploy. It pulls `teamgram`, `asr`, `coturn`, and
 `mediamtx`, then recreates the stack from all three compose files. `teamgram`
 depends on `kafka`, which is defined in `docker-compose-env.yaml`, so the app
 file is not composed by itself. MinIO is profile `local-minio` and is not
-started.
+started. No extra flag is required for `asr`: `docker-compose.yaml` sets
+`TELLOMI_TRANSCRIBE_ENABLED=true` and `TELLOMI_ASR_URL=http://asr:8080`.
 
 ```bash
-docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml pull teamgram coturn mediamtx
+docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml pull teamgram coturn mediamtx asr
 docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml up -d
 ```
+
+`asr` is the SenseVoice-Small sidecar (`services/asr`). The int8 ONNX weights
+are baked into the image at build time, so the Chengdu host does not download
+them. The container is limited to 1.5GB and 2 CPUs. `deploy-pull.sh` already
+pulls this image; it does not need a separate step. The model license is
+`services/asr/NOTICE`.
 
 `docker-compose.geoip.yaml` bind-mounts the DB-IP Lite city MMDB into
 `teamgram`. Omit that `-f` and the next `up` drops the mount. The database

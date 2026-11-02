@@ -1,0 +1,37 @@
+SenseVoice-Small speech recognition for Tellomi voice messages.
+
+Runtime
+  sherpa-onnx (Apache License 2.0)
+  https://github.com/k2-fsa/sherpa-onnx
+
+Model
+  Name: SenseVoiceSmall (SenseVoice-Small), int8 ONNX
+  Artifact: sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+  Source: FunAudioLLM / Alibaba Group
+  https://github.com/FunAudioLLM/SenseVoice
+  https://huggingface.co/FunAudioLLM/SenseVoiceSmall
+  Converted for sherpa-onnx by the k2-fsa project:
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2
+
+License
+  FunASR Model Open Source License Agreement, version 1.1
+  https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE
+
+  Section 2.1: free to use, copy, modify, and share the model weights and
+  derivatives, including fine-tuned models, under this agreement. The grant
+  has no non-commercial carve-out. FunAudioLLM maintainers confirmed in
+  FunAudioLLM/SenseVoice issue 287 (2026-05-20) that commercial use of
+  FunASR's own weights, including SenseVoice, is permitted when this license
+  is followed.
+
+  Section 2.2: when using, copying, modifying, or sharing the model, attribute
+  the source and author and retain the model name. This file is that notice:
+  SenseVoiceSmall by FunAudioLLM / Alibaba Group.
+
+  Section 3 is the warranty and risk disclaimer ("reference and learning
+  purposes only" sits in that section). It does not add a non-commercial
+  restriction on top of section 2.1.
+
+  Section 4.2: unjustified denigration of the model forfeits the license.
+  Section 6: a revised agreement published in the official FunASR repository
+  takes effect on continued use.

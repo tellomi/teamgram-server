@@ -103,6 +103,12 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-tellomi-attachments}
+      # Voice notes. The asr service below is SenseVoice-Small. Unset is off
+      # (trial weekly number 0, clients hide the button). This file ships the
+      # sidecar, so the default here is on. See docs/ci-acr.md.
+      TELLOMI_TRANSCRIBE_ENABLED: ${TELLOMI_TRANSCRIBE_ENABLED:-true}
+      TELLOMI_ASR_URL: ${TELLOMI_ASR_URL:-http://asr:8080}
+      TELLOMI_ASR_TIMEOUT: ${TELLOMI_ASR_TIMEOUT:-120}
       # APNs token auth (.p8). Leave the key unset to disable push.
       # TestFlight and the App Store use production (TELLOMI_APNS_SANDBOX=false).
       # Mount the key with TELLOMI_APNS_KEY_FILE=/path/AuthKey_XXXX.p8
@@ -155,6 +161,11 @@ services:
       kafka:
         condition: service_healthy
         required: false
+      # required: false so a stack that disables asr (CI profile) still starts.
+      # When asr is in the project, teamgram waits until the model is loaded.
+      asr:
+        condition: service_healthy
+        required: false
     networks:
       - teamgram_net
 
@@ -178,6 +189,35 @@ services:
     volumes:
       - ./teamgramd/deploy/coturn/entrypoint.sh:/opt/coturn/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/opt/coturn/entrypoint.sh"]
+
+  # SenseVoice-Small (int8 ONNX via sherpa-onnx). CPU only. The weights are
+  # in the image; the container does not download them. 1.5GB / 2 CPUs matches
+  # the Chengdu host. See services/asr/NOTICE for the model license.
+  asr:
+    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/asr:${TELLOMI_IMAGE_TAG:-local}"
+    build:
+      context: ./services/asr
+    restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 2
+    environment:
+      ASR_THREADS: "2"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - teamgram_net
 
   # RTMP ingest for phone.getGroupCallStreamRtmpUrl. This accepts the push;
   # it is not bridged into the group-call SFU (see app/bff/phone/LIMITATIONS.md).
