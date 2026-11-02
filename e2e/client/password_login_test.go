@@ -161,7 +161,7 @@ func setCloudPassword(ctx context.Context, c *Client, pass string) error {
 	obj, err := c.Invoke(ctx, &mtproto.TLAccountUpdatePasswordSettings{
 		Constructor: mtproto.CRC32_account_updatePasswordSettings,
 		Password:    mtproto.MakeTLInputCheckPasswordEmpty(nil).To_InputCheckPasswordSRP(),
-		NewSettings: &mtproto.Account_PasswordInputSettings{
+		NewSettings: mtproto.MakeTLAccountPasswordInputSettings(&mtproto.Account_PasswordInputSettings{
 			NewAlgo: mtproto.MakeTLPasswordKdfAlgoModPow(&mtproto.PasswordKdfAlgo{
 				Salt1: salt1,
 				Salt2: salt2,
@@ -170,7 +170,7 @@ func setCloudPassword(ctx context.Context, c *Client, pass string) error {
 			}).To_PasswordKdfAlgo(),
 			NewPasswordHash: Verifier([]byte(pass), salt1, salt2),
 			Hint:            &wrapperspb.StringValue{Value: "hint"},
-		},
+		}).To_Account_PasswordInputSettings(),
 	})
 	if err != nil {
 		return fmt.Errorf("set password: %w", err)
@@ -194,11 +194,11 @@ func disableCloudPassword(ctx context.Context, c *Client, pass string) error {
 	obj, err := c.Invoke(ctx, &mtproto.TLAccountUpdatePasswordSettings{
 		Constructor: mtproto.CRC32_account_updatePasswordSettings,
 		Password:    proof,
-		NewSettings: &mtproto.Account_PasswordInputSettings{
+		NewSettings: mtproto.MakeTLAccountPasswordInputSettings(&mtproto.Account_PasswordInputSettings{
 			NewAlgo:         mtproto.MakeTLPasswordKdfAlgoUnknown(nil).To_PasswordKdfAlgo(),
 			NewPasswordHash: []byte{},
 			Hint:            &wrapperspb.StringValue{Value: ""},
-		},
+		}).To_Account_PasswordInputSettings(),
 	})
 	if err != nil {
 		return fmt.Errorf("disable password: %w", err)
@@ -207,6 +207,63 @@ func disableCloudPassword(ctx context.Context, c *Client, pass string) error {
 		return fmt.Errorf("disable password returned %T", obj)
 	}
 	return nil
+}
+
+func TestPasswordSettingsRoundTrip(t *testing.T) {
+	salt1 := bytes.Repeat([]byte{1}, 40)
+	salt2 := bytes.Repeat([]byte{2}, 16)
+	hash := bytes.Repeat([]byte{3}, 256)
+	req := &mtproto.TLAccountUpdatePasswordSettings{
+		Constructor: mtproto.CRC32_account_updatePasswordSettings,
+		Password:    mtproto.MakeTLInputCheckPasswordEmpty(nil).To_InputCheckPasswordSRP(),
+		NewSettings: mtproto.MakeTLAccountPasswordInputSettings(&mtproto.Account_PasswordInputSettings{
+			NewAlgo: mtproto.MakeTLPasswordKdfAlgoModPow(&mtproto.PasswordKdfAlgo{
+				Salt1: salt1,
+				Salt2: salt2,
+				G:     3,
+				P:     append([]byte{}, Prime...),
+			}).To_PasswordKdfAlgo(),
+			NewPasswordHash: hash,
+			Hint:            &wrapperspb.StringValue{Value: "hint"},
+		}).To_Account_PasswordInputSettings(),
+	}
+	raw, err := encodeTL(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := decodeTL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := obj.(*mtproto.TLAccountUpdatePasswordSettings)
+	if !ok || got.GetNewSettings().GetNewAlgo().GetPredicateName() != mtproto.Predicate_passwordKdfAlgoModPow {
+		t.Fatalf("round trip %T algo %s", obj, got.GetNewSettings().GetNewAlgo().GetPredicateName())
+	}
+	if !bytes.Equal(got.GetNewSettings().GetNewPasswordHash(), hash) || got.GetNewSettings().GetHint().GetValue() != "hint" {
+		t.Fatalf("settings %+v", got.GetNewSettings())
+	}
+
+	disable := &mtproto.TLAccountUpdatePasswordSettings{
+		Constructor: mtproto.CRC32_account_updatePasswordSettings,
+		Password:    mtproto.MakeTLInputCheckPasswordEmpty(nil).To_InputCheckPasswordSRP(),
+		NewSettings: mtproto.MakeTLAccountPasswordInputSettings(&mtproto.Account_PasswordInputSettings{
+			NewAlgo:         mtproto.MakeTLPasswordKdfAlgoUnknown(nil).To_PasswordKdfAlgo(),
+			NewPasswordHash: []byte{},
+			Hint:            &wrapperspb.StringValue{Value: ""},
+		}).To_Account_PasswordInputSettings(),
+	}
+	raw, err = encodeTL(disable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err = decodeTL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = obj.(*mtproto.TLAccountUpdatePasswordSettings)
+	if !ok || got.GetNewSettings().GetNewAlgo().GetPredicateName() != mtproto.Predicate_passwordKdfAlgoUnknown || len(got.GetNewSettings().GetNewPasswordHash()) != 0 {
+		t.Fatalf("disable round trip %T %+v", obj, got.GetNewSettings())
+	}
 }
 
 func checkPasswordProof(pw *mtproto.TLAccountPassword, pass string) (*mtproto.InputCheckPasswordSRP, error) {
