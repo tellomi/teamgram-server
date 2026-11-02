@@ -68,8 +68,7 @@ UPDATE users SET premium = 1, premium_expire_date = %d WHERE id = %d;`,
 			now-60*86400, dave.ID))
 	}
 	setPremium()
-	// The previous test restarts the teamgram container; wait until the
-	// dfs/media backends are registered again before sending media.
+	// Wait until the dfs/media backends are registered in etcd.
 	waitMediaReady(t, a, aToDave)
 	t.Cleanup(func() {
 		_, _ = runSQL(fmt.Sprintf(`UPDATE users SET premium = 0, premium_expire_date = 0 WHERE id IN (%d, %d, %d, %d, %d)`,
@@ -362,7 +361,9 @@ func waitMediaReady(t *testing.T, c *Client, to *mtproto.InputPeer) {
 		fileID := randomID()
 		cx, cancel := ctx()
 		_, err := c.Invoke(cx, &mtproto.TLUploadSaveFilePart{Constructor: mtproto.CRC32_upload_saveFilePart, FileId: fileID, FilePart: 0, Bytes: []byte("ready")})
-		if err == nil {
+		if err != nil {
+			err = fmt.Errorf("upload.saveFilePart: %w", err)
+		} else {
 			_, err = c.Invoke(cx, &mtproto.TLMessagesSendMedia{
 				Constructor: mtproto.CRC32_messages_sendMedia_7852834e,
 				Peer:        to,
@@ -375,6 +376,9 @@ func waitMediaReady(t *testing.T, c *Client, to *mtproto.InputPeer) {
 				}).To_InputMedia(),
 				RandomId: randomID(),
 			})
+			if err != nil {
+				err = fmt.Errorf("messages.sendMedia: %w", err)
+			}
 		}
 		cancel()
 		if err == nil {
@@ -383,5 +387,8 @@ func waitMediaReady(t *testing.T, c *Client, to *mtproto.InputPeer) {
 		last = err
 		time.Sleep(2 * time.Second)
 	}
-	t.Fatalf("media backends not ready after restart: %v", last)
+	diag, _ := composeExec(time.Minute, "", "sh", "-c",
+		"ps -eo pid,etime,args | grep /app/bin/ | grep -v grep; for f in /app/logs/media/error.log /app/logs/dfs/error.log /app/logs/msg/error.log /app/logs/bff/error.log; do echo \"== $f\"; tail -n 15 $f 2>&1 | cut -c1-400; done")
+	t.Logf("teamgram diagnostics:\n%s", diag)
+	t.Fatalf("media backends not ready: %v", last)
 }
