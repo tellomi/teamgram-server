@@ -12,7 +12,7 @@ var now = time.Date(2026, 11, 3, 4, 0, 0, 0, time.UTC)
 
 func daysAgo(d int) int64 { return now.Add(-time.Duration(d) * 24 * time.Hour).Unix() }
 
-func cfg() Config { c := Defaults(); c.Enabled = true; return c }
+func cfg() Config { c := Defaults(); c.Enabled = true; c.DryRun = false; return c }
 
 func TestFromEnv(t *testing.T) {
 	t.Setenv(EnvEnabled, "true")
@@ -46,7 +46,7 @@ func TestFromEnvDefaultsOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Enabled || c.DryRun || c.Days != 90 || c.GraceDays != 30 {
+	if c.Enabled || !c.DryRun || c.Days != 90 || c.GraceDays != 30 {
 		t.Fatalf("got %+v", c)
 	}
 }

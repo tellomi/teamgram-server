@@ -49,7 +49,7 @@ type Config struct {
 
 // Defaults returns the production defaults: 90 days, 30-day grace.
 func Defaults() Config {
-	return Config{Days: 90, GraceDays: 30, Batch: 500, MaxPerRun: 5000, RunHour: 4}
+	return Config{Days: 90, GraceDays: 30, Batch: 500, MaxPerRun: 5000, RunHour: 4, DryRun: true}
 }
 
 func (c *Config) Normalize() {
@@ -82,7 +82,7 @@ func FromEnv() (Config, error) {
 	if c.Enabled, err = envBool(EnvEnabled, false); err != nil {
 		return c, err
 	}
-	if c.DryRun, err = envBool(EnvDryRun, false); err != nil {
+	if c.DryRun, err = envBool(EnvDryRun, true); err != nil {
 		return c, err
 	}
 	for _, f := range []struct {

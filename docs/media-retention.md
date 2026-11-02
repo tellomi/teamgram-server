@@ -43,7 +43,7 @@ first, so expired media never reaches the CDN path.
 | `TELLOMI_MEDIA_RETENTION_ENABLED` | `false` | Starts the daily sweeper in the media service. |
 | `TELLOMI_MEDIA_RETENTION_DAYS` | `90` | |
 | `TELLOMI_MEDIA_RETENTION_GRACE_DAYS` | `30` | |
-| `TELLOMI_MEDIA_RETENTION_DRY_RUN` | `false` | Log what would expire; delete nothing. |
+| `TELLOMI_MEDIA_RETENTION_DRY_RUN` | `true` | Log what would expire; delete nothing. Set to `false` to actually delete. |
 | `TELLOMI_MEDIA_RETENTION_BATCH` | `500` | Rows per query. |
 | `TELLOMI_MEDIA_RETENTION_MAX_PER_RUN` | `5000` | Cap on items expired per run (0 = none). |
 | `TELLOMI_MEDIA_RETENTION_RUN_HOUR` | `4` | Container-local hour of the daily run. |
