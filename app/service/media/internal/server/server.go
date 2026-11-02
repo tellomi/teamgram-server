@@ -24,7 +24,8 @@ import (
 var configFile = flag.String("f", "etc/media.yaml", "the config file")
 
 type Server struct {
-	grpcSrv *zrpc.RpcServer
+	grpcSrv       *zrpc.RpcServer
+	stopRetention func()
 }
 
 func New() *Server {
@@ -42,6 +43,7 @@ func (s *Server) Initialize() error {
 	go func() {
 		go s.grpcSrv.Start()
 	}()
+	s.stopRetention = startRetention(c)
 	return nil
 }
 
@@ -49,5 +51,8 @@ func (s *Server) RunLoop() {
 }
 
 func (s *Server) Destroy() {
+	if s.stopRetention != nil {
+		s.stopRetention()
+	}
 	s.grpcSrv.Stop()
 }

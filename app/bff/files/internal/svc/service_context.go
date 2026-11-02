@@ -19,9 +19,14 @@
 package svc
 
 import (
+	"time"
+
 	"github.com/teamgram/teamgram-server/app/bff/files/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/files/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/files/plugin"
+	"github.com/teamgram/teamgram-server/app/service/media/retention"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
@@ -29,13 +34,25 @@ type ServiceContext struct {
 	*dao.Dao
 	Plugin1 plugin.ThumbFilesPlugin
 	Plugin2 plugin.StreamFilesPlugin
+	// Retention reports media removed by the retention sweeper. Nil when no
+	// DSN is configured.
+	Retention *retention.Checker
 }
 
 func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2 plugin.StreamFilesPlugin) *ServiceContext {
-	return &ServiceContext{
+	svcCtx := &ServiceContext{
 		Config:  c,
 		Dao:     dao.New(c),
 		Plugin1: plugin1,
 		Plugin2: plugin2,
 	}
+	if c.Mysql != "" {
+		store, err := retention.OpenSQL(c.Mysql)
+		if err != nil {
+			logx.Errorf("files: media retention check disabled: %v", err)
+		} else {
+			svcCtx.Retention = retention.NewChecker(store, time.Minute)
+		}
+	}
+	return svcCtx
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
 	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
+	"github.com/teamgram/teamgram-server/app/service/media/retention"
 )
 
 // downloadFile is set by tests. Production uses DFS.
@@ -134,6 +135,14 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 		return nil, mtproto.ErrLocationInvalid
 	}
 
+	if c.mediaExpired(location) {
+		// FILE_ID_INVALID is what clients already handle for a file that is
+		// gone: they stop the download and keep the thumbnail. FILE_REFERENCE_*
+		// would make them refetch the message and retry forever.
+		c.Logger.Infof("upload.getFile - %s %d expired by media retention", location.GetPredicateName(), location.GetId())
+		return nil, mtproto.ErrFileIdInvalid
+	}
+
 	if c.wantsCDN(in) {
 		if full, ok := fullSeeded(location); ok {
 			if redir, ok := c.cdnRedirect(location, full); ok {
@@ -170,6 +179,31 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 	}
 
 	return uploadFile, nil
+}
+
+// mediaExpired reports whether location names an object the retention
+// sweeper removed. Thumbnails stay downloadable.
+func (c *FilesCore) mediaExpired(location *mtproto.InputFileLocation) bool {
+	if c.svcCtx == nil || c.svcCtx.Retention == nil {
+		return false
+	}
+	kind, ok := expiredKind(location)
+	if !ok {
+		return false
+	}
+	return c.svcCtx.Retention.Expired(c.ctx, kind, location.GetId())
+}
+
+func expiredKind(location *mtproto.InputFileLocation) (retention.Kind, bool) {
+	switch location.GetPredicateName() {
+	case mtproto.Predicate_inputDocumentFileLocation:
+		return retention.KindDocument, location.GetThumbSize() == ""
+	case mtproto.Predicate_inputPhotoFileLocation:
+		return retention.KindPhoto, retention.FullPhotoSize(location.GetThumbSize())
+	case mtproto.Predicate_inputEncryptedFileLocation:
+		return retention.KindEncrypted, true
+	}
+	return "", false
 }
 
 func (c *FilesCore) wantsCDN(in *mtproto.TLUploadGetFile) bool {

@@ -325,6 +325,7 @@ func (s *Server) Initialize() error {
 				DfsClient:     c.DfsClient,
 				UserClient:    c.BizServiceClient,
 				MediaClient:   c.MediaClient,
+				Mysql:         c.ChannelMySQL,
 			}, stickers_helper.Thumb{}, nil))
 
 		// passport_helper

@@ -27,4 +27,7 @@ type Config struct {
 	DfsClient   zrpc.RpcClientConf
 	UserClient  zrpc.RpcClientConf
 	MediaClient zrpc.RpcClientConf
+	// Mysql is the teamgram DSN used to look up expired media
+	// (documents/photos.expired_at). Empty disables the check.
+	Mysql string `json:",optional"`
 }

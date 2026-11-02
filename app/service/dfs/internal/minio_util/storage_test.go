@@ -424,6 +424,11 @@ func (s *s3fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		w.Header().Set("ETag", `"put"`)
 		w.WriteHeader(http.StatusOK)
+	case r.Method == http.MethodDelete && key != "":
+		s.mu.Lock()
+		delete(s.objects[bucket], key)
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodHead && key != "":
 		s.stat(w, bucket, key)
 	case r.Method == http.MethodGet && key != "":

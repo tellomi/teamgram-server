@@ -191,6 +191,27 @@ func (m *MinioUtil) put(ctx context.Context, class, path string, r io.Reader, si
 	return info, nil
 }
 
+// RemoveClassObject deletes the object Get*File reads for a chat-media class.
+// Only private chat classes are accepted: public media (avatars, stickers,
+// emoji, wallpapers) is never removed through this path. A missing object
+// is not an error.
+func (m *MinioUtil) RemoveClassObject(ctx context.Context, class, path string) error {
+	switch class {
+	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles:
+	default:
+		return fmt.Errorf("refusing to remove %s/%s: only chat media classes can be removed", class, path)
+	}
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return err
+	}
+	if err := m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil && !isNotFound(err) {
+		logx.WithContext(ctx).Errorf("RemoveObject %s/%s (%s) error: %v", bucket, key, class, err)
+		return err
+	}
+	return nil
+}
+
 func (m *MinioUtil) putBytes(ctx context.Context, class, path string, buf []byte) (minio.UploadInfo, error) {
 	return m.put(ctx, class, path, bytes.NewReader(buf), int64(len(buf)), contentTypeFor(path))
 }
