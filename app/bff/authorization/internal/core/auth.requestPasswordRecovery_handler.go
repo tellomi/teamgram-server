@@ -27,7 +27,12 @@ import (
 // https://core.telegram.org/method/auth.requestPasswordRecovery
 func (c *AuthorizationCore) AuthRequestPasswordRecovery(in *mtproto.TLAuthRequestPasswordRecovery) (*mtproto.Auth_PasswordRecovery, error) {
 	_ = in
-	recovery, err := c.codes().RequestPasswordRecovery(c.ctx, c.userID())
+	userID, err := c.passwordUserID()
+	if err != nil {
+		c.Logger.Errorf("auth.requestPasswordRecovery - pending: %v", err)
+		return nil, err
+	}
+	recovery, err := c.codes().RequestPasswordRecovery(c.ctx, userID)
 	if err != nil {
 		c.Logger.Errorf("auth.requestPasswordRecovery - error: %v", err)
 		return nil, err

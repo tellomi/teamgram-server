@@ -10,6 +10,10 @@ The verifier, salts, hint, recovery email, secure settings, and pending reset no
 
 `auth.signIn`, the email and future-auth-token paths, and `auth.exportLoginToken` return `SESSION_PASSWORD_NEEDED` with no suffix. The user id is stored on `user_password_login` before the auth key is bound. The session process still accepts the old suffixed form.
 
+After `auth.logOut` on the same permanent key, that error moves the session from Logout, Unknown, or New to NeedPassword. Only an already Normal session ignores it, so a delayed error cannot undo `auth.checkPassword`. `auth.checkPassword` success moves every other state to Normal. `account.getPassword`, `auth.requestPasswordRecovery`, `auth.checkRecoveryPassword`, and `auth.recoverPassword` read `user_password_login` when the session user id is still 0, the same fallback `auth.checkPassword` already had. A reconnect that finds the key in `auth_users` before the password check stays on NeedPassword while that row exists.
+
+Disabling 2FA sends `new_algo = passwordKdfAlgoUnknown` and an empty `new_password_hash` (hint and email may be present and empty). That removes the verifier, recovery email, and secure settings after the current SRP check, and drops `user_password_login` rows. Each `account.getPassword` deletes this user's expired `user_password_srp` rows. A live `srp_id` stays valid until it expires or the password changes.
+
 | Method | File |
 | --- | --- |
 | `account.getPassword` | `app/bff/twofa/internal/core/account.getPassword_handler.go` |

@@ -27,6 +27,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestUsernameThreeCharacters` | A 3-character username cannot be checked and set. |
 | `TestLinksUseTellCC` | `help.getConfig` `me_url_prefix` is not a `tell.cc` URL. |
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
+| `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).
@@ -62,6 +63,7 @@ shape. The code is the digit after `99966` five times, which is what
 | username | 9996610004 | 11111 |
 | reconnect_a | 9996610005 | 11111 |
 | reconnect_b | 9996610006 | 11111 |
+| password | 9996610008 | 11111 |
 
 `9996612345` is not code `12345`. The fixed code `12345` is only for numbers
 outside this range.

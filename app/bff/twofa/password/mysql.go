@@ -169,7 +169,12 @@ ON DUPLICATE KEY UPDATE
 }
 
 func (s *mysqlStore) PutChallenge(ctx context.Context, ch Challenge) error {
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM user_password_srp WHERE user_id = ? AND expires < ?`, ch.UserID, ch.Expires-600)
+	// Indexed by user_id. Expired rows for this user only; a live srp_id
+	// stays valid until it expires or the password changes.
+	cutoff := ch.Expires - int64(challengeTTL/time.Second)
+	_, _ = s.db.ExecContext(ctx, `
+DELETE FROM user_password_srp WHERE user_id = ? AND expires <= ?`,
+		ch.UserID, cutoff)
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO user_password_srp (srp_id, user_id, auth_key_id, b_priv, b_pub, version, expires)
 VALUES (?,?,?,?,?,?,?)`,

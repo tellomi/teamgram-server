@@ -448,6 +448,19 @@ func (s *Service) apply(ctx context.Context, rec Record, settings *mtproto.Accou
 	if err := s.validateShape(settings, !rec.HasPassword); err != nil {
 		return 0, err
 	}
+	// Android and iOS clear 2FA with passwordKdfAlgoUnknown and an empty
+	// hash. Hint and email may be present and empty. That is not a new verifier.
+	if removesPassword(settings) {
+		if !rec.HasPassword {
+			return 0, mtproto.ErrNewSaltInvalid
+		}
+		s.clearPassword(&rec)
+		if err := s.store.Save(ctx, rec); err != nil {
+			return 0, err
+		}
+		_ = s.store.DeleteUserLogins(ctx, rec.UserID)
+		return 0, nil
+	}
 	newHash := settings != nil && (settings.GetNewAlgo() != nil || len(settings.GetNewPasswordHash()) > 0)
 	if !rec.HasPassword && !newHash {
 		return 0, mtproto.ErrNewSettingsEmpty
@@ -571,7 +584,9 @@ func (s *Service) validateShape(settings *mtproto.Account_PasswordInputSettings,
 	}
 	algo := settings.GetNewAlgo()
 	hash := settings.GetNewPasswordHash()
-	if algo != nil || len(hash) > 0 {
+	if removesPassword(settings) {
+		// Checked above. An unknown algorithm with an empty hash is remove.
+	} else if algo != nil || len(hash) > 0 {
 		if !modPow(algo) || len(algo.GetSalt1()) == 0 || len(algo.GetSalt2()) == 0 || algo.GetG() != srp.Generator || !bytes.Equal(algo.GetP(), srp.Prime) {
 			return mtproto.ErrNewSaltInvalid
 		}
@@ -867,6 +882,25 @@ func modPow(algo *mtproto.PasswordKdfAlgo) bool {
 		return true
 	}
 	return algo.Constructor == mtproto.CRC32_passwordKdfAlgoModPow
+}
+
+// removesPassword is the client shape for turning 2FA off: passwordKdfAlgoUnknown
+// plus an empty new_password_hash. Empty hint and email flags do not matter.
+func removesPassword(settings *mtproto.Account_PasswordInputSettings) bool {
+	if settings == nil || !unknownAlgo(settings.GetNewAlgo()) {
+		return false
+	}
+	return len(settings.GetNewPasswordHash()) == 0
+}
+
+func unknownAlgo(algo *mtproto.PasswordKdfAlgo) bool {
+	if algo == nil {
+		return false
+	}
+	if algo.PredicateName == mtproto.Predicate_passwordKdfAlgoUnknown {
+		return true
+	}
+	return algo.Constructor == mtproto.CRC32_passwordKdfAlgoUnknown
 }
 
 func modPowAlgo(salt1, salt2 []byte) *mtproto.PasswordKdfAlgo {
