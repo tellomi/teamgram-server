@@ -11,6 +11,11 @@
     "username": {"number": "9996610004", "code": "11111"},
     "reconnect_a": {"number": "9996610005", "code": "11111"},
     "reconnect_b": {"number": "9996610006", "code": "11111"},
-    "password": {"number": "9996610008", "code": "11111"}
+    "password": {"number": "9996610008", "code": "11111"},
+    "ret_alice": {"number": "9996610021", "code": "11111"},
+    "ret_bob": {"number": "9996610022", "code": "11111"},
+    "ret_carol": {"number": "9996610023", "code": "11111"},
+    "ret_dave": {"number": "9996610024", "code": "11111"},
+    "ret_erin": {"number": "9996610025", "code": "11111"}
   }
 }
