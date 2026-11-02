@@ -21,11 +21,15 @@ func New(c Config) *service.Service {
 }
 
 func NewForums() *service.ForumsService { return &service.ForumsService{} }
-func NewReactions(userConf, messageConf zrpc.RpcClientConf) *service.ReactionsService {
-	return &service.ReactionsService{
+func NewReactions(userConf, messageConf zrpc.RpcClientConf, syncConf *kafka.KafkaProducerConf) *service.ReactionsService {
+	s := &service.ReactionsService{
 		Users:    user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
 		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(messageConf)),
 	}
+	if syncConf != nil && len(syncConf.Brokers) > 0 {
+		s.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(syncConf))
+	}
+	return s
 }
 func NewFragment(userConf zrpc.RpcClientConf) *service.FragmentService {
 	return &service.FragmentService{

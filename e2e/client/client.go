@@ -68,9 +68,37 @@ type sessionHandler struct {
 	mu   sync.Mutex
 	sess gotdmt.Session
 	ok   bool
+	// pushed holds server-initiated objects (updates the server pushes
+	// outside any rpc_result), newest last. Capped so long runs stay small.
+	pushed []mtproto.TLObject
 }
 
-func (h *sessionHandler) OnMessage(*bin.Buffer) error { return nil }
+const maxPushed = 512
+
+// OnMessage records objects the server pushes on its own, such as Updates.
+func (h *sessionHandler) OnMessage(b *bin.Buffer) error {
+	if b == nil {
+		return nil
+	}
+	obj, err := decodeTL(append([]byte(nil), b.Buf...))
+	if err != nil || obj == nil {
+		return nil
+	}
+	h.mu.Lock()
+	h.pushed = append(h.pushed, obj)
+	if len(h.pushed) > maxPushed {
+		h.pushed = append([]mtproto.TLObject(nil), h.pushed[len(h.pushed)-maxPushed:]...)
+	}
+	h.mu.Unlock()
+	return nil
+}
+
+// Pushed returns a copy of the objects the server pushed so far.
+func (c *Client) Pushed() []mtproto.TLObject {
+	c.handler.mu.Lock()
+	defer c.handler.mu.Unlock()
+	return append([]mtproto.TLObject(nil), c.handler.pushed...)
+}
 
 func (h *sessionHandler) OnSession(s gotdmt.Session) error {
 	h.mu.Lock()

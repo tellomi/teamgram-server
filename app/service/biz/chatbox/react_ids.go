@@ -144,3 +144,36 @@ func (b *Book) viewLocked(ctx context.Context, self int64, peer *mtproto.PeerUti
 	}
 	return &view
 }
+
+// PeerReactionUpdate builds the updateMessageReactions the other side of a
+// private chat needs after self reacted to msgID (self's own id). It returns
+// the peer's user id and the update in the peer's own numbering, or 0 and nil
+// when there is no other side to tell (saved messages, groups, unknown row).
+// https://core.telegram.org/constructor/updateMessageReactions
+func (b *Book) PeerReactionUpdate(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) (int64, *mtproto.Update) {
+	if b.ids == nil || !privatePair(self, peer) || msgID <= 0 {
+		return 0, nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	dlg := b.dialogIDLocked(ctx, self, peer, msgID)
+	if dlg == 0 {
+		return 0, nil
+	}
+	other := peer.PeerId
+	boxes, err := b.ids.BoxIDs(ctx, other, []int64{dlg})
+	if err != nil {
+		return 0, nil
+	}
+	theirs, ok := boxes[dlg]
+	if !ok || theirs <= 0 {
+		return 0, nil
+	}
+	doc, err := b.loadReact(ctx, self, peer)
+	if err != nil {
+		return 0, nil
+	}
+	back := &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: self}
+	view := b.viewLocked(ctx, other, back, doc)
+	return other, reactionUpdate(back, theirs, view, other)
+}
