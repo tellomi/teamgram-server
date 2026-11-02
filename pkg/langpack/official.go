@@ -1,9 +1,8 @@
 package langpack
 
-// OfficialLanguage is one language Telegram offers from the in-app language menu.
-// String bodies for languages other than English and Chinese are not vendored:
-// translations.telegram.org does not publish a license, and the same strings
-// ship inside the GPL client trees. Those languages use base_lang_code=en.
+// OfficialLanguage is one language served from langpack.getLanguages.
+// String bodies come from the public translations.telegram.org export.
+// See docs/languages.md.
 type OfficialLanguage struct {
 	Code       string
 	Name       string
@@ -14,11 +13,14 @@ type OfficialLanguage struct {
 
 // OfficialLanguages is the base set served by langpack.getLanguages.
 // Simplified Chinese, Traditional Chinese, and English stay first in languageOrder.
+// classic-zh-cn is the upstream simplified pack (简体中文). taiwan is 正體中文.
+// BCP-47 zh-TW / zh-HK still resolve to zh-hant, the full traditional pack.
 var OfficialLanguages = []OfficialLanguage{
 	{Code: "en", Name: "English", NativeName: "English", PluralCode: "en"},
 	{Code: "ar", Name: "Arabic", NativeName: "العربية", PluralCode: "ar", RTL: true},
 	{Code: "be", Name: "Belarusian", NativeName: "Беларуская", PluralCode: "be"},
 	{Code: "ca", Name: "Catalan", NativeName: "Català", PluralCode: "ca"},
+	{Code: "classic-zh-cn", Name: "Chinese (Simplified, Classic)", NativeName: "简体中文", PluralCode: "zh"},
 	{Code: "cs", Name: "Czech", NativeName: "Čeština", PluralCode: "cs"},
 	{Code: "de", Name: "German", NativeName: "Deutsch", PluralCode: "de"},
 	{Code: "el", Name: "Greek", NativeName: "Ελληνικά", PluralCode: "el"},
@@ -27,6 +29,7 @@ var OfficialLanguages = []OfficialLanguage{
 	{Code: "fi", Name: "Finnish", NativeName: "Suomi", PluralCode: "fi"},
 	{Code: "fr", Name: "French", NativeName: "Français", PluralCode: "fr"},
 	{Code: "he", Name: "Hebrew", NativeName: "עברית", PluralCode: "he", RTL: true},
+	{Code: "hi", Name: "Hindi", NativeName: "हिन्दी", PluralCode: "hi"},
 	{Code: "id", Name: "Indonesian", NativeName: "Bahasa Indonesia", PluralCode: "id"},
 	{Code: "it", Name: "Italian", NativeName: "Italiano", PluralCode: "it"},
 	{Code: "ja", Name: "Japanese", NativeName: "日本語", PluralCode: "ja"},
@@ -39,6 +42,8 @@ var OfficialLanguages = []OfficialLanguage{
 	{Code: "ro", Name: "Romanian", NativeName: "Română", PluralCode: "ro"},
 	{Code: "ru", Name: "Russian", NativeName: "Русский", PluralCode: "ru"},
 	{Code: "sv", Name: "Swedish", NativeName: "Svenska", PluralCode: "sv"},
+	{Code: "taiwan", Name: "Chinese (Traditional, Taiwan)", NativeName: "正體中文", PluralCode: "zh"},
+	{Code: "th", Name: "Thai", NativeName: "ไทย", PluralCode: "th"},
 	{Code: "tr", Name: "Turkish", NativeName: "Türkçe", PluralCode: "tr"},
 	{Code: "uk", Name: "Ukrainian", NativeName: "Українська", PluralCode: "uk"},
 	{Code: "uz", Name: "Uzbek", NativeName: "Oʻzbek", PluralCode: "uz"},

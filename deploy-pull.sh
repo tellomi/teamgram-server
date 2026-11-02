@@ -6,6 +6,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# /opt/tellomi/deploy-pull.sh <shortSHA> pins the image. The argument wins
+# over .env so a checkout that is not on that commit still pulls it.
+if [[ $# -ge 1 && -n "${1:-}" ]]; then
+  TELLOMI_IMAGE_TAG="$1"
+fi
+
 # Pin the app image to the 7-character commit SHA. "latest" moves, and an
 # empty or "local" tag must not pull it. A shell value wins over .env; an
 # explicit 7-character SHA (a rollback) is kept.

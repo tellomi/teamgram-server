@@ -157,7 +157,8 @@ def parse_android(path: Path) -> list[tuple[str, str]]:
 
 def split_form(key: str, forms: tuple[tuple[str, str], ...]) -> tuple[str, str] | tuple[None, None]:
     for suf, name in sorted(forms, key=lambda item: -len(item[0])):
-        tail = "_" + suf
+        # "#one" is a tdesktop plural marker. Other forms are "_<suffix>".
+        tail = suf if suf.startswith("#") else "_" + suf
         if key.endswith(tail) and len(key) > len(tail):
             return key[: -len(tail)], name
     return None, None
@@ -317,6 +318,10 @@ OFFICIAL = [
     ("vi", "Vietnamese", "Tiếng Việt", "vi", False),
     ("zh-hans", "Chinese (Simplified)", "简体中文", "zh", False),
     ("zh-hant", "Chinese (Traditional)", "繁體中文", "zh", False),
+    ("classic-zh-cn", "Chinese (Simplified, Classic)", "简体中文", "zh", False),
+    ("taiwan", "Chinese (Traditional, Taiwan)", "正體中文", "zh", False),
+    ("th", "Thai", "ไทย", "th", False),
+    ("hi", "Hindi", "हिन्दी", "hi", False),
 ]
 
 FULL_PACKS = {("ios", "en"), ("ios", "zh-hans"), ("ios", "zh-hant"), ("android", "en"), ("android", "zh-hans"), ("android", "zh-hant")}
@@ -343,6 +348,27 @@ def official_document(platform: str, code: str, name: str, native: str, plural: 
     return doc
 
 
+def pack_has_body(path: Path) -> bool:
+    """True when path or path.gz already contains translated strings."""
+    import gzip
+
+    for candidate in (path, Path(str(path) + ".gz")):
+        if not candidate.exists() or candidate.stat().st_size < 800:
+            continue
+        try:
+            if str(candidate).endswith(".gz"):
+                with gzip.open(candidate, "rt", encoding="utf-8") as fh:
+                    raw = fh.read(4000)
+            else:
+                raw = candidate.read_text(encoding="utf-8")[:4000]
+        except OSError:
+            continue
+        compact = raw.replace(" ", "")
+        if '"strings":[' in compact and '"strings":[]' not in compact:
+            return True
+    return False
+
+
 def write_official_languages(out: Path) -> None:
     """Write fallback language files. Existing full en/zh packs are left in place.
 
@@ -351,7 +377,7 @@ def write_official_languages(out: Path) -> None:
     for platform in PLATFORMS:
         for code, name, native, plural, rtl in OFFICIAL:
             path = out / platform / f"{code}.json"
-            if (platform, code) in FULL_PACKS and path.exists():
+            if pack_has_body(path):
                 continue
             write_pack(path, official_document(platform, code, name, native, plural, rtl))
             print(f"official {platform} {code}")
