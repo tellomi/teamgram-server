@@ -65,18 +65,25 @@ for name in minio minio-mc; do
   fi
 done
 
-if ! grep -Fq -- '-f docker-compose.geoip.yaml' deploy-pull.sh; then
-  fail "deploy-pull.sh does not merge docker-compose.geoip.yaml"
+if ! grep -Fq 'files=(-f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml -f docker-compose.tellomi.yaml)' deploy-pull.sh; then
+  fail "deploy-pull.sh must compose env, app, geoip and the host override together"
 fi
-if ! grep -Fq 'files=(-f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml)' deploy-pull.sh; then
-  fail "deploy-pull.sh must pass -f docker-compose.geoip.yaml on pull and up"
+if ! grep -Fq 'docker compose -p tellomi "${files[@]}"' deploy-pull.sh; then
+  fail "deploy-pull.sh must use project tellomi with the geoip file list"
 fi
-if ! grep -Fq '"${files[@]}" pull' deploy-pull.sh || ! grep -Fq '"${files[@]}" up' deploy-pull.sh; then
-  fail "deploy-pull.sh pull and up must use the geoip file list"
+if ! grep -Fq '"${C[@]}" pull' deploy-pull.sh || ! grep -Fq '"${C[@]}" up -d --no-deps teamgram' deploy-pull.sh; then
+  fail "deploy-pull.sh pull and up must use the same compose command"
 fi
-if ! grep -Fq 'pull teamgram coturn mediamtx asr' deploy-pull.sh; then
-  fail "deploy-pull.sh must pull the asr image"
+if ! grep -Fq 'apps=(asr teamgram)' deploy-pull.sh; then
+  fail "deploy-pull.sh must pull and recreate asr when the commit defines it"
 fi
+if ! grep -Fq 'up --no-deps mysql-migrate' deploy-pull.sh; then
+  fail "deploy-pull.sh must run mysql-migrate before recreating teamgram"
+fi
+if grep -Fq 'cd "$(dirname "$0")"' deploy-pull.sh; then
+  fail "deploy-pull.sh runs from /opt/tellomi, outside the checkout; use TELLOMI_DEPLOY_DIR"
+fi
+bash -n deploy-pull.sh || fail "deploy-pull.sh has a syntax error"
 
 geo="$(docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml config)"
 grep -Fq "/app/bin/GeoLite2-City.mmdb" <<<"$geo" \
