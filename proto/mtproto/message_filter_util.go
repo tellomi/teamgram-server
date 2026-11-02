@@ -46,6 +46,9 @@ const (
 	MEDIA_ROUND_FILE  = 11 // RoundFile ->inputMessagesFilterRoundVideo,
 	MEDIA_PINNED      = 12 // Pinned -> inputMessagesFilterPinned
 	MEDIA_STICKER     = 13 // Sticker -> inputMessagesFilterSticker
+	MEDIA_POLL        = 14 // Poll -> inputMessagesFilterPoll
+	MEDIA_GEO         = 15 // Geo, live location, venue -> inputMessagesFilterGeo
+	MEDIA_CONTACT     = 16 // Contact -> inputMessagesFilterContacts
 )
 
 func GetMediaType(message *Message) int32 {
@@ -65,6 +68,12 @@ func GetMediaType(message *Message) int32 {
 		switch message.GetMedia().GetPredicateName() {
 		case Predicate_messageMediaPhoto:
 			return MEDIA_PHOTOS_ONLY
+		case Predicate_messageMediaPoll:
+			return MEDIA_POLL
+		case Predicate_messageMediaGeo, Predicate_messageMediaGeoLive, Predicate_messageMediaVenue:
+			return MEDIA_GEO
+		case Predicate_messageMediaContact:
+			return MEDIA_CONTACT
 		case Predicate_messageMediaDocument:
 			if IsVoiceMessage(message) || IsRoundVideoMessage(message) {
 				return MEDIA_AUDIO
@@ -115,6 +124,7 @@ const (
 	FilterGeo        MessagesFilterType = 14
 	FilterContacts   MessagesFilterType = 15
 	FilterPinned     MessagesFilterType = 16
+	FilterPoll       MessagesFilterType = 17
 )
 
 func FromMessagesFilter(filter *MessagesFilter) MessagesFilterType {
@@ -154,6 +164,8 @@ func FromMessagesFilter(filter *MessagesFilter) MessagesFilterType {
 		r = FilterContacts
 	case Predicate_inputMessagesFilterPinned:
 		r = FilterPinned
+	case Predicate_inputMessagesFilterPoll:
+		r = FilterPoll
 	}
 
 	return r

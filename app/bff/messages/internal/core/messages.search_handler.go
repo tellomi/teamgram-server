@@ -171,9 +171,33 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return rValues, nil
 		}
-	case mtproto.FilterVoice:
-		c.Logger.Errorf("messages.search - invalid filter: %s", in)
-		return rValues, nil
+	case mtproto.FilterVoice, mtproto.FilterRoundVideo:
+		// Voice notes and round videos share MEDIA_AUDIO in storage; keep
+		// only the kind asked for.
+		boxList, err = c.searchMedia(peer, mtproto.MEDIA_AUDIO, offsetId, limit)
+		if err != nil {
+			c.Logger.Errorf("messages.search - error: %v", err)
+			return rValues, nil
+		}
+		boxList = keepBoxes(boxList, func(m *mtproto.Message) bool {
+			if filterType == mtproto.FilterVoice {
+				return mtproto.IsVoiceMessage(m)
+			}
+			return mtproto.IsRoundVideoMessage(m)
+		})
+	case mtproto.FilterPoll, mtproto.FilterGeo, mtproto.FilterContacts:
+		mediaType := int32(mtproto.MEDIA_POLL)
+		switch filterType {
+		case mtproto.FilterGeo:
+			mediaType = mtproto.MEDIA_GEO
+		case mtproto.FilterContacts:
+			mediaType = mtproto.MEDIA_CONTACT
+		}
+		boxList, err = c.searchMedia(peer, mediaType, offsetId, limit)
+		if err != nil {
+			c.Logger.Errorf("messages.search - error: %v", err)
+			return rValues, nil
+		}
 	case mtproto.FilterMusic:
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchByMediaType(c.ctx, &message.TLMessageSearchByMediaType{
 			UserId:    c.MD.UserId,
@@ -226,16 +250,7 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return rValues, nil
 		}
-	case mtproto.FilterRoundVideo:
-		c.Logger.Errorf("messages.search - invalid filter: %s", in)
-		return rValues, nil
 	case mtproto.FilterMyMentions:
-		c.Logger.Errorf("messages.search - invalid filter: %s", in)
-		return rValues, nil
-	case mtproto.FilterGeo:
-		c.Logger.Errorf("messages.search - invalid filter: %s", in)
-		return rValues, nil
-	case mtproto.FilterContacts:
 		c.Logger.Errorf("messages.search - invalid filter: %s", in)
 		return rValues, nil
 	case mtproto.FilterPinned:
@@ -334,4 +349,30 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		})
 
 	return rValues, nil
+}
+
+func (c *MessagesCore) searchMedia(peer *mtproto.PeerUtil, mediaType, offsetId, limit int32) (*mtproto.MessageBoxList, error) {
+	return c.svcCtx.Dao.MessageClient.MessageSearchByMediaType(c.ctx, &message.TLMessageSearchByMediaType{
+		UserId:    c.MD.UserId,
+		PeerType:  peer.PeerType,
+		PeerId:    peer.PeerId,
+		MediaType: mediaType,
+		Offset:    offsetId,
+		Limit:     limit,
+	})
+}
+
+// keepBoxes drops boxes whose message does not satisfy ok.
+func keepBoxes(list *mtproto.MessageBoxList, ok func(*mtproto.Message) bool) *mtproto.MessageBoxList {
+	if list == nil {
+		return list
+	}
+	kept := list.BoxList[:0]
+	for _, box := range list.BoxList {
+		if box != nil && ok(box.GetMessage()) {
+			kept = append(kept, box)
+		}
+	}
+	list.BoxList = kept
+	return list
 }
