@@ -47,13 +47,13 @@ Untranslated strings that are an exact copy of the official English text are omi
 
 ## Tellomi overrides
 
-`data/langpack/overrides/{ios,android}/{en,zh-hans,zh-hant}.json.gz` is the Tellomi catalog from before this import.
+`data/langpack/overrides/{ios,android}/en.json.gz` is the Tellomi English catalog. The Chinese overrides are only the strings that must differ from the official zh-hans / zh-hant export: a few branding, login, push, and permission lines. Everything else is the official translation.
 
 - `AppName`, `AppNameBeta`, `Application.Name`, and `Watch.AppName` are Tellomi.
-- Where the Tellomi English string differs from the branded official English string, that Tellomi wording wins in en, zh-hans, and zh-hant. Those strings keep their previous version (2 or 3).
-- Every other key is the official translation. The word Telegram becomes Tellomi. `t.me` / `telegram.me` / `telegram.dog` become `tell.cc`. `telegram.org` becomes `tellomi.cn`.
+- A Chinese key is replaced only when that key is present in the Chinese override. English divergences do not pull the old word-by-word translation back in.
+- The word Telegram becomes Tellomi, except inside a markdown link target such as `](telegram)` or `](web)`. `t.me` is rewritten only when it is a host, so `Chat.Message` stays intact. `telegram.org` becomes `tellomi.cn`.
 
-A client that already stored Chinese at version 3 receives the replaced strings from `langpack.getDifference` because their version is the upstream export version.
+Chinese pack versions are one above the 2026-11-02 export (`ios` zh-hans `22454344`, zh-hant `22421529`, `android` zh-hans `61570950`, zh-hant `61519201`). Clients that cached the machine-translated pack receive the restored strings from `langpack.getDifference`.
 
 ## Deploy
 

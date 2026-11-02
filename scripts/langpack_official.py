@@ -94,10 +94,11 @@ FORMS = ("zero", "one", "two", "few", "many", "other")
 
 
 def rewrite_link(text: str) -> str:
-    text = re.sub(r"(?i)https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
+    # t.me must be a host. Chat.Message contains the letters t.me and is not a link.
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
     text = re.sub(r"(?i)https?://(?:www\.)?((?:[a-z0-9-]+\.)*)telegram\.org", r"https://\1tellomi.cn", text)
-    text = re.sub(r"(?i)(?:t\.me|telegram\.me|telegram\.dog)", "tell.cc", text)
-    text = re.sub(r"(?i)telegram\.org", "tellomi.cn", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])(?:t\.me|telegram\.me|telegram\.dog)\b", "tell.cc", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])telegram\.org\b", "tellomi.cn", text)
     return text
 
 

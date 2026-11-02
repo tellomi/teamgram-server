@@ -3134,8 +3134,34 @@ def unknown_summary(limit: int = 40) -> list[tuple[str, int]]:
 _URL = re.compile(r"https?://[^\s<>()]+|t\.me/[^\s<>()]+|www\.[^\s<>()]+", re.I)
 
 
+# Markdown link targets are client actions ([label](web), [label](telegram)).
+# They are not prose and must survive branding and translation unchanged.
+_MD_LINK = re.compile(r"(\[[^\[\]]*\])\(([^)]*)\)")
+
+
+def shield_markdown_targets(text: str) -> tuple[str, list[str]]:
+    slots: list[str] = []
+
+    def hold(match: re.Match[str]) -> str:
+        slots.append(match.group(2))
+        return f"{match.group(1)}(\u0001{len(slots) - 1}\u0001)"
+
+    return _MD_LINK.sub(hold, text), slots
+
+
+def restore_markdown_targets(text: str, slots: list[str]) -> str:
+    for i, target in enumerate(slots):
+        text = text.replace(f"\u0001{i}\u0001", target)
+    return text
+
+
 def brand(text: str) -> str:
-    """Replace the app name and Telegram link hosts."""
+    """Replace the app name and Telegram link hosts.
+
+    Markdown link targets and placeholders are left untouched. A target such
+    as (telegram) or (web) is a client identifier, not the app name.
+    """
+    text, md_slots = shield_markdown_targets(text)
     slots: list[str] = []
 
     def hold(match: re.Match[str]) -> str:
@@ -3155,14 +3181,15 @@ def brand(text: str) -> str:
     shielded = re.sub(r"(?<![@./\w])[Tt]elegram(?!\.org\b)(?!\w)|(?<![@./\w])TELEGRAM(?!\w)", repl, shielded)
     for i, url in enumerate(slots):
         shielded = shielded.replace(f"\u0000{i}\u0000", rewrite_link(url))
-    return rewrite_link(shielded)
+    return restore_markdown_targets(rewrite_link(shielded), md_slots)
 
 
 def rewrite_link(text: str) -> str:
-    text = re.sub(r"(?i)https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
+    """Rewrite Telegram hosts. Do not match t.me inside words such as Chat.Message."""
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
     text = re.sub(r"(?i)https?://(?:www\.)?((?:[a-z0-9-]+\.)*)telegram\.org", r"https://\1tellomi.cn", text)
-    text = re.sub(r"(?i)(?:t\.me|telegram\.me|telegram\.dog)", "tell.cc", text)
-    text = re.sub(r"(?i)telegram\.org", "tellomi.cn", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])(?:t\.me|telegram\.me|telegram\.dog)\b", "tell.cc", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])telegram\.org\b", "tellomi.cn", text)
     return text
 
 
@@ -3397,6 +3424,16 @@ def _pattern_natural(text: str) -> str | None:
 def translate(text: str, lang: str) -> tuple[str, list[str]]:
     if lang == "en":
         return text, []
+    # Link targets are identifiers. Shield them before any word lookup so
+    # (web) cannot become (网页) and (telegram) cannot become (Tellomi).
+    if _MD_LINK.search(text):
+        shielded, slots = shield_markdown_targets(text)
+        translated, missing = _translate_body(shielded, lang)
+        return restore_markdown_targets(translated, slots), missing
+    return _translate_body(text, lang)
+
+
+def _translate_body(text: str, lang: str) -> tuple[str, list[str]]:
     exact = _EXACT.get(text)
     patterned = None if exact is not None else _pattern_natural(text)
     if exact is not None and _TOKEN.findall(text) == _TOKEN.findall(exact):
