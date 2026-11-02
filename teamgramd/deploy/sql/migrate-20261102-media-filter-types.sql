@@ -4,19 +4,24 @@
 -- before that as -1. Rows stored as 0 without any media came from an older
 -- insert path and made text messages show up under Photos & Videos.
 -- Safe to run more than once.
+-- Each UPDATE only touches rows still in the old state, so re-running is a no-op.
 
-UPDATE `messages` SET `message_filter_type` = 14
-WHERE `message_filter_type` = -1
-  AND JSON_UNQUOTE(JSON_EXTRACT(`message_data`, '$.media.predicate_name')) = 'messageMediaPoll';
+SET @teamgram_stmt = 'UPDATE messages SET message_filter_type = 14 WHERE message_filter_type = -1 AND JSON_UNQUOTE(JSON_EXTRACT(message_data, ''$.media.predicate_name'')) = ''messageMediaPoll''';
+PREPARE teamgram_ps FROM @teamgram_stmt;
+EXECUTE teamgram_ps;
+DEALLOCATE PREPARE teamgram_ps;
 
-UPDATE `messages` SET `message_filter_type` = 15
-WHERE `message_filter_type` = -1
-  AND JSON_UNQUOTE(JSON_EXTRACT(`message_data`, '$.media.predicate_name')) IN ('messageMediaGeo', 'messageMediaGeoLive', 'messageMediaVenue');
+SET @teamgram_stmt = 'UPDATE messages SET message_filter_type = 15 WHERE message_filter_type = -1 AND JSON_UNQUOTE(JSON_EXTRACT(message_data, ''$.media.predicate_name'')) IN (''messageMediaGeo'', ''messageMediaGeoLive'', ''messageMediaVenue'')';
+PREPARE teamgram_ps FROM @teamgram_stmt;
+EXECUTE teamgram_ps;
+DEALLOCATE PREPARE teamgram_ps;
 
-UPDATE `messages` SET `message_filter_type` = 16
-WHERE `message_filter_type` = -1
-  AND JSON_UNQUOTE(JSON_EXTRACT(`message_data`, '$.media.predicate_name')) = 'messageMediaContact';
+SET @teamgram_stmt = 'UPDATE messages SET message_filter_type = 16 WHERE message_filter_type = -1 AND JSON_UNQUOTE(JSON_EXTRACT(message_data, ''$.media.predicate_name'')) = ''messageMediaContact''';
+PREPARE teamgram_ps FROM @teamgram_stmt;
+EXECUTE teamgram_ps;
+DEALLOCATE PREPARE teamgram_ps;
 
-UPDATE `messages` SET `message_filter_type` = -1
-WHERE `message_filter_type` = 0
-  AND JSON_EXTRACT(`message_data`, '$.media') IS NULL;
+SET @teamgram_stmt = 'UPDATE messages SET message_filter_type = -1 WHERE message_filter_type = 0 AND JSON_EXTRACT(message_data, ''$.media'') IS NULL';
+PREPARE teamgram_ps FROM @teamgram_stmt;
+EXECUTE teamgram_ps;
+DEALLOCATE PREPARE teamgram_ps;
