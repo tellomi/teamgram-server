@@ -20,7 +20,8 @@ import (
 )
 
 func main() {
-	configFile := flag.String("f", "etc/media.yaml", "media config file (for the MySQL DSN)")
+	// -f (the media config file, for the MySQL DSN) is registered by the
+	// media server package, which this command imports for NewSweeper.
 	dryRun := flag.Bool("dry-run", true, "report what would expire without deleting anything")
 	days := flag.Int("days", 0, "override TELLOMI_MEDIA_RETENTION_DAYS")
 	flag.Parse()
@@ -34,7 +35,7 @@ func main() {
 		cfg.Days = *days
 	}
 	var c config.Config
-	configload.MustLoad(*configFile, &c)
+	configload.MustLoad(flag.Lookup("f").Value.String(), &c)
 	sw, err := server.NewSweeper(c, cfg)
 	if err != nil {
 		log.Fatal(err)
