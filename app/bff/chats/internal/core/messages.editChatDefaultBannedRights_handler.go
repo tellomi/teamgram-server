@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"time"
 )
@@ -78,9 +79,16 @@ func (c *ChatsCore) MessagesEditChatDefaultBannedRights(in *mtproto.TLMessagesEd
 			Seq:     0,
 		}).To_Updates()
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("messages.editChatDefaultBannedRights blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		up, err := channel.Shared().EditDefaultBanned(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId,
+			mtproto.MakeTLInputChannel(&mtproto.InputChannel{
+				ChannelId:  peer.PeerId,
+				AccessHash: peer.AccessHash,
+			}).To_InputChannel(), in.BannedRights)
+		if err != nil {
+			c.Logger.Errorf("messages.editChatDefaultBannedRights - error: %v", err)
+			return nil, err
+		}
+		rUpdates = up
 	default:
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("invalid peer type: {%v}")
