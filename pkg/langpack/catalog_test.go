@@ -1,6 +1,9 @@
 package langpack
 
 import (
+	"compress/gzip"
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -315,6 +318,10 @@ func TestShippedPacks(t *testing.T) {
 					if strings.Contains(low, "t.me") || strings.Contains(low, "telegram.org") || strings.Contains(low, "telegram.me") || strings.Contains(low, "telegram.dog") {
 						t.Fatalf("telegram host in %s %s %q", platform, s.GetKey(), part)
 					}
+					code := lang.GetLangCode()
+					if (platform == "ios" || platform == "android") && (code == "zh-hans" || code == "zh-hant") && (strings.Contains(s.GetKey(), "ell.cc") || strings.Contains(part, "](网页)") || strings.Contains(part, "](網頁)") || strings.Contains(part, "](Tellomi)") || strings.Contains(part, "何时你") || strings.Contains(part, "因此该你")) {
+						t.Fatalf("bad overlay leftover %s %s %s %q", platform, code, s.GetKey(), part)
+					}
 				}
 			}
 		}
@@ -361,6 +368,50 @@ func TestShippedPacks(t *testing.T) {
 	if err != nil || iosJA[0].GetValue() != "設定" || iosJA[1].GetValue() != "日本語で続ける" {
 		t.Fatalf("ios ja %+v", iosJA)
 	}
+	iosHans, err := cat.Strings("ios", "zh-hans", []string{
+		"InfoPlist.NSLocationAlwaysUsageDescription",
+		"InfoPlist.NSLocationWhenInUseUsageDescription",
+		"AuthSessions.HeaderInfo",
+		"Login.ContinueWithLocalization",
+		"AccessDenied.LocationDenied",
+		"Chat.Message.TopicAuthorBadge",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(iosHans[0].GetValue(), "何时") || strings.Contains(iosHans[1].GetValue(), "何时") {
+		t.Fatalf("location permission copy is still garbled: %#v", iosHans[:2])
+	}
+	header := iosHans[2].GetValue()
+	if !strings.Contains(header, "](web)") || !strings.Contains(header, "](desktop)") || strings.Contains(header, "](网页)") || strings.Contains(header, "](Tellomi)") {
+		t.Fatalf("login link targets: %q", header)
+	}
+	if iosHans[3].GetValue() != "使用简体中文继续" {
+		t.Fatalf("continue-in-language: %q", iosHans[3].GetValue())
+	}
+	if strings.Contains(iosHans[4].GetValue(), "因此该") {
+		t.Fatalf("location denial still machine-translated: %q", iosHans[4].GetValue())
+	}
+	if iosHans[5].GetValue() == "" {
+		t.Fatal("real Chat.Message key was lost")
+	}
+	refreshed, err := cat.Difference("ios", "zh-hans", 22454343)
+	if err != nil || refreshed.GetVersion() != 22454344 || len(refreshed.GetStrings()) < 1000 {
+		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
+	}
+	androidRefreshed, err := cat.Difference("android", "zh-hans", 61570949)
+	if err != nil || androidRefreshed.GetVersion() != 61570950 || len(androidRefreshed.GetStrings()) < 1000 {
+		t.Fatalf("android zh-hans bump %+v %v", androidRefreshed.GetVersion(), err)
+	}
+	hant, err := cat.Difference("ios", "zh-hant", 22421528)
+	if err != nil || hant.GetVersion() != 22421529 || len(hant.GetStrings()) < 1000 {
+		t.Fatalf("ios zh-hant bump v=%d n=%d %v", hant.GetVersion(), len(hant.GetStrings()), err)
+	}
+	hantAndroid, err := cat.Difference("android", "zh-hant", 61519200)
+	if err != nil || hantAndroid.GetVersion() != 61519201 || len(hantAndroid.GetStrings()) < 1000 {
+		t.Fatalf("android zh-hant bump v=%d n=%d %v", hantAndroid.GetVersion(), len(hantAndroid.GetStrings()), err)
+	}
+
 	classic, err := cat.Language("android", "classic-zh-cn")
 	if err != nil || classic.GetLangCode() != "classic-zh-cn" || classic.GetBaseLangCode().GetValue() != "zh-hans" || classic.GetNativeName() != "简体中文" {
 		t.Fatalf("classic %+v %v", classic, err)
@@ -458,5 +509,45 @@ func TestEmbeddedPacksLoad(t *testing.T) {
 	// Empty lang_pack is resolved by the handler; the catalog itself requires a platform.
 	if _, err := cat.Languages(""); err != ErrUnknownPack {
 		t.Fatal(err)
+	}
+}
+
+func TestChineseOverlayIsCurated(t *testing.T) {
+	for _, item := range []struct {
+		path string
+		max  int
+	}{
+		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 20},
+		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 20},
+		{"../../data/langpack/overrides/android/zh-hans.json.gz", 10},
+		{"../../data/langpack/overrides/android/zh-hant.json.gz", 10},
+	} {
+		fh, err := os.Open(item.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zr, err := gzip.NewReader(fh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			Strings []struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			} `json:"strings"`
+		}
+		if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+			t.Fatal(err)
+		}
+		_ = zr.Close()
+		_ = fh.Close()
+		if len(doc.Strings) == 0 || len(doc.Strings) > item.max {
+			t.Fatalf("%s overlay size %d", item.path, len(doc.Strings))
+		}
+		for _, s := range doc.Strings {
+			if strings.Contains(s.Value, "](网页)") || strings.Contains(s.Value, "](網頁)") || strings.Contains(s.Value, "何时你") || strings.Contains(s.Value, "因此该") {
+				t.Fatalf("%s %s %q", item.path, s.Key, s.Value)
+			}
+		}
 	}
 }
