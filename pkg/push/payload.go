@@ -3,30 +3,40 @@ package push
 import (
 	"encoding/json"
 	"strconv"
-	"strings"
 )
 
 // Alert is one APNs payload plus the JSON sealed inside "p".
 type Alert struct {
 	// Outer is the JSON object POSTed to APNs. It carries aps.alert loc-key /
-	// loc-args, mutable-content, and the custom from_id / chat_id / msg_id fields.
+	// loc-args, a localized body fallback, mutable-content, and the custom
+	// from_id / chat_id / msg_id fields.
 	Outer []byte
 	// Inner is the JSON the NotificationService reads after decrypting "p".
 	// It has no loc-key: the extension only renders aps.alert when loc-key is
-	// absent (see NotificationService.swift).
+	// absent (see NotificationService.swift). The title and body are already
+	// in the recipient's language.
 	Inner []byte
+	// Android is the FCM data object. Every value is a string, which is what
+	// the FCM HTTP API requires. loc_key / loc_args follow
+	// https://core.telegram.org/api/push-updates. "p" is that same object
+	// sealed, which is the only field tellomi/Telegram reads.
+	Android []byte
+	// Huawei is the raw "p" string. HuaweiPushListenerService passes the whole
+	// data payload to the decryptor, not a JSON wrapper. Empty without a secret.
+	Huawei string
 }
 
-// BuildAlert builds the Telegram-iOS notification for one message.
+// BuildAlert builds the Telegram notification for one message.
+// lang is the recipient device's lang_code (initConnection / registerDevice).
 // secret may be nil; then Outer has no "p" and the extension keeps the
 // outer loc-key text only after its time limit. A 256-byte secret produces "p".
-func BuildAlert(m Incoming, d Decision, secret []byte) (Alert, error) {
+func BuildAlert(m Incoming, d Decision, secret []byte, lang string) (Alert, error) {
 	if !d.Preview {
 		m.Text = ""
 	}
 	key := m.LocKeyFor(d.Preview)
 	args := m.Args(d.Preview)
-	title, subtitle, body := alertText(m, d.Preview)
+	title, subtitle, body := alertText(m, key, lang)
 	thread := threadID(m)
 	custom := customIDs(m)
 
@@ -65,6 +75,10 @@ func BuildAlert(m Incoming, d Decision, secret []byte) (Alert, error) {
 	outerAlert := map[string]any{
 		"loc-key":  key,
 		"loc-args": args,
+		// body is the localized fallback. Apple shows loc-key when that string
+		// exists and ignores body; the Notification Service shows this text
+		// from the decrypted payload, which is what a Chinese user actually sees.
+		"body": body,
 	}
 	outerAPS := map[string]any{
 		"alert":           outerAlert,
@@ -94,10 +108,77 @@ func BuildAlert(m Incoming, d Decision, secret []byte) (Alert, error) {
 	if err != nil {
 		return Alert{}, err
 	}
-	return Alert{Outer: outerJSON, Inner: innerJSON}, nil
+	android, huawei, err := androidPayload(m, d, key, args, body, custom, secret)
+	if err != nil {
+		return Alert{}, err
+	}
+	return Alert{Outer: outerJSON, Inner: innerJSON, Android: android, Huawei: huawei}, nil
 }
 
-func alertText(m Incoming, preview bool) (title, subtitle, body string) {
+// androidPayload is the object tellomi/Telegram decrypts from "p": loc_key and
+// loc_args (underscore), plus custom. The bytes returned are an FCM data map
+// whose values are all strings. Huawei is that same ciphertext alone.
+func androidPayload(m Incoming, d Decision, key string, args []string, body string, custom map[string]string, secret []byte) ([]byte, string, error) {
+	customObj := map[string]any{}
+	for k, v := range custom {
+		customObj[k] = v
+	}
+	if d.Silent {
+		customObj["silent"] = 1
+	}
+	if m.Mentioned {
+		customObj["mention"] = 1
+	}
+	plain := map[string]any{
+		"loc_key":  key,
+		"loc_args": args,
+		"custom":   customObj,
+		"user_id":  m.UserID,
+		"body":     body,
+	}
+	if !d.Silent && d.Sound != "" {
+		plain["sound"] = d.Sound
+	}
+	plainJSON, err := json.Marshal(plain)
+	if err != nil {
+		return nil, "", err
+	}
+	var p string
+	if len(secret) >= 128 {
+		p, err = EncryptNotification(secret, plainJSON)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		return nil, "", err
+	}
+	customJSON, err := json.Marshal(customObj)
+	if err != nil {
+		return nil, "", err
+	}
+	data := map[string]string{
+		"loc_key":  key,
+		"loc_args": string(argsJSON),
+		"custom":   string(customJSON),
+		"user_id":  strconv.FormatInt(m.UserID, 10),
+		"body":     body,
+	}
+	if !d.Silent && d.Sound != "" {
+		data["sound"] = d.Sound
+	}
+	if p != "" {
+		data["p"] = p
+	}
+	out, err := json.Marshal(data)
+	if err != nil {
+		return nil, "", err
+	}
+	return out, p, nil
+}
+
+func alertText(m Incoming, key, lang string) (title, subtitle, body string) {
 	author := m.SenderName
 	if author == "" {
 		author = "User"
@@ -106,7 +187,7 @@ func alertText(m Incoming, preview bool) (title, subtitle, body string) {
 	if chat == "" {
 		chat = "Chat"
 	}
-	body = previewBody(m, preview)
+	body = bodyFor(key, m.Text, lang)
 	switch {
 	case m.ChannelID != 0:
 		return chat, "", body
@@ -117,36 +198,14 @@ func alertText(m Incoming, preview bool) (title, subtitle, body string) {
 	}
 }
 
-func previewBody(m Incoming, preview bool) string {
-	if preview && m.Text != "" && strings.HasSuffix(m.LocKey, "MESSAGE_TEXT") {
-		return m.Text
+func bodyFor(key, text, lang string) string {
+	switch baseKey(key) {
+	case "MESSAGE_TEXT", "PINNED_TEXT":
+		if text != "" {
+			return text
+		}
 	}
-	switch {
-	case strings.HasSuffix(m.LocKey, "MESSAGE_PHOTO"):
-		return "sent you a photo"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_VIDEO"):
-		return "sent you a video"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_GIF"):
-		return "sent you a GIF"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_ROUND"):
-		return "sent you a video message"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_AUDIO"):
-		return "sent you a voice message"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_STICKER"):
-		return "sent you a sticker"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_DOC"):
-		return "sent you a file"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_GEO"):
-		return "sent you a map"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_GEOLIVE"):
-		return "started sharing their live location"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_CONTACT"):
-		return "shared a contact"
-	case strings.HasSuffix(m.LocKey, "MESSAGE_POLL"):
-		return "sent you a poll"
-	default:
-		return "sent you a message"
-	}
+	return phraseFor(lang, key)
 }
 
 func threadID(m Incoming) string {

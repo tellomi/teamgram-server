@@ -83,15 +83,14 @@ func TestLockedDeviceHidesMessageText(t *testing.T) {
 	if fcm.token != "fcm-token" {
 		t.Fatalf("token %q", fcm.token)
 	}
-	var outer map[string]any
-	if err := json.Unmarshal(fcm.body, &outer); err != nil {
+	var data map[string]string
+	if err := json.Unmarshal(fcm.body, &data); err != nil {
 		t.Fatal(err)
 	}
-	alert := outer["aps"].(map[string]any)["alert"].(map[string]any)
-	if key, _ := alert["loc-key"].(string); !strings.Contains(key, "NOTEXT") {
-		t.Fatalf("loc-key %v", alert["loc-key"])
+	if !strings.Contains(data["loc_key"], "NOTEXT") {
+		t.Fatalf("loc_key %q", data["loc_key"])
 	}
-	if strings.Contains(string(fcm.body), "ping") {
+	if strings.Contains(data["body"], "ping") || strings.Contains(data["loc_args"], "ping") {
 		t.Fatalf("locked push included the message text: %s", fcm.body)
 	}
 

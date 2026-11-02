@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/pkg/push"
 )
 
@@ -52,10 +53,24 @@ func (c *NotificationCore) AccountRegisterDevice(in *mtproto.TLAccountRegisterDe
 		AppSandbox: mtproto.FromBool(in.GetAppSandbox()),
 		Secret:     append([]byte(nil), in.GetSecret()...),
 		OtherUIDs:  append([]int64(nil), in.GetOtherUids()...),
+		LangCode:   deviceLang(c.MD),
 	})
 	if err != nil {
 		c.Logger.Errorf("account.registerDevice - error: %v", err)
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil
+}
+
+// deviceLang is the app language from the current session. initConnection
+// writes the same value onto auths.lang_code; registerDevice snapshots it
+// onto the device so a push can still be localized if that row is missing.
+func deviceLang(md *metadata.RpcMetadata) string {
+	if md == nil {
+		return ""
+	}
+	if lang := strings.TrimSpace(md.GetLangCode()); lang != "" {
+		return lang
+	}
+	return strings.TrimSpace(md.GetSystemLangCode())
 }

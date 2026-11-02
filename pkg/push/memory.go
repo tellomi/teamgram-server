@@ -19,6 +19,7 @@ func (s *MemoryStore) Upsert(_ context.Context, d Device) error {
 	// period already stored for this auth key, matching the MySQL upsert
 	// which leaves locked_period alone.
 	var locked int32
+	var lang string
 	for _, old := range s.devices {
 		if old.UserID == d.UserID && old.TokenType == d.TokenType && old.Token == d.Token && old.AuthKeyID != d.AuthKeyID {
 			continue
@@ -27,12 +28,18 @@ func (s *MemoryStore) Upsert(_ context.Context, d Device) error {
 			if locked == 0 {
 				locked = old.LockedPeriod
 			}
+			if lang == "" {
+				lang = old.LangCode
+			}
 			continue
 		}
 		kept = append(kept, old)
 	}
 	if d.LockedPeriod == 0 {
 		d.LockedPeriod = locked
+	}
+	if d.LangCode == "" {
+		d.LangCode = lang
 	}
 	s.devices = append(kept, cloneDevice(d))
 	return nil

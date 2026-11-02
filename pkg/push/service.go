@@ -23,19 +23,21 @@ type Directory interface {
 
 // Service turns new-message updates into APNs (and, if configured, FCM) pushes.
 type Service struct {
-	store Store
-	cfg   Config
-	apns  *APNS
-	fcm   FCMSender
-	now   func() time.Time
+	store  Store
+	cfg    Config
+	apns   *APNS
+	fcm    FCMSender
+	huawei HuaweiSender
+	now    func() time.Time
 }
 
 func NewService(store Store, cfg Config) *Service {
 	s := &Service{
-		store: store,
-		cfg:   cfg,
-		fcm:   fcmUnconfigured{},
-		now:   time.Now,
+		store:  store,
+		cfg:    cfg,
+		fcm:    fcmUnconfigured{},
+		huawei: huaweiUnconfigured{},
+		now:    time.Now,
 	}
 	if cfg.Enabled() {
 		client, err := NewAPNS(cfg)
@@ -55,6 +57,15 @@ func (s *Service) SetFCM(sender FCMSender) {
 		return
 	}
 	s.fcm = sender
+}
+
+// SetHuawei installs a Huawei Push Kit sender. Until then token type 13 is stored and not delivered.
+func (s *Service) SetHuawei(sender HuaweiSender) {
+	if sender == nil {
+		s.huawei = huaweiUnconfigured{}
+		return
+	}
+	s.huawei = sender
 }
 
 // Deliver sends a push for each new incoming message in updates, and a PushKit
@@ -148,6 +159,8 @@ func (s *Service) send(ctx context.Context, devices []Device, m Incoming, d Deci
 			s.sendAPNS(ctx, dev, m, dd)
 		case TokenFCM:
 			s.sendFCM(ctx, dev, m, dd)
+		case TokenHuawei:
+			s.sendHuawei(ctx, dev, m, dd)
 		case TokenAPNSVoIP:
 			// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
 		default:
@@ -159,7 +172,7 @@ func (s *Service) sendAPNS(ctx context.Context, dev Device, m Incoming, d Decisi
 	if s.apns == nil {
 		return
 	}
-	alert, err := BuildAlert(m, d, dev.Secret)
+	alert, err := BuildAlert(m, d, dev.Secret, dev.LangCode)
 	if err != nil {
 		logx.WithContext(ctx).Errorf("push: build apns user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 		return
@@ -208,12 +221,12 @@ func (s *Service) forgetIfUnregistered(ctx context.Context, dev Device, err erro
 }
 
 func (s *Service) sendFCM(ctx context.Context, dev Device, m Incoming, d Decision) {
-	alert, err := BuildAlert(m, d, dev.Secret)
+	alert, err := BuildAlert(m, d, dev.Secret, dev.LangCode)
 	if err != nil {
 		logx.WithContext(ctx).Errorf("push: build fcm user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 		return
 	}
-	err = s.fcm.Send(ctx, dev.Token, alert.Outer)
+	err = s.fcm.Send(ctx, dev.Token, alert.Android)
 	if err == nil {
 		return
 	}
@@ -221,6 +234,23 @@ func (s *Service) sendFCM(ctx context.Context, dev Device, m Incoming, d Decisio
 		return
 	}
 	logx.WithContext(ctx).Errorf("push: fcm user=%d msg=%d: %v", m.UserID, m.MsgID, err)
+}
+
+func (s *Service) sendHuawei(ctx context.Context, dev Device, m Incoming, d Decision) {
+	alert, err := BuildAlert(m, d, dev.Secret, dev.LangCode)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("push: build huawei user=%d msg=%d: %v", m.UserID, m.MsgID, err)
+		return
+	}
+	if alert.Huawei == "" {
+		// The client decrypts the whole data string. Without a secret there is nothing to send.
+		return
+	}
+	err = s.huawei.Send(ctx, dev.Token, alert.Huawei)
+	if err == nil || errors.Is(err, ErrHuaweiNotConfigured) {
+		return
+	}
+	logx.WithContext(ctx).Errorf("push: huawei user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 }
 
 func tokenTail(token string) string {
