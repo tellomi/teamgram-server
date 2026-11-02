@@ -52,7 +52,12 @@ func loadClip(ctx context.Context, messages MessageStore, userID int64, peer *mt
 		logx.WithContext(ctx).Errorf("messages.transcribeAudio load: %v", err)
 		return Clip{}, mtproto.ErrMsgIdInvalid
 	}
-	if box == nil || box.GetMessage() == nil || !sameDialog(box, userID, peer) {
+	if box == nil || box.GetMessage() == nil {
+		return Clip{}, mtproto.ErrMsgIdInvalid
+	}
+	if !sameDialog(box, userID, peer) {
+		logx.WithContext(ctx).Errorf("messages.transcribeAudio: msg %d of user %d is in peer %d:%d (sender %d, dialog %d:%d), not %d:%d",
+			msgID, userID, box.GetPeerType(), box.GetPeerId(), box.GetSenderUserId(), box.GetDialogId1(), box.GetDialogId2(), peer.PeerType, peer.PeerId)
 		return Clip{}, mtproto.ErrMsgIdInvalid
 	}
 	return clipFromMessage(box.GetMessage())
@@ -79,12 +84,34 @@ func sameDialog(box *mtproto.MessageBox, userID int64, peer *mtproto.PeerUtil) b
 		return (box.GetPeerType() == mtproto.PEER_USER || box.GetPeerType() == mtproto.PEER_SELF) &&
 			(box.GetPeerId() == userID || box.GetPeerId() == peer.PeerId)
 	case mtproto.PEER_USER:
-		return box.GetPeerType() == mtproto.PEER_USER && box.GetPeerId() == peer.PeerId
+		return samePrivateDialog(box, userID, peer.PeerId)
 	case mtproto.PEER_CHAT:
 		return box.GetPeerType() == mtproto.PEER_CHAT && box.GetPeerId() == peer.PeerId
 	default:
 		return false
 	}
+}
+
+// samePrivateDialog reports whether a row in userID's box belongs to the
+// private chat with partner. The recipient's copy of a private message stores
+// peer_id = the recipient itself and sender = the partner, so peer_id alone
+// only names the chat for outgoing messages. Rows carry the dialog as the
+// sorted user id pair; older rows without it fall back to sender.
+func samePrivateDialog(box *mtproto.MessageBox, userID, partner int64) bool {
+	if box.GetPeerType() != mtproto.PEER_USER {
+		return false
+	}
+	if a, b := box.GetDialogId1(), box.GetDialogId2(); a != 0 || b != 0 {
+		x, y := userID, partner
+		if x > y {
+			x, y = y, x
+		}
+		return a == x && b == y
+	}
+	if box.GetPeerId() == partner {
+		return true
+	}
+	return box.GetPeerId() == userID && box.GetSenderUserId() == partner
 }
 
 func clipFromMessage(msg *mtproto.Message) (Clip, error) {

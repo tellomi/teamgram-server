@@ -29,6 +29,12 @@ const (
 // ErrAudioTooLong is returned when the clip is over MaxDuration or MaxBytes.
 var ErrAudioTooLong = status.Error(mtproto.ErrBadRequest, "AUDIO_TOO_LONG")
 
+// ErrTranscriptionUnavailable is a recognizer outage (sidecar down, timeout,
+// non-200). It is not TRANSCRIPTION_FAILED, which clients show as "no speech
+// detected" and which is reserved for audio that really has no words. 400, not
+// 500: clients resend some 500s on their own.
+var ErrTranscriptionUnavailable = status.Error(mtproto.ErrBadRequest, "TRANSCRIPTION_UNAVAILABLE")
+
 // Clip is the document a voice note or round video stores in dfs.
 type Clip struct {
 	DocumentID    int64
@@ -149,11 +155,12 @@ func (h *Handler) Transcribe(ctx context.Context, md *metadata.RpcMetadata, in *
 		if status.Convert(err).Message() == "AUDIO_TOO_LONG" {
 			return nil, ErrAudioTooLong
 		}
-		logx.WithContext(ctx).Errorf("messages.transcribeAudio: %v", err)
-		return nil, mtproto.ErrTranscriptionFailed
+		logx.WithContext(ctx).Errorf("messages.transcribeAudio: recognizer: %v", err)
+		return nil, ErrTranscriptionUnavailable
 	}
 	text := CleanText(raw)
 	if text == "" {
+		logx.WithContext(ctx).Infof("messages.transcribeAudio: no speech in msg %d (%d bytes)", in.GetMsgId(), len(audio))
 		return nil, mtproto.ErrTranscriptionFailed
 	}
 	got := cachedResult{ID: transcriptionID(clip.DocumentID, md.GetUserId(), peer, in.GetMsgId()), Text: text}
