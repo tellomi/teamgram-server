@@ -337,7 +337,7 @@ func (s *store) themeList(self int64, format string, hash int64) *mtproto.Accoun
 	builtins := appThemes(format)
 	pairs := make([]idVer, 0, len(builtins))
 	for _, th := range builtins {
-		pairs = append(pairs, idVer{id: th.GetId(), ver: 1})
+		pairs = append(pairs, idVer{id: th.GetId(), ver: builtinCatalogVer})
 	}
 	u := s.users[self]
 	var rows []*themeRec

@@ -19,6 +19,14 @@ func TestChatThemeAndWallpaperCatalog(t *testing.T) {
 	if err != nil || len(appThemes.GetThemes()) < 2 || appThemes.GetThemes()[0].GetSlug() == "" {
 		t.Fatalf("app themes: %v %#v", err, appThemes)
 	}
+	dayApp := appThemes.GetThemes()[0]
+	nightApp := appThemes.GetThemes()[1]
+	if dayApp.GetSlug() != "android-day" || dayApp.GetSettings()[0].GetAccentColor() != 0x000000 {
+		t.Fatalf("day app theme slug %s accent #%06x", dayApp.GetSlug(), uint32(dayApp.GetSettings()[0].GetAccentColor()))
+	}
+	if nightApp.GetSlug() != "android-night" || nightApp.GetSettings()[0].GetAccentColor() != 0xffffff {
+		t.Fatalf("night app theme slug %s accent #%06x", nightApp.GetSlug(), uint32(nightApp.GetSettings()[0].GetAccentColor()))
+	}
 	if err := appThemes.Encode(mtproto.NewEncodeBuf(4096), 232); err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +50,10 @@ func TestChatThemeAndWallpaperCatalog(t *testing.T) {
 	}
 
 	picked := themes.GetThemes()[0]
-	if picked.GetEmoticon().GetValue() == "" || len(picked.GetSettings()) != 2 {
-		t.Fatalf("picked theme %#v", picked)
+	if picked.GetSlug() != "day" || picked.GetEmoticon().GetValue() == "" || len(picked.GetSettings()) != 2 ||
+		picked.GetSettings()[0].GetAccentColor() != 0x000000 || picked.GetSettings()[1].GetAccentColor() != 0xffffff {
+		t.Fatalf("picked theme slug %s accents #%06x #%06x", picked.GetSlug(),
+			uint32(picked.GetSettings()[0].GetAccentColor()), uint32(picked.GetSettings()[1].GetAccentColor()))
 	}
 	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 7, AccessHash: 1}).To_InputPeer()
 	up, err := p1rest.SetChatTheme(4, &mtproto.TLMessagesSetChatTheme{
@@ -70,14 +80,36 @@ func TestChatThemeAndWallpaperCatalog(t *testing.T) {
 	}
 
 	var solid *mtproto.WallPaper
+	var lightDef, darkDef bool
 	for _, paper := range walls.GetWallpapers() {
-		if paper.GetPredicateName() == mtproto.Predicate_wallPaperNoFile && paper.GetSettings() != nil && paper.GetSettings().GetBackgroundColor() != nil {
+		if paper.GetPredicateName() != mtproto.Predicate_wallPaperNoFile || paper.GetSettings() == nil || paper.GetSettings().GetBackgroundColor() == nil {
+			continue
+		}
+		st := paper.GetSettings()
+		if !greyChannel(st.GetBackgroundColor().GetValue()) {
+			t.Fatalf("wallpaper %d color #%06x", paper.GetId(), uint32(st.GetBackgroundColor().GetValue()))
+		}
+		if sec := st.GetSecondBackgroundColor(); sec != nil && !greyChannel(sec.GetValue()) {
+			t.Fatalf("wallpaper %d second #%06x", paper.GetId(), uint32(sec.GetValue()))
+		}
+		if paper.GetDefault() && !paper.GetDark() {
+			lightDef = true
+			if st.GetBackgroundColor().GetValue() != 0xf2f2f2 || st.GetSecondBackgroundColor() != nil {
+				t.Fatalf("light default #%06x", uint32(st.GetBackgroundColor().GetValue()))
+			}
+		}
+		if paper.GetDefault() && paper.GetDark() {
+			darkDef = true
+			if st.GetBackgroundColor().GetValue() != 0x000000 || st.GetSecondBackgroundColor() != nil {
+				t.Fatalf("dark default #%06x", uint32(st.GetBackgroundColor().GetValue()))
+			}
+		}
+		if solid == nil {
 			solid = paper
-			break
 		}
 	}
-	if solid == nil {
-		t.Fatal("no solid wallpaper")
+	if solid == nil || !lightDef || !darkDef {
+		t.Fatal("missing default solid wallpapers")
 	}
 	got, err := messages.NewWallpapers().AccountGetWallPaper(ctx, &mtproto.TLAccountGetWallPaper{
 		Wallpaper: mtproto.MakeTLInputWallPaperNoFile(&mtproto.InputWallPaper{Id: solid.GetId()}).To_InputWallPaper(),
@@ -93,4 +125,20 @@ func TestChatThemeAndWallpaperCatalog(t *testing.T) {
 	}); err == nil {
 		t.Fatal("unknown solid id was accepted")
 	}
+	// Ids issued before the monochrome catalog still resolve.
+	legacy, err := messages.NewWallpapers().AccountGetWallPaper(ctx, &mtproto.TLAccountGetWallPaper{
+		Wallpaper: mtproto.MakeTLInputWallPaperNoFile(&mtproto.InputWallPaper{Id: 9_100_000_001}).To_InputWallPaper(),
+	})
+	if err != nil || legacy.GetId() != 9_100_000_001 || legacy.GetSettings().GetBackgroundColor().GetValue() != 0xf2f2f2 {
+		t.Fatalf("legacy light default: %v %#v", err, legacy)
+	}
+}
+
+func greyChannel(c int32) bool {
+	u := uint32(c)
+	if u&^0xffffff != 0 {
+		return false
+	}
+	r, g, b := (u>>16)&0xff, (u>>8)&0xff, u&0xff
+	return r == g && g == b
 }

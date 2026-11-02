@@ -18,8 +18,11 @@ type appThemeDef struct {
 }
 
 var appThemePresets = []appThemeDef{
-	{"day", "Day", true, true, 0x2481cc},
-	{"night", "Night", false, false, 0x6ab2f2},
+	// Black on the day base and white on the night base. Slugs stay
+	// "{format}-day" and "{format}-night". These replace Telegram blue
+	// 0x2481cc and light blue 0x6ab2f2.
+	{"day", "Day", true, true, 0x000000},
+	{"night", "Night", false, false, 0xffffff},
 }
 
 func appThemes(format string) []*mtproto.Theme {
