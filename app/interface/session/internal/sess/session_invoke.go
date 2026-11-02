@@ -571,11 +571,14 @@ func (c *session) boundUserID(ctx context.Context) int64 {
 	return got.GetV()
 }
 
-// onlySetNeedPasswordFromError avoids overwriting Normal/Logout/Deleted with NeedPassword
-// when RPC results arrive out of order (e.g. delayed auth error after successful checkPassword).
+// onlySetNeedPasswordFromError moves Logout, Unknown, and New (and any other
+// non-normal state) onto the password step. The out-of-order guard is only
+// Normal: a delayed SESSION_PASSWORD_NEEDED must not demote a key that
+// already passed auth.checkPassword. auth.logOut on the same permanent key
+// leaves the wrapper in Logout; the next auth.signIn still has to enter
+// NeedPassword or account.getPassword is invoked with user id 0.
 func (c *session) onlySetNeedPasswordFromError(ctx context.Context, hackId int64) {
-	switch c.sessList.cb.state {
-	case mtproto.AuthStateNormal, mtproto.AuthStateLogout, mtproto.AuthStateDeleted, mtproto.AuthStateUnknown:
+	if c.sessList.cb.state == mtproto.AuthStateNormal {
 		return
 	}
 	c.sessList.cb.changeAuthState(ctx, mtproto.AuthStateNeedPassword, hackId)
@@ -624,6 +627,10 @@ func (c *session) onRpcResult(ctx context.Context, rpcResult *rpcApiMessage) {
 		} else if rpcErr != nil {
 			c.acceptPasswordNeeded(ctx, rpcErr)
 		}
+	case *mtproto.TLAuthImportLoginToken:
+		if rpcErr != nil {
+			c.acceptPasswordNeeded(ctx, rpcErr)
+		}
 	case *mtproto.TLAuthSignIn:
 		if rpcErr == nil && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {
 			authAuthorization, _ := rpcResult.rpcResult.Result.(*mtproto.Auth_Authorization)
@@ -655,7 +662,10 @@ func (c *session) onRpcResult(ctx context.Context, rpcResult *rpcApiMessage) {
 			}
 		}
 	case *mtproto.TLAuthCheckPassword:
-		if rpcErr == nil && c.sessList.cb.state == mtproto.AuthStateNeedPassword && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {
+		// Success from Logout or any other non-normal state still finishes
+		// the login. A key that is already Normal is left alone so a late
+		// result cannot switch the user.
+		if rpcErr == nil && c.sessList.cb.state != mtproto.AuthStateNormal && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {
 			authAuthorization, _ := rpcResult.rpcResult.Result.(*mtproto.Auth_Authorization)
 			if authAuthorization != nil && authAuthorization.GetPredicateName() == mtproto.Predicate_auth_authorization && authAuthorization.GetUser() != nil {
 				c.sessList.cb.changeAuthState(ctx, mtproto.AuthStateNormal, authAuthorization.GetUser().GetId())

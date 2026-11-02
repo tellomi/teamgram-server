@@ -335,6 +335,170 @@ func TestSecureSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestGetPasswordUsesPendingUserAfterLogout(t *testing.T) {
+	svc := password.New(password.Options{})
+	prev := password.Swap(svc)
+	t.Cleanup(func() { password.Swap(prev) })
+
+	c := testCore()
+	c.MD = &metadata.RpcMetadata{UserId: 42, PermAuthKeyId: 7}
+	if _, err := setPassword(t, c, "secret", "hint", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := password.NoteLogin(context.Background(), 7, 42); err != nil {
+		t.Fatal(err)
+	}
+
+	// auth.logOut cleared the session user id. The auth key still owes a password.
+	c.MD = &metadata.RpcMetadata{UserId: 0, PermAuthKeyId: 7}
+	pw, err := c.AccountGetPassword(nil)
+	if err != nil || !pw.GetHasPassword() || pw.GetCurrentAlgo() == nil || len(pw.GetSrp_B()) != 256 || pw.GetSrpId().GetValue() == 0 {
+		t.Fatalf("pending getPassword: has=%v algo=%v b=%d id=%d err=%v", pw.GetHasPassword(), pw.GetCurrentAlgo(), len(pw.GetSrp_B()), pw.GetSrpId().GetValue(), err)
+	}
+	if err = password.Verify(context.Background(), 42, 7, proofFor(t, pw, "secret")); err != nil {
+		t.Fatal(err)
+	}
+
+	c.MD.PermAuthKeyId = 8
+	plain, err := c.AccountGetPassword(nil)
+	if err != nil || plain.GetHasPassword() || plain.GetCurrentAlgo() != nil {
+		t.Fatalf("unrelated key: %+v %v", plain, err)
+	}
+}
+
+func TestDisablePasswordAndroidAndIOSShapes(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	var codes []string
+	svc := password.New(password.Options{
+		Now: func() time.Time { return now },
+		SendEmail: func(_ context.Context, _, code string) (string, error) {
+			codes = append(codes, code)
+			return code, nil
+		},
+	})
+	prev := password.Swap(svc)
+	t.Cleanup(func() { password.Swap(prev) })
+
+	shapes := []struct {
+		name    string
+		userID  int64
+		authKey int64
+		build   func() *mtproto.Account_PasswordInputSettings
+	}{
+		{
+			name:    "android",
+			userID:  42,
+			authKey: 7,
+			build: func() *mtproto.Account_PasswordInputSettings {
+				return &mtproto.Account_PasswordInputSettings{
+					NewAlgo:         mtproto.MakeTLPasswordKdfAlgoUnknown(nil).To_PasswordKdfAlgo(),
+					NewPasswordHash: []byte{},
+					Hint:            &wrapperspb.StringValue{Value: ""},
+				}
+			},
+		},
+		{
+			name:    "ios",
+			userID:  43,
+			authKey: 8,
+			build: func() *mtproto.Account_PasswordInputSettings {
+				return &mtproto.Account_PasswordInputSettings{
+					NewAlgo:         mtproto.MakeTLPasswordKdfAlgoUnknown(nil).To_PasswordKdfAlgo(),
+					NewPasswordHash: nil,
+					Hint:            &wrapperspb.StringValue{Value: ""},
+					Email:           &wrapperspb.StringValue{Value: ""},
+				}
+			},
+		},
+	}
+	for _, shape := range shapes {
+		t.Run(shape.name, func(t *testing.T) {
+			c := testCore()
+			c.MD = &metadata.RpcMetadata{UserId: shape.userID, PermAuthKeyId: shape.authKey}
+			enrollConfirmedPassword(t, c, &codes)
+			if err := password.NoteLogin(context.Background(), shape.authKey, shape.userID); err != nil {
+				t.Fatal(err)
+			}
+			bad, err := c.AccountUpdatePasswordSettings(&mtproto.TLAccountUpdatePasswordSettings{
+				Password:    proofFor(t, mustPassword(t, c), "nope"),
+				NewSettings: shape.build(),
+			})
+			if err != mtproto.ErrPasswordHashInvalid || bad != nil {
+				t.Fatalf("wrong password: %v %v", bad, err)
+			}
+			if has, _ := password.HasPassword(context.Background(), shape.userID); !has {
+				t.Fatal("wrong password removed 2FA")
+			}
+			unknown := &mtproto.PasswordKdfAlgo{Constructor: mtproto.CRC32_passwordKdfAlgoUnknown}
+			if _, err = c.AccountUpdatePasswordSettings(&mtproto.TLAccountUpdatePasswordSettings{
+				Password: proofFor(t, mustPassword(t, c), "secret"),
+				NewSettings: &mtproto.Account_PasswordInputSettings{
+					NewAlgo:         unknown,
+					NewPasswordHash: []byte{1},
+				},
+			}); err != mtproto.ErrNewSaltInvalid {
+				t.Fatalf("unknown algo with a hash: %v", err)
+			}
+
+			ok, err := c.AccountUpdatePasswordSettings(&mtproto.TLAccountUpdatePasswordSettings{
+				Password:    proofFor(t, mustPassword(t, c), "secret"),
+				NewSettings: shape.build(),
+			})
+			if err != nil || ok != mtproto.BoolTrue {
+				t.Fatalf("disable: %v %v", ok, err)
+			}
+			pw, err := c.AccountGetPassword(nil)
+			if err != nil || pw.GetHasPassword() || pw.GetHasRecovery() || pw.GetHasSecureValues() || pw.GetCurrentAlgo() != nil {
+				t.Fatalf("after disable: %+v %v", pw, err)
+			}
+			email, has, err := password.RecoveryEmail(context.Background(), shape.userID)
+			if err != nil || has || email != "" {
+				t.Fatalf("recovery email %q has=%v %v", email, has, err)
+			}
+			pending, err := password.PendingUser(context.Background(), shape.authKey)
+			if err != nil || pending != 0 {
+				t.Fatalf("pending login %d %v", pending, err)
+			}
+			// The next auth.signIn has no verifier, so it does not ask for a password.
+			if has, err = password.HasPassword(context.Background(), shape.userID); err != nil || has {
+				t.Fatalf("login would still need a password: %v %v", has, err)
+			}
+		})
+	}
+}
+
+func enrollConfirmedPassword(t *testing.T, c *TwoFaCore, codes *[]string) {
+	t.Helper()
+	pw := mustPassword(t, c)
+	salt1 := append(append([]byte{}, pw.GetNewAlgo().GetSalt1()...), bytes.Repeat([]byte{0x11}, 32)...)
+	secret := bytes.Repeat([]byte{0x5a}, 32)
+	_, err := c.AccountUpdatePasswordSettings(&mtproto.TLAccountUpdatePasswordSettings{
+		Password: mtproto.MakeTLInputCheckPasswordEmpty(&mtproto.InputCheckPasswordSRP{}).To_InputCheckPasswordSRP(),
+		NewSettings: &mtproto.Account_PasswordInputSettings{
+			NewAlgo: mtproto.MakeTLPasswordKdfAlgoModPow(&mtproto.PasswordKdfAlgo{
+				Salt1: salt1,
+				Salt2: append([]byte{}, pw.GetNewAlgo().GetSalt2()...),
+				G:     pw.GetNewAlgo().GetG(),
+				P:     append([]byte{}, pw.GetNewAlgo().GetP()...),
+			}).To_PasswordKdfAlgo(),
+			NewPasswordHash: srp.Verifier([]byte("secret"), salt1, pw.GetNewAlgo().GetSalt2()),
+			Hint:            &wrapperspb.StringValue{Value: "hint"},
+			Email:           &wrapperspb.StringValue{Value: "recover@tellomi.app"},
+			NewSecureSettings: mtproto.MakeTLSecureSecretSettings(&mtproto.SecureSecretSettings{
+				SecureAlgo:     pw.GetNewSecureAlgo(),
+				SecureSecret:   secret,
+				SecureSecretId: 99,
+			}).To_SecureSecretSettings(),
+		},
+	})
+	if statusText(err) != "EMAIL_UNCONFIRMED_6" || len(*codes) == 0 {
+		t.Fatalf("enroll: %v codes=%v", err, *codes)
+	}
+	if _, err = c.AccountConfirmPasswordEmail(&mtproto.TLAccountConfirmPasswordEmail{Code: (*codes)[len(*codes)-1]}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func statusText(err error) string {
 	if err == nil {
 		return ""

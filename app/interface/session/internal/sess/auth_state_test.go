@@ -132,6 +132,7 @@ var _ authsessionclient.AuthsessionClient = (*fakeAuthsessionClient)(nil)
 type fakeAuthsessionClient struct {
 	authStateData         *authsession.AuthKeyStateData
 	getAuthStateDataCalls int
+	userID                int64
 }
 
 func (f *fakeAuthsessionClient) AuthsessionGetAuthStateData(ctx context.Context, in *authsession.TLAuthsessionGetAuthStateData) (*authsession.AuthKeyStateData, error) {
@@ -158,7 +159,10 @@ func (f *fakeAuthsessionClient) AuthsessionGetLangCode(context.Context, *authses
 	return nil, nil
 }
 func (f *fakeAuthsessionClient) AuthsessionGetUserId(context.Context, *authsession.TLAuthsessionGetUserId) (*mtproto.Int64, error) {
-	return nil, nil
+	if f == nil || f.userID == 0 {
+		return nil, nil
+	}
+	return &mtproto.Int64{V: f.userID}, nil
 }
 func (f *fakeAuthsessionClient) AuthsessionGetPushSessionId(context.Context, *authsession.TLAuthsessionGetPushSessionId) (*mtproto.Int64, error) {
 	return nil, nil

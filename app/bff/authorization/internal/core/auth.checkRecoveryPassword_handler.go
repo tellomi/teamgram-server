@@ -30,7 +30,12 @@ func (c *AuthorizationCore) AuthCheckRecoveryPassword(in *mtproto.TLAuthCheckRec
 	if in != nil {
 		code = in.Code
 	}
-	ok, err := c.codes().CheckRecoveryPassword(c.ctx, c.userID(), code)
+	userID, err := c.passwordUserID()
+	if err != nil {
+		c.Logger.Errorf("auth.checkRecoveryPassword - pending: %v", err)
+		return nil, err
+	}
+	ok, err := c.codes().CheckRecoveryPassword(c.ctx, userID, code)
 	if err != nil {
 		c.Logger.Errorf("auth.checkRecoveryPassword - error: %v", err)
 		return nil, err

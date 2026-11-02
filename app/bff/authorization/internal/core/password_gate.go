@@ -27,3 +27,17 @@ func (c *AuthorizationCore) needsCloudPassword(userID int64) bool {
 func (c *AuthorizationCore) passwordNeeded(userID int64) error {
 	return password.NoteLogin(c.ctx, c.authKey(), userID)
 }
+
+// passwordUserID is the logged-in user, or the user still waiting to pass
+// the cloud password on this auth key. After auth.logOut the session user
+// id stays 0 until auth.checkPassword, so getPassword and recovery must
+// read the same pending row checkPassword already uses.
+func (c *AuthorizationCore) passwordUserID() (int64, error) {
+	if c == nil {
+		return 0, nil
+	}
+	if id := c.userID(); id != 0 {
+		return id, nil
+	}
+	return password.PendingUser(c.ctx, c.authKey())
+}

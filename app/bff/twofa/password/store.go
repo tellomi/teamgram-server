@@ -3,6 +3,7 @@ package password
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 // Record is one user's cloud password. Exists is false when no row is stored.
@@ -93,14 +94,24 @@ func (m *memoryStore) Save(_ context.Context, rec Record) error {
 func (m *memoryStore) PutChallenge(_ context.Context, ch Challenge) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := ch.Expires
-	for id, old := range m.challenges {
-		if old.UserID == ch.UserID && old.Expires > 0 && old.Expires < now-600 {
-			delete(m.challenges, id)
-		}
-	}
+	dropStaleChallenges(m.challenges, ch)
 	m.challenges[ch.ID] = ch
 	return nil
+}
+
+// dropStaleChallenges deletes this user's expired rows. account.getPassword
+// mints a new row every call; a live srp_id stays valid until it expires or
+// the password changes. The delete is limited to one user so it stays cheap.
+func dropStaleChallenges(challenges map[int64]Challenge, ch Challenge) {
+	cutoff := ch.Expires - int64(challengeTTL/time.Second)
+	for id, old := range challenges {
+		if old.UserID != ch.UserID || id == ch.ID {
+			continue
+		}
+		if old.Expires > 0 && old.Expires <= cutoff {
+			delete(challenges, id)
+		}
+	}
 }
 
 func (m *memoryStore) TakeChallenge(_ context.Context, id int64) (Challenge, bool, error) {

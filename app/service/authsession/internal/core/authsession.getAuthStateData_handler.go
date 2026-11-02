@@ -45,14 +45,10 @@ func (c *AuthsessionCore) AuthsessionGetAuthStateData(in *authsession.TLAuthsess
 
 	state := cData.ToAuthState()
 	userID := cData.UserId()
-	// A cloud-password login binds the key and records the user here so the
-	// session stays on the password step across a process restart.
-	if pending, ok := c.svcCtx.Dao.PasswordLoginUser(c.ctx, permID); ok && (userID == 0 || userID == pending) {
-		state = mtproto.AuthStateNeedPassword
-		if userID == 0 {
-			userID = pending
-		}
-	}
+	// A cloud-password login binds the key before auth.checkPassword. A
+	// reconnect must not treat that auth_users row as a finished login.
+	pending, pendingOK := c.svcCtx.Dao.PasswordLoginUser(c.ctx, permID)
+	state, userID = passwordPendingState(state, userID, pending, pendingOK)
 
 	return authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
 		AuthKeyId:            inKeyId,
@@ -62,4 +58,18 @@ func (c *AuthsessionCore) AuthsessionGetAuthStateData(in *authsession.TLAuthsess
 		Client:               cData.GetClient(),
 		AndroidPushSessionId: mtproto.MakeFlagsInt64(cData.AndroidPushSessionId()),
 	}).To_AuthKeyStateData(), nil
+}
+
+// passwordPendingState keeps a reconnecting key on the password step when
+// auth_users already has a user and user_password_login still names that
+// user. Without this, ToAuthState reports Normal and the client skips
+// auth.checkPassword.
+func passwordPendingState(state int, userID, pending int64, pendingOK bool) (int, int64) {
+	if pendingOK && pending != 0 && (userID == 0 || userID == pending) {
+		if userID == 0 {
+			userID = pending
+		}
+		return mtproto.AuthStateNeedPassword, userID
+	}
+	return state, userID
 }

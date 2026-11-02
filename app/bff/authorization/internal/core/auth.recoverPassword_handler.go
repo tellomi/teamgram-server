@@ -37,12 +37,17 @@ func (c *AuthorizationCore) AuthRecoverPassword(in *mtproto.TLAuthRecoverPasswor
 		code = in.Code
 		settings = in.NewSettings
 	}
-	if err := c.codes().RecoverPassword(c.ctx, c.userID(), code, settings); err != nil {
+	userID, err := c.passwordUserID()
+	if err != nil {
+		c.Logger.Errorf("auth.recoverPassword - pending: %v", err)
+		return nil, err
+	}
+	if err = c.codes().RecoverPassword(c.ctx, userID, code, settings); err != nil {
 		c.Logger.Errorf("auth.recoverPassword - error: %v", err)
 		return nil, err
 	}
 	user, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
-		Id: c.userID(),
+		Id: userID,
 	})
 	if err != nil {
 		c.Logger.Errorf("auth.recoverPassword - user: %v", err)
