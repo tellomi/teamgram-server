@@ -16,7 +16,11 @@ type Device struct {
 	// LockedPeriod is account.updateDeviceLocked. A positive value means the
 	// passcode is on, so pushes for this auth key omit the message text.
 	LockedPeriod int32
-	OtherUIDs    []int64
+	// LangCode is the app language. account.registerDevice copies it from the
+	// session (initConnection.lang_code). A later initConnection stored on
+	// auths wins when the device is loaded.
+	LangCode  string
+	OtherUIDs []int64
 }
 
 // Store persists push devices. Implementations must be safe for concurrent use.

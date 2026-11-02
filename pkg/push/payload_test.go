@@ -21,7 +21,7 @@ func TestBuildAlertIOSNotificationServiceShape(t *testing.T) {
 		PeerType:   mtproto.PEER_USER,
 		PeerID:     3,
 	}
-	alert, err := BuildAlert(msg, Decision{Send: true, Preview: true, Sound: "default"}, secret)
+	alert, err := BuildAlert(msg, Decision{Send: true, Preview: true, Sound: "default"}, secret, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestGroupPayloadUsesChatIDNotFromID(t *testing.T) {
 		UserID: 9, MsgID: 8, SenderID: 3, SenderName: "Ada", ChatID: 77, ChatTitle: "Lab",
 		Text: "hi", LocKey: "CHAT_MESSAGE_TEXT", PeerType: mtproto.PEER_CHAT, PeerID: 77,
 	}
-	alert, err := BuildAlert(msg, Decision{Send: true, Preview: true, Sound: "default"}, nil)
+	alert, err := BuildAlert(msg, Decision{Send: true, Preview: true, Sound: "default"}, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestGroupPayloadUsesChatIDNotFromID(t *testing.T) {
 	if outer["aps"].(map[string]any)["alert"].(map[string]any)["loc-key"] != "CHAT_MESSAGE_TEXT" {
 		t.Fatal(outer)
 	}
-	hidden, err := BuildAlert(msg, Decision{Send: true, Preview: false, Sound: "default"}, nil)
+	hidden, err := BuildAlert(msg, Decision{Send: true, Preview: false, Sound: "default"}, nil, "zh-Hans")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,8 +100,18 @@ func TestGroupPayloadUsesChatIDNotFromID(t *testing.T) {
 	if err := json.Unmarshal(hidden.Outer, &hid); err != nil {
 		t.Fatal(err)
 	}
-	if hid["aps"].(map[string]any)["alert"].(map[string]any)["loc-key"] != "CHAT_MESSAGE_NOTEXT" {
+	hiddenAlert := hid["aps"].(map[string]any)["alert"].(map[string]any)
+	if hiddenAlert["loc-key"] != "CHAT_MESSAGE_NOTEXT" {
 		t.Fatal(hid)
+	}
+	if hiddenAlert["body"] != "发来一条消息" {
+		t.Fatalf("hidden body %#v", hiddenAlert["body"])
+	}
+	args := hiddenAlert["loc-args"].([]any)
+	for _, a := range args {
+		if a == "hi" {
+			t.Fatal("hidden preview put the text in loc-args")
+		}
 	}
 }
 

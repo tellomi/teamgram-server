@@ -17,7 +17,7 @@ func TestRegisterAndUnregisterDevice(t *testing.T) {
 		ctx:    context.Background(),
 		svcCtx: &svc.ServiceContext{Devices: store},
 		Logger: logx.WithContext(context.Background()),
-		MD:     &metadata.RpcMetadata{UserId: 9, PermAuthKeyId: 55, AuthId: 7},
+		MD:     &metadata.RpcMetadata{UserId: 9, PermAuthKeyId: 55, AuthId: 7, LangCode: "zh-Hans"},
 	}
 	secret := []byte{9, 8, 7, 6}
 	ok, err := c.AccountRegisterDevice(&mtproto.TLAccountRegisterDevice{
@@ -50,7 +50,7 @@ func TestRegisterAndUnregisterDevice(t *testing.T) {
 			alert = d
 		}
 	}
-	if alert.AuthKeyID != 55 || alert.Token != "abc" || alert.AppSandbox || !alert.NoMuted || string(alert.Secret) != string(secret) || alert.OtherUIDs[0] != 4 {
+	if alert.AuthKeyID != 55 || alert.Token != "abc" || alert.AppSandbox || !alert.NoMuted || string(alert.Secret) != string(secret) || alert.OtherUIDs[0] != 4 || alert.LangCode != "zh-Hans" {
 		t.Fatalf("%+v", alert)
 	}
 	if _, err := c.AccountRegisterDevice(&mtproto.TLAccountRegisterDevice{TokenType: push.TokenFCM}); err != mtproto.ErrTokenInvalid {

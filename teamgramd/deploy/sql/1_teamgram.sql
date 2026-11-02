@@ -272,6 +272,7 @@ CREATE TABLE `devices` (
   `app_sandbox` tinyint(1) NOT NULL DEFAULT '0',
   `secret` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `other_uids` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `lang_code` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `state` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

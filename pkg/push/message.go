@@ -147,9 +147,20 @@ const (
 	kindGeoLive
 	kindContact
 	kindPoll
+	kindQuiz
+	kindPhotoSecret
+	kindVideoSecret
+	kindPin
+	kindPinText
 )
 
 func mediaKind(msg *mtproto.Message) (kind, string) {
+	if act := msg.GetAction(); act != nil && act.GetPredicateName() == mtproto.Predicate_messageActionPinMessage {
+		if strings.TrimSpace(msg.GetMessage()) != "" {
+			return kindPinText, ""
+		}
+		return kindPin, ""
+	}
 	media := msg.GetMedia()
 	if media == nil || media.GetPredicateName() == "" || media.GetPredicateName() == mtproto.Predicate_messageMediaEmpty {
 		if strings.TrimSpace(msg.GetMessage()) == "" {
@@ -159,6 +170,9 @@ func mediaKind(msg *mtproto.Message) (kind, string) {
 	}
 	switch media.GetPredicateName() {
 	case mtproto.Predicate_messageMediaPhoto:
+		if selfDestruct(media) {
+			return kindPhotoSecret, ""
+		}
 		return kindPhoto, ""
 	case mtproto.Predicate_messageMediaGeo:
 		return kindGeo, ""
@@ -167,9 +181,16 @@ func mediaKind(msg *mtproto.Message) (kind, string) {
 	case mtproto.Predicate_messageMediaContact:
 		return kindContact, ""
 	case mtproto.Predicate_messageMediaPoll:
+		if media.GetPoll() != nil && media.GetPoll().GetQuiz() {
+			return kindQuiz, ""
+		}
 		return kindPoll, ""
 	case mtproto.Predicate_messageMediaDocument:
-		return documentKind(media.GetDocument())
+		k, extra := documentKind(media.GetDocument())
+		if selfDestruct(media) && k == kindVideo {
+			return kindVideoSecret, ""
+		}
+		return k, extra
 	case mtproto.Predicate_messageMediaWebPage:
 		if strings.TrimSpace(msg.GetMessage()) == "" {
 			return kindNoText, ""
@@ -224,6 +245,11 @@ func documentKind(doc *mtproto.Document) (kind, string) {
 	}
 }
 
+func selfDestruct(media *mtproto.MessageMedia) bool {
+	ttl := media.GetTtlSeconds()
+	return ttl != nil && ttl.GetValue() > 0
+}
+
 func hasPredicate(doc *mtproto.Document, name string) bool {
 	for _, a := range doc.GetAttributes() {
 		if a.GetPredicateName() == name {
@@ -269,6 +295,21 @@ func locKey(peerType int32, k kind, text string) string {
 		name = "MESSAGE_CONTACT"
 	case kindPoll:
 		name = "MESSAGE_POLL"
+	case kindQuiz:
+		name = "MESSAGE_QUIZ"
+	case kindPhotoSecret:
+		name = "MESSAGE_PHOTO_SECRET"
+	case kindVideoSecret:
+		name = "MESSAGE_VIDEO_SECRET"
+	case kindPin:
+		name = "PINNED_NOTEXT"
+	case kindPinText:
+		name = "PINNED_TEXT"
+	}
+	// PINNED_* is the same key for private chats and groups. The peer is
+	// distinguished by loc-args (https://core.telegram.org/api/push-updates).
+	if strings.HasPrefix(name, "PINNED_") {
+		return name
 	}
 	return prefix + name
 }
@@ -298,36 +339,54 @@ func (m Incoming) Args(preview bool) []string {
 	}
 	switch {
 	case m.ChannelID != 0:
-		if strings.HasSuffix(m.LocKey, "MESSAGE_TEXT") && body != "" {
+		if wantsBodyArg(m.LocKey) && body != "" {
 			return []string{title, body}
 		}
 		return []string{title}
 	case m.ChatID != 0:
-		if strings.HasSuffix(m.LocKey, "MESSAGE_TEXT") && body != "" {
+		if wantsBodyArg(m.LocKey) && body != "" {
 			return []string{author, title, body}
 		}
-		if strings.HasSuffix(m.LocKey, "MESSAGE_STICKER") && m.Sticker != "" {
+		if strings.HasSuffix(baseKey(m.LocKey), "MESSAGE_STICKER") && m.Sticker != "" {
 			return []string{author, title, m.Sticker}
 		}
 		return []string{author, title}
 	default:
-		if strings.HasSuffix(m.LocKey, "MESSAGE_TEXT") && body != "" {
+		if wantsBodyArg(m.LocKey) && body != "" {
 			return []string{author, body}
 		}
-		if strings.HasSuffix(m.LocKey, "MESSAGE_STICKER") && m.Sticker != "" {
+		if strings.HasSuffix(baseKey(m.LocKey), "MESSAGE_STICKER") && m.Sticker != "" {
 			return []string{author, m.Sticker}
 		}
 		return []string{author}
 	}
 }
 
+// wantsBodyArg is true for keys whose template includes the message text
+// (MESSAGE_TEXT, PINNED_TEXT, and the CHAT_ / CHANNEL_ forms).
+func wantsBodyArg(loc string) bool {
+	switch baseKey(loc) {
+	case "MESSAGE_TEXT", "PINNED_TEXT":
+		return true
+	default:
+		return false
+	}
+}
+
 // LocKeyFor returns the key actually sent. Hidden previews use the NOTEXT key
 // so the message body is not placed in loc-args.
 func (m Incoming) LocKeyFor(preview bool) string {
-	if preview || !strings.HasSuffix(m.LocKey, "MESSAGE_TEXT") {
+	if preview {
 		return m.LocKey
 	}
-	return strings.TrimSuffix(m.LocKey, "MESSAGE_TEXT") + "MESSAGE_NOTEXT"
+	switch baseKey(m.LocKey) {
+	case "MESSAGE_TEXT":
+		return strings.TrimSuffix(m.LocKey, "MESSAGE_TEXT") + "MESSAGE_NOTEXT"
+	case "PINNED_TEXT":
+		return strings.TrimSuffix(m.LocKey, "PINNED_TEXT") + "PINNED_NOTEXT"
+	default:
+		return m.LocKey
+	}
 }
 
 func globalPeerType(peerType int32) int32 {

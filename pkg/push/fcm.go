@@ -10,7 +10,9 @@ import (
 var ErrFCMNotConfigured = errors.New("fcm is not configured")
 
 // FCMSender delivers a data payload to an FCM registration token.
-// The payload is the same JSON APNs posts, including "p" when a secret is set.
+// The JSON object's values are strings: loc_key, loc_args (a JSON array),
+// custom (a JSON object), body (localized fallback), and p (the sealed
+// loc_key object). tellomi/Telegram reads only p.
 type FCMSender interface {
 	Send(ctx context.Context, token string, payload []byte) error
 }

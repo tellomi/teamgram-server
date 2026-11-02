@@ -54,6 +54,9 @@ Devices and notify settings live in the existing teamgram MySQL database (`devic
 | `secret` | raw `secret` bytes, stored hex-encoded |
 | `no_muted` | `flags.0` |
 | `other_uids` | other accounts on the device |
+| `lang_code` | app language from the session (`initConnection.lang_code`, else `system_lang_code`) |
+
+When a push is built, `auths.lang_code` for that auth key wins over the device snapshot. `initConnection` rewrites `auths.lang_code` on every connection, so a language switch applies on the next message without waiting for another `account.registerDevice`. `zh`, `zh-CN` and `zh-Hans` render simplified Chinese. `zh-Hant`, `zh-TW` and `zh-HK` render traditional. Any other code stays English.
 
 `account.unregisterDevice` deletes that token for the current user and `other_uids`.
 
@@ -74,7 +77,11 @@ The outer JSON matches the Telegram loc-key form and carries the ids the app rea
 ```json
 {
   "aps": {
-    "alert": {"loc-key": "MESSAGE_TEXT", "loc-args": ["Ada Lovelace", "hello"]},
+    "alert": {
+      "loc-key": "MESSAGE_AUDIO",
+      "loc-args": ["林"],
+      "body": "发来一条语音消息"
+    },
     "mutable-content": 1,
     "sound": "default",
     "thread-id": "3"
@@ -86,6 +93,8 @@ The outer JSON matches the Telegram loc-key form and carries the ids the app rea
 }
 ```
 
+`loc-key` / `loc-args` are the Telegram keys (`MESSAGE_TEXT`, `MESSAGE_PHOTO`, `MESSAGE_AUDIO`, `CHAT_MESSAGE_*`, `CHANNEL_MESSAGE_*`, `PINNED_*`, and the secret / gif / round / sticker / file / contact / geo / poll / quiz forms). `body` is the same phrase in the recipient's language, for clients that show a literal string. Apple uses `loc-key` when the app has that string and ignores `body`.
+
 Groups use `chat_id` (not `from_id`). Channels use `channel_id`. The ids are strings.
 
 `p` is required by `Telegram/NotificationService/Sources/NotificationService.swift`. The extension base64url-decodes it, takes the first 8 bytes as the notification key id, and decrypts with MTProto 2.0 (`x = 8`) using the master key registered as `secret`. The plaintext is a little-endian length plus JSON. That JSON must **not** contain `loc-key`: if it does, the extension treats the push as a service event and does not render `aps.alert`. The decrypted object therefore looks like:
@@ -95,7 +104,7 @@ Groups use `chat_id` (not `from_id`). Channels use `channel_id`. The ids are str
   "msg_id": "42",
   "from_id": "3",
   "aps": {
-    "alert": {"title": "Ada Lovelace", "body": "hello"},
+    "alert": {"title": "林", "body": "发来一条语音消息"},
     "mutable-content": 1,
     "thread-id": "3",
     "category": "m",
@@ -104,7 +113,9 @@ Groups use `chat_id` (not `from_id`). Channels use `channel_id`. The ids are str
 }
 ```
 
-The extension copies those string ids into the notification and shows the alert, then polls for the message.
+The extension copies those string ids into the notification and shows `title` / `body` as-is. It does not look up `MESSAGE_*` in the string catalog. A Chinese recipient therefore needs the server to put Chinese in `body`. Text messages still use the message text as `body`.
+
+A pinned service message (`messageActionPinMessage`) uses `PINNED_NOTEXT` or `PINNED_TEXT`. Those keys are not prefixed with `CHAT_` or `CHANNEL_`; the peer is in `loc-args`. Reaction updates are not pushed: `updateMessageReactions` does not name a single actor, so a `REACT_*` payload would be a guess. The phrase table still has `REACT_*` / `CHAT_REACT_*` bodies for a later sender.
 
 ## Incoming calls (PushKit)
 
@@ -116,6 +127,55 @@ Headers: `apns-push-type: voip`, `apns-priority: 10`, `apns-expiration: 0`. Expi
 
 The JSON is the official `PHONE_CALL_REQUEST` shape. `call_id`, `call_ah`, and `from_id` are strings. `custom.updates` and top-level `updates` are the unpadded base64url of a layer-232 `updates#74ae4240` containing `updatePhoneCall` / `phoneCallRequested` and the caller in `users`. `p` is that same JSON sealed with the device secret, the same MTProto 2.0 seal as a message push. Telegram-iOS decrypts `p`, parses `updates`, and reports CallKit only when the caller user is present. A token with no secret is skipped, because a VoIP push the app cannot decrypt is not reported to CallKit.
 
-## FCM
+## Android (FCM and Huawei)
 
-Token type `2` is saved. `push.Service.SetFCM` accepts a sender; the default returns `ErrFCMNotConfigured` and does not call out. The bytes it would send are the same JSON as APNs, including `p` when the device registered a secret. Fill that in when an Android transport exists.
+Production sends APNs only. `sync` constructs `push.Service` from `TELLOMI_APNS_*` and never calls `SetFCM` or `SetHuawei`.
+
+| token_type | Client | What this server does |
+| --- | --- | --- |
+| `1` | APNs alert | Sent when the `.p8` is mounted |
+| `2` | FCM | Stored. No sender is installed (`ErrFCMNotConfigured`). Mainland China usually cannot reach FCM |
+| `9` | APNs VoIP | Sent for `phoneCallRequested` |
+| `13` | Huawei Push Kit | Stored. No sender is installed (`ErrHuaweiNotConfigured`). `tellomi/Telegram` `TMessagesProj_AppHuawei` registers this type |
+
+There is no Xiaomi, OPPO, vivo, Honor, Meizu, or JPush token in the Telegram API, and no code here sends one. `XiaomiUtilities` in the Android client is an MIUI permission helper, not a push transport. A non-Huawei phone in mainland China that cannot reach FCM has no push path.
+
+The FCM data object (every value a string, which the FCM HTTP API requires) is:
+
+```json
+{
+  "loc_key": "MESSAGE_PHOTO",
+  "loc_args": "[\"林\"]",
+  "custom": "{\"from_id\":\"3\",\"msg_id\":\"42\"}",
+  "user_id": "9",
+  "body": "发来一张图片",
+  "p": "<base64url>"
+}
+```
+
+`tellomi/Telegram` `GcmPushListenerService` reads only `p`. After decryption the JSON is the spec object, with a real array and object:
+
+```json
+{
+  "loc_key": "MESSAGE_PHOTO",
+  "loc_args": ["林"],
+  "custom": {"from_id": "3", "msg_id": "42"},
+  "user_id": 9,
+  "body": "发来一张图片"
+}
+```
+
+Huawei's listener passes the whole data string to that decryptor, so a future HMS sender must post `p` itself, not this wrapper. `body` is the localized fallback. The official client ignores it and formats `loc_key` with `values-zh`.
+
+## Client gaps (not changed in this repo)
+
+iOS `tellomi/Telegram-iOS`:
+
+- `Telegram/NotificationService/Sources/NotificationService.swift` copies the decrypted `aps.alert.body`. A `loc-key` on that decrypted object is treated as a service event (`SESSION_REVOKE`, `MESSAGE_DELETED`, …) and the `default` branch does not show the banner. Do not put `loc-key` in `p`.
+- `Telegram/Telegram-iOS/zh-Hans.lproj/` contains only `InfoPlist.strings`. There is no `Localizable.strings`, so an APNs `loc-key` that the Notification Service does not rewrite falls back to English.
+- `en.lproj/Localizable.strings` names the push strings `PUSH_MESSAGE_AUDIO`, not `MESSAGE_AUDIO`. Apple looks the `loc-key` up verbatim, so `MESSAGE_AUDIO` does not match. Add `zh-Hans.lproj/Localizable.strings` (and the same keys in `en.lproj`) for the keys this server sends: `MESSAGE_TEXT`, `MESSAGE_NOTEXT`, `MESSAGE_PHOTO`, `MESSAGE_PHOTO_SECRET`, `MESSAGE_VIDEO`, `MESSAGE_VIDEO_SECRET`, `MESSAGE_GIF`, `MESSAGE_ROUND`, `MESSAGE_AUDIO`, `MESSAGE_STICKER`, `MESSAGE_DOC`, `MESSAGE_GEO`, `MESSAGE_GEOLIVE`, `MESSAGE_CONTACT`, `MESSAGE_POLL`, `MESSAGE_QUIZ`, the `CHAT_` and `CHANNEL_` forms of those, and `PINNED_NOTEXT`, `PINNED_TEXT`, `PINNED_PHOTO`, `PINNED_VIDEO`, `PINNED_GIF`, `PINNED_ROUND`, `PINNED_AUDIO`, `PINNED_STICKER`, `PINNED_DOC`, `PINNED_GEO`, `PINNED_GEOLIVE`, `PINNED_CONTACT`, `PINNED_POLL`. Suggested simplified values, without a `|` (Apple does not split on it): `"MESSAGE_AUDIO" = "%1$@ 发来一条语音消息";`, `"MESSAGE_PHOTO" = "%1$@ 发来一张图片";`, `"CHAT_MESSAGE_AUDIO" = "%1$@ 在 %2$@ 发来一条语音消息";`. The Notification Service does not need a code change for the encrypted path: it already shows the server body.
+
+Android `tellomi/Telegram`:
+
+- `PushListenerController` handles `PUSH_TYPE_FIREBASE` (2) and `PUSH_TYPE_HUAWEI` (13) only. Both decrypt and switch on `loc_key`. `values-zh/strings.xml` already has `NotificationMessageAudio` (`%1$s 给您发送了一条语音消息`), `NotificationMessagePhoto`, and the group variants. No string change is required for those keys.
+- No client change is required for the decrypted `loc_key` path. A non-Huawei mainland device still needs a transport this client does not register.

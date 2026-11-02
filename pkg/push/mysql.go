@@ -60,16 +60,17 @@ func (m *MySQL) Upsert(ctx context.Context, d Device) error {
 		return err
 	}
 	_, err = m.db.ExecContext(ctx, `
-INSERT INTO devices (auth_key_id, user_id, token_type, token, no_muted, locked_period, app_sandbox, secret, other_uids, state)
-VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 0)
+INSERT INTO devices (auth_key_id, user_id, token_type, token, no_muted, locked_period, app_sandbox, secret, other_uids, lang_code, state)
+VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
 ON DUPLICATE KEY UPDATE
   token = VALUES(token),
   no_muted = VALUES(no_muted),
   app_sandbox = VALUES(app_sandbox),
   secret = VALUES(secret),
   other_uids = VALUES(other_uids),
+  lang_code = IF(VALUES(lang_code) = '', lang_code, VALUES(lang_code)),
   state = 0`,
-		d.AuthKeyID, d.UserID, d.TokenType, d.Token, noMuted, sandbox, secret, other)
+		d.AuthKeyID, d.UserID, d.TokenType, d.Token, noMuted, sandbox, secret, other, d.LangCode)
 	return err
 }
 
@@ -88,9 +89,15 @@ func (m *MySQL) Delete(ctx context.Context, userID int64, tokenType int32, token
 }
 
 func (m *MySQL) ListByUser(ctx context.Context, userID int64) ([]Device, error) {
+	// auths.lang_code is rewritten by every initConnection, so a language
+	// switch is visible on the next push without waiting for registerDevice.
+	// devices.lang_code is the snapshot taken at registration.
 	rows, err := m.db.QueryContext(ctx, `
-SELECT auth_key_id, user_id, token_type, token, no_muted, app_sandbox, secret, other_uids, locked_period
-FROM devices WHERE user_id = ? AND state = 0`, userID)
+SELECT d.auth_key_id, d.user_id, d.token_type, d.token, d.no_muted, d.app_sandbox, d.secret, d.other_uids, d.locked_period,
+       COALESCE(NULLIF(a.lang_code, ''), d.lang_code)
+FROM devices d
+LEFT JOIN auths a ON a.auth_key_id = d.auth_key_id AND a.deleted = 0
+WHERE d.user_id = ? AND d.state = 0`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +111,7 @@ FROM devices WHERE user_id = ? AND state = 0`, userID)
 			secret  string
 			other   string
 		)
-		if err := rows.Scan(&d.AuthKeyID, &d.UserID, &d.TokenType, &d.Token, &noMuted, &sandbox, &secret, &other, &d.LockedPeriod); err != nil {
+		if err := rows.Scan(&d.AuthKeyID, &d.UserID, &d.TokenType, &d.Token, &noMuted, &sandbox, &secret, &other, &d.LockedPeriod, &d.LangCode); err != nil {
 			return nil, err
 		}
 		d.NoMuted = noMuted != 0
