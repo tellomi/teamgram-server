@@ -233,7 +233,7 @@ func (s *handshake) OnReqPqMulti(request *mtproto.TLReqPqMulti) (*mtproto.ResPQ,
 // OnReqDHParams
 // req_DH_params#d712e4be nonce:int128 server_nonce:int128 p:string q:string public_key_fingerprint:long encrypted_data:string = Server_DH_Params;
 func (s *handshake) OnReqDHParams(ctx *HandshakeStateCtx, request *mtproto.TLReq_DHParams) (*mtproto.Server_DH_Params, error) {
-	logx.Infof("req_DH_params#d712e4be - state: {%s}, request: %s", ctx, request)
+	logx.Infof("req_DH_params#d712e4be - state: {%v}, request: %s", ctx, request)
 
 	var (
 		err error
@@ -436,7 +436,7 @@ func (s *handshake) OnReqDHParams(ctx *HandshakeStateCtx, request *mtproto.TLReq
 		EncryptedAnswer: hack.String(tmpEncryptedAnswer),
 	}}
 
-	logx.Infof("onReq_DHParams - state: {%s}, reply: %s", ctx, serverDHParamsOk)
+	logx.Infof("onReq_DHParams - state: {%v}, reply: %s", ctx, serverDHParamsOk)
 
 	return serverDHParamsOk.To_Server_DH_Params(), nil
 }
@@ -444,7 +444,7 @@ func (s *handshake) OnReqDHParams(ctx *HandshakeStateCtx, request *mtproto.TLReq
 // OnSetClientDHParams
 // set_client_DH_params#f5045f1f nonce:int128 server_nonce:int128 encrypted_data:string = Set_client_DH_params_answer;
 func (s *handshake) OnSetClientDHParams(ctx *HandshakeStateCtx, request *mtproto.TLSetClient_DHParams) (*mtproto.SetClient_DHParamsAnswer, error) {
-	logx.Infof("set_client_DH_params#f5045f1f - state: {%s}, request: %s", ctx, request)
+	logx.Infof("set_client_DH_params#f5045f1f - state: {%v}, request: %s", ctx, request)
 
 	// TODO(@benqi): Impl SetClient_DHParams logic
 	// 客户端传输数据解析
@@ -545,7 +545,7 @@ func (s *handshake) OnSetClientDHParams(ctx *HandshakeStateCtx, request *mtproto
 		//ctx.AuthKeyId = authKeyId
 		//ctx.AuthKey = authKey
 
-		logx.Infof("onSetClient_DHParams - ctx: {%s}, reply: %s", ctx, dhGenOk)
+		logx.Infof("onSetClient_DHParams - ctx: {%v}, reply: %s", ctx, dhGenOk)
 		return dhGenOk.To_SetClient_DHParamsAnswer(), nil
 	} else {
 		// TODO(@benqi): dhGenFail
@@ -563,7 +563,7 @@ func (s *handshake) OnSetClientDHParams(ctx *HandshakeStateCtx, request *mtproto
 // OnMsgsAck
 // msgs_ack#62d6b459 msg_ids:Vector<long> = MsgsAck;
 func (s *handshake) OnMsgsAck(state *HandshakeStateCtx, request *mtproto.TLMsgsAck) error {
-	logx.Infof("msgs_ack#62d6b459 - state: {%s}, request: %s", state, request)
+	logx.Infof("msgs_ack#62d6b459 - state: {%v}, request: %s", state, request)
 
 	switch state.State {
 	case STATE_pq_res:

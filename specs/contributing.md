@@ -44,6 +44,7 @@ This document covers branching, PR rules, code style, commit messages, and local
 ### Tests
 
 - From repo root: `go test ./...`. Use `go test ./pkg/...` if some tests need no external deps.
+- A pull request that adds or changes an RPC includes a case in `e2e/client` and regenerates `docs/api-coverage.csv`. P0 and P1 methods also land in the smoke list. See [docs/testing.md](../docs/testing.md).
 
 ### Code generation
 

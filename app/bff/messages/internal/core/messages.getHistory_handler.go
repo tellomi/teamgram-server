@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/zeromicro/go-zero/core/mr"
@@ -200,6 +201,7 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 	//	}).To_Messages_Messages()
 	//}
 
+	chatbox.Shared().ApplyReactions(c.ctx, c.MD.UserId, peer, messages)
 	mtproto.SanitizeOutgoingObject(rValues)
 	return rValues, nil
 }

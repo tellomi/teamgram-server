@@ -81,7 +81,7 @@ func (c *MsgCore) msgReadHistoryV2(ctx context.Context, in *msg.TLMsgReadHistory
 		// maxId         = in.MaxId
 	)
 
-	maxInboxMsg, err3 := c.svcCtx.Dao.MessagesDAO.SelectByMessageId(ctx, in.UserId, maxId)
+	maxInboxMsg, maxId, err3 := c.messageForRead(ctx, in.UserId, in.PeerType, in.PeerId, maxId)
 	if err3 != nil {
 		c.Logger.Errorf("msg.readHistoryV2 - error: not found dialog(%d,%d), error is %v", in.UserId, maxId, err3)
 		return nil, mtproto.ErrInternalServerError
@@ -129,7 +129,7 @@ func (c *MsgCore) msgReadHistoryV3(ctx context.Context, in *msg.TLMsgReadHistory
 		// maxId         = in.MaxId
 	)
 
-	maxInboxMsg, err3 := c.svcCtx.Dao.MessagesDAO.SelectByMessageId(ctx, in.UserId, maxId)
+	maxInboxMsg, maxId, err3 := c.messageForRead(ctx, in.UserId, in.PeerType, in.PeerId, maxId)
 	if err3 != nil {
 		c.Logger.Errorf("msg.readHistoryV2 - error: not found dialog(%d,%d), error is %v", in.UserId, maxId, err3)
 		return nil, mtproto.ErrInternalServerError

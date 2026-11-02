@@ -62,21 +62,21 @@ func (s *Server) RunLoop() {
 
 	r, err := s.dao.OpenFile(context.Background(), 7997959636588162716, -8695032368284712706, 1)
 	if err != nil {
-		logx.Error("open error: %v", err)
+		logx.Errorf("open error: %v", err)
 		// panic(err)
 		return
 	}
 
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
-		logx.Error("open error: %v", err)
+		logx.Errorf("open error: %v", err)
 		// panic(err)
 		return
 	}
 
 	b2, err := r.ReadAll(context.Background())
 	if err != nil {
-		logx.Error("open error: %v", err)
+		logx.Errorf("open error: %v", err)
 		// panic(err)
 		return
 	}

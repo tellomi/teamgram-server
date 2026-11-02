@@ -58,16 +58,16 @@ func (s *Server) RunLoop() {
 		os.Exit(0)
 	}()
 
-	logx.Infof("aaaa", "aa")
+	logx.Info("aaaa aa")
 	// buf, err := os.ReadFile("./test001.jpeg")
 	// ../../../../../../../tools/gif2mp4/safe_image.gif
 	buf, err := os.ReadFile("../../../../../../../tools/gif2mp4/safe_image.gif")
 	if err != nil {
-		logx.Error("open error: %v", err)
+		logx.Errorf("open error: %v", err)
 		return
 	}
 
-	logx.Infof("aaaa", "bb")
+	logx.Info("aaaa bb")
 
 	szParts := len(buf) / 10240
 	lastSize := len(buf) % 10240
@@ -76,14 +76,14 @@ func (s *Server) RunLoop() {
 	for i := 0; i < szParts; i++ {
 		s.dao.WriteFilePartData(context.Background(), 100, 1, int32(i), buf[i*10240:(i+1)*10240])
 	}
-	logx.Infof("aaaa", "cc")
+	logx.Info("aaaa cc")
 	if lastSize > 0 {
 		logx.Infof("aaaa: lastSize = %d, bufSize = %d", lastSize, len(buf))
 		// szParts++
 		s.dao.WriteFilePartData(context.Background(), 100, 1, int32(szParts), buf[szParts*10240:])
 	}
 
-	logx.Infof("aaaa", "dd")
+	logx.Info("aaaa dd")
 
 	if err = s.dao.SetFileInfo(context.Background(), &model.DfsFileInfo{
 		Creator:        100,

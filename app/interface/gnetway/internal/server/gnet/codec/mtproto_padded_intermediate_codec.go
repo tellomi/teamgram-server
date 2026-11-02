@@ -19,7 +19,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	rand2 "math/rand"
 
 	"github.com/teamgram/proto/mtproto"
 )
@@ -54,13 +53,13 @@ func (c *PaddedIntermediateCodec) Encode(conn CodecWriter, msg interface{}) ([]b
 		return nil, err
 	}
 
-	paddingLen := rand2.Int() % 16
-	buf := make([]byte, 4+len(rawMsg.Payload)+paddingLen)
+	// Length is the payload size. Bytes after that stay in the stream and the
+	// next frame treats them as a length. Keep padding at 0 so the length the
+	// decoder consumes is the whole write. A zero-padding frame is valid
+	// padded intermediate.
+	buf := make([]byte, 4+len(rawMsg.Payload))
 	binary.LittleEndian.PutUint32(buf, uint32(len(rawMsg.Payload)))
 	copy(buf[4:], rawMsg.Payload)
-	if paddingLen > 0 {
-		_, _ = rand.Read(buf[4+len(rawMsg.Payload):])
-	}
 
 	return c.Encrypt(buf), nil
 }

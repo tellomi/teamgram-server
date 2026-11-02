@@ -1,0 +1,29 @@
+# Runs the module tests on every pull request. Packages under e2e/client are a
+# separate module and run in the Client regression workflow, against compose.
+
+name: Go test
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: go-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Test
+        run: go test ./...
