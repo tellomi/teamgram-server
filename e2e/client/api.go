@@ -401,9 +401,9 @@ func (c *Client) SendVoice(ctx context.Context, peer *mtproto.InputPeer, audio [
 	}
 	media := mtproto.MakeTLInputMediaUploadedDocument(&mtproto.InputMedia{
 		File: mtproto.MakeTLInputFile(&mtproto.InputFile{
-			Id:    fileID,
-			Parts: parts,
-			Name:  "voice.ogg",
+			Id_INT64: fileID,
+			Parts:    parts,
+			Name:     "voice.ogg",
 		}).To_InputFile(),
 		MimeType: "audio/ogg",
 		Attributes: []*mtproto.DocumentAttribute{
