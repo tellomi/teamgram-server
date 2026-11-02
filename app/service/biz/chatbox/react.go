@@ -27,6 +27,9 @@ type reactionItem struct {
 	DocumentID int64  `json:"document_id,omitempty"`
 	Date       int32  `json:"date"`
 	Big        bool   `json:"big,omitempty"`
+	// Dialog is the shared dialog_message_id of a private-chat message.
+	// MsgID is the reactor's own id for it. See msgIDMap.
+	Dialog int64 `json:"dialog_msg_id,omitempty"`
 }
 
 type reactDoc struct {
@@ -171,19 +174,20 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 		return nil, err
 	}
 	now := int32(b.now().Unix())
+	dlg := b.dialogIDLocked(ctx, self, peer, msgID)
 	kept := doc.Items[:0]
 	for _, item := range doc.Items {
-		if item.MsgID == msgID && item.UserID == self {
+		if item.UserID == self && sameMessage(item, msgID, dlg) {
 			continue
 		}
 		kept = append(kept, item)
 	}
 	doc.Items = kept
 	for _, emo := range emos {
-		doc.Items = append(doc.Items, reactionItem{MsgID: msgID, UserID: self, Emoticon: emo, Date: now, Big: big})
+		doc.Items = append(doc.Items, reactionItem{MsgID: msgID, UserID: self, Emoticon: emo, Date: now, Big: big, Dialog: dlg})
 	}
 	for _, id := range docs {
-		doc.Items = append(doc.Items, reactionItem{MsgID: msgID, UserID: self, DocumentID: id, Date: now, Big: big})
+		doc.Items = append(doc.Items, reactionItem{MsgID: msgID, UserID: self, DocumentID: id, Date: now, Big: big, Dialog: dlg})
 	}
 	if err := b.storeReact(ctx, self, peer, doc); err != nil {
 		return nil, err
@@ -191,7 +195,7 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 	if savedDialog(self, peer) {
 		b.syncSavedTagsLocked(ctx, self, doc)
 	}
-	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, doc, self)), nil
+	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, b.viewLocked(ctx, self, peer, doc), self)), nil
 }
 
 // UnreadReactions returns messages in this dialog that have reactions newer
@@ -207,6 +211,7 @@ func (b *Book) UnreadReactions(ctx context.Context, self int64, peer *mtproto.Pe
 	if err != nil {
 		return nil, err
 	}
+	doc = b.viewLocked(ctx, self, peer, doc)
 	cursor := doc.Read[self]
 	seen := map[int32]bool{}
 	var msgs []*mtproto.Message
@@ -287,9 +292,10 @@ func (b *Book) DeleteParticipantReaction(ctx context.Context, self int64, peer *
 	if err != nil {
 		return nil, err
 	}
+	dlg := b.dialogIDLocked(ctx, self, peer, msgID)
 	kept := doc.Items[:0]
 	for _, item := range doc.Items {
-		if item.MsgID == msgID && item.UserID == participant {
+		if item.UserID == participant && sameMessage(item, msgID, dlg) {
 			continue
 		}
 		kept = append(kept, item)
@@ -301,7 +307,7 @@ func (b *Book) DeleteParticipantReaction(ctx context.Context, self int64, peer *
 	if savedDialog(self, peer) {
 		b.syncSavedTagsLocked(ctx, self, doc)
 	}
-	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, doc, self)), nil
+	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, b.viewLocked(ctx, self, peer, doc), self)), nil
 }
 
 // DeleteParticipantReactions removes every reaction by participant in the dialog.
@@ -364,6 +370,7 @@ func (b *Book) ApplyReactions(ctx context.Context, self int64, peer *mtproto.Pee
 	if err != nil || doc == nil || len(doc.Items) == 0 {
 		return
 	}
+	doc = b.viewLocked(ctx, self, peer, doc)
 	tags := savedDialog(self, peer)
 	for _, m := range msgs {
 		if m == nil || m.GetId() == 0 {

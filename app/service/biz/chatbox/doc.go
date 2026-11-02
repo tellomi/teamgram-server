@@ -74,11 +74,12 @@ type Book struct {
 	tags      map[int64]*tagDoc
 	paid      map[string][]*mtproto.MessageExtendedMedia
 	reports   []reportItem
+	ids       msgIDMap
 	now       func() time.Time
 }
 
 func newBook(db docDB) *Book {
-	return &Book{
+	b := &Book{
 		db:        db,
 		sched:     map[string]*schedDoc{},
 		polls:     map[int64]*pollDoc{},
@@ -101,6 +102,10 @@ func newBook(db docDB) *Book {
 		paid:      map[string][]*mtproto.MessageExtendedMedia{},
 		now:       time.Now,
 	}
+	if m, ok := db.(msgIDMap); ok {
+		b.ids = m
+	}
+	return b
 }
 
 var (

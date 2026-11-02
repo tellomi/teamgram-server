@@ -17,11 +17,11 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestHelpGetTermsOfServiceUpdate` | The default config returns `help.termsOfServiceUpdateEmpty`, and a second call stays empty. If an update is returned, accepting its id does not make the next call empty. |
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |
 | `TestStartupRPCs` | One startup RPC returned 500, timed out, or did not decode. A 4xx is recorded and does not fail this test. Subtests are named `ios/<method>` and `android/<method>`. |
-| `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads. |
+| `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads up to its own id for that message. |
 | `TestBasicGroupReadOutbox` | Same for a basic group. |
 | `TestSupergroupReadOutbox` | Same for a megagroup (`channels.readHistory`). |
 | `TestBadEntitiesDoNotBreakGetDifference` | A message with a zero-length entity and a duplicated entity makes `updates.getDifference` or `messages.getHistory` fail for the sender or the recipient. |
-| `TestSendReactionThumbsUp` | `messages.sendReaction` with 👍 does not show up as `MessageReactions` on the message. |
+| `TestSendReactionThumbsUp` | The recipient reacts 👍 to a private message and it does not show up as `MessageReactions` on that message for both sides. The two sides number the same message differently, so this also catches a reaction stored under the wrong side's id. |
 | `TestAvailableReactionsDownloadable` | `messages.getAvailableReactions` is empty, or a static icon's `upload.getFile` does not return bytes within 10s. |
 | `TestStickerSetUploadGetFile` | `messages.getStickerSet` (Twemoji, then AnimatedEmoji) has no document, or `upload.getFile` does not return bytes within 10s. |
 | `TestUsernameThreeCharacters` | A 3-character username cannot be checked and set. |
