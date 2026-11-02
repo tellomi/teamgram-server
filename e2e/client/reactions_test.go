@@ -8,54 +8,93 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+// TestSendReactionThumbsUp reacts from the recipient's side and checks both
+// sides. In a private chat each user numbers messages in their own box, so the
+// same message has a different id for sender and recipient. A note to Saved
+// Messages first moves the sender's counter ahead so the two ids never match
+// by luck; the server has to map the reaction onto each side's own id.
 func TestSendReactionThumbsUp(t *testing.T) {
 	a, b, _, bSelf := sharedPair(t)
 	c, cancel := contextTimeout(45 * time.Second)
 	defer cancel()
+	if _, err := a.SendText(c, inputPeerSelf(), fmt.Sprintf("react-skew-%d", time.Now().UnixNano()), nil); err != nil {
+		t.Fatal(err)
+	}
 	text := fmt.Sprintf("react-%d", time.Now().UnixNano())
 	peerForA := inputPeerUser(bSelf.ID, bSelf.AccessHash)
-	msgID, err := a.SendText(c, peerForA, text, nil)
+	aID, err := a.SendText(c, peerForA, text, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
+	var bID int32
 	err = waitUntil(c, 400*time.Millisecond, func() (bool, error) {
 		msgs, err := b.History(c, peerForB, 30)
 		if err != nil {
 			return false, err
 		}
-		return hasText(msgs, text), nil
+		bID = idOfText(msgs, text)
+		return bID != 0, nil
 	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("recipient never got %q: %v", text, err)
 	}
-	res, err := b.SendReaction(c, peerForB, msgID, "👍")
+	t.Logf("sender id %d, recipient id %d", aID, bID)
+	res, err := b.SendReaction(c, peerForB, bID, "👍")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reactionIn(res, msgID, "👍") {
-		err = waitUntil(c, 400*time.Millisecond, func() (bool, error) {
-			for _, side := range []struct {
-				c    *Client
-				peer *mtproto.InputPeer
-			}{
-				{a, peerForA},
-				{b, peerForB},
-			} {
-				msgs, err := side.c.History(c, side.peer, 30)
-				if err != nil {
-					return false, err
-				}
-				if !hasReaction(msgs, msgID, "👍") {
-					return false, nil
-				}
-			}
-			return true, nil
-		})
+	if !reactionIn(res, bID, "👍") && !updateReactionOn(res, bID, "👍") {
+		t.Fatalf("messages.sendReaction did not return 👍 on %d: %T", bID, res)
+	}
+	for _, side := range []struct {
+		name string
+		c    *Client
+		peer *mtproto.InputPeer
+		id   int32
+	}{
+		{"sender", a, peerForA, aID},
+		{"recipient", b, peerForB, bID},
+	} {
+		msgs, err := side.c.History(c, side.peer, 30)
 		if err != nil {
-			t.Fatalf("👍 did not stay on message %d as MessageReactions: %v", msgID, err)
+			t.Fatal(err)
+		}
+		if !hasReaction(msgs, side.id, "👍") {
+			t.Fatalf("%s history has no 👍 on its message %d", side.name, side.id)
 		}
 	}
+}
+
+func idOfText(msgs []*mtproto.Message, text string) int32 {
+	for _, m := range msgs {
+		if m != nil && m.GetMessage() == text {
+			return m.GetId()
+		}
+	}
+	return 0
+}
+
+func updateReactionOn(obj mtproto.TLObject, msgID int32, emoticon string) bool {
+	var ups []*mtproto.Update
+	switch v := obj.(type) {
+	case *mtproto.TLUpdates:
+		ups = v.GetUpdates()
+	case *mtproto.TLUpdatesCombined:
+		ups = v.GetUpdates()
+	case *mtproto.TLUpdateShort:
+		ups = []*mtproto.Update{v.GetUpdate()}
+	}
+	for _, u := range ups {
+		if u.GetMsgId_INT32() != msgID {
+			continue
+		}
+		m := mtproto.MakeTLMessage(&mtproto.Message{Id: msgID, Reactions: u.GetReactions_MESSAGEREACTIONS()}).To_Message()
+		if hasReaction([]*mtproto.Message{m}, msgID, emoticon) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAvailableReactionsDownloadable(t *testing.T) {

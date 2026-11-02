@@ -39,6 +39,7 @@ func (b *Book) ReactionList(ctx context.Context, self int64, peer *mtproto.PeerU
 	if err != nil {
 		return nil, err
 	}
+	doc = b.viewLocked(ctx, self, peer, doc)
 	var matched []reactionItem
 	for _, item := range doc.Items {
 		if item.MsgID != msgID || !reactionMatches(reaction, item.Emoticon, item.DocumentID) {
@@ -80,6 +81,7 @@ func (b *Book) ReactionsFor(ctx context.Context, self int64, peer *mtproto.PeerU
 	if err != nil {
 		return nil, err
 	}
+	doc = b.viewLocked(ctx, self, peer, doc)
 	var ups []*mtproto.Update
 	for _, id := range ids {
 		if id <= 0 {

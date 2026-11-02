@@ -21,7 +21,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestBasicGroupReadOutbox` | Same for a basic group. |
 | `TestSupergroupReadOutbox` | Same for a megagroup (`channels.readHistory`). |
 | `TestBadEntitiesDoNotBreakGetDifference` | A message with a zero-length entity and a duplicated entity makes `updates.getDifference` or `messages.getHistory` fail for the sender or the recipient. |
-| `TestSendReactionThumbsUp` | `messages.sendReaction` with 👍 does not show up as `MessageReactions` on the message. |
+| `TestSendReactionThumbsUp` | The recipient reacts 👍 to a private message and it does not show up as `MessageReactions` on that message for both sides. The two sides number the same message differently, so this also catches a reaction stored under the wrong side's id. |
 | `TestAvailableReactionsDownloadable` | `messages.getAvailableReactions` is empty, or a static icon's `upload.getFile` does not return bytes within 10s. |
 | `TestStickerSetUploadGetFile` | `messages.getStickerSet` (Twemoji, then AnimatedEmoji) has no document, or `upload.getFile` does not return bytes within 10s. |
 | `TestUsernameThreeCharacters` | A 3-character username cannot be checked and set. |
