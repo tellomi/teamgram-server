@@ -117,3 +117,41 @@ func hasEmoji(m *mtproto.Message, emo string) bool {
 	}
 	return false
 }
+
+func TestPeerReactionUpdateUsesPeersMessageID(t *testing.T) {
+	b := newBook(nil)
+	b.ids = fakeIDs{box: map[int64]map[int32]int64{
+		4: {250: 7001},
+		9: {2734: 7001},
+	}}
+	ctx := context.Background()
+	peer9 := mtproto.MakePeerUtil(mtproto.PEER_USER, 4)
+	if _, err := b.React(ctx, 9, peer9, 2734, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	to, up := b.PeerReactionUpdate(ctx, 9, peer9, 2734)
+	if to != 4 || up == nil {
+		t.Fatalf("to=%d up=%v", to, up)
+	}
+	if got := up.GetMsgId_INT32(); got != 250 {
+		t.Fatalf("peer update on %d, want 250", got)
+	}
+	if got := up.GetPeer_PEER().GetUserId(); got != 9 {
+		t.Fatalf("peer update peer %d, want 9", got)
+	}
+	res := up.GetReactions_MESSAGEREACTIONS().GetResults()
+	if len(res) != 1 || res[0].GetCount() != 1 || res[0].GetChosenOrder() != nil {
+		t.Fatalf("peer results %v", res)
+	}
+	// Removing the reaction tells the peer too, with an empty result.
+	if _, err := b.React(ctx, 9, peer9, 2734, nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	_, up = b.PeerReactionUpdate(ctx, 9, peer9, 2734)
+	if up == nil || len(up.GetReactions_MESSAGEREACTIONS().GetResults()) != 0 {
+		t.Fatalf("after removal %v", up)
+	}
+	if to, up := b.PeerReactionUpdate(ctx, 9, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 2734); to != 0 || up != nil {
+		t.Fatal("saved messages must not push")
+	}
+}

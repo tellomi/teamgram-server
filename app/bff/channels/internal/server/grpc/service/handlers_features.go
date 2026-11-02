@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 
 	"time"
 
@@ -335,13 +336,20 @@ type ReactionsService struct {
 	mtproto.UnimplementedRPCReactionsServer
 	Users    reactionUserAPI
 	Messages reactionMessageAPI
+	// Push delivers updates to other users. Nil in tests and when sync is not configured.
+	Push reactionPusher
+}
+
+// reactionPusher sends updates to one user's sessions.
+type reactionPusher interface {
+	SyncPushUpdates(ctx context.Context, in *sync.TLSyncPushUpdates) (*mtproto.Void, error)
 }
 
 func (ReactionsService) MessagesGetAvailableReactions(ctx context.Context, in *mtproto.TLMessagesGetAvailableReactions) (*mtproto.Messages_AvailableReactions, error) {
 	return catalog.Must().Reactions(in.GetHash()), nil
 }
 
-func (ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TLMessagesSendReaction) (*mtproto.Updates, error) {
+func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TLMessagesSendReaction) (*mtproto.Updates, error) {
 	self, _ := actor(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	var emos []string
@@ -374,6 +382,7 @@ func (ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.TL
 		return nil, err
 	}
 	catalog.Must().NoteReaction(self, emos)
+	s.pushPeerReaction(ctx, self, peer, in.GetMsgId())
 	return up, nil
 }
 
@@ -445,4 +454,20 @@ func (StatsService) StatsGetBroadcastStats(ctx context.Context, in *mtproto.TLSt
 func (StatsService) StatsGetMegagroupStats(ctx context.Context, in *mtproto.TLStatsGetMegagroupStats) (*mtproto.Stats_MegagroupStats, error) {
 	self, _ := actor(ctx)
 	return channel.Shared().MegagroupStats(ctx, self, in.GetChannel())
+}
+
+// pushPeerReaction tells the other side of a private chat that reactions on
+// the message changed, using that user's own message id.
+func (s ReactionsService) pushPeerReaction(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) {
+	if s.Push == nil {
+		return
+	}
+	to, up := chatbox.Shared().PeerReactionUpdate(ctx, self, peer, msgID)
+	if to == 0 || up == nil {
+		return
+	}
+	_, _ = s.Push.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{
+		UserId:  to,
+		Updates: mtproto.MakeUpdatesByUpdates(up),
+	})
 }
