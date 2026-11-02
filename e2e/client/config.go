@@ -123,6 +123,9 @@ func (c Config) PublicKey() (exchange.PublicKey, error) {
 	if block == nil {
 		return exchange.PublicKey{}, fmt.Errorf("server RSA key is not PEM")
 	}
+	if block.Type == "PUBLIC KEY" || block.Type == "RSA PUBLIC KEY" {
+		return parsePublicKey(block)
+	}
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
 		parsed, err2 := x509.ParsePKCS8PrivateKey(block.Bytes)
@@ -168,4 +171,25 @@ func configDir() string {
 		return "."
 	}
 	return filepath.Join("e2e", "client")
+}
+
+// parsePublicKey accepts a PKIX or PKCS#1 RSA public key so e2e runs against
+// a remote server need only its public key, never the server's private key.
+func parsePublicKey(block *pem.Block) (exchange.PublicKey, error) {
+	if block.Type == "RSA PUBLIC KEY" {
+		pub, err := x509.ParsePKCS1PublicKey(block.Bytes)
+		if err != nil {
+			return exchange.PublicKey{}, err
+		}
+		return exchange.PublicKey{RSA: pub}, nil
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return exchange.PublicKey{}, err
+	}
+	pub, ok := parsed.(*rsa.PublicKey)
+	if !ok {
+		return exchange.PublicKey{}, fmt.Errorf("server public key is not RSA")
+	}
+	return exchange.PublicKey{RSA: pub}, nil
 }

@@ -103,6 +103,18 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-tellomi-attachments}
+      # Chat media retention (docs/media-retention.md). Off unless enabled.
+      # Free chats keep photos/videos/voice/files for DAYS after upload;
+      # chats with an active subscriber keep them forever (GRACE_DAYS after
+      # premium_expire_date). Text, avatars, stickers, GIFs and wallpapers
+      # are never removed. RUN_HOUR is the container's local hour.
+      TELLOMI_MEDIA_RETENTION_ENABLED: ${TELLOMI_MEDIA_RETENTION_ENABLED:-false}
+      TELLOMI_MEDIA_RETENTION_DAYS: ${TELLOMI_MEDIA_RETENTION_DAYS:-90}
+      TELLOMI_MEDIA_RETENTION_GRACE_DAYS: ${TELLOMI_MEDIA_RETENTION_GRACE_DAYS:-30}
+      TELLOMI_MEDIA_RETENTION_DRY_RUN: ${TELLOMI_MEDIA_RETENTION_DRY_RUN:-true}
+      TELLOMI_MEDIA_RETENTION_BATCH: ${TELLOMI_MEDIA_RETENTION_BATCH:-500}
+      TELLOMI_MEDIA_RETENTION_MAX_PER_RUN: ${TELLOMI_MEDIA_RETENTION_MAX_PER_RUN:-5000}
+      TELLOMI_MEDIA_RETENTION_RUN_HOUR: ${TELLOMI_MEDIA_RETENTION_RUN_HOUR:-4}
       # Voice notes. The asr service below is SenseVoice-Small. Unset is off
       # (trial weekly number 0, clients hide the button). This file ships the
       # sidecar, so the default here is on. See docs/ci-acr.md.

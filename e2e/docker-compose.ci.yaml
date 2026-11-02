@@ -58,6 +58,10 @@ services:
   teamgram:
     environment:
       TELLOMI_TRANSCRIBE_ENABLED: "false"
+    # dfs checks the attachments bucket once at startup.
+    depends_on:
+      minio-mc:
+        condition: service_completed_successfully
   coturn:
     profiles: ["donotstart"]
   mediamtx:

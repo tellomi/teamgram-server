@@ -19,6 +19,8 @@ go build -o ${INSTALL}/bin/dfs
 echo "build media ..."
 cd ${TEAMGRAMAPP}/service/media/cmd/media
 go build -o ${INSTALL}/bin/media
+cd ${TEAMGRAMAPP}/service/media/cmd/mediaretention
+go build -o ${INSTALL}/bin/mediaretention
 
 echo "build authsession ..."
 cd ${TEAMGRAMAPP}/service/authsession/cmd/authsession

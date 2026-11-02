@@ -91,3 +91,25 @@ func (c *Client) Get(ctx context.Context, class, path string, limit int32) ([]by
 		return nil, fmt.Errorf("object storage class %q is not %s or %s", class, minio_util.ClassStickers, minio_util.ClassEmoji)
 	}
 }
+
+// Chat media classes Delete accepts. They mirror minio_util so callers
+// outside dfs do not import an internal package.
+const (
+	ClassDocuments      = minio_util.ClassDocuments
+	ClassPhotos         = minio_util.ClassPhotos
+	ClassVideos         = minio_util.ClassVideos
+	ClassEncryptedFiles = minio_util.ClassEncryptedFiles
+)
+
+// Delete removes one chat-media object (documents, photos, videos or
+// encryptedfiles). Public media classes are refused. A missing object is
+// not an error, so a retried sweep is safe.
+func (c *Client) Delete(ctx context.Context, class, path string) error {
+	if c == nil || c.u == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if err := c.u.RemoveClassObject(ctx, class, path); err != nil {
+		return fmt.Errorf("delete %s/%s: %w", class, path, err)
+	}
+	return nil
+}
