@@ -143,3 +143,27 @@ func withReactionUser(user int64, bot bool) context.Context {
 		"rpc_metadata", base64.StdEncoding.EncodeToString(raw),
 	))
 }
+
+// TestBoxPeerMatchesIncomingPrivate covers the recipient's copy of a private
+// message: prod rows store peer_id = the recipient itself, sender = the chat
+// partner, and the dialog as the sorted id pair.
+func TestBoxPeerMatchesIncomingPrivate(t *testing.T) {
+	const me, them = int64(136907725), int64(136907717)
+	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, them)
+	incoming := &mtproto.MessageBox{MessageId: 110, PeerType: mtproto.PEER_USER, PeerId: me, SenderUserId: them, DialogId1: them, DialogId2: me}
+	if !boxPeerMatches(incoming, peer, me) {
+		t.Fatal("incoming private message did not match its chat")
+	}
+	legacy := &mtproto.MessageBox{MessageId: 110, PeerType: mtproto.PEER_USER, PeerId: me, SenderUserId: them}
+	if !boxPeerMatches(legacy, peer, me) {
+		t.Fatal("incoming row without dialog ids did not match")
+	}
+	other := &mtproto.MessageBox{MessageId: 111, PeerType: mtproto.PEER_USER, PeerId: me, SenderUserId: 42, DialogId1: 42, DialogId2: me}
+	if boxPeerMatches(other, peer, me) {
+		t.Fatal("message from another chat matched")
+	}
+	outgoing := &mtproto.MessageBox{MessageId: 112, PeerType: mtproto.PEER_USER, PeerId: them, SenderUserId: me, DialogId1: them, DialogId2: me}
+	if !boxPeerMatches(outgoing, peer, me) {
+		t.Fatal("outgoing private message did not match")
+	}
+}

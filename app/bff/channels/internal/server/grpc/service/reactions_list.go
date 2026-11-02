@@ -190,6 +190,21 @@ func boxPeerMatches(box *mtproto.MessageBox, peer *mtproto.PeerUtil, self int64)
 			return true
 		}
 	}
+	if wantType == mtproto.PEER_USER {
+		// A private message row carries the dialog as the sorted pair of user
+		// ids. The recipient's copy stores peer_id = recipient (itself), so
+		// peer_id alone does not name the chat for incoming messages.
+		if a, b := box.GetDialogId1(), box.GetDialogId2(); a != 0 || b != 0 {
+			x, y := self, wantID
+			if x > y {
+				x, y = y, x
+			}
+			return a == x && b == y
+		}
+		if box.GetPeerType() == mtproto.PEER_USER && box.GetPeerId() == self && box.GetSenderUserId() == wantID {
+			return true
+		}
+	}
 	return box.GetPeerType() == wantType && box.GetPeerId() == wantID
 }
 
