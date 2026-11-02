@@ -42,37 +42,43 @@ attestations are off so ACR accepts the manifest.
 
 ## Deploy
 
-On the server, from a checkout that contains `docker-compose.yaml`. Log in once
-if the namespace is private:
-
-```bash
-docker login crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com
-./deploy-pull.sh
-```
-
-On the production host the same script is `/opt/tellomi/deploy-pull.sh`.
-A 7-character SHA argument pins the image and wins over `.env`:
+On the production host the script is `/opt/tellomi/deploy-pull.sh`, a copy of
+[`deploy-pull.sh`](../deploy-pull.sh). It takes the 7-character commit SHA,
+which must already be published by the "Publish images" workflow on master:
 
 ```bash
 /opt/tellomi/deploy-pull.sh <shortSHA>
 ```
 
-`deploy-pull.sh` is the full deploy. It pulls `teamgram`, `asr`, `coturn`, and
-`mediamtx`, then recreates the stack from all three compose files. `teamgram`
-depends on `kafka`, which is defined in `docker-compose-env.yaml`, so the app
-file is not composed by itself. MinIO is profile `local-minio` and is not
-started. No extra flag is required for `asr`: `docker-compose.yaml` sets
-`TELLOMI_TRANSCRIBE_ENABLED=true` and `TELLOMI_ASR_URL=http://asr:8080`.
+The script lives outside the checkout. It works in `TELLOMI_DEPLOY_DIR`
+(default `/opt/tellomi/teamgram-server`) and:
+
+1. fetches and checks out `<shortSHA>` (detached), and pins
+   `TELLOMI_IMAGE_TAG=<shortSHA>` in `.env`;
+2. composes project `tellomi` from `docker-compose-env.yaml`,
+   `docker-compose.yaml`, `docker-compose.geoip.yaml` and the host-only
+   `docker-compose.tellomi.yaml` (loopback ports, coturn config, secrets from
+   `.env`; not in git). It refuses to run without the override or the GeoIP
+   MMDB;
+3. pulls `teamgram`, plus `asr` when that commit defines it;
+4. runs `mysql-migrate` and stops if it exits non-zero;
+5. recreates `asr` (waiting up to 300s for its healthcheck), then `teamgram`.
+   Kafka, MySQL, Redis, etcd, MinIO, coturn and mediamtx keep running.
+
+The equivalent commands:
 
 ```bash
-docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml pull teamgram coturn mediamtx asr
-docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml up -d
+C="docker compose -p tellomi -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml -f docker-compose.tellomi.yaml"
+$C pull asr teamgram
+$C up --no-deps mysql-migrate
+$C up -d --no-deps --wait --wait-timeout 300 asr
+$C up -d --no-deps teamgram
 ```
 
 `asr` is the SenseVoice-Small sidecar (`services/asr`). The int8 ONNX weights
 are baked into the image at build time, so the Chengdu host does not download
 them. The container is limited to 1.5GB and 2 CPUs. `deploy-pull.sh` already
-pulls this image; it does not need a separate step. The model license is
+pulls and recreates this image; it does not need a separate step. The model license is
 `services/asr/NOTICE`.
 
 `docker-compose.geoip.yaml` bind-mounts the DB-IP Lite city MMDB into
@@ -89,19 +95,14 @@ start. Pull this checkout as well so `docker-compose.yaml` passes
 
 `TELLOMI_IMAGE_REGISTRY` defaults to
 `crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi`.
-`TELLOMI_IMAGE_TAG` is the 7-character commit SHA. `deploy-pull.sh` sets it
-from `git rev-parse --short=7 HEAD` when `.env` has it empty, `local`, or
-`latest`. Do not deploy `latest`: that tag moves, and the running checkout
-would not match the image. Do not pass `--build`. If `docker compose pull`
+`TELLOMI_IMAGE_TAG` is the 7-character commit SHA. `deploy-pull.sh` requires
+it as the argument and writes it to `.env`. Do not deploy `latest`: that tag
+moves, and the running checkout would not match the image. Do not pass `--build`. If `docker compose pull`
 fails, fix the login or the registry. Do not build on this machine.
 
 Dependency images (MySQL, Kafka, and the rest) are unchanged. MinIO is not
-one of them. `minio` and `minio-mc` are Compose profile `local-minio`, so this
-command does not pull or start them:
-
-```bash
-./deploy-pull.sh
-```
+one of them. `minio` and `minio-mc` are Compose profile `local-minio`, and
+the script only pulls and recreates `asr` and `teamgram`.
 
 Do not pass `--profile local-minio`. If an older copy of the script names
 `minio` or `minio-mc`, remove those names. Nothing in the default project
@@ -142,22 +143,16 @@ Each push is tagged with the first 7 characters of the commit SHA (the short
 SHA on the commit and on the Actions run). CI also moves `latest`, but deploy
 does not pull `latest`.
 
-To run an older build, set `TELLOMI_IMAGE_TAG` to that prefix and pull again.
-For commit `9deb01fc…` the tag is `9deb01f`:
+To roll back, deploy an older SHA whose image is still in ACR (and, for a
+fast rollback, still on the host):
 
 ```bash
-# .env
-TELLOMI_IMAGE_TAG=9deb01f
+/opt/tellomi/deploy-pull.sh 63b10ef
 ```
 
-```bash
-./deploy-pull.sh
-```
-
-To run the checkout you have, remove `TELLOMI_IMAGE_TAG` or set it to
-`local` and run `./deploy-pull.sh` again. The script replaces that with
-`git rev-parse --short=7 HEAD`. Keep `-f docker-compose.geoip.yaml` on every
-pull and up so the GeoIP mount stays.
+The script checks out that commit, pins it in `.env`, and recreates `asr`
+and `teamgram` from it. Migrations are forward-only; an older image runs
+against the newer schema.
 
 ## Local development
 

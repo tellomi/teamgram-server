@@ -1,62 +1,96 @@
 #!/usr/bin/env bash
-# Pull the published image and recreate the Chengdu stack. Do not build.
-# Always merges docker-compose.geoip.yaml so the DB-IP Lite mount is reapplied.
-# A plain `docker compose up` drops that volume.
+# Pinned production deploy. Pulls published images; never builds.
+#
+#   /opt/tellomi/deploy-pull.sh <7-char short SHA>
+#
+# The production copy lives at /opt/tellomi/deploy-pull.sh, outside the
+# checkout, so the checkout path is TELLOMI_DEPLOY_DIR (default
+# /opt/tellomi/teamgram-server), not the script's directory.
+#
+# Steps: check out that commit, pin TELLOMI_IMAGE_TAG in .env, pull the
+# teamgram image (and asr when the commit defines it), run mysql-migrate,
+# then recreate asr (waiting for its healthcheck) and teamgram only.
+# Kafka, MySQL, Redis, etcd, MinIO, coturn and mediamtx are left running.
+#
+# The image must already be in ACR: the "Publish images" workflow on master
+# tags it with the same 7-character SHA. Back up the database to
+# /opt/tellomi/backups (chmod 600) before a deploy that adds migrations.
 set -euo pipefail
 
-cd "$(dirname "$0")"
-
-# /opt/tellomi/deploy-pull.sh <shortSHA> pins the image. The argument wins
-# over .env so a checkout that is not on that commit still pulls it.
-if [[ $# -ge 1 && -n "${1:-}" ]]; then
-  TELLOMI_IMAGE_TAG="$1"
+SHA="${1:-}"
+if [[ ! "$SHA" =~ ^[0-9a-f]{7}$ ]]; then
+  echo "usage: $0 <7-char short SHA>" >&2
+  exit 2
 fi
 
-# Pin the app image to the 7-character commit SHA. "latest" moves, and an
-# empty or "local" tag must not pull it. A shell value wins over .env; an
-# explicit 7-character SHA (a rollback) is kept.
-image_tag="${TELLOMI_IMAGE_TAG:-}"
-if [[ -z "$image_tag" && -f .env ]]; then
-  image_tag="$(grep -E '^[[:space:]]*TELLOMI_IMAGE_TAG=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-  image_tag="${image_tag#"${image_tag%%[![:space:]]*}"}"
-  image_tag="${image_tag%"${image_tag##*[![:space:]]}"}"
+DIR="${TELLOMI_DEPLOY_DIR:-/opt/tellomi/teamgram-server}"
+cd "$DIR"
+
+timeout 120 git fetch -q origin master || echo "warn: git fetch failed; using local objects" >&2
+git checkout -q --detach "$SHA"
+
+touch .env
+if grep -q '^TELLOMI_IMAGE_TAG=' .env; then
+  sed -i "s/^TELLOMI_IMAGE_TAG=.*/TELLOMI_IMAGE_TAG=$SHA/" .env
+else
+  echo "TELLOMI_IMAGE_TAG=$SHA" >> .env
 fi
-case "$image_tag" in
-  ""|latest|local)
-    if ! image_tag="$(git rev-parse --short=7 HEAD 2>/dev/null)"; then
-      echo "Set TELLOMI_IMAGE_TAG to the 7-character commit SHA. latest is not used, and this directory is not a git checkout." >&2
-      exit 1
-    fi
-    ;;
-esac
-if [[ ! "$image_tag" =~ ^[0-9a-f]{7}$ ]]; then
-  echo "TELLOMI_IMAGE_TAG=${image_tag} is not a 7-character commit SHA. Refusing to pull latest." >&2
-  exit 1
-fi
-export TELLOMI_IMAGE_TAG="$image_tag"
+export TELLOMI_IMAGE_TAG="$SHA"
 echo "TELLOMI_IMAGE_TAG=${TELLOMI_IMAGE_TAG}"
 
-if [[ -z "${TELLOMI_GEOIP_MMDB_HOST:-}" && -f .env ]]; then
-  TELLOMI_GEOIP_MMDB_HOST="$(grep -E '^[[:space:]]*TELLOMI_GEOIP_MMDB_HOST=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
-  TELLOMI_GEOIP_MMDB_HOST="${TELLOMI_GEOIP_MMDB_HOST#"${TELLOMI_GEOIP_MMDB_HOST%%[![:space:]]*}"}"
-  TELLOMI_GEOIP_MMDB_HOST="${TELLOMI_GEOIP_MMDB_HOST%"${TELLOMI_GEOIP_MMDB_HOST##*[![:space:]]}"}"
+# docker-compose.geoip.yaml bind-mounts the DB-IP Lite MMDB. Without the file
+# compose would mount a missing path, so stop here instead.
+if [[ -z "${TELLOMI_GEOIP_MMDB_HOST:-}" ]]; then
+  TELLOMI_GEOIP_MMDB_HOST="$(grep -E '^[[:space:]]*TELLOMI_GEOIP_MMDB_HOST=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | xargs || true)"
 fi
 host_file="${TELLOMI_GEOIP_MMDB_HOST:-./data/geoip/dbip-city-lite.mmdb}"
 if [[ ! -f "$host_file" ]]; then
-  echo "GeoIP database not found at ${host_file}." >&2
-  echo "Set TELLOMI_GEOIP_MMDB_HOST to the DB-IP Lite city .mmdb on this host." >&2
-  echo "Refusing to continue: compose would bind-mount a missing path and drop the database." >&2
+  echo "GeoIP database not found at ${host_file}. Set TELLOMI_GEOIP_MMDB_HOST in .env." >&2
   exit 1
 fi
 
-# One project: env + app + GeoIP. MinIO stays out (profile local-minio).
-# teamgram depends_on kafka, which is defined in docker-compose-env.yaml, so
-# the app files cannot be composed alone. GeoIP is always in the same command
-# so `up` cannot drop the mount.
-files=(-f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml)
+# docker-compose.tellomi.yaml is the host-only override (loopback ports,
+# coturn config, secrets from .env). It is not in git. Without it the
+# infrastructure ports would be published on the public address.
+if [[ ! -f docker-compose.tellomi.yaml ]]; then
+  echo "docker-compose.tellomi.yaml is missing in ${DIR}. Refusing to deploy without the host override." >&2
+  exit 1
+fi
 
-echo "pulling app images"
-docker compose "${files[@]}" pull teamgram coturn mediamtx asr
+# Project "tellomi" is the running stack (tellomi-teamgram-1, tellomi-asr-1).
+# Keep -f docker-compose.geoip.yaml in the same command as up, or the mount drops.
+files=(-f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml -f docker-compose.tellomi.yaml)
+C=(docker compose -p tellomi "${files[@]}")
 
-echo "recreating the stack with the GeoIP mount"
-docker compose "${files[@]}" up -d
+"${C[@]}" config --quiet
+if ! "${C[@]}" config --images | grep -q "/teamgram:${SHA}$"; then
+  echo "compose does not resolve the teamgram image to tag ${SHA}" >&2
+  exit 1
+fi
+
+apps=(teamgram)
+if "${C[@]}" config --services | grep -qx asr; then
+  apps=(asr teamgram)
+fi
+
+echo "pulling ${apps[*]}"
+"${C[@]}" pull "${apps[@]}"
+
+echo "applying migrations"
+"${C[@]}" up --no-deps mysql-migrate
+code="$(docker inspect -f '{{.State.ExitCode}}' mysql-migrate 2>/dev/null || echo 1)"
+if [[ "$code" != "0" ]]; then
+  echo "mysql-migrate exited ${code}; teamgram was not recreated" >&2
+  docker logs --tail 50 mysql-migrate >&2 || true
+  exit 1
+fi
+
+if [[ " ${apps[*]} " == *" asr "* ]]; then
+  echo "recreating asr"
+  "${C[@]}" up -d --no-deps --wait --wait-timeout 300 asr
+fi
+echo "recreating teamgram"
+"${C[@]}" up -d --no-deps teamgram
+
+docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E 'tellomi-(teamgram|asr)-1' || true
+echo "DEPLOY_DONE ${SHA}"

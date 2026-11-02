@@ -63,4 +63,4 @@ The packs are in the image. After this merges, CI tags the image with the 7-char
 /opt/tellomi/deploy-pull.sh <shortSHA>
 ```
 
-That argument sets `TELLOMI_IMAGE_TAG` and wins over `.env`. The script pulls `teamgram` and recreates the stack. It does not build on the server and does not start MinIO. See [CI and ACR](ci-acr.md).
+The script checks out that commit, pins `TELLOMI_IMAGE_TAG` in `.env`, pulls `teamgram` (and `asr`), runs `mysql-migrate`, and recreates only `asr` and `teamgram`. It does not build on the server and does not start MinIO. See [CI and ACR](ci-acr.md).
