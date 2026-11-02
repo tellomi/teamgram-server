@@ -37,7 +37,7 @@ Feature tokens:
 | `about` | Biography length. Free cap 70 characters, Premium cap 140. |
 | `pinned_chats` | Main-list pins kept when chats leave the archive. Free cap 5, Premium cap 100. |
 | `folder_pins` | Archive pin cap advertised to clients. Free 100, Premium 200. |
-| `voice_to_text` | `messages.transcribeAudio`. There is no speech engine, so an allowed call returns `TRANSCRIPTION_FAILED`. A refused call returns `PREMIUM_ACCOUNT_REQUIRED`. |
+| `voice_to_text` | `messages.transcribeAudio`. `TELLOMI_TRANSCRIBE_ENABLED` (default false) sets `transcribe_audio_trial_weekly_number`, `transcribe_audio_trial_duration_max`, and `transcribe_audio_trial_cooldown_until` to 0, so non-Premium clients hide the button. `true` advertises 100000 / 300 / 0. An allowed call still returns `TRANSCRIPTION_FAILED` until a speech engine is connected. A refused call returns `PREMIUM_ACCOUNT_REQUIRED`. |
 | `custom_emoji` | `stickers_premium_by_emoji_num` in app config. Free or global membership advertises 100. Paid and not a member advertises 0. The server still stores `messageEntityCustomEmoji`. |
 | `profile_color` | `account.updateColor` with `for_profile`. Clearing the color is always allowed. |
 | `name_color` | `account.updateColor` for the name color. |
@@ -67,6 +67,30 @@ Accounts with `premium=1` and an unexpired `premium_expire_date` still receive t
 `emoji_blocklist` in that document is a JSON array of emoji to hide. The default is the Taiwan flag 🇹🇼 (`U+1F1F9` `U+1F1FC`). The hash also changes when the list changes. See [Stickers and emoji](stickers.md#emoji-blocklist).
 
 `premium_purchase_blocked` follows `TELLOMI_PREMIUM_PURCHASE_BLOCKED`. While it is true, `help.getPremiumPromo` has no subscription periods, purchase checks return `boolFalse`, store receipts return `PAYMENT_UNSUPPORTED`, and `users.getFullUser` does not include gift prices.
+
+The same document hides entry points official clients already know how to read. Android is `MessagesController` / `AppGlobalConfig` (DrKLO, 2026), iOS is `PremiumConfiguration` / `TranslationConfiguration` / `WalletConfiguration` (Telegram-iOS), Desktop is `Main::AppConfig`.
+
+| Key | Value | What clients do |
+|---|---|---|
+| `premium_purchase_blocked` | `true` | Hides Premium purchase. Android's "Send a Gift" settings row uses `premiumPurchaseBlocked()`. The Premium and Business settings rows use `premiumFeaturesBlocked()`, which is `premium_purchase_blocked && !user.premium`. With `TELLOMI_PREMIUM_EVERYONE=true` those two rows stay, because every account is Premium. There is no separate Business hide key; `business_promo_order` only orders the promo. |
+| `stars_purchase_blocked` | `true` | Hides Stars UI (`starsPurchaseAvailable` / `areStarsDisabled`). |
+| `stars_gifts_enabled` | `false` | Star gifting. Android defaults this to true when the key is absent. |
+| `stargifts_blocked` | `true` | Disables gifts. |
+| `enable_gifts_in_profile` | `false` | Android profile gifts. Defaults to true when absent. |
+| `premium_gift_attach_menu_icon` | `false` | Gift icon in the attachment menu. |
+| `premium_gift_text_field_icon` | `false` | Gift icon in the text field. |
+| `stars_paid_messages_available` | `false` | Paid messages. Android defaults this to true when absent. |
+| `giveaway_gifts_purchase_available` | `false` | Starting a giveaway, which is the boosts purchase gate. |
+| `channel_revenue_withdrawal_enabled` | `false` | Hides ad-revenue withdrawal. Sponsored-message slots themselves are not gated by an appConfig key. |
+| `starref_program_allowed` | `false` | Creating a bot referral program (Desktop). |
+| `starref_connect_allowed` | `false` | Joining a referral program (Desktop). |
+| `wallet_available` | `false` | Wallet row. Desktop defaults this to true when absent. Android's Gram earnings row on standalone builds is not gated by this key. |
+| `translations_manual_enabled` | `disabled` | Manual translation. Android's stored default is `enabled`. |
+| `translations_auto_enabled` | `disabled` | Automatic translation. Same Android default. |
+| `tellomi_ai_compose_enabled` | `false` | Tellomi key. Official clients ignore it. |
+| `tellomi_translate_enabled` | `false` | Tellomi key. Official clients ignore it. |
+
+`fragment_prefixes` is a list of anonymous Fragment phone prefixes, not a switch that hides fragment.com. `ton_topup_url` and `ton_proxy_address` are URLs, not hide switches, so they are left unset. `stories_posting` stays `enabled`.
 
 `help.getPeerColors` and `help.getPeerProfileColors` still return the palette. Saving a color or an emoji status checks the feature gate and then stores the value. Color id 0 is stored as `1` in `users.color` / `users.profile_color` because `0` in that column means "no color".
 

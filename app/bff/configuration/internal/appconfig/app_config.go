@@ -3,6 +3,7 @@ package appconfig
 import (
 	"fmt"
 	"hash/fnv"
+	"os"
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
@@ -11,6 +12,13 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
+
+// EnvTranscribeEnabled advertises a speech-to-text trial in help.getAppConfig.
+// Default false: transcribe_audio_trial_* is 0, so non-Premium clients hide the
+// button. The SenseVoice handler flips this default to true once
+// messages.transcribeAudio returns a transcript. Enabled values stay the
+// numbers clients already understood (100000 / 300 / 0).
+const EnvTranscribeEnabled = "TELLOMI_TRANSCRIBE_ENABLED"
 
 // AppConfig is the help.getAppConfig document official clients read for
 // Premium limits and emoji_blocklist. The numbers follow the server policy:
@@ -24,7 +32,8 @@ func AppConfig() *mtproto.JSONValue {
 // blocklist change.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
-	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"))
+	weekly, duration, cooldown := transcribeTrial()
+	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s transcribe=%d:%d:%d", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -60,12 +69,16 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("reactions_uniq_max", n(11)),
 		jsonPair("reactions_default", jsonString(catalog.DefaultReactionEmoji)),
 		jsonPair("emoji_blocklist", emojiBlocklistValue()),
-		jsonPair("transcribe_audio_trial_weekly_number", n(100000)),
-		jsonPair("transcribe_audio_trial_duration_max", n(300)),
-		jsonPair("transcribe_audio_trial_cooldown_until", n(0)),
 		jsonPair("stories_posting", jsonString("enabled")),
 		jsonPair("pm_read_date_expire_period", n(604800)),
 	}
+	weekly, duration, cooldown := transcribeTrial()
+	pairs = append(pairs,
+		jsonPair("transcribe_audio_trial_weekly_number", n(weekly)),
+		jsonPair("transcribe_audio_trial_duration_max", n(duration)),
+		jsonPair("transcribe_audio_trial_cooldown_until", n(cooldown)),
+	)
+	pairs = append(pairs, hiddenFeaturePairs()...)
 	pairs = append(pairs, pair("about_length_limit", premium.FeatureAbout)...)
 	pairs = append(pairs, pair("caption_length_limit", premium.FeatureCaption)...)
 	pairs = append(pairs, pair("dialogs_pinned_limit", premium.FeaturePinnedChats)...)
@@ -79,6 +92,73 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 	pairs = append(pairs, pair("reactions_user_max", premium.FeatureReactions)...)
 	pairs = append(pairs, pair("upload_max_fileparts", premium.FeatureUpload)...)
 	return pairs
+}
+
+// transcribeTrial is the (weekly count, max seconds, cooldown unix time)
+// triple published as transcribe_audio_trial_*.
+func transcribeTrial() (weekly, durationMax, cooldownUntil int) {
+	if !envBool(EnvTranscribeEnabled, false) {
+		return 0, 0, 0
+	}
+	return 100000, 300, 0
+}
+
+func envBool(key string, def bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(v) == "" {
+		return def
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
+// hiddenFeaturePairs are appConfig keys official Android, iOS, and Desktop
+// clients read when deciding whether to show a dead Telegram feature.
+// Values are the ones that hide the entry. Keys the clients do not read are
+// omitted; see the comment on each key.
+func hiddenFeaturePairs() []*mtproto.JSONObjectValue {
+	off := jsonBool(false)
+	on := jsonBool(true)
+	return []*mtproto.JSONObjectValue{
+		// Stars row and Star UI. Android starsPurchaseAvailable is !starsLocked.
+		// iOS areStarsDisabled. Both default to hidden when the key is absent;
+		// sending true keeps a client that defaults the other way hidden.
+		jsonPair("stars_purchase_blocked", on),
+		// Android starsGiftsEnabled defaults to true. iOS defaults to false.
+		jsonPair("stars_gifts_enabled", off),
+		// "If true, gifts must be disabled." Both clients default to blocked.
+		jsonPair("stargifts_blocked", on),
+		// Android profile gifts tab. Default true, so it must be sent false.
+		jsonPair("enable_gifts_in_profile", off),
+		// Gift icons in the attach menu and the text field. Defaults are false.
+		jsonPair("premium_gift_attach_menu_icon", off),
+		jsonPair("premium_gift_text_field_icon", off),
+		// Android starsPaidMessagesAvailable defaults to true.
+		jsonPair("stars_paid_messages_available", off),
+		// Starting a giveaway. Defaults are false. This is the boosts purchase gate.
+		jsonPair("giveaway_gifts_purchase_available", off),
+		// "Otherwise, all ad revenue-related UI options should be hidden."
+		jsonPair("channel_revenue_withdrawal_enabled", off),
+		// Desktop affiliate program gates. Defaults are false.
+		jsonPair("starref_program_allowed", off),
+		jsonPair("starref_connect_allowed", off),
+		// Desktop walletAvailable defaults to true. Android settings and iOS
+		// wallet both read this key; release Android and iOS default to false.
+		jsonPair("wallet_available", off),
+		// Android stores "enabled" when the key has never been seen. iOS treats
+		// a missing key as disabled. Send disabled so both stay off.
+		jsonPair("translations_manual_enabled", jsonString("disabled")),
+		jsonPair("translations_auto_enabled", jsonString("disabled")),
+		// Tellomi-only. Clients will read these; official builds ignore them.
+		jsonPair("tellomi_ai_compose_enabled", off),
+		jsonPair("tellomi_translate_enabled", off),
+	}
 }
 
 func emojiBlocklistValue() *mtproto.JSONValue {
