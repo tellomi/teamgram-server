@@ -160,17 +160,16 @@ func emptyEmojiList(hash int64) *mtproto.EmojiList {
 	}).To_EmojiList()
 }
 
-// MessagesTranscribeAudio is gated like the other Premium features.
-// There is no speech engine, so an allowed call returns TRANSCRIPTION_FAILED
-// instead of a purchase error.
+// MessagesTranscribeAudio recognizes a voice note or video note.
+// Premium is not required. Clients hide the button unless
+// TELLOMI_TRANSCRIBE_ENABLED advertises a non-zero
+// transcribe_audio_trial_weekly_number. TRANSCRIPTION_FAILED is only the
+// "no speech" result from the recognizer, not a stub.
 func (c *PremiumCore) MessagesTranscribeAudio(in *mtproto.TLMessagesTranscribeAudio) (*mtproto.Messages_TranscribedAudio, error) {
-	if in.GetPeer() == nil || in.GetMsgId() == 0 {
-		return nil, mtproto.ErrMsgIdInvalid
+	if c.svcCtx == nil || c.svcCtx.Speech == nil {
+		return nil, mtproto.ErrInternalServerError
 	}
-	if !premium.Allows(premium.FeatureVoiceToText, c.member()) {
-		return nil, mtproto.ErrPremiumAccountRequired
-	}
-	return nil, mtproto.ErrTranscriptionFailed
+	return c.svcCtx.Speech.Transcribe(c.ctx, c.MD, in)
 }
 
 func (c *PremiumCore) member() bool {

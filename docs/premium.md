@@ -37,7 +37,7 @@ Feature tokens:
 | `about` | Biography length. Free cap 70 characters, Premium cap 140. |
 | `pinned_chats` | Main-list pins kept when chats leave the archive. Free cap 5, Premium cap 100. |
 | `folder_pins` | Archive pin cap advertised to clients. Free 100, Premium 200. |
-| `voice_to_text` | `messages.transcribeAudio`. `TELLOMI_TRANSCRIBE_ENABLED` (default false) sets `transcribe_audio_trial_weekly_number`, `transcribe_audio_trial_duration_max`, and `transcribe_audio_trial_cooldown_until` to 0, so non-Premium clients hide the button. `true` advertises 100000 / 300 / 0. An allowed call still returns `TRANSCRIPTION_FAILED` until a speech engine is connected. A refused call returns `PREMIUM_ACCOUNT_REQUIRED`. |
+| `voice_to_text` | Not used by `messages.transcribeAudio`. Voice notes are recognized for every account by the self-hosted SenseVoice `asr` service. `TELLOMI_TRANSCRIBE_ENABLED` (default false) gates the client button: unset, `transcribe_audio_trial_weekly_number`, `transcribe_audio_trial_duration_max`, and `transcribe_audio_trial_cooldown_until` are 0 and clients hide it; `true` advertises 100000 / 300 / 0. Production compose sets it next to the `asr` service. |
 | `custom_emoji` | `stickers_premium_by_emoji_num` in app config. Free or global membership advertises 100. Paid and not a member advertises 0. The server still stores `messageEntityCustomEmoji`. |
 | `profile_color` | `account.updateColor` with `for_profile`. Clearing the color is always allowed. |
 | `name_color` | `account.updateColor` for the name color. |
@@ -51,7 +51,7 @@ Feature tokens:
 | `channels` | Channels and megagroups an account may join. Free 500, Premium 1000. |
 | `public_channels` | Public usernames. Free 10, Premium 20. |
 
-Example: keep the badge off, give everyone emoji status, and charge for a longer biography and voice transcription.
+Example: keep the badge off, give everyone emoji status, and charge for a longer biography.
 
 ```
 TELLOMI_PREMIUM_EVERYONE=false

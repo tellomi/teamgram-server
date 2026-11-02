@@ -18,7 +18,7 @@ import (
 // button. The SenseVoice handler flips this default to true once
 // messages.transcribeAudio returns a transcript. Enabled values stay the
 // numbers clients already understood (100000 / 300 / 0).
-const EnvTranscribeEnabled = "TELLOMI_TRANSCRIBE_ENABLED"
+const EnvTranscribeEnabled = premium.EnvTranscribeEnabled
 
 // AppConfig is the help.getAppConfig document official clients read for
 // Premium limits and emoji_blocklist. The numbers follow the server policy:
@@ -97,10 +97,10 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 // transcribeTrial is the (weekly count, max seconds, cooldown unix time)
 // triple published as transcribe_audio_trial_*.
 func transcribeTrial() (weekly, durationMax, cooldownUntil int) {
-	if !envBool(EnvTranscribeEnabled, false) {
+	if !premium.TranscribeEnabled() {
 		return 0, 0, 0
 	}
-	return 100000, 300, 0
+	return premium.TranscribeTrialWeekly, 300, 0
 }
 
 func envBool(key string, def bool) bool {

@@ -21,16 +21,20 @@ package svc
 import (
 	"github.com/teamgram/teamgram-server/app/bff/premium/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/premium/internal/dao"
+	"github.com/teamgram/teamgram-server/app/bff/premium/internal/speech"
 )
 
 type ServiceContext struct {
 	Config config.Config
 	Dao    *dao.Dao
+	Speech *speech.Handler
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	d := dao.New(c)
 	return &ServiceContext{
 		Config: c,
-		Dao:    dao.New(c),
+		Dao:    d,
+		Speech: speech.New(d.MessageClient, d.DfsClient, d.SyncClient, speech.RecognizerFromEnv()),
 	}
 }

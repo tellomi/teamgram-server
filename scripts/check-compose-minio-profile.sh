@@ -74,10 +74,17 @@ fi
 if ! grep -Fq '"${files[@]}" pull' deploy-pull.sh || ! grep -Fq '"${files[@]}" up' deploy-pull.sh; then
   fail "deploy-pull.sh pull and up must use the geoip file list"
 fi
+if ! grep -Fq 'pull teamgram coturn mediamtx asr' deploy-pull.sh; then
+  fail "deploy-pull.sh must pull the asr image"
+fi
 
 geo="$(docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml config)"
 grep -Fq "/app/bin/GeoLite2-City.mmdb" <<<"$geo" \
   || fail "merged config is missing the GeoIP mount"
+grep -Fq "TELLOMI_TRANSCRIBE_ENABLED" <<<"$geo" \
+  || fail "merged config is missing TELLOMI_TRANSCRIBE_ENABLED"
+grep -Eq 'TELLOMI_TRANSCRIBE_ENABLED: "?true"?' <<<"$geo" \
+  || fail "TELLOMI_TRANSCRIBE_ENABLED is not true when the asr service is in the stack"
 geo_services="$(docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml config --services)"
 for name in minio minio-mc; do
   if printf '%s\n' "$geo_services" | grep -qx "$name"; then

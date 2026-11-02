@@ -1,0 +1,48 @@
+package core
+
+import (
+	"context"
+	"testing"
+
+	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/premium/internal/speech"
+	"github.com/teamgram/teamgram-server/app/bff/premium/internal/svc"
+	"github.com/teamgram/teamgram-server/pkg/premium"
+)
+
+func TestMessagesTranscribeAudioIgnoresPremium(t *testing.T) {
+	t.Setenv(premium.EnvEveryone, "false")
+	t.Setenv(premium.EnvFreeFeatures, "")
+	t.Setenv(premium.EnvTranscribeEnabled, "true")
+	premium.Reload()
+	t.Cleanup(func() { premium.Reload() })
+	if premium.IsMember(false, 0, 1) || premium.Allows(premium.FeatureVoiceToText, false) {
+		t.Fatal("non-member was allowed by the premium policy")
+	}
+	var calls int
+	h := speech.NewHandler(
+		func(context.Context, int64, *mtproto.PeerUtil, int32) (speech.Clip, error) {
+			return speech.Clip{DocumentID: 11, Filename: "voice.ogg", Duration: 2}, nil
+		},
+		func(context.Context, speech.Clip) ([]byte, error) {
+			return []byte("OggS"), nil
+		},
+		speech.RecognizerFunc(func(context.Context, []byte, string) (string, error) {
+			calls++
+			return "收到", nil
+		}),
+		nil,
+	)
+	c := withUser(4)
+	c.svcCtx = &svc.ServiceContext{Speech: h}
+	out, err := c.MessagesTranscribeAudio(&mtproto.TLMessagesTranscribeAudio{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 5}).To_InputPeer(),
+		MsgId: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.GetPending() || out.GetText() != "收到" || calls != 1 {
+		t.Fatalf("pending=%v text=%q calls=%d", out.GetPending(), out.GetText(), calls)
+	}
+}

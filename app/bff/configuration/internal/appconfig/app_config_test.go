@@ -132,6 +132,37 @@ func assertHiddenFeatures(t *testing.T, obj map[string]any) {
 	}
 }
 
+func TestTranscribeTrialFollowsEnv(t *testing.T) {
+	t.Setenv(premium.EnvTranscribeEnabled, "")
+	if premium.TranscribeEnabled() {
+		t.Fatal("transcription is enabled when TELLOMI_TRANSCRIBE_ENABLED is unset")
+	}
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("app config is %T", raw)
+	}
+	if obj["transcribe_audio_trial_weekly_number"] != float64(0) {
+		t.Fatalf("weekly = %#v", obj["transcribe_audio_trial_weekly_number"])
+	}
+	if obj["transcribe_audio_trial_duration_max"] != float64(0) || obj["transcribe_audio_trial_cooldown_until"] != float64(0) {
+		t.Fatalf("duration/cooldown = %#v %#v", obj["transcribe_audio_trial_duration_max"], obj["transcribe_audio_trial_cooldown_until"])
+	}
+	off := AppConfigHash()
+	t.Setenv(premium.EnvTranscribeEnabled, "true")
+	if !premium.TranscribeEnabled() {
+		t.Fatal("true did not enable transcription")
+	}
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_TRANSCRIBE_ENABLED")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["transcribe_audio_trial_weekly_number"] != float64(premium.TranscribeTrialWeekly) {
+		t.Fatalf("weekly = %#v", obj["transcribe_audio_trial_weekly_number"])
+	}
+}
+
 func TestAppConfigEmojiBlocklistExtendsHash(t *testing.T) {
 	t.Cleanup(func() { emojiblock.Reload() })
 	t.Setenv(emojiblock.EnvExtra, "")

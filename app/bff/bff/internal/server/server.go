@@ -187,9 +187,16 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCEmojiCategoriesServer(grpcServer, stickers_helper.NewEmojiCategories())
 
 		// premium_helper
+		// Voice downloads share the dfs client but not the 3s sticker timeout.
+		dfsForSpeech := c.DfsClient
+		if dfsForSpeech.Timeout != 0 && dfsForSpeech.Timeout < 120000 {
+			dfsForSpeech.Timeout = 120000
+		}
 		premiumSvc := premium_helper.New(premium_helper.Config{
 			RpcServerConf: c.RpcServerConf,
 			UserClient:    c.BizServiceClient,
+			MessageClient: c.BizServiceClient,
+			DfsClient:     dfsForSpeech,
 			SyncClient:    c.SyncClient,
 		})
 		mtproto.RegisterRPCPremiumServer(grpcServer, premiumSvc)

@@ -69,7 +69,21 @@ const (
 	EnvFreeFeatures = "TELLOMI_PREMIUM_FREE_FEATURES"
 	// EnvPurchaseBlocked hides the store purchase UI. Default true.
 	EnvPurchaseBlocked = "TELLOMI_PREMIUM_PURCHASE_BLOCKED"
+	// EnvTranscribeEnabled turns on the voice-to-text button. Default false:
+	// help.getAppConfig advertises transcribe_audio_trial_weekly_number=0, so
+	// clients hide the control. Production compose sets it true next to the
+	// ASR service. The RPC itself is not premium-gated.
+	EnvTranscribeEnabled = "TELLOMI_TRANSCRIBE_ENABLED"
 )
+
+// TranscribeTrialWeekly is the quota advertised when transcription is enabled.
+// It is large on purpose: non-premium clients show the button while it is > 0.
+const TranscribeTrialWeekly = 100000
+
+// TranscribeEnabled reports TELLOMI_TRANSCRIBE_ENABLED. Unset is false.
+func TranscribeEnabled() bool {
+	return envBool(EnvTranscribeEnabled, false)
+}
 
 const (
 	AboutLength            = 140

@@ -56,7 +56,7 @@ fi
 files=(-f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml)
 
 echo "pulling app images"
-docker compose "${files[@]}" pull teamgram coturn mediamtx
+docker compose "${files[@]}" pull teamgram coturn mediamtx asr
 
 echo "recreating the stack with the GeoIP mount"
 docker compose "${files[@]}" up -d

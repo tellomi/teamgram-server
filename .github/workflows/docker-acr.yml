@@ -30,6 +30,9 @@ jobs:
           - image: teamgram
             context: .
             dockerfile: Dockerfile
+          - image: asr
+            context: services/asr
+            dockerfile: services/asr/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
