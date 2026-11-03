@@ -8,15 +8,39 @@ import (
 )
 
 func TestCorpus(t *testing.T) {
-	e := embeddedEngine()
+	e := officialEngine()
 	allowN, allowFail := checkCorpus(t, e, "corpus/must-allow.txt", true)
 	denyN, denyFail := checkCorpus(t, e, "corpus/must-deny.txt", false)
-	t.Logf("must-allow %d checked, %d failed; must-deny %d checked, %d failed", allowN, allowFail, denyN, denyFail)
-	if allowN == 0 || denyN == 0 {
-		t.Fatal("corpus file was empty")
+	t.Logf("official policy-2026092301: must-allow %d checked, %d failed; must-deny %d checked, %d failed", allowN, allowFail, denyN, denyFail)
+	if allowN != 20029 || denyN != 63 {
+		t.Fatalf("corpus size allow=%d deny=%d, want 20029 and 63", allowN, denyN)
 	}
 	if allowFail > 0 || denyFail > 0 {
 		t.Fatalf("corpus failures: allow %d, deny %d", allowFail, denyFail)
+	}
+}
+
+func TestOverlayKeepsCorpus(t *testing.T) {
+	e := runtimeEngine()
+	allowN, allowFail := checkCorpus(t, e, "corpus/must-allow.txt", true)
+	denyN, denyFail := checkCorpus(t, e, "corpus/must-deny.txt", false)
+	if allowN != 20029 || denyN != 63 || allowFail > 0 || denyFail > 0 {
+		t.Fatalf("overlay changed the corpus: allow %d/%d deny %d/%d", allowN, allowFail, denyN, denyFail)
+	}
+}
+
+func TestD24OnOfficialPolicy(t *testing.T) {
+	e := officialEngine()
+	global := []string{"global"}
+	for _, name := range []string{"admin01", "support88"} {
+		if !e.Check(name, FieldUsername, global).IsAllowed() {
+			t.Fatalf("%s should be allowed (D-24)", name)
+		}
+	}
+	for _, name := range []string{"admin", "admin_01", "support_88", "tellomi_xxx"} {
+		if e.Check(name, FieldUsername, global).IsAllowed() {
+			t.Fatalf("%s should be refused (D-24)", name)
+		}
 	}
 }
 

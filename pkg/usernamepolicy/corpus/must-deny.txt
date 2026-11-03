@@ -1,66 +1,66 @@
-# Vendored behavioral corpus. Upstream policy/tests/corpus (about 20029 allow
-# and 63 deny) is in private tellomi/tellomi and was not readable here.
-# Lines are `<field> <regions> <input>`, the policy-build format.
-
+# 必须拦下的名字。没有这份清单，「一条都没误杀」可以靠「什么都不拦」达成。
 username global admin
 username global Admin
 username global ADMIN
-username global admin_01
-username global admin_x
-username global team_admin
+username global administrator
+username global root
+username global system
 username global support
-username global support_88
+username global official
+username global staff
+username global moderator
+username global security
+username global webmaster
+username global admin_team
+username global team_admin
+username global support_center
 username global tellomi
-username global Tellomi
-username global TELLOMI
-username global tellomi_xxx
+username global tellomi_support
 username global tellomi_official
+username global tellomi_admin
 username global my_tellomi
 username global tel1omi
 username global te11omi
 username global tellorni
-username global t3llomi
-username global tellcc_support
-username global wechat
-username global wechat_01
-username global weixin
-username global google
-username global google_support
-username global apple
-username global telegram
-username global telegram_support
-username global botfather
-username global botfather_01
-username global meta
-username global instagram
-username global whatsapp
-username global microsoft
-username global facebook
-username global twitter
-username global openai
-username global chatgpt
-username global tiktok
-username global douyin
-username global alipay
-username global taobao
-username global weibo
-username global kefu
-username global kefu_1990
-username global guanfang
-username global news
-username global help
-username global verify
-username global system
-username global root
 username global password
-username global premium
-username global bot
-username global administrator
-username global sysadmin
-username global username
-slug global qq
-slug global x
-slug global jd
-username global signal
-username global line
-display_name global tеllomi
+username global verify_now
+username global wallet_recovery
+slug global u
+slug global g
+slug global call
+slug global download
+slug global privacy
+display_name global ＡＤＭＩＮ
+display_name global tellomi
+group_name global tellomi_official
+# 拼音职能词（2026-09-23）
+username global kefu
+username global KeFu
+username global guanliyuan
+username global kefu_zhang
+username global tellomi_kefu
+username global kefu_tellomi
+username global kefuzhongxin
+username global xitongxiaoxi
+username global anquanzhongxin
+# 拼音词第二轮（2026-09-23，#1128 review：新词 + 把当前的前后缀 / 字段行为钉住）
+username global guanfang
+username global GuanFang
+username global xitong
+username global anquan
+username global gongzuorenyuan
+username global tuikuan
+username global yanzhengma
+username global zhang_kefu
+username global kefu_1990
+username global guanliyuan_1995
+username global mystore_kefu
+username global kefuzhongxin_vip
+username global xitongxiaoxi_bot
+slug global guanfang
+bot_username global guanfang
+display_name global Zhang Kefu
+display_name global GuanLiyuan
+display_name global 小王 kefu
+group_name global Acme kefu
+group_name global kefu 1群

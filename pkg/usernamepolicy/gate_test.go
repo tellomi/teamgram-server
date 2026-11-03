@@ -60,11 +60,14 @@ func TestGateOn(t *testing.T) {
 	if err := RejectUser(ctx, 777001, "tellomi"); err != nil {
 		t.Fatalf("official tellomi: %v", err)
 	}
+	// news is not a policy term. The username table already holds it.
+	// Policy still lets the official channel through, and still blocks
+	// a reserved name on any other channel.
 	if err := RejectChannel(ctx, 1073800001, "news"); err != nil {
 		t.Fatalf("official news channel: %v", err)
 	}
-	if err := RejectChannel(ctx, 9, "news"); err == nil {
-		t.Fatal("stranger channel took news")
+	if err := RejectChannel(ctx, 9, "google"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("stranger channel google: %v", err)
 	}
 	if err := RejectChannel(ctx, 9, "qq"); status.Convert(err).Message() != mtproto.ErrUsernameOccupied.Error() && status.Convert(err).Message() != "USERNAME_OCCUPIED" {
 		t.Fatalf("qq slug: %v", err)
@@ -75,7 +78,8 @@ func TestGateOn(t *testing.T) {
 	if err := RejectBot(ctx, 7, "newsbot"); err != nil {
 		t.Fatalf("newsbot: %v", err)
 	}
-	if err := RejectUser(ctx, 7, "help"); err == nil {
-		t.Fatal("placeholder help was allowed")
+	// Official policy reserves help on slug only. A channel public name hits it.
+	if err := RejectChannel(ctx, 9, "help"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("help slug: %v", err)
 	}
 }
