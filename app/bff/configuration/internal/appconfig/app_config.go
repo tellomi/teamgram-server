@@ -73,6 +73,10 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("premium_purchase_blocked", jsonBool(premium.Load().PurchaseBlocked)),
 		jsonPair("stickers_premium_by_emoji_num", n(premium.CustomEmojiAllowance())),
 		jsonPair("reactions_uniq_max", n(11)),
+		// Same caps messages.sendMedia enforces for inputMediaTodo.
+		jsonPair("todo_items_max", n(mtproto.TodoItemsMax)),
+		jsonPair("todo_item_length_max", n(mtproto.TodoItemLengthMax)),
+		jsonPair("todo_title_length_max", n(mtproto.TodoTitleLengthMax)),
 		jsonPair("reactions_default", jsonString(catalog.DefaultReactionEmoji)),
 		jsonPair("emoji_blocklist", emojiBlocklistValue()),
 		jsonPair("stories_posting", jsonString("enabled")),

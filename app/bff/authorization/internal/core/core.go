@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -57,7 +58,10 @@ func checkPhoneNumberInvalid(phone string) (string, string, error) {
 
 // loginCodeNotice is the Simplified Chinese default sent by user 777000.
 // Bold spans match Telegram's login-code notice: the label, and "不要".
-// A non-empty SignInMessage config replaces this text.
+// The digits carry messageEntitySpoiler, the same entity official Telegram
+// puts on the code, so the chat list and notification preview hide it until
+// the chat is opened. A non-empty SignInMessage config replaces this text;
+// pushSignInMessage still wraps the code in a spoiler.
 func loginCodeNotice(code, appName string) (string, []*mtproto.MessageEntity) {
 	return mtproto.MakeTextAndMessageEntities([]mtproto.MessageBuildEntry{
 		{
@@ -65,7 +69,11 @@ func loginCodeNotice(code, appName string) (string, []*mtproto.MessageEntity) {
 			EntityType: mtproto.Predicate_messageEntityBold,
 		},
 		{
-			Text:       code + "。请",
+			Param:      code,
+			EntityType: mtproto.Predicate_messageEntitySpoiler,
+		},
+		{
+			Text:       "。请",
 			Param:      "不要",
 			EntityType: mtproto.Predicate_messageEntityBold,
 		},
@@ -73,6 +81,36 @@ func loginCodeNotice(code, appName string) (string, []*mtproto.MessageEntity) {
 			Text: fmt.Sprintf("把此验证码告诉任何人，即使对方声称来自 %s！\n\n此验证码可用于登录你的 %s 账号。我们绝不会以其他理由向你索要它。\n\n如果你并未尝试在其他设备上登录，请忽略此消息。", appName, appName),
 		},
 	})
+}
+
+// ensureLoginCodeSpoiler covers code with messageEntitySpoiler when a custom
+// SignInMessage left the digits in plain text. Official clients mask spoiler
+// spans in the dialog list and in the notification preview.
+func ensureLoginCodeSpoiler(text, code string, entities []*mtproto.MessageEntity) []*mtproto.MessageEntity {
+	if code == "" || text == "" {
+		return entities
+	}
+	byteAt := strings.Index(text, code)
+	if byteAt < 0 {
+		return entities
+	}
+	off := int32(mtproto.UTF16Len(text[:byteAt]))
+	length := int32(mtproto.UTF16Len(code))
+	if length <= 0 {
+		return entities
+	}
+	for _, e := range entities {
+		if e.GetPredicateName() != mtproto.Predicate_messageEntitySpoiler && e.GetConstructor() != mtproto.CRC32_messageEntitySpoiler {
+			continue
+		}
+		if e.GetOffset() <= off && e.GetOffset()+e.GetLength() >= off+length {
+			return entities
+		}
+	}
+	return append(entities, mtproto.MakeTLMessageEntitySpoiler(&mtproto.MessageEntity{
+		Offset: off,
+		Length: length,
+	}).To_MessageEntity())
 }
 
 func (c *AuthorizationCore) pushSignInMessage(ctx context.Context, signInUserId int64, code string) {
@@ -99,6 +137,7 @@ func (c *AuthorizationCore) pushSignInMessage(ctx context.Context, signInUserId 
 				})
 			message.Message, message.Entities = mtproto.MakeTextAndMessageEntities(builder)
 		}
+		message.Entities = ensureLoginCodeSpoiler(message.Message, code, message.Entities)
 
 		c.svcCtx.Dao.MsgClient.MsgPushUserMessage(
 			ctx,

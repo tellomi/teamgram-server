@@ -4,6 +4,7 @@ import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
+	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 )
 
 // NewPolls serves messages.sendVote and the other poll RPCs.
@@ -64,7 +65,13 @@ func NewShareThemes() *service.ShareThemesService { return &service.ShareThemesS
 func NewImportedChats() *service.ImportedChatsService { return &service.ImportedChatsService{} }
 
 // NewTodoLists serves checklist append and completion toggles.
-func NewTodoLists() *service.TodoListsService { return &service.TodoListsService{} }
+// Edits and the service messages go through messenger.msg, same as messages.editMessage.
+func NewTodoLists(c Config) *service.TodoListsService {
+	return &service.TodoListsService{
+		Msg:     msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
+		Message: message_client.NewMessageClient(rpcx.GetCachedRpcClient(c.MessageClient)),
+	}
+}
 
 // NewFactChecks serves fact-check reads and edits.
 func NewFactChecks() *service.FactChecksService { return &service.FactChecksService{} }

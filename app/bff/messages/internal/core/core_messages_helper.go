@@ -262,8 +262,8 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
 	case mtproto.Predicate_inputMediaTodo:
 		// inputMediaTodo#9fc55fde todo:TodoList = InputMedia;
-
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+		// Stored and returned as messageMediaToDo#8a53b014 (layer 232).
+		messageMedia, err = mtproto.MessageMediaFromTodo(media.GetTodo())
 	default:
 		err = mtproto.ErrMediaInvalid
 	}

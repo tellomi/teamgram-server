@@ -22,18 +22,50 @@ func TestLoginCodeNoticeChinese(t *testing.T) {
 			t.Fatalf("missing %q in %s", want, text)
 		}
 	}
-	if len(ents) != 2 {
+	if len(ents) != 3 {
 		t.Fatalf("entities %+v", ents)
+	}
+	if ents[0].GetPredicateName() != mtproto.Predicate_messageEntityBold {
+		t.Fatalf("label type %s", ents[0].GetPredicateName())
 	}
 	if got := utf16Slice(text, ents[0]); got != "登录验证码：" {
 		t.Fatalf("label span %q", got)
 	}
-	if got := utf16Slice(text, ents[1]); got != "不要" {
+	if ents[1].GetPredicateName() != mtproto.Predicate_messageEntitySpoiler {
+		t.Fatalf("code type %s", ents[1].GetPredicateName())
+	}
+	if got := utf16Slice(text, ents[1]); got != "123456" {
+		t.Fatalf("code span %q", got)
+	}
+	if ents[2].GetPredicateName() != mtproto.Predicate_messageEntityBold {
+		t.Fatalf("warn type %s", ents[2].GetPredicateName())
+	}
+	if got := utf16Slice(text, ents[2]); got != "不要" {
 		t.Fatalf("warn span %q", got)
 	}
 	// A 6-digit code must not shift the warning onto the wrong characters.
-	if ents[1].GetOffset() != int32(mtproto.UTF16Len("登录验证码：123456。请")) {
-		t.Fatalf("warn offset %d", ents[1].GetOffset())
+	if ents[2].GetOffset() != int32(mtproto.UTF16Len("登录验证码：123456。请")) {
+		t.Fatalf("warn offset %d", ents[2].GetOffset())
+	}
+}
+
+func TestEnsureLoginCodeSpoilerOnPlainConfig(t *testing.T) {
+	text := "登录验证码：654321。请不要把此验证码告诉任何人。"
+	ents := ensureLoginCodeSpoiler(text, "654321", []*mtproto.MessageEntity{
+		mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{
+			Offset: 0,
+			Length: int32(mtproto.UTF16Len("登录验证码：")),
+		}).To_MessageEntity(),
+	})
+	if len(ents) != 2 || ents[1].GetPredicateName() != mtproto.Predicate_messageEntitySpoiler {
+		t.Fatalf("entities %+v", ents)
+	}
+	if got := utf16Slice(text, ents[1]); got != "654321" {
+		t.Fatalf("code span %q", got)
+	}
+	again := ensureLoginCodeSpoiler(text, "654321", ents)
+	if len(again) != 2 {
+		t.Fatalf("duplicate spoiler %+v", again)
 	}
 }
 

@@ -74,22 +74,6 @@ func (ImportedChatsService) MessagesStartHistoryImport(ctx context.Context, in *
 	return p1rest.StartHistoryImport(self, in)
 }
 
-// TodoListsService serves checklist append and completion toggles.
-// https://core.telegram.org/api/todo
-type TodoListsService struct {
-	mtproto.UnimplementedRPCTodoListsServer
-}
-
-func (TodoListsService) MessagesAppendTodoList(ctx context.Context, in *mtproto.TLMessagesAppendTodoList) (*mtproto.Updates, error) {
-	self, _ := selfID(ctx)
-	return p1rest.AppendTodoList(self, in)
-}
-
-func (TodoListsService) MessagesToggleTodoCompleted(ctx context.Context, in *mtproto.TLMessagesToggleTodoCompleted) (*mtproto.Updates, error) {
-	self, _ := selfID(ctx)
-	return p1rest.ToggleTodoCompleted(self, in)
-}
-
 // FactChecksService serves fact-check reads and the fact-checker edits.
 // https://core.telegram.org/api/factcheck
 type FactChecksService struct {

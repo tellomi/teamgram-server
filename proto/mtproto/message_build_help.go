@@ -104,6 +104,11 @@ func MakeTextAndMessageEntities(m MessageBuildHelper) (text string, entities []*
 					Offset: int32(offset),
 					Length: int32(length),
 				}).To_MessageEntity())
+			case Predicate_messageEntitySpoiler:
+				entities = append(entities, MakeTLMessageEntitySpoiler(&MessageEntity{
+					Offset: int32(offset),
+					Length: int32(length),
+				}).To_MessageEntity())
 			case Predicate_messageEntityItalic:
 				entities = append(entities, MakeTLMessageEntityItalic(&MessageEntity{
 					Offset: int32(offset),

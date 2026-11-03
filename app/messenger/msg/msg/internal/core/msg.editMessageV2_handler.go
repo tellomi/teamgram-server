@@ -66,7 +66,7 @@ func (c *MsgCore) MsgEditMessageV2(in *msg.TLMsgEditMessageV2) (*mtproto.Updates
 				}
 			}
 			if edited.Media != nil {
-				m.Media = edited.Media
+				m.Media = mtproto.KeepTodoCompletions(m.GetMedia(), edited.Media)
 			}
 			if edited.Entities != nil {
 				m.Entities = edited.Entities

@@ -415,6 +415,43 @@ func (c *captureHuawei) Send(_ context.Context, _ string, data string) error {
 	return nil
 }
 
+func TestLoginCodeSpoilerHiddenInPushPreview(t *testing.T) {
+	const code = "123456"
+	text, ents := mtproto.MakeTextAndMessageEntities([]mtproto.MessageBuildEntry{
+		{Param: "登录验证码：", EntityType: mtproto.Predicate_messageEntityBold},
+		{Param: code, EntityType: mtproto.Predicate_messageEntitySpoiler},
+		{Text: "。请不要把此验证码告诉任何人。"},
+	})
+	user := mtproto.MakeTLUser(&mtproto.User{
+		Id:        777000,
+		FirstName: &wrapperspb.StringValue{Value: "Tellomi"},
+	}).To_User()
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Out: false, Id: 15, Message: text, Entities: ents,
+		FromId: mtproto.MakePeerUser(777000),
+		PeerId: mtproto.MakePeerUser(9),
+	}).To_Message()
+	got := Messages(9, mtproto.MakeUpdatesByUpdatesUsers([]*mtproto.User{user},
+		mtproto.MakeTLUpdateNewMessage(&mtproto.Update{Message_MESSAGE: msg}).To_Update(),
+	))
+	if len(got) != 1 {
+		t.Fatalf("incoming %+v", got)
+	}
+	if strings.Contains(got[0].Text, code) {
+		t.Fatalf("push preview leaked the code: %q", got[0].Text)
+	}
+	if !strings.Contains(got[0].Text, "登录验证码：") || !strings.Contains(got[0].Text, "••••••") {
+		t.Fatalf("preview %q", got[0].Text)
+	}
+	alert, err := BuildAlert(got[0], Decision{Send: true, Preview: true, Sound: "default"}, nil, "zh-hans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(alert.Outer), code) || strings.Contains(string(alert.Inner), code) || strings.Contains(string(alert.Android), code) {
+		t.Fatalf("banner leaked the code outer=%s inner=%s android=%s", alert.Outer, alert.Inner, alert.Android)
+	}
+}
+
 func mediaUpdate(media *mtproto.MessageMedia) *mtproto.Updates {
 	user := mtproto.MakeTLUser(&mtproto.User{
 		Id:        3,
