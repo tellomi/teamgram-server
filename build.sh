@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# A non-zero go build must fail the image. Publish images for 7416d74 kept
+# going after bff failed to compile and pushed a teamgram image without it.
+set -euo pipefail
 
 PWD=`pwd`
 TEAMGRAMAPP=${PWD}"/app"

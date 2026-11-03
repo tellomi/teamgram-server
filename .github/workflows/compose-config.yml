@@ -21,3 +21,6 @@ jobs:
 
       - name: Default env compose excludes minio
         run: bash scripts/check-compose-minio-profile.sh
+
+      - name: Teamgram image binaries are derived from the entrypoint
+        run: bash scripts/verify-teamgram-binaries.sh --self-test
