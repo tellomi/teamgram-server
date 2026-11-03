@@ -116,6 +116,29 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestTellomiUsernameMigration(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261104-tellomi-username.sql"))
+	for _, s := range []string{
+		"tellomi",
+		"777000",
+		"peer_type = 2",
+		"peer_id = 777000",
+		"utf8mb4_unicode_ci",
+		"D-27",
+		"INSERT IGNORE INTO username",
+	} {
+		if !strings.Contains(raw, s) {
+			t.Fatalf("tellomi username migration missing %s", s)
+		}
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToUpper(s), "UPDATE ") || strings.HasPrefix(strings.ToUpper(s), "DELETE ") {
+			t.Fatalf("raw UPDATE/DELETE is not idempotent under the migration check: %s", s)
+		}
+	}
+}
+
 func TestServiceUserRenameMigration(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261101-service-user.sql"))
 	for _, s := range []string{"777000", "Tellomi", "Telegram", "Teamgram", "tellomi"} {
