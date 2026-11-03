@@ -206,6 +206,26 @@ func TestApplyConfigLanguage(t *testing.T) {
 	if inner.GetSuggestedLangCode().GetValue() != "en" {
 		t.Fatalf("en suggested = %s", inner.GetSuggestedLangCode().GetValue())
 	}
+	enVer, ok := DefaultCatalog().Version("android", "en")
+	ApplyConfigLanguage(inner, "en", "fr-FR", "android")
+	if !ok || inner.GetSuggestedLangCode().GetValue() != "fr" || inner.GetLangPackVersion().GetValue() != enVer {
+		t.Fatalf("suggested %s version %d want fr %d", inner.GetSuggestedLangCode().GetValue(), inner.GetLangPackVersion().GetValue(), enVer)
+	}
+	zhVer, ok := DefaultCatalog().Version("android", "zh-hans")
+	ApplyConfigLanguage(inner, "zh-hans", "de", "android")
+	if !ok || inner.GetSuggestedLangCode().GetValue() != "de" || inner.GetLangPackVersion().GetValue() != zhVer {
+		t.Fatalf("app pack version suggested %s version %d want de %d", inner.GetSuggestedLangCode().GetValue(), inner.GetLangPackVersion().GetValue(), zhVer)
+	}
+}
+
+func offeredOfficialCount() int {
+	n := 0
+	for _, lang := range OfficialLanguages {
+		if !HiddenLang(lang.Code) {
+			n++
+		}
+	}
+	return n
 }
 
 func TestShippedPacks(t *testing.T) {
@@ -218,7 +238,7 @@ func TestShippedPacks(t *testing.T) {
 		if err != nil {
 			t.Fatal(platform, err)
 		}
-		if len(langs) != len(OfficialLanguages) {
+		if len(langs) != offeredOfficialCount() {
 			t.Fatalf("%s languages %d", platform, len(langs))
 		}
 		byCode := map[string]*mtproto.LangPackLanguage{}
@@ -299,10 +319,13 @@ func TestShippedPacks(t *testing.T) {
 		if err != nil {
 			t.Fatal(platform, err)
 		}
-		if len(langs) != len(OfficialLanguages) {
+		if len(langs) != offeredOfficialCount() {
 			t.Fatalf("%s languages %d", platform, len(langs))
 		}
 		for _, lang := range langs {
+			if HiddenLang(lang.GetLangCode()) {
+				t.Fatalf("%s lists hidden %s", platform, lang.GetLangCode())
+			}
 			if lang.GetTranslatedCount() < minTranslated(platform, lang.GetLangCode()) {
 				t.Fatalf("%s %s translated %d", platform, lang.GetLangCode(), lang.GetTranslatedCount())
 			}
@@ -536,10 +559,13 @@ func TestEmbeddedPacksLoad(t *testing.T) {
 		if err != nil {
 			t.Fatal(platform, err)
 		}
-		if len(langs) != len(OfficialLanguages) {
+		if len(langs) != offeredOfficialCount() {
 			t.Fatalf("%s languages %d", platform, len(langs))
 		}
 		for _, lang := range langs {
+			if HiddenLang(lang.GetLangCode()) {
+				t.Fatalf("%s lists hidden %s", platform, lang.GetLangCode())
+			}
 			if lang.GetNativeName() == "" || lang.GetPluralCode() == "" || lang.GetTranslationsUrl() == "" {
 				t.Fatalf("%s incomplete %+v", platform, lang)
 			}

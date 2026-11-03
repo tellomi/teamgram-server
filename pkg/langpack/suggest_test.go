@@ -3,6 +3,7 @@ package langpack
 import "testing"
 
 func TestCanonicalAndSuggest(t *testing.T) {
+	t.Setenv(hiddenLangEnv, defaultHiddenLangs)
 	cases := []struct {
 		in   string
 		want string
@@ -48,12 +49,27 @@ func TestCanonicalAndSuggest(t *testing.T) {
 		{"en", "zh-Hant", "zh-hant"},
 		{"en", "zh-TW", "zh-hant"},
 		{"en", "zh-HK", "zh-hant"},
-		{"zh-HK", "en", "zh-hant"},
-		{"zh_CN", "en-US", "zh-hans"},
+		{"zh-HK", "en", "en"},
+		{"zh_CN", "en-US", "en"},
 		{"en", "en-US", "en"},
 		{"", "", "en"},
-		{"fr", "de", "fr"},
+		{"fr", "de", "de"},
 		{"xx", "de", "de"},
+		{"en", "fr", "fr"},
+		{"en", "fr-FR", "fr"},
+		{"en", "ja-JP", "ja"},
+		{"en", "de_DE", "de"},
+		{"en", "pt-BR", "pt-br"},
+		{"de", "", "de"},
+		{"hi", "", "en"},
+		{"en", "hi", "en"},
+		{"en", "hi-IN", "en"},
+		{"ja", "th", "ja"},
+		{"ja", "el-GR", "ja"},
+		{"el", "el", "en"},
+		{"zh", "el", "zh-hans"},
+		{"xx", "yy", "en"},
+		{"en", "pt-PT", "en"},
 	}
 	for _, tc := range suggests {
 		if got := SuggestLangCode(tc.lang, tc.system); got != tc.want {

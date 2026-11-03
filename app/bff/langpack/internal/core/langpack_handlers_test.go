@@ -21,13 +21,20 @@ func testCore(md *metadata.RpcMetadata) *LangpackCore {
 }
 
 func TestGetLanguagesUsesConnectionLangPack(t *testing.T) {
+	t.Setenv("TELLOMI_LANGPACK_HIDDEN", "hi,th,el")
 	c := testCore(&metadata.RpcMetadata{Langpack: "ios", LangCode: "en", SystemLangCode: "zh-Hans"})
 	langs, err := c.LangpackGetLanguages(&mtproto.TLLangpackGetLanguages{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(langs.Datas) != len(langpack.OfficialLanguages) || langs.Datas[0].GetLangCode() != "zh-hans" {
+	if len(langs.Datas) != offeredOfficialCount() || langs.Datas[0].GetLangCode() != "zh-hans" {
 		t.Fatalf("%d %+v", len(langs.Datas), langs.Datas[0])
+	}
+	for _, lang := range langs.Datas {
+		switch lang.GetLangCode() {
+		case "hi", "th", "el":
+			t.Fatalf("offered %s", lang.GetLangCode())
+		}
 	}
 	if _, err := c.LangpackGetLanguages(&mtproto.TLLangpackGetLanguages{LangPack: "nope"}); err != mtproto.ErrLangPackInvalid {
 		t.Fatal(err)
@@ -155,6 +162,54 @@ func TestRemovedChinesePackFallsBack(t *testing.T) {
 	one, err := c.LangpackGetLanguage(&mtproto.TLLangpackGetLanguage{LangPack: "ios", LangCode: "taiwan"})
 	if err != nil || one.GetLangCode() != "zh-hant" || one.GetNativeName() != "繁體中文" || one.GetBaseLangCode().GetValue() != "en" {
 		t.Fatalf("taiwan language %+v %v", one, err)
+	}
+}
+
+func offeredOfficialCount() int {
+	n := 0
+	for _, lang := range langpack.OfficialLanguages {
+		if !langpack.HiddenLang(lang.Code) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestHiddenLanguagesStayAvailable(t *testing.T) {
+	t.Setenv("TELLOMI_LANGPACK_HIDDEN", "hi,th,el")
+	c := testCore(nil)
+	for _, pack := range []string{"android", "ios", "tdesktop", "macos"} {
+		langs, err := c.LangpackGetLanguages(&mtproto.TLLangpackGetLanguages{LangPack: pack})
+		if err != nil {
+			t.Fatal(pack, err)
+		}
+		if len(langs.Datas) != len(langpack.OfficialLanguages)-3 {
+			t.Fatalf("%s languages %d", pack, len(langs.Datas))
+		}
+		for _, lang := range langs.Datas {
+			switch lang.GetLangCode() {
+			case "hi", "th", "el":
+				t.Fatalf("%s offered %s", pack, lang.GetLangCode())
+			}
+		}
+	}
+	for _, code := range []string{"hi", "th", "el"} {
+		diff, err := c.LangpackGetLangPack(&mtproto.TLLangpackGetLangPack{LangPack: "android", LangCode: code})
+		if err != nil || diff.GetLangCode() != code {
+			t.Fatalf("getLangPack %s %+v %v", code, diff, err)
+		}
+		one, err := c.LangpackGetLanguage(&mtproto.TLLangpackGetLanguage{LangPack: "ios", LangCode: code})
+		if err != nil || one.GetLangCode() != code {
+			t.Fatalf("getLanguage %s %+v %v", code, one, err)
+		}
+		got, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: code, Keys: []string{"LanguageName"}})
+		if err != nil || len(got.Datas) != 1 {
+			t.Fatalf("getStrings %s %+v %v", code, got, err)
+		}
+	}
+	hi, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "hi", Keys: []string{"Settings"}})
+	if err != nil || hi.Datas[0].GetValue() != "सेटिंग्स" {
+		t.Fatalf("hindi settings %+v %v", hi, err)
 	}
 }
 

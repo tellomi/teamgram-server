@@ -295,9 +295,13 @@ func (c *Catalog) Languages(platform string) ([]*mtproto.LangPackLanguage, error
 		return nil, ErrUnknownPack
 	}
 	langs := c.platforms[NormalizePlatform(platform)]
+	hidden := hiddenLangSet()
 	var codes []string
 	seen := map[string]bool{}
 	for _, code := range languageOrder {
+		if _, hide := hidden[code]; hide {
+			continue
+		}
 		if _, ok := langs[code]; ok {
 			codes = append(codes, code)
 			seen[code] = true
@@ -311,6 +315,9 @@ func (c *Catalog) Languages(platform string) ([]*mtproto.LangPackLanguage, error
 		// A catalog that still has a removed duplicate (classic-zh-cn, taiwan)
 		// must not show a second Chinese entry. lookup serves the official pack.
 		if _, legacy := legacyLang(code); legacy {
+			continue
+		}
+		if _, hide := hidden[code]; hide {
 			continue
 		}
 		rest = append(rest, code)

@@ -11,7 +11,8 @@ type OfficialLanguage struct {
 	RTL        bool
 }
 
-// OfficialLanguages is the set served by langpack.getLanguages.
+// OfficialLanguages is every pack shipped under data/langpack.
+// langpack.getLanguages omits TELLOMI_LANGPACK_HIDDEN (default hi, th, el).
 // Simplified Chinese, Traditional Chinese, and English stay first in languageOrder.
 // classic-zh-cn and taiwan are not listed: each repeated a Chinese pack
 // (简体中文 next to zh-hans, 正體中文 next to zh-hant). CanonicalLang serves

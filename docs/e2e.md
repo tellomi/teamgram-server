@@ -15,6 +15,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 |---|---|
 | `TestInitConnectionInvokeWithLayer` | iOS and Android `initConnection` cannot read `help.getConfig`. |
 | `TestHelpGetConfig` | `help.getConfig` did not return a config. When `TELLOMI_E2E_DC_OPTIONS` is set, `dc_options` did not match that spec, `webfile_dc_id` was not 1, or `dc_txt_domain_name` was not `apv2.stel.com`. Unset (production smoke) does not check the list. |
+| `TestLangPackBeforeLogin` | `langpack.getLanguages` offered `hi`, `th`, or `el`, a client that already selected Hindi could not load that pack, or `help.getConfig` `suggested_lang_code` did not follow `initConnection.system_lang_code` (a Hindi device with the app in Japanese must be suggested `ja`, not `hi`). |
 | `TestHelpGetAppConfig` | `help.getAppConfig` returned 500, timed out, or did not decode. |
 | `TestHelpGetTermsOfServiceUpdate` | The default config returns `help.termsOfServiceUpdateEmpty`, and a second call stays empty. If an update is returned, accepting its id does not make the next call empty. |
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |

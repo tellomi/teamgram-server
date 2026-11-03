@@ -25,9 +25,57 @@ func TestLangPackBeforeLogin(t *testing.T) {
 		LangPack:    "android",
 	})
 	vec, ok := langs.(*tlVector)
-	if !ok || vec.Count < 22 {
+	if !ok || vec.Count < 22 || len(vec.Langs) != int(vec.Count) {
 		t.Fatalf("langpack.getLanguages = %T %+v", langs, langs)
 	}
+	for _, lang := range vec.Langs {
+		switch lang.GetLangCode() {
+		case "hi", "th", "el":
+			t.Fatalf("offered %s", lang.GetLangCode())
+		}
+	}
+
+	// A client that already selected a hidden pack still receives it.
+	hidden := invokeOK(t, c, &mtproto.TLLangpackGetLangPack{
+		Constructor: mtproto.CRC32_langpack_getLangPack_f2f2330a,
+		LangPack:    "android",
+		LangCode:    "hi",
+	})
+	hiPack, ok := hidden.(*mtproto.TLLangPackDifference)
+	if !ok || hiPack.GetLangCode() != "hi" {
+		t.Fatalf("hidden hi pack = %T %+v", hidden, hidden)
+	}
+
+	// suggested_lang_code follows the device language, not the app language,
+	// and does not suggest a hidden pack.
+	french := ProfileAndroid
+	french.SystemLangCode = "fr"
+	french.LangCode = "en"
+	c.SetProfile(french)
+	cfgObj := invokeOK(t, c, &mtproto.TLHelpGetConfig{Constructor: mtproto.CRC32_help_getConfig})
+	got, ok := cfgObj.(*mtproto.TLConfig)
+	if !ok {
+		t.Fatalf("help.getConfig = %T", cfgObj)
+	}
+	if got.GetSuggestedLangCode().GetValue() != "fr" {
+		t.Fatalf("suggested from fr device %q", got.GetSuggestedLangCode().GetValue())
+	}
+	if got.GetLangPackVersion().GetValue() < 1 {
+		t.Fatal("lang_pack_version missing")
+	}
+	hindi := ProfileAndroid
+	hindi.SystemLangCode = "hi"
+	hindi.LangCode = "ja"
+	c.SetProfile(hindi)
+	cfgObj = invokeOK(t, c, &mtproto.TLHelpGetConfig{Constructor: mtproto.CRC32_help_getConfig})
+	got, ok = cfgObj.(*mtproto.TLConfig)
+	if !ok {
+		t.Fatalf("help.getConfig = %T", cfgObj)
+	}
+	if got.GetSuggestedLangCode().GetValue() != "ja" {
+		t.Fatalf("suggested from hi device %q", got.GetSuggestedLangCode().GetValue())
+	}
+	c.SetProfile(ProfileAndroid)
 
 	one := invokeOK(t, c, &mtproto.TLLangpackGetLanguage{
 		Constructor: mtproto.CRC32_langpack_getLanguage,
