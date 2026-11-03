@@ -109,7 +109,7 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 		t.Fatal("z_init.sql insert is not idempotent")
 	}
 	helpers := mustRead(t, filepath.Join(dir, "0_migrate_helpers.sql"))
-	for _, name := range []string{"teamgram_add_column", "teamgram_drop_column", "teamgram_add_index", "teamgram_drop_index", "teamgram_change_column"} {
+	for _, name := range []string{"teamgram_add_column", "teamgram_drop_column", "teamgram_add_index", "teamgram_drop_index", "teamgram_change_column", "teamgram_fail_if_set"} {
 		if !strings.Contains(helpers, "PROCEDURE "+name) {
 			t.Errorf("helper %s missing", name)
 		}

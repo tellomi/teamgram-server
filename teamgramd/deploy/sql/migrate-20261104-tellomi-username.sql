@@ -16,21 +16,12 @@
 -- migrate.sh runs every migrate-*.sql before z_init.sql. There is no
 -- foreign key, so this row may be inserted before user 777000 exists.
 -- A second run changes nothing. If another peer already holds the name,
--- the script stops and does not take it (D-26).
+-- the script stops and does not take it (D-26). The stop uses
+-- teamgram_fail_if_set from 0_migrate_helpers.sql. SIGNAL cannot be
+-- prepared (MySQL error 1295). migrate.sh installs that procedure first.
 
-SET @teamgram_stmt = (
-  SELECT IF(
-    EXISTS(
-      SELECT 1 FROM username
-      WHERE username = 'tellomi' AND peer_id <> 777000
-    ),
-    'SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT = ''D-27: username tellomi is owned by a peer other than user 777000''',
-    'DO 0'
-  )
-);
-PREPARE teamgram_ps FROM @teamgram_stmt;
-EXECUTE teamgram_ps;
-DEALLOCATE PREPARE teamgram_ps;
+SET @bad = (SELECT username FROM username WHERE username = 'tellomi' AND peer_id <> 777000 LIMIT 1);
+CALL teamgram_fail_if_set(@bad, 'D-27: username tellomi is owned by a peer other than user 777000: ');
 
 SET @teamgram_stmt = 'UPDATE username SET username = ''tellomi'', peer_type = 2, peer_id = 777000, editable = 1, active = 1, deleted = 0 WHERE username = ''tellomi'' AND peer_id = 777000';
 PREPARE teamgram_ps FROM @teamgram_stmt;

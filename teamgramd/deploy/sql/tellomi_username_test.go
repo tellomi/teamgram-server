@@ -21,6 +21,7 @@ package cleanup
 import (
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -29,6 +30,7 @@ import (
 func TestTellomiUsernameMigrationMySQL(t *testing.T) {
 	db := openTellomiMySQL(t)
 	createUsernameTable(t, db)
+	installFailHelper(t, db)
 
 	applyTellomiUsernameMigration(t, db)
 	assertTellomiOwnedBy(t, db, 777000)
@@ -53,13 +55,57 @@ func TestTellomiUsernameMigrationMySQL(t *testing.T) {
 func TestTellomiUsernameMigrationDoesNotSteal(t *testing.T) {
 	db := openTellomiMySQL(t)
 	createUsernameTable(t, db)
+	installFailHelper(t, db)
 	if _, err := db.Exec(`INSERT INTO username (username, peer_type, peer_id, editable, active, order2, deleted) VALUES ('tellomi', 2, 42, 1, 1, 0, 0)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(mustReadMigration(t, "migrate-20261104-tellomi-username.sql")); err == nil {
-		t.Fatal("migration took tellomi from peer 42")
+	_, err := db.Exec(mustReadMigration(t, "migrate-20261104-tellomi-username.sql"))
+	if err == nil || !strings.Contains(err.Error(), "D-27:") {
+		t.Fatalf("migration error = %v, want D-27 refusal", err)
 	}
 	assertTellomiOwnedBy(t, db, 42)
+}
+
+func installFailHelper(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var name string
+	if err := db.QueryRow("SELECT DATABASE()").Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	dsn := os.Getenv("TEAMGRAM_MYSQL_DSN")
+	if dsn == "" {
+		dsn = "teamgram:teamgram@tcp(127.0.0.1:3306)/mysql?charset=utf8mb4&parseTime=true"
+	}
+	dsn = strings.ReplaceAll(dsn, "multiStatements=true", "")
+	dsn = strings.ReplaceAll(dsn, "&&", "&")
+	dsn = strings.TrimRight(dsn, "?&")
+	slash := strings.LastIndex(dsn, "/")
+	if slash < 0 {
+		t.Fatalf("dsn has no database: %s", dsn)
+	}
+	rest := dsn[slash+1:]
+	query := ""
+	if q := strings.Index(rest, "?"); q >= 0 {
+		query = rest[q:]
+	}
+	plain, err := sql.Open("mysql", dsn[:slash+1]+name+query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plain.Close()
+	if _, err = plain.Exec("DROP PROCEDURE IF EXISTS teamgram_fail_if_set"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = plain.Exec(`CREATE PROCEDURE teamgram_fail_if_set(IN detail VARCHAR(128), IN prefix VARCHAR(128))
+BEGIN
+  IF detail IS NOT NULL THEN
+    SET @teamgram_fail = CONCAT(prefix, detail);
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = @teamgram_fail;
+  END IF;
+END`)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func openTellomiMySQL(t *testing.T) *sql.DB {

@@ -80,4 +80,16 @@ BEGIN
   END IF;
 END$$
 
+-- teamgram_fail_if_set stops a migration with a readable message when detail
+-- is not NULL. SIGNAL cannot run from a prepared statement (MySQL error
+-- 1295), so migrations CALL this procedure instead. A NULL detail is a no-op.
+DROP PROCEDURE IF EXISTS teamgram_fail_if_set$$
+CREATE PROCEDURE teamgram_fail_if_set(IN detail VARCHAR(128), IN prefix VARCHAR(128))
+BEGIN
+  IF detail IS NOT NULL THEN
+    SET @teamgram_fail = CONCAT(prefix, detail);
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = @teamgram_fail;
+  END IF;
+END$$
+
 DELIMITER ;
