@@ -162,6 +162,11 @@ services:
       TELLOMI_DISCOVER_RELATIONS: ${TELLOMI_DISCOVER_RELATIONS:-}
       TELLOMI_DISCOVER_RELATION_KEY: ${TELLOMI_DISCOVER_RELATION_KEY:-}
       TELLOMI_DISCOVER_RELATION_ADDR: ${TELLOMI_DISCOVER_RELATION_ADDR:-}
+      # Account deletion notifies content-engine. Unset is off.
+      # See docs/discover-account-deletion.md.
+      TELLOMI_DISCOVER_DELETE: ${TELLOMI_DISCOVER_DELETE:-}
+      TELLOMI_DISCOVER_ENGINE_URL: ${TELLOMI_DISCOVER_ENGINE_URL:-}
+      TELLOMI_DISCOVER_SERVICE_KEY: ${TELLOMI_DISCOVER_SERVICE_KEY:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.
