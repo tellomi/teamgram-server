@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -232,6 +233,13 @@ func TestShippedPacks(t *testing.T) {
 			if lang.GetTranslatedCount() < minTranslated(platform, lang.GetLangCode()) {
 				t.Fatalf("%s %s translated %d", platform, lang.GetLangCode(), lang.GetTranslatedCount())
 			}
+			if lang.GetLangCode() == "en" {
+				if lang.GetBaseLangCode().GetValue() != "" {
+					t.Fatalf("%s en base %q", platform, lang.GetBaseLangCode().GetValue())
+				}
+			} else if lang.GetBaseLangCode().GetValue() != "en" {
+				t.Fatalf("%s %s base %q", platform, lang.GetLangCode(), lang.GetBaseLangCode().GetValue())
+			}
 			diff, err := cat.Difference(platform, lang.GetLangCode(), 0)
 			if err != nil || diff.GetVersion() < 1 {
 				t.Fatalf("%s %s diff %v %v", platform, lang.GetLangCode(), diff.GetVersion(), err)
@@ -297,6 +305,13 @@ func TestShippedPacks(t *testing.T) {
 		for _, lang := range langs {
 			if lang.GetTranslatedCount() < minTranslated(platform, lang.GetLangCode()) {
 				t.Fatalf("%s %s translated %d", platform, lang.GetLangCode(), lang.GetTranslatedCount())
+			}
+			if lang.GetLangCode() == "en" {
+				if lang.GetBaseLangCode().GetValue() != "" {
+					t.Fatalf("%s en base %q", platform, lang.GetBaseLangCode().GetValue())
+				}
+			} else if lang.GetBaseLangCode().GetValue() != "en" {
+				t.Fatalf("%s %s base %q", platform, lang.GetLangCode(), lang.GetBaseLangCode().GetValue())
 			}
 			diff, err := cat.Difference(platform, lang.GetLangCode(), 0)
 			if err != nil || diff.GetVersion() < 1 {
@@ -413,12 +428,50 @@ func TestShippedPacks(t *testing.T) {
 	}
 
 	classic, err := cat.Language("android", "classic-zh-cn")
-	if err != nil || classic.GetLangCode() != "classic-zh-cn" || classic.GetBaseLangCode().GetValue() != "zh-hans" || classic.GetNativeName() != "简体中文" {
-		t.Fatalf("classic %+v %v", classic, err)
+	hans, hansErr := cat.Language("android", "zh-hans")
+	if err != nil || hansErr != nil || classic.GetLangCode() != "zh-hans" || classic.GetBaseLangCode().GetValue() != "en" || classic.GetTranslatedCount() != hans.GetTranslatedCount() {
+		t.Fatalf("classic fallback %+v hans %+v %v", classic, hans, err)
 	}
 	tw, err := cat.Language("ios", "taiwan")
-	if err != nil || tw.GetLangCode() != "taiwan" || tw.GetBaseLangCode().GetValue() != "zh-hant" || tw.GetNativeName() != "正體中文" {
-		t.Fatalf("taiwan %+v %v", tw, err)
+	hantLang, hantErr := cat.Language("ios", "zh-hant")
+	if err != nil || hantErr != nil || tw.GetLangCode() != "zh-hant" || tw.GetBaseLangCode().GetValue() != "en" || tw.GetNativeName() != "繁體中文" || tw.GetTranslatedCount() != hantLang.GetTranslatedCount() {
+		t.Fatalf("taiwan fallback %+v hant %+v %v", tw, hantLang, err)
+	}
+	for _, platform := range []string{"ios", "android", "tdesktop", "macos"} {
+		listed, err := cat.Languages(platform)
+		if err != nil {
+			t.Fatal(platform, err)
+		}
+		var simplified, traditional int
+		for _, lang := range listed {
+			switch lang.GetLangCode() {
+			case "classic-zh-cn", "taiwan":
+				t.Fatalf("%s still lists %s", platform, lang.GetLangCode())
+			case "zh-hans":
+				simplified++
+			case "zh-hant":
+				traditional++
+			}
+			if lang.GetNativeName() == "简体中文" && lang.GetLangCode() != "zh-hans" {
+				t.Fatalf("%s extra simplified %+v", platform, lang)
+			}
+			if lang.GetNativeName() == "正體中文" {
+				t.Fatalf("%s still lists 正體中文", platform)
+			}
+		}
+		if simplified != 1 || traditional != 1 {
+			t.Fatalf("%s chinese entries simplified=%d traditional=%d", platform, simplified, traditional)
+		}
+	}
+	legacyStrings, err := cat.Strings("ios", "classic-zh-cn", []string{"Login.ContinueWithLocalization"})
+	officialStrings, err2 := cat.Strings("ios", "zh-hans", []string{"Login.ContinueWithLocalization"})
+	if err != nil || err2 != nil || legacyStrings[0].GetValue() == "" || legacyStrings[0].GetValue() != officialStrings[0].GetValue() {
+		t.Fatalf("classic strings %+v %+v %v %v", legacyStrings, officialStrings, err, err2)
+	}
+	twStrings, err := cat.Strings("android", "taiwan", []string{"LanguageName"})
+	hantStrings, err2 := cat.Strings("android", "zh-hant", []string{"LanguageName"})
+	if err != nil || err2 != nil || twStrings[0].GetValue() == "" || twStrings[0].GetValue() != hantStrings[0].GetValue() {
+		t.Fatalf("taiwan strings %+v %+v %v %v", twStrings, hantStrings, err, err2)
 	}
 }
 
@@ -434,16 +487,6 @@ func minTranslated(platform, code string) int32 {
 			return 1000
 		}
 		return 300
-	case "classic-zh-cn":
-		if platform == "ios" || platform == "macos" || platform == "tdesktop" {
-			return 2000
-		}
-		return 1000
-	case "taiwan":
-		if platform == "ios" || platform == "macos" || platform == "tdesktop" {
-			return 1500
-		}
-		return 1000
 	default:
 		return 1000
 	}
@@ -549,5 +592,122 @@ func TestChineseOverlayIsCurated(t *testing.T) {
 				t.Fatalf("%s %s %q", item.path, s.Key, s.Value)
 			}
 		}
+	}
+}
+
+func TestLegacyCodeHiddenAndFallsBack(t *testing.T) {
+	cat := NewCatalog(map[string]map[string]*Language{
+		"android": {
+			"zh-hans": {
+				Code: "zh-hans", Name: "Chinese (Simplified)", NativeName: "简体中文", PluralCode: "zh",
+				Official: true, BaseLangCode: "en", Version: 4,
+				Strings: []Entry{{Key: "Settings", Value: "设置", Version: 4}},
+			},
+			"classic-zh-cn": {
+				Code: "classic-zh-cn", Name: "Chinese (Simplified, Classic)", NativeName: "简体中文", PluralCode: "zh",
+				Official: true, BaseLangCode: "zh-hans", Version: 1,
+				Strings: []Entry{{Key: "Settings", Value: "旧简体", Version: 1}},
+			},
+			"zh-hant": {
+				Code: "zh-hant", Name: "Chinese (Traditional)", NativeName: "繁體中文", PluralCode: "zh",
+				Official: true, BaseLangCode: "en", Version: 4,
+				Strings: []Entry{{Key: "Settings", Value: "設定", Version: 4}},
+			},
+			"taiwan": {
+				Code: "taiwan", Name: "Chinese (Traditional, Taiwan)", NativeName: "正體中文", PluralCode: "zh",
+				Official: true, BaseLangCode: "zh-hant", Version: 1,
+				Strings: []Entry{{Key: "Settings", Value: "舊繁體", Version: 1}},
+			},
+		},
+	})
+	langs, err := cat.Languages("android")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(langs) != 2 || langs[0].GetLangCode() != "zh-hans" || langs[1].GetLangCode() != "zh-hant" {
+		t.Fatalf("listed %+v", langs)
+	}
+	got, err := cat.Strings("android", "classic-zh-cn", []string{"Settings"})
+	if err != nil || got[0].GetValue() != "设置" {
+		t.Fatalf("classic strings %+v %v", got, err)
+	}
+	tw, err := cat.Strings("android", "taiwan", []string{"Settings"})
+	if err != nil || tw[0].GetValue() != "設定" {
+		t.Fatalf("taiwan strings %+v %v", tw, err)
+	}
+	diff, err := cat.Difference("android", "classic-zh-cn", 0)
+	if err != nil || diff.GetLangCode() != "zh-hans" || diff.GetStrings()[0].GetValue() != "设置" {
+		t.Fatalf("classic pack %+v %v", diff, err)
+	}
+}
+
+func TestLoadSkipsLegacyPackFiles(t *testing.T) {
+	dir := t.TempDir()
+	writePack := func(name, code, value string) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"lang_code":        code,
+			"name":             code,
+			"native_name":      code,
+			"plural_code":      "zh",
+			"official":         true,
+			"base_lang_code":   "en",
+			"translations_url": "https://tellomi.cn/translations/android/" + code,
+			"version":          5,
+			"strings":          []map[string]any{{"key": "Settings", "value": value, "version": 5}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "android", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		fh, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zw := gzip.NewWriter(fh)
+		if _, err := zw.Write(body); err != nil {
+			t.Fatal(err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := fh.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Only the removed pack is on disk. It must not be served as zh-hans.
+	writePack("classic-zh-cn.json.gz", "classic-zh-cn", "旧简体")
+	cat, err := Load(os.DirFS(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.Languages("android"); err != ErrUnknownPack {
+		t.Fatalf("legacy-only directory listed a language: %v", err)
+	}
+	if _, err := cat.Strings("android", "classic-zh-cn", []string{"Settings"}); err != ErrUnknownPack {
+		t.Fatalf("legacy-only strings: %v", err)
+	}
+
+	writePack("zh-hans.json.gz", "zh-hans", "设置")
+	writePack("taiwan.json.gz", "taiwan", "舊繁體")
+	writePack("zh-hant.json.gz", "zh-hant", "設定")
+	cat, err = Load(os.DirFS(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	langs, err := cat.Languages("android")
+	if err != nil || len(langs) != 2 {
+		t.Fatalf("langs %d %v", len(langs), err)
+	}
+	got, err := cat.Strings("android", "classic-zh-cn", []string{"Settings"})
+	if err != nil || got[0].GetValue() != "设置" {
+		t.Fatalf("loaded classic %+v %v", got, err)
+	}
+	tw, err := cat.Strings("android", "taiwan", []string{"Settings"})
+	if err != nil || tw[0].GetValue() != "設定" {
+		t.Fatalf("loaded taiwan %+v %v", tw, err)
 	}
 }

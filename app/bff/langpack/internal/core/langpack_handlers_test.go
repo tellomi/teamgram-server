@@ -98,6 +98,66 @@ func TestLangPackWithoutSession(t *testing.T) {
 	}
 }
 
+func TestRemovedChinesePackFallsBack(t *testing.T) {
+	c := testCore(&metadata.RpcMetadata{Langpack: "android"})
+	langs, err := c.LangpackGetLanguages(&mtproto.TLLangpackGetLanguages{LangPack: "ios"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var simplified, traditional int
+	for _, lang := range langs.Datas {
+		switch lang.GetLangCode() {
+		case "classic-zh-cn", "taiwan":
+			t.Fatalf("listed %s", lang.GetLangCode())
+		case "zh-hans":
+			simplified++
+		case "zh-hant":
+			traditional++
+		}
+		if lang.GetNativeName() == "简体中文" && lang.GetLangCode() != "zh-hans" {
+			t.Fatalf("extra simplified %+v", lang)
+		}
+		if lang.GetNativeName() == "正體中文" {
+			t.Fatal("正體中文 still listed")
+		}
+	}
+	if simplified != 1 || traditional != 1 {
+		t.Fatalf("simplified %d traditional %d of %d", simplified, traditional, len(langs.Datas))
+	}
+
+	pack, err := c.LangpackGetLangPack(&mtproto.TLLangpackGetLangPack{LangPack: "ios", LangCode: "classic-zh-cn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	official, err := c.LangpackGetLangPack(&mtproto.TLLangpackGetLangPack{LangPack: "ios", LangCode: "zh-hans"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.GetLangCode() != "zh-hans" || pack.GetVersion() != official.GetVersion() || len(pack.GetStrings()) != len(official.GetStrings()) || len(pack.GetStrings()) < 1000 {
+		t.Fatalf("classic pack code=%s v=%d n=%d official n=%d", pack.GetLangCode(), pack.GetVersion(), len(pack.GetStrings()), len(official.GetStrings()))
+	}
+	got, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "classic-zh-cn", Keys: []string{"Settings"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "zh-hans", Keys: []string{"Settings"}})
+	if err != nil || got.Datas[0].GetValue() == "" || got.Datas[0].GetValue() != want.Datas[0].GetValue() {
+		t.Fatalf("classic strings %+v %+v %v", got, want, err)
+	}
+	tw, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "taiwan", Keys: []string{"LanguageName"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hant, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "zh-hant", Keys: []string{"LanguageName"}})
+	if err != nil || tw.Datas[0].GetValue() == "" || tw.Datas[0].GetValue() != hant.Datas[0].GetValue() {
+		t.Fatalf("taiwan strings %+v %+v %v", tw, hant, err)
+	}
+	one, err := c.LangpackGetLanguage(&mtproto.TLLangpackGetLanguage{LangPack: "ios", LangCode: "taiwan"})
+	if err != nil || one.GetLangCode() != "zh-hant" || one.GetNativeName() != "繁體中文" || one.GetBaseLangCode().GetValue() != "en" {
+		t.Fatalf("taiwan language %+v %v", one, err)
+	}
+}
+
 func TestGetStringsForLanguageAlert(t *testing.T) {
 	c := testCore(&metadata.RpcMetadata{Langpack: "android", LangCode: "zh-CN"})
 	out, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{Keys: []string{"Settings", "NoSuchKey"}})

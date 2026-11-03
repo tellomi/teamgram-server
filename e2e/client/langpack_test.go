@@ -89,4 +89,25 @@ func TestLangPackBeforeLogin(t *testing.T) {
 	if !ok || trad.GetLangCode() != "zh-hant" || trad.GetNativeName() != "繁體中文" || trad.GetTranslatedCount() < 1000 {
 		t.Fatalf("zh-hant %+v", iosLang)
 	}
+
+	// A client that still has a removed duplicate selected must get the
+	// official pack, not an error and not a second Chinese entry.
+	removed := invokeOK(t, c, &mtproto.TLLangpackGetLangPack{
+		Constructor: mtproto.CRC32_langpack_getLangPack_f2f2330a,
+		LangPack:    "ios",
+		LangCode:    "classic-zh-cn",
+	})
+	hans, ok := removed.(*mtproto.TLLangPackDifference)
+	if !ok || hans.GetLangCode() != "zh-hans" || len(hans.GetStrings()) < 1000 {
+		t.Fatalf("classic-zh-cn fallback %+v", removed)
+	}
+	twLang := invokeOK(t, c, &mtproto.TLLangpackGetLanguage{
+		Constructor: mtproto.CRC32_langpack_getLanguage,
+		LangPack:    "ios",
+		LangCode:    "taiwan",
+	})
+	tw, ok := twLang.(*mtproto.TLLangPackLanguage)
+	if !ok || tw.GetLangCode() != "zh-hant" || tw.GetNativeName() != "繁體中文" {
+		t.Fatalf("taiwan fallback %+v", twLang)
+	}
 }

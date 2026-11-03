@@ -10,7 +10,7 @@ import (
 
 // NormalizeLang maps one language tag onto a pack this server ships.
 // zh, zh-CN and zh-Hans are simplified. zh-Hant, zh-TW and zh-HK are
-// traditional. classic-zh-cn and taiwan stay those packs. Every other
+// traditional. classic-zh-cn is zh-hans and taiwan is zh-hant. Every other
 // official code (ja, ru, …) stays itself. An unknown tag is English.
 func NormalizeLang(code string) string {
 	if c, ok := langpack.CanonicalLang(code); ok {
@@ -21,8 +21,8 @@ func NormalizeLang(code string) string {
 
 // PickLang is the language a push is rendered in.
 //
-// The app language wins when it is a specific pack (zh-hans, classic-zh-cn,
-// ja, …). English does not win over the phone language: the iOS notification
+// The app language wins when it is a specific pack (zh-hans, ja, …).
+// English does not win over the phone language: the iOS notification
 // extension opens a supplementary connection with lang_code "en" because it
 // does not load the saved pack, and that initConnection overwrites
 // auths.lang_code. The phone language (initConnection.system_lang_code) is

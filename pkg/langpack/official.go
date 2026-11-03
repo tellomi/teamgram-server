@@ -11,16 +11,17 @@ type OfficialLanguage struct {
 	RTL        bool
 }
 
-// OfficialLanguages is the base set served by langpack.getLanguages.
+// OfficialLanguages is the set served by langpack.getLanguages.
 // Simplified Chinese, Traditional Chinese, and English stay first in languageOrder.
-// classic-zh-cn is the upstream simplified pack (简体中文). taiwan is 正體中文.
-// BCP-47 zh-TW / zh-HK still resolve to zh-hant, the full traditional pack.
+// classic-zh-cn and taiwan are not listed: each repeated a Chinese pack
+// (简体中文 next to zh-hans, 正體中文 next to zh-hant). CanonicalLang serves
+// those old codes from zh-hans and zh-hant. BCP-47 zh-TW / zh-HK still
+// resolve to zh-hant.
 var OfficialLanguages = []OfficialLanguage{
 	{Code: "en", Name: "English", NativeName: "English", PluralCode: "en"},
 	{Code: "ar", Name: "Arabic", NativeName: "العربية", PluralCode: "ar", RTL: true},
 	{Code: "be", Name: "Belarusian", NativeName: "Беларуская", PluralCode: "be"},
 	{Code: "ca", Name: "Catalan", NativeName: "Català", PluralCode: "ca"},
-	{Code: "classic-zh-cn", Name: "Chinese (Simplified, Classic)", NativeName: "简体中文", PluralCode: "zh"},
 	{Code: "cs", Name: "Czech", NativeName: "Čeština", PluralCode: "cs"},
 	{Code: "de", Name: "German", NativeName: "Deutsch", PluralCode: "de"},
 	{Code: "el", Name: "Greek", NativeName: "Ελληνικά", PluralCode: "el"},
@@ -42,7 +43,6 @@ var OfficialLanguages = []OfficialLanguage{
 	{Code: "ro", Name: "Romanian", NativeName: "Română", PluralCode: "ro"},
 	{Code: "ru", Name: "Russian", NativeName: "Русский", PluralCode: "ru"},
 	{Code: "sv", Name: "Swedish", NativeName: "Svenska", PluralCode: "sv"},
-	{Code: "taiwan", Name: "Chinese (Traditional, Taiwan)", NativeName: "正體中文", PluralCode: "zh"},
 	{Code: "th", Name: "Thai", NativeName: "ไทย", PluralCode: "th"},
 	{Code: "tr", Name: "Turkish", NativeName: "Türkçe", PluralCode: "tr"},
 	{Code: "uk", Name: "Ukrainian", NativeName: "Українська", PluralCode: "uk"},

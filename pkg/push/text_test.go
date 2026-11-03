@@ -25,8 +25,8 @@ func TestNormalizeLang(t *testing.T) {
 		"zh-Hant":       "zh-hant",
 		"zh-TW":         "zh-hant",
 		"zh-HK":         "zh-hant",
-		"classic-zh-cn": "classic-zh-cn",
-		"taiwan":        "taiwan",
+		"classic-zh-cn": "zh-hans",
+		"taiwan":        "zh-hant",
 		"ja":            "ja",
 		"pt_br":         "pt-br",
 	}
@@ -54,8 +54,11 @@ func TestPickLangPrefersAppThenPhone(t *testing.T) {
 	if PickLang("en", "en-US") != "en" {
 		t.Fatal(PickLang("en", "en-US"))
 	}
-	if PickLang("classic-zh-cn", "en") != "classic-zh-cn" {
+	if PickLang("classic-zh-cn", "en") != "zh-hans" {
 		t.Fatal(PickLang("classic-zh-cn", "en"))
+	}
+	if PickLang("taiwan", "en") != "zh-hant" {
+		t.Fatal(PickLang("taiwan", "en"))
 	}
 }
 
@@ -66,7 +69,7 @@ func TestPushPhrasesForEveryLanguage(t *testing.T) {
 	}{
 		{"zh-hans", "🎤 语音消息"},
 		{"zh-hant", "🎤 語音訊息"},
-		{"classic-zh-cn", "🎤 语音留言"},
+		{"classic-zh-cn", "🎤 语音消息"},
 		{"taiwan", "🎤 語音訊息"},
 		{"en", "sent you a voice message"},
 		{"ja", "🎤 音声"},

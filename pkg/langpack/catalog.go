@@ -28,8 +28,9 @@ import (
 )
 
 var (
-	ErrUnknownPack = errors.New("lang pack invalid")
-	ErrUnknownLang = errors.New("lang code not supported")
+	ErrUnknownPack    = errors.New("lang pack invalid")
+	ErrUnknownLang    = errors.New("lang code not supported")
+	errSkipLegacyPack = errors.New("skip legacy lang pack")
 )
 
 // languageOrder is the order clients see in langpack.getLanguages.
@@ -263,8 +264,8 @@ func (c *Catalog) BaseLang(platform, code string) (string, bool) {
 	return l.meta.BaseLangCode, true
 }
 
-// Plain is one string value. A missing key follows base_lang_code, so a
-// partial pack such as classic-zh-cn still resolves through zh-hans and en.
+// Plain is one string value. A missing key follows base_lang_code.
+// Every pack except English uses en, so the walk ends at English.
 func (c *Catalog) Plain(platform, code, key string) (string, bool) {
 	seen := map[string]struct{}{}
 	for code != "" {
@@ -304,9 +305,15 @@ func (c *Catalog) Languages(platform string) ([]*mtproto.LangPackLanguage, error
 	}
 	var rest []string
 	for code := range langs {
-		if !seen[code] {
-			rest = append(rest, code)
+		if seen[code] {
+			continue
 		}
+		// A catalog that still has a removed duplicate (classic-zh-cn, taiwan)
+		// must not show a second Chinese entry. lookup serves the official pack.
+		if _, legacy := legacyLang(code); legacy {
+			continue
+		}
+		rest = append(rest, code)
 	}
 	sort.Strings(rest)
 	codes = append(codes, rest...)
@@ -554,6 +561,9 @@ func Load(fsys fs.FS) (*Catalog, error) {
 				return nil, err
 			}
 			lang, err := decodeLanguage(body)
+			if errors.Is(err, errSkipLegacyPack) {
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -599,6 +609,11 @@ func decodeLanguage(body []byte) (*Language, error) {
 	var raw filePack
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
+	}
+	// Skip before CanonicalLang rewrites the code. Otherwise classic-zh-cn
+	// would be stored as zh-hans and could replace the official pack.
+	if _, ok := legacyLang(raw.LangCode); ok {
+		return nil, errSkipLegacyPack
 	}
 	lang := &Language{
 		Code:            raw.LangCode,

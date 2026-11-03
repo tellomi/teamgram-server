@@ -318,8 +318,7 @@ OFFICIAL = [
     ("vi", "Vietnamese", "Tiếng Việt", "vi", False),
     ("zh-hans", "Chinese (Simplified)", "简体中文", "zh", False),
     ("zh-hant", "Chinese (Traditional)", "繁體中文", "zh", False),
-    ("classic-zh-cn", "Chinese (Simplified, Classic)", "简体中文", "zh", False),
-    ("taiwan", "Chinese (Traditional, Taiwan)", "正體中文", "zh", False),
+    # classic-zh-cn and taiwan duplicated zh-hans / zh-hant and are not shipped.
     ("th", "Thai", "ไทย", "th", False),
     ("hi", "Hindi", "हिन्दी", "hi", False),
 ]

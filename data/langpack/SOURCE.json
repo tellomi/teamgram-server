@@ -27,12 +27,6 @@
       "strings": 12198,
       "bytes_gz": 225953
     },
-    "ios/classic-zh-cn": {
-      "source_file": "ios_classic-zh-cn_v22202254.strings",
-      "source_version": 22202254,
-      "strings": 5385,
-      "bytes_gz": 99142
-    },
     "ios/cs": {
       "source_file": "ios_cs_v22418772.strings",
       "source_version": 22418772,
@@ -159,12 +153,6 @@
       "strings": 11979,
       "bytes_gz": 220188
     },
-    "ios/taiwan": {
-      "source_file": "ios_taiwan_v22202254.strings",
-      "source_version": 22202254,
-      "strings": 3730,
-      "bytes_gz": 66644
-    },
     "ios/th": {
       "source_file": "ios_th_v22202254.strings",
       "source_version": 22202254,
@@ -230,12 +218,6 @@
       "source_version": 61550386,
       "strings": 11443,
       "bytes_gz": 218755
-    },
-    "android/classic-zh-cn": {
-      "source_file": "android_classic-zh-cn_v57480878.xml",
-      "source_version": 57480878,
-      "strings": 11535,
-      "bytes_gz": 231147
     },
     "android/cs": {
       "source_file": "android_cs_v61557644.xml",
@@ -363,12 +345,6 @@
       "strings": 11261,
       "bytes_gz": 215450
     },
-    "android/taiwan": {
-      "source_file": "android_taiwan_v57480878.xml",
-      "source_version": 57480878,
-      "strings": 11505,
-      "bytes_gz": 224547
-    },
     "android/th": {
       "source_file": "android_th_v57480878.xml",
       "source_version": 57480878,
@@ -434,12 +410,6 @@
       "source_version": 6017788,
       "strings": 8344,
       "bytes_gz": 147741
-    },
-    "tdesktop/classic-zh-cn": {
-      "source_file": "tdesktop_classic-zh-cn_v3487856.strings",
-      "source_version": 3487856,
-      "strings": 3095,
-      "bytes_gz": 55836
     },
     "tdesktop/cs": {
       "source_file": "tdesktop_cs_v6019032.strings",
@@ -567,12 +537,6 @@
       "strings": 7233,
       "bytes_gz": 129319
     },
-    "tdesktop/taiwan": {
-      "source_file": "tdesktop_taiwan_v3487856.strings",
-      "source_version": 3487856,
-      "strings": 2177,
-      "bytes_gz": 39348
-    },
     "tdesktop/th": {
       "source_file": "tdesktop_th_v3487856.strings",
       "source_version": 3487856,
@@ -638,12 +602,6 @@
       "source_version": 2404226,
       "strings": 8274,
       "bytes_gz": 156729
-    },
-    "macos/classic-zh-cn": {
-      "source_file": "macos_classic-zh-cn_v1264643.strings",
-      "source_version": 1264643,
-      "strings": 3603,
-      "bytes_gz": 67139
     },
     "macos/cs": {
       "source_file": "macos_cs_v2405040.strings",
@@ -770,12 +728,6 @@
       "source_version": 2402916,
       "strings": 7983,
       "bytes_gz": 149252
-    },
-    "macos/taiwan": {
-      "source_file": "macos_taiwan_v1933093.strings",
-      "source_version": 1933093,
-      "strings": 2420,
-      "bytes_gz": 44946
     },
     "macos/th": {
       "source_file": "macos_th_v1264643.strings",

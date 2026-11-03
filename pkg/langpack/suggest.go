@@ -15,16 +15,39 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+func normLang(code string) string {
+	s := strings.ToLower(strings.TrimSpace(code))
+	return strings.ReplaceAll(s, "_", "-")
+}
+
+// legacyLang maps a removed duplicate pack onto the official pack that
+// replaces it. Those codes are not listed by langpack.getLanguages.
+// classic-zh-cn is the old community 简体中文 pack. taiwan is 正體中文.
+func legacyLang(code string) (string, bool) {
+	switch normLang(code) {
+	case "classic-zh-cn":
+		return "zh-hans", true
+	case "taiwan":
+		return "zh-hant", true
+	default:
+		return "", false
+	}
+}
+
 // CanonicalLang maps a client or system language tag onto a pack we serve.
 // zh and zh-CN become zh-hans. zh-Hant, zh-TW, zh-HK, and the bare region
-// tags TW/HK/MO become zh-hant. English tags become en. Other official
+// tags TW/HK/MO become zh-hant. classic-zh-cn becomes zh-hans and taiwan
+// becomes zh-hant, so a client that still has the removed pack selected
+// loads the official strings. English tags become en. Other official
 // language codes, including pt_br and iw, map onto the pack code.
 // The boolean is false when the tag is not one of those languages.
 func CanonicalLang(code string) (string, bool) {
-	s := strings.ToLower(strings.TrimSpace(code))
-	s = strings.ReplaceAll(s, "_", "-")
+	s := normLang(code)
 	if s == "" {
 		return "", false
+	}
+	if to, ok := legacyLang(s); ok {
+		return to, true
 	}
 	if isTraditionalChinese(s) {
 		return "zh-hant", true

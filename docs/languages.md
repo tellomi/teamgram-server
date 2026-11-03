@@ -33,17 +33,17 @@ Served for ios, android, tdesktop, and macos:
 | en | English |
 | zh-hans | 简体中文 |
 | zh-hant | 繁體中文 |
-| classic-zh-cn | 简体中文 (upstream classic pack; `base_lang_code=zh-hans`) |
-| taiwan | 正體中文 (upstream Taiwan pack; `base_lang_code=zh-hant`) |
 | ja, ko, ru, es, de, fr, it, pt-br | full packs |
 | ar, tr, id, ms, vi, uk, nl, pl, fa | full packs |
 | hi | Hindi. Android is a large partial pack. iOS, macOS, and tdesktop are smaller. |
 | th | Thai. As of the 2026-11-02 export, translations.telegram.org has no Thai strings for these platforms (the Android file is an English copy, which is not shipped). The language is listed and falls back to English. |
 | be, ca, cs, el, fi, he, nb, ro, sv, uz | shipped from the same export. Greek is only partial on iOS and empty on desktop. |
 
-BCP-47 `zh-TW`, `zh-HK`, and `zh-Hant` still resolve to `zh-hant` (the full traditional pack). The code `taiwan` is the separate 正體中文 pack. `classic-zh-cn` is simplified, not traditional: its export `Localization.LanguageName` is 简体中文.
+One entry per language. `classic-zh-cn` (Chinese (Simplified, Classic), the old community 简体中文 pack) and `taiwan` (Chinese (Traditional, Taiwan), 正體中文) are not listed. On iOS those packs were about 5.4k and 3.7k strings beside the official ~12.4k packs, and both used the same language as `zh-hans` / `zh-hant`. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` for those codes serve `zh-hans` or `zh-hant` instead of returning an error. The `lang_code` in the response is the official code.
 
-Untranslated strings that are an exact copy of the official English text are omitted. The client loads `base_lang_code` for the missing keys.
+BCP-47 `zh-TW`, `zh-HK`, and `zh-Hant` still resolve to `zh-hant`. `zh`, `zh-CN`, and `zh-Hans` resolve to `zh-hans`.
+
+Untranslated strings that are an exact copy of the official English text are omitted. The client loads `base_lang_code` for the missing keys. Every shipped pack except English has `base_lang_code=en`. English has no base. The removed packs used to set their base to `zh-hans` or `zh-hant`; the packs that remain still fall back only to English.
 
 ## Tellomi overrides
 
