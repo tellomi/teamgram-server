@@ -61,12 +61,22 @@ type sentKey struct {
 	random int64
 }
 
+// keptFile is an EncryptedFile produced by messages.uploadEncryptedFile.
+// The bytes live in DFS; this record is what sendEncryptedFile attaches so
+// the peer sees size, dc_id, and key_fingerprint. It dies with the process,
+// same as the chat itself.
+type keptFile struct {
+	file   *mtproto.EncryptedFile
+	chatID int32
+}
+
 // Store is the process-wide secret-chat table.
 type Store struct {
 	mu      sync.Mutex
 	chats   map[int32]*chat
 	sent    map[sentKey]sentRec
 	reports map[int32][]int64
+	files   map[int64]keptFile
 }
 
 var (
@@ -79,6 +89,7 @@ func newStore() *Store {
 		chats:   map[int32]*chat{},
 		sent:    map[sentKey]sentRec{},
 		reports: map[int32][]int64{},
+		files:   map[int64]keptFile{},
 	}
 }
 
@@ -319,6 +330,35 @@ func (s *Store) Send(self int64, peer *mtproto.InputEncryptedChat, randomID int6
 	}}, nil
 }
 
+// RememberEncrypted keeps the EncryptedFile returned by
+// messages.uploadEncryptedFile. chatID is the secret chat it was bound to.
+func (s *Store) RememberEncrypted(chatID int32, file *mtproto.EncryptedFile) {
+	if s == nil || chatID == 0 || file == nil || file.GetId() == 0 {
+		return
+	}
+	cloned := cloneFile(file)
+	if cloned == nil {
+		return
+	}
+	s.mu.Lock()
+	s.files[file.GetId()] = keptFile{file: cloned, chatID: chatID}
+	s.mu.Unlock()
+}
+
+// LookupEncrypted returns a stored encrypted file and the chat it belongs to.
+func (s *Store) LookupEncrypted(id int64) (*mtproto.EncryptedFile, int32, bool) {
+	if s == nil || id == 0 {
+		return nil, 0, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.files[id]
+	if !ok || rec.file == nil {
+		return nil, 0, false
+	}
+	return cloneFile(rec.file), rec.chatID, true
+}
+
 // Counterpart is the other member of an accepted chat.
 func (s *Store) Counterpart(self int64, peer *mtproto.InputEncryptedChat) (int64, error) {
 	s.mu.Lock()
@@ -438,7 +478,9 @@ func cloneFile(f *mtproto.EncryptedFile) *mtproto.EncryptedFile {
 	}
 	return mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{
 		Id: f.GetId(), AccessHash: f.GetAccessHash(), DcId: f.GetDcId(),
-		KeyFingerprint: f.GetKeyFingerprint(), Size2_INT64: f.GetSize2_INT64(),
+		KeyFingerprint: f.GetKeyFingerprint(),
+		Size2_INT64:    f.GetSize2_INT64(),
+		Size2_INT32:    f.GetSize2_INT32(),
 	}).To_EncryptedFile()
 }
 

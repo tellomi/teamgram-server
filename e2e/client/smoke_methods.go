@@ -449,6 +449,7 @@ var smokeMethods = []smokeMethod{
 	{Name: "messages.updatePinnedForumTopic", CRC: 392032849},
 	{Name: "messages.updatePinnedMessage", CRC: -760547348},
 	{Name: "messages.updateSavedReactionTag", CRC: 1613331948},
+	{Name: "messages.uploadEncryptedFile", CRC: 1347929239},
 	{Name: "messages.uploadImportedMedia", CRC: 713433234},
 	{Name: "messages.uploadMedia", CRC: 345405816},
 	{Name: "photos.deletePhotos", CRC: -2016444625},
