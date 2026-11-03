@@ -1,0 +1,45 @@
+# Ordinary names and D-24 allows. Digits glued to a reserved word stay free.
+# Underscore variants are in must-deny.txt.
+
+username global admin01
+username global support88
+username global administer
+username global administrator2
+username global badminton
+username global supportive
+username global supporter
+username global kefu88
+username global ke_fu
+username global telephone
+username global television
+username global tell_me_more
+username global tello
+username global googlefan
+username global metal
+username global signaling
+username global lineage
+username global alice
+username global xiaoming
+username global sunny_day
+username global newsbot
+username global runner42
+username global chatroom
+username global applepie
+username global wechatfan
+username global roomname
+username global taken_name
+username global abc
+username global user_2026
+username global player_one
+username global green_tea
+username global the_real_bob
+username global badminton_club
+username global dev_ops
+username global hello_world
+username global just_me
+display_name global 小明
+display_name global Bob 李
+display_name global 咖啡爱好者
+username global qq
+username global x
+slug global alice

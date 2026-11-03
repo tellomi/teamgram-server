@@ -150,6 +150,8 @@ services:
       # apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
       TELLOMI_DC_OPTIONS: ${TELLOMI_DC_OPTIONS:-}
       TELLOMI_DC_TXT_DOMAIN: ${TELLOMI_DC_TXT_DOMAIN:-}
+      # Username reserve / sensitive-word check (M5). Unset is off.
+      TELLOMI_USERNAME_POLICY: ${TELLOMI_USERNAME_POLICY:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.
