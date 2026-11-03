@@ -57,6 +57,9 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 	if obj["authorization_autoconfirm_period"] != float64(authorizationAutoconfirmPeriod) || authorizationAutoconfirmPeriod != 604800 {
 		t.Fatalf("authorization_autoconfirm_period = %#v", obj["authorization_autoconfirm_period"])
 	}
+	if obj["todo_items_max"] != float64(mtproto.TodoItemsMax) || obj["todo_item_length_max"] != float64(mtproto.TodoItemLengthMax) || obj["todo_title_length_max"] != float64(mtproto.TodoTitleLengthMax) {
+		t.Fatalf("todo limits %#v %#v %#v", obj["todo_items_max"], obj["todo_item_length_max"], obj["todo_title_length_max"])
+	}
 	if obj["reactions_default"] != catalog.DefaultReactionEmoji || catalog.DefaultReactionEmoji != "👍" {
 		t.Fatalf("reactions_default = %#v", obj["reactions_default"])
 	}

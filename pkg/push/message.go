@@ -2,6 +2,7 @@ package push
 
 import (
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
@@ -76,7 +77,7 @@ func incomingFromMessage(userID int64, msg *mtproto.Message, users []*mtproto.Us
 		Silent:    msg.GetSilent(),
 		PeerType:  peerType,
 		PeerID:    peerID,
-		Text:      strings.TrimSpace(msg.GetMessage()),
+		Text:      strings.TrimSpace(hideSpoilers(msg.GetMessage(), msg.GetEntities())),
 	}
 	inc.SenderName = displayUser(users, senderID)
 	switch peerType {
@@ -312,6 +313,44 @@ func locKey(peerType int32, k kind, text string) string {
 		return name
 	}
 	return prefix + name
+}
+
+// hideSpoilers replaces messageEntitySpoiler spans with bullets. Official
+// clients do this in the chat list and in the notification preview; the push
+// body is plain text, so the digits have to be masked before they are sealed
+// into the banner.
+func hideSpoilers(text string, entities []*mtproto.MessageEntity) string {
+	if text == "" || len(entities) == 0 {
+		return text
+	}
+	units := utf16.Encode([]rune(text))
+	changed := false
+	for _, e := range entities {
+		if !isSpoiler(e) {
+			continue
+		}
+		off := int(e.GetOffset())
+		n := int(e.GetLength())
+		if off < 0 || n <= 0 || off+n > len(units) {
+			continue
+		}
+		for i := off; i < off+n; i++ {
+			units[i] = 0x2022
+		}
+		changed = true
+	}
+	if !changed {
+		return text
+	}
+	return string(utf16.Decode(units))
+}
+
+func isSpoiler(e *mtproto.MessageEntity) bool {
+	if e == nil {
+		return false
+	}
+	return e.GetPredicateName() == mtproto.Predicate_messageEntitySpoiler ||
+		e.GetConstructor() == mtproto.CRC32_messageEntitySpoiler
 }
 
 func clip(s string, n int) string {

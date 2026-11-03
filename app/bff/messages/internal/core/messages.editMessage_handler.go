@@ -124,11 +124,13 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	}
 
 	if in.Media != nil {
-		outMessage.Media, err = c.makeMediaByInputMedia(in.Media)
-		if err != nil {
-			c.Logger.Errorf("messages.editMessage - media error: %v", err)
-			return nil, err
+		newMedia, err2 := c.makeMediaByInputMedia(in.Media)
+		if err2 != nil {
+			c.Logger.Errorf("messages.editMessage - media error: %v", err2)
+			return nil, err2
 		}
+		// Re-sending inputMediaTodo must keep checkmarks for item ids that remain.
+		outMessage.Media = mtproto.KeepTodoCompletions(outMessage.GetMedia(), newMedia)
 	}
 	// message
 	if in.Message != nil {

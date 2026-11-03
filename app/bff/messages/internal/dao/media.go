@@ -232,6 +232,10 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 		correct := media.GetCorrectAnswers_FLAGVECTORBYTES()
 		messageMedia, err = chatbox.Shared().CreatePoll(ctx, userId, media.GetPoll(), correct, solution, media.GetSolutionEntities())
 
+	case mtproto.Predicate_inputMediaTodo:
+		// inputMediaTodo#9fc55fde todo:TodoList = InputMedia;
+		// messageMediaToDo#8a53b014 flags:# todo:TodoList completions:flags.0?Vector<TodoCompletion> = MessageMedia;
+		messageMedia, err = mtproto.MessageMediaFromTodo(media.GetTodo())
 	case mtproto.Predicate_inputMediaDice:
 		err = mtproto.ErrEnterpriseIsBlocked
 		//// inputMediaDice#e66fbf7b emoticon:string = InputMedia;

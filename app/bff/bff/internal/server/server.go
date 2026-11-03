@@ -460,7 +460,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBusinessConnectedBotsServer(grpcServer, messages_helper.NewConnectedBots())
 		mtproto.RegisterRPCShareThemesServer(grpcServer, messages_helper.NewShareThemes())
 		mtproto.RegisterRPCImportedChatsServer(grpcServer, messages_helper.NewImportedChats())
-		mtproto.RegisterRPCTodoListsServer(grpcServer, messages_helper.NewTodoLists())
+		mtproto.RegisterRPCTodoListsServer(grpcServer, messages_helper.NewTodoLists(msgCfg))
 		mtproto.RegisterRPCFactChecksServer(grpcServer, messages_helper.NewFactChecks())
 		mtproto.RegisterRPCAiComposeToneServer(grpcServer, messages_helper.NewAICompose())
 		mtproto.RegisterRPCGamesServer(grpcServer, messages_helper.NewGames())

@@ -239,14 +239,24 @@ func (s *Service) Card(ctx context.Context, viewer, channelID int64) (int32, *mt
 
 // LoadMessage returns the stored body of one channel message.
 func (s *Service) LoadMessage(ctx context.Context, channelID int64, id int32) (*mtproto.Message, error) {
+	_, msg, err := s.LoadMessageAuthor(ctx, channelID, id)
+	return msg, err
+}
+
+// LoadMessageAuthor returns the sender and the stored body of one channel message.
+func (s *Service) LoadMessageAuthor(ctx context.Context, channelID int64, id int32) (int64, *mtproto.Message, error) {
 	stored, err := s.store.GetMessage(ctx, channelID, id)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	if stored == nil || stored.Deleted {
-		return nil, mtproto.ErrMessageIdInvalid
+		return 0, nil, mtproto.ErrMessageIdInvalid
 	}
-	return unmarshalMessage(stored.Data)
+	msg, err := unmarshalMessage(stored.Data)
+	if err != nil {
+		return 0, nil, err
+	}
+	return stored.SenderID, msg, nil
 }
 
 // SaveMessageBody rewrites a message body without marking it edited.

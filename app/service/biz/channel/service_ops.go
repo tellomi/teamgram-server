@@ -412,6 +412,52 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	return updates, nil
 }
 
+// RewriteBody stores a channel message body and emits updateEditChannelMessage.
+// Edit refuses anyone who is not the author. Checklist completion is allowed
+// for other members when todoList.others_can_complete is set, so the caller
+// authorizes the change and this only requires channel membership.
+func (s *Service) RewriteBody(ctx context.Context, sender, channelID, actorAuth int64, messageID int32, body *mtproto.Message) (*mtproto.Updates, error) {
+	if body == nil {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, sender)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || !p.InChannel() {
+		return nil, mtproto.ErrChannelPrivate
+	}
+	stored, err := s.store.GetMessage(ctx, channelID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if stored == nil || stored.Deleted {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	body.Id = messageID
+	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
+	s.prepareOutgoing(ch, stored.SenderID, body)
+	body.SanitizeEntities()
+	raw, err := proto.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	pts, err := s.store.CommitEdit(ctx, channelID, messageID, body.EditDate.Value, raw)
+	if err != nil {
+		return nil, err
+	}
+	upd := editMessageUpdate(viewMessage(body, stored.SenderID, sender), pts, 1)
+	updates := s.updatesWith(ctx, sender, ch, upd)
+	s.emit(ctx, sender, actorAuth, channelID, func(viewer int64) *mtproto.Updates {
+		return s.updatesWith(ctx, viewer, ch, editMessageUpdate(viewMessage(body, stored.SenderID, viewer), pts, 1))
+	})
+	return updates, nil
+}
+
 func (s *Service) DeleteInput(ctx context.Context, sender, actorAuth int64, in *mtproto.InputChannel, ids []int32) (int32, int32, error) {
 	ch, _, err := s.requireMember(ctx, sender, in)
 	if err != nil {
