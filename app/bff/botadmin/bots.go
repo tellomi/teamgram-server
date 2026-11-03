@@ -18,6 +18,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -229,6 +230,9 @@ func CheckUsername(ctx context.Context, self int64, additional bool, username st
 	if err := validateUsername(username, !additional); err != nil {
 		return nil, err
 	}
+	if err := usernamepolicy.RejectBot(ctx, self, username); err != nil {
+		return nil, err
+	}
 	if err := remoteTaken(ctx, username); err != nil {
 		return nil, err
 	}
@@ -252,6 +256,9 @@ func CreateBot(ctx context.Context, self int64, via bool, name, username string,
 	}
 	username = strings.TrimSpace(username)
 	if err := validateUsername(username, true); err != nil {
+		return nil, err
+	}
+	if err := usernamepolicy.RejectBot(ctx, self, username); err != nil {
 		return nil, err
 	}
 	mgr, err := managerID(ctx, self, manager)

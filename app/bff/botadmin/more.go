@@ -16,6 +16,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -315,6 +316,9 @@ func AddUsername(ctx context.Context, self int64, bot *mtproto.InputUser, userna
 	}
 	username = strings.TrimSpace(username)
 	if err := validateUsername(username, false); err != nil {
+		return nil, err
+	}
+	if err := usernamepolicy.RejectBot(ctx, self, username); err != nil {
 		return nil, err
 	}
 	if err := remoteTaken(ctx, username); err != nil {
