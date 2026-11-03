@@ -151,3 +151,11 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | session route | `teamgramd/etc/session.yaml`, `teamgramd/etc2/session.yaml`, `app/interface/session/etc/session.yaml` | `"/mtproto.RPCDiscover": "bff.bff"` |
 | bff register | `app/bff/bff/internal/server/server.go` | `RegisterRPCDiscoverServer` |
 | RPC table | `proto/mtproto/rpc_client_registers.go` | `TLDiscoverGetEngineCredential` |
+
+## Discover relations (M3 / D-13 / D-16 / D-43)
+
+`TELLOMI_DISCOVER_RELATIONS=1` serves `POST /internal/v1/relations/check` so content-engine can ask whether a viewer `sub` is in an author's contacts or close friends. The read is live (`user_contacts`, `is_deleted = 0`, `close_friend`). The contract is `docs/discover-relations.md`. `discover_subject` is `teamgramd/deploy/sql/migrate-20261104-discover-subject.sql`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| start listener | `app/bff/bff/internal/server/server.go` | `discoverrel.Start` |
