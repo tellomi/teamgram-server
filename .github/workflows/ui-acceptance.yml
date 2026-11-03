@@ -145,7 +145,6 @@ jobs:
       E2E_PHONE_A: ${{ secrets.E2E_PHONE_A }}
       E2E_PHONE_B: ${{ secrets.E2E_PHONE_B }}
       E2E_PHONE_SIGNUP: ${{ secrets.E2E_PHONE_SIGNUP }}
-      BAZEL_CACHE: ${{ runner.temp }}/telegram-bazel-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -158,6 +157,9 @@ jobs:
           restore-keys: tellomi-ios-sim-
 
       - name: Maestro flows
+        env:
+          # runner is not available on the job env map. Same directory as the cache steps.
+          BAZEL_CACHE: ${{ runner.temp }}/telegram-bazel-cache
         run: bash e2e/ui/scripts/ios-acceptance.sh
 
       - name: Upload screenshots
