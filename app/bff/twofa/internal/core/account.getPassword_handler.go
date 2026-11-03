@@ -22,5 +22,11 @@ func (c *TwoFaCore) AccountGetPassword(_ *mtproto.TLAccountGetPassword) (*mtprot
 		}
 		userID = id
 	}
+	// A keyless call cannot load the verifier. An empty account.password
+	// makes iOS open the password screen and then fail with no SRP data.
+	if userID == 0 && c.authKey() == 0 {
+		c.Logger.Errorf("account.getPassword - no perm auth key")
+		return nil, mtproto.ErrAuthKeyPermEmpty
+	}
 	return password.AccountPassword(c.ctx, userID, c.authKey())
 }

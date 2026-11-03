@@ -179,6 +179,13 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 	// The pending-login row is written before the auth key is bound. A session
 	// that reloads after the bind then stays on the password step.
 	if c.needsCloudPassword(user.Id()) {
+		// Without a permanent key the password row cannot be stored, and iOS
+		// still opens the password screen from SESSION_PASSWORD_NEEDED. Ask
+		// the client to retry once bindTempAuthKey has finished.
+		if c.authKey() == 0 {
+			c.Logger.Errorf("auth.signIn - password step has no perm auth key")
+			return nil, mtproto.ErrAuthKeyPermEmpty
+		}
 		if err = c.passwordNeeded(user.Id()); err != nil {
 			c.Logger.Errorf("auth.signIn - password: %v", err)
 			return nil, err

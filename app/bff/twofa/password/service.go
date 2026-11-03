@@ -374,7 +374,7 @@ func Verify(ctx context.Context, userID, authKey int64, proof *mtproto.InputChec
 	return Default().verify(ctx, rec, authKey, proof)
 }
 
-func (s *Service) verify(ctx context.Context, rec Record, authKey int64, proof *mtproto.InputCheckPasswordSRP) error {
+func (s *Service) verify(ctx context.Context, rec Record, _ int64, proof *mtproto.InputCheckPasswordSRP) error {
 	if wait := s.floodWait(rec); wait > 0 {
 		return mtproto.NewErrFloodWaitX(wait)
 	}
@@ -385,9 +385,14 @@ func (s *Service) verify(ctx context.Context, rec Record, authKey int64, proof *
 	if err != nil {
 		return err
 	}
-	if !ok || ch.UserID != rec.UserID || ch.Expires < s.now().Unix() || (ch.AuthKeyID != 0 && authKey != 0 && ch.AuthKeyID != authKey) {
+	if !ok || ch.UserID != rec.UserID || ch.Expires < s.now().Unix() {
 		return mtproto.ErrSrpIdInvalid
 	}
+	// The caller's auth key is not compared to the challenge. iOS
+	// verifyPassword does not retry SRP_ID_INVALID, and the first phone
+	// login can fetch account.getPassword on the temp key then call
+	// auth.checkPassword on the permanent key. srp_id is single-use and
+	// M1 still has to prove the password.
 	if !rec.HasPassword || ch.Version != rec.Version {
 		return mtproto.ErrSrpPasswordChanged
 	}

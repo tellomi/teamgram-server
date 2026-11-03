@@ -38,6 +38,12 @@ func New(ctx context.Context, svcCtx *svc.ServiceContext) *SessionCore {
 }
 
 func (c *SessionCore) getOrFetchMainAuthWrapper(mainAuthId int64) (*sess.MainAuthWrapper, error) {
+	// Perm id 0 is an unbound temp key. One shared wrapper would answer
+	// auth.signIn with SESSION_PASSWORD_NEEDED and then account.getPassword
+	// with no SRP material, which is the iOS first-login dead end.
+	if mainAuthId == 0 {
+		return nil, mtproto.ErrAuthKeyPermEmpty
+	}
 	mainAuth := c.svcCtx.MainAuthMgr.GetMainAuthWrapper(mainAuthId)
 	if mainAuth != nil {
 		return mainAuth, nil
