@@ -22,7 +22,11 @@ import (
 // New new a grpc server.
 func New(ctx *svc.ServiceContext, c zrpc.RpcServerConf) *zrpc.RpcServer {
 	s, err := zrpc.NewServer(c, func(grpcServer *grpc.Server) {
-		authsession.RegisterRPCAuthsessionServer(grpcServer, service.New(ctx))
+		impl := service.New(ctx)
+		authsession.RegisterRPCAuthsessionServer(grpcServer, impl)
+		// account.changeAuthorizationSettings. Kept next to the generated
+		// registration because scheme.tl does not describe this RPC.
+		authsession.RegisterRPCAuthsessionSettingsServer(grpcServer, impl)
 	})
 	logx.Must(err)
 	return s

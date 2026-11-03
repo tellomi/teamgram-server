@@ -56,6 +56,17 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["users"]["email"] {
 		t.Fatal("users.email missing after migrations")
 	}
+	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed"} {
+		if !cols["auth_users"][col] {
+			t.Errorf("auth_users.%s missing after migrations", col)
+		}
+	}
+	settingsMig := mustRead(t, filepath.Join(dir, "migrate-20261103-authorization-settings.sql"))
+	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed"} {
+		if !strings.Contains(settingsMig, "teamgram_add_column('auth_users', '"+col+"'") {
+			t.Errorf("authorization settings migration does not add auth_users.%s", col)
+		}
+	}
 	emailMig := mustRead(t, filepath.Join(dir, "migrate-20261030-email.sql"))
 	if !strings.Contains(emailMig, "teamgram_add_column('users', 'email'") || !strings.Contains(emailMig, "MODIFY `phone`") {
 		t.Fatal("email migration does not add users.email or relax users.phone")

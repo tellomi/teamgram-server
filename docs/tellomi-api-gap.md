@@ -28,7 +28,7 @@ Tellomi iOS 实际调用、且落在覆盖矩阵里的 758 个方法：
 | 优先级 | 已实现 | 未实现（返回错误） | 残缺或假数据 |
 | --- | ---: | ---: | ---: |
 | P0 登录 / 启动 / 后台同步 | 91 | 0 | 0 |
-| P1 资料、联系人、私聊、历史上传、基础群 | 353 | 10 | 0 |
+| P1 资料、联系人、私聊、历史上传、基础群 | 354 | 9 | 0 |
 | P2 其余（动态、支付、机器人、商业等） | 304 | 0 | 0 |
 
 P0 包含 `auth.sendCode` / `auth.signIn` / `auth.checkPassword` / `account.getPassword`、`help.getConfig`、`updates.getState` / `updates.getDifference`、`messages.getDialogs`、`langpack.getLangPack`。这些都有路由和真实 handler，不是空壳。
@@ -60,13 +60,27 @@ P0 包含 `auth.sendCode` / `auth.signIn` / `auth.checkPassword` / `account.getP
 
 没有新的数据库表。`user_password_login` 仍是原来的迁移 `teamgramd/deploy/sql/migrate-20261101-cloud-password.sql`。
 
+## 设备授权设置
+
+`account.changeAuthorizationSettings` 已落库，不再返回 `ENTERPRISE_IS_BLOCKED`。返回 `boolTrue`。未知的 `hash` 返回 `400 HASH_INVALID`。`hash` 为 0 时改的是当前这把永久密钥（`account.getAuthorizations` 会把当前会话的 hash 写成 0）。没带上的 `Bool` 不改原来的值。`confirmed` 把该会话的 `unconfirmed` 清掉。
+
+`account.getAuthorizations` 把这三项读回来：`encrypted_requests_disabled`、`call_requests_disabled`、`unconfirmed`。用户已经有别的在线会话时，新插入的 `auth_users` 行从 `unconfirmed` 开始；第一把会话不是。满 7 天（`authorization_autoconfirm_period`，`help.getAppConfig` 里也是 604800）之后，列表里不再标未确认。登录时给其他设备推 `updateNewAuthorization`，以及按会话丢掉来电或加密对话，这次没有做。
+
+迁移：`teamgramd/deploy/sql/migrate-20261103-authorization-settings.sql`。容器入口会先跑 `teamgramd/deploy/migrate.sh`（先装 `0_migrate_helpers.sql`，再按文件名顺序执行还没记入 `schema_migrations` 的 `migrate-*.sql`）。手工：
+
+```bash
+mysql ... teamgram < teamgramd/deploy/sql/0_migrate_helpers.sql
+mysql ... teamgram < teamgramd/deploy/sql/migrate-20261103-authorization-settings.sql
+```
+
+可以重复执行。列还没加上时，设备列表仍能打开（这三项当关），`account.changeAuthorizationSettings` 返回 `500 INTERNAL_SERVER_ERROR`。
+
 ## 留下的 P1（客户端会调，服务端返回错误）
 
-这 10 个都不在登录和聊天列表的必经路径上。本 PR 没有改它们。
+下面这些仍不在登录和聊天列表的必经路径上。
 
 | 方法 | 客户端 | 现状 | 说明 |
 | --- | --- | --- | --- |
-| `account.changeAuthorizationSettings` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 设备列表里关加密对话 / 来电，以及确认新设备。需要把 flags 存到会话上并在 `account.getAuthorizations` 里读出来 |
 | `account.confirmBotConnection` | iOS | `ENTERPRISE_IS_BLOCKED` | 机器人连接确认 |
 | `account.toggleSponsoredMessages` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 赞助消息开关。Tellomi 未做广告 |
 | `channels.restrictSponsoredMessages` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 频道赞助消息 |

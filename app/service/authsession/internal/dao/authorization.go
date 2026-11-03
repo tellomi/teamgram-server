@@ -23,6 +23,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
@@ -130,7 +131,7 @@ func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.A
 
 	ip, country, region := d.authorizationPlace(cData.ClientIp())
 
-	return mtproto.MakeTLAuthorization(&mtproto.Authorization{
+	authorization := mtproto.MakeTLAuthorization(&mtproto.Authorization{
 		Current:         false,
 		OfficialApp:     true,
 		Hash:            0,
@@ -146,12 +147,19 @@ func (d *Dao) GetAuthorization(ctx context.Context, authKeyId int64) (*mtproto.A
 		Ip:              ip,
 		Country:         country,
 		Region:          region,
-	}).To_Authorization(), nil
+	}).To_Authorization()
+	d.applyAuthorizationKeyFlags(ctx, authKeyId, authorization)
+	return authorization, nil
 }
 
 type idxId struct {
-	idx int
-	id  int64
+	idx         int
+	id          int64
+	hash        int64
+	useHash     bool
+	encrypted   bool
+	calls       bool
+	unconfirmed bool
 }
 
 func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKeyId int64) (authorizations []*mtproto.Authorization) {
@@ -159,12 +167,21 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 	if len(doList) == 0 {
 		return
 	}
+	flags := d.authorizationSettingsForUser(ctx, userId, time.Now().Unix())
 
 	authorizations = make([]*mtproto.Authorization, len(doList)+1)
 	mr.ForEach(
 		func(source chan<- interface{}) {
 			for i := 0; i < len(doList); i++ {
-				source <- idxId{i, doList[i].AuthKeyId}
+				item := idxId{idx: i, id: doList[i].AuthKeyId}
+				if row, ok := flags[item.id]; ok {
+					item.useHash = row.Hash != 0
+					item.hash = row.Hash
+					item.encrypted = row.EncryptedRequestsDisabled
+					item.calls = row.CallRequestsDisabled
+					item.unconfirmed = row.Unconfirmed
+				}
+				source <- item
 			}
 		},
 		func(item interface{}) {
@@ -173,22 +190,31 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 			cData, _ := d.GetCacheAuthData(ctx, idx.id)
 			if cData != nil {
 				ip, country, region := d.authorizationPlace(cData.ClientIp())
+				hash := cData.Hash()
+				// The hash account.changeAuthorizationSettings matches is the
+				// auth_users.hash column. The cache copy can lag a re-bind.
+				if idx.useHash {
+					hash = idx.hash
+				}
 				authorization := mtproto.MakeTLAuthorization(&mtproto.Authorization{
-					Current:         false,
-					OfficialApp:     true,
-					PasswordPending: false,
-					Hash:            cData.Hash(),
-					DeviceModel:     cData.DeviceModel(),
-					Platform:        "",
-					SystemVersion:   cData.SystemVersion(),
-					ApiId:           cData.ApiId(),
-					AppName:         appNameForSession(cData.ApiId(), cData.LangPack()),
-					AppVersion:      cData.AppVersion(),
-					DateCreated:     int32(cData.DateCreated()),
-					DateActive:      int32(cData.DateActivated()),
-					Ip:              ip,
-					Country:         country,
-					Region:          region,
+					Current:                   false,
+					OfficialApp:               true,
+					PasswordPending:           false,
+					Hash:                      hash,
+					EncryptedRequestsDisabled: idx.encrypted,
+					CallRequestsDisabled:      idx.calls,
+					Unconfirmed:               idx.unconfirmed,
+					DeviceModel:               cData.DeviceModel(),
+					Platform:                  "",
+					SystemVersion:             cData.SystemVersion(),
+					ApiId:                     cData.ApiId(),
+					AppName:                   appNameForSession(cData.ApiId(), cData.LangPack()),
+					AppVersion:                cData.AppVersion(),
+					DateCreated:               int32(cData.DateCreated()),
+					DateActive:                int32(cData.DateActivated()),
+					Ip:                        ip,
+					Country:                   country,
+					Region:                    region,
 				}).To_Authorization()
 
 				if idx.id == excludeAuthKeyId {

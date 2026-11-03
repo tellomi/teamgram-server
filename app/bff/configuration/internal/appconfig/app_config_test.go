@@ -54,6 +54,9 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 	if AppConfigHash() == 0 {
 		t.Fatal("app config hash is zero")
 	}
+	if obj["authorization_autoconfirm_period"] != float64(authorizationAutoconfirmPeriod) || authorizationAutoconfirmPeriod != 604800 {
+		t.Fatalf("authorization_autoconfirm_period = %#v", obj["authorization_autoconfirm_period"])
+	}
 	if obj["reactions_default"] != catalog.DefaultReactionEmoji || catalog.DefaultReactionEmoji != "👍" {
 		t.Fatalf("reactions_default = %#v", obj["reactions_default"])
 	}

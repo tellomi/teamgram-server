@@ -1,0 +1,30 @@
+// Internal RPC for account.changeAuthorizationSettings.
+// This is not an MTProto constructor. The bff maps the official flags
+// (confirmed, encrypted_requests_disabled, call_requests_disabled) onto
+// these fields. A bool that was absent on the wire has its set_* field false.
+
+syntax = "proto3";
+
+package authsession;
+
+option go_package = "github.com/teamgram/teamgram-server/app/service/authsession/authsession";
+
+message TL_authsession_changeAuthorizationSettings {
+  int64 user_id = 1;
+  int64 auth_key_id = 2;
+  int64 hash = 3;
+  bool confirmed = 4;
+  bool set_encrypted_requests_disabled = 5;
+  bool encrypted_requests_disabled = 6;
+  bool set_call_requests_disabled = 7;
+  bool call_requests_disabled = 8;
+}
+
+message ChangeAuthorizationSettingsResult {
+  bool ok = 1;
+}
+
+service RPCAuthsessionSettings {
+  rpc authsession_changeAuthorizationSettings(TL_authsession_changeAuthorizationSettings)
+      returns (ChangeAuthorizationSettingsResult);
+}

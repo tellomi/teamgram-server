@@ -5,6 +5,7 @@ package e2e
 var smokeMethods = []smokeMethod{
 	{Name: "account.acceptAuthorization", CRC: -202552205},
 	{Name: "account.cancelPasswordEmail", CRC: -1043606090},
+	{Name: "account.changeAuthorizationSettings", CRC: 1089766498},
 	{Name: "account.changePhone", CRC: 1891839707},
 	{Name: "account.checkUsername", CRC: 655677548},
 	{Name: "account.clearRecentEmojiStatuses", CRC: 404757166},

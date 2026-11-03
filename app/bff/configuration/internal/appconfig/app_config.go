@@ -13,6 +13,12 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
+// authorizationAutoconfirmPeriod matches
+// authsession/internal/dao.AuthorizationAutoconfirmPeriod. A new session
+// stops looking unconfirmed in account.getAuthorizations after this many
+// seconds. help.getAppConfig publishes the same number.
+const authorizationAutoconfirmPeriod = 7 * 24 * 60 * 60
+
 // EnvTranscribeEnabled advertises a speech-to-text trial in help.getAppConfig.
 // Default false: transcribe_audio_trial_* is 0, so non-Premium clients hide the
 // button. The SenseVoice handler flips this default to true once
@@ -33,7 +39,7 @@ func AppConfig() *mtproto.JSONValue {
 func AppConfigHash() int32 {
 	h := fnv.New32a()
 	weekly, duration, cooldown := transcribeTrial()
-	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s transcribe=%d:%d:%d", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown)
+	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -71,6 +77,9 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("emoji_blocklist", emojiBlocklistValue()),
 		jsonPair("stories_posting", jsonString("enabled")),
 		jsonPair("pm_read_date_expire_period", n(604800)),
+		// Same 7 days as dao.AuthorizationAutoconfirmPeriod. Clients that
+		// already default to 604800 stay aligned with getAuthorizations.
+		jsonPair("authorization_autoconfirm_period", n(authorizationAutoconfirmPeriod)),
 	}
 	weekly, duration, cooldown := transcribeTrial()
 	pairs = append(pairs,

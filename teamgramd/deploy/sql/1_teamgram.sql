@@ -120,6 +120,9 @@ CREATE TABLE `auth_users` (
   `ip` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `country` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `region` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `encrypted_requests_disabled` tinyint(1) NOT NULL DEFAULT '0',
+  `call_requests_disabled` tinyint(1) NOT NULL DEFAULT '0',
+  `unconfirmed` tinyint(1) NOT NULL DEFAULT '0',
   `deleted` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
