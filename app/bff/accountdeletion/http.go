@@ -1,6 +1,8 @@
 // Package accountdeletion is the web form that deletes a Tellomi account.
-// It sends SMS through the same provider as auth.sendCode, checks a cloud
-// password with the same SRP verifier, and deletes through account.deleteAccount.
+// Phone mode sends SMS through the same provider as auth.sendCode. Email mode
+// sends through the same sender as email login (TELLOMI_EMAIL_PROVIDER).
+// A cloud password is checked with the same SRP verifier, and the account is
+// deleted through account.deleteAccount.
 package accountdeletion
 
 import (
@@ -29,13 +31,16 @@ const (
 	sessionTTL     = 10 * time.Minute
 	maxBody        = 8 << 10
 	maxAttempts    = 5
-	confirmWord    = "DELETE"
+	confirmWordEN  = "DELETE"
+	confirmWordZH  = "删除"
+	kindSMS        = "sms"
+	kindEmail      = "email"
 	defaultCodeLen = 6
 )
 
 var digitRun = regexp.MustCompile(`[0-9]{4,}`)
 
-// Account is the user behind a phone, after lookup.
+// Account is the user behind a phone or an email address, after lookup.
 type Account struct {
 	UserID   int64
 	Username string
@@ -44,29 +49,42 @@ type Account struct {
 
 // Deps are the Teamgram services the form is allowed to call.
 type Deps struct {
-	// Lookup returns the account for a normalized phone. ok is false when
-	// nobody has that phone. The HTTP response does not reveal which.
-	Lookup func(ctx context.Context, phone string) (Account, bool, error)
+	// Lookup returns the account for a normalized phone or email. ok is false
+	// when nobody has that identifier. The HTTP response does not reveal which.
+	// An email is stored on users.email; user.getImmutableUserByPhone reads
+	// that column when the argument contains "@".
+	Lookup func(ctx context.Context, phoneOrEmail string) (Account, bool, error)
 	// Password reports a cloud password. setAt 0 means the age is unknown.
 	Password func(ctx context.Context, userID int64) (has bool, setAt int64, hint string, err error)
 	// CheckPassword accepts a password typed on the form.
 	CheckPassword func(ctx context.Context, userID int64, plain string) error
 	// Purge is account.deleteAccount's cleanup.
 	Purge func(ctx context.Context, userID int64, reason string) error
-	// SendSMS delivers a code. Nil in tests that only check the HTTP shape.
+	// SendSMS delivers a phone code. Nil in tests that only check the HTTP shape.
 	SendSMS func(ctx context.Context, phone, code string) error
-	// AllowSend is the SMS quota. Nil allows the send.
-	AllowSend func(ctx context.Context, phone, ip string) error
+	// SendEmail delivers an email code through the login email sender.
+	// Nil in tests that only check the HTTP shape. A failure is logged and
+	// answered like a missing account.
+	SendEmail func(ctx context.Context, email, code string) error
+	// AllowSend is the send quota. kind is "sms" or "email". Nil allows the send.
+	AllowSend func(ctx context.Context, kind, target, ip string) error
 	Now       func() time.Time
-	// FixedCode is the development code when SMS is not really sent.
-	// Empty means generate a random code and call SendSMS.
+	// FixedCode is the development phone code when SMS is not really sent.
+	// Empty means generate a random code and call SendSMS. It is never used
+	// for email.
 	FixedCode string
-	CodeLen   int
-	Origins   []string
+	// FixedEmailCode, when set, skips SendEmail and accepts this code.
+	// Production leaves it empty so a random code is mailed (or logged).
+	FixedEmailCode string
+	CodeLen        int
+	EmailCodeLen   int
+	Origins        []string
 }
 
 type session struct {
 	Phone     string
+	Email     string
+	Kind      string
 	UserID    int64
 	CodeHash  [32]byte
 	Expires   time.Time
@@ -129,6 +147,9 @@ func New(deps Deps) *Server {
 	if deps.CodeLen <= 0 {
 		deps.CodeLen = defaultCodeLen
 	}
+	if deps.EmailCodeLen <= 0 {
+		deps.EmailCodeLen = defaultCodeLen
+	}
 	origins := map[string]struct{}{}
 	list := deps.Origins
 	if len(list) == 0 {
@@ -160,34 +181,31 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Phone       string `json:"phone"`
 		PhoneNumber string `json:"phone_number"`
+		Email       string `json:"email"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	raw := body.Phone
-	if raw == "" {
-		raw = body.PhoneNumber
-	}
-	phone, ok := normalizePhone(raw)
-	if !ok {
-		writeErr(w, http.StatusBadRequest, "phone_invalid")
+	tgt, errCode := s.resolveTarget(body.Phone, body.PhoneNumber, body.Email)
+	if errCode != "" {
+		writeErr(w, http.StatusBadRequest, errCode)
 		return
 	}
 	ip := clientIP(r)
-	acc, found, err := s.deps.Lookup(r.Context(), phone)
+	acc, found, err := s.deps.Lookup(r.Context(), tgt.Value)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "unavailable")
 		return
 	}
-	// A missing account must not consume that phone's SMS quota. The IP
-	// quota still applies, under a key that is not a real phone number.
-	quotaPhone := phone
+	// A missing account must not consume that phone or email's quota. The IP
+	// quota still applies, under a key that is not a real identifier.
+	quotaTarget := tgt.Value
 	if !found {
-		quotaPhone = "absent:" + ip
+		quotaTarget = "absent:" + ip
 	}
 	if s.deps.AllowSend != nil {
-		if err = s.deps.AllowSend(r.Context(), quotaPhone, ip); err != nil {
+		if err = s.deps.AllowSend(r.Context(), tgt.Kind, quotaTarget, ip); err != nil {
 			var lim *verify.LimitError
 			if errors.As(err, &lim) {
 				writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited", "retry_after": lim.Retry})
@@ -197,26 +215,32 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	code := s.deps.FixedCode
-	if code == "" {
-		code = verify.RandomDigits(s.deps.CodeLen)
+	code, fixed := s.issueCode(tgt)
+	send := s.deps.SendSMS
+	if tgt.Kind == kindEmail {
+		send = s.deps.SendEmail
 	}
-	if found && s.deps.SendSMS != nil && s.deps.FixedCode == "" {
+	if found && send != nil && !fixed {
 		ctx, cancel := context.WithTimeout(r.Context(), verify.SMSSendTimeout)
-		err = s.deps.SendSMS(ctx, phone, code)
+		err = send(ctx, tgt.Value, code)
 		cancel()
 		if err != nil {
 			// Same response as a missing account. Digits in the provider
 			// error are stripped so a code cannot land in the log.
-			logx.Errorf("account deletion sms failed: %s", RedactDigits(err.Error()))
+			logx.Errorf("account deletion %s failed: %s", tgt.Kind, RedactDigits(err.Error()))
 			found = false
 		}
 	}
 	id := newID()
 	row := &session{
-		Phone:    phone,
+		Kind:     tgt.Kind,
 		Expires:  s.deps.Now().Add(sessionTTL),
 		CodeHash: sha256.Sum256([]byte(code)),
+	}
+	if tgt.Kind == kindEmail {
+		row.Email = tgt.Value
+	} else {
+		row.Phone = tgt.Value
 	}
 	if found {
 		row.UserID = acc.UserID
@@ -305,7 +329,7 @@ func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if body.Confirm != confirmWord {
+	if !confirmAccepted(body.Confirm) {
 		writeErr(w, http.StatusBadRequest, "confirm_required")
 		return
 	}
@@ -326,7 +350,62 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", pageCSP)
 	_, _ = w.Write(pageHTML)
+}
+
+// confirmAccepted is the exact word for either locale. The page asks for
+// 删除 in Chinese and DELETE in English. Nothing else matches, including
+// a different case or surrounding space.
+func confirmAccepted(v string) bool {
+	return v == confirmWordEN || v == confirmWordZH
+}
+
+type deliveryTarget struct {
+	Kind    string
+	Value   string
+	CodeLen int
+}
+
+func (s *Server) resolveTarget(phone, phoneNumber, email string) (deliveryTarget, string) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		phone = strings.TrimSpace(phoneNumber)
+	}
+	email = strings.TrimSpace(email)
+	switch {
+	case email != "" && phone != "":
+		return deliveryTarget{}, "bad_request"
+	case email != "":
+		email = verify.NormalizeEmail(email)
+		if !verify.ValidEmail(email) || len(email) > 255 {
+			return deliveryTarget{}, "email_invalid"
+		}
+		return deliveryTarget{Kind: kindEmail, Value: email, CodeLen: s.deps.EmailCodeLen}, ""
+	default:
+		normalized, ok := normalizePhone(phone)
+		if !ok {
+			return deliveryTarget{}, "phone_invalid"
+		}
+		return deliveryTarget{Kind: kindSMS, Value: normalized, CodeLen: s.deps.CodeLen}, ""
+	}
+}
+
+func (s *Server) issueCode(tgt deliveryTarget) (code string, fixed bool) {
+	if tgt.Kind == kindEmail {
+		code = s.deps.FixedEmailCode
+	} else {
+		code = s.deps.FixedCode
+	}
+	if code != "" {
+		return code, true
+	}
+	n := tgt.CodeLen
+	if n <= 0 {
+		n = defaultCodeLen
+	}
+	return verify.RandomDigits(n), false
 }
 
 func (s *Server) cors(w http.ResponseWriter, r *http.Request) bool {

@@ -4,14 +4,22 @@
 
 ## 流程
 
-1. 网页 `POST /v1/verification/session`，body `{"phone":"+8613..."}`。号码按登录同一套规则归一化，默认只收 `+86`。
-2. 短信走 `auth.sendCode` 用的同一发送器（`TELLOMI_SMS_PROVIDER=aliyun` 时是阿里云；未设置时开发验证码是 `12345`，不外发）。配额和登录共用 `TELLOMI_SMS_*`（手机号每天、IP 每天、重发间隔）。
-3. 号码没有账号时，HTTP 响应和有账号时一样（都是 `session_id`）。不会发短信，也不会占用这个号码的短信配额。验证码填任何值都是 `code_invalid`。
-4. `POST /v1/tellomi/account-deletion`，body 里带 `session_id`、`code`、`confirm`。`confirm` 必须是 `DELETE`。
-5. 账号开了两步验证时，第一次提交返回 `password_required` 和密码提示。再提交时带上 `password`。服务端用现有 SRP 校验，明文密码不写日志。
-6. 通过后调用 `account.deleteAccount` 的同一段清理。
+1. 网页有两个入口：手机号和邮箱。
+   - 手机号：`POST /v1/verification/session`，body `{"phone":"+8613..."}`。号码按登录同一套规则归一化，默认只收 `+86`。
+   - 邮箱：同一个接口，body `{"email":"user@tellomi.app"}`。地址按邮箱登录同一套规则归一化（去空格、转小写）。邮箱登录账号存在 `users.email`（唯一索引），`users.phone` 为 NULL。`user.getImmutableUserByPhone` 在参数含 `@` 时查 `users.email`，删号走的就是这一条，不把邮箱写进手机号列。
+   - 手机号和邮箱都带时返回 `bad_request`。格式不对分别是 `phone_invalid`、`email_invalid`。这两种是输入错误，不是「有没有这个账号」。
+2. 手机短信走 `auth.sendCode` 用的同一发送器（`TELLOMI_SMS_PROVIDER=aliyun` 时是阿里云；未设置时开发验证码是 `12345`，不外发）。配额和登录共用 `TELLOMI_SMS_*`（手机号每天、IP 每天、重发间隔）。
+3. 邮箱验证码走邮箱登录的同一发送器（`verify.NewEmailSender`：生产 `resend`，遗留 `postal`，默认 `log`）。配额用 `TELLOMI_EMAIL_*`，和短信分开计数，默认数值与短信相同（60 秒重发、每个地址每天 10 次、每个 IP 每天 30 次）。邮箱不接受短信开发验证码 `12345`。`TELLOMI_EMAIL_PROVIDER` 为 `log` 或未设置时，验证码打在 teamgram 日志（`tellomi email verification code`），不进邮箱。
+4. 号码或邮箱没有账号时，HTTP 响应和有账号时一样（`session_id`、`expires_in`、`code_length`）。不会发短信或邮件，也不会占用这个号码或邮箱自己的配额。同一 IP 的配额仍会计入（键是 `absent:` 加 IP，不是这个号码或邮箱）。验证码填任何值都是 `code_invalid`。发送失败时响应也一样，日志里的连续数字会被抹掉。
+5. `POST /v1/tellomi/account-deletion`，body 里带 `session_id`、`code`、`confirm`。`confirm` 必须正好是 `DELETE` 或 `删除`。大小写、空格都不放宽。页面中文写「输入 删除 以确认删除」（「删除」为红色），英文写 “Type DELETE to confirm”（DELETE 为红色）。提交按钮在输入与当前语言的词一致之前不可用，脚本在发出删除请求前再比一次。服务端两个词都接受，不看页面语言。
+6. 账号开了两步验证时，第一次提交返回 `password_required` 和密码提示。再提交时带上 `password`。服务端用现有 SRP 校验，明文密码不写日志。
+7. 通过后调用 `account.deleteAccount` 的同一段清理。
+
+页面是黑白（白底、黑字、黑按钮）。确认词是页面上唯一的红色。`GET /delete-account/` 响应带严格 `Content-Security-Policy`：`default-src 'none'`，`script-src` 和 `style-src` 只放本页内联块的 sha256，`connect-src 'self'`，另有 `base-uri 'none'`、`form-action 'self'`、`frame-ancestors 'none'`。没有 `unsafe-inline`，也没有 `unsafe-eval`。
 
 会话令牌 10 分钟有效，删除成功后作废。验证码和密码各错 5 次后会话作废。
+
+这次没有新的数据库迁移。邮箱沿用登录已经在读的环境变量，不新增配置项。
 
 只接受 `Origin: https://www.tellomi.cn` 或 `https://chat.tellomi.cn`。
 
@@ -32,13 +40,14 @@
 
 ## 部署（成都 8.137.39.82）
 
-不要在这台机器上做别的手工改库。新镜像的入口会先跑 `teamgramd/deploy/migrate.sh`，其中包含 `migrate-20261103-account-deletion.sql` 和 `migrate-20261103-account-wipe.sql`（队列表 `account_media_gc`）。
+本变更不新增 SQL 文件。不要在这台机器上做别的手工改库。新镜像的入口仍会先跑 `teamgramd/deploy/migrate.sh`，其中包含早就带上的 `migrate-20261103-account-deletion.sql` 和 `migrate-20261103-account-wipe.sql`（队列表 `account_media_gc`）。已经跑过的语句可以再跑。
 
 1. 按现有发版把包含本变更的镜像部署到 `teamgram` 容器（`docker-compose.yaml` 已把 `127.0.0.1:8802` 映射进容器的 `8802`）。进程监听 `TELLOMI_ACCOUNT_DELETE_ADDR`，默认 `0.0.0.0:8802`。设成 `off` 可关掉网页入口，App 内删除不受影响。
 2. 在宿主机 nginx 的 `chat.tellomi.cn` TLS `server` 里加入 `teamgramd/deploy/nginx/chat.tellomi.cn.conf` 的三个 `location`。`X-Forwarded-For` 用 `$remote_addr`，不要把客户端自己带的地址拼进去。
 3. `nginx -t && nginx -s reload`。
 4. **上线前先备份 MySQL。** 删号会改消息、成员、资料，做完不能从应用里恢复。对象存储默认只记账（`TELLOMI_ACCOUNT_GC_DRY_RUN` 默认 true）。确认备份可以还原之后，再把这个变量设成 `false` 才会把文件移到 `trash/` 并在保留窗口后真删。
-5. 本机检查：`curl -sI -H 'Host: chat.tellomi.cn' http://127.0.0.1:8802/delete-account/` 应是 `200`，`content-type` 为 `text/html`。不要把验证码或密码打进这条命令。
+5. 本机检查：`curl -sI -H 'Host: chat.tellomi.cn' http://127.0.0.1:8802/delete-account/` 应是 `200`，`content-type` 为 `text/html`，并且有 `content-security-policy`（含 `default-src 'none'`，不含 `unsafe-inline`）。不要把验证码或密码打进这条命令。
+6. 邮箱要真正寄出，宿主机沿用邮箱登录的配置，不要另加一套。生产是 `TELLOMI_EMAIL_PROVIDER=resend` 加 `TELLOMI_RESEND_API_KEY`，发件人默认 `TELLOMI_EMAIL_FROM=noreply@tellomi.app`（域名须在 Resend 已验证）。这几项登录验证码已经能寄出的话，删号不用再改。provider 仍是 `log` 或没设时，删号验证码只出现在 teamgram 日志里。没有新的 SQL 迁移。
 
 旧的静态目录先留着，不要删。nginx 把 `/delete-account/` 转到 8802 之后，磁盘上的旧文件不会再被访问。
 
