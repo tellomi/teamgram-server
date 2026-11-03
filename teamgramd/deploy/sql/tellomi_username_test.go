@@ -66,6 +66,23 @@ func TestTellomiUsernameMigrationDoesNotSteal(t *testing.T) {
 	assertTellomiOwnedBy(t, db, 42)
 }
 
+func TestTellomiUsernameMigrationLeavesAIUser(t *testing.T) {
+	db := openTellomiMySQL(t)
+	createUsernameTable(t, db)
+	installFailHelper(t, db)
+	if _, err := db.Exec(`INSERT INTO username (username, peer_type, peer_id, editable, active, order2, deleted) VALUES ('tellomi', 2, 777001, 1, 1, 2, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	applyTellomiUsernameMigration(t, db)
+	var peer int64
+	if err := db.QueryRow(`SELECT peer_id FROM username WHERE username = 'tellomi'`).Scan(&peer); err != nil {
+		t.Fatal(err)
+	}
+	if peer != 777001 {
+		t.Fatalf("peer = %d, want 777001 left in place", peer)
+	}
+}
+
 func installFailHelper(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var name string

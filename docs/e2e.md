@@ -28,6 +28,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestStickerSetUploadGetFile` | `messages.getStickerSet` (Twemoji, then AnimatedEmoji) has no document, or `upload.getFile` does not return bytes within 10s. |
 | `TestUsernameThreeCharacters` | A 3-character username cannot be checked and set. |
 | `TestTellomiUsernameOccupied` | `account.checkUsername` for `tellomi`, `Tellomi`, or `TELLOMI` does not return `USERNAME_OCCUPIED`. |
+| `TestOfficialUsernamesOccupied` | `account.checkUsername` for an appendix D name (`support`, `news`, `help`, `admin`, `stickers`, `premium`, or a case variant of `tellomi`) does not return `USERNAME_OCCUPIED`. |
 | `TestLinksUseTellCC` | `help.getConfig` `me_url_prefix` is not a `tell.cc` URL. |
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
 | `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
