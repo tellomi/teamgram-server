@@ -410,3 +410,82 @@ func (dao *AuthUsersDAO) DeleteUserTx(tx *sqlx.Tx, userId int64) (rowsAffected i
 
 	return
 }
+
+const authUserSettingsColumns = "id, auth_key_id, user_id, hash, date_created, encrypted_requests_disabled, call_requests_disabled, unconfirmed"
+
+// SelectAuthorizationSettingsByUserId
+// select id, auth_key_id, user_id, hash, date_created, encrypted_requests_disabled, call_requests_disabled, unconfirmed from auth_users where user_id = :user_id and deleted = 0
+func (dao *AuthUsersDAO) SelectAuthorizationSettingsByUserId(ctx context.Context, userId int64) (rList []dataobject.AuthUsersDO, err error) {
+	var values []dataobject.AuthUsersDO
+	query := "select " + authUserSettingsColumns + " from auth_users where user_id = ? and deleted = 0"
+	err = dao.db.QueryRowsPartial(ctx, &values, query, userId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("queryx in SelectAuthorizationSettingsByUserId(_), error: %v", err)
+		return
+	}
+	rList = values
+	return
+}
+
+// SelectAuthorizationSettingsByAuthKeyId
+// select id, auth_key_id, user_id, hash, date_created, encrypted_requests_disabled, call_requests_disabled, unconfirmed from auth_users where auth_key_id = :auth_key_id and deleted = 0
+func (dao *AuthUsersDAO) SelectAuthorizationSettingsByAuthKeyId(ctx context.Context, authKeyId int64) (rValue *dataobject.AuthUsersDO, err error) {
+	do := &dataobject.AuthUsersDO{}
+	query := "select " + authUserSettingsColumns + " from auth_users where auth_key_id = ? and deleted = 0"
+	err = dao.db.QueryRowPartial(ctx, do, query, authKeyId)
+	if err != nil {
+		if !errors.Is(err, sqlx.ErrNotFound) {
+			logx.WithContext(ctx).Errorf("queryx in SelectAuthorizationSettingsByAuthKeyId(_), error: %v", err)
+			return
+		}
+		err = nil
+		return
+	}
+	rValue = do
+	return
+}
+
+// UpdateAuthorizationSettings
+// update auth_users set encrypted_requests_disabled = :encrypted_requests_disabled, call_requests_disabled = :call_requests_disabled, unconfirmed = :unconfirmed where id = :id and deleted = 0
+func (dao *AuthUsersDAO) UpdateAuthorizationSettings(ctx context.Context, encryptedRequestsDisabled bool, callRequestsDisabled bool, unconfirmed bool, id int64) (rowsAffected int64, err error) {
+	query := "update auth_users set encrypted_requests_disabled = ?, call_requests_disabled = ?, unconfirmed = ? where id = ? and deleted = 0"
+	rResult, err := dao.db.Exec(ctx, query, encryptedRequestsDisabled, callRequestsDisabled, unconfirmed, id)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("exec in UpdateAuthorizationSettings(_), error: %v", err)
+		return
+	}
+	rowsAffected, err = rResult.RowsAffected()
+	if err != nil {
+		logx.WithContext(ctx).Errorf("rowsAffected in UpdateAuthorizationSettings(_), error: %v", err)
+	}
+	return
+}
+
+// UpdateUnconfirmed marks one live binding. Login calls this only for a new row.
+func (dao *AuthUsersDAO) UpdateUnconfirmed(ctx context.Context, authKeyId int64, userId int64) (rowsAffected int64, err error) {
+	query := "update auth_users set unconfirmed = 1 where auth_key_id = ? and user_id = ? and deleted = 0"
+	rResult, err := dao.db.Exec(ctx, query, authKeyId, userId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("exec in UpdateUnconfirmed(_), error: %v", err)
+		return
+	}
+	rowsAffected, err = rResult.RowsAffected()
+	if err != nil {
+		logx.WithContext(ctx).Errorf("rowsAffected in UpdateUnconfirmed(_), error: %v", err)
+	}
+	return
+}
+
+// CountLiveByUserId is the number of auth_users rows still logged in.
+func (dao *AuthUsersDAO) CountLiveByUserId(ctx context.Context, userId int64) (n int, err error) {
+	var row struct {
+		N int `db:"n"`
+	}
+	err = dao.db.QueryRowPartial(ctx, &row, "select count(*) as n from auth_users where user_id = ? and deleted = 0", userId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("queryx in CountLiveByUserId(_), error: %v", err)
+		return
+	}
+	n = row.N
+	return
+}

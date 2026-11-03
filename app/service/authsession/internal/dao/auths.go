@@ -260,7 +260,16 @@ func (d *Dao) BindAuthKeyUser(ctx context.Context, authKeyId int64, userId int64
 	_, _, err := d.CachedConn.Exec(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			return d.AuthUsersDAO.InsertOrUpdates(ctx, authUsersDO)
+			lastID, rows, err := d.AuthUsersDAO.InsertOrUpdates(ctx, authUsersDO)
+			if err != nil {
+				return 0, 0, err
+			}
+			// rows == 1 is an insert. ON DUPLICATE KEY UPDATE of an existing
+			// key reports 2 and keeps the flags already stored on that row.
+			if rows == 1 {
+				d.markNewAuthorizationUnconfirmed(ctx, userId, authKeyId)
+			}
+			return lastID, rows, nil
 		},
 		genAuthDataCacheKey(authKeyId))
 	if err != nil {

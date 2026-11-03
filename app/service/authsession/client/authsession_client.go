@@ -44,6 +44,7 @@ type AuthsessionClient interface {
 	AuthsessionSetLayer(ctx context.Context, in *authsession.TLAuthsessionSetLayer) (*mtproto.Bool, error)
 	AuthsessionSetInitConnection(ctx context.Context, in *authsession.TLAuthsessionSetInitConnection) (*mtproto.Bool, error)
 	AuthsessionSetAndroidPushSessionId(ctx context.Context, in *authsession.TLAuthsessionSetAndroidPushSessionId) (*mtproto.Bool, error)
+	AuthsessionChangeAuthorizationSettings(ctx context.Context, in *authsession.TLAuthsessionChangeAuthorizationSettings) (*mtproto.Bool, error)
 }
 
 type defaultAuthsessionClient struct {
@@ -285,4 +286,22 @@ func (m *defaultAuthsessionClient) AuthsessionSetAndroidPushSessionId(ctx contex
 	}
 	client := authsession.NewRPCAuthsessionClient(m.cli.Conn())
 	return client.AuthsessionSetAndroidPushSessionId(ctx, in)
+}
+
+// AuthsessionChangeAuthorizationSettings
+// authsession.changeAuthorizationSettings user_id:long auth_key_id:long hash:long = Bool;
+func (m *defaultAuthsessionClient) AuthsessionChangeAuthorizationSettings(ctx context.Context, in *authsession.TLAuthsessionChangeAuthorizationSettings) (*mtproto.Bool, error) {
+	md := metadata.RpcMetadataFromIncoming(ctx)
+	if md != nil {
+		ctx, _ = metadata.RpcMetadataToOutgoing(ctx, md)
+	}
+	client := authsession.NewRPCAuthsessionSettingsClient(m.cli.Conn())
+	out, err := client.AuthsessionChangeAuthorizationSettings(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	if out.GetOk() {
+		return mtproto.BoolTrue, nil
+	}
+	return mtproto.BoolFalse, nil
 }

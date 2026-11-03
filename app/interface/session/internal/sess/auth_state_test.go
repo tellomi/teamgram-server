@@ -203,3 +203,6 @@ func (f *fakeAuthsessionClient) AuthsessionSetInitConnection(context.Context, *a
 func (f *fakeAuthsessionClient) AuthsessionSetAndroidPushSessionId(context.Context, *authsession.TLAuthsessionSetAndroidPushSessionId) (*mtproto.Bool, error) {
 	return nil, nil
 }
+func (f *fakeAuthsessionClient) AuthsessionChangeAuthorizationSettings(context.Context, *authsession.TLAuthsessionChangeAuthorizationSettings) (*mtproto.Bool, error) {
+	return nil, nil
+}

@@ -92,4 +92,61 @@
                 user_id = :user_id
         </sql>
     </operation>
+
+    <operation name="SelectAuthorizationSettingsByUserId" result_set="list">
+        <sql>
+            SELECT
+                id, auth_key_id, user_id, hash, date_created, encrypted_requests_disabled, call_requests_disabled, unconfirmed
+            FROM
+                auth_users
+            WHERE
+                user_id = :user_id AND deleted = 0
+        </sql>
+    </operation>
+
+    <operation name="SelectAuthorizationSettingsByAuthKeyId">
+        <sql>
+            SELECT
+                id, auth_key_id, user_id, hash, date_created, encrypted_requests_disabled, call_requests_disabled, unconfirmed
+            FROM
+                auth_users
+            WHERE
+                auth_key_id = :auth_key_id AND deleted = 0
+        </sql>
+    </operation>
+
+    <operation name="UpdateAuthorizationSettings">
+        <sql>
+            UPDATE
+                auth_users
+            SET
+                encrypted_requests_disabled = :encrypted_requests_disabled,
+                call_requests_disabled = :call_requests_disabled,
+                unconfirmed = :unconfirmed
+            WHERE
+                id = :id AND deleted = 0
+        </sql>
+    </operation>
+
+    <operation name="UpdateUnconfirmed">
+        <sql>
+            UPDATE
+                auth_users
+            SET
+                unconfirmed = 1
+            WHERE
+                auth_key_id = :auth_key_id AND user_id = :user_id AND deleted = 0
+        </sql>
+    </operation>
+
+    <operation name="CountLiveByUserId">
+        <sql>
+            SELECT
+                count(*) AS n
+            FROM
+                auth_users
+            WHERE
+                user_id = :user_id AND deleted = 0
+        </sql>
+    </operation>
 </table>

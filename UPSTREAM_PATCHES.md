@@ -95,6 +95,15 @@ JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. `pkg
 
 `dialog.markDialogUnread` and `dialog.getDialogUnreadMarkList` were stubs (`METHOD_NOT_IMPL`). `messages.markDialogUnread` and `messages.getDialogUnreadMarks` already called them. The dialog rows now store the flag in `dialogs.unread_mark`.
 
+## Session authorization settings
+
+`account.changeAuthorizationSettings` was an enterprise stub. It now stores `encrypted_requests_disabled`, `call_requests_disabled`, and `unconfirmed` on `auth_users` (`teamgramd/deploy/sql/migrate-20261103-authorization-settings.sql`) and `account.getAuthorizations` reads them back. `hash` 0 is the current permanent key. A missing hash is `HASH_INVALID`. A new `auth_users` row is unconfirmed when the user already has another live session; the flag drops off the authorization list after 7 days (`authorization_autoconfirm_period` in `help.getAppConfig`). Login does not yet push `updateNewAuthorization`, and the flags do not filter incoming calls or secret chats.
+
+| Method | File |
+| --- | --- |
+| `account.changeAuthorizationSettings` | `app/bff/authorization/internal/core/account.changeAuthorizationSettings_handler.go` |
+| `account.getAuthorizations` | `app/service/authsession/internal/dao/authorization.go` |
+
 ## Sticker wire format
 
 `stickerSet` flags bit 4 is `thumbs`, `thumb_dc_id`, and `thumb_version` together. The catalog used to set the ints without a thumbs vector, so `messages.featuredStickers` did not round-trip (`DecodeVectorLong`). The catalog now sends `thumb_document_id` (flags bit 8) and leaves bit 4 unset. The generated codec in `proto/mtproto` is unchanged.
