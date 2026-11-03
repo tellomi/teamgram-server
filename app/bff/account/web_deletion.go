@@ -59,16 +59,27 @@ func StartWebDeletion(mysqlDSN string, smsCfg *conf.SmsVerifyCodeConfig, acct *a
 		}
 	}
 	sms := code.NewVerifyCode(smsCfg)
-	var allow func(context.Context, string, string) error
+	// Same sender auth.sendCode uses for an email in phone_number.
+	emailSender := verify.NewEmailSender(cfg.Email)
+	var allow func(context.Context, string, string, string) error
 	if cache := svc.Dao.Cache(); cache != nil {
-		lim := verify.NewLimiter(cache, cfg.Limits)
-		allow = func(ctx context.Context, phone, ip string) error {
-			return lim.AllowSend(ctx, "sms", phone, ip)
+		smsLim := verify.NewLimiter(cache, cfg.Limits)
+		emailLim := verify.NewLimiter(cache, cfg.EmailLimits)
+		allow = func(ctx context.Context, kind, target, ip string) error {
+			lim := smsLim
+			if kind == "email" {
+				lim = emailLim
+			} else {
+				kind = "sms"
+			}
+			return lim.AllowSend(ctx, kind, target, ip)
 		}
 	}
 	accountdeletion.Listen(addr, accountdeletion.Deps{
-		Lookup: func(ctx context.Context, phone string) (accountdeletion.Account, bool, error) {
-			u, err := svc.UserClient.UserGetImmutableUserByPhone(ctx, &userpb.TLUserGetImmutableUserByPhone{Phone: phone})
+		// phoneOrEmail is a normalized phone, or an email. The user service
+		// reads users.email when the value contains "@".
+		Lookup: func(ctx context.Context, phoneOrEmail string) (accountdeletion.Account, bool, error) {
+			u, err := svc.UserClient.UserGetImmutableUserByPhone(ctx, &userpb.TLUserGetImmutableUserByPhone{Phone: phoneOrEmail})
 			if err != nil {
 				if status.Convert(err).Message() == "PHONE_NUMBER_UNOCCUPIED" {
 					return accountdeletion.Account{}, false, nil
@@ -91,8 +102,12 @@ func StartWebDeletion(mysqlDSN string, smsCfg *conf.SmsVerifyCodeConfig, acct *a
 			_, err := sms.SendSmsVerifyCode(ctx, phone, codeDigits, "")
 			return err
 		},
-		AllowSend: allow,
-		FixedCode: fixed,
-		CodeLen:   cfg.SMS.CodeLength,
+		SendEmail: func(ctx context.Context, email, codeDigits string) error {
+			return emailSender.SendCode(ctx, email, codeDigits)
+		},
+		AllowSend:    allow,
+		FixedCode:    fixed,
+		CodeLen:      cfg.SMS.CodeLength,
+		EmailCodeLen: cfg.Email.CodeLength,
 	})
 }
