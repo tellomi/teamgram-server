@@ -100,6 +100,18 @@ Thresholds:
 
 A failed post-deploy cleanup prints a warning and does not roll the deploy back. `mysql-migrate` still has to exit 0 before `teamgram` is recreated, and the GeoIP file and `docker-compose.tellomi.yaml` are still required.
 
+## Database backups
+
+MySQL, etcd, and Redis are dumped at 03:15, encrypted with age, and uploaded to Cloudflare R2 bucket `tellomi-prod-db-backups`. Local files under `/opt/tellomi/backups/daily` are kept 90 days. R2 lifecycle deletes the remote objects; the script does not. Redis is `BGSAVE` plus a copy of `dump.rdb` and `appendonlydir`. The script never runs `FLUSHALL`. The age private key stays offline. Setup, the bucket token, Bucket Lock, and the rclone 1.60.1 flags are in [ops/BACKUP.md](ops/BACKUP.md).
+
+```bash
+install -m 755 scripts/ops/tellomi-backup-common.sh /usr/local/bin/tellomi-backup-common.sh
+install -m 755 scripts/ops/tellomi-db-backup.sh /usr/local/bin/tellomi-db-backup.sh
+install -m 644 scripts/ops/tellomi-db-backup.cron /etc/cron.d/tellomi-db-backup
+```
+
+`git checkout` does not update `/usr/local/bin`. Copy them again after this repo changes. Leave `TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY` unset until `/opt/tellomi/secrets/db-backup-r2.env` exists. Without that file the script warns and uses the media key.
+
 ## Datacenter addresses
 
 `help.getConfig` `dc_options` stays the empty list in `teamgramd/bin/config.json` unless `TELLOMI_DC_OPTIONS` is set. Clients that already stored an address keep it after the server list goes back to empty. See [DC addresses](ops/DC_ADDRESSES.md).
