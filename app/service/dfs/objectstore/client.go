@@ -113,3 +113,36 @@ func (c *Client) Delete(ctx context.Context, class, path string) error {
 	}
 	return nil
 }
+
+// Endpoint is the S3 API host this client writes to. Account deletion logs
+// it so an operator can see whether the process is talking to R2 or MinIO.
+func (c *Client) Endpoint() string {
+	if c == nil || c.u == nil {
+		return ""
+	}
+	return c.u.Endpoint()
+}
+
+// MoveToTrash copies one object to the trash/ prefix in the same bucket and
+// deletes the live key. Avatars are allowed. Stickers, emoji and wallpapers
+// are refused. A missing object is success.
+func (c *Client) MoveToTrash(ctx context.Context, class, path string) error {
+	if c == nil || c.u == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if err := c.u.MoveToTrash(ctx, class, path); err != nil {
+		return fmt.Errorf("trash %s/%s: %w", class, path, err)
+	}
+	return nil
+}
+
+// DeleteTrash removes the trash/ copy written by MoveToTrash.
+func (c *Client) DeleteTrash(ctx context.Context, class, path string) error {
+	if c == nil || c.u == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if err := c.u.DeleteTrash(ctx, class, path); err != nil {
+		return fmt.Errorf("delete trash %s/%s: %w", class, path, err)
+	}
+	return nil
+}

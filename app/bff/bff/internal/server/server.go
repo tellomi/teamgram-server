@@ -19,8 +19,11 @@
 package server
 
 import (
+	"context"
 	"flag"
+	"fmt"
 
+	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
 	account_helper "github.com/teamgram/teamgram-server/app/bff/account"
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
@@ -70,6 +73,7 @@ import (
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
+	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
 
@@ -519,7 +523,17 @@ func (s *Server) Initialize() error {
 			nil,
 			nil)
 		mtproto.RegisterRPCAccountServer(grpcServer, acctSvc)
-		account_helper.StartWebDeletion(c.ChannelMySQL, c.Code, acctSvc)
+		idgen := idgen_client.NewIDGenClient2(rpcx.GetCachedRpcClient(c.IdgenClient))
+		account_helper.StartWebDeletion(c.ChannelMySQL, c.Code, acctSvc, func(ctx context.Context, userID int64, n int32) (int32, error) {
+			if n <= 0 {
+				return 0, nil
+			}
+			end := idgen.NextNPtsId(ctx, userID, int(n))
+			if end == 0 {
+				return 0, fmt.Errorf("idgen pts")
+			}
+			return end, nil
+		})
 		// usernames_helper
 		mtproto.RegisterRPCUsernamesServer(
 			grpcServer,

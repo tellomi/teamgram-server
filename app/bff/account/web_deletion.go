@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/teamgram/teamgram-server/app/bff/account/deletion"
+	"github.com/teamgram/teamgram-server/app/bff/account/deletion/wipe"
 	accountcore "github.com/teamgram/teamgram-server/app/bff/account/internal/core"
 	accountsvc "github.com/teamgram/teamgram-server/app/bff/account/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/accountdeletion"
@@ -15,6 +16,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 
+	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/status"
 )
 
@@ -22,7 +24,7 @@ import (
 // from the bff process, and expires seven-day deletions with the same purge
 // as account.deleteAccount. TELLOMI_ACCOUNT_DELETE_ADDR=off skips the HTTP
 // listener; the reaper still runs.
-func StartWebDeletion(mysqlDSN string, smsCfg *conf.SmsVerifyCodeConfig, acct *accountsvc.Service) {
+func StartWebDeletion(mysqlDSN string, smsCfg *conf.SmsVerifyCodeConfig, acct *accountsvc.Service, pts func(context.Context, int64, int32) (int32, error)) {
 	if acct == nil {
 		return
 	}
@@ -31,7 +33,17 @@ func StartWebDeletion(mysqlDSN string, smsCfg *conf.SmsVerifyCodeConfig, acct *a
 		addr = "0.0.0.0:8802"
 	}
 	deletion.ConfigureMySQL(mysqlDSN)
+	deletion.SetPts(pts)
 	svc := acct.GetServiceContext()
+	var cache wipe.Cache
+	if c := svc.Dao.Cache(); c != nil {
+		cache = c
+	}
+	if err := deletion.ConfigureWipe(mysqlDSN, svc.Dao.SyncClient, cache); err != nil {
+		logx.Errorf("account deletion wipe: %v", err)
+	} else {
+		deletion.StartGC(context.Background(), time.Minute)
+	}
 	deletion.StartReaper(context.Background(), time.Minute, func(ctx context.Context, userID int64, reason string) error {
 		return accountcore.New(ctx, svc).PurgeAccount(userID, reason)
 	})

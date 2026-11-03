@@ -104,6 +104,14 @@ func (c *AccountCore) PurgeAccount(userID int64, reason string) error {
 }
 
 func (c *AccountCore) purgeAccount(me *mtproto.UserData, reason string) (*mtproto.Bool, error) {
+	if deletion.Configured() {
+		if err := deletion.Apply(c.ctx, c.MD.UserId, me.Phone, me.Username); err != nil {
+			c.Logger.Errorf("account.deleteAccount - wipe user=%d: %v", c.MD.UserId, err)
+			return nil, err
+		}
+	} else {
+		c.Logger.Errorf("account.deleteAccount - wipe not configured, history and profile stay user=%d", c.MD.UserId)
+	}
 	if me.Username != "" {
 		if _, err := c.svcCtx.Dao.UserClient.UserDeleteUsername(c.ctx, &user.TLUserDeleteUsername{
 			Username: me.Username,

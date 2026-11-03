@@ -201,12 +201,82 @@ func (m *MinioUtil) RemoveClassObject(ctx context.Context, class, path string) e
 	default:
 		return fmt.Errorf("refusing to remove %s/%s: only chat media classes can be removed", class, path)
 	}
+	return m.removeKey(ctx, class, path, false)
+}
+
+// trashClasses are the only classes account deletion may move. Stickers,
+// emoji and wallpapers stay. Avatars are included because a deleted profile
+// photo has no other owner; RemoveClassObject still refuses them.
+func trashClass(class string) bool {
+	switch class {
+	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles, ClassAvatars:
+		return true
+	default:
+		return false
+	}
+}
+
+// Endpoint is the configured S3 host, without credentials.
+func (m *MinioUtil) Endpoint() string {
+	if m == nil || m.c == nil {
+		return ""
+	}
+	return m.c.Endpoint
+}
+
+// MoveToTrash copies the object to trash/<original key> in the same bucket,
+// then deletes the original. A missing source is success so a retry after a
+// crash is safe. The trash copy is what DeleteTrash removes after the
+// retention window.
+func (m *MinioUtil) MoveToTrash(ctx context.Context, class, path string) error {
+	if m == nil || m.client == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if !trashClass(class) {
+		return fmt.Errorf("refusing to trash %s/%s", class, path)
+	}
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return err
 	}
-	if err := m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil && !isNotFound(err) {
-		logx.WithContext(ctx).Errorf("RemoveObject %s/%s (%s) error: %v", bucket, key, class, err)
+	trashKey := "trash/" + key
+	_, err = m.client.CopyObject(ctx, minio.CopyDestOptions{Bucket: bucket, Object: trashKey}, minio.CopySrcOptions{Bucket: bucket, Object: key})
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		logx.WithContext(ctx).Errorf("CopyObject %s/%s -> %s error: %v", bucket, key, trashKey, err)
+		return err
+	}
+	if err = m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil && !isNotFound(err) {
+		logx.WithContext(ctx).Errorf("RemoveObject %s/%s error: %v", bucket, key, err)
+		return err
+	}
+	return nil
+}
+
+// DeleteTrash removes the trash/ copy of a class object. It does not touch
+// the live key.
+func (m *MinioUtil) DeleteTrash(ctx context.Context, class, path string) error {
+	if !trashClass(class) {
+		return fmt.Errorf("refusing to delete trash for %s/%s", class, path)
+	}
+	return m.removeKey(ctx, class, path, true)
+}
+
+func (m *MinioUtil) removeKey(ctx context.Context, class, path string, trash bool) error {
+	if m == nil || m.client == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return err
+	}
+	if trash {
+		key = "trash/" + key
+	}
+	if err = m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil && !isNotFound(err) {
+		logx.WithContext(ctx).Errorf("RemoveObject %s/%s error: %v", bucket, key, err)
 		return err
 	}
 	return nil
