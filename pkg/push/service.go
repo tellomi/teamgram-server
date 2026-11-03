@@ -172,7 +172,7 @@ func (s *Service) sendAPNS(ctx context.Context, dev Device, m Incoming, d Decisi
 	if s.apns == nil {
 		return
 	}
-	alert, err := BuildAlert(m, d, dev.Secret, dev.LangCode)
+	alert, err := BuildAlert(m, d, dev.Secret, dev.NotificationLang())
 	if err != nil {
 		logx.WithContext(ctx).Errorf("push: build apns user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 		return
@@ -221,7 +221,7 @@ func (s *Service) forgetIfUnregistered(ctx context.Context, dev Device, err erro
 }
 
 func (s *Service) sendFCM(ctx context.Context, dev Device, m Incoming, d Decision) {
-	alert, err := BuildAlert(m, d, dev.Secret, dev.LangCode)
+	alert, err := BuildAlert(m, d, dev.Secret, dev.NotificationLang())
 	if err != nil {
 		logx.WithContext(ctx).Errorf("push: build fcm user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 		return
@@ -237,7 +237,7 @@ func (s *Service) sendFCM(ctx context.Context, dev Device, m Incoming, d Decisio
 }
 
 func (s *Service) sendHuawei(ctx context.Context, dev Device, m Incoming, d Decision) {
-	alert, err := BuildAlert(m, d, dev.Secret, dev.LangCode)
+	alert, err := BuildAlert(m, d, dev.Secret, dev.NotificationLang())
 	if err != nil {
 		logx.WithContext(ctx).Errorf("push: build huawei user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 		return

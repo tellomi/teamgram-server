@@ -1,22 +1,56 @@
 package push
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
 
-// NormalizeLang maps an initConnection / registerDevice lang_code onto the
-// languages this server can render as a plain notification body.
-// Anything that is not Chinese stays English. zh, zh-CN and zh-Hans are
-// simplified. zh-Hant, zh-TW and zh-HK are traditional.
+	"github.com/teamgram/teamgram-server/pkg/langpack"
+)
+
+// NormalizeLang maps one language tag onto a pack this server ships.
+// zh, zh-CN and zh-Hans are simplified. zh-Hant, zh-TW and zh-HK are
+// traditional. classic-zh-cn and taiwan stay those packs. Every other
+// official code (ja, ru, …) stays itself. An unknown tag is English.
 func NormalizeLang(code string) string {
-	c := strings.ToLower(strings.TrimSpace(code))
-	c = strings.ReplaceAll(c, "_", "-")
-	switch {
-	case c == "zh-tw" || c == "zh-hk" || c == "zh-mo" || strings.HasPrefix(c, "zh-hant"):
-		return "zh-hant"
-	case c == "zh" || c == "zh-cn" || c == "zh-sg" || strings.HasPrefix(c, "zh-hans") || strings.HasPrefix(c, "zh"):
-		return "zh-hans"
-	default:
-		return "en"
+	if c, ok := langpack.CanonicalLang(code); ok {
+		return c
 	}
+	return "en"
+}
+
+// PickLang is the language a push is rendered in.
+//
+// The app language wins when it is a specific pack (zh-hans, classic-zh-cn,
+// ja, …). English does not win over the phone language: the iOS notification
+// extension opens a supplementary connection with lang_code "en" because it
+// does not load the saved pack, and that initConnection overwrites
+// auths.lang_code. The phone language (initConnection.system_lang_code) is
+// still zh-Hans on a 简体中文 iPhone, and that is what the banner should use.
+// A non-English app language still wins over the phone, so 简体中文 on an
+// English phone stays simplified Chinese.
+func PickLang(app, system string) string {
+	if c, ok := specificLang(app); ok {
+		return c
+	}
+	if c, ok := specificLang(system); ok {
+		return c
+	}
+	if c, ok := langpack.CanonicalLang(app); ok {
+		return c
+	}
+	if c, ok := langpack.CanonicalLang(system); ok {
+		return c
+	}
+	return "en"
+}
+
+func specificLang(code string) (string, bool) {
+	c, ok := langpack.CanonicalLang(code)
+	if !ok || c == "" || c == "en" {
+		return "", false
+	}
+	return c, true
 }
 
 // baseKey strips the CHAT_ / CHANNEL_ peer prefix. PINNED_* and REACT_* stay
@@ -32,28 +66,88 @@ func baseKey(loc string) string {
 	}
 }
 
-// phraseFor is the plain alert body for locKey in lang. The sender name and
-// chat title are the notification title / subtitle, so the body is only the
-// action ("发来一条语音消息"), matching the English "sent you a voice message".
+// phraseFor is the plain alert body for locKey in lang, with no loc-args
+// filled in. The sender name and chat title are the notification title and
+// subtitle. Names and the message text are filled by formatPushBody.
 func phraseFor(lang, locKey string) string {
-	key := baseKey(locKey)
-	switch NormalizeLang(lang) {
-	case "zh-hans":
-		if s, ok := zhHansPhrases[key]; ok {
-			return s
+	return formatPushBody(lang, locKey, nil, "", "")
+}
+
+// formatPushBody renders the iOS langpack string PUSH_<locKey>.
+// Telegram splits that string on "|": the left side is the title, the right
+// side is the body. Placeholders are loc-args. A name that is already the
+// title or subtitle is removed from the front of the body so a private chat
+// reads "🎤 语音消息" under the sender, not "林：🎤 语音消息" a second time.
+func formatPushBody(lang, locKey string, args []string, title, subtitle string) string {
+	tmpl := pushTemplate(lang, locKey)
+	body := fillPushTemplate(tmpl, args)
+	return trimShownName(body, subtitle, title)
+}
+
+func pushTemplate(lang, locKey string) string {
+	key := "PUSH_" + locKey
+	code := NormalizeLang(lang)
+	if cat := langpack.DefaultCatalog(); cat != nil {
+		if s, ok := cat.Plain("ios", code, key); ok {
+			return afterPipe(s)
 		}
-		return "发来一条消息"
-	case "zh-hant":
-		if s, ok := zhHantPhrases[key]; ok {
-			return s
+		if code != "en" {
+			if s, ok := cat.Plain("ios", "en", key); ok {
+				return afterPipe(s)
+			}
 		}
-		return "發來一條訊息"
-	default:
-		if s, ok := enPhrases[key]; ok {
-			return s
-		}
-		return "sent you a message"
 	}
+	if s, ok := enPhrases[baseKey(locKey)]; ok {
+		return s
+	}
+	return "sent you a message"
+}
+
+func afterPipe(s string) string {
+	if i := strings.Index(s, "|"); i >= 0 {
+		return strings.TrimSpace(s[i+1:])
+	}
+	return strings.TrimSpace(s)
+}
+
+func fillPushTemplate(tmpl string, args []string) string {
+	for i := len(args); i >= 1; i-- {
+		tmpl = strings.ReplaceAll(tmpl, "%"+strconv.Itoa(i)+"$@", args[i-1])
+	}
+	for {
+		i := strings.Index(tmpl, "%")
+		if i < 0 {
+			break
+		}
+		j := strings.Index(tmpl[i:], "$@")
+		if j < 0 {
+			break
+		}
+		tmpl = tmpl[:i] + tmpl[i+j+2:]
+	}
+	return strings.Trim(strings.TrimSpace(tmpl), "：:|-–— ")
+}
+
+func trimShownName(body, subtitle, title string) string {
+	body = strings.TrimSpace(body)
+	for _, name := range []string{subtitle, title} {
+		name = strings.TrimSpace(name)
+		if name == "" || !strings.HasPrefix(body, name) || len(body) == len(name) {
+			continue
+		}
+		rest := body[len(name):]
+		r, _ := utf8.DecodeRuneInString(rest)
+		// "林：🎤 语音消息" repeats the sender already shown as the title.
+		// A message whose text happens to start with that name is left as written.
+		if r != '：' && r != ':' && r != '|' {
+			continue
+		}
+		rest = strings.Trim(strings.TrimSpace(rest), "：:|-–— ")
+		if rest != "" {
+			body = rest
+		}
+	}
+	return strings.TrimSpace(body)
 }
 
 // enPhrases are the bodies previously hard-coded in previewBody.
@@ -101,92 +195,4 @@ var enPhrases = map[string]string{
 	"REACT_GEOLIVE": "reacted to your live location",
 	"REACT_CONTACT": "reacted to your contact",
 	"REACT_POLL":    "reacted to your poll",
-}
-
-var zhHansPhrases = map[string]string{
-	"MESSAGE_NOTEXT":       "发来一条消息",
-	"MESSAGE_PHOTO":        "发来一张图片",
-	"MESSAGE_PHOTO_SECRET": "发来一张阅后即焚图片",
-	"MESSAGE_VIDEO":        "发来一段视频",
-	"MESSAGE_VIDEO_SECRET": "发来一段阅后即焚视频",
-	"MESSAGE_GIF":          "发来一张 GIF",
-	"MESSAGE_ROUND":        "发来一条视频消息",
-	"MESSAGE_AUDIO":        "发来一条语音消息",
-	"MESSAGE_STICKER":      "发来一张贴纸",
-	"MESSAGE_DOC":          "发来一个文件",
-	"MESSAGE_GEO":          "发来一个位置",
-	"MESSAGE_GEOLIVE":      "开始共享实时位置",
-	"MESSAGE_CONTACT":      "分享了一个联系人",
-	"MESSAGE_POLL":         "发来一个投票",
-	"MESSAGE_QUIZ":         "发来一个问答",
-	"PINNED_NOTEXT":        "置顶了一条消息",
-	"PINNED_TEXT":          "置顶了一条消息",
-	"PINNED_PHOTO":         "置顶了一张图片",
-	"PINNED_VIDEO":         "置顶了一段视频",
-	"PINNED_GIF":           "置顶了一张 GIF",
-	"PINNED_ROUND":         "置顶了一条视频消息",
-	"PINNED_AUDIO":         "置顶了一条语音消息",
-	"PINNED_STICKER":       "置顶了一张贴纸",
-	"PINNED_DOC":           "置顶了一个文件",
-	"PINNED_GEO":           "置顶了一个位置",
-	"PINNED_GEOLIVE":       "置顶了实时位置",
-	"PINNED_CONTACT":       "置顶了一个联系人",
-	"PINNED_POLL":          "置顶了一个投票",
-	"REACT_NOTEXT":         "回应了你的消息",
-	"REACT_TEXT":           "回应了你的消息",
-	"REACT_PHOTO":          "回应了你的图片",
-	"REACT_VIDEO":          "回应了你的视频",
-	"REACT_GIF":            "回应了你的 GIF",
-	"REACT_ROUND":          "回应了你的视频消息",
-	"REACT_AUDIO":          "回应了你的语音消息",
-	"REACT_STICKER":        "回应了你的贴纸",
-	"REACT_DOC":            "回应了你的文件",
-	"REACT_GEO":            "回应了你的位置",
-	"REACT_GEOLIVE":        "回应了你的实时位置",
-	"REACT_CONTACT":        "回应了你的联系人",
-	"REACT_POLL":           "回应了你的投票",
-}
-
-var zhHantPhrases = map[string]string{
-	"MESSAGE_NOTEXT":       "發來一條訊息",
-	"MESSAGE_PHOTO":        "發來一張圖片",
-	"MESSAGE_PHOTO_SECRET": "發來一張閱後即焚圖片",
-	"MESSAGE_VIDEO":        "發來一段影片",
-	"MESSAGE_VIDEO_SECRET": "發來一段閱後即焚影片",
-	"MESSAGE_GIF":          "發來一張 GIF",
-	"MESSAGE_ROUND":        "發來一條影片訊息",
-	"MESSAGE_AUDIO":        "發來一條語音訊息",
-	"MESSAGE_STICKER":      "發來一張貼圖",
-	"MESSAGE_DOC":          "發來一個檔案",
-	"MESSAGE_GEO":          "發來一個位置",
-	"MESSAGE_GEOLIVE":      "開始分享即時位置",
-	"MESSAGE_CONTACT":      "分享了一個聯絡人",
-	"MESSAGE_POLL":         "發來一個投票",
-	"MESSAGE_QUIZ":         "發來一個問答",
-	"PINNED_NOTEXT":        "置頂了一條訊息",
-	"PINNED_TEXT":          "置頂了一條訊息",
-	"PINNED_PHOTO":         "置頂了一張圖片",
-	"PINNED_VIDEO":         "置頂了一段影片",
-	"PINNED_GIF":           "置頂了一張 GIF",
-	"PINNED_ROUND":         "置頂了一條影片訊息",
-	"PINNED_AUDIO":         "置頂了一條語音訊息",
-	"PINNED_STICKER":       "置頂了一張貼圖",
-	"PINNED_DOC":           "置頂了一個檔案",
-	"PINNED_GEO":           "置頂了一個位置",
-	"PINNED_GEOLIVE":       "置頂了即時位置",
-	"PINNED_CONTACT":       "置頂了一個聯絡人",
-	"PINNED_POLL":          "置頂了一個投票",
-	"REACT_NOTEXT":         "回應了你的訊息",
-	"REACT_TEXT":           "回應了你的訊息",
-	"REACT_PHOTO":          "回應了你的圖片",
-	"REACT_VIDEO":          "回應了你的影片",
-	"REACT_GIF":            "回應了你的 GIF",
-	"REACT_ROUND":          "回應了你的影片訊息",
-	"REACT_AUDIO":          "回應了你的語音訊息",
-	"REACT_STICKER":        "回應了你的貼圖",
-	"REACT_DOC":            "回應了你的檔案",
-	"REACT_GEO":            "回應了你的位置",
-	"REACT_GEOLIVE":        "回應了你的即時位置",
-	"REACT_CONTACT":        "回應了你的聯絡人",
-	"REACT_POLL":           "回應了你的投票",
 }

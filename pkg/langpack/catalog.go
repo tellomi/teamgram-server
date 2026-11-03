@@ -263,6 +263,31 @@ func (c *Catalog) BaseLang(platform, code string) (string, bool) {
 	return l.meta.BaseLangCode, true
 }
 
+// Plain is one string value. A missing key follows base_lang_code, so a
+// partial pack such as classic-zh-cn still resolves through zh-hans and en.
+func (c *Catalog) Plain(platform, code, key string) (string, bool) {
+	seen := map[string]struct{}{}
+	for code != "" {
+		if _, ok := seen[code]; ok {
+			return "", false
+		}
+		seen[code] = struct{}{}
+		l, ok := c.lookup(platform, code)
+		if !ok {
+			return "", false
+		}
+		if e, ok := l.byKey[key]; ok && e.Value != "" {
+			return e.Value, true
+		}
+		base := strings.TrimSpace(l.meta.BaseLangCode)
+		if base == "" || base == code {
+			return "", false
+		}
+		code = base
+	}
+	return "", false
+}
+
 // Languages implements langpack.getLanguages.
 func (c *Catalog) Languages(platform string) ([]*mtproto.LangPackLanguage, error) {
 	if c == nil || !c.HasPlatform(platform) {

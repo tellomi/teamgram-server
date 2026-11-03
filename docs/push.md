@@ -56,7 +56,11 @@ Devices and notify settings live in the existing teamgram MySQL database (`devic
 | `other_uids` | other accounts on the device |
 | `lang_code` | app language from the session (`initConnection.lang_code`, else `system_lang_code`) |
 
-When a push is built, `auths.lang_code` for that auth key wins over the device snapshot. `initConnection` rewrites `auths.lang_code` on every connection, so a language switch applies on the next message without waiting for another `account.registerDevice`. `zh`, `zh-CN` and `zh-Hans` render simplified Chinese. `zh-Hant`, `zh-TW` and `zh-HK` render traditional. Any other code stays English.
+When a push is built, `auths.lang_code` for that auth key wins over the device snapshot. `initConnection` rewrites `auths.lang_code` on every connection, so a language switch applies on the next message without waiting for another `account.registerDevice`.
+
+The iOS notification extension connects as a supplementary session and does not load the saved language pack, so its `initConnection.lang_code` is `en`. That overwrites the app language on the same auth key. The phone language stays in `auths.system_lang_code`. A push therefore uses the app language when it names a pack other than English (`zh-hans`, `classic-zh-cn`, `taiwan`, `ja`, …), and otherwise the phone language. `zh`, `zh-CN` and `zh-Hans` are simplified. `zh-Hant`, `zh-TW` and `zh-HK` are traditional. `classic-zh-cn` (简体中文) and `taiwan` (正體中文) use those packs. Every other language in `data/langpack` uses its iOS `PUSH_*` string. A pack with no translation of that key falls back along `base_lang_code` to English. Thai has no strings of its own, so a Thai banner is English.
+
+The body is the text after `|` in the iOS string (`PUSH_MESSAGE_AUDIO` → `🎤 语音消息` for zh-hans). The sender or chat name is the title, not part of the body. The lock-screen word Tellomi is the iOS app name. `Erel → erel` is the notification extension naming the recipient account after the sender when more than one account is signed in. The server title is only the sender name.
 
 `account.unregisterDevice` deletes that token for the current user and `other_uids`.
 
@@ -80,7 +84,7 @@ The outer JSON matches the Telegram loc-key form and carries the ids the app rea
     "alert": {
       "loc-key": "MESSAGE_AUDIO",
       "loc-args": ["林"],
-      "body": "发来一条语音消息"
+      "body": "🎤 语音消息"
     },
     "mutable-content": 1,
     "sound": "default",
@@ -104,7 +108,7 @@ Groups use `chat_id` (not `from_id`). Channels use `channel_id`. The ids are str
   "msg_id": "42",
   "from_id": "3",
   "aps": {
-    "alert": {"title": "林", "body": "发来一条语音消息"},
+    "alert": {"title": "林", "body": "🎤 语音消息"},
     "mutable-content": 1,
     "thread-id": "3",
     "category": "m",
@@ -148,7 +152,7 @@ The FCM data object (every value a string, which the FCM HTTP API requires) is:
   "loc_args": "[\"林\"]",
   "custom": "{\"from_id\":\"3\",\"msg_id\":\"42\"}",
   "user_id": "9",
-  "body": "发来一张图片",
+  "body": "📷图片",
   "p": "<base64url>"
 }
 ```
@@ -161,21 +165,21 @@ The FCM data object (every value a string, which the FCM HTTP API requires) is:
   "loc_args": ["林"],
   "custom": {"from_id": "3", "msg_id": "42"},
   "user_id": 9,
-  "body": "发来一张图片"
+  "body": "📷图片"
 }
 ```
 
 Huawei's listener passes the whole data string to that decryptor, so a future HMS sender must post `p` itself, not this wrapper. `body` is the localized fallback. The official client ignores it and formats `loc_key` with `values-zh`.
 
-## Client gaps (not changed in this repo)
+## Clients
 
 iOS `tellomi/Telegram-iOS`:
 
-- `Telegram/NotificationService/Sources/NotificationService.swift` copies the decrypted `aps.alert.body`. A `loc-key` on that decrypted object is treated as a service event (`SESSION_REVOKE`, `MESSAGE_DELETED`, …) and the `default` branch does not show the banner. Do not put `loc-key` in `p`.
-- `Telegram/Telegram-iOS/zh-Hans.lproj/` contains only `InfoPlist.strings`. There is no `Localizable.strings`, so an APNs `loc-key` that the Notification Service does not rewrite falls back to English.
-- `en.lproj/Localizable.strings` names the push strings `PUSH_MESSAGE_AUDIO`, not `MESSAGE_AUDIO`. Apple looks the `loc-key` up verbatim, so `MESSAGE_AUDIO` does not match. Add `zh-Hans.lproj/Localizable.strings` (and the same keys in `en.lproj`) for the keys this server sends: `MESSAGE_TEXT`, `MESSAGE_NOTEXT`, `MESSAGE_PHOTO`, `MESSAGE_PHOTO_SECRET`, `MESSAGE_VIDEO`, `MESSAGE_VIDEO_SECRET`, `MESSAGE_GIF`, `MESSAGE_ROUND`, `MESSAGE_AUDIO`, `MESSAGE_STICKER`, `MESSAGE_DOC`, `MESSAGE_GEO`, `MESSAGE_GEOLIVE`, `MESSAGE_CONTACT`, `MESSAGE_POLL`, `MESSAGE_QUIZ`, the `CHAT_` and `CHANNEL_` forms of those, and `PINNED_NOTEXT`, `PINNED_TEXT`, `PINNED_PHOTO`, `PINNED_VIDEO`, `PINNED_GIF`, `PINNED_ROUND`, `PINNED_AUDIO`, `PINNED_STICKER`, `PINNED_DOC`, `PINNED_GEO`, `PINNED_GEOLIVE`, `PINNED_CONTACT`, `PINNED_POLL`. Suggested simplified values, without a `|` (Apple does not split on it): `"MESSAGE_AUDIO" = "%1$@ 发来一条语音消息";`, `"MESSAGE_PHOTO" = "%1$@ 发来一张图片";`, `"CHAT_MESSAGE_AUDIO" = "%1$@ 在 %2$@ 发来一条语音消息";`. The Notification Service does not need a code change for the encrypted path: it already shows the server body.
+- `NotificationService.swift` copies the decrypted `aps.alert.title` and `body`. A `loc-key` on that decrypted object is treated as a service event and the banner is not shown. Do not put `loc-key` in `p`.
+- `zh-Hans.lproj/Localizable.strings` and `zh-Hant.lproj/Localizable.strings` now have the `MESSAGE_*` keys. `en.lproj` still names them `PUSH_MESSAGE_*`, so an English phone that never runs the extension shows the server `body` (the key is missing). The extension is what a locked phone actually shows, and it shows the server body.
+- `standaloneStateManager` passes a nil language, so every notification rewrites `auths.lang_code` to `en`. The server uses `system_lang_code` in that case. The extension also appends ` → account` when more than one account is signed in; a private chat should leave that off. Those two client edits are in `cursor/push-lang-private-title-817a` and could not be pushed from this run (the token cannot write `tellomi/Telegram-iOS`).
 
 Android `tellomi/Telegram`:
 
-- `PushListenerController` handles `PUSH_TYPE_FIREBASE` (2) and `PUSH_TYPE_HUAWEI` (13) only. Both decrypt and switch on `loc_key`. `values-zh/strings.xml` already has `NotificationMessageAudio` (`%1$s 给您发送了一条语音消息`), `NotificationMessagePhoto`, and the group variants. No string change is required for those keys.
-- No client change is required for the decrypted `loc_key` path. A non-Huawei mainland device still needs a transport this client does not register.
+- `PushListenerController` handles `PUSH_TYPE_FIREBASE` (2) and `PUSH_TYPE_HUAWEI` (13) only. Both decrypt `p` and format `loc_key` with the app's `LocaleController` (`NotificationMessageAudio` and the rest). The server `body` is ignored, so the same payload is Chinese when the app language is Chinese.
+- There is no Honor, Xiaomi, OPPO, vivo, or Meizu sender. A Honor phone without Google Play has no FCM path. The Huawei flavor registers token type 13, and this server still does not send it. That phone gets no banner, rather than an English one.

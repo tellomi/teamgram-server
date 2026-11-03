@@ -36,7 +36,7 @@ func BuildAlert(m Incoming, d Decision, secret []byte, lang string) (Alert, erro
 	}
 	key := m.LocKeyFor(d.Preview)
 	args := m.Args(d.Preview)
-	title, subtitle, body := alertText(m, key, lang)
+	title, subtitle, body := alertText(m, key, lang, d.Preview)
 	thread := threadID(m)
 	custom := customIDs(m)
 
@@ -178,7 +178,7 @@ func androidPayload(m Incoming, d Decision, key string, args []string, body stri
 	return out, p, nil
 }
 
-func alertText(m Incoming, key, lang string) (title, subtitle, body string) {
+func alertText(m Incoming, key, lang string, preview bool) (title, subtitle, body string) {
 	author := m.SenderName
 	if author == "" {
 		author = "User"
@@ -187,25 +187,16 @@ func alertText(m Incoming, key, lang string) (title, subtitle, body string) {
 	if chat == "" {
 		chat = "Chat"
 	}
-	body = bodyFor(key, m.Text, lang)
 	switch {
 	case m.ChannelID != 0:
-		return chat, "", body
+		title = chat
 	case m.ChatID != 0:
-		return chat, author, body
+		title, subtitle = chat, author
 	default:
-		return author, "", body
+		title = author
 	}
-}
-
-func bodyFor(key, text, lang string) string {
-	switch baseKey(key) {
-	case "MESSAGE_TEXT", "PINNED_TEXT":
-		if text != "" {
-			return text
-		}
-	}
-	return phraseFor(lang, key)
+	body = formatPushBody(lang, key, m.Args(preview), title, subtitle)
+	return title, subtitle, body
 }
 
 func threadID(m Incoming) string {
