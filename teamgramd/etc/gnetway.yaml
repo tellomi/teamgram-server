@@ -21,6 +21,8 @@ Log:
 #  Sampler: 1.0
 #  Batcher: jaeger
   
+# Upstream Teamgram default. Docker uses teamgramd/etc2/gnetway.yaml.
+# See docs/SECURITY-OPS.md.
 RSAKey:
   - KeyFile: "./server_pkcs1.key"
     KeyFingerprint: "12240908862933197005"

@@ -1,41 +1,78 @@
 #!/bin/bash
-# if [ ! -n "$TEAMGRAM_HOST" ]; then
-#   echo ">>> Plase set environment variable TEAMGRAM_HOST to your own server IP. <<<"
-#   exit 1
-# fi
+# Image entrypoint. Rewrites the MySQL password baked into /app/etc2, applies
+# SQL migrations, then replaces this shell with runall so it is PID 1.
 
-# export TEAMGRAM_HOST=${TEAMGRAM_HOST:-"0.0.0.0"}
-# export ETCD_URL=${ETCD_URL:-"etcd:2379"}
-# export REDIS_HOST=${REDIS_HOST:-"redis:6379"}
-# export KAFKA_HOST=${KAFKA_HOST:-"kafka:9092"}
-# export MYSQL_URI=${MYSQL_URI:-"teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4"}
-# export MINIO_URI=${MINIO_URI:-"minio:9000"}
-# export MINIO_KEY=${MINIO_KEY:-"minio"}
-# export MINIO_SECRET=${MINIO_SECRET:-"miniostorage"}
-# export MINIO_SSL=${MINIO_SSL:-"false"}
-# #export MTZ=${MTZ:-"Asia%2FTehran"}
+# rewrite_teamgram_mysql_line replaces the password in
+# teamgram:<password>@tcp(mysql:3306). The password is inserted literally.
+rewrite_teamgram_mysql_line() {
+  local line="$1" pw="$2"
+  local prefix="teamgram:" suffix="@tcp(mysql:3306)"
+  local out="" rest="$line"
+  while [[ "$rest" == *"$prefix"* ]]; do
+    local head="${rest%%"$prefix"*}"
+    local tail="${rest#*"$prefix"}"
+    if [[ "$tail" != *"$suffix"* ]]; then
+      out+="$rest"
+      rest=""
+      break
+    fi
+    local after="${tail#*"$suffix"}"
+    out+="${head}${prefix}${pw}${suffix}"
+    rest="$after"
+  done
+  printf '%s' "${out}${rest}"
+}
 
-# # create configs from config templates.
-# createConfigs() {
-#   CONFIG_TARGET_DIR=/app/etc2
-#   CONFIG_TEMPLATES_DIR=/app/etc
-#   for file in `ls $CONFIG_TEMPLATES_DIR`; do
-#     cat $CONFIG_TEMPLATES_DIR/$file \
-#       | sed 's#ListenOn: 127.0.0.1#ListenOn: '"$TEAMGRAM_HOST"'#g' \
-#       | sed "s#127.0.0.1:2379#$ETCD_URL#g" \
-#       | sed "s#127.0.0.1:6379#$REDIS_HOST#g" \
-#       | sed "s#localhost:6379#$REDIS_HOST#g" \
-#       | sed "s#root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4#$MYSQL_URI#g" \
-#       | sed 's#AccessKeyID: minio#AccessKeyID: '"$MINIO_KEY"'#g' \
-#       | sed 's#SecretAccessKey: miniostorage#SecretAccessKey: '"$MINIO_SECRET"'#g' \
-#       | sed 's#UseSSL: false#UseSSL: '"$MINIO_SSL"'#g' \
-#       | sed "s#localhost:9000#$MINIO_URI#g" \
-#       | sed "s#127.0.0.1:9092#$KAFKA_HOST#g" \
-#       | cat > $CONFIG_TARGET_DIR/$file
-#   done
-# }
+# rewrite_teamgram_mysql_dsns rewrites every /app/etc2 yaml (or the directory
+# passed in). When TEAMGRAM_MYSQL_PASSWORD is not the dev default "teamgram",
+# teamgram:teamgram@ left behind means a DSN was missed and startup must stop.
+# The dev default is itself "teamgram", so that string remaining is expected.
+rewrite_teamgram_mysql_dsns() {
+  local pw="$1"
+  local dir="$2"
+  local f tmp line mode
+  local had_nullglob=0
+  local rc=0
+  if shopt -q nullglob; then
+    had_nullglob=1
+  fi
+  shopt -s nullglob
+  local files=("$dir"/*.yaml)
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "no yaml files in ${dir}" >&2
+    rc=1
+  else
+    for f in "${files[@]}"; do
+      mode="$(stat -c %a "$f")"
+      tmp="$(mktemp)" || { rc=1; break; }
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        printf '%s\n' "$(rewrite_teamgram_mysql_line "$line" "$pw")"
+      done < "$f" > "$tmp"
+      mv "$tmp" "$f"
+      chmod "$mode" "$f"
+    done
+  fi
+  if [[ "$rc" -eq 0 ]] && grep -q 'teamgram:teamgram@' "$dir"/*.yaml; then
+    if [[ "$pw" != "teamgram" ]]; then
+      echo "refusing to start: teamgram:teamgram@ is still present in ${dir}" >&2
+      rc=1
+    fi
+  fi
+  if [[ "$had_nullglob" -eq 0 ]]; then
+    shopt -u nullglob
+  fi
+  return "$rc"
+}
 
-# createConfigs
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
+if [[ -n "${TEAMGRAM_MYSQL_PASSWORD:-}" ]]; then
+  if ! rewrite_teamgram_mysql_dsns "$TEAMGRAM_MYSQL_PASSWORD" /app/etc2; then
+    exit 1
+  fi
+fi
 
 # Apply SQL migrations before the processes start. A new image can ship a
 # migrate-*.sql that production never ran by hand (chat_participants.rank2).

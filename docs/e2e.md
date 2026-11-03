@@ -3,7 +3,9 @@
 The suite in `e2e/client` speaks MTProto the way Telegram iOS and Android do.
 In-memory handler tests live in `e2e/inmem` and run with `go test ./...`.
 [gotd](https://github.com/gotd/td) does the obfuscated padded-intermediate
-transport and the DH exchange against `teamgramd/bin/server_pkcs1.key`.
+transport and the DH exchange against `teamgramd/bin/server_pkcs1.key`
+(upstream fingerprint `12240908862933197005`). Production also advertises the
+rotated key; see [SECURITY-OPS.md](SECURITY-OPS.md).
 Every RPC is `invokeWithLayer` + `initConnection` at layer 232, encoded with
 this repo's schema. gotd's generated API layer is not used for those calls.
 

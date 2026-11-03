@@ -58,6 +58,18 @@ func NewRSACryptorByKeyData(pkcs1PemPrivateKey []byte) (*RSACryptor, error) {
 	return &RSACryptor{key}, nil
 }
 
+// PublicComponents returns the modulus and public exponent as unsigned
+// big-endian integers with leading zeros removed. The MTProto fingerprint is
+// the lower 64 bits of SHA1(TL-serialized n + e).
+func (m *RSACryptor) PublicComponents() (n, e []byte) {
+	if m == nil || m.key == nil || m.key.N == nil {
+		return nil, nil
+	}
+	n = append([]byte(nil), m.key.N.Bytes()...)
+	e = new(big.Int).SetInt64(int64(m.key.E)).Bytes()
+	return n, e
+}
+
 func (m *RSACryptor) modulusSize() int {
 	if m == nil || m.key == nil || m.key.N == nil {
 		return 256

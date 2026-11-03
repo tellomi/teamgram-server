@@ -3,7 +3,7 @@
 本文档介绍在 macOS（Intel 与 Apple Silicon）上从零手动安装 Teamgram 服务端及其依赖。推荐使用 [Homebrew](https://brew.sh/) 管理依赖。
 
 > [English (primary)](./install-manual-macos.md) | 中文  
-> 若使用 Docker 部署，请参阅 [install-docker.md](./install-docker.md)。
+> 本机 Docker 见 [local-docker.md](./local-docker.md)。成都生产不走本页。镜像由 Publish images 推到阿里云 ACR，备份数据库后在主机执行 `/opt/tellomi/deploy-pull.sh`（[ci-acr.md](./ci-acr.md)、[SECURITY-OPS.md](./SECURITY-OPS.md)）。克隆 `https://github.com/tellomi/teamgram-server`。不要克隆上游 Teamgram 仓库，也不要走 GitHub 镜像。
 
 ---
 
@@ -14,7 +14,7 @@
 - **MySQL**：8.x
 - **Redis**：6.x
 - **Etcd**：3.5.x
-- **Kafka**：2.x / 3.x（需 Zookeeper，Homebrew 版 Kafka 通常自带）
+- **Kafka**：3.x。`docker-compose-env.yaml` 用的是 KRaft（`apache/kafka:3.9.0`），不启动 ZooKeeper。下面的 ZooKeeper 步骤只用于源码安装的 broker。
 - **MinIO**：对象存储
 - **Pika**（可选）：需从源码或 release 安装，默认端口 9221
 - **FFmpeg**：音视频处理
@@ -122,7 +122,7 @@ brew services start minio
 ```
 
 - 控制台：http://localhost:9001  
-- 默认账号：minioadmin / minioadmin（或 miniostorage，视版本而定）
+- 自行设置 `MINIO_ROOT_USER` 和 `MINIO_ROOT_PASSWORD`。开发用 compose 默认是 `minio` / `miniostorage`。这不是生产密码。
 
 **创建存储桶：** 在 MinIO 控制台创建以下 bucket，启动 dfs 之前完成。服务不会自动建桶。详见 `docs/storage.md`。
 
@@ -167,7 +167,7 @@ go version   # 需 1.21+
 
 ```bash
 cd ~  # 或你希望放置的目录
-git clone https://github.com/teamgram/teamgram-server.git
+git clone https://github.com/tellomi/teamgram-server.git
 cd teamgram-server
 ```
 
@@ -203,7 +203,7 @@ make
 
 1. **dfs.yaml**  
    - `Minio.Endpoint`：`localhost:9000`  
-   - `Minio.AccessKeyID` / `SecretAccessKey`：与 MinIO 一致（如 minioadmin / minioadmin）  
+   - `Minio.AccessKeyID` / `SecretAccessKey`：与 MinIO 一致（开发用 compose 是 `minio` / `miniostorage`）  
    - `SSDB`：使用 Pika 则为 `127.0.0.1:9221`，否则用 Redis `127.0.0.1:6379`
 
 2. **gnetway.yaml**  
@@ -220,8 +220,8 @@ make
 ```yaml
 Minio:
   Endpoint: localhost:9000
-  AccessKeyID: minioadmin
-  SecretAccessKey: minioadmin
+  AccessKeyID: minio
+  SecretAccessKey: miniostorage
   UseSSL: false
   Region: us-east-1
   ForcePathStyle: true

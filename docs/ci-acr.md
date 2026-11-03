@@ -51,9 +51,13 @@ screenshots, and secrets are in [e2e/ui/README.md](../e2e/ui/README.md).
 This image-publish workflow is not that gate. Production deploys stay on
 `deploy-pull.sh` below.
 
-On the production host the script is `/opt/tellomi/deploy-pull.sh`, a copy of
-[`deploy-pull.sh`](../deploy-pull.sh). It takes the 7-character commit SHA,
-which must already be published by the "Publish images" workflow on master:
+On the production host the script path is `/opt/tellomi/deploy-pull.sh`.
+The current copy is [`deploy-pull.sh`](../deploy-pull.sh). The file on the
+Chengdu host is older than this repo; see [Security operations](SECURITY-OPS.md).
+It takes the 7-character commit SHA, which must already be published by the
+"Publish images" workflow on master. The script fetches that commit from the
+public GitHub remote. If the repository is made private, add a read-only
+deploy key on the host before the next fetch. Do not point the fetch at a mirror.
 
 ```bash
 /opt/tellomi/deploy-pull.sh <shortSHA>
@@ -100,7 +104,11 @@ authsession and bff open `./GeoLite2-City.mmdb` from `/app/bin`.
 
 The new image applies `teamgramd/deploy/sql/migrate-*.sql` before the processes
 start. Pull this checkout as well so `docker-compose.yaml` passes
-`MYSQL_ROOT_PASSWORD` into that step. The app DSN in `etc2` is unchanged.
+`MYSQL_ROOT_PASSWORD` into that step. `TEAMGRAM_MYSQL_PASSWORD` (from
+`MYSQL_PASSWORD`, dev default `teamgram`) rewrites
+`teamgram:<password>@tcp(mysql:3306)` in `/app/etc2/*.yaml` in the same
+entrypoint. A non-default password that leaves `teamgram:teamgram@` behind
+exits. See [SECURITY-OPS.md](SECURITY-OPS.md).
 
 `TELLOMI_IMAGE_REGISTRY` defaults to
 `crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi`.

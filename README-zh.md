@@ -46,7 +46,7 @@
 - [手动安装（Linux）](docs/install-manual-linux-zh.md)
 - [手动安装（macOS）](docs/install-manual-macos-zh.md)
 
-**Docker 部署：** [install-docker.md](docs/install-docker.md)（docker-compose 完整栈）。
+**Docker 部署：** [本地 Docker](docs/local-docker.md)。成都生产见 [CI 与 ACR](docs/ci-acr.md) 与 [安全运维](docs/SECURITY-OPS.md)。
 
 **一键环境（Docker）：** 使用 [docker-compose-env.yaml](docker-compose-env.yaml)，详见 [README-env-cn.md](README-env-cn.md) / [README-env-en.md](README-env-en.md)。
 
@@ -70,9 +70,11 @@
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/teamgram/teamgram-server.git
+git clone https://github.com/tellomi/teamgram-server.git
 cd teamgram-server
 ```
+
+这次克隆只用于本机。成都不靠克隆部署，也不从 GitHub 镜像拉取。见 [安全运维](docs/SECURITY-OPS.md)。
 
 ### 2. 启动依赖栈
 
@@ -104,18 +106,15 @@ docker compose up -d --build
 
 ## 兼容客户端
 
-**默认登录验证码：** `12345`（生产环境请修改。）
+Tellomi 安卓是 [tellomi/Telegram](https://github.com/tellomi/Telegram)，iOS 是 [tellomi/Telegram-iOS](https://github.com/tellomi/Telegram-iOS)。开发环境短信固定码是 `12345`。生产环境不是。
 
-| Platform | Repository | Patch Link |
-|----------|------------|------------|
-| Android | [https://github.com/teamgram/teamgram-android](https://github.com/teamgram/teamgram-android) | [teamgram-android](clients/teamgram-android.md) |
-| iOS | [https://github.com/teamgram/teamgram-ios](https://github.com/teamgram/teamgram-ios) | [teamgram-ios](clients/teamgram-ios.md) |
-| Desktop (TDesktop) | [https://github.com/teamgram/teamgram-tdesktop](https://github.com/teamgram/teamgram-tdesktop) | [teamgram-tdesktop](clients/teamgram-tdesktop.md) |
+`clients/` 下的说明是上游 Teamgram 客户端分支，不是 Tellomi 应用。
 
 ---
 
 ## 文档
 
+- [安全运维](docs/SECURITY-OPS.md) — 生产 RSA 密钥、密码存放位置、成都部署
 - [项目规范与设计文档（specs）](specs/README.md) — 架构、协议、依赖、贡献、安全、路线图
 - [服务拓扑与配置](docs/service-topology-zh.md) — 端口、基础设施、调用关系（[English](docs/service-topology.md)）
 - [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md)
@@ -129,17 +128,11 @@ docker compose up -d --build
 
 ---
 
-## 企业版
+## 运维
 
-以下能力在企业版中提供，请联系[作者](https://t.me/benqi)：
+生产密钥、秘密存放位置和成都部署见 [安全运维](docs/SECURITY-OPS.md)。仓库里的密码（`teamgram` / `teamgram`、MySQL root `root`、MinIO 用户 `minio`、Grafana 用户 `admin`）只用于开发。
 
-- sticker/theme/chat_theme/wallpaper/reactions/secretchat/2fa/sms/push(apns/web/fcm)/web/scheduled/autodelete/... 
-- channels/megagroups
-- audio/video/group/conferenceCall
-- bots
-- miniapp
-
-社区版与企业版边界见 [specs/roadmap.md](specs/roadmap.md)。
+本服务实现了什么以 `docs/` 为准。上游 Teamgram 的社区版/企业版划分不能当作本仓库的功能边界。
 
 ---
 

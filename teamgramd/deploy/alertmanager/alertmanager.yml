@@ -1,4 +1,4 @@
-# 最小 Alertmanager 配置，用于 docker-compose-env2
+# Alertmanager config. Not started by docker-compose-env.yaml.
 global:
   resolve_timeout: 5m
 

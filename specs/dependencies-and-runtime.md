@@ -14,7 +14,7 @@ This document covers core dependencies, recommended versions, and the Docker sta
 | **FFmpeg** | Media transcoding (install on server) | Per install docs |
 
 - Create database `teamgram` and run all init and migrate scripts under **`teamgramd/deploy/sql/`** in order.
-- MinIO: create buckets `documents`, `encryptedfiles`, `photos`, `videos` (auto-created by minio-mc when using the provided Docker stack).
+- Local object storage is Compose profile `local-minio` (buckets `tellomi-attachments`, `tellomi-public-media`, `tellomi-backups`). Chengdu media is Cloudflare R2. See `docs/storage.md` and `docs/SECURITY-OPS.md`.
 
 ## Optional: monitoring and logging
 
@@ -37,22 +37,22 @@ See the main README section “Logging, monitoring & tracing” and `teamgramd/d
 
 Aligned with `docker-compose-env.yaml` and [README-env-cn.md](../README-env-cn.md) / [README-env-en.md](../README-env-en.md):
 
-- **Kafka**: bitnamilegacy/kafka:3.5.1 (KRaft)
+- **Kafka**: apache/kafka:3.9.0 (KRaft, no ZooKeeper)
 - **etcd**: quay.io/coreos/etcd:v3.5.11
 - **Redis**: redis:7-alpine
 - **MySQL**: mysql:8.0
-- **MinIO**: minio/minio:latest; minio-mc for bucket init
-- **Jaeger**: jaegertracing/all-in-one:1.52
-- **Prometheus**: prom/prometheus:v2.47.2
-- **Grafana**: grafana/grafana:10.2.3
+- **MinIO** (profile `local-minio` only): docker.io/pgsty/silo and docker.io/pgsty/mc, tag `RELEASE.2026-10-26T00-00-00Z`
+- **Jaeger**: jaegertracing/all-in-one:1.63.0
+- **Prometheus**: prom/prometheus:v2.28.1
+- **Grafana**: grafana/grafana:8.0.6 (host port 3001)
 - **Node Exporter**: prom/node-exporter:v1.7.0
-- **Elasticsearch / Kibana / Filebeat**: 8.11.x
+- **Elasticsearch / Kibana / Filebeat**: 8.12.2
 - **go-stash**: kevinwan/go-stash:1.1.1
 
 ## Docker stack
 
-- **Compose file**: **`docker-compose-env.yaml`** (sometimes referred to as “docker-compose-env2” in older docs).
-- **Usage**: Copy `.env.example` to `.env`, then `docker compose -f docker-compose-env.yaml up -d`. See README-env-cn.md / README-env-en.md.
+- **Compose file**: **`docker-compose-env.yaml`**. There is no `docker-compose-env2.yaml`.
+- **Usage**: Copy `.env.example` to `.env`, then `docker compose -f docker-compose-env.yaml up -d`. See README-env-cn.md / README-env-en.md. Dev passwords in that file are not production.
 - **Network**: `teamgram_net`; data under project `data/` directory.
 
 ## Installation without Docker

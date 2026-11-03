@@ -63,9 +63,11 @@ Step-by-step for a layer-232 dev login (fixed SMS code `12345`): [Local deployme
 ### 1. Clone
 
 ```bash
-git clone https://github.com/teamgram/teamgram-server.git
+git clone https://github.com/tellomi/teamgram-server.git
 cd teamgram-server
 ```
+
+This clone is for a workstation. Chengdu does not deploy by cloning, and it does not fetch through a GitHub mirror. See [Security operations](docs/SECURITY-OPS.md).
 
 ### 2. Start dependency stack
 
@@ -97,18 +99,15 @@ This builds the image on your machine and tags it `local` unless `TELLOMI_IMAGE_
 
 ## Compatible clients
 
-**Default sign-in verification code:** `12345` (change for production.)
+Tellomi Android is [tellomi/Telegram](https://github.com/tellomi/Telegram). Tellomi iOS is [tellomi/Telegram-iOS](https://github.com/tellomi/Telegram-iOS). The dev SMS provider accepts the fixed code `12345`. Production does not.
 
-| Platform | Repository | Patch Link |
-|----------|------------|------------|
-| Android | [https://github.com/teamgram/teamgram-android](https://github.com/teamgram/teamgram-android) | [teamgram-android](clients/teamgram-android.md) |
-| iOS | [https://github.com/teamgram/teamgram-ios](https://github.com/teamgram/teamgram-ios) | [teamgram-ios](clients/teamgram-ios.md) |
-| Desktop (TDesktop) | [https://github.com/teamgram/teamgram-tdesktop](https://github.com/teamgram/teamgram-tdesktop) | [teamgram-tdesktop](clients/teamgram-tdesktop.md) |
+Notes under `clients/` describe the upstream Teamgram client forks. They are not the Tellomi apps.
 
 ---
 
 ## Documentation
 
+- [Security operations](docs/SECURITY-OPS.md) — production RSA key, password locations, Chengdu deploy
 - [Project specs](specs/README.md) — Architecture, protocol, dependencies, contributing, security, roadmap
 - [Service topology and configuration](docs/service-topology.md) — Ports, infrastructure, call graph ([中文](docs/service-topology-zh.md))
 - [Client regression](docs/e2e.md) — MTProto suite, required CI check, post-deploy smoke
@@ -125,17 +124,11 @@ This builds the image on your machine and tags it `local` unless `TELLOMI_IMAGE_
 
 ---
 
-## Enterprise edition
+## Operations
 
-The following are available in the enterprise edition (contact the [author](https://t.me/benqi)):
+Production keys, where secrets are stored, and the Chengdu deploy path are in [Security operations](docs/SECURITY-OPS.md). Passwords committed in this repo (`teamgram` / `teamgram`, MySQL root `root`, MinIO user `minio`, Grafana user `admin`) are dev-only.
 
-- sticker/theme/chat_theme/wallpaper/reactions/secretchat/2fa/sms/push(apns/web/fcm)/web/scheduled/autodelete/... 
-- channels/megagroups
-- audio/video/group/conferenceCall
-- bots
-- miniapp
-
-See [specs/roadmap.md](specs/roadmap.md) for community vs. enterprise scope.
+What this server implements is described in `docs/`. The old upstream Teamgram split between a community tree and an enterprise tree is not a map of this repository.
 
 ---
 

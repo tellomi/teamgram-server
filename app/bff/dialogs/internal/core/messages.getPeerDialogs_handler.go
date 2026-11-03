@@ -31,48 +31,6 @@ import (
 	"github.com/zeromicro/go-zero/core/mr"
 )
 
-/*
-	private func synchronizeGroupMessageStats(postbox: Postbox, network: Network, groupId: PeerGroupId, namespace: MessageId.Namespace) -> Signal<Void, NoError> {
-		return postbox.transaction { transaction -> Signal<Void, NoError> in
-			if namespace != Namespaces.Message.Cloud || groupId == .root {
-				transaction.confirmSynchronizedPeerGroupMessageStats(groupId: groupId, namespace: namespace)
-				return .complete()
-			}
-
-			if !transaction.doesChatListGroupContainHoles(groupId: groupId) {
-				transaction.recalculateChatListGroupStats(groupId: groupId)
-				return .complete()
-			}
-
-			return network.request(Api.functions.messages.getPeerDialogs(peers: [.inputDialogPeerFolder(folderId: groupId.rawValue)]))
-			|> map(Optional.init)
-			|> `catch` { _ -> Signal<Api.messages.PeerDialogs?, NoError> in
-				return .single(nil)
-			}
-			|> mapToSignal { result -> Signal<Void, NoError> in
-				return postbox.transaction { transaction in
-					if let result = result {
-						switch result {
-						case let .peerDialogs(peerDialogs):
-							for dialog in peerDialogs.dialogs {
-								switch dialog {
-									case let .dialogFolder(dialogFolder):
-										transaction.resetPeerGroupSummary(groupId: groupId, namespace: namespace, summary: PeerGroupUnreadCountersSummary(all: PeerGroupUnreadCounters(messageCount: dialogFolder.unreadMutedMessagesCount, chatCount: dialogFolder.unreadMutedPeersCount)))
-									case .dialog:
-										assertionFailure()
-										break
-								}
-							}
-						}
-					}
-					transaction.confirmSynchronizedPeerGroupMessageStats(groupId: groupId, namespace: namespace)
-				}
-			}
-		}
-		|> switchToLatest
-	}
-*/
-
 // MessagesGetPeerDialogs
 // messages.getPeerDialogs#e470bcfd peers:Vector<InputDialogPeer> = messages.PeerDialogs;
 func (c *DialogsCore) MessagesGetPeerDialogs(in *mtproto.TLMessagesGetPeerDialogs) (*mtproto.Messages_PeerDialogs, error) {

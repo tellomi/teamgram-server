@@ -3,7 +3,7 @@
 本文档介绍在 Linux 上从零手动安装 Teamgram 服务端及其依赖，适用于 CentOS 7/9、Fedora、Ubuntu/Debian 等发行版。不同发行版包管理器不同，请按说明替换为对应命令。
 
 > [English (primary)](./install-manual-linux.md) | 中文  
-> 若使用 Docker 部署，请参阅 [install-docker.md](./install-docker.md)。
+> 本机 Docker 见 [local-docker.md](./local-docker.md)。成都生产不走本页。镜像由 Publish images 推到阿里云 ACR，备份数据库后在主机执行 `/opt/tellomi/deploy-pull.sh`（[ci-acr.md](./ci-acr.md)、[SECURITY-OPS.md](./SECURITY-OPS.md)）。克隆 `https://github.com/tellomi/teamgram-server`。不要克隆上游 Teamgram 仓库，也不要走 GitHub 镜像。
 
 ---
 
@@ -13,7 +13,7 @@
 - **MySQL**：8.x（推荐 8.0.29）
 - **Redis**：6.x
 - **Etcd**：3.5.x
-- **Kafka**：2.x / 3.x（需配合 Zookeeper）
+- **Kafka**：3.x。`docker-compose-env.yaml` 用的是 KRaft（`apache/kafka:3.9.0`），不启动 ZooKeeper。下面的 ZooKeeper 步骤只用于源码安装的 broker。
 - **MinIO**：对象存储
 - **Pika**（可选）：默认端口 9221，可替代部分 Redis 能力
 - **FFmpeg**：音视频处理
@@ -171,7 +171,7 @@ chmod +x minio
 ```
 
 - 控制台：`http://<IP>:9001`（或终端提示的端口）
-- 默认账号：RootUser: minioadmin，RootPass: minioadmin（或 miniostorage，视版本而定）
+- 自行设置 `MINIO_ROOT_USER` 和 `MINIO_ROOT_PASSWORD`。开发用 compose 默认是 `minio` / `miniostorage`。这不是生产密码。
 
 **创建存储桶（在 MinIO 控制台或 mc 命令行），启动 dfs 之前完成。** 服务不会自动建桶。详见 `docs/storage.md`。
 
@@ -226,7 +226,7 @@ apt install ffmpeg -y
 ### 3.1 克隆代码
 
 ```bash
-git clone https://github.com/teamgram/teamgram-server.git
+git clone https://github.com/tellomi/teamgram-server.git
 cd teamgram-server
 ```
 
@@ -301,7 +301,7 @@ make
 ```yaml
 Minio:
   Endpoint: localhost:9000
-  AccessKeyID: minioadmin
+  AccessKeyID: minio
   SecretAccessKey: miniostorage
   UseSSL: false
   Region: us-east-1

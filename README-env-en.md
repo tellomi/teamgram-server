@@ -1,104 +1,86 @@
-# High-Performance Components Environment (docker-compose-env2)
+# Dependency stack (`docker-compose-env.yaml`)
 
-A self-contained environment stack based on `docker-compose-env2.yaml`, independent of `docker-compose-env.yaml`. It includes monitoring, logging, message queue, storage, and related components.
+`docker-compose-env.yaml` is the dependency stack: MySQL, Redis, etcd, Kafka (KRaft, no ZooKeeper), and the optional monitoring services. The app is `docker-compose.yaml`. There is no `docker-compose-env2.yaml`.
+
+MinIO is Compose profile `local-minio`. A default `up` does not start it. Chengdu media is Cloudflare R2, not this MinIO. See [docs/storage.md](docs/storage.md) and [docs/SECURITY-OPS.md](docs/SECURITY-OPS.md).
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
-| kafka | Message queue (KRaft mode, no Zookeeper) |
+| kafka | Message queue (`apache/kafka:3.9.0`, KRaft, no ZooKeeper) |
 | etcd | Configuration and discovery |
 | redis | Cache |
-| mysql | Relational database (MySQL 8.0) |
-| minio / minio-mc | Object storage and bucket initialization |
+| mysql | MySQL 8.0. Init SQL is already mounted from `teamgramd/deploy/sql`. |
+| mysql-migrate | Applies `teamgramd/deploy/sql/migrate-*.sql` |
+| minio / minio-mc | Profile `local-minio` only. Images `pgsty/silo` and `pgsty/mc`. |
 | jaeger | Distributed tracing |
-| prometheus | Metrics collection |
-| node-exporter | Host metrics export |
-| grafana | Visualization and dashboards |
-| elasticsearch | Search and log storage |
-| kibana | Log/data visualization |
+| prometheus | Metrics |
+| node-exporter | Host metrics |
+| grafana | Dashboards. Host port **3001** (container 3000). |
+| elasticsearch | Log storage (named volume) |
+| kibana | Log UI |
 | filebeat | Log collection |
-| go-stash | Log pipeline (Kafka → Elasticsearch) |
+| go-stash | Kafka → Elasticsearch (`kevinwan/go-stash:1.1.1`) |
 
 ## Prerequisites
 
 - Docker and Docker Compose (Compose V2: `docker compose`)
-- For Elasticsearch, ensure `vm.max_map_count` ≥ 262144 on Linux: `sysctl -w vm.max_map_count=262144`
+- For Elasticsearch, `vm.max_map_count` ≥ 262144 on Linux: `sysctl -w vm.max_map_count=262144`
 
-## Environment Variables
+## Environment variables
 
-- Template: `.env.example`
-- Usage: copy to `.env` and adjust as needed (change secrets in production).
+Copy `.env.example` to `.env`. The passwords in that file and in the table are **dev-only**. Production values were rotated on 2026-11-03 and are not in git. See [docs/SECURITY-OPS.md](docs/SECURITY-OPS.md).
 
-```bash
-cp .env.example .env
-# Edit .env for MYSQL_*, MINIO_*, GRAFANA_*, etc.
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable | Dev default | Description |
+|----------|-------------|-------------|
 | MYSQL_ROOT_PASSWORD | root | MySQL root password |
-| MYSQL_DATABASE | teamgram | Default database name |
+| MYSQL_DATABASE | teamgram | Database name |
 | MYSQL_USER | teamgram | Application DB user |
-| MYSQL_PASSWORD | teamgram | Application DB password |
-| MINIO_ROOT_USER | minio | MinIO username |
-| MINIO_ROOT_PASSWORD | miniostorage | MinIO password |
-| GRAFANA_ADMIN_USER | admin | Grafana admin username |
+| MYSQL_PASSWORD | teamgram | Application DB password. Passed to the app as `TEAMGRAM_MYSQL_PASSWORD`. |
+| MINIO_ROOT_USER | minio | Local MinIO user (profile `local-minio`) |
+| MINIO_ROOT_PASSWORD | miniostorage | Local MinIO password |
+| GRAFANA_ADMIN_USER | admin | Grafana admin user |
 | GRAFANA_ADMIN_PASSWORD | admin | Grafana admin password |
-| GRAFANA_ROOT_URL | http://localhost:3000 | Grafana root URL |
+| GRAFANA_ROOT_URL | http://localhost:3000 | Grafana root URL setting |
 
-## Start and Stop
+## Start and stop
 
 ```bash
-# Start all services (detached)
-docker compose -f docker-compose-env2.yaml up -d
-
-# Check status
-docker compose -f docker-compose-env2.yaml ps
-
-# Stop
-docker compose -f docker-compose-env2.yaml down
-
-# Stop (data under ./data/ is kept)
-docker compose -f docker-compose-env2.yaml down
+docker compose -f docker-compose-env.yaml up -d
+docker compose -f docker-compose-env.yaml --profile local-minio up -d   # workstation object storage
+docker compose -f docker-compose-env.yaml ps
+docker compose -f docker-compose-env.yaml down
 ```
 
-Compose reads `.env` from the current directory; if absent, the defaults above are used.
+`down` keeps bind-mounted data under `./data/` and the named volumes. Do not pass `--profile local-minio` on Chengdu.
 
-## Ports and Access URLs
+## Ports
 
-All services bind to `127.0.0.1` only (local access).
+Published ports listen on all interfaces. They are not bound to `127.0.0.1` in this file. Chengdu adds `docker-compose.tellomi.yaml` (not in git) so infrastructure ports stay on loopback.
 
-| Service | Port | URL |
-|---------|------|-----|
-| Jaeger UI | 16686 | http://127.0.0.1:16686 |
-| Prometheus | 9090 | http://127.0.0.1:9090 |
-| Grafana | 3000 | http://127.0.0.1:3000 |
-| Kibana | 5601 | http://127.0.0.1:5601 |
-| MinIO API | 9000 | http://127.0.0.1:9000 |
-| MinIO Console | 9001 | http://127.0.0.1:9001 |
-| MySQL | 3306 | 127.0.0.1:3306 |
-| Redis | 6379 | 127.0.0.1:6379 |
-| etcd | 2379 | http://127.0.0.1:2379 |
-| Kafka | 9092 | 127.0.0.1:9092 |
-| Elasticsearch | 9200 | http://127.0.0.1:9200 |
-| Node Exporter | 9100 | http://127.0.0.1:9100 |
+| Service | Host port | Notes |
+|---------|-----------|--------|
+| Jaeger UI | 16686 | |
+| Prometheus | 9090 | Config `teamgramd/deploy/prometheus/server/prometheus.yml` |
+| Grafana | 3001 | Container listens on 3000 |
+| Kibana | 5601 | |
+| MinIO API | 9000 | Profile `local-minio` only |
+| MinIO console | 9001 | Profile `local-minio` only |
+| MySQL | 3306 | |
+| Redis | 6379 | |
+| etcd | 2379 | |
+| Kafka | 9092 and 9094 | Other containers use `kafka:9092`. Host clients use `127.0.0.1:9094`. |
+| Elasticsearch | 9200 | |
+| Node exporter | 9100 | |
 
-## Configuration
+## Configuration files
 
-These services rely on config files under `teamgramd/deploy/`; the files must exist and be valid:
+- Prometheus: `teamgramd/deploy/prometheus/server/prometheus.yml`
+- Filebeat: `teamgramd/deploy/filebeat/conf/filebeat.yml`
+- Go-stash: `teamgramd/deploy/go-stash/etc/config.yaml`
 
-- **Prometheus**: `teamgramd/deploy/prometheus/prometheus.yml` (scrapes Prometheus and node-exporter)
-- **Filebeat**: `teamgramd/deploy/filebeat/filebeat.yml`
-- **Go-Stash**: `teamgramd/deploy/go-stash/config.yaml` (configure Kafka topics and Elasticsearch index for your use case)
-
-To run project SQL init for MySQL, add a volume to the `mysql` service in `docker-compose-env2.yaml`, for example:
-
-```yaml
-volumes:
-  - ./data/mysql:/var/lib/mysql
-  - ./teamgramd/sql:/docker-entrypoint-initdb.d:ro
-```
+MySQL already mounts `teamgramd/deploy/sql` onto `/docker-entrypoint-initdb.d`. Do not add a `teamgramd/sql` volume. That directory is not the init path.
 
 ## Network
 
@@ -106,24 +88,15 @@ volumes:
 - Driver: bridge
 - Subnet: `172.20.0.0/16`
 
-## Data Persistence
+## Data
 
-Data is stored in **local directories** under the project `data/` folder:
-
-| Service | Host path |
-|---------|-----------|
-| kafka | `./data/kafka` |
+| Service | Where |
+|---------|--------|
+| kafka | named volume `kafka_data` |
 | etcd | `./data/etcd` |
 | redis | `./data/redis` |
 | mysql | `./data/mysql` |
-| minio | `./data/minio` |
-| prometheus | `./data/prometheus` |
-| grafana | `./data/grafana` |
-| elasticsearch | `./data/elasticsearch` |
-
-Docker Compose creates these directories on first run. Running `down` does not remove them; back up or migrate by copying the `data/` directory.
-
-## Notes
-
-- **Go-Stash**: If the image `kevwan/go-stash` is not available, use your own or another image and keep `teamgramd/deploy/go-stash/config.yaml` in sync with the runtime.
-- **Grafana**: First login uses `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env`. Add Prometheus, Elasticsearch, etc. as data sources in Grafana to view metrics and logs.
+| minio | `./data/minio` (profile `local-minio`) |
+| prometheus | `./data/prometheus/data` |
+| grafana | `./data/grafana/data` |
+| elasticsearch | named volume `elasticsearch_data` |

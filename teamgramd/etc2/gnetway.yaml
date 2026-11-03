@@ -24,6 +24,10 @@ Telemetry:
   Sampler: 1.0
   Batcher: otlpgrpc
   
+# Upstream Teamgram default (dev and clients that do not have the rotated key).
+# Production prepends TELLOMI_MTPROTO_EXTRA_KEY_* and checks the fingerprint
+# at startup. Remove this entry only after those clients are gone.
+# See docs/SECURITY-OPS.md.
 RSAKey:
   - KeyFile: "./server_pkcs1.key"
     KeyFingerprint: "12240908862933197005"

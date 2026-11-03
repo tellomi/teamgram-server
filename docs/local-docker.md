@@ -73,12 +73,14 @@ Use E.164 numbers without extra spaces, for example `+15551212001`.
 
 ## Point a client at it
 
-Stock layer-232 clients (Telegram iOS `fb0e62ba`, Telegram Android `3de37c8`,
-rebranded) should use this server’s DC address and the public key in
-`teamgramd/bin/server_pkcs1.key` (fingerprint `12240908862933197005`). The
-client build replaces Telegram’s production DC list and RSA key; that
-rebrand is outside this repository. TCP port **10443** is the abridged /
-intermediate / padded-intermediate listener.
+A workstation client uses this server’s DC address and the public key in
+`teamgramd/bin/server_pkcs1.key` (fingerprint `12240908862933197005`). That
+file is the upstream Teamgram default. Chengdu production prepends the rotated
+key (fingerprint `4381149949997195609`) and still serves the upstream key
+until clients carrying the new public key are widespread. See
+[SECURITY-OPS.md](SECURITY-OPS.md). The client build replaces Telegram’s
+production DC list and RSA key; that rebrand is outside this repository.
+TCP port **10443** is the abridged / intermediate / padded-intermediate listener.
 
 ## Prove the layer 232 codec
 

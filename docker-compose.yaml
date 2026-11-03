@@ -139,8 +139,17 @@ services:
       TELLOMI_APP_UPDATE_URL: ${TELLOMI_APP_UPDATE_URL:-}
       TELLOMI_APP_UPDATE_SOURCE: ${TELLOMI_APP_UPDATE_SOURCE:-}
       TELLOMI_APP_UPDATE_CANNOT_SKIP: ${TELLOMI_APP_UPDATE_CANNOT_SKIP:-}
+      # Extra MTProto RSA key. Both empty: gnetway uses RSAKey in
+      # teamgramd/etc2/gnetway.yaml. Chengdu sets both; the file is the
+      # read-only mount at /etc/tellomi/mtproto/. See docs/SECURITY-OPS.md.
+      TELLOMI_MTPROTO_EXTRA_KEY_FILE: ${TELLOMI_MTPROTO_EXTRA_KEY_FILE:-}
+      TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT: ${TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT:-}
+      # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
+      # The dev default matches the database created by docker-compose-env.yaml.
+      # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.
+      TEAMGRAM_MYSQL_PASSWORD: ${MYSQL_PASSWORD:-teamgram}
       # Schema migration on startup (teamgramd/deploy/migrate.sh). Root matches
-      # the MySQL service; the app processes still use the DSN in etc2/*.yaml.
+      # the MySQL service. App DSNs in etc2 are rewritten from TEAMGRAM_MYSQL_PASSWORD.
       MYSQL_HOST: ${MYSQL_HOST:-mysql}
       MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_USER: ${MYSQL_MIGRATE_USER:-root}

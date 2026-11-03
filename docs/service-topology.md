@@ -1,6 +1,6 @@
 # Service Topology and Configuration
 
-This document describes each service’s **ports**, **infrastructure dependencies**, and **core call relationships** based on `teamgramd/etc/*.yaml` and the startup order in `teamgramd/bin/runall2.sh`.
+This document describes each service’s **ports**, **infrastructure dependencies**, and **core call relationships** based on `teamgramd/etc/*.yaml` and the startup order in `teamgramd/bin/runall2.sh`. The Docker image runs `teamgramd/etc2` through `teamgramd/bin/runall-docker.sh`. Chengdu deploy is [ci-acr.md](ci-acr.md) and [SECURITY-OPS.md](SECURITY-OPS.md), not an anonymous clone.
 
 ## Startup order
 

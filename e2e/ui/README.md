@@ -67,8 +67,11 @@ assertions in that checkout's `Tellomi/check_server_config.py`, regenerates
 the header, and builds `debug_sim_arm64`. The checkout is never pushed. A
 device IPA is rejected: it cannot boot in the Simulator.
 
-Staging must present the same development RSA key the clients ship
-(fingerprint `12240908862933197005`). The runner must be able to open TCP
+Clients that still ship the upstream public key need fingerprint
+`12240908862933197005` in the server key list. Staging and
+`teamgramd/etc2/gnetway.yaml` still serve that key. Chengdu production also
+advertises the rotated key first (fingerprint `4381149949997195609`). See
+[docs/SECURITY-OPS.md](../../docs/SECURITY-OPS.md). The runner must be able to open TCP
 `11443` on the host. If GitHub-hosted runners cannot, set
 `E2E_ANDROID_RUNNER` and `E2E_IOS_RUNNER` to self-hosted runners that can.
 
