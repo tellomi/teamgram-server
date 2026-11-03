@@ -1,6 +1,7 @@
 // Package discoverrel answers content-engine visibility checks.
-// Contacts and close friends are read from the chat tables at request time.
-// Nothing is snapshotted onto a post.
+// can_view calls POST /internal/v1/relations/check on each read.
+// Contacts and close friends come from the author's chat rows, not from a
+// friend_edge snapshot. Selected users stay on the audience token.
 package discoverrel
 
 import "encoding/base64"

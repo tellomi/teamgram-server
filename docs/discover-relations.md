@@ -66,6 +66,30 @@ Content-Type: application/json
 
 没见过的人、已删除的联系人：`contact` 和 `close_friend` 都是 false。不要把查询结果写进帖子。同一次读可以在内存里复用，下一次读再问。
 
+## `can_view` 怎么调用
+
+引擎每次读帖子都在 `can_view` 里判断。联系人和密友两档走这个接口，不读 `friend_edge`，也不在发帖时把名单写进帖子。
+
+一次只判断一篇帖时，`authors` 放一个作者：
+
+```json
+{"viewer":"<查看者 sub>","authors":["<作者 sub>"]}
+```
+
+一页很多作者时，可以放进同一次 `authors`（最多 100）。只在这一次请求里复用结果。下一次 `can_view` 再问。
+
+| 帖子可见范围 | `can_view` |
+| --- | --- |
+| 所有人 | 不调用 |
+| 我的联系人 | `contact == true` 才可见 |
+| 密友 | `close_friend == true` 才可见 |
+| 选定的用户 | 不调用。仍用发帖时的 `audience_token` 写入的 `audience_list_member` |
+| 作者本人 | 引擎直接放行，不必调用 |
+
+超时、401、400、503：这一档不可见。不要改成所有人可见。
+
+`friend_edge`（`tellomi-feed-friend`）是双方各报一次的旧边。联系人 / 密友不要再靠它。引擎把这两档改成调用上面的接口之后，旧的 friend 边可以留着，但 `can_view` 不要用它决定这两档。
+
 ## 错误
 
 | HTTP | `error` | 引擎怎么做 |
@@ -77,10 +101,12 @@ Content-Type: application/json
 
 失败不能当成「所有人可见」。
 
-## 和引擎现有模型的差别
+## 以后由 teamgram 签 audience / friend 断言
 
-引擎现在的好友要双方各交一份 Signal 签名。这里换成 teamgram 按聊天联系人和快拍密友实时回答，引擎不要再为这两档存边。
+这个接口不签发断言。引擎 `internal/engine/auth/assertion.go` 现在认的两种 JWT 可以以后改由 teamgram 签，校验不用改。签名密钥就是凭证那把 `TELLOMI_DISCOVER_SIGNING_KEY`（引擎 `ENGINE_FEED_AUTH_KEYS` 的第一把），头同样是 `{"alg":"HS256","typ":"JWT"}`。`sub` 的编码和凭证一样：16 字节的 base64url，无填充。
 
-「选定的用户」仍是发帖时的 include 名单（快照，不是这个接口）。引擎现有的 `SignAudience` JWT 还要 teamgram 签，这一档本接口不覆盖，引擎侧接到 include 名单之前先不要用未签名的 user id。
+好友断言 `tellomi-feed-friend`，字段顺序 `typ`、`exp`、`a`、`b`、`op`（`op` 是 `add` 或 `remove`）。这是快照。联系人 / 密友以本接口的实时查询为准，不要用这条边代替 `can_view`。
+
+受众断言 `tellomi-feed-audience`，字段顺序 `typ`、`exp`、`owner`、`kind`、`members`。`kind` 用 `include`。发帖时交给引擎，写入 `audience_list_member`。选定的用户仍是这份发帖时的名单，不是本接口。本 PR 还不提供签发方法；加上时不需要新的密钥，也不改这个查询。
 
 一个内容池（D-44）和机审拿不准只给作者看（D-46）都在引擎里改，不在这个接口里。
