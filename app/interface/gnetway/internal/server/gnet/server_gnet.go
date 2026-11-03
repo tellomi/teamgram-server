@@ -440,12 +440,6 @@ func (s *Server) onEncryptedMessage(c gnet.Conn, ctx *connContext, authKey *auth
 					s.PutAuthKey(key3)
 				}
 			}
-			if permAuthKeyId == 0 {
-				// Still unbound. A session keyed by 0 is shared by every such
-				// connection and answers the 2FA step with an empty password.
-				logx.Errorf("conn authKeyId=%d has no perm key yet; not opening a session", authKey.AuthKeyId())
-				return nil
-			}
 			err := s.svcCtx.Dao.SessionDispatcher.SendData(ctx2, permAuthKeyId, &session.TLSessionSendDataToSession{
 				Data: &session.SessionClientData{
 					ServerId:      s.svcCtx.GatewayId,
