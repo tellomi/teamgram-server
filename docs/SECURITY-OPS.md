@@ -71,7 +71,36 @@ The Publish images workflow (`.github/workflows/docker-acr.yml`) builds images a
 
 `deploy-pull.sh` runs `git fetch` against the public GitHub remote. If this repository becomes private, put a read-only deploy key on the host before the next fetch. Do not point the fetch at a mirror.
 
+## Root disk
+
+Deploying `a6e919c` filled the Chengdu root disk with old images and handshakes failed for about five minutes. `deploy-pull.sh` now refuses to touch the checkout when `/` is short of free space. The cleanup and cron files live in git; the host copies are installed by hand.
+
+```bash
+install -m 755 deploy-pull.sh /opt/tellomi/deploy-pull.sh
+install -m 755 scripts/ops/tellomi-image-cleanup.sh /usr/local/bin/tellomi-image-cleanup.sh
+install -m 755 scripts/ops/tellomi-disk-watch.sh /usr/local/bin/tellomi-disk-watch.sh
+install -m 644 scripts/ops/tellomi-disk-watch.cron /etc/cron.d/tellomi-disk-watch
+```
+
+`git checkout` does not update `/opt/tellomi/deploy-pull.sh` or `/usr/local/bin`. Copy them again after this repo changes.
+
+Retention, per `tellomi-image-cleanup.sh`. Only 7-hex tags of `*/tellomi/teamgram` and `*/tellomi/asr` are candidates. Kept:
+
+- the tag each container was created from (running or stopped);
+- the sha passed to the deploy (`--keep`), which is this deploy's tag;
+- the two newest other `teamgram` tags (`TELLOMI_KEEP_RECENT`, default 2). The same sha set is kept for `asr`.
+
+Newest is image creation time, then the local tag time (`Metadata.LastTagTime`, set when the tag was pulled), then the git commit time in `TELLOMI_DEPLOY_DIR`, then the tag string. Creation time alone is not a stable order: two images with the same `Created` could sort the rollback tag behind an older one and delete it. After that, `docker image prune -f` removes dangling layers only. Volumes, containers, `/opt/tellomi/backups`, and other images are not touched.
+
+Thresholds:
+
+- Before checkout, if `df -BG` reports less than `TELLOMI_MIN_FREE_GB` (default 10) GiB free on `/`, the script runs cleanup. If free space is still short, it exits 3 and does not change the checkout, `.env`, or containers.
+- `TELLOMI_DEPLOY_CHECK_ONLY=1` stops before checkout. When free space is already under the threshold, cleanup is `--dry-run` and the script still exits 3, because a dry-run does not free space. When free space is already enough, it prints `disk: ok` and `CHECK_ONLY: stop before deploy`.
+- `/etc/cron.d/tellomi-disk-watch` runs every 10 minutes. Above `TELLOMI_DISK_WARN_PCT` (default 85) percent used on `/`, it logs a warning and runs the same cleanup. 85 percent does not fire; 86 percent does.
+
+A failed post-deploy cleanup prints a warning and does not roll the deploy back. `mysql-migrate` still has to exit 0 before `teamgram` is recreated, and the GeoIP file and `docker-compose.tellomi.yaml` are still required.
+
 ## Known follow-ups
 
 - Remove the upstream RSA key from `gnetway.yaml` `RSAKey` once clients carrying the new public key are widespread.
-- The `deploy-pull.sh` on the Chengdu host (`/opt/tellomi/deploy-pull.sh`) is older than the copy in this repo. Update the host file from this repo before relying on behavior that only the repo copy has.
+- Chengdu does not pick up `deploy-pull.sh` or `scripts/ops/` from the checkout. Install them with the commands under Root disk before the next deploy.

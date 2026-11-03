@@ -1,0 +1,2 @@
+# Installed as /etc/cron.d/tellomi-disk-watch. See docs/SECURITY-OPS.md.
+*/10 * * * * root /usr/local/bin/tellomi-disk-watch.sh

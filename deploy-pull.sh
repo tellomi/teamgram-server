@@ -2,13 +2,22 @@
 # Pinned production deploy. Pulls published images; never builds.
 #
 #   /opt/tellomi/deploy-pull.sh <7-char short SHA>
+#   TELLOMI_DEPLOY_CHECK_ONLY=1 /opt/tellomi/deploy-pull.sh <sha>
 #
 # The production copy lives at /opt/tellomi/deploy-pull.sh, outside the
 # checkout, so the checkout path is TELLOMI_DEPLOY_DIR (default
-# /opt/tellomi/teamgram-server), not the script's directory. The host file
-# is older than this copy; updating it is a separate step (docs/SECURITY-OPS.md).
-# git fetch below uses the public GitHub remote. A private repo needs a
-# read-only deploy key on the host first. Do not fetch through a mirror.
+# /opt/tellomi/teamgram-server), not the script's directory. Copy this file
+# and scripts/ops onto the host; git checkout does not update them
+# (docs/SECURITY-OPS.md). git fetch below uses the public GitHub remote. A
+# private repo needs a read-only deploy key on the host first. Do not fetch
+# through a mirror.
+#
+# Disk: if / has less than TELLOMI_MIN_FREE_GB (default 10) GiB free, old
+# tellomi image tags are removed before checkout. Still short: exit 3, and
+# the checkout, .env, and containers are left alone. CHECK_ONLY stops before
+# checkout; when space is already short, cleanup is a dry-run and the script
+# exits 3 because a dry-run does not free space. After a successful deploy,
+# cleanup runs again.
 #
 # Steps: check out that commit, pin TELLOMI_IMAGE_TAG in .env, pull the
 # teamgram image (and asr when the commit defines it), run mysql-migrate,
@@ -24,6 +33,56 @@ SHA="${1:-}"
 if [[ ! "$SHA" =~ ^[0-9a-f]{7}$ ]]; then
   echo "usage: $0 <7-char short SHA>" >&2
   exit 2
+fi
+
+MIN_FREE_GB="${TELLOMI_MIN_FREE_GB:-10}"
+CLEANUP="${TELLOMI_IMAGE_CLEANUP:-/usr/local/bin/tellomi-image-cleanup.sh}"
+if [[ ! "$MIN_FREE_GB" =~ ^[0-9]+$ ]]; then
+  echo "TELLOMI_MIN_FREE_GB must be an integer" >&2
+  exit 2
+fi
+
+avail_gb() {
+  df -BG --output=avail / | tail -1 | tr -dc '0-9'
+}
+
+# Runs before checkout. A short disk must not rewrite .env or recreate containers.
+disk_precheck() {
+  local free mode
+  local -a dry_args
+  free="$(avail_gb)"
+  if [[ -z "$free" ]]; then
+    echo "disk: could not read free space on /" >&2
+    exit 1
+  fi
+  echo "disk: ${free}G free on / (need ${MIN_FREE_GB}G)"
+  if (( free < MIN_FREE_GB )); then
+    dry_args=()
+    mode="cleanup"
+    if [[ "${TELLOMI_DEPLOY_CHECK_ONLY:-}" == "1" ]]; then
+      dry_args=(--dry-run)
+      mode="dry-run"
+    fi
+    if [[ ! -x "$CLEANUP" ]]; then
+      echo "ABORT: only ${free}G free on / and ${CLEANUP} is not executable. Nothing deployed; containers untouched." >&2
+      exit 3
+    fi
+    echo "disk: below ${MIN_FREE_GB}G, cleaning old images (${mode})"
+    "$CLEANUP" "${dry_args[@]}" --keep "$SHA"
+    free="$(avail_gb)"
+    if (( free < MIN_FREE_GB )); then
+      echo "ABORT: only ${free}G free on / after cleanup (need ${MIN_FREE_GB}G). Nothing deployed; containers untouched." >&2
+      logger -t tellomi-deploy -p user.err "deploy ${SHA} aborted: ${free}G free on /" 2>/dev/null || true
+      exit 3
+    fi
+  fi
+  echo "disk: ok"
+}
+
+disk_precheck
+if [[ "${TELLOMI_DEPLOY_CHECK_ONLY:-}" == "1" ]]; then
+  echo "CHECK_ONLY: stop before deploy"
+  exit 0
 fi
 
 DIR="${TELLOMI_DEPLOY_DIR:-/opt/tellomi/teamgram-server}"
@@ -97,3 +156,8 @@ echo "recreating teamgram"
 
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E 'tellomi-(teamgram|asr)-1' || true
 echo "DEPLOY_DONE ${SHA}"
+if [[ -x "$CLEANUP" ]]; then
+  "$CLEANUP" --keep "$SHA" || echo "warn: post-deploy image cleanup failed" >&2
+else
+  echo "warn: ${CLEANUP} missing; skipped post-deploy image cleanup" >&2
+fi
