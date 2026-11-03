@@ -225,6 +225,8 @@ BFFProxyClients:
     # Feed reads. Constructors are layer 233; iOS already sends them.
     # feed.readFeed returns updates with seq 0.
     "/mtproto.RPCFeed": "bff.bff"
+    # discover.getEngineCredential. Content-engine HS256 credential. Off unless TELLOMI_DISCOVER=1.
+    "/mtproto.RPCDiscover": "bff.bff"
     # Android TL_iv.getRichMessage is messages.getRichMessage#501569cf.
     # This registration covers the coverage name. The constructor is RPCMessages.
     "/mtproto.RPCIv": "bff.bff"

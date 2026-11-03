@@ -1,0 +1,35 @@
+// Discover credential constructors are Tellomi-only. They are not in
+// telegram_api_layer232.tl. TL encode/decode lives in discover_codec.go.
+//
+// discover.engineCredential#0578ccaa token:string expires:int region:string = discover.EngineCredential;
+// discover.getEngineCredential#a80a7f76 = discover.EngineCredential;
+//
+// Constructor ids are CRC32 of the combinator with the id removed
+// (Vector<T> would be written "Vector T"). Clients send
+// discover.getEngineCredential and read discover.engineCredential.
+
+syntax = "proto3";
+
+package mtproto;
+
+import "schema.tl.crc32.proto";
+
+option go_package = "github.com/teamgram/proto/mtproto";
+
+// Discover_EngineCredential is discover.engineCredential#0578ccaa.
+message Discover_EngineCredential {
+  string predicate_name = 1;
+  TLConstructor constructor = 2;
+  string token = 3;
+  int32 expires = 4;
+  string region = 5;
+}
+
+// TL_discover_getEngineCredential is discover.getEngineCredential#a80a7f76.
+message TL_discover_getEngineCredential {
+  TLConstructor constructor = 1;
+}
+
+service RPCDiscover {
+  rpc discover_getEngineCredential(TL_discover_getEngineCredential) returns (Discover_EngineCredential);
+}

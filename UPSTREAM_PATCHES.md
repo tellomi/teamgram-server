@@ -141,3 +141,13 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 | `bots.addUsername` | `app/bff/botadmin/more.go` `AddUsername` | `usernamepolicy.RejectBot` after the format check |
 
 There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same hook.
+
+## Discover credential (M3)
+
+`TELLOMI_DISCOVER=1` makes `discover.getEngineCredential#a80a7f76` return a content-engine HS256 JWT. Any other value, including unset, answers `DISCOVER_DISABLED`. The schema, claims, and keys are in `docs/discover-engine-auth.md`. The codec and the handler live in Tellomi files (`proto/mtproto/discover_codec.go`, `app/bff/discover`).
+
+| Call | File | Hook |
+| --- | --- | --- |
+| session route | `teamgramd/etc/session.yaml`, `teamgramd/etc2/session.yaml`, `app/interface/session/etc/session.yaml` | `"/mtproto.RPCDiscover": "bff.bff"` |
+| bff register | `app/bff/bff/internal/server/server.go` | `RegisterRPCDiscoverServer` |
+| RPC table | `proto/mtproto/rpc_client_registers.go` | `TLDiscoverGetEngineCredential` |
