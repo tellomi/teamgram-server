@@ -154,3 +154,30 @@ rclone lsjson r2:tellomi-prod-db-backups/mysql/ --s3-no-check-bucket | head
 The newest `mysql/`, `etcd/`, and `redis/` objects should be from this run. There is no `rclone delete` in the script; confirm with `grep rclone /usr/local/bin/tellomi-db-backup.sh`.
 
 A monthly restore on a fresh Docker host is required. Do it off Chengdu. The drill steps are a separate change.
+
+## 04:00 check
+
+[`scripts/ops/tellomi-backup-verify.sh`](../../scripts/ops/tellomi-backup-verify.sh) lists the newest `.age` object under `mysql/`, `etcd/`, and `redis/`. It does not decrypt. For each prefix it checks:
+
+- the object is younger than 26 hours (`TELLOMI_BACKUP_MAX_AGE_HOURS`);
+- the `.sha256` sidecar matches the downloaded bytes (`sha256sum -c`);
+- the first lines are an age header (`age-encryption.org/v1`, a `->` recipient, then `---`);
+- the size is at least `TELLOMI_BACKUP_MIN_BYTES` (default 1024) and at most `TELLOMI_BACKUP_MAX_BYTES` (default 8 GiB).
+
+The same rclone flags as the upload are used, including `--s3-no-check-bucket`. Credentials are the same env file, with the same media-key warning. A write-only token cannot list or download, which is why the daily token is Object Read & Write on this bucket.
+
+At 04:00 a backup that finished at 03:15 the previous day is about 25 hours old, so one missed night still passes. The following morning it is about 49 hours old and the check fails. Set `TELLOMI_BACKUP_MAX_AGE_HOURS=6` in the cron file if a missed night should fail the same morning.
+
+```bash
+install -m 755 scripts/ops/tellomi-backup-verify.sh /usr/local/bin/tellomi-backup-verify.sh
+install -m 644 scripts/ops/tellomi-backup-verify.cron /etc/cron.d/tellomi-backup-verify
+```
+
+`tellomi-backup-common.sh` must already be in `/usr/local/bin`. The script logs to syslog with tag `tellomi-backup-verify` and exits non-zero when a prefix fails.
+
+```bash
+/usr/local/bin/tellomi-backup-verify.sh --self-test
+/usr/local/bin/tellomi-backup-verify.sh
+```
+
+`--self-test` uses a fake rclone. It does not talk to R2.
