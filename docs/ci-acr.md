@@ -66,6 +66,11 @@ deploy key on the host before the next fetch. Do not point the fetch at a mirror
 The script lives outside the checkout. It works in `TELLOMI_DEPLOY_DIR`
 (default `/opt/tellomi/teamgram-server`) and:
 
+Before checkout, if `/` has less than 10 GiB free, it deletes old tellomi
+image tags and exits 3 without changing the checkout or containers when
+space is still short. Install paths, the kept tags, and the cron are in
+[Security operations](SECURITY-OPS.md#root-disk).
+
 1. fetches and checks out `<shortSHA>` (detached), and pins
    `TELLOMI_IMAGE_TAG=<shortSHA>` in `.env`;
 2. composes project `tellomi` from `docker-compose-env.yaml`,

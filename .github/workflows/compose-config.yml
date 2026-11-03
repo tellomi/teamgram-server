@@ -24,3 +24,12 @@ jobs:
 
       - name: Teamgram image binaries are derived from the entrypoint
         run: bash scripts/verify-teamgram-binaries.sh --self-test
+
+      - name: shellcheck deploy and disk scripts
+        run: |
+          if ! command -v shellcheck >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq shellcheck
+          fi
+          shellcheck deploy-pull.sh scripts/ops/tellomi-image-cleanup.sh scripts/ops/tellomi-disk-watch.sh
+          bash scripts/ops/tellomi-image-cleanup.sh --self-test
