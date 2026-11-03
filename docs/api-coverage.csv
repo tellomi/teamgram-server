@@ -331,7 +331,7 @@ messages.acceptEncryption,messages,P1,interactive,yes,yes,no,yes,implemented,ok,
 messages.acceptUrlAuth,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSeamless,app/bff/seamless/service.go
 messages.addChatUser,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.addPollAnswer,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPolls,app/bff/messages/internal/server/grpc/service/chat_p1.go
-messages.appendTodoList,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTodoLists,app/bff/messages/internal/server/grpc/service/p1_rest.go
+messages.appendTodoList,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTodoLists,app/bff/messages/internal/server/grpc/service/todo_lists.go
 messages.checkChatInvite,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChatInvites,app/bff/chatinvites/client/chatinvites_client.go
 messages.checkHistoryImport,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCImportedChats,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.checkHistoryImportPeer,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCImportedChats,app/bff/messages/internal/server/grpc/service/p1_rest.go
@@ -559,7 +559,7 @@ messages.togglePeerTranslations,messages,P1,interactive,yes,yes,yes,yes,implemen
 messages.toggleSavedDialogPin,messages,P1,interactive,no,no,yes,no,implemented,ok,yes,implemented,RPCSavedMessageDialogs,app/bff/savedmessagedialogs/client/savedmessagedialogs_client.go
 messages.toggleStickerSets,stickers,P2,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers_p2.go
 messages.toggleSuggestedPostApproval,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSuggestedPosts,app/bff/messages/internal/server/grpc/service/p1_rest.go
-messages.toggleTodoCompleted,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTodoLists,app/bff/messages/internal/server/grpc/service/p1_rest.go
+messages.toggleTodoCompleted,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTodoLists,app/bff/messages/internal/server/grpc/service/todo_lists.go
 messages.transcribeAudio,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranscription,app/bff/premium/internal/server/grpc/service/features.go
 messages.translateRichMessage,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.translateRichMessage_handler.go
 messages.translateText,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranslation,app/bff/channels/internal/server/grpc/service/handlers_translate.go
