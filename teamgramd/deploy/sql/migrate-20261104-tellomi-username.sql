@@ -19,11 +19,16 @@
 -- the script stops and does not take it (D-26). The stop uses
 -- teamgram_fail_if_set from 0_migrate_helpers.sql. SIGNAL cannot be
 -- prepared (MySQL error 1295). migrate.sh installs that procedure first.
+--
+-- mysql-migrate and the teamgram entrypoint can apply this file at the
+-- same time as migrate-20261105-official-accounts.sql, which moves
+-- @tellomi from 777000 to the AI user 777001. Peer 777001 is that move,
+-- not a squatter. This file must not point the row back at 777000.
 
-SET @bad = (SELECT username FROM username WHERE username = 'tellomi' AND peer_id <> 777000 LIMIT 1);
+SET @bad = (SELECT username FROM username WHERE username = 'tellomi' AND peer_id NOT IN (777000, 777001) LIMIT 1);
 CALL teamgram_fail_if_set(@bad, 'D-27: username tellomi is owned by a peer other than user 777000: ');
 
-SET @teamgram_stmt = 'UPDATE username SET username = ''tellomi'', peer_type = 2, peer_id = 777000, editable = 1, active = 1, deleted = 0 WHERE username = ''tellomi'' AND peer_id = 777000';
+SET @teamgram_stmt = 'UPDATE username SET username = ''tellomi'', peer_type = 2, editable = 1, active = 1, deleted = 0 WHERE username = ''tellomi'' AND peer_id = 777000';
 PREPARE teamgram_ps FROM @teamgram_stmt;
 EXECUTE teamgram_ps;
 DEALLOCATE PREPARE teamgram_ps;
