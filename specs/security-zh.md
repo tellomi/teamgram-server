@@ -1,6 +1,6 @@
 # 安全策略
 
-本文档说明漏洞报告流程、支持版本及披露原则。根目录 [SECURITY.md](../SECURITY.md) 提供简要入口。
+本文档说明漏洞报告流程、支持版本及披露原则。根目录 [SECURITY.md](../SECURITY.md) 提供简要入口。生产密钥轮换、密码存放位置和成都部署见 [docs/SECURITY-OPS.md](../docs/SECURITY-OPS.md)。两个文件都不要写秘密的值。
 
 ## 漏洞报告
 

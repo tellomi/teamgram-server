@@ -1,6 +1,6 @@
 # Security policy
 
-This document describes how to report vulnerabilities, supported versions, and disclosure. The root [SECURITY.md](../SECURITY.md) is a short entry.
+This document describes how to report vulnerabilities, supported versions, and disclosure. The root [SECURITY.md](../SECURITY.md) is a short entry. Production key rotation, password locations, and the Chengdu deploy path are in [docs/SECURITY-OPS.md](../docs/SECURITY-OPS.md). Do not put secret values in either file.
 
 ## Reporting vulnerabilities
 

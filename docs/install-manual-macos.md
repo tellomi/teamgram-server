@@ -3,7 +3,7 @@
 This guide describes how to install the Teamgram server and its dependencies from scratch on macOS (Intel and Apple Silicon). [Homebrew](https://brew.sh/) is recommended for managing dependencies.
 
 > English (primary) | [中文](./install-manual-macos-zh.md)  
-> For Docker deployment, see [install-docker.md](./install-docker.md).
+> Workstation Docker is [local-docker.md](./local-docker.md). Chengdu production does not follow this page. Images are published to Aliyun ACR and installed with `/opt/tellomi/deploy-pull.sh` after a database backup ([ci-acr.md](./ci-acr.md), [SECURITY-OPS.md](./SECURITY-OPS.md)). Clone `https://github.com/tellomi/teamgram-server`. Do not clone the upstream Teamgram repository and do not use a GitHub mirror.
 
 ---
 
@@ -14,7 +14,7 @@ This guide describes how to install the Teamgram server and its dependencies fro
 - **MySQL**: 8.x
 - **Redis**: 6.x
 - **Etcd**: 3.5.x
-- **Kafka**: 2.x / 3.x (with Zookeeper; Homebrew Kafka usually includes it)
+- **Kafka**: 3.x. `docker-compose-env.yaml` runs KRaft (`apache/kafka:3.9.0`) and does not use ZooKeeper. The ZooKeeper steps below are only for a from-source broker.
 - **MinIO**: object storage
 - **Pika** (optional): install from source or release; default port 9221
 - **FFmpeg**: media processing
@@ -122,7 +122,7 @@ brew services start minio
 ```
 
 - Console: http://localhost:9001  
-- Default credentials: minioadmin / minioadmin (or miniostorage, depending on version)
+- Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` yourself. The dev compose defaults are `minio` / `miniostorage`. Those are not production passwords.
 
 **Create buckets** in the MinIO console before starting dfs. The server does not create them. See `docs/storage.md`.
 
@@ -167,7 +167,7 @@ Or install from [go.dev/dl](https://go.dev/dl/).
 
 ```bash
 cd ~   # or your preferred directory
-git clone https://github.com/teamgram/teamgram-server.git
+git clone https://github.com/tellomi/teamgram-server.git
 cd teamgram-server
 ```
 
@@ -203,7 +203,7 @@ Configuration files are under `teamgramd/etc/`. For a local macOS setup, service
 
 1. **dfs.yaml**  
    - `Minio.Endpoint`: `localhost:9000`  
-   - `Minio.AccessKeyID` / `SecretAccessKey`: match your MinIO (e.g. minioadmin / minioadmin)  
+   - `Minio.AccessKeyID` / `SecretAccessKey`: match your MinIO (dev compose uses `minio` / `miniostorage`)  
    - `SSDB`: `127.0.0.1:9221` if using Pika, otherwise Redis `127.0.0.1:6379`
 
 2. **gnetway.yaml**  
@@ -220,8 +220,8 @@ Example (dfs.yaml snippet):
 ```yaml
 Minio:
   Endpoint: localhost:9000
-  AccessKeyID: minioadmin
-  SecretAccessKey: minioadmin
+  AccessKeyID: minio
+  SecretAccessKey: miniostorage
   UseSSL: false
   Region: us-east-1
   ForcePathStyle: true

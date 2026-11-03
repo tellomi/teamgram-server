@@ -14,7 +14,7 @@ This directory contains the architecture, protocol compatibility, dependencies, 
 | [Contributing](contributing.md) | Branching, PR rules, code style, local dev ([中文](contributing-zh.md)) |
 | [Security](security.md) | Vulnerability reporting, supported versions, disclosure ([中文](security-zh.md)) |
 | [Release and changelog](release-and-changelog.md) | Versioning, CHANGELOG format, release checklist ([中文](release-and-changelog-zh.md)) |
-| [Roadmap](roadmap.md) | Short/mid-term goals, community vs enterprise ([中文](roadmap-zh.md)) |
+| [Roadmap](roadmap.md) | Short/mid-term goals ([中文](roadmap-zh.md)) |
 
 ## Quick links
 

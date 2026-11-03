@@ -14,7 +14,7 @@
 | [贡献指南](contributing-zh.md) | 分支策略、PR 规范、代码风格、本地开发（[English](contributing.md)） |
 | [安全策略](security-zh.md) | 漏洞报告、支持版本、披露原则（[English](security.md)） |
 | [版本与发布](release-and-changelog-zh.md) | 版本号、CHANGELOG、发布清单（[English](release-and-changelog.md)） |
-| [路线图与目标](roadmap-zh.md) | 短期/中期目标、社区版与企业版（[English](roadmap.md)） |
+| [路线图与目标](roadmap-zh.md) | 短期/中期目标（[English](roadmap.md)） |
 
 ## 快速链接
 

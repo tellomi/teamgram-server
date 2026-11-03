@@ -3,7 +3,7 @@
 This guide describes how to install the Teamgram server and its dependencies from scratch on Linux. It applies to CentOS 7/9, Fedora, Ubuntu/Debian, and similar distributions. Use the package manager commands that match your distribution.
 
 > English (primary) | [中文](./install-manual-linux-zh.md)  
-> For Docker deployment, see [install-docker.md](./install-docker.md).
+> Workstation Docker is [local-docker.md](./local-docker.md). Chengdu production does not follow this page. Images are published to Aliyun ACR and installed with `/opt/tellomi/deploy-pull.sh` after a database backup ([ci-acr.md](./ci-acr.md), [SECURITY-OPS.md](./SECURITY-OPS.md)). Clone `https://github.com/tellomi/teamgram-server`. Do not clone the upstream Teamgram repository and do not use a GitHub mirror.
 
 ---
 
@@ -13,7 +13,7 @@ This guide describes how to install the Teamgram server and its dependencies fro
 - **MySQL**: 8.x (8.0.29 recommended)
 - **Redis**: 6.x
 - **Etcd**: 3.5.x
-- **Kafka**: 2.x / 3.x (with Zookeeper)
+- **Kafka**: 3.x. `docker-compose-env.yaml` runs KRaft (`apache/kafka:3.9.0`) and does not use ZooKeeper. The ZooKeeper steps below are only for a from-source broker.
 - **MinIO**: object storage
 - **Pika** (optional): default port 9221; can replace some Redis usage
 - **FFmpeg**: media processing
@@ -171,7 +171,7 @@ chmod +x minio
 ```
 
 - Console: `http://<IP>:9001` (or the port shown in the terminal)
-- Default credentials: RootUser: minioadmin, RootPass: minioadmin (or miniostorage, depending on version)
+- Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` yourself. The dev compose defaults are `minio` / `miniostorage`. Those are not production passwords.
 
 **Create buckets (via MinIO console or mc CLI) before starting dfs.** The server does not create them. See `docs/storage.md`.
 
@@ -226,7 +226,7 @@ apt install ffmpeg -y
 ### 3.1 Clone repository
 
 ```bash
-git clone https://github.com/teamgram/teamgram-server.git
+git clone https://github.com/tellomi/teamgram-server.git
 cd teamgram-server
 ```
 
@@ -301,7 +301,7 @@ Example (dfs.yaml snippet):
 ```yaml
 Minio:
   Endpoint: localhost:9000
-  AccessKeyID: minioadmin
+  AccessKeyID: minio
   SecretAccessKey: miniostorage
   UseSSL: false
   Region: us-east-1

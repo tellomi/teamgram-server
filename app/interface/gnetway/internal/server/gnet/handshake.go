@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"os"
 	"strconv"
 	"time"
 
@@ -155,16 +156,43 @@ func (m *handshake) getKey(keyFingerprint int64) *crypto.RSACryptor {
 	return nil
 }
 
+// rsaKeyFingerprint is the MTProto server public-key fingerprint: the lower
+// 64 bits (last 8 bytes, little-endian) of SHA1(TL-serialized n + e).
+func rsaKeyFingerprint(rsa *crypto.RSACryptor) uint64 {
+	n, e := rsa.PublicComponents()
+	buf := mtproto.NewEncodeBuf(len(n) + len(e) + 32)
+	buf.StringBytes(n)
+	buf.StringBytes(e)
+	sum := sha1.Sum(buf.GetBuf())
+	return binary.LittleEndian.Uint64(sum[len(sum)-8:])
+}
+
+// withExtraRSAKey prepends the production key when both env vars are set.
+// The configured keys stay after it. One var without the other is a broken
+// mount, so startup fails instead of serving only the yaml keys.
+func withExtraRSAKey(cList []config.RSAKey) []config.RSAKey {
+	file := os.Getenv("TELLOMI_MTPROTO_EXTRA_KEY_FILE")
+	fp := os.Getenv("TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT")
+	if file == "" && fp == "" {
+		return cList
+	}
+	if file == "" || fp == "" {
+		panic("TELLOMI_MTPROTO_EXTRA_KEY_FILE and TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT must both be set")
+	}
+	out := make([]config.RSAKey, 0, len(cList)+1)
+	out = append(out, config.RSAKey{KeyFile: file, KeyFingerprint: fp})
+	out = append(out, cList...)
+	return out
+}
+
 func mustNewHandshake(cList []config.RSAKey) *handshake {
-	var (
-		h = &handshake{
-			keyFingerprints: make([]int64, 0, len(cList)),
-			rsaList:         make([]rsaKeyHelper, 0, len(cList)),
-			dh2048p:         dh2048P,
-			dh2048g:         dh2048G,
-		}
-		// rsaList = make([]rsaKeyHelper, 0, len(cList))
-	)
+	cList = withExtraRSAKey(cList)
+	h := &handshake{
+		keyFingerprints: make([]int64, 0, len(cList)),
+		rsaList:         make([]rsaKeyHelper, 0, len(cList)),
+		dh2048p:         dh2048P,
+		dh2048g:         dh2048G,
+	}
 
 	for _, c := range cList {
 		rsa, err := crypto.NewRSACryptor(c.KeyFile)
@@ -175,8 +203,9 @@ func mustNewHandshake(cList []config.RSAKey) *handshake {
 		if err != nil {
 			panic(err)
 		}
-
-		// TODO: check fingerprint
+		if got := rsaKeyFingerprint(rsa); got != keyFingerprint {
+			panic(fmt.Sprintf("rsa fingerprint mismatch for %s: computed %d, configured %s", c.KeyFile, got, c.KeyFingerprint))
+		}
 
 		h.keyFingerprints = append(h.keyFingerprints, int64(keyFingerprint))
 		h.rsaList = append(h.rsaList, rsaKeyHelper{

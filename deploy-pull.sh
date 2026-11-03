@@ -5,7 +5,10 @@
 #
 # The production copy lives at /opt/tellomi/deploy-pull.sh, outside the
 # checkout, so the checkout path is TELLOMI_DEPLOY_DIR (default
-# /opt/tellomi/teamgram-server), not the script's directory.
+# /opt/tellomi/teamgram-server), not the script's directory. The host file
+# is older than this copy; updating it is a separate step (docs/SECURITY-OPS.md).
+# git fetch below uses the public GitHub remote. A private repo needs a
+# read-only deploy key on the host first. Do not fetch through a mirror.
 #
 # Steps: check out that commit, pin TELLOMI_IMAGE_TAG in .env, pull the
 # teamgram image (and asr when the commit defines it), run mysql-migrate,

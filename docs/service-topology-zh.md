@@ -1,6 +1,6 @@
 # 服务拓扑与配置说明
 
-本文档根据 `teamgramd/etc/*.yaml` 与 `teamgramd/bin/runall2.sh` 的启动顺序，说明各服务的**端口**、**基础设施依赖**以及**核心调用关系**。
+本文档根据 `teamgramd/etc/*.yaml` 与 `teamgramd/bin/runall2.sh` 的启动顺序，说明各服务的**端口**、**基础设施依赖**以及**核心调用关系**。Docker 镜像跑的是 `teamgramd/etc2`，启动脚本是 `teamgramd/bin/runall-docker.sh`。成都部署见 [ci-acr.md](ci-acr.md) 与 [SECURITY-OPS.md](SECURITY-OPS.md)，不是匿名克隆。
 
 ## 启动顺序
 

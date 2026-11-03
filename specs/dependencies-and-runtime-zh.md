@@ -14,7 +14,7 @@
 | **FFmpeg** | 媒体转码（服务端安装） | 见各安装文档 |
 
 - 创建数据库 `teamgram`，并按顺序执行 **`teamgramd/deploy/sql/`** 下所有初始化与 migrate 脚本。
-- MinIO：创建桶 `documents`、`encryptedfiles`、`photos`、`videos`（使用仓库提供的 Docker 栈时由 minio-mc 自动创建）。
+- 本机对象存储是 Compose profile `local-minio`（桶 `tellomi-attachments`、`tellomi-public-media`、`tellomi-backups`）。成都的媒体在 Cloudflare R2。见 `docs/storage.md` 与 `docs/SECURITY-OPS.md`。
 
 ## 可选：监控与日志
 
@@ -37,22 +37,22 @@
 
 与 `docker-compose-env.yaml` 及 [README-env-cn.md](../README-env-cn.md) / [README-env-en.md](../README-env-en.md) 一致：
 
-- **Kafka**: bitnamilegacy/kafka:3.5.1（KRaft）
+- **Kafka**: apache/kafka:3.9.0（KRaft，无 ZooKeeper）
 - **etcd**: quay.io/coreos/etcd:v3.5.11
 - **Redis**: redis:7-alpine
 - **MySQL**: mysql:8.0
-- **MinIO**: minio/minio:latest；minio-mc 用于 bucket 初始化
-- **Jaeger**: jaegertracing/all-in-one:1.52
-- **Prometheus**: prom/prometheus:v2.47.2
-- **Grafana**: grafana/grafana:10.2.3
+- **MinIO**（仅 profile `local-minio`）：docker.io/pgsty/silo 与 docker.io/pgsty/mc，标签 `RELEASE.2026-10-26T00-00-00Z`
+- **Jaeger**: jaegertracing/all-in-one:1.63.0
+- **Prometheus**: prom/prometheus:v2.28.1
+- **Grafana**: grafana/grafana:8.0.6（宿主机端口 3001）
 - **Node Exporter**: prom/node-exporter:v1.7.0
-- **Elasticsearch / Kibana / Filebeat**: 8.11.x
+- **Elasticsearch / Kibana / Filebeat**: 8.12.2
 - **go-stash**: kevinwan/go-stash:1.1.1
 
 ## Docker 环境栈
 
-- **Compose 文件**：**`docker-compose-env.yaml`**（部分旧文档中称为「docker-compose-env2」）。
-- **使用**：复制 `.env.example` 为 `.env`，执行 `docker compose -f docker-compose-env.yaml up -d`。详见 README-env-cn.md / README-env-en.md。
+- **Compose 文件**：**`docker-compose-env.yaml`**。没有 `docker-compose-env2.yaml`。
+- **使用**：复制 `.env.example` 为 `.env`，执行 `docker compose -f docker-compose-env.yaml up -d`。详见 README-env-cn.md / README-env-en.md。文件里的密码只用于开发。
 - **网络**：`teamgram_net`；数据在项目 `data/` 目录下。
 
 ## 无 Docker 时的安装

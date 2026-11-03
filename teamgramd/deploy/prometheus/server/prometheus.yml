@@ -1,4 +1,4 @@
-# 最小 Prometheus 配置，用于 docker-compose-env2
+# Prometheus config mounted by docker-compose-env.yaml.
 # 抓取目标来自 teamgramd/etc2 各服务的 Prometheus 配置
 global:
   scrape_interval: 15s
