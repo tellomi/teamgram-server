@@ -91,16 +91,17 @@ func TestPushPhrasesForEveryLanguage(t *testing.T) {
 	}
 
 	cat := langpack.DefaultCatalog()
-	langs, err := cat.Languages("ios")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(langs) < 30 {
-		t.Fatalf("languages %d", len(langs))
+	// Every shipped pack, including codes getLanguages no longer offers.
+	// A client that already selected Hindi still gets a banner in that pack.
+	if len(langpack.OfficialLanguages) < 30 {
+		t.Fatalf("languages %d", len(langpack.OfficialLanguages))
 	}
 	en := phraseFor("en", "MESSAGE_AUDIO")
-	for _, lang := range langs {
-		code := lang.GetLangCode()
+	for _, lang := range langpack.OfficialLanguages {
+		code := lang.Code
+		if !cat.HasLang("ios", code) {
+			t.Fatalf("ios missing %s", code)
+		}
 		body := phraseFor(code, "MESSAGE_AUDIO")
 		if body == "" {
 			t.Fatalf("%s empty", code)
