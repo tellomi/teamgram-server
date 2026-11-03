@@ -41,7 +41,7 @@ bash scripts/ops/tellomi-restore-drill.sh
 |---|---|
 | install-tools | `age`, `rclone`, `docker`, `python3`, `go`, `gzip`, `tar`, `git` are on `PATH`. |
 | pull-images | `git checkout` of `TELLOMI_IMAGE_TAG`, then `docker compose pull teamgram asr`. |
-| fetch-backups | Newest `.age` under `mysql/`, `etcd/`, and `redis/`, plus the `.sha256` sidecar. The dedicated env file is required (`TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY=1`). The media key is not a fallback. |
+| fetch-backups | Newest `.age` under `mysql/`, `etcd/`, and `redis/`, plus the `.sha256` sidecar. The dedicated env file is required (`TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY=1`). The media key is not a fallback. `postgres/` is the content-engine dump and is not part of this chat drill. |
 | decrypt | `age -d -i` with the offline identity. Plaintext stays in a `mktemp` directory and is removed on exit. |
 | restore-mysql | Start only `mysql` in project `tellomi-drill`, wait until it answers ping, import the dump. The root password is the container's `MYSQL_ROOT_PASSWORD`. |
 | restore-redis | Extract `dump.rdb` and `appendonlydir` into `data/redis`, start `redis`, then `redis-cli --scan` for `pts_updates_ngen_*` and `message_box_ngen_*`. Both counts must be greater than zero. The script never sends `FLUSH`. |

@@ -252,11 +252,41 @@ backup_prune_local() {
   fi
 }
 
+# postgres_backup_enabled is 0 when this host should dump and verify Postgres.
+# Unset TELLOMI_POSTGRES_* uses the defaults (container postgres, database
+# engine, user engine). An empty value or "off" is not configured. A
+# container that is not running is treated as absent. Either case skips
+# Postgres and leaves MySQL, etcd, and Redis to finish. A dump that starts
+# and then fails is still fatal; this function only decides whether to start.
+postgres_backup_enabled() {
+  local name db user state
+  if [[ -z "${TELLOMI_POSTGRES_CONTAINER+x}" ]]; then
+    name=postgres
+  else
+    name=$TELLOMI_POSTGRES_CONTAINER
+  fi
+  if [[ -z "${TELLOMI_POSTGRES_DB+x}" ]]; then
+    db=engine
+  else
+    db=$TELLOMI_POSTGRES_DB
+  fi
+  if [[ -z "${TELLOMI_POSTGRES_USER+x}" ]]; then
+    user=engine
+  else
+    user=$TELLOMI_POSTGRES_USER
+  fi
+  [[ -n "$name" && "$name" != "off" && "$name" != "-" ]] || return 1
+  [[ -n "$db" && -n "$user" ]] || return 1
+  command -v docker >/dev/null 2>&1 || return 1
+  state="$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)"
+  [[ "$state" == "true" ]]
+}
+
 # backup_manifest_add records one ciphertext object. Fields are constrained so
 # the JSON writer does not need an encoder.
 backup_manifest_add() {
   local prefix="$1" name="$2" sum="$3" size="$4"
-  [[ "$prefix" =~ ^(mysql|etcd|redis)$ ]] || backup_die "bad manifest prefix"
+  [[ "$prefix" =~ ^(mysql|etcd|redis|postgres)$ ]] || backup_die "bad manifest prefix"
   [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || backup_die "bad manifest name"
   [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || backup_die "bad manifest sha256"
   [[ "$size" =~ ^[0-9]+$ ]] || backup_die "bad manifest size"

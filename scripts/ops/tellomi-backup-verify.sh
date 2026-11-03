@@ -5,7 +5,8 @@
 #   tellomi-backup-verify.sh --self-test
 #
 # Cron: scripts/ops/tellomi-backup-verify.cron at 04:00.
-# Lists the newest .age object under mysql/, etcd/, and redis/, checks it is
+# Lists the newest .age object under mysql/, etcd/, and redis/, and under
+# postgres/ when that container is running. Checks it is
 # under TELLOMI_BACKUP_MAX_AGE_HOURS (default 26), the sha256 sidecar matches,
 # the age header is well formed, and the size is inside the configured bounds.
 # Logs to syslog with tag tellomi-backup-verify.
@@ -283,6 +284,13 @@ verify_main() {
       fail=1
     fi
   done
+  if postgres_backup_enabled; then
+    if ! check_prefix postgres; then
+      fail=1
+    fi
+  else
+    backup_log "postgres: skipped (container is off or not running)"
+  fi
   if [[ "$fail" -ne 0 ]]; then
     backup_die "one or more prefixes failed"
   fi

@@ -21,7 +21,7 @@ Target is 120 minutes from the first step to the message check.
 |---|---|---|---|---|---|
 | install-tools | | | | | age, rclone, docker, python3, go |
 | pull-images | | | | | `TELLOMI_IMAGE_TAG` from ACR |
-| fetch-backups | | | | | read-only token, mysql/ etcd/ redis/ |
+| fetch-backups | | | | | read-only token, mysql/ etcd/ redis/ (postgres/ is not this drill) |
 | decrypt | | | | | offline age identity, on this host only |
 | restore-mysql | | | | | |
 | restore-redis | | | | | no FLUSH; pts and message_box counters scanned |
