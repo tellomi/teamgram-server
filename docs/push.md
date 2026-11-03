@@ -60,7 +60,7 @@ When a push is built, `auths.lang_code` for that auth key wins over the device s
 
 The iOS notification extension connects as a supplementary session and does not load the saved language pack, so its `initConnection.lang_code` is `en`. That overwrites the app language on the same auth key. The phone language stays in `auths.system_lang_code`. A push therefore uses the app language when it names a pack other than English (`zh-hans`, `classic-zh-cn`, `taiwan`, `ja`, …), and otherwise the phone language. `zh`, `zh-CN` and `zh-Hans` are simplified. `zh-Hant`, `zh-TW` and `zh-HK` are traditional. `classic-zh-cn` (简体中文) and `taiwan` (正體中文) use those packs. Every other language in `data/langpack` uses its iOS `PUSH_*` string. A pack with no translation of that key falls back along `base_lang_code` to English. Thai has no strings of its own, so a Thai banner is English.
 
-The body is the text after `|` in the iOS string (`PUSH_MESSAGE_AUDIO` → `🎤 语音消息` for zh-hans). The sender or chat name is the title, not part of the body. The lock-screen word Tellomi is the iOS app name. `Erel → erel` is the notification extension naming the recipient account after the sender when more than one account is signed in; a private chat no longer adds that suffix.
+The body is the text after `|` in the iOS string (`PUSH_MESSAGE_AUDIO` → `🎤 语音消息` for zh-hans). The sender or chat name is the title, not part of the body. The lock-screen word Tellomi is the iOS app name. `Erel → erel` is the notification extension naming the recipient account after the sender when more than one account is signed in. The server title is only the sender name.
 
 `account.unregisterDevice` deletes that token for the current user and `other_uids`.
 
@@ -177,7 +177,7 @@ iOS `tellomi/Telegram-iOS`:
 
 - `NotificationService.swift` copies the decrypted `aps.alert.title` and `body`. A `loc-key` on that decrypted object is treated as a service event and the banner is not shown. Do not put `loc-key` in `p`.
 - `zh-Hans.lproj/Localizable.strings` and `zh-Hant.lproj/Localizable.strings` now have the `MESSAGE_*` keys. `en.lproj` still names them `PUSH_MESSAGE_*`, so an English phone that never runs the extension shows the server `body` (the key is missing). The extension is what a locked phone actually shows, and it shows the server body.
-- `standaloneStateManager` used to pass a nil language, so every notification rewrote `auths.lang_code` to `en`. It now sends the saved pack. A private chat does not append ` → account` to the title.
+- `standaloneStateManager` passes a nil language, so every notification rewrites `auths.lang_code` to `en`. The server uses `system_lang_code` in that case. The extension also appends ` → account` when more than one account is signed in; a private chat should leave that off. Those two client edits are in `cursor/push-lang-private-title-817a` and could not be pushed from this run (the token cannot write `tellomi/Telegram-iOS`).
 
 Android `tellomi/Telegram`:
 
