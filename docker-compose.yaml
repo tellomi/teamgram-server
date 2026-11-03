@@ -225,7 +225,25 @@ services:
       TURN_TLS_PORT: ${TELLOMI_TURN_TLS_PORT:-5349}
     volumes:
       - ./teamgramd/deploy/coturn/entrypoint.sh:/opt/coturn/entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/opt/coturn/entrypoint.sh"]
+    # Do not point entrypoint at the bind mount alone. A host file that
+    # replaces volumes (`volumes: !override` in docker-compose.tellomi.yaml)
+    # drops this file, and coturn then crash-loops. Chengdu set
+    # `entrypoint: !reset null` to get the image entrypoint back.
+    # When the script is mounted, it writes /tmp/turnserver.conf from TURN_* .
+    # When it is not, this shell execs the image entrypoint
+    # (docker-entrypoint.sh) with the image command, which is what
+    # `entrypoint: !reset null` starts. The image reads turnserver.conf,
+    # including /etc/coturn/turnserver.conf. `$$` is a Compose escape.
+    # The word after the script is $0, so the image command is "$@".
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -f /opt/coturn/entrypoint.sh ]; then
+          exec /bin/sh /opt/coturn/entrypoint.sh
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - docker-entrypoint.sh
 
   # SenseVoice-Small (int8 ONNX via sherpa-onnx). CPU only. The weights are
   # in the image; the container does not download them. 1.5GB / 2 CPUs matches

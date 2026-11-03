@@ -76,8 +76,11 @@ space is still short. Install paths, the kept tags, and the cron are in
 2. composes project `tellomi` from `docker-compose-env.yaml`,
    `docker-compose.yaml`, `docker-compose.geoip.yaml` and the host-only
    `docker-compose.tellomi.yaml` (loopback ports, coturn config, secrets from
-   `.env`; not in git). It refuses to run without the override or the GeoIP
-   MMDB;
+   `.env`; not in git). A `volumes: !override` on coturn drops the
+   entrypoint script mount; the service falls back to the image entrypoint
+   instead of crash-looping, so `entrypoint: !reset null` is no longer
+   required. See [calls](calls.md). The script refuses to run without the
+   override or the GeoIP MMDB;
 3. pulls `teamgram`, plus `asr` when that commit defines it;
 4. runs `mysql-migrate` and stops if it exits non-zero;
 5. recreates `asr` (waiting up to 300s for its healthcheck), then `teamgram`.

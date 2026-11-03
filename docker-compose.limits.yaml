@@ -31,14 +31,22 @@ services:
       - --default-authentication-plugin=mysql_native_password
       - --innodb-buffer-pool-size=1G
 
+  # Chengdu RSS is about 956MiB with the image default heap (-Xmx1G -Xms1G,
+  # from kafka-server-start.sh when KAFKA_HEAP_OPTS is unset). A 1.2g cap
+  # is under a full 1G heap plus metaspace, threads, and page cache, and
+  # -Xmx768m is smaller than the broker already runs. Keep the 1G heap.
+  # 1.6g is that heap plus about 600MiB, so a later `up -d kafka` is not
+  # OOM-killed. A generic "heap + 1GiB" cap would be 2g; on a 7.1G host
+  # 1.6g still covers the measured process. Caps are ceilings, not
+  # reservations, and the other caps can already sum past 7.1G.
   kafka:
-    mem_limit: 1.2g
+    mem_limit: 1.6g
     deploy:
       resources:
         limits:
-          memory: 1.2g
+          memory: 1.6g
     environment:
-      KAFKA_HEAP_OPTS: "-Xmx768m -Xms768m"
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
 
   redis:
     mem_limit: 512m

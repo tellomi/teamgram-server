@@ -24,7 +24,7 @@ docker compose "${base[@]}" config --quiet
 docker compose "${with[@]}" config --quiet
 
 python3 - "${base[@]}" -- "${with[@]}" <<'PY'
-import json, subprocess, sys
+import json, os, subprocess, sys, tempfile
 
 def render(files):
     cmd = ["docker", "compose", *files, "config", "--format", "json"]
@@ -48,7 +48,7 @@ if mem(bare, "asr") != 1536 * 1024 * 1024:
 expect = {
     "teamgram": 2560 * 1024 * 1024,
     "mysql": 1536 * 1024 * 1024,
-    "kafka": 1288490188,  # 1.2g as Compose renders it
+    "kafka": 1717986918,  # 1.6g as Compose renders it (1.6 * 1024^3)
     "redis": 512 * 1024 * 1024,
     "etcd": 256 * 1024 * 1024,
     "coturn": 256 * 1024 * 1024,
@@ -70,9 +70,60 @@ for flag in ("utf8mb4", "mysql_native_password", "innodb-buffer-pool-size=1G"):
     if flag not in mysql_cmd:
         raise SystemExit(f"mysql command missing {flag}")
 
+bare_heap = bare["services"]["kafka"]["environment"].get("KAFKA_HEAP_OPTS", "")
+if bare_heap:
+    raise SystemExit(f"base compose sets KAFKA_HEAP_OPTS {bare_heap!r}")
 heap = full["services"]["kafka"]["environment"].get("KAFKA_HEAP_OPTS", "")
-if heap != "-Xmx768m -Xms768m":
+if heap != "-Xmx1G -Xms1G":
     raise SystemExit(f"KAFKA_HEAP_OPTS is {heap!r}")
+roles = full["services"]["kafka"]["environment"].get("KAFKA_PROCESS_ROLES", "")
+if roles != "broker,controller":
+    raise SystemExit(f"kafka environment was replaced; KAFKA_PROCESS_ROLES is {roles!r}")
+
+def entrypoint_text(doc):
+    ep = doc["services"]["coturn"].get("entrypoint")
+    if isinstance(ep, list):
+        return "\n".join(str(part) for part in ep)
+    return ep or ""
+
+def mounts_generator(doc):
+    for vol in doc["services"]["coturn"].get("volumes") or []:
+        target = vol.get("target") if isinstance(vol, dict) else ""
+        if target == "/opt/coturn/entrypoint.sh":
+            return True
+    return False
+
+# `docker compose config` re-escapes `$` as `$$`, so the runtime `$@`
+# shows up here as `$$@`.
+text = entrypoint_text(bare)
+if "[ -f /opt/coturn/entrypoint.sh ]" not in text:
+    raise SystemExit("coturn entrypoint does not test for the mounted script")
+if 'exec docker-entrypoint.sh "$$@"' not in text:
+    raise SystemExit("coturn entrypoint has no image fallback")
+ep = bare["services"]["coturn"]["entrypoint"]
+if not isinstance(ep, list) or ep[0] != "/bin/sh" or ep[-1] != "docker-entrypoint.sh":
+    raise SystemExit(f"coturn entrypoint lost the $0 placeholder: {ep!r}")
+if not mounts_generator(bare):
+    raise SystemExit("default compose does not mount the coturn generator")
+if entrypoint_text(full) != text:
+    raise SystemExit("limits overlay changed the coturn entrypoint")
+
+override = tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False)
+override.write("services:\n  coturn:\n    volumes: !override []\n")
+override.close()
+try:
+    dropped = render([
+        "-f", "docker-compose-env.yaml",
+        "-f", "docker-compose.yaml",
+        "-f", override.name,
+    ])
+finally:
+    os.unlink(override.name)
+if dropped["services"]["coturn"].get("volumes"):
+    raise SystemExit("volumes: !override did not drop the coturn script mount")
+dropped_text = entrypoint_text(dropped)
+if 'exec docker-entrypoint.sh "$$@"' not in dropped_text:
+    raise SystemExit("coturn fallback missing after volumes are replaced")
 
 print("check-compose-limits: ok")
 PY
