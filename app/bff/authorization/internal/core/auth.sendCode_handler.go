@@ -284,6 +284,10 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 			id, _ := c.svcCtx.Dao.GetFutureAuthToken(c.ctx, v)
 			if id == user.Id() {
 				if c.needsCloudPassword(user.Id()) {
+					if c.authKey() == 0 {
+						c.Logger.Errorf("auth.sendCode - password step has no perm auth key")
+						return nil, mtproto.ErrAuthKeyPermEmpty
+					}
 					if err = c.passwordNeeded(user.Id()); err != nil {
 						c.Logger.Errorf("auth.sendCode - password: %v", err)
 						return nil, err

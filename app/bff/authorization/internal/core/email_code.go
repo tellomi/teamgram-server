@@ -190,6 +190,10 @@ func (c *AuthorizationCore) authSendEmailCode(authKeyId, sessionId int64, reques
 				continue
 			}
 			if c.needsCloudPassword(user.Id()) {
+				if c.authKey() == 0 {
+					c.Logger.Errorf("auth.sendCode - email password step has no perm auth key")
+					return nil, mtproto.ErrAuthKeyPermEmpty
+				}
 				if err = c.passwordNeeded(user.Id()); err != nil {
 					c.Logger.Errorf("auth.sendCode - email password: %v", err)
 					return nil, err

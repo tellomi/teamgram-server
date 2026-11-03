@@ -157,8 +157,21 @@ func (d *Dao) QueryAuthKeyV2(ctx context.Context, authKeyId int64) (*mtproto.Aut
 		}
 		return nil, err
 	}
-
+	normalizePermAuthKey(keyInfo)
 	return keyInfo, nil
+}
+
+// normalizePermAuthKey fills PermAuthKeyId on a permanent key whose row left
+// the column at 0. Callers compare that field to 0 and otherwise treat the
+// key as unbound, so auth.checkPassword never sees the user. A temp key stays
+// 0 until auth.bindTempAuthKey writes the permanent id.
+func normalizePermAuthKey(key *mtproto.AuthKeyInfo) {
+	if key == nil || key.PermAuthKeyId != 0 {
+		return
+	}
+	if id := key.BoundPermAuthKeyId(); id != 0 {
+		key.PermAuthKeyId = id
+	}
 }
 
 func (d *Dao) SetAuthKeyV2(ctx context.Context, authKey *mtproto.AuthKeyInfo, expiredIn int32) (err error) {

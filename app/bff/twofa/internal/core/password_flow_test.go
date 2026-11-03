@@ -366,6 +366,36 @@ func TestGetPasswordUsesPendingUserAfterLogout(t *testing.T) {
 	}
 }
 
+func TestCheckPasswordAcceptsProofIssuedToAnotherAuthKey(t *testing.T) {
+	svc := password.New(password.Options{})
+	prev := password.Swap(svc)
+	t.Cleanup(func() { password.Swap(prev) })
+
+	c := testCore()
+	c.MD = &metadata.RpcMetadata{UserId: 42, PermAuthKeyId: 7}
+	if _, err := setPassword(t, c, "secret", "hint", ""); err != nil {
+		t.Fatal(err)
+	}
+	pw, err := c.AccountGetPassword(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// iOS does not retry SRP_ID_INVALID when the temp key and the permanent
+	// key disagree between getPassword and checkPassword.
+	if err = password.Verify(context.Background(), 42, 99, proofFor(t, pw, "secret")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetPasswordWithoutAuthKeyDoesNotLookLikeNoPassword(t *testing.T) {
+	c := testCore()
+	c.MD = &metadata.RpcMetadata{UserId: 0, PermAuthKeyId: 0}
+	_, err := c.AccountGetPassword(nil)
+	if status.Convert(err).Message() != "AUTH_KEY_PERM_EMPTY" {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestDisablePasswordAndroidAndIOSShapes(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	var codes []string

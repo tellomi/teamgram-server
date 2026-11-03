@@ -49,7 +49,13 @@ func (k *authKeyUtil) AuthKeyType() int {
 }
 
 func (k *authKeyUtil) PermAuthKeyId() int64 {
-	return k.keyData.PermAuthKeyId
+	if k == nil || k.keyData == nil {
+		return 0
+	}
+	// A permanent key owns its own authorization even when the stored column
+	// is still 0. An unbound temp key stays 0 so login RPCs are not parked
+	// on one shared session.
+	return k.keyData.BoundPermAuthKeyId()
 }
 
 func (k *authKeyUtil) TempAuthKeyId() int64 {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -27,6 +28,9 @@ func flagsOf(raw []byte) uint32 {
 
 func TestGetPasswordRoundTrip(t *testing.T) {
 	c := testCore()
+	// A real auth key with no user and no pending login is "no cloud password".
+	// Key 0 is rejected: that is the unbound temp-key session.
+	c.MD = &metadata.RpcMetadata{PermAuthKeyId: 1}
 	pw, err := c.AccountGetPassword(nil)
 	if err != nil {
 		t.Fatal(err)
