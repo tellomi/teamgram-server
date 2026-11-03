@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/account/deletion"
 	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -64,6 +65,7 @@ func (c *AuthorizationCore) AuthCheckPassword(in *mtproto.TLAuthCheckPassword) (
 		c.Logger.Errorf("auth.checkPassword - user is nil")
 		return nil, mtproto.ErrInternalServerError
 	}
+	_ = deletion.Cancel(c.ctx, userID)
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 		User: user.ToSelfUser(),
 	}).To_Auth_Authorization(), nil

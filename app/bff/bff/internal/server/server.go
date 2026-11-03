@@ -507,19 +507,19 @@ func (s *Server) Initialize() error {
 			}))
 
 		// account_helper
-		mtproto.RegisterRPCAccountServer(
-			grpcServer,
-			account_helper.New(
-				account_helper.Config{
-					RpcServerConf:     c.RpcServerConf,
-					KV:                c.KV,
-					UserClient:        c.BizServiceClient,
-					AuthsessionClient: c.AuthSessionClient,
-					ChatClient:        c.BizServiceClient,
-					SyncClient:        c.SyncClient,
-				},
-				nil,
-				nil))
+		acctSvc := account_helper.New(
+			account_helper.Config{
+				RpcServerConf:     c.RpcServerConf,
+				KV:                c.KV,
+				UserClient:        c.BizServiceClient,
+				AuthsessionClient: c.AuthSessionClient,
+				ChatClient:        c.BizServiceClient,
+				SyncClient:        c.SyncClient,
+			},
+			nil,
+			nil)
+		mtproto.RegisterRPCAccountServer(grpcServer, acctSvc)
+		account_helper.StartWebDeletion(c.ChannelMySQL, c.Code, acctSvc)
 		// usernames_helper
 		mtproto.RegisterRPCUsernamesServer(
 			grpcServer,

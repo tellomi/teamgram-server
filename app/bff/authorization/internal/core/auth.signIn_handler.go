@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/account/deletion"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -250,6 +251,7 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 
 	c.Logger.Infof("auth.signIn outcome phone=%s hash=%s result=authorization user=%d",
 		maskPhone(phoneNumber), hashPrefix(phoneCodeHash), user.Id())
+	_ = deletion.Cancel(c.ctx, user.Id())
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 		SetupPasswordRequired: false,
 		OtherwiseReloginDays:  nil,

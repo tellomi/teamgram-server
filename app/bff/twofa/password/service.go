@@ -374,6 +374,47 @@ func Verify(ctx context.Context, userID, authKey int64, proof *mtproto.InputChec
 	return Default().verify(ctx, rec, authKey, proof)
 }
 
+// Info is whether userID has a cloud password, when that verifier was stored,
+// and the hint. setAt is zero when the row has no password_set_at yet.
+func Info(ctx context.Context, userID int64) (has bool, setAt int64, hint string, err error) {
+	rec, err := Default().load(ctx, userID)
+	if err != nil {
+		return false, 0, "", err
+	}
+	return rec.HasPassword, rec.PasswordSetAt, rec.Hint, nil
+}
+
+// CheckPlaintext checks a password typed on the web deletion form.
+// The proof is built here so the browser does not implement SRP. The
+// plaintext is not written to the log. auth key 0 matches the challenge
+// issued below; the stored verifier is what actually accepts the password.
+func CheckPlaintext(ctx context.Context, userID int64, plain string) error {
+	if userID == 0 || plain == "" {
+		return mtproto.ErrPasswordHashInvalid
+	}
+	pw, err := AccountPassword(ctx, userID, 0)
+	if err != nil {
+		return err
+	}
+	if !pw.GetHasPassword() || pw.GetCurrentAlgo() == nil || len(pw.GetSrp_B()) == 0 || pw.GetSrpId() == nil {
+		return mtproto.ErrPasswordMissing
+	}
+	a := make([]byte, srp.PadSize)
+	if _, err = rand.Read(a); err != nil {
+		return mtproto.ErrInternalServerError
+	}
+	A, M1, err := srp.ClientProof([]byte(plain), pw.GetCurrentAlgo().GetSalt1(), pw.GetCurrentAlgo().GetSalt2(), a, pw.GetSrp_B())
+	if err != nil {
+		return mtproto.ErrPasswordHashInvalid
+	}
+	proof := mtproto.MakeTLInputCheckPasswordSRP(&mtproto.InputCheckPasswordSRP{
+		SrpId: pw.GetSrpId().GetValue(),
+		A:     A,
+		M1:    M1,
+	}).To_InputCheckPasswordSRP()
+	return Verify(ctx, userID, 0, proof)
+}
+
 func (s *Service) verify(ctx context.Context, rec Record, _ int64, proof *mtproto.InputCheckPasswordSRP) error {
 	if wait := s.floodWait(rec); wait > 0 {
 		return mtproto.NewErrFloodWaitX(wait)
@@ -514,6 +555,7 @@ func (s *Service) apply(ctx context.Context, rec Record, settings *mtproto.Accou
 		rec.FailCount = 0
 		rec.FloodUntil = 0
 		rec.PendingReset = 0
+		rec.PasswordSetAt = s.now().Unix()
 		if settings.GetHint() != nil {
 			rec.Hint = settings.GetHint().GetValue()
 		} else {
@@ -568,6 +610,7 @@ func (s *Service) clearPassword(rec *Record) {
 	rec.SecureSecret = nil
 	rec.SecureSecretID = 0
 	rec.PendingReset = 0
+	rec.PasswordSetAt = 0
 	rec.FailCount = 0
 	rec.FloodUntil = 0
 	rec.Version++
@@ -831,6 +874,7 @@ func CommitRecovery(ctx context.Context, userID int64, settings *mtproto.Account
 		rec.FailCount = 0
 		rec.FloodUntil = 0
 		rec.PendingReset = 0
+		rec.PasswordSetAt = s.now().Unix()
 		if settings.GetHint() != nil {
 			rec.Hint = settings.GetHint().GetValue()
 		}
