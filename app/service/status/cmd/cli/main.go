@@ -11,6 +11,7 @@ import (
 
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -25,7 +26,7 @@ func main() {
 		c Config
 	)
 	conf.MustLoad("./cli.yaml", &c)
-	logx.Info(c)
+	logx.Info(redact.Value(c))
 
 	cli := status_client.NewStatusClient(zrpc.MustNewClient(c.StatusClient))
 	rList, _ := cli.StatusGetUsersOnlineSessionsList(context.Background(), &status.TLStatusGetUsersOnlineSessionsList{

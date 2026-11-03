@@ -35,6 +35,7 @@ import (
 	user_helper "github.com/teamgram/teamgram-server/app/service/biz/user"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -55,7 +56,7 @@ func (s *Server) Initialize() error {
 	var c config.Config
 	configload.MustLoad(*configFile, &c)
 
-	logx.Infov(c)
+	logx.Infov(redact.Value(c))
 	// ctx := svc.NewServiceContext(c)
 	// s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
 

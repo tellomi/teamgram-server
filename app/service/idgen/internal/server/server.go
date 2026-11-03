@@ -18,6 +18,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/idgen/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/service/idgen/internal/svc"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -38,7 +39,7 @@ func (s *Server) Initialize() error {
 	var c config.Config
 	configload.MustLoad(*configFile, &c)
 
-	logx.Infov(c)
+	logx.Infov(redact.Value(c))
 	ctx := svc.NewServiceContext(c)
 	floors, err := seqfloor.Heal(context.Background(), c.Mysql.DSN, ctx.Dao.KV)
 	if err != nil {

@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/marmota/pkg/commands"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/config"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/dao"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 	"github.com/zeromicro/go-zero/core/conf"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -50,9 +51,7 @@ func (s *Server) Initialize() error {
 	var c config.Config
 	conf.MustLoad(*configFile, &c)
 
-	logged := c
-	logged.Minio = c.Minio.Redacted()
-	logx.Infov(logged)
+	logx.Infov(redact.Value(c))
 	s.dao = dao.New(c)
 	return nil
 }
