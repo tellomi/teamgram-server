@@ -136,3 +136,8 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 | `account.updateUsername` | `app/bff/usernames/internal/core/account.updateUsername_handler.go` | `usernamepolicy.RejectUser` in `updateUsername` after the format check |
 | `channels.checkUsername` | `app/service/biz/channel/service.go` `CheckUsername` | `usernamepolicy.RejectChannel` after the format check |
 | `channels.updateUsername` | `app/service/biz/channel/service.go` `UpdateUsername` | `usernamepolicy.RejectChannel` after the format check, skipped when the name is cleared |
+| `bots.checkUsername` | `app/bff/botadmin/bots.go` `CheckUsername` | `usernamepolicy.RejectBot` after the format check |
+| `bots.createBot` | `app/bff/botadmin/bots.go` `CreateBot` | `usernamepolicy.RejectBot` after the format check |
+| `bots.addUsername` | `app/bff/botadmin/more.go` `AddUsername` | `usernamepolicy.RejectBot` after the format check |
+
+There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same hook.
