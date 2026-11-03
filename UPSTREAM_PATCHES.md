@@ -117,3 +117,12 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 ## Sticker wire format
 
 `stickerSet` flags bit 4 is `thumbs`, `thumb_dc_id`, and `thumb_version` together. The catalog used to set the ints without a thumbs vector, so `messages.featuredStickers` did not round-trip (`DecodeVectorLong`). The catalog now sends `thumb_document_id` (flags bit 8) and leaves bit 4 unset. The generated codec in `proto/mtproto` is unchanged.
+
+## Username policy (M5 / D-24 / D-56)
+
+`TELLOMI_USERNAME_POLICY=1` runs `pkg/usernamepolicy` before the username table. Unset or any other value leaves these handlers as they were. A hit returns `USERNAME_OCCUPIED` and logs `rule_id`. The response does not carry the rule. The lexicon and the flag live in Tellomi files (`pkg/usernamepolicy`, `docker-compose.yaml`).
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `account.checkUsername` | `app/bff/usernames/internal/core/account.checkUsername_handler.go` | `usernamepolicy.RejectUser` after the format check |
+| `account.updateUsername` | `app/bff/usernames/internal/core/account.updateUsername_handler.go` | `usernamepolicy.RejectUser` in `updateUsername` after the format check |

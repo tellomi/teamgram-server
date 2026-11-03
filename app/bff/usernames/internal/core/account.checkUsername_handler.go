@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/grpc/status"
 )
@@ -41,6 +42,9 @@ func (c *UsernamesCore) AccountCheckUsername(in *mtproto.TLAccountCheckUsername)
 	if in == nil || !user.CheckUsernameInvalid(in.GetUsername()) {
 		c.Logger.Errorf("account.checkUsername#2714d86c - format error: %v", mtproto.ErrUsernameInvalid)
 		return nil, mtproto.ErrUsernameInvalid
+	}
+	if err := usernamepolicy.RejectUser(c.ctx, c.MD.UserId, in.GetUsername()); err != nil {
+		return nil, err
 	}
 
 	existed, err := c.svcCtx.Dao.UserClient.UserCheckAccountUsername(c.ctx, &user.TLUserCheckAccountUsername{
