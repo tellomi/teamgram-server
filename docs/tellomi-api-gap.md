@@ -23,12 +23,12 @@ iOS `submodules/TelegramApi/swift_scheme.tl` 与本仓库 `proto/schema/telegram
 
 ## 数量
 
-Tellomi iOS 实际调用、且落在覆盖矩阵里的 758 个方法：
+Tellomi iOS 实际调用、且落在覆盖矩阵里的 755 个方法：
 
 | 优先级 | 已实现 | 未实现（返回错误） | 残缺或假数据 |
 | --- | ---: | ---: | ---: |
 | P0 登录 / 启动 / 后台同步 | 91 | 0 | 0 |
-| P1 资料、联系人、私聊、历史上传、基础群 | 354 | 9 | 0 |
+| P1 资料、联系人、私聊、历史上传、基础群 | 352 | 8 | 0 |
 | P2 其余（动态、支付、机器人、商业等） | 304 | 0 | 0 |
 
 P0 包含 `auth.sendCode` / `auth.signIn` / `auth.checkPassword` / `account.getPassword`、`help.getConfig`、`updates.getState` / `updates.getDifference`、`messages.getDialogs`、`langpack.getLangPack`。这些都有路由和真实 handler，不是空壳。
@@ -77,7 +77,7 @@ mysql ... teamgram < teamgramd/deploy/sql/migrate-20261103-authorization-setting
 
 ## 留下的 P1（客户端会调，服务端返回错误）
 
-下面这些仍不在登录和聊天列表的必经路径上。
+下面这 8 个仍不在登录和聊天列表的必经路径上。
 
 | 方法 | 客户端 | 现状 | 说明 |
 | --- | --- | --- | --- |
@@ -89,7 +89,8 @@ mysql ... teamgram < teamgramd/deploy/sql/migrate-20261103-authorization-setting
 | `messages.reportSponsoredMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 同上 |
 | `messages.composeRichMessageWithAI` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 撰写 |
 | `messages.translateRichMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 翻译富文本。普通 `messages.translateText` 另有实现 |
-| `messages.uploadEncryptedFile` | iOS | `ENTERPRISE_IS_BLOCKED` | 秘密聊天上传。私聊普通文件走 `upload.saveFilePart`，不受影响 |
+
+`messages.uploadEncryptedFile` 已实现。客户端先用 `upload.saveFilePart` / `upload.saveBigFilePart` 传分片，再把 `inputEncryptedFileUploaded` 或 `inputEncryptedFileBigUploaded` 交给这个方法。服务端把分片收成 `encryptedFile`（含 `key_fingerprint`），对象写在 DFS 的 `encryptedfiles/<id>.dat`。对方用 `upload.getFile` 的 `inputEncryptedFileLocation` 读取。`inputEncryptedFile` 表示这份已经传过的文件。
 
 ## 不算缺口、但只做了一半的路径
 
@@ -98,7 +99,7 @@ mysql ... teamgram < teamgramd/deploy/sql/migrate-20261103-authorization-setting
 - `messages.saveDraft` / `messages.clearAllDrafts`：频道草稿被挡住，私聊和基础群可以存。
 - `messages.editChatAbout`：基础群可以改简介，频道不行。
 - `account.updateNotifySettings`：用户、基础群可以；频道分支要插件。
-- `upload.getFile`：普通图片和文件走 DFS。贴纸集缩略图、加密文件位置在没有插件时失败。
+- `upload.getFile`：普通图片、文件，以及秘密聊天的 `inputEncryptedFileLocation` 走 DFS。贴纸集缩略图在没有插件时失败。
 - `messages.forwardMessages` / `messages.deleteHistory`：有一条频道或加密分支返回企业错误，普通对话的转发和清空历史是实现了的。
 
 频道、付费、Apple/Google 登录按 P2 留着。

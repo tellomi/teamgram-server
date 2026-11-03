@@ -182,6 +182,7 @@ func TestServerSamples(t *testing.T) {
 	assertStatus("messages.acceptEncryption", statusImplemented, effectOK)
 	assertStatus("messages.sendEncrypted", statusImplemented, effectOK)
 	assertStatus("messages.sendEncryptedFile", statusImplemented, effectOK)
+	assertStatus("messages.uploadEncryptedFile", statusImplemented, effectOK)
 	assertStatus("messages.requestUrlAuth", statusImplemented, effectOK)
 	assertStatus("messages.acceptUrlAuth", statusImplemented, effectOK)
 	assertStatus("messages.sendPaidReaction", statusImplemented, effectOK)

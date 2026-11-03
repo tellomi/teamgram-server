@@ -56,7 +56,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | account | 113 | 111 | 2 | 0 | 0 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
-| messages | 215 | 209 | 6 | 0 | 0 | 14 | 0 |
+| messages | 215 | 210 | 5 | 0 | 0 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
@@ -79,7 +79,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | smsjobs | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | toncenter | 2 | 2 | 0 | 0 | 0 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **799** | **790** | **9** | **0** | **0** | **94** | **0** |
+| **total** | **799** | **791** | **8** | **0** | **0** | **94** | **0** |
 
 ## Counts by client
 
@@ -87,10 +87,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 746 | 9 | 0 | 0 | 91 | 0 |
+| ios | 755 | 747 | 8 | 0 | 0 | 91 | 0 |
 | android | 713 | 705 | 8 | 0 | 0 | 89 | 0 |
 | desktop | 692 | 685 | 7 | 0 | 0 | 79 | 0 |
-| macos | 677 | 669 | 8 | 0 | 0 | 90 | 0 |
+| macos | 677 | 670 | 7 | 0 | 0 | 90 | 0 |
 
 570 methods are called by all four clients.
 
@@ -106,13 +106,13 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-9 gaps (9 error, 0 empty or bool or not-modified).
+8 gaps (8 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
 | account | 2 |
 | channels | 1 |
-| messages | 6 |
+| messages | 5 |
 
 ### P2
 
@@ -322,7 +322,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-215 called, 209 implemented, 6 stub, 0 routed-unregistered, 0 missing.
+215 called, 210 implemented, 5 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -344,7 +344,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.composeRichMessageWithAI` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.reportSponsoredMessage` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.translateRichMessage` | yes | yes | yes | yes | interactive | stub | error |
-| `messages.uploadEncryptedFile` | yes | no | no | yes | interactive | stub | error |
 | `messages.viewSponsoredMessage` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.acceptEncryption` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -539,6 +538,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.updatePinnedForumTopic` | no | yes | yes | no | interactive | implemented | ok |
 | `messages.updatePinnedMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.updateSavedReactionTag` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.uploadEncryptedFile` | yes | no | no | yes | interactive | implemented | ok |
 | `messages.uploadImportedMedia` | yes | yes | no | no | interactive | implemented | ok |
 | `messages.uploadMedia` | yes | yes | yes | yes | interactive | implemented | ok |
 
@@ -1123,6 +1123,5 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.composeRichMessageWithAI` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.composeRichMessageWithAI_handler.go |
 | `messages.reportSponsoredMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.reportSponsoredMessage_handler.go |
 | `messages.translateRichMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.translateRichMessage_handler.go |
-| `messages.uploadEncryptedFile` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/files/internal/core/messages.uploadEncryptedFile_handler.go |
 | `messages.viewSponsoredMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.viewSponsoredMessage_handler.go |
 

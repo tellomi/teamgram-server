@@ -119,7 +119,7 @@ func (s *Service) MessagesSendEncryptedFile(ctx context.Context, in *mtproto.TLM
 	if _, err := s.md(ctx); err != nil {
 		return nil, err
 	}
-	file, err := encryptedFile(in.GetFile())
+	file, err := encryptedFile(in.GetPeer(), in.GetFile())
 	if err != nil {
 		return nil, err
 	}
@@ -244,14 +244,25 @@ func (s *Service) pushSecret(userID int64, upd *mtproto.Updates) {
 
 func now() int32 { return int32(time.Now().Unix()) }
 
-// encryptedFile echoes an uploaded secret-chat file. The bytes themselves
-// still depend on messages.uploadEncryptedFile.
-func encryptedFile(in *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
+// encryptedFile is the EncryptedFile carried on messages.sendEncryptedFile.
+// inputEncryptedFileUploaded still has to be stored by messages.uploadEncryptedFile
+// first. inputEncryptedFile refers to that stored object so the peer receives
+// size, dc_id, and key_fingerprint. An id this process has not stored is echoed
+// the way it was before uploads were kept.
+func encryptedFile(peer *mtproto.InputEncryptedChat, in *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
 	if in == nil || in.GetPredicateName() == "" || in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileEmpty || in.GetId() == 0 {
 		return nil, mtproto.ErrFileEmtpy
 	}
 	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileUploaded && !md5Hex(in.GetMd5Checksum()) {
 		return nil, mtproto.ErrCheckSumInvalid
+	}
+	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFile {
+		if kept, chatID, ok := secretchat.Default().LookupEncrypted(in.GetId()); ok {
+			if kept.GetAccessHash() != in.GetAccessHash() || peer.GetChatId() != chatID {
+				return nil, mtproto.ErrFileIdInvalid
+			}
+			return kept, nil
+		}
 	}
 	return mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{
 		Id: in.GetId(), AccessHash: in.GetAccessHash(), DcId: 1,

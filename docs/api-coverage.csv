@@ -570,7 +570,7 @@ messages.updateDialogFiltersOrder,folders,P0,startup,yes,yes,yes,yes,implemented
 messages.updatePinnedForumTopic,messages,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.updatePinnedMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.updateSavedReactionTag,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSavedMessageTags,app/bff/messages/internal/server/grpc/service/inbox.go
-messages.uploadEncryptedFile,messages,P1,interactive,yes,no,no,yes,stub,error,yes,stub,RPCFiles,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/files/internal/core/messages.uploadEncryptedFile_handler.go
+messages.uploadEncryptedFile,messages,P1,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
 messages.uploadImportedMedia,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCImportedChats,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.uploadMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
 messages.viewSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCSponsoredMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.viewSponsoredMessage_handler.go

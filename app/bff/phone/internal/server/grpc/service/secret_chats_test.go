@@ -164,6 +164,29 @@ func TestSecretChatFlow(t *testing.T) {
 	}); status.Convert(err).Message() != "MD5_CHECKSUM_INVALID" {
 		t.Fatalf("md5: %v", err)
 	}
+	secretchat.Default().RememberEncrypted(waiting.GetId(), mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{
+		Id: 55, AccessHash: 66, Size2_INT64: 12, Size2_INT32: 12, DcId: 1, KeyFingerprint: 77,
+	}).To_EncryptedFile())
+	stored, err := svc.MessagesSendEncryptedFile(peerUser, &mtproto.TLMessagesSendEncryptedFile{
+		Peer: encPeer, RandomId: 1010, Data: []byte("cipher-file"),
+		File: mtproto.MakeTLInputEncryptedFile(&mtproto.InputEncryptedFile{Id: 55, AccessHash: 66}).To_InputEncryptedFile(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GetFile().GetSize2_INT64() != 12 || stored.GetFile().GetKeyFingerprint() != 77 || stored.GetFile().GetDcId() != 1 {
+		t.Fatalf("stored file %+v", stored.GetFile())
+	}
+	pushedFile := pushed[len(pushed)-1].upd.Updates[0].GetMessage_ENCRYPTEDMESSAGE().GetFile()
+	if pushedFile.GetId() != 55 || pushedFile.GetKeyFingerprint() != 77 || pushedFile.GetSize2_INT64() != 12 {
+		t.Fatalf("pushed file %+v", pushedFile)
+	}
+	if _, err := svc.MessagesSendEncryptedFile(peerUser, &mtproto.TLMessagesSendEncryptedFile{
+		Peer: encPeer, RandomId: 1011, Data: []byte("cipher-file"),
+		File: mtproto.MakeTLInputEncryptedFile(&mtproto.InputEncryptedFile{Id: 55, AccessHash: 1}).To_InputEncryptedFile(),
+	}); status.Convert(err).Message() != "FILE_ID_INVALID" {
+		t.Fatalf("stored hash: %v", err)
+	}
 
 	svcMsg, err := svc.MessagesSendEncryptedService(admin, &mtproto.TLMessagesSendEncryptedService{
 		Peer: encPeer, RandomId: 1005, Data: []byte("cipher-service"),
