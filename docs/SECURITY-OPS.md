@@ -116,6 +116,23 @@ install -m 644 scripts/ops/tellomi-backup-verify.cron /etc/cron.d/tellomi-backup
 
 Once a month, restore onto a fresh Docker host and finish within two hours. That host is not Chengdu. The script and the record template are in [ops/RESTORE_DRILL.md](ops/RESTORE_DRILL.md). Do not copy the age identity onto this server.
 
+## Memory limits
+
+`docker-compose.limits.yaml` caps teamgram (2.5 GiB), mysql (1.5 GiB, InnoDB buffer pool 1 GiB), kafka (1.2 GiB, heap `-Xmx768m -Xms768m`), redis (512 MiB), etcd (256 MiB), coturn (256 MiB), and mediamtx (256 MiB). asr stays 1.5 GiB and 2 CPUs. Redis has no eviction policy, so at the cap the process is killed instead of dropping idgen or pts keys.
+
+`deploy-pull.sh` adds that file only when `TELLOMI_COMPOSE_LIMITS=1` is exported in the shell that runs the script and the file is in the checkout. A line in `.env` is not enough. Until then, production limits stay as they are.
+
+```bash
+export TELLOMI_COMPOSE_LIMITS=1
+/opt/tellomi/deploy-pull.sh <sha7>
+```
+
+Copy `deploy-pull.sh` to `/opt/tellomi/deploy-pull.sh` after this change. The overlay itself comes from the checkout.
+
+```bash
+bash scripts/check-compose-limits.sh
+```
+
 ## Known follow-ups
 
 - Remove the upstream RSA key from `gnetway.yaml` `RSAKey` once clients carrying the new public key are widespread.

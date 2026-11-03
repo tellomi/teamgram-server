@@ -24,6 +24,11 @@
 # then recreate asr (waiting for its healthcheck) and teamgram only.
 # Kafka, MySQL, Redis, etcd, MinIO, coturn and mediamtx are left running.
 #
+# Memory caps: docker-compose.limits.yaml is included only when
+# TELLOMI_COMPOSE_LIMITS=1 is set in the environment of this process and the
+# file is in the checkout. A line in .env does not count unless it is
+# exported. Unset leaves production limits unchanged.
+#
 # The image must already be in ACR: the "Publish images" workflow on master
 # tags it with the same 7-character SHA. Back up the database to
 # /opt/tellomi/backups (chmod 600) before a deploy that adds migrations.
@@ -122,6 +127,14 @@ fi
 # Project "tellomi" is the running stack (tellomi-teamgram-1, tellomi-asr-1).
 # Keep -f docker-compose.geoip.yaml in the same command as up, or the mount drops.
 files=(-f docker-compose-env.yaml -f docker-compose.yaml -f docker-compose.geoip.yaml -f docker-compose.tellomi.yaml)
+if [[ "${TELLOMI_COMPOSE_LIMITS:-}" == "1" ]]; then
+  if [[ -f docker-compose.limits.yaml ]]; then
+    files+=(-f docker-compose.limits.yaml)
+    echo "compose limits: docker-compose.limits.yaml"
+  else
+    echo "WARNING: TELLOMI_COMPOSE_LIMITS=1 but docker-compose.limits.yaml is missing; limits not applied" >&2
+  fi
+fi
 C=(docker compose -p tellomi "${files[@]}")
 
 "${C[@]}" config --quiet

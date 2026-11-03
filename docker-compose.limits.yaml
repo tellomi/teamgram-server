@@ -1,0 +1,80 @@
+# Opt-in memory caps (D-34, M7). deploy-pull.sh includes this file only when
+# TELLOMI_COMPOSE_LIMITS=1 and this file is in the checkout. Until that switch
+# is set on Chengdu, production limits are unchanged.
+#
+# mem_limit is what `docker compose up` applies. deploy.resources.limits is
+# the same value for Compose versions that read the deploy block.
+# asr stays 1536m, matching docker-compose.yaml.
+#
+# Redis has no maxmemory and no eviction policy. At 512m the process is
+# killed instead of dropping idgen or pts keys.
+
+services:
+  teamgram:
+    mem_limit: 2560m
+    deploy:
+      resources:
+        limits:
+          memory: 2560m
+
+  mysql:
+    mem_limit: 1536m
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+    # command replaces the command in docker-compose-env.yaml, so the charset
+    # flags are repeated. 1G is the cap inside the 1.5G cgroup.
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --innodb-buffer-pool-size=1G
+
+  kafka:
+    mem_limit: 1.2g
+    deploy:
+      resources:
+        limits:
+          memory: 1.2g
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx768m -Xms768m"
+
+  redis:
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  etcd:
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  coturn:
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  mediamtx:
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # Same 1536m and 2 cpus as docker-compose.yaml. Both fields are set
+  # because Compose rejects cpus and deploy.resources.limits.cpus when they differ.
+  asr:
+    mem_limit: 1536m
+    cpus: 2
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+          cpus: "2"
