@@ -23,7 +23,14 @@ RUN apt update -y && apt install -y ffmpeg psmisc default-mysql-client && apt-ge
 WORKDIR /app
 COPY --from=builder /app/teamgramd/ /app/
 COPY --from=ip2region /out/ /app/data/ip2region/
-RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/runall-docker.sh
+# Names come from entrypoint.sh and the compose command/entrypoint values,
+# not from a fixed list. A missing or non-executable file fails the build,
+# so the workflow cannot push a partial image.
+COPY scripts/verify-teamgram-binaries.sh /tmp/verify-teamgram-binaries.sh
+COPY docker-compose.yaml docker-compose-env.yaml docker-compose.staging.yaml docker-compose.geoip.yaml /tmp/compose/
+RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/runall-docker.sh \
+    && bash /tmp/verify-teamgram-binaries.sh /app /tmp/compose \
+    && rm -rf /tmp/verify-teamgram-binaries.sh /tmp/compose
 # Exec form so the entrypoint is PID 1. Shell form wraps it in `sh -c`,
 # which swallows SIGTERM and leaves client sockets open across a restart.
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
