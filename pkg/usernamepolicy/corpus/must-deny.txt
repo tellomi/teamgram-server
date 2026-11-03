@@ -1,0 +1,66 @@
+# 必须拦下的名字。没有这份清单，「一条都没误杀」可以靠「什么都不拦」达成。
+username global admin
+username global Admin
+username global ADMIN
+username global administrator
+username global root
+username global system
+username global support
+username global official
+username global staff
+username global moderator
+username global security
+username global webmaster
+username global admin_team
+username global team_admin
+username global support_center
+username global tellomi
+username global tellomi_support
+username global tellomi_official
+username global tellomi_admin
+username global my_tellomi
+username global tel1omi
+username global te11omi
+username global tellorni
+username global password
+username global verify_now
+username global wallet_recovery
+slug global u
+slug global g
+slug global call
+slug global download
+slug global privacy
+display_name global ＡＤＭＩＮ
+display_name global tellomi
+group_name global tellomi_official
+# 拼音职能词（2026-09-23）
+username global kefu
+username global KeFu
+username global guanliyuan
+username global kefu_zhang
+username global tellomi_kefu
+username global kefu_tellomi
+username global kefuzhongxin
+username global xitongxiaoxi
+username global anquanzhongxin
+# 拼音词第二轮（2026-09-23，#1128 review：新词 + 把当前的前后缀 / 字段行为钉住）
+username global guanfang
+username global GuanFang
+username global xitong
+username global anquan
+username global gongzuorenyuan
+username global tuikuan
+username global yanzhengma
+username global zhang_kefu
+username global kefu_1990
+username global guanliyuan_1995
+username global mystore_kefu
+username global kefuzhongxin_vip
+username global xitongxiaoxi_bot
+slug global guanfang
+bot_username global guanfang
+display_name global Zhang Kefu
+display_name global GuanLiyuan
+display_name global 小王 kefu
+group_name global Acme kefu
+group_name global kefu 1群

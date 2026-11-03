@@ -1,0 +1,1361 @@
+{
+  "name": "policy",
+  "version": 2026110302,
+  "schema": 1,
+  "generated_at": "2026-11-03T00:00:00Z",
+  "generated_by": "teamgram-server pkg/usernamepolicy overlay for requirements v2 appendix C / D-56; not part of policy-2026092301",
+  "inputs": [],
+  "payload": {
+    "rules": [
+      {
+        "id": "overlay/d56:telegram",
+        "term": "telegram",
+        "normalized": "telegram",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:botfather",
+        "term": "botfather",
+        "normalized": "botfather",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:wechat",
+        "term": "wechat",
+        "normalized": "wechat",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:weixin",
+        "term": "weixin",
+        "normalized": "weixin",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:whatsapp",
+        "term": "whatsapp",
+        "normalized": "whatsapp",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:kakaotalk",
+        "term": "kakaotalk",
+        "normalized": "kakaotalk",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:signal",
+        "term": "signal",
+        "normalized": "signal",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:discord",
+        "term": "discord",
+        "normalized": "discord",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:viber",
+        "term": "viber",
+        "normalized": "viber",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:tencent",
+        "term": "tencent",
+        "normalized": "tencent",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:alipay",
+        "term": "alipay",
+        "normalized": "alipay",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:alibaba",
+        "term": "alibaba",
+        "normalized": "alibaba",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:aliyun",
+        "term": "aliyun",
+        "normalized": "aliyun",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:taobao",
+        "term": "taobao",
+        "normalized": "taobao",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:tmall",
+        "term": "tmall",
+        "normalized": "tmall",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:douyin",
+        "term": "douyin",
+        "normalized": "douyin",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:kuaishou",
+        "term": "kuaishou",
+        "normalized": "kuaishou",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:bytedance",
+        "term": "bytedance",
+        "normalized": "bytedance",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:toutiao",
+        "term": "toutiao",
+        "normalized": "toutiao",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:xiaohongshu",
+        "term": "xiaohongshu",
+        "normalized": "xiaohongshu",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:baidu",
+        "term": "baidu",
+        "normalized": "baidu",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:bilibili",
+        "term": "bilibili",
+        "normalized": "bilibili",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:zhihu",
+        "term": "zhihu",
+        "normalized": "zhihu",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:meituan",
+        "term": "meituan",
+        "normalized": "meituan",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:jingdong",
+        "term": "jingdong",
+        "normalized": "jingdong",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:pinduoduo",
+        "term": "pinduoduo",
+        "normalized": "pinduoduo",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:huawei",
+        "term": "huawei",
+        "normalized": "huawei",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:xiaomi",
+        "term": "xiaomi",
+        "normalized": "xiaomi",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:google",
+        "term": "google",
+        "normalized": "google",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:gmail",
+        "term": "gmail",
+        "normalized": "gmail",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:youtube",
+        "term": "youtube",
+        "normalized": "youtube",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:apple",
+        "term": "apple",
+        "normalized": "apple",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:icloud",
+        "term": "icloud",
+        "normalized": "icloud",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:appstore",
+        "term": "appstore",
+        "normalized": "appstore",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:microsoft",
+        "term": "microsoft",
+        "normalized": "microsoft",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:meta",
+        "term": "meta",
+        "normalized": "meta",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:instagram",
+        "term": "instagram",
+        "normalized": "instagram",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:threads",
+        "term": "threads",
+        "normalized": "threads",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:tiktok",
+        "term": "tiktok",
+        "normalized": "tiktok",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:amazon",
+        "term": "amazon",
+        "normalized": "amazon",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:netflix",
+        "term": "netflix",
+        "normalized": "netflix",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:paypal",
+        "term": "paypal",
+        "normalized": "paypal",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:snapchat",
+        "term": "snapchat",
+        "normalized": "snapchat",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:reddit",
+        "term": "reddit",
+        "normalized": "reddit",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:openai",
+        "term": "openai",
+        "normalized": "openai",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:chatgpt",
+        "term": "chatgpt",
+        "normalized": "chatgpt",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:grok",
+        "term": "grok",
+        "normalized": "grok",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:xai",
+        "term": "xai",
+        "normalized": "xai",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:claude",
+        "term": "claude",
+        "normalized": "claude",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:anthropic",
+        "term": "anthropic",
+        "normalized": "anthropic",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:gemini",
+        "term": "gemini",
+        "normalized": "gemini",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:deepseek",
+        "term": "deepseek",
+        "normalized": "deepseek",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:qwen",
+        "term": "qwen",
+        "normalized": "qwen",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:tongyi",
+        "term": "tongyi",
+        "normalized": "tongyi",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:kimi",
+        "term": "kimi",
+        "normalized": "kimi",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:doubao",
+        "term": "doubao",
+        "normalized": "doubao",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:wenxin",
+        "term": "wenxin",
+        "normalized": "wenxin",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:ernie",
+        "term": "ernie",
+        "normalized": "ernie",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:line",
+        "term": "line",
+        "normalized": "line",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:qq",
+        "term": "qq",
+        "normalized": "qq",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT"
+        ],
+        "fields": [
+          "slug"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:jd",
+        "term": "jd",
+        "normalized": "jd",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT"
+        ],
+        "fields": [
+          "slug"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56:x",
+        "term": "x",
+        "normalized": "x",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT"
+        ],
+        "fields": [
+          "slug"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56-affix:facebook",
+        "term": "facebook",
+        "normalized": "facebook",
+        "skeleton": "",
+        "matches": [
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56-affix:twitter",
+        "term": "twitter",
+        "normalized": "twitter",
+        "skeleton": "",
+        "matches": [
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
+        "id": "overlay/d56-affix:messenger",
+        "term": "messenger",
+        "normalized": "messenger",
+        "skeleton": "",
+        "matches": [
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      }
+    ],
+    "allow": []
+  }
+}
