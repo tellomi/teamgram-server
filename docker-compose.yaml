@@ -157,6 +157,11 @@ services:
       TELLOMI_DISCOVER: ${TELLOMI_DISCOVER:-}
       TELLOMI_DISCOVER_SIGNING_KEY: ${TELLOMI_DISCOVER_SIGNING_KEY:-}
       TELLOMI_DISCOVER_PSEUDONYM_KEY: ${TELLOMI_DISCOVER_PSEUDONYM_KEY:-}
+      # Live contact / close-friend checks for content-engine. Unset is off.
+      # See docs/discover-relations.md. Do not publish this port.
+      TELLOMI_DISCOVER_RELATIONS: ${TELLOMI_DISCOVER_RELATIONS:-}
+      TELLOMI_DISCOVER_RELATION_KEY: ${TELLOMI_DISCOVER_RELATION_KEY:-}
+      TELLOMI_DISCOVER_RELATION_ADDR: ${TELLOMI_DISCOVER_RELATION_ADDR:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.

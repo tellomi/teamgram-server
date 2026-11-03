@@ -41,6 +41,7 @@ import (
 	deeplinks_helper "github.com/teamgram/teamgram-server/app/bff/deeplinks"
 	dialogs_helper "github.com/teamgram/teamgram-server/app/bff/dialogs"
 	discover_helper "github.com/teamgram/teamgram-server/app/bff/discover"
+	"github.com/teamgram/teamgram-server/app/bff/discoverrel"
 	drafts_helper "github.com/teamgram/teamgram-server/app/bff/drafts"
 	ephemeral_helper "github.com/teamgram/teamgram-server/app/bff/ephemeral"
 	feed_helper "github.com/teamgram/teamgram-server/app/bff/feed"
@@ -304,6 +305,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
 		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
 		mtproto.RegisterRPCDiscoverServer(grpcServer, discover_helper.New(c.BizServiceClient))
+		discoverrel.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCIvServer(grpcServer, iv_helper.New())
 		// Peer-to-Peer Login Program. The ledger is closed: no SMS job is dispatched.
 		mtproto.RegisterRPCSmsjobsServer(grpcServer, smsjobs_helper.New())

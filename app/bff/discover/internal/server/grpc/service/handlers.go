@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/discoverrel"
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -47,6 +48,9 @@ func (s *Service) DiscoverGetEngineCredential(ctx context.Context, _ *mtproto.TL
 	if err != nil {
 		logx.Errorf("discover credential: issue failed")
 		return nil, status.Error(mtproto.ErrInternal, "INTERNAL")
+	}
+	if err = discoverrel.Remember(ctx, userID, discoverauth.Pseudonym(keys.Pseudonym, userID)); err != nil {
+		logx.Errorf("discover relations: could not record subject")
 	}
 	return mtproto.MakeDiscoverEngineCredential(cred.Token, cred.Region, int32(cred.Expires)), nil
 }
