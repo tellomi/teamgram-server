@@ -132,6 +132,13 @@ services:
       TELLOMI_APNS_VOIP_TOPIC: ${TELLOMI_APNS_VOIP_TOPIC:-}
       TELLOMI_APNS_KEY_PATH: ${TELLOMI_APNS_KEY_PATH:-/etc/tellomi/apns/AuthKey.p8}
       TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
+      # help.getAppUpdate. Empty VERSION answers help.noAppUpdate. iOS sessions
+      # ignore these and always receive help.noAppUpdate. See .env.example.
+      TELLOMI_APP_UPDATE_VERSION: ${TELLOMI_APP_UPDATE_VERSION:-}
+      TELLOMI_APP_UPDATE_TEXT: ${TELLOMI_APP_UPDATE_TEXT:-}
+      TELLOMI_APP_UPDATE_URL: ${TELLOMI_APP_UPDATE_URL:-}
+      TELLOMI_APP_UPDATE_SOURCE: ${TELLOMI_APP_UPDATE_SOURCE:-}
+      TELLOMI_APP_UPDATE_CANNOT_SKIP: ${TELLOMI_APP_UPDATE_CANNOT_SKIP:-}
       # Schema migration on startup (teamgramd/deploy/migrate.sh). Root matches
       # the MySQL service; the app processes still use the DSN in etc2/*.yaml.
       MYSQL_HOST: ${MYSQL_HOST:-mysql}

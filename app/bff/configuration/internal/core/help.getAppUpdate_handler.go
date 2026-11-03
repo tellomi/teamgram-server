@@ -19,6 +19,8 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
@@ -30,24 +32,69 @@ import (
 //
 // Compares the signed-in client's app version with the published release.
 // help.noAppUpdate means the client is current or no release is published.
+// iOS (session lang_pack "ios") always receives help.noAppUpdate: that client
+// opens a blocking page whose button only launches App Store id 0.
 // The version is the initConnection app_version when the session has it,
-// otherwise a version embedded in source.
+// otherwise a version embedded in source. A session that cannot be loaded
+// keeps that comparison.
 func (c *ConfigurationCore) HelpGetAppUpdate(in *mtproto.TLHelpGetAppUpdate) (*mtproto.Help_AppUpdate, error) {
-	return helpdesk.AppUpdate(c.clientVersion(in.GetSource()), in.GetSource(), helpdesk.LoadRelease()), nil
+	return helpdesk.AppUpdateForSession(c.updateClient(), in.GetSource(), helpdesk.LoadRelease()), nil
 }
 
-func (c *ConfigurationCore) clientVersion(source string) string {
-	if v := helpdesk.VersionInSource(source); v != "" {
-		return v
+// updateClient reads lang_pack from the current RPC session, then the auths
+// row. device_model, system_version, and app_version come from the same row.
+// Known stays false when none of that is available.
+func (c *ConfigurationCore) updateClient() helpdesk.UpdateClient {
+	var client helpdesk.UpdateClient
+	lang, langOK := c.sessionLangPack()
+	client.LangPack = lang
+	if strings.EqualFold(strings.TrimSpace(lang), "ios") {
+		client.Known = true
+		return client
 	}
-	if c.MD == nil || c.MD.GetPermAuthKeyId() == 0 || c.svcCtx == nil || c.svcCtx.AuthSession == nil {
-		return ""
+	if auth, ok := c.sessionAuthorization(); ok {
+		client.Known = true
+		client.DeviceModel = auth.GetDeviceModel()
+		client.SystemVersion = auth.GetSystemVersion()
+		client.AppVersion = auth.GetAppVersion()
+	}
+	if langOK {
+		client.Known = true
+	}
+	return client
+}
+
+func (c *ConfigurationCore) sessionLangPack() (string, bool) {
+	if c.MD != nil {
+		if pack := strings.TrimSpace(c.MD.GetLangpack()); pack != "" {
+			return pack, true
+		}
+	}
+	if !c.canReadSession() {
+		return "", false
+	}
+	packed, err := c.svcCtx.AuthSession.AuthsessionGetLangPack(c.ctx, &authsession.TLAuthsessionGetLangPack{
+		AuthKeyId: c.MD.GetPermAuthKeyId(),
+	})
+	if err != nil || packed == nil {
+		return "", false
+	}
+	return strings.TrimSpace(packed.GetV()), true
+}
+
+func (c *ConfigurationCore) sessionAuthorization() (*mtproto.Authorization, bool) {
+	if !c.canReadSession() {
+		return nil, false
 	}
 	auth, err := c.svcCtx.AuthSession.AuthsessionGetAuthorization(c.ctx, &authsession.TLAuthsessionGetAuthorization{
 		AuthKeyId: c.MD.GetPermAuthKeyId(),
 	})
 	if err != nil || auth == nil {
-		return ""
+		return nil, false
 	}
-	return auth.GetAppVersion()
+	return auth, true
+}
+
+func (c *ConfigurationCore) canReadSession() bool {
+	return c.MD != nil && c.MD.GetPermAuthKeyId() != 0 && c.svcCtx != nil && c.svcCtx.AuthSession != nil
 }

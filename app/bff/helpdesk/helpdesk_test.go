@@ -26,6 +26,13 @@ func TestAppUpdateAndChangelog(t *testing.T) {
 	if VersionInSource("android") != "" || VersionInSource("build 14.0.3") != "14.0.3" {
 		t.Fatal(VersionInSource("build 14.0.3"))
 	}
+	clientBuild := "14.0.4 (1801699) "
+	if newer("1800979", clientBuild) || !newer("14.0.5", clientBuild) || newer("14.0.4", clientBuild) {
+		t.Fatalf("newer(%q)", clientBuild)
+	}
+	if AppUpdate(clientBuild, "", &Release{Version: "1800979"}).GetPredicateName() != mtproto.Predicate_help_noAppUpdate {
+		t.Fatal("bare build")
+	}
 
 	empty := Changelog("", []Note{{Version: "14.0.0", Text: "Hello"}}, 10)
 	if len(empty.GetUpdates()) != 0 {
