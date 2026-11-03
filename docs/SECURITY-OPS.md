@@ -108,6 +108,8 @@ MySQL, etcd, and Redis are dumped at 03:15, encrypted with age, and uploaded to 
 install -m 755 scripts/ops/tellomi-backup-common.sh /usr/local/bin/tellomi-backup-common.sh
 install -m 755 scripts/ops/tellomi-db-backup.sh /usr/local/bin/tellomi-db-backup.sh
 install -m 644 scripts/ops/tellomi-db-backup.cron /etc/cron.d/tellomi-db-backup
+install -m 755 scripts/ops/tellomi-backup-verify.sh /usr/local/bin/tellomi-backup-verify.sh
+install -m 644 scripts/ops/tellomi-backup-verify.cron /etc/cron.d/tellomi-backup-verify
 ```
 
 `git checkout` does not update `/usr/local/bin`. Copy them again after this repo changes. Leave `TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY` unset until `/opt/tellomi/secrets/db-backup-r2.env` exists. Without that file the script warns and uses the media key.

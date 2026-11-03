@@ -34,3 +34,4 @@ jobs:
           shellcheck -x deploy-pull.sh scripts/ops/*.sh
           bash scripts/ops/tellomi-image-cleanup.sh --self-test
           bash scripts/ops/tellomi-db-backup.sh --self-test
+          bash scripts/ops/tellomi-backup-verify.sh --self-test
