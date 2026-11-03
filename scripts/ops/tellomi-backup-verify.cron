@@ -1,0 +1,5 @@
+# Installed as /etc/cron.d/tellomi-backup-verify. See docs/ops/BACKUP.md.
+# 04:00, after the 03:15 backup. A missed night is still under 26h until the next morning.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 4 * * * root /usr/local/bin/tellomi-backup-verify.sh
