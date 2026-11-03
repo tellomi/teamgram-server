@@ -19,6 +19,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 
 	"github.com/zeromicro/go-zero/core/logx"
+	"google.golang.org/grpc/status"
 )
 
 type SessionCore struct {
@@ -49,28 +50,21 @@ func (c *SessionCore) getOrFetchMainAuthWrapper(mainAuthId int64) (*sess.MainAut
 		return mainAuth, nil
 	}
 
-	var (
-		kData *authsession.AuthKeyStateData
-		err   error
-	)
-
-	if mainAuthId == 0 {
-		kData = authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
-			AuthKeyId:            0,
-			KeyState:             mtproto.AuthStateNew,
-			UserId:               0,
-			AccessHash:           0,
-			Client:               nil,
-			AndroidPushSessionId: nil,
-		}).To_AuthKeyStateData()
-	} else {
-		kData, err = c.svcCtx.Dao.AuthsessionClient.AuthsessionGetAuthStateData(c.ctx, &authsession.TLAuthsessionGetAuthStateData{
-			AuthKeyId: mainAuthId,
-		})
-		if err != nil {
+	kData, err := c.svcCtx.Dao.AuthsessionClient.AuthsessionGetAuthStateData(c.ctx, &authsession.TLAuthsessionGetAuthStateData{
+		AuthKeyId: mainAuthId,
+	})
+	if err != nil {
+		if status.Convert(err).Message() != "AUTH_KEY_PERM_EMPTY" {
 			c.Logger.Errorf("getOrFetchMainAuthWrapper - error: %v", err)
 			return nil, err
 		}
+		// Not bound yet. A wrapper under this key's own id can answer
+		// ping, bad_server_salt and new_session_created. Id 0 stays rejected
+		// above, so these connections do not share a session.
+		kData = authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
+			AuthKeyId: mainAuthId,
+			KeyState:  mtproto.AuthStateNew,
+		}).To_AuthKeyStateData()
 	}
 
 	mainAuth = c.svcCtx.MainAuthMgr.AllocMainAuthWrapper(
