@@ -109,9 +109,11 @@ compose only.
 
 ## coturn on 8.137.39.82
 
-The `coturn` service uses `network_mode: host` and
-`teamgramd/deploy/coturn/entrypoint.sh`. The image stays
-`coturn/coturn:4.6.2` (it is not built in CI). On the Chengdu host, in the
+The `coturn` service uses `network_mode: host`. The image stays
+`coturn/coturn:4.6.2` (it is not built in CI). Compose bind-mounts
+`teamgramd/deploy/coturn/entrypoint.sh` at `/opt/coturn/entrypoint.sh` and
+runs it when that file is there. The script writes `/tmp/turnserver.conf`
+from `TURN_*` and execs `turnserver`. On the Chengdu host, in the
 compose `.env`:
 
 ```bash
@@ -133,6 +135,40 @@ private address. The entrypoint then writes
 `external-ip=8.137.39.82/<private>` so relay candidates advertise the public
 address. If the public address is configured on the NIC, leave
 `TELLOMI_TURN_RELAY_IP` empty.
+
+### Entrypoint when a host override replaces volumes
+
+`docker-compose.tellomi.yaml` is not in git. It often sets `volumes: !override`
+on a service. That replaces the list, so the bind mount of
+`entrypoint.sh` is gone. An entrypoint that only runs
+`/opt/coturn/entrypoint.sh` then crash-loops, because the file is not in
+the image. Chengdu worked around that with `entrypoint: !reset null`.
+
+The compose entrypoint is a shell. If `/opt/coturn/entrypoint.sh` exists,
+it runs the generator. If it does not, the shell execs the image
+entrypoint (`docker-entrypoint.sh`) and passes the image command through.
+That is the same process `entrypoint: !reset null` starts. The image
+looks up `turnserver.conf`, including `/etc/coturn/turnserver.conf`, so
+an override that mounts the real config there still starts coturn.
+`entrypoint: !reset null` still works, and it is no longer required for
+the container to stay up.
+
+To keep generating the config from `TELLOMI_TURN_*` after a volume
+override, repeat the script mount in the host file:
+
+```yaml
+services:
+  coturn:
+    volumes: !override
+      - ./teamgramd/deploy/coturn/entrypoint.sh:/opt/coturn/entrypoint.sh:ro
+```
+
+Confirm the rendered entrypoint tests for the file and falls back to
+`docker-entrypoint.sh`:
+
+```bash
+docker compose -f docker-compose-env.yaml -f docker-compose.yaml config
+```
 
 Apply and restart:
 

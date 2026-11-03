@@ -110,6 +110,10 @@ JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. `pkg
 
 The only upstream file is `app/bff/configuration/internal/core/help.getConfig_handler.go`, which calls `pkg/dcoptions.Apply` on the clone. Parsing and validation live in `pkg/dcoptions`.
 
+## coturn entrypoint
+
+`docker-compose.yaml` used to set coturn `entrypoint` to `/opt/coturn/entrypoint.sh`. That path exists only because the same file bind-mounts `teamgramd/deploy/coturn/entrypoint.sh`. A host override that replaces volumes (`volumes: !override`) removed the file and coturn crash-looped. Chengdu set `entrypoint: !reset null` so the image entrypoint ran. The compose entrypoint now runs the mounted generator when the file is there, and `docker-entrypoint.sh` with the image command otherwise. The image still reads `/etc/coturn/turnserver.conf` when the override mounts one. The generator script is Tellomi's; it is not an upstream file.
+
 ## Sticker wire format
 
 `stickerSet` flags bit 4 is `thumbs`, `thumb_dc_id`, and `thumb_version` together. The catalog used to set the ints without a thumbs vector, so `messages.featuredStickers` did not round-trip (`DecodeVectorLong`). The catalog now sends `thumb_document_id` (flags bit 8) and leaves bit 4 unset. The generated codec in `proto/mtproto` is unchanged.

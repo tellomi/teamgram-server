@@ -1,6 +1,9 @@
 #!/bin/sh
 # Generate coturn config from the environment and exec turnserver.
 # Compose sets TURN_* from TELLOMI_TURN_* / TELLOMI_CALL_IP. See docs/calls.md.
+# docker-compose.yaml runs this only when the file is mounted at
+# /opt/coturn/entrypoint.sh. A host `volumes: !override` that drops the
+# mount uses the image entrypoint instead of this script.
 set -eu
 
 : "${TURN_EXTERNAL_IP:=127.0.0.1}"

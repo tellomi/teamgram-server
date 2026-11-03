@@ -118,7 +118,9 @@ Once a month, restore onto a fresh Docker host and finish within two hours. That
 
 ## Memory limits
 
-`docker-compose.limits.yaml` caps teamgram (2.5 GiB), mysql (1.5 GiB, InnoDB buffer pool 1 GiB), kafka (1.2 GiB, heap `-Xmx768m -Xms768m`), redis (512 MiB), etcd (256 MiB), coturn (256 MiB), and mediamtx (256 MiB). asr stays 1.5 GiB and 2 CPUs. Redis has no eviction policy, so at the cap the process is killed instead of dropping idgen or pts keys.
+`docker-compose.limits.yaml` caps teamgram (2.5 GiB), mysql (1.5 GiB, InnoDB buffer pool 1 GiB), kafka (1.6 GiB, heap stays `-Xmx1G -Xms1G`), redis (512 MiB), etcd (256 MiB), coturn (256 MiB), and mediamtx (256 MiB). asr stays 1.5 GiB and 2 CPUs. Redis has no eviction policy, so at the cap the process is killed instead of dropping idgen or pts keys.
+
+Kafka on Chengdu is about 956 MiB RSS with that 1 GiB heap. The earlier 1.2 GiB cap and `-Xmx768m` were tighter than the process already runs, so the overlay was not applied to kafka. 1.6 GiB is the 1 GiB heap plus about 600 MiB for metaspace, threads, direct memory, and page cache. These caps are ceilings, not reservations. The host has 7.1G, and the caps can sum past that without every service sitting at its cap. Detail and the coturn entrypoint note are in [ops/COMPOSE_LIMITS.md](ops/COMPOSE_LIMITS.md).
 
 `deploy-pull.sh` adds that file only when `TELLOMI_COMPOSE_LIMITS=1` is exported in the shell that runs the script and the file is in the checkout. A line in `.env` is not enough. Until then, production limits stay as they are.
 
@@ -129,7 +131,17 @@ export TELLOMI_COMPOSE_LIMITS=1
 
 Copy `deploy-pull.sh` to `/opt/tellomi/deploy-pull.sh` after this change. The overlay itself comes from the checkout.
 
+Render the same files the script uses. Unset, kafka has no `mem_limit` and no `KAFKA_HEAP_OPTS` (the image default heap is already 1G). Set to `1`, the overlay is included and kafka is 1.6g with `-Xmx1G -Xms1G`.
+
 ```bash
+files=(-f docker-compose-env.yaml -f docker-compose.yaml)
+docker compose "${files[@]}" config
+
+export TELLOMI_COMPOSE_LIMITS=1
+if [[ "${TELLOMI_COMPOSE_LIMITS}" == "1" ]]; then
+  files+=(-f docker-compose.limits.yaml)
+fi
+docker compose "${files[@]}" config
 bash scripts/check-compose-limits.sh
 ```
 
