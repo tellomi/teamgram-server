@@ -137,3 +137,7 @@ bash scripts/check-compose-limits.sh
 
 - Remove the upstream RSA key from `gnetway.yaml` `RSAKey` once clients carrying the new public key are widespread.
 - Chengdu does not pick up `deploy-pull.sh` or `scripts/ops/` from the checkout. Install them with the commands under Root disk before the next deploy.
+
+## Datacenter addresses
+
+`help.getConfig` `dc_options` stays the empty list in `teamgramd/bin/config.json` unless `TELLOMI_DC_OPTIONS` is set. Clients that already stored an address keep it after the server list goes back to empty. See [DC addresses](ops/DC_ADDRESSES.md).

@@ -14,7 +14,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | Test | What a failing run means |
 |---|---|
 | `TestInitConnectionInvokeWithLayer` | iOS and Android `initConnection` cannot read `help.getConfig`. |
-| `TestHelpGetConfig` | `help.getConfig` did not return a config. |
+| `TestHelpGetConfig` | `help.getConfig` did not return a config. When `TELLOMI_E2E_DC_OPTIONS` is set, `dc_options` did not match that spec, `webfile_dc_id` was not 1, or `dc_txt_domain_name` was not `apv2.stel.com`. Unset (production smoke) does not check the list. |
 | `TestHelpGetAppConfig` | `help.getAppConfig` returned 500, timed out, or did not decode. |
 | `TestHelpGetTermsOfServiceUpdate` | The default config returns `help.termsOfServiceUpdateEmpty`, and a second call stays empty. If an update is returned, accepting its id does not make the next call empty. |
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |
@@ -96,7 +96,11 @@ server key fingerprint).
 
 ## CI
 
-`.github/workflows/e2e.yml` runs on every pull request. It starts
+`.github/workflows/e2e.yml` runs on every pull request. The job sets
+`TELLOMI_DC_OPTIONS=1:127.0.0.1:10443,1:127.0.0.1:5222` for the teamgram
+container and the same value as `TELLOMI_E2E_DC_OPTIONS` for
+`TestHelpGetConfig`. That address is the CI host, not production.
+The job starts
 `docker-compose-env.yaml` and `docker-compose.yaml` (MySQL, Redis, Kafka in
 KRaft, etcd, object storage, and the Teamgram image built in the job), then
 `go test` in `e2e/client` with `TELLOMI_E2E_RESTART=1`.
