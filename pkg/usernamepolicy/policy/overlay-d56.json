@@ -90,6 +90,27 @@
         "source": "requirements-v2/appendix-c"
       },
       {
+        "id": "overlay/d56:weibo",
+        "term": "weibo",
+        "normalized": "weibo",
+        "skeleton": "",
+        "matches": [
+          "NORMALIZED_EXACT",
+          "PREFIX",
+          "SUFFIX"
+        ],
+        "fields": [
+          "username",
+          "slug",
+          "bot_username"
+        ],
+        "regions": [
+          "global"
+        ],
+        "outcome": "reserved",
+        "source": "requirements-v2/appendix-c"
+      },
+      {
         "id": "overlay/d56:whatsapp",
         "term": "whatsapp",
         "normalized": "whatsapp",

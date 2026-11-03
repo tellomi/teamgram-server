@@ -20,13 +20,77 @@ func TestCorpus(t *testing.T) {
 	}
 }
 
+// mustAllowWeiboLine is the only vendored must-allow row the D-56 overlay
+// refuses. The corpus file is not edited. D-56; the user confirmed blocking
+// weibo on 2026-11-04.
+const mustAllowWeiboLine = 8525
+
 func TestOverlayKeepsCorpus(t *testing.T) {
 	e := runtimeEngine()
-	allowN, allowFail := checkCorpus(t, e, "corpus/must-allow.txt", true)
+	allowN, allowFail, weiboDenied := checkAllowExceptWeibo(t, e)
 	denyN, denyFail := checkCorpus(t, e, "corpus/must-deny.txt", false)
-	if allowN != 20029 || denyN != 63 || allowFail > 0 || denyFail > 0 {
-		t.Fatalf("overlay changed the corpus: allow %d/%d deny %d/%d", allowN, allowFail, denyN, denyFail)
+	if !weiboDenied {
+		t.Fatal("overlay must refuse must-allow.txt:8525 username global weibo")
 	}
+	if allowN != 20028 || allowFail > 0 || denyN != 63 || denyFail > 0 {
+		t.Fatalf("overlay corpus: allow %d checked %d failed, deny %d checked %d failed", allowN, allowFail, denyN, denyFail)
+	}
+}
+
+func TestWeiboD24(t *testing.T) {
+	e := runtimeEngine()
+	global := []string{"global"}
+	for _, name := range []string{"weibo", "weibo_01", "my_weibo"} {
+		if e.Check(name, FieldUsername, global).IsAllowed() {
+			t.Fatalf("%s should be refused", name)
+		}
+	}
+	if !e.Check("weibo88", FieldUsername, global).IsAllowed() {
+		t.Fatal("weibo88 should be allowed (D-24)")
+	}
+}
+
+func checkAllowExceptWeibo(t *testing.T, e *Engine) (checked, failed int, weiboDenied bool) {
+	t.Helper()
+	f, err := os.Open("corpus/must-allow.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	lineNo := 0
+	for sc.Scan() {
+		lineNo++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		field, regions, input, ok := splitCorpus(line)
+		if !ok {
+			t.Fatalf("corpus/must-allow.txt:%d: want `<field> <regions> <input>`", lineNo)
+		}
+		v := e.Check(input, field, strings.Split(regions, ","))
+		if lineNo == mustAllowWeiboLine {
+			if line != "username global weibo" {
+				t.Fatalf("line %d is %q, want the weibo exception", lineNo, line)
+			}
+			weiboDenied = !v.IsAllowed()
+			continue
+		}
+		checked++
+		if v.IsAllowed() {
+			continue
+		}
+		failed++
+		t.Errorf("corpus/must-allow.txt:%d %q allowed=false outcome=%s rule=%s", lineNo, input, v.Outcome, v.RuleID)
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !weiboDenied && checked+failed == 0 {
+		t.Fatal("did not see the weibo exception line")
+	}
+	return checked, failed, weiboDenied
 }
 
 func TestD24OnOfficialPolicy(t *testing.T) {

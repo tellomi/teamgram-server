@@ -18,9 +18,13 @@ func affix() []string {
 // Overlay terms from requirements v2 appendix C / D-56 that are not rules in
 // policy-2026092301.json. The official file is not edited.
 //
-// Three corpus rows would go red if the overlay were broader, so they are
-// not covered here:
-//   - must-allow.txt:8525 username "weibo" is an exact allow, so weibo is omitted
+// weibo is included (exact, plus underscore prefix and suffix), same as the
+// other platform names. D-56; the user confirmed blocking it on 2026-11-04.
+// must-allow.txt line 8525 is still `username global weibo`. That file is not
+// edited. TestOverlayKeepsCorpus exempts only that line and expects the
+// overlay to refuse it.
+//
+// Two other corpus rows stay uncovered:
 //   - must-allow.txt:61 username "telegram_fan" shares a prefix boundary with
 //     telegram, so telegram is exact-only
 //   - must-allow.txt:18910 username "x____…" would match a username prefix of
@@ -34,7 +38,7 @@ func overlaySpecs() []termSpec {
 	return []termSpec{
 		{prefix: "overlay/d56", source: "requirements-v2/appendix-c", outcome: OutcomeReserved, matches: exact(), fields: user, words: []string{"telegram"}},
 		{prefix: "overlay/d56", source: "requirements-v2/appendix-c", outcome: OutcomeReserved, matches: affix(), fields: user, words: []string{
-			"botfather", "wechat", "weixin", "whatsapp", "kakaotalk", "signal", "discord", "viber",
+			"botfather", "wechat", "weixin", "weibo", "whatsapp", "kakaotalk", "signal", "discord", "viber",
 			"tencent", "alipay", "alibaba", "aliyun", "taobao", "tmall", "douyin", "kuaishou", "bytedance", "toutiao",
 			"xiaohongshu", "baidu", "bilibili", "zhihu", "meituan", "jingdong", "pinduoduo", "huawei", "xiaomi",
 			"google", "gmail", "youtube", "apple", "icloud", "appstore", "microsoft", "meta", "instagram", "threads",
