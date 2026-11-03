@@ -153,7 +153,7 @@ rclone lsjson r2:tellomi-prod-db-backups/mysql/ --s3-no-check-bucket | head
 
 The newest `mysql/`, `etcd/`, and `redis/` objects should be from this run. There is no `rclone delete` in the script; confirm with `grep rclone /usr/local/bin/tellomi-db-backup.sh`.
 
-A monthly restore on a fresh Docker host is required. Do it off Chengdu. The drill steps are a separate change.
+A monthly restore on a fresh Docker host is required. Do it off Chengdu. Steps, the read-only token, and the record template are in [RESTORE_DRILL.md](RESTORE_DRILL.md).
 
 ## 04:00 check
 

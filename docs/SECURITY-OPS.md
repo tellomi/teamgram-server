@@ -114,6 +114,8 @@ install -m 644 scripts/ops/tellomi-backup-verify.cron /etc/cron.d/tellomi-backup
 
 `git checkout` does not update `/usr/local/bin`. Copy them again after this repo changes. Leave `TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY` unset until `/opt/tellomi/secrets/db-backup-r2.env` exists. Without that file the script warns and uses the media key.
 
+Once a month, restore onto a fresh Docker host and finish within two hours. That host is not Chengdu. The script and the record template are in [ops/RESTORE_DRILL.md](ops/RESTORE_DRILL.md). Do not copy the age identity onto this server.
+
 ## Known follow-ups
 
 - Remove the upstream RSA key from `gnetway.yaml` `RSAKey` once clients carrying the new public key are widespread.
