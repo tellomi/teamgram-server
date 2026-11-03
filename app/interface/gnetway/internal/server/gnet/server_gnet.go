@@ -440,6 +440,13 @@ func (s *Server) onEncryptedMessage(c gnet.Conn, ctx *connContext, authKey *auth
 					s.PutAuthKey(key3)
 				}
 			}
+			// Still unbound: key the session by this temp key, not by 0.
+			// auth.bindTempAuthKey above already swapped in the real perm id.
+			permAuthKeyId = sessionRoutingKey(permAuthKeyId, authKey.AuthKeyId(), mtpRwaData[16:])
+			if permAuthKeyId == 0 {
+				logx.Errorf("conn authKeyId=%d has no perm key yet; not opening a session", authKey.AuthKeyId())
+				return nil
+			}
 			err := s.svcCtx.Dao.SessionDispatcher.SendData(ctx2, permAuthKeyId, &session.TLSessionSendDataToSession{
 				Data: &session.SessionClientData{
 					ServerId:      s.svcCtx.GatewayId,

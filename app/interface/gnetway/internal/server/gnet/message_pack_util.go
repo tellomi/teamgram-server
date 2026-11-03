@@ -260,3 +260,18 @@ func tryGetPermAuthKeyId(b []byte) int64 {
 
 	return 0
 }
+
+// sessionRoutingKey is the session-service key for one encrypted payload.
+// Perm id 0 is one session shared by every unbound temp key, which is what
+// made the cloud-password step answer with no SRP data. An unbound key
+// therefore uses its own id. auth.bindTempAuthKey carries the permanent id
+// and switches to that.
+func sessionRoutingKey(boundPermID, authKeyID int64, payload []byte) int64 {
+	if boundPermID != 0 {
+		return boundPermID
+	}
+	if id := tryGetPermAuthKeyId(payload); id != 0 {
+		return id
+	}
+	return authKeyID
+}
