@@ -76,6 +76,7 @@ import (
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -102,7 +103,7 @@ func (s *Server) Initialize() error {
 		Etcd:  c.Etcd.Hosts,
 	})
 
-	logx.Infov(c)
+	logx.Infov(redact.Value(c))
 	password.ConfigureFromEnv(c.ChannelMySQL)
 	channelBridge := channels_helper.Bridge{}
 

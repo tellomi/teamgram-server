@@ -12,6 +12,7 @@ import (
 
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 	"github.com/zeromicro/go-zero/core/conf"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -33,7 +34,7 @@ func main() {
 		c Config
 	)
 	conf.MustLoad(*configFile, &c)
-	logx.Info(c)
+	logx.Info(redact.Value(c))
 
 	cli := media_client.NewMediaClient(zrpc.MustNewClient(c.MediaClient))
 	document, err := cli.MediaGetDocument(context.Background(), &media.TLMediaGetDocument{

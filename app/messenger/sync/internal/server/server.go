@@ -18,6 +18,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/svc"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -42,7 +43,7 @@ func (s *Server) Initialize() error {
 		Redis: bootstrap.RedisHosts(c.Cache, c.KV),
 		Etcd:  c.Etcd.Hosts,
 	})
-	logx.Infov(c)
+	logx.Infov(redact.Value(c))
 
 	if err := logx.SetUp(c.Log); err != nil {
 		return err

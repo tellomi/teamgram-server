@@ -28,6 +28,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -55,7 +56,7 @@ func (s *Server) Initialize() error {
 		Etcd:  c.Etcd.Hosts,
 	})
 
-	logx.Infov(c)
+	logx.Infov(redact.Value(c))
 	// ctx := svc.NewServiceContext(c)
 	// s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
 

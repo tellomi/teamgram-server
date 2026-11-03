@@ -18,6 +18,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/svc"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -41,9 +42,7 @@ func (s *Server) Initialize() error {
 		logx.Errorf("object storage config: %v", err)
 		return err
 	}
-	logged := c
-	logged.Minio = c.Minio.Redacted()
-	logx.Infov(logged)
+	logx.Infov(redact.Value(c))
 	ctx := svc.NewServiceContext(c)
 
 	s.grpcSrv = grpc.New(ctx, c.RpcServerConf)

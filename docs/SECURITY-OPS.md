@@ -34,6 +34,12 @@ These repo defaults are dev-only:
 
 Schema migration uses `MYSQL_ROOT_PASSWORD` (dev default `root`) and is separate from the application DSN.
 
+## Startup logs
+
+Each service logs its config at startup (`logx.Infov`). That copy goes through `pkg/redact` first. Passwords inside MySQL DSNs are replaced with `***` (the user, host, and database stay). Fields whose names contain `Secret`, `Password`, `Pass`, or `Key` are replaced with `***`. That covers Redis `Pass`, MinIO and S3 secret keys, and private keys. The process still uses the real config.
+
+Logs written before this change on Chengdu can still contain the database password. That includes `docker logs` for the teamgram containers and the files under `/app/logs`. Purge or rotate those logs after this change is deployed. Do not copy them into tickets or chat.
+
 ## Where secrets live
 
 Do not copy values into git, issues, or chat.
