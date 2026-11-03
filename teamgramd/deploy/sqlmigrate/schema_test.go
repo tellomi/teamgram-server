@@ -116,6 +116,59 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestOfficialAccountMigration(t *testing.T) {
+	dir := sqlDir(t)
+	raw := mustRead(t, filepath.Join(dir, "migrate-20261105-official-accounts.sql"))
+	for _, name := range []string{
+		"tellomi", "tellomi_official", "tellomiapp", "tellomi_team",
+		"support", "tellomi_support", "kefu", "customer_support", "customer_service",
+		"faxian", "discover",
+		"admin", "tellomi_admin", "administrator", "system", "xitong", "noreply", "notifications",
+		"news", "gonggao", "announcement", "notice", "updates",
+		"security", "tellomi_security", "anquan", "safety", "trust",
+		"dev", "developer", "api",
+		"help", "helpcenter", "help_center", "bangzhu",
+		"verify", "tellomi_verify", "verified", "renzheng",
+		"report", "jubao", "abuse", "feedback", "fankui",
+		"bots", "premium", "vip", "huiyuan", "stickers",
+		"777001", "1073800001", "D-55", "peer_type = 0",
+	} {
+		if !strings.Contains(raw, "'"+name+"'") && !strings.Contains(raw, name) {
+			t.Fatalf("official account migration missing %s", name)
+		}
+	}
+	for _, blocked := range []string{"wechat", "google", "whatsapp", "openai", "qq"} {
+		if strings.Contains(strings.ToLower(raw), blocked) {
+			t.Fatalf("appendix C name %s was written in the official-account migration", blocked)
+		}
+	}
+	z := mustRead(t, filepath.Join(dir, "z_init.sql"))
+	if !strings.Contains(z, "'Tellomi', '', 'admin', '42777'") {
+		t.Fatal("z_init.sql service user username is not admin")
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "migrate-*.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	var seenTellomi, seenOfficial bool
+	for _, f := range files {
+		base := filepath.Base(f)
+		if base == "migrate-20261104-tellomi-username.sql" {
+			seenTellomi = true
+		}
+		if base == "migrate-20261105-official-accounts.sql" {
+			if !seenTellomi {
+				t.Fatal("official accounts migration sorts before the tellomi username migration")
+			}
+			seenOfficial = true
+		}
+	}
+	if !seenOfficial {
+		t.Fatal("official accounts migration missing")
+	}
+}
+
 func TestTellomiUsernameMigration(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261104-tellomi-username.sql"))
 	for _, s := range []string{

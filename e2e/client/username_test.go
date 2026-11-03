@@ -88,6 +88,23 @@ func TestTellomiUsernameOccupied(t *testing.T) {
 	}
 }
 
+func TestOfficialUsernamesOccupied(t *testing.T) {
+	cfg := requireE2E(t)
+	c, _ := loginNamed(t, cfg, ProfileIOS, "username", "User")
+	for _, name := range []string{"tellomi", "TELLOMI", "support", "news", "help", "admin", "stickers", "premium"} {
+		cctx, cancel := contextTimeout(20 * time.Second)
+		_, err := c.Invoke(cctx, &mtproto.TLAccountCheckUsername{
+			Constructor: mtproto.CRC32_account_checkUsername,
+			Username:    name,
+		})
+		cancel()
+		rpc, ok := asRPCError(err)
+		if !ok || rpc.Message != "USERNAME_OCCUPIED" {
+			t.Fatalf("account.checkUsername(%s) = %v, want USERNAME_OCCUPIED", name, err)
+		}
+	}
+}
+
 func randomUsername() string {
 	const letters = "abcdefghijklmnopqrstuvwxyz"
 	var b [2]byte

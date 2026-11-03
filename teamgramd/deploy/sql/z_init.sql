@@ -1,3 +1,6 @@
--- Service account (login codes). Fresh databases insert Tellomi / @tellomi.
--- An older Telegram or Teamgram row is renamed by migrate-20261101-service-user.sql.
-INSERT IGNORE INTO users (id, user_type, access_hash, secret_key_id, first_name, last_name, username, phone, country_code, verified, support, scam, fake, premium, about, state, is_bot, account_days_ttl, photo_id, restricted, restriction_reason, archive_and_mute_new_noncontact_peers, emoji_status_document_id, emoji_status_until, deleted, delete_reason, created_at, updated_at) VALUES(777000, 4, 6599886787491911851, 6895602324158323006, 'Tellomi', '', 'tellomi', '42777', '', 1, 0, 0, 0, 0, '', 0, 0, 180, 0, 0, '', 0, 0, 0, 0, '', '2018-09-25 13:43:11', '2021-12-17 12:40:51');
+-- Service account (login codes). Fresh databases insert Tellomi, user id 777000.
+-- The public username is @admin (appendix D). @tellomi is user 777001,
+-- written by migrate-20261105-official-accounts.sql.
+-- An older Telegram or Teamgram row is renamed by migrate-20261101-service-user.sql,
+-- then that migration's tellomi label is moved to @admin by the official-accounts file.
+INSERT IGNORE INTO users (id, user_type, access_hash, secret_key_id, first_name, last_name, username, phone, country_code, verified, support, scam, fake, premium, about, state, is_bot, account_days_ttl, photo_id, restricted, restriction_reason, archive_and_mute_new_noncontact_peers, emoji_status_document_id, emoji_status_until, deleted, delete_reason, created_at, updated_at) VALUES(777000, 4, 6599886787491911851, 6895602324158323006, 'Tellomi', '', 'admin', '42777', '', 1, 0, 0, 0, 0, '', 0, 0, 180, 0, 0, '', 0, 0, 0, 0, '', '2018-09-25 13:43:11', '2021-12-17 12:40:51');
