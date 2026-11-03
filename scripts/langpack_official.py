@@ -43,13 +43,15 @@ from langpack_import import (  # noqa: E402
 PLATFORMS = ("ios", "android", "tdesktop", "macos")
 TELLOMI_LANGS = ("en", "zh-hans", "zh-hant")
 
-# code, english name, native name, plural code, rtl, base lang ("" = en, or none for en)
+# code, english name, native name, plural code, rtl, base lang ("" = none for en, else en)
+# classic-zh-cn and taiwan are not imported. They duplicated zh-hans (简体中文)
+# and zh-hant (繁體中文). pkg/langpack maps those old codes onto the official packs.
+REMOVED_DUPLICATES = ("classic-zh-cn", "taiwan")
 LANGS = [
     ("en", "English", "English", "en", False, ""),
     ("ar", "Arabic", "العربية", "ar", True, "en"),
     ("be", "Belarusian", "Беларуская", "be", False, "en"),
     ("ca", "Catalan", "Català", "ca", False, "en"),
-    ("classic-zh-cn", "Chinese (Simplified, Classic)", "简体中文", "zh", False, "zh-hans"),
     ("cs", "Czech", "Čeština", "cs", False, "en"),
     ("de", "German", "Deutsch", "de", False, "en"),
     ("el", "Greek", "Ελληνικά", "el", False, "en"),
@@ -71,7 +73,6 @@ LANGS = [
     ("ro", "Romanian", "Română", "ro", False, "en"),
     ("ru", "Russian", "Русский", "ru", False, "en"),
     ("sv", "Swedish", "Svenska", "sv", False, "en"),
-    ("taiwan", "Chinese (Traditional, Taiwan)", "正體中文", "zh", False, "zh-hant"),
     ("th", "Thai", "ไทย", "th", False, "en"),
     ("tr", "Turkish", "Türkçe", "tr", False, "en"),
     ("uk", "Ukrainian", "Українська", "uk", False, "en"),
@@ -437,6 +438,13 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=6)
     args = parser.parse_args()
     ensure_overrides(args.out)
+    for platform in PLATFORMS:
+        for code in REMOVED_DUPLICATES:
+            for name in (f"{code}.json.gz", f"{code}.json"):
+                stale = args.out / platform / name
+                if stale.exists():
+                    stale.unlink()
+                    print(f"removed duplicate {platform}/{code}")
 
     jobs = [(platform, meta) for platform in PLATFORMS for meta in LANGS]
     fetched: dict[tuple[str, str], tuple[Path, str, int]] = {}
