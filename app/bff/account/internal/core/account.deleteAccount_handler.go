@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/account/deletion"
+	"github.com/teamgram/teamgram-server/app/bff/discoverdelete"
 	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
@@ -128,6 +129,7 @@ func (c *AccountCore) purgeAccount(me *mtproto.UserData, reason string) (*mtprot
 		c.Logger.Errorf("account.deleteAccount - delete: %v", err)
 		return nil, err
 	}
+	discoverdelete.Enqueue(c.MD.UserId)
 	tKeyIdList, err := c.svcCtx.Dao.AuthsessionClient.AuthsessionResetAuthorization(c.ctx, &authsession.TLAuthsessionResetAuthorization{
 		UserId:    c.MD.UserId,
 		AuthKeyId: 0,

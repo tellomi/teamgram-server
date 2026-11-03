@@ -159,3 +159,11 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | Call | File | Hook |
 | --- | --- | --- |
 | start listener | `app/bff/bff/internal/server/server.go` | `discoverrel.Start` |
+
+## Discover account deletion (M3)
+
+`TELLOMI_DISCOVER_DELETE=1` calls content-engine `DELETE /internal/users/{sub}` after `UserDeleteUser` has succeeded. The call is queued in memory, retried, and cannot fail or delay `account.deleteAccount`. See `docs/discover-account-deletion.md`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `account.deleteAccount` | `app/bff/account/internal/core/account.deleteAccount_handler.go` | `discoverdelete.Enqueue` |
