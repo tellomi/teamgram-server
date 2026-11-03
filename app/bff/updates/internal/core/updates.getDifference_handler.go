@@ -19,11 +19,14 @@
 package core
 
 import (
+	"context"
+	"strconv"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -94,6 +97,9 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 	default:
 	}
 
+	if rDifference != nil {
+		attachDialogReactions(c.ctx, c.MD.UserId, rDifference.NewMessages)
+	}
 	idHelper.PickByMessages(rDifference.NewMessages...)
 	idHelper.PickByUpdates(rDifference.OtherUpdates...)
 
@@ -121,4 +127,38 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 		})
 
 	return rDifference, nil
+}
+
+// attachDialogReactions copies chatbox reactions onto private and basic-group
+// messages in updates.getDifference. Channel messages carry their chips on
+// the channel history and channel difference instead.
+func attachDialogReactions(ctx context.Context, self int64, msgs []*mtproto.Message) {
+	type group struct {
+		peer *mtproto.PeerUtil
+		msgs []*mtproto.Message
+	}
+	groups := map[string]*group{}
+	var order []string
+	for _, m := range msgs {
+		if m == nil || m.GetId() == 0 || m.GetPeerId() == nil {
+			continue
+		}
+		peer := mtproto.FromPeer(m.GetPeerId())
+		if peer == nil || peer.IsChannel() || !peer.IsUserOrChatOrChannel() {
+			continue
+		}
+		key := strconv.FormatInt(int64(peer.PeerType), 10) + ":" + strconv.FormatInt(peer.PeerId, 10)
+		g := groups[key]
+		if g == nil {
+			g = &group{peer: peer}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.msgs = append(g.msgs, m)
+	}
+	box := chatbox.Shared()
+	for _, key := range order {
+		g := groups[key]
+		box.ApplyReactions(ctx, self, g.peer, g.msgs)
+	}
 }
