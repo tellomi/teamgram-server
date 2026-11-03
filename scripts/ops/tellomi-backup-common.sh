@@ -38,7 +38,17 @@ backup_set_rclone_flags() {
   if [[ ! "$cutoff" =~ ^[0-9]+[KMGT]?$ ]]; then
     backup_die "TELLOMI_RCLONE_UPLOAD_CUTOFF must look like 5G or 200M"
   fi
-  RCLONE_S3_FLAGS=(--s3-no-check-bucket --s3-upload-cutoff "$cutoff" --s3-acl private)
+  # --s3-use-presigned-request: 1.60.1's PutObject uses SetStreamingBody, so the
+  # first request is chunked. R2 answers 501 (aws-chunked is not implemented)
+  # and the SDK retries. A presigned PUT sets Content-Length and does not chunk.
+  # --s3-no-head: skip the HEAD after PUT. The sha256 sidecar is the check.
+  RCLONE_S3_FLAGS=(
+    --s3-no-check-bucket
+    --s3-upload-cutoff "$cutoff"
+    --s3-acl private
+    --s3-use-presigned-request
+    --s3-no-head
+  )
 }
 
 # backup_rclone runs rclone with the R2 flags appended. Credentials come from
@@ -147,6 +157,7 @@ backup_age_header_ok() {
   local file="$1" line n=0 magic=0 recip=0 done_hdr=0
   [[ -f "$file" ]] || return 1
   while IFS= read -r line; do
+    line="${line%$'\r'}"
     n=$((n + 1))
     if (( n > 32 )); then
       return 1
@@ -156,7 +167,8 @@ backup_age_header_ok() {
       magic=1
       continue
     fi
-    if [[ "$line" == "---" ]]; then
+    # age ends the header with "---" or, in real files, "--- <base64 MAC>".
+    if [[ "$line" == "---" || "$line" == "--- "* ]]; then
       done_hdr=1
       break
     fi
