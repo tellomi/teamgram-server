@@ -134,3 +134,5 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 | --- | --- | --- |
 | `account.checkUsername` | `app/bff/usernames/internal/core/account.checkUsername_handler.go` | `usernamepolicy.RejectUser` after the format check |
 | `account.updateUsername` | `app/bff/usernames/internal/core/account.updateUsername_handler.go` | `usernamepolicy.RejectUser` in `updateUsername` after the format check |
+| `channels.checkUsername` | `app/service/biz/channel/service.go` `CheckUsername` | `usernamepolicy.RejectChannel` after the format check |
+| `channels.updateUsername` | `app/service/biz/channel/service.go` `UpdateUsername` | `usernamepolicy.RejectChannel` after the format check, skipped when the name is cleared |
