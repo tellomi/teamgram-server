@@ -1,0 +1,5 @@
+# Installed as /etc/cron.d/tellomi-db-backup. See docs/ops/BACKUP.md.
+# 03:15 so the 04:00 verifier still sees yesterday's object if today's run is late.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 3 * * * root /usr/local/bin/tellomi-db-backup.sh

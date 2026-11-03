@@ -1,0 +1,156 @@
+# Database backups
+
+D-34, D-53, M7. MySQL, etcd, and Redis are dumped every day, encrypted with age, and uploaded to a dedicated Cloudflare R2 bucket. This file has no secret values.
+
+The script in git is [`scripts/ops/tellomi-db-backup.sh`](../../scripts/ops/tellomi-db-backup.sh). Chengdu does not pick it up from the checkout. Install it by hand, the same way as the disk scripts in [SECURITY-OPS.md](../SECURITY-OPS.md).
+
+## What a run does
+
+Cron runs the script at 03:15 as root.
+
+| Data | How | Object prefix |
+|---|---|---|
+| MySQL database `teamgram` | `mysqldump` inside the `mysql` container (`--single-transaction`), gzip, age | `mysql/` |
+| etcd | `etcdctl snapshot save` inside the `etcd` container, copy out, gzip, age | `etcd/` |
+| Redis | `BGSAVE`, wait until `LASTSAVE` changes, then a read-only copy of `dump.rdb` and `appendonlydir`, tar, gzip, age | `redis/` |
+
+Redis commands the script may send are `BGSAVE` and `LASTSAVE`. It does not send `FLUSHALL`, `FLUSHDB`, `FLUSH`, `CONFIG`, `DEBUG`, `SHUTDOWN`, or `SAVE`. `dump.rdb` and `appendonlydir` hold the idgen and pts counters (`message_box_ngen_*`, `pts_updates_ngen_*`). Those files are copied. Redis is not told to drop or rewrite keys.
+
+Each ciphertext file gets a `.sha256` sidecar (`sha256sum -c` format). The run also writes `manifests/<stamp>.json` with the file names, sha256, sizes, and the git SHA of `TELLOMI_DEPLOY_DIR` (default `/opt/tellomi/teamgram-server`). The manifest is not encrypted. It has no keys.
+
+Local directory: `/opt/tellomi/backups/daily/{mysql,etcd,redis,manifests}/`, mode `0700`, files mode `0600`. Files older than 90 days are deleted there. The script does not delete objects in R2. Remote expiry is the bucket lifecycle below.
+
+Plaintext dumps stay in a `mktemp` directory and are removed when the run exits. The age identity is not on this host.
+
+## Install on Chengdu
+
+From a checkout of the commit you are deploying:
+
+```bash
+install -m 755 scripts/ops/tellomi-backup-common.sh /usr/local/bin/tellomi-backup-common.sh
+install -m 755 scripts/ops/tellomi-db-backup.sh /usr/local/bin/tellomi-db-backup.sh
+install -m 644 scripts/ops/tellomi-db-backup.cron /etc/cron.d/tellomi-db-backup
+install -d -m 700 /opt/tellomi/backups/daily
+```
+
+`/usr/local/bin/tellomi-db-backup.sh` and `tellomi-backup-common.sh` must sit in the same directory. The script sources the common file next to itself.
+
+Tools on the host: `docker`, `gzip`, `age`, `rclone` (Chengdu is 1.60.1), `sha256sum`, `tar`, GNU `find`, `flock`, `bash` 4.4 or newer. `age` and `rclone` belong on `PATH` (the cron file sets `/usr/local/bin`).
+
+Check the copy, then a dry run, then one real run:
+
+```bash
+/usr/local/bin/tellomi-db-backup.sh --self-test
+/usr/local/bin/tellomi-db-backup.sh --dry-run
+/usr/local/bin/tellomi-db-backup.sh
+```
+
+`--self-test` does not need Docker, age, or R2. `--dry-run` prints the mysqldump, etcd snapshot, `BGSAVE`, and rclone flags, and prints which local files are older than 90 days. It does not dump, encrypt, upload, or delete. A real run is the check that rclone accepts the flags below: the first upload must not be `501 NotImplemented`.
+
+`git checkout` does not update `/usr/local/bin` or `/etc/cron.d`. Copy the three files again after they change.
+
+## R2
+
+Bucket: `tellomi-prod-db-backups`. One bucket, not the media buckets.
+
+Create it in the Cloudflare dashboard (the S3 `CreateBucket` API returns `501 NotImplemented`, which is why rclone must not try).
+
+Token for the daily job: **Object Read & Write**, scoped only to `tellomi-prod-db-backups`. D-34 asks for a write-only token so this job cannot read media. Cloudflare's object write preset cannot list or checksum, and the 04:00 check has to do both, so the daily token is Object Read & Write on this bucket alone. It is not an account admin token and it is not the media token. Do not grant access to any other bucket.
+
+A separate **Object Read** token is for the monthly restore drill, stored with the age identity, not on Chengdu. The drill document covers that token.
+
+Lifecycle (R2, not rclone):
+
+| Rule | Prefix | Action |
+|---|---|---|
+| MySQL expiry | `mysql/` | Delete after 90 days |
+| etcd expiry | `etcd/` | Delete after 90 days |
+| Redis expiry | `redis/` | Delete after 90 days |
+| Manifest expiry | `manifests/` | Delete after 90 days |
+| Incomplete multipart | (whole bucket) | Abort after 1 day |
+
+Bucket Lock: 90 days. The lock stops an overwrite or an early delete. Lifecycle deletes once the lock period for that object has passed. Both periods are 90 days from object creation; if a lifecycle pass races the lock by a few minutes, the next daily pass deletes the object. Do not add a scripted `rclone delete`. The previous host script used `--min-age 30d`. That is gone. Retention is 90 days (D-53).
+
+Write `/opt/tellomi/secrets/db-backup-r2.env` mode `0600`, owner root. `KEY=value` lines only. The script does not execute the file.
+
+```bash
+install -d -m 700 /opt/tellomi/secrets
+umask 077
+cat >/opt/tellomi/secrets/db-backup-r2.env <<'EOF'
+RCLONE_CONFIG_R2_TYPE=s3
+RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+RCLONE_CONFIG_R2_ACCESS_KEY_ID=replace-with-the-backup-token-id
+RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=replace-with-the-backup-token-secret
+RCLONE_CONFIG_R2_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+RCLONE_CONFIG_R2_REGION=auto
+RCLONE_CONFIG_R2_ACL=private
+RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+EOF
+chmod 600 /opt/tellomi/secrets/db-backup-r2.env
+```
+
+Replace the three placeholders. Do not commit the file. The endpoint is `https://<accountid>.r2.cloudflarestorage.com`.
+
+Until that file exists, the script logs a warning and reads `TELLOMI_S3_ACCESS_KEY_ID` / `TELLOMI_S3_SECRET_ACCESS_KEY` / `TELLOMI_S3_ENDPOINT` from the `tellomi-teamgram-1` container. That is the media key. It keeps today's backups working. After the dedicated token is in place and one real run has uploaded with it, set `TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY=1` in the cron file (or the environment) so a missing dedicated file is a hard failure. Do not set that switch before the file exists.
+
+## rclone 1.60.1 and R2
+
+Chengdu's rclone is 1.60.1. Two flags are passed on every `copyto` and `lsjson`:
+
+`--s3-no-check-bucket`
+
+rclone's first S3 call ensures the bucket exists and, with this client, that is `CreateBucket`. R2 does not implement `CreateBucket` and answers `501 NotImplemented`. An Object Read & Write token cannot create buckets either. Cloudflare's rclone notes say the same thing: object-scoped tokens need `no_check_bucket = true`. The flag skips that first call. The bucket must already exist.
+
+`--s3-upload-cutoff 5G`
+
+The 1.60.1 default cutoff is 200Mi. Larger files go through multipart upload. On this rclone, that path has returned `501 NotImplemented` for headers R2 does not implement (in particular `x-amz-acl` values other than `private`, and multipart header combinations fixed in later rclone). A database object under 5GiB is one `PutObject` with `Content-Length`, which R2 implements. `--s3-acl private` is sent as well: R2 returns 501 for `public-read-write` and accepts `private`.
+
+`5G` is the largest cutoff rclone allows, and it is also the S3 single-PUT limit. A dump bigger than 5GiB would use multipart. If that upload returns 501, upgrade rclone (1.62 and later fixed the R2 multipart header bugs) rather than lowering the cutoff to force multipart on 1.60.1. Override the cutoff with `TELLOMI_RCLONE_UPLOAD_CUTOFF` (for example `200M`) only to reproduce the failure.
+
+The env file also sets `RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true` and `RCLONE_CONFIG_R2_ACL=private`. The command-line flags still win if a stale `rclone.conf` remote says otherwise.
+
+## Age keys
+
+Recipient (public, on the server, default in the script):
+
+`age1wm306jrc25rl0lavlte3m8ctqn5l5p0lmjnhtgfeeh3nufvljs6q8ypr7t`
+
+The private identity is offline, in the team vault (`成都服务器-运行时/`), not on Chengdu, not in git, and not in `/opt/tellomi/secrets`. The server can encrypt and can check the age header. It cannot decrypt. Decryption happens on the drill host, and the identity is removed from that host when the drill is over.
+
+`TELLOMI_BACKUP_AGE_RECIPIENT` overrides the recipient if the key is rotated. Rotation means a new identity offline, the new public key on the server, and the old identity kept until every object it can decrypt has expired.
+
+## Useful environment
+
+| Variable | Default |
+|---|---|
+| `TELLOMI_BACKUP_DIR` | `/opt/tellomi/backups/daily` |
+| `TELLOMI_BACKUP_RETAIN_DAYS` | `90` |
+| `TELLOMI_BACKUP_R2_ENV` | `/opt/tellomi/secrets/db-backup-r2.env` |
+| `TELLOMI_BACKUP_R2_REMOTE` | `r2:tellomi-prod-db-backups` |
+| `TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY` | unset (media-key fallback). `1` fails closed |
+| `TELLOMI_TEAMGRAM_CONTAINER` | `tellomi-teamgram-1` |
+| `TELLOMI_REDIS_DATA` | `/opt/tellomi/teamgram-server/data/redis` |
+| `TELLOMI_RCLONE_UPLOAD_CUTOFF` | `5G` |
+| `TELLOMI_BGSAVE_TIMEOUT` | `180` seconds |
+
+Container names `mysql`, `etcd`, and `redis` match `container_name` in `docker-compose-env.yaml`.
+
+## Verify a run
+
+After the first real run:
+
+```bash
+ls -l /opt/tellomi/backups/daily/mysql /opt/tellomi/backups/daily/etcd /opt/tellomi/backups/daily/redis /opt/tellomi/backups/daily/manifests
+sha256sum -c /opt/tellomi/backups/daily/mysql/teamgram-*.sql.gz.age.sha256
+head -n 1 /opt/tellomi/backups/daily/mysql/teamgram-*.sql.gz.age
+```
+
+The first line of each ciphertext file is `age-encryption.org/v1`. That is a header check, not decryption.
+
+```bash
+rclone lsjson r2:tellomi-prod-db-backups/mysql/ --s3-no-check-bucket | head
+```
+
+The newest `mysql/`, `etcd/`, and `redis/` objects should be from this run. There is no `rclone delete` in the script; confirm with `grep rclone /usr/local/bin/tellomi-db-backup.sh`.
+
+A monthly restore on a fresh Docker host is required. Do it off Chengdu. The drill steps are a separate change.
