@@ -87,22 +87,44 @@ func isSimplifiedChinese(s string) bool {
 }
 
 // SuggestLangCode is the value help.getConfig should return in suggested_lang_code.
-// The device language wins when it is Chinese, so a phone set to 简体中文 or
-// 繁體中文 is offered that pack even while the app language is still en.
-// Otherwise a served app language is used, then a served system language.
-// Anything else is en, which keeps config's shared flag bit for
-// suggested_lang_code / lang_pack_version valid.
+// Official clients send the device language as initConnection.system_lang_code
+// and the in-app language as lang_code. The suggestion follows the device
+// language. An empty, unknown, or hidden device language falls back to
+// lang_code. A hidden pack is never suggested. Anything else is en, which
+// keeps config's shared flag bit for suggested_lang_code / lang_pack_version valid.
 func SuggestLangCode(langCode, systemLangCode string) string {
-	if sys, ok := CanonicalLang(systemLangCode); ok && (sys == "zh-hans" || sys == "zh-hant") {
-		return sys
+	if code, ok := suggestable(systemLangCode); ok {
+		return code
 	}
-	if lang, ok := CanonicalLang(langCode); ok {
-		return lang
-	}
-	if sys, ok := CanonicalLang(systemLangCode); ok {
-		return sys
+	if code, ok := suggestable(langCode); ok {
+		return code
 	}
 	return "en"
+}
+
+func suggestable(code string) (string, bool) {
+	canon := packCode(code)
+	if canon == "" || HiddenLang(canon) {
+		return "", false
+	}
+	if _, ok := CanonicalLang(canon); !ok {
+		return "", false
+	}
+	return canon, true
+}
+
+// officialPrimary maps a regional tag such as fr-FR onto the pack code fr.
+// Exact tags and the Chinese and English aliases are handled by CanonicalLang.
+func officialPrimary(code string) string {
+	s := normLang(code)
+	i := strings.IndexByte(s, '-')
+	if i <= 0 {
+		return ""
+	}
+	if c, ok := officialCode(s[:i]); ok {
+		return c
+	}
+	return ""
 }
 
 // NormalizePlatform maps client lang_pack names onto catalog directories.

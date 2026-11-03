@@ -35,9 +35,14 @@ Served for ios, android, tdesktop, and macos:
 | zh-hant | 繁體中文 |
 | ja, ko, ru, es, de, fr, it, pt-br | full packs |
 | ar, tr, id, ms, vi, uk, nl, pl, fa | full packs |
-| hi | Hindi. Android is a large partial pack. iOS, macOS, and tdesktop are smaller. |
-| th | Thai. As of the 2026-11-02 export, translations.telegram.org has no Thai strings for these platforms (the Android file is an English copy, which is not shipped). The language is listed and falls back to English. |
-| be, ca, cs, el, fi, he, nb, ro, sv, uz | shipped from the same export. Greek is only partial on iOS and empty on desktop. |
+| hi | Hindi. Android is a large partial pack. iOS, macOS, and tdesktop are smaller. Not offered by default. |
+| th | Thai. As of the 2026-11-02 export, translations.telegram.org has no Thai strings for these platforms (the Android file is an English copy, which is not shipped). Not offered by default. |
+| el | Greek. Only partial on Android and a handful of strings on iOS and desktop. Not offered by default. |
+| be, ca, cs, fi, he, nb, ro, sv, uz | shipped from the same export. |
+
+`langpack.getLanguages` omits codes in `TELLOMI_LANGPACK_HIDDEN`. When that variable is unset the list is `hi,th,el`. Those packs are near-empty next to the ~11–12k string packs, and a client that offers them shows English. Set the variable to empty to list every pack. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve a hidden code.
+
+`help.getConfig` `suggested_lang_code` follows `initConnection.system_lang_code`. An empty, unknown, or hidden device language uses `lang_code` when that names a pack we offer, otherwise `en`. A hidden code is never suggested. `lang_pack_version` stays on the app language (`lang_code`).
 
 One entry per language. `classic-zh-cn` (Chinese (Simplified, Classic), the old community 简体中文 pack) and `taiwan` (Chinese (Traditional, Taiwan), 正體中文) are not listed. On iOS those packs were about 5.4k and 3.7k strings beside the official ~12.4k packs, and both used the same language as `zh-hans` / `zh-hant`. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` for those codes serve `zh-hans` or `zh-hant` instead of returning an error. The `lang_code` in the response is the official code.
 

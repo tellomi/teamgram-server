@@ -114,6 +114,14 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 
 `docker-compose.yaml` used to set coturn `entrypoint` to `/opt/coturn/entrypoint.sh`. That path exists only because the same file bind-mounts `teamgramd/deploy/coturn/entrypoint.sh`. A host override that replaces volumes (`volumes: !override`) removed the file and coturn crash-looped. Chengdu set `entrypoint: !reset null` so the image entrypoint ran. The compose entrypoint now runs the mounted generator when the file is there, and `docker-entrypoint.sh` with the image command otherwise. The image still reads `/etc/coturn/turnserver.conf` when the override mounts one. The generator script is Tellomi's; it is not an upstream file.
 
+## Language list (`langpack.getLanguages`, `help.getConfig`)
+
+Hindi, Thai, and Greek were listed with `official` set, but Telegram has no official translation for them. The shipped packs are near-empty (Android: hi about 1460 strings, th 2, el about 1300; iOS: hi about 980, th 3, el 3) next to the ~11–12k string packs, so a client that offers them shows English. `TELLOMI_LANGPACK_HIDDEN` (unset means `hi,th,el`; empty lists every pack) removes those codes from `langpack.getLanguages` on every lang pack. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve them.
+
+`help.getConfig` `suggested_lang_code` follows `initConnection.system_lang_code`, the same way official Telegram does. An empty device language uses `lang_code`. A hidden language is not suggested. `lang_pack_version` still follows the app language.
+
+The only upstream file is `app/bff/configuration/internal/core/help.getConfig_handler.go` (the comment on the existing `ApplyConfigLanguage` call). The list and the suggestion live in `pkg/langpack`.
+
 ## Sticker wire format
 
 `stickerSet` flags bit 4 is `thumbs`, `thumb_dc_id`, and `thumb_version` together. The catalog used to set the ints without a thumbs vector, so `messages.featuredStickers` did not round-trip (`DecodeVectorLong`). The catalog now sends `thumb_document_id` (flags bit 8) and leaves bit 4 unset. The generated codec in `proto/mtproto` is unchanged.

@@ -87,7 +87,8 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 		pack = c.MD.GetLangpack()
 	}
 	// iOS reads suggested_lang_code from this config. Android shows its language
-	// chooser from the same field. Map the device/app language onto zh-hans or zh-hant.
+	// chooser from the same field. The suggestion follows system_lang_code
+	// (the device language). An empty device language uses lang_code.
 	langpack.ApplyConfigLanguage(rValue, langCode, systemLang, pack)
 	// Double-tap sends this emoji. It has to be one of messages.getAvailableReactions.
 	// messages.setDefaultReaction replaces the account default.

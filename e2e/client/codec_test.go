@@ -42,6 +42,34 @@ func TestInvokeWithLayerEncodes(t *testing.T) {
 	}
 }
 
+func TestDecodeLangPackVector(t *testing.T) {
+	hi := mtproto.MakeTLLangPackLanguage(&mtproto.LangPackLanguage{
+		Official: true, Name: "Hindi", NativeName: "हिन्दी", LangCode: "hi",
+		PluralCode: "hi", StringsCount: 10, TranslatedCount: 2, TranslationsUrl: "https://tellomi.cn/hi",
+	})
+	fr := mtproto.MakeTLLangPackLanguage(&mtproto.LangPackLanguage{
+		Official: true, Name: "French", NativeName: "Français", LangCode: "fr",
+		PluralCode: "fr", StringsCount: 10, TranslatedCount: 10, TranslationsUrl: "https://tellomi.cn/fr",
+	})
+	buf := mtproto.NewEncodeBuf(512)
+	buf.UInt(crcVector)
+	buf.Int(2)
+	if err := hi.Encode(buf, layer); err != nil {
+		t.Fatal(err)
+	}
+	if err := fr.Encode(buf, layer); err != nil {
+		t.Fatal(err)
+	}
+	obj, err := decodeTL(buf.GetBuf())
+	if err != nil {
+		t.Fatal(err)
+	}
+	vec, ok := obj.(*tlVector)
+	if !ok || vec.Count != 2 || len(vec.Langs) != 2 || vec.Langs[0].GetLangCode() != "hi" || vec.Langs[1].GetLangCode() != "fr" {
+		t.Fatalf("%T %+v", obj, vec)
+	}
+}
+
 func TestServerKeyFingerprint(t *testing.T) {
 	cfg, err := LoadConfig()
 	if err != nil {
