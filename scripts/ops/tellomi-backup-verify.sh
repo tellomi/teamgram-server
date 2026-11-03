@@ -39,13 +39,25 @@ self_test() {
   fi
   grep -q 'tellomi-backup-verify' "$script" || backup_die "syslog tag missing"
 
+  # Real age files end the header with "--- <base64 MAC>", not a bare "---".
   printf '%s\n' \
     'age-encryption.org/v1' \
     '-> X25519 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
     'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
-    '---' \
+    '--- mac' \
     'ciphertext-not-decrypted' >"${SELF_TMP}/good.age"
   backup_age_header_ok "${SELF_TMP}/good.age" || backup_die "valid age header rejected"
+  printf '%s\n' \
+    'age-encryption.org/v1' \
+    '-> X25519 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' \
+    '---mac' >"${SELF_TMP}/nospace.age"
+  if backup_age_header_ok "${SELF_TMP}/nospace.age"; then
+    backup_die "age mac line without a space was accepted"
+  fi
+  if command -v age >/dev/null 2>&1; then
+    printf 'header-check\n' | age -r age1wm306jrc25rl0lavlte3m8ctqn5l5p0lmjnhtgfeeh3nufvljs6q8ypr7t -o "${SELF_TMP}/real.age"
+    backup_age_header_ok "${SELF_TMP}/real.age" || backup_die "real age file was rejected"
+  fi
   printf 'not-age\n' >"${SELF_TMP}/bad.age"
   if backup_age_header_ok "${SELF_TMP}/bad.age"; then
     backup_die "invalid age header accepted"

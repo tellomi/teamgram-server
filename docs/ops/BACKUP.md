@@ -11,7 +11,7 @@ Cron runs the script at 03:15 as root.
 | Data | How | Object prefix |
 |---|---|---|
 | MySQL database `teamgram` | `mysqldump` inside the `mysql` container (`--single-transaction`), gzip, age | `mysql/` |
-| etcd | `etcdctl snapshot save` inside the `etcd` container, copy out, gzip, age | `etcd/` |
+| etcd | `etcdctl snapshot save` into the `/etcd-data` mount, then delete that file on the host, gzip, age | `etcd/` |
 | Redis | `BGSAVE`, wait until `LASTSAVE` changes, then a read-only copy of `dump.rdb` and `appendonlydir`, tar, gzip, age | `redis/` |
 
 Redis commands the script may send are `BGSAVE` and `LASTSAVE`. It does not send `FLUSHALL`, `FLUSHDB`, `FLUSH`, `CONFIG`, `DEBUG`, `SHUTDOWN`, or `SAVE`. `dump.rdb` and `appendonlydir` hold the idgen and pts counters (`message_box_ngen_*`, `pts_updates_ngen_*`). Those files are copied. Redis is not told to drop or rewrite keys.
@@ -45,7 +45,7 @@ Check the copy, then a dry run, then one real run:
 /usr/local/bin/tellomi-db-backup.sh
 ```
 
-`--self-test` does not need Docker, age, or R2. `--dry-run` prints the mysqldump, etcd snapshot, `BGSAVE`, and rclone flags, and prints which local files are older than 90 days. It does not dump, encrypt, upload, or delete. A real run is the check that rclone accepts the flags below: the first upload must not be `501 NotImplemented`.
+`--self-test` does not need Docker, age, or R2. `--dry-run` prints the mysqldump, etcd snapshot, `BGSAVE`, and rclone flags, and prints which local files are older than 90 days. It does not dump, encrypt, upload, or delete.
 
 `git checkout` does not update `/usr/local/bin` or `/etc/cron.d`. Copy the three files again after they change.
 
@@ -95,17 +95,23 @@ Until that file exists, the script logs a warning and reads `TELLOMI_S3_ACCESS_K
 
 ## rclone 1.60.1 and R2
 
-Chengdu's rclone is 1.60.1. Two flags are passed on every `copyto` and `lsjson`:
+Chengdu's rclone is 1.60.1. Every `copyto` and `lsjson` gets these flags.
 
 `--s3-no-check-bucket`
 
-rclone's first S3 call ensures the bucket exists and, with this client, that is `CreateBucket`. R2 does not implement `CreateBucket` and answers `501 NotImplemented`. An Object Read & Write token cannot create buckets either. Cloudflare's rclone notes say the same thing: object-scoped tokens need `no_check_bucket = true`. The flag skips that first call. The bucket must already exist.
+rclone's first S3 call otherwise ensures the bucket exists, and on this client that is `CreateBucket`. R2 does not implement `CreateBucket` and answers `501 NotImplemented`. An Object Read & Write token cannot create buckets either. The bucket must already exist.
 
-`--s3-upload-cutoff 5G`
+`--s3-upload-cutoff 5G` and `--s3-acl private`
 
-The 1.60.1 default cutoff is 200Mi. Larger files go through multipart upload. On this rclone, that path has returned `501 NotImplemented` for headers R2 does not implement (in particular `x-amz-acl` values other than `private`, and multipart header combinations fixed in later rclone). A database object under 5GiB is one `PutObject` with `Content-Length`, which R2 implements. `--s3-acl private` is sent as well: R2 returns 501 for `public-read-write` and accepts `private`.
+The 1.60.1 default cutoff is 200Mi. Larger files go through multipart upload, which this rclone has answered with `501` for headers R2 does not implement. `--s3-acl private` is required because R2 returns 501 for any canned ACL other than `private`. `5G` is the largest cutoff rclone allows and the S3 single-PUT limit, so a dump under 5GiB stays one PUT. A larger dump would use multipart; upgrade rclone rather than lowering the cutoff. Override with `TELLOMI_RCLONE_UPLOAD_CUTOFF`.
 
-`5G` is the largest cutoff rclone allows, and it is also the S3 single-PUT limit. A dump bigger than 5GiB would use multipart. If that upload returns 501, upgrade rclone (1.62 and later fixed the R2 multipart header bugs) rather than lowering the cutoff to force multipart on 1.60.1. Override the cutoff with `TELLOMI_RCLONE_UPLOAD_CUTOFF` (for example `200M`) only to reproduce the failure.
+`--s3-use-presigned-request`
+
+Those two flags do not stop the 501 that still showed up on every upload. rclone 1.60.1's default single-part path is `PutObject` with `SetStreamingBody` (`backend/s3/s3.go` in that tag). The body is chunked. R2 does not implement aws-chunked / chunked transfer and returns `501 NotImplemented`. The AWS SDK (`aws-sdk-go` v1.44.70, vendored in 1.60.1) retries, and the second attempt succeeds, so the command can still exit 0 while every object logs a 501. `--s3-use-presigned-request` is the pre-1.59 path: one presigned PUT with `Content-Length` and no streaming body. There is no checksum-header flag in 1.60.1 (`--s3-disable-checksum` only skips the MD5 metadata, it does not change the body encoding).
+
+`--s3-no-head`
+
+After a PUT, rclone HEADs the object to compare the ETag. That HEAD is not needed here: the `.sha256` sidecar is the integrity check. Skipping it also avoids a follow-up 501 if R2 rejects a header on that HEAD.
 
 The env file also sets `RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true` and `RCLONE_CONFIG_R2_ACL=private`. The command-line flags still win if a stale `rclone.conf` remote says otherwise.
 
@@ -130,6 +136,7 @@ The private identity is offline, in the team vault (`成都服务器-运行时/`
 | `TELLOMI_BACKUP_REQUIRE_DEDICATED_KEY` | unset (media-key fallback). `1` fails closed |
 | `TELLOMI_TEAMGRAM_CONTAINER` | `tellomi-teamgram-1` |
 | `TELLOMI_REDIS_DATA` | `/opt/tellomi/teamgram-server/data/redis` |
+| `TELLOMI_ETCD_DATA` | `/opt/tellomi/teamgram-server/data/etcd` (host path of `/etcd-data`) |
 | `TELLOMI_RCLONE_UPLOAD_CUTOFF` | `5G` |
 | `TELLOMI_BGSAVE_TIMEOUT` | `180` seconds |
 
@@ -161,7 +168,7 @@ A monthly restore on a fresh Docker host is required. Do it off Chengdu. Steps, 
 
 - the object is younger than 26 hours (`TELLOMI_BACKUP_MAX_AGE_HOURS`);
 - the `.sha256` sidecar matches the downloaded bytes (`sha256sum -c`);
-- the first lines are an age header (`age-encryption.org/v1`, a `->` recipient, then `---`);
+- the first lines are an age header (`age-encryption.org/v1`, a `->` recipient, then `--- <MAC>`);
 - the size is at least `TELLOMI_BACKUP_MIN_BYTES` (default 1024) and at most `TELLOMI_BACKUP_MAX_BYTES` (default 8 GiB).
 
 The same rclone flags as the upload are used, including `--s3-no-check-bucket`. Credentials are the same env file, with the same media-key warning. A write-only token cannot list or download, which is why the daily token is Object Read & Write on this bucket.

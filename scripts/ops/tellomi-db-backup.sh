@@ -9,7 +9,8 @@
 # Install and R2 setup: docs/ops/BACKUP.md.
 #
 # MySQL: mysqldump of database teamgram inside the mysql container, gzip, age.
-# etcd: etcdctl snapshot save inside the etcd container, gzip, age.
+# etcd: etcdctl snapshot save into the /etcd-data mount, delete it on the host, gzip, age.
+# The etcd image has no shell and no rm. mysql has sh and mysqldump. redis has redis-cli.
 # Redis: BGSAVE, wait until LASTSAVE changes, then a read-only copy of
 # dump.rdb and appendonlydir. No FLUSH, CONFIG, DEBUG, SHUTDOWN, or SAVE.
 # Ciphertext, a .sha256 sidecar, and manifest.json go to
@@ -25,6 +26,10 @@ BACKUP_DIR="${TELLOMI_BACKUP_DIR:-/opt/tellomi/backups/daily}"
 RETAIN_DAYS="${TELLOMI_BACKUP_RETAIN_DAYS:-90}"
 DEPLOY_DIR="${TELLOMI_DEPLOY_DIR:-/opt/tellomi/teamgram-server}"
 REDIS_DATA="${TELLOMI_REDIS_DATA:-${DEPLOY_DIR}/data/redis}"
+# Bind mount of the etcd container's /etcd-data. The image has etcdctl and
+# nothing else, so the snapshot is written there and removed on the host.
+ETCD_DATA="${TELLOMI_ETCD_DATA:-${DEPLOY_DIR}/data/etcd}"
+ETCD_HOST_SNAP=""
 MYSQL_CONTAINER="${TELLOMI_MYSQL_CONTAINER:-mysql}"
 ETCD_CONTAINER="${TELLOMI_ETCD_CONTAINER:-etcd}"
 REDIS_CONTAINER="${TELLOMI_REDIS_CONTAINER:-redis}"
@@ -61,6 +66,12 @@ self_test() {
   code="$(printf '%s\n' "$code" | sed -E 's/[[:space:]]+#.*$//; /^[[:space:]]*#/d; /^[[:space:]]*$/d')"
   if printf '%s\n' "$code" | grep -E -n 'FLUSHALL|FLUSHDB|FLUSH |rclone[[:space:]]+delete|rclone[[:space:]]+purge|--min-age' >/dev/null; then
     backup_die "forbidden command in executable lines"
+  fi
+  if printf '%s\n' "$code" | grep -E -n 'docker exec[^#]*[[:space:]]rm([[:space:]]|$)' >/dev/null; then
+    backup_die "docker exec must not run rm; etcd has no rm"
+  fi
+  if printf '%s\n' "$code" | grep -F -q '/tmp/tellomi-etcd.snapshot'; then
+    backup_die "etcd snapshot must not be written to container /tmp"
   fi
   printf '%s\n' "$code" | grep -q 'redis-cli --raw' || backup_die "redis-cli must pass --raw"
   if printf '%s\n' "$code" | grep -E -n 'redis-cli' | grep -E -v 'redis-cli --raw' >/dev/null; then
@@ -192,6 +203,8 @@ EOF
   PATH="$old_path"
   printf '%s\n' "$out" | grep -q -- '--s3-no-check-bucket' || backup_die "dry-run omitted --s3-no-check-bucket"
   printf '%s\n' "$out" | grep -q -- '--s3-upload-cutoff 5G' || backup_die "dry-run omitted upload cutoff"
+  printf '%s\n' "$out" | grep -q -- '--s3-use-presigned-request' || backup_die "dry-run omitted presigned upload"
+  printf '%s\n' "$out" | grep -q -- '--s3-no-head' || backup_die "dry-run omitted --s3-no-head"
   printf '%s\n' "$out" | grep -q 'BGSAVE' || backup_die "dry-run omitted BGSAVE"
   printf '%s\n' "$out" | grep -q 'etcdctl snapshot save' || backup_die "dry-run omitted etcd snapshot"
   printf '%s\n' "$out" | grep -q 'mysqldump' || backup_die "dry-run omitted mysqldump"
@@ -289,6 +302,8 @@ finish_object() {
   backup_log "uploaded ${prefix}/${name} (${size} bytes)"
 }
 
+# mysql:8.0 has /bin/sh and mysqldump. redis:7-alpine has redis-cli.
+# quay.io/coreos/etcd has etcd and etcdctl only: no sh, no rm, no tar.
 backup_mysql() {
   local dest="$1" plain="${WORK}/mysql.sql.gz"
   docker exec "$MYSQL_CONTAINER" sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --quick --routines --events --triggers --no-tablespaces --set-gtid-purged=OFF --databases teamgram' \
@@ -298,15 +313,18 @@ backup_mysql() {
 }
 
 backup_etcd() {
-  local dest="$1" plain="${WORK}/etcd.db.gz" snap="${WORK}/etcd.snapshot"
-  docker exec "$ETCD_CONTAINER" etcdctl --endpoints=http://127.0.0.1:2379 snapshot save /tmp/tellomi-etcd.snapshot
-  if ! docker cp "${ETCD_CONTAINER}:/tmp/tellomi-etcd.snapshot" "$snap"; then
-    docker exec "$ETCD_CONTAINER" rm -f /tmp/tellomi-etcd.snapshot || true
-    backup_die "docker cp of the etcd snapshot failed"
+  local dest="$1" plain="${WORK}/etcd.db.gz"
+  [[ -d "$ETCD_DATA" ]] || backup_die "etcd data dir ${ETCD_DATA} is not a directory (set TELLOMI_ETCD_DATA to the host path of /etcd-data)"
+  ETCD_HOST_SNAP="${ETCD_DATA}/tellomi-etcd.snapshot"
+  [[ "$(basename "$ETCD_HOST_SNAP")" == "tellomi-etcd.snapshot" ]] || backup_die "refusing to use ${ETCD_HOST_SNAP}"
+  rm -f -- "$ETCD_HOST_SNAP"
+  docker exec "$ETCD_CONTAINER" etcdctl --endpoints=http://127.0.0.1:2379 snapshot save /etcd-data/tellomi-etcd.snapshot
+  if [[ ! -s "$ETCD_HOST_SNAP" ]]; then
+    backup_die "etcd snapshot was not on the host at ${ETCD_HOST_SNAP}. TELLOMI_ETCD_DATA must be the bind mount of /etcd-data; remove /etcd-data/tellomi-etcd.snapshot from that mount if etcdctl wrote it elsewhere."
   fi
-  docker exec "$ETCD_CONTAINER" rm -f /tmp/tellomi-etcd.snapshot
-  gzip -c "$snap" >"$plain"
-  rm -f "$snap"
+  gzip -c "$ETCD_HOST_SNAP" >"$plain"
+  rm -f -- "$ETCD_HOST_SNAP"
+  ETCD_HOST_SNAP=""
   encrypt_file "$plain" "$dest"
   rm -f "$plain"
 }
@@ -342,6 +360,10 @@ lock_path() {
 
 cleanup_work() {
   [[ -n "${WORK:-}" && -d "$WORK" ]] && rm -rf "$WORK"
+  # Drop a snapshot left in the etcd data dir if gzip or age fails mid-run.
+  if [[ -n "${ETCD_HOST_SNAP:-}" && "$(basename "$ETCD_HOST_SNAP")" == "tellomi-etcd.snapshot" ]]; then
+    rm -f -- "$ETCD_HOST_SNAP"
+  fi
 }
 
 main() {
@@ -368,7 +390,7 @@ main() {
   backup_log "start stamp=${stamp} git=${sha} dry_run=${DRY} retain_days=${RETAIN_DAYS} credentials=${CRED_SOURCE}"
   if [[ "$DRY" -eq 1 ]]; then
     backup_log "dry-run: docker exec ${MYSQL_CONTAINER} mysqldump --single-transaction --databases teamgram | gzip | age -r ${AGE_RECIPIENT}"
-    backup_log "dry-run: docker exec ${ETCD_CONTAINER} etcdctl snapshot save /tmp/tellomi-etcd.snapshot | gzip | age"
+    backup_log "dry-run: docker exec ${ETCD_CONTAINER} etcdctl snapshot save /etcd-data/tellomi-etcd.snapshot; delete ${ETCD_DATA}/tellomi-etcd.snapshot on the host"
     backup_log "dry-run: BGSAVE; wait for LASTSAVE; read-only tar of ${REDIS_DATA}/dump.rdb and appendonlydir | gzip | age"
     backup_log "dry-run: rclone copyto ${REMOTE}/mysql/ ${REMOTE}/etcd/ ${REMOTE}/redis/ ${REMOTE}/manifests/ ${RCLONE_S3_FLAGS[*]}"
     backup_prune_local "$BACKUP_DIR" "$RETAIN_DAYS"
