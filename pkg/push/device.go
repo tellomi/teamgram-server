@@ -19,8 +19,17 @@ type Device struct {
 	// LangCode is the app language. account.registerDevice copies it from the
 	// session (initConnection.lang_code). A later initConnection stored on
 	// auths wins when the device is loaded.
-	LangCode  string
-	OtherUIDs []int64
+	LangCode string
+	// SystemLangCode is initConnection.system_lang_code for that auth key.
+	// The iOS notification extension rewrites lang_code to "en"; the phone
+	// language is what PickLang uses in that case.
+	SystemLangCode string
+	OtherUIDs      []int64
+}
+
+// NotificationLang is the language a banner for this device is rendered in.
+func (d Device) NotificationLang() string {
+	return PickLang(d.LangCode, d.SystemLangCode)
 }
 
 // Store persists push devices. Implementations must be safe for concurrent use.

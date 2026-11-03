@@ -104,7 +104,7 @@ func TestGroupPayloadUsesChatIDNotFromID(t *testing.T) {
 	if hiddenAlert["loc-key"] != "CHAT_MESSAGE_NOTEXT" {
 		t.Fatal(hid)
 	}
-	if hiddenAlert["body"] != "发来一条消息" {
+	if hiddenAlert["body"] != "新消息" {
 		t.Fatalf("hidden body %#v", hiddenAlert["body"])
 	}
 	args := hiddenAlert["loc-args"].([]any)

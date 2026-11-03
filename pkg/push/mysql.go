@@ -94,7 +94,8 @@ func (m *MySQL) ListByUser(ctx context.Context, userID int64) ([]Device, error) 
 	// devices.lang_code is the snapshot taken at registration.
 	rows, err := m.db.QueryContext(ctx, `
 SELECT d.auth_key_id, d.user_id, d.token_type, d.token, d.no_muted, d.app_sandbox, d.secret, d.other_uids, d.locked_period,
-       COALESCE(NULLIF(a.lang_code, ''), d.lang_code)
+       COALESCE(NULLIF(a.lang_code, ''), d.lang_code),
+       COALESCE(a.system_lang_code, '')
 FROM devices d
 LEFT JOIN auths a ON a.auth_key_id = d.auth_key_id AND a.deleted = 0
 WHERE d.user_id = ? AND d.state = 0`, userID)
@@ -111,7 +112,7 @@ WHERE d.user_id = ? AND d.state = 0`, userID)
 			secret  string
 			other   string
 		)
-		if err := rows.Scan(&d.AuthKeyID, &d.UserID, &d.TokenType, &d.Token, &noMuted, &sandbox, &secret, &other, &d.LockedPeriod, &d.LangCode); err != nil {
+		if err := rows.Scan(&d.AuthKeyID, &d.UserID, &d.TokenType, &d.Token, &noMuted, &sandbox, &secret, &other, &d.LockedPeriod, &d.LangCode, &d.SystemLangCode); err != nil {
 			return nil, err
 		}
 		d.NoMuted = noMuted != 0
