@@ -20,6 +20,8 @@ package core
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -45,16 +47,21 @@ const (
 var config mtproto.TLConfig
 
 func init() {
+	// go test names its binary *.test and starts in this directory, which has
+	// no config.json. The server process still fails at startup when the file
+	// is missing.
+	base := filepath.Base(os.Args[0])
+	if strings.HasSuffix(base, ".test") || strings.HasSuffix(base, ".test.exe") {
+		return
+	}
 	configData, err := os.ReadFile(configFile)
 	if err != nil {
 		panic(err)
-		return
 	}
 
 	err = jsonx.Unmarshal(configData, &config)
 	if err != nil {
 		panic(err)
-		return
 	}
 }
 

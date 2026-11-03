@@ -7,10 +7,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -29,12 +31,64 @@ type Note struct {
 	Text    string
 }
 
+// UpdateClient is the signed-in client's initConnection record.
+// Known is false when lang_pack and the authorization row could not be loaded.
+type UpdateClient struct {
+	Known         bool
+	LangPack      string
+	DeviceModel   string
+	SystemVersion string
+	AppVersion    string
+}
+
+// AppUpdateForSession answers help.getAppUpdate for one client.
+// An iOS session always receives help.noAppUpdate. Every other known client,
+// and a client whose session could not be loaded, is compared with the
+// published release.
+// https://core.telegram.org/method/help.getAppUpdate
+func AppUpdateForSession(client UpdateClient, source string, published *Release) *mtproto.Help_AppUpdate {
+	if client.Known && iosClient(client.LangPack, client.DeviceModel, client.SystemVersion) {
+		return noUpdate()
+	}
+	version := strings.TrimSpace(client.AppVersion)
+	if v := VersionInSource(source); v != "" {
+		version = v
+	}
+	return AppUpdate(version, source, published)
+}
+
+// iosClient reports a Telegram iOS session.
+// lang_pack "ios" decides the platform. device_model and system_version apply
+// when lang_pack is empty: iPhone, iPad, iPod, or a system version that
+// starts with "iOS" or "iPadOS".
+func iosClient(langPack, deviceModel, systemVersion string) bool {
+	switch strings.ToLower(strings.TrimSpace(langPack)) {
+	case "ios":
+		return true
+	case "":
+	default:
+		return false
+	}
+	model := strings.ToLower(strings.TrimSpace(deviceModel))
+	if strings.Contains(model, "iphone") || strings.Contains(model, "ipad") || strings.Contains(model, "ipod") {
+		return true
+	}
+	system := strings.ToLower(strings.TrimSpace(systemVersion))
+	return strings.HasPrefix(system, "ios") || strings.HasPrefix(system, "ipados")
+}
+
 // AppUpdate compares the client's version with the published release.
 // help.noAppUpdate is the documented result when nothing newer is published
 // or the client is already on that version.
+// A published version with no dot is a build number (for example 1800979),
+// not a marketing version, and is treated as no update.
 // https://core.telegram.org/method/help.getAppUpdate
 func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_AppUpdate {
 	if published == nil || strings.TrimSpace(published.Version) == "" {
+		return noUpdate()
+	}
+	if bareBuildNumber(published.Version) {
+		warnBareBuild(published.Version)
 		return noUpdate()
 	}
 	if published.Source != "" && !strings.EqualFold(strings.TrimSpace(published.Source), strings.TrimSpace(source)) {
@@ -62,6 +116,9 @@ func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_A
 
 // LoadRelease reads the optional published update. An empty version means
 // the server is not offering an update.
+// TELLOMI_APP_UPDATE_VERSION is a dotted marketing version such as 14.0.4.
+// A value with no dot is a build number and AppUpdate ignores it.
+// iOS sessions ignore these variables and always receive help.noAppUpdate.
 func LoadRelease() *Release {
 	version := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_VERSION"))
 	if version == "" {
@@ -188,9 +245,14 @@ func normalizeLang(lang string) string {
 	}
 }
 
-// newer reports whether next is a strictly newer dotted version than prev.
-// Missing prev is not newer. Non-numeric tails are ignored.
+// newer reports whether next is a strictly newer dotted marketing version than prev.
+// A client string such as "14.0.4 (1801699) " compares as 14.0.4; the
+// parenthetical build is ignored. next with no dot, such as 1800979, is a
+// build number and is not newer. Missing prev is not newer.
 func newer(next, prev string) bool {
+	if bareBuildNumber(next) {
+		return false
+	}
 	a := parts(next)
 	b := parts(prev)
 	if len(a) == 0 {
@@ -245,6 +307,24 @@ func parts(v string) []int {
 	}
 	flush()
 	return out
+}
+
+// bareBuildNumber reports a version that is not a dotted marketing version.
+func bareBuildNumber(version string) bool {
+	return !strings.Contains(strings.TrimSpace(version), ".")
+}
+
+var bareBuildLogged sync.Map
+
+func warnBareBuild(version string) {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return
+	}
+	if _, loaded := bareBuildLogged.LoadOrStore(version, struct{}{}); loaded {
+		return
+	}
+	logx.Errorf("help.getAppUpdate: TELLOMI_APP_UPDATE_VERSION %q has no dot and is a build number. Use a marketing version such as 14.0.4. This value is ignored. iOS clients ignore TELLOMI_APP_UPDATE_* entirely.", version)
 }
 
 func versionID(version string) int32 {
