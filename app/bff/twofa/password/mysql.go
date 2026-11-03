@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS user_passwords (
   new_salt1 VARBINARY(64) NOT NULL,
   new_salt2 VARBINARY(64) NOT NULL,
   new_secure_salt VARBINARY(64) NOT NULL,
+  password_set_at BIGINT NOT NULL DEFAULT 0,
   updated_at BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -106,7 +107,20 @@ func execSchema(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	// Existing installs created the table before password_set_at existed.
+	// Duplicate column is the steady state after the first boot.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE user_passwords ADD COLUMN password_set_at BIGINT NOT NULL DEFAULT 0`); err != nil && !dupColumn(err) {
+		return err
+	}
 	return nil
+}
+
+func dupColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Duplicate column") || strings.Contains(msg, "1060")
 }
 
 func (s *mysqlStore) Load(ctx context.Context, userID int64) (Record, error) {
@@ -116,12 +130,13 @@ func (s *mysqlStore) Load(ctx context.Context, userID int64) (Record, error) {
 SELECT has_password, algo, salt1, salt2, verifier, hint, email, email_unconfirmed,
   email_code, email_code_expires, email_code_sent_at, email_code_attempts,
   secure_algo, secure_salt, secure_secret, secure_secret_id, pending_reset_date,
-  version, fail_count, flood_until, new_salt1, new_salt2, new_secure_salt
+  version, fail_count, flood_until, new_salt1, new_salt2, new_secure_salt, password_set_at
 FROM user_passwords WHERE user_id = ?`, userID).Scan(
 		&has, &rec.Algo, &rec.Salt1, &rec.Salt2, &rec.Verifier, &rec.Hint, &rec.Email, &rec.EmailUnconfirmed,
 		&rec.EmailCode, &rec.EmailCodeExpires, &rec.EmailCodeSentAt, &rec.EmailCodeAttempts,
 		&rec.SecureAlgo, &rec.SecureSalt, &rec.SecureSecret, &rec.SecureSecretID, &rec.PendingReset,
 		&rec.Version, &rec.FailCount, &rec.FloodUntil, &rec.NewSalt1, &rec.NewSalt2, &rec.NewSecureSalt,
+		&rec.PasswordSetAt,
 	)
 	if err == sql.ErrNoRows {
 		return Record{UserID: userID}, nil
@@ -145,8 +160,8 @@ INSERT INTO user_passwords (
   user_id, has_password, algo, salt1, salt2, verifier, hint, email, email_unconfirmed,
   email_code, email_code_expires, email_code_sent_at, email_code_attempts,
   secure_algo, secure_salt, secure_secret, secure_secret_id, pending_reset_date,
-  version, fail_count, flood_until, new_salt1, new_salt2, new_secure_salt, updated_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  version, fail_count, flood_until, new_salt1, new_salt2, new_secure_salt, password_set_at, updated_at
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON DUPLICATE KEY UPDATE
   has_password = VALUES(has_password), algo = VALUES(algo), salt1 = VALUES(salt1),
   salt2 = VALUES(salt2), verifier = VALUES(verifier), hint = VALUES(hint),
@@ -158,12 +173,13 @@ ON DUPLICATE KEY UPDATE
   pending_reset_date = VALUES(pending_reset_date), version = VALUES(version),
   fail_count = VALUES(fail_count), flood_until = VALUES(flood_until),
   new_salt1 = VALUES(new_salt1), new_salt2 = VALUES(new_salt2),
-  new_secure_salt = VALUES(new_secure_salt), updated_at = VALUES(updated_at)`,
+  new_secure_salt = VALUES(new_secure_salt), password_set_at = VALUES(password_set_at),
+  updated_at = VALUES(updated_at)`,
 		rec.UserID, has, rec.Algo, nz(rec.Salt1), nz(rec.Salt2), nz(rec.Verifier), rec.Hint, rec.Email, rec.EmailUnconfirmed,
 		rec.EmailCode, rec.EmailCodeExpires, rec.EmailCodeSentAt, rec.EmailCodeAttempts,
 		rec.SecureAlgo, nz(rec.SecureSalt), nz(rec.SecureSecret), rec.SecureSecretID, rec.PendingReset,
 		rec.Version, rec.FailCount, rec.FloodUntil, nz(rec.NewSalt1), nz(rec.NewSalt2), nz(rec.NewSecureSalt),
-		time.Now().Unix(),
+		rec.PasswordSetAt, time.Now().Unix(),
 	)
 	return err
 }

@@ -166,6 +166,9 @@ services:
       - "20110:20110"
       - "5222:5222"
       - "8801:8801" # linkpreview HTTP (GET /linkpreview/v1/resolve)
+      # Web account deletion. Bind the host side to loopback; nginx on the
+      # same machine proxies chat.tellomi.cn. See docs/account-deletion-web.md.
+      - "127.0.0.1:8802:8802"
       - "20660:20660"
       - "20650:20650"
       - "20030:20030"

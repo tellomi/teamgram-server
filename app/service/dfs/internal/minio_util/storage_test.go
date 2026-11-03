@@ -256,6 +256,34 @@ func TestPrecreatedBucketsRoundTrip(t *testing.T) {
 	if len(fake.forbidden) != 0 {
 		t.Fatalf("client called a forbidden API: %+v", fake.forbidden)
 	}
+
+	if err = client.MoveToTrash(ctx, ClassPhotos, "m/7.dat"); err != nil {
+		t.Fatal(err)
+	}
+	if fake.has("tellomi-attachments", "photos/m/7.dat", "story-photo") {
+		t.Fatal("live photo should have moved")
+	}
+	if !fake.has("tellomi-attachments", "trash/photos/m/7.dat", "story-photo") {
+		t.Fatal("trash copy missing")
+	}
+	if err = client.MoveToTrash(ctx, ClassPhotos, "m/7.dat"); err != nil {
+		t.Fatal("retry of a missing source")
+	}
+	if err = client.DeleteTrash(ctx, ClassPhotos, "m/7.dat"); err != nil {
+		t.Fatal(err)
+	}
+	if fake.has("tellomi-attachments", "trash/photos/m/7.dat", "story-photo") {
+		t.Fatal("trash copy should be gone")
+	}
+	if err = client.MoveToTrash(ctx, ClassStickers, "1.dat"); err == nil {
+		t.Fatal("stickers must not be trashed")
+	}
+	if err = client.MoveToTrash(ctx, ClassAvatars, "a/7.dat"); err != nil {
+		t.Fatal(err)
+	}
+	if !fake.has("tellomi-public-media", "trash/avatars/a/7.dat", "avatar") {
+		t.Fatal("avatar trash copy missing")
+	}
 }
 
 func TestGuardBlocksListAndMake(t *testing.T) {
@@ -417,6 +445,22 @@ func (s *s3fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		delete(s.uploads, q.Get("uploadId"))
 		s.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodPut && key != "" && r.Header.Get("X-Amz-Copy-Source") != "":
+		src := strings.TrimPrefix(r.Header.Get("X-Amz-Copy-Source"), "/")
+		sb, sk := splitPath("/" + src)
+		s.mu.Lock()
+		body, ok := s.objects[sb][sk]
+		if ok {
+			cp := append([]byte(nil), body...)
+			s.objects[bucket][key] = cp
+		}
+		s.mu.Unlock()
+		if !ok {
+			writeS3Error(w, http.StatusNotFound, "NoSuchKey", sb, sk)
+			return
+		}
+		w.Header().Set("ETag", `"copy"`)
+		fmt.Fprint(w, `<CopyObjectResult><ETag>&quot;copy&quot;</ETag><LastModified>2020-01-01T00:00:00.000Z</LastModified></CopyObjectResult>`)
 	case r.Method == http.MethodPut && key != "":
 		body, _ := io.ReadAll(r.Body)
 		s.mu.Lock()

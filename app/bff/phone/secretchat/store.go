@@ -194,6 +194,57 @@ func (s *Store) Discard(self int64, chatID int32, deleteHistory bool, now int32)
 	}}, nil
 }
 
+// DiscardAll closes every secret chat this user is in and drops the
+// ciphertext the process still holds. Already-discarded chats are skipped,
+// so a retried account deletion is safe. File ids are the encrypted-file
+// objects those chats uploaded; the caller may trash them when nothing else
+// references them. State is in-process, so a restart has already forgotten
+// chats that were not discarded here.
+func (s *Store) DiscardAll(userID int64, now int32) ([]Event, []int64) {
+	if s == nil || userID == 0 {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var events []Event
+	var files []int64
+	seen := map[int64]bool{}
+	for _, c := range s.chats {
+		if c == nil || (c.admin != userID && c.participant != userID) {
+			continue
+		}
+		if c.phase == phaseDiscarded {
+			continue
+		}
+		c.phase = phaseDiscarded
+		c.historyGone = true
+		for key, rec := range s.sent {
+			if key.chat != c.id {
+				continue
+			}
+			if rec.file != nil && rec.file.GetId() != 0 && !seen[rec.file.GetId()] {
+				seen[rec.file.GetId()] = true
+				files = append(files, rec.file.GetId())
+			}
+			delete(s.sent, key)
+		}
+		other := c.participant
+		if userID == c.participant {
+			other = c.admin
+		}
+		discarded := mtproto.MakeTLEncryptedChatDiscarded(&mtproto.EncryptedChat{
+			Id: c.id, HistoryDeleted: true,
+		}).To_EncryptedChat()
+		events = append(events, Event{
+			UserID: other,
+			Update: mtproto.MakeTLUpdateEncryption(&mtproto.Update{
+				Chat: discarded, Date_INT32: now,
+			}).To_Update(),
+		})
+	}
+	return events, files
+}
+
 // Typing tells the other participant that self is typing.
 // https://core.telegram.org/method/messages.setEncryptedTyping
 func (s *Store) Typing(self int64, peer *mtproto.InputEncryptedChat, typing bool) ([]Event, error) {

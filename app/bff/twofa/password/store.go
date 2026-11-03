@@ -26,13 +26,17 @@ type Record struct {
 	SecureSecret      []byte
 	SecureSecretID    int64
 	PendingReset      int64
-	Version           int64
-	FailCount         int
-	FloodUntil        int64
-	NewSalt1          []byte
-	NewSalt2          []byte
-	NewSecureSalt     []byte
-	Exists            bool
+	// PasswordSetAt is unix time when the verifier last changed.
+	// Zero means the row predates that column; callers treat it as older
+	// than seven days so an omitted password cannot delete the account at once.
+	PasswordSetAt int64
+	Version       int64
+	FailCount     int
+	FloodUntil    int64
+	NewSalt1      []byte
+	NewSalt2      []byte
+	NewSecureSalt []byte
+	Exists        bool
 }
 
 // Challenge is one SRP attempt. Taking it removes it.

@@ -11,9 +11,19 @@ import (
 )
 
 var (
-	regMu  sync.Mutex
-	shared *Service
+	regMu   sync.Mutex
+	shared  *Service
+	mysqlOn bool
 )
+
+// MySQLOpen reports whether Shared reads and writes the channel tables.
+// Account deletion uses that service when it is open, so membership changes
+// and the leave updates go through the same store as channels.editAdmin.
+func MySQLOpen() bool {
+	regMu.Lock()
+	defer regMu.Unlock()
+	return mysqlOn
+}
 
 // Shared is the process-wide channel service. BFF and the msg service must
 // open the same MySQL DSN or they will not see each other's channels.
@@ -26,10 +36,12 @@ func Shared() *Service {
 	return shared
 }
 
-// Use replaces the process-wide service.
+// Use replaces the process-wide service. The replacement is not the MySQL
+// store until UseDSN says so.
 func Use(s *Service) {
 	regMu.Lock()
 	shared = s
+	mysqlOn = false
 	regMu.Unlock()
 }
 
@@ -49,6 +61,9 @@ func UseDSN(dsn string) error {
 	prev := Shared()
 	svc.SetHooks(prev.hooks())
 	Use(svc)
+	regMu.Lock()
+	mysqlOn = true
+	regMu.Unlock()
 	return nil
 }
 
