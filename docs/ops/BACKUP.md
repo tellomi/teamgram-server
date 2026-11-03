@@ -105,13 +105,11 @@ rclone's first S3 call otherwise ensures the bucket exists, and on this client t
 
 The 1.60.1 default cutoff is 200Mi. Larger files go through multipart upload, which this rclone has answered with `501` for headers R2 does not implement. `--s3-acl private` is required because R2 returns 501 for any canned ACL other than `private`. `5G` is the largest cutoff rclone allows and the S3 single-PUT limit, so a dump under 5GiB stays one PUT. A larger dump would use multipart; upgrade rclone rather than lowering the cutoff. Override with `TELLOMI_RCLONE_UPLOAD_CUTOFF`.
 
-`--s3-use-presigned-request`
-
-Those two flags do not stop the 501 that still showed up on every upload. rclone 1.60.1's default single-part path is `PutObject` with `SetStreamingBody` (`backend/s3/s3.go` in that tag). The body is chunked. R2 does not implement aws-chunked / chunked transfer and returns `501 NotImplemented`. The AWS SDK (`aws-sdk-go` v1.44.70, vendored in 1.60.1) retries, and the second attempt succeeds, so the command can still exit 0 while every object logs a 501. `--s3-use-presigned-request` is the pre-1.59 path: one presigned PUT with `Content-Length` and no streaming body. There is no checksum-header flag in 1.60.1 (`--s3-disable-checksum` only skips the MD5 metadata, it does not change the body encoding).
-
 `--s3-no-head`
 
-After a PUT, rclone HEADs the object to compare the ETag. That HEAD is not needed here: the `.sha256` sidecar is the integrity check. Skipping it also avoids a follow-up 501 if R2 rejects a header on that HEAD.
+On Chengdu, a 2KB upload with rclone 1.60.1 and no extra flags logs `501 NotImplemented` and the object still lands. The same upload with only `--s3-no-head` succeeds and does not log that 501. rclone HEADs the object after PUT to compare the ETag. That HEAD is what R2 answers with 501. The `.sha256` sidecar is the integrity check, so the HEAD is not needed.
+
+Do not pass `--s3-use-presigned-request`. On the same host a presigned PUT of a 2KB object is `400 Bad Request`, whether or not `--s3-no-head` is also set.
 
 The env file also sets `RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true` and `RCLONE_CONFIG_R2_ACL=private`. The command-line flags still win if a stale `rclone.conf` remote says otherwise.
 

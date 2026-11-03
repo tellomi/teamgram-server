@@ -38,15 +38,15 @@ backup_set_rclone_flags() {
   if [[ ! "$cutoff" =~ ^[0-9]+[KMGT]?$ ]]; then
     backup_die "TELLOMI_RCLONE_UPLOAD_CUTOFF must look like 5G or 200M"
   fi
-  # --s3-use-presigned-request: 1.60.1's PutObject uses SetStreamingBody, so the
-  # first request is chunked. R2 answers 501 (aws-chunked is not implemented)
-  # and the SDK retries. A presigned PUT sets Content-Length and does not chunk.
-  # --s3-no-head: skip the HEAD after PUT. The sha256 sidecar is the check.
+  # --s3-no-head: on Chengdu (rclone 1.60.1, R2) a 2KB PUT without this flag
+  # logs 501 NotImplemented and the object still lands; with only this flag
+  # the upload succeeds. Do not add --s3-use-presigned-request: that PUT is
+  # 400 Bad Request, alone or together with --s3-no-head. The sha256 sidecar
+  # is the integrity check the skipped HEAD would have done.
   RCLONE_S3_FLAGS=(
     --s3-no-check-bucket
     --s3-upload-cutoff "$cutoff"
     --s3-acl private
-    --s3-use-presigned-request
     --s3-no-head
   )
 }

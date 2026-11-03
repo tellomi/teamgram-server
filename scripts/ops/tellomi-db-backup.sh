@@ -203,8 +203,10 @@ EOF
   PATH="$old_path"
   printf '%s\n' "$out" | grep -q -- '--s3-no-check-bucket' || backup_die "dry-run omitted --s3-no-check-bucket"
   printf '%s\n' "$out" | grep -q -- '--s3-upload-cutoff 5G' || backup_die "dry-run omitted upload cutoff"
-  printf '%s\n' "$out" | grep -q -- '--s3-use-presigned-request' || backup_die "dry-run omitted presigned upload"
   printf '%s\n' "$out" | grep -q -- '--s3-no-head' || backup_die "dry-run omitted --s3-no-head"
+  if printf '%s\n' "$out" | grep -q -- '--s3-use-presigned-request'; then
+    backup_die "dry-run must not use a presigned upload"
+  fi
   printf '%s\n' "$out" | grep -q 'BGSAVE' || backup_die "dry-run omitted BGSAVE"
   printf '%s\n' "$out" | grep -q 'etcdctl snapshot save' || backup_die "dry-run omitted etcd snapshot"
   printf '%s\n' "$out" | grep -q 'mysqldump' || backup_die "dry-run omitted mysqldump"
