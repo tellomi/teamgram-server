@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 // 3–32 characters, [A-Za-z0-9_], starting with a letter. A trailing
@@ -584,6 +585,9 @@ func (s *Service) CheckUsername(ctx context.Context, self int64, in *mtproto.Inp
 	if !validChannelUsername(username) {
 		return nil, mtproto.ErrUsernameInvalid
 	}
+	if err := usernamepolicy.RejectChannel(ctx, ch.ID, username); err != nil {
+		return nil, err
+	}
 	other, err := s.store.FindByUsername(ctx, username)
 	if err != nil {
 		return nil, err
@@ -608,6 +612,11 @@ func (s *Service) UpdateUsername(ctx context.Context, self, actorAuth int64, in 
 	}
 	if username != "" && !validChannelUsername(username) {
 		return nil, mtproto.ErrUsernameInvalid
+	}
+	if username != "" {
+		if err := usernamepolicy.RejectChannel(ctx, ch.ID, username); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.assignEditableUsername(ctx, self, ch, username); err != nil {
 		return nil, err
