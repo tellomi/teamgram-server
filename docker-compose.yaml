@@ -152,6 +152,11 @@ services:
       TELLOMI_DC_TXT_DOMAIN: ${TELLOMI_DC_TXT_DOMAIN:-}
       # Username reserve / sensitive-word check (M5). Unset is off.
       TELLOMI_USERNAME_POLICY: ${TELLOMI_USERNAME_POLICY:-}
+      # Discover credential (M3). Unset is off. Keys are standard base64.
+      # See docs/discover-engine-auth.md. Do not commit key values.
+      TELLOMI_DISCOVER: ${TELLOMI_DISCOVER:-}
+      TELLOMI_DISCOVER_SIGNING_KEY: ${TELLOMI_DISCOVER_SIGNING_KEY:-}
+      TELLOMI_DISCOVER_PSEUDONYM_KEY: ${TELLOMI_DISCOVER_PSEUDONYM_KEY:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.
