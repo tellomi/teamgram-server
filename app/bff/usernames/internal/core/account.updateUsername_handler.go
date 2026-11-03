@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/accountrest"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 // AccountUpdateUsername
@@ -76,6 +77,9 @@ func (c *UsernamesCore) updateUsername(userId int64, from, username2 string) err
 		if !userpb.CheckUsernameInvalid(username2) {
 			err := mtproto.ErrUsernameInvalid
 			c.Logger.Errorf("account.updateUsername - format error: %v", err)
+			return err
+		}
+		if err := usernamepolicy.RejectUser(c.ctx, userId, username2); err != nil {
 			return err
 		}
 
