@@ -100,6 +100,10 @@ Thresholds:
 
 A failed post-deploy cleanup prints a warning and does not roll the deploy back. `mysql-migrate` still has to exit 0 before `teamgram` is recreated, and the GeoIP file and `docker-compose.tellomi.yaml` are still required.
 
+## Datacenter addresses
+
+`help.getConfig` `dc_options` stays the empty list in `teamgramd/bin/config.json` unless `TELLOMI_DC_OPTIONS` is set. Clients that already stored an address keep it after the server list goes back to empty. See [DC addresses](ops/DC_ADDRESSES.md).
+
 ## Known follow-ups
 
 - Remove the upstream RSA key from `gnetway.yaml` `RSAKey` once clients carrying the new public key are widespread.

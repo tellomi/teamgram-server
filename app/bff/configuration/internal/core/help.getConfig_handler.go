@@ -28,6 +28,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/dcoptions"
 	"github.com/teamgram/teamgram-server/pkg/langpack"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
@@ -71,6 +72,9 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 	_ = in
 
 	rValue, _ := proto.Clone(&config).(*mtproto.TLConfig)
+	// TELLOMI_DC_OPTIONS replaces dc_options on this copy. Unset or invalid
+	// leaves the list loaded from config.json, which is empty in git.
+	dcoptions.Apply(rValue)
 	now := int32(time.Now().Unix())
 	rValue.SetDate(now)
 	rValue.SetExpires(now + expiresTimeout)
