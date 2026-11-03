@@ -4,7 +4,7 @@ D-34, M7. `docker-compose.limits.yaml` is an opt-in overlay. `deploy-pull.sh` ap
 
 | Service | Limit |
 |---|---|
-| teamgram | 2560m (2.5 GiB) |
+| teamgram | 3584m (3.5 GiB) |
 | mysql | 1536m, InnoDB buffer pool 1 GiB |
 | kafka | 1.6g, heap `-Xmx1G -Xms1G` |
 | redis | 512m, no eviction |
@@ -12,6 +12,10 @@ D-34, M7. `docker-compose.limits.yaml` is an opt-in overlay. `deploy-pull.sh` ap
 | coturn | 256m |
 | mediamtx | 256m |
 | asr | 1536m and 2 CPUs, same as `docker-compose.yaml` |
+
+## Teamgram
+
+The cap was 2560m. On Chengdu the process sat on that cgroup: reclaim used a full CPU and clients stayed on "connecting". It is now 3584m (3.5 GiB), the limit already set on the host.
 
 ## Kafka
 

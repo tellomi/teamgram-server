@@ -10,12 +10,14 @@
 # killed instead of dropping idgen or pts keys.
 
 services:
+  # Chengdu sat on the 2560m cgroup: reclaim pinned a CPU and clients stayed
+  # on "connecting". The host is already 3584m (3.5 GiB); this matches it.
   teamgram:
-    mem_limit: 2560m
+    mem_limit: 3584m
     deploy:
       resources:
         limits:
-          memory: 2560m
+          memory: 3584m
 
   mysql:
     mem_limit: 1536m

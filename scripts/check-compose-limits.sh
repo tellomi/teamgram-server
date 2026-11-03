@@ -46,7 +46,7 @@ if mem(bare, "asr") != 1536 * 1024 * 1024:
     raise SystemExit("asr limit changed in the base compose")
 
 expect = {
-    "teamgram": 2560 * 1024 * 1024,
+    "teamgram": 3584 * 1024 * 1024,
     "mysql": 1536 * 1024 * 1024,
     "kafka": 1717986918,  # 1.6g as Compose renders it (1.6 * 1024^3)
     "redis": 512 * 1024 * 1024,
