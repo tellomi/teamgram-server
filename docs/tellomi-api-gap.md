@@ -28,7 +28,7 @@ Tellomi iOS 实际调用、且落在覆盖矩阵里的 755 个方法：
 | 优先级 | 已实现 | 未实现（返回错误） | 残缺或假数据 |
 | --- | ---: | ---: | ---: |
 | P0 登录 / 启动 / 后台同步 | 91 | 0 | 0 |
-| P1 资料、联系人、私聊、历史上传、基础群 | 352 | 8 | 0 |
+| P1 资料、联系人、私聊、历史上传、基础群 | 360 | 0 | 0 |
 | P2 其余（动态、支付、机器人、商业等） | 304 | 0 | 0 |
 
 P0 包含 `auth.sendCode` / `auth.signIn` / `auth.checkPassword` / `account.getPassword`、`help.getConfig`、`updates.getState` / `updates.getDifference`、`messages.getDialogs`、`langpack.getLangPack`。这些都有路由和真实 handler，不是空壳。
@@ -92,25 +92,33 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 链接是 `https://tell.cc/+` 加 20 位 hash（`TELLOMI_LINK_BASE_URL` / `TEAMGRAM_TME_HOST` 可改主机）。基础群写 `chat_invites` / `chat_invite_participants`，频道和超级群写 `channel_invites` / `channel_invite_importers`。迁移：`teamgramd/deploy/sql/migrate-20261104-chat-invites.sql`。旧库的 `chat_invite_participants` 缺 `chat_id`、`requested`、`approved_by`，加入记录和次数统计会插不进去。
 
+## 这次补上的
+
+聊天里客户端还会打到、并且以前直接 `ENTERPRISE_IS_BLOCKED` 的三个 P1 方法。登录、会话路由和鉴权没改。没有新的数据库表，也没有对 Redis 做 `FLUSHALL`。
+
+### `messages.translateRichMessage`
+
+翻译按钮在富文本消息上走这个方法，不走 `messages.translateText`。两条都调用百炼，并且都要 `TELLOMI_TRANSLATE=1` 和 `TELLOMI_AI_API_KEY`。`to_lang` 不在语言表里是 `400 TO_LANG_INVALID`；带了 `text` 就翻这几段，否则用 `peer` + `id` 读已发出的消息。空 id 列表是 `MESSAGE_IDS_EMPTY`，找不到的 id 是 `MESSAGE_ID_INVALID`，peer 不对是 `PEER_ID_INVALID`。`tone` 超过 64 个字符同样是 `TO_LANG_INVALID`。开关关掉、没有 key、或模型失败是 `500 TRANSLATE_REQ_FAILED`，不把原文当译文返回。
+
+主模型 `qwen-plus`，失败或超时再换 `deepseek-v3`（仍走百炼）。百炼内容安全拦住时不换模型。`TELLOMI_CONTENT_SAFETY` 打开时，译文再过一遍文本审核，拦住也是 `TRANSLATE_REQ_FAILED`。块结构原样保留，只改叶子上的文字；代码块不改。HTML / Markdown 里的粗体和链接留在结果里。已发出的消息上的 entity 按 UTF-16 跟着译文移动。结果是 `messages.translatedRichMessage`，照片和文件向量是空的。`messages.translateText` 用同一套模型和同一把开关。
+
+### `messages.composeRichMessageWithAI`
+
+输入栏的 AI 按钮。`TELLOMI_AI_COMPOSE=1` 并且有 `TELLOMI_AI_API_KEY` 时，`help.getAppConfig` 的 `tellomi_ai_compose_enabled` 才是 true，校对、加表情、语气和 `translate_to_lang` 都调用上面的百炼模型。两个条件缺一，或者模型失败，是 `500 AICOMPOSE_TIMEOUT`，不把原文还回去。空文本是 `MESSAGE_EMPTY`，没指定任务是 `AI_COMPOSE_TASK_MISSING`，不认识的语气是 `AICOMPOSE_TONE_INVALID`。不返回 `AICOMPOSE_FLOOD_PREMIUM`。这块不依赖 `TELLOMI_AI`。
+
+### `account.confirmBotConnection`
+
+用户确认连上一个机器人时，客户端等的是 `Bool`。`bot_id` 为空、不是机器人、或者 access hash 对不上，返回 `400 BOT_ID_INVALID`。未登录是 `401 AUTH_KEY_UNREGISTERED`。`bots.createBot` 建在本进程里的机器人按返回的 access hash 核对。用户服务里 `is_bot` 的账号走 `user.isBot`，hash 不一致也是 `BOT_ID_INVALID`。确认写入进程内存，账号缓存可用时再写 `botconn:<用户>:<机器人>`。再确认一次仍是 `boolTrue`。不向会话推 `updateNewBotConnection`，避免一条客户端没在这次调用里等待的更新把连接打乱。
+
 ## 常见路径里还缺的
 
-频道简介、草稿、免打扰、清空自己的历史、从频道转发、贴纸集封面，以及赞助消息的空结果，已经在 master 上。`users.getIsPremiumRequiredToContact` 见下面「资料页」。下面这些客户端还会打到、并且仍返回 `ENTERPRISE_IS_BLOCKED`：
+频道简介、草稿、免打扰、清空自己的历史、从频道转发、贴纸集封面、赞助消息的空结果，以及上面这三项，都有路由和真实 handler。`users.getIsPremiumRequiredToContact` 见下面「资料页」。
 
-| 方法 | 会在哪碰到 |
-| --- | --- |
-| `messages.composeRichMessageWithAI`、`messages.translateRichMessage` | AI 撰写 / 富文本翻译。普通 `messages.translateText` 另有实现 |
-| `account.confirmBotConnection` | 机器人连接确认 |
-| `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth` | 机器人、网页令牌、付费登录。Tellomi 登录不走这些 |
+覆盖矩阵里，客户端会调并且仍可能返回错误的登录类方法没有改：`auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`。Tellomi 的手机号和邮箱登录不走这些。
 
 ## 留下的 P1（客户端会调，服务端返回错误）
 
-下面这 3 个仍返回 `ENTERPRISE_IS_BLOCKED`，并且不在登录和聊天列表的必经路径上。赞助消息的读取、点击、查看、举报和开关已经返回空结果或成功，不再算缺口。
-
-| 方法 | 客户端 | 现状 | 说明 |
-| --- | --- | --- | --- |
-| `account.confirmBotConnection` | iOS | `ENTERPRISE_IS_BLOCKED` | 机器人连接确认 |
-| `messages.composeRichMessageWithAI` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 撰写 |
-| `messages.translateRichMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 翻译富文本。普通 `messages.translateText` 另有实现 |
+上面三个 P1 不再返回 `ENTERPRISE_IS_BLOCKED`。赞助消息的读取、点击、查看、举报和开关已经返回空结果或成功。登录和聊天列表的必经路径没有新的错误桩。
 
 `messages.uploadEncryptedFile` 已实现。客户端先用 `upload.saveFilePart` / `upload.saveBigFilePart` 传分片，再把 `inputEncryptedFileUploaded` 或 `inputEncryptedFileBigUploaded` 交给这个方法。服务端把分片收成 `encryptedFile`（含 `key_fingerprint`），对象写在 DFS 的 `encryptedfiles/<id>.dat`。对方用 `upload.getFile` 的 `inputEncryptedFileLocation` 读取。`inputEncryptedFile` 表示这份已经传过的文件。
 
@@ -120,6 +128,39 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ## 还留着的
 
-- `account.confirmBotConnection`：机器人连接确认。
-- `messages.composeRichMessageWithAI`、`messages.translateRichMessage`：AI 撰写和富文本翻译。普通 `messages.translateText` 另有实现。
-- `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些。
+- 输入栏 AI 默认关。`TELLOMI_AI_COMPOSE` 不是 `1`，或没有百炼 key 时，`tellomi_ai_compose_enabled` 是 false，调用返回 `AICOMPOSE_TIMEOUT`。
+- `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些，这次不改登录流程。
+- v2.1 里不在这几个 RPC 上的项见下一节。
+
+## v2.1 服务端
+
+对照 v2.1 定稿和当前代码。上面的客户端 RPC 缺口不在这一节里。新行为默认关闭，登录流程没改。
+
+### 这次补上的
+
+`help.getAppConfig` 增加「关于 Tellomi」和个性化推荐要用的键。官方客户端不读这些键。
+
+`TELLOMI_ABOUT_DISCLOSURE` 不是 `1` 时，`tellomi_personalized_recommend_default` 是 false，客户端不显示「个性化推荐」。备案号、模型名、登记编号这三个键不出现。
+
+`TELLOMI_ABOUT_DISCLOSURE=1` 并且 `TELLOMI_ALGORITHM_FILING_NUMBER` 是一段公开编号时：
+
+- `tellomi_personalized_recommend_default` 为 true。这是开关的默认打开（D-58），不是某个用户此刻的选择。客户端在「隐私与安全」里显示开关，默认开。用户关掉之后，推荐流改为不针对个人的排序；排序在 content-engine，本进程不保存这个选择，也不做排序。
+- `tellomi_algorithm_filing_number` 是这段编号，给「关于 Tellomi」页（D-59）。
+
+同一个开关下，`TELLOMI_AI_PUBLIC_MODEL`、`TELLOMI_AI_REGISTRATION_NUMBER` 去掉首尾空白后非空，才分别下发 `tellomi_ai_model_name`、`tellomi_ai_registration_number`（D-50）。没填就没有这个键。控制字符、超过 128 个字符、或正文里出现 telegram / t.me 的，当成没填。`true`、`yes` 不能代替 `1`。
+
+配置一变，`help.getAppConfig` 的 hash 就变，客户端会重新拉。没有新的 RPC，没有新表，也不动 Redis。
+
+### 已经在 master 上、这次没改行为
+
+- 小米推送已经在 `pkg/push`。`TELLOMI_XIAOMI_PUSH=1`，并且 AppSecret 和包名都有，才向 token_type 14 发通知栏消息。否则只存 token，不发。见 `docs/push.md`。
+- 帮助中心网址：`TELLOMI_HELP_CENTER=1` 才把 `faq_link` 改成 `https://tellomi.cn/help`（D-40）。默认仍是 `https://tellomi.cn/faq`。页面不由本进程提供，这次不改默认值。
+
+### 还留着的 v2.1 服务端
+
+- 帮助网页搬到 Cloudflare Pages（D-62），以及什么时候把 `TELLOMI_HELP_CENTER` 打开。打开之前要确认 `https://tellomi.cn/help` 已经能打开。
+- R2 前面的 CDN 域名（D-63）是 Cloudflare 配置。本仓库已有公开媒体和附件的 base URL。
+- 发现和 @tellomi 的海外 Cloud Run、Supabase 只读副本、手机离线队列（D-64 到 D-67）不在这个进程里。`@tellomi` 的每日计数还在进程内存里，第二份实例不能共用。群聊上下文还没做。
+- 推送（D-68）：APNs 在挂了 `.p8` 时发送。FCM 和华为的 token 只存储，发送端没装。OPPO、vivo、荣耀、魅族没有通道，等确认小米能不能覆盖这些品牌后再接。从成都能不能打到 FCM，这个仓库里没测。
+- 监控和告警仍不做（D-69）。聊天主备只写了 `docs/design/chat-standby.md`，没有代码（D-70）。隐私政策正文在官网，不在这里（D-71）。
+- 用户关掉个性化推荐之后，发现流立刻改成不针对个人的排序：客户端把选择交给 content-engine。本进程不下发这个人的当前选择。

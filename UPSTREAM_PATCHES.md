@@ -171,6 +171,14 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | --- | --- | --- |
 | start listener | `app/bff/bff/internal/server/server.go` | `discoverrel.Start` |
 
+## Discover profile cards (M3 / D-17)
+
+`TELLOMI_DISCOVER_PROFILES=1` serves `POST /internal/v1/profiles/resolve` so content-engine can read a viewer's copy of an author's name, username, bio, and profile photo. Photo and bio follow `user_privacies` (`key_type` 6 and 10) and the author's live `user_contacts` row. Unset does not listen. Login and `messages.sendMessage` are unchanged. The contract is `docs/discover-profiles.md`. No new table.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| start listener | `app/bff/bff/internal/server/server.go` | `discoverprofile.Start` |
+
 ## Xiaomi push (M8 / D-68)
 
 `TELLOMI_XIAOMI_PUSH=1` sends token type 14 through MiPush (`pkg/push/xiaomi.go`). Unset leaves the token stored and unsent. `account.registerDevice` is unchanged: it already stores any positive `token_type`. Login and session routing are unchanged. The contract is `docs/push.md`.
@@ -228,6 +236,17 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describes a manual promotion of a MySQL replica, how `seqfloor` keeps Redis idgen and pts from moving backwards, and why the spare IP stays out of `TELLOMI_DC_OPTIONS` until the spare is listening. No code, no flag, and no migration.
 
+## Translation and rich compose
+
+`messages.translateText` and `messages.translateRichMessage` call Bailian when `TELLOMI_TRANSLATE=1` and `TELLOMI_AI_API_KEY` are both set. `messages.composeRichMessageWithAI` calls the same client when `TELLOMI_AI_COMPOSE=1` and the key are set. That second flag is what `help.getAppConfig` publishes as `tellomi_ai_compose_enabled`. The model is `qwen-plus`, then `deepseek-v3` on the same Bailian API. A content-safety block does not switch models. When `TELLOMI_CONTENT_SAFETY` is on, the output is checked again and a block is a failure. Unset flags, a missing key, and a provider failure return `500 TRANSLATE_REQ_FAILED` or `500 AICOMPOSE_TIMEOUT`. The previous English/Chinese word list is gone. Rich blocks stay in place; message entities keep their UTF-16 spans. `account.confirmBotConnection` is unchanged. Login and session routing are unchanged.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `messages.translateText` | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` | `chatbox.TranslateText` |
+| `messages.translateRichMessage` | `app/bff/messages/internal/core/messages.translateRichMessage_handler.go` | `richmsg.Translate` |
+| `messages.composeRichMessageWithAI` | `app/bff/messages/internal/core/messages.composeRichMessageWithAI_handler.go` | `richmsg.Compose` |
+| app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_translate_enabled`, `tellomi_ai_compose_enabled` |
+
 ## Help center link (M1 / D-40)
 
 `TELLOMI_HELP_CENTER=1` sets `help.getAppConfig` `faq_link` to `https://tellomi.cn/help`. Unset leaves `https://tellomi.cn/faq`. The page is not served here. The hash of the app config includes the URL, so a client that caches `help.getAppConfig` refetches after the flag changes. Login is unchanged.
@@ -235,3 +254,11 @@ Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describe
 | Call | File | Hook |
 | --- | --- | --- |
 | `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `brand.HelpURL` |
+
+## About page and recommendation default (D-50 / D-58 / D-59)
+
+`TELLOMI_ABOUT_DISCLOSURE=1` plus `TELLOMI_ALGORITHM_FILING_NUMBER` sets `help.getAppConfig` `tellomi_personalized_recommend_default` to true and publishes `tellomi_algorithm_filing_number`. The same flag publishes `tellomi_ai_model_name` and `tellomi_ai_registration_number` when `TELLOMI_AI_PUBLIC_MODEL` and `TELLOMI_AI_REGISTRATION_NUMBER` are set. Unset leaves the bool false and omits the strings. The bool is the switch default, not a stored per-user choice. The hash includes the flag and the published strings. Login is unchanged.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `pkg/about` |

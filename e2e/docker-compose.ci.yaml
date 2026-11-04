@@ -61,6 +61,9 @@ services:
       # Profile and channel-title checks in e2e/client/profile_name_test.go.
       # Production stays off until TELLOMI_USERNAME_POLICY=1 is set there.
       TELLOMI_USERNAME_POLICY: "1"
+      # Do not call www.tellomi.cn from CI. Production leaves this empty so
+      # latest.json drives help.getAppUpdate.
+      TELLOMI_APP_UPDATE_MANIFEST: "off"
     # dfs checks the attachments bucket once at startup.
     depends_on:
       minio-mc:

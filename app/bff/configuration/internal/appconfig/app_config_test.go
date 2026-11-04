@@ -6,6 +6,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/about"
 	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
@@ -14,6 +15,9 @@ import (
 )
 
 func TestAppConfigPremiumPolicy(t *testing.T) {
+	t.Setenv(tellomiai.EnvTranslate, "")
+	t.Setenv(tellomiai.EnvCompose, "")
+	t.Setenv(tellomiai.EnvAPIKey, "")
 	t.Cleanup(func() { emojiblock.Reload() })
 	t.Setenv(emojiblock.EnvExtra, "")
 	t.Setenv(emojiblock.EnvFile, "")
@@ -22,6 +26,10 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 	t.Setenv(premium.EnvFreeFeatures, "")
 	t.Setenv(premium.EnvPurchaseBlocked, "true")
 	t.Setenv(EnvTranscribeEnabled, "")
+	t.Setenv(about.EnvEnabled, "")
+	t.Setenv(about.EnvAlgorithmFiling, "")
+	t.Setenv(about.EnvAIModel, "")
+	t.Setenv(about.EnvAIRegistration, "")
 	premium.Reload()
 	t.Cleanup(func() { premium.Reload() })
 
@@ -113,23 +121,24 @@ func TestAppConfigTranscribeSwitch(t *testing.T) {
 func assertHiddenFeatures(t *testing.T, obj map[string]any) {
 	t.Helper()
 	bools := map[string]bool{
-		"premium_purchase_blocked":           true,
-		"stars_purchase_blocked":             true,
-		"stars_gifts_enabled":                false,
-		"stargifts_blocked":                  true,
-		"enable_gifts_in_profile":            false,
-		"premium_gift_attach_menu_icon":      false,
-		"premium_gift_text_field_icon":       false,
-		"stars_paid_messages_available":      false,
-		"giveaway_gifts_purchase_available":  false,
-		"channel_revenue_withdrawal_enabled": false,
-		"starref_program_allowed":            false,
-		"starref_connect_allowed":            false,
-		"wallet_available":                   false,
-		"tellomi_ai_compose_enabled":         false,
-		"tellomi_ai_enabled":                 false,
-		"tellomi_translate_enabled":          false,
-		"tellomi_announce_enabled":           false,
+		"premium_purchase_blocked":               true,
+		"stars_purchase_blocked":                 true,
+		"stars_gifts_enabled":                    false,
+		"stargifts_blocked":                      true,
+		"enable_gifts_in_profile":                false,
+		"premium_gift_attach_menu_icon":          false,
+		"premium_gift_text_field_icon":           false,
+		"stars_paid_messages_available":          false,
+		"giveaway_gifts_purchase_available":      false,
+		"channel_revenue_withdrawal_enabled":     false,
+		"starref_program_allowed":                false,
+		"starref_connect_allowed":                false,
+		"wallet_available":                       false,
+		"tellomi_ai_compose_enabled":             false,
+		"tellomi_ai_enabled":                     false,
+		"tellomi_translate_enabled":              false,
+		"tellomi_announce_enabled":               false,
+		"tellomi_personalized_recommend_default": false,
 	}
 	for key, want := range bools {
 		if obj[key] != want {
@@ -199,6 +208,8 @@ func TestAppConfigEmojiBlocklistExtendsHash(t *testing.T) {
 
 func TestTellomiAIFlagDefaultsOff(t *testing.T) {
 	t.Setenv(tellomiai.EnvEnabled, "")
+	t.Setenv(tellomiai.EnvTranslate, "")
+	t.Setenv(tellomiai.EnvCompose, "")
 	t.Setenv(tellomiai.EnvAPIKey, "")
 	if tellomiai.Advertised() {
 		t.Fatal("advertised")
@@ -221,6 +232,48 @@ func TestTellomiAIFlagDefaultsOff(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["tellomi_ai_enabled"] != true {
 		t.Fatalf("tellomi_ai_enabled = %#v", obj["tellomi_ai_enabled"])
+	}
+	if obj["tellomi_ai_compose_enabled"] != false || obj["tellomi_translate_enabled"] != false {
+		t.Fatalf("compose/translate followed TELLOMI_AI: %#v %#v", obj["tellomi_ai_compose_enabled"], obj["tellomi_translate_enabled"])
+	}
+}
+
+func TestTranslateAndComposeFlags(t *testing.T) {
+	t.Setenv(tellomiai.EnvEnabled, "")
+	t.Setenv(tellomiai.EnvTranslate, "")
+	t.Setenv(tellomiai.EnvCompose, "")
+	t.Setenv(tellomiai.EnvAPIKey, "")
+	if tellomiai.TranslateAdvertised() || tellomiai.ComposeAdvertised() {
+		t.Fatal("advertised without a flag")
+	}
+	off := AppConfigHash()
+	t.Setenv(tellomiai.EnvTranslate, "1")
+	if tellomiai.TranslateAdvertised() {
+		t.Fatal("translate advertised without an API key")
+	}
+	t.Setenv(tellomiai.EnvAPIKey, "test-key")
+	if !tellomiai.TranslateAdvertised() || tellomiai.ComposeAdvertised() {
+		t.Fatal("translate flag did not follow TELLOMI_TRANSLATE")
+	}
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_TRANSLATE")
+	}
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_translate_enabled"] != true || obj["tellomi_ai_compose_enabled"] != false {
+		t.Fatalf("translate %#v compose %#v", obj["tellomi_translate_enabled"], obj["tellomi_ai_compose_enabled"])
+	}
+	if obj["translations_manual_enabled"] != "disabled" {
+		t.Fatalf("official translation UI = %#v", obj["translations_manual_enabled"])
+	}
+	t.Setenv(tellomiai.EnvCompose, "1")
+	if !tellomiai.ComposeAdvertised() {
+		t.Fatal("compose flag did not follow TELLOMI_AI_COMPOSE")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_ai_compose_enabled"] != true || obj["tellomi_ai_enabled"] != false {
+		t.Fatalf("compose %#v ai %#v", obj["tellomi_ai_compose_enabled"], obj["tellomi_ai_enabled"])
 	}
 }
 
@@ -248,6 +301,37 @@ func TestAnnounceFlagDefaultsOff(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["tellomi_announce_enabled"] != true {
 		t.Fatalf("tellomi_announce_enabled = %#v", obj["tellomi_announce_enabled"])
+	}
+}
+
+func TestAboutDisclosureDefaultsOff(t *testing.T) {
+	t.Setenv(about.EnvEnabled, "")
+	t.Setenv(about.EnvAlgorithmFiling, "网信算备示例")
+	t.Setenv(about.EnvAIModel, "Qwen")
+	t.Setenv(about.EnvAIRegistration, "示例登记")
+	off := AppConfigHash()
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_personalized_recommend_default"] != false {
+		t.Fatalf("default = %#v", obj["tellomi_personalized_recommend_default"])
+	}
+	for _, key := range []string{"tellomi_algorithm_filing_number", "tellomi_ai_model_name", "tellomi_ai_registration_number"} {
+		if _, ok := obj[key]; ok {
+			t.Fatalf("%s published while disclosure is off: %#v", key, obj[key])
+		}
+	}
+
+	t.Setenv(about.EnvEnabled, "1")
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_ABOUT_DISCLOSURE")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_personalized_recommend_default"] != true || obj["tellomi_algorithm_filing_number"] != "网信算备示例" {
+		t.Fatalf("recommend %#v filing %#v", obj["tellomi_personalized_recommend_default"], obj["tellomi_algorithm_filing_number"])
+	}
+	if obj["tellomi_ai_model_name"] != "Qwen" || obj["tellomi_ai_registration_number"] != "示例登记" {
+		t.Fatalf("model %#v reg %#v", obj["tellomi_ai_model_name"], obj["tellomi_ai_registration_number"])
 	}
 }
 

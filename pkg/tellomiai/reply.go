@@ -74,6 +74,19 @@ func Advertised() bool {
 	return envOn(EnvEnabled) && strings.TrimSpace(getenv(EnvAPIKey)) != ""
 }
 
+// TranslateAdvertised is help.getAppConfig tellomi_translate_enabled.
+// It is true only when TELLOMI_TRANSLATE=1 and TELLOMI_AI_API_KEY is set.
+func TranslateAdvertised() bool {
+	return envOn(EnvTranslate) && strings.TrimSpace(getenv(EnvAPIKey)) != ""
+}
+
+// ComposeAdvertised is help.getAppConfig tellomi_ai_compose_enabled.
+// It is true only when TELLOMI_AI_COMPOSE=1 and TELLOMI_AI_API_KEY is set.
+// TELLOMI_AI is a separate switch for the @tellomi account.
+func ComposeAdvertised() bool {
+	return envOn(EnvCompose) && strings.TrimSpace(getenv(EnvAPIKey)) != ""
+}
+
 // Enabled reports whether private replies and the engine endpoint are live.
 func Enabled() bool {
 	installedMu.RLock()

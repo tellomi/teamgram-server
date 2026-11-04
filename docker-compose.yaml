@@ -150,8 +150,12 @@ services:
       TELLOMI_HUAWEI_APP_SECRET: ${TELLOMI_HUAWEI_APP_SECRET:-}
       TELLOMI_HUAWEI_HOST: ${TELLOMI_HUAWEI_HOST:-}
       TELLOMI_HUAWEI_TOKEN_URL: ${TELLOMI_HUAWEI_TOKEN_URL:-}
-      # help.getAppUpdate. Empty VERSION answers help.noAppUpdate. iOS sessions
-      # ignore these and always receive help.noAppUpdate. See .env.example.
+      # help.getAppUpdate. Empty MANIFEST reads a local synced latest.json
+      # if one exists, otherwise https://www.tellomi.cn/dl/android/latest.json.
+      # off disables that feed. Non-empty VERSION replaces the manifest;
+      # leave it empty so each Android release prompts from latest.json.
+      # iOS sessions always receive help.noAppUpdate. See .env.example.
+      TELLOMI_APP_UPDATE_MANIFEST: ${TELLOMI_APP_UPDATE_MANIFEST:-}
       TELLOMI_APP_UPDATE_VERSION: ${TELLOMI_APP_UPDATE_VERSION:-}
       TELLOMI_APP_UPDATE_TEXT: ${TELLOMI_APP_UPDATE_TEXT:-}
       TELLOMI_APP_UPDATE_URL: ${TELLOMI_APP_UPDATE_URL:-}
@@ -173,6 +177,13 @@ services:
       # 1 switches it to https://tellomi.cn/help (D-40). The page is not
       # served by this container.
       TELLOMI_HELP_CENTER: ${TELLOMI_HELP_CENTER:-}
+      # About page and the personalized-recommendation default (D-50 / D-58 / D-59).
+      # Unset leaves tellomi_personalized_recommend_default false and omits
+      # the filing number, model name, and registration number.
+      TELLOMI_ABOUT_DISCLOSURE: ${TELLOMI_ABOUT_DISCLOSURE:-}
+      TELLOMI_ALGORITHM_FILING_NUMBER: ${TELLOMI_ALGORITHM_FILING_NUMBER:-}
+      TELLOMI_AI_PUBLIC_MODEL: ${TELLOMI_AI_PUBLIC_MODEL:-}
+      TELLOMI_AI_REGISTRATION_NUMBER: ${TELLOMI_AI_REGISTRATION_NUMBER:-}
       TELLOMI_USERNAME_POLICY: ${TELLOMI_USERNAME_POLICY:-}
       # Aliyun Green / Bailian text moderation for Han display names,
       # bios, and group titles.
@@ -195,6 +206,11 @@ services:
       TELLOMI_DISCOVER_RELATIONS: ${TELLOMI_DISCOVER_RELATIONS:-}
       TELLOMI_DISCOVER_RELATION_KEY: ${TELLOMI_DISCOVER_RELATION_KEY:-}
       TELLOMI_DISCOVER_RELATION_ADDR: ${TELLOMI_DISCOVER_RELATION_ADDR:-}
+      # Privacy-filtered profile cards for content-engine. Unset is off.
+      # See docs/discover-profiles.md. Do not publish this port.
+      TELLOMI_DISCOVER_PROFILES: ${TELLOMI_DISCOVER_PROFILES:-}
+      TELLOMI_DISCOVER_PROFILE_KEY: ${TELLOMI_DISCOVER_PROFILE_KEY:-}
+      TELLOMI_DISCOVER_PROFILE_ADDR: ${TELLOMI_DISCOVER_PROFILE_ADDR:-}
       # Account deletion notifies content-engine. Unset is off.
       # See docs/discover-account-deletion.md.
       TELLOMI_DISCOVER_DELETE: ${TELLOMI_DISCOVER_DELETE:-}
@@ -217,6 +233,12 @@ services:
       TELLOMI_AI_PRICE_PER_1K: ${TELLOMI_AI_PRICE_PER_1K:-}
       TELLOMI_AI_INTERNAL_KEY: ${TELLOMI_AI_INTERNAL_KEY:-}
       TELLOMI_AI_ADDR: ${TELLOMI_AI_ADDR:-}
+      # messages.translateText / translateRichMessage. Unset is off.
+      # Requires TELLOMI_AI_API_KEY. Off or a model failure is TRANSLATE_REQ_FAILED.
+      TELLOMI_TRANSLATE: ${TELLOMI_TRANSLATE:-}
+      # messages.composeRichMessageWithAI. Unset is off. tellomi_ai_compose_enabled
+      # is true only together with TELLOMI_AI_API_KEY. Off is AICOMPOSE_TIMEOUT.
+      TELLOMI_AI_COMPOSE: ${TELLOMI_AI_COMPOSE:-}
       # Launch notices from @admin. Unset is off. See docs/api/announce.md.
       # Do not publish this port. This does not run during login.
       TELLOMI_ANNOUNCE: ${TELLOMI_ANNOUNCE:-}

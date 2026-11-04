@@ -5,7 +5,7 @@ account.changeAuthorizationSettings,account,P1,interactive,yes,yes,yes,yes,imple
 account.changePhone,account,P0,startup,yes,yes,no,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.checkUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCUsernames,app/bff/usernames/client/usernames_client.go
 account.clearRecentEmojiStatuses,account,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCEmojiStatus,app/bff/premium/internal/server/grpc/service/features.go
-account.confirmBotConnection,account,P1,interactive,yes,yes,no,no,stub,error,yes,stub,RPCAccount,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/account/internal/core/account.confirmBotConnection_handler.go
+account.confirmBotConnection,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.confirmPasswordEmail,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTwoFa,app/bff/twofa/internal/server/grpc/service/twofa_service_impl.go
 account.confirmPhone,account,P0,startup,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAccount,app/bff/account/client/account_client.go
 account.createBusinessChatLink,business,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessChatLinks,app/bff/business/internal/server/grpc/service/handlers.go
@@ -341,7 +341,7 @@ messages.clearRecentReactions,messages,P1,interactive,yes,yes,no,yes,implemented
 messages.clearRecentStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.clickSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 messages.composeMessageWithAI,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
-messages.composeRichMessageWithAI,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.composeRichMessageWithAI_handler.go
+messages.composeRichMessageWithAI,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.createChat,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
 messages.createForumTopic,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCForums,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.declineUrlAuth,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSeamless,app/bff/seamless/service.go
@@ -561,7 +561,7 @@ messages.toggleStickerSets,stickers,P2,interactive,yes,yes,no,yes,implemented,ok
 messages.toggleSuggestedPostApproval,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSuggestedPosts,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.toggleTodoCompleted,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTodoLists,app/bff/messages/internal/server/grpc/service/todo_lists.go
 messages.transcribeAudio,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranscription,app/bff/premium/internal/server/grpc/service/features.go
-messages.translateRichMessage,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.translateRichMessage_handler.go
+messages.translateRichMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 messages.translateText,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCTranslation,app/bff/channels/internal/server/grpc/service/handlers_translate.go
 messages.uninstallStickerSet,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
 messages.unpinAllMessages,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go

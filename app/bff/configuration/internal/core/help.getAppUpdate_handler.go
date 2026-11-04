@@ -31,6 +31,9 @@ import (
 // https://core.telegram.org/method/help.getAppUpdate
 //
 // Compares the signed-in client's app version with the published release.
+// The release is latest.json: TELLOMI_APP_UPDATE_MANIFEST, a local synced
+// file, or https://www.tellomi.cn/dl/android/latest.json. A non-empty
+// TELLOMI_APP_UPDATE_VERSION replaces that manifest.
 // help.noAppUpdate means the client is current or no release is published.
 // iOS (session lang_pack "ios") always receives help.noAppUpdate: that client
 // opens a blocking page whose button only launches App Store id 0.
