@@ -198,8 +198,8 @@
     "android/en": {
       "source_file": "android_en_v61510239.xml",
       "source_version": 61510239,
-      "strings": 11703,
-      "bytes_gz": 188651
+      "strings": 11816,
+      "bytes_gz": 190134
     },
     "android/ar": {
       "source_file": "android_ar_v61561860.xml",
@@ -378,14 +378,14 @@
     "android/zh-hans": {
       "source_file": "android_zh-hans_v61570949.xml",
       "source_version": 61570949,
-      "strings": 11600,
-      "bytes_gz": 216026
+      "strings": 11901,
+      "bytes_gz": 240565
     },
     "android/zh-hant": {
       "source_file": "android_zh-hant_v61519200.xml",
       "source_version": 61519200,
-      "strings": 11585,
-      "bytes_gz": 213978
+      "strings": 11786,
+      "bytes_gz": 232881
     },
     "tdesktop/en": {
       "source_file": "tdesktop_en_v6016588.strings",

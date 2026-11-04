@@ -143,6 +143,9 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	cat := DefaultCatalog()
+	// The key table has 103 rows. Tellomi. occurs 104 times in the note because
+	// the prose also says Tellomi.Discover.*. AvatarFailed and AvatarRetry are
+	// both here. The iOS strings files and the city catalog have no extra key.
 	if len(iosDiscoverSignUp) != 103 {
 		t.Fatalf("keys %d", len(iosDiscoverSignUp))
 	}
