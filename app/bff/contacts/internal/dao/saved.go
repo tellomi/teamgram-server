@@ -3,6 +3,7 @@ package dao
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 
@@ -33,6 +34,10 @@ type SavedBook interface {
 	List(ctx context.Context, userID int64) ([]SavedPhone, error)
 	UnregisteredCount(ctx context.Context, userID int64) (int32, error)
 	ResetUnregistered(ctx context.Context, userID int64) error
+	// DeletePhones removes phone-book rows for contacts.deleteByPhones.
+	// Registered rows are deleted by the user service; this drops the
+	// unregistered copy so saved_count stays honest.
+	DeletePhones(ctx context.Context, userID int64, phones []string) error
 }
 
 // SQLSaved reads user_contacts and unregistered_contacts.
@@ -98,6 +103,28 @@ func (s *SQLSaved) ResetUnregistered(ctx context.Context, userID int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE unregistered_contacts SET imported = 1
 		WHERE importer_user_id = ? AND imported = 0`, userID)
+	return err
+}
+
+// DeletePhones marks the given unregistered phone-book rows as imported.
+func (s *SQLSaved) DeletePhones(ctx context.Context, userID int64, phones []string) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	keys := phoneKeys(phones)
+	if len(keys) == 0 {
+		return nil
+	}
+	args := make([]any, 0, len(keys)+1)
+	args = append(args, userID)
+	holders := make([]string, len(keys))
+	for i, phone := range keys {
+		holders[i] = "?"
+		args = append(args, phone)
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE unregistered_contacts SET imported = 1
+		WHERE importer_user_id = ? AND imported = 0 AND phone IN (`+strings.Join(holders, ",")+`)`, args...)
 	return err
 }
 

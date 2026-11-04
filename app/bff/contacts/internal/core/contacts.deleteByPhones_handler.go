@@ -25,7 +25,20 @@ import (
 // ContactsDeleteByPhones
 // contacts.deleteByPhones#1013fd9e phones:Vector<string> = Bool;
 func (c *ContactsCore) ContactsDeleteByPhones(in *mtproto.TLContactsDeleteByPhones) (*mtproto.Bool, error) {
-	// @benqi: clients not use
-
+	rows, err := c.contactRows()
+	if err != nil {
+		c.Logger.Errorf("contacts.deleteByPhones - error: %v", err)
+		return nil, err
+	}
+	if err := c.removeContactIDs(contactIDsForPhones(rows, in.GetPhones())); err != nil {
+		c.Logger.Errorf("contacts.deleteByPhones - error: %v", err)
+		return nil, err
+	}
+	if store := c.savedBook(); store != nil {
+		if err := store.DeletePhones(c.ctx, c.MD.UserId, in.GetPhones()); err != nil {
+			c.Logger.Errorf("contacts.deleteByPhones - saved: %v", err)
+			return nil, err
+		}
+	}
 	return mtproto.BoolTrue, nil
 }
