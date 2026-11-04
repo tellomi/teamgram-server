@@ -26,7 +26,7 @@ Chat invite RPCs (`messages.exportChatInvite`, `messages.getExportedChatInvites`
 
 ## Routing snapshot
 
-From `docs/api-coverage.md` on this tree: called methods are routed. The three P1 methods that still returned `ENTERPRISE_IS_BLOCKED` — `messages.translateRichMessage`, `messages.composeRichMessageWithAI`, and `account.confirmBotConnection` — now have handlers. They are not on the login path. `messages.translateRichMessage` uses the same lexicon as `messages.translateText`. Rich compose does not call a model; proofread, emojify, and tone return the source rich message, and `translate_to_lang` uses that lexicon. `account.confirmBotConnection` returns `BOT_ID_INVALID` unless `bot_id` is a bot, then stores the confirmation and returns `boolTrue`. Login, session routing, and `auth.importBotAuthorization` / `auth.importWebTokenAuthorization` / `auth.checkPaidAuth` are unchanged.
+From `docs/api-coverage.md` on this tree: called methods are routed. `messages.translateText`, `messages.translateRichMessage`, and `messages.composeRichMessageWithAI` call Bailian (`qwen-plus`, then `deepseek-v3`) when their flags are on. Translation needs `TELLOMI_TRANSLATE=1` and `TELLOMI_AI_API_KEY`. Compose needs `TELLOMI_AI_COMPOSE=1` and the same key, which is also when `tellomi_ai_compose_enabled` is true. Off or a model failure is `TRANSLATE_REQ_FAILED` or `AICOMPOSE_TIMEOUT`. `account.confirmBotConnection` returns `BOT_ID_INVALID` unless `bot_id` is a bot, then stores the confirmation and returns `boolTrue`. Login, session routing, and `auth.importBotAuthorization` / `auth.importWebTokenAuthorization` / `auth.checkPaidAuth` are unchanged.
 
 The gaps below are `partial` or `stub` inside methods the routing matrix already calls implemented.
 
@@ -276,9 +276,6 @@ These are called, routed, and fail until the product exists. They are not chat-l
 
 | Method | Why |
 | --- | --- |
-| `account.confirmBotConnection` | Bot connection confirmation is not implemented. |
-| `messages.composeRichMessageWithAI` | No model provider behind the RPC. Left as an error on purpose. |
-| `messages.translateRichMessage` | Plain `messages.translateText` is separate and implemented. |
 | `upload.getFile` | Sticker-set thumbnail location when the plugin is absent. Ordinary files and secret-chat files are served. |
 | `upload.getFileHashes` | Whole method. |
 | `upload.getWebFile` | One location branch. |

@@ -2,10 +2,7 @@ package chatbox
 
 import (
 	"context"
-	"sort"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/proto"
@@ -15,14 +12,13 @@ import (
 // https://core.telegram.org/method/messages.translateText
 // https://core.telegram.org/method/messages.togglePeerTranslations
 //
-// There is no external machine-translation provider. A valid to_lang returns
-// messages.translateResult. Text that carries message entities is returned
-// unchanged so entity offsets stay valid. Plain text is rewritten with a
-// small built-in lexicon for en↔zh; every other supported language keeps
-// the source wording. The optional tone is accepted and does not change
-// the lexicon. togglePeerTranslations only stores the viewer's per-peer
-// flag (userFull.translations_disabled / channelFull.translations_disabled).
-// An explicit translateText call still runs when that flag is set.
+// Translation calls the Bailian client in pkg/tellomiai when
+// TELLOMI_TRANSLATE=1 and TELLOMI_AI_API_KEY are set. Otherwise, and when
+// the model call fails, the result is TRANSLATE_REQ_FAILED. Entity offsets
+// are UTF-16 and are moved with the translated spans. Code, URLs, mentions,
+// and custom emoji stay as written. togglePeerTranslations only stores the
+// viewer's per-peer flag. An explicit translateText call still runs when
+// that flag is set.
 
 type plainDoc struct {
 	Text string   `json:"text"`
@@ -157,24 +153,22 @@ func (b *Book) NoteSent(ctx context.Context, user int64, peer *mtproto.PeerUtil,
 	}
 }
 
+// TranslateInput is one messages.translateText fragment.
+type TranslateInput struct {
+	Text     string
+	Entities []*mtproto.MessageEntity
+	ToLang   string
+	FromLang string
+	Tone     string
+}
+
 // TranslateText builds messages.translateResult for one piece of text.
-func TranslateText(text string, entities []*mtproto.MessageEntity, toLang string) (*mtproto.TextWithEntities, error) {
-	if !ValidToLang(toLang) {
+// https://core.telegram.org/method/messages.translateText
+func TranslateText(ctx context.Context, in TranslateInput) (*mtproto.TextWithEntities, error) {
+	if !ValidToLang(in.ToLang) {
 		return nil, mtproto.ErrToLangInvalid
 	}
-	out := text
-	outEnt := entities
-	if len(entities) == 0 {
-		out = applyLexicon(text, toLang)
-		outEnt = []*mtproto.MessageEntity{}
-	}
-	if outEnt == nil {
-		outEnt = []*mtproto.MessageEntity{}
-	}
-	return mtproto.MakeTLTextWithEntities(&mtproto.TextWithEntities{
-		Text:     out,
-		Entities: outEnt,
-	}).To_TextWithEntities(), nil
+	return rewritePlain(ctx, in.Text, in.Entities, translateJob(in))
 }
 
 // ValidToLang reports whether to_lang is a language code this server accepts.
@@ -185,96 +179,6 @@ func ValidToLang(code string) bool {
 	}
 	_, ok := supportedLangs[code]
 	return ok
-}
-
-func applyLexicon(text, toLang string) string {
-	toLang = strings.ToLower(toLang)
-	var table map[string]string
-	switch {
-	case strings.HasPrefix(toLang, "zh"):
-		table = enToZH
-	case toLang == "en" || strings.HasPrefix(toLang, "en-"):
-		table = zhToEN
-	default:
-		return text
-	}
-	if len(table) == 0 || text == "" {
-		return text
-	}
-	if repl, ok := table[strings.ToLower(strings.TrimSpace(text))]; ok {
-		return repl
-	}
-	return replaceWords(text, table)
-}
-
-func replaceWords(text string, table map[string]string) string {
-	keys := make([]string, 0, len(table))
-	for key := range table {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
-	lower := strings.ToLower(text)
-	var b strings.Builder
-	i := 0
-	for i < len(text) {
-		matched := false
-		for _, key := range keys {
-			if !strings.HasPrefix(lower[i:], key) {
-				continue
-			}
-			next := i + len(key)
-			if asciiKey(key) && next < len(text) {
-				r, _ := utf8.DecodeRuneInString(text[next:])
-				if unicode.IsLetter(r) || unicode.IsDigit(r) {
-					continue
-				}
-			}
-			b.WriteString(table[key])
-			i = next
-			matched = true
-			break
-		}
-		if matched {
-			continue
-		}
-		r, size := utf8.DecodeRuneInString(text[i:])
-		if r == utf8.RuneError && size == 1 {
-			b.WriteByte(text[i])
-			i++
-			continue
-		}
-		// Keep scanning ASCII words that the prefix search already handled
-		// one key at a time. A non-matching byte is copied as itself.
-		b.WriteRune(r)
-		i += size
-	}
-	return b.String()
-}
-
-var enToZH = map[string]string{
-	"hello":     "你好",
-	"hi":        "你好",
-	"thanks":    "谢谢",
-	"thank you": "谢谢",
-	"yes":       "是",
-	"no":        "不是",
-	"ok":        "好的",
-	"okay":      "好的",
-	"goodbye":   "再见",
-	"bye":       "再见",
-	"please":    "请",
-	"sorry":     "对不起",
-}
-
-var zhToEN = map[string]string{
-	"你好":  "hello",
-	"谢谢":  "thanks",
-	"是":   "yes",
-	"不是":  "no",
-	"好的":  "ok",
-	"再见":  "goodbye",
-	"请":   "please",
-	"对不起": "sorry",
 }
 
 // supportedLangs is the to_lang set messages.translateText accepts.
@@ -292,15 +196,6 @@ var supportedLangs = map[string]struct{}{
 	"si": {}, "sk": {}, "sl": {}, "sq": {}, "sr": {}, "sv": {}, "sw": {},
 	"ta": {}, "te": {}, "th": {}, "tr": {}, "uk": {}, "ur": {}, "uz": {},
 	"vi": {}, "zh": {}, "zh-cn": {}, "zh-tw": {}, "zh-hans": {}, "zh-hant": {},
-}
-
-func asciiKey(key string) bool {
-	for i := 0; i < len(key); i++ {
-		if key[i] >= 0x80 {
-			return false
-		}
-	}
-	return true
 }
 
 func itoa(n int) string {

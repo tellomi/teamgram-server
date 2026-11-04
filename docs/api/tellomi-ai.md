@@ -12,7 +12,11 @@
 
 定时消息不触发回复。群聊不在这一期。
 
-`help.getAppConfig` 的 `tellomi_ai_enabled` 为 true 时，客户端可以显示入口。官方客户端不读这个键。`tellomi_ai_compose_enabled` 仍是 false。输入栏的 `messages.composeRichMessageWithAI` 不调用百炼：校对、加表情和语气把原文还回去，`translate_to_lang` 用和 `messages.translateText` 一样的本地词表。
+`help.getAppConfig` 的 `tellomi_ai_enabled` 为 true 时，客户端可以显示入口。官方客户端不读这个键。
+
+`messages.translateText` 和 `messages.translateRichMessage` 另走 `TELLOMI_TRANSLATE=1`，并且同样要有 `TELLOMI_AI_API_KEY`。`tellomi_translate_enabled` 只在这两样都有时为 true。关掉或模型失败是 `500 TRANSLATE_REQ_FAILED`，不返回原文冒充译文。
+
+`messages.composeRichMessageWithAI` 走 `TELLOMI_AI_COMPOSE=1` 加上同一把 key。`tellomi_ai_compose_enabled` 只在这两样都有时为 true。校对、加表情、语气和 `translate_to_lang` 都调用百炼（`qwen-plus`，失败再换 `deepseek-v3`）。关掉或模型失败是 `500 AICOMPOSE_TIMEOUT`。不返回 `AICOMPOSE_FLOOD_PREMIUM`。这两个开关都不依赖 `TELLOMI_AI`。
 
 | 情况 | 用户看到的文字 |
 | --- | --- |
@@ -88,6 +92,8 @@ Content-Type: application/json
 | `TELLOMI_AI_PRICE_PER_1K` | 空 | 每 1000 token 的价钱，用来算预算。空则不计花费 |
 | `TELLOMI_AI_INTERNAL_KEY` | 空 | 引擎调用的密钥。缺了只关这个 HTTP，私聊仍可用 |
 | `TELLOMI_AI_ADDR` | `127.0.0.1:8814` | `off` 不监听 |
+| `TELLOMI_TRANSLATE` | 关 | `1` 才启用 `messages.translateText` / `messages.translateRichMessage`。还要有 API key |
+| `TELLOMI_AI_COMPOSE` | 关 | `1` 才启用 `messages.composeRichMessageWithAI`。还要有 API key。`tellomi_ai_compose_enabled` 跟着它 |
 
 表 `tellomi_ai_reply` 在 `teamgramd/deploy/sql/migrate-20261106-tellomi-ai.sql`。
 

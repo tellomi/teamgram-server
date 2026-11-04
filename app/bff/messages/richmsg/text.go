@@ -1,13 +1,17 @@
 package richmsg
 
 import (
+	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -16,12 +20,9 @@ const walkLimit = 32
 var htmlTag = regexp.MustCompile(`<[^>]*>`)
 var mdLink = regexp.MustCompile(`\[([^\[\]]+)\]\([^)]+\)`)
 
-func translateString(text, toLang string) (string, error) {
-	out, err := chatbox.TranslateText(text, nil, toLang)
-	if err != nil {
-		return "", err
-	}
-	return out.GetText(), nil
+type slot struct {
+	text string
+	set  func(string)
 }
 
 func htmlPlain(s string) string {
@@ -152,93 +153,119 @@ func richPlain(text *mtproto.RichText, depth int) string {
 	}
 }
 
-func translateInput(in *mtproto.InputRichMessage, toLang string) (*mtproto.RichMessage, error) {
+func rewriteInput(ctx context.Context, in *mtproto.InputRichMessage, job tellomiai.Job) (*mtproto.RichMessage, error) {
 	if in == nil {
 		return paragraph("", false), nil
 	}
 	switch in.GetPredicateName() {
 	case mtproto.Predicate_inputRichMessageHTML:
-		plain := htmlPlain(in.GetHtml())
-		out, err := translateString(plain, toLang)
-		if err != nil {
-			return nil, err
-		}
-		return paragraph(out, in.GetRtl()), nil
+		plain, ents := parseHTML(in.GetHtml())
+		return plainToRich(ctx, plain, ents, in.GetRtl(), job)
 	case mtproto.Predicate_inputRichMessageMarkdown:
-		plain := markdownPlain(in.GetMarkdown())
-		out, err := translateString(plain, toLang)
-		if err != nil {
-			return nil, err
-		}
-		return paragraph(out, in.GetRtl()), nil
+		plain, ents := parseMarkdown(in.GetMarkdown())
+		return plainToRich(ctx, plain, ents, in.GetRtl(), job)
 	default:
-		if err := translateBlocks(in.GetBlocks(), toLang, 0); err != nil {
+		blocks := cloneBlocks(in.GetBlocks())
+		if err := rewriteBlocks(ctx, blocks, job); err != nil {
 			return nil, err
 		}
-		return richFromBlocks(in.GetRtl(), in.GetBlocks()), nil
+		return richFromBlocks(in.GetRtl(), blocks), nil
 	}
 }
 
-func translateBlocks(blocks []*mtproto.PageBlock, toLang string, depth int) error {
-	if depth > walkLimit {
+func plainToRich(ctx context.Context, plain string, ents []*mtproto.MessageEntity, rtl bool, job tellomiai.Job) (*mtproto.RichMessage, error) {
+	out, err := chatbox.RewritePlain(ctx, plain, ents, job)
+	if err != nil {
+		return nil, err
+	}
+	return richFromPlain(out.GetText(), out.GetEntities(), rtl), nil
+}
+
+func rewriteBlocks(ctx context.Context, blocks []*mtproto.PageBlock, job tellomiai.Job) error {
+	var slots []slot
+	collectBlocks(blocks, &slots, 0)
+	return applySlots(ctx, slots, job)
+}
+
+func applySlots(ctx context.Context, slots []slot, job tellomiai.Job) error {
+	if len(slots) == 0 {
 		return nil
+	}
+	texts := make([]string, len(slots))
+	for i, one := range slots {
+		texts[i] = one.text
+	}
+	job.Texts = texts
+	out, err := tellomiai.Rewrite(ctx, job)
+	if err != nil {
+		return failJob(job, err)
+	}
+	for i, one := range slots {
+		one.set(out[i])
+	}
+	return nil
+}
+
+func failJob(job tellomiai.Job, err error) error {
+	if errors.Is(err, tellomiai.ErrTooLong) {
+		return mtproto.ErrInputTextTooLong
+	}
+	if job.Mode == tellomiai.ModeCompose {
+		return mtproto.ErrAiComposeTimeout
+	}
+	return mtproto.ErrTranslateReqFailed
+}
+
+func cloneBlocks(blocks []*mtproto.PageBlock) []*mtproto.PageBlock {
+	out := make([]*mtproto.PageBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if block == nil {
+			continue
+		}
+		cp, ok := proto.Clone(block).(*mtproto.PageBlock)
+		if !ok || cp == nil {
+			continue
+		}
+		out = append(out, cp)
+	}
+	return out
+}
+
+func collectBlocks(blocks []*mtproto.PageBlock, slots *[]slot, depth int) {
+	if depth > walkLimit {
+		return
 	}
 	for _, block := range blocks {
 		if block == nil {
 			continue
 		}
-		if err := translateRich(block.GetText(), toLang, depth+1); err != nil {
-			return err
-		}
-		if err := translateRich(block.GetAuthor_RICHTEXT(), toLang, depth+1); err != nil {
-			return err
-		}
-		if err := translateRich(block.GetCaption_RICHTEXT(), toLang, depth+1); err != nil {
-			return err
-		}
-		if err := translateRich(block.GetTitle(), toLang, depth+1); err != nil {
-			return err
-		}
+		freeze := block.GetPredicateName() == mtproto.Predicate_pageBlockPreformatted
+		collectRich(block.GetText(), freeze, slots, depth+1)
+		collectRich(block.GetAuthor_RICHTEXT(), false, slots, depth+1)
+		collectRich(block.GetCaption_RICHTEXT(), false, slots, depth+1)
+		collectRich(block.GetTitle(), false, slots, depth+1)
 		if cap := block.GetCaption_PAGECAPTION(); cap != nil {
-			if err := translateRich(cap.GetText(), toLang, depth+1); err != nil {
-				return err
-			}
-			if err := translateRich(cap.GetCredit(), toLang, depth+1); err != nil {
-				return err
-			}
+			collectRich(cap.GetText(), false, slots, depth+1)
+			collectRich(cap.GetCredit(), false, slots, depth+1)
 		}
-		if err := translateBlocks(block.GetBlocks(), toLang, depth+1); err != nil {
-			return err
-		}
-		if err := translateBlocks(block.GetItems_VECTORPAGEBLOCK(), toLang, depth+1); err != nil {
-			return err
-		}
+		collectBlocks(block.GetBlocks(), slots, depth+1)
+		collectBlocks(block.GetItems_VECTORPAGEBLOCK(), slots, depth+1)
 		if cover := block.GetCover(); cover != nil {
-			if err := translateBlocks([]*mtproto.PageBlock{cover}, toLang, depth+1); err != nil {
-				return err
-			}
+			collectBlocks([]*mtproto.PageBlock{cover}, slots, depth+1)
 		}
 		for _, item := range block.GetItems_VECTORPAGELISTITEM() {
 			if item == nil {
 				continue
 			}
-			if err := translateRich(item.GetText(), toLang, depth+1); err != nil {
-				return err
-			}
-			if err := translateBlocks(item.GetBlocks(), toLang, depth+1); err != nil {
-				return err
-			}
+			collectRich(item.GetText(), false, slots, depth+1)
+			collectBlocks(item.GetBlocks(), slots, depth+1)
 		}
 		for _, item := range block.GetItems_VECTORPAGELISTORDEREDITEM() {
 			if item == nil {
 				continue
 			}
-			if err := translateRich(item.GetText(), toLang, depth+1); err != nil {
-				return err
-			}
-			if err := translateBlocks(item.GetBlocks(), toLang, depth+1); err != nil {
-				return err
-			}
+			collectRich(item.GetText(), false, slots, depth+1)
+			collectBlocks(item.GetBlocks(), slots, depth+1)
 		}
 		for _, row := range block.GetRows() {
 			if row == nil {
@@ -248,79 +275,52 @@ func translateBlocks(blocks []*mtproto.PageBlock, toLang string, depth int) erro
 				if cell == nil {
 					continue
 				}
-				if err := translateRich(cell.GetText(), toLang, depth+1); err != nil {
-					return err
-				}
+				collectRich(cell.GetText(), false, slots, depth+1)
 			}
 		}
 		for _, article := range block.GetArticles() {
 			if article == nil {
 				continue
 			}
-			if err := translateValue(article.GetTitle(), toLang); err != nil {
-				return err
-			}
-			if err := translateValue(article.GetDescription(), toLang); err != nil {
-				return err
-			}
-			if err := translateValue(article.GetAuthor(), toLang); err != nil {
-				return err
-			}
+			collectValue(article.GetTitle(), slots)
+			collectValue(article.GetDescription(), slots)
+			collectValue(article.GetAuthor(), slots)
 		}
 	}
-	return nil
 }
 
-func translateValue(v *wrapperspb.StringValue, toLang string) error {
-	if v == nil {
-		return nil
+func collectValue(v *wrapperspb.StringValue, slots *[]slot) {
+	if v == nil || strings.TrimSpace(v.GetValue()) == "" {
+		return
 	}
-	out, err := translateString(v.GetValue(), toLang)
-	if err != nil {
-		return err
-	}
-	v.Value = out
-	return nil
+	captured := v
+	*slots = append(*slots, slot{text: v.GetValue(), set: func(s string) { captured.Value = s }})
 }
 
-func translateRich(text *mtproto.RichText, toLang string, depth int) error {
-	if text == nil || depth > walkLimit {
-		return nil
+func collectRich(text *mtproto.RichText, freeze bool, slots *[]slot, depth int) {
+	if text == nil || depth > walkLimit || freeze {
+		return
 	}
 	switch text.GetPredicateName() {
 	case mtproto.Predicate_textPlain:
-		out, err := translateString(text.GetText_STRING(), toLang)
-		if err != nil {
-			return err
+		if strings.TrimSpace(text.GetText_STRING()) == "" {
+			return
 		}
-		text.Text_STRING = out
-		return nil
-	case mtproto.Predicate_textMath:
-		out, err := translateString(text.GetSource(), toLang)
-		if err != nil {
-			return err
-		}
-		text.Source = out
-		return nil
+		captured := text
+		*slots = append(*slots, slot{text: text.GetText_STRING(), set: func(s string) { captured.Text_STRING = s }})
+	case mtproto.Predicate_textMath, mtproto.Predicate_textFixed,
+		mtproto.Predicate_textEmpty, mtproto.Predicate_textImage, mtproto.Predicate_textCustomEmoji:
+		return
 	case mtproto.Predicate_textConcat:
 		for _, part := range text.GetTexts() {
-			if err := translateRich(part, toLang, depth+1); err != nil {
-				return err
-			}
+			collectRich(part, false, slots, depth+1)
 		}
-		return nil
-	case mtproto.Predicate_textEmpty, mtproto.Predicate_textImage, mtproto.Predicate_textCustomEmoji:
-		return nil
 	default:
-		if err := translateRich(text.GetText_RICHTEXT(), toLang, depth+1); err != nil {
-			return err
-		}
+		collectRich(text.GetText_RICHTEXT(), false, slots, depth+1)
 		for _, part := range text.GetTexts() {
-			if err := translateRich(part, toLang, depth+1); err != nil {
-				return err
-			}
+			collectRich(part, false, slots, depth+1)
 		}
-		return translateRich(text.GetOldText(), toLang, depth+1)
+		collectRich(text.GetOldText(), false, slots, depth+1)
 	}
 }
 
@@ -342,12 +342,12 @@ func richFromBlocks(rtl bool, blocks []*mtproto.PageBlock) *mtproto.RichMessage 
 	}).To_RichMessage()
 }
 
-func copyPlain(text string, entities []*mtproto.MessageEntity, toLang string) (*mtproto.RichMessage, error) {
-	out, err := chatbox.TranslateText(text, entities, toLang)
+func copyPlain(ctx context.Context, text string, entities []*mtproto.MessageEntity, job tellomiai.Job) (*mtproto.RichMessage, error) {
+	out, err := chatbox.RewritePlain(ctx, text, entities, job)
 	if err != nil {
 		return nil, err
 	}
-	return paragraph(out.GetText(), false), nil
+	return richFromPlain(out.GetText(), out.GetEntities(), false), nil
 }
 
 func visible(msg *mtproto.RichMessage) string {

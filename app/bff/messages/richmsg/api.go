@@ -1,11 +1,12 @@
 // Package richmsg serves the layer-232 rich-text translate and AI compose
 // methods official clients call from the chat screen.
 //
-// Translation uses the same lexicon as messages.translateText. There is no
-// external translation provider. Proofread, emojify, and tone do not call a
-// model: the original rich message is returned, matching
-// messages.composeMessageWithAI. help.getAppConfig keeps
-// tellomi_ai_compose_enabled false.
+// Both call the Bailian client in pkg/tellomiai (qwen-plus, then deepseek-v3).
+// Translation runs only when TELLOMI_TRANSLATE=1 and TELLOMI_AI_API_KEY are
+// set. Compose runs only when TELLOMI_AI_COMPOSE=1 and the same key are set,
+// which is also when help.getAppConfig reports tellomi_ai_compose_enabled.
+// A flag that is off, or a model error, is an official RPC error.
+// The source text is not returned in place of a model result.
 package richmsg
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/aicompose"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 )
 
 // PlainFunc loads one stored message when the chatbox index does not have it.
@@ -28,19 +30,25 @@ func Translate(ctx context.Context, self int64, in *mtproto.TLMessagesTranslateR
 	if in == nil || !chatbox.ValidToLang(in.GetToLang()) {
 		return nil, mtproto.ErrToLangInvalid
 	}
-	if in.GetTone() != nil && toneTooLong(in.GetTone().GetValue()) {
-		return nil, mtproto.ErrToLangInvalid
+	tone := ""
+	if in.GetTone() != nil {
+		tone = in.GetTone().GetValue()
+		if toneTooLong(tone) {
+			return nil, mtproto.ErrToLangInvalid
+		}
 	}
+	type item struct {
+		in   *mtproto.InputRichMessage
+		text string
+		ents []*mtproto.MessageEntity
+		byID bool
+	}
+	var items []item
 	texts := in.GetText()
-	var out []*mtproto.RichMessage
 	if len(texts) > 0 {
-		out = make([]*mtproto.RichMessage, 0, len(texts))
+		items = make([]item, 0, len(texts))
 		for _, text := range texts {
-			one, err := translateInput(text, in.GetToLang())
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, one)
+			items = append(items, item{in: text})
 		}
 	} else {
 		if in.GetPeer() == nil {
@@ -54,7 +62,7 @@ func Translate(ctx context.Context, self int64, in *mtproto.TLMessagesTranslateR
 		if len(ids) == 0 {
 			return nil, mtproto.ErrMessageIdsEmpty
 		}
-		out = make([]*mtproto.RichMessage, 0, len(ids))
+		items = make([]item, 0, len(ids))
 		for _, id := range ids {
 			if id <= 0 {
 				return nil, mtproto.ErrMessageIdInvalid
@@ -66,12 +74,28 @@ func Translate(ctx context.Context, self int64, in *mtproto.TLMessagesTranslateR
 			if !ok {
 				return nil, mtproto.ErrMessageIdInvalid
 			}
-			one, err := copyPlain(text, ents, in.GetToLang())
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, one)
+			items = append(items, item{text: text, ents: ents, byID: true})
 		}
+	}
+	if !tellomiai.TranslateAdvertised() {
+		return nil, mtproto.ErrTranslateReqFailed
+	}
+	job := tellomiai.Job{Mode: tellomiai.ModeTranslate, ToLang: in.GetToLang(), Tone: tone}
+	out := make([]*mtproto.RichMessage, 0, len(items))
+	for _, item := range items {
+		var (
+			one *mtproto.RichMessage
+			err error
+		)
+		if item.byID {
+			one, err = copyPlain(ctx, item.text, item.ents, job)
+		} else {
+			one, err = rewriteInput(ctx, item.in, job)
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, one)
 	}
 	return mtproto.MakeTLMessagesTranslatedRichMessage(&mtproto.Messages_TranslatedRichMessage{
 		Result: out,
@@ -80,8 +104,7 @@ func Translate(ctx context.Context, self int64, in *mtproto.TLMessagesTranslateR
 
 // Compose implements messages.composeRichMessageWithAI.
 // https://core.telegram.org/method/messages.composeMessageWithAI
-// translate_to_lang uses the lexicon. The other modes keep the source text.
-func Compose(in *mtproto.TLMessagesComposeRichMessageWithAI) (*mtproto.Messages_ComposedRichMessageWithAI, error) {
+func Compose(ctx context.Context, in *mtproto.TLMessagesComposeRichMessageWithAI) (*mtproto.Messages_ComposedRichMessageWithAI, error) {
 	if in == nil || inputEmpty(in.GetText()) {
 		return nil, mtproto.ErrMessageEmpty
 	}
@@ -97,19 +120,27 @@ func Compose(in *mtproto.TLMessagesComposeRichMessageWithAI) (*mtproto.Messages_
 	if in.GetTranslateToLang() != nil {
 		lang = strings.TrimSpace(in.GetTranslateToLang().GetValue())
 	}
-	var (
-		msg *mtproto.RichMessage
-		err error
-	)
-	if lang != "" {
-		if !chatbox.ValidToLang(lang) {
-			return nil, mtproto.ErrToLangInvalid
-		}
-		msg, err = translateInput(in.GetText(), lang)
-	} else {
-		// Proofread, emojify, and tone have no model. The draft stays as written.
-		msg, err = passThrough(in.GetText())
+	if lang != "" && !chatbox.ValidToLang(lang) {
+		return nil, mtproto.ErrToLangInvalid
 	}
+	if !tellomiai.ComposeAdvertised() {
+		return nil, mtproto.ErrAiComposeTimeout
+	}
+	tone := ""
+	if in.GetTone() != nil {
+		var err error
+		tone, err = aicompose.Instruction(in.GetTone())
+		if err != nil {
+			return nil, err
+		}
+	}
+	msg, err := rewriteInput(ctx, in.GetText(), tellomiai.Job{
+		Mode:      tellomiai.ModeCompose,
+		ToLang:    lang,
+		Tone:      tone,
+		Proofread: in.GetProofread(),
+		Emojify:   in.GetEmojify(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -124,19 +155,4 @@ func composeTask(in *mtproto.TLMessagesComposeRichMessageWithAI) bool {
 	}
 	lang := in.GetTranslateToLang()
 	return lang != nil && strings.TrimSpace(lang.GetValue()) != ""
-}
-
-// passThrough rebuilds the rich message without the lexicon.
-func passThrough(in *mtproto.InputRichMessage) (*mtproto.RichMessage, error) {
-	if in == nil {
-		return paragraph("", false), nil
-	}
-	switch in.GetPredicateName() {
-	case mtproto.Predicate_inputRichMessageHTML:
-		return paragraph(htmlPlain(in.GetHtml()), in.GetRtl()), nil
-	case mtproto.Predicate_inputRichMessageMarkdown:
-		return paragraph(markdownPlain(in.GetMarkdown()), in.GetRtl()), nil
-	default:
-		return richFromBlocks(in.GetRtl(), in.GetBlocks()), nil
-	}
 }

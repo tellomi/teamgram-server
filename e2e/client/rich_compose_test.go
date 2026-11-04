@@ -10,10 +10,10 @@ import (
 )
 
 // TestRichTranslateAndCompose is the chat-screen path that used to return
-// ENTERPRISE_IS_BLOCKED: translating a formatted draft, translating a sent
-// message, and the AI editor button. There is no composer model, so
-// proofread keeps the source text. translate_to_lang uses the same lexicon
-// as messages.translateText.
+// ENTERPRISE_IS_BLOCKED. Translation and compose call Bailian only when
+// TELLOMI_TRANSLATE / TELLOMI_AI_COMPOSE are on. CI leaves both off, so a
+// valid call is TRANSLATE_REQ_FAILED or AICOMPOSE_TIMEOUT rather than a
+// word-list or echo result.
 func TestRichTranslateAndCompose(t *testing.T) {
 	a, _, _, bSelf := sharedPair(t)
 	ctx, cancel := contextTimeout(40 * time.Second)
@@ -28,18 +28,12 @@ func TestRichTranslateAndCompose(t *testing.T) {
 	})
 	assertRichError(t, err, "TO_LANG_INVALID")
 
-	translated, err := a.Invoke(ctx, &mtproto.TLMessagesTranslateRichMessage{
+	_, err = a.Invoke(ctx, &mtproto.TLMessagesTranslateRichMessage{
 		Constructor: mtproto.CRC32_messages_translateRichMessage,
 		ToLang:      "zh-hans",
 		Text:        []*mtproto.InputRichMessage{hello},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows := translatedRich(t, translated)
-	if len(rows) != 1 || richPlain(rows[0]) != "你好" {
-		t.Fatalf("draft translate %#v", rows)
-	}
+	assertRichError(t, err, "TRANSLATE_REQ_FAILED")
 
 	// peer and id share flag bit 0. An omitted id is not encoded, and the
 	// session drops the frame. An empty vector is the call with no message ids.
@@ -55,19 +49,13 @@ func TestRichTranslateAndCompose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	byID, err := a.Invoke(ctx, &mtproto.TLMessagesTranslateRichMessage{
+	_, err = a.Invoke(ctx, &mtproto.TLMessagesTranslateRichMessage{
 		Constructor: mtproto.CRC32_messages_translateRichMessage,
 		ToLang:      "zh",
 		Peer:        peer,
 		Id:          []int32{id},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows = translatedRich(t, byID)
-	if len(rows) != 1 || richPlain(rows[0]) != "你好" {
-		t.Fatalf("message translate %#v", rows)
-	}
+	assertRichError(t, err, "TRANSLATE_REQ_FAILED")
 
 	_, err = a.Invoke(ctx, &mtproto.TLMessagesComposeRichMessageWithAI{
 		Constructor: mtproto.CRC32_messages_composeRichMessageWithAI,
@@ -80,29 +68,19 @@ func TestRichTranslateAndCompose(t *testing.T) {
 	})
 	assertRichError(t, err, "AI_COMPOSE_TASK_MISSING")
 
-	kept, err := a.Invoke(ctx, &mtproto.TLMessagesComposeRichMessageWithAI{
+	_, err = a.Invoke(ctx, &mtproto.TLMessagesComposeRichMessageWithAI{
 		Constructor: mtproto.CRC32_messages_composeRichMessageWithAI,
 		Proofread:   true,
 		Text:        hello,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if richPlain(composedRich(t, kept)) != "hello" {
-		t.Fatalf("proofread %#v", kept)
-	}
+	assertRichError(t, err, "AICOMPOSE_TIMEOUT")
 
-	composed, err := a.Invoke(ctx, &mtproto.TLMessagesComposeRichMessageWithAI{
+	_, err = a.Invoke(ctx, &mtproto.TLMessagesComposeRichMessageWithAI{
 		Constructor:     mtproto.CRC32_messages_composeRichMessageWithAI,
 		Text:            hello,
 		TranslateToLang: &wrapperspb.StringValue{Value: "zh-hans"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if richPlain(composedRich(t, composed)) != "你好" {
-		t.Fatalf("compose translate %#v", composed)
-	}
+	assertRichError(t, err, "AICOMPOSE_TIMEOUT")
 }
 
 // TestConfirmBotConnection is the dialog a client shows when a user connects
@@ -251,44 +229,4 @@ func assertRichError(t *testing.T, err error, want string) {
 	if rpc.Message != want {
 		t.Fatalf("got %s, want %s", rpc.Message, want)
 	}
-}
-
-func translatedRich(t *testing.T, obj mtproto.TLObject) []*mtproto.RichMessage {
-	t.Helper()
-	switch v := obj.(type) {
-	case *mtproto.TLMessagesTranslatedRichMessage:
-		return v.GetResult()
-	case *mtproto.Messages_TranslatedRichMessage:
-		return v.GetResult()
-	default:
-		t.Fatalf("translated %T", obj)
-		return nil
-	}
-}
-
-func composedRich(t *testing.T, obj mtproto.TLObject) *mtproto.RichMessage {
-	t.Helper()
-	switch v := obj.(type) {
-	case *mtproto.TLMessagesComposedRichMessageWithAI:
-		return v.GetResult()
-	case *mtproto.Messages_ComposedRichMessageWithAI:
-		return v.GetResult()
-	default:
-		t.Fatalf("composed %T", obj)
-		return nil
-	}
-}
-
-func richPlain(msg *mtproto.RichMessage) string {
-	if msg == nil {
-		return ""
-	}
-	var b strings.Builder
-	for _, block := range msg.GetBlocks() {
-		if block == nil || block.GetText() == nil {
-			continue
-		}
-		b.WriteString(block.GetText().GetText_STRING())
-	}
-	return b.String()
 }

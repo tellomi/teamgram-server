@@ -50,9 +50,23 @@ func (s TranslationService) MessagesTranslateText(ctx context.Context, in *mtpro
 		}
 		parts = loaded
 	}
+	tone := ""
+	if in.GetTone() != nil {
+		tone = in.GetTone().GetValue()
+	}
+	from := ""
+	if in.GetFromLang() != nil {
+		from = in.GetFromLang().GetValue()
+	}
 	out := make([]*mtproto.TextWithEntities, 0, len(parts))
 	for _, part := range parts {
-		one, err := chatbox.TranslateText(part.text, part.entities, in.GetToLang())
+		one, err := chatbox.TranslateText(ctx, chatbox.TranslateInput{
+			Text:     part.text,
+			Entities: part.entities,
+			ToLang:   in.GetToLang(),
+			FromLang: from,
+			Tone:     tone,
+		})
 		if err != nil {
 			return nil, err
 		}

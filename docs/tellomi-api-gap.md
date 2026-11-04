@@ -98,13 +98,13 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ### `messages.translateRichMessage`
 
-翻译按钮在富文本消息上走这个方法，不走已经实现的 `messages.translateText`。规则和普通翻译一样：`to_lang` 不在词表里是 `400 TO_LANG_INVALID`；带了 `text` 就翻这几段，否则用 `peer` + `id` 读已发出的消息。空 id 列表是 `MESSAGE_IDS_EMPTY`，找不到的 id 是 `MESSAGE_ID_INVALID`，peer 不对是 `PEER_ID_INVALID`。`tone` 超过 64 个字符同样是 `TO_LANG_INVALID`，不改变译文。
+翻译按钮在富文本消息上走这个方法，不走 `messages.translateText`。两条都调用百炼，并且都要 `TELLOMI_TRANSLATE=1` 和 `TELLOMI_AI_API_KEY`。`to_lang` 不在语言表里是 `400 TO_LANG_INVALID`；带了 `text` 就翻这几段，否则用 `peer` + `id` 读已发出的消息。空 id 列表是 `MESSAGE_IDS_EMPTY`，找不到的 id 是 `MESSAGE_ID_INVALID`，peer 不对是 `PEER_ID_INVALID`。`tone` 超过 64 个字符同样是 `TO_LANG_INVALID`。开关关掉、没有 key、或模型失败是 `500 TRANSLATE_REQ_FAILED`，不把原文当译文返回。
 
-没有外部翻译服务。英文和中文之间用 `messages.translateText` 同一份小词表（例如 `hello` → `你好`），别的语言原文返回。带 message entity 的普通消息保持原文，避免偏移错位。HTML 和 Markdown 先抽成纯文本再放进一个段落。块结构里的 `textPlain` 按叶子翻译，粗体这类外层保留。结果是 `messages.translatedRichMessage`，照片和文件向量是空的（块里的 photo id 还在）。
+主模型 `qwen-plus`，失败或超时再换 `deepseek-v3`（仍走百炼）。百炼内容安全拦住时不换模型。`TELLOMI_CONTENT_SAFETY` 打开时，译文再过一遍文本审核，拦住也是 `TRANSLATE_REQ_FAILED`。块结构原样保留，只改叶子上的文字；代码块不改。HTML / Markdown 里的粗体和链接留在结果里。已发出的消息上的 entity 按 UTF-16 跟着译文移动。结果是 `messages.translatedRichMessage`，照片和文件向量是空的。`messages.translateText` 用同一套模型和同一把开关。
 
 ### `messages.composeRichMessageWithAI`
 
-输入栏的 AI 按钮。没有模型，`help.getAppConfig` 的 `tellomi_ai_compose_enabled` 仍是 false，不调用百炼。这和已经实现的 `messages.composeMessageWithAI` 一样：空文本是 `MESSAGE_EMPTY`，没带校对、翻译、语气或加表情是 `AI_COMPOSE_TASK_MISSING`，不认识的语气是 `AICOMPOSE_TONE_INVALID`。校对、加表情和语气把原文还回去，草稿不会被清掉，客户端也不会停在错误页。`translate_to_lang` 用上面的词表。不返回 `AICOMPOSE_FLOOD_PREMIUM`，Tellomi 没有这道 Premium 门槛。
+输入栏的 AI 按钮。`TELLOMI_AI_COMPOSE=1` 并且有 `TELLOMI_AI_API_KEY` 时，`help.getAppConfig` 的 `tellomi_ai_compose_enabled` 才是 true，校对、加表情、语气和 `translate_to_lang` 都调用上面的百炼模型。两个条件缺一，或者模型失败，是 `500 AICOMPOSE_TIMEOUT`，不把原文还回去。空文本是 `MESSAGE_EMPTY`，没指定任务是 `AI_COMPOSE_TASK_MISSING`，不认识的语气是 `AICOMPOSE_TONE_INVALID`。不返回 `AICOMPOSE_FLOOD_PREMIUM`。这块不依赖 `TELLOMI_AI`。
 
 ### `account.confirmBotConnection`
 
@@ -128,6 +128,6 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ## 还留着的
 
-- 输入栏 AI 没有模型。校对、语气、加表情只把原文还回去。`tellomi_ai_compose_enabled` 保持 false。
+- 输入栏 AI 默认关。`TELLOMI_AI_COMPOSE` 不是 `1`，或没有百炼 key 时，`tellomi_ai_compose_enabled` 是 false，调用返回 `AICOMPOSE_TIMEOUT`。
 - `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些，这次不改登录流程。
 - v2.1 里不在这几个 RPC 上的项见 `docs/design/chat-standby.md` 的 M8 表：帮助页默认仍是 `https://tellomi.cn/faq`（`TELLOMI_HELP_CENTER=1` 才换成 `https://tellomi.cn/help`）、发现的海外读副本和离线队列、`@tellomi` 群聊和跨区域额度、FCM / 华为以外的厂商推送、监控告警。个性化推荐开关和「关于」页的算法备案编号不在 `help.getAppConfig` 里。

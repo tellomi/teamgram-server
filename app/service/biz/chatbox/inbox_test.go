@@ -2,9 +2,12 @@ package chatbox
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -69,33 +72,103 @@ func TestQuickReplyCaptureListAndSend(t *testing.T) {
 	}
 }
 
-func TestTranslateLexiconAndPeerFlag(t *testing.T) {
+func TestTranslateModelAndPeerFlag(t *testing.T) {
 	ResetShared()
 	b := Shared()
 	ctx := context.Background()
 	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 4)
-	if _, err := TranslateText("hello", nil, "nope"); err != mtproto.ErrToLangInvalid {
+	if _, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "nope"}); err != mtproto.ErrToLangInvalid {
 		t.Fatalf("lang: %v", err)
 	}
-	zh, err := TranslateText("hello", nil, "zh-hans")
+	t.Setenv("TELLOMI_TRANSLATE", "")
+	t.Setenv("TELLOMI_AI_API_KEY", "")
+	if _, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "zh-hans"}); err != mtproto.ErrTranslateReqFailed {
+		t.Fatalf("flag: %v", err)
+	}
+	t.Setenv("TELLOMI_TRANSLATE", "1")
+	t.Setenv("TELLOMI_AI_API_KEY", "test-key")
+	tellomiai.SetHook(func(_ context.Context, job tellomiai.Job) ([]string, error) {
+		out := make([]string, len(job.Texts))
+		for i, text := range job.Texts {
+			switch strings.TrimSpace(text) {
+			case "hello":
+				if strings.HasPrefix(job.ToLang, "zh") {
+					out[i] = strings.Replace(text, "hello", "你好", 1)
+					continue
+				}
+				if job.ToLang == "fr" {
+					out[i] = strings.Replace(text, "hello", "bonjour", 1)
+					continue
+				}
+			case "world":
+				if strings.HasPrefix(job.ToLang, "zh") {
+					out[i] = strings.Replace(text, "world", "世界", 1)
+					continue
+				}
+			case "你好":
+				if job.ToLang == "en" {
+					out[i] = "hello"
+					continue
+				}
+			}
+			out[i] = text
+		}
+		return out, nil
+	})
+	t.Cleanup(func() { tellomiai.SetHook(nil) })
+	zh, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "zh-hans"})
 	if err != nil || zh.GetText() != "你好" {
 		t.Fatalf("zh %+v %v", zh, err)
 	}
-	kept, err := TranslateText("hello", []*mtproto.MessageEntity{{
+	bold := &mtproto.MessageEntity{
 		PredicateName: mtproto.Predicate_messageEntityBold,
 		Offset:        0,
 		Length:        5,
-	}}, "zh")
-	if err != nil || kept.GetText() != "hello" || len(kept.GetEntities()) != 1 {
+	}
+	kept, err := TranslateText(ctx, TranslateInput{
+		Text:     "hello world",
+		Entities: []*mtproto.MessageEntity{bold},
+		ToLang:   "zh",
+	})
+	if err != nil || kept.GetText() != "你好 世界" || len(kept.GetEntities()) != 1 {
 		t.Fatalf("entities %+v %v", kept, err)
 	}
-	en, err := TranslateText("你好", nil, "en")
+	if kept.GetEntities()[0].GetOffset() != 0 || kept.GetEntities()[0].GetLength() != int32(mtproto.UTF16Len("你好")) {
+		t.Fatalf("bold span %+v", kept.GetEntities()[0])
+	}
+	if bold.GetLength() != 5 {
+		t.Fatal("source entity was rewritten")
+	}
+	url := "http://a.test"
+	raw := "see " + url
+	urlEnt := &mtproto.MessageEntity{
+		PredicateName: mtproto.Predicate_messageEntityUrl,
+		Offset:        int32(mtproto.UTF16Len("see ")),
+		Length:        int32(mtproto.UTF16Len(url)),
+	}
+	linked, err := TranslateText(ctx, TranslateInput{
+		Text:     raw,
+		Entities: []*mtproto.MessageEntity{urlEnt},
+		ToLang:   "zh",
+	})
+	if err != nil || len(linked.GetEntities()) != 1 {
+		t.Fatalf("url %+v %v", linked, err)
+	}
+	units := utf16.Encode([]rune(linked.GetText()))
+	ent := linked.GetEntities()[0]
+	if int(ent.GetOffset())+int(ent.GetLength()) > len(units) {
+		t.Fatalf("url entity out of range %+v", ent)
+	}
+	if got := string(utf16.Decode(units[ent.GetOffset() : ent.GetOffset()+ent.GetLength()])); got != url {
+		t.Fatalf("url span %q", got)
+	}
+	en, err := TranslateText(ctx, TranslateInput{Text: "你好", ToLang: "en"})
 	if err != nil || en.GetText() != "hello" {
 		t.Fatalf("en %+v %v", en, err)
 	}
-	same, err := TranslateText("hello", nil, "fr")
-	if err != nil || same.GetText() != "hello" {
-		t.Fatalf("fr %+v %v", same, err)
+	fr, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "fr"})
+	if err != nil || fr.GetText() != "bonjour" {
+		t.Fatalf("fr %+v %v", fr, err)
 	}
 	b.RememberPlain(ctx, 3, peer, 11, "hello", nil)
 	text, _, ok := b.LookupPlain(ctx, 3, peer, 11)
