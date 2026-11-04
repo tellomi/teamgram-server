@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
 	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
 )
@@ -99,20 +100,12 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 		// inputStickerSetThumb#9d84f3db
 		//	stickerset:InputStickerSet
 		//	thumb_version:int = InputFileLocation;
-		if c.svcCtx.Plugin1 != nil {
-			location2, err := c.svcCtx.Plugin1.GetStickerSetThumbFileLocation(c.ctx,
-				c.MD.UserId,
-				location.GetStickerset(),
-				location.GetThumbVersion())
-			if err != nil {
-				c.Logger.Errorf("upload.getFile - error: %v inputFileLocation", err)
-				return nil, mtproto.ErrStickerIdInvalid
-			}
-			location = location2
-		} else {
-			c.Logger.Errorf("upload.getFile blocked, License key from https://teamgram.net required to unlock enterprise features.")
-			return nil, mtproto.ErrEnterpriseIsBlocked
+		location2, err := c.stickerSetThumb(location)
+		if err != nil {
+			c.Logger.Errorf("upload.getFile - error: %v inputStickerSetThumb", err)
+			return nil, err
 		}
+		location = location2
 	case mtproto.Predicate_inputGroupCallStream:
 		// inputGroupCallStream#bba51639
 		//	call:InputGroupCall
@@ -179,6 +172,29 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 	}
 
 	return uploadFile, nil
+}
+
+// stickerSetThumb turns inputStickerSetThumb into the cover document.
+// The sticker catalog is the source of that cover. A process that did not
+// inject the optional plugin still serves it; it does not return
+// ENTERPRISE_IS_BLOCKED.
+func (c *FilesCore) stickerSetThumb(location *mtproto.InputFileLocation) (*mtproto.InputFileLocation, error) {
+	var (
+		loc *mtproto.InputFileLocation
+		err error
+	)
+	if c != nil && c.svcCtx != nil && c.svcCtx.Plugin1 != nil && c.MD != nil {
+		loc, err = c.svcCtx.Plugin1.GetStickerSetThumbFileLocation(c.ctx, c.MD.UserId, location.GetStickerset(), location.GetThumbVersion())
+	} else {
+		loc, err = catalog.Must().ThumbLocation(location.GetStickerset())
+	}
+	if err != nil {
+		return nil, err
+	}
+	if loc == nil {
+		return nil, mtproto.ErrStickerIdInvalid
+	}
+	return loc, nil
 }
 
 // mediaExpired reports whether location names an object the retention
