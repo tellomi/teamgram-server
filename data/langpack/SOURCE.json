@@ -6,8 +6,8 @@
     "ios/en": {
       "source_file": "ios_en_v22347344.strings",
       "source_version": 22347344,
-      "strings": 12634,
-      "bytes_gz": 214842
+      "strings": 12737,
+      "bytes_gz": 216173
     },
     "ios/ar": {
       "source_file": "ios_ar_v22452751.strings",
@@ -186,14 +186,14 @@
     "ios/zh-hans": {
       "source_file": "ios_zh-hans_v22454343.strings",
       "source_version": 22454343,
-      "strings": 12361,
-      "bytes_gz": 235025
+      "strings": 12570,
+      "bytes_gz": 235926
     },
     "ios/zh-hant": {
       "source_file": "ios_zh-hant_v22421528.strings",
       "source_version": 22421528,
-      "strings": 12334,
-      "bytes_gz": 233340
+      "strings": 12571,
+      "bytes_gz": 231601
     },
     "android/en": {
       "source_file": "android_en_v61510239.xml",

@@ -434,7 +434,7 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatal("real Chat.Message key was lost")
 	}
 	refreshed, err := cat.Difference("ios", "zh-hans", 22454343)
-	if err != nil || refreshed.GetVersion() != 22454344 || len(refreshed.GetStrings()) < 1000 {
+	if err != nil || refreshed.GetVersion() != 22454345 || len(refreshed.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
 	}
 	androidRefreshed, err := cat.Difference("android", "zh-hans", 61570949)
@@ -442,7 +442,7 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatalf("android zh-hans bump %+v %v", androidRefreshed.GetVersion(), err)
 	}
 	hant, err := cat.Difference("ios", "zh-hant", 22421528)
-	if err != nil || hant.GetVersion() != 22421529 || len(hant.GetStrings()) < 1000 {
+	if err != nil || hant.GetVersion() != 22421530 || len(hant.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hant bump v=%d n=%d %v", hant.GetVersion(), len(hant.GetStrings()), err)
 	}
 	hantAndroid, err := cat.Difference("android", "zh-hant", 61519200)
@@ -586,8 +586,9 @@ func TestChineseOverlayIsCurated(t *testing.T) {
 		path string
 		max  int
 	}{
-		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 20},
-		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 20},
+		// 12 curated lines plus the Discover and sign-up keys.
+		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 115},
+		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 115},
 		{"../../data/langpack/overrides/android/zh-hans.json.gz", 10},
 		{"../../data/langpack/overrides/android/zh-hant.json.gz", 10},
 	} {
