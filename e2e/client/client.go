@@ -203,7 +203,33 @@ func (c *Client) SetProfile(p Profile) { c.profile = p }
 func (c *Client) Session() (gotdmt.Session, bool) { return c.handler.Session() }
 
 // Invoke sends one RPC and decodes the layer 232 result.
+// A short FLOOD_WAIT is honored and the same request is sent again. The
+// regression suite creates many chats in one process, and the server asks
+// for a few seconds between them.
 func (c *Client) Invoke(ctx context.Context, req mtproto.TLObject) (mtproto.TLObject, error) {
+	var last error
+	for attempt := 0; attempt < 4; attempt++ {
+		obj, err := c.invokeOnce(ctx, req)
+		if err == nil {
+			return obj, nil
+		}
+		last = err
+		wait, ok := floodWait(err)
+		if !ok {
+			return nil, err
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, last
+}
+
+func (c *Client) invokeOnce(ctx context.Context, req mtproto.TLObject) (mtproto.TLObject, error) {
 	raw, err := encodeTL(req)
 	if err != nil {
 		return nil, err
@@ -217,6 +243,23 @@ func (c *Client) Invoke(ctx context.Context, req mtproto.TLObject) (mtproto.TLOb
 		return nil, err
 	}
 	return out.obj, nil
+}
+
+func floodWait(err error) (time.Duration, bool) {
+	rpc, ok := asRPCError(err)
+	if !ok || rpc.Code != 420 {
+		return 0, false
+	}
+	var n int
+	if _, scanErr := fmt.Sscanf(rpc.Message, "FLOOD_WAIT_%d", &n); scanErr != nil {
+		if _, scanErr = fmt.Sscanf(rpc.Message, "FLOOD_WAIT (%d)", &n); scanErr != nil {
+			return 0, false
+		}
+	}
+	if n < 0 || n > 30 {
+		return 0, false
+	}
+	return time.Duration(n+1) * time.Second, true
 }
 
 // dialObfuscated speaks the obfuscated2 + padded intermediate transport.
