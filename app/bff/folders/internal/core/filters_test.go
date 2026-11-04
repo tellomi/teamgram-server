@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -140,6 +141,88 @@ func TestApplyColorPolicy(t *testing.T) {
 	if next.GetColor() != nil {
 		t.Fatalf("out of range color kept")
 	}
+}
+
+func TestDialogFilterPeersStableOrder(t *testing.T) {
+	filter := titled("People")
+	filter.PinnedPeers = []*mtproto.InputPeer{
+		inUser(9), inChat(2), inUser(3), inChannel(1),
+	}
+	filter.IncludePeers = []*mtproto.InputPeer{
+		inChannel(4), inUser(1), inChat(2),
+	}
+	filter.ExcludePeers = []*mtproto.InputPeer{
+		inUser(8), inUser(2), inChat(1),
+	}
+	shuffled := titled("People")
+	shuffled.PinnedPeers = []*mtproto.InputPeer{
+		inChannel(1), inUser(3), inChat(2), inUser(9),
+	}
+	shuffled.IncludePeers = []*mtproto.InputPeer{
+		inChat(2), inChannel(4), inUser(1),
+	}
+	shuffled.ExcludePeers = []*mtproto.InputPeer{
+		inChat(1), inUser(8), inUser(2),
+	}
+
+	got := prepareStoredFilter(filter)
+	again := prepareStoredFilter(got)
+	other := prepareStoredFilter(shuffled)
+	wantPinned := []string{"user:3", "user:9", "chat:2", "channel:1"}
+	wantInclude := []string{"user:1", "chat:2", "channel:4"}
+	wantExclude := []string{"user:2", "user:8", "chat:1"}
+	for _, f := range []*mtproto.DialogFilter{got, again, other} {
+		if keys := peerKeys(f.GetPinnedPeers()); !sameStrings(keys, wantPinned) {
+			t.Fatalf("pinned %v", keys)
+		}
+		if keys := peerKeys(f.GetIncludePeers()); !sameStrings(keys, wantInclude) {
+			t.Fatalf("include %v", keys)
+		}
+		if keys := peerKeys(f.GetExcludePeers()); !sameStrings(keys, wantExclude) {
+			t.Fatalf("exclude %v", keys)
+		}
+	}
+}
+
+func inUser(id int64) *mtproto.InputPeer {
+	return mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: id}).To_InputPeer()
+}
+
+func inChat(id int64) *mtproto.InputPeer {
+	return mtproto.MakeTLInputPeerChat(&mtproto.InputPeer{ChatId: id}).To_InputPeer()
+}
+
+func inChannel(id int64) *mtproto.InputPeer {
+	return mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{ChannelId: id}).To_InputPeer()
+}
+
+func peerKeys(peers []*mtproto.InputPeer) []string {
+	out := make([]string, 0, len(peers))
+	for _, peer := range peers {
+		switch peer.GetPredicateName() {
+		case mtproto.Predicate_inputPeerUser:
+			out = append(out, "user:"+strconv.FormatInt(peer.GetUserId(), 10))
+		case mtproto.Predicate_inputPeerChat:
+			out = append(out, "chat:"+strconv.FormatInt(peer.GetChatId(), 10))
+		case mtproto.Predicate_inputPeerChannel:
+			out = append(out, "channel:"+strconv.FormatInt(peer.GetChannelId(), 10))
+		default:
+			out = append(out, peer.GetPredicateName())
+		}
+	}
+	return out
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func titled(text string) *mtproto.DialogFilter {

@@ -81,9 +81,8 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 		}).To_Messages_Dialogs(), nil
 	}
 
-	var (
-		dialogCount = int32(dialogExtList.Len())
-	)
+	// messages.dialogsSlice.count is the whole folder view, not this page.
+	dialogCount := dialogExtList.Count()
 
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())
@@ -97,7 +96,7 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 		in.OffsetDate,
 		in.OffsetId,
 		offsetPeer,
-		in.Limit)
+		limit)
 
 	messageDialogs := dialogExtList.DoGetMessagesDialogs(
 		c.ctx,
