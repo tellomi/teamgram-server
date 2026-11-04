@@ -50,6 +50,7 @@ services:
     volumes: !override
       - ./data-staging/logs:/app/logs
       - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
+      - ${TELLOMI_FCM_CREDENTIALS_FILE:-/dev/null}:/etc/tellomi/fcm/service-account.json:ro
 
   # Host-network and monitoring ports belong to the production stack.
   coturn:

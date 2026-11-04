@@ -1,6 +1,6 @@
 # Push notifications
 
-iOS clients (rebranded Telegram-iOS, layer 232) register a device token with `account.registerDevice`. When a new message is delivered, sync sends an APNs HTTP/2 alert to tokens whose owner is the recipient. Android FCM is stored and left unwired: mainland China has no FCM.
+iOS clients (rebranded Telegram-iOS, layer 232) register a device token with `account.registerDevice`. When a new message is delivered, sync sends an APNs HTTP/2 alert to tokens whose owner is the recipient. Android FCM (token type 2) and Huawei Push Kit (token type 13) are sent only when their own flags are on. Both default off. FCM is often unreachable from Chengdu; that attempt is logged and dropped and does not delay APNs, Huawei, or Xiaomi.
 
 Muted chats do not notify, except when the message mentions the recipient. `show_previews` hides the message text. `silent` (and a silent message) sends the alert with no sound.
 
@@ -36,9 +36,10 @@ environment:
   TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
 volumes:
   - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
+  - ${TELLOMI_FCM_CREDENTIALS_FILE:-/dev/null}:/etc/tellomi/fcm/service-account.json:ro
 ```
 
-Point `TELLOMI_APNS_KEY_FILE` at the real `.p8` on the host. The default `/dev/null` keeps `docker compose up` working when push is not configured.
+Point `TELLOMI_APNS_KEY_FILE` at the real `.p8` on the host. Point `TELLOMI_FCM_CREDENTIALS_FILE` at the Firebase service-account JSON. The default `/dev/null` keeps `docker compose up` working when push is not configured. The FCM and Huawei variables are listed in the Android section.
 
 Devices and notify settings live in the existing teamgram MySQL database (`devices`, `user_notify_settings`). The bff uses `ChannelMySQL`; sync uses its `Mysql.DSN`. `TEAMGRAM_MYSQL_DSN` overrides both.
 
@@ -131,19 +132,21 @@ Headers: `apns-push-type: voip`, `apns-priority: 10`, `apns-expiration: 0`. Expi
 
 The JSON is the official `PHONE_CALL_REQUEST` shape. `call_id`, `call_ah`, and `from_id` are strings. `custom.updates` and top-level `updates` are the unpadded base64url of a layer-232 `updates#74ae4240` containing `updatePhoneCall` / `phoneCallRequested` and the caller in `users`. `p` is that same JSON sealed with the device secret, the same MTProto 2.0 seal as a message push. Telegram-iOS decrypts `p`, parses `updates`, and reports CallKit only when the caller user is present. A token with no secret is skipped, because a VoIP push the app cannot decrypt is not reported to CallKit.
 
+The same call is also sent to FCM token type 2 and Huawei token type 13 when those senders are installed. See Android below. An FCM or Huawei row with no secret is skipped. APNs being unconfigured does not suppress the Android ring.
+
 ## Android (FCM, Huawei, and Xiaomi)
 
-Production sends APNs when the `.p8` is mounted. `sync` constructs `push.Service` from `TELLOMI_APNS_*`. FCM and Huawei senders are still not installed. Xiaomi is installed only when `TELLOMI_XIAOMI_PUSH=1`.
+Production sends APNs when the `.p8` is mounted. `sync` constructs `push.Service` from `TELLOMI_APNS_*`, then installs Xiaomi, FCM, and Huawei only when each flag is `1`. Any other value, including unset, leaves that channel stored and unsent. `show_previews = 0` and a passcode (`account.updateDeviceLocked`) clear the message text before any of these senders run, the same way Xiaomi's title and description are built.
 
 | token_type | Client | What this server does |
 | --- | --- | --- |
 | `1` | APNs alert | Sent when the `.p8` is mounted |
-| `2` | FCM | Stored. No sender is installed (`ErrFCMNotConfigured`). Mainland China usually cannot reach FCM |
+| `2` | FCM | Sent only when `TELLOMI_FCM_PUSH=1` and the service-account file loads. Otherwise stored (`ErrFCMNotConfigured`) |
 | `9` | APNs VoIP | Sent for `phoneCallRequested` |
-| `13` | Huawei Push Kit | Stored. No sender is installed (`ErrHuaweiNotConfigured`). `tellomi/Telegram` `TMessagesProj_AppHuawei` registers this type |
-| `14` | Xiaomi Push | Stored. Sent only when `TELLOMI_XIAOMI_PUSH=1` and the AppSecret and package name are set. Not a Telegram API type |
+| `13` | Huawei Push Kit | Sent only when `TELLOMI_HUAWEI_PUSH=1` and the app id and secret are set. `tellomi/Telegram` `TMessagesProj_AppHuawei` registers this type |
+| `14` | Xiaomi Push | Sent only when `TELLOMI_XIAOMI_PUSH=1` and the AppSecret and package name are set. Not a Telegram API type |
 
-OPPO, vivo, Honor, Meizu, and JPush are not sent. `XiaomiUtilities` in the Android client is an MIUI permission helper, not this channel. A phone receives Xiaomi pushes only after the Tellomi Android build registers a MiPush regid as `token_type` 14. Other brands do not get this channel unless that build also ships the Xiaomi Push SDK.
+OPPO, vivo, Honor, Meizu, and JPush are not sent. `XiaomiUtilities` in the Android client is an MIUI permission helper, not this channel. A phone receives Xiaomi pushes only after the Tellomi Android build registers a MiPush regid as `token_type` 14. Other brands do not get this channel unless that build also ships the Xiaomi Push SDK. Honor Push is a separate channel from Huawei; a Honor phone that does not register token type 13 still has no sender.
 
 ### Xiaomi
 
@@ -183,7 +186,44 @@ The FCM data object (every value a string, which the FCM HTTP API requires) is:
 }
 ```
 
-Huawei's listener passes the whole data string to that decryptor, so a future HMS sender must post `p` itself, not this wrapper. `body` is the localized fallback. The official client ignores it and formats `loc_key` with `values-zh`.
+`body` is the localized fallback. The official client ignores it and formats `loc_key` with `values-zh`. `show_previews = 0` switches the key to `MESSAGE_NOTEXT` and omits the message text from `body`, `loc_args`, and the sealed object inside `p`.
+
+### FCM
+
+`POST https://fcm.googleapis.com/v1/projects/<project>/messages:send` (override the origin with `TELLOMI_FCM_HOST`). Header `Authorization: Bearer <oauth access token>`. The access token is an OAuth JWT-bearer grant (`scope` `https://www.googleapis.com/auth/firebase.messaging`) signed with the service-account RSA key. The token endpoint is `token_uri` from that file, or `TELLOMI_FCM_TOKEN_URL`, or `https://oauth2.googleapis.com/token`.
+
+The body is a data message. There is no `notification` block, so FCM cannot draw a banner from the message text. `message.data` is the string map above. `message.android.priority` is `HIGH`. `ttl` is `86400s`, or `60s` when `loc_key` is `PHONE_CALL_REQUEST`.
+
+A call uses the same string map with `loc_key` `PHONE_CALL_REQUEST`, `call_id`, `call_ah`, `from_id`, `updates`, and `p`. The sealed object uses `loc_key` (underscore) plus those call fields. A row with no secret is skipped.
+
+Each HTTP call gives up after 8 seconds. Token fetch plus send, including one 401 retry, gives up after 12 seconds. The attempt runs on its own goroutine and does not take a slot from the Deliver deadline. If 32 attempts are already in flight, the new one is logged and dropped. `UNREGISTERED`, `SENDER_ID_MISMATCH`, `NOT_FOUND`, and `INVALID_ARGUMENT` that names the registration token delete that device row. A timeout, an unreachable dial, or a payload error is logged and the row stays.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TELLOMI_FCM_PUSH` | off | `1` installs the sender. Any other value leaves token type 2 stored and unsent |
+| `TELLOMI_FCM_CREDENTIALS` | empty | Path of the Firebase service-account JSON. Not committed. The private key is not logged. Flag on with a missing or unusable file logs once and does not send |
+| `TELLOMI_FCM_CREDENTIALS_FILE` | `/dev/null` | Host path mounted into the container at `/etc/tellomi/fcm/service-account.json`. Compose sets `TELLOMI_FCM_CREDENTIALS` to that container path when the variable is empty |
+| `TELLOMI_FCM_PROJECT` | file `project_id` | Overrides the FCM project id in the URL |
+| `TELLOMI_FCM_HOST` | `https://fcm.googleapis.com` | Send origin |
+| `TELLOMI_FCM_TOKEN_URL` | file `token_uri`, else `https://oauth2.googleapis.com/token` | OAuth token endpoint |
+
+Chengdu often cannot open either Google host. Leave the flag off there unless a path to Google exists. Huawei and Xiaomi do not wait on this dial.
+
+### Huawei
+
+`POST https://push-api.cloud.huawei.com/v1/<app id>/messages:send` (override the origin with `TELLOMI_HUAWEI_HOST`). Header `Authorization: Bearer <access token>`. The token is `client_credentials` at `https://oauth-login.cloud.huawei.com/oauth2/v3/token` (`TELLOMI_HUAWEI_TOKEN_URL` overrides it), with `client_id` = `TELLOMI_HUAWEI_APP_ID` and `client_secret` = `TELLOMI_HUAWEI_APP_SECRET`. The secret is not logged.
+
+The body is a data message. `message.data` is the raw `p` string, not the FCM wrapper. `message.token` is that one registration token. `android.urgency` is `HIGH`, `android.ttl` is `86400s`, and `android.category` is `IM`. A call uses `SendCall`: `ttl` `60s` and `category` `VOIP`. There is no notification title, so a hidden preview cannot show up in the system tray. The listener passes `data` straight to the decryptor.
+
+Each HTTP call gives up after 8 seconds, and that budget also covers the token fetch. Code `80000000` is success. Code `80300007` (every token invalid) and `80100000` (this token is in `illegal_tokens`) delete the device row. An auth failure refreshes the token once and does not delete the row. Any other error is logged and the row stays.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TELLOMI_HUAWEI_PUSH` | off | `1` installs the sender. Any other value leaves token type 13 stored and unsent |
+| `TELLOMI_HUAWEI_APP_ID` | empty | Push Kit client id. Flag on with an empty id logs once and does not send |
+| `TELLOMI_HUAWEI_APP_SECRET` | empty | Push Kit client secret. Not logged |
+| `TELLOMI_HUAWEI_HOST` | `https://push-api.cloud.huawei.com` | China send origin |
+| `TELLOMI_HUAWEI_TOKEN_URL` | `https://oauth-login.cloud.huawei.com/oauth2/v3/token` | China OAuth endpoint |
 
 ## Clients
 
@@ -196,4 +236,5 @@ iOS `tellomi/Telegram-iOS`:
 Android `tellomi/Telegram`:
 
 - `PushListenerController` handles `PUSH_TYPE_FIREBASE` (2) and `PUSH_TYPE_HUAWEI` (13) only. Both decrypt `p` and format `loc_key` with the app's `LocaleController` (`NotificationMessageAudio` and the rest). The server `body` is ignored, so the same payload is Chinese when the app language is Chinese.
-- There is no Honor, OPPO, vivo, or Meizu sender. A Honor phone without Google Play has no FCM path. The Huawei flavor registers token type 13, and this server still does not send it. Xiaomi is token type 14 and is sent only when `TELLOMI_XIAOMI_PUSH=1`. The client has to register the regid and read `payload` as `p`.
+- FCM is sent when `TELLOMI_FCM_PUSH=1`. Huawei is sent when `TELLOMI_HUAWEI_PUSH=1`. Xiaomi is token type 14 and is sent only when `TELLOMI_XIAOMI_PUSH=1`. The client has to register the regid and read `payload` as `p`.
+- There is no Honor, OPPO, vivo, or Meizu sender. A Honor phone that does not register a Huawei token has no push path.

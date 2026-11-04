@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -127,6 +128,77 @@ func TestIncomingCallWithoutCallerIsNotSent(t *testing.T) {
 	svc.Deliver(ctx, 9, bare)
 	if got.path != "" {
 		t.Fatal("unsafe voip push was sent")
+	}
+}
+
+func TestIncomingCallReachesFCMAndHuawei(t *testing.T) {
+	client, srv, got := newAPNSCapture(t, "app.tellomi.chat")
+	defer srv.Close()
+	store := &MemoryStore{}
+	ctx := context.Background()
+	secret := bytes.Repeat([]byte{0x11}, 256)
+	_ = store.Upsert(ctx, Device{AuthKeyID: 1, UserID: 9, TokenType: TokenAPNS, Token: "alert-token", Secret: secret})
+	_ = store.Upsert(ctx, Device{AuthKeyID: 2, UserID: 9, TokenType: TokenAPNSVoIP, Token: "voip-token", Secret: secret})
+	_ = store.Upsert(ctx, Device{AuthKeyID: 3, UserID: 9, TokenType: TokenFCM, Token: "fcm-token", Secret: secret})
+	_ = store.Upsert(ctx, Device{AuthKeyID: 4, UserID: 9, TokenType: TokenHuawei, Token: "hms-token", Secret: secret})
+	_ = store.Upsert(ctx, Device{AuthKeyID: 5, UserID: 9, TokenType: TokenFCM, Token: "fcm-nosecret"})
+	fcm := &captureFCM{}
+	hms := &captureHuawei{}
+	svc := NewService(store, Config{})
+	svc.apns = client
+	svc.SetFCM(fcm)
+	svc.SetHuawei(hms)
+
+	svc.Deliver(ctx, 9, incomingCallUpdates(t))
+	if got.path != "/3/device/voip-token" {
+		t.Fatalf("apns path %s", got.path)
+	}
+	if got.header.Get("apns-push-type") != "voip" {
+		t.Fatalf("apns type %s", got.header.Get("apns-push-type"))
+	}
+	if fcm.token != "fcm-token" {
+		t.Fatalf("fcm token %q", fcm.token)
+	}
+	var data map[string]string
+	if err := json.Unmarshal(fcm.body, &data); err != nil {
+		t.Fatal(err)
+	}
+	if data["loc_key"] != locKeyPhoneCallRequest || data["call_id"] != "100" || data["call_ah"] != "200" || data["p"] == "" {
+		t.Fatalf("%v", data)
+	}
+	plain, err := DecryptNotification(secret, data["p"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(plain), `"loc_key":"`+locKeyPhoneCallRequest+`"`) {
+		t.Fatalf("%s", plain)
+	}
+	assertCallUpdates(t, data["updates"])
+	if hms.token != "hms-token" || hms.data == "" {
+		t.Fatalf("huawei token %q", hms.token)
+	}
+	hplain, err := DecryptNotification(secret, hms.data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hplain), `"loc_key":"`+locKeyPhoneCallRequest+`"`) {
+		t.Fatalf("%s", hplain)
+	}
+	if _, _, err := BuildAndroidCall(Call{CallID: 100, CallerID: 3, Updates: incomingCallUpdates(t)}, nil); err == nil {
+		t.Fatal("missing secret must not produce an android call payload")
+	}
+}
+
+func TestIncomingCallReachesFCMWhenAPNSIsOff(t *testing.T) {
+	store := &MemoryStore{}
+	secret := bytes.Repeat([]byte{0x11}, 256)
+	_ = store.Upsert(context.Background(), Device{AuthKeyID: 3, UserID: 9, TokenType: TokenFCM, Token: "fcm-token", Secret: secret})
+	fcm := &captureFCM{}
+	svc := NewService(store, Config{})
+	svc.SetFCM(fcm)
+	svc.Deliver(context.Background(), 9, incomingCallUpdates(t))
+	if fcm.token != "fcm-token" || !strings.Contains(string(fcm.body), locKeyPhoneCallRequest) {
+		t.Fatalf("token %q body %s", fcm.token, fcm.body)
 	}
 }
 

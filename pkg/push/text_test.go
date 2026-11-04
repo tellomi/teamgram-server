@@ -411,10 +411,12 @@ func TestDeliverUsesDeviceLang(t *testing.T) {
 }
 
 type captureHuawei struct {
-	data string
+	token string
+	data  string
 }
 
-func (c *captureHuawei) Send(_ context.Context, _ string, data string) error {
+func (c *captureHuawei) Send(_ context.Context, token string, data string) error {
+	c.token = token
 	c.data = data
 	return nil
 }

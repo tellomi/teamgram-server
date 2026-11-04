@@ -173,12 +173,21 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 ## Xiaomi push (M8 / D-68)
 
-`TELLOMI_XIAOMI_PUSH=1` sends token type 14 through MiPush (`pkg/push/xiaomi.go`). Unset leaves the token stored and unsent, same as FCM and Huawei today. `account.registerDevice` is unchanged: it already stores any positive `token_type`. Login and session routing are unchanged. The contract is `docs/push.md`.
+`TELLOMI_XIAOMI_PUSH=1` sends token type 14 through MiPush (`pkg/push/xiaomi.go`). Unset leaves the token stored and unsent. `account.registerDevice` is unchanged: it already stores any positive `token_type`. Login and session routing are unchanged. The contract is `docs/push.md`.
 
 | Call | File | Hook |
 | --- | --- | --- |
 | sync startup | `app/messenger/sync/internal/svc/service_context.go` | `push.LoadXiaomi` then `SetXiaomi` |
 | deliver | `pkg/push/service.go` | `TokenXiaomi` |
+
+## FCM and Huawei push (M8 / D-68)
+
+`TELLOMI_FCM_PUSH=1` sends token type 2 through FCM HTTP v1 (`pkg/push/fcm.go`). `TELLOMI_HUAWEI_PUSH=1` sends token type 13 through Huawei Push Kit (`pkg/push/huawei.go`). Unset leaves each token stored and unsent. No new RPC and no new table. The FCM attempt does not share its deadline with APNs, Huawei, or Xiaomi. The contract is `docs/push.md`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| sync startup | `app/messenger/sync/internal/svc/service_context.go` | `push.LoadFCM` then `SetFCM`; `push.LoadHuawei` then `SetHuawei` |
+| deliver | `pkg/push/service.go` | `TokenFCM`, `TokenHuawei`, including `phoneCallRequested` |
 
 ## Discover push (M3 / D-18)
 

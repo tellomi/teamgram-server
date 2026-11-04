@@ -121,7 +121,7 @@ Postgres for content-engine and the engine process are not in this compose file.
 | D-63 R2 in front of a CDN | `TELLOMI_S3_PUBLIC_MEDIA_BASE_URL` and `TELLOMI_S3_ATTACHMENTS_BASE_URL` already exist. Binding the hostname is Cloudflare configuration. See [storage.md](../storage.md). |
 | D-64, D-65, D-66 feed split, Supabase replica, offline queue | content-engine and the clients. Not this process. |
 | D-67 `@tellomi` on Cloud Run | The server path is in-process and off unless `TELLOMI_AI=1`. The daily counter is per process. A second region cannot share it until that counter moves to a store both sides read. Not built here. |
-| D-68 push | APNs is sent when the `.p8` is mounted. Xiaomi is sent only when `TELLOMI_XIAOMI_PUSH=1` (token type 14). FCM and Huawei tokens are stored and not sent. Other Android brands have no channel. Whether Chengdu can reach FCM was not measured from this repo. See [push.md](../push.md). |
+| D-68 push | APNs is sent when the `.p8` is mounted. Xiaomi (`TELLOMI_XIAOMI_PUSH=1`, token type 14), FCM (`TELLOMI_FCM_PUSH=1`, token type 2), and Huawei (`TELLOMI_HUAWEI_PUSH=1`, token type 13) each default off. A blocked FCM dial is logged and dropped and does not delay the other channels. OPPO, vivo, Honor, and Meizu still have no sender. See [push.md](../push.md). |
 | D-69 alerts | Still no monitor and no pager. The memory note above is the recount. |
 | D-71 privacy text | The public privacy page, not this server. |
 
