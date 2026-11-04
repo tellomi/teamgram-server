@@ -8,7 +8,10 @@ import (
 
 func TestConvertBytesToMp4(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.Fatal("ffmpeg is required to transcode an animated GIF")
+		t.Skip("ffmpeg is not installed")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe is not installed")
 	}
 	gif, err := os.ReadFile("safe_image.gif")
 	if err != nil {
