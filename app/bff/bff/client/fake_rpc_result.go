@@ -247,18 +247,6 @@ func (c *BFFProxyClient) TryReturnFakeRpcResult(ctx context.Context, object mtpr
 			Datas: []*mtproto.EmojiLanguage{},
 		}, nil
 
-	// reports
-	case "TLAccountReportPeer":
-		return mtproto.BoolTrue, nil
-	case "TLAccountReportProfilePhoto":
-		return mtproto.BoolTrue, nil
-	case "TLChannelsReportSpam":
-		return mtproto.BoolTrue, nil
-	case "TLMessagesReport":
-		return mtproto.BoolTrue, nil
-	case "TLMessagesReportSpam":
-		return mtproto.BoolTrue, nil
-
 	// phone
 	case "TLPhoneGetCallConfig":
 		return mtproto.MakeTLDataJSON(&mtproto.DataJSON{

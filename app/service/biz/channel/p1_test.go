@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -148,6 +149,7 @@ func TestAntispamBoostsAutotranslationForumView(t *testing.T) {
 }
 
 func TestRecommendationsLeftChannelsAndSpam(t *testing.T) {
+	report.ResetShared()
 	svc, ctx := newTest(t)
 	home := megagroup(t, svc, ctx, "Home")
 	in := inCh(home)
@@ -204,16 +206,42 @@ func TestRecommendationsLeftChannelsAndSpam(t *testing.T) {
 		t.Fatalf("missing public recommendation: %+v", rec.Chats)
 	}
 
+	rows, err := report.Shared().List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spam int
+	for _, row := range rows {
+		if row.Source == report.SourceChannelSpam {
+			spam++
+			if row.SubjectUserID != 2 || len(row.ObjectIDs) != 1 {
+				t.Fatalf("channel spam %+v", row)
+			}
+		}
+	}
+	if spam != 1 {
+		t.Fatalf("channel spam rows %d", spam)
+	}
 	if _, err := svc.RecordPeerReport(ctx, 1, &mtproto.InputPeer{
 		PredicateName: mtproto.Predicate_inputPeerUser,
 		UserId:        4,
-	}, "spam", "nope", 0); err != nil {
+	}, report.SourcePeer, "spam", "nope", 0); err != nil {
 		t.Fatal(err)
 	}
-	if len(svc.PeerReports()) != 1 {
-		t.Fatalf("reports %d", len(svc.PeerReports()))
+	rows, err = report.Shared().List(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := svc.RecordPeerReport(ctx, 1, nil, "", "", 0); err == nil {
+	var peers int
+	for _, row := range rows {
+		if row.Source == report.SourcePeer && row.PeerID == 4 && row.Message == "nope" {
+			peers++
+		}
+	}
+	if peers != 1 {
+		t.Fatalf("peer reports %d", peers)
+	}
+	if _, err := svc.RecordPeerReport(ctx, 1, nil, report.SourcePeer, "", "", 0); err == nil {
 		t.Fatal("empty peer accepted")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
 )
 
@@ -124,6 +125,7 @@ func (s *Service) reportBool(ctx context.Context, peer *mtproto.InputPeer, ids [
 	if reason != nil && reason.GetPredicateName() != "" {
 		opt = []byte(reason.GetPredicateName())
 	}
+	ctx = report.WithLang(ctx, md.GetLangCode())
 	if _, err = story.Shared().Report(ctx, md.GetUserId(), owner, hash, ids, opt, message, md.GetLangCode()); err != nil {
 		return nil, err
 	}

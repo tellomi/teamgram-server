@@ -63,9 +63,6 @@ type Service struct {
 	mu     sync.Mutex
 	push   Hooks
 	loaded bool
-
-	reportMu    sync.Mutex
-	peerReports []PeerReport
 }
 
 func New(store Store) *Service {

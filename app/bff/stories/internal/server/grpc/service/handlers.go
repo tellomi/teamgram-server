@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
 )
 
@@ -326,6 +327,7 @@ func (s *Service) StoriesReport19D8EB45(ctx context.Context, in *mtproto.TLStori
 	if err != nil {
 		return nil, err
 	}
+	ctx = report.WithLang(ctx, md.GetLangCode())
 	return story.Shared().Report(ctx, md.GetUserId(), owner, hash, in.GetId(), in.GetOption(), in.GetMessage(), md.GetLangCode())
 }
 

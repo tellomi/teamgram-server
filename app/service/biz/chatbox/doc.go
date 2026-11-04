@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS chatbox_doc (
 // Book is the process-wide store for polls, scheduled messages, private-chat
 // reactions, the default double-tap reaction, in-chat bot state (inline
 // results, attach menu, web apps, prepared messages), quick replies,
-// translation flags, saved-message reaction tags, and message reports.
+// translation flags, and saved-message reaction tags. User reports go to
+// biz/report. Delivery, listen, and read signals stay in this book.
 type Book struct {
 	mu        sync.Mutex
 	db        docDB
@@ -73,7 +74,7 @@ type Book struct {
 	transOff  map[string]bool
 	tags      map[int64]*tagDoc
 	paid      map[string][]*mtproto.MessageExtendedMedia
-	reports   []reportItem
+	signals   []reportItem
 	ids       msgIDMap
 	now       func() time.Time
 }
@@ -152,6 +153,8 @@ func UseDSN(dsn string) error {
 		_ = db.Close()
 		return err
 	}
+	// The capped reports document is retired. Rows now live in the reports table.
+	_, _ = db.ExecContext(ctx, `DELETE FROM chatbox_doc WHERE doc_key=?`, "reports")
 	regMu.Lock()
 	prev := shared
 	shared = newBook(sqlDocs{db: db})

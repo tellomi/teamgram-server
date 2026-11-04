@@ -4,19 +4,17 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 )
 
 // MessagesReportFC78AF9B is messages.report.
 // https://core.telegram.org/method/messages.report
 func (ReportsService) MessagesReportFC78AF9B(ctx context.Context, in *mtproto.TLMessagesReportFC78AF9B) (*mtproto.ReportResult, error) {
 	self, _ := actor(ctx)
-	lang := ""
-	if md := metadata.RpcMetadataFromIncoming(ctx); md != nil {
-		lang = md.GetLangCode()
-	}
+	lang := langCode(ctx)
+	ctx = report.WithLang(ctx, lang)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	return chatbox.Shared().ReportMessages(ctx, self, peer, in.GetId(), in.GetOption(), in.GetMessage(), lang)
 }
@@ -25,6 +23,7 @@ func (ReportsService) MessagesReportFC78AF9B(ctx context.Context, in *mtproto.TL
 // It takes a ReportReason and returns Bool.
 func (ReportsService) MessagesReport8953AB4E(ctx context.Context, in *mtproto.TLMessagesReport8953AB4E) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
+	ctx = report.WithLang(ctx, langCode(ctx))
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	reason := ""
 	if in.GetReason() != nil {
@@ -72,6 +71,7 @@ func (ReportsService) MessagesReportEncryptedSpam(ctx context.Context, in *mtpro
 // messages.reportReaction#3f64c076 peer:InputPeer id:int reaction_peer:InputPeer = Bool;
 func (ReactionsService) MessagesReportReaction(ctx context.Context, in *mtproto.TLMessagesReportReaction) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
+	ctx = report.WithLang(ctx, langCode(ctx))
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	reactionPeer := mtproto.FromInputPeer2(self, in.GetReactionPeer())
 	if err := chatbox.Shared().ReportReaction(ctx, self, peer, in.GetId(), reactionPeer); err != nil {

@@ -451,6 +451,8 @@ func (s *Server) Initialize() error {
 		bots_helper.StartTellomi(c.MsgClient, c.ChannelMySQL)
 		// Launch notices. Unset returns immediately and is not on the login path.
 		bots_helper.StartAnnounce(c.MsgClient, c.ChannelMySQL)
+		// Unified reports. Review and the decision listener stay off unless configured.
+		bots_helper.StartReports(c.MsgClient, c.ChannelMySQL)
 		mtproto.RegisterRPCBotsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCBotVerificationIconsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCAffiliateProgramsServer(grpcServer, botAdmin)

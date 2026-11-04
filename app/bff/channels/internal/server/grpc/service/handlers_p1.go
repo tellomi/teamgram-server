@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/historysplit"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -234,26 +235,30 @@ type ReportsService struct {
 
 func (ReportsService) ChannelsReportSpam(ctx context.Context, in *mtproto.TLChannelsReportSpam) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
+	ctx = report.WithLang(ctx, langCode(ctx))
 	return channel.Shared().ReportSpam(ctx, self, in.GetChannel(), in.GetParticipant(), in.GetId())
 }
 
 func (ReportsService) AccountReportPeer(ctx context.Context, in *mtproto.TLAccountReportPeer) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
-	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), reasonName(in.GetReason()), in.GetMessage(), 0)
+	ctx = report.WithLang(ctx, langCode(ctx))
+	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourcePeer, reasonName(in.GetReason()), in.GetMessage(), 0)
 }
 
 func (ReportsService) AccountReportProfilePhoto(ctx context.Context, in *mtproto.TLAccountReportProfilePhoto) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
+	ctx = report.WithLang(ctx, langCode(ctx))
 	var photoID int64
 	if in.GetPhotoId() != nil {
 		photoID = in.GetPhotoId().GetId()
 	}
-	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), reasonName(in.GetReason()), in.GetMessage(), photoID)
+	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourceProfilePhoto, reasonName(in.GetReason()), in.GetMessage(), photoID)
 }
 
 func (ReportsService) MessagesReportSpam(ctx context.Context, in *mtproto.TLMessagesReportSpam) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
-	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), "messages.reportSpam", "", 0)
+	ctx = report.WithLang(ctx, langCode(ctx))
+	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourceSpam, "spam", "", 0)
 }
 
 func reasonName(reason *mtproto.ReportReason) string {
