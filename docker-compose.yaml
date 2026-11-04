@@ -182,6 +182,11 @@ services:
       TELLOMI_DISCOVER_RELATIONS: ${TELLOMI_DISCOVER_RELATIONS:-}
       TELLOMI_DISCOVER_RELATION_KEY: ${TELLOMI_DISCOVER_RELATION_KEY:-}
       TELLOMI_DISCOVER_RELATION_ADDR: ${TELLOMI_DISCOVER_RELATION_ADDR:-}
+      # Privacy-filtered profile cards for content-engine. Unset is off.
+      # See docs/discover-profiles.md. Do not publish this port.
+      TELLOMI_DISCOVER_PROFILES: ${TELLOMI_DISCOVER_PROFILES:-}
+      TELLOMI_DISCOVER_PROFILE_KEY: ${TELLOMI_DISCOVER_PROFILE_KEY:-}
+      TELLOMI_DISCOVER_PROFILE_ADDR: ${TELLOMI_DISCOVER_PROFILE_ADDR:-}
       # Account deletion notifies content-engine. Unset is off.
       # See docs/discover-account-deletion.md.
       TELLOMI_DISCOVER_DELETE: ${TELLOMI_DISCOVER_DELETE:-}
