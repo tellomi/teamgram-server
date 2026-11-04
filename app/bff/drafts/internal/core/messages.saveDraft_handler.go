@@ -60,7 +60,8 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		date                = int32(time.Now().Unix())
 	)
 
-	if draftHasContent(in) {
+	rich := richFromInput(in.GetRichMessage())
+	if draftHasContent(in) || rich != nil {
 		isDraftMessageEmpty = false
 	}
 
@@ -86,6 +87,7 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 			Date_INT32:    date,
 			Effect:        in.GetEffect(),
 			SuggestedPost: in.GetSuggestedPost(),
+			RichMessage:   rich,
 		}).To_DraftMessage()
 
 		c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
