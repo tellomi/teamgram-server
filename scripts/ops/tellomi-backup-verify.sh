@@ -5,8 +5,10 @@
 #   tellomi-backup-verify.sh --self-test
 #
 # Cron: scripts/ops/tellomi-backup-verify.cron at 04:00.
-# Lists the newest .age object under mysql/, etcd/, and redis/, and under
-# postgres/ when that container is running. Checks it is
+# Lists the newest .age object under mysql/, etcd/, redis/, and postgres/.
+# postgres/ is checked whenever the dump is configured, including when the
+# container is missing. off, "-", or an empty TELLOMI_POSTGRES_* value is
+# the only skip, and that skip is logged. Checks it is
 # under TELLOMI_BACKUP_MAX_AGE_HOURS (default 26), the sha256 sidecar matches,
 # the age header is well formed, and the size is inside the configured bounds.
 # Logs to syslog with tag tellomi-backup-verify.
@@ -115,6 +117,25 @@ self_test() {
   write_lsjson "$name" "$size" "$now_iso" >"${SELF_TMP}/ls.json"
   if check_prefix mysql; then
     backup_die "bad age header should fail"
+  fi
+
+  unset TELLOMI_POSTGRES_CONTAINER TELLOMI_POSTGRES_DB TELLOMI_POSTGRES_USER
+  postgres_configured || backup_die "default must verify postgres"
+  [[ "$(postgres_container_name)" == "tellomi-feed-db" ]] || backup_die "verify default container is not tellomi-feed-db"
+  if TELLOMI_POSTGRES_CONTAINER=off postgres_configured; then
+    backup_die "off must not require a postgres object"
+  fi
+  if ! TELLOMI_POSTGRES_CONTAINER=tellomi-feed-db postgres_configured; then
+    backup_die "a configured container must be verified even when it is down"
+  fi
+  if awk '
+    /^self_test\(\) \{/ {skip=1; next}
+    skip && /^\}/ {skip=0; next}
+    skip {next}
+    /postgres_backup_enabled/ {found=1}
+    END {exit found ? 0 : 1}
+  ' "$script"; then
+    backup_die "verify still skips postgres when the container is down"
   fi
 
   echo "tellomi-backup-verify: self-test ok"
@@ -284,17 +305,18 @@ verify_main() {
       fail=1
     fi
   done
-  if postgres_backup_enabled; then
+  if postgres_configured; then
     if ! check_prefix postgres; then
+      backup_alert "postgres backup is missing or stale under ${REMOTE}/postgres/. Container $(postgres_container_name) was expected."
       fail=1
     fi
   else
-    backup_log "postgres: skipped (container is off or not running)"
+    backup_log "postgres: verify skipped by configuration (TELLOMI_POSTGRES_CONTAINER is off, -, or empty)"
   fi
   if [[ "$fail" -ne 0 ]]; then
     backup_die "one or more prefixes failed"
   fi
-  backup_log "done mysql etcd redis within ${MAX_AGE_HOURS}h"
+  backup_log "done mysql etcd redis postgres within ${MAX_AGE_HOURS}h"
 }
 
 if [[ "$SELFTEST" -eq 1 ]]; then

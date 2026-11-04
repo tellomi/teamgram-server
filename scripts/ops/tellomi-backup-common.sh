@@ -23,6 +23,16 @@ backup_die() {
   exit 1
 }
 
+# backup_alert is a loud failure that does not exit. The caller still uploads
+# the other segments, then exits non-zero. logger priority is user.err so a
+# syslog alert path can see it. The banner is what a cron mail shows.
+backup_alert() {
+  echo "================================================================================" >&2
+  echo "ALERT: $*" >&2
+  echo "================================================================================" >&2
+  logger -t "${LOG_TAG:-tellomi-backup}" -p user.err -- "ALERT: $*" 2>/dev/null || true
+}
+
 # backup_set_rclone_flags fills RCLONE_S3_FLAGS.
 #
 # rclone 1.60.1 against Cloudflare R2 (docs/ops/BACKUP.md):
@@ -252,34 +262,65 @@ backup_prune_local() {
   fi
 }
 
-# postgres_backup_enabled is 0 when this host should dump and verify Postgres.
-# Unset TELLOMI_POSTGRES_* uses the defaults (container postgres, database
-# engine, user engine). An empty value or "off" is not configured. A
-# container that is not running is treated as absent. Either case skips
-# Postgres and leaves MySQL, etcd, and Redis to finish. A dump that starts
-# and then fails is still fatal; this function only decides whether to start.
-postgres_backup_enabled() {
-  local name db user state
+# Content-engine Chengdu compose names the database container tellomi-feed-db.
+# Database and user are both engine. off, "-", or an empty value is the only
+# skip, and it is logged. A missing or stopped container is not a skip.
+
+postgres_container_name() {
   if [[ -z "${TELLOMI_POSTGRES_CONTAINER+x}" ]]; then
-    name=postgres
-  else
-    name=$TELLOMI_POSTGRES_CONTAINER
+    printf 'tellomi-feed-db'
+    return 0
   fi
+  printf '%s' "$TELLOMI_POSTGRES_CONTAINER"
+}
+
+postgres_db_name() {
   if [[ -z "${TELLOMI_POSTGRES_DB+x}" ]]; then
-    db=engine
-  else
-    db=$TELLOMI_POSTGRES_DB
+    printf 'engine'
+    return 0
   fi
+  printf '%s' "$TELLOMI_POSTGRES_DB"
+}
+
+postgres_user_name() {
   if [[ -z "${TELLOMI_POSTGRES_USER+x}" ]]; then
-    user=engine
-  else
-    user=$TELLOMI_POSTGRES_USER
+    printf 'engine'
+    return 0
   fi
+  printf '%s' "$TELLOMI_POSTGRES_USER"
+}
+
+# postgres_configured is 0 when this host should dump and verify Postgres.
+# It does not look at Docker. A container that is not running stays configured,
+# so the backup alerts and the 04:00 check still requires a postgres/ object.
+postgres_configured() {
+  local name db user
+  name="$(postgres_container_name)"
+  db="$(postgres_db_name)"
+  user="$(postgres_user_name)"
   [[ -n "$name" && "$name" != "off" && "$name" != "-" ]] || return 1
   [[ -n "$db" && -n "$user" ]] || return 1
-  command -v "${DOCKER:-docker}" >/dev/null 2>&1 || return 1
-  state="$("${DOCKER:-docker}" inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)"
-  [[ "$state" == "true" ]]
+  return 0
+}
+
+# postgres_container_state prints running, stopped, or missing.
+# missing covers "no such container" and "docker is not on PATH".
+postgres_container_state() {
+  local name="$1" state
+  if ! command -v "${DOCKER:-docker}" >/dev/null 2>&1; then
+    printf 'missing'
+    return 0
+  fi
+  if ! state="$("${DOCKER:-docker}" inspect -f '{{.State.Running}}' "$name" 2>/dev/null)"; then
+    printf 'missing'
+    return 0
+  fi
+  state="${state//$'\r'/}"
+  if [[ "$state" == "true" ]]; then
+    printf 'running'
+    return 0
+  fi
+  printf 'stopped'
 }
 
 # backup_manifest_add records one ciphertext object. Fields are constrained so
