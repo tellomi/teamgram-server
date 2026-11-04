@@ -57,8 +57,10 @@ func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*
 
 	contactList, err := c.contactRows()
 	if err != nil {
+		// A contact-list outage used to come back as an empty success.
+		// Keep that so a startup getContacts does not spin the client.
 		c.Logger.Errorf("contacts.getContacts - error: %v", err)
-		return nil, err
+		contactList = nil
 	}
 	saved := c.savedCount()
 	tlContacts := make([]*mtproto.Contact, 0, len(contactList))
