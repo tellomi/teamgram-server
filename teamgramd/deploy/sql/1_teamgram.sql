@@ -226,8 +226,11 @@ CREATE TABLE `chat_invites` (
 
 CREATE TABLE `chat_invite_participants` (
   `id` bigint(20) NOT NULL,
-  `link` varchar(32) COLLATE utf8mb4_bin NOT NULL,
+  `chat_id` bigint(20) NOT NULL DEFAULT '0',
+  `link` varchar(64) COLLATE utf8mb4_bin NOT NULL,
   `user_id` bigint(20) NOT NULL,
+  `requested` tinyint(1) NOT NULL DEFAULT '0',
+  `approved_by` bigint(20) NOT NULL DEFAULT '0',
   `date2` bigint(20) NOT NULL,
   `deleted` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,

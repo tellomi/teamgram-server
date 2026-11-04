@@ -49,6 +49,14 @@ func (c *ChatInvitesCore) MessagesGetChatInviteImporters(in *mtproto.TLMessagesG
 		return nil, err
 	}
 
+	if peer.IsChannel() {
+		rValues, err := c.channelImporters(in, peer)
+		if err != nil {
+			c.Logger.Errorf("messages.getChatInviteImporters - error: %v", err)
+			return nil, err
+		}
+		return rValues, nil
+	}
 	if !peer.IsChat() {
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getChatInviteImporters - error: ", err)

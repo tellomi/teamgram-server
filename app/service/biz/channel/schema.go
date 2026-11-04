@@ -112,4 +112,36 @@ CREATE TABLE IF NOT EXISTS message_read_outbox (
   PRIMARY KEY (id),
   UNIQUE KEY user_id (user_id, peer_dialog_id, read_user_id, read_outbox_max_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS channel_invites (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  channel_id BIGINT NOT NULL,
+  admin_id BIGINT NOT NULL,
+  link VARCHAR(64) NOT NULL,
+  permanent TINYINT NOT NULL DEFAULT 0,
+  revoked TINYINT NOT NULL DEFAULT 0,
+  request_needed TINYINT NOT NULL DEFAULT 0,
+  start_date BIGINT NOT NULL DEFAULT 0,
+  expire_date BIGINT NOT NULL DEFAULT 0,
+  usage_limit INT NOT NULL DEFAULT 0,
+  title VARCHAR(64) NOT NULL DEFAULT '',
+  date2 BIGINT NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY channel_invites_link (link),
+  KEY channel_invites_channel (channel_id, admin_id, revoked)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS channel_invite_importers (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  channel_id BIGINT NOT NULL,
+  link VARCHAR(64) NOT NULL,
+  user_id BIGINT NOT NULL,
+  requested TINYINT NOT NULL DEFAULT 0,
+  approved_by BIGINT NOT NULL DEFAULT 0,
+  about VARCHAR(128) NOT NULL DEFAULT '',
+  date2 BIGINT NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY channel_invite_importer (link, user_id),
+  KEY channel_invite_importers_channel (channel_id, requested)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `

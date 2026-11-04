@@ -202,6 +202,17 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.Stories = att.Stories
 		full.StoriesPinnedAvailable = att.Pinned
 	}
+	// The invite sheet reads this before it calls messages.exportChatInvite.
+	// Without it the iOS sheet stays on the progress bar.
+	if p != nil && p.InChannel() && (p.IsCreator() || p.adminRights().CanInviteUsers()) {
+		if inv := s.PrimaryExported(ctx, ch.ID, viewer); inv != nil {
+			full.ExportedInvite = inv
+		}
+		if pending, recent := s.PendingRequesters(ctx, ch.ID); pending > 0 {
+			full.RequestsPending = &wrapperspb.Int32Value{Value: pending}
+			full.RecentRequesters = recent
+		}
+	}
 	return full
 }
 

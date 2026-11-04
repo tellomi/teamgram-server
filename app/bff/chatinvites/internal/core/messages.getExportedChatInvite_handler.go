@@ -33,6 +33,14 @@ func (c *ChatInvitesCore) MessagesGetExportedChatInvite(in *mtproto.TLMessagesGe
 		err                error
 	)
 
+	if peer.IsChannel() {
+		rValue, err := c.oneChannelInvite(in, peer)
+		if err != nil {
+			c.Logger.Errorf("messages.getExportedChatInvite - error: %v", err)
+			return nil, err
+		}
+		return rValue, nil
+	}
 	if !peer.IsChat() {
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getExportedChatInvite - error: ", err)

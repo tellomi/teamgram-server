@@ -50,4 +50,14 @@ type Store interface {
 	SaveFeatures(ctx context.Context, channelID int64, f *Features) error
 	GetPersonalChannel(ctx context.Context, userID int64) (int64, error)
 	SetPersonalChannel(ctx context.Context, userID, channelID int64) error
+
+	InsertInvite(ctx context.Context, inv *StoredInvite) error
+	UpdateInvite(ctx context.Context, inv *StoredInvite) error
+	GetInviteByLink(ctx context.Context, link string) (*StoredInvite, error)
+	ListInvites(ctx context.Context, channelID int64) ([]*StoredInvite, error)
+	DeleteInvite(ctx context.Context, channelID int64, link string) error
+	DeleteRevokedInvites(ctx context.Context, channelID, adminID int64) error
+	UpsertImporter(ctx context.Context, row *StoredImporter) error
+	ListImporters(ctx context.Context, channelID int64) ([]*StoredImporter, error)
+	DeleteImporter(ctx context.Context, link string, userID int64) error
 }

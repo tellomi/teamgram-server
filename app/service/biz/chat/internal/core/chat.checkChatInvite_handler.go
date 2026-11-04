@@ -42,16 +42,10 @@ func (c *ChatCore) ChatCheckChatInvite(in *chat.TLChatCheckChatInvite) (*chat.Ch
 	}
 
 	if chatInviteDO.UsageLimit > 0 {
-		// TODO: calc
-		sz := c.svcCtx.Dao.CommonDAO.CalcSize(
-			c.ctx,
-			"chat_invite_participants",
-			map[string]interface{}{
-				"link": chatInviteDO.Link,
-			})
-		if sz >= int(chatInviteDO.UsageLimit) {
+		sz := c.svcCtx.Dao.GetLinkInviteSize(c.ctx, chatInviteDO.Link)
+		if sz >= chatInviteDO.UsageLimit {
 			err = mtproto.ErrInviteHashExpired
-			c.Logger.Errorf("chat.importChatInvite - error: %v", err)
+			c.Logger.Errorf("chat.checkChatInvite - error: %v", err)
 			return nil, err
 		}
 	}

@@ -19,12 +19,14 @@
 package core
 
 import (
+	"math/rand"
+
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
-	"math/rand"
 )
 
 // MessagesHideChatJoinRequest
@@ -42,6 +44,17 @@ func (c *ChatInvitesCore) MessagesHideChatJoinRequest(in *mtproto.TLMessagesHide
 		return nil, mtproto.ErrUserIdInvalid
 	}
 
+	if peer.IsChannel() {
+		rUpdates, err := channel.Shared().HideJoinRequest(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, mtproto.MakeTLInputChannel(&mtproto.InputChannel{
+			ChannelId:  peer.PeerId,
+			AccessHash: peer.AccessHash,
+		}).To_InputChannel(), userId.PeerId, in.GetApproved())
+		if err != nil {
+			c.Logger.Errorf("messages.hideChatJoinRequest - error: %v", err)
+			return nil, err
+		}
+		return rUpdates, nil
+	}
 	if !peer.IsChat() {
 		c.Logger.Errorf("messages.hideChatJoinRequest - error: method MessagesHideChatJoinRequest not impl")
 		return nil, mtproto.ErrPeerIdInvalid

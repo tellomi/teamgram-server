@@ -75,6 +75,41 @@ mysql ... teamgram < teamgramd/deploy/sql/migrate-20261103-authorization-setting
 
 可以重复执行。列还没加上时，设备列表仍能打开（这三项当关），`account.changeAuthorizationSettings` 返回 `500 INTERNAL_SERVER_ERROR`。
 
+## 邀请链接
+
+iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` / `chatFull.exported_invite`。没有主链接时再调 `messages.exportChatInvite`，`legacy_revoke_permanent` 置位。这个调用以前只接受基础群，超级群和频道直接 `PEER_ID_INVALID`，分享页的进度条就不会停。「管理邀请链接 → 新链接」带 `title`、`request_needed`、`expire_date`、`usage_limit`，同样因为 peer 不是基础群而失败，客户端弹出「发生错误，请稍后再试」。
+
+现在这组方法对基础群、超级群和频道都按 layer 232 处理：
+
+- `messages.exportChatInvite`（含 `legacy_revoke_permanent`、`expire_date`、`usage_limit`、`request_needed`、`title`。`subscription_pricing` 返回 `406 PAYMENT_UNSUPPORTED`，本服务不卖 Stars 订阅）
+- `messages.getExportedChatInvites`、`messages.getExportedChatInvite`
+- `messages.editExportedChatInvite`（含 `revoked`。撤销主链接时返回 `messages.exportedChatInviteReplaced`）
+- `messages.deleteExportedChatInvite`、`messages.deleteRevokedExportedChatInvites`
+- `messages.getChatInviteImporters`、`messages.getAdminsWithInvites`
+- `messages.checkChatInvite`、`messages.importChatInvite`（`#de91436e` 和旧的 `#6c50051c`）
+- `messages.hideChatJoinRequest`、`messages.hideAllChatJoinRequests`
+- `messages.getFullChat` 和 `channels.getFullChannel` 的 `exported_invite`
+
+链接是 `https://tell.cc/+` 加 20 位 hash（`TELLOMI_LINK_BASE_URL` / `TEAMGRAM_TME_HOST` 可改主机）。基础群写 `chat_invites` / `chat_invite_participants`，频道和超级群写 `channel_invites` / `channel_invite_importers`。迁移：`teamgramd/deploy/sql/migrate-20261104-chat-invites.sql`。旧库的 `chat_invite_participants` 缺 `chat_id`、`requested`、`approved_by`，加入记录和次数统计会插不进去。
+
+## 常见路径里还缺的
+
+对照 iOS（`tellomi/Telegram-iOS`）和 Android（`tellomi/Telegram`）会在群、频道、联系人、隐私、设置里打到的方法。覆盖矩阵把它们标成已实现，是因为基础群或私聊走得通。下面这些分支仍然返回 `ENTERPRISE_IS_BLOCKED`：
+
+| 方法 | 会在哪碰到 | 处理 |
+| --- | --- | --- |
+| `messages.editChatAbout` | 频道 / 超级群简介 | 另开 PR，基础群已经能改 |
+| `messages.saveDraft` / `messages.clearAllDrafts` | 频道草稿 | 另开 PR，私聊和基础群已经能存 |
+| `account.updateNotifySettings` | 频道免打扰 | 另开 PR，用户和基础群已经能改 |
+| `messages.deleteHistory` | 清空超级群自己的记录 | 另开 PR。`channels.deleteHistory` 是另一条已经实现的路径 |
+| `users.getIsPremiumRequiredToContact` | 打开资料页时的隐私判断 | 另开 PR |
+| `messages.forwardMessages` | 从频道把帖子转发走 | 留下。私聊和基础群转发是通的 |
+| `upload.getFile` 的贴纸集缩略图 | 贴纸面板 | 留下。普通文件和秘密聊天文件走 DFS |
+| `account.toggleSponsoredMessages`、`channels.restrictSponsoredMessages`、`messages.viewSponsoredMessage`、`messages.clickSponsoredMessage`、`messages.reportSponsoredMessage` | 赞助消息 | 留下。Tellomi 没有广告 |
+| `messages.composeRichMessageWithAI`、`messages.translateRichMessage` | AI 撰写 / 富文本翻译 | 留下。普通 `messages.translateText` 另有实现 |
+| `account.confirmBotConnection` | 机器人连接确认 | 留下 |
+| `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth` | 机器人、网页令牌、付费登录 | 留下。Tellomi 登录不走这些 |
+
 ## 留下的 P1（客户端会调，服务端返回错误）
 
 下面这 8 个仍不在登录和聊天列表的必经路径上。

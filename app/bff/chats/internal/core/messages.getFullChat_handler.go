@@ -96,7 +96,17 @@ func (c *ChatsCore) MessagesGetFullChat(in *mtproto.TLMessagesGetFullChat) (*mtp
 	}
 
 	if me.CanInviteUsers() {
-		if me.Link != "" {
+		invites, _ := c.svcCtx.Dao.ChatClient.Client().ChatGetExportedChatInvites(c.ctx, &chatpb.TLChatGetExportedChatInvites{
+			ChatId:  in.ChatId,
+			AdminId: c.MD.UserId,
+		})
+		for _, inv := range invites.GetDatas() {
+			if inv.GetPermanent() && !inv.GetRevoked() {
+				chatFull.ExportedInvite = inv
+				break
+			}
+		}
+		if chatFull.ExportedInvite == nil && me.Link != "" {
 			chatFull.ExportedInvite, _ = c.svcCtx.Dao.ChatClient.Client().ChatGetExportedChatInvite(c.ctx, &chatpb.TLChatGetExportedChatInvite{
 				ChatId: in.ChatId,
 				Link:   me.Link,

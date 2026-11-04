@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -465,10 +466,14 @@ func (s *Service) HideAllJoins(ctx context.Context, self, actorAuth int64, in *m
 	f := s.features(ctx, ch.ID)
 	kept := make([]JoinReq, 0, len(f.JoinRequests))
 	var hit []int64
+	want := brand.InviteHash(link)
 	for _, req := range f.JoinRequests {
-		if link != "" && req.Link != link {
-			kept = append(kept, req)
-			continue
+		if want != "" {
+			stored := brand.InviteHash(req.Link)
+			if stored == "" || (stored != want && req.Link != link) {
+				kept = append(kept, req)
+				continue
+			}
 		}
 		hit = append(hit, req.UserID)
 	}
@@ -481,6 +486,7 @@ func (s *Service) HideAllJoins(ctx context.Context, self, actorAuth int64, in *m
 			return nil, err
 		}
 	}
+	s.syncImportersAfterHide(ctx, self, ch.ID, hit, approved, link)
 	recent := make([]int64, 0, len(kept))
 	for _, req := range kept {
 		recent = append(recent, req.UserID)

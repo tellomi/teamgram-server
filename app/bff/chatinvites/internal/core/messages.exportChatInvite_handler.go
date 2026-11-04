@@ -32,10 +32,21 @@ func (c *ChatInvitesCore) MessagesExportChatInvite(in *mtproto.TLMessagesExportC
 		exportedChatInvite *mtproto.ExportedChatInvite
 	)
 
+	if peer.IsChannel() {
+		exportedChatInvite, err = c.exportChannelInvite(in, peer)
+		if err != nil {
+			c.Logger.Errorf("messages.exportChatInvite - error: %v", err)
+			return nil, err
+		}
+		return exportedChatInvite, nil
+	}
 	if !peer.IsChat() {
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.exportChatInvite - error: ", err)
 		return nil, err
+	}
+	if in.GetSubscriptionPricing() != nil {
+		return nil, mtproto.ErrPaymentUnsupported
 	}
 
 	exportedChatInvite, err = c.svcCtx.Dao.ChatClient.ChatExportChatInvite(c.ctx, &chatpb.TLChatExportChatInvite{
