@@ -12,13 +12,23 @@ import (
 )
 
 const (
-	pathPending = "/internal/v1/reports/pending"
-	maxBody     = 8 << 10
+	pathPending    = "/internal/v1/reports/pending"
+	pathIngest     = "/internal/v1/reports"
+	pathModeration = "/internal/v1/moderation/review"
+	maxBody        = 64 << 10
 )
 
-// Handler serves the human-review placeholder.
-// POST /internal/v1/reports/{id}/decision
-// GET  /internal/v1/reports/pending
+// Handler is the internal report listener. It is mounted only when
+// TELLOMI_REPORT_HTTP=1.
+//
+//	POST /internal/v1/reports
+//	POST /internal/v1/reports/{id}/decision
+//	GET  /internal/v1/reports/pending
+//	POST /internal/v1/moderation/review
+//
+// Discover push stays on POST /internal/v1/discover/notify
+// (docs/api/discover-ai.md). @tellomi mentions stay on
+// POST /internal/v1/ai/complete (docs/api/tellomi-ai.md).
 type Handler struct {
 	Service *Service
 	Key     []byte
@@ -37,12 +47,27 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	if r.URL.Path == pathPending {
+	switch r.URL.Path {
+	case pathPending:
 		if r.Method != http.MethodGet {
 			writeErr(w, http.StatusMethodNotAllowed, "method")
 			return
 		}
 		h.pending(w, r)
+		return
+	case pathIngest:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.ingest(w, r)
+		return
+	case pathModeration:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.moderate(w, r)
 		return
 	}
 	id, ok := decisionPath(r.URL.Path)
@@ -79,6 +104,125 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, http.StatusServiceUnavailable, "unavailable")
 	}
+}
+
+type ingestBody struct {
+	ReporterUserID int64  `json:"reporter_user_id"`
+	AuthorID       int64  `json:"author_id"`
+	PostID         string `json:"post_id"`
+	CommentID      string `json:"comment_id"`
+	Reason         string `json:"reason"`
+	Comment        string `json:"comment"`
+	LangCode       string `json:"lang_code"`
+}
+
+func (h Handler) ingest(w http.ResponseWriter, r *http.Request) {
+	var body ingestBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	body.PostID = strings.TrimSpace(body.PostID)
+	body.CommentID = strings.TrimSpace(body.CommentID)
+	body.Reason = strings.TrimSpace(body.Reason)
+	if body.ReporterUserID <= 0 || body.AuthorID <= 0 || !validDiscoverID(body.PostID) || !validDiscoverReason(body.Reason) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if body.CommentID != "" && !validDiscoverID(body.CommentID) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if len(body.Comment) > 1024 {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	row, dup, err := h.Service.IngestDiscover(r.Context(), DiscoverReport{
+		Reporter:  body.ReporterUserID,
+		Author:    body.AuthorID,
+		PostID:    body.PostID,
+		CommentID: body.CommentID,
+		Reason:    body.Reason,
+		Comment:   body.Comment,
+		Lang:      body.LangCode,
+	})
+	if wait, ok := floodWait(err); ok {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited", "retry_after": wait})
+		return
+	}
+	if err != nil || row == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	status := "created"
+	if dup {
+		status = "duplicate"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": status,
+		"id":     row.ID,
+		"ticket": row.Ticket(),
+	})
+}
+
+type moderateBody struct {
+	PostID    string   `json:"post_id"`
+	Text      string   `json:"text"`
+	MediaKeys []string `json:"media_keys"`
+}
+
+func (h Handler) moderate(w http.ResponseWriter, r *http.Request) {
+	var body moderateBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	text := strings.TrimSpace(body.Text)
+	var media []string
+	for _, key := range body.MediaKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if !validMediaKey(key) {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		media = append(media, key)
+	}
+	if text == "" && len(media) == 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if body.PostID != "" && !validDiscoverID(strings.TrimSpace(body.PostID)) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	verdict := h.Service.Moderate(r.Context(), text, media)
+	writeJSON(w, http.StatusOK, map[string]string{"verdict": verdict})
+}
+
+func floodWait(err error) (int32, bool) {
+	if err == nil {
+		return 0, false
+	}
+	const marker = "FLOOD_WAIT_"
+	msg := err.Error()
+	i := strings.Index(msg, marker)
+	if i < 0 {
+		return 0, false
+	}
+	n := 0
+	for _, c := range msg[i+len(marker):] {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n < 1 {
+		n = 1
+	}
+	return int32(n), true
 }
 
 func (h Handler) pending(w http.ResponseWriter, r *http.Request) {

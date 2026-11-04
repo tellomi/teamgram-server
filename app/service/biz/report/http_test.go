@@ -82,3 +82,132 @@ func bytesKey(t *testing.T) []byte {
 	t.Helper()
 	return []byte("0123456789abcdef0123456789abcdef")
 }
+
+func TestDiscoverIngestDedupesAndReceipt(t *testing.T) {
+	s, box, _ := testService(t)
+	key := bytesKey(t)
+	h := Handler{Service: s, Key: key}
+	token := base64.StdEncoding.EncodeToString(key)
+	body := `{"reporter_user_id":424242,"author_id":909090,"post_id":"post-9","reason":"spam","comment":"bad","lang_code":"zh-hans"}`
+
+	rec := postJSON(t, h, token, "/internal/v1/reports", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create %d %s", rec.Code, rec.Body.String())
+	}
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created["status"] != "created" || created["ticket"] != "T1" {
+		t.Fatalf("%v %v", created, err)
+	}
+	rows, err := s.List(context.Background())
+	if err != nil || len(rows) != 1 || rows[0].Source != SourcePost || rows[0].SubjectUserID != 909090 || rows[0].Reason != "spam" || rows[0].Message != "bad" {
+		t.Fatalf("%+v %v", rows, err)
+	}
+	if rows[0].TargetKey != "post:post-9" {
+		t.Fatalf("target %s", rows[0].TargetKey)
+	}
+	notes := box.to(424242)
+	if len(notes) != 1 || !strings.Contains(notes[0], "T1") || !strings.Contains(notes[0], "经平台审核") || strings.Contains(strings.ToLower(notes[0]), "ai") {
+		t.Fatalf("receipt %+v", notes)
+	}
+
+	rec = postJSON(t, h, token, "/internal/v1/reports", body)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"duplicate"`) {
+		t.Fatalf("dup %d %s", rec.Code, rec.Body.String())
+	}
+	rows, err = s.List(context.Background())
+	if err != nil || len(rows) != 1 || len(box.to(424242)) != 1 {
+		t.Fatalf("rows %d receipts %d %v", len(rows), len(box.to(424242)), err)
+	}
+
+	other := `{"reporter_user_id":515151,"author_id":909090,"post_id":"post-9","comment_id":"c-1","reason":"other","comment":"x","lang_code":"en"}`
+	rec = postJSON(t, h, token, "/internal/v1/reports", other)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"created"`) {
+		t.Fatalf("comment %d %s", rec.Code, rec.Body.String())
+	}
+	rows, _ = s.List(context.Background())
+	if len(rows) != 2 || rows[1].Source != "discover.comment" || rows[1].TargetKey != "comment:post-9:c-1" {
+		t.Fatalf("%+v", rows)
+	}
+
+	rec = postJSON(t, h, "", "/internal/v1/reports", body)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("auth %d", rec.Code)
+	}
+	rec = postJSON(t, h, token, "/internal/v1/reports", `{"reporter_user_id":1,"author_id":2,"post_id":"post-1","reason":"nope"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("reason %d", rec.Code)
+	}
+}
+
+func TestDiscoverIngestRateLimit(t *testing.T) {
+	s, _, _ := testService(t)
+	s.limit = 1
+	h := Handler{Service: s, Key: bytesKey(t)}
+	token := base64.StdEncoding.EncodeToString(h.Key)
+	first := `{"reporter_user_id":7,"author_id":8,"post_id":"p1","reason":"violence"}`
+	if rec := postJSON(t, h, token, "/internal/v1/reports", first); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body.String())
+	}
+	second := `{"reporter_user_id":7,"author_id":8,"post_id":"p2","reason":"drugs"}`
+	rec := postJSON(t, h, token, "/internal/v1/reports", second)
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), `"rate_limited"`) {
+		t.Fatalf("limit %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModerationVerdicts(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		reply string
+		want  string
+	}{
+		{`{"result":"violation"}`, "violation"},
+		{`{"result":"clear"}`, "ok"},
+		{`{"result":"needs_human"}`, "uncertain"},
+	} {
+		s, _, _ := testService(t)
+		llm := &fakeLLM{reply: tc.reply}
+		s.SetReviewer(NewReviewer(llm))
+		h := Handler{Service: s, Key: bytesKey(t)}
+		token := base64.StdEncoding.EncodeToString(h.Key)
+		rec := postJSON(t, h, token, "/internal/v1/moderation/review", `{"post_id":"post-3","text":"keyword hit","media_keys":["photos/9","videos/2"]}`)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"verdict":"`+tc.want+`"`) {
+			t.Fatalf("%s -> %d %s", tc.reply, rec.Code, rec.Body.String())
+		}
+		if llm.calls != 1 {
+			t.Fatalf("calls %d", llm.calls)
+		}
+		rows, err := s.List(ctx)
+		if err != nil || len(rows) != 0 {
+			t.Fatalf("moderation stored a report %+v %v", rows, err)
+		}
+	}
+
+	s, _, _ := testService(t)
+	llm := &fakeLLM{reply: `{"result":"violation"}`}
+	h := Handler{Service: s, Key: bytesKey(t)}
+	token := base64.StdEncoding.EncodeToString(h.Key)
+	rec := postJSON(t, h, token, "/internal/v1/moderation/review", `{"text":"","media_keys":["photos/1"]}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"uncertain"`) || llm.calls != 0 {
+		t.Fatalf("off %d %s calls %d", rec.Code, rec.Body.String(), llm.calls)
+	}
+	rec = postJSON(t, h, token, "/internal/v1/moderation/review", `{"text":"","media_keys":[]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty %d", rec.Code)
+	}
+	rec = postJSON(t, h, token, "/internal/v1/moderation/review", `{"text":"x","media_keys":["../secret"]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("media %d", rec.Code)
+	}
+}
+
+func postJSON(t *testing.T, h Handler, token, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}

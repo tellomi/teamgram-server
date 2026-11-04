@@ -31,10 +31,12 @@ CREATE TABLE IF NOT EXISTS reports (
   evidence_key VARCHAR(255) NOT NULL DEFAULT '',
   status VARCHAR(16) NOT NULL DEFAULT 'needs_human',
   legacy_story_id BIGINT NULL,
+  dedupe_key VARCHAR(191) NULL,
   created_at INT NOT NULL,
   decided_at INT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY reports_legacy_story (legacy_story_id),
+  UNIQUE KEY reports_dedupe (dedupe_key),
   KEY reports_reporter_time (reporter_user_id, created_at),
   KEY reports_target (target_key, status),
   KEY reports_status (status, id)
@@ -50,7 +52,7 @@ CREATE TABLE IF NOT EXISTS report_notices (
   PRIMARY KEY (target_key, user_id, kind, decision)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 
-const reportCols = `id, source, reporter_user_id, lang_code, peer_type, peer_id, subject_user_id, target_key, reason, IFNULL(message,''), object_ids, photo_id, reaction_peer_id, evidence_key, status, IFNULL(legacy_story_id,0), created_at, decided_at`
+const reportCols = `id, source, reporter_user_id, lang_code, peer_type, peer_id, subject_user_id, target_key, reason, IFNULL(message,''), object_ids, photo_id, reaction_peer_id, evidence_key, status, IFNULL(legacy_story_id,0), IFNULL(dedupe_key,''), created_at, decided_at`
 
 type mysqlStore struct {
 	db *sql.DB
@@ -66,6 +68,13 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	// Tables created before dedupe_key existed still need the column.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE reports ADD COLUMN dedupe_key VARCHAR(191) NULL`); err != nil && !isAlready(err) {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE reports ADD UNIQUE KEY reports_dedupe (dedupe_key)`); err != nil && !isAlready(err) {
+		return err
+	}
 	return nil
 }
 
@@ -74,15 +83,22 @@ func (s *mysqlStore) Insert(ctx context.Context, row *Row) error {
 	if row.LegacyStoryID != 0 {
 		legacy = row.LegacyStoryID
 	}
+	var dedupe any
+	if row.DedupeKey != "" {
+		dedupe = row.DedupeKey
+	}
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO reports (
   source, reporter_user_id, lang_code, peer_type, peer_id, subject_user_id,
   target_key, reason, message, object_ids, photo_id, reaction_peer_id,
-  evidence_key, status, legacy_story_id, created_at, decided_at
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  evidence_key, status, legacy_story_id, dedupe_key, created_at, decided_at
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		row.Source, row.Reporter, row.Lang, row.PeerType, row.PeerID, row.SubjectUserID,
 		row.TargetKey, row.Reason, row.Message, joinIDs(row.ObjectIDs), row.PhotoID, row.ReactionPeerID,
-		row.EvidenceKey, row.Status, legacy, row.CreatedAt, row.DecidedAt)
+		row.EvidenceKey, row.Status, legacy, dedupe, row.CreatedAt, row.DecidedAt)
+	if isDup(err) && row.DedupeKey != "" {
+		return ErrDuplicate
+	}
 	if err != nil {
 		return err
 	}
@@ -150,6 +166,18 @@ func (s *mysqlStore) UpdateEvidence(ctx context.Context, id int64, key string) e
 	return err
 }
 
+func (s *mysqlStore) FindDedupe(ctx context.Context, key string) (*Row, error) {
+	if key == "" {
+		return nil, nil
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT `+reportCols+` FROM reports WHERE dedupe_key=? ORDER BY id LIMIT 1`, key)
+	got, err := scanReport(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return got, err
+}
+
 func (s *mysqlStore) HasLegacy(ctx context.Context, storyID int64) (bool, error) {
 	if storyID == 0 {
 		return false, nil
@@ -202,7 +230,7 @@ func scanReport(row scanner) (*Row, error) {
 	err := row.Scan(
 		&got.ID, &got.Source, &got.Reporter, &got.Lang, &peerType, &got.PeerID, &got.SubjectUserID,
 		&got.TargetKey, &got.Reason, &got.Message, &objects, &got.PhotoID, &got.ReactionPeerID,
-		&got.EvidenceKey, &got.Status, &got.LegacyStoryID, &got.CreatedAt, &got.DecidedAt,
+		&got.EvidenceKey, &got.Status, &got.LegacyStoryID, &got.DedupeKey, &got.CreatedAt, &got.DecidedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -223,6 +251,11 @@ func placeholders(n int) string {
 func isDup(err error) bool {
 	var me *mysql.MySQLError
 	return errors.As(err, &me) && me.Number == 1062
+}
+
+func isAlready(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && (me.Number == 1060 || me.Number == 1061)
 }
 
 func isNoTable(err error) bool {

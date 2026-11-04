@@ -119,6 +119,10 @@ func (s *Service) Submit(ctx context.Context, in Submission) (*Row, error) {
 	if lang == "" {
 		lang = LangFrom(ctx)
 	}
+	target := in.TargetKey
+	if target == "" {
+		target = TargetKey(in.Source, in.PeerType, in.PeerID, in.ObjectIDs, in.PhotoID, in.ReactionPeerID)
+	}
 	row := &Row{
 		Source:         in.Source,
 		Reporter:       in.Reporter,
@@ -126,7 +130,7 @@ func (s *Service) Submit(ctx context.Context, in Submission) (*Row, error) {
 		PeerType:       in.PeerType,
 		PeerID:         in.PeerID,
 		SubjectUserID:  in.SubjectUserID,
-		TargetKey:      TargetKey(in.Source, in.PeerType, in.PeerID, in.ObjectIDs, in.PhotoID, in.ReactionPeerID),
+		TargetKey:      target,
 		Reason:         clipRunes(in.Reason, 64),
 		Message:        in.Message,
 		ObjectIDs:      normalizeIDs(in.ObjectIDs),
@@ -134,6 +138,7 @@ func (s *Service) Submit(ctx context.Context, in Submission) (*Row, error) {
 		ReactionPeerID: in.ReactionPeerID,
 		Status:         StatusPending,
 		LegacyStoryID:  in.LegacyStoryID,
+		DedupeKey:      in.DedupeKey,
 		CreatedAt:      now,
 	}
 	if err := s.store.Insert(ctx, row); err != nil {
@@ -262,3 +267,6 @@ var ErrBadDecision = errors.New("report: bad decision")
 
 // ErrConflict means the row already has the other result.
 var ErrConflict = errors.New("report: already decided")
+
+// ErrDuplicate means this reporter already filed this target.
+var ErrDuplicate = errors.New("report: duplicate")

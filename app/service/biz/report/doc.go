@@ -3,7 +3,8 @@
 //
 // TELLOMI_REPORT_REVIEW=1 asks pkg/tellomiai to classify a new row. Any
 // other value leaves the row for a person. TELLOMI_REPORT_HTTP=1 listens
-// on POST /internal/v1/reports/{id}/decision. Both default off.
+// for POST /internal/v1/reports, POST /internal/v1/reports/{id}/decision,
+// and POST /internal/v1/moderation/review. Both default off.
 // TELLOMI_REPORT_SNAPSHOT=1 uploads the evidence object. Login and session
 // code are not on this path, and this package does not touch Redis.
 package report

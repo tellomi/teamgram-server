@@ -27,7 +27,8 @@ func (s *Service) sendReceipt(ctx context.Context, row *Row) {
 	if row == nil {
 		return
 	}
-	text := Receipt(row.Lang, row.Ticket(), etaText(s.etaHours, row.Lang))
+	lang := s.langFor(ctx, row.Reporter, row.Lang)
+	text := Receipt(lang, row.Ticket(), etaText(s.etaHours, lang))
 	_ = s.send(ctx, row.Reporter, text)
 }
 

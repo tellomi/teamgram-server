@@ -25,10 +25,31 @@ func noticeKey(target string, user int64, kind, decision string) string {
 func (m *memoryStore) Insert(ctx context.Context, row *Row) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if row.DedupeKey != "" {
+		for _, existing := range m.rows {
+			if existing.DedupeKey == row.DedupeKey {
+				return ErrDuplicate
+			}
+		}
+	}
 	m.next++
 	row.ID = m.next
 	m.rows = append(m.rows, copyRow(row))
 	return nil
+}
+
+func (m *memoryStore) FindDedupe(ctx context.Context, key string) (*Row, error) {
+	if key == "" {
+		return nil, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, row := range m.rows {
+		if row.DedupeKey == key {
+			return copyRow(row), nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *memoryStore) Get(ctx context.Context, id int64) (*Row, error) {

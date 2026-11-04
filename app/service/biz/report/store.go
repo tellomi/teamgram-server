@@ -13,6 +13,7 @@ type Store interface {
 	UpdateStatus(ctx context.Context, ids []int64, status string, decidedAt int32) error
 	UpdateEvidence(ctx context.Context, id int64, key string) error
 	HasLegacy(ctx context.Context, storyID int64) (bool, error)
+	FindDedupe(ctx context.Context, key string) (*Row, error)
 	ClaimNotice(ctx context.Context, targetKey string, userID int64, kind, decision string) (fresh bool, err error)
 	ReleaseNotice(ctx context.Context, targetKey string, userID int64, kind, decision string) error
 }

@@ -22,10 +22,12 @@ CREATE TABLE IF NOT EXISTS reports (
   evidence_key VARCHAR(255) NOT NULL DEFAULT '',
   status VARCHAR(16) NOT NULL DEFAULT 'needs_human',
   legacy_story_id BIGINT NULL,
+  dedupe_key VARCHAR(191) NULL,
   created_at INT NOT NULL,
   decided_at INT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY reports_legacy_story (legacy_story_id),
+  UNIQUE KEY reports_dedupe (dedupe_key),
   KEY reports_reporter_time (reporter_user_id, created_at),
   KEY reports_target (target_key, status),
   KEY reports_status (status, id)

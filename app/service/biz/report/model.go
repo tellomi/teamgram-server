@@ -50,6 +50,10 @@ type Submission struct {
 	ReactionPeerID int64
 	Evidence       Evidence
 	LegacyStoryID  int64
+	// TargetKey overrides the derived key. Discover posts use the post id.
+	TargetKey string
+	// DedupeKey is set for engine retries. Empty means no dedupe.
+	DedupeKey string
 }
 
 // Evidence is what a reviewer can read. Items are messages, stories, or a
@@ -63,6 +67,7 @@ type Evidence struct {
 type Content struct {
 	Kind      string   `json:"kind"`
 	ID        int64    `json:"id,omitempty"`
+	Ref       string   `json:"ref,omitempty"`
 	Text      string   `json:"text,omitempty"`
 	MediaKeys []string `json:"media_keys,omitempty"`
 }
@@ -85,6 +90,7 @@ type Row struct {
 	EvidenceKey    string  `json:"evidence_key"`
 	Status         string  `json:"status"`
 	LegacyStoryID  int64   `json:"legacy_story_id"`
+	DedupeKey      string  `json:"dedupe_key,omitempty"`
 	CreatedAt      int32   `json:"created_at"`
 	DecidedAt      int32   `json:"decided_at"`
 }
