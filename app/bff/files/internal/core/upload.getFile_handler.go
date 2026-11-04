@@ -25,6 +25,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
 	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
 )
@@ -159,6 +160,12 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 					return redir, nil
 				}
 			}
+		}
+	}
+
+	if location.GetPredicateName() == mtproto.Predicate_inputPhotoFileLocation {
+		if body, mime, ok := chatbox.WebPhoto(location.GetId()); ok {
+			return uploadFileChunk(sliceFile(body, offset, limit), mime), nil
 		}
 	}
 
