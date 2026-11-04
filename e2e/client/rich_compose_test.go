@@ -41,10 +41,13 @@ func TestRichTranslateAndCompose(t *testing.T) {
 		t.Fatalf("draft translate %#v", rows)
 	}
 
+	// peer and id share flag bit 0. An omitted id is not encoded, and the
+	// session drops the frame. An empty vector is the call with no message ids.
 	_, err = a.Invoke(ctx, &mtproto.TLMessagesTranslateRichMessage{
 		Constructor: mtproto.CRC32_messages_translateRichMessage,
 		ToLang:      "en",
 		Peer:        peer,
+		Id:          []int32{},
 	})
 	assertRichError(t, err, "MESSAGE_IDS_EMPTY")
 
@@ -200,6 +203,12 @@ func TestRichRequestsEncode(t *testing.T) {
 			ToLang:      "zh",
 			Peer:        inputPeerUser(2, 3),
 			Id:          []int32{11},
+		},
+		&mtproto.TLMessagesTranslateRichMessage{
+			Constructor: mtproto.CRC32_messages_translateRichMessage,
+			ToLang:      "en",
+			Peer:        inputPeerUser(2, 3),
+			Id:          []int32{},
 		},
 		&mtproto.TLMessagesComposeRichMessageWithAI{
 			Constructor:     mtproto.CRC32_messages_composeRichMessageWithAI,
