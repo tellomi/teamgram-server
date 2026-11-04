@@ -253,6 +253,10 @@ func TestSetThumbAndChangeSticker(t *testing.T) {
 	if err != nil || updated.GetSet().GetThumbDocumentId().GetValue() != docs[1].GetId() {
 		t.Fatalf("thumb %#v %v", updated.GetSet(), err)
 	}
+	loc, err := s.ThumbLocation(set)
+	if err != nil || loc.GetId() != docs[1].GetId() {
+		t.Fatalf("thumb location %+v %v", loc, err)
+	}
 	// No explicit thumb falls back to the first sticker, which is the cover.
 	cleared, err := s.SetThumb(user, set, nil, nil)
 	if err != nil || cleared.GetSet().GetThumbDocumentId().GetValue() != docs[0].GetId() {

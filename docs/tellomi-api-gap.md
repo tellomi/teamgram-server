@@ -99,7 +99,7 @@ mysql ... teamgram < teamgramd/deploy/sql/migrate-20261103-authorization-setting
 - `messages.saveDraft` / `messages.clearAllDrafts`：频道草稿被挡住，私聊和基础群可以存。
 - `messages.editChatAbout`：基础群可以改简介，频道不行。
 - `account.updateNotifySettings`：用户、基础群可以；频道分支要插件。
-- `upload.getFile`：普通图片、文件，以及秘密聊天的 `inputEncryptedFileLocation` 走 DFS。贴纸集缩略图在没有插件时失败。
+- `upload.getFile`：普通图片、文件、秘密聊天的 `inputEncryptedFileLocation`，以及 `inputStickerSetThumb`（贴纸集封面，来自贴纸目录里的封面文档）都返回字节。没有贴纸插件时不再返回 `ENTERPRISE_IS_BLOCKED`。
 - `messages.forwardMessages` / `messages.deleteHistory`：有一条频道或加密分支返回企业错误，普通对话的转发和清空历史是实现了的。
 
 频道、付费、Apple/Google 登录按 P2 留着。

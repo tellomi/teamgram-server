@@ -676,6 +676,14 @@ func (s *Service) ThumbLocation(in *mtproto.InputStickerSet) (*mtproto.InputFile
 		return nil, mtproto.ErrStickersetInvalid
 	}
 	item := items[0]
+	if p.ThumbID != 0 {
+		for _, it := range items {
+			if it.DocumentID == p.ThumbID {
+				item = it
+				break
+			}
+		}
+	}
 	return mtproto.MakeTLInputDocumentFileLocation(&mtproto.InputFileLocation{
 		Id:         item.DocumentID,
 		AccessHash: item.AccessHash,
