@@ -19,7 +19,7 @@ Content-Type: application/json
 { "url": "https://example.com/post" }
 ```
 
-`url` 只能是 http 或 https。内网、回环、链路本地地址在解析前就拒绝，DNS 和跳转之后再查一次。
+`url` 只能是 http 或 https。内网、回环、链路本地地址在解析前就拒绝，包括方括号里的 IPv6（`[::1]`）和 `localhost`。DNS 和跳转之后再查一次：仍然是这类地址时返回 400，不是 502。相对路径的 `image` 按跳转后的最终页面解析。
 
 `200`
 

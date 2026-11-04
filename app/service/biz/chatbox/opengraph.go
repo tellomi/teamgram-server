@@ -41,6 +41,9 @@ func OpenGraph(ctx context.Context, raw string) (Card, error) {
 	ctx, cancel := context.WithTimeout(ctx, webTimeout)
 	defer cancel()
 	res := loadOpenGraph(ctx, u)
+	if res.blocked {
+		return Card{}, errPreviewDenied
+	}
 	if res.failed {
 		if res.pending || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return Card{}, errPreviewTimeout
@@ -63,17 +66,23 @@ func OpenGraph(ctx context.Context, raw string) (Card, error) {
 	}, nil
 }
 
+// filterImageURL is replaced by tests. Production drops private image URLs.
+var filterImageURL = safeImageURL
+
 func fetchOpenGraph(ctx context.Context, u *url.URL) fetchResult {
-	body, ctype, err := httpGetContext(ctx, u, webHTMLLimit)
+	body, ctype, final, err := httpGetContext(ctx, u, webHTMLLimit)
 	if err != nil {
+		if errors.Is(err, errBlockedTarget) {
+			return fetchResult{failed: true, blocked: true}
+		}
 		pending := temporaryFetchErr(err) || errors.Is(err, context.DeadlineExceeded)
 		return fetchResult{failed: true, pending: pending}
 	}
 	if !htmlType(ctype) {
 		return fetchResult{failed: true}
 	}
-	meta := parseMeta(decodeHTML(body, ctype), u)
-	meta.ImageURL = safeImageURL(ctx, meta.ImageURL)
+	meta := parseMeta(decodeHTML(body, ctype), pageBase(u, final))
+	meta.ImageURL = filterImageURL(ctx, meta.ImageURL)
 	return fetchResult{meta: meta}
 }
 

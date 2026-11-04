@@ -1,7 +1,6 @@
 package chatbox
 
 import (
-	"net"
 	"net/url"
 	"strings"
 	"unicode/utf16"
@@ -13,7 +12,8 @@ import (
 //
 // https://core.telegram.org/method/messages.getWebPage
 // The card is the page's Open Graph / meta tags. Fetches refuse private,
-// loopback, and link-local addresses, including after DNS and redirects.
+// loopback, and link-local addresses, including bracketed IPv6 and
+// localhost, and again after DNS and redirects.
 // A hash match returns webPageNotModified. An empty or non-http URL returns
 // WEBPAGE_CURL_FAILED. A page that cannot be loaded returns webPageEmpty,
 // or webPagePending when the failure may succeed on retry.
@@ -96,10 +96,7 @@ func parseWebURL(raw string) (*url.URL, error) {
 		raw = "https://" + raw
 	}
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, mtproto.ErrWebpageCurlFailed
-	}
-	if ip := net.ParseIP(hostOnly(u.Host)); ip != nil && blockedIP(ip) {
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || blockedHost(u.Host) {
 		return nil, mtproto.ErrWebpageCurlFailed
 	}
 	return u, nil

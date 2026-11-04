@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from langpack_official import LANGS, PLATFORMS, brand as official_brand  # noqa: E402
+from langpack_official import LANGS, PLATFORMS, brand as official_brand, rewritten_key  # noqa: E402
 
 FORMS = ("zero", "one", "two", "few", "many", "other")
 
@@ -107,7 +107,8 @@ GOOGLE = {
 def corrupt_key(key: str) -> bool:
     # brand() used to rewrite the letters t.me inside Chat.Message.
     # Those keys are not real strings. Do not copy them into other languages.
-    return "ell.cc" in key
+    # The same tell.cc check refuses the key in langpack_official.py.
+    return rewritten_key(key)
 
 
 def placeholders(text: str) -> list[str]:

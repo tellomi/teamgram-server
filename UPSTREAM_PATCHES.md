@@ -234,7 +234,7 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 ## Discover link cards
 
-`TELLOMI_LINK_PREVIEW=1` serves `POST /internal/v1/link-preview` on bff so content-engine can build a Discover card. Unset does not listen. The fetch is the same SSRF-protected Open Graph read as `messages.getWebPage`: private, loopback, and link-local addresses are refused before the request and again after DNS and redirects. The JSON card is title, description, image URL, and site name. It does not use the public tell.cc resolver on port 8801. The contract is `docs/api/link-preview-card.md`.
+`TELLOMI_LINK_PREVIEW=1` serves `POST /internal/v1/link-preview` on bff so content-engine can build a Discover card. Unset does not listen. The fetch is the same SSRF-protected Open Graph read as `messages.getWebPage`: private, loopback, and link-local addresses are refused before the request and again after DNS and redirects. Bracketed IPv6 and `localhost` are refused before the request. A block after DNS or a redirect is HTTP 400. A relative image URL is resolved against the final page URL. The JSON card is title, description, image URL, and site name. It does not use the public tell.cc resolver on port 8801. The contract is `docs/api/link-preview-card.md`.
 
 | Call | File | Hook |
 | --- | --- | --- |

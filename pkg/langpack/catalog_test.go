@@ -436,6 +436,13 @@ func TestShippedPacks(t *testing.T) {
 	if iosHans[5].GetValue() == "" {
 		t.Fatal("real Chat.Message key was lost")
 	}
+	iosEn, err := cat.Strings("ios", "en", []string{"Chat.Message.TopicAuthorBadge", "Chatell.ccssage.TopicAuthorBadge"})
+	if err != nil || iosEn[0].GetValue() != "Topic Creator" {
+		t.Fatalf("ios en real key %+v %v", iosEn, err)
+	}
+	if iosEn[1].GetPredicateName() != mtproto.Predicate_langPackStringDeleted {
+		t.Fatalf("rewritten key still served %+v", iosEn[1])
+	}
 	refreshed, err := cat.Difference("ios", "zh-hans", 22454343)
 	if err != nil || refreshed.GetVersion() < 22454346 || len(refreshed.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
@@ -904,5 +911,41 @@ func TestLangpackKeyNamesAreNotHosts(t *testing.T) {
 	}
 	if files < 100 || keys < 1000 {
 		t.Fatalf("langpack scan files=%d keys=%d", files, keys)
+	}
+}
+
+// TestIOSEnglishOverrideDoesNotPinHostKeys keeps the official Chat.Message
+// strings out of the Tellomi override. A copy with the same text would become
+// a divergence the next time the export changes, and the old wording would win.
+func TestIOSEnglishOverrideDoesNotPinHostKeys(t *testing.T) {
+	path := filepath.Join("..", "..", "data", "langpack", "overrides", "ios", "en.json.gz")
+	fh, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fh.Close()
+	zr, err := gzip.NewReader(fh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	var doc struct {
+		Strings []struct {
+			Key string `json:"key"`
+		} `json:"strings"`
+	}
+	if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	banned := map[string]bool{
+		"Chat.Message.TopicAuthorBadge":    true,
+		"Chatell.ccssage.TopicAuthorBadge": true,
+		"Attachment.MediaAccessText":       true,
+		"Attachmentell.ccdiaAccessText":    true,
+	}
+	for _, s := range doc.Strings {
+		if banned[s.Key] {
+			t.Fatalf("override pins %s", s.Key)
+		}
 	}
 }

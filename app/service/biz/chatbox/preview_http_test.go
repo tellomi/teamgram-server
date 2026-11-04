@@ -77,6 +77,18 @@ func TestLinkPreviewEndpoint(t *testing.T) {
 	if rec.Code != http.StatusBadRequest || calls != 1 {
 		t.Fatalf("link-local %d calls %d", rec.Code, calls)
 	}
+	rec = postPreview(t, h, token, `{"url":"http://[::1]/secret"}`)
+	if rec.Code != http.StatusBadRequest || calls != 1 {
+		t.Fatalf("ipv6 %d calls %d %s", rec.Code, calls, rec.Body.String())
+	}
+	rec = postPreview(t, h, token, `{"url":"http://localhost/secret"}`)
+	if rec.Code != http.StatusBadRequest || calls != 1 {
+		t.Fatalf("localhost %d calls %d", rec.Code, calls)
+	}
+	rec = postPreview(t, h, token, `{"url":""}`)
+	if rec.Code != http.StatusBadRequest || calls != 1 {
+		t.Fatalf("empty %d calls %d", rec.Code, calls)
+	}
 	rec = postPreview(t, h, token, `{`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("json %d", rec.Code)
@@ -89,6 +101,14 @@ func TestLinkPreviewEndpoint(t *testing.T) {
 	rec = postPreview(t, h, token, `{"url":"https://example.com/slow"}`)
 	if rec.Code != http.StatusGatewayTimeout || !strings.Contains(rec.Body.String(), `"timeout"`) {
 		t.Fatalf("timeout %d %s", rec.Code, rec.Body.String())
+	}
+
+	loadOpenGraph = func(context.Context, *url.URL) fetchResult {
+		return fetchResult{failed: true, blocked: true}
+	}
+	rec = postPreview(t, h, token, `{"url":"https://example.com/rebinding"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"bad_request"`) {
+		t.Fatalf("blocked after dns %d %s", rec.Code, rec.Body.String())
 	}
 
 	loadOpenGraph = func(context.Context, *url.URL) fetchResult {
