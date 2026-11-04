@@ -130,4 +130,37 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 - 输入栏 AI 默认关。`TELLOMI_AI_COMPOSE` 不是 `1`，或没有百炼 key 时，`tellomi_ai_compose_enabled` 是 false，调用返回 `AICOMPOSE_TIMEOUT`。
 - `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些，这次不改登录流程。
-- v2.1 里不在这几个 RPC 上的项见 `docs/design/chat-standby.md` 的 M8 表：帮助页默认仍是 `https://tellomi.cn/faq`（`TELLOMI_HELP_CENTER=1` 才换成 `https://tellomi.cn/help`）、发现的海外读副本和离线队列、`@tellomi` 群聊和跨区域额度、FCM / 华为以外的厂商推送、监控告警。个性化推荐开关和「关于」页的算法备案编号不在 `help.getAppConfig` 里。
+- v2.1 里不在这几个 RPC 上的项见下一节。
+
+## v2.1 服务端
+
+对照 v2.1 定稿和当前代码。上面的客户端 RPC 缺口不在这一节里。新行为默认关闭，登录流程没改。
+
+### 这次补上的
+
+`help.getAppConfig` 增加「关于 Tellomi」和个性化推荐要用的键。官方客户端不读这些键。
+
+`TELLOMI_ABOUT_DISCLOSURE` 不是 `1` 时，`tellomi_personalized_recommend_default` 是 false，客户端不显示「个性化推荐」。备案号、模型名、登记编号这三个键不出现。
+
+`TELLOMI_ABOUT_DISCLOSURE=1` 并且 `TELLOMI_ALGORITHM_FILING_NUMBER` 是一段公开编号时：
+
+- `tellomi_personalized_recommend_default` 为 true。这是开关的默认打开（D-58），不是某个用户此刻的选择。客户端在「隐私与安全」里显示开关，默认开。用户关掉之后，推荐流改为不针对个人的排序；排序在 content-engine，本进程不保存这个选择，也不做排序。
+- `tellomi_algorithm_filing_number` 是这段编号，给「关于 Tellomi」页（D-59）。
+
+同一个开关下，`TELLOMI_AI_PUBLIC_MODEL`、`TELLOMI_AI_REGISTRATION_NUMBER` 去掉首尾空白后非空，才分别下发 `tellomi_ai_model_name`、`tellomi_ai_registration_number`（D-50）。没填就没有这个键。控制字符、超过 128 个字符、或正文里出现 telegram / t.me 的，当成没填。`true`、`yes` 不能代替 `1`。
+
+配置一变，`help.getAppConfig` 的 hash 就变，客户端会重新拉。没有新的 RPC，没有新表，也不动 Redis。
+
+### 已经在 master 上、这次没改行为
+
+- 小米推送已经在 `pkg/push`。`TELLOMI_XIAOMI_PUSH=1`，并且 AppSecret 和包名都有，才向 token_type 14 发通知栏消息。否则只存 token，不发。见 `docs/push.md`。
+- 帮助中心网址：`TELLOMI_HELP_CENTER=1` 才把 `faq_link` 改成 `https://tellomi.cn/help`（D-40）。默认仍是 `https://tellomi.cn/faq`。页面不由本进程提供，这次不改默认值。
+
+### 还留着的 v2.1 服务端
+
+- 帮助网页搬到 Cloudflare Pages（D-62），以及什么时候把 `TELLOMI_HELP_CENTER` 打开。打开之前要确认 `https://tellomi.cn/help` 已经能打开。
+- R2 前面的 CDN 域名（D-63）是 Cloudflare 配置。本仓库已有公开媒体和附件的 base URL。
+- 发现和 @tellomi 的海外 Cloud Run、Supabase 只读副本、手机离线队列（D-64 到 D-67）不在这个进程里。`@tellomi` 的每日计数还在进程内存里，第二份实例不能共用。群聊上下文还没做。
+- 推送（D-68）：APNs 在挂了 `.p8` 时发送。FCM 和华为的 token 只存储，发送端没装。OPPO、vivo、荣耀、魅族没有通道，等确认小米能不能覆盖这些品牌后再接。从成都能不能打到 FCM，这个仓库里没测。
+- 监控和告警仍不做（D-69）。聊天主备只写了 `docs/design/chat-standby.md`，没有代码（D-70）。隐私政策正文在官网，不在这里（D-71）。
+- 用户关掉个性化推荐之后，发现流立刻改成不针对个人的排序：客户端把选择交给 content-engine。本进程不下发这个人的当前选择。

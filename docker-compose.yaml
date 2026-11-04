@@ -160,6 +160,13 @@ services:
       # 1 switches it to https://tellomi.cn/help (D-40). The page is not
       # served by this container.
       TELLOMI_HELP_CENTER: ${TELLOMI_HELP_CENTER:-}
+      # About page and the personalized-recommendation default (D-50 / D-58 / D-59).
+      # Unset leaves tellomi_personalized_recommend_default false and omits
+      # the filing number, model name, and registration number.
+      TELLOMI_ABOUT_DISCLOSURE: ${TELLOMI_ABOUT_DISCLOSURE:-}
+      TELLOMI_ALGORITHM_FILING_NUMBER: ${TELLOMI_ALGORITHM_FILING_NUMBER:-}
+      TELLOMI_AI_PUBLIC_MODEL: ${TELLOMI_AI_PUBLIC_MODEL:-}
+      TELLOMI_AI_REGISTRATION_NUMBER: ${TELLOMI_AI_REGISTRATION_NUMBER:-}
       TELLOMI_USERNAME_POLICY: ${TELLOMI_USERNAME_POLICY:-}
       # Aliyun Green / Bailian text moderation for Han display names,
       # bios, and group titles.

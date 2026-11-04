@@ -245,3 +245,11 @@ Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describe
 | Call | File | Hook |
 | --- | --- | --- |
 | `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `brand.HelpURL` |
+
+## About page and recommendation default (D-50 / D-58 / D-59)
+
+`TELLOMI_ABOUT_DISCLOSURE=1` plus `TELLOMI_ALGORITHM_FILING_NUMBER` sets `help.getAppConfig` `tellomi_personalized_recommend_default` to true and publishes `tellomi_algorithm_filing_number`. The same flag publishes `tellomi_ai_model_name` and `tellomi_ai_registration_number` when `TELLOMI_AI_PUBLIC_MODEL` and `TELLOMI_AI_REGISTRATION_NUMBER` are set. Unset leaves the bool false and omits the strings. The bool is the switch default, not a stored per-user choice. The hash includes the flag and the published strings. Login is unchanged.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `pkg/about` |
