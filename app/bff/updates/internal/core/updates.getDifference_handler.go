@@ -29,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/diffstrict"
 )
 
 // UpdatesGetDifference
@@ -67,8 +68,11 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 			Seq:  updatesDiff.GetState().GetSeq(),
 		}).To_Updates_Difference(), nil
 	case updates.Predicate_difference:
-		// TODO: fix date
-		updatesDiff.State.Date = int32(time.Now().Unix())
+		// The historical path stamps "now" so a client with a stale date
+		// does not immediately ask again. Strict mode keeps the merged date.
+		if !diffstrict.Enabled() {
+			updatesDiff.State.Date = int32(time.Now().Unix())
+		}
 
 		rDifference = mtproto.MakeTLUpdatesDifference(&mtproto.Updates_Difference{
 			NewMessages:          updatesDiff.NewMessages,

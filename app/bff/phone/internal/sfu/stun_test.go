@@ -45,18 +45,27 @@ func TestSTUNBindingUsesServerPassword(t *testing.T) {
 	if _, err := c.Write(req.Raw); err != nil {
 		t.Fatal(err)
 	}
-	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	// The call handshake can send a DTLS flight on this socket before the
+	// binding response. Read until the STUN success or the deadline.
+	deadline := time.Now().Add(2 * time.Second)
 	buf := make([]byte, 1500)
-	n, err := c.Read(buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res := &stun.Message{Raw: append([]byte(nil), buf[:n]...)}
-	if err := res.Decode(); err != nil {
-		t.Fatal(err)
-	}
-	if res.Type != stun.BindingSuccess {
-		t.Fatalf("type %s", res.Type)
+	var res *stun.Message
+	for {
+		if err := c.SetReadDeadline(deadline); err != nil {
+			t.Fatal(err)
+		}
+		n, err := c.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg := &stun.Message{Raw: append([]byte(nil), buf[:n]...)}
+		if err := msg.Decode(); err != nil {
+			continue
+		}
+		if msg.Type == stun.BindingSuccess {
+			res = msg
+			break
+		}
 	}
 	var xor stun.XORMappedAddress
 	if err := xor.GetFrom(res); err != nil {
