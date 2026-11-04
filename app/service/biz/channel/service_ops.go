@@ -340,6 +340,7 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		if err != nil {
 			return nil, err
 		}
+		s.bindTopic(ctx, channelID, id, msg)
 		stored, err := s.store.GetMessage(ctx, channelID, id)
 		if err != nil || stored == nil {
 			return nil, mtproto.ErrInternalServerError

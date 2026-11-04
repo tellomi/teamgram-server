@@ -927,6 +927,40 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	return s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
 }
 
+// UnpinAll clears the channel's pinned message. A channel with nothing
+// pinned returns the current pts and a zero count.
+func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64) (int32, int32, error) {
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return 0, 0, err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, self)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !p.IsCreator() && !p.adminRights().CanPinMessages() {
+		return 0, 0, mtproto.ErrChatAdminRequired
+	}
+	f := s.features(ctx, ch.ID)
+	if f.PinnedMsgID == 0 {
+		return ch.Pts, 0, nil
+	}
+	pinned := f.PinnedMsgID
+	f.PinnedMsgID = 0
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return 0, 0, err
+	}
+	if stored, err := s.store.GetMessage(ctx, channelID, pinned); err == nil && stored != nil && !stored.Deleted {
+		if body, _ := unmarshalMessage(stored.Data); body != nil {
+			body.Pinned = false
+			raw, _ := proto.Marshal(body)
+			_, _ = s.store.CommitEdit(ctx, channelID, pinned, int32(time.Now().Unix()), raw)
+		}
+	}
+	_ = actorAuth
+	return ch.Pts, 1, nil
+}
+
 func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID int64, title string, iconColor int32, iconEmoji int64) (*mtproto.Updates, *TopicRec, error) {
 	ch, p, err := s.requireMember(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
@@ -942,14 +976,7 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 		return nil, nil, mtproto.ErrChatTitleEmpty
 	}
 	f := s.features(ctx, ch.ID)
-	var next int32 = 1
-	for _, t := range f.Topics {
-		if t.ID >= next {
-			next = t.ID + 1
-		}
-	}
 	topic := TopicRec{
-		ID:        next,
 		Title:     title,
 		IconColor: iconColor,
 		IconEmoji: iconEmoji,
@@ -964,6 +991,8 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 	if err != nil {
 		return nil, nil, err
 	}
+	// forumTopic.id is the service message that created the topic.
+	topic.ID = id
 	topic.TopMessage = id
 	if f.MsgTopic == nil {
 		f.MsgTopic = map[int32]int32{}
@@ -977,7 +1006,7 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 	return up, &topic, err
 }
 
-func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q string, limit int32) ([]*mtproto.ForumTopic, *mtproto.Chat, error) {
+func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q string, limit, offsetDate, offsetID, offsetTopic int32) ([]*mtproto.ForumTopic, *mtproto.Chat, error) {
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, nil, err
@@ -987,8 +1016,33 @@ func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q strin
 	if limit <= 0 {
 		limit = 20
 	}
+	rows := append([]TopicRec(nil), f.Topics...)
+	sortTopics(rows)
+	start := 0
+	if offsetTopic != 0 {
+		for i, t := range rows {
+			if t.ID == offsetTopic {
+				start = i + 1
+				break
+			}
+		}
+	} else if offsetDate != 0 || offsetID != 0 {
+		for i, t := range rows {
+			if t.Pinned {
+				continue
+			}
+			if t.Date < offsetDate || (t.Date == offsetDate && t.ID < offsetID) {
+				start = i
+				break
+			}
+			start = i + 1
+		}
+	}
+	if start > len(rows) {
+		start = len(rows)
+	}
 	var topics []*mtproto.ForumTopic
-	for _, t := range f.Topics {
+	for _, t := range rows[start:] {
 		if q != "" && !strings.Contains(strings.ToLower(t.Title), q) {
 			continue
 		}
@@ -998,6 +1052,29 @@ func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q strin
 		}
 	}
 	return topics, s.ChatFor(ctx, self, ch), nil
+}
+
+func sortTopics(rows []TopicRec) {
+	for i := 0; i < len(rows); i++ {
+		for j := i + 1; j < len(rows); j++ {
+			if topicLess(rows[j], rows[i]) {
+				rows[i], rows[j] = rows[j], rows[i]
+			}
+		}
+	}
+}
+
+func topicLess(a, b TopicRec) bool {
+	if a.Pinned != b.Pinned {
+		return a.Pinned
+	}
+	if a.Pinned && b.Pinned && a.PinOrder != b.PinOrder {
+		return a.PinOrder < b.PinOrder
+	}
+	if a.Date != b.Date {
+		return a.Date > b.Date
+	}
+	return a.ID > b.ID
 }
 
 func (s *Service) topicTL(self, channelID int64, t TopicRec) *mtproto.ForumTopic {
@@ -1021,32 +1098,51 @@ func (s *Service) topicTL(self, channelID int64, t TopicRec) *mtproto.ForumTopic
 	return ft
 }
 
-func (s *Service) EditTopic(ctx context.Context, self, channelID int64, topicID int32, title string, closed *bool) (*TopicRec, error) {
+func (s *Service) EditTopic(ctx context.Context, self, channelID int64, topicID int32, title string, closed *bool, iconEmoji *int64, hidden *bool) (*TopicRec, error) {
 	ch, p, err := s.requireMember(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
 	}
 	f := s.features(ctx, ch.ID)
-	for i := range f.Topics {
-		if f.Topics[i].ID != topicID {
-			continue
-		}
-		if f.Topics[i].CreatorID != self && !p.IsAdmin() {
+	idx, ok := findTopic(f, topicID)
+	if !ok {
+		return nil, mtproto.ErrTopicIdInvalid
+	}
+	if f.Topics[idx].CreatorID != self && !p.IsAdmin() {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	if title != "" {
+		f.Topics[idx].Title = title
+	}
+	if closed != nil {
+		f.Topics[idx].Closed = *closed
+	}
+	if iconEmoji != nil {
+		f.Topics[idx].IconEmoji = *iconEmoji
+	}
+	if hidden != nil {
+		if !p.IsAdmin() && f.Topics[idx].CreatorID != self {
 			return nil, mtproto.ErrChatAdminRequired
 		}
-		if title != "" {
-			f.Topics[i].Title = title
-		}
-		if closed != nil {
-			f.Topics[i].Closed = *closed
-		}
-		if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
-			return nil, err
-		}
-		cp := f.Topics[i]
-		return &cp, nil
+		f.Topics[idx].Hidden = *hidden
 	}
-	return nil, mtproto.ErrTopicIdInvalid
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	cp := f.Topics[idx]
+	return &cp, nil
+}
+
+func findTopic(f *Features, id int32) (int, bool) {
+	if f == nil || id == 0 {
+		return 0, false
+	}
+	for i := range f.Topics {
+		if f.Topics[i].ID == id {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func (s *Service) PinTopic(ctx context.Context, self, channelID int64, topicID int32, pinned bool) error {
@@ -1058,13 +1154,174 @@ func (s *Service) PinTopic(ctx context.Context, self, channelID int64, topicID i
 		return mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
-	for i := range f.Topics {
-		if f.Topics[i].ID == topicID {
-			f.Topics[i].Pinned = pinned
-			return s.saveFeatures(ctx, ch.ID, f)
+	idx, ok := findTopic(f, topicID)
+	if !ok {
+		return mtproto.ErrTopicIdInvalid
+	}
+	f.Topics[idx].Pinned = pinned
+	if pinned {
+		var max int32
+		for _, t := range f.Topics {
+			if t.Pinned && t.PinOrder >= max {
+				max = t.PinOrder + 1
+			}
+		}
+		f.Topics[idx].PinOrder = max
+	}
+	return s.saveFeatures(ctx, ch.ID, f)
+}
+
+// ReorderPinnedTopics applies messages.reorderPinnedForumTopics.
+// order is the pinned topic ids, first in the list shown first.
+// force unpins topics that are missing from order.
+func (s *Service) ReorderPinnedTopics(ctx context.Context, self, channelID int64, order []int32, force bool) error {
+	ch, p, err := s.requireMember(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
+	if err != nil {
+		return err
+	}
+	if !p.IsAdmin() {
+		return mtproto.ErrChatAdminRequired
+	}
+	f := s.features(ctx, ch.ID)
+	seen := map[int32]int32{}
+	for i, id := range order {
+		idx, ok := findTopic(f, id)
+		if !ok {
+			return mtproto.ErrTopicIdInvalid
+		}
+		seen[f.Topics[idx].ID] = int32(i)
+	}
+	if !force {
+		for _, t := range f.Topics {
+			if t.Pinned {
+				if _, ok := seen[t.ID]; !ok {
+					return mtproto.ErrTopicIdInvalid
+				}
+			}
 		}
 	}
-	return mtproto.ErrTopicIdInvalid
+	for i := range f.Topics {
+		pos, ok := seen[f.Topics[i].ID]
+		if ok {
+			f.Topics[i].Pinned = true
+			f.Topics[i].PinOrder = pos
+			continue
+		}
+		if force {
+			f.Topics[i].Pinned = false
+		}
+	}
+	return s.saveFeatures(ctx, ch.ID, f)
+}
+
+// DeleteTopicHistory deletes messages that belong to one forum topic.
+// It does not clear the rest of the channel. The topic record stays so the
+// topic id (the creation message) remains addressable.
+func (s *Service) DeleteTopicHistory(ctx context.Context, self, actorAuth, channelID int64, topMsgID int32) (pts, ptsCount int32, err error) {
+	ch, p, err := s.requireMember(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
+	if err != nil {
+		return 0, 0, err
+	}
+	if !ch.Forum {
+		return 0, 0, mtproto.ErrTopicIdInvalid
+	}
+	f := s.features(ctx, ch.ID)
+	idx, ok := findTopic(f, topMsgID)
+	if !ok {
+		return 0, 0, mtproto.ErrTopicIdInvalid
+	}
+	if !p.IsCreator() && !p.adminRights().CanDeleteMessages() {
+		return 0, 0, mtproto.ErrChatAdminRequired
+	}
+	topicID := f.Topics[idx].ID
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+	var ids []int32
+	for _, m := range msgs {
+		if m.Deleted || m.ID == topicID {
+			continue
+		}
+		if messageInTopic(f, m, topicID) {
+			ids = append(ids, m.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return ch.Pts, 0, nil
+	}
+	pts, ptsCount, err = s.Delete(ctx, self, ch.ID, actorAuth, ids)
+	if err != nil {
+		return 0, 0, err
+	}
+	f = s.features(ctx, ch.ID)
+	if i, ok := findTopic(f, topicID); ok {
+		f.Topics[i].TopMessage = topicID
+		for _, id := range ids {
+			delete(f.MsgTopic, id)
+		}
+		_ = s.saveFeatures(ctx, ch.ID, f)
+	}
+	return pts, ptsCount, nil
+}
+
+func messageInTopic(f *Features, m *StoredMessage, topicID int32) bool {
+	if f != nil && f.MsgTopic[m.ID] == topicID {
+		return true
+	}
+	body, err := unmarshalMessage(m.Data)
+	if err != nil || body == nil || body.GetReplyTo() == nil {
+		return false
+	}
+	h := body.GetReplyTo()
+	if h.GetReplyToTopId().GetValue() == topicID {
+		return true
+	}
+	return h.GetReplyToMsgId() == topicID
+}
+
+// ensureGeneralTopic creates the hidden General topic once when a forum is enabled.
+func (s *Service) ensureGeneralTopic(ctx context.Context, self, channelID int64) {
+	f := s.features(ctx, channelID)
+	for _, t := range f.Topics {
+		if t.Hidden && strings.EqualFold(t.Title, "General") {
+			return
+		}
+	}
+	_, topic, err := s.CreateTopic(ctx, self, 0, channelID, "General", 0x6FB9F0, 0)
+	if err != nil || topic == nil {
+		return
+	}
+	hidden := true
+	_, _ = s.EditTopic(ctx, self, channelID, topic.ID, "", nil, nil, &hidden)
+}
+
+// bindTopic records which forum topic a new message belongs to and advances top_message.
+func (s *Service) bindTopic(ctx context.Context, channelID int64, msgID int32, msg *mtproto.Message) {
+	if msg == nil || msg.GetReplyTo() == nil {
+		return
+	}
+	h := msg.GetReplyTo()
+	top := h.GetReplyToTopId().GetValue()
+	if top == 0 {
+		top = h.GetReplyToMsgId()
+	}
+	if top == 0 {
+		return
+	}
+	f := s.features(ctx, channelID)
+	idx, ok := findTopic(f, top)
+	if !ok {
+		return
+	}
+	if f.MsgTopic == nil {
+		f.MsgTopic = map[int32]int32{}
+	}
+	f.MsgTopic[msgID] = f.Topics[idx].ID
+	if msgID > f.Topics[idx].TopMessage {
+		f.Topics[idx].TopMessage = msgID
+	}
+	_ = s.saveFeatures(ctx, channelID, f)
 }
 
 func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.InputChannel, enabled bool) (*mtproto.Updates, error) {
@@ -1079,6 +1336,9 @@ func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.Input
 	ch.Version++
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
 		return nil, err
+	}
+	if enabled {
+		s.ensureGeneralTopic(ctx, self, ch.ID)
 	}
 	return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
 }
@@ -1276,19 +1536,16 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID, off
 		}
 		chats = append(chats, s.ChatFor(ctx, self, peerCh))
 		all, _ := s.store.ListMessages(ctx, id)
+		topicID := msgID
+		if i, ok := findTopic(f, msgID); ok {
+			topicID = f.Topics[i].ID
+		}
 		for _, stored := range all {
 			if stored.Deleted || (offsetID > 0 && stored.ID >= offsetID) {
 				continue
 			}
 			body, err := unmarshalMessage(stored.Data)
-			if err != nil || body.GetReplyTo() == nil {
-				continue
-			}
-			replyID := body.GetReplyTo().GetReplyToMsgId()
-			if replyID == 0 {
-				replyID = body.GetReplyTo().GetReplyToMsgId_INT32()
-			}
-			if replyID != msgID {
+			if err != nil || !messageInTopic(f, stored, topicID) {
 				continue
 			}
 			msgs = append(msgs, viewMessage(body, stored.SenderID, self))

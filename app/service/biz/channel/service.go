@@ -150,6 +150,9 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 	if _, _, err := s.appendMessage(ctx, ch.ID, in.CreatorID, 0, msg); err != nil {
 		return nil, err
 	}
+	if ch.Forum {
+		s.ensureGeneralTopic(ctx, in.CreatorID, ch.ID)
+	}
 	return s.actorUpdates(ctx, in.CreatorID, in.ActorAuth, ch.ID, KindNew)
 }
 

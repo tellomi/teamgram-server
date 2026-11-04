@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 // MessagesUnpinAllMessages
@@ -34,6 +35,15 @@ func (c *MessagesCore) MessagesUnpinAllMessages(in *mtproto.TLMessagesUnpinAllMe
 	case mtproto.PEER_USER:
 	case mtproto.PEER_CHAT:
 	case mtproto.PEER_CHANNEL:
+		pts, count, err := channel.Shared().UnpinAll(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId)
+		if err != nil {
+			c.Logger.Errorf("messages.unpinAllMessages - error: %v", err)
+			return nil, err
+		}
+		return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
+			Pts:      pts,
+			PtsCount: count,
+		}).To_Messages_AffectedHistory(), nil
 	default:
 		c.Logger.Errorf("invalid peer: %v", in.Peer)
 		err := mtproto.ErrPeerIdInvalid

@@ -151,6 +151,9 @@ type TopicRec struct {
 	Closed     bool
 	Pinned     bool
 	Hidden     bool
+	// PinOrder is the position from messages.reorderPinnedForumTopics.
+	// Lower comes first among pinned topics.
+	PinOrder int32
 }
 
 type ReactRec struct {
