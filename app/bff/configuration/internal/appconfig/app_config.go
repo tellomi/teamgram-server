@@ -8,6 +8,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/about"
 	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
@@ -57,7 +58,7 @@ func AppConfigHash() int32 {
 	if announce.Advertised() {
 		notice = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice)
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, about.HashFragment())
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -122,6 +123,25 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 	pairs = append(pairs, pair("channels_public_limit", premium.FeaturePublicChannels)...)
 	pairs = append(pairs, pair("reactions_user_max", premium.FeatureReactions)...)
 	pairs = append(pairs, pair("upload_max_fileparts", premium.FeatureUpload)...)
+	pairs = append(pairs, aboutPairs()...)
+	return pairs
+}
+
+// aboutPairs are Tellomi keys for the privacy switch and the About page.
+// Official clients ignore them. String keys are omitted until disclosed.
+func aboutPairs() []*mtproto.JSONObjectValue {
+	pairs := []*mtproto.JSONObjectValue{
+		jsonPair("tellomi_personalized_recommend_default", jsonBool(about.PersonalizedRecommendDefault())),
+	}
+	if s := about.AlgorithmFilingNumber(); s != "" {
+		pairs = append(pairs, jsonPair("tellomi_algorithm_filing_number", jsonString(s)))
+	}
+	if s := about.AIModelName(); s != "" {
+		pairs = append(pairs, jsonPair("tellomi_ai_model_name", jsonString(s)))
+	}
+	if s := about.AIRegistrationNumber(); s != "" {
+		pairs = append(pairs, jsonPair("tellomi_ai_registration_number", jsonString(s)))
+	}
 	return pairs
 }
 

@@ -117,7 +117,7 @@ Postgres for content-engine and the engine process are not in this compose file.
 
 | Decision | Where it stands for this server |
 | --- | --- |
-| D-62 help site on Cloudflare Pages | Not this repository. `faq_link` is still `https://tellomi.cn/faq` until a later change. |
+| D-62 help site on Cloudflare Pages | Not this repository. `faq_link` stays `https://tellomi.cn/faq` unless `TELLOMI_HELP_CENTER=1`, which advertises `https://tellomi.cn/help`. The page is still not served here. |
 | D-63 R2 in front of a CDN | `TELLOMI_S3_PUBLIC_MEDIA_BASE_URL` and `TELLOMI_S3_ATTACHMENTS_BASE_URL` already exist. Binding the hostname is Cloudflare configuration. See [storage.md](../storage.md). |
 | D-64, D-65, D-66 feed split, Supabase replica, offline queue | content-engine and the clients. Not this process. |
 | D-67 `@tellomi` on Cloud Run | The server path is in-process and off unless `TELLOMI_AI=1`. The daily counter is per process. A second region cannot share it until that counter moves to a store both sides read. Not built here. |
