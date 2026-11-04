@@ -112,7 +112,7 @@ func TestHelpGetAppUpdateReadsManifest(t *testing.T) {
 	auth := authUpdateStub{auth: authorization("14.0.4", "Pixel 8", "14")}
 
 	got := callAppUpdate(t, android, auth, "")
-	if got.GetPredicateName() != mtproto.Predicate_help_appUpdate || got.GetVersion() != "14.0.6" || !got.GetCanNotSkip() || got.GetText() != "Bug fixes" {
+	if got.GetPredicateName() != mtproto.Predicate_help_appUpdate || got.GetVersion() != "14.0.6" || got.GetCanNotSkip() || got.GetText() != "Bug fixes" {
 		t.Fatalf("predicate %s version %q skip %v text %q", got.GetPredicateName(), got.GetVersion(), got.GetCanNotSkip(), got.GetText())
 	}
 	if got.GetUrl().GetValue() != "https://www.tellomi.cn/dl/android/Tellomi.apk" {
@@ -131,14 +131,25 @@ func TestHelpGetAppUpdateReadsManifest(t *testing.T) {
 	t.Setenv("TELLOMI_APP_UPDATE_TEXT", "Operator note")
 	t.Setenv("TELLOMI_APP_UPDATE_URL", "https://tellomi.cn/get")
 	overFields := callAppUpdate(t, android, auth, "")
-	if overFields.GetVersion() != "14.0.6" || overFields.GetText() != "Operator note" || overFields.GetUrl().GetValue() != "https://tellomi.cn/get" || !overFields.GetCanNotSkip() {
+	if overFields.GetVersion() != "14.0.6" || overFields.GetText() != "Operator note" || overFields.GetUrl().GetValue() != "https://tellomi.cn/get" || overFields.GetCanNotSkip() {
 		t.Fatalf("version %q text %q url %v skip %v", overFields.GetVersion(), overFields.GetText(), overFields.GetUrl(), overFields.GetCanNotSkip())
 	}
 
+	t.Setenv("TELLOMI_APP_UPDATE_CANNOT_SKIP", "1")
+	forcedEnv := callAppUpdate(t, android, auth, "")
+	if !forcedEnv.GetCanNotSkip() || forcedEnv.GetVersion() != "14.0.6" {
+		t.Fatalf("skip %v version %q", forcedEnv.GetCanNotSkip(), forcedEnv.GetVersion())
+	}
+
+	mandatoryPath := filepath.Join(t.TempDir(), "latest.json")
+	if err := os.WriteFile(mandatoryPath, []byte(`{"versionName":"14.0.6","url":"https://www.tellomi.cn/dl/android/Tellomi.apk","mandatory":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("TELLOMI_APP_UPDATE_CANNOT_SKIP", "0")
-	dismissible := callAppUpdate(t, android, auth, "")
-	if dismissible.GetCanNotSkip() || dismissible.GetVersion() != "14.0.6" {
-		t.Fatalf("skip %v version %q", dismissible.GetCanNotSkip(), dismissible.GetVersion())
+	t.Setenv("TELLOMI_APP_UPDATE_MANIFEST", mandatoryPath)
+	fromManifest := callAppUpdate(t, android, auth, "")
+	if !fromManifest.GetCanNotSkip() || fromManifest.GetVersion() != "14.0.6" {
+		t.Fatalf("skip %v version %q", fromManifest.GetCanNotSkip(), fromManifest.GetVersion())
 	}
 
 	t.Setenv("TELLOMI_APP_UPDATE_VERSION", "14.0.5")

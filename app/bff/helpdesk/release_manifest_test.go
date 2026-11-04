@@ -37,14 +37,14 @@ func TestParsePublishedManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rel.Version != "14.0.6" || !rel.CannotSkip || rel.Text != "" {
+	if rel.Version != "14.0.6" || rel.CannotSkip || rel.Text != "" {
 		t.Fatalf("%#v", rel)
 	}
 	if rel.URL != "https://www.tellomi.cn/dl/android/14.0.6-1802599/Tellomi.apk" {
 		t.Fatal(rel.URL)
 	}
 	got := AppUpdate("14.0.5", "", rel)
-	if got.GetPredicateName() != mtproto.Predicate_help_appUpdate || got.GetVersion() != "14.0.6" || !got.GetCanNotSkip() {
+	if got.GetPredicateName() != mtproto.Predicate_help_appUpdate || got.GetVersion() != "14.0.6" || got.GetCanNotSkip() {
 		t.Fatalf("%s %s skip=%v", got.GetPredicateName(), got.GetVersion(), got.GetCanNotSkip())
 	}
 	if got.GetText() != "A new version of Tellomi is available." {
@@ -81,6 +81,19 @@ func TestParsePublishedManifest(t *testing.T) {
 	}
 	if _, err := parseManifest([]byte(`{`)); err == nil {
 		t.Fatal("invalid json")
+	}
+
+	forced, err := parseManifest([]byte(`{"versionName":"14.0.7","url":"https://example.com/a.apk","mandatory":true}`))
+	if err != nil || !forced.CannotSkip {
+		t.Fatalf("%v %#v", err, forced)
+	}
+	soft, err := parseManifest([]byte(`{"versionName":"14.0.7","url":"https://example.com/a.apk","mandatory":false}`))
+	if err != nil || soft.CannotSkip {
+		t.Fatalf("%v %#v", err, soft)
+	}
+	quoted, err := parseManifest([]byte(`{"versionName":"14.0.7","url":"https://example.com/a.apk","mandatory":"true"}`))
+	if err != nil || quoted.CannotSkip {
+		t.Fatalf("%v %#v", err, quoted)
 	}
 }
 
@@ -119,7 +132,7 @@ func TestManifestFileAndHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	rel, err := loadCachedManifest(path)
-	if err != nil || rel.Version != "14.0.8" || rel.Text != "Fixes" || !rel.CannotSkip {
+	if err != nil || rel.Version != "14.0.8" || rel.Text != "Fixes" || rel.CannotSkip {
 		t.Fatalf("%v %#v", err, rel)
 	}
 	if _, err := loadCachedManifest(filepath.Join(t.TempDir(), "missing.json")); err == nil {

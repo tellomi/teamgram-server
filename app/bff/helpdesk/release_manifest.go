@@ -233,13 +233,15 @@ func readLimited(r io.Reader) ([]byte, error) {
 // androidManifest is the published /dl/android/latest.json object.
 // versionName is what help.getAppUpdate compares. url is the button link,
 // and fallbackUrl is used when url is empty. changelog, when it is a string,
-// is the dialog text. Other keys (versionCode, sha256, sha256sum, size, files)
+// is the dialog text. mandatory forces can_not_skip only when it is the JSON
+// boolean true. Other keys (versionCode, sha256, sha256sum, size, files)
 // are accepted and ignored.
 type androidManifest struct {
 	VersionName string          `json:"versionName"`
 	URL         string          `json:"url"`
 	FallbackURL string          `json:"fallbackUrl"`
 	Changelog   json.RawMessage `json:"changelog"`
+	Mandatory   json.RawMessage `json:"mandatory"`
 }
 
 func parseManifest(body []byte) (*Release, error) {
@@ -259,8 +261,22 @@ func parseManifest(body []byte) (*Release, error) {
 		Version:    version,
 		Text:       manifestChangelog(doc.Changelog),
 		URL:        link,
-		CannotSkip: true,
+		CannotSkip: manifestMandatory(doc.Mandatory),
 	}, nil
+}
+
+// manifestMandatory reports a JSON boolean true. A missing field, false,
+// null, or any other JSON type leaves the prompt skippable.
+func manifestMandatory(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return false
+	}
+	var mandatory bool
+	if err := json.Unmarshal(raw, &mandatory); err != nil {
+		return false
+	}
+	return mandatory
 }
 
 func manifestChangelog(raw json.RawMessage) string {

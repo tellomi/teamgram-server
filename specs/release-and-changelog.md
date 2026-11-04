@@ -31,7 +31,7 @@ Before cutting a new release:
 
 Every Android release publishes `https://www.tellomi.cn/dl/android/latest.json`. Chengdu syncs that object from the R2 bucket `tellomi-updates`. `help.getAppUpdate` reads it and compares `versionName` with the client. Publishing the file is what shows the in-app prompt. Do not rely on editing `TELLOMI_APP_UPDATE_VERSION` in the production `.env`. Leave that variable empty. A non-empty value replaces the manifest and will go stale on the next APK.
 
-The feed fields are `versionName`, `versionCode`, `url`, `fallbackUrl`, `sha256` or `sha256sum`, and `size`. The published file uses `sha256sum` at the top level and `sha256` on each `files[]` entry. Optional `changelog`, when it is a string, is the dialog text. The prompt is mandatory (`can_not_skip`) unless `TELLOMI_APP_UPDATE_CANNOT_SKIP=0`. iOS still receives `help.noAppUpdate`.
+The feed fields are `versionName`, `versionCode`, `url`, `fallbackUrl`, `sha256` or `sha256sum`, and `size`. The published file uses `sha256sum` at the top level and `sha256` on each `files[]` entry. Optional `changelog`, when it is a string, is the dialog text. The prompt is skippable. It sets `can_not_skip` only when `TELLOMI_APP_UPDATE_CANNOT_SKIP=1` or the feed contains `"mandatory": true` (a JSON boolean; any other type is ignored). iOS still receives `help.noAppUpdate`.
 
 `TELLOMI_APP_UPDATE_MANIFEST` selects a file path or an `http(s)` URL. When it is unset or empty, the server uses the first regular file that exists:
 
@@ -45,4 +45,4 @@ Otherwise it fetches `https://www.tellomi.cn/dl/android/latest.json`. `off` disa
 After each Android release:
 
 1. `curl -fsS https://www.tellomi.cn/dl/android/latest.json` shows the new `versionName`.
-2. Within 5 minutes, `help.getAppUpdate` for an Android session older than that version returns `help.appUpdate` with the same `versionName`, the manifest `url`, and `can_not_skip`. An iOS session still returns `help.noAppUpdate`.
+2. Within 5 minutes, `help.getAppUpdate` for an Android session older than that version returns `help.appUpdate` with the same `versionName` and the manifest `url`. `can_not_skip` is set only when the feed has `"mandatory": true` or `TELLOMI_APP_UPDATE_CANNOT_SKIP=1`. An iOS session still returns `help.noAppUpdate`.

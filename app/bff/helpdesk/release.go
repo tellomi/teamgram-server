@@ -119,8 +119,9 @@ func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_A
 // is logged once. Leave it empty in production so latest.json drives the
 // prompt. When it is empty, the manifest supplies versionName, the download
 // URL, and changelog. TEXT, URL, and SOURCE, when non-empty, replace those
-// manifest fields. A non-empty CANNOT_SKIP replaces the manifest default
-// (mandatory). An env-only release is mandatory only when CANNOT_SKIP is 1.
+// manifest fields. The prompt is skippable unless CANNOT_SKIP is 1 or the
+// manifest sets mandatory to true. An env-only release is mandatory only
+// when CANNOT_SKIP is 1.
 // A manifest that cannot be read, or an empty version, offers no update.
 // TELLOMI_APP_UPDATE_VERSION is a dotted marketing version such as 14.0.4.
 // A value with no dot is a build number and AppUpdate ignores it.
@@ -152,9 +153,9 @@ func releaseFromEnv() *Release {
 }
 
 // applyManifestOverrides copies rel and replaces fields that the operator set.
-// Empty variables leave the manifest value. CANNOT_SKIP counts as set only
-// when it is non-empty, because Compose injects an empty string by default
-// and the manifest update is mandatory.
+// Empty TEXT, URL, and SOURCE leave the manifest value. CANNOT_SKIP=1 forces
+// the dialog to stay up. Any other value leaves the manifest flag, which is
+// set only when mandatory is the JSON boolean true.
 func applyManifestOverrides(rel *Release) *Release {
 	out := cloneRelease(rel)
 	if text := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_TEXT")); text != "" {
@@ -166,11 +167,8 @@ func applyManifestOverrides(rel *Release) *Release {
 	if source := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_SOURCE")); source != "" {
 		out.Source = source
 	}
-	if skip, ok := os.LookupEnv("TELLOMI_APP_UPDATE_CANNOT_SKIP"); ok {
-		skip = strings.TrimSpace(skip)
-		if skip != "" {
-			out.CannotSkip = skip == "1"
-		}
+	if os.Getenv("TELLOMI_APP_UPDATE_CANNOT_SKIP") == "1" {
+		out.CannotSkip = true
 	}
 	return out
 }
