@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/ephemeral/internal/box"
 )
 
@@ -137,5 +138,9 @@ func (s *Service) EphemeralReportMessage(ctx context.Context, in *mtproto.TLEphe
 	if err != nil {
 		return nil, err
 	}
-	return s.svcCtx.Box.Report(id, peer, in.GetId(), in.GetOption(), in.GetMessage())
+	lang := ""
+	if md := metadata.RpcMetadataFromIncoming(ctx); md != nil {
+		lang = md.GetLangCode()
+	}
+	return s.svcCtx.Box.Report(id, peer, in.GetId(), in.GetOption(), in.GetMessage(), lang)
 }

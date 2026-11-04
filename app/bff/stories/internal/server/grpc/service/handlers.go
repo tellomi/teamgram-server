@@ -326,7 +326,7 @@ func (s *Service) StoriesReport19D8EB45(ctx context.Context, in *mtproto.TLStori
 	if err != nil {
 		return nil, err
 	}
-	return story.Shared().Report(ctx, md.GetUserId(), owner, hash, in.GetId(), in.GetOption(), in.GetMessage())
+	return story.Shared().Report(ctx, md.GetUserId(), owner, hash, in.GetId(), in.GetOption(), in.GetMessage(), md.GetLangCode())
 }
 
 func (s *Service) StoriesActivateStealthMode(ctx context.Context, in *mtproto.TLStoriesActivateStealthMode) (*mtproto.Updates, error) {

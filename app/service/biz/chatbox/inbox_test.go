@@ -225,19 +225,22 @@ func TestReportTreeAndPaidMedia(t *testing.T) {
 	b := Shared()
 	ctx := context.Background()
 	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
-	choose, err := b.ReportMessages(ctx, 3, peer, []int32{4}, nil, "")
+	choose, err := b.ReportMessages(ctx, 3, peer, []int32{4}, nil, "", "zh-hans")
 	if err != nil || choose.GetPredicateName() != mtproto.Predicate_reportResultChooseOption || len(choose.GetOptions()) < 2 {
 		t.Fatalf("choose %+v %v", choose, err)
 	}
-	ask, err := b.ReportMessages(ctx, 3, peer, []int32{4}, []byte("other"), "")
+	if choose.GetTitle() != "这条消息有什么问题？" || choose.GetOptions()[0].GetText() != "垃圾信息" || string(choose.GetOptions()[0].GetOption()) != "spam" {
+		t.Fatalf("zh message report %#v", choose)
+	}
+	ask, err := b.ReportMessages(ctx, 3, peer, []int32{4}, []byte("other"), "", "en")
 	if err != nil || ask.GetPredicateName() != mtproto.Predicate_reportResultAddComment {
 		t.Fatalf("comment %+v %v", ask, err)
 	}
-	done, err := b.ReportMessages(ctx, 3, peer, []int32{4}, []byte("other"), "spam text here")
+	done, err := b.ReportMessages(ctx, 3, peer, []int32{4}, []byte("other"), "spam text here", "en")
 	if err != nil || done.GetPredicateName() != mtproto.Predicate_reportResultReported {
 		t.Fatalf("reported %+v %v", done, err)
 	}
-	if _, err := b.ReportMessages(ctx, 3, peer, []int32{4}, []byte("nope"), ""); err != mtproto.ErrOptionInvalid {
+	if _, err := b.ReportMessages(ctx, 3, peer, []int32{4}, []byte("nope"), "", "en"); err != mtproto.ErrOptionInvalid {
 		t.Fatalf("option: %v", err)
 	}
 	if err := b.ReportDelivery(ctx, 3, peer, []int32{4}, true); err != nil {

@@ -24,6 +24,50 @@ func withUser(userID, auth int64) context.Context {
 	))
 }
 
+func TestStoryReportUsesSessionLang(t *testing.T) {
+	story.Use(story.New(story.NewMemoryStore()))
+	svc := New(&svc.ServiceContext{})
+	md := &rpcmd.RpcMetadata{UserId: 3, PermAuthKeyId: 30, LangCode: "zh-hans"}
+	buf, _ := proto.Marshal(md)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
+	up, err := svc.StoriesSendStory(ctx, &mtproto.TLStoriesSendStory{
+		Peer: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Media: mtproto.MakeTLInputMediaPhoto(&mtproto.InputMedia{
+			Id_INPUTPHOTO: mtproto.MakeTLInputPhoto(&mtproto.InputPhoto{Id: 4, AccessHash: 5}).To_InputPhoto(),
+		}).To_InputMedia(),
+		PrivacyRules: []*mtproto.InputPrivacyRule{
+			mtproto.MakeTLInputPrivacyValueAllowAll(nil).To_InputPrivacyRule(),
+		},
+		RandomId: 78,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id int32
+	for _, u := range up.Updates {
+		if u.GetPredicateName() == mtproto.Predicate_updateStoryID {
+			id = u.GetId_INT32()
+		}
+	}
+	choose, err := svc.StoriesReport19D8EB45(ctx, &mtproto.TLStoriesReport19D8EB45{
+		Peer: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Id:   []int32{id},
+	})
+	if err != nil || choose.GetTitle() != "举报动态" || choose.GetOptions()[0].GetText() != "垃圾信息" {
+		t.Fatalf("choose %#v %v", choose, err)
+	}
+	ask, err := svc.StoriesReport19D8EB45(ctx, &mtproto.TLStoriesReport19D8EB45{
+		Peer:   mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+		Id:     []int32{id},
+		Option: []byte("other"),
+	})
+	if err != nil || ask.GetPredicateName() != mtproto.Predicate_reportResultAddComment {
+		t.Fatalf("other %#v %v", ask, err)
+	}
+}
+
 func TestHandlersSendAndFetch(t *testing.T) {
 	story.Use(story.New(story.NewMemoryStore()))
 	svc := New(&svc.ServiceContext{})
