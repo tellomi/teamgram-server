@@ -25,63 +25,147 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+const (
+	profilePhotoFile = iota + 1
+	profilePhotoVideo
+	profilePhotoEmoji
+)
+
+// profilePhotoID allocates the photo id for an emoji or sticker markup avatar.
+// Those avatars have no uploaded bytes. Tests replace this.
+var profilePhotoID = defaultProfilePhotoID
+
+func defaultProfilePhotoID(c *DfsCore) (int64, error) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return 0, mtproto.ErrInternalServerError
+	}
+	id := c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+	if id == 0 {
+		return 0, mtproto.ErrInternalServerError
+	}
+	return id, nil
+}
+
+// profilePhotoSource picks the avatar payload.
+// A video is the animated avatar, including when a still file is sent with it.
+// A file alone is a still photo. Emoji and sticker markup have neither file.
+func profilePhotoSource(in *dfs.TLDfsUploadProfilePhotoFileV2) (kind int, src *mtproto.InputFile, err error) {
+	if in == nil {
+		return 0, nil, mtproto.ErrInputRequestInvalid
+	}
+	if video := in.GetVideo(); video != nil {
+		return profilePhotoVideo, video, nil
+	}
+	if file := in.GetFile(); file != nil {
+		return profilePhotoFile, file, nil
+	}
+	if in.GetVideoEmojiMarkup() != nil {
+		return profilePhotoEmoji, nil, nil
+	}
+	return 0, nil, mtproto.ErrInputRequestInvalid
+}
+
 // DfsUploadProfilePhotoFileV2
-// dfs.uploadProfilePhotoFileV2 flags:# creator:long file:flags.0?InputFile video:flags.1?InputFile video_start_ts:flags.2?double = Photo;
+// dfs.uploadProfilePhotoFileV2 flags:# creator:long file:flags.0?InputFile video:flags.1?InputFile video_start_ts:flags.2?double video_emoji_markup:flags.3?VideoSize = Photo;
 func (c *DfsCore) DfsUploadProfilePhotoFileV2(in *dfs.TLDfsUploadProfilePhotoFileV2) (*mtproto.Photo, error) {
-	if in.GetFile() == nil && in.GetVideo() == nil {
+	kind, src, err := profilePhotoSource(in)
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+		return nil, err
+	}
+
+	switch kind {
+	case profilePhotoVideo:
+		if err = model.CheckFileParts(src.Parts); err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			return nil, err
+		}
+		photo, err := c.uploadVideoSizeListV2(in.GetCreator(), src, in.GetVideoStartTs().GetValue())
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			return nil, err
+		}
+		return photo, nil
+	case profilePhotoFile:
+		if err = model.CheckFileParts(src.Parts); err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			return nil, err
+		}
+		photo, err := c.uploadPhotoSizeListV2(in.GetCreator(), src, true)
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			return nil, err
+		}
+		return photo, nil
+	case profilePhotoEmoji:
+		id, err := profilePhotoID(c)
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			return nil, err
+		}
+		photo, err := emojiMarkupProfilePhoto(id, in.GetVideoEmojiMarkup())
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			return nil, err
+		}
+		return photo, nil
+	default:
 		c.Logger.Errorf("dfs.uploadPhotoFile - ErrInputRequestInvalid")
 		return nil, mtproto.ErrInputRequestInvalid
 	}
+}
 
-	var (
-		file    *mtproto.InputFile
-		err     error
-		photoV2 *mtproto.Photo
-	)
-
-	// TODO: file and video not nil
-	if in.GetFile() != nil {
-		file = in.GetVideo()
-		if file != nil {
-			if err = model.CheckFileParts(file.Parts); err != nil {
-				c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-				return nil, err
-			}
-
-			photoV2, err = c.uploadVideoSizeListV2(in.GetCreator(), file, in.GetVideoStartTs().GetValue())
-		} else {
-			file = in.GetFile()
-			if err = model.CheckFileParts(file.Parts); err != nil {
-				c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-				return nil, err
-			}
-
-			photoV2, err = c.uploadPhotoSizeListV2(in.GetCreator(), in.GetFile(), true)
-		}
-		if err != nil {
-			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-			return nil, err
-		}
-	} else {
-		file = in.GetFile()
-		//if file == nil {
-		//	c.Logger.Errorf("dfs.uploadPhotoFile - ErrInputRequestInvalid")
-		//	return nil, mtproto.ErrInputRequestInvalid
-		//}
-
-		if err = model.CheckFileParts(file.Parts); err != nil {
-			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-			return nil, err
-		}
-
-		photoV2, err = c.uploadPhotoSizeListV2(in.GetCreator(), in.GetFile(), true)
-		if err != nil {
-			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-			return nil, err
-		}
+// emojiMarkupProfilePhoto is an avatar the client draws from a custom emoji
+// or a sticker. photos.uploadProfilePhoto sends videoSizeEmojiMarkup or
+// videoSizeStickerMarkup and no file. The photo carries that VideoSize and
+// no uploaded image.
+func emojiMarkupProfilePhoto(id int64, markup *mtproto.VideoSize) (*mtproto.Photo, error) {
+	vs, err := copyEmojiMarkup(markup)
+	if err != nil {
+		return nil, err
 	}
+	return mtproto.MakeTLPhoto(&mtproto.Photo{
+		Id:            id,
+		HasStickers:   false,
+		AccessHash:    int64(rand.Uint32()),
+		FileReference: []byte{},
+		Date:          int32(time.Now().Unix()),
+		Sizes:         []*mtproto.PhotoSize{},
+		VideoSizes:    []*mtproto.VideoSize{vs},
+		DcId:          1,
+	}).To_Photo(), nil
+}
 
-	return photoV2, nil
+func copyEmojiMarkup(markup *mtproto.VideoSize) (*mtproto.VideoSize, error) {
+	if markup == nil {
+		return nil, mtproto.ErrInputRequestInvalid
+	}
+	colors := markup.GetBackgroundColors()
+	if len(colors) < 1 || len(colors) > 4 {
+		return nil, mtproto.ErrInputRequestInvalid
+	}
+	copied := append([]int32(nil), colors...)
+	switch markup.GetPredicateName() {
+	case mtproto.Predicate_videoSizeEmojiMarkup:
+		if markup.GetEmojiId() == 0 {
+			return nil, mtproto.ErrInputRequestInvalid
+		}
+		return mtproto.MakeTLVideoSizeEmojiMarkup(&mtproto.VideoSize{
+			EmojiId:          markup.GetEmojiId(),
+			BackgroundColors: copied,
+		}).To_VideoSize(), nil
+	case mtproto.Predicate_videoSizeStickerMarkup:
+		if markup.GetStickerId() == 0 || markup.GetStickerset() == nil {
+			return nil, mtproto.ErrInputRequestInvalid
+		}
+		return mtproto.MakeTLVideoSizeStickerMarkup(&mtproto.VideoSize{
+			Stickerset:       markup.GetStickerset(),
+			StickerId:        markup.GetStickerId(),
+			BackgroundColors: copied,
+		}).To_VideoSize(), nil
+	default:
+		return nil, mtproto.ErrInputRequestInvalid
+	}
 }
 
 func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFile, videoStartTs float64) (photo *mtproto.Photo, err error) {

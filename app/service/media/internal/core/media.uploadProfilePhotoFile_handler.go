@@ -15,20 +15,32 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 )
 
-// MediaUploadProfilePhotoFile
-// media.uploadProfilePhotoFile flags:# owner_id:long file:flags.0?InputFile video:flags.1?InputFile video_start_ts:flags.2?double = Photo;
-func (c *MediaCore) MediaUploadProfilePhotoFile(in *media.TLMediaUploadProfilePhotoFile) (*mtproto.Photo, error) {
-	if in.GetFile() == nil && in.GetVideo() == nil {
-		c.Logger.Errorf("media.uploadProfilePhotoFile - error: file is nil")
+// dfsProfilePhotoRequest is the dfs upload for a profile photo.
+// Video-only and emoji-markup avatars have no still file. Dropping the
+// markup here made emoji avatars fail before dfs could store them.
+func dfsProfilePhotoRequest(in *media.TLMediaUploadProfilePhotoFile) (*dfs.TLDfsUploadProfilePhotoFileV2, error) {
+	if in == nil || (in.GetFile() == nil && in.GetVideo() == nil && in.GetVideoEmojiMarkup() == nil) {
 		return nil, mtproto.ErrMediaInvalid
 	}
+	return &dfs.TLDfsUploadProfilePhotoFileV2{
+		Creator:          in.GetOwnerId(),
+		File:             in.GetFile(),
+		Video:            in.GetVideo(),
+		VideoStartTs:     in.GetVideoStartTs(),
+		VideoEmojiMarkup: in.GetVideoEmojiMarkup(),
+	}, nil
+}
 
-	photo, err := c.svcCtx.Dao.DfsClient.DfsUploadProfilePhotoFileV2(c.ctx, &dfs.TLDfsUploadProfilePhotoFileV2{
-		Creator:      in.OwnerId,
-		File:         in.GetFile(),
-		Video:        in.GetVideo(),
-		VideoStartTs: in.GetVideoStartTs(),
-	})
+// MediaUploadProfilePhotoFile
+// media.uploadProfilePhotoFile flags:# owner_id:long file:flags.0?InputFile video:flags.1?InputFile video_start_ts:flags.2?double video_emoji_markup:flags.3?VideoSize = Photo;
+func (c *MediaCore) MediaUploadProfilePhotoFile(in *media.TLMediaUploadProfilePhotoFile) (*mtproto.Photo, error) {
+	req, err := dfsProfilePhotoRequest(in)
+	if err != nil {
+		c.Logger.Errorf("media.uploadProfilePhotoFile - error: file is nil")
+		return nil, err
+	}
+
+	photo, err := c.svcCtx.Dao.DfsClient.DfsUploadProfilePhotoFileV2(c.ctx, req)
 	if err != nil {
 		c.Logger.Error("media.uploadProfilePhotoFile - error: %v", err.Error())
 		return nil, err
