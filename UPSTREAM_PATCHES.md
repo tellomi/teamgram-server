@@ -224,6 +224,17 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | bff start | `app/bff/bff/internal/server/server.go` | `bots.StartAnnounce` |
 | app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_announce_enabled` |
 
+## User reports and the @admin receipt
+
+`account.reportPeer`, `account.reportProfilePhoto`, `messages.report` (both constructors), `messages.reportSpam`, `messages.reportReaction`, `messages.reportEncryptedSpam`, `channels.reportSpam`, `stories.report`, and `ephemeral.reportMessage` insert one `reports` row and send a private message from user 777000 (`@admin`) to the reporter. The receipt does not depend on `TELLOMI_REPORT_REVIEW` or `TELLOMI_REPORT_HTTP`. An empty `TELLOMI_REPORT_REVIEW` classifies the row when `TELLOMI_AI=1` and `TELLOMI_AI_API_KEY` are set. `TELLOMI_REPORT_REVIEW=0` leaves it for a person. `TELLOMI_REPORT_HTTP=1` serves `POST /internal/v1/reports` for Discover and `POST /internal/v1/reports/subjects` so content-engine can resolve a `sub` through `discover_subject`. Login is unchanged. The contract is `docs/api/reports.md`. `reports` is `teamgramd/deploy/sql/migrate-20261105-reports.sql` and is also created when bff opens MySQL.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| bff start | `app/bff/bff/internal/server/server.go` | `bots.StartReports` |
+| peer / spam | `app/bff/channels/internal/server/grpc/service/handlers_p1.go` | `report.Shared().Submit` |
+| encrypted spam | `app/bff/channels/internal/server/grpc/service/handlers_report.go` | same |
+| ephemeral | `app/bff/ephemeral/internal/box/box.go` | same |
+
 ## Discover account deletion (M3)
 
 `TELLOMI_DISCOVER_DELETE=1` calls content-engine `DELETE /internal/users/{sub}` after `UserDeleteUser` has succeeded. The call is queued in memory, retried, and cannot fail or delay `account.deleteAccount`. See `docs/discover-account-deletion.md`.

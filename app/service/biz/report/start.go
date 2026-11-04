@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -18,7 +19,8 @@ import (
 )
 
 const (
-	// EnvReview turns the model classifier on. Only the value 1 counts.
+	// EnvReview turns the model classifier on. 1 turns it on. 0 forces a
+	// person. Empty follows TELLOMI_AI when that service is on.
 	EnvReview = "TELLOMI_REPORT_REVIEW"
 	// EnvSnapshot writes evidence objects when set to 1.
 	EnvSnapshot = "TELLOMI_REPORT_SNAPSHOT"
@@ -124,11 +126,49 @@ func Start(dsn string, n Notifier) {
 		s.SetNotifier(n)
 	}
 	s.ApplyEnv()
+	s.logReady()
 	listen(s)
 }
 
-// ApplyEnv reads the report switches. The model and the HTTP listener stay
-// off unless their env values are 1.
+// logReady is the startup line operators should grep for. Receipts do not
+// depend on the review or HTTP switches. A missing notifier means a report
+// is stored and the reporter gets no @admin message.
+func (s *Service) logReady() {
+	if s == nil {
+		return
+	}
+	reviewOn, reviewWhy := reviewPlan()
+	http := planHTTP()
+	notifier := "missing"
+	if s.notifier != nil {
+		notifier = "on"
+	}
+	review := "off (" + reviewWhy + ")"
+	if reviewOn {
+		review = "on (" + reviewWhy + ")"
+	}
+	httpState := "off (" + http.why + ")"
+	if http.on {
+		httpState = "on " + http.addr
+		if loopback(http.addr) {
+			httpState += " loopback"
+		}
+	}
+	logx.Infof("report: ready store=%s notifier=%s review=%s http=%s", s.storeName(), notifier, review, httpState)
+}
+
+func (s *Service) storeName() string {
+	if s == nil || s.store == nil {
+		return "none"
+	}
+	if _, ok := s.store.(*mysqlStore); ok {
+		return "mysql"
+	}
+	return "memory"
+}
+
+// ApplyEnv reads the report switches. The HTTP listener stays off unless
+// TELLOMI_REPORT_HTTP=1. Review follows reviewPlan.
 func (s *Service) ApplyEnv() {
 	if s == nil {
 		return
@@ -150,8 +190,34 @@ func (s *Service) ApplyEnv() {
 	}
 }
 
+// reviewPlan decides whether a new row is classified.
+// TELLOMI_REPORT_REVIEW=1 turns it on. 0 forces a person.
+// An empty value follows TELLOMI_AI when that service is actually on.
+func reviewPlan() (on bool, why string) {
+	switch strings.TrimSpace(os.Getenv(EnvReview)) {
+	case "1":
+		if strings.TrimSpace(os.Getenv(tellomiai.EnvAPIKey)) == "" {
+			return false, "TELLOMI_REPORT_REVIEW=1 but TELLOMI_AI_API_KEY is empty"
+		}
+		return true, "TELLOMI_REPORT_REVIEW=1"
+	case "0":
+		return false, "TELLOMI_REPORT_REVIEW=0"
+	case "":
+		if tellomiai.Advertised() {
+			return true, "follows TELLOMI_AI"
+		}
+		return false, "TELLOMI_REPORT_REVIEW is unset"
+	default:
+		return false, "TELLOMI_REPORT_REVIEW is not 1"
+	}
+}
+
 func openReviewer() *Reviewer {
-	if os.Getenv(EnvReview) != "1" {
+	on, _ := reviewPlan()
+	if !on {
+		if strings.TrimSpace(os.Getenv(EnvReview)) == "1" {
+			logx.Error("report review is enabled but the model key is missing; reports wait for a person")
+		}
 		return nil
 	}
 	key := strings.TrimSpace(os.Getenv(tellomiai.EnvAPIKey))
@@ -176,22 +242,60 @@ func openReviewer() *Reviewer {
 	return NewReviewer(client)
 }
 
-func listen(s *Service) {
+type httpPlan struct {
+	on   bool
+	addr string
+	key  []byte
+	why  string
+}
+
+func planHTTP() httpPlan {
 	if os.Getenv(EnvHTTP) != "1" {
-		return
+		return httpPlan{why: EnvHTTP + " is not 1"}
 	}
 	key, err := decodeKey(os.Getenv(EnvKey))
 	if err != nil {
-		logx.Error("report review endpoint is enabled but the key is missing or invalid")
-		return
+		return httpPlan{why: EnvKey + " is missing or invalid"}
 	}
 	addr := strings.TrimSpace(os.Getenv(EnvAddr))
 	if addr == "" {
 		addr = defaultAddr
 	}
 	if addr == "off" {
+		return httpPlan{why: EnvAddr + "=off"}
+	}
+	return httpPlan{on: true, addr: addr, key: key}
+}
+
+func loopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch host {
+	case "127.0.0.1", "::1", "localhost":
+		return true
+	default:
+		return false
+	}
+}
+
+func listen(s *Service) {
+	plan := planHTTP()
+	if !plan.on {
+		if os.Getenv(EnvHTTP) == "1" && strings.Contains(plan.why, EnvKey) {
+			logx.Error("report review endpoint is enabled but the key is missing or invalid")
+		}
 		return
 	}
+	if loopback(plan.addr) {
+		logx.Infof("report: http on %s is loopback; another container cannot connect. Set %s to an address content-engine can reach", plan.addr, EnvAddr)
+	}
+	if _, ok := s.store.(*mysqlStore); !ok {
+		logx.Error("report: discover subject lookup needs mysql; POST /internal/v1/reports/subjects answers unavailable")
+	}
+	key := plan.key
+	addr := plan.addr
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           Handler{Service: s, Key: key},

@@ -359,6 +359,17 @@ func (s *Store) LookupEncrypted(id int64) (*mtproto.EncryptedFile, int32, bool) 
 	return cloneFile(rec.file), rec.chatID, true
 }
 
+// PeerUser is the other member. The chat may still be waiting.
+func (s *Store) PeerUser(self int64, peer *mtproto.InputEncryptedChat) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.member(self, peer)
+	if err != nil {
+		return 0, err
+	}
+	return c.other(self), nil
+}
+
 // Counterpart is the other member of an accepted chat.
 func (s *Store) Counterpart(self int64, peer *mtproto.InputEncryptedChat) (int64, error) {
 	s.mu.Lock()

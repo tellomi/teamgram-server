@@ -144,9 +144,15 @@ func (s *Service) Submit(ctx context.Context, in Submission) (*Row, error) {
 	if err := s.store.Insert(ctx, row); err != nil {
 		return nil, err
 	}
-	s.writeSnapshot(ctx, row, in.Evidence)
-	s.sendReceipt(ctx, row)
-	s.review(ctx, row, in.Evidence)
+	// The reporter's RPC context is cancelled when the client gives up.
+	// The row is already stored. The @admin receipt and the classifier
+	// must still finish, and they must not carry that session's metadata
+	// into the message service.
+	work, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.writeSnapshot(work, row, in.Evidence)
+	s.sendReceipt(work, row)
+	s.review(work, row, in.Evidence)
 	return row, nil
 }
 

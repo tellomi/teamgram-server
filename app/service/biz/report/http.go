@@ -1,6 +1,7 @@
 package report
 
 import (
+	"context"
 	"crypto/hmac"
 	"encoding/base64"
 	"encoding/json"
@@ -14,14 +15,26 @@ import (
 const (
 	pathPending    = "/internal/v1/reports/pending"
 	pathIngest     = "/internal/v1/reports"
+	pathSubjects   = "/internal/v1/reports/subjects"
 	pathModeration = "/internal/v1/moderation/review"
 	maxBody        = 64 << 10
+	// maxReportSubs is one report's reporter and author, with room for a
+	// short batch. content-engine sends the subs it still cannot map.
+	maxReportSubs = 32
 )
+
+// Subjects resolves content-engine subs through discover_subject.
+// The map key is the canonical base64url (no padding) of the 16-byte sub.
+// Subs that are not in the table are omitted.
+type Subjects interface {
+	Users(ctx context.Context, subs [][]byte) (map[string]int64, error)
+}
 
 // Handler is the internal report listener. It is mounted only when
 // TELLOMI_REPORT_HTTP=1.
 //
 //	POST /internal/v1/reports
+//	POST /internal/v1/reports/subjects
 //	POST /internal/v1/reports/{id}/decision
 //	GET  /internal/v1/reports/pending
 //	POST /internal/v1/moderation/review
@@ -32,6 +45,9 @@ const (
 type Handler struct {
 	Service *Service
 	Key     []byte
+	// Subjects overrides the discover_subject lookup. Nil uses the MySQL
+	// store on Service when that store is connected.
+	Subjects Subjects
 }
 
 type decisionBody struct {
@@ -61,6 +77,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.ingest(w, r)
+		return
+	case pathSubjects:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.subjects(w, r)
 		return
 	case pathModeration:
 		if r.Method != http.MethodPost {
@@ -163,6 +186,89 @@ func (h Handler) ingest(w http.ResponseWriter, r *http.Request) {
 		"id":     row.ID,
 		"ticket": row.Ticket(),
 	})
+}
+
+type subjectUser struct {
+	Sub    string `json:"sub"`
+	UserID int64  `json:"user_id"`
+}
+
+type subjectsBody struct {
+	Subs []string `json:"subs"`
+}
+
+func (h Handler) subjects(w http.ResponseWriter, r *http.Request) {
+	var body subjectsBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if len(body.Subs) == 0 || len(body.Subs) > maxReportSubs {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	raws := make([][]byte, 0, len(body.Subs))
+	order := make([]string, 0, len(body.Subs))
+	seen := map[string]struct{}{}
+	for _, item := range body.Subs {
+		sub, err := decodeReportSub(item)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		key := base64.RawURLEncoding.EncodeToString(sub)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		raws = append(raws, sub)
+		order = append(order, key)
+	}
+	dir := h.subjectDir()
+	if dir == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	found, err := dir.Users(r.Context(), raws)
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	users := make([]subjectUser, 0)
+	for _, key := range order {
+		id := found[key]
+		if id <= 0 {
+			continue
+		}
+		users = append(users, subjectUser{Sub: key, UserID: id})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (h Handler) subjectDir() Subjects {
+	if h.Subjects != nil {
+		return h.Subjects
+	}
+	if h.Service == nil {
+		return nil
+	}
+	idx, ok := h.Service.store.(*mysqlStore)
+	if !ok || idx == nil {
+		return nil
+	}
+	return idx
+}
+
+func decodeReportSub(raw string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "=") {
+		return nil, errors.New("sub")
+	}
+	buf, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil || len(buf) != 16 {
+		return nil, errors.New("sub")
+	}
+	return buf, nil
 }
 
 type moderateBody struct {
