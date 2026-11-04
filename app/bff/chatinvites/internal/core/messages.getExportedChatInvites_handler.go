@@ -33,6 +33,14 @@ func (c *ChatInvitesCore) MessagesGetExportedChatInvites(in *mtproto.TLMessagesG
 		// limit   = in.GetLimit()
 	)
 
+	if peer.IsChannel() {
+		rValues, err := c.listChannelInvites(in, peer, adminId.PeerId)
+		if err != nil {
+			c.Logger.Errorf("messages.getExportedChatInvites - error: %v", err)
+			return nil, err
+		}
+		return rValues, nil
+	}
 	if !peer.IsChat() {
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.getExportedChatInvites - error: ", err)
@@ -59,8 +67,9 @@ func (c *ChatInvitesCore) MessagesGetExportedChatInvites(in *mtproto.TLMessagesG
 		Users:   []*mtproto.User{},
 	}).To_Messages_ExportedChatInvites()
 
-	rValues.Count = int32(len(rInvites.Datas))
-	rValues.Invites = rInvites.Datas
+	page, total := pageInvites(rInvites.GetDatas(), in.GetOffsetDate().GetValue(), in.GetOffsetLink().GetValue(), in.GetLimit())
+	rValues.Count = total
+	rValues.Invites = page
 
 	if len(rValues.Invites) == 0 {
 		return rValues, nil

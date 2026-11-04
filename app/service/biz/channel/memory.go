@@ -9,16 +9,20 @@ import (
 )
 
 type memoryStore struct {
-	mu       sync.Mutex
-	nextID   int64
-	channels map[int64]*Channel
-	parts    map[int64]map[int64]*Participant
-	messages map[int64]map[int32]*StoredMessage
-	events   map[int64][]*PtsEvent
-	reads    map[int64]map[int64]*ReadState
-	marks    []memReadMark
-	features map[int64]*Features
-	personal map[int64]int64
+	mu           sync.Mutex
+	nextID       int64
+	channels     map[int64]*Channel
+	parts        map[int64]map[int64]*Participant
+	messages     map[int64]map[int32]*StoredMessage
+	events       map[int64][]*PtsEvent
+	reads        map[int64]map[int64]*ReadState
+	marks        []memReadMark
+	features     map[int64]*Features
+	personal     map[int64]int64
+	invites      map[string]*StoredInvite
+	importers    map[string]map[int64]*StoredImporter
+	nextInvite   int64
+	nextImporter int64
 }
 
 type memReadMark struct {

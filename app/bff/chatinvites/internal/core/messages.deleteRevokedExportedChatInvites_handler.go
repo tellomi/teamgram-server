@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 )
 
@@ -32,6 +33,13 @@ func (c *ChatInvitesCore) MessagesDeleteRevokedExportedChatInvites(in *mtproto.T
 		adminId = mtproto.FromInputUser(c.MD.UserId, in.AdminId)
 	)
 
+	if peer.IsChannel() {
+		if err = channel.Shared().DeleteRevokedInvites(c.ctx, c.MD.UserId, inputChannelOf(peer), adminId.PeerId); err != nil {
+			c.Logger.Errorf("messages.deleteRevokedExportedChatInvites - error: %v", err)
+			return nil, err
+		}
+		return mtproto.BoolTrue, nil
+	}
 	if !peer.IsChat() {
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.deleteRevokedExportedChatInvites - error: ", err)

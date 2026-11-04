@@ -45,6 +45,14 @@ func (c *ChatInvitesCore) MessagesImportChatInvite6C50051C(in *mtproto.TLMessage
 		c.Logger.Errorf("messages.importChatInvite - error: %v", err)
 		return nil, err
 	}
+	if chatpb.IsChannelInviteHash(in.Hash) {
+		updates, err := c.importChannelInvite(in.Hash)
+		if err != nil {
+			c.Logger.Errorf("messages.importChatInvite - error: %v", err)
+			return nil, err
+		}
+		return updates, nil
+	}
 
 	if !chatpb.IsChatInviteHash(in.Hash) {
 		err := mtproto.ErrInviteHashInvalid

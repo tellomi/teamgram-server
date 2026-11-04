@@ -42,6 +42,14 @@ func (c *ChatInvitesCore) MessagesCheckChatInvite(in *mtproto.TLMessagesCheckCha
 		c.Logger.Errorf("messages.checkChatInvite - error: %v", err)
 		return nil, err
 	}
+	if chatpb.IsChannelInviteHash(in.Hash) {
+		rValue, err := c.checkChannelInvite(in.Hash)
+		if err != nil {
+			c.Logger.Errorf("messages.checkChatInvite - error: %v", err)
+			return nil, err
+		}
+		return rValue, nil
+	}
 	if !chatpb.IsChatInviteHash(in.Hash) {
 		err := mtproto.ErrInviteHashInvalid
 		c.Logger.Errorf("messages.checkChatInvite - error: %v", err)

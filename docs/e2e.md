@@ -35,6 +35,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
 | `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
 | `TestTranscribeAudioIsNotPremiumOrStub` | `messages.transcribeAudio` on a text message returns `PREMIUM_ACCOUNT_REQUIRED` or `TRANSCRIPTION_FAILED`, or a zero message id does not return `MSG_ID_INVALID`. |
+| `TestInviteLinkSheet` | A supergroup or basic group invite sheet does not return a `https://tell.cc/+` link, `channels.getFullChannel` / `messages.getFullChat` omits that primary link, or creating an additional link with a title, `request_needed`, `expire_date`, and `usage_limit` fails. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).

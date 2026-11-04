@@ -3,7 +3,9 @@ package e2e
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 
+	"github.com/gotd/td/tgerr"
 	"github.com/teamgram/proto/mtproto"
 )
 
@@ -82,5 +84,19 @@ func TestServerKeyFingerprint(t *testing.T) {
 	const want uint64 = 12240908862933197005
 	if got := uint64(key.Fingerprint()); got != want {
 		t.Fatalf("fingerprint %d, want %d", got, want)
+	}
+}
+
+func TestFloodWait(t *testing.T) {
+	wait, ok := floodWait(&tgerr.Error{Code: 420, Message: "FLOOD_WAIT (7)"})
+	if !ok || wait != 8*time.Second {
+		t.Fatalf("paren wait %s %v", wait, ok)
+	}
+	wait, ok = floodWait(&tgerr.Error{Code: 420, Message: "FLOOD_WAIT_3"})
+	if !ok || wait != 4*time.Second {
+		t.Fatalf("underscore wait %s %v", wait, ok)
+	}
+	if _, ok = floodWait(&tgerr.Error{Code: 400, Message: "FLOOD_WAIT (1)"}); ok {
+		t.Fatal("non-420 accepted")
 	}
 }
