@@ -16,4 +16,7 @@ const (
 	TokenMPNSVoIP   int32 = 11
 	TokenTizen      int32 = 12
 	TokenHuawei     int32 = 13
+	// TokenXiaomi is not in the Telegram push API. Tellomi Android registers
+	// a Xiaomi Push regid with this type. See docs/push.md.
+	TokenXiaomi int32 = 14
 )

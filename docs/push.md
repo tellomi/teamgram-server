@@ -131,9 +131,9 @@ Headers: `apns-push-type: voip`, `apns-priority: 10`, `apns-expiration: 0`. Expi
 
 The JSON is the official `PHONE_CALL_REQUEST` shape. `call_id`, `call_ah`, and `from_id` are strings. `custom.updates` and top-level `updates` are the unpadded base64url of a layer-232 `updates#74ae4240` containing `updatePhoneCall` / `phoneCallRequested` and the caller in `users`. `p` is that same JSON sealed with the device secret, the same MTProto 2.0 seal as a message push. Telegram-iOS decrypts `p`, parses `updates`, and reports CallKit only when the caller user is present. A token with no secret is skipped, because a VoIP push the app cannot decrypt is not reported to CallKit.
 
-## Android (FCM and Huawei)
+## Android (FCM, Huawei, and Xiaomi)
 
-Production sends APNs only. `sync` constructs `push.Service` from `TELLOMI_APNS_*` and never calls `SetFCM` or `SetHuawei`.
+Production sends APNs when the `.p8` is mounted. `sync` constructs `push.Service` from `TELLOMI_APNS_*`. FCM and Huawei senders are still not installed. Xiaomi is installed only when `TELLOMI_XIAOMI_PUSH=1`.
 
 | token_type | Client | What this server does |
 | --- | --- | --- |
@@ -141,8 +141,22 @@ Production sends APNs only. `sync` constructs `push.Service` from `TELLOMI_APNS_
 | `2` | FCM | Stored. No sender is installed (`ErrFCMNotConfigured`). Mainland China usually cannot reach FCM |
 | `9` | APNs VoIP | Sent for `phoneCallRequested` |
 | `13` | Huawei Push Kit | Stored. No sender is installed (`ErrHuaweiNotConfigured`). `tellomi/Telegram` `TMessagesProj_AppHuawei` registers this type |
+| `14` | Xiaomi Push | Stored. Sent only when `TELLOMI_XIAOMI_PUSH=1` and the AppSecret and package name are set. Not a Telegram API type |
 
-There is no Xiaomi, OPPO, vivo, Honor, Meizu, or JPush token in the Telegram API, and no code here sends one. `XiaomiUtilities` in the Android client is an MIUI permission helper, not a push transport. A non-Huawei phone in mainland China that cannot reach FCM has no push path.
+OPPO, vivo, Honor, Meizu, and JPush are not sent. `XiaomiUtilities` in the Android client is an MIUI permission helper, not this channel. A phone receives Xiaomi pushes only after the Tellomi Android build registers a MiPush regid as `token_type` 14. Other brands do not get this channel unless that build also ships the Xiaomi Push SDK.
+
+### Xiaomi
+
+`POST https://api.xmpush.xiaomi.com/v3/message/regid` (override with `TELLOMI_XIAOMI_HOST`). Header `Authorization: key=<TELLOMI_XIAOMI_APP_SECRET>`. The body is form fields: `registration_id`, `restricted_package_name` (`TELLOMI_XIAOMI_PACKAGE`), `title`, `description`, `payload`, `pass_through=0`, `notify_type` (`-1`, or `0` when the chat is silent), `time_to_live=86400000`, `extra.notify_foreground=0`.
+
+`pass_through=0` is a notification-bar message, so the banner can show when the process is not running. `payload` is the same `p` ciphertext Huawei would send when the device registered a secret. Without a secret, `payload` is the FCM data JSON (`loc_key`, string `loc_args`, `custom`, `body`). The client decrypts `p` the same way `GcmPushListenerService` does. Code `20301` deletes that device row. Any other MiPush error is logged and the row stays.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TELLOMI_XIAOMI_PUSH` | off | `1` installs the sender. Any other value leaves token type 14 stored and unsent |
+| `TELLOMI_XIAOMI_APP_SECRET` | empty | MiPush AppSecret. Not logged. Flag on with an empty secret logs once and does not send |
+| `TELLOMI_XIAOMI_PACKAGE` | empty | `restricted_package_name`, the Android application id |
+| `TELLOMI_XIAOMI_HOST` | `https://api.xmpush.xiaomi.com` | China endpoint. Overseas regids need the matching regional host |
 
 The FCM data object (every value a string, which the FCM HTTP API requires) is:
 
@@ -182,4 +196,4 @@ iOS `tellomi/Telegram-iOS`:
 Android `tellomi/Telegram`:
 
 - `PushListenerController` handles `PUSH_TYPE_FIREBASE` (2) and `PUSH_TYPE_HUAWEI` (13) only. Both decrypt `p` and format `loc_key` with the app's `LocaleController` (`NotificationMessageAudio` and the rest). The server `body` is ignored, so the same payload is Chinese when the app language is Chinese.
-- There is no Honor, Xiaomi, OPPO, vivo, or Meizu sender. A Honor phone without Google Play has no FCM path. The Huawei flavor registers token type 13, and this server still does not send it. That phone gets no banner, rather than an English one.
+- There is no Honor, OPPO, vivo, or Meizu sender. A Honor phone without Google Play has no FCM path. The Huawei flavor registers token type 13, and this server still does not send it. Xiaomi is token type 14 and is sent only when `TELLOMI_XIAOMI_PUSH=1`. The client has to register the regid and read `payload` as `p`.

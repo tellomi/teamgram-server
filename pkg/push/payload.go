@@ -24,6 +24,11 @@ type Alert struct {
 	// Huawei is the raw "p" string. HuaweiPushListenerService passes the whole
 	// data payload to the decryptor, not a JSON wrapper. Empty without a secret.
 	Huawei string
+	// Title and Body are the visible banner. Xiaomi's notification bar uses
+	// them. APNs and FCM keep using Outer and Android.
+	Title  string
+	Body   string
+	Silent bool
 }
 
 // BuildAlert builds the Telegram notification for one message.
@@ -112,7 +117,15 @@ func BuildAlert(m Incoming, d Decision, secret []byte, lang string) (Alert, erro
 	if err != nil {
 		return Alert{}, err
 	}
-	return Alert{Outer: outerJSON, Inner: innerJSON, Android: android, Huawei: huawei}, nil
+	return Alert{
+		Outer:   outerJSON,
+		Inner:   innerJSON,
+		Android: android,
+		Huawei:  huawei,
+		Title:   title,
+		Body:    body,
+		Silent:  d.Silent,
+	}, nil
 }
 
 // androidPayload is the object tellomi/Telegram decrypts from "p": loc_key and

@@ -160,6 +160,15 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | --- | --- | --- |
 | start listener | `app/bff/bff/internal/server/server.go` | `discoverrel.Start` |
 
+## Xiaomi push (M8 / D-68)
+
+`TELLOMI_XIAOMI_PUSH=1` sends token type 14 through MiPush (`pkg/push/xiaomi.go`). Unset leaves the token stored and unsent, same as FCM and Huawei today. `account.registerDevice` is unchanged: it already stores any positive `token_type`. Login and session routing are unchanged. The contract is `docs/push.md`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| sync startup | `app/messenger/sync/internal/svc/service_context.go` | `push.LoadXiaomi` then `SetXiaomi` |
+| deliver | `pkg/push/service.go` | `TokenXiaomi` |
+
 ## Discover account deletion (M3)
 
 `TELLOMI_DISCOVER_DELETE=1` calls content-engine `DELETE /internal/users/{sub}` after `UserDeleteUser` has succeeded. The call is queued in memory, retried, and cannot fail or delay `account.deleteAccount`. See `docs/discover-account-deletion.md`.

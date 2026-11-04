@@ -132,6 +132,11 @@ services:
       TELLOMI_APNS_VOIP_TOPIC: ${TELLOMI_APNS_VOIP_TOPIC:-}
       TELLOMI_APNS_KEY_PATH: ${TELLOMI_APNS_KEY_PATH:-/etc/tellomi/apns/AuthKey.p8}
       TELLOMI_APNS_SANDBOX: ${TELLOMI_APNS_SANDBOX:-false}
+      # Xiaomi Push (token_type 14). Unset does not send. See docs/push.md.
+      TELLOMI_XIAOMI_PUSH: ${TELLOMI_XIAOMI_PUSH:-}
+      TELLOMI_XIAOMI_APP_SECRET: ${TELLOMI_XIAOMI_APP_SECRET:-}
+      TELLOMI_XIAOMI_PACKAGE: ${TELLOMI_XIAOMI_PACKAGE:-}
+      TELLOMI_XIAOMI_HOST: ${TELLOMI_XIAOMI_HOST:-}
       # help.getAppUpdate. Empty VERSION answers help.noAppUpdate. iOS sessions
       # ignore these and always receive help.noAppUpdate. See .env.example.
       TELLOMI_APP_UPDATE_VERSION: ${TELLOMI_APP_UPDATE_VERSION:-}

@@ -50,5 +50,14 @@ func newPushService(dsn string) *push.Service {
 		logx.Errorf("push: open device store: %v", err)
 		return nil
 	}
-	return push.NewService(store, push.LoadConfig())
+	svc := push.NewService(store, push.LoadConfig())
+	xm, err := push.LoadXiaomi()
+	if err != nil {
+		logx.Errorf("push: xiaomi disabled: %v", err)
+		return svc
+	}
+	if xm != nil {
+		svc.SetXiaomi(xm)
+	}
+	return svc
 }
