@@ -108,14 +108,14 @@ exit 99
 EOF
   chmod 755 "${pgmock}/docker"
   (
-    PATH="${pgmock}:${PATH}"
+    export DOCKER="${pgmock}/docker"
     TELLOMI_POSTGRES_CONTAINER=off postgres_backup_enabled && exit 1
-    TELLOMI_POSTGRES_CONTAINER= postgres_backup_enabled && exit 1
+    TELLOMI_POSTGRES_CONTAINER='' postgres_backup_enabled && exit 1
     TELLOMI_POSTGRES_CONTAINER=- postgres_backup_enabled && exit 1
     TELLOMI_POSTGRES_CONTAINER=missing postgres_backup_enabled && exit 1
     TELLOMI_POSTGRES_CONTAINER=stopped postgres_backup_enabled && exit 1
-    TELLOMI_POSTGRES_DB= TELLOMI_POSTGRES_CONTAINER=running postgres_backup_enabled && exit 1
-    TELLOMI_POSTGRES_USER= TELLOMI_POSTGRES_DB=engine TELLOMI_POSTGRES_CONTAINER=running postgres_backup_enabled && exit 1
+    TELLOMI_POSTGRES_DB='' TELLOMI_POSTGRES_CONTAINER=running postgres_backup_enabled && exit 1
+    TELLOMI_POSTGRES_USER='' TELLOMI_POSTGRES_DB=engine TELLOMI_POSTGRES_CONTAINER=running postgres_backup_enabled && exit 1
     unset TELLOMI_POSTGRES_DB TELLOMI_POSTGRES_USER
     TELLOMI_POSTGRES_CONTAINER=running postgres_backup_enabled || exit 1
     exit 0

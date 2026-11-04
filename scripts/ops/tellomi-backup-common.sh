@@ -277,8 +277,8 @@ postgres_backup_enabled() {
   fi
   [[ -n "$name" && "$name" != "off" && "$name" != "-" ]] || return 1
   [[ -n "$db" && -n "$user" ]] || return 1
-  command -v docker >/dev/null 2>&1 || return 1
-  state="$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)"
+  command -v "${DOCKER:-docker}" >/dev/null 2>&1 || return 1
+  state="$("${DOCKER:-docker}" inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)"
   [[ "$state" == "true" ]]
 }
 
