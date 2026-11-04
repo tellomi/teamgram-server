@@ -58,6 +58,18 @@ func newPushService(dsn string) *push.Service {
 	} else if xm != nil {
 		svc.SetXiaomi(xm)
 	}
+	fcm, err := push.LoadFCM()
+	if err != nil {
+		logx.Errorf("push: fcm disabled: %v", err)
+	} else if fcm != nil {
+		svc.SetFCM(fcm)
+	}
+	hw, err := push.LoadHuawei()
+	if err != nil {
+		logx.Errorf("push: huawei disabled: %v", err)
+	} else if hw != nil {
+		svc.SetHuawei(hw)
+	}
 	discoverpush.Start(svc, dsn)
 	return svc
 }

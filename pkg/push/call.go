@@ -197,6 +197,84 @@ func BuildCall(c Call, secret []byte) ([]byte, error) {
 	return outerJSON, nil
 }
 
+// BuildAndroidCall is the FCM data map and the Huawei data string for one
+// incoming call. android is a JSON object whose values are strings. huawei
+// is the sealed p value alone. The plaintext uses loc_key (underscore), which
+// is what the Android listener reads after decrypting p. There is no message
+// text in either value. A short secret is refused: the client reads only p.
+func BuildAndroidCall(c Call, secret []byte) (android []byte, huawei string, err error) {
+	if c.Updates == nil || c.CallID == 0 || c.CallerID == 0 {
+		return nil, "", fmt.Errorf("incomplete call push")
+	}
+	if len(secret) < 128 {
+		return nil, "", fmt.Errorf("android call push requires the device secret")
+	}
+	raw, err := encodeUpdates(c.Updates)
+	if err != nil {
+		return nil, "", err
+	}
+	updatesB64 := base64.RawURLEncoding.EncodeToString(raw)
+	name := c.CallerName
+	if name == "" {
+		name = "User"
+	}
+	callID := strconv.FormatInt(c.CallID, 10)
+	callAH := strconv.FormatInt(c.AccessHash, 10)
+	fromID := strconv.FormatInt(c.CallerID, 10)
+	customObj := map[string]any{
+		"call_id": callID,
+		"call_ah": callAH,
+		"from_id": fromID,
+		"updates": updatesB64,
+	}
+	plain := map[string]any{
+		"loc_key":  locKeyPhoneCallRequest,
+		"loc_args": []string{name},
+		"custom":   customObj,
+		"call_id":  callID,
+		"call_ah":  callAH,
+		"from_id":  fromID,
+		"updates":  updatesB64,
+	}
+	if c.UserID != 0 {
+		plain["user_id"] = c.UserID
+	}
+	plainJSON, err := json.Marshal(plain)
+	if err != nil {
+		return nil, "", err
+	}
+	p, err := EncryptNotification(secret, plainJSON)
+	if err != nil {
+		return nil, "", err
+	}
+	argsJSON, err := json.Marshal([]string{name})
+	if err != nil {
+		return nil, "", err
+	}
+	customJSON, err := json.Marshal(customObj)
+	if err != nil {
+		return nil, "", err
+	}
+	data := map[string]string{
+		"loc_key":  locKeyPhoneCallRequest,
+		"loc_args": string(argsJSON),
+		"custom":   string(customJSON),
+		"call_id":  callID,
+		"call_ah":  callAH,
+		"from_id":  fromID,
+		"updates":  updatesB64,
+		"p":        p,
+	}
+	if c.UserID != 0 {
+		data["user_id"] = strconv.FormatInt(c.UserID, 10)
+	}
+	out, err := json.Marshal(data)
+	if err != nil {
+		return nil, "", err
+	}
+	return out, p, nil
+}
+
 func encodeUpdates(u *mtproto.Updates) (raw []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {

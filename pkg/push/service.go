@@ -21,7 +21,8 @@ type Directory interface {
 	ChatTitle(ctx context.Context, id int64) (string, error)
 }
 
-// Service turns new-message updates into APNs (and, if configured, FCM) pushes.
+// Service turns new-message updates into APNs pushes and, when that sender
+// is installed, FCM, Huawei, and Xiaomi pushes.
 type Service struct {
 	store  Store
 	cfg    Config
@@ -198,28 +199,40 @@ func (s *Service) sendAPNS(ctx context.Context, dev Device, m Incoming, d Decisi
 	logx.WithContext(ctx).Errorf("push: apns user=%d msg=%d token=%s: %v", m.UserID, m.MsgID, tokenTail(dev.Token), err)
 }
 
-// sendVoIP rings token_type 9 devices. A locked iOS session is often still
-// marked online, so this runs even when sync also delivered updatePhoneCall.
-// The client dedupes CallKit by call id.
+// sendVoIP rings token_type 9 devices, and token types 2 and 13 when those
+// senders are installed. A locked iOS session is often still marked online,
+// so this runs even when sync also delivered updatePhoneCall. The client
+// dedupes CallKit by call id. Android reads the same call from p.
 func (s *Service) sendVoIP(ctx context.Context, devices []Device, c Call) {
-	if s.apns == nil {
-		return
+	if s.apns != nil {
+		for _, dev := range devices {
+			if dev.TokenType != TokenAPNSVoIP {
+				continue
+			}
+			body, err := BuildCall(c, dev.Secret)
+			if err != nil {
+				logx.WithContext(ctx).Errorf("push: build voip user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
+				continue
+			}
+			err = s.apns.SendVoIP(ctx, dev.Token, dev.AppSandbox, body)
+			if err == nil {
+				continue
+			}
+			s.forgetIfUnregistered(ctx, dev, err)
+			logx.WithContext(ctx).Errorf("push: voip user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
+		}
 	}
+	s.sendAndroidCall(ctx, devices, c)
+}
+
+func (s *Service) sendAndroidCall(ctx context.Context, devices []Device, c Call) {
 	for _, dev := range devices {
-		if dev.TokenType != TokenAPNSVoIP {
-			continue
+		switch dev.TokenType {
+		case TokenFCM:
+			s.sendFCMCall(ctx, dev, c)
+		case TokenHuawei:
+			s.sendHuaweiCall(ctx, dev, c)
 		}
-		body, err := BuildCall(c, dev.Secret)
-		if err != nil {
-			logx.WithContext(ctx).Errorf("push: build voip user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
-			continue
-		}
-		err = s.apns.SendVoIP(ctx, dev.Token, dev.AppSandbox, body)
-		if err == nil {
-			continue
-		}
-		s.forgetIfUnregistered(ctx, dev, err)
-		logx.WithContext(ctx).Errorf("push: voip user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
 	}
 }
 
@@ -239,14 +252,62 @@ func (s *Service) sendFCM(ctx context.Context, dev Device, m Incoming, d Decisio
 		logx.WithContext(ctx).Errorf("push: build fcm user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 		return
 	}
-	err = s.fcm.Send(ctx, dev.Token, alert.Android)
-	if err == nil {
+	s.dispatchFCM(ctx, dev, m.UserID, int64(m.MsgID), "msg", alert.Android)
+}
+
+func (s *Service) sendFCMCall(ctx context.Context, dev Device, c Call) {
+	if _, off := s.fcm.(fcmUnconfigured); off {
 		return
 	}
-	if errors.Is(err, ErrFCMNotConfigured) {
+	payload, _, err := BuildAndroidCall(c, dev.Secret)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("push: build fcm user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
 		return
 	}
-	logx.WithContext(ctx).Errorf("push: fcm user=%d msg=%d: %v", m.UserID, m.MsgID, err)
+	s.dispatchFCM(ctx, dev, dev.UserID, c.CallID, "call", payload)
+}
+
+// dispatchFCM hands the payload to the installed sender. The HTTP client runs
+// on its own goroutine with its own deadline: a blackholed FCM dial must not
+// wait in front of APNs, Huawei, Xiaomi, or the rest of Deliver. Test doubles
+// stay on the caller goroutine so a Deliver assertion can read them immediately.
+func (s *Service) dispatchFCM(ctx context.Context, dev Device, userID, ref int64, kind string, payload []byte) {
+	if real, ok := s.fcm.(*FCM); ok {
+		select {
+		case fcmInFlight <- struct{}{}:
+		default:
+			logx.WithContext(ctx).Errorf("push: fcm dropped user=%d %s=%d: busy", userID, kind, ref)
+			return
+		}
+		payload = append([]byte(nil), payload...)
+		go func() {
+			defer func() { <-fcmInFlight }()
+			s.finishFCM(dev, userID, ref, kind, payload, real)
+		}()
+		return
+	}
+	err := s.fcm.Send(ctx, dev.Token, payload)
+	s.noteFCM(context.WithoutCancel(ctx), dev, userID, ref, kind, err)
+}
+
+func (s *Service) finishFCM(dev Device, userID, ref int64, kind string, payload []byte, fcm *FCM) {
+	ctx, cancel := context.WithTimeout(context.Background(), fcmAttemptTimeout)
+	defer cancel()
+	err := fcm.Send(ctx, dev.Token, payload)
+	s.noteFCM(context.Background(), dev, userID, ref, kind, err)
+}
+
+func (s *Service) noteFCM(ctx context.Context, dev Device, userID, ref int64, kind string, err error) {
+	if err == nil || errors.Is(err, ErrFCMNotConfigured) {
+		return
+	}
+	var fe *FCMError
+	if errors.As(err, &fe) && fe.Drop() {
+		if delErr := s.store.Delete(ctx, dev.UserID, dev.TokenType, dev.Token, nil); delErr != nil {
+			logx.WithContext(ctx).Errorf("push: drop fcm token user=%d: %v", dev.UserID, delErr)
+		}
+	}
+	logx.WithContext(ctx).Errorf("push: fcm user=%d %s=%d: %v", userID, kind, ref, err)
 }
 
 func (s *Service) sendHuawei(ctx context.Context, dev Device, m Incoming, d Decision) {
@@ -259,11 +320,48 @@ func (s *Service) sendHuawei(ctx context.Context, dev Device, m Incoming, d Deci
 		// The client decrypts the whole data string. Without a secret there is nothing to send.
 		return
 	}
-	err = s.huawei.Send(ctx, dev.Token, alert.Huawei)
+	s.dispatchHuawei(ctx, dev, m.UserID, int64(m.MsgID), "msg", alert.Huawei, false)
+}
+
+func (s *Service) sendHuaweiCall(ctx context.Context, dev Device, c Call) {
+	if _, off := s.huawei.(huaweiUnconfigured); off {
+		return
+	}
+	_, data, err := BuildAndroidCall(c, dev.Secret)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("push: build huawei user=%d call=%d token=%s: %v", dev.UserID, c.CallID, tokenTail(dev.Token), err)
+		return
+	}
+	s.dispatchHuawei(ctx, dev, dev.UserID, c.CallID, "call", data, true)
+}
+
+func (s *Service) dispatchHuawei(ctx context.Context, dev Device, userID, ref int64, kind, data string, call bool) {
+	hctx, cancel := context.WithTimeout(ctx, huaweiAttemptTimeout)
+	defer cancel()
+	var err error
+	if call {
+		if hw, ok := s.huawei.(*Huawei); ok {
+			err = hw.SendCall(hctx, dev.Token, data)
+		} else {
+			err = s.huawei.Send(hctx, dev.Token, data)
+		}
+	} else {
+		err = s.huawei.Send(hctx, dev.Token, data)
+	}
+	s.noteHuawei(context.WithoutCancel(ctx), dev, userID, ref, kind, err)
+}
+
+func (s *Service) noteHuawei(ctx context.Context, dev Device, userID, ref int64, kind string, err error) {
 	if err == nil || errors.Is(err, ErrHuaweiNotConfigured) {
 		return
 	}
-	logx.WithContext(ctx).Errorf("push: huawei user=%d msg=%d: %v", m.UserID, m.MsgID, err)
+	var he *HuaweiError
+	if errors.As(err, &he) && he.Drop() {
+		if delErr := s.store.Delete(ctx, dev.UserID, dev.TokenType, dev.Token, nil); delErr != nil {
+			logx.WithContext(ctx).Errorf("push: drop huawei token user=%d: %v", dev.UserID, delErr)
+		}
+	}
+	logx.WithContext(ctx).Errorf("push: huawei user=%d %s=%d: %v", userID, kind, ref, err)
 }
 
 func (s *Service) sendXiaomi(ctx context.Context, dev Device, m Incoming, d Decision) {

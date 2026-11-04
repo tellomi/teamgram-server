@@ -239,9 +239,10 @@ Signaling can succeed and the call can still have no audio.
   which is one bff. Restarting it drops live calls.
 - **Background iOS.** `updatePhoneCall` still reaches a connected session.
   `phone.requestCall` also sends `PHONE_CALL_REQUEST` to `token_type` 9
-  (PushKit) on `<bundle-id>.voip`, so a locked callee rings. See
-  [push.md](push.md). The phone needs the PushKit entitlement and a
-  registered VoIP token. Foreground clients still complete signaling
-  without that push.
+  (PushKit) on `<bundle-id>.voip`, so a locked callee rings. When
+  `TELLOMI_FCM_PUSH=1` or `TELLOMI_HUAWEI_PUSH=1`, the same call is sent
+  to token types 2 and 13. See [push.md](push.md). The phone needs the
+  PushKit entitlement and a registered VoIP token for the iOS ring.
+  Foreground clients still complete signaling without that push.
 - **Group calls.** `RPCGroupCalls` and `RPCConferenceCalls` are routed. The
   in-process SFU does not speak tgcalls colibri. That does not affect 1:1.

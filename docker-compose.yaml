@@ -137,6 +137,19 @@ services:
       TELLOMI_XIAOMI_APP_SECRET: ${TELLOMI_XIAOMI_APP_SECRET:-}
       TELLOMI_XIAOMI_PACKAGE: ${TELLOMI_XIAOMI_PACKAGE:-}
       TELLOMI_XIAOMI_HOST: ${TELLOMI_XIAOMI_HOST:-}
+      # FCM HTTP v1 (token_type 2). Unset does not send. The JSON key is a
+      # file mount, not this environment. See docs/push.md.
+      TELLOMI_FCM_PUSH: ${TELLOMI_FCM_PUSH:-}
+      TELLOMI_FCM_CREDENTIALS: ${TELLOMI_FCM_CREDENTIALS:-/etc/tellomi/fcm/service-account.json}
+      TELLOMI_FCM_PROJECT: ${TELLOMI_FCM_PROJECT:-}
+      TELLOMI_FCM_HOST: ${TELLOMI_FCM_HOST:-}
+      TELLOMI_FCM_TOKEN_URL: ${TELLOMI_FCM_TOKEN_URL:-}
+      # Huawei Push Kit (token_type 13). Unset does not send. See docs/push.md.
+      TELLOMI_HUAWEI_PUSH: ${TELLOMI_HUAWEI_PUSH:-}
+      TELLOMI_HUAWEI_APP_ID: ${TELLOMI_HUAWEI_APP_ID:-}
+      TELLOMI_HUAWEI_APP_SECRET: ${TELLOMI_HUAWEI_APP_SECRET:-}
+      TELLOMI_HUAWEI_HOST: ${TELLOMI_HUAWEI_HOST:-}
+      TELLOMI_HUAWEI_TOKEN_URL: ${TELLOMI_HUAWEI_TOKEN_URL:-}
       # help.getAppUpdate. Empty MANIFEST reads a local synced latest.json
       # if one exists, otherwise https://www.tellomi.cn/dl/android/latest.json.
       # off disables that feed. Non-empty VERSION replaces the manifest;
@@ -247,6 +260,7 @@ services:
     volumes:
       - ./data/logs:/app/logs
       - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
+      - ${TELLOMI_FCM_CREDENTIALS_FILE:-/dev/null}:/etc/tellomi/fcm/service-account.json:ro
     logging:
       driver: json-file
       options:

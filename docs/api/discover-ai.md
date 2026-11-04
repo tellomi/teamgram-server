@@ -87,7 +87,7 @@ Content-Type: application/json
 
 ## 客户端：系统推送里有什么
 
-和聊天推送同一条设备登记（`account.registerDevice`）。会发出的通道：APNs（`token_type` 1，要有 `.p8`）、FCM（2，要装发送端）、华为（13，要装发送端）、小米（14，`TELLOMI_XIAOMI_PUSH=1`）。没装的通道不计入 `sent`。一台都没有时是 `no_devices`。
+和聊天推送同一条设备登记（`account.registerDevice`）。会发出的通道：APNs（`token_type` 1，要有 `.p8`）、FCM（2，`TELLOMI_FCM_PUSH=1`）、华为（13，`TELLOMI_HUAWEI_PUSH=1`）、小米（14，`TELLOMI_XIAOMI_PUSH=1`）。没装的通道不计入 `sent`。一台都没有时是 `no_devices`。
 
 横幅标题是 `actor_name`。正文：
 
