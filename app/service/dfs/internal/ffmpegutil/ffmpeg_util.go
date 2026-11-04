@@ -119,6 +119,69 @@ func (trans *FFmpegUtil) ConvertToMp4(gifPath string) (err error) {
 	return
 }
 
+// ConvertBytesToMp4 transcodes an uploaded GIF (or passes through bytes the
+// caller already read) without fetching http://127.0.0.1/dfs/file/<name>.
+// That URL 404s when the name is the client filename, for example x.mp4.
+func (trans *FFmpegUtil) ConvertBytesToMp4(data []byte, dstW, dstH int) (out []byte, duration int32, err error) {
+	if len(data) == 0 {
+		return nil, 0, errors.New("empty media")
+	}
+	err = trans.InitializeEmptyTranscoder()
+	if err != nil {
+		logx.Errorf("InitializeEmptyTranscoder - error: %v", err)
+		return
+	}
+	w, err := trans.CreateInputPipe()
+	if err != nil {
+		logx.Errorf("createInputPipe error: %v", err)
+		return
+	}
+	trans.MediaFile().SetOutputFormat("mp4")
+	trans.MediaFile().SetPixFmt("yuv420p")
+	if dstW != 0 || dstH != 0 {
+		trans.MediaFile().SetVideoFilter(fmt.Sprintf("scale=%d:%d", dstW, dstH))
+	}
+	trans.MediaFile().SetVideoCodec("libx264")
+	trans.MediaFile().SetStrict(-2)
+	r, err := trans.CreateOutputPipe("mp4")
+	if err != nil {
+		logx.Errorf("createOutputPipe error: %v", err)
+		return
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer r.Close()
+		defer wg.Done()
+		out, err = ioutil.ReadAll(r)
+		if err != nil && !errors.Is(err, io.ErrClosedPipe) {
+			logx.Errorf("readPipe error: %v", err)
+		}
+	}()
+	go func() {
+		defer w.Close()
+		if _, werr := w.Write(data); werr != nil && !errors.Is(werr, io.ErrClosedPipe) {
+			logx.Errorf("writePipe error: %v", werr)
+		}
+	}()
+	done := trans.Run(true)
+	progress := trans.Output()
+	for msg := range progress {
+		duration = int32(math.Round(utils.DurToSec(msg.CurrentTime)))
+	}
+	err = <-done
+	if err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		logx.Errorf("transcoding error: %v", err)
+		return
+	}
+	wg.Wait()
+	if len(out) < 12 || string(out[4:8]) != "ftyp" {
+		return nil, 0, errors.New("ffmpeg did not produce an mp4")
+	}
+	err = nil
+	return
+}
+
 func (trans *FFmpegUtil) ConvertToMp4ByPipe(gifPath string, dstW, dstH int) (bytes []byte, duration int32, err error) {
 	// Create new instance of transcoder
 	// trans := new(transcoder.Transcoder)

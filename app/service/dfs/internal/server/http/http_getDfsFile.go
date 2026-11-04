@@ -12,7 +12,9 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,30 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/rest/httpx"
 )
+
+// ParseDfsFileName reads creator_fileId.ext. A bare name such as x.mp4 is
+// rejected: it is a document filename, not an object key.
+func ParseDfsFileName(name string) (creator, fileID int64, err error) {
+	name = path.Base(strings.TrimSpace(name))
+	stem := name
+	if i := strings.LastIndex(name, "."); i > 0 {
+		stem = name[:i]
+	}
+	parts := strings.Split(stem, "_")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid fileName %s", name)
+	}
+	if creator, err = strconv.ParseInt(parts[0], 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("invalid fileName %s", name)
+	}
+	if fileID, err = strconv.ParseInt(parts[1], 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("invalid fileName %s", name)
+	}
+	if fileID == 0 {
+		return 0, 0, fmt.Errorf("invalid fileName %s", name)
+	}
+	return creator, fileID, nil
+}
 
 func GetDfsFile(ctx *svc.ServiceContext) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -45,30 +71,16 @@ func GetDfsFile(ctx *svc.ServiceContext) http.HandlerFunc {
 			return
 		}
 
-		v := strings.Split(fileName.FileName, "_")
-		if len(v) != 2 {
-			logx.Errorf("getDfsFile - error: invalid fileName: %s", fileName)
+		creator, fileId, err = ParseDfsFileName(fileName.FileName)
+		if err != nil {
+			logx.Errorf("getDfsFile - error: %v", err)
 			http.NotFound(w, r)
 			return
 		}
-
-		if creator, err = strconv.ParseInt(v[0], 10, 64); err != nil {
-			logx.Errorf("getDfsFile - error: invalid fileName: %s", fileName)
-			http.NotFound(w, r)
-			return
-		}
-		_ = creator
-
-		if fileId, err = strconv.ParseInt(strings.Split(v[1], ".")[0], 10, 64); err != nil {
-			logx.Errorf("getDfsFile - error: invalid fileName: %s", fileName)
-			http.NotFound(w, r)
-			return
-		}
-		_ = fileId
 
 		f, err := DfsOpenFile(ctx, creator, fileId)
 		if err != nil {
-			logx.Errorf("getDfsFile(%d, %d) - error: invalid fileName: %s", creator, fileId, fileName)
+			logx.Errorf("getDfsFile(%d, %d) - error: %v", creator, fileId, err)
 			http.NotFound(w, r)
 			return
 		}

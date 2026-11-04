@@ -216,8 +216,14 @@ func TestManageStickersAndGifs(t *testing.T) {
 	if err = gs.SaveGif(user, inputItem(gif), true); err != nil {
 		t.Fatal(err)
 	}
-	if len(gs.SavedGifs(user, 0).GetGifs()) != 0 {
-		t.Fatal("unsave left a gif")
+	cleared := gs.SavedGifs(user, 0)
+	if len(cleared.GetGifs()) == 0 {
+		t.Fatal("unsaving the last gif left the panel empty")
+	}
+	for _, doc := range cleared.GetGifs() {
+		if doc.GetId() == gif.DocumentID {
+			t.Fatal("unsaved gif is still listed")
+		}
 	}
 	if err = gs.SaveGif(user, inputItem(webp), false); err != mtproto.ErrGifContentTypeInvalid {
 		t.Fatalf("webp gif: %v", err)

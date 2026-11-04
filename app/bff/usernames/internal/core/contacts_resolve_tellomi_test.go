@@ -82,3 +82,31 @@ func TestContactsResolveUsernameTellomi(t *testing.T) {
 		t.Fatalf("username = %q", ai.GetUsername().GetValue())
 	}
 }
+
+func TestContactsResolveGifBot(t *testing.T) {
+	const viewer int64 = 42
+	buf, err := proto.Marshal(&rpcmeta.RpcMetadata{UserId: viewer, PermAuthKeyId: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
+	c := New(ctx, &svc.ServiceContext{Dao: &dao.Dao{UserClient: tellomiResolver{}}})
+	got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: "gif"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPeer().GetUserId() != 101 {
+		t.Fatalf("peer %d", got.GetPeer().GetUserId())
+	}
+	var bot *mtproto.User
+	for _, u := range got.GetUsers() {
+		if u.GetId() == 101 {
+			bot = u
+		}
+	}
+	if bot == nil || !bot.GetBot() || bot.GetUsername().GetValue() != "gif" {
+		t.Fatalf("gif bot %#v", bot)
+	}
+}

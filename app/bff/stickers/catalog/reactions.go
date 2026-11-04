@@ -218,6 +218,9 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 // DocumentFile returns the bytes for a seeded sticker, emoji, or reaction icon.
 // upload.getFile serves these directly so a missing R2 object cannot stall the session.
 func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
+	if body, mime, ok = GifFile(id); ok {
+		return body, mime, true
+	}
 	s.mu.Lock()
 	link := s.docs[id]
 	s.mu.Unlock()

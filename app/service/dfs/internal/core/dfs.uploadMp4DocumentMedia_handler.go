@@ -81,9 +81,14 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 		// secretId  = int64(extType2)<<32 | int64(rand.Uint32())
 	)
 
-	// getFirstFrame
-	tmpFileName := fmt.Sprintf("http://127.0.0.1:11701/dfs/file/%d_%d.mp4", creatorId, file.GetId_INT64())
-	thumbData, err = c.svcCtx.FFmpegUtil.GetFirstFrame(tmpFileName)
+	// Read the upload directly. Fetching /dfs/file/<client name>.mp4 404s
+	// (invalid fileName x.mp4) and leaves the GIF without a thumb.
+	mp4Bytes, err := c.uploadedBytes(creatorId, file.GetId_INT64())
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
+		return nil, err
+	}
+	thumbData, err = c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(mp4Bytes)
 	if thumbData == nil || err != nil {
 		// upload mp4 file
 		fileInfo, err := c.svcCtx.Dao.GetFileInfo(c.ctx, creatorId, file.Id_INT64)
@@ -121,7 +126,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			DcId:          1,
 			Attributes:    makeMp4DocumentAttributes(media.GetAttributes()),
 		}).To_Document()
-		return document, nil
+		return finishGifDocument(document, mp4Bytes), nil
 	} else {
 		// 1. getFirstFrame
 		// build photoStrippedSize
@@ -211,6 +216,6 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			Attributes:    makeMp4DocumentAttributes(media.GetAttributes()),
 		}).To_Document()
 
-		return document, nil
+		return finishGifDocument(document, mp4Bytes), nil
 	}
 }

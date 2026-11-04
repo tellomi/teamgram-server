@@ -64,7 +64,7 @@ func (c *DfsCore) DfsUploadGifDocumentMedia(in *dfs.TLDfsUploadGifDocumentMedia)
 	}
 
 	fileInfo, err2 := c.svcCtx.Dao.GetFileInfo(c.ctx, in.GetCreator(), file.GetId_INT64())
-	if err != nil {
+	if err2 != nil || fileInfo == nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err2)
 		return nil, mtproto.ErrMediaInvalid
 	}
@@ -147,7 +147,7 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		},
 	}).To_Document()
 
-	return document, nil
+	return finishGifDocument(document, gifData), nil
 }
 
 func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.InputMedia) (*mtproto.Document, error) {
@@ -207,11 +207,12 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 	if dstH%2 != 0 {
 		dstH += 1
 	}
-	gifMp4Data, duration, err := c.svcCtx.FFmpegUtil.ConvertToMp4ByPipe(
-		fmt.Sprintf("http://127.0.0.1:11701/dfs/file/%d_%d.gif",
-			creatorId,
-			media.GetFile().GetId_INT64()),
-		int(dstW), int(dstH))
+	raw, err := c.uploadedBytes(creatorId, media.GetFile().GetId_INT64())
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
+		return nil, mtproto.ErrMediaInvalid
+	}
+	gifMp4Data, duration, err := c.svcCtx.FFmpegUtil.ConvertBytesToMp4(raw, int(dstW), int(dstH))
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		return nil, err
@@ -252,13 +253,13 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 				H:                 dstH,
 			}).To_DocumentAttribute(),
 			mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{
-				FileName: media.GetFile().GetName() + ".mp4",
+				FileName: model.AnimatedFileName(media.GetFile().GetName()),
 			}).To_DocumentAttribute(),
 			mtproto.MakeTLDocumentAttributeAnimated(&mtproto.DocumentAttribute{}).To_DocumentAttribute(),
 		},
 	}).To_Document()
 
-	return document, nil
+	return finishGifDocument(document, gifMp4Data), nil
 }
 
 func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) (*mtproto.Document, error) {
@@ -301,12 +302,12 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		}
 	}
 
-	gifMp4Data, duration, err := c.svcCtx.FFmpegUtil.ConvertToMp4ByPipe(
-		fmt.Sprintf("http://127.0.0.1:11701/dfs/file/%d_%d.gif",
-			creatorId,
-			media.GetFile().GetId_INT64()),
-		dstW,
-		dstH)
+	raw, err := c.uploadedBytes(creatorId, media.GetFile().GetId_INT64())
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
+		return nil, mtproto.ErrMediaInvalid
+	}
+	gifMp4Data, duration, err := c.svcCtx.FFmpegUtil.ConvertBytesToMp4(raw, dstW, dstH)
 
 	if err != nil {
 		c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
@@ -369,13 +370,13 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 				VideoCodec:        nil,
 			}).To_DocumentAttribute(),
 			mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{
-				FileName: media.GetFile().GetName() + ".mp4",
+				FileName: model.AnimatedFileName(media.GetFile().GetName()),
 			}).To_DocumentAttribute(),
 			mtproto.MakeTLDocumentAttributeAnimated(&mtproto.DocumentAttribute{}).To_DocumentAttribute(),
 		},
 	}).To_Document()
 
-	return document, nil
+	return finishGifDocument(document, gifMp4Data), nil
 }
 
 func (c *DfsCore) uploadGifThumb(id int64, gifThumb image.Image) ([]*mtproto.PhotoSize, error) {

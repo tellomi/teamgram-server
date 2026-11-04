@@ -30,13 +30,16 @@ func seededDocumentFile(location *mtproto.InputFileLocation, offset int64, limit
 		if body, mime, ok := catalog.Must().ThumbFile(location.GetId(), location.GetThumbSize()); ok {
 			return uploadFileChunk(sliceFile(body, offset, limit), mime), true
 		}
+		if body, mime, ok := catalog.GifThumb(location.GetId(), location.GetThumbSize()); ok {
+			return uploadFileChunk(sliceFile(body, offset, limit), mime), true
+		}
 	}
 	body, mime, ok := catalog.Must().DocumentFile(location.GetId())
 	if !ok {
 		return nil, false
 	}
 	// A .tgs has no jpeg thumb of its own. Return an empty partial instead of asking dfs.
-	if location.GetThumbSize() != "" && mime != "image/webp" && mime != "image/jpeg" {
+	if location.GetThumbSize() != "" && mime != "image/webp" && mime != "image/jpeg" && mime != "video/mp4" {
 		return uploadFileChunk(nil, "application/x-tgsticker"), true
 	}
 	return uploadFileChunk(sliceFile(body, offset, limit), mime), true
@@ -68,6 +71,8 @@ func uploadFileChunk(body []byte, mime string) *mtproto.Upload_File {
 		ft = mtproto.MakeTLStorageFileWebp(&mtproto.Storage_FileType{}).To_Storage_FileType()
 	case "image/jpeg":
 		ft = mtproto.MakeTLStorageFileJpeg(&mtproto.Storage_FileType{}).To_Storage_FileType()
+	case "video/mp4":
+		ft = mtproto.MakeTLStorageFileMp4(&mtproto.Storage_FileType{}).To_Storage_FileType()
 	}
 	return mtproto.MakeTLUploadFile(&mtproto.Upload_File{
 		Type:  ft,

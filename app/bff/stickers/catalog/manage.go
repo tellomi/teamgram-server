@@ -238,6 +238,9 @@ func (s *Service) SavedGifs(userID, hash int64) *mtproto.Messages_SavedGifs {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows := s.state(userID).gifs
+	if len(rows) == 0 {
+		return BundledGifs(hash)
+	}
 	var docs []*mtproto.Document
 	var ids []int64
 	for _, row := range rows {
