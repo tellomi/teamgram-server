@@ -31,11 +31,11 @@ type announceSender struct {
 	c msgclient.MsgClient
 }
 
-func (s announceSender) Send(ctx context.Context, to int64, text string) error {
+func (s announceSender) Send(ctx context.Context, to int64, notice announce.Outbound) error {
 	if s.c == nil {
 		return errNoMsg
 	}
-	ok, err := s.c.MsgPushUserMessage(ctx, buildAnnounceMessage(to, text, randomID()))
+	ok, err := s.c.MsgPushUserMessage(ctx, buildAnnounceMessage(notice, to, randomID()))
 	if err != nil {
 		return err
 	}
@@ -45,30 +45,31 @@ func (s announceSender) Send(ctx context.Context, to int64, text string) error {
 	return nil
 }
 
-func (s announceSender) Post(ctx context.Context, text string) error {
+func (s announceSender) Post(ctx context.Context, notice announce.Outbound) error {
 	if s.c == nil {
 		return errNoMsg
 	}
-	_, err := s.c.MsgSendMessageV2(ctx, buildNewsPost(text, randomID()))
+	_, err := s.c.MsgSendMessageV2(ctx, buildNewsPost(notice, randomID()))
 	return err
 }
 
-// buildAnnounceMessage is a private message from @admin, the same shape as
-// a login-code notice (push type 1) without a spoiler.
-func buildAnnounceMessage(to int64, text string, random int64) *msg.TLMsgPushUserMessage {
+// buildAnnounceMessage is a normal private message. PushType 0 is the same
+// path as a user-to-user send, including the recipient's push.
+func buildAnnounceMessage(notice announce.Outbound, to int64, random int64) *msg.TLMsgPushUserMessage {
 	out := mtproto.MakeTLMessage(&mtproto.Message{
-		Out:     true,
-		FromId:  mtproto.MakePeerUser(announce.ServiceUserID),
-		PeerId:  mtproto.MakePeerUser(to),
-		Date:    int32(time.Now().Unix()),
-		Message: text,
+		Out:      true,
+		FromId:   mtproto.MakePeerUser(notice.From),
+		PeerId:   mtproto.MakePeerUser(to),
+		Date:     int32(time.Now().Unix()),
+		Message:  notice.Text,
+		Entities: messageEntities(notice.Entities),
 	}).To_Message()
 	return &msg.TLMsgPushUserMessage{
-		UserId:    announce.ServiceUserID,
+		UserId:    notice.From,
 		AuthKeyId: 0,
 		PeerType:  mtproto.PEER_USER,
 		PeerId:    to,
-		PushType:  1,
+		PushType:  0,
 		Message: msg.MakeTLOutboxMessage(&msg.OutboxMessage{
 			RandomId: random,
 			Message:  out,
@@ -77,13 +78,14 @@ func buildAnnounceMessage(to int64, text string, random int64) *msg.TLMsgPushUse
 }
 
 // buildNewsPost is one channel message in @news from its creator.
-func buildNewsPost(text string, random int64) *msg.TLMsgSendMessageV2 {
+func buildNewsPost(notice announce.Outbound, random int64) *msg.TLMsgSendMessageV2 {
 	out := mtproto.MakeTLMessage(&mtproto.Message{
-		Out:     true,
-		Post:    true,
-		PeerId:  mtproto.MakePeerChannel(announce.NewsChannelID),
-		Date:    int32(time.Now().Unix()),
-		Message: text,
+		Out:      true,
+		Post:     true,
+		PeerId:   mtproto.MakePeerChannel(announce.NewsChannelID),
+		Date:     int32(time.Now().Unix()),
+		Message:  notice.Text,
+		Entities: messageEntities(notice.Entities),
 	}).To_Message()
 	return &msg.TLMsgSendMessageV2{
 		UserId:   announce.NewsPosterID,
@@ -96,6 +98,23 @@ func buildNewsPost(text string, random int64) *msg.TLMsgSendMessageV2 {
 			}).To_OutboxMessage(),
 		},
 	}
+}
+
+func messageEntities(ents []announce.Entity) []*mtproto.MessageEntity {
+	if len(ents) == 0 {
+		return nil
+	}
+	out := make([]*mtproto.MessageEntity, 0, len(ents))
+	for _, e := range ents {
+		if e.Type != "bold" {
+			continue
+		}
+		out = append(out, mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{
+			Offset: e.Offset,
+			Length: e.Length,
+		}).To_MessageEntity())
+	}
+	return out
 }
 
 func randomID() int64 {

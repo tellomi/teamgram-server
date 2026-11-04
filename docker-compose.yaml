@@ -209,6 +209,8 @@ services:
       TELLOMI_ANNOUNCE: ${TELLOMI_ANNOUNCE:-}
       TELLOMI_ANNOUNCE_KEY: ${TELLOMI_ANNOUNCE_KEY:-}
       TELLOMI_ANNOUNCE_ADDR: ${TELLOMI_ANNOUNCE_ADDR:-}
+      TELLOMI_ANNOUNCE_FROM: ${TELLOMI_ANNOUNCE_FROM:-}
+      TELLOMI_ANNOUNCE_GAP_MS: ${TELLOMI_ANNOUNCE_GAP_MS:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.
