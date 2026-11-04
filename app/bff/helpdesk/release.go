@@ -114,16 +114,35 @@ func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_A
 	return mtproto.MakeTLHelpAppUpdate(data).To_Help_AppUpdate()
 }
 
-// LoadRelease reads the optional published update. An empty version means
-// the server is not offering an update.
+// LoadRelease reads the published Android update.
+// A non-empty TELLOMI_APP_UPDATE_VERSION replaces the release manifest and
+// is logged once. Leave it empty in production so latest.json drives the
+// prompt. When it is empty, the manifest supplies versionName, the download
+// URL, and changelog. TEXT, URL, and SOURCE, when non-empty, replace those
+// manifest fields. The prompt is skippable unless CANNOT_SKIP is 1 or the
+// manifest sets mandatory to true. An env-only release is mandatory only
+// when CANNOT_SKIP is 1.
+// A manifest that cannot be read, or an empty version, offers no update.
 // TELLOMI_APP_UPDATE_VERSION is a dotted marketing version such as 14.0.4.
 // A value with no dot is a build number and AppUpdate ignores it.
-// iOS sessions ignore these variables and always receive help.noAppUpdate.
+// iOS sessions ignore the release and always receive help.noAppUpdate.
 func LoadRelease() *Release {
+	if rel := releaseFromEnv(); rel != nil {
+		return rel
+	}
+	rel, err := publishedManifest()
+	if err != nil || rel == nil {
+		return nil
+	}
+	return applyManifestOverrides(rel)
+}
+
+func releaseFromEnv() *Release {
 	version := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_VERSION"))
 	if version == "" {
 		return nil
 	}
+	warnEnvOverride(version)
 	return &Release{
 		Version:    version,
 		Text:       strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_TEXT")),
@@ -131,6 +150,27 @@ func LoadRelease() *Release {
 		Source:     strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_SOURCE")),
 		CannotSkip: os.Getenv("TELLOMI_APP_UPDATE_CANNOT_SKIP") == "1",
 	}
+}
+
+// applyManifestOverrides copies rel and replaces fields that the operator set.
+// Empty TEXT, URL, and SOURCE leave the manifest value. CANNOT_SKIP=1 forces
+// the dialog to stay up. Any other value leaves the manifest flag, which is
+// set only when mandatory is the JSON boolean true.
+func applyManifestOverrides(rel *Release) *Release {
+	out := cloneRelease(rel)
+	if text := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_TEXT")); text != "" {
+		out.Text = text
+	}
+	if url := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_URL")); url != "" {
+		out.URL = url
+	}
+	if source := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_SOURCE")); source != "" {
+		out.Source = source
+	}
+	if os.Getenv("TELLOMI_APP_UPDATE_CANNOT_SKIP") == "1" {
+		out.CannotSkip = true
+	}
+	return out
 }
 
 // Changelog returns service notifications for notes newer than prev.
@@ -314,7 +354,10 @@ func bareBuildNumber(version string) bool {
 	return !strings.Contains(strings.TrimSpace(version), ".")
 }
 
-var bareBuildLogged sync.Map
+var (
+	bareBuildLogged   sync.Map
+	envOverrideLogged sync.Map
+)
 
 func warnBareBuild(version string) {
 	version = strings.TrimSpace(version)
@@ -324,7 +367,14 @@ func warnBareBuild(version string) {
 	if _, loaded := bareBuildLogged.LoadOrStore(version, struct{}{}); loaded {
 		return
 	}
-	logx.Errorf("help.getAppUpdate: TELLOMI_APP_UPDATE_VERSION %q has no dot and is a build number. Use a marketing version such as 14.0.4. This value is ignored. iOS clients ignore TELLOMI_APP_UPDATE_* entirely.", version)
+	logx.Errorf("help.getAppUpdate: published version %q has no dot and is a build number. Use a marketing version such as 14.0.4. This value is ignored. iOS clients always receive help.noAppUpdate.", version)
+}
+
+func warnEnvOverride(version string) {
+	if _, loaded := envOverrideLogged.LoadOrStore(version, struct{}{}); loaded {
+		return
+	}
+	logx.Errorf("help.getAppUpdate: TELLOMI_APP_UPDATE_VERSION %q overrides the Android release manifest. Leave it empty so latest.json drives the in-app prompt.", version)
 }
 
 func versionID(version string) int32 {

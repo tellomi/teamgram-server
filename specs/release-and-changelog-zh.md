@@ -25,3 +25,24 @@
 3. **Tag**：在 Git 中打 tag（如 `v0.96.0`）并推送到远程。
 4. **二进制/镜像**：按项目惯例构建并发布预编译二进制或 Docker 镜像。
 5. **README**：若主 README 中有固定版本号或“当前版本”说明，按需更新。
+6. **安卓客户端**：发布 `latest.json`，并确认 `help.getAppUpdate`（见下）。每次安卓 Release 都必须做。
+
+## 安卓应用内更新
+
+每次安卓 Release 都要发布 `https://www.tellomi.cn/dl/android/latest.json`。成都从 R2 桶 `tellomi-updates` 同步这份文件。`help.getAppUpdate` 读取它，并用 `versionName` 和客户端版本比较。弹出应用内更新靠的是这个文件，不要靠改生产 `.env` 里的 `TELLOMI_APP_UPDATE_VERSION`。生产环境把该变量留空。非空会盖住清单，下次 APK 发布后就会过期。
+
+清单字段为 `versionName`、`versionCode`、`url`、`fallbackUrl`、`sha256` 或 `sha256sum`、`size`。已发布文件在顶层使用 `sha256sum`，在每条 `files[]` 上使用 `sha256`。可选的 `changelog`（字符串）是对话框正文。更新提示默认可跳过。只有 `TELLOMI_APP_UPDATE_CANNOT_SKIP=1`，或清单里的 `"mandatory": true`（JSON 布尔值，其他类型忽略），才会设置 `can_not_skip`。iOS 仍然收到 `help.noAppUpdate`。
+
+`TELLOMI_APP_UPDATE_MANIFEST` 指定文件路径或 `http(s)` URL。未设置或为空时，服务器使用第一个存在的普通文件：
+
+- `/etc/tellomi/updates/android/latest.json`
+- `/opt/tellomi/updates/android/latest.json`
+- `/var/www/tellomi/dl/android/latest.json`
+- `/usr/share/nginx/html/dl/android/latest.json`
+
+否则请求 `https://www.tellomi.cn/dl/android/latest.json`。`off` 关闭清单。成功读取缓存 5 分钟。超时（5 秒）或其他读取错误缓存 30 秒，然后回答 `help.noAppUpdate`。`TELLOMI_APP_UPDATE_VERSION` 非空时直接使用环境变量，不再读清单，因此清单故障不会挡住这次覆盖。文件更新后不必重启进程。
+
+每次安卓发布之后：
+
+1. `curl -fsS https://www.tellomi.cn/dl/android/latest.json` 能看到新的 `versionName`。
+2. 5 分钟内，比该版本旧的安卓会话调用 `help.getAppUpdate`，返回 `help.appUpdate`，且 `versionName` 与清单 `url` 一致。只有清单含 `"mandatory": true` 或 `TELLOMI_APP_UPDATE_CANNOT_SKIP=1` 时 `can_not_skip` 才为真。iOS 会话仍返回 `help.noAppUpdate`。

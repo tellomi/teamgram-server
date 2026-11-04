@@ -137,8 +137,12 @@ services:
       TELLOMI_XIAOMI_APP_SECRET: ${TELLOMI_XIAOMI_APP_SECRET:-}
       TELLOMI_XIAOMI_PACKAGE: ${TELLOMI_XIAOMI_PACKAGE:-}
       TELLOMI_XIAOMI_HOST: ${TELLOMI_XIAOMI_HOST:-}
-      # help.getAppUpdate. Empty VERSION answers help.noAppUpdate. iOS sessions
-      # ignore these and always receive help.noAppUpdate. See .env.example.
+      # help.getAppUpdate. Empty MANIFEST reads a local synced latest.json
+      # if one exists, otherwise https://www.tellomi.cn/dl/android/latest.json.
+      # off disables that feed. Non-empty VERSION replaces the manifest;
+      # leave it empty so each Android release prompts from latest.json.
+      # iOS sessions always receive help.noAppUpdate. See .env.example.
+      TELLOMI_APP_UPDATE_MANIFEST: ${TELLOMI_APP_UPDATE_MANIFEST:-}
       TELLOMI_APP_UPDATE_VERSION: ${TELLOMI_APP_UPDATE_VERSION:-}
       TELLOMI_APP_UPDATE_TEXT: ${TELLOMI_APP_UPDATE_TEXT:-}
       TELLOMI_APP_UPDATE_URL: ${TELLOMI_APP_UPDATE_URL:-}

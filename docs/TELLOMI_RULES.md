@@ -1,6 +1,6 @@
 # Tellomi 硬规则
 
-改规则开 PR，不要只改聊天记忆。产品 1–9 三仓同文（本仓、iOS、Android）；改口径时一起改。
+改规则开 PR，不要只改聊天记忆。产品 1–10 三仓同文（本仓、iOS、Android）；改口径时一起改。
 
 1. 对人装的测包/Release：安卓必须 `-PTELLOMI_SERVER_PROFILE=dev` → `8.137.39.82:10443`；禁止打出 `10.0.2.2`（local）；出包前核 BuildConfig DC。
 2. DC 用 IP:端口（native `inet_pton`），勿把域名塞进 DC 列表；域名留给官网/协议页。
@@ -11,6 +11,7 @@
 7. 大陆默认只 +86；品牌 Tellomi；营销版本从 14.0.x；密钥找「所有权限管理」。
 8. 登录改牌后清死引用；出包前过 checklist（DC / 死引用 / 攒批 / 双端）。
 9. 预发 `staging-api.tellomi.cn`、生产 `api.tellomi.cn`；端口 10443 MTProto / 11443 WS；生产 Redis 禁 FLUSHALL。
+10. 每次安卓 Release 必须发布 `latest.json`（`https://www.tellomi.cn/dl/android/latest.json`，成都从 R2 `tellomi-updates` 同步）。它驱动 `help.getAppUpdate`；禁止只改生产 `.env` 来弹更新。发布后确认安卓会话的 `help.getAppUpdate` 返回新 `versionName`。生产 `TELLOMI_APP_UPDATE_VERSION` 留空。
 
 ## 本仓补充
 
