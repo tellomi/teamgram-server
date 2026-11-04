@@ -203,6 +203,10 @@ def group(rows: list[tuple[str, str]], forms) -> list[dict]:
 
 
 def apply_brand_entry(entry: dict) -> dict:
+    # brand() rewrites hosts inside values. Key names stay as imported.
+    key = entry.get("key", "")
+    if "tell.cc" in key.lower():
+        raise ValueError(f"refusing rewritten langpack key {key}")
     if "value" in entry:
         entry["value"] = brand(entry["value"])
     if "plural" in entry:

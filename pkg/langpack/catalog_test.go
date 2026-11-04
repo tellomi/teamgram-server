@@ -348,6 +348,9 @@ func TestShippedPacks(t *testing.T) {
 				t.Fatalf("%s %s caught up %+v %v", platform, lang.GetLangCode(), caught, err)
 			}
 			for _, s := range diff.GetStrings() {
+				if strings.Contains(strings.ToLower(s.GetKey()), "tell.cc") {
+					t.Fatalf("rewritten key name %s %s %q", platform, lang.GetLangCode(), s.GetKey())
+				}
 				if hasTelegramBrand(s.GetValue()) || hasTelegramBrand(s.GetOtherValue()) {
 					t.Fatalf("brand in %s %s %q", platform, s.GetKey(), s.GetValue()+s.GetOtherValue())
 				}
@@ -852,5 +855,54 @@ func TestTellomiKeysHaveNoHyphen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// TestLangpackKeyNamesAreNotHosts fails when a host rewrite has been applied
+// to a key. Chat.Message contains the letters t.me; rewriting that substring
+// produced keys such as Chatell.ccssage. The check covers shipped packs and
+// the override and machine catalogs the importer reapplies.
+func TestLangpackKeyNamesAreNotHosts(t *testing.T) {
+	root := filepath.Join("..", "..", "data", "langpack")
+	var files, keys int
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".json.gz") {
+			return nil
+		}
+		fh, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer fh.Close()
+		zr, err := gzip.NewReader(fh)
+		if err != nil {
+			return err
+		}
+		defer zr.Close()
+		var doc struct {
+			Strings []struct {
+				Key string `json:"key"`
+			} `json:"strings"`
+		}
+		if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+			return err
+		}
+		files++
+		for _, s := range doc.Strings {
+			keys++
+			if strings.Contains(strings.ToLower(s.Key), "tell.cc") {
+				t.Errorf("%s key %s was rewritten", path, s.Key)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files < 100 || keys < 1000 {
+		t.Fatalf("langpack scan files=%d keys=%d", files, keys)
 	}
 }

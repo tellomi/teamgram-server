@@ -94,8 +94,23 @@ BRAND_KEYS = {"AppName", "AppNameBeta", "Application.Name", "Watch.AppName"}
 FORMS = ("zero", "one", "two", "few", "many", "other")
 
 
+def rewritten_key(key: str) -> bool:
+    """A key name that already went through the host rewrite.
+
+    Chat.Message contains the letters t.me. An older replace turned that into
+    Chatell.ccssage. tell.cc inside a key is that damage. Values may contain
+    tell.cc; key names may not.
+    """
+    return "tell.cc" in key.lower()
+
+
 def rewrite_link(text: str) -> str:
-    # t.me must be a host. Chat.Message contains the letters t.me and is not a link.
+    """Rewrite Telegram hosts in a string value. Never call this on a key name.
+
+    t.me must be a host. Chat.Message, Attachment.Media, and RichText.Menu
+    contain those letters and are not links. The lookbehind and the word
+    boundary keep the match off those identifiers.
+    """
     text = re.sub(r"(?i)(?<![A-Za-z0-9])https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
     text = re.sub(r"(?i)https?://(?:www\.)?((?:[a-z0-9-]+\.)*)telegram\.org", r"https://\1tellomi.cn", text)
     text = re.sub(r"(?i)(?<![A-Za-z0-9])(?:t\.me|telegram\.me|telegram\.dog)\b", "tell.cc", text)
@@ -194,14 +209,18 @@ def forms_for(platform: str, rows: list[tuple[str, str]]) -> tuple:
 
 
 def brand_entries(entries: list[dict]) -> list[dict]:
+    """Brand string values. The key is copied and is not passed to rewrite_link."""
     out = []
     for entry in entries:
-        item = {"key": entry["key"]}
+        key = entry["key"]
+        if rewritten_key(key):
+            raise ValueError(f"refusing rewritten langpack key {key}")
+        item = {"key": key}
         if "plural" in entry:
             item["plural"] = {k: brand(v) for k, v in entry["plural"].items()}
         else:
             item["value"] = brand(entry.get("value", ""))
-        if entry["key"] in BRAND_KEYS and "plural" not in item:
+        if key in BRAND_KEYS and "plural" not in item:
             item["value"] = "Tellomi"
         out.append(item)
     return out
@@ -257,7 +276,13 @@ def load_overrides(root: Path, platform: str) -> dict[str, dict]:
         doc = load_doc(path)
         if not doc:
             continue
-        found[lang] = {s["key"]: from_file_string(s) for s in doc.get("strings") or []}
+        packed = {}
+        for s in doc.get("strings") or []:
+            key = s["key"]
+            if rewritten_key(key):
+                raise SystemExit(f"refusing rewritten langpack key {path}: {key}")
+            packed[key] = from_file_string(s)
+        found[lang] = packed
     return found
 
 
@@ -446,6 +471,8 @@ def apply_machine(root: Path, platform: str, code: str, strings: list[dict]) -> 
         key = item.get("key")
         if not key or key in have:
             continue
+        if rewritten_key(key):
+            raise SystemExit(f"refusing rewritten langpack key {path}: {key}")
         have.add(key)
         extra.append(item)
     if extra:

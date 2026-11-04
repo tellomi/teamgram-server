@@ -12,7 +12,19 @@ class LinkTargetTest(unittest.TestCase):
         self.assertEqual(brand("[@cocoon](telegram)"), "[@cocoon](telegram)")
         self.assertEqual(brand("[cocoon.org](web)"), "[cocoon.org](web)")
         self.assertEqual(brand("Open [Telegram](telegram)"), "Open [Tellomi](telegram)")
-        self.assertEqual(brand("Chat.Message"), "Chat.Message")
+        for key in (
+            "Chat.Message",
+            "Attachment.Media",
+            "BoostGift.Members",
+            "RichText.Menu",
+            "GroupBoost.MemberBoosted",
+            "VoiceChat.Message",
+            "Gift.Message",
+            "Chat.PaidMessage.Confirm.Text.Messages",
+        ):
+            self.assertEqual(brand(key), key, key)
+        self.assertEqual(brand("https://t.me/tellomi"), "https://tell.cc/tellomi")
+        self.assertEqual(brand("see t.me/name"), "see tell.cc/name")
         self.assertIn("https://tell.cc/", brand("https://t.me/tellomi"))
         self.assertIn("%1$@", brand("Hello %1$@ from Telegram"))
         self.assertNotIn("Telegram", brand("Hello %1$@ from Telegram"))
