@@ -171,6 +171,14 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | --- | --- | --- |
 | start listener | `app/bff/bff/internal/server/server.go` | `discoverrel.Start` |
 
+## Discover profile cards (M3 / D-17)
+
+`TELLOMI_DISCOVER_PROFILES=1` serves `POST /internal/v1/profiles/resolve` so content-engine can read a viewer's copy of an author's name, username, bio, and profile photo. Photo and bio follow `user_privacies` (`key_type` 6 and 10) and the author's live `user_contacts` row. Unset does not listen. Login and `messages.sendMessage` are unchanged. The contract is `docs/discover-profiles.md`. No new table.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| start listener | `app/bff/bff/internal/server/server.go` | `discoverprofile.Start` |
+
 ## Xiaomi push (M8 / D-68)
 
 `TELLOMI_XIAOMI_PUSH=1` sends token type 14 through MiPush (`pkg/push/xiaomi.go`). Unset leaves the token stored and unsent, same as FCM and Huawei today. `account.registerDevice` is unchanged: it already stores any positive `token_type`. Login and session routing are unchanged. The contract is `docs/push.md`.
