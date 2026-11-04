@@ -43,11 +43,41 @@ func TestAvailableReactionsUseTheirOwnArt(t *testing.T) {
 			prev = body
 		}
 	}
-	if !seen["👍"] || !seen["🔥"] || !seen["❤️"] {
+	if !seen["👍"] || !seen["🔥"] || !seen["❤"] {
 		t.Fatalf("missing defaults %#v", seen)
+	}
+	if seen["❤️"] {
+		t.Fatal("heart reaction includes U+FE0F")
 	}
 	if _, ok := reactionAssets("0000"); ok {
 		t.Fatal("missing code was treated as complete")
+	}
+}
+
+func TestOfficialEmojiVariation(t *testing.T) {
+	// Official reactions and Unicode fully-qualified forms.
+	// https://unicode.org/Public/emoji/latest/emoji-test.txt
+	if got := emojiFromCode("2764"); got != "❤" || got == "❤️" {
+		t.Fatalf("2764 %q", got)
+	}
+	if got := emojiFromCode("2705"); got != "✅" || len([]rune(got)) != 1 {
+		t.Fatalf("2705 %q", got)
+	}
+	if got := emojiFromCode("274c"); got != "❌" || len([]rune(got)) != 1 {
+		t.Fatalf("274c %q", got)
+	}
+	if got := emojiFromCode("2615"); got != "☕️" {
+		t.Fatalf("2615 %q", got)
+	}
+	s := newService(builtinPacks())
+	var heart string
+	for _, r := range s.Reactions(0).GetReactions() {
+		if r.GetTitle() == "Red heart" {
+			heart = r.GetReaction()
+		}
+	}
+	if heart != "❤" {
+		t.Fatalf("available heart %q", heart)
 	}
 }
 

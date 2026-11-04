@@ -633,7 +633,7 @@ func (s *Service) React(ctx context.Context, viewer, auth int64, owner Owner, ac
 	if reaction == nil || reaction.GetPredicateName() == mtproto.Predicate_reactionEmpty || reaction.GetPredicateName() == "" {
 		view.Reaction = ""
 	} else {
-		view.Reaction = reaction.ToString()
+		view.Reaction = mtproto.NormalizeReactionEmoji(reaction.ToString())
 	}
 	if err = s.store.SaveView(ctx, owner, storyID, view); err != nil {
 		return nil, err

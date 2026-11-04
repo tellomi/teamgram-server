@@ -140,6 +140,14 @@ func TestPrivateUnreadReactionsAndDefault(t *testing.T) {
 	if err := b.SetDefaultReaction(ctx, 1, nil); err != mtproto.ErrReactionEmpty {
 		t.Fatalf("empty reaction: %v", err)
 	}
+	emo, doc, err := ParseReaction(mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "❤️"}).To_Reaction())
+	if err != nil || emo != "❤" || doc != 0 {
+		t.Fatalf("parse heart %q %d %v", emo, doc, err)
+	}
+	kept, _, err := ParseReaction(mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "❤️‍🔥"}).To_Reaction())
+	if err != nil || kept != "❤️‍🔥" {
+		t.Fatalf("parse zwj %q %v", kept, err)
+	}
 }
 
 func TestWebPagePreview(t *testing.T) {
