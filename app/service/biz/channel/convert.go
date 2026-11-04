@@ -149,6 +149,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
 	}
 	if feat := s.features(ctx, ch.ID); feat != nil {
+		full.RestrictedSponsored = feat.SponsoredRestricted
 		full.HiddenPrehistory = feat.HiddenPrehistory
 		full.ParticipantsHidden = feat.ParticipantsHidden
 		full.Antispam = feat.Antispam

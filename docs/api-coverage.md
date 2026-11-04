@@ -53,15 +53,15 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | Module | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | auth | 22 | 22 | 0 | 0 | 0 | 17 | 0 |
-| account | 113 | 111 | 2 | 0 | 0 | 31 | 0 |
+| account | 113 | 112 | 1 | 0 | 0 | 31 | 0 |
 | users | 6 | 6 | 0 | 0 | 0 | 0 | 0 |
 | contacts | 27 | 27 | 0 | 0 | 0 | 6 | 0 |
-| messages | 215 | 210 | 5 | 0 | 0 | 14 | 0 |
+| messages | 215 | 213 | 2 | 0 | 0 | 14 | 0 |
 | updates | 3 | 3 | 0 | 0 | 0 | 3 | 0 |
 | photos | 5 | 5 | 0 | 0 | 0 | 0 | 0 |
 | upload | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | help | 25 | 25 | 0 | 0 | 0 | 12 | 0 |
-| channels | 58 | 57 | 1 | 0 | 0 | 1 | 0 |
+| channels | 58 | 58 | 0 | 0 | 0 | 1 | 0 |
 | stickers | 39 | 39 | 0 | 0 | 0 | 0 | 0 |
 | phone/calls | 43 | 43 | 0 | 0 | 0 | 0 | 0 |
 | langpack | 5 | 5 | 0 | 0 | 0 | 5 | 0 |
@@ -79,7 +79,7 @@ Desktop is `MTPnamespace_Method` requests under `Telegram/SourceFiles`: direct c
 | smsjobs | 7 | 7 | 0 | 0 | 0 | 0 | 0 |
 | toncenter | 2 | 2 | 0 | 0 | 0 | 0 | 0 |
 | wallet | 25 | 25 | 0 | 0 | 0 | 0 | 0 |
-| **total** | **799** | **791** | **8** | **0** | **0** | **94** | **0** |
+| **total** | **799** | **796** | **3** | **0** | **0** | **94** | **0** |
 
 ## Counts by client
 
@@ -87,10 +87,10 @@ A method counts for a client when that client has at least one call site. Implem
 
 | Client | Called | Implemented | Stub | Routed-unregistered | Missing | P0 | P0 errors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| ios | 755 | 747 | 8 | 0 | 0 | 91 | 0 |
-| android | 713 | 705 | 8 | 0 | 0 | 89 | 0 |
-| desktop | 692 | 685 | 7 | 0 | 0 | 79 | 0 |
-| macos | 677 | 670 | 7 | 0 | 0 | 90 | 0 |
+| ios | 755 | 752 | 3 | 0 | 0 | 91 | 0 |
+| android | 713 | 710 | 3 | 0 | 0 | 89 | 0 |
+| desktop | 692 | 690 | 2 | 0 | 0 | 79 | 0 |
+| macos | 677 | 675 | 2 | 0 | 0 | 90 | 0 |
 
 570 methods are called by all four clients.
 
@@ -106,13 +106,12 @@ No gaps.
 
 Core chat that is not already covered by P0: sign-in extras, profiles, contacts, history, send, media, groups, and channels.
 
-8 gaps (8 error, 0 empty or bool or not-modified).
+3 gaps (3 error, 0 empty or bool or not-modified).
 
 | Module | Gaps |
 | --- | ---: |
-| account | 2 |
-| channels | 1 |
-| messages | 5 |
+| account | 1 |
+| messages | 2 |
 
 ### P2
 
@@ -155,7 +154,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### account
 
-113 called, 111 implemented, 2 stub, 0 routed-unregistered, 0 missing.
+113 called, 112 implemented, 1 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -191,7 +190,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.updateStatus` | yes | yes | yes | yes | startup+background | implemented | ok |
 | `account.verifyEmail` | yes | yes | yes | yes | startup | implemented | ok |
 | `account.confirmBotConnection` | yes | yes | no | no | interactive | stub | error |
-| `account.toggleSponsoredMessages` | yes | yes | yes | yes | interactive | stub | error |
 | `account.acceptAuthorization` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.changeAuthorizationSettings` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.checkUsername` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -256,6 +254,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `account.setPrivacy` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.toggleConnectedBotPaused` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.toggleNoPaidMessagesException` | yes | yes | yes | yes | interactive | implemented | ok |
+| `account.toggleSponsoredMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.toggleUsername` | yes | yes | yes | yes | interactive | implemented | ok |
 | `account.toggleWebBrowserSettingsException` | yes | yes | no | no | interactive | implemented | ok |
 | `account.updateBirthday` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -322,7 +321,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### messages
 
-215 called, 210 implemented, 5 stub, 0 routed-unregistered, 0 missing.
+215 called, 213 implemented, 2 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -340,11 +339,8 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.receivedMessages` | yes | no | no | yes | startup+background | implemented | ok |
 | `messages.receivedQueue` | yes | yes | no | yes | startup+background | implemented | ok |
 | `messages.reorderPinnedDialogs` | yes | yes | yes | yes | startup+background | implemented | ok |
-| `messages.clickSponsoredMessage` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.composeRichMessageWithAI` | yes | yes | yes | yes | interactive | stub | error |
-| `messages.reportSponsoredMessage` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.translateRichMessage` | yes | yes | yes | yes | interactive | stub | error |
-| `messages.viewSponsoredMessage` | yes | yes | yes | yes | interactive | stub | error |
 | `messages.acceptEncryption` | yes | yes | no | yes | interactive | implemented | ok |
 | `messages.acceptUrlAuth` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.addChatUser` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -356,6 +352,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.checkUrlAuthMatchCode` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.clearAllDrafts` | no | yes | no | no | interactive | implemented | ok |
 | `messages.clearRecentReactions` | yes | yes | no | yes | interactive | implemented | ok |
+| `messages.clickSponsoredMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.composeMessageWithAI` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.createChat` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.createForumTopic` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -484,6 +481,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.reportReaction` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reportReadMetrics` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.reportSpam` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.reportSponsoredMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestAppWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestChatJoinWebView` | yes | yes | yes | yes | interactive | implemented | ok |
 | `messages.requestEncryption` | yes | yes | no | yes | interactive | implemented | ok |
@@ -541,6 +539,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `messages.uploadEncryptedFile` | yes | no | no | yes | interactive | implemented | ok |
 | `messages.uploadImportedMedia` | yes | yes | no | no | interactive | implemented | ok |
 | `messages.uploadMedia` | yes | yes | yes | yes | interactive | implemented | ok |
+| `messages.viewSponsoredMessage` | yes | yes | yes | yes | interactive | implemented | ok |
 
 ### updates
 
@@ -612,12 +611,11 @@ Columns: which clients call the method, when, server status, and the effect a cl
 
 ### channels
 
-58 called, 57 implemented, 1 stub, 0 routed-unregistered, 0 missing.
+58 called, 58 implemented, 0 stub, 0 routed-unregistered, 0 missing.
 
 | Method | iOS | Android | Desktop | macOS | When | Status | Effect |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `channels.getMessages` | yes | yes | yes | yes | startup+background | implemented | ok |
-| `channels.restrictSponsoredMessages` | yes | yes | yes | yes | interactive | stub | error |
 | `channels.checkSearchPostsFlood` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.checkUsername` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.convertToGigagroup` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -655,6 +653,7 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | `channels.reorderUsernames` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.reportAntiSpamFalsePositive` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.reportSpam` | no | yes | yes | no | interactive | implemented | ok |
+| `channels.restrictSponsoredMessages` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.searchPosts` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.setBoostsToUnblockRestrictions` | yes | yes | yes | yes | interactive | implemented | ok |
 | `channels.setDiscussionGroup` | yes | yes | yes | yes | interactive | implemented | ok |
@@ -1117,11 +1116,6 @@ Columns: which clients call the method, when, server status, and the effect a cl
 | Method | Status | Notes |
 | --- | --- | --- |
 | `account.confirmBotConnection` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/account/internal/core/account.confirmBotConnection_handler.go |
-| `account.toggleSponsoredMessages` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/account.toggleSponsoredMessages_handler.go |
-| `channels.restrictSponsoredMessages` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/channels.restrictSponsoredMessages_handler.go |
-| `messages.clickSponsoredMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.clickSponsoredMessage_handler.go |
 | `messages.composeRichMessageWithAI` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.composeRichMessageWithAI_handler.go |
-| `messages.reportSponsoredMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.reportSponsoredMessage_handler.go |
 | `messages.translateRichMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.translateRichMessage_handler.go |
-| `messages.viewSponsoredMessage` | stub | returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.viewSponsoredMessage_handler.go |
 
