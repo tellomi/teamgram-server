@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/dcoptions"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -122,7 +123,7 @@ func (item *Item) document(p *Pack) *mtproto.Document {
 		Mask:       p.Masks,
 		MaskCoords: item.MaskCoords,
 	}).To_DocumentAttribute())
-	return mtproto.MakeTLDocument(&mtproto.Document{
+	doc := mtproto.MakeTLDocument(&mtproto.Document{
 		Id:            item.DocumentID,
 		AccessHash:    item.AccessHash,
 		FileReference: []byte{},
@@ -131,7 +132,18 @@ func (item *Item) document(p *Pack) *mtproto.Document {
 		Size2_INT32:   item.Size,
 		Size2_INT64:   int64(item.Size),
 		Size2:         int64(item.Size),
-		DcId:          1,
+		DcId:          dcoptions.FileDC(),
 		Attributes:    attrs,
 	}).To_Document()
+	if jpg := item.thumbJPEG(); len(jpg) > 0 {
+		doc.Thumbs = []*mtproto.PhotoSize{
+			mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
+				Type:  mtproto.PhotoSZMediumType,
+				W:     thumbSide,
+				H:     thumbSide,
+				Size2: int32(len(jpg)),
+			}).To_PhotoSize(),
+		}
+	}
+	return doc
 }

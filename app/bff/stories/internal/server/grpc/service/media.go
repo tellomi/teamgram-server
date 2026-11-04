@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
 )
 
@@ -83,12 +84,14 @@ func ResolveMedia(ctx context.Context, owner int64, in *mtproto.InputMedia, api 
 		if docIn == nil {
 			return nil, mtproto.ErrMediaInvalid
 		}
-		var doc *mtproto.Document
-		if api != nil {
-			doc, _ = api.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: docIn.GetId()})
-		}
-		if doc == nil {
-			doc = stubDocument(docIn.GetId(), docIn.GetAccessHash(), "video/mp4", now)
+		doc, err := catalog.ResolveInputDocument(docIn, func() (*mtproto.Document, error) {
+			if api == nil {
+				return nil, mtproto.ErrMediaInvalid
+			}
+			return api.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: docIn.GetId()})
+		})
+		if err != nil {
+			return nil, err
 		}
 		return mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{
 			Spoiler:    in.GetSpoiler(),
