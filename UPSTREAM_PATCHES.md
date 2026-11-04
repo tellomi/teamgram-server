@@ -262,3 +262,15 @@ Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describe
 | Call | File | Hook |
 | --- | --- | --- |
 | `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `pkg/about` |
+
+## Official usernames (M5 P0 / D-27 / D-55 / D-60)
+
+`account.checkUsername` reads the `username` table. The old `z_init.sql` wrote `tellomi` only on `users` (id 777000, `user_type` 4) and left `username` empty, so the name could still be taken. The rows that occupy the name live in Tellomi migrations, not in a second copy of the schema:
+
+- `teamgramd/deploy/sql/migrate-20261104-tellomi-username.sql` inserts `@tellomi` (`peer_type` 2 = `PEER_USER`, `peer_id` 777000, `deleted` 0). `username.id` is `AUTO_INCREMENT`. Collation `utf8mb4_unicode_ci` makes `Tellomi` and `TELLOMI` the same key.
+- `teamgramd/deploy/sql/migrate-20261105-official-accounts.sql` moves `@tellomi` to user 777001 and reserves the other appendix D names on that peer, on user 777000 (`@admin`), or on a channel (`peer_type` 4). One peer can own many `username` rows. Bot names are empty placeholders (`peer_type` 0, `peer_id` 0) because `bots.createBot` does not persist a bot this SQL can operate. Appendix C names that appendix D does not assign are not inserted.
+- `teamgramd/deploy/sql/migrate-20261107-tellomi-ai-name.sql` sets 777001's display name to Tellomi AI. 777000 stays the login-code account.
+
+`migrate.sh` records `z_init.sql` once. A database that already applied the old seed would never see a new `INSERT` there, so the occupation is a `migrate-*.sql` file. The one upstream edit is the seed's `users.username` for 777000: `tellomi` became `admin`, which is the appendix D name for that service account. The `INSERT IGNORE` still does not update an existing row. The official-accounts migration renames `tellomi` / `telegram` / `teamgram` / empty to `admin` on id 777000 only. Login-code sending is unchanged. Report handling is unchanged.
+
+`0_migrate_helpers.sql` gained `teamgram_fail_if_set`. A name that already belongs to someone else stops the script (`D-26`). `SIGNAL` cannot run from a prepared statement (MySQL 1295), so the migrations `CALL` the procedure. How to apply this on a database that is already running, including the backup, is [docs/official-usernames.md](docs/official-usernames.md).

@@ -169,6 +169,31 @@ func TestOfficialAccountMigration(t *testing.T) {
 	}
 }
 
+func TestOfficialUsernameRunbook(t *testing.T) {
+	root := filepath.Join(sqlDir(t), "..", "..", "..")
+	doc := mustRead(t, filepath.Join(root, "docs", "official-usernames.md"))
+	for _, s := range []string{
+		"先备份",
+		"FLUSHALL",
+		"migrate-20261104-tellomi-username.sql",
+		"migrate-20261105-official-accounts.sql",
+		"migrate-20261107-tellomi-ai-name.sql",
+		"D-27",
+		"777001",
+		"peer_type",
+	} {
+		if !strings.Contains(doc, s) {
+			t.Fatalf("official username runbook missing %s", s)
+		}
+	}
+	patches := mustRead(t, filepath.Join(root, "UPSTREAM_PATCHES.md"))
+	for _, s := range []string{"z_init.sql", "D-27", "teamgram_fail_if_set", "docs/official-usernames.md"} {
+		if !strings.Contains(patches, s) {
+			t.Fatalf("UPSTREAM_PATCHES.md missing %s", s)
+		}
+	}
+}
+
 func TestTellomiUsernameMigration(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261104-tellomi-username.sql"))
 	for _, s := range []string{
