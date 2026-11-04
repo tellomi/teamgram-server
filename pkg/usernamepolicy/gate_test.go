@@ -2,10 +2,13 @@ package usernamepolicy
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/contentsafety"
 	"google.golang.org/grpc/status"
 )
 
@@ -42,6 +45,42 @@ func TestRejectDisplay(t *testing.T) {
 	}
 	if err := RejectDisplay(ctx, mtproto.PEER_CHANNEL, 9, "tellomi"); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
 		t.Fatalf("channel title: %v", err)
+	}
+}
+
+func TestRejectDisplayContentSafety(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv(EnvEnabled, "")
+	t.Setenv("TELLOMI_CONTENT_SAFETY", "aliyun")
+	t.Setenv("TELLOMI_CONTENT_SAFETY_ACCESS_KEY_ID", "id")
+	t.Setenv("TELLOMI_CONTENT_SAFETY_ACCESS_KEY_SECRET", "secret")
+
+	block := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"Code":200,"Data":{"labels":"political_content"},"RequestId":"x"}`))
+	}))
+	defer block.Close()
+	t.Setenv("TELLOMI_CONTENT_SAFETY_ENDPOINT", block.URL)
+	err := RejectDisplay(ctx, mtproto.PEER_USER, 7, "小明")
+	if status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("blocked nickname: %v", err)
+	}
+	if strings.Contains(err.Error(), "political") || strings.Contains(err.Error(), "小明") {
+		t.Fatalf("error leaked the decision: %v", err)
+	}
+	if err := RejectDisplay(ctx, mtproto.PEER_USER, 7, "Ada"); err != nil {
+		t.Fatalf("ascii must stay on the local lexicon: %v", err)
+	}
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer down.Close()
+	t.Setenv("TELLOMI_CONTENT_SAFETY_ENDPOINT", down.URL)
+	if err := RejectDisplay(ctx, mtproto.PEER_USER, 7, "小明"); err != nil {
+		t.Fatalf("outage must allow the name: %v", err)
+	}
+	if contentsafety.Decide(ctx, "小明") != contentsafety.Fallback {
+		t.Fatal("outage was not a fallback")
 	}
 }
 

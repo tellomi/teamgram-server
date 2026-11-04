@@ -147,6 +147,8 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 
 There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same username hook. Display names use `RejectDisplay` and do not return `USERNAME_OCCUPIED`. Chat messages are not checked. Sign-up is not checked.
 
+`TELLOMI_CONTENT_SAFETY` adds Aliyun Green (`1` or `aliyun`, `TextModeration` / `nickname_detection`) or Bailian text moderation (`bailian`, `TextModerationPlus` / `nickname_detection_pro`) after the lexicon, for Han text only. Unset is off. A block uses the same `FIRSTNAME_INVALID` / `LASTNAME_INVALID` errors. A timeout, HTTP error, or missing key allows the name and logs the failure. The client does not see the label. The call lives in `pkg/contentsafety` and is reached from `RejectDisplay`.
+
 ## Discover credential (M3)
 
 `TELLOMI_DISCOVER=1` makes `discover.getEngineCredential#a80a7f76` return a content-engine HS256 JWT. Any other value, including unset, answers `DISCOVER_DISABLED`. The schema, claims, and keys are in `docs/discover-engine-auth.md`. The codec and the handler live in Tellomi files (`proto/mtproto/discover_codec.go`, `app/bff/discover`).

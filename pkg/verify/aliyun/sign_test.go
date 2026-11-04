@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"strings"
 	"testing"
 )
 
@@ -46,5 +47,26 @@ func TestSignMatchesIndependentHMAC(t *testing.T) {
 	params["TemplateParam"] = `{"code":"000000"}`
 	if Sign(params, secret) == got {
 		t.Fatal("signature did not change with the code")
+	}
+}
+
+func TestFormBodyCarriesTheSignature(t *testing.T) {
+	params := map[string]string{
+		"Action":            "TextModeration",
+		"Format":            "JSON",
+		"Service":           "nickname_detection",
+		"ServiceParameters": `{"content":"小明"}`,
+		"Version":           "2022-03-02",
+	}
+	body := FormBody(params, "secret")
+	if _, ok := params["Signature"]; ok {
+		t.Fatal("FormBody wrote Signature back into the caller map")
+	}
+	want := Sign(params, "secret")
+	if !strings.Contains(body, "Signature="+percentEncode(want)) {
+		t.Fatalf("body missing signature: %s", body)
+	}
+	if strings.Contains(body, "secret") {
+		t.Fatal("body contains the access key secret")
 	}
 }
