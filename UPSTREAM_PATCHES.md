@@ -169,6 +169,14 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | sync startup | `app/messenger/sync/internal/svc/service_context.go` | `push.LoadXiaomi` then `SetXiaomi` |
 | deliver | `pkg/push/service.go` | `TokenXiaomi` |
 
+## Discover push (M3 / D-18)
+
+`TELLOMI_DISCOVER_PUSH=1` serves `POST /internal/v1/discover/notify` on the sync process. content-engine posts an interaction; teamgram resolves `sub` with `discover_subject` and sends it through `pkg/push` (APNs, FCM, Huawei, and Xiaomi when that sender is installed). Muting user 777005 (`@faxian`) with `account.updateNotifySettings` suppresses it. Unset does not listen and does not change chat push. The client contract is `docs/api/discover-ai.md`. `discover_push_event` is `teamgramd/deploy/sql/migrate-20261106-discover-push.sql`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| start listener | `app/messenger/sync/internal/svc/service_context.go` | `discoverpush.Start` |
+
 ## Discover account deletion (M3)
 
 `TELLOMI_DISCOVER_DELETE=1` calls content-engine `DELETE /internal/users/{sub}` after `UserDeleteUser` has succeeded. The call is queued in memory, retried, and cannot fail or delay `account.deleteAccount`. See `docs/discover-account-deletion.md`.

@@ -97,6 +97,9 @@ func pushTemplate(lang, locKey string) string {
 			}
 		}
 	}
+	if s, ok := discoverPhrase(code, baseKey(locKey)); ok {
+		return s
+	}
 	if s, ok := enPhrases[baseKey(locKey)]; ok {
 		return s
 	}

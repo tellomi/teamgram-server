@@ -24,6 +24,8 @@ type Incoming struct {
 	Silent     bool
 	PeerType   int32
 	PeerID     int64
+	// Extra is copied into the push custom object. Chat messages leave it nil.
+	Extra map[string]string
 }
 
 // Messages walks updates and returns incoming messages for userID.
@@ -405,7 +407,7 @@ func (m Incoming) Args(preview bool) []string {
 // (MESSAGE_TEXT, PINNED_TEXT, and the CHAT_ / CHANNEL_ forms).
 func wantsBodyArg(loc string) bool {
 	switch baseKey(loc) {
-	case "MESSAGE_TEXT", "PINNED_TEXT":
+	case "MESSAGE_TEXT", "PINNED_TEXT", "DISCOVER_COMMENT_TEXT", "DISCOVER_REPLY_TEXT":
 		return true
 	default:
 		return false
@@ -423,6 +425,8 @@ func (m Incoming) LocKeyFor(preview bool) string {
 		return strings.TrimSuffix(m.LocKey, "MESSAGE_TEXT") + "MESSAGE_NOTEXT"
 	case "PINNED_TEXT":
 		return strings.TrimSuffix(m.LocKey, "PINNED_TEXT") + "PINNED_NOTEXT"
+	case "DISCOVER_COMMENT_TEXT", "DISCOVER_REPLY_TEXT":
+		return strings.TrimSuffix(m.LocKey, "_TEXT")
 	default:
 		return m.LocKey
 	}

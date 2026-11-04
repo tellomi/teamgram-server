@@ -15,6 +15,7 @@ import (
 
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/config"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/dao"
+	"github.com/teamgram/teamgram-server/pkg/discoverpush"
 	"github.com/teamgram/teamgram-server/pkg/notifyack"
 	"github.com/teamgram/teamgram-server/pkg/push"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -54,10 +55,9 @@ func newPushService(dsn string) *push.Service {
 	xm, err := push.LoadXiaomi()
 	if err != nil {
 		logx.Errorf("push: xiaomi disabled: %v", err)
-		return svc
-	}
-	if xm != nil {
+	} else if xm != nil {
 		svc.SetXiaomi(xm)
 	}
+	discoverpush.Start(svc, dsn)
 	return svc
 }

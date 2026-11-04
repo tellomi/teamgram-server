@@ -192,6 +192,13 @@ func TestTellomiUsernameMigration(t *testing.T) {
 	}
 }
 
+func TestDiscoverPushMigration(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261106-discover-push.sql"))
+	if !strings.Contains(raw, "CREATE TABLE IF NOT EXISTS discover_push_event") || !strings.Contains(raw, "event_id") {
+		t.Fatal("discover push migration is missing the event table")
+	}
+}
+
 func TestServiceUserRenameMigration(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261101-service-user.sql"))
 	for _, s := range []string{"777000", "Tellomi", "Telegram", "Teamgram", "tellomi"} {
