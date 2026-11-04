@@ -157,7 +157,8 @@ services:
       TELLOMI_DC_TXT_DOMAIN: ${TELLOMI_DC_TXT_DOMAIN:-}
       # Username reserve / sensitive-word check (M5). Unset is off.
       TELLOMI_USERNAME_POLICY: ${TELLOMI_USERNAME_POLICY:-}
-      # Aliyun Green / Bailian text moderation for Han display names.
+      # Aliyun Green / Bailian text moderation for Han display names,
+      # bios, and group titles.
       # Unset is off. 1 or aliyun calls TextModeration. bailian calls
       # TextModerationPlus. A timeout or HTTP error allows the name.
       # Keys fall back to ALIBABA_CLOUD_ACCESS_KEY_*. See pkg/contentsafety.

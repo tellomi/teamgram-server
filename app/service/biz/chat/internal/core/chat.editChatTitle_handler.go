@@ -16,6 +16,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 // ChatEditChatTitle
@@ -44,6 +45,10 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 		err = mtproto.ErrChatNotModified
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, err
+	}
+	if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, chatId, in.Title); err != nil {
+		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
+		return nil, mtproto.ErrFirstnameInvalid
 	}
 
 	me, _ = chat2.GetImmutableChatParticipant(editUserId)

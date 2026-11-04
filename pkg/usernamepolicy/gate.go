@@ -36,13 +36,14 @@ func RejectBot(ctx context.Context, userID int64, username string) error {
 	return reject(ctx, username, mtproto.PEER_USER, userID, FieldUsername, FieldBotUsername)
 }
 
-// RejectDisplay checks a nickname, channel title, or bot name against the
-// display_name field, then Aliyun or Bailian text moderation when that
-// flag is on. A hit returns FIRSTNAME_INVALID. account.updateProfile maps a
-// last-name hit to LASTNAME_INVALID. The rule id stays in the log. An empty
-// string is allowed. The appendix D owner of an exact reserved username may
-// use that string as their display name. Moderation still runs for them.
-// A moderation outage allows the name.
+// RejectDisplay checks a nickname, bio, group or channel title, group or
+// channel description, or bot name and description against the display_name
+// field, then Aliyun or Bailian text moderation when that flag is on. A hit
+// returns FIRSTNAME_INVALID. account.updateProfile maps a last-name hit to
+// LASTNAME_INVALID. The rule id stays in the log. An empty string is
+// allowed. The appendix D owner of an exact reserved username may use that
+// string as their display name. Moderation still runs for them. A moderation
+// outage allows the name. Chat messages are not checked.
 func RejectDisplay(ctx context.Context, peerType int32, peerID int64, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {

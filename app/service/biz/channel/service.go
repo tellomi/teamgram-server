@@ -109,6 +109,9 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 		return nil, mtproto.ErrFirstnameInvalid
 	}
 	about := in.About
+	if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, 0, about); err != nil {
+		return nil, mtproto.ErrFirstnameInvalid
+	}
 	if len(about) > 255 {
 		about = about[:255]
 	}
@@ -582,6 +585,9 @@ func (s *Service) EditAbout(ctx context.Context, actor, actorAuth int64, in *mtp
 	}
 	if about == ch.About {
 		return nil, mtproto.ErrChatAboutNotModified
+	}
+	if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, ch.ID, about); err != nil {
+		return nil, mtproto.ErrFirstnameInvalid
 	}
 	prev := ch.About
 	ch.About = about

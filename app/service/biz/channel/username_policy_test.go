@@ -63,3 +63,36 @@ func TestChannelTitlePolicy(t *testing.T) {
 		t.Fatalf("ada: %v", err)
 	}
 }
+
+func TestChannelAboutPolicy(t *testing.T) {
+	t.Setenv(usernamepolicy.EnvEnabled, "1")
+	svc, ctx := newTest(t)
+	if _, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "Book Club", About: "admin", Megagroup: true}); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("create about admin: %v", err)
+	}
+	if _, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "Book Club", About: "tellomi", Broadcast: true}); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("create about tellomi: %v", err)
+	}
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "Book Club", About: "hello", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.EditAbout(ctx, 7, 0, in, "admin_01"); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("edit about: %v", err)
+	}
+	full, err := svc.GetFullChannel(ctx, 7, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.GetFullChat().GetAbout() != "hello" {
+		t.Fatalf("about changed after reject: %q", full.GetFullChat().GetAbout())
+	}
+	if _, err := svc.EditAbout(ctx, 7, 0, in, "weekly notes"); err != nil {
+		t.Fatalf("normal about: %v", err)
+	}
+	if _, err := svc.EditAbout(ctx, 7, 0, in, ""); err != nil {
+		t.Fatalf("clear about: %v", err)
+	}
+}

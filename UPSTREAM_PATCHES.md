@@ -139,13 +139,17 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 | `bots.checkUsername` | `app/bff/botadmin/bots.go` `CheckUsername` | `usernamepolicy.RejectBot` after the format check |
 | `bots.createBot` | `app/bff/botadmin/bots.go` `CreateBot` | `usernamepolicy.RejectBot` after the format check |
 | `bots.addUsername` | `app/bff/botadmin/more.go` `AddUsername` | `usernamepolicy.RejectBot` after the format check |
-| `account.updateProfile` | `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go` | `usernamepolicy.RejectDisplay` when first or last name changes. `FIRSTNAME_INVALID` or `LASTNAME_INVALID` |
-| `channels.createChannel` | `app/service/biz/channel/service.go` `Create` | `usernamepolicy.RejectDisplay` on the title. `FIRSTNAME_INVALID` |
+| `account.updateProfile` | `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go` | `usernamepolicy.RejectDisplay` when first name, last name, or about changes. `FIRSTNAME_INVALID` or `LASTNAME_INVALID` |
+| `channels.createChannel` | `app/service/biz/channel/service.go` `Create` | `usernamepolicy.RejectDisplay` on the title and the about text. `FIRSTNAME_INVALID` |
 | `channels.editTitle` | `app/service/biz/channel/service.go` `EditTitle` | `usernamepolicy.RejectDisplay` when the title changes. `FIRSTNAME_INVALID` |
+| `messages.editChatAbout` | `app/service/biz/channel/service.go` `EditAbout` | `usernamepolicy.RejectDisplay` when a channel or supergroup description changes. `FIRSTNAME_INVALID` |
+| `messages.createChat` | `app/bff/chats/internal/core/messages.createChat_handler.go` and `app/service/biz/chat/internal/core/chat.createChat2_handler.go` | `usernamepolicy.RejectDisplay` on the basic-group title. `FIRSTNAME_INVALID` |
+| `messages.editChatTitle` | `app/service/biz/chat/internal/core/chat.editChatTitle_handler.go` | `usernamepolicy.RejectDisplay` when the basic-group title changes. `FIRSTNAME_INVALID` |
+| `messages.editChatAbout` | `app/service/biz/chat/internal/core/chat.editChatAbout_handler.go` | `usernamepolicy.RejectDisplay` when the basic-group description changes. `FIRSTNAME_INVALID` |
 | `bots.createBot` | `app/bff/botadmin/bots.go` `CreateBot` | `usernamepolicy.RejectDisplay` on the bot name. `FIRSTNAME_INVALID` |
-| `bots.setBotInfo` | `app/bff/botadmin/bots.go` `SetBotInfo` | `usernamepolicy.RejectDisplay` when the bot name changes. `FIRSTNAME_INVALID` |
+| `bots.setBotInfo` | `app/bff/botadmin/bots.go` `SetBotInfo` | `usernamepolicy.RejectDisplay` when the bot name, about, or description changes. `FIRSTNAME_INVALID` |
 
-There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same username hook. Display names use `RejectDisplay` and do not return `USERNAME_OCCUPIED`. Chat messages are not checked. Sign-up is not checked.
+There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same username hook. Display names, bios, and group titles use `RejectDisplay` and do not return `USERNAME_OCCUPIED`. The lexicon has no separate `bio` field, so a bio is checked as `display_name`. An unchanged bio or title is left alone. Chat messages are not checked. Sign-up is not checked.
 
 `TELLOMI_CONTENT_SAFETY` adds Aliyun Green (`1` or `aliyun`, `TextModeration` / `nickname_detection`) or Bailian text moderation (`bailian`, `TextModerationPlus` / `nickname_detection_pro`) after the lexicon, for Han text only. Unset is off. A block uses the same `FIRSTNAME_INVALID` / `LASTNAME_INVALID` errors. A timeout, HTTP error, or missing key allows the name and logs the failure. The client does not see the label. The call lives in `pkg/contentsafety` and is reached from `RejectDisplay`.
 

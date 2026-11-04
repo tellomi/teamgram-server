@@ -368,6 +368,17 @@ func SetBotInfo(ctx context.Context, self int64, bot *mtproto.InputUser, lang st
 	if cur == nil {
 		return nil, mtproto.ErrBotInvalid
 	}
+	_, curAbout, curDesc := cur.texts(lang)
+	if about != nil && about.GetValue() != curAbout {
+		if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_USER, self, about.GetValue()); err != nil {
+			return nil, mtproto.ErrFirstnameInvalid
+		}
+	}
+	if desc != nil && desc.GetValue() != curDesc {
+		if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_USER, self, desc.GetValue()); err != nil {
+			return nil, mtproto.ErrFirstnameInvalid
+		}
+	}
 	row := cur.info[lang]
 	if name != nil {
 		next := strings.TrimSpace(name.GetValue())

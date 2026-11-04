@@ -16,6 +16,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 // ChatEditChatAbout
@@ -50,6 +51,10 @@ func (c *ChatCore) ChatEditChatAbout(in *chat.TLChatEditChatAbout) (*mtproto.Mut
 	if !me.CanChangeInfo() {
 		err = mtproto.ErrChatAdminRequired
 		return nil, err
+	}
+	if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, chatId, in.About); err != nil {
+		c.Logger.Errorf("chat.editChatAbout - error: %v", err)
+		return nil, mtproto.ErrFirstnameInvalid
 	}
 
 	_, _, err = c.svcCtx.Dao.CachedConn.Exec(

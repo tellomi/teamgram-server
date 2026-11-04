@@ -26,6 +26,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -38,6 +39,10 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 		err := mtproto.ErrChatTitleEmpty
 		c.Logger.Errorf("messages.createChat - error: %v", err)
 		return nil, err
+	}
+	if err := usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, 0, chatTitle); err != nil {
+		c.Logger.Errorf("messages.createChat - error: %v", err)
+		return nil, mtproto.ErrFirstnameInvalid
 	}
 
 	// Official Telegram iOS (layer 232) calls messages.createChat with an empty

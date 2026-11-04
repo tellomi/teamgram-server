@@ -59,7 +59,14 @@ func (c *UserChannelProfilesCore) AccountUpdateProfile(in *mtproto.TLAccountUpda
 			return nil, err
 		}
 
+		// Bios are checked only when they change (D-26). A hit is the same
+		// FIRSTNAME_INVALID the first-name path already returns. Chat text
+		// is not checked.
 		if in.GetAbout().GetValue() != me.About() {
+			if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_USER, c.MD.UserId, in.GetAbout().GetValue()); err != nil {
+				c.Logger.Errorf("account.updateProfile - error: %v", err)
+				return nil, mtproto.ErrFirstnameInvalid
+			}
 			if _, err = c.svcCtx.Dao.UserClient.UserUpdateAbout(c.ctx, &userpb.TLUserUpdateAbout{
 				UserId: c.MD.UserId,
 				About:  in.GetAbout().GetValue(),
