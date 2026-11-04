@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -168,9 +169,13 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 		//	query:flags.1?string = InputMedia;
 
 		id := media.To_InputMediaDocument().GetId_INPUTDOCUMENT()
-		document3, _ := d.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{
-			Id: id.GetId(),
+		var document3 *mtproto.Document
+		document3, err = catalog.ResolveInputDocument(id, func() (*mtproto.Document, error) {
+			return d.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: id.GetId()})
 		})
+		if err != nil {
+			return
+		}
 
 		// messageMediaDocument#7c4414d3 flags:# document:flags.0?Document caption:flags.1?string ttl_seconds:flags.2?int = MessageMedia;
 		messageMedia = mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{

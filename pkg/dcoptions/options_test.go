@@ -14,6 +14,21 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestFileDC(t *testing.T) {
+	t.Setenv(envOptions, "")
+	if FileDC() != 1 {
+		t.Fatalf("default dc %d", FileDC())
+	}
+	t.Setenv(envOptions, "2:8.137.39.82:10443")
+	if FileDC() != 2 {
+		t.Fatalf("configured dc %d", FileDC())
+	}
+	t.Setenv(envOptions, "not-a-spec")
+	if FileDC() != 1 {
+		t.Fatalf("invalid spec dc %d", FileDC())
+	}
+}
+
 func TestParseProductionSpec(t *testing.T) {
 	opts, err := Parse("1:8.137.39.82:10443,1:8.137.39.82:5222")
 	if err != nil {

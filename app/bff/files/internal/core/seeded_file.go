@@ -26,12 +26,17 @@ func seededDocumentFile(location *mtproto.InputFileLocation, offset int64, limit
 	if location.GetPredicateName() != mtproto.Predicate_inputDocumentFileLocation {
 		return nil, false
 	}
+	if location.GetThumbSize() != "" {
+		if body, mime, ok := catalog.Must().ThumbFile(location.GetId(), location.GetThumbSize()); ok {
+			return uploadFileChunk(sliceFile(body, offset, limit), mime), true
+		}
+	}
 	body, mime, ok := catalog.Must().DocumentFile(location.GetId())
 	if !ok {
 		return nil, false
 	}
-	// A .tgs has no jpeg thumb. Return an empty partial instead of asking dfs.
-	if location.GetThumbSize() != "" && mime != "image/webp" {
+	// A .tgs has no jpeg thumb of its own. Return an empty partial instead of asking dfs.
+	if location.GetThumbSize() != "" && mime != "image/webp" && mime != "image/jpeg" {
 		return uploadFileChunk(nil, "application/x-tgsticker"), true
 	}
 	return uploadFileChunk(sliceFile(body, offset, limit), mime), true
@@ -58,8 +63,11 @@ func uploadFileChunk(body []byte, mime string) *mtproto.Upload_File {
 		body = []byte{}
 	}
 	ft := mtproto.MakeTLStorageFilePartial(&mtproto.Storage_FileType{}).To_Storage_FileType()
-	if mime == "image/webp" {
+	switch mime {
+	case "image/webp":
 		ft = mtproto.MakeTLStorageFileWebp(&mtproto.Storage_FileType{}).To_Storage_FileType()
+	case "image/jpeg":
+		ft = mtproto.MakeTLStorageFileJpeg(&mtproto.Storage_FileType{}).To_Storage_FileType()
 	}
 	return mtproto.MakeTLUploadFile(&mtproto.Upload_File{
 		Type:  ft,

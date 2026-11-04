@@ -82,7 +82,7 @@ func builtinPacks() []*Pack {
 		newPack(ShortTwemoji, "Twemoji", KindSticker, false, false, true, true,
 			"CC-BY-4.0", "Twemoji by Twitter, Inc. and contributors",
 			"https://github.com/jdecked/twemoji", twemoji),
-		newPack(ShortFluent, "Fluent Emoji", KindSticker, false, false, true, false,
+		newPack(ShortFluent, "Fluent Emoji", KindSticker, false, false, true, true,
 			"MIT", "Fluent Emoji by Microsoft",
 			"https://github.com/microsoft/fluentui-emoji", fluent),
 		newPack(ShortNoto, "Noto Emoji", KindCustomEmoji, true, true, true, true,

@@ -129,6 +129,21 @@ func parseCanonicalInt(raw string, min, max int) (int, error) {
 	return n, nil
 }
 
+// FileDC is the datacenter id clients should use when downloading a file
+// this process stored. It is the first id in TELLOMI_DC_OPTIONS, or 1 when
+// that variable is unset or invalid. Documents must not hardcode a different id.
+func FileDC() int32 {
+	spec := strings.TrimSpace(os.Getenv(envOptions))
+	if spec == "" {
+		return 1
+	}
+	opts, err := Parse(spec)
+	if err != nil || len(opts) == 0 || opts[0].GetId() == 0 {
+		return 1
+	}
+	return opts[0].GetId()
+}
+
 func applyDomain(cfg *mtproto.TLConfig) {
 	raw, ok := os.LookupEnv(envDomain)
 	if !ok {
