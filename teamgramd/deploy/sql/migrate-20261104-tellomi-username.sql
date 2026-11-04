@@ -1,13 +1,15 @@
 -- D-27 / M5. Occupy @tellomi in the username table.
 --
 -- account.checkUsername reads this table (UserCheckAccountUsername →
--- UsernameDAO.SelectByUsername). z_init.sql inserts user 777000 with
--- users.username = 'tellomi' and does not insert a username row, so the
--- name was still free.
+-- UsernameDAO.SelectByUsername). The old z_init.sql inserted user 777000
+-- with users.username = 'tellomi' and no username row, so the name was
+-- still free. Current z_init.sql inserts that service user as @admin.
+-- This file still parks @tellomi on peer 777000 when the row is missing.
+-- migrate-20261105-official-accounts.sql moves it to user 777001.
 --
 -- username.id is AUTO_INCREMENT (1_teamgram.sql). This file does not pick
 -- an id. peer_type 2 is PEER_USER (proto/mtproto/peer_util.go). peer_id
--- 777000 is that service user (user_type 4, login codes).
+-- 777000 is the service user (user_type 4, login codes).
 --
 -- The column collation is utf8mb4_unicode_ci, so Tellomi and TELLOMI are
 -- the same key as tellomi. editable, active, and order2 are added by
