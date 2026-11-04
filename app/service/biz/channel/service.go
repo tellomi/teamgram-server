@@ -15,9 +15,9 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
-// 3–32 characters, [A-Za-z0-9_], starting with a letter. A trailing
+// 4–32 characters, [A-Za-z0-9_], starting with a letter. A trailing
 // underscore is rejected by validChannelUsername.
-var usernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{2,31}$`)
+var usernamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{3,31}$`)
 
 func validChannelUsername(username string) bool {
 	return usernamePattern.MatchString(username) && !strings.HasSuffix(username, "_")

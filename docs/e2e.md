@@ -27,7 +27,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestSendReactionThumbsUp` | The recipient reacts 👍 to a private message and it does not show up as `MessageReactions` on that message for both sides. The two sides number the same message differently, so this also catches a reaction stored under the wrong side's id. |
 | `TestAvailableReactionsDownloadable` | `messages.getAvailableReactions` is empty, or a static icon's `upload.getFile` does not return bytes within 10s. |
 | `TestStickerSetUploadGetFile` | `messages.getStickerSet` (Twemoji, then AnimatedEmoji) has no document, or `upload.getFile` does not return bytes within 10s. |
-| `TestUsernameThreeCharacters` | A 3-character username cannot be checked and set. |
+| `TestUsernameFourCharacters` | A 4-character username cannot be checked and set, or a 3-character name is accepted. |
 | `TestTellomiUsernameOccupied` | `account.checkUsername` for `tellomi`, `Tellomi`, or `TELLOMI` does not return `USERNAME_OCCUPIED`. |
 | `TestOfficialUsernamesOccupied` | `account.checkUsername` for an appendix D name (`support`, `news`, `help`, `admin`, `stickers`, `premium`, or a case variant of `tellomi`) does not return `USERNAME_OCCUPIED`. |
 | `TestProfileAndChannelNames` | With `TELLOMI_USERNAME_POLICY=1`, `account.updateProfile` does not return 400 `FIRSTNAME_INVALID` / `LASTNAME_INVALID` for `admin` / `tellomi`, a normal name or bio is not saved, a megagroup titled `admin` or described as `tellomi` is created, a basic group titled `admin` or `tellomi` or described as `admin` is saved, a normal Chinese basic-group title is rejected, or a chat message containing those words is rejected. |

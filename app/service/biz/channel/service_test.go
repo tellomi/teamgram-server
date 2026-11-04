@@ -281,7 +281,10 @@ func TestUsernameAndMigrate(t *testing.T) {
 	if _, err := svc.CheckUsername(ctx, 7, in, "no"); err == nil {
 		t.Fatal("short username accepted")
 	}
-	if _, err := svc.CheckUsername(ctx, 7, in, "abc"); err != nil {
+	if _, err := svc.CheckUsername(ctx, 7, in, "abc"); err == nil {
+		t.Fatal("3-character username accepted")
+	}
+	if _, err := svc.CheckUsername(ctx, 7, in, "abcd"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.CheckUsername(ctx, 7, in, "ab_"); err == nil {

@@ -3,8 +3,8 @@ package user
 import "testing"
 
 func TestCheckUsernameInvalid(t *testing.T) {
-	ok := []string{"abc", "AbC", "a_b", "a1b", "n" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-	bad := []string{"", "ab", "a", "1abc", "_abc", "abc_", "a b", "a.b", "abcdefghijabcdefghijabcdefghijabc"}
+	ok := []string{"abcd", "AbCd", "a_bc", "a1bc", "n" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	bad := []string{"", "abc", "ab", "a", "1abc", "_abc", "abc_", "a b", "a.b", "abcdefghijabcdefghijabcdefghijabc"}
 	if len(ok[4]) != MaxUsernameLen {
 		t.Fatalf("fixture length %d", len(ok[4]))
 	}
