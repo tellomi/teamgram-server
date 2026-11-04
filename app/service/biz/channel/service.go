@@ -445,6 +445,7 @@ func (s *Service) EditAdmin(ctx context.Context, actor, actorAuth int64, in *mtp
 	if !actorP.IsCreator() && want&^actorP.AdminRights != 0 {
 		return nil, mtproto.ErrRightForbidden
 	}
+	prev := *target
 	if want == 0 {
 		target.Role = RoleMember
 		target.AdminRights = 0
@@ -460,6 +461,10 @@ func (s *Service) EditAdmin(ctx context.Context, actor, actorAuth int64, in *mtp
 	if err := s.store.PutParticipant(ctx, target); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionParticipantToggleAdmin(&mtproto.ChannelAdminLogEventAction{
+		PrevParticipant: participantTL(actor, &prev),
+		NewParticipant:  participantTL(actor, target),
+	}).To_ChannelAdminLogEventAction())
 	return s.pack(ctx, actor, ch.ID, channelUpdate(ch.ID)), nil
 }
 
@@ -485,6 +490,7 @@ func (s *Service) EditBanned(ctx context.Context, actor, actorAuth int64, in *mt
 		return nil, mtproto.ErrRightForbidden
 	}
 	kicked := false
+	prev := *target
 	if rights == nil || rights.NoBanRights() {
 		target.Role = RoleMember
 		target.BannedRights = 0
@@ -506,6 +512,10 @@ func (s *Service) EditBanned(ctx context.Context, actor, actorAuth int64, in *mt
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionParticipantToggleBan(&mtproto.ChannelAdminLogEventAction{
+		PrevParticipant: participantTL(actor, &prev),
+		NewParticipant:  participantTL(actor, target),
+	}).To_ChannelAdminLogEventAction())
 	if kicked {
 		msg := serviceMessage(actor, ch.ID, mtproto.MakeMessageActionChatDeleteUser(userID))
 		if _, _, err = s.appendMessage(ctx, ch.ID, actor, 0, msg); err != nil {
@@ -551,6 +561,36 @@ func (s *Service) EditTitle(ctx context.Context, actor, actorAuth int64, in *mtp
 		NewValue_STRING:  title,
 	}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, actor, actorAuth, ch.ID, KindNew)
+}
+
+// EditAbout implements messages.editChatAbout for a channel or supergroup.
+// An empty string clears the description. More than 255 characters is
+// CHAT_ABOUT_TOO_LONG. The same text is CHAT_ABOUT_NOT_MODIFIED.
+func (s *Service) EditAbout(ctx context.Context, actor, actorAuth int64, in *mtproto.InputChannel, about string) (*mtproto.Updates, error) {
+	ch, p, err := s.requireMember(ctx, actor, in)
+	if err != nil {
+		return nil, err
+	}
+	if !s.canChangeInfo(ch, p) {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	if len([]rune(about)) > 255 {
+		return nil, mtproto.ErrChatAboutTooLong
+	}
+	if about == ch.About {
+		return nil, mtproto.ErrChatAboutNotModified
+	}
+	prev := ch.About
+	ch.About = about
+	ch.Version++
+	if err := s.store.SaveChannel(ctx, ch); err != nil {
+		return nil, err
+	}
+	s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionChangeAbout(&mtproto.ChannelAdminLogEventAction{
+		PrevValue_STRING: prev,
+		NewValue_STRING:  about,
+	}).To_ChannelAdminLogEventAction())
+	return s.pack(ctx, actor, ch.ID, channelUpdate(ch.ID)), nil
 }
 
 func (s *Service) EditPhoto(ctx context.Context, actor, actorAuth int64, in *mtproto.InputChannel, photo *mtproto.InputChatPhoto) (*mtproto.Updates, error) {
@@ -635,7 +675,10 @@ func (s *Service) UpdateUsername(ctx context.Context, self, actorAuth int64, in 
 	return mtproto.BoolTrue, nil
 }
 
-func (s *Service) ToggleSignatures(ctx context.Context, actor, actorAuth int64, in *mtproto.InputChannel, enabled bool) (*mtproto.Updates, error) {
+// ToggleSignatures stores channels.toggleSignatures. Layer 232 sends
+// signatures_enabled and profiles_enabled as true-flags, not the legacy
+// enabled:Bool. An unchanged pair is CHAT_NOT_MODIFIED.
+func (s *Service) ToggleSignatures(ctx context.Context, actor, actorAuth int64, in *mtproto.InputChannel, signatures, profiles bool) (*mtproto.Updates, error) {
 	ch, p, err := s.requireMember(ctx, actor, in)
 	if err != nil {
 		return nil, err
@@ -643,10 +686,30 @@ func (s *Service) ToggleSignatures(ctx context.Context, actor, actorAuth int64, 
 	if !p.IsCreator() && !p.adminRights().CanChangeInfo() {
 		return nil, mtproto.ErrChatAdminRequired
 	}
-	ch.Signatures = enabled
+	f := s.features(ctx, ch.ID)
+	if ch.Signatures == signatures && f.SignatureProfiles == profiles {
+		return nil, mtproto.ErrChatNotModified
+	}
+	prevSig := ch.Signatures
+	prevProf := f.SignatureProfiles
+	ch.Signatures = signatures
 	ch.Version++
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
 		return nil, err
+	}
+	f.SignatureProfiles = profiles
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	if prevSig != signatures {
+		s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionToggleSignatures(&mtproto.ChannelAdminLogEventAction{
+			NewValue_BOOL: mtproto.ToBool(signatures),
+		}).To_ChannelAdminLogEventAction())
+	}
+	if prevProf != profiles {
+		s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionToggleSignatureProfiles(&mtproto.ChannelAdminLogEventAction{
+			NewValue_BOOL: mtproto.ToBool(profiles),
+		}).To_ChannelAdminLogEventAction())
 	}
 	s.emit(ctx, actor, actorAuth, ch.ID, func(viewer int64) *mtproto.Updates {
 		return s.pack(ctx, viewer, ch.ID, channelUpdate(ch.ID))

@@ -60,6 +60,9 @@ type Features struct {
 	SponsoredRestricted      bool
 	Antispam                 bool
 	Autotranslation          bool
+	// SignatureProfiles is channels.toggleSignatures profiles_enabled.
+	// Author names on posts stay on Channel.Signatures.
+	SignatureProfiles bool
 	BoostsUnrestrict         int32
 	PaidMessagesSet          bool
 	SendPaidMessagesStars    int64

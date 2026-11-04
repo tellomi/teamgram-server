@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 )
 
@@ -40,9 +41,15 @@ func (c *ChatsCore) MessagesEditChatAbout(in *mtproto.TLMessagesEditChatAbout) (
 			return nil, err
 		}
 	case mtproto.PEER_CHANNEL:
-		c.Logger.Errorf("messages.editChatAbout blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		_, err := channel.Shared().EditAbout(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, &mtproto.InputChannel{
+			PredicateName: mtproto.Predicate_inputChannel,
+			ChannelId:     peer.PeerId,
+			AccessHash:    peer.AccessHash,
+		}, in.About)
+		if err != nil {
+			c.Logger.Errorf("messages.editChatAbout - error: %v", err)
+			return nil, err
+		}
 	default:
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("invalid peer type: {%v}")

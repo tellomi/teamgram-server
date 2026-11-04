@@ -185,7 +185,13 @@ func (s *Service) ChannelsEditPhoto(ctx context.Context, in *mtproto.TLChannelsE
 
 func (s *Service) ChannelsToggleSignatures(ctx context.Context, in *mtproto.TLChannelsToggleSignatures) (*mtproto.Updates, error) {
 	md := s.md(ctx)
-	return channel.Shared().ToggleSignatures(ctx, md.GetUserId(), md.GetPermAuthKeyId(), in.GetChannel(), mtproto.FromBool(in.GetEnabled()))
+	// Layer 232: signatures_enabled / profiles_enabled. Older clients set enabled:Bool.
+	signatures := in.GetSignaturesEnabled()
+	profiles := in.GetProfilesEnabled()
+	if in.GetEnabled() != nil {
+		signatures = mtproto.FromBool(in.GetEnabled())
+	}
+	return channel.Shared().ToggleSignatures(ctx, md.GetUserId(), md.GetPermAuthKeyId(), in.GetChannel(), signatures, profiles)
 }
 
 func (s *Service) ChannelsGetAdminedPublicChannels(ctx context.Context, in *mtproto.TLChannelsGetAdminedPublicChannels) (*mtproto.Messages_Chats, error) {
