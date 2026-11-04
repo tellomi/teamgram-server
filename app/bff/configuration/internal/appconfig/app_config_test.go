@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
+	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 )
 
 func TestAppConfigPremiumPolicy(t *testing.T) {
@@ -124,6 +125,7 @@ func assertHiddenFeatures(t *testing.T, obj map[string]any) {
 		"starref_connect_allowed":            false,
 		"wallet_available":                   false,
 		"tellomi_ai_compose_enabled":         false,
+		"tellomi_ai_enabled":                 false,
 		"tellomi_translate_enabled":          false,
 	}
 	for key, want := range bools {
@@ -189,5 +191,32 @@ func TestAppConfigEmojiBlocklistExtendsHash(t *testing.T) {
 	blocklist, _ := obj["emoji_blocklist"].([]any)
 	if len(blocklist) != 2 || blocklist[0] != emojiblock.TaiwanFlag || blocklist[1] != "\U0001F44D" {
 		t.Fatalf("emoji_blocklist = %#v", blocklist)
+	}
+}
+
+func TestTellomiAIFlagDefaultsOff(t *testing.T) {
+	t.Setenv(tellomiai.EnvEnabled, "")
+	t.Setenv(tellomiai.EnvAPIKey, "")
+	if tellomiai.Advertised() {
+		t.Fatal("advertised")
+	}
+	off := AppConfigHash()
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_ai_enabled"] != false || obj["tellomi_ai_compose_enabled"] != false {
+		t.Fatalf("flags %#v %#v", obj["tellomi_ai_enabled"], obj["tellomi_ai_compose_enabled"])
+	}
+	t.Setenv(tellomiai.EnvEnabled, "1")
+	t.Setenv(tellomiai.EnvAPIKey, "test-key")
+	if !tellomiai.Advertised() {
+		t.Fatal("flag and key did not advertise")
+	}
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_AI")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_ai_enabled"] != true {
+		t.Fatalf("tellomi_ai_enabled = %#v", obj["tellomi_ai_enabled"])
 	}
 }
