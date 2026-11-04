@@ -199,6 +199,13 @@ func TestDiscoverPushMigration(t *testing.T) {
 	}
 }
 
+func TestTellomiAIReplyMigration(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261106-tellomi-ai.sql"))
+	if !strings.Contains(raw, "CREATE TABLE IF NOT EXISTS tellomi_ai_reply") || !strings.Contains(raw, "prompt") || !strings.Contains(raw, "reply") {
+		t.Fatal("tellomi ai reply migration is missing the audit table")
+	}
+}
+
 func TestServiceUserRenameMigration(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261101-service-user.sql"))
 	for _, s := range []string{"777000", "Tellomi", "Telegram", "Teamgram", "tellomi"} {

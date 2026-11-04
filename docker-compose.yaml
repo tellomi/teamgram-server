@@ -177,6 +177,18 @@ services:
       TELLOMI_DISCOVER_PUSH: ${TELLOMI_DISCOVER_PUSH:-}
       TELLOMI_DISCOVER_PUSH_KEY: ${TELLOMI_DISCOVER_PUSH_KEY:-}
       TELLOMI_DISCOVER_PUSH_ADDR: ${TELLOMI_DISCOVER_PUSH_ADDR:-}
+      # @tellomi. Unset is off. See docs/api/tellomi-ai.md. Do not publish the port.
+      TELLOMI_AI: ${TELLOMI_AI:-}
+      TELLOMI_AI_API_KEY: ${TELLOMI_AI_API_KEY:-}
+      TELLOMI_AI_BASE_URL: ${TELLOMI_AI_BASE_URL:-}
+      TELLOMI_AI_MODEL_PRIMARY: ${TELLOMI_AI_MODEL_PRIMARY:-}
+      TELLOMI_AI_MODEL_SMALL: ${TELLOMI_AI_MODEL_SMALL:-}
+      TELLOMI_AI_MODEL_FALLBACK: ${TELLOMI_AI_MODEL_FALLBACK:-}
+      TELLOMI_AI_TIMEOUT_SECONDS: ${TELLOMI_AI_TIMEOUT_SECONDS:-}
+      TELLOMI_AI_MONTHLY_BUDGET: ${TELLOMI_AI_MONTHLY_BUDGET:-}
+      TELLOMI_AI_PRICE_PER_1K: ${TELLOMI_AI_PRICE_PER_1K:-}
+      TELLOMI_AI_INTERNAL_KEY: ${TELLOMI_AI_INTERNAL_KEY:-}
+      TELLOMI_AI_ADDR: ${TELLOMI_AI_ADDR:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.

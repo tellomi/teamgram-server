@@ -182,6 +182,16 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | --- | --- | --- |
 | start listener | `app/messenger/sync/internal/svc/service_context.go` | `discoverpush.Start` |
 
+## @tellomi AI (M4, phase 1 server)
+
+`TELLOMI_AI=1` plus `TELLOMI_AI_API_KEY` replies to private messages sent to user 777001 and can serve `POST /internal/v1/ai/complete` for a content-engine @mention. Both stay off otherwise. `messages.sendMessage` returns the user's update before the reply is generated. Login and session routing are unchanged. The contract is `docs/api/tellomi-ai.md`. `tellomi_ai_reply` is `teamgramd/deploy/sql/migrate-20261106-tellomi-ai.sql`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `messages.sendMessage` | `app/bff/messages/internal/core/messages.sendMessage_handler.go` | `maybeTellomi`, only after a successful send, only when the flag is on |
+| bff start | `app/bff/bff/internal/server/server.go` | `bots.StartTellomi` |
+| app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_ai_enabled` |
+
 ## Discover account deletion (M3)
 
 `TELLOMI_DISCOVER_DELETE=1` calls content-engine `DELETE /internal/users/{sub}` after `UserDeleteUser` has succeeded. The call is queued in memory, retried, and cannot fail or delay `account.deleteAccount`. See `docs/discover-account-deletion.md`.

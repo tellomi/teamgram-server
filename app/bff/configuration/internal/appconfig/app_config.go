@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
+	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 )
 
 // authorizationAutoconfirmPeriod matches
@@ -39,7 +40,11 @@ func AppConfig() *mtproto.JSONValue {
 func AppConfigHash() int32 {
 	h := fnv.New32a()
 	weekly, duration, cooldown := transcribeTrial()
-	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod)
+	ai := 0
+	if tellomiai.Advertised() {
+		ai = 1
+	}
+	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -170,6 +175,7 @@ func hiddenFeaturePairs() []*mtproto.JSONObjectValue {
 		jsonPair("translations_auto_enabled", jsonString("disabled")),
 		// Tellomi-only. Clients will read these; official builds ignore them.
 		jsonPair("tellomi_ai_compose_enabled", off),
+		jsonPair("tellomi_ai_enabled", jsonBool(tellomiai.Advertised())),
 		jsonPair("tellomi_translate_enabled", off),
 	}
 }
