@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"github.com/teamgram/teamgram-server/pkg/reportcopy"
 )
 
@@ -24,7 +25,7 @@ type reportItem struct {
 	Extra    int64   `json:"extra,omitempty"`
 }
 
-func reportKey() string { return "reports" }
+func signalKey() string { return "signals" }
 
 func paidKey(user int64, peer *mtproto.PeerUtil, msgID int32) string {
 	return "paid:" + transKey(user, peer) + ":" + itoa(int(msgID))
@@ -40,6 +41,7 @@ type paidDoc struct {
 // returns reportResultReported.
 // https://core.telegram.org/method/messages.report
 func (b *Book) ReportMessages(ctx context.Context, user int64, peer *mtproto.PeerUtil, ids []int32, option []byte, message, lang string) (*mtproto.ReportResult, error) {
+	ctx = report.WithLang(ctx, lang)
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
 		return nil, mtproto.ErrPeerIdInvalid
 	}
@@ -102,7 +104,21 @@ func (b *Book) ReportReaction(ctx context.Context, user int64, peer *mtproto.Pee
 	if msgID <= 0 {
 		return mtproto.ErrMessageIdInvalid
 	}
-	return b.storeReport(ctx, user, peer, []int32{msgID}, "", "", "messages.reportReaction", reactionPeer.PeerId)
+	sub := report.Submission{
+		Source:         report.SourceReaction,
+		Reporter:       user,
+		PeerType:       peer.PeerType,
+		PeerID:         peer.PeerId,
+		ObjectIDs:      []int32{msgID},
+		ReactionPeerID: reactionPeer.PeerId,
+	}
+	if reactionPeer.PeerType == mtproto.PEER_USER {
+		sub.SubjectUserID = reactionPeer.PeerId
+	} else if peer.PeerType == mtproto.PEER_USER {
+		sub.SubjectUserID = peer.PeerId
+	}
+	_, err := report.Shared().Submit(ctx, sub)
+	return err
 }
 
 // ReportReadMetrics records messages.reportReadMetrics.
@@ -154,19 +170,38 @@ func (b *Book) ReportDelivery(ctx context.Context, user int64, peer *mtproto.Pee
 	return b.storeReport(ctx, user, peer, ids, "", "", "messages.reportMessagesDelivery", extra)
 }
 
-// Reports returns stored report rows. Tests use it.
+// Reports returns delivery, listen, and read signals. User reports are not here.
 func (b *Book) Reports() []reportItem {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]reportItem, len(b.reports))
-	copy(out, b.reports)
+	out := make([]reportItem, len(b.signals))
+	copy(out, b.signals)
 	return out
 }
 
 func (b *Book) storeReport(ctx context.Context, user int64, peer *mtproto.PeerUtil, ids []int32, option, message, kind string, extra int64) error {
+	switch kind {
+	case "messages.report", "messages.report.legacy":
+		sub := report.Submission{
+			Source:    report.SourceMessages,
+			Reporter:  user,
+			Reason:    option,
+			Message:   message,
+			ObjectIDs: ids,
+		}
+		if peer != nil {
+			sub.PeerType = peer.PeerType
+			sub.PeerID = peer.PeerId
+			if peer.PeerType == mtproto.PEER_USER {
+				sub.SubjectUserID = peer.PeerId
+			}
+		}
+		_, err := report.Shared().Submit(ctx, sub)
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	_ = b.load(ctx, reportKey(), &b.reports)
+	_ = b.load(ctx, signalKey(), &b.signals)
 	item := reportItem{
 		User: user, MsgIDs: append([]int32(nil), ids...),
 		Option: option, Message: message, Kind: kind, Extra: extra,
@@ -175,11 +210,11 @@ func (b *Book) storeReport(ctx context.Context, user int64, peer *mtproto.PeerUt
 		item.PeerType = peer.PeerType
 		item.PeerID = peer.PeerId
 	}
-	b.reports = append(b.reports, item)
-	if len(b.reports) > reportCap {
-		b.reports = b.reports[len(b.reports)-reportCap:]
+	b.signals = append(b.signals, item)
+	if len(b.signals) > reportCap {
+		b.signals = b.signals[len(b.signals)-reportCap:]
 	}
-	return b.save(ctx, reportKey(), b.reports)
+	return b.save(ctx, signalKey(), b.signals)
 }
 
 func reported() *mtproto.ReportResult {

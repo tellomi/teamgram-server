@@ -147,6 +147,14 @@ func actor(ctx context.Context) (int64, int64) {
 	return md.GetUserId(), md.GetPermAuthKeyId()
 }
 
+func langCode(ctx context.Context) string {
+	md := metadata.RpcMetadataFromIncoming(ctx)
+	if md == nil {
+		return ""
+	}
+	return md.GetLangCode()
+}
+
 func channelID(peer *mtproto.InputPeer, self int64) int64 {
 	p := mtproto.FromInputPeer2(self, peer)
 	return p.PeerId

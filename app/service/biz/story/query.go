@@ -730,14 +730,7 @@ func (s *Service) Report(ctx context.Context, viewer int64, owner Owner, accessH
 			Option:   []byte("other"),
 		}).To_ReportResult(), nil
 	}
-	if err := s.store.SaveReport(ctx, &Report{
-		Reporter: viewer,
-		Owner:    owner,
-		StoryIDs: append([]int32(nil), ids...),
-		Option:   string(option),
-		Message:  message,
-		Date:     s.now(),
-	}); err != nil {
+	if err := s.fileReport(ctx, viewer, owner, ids, string(option), message, lang); err != nil {
 		return nil, err
 	}
 	return mtproto.MakeTLReportResultReported(&mtproto.ReportResult{}).To_ReportResult(), nil

@@ -7,6 +7,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -222,6 +223,7 @@ func TestSavedTagsFromSelfReactions(t *testing.T) {
 
 func TestReportTreeAndPaidMedia(t *testing.T) {
 	ResetShared()
+	report.ResetShared()
 	b := Shared()
 	ctx := context.Background()
 	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
@@ -249,8 +251,12 @@ func TestReportTreeAndPaidMedia(t *testing.T) {
 	if err := b.ReportMusicListen(ctx, 3, mtproto.MakeTLInputDocument(&mtproto.InputDocument{Id: 15}).To_InputDocument(), 3); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.Reports()) != 3 {
-		t.Fatalf("reports %d", len(b.Reports()))
+	rows, err := report.Shared().List(ctx)
+	if err != nil || len(rows) != 1 || rows[0].Source != report.SourceMessages || rows[0].Message != "spam text here" {
+		t.Fatalf("unified %+v %v", rows, err)
+	}
+	if len(b.Reports()) != 2 {
+		t.Fatalf("signals %d", len(b.Reports()))
 	}
 	media := mtproto.MakeTLMessageExtendedMedia(&mtproto.MessageExtendedMedia{
 		Media: mtproto.MakeTLMessageMediaEmpty(&mtproto.MessageMedia{}).To_MessageMedia(),

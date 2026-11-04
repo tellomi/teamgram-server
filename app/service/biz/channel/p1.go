@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -18,17 +20,6 @@ const (
 	recommendationCap   = 100
 	reportCap           = 200
 )
-
-// PeerReport is one account.reportPeer, account.reportProfilePhoto, or
-// messages.reportSpam record. Channel spam stays on the channel feature row.
-type PeerReport struct {
-	ReporterID int64
-	PeerID     int64
-	Kind       string
-	Message    string
-	PhotoID    int64
-	Date       int32
-}
 
 func (s *Service) requireInfoAdmin(ctx context.Context, self int64, in *mtproto.InputChannel) (*Channel, *Participant, error) {
 	ch, p, err := s.requireMember(ctx, self, in)
@@ -855,7 +846,9 @@ func (s *Service) ReportSpam(ctx context.Context, self int64, in *mtproto.InputC
 	if target == nil {
 		return nil, mtproto.ErrUserNotParticipant
 	}
-	for _, id := range ids {
+	copied := append([]int32(nil), ids...)
+	var items []report.Content
+	for _, id := range copied {
 		if id <= 0 {
 			return nil, mtproto.ErrMessageIdInvalid
 		}
@@ -866,19 +859,22 @@ func (s *Service) ReportSpam(ctx context.Context, self int64, in *mtproto.InputC
 		if msg == nil {
 			return nil, mtproto.ErrMessageIdInvalid
 		}
+		body := &mtproto.Message{}
+		if len(msg.Data) > 0 {
+			_ = proto.Unmarshal(msg.Data, body)
+		}
+		items = append(items, report.ContentFromMessage(int64(id), body))
 	}
-	f := s.features(ctx, ch.ID)
-	copied := append([]int32(nil), ids...)
-	f.SpamReports = append(f.SpamReports, SpamReport{
-		ReporterID: self,
-		UserID:     userID,
-		MsgIDs:     copied,
-		Date:       int32(time.Now().Unix()),
-	})
-	if len(f.SpamReports) > reportCap {
-		f.SpamReports = f.SpamReports[len(f.SpamReports)-reportCap:]
-	}
-	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+	if _, err = report.Shared().Submit(ctx, report.Submission{
+		Source:        report.SourceChannelSpam,
+		Reporter:      self,
+		PeerType:      mtproto.PEER_CHANNEL,
+		PeerID:        ch.ID,
+		SubjectUserID: userID,
+		Reason:        "spam",
+		ObjectIDs:     copied,
+		Evidence:      report.Evidence{Items: items},
+	}); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil
@@ -899,35 +895,49 @@ func reportedUserID(peer *mtproto.InputPeer) (int64, error) {
 	}
 }
 
-// RecordPeerReport stores a peer report that is not scoped to one channel.
-func (s *Service) RecordPeerReport(ctx context.Context, self int64, peer *mtproto.InputPeer, kind, message string, photoID int64) (*mtproto.Bool, error) {
+// RecordPeerReport stores account.reportPeer, account.reportProfilePhoto, or
+// messages.reportSpam in the unified reports table.
+func (s *Service) RecordPeerReport(ctx context.Context, self int64, peer *mtproto.InputPeer, source, reason, message string, photoID int64) (*mtproto.Bool, error) {
 	id, err := reportPeerID(ctx, s, self, peer)
 	if err != nil {
 		return nil, err
 	}
-	s.reportMu.Lock()
-	s.peerReports = append(s.peerReports, PeerReport{
-		ReporterID: self,
-		PeerID:     id,
-		Kind:       kind,
-		Message:    message,
-		PhotoID:    photoID,
-		Date:       int32(time.Now().Unix()),
-	})
-	if len(s.peerReports) > reportCap {
-		s.peerReports = s.peerReports[len(s.peerReports)-reportCap:]
+	peerType := int32(mtproto.PEER_USER)
+	switch peer.GetPredicateName() {
+	case mtproto.Predicate_inputPeerChat:
+		peerType = mtproto.PEER_CHAT
+	case mtproto.Predicate_inputPeerChannel, mtproto.Predicate_inputPeerChannelFromMessage:
+		peerType = mtproto.PEER_CHANNEL
 	}
-	s.reportMu.Unlock()
+	var subject int64
+	if peerType == mtproto.PEER_USER {
+		subject = id
+	}
+	var ev report.Evidence
+	if photoID != 0 {
+		ev.Items = []report.Content{{
+			Kind:      "photo",
+			ID:        photoID,
+			MediaKeys: []string{report.AvatarKey(photoID)},
+		}}
+	}
+	if source == "" {
+		source = report.SourcePeer
+	}
+	if _, err = report.Shared().Submit(ctx, report.Submission{
+		Source:        source,
+		Reporter:      self,
+		PeerType:      peerType,
+		PeerID:        id,
+		SubjectUserID: subject,
+		Reason:        reason,
+		Message:       message,
+		PhotoID:       photoID,
+		Evidence:      ev,
+	}); err != nil {
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
-}
-
-// PeerReports returns recorded peer reports. Tests use it.
-func (s *Service) PeerReports() []PeerReport {
-	s.reportMu.Lock()
-	defer s.reportMu.Unlock()
-	out := make([]PeerReport, len(s.peerReports))
-	copy(out, s.peerReports)
-	return out
 }
 
 func reportPeerID(ctx context.Context, s *Service, self int64, peer *mtproto.InputPeer) (int64, error) {

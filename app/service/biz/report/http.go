@@ -1,0 +1,311 @@
+package report
+
+import (
+	"crypto/hmac"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+)
+
+const (
+	pathPending    = "/internal/v1/reports/pending"
+	pathIngest     = "/internal/v1/reports"
+	pathModeration = "/internal/v1/moderation/review"
+	maxBody        = 64 << 10
+)
+
+// Handler is the internal report listener. It is mounted only when
+// TELLOMI_REPORT_HTTP=1.
+//
+//	POST /internal/v1/reports
+//	POST /internal/v1/reports/{id}/decision
+//	GET  /internal/v1/reports/pending
+//	POST /internal/v1/moderation/review
+//
+// Discover push stays on POST /internal/v1/discover/notify
+// (docs/api/discover-ai.md). @tellomi mentions stay on
+// POST /internal/v1/ai/complete (docs/api/tellomi-ai.md).
+type Handler struct {
+	Service *Service
+	Key     []byte
+}
+
+type decisionBody struct {
+	Decision string `json:"decision"`
+}
+
+func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !authorized(r, h.Key) {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.Service == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	switch r.URL.Path {
+	case pathPending:
+		if r.Method != http.MethodGet {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.pending(w, r)
+		return
+	case pathIngest:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.ingest(w, r)
+		return
+	case pathModeration:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.moderate(w, r)
+		return
+	}
+	id, ok := decisionPath(r.URL.Path)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method")
+		return
+	}
+	var body decisionBody
+	dec := json.NewDecoder(io.LimitReader(r.Body, maxBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	verdict, ok := normalizeDecision(body.Decision)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	err := h.Service.Decide(r.Context(), id, verdict)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "ticket": Ticket(id), "status": verdict})
+	case errors.Is(err, ErrNotFound):
+		writeErr(w, http.StatusNotFound, "not_found")
+	case errors.Is(err, ErrConflict):
+		writeErr(w, http.StatusConflict, "conflict")
+	case errors.Is(err, ErrBadDecision):
+		writeErr(w, http.StatusBadRequest, "bad_request")
+	default:
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+	}
+}
+
+type ingestBody struct {
+	ReporterUserID int64  `json:"reporter_user_id"`
+	AuthorID       int64  `json:"author_id"`
+	PostID         string `json:"post_id"`
+	CommentID      string `json:"comment_id"`
+	Reason         string `json:"reason"`
+	Comment        string `json:"comment"`
+	LangCode       string `json:"lang_code"`
+}
+
+func (h Handler) ingest(w http.ResponseWriter, r *http.Request) {
+	var body ingestBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	body.PostID = strings.TrimSpace(body.PostID)
+	body.CommentID = strings.TrimSpace(body.CommentID)
+	body.Reason = strings.TrimSpace(body.Reason)
+	if body.ReporterUserID <= 0 || body.AuthorID <= 0 || !validDiscoverID(body.PostID) || !validDiscoverReason(body.Reason) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if body.CommentID != "" && !validDiscoverID(body.CommentID) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if len(body.Comment) > 1024 {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	row, dup, err := h.Service.IngestDiscover(r.Context(), DiscoverReport{
+		Reporter:  body.ReporterUserID,
+		Author:    body.AuthorID,
+		PostID:    body.PostID,
+		CommentID: body.CommentID,
+		Reason:    body.Reason,
+		Comment:   body.Comment,
+		Lang:      body.LangCode,
+	})
+	if wait, ok := floodWait(err); ok {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited", "retry_after": wait})
+		return
+	}
+	if err != nil || row == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	status := "created"
+	if dup {
+		status = "duplicate"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": status,
+		"id":     row.ID,
+		"ticket": row.Ticket(),
+	})
+}
+
+type moderateBody struct {
+	PostID    string   `json:"post_id"`
+	Text      string   `json:"text"`
+	MediaKeys []string `json:"media_keys"`
+}
+
+func (h Handler) moderate(w http.ResponseWriter, r *http.Request) {
+	var body moderateBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	text := strings.TrimSpace(body.Text)
+	var media []string
+	for _, key := range body.MediaKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if !validMediaKey(key) {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		media = append(media, key)
+	}
+	if text == "" && len(media) == 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if body.PostID != "" && !validDiscoverID(strings.TrimSpace(body.PostID)) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	verdict := h.Service.Moderate(r.Context(), text, media)
+	writeJSON(w, http.StatusOK, map[string]string{"verdict": verdict})
+}
+
+func floodWait(err error) (int32, bool) {
+	if err == nil {
+		return 0, false
+	}
+	const marker = "FLOOD_WAIT_"
+	msg := err.Error()
+	i := strings.Index(msg, marker)
+	if i < 0 {
+		return 0, false
+	}
+	n := 0
+	for _, c := range msg[i+len(marker):] {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n < 1 {
+		n = 1
+	}
+	return int32(n), true
+}
+
+func (h Handler) pending(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		limit = n
+	}
+	rows, err := h.Service.Pending(r.Context(), limit)
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, map[string]any{
+			"id":               row.ID,
+			"ticket":           row.Ticket(),
+			"source":           row.Source,
+			"status":           row.Status,
+			"target_key":       row.TargetKey,
+			"reason":           row.Reason,
+			"reporter_user_id": row.Reporter,
+			"subject_user_id":  row.SubjectUserID,
+			"created_at":       row.CreatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reports": out})
+}
+
+func decisionPath(path string) (int64, bool) {
+	const prefix = "/internal/v1/reports/"
+	const suffix = "/decision"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return 0, false
+	}
+	mid := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if mid == "" || strings.Contains(mid, "/") {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(mid, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+func normalizeDecision(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case StatusViolation:
+		return StatusViolation, true
+	case StatusClear, "no_violation":
+		return StatusClear, true
+	default:
+		return "", false
+	}
+}
+
+func authorized(r *http.Request, key []byte) bool {
+	const prefix = "Bearer "
+	header := r.Header.Get("Authorization")
+	token, ok := strings.CutPrefix(header, prefix)
+	if !ok || len(key) == 0 {
+		return false
+	}
+	got, err := base64.StdEncoding.DecodeString(strings.TrimSpace(token))
+	if err != nil || len(got) != len(key) {
+		return false
+	}
+	return hmac.Equal(got, key)
+}
+
+func writeErr(w http.ResponseWriter, status int, code string) {
+	writeJSON(w, status, map[string]string{"error": code})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
