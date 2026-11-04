@@ -23,7 +23,11 @@ func (s *Service) AvailableEffects(hash int32) *mtproto.Messages_AvailableEffect
 		if alt == "" || emojiblock.Blocked(alt) {
 			continue
 		}
-		webp, tgs := reactionArt(spec.code)
+		files, ok := reactionAssets(spec.code)
+		if !ok {
+			continue
+		}
+		webp, tgs := files.webp, files.slots["effect"]
 		if len(webp) == 0 || len(tgs) == 0 || !tgsCanvas512(tgs) {
 			continue
 		}
