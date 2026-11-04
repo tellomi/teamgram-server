@@ -232,6 +232,14 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | --- | --- | --- |
 | `account.deleteAccount` | `app/bff/account/internal/core/account.deleteAccount_handler.go` | `discoverdelete.Enqueue` |
 
+## Discover link cards
+
+`TELLOMI_LINK_PREVIEW=1` serves `POST /internal/v1/link-preview` on bff so content-engine can build a Discover card. Unset does not listen. The fetch is the same SSRF-protected Open Graph read as `messages.getWebPage`: private, loopback, and link-local addresses are refused before the request and again after DNS and redirects. The JSON card is title, description, image URL, and site name. It does not use the public tell.cc resolver on port 8801. The contract is `docs/api/link-preview-card.md`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| bff start | `app/bff/bff/internal/server/server.go` | `chatbox.StartLinkPreview` |
+
 ## Chat primary and standby (M8 / D-70)
 
 Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describes a manual promotion of a MySQL replica, how `seqfloor` keeps Redis idgen and pts from moving backwards, and why the spare IP stays out of `TELLOMI_DC_OPTIONS` until the spare is listening. No code, no flag, and no migration.

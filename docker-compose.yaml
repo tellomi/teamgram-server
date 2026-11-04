@@ -221,6 +221,11 @@ services:
       TELLOMI_DISCOVER_PUSH: ${TELLOMI_DISCOVER_PUSH:-}
       TELLOMI_DISCOVER_PUSH_KEY: ${TELLOMI_DISCOVER_PUSH_KEY:-}
       TELLOMI_DISCOVER_PUSH_ADDR: ${TELLOMI_DISCOVER_PUSH_ADDR:-}
+      # Discover link cards. Unset is off. See docs/api/link-preview-card.md.
+      # Do not publish this port. This is not the public tell.cc resolver.
+      TELLOMI_LINK_PREVIEW: ${TELLOMI_LINK_PREVIEW:-}
+      TELLOMI_LINK_PREVIEW_KEY: ${TELLOMI_LINK_PREVIEW_KEY:-}
+      TELLOMI_LINK_PREVIEW_ADDR: ${TELLOMI_LINK_PREVIEW_ADDR:-}
       # @tellomi. Unset is off. See docs/api/tellomi-ai.md. Do not publish the port.
       TELLOMI_AI: ${TELLOMI_AI:-}
       TELLOMI_AI_API_KEY: ${TELLOMI_AI_API_KEY:-}

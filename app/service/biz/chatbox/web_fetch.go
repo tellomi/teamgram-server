@@ -263,7 +263,11 @@ func temporaryFetchErr(err error) bool {
 }
 
 func httpGet(u *url.URL, limit int64) ([]byte, string, error) {
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	return httpGetContext(context.Background(), u, limit)
+}
+
+func httpGetContext(ctx context.Context, u *url.URL, limit int64) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", err
 	}
