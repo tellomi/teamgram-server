@@ -14,6 +14,21 @@ type Target struct {
 	DialogMessageID int64
 }
 
+// Advance reports that next is a strictly newer outbox cursor.
+// Equal and older ids must not move read_outbox_max_id backwards.
+func Advance(current, next int32) bool {
+	return next > 0 && next > current
+}
+
+// NotifySender reports that reader has seen a message written by sender.
+// The reader's inbox box id and the reader's own ReadOutboxMaxId are different
+// cursors in the same box. An incoming message often has a lower box id than
+// a later outgoing message the peer already read, so comparing the two drops
+// a real read receipt. Callers must not make that comparison.
+func NotifySender(reader, sender int64) bool {
+	return reader != 0 && sender != 0 && sender != reader
+}
+
 // Targets returns the other participants whose messages reader has seen.
 // The highest dialog message id wins for each sender. The reader's own
 // messages are left out, so sending and then reading your own history does

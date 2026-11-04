@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/readoutbox"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 
@@ -78,38 +79,8 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 			in.PeerId,
 			mtproto.MakePeerDialogId(in.PeerType, in.PeerId),
 			replyId.UserMessageBoxId)
-
-		_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(
-			c.ctx,
-			&dialog.TLDialogInsertOrUpdateDialog{
-				UserId:          in.UserId,
-				PeerType:        in.PeerType,
-				PeerId:          in.PeerId,
-				TopMessage:      nil,
-				ReadOutboxMaxId: &wrapperspb.Int32Value{Value: replyId.UserMessageBoxId},
-				ReadInboxMaxId:  nil,
-				UnreadCount:     nil,
-				UnreadMark:      false,
-				PinnedMsgId:     nil,
-				Date2:           nil,
-			})
-		c.Logger.Infof("inbox.readOutboxHistory: (%d, %d, %d)",
-			replyId.UserMessageBoxId,
-			in.UserId,
-			mtproto.MakePeerDialogId(in.PeerType, in.PeerId))
-
-		updateReadHistoryOutbox := mtproto.MakeTLUpdateReadHistoryOutbox(&mtproto.Update{
-			Peer_PEER: mtproto.MakePeerUser(in.PeerId),
-			MaxId:     replyId.UserMessageBoxId,
-			Pts_INT32: c.svcCtx.Dao.IDGenClient2.NextPtsId(c.ctx, in.UserId),
-			PtsCount:  1,
-		}).To_Update()
-		c.persistPtsUpdate(c.ctx, in.UserId, updateReadHistoryOutbox)
-
-		_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
-			UserId:  in.UserId,
-			Updates: mtproto.MakeUpdatesByUpdates(updateReadHistoryOutbox),
-		})
+		// The live messages.readHistory path. Do not move the cursor backwards.
+		c.pushUserOutboxRead(in.UserId, in.PeerId, replyId.UserMessageBoxId)
 	case mtproto.PEER_CHAT:
 		replyId, err := c.svcCtx.Dao.MessagesDAO.SelectByMessageDataId(
 			c.ctx,
@@ -132,7 +103,7 @@ func (c *InboxCore) InboxReadOutboxHistory(in *inbox.TLInboxReadOutboxHistory) (
 			replyId.UserId,
 			[]int64{mtproto.MakePeerDialogId(in.PeerType, in.PeerId)},
 			func(sz, i int, v *dataobject.DialogsDO) {
-				if v.ReadOutboxMaxId < replyId.UserMessageBoxId {
+				if readoutbox.Advance(v.ReadOutboxMaxId, replyId.UserMessageBoxId) {
 					_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(
 						c.ctx,
 						&dialog.TLDialogInsertOrUpdateDialog{

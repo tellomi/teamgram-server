@@ -58,7 +58,7 @@ Untranslated strings that are an exact copy of the official English text are omi
 - A Chinese key is replaced only when that key is present in the Chinese override. English divergences do not pull the old word-by-word translation back in.
 - The word Telegram becomes Tellomi, except inside a markdown link target such as `](telegram)` or `](web)`. `t.me` is rewritten only when it is a host, so `Chat.Message` stays intact. `telegram.org` becomes `tellomi.cn`.
 
-Chinese pack versions are one above the 2026-11-02 export (`ios` zh-hans `22454344`, zh-hant `22421529`, `android` zh-hans `61570950`, zh-hant `61519201`). Clients that cached the machine-translated pack receive the restored strings from `langpack.getDifference`.
+Chinese pack versions are one above the 2026-11-02 export (`ios` zh-hans `22454344`, zh-hant `22421529`, `android` zh-hant `61519201`), except Android zh-hans, which is `61570951`. That extra step is the Tellomi strings added after the export (login, maps, intro, and the call-count plurals). Clients that cached `61570950` receive those strings from `langpack.getDifference`.
 
 ## Deploy
 

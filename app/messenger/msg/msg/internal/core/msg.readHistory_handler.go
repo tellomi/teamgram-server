@@ -16,6 +16,7 @@ import (
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/readoutbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -130,8 +131,13 @@ func (c *MsgCore) MsgReadHistory(in *msg.TLMsgReadHistory) (*mtproto.Messages_Af
 				Updates:       syncUpdates,
 			})
 
-			// The reader's own message must not move their outbox. Only another member does.
-			if senderId != 0 && senderId != in.UserId && maxId > dlg.ReadOutboxMaxId {
+			// maxId is the reader's inbox box id. dlg.ReadOutboxMaxId is how far the
+			// peer has read the reader's own outgoing messages. Those cursors
+			// are not comparable, and the old check dropped receipts whenever
+			// the reader had a newer outgoing message already marked read.
+			// InboxUpdateHistoryReaded maps maxId into the sender's box and
+			// only advances that cursor.
+			if readoutbox.NotifySender(in.UserId, senderId) {
 				c.svcCtx.Dao.InboxClient.InboxUpdateHistoryReaded(ctx, &inbox.TLInboxUpdateHistoryReaded{
 					FromId:   in.UserId,
 					PeerType: in.PeerType,
