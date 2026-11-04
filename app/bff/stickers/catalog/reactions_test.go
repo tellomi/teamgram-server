@@ -1,10 +1,55 @@
 package catalog
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
 )
+
+func TestAvailableReactionsUseTheirOwnArt(t *testing.T) {
+	s := newService(builtinPacks())
+	msg := s.Reactions(0)
+	if len(msg.GetReactions()) == 0 {
+		t.Fatal("no reactions")
+	}
+	thumbs, _ := readAsset("assets/twemoji/1f44d.webp")
+	seen := map[string]bool{}
+	for _, r := range msg.GetReactions() {
+		emo := r.GetReaction()
+		if emo == "" || seen[emo] {
+			t.Fatalf("duplicate or empty reaction %q", emo)
+		}
+		seen[emo] = true
+		icon, mime, ok := s.DocumentFile(r.GetStaticIcon().GetId())
+		if !ok || mime != "image/webp" || len(icon) == 0 {
+			t.Fatalf("%s static icon", emo)
+		}
+		if emo != "👍" && bytes.Equal(icon, thumbs) {
+			t.Fatalf("%s static icon fell back to thumbs up", emo)
+		}
+		var prev []byte
+		for _, doc := range []*mtproto.Document{
+			r.GetAppearAnimation(), r.GetSelectAnimation(), r.GetActivateAnimation(),
+			r.GetEffectAnimation(), r.GetAroundAnimation(), r.GetCenterIcon(),
+		} {
+			body, animMIME, ok := s.DocumentFile(doc.GetId())
+			if !ok || animMIME != "application/x-tgsticker" || !tgsCanvas512(body) || bytes.Equal(body, fallbackTGS()) {
+				t.Fatalf("%s animation is blank", emo)
+			}
+			if prev != nil && bytes.Equal(prev, body) {
+				t.Fatalf("%s reuses one animation for two slots", emo)
+			}
+			prev = body
+		}
+	}
+	if !seen["👍"] || !seen["🔥"] || !seen["❤️"] {
+		t.Fatalf("missing defaults %#v", seen)
+	}
+	if _, ok := reactionAssets("0000"); ok {
+		t.Fatal("missing code was treated as complete")
+	}
+}
 
 func TestTopAndRecentReactions(t *testing.T) {
 	s := newService(builtinPacks())

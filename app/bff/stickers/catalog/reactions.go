@@ -55,13 +55,6 @@ func fallbackTGS() []byte {
 	return fallbackTGSBytes
 }
 
-func fallbackWebP() []byte {
-	if b, ok := readAsset("assets/twemoji/1f44d.webp"); ok {
-		return b
-	}
-	return nil
-}
-
 // reactionSlots are the documents on availableReaction. static_icon is a
 // WebP (the chip). The other six are gzipped Lottie, matching Telegram.
 var reactionSlots = []struct {
@@ -77,30 +70,64 @@ var reactionSlots = []struct {
 	{"center", true},
 }
 
+func reactionReady(code string) bool {
+	_, ok := reactionAssets(code)
+	return ok
+}
+
 func reactionSlotID(code, slot string) int64 {
 	return stableID("reaction", slot, code)
 }
 
-func reactionArt(code string) (webp, tgs []byte) {
-	if b, ok := readAsset("assets/twemoji/" + code + ".webp"); ok {
-		webp = b
-	} else {
-		webp = fallbackWebP()
+type reactionFiles struct {
+	webp  []byte
+	slots map[string][]byte
+}
+
+var reactionFileCache sync.Map
+
+// reactionAssets is the static WebP and one Lottie per slot. ok is false
+// when either file is missing: those reactions are left out of the picker
+// instead of showing a blank animation or the thumbs-up icon.
+func reactionAssets(code string) (reactionFiles, bool) {
+	if v, ok := reactionFileCache.Load(code); ok {
+		files := v.(reactionFiles)
+		return files, len(files.webp) > 0 && len(files.slots) == 6
 	}
-	if b, ok := readAsset("assets/noto/" + code + ".tgs"); ok && tgsCanvas512(b) {
-		tgs = b
-	} else {
-		tgs = fallbackTGS()
+	var files reactionFiles
+	webp, ok := readAsset("assets/twemoji/" + code + ".webp")
+	base, okTGS := readAsset("assets/noto/" + code + ".tgs")
+	if !ok || !okTGS || !tgsCanvas512(base) {
+		reactionFileCache.Store(code, files)
+		return files, false
 	}
-	return webp, tgs
+	files.webp = webp
+	files.slots = map[string][]byte{}
+	for _, slot := range reactionSlots {
+		if !slot.tgs {
+			continue
+		}
+		body, ok := varyTGS(base, slot.name)
+		if !ok {
+			files.slots = nil
+			reactionFileCache.Store(code, reactionFiles{})
+			return reactionFiles{}, false
+		}
+		files.slots[slot.name] = body
+	}
+	reactionFileCache.Store(code, files)
+	return files, true
 }
 
 func reactionSlotBytes(code, slot string, tgs bool) (body []byte, mime string) {
-	webp, anim := reactionArt(code)
-	if tgs {
-		return anim, "application/x-tgsticker"
+	files, ok := reactionAssets(code)
+	if !ok {
+		return nil, ""
 	}
-	return webp, "image/webp"
+	if tgs {
+		return files.slots[slot], "application/x-tgsticker"
+	}
+	return files.webp, "image/webp"
 }
 
 func reactionSpecs() []struct {
@@ -132,10 +159,9 @@ func reactionSpecs() []struct {
 	return out
 }
 
-// Reactions is messages.getAvailableReactions. Every entry has the documents
-// TelegramCore requires: static icon, four animations, and the optional
-// around/center pair. A missing .tgs is replaced with a 512×512 fallback so
-// the picker is never empty.
+// Reactions is messages.getAvailableReactions. Every entry has its own
+// static icon and a distinct appear/select/activate/effect/around/center
+// animation. A code without those files is omitted.
 func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 	var reactions []*mtproto.AvailableReaction
 	var ids []int64
@@ -275,7 +301,7 @@ func defaultReactionOrder() []string {
 			continue
 		}
 		emo := emojiFromCode(def.Code)
-		if emo == "" || seen[emo] {
+		if emo == "" || seen[emo] || !reactionReady(def.Code) {
 			continue
 		}
 		seen[emo] = true
