@@ -35,12 +35,12 @@ Served for ios, android, tdesktop, and macos:
 | zh-hant | 繁體中文 |
 | ja, ko, ru, es, de, fr, it, pt-br | full packs |
 | ar, tr, id, ms, vi, uk, nl, pl, fa | full packs |
-| hi | Hindi. Android is a large partial pack. iOS, macOS, and tdesktop are smaller. Not offered by default. |
-| th | Thai. As of the 2026-11-02 export, translations.telegram.org has no Thai strings for these platforms (the Android file is an English copy, which is not shipped). Not offered by default. |
-| el | Greek. Only partial on Android and a handful of strings on iOS and desktop. Not offered by default. |
+| hi | Hindi. Re-exported 2026-11-04. Android is still a partial official pack; iOS, macOS, and tdesktop are smaller. Missing keys are machine-translated. Not offered by default. |
+| th | Thai. Re-exported 2026-11-04. translations.telegram.org still has no Thai strings (the Android file is an English copy, which is not shipped). The pack is machine-translated. Not offered by default. |
+| el | Greek. Re-exported 2026-11-04. Official coverage is still partial. Missing keys are machine-translated. Not offered by default. |
 | be, ca, cs, fi, he, nb, ro, sv, uz | shipped from the same export. |
 
-`langpack.getLanguages` omits codes in `TELLOMI_LANGPACK_HIDDEN`. When that variable is unset the list is `hi,th,el`. Those packs are near-empty next to the ~11–12k string packs, and a client that offers them shows English. Set the variable to empty to list every pack. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve a hidden code.
+`langpack.getLanguages` omits codes in `TELLOMI_LANGPACK_HIDDEN`. When that variable is unset the list is `hi,th,el`. Those three stay hidden until the machine translations are reviewed. Set the variable to empty to list every pack. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve a hidden code, and that pack now has the same keys as English.
 
 `help.getConfig` `suggested_lang_code` follows `initConnection.system_lang_code`. An empty, unknown, or hidden device language uses `lang_code` when that names a pack we offer, otherwise `en`. A hidden code is never suggested. `lang_pack_version` stays on the app language (`lang_code`).
 
@@ -58,9 +58,21 @@ Untranslated strings that are an exact copy of the official English text are omi
 - A Chinese key is replaced only when that key is present in the Chinese override. English divergences do not pull the old word-by-word translation back in.
 - The word Telegram becomes Tellomi, except inside a markdown link target such as `](telegram)` or `](web)`. `t.me` is rewritten only when it is a host, so `Chat.Message` stays intact. `telegram.org` becomes `tellomi.cn`.
 
-Chinese pack versions sit above the 2026-11-02 export. Android zh-hans is `61570953` and Android zh-hant is `61519203`. That covers the Tellomi strings added after the export (login, maps, intro, call-count plurals, and Discover) and the city-key rename. Clients that cached `61570950` still receive the earlier Tellomi strings from `langpack.getDifference`, and clients that cached `61570951` receive the Discover keys. Clients that cached `61570952` receive the four renamed city keys. Android en is `61510241` (export `61510239`).
+Chinese pack versions sit above the 2026-11-02 export. Android zh-hans is `61570954` and Android zh-hant is `61519204`. That covers the Tellomi strings added after the export (login, maps, intro, call-count plurals, and Discover), the city-key rename, and the later fill of keys the other Chinese pack or English already had. Clients that cached `61570950` still receive the earlier Tellomi strings from `langpack.getDifference`, and clients that cached `61570951` receive the Discover keys. Clients that cached `61570952` receive the four renamed city keys together with the filled keys. Clients that cached `61570953` receive only the filled Simplified Chinese keys. Android en is `61510241` (export `61510239`).
 
-iOS Discover and sign-up avatar strings are en `22347346` (export `22347344`), zh-hans `22454346` (export `22454343`), and zh-hant `22421531` (export `22421528`). A client cached at the previous pack version receives the Discover keys from `langpack.getDifference`. The four city ids that used a hyphen (`cn_hong_kong`, `us_new_york`, `us_los_angeles`, `us_san_francisco`) are one version newer than the rest of that set, so a client already on the previous pack version receives just those keys. Other languages omit the keys and fall back to English through `base_lang_code`. The ten `Tellomi.Discover.Report*` keys are on Android only.
+iOS Discover and sign-up avatar strings are en `22347346` (export `22347344`), zh-hans `22454347` (export `22454343`), and zh-hant `22421532` (export `22421528`). The four city ids (`cn_hong_kong`, `us_new_york`, `us_los_angeles`, `us_san_francisco`) use underscores in every language. On English they are the newest strings, so a client one version behind receives just those keys. On zh-hans and zh-hant they sit one version below the filled pack: a client that already has the renamed cities receives only the fill, and a client one version behind the rename receives the cities together with the fill. Every other built-in language has those keys too. The ten `Tellomi.Discover.Report*` keys are on Android only. Keys whose names are the old `Chat.Message` → `Chatell.ccssage` rewrite are not copied.
+
+## Coverage
+
+`scripts/langpack_gap.py` prints, per language and platform, the key-count gap versus English. `go test ./pkg/langpack` fails when any language is missing more than 1% of the English keys on ios, android, tdesktop, or macos.
+
+Keys that are not in the official export are machine-translated and stored with `"mt": true` and `"mt_via"` (`google`, `google+opencc`, `opencc`, or `copy`). Placeholders (`%@`, `%1$s`, `{count}`, `{}`) and markdown link targets are not sent to the translator. `data/langpack/machine/<platform>/<code>.json.gz` is the review set. `scripts/langpack_official.py` reapplies it when a later export still lacks the key. A simplified string missing from traditional Chinese is OpenCC `s2twp` of the simplified text, and the other way is `tw2sp`.
+
+```bash
+python3 scripts/langpack_official.py --codes el,th,hi
+python3 scripts/langpack_fill.py
+python3 scripts/langpack_gap.py
+```
 
 ## Deploy
 

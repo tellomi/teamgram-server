@@ -11,9 +11,10 @@ import (
 // a hidden code so a client that already selected it keeps working.
 const hiddenLangEnv = "TELLOMI_LANGPACK_HIDDEN"
 
-// defaultHiddenLangs is Hindi, Thai, and Greek. Telegram has no official
-// translation for those, and the packs we ship are near-empty, so a client
-// that offers them shows English.
+// defaultHiddenLangs is Hindi, Thai, and Greek. The official export is still
+// partial, and the strings added to match English are machine translations
+// (mt:true) waiting for review, so langpack.getLanguages omits them.
+// getLangPack still serves the full pack.
 const defaultHiddenLangs = "hi,th,el"
 
 // HiddenLang reports whether langpack.getLanguages should omit code.

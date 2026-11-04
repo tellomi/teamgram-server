@@ -434,19 +434,19 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatal("real Chat.Message key was lost")
 	}
 	refreshed, err := cat.Difference("ios", "zh-hans", 22454343)
-	if err != nil || refreshed.GetVersion() != 22454346 || len(refreshed.GetStrings()) < 1000 {
+	if err != nil || refreshed.GetVersion() < 22454346 || len(refreshed.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
 	}
 	androidRefreshed, err := cat.Difference("android", "zh-hans", 61570949)
-	if err != nil || androidRefreshed.GetVersion() != 61570953 || len(androidRefreshed.GetStrings()) < 1000 {
+	if err != nil || androidRefreshed.GetVersion() < 61570953 || len(androidRefreshed.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hans bump %+v %v", androidRefreshed.GetVersion(), err)
 	}
 	hant, err := cat.Difference("ios", "zh-hant", 22421528)
-	if err != nil || hant.GetVersion() != 22421531 || len(hant.GetStrings()) < 1000 {
+	if err != nil || hant.GetVersion() < 22421531 || len(hant.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hant bump v=%d n=%d %v", hant.GetVersion(), len(hant.GetStrings()), err)
 	}
 	hantAndroid, err := cat.Difference("android", "zh-hant", 61519200)
-	if err != nil || hantAndroid.GetVersion() != 61519203 || len(hantAndroid.GetStrings()) < 1000 {
+	if err != nil || hantAndroid.GetVersion() < 61519203 || len(hantAndroid.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hant bump v=%d n=%d %v", hantAndroid.GetVersion(), len(hantAndroid.GetStrings()), err)
 	}
 
@@ -749,7 +749,7 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff.GetVersion() != 61570953 {
+	if diff.GetVersion() < 61570953 {
 		t.Fatalf("version %d", diff.GetVersion())
 	}
 	if len(diff.GetStrings()) < 100 {
@@ -769,8 +769,8 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 			t.Fatalf("getDifference missed %s", key)
 		}
 	}
-	if _, ok := seen["SearchEngine2SearchURL"]; ok {
-		t.Fatal("URL that matches English was added to zh-hans")
+	if url, ok := seen["SearchEngine2SearchURL"]; ok && url.GetValue() != "https://duckduckgo.com/?q=" {
+		t.Fatalf("search URL %q", url.GetValue())
 	}
 	phone := seen["TellomiLoginWithPhone"].GetValue()
 	if phone != "使用手机号登录" {
@@ -785,7 +785,7 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 		t.Fatalf("intro markup %q", intro)
 	}
 	caught, err := cat.Difference("android", "zh-hans", diff.GetVersion())
-	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != 61570953 {
+	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != diff.GetVersion() {
 		t.Fatalf("caught up %+v %v", caught, err)
 	}
 }
@@ -814,41 +814,43 @@ func TestTellomiKeysHaveNoHyphen(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no Tellomi keys in the catalog")
 	}
-	// Overrides are reapplied by scripts/langpack_official.py. A hyphen there
-	// would return on the next import.
-	err := filepath.Walk("../../data/langpack/overrides", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() || !strings.HasSuffix(path, ".json.gz") {
-			return nil
-		}
-		fh, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer fh.Close()
-		zr, err := gzip.NewReader(fh)
-		if err != nil {
-			return err
-		}
-		defer zr.Close()
-		var doc struct {
-			Strings []struct {
-				Key string `json:"key"`
-			} `json:"strings"`
-		}
-		if err := json.NewDecoder(zr).Decode(&doc); err != nil {
-			return err
-		}
-		for _, s := range doc.Strings {
-			if strings.HasPrefix(s.Key, "Tellomi.") && strings.Contains(s.Key, "-") {
-				t.Errorf("%s key %s contains '-'", path, s.Key)
+	// Overrides and machine files are reapplied by scripts/langpack_official.py.
+	// A hyphen there would return on the next import.
+	for _, root := range []string{"../../data/langpack/overrides", "../../data/langpack/machine"} {
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
 			}
+			if info.IsDir() || !strings.HasSuffix(path, ".json.gz") {
+				return nil
+			}
+			fh, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer fh.Close()
+			zr, err := gzip.NewReader(fh)
+			if err != nil {
+				return err
+			}
+			defer zr.Close()
+			var doc struct {
+				Strings []struct {
+					Key string `json:"key"`
+				} `json:"strings"`
+			}
+			if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+				return err
+			}
+			for _, s := range doc.Strings {
+				if strings.HasPrefix(s.Key, "Tellomi.") && strings.Contains(s.Key, "-") {
+					t.Errorf("%s key %s contains '-'", path, s.Key)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }

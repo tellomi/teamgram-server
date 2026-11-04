@@ -430,13 +430,48 @@ def build_doc(meta: tuple, platform: str, strings: list[dict], upstream: int, fi
     return doc
 
 
+def apply_machine(root: Path, platform: str, code: str, strings: list[dict]) -> list[dict]:
+    """Reapply reviewed-later machine translations for keys the export still lacks.
+
+    data/langpack/machine holds only the generated strings (mt:true). An official
+    translation for the same key wins.
+    """
+    path = root / "machine" / platform / f"{code}.json.gz"
+    doc = load_doc(path)
+    if not doc:
+        return strings
+    have = {item["key"] for item in strings}
+    extra = []
+    for item in doc.get("strings") or []:
+        key = item.get("key")
+        if not key or key in have:
+            continue
+        have.add(key)
+        extra.append(item)
+    if extra:
+        print(f"machine {platform}/{code}: +{len(extra)}")
+    return strings + extra
+
+
 def main() -> int:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Import official Telegram language packs")
     parser.add_argument("--out", type=Path, default=here.parent / "data" / "langpack")
     parser.add_argument("--cache", type=Path, default=Path("/tmp/tellomi-langpack-cache"))
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--codes", default="", help="Comma-separated language codes to write. English is still fetched as the baseline.")
+    parser.add_argument("--platforms", default="", help="Comma-separated platforms to write (default: all).")
     args = parser.parse_args()
+    metas = {meta[0]: meta for meta in LANGS}
+    codes = [part.strip() for part in args.codes.split(",") if part.strip()] or [meta[0] for meta in LANGS]
+    platforms = [part.strip() for part in args.platforms.split(",") if part.strip()] or list(PLATFORMS)
+    unknown = [code for code in codes if code not in metas]
+    bad_platforms = [platform for platform in platforms if platform not in PLATFORMS]
+    if unknown or bad_platforms:
+        print(f"unknown codes {unknown} platforms {bad_platforms}", file=sys.stderr)
+        return 1
+    code_set = set(codes)
+    partial = code_set != {meta[0] for meta in LANGS} or set(platforms) != set(PLATFORMS)
     ensure_overrides(args.out)
     for platform in PLATFORMS:
         for code in REMOVED_DUPLICATES:
@@ -446,7 +481,8 @@ def main() -> int:
                     stale.unlink()
                     print(f"removed duplicate {platform}/{code}")
 
-    jobs = [(platform, meta) for platform in PLATFORMS for meta in LANGS]
+    fetch_codes = set(codes) | {"en"}
+    jobs = [(platform, metas[code]) for platform in platforms for code in sorted(fetch_codes)]
     fetched: dict[tuple[str, str], tuple[Path, str, int]] = {}
     errors = []
 
@@ -475,10 +511,11 @@ def main() -> int:
         "source": "https://translations.telegram.org/{code}/{platform}/export",
         "note": "Public export. No login. Version is the integer in the export filename.",
         "overrides": "data/langpack/overrides/{ios,android}/{en,zh-hans,zh-hant}.json.gz",
+        "machine": "data/langpack/machine/{platform}/{code}.json.gz strings with mt:true are reapplied when a key is still missing after the official merge.",
         "packs": {},
     }
     problems = []
-    for platform in PLATFORMS:
+    for platform in platforms:
         overrides = load_overrides(args.out, platform)
         en_path, _, _ = fetched[(platform, "en")]
         official_en = {e["key"]: e for e in parse_body(en_path, platform)}
@@ -486,12 +523,15 @@ def main() -> int:
         print(f"{platform}: {len(diverged)} Tellomi English overrides")
         for meta in LANGS:
             code = meta[0]
+            if code not in code_set:
+                continue
             path, filename, upstream = fetched[(platform, code)]
             if code == "en":
                 official = list(official_en.values())
             else:
                 official = parse_body(path, platform)
             strings = merge_lang(code, official, overrides, diverged, upstream, official_en)
+            strings = apply_machine(args.out, platform, code, strings)
             doc = build_doc(meta, platform, strings, upstream, filename)
             dest = args.out / platform / f"{code}.json.gz"
             write_gz(dest, doc)
@@ -510,7 +550,15 @@ def main() -> int:
             }
             print(f"wrote {platform}/{code}: {len(strings)} strings v{doc['version']}")
 
-    (args.out / "SOURCE.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    source_path = args.out / "SOURCE.json"
+    if partial and source_path.exists():
+        previous = json.loads(source_path.read_text(encoding="utf-8"))
+        packs = previous.get("packs") or {}
+        packs.update(manifest["packs"])
+        manifest["packs"] = packs
+        for key in ("source", "note", "overrides"):
+            manifest.setdefault(key, previous.get(key))
+    source_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if problems:
         print("brand leftovers:", file=sys.stderr)
         for line in problems:
