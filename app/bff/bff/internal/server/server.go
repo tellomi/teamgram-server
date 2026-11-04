@@ -76,6 +76,7 @@ import (
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
@@ -308,6 +309,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCDiscoverServer(grpcServer, discover_helper.New(c.BizServiceClient))
 		discoverrel.Start(c.ChannelMySQL)
 		discoverprofile.Start(c.ChannelMySQL)
+		chatbox.StartLinkPreview()
 		mtproto.RegisterRPCIvServer(grpcServer, iv_helper.New())
 		// Peer-to-Peer Login Program. The ledger is closed: no SMS job is dispatched.
 		mtproto.RegisterRPCSmsjobsServer(grpcServer, smsjobs_helper.New())

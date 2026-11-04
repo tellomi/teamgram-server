@@ -3185,7 +3185,11 @@ def brand(text: str) -> str:
 
 
 def rewrite_link(text: str) -> str:
-    """Rewrite Telegram hosts. Do not match t.me inside words such as Chat.Message."""
+    """Rewrite Telegram hosts in a string value. Do not call this on a key name.
+
+    Do not match t.me inside identifiers such as Chat.Message, Attachment.Media,
+    or RichText.Menu.
+    """
     text = re.sub(r"(?i)(?<![A-Za-z0-9])https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
     text = re.sub(r"(?i)https?://(?:www\.)?((?:[a-z0-9-]+\.)*)telegram\.org", r"https://\1tellomi.cn", text)
     text = re.sub(r"(?i)(?<![A-Za-z0-9])(?:t\.me|telegram\.me|telegram\.dog)\b", "tell.cc", text)

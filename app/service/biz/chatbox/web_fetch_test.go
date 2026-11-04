@@ -2,11 +2,18 @@ package chatbox
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"image"
 	"image/jpeg"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -32,6 +39,23 @@ func TestBlockedWebIPs(t *testing.T) {
 	}
 	if _, err := parseWebURL("http://169.254.169.254/latest"); err == nil {
 		t.Fatal("link-local URL was accepted")
+	}
+	for _, raw := range []string{
+		"http://[::1]/secret",
+		"http://[fe80::1]/",
+		"http://[fd00::1]/",
+		"http://[::ffff:127.0.0.1]/",
+		"http://[::ffff:10.1.2.3]/",
+		"http://[::ffff:169.254.169.254]/",
+		"http://localhost/secret",
+		"http://app.localhost/secret",
+	} {
+		if _, err := parseWebURL(raw); err == nil {
+			t.Fatalf("%s was accepted", raw)
+		}
+	}
+	if _, err := parseWebURL("http://[2606:4700:4700::1111]/"); err != nil {
+		t.Fatalf("public ipv6: %v", err)
 	}
 }
 
@@ -80,6 +104,73 @@ func TestGBKTitle(t *testing.T) {
 	meta := parseMeta(text, nil)
 	if meta.Title != "中文标题" {
 		t.Fatalf("title %q", meta.Title)
+	}
+}
+
+func TestFetchOpenGraphBlocksLoopbackAtDial(t *testing.T) {
+	u, err := url.Parse("http://127.0.0.1/secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := fetchOpenGraph(context.Background(), u)
+	if !res.failed || !res.blocked {
+		t.Fatalf("%+v", res)
+	}
+	card, err := OpenGraph(context.Background(), "http://[::1]/secret")
+	if !errors.Is(err, errPreviewDenied) || card.Title != "" {
+		t.Fatalf("%+v %v", card, err)
+	}
+}
+
+func TestFetchOpenGraphImageUsesFinalURL(t *testing.T) {
+	land := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, `<meta property="og:title" content="Landed"><meta property="og:image" content="/pic.jpg">`)
+	}))
+	defer land.Close()
+	hop := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, land.URL+"/land", http.StatusFound)
+	}))
+	defer hop.Close()
+
+	prevClient := webHTTPClient
+	prevFilter := filterImageURL
+	webHTTPClient = func() *http.Client { return &http.Client{Timeout: webTimeout} }
+	// The land host is loopback. Keep the resolved URL so the assertion can
+	// see it; production drops that address in safeImageURL.
+	var resolved string
+	filterImageURL = func(_ context.Context, raw string) string {
+		resolved = raw
+		return ""
+	}
+	defer func() {
+		webHTTPClient = prevClient
+		filterImageURL = prevFilter
+	}()
+
+	u, err := url.Parse(hop.URL + "/go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := fetchOpenGraph(context.Background(), u)
+	if res.failed {
+		t.Fatalf("%+v", res)
+	}
+	landURL, err := url.Parse(land.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := landURL.Scheme + "://" + landURL.Host + "/pic.jpg"
+	if res.meta.Title != "Landed" || resolved != want {
+		t.Fatalf("title %q image %q want %s", res.meta.Title, resolved, want)
+	}
+}
+
+func TestOneLineKeepsUTF8(t *testing.T) {
+	s := strings.Repeat("a", 299) + "é" + "z"
+	got := oneLine(s)
+	if !utf8.ValidString(got) || got != strings.Repeat("a", 299) {
+		t.Fatalf("cut %q", got)
 	}
 }
 

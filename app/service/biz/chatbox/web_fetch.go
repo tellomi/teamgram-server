@@ -3,6 +3,8 @@ package chatbox
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"hash/fnv"
 	"image"
 	"image/gif"
@@ -52,7 +54,21 @@ type fetchResult struct {
 	meta    pageMeta
 	pending bool
 	failed  bool
+	// blocked is a private, loopback, or link-local target. Chat previews
+	// still become an empty page. The Discover card returns 400.
+	blocked bool
 }
+
+// errBlockedTarget is returned when dial or a redirect hits an address
+// blockedHost would refuse. It is wrapped with WEBPAGE_CURL_FAILED.
+var errBlockedTarget = errors.New("blocked target")
+
+func blockedTargetErr() error {
+	return fmt.Errorf("%w: %w", mtproto.ErrWebpageCurlFailed, errBlockedTarget)
+}
+
+// webHTTPClient is replaced by tests. Production uses safeClient.
+var webHTTPClient = safeClient
 
 // loadWebPage is replaced by tests. Production fetches the URL.
 var loadWebPage = fetchRemote
@@ -176,6 +192,19 @@ func hostOnly(hostport string) string {
 	return host
 }
 
+// blockedHost is the check that runs before a request. Bracketed IPv6 is
+// an address: [::1] is loopback even when the port is omitted. localhost
+// is refused here so it is not looked up. DNS answers are checked again
+// in the dialer.
+func blockedHost(hostport string) bool {
+	host := strings.Trim(hostOnly(hostport), "[]")
+	if host == "" || strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && blockedIP(ip)
+}
+
 func safeClient() *http.Client {
 	dialer := &net.Dialer{Timeout: webTimeout}
 	transport := &http.Transport{
@@ -187,7 +216,7 @@ func safeClient() *http.Client {
 			}
 			if ip := net.ParseIP(host); ip != nil {
 				if blockedIP(ip) {
-					return nil, mtproto.ErrWebpageCurlFailed
+					return nil, blockedTargetErr()
 				}
 				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 			}
@@ -198,7 +227,7 @@ func safeClient() *http.Client {
 			var last error
 			for _, ip := range ips {
 				if blockedIP(ip.IP) {
-					last = mtproto.ErrWebpageCurlFailed
+					last = blockedTargetErr()
 					continue
 				}
 				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
@@ -220,8 +249,8 @@ func safeClient() *http.Client {
 			if len(via) >= maxRedirects {
 				return mtproto.ErrWebpageCurlFailed
 			}
-			if ip := net.ParseIP(hostOnly(req.URL.Host)); ip != nil && blockedIP(ip) {
-				return mtproto.ErrWebpageCurlFailed
+			if blockedHost(req.URL.Host) {
+				return blockedTargetErr()
 			}
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 				return mtproto.ErrWebpageCurlFailed
@@ -232,15 +261,15 @@ func safeClient() *http.Client {
 }
 
 func fetchRemote(u *url.URL) fetchResult {
-	body, ctype, err := httpGet(u, webHTMLLimit)
+	body, ctype, final, err := httpGetContext(context.Background(), u, webHTMLLimit)
 	if err != nil {
-		return fetchResult{failed: true, pending: temporaryFetchErr(err)}
+		return fetchResult{failed: true, pending: temporaryFetchErr(err) && !errors.Is(err, errBlockedTarget), blocked: errors.Is(err, errBlockedTarget)}
 	}
 	if !htmlType(ctype) {
 		return fetchResult{failed: true}
 	}
 	text := decodeHTML(body, ctype)
-	meta := parseMeta(text, u)
+	meta := parseMeta(text, pageBase(u, final))
 	if meta.ImageURL != "" {
 		if imgURL, err := u.Parse(meta.ImageURL); err == nil && (imgURL.Scheme == "http" || imgURL.Scheme == "https") {
 			if ip := net.ParseIP(hostOnly(imgURL.Host)); ip == nil || !blockedIP(ip) {
@@ -263,31 +292,49 @@ func temporaryFetchErr(err error) bool {
 }
 
 func httpGet(u *url.URL, limit int64) ([]byte, string, error) {
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	body, ctype, _, err := httpGetContext(context.Background(), u, limit)
+	return body, ctype, err
+}
+
+func httpGetContext(ctx context.Context, u *url.URL, limit int64) ([]byte, string, *url.URL, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	req.Header.Set("User-Agent", "TellomiBot/1.0")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,image/*;q=0.8")
-	resp, err := safeClient().Do(req)
+	resp, err := webHTTPClient().Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	defer resp.Body.Close()
+	final := pageBase(u, nil)
+	if resp.Request != nil {
+		final = pageBase(u, resp.Request.URL)
+	}
 	if resp.StatusCode >= 500 {
-		return nil, "", mtproto.ErrWebpageCurlFailed
+		return nil, "", final, mtproto.ErrWebpageCurlFailed
 	}
 	if resp.StatusCode >= 400 {
-		return nil, resp.Header.Get("Content-Type"), io.ErrUnexpectedEOF
+		return nil, resp.Header.Get("Content-Type"), final, io.ErrUnexpectedEOF
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, "", err
+		return nil, "", final, err
 	}
 	if int64(len(raw)) > limit {
 		raw = raw[:limit]
 	}
-	return raw, resp.Header.Get("Content-Type"), nil
+	return raw, resp.Header.Get("Content-Type"), final, nil
+}
+
+// pageBase is the URL relative image paths resolve against. Redirects keep
+// the final page, so og:image "/pic.jpg" stays on the site that sent the HTML.
+func pageBase(original, final *url.URL) *url.URL {
+	if final != nil && final.Host != "" && (final.Scheme == "http" || final.Scheme == "https") {
+		return final
+	}
+	return original
 }
 
 func htmlType(ctype string) bool {
@@ -421,8 +468,12 @@ func applyMeta(meta *pageMeta, attrs []html.Attribute) {
 
 func oneLine(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 300 {
-		s = s[:300]
+	if len(s) <= 300 {
+		return s
+	}
+	s = s[:300]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
 	}
 	return s
 }
