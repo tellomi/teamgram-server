@@ -14,6 +14,9 @@ import (
 )
 
 func TestAppConfigPremiumPolicy(t *testing.T) {
+	t.Setenv(tellomiai.EnvTranslate, "")
+	t.Setenv(tellomiai.EnvCompose, "")
+	t.Setenv(tellomiai.EnvAPIKey, "")
 	t.Cleanup(func() { emojiblock.Reload() })
 	t.Setenv(emojiblock.EnvExtra, "")
 	t.Setenv(emojiblock.EnvFile, "")
@@ -199,6 +202,8 @@ func TestAppConfigEmojiBlocklistExtendsHash(t *testing.T) {
 
 func TestTellomiAIFlagDefaultsOff(t *testing.T) {
 	t.Setenv(tellomiai.EnvEnabled, "")
+	t.Setenv(tellomiai.EnvTranslate, "")
+	t.Setenv(tellomiai.EnvCompose, "")
 	t.Setenv(tellomiai.EnvAPIKey, "")
 	if tellomiai.Advertised() {
 		t.Fatal("advertised")
@@ -221,6 +226,48 @@ func TestTellomiAIFlagDefaultsOff(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["tellomi_ai_enabled"] != true {
 		t.Fatalf("tellomi_ai_enabled = %#v", obj["tellomi_ai_enabled"])
+	}
+	if obj["tellomi_ai_compose_enabled"] != false || obj["tellomi_translate_enabled"] != false {
+		t.Fatalf("compose/translate followed TELLOMI_AI: %#v %#v", obj["tellomi_ai_compose_enabled"], obj["tellomi_translate_enabled"])
+	}
+}
+
+func TestTranslateAndComposeFlags(t *testing.T) {
+	t.Setenv(tellomiai.EnvEnabled, "")
+	t.Setenv(tellomiai.EnvTranslate, "")
+	t.Setenv(tellomiai.EnvCompose, "")
+	t.Setenv(tellomiai.EnvAPIKey, "")
+	if tellomiai.TranslateAdvertised() || tellomiai.ComposeAdvertised() {
+		t.Fatal("advertised without a flag")
+	}
+	off := AppConfigHash()
+	t.Setenv(tellomiai.EnvTranslate, "1")
+	if tellomiai.TranslateAdvertised() {
+		t.Fatal("translate advertised without an API key")
+	}
+	t.Setenv(tellomiai.EnvAPIKey, "test-key")
+	if !tellomiai.TranslateAdvertised() || tellomiai.ComposeAdvertised() {
+		t.Fatal("translate flag did not follow TELLOMI_TRANSLATE")
+	}
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_TRANSLATE")
+	}
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_translate_enabled"] != true || obj["tellomi_ai_compose_enabled"] != false {
+		t.Fatalf("translate %#v compose %#v", obj["tellomi_translate_enabled"], obj["tellomi_ai_compose_enabled"])
+	}
+	if obj["translations_manual_enabled"] != "disabled" {
+		t.Fatalf("official translation UI = %#v", obj["translations_manual_enabled"])
+	}
+	t.Setenv(tellomiai.EnvCompose, "1")
+	if !tellomiai.ComposeAdvertised() {
+		t.Fatal("compose flag did not follow TELLOMI_AI_COMPOSE")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_ai_compose_enabled"] != true || obj["tellomi_ai_enabled"] != false {
+		t.Fatalf("compose %#v ai %#v", obj["tellomi_ai_compose_enabled"], obj["tellomi_ai_enabled"])
 	}
 }
 

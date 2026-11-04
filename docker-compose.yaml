@@ -204,6 +204,12 @@ services:
       TELLOMI_AI_PRICE_PER_1K: ${TELLOMI_AI_PRICE_PER_1K:-}
       TELLOMI_AI_INTERNAL_KEY: ${TELLOMI_AI_INTERNAL_KEY:-}
       TELLOMI_AI_ADDR: ${TELLOMI_AI_ADDR:-}
+      # messages.translateText / translateRichMessage. Unset is off.
+      # Requires TELLOMI_AI_API_KEY. Off or a model failure is TRANSLATE_REQ_FAILED.
+      TELLOMI_TRANSLATE: ${TELLOMI_TRANSLATE:-}
+      # messages.composeRichMessageWithAI. Unset is off. tellomi_ai_compose_enabled
+      # is true only together with TELLOMI_AI_API_KEY. Off is AICOMPOSE_TIMEOUT.
+      TELLOMI_AI_COMPOSE: ${TELLOMI_AI_COMPOSE:-}
       # Launch notices from @admin. Unset is off. See docs/api/announce.md.
       # Do not publish this port. This does not run during login.
       TELLOMI_ANNOUNCE: ${TELLOMI_ANNOUNCE:-}

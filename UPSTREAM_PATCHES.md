@@ -219,6 +219,17 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describes a manual promotion of a MySQL replica, how `seqfloor` keeps Redis idgen and pts from moving backwards, and why the spare IP stays out of `TELLOMI_DC_OPTIONS` until the spare is listening. No code, no flag, and no migration.
 
+## Translation and rich compose
+
+`messages.translateText` and `messages.translateRichMessage` call Bailian when `TELLOMI_TRANSLATE=1` and `TELLOMI_AI_API_KEY` are both set. `messages.composeRichMessageWithAI` calls the same client when `TELLOMI_AI_COMPOSE=1` and the key are set. That second flag is what `help.getAppConfig` publishes as `tellomi_ai_compose_enabled`. The model is `qwen-plus`, then `deepseek-v3` on the same Bailian API. A content-safety block does not switch models. When `TELLOMI_CONTENT_SAFETY` is on, the output is checked again and a block is a failure. Unset flags, a missing key, and a provider failure return `500 TRANSLATE_REQ_FAILED` or `500 AICOMPOSE_TIMEOUT`. The previous English/Chinese word list is gone. Rich blocks stay in place; message entities keep their UTF-16 spans. `account.confirmBotConnection` is unchanged. Login and session routing are unchanged.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `messages.translateText` | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` | `chatbox.TranslateText` |
+| `messages.translateRichMessage` | `app/bff/messages/internal/core/messages.translateRichMessage_handler.go` | `richmsg.Translate` |
+| `messages.composeRichMessageWithAI` | `app/bff/messages/internal/core/messages.composeRichMessageWithAI_handler.go` | `richmsg.Compose` |
+| app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_translate_enabled`, `tellomi_ai_compose_enabled` |
+
 ## Help center link (M1 / D-40)
 
 `TELLOMI_HELP_CENTER=1` sets `help.getAppConfig` `faq_link` to `https://tellomi.cn/help`. Unset leaves `https://tellomi.cn/faq`. The page is not served here. The hash of the app config includes the URL, so a client that caches `help.getAppConfig` refetches after the flag changes. Login is unchanged.

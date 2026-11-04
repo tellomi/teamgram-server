@@ -37,7 +37,7 @@ func AppConfig() *mtproto.JSONValue {
 
 // AppConfigHash is the hash clients send back on help.getAppConfig.
 // It changes when the premium policy, the public link hosts, the help URL,
-// the emoji blocklist, or the launch-notice flag change.
+// the emoji blocklist, or a Tellomi feature flag changes.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
 	weekly, duration, cooldown := transcribeTrial()
@@ -45,11 +45,19 @@ func AppConfigHash() int32 {
 	if tellomiai.Advertised() {
 		ai = 1
 	}
+	translate := 0
+	if tellomiai.TranslateAdvertised() {
+		translate = 1
+	}
+	compose := 0
+	if tellomiai.ComposeAdvertised() {
+		compose = 1
+	}
 	notice := 0
 	if announce.Advertised() {
 		notice = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d announce=%d", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, notice)
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -179,9 +187,9 @@ func hiddenFeaturePairs() []*mtproto.JSONObjectValue {
 		jsonPair("translations_manual_enabled", jsonString("disabled")),
 		jsonPair("translations_auto_enabled", jsonString("disabled")),
 		// Tellomi-only. Clients will read these; official builds ignore them.
-		jsonPair("tellomi_ai_compose_enabled", off),
+		jsonPair("tellomi_ai_compose_enabled", jsonBool(tellomiai.ComposeAdvertised())),
 		jsonPair("tellomi_ai_enabled", jsonBool(tellomiai.Advertised())),
-		jsonPair("tellomi_translate_enabled", off),
+		jsonPair("tellomi_translate_enabled", jsonBool(tellomiai.TranslateAdvertised())),
 		jsonPair("tellomi_announce_enabled", jsonBool(announce.Advertised())),
 	}
 }

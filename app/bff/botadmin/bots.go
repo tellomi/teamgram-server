@@ -210,6 +210,21 @@ func remoteIsBot(ctx context.Context, id int64) bool {
 	return mtproto.FromBool(ok)
 }
 
+// LocalBot reports a bot created in this process and the access hash
+// bots.createBot returned. The user service does not have that row.
+func LocalBot(id int64) (hash int64, ok bool) {
+	if id <= 0 {
+		return 0, false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	b := w.bots[id]
+	if b == nil {
+		return 0, false
+	}
+	return b.hash, true
+}
+
 func knownBotLocked(id int64) bool {
 	if id <= 0 {
 		return false

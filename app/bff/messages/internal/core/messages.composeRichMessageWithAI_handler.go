@@ -18,14 +18,19 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/richmsg"
 )
 
 // MessagesComposeRichMessageWithAI
 // messages.composeRichMessageWithAI#8d7ae6af flags:# proofread:flags.0?true emojify:flags.3?true text:flags.4?InputRichMessage translate_to_lang:flags.1?string tone:flags.2?InputAiComposeTone = messages.ComposedRichMessageWithAI;
+// https://core.telegram.org/method/messages.composeMessageWithAI
 func (c *MessagesCore) MessagesComposeRichMessageWithAI(in *mtproto.TLMessagesComposeRichMessageWithAI) (*mtproto.Messages_ComposedRichMessageWithAI, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.composeRichMessageWithAI blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	ctx := context.Background()
+	if c != nil && c.ctx != nil {
+		ctx = c.ctx
+	}
+	return richmsg.Compose(ctx, in)
 }

@@ -83,18 +83,28 @@ func NewClient(baseURL, apiKey, primary, small, fallback string, timeout time.Du
 
 // Complete returns the assistant text and total tokens.
 func (c *Client) Complete(ctx context.Context, model, prompt string) (string, int, error) {
+	return c.CompletePrompt(ctx, model, systemPrompt, prompt)
+}
+
+// CompletePrompt is Complete with a caller-supplied system message.
+// Translation and compose use it so the chat-assistant prompt is not applied.
+func (c *Client) CompletePrompt(ctx context.Context, model, system, prompt string) (string, int, error) {
 	if c == nil || c.APIKey == "" || c.BaseURL == "" {
 		return "", 0, errors.New("tellomi ai: client is not configured")
 	}
 	if model == "" {
 		model = c.Primary
 	}
-	payload, err := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
+	messages := []map[string]string{{"role": "user", "content": prompt}}
+	if strings.TrimSpace(system) != "" {
+		messages = []map[string]string{
+			{"role": "system", "content": system},
 			{"role": "user", "content": prompt},
-		},
+		}
+	}
+	payload, err := json.Marshal(map[string]any{
+		"model":    model,
+		"messages": messages,
 	})
 	if err != nil {
 		return "", 0, err

@@ -703,6 +703,10 @@ var (
 	// | 400 | INPUT_TEXT_EMPTY | The specified text is empty. |
 	ErrInputTextEmpty = status.Error(ErrBadRequest, "INPUT_TEXT_EMPTY")
 
+	// ErrInputTextTooLong
+	// | 400 | INPUT_TEXT_TOO_LONG | The specified text is too long. |
+	ErrInputTextTooLong = status.Error(ErrBadRequest, "INPUT_TEXT_TOO_LONG")
+
 	// ErrMessageTooLong
 	// | 400 | MESSAGE_TOO_LONG | The provided message is too long. |
 	ErrMessageTooLong = status.Error(ErrBadRequest, "MESSAGE_TOO_LONG")
@@ -1335,6 +1339,10 @@ var (
 	// ErrBotInvalid
 	// | 400 | BOT_INVALID | This is not a valid bot. |
 	ErrBotInvalid = status.Error(ErrBadRequest, "BOT_INVALID")
+
+	// ErrBotIdInvalid
+	// | 400 | BOT_ID_INVALID | The specified bot ID is invalid.
+	ErrBotIdInvalid = status.Error(ErrBadRequest, "BOT_ID_INVALID")
 
 	// ErrBotCreateLimitExceeded
 	// | 400 | BOT_CREATE_LIMIT_EXCEEDED | The current user already owns the maximum allowed number of owned bots, as specified by bots_create_limit_default and bots_create_limit_premium.
@@ -2678,6 +2686,14 @@ var (
 	// ErrInternalCallOccupyFailed
 	// | 500 | CALL_OCCUPY_FAILED | The call failed because the user is already making another call. |
 	ErrInternalCallOccupyFailed = status.Error(ErrInternal, "CALL_OCCUPY_FAILED")
+
+	// ErrTranslateReqFailed
+	// | 500 | TRANSLATE_REQ_FAILED | Translation failed, please try again later. |
+	ErrTranslateReqFailed = status.Error(ErrInternal, "TRANSLATE_REQ_FAILED")
+
+	// ErrAiComposeTimeout
+	// | 500 | AICOMPOSE_TIMEOUT | A timeout occurred while composing the message. |
+	ErrAiComposeTimeout = status.Error(ErrInternal, "AICOMPOSE_TIMEOUT")
 )
 
 // -503 Timeout

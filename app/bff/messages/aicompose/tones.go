@@ -1,6 +1,7 @@
 // Package aicompose stores AI composer tones for the current process.
 // A restart drops custom tones. Built-in tones are always available.
-// Examples are local templates. There is no composer model.
+// aicompose.getToneExample still returns a local template.
+// messages.composeRichMessageWithAI calls the model when its flag is on.
 package aicompose
 
 import (
@@ -338,6 +339,50 @@ func resolve(tone *mtproto.InputAiComposeTone, allowSingle bool) (savedRef, *cus
 		return savedRef{name: "single"}, nil, nil
 	default:
 		return savedRef{}, nil, mtproto.ErrAiComposeToneInvalid
+	}
+}
+
+// Accept reports whether tone is a constructor the composer can name.
+// A nil tone is not a task.
+func Accept(tone *mtproto.InputAiComposeTone) error {
+	if tone == nil {
+		return mtproto.ErrAiComposeToneInvalid
+	}
+	_, _, err := resolve(tone, true)
+	return err
+}
+
+// Instruction is the tone sentence sent to the model.
+// A nil tone has no sentence. Samples from getToneExample are not used.
+func Instruction(tone *mtproto.InputAiComposeTone) (string, error) {
+	if tone == nil {
+		return "", nil
+	}
+	switch tone.GetPredicateName() {
+	case mtproto.Predicate_inputAiComposeToneDefault:
+		item := builtinBy(tone.GetTone())
+		if item == nil {
+			return "", mtproto.ErrAiComposeToneInvalid
+		}
+		return item.title, nil
+	case mtproto.Predicate_inputAiComposeToneSingleUse:
+		prompt := strings.TrimSpace(tone.GetCustomPrompt())
+		if prompt == "" || utf8.RuneCountInString(prompt) > maxPrompt {
+			return "", mtproto.ErrAiComposeToneInvalid
+		}
+		return prompt, nil
+	default:
+		_, row, err := resolve(tone, false)
+		if err != nil {
+			return "", err
+		}
+		if row == nil {
+			return "", mtproto.ErrAiComposeToneInvalid
+		}
+		if strings.TrimSpace(row.prompt) != "" {
+			return row.prompt, nil
+		}
+		return row.title, nil
 	}
 }
 
