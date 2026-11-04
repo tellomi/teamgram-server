@@ -209,3 +209,11 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 ## Chat primary and standby (M8 / D-70)
 
 Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describes a manual promotion of a MySQL replica, how `seqfloor` keeps Redis idgen and pts from moving backwards, and why the spare IP stays out of `TELLOMI_DC_OPTIONS` until the spare is listening. No code, no flag, and no migration.
+
+## Help center link (M1 / D-40)
+
+`TELLOMI_HELP_CENTER=1` sets `help.getAppConfig` `faq_link` to `https://tellomi.cn/help`. Unset leaves `https://tellomi.cn/faq`. The page is not served here. The hash of the app config includes the URL, so a client that caches `help.getAppConfig` refetches after the flag changes. Login is unchanged.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `brand.HelpURL` |

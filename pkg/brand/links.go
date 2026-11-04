@@ -15,6 +15,10 @@ import (
 	"strings"
 )
 
+// EnvHelpCenter selects the help page advertised as faq_link.
+// Only the value 1 switches it. Unset keeps FAQURL.
+const EnvHelpCenter = "TELLOMI_HELP_CENTER"
+
 const (
 	// ShortHost is the t.me replacement.
 	ShortHost = "tell.cc"
@@ -24,13 +28,16 @@ const (
 	// clients append a username or invite hash to.
 	LinkPrefix = "https://tell.cc/"
 
-	PrivacyURL  = "https://tellomi.cn/legal/privacy/"
-	TermsURL    = "https://tellomi.cn/legal/terms/"
-	FAQURL      = "https://tellomi.cn/faq"
-	SupportURL  = "https://tellomi.cn/support"
-	PremiumURL  = "https://tellomi.cn/premium"
-	AntispamURL = "https://tellomi.cn/antispam"
-	CallPrefix  = "https://tell.cc/call/"
+	PrivacyURL = "https://tellomi.cn/legal/privacy/"
+	TermsURL   = "https://tellomi.cn/legal/terms/"
+	FAQURL     = "https://tellomi.cn/faq"
+	// HelpCenterURL is the D-40 help page. faq_link uses it only when
+	// TELLOMI_HELP_CENTER=1. The page itself is not served by this process.
+	HelpCenterURL = "https://tellomi.cn/help"
+	SupportURL    = "https://tellomi.cn/support"
+	PremiumURL    = "https://tellomi.cn/premium"
+	AntispamURL   = "https://tellomi.cn/antispam"
+	CallPrefix    = "https://tell.cc/call/"
 )
 
 var (
@@ -57,6 +64,16 @@ func Rewrite(s string) string {
 func mentionsTelegram(s string) bool {
 	low := strings.ToLower(s)
 	return strings.Contains(low, "t.me") || strings.Contains(low, "telegram.me") || strings.Contains(low, "telegram.dog") || strings.Contains(low, "telegram.org")
+}
+
+// HelpURL is help.getAppConfig faq_link.
+// TELLOMI_HELP_CENTER=1 returns HelpCenterURL (https://tellomi.cn/help).
+// Any other value, including unset, returns FAQURL.
+func HelpURL() string {
+	if os.Getenv(EnvHelpCenter) == "1" {
+		return HelpCenterURL
+	}
+	return FAQURL
 }
 
 // LinkBase is the https host for invites, usernames, and message links.

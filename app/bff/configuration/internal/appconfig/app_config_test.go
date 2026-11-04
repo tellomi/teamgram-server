@@ -6,6 +6,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
@@ -218,5 +219,24 @@ func TestTellomiAIFlagDefaultsOff(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["tellomi_ai_enabled"] != true {
 		t.Fatalf("tellomi_ai_enabled = %#v", obj["tellomi_ai_enabled"])
+	}
+}
+
+func TestHelpCenterFlag(t *testing.T) {
+	t.Setenv(brand.EnvHelpCenter, "")
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["faq_link"] != brand.FAQURL {
+		t.Fatalf("default faq_link = %#v", obj["faq_link"])
+	}
+	off := AppConfigHash()
+	t.Setenv(brand.EnvHelpCenter, "1")
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_HELP_CENTER")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["faq_link"] != "https://tellomi.cn/help" {
+		t.Fatalf("faq_link = %#v", obj["faq_link"])
 	}
 }
