@@ -201,3 +201,7 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | Call | File | Hook |
 | --- | --- | --- |
 | `account.deleteAccount` | `app/bff/account/internal/core/account.deleteAccount_handler.go` | `discoverdelete.Enqueue` |
+
+## Chat primary and standby (M8 / D-70)
+
+Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describes a manual promotion of a MySQL replica, how `seqfloor` keeps Redis idgen and pts from moving backwards, and why the spare IP stays out of `TELLOMI_DC_OPTIONS` until the spare is listening. No code, no flag, and no migration.
