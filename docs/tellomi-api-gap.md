@@ -104,16 +104,11 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ## 留下的 P1（客户端会调，服务端返回错误）
 
-下面这 8 个仍不在登录和聊天列表的必经路径上。
+下面这 3 个仍返回 `ENTERPRISE_IS_BLOCKED`，并且不在登录和聊天列表的必经路径上。赞助消息的读取、点击、查看、举报和开关已经返回空结果或成功，不再算缺口。
 
 | 方法 | 客户端 | 现状 | 说明 |
 | --- | --- | --- | --- |
 | `account.confirmBotConnection` | iOS | `ENTERPRISE_IS_BLOCKED` | 机器人连接确认 |
-| `account.toggleSponsoredMessages` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 赞助消息开关。Tellomi 未做广告 |
-| `channels.restrictSponsoredMessages` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 频道赞助消息 |
-| `messages.viewSponsoredMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 同上 |
-| `messages.clickSponsoredMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 同上 |
-| `messages.reportSponsoredMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | 同上 |
 | `messages.composeRichMessageWithAI` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 撰写 |
 | `messages.translateRichMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 翻译富文本。普通 `messages.translateText` 另有实现 |
 
