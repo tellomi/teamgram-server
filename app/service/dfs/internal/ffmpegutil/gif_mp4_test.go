@@ -2,10 +2,14 @@ package ffmpegutil
 
 import (
 	"os"
+	"os/exec"
 	"testing"
 )
 
 func TestConvertBytesToMp4(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Fatal("ffmpeg is required to transcode an animated GIF")
+	}
 	gif, err := os.ReadFile("safe_image.gif")
 	if err != nil {
 		t.Fatal(err)
