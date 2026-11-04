@@ -42,9 +42,9 @@ func TestAndroidDiscoverSignUpKeysResolve(t *testing.T) {
 		prev    int32
 		version int32
 	}{
-		{"en", 61510239, 61510240},
-		{"zh-hans", 61570951, 61570952},
-		{"zh-hant", 61519201, 61519202},
+		{"en", 61510239, 61510241},
+		{"zh-hans", 61570951, 61570953},
+		{"zh-hant", 61519201, 61519203},
 	} {
 		ver, ok := cat.Version("android", tc.code)
 		if !ok || ver != tc.version {
@@ -91,10 +91,11 @@ func TestAndroidDiscoverSignUpKeysResolve(t *testing.T) {
 		if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != tc.version {
 			t.Fatalf("%s caught up %+v %v", tc.code, caught, err)
 		}
+		assertRenamedCitiesDelivered(t, cat, "android", tc.code, tc.version, want)
 		override := readOverride(t, "../../data/langpack/overrides/android/"+tc.code+".json.gz")
 		for key, value := range want {
 			entry, ok := override[key]
-			if !ok || entry.value != value || entry.version != tc.version {
+			if !ok || entry.value != value || entry.version != discoverStringVersion(key, tc.version) {
 				t.Fatalf("override %s %s %+v", tc.code, key, entry)
 			}
 		}

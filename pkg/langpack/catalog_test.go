@@ -434,19 +434,19 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatal("real Chat.Message key was lost")
 	}
 	refreshed, err := cat.Difference("ios", "zh-hans", 22454343)
-	if err != nil || refreshed.GetVersion() != 22454345 || len(refreshed.GetStrings()) < 1000 {
+	if err != nil || refreshed.GetVersion() != 22454346 || len(refreshed.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
 	}
 	androidRefreshed, err := cat.Difference("android", "zh-hans", 61570949)
-	if err != nil || androidRefreshed.GetVersion() != 61570952 || len(androidRefreshed.GetStrings()) < 1000 {
+	if err != nil || androidRefreshed.GetVersion() != 61570953 || len(androidRefreshed.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hans bump %+v %v", androidRefreshed.GetVersion(), err)
 	}
 	hant, err := cat.Difference("ios", "zh-hant", 22421528)
-	if err != nil || hant.GetVersion() != 22421530 || len(hant.GetStrings()) < 1000 {
+	if err != nil || hant.GetVersion() != 22421531 || len(hant.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hant bump v=%d n=%d %v", hant.GetVersion(), len(hant.GetStrings()), err)
 	}
 	hantAndroid, err := cat.Difference("android", "zh-hant", 61519200)
-	if err != nil || hantAndroid.GetVersion() != 61519202 || len(hantAndroid.GetStrings()) < 1000 {
+	if err != nil || hantAndroid.GetVersion() != 61519203 || len(hantAndroid.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hant bump v=%d n=%d %v", hantAndroid.GetVersion(), len(hantAndroid.GetStrings()), err)
 	}
 
@@ -749,7 +749,7 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff.GetVersion() != 61570952 {
+	if diff.GetVersion() != 61570953 {
 		t.Fatalf("version %d", diff.GetVersion())
 	}
 	if len(diff.GetStrings()) < 100 {
@@ -785,7 +785,70 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 		t.Fatalf("intro markup %q", intro)
 	}
 	caught, err := cat.Difference("android", "zh-hans", diff.GetVersion())
-	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != 61570952 {
+	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != 61570953 {
 		t.Fatalf("caught up %+v %v", caught, err)
+	}
+}
+
+// TestTellomiKeysHaveNoHyphen guards iOS PresentationStrings generation.
+// A hyphen in a Tellomi.* key is not a valid Swift identifier.
+func TestTellomiKeysHaveNoHyphen(t *testing.T) {
+	if err := DefaultError(); err != nil {
+		t.Fatal(err)
+	}
+	cat := DefaultCatalog()
+	var checked int
+	for platform, langs := range cat.platforms {
+		for code, lang := range langs {
+			for _, e := range lang.meta.Strings {
+				if !strings.HasPrefix(e.Key, "Tellomi.") {
+					continue
+				}
+				checked++
+				if strings.Contains(e.Key, "-") {
+					t.Errorf("%s/%s key %s contains '-'", platform, code, e.Key)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no Tellomi keys in the catalog")
+	}
+	// Overrides are reapplied by scripts/langpack_official.py. A hyphen there
+	// would return on the next import.
+	err := filepath.Walk("../../data/langpack/overrides", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".json.gz") {
+			return nil
+		}
+		fh, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer fh.Close()
+		zr, err := gzip.NewReader(fh)
+		if err != nil {
+			return err
+		}
+		defer zr.Close()
+		var doc struct {
+			Strings []struct {
+				Key string `json:"key"`
+			} `json:"strings"`
+		}
+		if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+			return err
+		}
+		for _, s := range doc.Strings {
+			if strings.HasPrefix(s.Key, "Tellomi.") && strings.Contains(s.Key, "-") {
+				t.Errorf("%s key %s contains '-'", path, s.Key)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
