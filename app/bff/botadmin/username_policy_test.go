@@ -61,4 +61,20 @@ func TestBotDisplayNamePolicy(t *testing.T) {
 	if _, err := SetBotInfo(ctx, 7, in, "", wrapperspb.String("Ada"), nil, nil); err != nil {
 		t.Fatalf("ada: %v", err)
 	}
+	if _, err := SetBotInfo(ctx, 7, in, "", nil, wrapperspb.String("tellomi"), nil); codeOf(err) != "FIRSTNAME_INVALID" {
+		t.Fatalf("about tellomi: %s", codeOf(err))
+	}
+	if _, err := SetBotInfo(ctx, 7, in, "", nil, nil, wrapperspb.String("admin")); codeOf(err) != "FIRSTNAME_INVALID" {
+		t.Fatalf("description admin: %s", codeOf(err))
+	}
+	if _, err := SetBotInfo(ctx, 7, in, "", nil, wrapperspb.String("answers questions"), wrapperspb.String("a small helper")); err != nil {
+		t.Fatalf("normal bio: %v", err)
+	}
+	info, err := GetBotInfo(ctx, 7, in, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.GetAbout() != "answers questions" || info.GetDescription() != "a small helper" {
+		t.Fatalf("stored about %q description %q", info.GetAbout(), info.GetDescription())
+	}
 }

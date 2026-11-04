@@ -6,8 +6,9 @@
 // CONFUSABLE compares UTS #39 skeletons plus the ASCII lookalike fold
 // (the stored tellomi skeleton is telloml). A username denial is
 // USERNAME_OCCUPIED. A display-name denial is FIRSTNAME_INVALID; the
-// last-name caller maps that to LASTNAME_INVALID. The rule id is written
-// to the server log and is not put on the error.
+// last-name caller maps that to LASTNAME_INVALID. Bios, group titles, and
+// group descriptions use the same display-name denial. The rule id is
+// written to the server log and is not put on the error.
 //
 // The embedded policy/policy-2026092301.json file is the tellomi/tellomi
 // dist file, unchanged. Names from requirements appendix C / D-56 that it

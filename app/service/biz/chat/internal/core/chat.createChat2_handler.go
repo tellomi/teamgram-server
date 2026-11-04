@@ -17,6 +17,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 // ChatCreateChat2
@@ -30,6 +31,11 @@ func (c *ChatCore) ChatCreateChat2(in *chat.TLChatCreateChat2) (*mtproto.Mutable
 		userIdList = in.UserIdList
 		title      = in.Title
 	)
+
+	if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, 0, title); err != nil {
+		c.Logger.Errorf("chat.createChat2 - error: %v", err)
+		return nil, mtproto.ErrFirstnameInvalid
+	}
 
 	// TODO:
 	if chatsDO, err = c.svcCtx.Dao.ChatsDAO.SelectLastCreator(c.ctx, creatorId); err != nil {

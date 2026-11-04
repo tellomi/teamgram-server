@@ -1,4 +1,5 @@
-// Package contentsafety calls Aliyun Green text moderation for display names.
+// Package contentsafety calls Aliyun Green text moderation for display
+// names, bios, and group titles.
 //
 // TELLOMI_CONTENT_SAFETY selects the API. Unset, 0, and off do nothing.
 // 1 or aliyun calls TextModeration (nickname_detection) on the Chengdu
