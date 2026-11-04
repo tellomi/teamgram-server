@@ -35,8 +35,8 @@ func AppConfig() *mtproto.JSONValue {
 }
 
 // AppConfigHash is the hash clients send back on help.getAppConfig.
-// It changes when the premium policy, the public link hosts, or the emoji
-// blocklist change.
+// It changes when the premium policy, the public link hosts, the help URL,
+// or the emoji blocklist change.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
 	weekly, duration, cooldown := transcribeTrial()
@@ -44,7 +44,7 @@ func AppConfigHash() int32 {
 	if tellomiai.Advertised() {
 		ai = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d", premium.AppConfigHash(), brand.LinkPrefix, catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai)
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -71,7 +71,7 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("whitelisted_domains", domains),
 		jsonPair("premium_link", jsonString(brand.PremiumURL)),
 		jsonPair("support_link", jsonString(brand.SupportURL)),
-		jsonPair("faq_link", jsonString(brand.FAQURL)),
+		jsonPair("faq_link", jsonString(brand.HelpURL())),
 		jsonPair("privacy_policy_url", jsonString(brand.PrivacyURL)),
 		jsonPair("tos_url", jsonString(brand.TermsURL)),
 		jsonPair("telegram_antispam", jsonString(brand.AntispamURL)),

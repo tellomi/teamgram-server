@@ -21,6 +21,21 @@ func TestRewrite(t *testing.T) {
 	}
 }
 
+func TestHelpURL(t *testing.T) {
+	t.Setenv(EnvHelpCenter, "")
+	if HelpURL() != FAQURL {
+		t.Fatalf("default %s", HelpURL())
+	}
+	t.Setenv(EnvHelpCenter, "0")
+	if HelpURL() != FAQURL {
+		t.Fatalf("off %s", HelpURL())
+	}
+	t.Setenv(EnvHelpCenter, "1")
+	if HelpURL() != HelpCenterURL {
+		t.Fatalf("on %s", HelpURL())
+	}
+}
+
 func TestInviteHash(t *testing.T) {
 	if got := InviteHash("https://t.me/+abc"); got != "abc" {
 		t.Fatal(got)
