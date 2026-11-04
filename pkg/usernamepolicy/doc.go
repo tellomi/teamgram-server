@@ -4,8 +4,10 @@
 // reject Cc/Cf, NFKC, Unicode lowercase with ß→ss, collapse whitespace,
 // then exact match and prefix/suffix only at a non-alphanumeric boundary.
 // CONFUSABLE compares UTS #39 skeletons plus the ASCII lookalike fold
-// (the stored tellomi skeleton is telloml). A denial is USERNAME_OCCUPIED.
-// The rule id is written to the server log and is not put on the error.
+// (the stored tellomi skeleton is telloml). A username denial is
+// USERNAME_OCCUPIED. A display-name denial is FIRSTNAME_INVALID; the
+// last-name caller maps that to LASTNAME_INVALID. The rule id is written
+// to the server log and is not put on the error.
 //
 // The embedded policy/policy-2026092301.json file is the tellomi/tellomi
 // dist file, unchanged. Names from requirements appendix C / D-56 that it

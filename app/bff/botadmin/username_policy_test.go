@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestBotUsernamePolicy(t *testing.T) {
@@ -34,5 +36,29 @@ func TestBotUsernamePolicy(t *testing.T) {
 	}
 	if _, err := AddUsername(ctx, 7, in, "extra"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBotDisplayNamePolicy(t *testing.T) {
+	Reset()
+	t.Setenv(usernamepolicy.EnvEnabled, "1")
+	ctx := context.Background()
+
+	if _, err := CreateBot(ctx, 7, false, "admin", "adminbot", manager()); codeOf(err) != "FIRSTNAME_INVALID" {
+		t.Fatalf("create admin: %s", codeOf(err))
+	}
+	got, err := CreateBot(ctx, 7, false, "News", "newsbot", manager())
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := asUser(got.GetId(), got.GetAccessHash().GetValue())
+	if _, err := SetBotInfo(ctx, 7, in, "", wrapperspb.String("tellomi"), nil, nil); codeOf(err) != "FIRSTNAME_INVALID" {
+		t.Fatalf("rename tellomi: %s", codeOf(err))
+	}
+	if _, err := SetBotInfo(ctx, 7, in, "", wrapperspb.String("News"), wrapperspb.String("about"), nil); err != nil {
+		t.Fatalf("unchanged name: %v", err)
+	}
+	if _, err := SetBotInfo(ctx, 7, in, "", wrapperspb.String("Ada"), nil, nil); err != nil {
+		t.Fatalf("ada: %v", err)
 	}
 }

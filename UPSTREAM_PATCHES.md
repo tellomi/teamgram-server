@@ -128,7 +128,7 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 
 ## Username policy (M5 / D-24 / D-56)
 
-`TELLOMI_USERNAME_POLICY=1` runs `pkg/usernamepolicy` before the username table. Unset or any other value leaves these handlers as they were. A hit returns `USERNAME_OCCUPIED` and logs `rule_id`. The response does not carry the rule. The lexicon and the flag live in Tellomi files (`pkg/usernamepolicy`, `docker-compose.yaml`).
+`TELLOMI_USERNAME_POLICY=1` runs `pkg/usernamepolicy` before the username table. Unset or any other value leaves these handlers as they were. A username hit returns `USERNAME_OCCUPIED`. A display-name hit returns `FIRSTNAME_INVALID`, or `LASTNAME_INVALID` when the field is the last name. The handler logs `rule_id`. The response does not carry the rule. The lexicon and the flag live in Tellomi files (`pkg/usernamepolicy`, `docker-compose.yaml`).
 
 | Call | File | Hook |
 | --- | --- | --- |
@@ -139,8 +139,13 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 | `bots.checkUsername` | `app/bff/botadmin/bots.go` `CheckUsername` | `usernamepolicy.RejectBot` after the format check |
 | `bots.createBot` | `app/bff/botadmin/bots.go` `CreateBot` | `usernamepolicy.RejectBot` after the format check |
 | `bots.addUsername` | `app/bff/botadmin/more.go` `AddUsername` | `usernamepolicy.RejectBot` after the format check |
+| `account.updateProfile` | `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go` | `usernamepolicy.RejectDisplay` when first or last name changes. `FIRSTNAME_INVALID` or `LASTNAME_INVALID` |
+| `channels.createChannel` | `app/service/biz/channel/service.go` `Create` | `usernamepolicy.RejectDisplay` on the title. `FIRSTNAME_INVALID` |
+| `channels.editTitle` | `app/service/biz/channel/service.go` `EditTitle` | `usernamepolicy.RejectDisplay` when the title changes. `FIRSTNAME_INVALID` |
+| `bots.createBot` | `app/bff/botadmin/bots.go` `CreateBot` | `usernamepolicy.RejectDisplay` on the bot name. `FIRSTNAME_INVALID` |
+| `bots.setBotInfo` | `app/bff/botadmin/bots.go` `SetBotInfo` | `usernamepolicy.RejectDisplay` when the bot name changes. `FIRSTNAME_INVALID` |
 
-There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same hook.
+There is no separate bot primary-username rename RPC. `bots.checkUsername` is the probe, `bots.createBot` writes the first name, and `bots.addUsername` writes another name. All three call the same username hook. Display names use `RejectDisplay` and do not return `USERNAME_OCCUPIED`. Chat messages are not checked. Sign-up is not checked.
 
 ## Discover credential (M3)
 

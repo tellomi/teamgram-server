@@ -37,3 +37,29 @@ func TestChannelUsernamePolicy(t *testing.T) {
 		t.Fatalf("clear: %v", err)
 	}
 }
+
+func TestChannelTitlePolicy(t *testing.T) {
+	t.Setenv(usernamepolicy.EnvEnabled, "1")
+	svc, ctx := newTest(t)
+	if _, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "admin", Megagroup: true}); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("create admin: %v", err)
+	}
+	if _, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "tellomi", Broadcast: true}); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("create tellomi: %v", err)
+	}
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "Book Club", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.EditTitle(ctx, 7, 0, in, "admin_01"); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("edit admin_01: %v", err)
+	}
+	if _, err := svc.EditTitle(ctx, 7, 0, in, "Book Club"); err != nil {
+		t.Fatalf("unchanged title: %v", err)
+	}
+	if _, err := svc.EditTitle(ctx, 7, 0, in, "Ada"); err != nil {
+		t.Fatalf("ada: %v", err)
+	}
+}

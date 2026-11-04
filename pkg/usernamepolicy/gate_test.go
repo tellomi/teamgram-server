@@ -9,6 +9,42 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestRejectDisplay(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv(EnvEnabled, "")
+	if err := RejectDisplay(ctx, mtproto.PEER_USER, 7, "admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(EnvEnabled, "1")
+	for _, name := range []string{"Ada", "小明", "support", "Book Club", ""} {
+		if err := RejectDisplay(ctx, mtproto.PEER_USER, 7, name); err != nil {
+			t.Fatalf("%q: %v", name, err)
+		}
+	}
+	for _, name := range []string{"admin", "ADMIN", "tellomi", "admin_01", "Tel1omi"} {
+		err := RejectDisplay(ctx, mtproto.PEER_USER, 7, name)
+		if status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+			t.Fatalf("%q: %v", name, err)
+		}
+		if strings.Contains(err.Error(), "rule") || strings.Contains(err.Error(), "brand") || strings.Contains(err.Error(), "impersonat") {
+			t.Fatalf("%q leaked rule info: %v", name, err)
+		}
+	}
+	if err := RejectDisplay(ctx, mtproto.PEER_USER, 777000, "admin"); err != nil {
+		t.Fatalf("official admin display: %v", err)
+	}
+	if err := RejectDisplay(ctx, mtproto.PEER_USER, 777001, "tellomi"); err != nil {
+		t.Fatalf("official tellomi display: %v", err)
+	}
+	if err := RejectDisplay(ctx, mtproto.PEER_USER, 777000, "admin_01"); err == nil {
+		t.Fatal("official variant was allowed")
+	}
+	if err := RejectDisplay(ctx, mtproto.PEER_CHANNEL, 9, "tellomi"); status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("channel title: %v", err)
+	}
+}
+
 func TestGateOffIsTransparent(t *testing.T) {
 	t.Setenv(EnvEnabled, "")
 	if err := RejectUser(context.Background(), 7, "admin"); err != nil {
