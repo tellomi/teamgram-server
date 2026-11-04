@@ -6,6 +6,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -128,6 +129,7 @@ func assertHiddenFeatures(t *testing.T, obj map[string]any) {
 		"tellomi_ai_compose_enabled":         false,
 		"tellomi_ai_enabled":                 false,
 		"tellomi_translate_enabled":          false,
+		"tellomi_announce_enabled":           false,
 	}
 	for key, want := range bools {
 		if obj[key] != want {
@@ -219,6 +221,33 @@ func TestTellomiAIFlagDefaultsOff(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["tellomi_ai_enabled"] != true {
 		t.Fatalf("tellomi_ai_enabled = %#v", obj["tellomi_ai_enabled"])
+	}
+}
+
+func TestAnnounceFlagDefaultsOff(t *testing.T) {
+	t.Setenv(announce.EnvEnabled, "")
+	t.Setenv(announce.EnvKey, "")
+	if announce.Advertised() {
+		t.Fatal("advertised")
+	}
+	off := AppConfigHash()
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_announce_enabled"] != false {
+		t.Fatalf("flag %#v", obj["tellomi_announce_enabled"])
+	}
+	t.Setenv(announce.EnvEnabled, "1")
+	t.Setenv(announce.EnvKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	if !announce.Advertised() {
+		t.Fatal("flag and key did not advertise")
+	}
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_ANNOUNCE")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_announce_enabled"] != true {
+		t.Fatalf("tellomi_announce_enabled = %#v", obj["tellomi_announce_enabled"])
 	}
 }
 

@@ -204,6 +204,11 @@ services:
       TELLOMI_AI_PRICE_PER_1K: ${TELLOMI_AI_PRICE_PER_1K:-}
       TELLOMI_AI_INTERNAL_KEY: ${TELLOMI_AI_INTERNAL_KEY:-}
       TELLOMI_AI_ADDR: ${TELLOMI_AI_ADDR:-}
+      # Launch notices from @admin. Unset is off. See docs/api/announce.md.
+      # Do not publish this port. This does not run during login.
+      TELLOMI_ANNOUNCE: ${TELLOMI_ANNOUNCE:-}
+      TELLOMI_ANNOUNCE_KEY: ${TELLOMI_ANNOUNCE_KEY:-}
+      TELLOMI_ANNOUNCE_ADDR: ${TELLOMI_ANNOUNCE_ADDR:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.

@@ -447,6 +447,8 @@ func (s *Server) Initialize() error {
 		// Managed bots: create, profile, usernames, verification, and affiliate programs.
 		botAdmin := bots_helper.New(c.BizServiceClient)
 		bots_helper.StartTellomi(c.MsgClient, c.ChannelMySQL)
+		// Launch notices. Unset returns immediately and is not on the login path.
+		bots_helper.StartAnnounce(c.MsgClient, c.ChannelMySQL)
 		mtproto.RegisterRPCBotsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCBotVerificationIconsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCAffiliateProgramsServer(grpcServer, botAdmin)

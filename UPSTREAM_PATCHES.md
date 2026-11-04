@@ -198,6 +198,15 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 | bff start | `app/bff/bff/internal/server/server.go` | `bots.StartTellomi` |
 | app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_ai_enabled` |
 
+## Launch notice
+
+`TELLOMI_ANNOUNCE=1` plus `TELLOMI_ANNOUNCE_KEY` serves `POST /internal/v1/announce` on bff. Each page writes up to 50 private messages from user 777000 (`@admin`) and one channel post in `@news`. Unset does not listen. Login and `messages.sendMessage` are unchanged. The contract is `docs/api/announce.md`. `tellomi_announcement` is `teamgramd/deploy/sql/migrate-20261108-announce.sql`.
+
+| Call | File | Hook |
+| --- | --- | --- |
+| bff start | `app/bff/bff/internal/server/server.go` | `bots.StartAnnounce` |
+| app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_announce_enabled` |
+
 ## Discover account deletion (M3)
 
 `TELLOMI_DISCOVER_DELETE=1` calls content-engine `DELETE /internal/users/{sub}` after `UserDeleteUser` has succeeded. The call is queued in memory, retried, and cannot fail or delay `account.deleteAccount`. See `docs/discover-account-deletion.md`.

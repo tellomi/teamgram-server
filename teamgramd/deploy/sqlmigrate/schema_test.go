@@ -206,6 +206,16 @@ func TestTellomiAIReplyMigration(t *testing.T) {
 	}
 }
 
+func TestAnnounceMigration(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261108-announce.sql"))
+	if !strings.Contains(raw, "CREATE TABLE IF NOT EXISTS tellomi_announcement") || !strings.Contains(raw, "CREATE TABLE IF NOT EXISTS tellomi_announcement_channel") {
+		t.Fatal("announce migration is missing a claim table")
+	}
+	if strings.Contains(strings.ToUpper(raw), "FLUSH") {
+		t.Fatal("announce migration must not flush redis")
+	}
+}
+
 func TestServiceUserRenameMigration(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261101-service-user.sql"))
 	for _, s := range []string{"777000", "Tellomi", "Telegram", "Teamgram", "tellomi"} {
