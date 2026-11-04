@@ -83,6 +83,12 @@ func prepareStoredFilter(filter *mtproto.DialogFilter) *mtproto.DialogFilter {
 		return nil
 	}
 	filter.FixData()
+	// Peer vectors are part of the folder hash clients compare between
+	// getDialogFilters calls. A fixed order stops the chat list jumping
+	// when the same peers come back shuffled.
+	filter.PinnedPeers = orderedInputPeers(filter.GetPinnedPeers())
+	filter.IncludePeers = orderedInputPeers(filter.GetIncludePeers())
+	filter.ExcludePeers = orderedInputPeers(filter.GetExcludePeers())
 	if filter.GetTitle_TEXTWITHENTITIES() == nil {
 		filter.Title_TEXTWITHENTITIES = mtproto.MakeTLTextWithEntities(&mtproto.TextWithEntities{
 			Text:     filter.GetTitle(),
@@ -98,6 +104,63 @@ func prepareStoredFilter(filter *mtproto.DialogFilter) *mtproto.DialogFilter {
 		return mtproto.MakeTLDialogFilterDefault(filter).To_DialogFilter()
 	default:
 		return mtproto.MakeTLDialogFilter(filter).To_DialogFilter()
+	}
+}
+
+// orderedInputPeers sorts peers by kind, id, message id, access hash, then
+// username. The same folder always returns the same vectors.
+func orderedInputPeers(peers []*mtproto.InputPeer) []*mtproto.InputPeer {
+	if len(peers) < 2 {
+		return peers
+	}
+	out := append([]*mtproto.InputPeer(nil), peers...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return inputPeerLess(out[i], out[j])
+	})
+	return out
+}
+
+func inputPeerLess(a, b *mtproto.InputPeer) bool {
+	if a == nil || b == nil {
+		return a != nil && b == nil
+	}
+	ak, aid, amsg, aname := inputPeerKey(a)
+	bk, bid, bmsg, bname := inputPeerKey(b)
+	if ak != bk {
+		return ak < bk
+	}
+	if aid != bid {
+		return aid < bid
+	}
+	if amsg != bmsg {
+		return amsg < bmsg
+	}
+	if a.GetAccessHash() != b.GetAccessHash() {
+		return a.GetAccessHash() < b.GetAccessHash()
+	}
+	return aname < bname
+}
+
+func inputPeerKey(p *mtproto.InputPeer) (kind int, id int64, msg int32, name string) {
+	switch p.GetPredicateName() {
+	case mtproto.Predicate_inputPeerEmpty:
+		return 0, 0, 0, ""
+	case mtproto.Predicate_inputPeerSelf:
+		return 1, 0, 0, ""
+	case mtproto.Predicate_inputPeerUser:
+		return 2, p.GetUserId(), 0, ""
+	case mtproto.Predicate_inputPeerChat:
+		return 3, p.GetChatId(), 0, ""
+	case mtproto.Predicate_inputPeerChannel:
+		return 4, p.GetChannelId(), 0, ""
+	case mtproto.Predicate_inputPeerUserFromMessage:
+		return 5, p.GetUserId(), p.GetMsgId(), ""
+	case mtproto.Predicate_inputPeerChannelFromMessage:
+		return 6, p.GetChannelId(), p.GetMsgId(), ""
+	case mtproto.Predicate_inputPeerUsername:
+		return 7, 0, 0, p.GetUsername()
+	default:
+		return 8, p.GetUserId(), p.GetMsgId(), p.GetPredicateName()
 	}
 }
 
