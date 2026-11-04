@@ -41,6 +41,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		Megagroup:                   ch.Megagroup,
 		Forum:                       ch.Forum,
 		Signatures:                  ch.Signatures,
+		SignatureProfiles:           feat.SignatureProfiles,
 		Id:                          ch.ID,
 		AccessHash_FLAGINT64:        &wrapperspb.Int64Value{Value: ch.AccessHash},
 		Title:                       ch.Title,
