@@ -291,6 +291,10 @@ func TestViewsReactionsReadStealthReport(t *testing.T) {
 	if err != nil || react.Updates[0].GetStory().GetSentReaction().GetEmoticon() != "❤" {
 		t.Fatalf("react %+v %v", react, err)
 	}
+	qualified, err := svc.React(ctx, 2, 9, owner, 0, id, mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "❤️"}).To_Reaction())
+	if err != nil || qualified.Updates[0].GetStory().GetSentReaction().GetEmoticon() != "❤" {
+		t.Fatalf("qualified heart %+v %v", qualified, err)
+	}
 	reactions, err := svc.ReactionsList(ctx, ViewsQuery{Actor: 1, Owner: owner, ID: id, Limit: 10})
 	if err != nil || reactions.Count != 1 {
 		t.Fatalf("reactions %+v %v", reactions, err)

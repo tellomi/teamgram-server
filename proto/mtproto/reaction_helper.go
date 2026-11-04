@@ -15,6 +15,16 @@ var (
 	reactionPaid  = MakeTLReactionPaid(nil).To_Reaction()
 )
 
+// NormalizeReactionEmoji maps the variation-selector heart onto the bare
+// heart official clients store and look up. "❤️" (U+2764 U+FE0F) becomes
+// "❤" (U+2764). A ZWJ sequence such as "❤️‍🔥" is left unchanged.
+func NormalizeReactionEmoji(emo string) string {
+	if emo == "\u2764\uFE0F" {
+		return "\u2764"
+	}
+	return emo
+}
+
 func (m *Reaction) ToString() (s string) {
 	if m == nil {
 		return

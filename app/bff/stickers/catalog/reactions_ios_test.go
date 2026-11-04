@@ -9,7 +9,7 @@ import (
 
 // The emoji the iOS picker and double-tap must always be able to use.
 var iosDefaultReactions = []string{
-	"👍", "❤️", "🔥", "🥰", "👏", "😁", "🤔", "😢", "🎉", "🙏", "👎", "😱",
+	"👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "😢", "🎉", "🙏", "👎", "😱",
 }
 
 func TestDefaultReactionsAlwaysAvailable(t *testing.T) {

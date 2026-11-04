@@ -41,9 +41,14 @@ func emojiFromCode(code string) string {
 	}
 	s := string(rune(v))
 	switch strings.ToLower(code) {
-	case "2764", "2705", "274c", "2615":
+	case "2615":
+		// U+2615 is text-default. The fully-qualified hot beverage is
+		// U+2615 U+FE0F. It is a sticker alt, not a reaction id.
 		return s + "\uFE0F"
 	default:
+		// U+2764 is the bare heart. Official messages.getAvailableReactions
+		// and both clients look up "❤", not "❤️". U+2705 and U+274C are
+		// already fully-qualified without U+FE0F.
 		return s
 	}
 }

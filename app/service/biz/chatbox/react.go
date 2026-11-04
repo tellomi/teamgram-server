@@ -92,6 +92,7 @@ func ParseReaction(r *mtproto.Reaction) (emo string, doc int64, err error) {
 		if emo == "" {
 			return "", 0, mtproto.ErrReactionInvalid
 		}
+		emo = mtproto.NormalizeReactionEmoji(emo)
 		if emojiblock.Blocked(emo) {
 			return "", 0, mtproto.ErrReactionInvalid
 		}
