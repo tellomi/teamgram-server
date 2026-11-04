@@ -52,6 +52,57 @@ func TestOfficialAccountsMySQL(t *testing.T) {
 	}
 }
 
+func TestTellomiAINameAndResolveTarget(t *testing.T) {
+	db := newSchemaDB(t, "tellomi_ai_name")
+	applyTeamgramSchema(t, db, "tellomi_ai_name", true)
+	assertTellomiAI(t, db)
+
+	if _, err := db.Exec(`UPDATE users SET username = 'parked', first_name = 'Tellomi', about = '' WHERE id = 777001`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE users SET username = 'tellomi', first_name = 'Teamgram' WHERE id = 777000`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE username SET peer_id = 777000 WHERE username = 'tellomi'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := mysqlFile(t, "tellomi_ai_name", "migrate-20261107-tellomi-ai-name.sql"); err != nil {
+		t.Fatal(err)
+	}
+	assertTellomiAI(t, db)
+	if err := mysqlFile(t, "tellomi_ai_name", "migrate-20261107-tellomi-ai-name.sql"); err != nil {
+		t.Fatal(err)
+	}
+	assertTellomiAI(t, db)
+}
+
+func assertTellomiAI(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var first, about, name string
+	if err := db.QueryRow(`SELECT first_name, about, username FROM users WHERE id = 777001`).Scan(&first, &about, &name); err != nil {
+		t.Fatal(err)
+	}
+	if first != "Tellomi AI" || name != "tellomi" || about != "Tellomi 智能助手。直接发消息，即可获得解答、建议与灵感。" {
+		t.Fatalf("777001 = %q %q %q", first, name, about)
+	}
+	var svcFirst, svcName string
+	if err := db.QueryRow(`SELECT first_name, username FROM users WHERE id = 777000`).Scan(&svcFirst, &svcName); err != nil {
+		t.Fatal(err)
+	}
+	if svcFirst != "Tellomi" || svcName != "admin" {
+		t.Fatalf("777000 = %q %q", svcFirst, svcName)
+	}
+	var n int
+	var peer int64
+	var peerType int
+	if err := db.QueryRow(`SELECT COUNT(*), MIN(peer_id), MIN(peer_type) FROM username WHERE username = 'tellomi'`).Scan(&n, &peer, &peerType); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || peer != 777001 || peerType != 2 {
+		t.Fatalf("@tellomi rows = %d peer %d type %d", n, peer, peerType)
+	}
+}
+
 func TestOfficialAccountsDoNotSteal(t *testing.T) {
 	db := newSchemaDB(t, "tellomi_official_squat")
 	applyTeamgramSchema(t, db, "tellomi_official_squat", false)
@@ -171,7 +222,7 @@ func assertOfficialAccounts(t *testing.T, db *sql.DB) {
 	}
 	users := []userRow{
 		{777000, 4, "Tellomi", "admin", false, 1, 0},
-		{777001, 2, "Tellomi", "tellomi", true, 1, 0},
+		{777001, 2, "Tellomi AI", "tellomi", true, 1, 0},
 		{777002, 2, "Tellomi", "tellomi_official", true, 1, 0},
 		{777003, 2, "Tellomi Team", "tellomi_team", true, 1, 0},
 		{777004, 2, "Tellomi Support", "support", true, 1, 1},
