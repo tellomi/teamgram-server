@@ -36,6 +36,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
 | `TestTranscribeAudioIsNotPremiumOrStub` | `messages.transcribeAudio` on a text message returns `PREMIUM_ACCOUNT_REQUIRED` or `TRANSCRIPTION_FAILED`, or a zero message id does not return `MSG_ID_INVALID`. |
 | `TestInviteLinkSheet` | A supergroup or basic group invite sheet does not return a `https://tell.cc/+` link, `channels.getFullChannel` / `messages.getFullChat` omits that primary link, or creating an additional link with a title, `request_needed`, `expire_date`, and `usage_limit` fails. |
+| `TestAnnounceFlagDefaultsOff` | `help.getAppConfig` is missing `tellomi_announce_enabled`, or the flag is true. The launch notice stays off unless `TELLOMI_ANNOUNCE=1` and a key are set. |
 | `TestPremiumNotRequiredToContact` | `users.getIsPremiumRequiredToContact` returns an error or does not return one bool per requested user. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the

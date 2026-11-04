@@ -8,6 +8,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -36,7 +37,7 @@ func AppConfig() *mtproto.JSONValue {
 
 // AppConfigHash is the hash clients send back on help.getAppConfig.
 // It changes when the premium policy, the public link hosts, the help URL,
-// or the emoji blocklist change.
+// the emoji blocklist, or the launch-notice flag change.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
 	weekly, duration, cooldown := transcribeTrial()
@@ -44,7 +45,11 @@ func AppConfigHash() int32 {
 	if tellomiai.Advertised() {
 		ai = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai)
+	notice := 0
+	if announce.Advertised() {
+		notice = 1
+	}
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d announce=%d", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, notice)
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -177,6 +182,7 @@ func hiddenFeaturePairs() []*mtproto.JSONObjectValue {
 		jsonPair("tellomi_ai_compose_enabled", off),
 		jsonPair("tellomi_ai_enabled", jsonBool(tellomiai.Advertised())),
 		jsonPair("tellomi_translate_enabled", off),
+		jsonPair("tellomi_announce_enabled", jsonBool(announce.Advertised())),
 	}
 }
 
