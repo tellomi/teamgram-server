@@ -438,7 +438,7 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
 	}
 	androidRefreshed, err := cat.Difference("android", "zh-hans", 61570949)
-	if err != nil || androidRefreshed.GetVersion() != 61570950 || len(androidRefreshed.GetStrings()) < 1000 {
+	if err != nil || androidRefreshed.GetVersion() != 61570951 || len(androidRefreshed.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hans bump %+v %v", androidRefreshed.GetVersion(), err)
 	}
 	hant, err := cat.Difference("ios", "zh-hant", 22421528)
@@ -735,5 +735,55 @@ func TestLoadSkipsLegacyPackFiles(t *testing.T) {
 	tw, err := cat.Strings("android", "taiwan", []string{"Settings"})
 	if err != nil || tw[0].GetValue() != "設定" {
 		t.Fatalf("loaded taiwan %+v %v", tw, err)
+	}
+}
+
+func TestAndroidZhHansTellomiStrings(t *testing.T) {
+	cat := DefaultCatalog()
+	if err := DefaultError(); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := cat.Difference("android", "zh-hans", 61570950)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff.GetVersion() != 61570951 {
+		t.Fatalf("version %d", diff.GetVersion())
+	}
+	if len(diff.GetStrings()) < 100 {
+		t.Fatalf("difference from 61570950 has %d strings", len(diff.GetStrings()))
+	}
+	seen := map[string]*mtproto.LangPackString{}
+	for _, s := range diff.GetStrings() {
+		seen[s.GetKey()] = s
+		for _, part := range stringParts(s) {
+			if hasTelegramBrand(part) {
+				t.Fatalf("telegram brand in new %s %q", s.GetKey(), part)
+			}
+		}
+	}
+	for _, key := range []string{"TellomiLoginWithPhone", "NotificationsInternal", "OutgoingCallsCount", "TellomiMapAmap"} {
+		if seen[key] == nil {
+			t.Fatalf("getDifference missed %s", key)
+		}
+	}
+	if _, ok := seen["SearchEngine2SearchURL"]; ok {
+		t.Fatal("URL that matches English was added to zh-hans")
+	}
+	phone := seen["TellomiLoginWithPhone"].GetValue()
+	if phone != "使用手机号登录" {
+		t.Fatalf("login %q", phone)
+	}
+	calls := seen["OutgoingCallsCount"]
+	if calls.GetPredicateName() != mtproto.Predicate_langPackStringPluralized || calls.GetOtherValue() != "%1$d 通拨出电话" || calls.GetOneValue().GetValue() != "%1$d 通拨出电话" {
+		t.Fatalf("call plural %+v", calls)
+	}
+	intro := seen["TellomiIntroPage1Message"].GetValue()
+	if !strings.Contains(intro, "**私密**") || !strings.Contains(intro, "\n") {
+		t.Fatalf("intro markup %q", intro)
+	}
+	caught, err := cat.Difference("android", "zh-hans", diff.GetVersion())
+	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != 61570951 {
+		t.Fatalf("caught up %+v %v", caught, err)
 	}
 }
