@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/reportcopy"
 )
 
 // Message reports, delivery acks, read metrics, music listens, and paid
@@ -38,7 +39,7 @@ type paidDoc struct {
 // Any other known option, or "other" plus a comment, stores the report and
 // returns reportResultReported.
 // https://core.telegram.org/method/messages.report
-func (b *Book) ReportMessages(ctx context.Context, user int64, peer *mtproto.PeerUtil, ids []int32, option []byte, message string) (*mtproto.ReportResult, error) {
+func (b *Book) ReportMessages(ctx context.Context, user int64, peer *mtproto.PeerUtil, ids []int32, option []byte, message, lang string) (*mtproto.ReportResult, error) {
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
 		return nil, mtproto.ErrPeerIdInvalid
 	}
@@ -54,7 +55,7 @@ func (b *Book) ReportMessages(ctx context.Context, user int64, peer *mtproto.Pee
 		return nil, mtproto.ErrMessageTooLong
 	}
 	if len(option) == 0 {
-		return chooseReport(), nil
+		return reportcopy.Choose(lang, reportcopy.Message), nil
 	}
 	switch string(option) {
 	case "spam", "violence", "pornography", "child", "drugs", "personal":
@@ -179,29 +180,6 @@ func (b *Book) storeReport(ctx context.Context, user int64, peer *mtproto.PeerUt
 		b.reports = b.reports[len(b.reports)-reportCap:]
 	}
 	return b.save(ctx, reportKey(), b.reports)
-}
-
-func chooseReport() *mtproto.ReportResult {
-	labels := []struct{ text, id string }{
-		{"Spam", "spam"},
-		{"Violence", "violence"},
-		{"Pornography", "pornography"},
-		{"Child abuse", "child"},
-		{"Illegal drugs", "drugs"},
-		{"Personal details", "personal"},
-		{"Other", "other"},
-	}
-	opts := make([]*mtproto.MessageReportOption, 0, len(labels))
-	for _, row := range labels {
-		opts = append(opts, mtproto.MakeTLMessageReportOption(&mtproto.MessageReportOption{
-			Text:   row.text,
-			Option: []byte(row.id),
-		}).To_MessageReportOption())
-	}
-	return mtproto.MakeTLReportResultChooseOption(&mtproto.ReportResult{
-		Title:   "What is wrong with this message?",
-		Options: opts,
-	}).To_ReportResult()
 }
 
 func reported() *mtproto.ReportResult {

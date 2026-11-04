@@ -10,6 +10,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/pkg/reportcopy"
 )
 
 func (s *Service) filter(ctx context.Context, viewer int64, owner Owner, expired bool, pinnedOnly bool) ([]*Record, error) {
@@ -712,7 +713,7 @@ func (s *Service) channelUsername(ctx context.Context, viewer, id int64) string 
 	return chats[0].GetUsername().GetValue()
 }
 
-func (s *Service) Report(ctx context.Context, viewer int64, owner Owner, accessHash int64, ids []int32, option []byte, message string) (*mtproto.ReportResult, error) {
+func (s *Service) Report(ctx context.Context, viewer int64, owner Owner, accessHash int64, ids []int32, option []byte, message, lang string) (*mtproto.ReportResult, error) {
 	if len(ids) == 0 {
 		return nil, mtproto.ErrStoryIdEmpty
 	}
@@ -720,14 +721,13 @@ func (s *Service) Report(ctx context.Context, viewer int64, owner Owner, accessH
 		return nil, err
 	}
 	if len(option) == 0 {
-		return mtproto.MakeTLReportResultChooseOption(&mtproto.ReportResult{
-			Title: "Report story",
-			Options: []*mtproto.MessageReportOption{
-				mtproto.MakeTLMessageReportOption(&mtproto.MessageReportOption{Text: "Spam", Option: []byte("spam")}).To_MessageReportOption(),
-				mtproto.MakeTLMessageReportOption(&mtproto.MessageReportOption{Text: "Violence", Option: []byte("violence")}).To_MessageReportOption(),
-				mtproto.MakeTLMessageReportOption(&mtproto.MessageReportOption{Text: "Illegal content", Option: []byte("illegal")}).To_MessageReportOption(),
-				mtproto.MakeTLMessageReportOption(&mtproto.MessageReportOption{Text: "Other", Option: []byte("other")}).To_MessageReportOption(),
-			},
+		return reportcopy.Choose(lang, reportcopy.Story), nil
+	}
+	// "other" asks for a comment before the report is stored, matching messages.report.
+	if string(option) == "other" && message == "" {
+		return mtproto.MakeTLReportResultAddComment(&mtproto.ReportResult{
+			Optional: false,
+			Option:   []byte("other"),
 		}).To_ReportResult(), nil
 	}
 	if err := s.store.SaveReport(ctx, &Report{

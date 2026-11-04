@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/reportcopy"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -322,7 +323,7 @@ func (b *Box) Callback(owner int64, peer *mtproto.PeerUtil, id int32, data []byt
 }
 
 // Report walks the same option list as messages.report. The message must exist.
-func (b *Box) Report(owner int64, peer *mtproto.PeerUtil, id int32, option []byte, comment string) (*mtproto.ReportResult, error) {
+func (b *Box) Report(owner int64, peer *mtproto.PeerUtil, id int32, option []byte, comment, lang string) (*mtproto.ReportResult, error) {
 	if peer == nil || peer.PeerId == 0 || id <= 0 {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
@@ -336,7 +337,7 @@ func (b *Box) Report(owner int64, peer *mtproto.PeerUtil, id int32, option []byt
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	if len(option) == 0 {
-		return chooseReport(), nil
+		return reportcopy.Choose(lang, reportcopy.Message), nil
 	}
 	switch string(option) {
 	case "spam", "violence", "pornography", "child", "drugs", "personal":
@@ -557,29 +558,6 @@ func itoa(n int64) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
-}
-
-func chooseReport() *mtproto.ReportResult {
-	labels := []struct{ text, id string }{
-		{"Spam", "spam"},
-		{"Violence", "violence"},
-		{"Pornography", "pornography"},
-		{"Child abuse", "child"},
-		{"Illegal drugs", "drugs"},
-		{"Personal details", "personal"},
-		{"Other", "other"},
-	}
-	opts := make([]*mtproto.MessageReportOption, 0, len(labels))
-	for _, row := range labels {
-		opts = append(opts, mtproto.MakeTLMessageReportOption(&mtproto.MessageReportOption{
-			Text:   row.text,
-			Option: []byte(row.id),
-		}).To_MessageReportOption())
-	}
-	return mtproto.MakeTLReportResultChooseOption(&mtproto.ReportResult{
-		Title:   "What is wrong with this message?",
-		Options: opts,
-	}).To_ReportResult()
 }
 
 func reported() *mtproto.ReportResult {

@@ -156,3 +156,28 @@ func TestEphemeral(t *testing.T) {
 		t.Fatalf("cleared %#v %v", after, err)
 	}
 }
+
+func TestEphemeralReportLang(t *testing.T) {
+	svc := newSvc()
+	md := &rpcmd.RpcMetadata{UserId: 9, PermAuthKeyId: 19, LangCode: "zh-hant"}
+	buf, _ := proto.Marshal(md)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
+	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 8, AccessHash: 1}).To_InputPeer()
+	receiver := mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 8, AccessHash: 1}).To_InputUser()
+	ups, err := svc.EphemeralSendMessage(ctx, &mtproto.TLEphemeralSendMessage{
+		Peer: peer, ReceiverId: receiver, Message: "hi", RandomId: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ups.GetUpdates()[0].GetMessage_EPHEMERALMESSAGE().GetId()
+	choose, err := svc.EphemeralReportMessage(ctx, &mtproto.TLEphemeralReportMessage{Peer: peer, Id: id})
+	if err != nil || choose.GetTitle() != "這則訊息有什麼問題？" || choose.GetOptions()[0].GetText() != "垃圾訊息" {
+		t.Fatalf("report %#v %v", choose, err)
+	}
+	if string(choose.GetOptions()[0].GetOption()) != "spam" {
+		t.Fatalf("option id %q", choose.GetOptions()[0].GetOption())
+	}
+}

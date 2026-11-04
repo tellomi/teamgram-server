@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 )
@@ -12,8 +13,12 @@ import (
 // https://core.telegram.org/method/messages.report
 func (ReportsService) MessagesReportFC78AF9B(ctx context.Context, in *mtproto.TLMessagesReportFC78AF9B) (*mtproto.ReportResult, error) {
 	self, _ := actor(ctx)
+	lang := ""
+	if md := metadata.RpcMetadataFromIncoming(ctx); md != nil {
+		lang = md.GetLangCode()
+	}
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
-	return chatbox.Shared().ReportMessages(ctx, self, peer, in.GetId(), in.GetOption(), in.GetMessage())
+	return chatbox.Shared().ReportMessages(ctx, self, peer, in.GetId(), in.GetOption(), in.GetMessage(), lang)
 }
 
 // MessagesReport8953AB4E is the previous messages.report constructor.

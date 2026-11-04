@@ -323,11 +323,18 @@ func TestViewsReactionsReadStealthReport(t *testing.T) {
 		t.Fatal("stealth cooldown should flood")
 	}
 
-	choose, err := svc.Report(ctx, 2, owner, 0, []int32{id}, nil, "")
+	choose, err := svc.Report(ctx, 2, owner, 0, []int32{id}, nil, "", "zh-hans")
 	if err != nil || choose.GetPredicateName() != mtproto.Predicate_reportResultChooseOption || len(choose.Options) != 4 {
 		t.Fatalf("report options %+v %v", choose, err)
 	}
-	done, err := svc.Report(ctx, 2, owner, 0, []int32{id}, []byte("spam"), "bad")
+	if choose.GetTitle() != "举报动态" || choose.Options[0].GetText() != "垃圾信息" || string(choose.Options[3].GetOption()) != "other" {
+		t.Fatalf("zh story report %#v", choose)
+	}
+	ask, err := svc.Report(ctx, 2, owner, 0, []int32{id}, []byte("other"), "", "zh-hans")
+	if err != nil || ask.GetPredicateName() != mtproto.Predicate_reportResultAddComment || string(ask.GetOption()) != "other" {
+		t.Fatalf("story other %+v %v", ask, err)
+	}
+	done, err := svc.Report(ctx, 2, owner, 0, []int32{id}, []byte("spam"), "bad", "en")
 	if err != nil || done.GetPredicateName() != mtproto.Predicate_reportResultReported {
 		t.Fatalf("report %+v %v", done, err)
 	}
