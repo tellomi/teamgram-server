@@ -40,3 +40,20 @@ docker exec tellomi-teamgram-1 /app/bin/seedofficialavatars -force -users 777001
 Accounts that already have a photo are skipped unless `-force` is set, so the
 command is safe to rerun. Clients that cached the old (empty) user show the
 photo after the next user refresh (reopen the chat or restart the app).
+
+## Official channels
+
+The official channels 1073800001–1073800004 (官方公告 @news, 更新日志 @updates,
+安全中心 @security, 开发者 @dev) get their photos with `-channels`. The upload is
+owned by 777002 (the channel creator) and the photo is applied through the
+MySQL channel service's `ApplyPhoto`, the same code `channels.editPhoto` runs,
+so each channel gets a "photo updated" service message and a new version.
+
+```sh
+docker exec -e TEAMGRAM_MYSQL_DSN='root:...@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai' \
+  tellomi-teamgram-1 /app/bin/seedofficialavatars -users none -channels all
+# one channel, replacing its photo:
+... /app/bin/seedofficialavatars -users none -channels 1073800003 -force
+```
+
+Run one seeder at a time; channels are processed sequentially.
