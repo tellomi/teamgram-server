@@ -135,3 +135,58 @@ iOS 解密后的对象**没有** `loc-key`（有的话通知扩展会把它当�
 还要开 `TELLOMI_DISCOVER=1` 和 `TELLOMI_DISCOVER_RELATIONS=1`，否则没有 `sub → user id`，推送会一直是 `unknown_recipient`。表 `discover_push_event` 在 `teamgramd/deploy/sql/migrate-20261106-discover-push.sql`。
 
 监听跑在 `sync` 进程里，因为设备表和推送都在那里。
+
+## 客户端：可见名单
+
+发「选定用户」（`include`）或「排除部分人」（`exclude`）之前，已登录的客户端调用下面的 TL，拿到 content-engine 认的 HS256 JWT，放进 `POST /v1/feed/posts` 的 `audience.audience_token`。`visibility` 必须和这里的 `kind` 相同。引擎不收 teamgram 的 user id。
+
+开关和密钥与 `discover.getEngineCredential` 相同（`docs/discover-engine-auth.md`）。`TELLOMI_DISCOVER` 不是 `1`，或密钥不可用，返回 `DISCOVER_DISABLED`。没有新的环境变量。会话路由仍是已经登记的 `/mtproto.RPCDiscover` → `bff.bff`。
+
+```
+discover.audienceToken#da177181 token:string expires:int = discover.AudienceToken;
+discover.getAudienceToken#dc5213c2 kind:string user_ids:Vector<long> = discover.AudienceToken;
+```
+
+| | |
+| --- | --- |
+| 方法 | `discover.getAudienceToken` |
+| constructor id | `0xdc5213c2`（十进制 `-599583806`） |
+| `kind` | 字符串 `include` 或 `exclude`。别的值是 `AUDIENCE_INVALID` |
+| `user_ids` | `Vector<long>`，1–500 个 teamgram 用户 id。顺序原样进 JWT 的 `members` |
+| 返回 | `discover.audienceToken` |
+| 返回 constructor id | `0xda177181`（十进制 `-636006015`） |
+| `token` | JWT 字符串。客户端不解析、不改，原样交给引擎 |
+| `expires` | `exp`，Unix 秒，TL `int` |
+
+constructor id 是去掉 `#id` 和行末分号之后的 CRC32（`Vector<long>` 写成 `Vector long`）。没有用户 id 时返回 `AUTH_KEY_UNREGISTERED`。
+
+名单规则，命中就整单拒绝，不返回部分名单：
+
+| 情况 | 错误 |
+| --- | --- |
+| `kind` 不是 `include` / `exclude`，空名单，超过 500，重复 id，id ≤ 0，名单里有自己 | `AUDIENCE_INVALID` |
+| 某个 id 没有这个用户，或账号已删除；调用者自己已删除 | `USER_ID_INVALID` |
+| 调用者拉黑了对方，或对方拉黑了调用者（`user_peer_blocks` 任一方向） | `USER_IS_BLOCKED` |
+| 用户服务暂时失败 | `INTERNAL` |
+
+存在性先于拉黑：又删除又拉黑时返回 `USER_ID_INVALID`。错误里不带是哪一个 id，也不带 token。
+
+### JWT
+
+头和凭证相同，引擎按原文比对：`{"alg":"HS256","typ":"JWT"}`。签名密钥是 `TELLOMI_DISCOVER_SIGNING_KEY` 解码后的字节，和引擎 `ENGINE_FEED_AUTH_KEYS` 的第一把相同。
+
+claims 只有这五个字段，紧凑 JSON，顺序是 `typ`、`exp`、`owner`、`kind`、`members`：
+
+```json
+{"typ":"tellomi-feed-audience","exp":1760000000,"owner":"<16 字节 base64url>","kind":"include","members":["<16 字节 base64url>"]}
+```
+
+| 字段 | 值 |
+| --- | --- |
+| `typ` | `tellomi-feed-audience`。不能拿凭证或好友声明来冒充 |
+| `owner` | 调用者的假名。算法和凭证的 `sub` 一样：`HMAC-SHA256(TELLOMI_DISCOVER_PSEUDONYM_KEY, 十进制 user id 的 UTF-8)` 的前 16 字节，再 base64url、无填充 |
+| `kind` | 请求里的 `include` 或 `exclude` |
+| `members` | 每个 `user_ids` 用同一把派生密钥、同一种编码。顺序与请求一致 |
+| `exp` | 签发时刻加 10 分钟，截到整秒 |
+
+引擎拒绝 `exp` 超过 15 分钟之后的名单（另外有 60 秒时钟误差，不是多出来的可用时间）。客户端在 `expires` 之前重新取。过期后发帖会得到 `invalid_audience`，再调一次本方法即可。假名不能反查 user id。日志不写密钥和 token。

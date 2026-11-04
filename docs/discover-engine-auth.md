@@ -50,6 +50,8 @@ constructor id 是去掉 `#id` 之后那一行的 CRC32（和 Telegram 一样，
 
 开关开着但密钥缺失、太短或两把相同，方法仍返回 `DISCOVER_DISABLED`，进程不退出。日志不写密钥和 token。
 
+同一开关、同一对密钥也签发可见名单 `discover.getAudienceToken`。客户端契约在 `docs/api/discover-ai.md` 的「客户端：可见名单」。
+
 ## 和 D-44 的关系
 
 `rgn` 仍然是 `cn` 或 `global`，因为引擎现在的 JWT 和内容池就是这两个值。一个内容池、同一套审核（D-1、D-44）要改 content-engine 的 `internal/engine/moderation/worker.go` `regions()`，本仓库不改引擎。teamgram 不另造第三个 `rgn`。
