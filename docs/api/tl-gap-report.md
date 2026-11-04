@@ -26,7 +26,7 @@ Chat invite RPCs (`messages.exportChatInvite`, `messages.getExportedChatInvites`
 
 ## Routing snapshot
 
-From `docs/api-coverage.md` on this tree: **799** called methods, **791** routed to a real handler, **8** stubs that return `ENTERPRISE_IS_BLOCKED`, **0** missing routes. The 8 stubs are sponsored-message and AI-compose methods. They are not on the login path.
+From `docs/api-coverage.md` on this tree: **799** called methods, **791** routed to a real handler, **8** stubs that return `ENTERPRISE_IS_BLOCKED`, **0** missing routes. After the sponsored-message pull request, the remaining stubs are the two AI-compose methods and `account.confirmBotConnection`. They are not on the login path.
 
 The gaps below are `partial` or `stub` inside methods the routing matrix already calls implemented.
 
@@ -43,6 +43,11 @@ The gaps below are `partial` or `stub` inside methods the routing matrix already
 | Global search | `users_only`, `groups_only`, `broadcasts_only`, `min_date`, and `max_date` filter the text hits. Channel chats are attached to the result. | #165 |
 | Notify settings | `account.updateNotifySettings` and `account.getNotifyExceptions` resolve a channel without the enterprise plugin. | #165 |
 | Contacts | `contacts.getContacts` returns `contacts.contactsNotModified` when `hash` matches. `contacts.deleteByPhones` deletes the matching contacts and unregistered phone-book rows. | #166 |
+| Channel search | `messages.search` on a channel applies media filters, dates, and `top_msg_id`. `messages.searchGlobal` pages with `offset_rate`, `offset_peer`, and `offset_id`, and can limit hits to `folder_id`. | #170 |
+| Rich drafts | A draft whose only content is `inputRichMessage` is stored as `richMessage`. Markdown or HTML with no blocks becomes a paragraph. | #172 |
+| Channel history and forward | `messages.deleteHistory` on a channel clears that member's view, or deletes a date range when the caller can. `messages.forwardMessages` loads channel posts and honors `noforwards`. | #174 |
+| Sponsored messages | List methods return `messages.sponsoredMessagesEmpty`. View, click, and the account toggle return `boolTrue`. A report returns `reported`. Restrict stores `restricted_sponsored`. AI compose is unchanged. | #173 |
+| Difference | `qts`, `differenceTooLong`, and the merged date are behind `TELLOMI_DIFFERENCE_STRICT`, default off, so login keeps the current difference. Not merged until the login and session client regression is green. | #171 |
 
 ## Messages
 
@@ -50,7 +55,7 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 
 | Method | Status | What is still missing |
 | --- | --- | --- |
-| `messages.saveDraft` | partial | `rich_message` is `InputRichMessage` on the request and `RichMessage` on the stored draft. It is not converted, so a rich-only draft is still cleared. Other flags are stored. |
+| `messages.saveDraft` | implemented | Rich blocks, markdown, and HTML are stored (#172). Media, effect, and suggested post were already stored (#165). |
 | `messages.getAllDrafts` | implemented | Channel cards come from the channel service. |
 | `messages.clearAllDrafts` | implemented | Same as get. |
 | `messages.sendReaction` | partial | `add_to_recent` is ignored; the reaction is always added to the recent list. Omitting the reaction vector clears the user's reactions. Custom emoji on a channel is `REACTION_INVALID`. |
@@ -67,8 +72,8 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.sendVote` | partial | Vote is stored. Closed polls and the public voter list are not the full TL rules. |
 | `messages.getPollResults` | partial | `poll_hash` is checked. Same voter-list limit as send. |
 | `messages.getPollVotes` | partial | `option` and `offset` are forwarded. |
-| `messages.search` | partial | User and basic-group filters work. A channel search is text and sender only: no `filter`, dates, `hash`, `top_msg_id`, or `saved_reaction`. `saved_peer_id` and `inputMessagesFilterMyMentions` return an empty page. |
-| `messages.searchGlobal` | partial | Kind flags and dates are applied (#165). `folder_id`, `community`, `filter`, `offset_rate`, and `offset_peer` are not. |
+| `messages.search` | partial | User, basic-group, and channel filters, dates, and `top_msg_id` work (#170). `hash`, `saved_reaction`, and `saved_peer_id` are still empty. `inputMessagesFilterMyMentions` is not a channel filter. |
+| `messages.searchGlobal` | partial | Kind flags, dates (#165), folder, and the rate/peer/id cursor (#170) are applied. `community` and the media `filter` are not. |
 | `messages.getSearchCounters` | partial | `saved_peer_id` is an empty vector. `top_msg_id` is ignored. An unsupported filter is count 0, not an error. |
 | `messages.getSearchResultsCalendar` | partial | User and basic-group media calendar works. `offset_id_offset` is not set. Channel history is weak. |
 | `messages.getSearchResultsPositions` | partial | Same scan as the calendar. |
@@ -89,8 +94,8 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.reorderPinnedForumTopics` | implemented | `force` unpins topics left out of `order`. Without `force`, a missing pinned topic is `TOPIC_ID_INVALID`. |
 | `messages.deleteTopicHistory` | implemented | Topic-scoped (#163). Requires delete-message rights. |
 | `channels.toggleForum` | partial | `enabled` works and creates General. The `tabs` flag is ignored. |
-| `messages.deleteHistory` | partial | A channel peer returns `ENTERPRISE_IS_BLOCKED`. Clients should call `channels.deleteHistory`, which is implemented. |
-| `messages.forwardMessages` | partial | A channel source can return `ENTERPRISE_IS_BLOCKED`. Private and basic-group forward works. |
+| `messages.deleteHistory` | implemented | A channel peer clears that member's history, or deletes a date range for an admin (#174). |
+| `messages.forwardMessages` | implemented | A channel source is loaded and forwarded. `noforwards` is `CHAT_FORWARDS_RESTRICTED` (#174). |
 
 ## Channels and groups
 
@@ -199,7 +204,7 @@ The sticker, emoji, reaction, and ringtone methods clients call are backed by `a
 | Method | Status | What is still missing |
 | --- | --- | --- |
 | `updates.getState` | implemented | Returns pts, qts, seq, and date. |
-| `updates.getDifference` | partial | Pts and seq are merged and users and chats are filled. The request `qts` is not passed through, so secret-chat encrypted messages are not in the difference (`new_encrypted_messages` is empty). The state inside a difference does not repeat `qts`. `differenceTooLong` is not produced; an empty update list is `differenceEmpty`. The full-difference `date` is overwritten with the server time. This path runs at startup, so it was left unchanged in this pass. |
+| `updates.getDifference` | partial | Pts and seq are merged and users and chats are filled. With `TELLOMI_DIFFERENCE_STRICT` unset (the default, #171), `qts` is still omitted, `differenceTooLong` is not produced, encrypted messages stay empty, and the date is still stamped with the server time. Turning the variable on is the corrected path and is not the login default. |
 | `updates.getChannelDifference` | partial | Pts, too-long, and slice behavior are implemented. `force` and `ChannelMessagesFilter` are ignored. |
 
 ## help.\*
@@ -224,31 +229,68 @@ The sticker, emoji, reaction, and ringtone methods clients call are backed by `a
 
 `stories.getAllStories`, `stories.getStoriesArchive`, and `stories.getPeerStories` read the story store and are not startup methods in the coverage matrix (P2, interactive). They were not changed. Clients do not call them unconditionally during login.
 
+## Account, privacy, photos, stickers, help
+
+These are the rows still short of the official API after the chat and channel fixes. None of them run before the chat list is usable.
+
+### Account settings
+
+| Method | Status | What is still missing |
+| --- | --- | --- |
+| `account.getNotifyExceptions` | partial | Channel cards are filled. `compare_sound` is ignored, so a client that asks only for peers whose sound differs from the default still receives every exception. |
+| `account.getDefaultEmojiStatuses` | partial | The list is valid and empty. The emoji-status picker has nothing to show. |
+| `account.updateNotifySettings` | implemented | Including a channel peer. |
+| Sessions, themes, wallpapers, autodownload, profile, birthday, personal channel | implemented | See the tables above. |
+
+### Privacy
+
+| Method | Status | What is still missing |
+| --- | --- | --- |
+| `account.getPrivacy` / `setPrivacy` | partial | User rules persist and sync. A rule that points at a channel is not resolved into that channel. |
+| `contacts.deleteContacts` | partial | `inputUser` is deleted. `inputUserFromMessage` is skipped. |
+| `contacts.getBlocked` | partial | The handler caps `limit` at 50 in one place and then forwards the client's original limit. |
+| `account.getContactSignUpNotification` | partial | A storage error is returned as `boolFalse` instead of an RPC error. |
+| `users.getRequirementsToContact` | implemented | Every peer is `requirementToContactEmpty`. There is no paid-message requirement. |
+
+### Photos and profile
+
+`photos.uploadProfilePhoto`, `photos.updateProfilePhoto`, `photos.deletePhotos`, `photos.getUserPhotos`, `photos.uploadContactProfilePhoto`, `users.getUsers`, and `users.getFullUser` read and write real profile state. `photos.deletePhotos` does not enforce an album cap. That is the remaining limit.
+
+### Stickers and emoji
+
+Install, recent, featured, custom emoji, and `messages.getStickerSet` (including `stickerSetNotModified`) are backed by the sticker catalog. `messages.getEmojiKeywords` always reads version 0. Clients that pass a version need `messages.getEmojiKeywordsDifference`, which is the versioned method and is implemented.
+
+### help.\*
+
+| Method | Status | What is still missing |
+| --- | --- | --- |
+| `help.getConfig` / `getAppConfig` / `getCountriesList` / `getTermsOfServiceUpdate` / `getAppUpdate` | implemented | |
+| `help.getNearestDc` | partial | Always datacenter 1. There is no geo lookup. |
+| `help.getDeepLinkInfo` | stub | Always `help.deepLinkInfoEmpty`. No interstitial is resolved. The constructor is valid, so clients do not error. |
+| `help.getPremiumPromo` | partial | Static Tellomi copy. `period_options` is empty because there is no store. |
+| `help.getPeerColors` / `getPeerProfileColors` | implemented | |
+
 ## Still returning ENTERPRISE_IS_BLOCKED
 
-These are called, routed, and fail on purpose until the product exists. They are not chat-list blockers.
+These are called, routed, and fail until the product exists. They are not chat-list blockers.
 
 | Method | Why |
 | --- | --- |
-| `account.toggleSponsoredMessages` | No sponsored-message product. |
-| `channels.restrictSponsoredMessages` | Same. |
-| `messages.viewSponsoredMessage` | Same. |
-| `messages.clickSponsoredMessage` | Same. |
-| `messages.reportSponsoredMessage` | Same. |
 | `account.confirmBotConnection` | Bot connection confirmation is not implemented. |
-| `messages.composeRichMessageWithAI` | No model provider behind the RPC. |
+| `messages.composeRichMessageWithAI` | No model provider behind the RPC. Left as an error on purpose. |
 | `messages.translateRichMessage` | Plain `messages.translateText` is separate and implemented. |
-| `messages.deleteHistory` | Channel peer only. `channels.deleteHistory` is the working method. |
-| `messages.forwardMessages` | One channel branch. |
 | `upload.getFile` | Sticker-set thumbnail location when the plugin is absent. Ordinary files and secret-chat files are served. |
 | `upload.getFileHashes` | Whole method. |
 | `upload.getWebFile` | One location branch. |
 
+Sponsored-message methods no longer use this error. They return the empty sponsored result (#173).
+
 ## What to do next
 
-1. `updates.getDifference`: carry `qts` on the state and stop rewriting `date`, with a regression test that does not change login. Encrypted-message replay is a separate secret-chat change.
-2. `messages.search` on a channel: honor `filter`, dates, and `top_msg_id`.
-3. `messages.saveDraft`: convert `InputRichMessage` into the stored `RichMessage`.
-4. `channels.getAdminLog`: record message deletes and the remaining settings.
-5. `messages.forwardMessages` and `messages.deleteHistory` for a channel peer, by calling the channel service instead of the enterprise error.
-6. `account.getDefaultEmojiStatuses`: a real catalog, or an explicit empty list the clients already accept. The empty list is valid TL; it is partial because the picker is blank.
+1. Leave `TELLOMI_DIFFERENCE_STRICT` off until #171's login and session client regression is green. Encrypted-message replay is still a separate secret-chat change.
+2. `messages.search` `hash`, `saved_reaction`, and `saved_peer_id`. Global search `community` and media `filter`.
+3. `channels.getAdminLog`: record message deletes and the remaining settings.
+4. `account.getNotifyExceptions` `compare_sound`, and a real emoji-status catalog for `account.getDefaultEmojiStatuses`.
+5. Privacy rules that name a channel, `contacts.deleteContacts` for `inputUserFromMessage`, and the `contacts.getBlocked` limit.
+6. `messages.getEmojiKeywords` should honor the client version, or clients should keep using `messages.getEmojiKeywordsDifference`.
+7. `help.getNearestDc` needs a real datacenter choice. `help.getDeepLinkInfo` needs a resolver before it can return anything other than empty.
