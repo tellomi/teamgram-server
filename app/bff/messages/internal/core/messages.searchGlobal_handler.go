@@ -19,11 +19,13 @@
 package core
 
 import (
+	"math"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	messagepb "github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
-	"math"
 )
 
 // MessagesSearchGlobal
@@ -55,8 +57,21 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 	if limit > 50 {
 		limit = 50
 	}
+	scope := globalQuery{
+		UsersOnly:      in.GetUsersOnly(),
+		GroupsOnly:     in.GetGroupsOnly(),
+		BroadcastsOnly: in.GetBroadcastsOnly(),
+		MinDate:        in.GetMinDate(),
+		MaxDate:        in.GetMaxDate(),
+	}
+	fetchLimit := limit
+	if scope.narrows() && fetchLimit > 0 {
+		fetchLimit *= 8
+		if fetchLimit > 200 {
+			fetchLimit = 200
+		}
+	}
 
-	// TODO(@benqi): Impl MessagesSearchGlobal logic
 	rValues := mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{
 		Messages: []*mtproto.Message{},
 		Chats:    []*mtproto.Chat{},
@@ -69,11 +84,27 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 			UserId: c.MD.UserId,
 			Q:      in.Q,
 			Offset: offsetId,
-			Limit:  limit,
+			Limit:  fetchLimit,
 		})
 	if err != nil {
 		c.Logger.Errorf("messages.searchGlobal - error: %v", err)
 		return rValues, nil
+	}
+	if scope.narrows() {
+		kinds := map[int64]channelKind{}
+		var channelIDs []int64
+		for _, box := range boxList.GetBoxList() {
+			if box != nil && box.GetPeerType() == mtproto.PEER_CHANNEL {
+				channelIDs = append(channelIDs, box.GetPeerId())
+			}
+		}
+		for _, chat := range channel.Shared().ChatsFor(c.ctx, c.MD.UserId, channelIDs...) {
+			if chat == nil {
+				continue
+			}
+			kinds[chat.GetId()] = channelKind{Broadcast: chat.GetBroadcast(), Megagroup: chat.GetMegagroup()}
+		}
+		boxList = filterGlobalBoxes(boxList, scope, kinds, limit)
 	}
 
 	boxList.Visit(c.MD.UserId,
@@ -95,14 +126,9 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 			rValues.Chats = append(rValues.Chats, mChats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 		},
 		func(channelIdList []int64) {
-			//mChannels, _ := c.svcCtx.Dao.ChannelClient.ChannelGetChannelListByIdList(c.ctx,
-			//	&channelpb.TLChannelGetChannelListByIdList{
-			//		SelfUserId: c.MD.UserId,
-			//		Id:         channelIdList,
-			//	})
-			//if len(mChannels.GetDatas()) > 0 {
-			//	rValues.Chats = append(rValues.Chats, mChannels.GetDatas()...)
-			//}
+			if chats := channel.Shared().ChatsFor(c.ctx, c.MD.UserId, channelIdList...); len(chats) > 0 {
+				rValues.Chats = append(rValues.Chats, chats...)
+			}
 		})
 
 	return rValues, nil

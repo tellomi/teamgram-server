@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -69,12 +70,11 @@ func (c *NotificationCore) AccountGetNotifyExceptions(in *mtproto.TLAccountGetNo
 		},
 
 		func(channelIdList []int64) {
-			if c.svcCtx.Plugin != nil {
-				chats := c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, channelIdList...)
-				rUpdates.PushChat(chats...)
-			} else {
-				c.Logger.Errorf("account.registerDevice blocked, License key from https://teamgram.net required to unlock enterprise features.")
+			if c.svcCtx != nil && c.svcCtx.Plugin != nil {
+				rUpdates.PushChat(c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, channelIdList...)...)
+				return
 			}
+			rUpdates.PushChat(channel.Shared().ChatsFor(c.ctx, c.MD.UserId, channelIdList...)...)
 		})
 
 	return rUpdates, nil
