@@ -12,6 +12,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/pkg/premium"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func (s *Service) MessagesGetPersonalChannelHistory(ctx context.Context, in *mtproto.TLMessagesGetPersonalChannelHistory) (*mtproto.Messages_Messages, error) {
@@ -156,20 +158,21 @@ type ForumsService struct {
 }
 
 func (ForumsService) MessagesGetForumTopics(ctx context.Context, in *mtproto.TLMessagesGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
-	return listTopics(ctx, in.GetPeer(), in.GetQ().GetValue(), in.GetLimit())
+	return listTopics(ctx, in.GetPeer(), in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 }
 
 func (ForumsService) ChannelsGetForumTopics(ctx context.Context, in *mtproto.TLChannelsGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
-	topics, chat, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), in.GetQ().GetValue(), in.GetLimit())
+	id := in.GetChannel().GetChannelId()
+	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(topics, chat), nil
+	return topicsResult(ctx, id, topics, chat), nil
 }
 
 func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto.TLMessagesGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
-	res, err := listTopics(ctx, in.GetPeer(), "", 100)
+	res, err := listTopics(ctx, in.GetPeer(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +193,7 @@ func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto
 
 func (ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto.TLChannelsGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
-	topics, chat, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), "", 100)
+	topics, chat, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +207,7 @@ func (ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto
 			kept = append(kept, t)
 		}
 	}
-	return topicsResult(kept, chat), nil
+	return topicsResult(ctx, in.GetChannel().GetChannelId(), kept, chat), nil
 }
 
 func (ForumsService) MessagesCreateForumTopic(ctx context.Context, in *mtproto.TLMessagesCreateForumTopic) (*mtproto.Updates, error) {
@@ -221,11 +224,11 @@ func (ForumsService) ChannelsCreateForumTopic(ctx context.Context, in *mtproto.T
 
 func (ForumsService) MessagesEditForumTopic(ctx context.Context, in *mtproto.TLMessagesEditForumTopic) (*mtproto.Updates, error) {
 	self, _ := actor(ctx)
-	return editTopic(ctx, channelID(in.GetPeer(), self), in.GetTopicId(), in.GetTitle().GetValue(), in.GetClosed())
+	return editTopic(ctx, channelID(in.GetPeer(), self), in.GetTopicId(), in.GetTitle().GetValue(), in.GetClosed(), in.GetIconEmojiId(), in.GetHidden())
 }
 
 func (ForumsService) ChannelsEditForumTopic(ctx context.Context, in *mtproto.TLChannelsEditForumTopic) (*mtproto.Updates, error) {
-	return editTopic(ctx, in.GetChannel().GetChannelId(), in.GetTopicId(), in.GetTitle().GetValue(), in.GetClosed())
+	return editTopic(ctx, in.GetChannel().GetChannelId(), in.GetTopicId(), in.GetTitle().GetValue(), in.GetClosed(), in.GetIconEmojiId(), in.GetHidden())
 }
 
 func (ForumsService) MessagesUpdatePinnedForumTopic(ctx context.Context, in *mtproto.TLMessagesUpdatePinnedForumTopic) (*mtproto.Updates, error) {
@@ -240,7 +243,7 @@ func (ForumsService) ChannelsUpdatePinnedForumTopic(ctx context.Context, in *mtp
 func (ForumsService) MessagesDeleteTopicHistory(ctx context.Context, in *mtproto.TLMessagesDeleteTopicHistory) (*mtproto.Messages_AffectedHistory, error) {
 	self, auth := actor(ctx)
 	id := channelID(in.GetPeer(), self)
-	pts, count, err := channel.Shared().DeleteHistory(ctx, self, auth, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: id}, 0, false)
+	pts, count, err := channel.Shared().DeleteTopicHistory(ctx, self, auth, id, in.GetTopMsgId())
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +252,7 @@ func (ForumsService) MessagesDeleteTopicHistory(ctx context.Context, in *mtproto
 
 func (ForumsService) ChannelsDeleteTopicHistory(ctx context.Context, in *mtproto.TLChannelsDeleteTopicHistory) (*mtproto.Messages_AffectedHistory, error) {
 	self, auth := actor(ctx)
-	pts, count, err := channel.Shared().DeleteHistory(ctx, self, auth, in.GetChannel(), 0, false)
+	pts, count, err := channel.Shared().DeleteTopicHistory(ctx, self, auth, in.GetChannel().GetChannelId(), in.GetTopMsgId())
 	if err != nil {
 		return nil, err
 	}
@@ -265,31 +268,32 @@ func (ForumsService) ChannelsToggleForum(ctx context.Context, in *mtproto.TLChan
 func (ForumsService) MessagesReorderPinnedForumTopics(ctx context.Context, in *mtproto.TLMessagesReorderPinnedForumTopics) (*mtproto.Updates, error) {
 	self, _ := actor(ctx)
 	id := channelID(in.GetPeer(), self)
-	for i, topicID := range in.GetOrder() {
-		_ = channel.Shared().PinTopic(ctx, self, id, topicID, i == 0)
+	if err := channel.Shared().ReorderPinnedTopics(ctx, self, id, in.GetOrder(), in.GetForce()); err != nil {
+		return nil, err
 	}
 	return mtproto.MakeUpdatesByUpdates(channelUpdate(id)), nil
 }
 
 func (ForumsService) ChannelsReorderPinnedForumTopics(ctx context.Context, in *mtproto.TLChannelsReorderPinnedForumTopics) (*mtproto.Updates, error) {
 	self, _ := actor(ctx)
-	for i, topicID := range in.GetOrder() {
-		_ = channel.Shared().PinTopic(ctx, self, in.GetChannel().GetChannelId(), topicID, true)
-		_ = i
+	id := in.GetChannel().GetChannelId()
+	if err := channel.Shared().ReorderPinnedTopics(ctx, self, id, in.GetOrder(), in.GetForce()); err != nil {
+		return nil, err
 	}
-	return mtproto.MakeUpdatesByUpdates(channelUpdate(in.GetChannel().GetChannelId())), nil
+	return mtproto.MakeUpdatesByUpdates(channelUpdate(id)), nil
 }
 
-func listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit int32) (*mtproto.Messages_ForumTopics, error) {
+func listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit, offsetDate, offsetID, offsetTopic int32) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
-	topics, chat, err := channel.Shared().ListTopics(ctx, self, channelID(peer, self), q, limit)
+	id := channelID(peer, self)
+	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, q, limit, offsetDate, offsetID, offsetTopic)
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(topics, chat), nil
+	return topicsResult(ctx, id, topics, chat), nil
 }
 
-func topicsResult(topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
+func topicsResult(ctx context.Context, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
 	if topics == nil {
 		topics = []*mtproto.ForumTopic{}
 	}
@@ -297,23 +301,47 @@ func topicsResult(topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Mes
 	if chat != nil {
 		chats = []*mtproto.Chat{chat}
 	}
+	var msgs []*mtproto.Message
+	for _, t := range topics {
+		if t.GetTopMessage() == 0 {
+			continue
+		}
+		m, err := channel.Shared().LoadMessage(ctx, channelID, t.GetTopMessage())
+		if err != nil || m == nil {
+			continue
+		}
+		msgs = append(msgs, m)
+	}
+	if msgs == nil {
+		msgs = []*mtproto.Message{}
+	}
 	return mtproto.MakeTLMessagesForumTopics(&mtproto.Messages_ForumTopics{
 		Count:    int32(len(topics)),
 		Topics:   topics,
-		Messages: []*mtproto.Message{},
+		Messages: msgs,
 		Chats:    chats,
 		Users:    []*mtproto.User{},
 	}).To_Messages_ForumTopics()
 }
 
-func editTopic(ctx context.Context, channelID int64, topicID int32, title string, closed *mtproto.Bool) (*mtproto.Updates, error) {
+func editTopic(ctx context.Context, channelID int64, topicID int32, title string, closed *mtproto.Bool, icon *wrapperspb.Int64Value, hidden *mtproto.Bool) (*mtproto.Updates, error) {
 	self, _ := actor(ctx)
 	var closedPtr *bool
 	if closed != nil {
 		v := mtproto.FromBool(closed)
 		closedPtr = &v
 	}
-	if _, err := channel.Shared().EditTopic(ctx, self, channelID, topicID, title, closedPtr); err != nil {
+	var hiddenPtr *bool
+	if hidden != nil {
+		v := mtproto.FromBool(hidden)
+		hiddenPtr = &v
+	}
+	var iconPtr *int64
+	if icon != nil {
+		v := icon.GetValue()
+		iconPtr = &v
+	}
+	if _, err := channel.Shared().EditTopic(ctx, self, channelID, topicID, title, closedPtr, iconPtr, hiddenPtr); err != nil {
 		return nil, err
 	}
 	return mtproto.MakeUpdatesByUpdates(channelUpdate(channelID)), nil
