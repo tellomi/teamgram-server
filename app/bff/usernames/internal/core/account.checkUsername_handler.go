@@ -31,7 +31,7 @@ import (
 //
 // A free name, including the caller's current name, returns boolTrue.
 // Occupied names return USERNAME_OCCUPIED. Names outside
-// 3–32 [A-Za-z0-9_], or that do not start with a letter, return
+// 4–32 [A-Za-z0-9_], or that do not start with a letter, return
 // USERNAME_INVALID. Other failures are logged and returned as
 // USERNAME_INVALID so the client does not retry them as an internal error.
 func (c *UsernamesCore) AccountCheckUsername(in *mtproto.TLAccountCheckUsername) (*mtproto.Bool, error) {

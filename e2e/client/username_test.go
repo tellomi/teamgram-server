@@ -9,7 +9,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-func TestUsernameThreeCharacters(t *testing.T) {
+func TestUsernameFourCharacters(t *testing.T) {
 	cfg := requireE2E(t)
 	c, _ := loginNamed(t, cfg, ProfileIOS, "username", "User")
 	var last error
@@ -64,11 +64,11 @@ func TestUsernameThreeCharacters(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, ok := again.(*mtproto.TLBoolTrue); !ok {
-			t.Fatalf("own 3-character username %s is not free for its owner: %T", name, again)
+			t.Fatalf("own 4-character username %s is not free for its owner: %T", name, again)
 		}
 		return
 	}
-	t.Fatalf("could not claim a 3-character username: %v", last)
+		t.Fatalf("could not claim a 4-character username: %v", last)
 }
 
 func TestTellomiUsernameOccupied(t *testing.T) {
@@ -109,5 +109,5 @@ func randomUsername() string {
 	const letters = "abcdefghijklmnopqrstuvwxyz"
 	var b [2]byte
 	_, _ = rand.Read(b[:])
-	return fmt.Sprintf("q%c%c", letters[int(b[0])%len(letters)], letters[int(b[1])%len(letters)])
+	return fmt.Sprintf("q%c%c%c", letters[int(b[0])%len(letters)], letters[int(b[1])%len(letters)], letters[int(b[0]+b[1])%len(letters)])
 }

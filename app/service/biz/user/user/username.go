@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	MinUsernameLen = 3
+	MinUsernameLen = 4
 	MaxUsernameLen = 32
 )
 
@@ -76,7 +76,7 @@ var ()
 
 // CheckUsernameInvalid reports whether username matches the public username
 // rule. The name is historical: it returns true when the username is valid.
-// Valid usernames are 3–32 characters of [A-Za-z0-9_], start with a letter,
+// Valid usernames are 4–32 characters of [A-Za-z0-9_], start with a letter,
 // and do not end with an underscore.
 func CheckUsernameInvalid(username string) bool {
 	if len(username) < MinUsernameLen || len(username) > MaxUsernameLen {
