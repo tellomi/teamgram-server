@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
+	"github.com/teamgram/teamgram-server/pkg/diffstrict"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 )
@@ -31,6 +32,15 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 	updateList, lastPts, lastSeq, lastDate := c.GetMergedUpdateList(in.UserId, in.AuthKeyId, in.Pts, int32(in.Date), limit)
 	if lastDate == 0 {
 		lastDate = time.Now().Unix()
+	}
+	if diffstrict.Enabled() {
+		serverPts := c.svcCtx.Dao.IDGenClient2.CurrentPtsId(c.ctx, in.UserId)
+		if serverPts < lastPts {
+			serverPts = lastPts
+		}
+		if diffstrict.TooLong(in.Pts, serverPts, limit, len(updateList)) {
+			return updates.MakeTLDifferenceTooLong(&updates.Difference{Pts: serverPts}).To_Difference(), nil
+		}
 	}
 
 	if len(updateList) == 0 {
@@ -92,6 +102,9 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 		UnreadCount: 0,
 		Seq:         lastSeq,
 	}).To_Updates_State()
+	if diffstrict.Enabled() {
+		state.Qts = c.svcCtx.Dao.IDGenClient2.CurrentQtsId(c.ctx, in.AuthKeyId)
+	}
 
 	if len(updateList) >= int(limit) {
 		// 2.2 updates.differenceSlice#a8fb1981
