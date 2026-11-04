@@ -94,12 +94,10 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ## 常见路径里还缺的
 
-频道简介、草稿、免打扰、清空自己的历史、从频道转发，以及赞助消息的空结果，已经在 master 上。下面这些客户端还会打到、并且仍返回 `ENTERPRISE_IS_BLOCKED`：
+频道简介、草稿、免打扰、清空自己的历史、从频道转发、贴纸集封面，以及赞助消息的空结果，已经在 master 上。`users.getIsPremiumRequiredToContact` 见下面「资料页」。下面这些客户端还会打到、并且仍返回 `ENTERPRISE_IS_BLOCKED`：
 
 | 方法 | 会在哪碰到 |
 | --- | --- |
-| `users.getIsPremiumRequiredToContact` | 打开资料页 |
-| `upload.getFile` 的 `inputStickerSetThumb` | 贴纸集封面。普通文件和秘密聊天文件走 DFS |
 | `messages.composeRichMessageWithAI`、`messages.translateRichMessage` | AI 撰写 / 富文本翻译。普通 `messages.translateText` 另有实现 |
 | `account.confirmBotConnection` | 机器人连接确认 |
 | `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth` | 机器人、网页令牌、付费登录。Tellomi 登录不走这些 |
@@ -121,14 +119,12 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 `messages.uploadEncryptedFile` 已实现。客户端先用 `upload.saveFilePart` / `upload.saveBigFilePart` 传分片，再把 `inputEncryptedFileUploaded` 或 `inputEncryptedFileBigUploaded` 交给这个方法。服务端把分片收成 `encryptedFile`（含 `key_fingerprint`），对象写在 DFS 的 `encryptedfiles/<id>.dat`。对方用 `upload.getFile` 的 `inputEncryptedFileLocation` 读取。`inputEncryptedFile` 表示这份已经传过的文件。
 
-## 不算缺口、但只做了一半的路径
+## 资料页
 
-这些方法整体是已实现。个别分支在频道或企业插件缺失时返回 `ENTERPRISE_IS_BLOCKED`。私聊和基础群走得到：
+`users.getIsPremiumRequiredToContact` 对每个 id 返回 `boolFalse`。Tellomi 不用 Premium 才能发消息这道门槛。
 
-- `messages.saveDraft` / `messages.clearAllDrafts`：频道草稿被挡住，私聊和基础群可以存。
-- `messages.editChatAbout`：基础群可以改简介，频道不行。
-- `account.updateNotifySettings`：用户、基础群可以；频道分支要插件。
-- `upload.getFile`：普通图片、文件、秘密聊天的 `inputEncryptedFileLocation`，以及 `inputStickerSetThumb`（贴纸集封面，来自贴纸目录里的封面文档）都返回字节。没有贴纸插件时不再返回 `ENTERPRISE_IS_BLOCKED`。
-- `messages.forwardMessages` / `messages.deleteHistory`：有一条频道或加密分支返回企业错误，普通对话的转发和清空历史是实现了的。
+## 还留着的
 
-频道、付费、Apple/Google 登录按 P2 留着。
+- `account.confirmBotConnection`：机器人连接确认。
+- `messages.composeRichMessageWithAI`、`messages.translateRichMessage`：AI 撰写和富文本翻译。普通 `messages.translateText` 另有实现。
+- `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些。

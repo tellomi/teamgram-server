@@ -24,9 +24,17 @@ import (
 
 // UsersGetIsPremiumRequiredToContact
 // users.getIsPremiumRequiredToContact#a622aa10 id:Vector<InputUser> = Vector<Bool>;
+// UsersGetIsPremiumRequiredToContact reports whether each user requires a
+// premium subscription before they can be contacted. Tellomi does not gate
+// contact on premium, so every id is boolFalse. An empty id list is an empty
+// vector. https://core.telegram.org/method/users.getIsPremiumRequiredToContact
 func (c *PrivacySettingsCore) UsersGetIsPremiumRequiredToContact(in *mtproto.TLUsersGetIsPremiumRequiredToContact) (*mtproto.Vector_Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("users.getIsPremiumRequiredToContact blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	out := make([]*mtproto.Bool, 0, len(in.GetId()))
+	for _, id := range in.GetId() {
+		if id == nil {
+			continue
+		}
+		out = append(out, mtproto.BoolFalse)
+	}
+	return &mtproto.Vector_Bool{Datas: out}, nil
 }
