@@ -8,6 +8,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	rpcmd "github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/discoverrel"
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 
 	"google.golang.org/grpc/metadata"
@@ -103,5 +104,50 @@ func TestDiscoverCredentialVerifiesAndStaysOffByDefault(t *testing.T) {
 	}
 	if _, err = svc.DiscoverGetEngineCredential(withUser(0, ""), nil); status.Convert(err).Message() != "AUTH_KEY_UNREGISTERED" {
 		t.Fatalf("anon: %v", err)
+	}
+}
+
+func TestCredentialRecordsSubjectWhenRelationsOn(t *testing.T) {
+	testKeys(t)
+	svc := New(memAccounts{rows: map[int64]Account{
+		7: {CountryCode: "US", Phone: "14155552671"},
+	}})
+	svc.mainland = func(string) bool { return false }
+	fixed := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	svc.now = func() int64 { return fixed.Unix() }
+
+	discoverrel.UseDirectory(nil)
+	t.Cleanup(func() { discoverrel.UseDirectory(nil) })
+	if _, err := svc.DiscoverGetEngineCredential(withUser(7, "8.8.8.8"), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := discoverrel.NewMemory()
+	discoverrel.UseDirectory(dir)
+	got, err := svc.DiscoverGetEngineCredential(withUser(7, "8.8.8.8"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := discoverauth.LoadKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := discoverauth.Pseudonym(keys.Pseudonym, 7)
+	users, err := dir.Users(context.Background(), [][]byte{sub})
+	if err != nil || users[discoverauth.EncodeSub(sub)] != 7 {
+		t.Fatalf("subject %v %v", users, err)
+	}
+	claims, err := discoverauth.Verify(keys.Signing, got.GetToken(), fixed)
+	if err != nil || claims.Sub != discoverauth.EncodeSub(sub) {
+		t.Fatalf("token sub %s err %v", claims.Sub, err)
+	}
+
+	svc = svc.WithMembers(&memMembers{views: map[int64]MemberView{8: {Live: true}}})
+	if _, err = svc.DiscoverGetAudienceToken(withUser(7, ""), &mtproto.TLDiscoverGetAudienceToken{Kind: "include", UserIds: []int64{8}}); err != nil {
+		t.Fatal(err)
+	}
+	users, err = dir.Users(context.Background(), [][]byte{sub})
+	if err != nil || users[discoverauth.EncodeSub(sub)] != 7 {
+		t.Fatalf("audience subject %v %v", users, err)
 	}
 }

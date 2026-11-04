@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -60,6 +61,40 @@ type mysqlStore struct {
 
 func newMySQLStore(db *sql.DB) *mysqlStore {
 	return &mysqlStore{db: db}
+}
+
+// Users reads discover_subject. The map key is base64url of the 16-byte sub.
+// A missing table is an empty result: nobody has been recorded yet.
+func (m *mysqlStore) Users(ctx context.Context, subs [][]byte) (map[string]int64, error) {
+	out := map[string]int64{}
+	if m == nil || m.db == nil || len(subs) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(subs))
+	for i, sub := range subs {
+		args[i] = sub
+	}
+	rows, err := m.db.QueryContext(ctx, `
+SELECT sub, user_id FROM discover_subject WHERE sub IN (`+placeholders(len(subs))+`)`, args...)
+	if err != nil {
+		if isNoTable(err) {
+			return out, nil
+		}
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sub []byte
+		var id int64
+		if err = rows.Scan(&sub, &id); err != nil {
+			return nil, err
+		}
+		if len(sub) != 16 || id <= 0 {
+			continue
+		}
+		out[base64.RawURLEncoding.EncodeToString(sub)] = id
+	}
+	return out, rows.Err()
 }
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {

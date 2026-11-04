@@ -1,7 +1,11 @@
 package report
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
 	"os"
 	"testing"
 
@@ -101,5 +105,53 @@ CREATE TABLE IF NOT EXISTS story_reports (
 	}
 	if !found {
 		t.Fatal("legacy story row missing after reopen")
+	}
+}
+
+func TestMySQLReportSubjects(t *testing.T) {
+	dsn := os.Getenv("TEAMGRAM_MYSQL_DSN")
+	if dsn == "" {
+		dsn = "root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai"
+	}
+	svc, err := OpenMySQL(dsn)
+	if err != nil {
+		t.Skipf("mysql not available: %v", err)
+	}
+	store := svc.store.(*mysqlStore)
+	ctx := context.Background()
+	if _, err = store.db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS discover_subject (
+  sub BINARY(16) NOT NULL,
+  user_id BIGINT NOT NULL,
+  PRIMARY KEY (sub),
+  UNIQUE KEY discover_subject_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`); err != nil {
+		t.Fatal(err)
+	}
+	known := bytes.Repeat([]byte{9}, 16)
+	missing := bytes.Repeat([]byte{10}, 16)
+	const userID int64 = 88051106
+	t.Cleanup(func() {
+		_, _ = store.db.ExecContext(context.Background(), `DELETE FROM discover_subject WHERE user_id=? OR sub=?`, userID, known)
+	})
+	_, _ = store.db.ExecContext(ctx, `DELETE FROM discover_subject WHERE user_id=? OR sub=?`, userID, known)
+	if _, err = store.db.ExecContext(ctx, `INSERT INTO discover_subject (sub, user_id) VALUES (?, ?)`, known, userID); err != nil {
+		t.Fatal(err)
+	}
+	h := Handler{Service: svc, Key: bytesKey(t)}
+	token := base64.StdEncoding.EncodeToString(h.Key)
+	body := `{"subs":["` + base64.RawURLEncoding.EncodeToString(known) + `","` + base64.RawURLEncoding.EncodeToString(missing) + `"]}`
+	rec := postJSON(t, h, token, pathSubjects, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("subjects %d %s", rec.Code, rec.Body.String())
+	}
+	var parsed struct {
+		Users []subjectUser `json:"users"`
+	}
+	if err = json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Users) != 1 || parsed.Users[0].UserID != userID || parsed.Users[0].Sub != base64.RawURLEncoding.EncodeToString(known) {
+		t.Fatalf("%+v", parsed.Users)
 	}
 }

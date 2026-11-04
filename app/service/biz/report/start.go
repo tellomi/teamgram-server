@@ -291,6 +291,9 @@ func listen(s *Service) {
 	if loopback(plan.addr) {
 		logx.Infof("report: http on %s is loopback; another container cannot connect. Set %s to an address content-engine can reach", plan.addr, EnvAddr)
 	}
+	if _, ok := s.store.(*mysqlStore); !ok {
+		logx.Error("report: discover subject lookup needs mysql; POST /internal/v1/reports/subjects answers unavailable")
+	}
 	key := plan.key
 	addr := plan.addr
 	srv := &http.Server{

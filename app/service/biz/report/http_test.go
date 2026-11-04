@@ -1,9 +1,11 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -198,6 +200,104 @@ func TestModerationVerdicts(t *testing.T) {
 	rec = postJSON(t, h, token, "/internal/v1/moderation/review", `{"text":"x","media_keys":["../secret"]}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("media %d", rec.Code)
+	}
+}
+
+type mapSubjects struct {
+	users map[string]int64
+	err   error
+}
+
+func (m mapSubjects) Users(_ context.Context, subs [][]byte) (map[string]int64, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	out := map[string]int64{}
+	for _, sub := range subs {
+		key := base64.RawURLEncoding.EncodeToString(sub)
+		if id := m.users[key]; id > 0 {
+			out[key] = id
+		}
+	}
+	return out, nil
+}
+
+func TestReportSubjects(t *testing.T) {
+	s, box, _ := testService(t)
+	known := bytes.Repeat([]byte{7}, 16)
+	unknown := bytes.Repeat([]byte{8}, 16)
+	knownEnc := base64.RawURLEncoding.EncodeToString(known)
+	unknownEnc := base64.RawURLEncoding.EncodeToString(unknown)
+	h := Handler{
+		Service:  s,
+		Key:      bytesKey(t),
+		Subjects: mapSubjects{users: map[string]int64{knownEnc: 34}},
+	}
+	token := base64.StdEncoding.EncodeToString(h.Key)
+
+	rec := postJSON(t, h, "", pathSubjects, `{"subs":["`+knownEnc+`"]}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("auth %d %s", rec.Code, rec.Body.String())
+	}
+
+	body := `{"subs":["` + knownEnc + `","` + knownEnc + `","` + unknownEnc + `"]}`
+	rec = postJSON(t, h, token, pathSubjects, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lookup %d %s", rec.Code, rec.Body.String())
+	}
+	var parsed struct {
+		Users []subjectUser `json:"users"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Users) != 1 || parsed.Users[0].Sub != knownEnc || parsed.Users[0].UserID != 34 {
+		t.Fatalf("%+v", parsed.Users)
+	}
+	rows, err := s.List(context.Background())
+	if err != nil || len(rows) != 0 || len(box.msgs) != 0 {
+		t.Fatalf("stored rows %d receipts %d err %v", len(rows), len(box.msgs), err)
+	}
+
+	rec = postJSON(t, h, token, pathSubjects, `{"subs":["`+unknownEnc+`"]}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"users":[]`) {
+		t.Fatalf("unknown %d %s", rec.Code, rec.Body.String())
+	}
+	rec = postJSON(t, h, token, pathSubjects, `{"subs":[]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty %d", rec.Code)
+	}
+	rec = postJSON(t, h, token, pathSubjects, `{"subs":["abc"]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("shape %d", rec.Code)
+	}
+	rec = postJSON(t, h, token, pathSubjects, `{"subs":["`+knownEnc+`="]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("padding %d", rec.Code)
+	}
+	tooMany := `{"subs":[` + strings.TrimRight(strings.Repeat(`"`+knownEnc+`",`, maxReportSubs+1), ",") + `]}`
+	rec = postJSON(t, h, token, pathSubjects, tooMany)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("cap %d %s", rec.Code, rec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, pathSubjects, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("method %d", rec.Code)
+	}
+
+	h.Subjects = mapSubjects{err: errors.New("down")}
+	rec = postJSON(t, h, token, pathSubjects, `{"subs":["`+knownEnc+`"]}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("down %d %s", rec.Code, rec.Body.String())
+	}
+	h.Subjects = nil
+	rec = postJSON(t, h, token, pathSubjects, `{"subs":["`+knownEnc+`"]}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("memory %d %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -97,6 +97,32 @@ content-engine：
 
 重试时 `status` 是 `duplicate`。太频繁是 `429`，正文 `{"error":"rate_limited","retry_after":N}`。
 
+转发上面这条之前，content-engine 若还没有数字 user id，先解析 `sub`。content-engine#77 会这么做。这条路由不存在（`404`）时，它把举报留在本地，稍后重试。
+
+### 解析 sub
+
+`POST /internal/v1/reports/subjects`
+
+鉴权与上面相同。
+
+```json
+{"subs":["<16 字节 sub 的 base64url，无填充>"]}
+```
+
+`subs` 1 到 32 个。带 `=`、解出来不是 16 字节、或不是 base64url，整次是 `400`。
+
+`200`
+
+```json
+{"users":[{"sub":"<同一串字节的 base64url，无填充>","user_id":34}]}
+```
+
+`user_id` 是 teamgram 的 `users.id`。`discover_subject` 里没有的 `sub` 不出现。重复的 `sub` 只返回一次。这个接口不写 `reports`，也不发 `@admin`。
+
+这些行只在 `TELLOMI_DISCOVER_RELATIONS=1` 且关系密钥、MySQL 都可用时写入：用户成功调用 `discover.getEngineCredential` 或 `discover.getAudienceToken` 之后，bff 记下这次调用者的 `sub → user_id`。开关没开，或者这个人还没拿过凭证，`users` 是空数组。表是 `teamgramd/deploy/sql/migrate-20261104-discover-subject.sql`。
+
+没连上 MySQL 是 `503`，正文 `{"error":"unavailable"}`。表还没建时按「还没有这个 sub」回答，`users` 为空。
+
 可选：发帖前的分类走 `POST /internal/v1/moderation/review`，正文 `{"post_id":"post-9","text":"...","media_keys":["photos/1"]}`，响应 `{"verdict":"violation"}`。`verdict` 是 `violation`、`ok` 或 `uncertain`。机审没开时直接是 `uncertain`，不调用模型，也不写 `reports`。
 
 人审结论是 `POST /internal/v1/reports/{id}/decision`，正文 `{"decision":"violation"}` 或 `{"decision":"clear"}`。`no_violation` 与 `clear` 相同。
