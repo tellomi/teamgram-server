@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -558,6 +559,9 @@ func (b *Book) InlineResults(ctx context.Context, self int64, bot *mtproto.Input
 	if err != nil {
 		return nil, err
 	}
+	if botID == mtproto.BotGifId {
+		return b.gifInline(ctx, self, p, query)
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	st := b.botLocked(ctx, botID)
@@ -622,6 +626,31 @@ func (b *Book) storeQueryLocked(ctx context.Context, self, botID int64, peer *mt
 	b.queries[q.ID] = q
 	_ = b.save(ctx, queryKey(q.ID), q)
 	return q
+}
+
+func (b *Book) gifInline(ctx context.Context, self int64, peer *mtproto.PeerUtil, query string) (*mtproto.Messages_BotResults, error) {
+	raw, err := packResults(catalog.GifInlineResults(query))
+	if err != nil {
+		return nil, err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	q := b.storeQueryLocked(ctx, self, mtproto.BotGifId, peer, query, &cachedAnswer{
+		Gallery:   true,
+		CacheTime: 300,
+		Results:   raw,
+	})
+	results, err := unpackResults(q.Results)
+	if err != nil {
+		return nil, err
+	}
+	return mtproto.MakeTLMessagesBotResults(&mtproto.Messages_BotResults{
+		Gallery:   true,
+		QueryId:   q.ID,
+		Results:   results,
+		CacheTime: 300,
+		Users:     []*mtproto.User{catalog.GifBotUser()},
+	}).To_Messages_BotResults(), nil
 }
 
 func queryKey(id int64) string { return "iq:" + userKey(id) }
@@ -808,11 +837,37 @@ func (b *Book) TakeInlineResult(ctx context.Context, self int64, peer *mtproto.I
 	if st := b.botLocked(ctx, botID); st != nil {
 		users = []*mtproto.User{st.Profile.user(false)}
 	}
+	if botID == mtproto.BotGifId && len(users) == 0 {
+		users = []*mtproto.User{catalog.GifBotUser()}
+	}
 	b.mu.Unlock()
 	if hit == nil || hit.SendMessage == nil {
 		return nil, nil, mtproto.ErrInlineResultExpired
 	}
 	text := hit.SendMessage.Message
+	if hit.GetDocument() != nil && hit.GetDocument().GetPredicateName() == mtproto.Predicate_document {
+		msg := b.textMessage(self, p, text, silent)
+		msg.Media = mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{
+			Document: hit.GetDocument(),
+		}).To_MessageMedia()
+		msg.Entities = hit.SendMessage.Entities
+		msg.ReplyMarkup = hit.SendMessage.ReplyMarkup
+		if !hideVia {
+			msg.ViaBotId = wrapperspb.Int64(botID)
+		}
+		msg.ReplyTo = replyHeader(reply)
+		if schedule > 0 {
+			ups, err := b.Schedule(ctx, self, p, schedule, []*mtproto.Message{msg})
+			return nil, ups, err
+		}
+		if random == 0 {
+			random = b.freshID()
+		}
+		return &SendReq{
+			Peer: p, RandomID: random, Background: background, Message: msg,
+			Fallback: localUpdates(msg, users),
+		}, nil, nil
+	}
 	if strings.TrimSpace(text) == "" {
 		return nil, nil, mtproto.ErrMessageEmpty
 	}

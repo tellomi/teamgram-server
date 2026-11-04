@@ -19,7 +19,10 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -91,5 +94,25 @@ func (c *UsernamesCore) ContactsResolveUsername(in *mtproto.TLContactsResolveUse
 		}
 	}
 
+	ensureGifBot(in.GetUsername(), resolvedPeer)
 	return resolvedPeer, nil
+}
+
+// ensureGifBot puts the built-in @gif user on contacts.resolvedPeer.
+// iOS will not open the GIF panel when resolveUsername has no bot user.
+func ensureGifBot(username string, peer *mtproto.Contacts_ResolvedPeer) {
+	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(username)), "@")
+	if peer == nil || name != mtproto.BotGifName {
+		return
+	}
+	bot := catalog.GifBotUser()
+	for i, u := range peer.Users {
+		if u.GetId() == bot.GetId() {
+			if !u.GetBot() {
+				peer.Users[i] = bot
+			}
+			return
+		}
+	}
+	peer.Users = append(peer.Users, bot)
 }
