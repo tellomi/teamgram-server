@@ -117,15 +117,15 @@ var iosDiscoverSignUp = []iosDiscoverRow{
 	{"Tellomi.Discover.City.cn_urumqi", "Urumqi", "乌鲁木齐", "烏魯木齊"},
 	{"Tellomi.Discover.City.cn_hohhot", "Hohhot", "呼和浩特", "呼和浩特"},
 	{"Tellomi.Discover.City.cn_lhasa", "Lhasa", "拉萨", "拉薩"},
-	{"Tellomi.Discover.City.cn_hong-kong", "Hong Kong", "香港", "香港"},
+	{"Tellomi.Discover.City.cn_hong_kong", "Hong Kong", "香港", "香港"},
 	{"Tellomi.Discover.City.cn_macau", "Macau", "澳门", "澳門"},
 	{"Tellomi.Discover.City.cn_taipei", "Taipei", "台北", "台北"},
 	{"Tellomi.Discover.City.cn_kaohsiung", "Kaohsiung", "高雄", "高雄"},
 	{"Tellomi.Discover.City.cn_taichung", "Taichung", "台中", "台中"},
 	{"Tellomi.Discover.City.cn_tainan", "Tainan", "台南", "台南"},
-	{"Tellomi.Discover.City.us_new-york", "New York", "纽约", "紐約"},
-	{"Tellomi.Discover.City.us_los-angeles", "Los Angeles", "洛杉矶", "洛杉磯"},
-	{"Tellomi.Discover.City.us_san-francisco", "San Francisco", "旧金山", "舊金山"},
+	{"Tellomi.Discover.City.us_new_york", "New York", "纽约", "紐約"},
+	{"Tellomi.Discover.City.us_los_angeles", "Los Angeles", "洛杉矶", "洛杉磯"},
+	{"Tellomi.Discover.City.us_san_francisco", "San Francisco", "旧金山", "舊金山"},
 	{"Tellomi.Discover.City.gb_london", "London", "伦敦", "倫敦"},
 	{"Tellomi.Discover.City.jp_tokyo", "Tokyo", "东京", "東京"},
 	{"Tellomi.Discover.City.jp_osaka", "Osaka", "大阪", "大阪"},
@@ -136,6 +136,54 @@ var iosDiscoverSignUp = []iosDiscoverRow{
 	{"Tellomi.Discover.City.au_sydney", "Sydney", "悉尼", "悉尼"},
 	{"Tellomi.Discover.City.ca_toronto", "Toronto", "多伦多", "多倫多"},
 	{"Tellomi.Discover.City.th_bangkok", "Bangkok", "曼谷", "曼谷"},
+}
+
+// discoverStringVersion is the override version for a Discover key.
+// The four city ids that used a hyphen are at the pack version. Every other
+// Discover key stays one behind, so langpack.getDifference from that previous
+// version returns only the renamed keys.
+func discoverStringVersion(key string, pack int32) int32 {
+	switch key {
+	case "Tellomi.Discover.City.cn_hong_kong",
+		"Tellomi.Discover.City.us_new_york",
+		"Tellomi.Discover.City.us_los_angeles",
+		"Tellomi.Discover.City.us_san_francisco":
+		return pack
+	default:
+		return pack - 1
+	}
+}
+
+func assertRenamedCitiesDelivered(t *testing.T, cat *Catalog, platform, code string, pack int32, want map[string]string) {
+	t.Helper()
+	diff, err := cat.Difference(platform, code, pack-1)
+	if err != nil {
+		t.Fatal(platform, code, err)
+	}
+	if diff.GetVersion() != pack {
+		t.Fatalf("%s %s city difference version %d", platform, code, diff.GetVersion())
+	}
+	seen := map[string]string{}
+	for _, s := range diff.GetStrings() {
+		if s.GetPredicateName() != mtproto.Predicate_langPackString {
+			t.Fatalf("%s %s %s predicate %s", platform, code, s.GetKey(), s.GetPredicateName())
+		}
+		seen[s.GetKey()] = s.GetValue()
+	}
+	wantKeys := []string{
+		"Tellomi.Discover.City.cn_hong_kong",
+		"Tellomi.Discover.City.us_new_york",
+		"Tellomi.Discover.City.us_los_angeles",
+		"Tellomi.Discover.City.us_san_francisco",
+	}
+	if len(seen) != len(wantKeys) {
+		t.Fatalf("%s %s city difference n=%d", platform, code, len(seen))
+	}
+	for _, key := range wantKeys {
+		if seen[key] != want[key] {
+			t.Fatalf("%s %s %s got %q want %q", platform, code, key, seen[key], want[key])
+		}
+	}
 }
 
 func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
@@ -154,9 +202,9 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 		prev    int32
 		version int32
 	}{
-		{"en", 22347344, 22347345},
-		{"zh-hans", 22454344, 22454345},
-		{"zh-hant", 22421529, 22421530},
+		{"en", 22347344, 22347346},
+		{"zh-hans", 22454344, 22454346},
+		{"zh-hant", 22421529, 22421531},
 	} {
 		ver, ok := cat.Version("ios", tc.code)
 		if !ok || ver != tc.version {
@@ -203,10 +251,11 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 		if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != tc.version {
 			t.Fatalf("%s caught up %+v %v", tc.code, caught, err)
 		}
+		assertRenamedCitiesDelivered(t, cat, "ios", tc.code, tc.version, want)
 		override := readOverride(t, "../../data/langpack/overrides/ios/"+tc.code+".json.gz")
 		for key, value := range want {
 			entry, ok := override[key]
-			if !ok || entry.value != value || entry.version != tc.version {
+			if !ok || entry.value != value || entry.version != discoverStringVersion(key, tc.version) {
 				t.Fatalf("override %s %s %+v", tc.code, key, entry)
 			}
 		}
