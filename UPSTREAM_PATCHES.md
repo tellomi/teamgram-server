@@ -116,7 +116,7 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 
 ## Language list (`langpack.getLanguages`, `help.getConfig`)
 
-Hindi, Thai, and Greek were listed with `official` set, but Telegram has no official translation for them. The shipped packs are near-empty (Android: hi about 1460 strings, th 2, el about 1300; iOS: hi about 980, th 3, el 3) next to the ~11–12k string packs, so a client that offers them shows English. `TELLOMI_LANGPACK_HIDDEN` (unset means `hi,th,el`; empty lists every pack) removes those codes from `langpack.getLanguages` on every lang pack. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve them.
+Hindi, Thai, and Greek were listed with `official` set, but Telegram's export for them is still partial (Thai is an English copy, which is not shipped). The gaps are machine-translated so each pack has the same keys as English, marked `mt:true` for review. `TELLOMI_LANGPACK_HIDDEN` (unset means `hi,th,el`; empty lists every pack) keeps those codes out of `langpack.getLanguages` until that review. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve them.
 
 `help.getConfig` `suggested_lang_code` follows `initConnection.system_lang_code`, the same way official Telegram does. An empty device language uses `lang_code`. A hidden language is not suggested. `lang_pack_version` still follows the app language.
 

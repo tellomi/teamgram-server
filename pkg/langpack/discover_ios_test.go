@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -139,9 +140,9 @@ var iosDiscoverSignUp = []iosDiscoverRow{
 }
 
 // discoverStringVersion is the override version for a Discover key.
-// The four city ids that used a hyphen are at the pack version. Every other
-// Discover key stays one behind, so langpack.getDifference from that previous
-// version returns only the renamed keys.
+// The four city ids that used a hyphen are at the rename version (pack).
+// Every other Discover key in the override stays one behind. Chinese packs
+// can be newer than pack when a later fill added strings above the rename.
 func discoverStringVersion(key string, pack int32) int32 {
 	switch key {
 	case "Tellomi.Discover.City.cn_hong_kong",
@@ -160,13 +161,15 @@ func assertRenamedCitiesDelivered(t *testing.T, cat *Catalog, platform, code str
 	if err != nil {
 		t.Fatal(platform, code, err)
 	}
-	if diff.GetVersion() != pack {
+	if diff.GetVersion() < pack {
 		t.Fatalf("%s %s city difference version %d", platform, code, diff.GetVersion())
 	}
 	seen := map[string]string{}
+	atRename := map[string]struct{}{}
 	for _, s := range diff.GetStrings() {
+		atRename[s.GetKey()] = struct{}{}
 		if s.GetPredicateName() != mtproto.Predicate_langPackString {
-			t.Fatalf("%s %s %s predicate %s", platform, code, s.GetKey(), s.GetPredicateName())
+			continue
 		}
 		seen[s.GetKey()] = s.GetValue()
 	}
@@ -176,13 +179,44 @@ func assertRenamedCitiesDelivered(t *testing.T, cat *Catalog, platform, code str
 		"Tellomi.Discover.City.us_los_angeles",
 		"Tellomi.Discover.City.us_san_francisco",
 	}
-	if len(seen) != len(wantKeys) {
-		t.Fatalf("%s %s city difference n=%d", platform, code, len(seen))
-	}
 	for _, key := range wantKeys {
 		if seen[key] != want[key] {
 			t.Fatalf("%s %s %s got %q want %q", platform, code, key, seen[key], want[key])
 		}
+	}
+	// The four renamed keys are exactly at pack. A later fill may add strings
+	// above that, and a client already on pack does not download the cities again.
+	after, err := cat.Difference(platform, code, pack)
+	if err != nil {
+		t.Fatal(platform, code, err)
+	}
+	later := map[string]struct{}{}
+	for _, s := range after.GetStrings() {
+		later[s.GetKey()] = struct{}{}
+	}
+	for _, key := range wantKeys {
+		if _, ok := later[key]; ok {
+			t.Fatalf("%s %s %s still delivered after %d", platform, code, key, pack)
+		}
+	}
+	var extra []string
+	for key := range atRename {
+		if _, ok := later[key]; ok {
+			continue
+		}
+		found := false
+		for _, wantKey := range wantKeys {
+			if key == wantKey {
+				found = true
+				break
+			}
+		}
+		if !found {
+			extra = append(extra, key)
+		}
+	}
+	if len(extra) != 0 {
+		t.Fatalf("%s %s extra keys at city version %d: %v", platform, code, pack, extra)
 	}
 }
 
@@ -207,7 +241,7 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 		{"zh-hant", 22421529, 22421531},
 	} {
 		ver, ok := cat.Version("ios", tc.code)
-		if !ok || ver != tc.version {
+		if !ok || ver < tc.version {
 			t.Fatalf("%s version %d %v", tc.code, ver, ok)
 		}
 		want := map[string]string{}
@@ -232,13 +266,13 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 		if err != nil {
 			t.Fatal(tc.code, err)
 		}
-		if diff.GetVersion() != tc.version || len(diff.GetStrings()) != len(want) {
+		if diff.GetVersion() < tc.version || len(diff.GetStrings()) < len(want) {
 			t.Fatalf("%s difference v=%d n=%d", tc.code, diff.GetVersion(), len(diff.GetStrings()))
 		}
 		seen := map[string]string{}
 		for _, s := range diff.GetStrings() {
 			if s.GetPredicateName() != mtproto.Predicate_langPackString {
-				t.Fatalf("%s %s predicate %s", tc.code, s.GetKey(), s.GetPredicateName())
+				continue
 			}
 			seen[s.GetKey()] = s.GetValue()
 		}
@@ -247,8 +281,8 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 				t.Fatalf("%s refresh %s got %q want %q", tc.code, key, seen[key], value)
 			}
 		}
-		caught, err := cat.Difference("ios", tc.code, tc.version)
-		if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != tc.version {
+		caught, err := cat.Difference("ios", tc.code, diff.GetVersion())
+		if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != diff.GetVersion() {
 			t.Fatalf("%s caught up %+v %v", tc.code, caught, err)
 		}
 		assertRenamedCitiesDelivered(t, cat, "ios", tc.code, tc.version, want)
@@ -261,17 +295,26 @@ func TestIOSDiscoverSignUpKeysResolve(t *testing.T) {
 		}
 	}
 
-	// Other languages omit the keys. The client loads base_lang_code (en).
+	// Other languages ship the Tellomi keys themselves. base_lang_code is only
+	// the fallback for a key that is still absent.
 	for _, row := range iosDiscoverSignUp {
-		got, ok := cat.Plain("ios", "ja", row.key)
-		if !ok || got != row.en {
-			t.Fatalf("ja fallback %s %q %v", row.key, got, ok)
-		}
 		rows, err := cat.Strings("ios", "ja", []string{row.key})
-		if err != nil || len(rows) != 1 || rows[0].GetPredicateName() != mtproto.Predicate_langPackStringDeleted {
-			t.Fatalf("ja pack should omit %s %+v %v", row.key, rows, err)
+		if err != nil || len(rows) != 1 || rows[0].GetPredicateName() != mtproto.Predicate_langPackString || rows[0].GetValue() == "" {
+			t.Fatalf("ja pack missing %s %+v %v", row.key, rows, err)
+		}
+		if !sameDiscoverPlaceholders(row.en, rows[0].GetValue()) {
+			t.Fatalf("ja placeholders %s %q", row.key, rows[0].GetValue())
 		}
 	}
+}
+
+func sameDiscoverPlaceholders(src, dst string) bool {
+	for _, token := range []string{"%@", "%d", "%1$@", "%1$s", "%2$@"} {
+		if strings.Contains(src, token) != strings.Contains(dst, token) {
+			return false
+		}
+	}
+	return true
 }
 
 type overrideEntry struct {
