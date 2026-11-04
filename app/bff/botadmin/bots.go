@@ -254,6 +254,9 @@ func CreateBot(ctx context.Context, self int64, via bool, name, username string,
 	if !validName(name) {
 		return nil, mtproto.ErrNameInvalid
 	}
+	if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_USER, self, name); err != nil {
+		return nil, mtproto.ErrFirstnameInvalid
+	}
 	username = strings.TrimSpace(username)
 	if err := validateUsername(username, true); err != nil {
 		return nil, err
@@ -367,7 +370,14 @@ func SetBotInfo(ctx context.Context, self int64, bot *mtproto.InputUser, lang st
 	}
 	row := cur.info[lang]
 	if name != nil {
-		row.name = strings.TrimSpace(name.GetValue())
+		next := strings.TrimSpace(name.GetValue())
+		curName, _, _ := cur.texts(lang)
+		if next != curName {
+			if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_USER, self, next); err != nil {
+				return nil, mtproto.ErrFirstnameInvalid
+			}
+		}
+		row.name = next
 		if lang == "" {
 			cur.display = row.name
 		}

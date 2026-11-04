@@ -30,6 +30,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestUsernameThreeCharacters` | A 3-character username cannot be checked and set. |
 | `TestTellomiUsernameOccupied` | `account.checkUsername` for `tellomi`, `Tellomi`, or `TELLOMI` does not return `USERNAME_OCCUPIED`. |
 | `TestOfficialUsernamesOccupied` | `account.checkUsername` for an appendix D name (`support`, `news`, `help`, `admin`, `stickers`, `premium`, or a case variant of `tellomi`) does not return `USERNAME_OCCUPIED`. |
+| `TestProfileAndChannelNames` | With `TELLOMI_USERNAME_POLICY=1`, `account.updateProfile` does not return 400 `FIRSTNAME_INVALID` / `LASTNAME_INVALID` for `admin` / `tellomi`, a normal name is not saved, a megagroup titled `admin` is created, or a chat message containing those words is rejected. |
 | `TestLinksUseTellCC` | `help.getConfig` `me_url_prefix` is not a `tell.cc` URL. |
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
 | `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
@@ -94,6 +95,9 @@ not a local compose stack.
 
 Without `TELLOMI_E2E`, only the offline checks run (layer wrapping and the
 server key fingerprint).
+
+`TestProfileAndChannelNames` needs `TELLOMI_USERNAME_POLICY=1` on the server.
+The CI compose overlay sets it. A local stack does not, unless `.env` does.
 
 ## CI
 

@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/premium"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 // AccountUpdateProfile
@@ -34,6 +35,21 @@ func (c *UserChannelProfilesCore) AccountUpdateProfile(in *mtproto.TLAccountUpda
 	if err != nil {
 		c.Logger.Errorf("account.updateProfile - error: %v", err)
 		return nil, mtproto.ErrUserInvalid
+	}
+
+	// Names are checked only when they change (D-26). A hit uses the official
+	// account.updateProfile errors. The rule id stays in the usernamepolicy log.
+	if in.GetFirstName() != nil && in.GetFirstName().GetValue() != me.FirstName() {
+		if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_USER, c.MD.UserId, in.GetFirstName().GetValue()); err != nil {
+			c.Logger.Errorf("account.updateProfile - error: %v", err)
+			return nil, mtproto.ErrFirstnameInvalid
+		}
+	}
+	if in.GetLastName() != nil && in.GetLastName().GetValue() != me.LastName() {
+		if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_USER, c.MD.UserId, in.GetLastName().GetValue()); err != nil {
+			c.Logger.Errorf("account.updateProfile - error: %v", err)
+			return nil, mtproto.ErrLastnameInvalid
+		}
 	}
 
 	if in.GetAbout() != nil {

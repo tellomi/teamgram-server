@@ -35,6 +35,34 @@ func RejectBot(ctx context.Context, userID int64, username string) error {
 	return reject(ctx, username, mtproto.PEER_USER, userID, FieldUsername, FieldBotUsername)
 }
 
+// RejectDisplay checks a nickname, channel title, or bot name against the
+// display_name field. A hit returns FIRSTNAME_INVALID. account.updateProfile
+// maps a last-name hit to LASTNAME_INVALID. The rule id stays in the log.
+// An empty string is allowed. The appendix D owner of an exact reserved
+// username may use that string as their display name.
+func RejectDisplay(ctx context.Context, peerType int32, peerID int64, text string) error {
+	if !Enabled() {
+		return nil
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if officialExact(Normalize(text), peerType, peerID) {
+		return nil
+	}
+	v := embeddedEngine().Check(text, FieldDisplayName, []string{"global", "cn"})
+	if v.IsAllowed() {
+		return nil
+	}
+	if v.RuleID != "" {
+		logx.WithContext(ctx).Errorf("usernamepolicy: denied field=%s rule_id=%s", FieldDisplayName, v.RuleID)
+	} else {
+		logx.WithContext(ctx).Errorf("usernamepolicy: denied field=%s outcome=%s", FieldDisplayName, v.Outcome)
+	}
+	return mtproto.ErrFirstnameInvalid
+}
+
 func reject(ctx context.Context, username string, peerType int32, peerID int64, fields ...string) error {
 	if !Enabled() {
 		return nil

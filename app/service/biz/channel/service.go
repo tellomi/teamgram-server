@@ -105,6 +105,9 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 	if len(title) > 255 {
 		title = title[:255]
 	}
+	if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, 0, title); err != nil {
+		return nil, mtproto.ErrFirstnameInvalid
+	}
 	about := in.About
 	if len(about) > 255 {
 		about = about[:255]
@@ -527,6 +530,11 @@ func (s *Service) EditTitle(ctx context.Context, actor, actorAuth int64, in *mtp
 	}
 	if len(title) > 255 {
 		title = title[:255]
+	}
+	if title != ch.Title {
+		if err = usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, ch.ID, title); err != nil {
+			return nil, mtproto.ErrFirstnameInvalid
+		}
 	}
 	prevTitle := ch.Title
 	ch.Title = title
