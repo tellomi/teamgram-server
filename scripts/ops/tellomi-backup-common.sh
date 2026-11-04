@@ -23,6 +23,16 @@ backup_die() {
   exit 1
 }
 
+# backup_alert is a loud failure that does not exit. The caller still uploads
+# the other segments, then exits non-zero. logger priority is user.err so a
+# syslog alert path can see it. The banner is what a cron mail shows.
+backup_alert() {
+  echo "================================================================================" >&2
+  echo "ALERT: $*" >&2
+  echo "================================================================================" >&2
+  logger -t "${LOG_TAG:-tellomi-backup}" -p user.err -- "ALERT: $*" 2>/dev/null || true
+}
+
 # backup_set_rclone_flags fills RCLONE_S3_FLAGS.
 #
 # rclone 1.60.1 against Cloudflare R2 (docs/ops/BACKUP.md):
@@ -252,11 +262,72 @@ backup_prune_local() {
   fi
 }
 
+# Content-engine Chengdu compose names the database container tellomi-feed-db.
+# Database and user are both engine. off, "-", or an empty value is the only
+# skip, and it is logged. A missing or stopped container is not a skip.
+
+postgres_container_name() {
+  if [[ -z "${TELLOMI_POSTGRES_CONTAINER+x}" ]]; then
+    printf 'tellomi-feed-db'
+    return 0
+  fi
+  printf '%s' "$TELLOMI_POSTGRES_CONTAINER"
+}
+
+postgres_db_name() {
+  if [[ -z "${TELLOMI_POSTGRES_DB+x}" ]]; then
+    printf 'engine'
+    return 0
+  fi
+  printf '%s' "$TELLOMI_POSTGRES_DB"
+}
+
+postgres_user_name() {
+  if [[ -z "${TELLOMI_POSTGRES_USER+x}" ]]; then
+    printf 'engine'
+    return 0
+  fi
+  printf '%s' "$TELLOMI_POSTGRES_USER"
+}
+
+# postgres_configured is 0 when this host should dump and verify Postgres.
+# It does not look at Docker. A container that is not running stays configured,
+# so the backup alerts and the 04:00 check still requires a postgres/ object.
+postgres_configured() {
+  local name db user
+  name="$(postgres_container_name)"
+  db="$(postgres_db_name)"
+  user="$(postgres_user_name)"
+  [[ -n "$name" && "$name" != "off" && "$name" != "-" ]] || return 1
+  [[ -n "$db" && -n "$user" ]] || return 1
+  return 0
+}
+
+# postgres_container_state prints running, stopped, or missing.
+# missing covers "no such container" and "docker is not on PATH".
+postgres_container_state() {
+  local name="$1" state
+  if ! command -v "${DOCKER:-docker}" >/dev/null 2>&1; then
+    printf 'missing'
+    return 0
+  fi
+  if ! state="$("${DOCKER:-docker}" inspect -f '{{.State.Running}}' "$name" 2>/dev/null)"; then
+    printf 'missing'
+    return 0
+  fi
+  state="${state//$'\r'/}"
+  if [[ "$state" == "true" ]]; then
+    printf 'running'
+    return 0
+  fi
+  printf 'stopped'
+}
+
 # backup_manifest_add records one ciphertext object. Fields are constrained so
 # the JSON writer does not need an encoder.
 backup_manifest_add() {
   local prefix="$1" name="$2" sum="$3" size="$4"
-  [[ "$prefix" =~ ^(mysql|etcd|redis)$ ]] || backup_die "bad manifest prefix"
+  [[ "$prefix" =~ ^(mysql|etcd|redis|postgres)$ ]] || backup_die "bad manifest prefix"
   [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || backup_die "bad manifest name"
   [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || backup_die "bad manifest sha256"
   [[ "$size" =~ ^[0-9]+$ ]] || backup_die "bad manifest size"

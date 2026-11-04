@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily MySQL, etcd, and Redis backups (D-34, D-53, M7).
+# Daily MySQL, etcd, Redis, and content-engine Postgres backups (D-34, D-53, M7).
 #
 #   tellomi-db-backup.sh
 #   tellomi-db-backup.sh --dry-run
@@ -13,8 +13,12 @@
 # The etcd image has no shell and no rm. mysql has sh and mysqldump. redis has redis-cli.
 # Redis: BGSAVE, wait until LASTSAVE changes, then a read-only copy of
 # dump.rdb and appendonlydir. No FLUSH, CONFIG, DEBUG, SHUTDOWN, or SAVE.
+# Postgres: pg_dump -Fc inside TELLOMI_POSTGRES_CONTAINER, gzip, age.
+# The container's POSTGRES_PASSWORD is used and is not printed. If the
+# container name is off or the container is not running, Postgres is skipped
+# and the rest of the run continues.
 # Ciphertext, a .sha256 sidecar, and manifest.json go to
-# /opt/tellomi/backups/daily/ and to r2:tellomi-prod-db-backups/{mysql,etcd,redis,manifests}/.
+# /opt/tellomi/backups/daily/ and to r2:tellomi-prod-db-backups/{mysql,etcd,redis,postgres,manifests}/.
 # Local files older than 90 days are removed. Remote expiry is an R2 lifecycle
 # rule; this script does not delete remote objects.
 set -euo pipefail
@@ -33,6 +37,12 @@ ETCD_HOST_SNAP=""
 MYSQL_CONTAINER="${TELLOMI_MYSQL_CONTAINER:-mysql}"
 ETCD_CONTAINER="${TELLOMI_ETCD_CONTAINER:-etcd}"
 REDIS_CONTAINER="${TELLOMI_REDIS_CONTAINER:-redis}"
+# content-engine Chengdu compose: container tellomi-feed-db, database engine,
+# user engine. off, "-", or empty is an explicit skip. A missing container
+# alerts and fails the run; it does not skip.
+POSTGRES_CONTAINER="${TELLOMI_POSTGRES_CONTAINER-tellomi-feed-db}"
+POSTGRES_DB="${TELLOMI_POSTGRES_DB-engine}"
+POSTGRES_USER="${TELLOMI_POSTGRES_USER-engine}"
 REMOTE="${TELLOMI_BACKUP_R2_REMOTE:-r2:tellomi-prod-db-backups}"
 DRY=0
 declare -a MANIFEST_ROWS=()
@@ -83,6 +93,62 @@ self_test() {
   (redis_cli "CON""FIG") >/dev/null 2>&1 && backup_die "CONFIG was not refused"
   (redis_cli "SA""VE") >/dev/null 2>&1 && backup_die "SAVE was not refused"
 
+  grep -q 'TELLOMI_POSTGRES_CONTAINER-tellomi-feed-db' "$script" || backup_die "default container is not tellomi-feed-db"
+  grep -q 'Refusing to skip the content-engine dump' "$script" || backup_die "missing container does not alert"
+  grep -q "printf 'tellomi-feed-db'" "$(dirname "$script")/tellomi-backup-common.sh" || backup_die "common default container drifted"
+  if awk '
+    /^self_test\(\) \{/ {skip=1; next}
+    skip && /^\}/ {skip=0; next}
+    skip {next}
+    /skipped \(container/ {found=1}
+    END {exit found ? 0 : 1}
+  ' "$script"; then
+    backup_die "silent postgres skip is still in the backup script"
+  fi
+
+  pgmock="${SELF_TMP}/pgbin"
+  mkdir -p "$pgmock"
+  cat >"${pgmock}/docker" <<'EOF'
+#!/bin/sh
+if [ "$1" = inspect ]; then
+  printf '%s\n' "$4" >> "${PG_SEEN}"
+  case "$4" in
+    running|tellomi-feed-db) printf 'true'; exit 0 ;;
+    stopped) printf 'false'; exit 0 ;;
+  esac
+  exit 1
+fi
+exit 99
+EOF
+  chmod 755 "${pgmock}/docker"
+  (
+    export DOCKER="${pgmock}/docker"
+    export PG_SEEN="${SELF_TMP}/pg-seen"
+    : >"$PG_SEEN"
+    unset TELLOMI_POSTGRES_CONTAINER TELLOMI_POSTGRES_DB TELLOMI_POSTGRES_USER
+    [[ "$(postgres_container_name)" == "tellomi-feed-db" ]] || exit 1
+    postgres_configured || exit 1
+    [[ "$(postgres_container_state "$(postgres_container_name)")" == "running" ]] || exit 1
+    grep -qx 'tellomi-feed-db' "$PG_SEEN" || exit 1
+    TELLOMI_POSTGRES_CONTAINER=off postgres_configured && exit 1
+    TELLOMI_POSTGRES_CONTAINER='' postgres_configured && exit 1
+    TELLOMI_POSTGRES_CONTAINER=- postgres_configured && exit 1
+    TELLOMI_POSTGRES_DB='' postgres_configured && exit 1
+    TELLOMI_POSTGRES_USER='' TELLOMI_POSTGRES_DB=engine postgres_configured && exit 1
+    TELLOMI_POSTGRES_CONTAINER=running
+    [[ "$(postgres_container_state running)" == "running" ]] || exit 1
+    TELLOMI_POSTGRES_CONTAINER=stopped
+    [[ "$(postgres_container_state stopped)" == "stopped" ]] || exit 1
+    TELLOMI_POSTGRES_CONTAINER=missing
+    [[ "$(postgres_container_state missing)" == "missing" ]] || exit 1
+    exit 0
+  ) || backup_die "postgres container rules failed"
+  alert_out="$(
+    TELLOMI_POSTGRES_CONTAINER=missing backup_alert "postgres container missing is not running" 2>&1
+  )"
+  printf '%s\n' "$alert_out" | grep -q 'ALERT: postgres container missing is not running' || backup_die "missing container did not alert"
+  printf '%s\n' "$alert_out" | grep -q 'skipped' && backup_die "missing container alert said skipped"
+
   root="${SELF_TMP}/daily"
   mkdir -p "${root}/mysql" "${SELF_TMP}/outside"
   old="${root}/mysql/old.age"
@@ -119,6 +185,7 @@ self_test() {
     "0123456789abcdef0123456789abcdef01234567" 90 dedicated
   python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["git_sha"].startswith("0123"); assert d["retain_days"]==90; assert d["files"][0]["sha256"]==open(sys.argv[2]).read().split()[0]; assert d["files"][0]["size"]==2' \
     "${SELF_TMP}/manifest.json" "${SELF_TMP}/obj.age.sha256"
+  backup_manifest_add postgres engine-test.dump.gz.age "$(backup_write_sha256 "${SELF_TMP}/obj.age")" "$(stat -c '%s' "${SELF_TMP}/obj.age")"
 
   printf 'RCLONE_CONFIG_R2_TYPE=s3\nRCLONE_CONFIG_R2_ACCESS_KEY_ID=AKIATEST\nRCLONE_CONFIG_R2_SECRET_ACCESS_KEY=SECRETTEST\nRCLONE_CONFIG_R2_ENDPOINT=https://example.r2.cloudflarestorage.com\n' >"${SELF_TMP}/r2.env"
   chmod 600 "${SELF_TMP}/r2.env"
@@ -210,6 +277,10 @@ EOF
   printf '%s\n' "$out" | grep -q 'BGSAVE' || backup_die "dry-run omitted BGSAVE"
   printf '%s\n' "$out" | grep -q 'etcdctl snapshot save' || backup_die "dry-run omitted etcd snapshot"
   printf '%s\n' "$out" | grep -q 'mysqldump' || backup_die "dry-run omitted mysqldump"
+  printf '%s\n' "$out" | grep -q 'pg_dump -Fc' || backup_die "dry-run omitted pg_dump -Fc"
+  printf '%s\n' "$out" | grep -q 'postgres/' || backup_die "dry-run omitted postgres/"
+  printf '%s\n' "$out" | grep -q 'tellomi-feed-db' || backup_die "dry-run omitted default container tellomi-feed-db"
+  printf '%s\n' "$out" | grep -q 'not a skip' || backup_die "dry-run still describes a silent postgres skip"
   printf '%s\n' "$out" | grep -q 'would delete' || backup_die "dry-run omitted local retention"
   printf '%s\n' "$out" | grep -E -q 'FLUSH|rclone delete' && backup_die "dry-run showed a forbidden command"
   [[ -f "${root}/mysql/stale.age" ]] || backup_die "dry-run deleted a file"
@@ -331,6 +402,20 @@ backup_etcd() {
   rm -f "$plain"
 }
 
+backup_postgres() {
+  local dest="$1" plain="${WORK}/postgres.dump.gz"
+  [[ "$POSTGRES_DB" =~ ^[A-Za-z0-9_]+$ ]] || backup_die "TELLOMI_POSTGRES_DB must be letters, digits, or underscore"
+  [[ "$POSTGRES_USER" =~ ^[A-Za-z0-9_]+$ ]] || backup_die "TELLOMI_POSTGRES_USER must be letters, digits, or underscore"
+  [[ "$POSTGRES_CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || backup_die "TELLOMI_POSTGRES_CONTAINER is not a container name"
+  # PGPASSWORD is the container's own POSTGRES_PASSWORD. It is not an argument
+  # and it is not logged. pg_dump -Fc is the custom archive; gzip matches the
+  # other segments so encrypt_file can check the stream.
+  docker exec "$POSTGRES_CONTAINER" sh -c 'export PGPASSWORD="${POSTGRES_PASSWORD-}"; exec pg_dump -Fc --no-password -U "$1" -d "$2"' sh "$POSTGRES_USER" "$POSTGRES_DB" \
+    | gzip -c >"$plain"
+  encrypt_file "$plain" "$dest"
+  rm -f "$plain"
+}
+
 backup_redis() {
   local dest="$1" plain="${WORK}/redis.tar.gz" before now deadline
   before="$(redis_cli LASTSAVE)"
@@ -369,7 +454,7 @@ cleanup_work() {
 }
 
 main() {
-  local stamp started finished sha manifest lock
+  local stamp started finished sha manifest lock pg_absent pg_state
   [[ "$AGE_RECIPIENT" =~ ^age1[a-z0-9]{20,}$ ]] || backup_die "age recipient is not an age1 public key"
   [[ "$RETAIN_DAYS" =~ ^[0-9]+$ ]] || backup_die "TELLOMI_BACKUP_RETAIN_DAYS must be an integer"
   if ! backup_dir_allowed "$BACKUP_DIR"; then
@@ -380,8 +465,8 @@ main() {
   fi
   backup_set_rclone_flags
   umask 077
-  mkdir -p "${BACKUP_DIR}/mysql" "${BACKUP_DIR}/etcd" "${BACKUP_DIR}/redis" "${BACKUP_DIR}/manifests"
-  chmod 700 "$BACKUP_DIR" "${BACKUP_DIR}/mysql" "${BACKUP_DIR}/etcd" "${BACKUP_DIR}/redis" "${BACKUP_DIR}/manifests" || true
+  mkdir -p "${BACKUP_DIR}/mysql" "${BACKUP_DIR}/etcd" "${BACKUP_DIR}/redis" "${BACKUP_DIR}/postgres" "${BACKUP_DIR}/manifests"
+  chmod 700 "$BACKUP_DIR" "${BACKUP_DIR}/mysql" "${BACKUP_DIR}/etcd" "${BACKUP_DIR}/redis" "${BACKUP_DIR}/postgres" "${BACKUP_DIR}/manifests" || true
   lock="$(lock_path)"
   exec 9>"$lock"
   flock -w 5 9 || backup_die "another backup holds ${lock}"
@@ -394,7 +479,9 @@ main() {
     backup_log "dry-run: docker exec ${MYSQL_CONTAINER} mysqldump --single-transaction --databases teamgram | gzip | age -r ${AGE_RECIPIENT}"
     backup_log "dry-run: docker exec ${ETCD_CONTAINER} etcdctl snapshot save /etcd-data/tellomi-etcd.snapshot; delete ${ETCD_DATA}/tellomi-etcd.snapshot on the host"
     backup_log "dry-run: BGSAVE; wait for LASTSAVE; read-only tar of ${REDIS_DATA}/dump.rdb and appendonlydir | gzip | age"
-    backup_log "dry-run: rclone copyto ${REMOTE}/mysql/ ${REMOTE}/etcd/ ${REMOTE}/redis/ ${REMOTE}/manifests/ ${RCLONE_S3_FLAGS[*]}"
+    backup_log "dry-run: docker exec ${POSTGRES_CONTAINER} pg_dump -Fc --no-password -U ${POSTGRES_USER} -d ${POSTGRES_DB} | gzip | age -r ${AGE_RECIPIENT}"
+    backup_log "dry-run: a missing ${POSTGRES_CONTAINER} container fails this run after mysql, etcd, and redis; it is not a skip"
+    backup_log "dry-run: rclone copyto ${REMOTE}/mysql/ ${REMOTE}/etcd/ ${REMOTE}/redis/ ${REMOTE}/postgres/ ${REMOTE}/manifests/ ${RCLONE_S3_FLAGS[*]}"
     backup_prune_local "$BACKUP_DIR" "$RETAIN_DAYS"
     backup_log "done dry-run stamp=${stamp}"
     return 0
@@ -412,6 +499,20 @@ main() {
   backup_redis "${BACKUP_DIR}/redis/redis-${stamp}.tar.gz.age"
   finish_object redis "${BACKUP_DIR}/redis/redis-${stamp}.tar.gz.age"
 
+  pg_absent=0
+  if ! postgres_configured; then
+    backup_log "postgres: skipped by configuration (TELLOMI_POSTGRES_CONTAINER is off, -, or empty). MySQL, etcd, and Redis continue."
+  else
+    pg_state="$(postgres_container_state "$POSTGRES_CONTAINER")"
+    if [[ "$pg_state" == "running" ]]; then
+      backup_postgres "${BACKUP_DIR}/postgres/${POSTGRES_DB}-${stamp}.dump.gz.age"
+      finish_object postgres "${BACKUP_DIR}/postgres/${POSTGRES_DB}-${stamp}.dump.gz.age"
+    else
+      backup_alert "postgres container ${POSTGRES_CONTAINER} is ${pg_state}. Refusing to skip the content-engine dump."
+      pg_absent=1
+    fi
+  fi
+
   finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   manifest="${BACKUP_DIR}/manifests/${stamp}.json"
   backup_write_manifest "$manifest" "$started" "$finished" "$sha" "$RETAIN_DAYS" "$CRED_SOURCE"
@@ -422,6 +523,9 @@ main() {
     backup_log "uploaded manifests/${stamp}.json"
   fi
   backup_prune_local "$BACKUP_DIR" "$RETAIN_DAYS"
+  if [[ "$pg_absent" -ne 0 ]]; then
+    backup_die "postgres backup failed: container ${POSTGRES_CONTAINER} is not running"
+  fi
   backup_log "done stamp=${stamp} credentials=${CRED_SOURCE}"
 }
 

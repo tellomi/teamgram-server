@@ -1,6 +1,6 @@
 # Database backups
 
-D-34, D-53, M7. MySQL, etcd, and Redis are dumped every day, encrypted with age, and uploaded to a dedicated Cloudflare R2 bucket. This file has no secret values.
+D-34, D-53, M7. MySQL, etcd, Redis, and the content-engine Postgres database are dumped every day, encrypted with age, and uploaded to a dedicated Cloudflare R2 bucket. This file has no secret values. The Postgres container defaults to `tellomi-feed-db`. If that container is missing or stopped, the run logs an alert and exits non-zero after the MySQL, etcd, and Redis uploads. `off`, `-`, or an empty `TELLOMI_POSTGRES_*` value is the only skip, and that skip is logged.
 
 The script in git is [`scripts/ops/tellomi-db-backup.sh`](../../scripts/ops/tellomi-db-backup.sh). Chengdu does not pick it up from the checkout. Install it by hand, the same way as the disk scripts in [SECURITY-OPS.md](../SECURITY-OPS.md).
 
@@ -13,12 +13,13 @@ Cron runs the script at 03:15 as root.
 | MySQL database `teamgram` | `mysqldump` inside the `mysql` container (`--single-transaction`), gzip, age | `mysql/` |
 | etcd | `etcdctl snapshot save` into the `/etcd-data` mount, then delete that file on the host, gzip, age | `etcd/` |
 | Redis | `BGSAVE`, wait until `LASTSAVE` changes, then a read-only copy of `dump.rdb` and `appendonlydir`, tar, gzip, age | `redis/` |
+| content-engine Postgres | `pg_dump -Fc` inside `tellomi-feed-db`, gzip, age. A missing container alerts and fails the run | `postgres/` |
 
 Redis commands the script may send are `BGSAVE` and `LASTSAVE`. It does not send `FLUSHALL`, `FLUSHDB`, `FLUSH`, `CONFIG`, `DEBUG`, `SHUTDOWN`, or `SAVE`. `dump.rdb` and `appendonlydir` hold the idgen and pts counters (`message_box_ngen_*`, `pts_updates_ngen_*`). Those files are copied. Redis is not told to drop or rewrite keys.
 
 Each ciphertext file gets a `.sha256` sidecar (`sha256sum -c` format). The run also writes `manifests/<stamp>.json` with the file names, sha256, sizes, and the git SHA of `TELLOMI_DEPLOY_DIR` (default `/opt/tellomi/teamgram-server`). The manifest is not encrypted. It has no keys.
 
-Local directory: `/opt/tellomi/backups/daily/{mysql,etcd,redis,manifests}/`, mode `0700`, files mode `0600`. Files older than 90 days are deleted there. The script does not delete objects in R2. Remote expiry is the bucket lifecycle below.
+Local directory: `/opt/tellomi/backups/daily/{mysql,etcd,redis,postgres,manifests}/`, mode `0700`, files mode `0600`. Files older than 90 days are deleted there. The script does not delete objects in R2. Remote expiry is the bucket lifecycle below.
 
 Plaintext dumps stay in a `mktemp` directory and are removed when the run exits. The age identity is not on this host.
 
@@ -45,7 +46,7 @@ Check the copy, then a dry run, then one real run:
 /usr/local/bin/tellomi-db-backup.sh
 ```
 
-`--self-test` does not need Docker, age, or R2. `--dry-run` prints the mysqldump, etcd snapshot, `BGSAVE`, and rclone flags, and prints which local files are older than 90 days. It does not dump, encrypt, upload, or delete.
+`--self-test` does not need Docker, age, or R2. `--dry-run` prints the mysqldump, etcd snapshot, `BGSAVE`, `pg_dump -Fc`, the default container `tellomi-feed-db`, and rclone flags, and prints which local files are older than 90 days. It does not dump, encrypt, upload, or delete. A real run with a missing container still uploads MySQL, etcd, and Redis, then exits non-zero.
 
 `git checkout` does not update `/usr/local/bin` or `/etc/cron.d`. Copy the three files again after they change.
 
@@ -66,10 +67,20 @@ Lifecycle (R2, not rclone):
 | MySQL expiry | `mysql/` | Delete after 90 days |
 | etcd expiry | `etcd/` | Delete after 90 days |
 | Redis expiry | `redis/` | Delete after 90 days |
+| Postgres expiry | `postgres/` | Delete after 90 days |
 | Manifest expiry | `manifests/` | Delete after 90 days |
 | Incomplete multipart | (whole bucket) | Abort after 1 day |
 
 Bucket Lock: 90 days. The lock stops an overwrite or an early delete. Lifecycle deletes once the lock period for that object has passed. Both periods are 90 days from object creation; if a lifecycle pass races the lock by a few minutes, the next daily pass deletes the object. Do not add a scripted `rclone delete`. The previous host script used `--min-age 30d`. That is gone. Retention is 90 days (D-53).
+
+### Manual step: `postgres/` lock and expiry
+
+The backup script uploads `postgres/` and does not create R2 rules. Cloudflare has to be set by hand before those objects are protected. In the Cloudflare dashboard, bucket `tellomi-prod-db-backups`:
+
+1. Add a lifecycle rule named `postgres expiry`: prefix `postgres/`, delete objects after 90 days. This is the same action as the `mysql/`, `etcd/`, `redis/`, and `manifests/` rows in the table above.
+2. Add a Bucket Lock rule for prefix `postgres/`, retention 90 days. The lock stops an overwrite or an early delete. Lifecycle deletes the object once that lock period has passed.
+
+Until both rules exist, a `postgres/` object can be overwritten or deleted early, and it will not expire on its own. The script cannot add these rules (R2 `CreateBucket` and lock APIs are not what this token is allowed to call). Do this in the dashboard. Do not add a scripted `rclone delete`.
 
 Write `/opt/tellomi/secrets/db-backup-r2.env` mode `0600`, owner root. `KEY=value` lines only. The script does not execute the file.
 
@@ -137,15 +148,22 @@ The private identity is offline, in the team vault (`成都服务器-运行时/`
 | `TELLOMI_ETCD_DATA` | `/opt/tellomi/teamgram-server/data/etcd` (host path of `/etcd-data`) |
 | `TELLOMI_RCLONE_UPLOAD_CUTOFF` | `5G` |
 | `TELLOMI_BGSAVE_TIMEOUT` | `180` seconds |
+| `TELLOMI_POSTGRES_CONTAINER` | `tellomi-feed-db`. `off`, `-`, or empty skips the dump and logs that skip |
+| `TELLOMI_POSTGRES_DB` | `engine`. Empty skips the dump and logs that skip |
+| `TELLOMI_POSTGRES_USER` | `engine`. Empty skips the dump and logs that skip |
 
-Container names `mysql`, `etcd`, and `redis` match `container_name` in `docker-compose-env.yaml`.
+Container names `mysql`, `etcd`, and `redis` match `container_name` in `docker-compose-env.yaml`. The content-engine container name is `tellomi-feed-db` in the Chengdu compose. Database and user stay `engine`.
+
+The password is `POSTGRES_PASSWORD` inside the container. The script does not take it as an argument and does not log it.
+
+`pg_dump -Fc` writes a custom-format archive, then gzip and age, same as the other segments. The object name is `postgres/<database>-<stamp>.dump.gz.age`. If `tellomi-feed-db` is missing or stopped, syslog gets an `ALERT` at `user.err`, MySQL, etcd, and Redis still upload, and the process exits non-zero. The manifest then has no `postgres` row. If the container is running and `pg_dump` fails, the whole run fails, the same way a failed `mysqldump` does. A host that does not run content-engine sets `TELLOMI_POSTGRES_CONTAINER=off` so the skip is intentional. The 04:00 check uses that same switch. With the default, a missing `postgres/` object fails the check even when the container is down.
 
 ## Verify a run
 
 After the first real run:
 
 ```bash
-ls -l /opt/tellomi/backups/daily/mysql /opt/tellomi/backups/daily/etcd /opt/tellomi/backups/daily/redis /opt/tellomi/backups/daily/manifests
+ls -l /opt/tellomi/backups/daily/mysql /opt/tellomi/backups/daily/etcd /opt/tellomi/backups/daily/redis /opt/tellomi/backups/daily/postgres /opt/tellomi/backups/daily/manifests
 sha256sum -c /opt/tellomi/backups/daily/mysql/teamgram-*.sql.gz.age.sha256
 head -n 1 /opt/tellomi/backups/daily/mysql/teamgram-*.sql.gz.age
 ```
@@ -156,13 +174,13 @@ The first line of each ciphertext file is `age-encryption.org/v1`. That is a hea
 rclone lsjson r2:tellomi-prod-db-backups/mysql/ --s3-no-check-bucket | head
 ```
 
-The newest `mysql/`, `etcd/`, and `redis/` objects should be from this run. There is no `rclone delete` in the script; confirm with `grep rclone /usr/local/bin/tellomi-db-backup.sh`.
+The newest `mysql/`, `etcd/`, `redis/`, and `postgres/` objects should be from this run. There is no `rclone delete` in the script; confirm with `grep rclone /usr/local/bin/tellomi-db-backup.sh`. A missing `postgres/` object means the run alerted.
 
 A monthly restore on a fresh Docker host is required. Do it off Chengdu. Steps, the read-only token, and the record template are in [RESTORE_DRILL.md](RESTORE_DRILL.md).
 
 ## 04:00 check
 
-[`scripts/ops/tellomi-backup-verify.sh`](../../scripts/ops/tellomi-backup-verify.sh) lists the newest `.age` object under `mysql/`, `etcd/`, and `redis/`. It does not decrypt. For each prefix it checks:
+[`scripts/ops/tellomi-backup-verify.sh`](../../scripts/ops/tellomi-backup-verify.sh) lists the newest `.age` object under `mysql/`, `etcd/`, `redis/`, and `postgres/`. It does not decrypt. It does not look at Docker to decide whether `postgres/` can be skipped. A missing or stale `postgres/` object is an alert and a failed check, the same as `mysql/`. `TELLOMI_POSTGRES_CONTAINER=off` (or `-`, or empty) is the only skip, and the script logs it. For each prefix it checks:
 
 - the object is younger than 26 hours (`TELLOMI_BACKUP_MAX_AGE_HOURS`);
 - the `.sha256` sidecar matches the downloaded bytes (`sha256sum -c`);
