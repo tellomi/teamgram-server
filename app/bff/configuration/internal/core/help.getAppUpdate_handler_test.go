@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -96,6 +98,73 @@ func TestHelpGetAppUpdateSessions(t *testing.T) {
 			t.Fatalf("predicate %s version %q", got.GetPredicateName(), got.GetVersion())
 		}
 	})
+}
+
+func TestHelpGetAppUpdateReadsManifest(t *testing.T) {
+	body := []byte(`{"versionName":"14.0.6","versionCode":1802599,"url":"https://www.tellomi.cn/dl/android/Tellomi.apk","fallbackUrl":"https://dl.tellomi.cn/android/Tellomi.apk","sha256sum":"abc","size":3,"changelog":"Bug fixes"}`)
+	path := filepath.Join(t.TempDir(), "latest.json")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clearAppUpdateEnv(t)
+	t.Setenv("TELLOMI_APP_UPDATE_MANIFEST", path)
+	android := &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9}
+	auth := authUpdateStub{auth: authorization("14.0.4", "Pixel 8", "14")}
+
+	got := callAppUpdate(t, android, auth, "")
+	if got.GetPredicateName() != mtproto.Predicate_help_appUpdate || got.GetVersion() != "14.0.6" || !got.GetCanNotSkip() || got.GetText() != "Bug fixes" {
+		t.Fatalf("predicate %s version %q skip %v text %q", got.GetPredicateName(), got.GetVersion(), got.GetCanNotSkip(), got.GetText())
+	}
+	if got.GetUrl().GetValue() != "https://www.tellomi.cn/dl/android/Tellomi.apk" {
+		t.Fatal(got.GetUrl())
+	}
+
+	current := callAppUpdate(t, android, authUpdateStub{auth: authorization("14.0.6", "Pixel 8", "14")}, "")
+	if current.GetPredicateName() != mtproto.Predicate_help_noAppUpdate {
+		t.Fatal(current.GetPredicateName())
+	}
+	ios := callAppUpdate(t, &metadata.RpcMetadata{Langpack: "ios", PermAuthKeyId: 9}, auth, "")
+	if ios.GetPredicateName() != mtproto.Predicate_help_noAppUpdate {
+		t.Fatal(ios.GetPredicateName())
+	}
+
+	t.Setenv("TELLOMI_APP_UPDATE_TEXT", "Operator note")
+	t.Setenv("TELLOMI_APP_UPDATE_URL", "https://tellomi.cn/get")
+	overFields := callAppUpdate(t, android, auth, "")
+	if overFields.GetVersion() != "14.0.6" || overFields.GetText() != "Operator note" || overFields.GetUrl().GetValue() != "https://tellomi.cn/get" || !overFields.GetCanNotSkip() {
+		t.Fatalf("version %q text %q url %v skip %v", overFields.GetVersion(), overFields.GetText(), overFields.GetUrl(), overFields.GetCanNotSkip())
+	}
+
+	t.Setenv("TELLOMI_APP_UPDATE_CANNOT_SKIP", "0")
+	dismissible := callAppUpdate(t, android, auth, "")
+	if dismissible.GetCanNotSkip() || dismissible.GetVersion() != "14.0.6" {
+		t.Fatalf("skip %v version %q", dismissible.GetCanNotSkip(), dismissible.GetVersion())
+	}
+
+	t.Setenv("TELLOMI_APP_UPDATE_VERSION", "14.0.5")
+	t.Setenv("TELLOMI_APP_UPDATE_TEXT", "From env")
+	t.Setenv("TELLOMI_APP_UPDATE_URL", "https://tellomi.cn/env")
+	t.Setenv("TELLOMI_APP_UPDATE_CANNOT_SKIP", "")
+	t.Setenv("TELLOMI_APP_UPDATE_MANIFEST", filepath.Join(t.TempDir(), "missing.json"))
+	fromEnv := callAppUpdate(t, android, auth, "")
+	if fromEnv.GetVersion() != "14.0.5" || fromEnv.GetText() != "From env" || fromEnv.GetCanNotSkip() || fromEnv.GetUrl().GetValue() != "https://tellomi.cn/env" {
+		t.Fatalf("version %q text %q skip %v url %v", fromEnv.GetVersion(), fromEnv.GetText(), fromEnv.GetCanNotSkip(), fromEnv.GetUrl())
+	}
+
+	clearAppUpdateEnv(t)
+	t.Setenv("TELLOMI_APP_UPDATE_MANIFEST", filepath.Join(t.TempDir(), "missing.json"))
+	if callAppUpdate(t, android, auth, "").GetPredicateName() != mtproto.Predicate_help_noAppUpdate {
+		t.Fatal("missing manifest")
+	}
+}
+
+func clearAppUpdateEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("TELLOMI_APP_UPDATE_VERSION", "")
+	t.Setenv("TELLOMI_APP_UPDATE_TEXT", "")
+	t.Setenv("TELLOMI_APP_UPDATE_URL", "")
+	t.Setenv("TELLOMI_APP_UPDATE_SOURCE", "")
+	t.Setenv("TELLOMI_APP_UPDATE_CANNOT_SKIP", "")
 }
 
 func setAppUpdateEnv(t *testing.T, version string) {
