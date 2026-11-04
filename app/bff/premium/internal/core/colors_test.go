@@ -23,10 +23,37 @@ func TestPeerColors(t *testing.T) {
 	if len(profile.GetColors()) != len(profileColors) {
 		t.Fatalf("profile colors = %d", len(profile.GetColors()))
 	}
+	for _, opt := range profile.GetColors() {
+		light := opt.GetColors()
+		dark := opt.GetDarkColors()
+		if light.GetPredicateName() != mtproto.Predicate_help_peerColorProfileSet || dark.GetPredicateName() != mtproto.Predicate_help_peerColorProfileSet {
+			t.Fatalf("profile set light %s dark %s", light.GetPredicateName(), dark.GetPredicateName())
+		}
+		if len(light.GetBgColors()) != 2 || len(dark.GetBgColors()) != 2 || len(light.GetPaletteColors()) != 2 || len(dark.GetStoryColors()) != 2 {
+			t.Fatalf("palette lengths light %#v dark %#v", light, dark)
+		}
+		for _, c := range append(append([]int32{}, light.GetBgColors()...), dark.GetBgColors()...) {
+			if colorLuma(c) > 0.65 {
+				t.Fatalf("profile background #%06x is too light for white buttons", uint32(c))
+			}
+		}
+	}
+	for _, opt := range colors.GetColors() {
+		if opt.GetDarkColors() == nil || len(opt.GetDarkColors().GetColors()) == 0 {
+			t.Fatal("name color is missing dark_colors")
+		}
+	}
 	same := peerColorsReply(premium.PeerColorHash, false)
 	if same.GetPredicateName() != mtproto.Predicate_help_peerColorsNotModified {
 		t.Fatalf("predicate = %s", same.GetPredicateName())
 	}
+}
+
+func colorLuma(c int32) float64 {
+	r := float64((c>>16)&0xff) / 255
+	g := float64((c>>8)&0xff) / 255
+	b := float64(c&0xff) / 255
+	return 0.2126*r + 0.7152*g + 0.0722*b
 }
 
 func TestSelectedColor(t *testing.T) {

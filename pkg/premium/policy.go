@@ -114,7 +114,7 @@ const (
 	StoriesPerDay          = 100
 	StoriesPerDayFree      = 3
 
-	PeerColorHash       int32 = 0x70524301
+	PeerColorHash       int32 = 0x70524302
 	EmojiStatusListHash int64 = 1
 )
 
