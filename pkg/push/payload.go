@@ -240,5 +240,14 @@ func customIDs(m Incoming) map[string]string {
 	default:
 		out["from_id"] = strconv.FormatInt(m.SenderID, 10)
 	}
+	for k, v := range m.Extra {
+		if v == "" {
+			continue
+		}
+		if _, exists := out[k]; exists {
+			continue
+		}
+		out[k] = v
+	}
 	return out
 }
