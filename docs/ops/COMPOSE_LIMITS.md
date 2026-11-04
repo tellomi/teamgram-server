@@ -23,7 +23,7 @@ Chengdu's broker is about 956 MiB RSS with a 1 GiB Java heap. `apache/kafka:3.9.
 
 The cap is now 1.6g and the heap stays 1 GiB. 1.6 GiB is the heap plus about 600 MiB for that non-heap use, which covers the measured 956 MiB with room for the heap to reach 1 GiB. Kafka's generic container hint is heap plus 1 GiB (2g here). On a 7.1G host, 1.6g is the cap that still fits the measured broker. A later `up -d kafka` then stays under the cgroup instead of being OOM-killed.
 
-`mem_limit` is a ceiling, not a reservation. The host has 7.1G. The caps above can sum past that. They do not all sit at the cap at once. Redis still has no eviction policy, so at 512m the process is killed instead of dropping idgen or pts keys.
+`mem_limit` is a ceiling, not a reservation. The host has 7.1G. The caps above can sum past that (about 9.3 GiB). They do not all sit at the cap at once. Redis still has no eviction policy, so at 512m the process is killed instead of dropping idgen or pts keys. D-69's recount, including feed Postgres which is not in this file, is in [chat-standby.md](../design/chat-standby.md#memory-budget-d-69). The numbers in this file are unchanged.
 
 ## Verify
 
