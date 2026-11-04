@@ -55,14 +55,32 @@ func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*
 		contacts *mtproto.Contacts_Contacts
 	)
 
-	contactList, _ := c.svcCtx.Dao.UserClient.UserGetContactList(c.ctx, &userpb.TLUserGetContactList{
-		UserId: c.MD.UserId,
-	})
+	contactList, err := c.contactRows()
+	if err != nil {
+		// A contact-list outage used to come back as an empty success.
+		// Keep that so a startup getContacts does not spin the client.
+		c.Logger.Errorf("contacts.getContacts - error: %v", err)
+		contactList = nil
+	}
+	saved := c.savedCount()
+	tlContacts := make([]*mtproto.Contact, 0, len(contactList))
+	for _, row := range contactList {
+		if row == nil || row.GetContactUserId() == 0 {
+			continue
+		}
+		tlContacts = append(tlContacts, mtproto.MakeTLContact(&mtproto.Contact{
+			UserId: row.GetContactUserId(),
+			Mutual: mtproto.ToBool(row.GetMutualContact()),
+		}).To_Contact())
+	}
+	if in.GetHash() != 0 && in.GetHash() == contactsHash(saved, tlContacts) {
+		return mtproto.MakeTLContactsContactsNotModified(nil).To_Contacts_Contacts(), nil
+	}
 
 	// 避免查询数据库时IN()条件为empty
-	if len(contactList.GetDatas()) > 0 {
-		idList := make([]int64, 0, len(contactList.Datas))
-		for _, cV := range contactList.Datas {
+	if len(contactList) > 0 {
+		idList := make([]int64, 0, len(contactList))
+		for _, cV := range contactList {
 			idList = append(idList, cV.ContactUserId)
 		}
 
@@ -73,14 +91,14 @@ func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*
 			To: []int64{c.MD.UserId},
 		})
 		contacts = mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
-			Contacts:   contactList.ToContacts(),
-			SavedCount: c.savedCount(),
+			Contacts:   tlContacts,
+			SavedCount: saved,
 			Users:      users.GetUserListByIdList(c.MD.UserId, idList...),
 		}).To_Contacts_Contacts()
 	} else {
 		contacts = mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
 			Contacts:   []*mtproto.Contact{},
-			SavedCount: c.savedCount(),
+			SavedCount: saved,
 			Users:      []*mtproto.User{},
 		}).To_Contacts_Contacts()
 	}
