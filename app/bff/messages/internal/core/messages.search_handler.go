@@ -57,7 +57,25 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 
 	peer := mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
 	if peer.IsChannel() {
-		return channel.Shared().SearchChannel(c.ctx, c.MD.UserId, peer.PeerId, in.Q, 0, offsetId, limit)
+		var fromUser int64
+		if in.GetFromId() != nil {
+			from := mtproto.FromInputPeer2(c.MD.UserId, in.GetFromId())
+			if from.IsUser() {
+				fromUser = from.PeerId
+			}
+		}
+		return channel.Shared().SearchInChannel(c.ctx, c.MD.UserId, peer.PeerId, channel.ChannelSearch{
+			Q:        in.Q,
+			FromUser: fromUser,
+			OffsetID: offsetId,
+			Limit:    limit,
+			MinDate:  in.GetMinDate(),
+			MaxDate:  in.GetMaxDate(),
+			MinID:    in.GetMinId(),
+			MaxID:    in.GetMaxId(),
+			TopMsgID: in.GetTopMsgId().GetValue(),
+			Filter:   in.GetFilter(),
+		})
 	}
 
 	if in.GetFromId() != nil {

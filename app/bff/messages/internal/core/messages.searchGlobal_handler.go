@@ -64,8 +64,20 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		MinDate:        in.GetMinDate(),
 		MaxDate:        in.GetMaxDate(),
 	}
+	cur := globalCursor{}
+	if in.GetOffsetRate() != 0 || (in.GetOffsetPeer() != nil && in.GetOffsetId() != 0) {
+		peer := mtproto.FromInputPeer2(c.MD.UserId, in.GetOffsetPeer())
+		cur = globalCursor{
+			Active:   true,
+			Rate:     in.GetOffsetRate(),
+			PeerType: peer.PeerType,
+			PeerID:   peer.PeerId,
+			MsgID:    in.GetOffsetId(),
+		}
+	}
+	useFolder := in.GetFolderId() != nil
 	fetchLimit := limit
-	if scope.narrows() && fetchLimit > 0 {
+	if (scope.narrows() || cur.Active || useFolder) && fetchLimit > 0 {
 		fetchLimit *= 8
 		if fetchLimit > 200 {
 			fetchLimit = 200
@@ -104,8 +116,13 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 			}
 			kinds[chat.GetId()] = channelKind{Broadcast: chat.GetBroadcast(), Megagroup: chat.GetMegagroup()}
 		}
-		boxList = filterGlobalBoxes(boxList, scope, kinds, limit)
+		boxList = filterGlobalBoxes(boxList, scope, kinds, 0)
 	}
+	var folder map[string]bool
+	if useFolder {
+		folder, useFolder = c.globalFolder(in.GetFolderId().GetValue())
+	}
+	boxList = filterGlobalPage(boxList, cur, folder, useFolder, limit)
 
 	boxList.Visit(c.MD.UserId,
 		func(messageList []*mtproto.Message) {

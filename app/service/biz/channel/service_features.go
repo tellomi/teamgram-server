@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -819,7 +820,27 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, query, hashtag st
 	}).To_Messages_Messages(), nil
 }
 
+// ChannelSearch is messages.search against one channel.
+type ChannelSearch struct {
+	Q        string
+	FromUser int64
+	OffsetID int32
+	Limit    int32
+	MinDate  int32
+	MaxDate  int32
+	MinID    int32
+	MaxID    int32
+	TopMsgID int32
+	Filter   *mtproto.MessagesFilter
+}
+
 func (s *Service) SearchChannel(ctx context.Context, self, channelID int64, q string, fromUser int64, offsetID, limit int32) (*mtproto.Messages_Messages, error) {
+	return s.SearchInChannel(ctx, self, channelID, ChannelSearch{
+		Q: q, FromUser: fromUser, OffsetID: offsetID, Limit: limit,
+	})
+}
+
+func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q ChannelSearch) (*mtproto.Messages_Messages, error) {
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{
 		PredicateName: mtproto.Predicate_inputChannel,
 		ChannelId:     channelID,
@@ -827,34 +848,54 @@ func (s *Service) SearchChannel(ctx context.Context, self, channelID int64, q st
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 50 {
-		limit = 20
+	if q.Limit <= 0 || q.Limit > 50 {
+		q.Limit = 20
 	}
-	q = strings.ToLower(q)
+	text := strings.ToLower(q.Q)
 	all, err := s.store.ListMessages(ctx, ch.ID)
 	if err != nil {
 		return nil, err
 	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ID > all[j].ID })
+	feat := s.features(ctx, ch.ID)
 	var msgs []*mtproto.Message
 	for _, stored := range all {
-		if stored.Deleted {
+		if stored == nil || stored.Deleted {
 			continue
 		}
-		if offsetID > 0 && stored.ID >= offsetID {
+		if q.OffsetID > 0 && stored.ID >= q.OffsetID {
 			continue
 		}
-		if fromUser != 0 && stored.SenderID != fromUser {
+		if q.MinID > 0 && stored.ID <= q.MinID {
+			continue
+		}
+		if q.MaxID > 0 && stored.ID >= q.MaxID {
+			continue
+		}
+		if q.MinDate > 0 && stored.Date < q.MinDate {
+			continue
+		}
+		if q.MaxDate > 0 && stored.Date > q.MaxDate {
+			continue
+		}
+		if q.FromUser != 0 && stored.SenderID != q.FromUser {
+			continue
+		}
+		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
 		if err != nil {
 			continue
 		}
-		if q != "" && !strings.Contains(strings.ToLower(body.GetMessage()), q) {
+		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
+			continue
+		}
+		if !channelFilterMatches(body, q.Filter, feat.PinnedMsgID == stored.ID) {
 			continue
 		}
 		msgs = append(msgs, viewMessage(body, stored.SenderID, self))
-		if int32(len(msgs)) >= limit {
+		if int32(len(msgs)) >= q.Limit {
 			break
 		}
 	}
