@@ -1,6 +1,7 @@
 package langpack
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -91,12 +92,22 @@ func TestAndroidDiscoverSignUpKeysResolve(t *testing.T) {
 		if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != diff.GetVersion() {
 			t.Fatalf("%s caught up %+v %v", tc.code, caught, err)
 		}
-		assertRenamedCitiesDelivered(t, cat, "android", tc.code, tc.version, want)
+		// English still has the four renamed cities alone at tc.version.
+		// zh-hans / zh-hant rewrote the double-encoded Discover copy at the
+		// pack version, next to the settings keys, so that tip is no longer
+		// only the four cities.
+		if tc.code == "en" {
+			assertRenamedCitiesDelivered(t, cat, "android", tc.code, tc.version, want)
+		}
 		override := readOverride(t, "../../data/langpack/overrides/android/"+tc.code+".json.gz")
 		for key, value := range want {
 			entry, ok := override[key]
-			if !ok || entry.value != value || entry.version != discoverStringVersion(key, tc.version) {
-				t.Fatalf("override %s %s %+v", tc.code, key, entry)
+			wantVersion := discoverStringVersion(key, tc.version)
+			if tc.code != "en" && !strings.HasPrefix(key, "Tellomi.Discover.Report") {
+				wantVersion = ver
+			}
+			if !ok || entry.value != value || entry.version != wantVersion {
+				t.Fatalf("override %s %s %+v want v%d", tc.code, key, entry, wantVersion)
 			}
 		}
 	}
