@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -94,20 +95,10 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 
 		peerChat = peerChat2.ToUnsafeChat(c.MD.UserId)
 	case mtproto.PEER_CHANNEL:
-		if c.svcCtx.Plugin != nil {
-			peerChannel, err = c.svcCtx.Plugin.GetChannelById(c.ctx, c.MD.UserId, peer.PeerId)
-			if err != nil {
-				c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
-				return nil, err
-			} else if peerChannel.GetPredicateName() == mtproto.Predicate_channelForbidden {
-				err = mtproto.ErrChannelPrivate
-				c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
-				return nil, err
-			}
-		} else {
-			c.Logger.Errorf("account.updateNotifySettings blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-			return nil, mtproto.ErrEnterpriseIsBlocked
+		peerChannel, err = c.channelForNotify(peer.PeerId)
+		if err != nil {
+			c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
+			return nil, err
 		}
 	default:
 		err = mtproto.ErrPeerIdInvalid
@@ -149,4 +140,28 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 
 	// return
 	return mtproto.BoolTrue, nil
+}
+
+// channelForNotify loads the channel card attached to updateNotifySettings.
+// The plugin is the usual path. Without it the channel service is used, so
+// a missing enterprise plugin does not fail the RPC.
+func (c *NotificationCore) channelForNotify(id int64) (*mtproto.Chat, error) {
+	if c.svcCtx != nil && c.svcCtx.Plugin != nil {
+		chat, err := c.svcCtx.Plugin.GetChannelById(c.ctx, c.MD.UserId, id)
+		if err != nil {
+			return nil, err
+		}
+		if chat.GetPredicateName() == mtproto.Predicate_channelForbidden {
+			return nil, mtproto.ErrChannelPrivate
+		}
+		return chat, nil
+	}
+	chat := channel.Shared().VisibleChat(c.ctx, c.MD.UserId, id)
+	if chat == nil {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if chat.GetPredicateName() == mtproto.Predicate_channelForbidden {
+		return nil, mtproto.ErrChannelPrivate
+	}
+	return chat, nil
 }

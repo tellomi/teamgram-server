@@ -23,10 +23,32 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
+
+// draftHasContent reports whether saveDraft carries anything other than an
+// empty text draft. A media-only or effect-only draft must be stored.
+func draftHasContent(in *mtproto.TLMessagesSaveDraft) bool {
+	if in == nil {
+		return false
+	}
+	if in.GetNoWebpage() || in.GetInvertMedia() {
+		return true
+	}
+	if in.GetReplyToMsgId() != nil || in.GetReplyTo() != nil {
+		return true
+	}
+	if in.GetMessage() != "" || len(in.GetEntities()) > 0 {
+		return true
+	}
+	if in.GetMedia() != nil || in.GetEffect() != nil || in.GetSuggestedPost() != nil {
+		return true
+	}
+	return false
+}
 
 // MessagesSaveDraft
 // messages.saveDraft#bc39e14b flags:# no_webpage:flags.1?true reply_to_msg_id:flags.0?int peer:InputPeer message:string entities:flags.3?Vector<MessageEntity> = Bool;
@@ -38,13 +60,7 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		date                = int32(time.Now().Unix())
 	)
 
-	if in.NoWebpage == true {
-		isDraftMessageEmpty = false
-	} else if in.ReplyToMsgId != nil {
-		isDraftMessageEmpty = false
-	} else if in.Message != "" {
-		isDraftMessageEmpty = false
-	} else if in.Entities != nil {
+	if draftHasContent(in) {
 		isDraftMessageEmpty = false
 	}
 
@@ -60,15 +76,16 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		})
 	} else {
 		draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{
-			NoWebpage:    in.GetNoWebpage(),
-			InvertMedia:  in.GetInvertMedia(),
-			ReplyToMsgId: in.GetReplyToMsgId(),
-			ReplyTo:      in.GetReplyTo(),
-			Message:      in.GetMessage(),
-			Entities:     in.GetEntities(),
-			Media:        in.GetMedia(),
-			Date_INT32:   date,
-			Effect:       in.GetEffect(),
+			NoWebpage:     in.GetNoWebpage(),
+			InvertMedia:   in.GetInvertMedia(),
+			ReplyToMsgId:  in.GetReplyToMsgId(),
+			ReplyTo:       in.GetReplyTo(),
+			Message:       in.GetMessage(),
+			Entities:      in.GetEntities(),
+			Media:         in.GetMedia(),
+			Date_INT32:    date,
+			Effect:        in.GetEffect(),
+			SuggestedPost: in.GetSuggestedPost(),
 		}).To_DraftMessage()
 
 		c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
@@ -104,13 +121,7 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		})
 		syncUpdates.AddSafeChat(chat.ToUnsafeChat(c.MD.UserId))
 	case mtproto.PEER_CHANNEL:
-		if c.svcCtx.Plugin != nil {
-			chats := c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, peer.PeerId)
-			syncUpdates.PushChat(chats...)
-		} else {
-			c.Logger.Errorf("messages.saveDraft blocked, License key from https://teamgram.net required to unlock enterprise features.")
-			return nil, mtproto.ErrEnterpriseIsBlocked
-		}
+		syncUpdates.PushChat(c.channelChats(peer.PeerId)...)
 	}
 
 	// sync
@@ -121,4 +132,14 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 	})
 
 	return mtproto.BoolTrue, nil
+}
+
+func (c *DraftsCore) channelChats(ids ...int64) []*mtproto.Chat {
+	if len(ids) == 0 {
+		return nil
+	}
+	if c.svcCtx != nil && c.svcCtx.Plugin != nil {
+		return c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, ids...)
+	}
+	return channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...)
 }
