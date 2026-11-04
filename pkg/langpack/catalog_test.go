@@ -434,19 +434,19 @@ func TestShippedPacks(t *testing.T) {
 		t.Fatal("real Chat.Message key was lost")
 	}
 	refreshed, err := cat.Difference("ios", "zh-hans", 22454343)
-	if err != nil || refreshed.GetVersion() != 22454344 || len(refreshed.GetStrings()) < 1000 {
+	if err != nil || refreshed.GetVersion() != 22454345 || len(refreshed.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hans bump %+v %v", refreshed.GetVersion(), err)
 	}
 	androidRefreshed, err := cat.Difference("android", "zh-hans", 61570949)
-	if err != nil || androidRefreshed.GetVersion() != 61570951 || len(androidRefreshed.GetStrings()) < 1000 {
+	if err != nil || androidRefreshed.GetVersion() != 61570952 || len(androidRefreshed.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hans bump %+v %v", androidRefreshed.GetVersion(), err)
 	}
 	hant, err := cat.Difference("ios", "zh-hant", 22421528)
-	if err != nil || hant.GetVersion() != 22421529 || len(hant.GetStrings()) < 1000 {
+	if err != nil || hant.GetVersion() != 22421530 || len(hant.GetStrings()) < 1000 {
 		t.Fatalf("ios zh-hant bump v=%d n=%d %v", hant.GetVersion(), len(hant.GetStrings()), err)
 	}
 	hantAndroid, err := cat.Difference("android", "zh-hant", 61519200)
-	if err != nil || hantAndroid.GetVersion() != 61519201 || len(hantAndroid.GetStrings()) < 1000 {
+	if err != nil || hantAndroid.GetVersion() != 61519202 || len(hantAndroid.GetStrings()) < 1000 {
 		t.Fatalf("android zh-hant bump v=%d n=%d %v", hantAndroid.GetVersion(), len(hantAndroid.GetStrings()), err)
 	}
 
@@ -586,10 +586,12 @@ func TestChineseOverlayIsCurated(t *testing.T) {
 		path string
 		max  int
 	}{
-		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 20},
-		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 20},
-		{"../../data/langpack/overrides/android/zh-hans.json.gz", 10},
-		{"../../data/langpack/overrides/android/zh-hant.json.gz", 10},
+		// 12 curated lines plus the Discover and sign-up keys.
+		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 115},
+		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 115},
+		// 3 curated lines plus the shared Discover keys and the Android report keys.
+		{"../../data/langpack/overrides/android/zh-hans.json.gz", 116},
+		{"../../data/langpack/overrides/android/zh-hant.json.gz", 116},
 	} {
 		fh, err := os.Open(item.path)
 		if err != nil {
@@ -747,7 +749,7 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if diff.GetVersion() != 61570951 {
+	if diff.GetVersion() != 61570952 {
 		t.Fatalf("version %d", diff.GetVersion())
 	}
 	if len(diff.GetStrings()) < 100 {
@@ -783,7 +785,7 @@ func TestAndroidZhHansTellomiStrings(t *testing.T) {
 		t.Fatalf("intro markup %q", intro)
 	}
 	caught, err := cat.Difference("android", "zh-hans", diff.GetVersion())
-	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != 61570951 {
+	if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != 61570952 {
 		t.Fatalf("caught up %+v %v", caught, err)
 	}
 }
