@@ -26,7 +26,7 @@ Chat invite RPCs (`messages.exportChatInvite`, `messages.getExportedChatInvites`
 
 ## Routing snapshot
 
-From `docs/api-coverage.md` on this tree: **799** called methods, **791** routed to a real handler, **8** stubs that return `ENTERPRISE_IS_BLOCKED`, **0** missing routes. After the sponsored-message pull request, the remaining stubs are the two AI-compose methods and `account.confirmBotConnection`. They are not on the login path.
+From `docs/api-coverage.md` on this tree: called methods are routed. The three P1 methods that still returned `ENTERPRISE_IS_BLOCKED` — `messages.translateRichMessage`, `messages.composeRichMessageWithAI`, and `account.confirmBotConnection` — now have handlers. They are not on the login path. `messages.translateRichMessage` uses the same lexicon as `messages.translateText`. Rich compose does not call a model; proofread, emojify, and tone return the source rich message, and `translate_to_lang` uses that lexicon. `account.confirmBotConnection` returns `BOT_ID_INVALID` unless `bot_id` is a bot, then stores the confirmation and returns `boolTrue`. Login, session routing, and `auth.importBotAuthorization` / `auth.importWebTokenAuthorization` / `auth.checkPaidAuth` are unchanged.
 
 The gaps below are `partial` or `stub` inside methods the routing matrix already calls implemented.
 

@@ -341,6 +341,16 @@ func resolve(tone *mtproto.InputAiComposeTone, allowSingle bool) (savedRef, *cus
 	}
 }
 
+// Accept reports whether tone is a constructor the composer can name.
+// There is still no model behind it. A nil tone is not a task.
+func Accept(tone *mtproto.InputAiComposeTone) error {
+	if tone == nil {
+		return mtproto.ErrAiComposeToneInvalid
+	}
+	_, _, err := resolve(tone, true)
+	return err
+}
+
 func sample(tone *mtproto.InputAiComposeTone, num int) (string, string, error) {
 	num = num % 3
 	switch tone.GetPredicateName() {

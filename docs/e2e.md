@@ -38,6 +38,8 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestInviteLinkSheet` | A supergroup or basic group invite sheet does not return a `https://tell.cc/+` link, `channels.getFullChannel` / `messages.getFullChat` omits that primary link, or creating an additional link with a title, `request_needed`, `expire_date`, and `usage_limit` fails. |
 | `TestAnnounceFlagDefaultsOff` | `help.getAppConfig` is missing `tellomi_announce_enabled`, or the flag is true. The launch notice stays off unless `TELLOMI_ANNOUNCE=1` and a key are set. |
 | `TestPremiumNotRequiredToContact` | `users.getIsPremiumRequiredToContact` returns an error or does not return one bool per requested user. |
+| `TestRichTranslateAndCompose` | `messages.translateRichMessage` or `messages.composeRichMessageWithAI` returns `ENTERPRISE_IS_BLOCKED`, a formatted `hello` does not become `你好` for `zh-hans`, a sent `hello` does not translate by id, or proofread does not return the source text. |
+| `TestConfirmBotConnection` | `account.confirmBotConnection` returns `ENTERPRISE_IS_BLOCKED`, a person or an empty id is not `BOT_ID_INVALID`, or a bot from `bots.createBot` does not confirm. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).

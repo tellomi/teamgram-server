@@ -12,7 +12,7 @@
 
 定时消息不触发回复。群聊不在这一期。
 
-`help.getAppConfig` 的 `tellomi_ai_enabled` 为 true 时，客户端可以显示入口。官方客户端不读这个键。`tellomi_ai_compose_enabled` 仍是 false，那是另一项。
+`help.getAppConfig` 的 `tellomi_ai_enabled` 为 true 时，客户端可以显示入口。官方客户端不读这个键。`tellomi_ai_compose_enabled` 仍是 false。输入栏的 `messages.composeRichMessageWithAI` 不调用百炼：校对、加表情和语气把原文还回去，`translate_to_lang` 用和 `messages.translateText` 一样的本地词表。
 
 | 情况 | 用户看到的文字 |
 | --- | --- |

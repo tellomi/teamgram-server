@@ -1336,6 +1336,10 @@ var (
 	// | 400 | BOT_INVALID | This is not a valid bot. |
 	ErrBotInvalid = status.Error(ErrBadRequest, "BOT_INVALID")
 
+	// ErrBotIdInvalid
+	// | 400 | BOT_ID_INVALID | The specified bot ID is invalid.
+	ErrBotIdInvalid = status.Error(ErrBadRequest, "BOT_ID_INVALID")
+
 	// ErrBotCreateLimitExceeded
 	// | 400 | BOT_CREATE_LIMIT_EXCEEDED | The current user already owns the maximum allowed number of owned bots, as specified by bots_create_limit_default and bots_create_limit_premium.
 	ErrBotCreateLimitExceeded = status.Error(ErrBadRequest, "BOT_CREATE_LIMIT_EXCEEDED")

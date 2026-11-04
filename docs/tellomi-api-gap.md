@@ -28,7 +28,7 @@ Tellomi iOS 实际调用、且落在覆盖矩阵里的 755 个方法：
 | 优先级 | 已实现 | 未实现（返回错误） | 残缺或假数据 |
 | --- | ---: | ---: | ---: |
 | P0 登录 / 启动 / 后台同步 | 91 | 0 | 0 |
-| P1 资料、联系人、私聊、历史上传、基础群 | 352 | 8 | 0 |
+| P1 资料、联系人、私聊、历史上传、基础群 | 360 | 0 | 0 |
 | P2 其余（动态、支付、机器人、商业等） | 304 | 0 | 0 |
 
 P0 包含 `auth.sendCode` / `auth.signIn` / `auth.checkPassword` / `account.getPassword`、`help.getConfig`、`updates.getState` / `updates.getDifference`、`messages.getDialogs`、`langpack.getLangPack`。这些都有路由和真实 handler，不是空壳。
@@ -92,25 +92,33 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 链接是 `https://tell.cc/+` 加 20 位 hash（`TELLOMI_LINK_BASE_URL` / `TEAMGRAM_TME_HOST` 可改主机）。基础群写 `chat_invites` / `chat_invite_participants`，频道和超级群写 `channel_invites` / `channel_invite_importers`。迁移：`teamgramd/deploy/sql/migrate-20261104-chat-invites.sql`。旧库的 `chat_invite_participants` 缺 `chat_id`、`requested`、`approved_by`，加入记录和次数统计会插不进去。
 
+## 这次补上的
+
+聊天里客户端还会打到、并且以前直接 `ENTERPRISE_IS_BLOCKED` 的三个 P1 方法。登录、会话路由和鉴权没改。没有新的数据库表，也没有对 Redis 做 `FLUSHALL`。
+
+### `messages.translateRichMessage`
+
+翻译按钮在富文本消息上走这个方法，不走已经实现的 `messages.translateText`。规则和普通翻译一样：`to_lang` 不在词表里是 `400 TO_LANG_INVALID`；带了 `text` 就翻这几段，否则用 `peer` + `id` 读已发出的消息。空 id 列表是 `MESSAGE_IDS_EMPTY`，找不到的 id 是 `MESSAGE_ID_INVALID`，peer 不对是 `PEER_ID_INVALID`。`tone` 超过 64 个字符同样是 `TO_LANG_INVALID`，不改变译文。
+
+没有外部翻译服务。英文和中文之间用 `messages.translateText` 同一份小词表（例如 `hello` → `你好`），别的语言原文返回。带 message entity 的普通消息保持原文，避免偏移错位。HTML 和 Markdown 先抽成纯文本再放进一个段落。块结构里的 `textPlain` 按叶子翻译，粗体这类外层保留。结果是 `messages.translatedRichMessage`，照片和文件向量是空的（块里的 photo id 还在）。
+
+### `messages.composeRichMessageWithAI`
+
+输入栏的 AI 按钮。没有模型，`help.getAppConfig` 的 `tellomi_ai_compose_enabled` 仍是 false，不调用百炼。这和已经实现的 `messages.composeMessageWithAI` 一样：空文本是 `MESSAGE_EMPTY`，没带校对、翻译、语气或加表情是 `AI_COMPOSE_TASK_MISSING`，不认识的语气是 `AICOMPOSE_TONE_INVALID`。校对、加表情和语气把原文还回去，草稿不会被清掉，客户端也不会停在错误页。`translate_to_lang` 用上面的词表。不返回 `AICOMPOSE_FLOOD_PREMIUM`，Tellomi 没有这道 Premium 门槛。
+
+### `account.confirmBotConnection`
+
+用户确认连上一个机器人时，客户端等的是 `Bool`。`bot_id` 为空、不是机器人、或者 access hash 对不上，返回 `400 BOT_ID_INVALID`。未登录是 `401 AUTH_KEY_UNREGISTERED`。`bots.createBot` 建在本进程里的机器人按返回的 access hash 核对。用户服务里 `is_bot` 的账号走 `user.isBot`，hash 不一致也是 `BOT_ID_INVALID`。确认写入进程内存，账号缓存可用时再写 `botconn:<用户>:<机器人>`。再确认一次仍是 `boolTrue`。不向会话推 `updateNewBotConnection`，避免一条客户端没在这次调用里等待的更新把连接打乱。
+
 ## 常见路径里还缺的
 
-频道简介、草稿、免打扰、清空自己的历史、从频道转发、贴纸集封面，以及赞助消息的空结果，已经在 master 上。`users.getIsPremiumRequiredToContact` 见下面「资料页」。下面这些客户端还会打到、并且仍返回 `ENTERPRISE_IS_BLOCKED`：
+频道简介、草稿、免打扰、清空自己的历史、从频道转发、贴纸集封面、赞助消息的空结果，以及上面这三项，都有路由和真实 handler。`users.getIsPremiumRequiredToContact` 见下面「资料页」。
 
-| 方法 | 会在哪碰到 |
-| --- | --- |
-| `messages.composeRichMessageWithAI`、`messages.translateRichMessage` | AI 撰写 / 富文本翻译。普通 `messages.translateText` 另有实现 |
-| `account.confirmBotConnection` | 机器人连接确认 |
-| `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth` | 机器人、网页令牌、付费登录。Tellomi 登录不走这些 |
+覆盖矩阵里，客户端会调并且仍可能返回错误的登录类方法没有改：`auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`。Tellomi 的手机号和邮箱登录不走这些。
 
 ## 留下的 P1（客户端会调，服务端返回错误）
 
-下面这 3 个仍返回 `ENTERPRISE_IS_BLOCKED`，并且不在登录和聊天列表的必经路径上。赞助消息的读取、点击、查看、举报和开关已经返回空结果或成功，不再算缺口。
-
-| 方法 | 客户端 | 现状 | 说明 |
-| --- | --- | --- | --- |
-| `account.confirmBotConnection` | iOS | `ENTERPRISE_IS_BLOCKED` | 机器人连接确认 |
-| `messages.composeRichMessageWithAI` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 撰写 |
-| `messages.translateRichMessage` | iOS、Android | `ENTERPRISE_IS_BLOCKED` | AI 翻译富文本。普通 `messages.translateText` 另有实现 |
+上面三个 P1 不再返回 `ENTERPRISE_IS_BLOCKED`。赞助消息的读取、点击、查看、举报和开关已经返回空结果或成功。登录和聊天列表的必经路径没有新的错误桩。
 
 `messages.uploadEncryptedFile` 已实现。客户端先用 `upload.saveFilePart` / `upload.saveBigFilePart` 传分片，再把 `inputEncryptedFileUploaded` 或 `inputEncryptedFileBigUploaded` 交给这个方法。服务端把分片收成 `encryptedFile`（含 `key_fingerprint`），对象写在 DFS 的 `encryptedfiles/<id>.dat`。对方用 `upload.getFile` 的 `inputEncryptedFileLocation` 读取。`inputEncryptedFile` 表示这份已经传过的文件。
 
@@ -120,6 +128,6 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ## 还留着的
 
-- `account.confirmBotConnection`：机器人连接确认。
-- `messages.composeRichMessageWithAI`、`messages.translateRichMessage`：AI 撰写和富文本翻译。普通 `messages.translateText` 另有实现。
-- `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些。
+- 输入栏 AI 没有模型。校对、语气、加表情只把原文还回去。`tellomi_ai_compose_enabled` 保持 false。
+- `auth.importBotAuthorization`、`auth.importWebTokenAuthorization`、Firebase PNV、`auth.checkPaidAuth`：机器人、网页令牌、付费登录。Tellomi 的手机号和邮箱登录不走这些，这次不改登录流程。
+- v2.1 里不在这几个 RPC 上的项见 `docs/design/chat-standby.md` 的 M8 表：帮助页默认仍是 `https://tellomi.cn/faq`（`TELLOMI_HELP_CENTER=1` 才换成 `https://tellomi.cn/help`）、发现的海外读副本和离线队列、`@tellomi` 群聊和跨区域额度、FCM / 华为以外的厂商推送、监控告警。个性化推荐开关和「关于」页的算法备案编号不在 `help.getAppConfig` 里。
