@@ -25,6 +25,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -158,10 +159,23 @@ func (c *MessagesCore) makeForwardMessages(
 
 	switch fromPeer.PeerType {
 	case mtproto.PEER_CHANNEL:
-		// TODO: not impl
-		c.Logger.Errorf("messages.forwardMessages blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		loaded, err := channel.Shared().GetMessages(c.ctx, c.MD.UserId, &mtproto.InputChannel{
+			PredicateName: mtproto.Predicate_inputChannel,
+			ChannelId:     fromPeer.PeerId,
+			AccessHash:    fromPeer.AccessHash,
+		}, idList)
+		if err != nil {
+			return nil, err
+		}
+		for _, chat := range loaded.GetChats() {
+			if chat.GetNoforwards() {
+				return nil, mtproto.ErrChatForwardsRestricted
+			}
+		}
+		messageList = boxesFromChannelMessages(fromPeer.PeerId, loaded.GetMessages())
+		if messageList.Length() == 0 {
+			return nil, mtproto.ErrMessageIdInvalid
+		}
 	default:
 		messageList, _ = c.svcCtx.Dao.MessageClient.MessageGetUserMessageList(c.ctx, &message.TLMessageGetUserMessageList{
 			UserId: c.MD.UserId,
@@ -305,4 +319,22 @@ func (c *MessagesCore) makeForwardMessages(
 	}
 
 	return fwdOutboxList, nil
+}
+
+func boxesFromChannelMessages(channelID int64, msgs []*mtproto.Message) *message.Vector_MessageBox {
+	out := &message.Vector_MessageBox{}
+	for _, m := range msgs {
+		if m == nil || m.GetPredicateName() == mtproto.Predicate_messageEmpty || m.GetId() == 0 {
+			continue
+		}
+		sender := m.GetFromId().GetUserId()
+		out.Datas = append(out.Datas, &mtproto.MessageBox{
+			MessageId:    m.GetId(),
+			SenderUserId: sender,
+			PeerType:     mtproto.PEER_CHANNEL,
+			PeerId:       channelID,
+			Message:      m,
+		})
+	}
+	return out
 }
