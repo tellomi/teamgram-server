@@ -20,13 +20,14 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 // ChannelsRestrictSponsoredMessages
 // channels.restrictSponsoredMessages#9ae91519 channel:InputChannel restricted:Bool = Updates;
 func (c *SponsoredMessagesCore) ChannelsRestrictSponsoredMessages(in *mtproto.TLChannelsRestrictSponsoredMessages) (*mtproto.Updates, error) {
-	// TODO: not impl
-	c.Logger.Errorf("channels.restrictSponsoredMessages blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	if c.MD == nil {
+		return nil, mtproto.ErrUserIdInvalid
+	}
+	return channel.Shared().SetSponsoredRestricted(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in.GetChannel(), mtproto.FromBool(in.GetRestricted()))
 }

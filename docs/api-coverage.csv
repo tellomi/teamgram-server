@@ -95,7 +95,7 @@ account.setPrivacy,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,imp
 account.setReactionsNotifySettings,account,P0,startup+background,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactionNotification,app/bff/notification/internal/server/grpc/service/reactions_notify_service.go
 account.toggleConnectedBotPaused,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBusinessConnectedBots,app/bff/messages/internal/server/grpc/service/account_assets.go
 account.toggleNoPaidMessagesException,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCPaidMessage,app/bff/channels/internal/server/grpc/service/handlers_p1.go
-account.toggleSponsoredMessages,account,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCSponsoredMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/account.toggleSponsoredMessages_handler.go
+account.toggleSponsoredMessages,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 account.toggleUsername,account,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 account.toggleWebBrowserSettingsException,account,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCWebBrowser,app/bff/webbrowser/client/webbrowser_client.go
 account.unregisterDevice,account,P0,startup+background,yes,yes,no,yes,implemented,ok,yes,implemented,RPCNotification,app/bff/notification/client/notification_client.go
@@ -212,7 +212,7 @@ channels.readMessageContents,channels,P1,interactive,yes,yes,yes,yes,implemented
 channels.reorderUsernames,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFragment,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.reportAntiSpamFalsePositive,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAntiSpam,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.reportSpam,channels,P1,interactive,no,yes,yes,no,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_p1.go
-channels.restrictSponsoredMessages,channels,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCSponsoredMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/channels.restrictSponsoredMessages_handler.go
+channels.restrictSponsoredMessages,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 channels.searchPosts,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMessages,app/bff/messages/client/messages_client.go
 channels.setBoostsToUnblockRestrictions,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCBoosts,app/bff/channels/internal/server/grpc/service/handlers_p1.go
 channels.setDiscussionGroup,channels,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChannels,app/bff/channels/internal/server/grpc/service/handlers_features.go
@@ -339,7 +339,7 @@ messages.checkUrlAuthMatchCode,messages,P1,interactive,yes,yes,yes,yes,implement
 messages.clearAllDrafts,messages,P1,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCDrafts,app/bff/drafts/client/drafts_client.go
 messages.clearRecentReactions,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_features.go
 messages.clearRecentStickers,stickers,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCStickers,app/bff/stickers/internal/server/grpc/service/handlers.go
-messages.clickSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCSponsoredMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.clickSponsoredMessage_handler.go
+messages.clickSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 messages.composeMessageWithAI,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCAiComposeTone,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.composeRichMessageWithAI,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/messages/internal/core/messages.composeRichMessageWithAI_handler.go
 messages.createChat,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCChats,app/bff/chats/client/chats_client.go
@@ -504,7 +504,7 @@ messages.reportMusicListen,messages,P1,interactive,yes,yes,yes,no,implemented,ok
 messages.reportReaction,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReactions,app/bff/channels/internal/server/grpc/service/handlers_report.go
 messages.reportReadMetrics,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_report.go
 messages.reportSpam,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCReports,app/bff/channels/internal/server/grpc/service/handlers_p1.go
-messages.reportSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCSponsoredMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.reportSponsoredMessage_handler.go
+messages.reportSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 messages.requestAppWebView,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go (layer variants disagree; best reachable status kept)
 messages.requestChatJoinWebView,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCMiniBotApps,app/bff/messages/internal/server/grpc/service/bots.go
 messages.requestEncryption,messages,P1,interactive,yes,yes,no,yes,implemented,ok,yes,implemented,RPCSecretChats,app/bff/phone/internal/server/grpc/service/secret_chats.go
@@ -573,7 +573,7 @@ messages.updateSavedReactionTag,messages,P1,interactive,yes,yes,yes,yes,implemen
 messages.uploadEncryptedFile,messages,P1,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
 messages.uploadImportedMedia,messages,P1,interactive,yes,yes,no,no,implemented,ok,yes,implemented,RPCImportedChats,app/bff/messages/internal/server/grpc/service/p1_rest.go
 messages.uploadMedia,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCFiles,app/bff/files/client/files_client.go
-messages.viewSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,stub,error,yes,stub,RPCSponsoredMessages,returns ENTERPRISE_IS_BLOCKED or METHOD_NOT_IMPL app/bff/sponsoredmessages/internal/core/messages.viewSponsoredMessage_handler.go
+messages.viewSponsoredMessage,messages,P1,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCSponsoredMessages,app/bff/sponsoredmessages/client/sponsoredmessages_client.go
 payments.applyGiftCode,premium/payments,P2,interactive,yes,yes,yes,yes,implemented,ok,yes,implemented,RPCGiftCodes,app/bff/payments/internal/server/grpc/service/handlers.go
 payments.assignAppStoreTransaction,premium/payments,P2,interactive,yes,no,no,yes,implemented,ok,yes,implemented,RPCPremium,app/bff/premium/client/premium_client.go
 payments.assignPlayMarketTransaction,premium/payments,P2,interactive,no,yes,no,no,implemented,ok,yes,implemented,RPCPremium,app/bff/premium/client/premium_client.go

@@ -25,8 +25,6 @@ import (
 // MessagesClickSponsoredMessage
 // messages.clickSponsoredMessage#f093465 flags:# media:flags.0?true fullscreen:flags.1?true peer:InputPeer random_id:bytes = Bool;
 func (c *SponsoredMessagesCore) MessagesClickSponsoredMessage(in *mtproto.TLMessagesClickSponsoredMessage) (*mtproto.Bool, error) {
-	// TODO: not impl
-	c.Logger.Errorf("messages.clickSponsoredMessage blocked, License key from https://teamgram.net required to unlock enterprise features.")
-
-	return nil, mtproto.ErrEnterpriseIsBlocked
+	_ = in
+	return mtproto.BoolTrue, nil
 }

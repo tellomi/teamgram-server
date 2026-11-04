@@ -25,11 +25,5 @@ import (
 // MessagesGetSponsoredMessages
 // messages.getSponsoredMessages#9bd2f439 peer:InputPeer = messages.SponsoredMessages;
 func (c *SponsoredMessagesCore) MessagesGetSponsoredMessages(in *mtproto.TLMessagesGetSponsoredMessages) (*mtproto.Messages_SponsoredMessages, error) {
-	// disable SponsoredMessages
-
-	return mtproto.MakeTLMessagesSponsoredMessages(&mtproto.Messages_SponsoredMessages{
-		Messages: []*mtproto.SponsoredMessage{},
-		Chats:    []*mtproto.Chat{},
-		Users:    []*mtproto.User{},
-	}).To_Messages_SponsoredMessages(), nil
+	return sponsoredEmpty(), nil
 }
