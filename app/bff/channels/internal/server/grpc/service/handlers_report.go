@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"strconv"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
@@ -62,6 +64,28 @@ func (ReportsService) MessagesReportEncryptedSpam(ctx context.Context, in *mtpro
 		return nil, mtproto.ErrAuthKeyUnregistered
 	}
 	if err := secretchat.Default().Report(self, in.GetPeer()); err != nil {
+		return nil, err
+	}
+	other, err := secretchat.Default().PeerUser(self, in.GetPeer())
+	if err != nil {
+		return nil, err
+	}
+	chatID := int64(0)
+	if in.GetPeer() != nil {
+		chatID = int64(in.GetPeer().GetChatId())
+	}
+	ctx = report.WithLang(ctx, langCode(ctx))
+	_, err = report.Shared().Submit(ctx, report.Submission{
+		Source:        report.SourceEncrypted,
+		Reporter:      self,
+		PeerType:      mtproto.PEER_USER,
+		PeerID:        other,
+		SubjectUserID: other,
+		Reason:        "spam",
+		TargetKey:     "encrypted:" + strconv.FormatInt(chatID, 10),
+		DedupeKey:     "enc:" + strconv.FormatInt(self, 10) + ":" + strconv.FormatInt(chatID, 10),
+	})
+	if err != nil && !errors.Is(err, report.ErrDuplicate) {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil

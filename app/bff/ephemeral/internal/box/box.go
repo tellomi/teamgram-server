@@ -6,12 +6,14 @@
 package box
 
 import (
+	"context"
 	"encoding/binary"
 	"hash/fnv"
 	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"github.com/teamgram/teamgram-server/pkg/reportcopy"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -323,6 +325,8 @@ func (b *Box) Callback(owner int64, peer *mtproto.PeerUtil, id int32, data []byt
 }
 
 // Report walks the same option list as messages.report. The message must exist.
+// A chosen option is stored in the unified reports table and the reporter
+// gets the @admin receipt.
 func (b *Box) Report(owner int64, peer *mtproto.PeerUtil, id int32, option []byte, comment, lang string) (*mtproto.ReportResult, error) {
 	if peer == nil || peer.PeerId == 0 || id <= 0 {
 		return nil, mtproto.ErrMessageIdInvalid
@@ -331,17 +335,29 @@ func (b *Box) Report(owner int64, peer *mtproto.PeerUtil, id int32, option []byt
 		return nil, mtproto.ErrMessageTooLong
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	box := b.users[owner]
 	if box == nil || !box.has(peer, id) {
+		b.mu.Unlock()
 		return nil, mtproto.ErrMessageIdInvalid
 	}
+	var text string
+	var from int64
+	if th := box.threads[peerKey(peer)]; th != nil {
+		for _, msg := range th.msgs {
+			if msg.id == id {
+				text = msg.text
+				from = msg.from
+				break
+			}
+		}
+	}
+	b.mu.Unlock()
 	if len(option) == 0 {
 		return reportcopy.Choose(lang, reportcopy.Message), nil
 	}
-	switch string(option) {
+	reason := string(option)
+	switch reason {
 	case "spam", "violence", "pornography", "child", "drugs", "personal":
-		return reported(), nil
 	case "other":
 		if comment == "" {
 			return mtproto.MakeTLReportResultAddComment(&mtproto.ReportResult{
@@ -349,10 +365,33 @@ func (b *Box) Report(owner int64, peer *mtproto.PeerUtil, id int32, option []byt
 				Option:   []byte("other"),
 			}).To_ReportResult(), nil
 		}
-		return reported(), nil
 	default:
 		return nil, mtproto.ErrOptionInvalid
 	}
+	subject := from
+	if subject == 0 || subject == owner {
+		if peer.PeerType == mtproto.PEER_USER {
+			subject = peer.PeerId
+		} else {
+			subject = 0
+		}
+	}
+	if _, err := report.Shared().Submit(context.Background(), report.Submission{
+		Source:        report.SourceEphemeral,
+		Reporter:      owner,
+		Lang:          lang,
+		PeerType:      peer.PeerType,
+		PeerID:        peer.PeerId,
+		SubjectUserID: subject,
+		Reason:        reason,
+		Message:       comment,
+		ObjectIDs:     []int32{id},
+		TargetKey:     "ephemeral:" + itoa(int64(peer.PeerType)) + ":" + itoa(peer.PeerId) + ":" + itoa(int64(id)),
+		Evidence:      report.Evidence{Items: []report.Content{{Kind: "message", ID: int64(id), Text: text}}},
+	}); err != nil {
+		return nil, err
+	}
+	return reported(), nil
 }
 
 func (b *Box) touch(user int64) *userBox {

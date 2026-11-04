@@ -246,6 +246,16 @@ services:
       TELLOMI_ANNOUNCE_ADDR: ${TELLOMI_ANNOUNCE_ADDR:-}
       TELLOMI_ANNOUNCE_FROM: ${TELLOMI_ANNOUNCE_FROM:-}
       TELLOMI_ANNOUNCE_GAP_MS: ${TELLOMI_ANNOUNCE_GAP_MS:-}
+      # User reports. The @admin receipt does not need these. Review follows
+      # TELLOMI_AI when TELLOMI_REPORT_REVIEW is empty. HTTP is Discover ingest.
+      # See docs/api/reports.md. Do not publish this port.
+      TELLOMI_REPORT_REVIEW: ${TELLOMI_REPORT_REVIEW:-}
+      TELLOMI_REPORT_HTTP: ${TELLOMI_REPORT_HTTP:-}
+      TELLOMI_REPORT_KEY: ${TELLOMI_REPORT_KEY:-}
+      TELLOMI_REPORT_ADDR: ${TELLOMI_REPORT_ADDR:-}
+      TELLOMI_REPORT_SNAPSHOT: ${TELLOMI_REPORT_SNAPSHOT:-}
+      TELLOMI_REPORT_SNAPSHOT_BUCKET: ${TELLOMI_REPORT_SNAPSHOT_BUCKET:-}
+      TELLOMI_REPORT_ETA_HOURS: ${TELLOMI_REPORT_ETA_HOURS:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.

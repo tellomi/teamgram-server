@@ -9,6 +9,7 @@ import (
 	rpcmd "github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/ephemeral/internal/box"
 	"github.com/teamgram/teamgram-server/app/bff/ephemeral/internal/svc"
+	"github.com/teamgram/teamgram-server/app/service/biz/report"
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -179,5 +180,19 @@ func TestEphemeralReportLang(t *testing.T) {
 	}
 	if string(choose.GetOptions()[0].GetOption()) != "spam" {
 		t.Fatalf("option id %q", choose.GetOptions()[0].GetOption())
+	}
+	report.ResetShared()
+	done, err := svc.EphemeralReportMessage(ctx, &mtproto.TLEphemeralReportMessage{
+		Peer: peer, Id: id, Option: []byte("spam"), Message: "bad",
+	})
+	if err != nil || done.GetPredicateName() != mtproto.Predicate_reportResultReported {
+		t.Fatalf("filed %#v %v", done, err)
+	}
+	rows, err := report.Shared().List(context.Background())
+	if err != nil || len(rows) != 1 || rows[0].Source != report.SourceEphemeral || rows[0].Reporter != 9 || rows[0].SubjectUserID != 8 || rows[0].Reason != "spam" || rows[0].Message != "bad" {
+		t.Fatalf("%+v %v", rows, err)
+	}
+	if len(rows[0].ObjectIDs) != 1 || rows[0].ObjectIDs[0] != id || rows[0].TargetKey == "" {
+		t.Fatalf("target %+v", rows[0])
 	}
 }

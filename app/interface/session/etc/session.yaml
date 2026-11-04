@@ -34,7 +34,8 @@ BFFProxyClients:
         Key: messenger.biz_server.phone
   IDMap:
     "/mtproto.RPCTos": "bff.bff"
-    #"/mtproto.RPCReports": "bff.bff"
+    # Spam and peer reports, including channels.reportSpam.
+    "/mtproto.RPCReports": "bff.bff"
     "/mtproto.RPCConfiguration": "bff.bff"
     "/mtproto.RPCQrCode": "bff.bff"
     "/mtproto.RPCMiscellaneous": "bff.bff"

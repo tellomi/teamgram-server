@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 )
 
 type noteBox struct {
@@ -20,6 +21,9 @@ type sent struct {
 }
 
 func (b *noteBox) Send(ctx context.Context, to int64, text string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	b.msgs = append(b.msgs, sent{To: to, Text: text})
 	return nil
 }
@@ -488,11 +492,56 @@ func TestStartDefaultsOff(t *testing.T) {
 	t.Setenv(EnvReview, "")
 	t.Setenv(EnvSnapshot, "")
 	t.Setenv(EnvHTTP, "")
+	t.Setenv(tellomiai.EnvEnabled, "")
+	t.Setenv(tellomiai.EnvAPIKey, "")
 	t.Setenv("TEAMGRAM_MYSQL_DSN", "")
 	ResetShared()
 	Start("", nil)
 	s := Shared()
 	if s.reviewer != nil || s.objects != nil {
 		t.Fatal("switches default on")
+	}
+	if s.notifier != nil {
+		t.Fatal("notifier installed from a nil sender")
+	}
+}
+
+func TestReceiptIgnoresCallerCancel(t *testing.T) {
+	s, box, _ := testService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	row, err := s.Submit(ctx, Submission{
+		Source: SourcePeer, Reporter: 11, PeerType: mtproto.PEER_USER, PeerID: 23,
+		SubjectUserID: 23, Reason: "spam", Lang: "zh-hans",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := box.to(11)
+	if row == nil || len(notes) != 1 || !strings.Contains(notes[0], row.Ticket()) || !strings.Contains(notes[0], "已收到你的举报") {
+		t.Fatalf("row %+v notes %+v", row, notes)
+	}
+}
+
+func TestReviewFollowsTellomiAI(t *testing.T) {
+	t.Setenv(EnvReview, "")
+	t.Setenv(EnvSnapshot, "")
+	t.Setenv(tellomiai.EnvEnabled, "1")
+	t.Setenv(tellomiai.EnvAPIKey, "test-key")
+	s := New(NewMemory())
+	s.ApplyEnv()
+	if s.reviewer == nil {
+		t.Fatal("review did not follow TELLOMI_AI")
+	}
+}
+
+func TestReviewExplicitOff(t *testing.T) {
+	t.Setenv(EnvReview, "0")
+	t.Setenv(tellomiai.EnvEnabled, "1")
+	t.Setenv(tellomiai.EnvAPIKey, "test-key")
+	s := New(NewMemory())
+	s.ApplyEnv()
+	if s.reviewer != nil {
+		t.Fatal("TELLOMI_REPORT_REVIEW=0 still classified")
 	}
 }

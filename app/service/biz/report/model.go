@@ -23,6 +23,8 @@ const (
 	SourceProfilePhoto = "account.reportProfilePhoto"
 	SourceSpam         = "messages.reportSpam"
 	SourceChannelSpam  = "channels.reportSpam"
+	SourceEncrypted    = "messages.reportEncryptedSpam"
+	SourceEphemeral    = "ephemeral.reportMessage"
 	// SourcePost is a discover post. The feed service will call Submit with it.
 	SourcePost = "discover.post"
 

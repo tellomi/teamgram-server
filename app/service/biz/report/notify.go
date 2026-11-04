@@ -2,10 +2,14 @@ package report
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
+
+// errNoNotifier means Start did not install an @admin sender.
+var errNoNotifier = errors.New("report: notifier is not installed")
 
 // Notifier delivers one private message from @admin.
 type Notifier interface {
@@ -13,14 +17,24 @@ type Notifier interface {
 }
 
 func (s *Service) send(ctx context.Context, to int64, text string) error {
-	if s == nil || s.notifier == nil || to == 0 || text == "" {
+	if s == nil || to == 0 || text == "" {
 		return nil
 	}
-	if err := s.notifier.Send(ctx, to, text); err != nil {
-		logx.WithContext(ctx).Errorf("report: notice failed user=%d", to)
-		return err
+	if s.notifier == nil {
+		return errNoNotifier
 	}
-	return nil
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		err = s.notifier.Send(ctx, to, text)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	logx.WithContext(ctx).Errorf("report: notice failed user=%d", to)
+	return err
 }
 
 func (s *Service) sendReceipt(ctx context.Context, row *Row) {
@@ -29,7 +43,16 @@ func (s *Service) sendReceipt(ctx context.Context, row *Row) {
 	}
 	lang := s.langFor(ctx, row.Reporter, row.Lang)
 	text := Receipt(lang, row.Ticket(), etaText(s.etaHours, lang))
-	_ = s.send(ctx, row.Reporter, text)
+	err := s.send(ctx, row.Reporter, text)
+	if err == nil {
+		logx.WithContext(ctx).Infof("report: receipt sent id=%d user=%d", row.ID, row.Reporter)
+		return
+	}
+	if errors.Is(err, errNoNotifier) {
+		logx.WithContext(ctx).Errorf("report: receipt not sent id=%d; @admin sender is not installed", row.ID)
+		return
+	}
+	logx.WithContext(ctx).Errorf("report: receipt failed id=%d user=%d", row.ID, row.Reporter)
 }
 
 func (s *Service) langFor(ctx context.Context, userID int64, stored string) string {
