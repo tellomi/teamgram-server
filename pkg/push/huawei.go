@@ -6,9 +6,9 @@ import (
 )
 
 // ErrHuaweiNotConfigured is returned until a Huawei Push Kit sender is installed.
-// The Android client registers token_type 13 (PUSH_TYPE_HUAWEI). There is no
-// Xiaomi, OPPO, vivo, or JPush token in the Telegram API, and this server does
-// not send those. Mainland China builds that cannot reach FCM use this token.
+// The Android client registers token_type 13 (PUSH_TYPE_HUAWEI). Xiaomi is
+// token_type 14 (xiaomi.go). OPPO, vivo, and JPush are not sent. Mainland
+// China builds that cannot reach FCM use Huawei or Xiaomi.
 var ErrHuaweiNotConfigured = errors.New("huawei push is not configured")
 
 // HuaweiSender delivers the encrypted notification string to one HMS token.

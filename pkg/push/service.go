@@ -28,6 +28,7 @@ type Service struct {
 	apns   *APNS
 	fcm    FCMSender
 	huawei HuaweiSender
+	xiaomi XiaomiSender
 	now    func() time.Time
 }
 
@@ -37,6 +38,7 @@ func NewService(store Store, cfg Config) *Service {
 		cfg:    cfg,
 		fcm:    fcmUnconfigured{},
 		huawei: huaweiUnconfigured{},
+		xiaomi: xiaomiUnconfigured{},
 		now:    time.Now,
 	}
 	if cfg.Enabled() {
@@ -66,6 +68,15 @@ func (s *Service) SetHuawei(sender HuaweiSender) {
 		return
 	}
 	s.huawei = sender
+}
+
+// SetXiaomi installs a Xiaomi Push sender. Until then token type 14 is stored and not delivered.
+func (s *Service) SetXiaomi(sender XiaomiSender) {
+	if sender == nil {
+		s.xiaomi = xiaomiUnconfigured{}
+		return
+	}
+	s.xiaomi = sender
 }
 
 // Deliver sends a push for each new incoming message in updates, and a PushKit
@@ -161,6 +172,8 @@ func (s *Service) send(ctx context.Context, devices []Device, m Incoming, d Deci
 			s.sendFCM(ctx, dev, m, dd)
 		case TokenHuawei:
 			s.sendHuawei(ctx, dev, m, dd)
+		case TokenXiaomi:
+			s.sendXiaomi(ctx, dev, m, dd)
 		case TokenAPNSVoIP:
 			// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
 		default:
@@ -251,6 +264,39 @@ func (s *Service) sendHuawei(ctx context.Context, dev Device, m Incoming, d Deci
 		return
 	}
 	logx.WithContext(ctx).Errorf("push: huawei user=%d msg=%d: %v", m.UserID, m.MsgID, err)
+}
+
+func (s *Service) sendXiaomi(ctx context.Context, dev Device, m Incoming, d Decision) {
+	alert, err := BuildAlert(m, d, dev.Secret, dev.NotificationLang())
+	if err != nil {
+		logx.WithContext(ctx).Errorf("push: build xiaomi user=%d msg=%d: %v", m.UserID, m.MsgID, err)
+		return
+	}
+	msg := XiaomiMessage{
+		Title:       alert.Title,
+		Description: alert.Body,
+		Payload:     alert.Huawei,
+		Silent:      alert.Silent,
+	}
+	if msg.Payload == "" {
+		// No device secret: the notification bar still shows the text.
+		// Payload is the FCM-shaped JSON so a client can read loc_key.
+		msg.Payload = string(alert.Android)
+	}
+	if msg.Title == "" {
+		msg.Title = "Tellomi"
+	}
+	err = s.xiaomi.Send(ctx, dev.Token, msg)
+	if err == nil || errors.Is(err, ErrXiaomiNotConfigured) {
+		return
+	}
+	var xe *XiaomiError
+	if errors.As(err, &xe) && xe.Drop() {
+		if delErr := s.store.Delete(ctx, dev.UserID, dev.TokenType, dev.Token, nil); delErr != nil {
+			logx.WithContext(ctx).Errorf("push: drop xiaomi token user=%d: %v", dev.UserID, delErr)
+		}
+	}
+	logx.WithContext(ctx).Errorf("push: xiaomi user=%d msg=%d: %v", m.UserID, m.MsgID, err)
 }
 
 func tokenTail(token string) string {
