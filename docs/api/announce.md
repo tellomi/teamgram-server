@@ -6,7 +6,9 @@
 
 ## 谁收到
 
-每一页最多 50 个未删除、不是机器人的账号，从 `@admin`（用户 777000，登录验证码也是这个号）的私聊里收到一条普通文字。客户端不用改，这条会进已经存在的服务通知对话。
+每一页最多 50 个未删除、不是机器人的账号，从 `@tellomi`（用户 777001，Tellomi AI）的私聊里收到一条普通文字，并走和普通私聊一样的推送。省略 `from` 时就是 777001。`from` 只能是 777000 到 777005。`TELLOMI_ANNOUNCE_FROM` 可以改默认值。
+
+每一条成功的私聊之后暂停 `TELLOMI_ANNOUNCE_GAP_MS` 毫秒（默认 50，0 表示不等）。部署本身不会发公告：`TELLOMI_ANNOUNCE` 不是 `1` 时不监听，监听之后也要有人调用这个接口。
 
 同一条 `event_id` 对同一个用户只写一次。发送失败会放开这一条，下一次用同一个 `cursor` 再试。已经写成功的不会再写。
 
@@ -26,15 +28,25 @@ Content-Type: application/json
 ```
 
 ```json
-{"event_id":"launch-1","text":"Tellomi 已上线。","cursor":""}
+{"event_id":"tellomi-ai-launch","text":"**Tellomi AI 正式上线**\n\n您好！","markup":"markdown","cursor":""}
 ```
+
+`markup` 为 `markdown` 时，`**加粗**` 会变成 `messageEntityBold`，星号不进正文。换行和 `•` 项目符号保留。偏移按 UTF-16 计。也可以不传 `markup`，自己给 `entities`（`type` 目前只接受 `bold`）。两者不要同时给。
+
+`dry_run` 为 true 时只返回人数和预览，不写领取记录，也不发私聊、不发频道。
 
 `cursor` 用上一次响应里的字符串。第一次省略或 `"0"`。它是用户 id 的十进制，不用 JSON 数字，避免超过 2^53 时丢精度。
 
 `200`
 
 ```json
-{"status":"partial","cursor":"10050","sent":50,"channel":"posted"}
+{"status":"partial","cursor":"10050","sent":50,"channel":"posted","from":777001}
+```
+
+试运行：
+
+```json
+{"dry_run":true,"status":"dry_run","count":1200,"sent":1200,"from":777001,"preview":"Hi","entities":[{"type":"bold","offset":0,"length":2}],"channel":"skipped","cursor":"0"}
 ```
 
 | 字段 | 含义 |
@@ -61,5 +73,7 @@ Content-Type: application/json
 | `TELLOMI_ANNOUNCE` | 关 | `1` 才启用 |
 | `TELLOMI_ANNOUNCE_KEY` | 空 | 标准 base64，解码后至少 32 字节 |
 | `TELLOMI_ANNOUNCE_ADDR` | `127.0.0.1:8815` | `off` 不监听 |
+| `TELLOMI_ANNOUNCE_FROM` | `777001` | 默认发件人，必须是 777000–777005 |
+| `TELLOMI_ANNOUNCE_GAP_MS` | `50` | 每条私聊之后的间隔，0–5000 |
 
 表在 `teamgramd/deploy/sql/migrate-20261108-announce.sql`。

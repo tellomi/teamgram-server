@@ -6,14 +6,19 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
 
 type body struct {
-	EventID string `json:"event_id"`
-	Text    string `json:"text"`
-	Cursor  string `json:"cursor"`
+	EventID  string   `json:"event_id"`
+	Text     string   `json:"text"`
+	Cursor   string   `json:"cursor"`
+	From     int64    `json:"from"`
+	DryRun   bool     `json:"dry_run"`
+	Markup   string   `json:"markup"`
+	Entities []Entity `json:"entities"`
 }
 
 // Handler is POST /internal/v1/announce.
@@ -42,8 +47,34 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	after, err := validate(strings.TrimSpace(in.EventID), strings.TrimSpace(in.Text), in.Cursor)
-	if err != nil {
+	text := strings.TrimSpace(in.Text)
+	ents := in.Entities
+	switch in.Markup {
+	case "":
+	case "markdown":
+		if len(in.Entities) != 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		text, ents = ParseMarkup(text)
+	default:
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	after, err := validate(strings.TrimSpace(in.EventID), text, in.Cursor)
+	if err != nil || !entitiesInRange(text, ents) {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	from := in.From
+	if from == 0 {
+		var ok bool
+		from, ok = SenderFrom(os.Getenv(EnvFrom))
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+	} else if !AllowedSender(from) {
 		writeErr(w, http.StatusBadRequest, "bad_request")
 		return
 	}
@@ -51,21 +82,37 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	out, err := h.Service.Deliver(r.Context(), Request{
-		EventID: strings.TrimSpace(in.EventID),
-		Text:    strings.TrimSpace(in.Text),
-		After:   after,
-	})
+	req := Request{
+		EventID:  strings.TrimSpace(in.EventID),
+		Text:     text,
+		Entities: ents,
+		From:     from,
+		After:    after,
+	}
+	var out Result
+	if in.DryRun {
+		out, err = h.Service.Preview(r.Context(), req)
+	} else {
+		out, err = h.Service.Deliver(r.Context(), req)
+	}
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":  out.Status,
 		"cursor":  strconv.FormatInt(out.Cursor, 10),
 		"sent":    out.Sent,
 		"channel": out.Channel,
-	})
+		"from":    out.From,
+	}
+	if out.DryRun {
+		resp["dry_run"] = true
+		resp["preview"] = out.Preview
+		resp["entities"] = out.Entities
+		resp["count"] = out.Sent
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func authorized(r *http.Request, key []byte) bool {

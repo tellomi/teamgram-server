@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStartOffDoesNotOpen(t *testing.T) {
@@ -53,8 +54,8 @@ type recUsers struct {
 	fail map[int64]int
 }
 
-func (r *recUsers) Send(_ context.Context, id int64, text string) error {
-	if text == "" {
+func (r *recUsers) Send(_ context.Context, id int64, msg Outbound) error {
+	if msg.Text == "" || msg.From == 0 {
 		return errors.New("empty")
 	}
 	if r.fail[id] > 0 {
@@ -70,7 +71,7 @@ type recChannel struct {
 	fail int
 }
 
-func (c *recChannel) Post(context.Context, string) error {
+func (c *recChannel) Post(context.Context, Outbound) error {
 	c.n++
 	if c.fail > 0 {
 		c.fail--
@@ -149,6 +150,69 @@ func TestChannelFailureDoesNotBlockCopies(t *testing.T) {
 	second, err := svc.Deliver(context.Background(), Request{EventID: "e", Text: "hi"})
 	if err != nil || second.Channel != "posted" || second.Sent != 0 || ch.n != 2 || len(users.ids) != 1 {
 		t.Fatalf("%+v err %v posts %d ids %v", second, err, ch.n, users.ids)
+	}
+}
+
+func TestDryRunDoesNotSend(t *testing.T) {
+	t.Setenv(EnvFrom, "")
+	key := bytes.Repeat([]byte{3}, 32)
+	token := base64.StdEncoding.EncodeToString(key)
+	mem := NewMemory([]int64{3, TellomiAIUserID, 9})
+	users := &recUsers{}
+	h := Handler{Key: key, Service: &Service{Dir: mem, Claims: mem, Users: users, Channel: &recChannel{}, PageSize: 1}}
+	req := httptest.NewRequest(http.MethodPost, pathPost, strings.NewReader(`{"event_id":"tellomi-ai-launch","text":"**Hi**","markup":"markdown","dry_run":true}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if len(users.ids) != 0 {
+		t.Fatalf("dry-run sent %v", users.ids)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["dry_run"] != true || got["count"] != float64(2) || got["preview"] != "Hi" || got["from"] != float64(TellomiAIUserID) {
+		t.Fatalf("%s", rec.Body.String())
+	}
+	again := httptest.NewRequest(http.MethodPost, pathPost, strings.NewReader(`{"event_id":"tellomi-ai-launch","text":"Hi","from":777000}`))
+	again.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, again)
+	if rec.Code != http.StatusOK || len(users.ids) != 1 {
+		t.Fatalf("real send %d %s ids %v", rec.Code, rec.Body.String(), users.ids)
+	}
+}
+
+func TestRejectsNonOfficialSender(t *testing.T) {
+	key := bytes.Repeat([]byte{4}, 32)
+	token := base64.StdEncoding.EncodeToString(key)
+	h := Handler{Key: key, Service: &Service{Dir: NewMemory([]int64{2}), Claims: NewMemory(nil), Users: &recUsers{}, Channel: &recChannel{}}}
+	req := httptest.NewRequest(http.MethodPost, pathPost, strings.NewReader(`{"event_id":"e","text":"hi","from":42}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGapBetweenCopies(t *testing.T) {
+	var waits int
+	mem := NewMemory([]int64{4, 5})
+	svc := &Service{
+		Dir: mem, Claims: mem, Users: &recUsers{}, Channel: &recChannel{},
+		Gap: time.Second,
+		Wait: func(context.Context, time.Duration) error {
+			waits++
+			return nil
+		},
+	}
+	out, err := svc.Deliver(context.Background(), Request{EventID: "e", Text: "hi"})
+	if err != nil || out.Sent != 2 || out.From != TellomiAIUserID || waits != 2 {
+		t.Fatalf("%+v err %v waits %d", out, err, waits)
 	}
 }
 

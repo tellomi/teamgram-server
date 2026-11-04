@@ -37,6 +37,12 @@ func Start(dsn string, users Users, channel Channels) {
 		logx.Error("announce: mysql or sender is missing; listener is off")
 		return
 	}
+	if raw := strings.TrimSpace(os.Getenv(EnvFrom)); raw != "" {
+		if _, ok := SenderFrom(raw); !ok {
+			logx.Error("announce: sender is not an official account; listener is off")
+			return
+		}
+	}
 	store, err := OpenMySQL(dsn)
 	if err != nil {
 		logx.Error("announce: mysql is unavailable; listener is off")
@@ -49,7 +55,7 @@ func Start(dsn string, users Users, channel Channels) {
 	if addr == "off" {
 		return
 	}
-	svc := &Service{Dir: store, Claims: store, Users: users, Channel: channel}
+	svc := &Service{Dir: store, Claims: store, Users: users, Channel: channel, Gap: GapFromEnv()}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           Handler{Service: svc, Key: key},
