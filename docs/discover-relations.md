@@ -14,7 +14,7 @@
 | `TELLOMI_DISCOVER_RELATION_KEY` | 空 | 标准 base64，解码后至少 32 字节。引擎放在 `Authorization: Bearer` 里，内容就是这串 base64 |
 | `TELLOMI_DISCOVER_RELATION_ADDR` | `127.0.0.1:8812` | 监听地址。`off` 只记录 `sub`，不监听 |
 
-还要开 `TELLOMI_DISCOVER=1` 并配好派生密钥。用户成功调用 `discover.getEngineCredential` 之后，teamgram 才记下 `sub → user_id`。没拿过凭证的 `sub` 查出来是 `known: false`，按「不是联系人、不是密友」处理。凭证 1 小时过期，客户端续期时会再次记下。
+还要开 `TELLOMI_DISCOVER=1` 并配好派生密钥。用户成功调用 `discover.getEngineCredential` 或 `discover.getAudienceToken` 之后，teamgram 才记下调用者的 `sub → user_id`。没拿过凭证的 `sub` 查出来是 `known: false`，按「不是联系人、不是密友」处理。凭证 1 小时过期，客户端续期时会再次记下。可见名单不写对方的 user id。
 
 表是 `discover_subject`（`teamgramd/deploy/sql/migrate-20261104-discover-subject.sql`）。联系人和密友读现有的 `user_contacts`：`is_deleted = 0` 才算联系人，`close_friend = 1` 才算密友（`contacts.editCloseFriends` 写的那一列）。删掉联系人后下一次查询立刻看不到（D-43）。
 
@@ -107,6 +107,6 @@ Content-Type: application/json
 
 好友断言 `tellomi-feed-friend`，字段顺序 `typ`、`exp`、`a`、`b`、`op`（`op` 是 `add` 或 `remove`）。这是快照。联系人 / 密友以本接口的实时查询为准，不要用这条边代替 `can_view`。
 
-受众断言 `tellomi-feed-audience`，字段顺序 `typ`、`exp`、`owner`、`kind`、`members`。`kind` 用 `include`。发帖时交给引擎，写入 `audience_list_member`。选定的用户仍是这份发帖时的名单，不是本接口。本 PR 还不提供签发方法；加上时不需要新的密钥，也不改这个查询。
+受众断言 `tellomi-feed-audience`，字段顺序 `typ`、`exp`、`owner`、`kind`、`members`。`kind` 是 `include`（选定用户）或 `exclude`（排除部分人）。客户端用 `discover.getAudienceToken` 签发，契约在 `docs/api/discover-ai.md` 的「客户端：可见名单」。发帖时交给引擎，写入 `audience_list_member`。选定的用户仍是这份发帖时的名单，不是本查询。签发用凭证同一把 `TELLOMI_DISCOVER_SIGNING_KEY`，不需要新的密钥，也不改这个查询。
 
 一个内容池（D-44）和机审拿不准只给作者看（D-46）都在引擎里改，不在这个接口里。

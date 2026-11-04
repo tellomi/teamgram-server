@@ -35,6 +35,7 @@ type UserReader interface {
 type Service struct {
 	mtproto.UnimplementedRPCDiscoverServer
 	accounts Accounts
+	members  Members
 	mainland func(ip string) bool
 	now      func() int64
 	keyOnce  sync.Once
@@ -46,6 +47,13 @@ type Service struct {
 // service is not configured; issuing then fails closed.
 func New(accounts Accounts) *Service {
 	return &Service{accounts: accounts, mainland: defaultMainland}
+}
+
+// WithMembers installs the audience directory. Nil keeps audience issuing
+// failing closed.
+func (s *Service) WithMembers(members Members) *Service {
+	s.members = members
+	return s
 }
 
 func (s *Service) userID(ctx context.Context) (int64, string, error) {

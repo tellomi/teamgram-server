@@ -51,6 +51,7 @@ var rpcContextRegisters = map[string]RPCContextTuple{
 	"TLAicomposeGetTones":                                RPCContextTuple{"/mtproto.RPCAiComposeTone/aicompose_getTones", func() interface{} { return new(Aicompose_Tones) }},
 	"TLAicomposeGetToneExample":                          RPCContextTuple{"/mtproto.RPCAiComposeTone/aicompose_getToneExample", func() interface{} { return new(AiComposeToneExample) }},
 	"TLDiscoverGetEngineCredential":                      RPCContextTuple{"/mtproto.RPCDiscover/discover_getEngineCredential", func() interface{} { return new(Discover_EngineCredential) }},
+	"TLDiscoverGetAudienceToken":                         RPCContextTuple{"/mtproto.RPCDiscover/discover_getAudienceToken", func() interface{} { return new(Discover_AudienceToken) }},
 	"TLFeedGetFeed":                                      RPCContextTuple{"/mtproto.RPCFeed/feed_getFeed", func() interface{} { return new(Feed_FeedMessages) }},
 	"TLFeedGetForYou":                                    RPCContextTuple{"/mtproto.RPCFeed/feed_getForYou", func() interface{} { return new(Feed_ForYouFeed) }},
 	"TLFeedReadFeed":                                     RPCContextTuple{"/mtproto.RPCFeed/feed_readFeed", func() interface{} { return new(Updates) }},

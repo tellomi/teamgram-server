@@ -151,13 +151,13 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 ## Discover credential (M3)
 
-`TELLOMI_DISCOVER=1` makes `discover.getEngineCredential#a80a7f76` return a content-engine HS256 JWT. Any other value, including unset, answers `DISCOVER_DISABLED`. The schema, claims, and keys are in `docs/discover-engine-auth.md`. The codec and the handler live in Tellomi files (`proto/mtproto/discover_codec.go`, `app/bff/discover`).
+`TELLOMI_DISCOVER=1` makes `discover.getEngineCredential#a80a7f76` return a content-engine HS256 JWT, and `discover.getAudienceToken#dc5213c2` return an audience JWT (`typ` `tellomi-feed-audience`, at most 500 member pseudonyms, 10 minute `exp`). Any other value, including unset, answers `DISCOVER_DISABLED` for both. The credential schema is `docs/discover-engine-auth.md`. The audience client contract is `docs/api/discover-ai.md`. The codec and the handlers live in Tellomi files (`proto/mtproto/discover_codec.go`, `app/bff/discover`). Login and session routing are unchanged: both methods use the route that was already registered for `RPCDiscover`.
 
 | Call | File | Hook |
 | --- | --- | --- |
 | session route | `teamgramd/etc/session.yaml`, `teamgramd/etc2/session.yaml`, `app/interface/session/etc/session.yaml` | `"/mtproto.RPCDiscover": "bff.bff"` |
 | bff register | `app/bff/bff/internal/server/server.go` | `RegisterRPCDiscoverServer` |
-| RPC table | `proto/mtproto/rpc_client_registers.go` | `TLDiscoverGetEngineCredential` |
+| RPC table | `proto/mtproto/rpc_client_registers.go` | `TLDiscoverGetEngineCredential`, `TLDiscoverGetAudienceToken` |
 
 ## Discover relations (M3 / D-13 / D-16 / D-43)
 
