@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 )
 
@@ -32,8 +33,7 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 	)
 
 	if peer.IsChannel() {
-		c.Logger.Errorf("messages.deleteHistory blocked, License key from https://teamgram.net required to unlock enterprise features.")
-		return nil, mtproto.ErrEnterpriseIsBlocked
+		return c.deleteChannelHistory(peer, in)
 	}
 
 	if !peer.IsChatOrUser() {
@@ -85,4 +85,36 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 	}
 
 	return affectedHistory, nil
+}
+
+func (c *MessagesCore) deleteChannelHistory(peer *mtproto.PeerUtil, in *mtproto.TLMessagesDeleteHistory) (*mtproto.Messages_AffectedHistory, error) {
+	input := &mtproto.InputChannel{
+		PredicateName: mtproto.Predicate_inputChannel,
+		ChannelId:     peer.PeerId,
+		AccessHash:    peer.AccessHash,
+	}
+	var (
+		pts, count int32
+		err        error
+	)
+	if in.GetMinDate() != nil || in.GetMaxDate() != nil {
+		pts, count, err = channel.Shared().DeleteByDate(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMinDate().GetValue(), in.GetMaxDate().GetValue())
+	} else {
+		pts, count, err = channel.Shared().DeleteHistory(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMaxId(), in.GetRevoke())
+		if err == mtproto.ErrChatAdminRequired && in.GetRevoke() {
+			pts, count, err = channel.Shared().DeleteHistory(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMaxId(), false)
+		}
+	}
+	if err != nil {
+		c.Logger.Errorf("messages.deleteHistory - error: %v", err)
+		return nil, err
+	}
+	if !in.GetJustClear() {
+		_, _ = channel.Shared().Leave(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input)
+	}
+	return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
+		Pts:      pts,
+		PtsCount: count,
+		Offset:   0,
+	}).To_Messages_AffectedHistory(), nil
 }

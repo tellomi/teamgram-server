@@ -210,6 +210,39 @@ func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.Inpu
 	return s.saveFeatures(ctx, ch.ID, f)
 }
 
+// DeleteByDate removes channel messages whose date is inside [minDate, maxDate].
+// A zero bound is open. The caller must be allowed to delete messages.
+func (s *Service) DeleteByDate(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, minDate, maxDate int32) (pts, ptsCount int32, err error) {
+	ch, p, err := s.requireMember(ctx, self, in)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !p.IsCreator() && !p.adminRights().CanDeleteMessages() {
+		return 0, 0, mtproto.ErrChatAdminRequired
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+	var ids []int32
+	for _, m := range msgs {
+		if m == nil || m.Deleted {
+			continue
+		}
+		if minDate > 0 && m.Date < minDate {
+			continue
+		}
+		if maxDate > 0 && m.Date > maxDate {
+			continue
+		}
+		ids = append(ids, m.ID)
+	}
+	if len(ids) == 0 {
+		return ch.Pts, 0, nil
+	}
+	return s.Delete(ctx, self, ch.ID, actorAuth, ids)
+}
+
 func (s *Service) DeleteHistory(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, maxID int32, forEveryone bool) (pts, ptsCount int32, err error) {
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
