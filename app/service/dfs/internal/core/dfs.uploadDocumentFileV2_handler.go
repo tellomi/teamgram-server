@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"io"
 	"math/rand"
 
 	"github.com/teamgram/marmota/pkg/bytes2"
@@ -22,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
 
 // DfsUploadDocumentFileV2
@@ -51,7 +53,8 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	//	return nil, err
 	//}
 
-	c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
+	// Set after the claim: a reused document must download the existing
+	// object, not this upload's temporary parts.
 
 	//go func() {
 	//	_, err2 := s.Dao.PutDocumentFile(ctx,
@@ -185,26 +188,37 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		}
 	}
 
+	var claim mediablob.Claim
+	if isThumb {
+		claim = c.claimDocumentBytes(c.ctx, documentId, cacheData)
+	} else {
+		var err2 error
+		claim, err2 = c.claimDocumentReader(c.ctx, documentId, c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo))
+		if err2 != nil {
+			c.Logger.Errorf("dfs.uploadDocumentFile - %v", err2)
+			return nil, mtproto.ErrMediaInvalid
+		}
+	}
+	applyDocumentSize(document, claim.Size)
+	if !claim.Reused {
+		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
+	}
+
 	return threading2.WrapperGoFunc(
 		c.ctx,
 		document,
 		func(ctx context.Context) {
+			if claim.Reused {
+				return
+			}
+			var body io.Reader
 			if isThumb {
-				_, err2 := c.svcCtx.Dao.PutDocumentFile(
-					ctx,
-					fmt.Sprintf("%d.dat", documentId),
-					bytes.NewReader(cacheData))
-				if err2 != nil {
-					c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err2)
-				}
+				body = bytes.NewReader(cacheData)
 			} else {
-				_, err2 := c.svcCtx.Dao.PutDocumentFile(
-					ctx,
-					fmt.Sprintf("%d.dat", documentId),
-					c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo))
-				if err2 != nil {
-					c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err2)
-				}
+				body = c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo)
+			}
+			if _, err2 := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, body); err2 != nil {
+				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err2)
 			}
 		}).(*mtproto.Document), nil
 }

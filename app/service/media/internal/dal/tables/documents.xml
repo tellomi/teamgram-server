@@ -3,9 +3,9 @@
     <operation name="Insert">
         <sql>
             INSERT INTO documents
-                (document_id, access_hash, dc_id, file_path, file_size, uploaded_file_name, ext, mime_type, thumb_id, video_thumb_id, attributes, date2)
+                (document_id, access_hash, dc_id, file_path, file_size, sha256, blob_id, uploaded_file_name, ext, mime_type, thumb_id, video_thumb_id, attributes, date2)
             VALUES
-                (:document_id, :access_hash, :dc_id, :file_path, :file_size, :uploaded_file_name, :ext, :mime_type, :thumb_id, :video_thumb_id, :attributes, :date2)
+                (:document_id, :access_hash, :dc_id, :file_path, :file_size, :sha256, :blob_id, :uploaded_file_name, :ext, :mime_type, :thumb_id, :video_thumb_id, :attributes, :date2)
         </sql>
     </operation>
 

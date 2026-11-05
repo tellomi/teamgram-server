@@ -11,21 +11,16 @@ package core
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"image"
 	"math/rand"
 	"time"
 
 	"github.com/teamgram/marmota/pkg/bytes2"
-	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
-
-	"github.com/zeromicro/go-zero/core/contextx"
-	"github.com/zeromicro/go-zero/core/threading"
 )
 
 func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute, videoW, videoH int32) []*mtproto.DocumentAttribute {
@@ -94,52 +89,22 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 	}
 	dispW, dispH, rot := probeVideoDisplay(c.svcCtx.FFmpegUtil, mp4Bytes)
 	videoW, videoH := chosenAttributeSize(media.GetAttributes(), dispW, dispH, rot)
+	// A frame ffmpeg cannot turn into a JPEG must not fail the upload.
+	// GetFirstFrameByPipe clears a closed-pipe error and can return a
+	// non-nil empty buffer for bytes that are not a video.
+	storePlain := func() (*mtproto.Document, error) {
+		return c.storePlainMp4(documentId, accessHash, creatorId, file.Id_INT64, mp4Bytes, media, videoW, videoH, nil)
+	}
 	thumbData, err = c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(mp4Bytes)
-	if thumbData == nil || err != nil {
-		// upload mp4 file
-		fileInfo, err := c.svcCtx.Dao.GetFileInfo(c.ctx, creatorId, file.Id_INT64)
-		if err != nil {
-			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
-			return nil, err
-		}
-		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
-		path = fmt.Sprintf("%d.dat", documentId)
-
-		threading.RunSafe(func() {
-			_, err2 := c.svcCtx.Dao.PutDocumentFile(
-				contextx.ValueOnlyFrom(c.ctx),
-				path,
-				c.svcCtx.Dao.NewSSDBReader(fileInfo))
-			if err2 != nil {
-				c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
-			}
-		})
-		//c.Logger.Errorf("getFirstFrameByPipe - error: %v", err)
-		//return nil, err
-
-		// build document
-		document := mtproto.MakeTLDocument(&mtproto.Document{
-			Id:            documentId,
-			AccessHash:    accessHash,
-			FileReference: []byte{}, // TODO(@benqi): gen file_reference
-			Date:          int32(time.Now().Unix()),
-			MimeType:      "video/mp4",
-			Size2:         fileInfo.GetFileSize(),
-			Size2_INT32:   int32(fileInfo.GetFileSize()),
-			Size2_INT64:   fileInfo.GetFileSize(),
-			Thumbs:        nil,
-			VideoThumbs:   nil,
-			DcId:          1,
-			Attributes:    makeMp4DocumentAttributes(media.GetAttributes(), videoW, videoH),
-		}).To_Document()
-		return finishGifDocument(document, mp4Bytes), nil
+	if len(thumbData) == 0 || err != nil {
+		return storePlain()
 	} else {
 		// 1. getFirstFrame
 		// build photoStrippedSize
 		thumb, err = imaging.Decode(bytes.NewReader(thumbData))
 		if err != nil {
-			return nil, err
-
+			c.Logger.Errorf("dfs.uploadMp4DocumentMedia - thumb: %v", err)
+			return storePlain()
 		}
 		// A coded landscape frame of a portrait video must not become the
 		// bubble size. Clients use this thumb's w/h and center-crop the
@@ -152,7 +117,8 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			err = imaging.EncodeStripped(stripped, imaging.Resize(thumb, 0, 40), 30)
 		}
 		if err != nil {
-			return nil, err
+			c.Logger.Errorf("dfs.uploadMp4DocumentMedia - stripped thumb: %v", err)
+			return storePlain()
 		}
 
 		// upload thumb
@@ -170,7 +136,8 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 
 		err = imaging.EncodeJpeg(mThumbData, mThumb)
 		if err != nil {
-			return nil, err
+			c.Logger.Errorf("dfs.uploadMp4DocumentMedia - jpeg thumb: %v", err)
+			return storePlain()
 		}
 
 		// upload thumb
@@ -191,41 +158,37 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			}).To_PhotoSize(),
 		}
 
-		// upload mp4 file
-		fileInfo, err := c.svcCtx.Dao.GetFileInfo(c.ctx, creatorId, file.Id_INT64)
-		if err != nil {
-			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
-			return nil, err
-		}
-		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
-		path = fmt.Sprintf("%d.dat", documentId)
-
-		threading2.GoSafeContext(c.ctx, func(ctx context.Context) {
-			_, err2 := c.svcCtx.Dao.PutDocumentFile(
-				ctx,
-				path,
-				c.svcCtx.Dao.NewSSDBReader(fileInfo))
-			if err2 != nil {
-				c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
-			}
-		})
-
-		// build document
-		document := mtproto.MakeTLDocument(&mtproto.Document{
-			Id:            documentId,
-			AccessHash:    accessHash,
-			FileReference: []byte{}, // TODO(@benqi): gen file_reference
-			Date:          int32(time.Now().Unix()),
-			MimeType:      "video/mp4",
-			Size2:         fileInfo.GetFileSize(),
-			Size2_INT32:   int32(fileInfo.GetFileSize()),
-			Size2_INT64:   fileInfo.GetFileSize(),
-			Thumbs:        szList,
-			VideoThumbs:   nil,
-			DcId:          1,
-			Attributes:    makeMp4DocumentAttributes(media.GetAttributes(), videoW, videoH),
-		}).To_Document()
-
-		return finishGifDocument(document, mp4Bytes), nil
+		return c.storePlainMp4(documentId, accessHash, creatorId, file.Id_INT64, mp4Bytes, media, videoW, videoH, szList)
 	}
+}
+
+func (c *DfsCore) storePlainMp4(documentId, accessHash, creatorId, fileID int64, mp4Bytes []byte, media *mtproto.InputMedia, videoW, videoH int32, thumbs []*mtproto.PhotoSize) (*mtproto.Document, error) {
+	fileInfo, err := c.svcCtx.Dao.GetFileInfo(c.ctx, creatorId, fileID)
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
+		return nil, err
+	}
+	claim, err := c.storeDocumentBytes(c.ctx, documentId, mp4Bytes, true)
+	if err != nil {
+		c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
+		return nil, err
+	}
+	if !claim.Reused {
+		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
+	}
+	document := mtproto.MakeTLDocument(&mtproto.Document{
+		Id:            documentId,
+		AccessHash:    accessHash,
+		FileReference: []byte{},
+		Date:          int32(time.Now().Unix()),
+		MimeType:      "video/mp4",
+		Size2:         claim.Size,
+		Size2_INT32:   int32(claim.Size),
+		Size2_INT64:   claim.Size,
+		Thumbs:        thumbs,
+		VideoThumbs:   nil,
+		DcId:          1,
+		Attributes:    makeMp4DocumentAttributes(media.GetAttributes(), videoW, videoH),
+	}).To_Document()
+	return finishGifDocument(document, mp4Bytes), nil
 }

@@ -22,4 +22,6 @@ type PhotosDO struct {
 	VideoSizeId   int64  `db:"video_size_id" json:"video_size_id"`
 	InputFileName string `db:"input_file_name" json:"input_file_name"`
 	Ext           string `db:"ext" json:"ext"`
+	Sha256        string `db:"sha256" json:"sha256"`
+	BlobId        int64  `db:"blob_id" json:"blob_id"`
 }

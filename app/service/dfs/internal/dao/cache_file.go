@@ -102,6 +102,7 @@ func (d *Dao) GetCacheFile(
 	id int64,
 	offset int64,
 	limit int32,
+	path string,
 	takeF func(ctx context.Context, path string, offset int64, limit int32) (bytes []byte, err error),
 ) (bytes []byte, err error) {
 	var (
@@ -125,7 +126,9 @@ func (d *Dao) GetCacheFile(
 		}
 		bytes = bytes[:n]
 	} else {
-		path := fmt.Sprintf("%d.dat", id)
+		if path == "" {
+			path = fmt.Sprintf("%d.dat", id)
+		}
 		bytes, err = takeF(ctx, path, offset, limit)
 		if err != nil {
 			logx.WithContext(ctx).Errorf("getCacheFile(id: %d: %d, offset: %d, limit: %d) error :%v",

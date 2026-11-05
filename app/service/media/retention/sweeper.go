@@ -2,11 +2,14 @@ package retention
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
 
 // Deleter removes one object. objectstore.Client implements it.
@@ -216,7 +219,10 @@ func (s *Sweeper) holders(ctx context.Context, m Media, channels map[Kind]map[in
 }
 
 func (s *Sweeper) expire(ctx context.Context, m Media, now time.Time, dryRun bool, rep *Report) error {
-	objs := Objects(m)
+	objs, err := s.retentionObjects(ctx, m, dryRun)
+	if err != nil {
+		return err
+	}
 	if dryRun {
 		s.logf("media retention DRY_RUN: would expire %s %d (%d objects, %d bytes)", m.Kind, m.ID, len(objs), m.Size)
 		return nil
@@ -232,6 +238,92 @@ func (s *Sweeper) expire(ctx context.Context, m Media, now time.Time, dryRun boo
 	}
 	s.logf("media retention: expired %s %d (%d objects, %d bytes)", m.Kind, m.ID, len(objs), m.Size)
 	return nil
+}
+
+// retentionObjects is the object list expire would remove. A blob that
+// still has another document or photo keeps its object. Dry runs do not
+// change the reference count.
+func (s *Sweeper) retentionObjects(ctx context.Context, m Media, dryRun bool) ([][2]string, error) {
+	objs := Objects(m)
+	db := s.blobDB()
+	if db == nil || (m.Kind != KindDocument && m.Kind != KindPhoto) {
+		return objs, nil
+	}
+	blobs := mediablob.New(db)
+	kind := mediablob.KindDocument
+	if m.Kind == KindPhoto {
+		kind = mediablob.KindPhoto
+	}
+	if !dryRun {
+		rel, err := blobs.Release(ctx, kind, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		if rel.Found && !rel.Remove {
+			objs = nil
+		} else if rel.Found && rel.Remove && rel.Path != "" {
+			objs = releasedObjects(m, rel)
+		}
+	}
+	return dropSharedObjects(ctx, blobs, m, objs)
+}
+
+func releasedObjects(m Media, rel mediablob.ReleaseResult) [][2]string {
+	if m.Kind == KindDocument {
+		if rel.Class == "" {
+			rel.Class = "documents"
+		}
+		return [][2]string{{rel.Class, rel.Path}}
+	}
+	id := originFromPhotoPath(rel.Path)
+	if id == 0 {
+		id = m.ID
+	}
+	return Objects(Media{Kind: KindPhoto, ID: id})
+}
+
+func originFromPhotoPath(path string) int64 {
+	rest := path
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		rest = path[i+1:]
+	}
+	rest = strings.TrimSuffix(rest, ".dat")
+	id, _ := strconv.ParseInt(rest, 10, 64)
+	return id
+}
+
+// dropSharedObjects refuses to delete an object key that another row still
+// references. That covers a sweeper retry after the reference row was
+// already removed.
+func dropSharedObjects(ctx context.Context, blobs *mediablob.Store, m Media, objs [][2]string) ([][2]string, error) {
+	if len(objs) == 0 || blobs == nil {
+		return objs, nil
+	}
+	var class, path string
+	switch m.Kind {
+	case KindDocument:
+		class, path = "documents", itoa(m.ID)+".dat"
+	case KindPhoto:
+		class, path = "photos", "0/"+itoa(m.ID)+".dat"
+	default:
+		return objs, nil
+	}
+	inUse, err := blobs.PathInUse(ctx, class, path)
+	if err != nil {
+		return nil, err
+	}
+	if inUse {
+		return nil, nil
+	}
+	return objs, nil
+}
+
+func (s *Sweeper) blobDB() *sql.DB {
+	st, ok := s.Store.(*SQLStore)
+	if !ok || st == nil {
+		return nil
+	}
+	return st.DB
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

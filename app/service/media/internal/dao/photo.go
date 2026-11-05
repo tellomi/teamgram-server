@@ -29,8 +29,10 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/media/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 var (
@@ -221,10 +223,18 @@ func getPhotoSize(szDO *dataobject.PhotoSizesDO) *mtproto.PhotoSize {
 }
 
 func (m *Dao) SavePhotoSizeV2(ctx context.Context, szId int64, szList []*mtproto.PhotoSize) error {
+	paths, err := m.Blobs.PhotoPaths(ctx, szId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("savePhotoSizeV2 paths: %v", err)
+		paths = nil
+	}
 	for _, sz := range szList {
 		szDO := makePhotoSizesDO(szId, sz)
 		if szDO == nil {
 			continue
+		}
+		if p := paths[sz.Type]; p != "" {
+			szDO.FilePath = p
 		}
 		if _, _, err := m.PhotoSizesDAO.Insert(ctx, szDO); err != nil {
 			return err
@@ -235,7 +245,7 @@ func (m *Dao) SavePhotoSizeV2(ctx context.Context, szId int64, szList []*mtproto
 }
 
 func (m *Dao) SavePhotoV2(ctx context.Context, id, accessHash int64, hasStickers, hasVideo bool, fileName string) error {
-	_, _, err := m.PhotosDAO.Insert(ctx, &dataobject.PhotosDO{
+	row := &dataobject.PhotosDO{
 		PhotoId:       id,
 		AccessHash:    accessHash,
 		HasStickers:   hasStickers,
@@ -244,7 +254,14 @@ func (m *Dao) SavePhotoV2(ctx context.Context, id, accessHash int64, hasStickers
 		HasVideo:      hasVideo,
 		InputFileName: fileName,
 		Ext:           getFileExtName(fileName),
-	})
+	}
+	if info, ok, err := m.Blobs.Ref(ctx, mediablob.KindPhoto, id); err != nil {
+		logx.WithContext(ctx).Errorf("savePhotoV2 blob: %v", err)
+	} else if ok {
+		row.Sha256 = info.SHA256
+		row.BlobId = info.BlobID
+	}
+	_, _, err := m.PhotosDAO.Insert(ctx, row)
 	return err
 }
 

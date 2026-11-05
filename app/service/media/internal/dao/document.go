@@ -30,6 +30,7 @@ import (
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/media/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -321,6 +322,18 @@ func (m *Dao) SaveDocumentV2(ctx context.Context, fileName string, document *mtp
 	}
 	if len(document.GetVideoThumbs()) > 0 {
 		data.VideoThumbId = document.Id
+	}
+	// A hash hit points this new row at the existing object. access_hash
+	// stays the one dfs just minted for this row.
+	if info, ok, err := m.Blobs.Ref(ctx, mediablob.KindDocument, document.Id); err != nil {
+		logx.WithContext(ctx).Errorf("saveDocumentV2 blob: %v", err)
+	} else if ok && info.Path != "" {
+		data.FilePath = info.Path
+		data.Sha256 = info.SHA256
+		data.BlobId = info.BlobID
+		if info.Size > 0 {
+			data.FileSize = info.Size
+		}
 	}
 
 	data.Id, _, _ = m.DocumentsDAO.Insert(ctx, data)

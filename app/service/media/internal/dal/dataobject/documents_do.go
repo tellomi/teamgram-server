@@ -17,6 +17,8 @@ type DocumentsDO struct {
 	DcId             int32  `db:"dc_id" json:"dc_id"`
 	FilePath         string `db:"file_path" json:"file_path"`
 	FileSize         int64  `db:"file_size" json:"file_size"`
+	Sha256           string `db:"sha256" json:"sha256"`
+	BlobId           int64  `db:"blob_id" json:"blob_id"`
 	UploadedFileName string `db:"uploaded_file_name" json:"uploaded_file_name"`
 	Ext              string `db:"ext" json:"ext"`
 	MimeType         string `db:"mime_type" json:"mime_type"`

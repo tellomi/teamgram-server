@@ -3,9 +3,9 @@
     <operation name="Insert">
         <sql>
             INSERT INTO photos
-                (photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext)
+                (photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext, sha256, blob_id)
             VALUES
-                (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext)
+                (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext, :sha256, :blob_id)
         </sql>
     </operation>
 
