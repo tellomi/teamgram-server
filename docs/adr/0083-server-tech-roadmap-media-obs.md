@@ -134,7 +134,15 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 
 ### D — 上传与去重的 OpenTelemetry
 
-沿用 [link-tracking-zh.md](../link-tracking-zh.md)。`TELLOMI_OTEL_ENDPOINT` 为空时不安装导出器，没有采集器也不打 `[otel] error`。只有采集器在跑时才设 `TELLOMI_OTEL_ENDPOINT=jaeger:4317`（OTLP gRPC）。
+状态：已在服务端实现，待合入。本波不新装导出器，不改 RPC，不跑迁移。
+
+沿用 [link-tracking-zh.md](../link-tracking-zh.md)。`TELLOMI_OTEL_ENDPOINT` 为空时不安装导出器，没有采集器也不打 `[otel] error`。只有采集器在跑时才设 `TELLOMI_OTEL_ENDPOINT=jaeger:4317`（OTLP gRPC）。导出器仍由 go-zero 在 `pkg/configload` 把空端点标成 `Telemetry.Disabled` 之后安装。`pkg/mediaotel` 只往当前进程的 tracer 上记 span；端点为空时这是 no-op，上传不会因为追踪失败。
+
+一次上传一个 `media.upload` span：事件 `claim`；未命中且对象字节已经写入时再有事件 `object.write`。属性是 `storage_class`（`documents` / `photos`）、`reused`、`dedup`（`hit` / `miss`）、`bytes`、`bytes_written`、`object_written`、`duration_ms`。接到这条 span 的路径是 `dfs.uploadPhotoFileV2`、`dfs.uploadDocumentFileV2`、`dfs.uploadGifDocumentMedia`、`dfs.uploadMp4DocumentMedia`。
+
+`messages.getDocumentByHash` 一个 span，属性 `lookup` 为 `hit`、`documentEmpty` 或 `error`，外加请求的 `bytes`（size）和 `duration_ms`。
+
+属性里没有 `access_hash`、对象字节、用户明文、内容 `sha256`。调用方就算把哈希当成 class 或 lookup 结果传进来，也只会记成 `unknown` 或 `error`。
 
 验收：
 

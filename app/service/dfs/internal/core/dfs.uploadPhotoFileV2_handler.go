@@ -20,6 +20,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/mediaotel"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -80,6 +81,13 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		return nil, err
 	}
+	// One span for this upload: claim (hit or miss) and whether the
+	// original object was written. Derivative sizes are not the blob.
+	var objectWritten bool
+	var bytesWritten int64
+	var endUpload func(wrote bool, written int64)
+	c.ctx, endUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassPhotos, claim.Reused, claim.Size)
+	defer func() { endUpload(objectWritten, bytesWritten) }()
 	photo := mtproto.MakeTLPhoto(&mtproto.Photo{
 		HasStickers:   false,
 		Id:            photoId,
@@ -95,10 +103,16 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		return photo, nil
 	}
 	if !claim.Reused {
-		if _, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData); err != nil {
+		info, err := c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData)
+		if err != nil {
 			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 			c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
 			return nil, mtproto.ErrImageProcessFailed
+		}
+		objectWritten = true
+		bytesWritten = int64(len(cacheData))
+		if info.Size > 0 {
+			bytesWritten = info.Size
 		}
 	}
 	c.rememberPhotoPath(c.ctx, photoId, "0", claim.Path)

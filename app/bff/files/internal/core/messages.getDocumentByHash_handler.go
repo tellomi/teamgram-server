@@ -19,10 +19,14 @@
 package core
 
 import (
+	"context"
 	"encoding/hex"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/mediaotel"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // MessagesGetDocumentByHash
@@ -36,32 +40,89 @@ import (
 // the same bytes still creates a new document row; this method is the only
 // path that hands back an existing one, and only to the caller who already
 // has the content hash.
+
+// hashFinder is the content-address lookup. A nil *mediablob.Store is a
+// valid value: FindDocument returns no row.
+type hashFinder interface {
+	FindDocument(ctx context.Context, shaHex string, size int64, mime string) (int64, error)
+}
+
+// documentGetter loads the document row for a hash hit.
+type documentGetter interface {
+	MediaGetDocument(ctx context.Context, in *media.TLMediaGetDocument) (*mtproto.Document, error)
+}
+
 func (c *FilesCore) MessagesGetDocumentByHash(in *mtproto.TLMessagesGetDocumentByHash) (*mtproto.Document, error) {
+	var blobs hashFinder
+	var docs documentGetter
+	if c != nil && c.svcCtx != nil {
+		blobs = c.svcCtx.Blobs
+		if c.svcCtx.Dao != nil {
+			docs = c.svcCtx.Dao.MediaClient
+		}
+	}
+	var log logx.Logger
+	if c != nil {
+		log = c.Logger
+	}
+	ctx := context.Background()
+	if c != nil && c.ctx != nil {
+		ctx = c.ctx
+	}
+	return lookupDocumentByHash(ctx, log, blobs, docs, in)
+}
+
+// lookupDocumentByHash runs the hash lookup and records hit versus
+// documentEmpty on one span. The span does not carry the sha256, the
+// mime string, or the document access_hash.
+func lookupDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, docs documentGetter, in *mtproto.TLMessagesGetDocumentByHash) (*mtproto.Document, error) {
+	size := documentByHashSize(in)
+	ctx, finish := mediaotel.BeginDocumentLookup(ctx)
+	doc, err := findDocumentByHash(ctx, log, blobs, docs, in)
+	finish(documentLookupResult(doc, err), size)
+	return doc, err
+}
+
+func findDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, docs documentGetter, in *mtproto.TLMessagesGetDocumentByHash) (*mtproto.Document, error) {
 	empty := mtproto.MakeTLDocumentEmpty(nil).To_Document()
-	if in == nil || c.svcCtx == nil || c.svcCtx.Blobs == nil {
+	if in == nil || blobs == nil {
 		return empty, nil
 	}
 	sum := in.GetSha256()
 	if len(sum) != 32 || in.GetMimeType() == "" {
 		return empty, nil
 	}
-	id, err := c.svcCtx.Blobs.FindDocument(c.ctx, hex.EncodeToString(sum), documentByHashSize(in), in.GetMimeType())
+	id, err := blobs.FindDocument(ctx, hex.EncodeToString(sum), documentByHashSize(in), in.GetMimeType())
 	if err != nil {
-		c.Logger.Errorf("messages.getDocumentByHash: %v", err)
+		if log != nil {
+			log.Errorf("messages.getDocumentByHash: %v", err)
+		}
 		return nil, err
 	}
-	if id == 0 || c.svcCtx.Dao == nil {
+	if id == 0 || docs == nil {
 		return empty, nil
 	}
-	doc, err := c.svcCtx.Dao.MediaClient.MediaGetDocument(c.ctx, &media.TLMediaGetDocument{Id: id})
+	doc, err := docs.MediaGetDocument(ctx, &media.TLMediaGetDocument{Id: id})
 	if err != nil {
-		c.Logger.Errorf("messages.getDocumentByHash document %d: %v", id, err)
+		if log != nil {
+			log.Errorf("messages.getDocumentByHash document %d: %v", id, err)
+		}
 		return nil, err
 	}
 	if doc == nil || doc.GetPredicateName() == mtproto.Predicate_documentEmpty || doc.GetId() == 0 {
 		return empty, nil
 	}
 	return doc, nil
+}
+
+func documentLookupResult(doc *mtproto.Document, err error) string {
+	if err != nil {
+		return mediaotel.LookupError
+	}
+	if doc == nil || doc.GetId() == 0 || doc.GetPredicateName() == mtproto.Predicate_documentEmpty {
+		return mediaotel.LookupEmpty
+	}
+	return mediaotel.LookupHit
 }
 
 // documentByHashSize reads the size field of the constructor the client sent.

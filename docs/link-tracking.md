@@ -14,6 +14,8 @@ install an exporter, so a missing collector does not log `[otel] error` on
 every span. Set `TELLOMI_OTEL_ENDPOINT=jaeger:4317` (OTLP gRPC) before
 starting the stack when Jaeger is actually running.
 
+Upload dedup uses that same switch and does not install its own exporter. With an empty endpoint the `media.upload` and `messages.getDocumentByHash` spans are no-ops: the upload still succeeds and nothing logs a per-request `[otel] error`. When the endpoint is set, one `media.upload` span records `dedup=hit|miss`, `reused`, `object_written`, `storage_class`, `bytes`, `bytes_written`, and `duration_ms`, so a trace shows the claim, the hit or miss, and whether object bytes were written. `messages.getDocumentByHash` sets `lookup=hit|documentEmpty`. Those attributes do not include `access_hash`, object bytes, user plaintext, or the content sha256. See [adr/0083-server-tech-roadmap-media-obs.md](adr/0083-server-tech-roadmap-media-obs.md) Wave D.
+
 ### 1. Configure the Telemetry block
 
 In each service config under `teamgramd/etc2/` (e.g. `bff.yaml`, `gateway.yaml`), add or adjust the `Telemetry` block:

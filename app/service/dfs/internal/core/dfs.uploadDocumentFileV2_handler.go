@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/mediaotel"
 )
 
 // DfsUploadDocumentFileV2
@@ -114,6 +115,13 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 
 	isThumb := mtproto.IsMimeAcceptedForPhotoVideoAlbum(document.MimeType) && model.IsFileExtImage(ext)
 	var claim mediablob.Claim
+	var finishUpload func(bool, int64)
+	uploadScheduled := false
+	defer func() {
+		if finishUpload != nil && !uploadScheduled {
+			finishUpload(false, 0)
+		}
+	}()
 	if isThumb {
 		var (
 			thumb image.Image
@@ -131,6 +139,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 			// log.Debugf("cacheData: %s", hex.EncodeToString(cacheData))
 		}
 		claim = c.claimDocumentBytes(c.ctx, documentId, cacheData)
+		c.ctx, finishUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
 		if sizes, ok := c.reusedPhotoSizes(c.ctx, documentId, claim); ok {
 			document.Thumbs = sizes
 		} else if thumb, err = imaging.Decode(bytes.NewReader(cacheData)); err != nil {
@@ -200,16 +209,24 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 			c.Logger.Errorf("dfs.uploadDocumentFile - %v", err2)
 			return nil, mtproto.ErrMediaInvalid
 		}
+		c.ctx, finishUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
 	}
 	applyDocumentSize(document, claim.Size)
 	if !claim.Reused {
 		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
 	}
 
+	uploadScheduled = true
 	return threading2.WrapperGoFunc(
 		c.ctx,
 		document,
 		func(ctx context.Context) {
+			if finishUpload == nil {
+				return
+			}
+			wrote := false
+			var written int64
+			defer func() { finishUpload(wrote, written) }()
 			if claim.Reused {
 				return
 			}
@@ -219,8 +236,15 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 			} else {
 				body = c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo)
 			}
-			if _, err2 := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, body); err2 != nil {
+			info, err2 := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, body)
+			if err2 != nil {
 				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err2)
+				return
 			}
+			written = claim.Size
+			if info.Size > 0 {
+				written = info.Size
+			}
+			wrote = true
 		}).(*mtproto.Document), nil
 }
