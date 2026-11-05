@@ -1,6 +1,6 @@
 # 媒体去重
 
-> P1（ADR-0082）已在服务端落地：上传合并后按 sha256 + size 复用已有对象。总仓决策见 [`docs/adr/0082-media-dedup-telegram-baseline.md`](https://github.com/tellomi/tellomi/blob/main/docs/adr/0082-media-dedup-telegram-baseline.md)。对象键布局见 [storage.md](storage.md)。保留策略见 [media-retention.md](media-retention.md)。
+> P1（ADR-0082）已在服务端落地：上传合并后按 sha256 + size 复用已有对象。总仓决策见 [`docs/adr/0082-media-dedup-telegram-baseline.md`](https://github.com/tellomi/tellomi/blob/main/docs/adr/0082-media-dedup-telegram-baseline.md)。对象键布局见 [storage.md](storage.md)。保留策略见 [media-retention.md](media-retention.md)。后续路线（波次、观测、明确不做）见 [adr/0083-server-tech-roadmap-media-obs.md](adr/0083-server-tech-roadmap-media-obs.md)。
 
 同一份字节再上传不会再写第二份对象。新的 document / photo 行仍有自己的 `id`、`access_hash` 和 `file_reference`。命中 hash 不是授权。
 
