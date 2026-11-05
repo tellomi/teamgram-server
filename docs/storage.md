@@ -137,3 +137,9 @@ The client is `github.com/minio/minio-go/v7` with `Region` set (so it does not
 call GetBucketLocation) and `BucketLookup` set to path style. Server-side
 encryption headers from MinIO's `encrypt` package are not sent; secret-chat
 files are already encrypted by the client.
+
+## Content identity
+
+Object keys are `<id>.dat` from a new id on every upload. There is no content
+hash, so the same bytes stored twice are two objects. `documents` has no hash
+column. See [media-dedup.md](media-dedup.md).

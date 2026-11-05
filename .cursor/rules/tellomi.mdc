@@ -1,0 +1,6 @@
+---
+description: Tellomi 规则入口（只引用，不重复正文）
+alwaysApply: true
+---
+
+动手前先读 `AGENTS.md`、`docs/TELLOMI_RULES.md`，以及总仓 `tellomi/tellomi` 的 `docs/MODULE_BOUNDARIES.md`。本文件不写规则正文；要改规则改那几份文件并开 PR。
