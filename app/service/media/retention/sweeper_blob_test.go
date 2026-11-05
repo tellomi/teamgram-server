@@ -11,6 +11,56 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
 
+func TestDryRunNeverDeletesReferencedBlob(t *testing.T) {
+	db := openBlobDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS media_blob_gc, media_blob_refs, media_photo_paths, media_blobs, documents`); err != nil {
+		t.Fatal(err)
+	}
+	if err := createRetentionBlobTables(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	blobs := mediablob.New(db)
+	const sha = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	if _, err := blobs.Claim(ctx, mediablob.ClassDocuments, mediablob.KindDocument, 11, sha, 40, "11.dat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := blobs.Claim(ctx, mediablob.ClassDocuments, mediablob.KindDocument, 22, sha, 40, "22.dat"); err != nil {
+		t.Fatal(err)
+	}
+	del := &fakeDeleter{}
+	sw := &Sweeper{Store: &SQLStore{DB: db}, Objects: del}
+	if err := sw.expire(ctx, Media{Kind: KindDocument, ID: 22, Size: 40}, time.Now(), true, &Report{Expired: map[Kind]int{}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(del.keys) != 0 {
+		t.Fatalf("dry-run deleted a shared blob: %v", del.keys)
+	}
+	var refs int
+	if err := db.QueryRowContext(ctx, `SELECT ref_count FROM media_blobs WHERE file_path = '11.dat'`).Scan(&refs); err != nil || refs != 2 {
+		t.Fatalf("dry-run changed ref_count to %d (%v)", refs, err)
+	}
+
+	if _, err := blobs.Release(ctx, mediablob.KindDocument, 11); err != nil {
+		t.Fatal(err)
+	}
+	del.keys = nil
+	if err := sw.expire(ctx, Media{Kind: KindDocument, ID: 22, Size: 40}, time.Now(), true, &Report{Expired: map[Kind]int{}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(del.keys) != 0 {
+		t.Fatalf("dry-run deleted the last live ref: %v", del.keys)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT ref_count FROM media_blobs WHERE file_path = '11.dat'`).Scan(&refs); err != nil || refs != 1 {
+		t.Fatalf("last ref ref_count %d err %v", refs, err)
+	}
+	var queued int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_blob_gc`).Scan(&queued); err != nil || queued != 0 {
+		t.Fatalf("dry-run queued gc rows %d err %v", queued, err)
+	}
+}
+
 func TestSweeperKeepsSharedBlobUntilLastRef(t *testing.T) {
 	db := openBlobDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

@@ -82,7 +82,20 @@ func getImageFormat(extName string) (int, error) {
 	return int(f), nil
 }
 
-func ReSizeImage(rb []byte, extName string, isABC bool, cb func(szType string, localId int, w, h int32, b []byte) error) (err error) {
+// ReSizeImage builds the client size ladder. JPEG, PNG and WebP go through
+// govips and the callback runs only after every derivative has been encoded.
+// GIF, TIFF and BMP stay on the historical decoder. Video frames do not use
+// this entry point; ffmpeg still owns those thumbnails (ReSizeImageLegacy).
+func ReSizeImage(rb []byte, extName string, isABC bool, cb func(szType string, localId int, w, h int32, b []byte) error) error {
+	if _, ok := staticFormatOf(extName); ok {
+		return reSizeStatic(rb, extName, isABC, cb)
+	}
+	return ReSizeImageLegacy(rb, extName, isABC, cb)
+}
+
+// ReSizeImageLegacy is the pre-govips ladder. Video avatar stills call it
+// directly so a JPEG frame from ffmpeg is not re-encoded by govips.
+func ReSizeImageLegacy(rb []byte, extName string, isABC bool, cb func(szType string, localId int, w, h int32, b []byte) error) (err error) {
 	var (
 		img image.Image
 	)

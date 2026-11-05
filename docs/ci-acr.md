@@ -5,6 +5,13 @@ GitHub Actions builds the images `docker-compose.yaml` builds itself
 (`teamgram` from the root `Dockerfile`, and `asr` from `services/asr`) and
 pushes them to ACR. Deploy is a pull.
 
+The teamgram image links libvips. dfs uses it for static JPEG, PNG and WebP
+photo derivatives. The builder installs `libvips-dev`; the runtime image
+installs the libvips shared library (`libvips42t64` or `libvips42`). GIF
+bytes, video bytes and plain files do not go through libvips, and ffmpeg
+still extracts video thumbnails. Chengdu does not compile this dependency.
+Actions builds the image and Chengdu only pulls it.
+
 The workflow runs on every push to `master` and from the Actions tab
 (`workflow_dispatch`). A new push to the same ref cancels the in-progress
 build, so an older run cannot finish later and move `:latest` backwards.
