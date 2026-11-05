@@ -1,5 +1,10 @@
 package models
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 type Ffmpeg struct {
 	FfmpegBinPath  string
 	FfprobeBinPath string
@@ -40,6 +45,40 @@ type Streams struct {
 	Duration           string      `json:"duration"`
 	Disposition        Disposition `json:"disposition"`
 	BitRate            string      `json:"bit_rate"`
+	// Tags and SideDataList carry the display matrix. Phone portrait
+	// videos are often stored as landscape pixels plus a 90° rotation.
+	Tags         StreamTags `json:"tags"`
+	SideDataList []SideData `json:"side_data_list"`
+}
+
+// FlexString accepts either a JSON string or a JSON number. ffprobe writes
+// the rotate tag both ways.
+type FlexString string
+
+func (f *FlexString) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*f = FlexString(s)
+		return nil
+	}
+	*f = FlexString(b)
+	return nil
+}
+
+type StreamTags struct {
+	Rotate FlexString `json:"rotate"`
+}
+
+type SideData struct {
+	SideDataType string  `json:"side_data_type"`
+	Rotation     float64 `json:"rotation"`
 }
 
 type Disposition struct {

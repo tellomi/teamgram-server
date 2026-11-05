@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/chai2010/webp"
+	dimaging "github.com/disintegration/imaging"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/objectstore"
 	"github.com/teamgram/teamgram-server/pkg/dcoptions"
@@ -48,6 +49,10 @@ type pageMeta struct {
 	ImageURL    string
 	Image       []byte
 	ImageMIME   string
+	OGType      string
+	HasVideo    bool
+	VideoW      int
+	VideoH      int
 }
 
 type fetchResult struct {
@@ -121,22 +126,77 @@ func fetchWebPage(u *url.URL) *mtproto.WebPage {
 		display = u.Host
 	}
 	sum := webHash(u.String(), meta.Title, meta.Description)
+	var iw, ih int
+	var photo *mtproto.Photo
+	if len(meta.Image) > 0 {
+		photo = storeWebPhoto(meta.Image, meta.ImageMIME)
+		if photo != nil && len(photo.GetSizes()) > 0 {
+			iw = int(photo.GetSizes()[0].GetW())
+			ih = int(photo.GetSizes()[0].GetH())
+			// A square og:image (Douyin covers are often 1:1) must not
+			// become the bubble when the video itself is tall or wide.
+			// The pixels stay as fetched; only the stored size changes.
+			if iw > 0 && iw == ih && meta.VideoW > 0 && meta.VideoH > 0 && meta.VideoW != meta.VideoH {
+				iw, ih = fitPreview(meta.VideoW, meta.VideoH)
+				photo.GetSizes()[0].W = int32(iw)
+				photo.GetSizes()[0].H = int32(ih)
+			}
+		}
+	}
 	page := mtproto.MakeTLWebPage(&mtproto.WebPage{
 		Id:          int64(sum),
 		Url_STRING:  u.String(),
 		DisplayUrl:  display,
 		Hash:        sum,
-		Type:        wrapperspb.String("article"),
+		Type:        wrapperspb.String(previewType(meta, iw, ih)),
 		SiteName:    wrapperspb.String(meta.Site),
 		Title:       wrapperspb.String(meta.Title),
 		Description: wrapperspb.String(meta.Description),
+		Photo:       photo,
 	}).To_WebPage()
-	if len(meta.Image) > 0 {
-		if photo := storeWebPhoto(meta.Image, meta.ImageMIME); photo != nil {
-			page.Photo = photo
-		}
-	}
 	return page
+}
+
+// previewType is the webPage.type clients use to pick a layout.
+// "article" is drawn in a square slot, which center-crops a tall cover.
+// A video page, or any non-square image, keeps its own aspect.
+func previewType(meta pageMeta, w, h int) string {
+	og := strings.ToLower(meta.OGType)
+	if strings.Contains(og, "video") || meta.HasVideo || (meta.VideoW > 0 && meta.VideoH > 0) {
+		return "video"
+	}
+	if w > 0 && h > 0 && w != h {
+		return "photo"
+	}
+	return "article"
+}
+
+func fitPreview(w, h int) (int, int) {
+	const longSide = 320
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	if w >= h {
+		if w <= longSide {
+			return w, h
+		}
+		nh := h * longSide / w
+		if nh < 1 {
+			nh = 1
+		}
+		return longSide, nh
+	}
+	if h <= longSide {
+		return w, h
+	}
+	nw := w * longSide / h
+	if nw < 1 {
+		nw = 1
+	}
+	return nw, longSide
 }
 
 func webHash(parts ...string) int32 {
@@ -463,7 +523,29 @@ func applyMeta(meta *pageMeta, attrs []html.Attribute) {
 		if meta.ImageURL == "" {
 			meta.ImageURL = content
 		}
+	case "og:type":
+		if meta.OGType == "" {
+			meta.OGType = content
+		}
+	case "og:video", "og:video:url":
+		meta.HasVideo = true
+	case "og:video:width":
+		if meta.VideoW == 0 {
+			meta.VideoW = metaInt(content)
+		}
+	case "og:video:height":
+		if meta.VideoH == 0 {
+			meta.VideoH = metaInt(content)
+		}
 	}
+}
+
+func metaInt(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func oneLine(s string) string {
@@ -531,14 +613,20 @@ func storeWebPhoto(raw []byte, mime string) *mtproto.Photo {
 }
 
 func decodePreview(raw []byte) (image.Image, string, error) {
-	img, format, err := image.Decode(bytes.NewReader(raw))
-	if err == nil {
-		return img, format, nil
+	// AutoOrientation bakes EXIF into the pixels. A phone JPEG is often
+	// stored landscape with a rotate-90 tag; ignoring the tag stores a
+	// landscape box and the client center-crops the upright picture.
+	if img, err := dimaging.Decode(bytes.NewReader(raw), dimaging.AutoOrientation(true)); err == nil {
+		return img, "image", nil
 	}
-	if img, err = webp.Decode(bytes.NewReader(raw)); err == nil {
+	if img, err := webp.Decode(bytes.NewReader(raw)); err == nil {
 		return img, "webp", nil
 	}
-	return nil, "", err
+	img, format, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, "", err
+	}
+	return img, format, nil
 }
 
 func init() {

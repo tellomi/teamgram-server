@@ -95,6 +95,67 @@ func TestOpenGraphAndPhoto(t *testing.T) {
 	}
 }
 
+func TestTallVideoPreviewKeepsAspect(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 12, 20))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 40}); err != nil {
+		t.Fatal(err)
+	}
+	restore := stubWebFetch(pageMeta{
+		Title: "Tall", Image: buf.Bytes(), ImageMIME: "image/jpeg",
+	})
+	defer restore()
+	page, err := WebPage("https://example.com/tall-cover", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.GetType().GetValue() != "photo" {
+		t.Fatalf("type %q", page.GetType().GetValue())
+	}
+	sz := page.GetPhoto().GetSizes()
+	if len(sz) == 0 || sz[0].GetW() >= sz[0].GetH() {
+		t.Fatalf("size %#v", sz)
+	}
+
+	square := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	buf.Reset()
+	if err := jpeg.Encode(&buf, square, &jpeg.Options{Quality: 40}); err != nil {
+		t.Fatal(err)
+	}
+	restore()
+	restore = stubWebFetch(pageMeta{
+		Title: "Douyin", OGType: "video.other", HasVideo: true,
+		VideoW: 720, VideoH: 1280,
+		Image: buf.Bytes(), ImageMIME: "image/jpeg",
+	})
+	defer restore()
+	page, err = WebPage("https://v.douyin.com/example", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.GetType().GetValue() != "video" {
+		t.Fatalf("type %q", page.GetType().GetValue())
+	}
+	sz = page.GetPhoto().GetSizes()
+	if len(sz) == 0 || sz[0].GetW() >= sz[0].GetH() || sz[0].GetW() == sz[0].GetH() {
+		t.Fatalf("video card stored square %#v", sz)
+	}
+}
+
+func TestOpenGraphVideoSize(t *testing.T) {
+	html := `<meta property="og:type" content="video.other">
+<meta property="og:video:width" content="720">
+<meta property="og:video:height" content="1280">
+<meta property="og:video" content="https://cdn.example/v.mp4">`
+	meta := parseMeta(html, nil)
+	if meta.OGType != "video.other" || !meta.HasVideo || meta.VideoW != 720 || meta.VideoH != 1280 {
+		t.Fatalf("%#v", meta)
+	}
+	if previewType(meta, 8, 8) != "video" {
+		t.Fatal(previewType(meta, 8, 8))
+	}
+}
+
 func TestGBKTitle(t *testing.T) {
 	raw, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte("<title>中文标题</title>"))
 	if err != nil {

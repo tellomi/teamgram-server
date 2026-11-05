@@ -28,13 +28,17 @@ import (
 	"github.com/zeromicro/go-zero/core/threading"
 )
 
-func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute) []*mtproto.DocumentAttribute {
+func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute, videoW, videoH int32) []*mtproto.DocumentAttribute {
 	attributes := make([]*mtproto.DocumentAttribute, 0, len(attrs))
 	for _, attr := range attrs {
 		switch attr.GetPredicateName() {
 		case mtproto.Predicate_documentAttributeFilename:
 			attributes = append(attributes, attr)
 		case mtproto.Predicate_documentAttributeVideo:
+			w, h := attr.W, attr.H
+			if !attr.RoundMessage && videoW > 0 && videoH > 0 {
+				w, h = videoW, videoH
+			}
 			attributes = append(attributes, mtproto.MakeTLDocumentAttributeVideo(&mtproto.DocumentAttribute{
 				RoundMessage:      attr.RoundMessage,
 				SupportsStreaming: true,
@@ -42,8 +46,8 @@ func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute) []*mtproto.Do
 				Duration:          attr.Duration, // gif.mp4's duration
 				Duration_INT32:    attr.Duration_INT32,
 				Duration_FLOAT64:  attr.Duration_FLOAT64,
-				W:                 attr.W,
-				H:                 attr.H,
+				W:                 w,
+				H:                 h,
 				PreloadPrefixSize: attr.PreloadPrefixSize,
 				VideoStartTs:      attr.VideoStartTs,
 				VideoCodec:        attr.VideoCodec,
@@ -88,6 +92,8 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 		c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
 		return nil, err
 	}
+	dispW, dispH, rot := probeVideoDisplay(c.svcCtx.FFmpegUtil, mp4Bytes)
+	videoW, videoH := chosenAttributeSize(media.GetAttributes(), dispW, dispH, rot)
 	thumbData, err = c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(mp4Bytes)
 	if thumbData == nil || err != nil {
 		// upload mp4 file
@@ -124,7 +130,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			Thumbs:        nil,
 			VideoThumbs:   nil,
 			DcId:          1,
-			Attributes:    makeMp4DocumentAttributes(media.GetAttributes()),
+			Attributes:    makeMp4DocumentAttributes(media.GetAttributes(), videoW, videoH),
 		}).To_Document()
 		return finishGifDocument(document, mp4Bytes), nil
 	} else {
@@ -135,6 +141,10 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			return nil, err
 
 		}
+		// A coded landscape frame of a portrait video must not become the
+		// bubble size. Clients use this thumb's w/h and center-crop the
+		// picture into that box.
+		thumb = imaging.MatchDisplayAspect(thumb, rot, int(videoW), int(videoH))
 		stripped := bytes2.NewBuffer(make([]byte, 0, 4096))
 		if thumb.Bounds().Dx() >= thumb.Bounds().Dy() {
 			err = imaging.EncodeStripped(stripped, imaging.Resize(thumb, 40, 0), 30)
@@ -213,7 +223,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			Thumbs:        szList,
 			VideoThumbs:   nil,
 			DcId:          1,
-			Attributes:    makeMp4DocumentAttributes(media.GetAttributes()),
+			Attributes:    makeMp4DocumentAttributes(media.GetAttributes(), videoW, videoH),
 		}).To_Document()
 
 		return finishGifDocument(document, mp4Bytes), nil
