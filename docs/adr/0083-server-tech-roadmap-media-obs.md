@@ -72,9 +72,9 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 | `dfs.uploadDocumentFileV2` | `documents`（普通文件） |
 | `dfs.uploadMp4DocumentMedia` | `documents`（含 `video/mp4`） |
 
-`upload.getFileHashes`（`app/bff/files/internal/core/upload.getFileHashes_handler.go`）仍返回 `ENTERPRISE_IS_BLOCKED`。`upload.getCdnFileHashes` 已实现，只做 CDN 分块 SHA-256 下载校验，不参与上传去重。
+`upload.getFileHashes` 已实现（ADR-0083 B2）：按 location 读明文，128 KiB SHA-256，`offset` 与 `upload.getCdnFileHashes` 同一口径。CDN 那条只哈希密文，不参与上传去重。
 
-`Store.Release` 会删掉引用行；`ref_count` 将为 0 时删 `media_blobs` 行并返回 `Remove`。删一条消息不会删对象。保留任务扫掉一条 document / photo 时，`PathInUse` 为真就不删那份对象（[media-retention.md](../media-retention.md)）。静图衍生仍在 `app/service/dfs/internal/imaging`，仓库里没有 govips。
+`Store.Release` 删掉引用行。还有别的引用就只减 `ref_count`。最后一条引用在同一事务里删掉 `media_blobs` 行（不留下 `ref_count = 0`）并把对象键写入 `media_blob_gc`。对象删除在事务提交之后；失败留下孤儿对象和 gc 行，下次保留任务再删。删一条消息不会放引用，也不会删对象。保留任务与账号清理在仍有别的 `media_blob_refs` 时不删对象（[media-retention.md](../media-retention.md)）。静图衍生仍在 `app/service/dfs/internal/imaging`，仓库里没有 govips。
 
 ## 波次与验收
 
@@ -212,7 +212,7 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 
 1. **多档 PhotoSize 要不要各自成为 blob。** 现行：只对原图做 `sha256 + size`；衍生尺寸记在 `media_photo_paths`，指向第一份上传的对象键。另一选择是每一档尺寸自己一行 `media_blobs`。A 与 C 在没有新结论之前按现行做法。
 2. **大视频要不要在客户端先算完整 sha256。** 现行：服务端在合并后的可 seek 上传上整段哈希（`claimDocumentReader`），再决定写不写。B1 的跳过上传适用于 GIF、贴纸和客户端已经算得起哈希的文件。多 GB 视频是否在上传前整段预哈希，本文不规定。没结论之前，大视频仍走上传，由服务端在合并后哈希。
-3. **引用归零后的对象删除是同步还是异步。** 现行：`Release` 在同一事务里删引用行，并在计数归零时删 `media_blobs` 行，返回 `Remove`。对象本身由调用方删；保留任务用 `PathInUse` 躲开仍被引用的键。B2 需要定：对象删除跟在该事务后面同步做，还是进异步 GC。约束已经写在不变量 6：失败时留下孤儿对象，不留下悬空引用。异步 GC 是满足这条约束的默认方向；若改成同步删除，PR 里要写清崩溃窗口。
+3. **引用归零后的对象删除是同步还是异步。** B2 定为异步。`Release` 在同一事务里删引用行，计数归零时删 `media_blobs` 行，并把对象键写入 `media_blob_gc`。对象删除在提交之后，由保留任务（以及插入时返回的键）执行。崩溃窗口是：事务已提交、对象还没删。这时没有悬空引用，也没有 `ref_count = 0` 的活行，只留下孤儿对象和 gc 行；下次 live 跑会删对象。删除失败同样留下 gc 行，不把引用写回去。
 
 ## 相关文档
 

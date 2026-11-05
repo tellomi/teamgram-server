@@ -96,6 +96,12 @@ func (s *Sweeper) Run(ctx context.Context, now time.Time) (Report, error) {
 	} else {
 		s.logf("media retention: count encrypted files: %v", err)
 	}
+	if !cfg.DryRun {
+		if err := s.drainBlobGC(ctx, &rep); err != nil {
+			rep.Errors++
+			s.logf("media retention: blob gc: %v", err)
+		}
+	}
 	var channels map[Kind]map[int64][]int64
 	expired := 0
 	for _, kind := range []Kind{KindDocument, KindPhoto} {
@@ -227,22 +233,86 @@ func (s *Sweeper) expire(ctx context.Context, m Media, now time.Time, dryRun boo
 		s.logf("media retention DRY_RUN: would expire %s %d (%d objects, %d bytes)", m.Kind, m.ID, len(objs), m.Size)
 		return nil
 	}
-	for _, o := range objs {
-		if err := s.Objects.Delete(ctx, o[0], o[1]); err != nil {
-			return err
-		}
-		rep.ObjectsRemoved++
+	before := rep.ObjectsRemoved
+	if err := s.deleteKeys(ctx, objs, rep); err != nil {
+		return err
 	}
 	if err := s.Store.MarkExpired(ctx, m.Kind, m.ID, now.Unix()); err != nil {
 		return err
 	}
-	s.logf("media retention: expired %s %d (%d objects, %d bytes)", m.Kind, m.ID, len(objs), m.Size)
+	s.logf("media retention: expired %s %d (%d objects, %d bytes)", m.Kind, m.ID, rep.ObjectsRemoved-before, m.Size)
+	return nil
+}
+
+// deleteKeys removes object keys that no live blob still references.
+// A delete error leaves the media_blob_gc row in place. The blob row and
+// the ref are already gone, so the object is an orphan until a later pass.
+func (s *Sweeper) deleteKeys(ctx context.Context, objs [][2]string, rep *Report) error {
+	if len(objs) == 0 {
+		return nil
+	}
+	blobs := mediablob.New(s.blobDB())
+	for _, o := range objs {
+		if blobs != nil {
+			inUse, err := blobs.PathInUse(ctx, o[0], o[1])
+			if err != nil {
+				return err
+			}
+			if inUse {
+				_ = blobs.AckGC(ctx, o[0], o[1])
+				continue
+			}
+		}
+		if s.Objects == nil {
+			return fmt.Errorf("media retention: object storage is not configured")
+		}
+		if err := s.Objects.Delete(ctx, o[0], o[1]); err != nil {
+			return err
+		}
+		if blobs != nil {
+			_ = blobs.AckGC(ctx, o[0], o[1])
+		}
+		if rep != nil {
+			rep.ObjectsRemoved++
+		}
+	}
+	return nil
+}
+
+// drainBlobGC retries object deletes that were queued when the last
+// reference was released. The queue is written in the same transaction as
+// the blob-row delete, so a crash leaves an orphan object and a gc row,
+// never a dangling ref and never a media_blobs row with ref_count = 0.
+func (s *Sweeper) drainBlobGC(ctx context.Context, rep *Report) error {
+	db := s.blobDB()
+	if db == nil {
+		return nil
+	}
+	blobs := mediablob.New(db)
+	for pass := 0; pass < 20; pass++ {
+		keys, err := blobs.PendingGC(ctx, 200)
+		if err != nil {
+			return err
+		}
+		if len(keys) == 0 {
+			return nil
+		}
+		objs := make([][2]string, len(keys))
+		for i, key := range keys {
+			objs[i] = [2]string{key.Class, key.Path}
+		}
+		if err = s.deleteKeys(ctx, objs, rep); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // retentionObjects is the object list expire would remove. A blob that
 // still has another document or photo keeps its object. Dry runs do not
-// change the reference count.
+// change the reference count. The last reference queues the real object
+// keys (the shared path, not this row's unused <id>.dat) and drops the
+// blob row before anything is deleted.
 func (s *Sweeper) retentionObjects(ctx context.Context, m Media, dryRun bool) ([][2]string, error) {
 	objs := Objects(m)
 	db := s.blobDB()
@@ -254,68 +324,57 @@ func (s *Sweeper) retentionObjects(ctx context.Context, m Media, dryRun bool) ([
 	if m.Kind == KindPhoto {
 		kind = mediablob.KindPhoto
 	}
-	if !dryRun {
-		rel, err := blobs.Release(ctx, kind, m.ID)
-		if err != nil {
-			return nil, err
-		}
-		if rel.Found && !rel.Remove {
-			objs = nil
-		} else if rel.Found && rel.Remove && rel.Path != "" {
-			objs = releasedObjects(m, rel)
-		}
+	var rel mediablob.ReleaseResult
+	var err error
+	if dryRun {
+		rel, err = blobs.Peek(ctx, kind, m.ID)
+	} else {
+		rel, err = blobs.Release(ctx, kind, m.ID)
 	}
-	return dropSharedObjects(ctx, blobs, m, objs)
-}
-
-func releasedObjects(m Media, rel mediablob.ReleaseResult) [][2]string {
-	if m.Kind == KindDocument {
-		if rel.Class == "" {
-			rel.Class = "documents"
-		}
-		return [][2]string{{rel.Class, rel.Path}}
-	}
-	id := originFromPhotoPath(rel.Path)
-	if id == 0 {
-		id = m.ID
-	}
-	return Objects(Media{Kind: KindPhoto, ID: id})
-}
-
-func originFromPhotoPath(path string) int64 {
-	rest := path
-	if i := strings.LastIndex(path, "/"); i >= 0 {
-		rest = path[i+1:]
-	}
-	rest = strings.TrimSuffix(rest, ".dat")
-	id, _ := strconv.ParseInt(rest, 10, 64)
-	return id
-}
-
-// dropSharedObjects refuses to delete an object key that another row still
-// references. That covers a sweeper retry after the reference row was
-// already removed.
-func dropSharedObjects(ctx context.Context, blobs *mediablob.Store, m Media, objs [][2]string) ([][2]string, error) {
-	if len(objs) == 0 || blobs == nil {
-		return objs, nil
-	}
-	var class, path string
-	switch m.Kind {
-	case KindDocument:
-		class, path = "documents", itoa(m.ID)+".dat"
-	case KindPhoto:
-		class, path = "photos", "0/"+itoa(m.ID)+".dat"
-	default:
-		return objs, nil
-	}
-	inUse, err := blobs.PathInUse(ctx, class, path)
 	if err != nil {
 		return nil, err
 	}
-	if inUse {
-		return nil, nil
+	except := mediablob.Except{}
+	if rel.Found && !rel.Remove {
+		objs = nil
+	} else if rel.Found && rel.Remove {
+		objs = keyPairs(rel.Objects)
+		except.BlobID = rel.BlobID
+		if m.Kind == KindPhoto {
+			except.PhotoID = m.ID
+		}
 	}
-	return objs, nil
+	return withoutLiveObjects(ctx, blobs, objs, except)
+}
+
+func keyPairs(keys []mediablob.Key) [][2]string {
+	out := make([][2]string, 0, len(keys))
+	for _, key := range keys {
+		if key.Path == "" {
+			continue
+		}
+		out = append(out, [2]string{key.Class, key.Path})
+	}
+	return out
+}
+
+// withoutLiveObjects drops keys that another blob or photo size still uses.
+func withoutLiveObjects(ctx context.Context, blobs *mediablob.Store, objs [][2]string, except mediablob.Except) ([][2]string, error) {
+	if len(objs) == 0 || blobs == nil {
+		return objs, nil
+	}
+	out := make([][2]string, 0, len(objs))
+	for _, o := range objs {
+		inUse, err := blobs.InUse(ctx, o[0], o[1], except)
+		if err != nil {
+			return nil, err
+		}
+		if inUse {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out, nil
 }
 
 func (s *Sweeper) blobDB() *sql.DB {

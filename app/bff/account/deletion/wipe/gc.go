@@ -71,6 +71,13 @@ type GCStore interface {
 	// A negative result means the count could not be proven and the object
 	// must be kept.
 	Refs(ctx context.Context, item GCItem) (int, error)
+	// Shared reports whether a different media_blob_refs row still points at
+	// this object. Dry-run uses it and does not change the count.
+	Shared(ctx context.Context, item GCItem) (bool, error)
+	// Detach drops this item's blob ref. remove is true when that was the
+	// last ref, or when the object was never in media_blobs, so the object
+	// may be deleted. remove is false when another ref still holds it.
+	Detach(ctx context.Context, item GCItem) (remove bool, err error)
 	Exempt(ctx context.Context, item GCItem) (bool, error)
 	Mark(ctx context.Context, id int64, status string, trashedAt int64) error
 }
@@ -181,12 +188,34 @@ func RunGC(ctx context.Context, store GCStore, mover Mover, cfg GCConfig, now ti
 			continue
 		}
 		if cfg.DryRun {
+			shared, err := store.Shared(ctx, item)
+			if err != nil {
+				rep.Errors++
+				continue
+			}
+			if shared {
+				rep.Referenced++
+				sample(&rep, "shared "+item.Class+"/"+item.Path)
+				continue
+			}
 			rep.WouldTrash++
 			sample(&rep, "would_trash "+item.Class+"/"+item.Path)
 			continue
 		}
 		if mover == nil {
 			rep.Errors++
+			continue
+		}
+		// Drop the blob ref before the object moves. If another ref appears
+		// in that transaction, the object stays. A failed move leaves an
+		// orphan object and a media_blob_gc row, not a dangling ref.
+		remove, err := store.Detach(ctx, item)
+		if err != nil {
+			rep.Errors++
+			continue
+		}
+		if !remove {
+			rep.Referenced++
 			continue
 		}
 		if err := mover.MoveToTrash(ctx, item.Class, item.Path); err != nil {

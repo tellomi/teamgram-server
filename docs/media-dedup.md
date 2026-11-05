@@ -13,6 +13,7 @@
 | `media_blobs` | 唯一键 `(storage_class, sha256, file_size)` → 对象键、`ref_count`、第一份上传的 id |
 | `media_blob_refs` | 每条 document / photo 指向一个 blob |
 | `media_photo_paths` | 复用的图片各档尺寸指向已有对象键 |
+| `media_blob_gc` | 最后一条引用放掉之后待删的对象键（`migrate-20261119-media-blob-gc.sql`） |
 | `documents.sha256` / `blob_id` | `messages.getDocumentByHash` 的查找列 |
 | `photos.sha256` / `blob_id` | 同一套引用，图片不走 getDocumentByHash |
 
@@ -27,11 +28,11 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 - 图片路径（`dfs.uploadPhotoFileV2` 等）在客户端带了 checksum 且不符时返回 `MD5_CHECKSUM_INVALID`。
 - 加密文件（`dfs.uploadEncryptedFileV2`）同样比对 md5，不符则 `MD5_CHECKSUM_INVALID`。`encrypted_files.md5_checksum` 是该校验的存储，不是去重键。
 
-## 仍是封锁桩
+## 分块校验
 
-- `upload.getFileHashes`（`upload.getFileHashes_handler.go`）：上游封锁桩，直接返回 `ENTERPRISE_IS_BLOCKED`。P2，本批不实现。
+`upload.getFileHashes` 按 location 读 `upload.getFile` 会返回的明文，切成 128 KiB 做 SHA-256。`offset` 丢掉起点早于它的分块，和 `upload.getCdnFileHashes` 同一口径。CDN 那条哈希的是密文，不参与上传去重。旧构造 `#c7025931` 的 offset 是 int，当前 `#9156982a` 是 long，两条都走这个 handler。
 
-`upload.getCdnFileHashes` 与 `upload.reuploadCdnFile` 已实现，只做 CDN 分块 SHA-256 下载校验，不参与上传去重。
+`upload.getCdnFileHashes` 与 `upload.reuploadCdnFile` 只做 CDN 分块 SHA-256 下载校验。
 
 ## 现有复用
 
@@ -39,13 +40,11 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 
 `messages.getDocumentByHash` 按官方 TL：`sha256`（32 字节）+ `size` + `mime_type` 命中则返回已有 Document（含它自己的 `access_hash`），否则 `documentEmpty`。旧构造 `#338e2464` 的 size 是 int，当前 `#b1f2061f` 是 long。这是客户端在发送贴纸、GIF、已知文件前按 hash 取已有 Document 的接口；上传路径不会因为 hash 相同就把别人的 `access_hash` 交给上传者。
 
-删一条消息不会删对象。保留任务扫掉一条 document/photo 时，只要 `media_blobs.ref_count` 还有别的引用，就不删那份对象。
+删一条消息不会删对象，也不会放掉 `media_blob_refs`。保留任务扫掉一条 document/photo 时，只要还有别的引用，就不删那份对象。最后一条引用在同一事务里删掉 blob 行（不留下 `ref_count = 0`），并把对象键写入 `media_blob_gc`；对象本身随后删除。删除失败留下孤儿对象和 gc 行，不留下悬空引用。账号清理在搬走对象之前先放掉这条引用；别的引用还在就不搬。
 
 ## 待办
 
-1. **P2** 实现 `upload.getFileHashes`，与 CDN 分块 hash 口径统一。本批不改这个封锁桩：它要按 location 读整份对象再切 128KB SHA-256，和上传去重不是一条路径。
-2. **P2** 生命周期跟 [media-retention.md](media-retention.md) 对齐的其余部分：引用归零后的对象删除已经在保留任务里躲开了仍被引用的 blob，完整的保留周期不在 P1。
-3. **P3** 其余 Telegram 公开能力（file_reference 刷新、分块并行上传与断点续传、CDN DC、按需缩略图）逐项列入 `docs/api-coverage.md`。
-4. 头像（`uploadProfilePhoto`）、壁纸、主题、铃声仍按新 id 写对象。公开地址和一部分下载位置直接用这个 id，不走 `media_photo_paths`。加密文件不参与去重。
+1. **P3** 其余 Telegram 公开能力（file_reference 刷新、分块并行上传与断点续传、CDN DC、按需缩略图）逐项列入 `docs/api-coverage.md`。
+2. 头像（`uploadProfilePhoto`）、壁纸、主题、铃声仍按新 id 写对象。公开地址和一部分下载位置直接用这个 id，不走 `media_photo_paths`。加密文件不参与去重。
 
 验收：同一视频、同一张图片、同一 GIF、同一普通文件，两个账号各发一次，对应 `documents.file_path` 或图片尺寸键相同，且 `media_blobs` 只有一行；两条都能 `upload.getFile`；删掉其中一条消息后另一条仍能下。图片是两行 `photos`、各自的 `access_hash`。e2e：`TestMediaDedupTwoAccounts`、`TestMediaDedupPhotoGifAndFile`。

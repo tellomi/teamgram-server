@@ -277,7 +277,6 @@ These are called, routed, and fail until the product exists. They are not chat-l
 | Method | Why |
 | --- | --- |
 | `upload.getFile` | Sticker-set thumbnail location when the plugin is absent. Ordinary files and secret-chat files are served. |
-| `upload.getFileHashes` | Whole method. |
 | `upload.getWebFile` | One location branch. |
 
 Sponsored-message methods no longer use this error. They return the empty sponsored result (#173).

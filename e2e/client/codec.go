@@ -18,8 +18,9 @@ const crcVector = 0x1cb5c415
 // Langs is set when the elements are langPackLanguage, so the language
 // picker test can see which codes were offered.
 type tlVector struct {
-	Count int32
-	Langs []*mtproto.TLLangPackLanguage
+	Count  int32
+	Langs  []*mtproto.TLLangPackLanguage
+	Hashes []*mtproto.FileHash
 }
 
 func (v *tlVector) Encode(*mtproto.EncodeBuf, int32) error { return nil }
@@ -99,19 +100,37 @@ func decodeTL(raw []byte) (mtproto.TLObject, error) {
 			return nil, fmt.Errorf("vector size %d", n)
 		}
 		v := &tlVector{Count: n}
-		if n > 0 && len(raw) >= 12 && int32(binary.LittleEndian.Uint32(raw[8:12])) == int32(mtproto.CRC32_langPackLanguage) {
-			d := mtproto.NewDecodeBuf(raw[8:])
-			v.Langs = make([]*mtproto.TLLangPackLanguage, 0, n)
-			for i := int32(0); i < n; i++ {
-				obj := d.Object()
-				if err := d.GetError(); err != nil {
-					return nil, err
+		if n > 0 && len(raw) >= 12 {
+			ctor := int32(binary.LittleEndian.Uint32(raw[8:12]))
+			switch ctor {
+			case int32(mtproto.CRC32_langPackLanguage):
+				d := mtproto.NewDecodeBuf(raw[8:])
+				v.Langs = make([]*mtproto.TLLangPackLanguage, 0, n)
+				for i := int32(0); i < n; i++ {
+					obj := d.Object()
+					if err := d.GetError(); err != nil {
+						return nil, err
+					}
+					lang, ok := obj.(*mtproto.TLLangPackLanguage)
+					if !ok {
+						return nil, fmt.Errorf("langpack language vector element %T", obj)
+					}
+					v.Langs = append(v.Langs, lang)
 				}
-				lang, ok := obj.(*mtproto.TLLangPackLanguage)
-				if !ok {
-					return nil, fmt.Errorf("langpack language vector element %T", obj)
+			case int32(mtproto.CRC32_fileHash_f39b035c), int32(mtproto.CRC32_fileHash_6242c773):
+				d := mtproto.NewDecodeBuf(raw[8:])
+				v.Hashes = make([]*mtproto.FileHash, 0, n)
+				for i := int32(0); i < n; i++ {
+					obj := d.Object()
+					if err := d.GetError(); err != nil {
+						return nil, err
+					}
+					hash, ok := obj.(*mtproto.TLFileHash)
+					if !ok {
+						return nil, fmt.Errorf("fileHash vector element %T", obj)
+					}
+					v.Hashes = append(v.Hashes, hash.To_FileHash())
 				}
-				v.Langs = append(v.Langs, lang)
 			}
 		}
 		return v, nil

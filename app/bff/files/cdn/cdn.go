@@ -34,9 +34,11 @@ import (
 )
 
 const (
-	align     = 4096
-	megabyte  = 1024 * 1024
-	hashChunk = 128 * 1024
+	align    = 4096
+	megabyte = 1024 * 1024
+	// PartBytes is the SHA-256 part size shared by upload.getCdnFileHashes
+	// and upload.getFileHashes. The last part of a file is shorter.
+	PartBytes = 128 * 1024
 	tokenLen  = 32
 	maxToken  = 256
 	// MaxPlain is the largest plaintext this process will encrypt for a CDN
@@ -346,14 +348,29 @@ func (b *Book) forget(obj *object) {
 func (b *Book) at(t time.Time) { b.now = func() time.Time { return t } }
 
 func fileHashes(body []byte) []*mtproto.FileHash {
+	hashes, _ := PartHashes(body, 0)
+	return hashes
+}
+
+// PartHashes is the chunk SHA-256 both upload.getCdnFileHashes and
+// upload.getFileHashes return. Parts start at 0, PartBytes, and so on.
+// offset keeps parts whose start is at or after offset. A negative offset
+// is OFFSET_INVALID. An empty body has no parts.
+func PartHashes(body []byte, offset int64) ([]*mtproto.FileHash, error) {
+	if offset < 0 {
+		return nil, mtproto.ErrOffsetInvalid
+	}
 	if len(body) == 0 {
-		return nil
+		return nil, nil
 	}
 	var out []*mtproto.FileHash
-	for off := 0; off < len(body); off += hashChunk {
-		n := hashChunk
+	for off := 0; off < len(body); off += PartBytes {
+		n := PartBytes
 		if off+n > len(body) {
 			n = len(body) - off
+		}
+		if int64(off) < offset {
+			continue
 		}
 		sum := sha256.Sum256(body[off : off+n])
 		out = append(out, mtproto.MakeTLFileHash(&mtproto.FileHash{
@@ -362,7 +379,7 @@ func fileHashes(body []byte) []*mtproto.FileHash {
 			Hash:         append([]byte(nil), sum[:]...),
 		}).To_FileHash())
 	}
-	return out
+	return out, nil
 }
 
 func slice(body []byte, offset, limit int64) []byte {
