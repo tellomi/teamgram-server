@@ -25,6 +25,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/files/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/files/plugin"
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -37,6 +38,8 @@ type ServiceContext struct {
 	// Retention reports media removed by the retention sweeper. Nil when no
 	// DSN is configured.
 	Retention *retention.Checker
+	// Blobs looks up documents by sha256 for messages.getDocumentByHash.
+	Blobs *mediablob.Store
 }
 
 func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2 plugin.StreamFilesPlugin) *ServiceContext {
@@ -52,6 +55,12 @@ func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2
 			logx.Errorf("files: media retention check disabled: %v", err)
 		} else {
 			svcCtx.Retention = retention.NewChecker(store, time.Minute)
+		}
+		blobs, err := mediablob.Open(c.Mysql)
+		if err != nil {
+			logx.Errorf("files: messages.getDocumentByHash lookup disabled: %v", err)
+		} else {
+			svcCtx.Blobs = blobs
 		}
 	}
 	return svcCtx

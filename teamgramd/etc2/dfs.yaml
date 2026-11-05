@@ -51,3 +51,9 @@ IdGen:
     Key: service.idgen
 SSDB:
   - Host: redis:6379 # if use pika, change to 9221
+# Same database as service.media. Content-addressed dedup reads and writes media_blobs.
+Mysql:
+  DSN: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true
+  Active: 16
+  Idle: 4
+  IdleTimeout: 4h

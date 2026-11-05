@@ -115,9 +115,7 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		return nil, err
 	}
 
-	// build file
-	path := fmt.Sprintf("%d.dat", documentId)
-	gifFileSize, err := c.svcCtx.Dao.PutDocumentFile(c.ctx, path, bytes.NewReader(gifData))
+	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifData, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
 		return nil, err
@@ -130,9 +128,9 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		FileReference: []byte{}, // TODO(@benqi): gen file_reference
 		Date:          int32(time.Now().Unix()),
 		MimeType:      "image/gif",
-		Size2:         gifFileSize.Size,
-		Size2_INT32:   int32(gifFileSize.Size),
-		Size2_INT64:   gifFileSize.Size,
+		Size2:         stored.Size,
+		Size2_INT32:   int32(stored.Size),
+		Size2_INT64:   stored.Size,
 		Thumbs:        szList,
 		VideoThumbs:   nil,
 		DcId:          1,
@@ -217,9 +215,7 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		return nil, err
 	}
-	// build file
-	path := fmt.Sprintf("%d.dat", documentId)
-	gifFileSize, err := c.svcCtx.Dao.PutDocumentFile(c.ctx, path, bytes.NewReader(gifMp4Data))
+	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		return nil, err
@@ -232,9 +228,9 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 		FileReference: []byte{}, // TODO(@benqi): gen file_reference
 		Date:          int32(time.Now().Unix()),
 		MimeType:      "video/mp4",
-		Size2:         gifFileSize.Size,
-		Size2_INT32:   int32(gifFileSize.Size),
-		Size2_INT64:   gifFileSize.Size,
+		Size2:         stored.Size,
+		Size2_INT32:   int32(stored.Size),
+		Size2_INT64:   stored.Size,
 		Thumbs:        szList,
 		VideoThumbs:   nil,
 		DcId:          1,
@@ -334,9 +330,7 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		return nil, err
 	}
 
-	// build file
-	path := fmt.Sprintf("%d.dat", documentId)
-	gifFileSize, err := c.svcCtx.Dao.PutDocumentFile(c.ctx, path, bytes.NewReader(gifMp4Data))
+	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		return nil, err
@@ -349,9 +343,9 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		FileReference: []byte{}, // TODO(@benqi): gen file_reference
 		Date:          int32(time.Now().Unix()),
 		MimeType:      "video/mp4",
-		Size2:         gifFileSize.Size,
-		Size2_INT32:   int32(gifFileSize.Size),
-		Size2_INT64:   gifFileSize.Size,
+		Size2:         stored.Size,
+		Size2_INT32:   int32(stored.Size),
+		Size2_INT64:   stored.Size,
 		Thumbs:        szList,
 		VideoThumbs:   nil,
 		DcId:          1,

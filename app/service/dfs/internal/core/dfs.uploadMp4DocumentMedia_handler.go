@@ -11,21 +11,16 @@ package core
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"image"
 	"math/rand"
 	"time"
 
 	"github.com/teamgram/marmota/pkg/bytes2"
-	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
-
-	"github.com/zeromicro/go-zero/core/contextx"
-	"github.com/zeromicro/go-zero/core/threading"
 )
 
 func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute, videoW, videoH int32) []*mtproto.DocumentAttribute {
@@ -102,18 +97,14 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
 			return nil, err
 		}
-		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
-		path = fmt.Sprintf("%d.dat", documentId)
-
-		threading.RunSafe(func() {
-			_, err2 := c.svcCtx.Dao.PutDocumentFile(
-				contextx.ValueOnlyFrom(c.ctx),
-				path,
-				c.svcCtx.Dao.NewSSDBReader(fileInfo))
-			if err2 != nil {
-				c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
-			}
-		})
+		claim, err := c.storeDocumentBytes(c.ctx, documentId, mp4Bytes, true)
+		if err != nil {
+			c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
+			return nil, err
+		}
+		if !claim.Reused {
+			c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
+		}
 		//c.Logger.Errorf("getFirstFrameByPipe - error: %v", err)
 		//return nil, err
 
@@ -124,9 +115,9 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			FileReference: []byte{}, // TODO(@benqi): gen file_reference
 			Date:          int32(time.Now().Unix()),
 			MimeType:      "video/mp4",
-			Size2:         fileInfo.GetFileSize(),
-			Size2_INT32:   int32(fileInfo.GetFileSize()),
-			Size2_INT64:   fileInfo.GetFileSize(),
+			Size2:         claim.Size,
+			Size2_INT32:   int32(claim.Size),
+			Size2_INT64:   claim.Size,
 			Thumbs:        nil,
 			VideoThumbs:   nil,
 			DcId:          1,
@@ -197,18 +188,14 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
 			return nil, err
 		}
-		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
-		path = fmt.Sprintf("%d.dat", documentId)
-
-		threading2.GoSafeContext(c.ctx, func(ctx context.Context) {
-			_, err2 := c.svcCtx.Dao.PutDocumentFile(
-				ctx,
-				path,
-				c.svcCtx.Dao.NewSSDBReader(fileInfo))
-			if err2 != nil {
-				c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
-			}
-		})
+		claim, err := c.storeDocumentBytes(c.ctx, documentId, mp4Bytes, true)
+		if err != nil {
+			c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
+			return nil, err
+		}
+		if !claim.Reused {
+			c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
+		}
 
 		// build document
 		document := mtproto.MakeTLDocument(&mtproto.Document{
@@ -217,9 +204,9 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 			FileReference: []byte{}, // TODO(@benqi): gen file_reference
 			Date:          int32(time.Now().Unix()),
 			MimeType:      "video/mp4",
-			Size2:         fileInfo.GetFileSize(),
-			Size2_INT32:   int32(fileInfo.GetFileSize()),
-			Size2_INT64:   fileInfo.GetFileSize(),
+			Size2:         claim.Size,
+			Size2_INT32:   int32(claim.Size),
+			Size2_INT64:   claim.Size,
 			Thumbs:        szList,
 			VideoThumbs:   nil,
 			DcId:          1,

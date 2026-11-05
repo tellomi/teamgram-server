@@ -45,7 +45,7 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 		//	id:long
 		//	access_hash:long = InputFileLocation;
 
-		bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, c.svcCtx.Dao.MinioUtil.GetEncryptedFile)
+		bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, fmt.Sprintf("%d.dat", location.GetId()), c.svcCtx.Dao.MinioUtil.GetEncryptedFile)
 		if err != nil {
 			c.Logger.Errorf("download file: %v", err)
 			err = nil
@@ -61,9 +61,9 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 
 		if location.GetThumbSize() == "" {
 			// fileLocation := location.To_InputDocumentFileLocation()
-			bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, c.svcCtx.Dao.MinioUtil.GetDocumentFile)
+			path := c.svcCtx.Dao.DocumentObjectPath(c.ctx, location.GetId())
+			bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, path, c.svcCtx.Dao.MinioUtil.GetDocumentFile)
 			if err != nil {
-				path := fmt.Sprintf("%d.dat", location.GetId())
 				// Seeded stickers and emoji live in the public bucket, not
 				// documents/. Try those keys first so a sticker download is one
 				// round trip. Probing documents first used up the RPC deadline
@@ -143,7 +143,7 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 		//inputPhotoFileLocation#40181ffe id:long access_hash:long file_reference:bytes thumb_size:string = InputFileLocation;
 
 		isVideo := mtproto.PhotoSizeIsVideo(location.GetThumbSize())
-		path := fmt.Sprintf("%s/%d.dat", location.GetThumbSize(), location.GetId())
+		path := c.svcCtx.Dao.PhotoObjectPath(c.ctx, location.GetId(), location.GetThumbSize())
 		// log.Debugf("path: %s", path)
 		if isVideo {
 			bytes, err = readFirst(

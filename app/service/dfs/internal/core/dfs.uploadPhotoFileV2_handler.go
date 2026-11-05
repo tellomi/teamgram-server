@@ -74,9 +74,32 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
 	)
 
-	_, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, fmt.Sprintf("0/%d.dat", photoId), cacheData)
+	claim, err := c.claimPhoto(c.ctx, photoId, cacheData)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+		return nil, err
+	}
+	if claim.Reused {
+		if sizes, ok := c.reusedPhotoSizes(c.ctx, photoId, claim); ok {
+			return mtproto.MakeTLPhoto(&mtproto.Photo{
+				HasStickers:   false,
+				Id:            photoId,
+				AccessHash:    accessHash,
+				FileReference: []byte{},
+				Date:          int32(r.Mtime),
+				Sizes:         sizes,
+				VideoSizes:    nil,
+				DcId:          1,
+			}).To_Photo(), nil
+		}
+		if c.svcCtx.Dao.Blobs != nil {
+			_ = c.svcCtx.Dao.Blobs.SavePhotoPath(c.ctx, photoId, "0", claim.Path)
+		}
+	} else {
+		_, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData)
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+		}
 	}
 
 	err = imaging.ReSizeImage(cacheData, ext, false, func(szType string, localId int, w, h int32, b []byte) error {

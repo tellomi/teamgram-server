@@ -32,13 +32,13 @@ func NewPhotosDAO(db *sqlx.DB) *PhotosDAO {
 }
 
 // Insert
-// insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext)
+// insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext, sha256, blob_id) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext, :sha256, :blob_id)
 func (dao *PhotosDAO) Insert(ctx context.Context, do *dataobject.PhotosDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext)"
+	query = "insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext, sha256, blob_id) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext, :sha256, :blob_id)"
 
 	r, err = dao.db.NamedExec(ctx, query, do)
 	if err != nil {
@@ -60,13 +60,13 @@ func (dao *PhotosDAO) Insert(ctx context.Context, do *dataobject.PhotosDO) (last
 }
 
 // InsertTx
-// insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext)
+// insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext, sha256, blob_id) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext, :sha256, :blob_id)
 func (dao *PhotosDAO) InsertTx(tx *sqlx.Tx, do *dataobject.PhotosDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext)"
+	query = "insert into photos(photo_id, access_hash, has_stickers, dc_id, date2, has_video, input_file_name, ext, sha256, blob_id) values (:photo_id, :access_hash, :has_stickers, :dc_id, :date2, :has_video, :input_file_name, :ext, :sha256, :blob_id)"
 
 	r, err = tx.NamedExec(query, do)
 	if err != nil {

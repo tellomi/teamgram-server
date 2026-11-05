@@ -30,3 +30,8 @@ IdGen:
     Key: service.idgen
 SSDB:
   - Host: 127.0.0.1:9221
+Mysql:
+  DSN: root:@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai
+  Active: 16
+  Idle: 4
+  IdleTimeout: 4h

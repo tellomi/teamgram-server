@@ -140,6 +140,9 @@ files are already encrypted by the client.
 
 ## Content identity
 
-Object keys are `<id>.dat` from a new id on every upload. There is no content
-hash, so the same bytes stored twice are two objects. `documents` has no hash
-column. See [media-dedup.md](media-dedup.md).
+New uploads of the same bytes share one object. dfs hashes the merged file
+(sha256 and size) and records it in `media_blobs`. A hit stores no second
+object; the new document or photo row points at the first upload's key
+(`documents/<id>.dat` or `photos/0/<id>.dat`). `access_hash` stays per row.
+See [media-dedup.md](media-dedup.md). Rows written before that migration keep
+their own `<id>.dat` key.

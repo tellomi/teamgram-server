@@ -10,6 +10,7 @@
 package config
 
 import (
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 	"github.com/zeromicro/go-zero/core/stores/kv"
 	"github.com/zeromicro/go-zero/rest"
@@ -23,4 +24,7 @@ type Config struct {
 	Minio    minio_util.MinioConfig
 	IdGen    zrpc.RpcClientConf
 	SSDB     kv.KvConf
+	// Mysql is the teamgram DSN used for content-addressed media_blobs.
+	// Empty keeps the historical one-object-per-upload behavior.
+	Mysql sqlx.Config `json:",optional"`
 }
