@@ -48,3 +48,5 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 2. 头像（`uploadProfilePhoto`）、壁纸、主题、铃声仍按新 id 写对象。公开地址和一部分下载位置直接用这个 id，不走 `media_photo_paths`。加密文件不参与去重。
 
 验收：同一视频、同一张图片、同一 GIF、同一普通文件，两个账号各发一次，对应 `documents.file_path` 或图片尺寸键相同，且 `media_blobs` 只有一行；两条都能 `upload.getFile`；删掉其中一条消息后另一条仍能下。图片是两行 `photos`、各自的 `access_hash`。e2e：`TestMediaDedupTwoAccounts`、`TestMediaDedupPhotoGifAndFile`。
+
+上传与 `messages.getDocumentByHash` 的 trace 见 [link-tracking-zh.md](link-tracking-zh.md)。`TELLOMI_OTEL_ENDPOINT` 为空时不安装导出器。span 属性不写 `access_hash`、对象字节或内容 sha256。

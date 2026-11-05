@@ -10,6 +10,8 @@ Teamgram 使用 go-zero 内置的分布式追踪能力，可对接 [Jaeger](http
 
 `teamgramd/etc2/` 里的 `Telemetry.Endpoint` 是 `${TELLOMI_OTEL_ENDPOINT}`。变量为空时不安装导出器，没有采集器也不会每条 span 打 `[otel] error`。只有 Jaeger 在跑时才设置 `TELLOMI_OTEL_ENDPOINT=jaeger:4317`（OTLP gRPC）。
 
+上传与去重走同一套开关，不另装导出器。端点为空时 `media.upload` 和 `messages.getDocumentByHash` 是 no-op，上传不会因为追踪失败，也没有逐条 `[otel] error`。端点有值时，一次上传的 `media.upload` span 用 `dedup=hit|miss`、`reused`、`object_written`、`storage_class`、`bytes`、`bytes_written`、`duration_ms` 区分 claim、命中或未命中、对象是否写入。`messages.getDocumentByHash` 用 `lookup=hit|documentEmpty` 区分命中和空文档。这些属性不包含 `access_hash`、对象字节、用户明文或内容 sha256。见 [adr/0083-server-tech-roadmap-media-obs.md](adr/0083-server-tech-roadmap-media-obs.md) 波次 D。
+
 ### 1. 配置 Telemetry
 
 在 `teamgramd/etc2/` 下各服务配置（如 `bff.yaml`、`gateway.yaml`）中增加或修改 `Telemetry` 块：

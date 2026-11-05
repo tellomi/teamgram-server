@@ -12,8 +12,10 @@ import (
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/mediaotel"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // cached photo_sizes.cached_type values. They match media/internal/dao.
@@ -42,20 +44,58 @@ func (c *DfsCore) claimDocumentBytes(ctx context.Context, documentID int64, data
 
 func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data []byte, async bool) (mediablob.Claim, error) {
 	claim := c.claimDocumentBytes(ctx, documentID, data)
-	if claim.Reused {
-		return claim, nil
-	}
-	write := func(ctx context.Context) {
-		if _, err2 := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, bytes.NewReader(data)); err2 != nil {
-			c.Logger.Errorf("dfs.PutDocumentFile %s - %v", claim.Path, err2)
+	return storeClaimedDocument(ctx, c.Logger, claim, async, func(ctx context.Context) (int64, error) {
+		info, err := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, bytes.NewReader(data))
+		if err != nil {
+			// The async path used to log and continue. Sync callers log the
+			// returned error themselves.
+			if async {
+				c.Logger.Errorf("dfs.PutDocumentFile %s - %v", claim.Path, err)
+			}
+			return 0, err
 		}
+		if info.Size > 0 {
+			return info.Size, nil
+		}
+		return claim.Size, nil
+	})
+}
+
+// storeClaimedDocument records the claim on one upload span and writes the
+// object only on a miss. A hit finishes the span with object_written=false.
+// Tracing never changes the returned error: a nil writer or a failed put
+// is the storage error, and a disabled exporter does not add one.
+func storeClaimedDocument(ctx context.Context, log logx.Logger, claim mediablob.Claim, async bool, write func(context.Context) (int64, error)) (mediablob.Claim, error) {
+	ctx, finish := mediaotel.BeginUpload(ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
+	run := func(ctx context.Context) error {
+		wrote := false
+		var written int64
+		defer func() { finish(wrote, written) }()
+		if claim.Reused {
+			return nil
+		}
+		if write == nil {
+			if log != nil {
+				log.Errorf("dfs.PutDocumentFile - missing writer")
+			}
+			return fmt.Errorf("dfs: missing document writer")
+		}
+		n, err := write(ctx)
+		if err != nil {
+			return err
+		}
+		wrote = true
+		written = n
+		return nil
 	}
-	if async {
-		threading2.GoSafeContext(ctx, write)
+	if async && !claim.Reused {
+		threading2.GoSafeContext(ctx, func(ctx context.Context) {
+			_ = run(ctx)
+		})
 		return claim, nil
 	}
-	if _, err2 := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, bytes.NewReader(data)); err2 != nil {
-		return claim, err2
+	if err := run(ctx); err != nil {
+		return claim, err
 	}
 	return claim, nil
 }
