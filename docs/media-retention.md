@@ -75,3 +75,11 @@ media retention DRY_RUN: cutoff=... scanned documents=N photos=N; exempt=N subsc
 - Expiry deletes the objects from the attachments bucket and sets
   `expired_at`. Public-media classes are refused by
   `objectstore.Client.Delete`.
+- A document or photo that shares a `media_blobs` row does not take the
+  object with it while another `media_blob_refs` row remains. The last
+  reference deletes the blob row in that same transaction (`ref_count` is
+  never left at 0) and inserts the object keys into `media_blob_gc`.
+  The object delete happens after the commit. A failed delete leaves the
+  gc row and an orphan object; the next live run retries it. Photo
+  thumbnails `s`, `i` and `j` stay. Deleting one chat message does not
+  release a reference.

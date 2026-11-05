@@ -13,6 +13,40 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestPartHashesOffset(t *testing.T) {
+	body := make([]byte, PartBytes+40)
+	for i := range body {
+		body[i] = byte(i)
+	}
+	all, err := PartHashes(body, 0)
+	if err != nil || len(all) != 2 || all[0].GetLimit() != PartBytes || all[1].GetLimit() != 40 {
+		t.Fatalf("%v %+v", err, all)
+	}
+	sum := sha256.Sum256(body[:PartBytes])
+	if !bytes.Equal(all[0].GetHash(), sum[:]) || len(all[0].GetHash()) != 32 {
+		t.Fatal("first part")
+	}
+	from, err := PartHashes(body, 1)
+	if err != nil || len(from) != 1 || from[0].GetOffset_INT64() != int64(PartBytes) {
+		t.Fatalf("mid %v %+v", err, from)
+	}
+	at, err := PartHashes(body, int64(PartBytes))
+	if err != nil || len(at) != 1 || !bytes.Equal(at[0].GetHash(), all[1].GetHash()) {
+		t.Fatal(err, at)
+	}
+	past, err := PartHashes(body, int64(len(body)))
+	if err != nil || len(past) != 0 {
+		t.Fatal(err, past)
+	}
+	if _, err = PartHashes(body, -1); err != mtproto.ErrOffsetInvalid {
+		t.Fatal(err)
+	}
+	empty, err := PartHashes(nil, 0)
+	if err != nil || len(empty) != 0 {
+		t.Fatal(err, empty)
+	}
+}
+
 func TestIssueReusesLocation(t *testing.T) {
 	b := New()
 	loc := mtproto.MakeTLInputDocumentFileLocation(&mtproto.InputFileLocation{Id: 5, AccessHash: 6}).To_InputFileLocation()
@@ -81,11 +115,11 @@ func TestReuploadThenReadAndHash(t *testing.T) {
 		t.Fatalf("%s %d", file.GetPredicateName(), len(file.GetBytes()))
 	}
 	obj := b.files[hex.EncodeToString(token)]
-	sum := sha256.Sum256(obj.cipher[:hashChunk])
-	if !bytes.Equal(hashes[0].GetHash(), sum[:]) || hashes[0].GetLimit() != hashChunk || hashes[0].GetOffset_INT64() != 0 {
+	sum := sha256.Sum256(obj.cipher[:PartBytes])
+	if !bytes.Equal(hashes[0].GetHash(), sum[:]) || hashes[0].GetLimit() != PartBytes || hashes[0].GetOffset_INT64() != 0 {
 		t.Fatal("hash")
 	}
-	if hashes[1].GetOffset_INT64() != hashChunk || hashes[1].GetLimit() != int32(len(obj.cipher)-hashChunk) {
+	if hashes[1].GetOffset_INT64() != int64(PartBytes) || hashes[1].GetLimit() != int32(len(obj.cipher)-PartBytes) {
 		t.Fatal("second hash")
 	}
 	if !bytes.Equal(decryptAt(file.GetBytes(), obj.key, obj.iv, 8192), plain[8192:8192+4096]) {

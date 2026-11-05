@@ -10,6 +10,7 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -863,6 +864,82 @@ func (s *SQL) messageRefs(ctx context.Context, expr string, id int64) (int, erro
 		}
 	}
 	return 0, nil
+}
+
+func blobKind(item GCItem) string {
+	switch item.Kind {
+	case "document":
+		return mediablob.KindDocument
+	case "photo", "avatar":
+		return mediablob.KindPhoto
+	default:
+		return ""
+	}
+}
+
+// Shared reports a different media_blob_refs row for this object key.
+// A missing dedup table means dedup is off, so nothing else holds the key.
+func (s *SQL) Shared(ctx context.Context, item GCItem) (bool, error) {
+	kind := blobKind(item)
+	if kind == "" || s == nil || s.DB == nil {
+		return false, nil
+	}
+	var n int
+	// Another row that shares this media's blob, even when the queued key is
+	// a derivative path rather than the blob's own file_path.
+	err := s.DB.QueryRowContext(ctx, `
+SELECT 1 FROM media_blob_refs mine
+JOIN media_blob_refs other ON other.blob_id = mine.blob_id
+WHERE mine.ref_kind = ? AND mine.ref_id = ?
+  AND NOT (other.ref_kind = ? AND other.ref_id = ?)
+LIMIT 1`, kind, item.MediaID, kind, item.MediaID).Scan(&n)
+	if err == nil {
+		return true, nil
+	}
+	if err != sql.ErrNoRows && !missing(err) && !missingColumn(err) {
+		return false, err
+	}
+	err = s.DB.QueryRowContext(ctx, `
+SELECT 1 FROM media_blobs b
+JOIN media_blob_refs r ON r.blob_id = b.id
+WHERE b.storage_class = ? AND b.file_path = ?
+  AND NOT (r.ref_kind = ? AND r.ref_id = ?)
+LIMIT 1`, item.Class, item.Path, kind, item.MediaID).Scan(&n)
+	if err == nil {
+		return true, nil
+	}
+	if err != sql.ErrNoRows && !missing(err) && !missingColumn(err) {
+		return false, err
+	}
+	err = s.DB.QueryRowContext(ctx, `
+SELECT 1 FROM media_photo_paths p
+JOIN media_blob_refs r ON r.ref_kind = ? AND r.ref_id = p.photo_id
+WHERE p.file_path = ? AND NOT (r.ref_kind = ? AND r.ref_id = ?)
+LIMIT 1`, mediablob.KindPhoto, item.Path, kind, item.MediaID).Scan(&n)
+	if err == sql.ErrNoRows || missing(err) || missingColumn(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// Detach releases this item's blob ref before the object is removed.
+// remove is false when another ref still holds the object.
+func (s *SQL) Detach(ctx context.Context, item GCItem) (bool, error) {
+	kind := blobKind(item)
+	if kind == "" || s == nil || s.DB == nil {
+		return true, nil
+	}
+	rel, err := mediablob.New(s.DB).Release(ctx, kind, item.MediaID)
+	if err != nil {
+		return false, err
+	}
+	if !rel.Found {
+		return true, nil
+	}
+	return rel.Remove, nil
 }
 
 func (s *SQL) Exempt(ctx context.Context, item GCItem) (bool, error) {

@@ -57,12 +57,31 @@ type PhotoSize struct {
 	CachedBytes string
 }
 
+// Key is one object a caller may delete after the last reference is gone.
+type Key struct {
+	Class string
+	Path  string
+}
+
+// Except is the blob and photo a dry-run is pretending to release. Those
+// rows are not a second live reference.
+type Except struct {
+	BlobID  int64
+	PhotoID int64
+}
+
 // ReleaseResult is what remains after dropping one reference.
+// Objects is set only when Remove is true: the blob row is already gone
+// (or, for Peek, would be) and these keys are queued in media_blob_gc.
+// Deleting them is the caller's job. A failed delete leaves the gc row and
+// the object; it does not leave a media_blobs row or a dangling ref.
 type ReleaseResult struct {
-	Found  bool
-	Remove bool // this was the last reference; the object may be deleted
-	Class  string
-	Path   string
+	Found   bool
+	Remove  bool // this was the last reference; the object may be deleted
+	Class   string
+	Path    string
+	BlobID  int64
+	Objects []Key
 }
 
 // Open returns nil when dsn is empty. The pool connects on the first query.
@@ -168,7 +187,9 @@ func (s *Store) DocumentPath(ctx context.Context, documentID int64) (string, err
 }
 
 // Release drops one reference. Remove is set when the object is no longer
-// referenced. Missing refs are not an error.
+// referenced. The blob row is deleted in this transaction when the count
+// would hit zero, and the object keys are inserted into media_blob_gc.
+// Missing refs are not an error. The row is never left with ref_count = 0.
 func (s *Store) Release(ctx context.Context, kind string, refID int64) (ReleaseResult, error) {
 	if s == nil || s.db == nil || refID == 0 {
 		return ReleaseResult{}, nil
@@ -179,19 +200,15 @@ func (s *Store) Release(ctx context.Context, kind string, refID int64) (ReleaseR
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var blobID, count int64
-	var class, path string
-	err = tx.QueryRowContext(ctx, `
-SELECT b.id, b.storage_class, b.file_path, b.ref_count
-FROM media_blob_refs r
-JOIN media_blobs b ON b.id = r.blob_id
-WHERE r.ref_kind = ? AND r.ref_id = ?
-FOR UPDATE`, kind, refID).Scan(&blobID, &class, &path, &count)
-	if err == sql.ErrNoRows {
-		return ReleaseResult{}, nil
+	rel, err := readRef(ctx, tx, kind, refID, true)
+	if err != nil || !rel.Found {
+		return rel, err
 	}
-	if err != nil {
-		return ReleaseResult{}, err
+	if rel.Remove {
+		rel.Objects, err = objectKeys(ctx, tx, kind, refID, rel.Class, rel.Path)
+		if err != nil {
+			return ReleaseResult{}, err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM media_blob_refs WHERE ref_kind = ? AND ref_id = ?`, kind, refID); err != nil {
 		return ReleaseResult{}, err
@@ -201,37 +218,204 @@ FOR UPDATE`, kind, refID).Scan(&blobID, &class, &path, &count)
 			return ReleaseResult{}, err
 		}
 	}
-	remove := count <= 1
-	if remove {
-		if _, err = tx.ExecContext(ctx, `DELETE FROM media_blobs WHERE id = ?`, blobID); err != nil {
+	if rel.Remove {
+		for _, key := range rel.Objects {
+			if _, err = tx.ExecContext(ctx, `
+INSERT INTO media_blob_gc (storage_class, file_path) VALUES (?, ?)
+ON DUPLICATE KEY UPDATE storage_class = storage_class`, key.Class, key.Path); err != nil {
+				return ReleaseResult{}, err
+			}
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM media_blobs WHERE id = ?`, rel.BlobID); err != nil {
 			return ReleaseResult{}, err
 		}
-	} else if _, err = tx.ExecContext(ctx, `UPDATE media_blobs SET ref_count = ref_count - 1 WHERE id = ? AND ref_count > 0`, blobID); err != nil {
+	} else if _, err = tx.ExecContext(ctx, `UPDATE media_blobs SET ref_count = ref_count - 1 WHERE id = ? AND ref_count > 1`, rel.BlobID); err != nil {
 		return ReleaseResult{}, err
 	}
 	if err = tx.Commit(); err != nil {
 		return ReleaseResult{}, err
 	}
-	return ReleaseResult{Found: true, Remove: remove, Class: class, Path: path}, nil
+	return rel, nil
 }
 
-// PathInUse reports whether a live blob still points at class/path.
-// The retention sweeper uses this so a retried expire cannot delete an
-// object another document still references.
+// Peek reports what Release would do without changing rows. Dry-runs use it
+// so a shared object is not listed as something that would be deleted.
+func (s *Store) Peek(ctx context.Context, kind string, refID int64) (ReleaseResult, error) {
+	if s == nil || s.db == nil || refID == 0 {
+		return ReleaseResult{}, nil
+	}
+	rel, err := readRef(ctx, s.db, kind, refID, false)
+	if err != nil || !rel.Found || !rel.Remove {
+		return rel, err
+	}
+	rel.Objects, err = objectKeys(ctx, s.db, kind, refID, rel.Class, rel.Path)
+	return rel, err
+}
+
+type rowQuery interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func readRef(ctx context.Context, q rowQuery, kind string, refID int64, lock bool) (ReleaseResult, error) {
+	stmt := `
+SELECT b.id, b.storage_class, b.file_path, b.ref_count
+FROM media_blob_refs r
+JOIN media_blobs b ON b.id = r.blob_id
+WHERE r.ref_kind = ? AND r.ref_id = ?`
+	if lock {
+		stmt += ` FOR UPDATE`
+	}
+	var blobID, count int64
+	var class, path string
+	err := q.QueryRowContext(ctx, stmt, kind, refID).Scan(&blobID, &class, &path, &count)
+	if err == sql.ErrNoRows {
+		return ReleaseResult{}, nil
+	}
+	if err != nil {
+		return ReleaseResult{}, err
+	}
+	return ReleaseResult{
+		Found:  true,
+		Remove: count <= 1,
+		Class:  class,
+		Path:   path,
+		BlobID: blobID,
+	}, nil
+}
+
+// objectKeys are the full-size objects released with the last reference.
+// Photo thumbnails s, i and j stay. Document thumbnails are not in this list.
+func objectKeys(ctx context.Context, q rowQuery, kind string, refID int64, class, path string) ([]Key, error) {
+	if kind != KindPhoto {
+		if path == "" {
+			return nil, nil
+		}
+		if class == "" {
+			class = ClassDocuments
+		}
+		return []Key{{Class: class, Path: path}}, nil
+	}
+	rows, err := q.QueryContext(ctx, `SELECT size_type, file_path FROM media_photo_paths WHERE photo_id = ?`, refID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	var out []Key
+	add := func(class, path string) {
+		if path == "" {
+			return
+		}
+		k := class + "\x00" + path
+		if seen[k] {
+			return
+		}
+		seen[k] = true
+		out = append(out, Key{Class: class, Path: path})
+	}
+	for rows.Next() {
+		var sizeType, filePath string
+		if err = rows.Scan(&sizeType, &filePath); err != nil {
+			return nil, err
+		}
+		if keptThumb(sizeType) {
+			continue
+		}
+		add(ClassPhotos, filePath)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if class == "" {
+		class = ClassPhotos
+	}
+	add(class, path)
+	return out, nil
+}
+
+func keptThumb(sizeType string) bool {
+	switch sizeType {
+	case "s", "i", "j":
+		return true
+	}
+	return false
+}
+
+// PendingGC lists object keys whose blob row is already gone. The caller
+// deletes the object, then AckGC. A delete failure leaves the row so the
+// next pass can retry. The object stays an orphan rather than a dangling ref.
+func (s *Store) PendingGC(ctx context.Context, limit int) ([]Key, error) {
+	if s == nil || s.db == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT storage_class, file_path FROM media_blob_gc ORDER BY id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Key
+	for rows.Next() {
+		var key Key
+		if err = rows.Scan(&key.Class, &key.Path); err != nil {
+			return nil, err
+		}
+		out = append(out, key)
+	}
+	return out, rows.Err()
+}
+
+// AckGC drops a queued key after the object delete succeeded, or when a
+// newer blob is using that key again.
+func (s *Store) AckGC(ctx context.Context, class, path string) error {
+	if s == nil || s.db == nil || path == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM media_blob_gc WHERE storage_class = ? AND file_path = ?`, class, path)
+	return err
+}
+
+// PathInUse reports whether a live blob or photo size still points at
+// class/path. The retention sweeper uses this so a retried expire cannot
+// delete an object another document or photo still references.
 func (s *Store) PathInUse(ctx context.Context, class, path string) (bool, error) {
+	return s.InUse(ctx, class, path, Except{})
+}
+
+// InUse is PathInUse, ignoring the blob and photo named by except. A dry-run
+// of the last reference still sees that row and must not treat it as a
+// second holder.
+func (s *Store) InUse(ctx context.Context, class, path string, except Except) (bool, error) {
 	if s == nil || s.db == nil || path == "" {
 		return false, nil
 	}
 	var n int
 	err := s.db.QueryRowContext(ctx, `
-SELECT ref_count FROM media_blobs WHERE storage_class = ? AND file_path = ? LIMIT 1`, class, path).Scan(&n)
+SELECT 1 FROM media_blobs
+WHERE storage_class = ? AND file_path = ? AND ref_count > 0 AND id <> ?
+LIMIT 1`, class, path, except.BlobID).Scan(&n)
+	if err == nil {
+		return true, nil
+	}
+	if err != sql.ErrNoRows {
+		return false, err
+	}
+	err = s.db.QueryRowContext(ctx, `
+SELECT 1 FROM media_photo_paths p
+JOIN media_blob_refs r ON r.ref_kind = ? AND r.ref_id = p.photo_id
+WHERE p.file_path = ? AND p.photo_id <> ?
+LIMIT 1`, KindPhoto, path, except.PhotoID).Scan(&n)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return n > 0, nil
+	return true, nil
 }
 
 // FindDocument returns the oldest live document with this hash, size and mime.

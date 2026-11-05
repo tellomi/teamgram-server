@@ -69,6 +69,11 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["media_blob_refs"]["ref_id"] || !cols["media_photo_paths"]["file_path"] {
 		t.Fatal("media dedup tables missing after migrations")
 	}
+	for _, col := range []string{"storage_class", "file_path"} {
+		if !cols["media_blob_gc"][col] {
+			t.Errorf("media_blob_gc.%s missing after migrations", col)
+		}
+	}
 	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed"} {
 		if !cols["auth_users"][col] {
 			t.Errorf("auth_users.%s missing after migrations", col)

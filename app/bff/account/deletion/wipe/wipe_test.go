@@ -253,6 +253,34 @@ func TestPickSuccessorBasicGroup(t *testing.T) {
 	}
 }
 
+func TestGCKeepsObjectHeldByAnotherBlobRef(t *testing.T) {
+	mem := NewMem()
+	mem.queue = []GCItem{
+		{ID: 1, Kind: "document", MediaID: 22, Class: "documents", Path: "11.dat", Status: statusPending},
+	}
+	mem.SetShared("documents", "11.dat")
+	mv := &fakeMover{}
+	cfg := GCConfig{DryRun: true, Keep: time.Hour, Batch: 10}
+	rep, err := RunGC(context.Background(), mem, mv, cfg, time.Unix(10, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.WouldTrash != 0 || rep.Referenced != 1 || len(mv.trashed) != 0 {
+		t.Fatalf("dry %+v", rep)
+	}
+	cfg.DryRun = false
+	rep, err = RunGC(context.Background(), mem, mv, cfg, time.Unix(10, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Trashed != 0 || rep.Referenced != 1 || len(mv.trashed) != 0 {
+		t.Fatalf("live %+v mover %+v", rep, mv)
+	}
+	if mem.Queue()[0].Status != statusPending {
+		t.Fatalf("queue %+v", mem.Queue())
+	}
+}
+
 func TestGCFromEnvDefaultsDryRun(t *testing.T) {
 	t.Setenv(EnvDryRun, "")
 	t.Setenv(EnvKeepDays, "")

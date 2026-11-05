@@ -23,6 +23,7 @@ type Mem struct {
 	ptsRows  []memPts
 	nextGC   int64
 	refs     map[string]int
+	shared   map[string]bool
 	exempt   map[int64]bool
 }
 
@@ -79,6 +80,7 @@ func NewMem() *Mem {
 		objects:  map[string][]Object{},
 		pts:      map[int64]int32{},
 		refs:     map[string]int{},
+		shared:   map[string]bool{},
 		exempt:   map[int64]bool{},
 	}
 }
@@ -133,6 +135,13 @@ func (m *Mem) SetObjects(kind string, id int64, objs []Object) {
 func (m *Mem) SetRefs(kind string, id int64, n int) {
 	m.mu.Lock()
 	m.refs[objKey(kind, id)] = n
+	m.mu.Unlock()
+}
+
+// SetShared marks an object key as still held by another media_blob_refs row.
+func (m *Mem) SetShared(class, path string) {
+	m.mu.Lock()
+	m.shared[class+"/"+path] = true
 	m.mu.Unlock()
 }
 
@@ -515,6 +524,21 @@ func (m *Mem) Refs(_ context.Context, item GCItem) (int, error) {
 		return n, nil
 	}
 	return 0, nil
+}
+
+func (m *Mem) Shared(_ context.Context, item GCItem) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.shared[item.Class+"/"+item.Path], nil
+}
+
+func (m *Mem) Detach(_ context.Context, item GCItem) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.shared[item.Class+"/"+item.Path] {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (m *Mem) Exempt(_ context.Context, item GCItem) (bool, error) {
