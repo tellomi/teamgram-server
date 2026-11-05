@@ -18,7 +18,9 @@
 
 dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同一个库）。DSN 为空时保持旧行为：每次上传写 `<id>.dat`。
 
-文档（含 `video/mp4`、GIF）在 `documents/<第一份 id>.dat`。图片原图在 `photos/0/<第一份 id>.dat`，衍生尺寸沿用第一份的键。下载先读引用，没有引用时仍按 `<id>.dat`。
+文档（含 `video/mp4`、GIF、`image/jpeg` 当文件发、普通文件）在 `documents/<第一份 id>.dat`。图片原图在 `photos/0/<第一份 id>.dat`。第一份上传把各档尺寸写进 `media_photo_paths`；后来的图片和文档缩略图沿用这些键，不再写第二份对象。下载先读引用。没有引用时，文档仍按 `<id>.dat`，图片仍按 `<type>/<id>.dat`。
+
+小 GIF（小于 10KB）按收到的 `image/gif` 字节取 hash。更大的 GIF 先转成 mp4，hash 的是转码后的字节，所以只有转码结果逐字节相同才会复用。
 
 `md5_checksum` 仍只做完整性校验，不参与复用：
 
@@ -41,8 +43,9 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 
 ## 待办
 
-1. **P2** 实现 `upload.getFileHashes`，与 CDN 分块 hash 口径统一。
+1. **P2** 实现 `upload.getFileHashes`，与 CDN 分块 hash 口径统一。本批不改这个封锁桩：它要按 location 读整份对象再切 128KB SHA-256，和上传去重不是一条路径。
 2. **P2** 生命周期跟 [media-retention.md](media-retention.md) 对齐的其余部分：引用归零后的对象删除已经在保留任务里躲开了仍被引用的 blob，完整的保留周期不在 P1。
 3. **P3** 其余 Telegram 公开能力（file_reference 刷新、分块并行上传与断点续传、CDN DC、按需缩略图）逐项列入 `docs/api-coverage.md`。
+4. 头像（`uploadProfilePhoto`）、壁纸、主题、铃声仍按新 id 写对象。公开地址和一部分下载位置直接用这个 id，不走 `media_photo_paths`。加密文件不参与去重。
 
-验收：同一视频两个账号各发一次，`documents.file_path` 相同且 `media_blobs` 只有一行；两条都能 `upload.getFile`；删掉其中一条消息后另一条仍能下。e2e：`TestMediaDedupTwoAccounts`。
+验收：同一视频、同一张图片、同一 GIF、同一普通文件，两个账号各发一次，对应 `documents.file_path` 或图片尺寸键相同，且 `media_blobs` 只有一行；两条都能 `upload.getFile`；删掉其中一条消息后另一条仍能下。图片是两行 `photos`、各自的 `access_hash`。e2e：`TestMediaDedupTwoAccounts`、`TestMediaDedupPhotoGifAndFile`。

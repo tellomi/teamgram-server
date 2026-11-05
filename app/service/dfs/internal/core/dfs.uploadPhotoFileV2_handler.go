@@ -19,6 +19,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -79,44 +80,50 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		return nil, err
 	}
-	if claim.Reused {
-		if sizes, ok := c.reusedPhotoSizes(c.ctx, photoId, claim); ok {
-			return mtproto.MakeTLPhoto(&mtproto.Photo{
-				HasStickers:   false,
-				Id:            photoId,
-				AccessHash:    accessHash,
-				FileReference: []byte{},
-				Date:          int32(r.Mtime),
-				Sizes:         sizes,
-				VideoSizes:    nil,
-				DcId:          1,
-			}).To_Photo(), nil
-		}
-		if c.svcCtx.Dao.Blobs != nil {
-			_ = c.svcCtx.Dao.Blobs.SavePhotoPath(c.ctx, photoId, "0", claim.Path)
-		}
-	} else {
+	photo := mtproto.MakeTLPhoto(&mtproto.Photo{
+		HasStickers:   false,
+		Id:            photoId,
+		AccessHash:    accessHash,
+		FileReference: []byte{},
+		Date:          int32(r.Mtime),
+		VideoSizes:    nil,
+		DcId:          1,
+	}).To_Photo()
+	// Same bytes as an earlier photo: one object, this row's own access_hash.
+	if sizes, ok := c.reusedPhotoSizes(c.ctx, photoId, claim); ok {
+		photo.Sizes = sizes
+		return photo, nil
+	}
+	if !claim.Reused {
 		_, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		}
 	}
+	c.rememberPhotoPath(c.ctx, photoId, "0", claim.Path)
+	originPaths := c.originSizePaths(c.ctx, claim)
 
 	err = imaging.ReSizeImage(cacheData, ext, false, func(szType string, localId int, w, h int32, b []byte) error {
 		// secretId := int64(extType)<<32 | int64(rand.Uint32())
-		path := fmt.Sprintf("%s/%d.dat", szType, photoId)
-		// c.Logger.Debugf("path: %s", path)
-		fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
-		if err != nil {
-			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-			return err
+		path := originPaths[szType]
+		size := int32(len(b))
+		if path == "" {
+			path = fmt.Sprintf("%s/%d.dat", szType, photoId)
+			// c.Logger.Debugf("path: %s", path)
+			fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
+			if err != nil {
+				c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+				return err
+			}
+			size = int32(fileSize.Size)
 		}
+		c.rememberPhotoPath(c.ctx, photoId, szType, path)
 
 		sizeList = append(sizeList, mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
 			Type:  szType,
 			W:     w,
 			H:     h,
-			Size2: int32(fileSize.Size),
+			Size2: size,
 		}).To_PhotoSize())
 
 		return nil
@@ -124,33 +131,16 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
 		err = mtproto.ErrImageProcessFailed
 		return nil, err
 	} else if len(sizeList) == 0 {
 		err = mtproto.ErrImageProcessFailed
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
 		return nil, err
 	}
 
-	// photo#fb197a65 flags:#
-	//	has_stickers:flags.0?true
-	//	id:long
-	//	access_hash:long
-	//	file_reference:bytes
-	//	date:int
-	//	sizes:Vector<PhotoSize>
-	//	video_sizes:flags.1?Vector<VideoSize>
-	//	dc_id:int = Photo;
-	photo := mtproto.MakeTLPhoto(&mtproto.Photo{
-		HasStickers:   false,
-		Id:            photoId,
-		AccessHash:    accessHash,
-		FileReference: []byte{},
-		Date:          int32(r.Mtime),
-		Sizes:         sizeList,
-		VideoSizes:    nil,
-		DcId:          1,
-	}).To_Photo()
-
+	photo.Sizes = sizeList
 	return photo, nil
 }

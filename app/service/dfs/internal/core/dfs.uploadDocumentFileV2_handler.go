@@ -113,6 +113,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	}).To_Document()
 
 	isThumb := mtproto.IsMimeAcceptedForPhotoVideoAlbum(document.MimeType) && model.IsFileExtImage(ext)
+	var claim mediablob.Claim
 	if isThumb {
 		var (
 			thumb image.Image
@@ -129,10 +130,15 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		} else {
 			// log.Debugf("cacheData: %s", hex.EncodeToString(cacheData))
 		}
-
-		// build photoStrippedSize
-		thumb, err = imaging.Decode(bytes.NewReader(cacheData))
-		if err == nil {
+		claim = c.claimDocumentBytes(c.ctx, documentId, cacheData)
+		if sizes, ok := c.reusedPhotoSizes(c.ctx, documentId, claim); ok {
+			document.Thumbs = sizes
+		} else if thumb, err = imaging.Decode(bytes.NewReader(cacheData)); err != nil {
+			// ioutil.WriteFile("./t.jpg", cacheData, 0644)
+			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
+			// The body is still these bytes. A bad image just has no thumb.
+		} else {
+			// build photoStrippedSize
 			stripped := bytes2.NewBuffer(make([]byte, 0, 4096))
 			if thumb.Bounds().Dx() >= thumb.Bounds().Dy() {
 				err = imaging.EncodeStripped(stripped, imaging.Resize(thumb, 40, 0), 30)
@@ -141,6 +147,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 			}
 			if err != nil {
 				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
+				c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
 				return nil, err
 			}
 
@@ -160,13 +167,18 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 			err = imaging.EncodeJpeg(mThumbData, mThumb)
 			if err != nil {
 				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
+				c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
 				return nil, err
 			}
 
 			// upload thumb
 			path := fmt.Sprintf("%s/%d.dat", mtproto.PhotoSZMediumType, documentId)
-			// upload
-			c.svcCtx.Dao.PutPhotoFile(c.ctx, path, mThumbData.Bytes())
+			if shared := c.originSizePaths(c.ctx, claim)[mtproto.PhotoSZMediumType]; shared != "" {
+				path = shared
+			} else {
+				c.svcCtx.Dao.PutPhotoFile(c.ctx, path, mThumbData.Bytes())
+			}
+			c.rememberPhotoPath(c.ctx, documentId, mtproto.PhotoSZMediumType, path)
 
 			document.Thumbs = []*mtproto.PhotoSize{
 				mtproto.MakeTLPhotoStrippedSize(&mtproto.PhotoSize{
@@ -180,17 +192,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 					Size2: int32(len(mThumbData.Bytes())),
 				}).To_PhotoSize(),
 			}
-		} else {
-			// ioutil.WriteFile("./t.jpg", cacheData, 0644)
-			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
-			// return nil, err
-			isThumb = false
 		}
-	}
-
-	var claim mediablob.Claim
-	if isThumb {
-		claim = c.claimDocumentBytes(c.ctx, documentId, cacheData)
 	} else {
 		var err2 error
 		claim, err2 = c.claimDocumentReader(c.ctx, documentId, c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo))
@@ -212,7 +214,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 				return
 			}
 			var body io.Reader
-			if isThumb {
+			if len(cacheData) > 0 {
 				body = bytes.NewReader(cacheData)
 			} else {
 				body = c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo)

@@ -105,10 +105,14 @@ func (c *DfsCore) claimPhoto(ctx context.Context, photoID int64, data []byte) (m
 }
 
 // reusedPhotoSizes clones the origin photo's size list and records those
-// object keys for the new photo. ok is false when the origin has no sizes
-// yet; the caller then writes its own derivatives.
+// object keys for the new photo or document. ok is false when this upload
+// owns the blob, or the origin has no sizes yet; the caller then writes
+// its own derivatives.
 func (c *DfsCore) reusedPhotoSizes(ctx context.Context, photoID int64, claim mediablob.Claim) ([]*mtproto.PhotoSize, bool) {
-	if c.svcCtx.Dao.Blobs == nil || claim.OriginID == 0 {
+	if !claim.Reused || c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil {
+		return nil, false
+	}
+	if claim.OriginID == 0 || claim.OriginID == photoID {
 		return nil, false
 	}
 	rows, err := c.svcCtx.Dao.Blobs.ListPhotoSizes(ctx, claim.OriginID)
@@ -121,17 +125,69 @@ func (c *DfsCore) reusedPhotoSizes(ctx context.Context, photoID int64, claim med
 	}
 	out := make([]*mtproto.PhotoSize, 0, len(rows))
 	for _, row := range rows {
-		if err = c.svcCtx.Dao.Blobs.SavePhotoPath(ctx, photoID, row.Type, row.Path); err != nil {
-			c.Logger.Errorf("dfs.savePhotoPath - %v", err)
-		}
+		c.rememberPhotoPath(ctx, photoID, row.Type, storedPhotoPath(row.Type, row.Path, claim.OriginID, row.CachedType))
 		if sz := photoSizeFromRow(row); sz != nil {
 			out = append(out, sz)
 		}
 	}
-	if err = c.svcCtx.Dao.Blobs.SavePhotoPath(ctx, photoID, "0", claim.Path); err != nil {
-		c.Logger.Errorf("dfs.savePhotoPath 0 - %v", err)
-	}
+	c.rememberPhotoPath(ctx, photoID, "0", storedPhotoPath("0", claim.Path, claim.OriginID, cachedTypeSize))
 	return out, len(out) > 0
+}
+
+// originSizePaths is the first upload's recorded keys. A second upload that
+// arrives before photo_sizes is inserted still points at those keys instead
+// of writing another object.
+func (c *DfsCore) originSizePaths(ctx context.Context, claim mediablob.Claim) map[string]string {
+	out := map[string]string{}
+	if !claim.Reused || claim.OriginID == 0 || c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil {
+		return out
+	}
+	paths, err := c.svcCtx.Dao.Blobs.PhotoPaths(ctx, claim.OriginID)
+	if err != nil {
+		c.Logger.Errorf("dfs.originSizePaths - %v", err)
+		return out
+	}
+	if paths == nil {
+		return out
+	}
+	return paths
+}
+
+func (c *DfsCore) rememberPhotoPath(ctx context.Context, photoID int64, sizeType, path string) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil {
+		return
+	}
+	if err := c.svcCtx.Dao.Blobs.SavePhotoPath(ctx, photoID, sizeType, path); err != nil {
+		c.Logger.Errorf("dfs.savePhotoPath %s - %v", sizeType, err)
+	}
+}
+
+// abandonClaim drops a reference when the upload returns an error before
+// the document or photo row is saved. A shared object stays.
+func (c *DfsCore) abandonClaim(ctx context.Context, kind string, id int64) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil || id == 0 {
+		return
+	}
+	if _, err := c.svcCtx.Dao.Blobs.Release(ctx, kind, id); err != nil {
+		c.Logger.Errorf("dfs.release %s %d - %v", kind, id, err)
+	}
+}
+
+// storedPhotoPath is the object key for a photo size. Inline sizes (stripped,
+// path, cached bytes) have no object. An empty stored path uses the first
+// upload's conventional <type>/<id>.dat key.
+func storedPhotoPath(sizeType, stored string, originID int64, cachedType int32) string {
+	switch cachedType {
+	case cachedTypePathSize, cachedTypeStrippedSize, cachedTypeCachedSize:
+		return ""
+	}
+	if stored != "" {
+		return stored
+	}
+	if originID == 0 || sizeType == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%d.dat", sizeType, originID)
 }
 
 func photoSizeFromRow(row mediablob.PhotoSize) *mtproto.PhotoSize {
