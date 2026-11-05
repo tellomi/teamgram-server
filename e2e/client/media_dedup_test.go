@@ -143,6 +143,11 @@ func sendPayload(t *testing.T, c *Client, to *mtproto.InputPeer, mime, name stri
 			MimeType: mime,
 			Attributes: []*mtproto.DocumentAttribute{
 				mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{FileName: name}).To_DocumentAttribute(),
+				mtproto.MakeTLDocumentAttributeVideo(&mtproto.DocumentAttribute{
+					Duration: 1,
+					W:        160,
+					H:        120,
+				}).To_DocumentAttribute(),
 			},
 		}).To_InputMedia(),
 		RandomId: randomID(),
