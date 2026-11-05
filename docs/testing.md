@@ -2,7 +2,7 @@
 
 Two suites gate a pull request.
 
-`go test ./...` runs in the **Go test / go-test** check. It is the in-process suite: handlers, schema migrations, and the in-memory cases under `e2e/inmem`. JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. FFmpeg tests skip when the `ffmpeg` binary or `/tmp/ffmpeg` fixtures are absent.
+`go test ./...` runs in the **Go test / go-test** check. It is the in-process suite: handlers, schema migrations, and the in-memory cases under `e2e/inmem`. JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. FFmpeg tests skip when the `ffmpeg` binary or `/tmp/ffmpeg` fixtures are absent. Static photo derivatives link govips, so the job installs `libvips-dev` and runs with `CGO_ENABLED=1`. GIF, video frames and plain files do not use it.
 
 `e2e/client` is its own module. **Client regression / e2e** starts the compose stack and runs it. `TELLOMI_E2E=1` is required; without that variable the server tests skip. In-memory cases stay in `e2e/inmem` so they stay on the root module and `go test ./...` still compiles them.
 

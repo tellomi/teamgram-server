@@ -26,6 +26,21 @@ func TestStoredPhotoPath(t *testing.T) {
 	}
 }
 
+func TestPhotoSizeObjectKeepsFirstUploadKey(t *testing.T) {
+	path, write := photoSizeObject(map[string]string{"m": "m/11.dat", "x": "x/11.dat"}, "m", 22)
+	if write || path != "m/11.dat" {
+		t.Fatalf("hash hit rewrote %q write=%v", path, write)
+	}
+	path, write = photoSizeObject(map[string]string{"m": "m/11.dat"}, "x", 22)
+	if !write || path != "x/22.dat" {
+		t.Fatalf("missing size key %q write=%v", path, write)
+	}
+	path, write = photoSizeObject(nil, "s", 9)
+	if !write || path != "s/9.dat" {
+		t.Fatalf("nil origin %q write=%v", path, write)
+	}
+}
+
 func TestRecordOriginalPhotoPath(t *testing.T) {
 	if !recordOriginalPhotoPath(mediablob.ClassPhotos) {
 		t.Fatal("photo original must be recorded on reuse")

@@ -227,7 +227,9 @@ func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFil
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
 	)
 
-	err = imaging.ReSizeImage(photoData, ext, true, func(szType string, localId int, w, h int32, b []byte) error {
+	// ffmpeg extracted this JPEG. Resize it with the historical ladder;
+	// govips does not own video thumbnails.
+	err = imaging.ReSizeImageLegacy(photoData, ext, true, func(szType string, localId int, w, h int32, b []byte) error {
 		// secretId := int64(extType)<<32 | int64(rand.Uint32())
 		path := fmt.Sprintf("%s/%d.dat", szType, photoId)
 		// c.Logger.Debugf("path: %s", path)
@@ -322,9 +324,9 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
 	)
 
-	_, err = c.putProfilePhoto(fmt.Sprintf("0/%d.dat", photoId), cacheData)
-	if err != nil {
+	if _, err = c.putProfilePhoto(fmt.Sprintf("0/%d.dat", photoId), cacheData); err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+		return nil, mtproto.ErrImageProcessFailed
 	}
 
 	err = imaging.ReSizeImage(cacheData, ext, isABC, func(szType string, localId int, w, h int32, b []byte) error {
@@ -347,10 +349,9 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 		return nil
 	})
 
-	if len(sizeList) == 0 {
-		err = mtproto.ErrImageProcessFailed
+	if err != nil || len(sizeList) == 0 {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-		return nil, err
+		return nil, mtproto.ErrImageProcessFailed
 	}
 
 	return mtproto.MakeTLPhoto(&mtproto.Photo{

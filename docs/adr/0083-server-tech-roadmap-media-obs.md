@@ -74,7 +74,7 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 
 `upload.getFileHashes` 已实现（ADR-0083 B2）：按 location 读明文，128 KiB SHA-256，`offset` 与 `upload.getCdnFileHashes` 同一口径。CDN 那条只哈希密文，不参与上传去重。
 
-`Store.Release` 删掉引用行。还有别的引用就只减 `ref_count`。最后一条引用在同一事务里删掉 `media_blobs` 行（不留下 `ref_count = 0`）并把对象键写入 `media_blob_gc`。对象删除在事务提交之后；失败留下孤儿对象和 gc 行，下次保留任务再删。删一条消息不会放引用，也不会删对象。保留任务与账号清理在仍有别的 `media_blob_refs` 时不删对象（[media-retention.md](../media-retention.md)）。静图衍生仍在 `app/service/dfs/internal/imaging`，仓库里没有 govips。
+`Store.Release` 删掉引用行。还有别的引用就只减 `ref_count`。最后一条引用在同一事务里删掉 `media_blobs` 行（不留下 `ref_count = 0`）并把对象键写入 `media_blob_gc`。对象删除在事务提交之后；失败留下孤儿对象和 gc 行，下次保留任务再删。删一条消息不会放引用，也不会删对象。保留任务与账号清理在仍有别的 `media_blob_refs` 时不删对象（[media-retention.md](../media-retention.md)）。静图衍生在 `app/service/dfs/internal/imaging`：JPEG / PNG / WebP 用 govips；GIF、TIFF、BMP 和 ffmpeg 抽出的视频静帧仍走原来的缩放。未决问题 1 仍按现行做法，衍生尺寸不是各自的 blob。
 
 ## 波次与验收
 

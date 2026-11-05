@@ -73,6 +73,32 @@ func TestProtects(t *testing.T) {
 	}
 }
 
+func TestADR0083RetentionExemptions(t *testing.T) {
+	cases := []Media{
+		{Kind: KindDocument, MimeType: "image/gif"},
+		{Kind: KindDocument, MimeType: "video/mp4", Attributes: `[{"predicate_name":"documentAttributeAnimated"}]`},
+		{Kind: KindDocument, MimeType: "image/webp", Attributes: `[{"predicate_name":"documentAttributeSticker"}]`},
+		{Kind: KindDocument, MimeType: "application/x-tgsticker"},
+		{Kind: KindDocument, MimeType: "image/png", Attributes: `[{"predicate_name":"documentAttributeCustomEmoji"}]`},
+		{Kind: KindDocument, MimeType: "application/x-tgwallpattern"},
+		{Kind: KindPhoto, SizeTypes: []string{"a", "b", "c"}},
+	}
+	for i, m := range cases {
+		if !Exempt(m) {
+			t.Errorf("case %d %+v is not exempt", i, m)
+		}
+	}
+	if !(Subscription{Premium: true}).Protects(now, 30*24*time.Hour) {
+		t.Fatal("active subscriber is not protected")
+	}
+	t.Setenv(EnvDryRun, "true")
+	t.Setenv(EnvEnabled, "true")
+	c, err := FromEnv()
+	if err != nil || !c.DryRun {
+		t.Fatalf("dry-run config %+v %v", c, err)
+	}
+}
+
 func TestExempt(t *testing.T) {
 	cases := []struct {
 		m    Media

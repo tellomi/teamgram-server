@@ -95,9 +95,10 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		return photo, nil
 	}
 	if !claim.Reused {
-		_, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData)
-		if err != nil {
+		if _, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData); err != nil {
 			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
+			c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
+			return nil, mtproto.ErrImageProcessFailed
 		}
 	}
 	c.rememberPhotoPath(c.ctx, photoId, "0", claim.Path)
@@ -105,10 +106,10 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 
 	err = imaging.ReSizeImage(cacheData, ext, false, func(szType string, localId int, w, h int32, b []byte) error {
 		// secretId := int64(extType)<<32 | int64(rand.Uint32())
-		path := originPaths[szType]
+		// Hash hit keeps the first upload's key (ADR-0083 open question 1).
+		path, write := photoSizeObject(originPaths, szType, photoId)
 		size := int32(len(b))
-		if path == "" {
-			path = fmt.Sprintf("%s/%d.dat", szType, photoId)
+		if write {
 			// c.Logger.Debugf("path: %s", path)
 			fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
 			if err != nil {

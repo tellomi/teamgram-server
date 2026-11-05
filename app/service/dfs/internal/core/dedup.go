@@ -165,6 +165,18 @@ func (c *DfsCore) originSizePaths(ctx context.Context, claim mediablob.Claim) ma
 	return paths
 }
 
+// photoSizeObject is the key for one derivative. A hash hit keeps the first
+// upload's key and must not write a second object. ADR-0083 open question 1
+// stays on that current practice: derivatives are not their own blobs.
+func photoSizeObject(origin map[string]string, sizeType string, photoID int64) (path string, write bool) {
+	if origin != nil {
+		if p := origin[sizeType]; p != "" {
+			return p, false
+		}
+	}
+	return fmt.Sprintf("%s/%d.dat", sizeType, photoID), true
+}
+
 func (c *DfsCore) rememberPhotoPath(ctx context.Context, photoID int64, sizeType, path string) {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil {
 		return
