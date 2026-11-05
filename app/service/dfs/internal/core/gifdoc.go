@@ -45,13 +45,18 @@ func finishGifDocument(doc *mtproto.Document, mp4 []byte) *mtproto.Document {
 			FileName: "animation.mp4",
 		}).To_DocumentAttribute())
 	}
-	if len(doc.GetThumbs()) == 0 {
-		jpg := solidJPEG(color.RGBA{R: 32, G: 32, B: 32, A: 255})
+	if len(doc.GetThumbs()) == 0 && w > 0 && h > 0 {
+		// Telegram clients size the bubble from this photo, and ignore
+		// documentAttributeVideo while it has a non-zero w and h. A 40×40
+		// stand-in makes a tall video a full-width square and center-crops
+		// the top and bottom. The placeholder keeps the video's aspect.
+		tw, th := fitAspect(w, h, 40)
+		jpg := solidJPEG(color.RGBA{R: 32, G: 32, B: 32, A: 255}, tw, th)
 		doc.Thumbs = []*mtproto.PhotoSize{
 			mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
 				Type:  mtproto.PhotoSZMediumType,
-				W:     40,
-				H:     40,
+				W:     tw,
+				H:     th,
 				Size2: int32(len(jpg)),
 			}).To_PhotoSize(),
 		}
@@ -75,10 +80,16 @@ func finishGifDocument(doc *mtproto.Document, mp4 []byte) *mtproto.Document {
 	return doc
 }
 
-func solidJPEG(c color.Color) []byte {
-	img := image.NewRGBA(image.Rect(0, 0, 40, 40))
-	for y := 0; y < 40; y++ {
-		for x := 0; x < 40; x++ {
+func solidJPEG(c color.Color, w, h int32) []byte {
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	img := image.NewRGBA(image.Rect(0, 0, int(w), int(h)))
+	for y := 0; y < int(h); y++ {
+		for x := 0; x < int(w); x++ {
 			img.Set(x, y, c)
 		}
 	}
