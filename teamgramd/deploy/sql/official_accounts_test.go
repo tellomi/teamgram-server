@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 type officialName struct {
@@ -46,9 +47,15 @@ func TestOfficialAccountsMySQL(t *testing.T) {
 	if err := mysqlFile(t, "tellomi_official_happy", "migrate-20261105-official-accounts.sql"); err != nil {
 		t.Fatal(err)
 	}
+	if err := mysqlFile(t, "tellomi_official_happy", "migrate-20261109-appendix-c-placeholders.sql"); err != nil {
+		t.Fatal(err)
+	}
 	assertOfficialAccounts(t, db)
 	if _, err := db.Exec(`INSERT INTO username (username, peer_type, peer_id, deleted) VALUES ('TELLOMI', 2, 1, 0)`); err == nil {
 		t.Fatal("TELLOMI insert succeeded")
+	}
+	if _, err := db.Exec(`INSERT INTO username (username, peer_type, peer_id, deleted) VALUES ('WECHAT', 2, 1, 0)`); err == nil {
+		t.Fatal("WECHAT insert succeeded")
 	}
 }
 
@@ -105,7 +112,9 @@ func assertTellomiAI(t *testing.T, db *sql.DB) {
 
 func TestOfficialAccountsDoNotSteal(t *testing.T) {
 	db := newSchemaDB(t, "tellomi_official_squat")
-	applyTeamgramSchema(t, db, "tellomi_official_squat", false)
+	// 20261107 also inserts user 777001. Skip it so a refused 20261105 is the
+	// only file that could have created that user.
+	applyTeamgramSchema(t, db, "tellomi_official_squat", false, "migrate-20261107-tellomi-ai-name.sql")
 	if _, err := db.Exec(`INSERT INTO username (username, peer_type, peer_id, editable, active, order2, deleted) VALUES ('support', 2, 99, 1, 1, 0, 0)`); err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +135,32 @@ func TestOfficialAccountsDoNotSteal(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatal("migration inserted users after refusing support")
+	}
+}
+
+func TestAppendixCPlaceholdersDoNotSteal(t *testing.T) {
+	db := newSchemaDB(t, "tellomi_appendix_c_squat")
+	applyTeamgramSchema(t, db, "tellomi_appendix_c_squat", true, "migrate-20261109-appendix-c-placeholders.sql")
+	if _, err := db.Exec(`INSERT INTO username (username, peer_type, peer_id, editable, active, order2, deleted) VALUES ('WeChat', 2, 42, 1, 1, 0, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	err := mysqlFile(t, "tellomi_appendix_c_squat", "migrate-20261109-appendix-c-placeholders.sql")
+	if err == nil || !strings.Contains(err.Error(), "D-56: reserved username taken: WeChat") {
+		t.Fatalf("migration error = %v", err)
+	}
+	var peer int64
+	if err := db.QueryRow(`SELECT peer_id FROM username WHERE username = 'wechat'`).Scan(&peer); err != nil {
+		t.Fatal(err)
+	}
+	if peer != 42 {
+		t.Fatalf("wechat peer = %d", peer)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM username WHERE username = 'google'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("migration inserted google after refusing wechat")
 	}
 }
 
@@ -181,6 +216,17 @@ func assertOfficialAccounts(t *testing.T, db *sql.DB) {
 		{"vip", 0, 0, 0, 0},
 		{"huiyuan", 0, 0, 0, 0},
 		{"stickers", 0, 0, 0, 0},
+	}
+	occupied, unresolved := usernamepolicy.AppendixCPlaceholders()
+	for _, name := range unresolved {
+		for _, w := range want {
+			if w.name == name {
+				t.Fatalf("short name %s is assigned in appendix D", name)
+			}
+		}
+	}
+	for _, name := range occupied {
+		want = append(want, officialName{name, 0, 0, 0, 0})
 	}
 	rows, err := db.Query(`SELECT username, peer_type, peer_id, editable, active, deleted FROM username ORDER BY username`)
 	if err != nil {
@@ -282,12 +328,20 @@ func assertOfficialAccounts(t *testing.T, db *sql.DB) {
 	if next < 1073800005 {
 		t.Fatalf("channel counter = %d", next)
 	}
-	var blocked int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM username WHERE username IN ('wechat', 'google', 'openai')`).Scan(&blocked); err != nil {
+	var peerType int
+	var peerID int64
+	if err := db.QueryRow(`SELECT peer_type, peer_id FROM username WHERE username = 'WeChat'`).Scan(&peerType, &peerID); err != nil {
 		t.Fatal(err)
 	}
-	if blocked != 0 {
-		t.Fatal("appendix C names were inserted")
+	if peerType != 0 || peerID != 0 {
+		t.Fatalf("WeChat => type %d peer %d", peerType, peerID)
+	}
+	var tellomiN int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM username WHERE username = 'TELLOMI'`).Scan(&tellomiN); err != nil {
+		t.Fatal(err)
+	}
+	if tellomiN != 1 {
+		t.Fatalf("TELLOMI rows = %d", tellomiN)
 	}
 }
 
@@ -321,8 +375,12 @@ func newSchemaDB(t *testing.T, name string) *sql.DB {
 	return db
 }
 
-func applyTeamgramSchema(t *testing.T, db *sql.DB, name string, official bool) {
+func applyTeamgramSchema(t *testing.T, db *sql.DB, name string, official bool, skip ...string) {
 	t.Helper()
+	skipSet := map[string]bool{}
+	for _, s := range skip {
+		skipSet[s] = true
+	}
 	base, err := os.ReadFile("1_teamgram.sql")
 	if err != nil {
 		t.Fatal(err)
@@ -340,7 +398,11 @@ func applyTeamgramSchema(t *testing.T, db *sql.DB, name string, official bool) {
 	}
 	sort.Strings(files)
 	for _, f := range files {
-		if !official && (strings.HasSuffix(f, "migrate-20261105-official-accounts.sql")) {
+		base := filepath.Base(f)
+		if !official && base == "migrate-20261105-official-accounts.sql" {
+			continue
+		}
+		if skipSet[base] {
 			continue
 		}
 		if err = mysqlFile(t, name, f); err != nil {

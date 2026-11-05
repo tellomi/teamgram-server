@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
 func sqlDir(t *testing.T) string {
@@ -178,9 +180,11 @@ func TestOfficialUsernameRunbook(t *testing.T) {
 		"migrate-20261104-tellomi-username.sql",
 		"migrate-20261105-official-accounts.sql",
 		"migrate-20261107-tellomi-ai-name.sql",
+		"migrate-20261109-appendix-c-placeholders.sql",
 		"D-27",
 		"777001",
 		"peer_type",
+		"qq",
 	} {
 		if !strings.Contains(doc, s) {
 			t.Fatalf("official username runbook missing %s", s)
@@ -190,6 +194,34 @@ func TestOfficialUsernameRunbook(t *testing.T) {
 	for _, s := range []string{"z_init.sql", "D-27", "teamgram_fail_if_set", "docs/official-usernames.md"} {
 		if !strings.Contains(patches, s) {
 			t.Fatalf("UPSTREAM_PATCHES.md missing %s", s)
+		}
+	}
+}
+
+func TestAppendixCPlaceholderMigration(t *testing.T) {
+	occupied, unresolved := usernamepolicy.AppendixCPlaceholders()
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261109-appendix-c-placeholders.sql"))
+	re := regexp.MustCompile(`\('([a-z0-9_]+)', 0, 0, 0, 0, 0, 0\)`)
+	found := map[string]int{}
+	for _, m := range re.FindAllStringSubmatch(raw, -1) {
+		found[m[1]]++
+	}
+	if len(found) != len(occupied) {
+		t.Fatalf("placeholder rows %d, list %d", len(found), len(occupied))
+	}
+	for _, name := range occupied {
+		if found[name] != 1 {
+			t.Fatalf("%s count %d", name, found[name])
+		}
+	}
+	for _, name := range unresolved {
+		if strings.Contains(raw, "'"+name+"'") {
+			t.Fatalf("short name %s was written", name)
+		}
+	}
+	for _, s := range []string{"D-56", "peer_type 0", "teamgram_fail_if_set", "INSERT IGNORE INTO username", "utf8mb4_unicode_ci"} {
+		if !strings.Contains(raw, s) {
+			t.Fatalf("appendix C migration missing %s", s)
 		}
 	}
 }
