@@ -33,7 +33,8 @@
 -- ChangeInfo, and PinMessages banned, until date 2147483647 in the high
 -- 32 bits (9223372032627049472).
 --
--- Names in appendix C that appendix D does not assign are not written.
+-- Names in appendix C that appendix D does not assign are written by
+-- migrate-20261109-appendix-c-placeholders.sql, not this file.
 -- username.id is AUTO_INCREMENT. New users are 777001 through 777005.
 -- phone is NULL (the unique phone index allows many NULLs). These users
 -- have no auth key and cannot sign in. allowlist.toml is in the

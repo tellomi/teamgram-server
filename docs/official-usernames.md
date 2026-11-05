@@ -7,6 +7,7 @@
 | `teamgramd/deploy/sql/migrate-20261104-tellomi-username.sql` | D-27。没有行时把 `@tellomi` 挂到用户 777000 |
 | `teamgramd/deploy/sql/migrate-20261105-official-accounts.sql` | 附录 D。把 `@tellomi` 挪到 777001，并占住其余已分配的名字 |
 | `teamgramd/deploy/sql/migrate-20261107-tellomi-ai-name.sql` | 777001 的显示名改为 Tellomi AI。777000 仍是登录验证码账号，主用户名 `@admin` |
+| `teamgramd/deploy/sql/migrate-20261109-appendix-c-placeholders.sql` | 附录 C / D-56 里没有分给账号、且能当公开用户名的名字。空占位：`peer_type = 0`，`peer_id = 0` |
 | `teamgramd/deploy/sql/z_init.sql` | 上游种子。新库插入用户 777000，`users.username` 为 `admin`。已记入 `schema_migrations` 的库不会再跑这份文件 |
 
 `username.id` 是自增，迁移不指定 id。`peer_type` 来自 `proto/mtproto/peer_util.go`：2 是用户，4 是频道，0 是空占位。`deleted` 为 0。列排序规则是 `utf8mb4_unicode_ci`，`Tellomi` 和 `TELLOMI` 与 `tellomi` 是同一行。
@@ -15,7 +16,13 @@
 
 Bot 不插入 `users` / `bots`。`bots.createBot` 把 Bot 放在进程内存里，SQL 插出来的行运行时开不了。这些名字是空占位：`peer_type = 0`，`peer_id = 0`，`active = 0`。`account.checkUsername` 只要表里有行就返回 `USERNAME_OCCUPIED`。`user.resolveUsername` 对 `peer_type` 0 返回 `USERNAME_NOT_OCCUPIED`，直到以后把这一行指到真实账号。
 
-附录 D 最后一行（附录 C 里没有分给某个账号的名字，例如 wechat、google）不写入 `username` 表。那部分留给后面的词库（D-56）。`allowlist.toml` 在 tellomi/tellomi 仓库，不在这里。
+附录 D 最后一行（附录 C 里没有分给某个账号的名字）里，能当公开用户名的写进 `username` 表做空占位。名单是 `pkg/usernamepolicy` 的 overlay（`requirements-v2/appendix-c`），去掉附录 D 已经分配的名字。`wechat`、`google`、`telegram` 这一类是 `peer_type = 0`、`peer_id = 0`、`active = 0`。`account.checkUsername` 看到行就返回 `USERNAME_OCCUPIED`，不依赖 `TELLOMI_USERNAME_POLICY`。`user.resolveUsername` 对 `peer_type` 0 仍返回 `USERNAME_NOT_OCCUPIED`，因为没有可打开的用户或频道。
+
+`qq`、`jd`、`x`、`xai` 短于公开用户名下限 4，不写入。`account.checkUsername` 在查表之前就返回 `USERNAME_INVALID`。`qq`、`jd`、`x` 在词库里只保留公开链接（slug）；策略开关关掉时，这条也不生效。
+
+`wechat_01` 这种下划线前后缀，以及 `policy-2026092301` 里其余约 470 条通用保留词，不写进行。精确占用靠这张表；词缀和通用词仍要 `TELLOMI_USERNAME_POLICY=1`。本变更不改那四个接入点，也不接阿里云内容安全。
+
+`allowlist.toml` 在 tellomi/tellomi，不在本仓。官方账号自己能用自己的名字：行上的 `peer_id` 就是占用者；策略打开时，`pkg/usernamepolicy` 的 `officialExact` 放行同一个 peer。空占位没有 owner，谁都不能把这些名字改成自己的用户名。
 
 登录验证码仍从用户 777000 发出。本变更不改举报，也不改 `@admin` 的发消息逻辑。`@admin` 只是这个服务账号的保留用户名。
 
@@ -25,9 +32,9 @@ Bot 不插入 `users` / `bots`。`bots.createBot` 把 Bot 放在进程内存里�
 
 先备份 MySQL，确认这份备份能还原，再升级或手工执行。备份方式见 [ops/BACKUP.md](ops/BACKUP.md)：`mysqldump --single-transaction`，不要锁全库。生产 Redis 禁止 `FLUSHALL`。这次迁移不碰 Redis。
 
-正常发布不用手工插行。新镜像的入口和 `mysql-migrate` 都会跑 `teamgramd/deploy/migrate.sh`：先装 `0_migrate_helpers.sql`，再按文件名执行还没记入 `schema_migrations` 的 `migrate-*.sql`，最后才是尚未记录过的 `z_init.sql`。三个官方用户名文件会按 `20261104`、`20261105`、`20261107` 的顺序跑。
+正常发布不用手工插行。新镜像的入口和 `mysql-migrate` 都会跑 `teamgramd/deploy/migrate.sh`：先装 `0_migrate_helpers.sql`，再按文件名执行还没记入 `schema_migrations` 的 `migrate-*.sql`，最后才是尚未记录过的 `z_init.sql`。四个官方用户名文件会按 `20261104`、`20261105`、`20261107`、`20261109` 的顺序跑。
 
-名字已经被别人占用时，脚本以 `D-27` 或 `D-55` 停住，不会把名字抢过来（D-26）。先处理那一行，再重跑同一个文件。已经成功的语句可以再跑，结果不变。
+名字已经被别人占用时，脚本以 `D-27`、`D-55` 或 `D-56` 停住，不会把名字抢过来（D-26）。先处理那一行，再重跑同一个文件。已经成功的语句可以再跑，结果不变。
 
 必须手工执行时，在备份完成之后、对着 `teamgram` 库按这个顺序：
 
@@ -36,6 +43,7 @@ mysql ... teamgram < teamgramd/deploy/sql/0_migrate_helpers.sql
 mysql ... teamgram < teamgramd/deploy/sql/migrate-20261104-tellomi-username.sql
 mysql ... teamgram < teamgramd/deploy/sql/migrate-20261105-official-accounts.sql
 mysql ... teamgram < teamgramd/deploy/sql/migrate-20261107-tellomi-ai-name.sql
+mysql ... teamgram < teamgramd/deploy/sql/migrate-20261109-appendix-c-placeholders.sql
 ```
 
 不要为了改用户名去重放旧的 `z_init.sql`。库里如果已经有用户 777000，`INSERT IGNORE` 不会把它的用户名改成 `admin`；改名是 `migrate-20261105` 和 `migrate-20261107` 做的，而且只改 `tellomi`、`telegram`、`teamgram` 或空字符串。
@@ -46,7 +54,8 @@ mysql ... teamgram < teamgramd/deploy/sql/migrate-20261107-tellomi-ai-name.sql
 INSERT IGNORE INTO schema_migrations (version) VALUES
   ('migrate-20261104-tellomi-username.sql'),
   ('migrate-20261105-official-accounts.sql'),
-  ('migrate-20261107-tellomi-ai-name.sql');
+  ('migrate-20261107-tellomi-ai-name.sql'),
+  ('migrate-20261109-appendix-c-placeholders.sql');
 ```
 
 `schema_migrations` 这张表不存在时，先让 `migrate.sh` 跑一遍，或按 `teamgramd/deploy/migrate.sh` 里的 `CREATE TABLE IF NOT EXISTS schema_migrations` 建表。
@@ -59,12 +68,12 @@ FROM username
 WHERE username IN (
   'tellomi', 'support', 'news', 'admin', 'help', 'report',
   'feedback', 'bots', 'updates', 'security', 'verify',
-  'premium', 'stickers', 'dev'
+  'premium', 'stickers', 'dev', 'wechat', 'google', 'telegram'
 )
 ORDER BY username;
 ```
 
-期望：每个名字一行，`deleted = 0`。`tellomi` 是用户 777001。`support` 是用户 777004。`admin` 是用户 777000。`news` 是频道 1073800001，`updates` 是 1073800002，`security` 是 1073800003，`dev` 是 1073800004（`peer_type` 都是 4）。`help`、`report`、`feedback`、`bots`、`verify`、`premium`、`stickers` 是 `peer_type = 0`、`peer_id = 0`、`active = 0`。
+期望：每个名字一行，`deleted = 0`。`tellomi` 是用户 777001。`support` 是用户 777004。`admin` 是用户 777000。`news` 是频道 1073800001，`updates` 是 1073800002，`security` 是 1073800003，`dev` 是 1073800004（`peer_type` 都是 4）。`help`、`report`、`feedback`、`bots`、`verify`、`premium`、`stickers`，以及 `wechat`、`google`、`telegram`，是 `peer_type = 0`、`peer_id = 0`、`active = 0`。
 
 ```sql
 SELECT id, user_type, first_name, username FROM users
