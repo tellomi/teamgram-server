@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
 
 const (
@@ -109,15 +110,16 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		return nil, err
 	}
 
-	szList, err := c.uploadGifThumb(documentId, gifThumb)
-	if err != nil {
-		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-		return nil, err
-	}
-
 	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifData, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+		return nil, err
+	}
+	szList, err := c.uploadGifThumb(documentId, gifThumb, stored)
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
 		return nil, err
 	}
 
@@ -191,17 +193,12 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 		return nil, mtproto.ErrMediaInvalid
 	}
 
-	szList, err := c.uploadGifThumb(documentId, thumb)
-	if err != nil {
-		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-		return nil, err
-	}
-
-	dstW := (szList[1].W * 2) / 2
+	disp, _ := gifDisplayThumb(thumb)
+	dstW := int32(disp.Bounds().Dx())
 	if dstW%2 != 0 {
 		dstW += 1
 	}
-	dstH := (szList[1].H * 2) / 2
+	dstH := int32(disp.Bounds().Dy())
 	if dstH%2 != 0 {
 		dstH += 1
 	}
@@ -218,6 +215,13 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+		return nil, err
+	}
+	szList, err := c.uploadGifThumb(documentId, thumb, stored)
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
 		return nil, err
 	}
 
@@ -310,30 +314,49 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		return nil, err
 	}
 
-	// getFirstFrame
-	thumbData, err := c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(gifMp4Data)
-	if err != nil {
-		c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
-		return nil, err
-	}
-
-	// build photoStrippedSize
-	gifThumb, err := imaging.Decode(bytes.NewReader(thumbData))
-	if err != nil {
-		c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
-		return nil, err
-	}
-
-	szList, err := c.uploadGifThumb(documentId, gifThumb)
-	if err != nil {
-		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-		return nil, err
-	}
-
 	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
 		return nil, err
+	}
+
+	var (
+		szList   []*mtproto.PhotoSize
+		gifThumb image.Image
+	)
+	if sizes, ok := c.reusedPhotoSizes(c.ctx, documentId, stored); ok {
+		szList = sizes
+	} else {
+		// getFirstFrame
+		thumbData, err := c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(gifMp4Data)
+		if err != nil {
+			c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
+			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			return nil, err
+		}
+
+		// build photoStrippedSize
+		gifThumb, err = imaging.Decode(bytes.NewReader(thumbData))
+		if err != nil {
+			c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
+			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			return nil, err
+		}
+
+		szList, err = c.uploadGifThumb(documentId, gifThumb, stored)
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
+			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			return nil, err
+		}
+	}
+	frameW, frameH := 0, 0
+	if gifThumb != nil {
+		frameW, frameH = gifThumb.Bounds().Dx(), gifThumb.Bounds().Dy()
+	}
+	if frameW == 0 || frameH == 0 {
+		frameW, frameH = photoSizeWH(szList)
 	}
 
 	// build document
@@ -357,8 +380,8 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 				Duration:          float64(duration), // gif.mp4's duration
 				Duration_INT32:    duration,
 				Duration_FLOAT64:  float64(duration),
-				W:                 int32(gifThumb.Bounds().Dx()),
-				H:                 int32(gifThumb.Bounds().Dy()),
+				W:                 int32(frameW),
+				H:                 int32(frameH),
 				PreloadPrefixSize: nil,
 				VideoStartTs:      nil,
 				VideoCodec:        nil,
@@ -373,10 +396,12 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 	return finishGifDocument(document, gifMp4Data), nil
 }
 
-func (c *DfsCore) uploadGifThumb(id int64, gifThumb image.Image) ([]*mtproto.PhotoSize, error) {
+func (c *DfsCore) uploadGifThumb(id int64, gifThumb image.Image, claim mediablob.Claim) ([]*mtproto.PhotoSize, error) {
+	if sizes, ok := c.reusedPhotoSizes(c.ctx, id, claim); ok {
+		return sizes, nil
+	}
 	var (
 		err    error
-		thumb  image.Image
 		szList = make([]*mtproto.PhotoSize, 0, 2)
 	)
 
@@ -400,26 +425,7 @@ func (c *DfsCore) uploadGifThumb(id int64, gifThumb image.Image) ([]*mtproto.Pho
 	}).To_PhotoSize())
 
 	// 2. photoSize
-	sz := mtproto.GetMaxResizeInfo(false, gifThumb.Bounds().Dx(), gifThumb.Bounds().Dy())
-	if isW {
-		if gifThumb.Bounds().Dx() >= mtproto.PhotoSZMediumSize {
-			thumb = imaging.Resize(gifThumb, mtproto.PhotoSZMediumSize, 0)
-			sz.Size = mtproto.PhotoSZMediumSize
-			sz.LocalId = mtproto.PhotoSZMediumLocalId
-			sz.Type = mtproto.PhotoSZMediumType
-		} else {
-			thumb = imaging.Resize(gifThumb, 0, 320)
-		}
-	} else {
-		if gifThumb.Bounds().Dy() >= mtproto.PhotoSZMediumSize {
-			thumb = imaging.Resize(gifThumb, mtproto.PhotoSZMediumSize, 0)
-			sz.Size = mtproto.PhotoSZMediumSize
-			sz.LocalId = mtproto.PhotoSZMediumLocalId
-			sz.Type = mtproto.PhotoSZMediumType
-		} else {
-			thumb = imaging.Resize(gifThumb, 0, sz.Size)
-		}
-	}
+	thumb, szType := gifDisplayThumb(gifThumb)
 
 	o := bytes2.NewBuffer(make([]byte, 0, 8192))
 	err = imaging.EncodeJpeg(o, thumb)
@@ -429,19 +435,60 @@ func (c *DfsCore) uploadGifThumb(id int64, gifThumb image.Image) ([]*mtproto.Pho
 	}
 
 	// 3. upload
-	path := fmt.Sprintf("%s/%d.dat", sz.Type, id)
-	thumbSize, err := c.svcCtx.Dao.PutPhotoFile(c.ctx, path, o.Bytes())
-	if err != nil {
-		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-		return nil, err
+	path := fmt.Sprintf("%s/%d.dat", szType, id)
+	thumbSize := int64(len(o.Bytes()))
+	if shared := c.originSizePaths(c.ctx, claim)[szType]; shared != "" {
+		path = shared
+	} else {
+		info, err := c.svcCtx.Dao.PutPhotoFile(c.ctx, path, o.Bytes())
+		if err != nil {
+			c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
+			return nil, err
+		}
+		thumbSize = info.Size
 	}
+	c.rememberPhotoPath(c.ctx, id, szType, path)
 
 	szList = append(szList, mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
-		Type:  sz.Type,
+		Type:  szType,
 		W:     int32(thumb.Bounds().Dx()),
 		H:     int32(thumb.Bounds().Dy()),
-		Size2: int32(thumbSize.Size),
+		Size2: int32(thumbSize),
 	}).To_PhotoSize())
 
 	return szList, nil
+}
+
+// gifDisplayThumb is the JPEG preview written next to a GIF document.
+// The size type matches the historical uploadGifThumb choice.
+func gifDisplayThumb(img image.Image) (image.Image, string) {
+	isW := img.Bounds().Dx() >= img.Bounds().Dy()
+	sz := mtproto.GetMaxResizeInfo(false, img.Bounds().Dx(), img.Bounds().Dy())
+	var thumb image.Image
+	if isW {
+		if img.Bounds().Dx() >= mtproto.PhotoSZMediumSize {
+			thumb = imaging.Resize(img, mtproto.PhotoSZMediumSize, 0)
+			sz.Type = mtproto.PhotoSZMediumType
+		} else {
+			thumb = imaging.Resize(img, 0, 320)
+		}
+	} else {
+		if img.Bounds().Dy() >= mtproto.PhotoSZMediumSize {
+			thumb = imaging.Resize(img, mtproto.PhotoSZMediumSize, 0)
+			sz.Type = mtproto.PhotoSZMediumType
+		} else {
+			thumb = imaging.Resize(img, 0, sz.Size)
+		}
+	}
+	return thumb, sz.Type
+}
+
+func photoSizeWH(sizes []*mtproto.PhotoSize) (int, int) {
+	w, h := 0, 0
+	for _, sz := range sizes {
+		if sz.GetW() > 0 && sz.GetH() > 0 {
+			w, h = int(sz.GetW()), int(sz.GetH())
+		}
+	}
+	return w, h
 }

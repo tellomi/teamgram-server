@@ -90,7 +90,7 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 			}
 			sType = int32(location.GetAccessHash() >> 32)
 		} else {
-			path := fmt.Sprintf("%s/%d.dat", location.GetThumbSize(), location.GetId())
+			path := c.svcCtx.Dao.PhotoObjectPath(c.ctx, location.GetId(), location.GetThumbSize())
 
 			isVideo := mtproto.PhotoSizeIsVideo(location.GetThumbSize())
 			c.Logger.Infof("path: %s", path)
