@@ -596,12 +596,12 @@ func TestChineseOverlayIsCurated(t *testing.T) {
 		path string
 		max  int
 	}{
-		// 12 curated lines plus the Discover and sign-up keys.
-		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 115},
-		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 115},
-		// 3 curated lines plus the shared Discover keys and the Android report keys.
-		{"../../data/langpack/overrides/android/zh-hans.json.gz", 116},
-		{"../../data/langpack/overrides/android/zh-hant.json.gz", 116},
+		// 12 curated lines, the Discover and sign-up keys, and 7 settings keys.
+		{"../../data/langpack/overrides/ios/zh-hans.json.gz", 122},
+		{"../../data/langpack/overrides/ios/zh-hant.json.gz", 122},
+		// 3 curated lines, the shared Discover keys, the Android report keys, and 7 settings keys.
+		{"../../data/langpack/overrides/android/zh-hans.json.gz", 123},
+		{"../../data/langpack/overrides/android/zh-hant.json.gz", 123},
 	} {
 		fh, err := os.Open(item.path)
 		if err != nil {
