@@ -130,8 +130,20 @@ func (c *DfsCore) reusedPhotoSizes(ctx context.Context, photoID int64, claim med
 			out = append(out, sz)
 		}
 	}
-	c.rememberPhotoPath(ctx, photoID, "0", storedPhotoPath("0", claim.Path, claim.OriginID, cachedTypeSize))
+	// Size "0" is the photo original (photos/0/<id>.dat). A document claim's
+	// path is the document object in another bucket. Writing it here leaves
+	// only the second upload with a size_type 0 row, and that key is not a
+	// photo object.
+	if recordOriginalPhotoPath(claim.Class) {
+		c.rememberPhotoPath(ctx, photoID, "0", storedPhotoPath("0", claim.Path, claim.OriginID, cachedTypeSize))
+	}
 	return out, len(out) > 0
+}
+
+// recordOriginalPhotoPath reports whether this claim's object is the photo
+// original. Document blobs are not a photo size.
+func recordOriginalPhotoPath(class string) bool {
+	return class == mediablob.ClassPhotos
 }
 
 // originSizePaths is the first upload's recorded keys. A second upload that

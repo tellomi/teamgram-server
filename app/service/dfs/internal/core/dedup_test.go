@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
 
 func TestStoredPhotoPath(t *testing.T) {
@@ -22,6 +23,18 @@ func TestStoredPhotoPath(t *testing.T) {
 	}
 	if got := storedPhotoPath("j", "", 11, cachedTypePathSize); got != "" {
 		t.Fatalf("path size %q", got)
+	}
+}
+
+func TestRecordOriginalPhotoPath(t *testing.T) {
+	if !recordOriginalPhotoPath(mediablob.ClassPhotos) {
+		t.Fatal("photo original must be recorded on reuse")
+	}
+	if recordOriginalPhotoPath(mediablob.ClassDocuments) {
+		t.Fatal("document object must not be stored as photo size 0")
+	}
+	if recordOriginalPhotoPath("") {
+		t.Fatal("empty class")
 	}
 }
 

@@ -42,6 +42,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestRichTranslateAndCompose` | `messages.translateRichMessage` or `messages.composeRichMessageWithAI` returns `ENTERPRISE_IS_BLOCKED`, a valid translate does not return `TRANSLATE_REQ_FAILED` while `TELLOMI_TRANSLATE` is off, or proofread / compose-translate does not return `AICOMPOSE_TIMEOUT` while `TELLOMI_AI_COMPOSE` is off. |
 | `TestConfirmBotConnection` | `account.confirmBotConnection` returns `ENTERPRISE_IS_BLOCKED`, a person or an empty id is not `BOT_ID_INVALID`, or a bot from `bots.createBot` does not confirm. |
 | `TestMediaDedupTwoAccounts` | Two accounts uploading the same video do not share one `documents.file_path` and one `media_blobs` row, either download fails, deleting one message breaks the other download, `messages.getDocumentByHash` misses that sha256+size+mime, or a different mime does not return `documentEmpty`. |
+| `TestMediaDedupPhotoGifAndFile` | Two accounts uploading the same JPEG as a photo, the same JPEG as an image document, the same plain file, or the same small GIF do not share one blob and one object key, either download fails, deleting one photo message breaks the other photo, a different JPEG reuses the first photo's object, or a document thumb size is recorded for only one of the two uploads. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).
