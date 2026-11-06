@@ -44,7 +44,7 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 
 ## 待办
 
-1. **P3** 其余 Telegram 公开能力（file_reference 刷新、分块并行上传与断点续传、CDN DC、按需缩略图）的盘点见 [adr-0082-p3-status.md](adr-0082-p3-status.md)。生成的 `docs/api-coverage.md` 不记这四项的缺口。
+1. **P3** 盘点见 [adr-0082-p3-status.md](adr-0082-p3-status.md)。官方 Telegram 分块上传校验（第 2 项：写入时的分块大小，以及收尾时的 `FILE_PART_<n>_MISSING`）已随 #221 落地，squash `3470142c71aa4d3c9d7ada971e15c85cafb3bc0f`。file_reference 刷新、CDN DC、按需缩略图仍未做完。ADR-0031 的显式上传会话仍未排期。生成的 `docs/api-coverage.md` 不记这些缺口。
 2. 头像（`uploadProfilePhoto`）、壁纸、主题、铃声仍按新 id 写对象。公开地址和一部分下载位置直接用这个 id，不走 `media_photo_paths`。加密文件不参与去重。
 
 验收：同一视频、同一张图片、同一 GIF、同一普通文件，两个账号各发一次，对应 `documents.file_path` 或图片尺寸键相同，且 `media_blobs` 只有一行；两条都能 `upload.getFile`；删掉其中一条消息后另一条仍能下。图片是两行 `photos`、各自的 `access_hash`。e2e：`TestMediaDedupTwoAccounts`、`TestMediaDedupPhotoGifAndFile`。
