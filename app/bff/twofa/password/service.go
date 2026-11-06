@@ -232,6 +232,14 @@ func (s *Service) accountPassword(ctx context.Context, userID, authKey int64) (*
 	if rec.PendingReset > 0 {
 		pw.PendingResetDate = &wrapperspb.Int32Value{Value: int32(rec.PendingReset)}
 	}
+	// users.email is the login identity. Clients treat an empty
+	// login_email_pattern as "ask the user to bind an email".
+	// The recovery address stays on email_unconfirmed_pattern / has_recovery.
+	if email, emailErr := s.identityEmail(ctx, userID); emailErr != nil {
+		return nil, emailErr
+	} else if email != "" {
+		pw.LoginEmailPattern = &wrapperspb.StringValue{Value: verify.MaskEmail(email)}
+	}
 	if !rec.HasPassword {
 		return pw, nil
 	}

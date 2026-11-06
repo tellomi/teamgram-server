@@ -67,6 +67,14 @@ Other touched upstream files:
 
 `account.verifyEmail#ecba39db` (the pre-purpose constructor) is unchanged and still returns the enterprise error. Layer 232 clients call `account.verifyEmail#32da4cf`.
 
+Email-only accounts keep the login identity in `users.email` (`users.phone` NULL). `account.getPassword` used to leave `login_email_pattern` empty, so settings asked the user to bind an email they had already registered with. The pattern is now the masked `users.email`. It is a read of that column. Sign-up is still the only writer; this does not merge users or rewrite `user.id` or sessions.
+
+`account.sendVerifyEmailCode` / `account.verifyEmail` with `emailVerifyPurposeLoginChange` or `emailVerifyPurposeLoginSetup` return `EMAIL_NOT_ALLOWED` when the address is not that `users.email`, or when it is already another account's `users.email`. The Redis key `tellomi:p0:loginemail:{userId}` is not updated in those cases. Confirming the same identity address is allowed. `auth.recoverPassword` may still store a different cloud-password recovery address in `user_passwords.email`; a refusal to copy that address onto the Redis login key does not abort recovery. No schema migration.
+
+- `app/bff/twofa/password/service.go`, `identity.go`, `mysql.go` — `login_email_pattern` from `SELECT email FROM users`.
+- `app/bff/codelogin/service.go`, `methods.go` — refuse a divergent or cross-user login email.
+- `app/bff/authorization/internal/core/p0_codes.go` — wires those checks to the password store's read of `users.email`.
+
 `auth.requestFirebaseSms` returns `boolFalse` for a well-formed request. Official Android treats that as "use `auth.resendCode` / `next_type`" (`PLAYINTEGRITY_REQUESTFIREBASESMS_FALSE`). Firebase is not used in mainland China. `PHONE_CODE_EMPTY` and `PHONE_NUMBER_INVALID` are still returned when the request itself is invalid.
 
 `account.sendConfirmPhoneCode` returns `HASH_INVALID` unless a confirmation hash was issued. `account.deleteAccount` still deletes immediately, so production does not mint that hash. When a hash exists, the SMS uses the same Aliyun login template, the 10 second cap, and `SMS_CODE_CREATE_FAILED`.

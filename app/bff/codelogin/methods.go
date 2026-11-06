@@ -80,7 +80,9 @@ func (s *Service) RecoverPassword(ctx context.Context, userID int64, code string
 		return err
 	}
 	if settings != nil && settings.GetEmail() != nil {
-		if err = s.SaveLoginEmail(ctx, userID, settings.GetEmail().GetValue()); err != nil {
+		// A recovery address may differ from users.email. Refusing to copy
+		// it onto the Redis login key must not abort password recovery.
+		if err = s.SaveLoginEmail(ctx, userID, settings.GetEmail().GetValue()); err != nil && err != mtproto.ErrEmailNotAllowed {
 			return err
 		}
 	}

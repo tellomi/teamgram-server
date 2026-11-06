@@ -24,6 +24,20 @@ Apple and Google `EmailVerification` tokens are rejected with `EMAIL_INVALID`.
 
 Lookup and create go through the existing user RPCs. `user.getImmutableUserByPhone` and `user.createNewUser` treat a value containing `@` as an email. Deleting an account sets `email` to NULL so the address can be registered again.
 
+## Settings
+
+Three addresses stay separate. Nothing in this flow writes `users.email` after sign-up, merges accounts, or changes `user.id`.
+
+| Store | What it is | Settings screen |
+| --- | --- | --- |
+| `users.email` | Login identity of an email-only account. `users.phone` is NULL. | `account.getPassword.login_email_pattern` is the masked address (`u***@tellomi.app`). The account already has a login email. |
+| Redis `tellomi:p0:loginemail:{userId}` | Attached login-email copy. For an email-only account it may only equal `users.email`. | Not a second identity. |
+| `user_passwords.email` | Cloud-password recovery address. Optional, and empty until the user sets one. | `has_recovery` / `email_unconfirmed_pattern`. An empty recovery email is not "this account has no email". |
+
+`account.sendVerifyEmailCode` with `emailVerifyPurposeLoginChange` accepts the same `users.email` and returns `400 EMAIL_NOT_ALLOWED` for any other address. That call does not create a user and does not move the login identity. `emailVerifyPurposeLoginSetup` during an email `auth.sendCode` likewise refuses a second address. A phone account may still attach a free login email in Redis; an address that is already some account's `users.email` is `EMAIL_NOT_ALLOWED`.
+
+Clients should show `login_email_pattern` as the bound login email and should not open an empty bind form when it is set. Changing the login identity is not this RPC. The recovery-email field on the cloud-password screen stays an independent input.
+
 Migration: `teamgramd/deploy/sql/migrate-20261030-email.sql`. A fresh `1_teamgram.sql` already has the columns.
 
 ## Delivery

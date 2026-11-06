@@ -7,6 +7,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 	"github.com/teamgram/teamgram-server/app/bff/codelogin"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 )
@@ -62,6 +63,8 @@ func (c *AuthorizationCore) codes() *codelogin.Service {
 			}
 			return n, nil
 		},
+		IdentityEmail: password.IdentityEmail,
+		IdentityOwner: password.IdentityOwner,
 		LookupUser: func(ctx context.Context, phone string) (int64, error) {
 			if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
 				return 0, nil

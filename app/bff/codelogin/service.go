@@ -31,9 +31,14 @@ const (
 // SendEmail and SendSMS return the code that was actually delivered.
 // A nil return code keeps the code this service generated.
 type Options struct {
-	SendEmail      func(ctx context.Context, to, code string) (string, error)
-	SendSMS        func(ctx context.Context, phone, code string) (string, error)
-	LookupUser     func(ctx context.Context, phone string) (int64, error)
+	SendEmail  func(ctx context.Context, to, code string) (string, error)
+	SendSMS    func(ctx context.Context, phone, code string) (string, error)
+	LookupUser func(ctx context.Context, phone string) (int64, error)
+	// IdentityEmail is users.email for a user, or "" for a phone account.
+	// IdentityOwner is the user id that owns users.email, or 0.
+	// Nil leaves the Redis login email unconstrained (tests).
+	IdentityEmail  func(ctx context.Context, userID int64) (string, error)
+	IdentityOwner  func(ctx context.Context, email string) (int64, error)
 	Phones         PhoneCodes
 	Now            func() time.Time
 	EmailLen       int
@@ -229,7 +234,10 @@ func confirmCodeKey(hash string) string {
 	return "tellomi:p0:confirmcode:" + hash
 }
 
-// SaveLoginEmail remembers a verified login or recovery address for userID.
+// SaveLoginEmail remembers a verified login address for userID.
+// An email-only account can only store its own users.email here.
+// An address that is already another account's users.email is refused.
+// The cloud-password recovery address is not this key.
 func (s *Service) SaveLoginEmail(ctx context.Context, userID int64, email string) error {
 	if s == nil || userID == 0 {
 		return nil
@@ -238,10 +246,78 @@ func (s *Service) SaveLoginEmail(ctx context.Context, userID int64, email string
 	if err != nil {
 		return err
 	}
+	if err = s.permitLoginEmail(ctx, userID, email); err != nil {
+		return err
+	}
 	return s.kv.SetexCtx(ctx, loginEmailKey(userID), email, 10*365*24*3600)
 }
 
-// LoginEmail returns the verified recovery address, or "" when none is set.
+// permitLoginEmail refuses a Redis login address that would diverge from
+// users.email or take an address another account already uses as its identity.
+// Hooks left nil allow the write (unit tests of the older phone flow).
+func (s *Service) permitLoginEmail(ctx context.Context, userID int64, email string) error {
+	if s == nil || (s.opt.IdentityEmail == nil && s.opt.IdentityOwner == nil) {
+		return nil
+	}
+	if s.opt.IdentityEmail != nil && userID != 0 {
+		mine, err := s.opt.IdentityEmail(ctx, userID)
+		if err != nil {
+			return err
+		}
+		mine = verify.NormalizeEmail(strings.TrimSpace(mine))
+		if mine != "" && mine != email {
+			return mtproto.ErrEmailNotAllowed
+		}
+	}
+	if s.opt.IdentityOwner != nil {
+		owner, err := s.opt.IdentityOwner(ctx, email)
+		if err != nil {
+			return err
+		}
+		if owner != 0 && owner != userID {
+			return mtproto.ErrEmailNotAllowed
+		}
+	}
+	return nil
+}
+
+func (s *Service) identityEmail(ctx context.Context, userID int64) (string, error) {
+	if s == nil || s.opt.IdentityEmail == nil || userID == 0 {
+		return "", nil
+	}
+	email, err := s.opt.IdentityEmail(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	email = verify.NormalizeEmail(strings.TrimSpace(email))
+	if !verify.ValidEmail(email) {
+		return "", nil
+	}
+	return email, nil
+}
+
+// guardSetupEmail keeps an in-progress email registration from attaching a
+// second address, and keeps a phone login from claiming another account's
+// users.email.
+func (s *Service) guardSetupEmail(ctx context.Context, userID int64, canon, email string) error {
+	if verify.IsEmail(canon) && email != canon {
+		return mtproto.ErrEmailNotAllowed
+	}
+	if err := s.permitLoginEmail(ctx, userID, email); err != nil {
+		return err
+	}
+	if userID != 0 || s.opt.LookupUser == nil || (s.opt.IdentityEmail == nil && s.opt.IdentityOwner == nil) {
+		return nil
+	}
+	id, err := s.opt.LookupUser(ctx, canon)
+	if err != nil || id == 0 {
+		return err
+	}
+	return s.permitLoginEmail(ctx, id, email)
+}
+
+// LoginEmail returns the Redis login-email copy, or "" when none is set.
+// The cloud-password recovery address lives in user_passwords, not here.
 func (s *Service) LoginEmail(ctx context.Context, userID int64) (string, error) {
 	if s == nil || userID == 0 {
 		return "", nil
@@ -403,16 +479,28 @@ func (s *Service) SendVerifyEmailCode(ctx context.Context, authKey, userID int64
 			}
 			return nil, mtproto.ErrPhoneHashExpired
 		}
+		if err = s.guardSetupEmail(ctx, userID, canon, email); err != nil {
+			return nil, err
+		}
 		phone = canon
 	case purposeChange:
 		if userID == 0 {
 			return nil, mtproto.ErrAuthKeyUnregistered
 		}
+		if err = s.permitLoginEmail(ctx, userID, email); err != nil {
+			return nil, err
+		}
 		have, err := s.LoginEmail(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		if have == "" {
+		mine, err := s.identityEmail(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		// An email-only account already has users.email. Confirming that
+		// same address does not need a previous Redis row.
+		if have == "" && mine == "" {
 			return nil, mtproto.ErrEmailNotSetup
 		}
 	}
@@ -513,6 +601,9 @@ func (s *Service) VerifyEmail(ctx context.Context, authKey, userID int64, in *mt
 	if err != nil {
 		return nil, mtproto.ErrPhoneCodeExpired
 	}
+	if err = s.guardSetupEmail(ctx, userID, phone, rec.Email); err != nil {
+		return nil, err
+	}
 	next, err := s.issueNextLoginCode(ctx, pc, rec.Email)
 	if err != nil {
 		return nil, err
@@ -525,7 +616,9 @@ func (s *Service) VerifyEmail(ctx context.Context, authKey, userID int64, in *mt
 		uid, _ = s.opt.LookupUser(ctx, phone)
 	}
 	if uid != 0 {
-		_ = s.SaveLoginEmail(ctx, uid, rec.Email)
+		if err = s.SaveLoginEmail(ctx, uid, rec.Email); err != nil {
+			return nil, err
+		}
 	}
 	_, _ = s.kv.DelCtx(ctx, key)
 	_, _ = s.kv.DelCtx(ctx, pendingEmailKey(authKey, phone))

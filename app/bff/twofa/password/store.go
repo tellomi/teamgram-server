@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 // Record is one user's cloud password. Exists is false when no row is stored.
@@ -67,6 +69,8 @@ type memoryStore struct {
 	users      map[int64]Record
 	challenges map[int64]Challenge
 	logins     map[int64]int64
+	// identity is users.email for tests. The MySQL store reads the users table.
+	identity map[int64]string
 }
 
 func newMemoryStore() *memoryStore {
@@ -148,6 +152,40 @@ func (m *memoryStore) DeleteLogin(_ context.Context, authKey int64) error {
 	defer m.mu.Unlock()
 	delete(m.logins, authKey)
 	return nil
+}
+
+func (m *memoryStore) IdentityEmail(_ context.Context, userID int64) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.identity == nil {
+		return "", nil
+	}
+	return m.identity[userID], nil
+}
+
+func (m *memoryStore) IdentityOwner(_ context.Context, email string) (int64, error) {
+	email = verify.NormalizeEmail(email)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, own := range m.identity {
+		if own == email {
+			return id, nil
+		}
+	}
+	return 0, nil
+}
+
+func (m *memoryStore) setIdentity(userID int64, email string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.identity == nil {
+		m.identity = map[int64]string{}
+	}
+	if email == "" {
+		delete(m.identity, userID)
+		return
+	}
+	m.identity[userID] = verify.NormalizeEmail(email)
 }
 
 func (m *memoryStore) DeleteUserLogins(_ context.Context, userID int64) error {
