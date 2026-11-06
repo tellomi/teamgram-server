@@ -3,6 +3,7 @@ package story
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +36,12 @@ CREATE TABLE IF NOT EXISTS users (
   id BIGINT NOT NULL PRIMARY KEY,
   stories_max_id INT NOT NULL DEFAULT 0
 )`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `ALTER TABLE users ADD INDEX IF NOT EXISTS users_stories_max (stories_max_id, id)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `ALTER TABLE stories ADD INDEX IF NOT EXISTS stories_owner_expire (owner_kind, deleted, expire_date, owner_id, story_id)`); err != nil {
 		t.Fatal(err)
 	}
 	return db, &mysqlStore{db: db}, int32(time.Now().Unix())
@@ -195,4 +202,217 @@ UPDATE users SET stories_max_id = (
 	if err != nil || !wrote || max != 2 || userMax(t, db, user) != 2 {
 		t.Fatalf("recompute max %d wrote %v err %v column %d", max, wrote, err, userMax(t, db, user))
 	}
+}
+
+func TestMySQLAdvertPlansAreBounded(t *testing.T) {
+	db, ms, now := openAdvertTest(t)
+	ctx := context.Background()
+	const zeros = 2000
+	const stale = 300
+	base := int64(700_000_000)
+	if _, err := db.Exec(`DELETE FROM users WHERE id BETWEEN ? AND ?`, base, base+zeros+stale); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM users WHERE id BETWEEN ? AND ?`, base, base+zeros+stale)
+	})
+	for i := 0; i < zeros; i++ {
+		if _, err := db.Exec(`INSERT INTO users (id, stories_max_id) VALUES (?, 0)`, base+int64(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < stale; i++ {
+		if _, err := db.Exec(`INSERT INTO users (id, stories_max_id) VALUES (?, 5)`, base+zeros+int64(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	typ, key := explainQuery(t, db, `
+SELECT id, stories_max_id FROM users
+WHERE stories_max_id > ? OR (stories_max_id = ? AND id > ?)
+ORDER BY stories_max_id, id
+LIMIT ?`, 0, 0, int64(^uint64(0)>>1), 256)
+	t.Logf("MariaDB stale advert plan type=%s key=%s", typ, key)
+	if typ == "ALL" || key != "users_stories_max" {
+		t.Fatalf("stale plan type=%s key=%s, want a range on users_stories_max", typ, key)
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	before := handlerCount(t, conn, "Handler_read_rnd_next")
+	qrows, err := conn.QueryContext(ctx, `
+SELECT id, stories_max_id FROM users
+WHERE stories_max_id > ? OR (stories_max_id = ? AND id > ?)
+ORDER BY stories_max_id, id
+LIMIT ?`, 0, 0, int64(^uint64(0)>>1), 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for qrows.Next() {
+		n++
+	}
+	qrows.Close()
+	after := handlerCount(t, conn, "Handler_read_rnd_next")
+	if n != 256 {
+		t.Fatalf("page %d", n)
+	}
+	// A table scan of the zero rows would move this counter by about 2000.
+	if after-before > 50 {
+		t.Fatalf("page scanned %d table rows; zeros=%d", after-before, zeros)
+	}
+
+	svc := New(ms)
+	svc.SetClock(func() int32 { return now })
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	var left int
+	if err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE id BETWEEN ? AND ? AND stories_max_id > 0`, base, base+zeros+stale).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != stale-256 {
+		t.Fatalf("after first page %d non-zero, want %d", left, stale-256)
+	}
+	var zerosMoved int
+	if err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE id >= ? AND id < ? AND stories_max_id <> 0`, base, base+zeros).Scan(&zerosMoved); err != nil {
+		t.Fatal(err)
+	}
+	if zerosMoved != 0 {
+		t.Fatalf("zero advertisements rewritten: %d", zerosMoved)
+	}
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE id BETWEEN ? AND ? AND stories_max_id > 0`, base, base+zeros+stale).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("second page left %d", left)
+	}
+}
+
+func TestMySQLDirtyCacheRetriesAfterCrash(t *testing.T) {
+	db, ms, now := openAdvertTest(t)
+	ctx := context.Background()
+	user := advertUser(t, db)
+	cache := map[int64]int32{user: 1}
+	var calls int
+	svc := New(ms)
+	svc.SetClock(func() int32 { return now })
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, id int64, max int32) error {
+		calls++
+		if calls == 1 {
+			return errors.New("cache down")
+		}
+		cache[id] = max
+		return nil
+	}})
+	if _, _, err := ms.commitUserAdvert(ctx, user, now, func(tx *sql.Tx) error {
+		return upsertExec(ctx, tx, storyRow(user, 4, now+3600))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if cache[user] != 1 || userMax(t, db, user) != 4 {
+		t.Fatalf("crash window cache %d sql %d", cache[user], userMax(t, db, user))
+	}
+	var dirty int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, user).Scan(&dirty); err != nil || dirty != 1 {
+		t.Fatalf("dirty %d err %v", dirty, err)
+	}
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if cache[user] != 1 {
+		t.Fatalf("failed delete changed cache to %d", cache[user])
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, user).Scan(&dirty); err != nil || dirty != 1 {
+		t.Fatalf("dirty after failed delete %d err %v", dirty, err)
+	}
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if cache[user] != 4 {
+		t.Fatalf("cache %d, want 4", cache[user])
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, user).Scan(&dirty); err != nil || dirty != 0 {
+		t.Fatalf("dirty left %d err %v", dirty, err)
+	}
+
+	const extra = 300
+	for i := 0; i < extra; i++ {
+		id := int64(810_000_000 + i)
+		if _, err := db.Exec(`INSERT INTO users (id, stories_max_id) VALUES (?, 0)`, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO story_advert_dirty (user_id, stories_max_id, updated_at) VALUES (?,?,?)`, id, 3, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DELETE FROM story_advert_dirty WHERE user_id BETWEEN 810000000 AND 810000300`)
+		_, _ = db.Exec(`DELETE FROM users WHERE id BETWEEN 810000000 AND 810000300`)
+	})
+	svc.SetHooks(Hooks{SetUserMax: func(context.Context, int64, int32) error { return nil }})
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id BETWEEN 810000000 AND 810000300`).Scan(&dirty); err != nil {
+		t.Fatal(err)
+	}
+	if dirty != extra-256 {
+		t.Fatalf("dirty left %d, want %d", dirty, extra-256)
+	}
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id BETWEEN 810000000 AND 810000300`).Scan(&dirty); err != nil {
+		t.Fatal(err)
+	}
+	if dirty != 0 {
+		t.Fatalf("second drain left %d", dirty)
+	}
+}
+
+func explainQuery(t *testing.T, db *sql.DB, query string, args ...any) (typ, key string) {
+	t.Helper()
+	rows, err := db.Query("EXPLAIN "+query, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err = rows.Scan(ptrs...); err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for i, col := range cols {
+			got[col] = vals[i].String
+		}
+		if got["table"] == "users" || typ == "" {
+			typ = got["type"]
+			key = got["key"]
+		}
+	}
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return typ, key
+}
+
+func handlerCount(t *testing.T, conn *sql.Conn, name string) int {
+	t.Helper()
+	var key, raw string
+	if name != "Handler_read_rnd_next" {
+		t.Fatalf("status %s", name)
+	}
+	if err := conn.QueryRowContext(context.Background(), `SHOW SESSION STATUS LIKE 'Handler_read_rnd_next'`).Scan(&key, &raw); err != nil {
+		t.Fatal(err)
+	}
+	val := 0
+	for _, c := range raw {
+		if c < '0' || c > '9' {
+			t.Fatalf("status %s=%q", name, raw)
+		}
+		val = val*10 + int(c-'0')
+	}
+	return val
 }

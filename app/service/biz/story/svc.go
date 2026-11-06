@@ -40,16 +40,21 @@ type Service struct {
 
 	// Advertised active-story max. recentStory.max_id is this value, and it
 	// has no expire_date, so it must be cleared when the active set changes.
-	userMax       map[int64]int32
-	userMaxKnown  map[int64]bool
-	userEpoch     map[int64]uint64
-	userAdvert    map[int64]*sync.Mutex
-	channelMax    map[int64]channelAdvert
-	foldedThrough int32
-	persistedDone bool
-	haveUserTable bool
-	persistLogged bool
-	expireOnce    sync.Once
+	userMax           map[int64]int32
+	userMaxKnown      map[int64]bool
+	userEpoch         map[int64]uint64
+	userAdvert        map[int64]*sync.Mutex
+	channelMax        map[int64]channelAdvert
+	foldedThrough     int32
+	persistedDone     bool
+	advertLiveAfter   int64
+	advertStaleMax    int32
+	advertStaleID     int64
+	advertStaleInit   bool
+	advertIndexLogged bool
+	haveUserTable     bool
+	persistLogged     bool
+	expireOnce        sync.Once
 }
 
 func New(store Store) *Service {
