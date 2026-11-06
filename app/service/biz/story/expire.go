@@ -2,6 +2,7 @@ package story
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -186,9 +187,32 @@ func (s *Service) ensureAdvertLocked() {
 	if s.userMaxKnown == nil {
 		s.userMaxKnown = map[int64]bool{}
 	}
+	if s.userEpoch == nil {
+		s.userEpoch = map[int64]uint64{}
+	}
+	if s.userAdvert == nil {
+		s.userAdvert = map[int64]*sync.Mutex{}
+	}
 	if s.channelMax == nil {
 		s.channelMax = map[int64]channelAdvert{}
 	}
+}
+
+// lockUserAdvert serializes advertisement writes for one user. The mutex is
+// not the service lock: a hook may call out to storage and push, and that
+// must not stall every other user's send or expiry. Callers must not hold
+// s.mu.
+func (s *Service) lockUserAdvert(id int64) func() {
+	s.mu.Lock()
+	s.ensureAdvertLocked()
+	lk := s.userAdvert[id]
+	if lk == nil {
+		lk = &sync.Mutex{}
+		s.userAdvert[id] = lk
+	}
+	s.mu.Unlock()
+	lk.Lock()
+	return lk.Unlock
 }
 
 // syncUserMax writes the maximum id among active stories. Zero means there
@@ -198,38 +222,71 @@ func (s *Service) syncUserMax(ctx context.Context, owner Owner) bool {
 	if owner.Kind != KindUser || !owner.ok() {
 		return true
 	}
-	max, _, err := s.activeMax(ctx, owner)
-	if err != nil {
-		logx.WithContext(ctx).Errorf("story: active max %d: %v", owner.ID, err)
-		return false
-	}
-	s.mu.Lock()
-	s.ensureAdvertLocked()
-	if s.userMaxKnown[owner.ID] && s.userMax[owner.ID] == max {
-		s.mu.Unlock()
-		return true
-	}
-	// The users table is already 0 for anyone absent from the seed read.
-	// Writing 0 again only invalidates the user cache.
-	if !s.userMaxKnown[owner.ID] && max == 0 && s.haveUserTable {
-		s.userMaxKnown[owner.ID] = true
-		s.userMax[owner.ID] = 0
-		s.mu.Unlock()
-		return true
-	}
-	fn := s.hooks.SetUserMax
-	s.mu.Unlock()
-	if fn != nil {
-		if err = fn(ctx, owner.ID, max); err != nil {
+	unlock := s.lockUserAdvert(owner.ID)
+	defer unlock()
+	return s.syncUserMaxInGate(ctx, owner)
+}
+
+// syncUserMaxInGate is syncUserMax for a caller that already holds this
+// user's advertisement lock. Send and delete hold that lock across the story
+// row change and this write, so an expiry hook cannot commit an older max
+// after a newer publish. The epoch is checked again after the hook returns:
+// a stale ticket does not update memory, and the active set is recomputed
+// before another external write.
+func (s *Service) syncUserMaxInGate(ctx context.Context, owner Owner) bool {
+	const maxPasses = 4
+	for pass := 0; pass < maxPasses; pass++ {
+		max, _, err := s.activeMax(ctx, owner)
+		if err != nil {
+			logx.WithContext(ctx).Errorf("story: active max %d: %v", owner.ID, err)
 			return false
 		}
+		s.mu.Lock()
+		s.ensureAdvertLocked()
+		if s.userMaxKnown[owner.ID] && s.userMax[owner.ID] == max {
+			s.mu.Unlock()
+			return true
+		}
+		// The users table is already 0 for anyone absent from the seed read.
+		// Writing 0 again only invalidates the user cache.
+		if !s.userMaxKnown[owner.ID] && max == 0 && s.haveUserTable {
+			s.userMaxKnown[owner.ID] = true
+			s.userMax[owner.ID] = 0
+			s.mu.Unlock()
+			return true
+		}
+		s.userEpoch[owner.ID]++
+		ticket := s.userEpoch[owner.ID]
+		fn := s.hooks.SetUserMax
+		s.mu.Unlock()
+		if fn != nil {
+			if err = fn(ctx, owner.ID, max); err != nil {
+				logx.WithContext(ctx).Errorf("story: set max %d: %v", owner.ID, err)
+				return false
+			}
+		}
+		again, _, err := s.activeMax(ctx, owner)
+		if err != nil {
+			logx.WithContext(ctx).Errorf("story: active max %d: %v", owner.ID, err)
+			return false
+		}
+		s.mu.Lock()
+		s.ensureAdvertLocked()
+		if s.userEpoch[owner.ID] != ticket {
+			s.mu.Unlock()
+			return false
+		}
+		if again != max {
+			s.mu.Unlock()
+			continue
+		}
+		s.userMaxKnown[owner.ID] = true
+		s.userMax[owner.ID] = max
+		s.mu.Unlock()
+		return true
 	}
-	s.mu.Lock()
-	s.ensureAdvertLocked()
-	s.userMaxKnown[owner.ID] = true
-	s.userMax[owner.ID] = max
-	s.mu.Unlock()
-	return true
+	logx.WithContext(ctx).Errorf("story: max %d changed while it was being stored", owner.ID)
+	return false
 }
 
 func (s *Service) syncChannelAdvert(ctx context.Context, owner Owner) bool {

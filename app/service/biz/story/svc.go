@@ -42,6 +42,8 @@ type Service struct {
 	// has no expire_date, so it must be cleared when the active set changes.
 	userMax       map[int64]int32
 	userMaxKnown  map[int64]bool
+	userEpoch     map[int64]uint64
+	userAdvert    map[int64]*sync.Mutex
 	channelMax    map[int64]channelAdvert
 	foldedThrough int32
 	persistedDone bool

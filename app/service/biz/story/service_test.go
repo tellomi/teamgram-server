@@ -2,7 +2,10 @@ package story
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -494,6 +497,238 @@ func TestExpiringLatestStoryKeepsOlderActiveMax(t *testing.T) {
 	active, _ = svc.GetPeerStories(ctx, 1, owner, 0)
 	if len(active.GetStories().GetStories()) != 0 {
 		t.Fatalf("both expired %+v", active)
+	}
+}
+
+type advertWrite struct {
+	user int64
+	max  int32
+}
+
+func TestStaleExpiryDoesNotOverwriteNewStory(t *testing.T) {
+	svc, ctx, now := newSvc(t)
+	var mu sync.Mutex
+	var writes []advertWrite
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, id int64, max int32) error {
+		if id == 1 && max == 0 {
+			once.Do(func() { close(entered) })
+			<-release
+		}
+		mu.Lock()
+		writes = append(writes, advertWrite{id, max})
+		mu.Unlock()
+		return nil
+	}})
+	owner := Owner{Kind: KindUser, ID: 1}
+	first := storyID(t, send(t, svc, ctx, 1, photoMedia(), rules("all"), 1, "old", false))
+	*now += defaultPeriod + 1
+	expired := make(chan struct{})
+	go func() {
+		svc.ReleaseExpired(ctx)
+		close(expired)
+	}()
+	<-entered
+
+	otherDone := make(chan error)
+	go func() {
+		_, err := svc.Send(ctx, SendRequest{
+			Actor: 2, Owner: Owner{Kind: KindUser, ID: 2}, Media: photoMedia(),
+			Rules: rules("all"), RandomID: 2, Caption: "other",
+		})
+		otherDone <- err
+	}()
+	select {
+	case err := <-otherDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("another user's send waited behind this expiry")
+	}
+
+	newDone := make(chan int32)
+	newErr := make(chan error, 1)
+	go func() {
+		up, err := svc.Send(ctx, SendRequest{
+			Actor: 1, Owner: owner, Media: photoMedia(),
+			Rules: rules("all"), RandomID: 3, Caption: "new",
+		})
+		if err != nil {
+			newErr <- err
+			newDone <- 0
+			return
+		}
+		newDone <- storyID(t, up)
+	}()
+	select {
+	case id := <-newDone:
+		t.Fatalf("new story %d stored its max while the expiry write was still running", id)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	var id2 int32
+	select {
+	case id2 = <-newDone:
+		if id2 == 0 {
+			t.Fatal(<-newErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("new story did not finish after the expiry write")
+	}
+	<-expired
+
+	mu.Lock()
+	got := append([]advertWrite(nil), writes...)
+	mu.Unlock()
+	last := int32(-1)
+	for _, w := range got {
+		if w.user == 1 {
+			last = w.max
+		}
+	}
+	if last != id2 {
+		t.Fatalf("user 1 last write %d, want %d (%d then a newer story); writes %+v", last, id2, first, got)
+	}
+	svc.mu.Lock()
+	mem, known := svc.userMax[1], svc.userMaxKnown[1]
+	svc.mu.Unlock()
+	if !known || mem != id2 {
+		t.Fatalf("memory max %d known %v, want %d", mem, known, id2)
+	}
+	before := len(got)
+	svc.ReleaseExpired(ctx)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(writes) != before {
+		t.Fatalf("later expiry rewrote %+v", writes[before:])
+	}
+	_ = owner
+}
+
+func TestDeleteDuringExpiryEndsAtLiveMax(t *testing.T) {
+	svc, ctx, now := newSvc(t)
+	var mu sync.Mutex
+	var writes []int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, _ int64, max int32) error {
+		if max != 0 {
+			mu.Lock()
+			n := len(writes)
+			mu.Unlock()
+			if n >= 2 {
+				once.Do(func() { close(entered) })
+				<-release
+			}
+		}
+		mu.Lock()
+		writes = append(writes, max)
+		mu.Unlock()
+		return nil
+	}})
+	owner := Owner{Kind: KindUser, ID: 1}
+	first, err := svc.Send(ctx, SendRequest{
+		Actor: 1, Owner: owner, Media: photoMedia(), Rules: rules("all"), RandomID: 1, Period: 48 * 3600,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1 := storyID(t, first)
+	*now += 10
+	if _, err = svc.Send(ctx, SendRequest{
+		Actor: 1, Owner: owner, Media: photoMedia(), Rules: rules("all"), RandomID: 2, Period: 6 * 3600,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	*now += 6 * 3600
+	expired := make(chan struct{})
+	go func() {
+		svc.ReleaseExpired(ctx)
+		close(expired)
+	}()
+	<-entered
+	deleted := make(chan error)
+	go func() {
+		_, err := svc.Delete(ctx, 1, 0, owner, 0, []int32{id1})
+		deleted <- err
+	}()
+	select {
+	case err := <-deleted:
+		t.Fatalf("delete finished while expiry write was in progress: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case err := <-deleted:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("delete did not finish")
+	}
+	<-expired
+	mu.Lock()
+	last := writes[len(writes)-1]
+	mu.Unlock()
+	if last != 0 {
+		t.Fatalf("last write %d, want 0 after the remaining story was deleted; writes %v", last, writes)
+	}
+	svc.mu.Lock()
+	mem, known := svc.userMax[1], svc.userMaxKnown[1]
+	svc.mu.Unlock()
+	if !known || mem != 0 {
+		t.Fatalf("memory %d known %v", mem, known)
+	}
+	active, err := svc.GetPeerStories(ctx, 1, owner, 0)
+	if err != nil || len(active.GetStories().GetStories()) != 0 {
+		t.Fatalf("active %+v %v", active, err)
+	}
+}
+
+func TestExpiryHookFailureRetriesToMatchStore(t *testing.T) {
+	svc, ctx, now := newSvc(t)
+	var mu sync.Mutex
+	var writes []int32
+	failed := false
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, _ int64, max int32) error {
+		if max == 0 && !failed {
+			failed = true
+			return errors.New("storage unavailable")
+		}
+		mu.Lock()
+		writes = append(writes, max)
+		mu.Unlock()
+		return nil
+	}})
+	id := storyID(t, send(t, svc, ctx, 1, photoMedia(), rules("all"), 1, "one", false))
+	*now += defaultPeriod + 1
+	svc.ReleaseExpired(ctx)
+	mu.Lock()
+	if len(writes) != 1 || writes[0] != id {
+		t.Fatalf("failed expiry was stored %v", writes)
+	}
+	mu.Unlock()
+	svc.mu.Lock()
+	mem, known := svc.userMax[1], svc.userMaxKnown[1]
+	svc.mu.Unlock()
+	if !known || mem != id {
+		t.Fatalf("memory changed on failure: %d known %v", mem, known)
+	}
+	svc.ReleaseExpired(ctx)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(writes) != 2 || writes[1] != 0 {
+		t.Fatalf("retry writes %v", writes)
+	}
+	svc.mu.Lock()
+	mem, known = svc.userMax[1], svc.userMaxKnown[1]
+	svc.mu.Unlock()
+	if !known || mem != 0 {
+		t.Fatalf("memory after retry %d known %v", mem, known)
 	}
 }
 
