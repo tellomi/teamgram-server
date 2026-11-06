@@ -158,6 +158,36 @@ func (s *mysqlStore) ListAll(ctx context.Context) ([]*Record, error) {
 	return s.list(ctx, `SELECT `+storyCols+` FROM stories`)
 }
 
+func (s *mysqlStore) OwnersExpiredBetween(ctx context.Context, after, now int32) ([]Owner, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT owner_kind, owner_id FROM stories
+WHERE deleted=0 AND expire_date<=? AND expire_date>?`, now, after)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Owner
+	for rows.Next() {
+		var kind int
+		var id int64
+		if err = rows.Scan(&kind, &id); err != nil {
+			return nil, err
+		}
+		out = append(out, Owner{Kind: Kind(kind), ID: id})
+	}
+	return out, rows.Err()
+}
+
+func (s *mysqlStore) NextExpiry(ctx context.Context, now int32) (int32, error) {
+	var next sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+SELECT MIN(expire_date) FROM stories WHERE deleted=0 AND expire_date>?`, now).Scan(&next)
+	if err != nil || !next.Valid {
+		return 0, err
+	}
+	return int32(next.Int64), nil
+}
+
 func (s *mysqlStore) AddForwards(ctx context.Context, owner Owner, id int32) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE stories SET forwards=forwards+1 WHERE owner_kind=? AND owner_id=? AND story_id=?`, owner.Kind, owner.ID, id)
 	return err

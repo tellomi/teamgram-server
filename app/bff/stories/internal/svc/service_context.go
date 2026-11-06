@@ -87,11 +87,8 @@ func installHooks(users user_client.UserClient, c config.Config) {
 			contact, err := users.UserGetContact(ctx, &user.TLUserGetContact{UserId: owner, Id: viewer})
 			return err == nil && contact.GetCloseFriend()
 		},
-		SetUserMax: func(ctx context.Context, userID int64, maxID int32) {
-			if users == nil {
-				return
-			}
-			_, _ = users.UserSetStoriesMaxId(ctx, &user.TLUserSetStoriesMaxId{UserId: userID, Id: maxID})
+		SetUserMax: func(ctx context.Context, userID int64, maxID int32) error {
+			return applyStoryMax(ctx, users, syncer, userID, maxID)
 		},
 		SetStoriesHidden: func(ctx context.Context, userID, peerID int64, hidden bool) {
 			if users == nil {
@@ -127,4 +124,5 @@ func installHooks(users user_client.UserClient, c config.Config) {
 				strings.Contains(strings.ToLower(data.GetUsername()), q)
 		},
 	})
+	story.Shared().WatchExpiries()
 }

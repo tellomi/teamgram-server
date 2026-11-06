@@ -10,6 +10,11 @@ type Store interface {
 	FindByRandom(ctx context.Context, owner Owner, sender, randomID int64) (*Record, error)
 	ListByOwner(ctx context.Context, owner Owner) ([]*Record, error)
 	ListAll(ctx context.Context) ([]*Record, error)
+	// OwnersExpiredBetween lists peers with a non-deleted story whose
+	// expire_date is after `after` and at or before `now`.
+	OwnersExpiredBetween(ctx context.Context, after, now int32) ([]Owner, error)
+	// NextExpiry is the soonest expire_date strictly after now, or 0.
+	NextExpiry(ctx context.Context, now int32) (int32, error)
 	AddForwards(ctx context.Context, owner Owner, id int32) error
 
 	SaveView(ctx context.Context, owner Owner, storyID int32, v View) error

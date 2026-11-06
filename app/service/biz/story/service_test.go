@@ -404,6 +404,162 @@ func TestChannelStoriesRing(t *testing.T) {
 	}
 }
 
+func TestExpiredStoryClearsActiveAdvertisement(t *testing.T) {
+	svc, ctx, now := newSvc(t)
+	var got []int32
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, id int64, max int32) error {
+		if id != 1 {
+			t.Errorf("user %d", id)
+		}
+		got = append(got, max)
+		return nil
+	}})
+	id := storyID(t, send(t, svc, ctx, 1, photoMedia(), rules("all"), 1, "today", false))
+	if len(got) != 1 || got[0] != id {
+		t.Fatalf("send advertisement %v", got)
+	}
+	owner := Owner{Kind: KindUser, ID: 1}
+	svc.ReleaseExpired(ctx)
+	if len(got) != 1 {
+		t.Fatalf("active story cleared early %v", got)
+	}
+
+	*now += defaultPeriod + 1
+	active, err := svc.GetPeerStories(ctx, 2, owner, 0)
+	if err != nil || len(active.GetStories().GetStories()) != 0 {
+		t.Fatalf("expired peer stories %+v %v", active, err)
+	}
+	maxes := svc.PeerMaxIDs(ctx, 2, []Owner{owner})
+	if len(maxes) != 1 || maxes[0].GetMaxId() != nil {
+		t.Fatalf("peer max %+v", maxes)
+	}
+	archive, err := svc.GetArchive(ctx, 1, owner, 0, 0, 10)
+	if err != nil || archive.GetCount() != 1 {
+		t.Fatalf("archive %+v %v", archive, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("read path cleared the advertisement %v", got)
+	}
+
+	svc.ReleaseExpired(ctx)
+	if len(got) != 2 || got[1] != 0 {
+		t.Fatalf("expire advertisement %v", got)
+	}
+	svc.ReleaseExpired(ctx)
+	if len(got) != 2 {
+		t.Fatalf("repeated expiry %v", got)
+	}
+}
+
+func TestExpiringLatestStoryKeepsOlderActiveMax(t *testing.T) {
+	svc, ctx, now := newSvc(t)
+	var got []int32
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, _ int64, max int32) error {
+		got = append(got, max)
+		return nil
+	}})
+	owner := Owner{Kind: KindUser, ID: 1}
+	first, err := svc.Send(ctx, SendRequest{
+		Actor: 1, Owner: owner, Media: photoMedia(), Rules: rules("all"), RandomID: 1, Period: 48 * 3600,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1 := storyID(t, first)
+	*now += 10
+	second, err := svc.Send(ctx, SendRequest{
+		Actor: 1, Owner: owner, Media: photoMedia(), Rules: rules("all"), RandomID: 2, Period: 6 * 3600,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2 := storyID(t, second)
+	if len(got) != 2 || got[0] != id1 || got[1] != id2 {
+		t.Fatalf("send advertisement %v", got)
+	}
+	*now += 6 * 3600
+	svc.ReleaseExpired(ctx)
+	if len(got) != 3 || got[2] != id1 {
+		t.Fatalf("max should fall back to the story that is still active, got %v", got)
+	}
+	active, err := svc.GetPeerStories(ctx, 1, owner, 0)
+	if err != nil || len(active.GetStories().GetStories()) != 1 || active.GetStories().GetStories()[0].GetId() != id1 {
+		t.Fatalf("still active %+v %v", active, err)
+	}
+	*now += 48 * 3600
+	svc.ReleaseExpired(ctx)
+	if len(got) != 4 || got[3] != 0 {
+		t.Fatalf("last story expiry %v", got)
+	}
+	active, _ = svc.GetPeerStories(ctx, 1, owner, 0)
+	if len(active.GetStories().GetStories()) != 0 {
+		t.Fatalf("both expired %+v", active)
+	}
+}
+
+func TestDeleteClearsActiveAdvertisement(t *testing.T) {
+	svc, ctx, _ := newSvc(t)
+	var got []int32
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, _ int64, max int32) error {
+		got = append(got, max)
+		return nil
+	}})
+	id := storyID(t, send(t, svc, ctx, 1, photoMedia(), rules("all"), 3, "gone", false))
+	if _, err := svc.Delete(ctx, 1, 0, Owner{Kind: KindUser, ID: 1}, 0, []int32{id}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != id || got[1] != 0 {
+		t.Fatalf("delete advertisement %v", got)
+	}
+}
+
+func TestExpiredChannelStoryPushesClearedRing(t *testing.T) {
+	svc, ctx, now := newSvc(t)
+	var channelUpdates []*mtproto.Updates
+	svc.SetHooks(Hooks{Push: func(_ context.Context, _ int64, _ []int64, updates *mtproto.Updates) {
+		for _, one := range updates.GetUpdates() {
+			if one.GetPredicateName() == mtproto.Predicate_updateChannel {
+				channelUpdates = append(channelUpdates, updates)
+			}
+		}
+	}})
+	created, err := channel.Shared().Create(ctx, channel.CreateRequest{CreatorID: 7, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	owner := Owner{Kind: KindChannel, ID: ch.Id}
+	if _, err = svc.Send(ctx, SendRequest{
+		Actor: 7, Owner: owner, AccessHash: ch.GetAccessHash_FLAGINT64().GetValue(),
+		Media: photoMedia(), Rules: rules("all"), RandomID: 11,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc.ReleaseExpired(ctx)
+	if len(channelUpdates) != 0 {
+		t.Fatalf("active channel pushed a clear %d", len(channelUpdates))
+	}
+	*now += defaultPeriod + 1
+	if att := svc.AttachChannel(ctx, 7, ch.Id); att.MaxID != 0 {
+		t.Fatalf("live channel ring %d", att.MaxID)
+	}
+	if len(channelUpdates) != 0 {
+		t.Fatal("expiry itself pushed a channel update")
+	}
+	svc.ReleaseExpired(ctx)
+	if len(channelUpdates) != 1 {
+		t.Fatalf("channel refresh %d", len(channelUpdates))
+	}
+	up := channelUpdates[0]
+	if len(up.Chats) != 1 || up.Chats[0].GetStoriesMaxId_FLAGRECENTSTORY() != nil {
+		t.Fatalf("channel still advertising %+v", up.Chats)
+	}
+	svc.ReleaseExpired(ctx)
+	if len(channelUpdates) != 1 {
+		t.Fatalf("repeated channel refresh %d", len(channelUpdates))
+	}
+}
+
 func TestLayer232StoryConstructors(t *testing.T) {
 	item := mtproto.MakeTLStoryItem(&mtproto.StoryItem{
 		Pinned: true, Public: true, Id: 3, Date: 10, ExpireDate: 20,

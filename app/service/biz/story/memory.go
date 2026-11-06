@@ -128,6 +128,47 @@ func (s *memoryStore) listLocked(owner Owner) []*Record {
 	return out
 }
 
+func (s *memoryStore) OwnersExpiredBetween(ctx context.Context, after, now int32) ([]Owner, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Owner
+	for owner, byID := range s.stories {
+		for _, rec := range byID {
+			if rec == nil || rec.Deleted || rec.Item == nil {
+				continue
+			}
+			if rec.Item.ExpireDate <= now && rec.Item.ExpireDate > after {
+				out = append(out, owner)
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *memoryStore) NextExpiry(ctx context.Context, now int32) (int32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var next int32
+	for _, byID := range s.stories {
+		for _, rec := range byID {
+			if rec == nil || rec.Deleted || rec.Item == nil || rec.Item.ExpireDate <= now {
+				continue
+			}
+			if next == 0 || rec.Item.ExpireDate < next {
+				next = rec.Item.ExpireDate
+			}
+		}
+	}
+	return next, nil
+}
+
 func (s *memoryStore) ListAll(ctx context.Context) ([]*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
