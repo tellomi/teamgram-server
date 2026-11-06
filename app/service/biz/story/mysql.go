@@ -3,6 +3,7 @@ package story
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,6 +61,14 @@ func (s *mysqlStore) Save(ctx context.Context, rec *Record) error {
 }
 
 func (s *mysqlStore) upsert(ctx context.Context, rec *Record) error {
+	return upsertExec(ctx, s.db, rec)
+}
+
+type sqlExec interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func upsertExec(ctx context.Context, ex sqlExec, rec *Record) error {
 	if rec.Item != nil {
 		rec.Item.SanitizeEntities()
 	}
@@ -67,7 +76,7 @@ func (s *mysqlStore) upsert(ctx context.Context, rec *Record) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `
+	_, err = ex.ExecContext(ctx, `
 INSERT INTO stories (
   owner_kind, owner_id, story_id, sender_user_id, random_id, date2, expire_date, pinned, deleted, forwards, body)
 VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -77,6 +86,116 @@ ON DUPLICATE KEY UPDATE sender_user_id=VALUES(sender_user_id), random_id=VALUES(
 		rec.Owner.Kind, rec.Owner.ID, rec.Item.Id, rec.Sender, rec.RandomID, rec.Item.Date, rec.Item.ExpireDate,
 		boolInt(rec.Item.Pinned), boolInt(rec.Deleted), rec.Forwards, body)
 	return err
+}
+
+// errNoAdvertUser means the story change was committed and there is no users
+// row to store stories_max_id on.
+var errNoAdvertUser = errors.New("story: user row missing")
+
+// commitUserAdvert locks one users row, applies mutate, then sets
+// stories_max_id from the live story rows in that same transaction.
+// A second process blocks on the row until this commit, then recomputes,
+// so it cannot store an older max. A crash before commit rolls the story
+// change back with the advertisement.
+func (s *mysqlStore) commitUserAdvert(ctx context.Context, userID int64, now int32, mutate func(*sql.Tx) error) (max int32, wrote bool, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback()
+	var id int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id=? FOR UPDATE`, userID).Scan(&id)
+	if err == sql.ErrNoRows {
+		if mutate != nil {
+			if err = mutate(tx); err != nil {
+				return 0, false, err
+			}
+		}
+		if err = tx.Commit(); err != nil {
+			return 0, false, err
+		}
+		return 0, false, errNoAdvertUser
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if mutate != nil {
+		if err = mutate(tx); err != nil {
+			return 0, false, err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `
+UPDATE users SET stories_max_id = (
+  SELECT IFNULL(MAX(story_id), 0) FROM stories
+  WHERE owner_kind=? AND owner_id=? AND deleted=0 AND expire_date>?
+) WHERE id=?`, KindUser, userID, now, userID); err != nil {
+		return 0, false, err
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT stories_max_id FROM users WHERE id=?`, userID).Scan(&max); err != nil {
+		return 0, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, false, err
+	}
+	return max, true, nil
+}
+
+// advertMismatches lists users whose stories_max_id is not the live story
+// max. The live side is the unexpired rows, not the whole stories table.
+// Each call returns at most limit ids.
+func (s *mysqlStore) advertMismatches(ctx context.Context, now int32, limit int) ([]int64, error) {
+	if limit <= 0 {
+		limit = 256
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT u.id
+FROM users u
+JOIN (
+  SELECT owner_id, MAX(story_id) AS live_max
+  FROM stories
+  WHERE owner_kind=? AND deleted=0 AND expire_date>?
+  GROUP BY owner_id
+) live ON live.owner_id = u.id
+WHERE u.stories_max_id <> live.live_max
+LIMIT ?`, KindUser, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) >= limit {
+		return out, nil
+	}
+	rows2, err := s.db.QueryContext(ctx, `
+SELECT id FROM users
+WHERE stories_max_id <> 0
+AND NOT EXISTS (
+  SELECT 1 FROM stories
+  WHERE owner_kind=? AND owner_id=users.id AND deleted=0 AND expire_date>?
+)
+LIMIT ?`, KindUser, now, limit-len(out))
+	if err != nil {
+		return nil, err
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var id int64
+		if err = rows2.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows2.Err()
 }
 
 func scanRecord(row interface{ Scan(...any) error }) (*Record, error) {

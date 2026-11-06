@@ -2,6 +2,7 @@ package story
 
 import (
 	"context"
+	"database/sql"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -169,6 +170,9 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, 
 	applyPrivacyFlags(item)
 	item = mtproto.MakeTLStoryItem(item).To_StoryItem()
 	rec := &Record{Owner: req.Owner, Sender: req.Actor, RandomID: req.RandomID, Item: item}
+	if ms, ok := s.store.(*mysqlStore); ok && ms != nil && req.Owner.Kind == KindUser {
+		return s.persistUserMySQL(ctx, ms, req, rec)
+	}
 	// Hold this user's advertisement lock from the insert through the max
 	// write. An expiry already inside SetUserMax stays outside this section,
 	// so its older max cannot land after this one.
@@ -243,12 +247,106 @@ func (s *Service) Edit(ctx context.Context, req EditRequest) (*mtproto.Updates, 
 	return s.storyUpdates(ctx, req.Actor, rec, false), nil
 }
 
+func (s *Service) persistUserMySQL(ctx context.Context, ms *mysqlStore, req SendRequest, rec *Record) (*mtproto.Updates, error) {
+	unlock := s.lockUserAdvert(req.Owner.ID)
+	if rec.Item.Id == 0 {
+		id, err := ms.alloc(ctx, req.Owner, "next_story")
+		if err != nil {
+			unlock()
+			return nil, err
+		}
+		rec.Item.Id = id
+	}
+	max, wrote, err := ms.commitUserAdvert(ctx, req.Owner.ID, s.now(), func(tx *sql.Tx) error {
+		return upsertExec(ctx, tx, rec)
+	})
+	if err == errNoAdvertUser {
+		unlock()
+		if err = s.store.Create(ctx, rec); err != nil {
+			return nil, err
+		}
+		s.syncUserMax(ctx, req.Owner)
+		if err = s.attachAlbums(ctx, req.Actor, req.Owner, req.AccessHash, rec.id(), req.Albums); err != nil {
+			return nil, err
+		}
+		if req.HasFwd && req.FwdOwner.ok() && req.FwdID != 0 {
+			_ = s.store.AddForwards(ctx, req.FwdOwner, req.FwdID)
+		}
+		s.fanout(ctx, req.Actor, req.AuthKey, rec)
+		return s.storyUpdates(ctx, req.Actor, rec, true), nil
+	}
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	if wrote {
+		s.rememberAdvert(req.Owner.ID, max)
+	}
+	unlock()
+	if wrote {
+		s.pushAdvert(ctx, req.Owner.ID, max)
+	}
+	if err = s.attachAlbums(ctx, req.Actor, req.Owner, req.AccessHash, rec.id(), req.Albums); err != nil {
+		return nil, err
+	}
+	if req.HasFwd && req.FwdOwner.ok() && req.FwdID != 0 {
+		_ = s.store.AddForwards(ctx, req.FwdOwner, req.FwdID)
+	}
+	s.fanout(ctx, req.Actor, req.AuthKey, rec)
+	return s.storyUpdates(ctx, req.Actor, rec, true), nil
+}
+
+func (s *Service) deleteUserMySQL(ctx context.Context, ms *mysqlStore, actor, auth int64, owner Owner, ids []int32) ([]int32, error) {
+	unlock := s.lockUserAdvert(owner.ID)
+	var removed []*Record
+	max, wrote, err := ms.commitUserAdvert(ctx, owner.ID, s.now(), func(tx *sql.Tx) error {
+		for _, id := range ids {
+			rec, err := scanRecord(tx.QueryRowContext(ctx, `SELECT `+storyCols+` FROM stories WHERE owner_kind=? AND owner_id=? AND story_id=?`, owner.Kind, owner.ID, id))
+			if err == sql.ErrNoRows {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if rec == nil || rec.Deleted {
+				continue
+			}
+			rec.Deleted = true
+			if err = upsertExec(ctx, tx, rec); err != nil {
+				return err
+			}
+			removed = append(removed, rec)
+		}
+		return nil
+	})
+	if err != nil && err != errNoAdvertUser {
+		unlock()
+		return nil, err
+	}
+	if wrote {
+		s.rememberAdvert(owner.ID, max)
+	}
+	unlock()
+	if wrote {
+		s.pushAdvert(ctx, owner.ID, max)
+	}
+	deleted := make([]int32, 0, len(removed))
+	for _, rec := range removed {
+		deleted = append(deleted, rec.id())
+		s.fanout(ctx, actor, auth, rec)
+	}
+	return deleted, nil
+}
+
 func (s *Service) Delete(ctx context.Context, actor, auth int64, owner Owner, accessHash int64, ids []int32) ([]int32, error) {
 	if len(ids) == 0 {
 		return nil, mtproto.ErrStoryIdEmpty
 	}
 	if err := s.canDelete(ctx, actor, owner, accessHash); err != nil {
 		return nil, err
+	}
+	if ms, ok := s.store.(*mysqlStore); ok && ms != nil && owner.Kind == KindUser {
+		return s.deleteUserMySQL(ctx, ms, actor, auth, owner, ids)
 	}
 	unlock := func() {}
 	if owner.Kind == KindUser {

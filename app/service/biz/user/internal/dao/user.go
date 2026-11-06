@@ -470,15 +470,22 @@ func (d *Dao) GetCacheImmutableUserList(ctx context.Context, idList2 []int64, co
 }
 
 func (d *Dao) UpdateStoriesMaxId(ctx context.Context, id int64, maxId int32) bool {
+	// The story transaction already stored stories_max_id under the user
+	// row lock. Writing maxId here would let a slower process replace a
+	// newer value. Touch the row so this cache key is dropped and the next
+	// read sees the committed column.
+	_ = maxId
 	_, _, err := d.CachedConn.Exec(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			rowsAffected, err := d.UsersDAO.UpdateStoriesMaxId(ctx, maxId, id)
-
+			res, err := conn.Exec(ctx, `UPDATE users SET stories_max_id = stories_max_id WHERE id = ?`, id)
 			if err != nil {
 				return 0, 0, err
 			}
-
+			rowsAffected, err := res.RowsAffected()
+			if err != nil {
+				return 0, 0, err
+			}
 			return 0, rowsAffected, nil
 		},
 		genCacheUserDataCacheKey(id))
