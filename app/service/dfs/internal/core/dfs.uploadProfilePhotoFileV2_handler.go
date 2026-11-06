@@ -179,13 +179,13 @@ func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFil
 	r, err = c.svcCtx.Dao.OpenFile(c.ctx, creatorId, video.Id_INT64, video.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadVideoSizeList - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	videoMp4Data, err = r.ReadAll(c.ctx)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadVideoSizeList - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	if len(video.Md5Checksum) > 0 {
@@ -299,13 +299,13 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 	r, err = c.svcCtx.Dao.OpenFile(c.ctx, creatorId, file.Id_INT64, file.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	cacheData, err = r.ReadAll(c.ctx)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	if len(file.Md5Checksum) > 0 {

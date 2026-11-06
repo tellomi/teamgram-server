@@ -11,15 +11,12 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/dcoptions"
 )
 
-func (c *DfsCore) uploadedBytes(creator, id int64) ([]byte, error) {
-	info, err := c.svcCtx.Dao.GetFileInfo(c.ctx, creator, id)
-	if err != nil || info == nil {
-		if err == nil {
-			err = mtproto.ErrMediaInvalid
-		}
+func (c *DfsCore) uploadedBytes(creator, id int64, parts int32) ([]byte, error) {
+	r, err := c.svcCtx.Dao.OpenFile(c.ctx, creator, id, parts)
+	if err != nil {
 		return nil, err
 	}
-	return c.svcCtx.Dao.NewSSDBReader(info).ReadAll(c.ctx)
+	return r.ReadAll(c.ctx)
 }
 
 // finishGifDocument fills dc id, a single .mp4 filename, and a video thumb.

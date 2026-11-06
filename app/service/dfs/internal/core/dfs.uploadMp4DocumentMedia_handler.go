@@ -72,7 +72,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 
 	// Read the upload directly. Fetching /dfs/file/<client name>.mp4 404s
 	// (invalid fileName x.mp4) and leaves the GIF without a thumb.
-	mp4Bytes, err := c.uploadedBytes(creatorId, file.GetId_INT64())
+	mp4Bytes, err := c.uploadedBytes(creatorId, file.GetId_INT64(), file.GetParts())
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
 		return nil, err

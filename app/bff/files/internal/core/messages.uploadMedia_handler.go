@@ -145,7 +145,11 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 			Media:   media,
 		})
 		if err2 != nil {
-			err = mtproto.ErrMediaInvalid
+			if mtproto.IsFilePartMissing(err2) {
+				err = err2
+			} else {
+				err = mtproto.ErrMediaInvalid
+			}
 			return
 		}
 		messageMedia = documentMedia

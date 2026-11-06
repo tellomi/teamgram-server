@@ -45,7 +45,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	r, err := c.svcCtx.Dao.OpenFile(c.ctx, in.GetCreator(), file.Id_INT64, file.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadDocumentFile - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	//fileInfo, err := s.Dao.GetFileInfo(ctx, creatorId, file.Id)
@@ -134,7 +134,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		cacheData, err = r.ReadAll(c.ctx)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadDocumentFile - %v", err)
-			return nil, mtproto.ErrWallpaperFileInvalid
+			return nil, partMissOr(err, mtproto.ErrWallpaperFileInvalid)
 		} else {
 			// log.Debugf("cacheData: %s", hex.EncodeToString(cacheData))
 		}
@@ -207,7 +207,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		claim, err2 = c.claimDocumentReader(c.ctx, documentId, c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo))
 		if err2 != nil {
 			c.Logger.Errorf("dfs.uploadDocumentFile - %v", err2)
-			return nil, mtproto.ErrMediaInvalid
+			return nil, partMissOr(err2, mtproto.ErrMediaInvalid)
 		}
 		c.ctx, finishUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
 	}

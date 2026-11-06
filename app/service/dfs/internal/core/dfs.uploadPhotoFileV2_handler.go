@@ -49,13 +49,13 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	r, err = c.svcCtx.Dao.OpenFile(c.ctx, in.GetCreator(), file.Id_INT64, file.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	cacheData, err = r.ReadAll(c.ctx)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	} else {
 		// log.Debugf("cacheData: %s", hex.EncodeToString(cacheData))
 	}

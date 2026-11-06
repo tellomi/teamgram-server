@@ -20,12 +20,15 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 
 	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
 const (
@@ -169,10 +172,44 @@ func (d *Dao) ReadOffsetLimit(ctx context.Context, fileInfo *model.DfsFileInfo, 
 func (d *Dao) OpenFile(ctx context.Context, ownerId, fileId int64, parts int32) (*SSDBReader, error) {
 	fileInfo, err := d.GetFileInfo(ctx, ownerId, fileId)
 	if err != nil {
+		if parts > 0 && (errors.Is(err, model.ErrorDfsFileNotFound) || errors.Is(err, redis.Nil)) {
+			// Deriving the total from the hash length fails when a middle
+			// field is absent (HGET of that index is redis.Nil) or when
+			// nothing was saved. Name the hole instead of a generic media error.
+			return nil, d.missingDeclaredPart(ctx, ownerId, fileId, parts)
+		}
 		return nil, err
 	}
 	if parts > 0 {
-		// TODO(@benqi): check fileInfo.FileTotalParts == parts
+		if err = d.missingDeclaredPart(ctx, ownerId, fileId, parts); err != nil {
+			return nil, err
+		}
 	}
-	return d.NewSSDBReader(fileInfo), nil
+	r := d.NewSSDBReader(fileInfo)
+	if parts > 0 {
+		r.requiredParts = int(parts)
+	}
+	return r, nil
+}
+
+// missingDeclaredPart returns nil when every part in [0, parts) is stored.
+// The first absent part is FILE_PART_<n>_MISSING. parts is the count from
+// inputFile.parts, which is the range finalize has to assemble. Existence
+// is checked with HEXISTS so the bytes are read once, by Read or ReadAll.
+func (d *Dao) missingDeclaredPart(ctx context.Context, ownerId, fileId int64, parts int32) error {
+	if parts <= 0 {
+		return mtproto.NewFilePartXMissing(0)
+	}
+	k := getFileKey(ownerId, fileId)
+	for i := int32(0); i < parts; i++ {
+		ok, err := d.ssdb.HexistsCtx(ctx, k, strconv.Itoa(int(i)))
+		if err != nil {
+			logx.WithContext(ctx).Errorf("conn.Send(HEXISTS %s, %d) error(%v)", k, i, err)
+			return err
+		}
+		if !ok {
+			return mtproto.NewFilePartXMissing(i)
+		}
+	}
+	return nil
 }

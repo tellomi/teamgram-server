@@ -158,7 +158,11 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 			Media:   media,
 		})
 		if err2 != nil {
-			err = mtproto.ErrMediaInvalid
+			if mtproto.IsFilePartMissing(err2) {
+				err = err2
+			} else {
+				err = mtproto.ErrMediaInvalid
+			}
 			return
 		}
 		messageMedia = documentMedia
