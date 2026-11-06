@@ -3,6 +3,7 @@ package story
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
@@ -164,9 +165,8 @@ func (s *Service) readPersistedMaxes(ctx context.Context) (map[int64]int32, bool
 		return nil, false, nil
 	}
 	// Non-zero advertisements are paged by users_stories_max in
-	// repairMySQLAdverts. Reading them all here scanned every user on
-	// MariaDB 10.11 (type=ALL, possible_keys=NULL) because `<> 0` is not a
-	// range. The table exists; the repair cursor does the work.
+	// repairMySQLAdverts. This used to read every non-zero row in one query.
+	// The table exists; the repair cursor does the work.
 	err := ms.db.QueryRowContext(ctx, `SELECT 1 FROM users LIMIT 1`).Scan(new(int))
 	if err != nil && err != sql.ErrNoRows {
 		return nil, true, err
@@ -355,55 +355,79 @@ func (s *Service) repairMySQLAdvertsLimit(ctx context.Context, limit int) {
 }
 
 func (s *Service) drainAdvertDirty(ctx context.Context, ms *mysqlStore, limit int) {
-	rows, err := ms.pageDirty(ctx, limit)
+	s.mu.Lock()
+	after := s.advertDirtyAfter
+	s.mu.Unlock()
+	rows, err := ms.pageDirty(ctx, after, limit)
 	if err != nil {
-		logx.WithContext(ctx).Errorf("story: dirty adverts: %v", err)
+		if !errors.Is(err, errAdvertSchema) {
+			logx.WithContext(ctx).Errorf("story: dirty adverts: %v", err)
+		} else {
+			s.logAdvertSchemaOnce()
+		}
 		return
 	}
+	// A failed user stays in the table and is retried after this cursor
+	// wraps. The rest of the page, and later pages, still advance.
 	for _, row := range rows {
 		if err = s.pushAdvert(ctx, row.userID, row.max); err != nil {
-			return
+			continue
 		}
 		if err = ms.clearDirty(ctx, row.userID, row.max); err != nil {
 			logx.WithContext(ctx).Errorf("story: clear dirty %d: %v", row.userID, err)
-			return
+			continue
 		}
 	}
+	s.mu.Lock()
+	if len(rows) < limit {
+		s.advertDirtyAfter = 0
+	} else {
+		s.advertDirtyAfter = rows[len(rows)-1].userID
+	}
+	s.mu.Unlock()
 }
 
 func (s *Service) repairLiveAdverts(ctx context.Context, ms *mysqlStore, limit int) {
 	s.mu.Lock()
 	after := s.advertLiveAfter
 	s.mu.Unlock()
-	ids, err := ms.pageLiveOwners(ctx, s.now(), after, limit)
+	rows, err := ms.pageLiveOwners(ctx, after, limit)
 	if err != nil {
-		logx.WithContext(ctx).Errorf("story: live adverts: %v", err)
+		if !errors.Is(err, errAdvertSchema) {
+			logx.WithContext(ctx).Errorf("story: live adverts: %v", err)
+		} else {
+			s.logAdvertSchemaOnce()
+		}
 		return
 	}
-	now := s.now()
-	for _, id := range ids {
-		live, err := ms.liveMax(ctx, id, now)
-		if err != nil {
-			logx.WithContext(ctx).Errorf("story: live max %d: %v", id, err)
-			continue
-		}
+	for _, row := range rows {
 		var stored int32
-		err = ms.db.QueryRowContext(ctx, `SELECT stories_max_id FROM users WHERE id=?`, id).Scan(&stored)
+		err = ms.db.QueryRowContext(ctx, `SELECT stories_max_id FROM users WHERE id=?`, row.id).Scan(&stored)
 		if err != nil {
 			continue
 		}
-		if stored == live {
+		if stored == row.max {
 			continue
 		}
-		s.syncUserMax(ctx, Owner{Kind: KindUser, ID: id})
+		s.syncUserMax(ctx, Owner{Kind: KindUser, ID: row.id})
 	}
 	s.mu.Lock()
-	if len(ids) < limit {
+	if len(rows) < limit {
 		s.advertLiveAfter = 0
 	} else {
-		s.advertLiveAfter = ids[len(ids)-1]
+		s.advertLiveAfter = rows[len(rows)-1].id
 	}
 	s.mu.Unlock()
+}
+
+func (s *Service) logAdvertSchemaOnce() {
+	s.mu.Lock()
+	logged := s.advertIndexLogged
+	s.advertIndexLogged = true
+	s.mu.Unlock()
+	if !logged {
+		logx.Error("story: advert schema is not migrated; repair will not scan stories or users. Run teamgramd/deploy/apply-gated-sql.sh after a restorable backup. Until story_advert_dirty and story_live_owner both exist, advertisement writes fail and nothing is committed.")
+	}
 }
 
 func (s *Service) repairStaleAdverts(ctx context.Context, ms *mysqlStore, limit int) {
@@ -417,7 +441,7 @@ func (s *Service) repairStaleAdverts(ctx context.Context, ms *mysqlStore, limit 
 			s.advertIndexLogged = true
 			s.mu.Unlock()
 			if !logged {
-				logx.Error("story: users_stories_max is missing; non-zero advertisement repair stays off until migrate-20261120-story-advert.sql")
+				logx.Error("story: users_stories_max is missing; non-zero advertisement repair stays off and does not scan users. Apply teamgramd/deploy/gated/20261120-story-advert.sql through apply-gated-sql.sh.")
 			}
 		}
 		return

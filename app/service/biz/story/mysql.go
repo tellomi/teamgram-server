@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"google.golang.org/protobuf/proto"
 
@@ -14,8 +15,14 @@ import (
 )
 
 type mysqlStore struct {
-	db *sql.DB
+	db     *sql.DB
+	mu     sync.Mutex
+	tables map[string]bool
 }
+
+// errAdvertSchema means the gated advertisement tables or the users index
+// are not present. Callers must not fall back to a stories or users scan.
+var errAdvertSchema = errors.New("story: advert schema is not migrated")
 
 func newMySQLStore(db *sql.DB) Store {
 	return &mysqlStore{db: db}
@@ -97,7 +104,43 @@ var errNoAdvertUser = errors.New("story: user row missing")
 // A second process blocks on the row until this commit, then recomputes,
 // so it cannot store an older max. A crash before commit rolls the story
 // change back with the advertisement.
+func (s *mysqlStore) hasTable(ctx context.Context, name string) (bool, error) {
+	s.mu.Lock()
+	if s.tables[name] {
+		s.mu.Unlock()
+		return true, nil
+	}
+	s.mu.Unlock()
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`, name).Scan(&n)
+	if err != nil || n == 0 {
+		return false, err
+	}
+	s.mu.Lock()
+	if s.tables == nil {
+		s.tables = map[string]bool{}
+	}
+	s.tables[name] = true
+	s.mu.Unlock()
+	return true, nil
+}
+
 func (s *mysqlStore) commitUserAdvert(ctx context.Context, userID int64, now int32, mutate func(*sql.Tx) error) (max int32, wrote bool, err error) {
+	dirty, err := s.hasTable(ctx, "story_advert_dirty")
+	if err != nil {
+		return 0, false, err
+	}
+	live, err := s.hasTable(ctx, "story_live_owner")
+	if err != nil {
+		return 0, false, err
+	}
+	if !dirty || !live {
+		// Do not write the story. A missing side table would leave the
+		// advertisement without a bounded repair row.
+		return 0, false, errAdvertSchema
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, false, err
@@ -144,6 +187,14 @@ ON DUPLICATE KEY UPDATE stories_max_id=?, updated_at=?`,
 		userID, max, now, max, now); err != nil {
 		return 0, false, err
 	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM story_live_owner WHERE owner_id=?`, userID); err != nil {
+		return 0, false, err
+	}
+	if max > 0 {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO story_live_owner (owner_id, live_max) VALUES (?, ?)`, userID, max); err != nil {
+			return 0, false, err
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return 0, false, err
 	}
@@ -172,10 +223,16 @@ WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'users
 }
 
 // pageStaleAdverts reads the next non-zero advertisements after the cursor.
-// stories_max_id > 0 on users_stories_max is a range. stories_max_id <> 0
-// is not: MariaDB 10.11 and MySQL 8 both refuse that predicate and scan
-// every user. limit bounds the index read, not only the result.
+// It runs only when users_stories_max exists. Without that index the
+// predicate is not executed.
 func (s *mysqlStore) pageStaleAdverts(ctx context.Context, afterMax int32, afterID int64, limit int) ([]staleAdvert, error) {
+	indexed, err := s.usersStoriesMaxIndexed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !indexed {
+		return nil, errAdvertSchema
+	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, stories_max_id FROM users
 WHERE stories_max_id > ? OR (stories_max_id = ? AND id > ?)
@@ -199,35 +256,55 @@ LIMIT ?`, afterMax, afterMax, afterID, limit)
 	return out, rows.Err()
 }
 
-// pageLiveOwners reads the next owners that still have an unexpired story.
-// The range is expire_date, so expired history is not part of the scan.
-func (s *mysqlStore) pageLiveOwners(ctx context.Context, now int32, afterOwner int64, limit int) ([]int64, error) {
+type liveOwner struct {
+	id  int64
+	max int32
+}
+
+// pageLiveOwners reads the next rows of story_live_owner by primary key.
+// One page is a range of limit keys. It does not read the stories table.
+// A missing table returns errAdvertSchema instead of scanning stories.
+func (s *mysqlStore) pageLiveOwners(ctx context.Context, afterOwner int64, limit int) ([]liveOwner, error) {
+	ok, err := s.hasTable(ctx, "story_live_owner")
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errAdvertSchema
+	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT owner_id FROM stories
-WHERE owner_kind=? AND deleted=0 AND expire_date>? AND owner_id>?
-GROUP BY owner_id
+SELECT owner_id, live_max FROM story_live_owner
+WHERE owner_id > ?
 ORDER BY owner_id
-LIMIT ?`, KindUser, now, afterOwner, limit)
+LIMIT ?`, afterOwner, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []int64
+	var out []liveOwner
 	for rows.Next() {
-		var id int64
-		if err = rows.Scan(&id); err != nil {
+		var row liveOwner
+		if err = rows.Scan(&row.id, &row.max); err != nil {
 			return nil, err
 		}
-		out = append(out, id)
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }
 
-func (s *mysqlStore) pageDirty(ctx context.Context, limit int) ([]advertDirty, error) {
+func (s *mysqlStore) pageDirty(ctx context.Context, afterUser int64, limit int) ([]advertDirty, error) {
+	ok, err := s.hasTable(ctx, "story_advert_dirty")
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errAdvertSchema
+	}
 	rows, err := s.db.QueryContext(ctx, `
 SELECT user_id, stories_max_id FROM story_advert_dirty
+WHERE user_id > ?
 ORDER BY user_id
-LIMIT ?`, limit)
+LIMIT ?`, afterUser, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -48,6 +48,7 @@ type Service struct {
 	foldedThrough     int32
 	persistedDone     bool
 	advertLiveAfter   int64
+	advertDirtyAfter  int64
 	advertStaleMax    int32
 	advertStaleID     int64
 	advertStaleInit   bool

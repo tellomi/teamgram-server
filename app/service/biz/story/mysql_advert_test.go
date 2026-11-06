@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,41 +15,93 @@ import (
 
 // Local throwaway server only. This test does not read TEAMGRAM_MYSQL_DSN.
 // Fixture login for a local throwaway database. It is not a production
-// credential. The tests skip when this server is not listening.
-const advertTestDSN = "storyadvert:storyadvert@tcp(127.0.0.1:3306)/storyadvert?charset=utf8mb4&parseTime=true&multiStatements=true"
+// credential. Each test creates its own schema and drops only that schema.
+// The tests skip when this server is not listening.
+const advertServerDSN = "storyadvert:storyadvert@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=true&multiStatements=true"
 
 func openAdvertTest(t *testing.T) (*sql.DB, *mysqlStore, int32) {
 	t.Helper()
-	db, err := sql.Open("mysql", advertTestDSN)
+	return openAdvertSchema(t, true)
+}
+
+func openBareAdvertTest(t *testing.T) (*sql.DB, *mysqlStore, int32) {
+	t.Helper()
+	return openAdvertSchema(t, false)
+}
+
+func openAdvertSchema(t *testing.T, advertTables bool) (*sql.DB, *mysqlStore, int32) {
+	t.Helper()
+	admin, err := sql.Open("mysql", advertServerDSN)
 	if err != nil {
 		t.Skipf("mysql open: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err = db.PingContext(ctx); err != nil {
+	if err = admin.PingContext(ctx); err != nil {
+		_ = admin.Close()
 		t.Skipf("mysql not available: %v", err)
 	}
+	name := fmt.Sprintf("story_advert_%d_%d", os.Getpid(), advertSchemaSeq.Add(1))
+	if _, err = admin.ExecContext(ctx, "CREATE DATABASE `"+name+"`"); err != nil {
+		_ = admin.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec("DROP DATABASE `" + name + "`")
+		_ = admin.Close()
+	})
+	dsn := "storyadvert:storyadvert@tcp(127.0.0.1:3306)/" + name + "?charset=utf8mb4&parseTime=true&multiStatements=true"
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
 	if err = ensureSchema(ctx, db); err != nil {
 		t.Fatal(err)
 	}
+	var extra int
+	if err = db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('story_advert_dirty', 'story_live_owner')`).Scan(&extra); err != nil {
+		t.Fatal(err)
+	}
+	if extra != 0 {
+		t.Fatalf("startup schema created %d advert tables", extra)
+	}
 	if _, err = db.ExecContext(ctx, `
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
   id BIGINT NOT NULL PRIMARY KEY,
   stories_max_id INT NOT NULL DEFAULT 0
 )`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.ExecContext(ctx, `ALTER TABLE users ADD INDEX IF NOT EXISTS users_stories_max (stories_max_id, id)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, `ALTER TABLE stories ADD INDEX IF NOT EXISTS stories_owner_expire (owner_kind, deleted, expire_date, owner_id, story_id)`); err != nil {
-		t.Fatal(err)
+	if advertTables {
+		if _, err = db.ExecContext(ctx, `
+CREATE TABLE story_advert_dirty (
+  user_id BIGINT NOT NULL,
+  stories_max_id INT NOT NULL,
+  updated_at INT NOT NULL,
+  PRIMARY KEY (user_id)
+)`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.ExecContext(ctx, `
+CREATE TABLE story_live_owner (
+  owner_id BIGINT NOT NULL,
+  live_max INT NOT NULL,
+  PRIMARY KEY (owner_id)
+)`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.ExecContext(ctx, `ALTER TABLE users ADD INDEX users_stories_max (stories_max_id, id)`); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return db, &mysqlStore{db: db}, int32(time.Now().Unix())
 }
 
 var advertUserSeq atomic.Int64
+var advertSchemaSeq atomic.Int64
 
 func advertUser(t *testing.T, db *sql.DB) int64 {
 	t.Helper()
@@ -289,78 +343,241 @@ LIMIT ?`, 0, 0, int64(^uint64(0)>>1), 256)
 	}
 }
 
-func TestMySQLDirtyCacheRetriesAfterCrash(t *testing.T) {
+func TestMySQLDirtyCursorSkipsFailedHead(t *testing.T) {
 	db, ms, now := openAdvertTest(t)
 	ctx := context.Background()
-	user := advertUser(t, db)
-	cache := map[int64]int32{user: 1}
-	var calls int
+	const extra = 300
+	for i := 1; i <= extra; i++ {
+		if _, err := db.Exec(`INSERT INTO story_advert_dirty (user_id, stories_max_id, updated_at) VALUES (?,?,?)`, i, 3, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fail := true
 	svc := New(ms)
 	svc.SetClock(func() int32 { return now })
-	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, id int64, max int32) error {
-		calls++
-		if calls == 1 {
+	svc.SetHooks(Hooks{SetUserMax: func(_ context.Context, id int64, _ int32) error {
+		if fail && id == 1 {
 			return errors.New("cache down")
 		}
-		cache[id] = max
 		return nil
 	}})
-	if _, _, err := ms.commitUserAdvert(ctx, user, now, func(tx *sql.Tx) error {
-		return upsertExec(ctx, tx, storyRow(user, 4, now+3600))
-	}); err != nil {
-		t.Fatal(err)
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if dirtyCount(t, db, 1) != 1 {
+		t.Fatal("failed head was cleared")
 	}
-	if cache[user] != 1 || userMax(t, db, user) != 4 {
-		t.Fatalf("crash window cache %d sql %d", cache[user], userMax(t, db, user))
-	}
-	var dirty int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, user).Scan(&dirty); err != nil || dirty != 1 {
-		t.Fatalf("dirty %d err %v", dirty, err)
+	if n := dirtyCount(t, db, 0); n != 1+extra-256 {
+		t.Fatalf("after first page %d dirty, want %d", n, 1+extra-256)
 	}
 	svc.repairMySQLAdvertsLimit(ctx, 256)
-	if cache[user] != 1 {
-		t.Fatalf("failed delete changed cache to %d", cache[user])
-	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, user).Scan(&dirty); err != nil || dirty != 1 {
-		t.Fatalf("dirty after failed delete %d err %v", dirty, err)
+	if dirtyCount(t, db, 1) != 1 || dirtyCount(t, db, 0) != 1 {
+		t.Fatalf("tail not drained, head %d total %d", dirtyCount(t, db, 1), dirtyCount(t, db, 0))
 	}
 	svc.repairMySQLAdvertsLimit(ctx, 256)
-	if cache[user] != 4 {
-		t.Fatalf("cache %d, want 4", cache[user])
+	if dirtyCount(t, db, 1) != 1 {
+		t.Fatal("retry cleared the still-failing head")
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, user).Scan(&dirty); err != nil || dirty != 0 {
-		t.Fatalf("dirty left %d err %v", dirty, err)
+	fail = false
+	svc.repairMySQLAdvertsLimit(ctx, 256)
+	if dirtyCount(t, db, 0) != 0 {
+		t.Fatalf("retry left %d", dirtyCount(t, db, 0))
 	}
+}
 
-	const extra = 300
-	for i := 0; i < extra; i++ {
-		id := int64(810_000_000 + i)
-		if _, err := db.Exec(`INSERT INTO users (id, stories_max_id) VALUES (?, 0)`, id); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(`INSERT INTO story_advert_dirty (user_id, stories_max_id, updated_at) VALUES (?,?,?)`, id, 3, now); err != nil {
-			t.Fatal(err)
-		}
+func TestMySQLUnmigratedDoesNotScanOrWrite(t *testing.T) {
+	db, ms, now := openBareAdvertTest(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`INSERT INTO users (id, stories_max_id) VALUES (1, 5)`); err != nil {
+		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_, _ = db.Exec(`DELETE FROM story_advert_dirty WHERE user_id BETWEEN 810000000 AND 810000300`)
-		_, _ = db.Exec(`DELETE FROM users WHERE id BETWEEN 810000000 AND 810000300`)
+	insertStories(t, db, 1, 2000, now-10)
+	var beforeStories int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM stories`).Scan(&beforeStories); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := ms.commitUserAdvert(ctx, 1, now, func(tx *sql.Tx) error {
+		return upsertExec(ctx, tx, storyRow(1, 9000001, now+3600))
 	})
-	svc.SetHooks(Hooks{SetUserMax: func(context.Context, int64, int32) error { return nil }})
-	svc.repairMySQLAdvertsLimit(ctx, 256)
-	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id BETWEEN 810000000 AND 810000300`).Scan(&dirty); err != nil {
+	if !errors.Is(err, errAdvertSchema) {
+		t.Fatalf("commit err %v", err)
+	}
+	var stories int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM stories`).Scan(&stories); err != nil {
 		t.Fatal(err)
 	}
-	if dirty != extra-256 {
-		t.Fatalf("dirty left %d, want %d", dirty, extra-256)
+	if stories != beforeStories || userMax(t, db, 1) != 5 {
+		t.Fatalf("unmigrated write kept story %d max %d", stories, userMax(t, db, 1))
 	}
+	db.SetMaxOpenConns(1)
+	before := sessionStatus(t, db, "Handler_read_next")
+	beforeRnd := sessionStatus(t, db, "Handler_read_rnd_next")
+	svc := New(ms)
+	svc.SetClock(func() int32 { return now })
 	svc.repairMySQLAdvertsLimit(ctx, 256)
-	if err := db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id BETWEEN 810000000 AND 810000300`).Scan(&dirty); err != nil {
+	next := sessionStatus(t, db, "Handler_read_next") - before
+	rnd := sessionStatus(t, db, "Handler_read_rnd_next") - beforeRnd
+	if next > 200 || rnd > 200 {
+		t.Fatalf("unmigrated repair read next=%d rnd=%d", next, rnd)
+	}
+	if userMax(t, db, 1) != 5 {
+		t.Fatalf("unmigrated repair changed max to %d", userMax(t, db, 1))
+	}
+}
+
+func TestMySQLLiveOwnersPageDoesNotScanStories(t *testing.T) {
+	db, ms, now := openAdvertTest(t)
+	ctx := context.Background()
+	const expired = 20000
+	const active = 1000
+	insertStories(t, db, 1, expired, now-10)
+	for i := 1; i <= active; i++ {
+		owner := int64(100000 + i)
+		if _, err := db.Exec(`INSERT INTO users (id, stories_max_id) VALUES (?, 1)`, owner); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO stories (owner_kind, owner_id, story_id, sender_user_id, random_id, date2, expire_date, pinned, deleted, forwards, body) VALUES (1, ?, 1, ?, 0, ?, ?, 0, 0, 0, x'00')`, owner, owner, now, now+3600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO story_live_owner (owner_id, live_max) VALUES (?, 1)`, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	typ, key, table := explainPlan(t, db, `
+SELECT owner_id, live_max FROM story_live_owner
+WHERE owner_id > ?
+ORDER BY owner_id
+LIMIT ?`, 0, 256)
+	t.Logf("MariaDB live owner plan table=%s type=%s key=%s", table, typ, key)
+	if table != "story_live_owner" || typ != "range" || key != "PRIMARY" {
+		t.Fatalf("live plan table=%s type=%s key=%s", table, typ, key)
+	}
+	db.SetMaxOpenConns(1)
+	before := sessionStatus(t, db, "Handler_read_next")
+	rows, err := ms.pageLiveOwners(ctx, 0, 256)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if dirty != 0 {
-		t.Fatalf("second drain left %d", dirty)
+	got := sessionStatus(t, db, "Handler_read_next") - before
+	t.Logf("MariaDB live owner page read %d", got)
+	if len(rows) != 256 {
+		t.Fatalf("page %d", len(rows))
 	}
+	if got > 800 {
+		t.Fatalf("live page read %d index rows", got)
+	}
+	before = sessionStatus(t, db, "Handler_read_next")
+	q, err := db.QueryContext(ctx, `
+SELECT owner_id FROM stories
+WHERE owner_kind=1 AND deleted=0 AND expire_date>? AND owner_id>?
+GROUP BY owner_id
+ORDER BY owner_id
+LIMIT 256`, now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for q.Next() {
+		n++
+	}
+	q.Close()
+	scanned := sessionStatus(t, db, "Handler_read_next") - before
+	t.Logf("MariaDB grouped story page returned %d and read %d", n, scanned)
+	if scanned <= 256 {
+		t.Fatalf("grouped story page read %d, which is not more than the returned page", scanned)
+	}
+}
+
+func dirtyCount(t *testing.T, db *sql.DB, id int64) int {
+	t.Helper()
+	var n int
+	var err error
+	if id == 0 {
+		err = db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty`).Scan(&n)
+	} else {
+		err = db.QueryRow(`SELECT COUNT(*) FROM story_advert_dirty WHERE user_id=?`, id).Scan(&n)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func insertStories(t *testing.T, db *sql.DB, owner int64, n int, expire int32) {
+	t.Helper()
+	const batch = 500
+	for at := 1; at <= n; {
+		end := at + batch - 1
+		if end > n {
+			end = n
+		}
+		q := "INSERT INTO stories (owner_kind, owner_id, story_id, sender_user_id, random_id, date2, expire_date, pinned, deleted, forwards, body) VALUES "
+		args := make([]any, 0, (end-at+1)*4)
+		for id := at; id <= end; id++ {
+			if id > at {
+				q += ","
+			}
+			q += "(1,?,?,?,0,?,?,0,0,0,x'00')"
+			args = append(args, owner, id, owner, expire-3600, expire)
+		}
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatal(err)
+		}
+		at = end + 1
+	}
+}
+
+func explainPlan(t *testing.T, db *sql.DB, query string, args ...any) (typ, key, table string) {
+	t.Helper()
+	typ, key = explainQuery(t, db, query, args...)
+	rows, err := db.Query("EXPLAIN "+query, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows.Next() {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err = rows.Scan(ptrs...); err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for i, col := range cols {
+			got[col] = vals[i].String
+		}
+		table = got["table"]
+		typ = got["type"]
+		key = got["key"]
+	}
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return typ, key, table
+}
+
+func sessionStatus(t *testing.T, db *sql.DB, name string) int {
+	t.Helper()
+	if name != "Handler_read_next" && name != "Handler_read_rnd_next" {
+		t.Fatalf("status %s", name)
+	}
+	var key, raw string
+	q := "SHOW SESSION STATUS LIKE '" + name + "'"
+	if err := db.QueryRowContext(context.Background(), q).Scan(&key, &raw); err != nil {
+		t.Fatal(err)
+	}
+	val := 0
+	for _, c := range raw {
+		if c < '0' || c > '9' {
+			t.Fatalf("status %s=%q", name, raw)
+		}
+		val = val*10 + int(c-'0')
+	}
+	return val
 }
 
 func explainQuery(t *testing.T, db *sql.DB, query string, args ...any) (typ, key string) {

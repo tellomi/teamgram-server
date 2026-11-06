@@ -6,6 +6,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -38,7 +39,8 @@ func applyStoryMax(ctx context.Context, users storyMaxUsers, syncer storyPusher,
 	if users == nil || userID == 0 {
 		return nil
 	}
-	if _, err := users.UserSetStoriesMaxId(ctx, &user.TLUserSetStoriesMaxId{UserId: userID, Id: maxID}); err != nil {
+	stored, err := users.UserSetStoriesMaxId(ctx, &user.TLUserSetStoriesMaxId{UserId: userID, Id: maxID})
+	if err = story.RejectUnstoredAdvert(stored, err); err != nil {
 		logx.WithContext(ctx).Errorf("story max id: %v", err)
 		return err
 	}

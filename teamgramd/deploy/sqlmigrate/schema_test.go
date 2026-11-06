@@ -304,6 +304,44 @@ func TestServiceUserRenameMigration(t *testing.T) {
 	}
 }
 
+func TestAdvertSQLIsNotAppliedOnStartup(t *testing.T) {
+	dir := sqlDir(t)
+	root := filepath.Join(dir, "..")
+	files, err := filepath.Glob(filepath.Join(dir, "migrate-*.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if strings.Contains(mustRead(t, f), "story_advert_dirty") || strings.Contains(mustRead(t, f), "story_live_owner") {
+			t.Fatalf("%s is on the automatic migrate path", filepath.Base(f))
+		}
+	}
+	gated := filepath.Join(root, "gated", "20261120-story-advert.sql")
+	if _, err = os.Stat(gated); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"migrate.sh", filepath.Join("..", "docker", "entrypoint.sh")} {
+		text := mustRead(t, filepath.Join(root, name))
+		if strings.Contains(text, "apply-gated-sql") || strings.Contains(text, "gated/") {
+			t.Fatalf("%s invokes the gated advert SQL", name)
+		}
+	}
+	schema := mustRead(t, filepath.Join(root, "..", "..", "app", "service", "biz", "story", "schema.go"))
+	if strings.Contains(schema, "story_advert_dirty") || strings.Contains(schema, "story_live_owner") {
+		t.Fatal("story schema startup creates advert tables")
+	}
+	script := filepath.Join(root, "apply-gated-sql.sh")
+	cmd := exec.Command("bash", script)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("gate ran without a backup confirmation: %s", out)
+	}
+	if !strings.Contains(string(out), "TEAMGRAM_SQL_BACKUP_CONFIRMED") {
+		t.Fatalf("gate output %q err %v", out, err)
+	}
+}
+
 func TestMigrateScriptParsesDSN(t *testing.T) {
 	script := filepath.Join("..", "migrate.sh")
 	if _, err := os.Stat(script); err != nil {

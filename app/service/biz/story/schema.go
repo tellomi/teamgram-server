@@ -25,8 +25,7 @@ CREATE TABLE IF NOT EXISTS stories (
   body MEDIUMBLOB NOT NULL,
   PRIMARY KEY (owner_kind, owner_id, story_id),
   KEY stories_random (owner_kind, owner_id, sender_user_id, random_id),
-  KEY stories_expire (expire_date, deleted),
-  KEY stories_owner_expire (owner_kind, deleted, expire_date, owner_id, story_id)
+  KEY stories_expire (expire_date, deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS story_views (
@@ -87,12 +86,5 @@ CREATE TABLE IF NOT EXISTS story_reports (
   date2 INT NOT NULL,
   PRIMARY KEY (id),
   KEY story_reports_owner (owner_kind, owner_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS story_advert_dirty (
-  user_id BIGINT NOT NULL,
-  stories_max_id INT NOT NULL,
-  updated_at INT NOT NULL,
-  PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `

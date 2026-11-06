@@ -26,10 +26,10 @@ import (
 // UserSetStoriesMaxId
 // user.setStoriesMaxId user_id:long id:int = Bool;
 func (c *UserCore) UserSetStoriesMaxId(in *user.TLUserSetStoriesMaxId) (*mtproto.Bool, error) {
-	rB := c.svcCtx.Dao.UpdateStoriesMaxId(
-		c.ctx,
-		in.GetUserId(),
-		in.GetId())
-
-	return mtproto.ToBool(rB), nil
+	if !c.svcCtx.Dao.UpdateStoriesMaxId(c.ctx, in.GetUserId(), in.GetId()) {
+		// DelCache failure used to come back as BoolFalse with a nil error.
+		// Callers that only read the Go error then treated the drop as done.
+		return nil, mtproto.ErrInternalServerError
+	}
+	return mtproto.BoolTrue, nil
 }
