@@ -73,6 +73,89 @@ func parseContactCacheKey(k string) (int64, int64) {
 	return 0, 0
 }
 
+// forwardContactIDs are the contact users whose rows CheckPrivacy must see.
+// A user listed in `to` loads edges to the loaded ids. Everyone else loads
+// edges to `to`. An empty `to` loads edges inside the loaded ids. Contact
+// ids outside that set are not loaded, so a "my contacts" rule stays limited
+// to relationships this request can actually see.
+func forwardContactIDs(id int64, idList, to, contactIDs []int64) []int64 {
+	if len(contactIDs) == 0 {
+		return nil
+	}
+	peers := idList
+	if len(to) > 0 && !container2.ContainsInt64(to, id) {
+		peers = to
+	}
+	if len(peers) == 0 {
+		return nil
+	}
+	out := make([]int64, 0, len(peers))
+	for _, peerID := range peers {
+		if peerID == id || !container2.ContainsInt64(contactIDs, peerID) {
+			continue
+		}
+		out = append(out, peerID)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func contactDataFromDO(contact *dataobject.UserContactsDO) *mtproto.ContactData {
+	if contact == nil {
+		return nil
+	}
+	return mtproto.MakeTLContactData(&mtproto.ContactData{
+		UserId:        contact.OwnerUserId,
+		ContactUserId: contact.ContactUserId,
+		FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
+		LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
+		MutualContact: contact.Mutual,
+		Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
+		CloseFriend:   contact.CloseFriend,
+	}).To_ContactData()
+}
+
+func appendContactData(list []*mtproto.ContactData, row *mtproto.ContactData) []*mtproto.ContactData {
+	if row == nil {
+		return list
+	}
+	for _, existing := range list {
+		if existing != nil && existing.UserId == row.UserId && existing.ContactUserId == row.ContactUserId {
+			return list
+		}
+	}
+	return append(list, row)
+}
+
+// attachContactRow records one user_contacts row on both sides. The owner
+// needs it in Contacts because CheckPrivacy only walks that list. The contact
+// user needs it in ReverseContacts for the contact flag and the local name.
+func attachContactRow(mUsers map[int64]*mtproto.ImmutableUser, contact *dataobject.UserContactsDO) {
+	row := contactDataFromDO(contact)
+	if row == nil {
+		return
+	}
+	if owner, ok := mUsers[contact.OwnerUserId]; ok && owner != nil {
+		owner.Contacts = appendContactData(owner.Contacts, row)
+	}
+	if saved, ok := mUsers[contact.ContactUserId]; ok && saved != nil {
+		saved.ReverseContacts = appendContactData(saved.ReverseContacts, row)
+	}
+}
+
+func appendUniqueKey(keys []string, seen map[string]struct{}, key string) []string {
+	if seen == nil {
+		return append(keys, key)
+	}
+	if _, ok := seen[key]; ok {
+		return keys
+	}
+	seen[key] = struct{}{}
+	return append(keys, key)
+}
+
 func (d *Dao) GetUserContactList(ctx context.Context, id int64) []*mtproto.ContactData {
 	cacheUserData := d.GetCacheUserData(ctx, id)
 	if len(cacheUserData.GetContactIdList()) == 0 {
