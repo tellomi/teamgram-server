@@ -169,16 +169,30 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, 
 	applyPrivacyFlags(item)
 	item = mtproto.MakeTLStoryItem(item).To_StoryItem()
 	rec := &Record{Owner: req.Owner, Sender: req.Actor, RandomID: req.RandomID, Item: item}
+	// Hold this user's advertisement lock from the insert through the max
+	// write. An expiry already inside SetUserMax stays outside this section,
+	// so its older max cannot land after this one.
+	unlock := func() {}
+	if req.Owner.Kind == KindUser {
+		unlock = s.lockUserAdvert(req.Owner.ID)
+	}
 	if err = s.store.Create(ctx, rec); err != nil {
+		unlock()
 		return nil, err
 	}
 	if err = s.attachAlbums(ctx, req.Actor, req.Owner, req.AccessHash, rec.id(), req.Albums); err != nil {
+		unlock()
 		return nil, err
 	}
 	if req.HasFwd && req.FwdOwner.ok() && req.FwdID != 0 {
 		_ = s.store.AddForwards(ctx, req.FwdOwner, req.FwdID)
 	}
-	s.syncUserMax(ctx, req.Owner)
+	if req.Owner.Kind == KindUser {
+		s.syncUserMaxInGate(ctx, req.Owner)
+	} else {
+		s.syncUserMax(ctx, req.Owner)
+	}
+	unlock()
 	s.fanout(ctx, req.Actor, req.AuthKey, rec)
 	return s.storyUpdates(ctx, req.Actor, rec, true), nil
 }
@@ -236,10 +250,16 @@ func (s *Service) Delete(ctx context.Context, actor, auth int64, owner Owner, ac
 	if err := s.canDelete(ctx, actor, owner, accessHash); err != nil {
 		return nil, err
 	}
+	unlock := func() {}
+	if owner.Kind == KindUser {
+		unlock = s.lockUserAdvert(owner.ID)
+	}
 	var deleted []int32
+	var removed []*Record
 	for _, id := range ids {
 		rec, err := s.store.Get(ctx, owner, id)
 		if err != nil {
+			unlock()
 			return nil, err
 		}
 		if rec == nil || rec.Deleted {
@@ -247,12 +267,21 @@ func (s *Service) Delete(ctx context.Context, actor, auth int64, owner Owner, ac
 		}
 		rec.Deleted = true
 		if err = s.store.Save(ctx, rec); err != nil {
+			unlock()
 			return nil, err
 		}
 		deleted = append(deleted, id)
+		removed = append(removed, rec)
+	}
+	if owner.Kind == KindUser {
+		s.syncUserMaxInGate(ctx, owner)
+	} else {
+		s.syncUserMax(ctx, owner)
+	}
+	unlock()
+	for _, rec := range removed {
 		s.fanout(ctx, actor, auth, rec)
 	}
-	s.syncUserMax(ctx, owner)
 	if deleted == nil {
 		deleted = []int32{}
 	}

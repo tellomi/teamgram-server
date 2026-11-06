@@ -23,7 +23,7 @@ type Hooks struct {
 	ContactIDs       func(ctx context.Context, userID int64) ([]int64, error)
 	IsContact        func(ctx context.Context, owner, viewer int64) bool
 	IsCloseFriend    func(ctx context.Context, owner, viewer int64) bool
-	SetUserMax       func(ctx context.Context, userID int64, maxID int32)
+	SetUserMax       func(ctx context.Context, userID int64, maxID int32) error
 	SetStoriesHidden func(ctx context.Context, userID, peerID int64, hidden bool)
 	Username         func(ctx context.Context, userID int64) string
 	MatchName        func(ctx context.Context, userID int64, q string) bool
@@ -37,6 +37,19 @@ type Service struct {
 	contacts     map[int64]map[int64]bool
 	closeFriends map[int64]map[int64]bool
 	clock        func() int32
+
+	// Advertised active-story max. recentStory.max_id is this value, and it
+	// has no expire_date, so it must be cleared when the active set changes.
+	userMax       map[int64]int32
+	userMaxKnown  map[int64]bool
+	userEpoch     map[int64]uint64
+	userAdvert    map[int64]*sync.Mutex
+	channelMax    map[int64]channelAdvert
+	foldedThrough int32
+	persistedDone bool
+	haveUserTable bool
+	persistLogged bool
+	expireOnce    sync.Once
 }
 
 func New(store Store) *Service {
@@ -336,8 +349,11 @@ func normalizePeriod(p int32) (int32, error) {
 	}
 }
 
-func (s *Service) activeMax(ctx context.Context, owner Owner) (max int32, live bool) {
-	recs, _ := s.store.ListByOwner(ctx, owner)
+func (s *Service) activeMax(ctx context.Context, owner Owner) (max int32, live bool, err error) {
+	recs, err := s.store.ListByOwner(ctx, owner)
+	if err != nil {
+		return 0, false, err
+	}
 	now := s.now()
 	for _, r := range recs {
 		if r.active(now) && r.id() >= max {
@@ -345,21 +361,7 @@ func (s *Service) activeMax(ctx context.Context, owner Owner) (max int32, live b
 			live = r.Item.GetLive()
 		}
 	}
-	return max, live
-}
-
-func (s *Service) syncUserMax(ctx context.Context, owner Owner) {
-	if owner.Kind != KindUser {
-		return
-	}
-	s.mu.Lock()
-	fn := s.hooks.SetUserMax
-	s.mu.Unlock()
-	if fn == nil {
-		return
-	}
-	max, _ := s.activeMax(ctx, owner)
-	fn(ctx, owner.ID, max)
+	return max, live, nil
 }
 
 func (s *Service) audience(ctx context.Context, actor int64, rec *Record) []int64 {
