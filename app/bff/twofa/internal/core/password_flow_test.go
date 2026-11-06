@@ -218,6 +218,9 @@ func TestPasswordResetAndRecoveryEmail(t *testing.T) {
 }
 
 func setPassword(t *testing.T, c *TwoFaCore, pass, hint, email string) (int32, error) {
+	if c.MD != nil && c.MD.UserId != 0 {
+		password.SeedPhone(c.MD.UserId)
+	}
 	t.Helper()
 	pw, err := c.AccountGetPassword(nil)
 	if err != nil {
@@ -270,6 +273,9 @@ func changePassword(t *testing.T, c *TwoFaCore, old, next string) {
 
 func mustPassword(t *testing.T, c *TwoFaCore) *mtproto.Account_Password {
 	t.Helper()
+	if c.MD != nil && c.MD.UserId != 0 {
+		password.SeedPhone(c.MD.UserId)
+	}
 	pw, err := c.AccountGetPassword(nil)
 	if err != nil {
 		t.Fatal(err)

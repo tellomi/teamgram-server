@@ -236,7 +236,9 @@ func (s *Service) accountPassword(ctx context.Context, userID, authKey int64) (*
 	// login_email_pattern as "ask the user to bind an email".
 	// The recovery address stays on email_unconfirmed_pattern / has_recovery.
 	if email, emailErr := s.identityEmail(ctx, userID); emailErr != nil {
-		return nil, emailErr
+		// A failed read must not look like a phone account with no login email.
+		// Clients treat a successful empty login_email_pattern as "not bound".
+		return nil, mtproto.ErrInternalServerError
 	} else if email != "" {
 		pw.LoginEmailPattern = &wrapperspb.StringValue{Value: verify.MaskEmail(email)}
 	}

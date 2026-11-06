@@ -2,9 +2,15 @@ package password
 
 import (
 	"context"
+	"errors"
 
 	"github.com/teamgram/teamgram-server/pkg/verify"
 )
+
+// ErrIdentityUnconfirmed means users.email could not be read as either a
+// confirmed phone account (NULL email) or a valid email identity.
+// Callers must not treat it as a phone account.
+var ErrIdentityUnconfirmed = errors.New("login identity is not confirmed")
 
 // identityReader is implemented by the memory and MySQL stores.
 // It reads users.email. It does not write it.
@@ -14,8 +20,9 @@ type identityReader interface {
 }
 
 // IdentityEmail is the normalized users.email for userID.
-// An empty string means the account has no email identity (a phone account,
-// or a memory store with no seeded row).
+// An empty string with a nil error is a confirmed phone account.
+// ErrIdentityUnconfirmed means the row is missing, the value is not an
+// address, or the user table cannot be read.
 func IdentityEmail(ctx context.Context, userID int64) (string, error) {
 	return Default().identityEmail(ctx, userID)
 }
@@ -43,6 +50,16 @@ func SeedRecovery(userID int64, email string, hasPassword bool) error {
 	return s.store.Save(context.Background(), rec)
 }
 
+// SeedPhone marks userID as a confirmed phone account (users.email NULL)
+// on the in-memory ledger. A MySQL store ignores this call.
+func SeedPhone(userID int64) {
+	m, ok := Default().store.(*memoryStore)
+	if !ok {
+		return
+	}
+	m.setPhone(userID)
+}
+
 // SeedIdentity records users.email on the in-memory store used by tests.
 // A MySQL store reads the users table and ignores this call.
 func SeedIdentity(userID int64, email string) {
@@ -59,15 +76,18 @@ func (s *Service) identityEmail(ctx context.Context, userID int64) (string, erro
 	}
 	r, ok := s.store.(identityReader)
 	if !ok {
-		return "", nil
+		return "", ErrIdentityUnconfirmed
 	}
 	email, err := r.IdentityEmail(ctx, userID)
-	if err != nil || email == "" {
+	if err != nil {
 		return "", err
 	}
 	email = verify.NormalizeEmail(email)
-	if !verify.ValidEmail(email) {
+	if email == "" {
 		return "", nil
+	}
+	if !verify.ValidEmail(email) {
+		return "", ErrIdentityUnconfirmed
 	}
 	return email, nil
 }
@@ -82,7 +102,7 @@ func (s *Service) identityOwner(ctx context.Context, email string) (int64, error
 	}
 	r, ok := s.store.(identityReader)
 	if !ok {
-		return 0, nil
+		return 0, ErrIdentityUnconfirmed
 	}
 	return r.IdentityOwner(ctx, email)
 }

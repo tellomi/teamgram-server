@@ -69,8 +69,10 @@ type memoryStore struct {
 	users      map[int64]Record
 	challenges map[int64]Challenge
 	logins     map[int64]int64
-	// identity is users.email for tests. The MySQL store reads the users table.
+	// identity is the users.email ledger for tests.
+	// A missing id is unconfirmed. An empty email is a confirmed phone account.
 	identity map[int64]string
+	phone    map[int64]bool
 }
 
 func newMemoryStore() *memoryStore {
@@ -157,10 +159,14 @@ func (m *memoryStore) DeleteLogin(_ context.Context, authKey int64) error {
 func (m *memoryStore) IdentityEmail(_ context.Context, userID int64) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.identity == nil {
+	if m.phone[userID] {
 		return "", nil
 	}
-	return m.identity[userID], nil
+	email, ok := m.identity[userID]
+	if !ok {
+		return "", ErrIdentityUnconfirmed
+	}
+	return email, nil
 }
 
 func (m *memoryStore) IdentityOwner(_ context.Context, email string) (int64, error) {
@@ -181,11 +187,21 @@ func (m *memoryStore) setIdentity(userID int64, email string) {
 	if m.identity == nil {
 		m.identity = map[int64]string{}
 	}
-	if email == "" {
-		delete(m.identity, userID)
-		return
+	if m.phone == nil {
+		m.phone = map[int64]bool{}
 	}
+	delete(m.phone, userID)
 	m.identity[userID] = verify.NormalizeEmail(email)
+}
+
+func (m *memoryStore) setPhone(userID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.phone == nil {
+		m.phone = map[int64]bool{}
+	}
+	delete(m.identity, userID)
+	m.phone[userID] = true
 }
 
 func (m *memoryStore) DeleteUserLogins(_ context.Context, userID int64) error {

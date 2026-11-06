@@ -517,6 +517,7 @@ func TestRecoveryUsesCloudPasswordEmail(t *testing.T) {
 	})
 	prev := password.Swap(pw)
 	t.Cleanup(func() { password.Swap(prev) })
+	password.SeedPhone(9)
 
 	issued, err := password.AccountPassword(ctx, 9, 1)
 	if err != nil {

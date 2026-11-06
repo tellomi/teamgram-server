@@ -213,6 +213,71 @@ func TestEmailIdentityRecoveryDoesNotUseTheLoginCopy(t *testing.T) {
 	}
 }
 
+func TestUnconfirmedIdentityDoesNotMailRedis(t *testing.T) {
+	svc, phones, emails, _, _ := harness(t)
+	ctx := context.Background()
+	if err := svc.SaveLoginEmail(ctx, 7, "other@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	prev := password.Swap(password.New(password.Options{}))
+	t.Cleanup(func() { password.Swap(prev) })
+	svc.opt.IdentityEmail = password.IdentityEmail
+	svc.opt.IdentityOwner = password.IdentityOwner
+
+	_, err := svc.RequestPasswordRecovery(ctx, 7)
+	if rpcText(err) != "PASSWORD_RECOVERY_NA" || len(*emails) != 0 {
+		t.Fatalf("degraded store: %v %v", err, *emails)
+	}
+
+	svc.opt.IdentityEmail = func(context.Context, int64) (string, error) {
+		return "not-an-email", nil
+	}
+	_, err = svc.RequestPasswordRecovery(ctx, 7)
+	if rpcText(err) != "PASSWORD_RECOVERY_NA" || len(*emails) != 0 {
+		t.Fatalf("dirty identity: %v %v", err, *emails)
+	}
+
+	_, err = svc.SendVerifyEmailCode(ctx, 4, 7, &mtproto.TLAccountSendVerifyEmailCode{
+		Purpose: changePurpose(),
+		Email:   "free@tellomi.app",
+	})
+	if rpcText(err) != "INTERNAL_SERVER_ERROR" || len(*emails) != 0 {
+		t.Fatalf("change: %v %v", err, *emails)
+	}
+
+	password.SeedPhone(9)
+	svc.opt.IdentityEmail = password.IdentityEmail
+	if err := svc.SaveLoginEmail(ctx, 9, "free@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := svc.RequestPasswordRecovery(ctx, 9)
+	if err != nil || len(*emails) != 1 || (*emails)[0].to != "free@tellomi.app" {
+		t.Fatalf("phone attached: %v %#v", err, *emails)
+	}
+	if sent.GetEmailPattern() != "f***@tellomi.app" {
+		t.Fatal(sent.GetEmailPattern())
+	}
+
+	if err := svc.SaveLoginEmail(ctx, 9, "user@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	putPhone(phones, 3, "8613800138000", "h", "123456", 9)
+	_ = svc.kv.SetexCtx(ctx, pendingEmailKey(3, "8613800138000"), "user@tellomi.app", 180)
+	svc.opt.IdentityOwner = func(_ context.Context, email string) (int64, error) {
+		if email == "user@tellomi.app" {
+			return 7, nil
+		}
+		return 0, nil
+	}
+	_, err = svc.ResetLoginEmail(ctx, 3, "8613800138000", "h", 9)
+	if rpcText(err) != "EMAIL_INSTALL_MISSING" {
+		t.Fatal(err)
+	}
+	if len(*emails) != 1 {
+		t.Fatalf("pending mailed %#v", *emails)
+	}
+}
+
 func TestRecoveryEmailStaysOffTheLoginIdentity(t *testing.T) {
 	svc, _, emails, _, _ := harness(t)
 	ctx := context.Background()

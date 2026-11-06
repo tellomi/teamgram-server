@@ -69,6 +69,9 @@ type mysqlStore struct {
 	db *sql.DB
 }
 
+// openDatabase is sql.Open. Tests replace it to simulate a driver failure.
+var openDatabase = sql.Open
+
 func openStore(dsn string) Store {
 	dsn = strings.TrimSpace(dsn)
 	if env := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN")); env != "" {
@@ -77,7 +80,7 @@ func openStore(dsn string) Store {
 	if dsn == "" {
 		return newMemoryStore()
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := openDatabase("mysql", dsn)
 	if err != nil {
 		logx.Errorf("cloud password: mysql open failed, state stays in memory: %v", err)
 		return newMemoryStore()
@@ -135,13 +138,16 @@ func (s *mysqlStore) IdentityEmail(ctx context.Context, userID int64) (string, e
 	var email sql.NullString
 	err := s.db.QueryRowContext(ctx, identityEmailSQL, userID).Scan(&email)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return "", ErrIdentityUnconfirmed
 	}
 	if err != nil {
 		return "", err
 	}
-	if !email.Valid {
+	if !email.Valid || email.String == "" {
 		return "", nil
+	}
+	if strings.TrimSpace(email.String) == "" {
+		return "", ErrIdentityUnconfirmed
 	}
 	return email.String, nil
 }

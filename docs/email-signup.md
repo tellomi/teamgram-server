@@ -36,7 +36,7 @@ Three addresses stay separate. Nothing in this flow writes `users.email` after s
 
 `account.sendVerifyEmailCode` with `emailVerifyPurposeLoginChange` accepts the same `users.email` and returns `400 EMAIL_NOT_ALLOWED` for any other address. That call does not create a user and does not move the login identity. `emailVerifyPurposeLoginSetup` during an email `auth.sendCode` likewise refuses a second address. A phone account may still attach a free login email in Redis; an address that is already some account's `users.email` is `EMAIL_NOT_ALLOWED`.
 
-`login_email_pattern` is a mask (`u***@tellomi.app`), not the full address. There is no RPC that returns the full `users.email` to a logged-in client. A reinstall has no local cache: `account.getPassword` reads `users.email` for the user id already bound to the auth key and returns the same mask.
+`login_email_pattern` is a mask (`u***@tellomi.app`), not the full address. There is no RPC that returns the full `users.email` to a logged-in client. A reinstall has no local cache: `account.getPassword` reads `users.email` for the user id already bound to the auth key and returns the same mask. If that read cannot tell a confirmed phone account (NULL email) from a missing row, a dirty value, or a database that failed to open, `account.getPassword` returns `500 INTERNAL_SERVER_ERROR` and does not return an empty pattern. `auth.requestPasswordRecovery` without a cloud password returns `PASSWORD_RECOVERY_NA` and does not mail the Redis copy. A confirmed phone account can still use a free attached address.
 
 `help.getPromoData` does not offer `SETUP_LOGIN_EMAIL` or `SETUP_LOGIN_EMAIL_NOSKIP`, even if `TELLOMI_SUGGESTIONS` lists them.
 

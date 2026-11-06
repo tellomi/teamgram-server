@@ -6,11 +6,13 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -260,11 +262,10 @@ func (s *Service) permitLoginEmail(ctx context.Context, userID int64, email stri
 		return nil
 	}
 	if s.opt.IdentityEmail != nil && userID != 0 {
-		mine, err := s.opt.IdentityEmail(ctx, userID)
+		mine, err := s.identityEmail(ctx, userID)
 		if err != nil {
-			return err
+			return refuseIdentity(err)
 		}
-		mine = verify.NormalizeEmail(strings.TrimSpace(mine))
 		if mine != "" && mine != email {
 			return mtproto.ErrEmailNotAllowed
 		}
@@ -272,13 +273,23 @@ func (s *Service) permitLoginEmail(ctx context.Context, userID int64, email stri
 	if s.opt.IdentityOwner != nil {
 		owner, err := s.opt.IdentityOwner(ctx, email)
 		if err != nil {
-			return err
+			return refuseIdentity(err)
 		}
 		if owner != 0 && owner != userID {
 			return mtproto.ErrEmailNotAllowed
 		}
 	}
 	return nil
+}
+
+func refuseIdentity(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, password.ErrIdentityUnconfirmed) {
+		return mtproto.ErrInternalServerError
+	}
+	return err
 }
 
 func (s *Service) identityEmail(ctx context.Context, userID int64) (string, error) {
@@ -290,8 +301,11 @@ func (s *Service) identityEmail(ctx context.Context, userID int64) (string, erro
 		return "", err
 	}
 	email = verify.NormalizeEmail(strings.TrimSpace(email))
-	if !verify.ValidEmail(email) {
+	if email == "" {
 		return "", nil
+	}
+	if !verify.ValidEmail(email) {
+		return "", password.ErrIdentityUnconfirmed
 	}
 	return email, nil
 }
@@ -342,7 +356,7 @@ func (s *Service) safeAttachedLoginEmail(ctx context.Context, userID int64) (str
 	}
 	mine, err := s.identityEmail(ctx, userID)
 	if err != nil {
-		return "", err
+		return "", refuseIdentity(err)
 	}
 	if mine != "" && email != mine {
 		return "", nil
@@ -350,7 +364,7 @@ func (s *Service) safeAttachedLoginEmail(ctx context.Context, userID int64) (str
 	if s.opt.IdentityOwner != nil {
 		owner, err := s.opt.IdentityOwner(ctx, email)
 		if err != nil {
-			return "", err
+			return "", refuseIdentity(err)
 		}
 		if owner != 0 && owner != userID {
 			return "", nil
@@ -530,7 +544,7 @@ func (s *Service) SendVerifyEmailCode(ctx context.Context, authKey, userID int64
 		}
 		mine, err := s.identityEmail(ctx, userID)
 		if err != nil {
-			return nil, err
+			return nil, refuseIdentity(err)
 		}
 		// An email-only account already has users.email. Confirming that
 		// same address does not need a previous Redis row.

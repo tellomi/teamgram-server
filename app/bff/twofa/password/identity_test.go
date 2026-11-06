@@ -4,7 +4,19 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"google.golang.org/grpc/status"
 )
+
+func statusText(err error) string {
+	if err == nil {
+		return ""
+	}
+	if st, ok := status.FromError(err); ok {
+		return st.Message()
+	}
+	return err.Error()
+}
 
 func TestIdentitySQLIsReadOnly(t *testing.T) {
 	for _, q := range []string{identityEmailSQL, identityOwnerSQL} {
@@ -38,6 +50,11 @@ func TestLoginEmailPatternFromIdentity(t *testing.T) {
 		t.Fatalf("recovery must stay independent: %+v", pw)
 	}
 
+	unconfirmed, err := AccountPassword(context.Background(), 8, 1)
+	if unconfirmed != nil || statusText(err) != "INTERNAL_SERVER_ERROR" {
+		t.Fatalf("unknown identity must fail closed: %#v %v", unconfirmed, err)
+	}
+	SeedPhone(8)
 	phone, err := AccountPassword(context.Background(), 8, 1)
 	if err != nil {
 		t.Fatal(err)

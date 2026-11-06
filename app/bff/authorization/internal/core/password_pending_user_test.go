@@ -22,6 +22,7 @@ func TestRecoveryUsesPendingUserWhenSessionUserIsZero(t *testing.T) {
 	})
 	prev := password.Swap(svc)
 	t.Cleanup(func() { password.Swap(prev) })
+	password.SeedPhone(42)
 
 	ctx := context.Background()
 	pw, err := password.AccountPassword(ctx, 42, 7)
