@@ -617,28 +617,9 @@ func (d *Dao) GetCacheImmutableUserListV2(ctx context.Context, idList2 []int64, 
 		// LastSeenAt
 		keyList = append(keyList, genUserPresencesKey(cData.GetUserData().GetId()))
 
-		// contacts
-		var (
-			myContacts []int64
-		)
-		if ok := container2.ContainsInt64(contacts, id); ok {
-			myContacts = idList2
-		} else {
-			if len(contacts) == 0 {
-				myContacts = idList2
-			} else {
-				myContacts = contacts
-			}
-		}
-
-		cIdList := cData.GetContactIdList()
-		if len(cIdList) == 0 {
-			continue
-		}
-		for _, v := range myContacts {
-			if ok := container2.ContainsInt64(cIdList, v); ok && v != id {
-				keyList = append(keyList, genContactCacheKey(id, v))
-			}
+		// Forward contacts. CheckPrivacy walks only this list.
+		for _, contactID := range forwardContactIDs(id, idList2, contacts, cData.GetContactIdList()) {
+			keyList = append(keyList, genContactCacheKey(id, contactID))
 		}
 	}
 	logger.Infof("getCacheImmutableUserList - cDataList: %d", len(cDataList))
@@ -794,6 +775,13 @@ func (d *Dao) GetImmutableUserV2(ctx context.Context, id int64, privacy bool, ha
 			})
 
 	}
+	// Same forward edges as the multi-user path. Without them a single-id
+	// GetMutableUsersV2 still treats "my contacts" as deny-all.
+	if fIdList := forwardContactIDs(id, []int64{id}, reverseContacts, cacheUserData.GetContactIdList()); len(fIdList) > 0 {
+		fns = append(fns, func() {
+			immutableUser.Contacts = d.getContactListByIdList(ctx, id, fIdList)
+		})
+	}
 
 	if len(fns) == 1 {
 		fns[0]()
@@ -829,6 +817,7 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 
 	var (
 		keyList   = make([]string, 0, len(idList2))
+		seenKey   = make(map[string]struct{}, len(idList2))
 		cUserList = make([]*mtproto.ImmutableUser, 0, len(cDataList))
 		mUsers    = make(map[int64]*mtproto.ImmutableUser, len(cDataList))
 	)
@@ -861,9 +850,9 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 		mUsers[id] = cUser
 
 		// LastSeenAt
-		keyList = append(keyList, genUserPresencesKey(cData.GetUserData().GetId()))
+		keyList = appendUniqueKey(keyList, seenKey, genUserPresencesKey(cData.GetUserData().GetId()))
 
-		// contacts
+		// Reverse contacts: the viewer's address-book row (contact flag and local name).
 		var (
 			rContacts []int64
 		)
@@ -881,7 +870,13 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 		}
 
 		for _, v := range rContacts {
-			keyList = append(keyList, genContactCacheKey(v, id))
+			keyList = appendUniqueKey(keyList, seenKey, genContactCacheKey(v, id))
+		}
+		// Forward contacts. CheckPrivacy only walks Contacts, so a "my contacts"
+		// photo, phone, or last-seen rule is deny-all while this stays empty.
+		// These are the same edges GetCacheImmutableUserListV2 loads.
+		for _, contactID := range forwardContactIDs(id, idList2, to, cData.GetContactIdList()) {
+			keyList = appendUniqueKey(keyList, seenKey, genContactCacheKey(id, contactID))
 		}
 	}
 
@@ -911,17 +906,7 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 						continue
 					}
 					noCaches[key] = contact
-					if cUser, ok := mUsers[contact.ContactUserId]; ok {
-						cUser.ReverseContacts = append(cUser.ReverseContacts, mtproto.MakeTLContactData(&mtproto.ContactData{
-							UserId:        contact.OwnerUserId,
-							ContactUserId: contact.ContactUserId,
-							FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
-							LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
-							MutualContact: contact.Mutual,
-							Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
-							CloseFriend:   contact.CloseFriend,
-						}).To_ContactData())
-					}
+					attachContactRow(mUsers, contact)
 				}
 			}
 
@@ -953,17 +938,7 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 					return nil, err
 				}
 
-				if cUser, ok := mUsers[contact.ContactUserId]; ok {
-					cUser.ReverseContacts = append(cUser.ReverseContacts, mtproto.MakeTLContactData(&mtproto.ContactData{
-						UserId:        contact.OwnerUserId,
-						ContactUserId: contact.ContactUserId,
-						FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
-						LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
-						MutualContact: contact.Mutual,
-						Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
-						CloseFriend:   contact.CloseFriend,
-					}).To_ContactData())
-				}
+				attachContactRow(mUsers, contact)
 
 				return contact, nil
 			}
