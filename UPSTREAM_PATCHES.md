@@ -67,6 +67,21 @@ Other touched upstream files:
 
 `account.verifyEmail#ecba39db` (the pre-purpose constructor) is unchanged and still returns the enterprise error. Layer 232 clients call `account.verifyEmail#32da4cf`.
 
+Email-only accounts keep the login identity in `users.email` (`users.phone` NULL). `account.getPassword` used to leave `login_email_pattern` empty, so settings asked the user to bind an email they had already registered with. The pattern is now the masked `users.email`. It is a read of that column. Sign-up is still the only writer; this does not merge users or rewrite `user.id` or sessions.
+
+`account.sendVerifyEmailCode` / `account.verifyEmail` with `emailVerifyPurposeLoginChange` or `emailVerifyPurposeLoginSetup` return `EMAIL_NOT_ALLOWED` when the address is not that `users.email`, or when it is already another account's `users.email`. The Redis key `tellomi:p0:loginemail:{userId}` is not updated in those cases. Confirming the same identity address is allowed. `auth.recoverPassword` may still store a different cloud-password recovery address in `user_passwords.email`; a refusal to copy that address onto the Redis login key does not abort recovery. No schema migration.
+
+A Redis copy that already differs from `users.email` is left in place. It is not scanned and not rewritten. Before any later `auth.sendCode` stores the identity address again, readers that send mail do not use that copy: `auth.requestPasswordRecovery` on an email-only account with no cloud password returns `PASSWORD_RECOVERY_NA`, and `auth.resetLoginEmail` for a phone account skips a copy that is another account's `users.email`. The 180-second `tellomi:p0:pendingemail` fallback is skipped the same way. Email `auth.resetLoginEmail` sends to the address in the request. `help.getPromoData` drops `SETUP_LOGIN_EMAIL` and `SETUP_LOGIN_EMAIL_NOSKIP`. `login_email_pattern` is only the mask.
+
+An empty DSN, a failed `sql.Open`, a failed ping, a missing `users` row, or a non-address in `users.email` is not a confirmed phone account. `account.getPassword` then returns `INTERNAL_SERVER_ERROR` instead of a password object with an empty `login_email_pattern`. Recovery without a cloud password does not mail Redis. A confirmed phone row (NULL email) still may. Cloud-password recovery keeps using `user_passwords.email`.
+
+- `app/bff/codelogin/methods.go`, `service.go` — mail destinations ignore a divergent or cross-user Redis copy.
+- `app/bff/helpdesk/suggestions.go` — those two suggestion names are not offered.
+
+- `app/bff/twofa/password/service.go`, `identity.go`, `mysql.go` — `login_email_pattern` from `SELECT email FROM users`.
+- `app/bff/codelogin/service.go`, `methods.go` — refuse a divergent or cross-user login email.
+- `app/bff/authorization/internal/core/p0_codes.go` — wires those checks to the password store's read of `users.email`.
+
 `auth.requestFirebaseSms` returns `boolFalse` for a well-formed request. Official Android treats that as "use `auth.resendCode` / `next_type`" (`PLAYINTEGRITY_REQUESTFIREBASESMS_FALSE`). Firebase is not used in mainland China. `PHONE_CODE_EMPTY` and `PHONE_NUMBER_INVALID` are still returned when the request itself is invalid.
 
 `account.sendConfirmPhoneCode` returns `HASH_INVALID` unless a confirmation hash was issued. `account.deleteAccount` still deletes immediately, so production does not mint that hash. When a hash exists, the SMS uses the same Aliyun login template, the 10 second cap, and `SMS_CODE_CREATE_FAILED`.

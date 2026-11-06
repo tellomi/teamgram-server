@@ -7,6 +7,14 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestLoginEmailSuggestionsAreNotOffered(t *testing.T) {
+	s := NewMemory([]string{"SETUP_LOGIN_EMAIL", "SETUP_LOGIN_EMAIL_NOSKIP", "VALIDATE_PASSWORD"})
+	pending, dismissed := s.Lists(context.Background(), 7, nil)
+	if len(dismissed) != 0 || len(pending) != 1 || pending[0] != "VALIDATE_PASSWORD" {
+		t.Fatalf("pending %v dismissed %v", pending, dismissed)
+	}
+}
+
 func TestAppUpdateAndChangelog(t *testing.T) {
 	none := AppUpdate("14.0.1", "android", nil)
 	if none.GetPredicateName() != mtproto.Predicate_help_noAppUpdate {

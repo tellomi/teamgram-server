@@ -23,7 +23,17 @@ func (s *Service) RequestPasswordRecovery(ctx context.Context, userID int64) (*m
 		return nil, err
 	}
 	if !hasPassword {
-		email, err = s.LoginEmail(ctx, userID)
+		// An email-only account logs in with users.email. That address is not
+		// a cloud-password recovery mailbox, and a divergent Redis copy must
+		// not receive this code.
+		mine, err := s.identityEmail(ctx, userID)
+		if err != nil {
+			return nil, mtproto.ErrPasswordRecoveryNa
+		}
+		if mine != "" {
+			return nil, mtproto.ErrPasswordRecoveryNa
+		}
+		email, err = s.safeAttachedLoginEmail(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +90,9 @@ func (s *Service) RecoverPassword(ctx context.Context, userID int64, code string
 		return err
 	}
 	if settings != nil && settings.GetEmail() != nil {
-		if err = s.SaveLoginEmail(ctx, userID, settings.GetEmail().GetValue()); err != nil {
+		// A recovery address may differ from users.email. Refusing to copy
+		// it onto the Redis login key must not abort password recovery.
+		if err = s.SaveLoginEmail(ctx, userID, settings.GetEmail().GetValue()); err != nil && err != mtproto.ErrEmailNotAllowed {
 			return err
 		}
 	}
@@ -187,9 +199,9 @@ func (s *Service) resetTarget(ctx context.Context, authKey int64, canon string, 
 		uid = id
 	}
 	if uid != 0 {
-		email, err := s.LoginEmail(ctx, uid)
+		email, err := s.safeAttachedLoginEmail(ctx, uid)
 		if err != nil {
-			return "", err
+			return "", refuseIdentity(err)
 		}
 		if email != "" {
 			return email, nil
@@ -199,7 +211,44 @@ func (s *Service) resetTarget(ctx context.Context, authKey int64, canon string, 
 	if err != nil {
 		return "", err
 	}
-	return pending, nil
+	return s.pendingTarget(ctx, uid, pending)
+}
+
+// pendingTarget is the 180s setup address left under
+// tellomi:p0:pendingemail. It is not mailed when the user identity cannot
+// be confirmed, or when the address is another account's users.email.
+func (s *Service) pendingTarget(ctx context.Context, userID int64, raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	if s.opt.IdentityEmail == nil && s.opt.IdentityOwner == nil {
+		return raw, nil
+	}
+	email, err := normalizeEmail(raw)
+	if err != nil {
+		return "", nil
+	}
+	if userID != 0 && s.opt.IdentityEmail != nil {
+		mine, err := s.identityEmail(ctx, userID)
+		if err != nil {
+			return "", refuseIdentity(err)
+		}
+		if mine != "" && email != mine {
+			return "", nil
+		}
+	} else if s.opt.IdentityEmail != nil {
+		return "", mtproto.ErrInternalServerError
+	}
+	if s.opt.IdentityOwner != nil {
+		owner, err := s.opt.IdentityOwner(ctx, email)
+		if err != nil {
+			return "", refuseIdentity(err)
+		}
+		if owner != 0 && owner != userID {
+			return "", nil
+		}
+	}
+	return email, nil
 }
 
 // RequestFirebaseSms does not send Firebase SMS. Mainland China clients

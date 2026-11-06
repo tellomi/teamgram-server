@@ -15,6 +15,7 @@ func TestGetPasswordDropsStaleChallenges(t *testing.T) {
 	svc := New(Options{Now: func() time.Time { return now }})
 	prev := Swap(svc)
 	t.Cleanup(func() { Swap(prev) })
+	SeedPhone(42)
 
 	ctx := context.Background()
 	pw, err := AccountPassword(ctx, 42, 7)
