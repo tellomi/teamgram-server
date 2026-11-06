@@ -2,6 +2,7 @@ package svc
 
 import (
 	"context"
+	"errors"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -15,7 +16,14 @@ import (
 type storyMaxUsers interface {
 	UserSetStoriesMaxId(ctx context.Context, in *user.TLUserSetStoriesMaxId) (*mtproto.Bool, error)
 	UserGetImmutableUserV2(ctx context.Context, in *user.TLUserGetImmutableUserV2) (*mtproto.ImmutableUser, error)
+	// UserGetMutableUsers loads forward contact rows. CheckPrivacy reads
+	// those rows, and getImmutableUserV2 does not when To is empty.
+	UserGetMutableUsers(ctx context.Context, in *user.TLUserGetMutableUsers) (*user.Vector_ImmutableUser, error)
 }
+
+// errStoryContacts means the forward contact rows were not loaded, so a
+// viewer push would be a non-min user with "my contacts" fields removed.
+var errStoryContacts = errors.New("story max: forward contacts unavailable")
 
 // storyPusher delivers an updates container to one user.
 type storyPusher interface {
@@ -49,6 +57,14 @@ func applyStoryMax(ctx context.Context, users storyMaxUsers, syncer storyPusher,
 		return nil
 	}
 	pushStoryUser(ctx, syncer, userID, userID, im.ToSelfUser())
+	// Reverse contacts are who added this user. Their push is a non-min user,
+	// so a missing forward edge would hide a "my contacts" photo, phone, and
+	// last seen. Skip those pushes instead of sending that user. The stored
+	// max is already corrected for the next fetch.
+	if err = attachForwardContacts(ctx, users, im); err != nil {
+		logx.WithContext(ctx).Errorf("story max contacts %d: %v", userID, err)
+		return nil
+	}
 	seen := map[int64]bool{userID: true}
 	for _, contact := range im.GetReverseContacts() {
 		viewer := contact.GetUserId()
@@ -59,6 +75,46 @@ func applyStoryMax(ctx context.Context, users storyMaxUsers, syncer storyPusher,
 		pushStoryUser(ctx, syncer, viewer, userID, im.ToUser(viewer))
 	}
 	return nil
+}
+
+// attachForwardContacts fills im.Contacts from the same loader a new-message
+// update uses. getImmutableUserV2 with an empty To list returns reverse
+// contacts only. A later loader that selects forward peers from To still
+// returns none for that call. ToUser then treats "my contacts" as deny.
+func attachForwardContacts(ctx context.Context, users storyMaxUsers, im *mtproto.ImmutableUser) error {
+	if im == nil {
+		return nil
+	}
+	viewers := make([]int64, 0, len(im.GetReverseContacts()))
+	seen := map[int64]bool{im.Id(): true}
+	for _, contact := range im.GetReverseContacts() {
+		viewer := contact.GetUserId()
+		if viewer == 0 || seen[viewer] {
+			continue
+		}
+		seen[viewer] = true
+		viewers = append(viewers, viewer)
+	}
+	if len(viewers) == 0 {
+		return nil
+	}
+	batch, err := users.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{
+		Id: append([]int64{im.Id()}, viewers...),
+		To: viewers,
+	})
+	if err != nil || batch == nil {
+		if err == nil {
+			err = errStoryContacts
+		}
+		return err
+	}
+	for _, other := range batch.GetDatas() {
+		if other != nil && other.Id() == im.Id() {
+			im.Contacts = other.GetContacts()
+			return nil
+		}
+	}
+	return errStoryContacts
 }
 
 func pushStoryUser(ctx context.Context, syncer storyPusher, to, userID int64, rendered *mtproto.User) {
