@@ -69,6 +69,22 @@ class AccountsTest(unittest.TestCase):
 
 
 class RedirectTest(unittest.TestCase):
+    def _evidence(self) -> str:
+        handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False)
+        handle.write(
+            "\n".join(
+                [
+                    "container=tellomi-staging-teamgram",
+                    "listen=127.0.0.1:10444",
+                    "project=tellomi-staging",
+                    "datadir=data-staging",
+                ]
+            )
+        )
+        handle.close()
+        self.addCleanup(lambda: os.remove(handle.name))
+        return handle.name
+
     def test_dnat_sends_the_apk_dial_port_to_the_staging_port(self) -> None:
         self.assertEqual(redirect.CLIENT_DIAL_PORT, "10443")
         self.assertEqual(redirect.STAGING_HOST_TCP, "10444")
@@ -97,7 +113,12 @@ class RedirectTest(unittest.TestCase):
     def test_confirmed_endpoint_fails_closed(self) -> None:
         saved = {
             key: os.environ.get(key)
-            for key in ("E2E_API_HOST", "E2E_API_PORT", "E2E_STAGING_CONFIRMED")
+            for key in (
+                "E2E_API_HOST",
+                "E2E_API_PORT",
+                "E2E_STAGING_CONFIRMED",
+                "E2E_STAGING_EVIDENCE",
+            )
         }
         try:
             for key in saved:
@@ -117,9 +138,24 @@ class RedirectTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 redirect.require_confirmed_endpoint()
             os.environ["E2E_API_PORT"] = "10444"
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            os.environ["E2E_API_PORT"] = "11444"
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            evidence = Path(self._evidence())
+            os.environ["E2E_STAGING_EVIDENCE"] = str(evidence)
+            os.environ["E2E_API_PORT"] = "10444"
             self.assertEqual(redirect.require_confirmed_endpoint(), ("203.0.113.10", "10444"))
             os.environ["E2E_API_PORT"] = "11444"
-            self.assertEqual(redirect.require_confirmed_endpoint(), ("203.0.113.10", "11444"))
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            os.environ["E2E_API_PORT"] = "10444"
+            bad = Path(self._evidence())
+            bad.write_text(bad.read_text(encoding="utf-8") + "\nmount=/opt/tellomi/teamgram-server/data/mysql\n", encoding="utf-8")
+            os.environ["E2E_STAGING_EVIDENCE"] = str(bad)
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
         finally:
             for key, value in saved.items():
                 if value is None:
@@ -281,6 +317,7 @@ class ChecklistTest(unittest.TestCase):
         self.assertIn("10444", readme)
         self.assertIn("11444", readme)
         self.assertIn("E2E_STAGING_CONFIRMED", readme)
+        self.assertIn("E2E_STAGING_EVIDENCE", readme)
         self.assertNotIn("TCP `11443`", readme)
         workflow = (ROOT / ".github/workflows/ui-acceptance.yml").read_text(encoding="utf-8")
         self.assertIn("deploy-staging", workflow)

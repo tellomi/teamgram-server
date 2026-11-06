@@ -2,11 +2,12 @@
 # Compose 2.24 or newer (the !override tag). See docs/staging.md.
 #
 # Do not run this until docs/ops/STAGING_BRINGUP.md is approved.
+# Project name is fixed below. Directory basename and an inherited
+# COMPOSE_PROJECT_NAME must not select the production project.
+# Use scripts/staging-compose.sh for every lifecycle command.
 # Host ports are 127.0.0.1:10444 (TCP) and 127.0.0.1:11444 (WebSocket).
-#   COMPOSE_PROJECT_NAME=tellomi-staging \
-#   docker compose --env-file .env.staging \
-#     -f docker-compose-env.yaml -f docker-compose.yaml \
-#     -f docker-compose.staging.yaml up -d
+
+name: tellomi-staging
 
 services:
   kafka:
@@ -14,14 +15,30 @@ services:
     ports: !override []
     mem_limit: 768m
     memswap_limit: 768m
+    cpus: 0.5
     environment:
       KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    # Bind under data-staging so the 8GiB directory cap covers the log.
+    # Do not use the production named volume tellomi_kafka_data.
+    volumes: !override
+      - ./data-staging/kafka:/var/lib/kafka/data
 
   etcd:
     container_name: tellomi-staging-etcd
     ports: !override []
     mem_limit: 128m
     memswap_limit: 128m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     volumes: !override
       - ./data-staging/etcd:/etcd-data
 
@@ -30,6 +47,12 @@ services:
     ports: !override []
     mem_limit: 256m
     memswap_limit: 256m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     volumes: !override
       - ./data-staging/redis:/data
 
@@ -38,6 +61,12 @@ services:
     ports: !override []
     mem_limit: 512m
     memswap_limit: 512m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -49,6 +78,8 @@ services:
 
   mysql-migrate:
     container_name: tellomi-staging-mysql-migrate
+    mem_limit: 256m
+    memswap_limit: 256m
 
   minio:
     container_name: tellomi-staging-minio
@@ -75,6 +106,10 @@ services:
       - ./data-staging/logs:/app/logs
       - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
       - ${TELLOMI_FCM_CREDENTIALS_FILE:-/dev/null}:/etc/tellomi/fcm/service-account.json:ro
+
+  # Not needed for desktop chat. Default `up` must not start them.
+  asr:
+    profiles: ["donotstart"]
 
   # Host-network and monitoring ports belong to the production stack.
   coturn:

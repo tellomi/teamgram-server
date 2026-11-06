@@ -13,11 +13,15 @@ on:
         type: string
         required: true
       api_port:
-        description: 10444 host TCP or 11444 host WebSocket. Not 10443 or 11443.
+        description: Host TCP 10444 only. 11444 is WebSocket and is refused. Port alone is not isolation.
         type: string
         required: true
       staging_confirmed:
-        description: Type tellomi-staging only after that project and data directory are verified.
+        description: Type tellomi-staging only together with staging_evidence. The word alone is not proof.
+        type: string
+        required: true
+      staging_evidence:
+        description: Host read-only lines container=tellomi-staging-teamgram, listen=127.0.0.1:10444, project=tellomi-staging, datadir=data-staging. No production data mount.
         type: string
         required: true
       android:
@@ -49,6 +53,9 @@ on:
       staging_confirmed:
         type: string
         required: true
+      staging_evidence:
+        type: string
+        required: true
       android:
         type: boolean
         default: true
@@ -68,6 +75,7 @@ env:
   E2E_API_HOST: ${{ inputs.api_host }}
   E2E_API_PORT: ${{ inputs.api_port }}
   E2E_STAGING_CONFIRMED: ${{ inputs.staging_confirmed }}
+  E2E_STAGING_EVIDENCE_TEXT: ${{ inputs.staging_evidence }}
 
 jobs:
   check:
@@ -103,6 +111,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Write staging evidence
+        run: |
+          printf '%s\n' "$E2E_STAGING_EVIDENCE_TEXT" > "$RUNNER_TEMP/staging-evidence.txt"
+          echo "E2E_STAGING_EVIDENCE=$RUNNER_TEMP/staging-evidence.txt" >> "$GITHUB_ENV"
 
       - name: Staging TCP preflight
         run: python3 e2e/ui/scripts/redirect.py --preflight
@@ -171,6 +184,11 @@ jobs:
           key: tellomi-ios-sim-none
           restore-keys: tellomi-ios-sim-
 
+      - name: Write staging evidence
+        run: |
+          printf '%s\n' "$E2E_STAGING_EVIDENCE_TEXT" > "$RUNNER_TEMP/staging-evidence.txt"
+          echo "E2E_STAGING_EVIDENCE=$RUNNER_TEMP/staging-evidence.txt" >> "$GITHUB_ENV"
+
       - name: Maestro flows
         env:
           # runner is not available on the job env map. Same directory as the cache steps.
@@ -219,5 +237,5 @@ jobs:
 
           可以继续部署 staging。在本作业成功之前，不要在 staging 主机上执行 `docker compose pull`。
 
-          Endpoint: the host and port passed into this run (10444 TCP or 11444 WebSocket). Screenshots are the `ui-android-screenshots` and `ui-ios-screenshots` artifacts. This job does not mean those ports are already deployed.
+          Endpoint: MTProto TCP 10444 only, and only after the evidence file named the tellomi-staging container, loopback listen, project, and data-staging directory. 11444 is WebSocket and is refused. Screenshots are the `ui-android-screenshots` and `ui-ios-screenshots` artifacts. This job does not deploy those ports.
           EOF

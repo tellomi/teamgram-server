@@ -56,10 +56,39 @@ def require_confirmed_endpoint() -> tuple[str, str]:
             "Refusing it. Host TCP 10444 and host WebSocket 11444 are the "
             "staging file's ports. Setting them does not mean they are deployed."
         )
-    if port not in {STAGING_HOST_TCP, STAGING_HOST_WS}:
+    if port != STAGING_HOST_TCP:
         raise SystemExit(
-            "E2E_API_PORT must be 10444 (host TCP, container MTProto 10443) or "
-            "11444 (host WebSocket, container 11443)."
+            "E2E_API_PORT must be 10444. UI acceptance speaks MTProto TCP. "
+            "11444 is the staging WebSocket publish and is refused here. "
+            "Port 10444 alone does not prove the process is isolated."
+        )
+    evidence = os.environ.get("E2E_STAGING_EVIDENCE", "").strip()
+    if not evidence:
+        raise SystemExit(
+            "E2E_STAGING_EVIDENCE is required. E2E_STAGING_CONFIRMED and "
+            "port 10444 are not proof of isolation."
+        )
+    try:
+        with open(evidence, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise SystemExit(f"cannot read E2E_STAGING_EVIDENCE: {exc}") from exc
+    required = (
+        "container=tellomi-staging-teamgram",
+        "listen=127.0.0.1:10444",
+        "project=tellomi-staging",
+        "datadir=data-staging",
+    )
+    missing = [item for item in required if item not in text]
+    if missing:
+        raise SystemExit(
+            "staging evidence is missing "
+            + ", ".join(missing)
+            + ". Copy them from the host read-only check. Do not invent them from the port."
+        )
+    if "mount=/opt/tellomi/teamgram-server/data/" in text:
+        raise SystemExit(
+            "staging evidence still lists a production data mount. Refusing to dial."
         )
     return host, port
 
