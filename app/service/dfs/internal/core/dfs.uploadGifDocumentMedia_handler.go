@@ -64,11 +64,12 @@ func (c *DfsCore) DfsUploadGifDocumentMedia(in *dfs.TLDfsUploadGifDocumentMedia)
 		}
 	}
 
-	fileInfo, err2 := c.svcCtx.Dao.GetFileInfo(c.ctx, in.GetCreator(), file.GetId_INT64())
-	if err2 != nil || fileInfo == nil {
+	opened, err2 := c.svcCtx.Dao.OpenFile(c.ctx, in.GetCreator(), file.GetId_INT64(), file.Parts)
+	if err2 != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err2)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err2, mtproto.ErrMediaInvalid)
 	}
+	fileInfo := opened.DfsFileInfo
 
 	if fileInfo.GetFileSize() < GifNeedConvertSize {
 		document, err = c.uploadGifMedia(in.GetCreator(), media, fileInfo)
@@ -169,13 +170,13 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 	r, err := c.svcCtx.Dao.OpenFile(c.ctx, creatorId, thumbFile.Id_INT64, thumbFile.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	thumbFileData, err := r.ReadAll(c.ctx)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 
 	if len(thumbFile.Md5Checksum) > 0 {
@@ -202,10 +203,10 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 	if dstH%2 != 0 {
 		dstH += 1
 	}
-	raw, err := c.uploadedBytes(creatorId, media.GetFile().GetId_INT64())
+	raw, err := c.uploadedBytes(creatorId, media.GetFile().GetId_INT64(), media.GetFile().GetParts())
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 	gifMp4Data, duration, err := c.svcCtx.FFmpegUtil.ConvertBytesToMp4(raw, int(dstW), int(dstH))
 	if err != nil {
@@ -302,10 +303,10 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		}
 	}
 
-	raw, err := c.uploadedBytes(creatorId, media.GetFile().GetId_INT64())
+	raw, err := c.uploadedBytes(creatorId, media.GetFile().GetId_INT64(), media.GetFile().GetParts())
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
-		return nil, mtproto.ErrMediaInvalid
+		return nil, partMissOr(err, mtproto.ErrMediaInvalid)
 	}
 	gifMp4Data, duration, err := c.svcCtx.FFmpegUtil.ConvertBytesToMp4(raw, dstW, dstH)
 

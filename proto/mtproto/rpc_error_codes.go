@@ -280,6 +280,29 @@ func NewFilePartXMissing(x int32) error {
 	return status.Errorf(ErrBadRequest, "FILE_PART_%d_MISSING", x)
 }
 
+// IsFilePartMissing reports FILE_PART_<n>_MISSING and the FILE_PART_X_MISSING spelling.
+func IsFilePartMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := status.Convert(err).Message()
+	const prefix = "FILE_PART_"
+	const suffix = "_MISSING"
+	if len(msg) <= len(prefix)+len(suffix) || msg[:len(prefix)] != prefix || msg[len(msg)-len(suffix):] != suffix {
+		return false
+	}
+	mid := msg[len(prefix) : len(msg)-len(suffix)]
+	if mid == "X" {
+		return true
+	}
+	for _, r := range mid {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // NewEmailUnconfirmedX
 // 400	EMAIL_UNCONFIRMED_X	The provided email isn't confirmed, X is the length of the verification code that was just sent to the email: use account.verifyEmail to enter the received verification code and enable the recovery email.
 func NewEmailUnconfirmedX(x int) error {

@@ -76,6 +76,9 @@ func ResolveMedia(ctx context.Context, owner int64, in *mtproto.InputMedia, api 
 			Media:   in,
 		})
 		if err != nil {
+			if mtproto.IsFilePartMissing(err) {
+				return nil, err
+			}
 			return nil, mtproto.ErrMediaInvalid
 		}
 		return media, nil

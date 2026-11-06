@@ -20,20 +20,28 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/stores/kv"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
 type SSDBReader struct {
 	*model.DfsFileInfo
 	ssdb kv.Store
 	i    int64 // current reading index
+	// requiredParts is the part count the client declared (inputFile.parts).
+	// FileTotalParts can be smaller when it was derived from the number of
+	// hash fields, which hides a missing tail. ReadAll must still visit
+	// every declared part.
+	requiredParts int
 }
 
 func (d *Dao) NewSSDBReader(fileInfo *model.DfsFileInfo) *SSDBReader {
@@ -119,6 +127,14 @@ func (r *SSDBReader) Seek(offset int64, whence int) (int64, error) {
 	return abs, nil
 }
 
+func (r *SSDBReader) partsToRead() int {
+	n := r.FileTotalParts
+	if r.requiredParts > n {
+		n = r.requiredParts
+	}
+	return n
+}
+
 func (r *SSDBReader) readFile(ctx context.Context, filePart int) ([]byte, error) {
 	var (
 		err  error
@@ -126,37 +142,52 @@ func (r *SSDBReader) readFile(ctx context.Context, filePart int) ([]byte, error)
 		bBuf string
 	)
 
-	bBuf, err = r.ssdb.HgetCtx(ctx, k, strconv.Itoa(int(filePart)))
-	if err != nil {
-		logx.WithContext(ctx).Errorf("conn.Send(HGET %s, %d) error(%v)", k, filePart, err)
-		return nil, err
+	bBuf, err = r.ssdb.HgetCtx(ctx, k, strconv.Itoa(filePart))
+	if perr := missingFilePart(filePart, err, bBuf); perr != nil {
+		if err != nil && !errors.Is(err, redis.Nil) {
+			logx.WithContext(ctx).Errorf("conn.Send(HGET %s, %d) error(%v)", k, filePart, err)
+		}
+		return nil, perr
 	}
 
 	return []byte(bBuf), nil
 }
 
 func (r *SSDBReader) ReadAll(ctx context.Context) ([]byte, error) {
+	n := r.partsToRead()
+	if n <= 0 {
+		return nil, mtproto.NewFilePartXMissing(0)
+	}
 
-	var (
-		bytes []byte
-		err   error
-		bBuf  string
-		b     []byte
-		k     = getFileKey(r.Creator, r.FileId)
-	)
-
-	for i := 0; i < r.FileTotalParts; i++ {
-		bBuf, err = r.ssdb.HgetCtx(ctx, k, strconv.Itoa(i))
+	var bytes []byte
+	for i := 0; i < n; i++ {
+		b, err := r.readFile(ctx, i)
 		if err != nil {
-			logx.WithContext(ctx).Errorf("conn.Send(HGET %s, %d) error(%v)", k, i, err)
+			// A hole must not be assembled as an empty or zero-padded span.
 			return nil, err
 		}
-		b = []byte(bBuf)
 		if bytes == nil {
-			bytes = make([]byte, 0, len(b)*r.FileTotalParts)
+			bytes = make([]byte, 0, len(b)*n)
 		}
 		bytes = append(bytes, b...)
 	}
 
 	return bytes, nil
+}
+
+// missingFilePart reports FILE_PART_<n>_MISSING when the part is absent.
+// HGET of a missing field is redis.Nil. An empty payload is the same hole:
+// the write path rejects empty parts, and treating one as present would
+// publish a short object.
+func missingFilePart(filePart int, err error, payload string) error {
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return mtproto.NewFilePartXMissing(int32(filePart))
+		}
+		return err
+	}
+	if len(payload) == 0 {
+		return mtproto.NewFilePartXMissing(int32(filePart))
+	}
+	return nil
 }

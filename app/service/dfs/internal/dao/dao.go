@@ -51,6 +51,12 @@ func NewDFSHelper(minio *minio_util.MinioConfig, idgen zrpc.RpcClientConf, ssdb 
 	}
 }
 
+// NewDaoWithStore builds a Dao around an existing part cache. Tests use it
+// to exercise upload finalize without a live Redis.
+func NewDaoWithStore(store kv.ExtStore) *Dao {
+	return &Dao{ssdb: store}
+}
+
 func NewMinioHelper(minio *minio_util.MinioConfig) *minio_util.MinioUtil {
 	return minio_util.MustNewMinioClient(minio)
 }

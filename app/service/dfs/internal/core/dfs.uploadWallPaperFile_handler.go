@@ -63,13 +63,13 @@ func (c *DfsCore) DfsUploadWallPaperFile(in *dfs.TLDfsUploadWallPaperFile) (*mtp
 	r, err = c.svcCtx.Dao.OpenFile(c.ctx, in.GetCreator(), file.Id_INT64, file.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadWallPaperFile - %v", err)
-		return nil, mtproto.ErrWallpaperFileInvalid
+		return nil, partMissOr(err, mtproto.ErrWallpaperFileInvalid)
 	}
 
 	cacheData, err = r.ReadAll(c.ctx)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadWallPaperFile - %v", err)
-		return nil, mtproto.ErrWallpaperFileInvalid
+		return nil, partMissOr(err, mtproto.ErrWallpaperFileInvalid)
 	} else {
 		// log.Debugf("cacheData: %s", hex.EncodeToString(cacheData))
 	}

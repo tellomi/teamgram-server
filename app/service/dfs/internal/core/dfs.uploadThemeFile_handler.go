@@ -57,11 +57,12 @@ func (c *DfsCore) DfsUploadThemeFile(in *dfs.TLDfsUploadThemeFile) (*mtproto.Doc
 		return nil, err
 	}
 
-	fileInfo, err := c.svcCtx.Dao.GetFileInfo(c.ctx, in.GetCreator(), file.Id_INT64)
+	opened, err := c.svcCtx.Dao.OpenFile(c.ctx, in.GetCreator(), file.Id_INT64, file.Parts)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadThemeFile - error: %v", err)
 		return nil, err
 	}
+	fileInfo := opened.DfsFileInfo
 	c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, fileInfo)
 
 	threading2.GoSafeContext(c.ctx, func(ctx context.Context) {
@@ -88,13 +89,13 @@ func (c *DfsCore) DfsUploadThemeFile(in *dfs.TLDfsUploadThemeFile) (*mtproto.Doc
 		r, err = c.svcCtx.Dao.OpenFile(c.ctx, in.GetCreator(), thumbFile.Id_INT64, thumbFile.Parts)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadThemeFile - %v", err)
-			return nil, mtproto.ErrThemeFileInvalid
+			return nil, partMissOr(err, mtproto.ErrThemeFileInvalid)
 		}
 
 		thumbCacheData, err = r.ReadAll(c.ctx)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadThemeFile - %v", err)
-			return nil, mtproto.ErrThemeFileInvalid
+			return nil, partMissOr(err, mtproto.ErrThemeFileInvalid)
 		}
 
 		if len(thumbFile.Md5Checksum) > 0 {
