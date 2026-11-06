@@ -59,6 +59,9 @@ for name, want in expect.items():
     got = mem(full, name)
     if got != want:
         raise SystemExit(f"{name} mem_limit {got} != {want}")
+    swap = int(full["services"][name].get("memswap_limit") or 0)
+    if swap != want:
+        raise SystemExit(f"{name} memswap_limit {swap} != {want}")
     deploy = full["services"][name]["deploy"]["resources"]["limits"]["memory"]
     if int(deploy) != want:
         raise SystemExit(f"{name} deploy memory {deploy} != {want}")
