@@ -4,7 +4,7 @@
 
 总仓 [ADR-0082](https://github.com/tellomi/tellomi/blob/main/docs/adr/0082-media-dedup-telegram-baseline.md) 阶段 P3 要求把下面四项 Telegram 公开技术逐项写进本仓文档，不在那份 ADR 里展开实现。P1（#212，`media_blobs` + `messages.getDocumentByHash`）和 P2（#215，`upload.getFileHashes` + 引用计数 GC）已经合入，不在这次盘点里重写。入口仍是 [media-dedup.md](media-dedup.md)。
 
-分块上传对照总仓 ADR-0031（`tellomi/tellomi` 的 `docs/adr/`，编号 0031，主题是分块上传与断点续传）。本次读取该仓返回 404，正文没有抄进本文，也不沿用 ADR-0082 里日期为 2026-11-05 的「现状」段。下面的结论来自本提交的代码、`proto/schema/telegram_api_layer232.tl`，以及官方文档。
+分块上传对照总仓 [ADR-0031](https://github.com/tellomi/tellomi/blob/main/docs/adr/0031-resumable-media-upload.md)（`docs/adr/0031-resumable-media-upload.md`，2026-09-10）。本文不沿用 ADR-0082 里日期为 2026-11-05 的「现状」段。四项结论来自本提交的代码、`proto/schema/telegram_api_layer232.tl`，以及官方文档。和 ADR-0031 的对照写在第 2 节。
 
 ## 为什么不改生成的覆盖矩阵
 
@@ -57,7 +57,9 @@
 | `DfsUploadPhotoFileV2`、`DfsUploadDocumentFileV2` | 用 `inputFile.parts` 去 `SSDBReader.ReadAll`。读不到的 field 只要 HGET 不报错，就当成空字节拼进去，不返回 `FILE_PART_X_MISSING` |
 | `validateEncryptedSource`、`dfs.uploadEncryptedFileV2_handler_test.go` | 加密文件会在块数、首块长度对不上时返回 `FILE_PART_0_MISSING` 或 `FILE_PARTS_INVALID`。普通照片和文档不走这里 |
 
-和 ADR-0031 要对照的官方断点续传比，本仓只做了「分块可以乱序写入，并在 3 小时内留在 SSDB」。未做：保存时不执行官方分块大小规则；普通上传收尾不报告缺的是哪一块，所以客户端不能靠 `FILE_PART_X_MISSING` 只补那一块；也没有服务端的已保存分块清单（官方同样没有这条 RPC）。并行是客户端多连接的事，本仓没有服务端的并行队列上限，也没有把并行收口成一次可恢复的上传会话。
+[ADR-0031](https://github.com/tellomi/tellomi/blob/main/docs/adr/0031-resumable-media-upload.md)（2026-09-10）把断点续传记成长期方向，实现未排期。它记录的旧路径是 `PUT /media/{id}`：`serveMedia` → `StoreObject` → 对整个 body `io.ReadAll`，再对整段明文 `EncryptV2`；`media_uploads` 没有 `uploaded_offset` / `uploaded_ranges`。那条路径不是续传，重试从 0 开始。它的长期目标是一条显式上传会话：资产身份、预期大小、chunk/range、已确认的 offset/ranges、校验和、过期、续传、收尾。
+
+那条旧的 HTTP 媒体路径不是本盘点覆盖的 Teamgram MTProto 上传路径。当前 `upload.saveFilePart` / `upload.saveBigFilePart`（SSDB 分块、3 小时 TTL、乱序写入）多于 ADR-0031 所记的「当前没有」，但仍不是它的上传会话目标。对照官方 Telegram 分块规则，状态仍是 partial：写入路径不调用 `CheckFilePart` / `CheckFilePartSize`；普通照片和文档收尾不返回 `FILE_PART_X_MISSING`。未做的还有：没有服务端的已保存分块清单（官方同样没有这条 RPC）；并行是客户端多连接的事，本仓没有服务端的并行队列上限，也没有把并行收口成一次可恢复的上传会话。
 
 ## 3. CDN DC — partial
 
@@ -95,6 +97,6 @@
 ## 相关
 
 - 总仓 ADR-0082 阶段 P3：[`docs/adr/0082-media-dedup-telegram-baseline.md`](https://github.com/tellomi/tellomi/blob/main/docs/adr/0082-media-dedup-telegram-baseline.md)
-- 总仓 ADR-0031：`tellomi/tellomi` 的 `docs/adr/` 中编号 0031（分块上传 / 断点续传）
+- 总仓 ADR-0031：[`docs/adr/0031-resumable-media-upload.md`](https://github.com/tellomi/tellomi/blob/main/docs/adr/0031-resumable-media-upload.md)
 - 本仓 [media-dedup.md](media-dedup.md)、[adr/0083-server-tech-roadmap-media-obs.md](adr/0083-server-tech-roadmap-media-obs.md)
 - 官方：[file references](https://core.telegram.org/api/file-references)、[files](https://core.telegram.org/api/files)、[CDN](https://core.telegram.org/cdn)
