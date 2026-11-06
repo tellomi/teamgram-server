@@ -5,18 +5,12 @@ root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 artifact_dir="${ARTIFACT_DIR:-${root}/ui-artifacts/ios}"
 mkdir -p "$artifact_dir"
-export E2E_API_HOST="${E2E_API_HOST:-staging-api.tellomi.cn}"
-export E2E_API_PORT="${E2E_API_PORT:-11443}"
 export PATH="${PATH}:${HOME}/.maestro/bin"
 
+python3 e2e/ui/scripts/redirect.py --check
 python3 e2e/ui/scripts/redirect.py --preflight
-staging_ip="$(python3 -c 'import os, socket; print(socket.gethostbyname(os.environ.get("E2E_API_HOST", "staging-api.tellomi.cn")))')"
-# Prebuilt clients dial the hostname api.tellomi.cn. Send that name to staging.
-# A from-source build dials E2E_API_HOST directly.
-sudo sed -i '' '/[[:space:]]api\.tellomi\.cn$/d' /etc/hosts
-echo "${staging_ip} api.tellomi.cn" | sudo tee -a /etc/hosts >/dev/null
-sudo dscacheutil -flushcache || true
-sudo killall -HUP mDNSResponder || true
+# Do not map api.tellomi.cn at this IP. A prebuilt app keeps port 10443, and
+# that name is production DNS. From-source builds dial E2E_API_HOST:E2E_API_PORT.
 
 python3 e2e/ui/scripts/accounts.py --write "${artifact_dir}/accounts.env"
 set -a

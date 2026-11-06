@@ -33,7 +33,7 @@ def _port(port: int | str) -> int:
     return number
 
 
-def point_ios_seeds(path: Path, host: str, port: int | str = 11443) -> None:
+def point_ios_seeds(path: Path, host: str, port: int | str) -> None:
     host = _host(host)
     port_number = _port(port)
     cfg = json.loads(path.read_text(encoding="utf-8"))
@@ -78,13 +78,12 @@ def main() -> None:
         )
         path.write_text(updated, encoding="utf-8")
         return
-    if len(sys.argv) not in (3, 4):
+    if len(sys.argv) != 4:
         raise SystemExit(
-            "usage: seeds.py TELLOMI_SERVER_JSON HOST [PORT]\n"
+            "usage: seeds.py TELLOMI_SERVER_JSON HOST PORT\n"
             "       seeds.py --allow-staging-check CHECK_PY HOST PORT"
         )
-    port = sys.argv[3] if len(sys.argv) == 4 else 11443
-    point_ios_seeds(Path(sys.argv[1]), sys.argv[2], port)
+    point_ios_seeds(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
 
 
 if __name__ == "__main__":

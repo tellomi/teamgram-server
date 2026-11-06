@@ -1,9 +1,9 @@
-"""Point the shipped Android client at staging without rebuilding it.
+"""Point the shipped Android client at an already confirmed staging endpoint.
 
 tellomi/Telegram release APKs dial an IPv4 literal (gradle TELLOMI_PROFILE_DEV,
-currently 8.137.39.82:10443). A hosts entry cannot change that. On a rooted
-emulator, DNAT sends every TCP connection to that production port to
-staging-api.tellomi.cn on the staging MTProto port (default 11443).
+port 10443). A hosts entry cannot change that. On a rooted emulator, DNAT
+can send that dial to an explicit staging host. This file does not choose
+the host. It does not rewrite a missing DNS name to a production address.
 The client repositories are not modified.
 """
 
@@ -17,14 +17,62 @@ import sys
 
 # Port baked into release clients (TELLOMI_PROFILE_DEV / iOS seed_port).
 CLIENT_DIAL_PORT = "10443"
-# TCP port staging-api.tellomi.cn listens on.
-DEFAULT_STAGING_PORT = "11443"
+# Host ports published by docker-compose.staging.yaml. Not a deploy claim.
+STAGING_HOST_TCP = "10444"
+STAGING_HOST_WS = "11444"
+# Ports the non-staging compose file publishes. Acceptance must not dial them.
+REFUSED_PORTS = frozenset({CLIENT_DIAL_PORT, "5222", "11443"})
+REFUSED_HOSTS = frozenset({"api.tellomi.cn", "chat.tellomi.cn"})
+CONFIRMED_VALUE = "tellomi-staging"
+
+
+def require_confirmed_endpoint() -> tuple[str, str]:
+    """Fail closed unless the operator named an isolated staging endpoint.
+
+    There is no default host and no default port. A name that does not
+    resolve stays unresolved; nothing substitutes another address.
+    """
+    host = os.environ.get("E2E_API_HOST", "").strip().rstrip(".")
+    port = os.environ.get("E2E_API_PORT", "").strip()
+    confirmed = os.environ.get("E2E_STAGING_CONFIRMED", "").strip()
+    if confirmed != CONFIRMED_VALUE:
+        raise SystemExit(
+            "E2E_STAGING_CONFIRMED must be tellomi-staging, and only after "
+            "the endpoint is verified as the isolated tellomi-staging project "
+            "(its own data directory, not the production stack). Refusing to dial."
+        )
+    if not host:
+        raise SystemExit(
+            "E2E_API_HOST is required. This harness has no default host and "
+            "does not rewrite a missing DNS name to another address."
+        )
+    if host.lower() in REFUSED_HOSTS:
+        raise SystemExit(
+            f"{host} is a production hostname. Pass the confirmed staging endpoint."
+        )
+    if port in REFUSED_PORTS:
+        raise SystemExit(
+            f"E2E_API_PORT {port} is published by the non-staging compose file. "
+            "Refusing it. Host TCP 10444 and host WebSocket 11444 are the "
+            "staging file's ports. Setting them does not mean they are deployed."
+        )
+    if port not in {STAGING_HOST_TCP, STAGING_HOST_WS}:
+        raise SystemExit(
+            "E2E_API_PORT must be 10444 (host TCP, container MTProto 10443) or "
+            "11444 (host WebSocket, container 11443)."
+        )
+    return host, port
 
 
 def resolve_host(host: str) -> str:
-    infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise OSError(
+            f"no IPv4 address for {host}; not substituting another address"
+        ) from exc
     if not infos:
-        raise OSError(f"no IPv4 address for {host}")
+        raise OSError(f"no IPv4 address for {host}; not substituting another address")
     return infos[0][4][0]
 
 
@@ -119,18 +167,21 @@ def preflight(host: str, port: int, timeout: float = 20.0) -> str:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Staging network helpers")
+    parser.add_argument("--check", action="store_true")
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
-    host = os.environ.get("E2E_API_HOST", "staging-api.tellomi.cn").strip()
-    port = os.environ.get("E2E_API_PORT", DEFAULT_STAGING_PORT).strip()
+    host, port = require_confirmed_endpoint()
+    if args.check and not args.preflight and not args.apply:
+        print(f"staging endpoint accepted: {host}:{port}")
+        return 0
     if args.preflight:
         preflight(host, int(port))
     if args.apply:
         ip = resolve_host(host)
         apply_dnat(ip, port)
     if not args.preflight and not args.apply:
-        parser.error("pass --preflight and/or --apply")
+        parser.error("pass --check, --preflight, and/or --apply")
     return 0
 
 

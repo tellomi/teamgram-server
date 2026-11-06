@@ -6,8 +6,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
-host="${E2E_API_HOST:-staging-api.tellomi.cn}"
-port="${E2E_API_PORT:-11443}"
+host="${E2E_API_HOST:?E2E_API_HOST is required}"
+port="${E2E_API_PORT:?E2E_API_PORT is required}"
 work="${RUNNER_TEMP:-/tmp}/tellomi-ios-fetch"
 mkdir -p "$work"
 
@@ -23,8 +23,8 @@ download_and_select() {
 }
 
 if [[ -n "${IOS_SIMULATOR_APP_URL:-}" ]]; then
-  download_and_select "${IOS_SIMULATOR_APP_URL}"
-  exit 0
+  echo "A prebuilt simulator app still dials the production seed. This harness will not remap api.tellomi.cn. Build from source with the confirmed staging host and port." >&2
+  exit 1
 fi
 
 python3 - <<'PY' > "${work}/simulator-url.txt" || true
@@ -49,8 +49,8 @@ for asset in payload.get("assets", []):
 PY
 sim_url="$(tr -d '[:space:]' < "${work}/simulator-url.txt" || true)"
 if [[ -n "$sim_url" ]]; then
-  download_and_select "$sim_url"
-  exit 0
+  echo "The latest release simulator zip still dials the production seed. This harness will not remap api.tellomi.cn. Build from source with the confirmed staging host and port." >&2
+  exit 1
 fi
 
 src="${IOS_SRC:-${RUNNER_TEMP:-/tmp}/Telegram-iOS}"

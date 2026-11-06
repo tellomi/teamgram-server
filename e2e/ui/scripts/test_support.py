@@ -71,9 +71,12 @@ class AccountsTest(unittest.TestCase):
 class RedirectTest(unittest.TestCase):
     def test_dnat_sends_the_apk_dial_port_to_the_staging_port(self) -> None:
         self.assertEqual(redirect.CLIENT_DIAL_PORT, "10443")
-        self.assertEqual(redirect.DEFAULT_STAGING_PORT, "11443")
+        self.assertEqual(redirect.STAGING_HOST_TCP, "10444")
+        self.assertEqual(redirect.STAGING_HOST_WS, "11444")
+        self.assertIn("10443", redirect.REFUSED_PORTS)
+        self.assertIn("11443", redirect.REFUSED_PORTS)
         self.assertEqual(
-            redirect.dnat_arguments("203.0.113.10", "11443"),
+            redirect.dnat_arguments("203.0.113.10", "10444"),
             [
                 "iptables",
                 "-t",
@@ -87,13 +90,46 @@ class RedirectTest(unittest.TestCase):
                 "-j",
                 "DNAT",
                 "--to-destination",
-                "203.0.113.10:11443",
+                "203.0.113.10:10444",
             ],
         )
 
+    def test_confirmed_endpoint_fails_closed(self) -> None:
+        saved = {
+            key: os.environ.get(key)
+            for key in ("E2E_API_HOST", "E2E_API_PORT", "E2E_STAGING_CONFIRMED")
+        }
+        try:
+            for key in saved:
+                os.environ.pop(key, None)
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            os.environ["E2E_STAGING_CONFIRMED"] = "tellomi-staging"
+            os.environ["E2E_API_HOST"] = "api.tellomi.cn"
+            os.environ["E2E_API_PORT"] = "10444"
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            os.environ["E2E_API_HOST"] = "203.0.113.10"
+            os.environ["E2E_API_PORT"] = "10443"
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            os.environ["E2E_API_PORT"] = "11443"
+            with self.assertRaises(SystemExit):
+                redirect.require_confirmed_endpoint()
+            os.environ["E2E_API_PORT"] = "10444"
+            self.assertEqual(redirect.require_confirmed_endpoint(), ("203.0.113.10", "10444"))
+            os.environ["E2E_API_PORT"] = "11444"
+            self.assertEqual(redirect.require_confirmed_endpoint(), ("203.0.113.10", "11444"))
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
     def test_dnat_rejects_a_hostname(self) -> None:
         with self.assertRaises(ValueError):
-            redirect.dnat_arguments("staging-api.tellomi.cn", "11443")
+            redirect.dnat_arguments("staging.example", "10444")
 
 
 class SeedsTest(unittest.TestCase):
@@ -104,13 +140,13 @@ class SeedsTest(unittest.TestCase):
                 '{"seeds": {"production": {"2": ["old.example"]}, "testing": {"1": ["old.example"]}}, "note": "keep"}',
                 encoding="utf-8",
             )
-            seeds.point_ios_seeds(path, "staging-api.tellomi.cn")
+            seeds.point_ios_seeds(path, "staging.example", 10444)
             import json
 
             cfg = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(cfg["seeds"]["production"]["1"], ["staging-api.tellomi.cn"])
-            self.assertEqual(cfg["seeds"]["testing"]["1"], ["staging-api.tellomi.cn"])
-            self.assertEqual(cfg["seed_port"], 11443)
+            self.assertEqual(cfg["seeds"]["production"]["1"], ["staging.example"])
+            self.assertEqual(cfg["seeds"]["testing"]["1"], ["staging.example"])
+            self.assertEqual(cfg["seed_port"], 10444)
             self.assertEqual(cfg["note"], "keep")
 
     def test_staging_seed_port_replaces_the_production_port(self) -> None:
@@ -120,14 +156,14 @@ class SeedsTest(unittest.TestCase):
                 '{"seed_port": 10443, "seeds": {"production": {"1": ["api.tellomi.cn"]}}}\n',
                 encoding="utf-8",
             )
-            seeds.point_ios_seeds(path, "staging-api.tellomi.cn", 11443)
+            seeds.point_ios_seeds(path, "staging.example", 10444)
             import json
 
             cfg = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(cfg["seed_port"], 11443)
-            self.assertEqual(cfg["seeds"]["production"]["1"], ["staging-api.tellomi.cn"])
+            self.assertEqual(cfg["seed_port"], 10444)
+            self.assertEqual(cfg["seeds"]["production"]["1"], ["staging.example"])
 
-    def test_staging_check_accepts_port_11443(self) -> None:
+    def test_staging_check_accepts_host_tcp_10444(self) -> None:
         source = (
             'def check_keys(config):\n'
             '    if config["seed_port"] != 10443:\n'
@@ -137,10 +173,10 @@ class SeedsTest(unittest.TestCase):
             '        if hosts != ["api.tellomi.cn"]:\n'
             '            fail(f"{environment} seeds are not api.tellomi.cn")\n'
         )
-        updated = seeds.allow_staging_in_server_check(source, "staging-api.tellomi.cn", 11443)
-        self.assertIn("!= 11443", updated)
+        updated = seeds.allow_staging_in_server_check(source, "staging.example", 10444)
+        self.assertIn("!= 10444", updated)
         self.assertNotIn("10443", updated)
-        self.assertIn('["staging-api.tellomi.cn"]', updated)
+        self.assertIn('["staging.example"]', updated)
         self.assertNotIn('["api.tellomi.cn"]', updated)
         compile(updated, "<check>", "exec")
 
@@ -242,14 +278,17 @@ class ChecklistTest(unittest.TestCase):
         self.assertEqual(hierarchy.ORDER, ("e2e-order-1", "e2e-order-2", "e2e-order-3"))
         self.assertEqual(hierarchy.RECEIPT, "e2e-receipt")
         readme = (ROOT / "e2e/ui/README.md").read_text(encoding="utf-8")
-        self.assertIn("staging-api.tellomi.cn", readme)
-        self.assertIn("TCP `11443`", readme)
-        self.assertIn("端口 `10443`", readme)
+        self.assertIn("10444", readme)
+        self.assertIn("11444", readme)
+        self.assertIn("E2E_STAGING_CONFIRMED", readme)
+        self.assertNotIn("TCP `11443`", readme)
         workflow = (ROOT / ".github/workflows/ui-acceptance.yml").read_text(encoding="utf-8")
         self.assertIn("deploy-staging", workflow)
         self.assertIn("workflow_dispatch", workflow)
         self.assertIn("reactivecircus/android-emulator-runner", workflow)
-        self.assertIn('E2E_API_PORT: "11443"', workflow)
+        self.assertIn("E2E_STAGING_CONFIRMED", workflow)
+        self.assertNotIn('E2E_API_PORT: "11443"', workflow)
+        self.assertNotIn("staging-api.tellomi.cn", workflow)
 
 
 class ShellSyntaxTest(unittest.TestCase):

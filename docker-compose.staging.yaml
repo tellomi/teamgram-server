@@ -1,31 +1,48 @@
 # Second stack on a host that already runs production.
 # Compose 2.24 or newer (the !override tag). See docs/staging.md.
 #
+# Do not run this until docs/ops/STAGING_BRINGUP.md is approved.
+# Host ports are 127.0.0.1:10444 (TCP) and 127.0.0.1:11444 (WebSocket).
 #   COMPOSE_PROJECT_NAME=tellomi-staging \
-#   TELLOMI_IMAGE_TAG=<sha> \
-#   docker compose -f docker-compose-env.yaml -f docker-compose.yaml \
+#   docker compose --env-file .env.staging \
+#     -f docker-compose-env.yaml -f docker-compose.yaml \
 #     -f docker-compose.staging.yaml up -d
 
 services:
   kafka:
     container_name: tellomi-staging-kafka
     ports: !override []
+    mem_limit: 768m
+    memswap_limit: 768m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
 
   etcd:
     container_name: tellomi-staging-etcd
     ports: !override []
+    mem_limit: 128m
+    memswap_limit: 128m
     volumes: !override
       - ./data-staging/etcd:/etcd-data
 
   redis:
     container_name: tellomi-staging-redis
     ports: !override []
+    mem_limit: 256m
+    memswap_limit: 256m
     volumes: !override
       - ./data-staging/redis:/data
 
   mysql:
     container_name: tellomi-staging-mysql
     ports: !override []
+    mem_limit: 512m
+    memswap_limit: 512m
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --innodb-buffer-pool-size=256M
     volumes: !override
       - ./data-staging/mysql:/var/lib/mysql
       - ./teamgramd/deploy/sql:/docker-entrypoint-initdb.d/
@@ -44,9 +61,16 @@ services:
 
   teamgram:
     container_name: tellomi-staging-teamgram
+    # Loopback only. Desktop and CI reach these through an SSH local forward
+    # or a runner on this host. Do not publish them on 0.0.0.0 from this file.
+    # 10444 is host TCP (container MTProto 10443). 11444 is host WebSocket
+    # (container 11443). See docs/ops/STAGING_BRINGUP.md.
     ports: !override
-      - "10444:10443"
-      - "11444:11443"
+      - "127.0.0.1:10444:10443"
+      - "127.0.0.1:11444:11443"
+    cpus: 1
+    mem_limit: 1024m
+    memswap_limit: 1024m
     volumes: !override
       - ./data-staging/logs:/app/logs
       - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro

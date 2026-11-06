@@ -1,5 +1,13 @@
 # Staging on the same host
 
+This file is the repo layout for a second Compose project. It is not a
+record that the project is running. A 2026-11-07 operator read-only pass
+found no staging containers, volumes, or `data-staging` directory on the
+Chengdu host, and nothing listening on host `10444` or `11444`. That pass
+is not authorization to create the stack. The bring-up steps, resource
+caps, and the rule against copying production data are in
+[STAGING_BRINGUP.md](ops/STAGING_BRINGUP.md).
+
 Staging is a second Compose project. It does not reuse production's MySQL
 data directory, published ports, or container names. The image is the one CI
 pushed. The host does not build it.
@@ -12,8 +20,8 @@ Requires Docker Compose 2.24 or newer (`!override` in
 | | Production | Staging |
 |---|---|---|
 | Project | default (`docker compose`) | `COMPOSE_PROJECT_NAME=tellomi-staging` |
-| MTProto | host port 10443 | host port 10444 |
-| WebSocket | host port 11443 | host port 11444 |
+| MTProto | host TCP 10443, all interfaces | host TCP **10444** on `127.0.0.1` only (container 10443) |
+| WebSocket | host TCP 11443, all interfaces | host TCP **11444** on `127.0.0.1` only (container 11443) |
 | MySQL data | `./data/mysql` | `./data-staging/mysql` |
 | Redis / etcd / MinIO | `./data/...` | `./data-staging/...` |
 | Kafka volume | project volume `kafka_data` | project volume under `tellomi-staging` |
