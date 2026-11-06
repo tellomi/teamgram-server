@@ -61,6 +61,7 @@ func (s *Service) ReleaseExpired(ctx context.Context) {
 		return
 	}
 	now := s.now()
+	s.repairMySQLAdverts(ctx)
 	s.reconcilePersisted(ctx)
 
 	s.mu.Lock()
@@ -234,6 +235,9 @@ func (s *Service) syncUserMax(ctx context.Context, owner Owner) bool {
 // a stale ticket does not update memory, and the active set is recomputed
 // before another external write.
 func (s *Service) syncUserMaxInGate(ctx context.Context, owner Owner) bool {
+	if ms, ok := s.store.(*mysqlStore); ok && ms != nil && ms.db != nil {
+		return s.syncUserMaxMySQL(ctx, ms, owner)
+	}
 	const maxPasses = 4
 	for pass := 0; pass < maxPasses; pass++ {
 		max, _, err := s.activeMax(ctx, owner)
@@ -287,6 +291,63 @@ func (s *Service) syncUserMaxInGate(ctx context.Context, owner Owner) bool {
 	}
 	logx.WithContext(ctx).Errorf("story: max %d changed while it was being stored", owner.ID)
 	return false
+}
+
+// syncUserMaxMySQL stores the live max in the same database transaction that
+// the caller uses for a story change. The value comes from the story rows,
+// not from a max this process computed earlier.
+func (s *Service) syncUserMaxMySQL(ctx context.Context, ms *mysqlStore, owner Owner) bool {
+	max, wrote, err := ms.commitUserAdvert(ctx, owner.ID, s.now(), nil)
+	if err == errNoAdvertUser {
+		return true
+	}
+	if err != nil {
+		logx.WithContext(ctx).Errorf("story: advert %d: %v", owner.ID, err)
+		return false
+	}
+	if !wrote {
+		return false
+	}
+	s.rememberAdvert(owner.ID, max)
+	s.pushAdvert(ctx, owner.ID, max)
+	return true
+}
+
+func (s *Service) rememberAdvert(userID int64, max int32) {
+	s.mu.Lock()
+	s.ensureAdvertLocked()
+	s.userMaxKnown[userID] = true
+	s.userMax[userID] = max
+	s.mu.Unlock()
+}
+
+func (s *Service) pushAdvert(ctx context.Context, userID int64, max int32) {
+	s.mu.Lock()
+	fn := s.hooks.SetUserMax
+	s.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	if err := fn(ctx, userID, max); err != nil {
+		logx.WithContext(ctx).Errorf("story: push max %d: %v", userID, err)
+	}
+}
+
+// repairMySQLAdverts fixes users whose stories_max_id does not match a live
+// story, including a crash that left the column at 0. One pass is capped.
+func (s *Service) repairMySQLAdverts(ctx context.Context) {
+	ms, ok := s.store.(*mysqlStore)
+	if !ok || ms == nil || ms.db == nil {
+		return
+	}
+	ids, err := ms.advertMismatches(ctx, s.now(), 256)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("story: advert mismatches: %v", err)
+		return
+	}
+	for _, id := range ids {
+		s.syncUserMax(ctx, Owner{Kind: KindUser, ID: id})
+	}
 }
 
 func (s *Service) syncChannelAdvert(ctx context.Context, owner Owner) bool {
