@@ -12,6 +12,13 @@ bytes, video bytes and plain files do not go through libvips, and ffmpeg
 still extracts video thumbnails. Chengdu does not compile this dependency.
 Actions builds the image and Chengdu only pulls it.
 
+The runtime stage also installs `ca-certificates`. Go verifies the R2 API
+certificate with `/etc/ssl/certs/ca-certificates.crt` when `SSL_CERT_FILE`
+and `SSL_CERT_DIR` are unset. Leave both unset. The image build runs
+`scripts/verify-ca-bundle.sh` and fails if that bundle is missing or has no
+PEM certificates. Do not turn TLS verification off, switch the endpoint to
+HTTP, or skip the bucket check to get past a missing bundle.
+
 The workflow runs on every push to `master` and from the Actions tab
 (`workflow_dispatch`). A new push to the same ref cancels the in-progress
 build, so an older run cannot finish later and move `:latest` backwards.
@@ -57,6 +64,12 @@ host until that workflow's `ready-for-deploy` job is green. The checklist,
 screenshots, and secrets are in [e2e/ui/README.md](../e2e/ui/README.md).
 This image-publish workflow is not that gate. Production deploys stay on
 `deploy-pull.sh` below.
+
+Images `2a39de6` and `e66b59c` have no CA bundle: `ca-certificates` is not
+installed and `/etc/ssl/certs` is empty. `dfs` exits during startup and does
+not listen. Roll back to `59922c6` (the last image confirmed to contain the
+trust store), not to those two tags. A rollback uses the same
+`deploy-pull.sh` argument and does not edit TLS settings.
 
 On the production host the script path is `/opt/tellomi/deploy-pull.sh`.
 The current copy is [`deploy-pull.sh`](../deploy-pull.sh). The file on the
