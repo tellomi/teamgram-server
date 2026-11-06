@@ -119,10 +119,72 @@ if [[ "$status" -eq 0 ]]; then
   echo "up accepted empty TELLOMI_DC_OPTIONS" >&2
   exit 1
 fi
-printf '%s\n' "$out" | grep -q "TELLOMI_DC_OPTIONS" || {
-  echo "expected DC refusal, got: $out" >&2
+printf '%s\n' "$out" | grep -q "refusing before any docker command" || {
+  echo "expected DC refusal before docker, got: $out" >&2
   exit 1
 }
+
+echo "exact tunnel spec is accepted by the parser"
+TELLOMI_DC_OPTIONS='1:127.0.0.1:10444' python3 "$root/scripts/staging_dc_options.py"
+
+echo "parser rejects mixed, duplicate, empty, IPv6, and whitespace forms"
+while IFS= read -r spec; do
+  [[ -n "$spec" ]] || continue
+  set +e
+  out="$(TELLOMI_DC_OPTIONS="$spec" python3 "$root/scripts/staging_dc_options.py" 2>&1)"
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "accepted DC spec: $spec" >&2
+    exit 1
+  fi
+  printf '%s\n' "$out" | grep -q "refusing before any docker command" || {
+    echo "spec $spec did not refuse before docker: $out" >&2
+    exit 1
+  }
+done <<'EOF'
+1:8.137.39.82:10443,1:127.0.0.1:10444
+1:127.0.0.1:10444,1:8.137.39.82:10443
+1:127.0.0.1:10444,1:8.137.39.82:5222
+1:127.0.0.1:10444,1:127.0.0.1:10444
+1:127.0.0.1:10444,
+,1:127.0.0.1:10444
+1:::1:10444
+1:2001:db8::1:10444
+ 1:127.0.0.1:10444
+1:127.0.0.1:10444 
+1: 127.0.0.1:10444
+1:127.0.0.1:10443
+1:127.0.0.1:11444
+1:localhost:10444
+1:0.0.0.0:10444
+2:127.0.0.1:10444
+EOF
+
+echo "rendered mixed production DC is refused before docker"
+dcfile="$(mktemp)"
+printf '%s\n' 'TELLOMI_DC_OPTIONS=1:8.137.39.82:10443,1:127.0.0.1:10444' > "$dcfile"
+set +e
+out="$(env -u COMPOSE_PROJECT_NAME STAGING_ENV_FILE="$dcfile" "$root/scripts/staging-compose.sh" up -d 2>&1)"
+status=$?
+set -e
+rm -f "$dcfile"
+if [[ "$status" -eq 0 ]]; then
+  echo "up accepted a production DC mixed with the tunnel" >&2
+  exit 1
+fi
+printf '%s\n' "$out" | grep -q "refusing before any docker command" || {
+  echo "mixed DC was not refused before docker: $out" >&2
+  exit 1
+}
+printf '%s\n' "$out" | grep -q "8.137.39.82" || {
+  echo "mixed DC was not parsed: $out" >&2
+  exit 1
+}
+if printf '%s\n' "$out" | grep -Eq 'Cannot connect to the Docker daemon|docker.sock|Pulling|pull access denied'; then
+  echo "mixed DC reached docker: $out" >&2
+  exit 1
+fi
 
 echo "wrapper ignores the current directory name"
 (

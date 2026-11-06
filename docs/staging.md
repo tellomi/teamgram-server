@@ -61,10 +61,15 @@ scripts/staging-compose.sh up -d
 ```
 
 Do not pass `--build`. Do not export `COMPOSE_PROJECT_NAME`.
-`.env.staging` must set `TELLOMI_DC_OPTIONS=1:127.0.0.1:10444` for a desktop
-SSH tunnel. `up` refuses an env file that omits it, and refuses an extra
-RSA key. Leave `TELLOMI_MTPROTO_EXTRA_KEY_FILE` and
-`TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT` empty.
+`.env.staging` must set `TELLOMI_DC_OPTIONS` to exactly
+`1:127.0.0.1:10444`. `up` parses the rendered list and refuses a production
+address mixed in, a duplicate, an empty item, IPv6, whitespace, or any
+other DC, before it calls Docker. It also refuses an extra RSA key. Leave
+`TELLOMI_MTPROTO_EXTRA_KEY_FILE` and
+`TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT` empty. Do not copy the production
+private key. The image fingerprint `12240908862933197005` is not the
+production pin `4381149949997195609`, and this file does not say a desktop
+can log in.
 
 `up` the first time creates `./data-staging` and loads SQL through the MySQL
 entrypoint plus `mysql-migrate`. Later deploys only change

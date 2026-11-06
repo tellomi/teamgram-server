@@ -86,15 +86,20 @@ Use a new env file, for example `.env.staging`, that is not the production
 - Leave `TELLOMI_DISCOVER`, `TELLOMI_AI`, `TELLOMI_ANNOUNCE`, and the push
   credential paths unset. Do not mount the production APNs or MTProto key.
 - Leave `TELLOMI_MTPROTO_EXTRA_KEY_FILE` and
-  `TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT` empty. Both empty means the process
-  serves only the image yaml key, fingerprint `12240908862933197005`. Setting
-  one without the other panics. Do not mount `/opt/tellomi/secrets`.
+  `TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT` empty. Do not copy the production
+  private key and do not mount `/opt/tellomi/secrets`. See the key section
+  below. This PR does not change any client pin.
 - For a desktop that dials the SSH forward, set
   `TELLOMI_DC_OPTIONS=1:127.0.0.1:10444` and `TELLOMI_DC_TXT_DOMAIN=-`.
-  Unset or empty `TELLOMI_DC_OPTIONS` leaves `help.getConfig` `dc_options`
-  empty (`TestHelpGetConfigDCOptionsUnsetMatchesFile`). The tunnel value is
-  covered by `TestHelpGetConfigStagingTunnelDC`. Do not advertise
-  `8.137.39.82:10443` from the staging env.
+  That is the only value `scripts/staging-compose.sh up` accepts. The check
+  parses the list. It refuses a production address before or after the
+  tunnel, a duplicate, an empty item, IPv6, whitespace, and any other DC.
+  Unset or empty leaves `help.getConfig` `dc_options` empty
+  (`TestHelpGetConfigDCOptionsUnsetMatchesFile`).
+  `TestHelpGetConfigStagingTunnelDC` checks the single tunnel string. It is
+  not a live `getConfig`. `TestParseMixedTunnelStillPublishesProduction`
+  shows the server parser would publish both addresses, with
+  `this_port_only`, if the staging gate did not refuse the mixed string.
 - Login tests use `99966XYYYY`. On DC 1 the code is `11111`. That range never
   calls the SMS API. Non-test numbers stay on the fixed code `12345` while
   the SMS provider is unset, and that path does not dial Aliyun.
@@ -166,12 +171,28 @@ Do not pass `--build`. Do not pass `docker-compose.limits.yaml`. The first
 `mysql-migrate`. It does not read `./data/mysql`. `down`, `ps`, `logs`,
 `pull`, `stop`, `start`, and `rm` go through the same script.
 
-## Identity evidence before any dial
+## What can be checked, and what cannot
 
-`E2E_STAGING_CONFIRMED=tellomi-staging` is a typed word. Port `10444` is a
-number. Neither one proves the process is the isolated project. UI
-acceptance reads `E2E_STAGING_EVIDENCE`, a file copied from a read-only
-host check, and refuses to dial unless the file contains all of:
+Two different things were easy to mix together.
+
+A host capture is output from commands run on the host, read by a person
+before any dial. This repository cannot collect it. The commands, when
+someone with access runs them later, are `docker inspect` on
+`tellomi-staging-teamgram` (name, port bindings, mounts), `ss` for
+`127.0.0.1:10444`, and the Compose project name from
+`scripts/staging-compose.sh ps`. None of those commands has been run for
+this change. Their output is not in git.
+
+An operator attestation is text a person types. The UI harness can reject
+shapes that are obviously wrong. Passing that check does not authenticate
+the host. GitHub Actions `workflow_dispatch` input `staging_evidence` is
+ignored. The workflow sets `E2E_STAGING_EVIDENCE_SOURCE=workflow-input`,
+and `redirect.py` refuses that source. It does not write the pasted text
+to a file and then call the file a capture.
+
+The harness dials only `127.0.0.1`. A public IP is refused even when the
+attestation file contains the four lines below. Those lines have to be
+exact lines, not substrings:
 
 ```text
 container=tellomi-staging-teamgram
@@ -180,39 +201,50 @@ project=tellomi-staging
 datadir=data-staging
 ```
 
-Write those lines only from `docker inspect` / `ss` output for that
-container. A line `mount=/opt/tellomi/teamgram-server/data/` is a refusal.
-Do not type the four lines because the port is open. A public
-`<ip>:10444` is not `listen=127.0.0.1:10444`. The UI harness is MTProto
-TCP and refuses `11444` even when the evidence file is present.
+A `mount=` line is path-normalized (`//`, `.`, `..`, and a missing trailing
+slash). `/opt/tellomi/teamgram-server/data` and `/opt/tellomi/secrets`, and
+anything under them, are refused. A missing `mount=` line does not prove
+the mount is absent. The confirmation word and port `10444` are not proof
+either. Host `11444` is WebSocket and this TCP harness refuses it.
+
+This acceptance scope is desktop MTProto TCP `10444` only. iOS ignores
+`this_port_only` and still probes `80` and `5222` (`pkg/dcoptions` and
+`docs/ops/DC_ADDRESSES.md`). Before any later real acceptance, check each
+desktop client's DC list and what it does when the SSH tunnel reconnects.
+That check has not been done. This PR does not change a client.
 
 ## Keys and DC, not a passed interop
 
 Empty extra-key variables load fingerprint `12240908862933197005` from
-`teamgramd/etc2/gnetway.yaml`. gnetway startup logs redact that fingerprint
-(`startup_redact_test.go`), so the log line is not the check. The check is
-the rendered environment: both `TELLOMI_MTPROTO_EXTRA_KEY_*` values empty,
-and no mount of `/opt/tellomi/secrets`. `scripts/staging-compose.sh` fails
-`check` when either value is set. A client that still pins
-`12240908862933197005` can handshake with that process in principle. A
-client that only pins production fingerprint `4381149949997195609` cannot.
-This repository change did not start the process and did not complete a
-desktop login. A human still has to compare the desktop binary's pinned
-fingerprint with `12240908862933197005` before any later attempt. That
-comparison is not recorded as done.
+`teamgramd/etc2/gnetway.yaml`. Production clients pin
+`4381149949997195609`. Those two fingerprints are not interchangeable.
+gnetway startup logs redact the fingerprint (`startup_redact_test.go`), so
+the log line is not the check. The rendered environment must keep both
+`TELLOMI_MTPROTO_EXTRA_KEY_*` values empty, and must not mount
+`/opt/tellomi/secrets`. `scripts/staging-compose.sh` fails `check` when
+either value is set.
 
-`help.getConfig` returns the tunnel DC only when `.env.staging` sets
-`TELLOMI_DC_OPTIONS=1:127.0.0.1:10444`. The unit test
-`TestHelpGetConfigStagingTunnelDC` checks that string. It is not a live
-`getConfig` against a running server.
+A desktop-only staging config would need that desktop build to trust the
+public key for `12240908862933197005` on purpose. Copying the production
+private key into staging is not that step, and this PR does not do it.
+This PR also does not change the production client pin. Until a desktop
+build has that explicit trust, and until someone has compared it with the
+key the staging process actually loaded, do not describe staging as able
+to log in. No such build and no such comparison exist here.
+
+`help.getConfig` publishes the tunnel DC only when `.env.staging` is
+exactly `TELLOMI_DC_OPTIONS=1:127.0.0.1:10444`. `up` parses that value and
+refuses anything else before it calls Docker. The unit test
+`TestHelpGetConfigStagingTunnelDC` checks the single string. It is not a
+live `getConfig` against a running server.
 
 ## Acceptance and rollback
 
 On the host, after the containers exist, and only then:
 
 1. `docker ps` names start with `tellomi-staging-`. No staging container
-   mounts `/opt/tellomi/teamgram-server/data`. Copy the four evidence lines
-   from that inspect output.
+   mounts `/opt/tellomi/teamgram-server/data`. Keep the inspect output.
+   Retyping four lines from it is not a substitute for that output.
 2. `ss` shows `127.0.0.1:10444` owned by `tellomi-staging-teamgram`.
    `10443`, `11443`, and `5222` stay on the production container.
 3. TCP to `127.0.0.1:10444` succeeds on the host. Then

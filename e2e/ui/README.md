@@ -4,18 +4,23 @@ English below. [中文](#中文).
 
 These flows are the gate before a staging deploy. GitHub Actions runs them on
 `workflow_dispatch` and when a pull request is labeled `deploy-staging`.
-They do not pick a host. `E2E_API_HOST`, `E2E_API_PORT`,
-`E2E_STAGING_CONFIRMED=tellomi-staging`, and `E2E_STAGING_EVIDENCE` are
-required. The port must be host TCP `10444`. Host WebSocket `11444` is
-refused because this harness speaks MTProto TCP. `10443`, `5222`, `11443`,
-`api.tellomi.cn`, and `chat.tellomi.cn` are refused. A missing DNS name is
-not rewritten to another address. The confirmation word and port `10444`
-are not proof of isolation. The evidence file must contain
-`container=tellomi-staging-teamgram`, `listen=127.0.0.1:10444`,
-`project=tellomi-staging`, and `datadir=data-staging`, copied from a
-read-only host check. A public IP with port `10444` is not that listen
-line. The `ready-for-deploy` job is green only after the flows pass. Do
-not `docker compose pull` on the staging host until that job is green.
+They do not pick a host. `E2E_API_HOST` must be `127.0.0.1`, `E2E_API_PORT`
+must be TCP `10444`, and `E2E_STAGING_CONFIRMED=tellomi-staging`. Host
+WebSocket `11444` is refused because this harness speaks MTProto TCP.
+`10443`, `5222`, `11443`, `api.tellomi.cn`, and `chat.tellomi.cn` are
+refused. A public IP is refused even if an evidence file was typed. A
+missing DNS name is not rewritten to another address. The confirmation
+word, the port, and a handwritten file are not host authentication.
+GitHub Actions does not write `staging_evidence` into a file. That input
+is not a host capture, and the workflow sets
+`E2E_STAGING_EVIDENCE_SOURCE=workflow-input`, which the harness refuses.
+This scope is desktop MTProto TCP `10444` only. iOS ignores
+`this_port_only` and still probes `80` and `5222`. The image key
+fingerprint `12240908862933197005` is not the production pin
+`4381149949997195609`. This harness does not change client pins and does
+not show that a desktop can log in. The `ready-for-deploy` job is green
+only after the flows pass. Do not `docker compose pull` on the staging
+host until that job is green.
 
 The image publish workflow (`.github/workflows/docker-acr.yml`) is separate.
 It does not run this suite.
@@ -110,10 +115,10 @@ workflow.
 | `E2E_PHONE_A` | secret | no | Stable number for account A, digits `999661xxxx`. Default: a fresh number per run. |
 | `E2E_PHONE_B` | secret | no | Stable number for account B. |
 | `E2E_PHONE_SIGNUP` | secret | no | Stable number for the sign-up checkbox flow. Reuse only after the account is deleted, or the sign-up screen will not appear. |
-| `E2E_API_HOST` | env / dispatch `api_host` | yes | Confirmed staging host. No default. `api.tellomi.cn` is refused. |
+| `E2E_API_HOST` | env / dispatch `api_host` | yes | `127.0.0.1` only. A public IP is refused. |
 | `E2E_API_PORT` | env / dispatch `api_port` | yes | TCP `10444` only. `11444` is refused. |
 | `E2E_STAGING_CONFIRMED` | env / dispatch `staging_confirmed` | yes | Must be `tellomi-staging`. The word alone is not proof. |
-| `E2E_STAGING_EVIDENCE` | env / dispatch `staging_evidence` | yes | File with the four host-identity lines. |
+| `E2E_STAGING_EVIDENCE` | env, local file | local only | Operator attestation. Not a host capture. Workflow input is ignored. |
 | `E2E_DC_DIGIT` | env | no | Default `1` (code `11111`). |
 | `E2E_ANDROID_RUNNER` | variable | no | Default `ubuntu-latest`. |
 | `E2E_IOS_RUNNER` | variable | no | Default `xcode-27`. |
@@ -129,7 +134,7 @@ That does not boot an emulator. The shell scripts are parsed with `bash -n`.
 
 ## 中文
 
-这是 staging 部署前的界面验收。Actions 里手动运行（`workflow_dispatch`），或给 pull request 打上 `deploy-staging` 标签时，会在模拟器里跑 Maestro。必须显式给出 `E2E_API_HOST`、`E2E_API_PORT`（只能是宿主 TCP `10444`）、`E2E_STAGING_CONFIRMED=tellomi-staging` 和 `E2E_STAGING_EVIDENCE`。`11444` 是 WebSocket，这套 MTProto TCP 验收会拒绝。没有默认主机。`10443`、`5222`、`11443` 以及 `api.tellomi.cn` 会被拒绝。DNS 不存在时不会改写成别的地址。确认词和端口 `10444` 都不是隔离证据。证据文件必须含有 `container=tellomi-staging-teamgram`、`listen=127.0.0.1:10444`、`project=tellomi-staging`、`datadir=data-staging`，并且来自主机只读检查。公网 IP 加端口 `10444` 不能代替 `listen=127.0.0.1:10444`。`ready-for-deploy` 成功之后，才能在 staging 主机上 `docker compose pull`。
+这是 staging 部署前的界面验收。Actions 里手动运行（`workflow_dispatch`），或给 pull request 打上 `deploy-staging` 标签时，会在模拟器里跑 Maestro。`E2E_API_HOST` 只能是 `127.0.0.1`，`E2E_API_PORT` 只能是宿主 TCP `10444`，并要有 `E2E_STAGING_CONFIRMED=tellomi-staging`。`11444` 是 WebSocket，这套 MTProto TCP 验收会拒绝。公网 IP 即使配了手写证据也会被拒绝。`10443`、`5222`、`11443` 以及 `api.tellomi.cn` 会被拒绝。DNS 不存在时不会改写成别的地址。确认词、端口和手写文件都不是主机认证。Actions 不会把 `staging_evidence` 写成文件。那个输入不是主机采集，工作流会设置 `E2E_STAGING_EVIDENCE_SOURCE=workflow-input`，验收脚本会拒绝。这次范围只是桌面 MTProto TCP `10444`。iOS 忽略 `this_port_only`，仍会探测 `80` 和 `5222`。镜像密钥指纹 `12240908862933197005` 不是生产 pin `4381149949997195609`。本仓库不改客户端 pin，也不表示桌面已经能登录。`ready-for-deploy` 成功之后，才能在 staging 主机上 `docker compose pull`。
 
 镜像发布（`.github/workflows/docker-acr.yml`）不跑这套测试。
 
@@ -181,10 +186,10 @@ Android 和 iOS 都跳过时，`ready-for-deploy` 失败。
 | `E2E_PHONE_A` | secret | 否 | 账号 A 的固定号码，数字形式 `999661xxxx`。默认每次换新号。 |
 | `E2E_PHONE_B` | secret | 否 | 账号 B 的固定号码。 |
 | `E2E_PHONE_SIGNUP` | secret | 否 | 注册勾选框用的固定号码。账号还在时不会再进入注册页，所以不要复用没删掉的号。 |
-| `E2E_API_HOST` | 环境变量 / 手动输入 `api_host` | 是 | 已确认的预发主机。无默认。`api.tellomi.cn` 会被拒绝。 |
+| `E2E_API_HOST` | 环境变量 / 手动输入 `api_host` | 是 | 只能是 `127.0.0.1`。公网 IP 会被拒绝。 |
 | `E2E_API_PORT` | 环境变量 / 手动输入 `api_port` | 是 | 只能是 TCP `10444`。`11444` 会被拒绝。 |
 | `E2E_STAGING_CONFIRMED` | 环境变量 / 手动输入 `staging_confirmed` | 是 | 填 `tellomi-staging`。这个词本身不是证据。 |
-| `E2E_STAGING_EVIDENCE` | 环境变量 / 手动输入 `staging_evidence` | 是 | 含四行主机身份证据的文件。 |
+| `E2E_STAGING_EVIDENCE` | 环境变量，本地文件 | 仅本地 | 操作者声明。不是主机采集。工作流输入会被忽略。 |
 | `E2E_DC_DIGIT` | 环境变量 | 否 | 默认 `1`（验证码 `11111`）。 |
 | `E2E_ANDROID_RUNNER` | 变量 | 否 | 默认 `ubuntu-latest`。 |
 | `E2E_IOS_RUNNER` | 变量 | 否 | 默认 `xcode-27`。 |

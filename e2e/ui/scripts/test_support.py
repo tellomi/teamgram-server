@@ -118,6 +118,7 @@ class RedirectTest(unittest.TestCase):
                 "E2E_API_PORT",
                 "E2E_STAGING_CONFIRMED",
                 "E2E_STAGING_EVIDENCE",
+                "E2E_STAGING_EVIDENCE_SOURCE",
             )
         }
         try:
@@ -146,14 +147,40 @@ class RedirectTest(unittest.TestCase):
             evidence = Path(self._evidence())
             os.environ["E2E_STAGING_EVIDENCE"] = str(evidence)
             os.environ["E2E_API_PORT"] = "10444"
-            self.assertEqual(redirect.require_confirmed_endpoint(), ("203.0.113.10", "10444"))
+            for public in ("203.0.113.10", "8.137.39.82"):
+                os.environ["E2E_API_HOST"] = public
+                with self.assertRaises(SystemExit):
+                    redirect.require_confirmed_endpoint()
+            os.environ["E2E_API_HOST"] = "127.0.0.1"
+            self.assertEqual(redirect.require_confirmed_endpoint(), ("127.0.0.1", "10444"))
+            os.environ["E2E_STAGING_EVIDENCE_SOURCE"] = "workflow-input"
+            with self.assertRaisesRegex(SystemExit, "not a host capture"):
+                redirect.require_confirmed_endpoint()
+            os.environ.pop("E2E_STAGING_EVIDENCE_SOURCE", None)
             os.environ["E2E_API_PORT"] = "11444"
             with self.assertRaises(SystemExit):
                 redirect.require_confirmed_endpoint()
             os.environ["E2E_API_PORT"] = "10444"
-            bad = Path(self._evidence())
-            bad.write_text(bad.read_text(encoding="utf-8") + "\nmount=/opt/tellomi/teamgram-server/data/mysql\n", encoding="utf-8")
-            os.environ["E2E_STAGING_EVIDENCE"] = str(bad)
+            for extra in (
+                "\nmount=/opt/tellomi/teamgram-server/data\n",
+                "\nmount=/opt/tellomi/teamgram-server/data/\n",
+                "\nmount=/opt/tellomi/teamgram-server/./data\n",
+                "\nmount=/opt/tellomi/teamgram-server/data/../data\n",
+                "\nmount=/opt//tellomi/teamgram-server/data/mysql\n",
+                "\nmount=/opt/tellomi/secrets\n",
+            ):
+                bad = Path(self._evidence())
+                bad.write_text(bad.read_text(encoding="utf-8") + extra, encoding="utf-8")
+                os.environ["E2E_STAGING_EVIDENCE"] = str(bad)
+                with self.assertRaises(SystemExit):
+                    redirect.require_confirmed_endpoint()
+            slipped = Path(self._evidence())
+            text = slipped.read_text(encoding="utf-8").replace(
+                "container=tellomi-staging-teamgram",
+                "container=tellomi-staging-teamgram-extra",
+            )
+            slipped.write_text(text, encoding="utf-8")
+            os.environ["E2E_STAGING_EVIDENCE"] = str(slipped)
             with self.assertRaises(SystemExit):
                 redirect.require_confirmed_endpoint()
         finally:
@@ -324,6 +351,8 @@ class ChecklistTest(unittest.TestCase):
         self.assertIn("workflow_dispatch", workflow)
         self.assertIn("reactivecircus/android-emulator-runner", workflow)
         self.assertIn("E2E_STAGING_CONFIRMED", workflow)
+        self.assertIn("not a host capture", workflow)
+        self.assertNotIn("staging-evidence.txt", workflow)
         self.assertNotIn('E2E_API_PORT: "11443"', workflow)
         self.assertNotIn("staging-api.tellomi.cn", workflow)
 

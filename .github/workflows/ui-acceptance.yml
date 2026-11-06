@@ -21,9 +21,10 @@ on:
         type: string
         required: true
       staging_evidence:
-        description: Host read-only lines container=tellomi-staging-teamgram, listen=127.0.0.1:10444, project=tellomi-staging, datadir=data-staging. No production data mount.
+        description: Ignored. Pasting lines here is not a host capture, and this workflow will not write them into an evidence file.
         type: string
-        required: true
+        required: false
+        default: ""
       android:
         description: Run the Android emulator flows
         type: boolean
@@ -54,8 +55,10 @@ on:
         type: string
         required: true
       staging_evidence:
+        description: Ignored. Not a host capture.
         type: string
-        required: true
+        required: false
+        default: ""
       android:
         type: boolean
         default: true
@@ -75,7 +78,8 @@ env:
   E2E_API_HOST: ${{ inputs.api_host }}
   E2E_API_PORT: ${{ inputs.api_port }}
   E2E_STAGING_CONFIRMED: ${{ inputs.staging_confirmed }}
-  E2E_STAGING_EVIDENCE_TEXT: ${{ inputs.staging_evidence }}
+  # workflow input is not a host capture. redirect.py refuses this source.
+  E2E_STAGING_EVIDENCE_SOURCE: workflow-input
 
 jobs:
   check:
@@ -111,11 +115,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Write staging evidence
-        run: |
-          printf '%s\n' "$E2E_STAGING_EVIDENCE_TEXT" > "$RUNNER_TEMP/staging-evidence.txt"
-          echo "E2E_STAGING_EVIDENCE=$RUNNER_TEMP/staging-evidence.txt" >> "$GITHUB_ENV"
 
       - name: Staging TCP preflight
         run: python3 e2e/ui/scripts/redirect.py --preflight
@@ -183,11 +182,6 @@ jobs:
           path: ${{ runner.temp }}/telegram-bazel-cache
           key: tellomi-ios-sim-none
           restore-keys: tellomi-ios-sim-
-
-      - name: Write staging evidence
-        run: |
-          printf '%s\n' "$E2E_STAGING_EVIDENCE_TEXT" > "$RUNNER_TEMP/staging-evidence.txt"
-          echo "E2E_STAGING_EVIDENCE=$RUNNER_TEMP/staging-evidence.txt" >> "$GITHUB_ENV"
 
       - name: Maestro flows
         env:

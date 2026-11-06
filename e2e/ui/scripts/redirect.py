@@ -24,6 +24,22 @@ STAGING_HOST_WS = "11444"
 REFUSED_PORTS = frozenset({CLIENT_DIAL_PORT, "5222", "11443"})
 REFUSED_HOSTS = frozenset({"api.tellomi.cn", "chat.tellomi.cn"})
 CONFIRMED_VALUE = "tellomi-staging"
+# Desktop SSH tunnel dials the runner's loopback. A public address is not
+# accepted because an evidence file says so.
+TUNNEL_HOST = "127.0.0.1"
+REQUIRED_EVIDENCE_LINES = (
+    "container=tellomi-staging-teamgram",
+    "listen=127.0.0.1:10444",
+    "project=tellomi-staging",
+    "datadir=data-staging",
+)
+# Operator attestation is not a capture from the host. The workflow must not
+# mint E2E_STAGING_EVIDENCE by writing its text input to a file.
+WORKFLOW_EVIDENCE_SOURCE = "workflow-input"
+PRODUCTION_MOUNT_ROOTS = (
+    "/opt/tellomi/teamgram-server/data",
+    "/opt/tellomi/secrets",
+)
 
 
 def require_confirmed_endpoint() -> tuple[str, str]:
@@ -62,35 +78,75 @@ def require_confirmed_endpoint() -> tuple[str, str]:
             "11444 is the staging WebSocket publish and is refused here. "
             "Port 10444 alone does not prove the process is isolated."
         )
+    if host != TUNNEL_HOST:
+        raise SystemExit(
+            "E2E_API_HOST must be 127.0.0.1. A public IP is not accepted "
+            "because an evidence file was typed. This harness does not "
+            "authenticate the host."
+        )
+    if os.environ.get("E2E_STAGING_EVIDENCE_SOURCE", "").strip() == WORKFLOW_EVIDENCE_SOURCE:
+        raise SystemExit(
+            "workflow input is not a host capture. Refusing to dial. "
+            "Pasting lines into GitHub and writing them to a file does not "
+            "authenticate the staging host."
+        )
     evidence = os.environ.get("E2E_STAGING_EVIDENCE", "").strip()
     if not evidence:
         raise SystemExit(
             "E2E_STAGING_EVIDENCE is required. E2E_STAGING_CONFIRMED and "
-            "port 10444 are not proof of isolation."
+            "port 10444 are not proof of isolation. The file is an operator "
+            "attestation, not a host capture."
         )
     try:
         with open(evidence, encoding="utf-8") as handle:
             text = handle.read()
     except OSError as exc:
         raise SystemExit(f"cannot read E2E_STAGING_EVIDENCE: {exc}") from exc
-    required = (
-        "container=tellomi-staging-teamgram",
-        "listen=127.0.0.1:10444",
-        "project=tellomi-staging",
-        "datadir=data-staging",
-    )
-    missing = [item for item in required if item not in text]
+    _require_attestation(text)
+    return host, port
+
+
+def _normalize_mount(path: str) -> str:
+    path = path.strip().replace("\\", "/")
+    if "\x00" in path:
+        raise SystemExit("mount path contains NUL")
+    absolute = path.startswith("/")
+    parts: list[str] = []
+    for part in path.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    normalized = "/" + "/".join(parts) if absolute else "/".join(parts)
+    if len(normalized) > 1:
+        normalized = normalized.rstrip("/")
+    return normalized or "/"
+
+
+def _require_attestation(text: str) -> None:
+    """Check operator attestation shape. This does not prove host identity."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    missing = [item for item in REQUIRED_EVIDENCE_LINES if item not in lines]
     if missing:
         raise SystemExit(
-            "staging evidence is missing "
+            "staging attestation is missing exact lines "
             + ", ".join(missing)
-            + ". Copy them from the host read-only check. Do not invent them from the port."
+            + ". A substring is not enough, and typing the lines is not a "
+            "host capture."
         )
-    if "mount=/opt/tellomi/teamgram-server/data/" in text:
-        raise SystemExit(
-            "staging evidence still lists a production data mount. Refusing to dial."
-        )
-    return host, port
+    for line in lines:
+        if not line.lower().startswith("mount="):
+            continue
+        normalized = _normalize_mount(line.split("=", 1)[1])
+        for root in PRODUCTION_MOUNT_ROOTS:
+            if normalized == root or normalized.startswith(root + "/"):
+                raise SystemExit(
+                    f"staging attestation lists production mount {normalized}. "
+                    "Refusing to dial."
+                )
 
 
 def resolve_host(host: str) -> str:

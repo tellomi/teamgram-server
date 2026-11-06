@@ -118,6 +118,14 @@ that prefers the classic port an address that answers. Leave `11443` out.
 `TELLOMI_DC_TXT_DOMAIN=-` is recommended so Android backup discovery does not
 point at Telegram. Omit it, or leave it empty, to keep `apv2.stel.com`.
 
+Staging does not use that production list. `scripts/staging-compose.sh up`
+accepts only `TELLOMI_DC_OPTIONS=1:127.0.0.1:10444`. The server parser would
+publish a mixed list such as `1:8.137.39.82:10443,1:127.0.0.1:10444` as two
+`this_port_only` addresses, and Android would dial the production one. iOS
+still probes `80` and `5222` because it ignores `this_port_only`. The
+current staging acceptance scope is desktop MTProto TCP `10444` only. See
+[STAGING_BRINGUP.md](STAGING_BRINGUP.md).
+
 ## Clients persist the list
 
 Only deliver addresses that complete MTProto. A blackhole IP is stored.

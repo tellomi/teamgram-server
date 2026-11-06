@@ -177,27 +177,25 @@ PY
 }
 
 assert_up_dc() {
-  RENDERED="$1" python3 - <<'PY'
-import json, os, sys
+  local spec
+  spec="$(RENDERED="$1" python3 - <<'PY'
+import json, os
 doc = json.loads(os.environ["RENDERED"])
 teamgram = (doc.get("services") or {})["teamgram"]
 env = teamgram.get("environment") or {}
-def env_get(key):
-    if isinstance(env, dict):
-        return str(env.get(key) or "")
+key = "TELLOMI_DC_OPTIONS"
+if isinstance(env, dict):
+    print(env.get(key) or "", end="")
+elif isinstance(env, list):
     prefix = key + "="
-    if isinstance(env, list):
-        for item in env:
-            if isinstance(item, str) and item.startswith(prefix):
-                return item[len(prefix):]
-    return ""
-dc = env_get("TELLOMI_DC_OPTIONS")
-if "1:127.0.0.1:10444" not in dc:
-    sys.exit(
-        "TELLOMI_DC_OPTIONS must include 1:127.0.0.1:10444 "
-        "(desktop SSH tunnel). Unset leaves help.getConfig dc_options empty."
-    )
+    for item in env:
+        if isinstance(item, str) and item.startswith(prefix):
+            print(item[len(prefix):], end="")
+            break
 PY
+)"
+  # Parse the rendered list. Do not accept a substring of a production DC.
+  TELLOMI_DC_OPTIONS="$spec" python3 "$root/scripts/staging_dc_options.py"
 }
 
 rendered="$(render)"
