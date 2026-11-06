@@ -2,6 +2,8 @@ package story
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
@@ -162,23 +164,14 @@ func (s *Service) readPersistedMaxes(ctx context.Context) (map[int64]int32, bool
 	if !ok || ms == nil || ms.db == nil {
 		return nil, false, nil
 	}
-	rows, err := ms.db.QueryContext(ctx, `SELECT id, stories_max_id FROM users WHERE stories_max_id <> 0`)
-	if err != nil {
+	// Non-zero advertisements are paged by users_stories_max in
+	// repairMySQLAdverts. This used to read every non-zero row in one query.
+	// The table exists; the repair cursor does the work.
+	err := ms.db.QueryRowContext(ctx, `SELECT 1 FROM users LIMIT 1`).Scan(new(int))
+	if err != nil && err != sql.ErrNoRows {
 		return nil, true, err
 	}
-	defer rows.Close()
-	out := map[int64]int32{}
-	for rows.Next() {
-		var id int64
-		var max int32
-		if err = rows.Scan(&id, &max); err != nil {
-			return nil, true, err
-		}
-		if id != 0 && max != 0 {
-			out[id] = max
-		}
-	}
-	return out, true, rows.Err()
+	return nil, true, nil
 }
 
 func (s *Service) ensureAdvertLocked() {
@@ -309,7 +302,14 @@ func (s *Service) syncUserMaxMySQL(ctx context.Context, ms *mysqlStore, owner Ow
 		return false
 	}
 	s.rememberAdvert(owner.ID, max)
-	s.pushAdvert(ctx, owner.ID, max)
+	if err = s.pushAdvert(ctx, owner.ID, max); err != nil {
+		// SQL and story_advert_dirty are committed. The next repair retries
+		// the cache delete. Do not report the story write as failed.
+		return true
+	}
+	if err = ms.clearDirty(ctx, owner.ID, max); err != nil {
+		logx.WithContext(ctx).Errorf("story: clear dirty %d: %v", owner.ID, err)
+	}
 	return true
 }
 
@@ -321,33 +321,166 @@ func (s *Service) rememberAdvert(userID int64, max int32) {
 	s.mu.Unlock()
 }
 
-func (s *Service) pushAdvert(ctx context.Context, userID int64, max int32) {
+func (s *Service) pushAdvert(ctx context.Context, userID int64, max int32) error {
 	s.mu.Lock()
 	fn := s.hooks.SetUserMax
 	s.mu.Unlock()
 	if fn == nil {
-		return
+		return nil
 	}
 	if err := fn(ctx, userID, max); err != nil {
 		logx.WithContext(ctx).Errorf("story: push max %d: %v", userID, err)
+		return err
+	}
+	return nil
+}
+
+// repairMySQLAdverts drops caches recorded in story_advert_dirty, then one
+// page of live-story mismatches and one page of non-zero advertisements.
+// Each page is at most advertPage rows. A short page restarts that cursor.
+func (s *Service) repairMySQLAdverts(ctx context.Context) {
+	s.repairMySQLAdvertsLimit(ctx, advertPage)
+}
+
+const advertPage = 256
+
+func (s *Service) repairMySQLAdvertsLimit(ctx context.Context, limit int) {
+	ms, ok := s.store.(*mysqlStore)
+	if !ok || ms == nil || ms.db == nil || limit <= 0 {
+		return
+	}
+	s.drainAdvertDirty(ctx, ms, limit)
+	s.repairLiveAdverts(ctx, ms, limit)
+	s.repairStaleAdverts(ctx, ms, limit)
+}
+
+func (s *Service) drainAdvertDirty(ctx context.Context, ms *mysqlStore, limit int) {
+	s.mu.Lock()
+	after := s.advertDirtyAfter
+	s.mu.Unlock()
+	rows, err := ms.pageDirty(ctx, after, limit)
+	if err != nil {
+		if !errors.Is(err, errAdvertSchema) {
+			logx.WithContext(ctx).Errorf("story: dirty adverts: %v", err)
+		} else {
+			s.logAdvertSchemaOnce()
+		}
+		return
+	}
+	// A failed user stays in the table and is retried after this cursor
+	// wraps. The rest of the page, and later pages, still advance.
+	for _, row := range rows {
+		if err = s.pushAdvert(ctx, row.userID, row.max); err != nil {
+			continue
+		}
+		if err = ms.clearDirty(ctx, row.userID, row.max); err != nil {
+			logx.WithContext(ctx).Errorf("story: clear dirty %d: %v", row.userID, err)
+			continue
+		}
+	}
+	s.mu.Lock()
+	if len(rows) < limit {
+		s.advertDirtyAfter = 0
+	} else {
+		s.advertDirtyAfter = rows[len(rows)-1].userID
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) repairLiveAdverts(ctx context.Context, ms *mysqlStore, limit int) {
+	s.mu.Lock()
+	after := s.advertLiveAfter
+	s.mu.Unlock()
+	rows, err := ms.pageLiveOwners(ctx, after, limit)
+	if err != nil {
+		if !errors.Is(err, errAdvertSchema) {
+			logx.WithContext(ctx).Errorf("story: live adverts: %v", err)
+		} else {
+			s.logAdvertSchemaOnce()
+		}
+		return
+	}
+	for _, row := range rows {
+		var stored int32
+		err = ms.db.QueryRowContext(ctx, `SELECT stories_max_id FROM users WHERE id=?`, row.id).Scan(&stored)
+		if err != nil {
+			continue
+		}
+		if stored == row.max {
+			continue
+		}
+		s.syncUserMax(ctx, Owner{Kind: KindUser, ID: row.id})
+	}
+	s.mu.Lock()
+	if len(rows) < limit {
+		s.advertLiveAfter = 0
+	} else {
+		s.advertLiveAfter = rows[len(rows)-1].id
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) logAdvertSchemaOnce() {
+	s.mu.Lock()
+	logged := s.advertIndexLogged
+	s.advertIndexLogged = true
+	s.mu.Unlock()
+	if !logged {
+		logx.Error("story: advert schema is not migrated; repair will not scan stories or users. Run teamgramd/deploy/apply-gated-sql.sh after a restorable backup. Until story_advert_dirty and story_live_owner both exist, advertisement writes fail and nothing is committed.")
 	}
 }
 
-// repairMySQLAdverts fixes users whose stories_max_id does not match a live
-// story, including a crash that left the column at 0. One pass is capped.
-func (s *Service) repairMySQLAdverts(ctx context.Context) {
-	ms, ok := s.store.(*mysqlStore)
-	if !ok || ms == nil || ms.db == nil {
+func (s *Service) repairStaleAdverts(ctx context.Context, ms *mysqlStore, limit int) {
+	indexed, err := ms.usersStoriesMaxIndexed(ctx)
+	if err != nil || !indexed {
+		if err != nil {
+			logx.WithContext(ctx).Errorf("story: stories_max index: %v", err)
+		} else {
+			s.mu.Lock()
+			logged := s.advertIndexLogged
+			s.advertIndexLogged = true
+			s.mu.Unlock()
+			if !logged {
+				logx.Error("story: users_stories_max is missing; non-zero advertisement repair stays off and does not scan users. Apply teamgramd/deploy/gated/20261120-story-advert.sql through apply-gated-sql.sh.")
+			}
+		}
 		return
 	}
-	ids, err := ms.advertMismatches(ctx, s.now(), 256)
+	s.mu.Lock()
+	if !s.advertStaleInit {
+		s.advertStaleMax = 0
+		s.advertStaleID = int64(^uint64(0) >> 1)
+		s.advertStaleInit = true
+	}
+	afterMax, afterID := s.advertStaleMax, s.advertStaleID
+	s.mu.Unlock()
+	rows, err := ms.pageStaleAdverts(ctx, afterMax, afterID, limit)
 	if err != nil {
-		logx.WithContext(ctx).Errorf("story: advert mismatches: %v", err)
+		logx.WithContext(ctx).Errorf("story: stale adverts: %v", err)
 		return
 	}
-	for _, id := range ids {
-		s.syncUserMax(ctx, Owner{Kind: KindUser, ID: id})
+	now := s.now()
+	for _, row := range rows {
+		live, err := ms.liveMax(ctx, row.userID, now)
+		if err != nil {
+			logx.WithContext(ctx).Errorf("story: live max %d: %v", row.userID, err)
+			continue
+		}
+		if live == row.max {
+			continue
+		}
+		s.syncUserMax(ctx, Owner{Kind: KindUser, ID: row.userID})
 	}
+	s.mu.Lock()
+	if len(rows) < limit {
+		s.advertStaleMax = 0
+		s.advertStaleID = int64(^uint64(0) >> 1)
+	} else {
+		last := rows[len(rows)-1]
+		s.advertStaleMax = last.max
+		s.advertStaleID = last.userID
+	}
+	s.mu.Unlock()
 }
 
 func (s *Service) syncChannelAdvert(ctx context.Context, owner Owner) bool {
