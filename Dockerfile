@@ -35,8 +35,14 @@ RUN cd app/bff/userchannelprofiles/officialavatars/cmd/seedofficialavatars && go
 FROM ubuntu:latest
 # libvips is only needed by the dfs binary inside this image. The package
 # name changed with the t64 transition; both names are the SONAME 42 runtime.
+# ca-certificates has to be named here. --no-install-recommends does not
+# pull it in, and this rootfs does not ship a trust store. Without
+# /etc/ssl/certs/ca-certificates.crt, Go rejects the R2 API certificate
+# and dfs exits in MustNewMinioClient before it listens. Leave
+# SSL_CERT_FILE and SSL_CERT_DIR unset; crypto/x509 reads that bundle.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg psmisc default-mysql-client \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates ffmpeg psmisc default-mysql-client \
     && if apt-cache show libvips42t64 >/dev/null 2>&1; then \
          apt-get install -y --no-install-recommends libvips42t64; \
        elif apt-cache show libvips42 >/dev/null 2>&1; then \
@@ -47,6 +53,12 @@ RUN apt-get update \
        fi \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+COPY scripts/verify-ca-bundle.sh /tmp/verify-ca-bundle.sh
+# Fail the image when the trust store did not survive package install.
+# A missing bundle is the same failure as an empty /etc/ssl/certs.
+RUN chmod +x /tmp/verify-ca-bundle.sh \
+    && /tmp/verify-ca-bundle.sh \
+    && rm -f /tmp/verify-ca-bundle.sh
 WORKDIR /app
 COPY --from=builder /app/teamgramd/ /app/
 COPY --from=ip2region /out/ /app/data/ip2region/
