@@ -111,7 +111,7 @@ The opt-in overlay (`TELLOMI_COMPOSE_LIMITS=1`) is a ceiling, not a reservation.
 
 They do not all sit on the ceiling at once. Redis still has no eviction policy, so a 512m kill drops idgen and pts keys. Push and `@tellomi` run inside the `teamgram` container. They do not have their own cap.
 
-Postgres for content-engine and the engine process are not in this compose file. Adding them on the same 8 GB host, on top of the table above, does not fit. D-69's recount is: do not lower teamgram, do not put the feed database on this overlay until something else moves off the host (asr is the large optional piece, at 1536m), and do not turn the overlay on until the host's current RSS is measured again. This page does not change those numbers.
+Postgres for content-engine and the engine process are not in this compose file. Adding them on the same 8 GB host, on top of the table above, does not fit. D-69's recount is: do not lower teamgram, do not put the feed database on this overlay until something else moves off the host (asr is the large optional piece, at 1536m), and do not turn the overlay on until the host's current RSS is measured again. This page does not change those numbers. [COMPOSE_LIMITS.md](../ops/COMPOSE_LIMITS.md) proposes 512m for container `tellomi-feed-db` in the content-engine compose. That cap is not added to this overlay.
 
 ## What else in M8 is not this change
 

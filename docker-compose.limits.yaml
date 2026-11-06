@@ -8,12 +8,19 @@
 #
 # Redis has no maxmemory and no eviction policy. At 512m the process is
 # killed instead of dropping idgen or pts keys.
+#
+# Host RAM in this repo is 7.1G (Chengdu). Caps are ceilings and can sum past
+# that. memswap_limit equals mem_limit so a container cannot swap a second
+# copy of its cap; that RAM stays for the OS and the 03:15 backup.
+# content-engine is not a service here. See docs/ops/COMPOSE_LIMITS.md.
+# This file does not set ENGINE_COLIKE.
 
 services:
   # Chengdu sat on the 2560m cgroup: reclaim pinned a CPU and clients stayed
   # on "connecting". The host is already 3584m (3.5 GiB); this matches it.
   teamgram:
     mem_limit: 3584m
+    memswap_limit: 3584m
     deploy:
       resources:
         limits:
@@ -21,6 +28,7 @@ services:
 
   mysql:
     mem_limit: 1536m
+    memswap_limit: 1536m
     deploy:
       resources:
         limits:
@@ -43,6 +51,7 @@ services:
   # reservations, and the other caps can already sum past 7.1G.
   kafka:
     mem_limit: 1.6g
+    memswap_limit: 1.6g
     deploy:
       resources:
         limits:
@@ -52,6 +61,7 @@ services:
 
   redis:
     mem_limit: 512m
+    memswap_limit: 512m
     deploy:
       resources:
         limits:
@@ -59,6 +69,7 @@ services:
 
   etcd:
     mem_limit: 256m
+    memswap_limit: 256m
     deploy:
       resources:
         limits:
@@ -66,6 +77,7 @@ services:
 
   coturn:
     mem_limit: 256m
+    memswap_limit: 256m
     deploy:
       resources:
         limits:
@@ -73,6 +85,7 @@ services:
 
   mediamtx:
     mem_limit: 256m
+    memswap_limit: 256m
     deploy:
       resources:
         limits:
@@ -82,6 +95,7 @@ services:
   # because Compose rejects cpus and deploy.resources.limits.cpus when they differ.
   asr:
     mem_limit: 1536m
+    memswap_limit: 1536m
     cpus: 2
     deploy:
       resources:
