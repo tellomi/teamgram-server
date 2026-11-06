@@ -173,13 +173,26 @@ func cleanNames(in []string) []string {
 	seen := map[string]bool{}
 	for _, name := range in {
 		name, err := cleanName(name)
-		if err != nil || seen[name] {
+		if err != nil || seen[name] || loginEmailSuggestion(name) {
 			continue
 		}
 		seen[name] = true
 		out = append(out, name)
 	}
 	return out
+}
+
+// loginEmailSuggestion is the official nag to attach a login email.
+// Email-only accounts already have users.email, and this server does not
+// offer that attachment flow. help.getPromoData must not list these names,
+// including when TELLOMI_SUGGESTIONS contains them.
+func loginEmailSuggestion(name string) bool {
+	switch name {
+	case "SETUP_LOGIN_EMAIL", "SETUP_LOGIN_EMAIL_NOSKIP":
+		return true
+	default:
+		return false
+	}
 }
 
 func cleanName(name string) (string, error) {

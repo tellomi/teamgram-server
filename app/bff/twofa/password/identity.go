@@ -25,6 +25,24 @@ func IdentityOwner(ctx context.Context, email string) (int64, error) {
 	return Default().identityOwner(ctx, email)
 }
 
+// SeedRecovery stores a cloud-password recovery address on the current store.
+// It does not write users.email or the Redis login-email copy.
+func SeedRecovery(userID int64, email string, hasPassword bool) error {
+	s := Default()
+	if s == nil || s.store == nil || userID == 0 {
+		return nil
+	}
+	rec, err := s.load(context.Background(), userID)
+	if err != nil {
+		return err
+	}
+	rec.UserID = userID
+	rec.Email = email
+	rec.HasPassword = hasPassword
+	rec.Exists = true
+	return s.store.Save(context.Background(), rec)
+}
+
 // SeedIdentity records users.email on the in-memory store used by tests.
 // A MySQL store reads the users table and ignores this call.
 func SeedIdentity(userID int64, email string) {

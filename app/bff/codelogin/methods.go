@@ -23,7 +23,17 @@ func (s *Service) RequestPasswordRecovery(ctx context.Context, userID int64) (*m
 		return nil, err
 	}
 	if !hasPassword {
-		email, err = s.LoginEmail(ctx, userID)
+		// An email-only account logs in with users.email. That address is not
+		// a cloud-password recovery mailbox, and a divergent Redis copy must
+		// not receive this code.
+		mine, err := s.identityEmail(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if mine != "" {
+			return nil, mtproto.ErrPasswordRecoveryNa
+		}
+		email, err = s.safeAttachedLoginEmail(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +199,7 @@ func (s *Service) resetTarget(ctx context.Context, authKey int64, canon string, 
 		uid = id
 	}
 	if uid != 0 {
-		email, err := s.LoginEmail(ctx, uid)
+		email, err := s.safeAttachedLoginEmail(ctx, uid)
 		if err != nil {
 			return "", err
 		}

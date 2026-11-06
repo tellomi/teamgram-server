@@ -2,6 +2,7 @@ package codelogin
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -111,12 +112,116 @@ func TestEmailSetupCannotAttachASecondAddress(t *testing.T) {
 	}
 }
 
+func TestDivergentRedisIsNotMailedBeforeSendCode(t *testing.T) {
+	svc, phones, emails, _, _ := harness(t)
+	ctx := context.Background()
+	// Plant the old copy before the identity guard exists, the way a row
+	// written by an earlier build would still be in Redis.
+	if err := svc.SaveLoginEmail(ctx, 7, "other@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveLoginEmail(ctx, 9, "user@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	withIdentity(t, svc, func(id int64) string {
+		if id == 7 {
+			return "user@tellomi.app"
+		}
+		return ""
+	}, func(email string) int64 {
+		if email == "user@tellomi.app" {
+			return 7
+		}
+		return 0
+	})
+
+	_, err := svc.RequestPasswordRecovery(ctx, 7)
+	if rpcText(err) != "PASSWORD_RECOVERY_NA" {
+		t.Fatal(err)
+	}
+	if len(*emails) != 0 {
+		t.Fatalf("recovery mailed %v", *emails)
+	}
+
+	putPhone(phones, 8, "8613800138000", "h", "123456", 9)
+	_, err = svc.ResetLoginEmail(ctx, 8, "8613800138000", "h", 9)
+	if rpcText(err) != "EMAIL_INSTALL_MISSING" {
+		t.Fatal(err)
+	}
+	if len(*emails) != 0 {
+		t.Fatalf("reset mailed %v", *emails)
+	}
+
+	putPhone(phones, 2, "user@tellomi.app", "h2", "old", 7)
+	sent, err := svc.ResetLoginEmail(ctx, 2, "user@tellomi.app", "h2", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*emails) != 1 || (*emails)[0].to != "user@tellomi.app" {
+		t.Fatalf("email reset %#v", *emails)
+	}
+	if sent.GetType().GetEmailPattern() != "u***@tellomi.app" {
+		t.Fatal(sent.GetType().GetEmailPattern())
+	}
+	got, _ := svc.LoginEmail(ctx, 7)
+	if got != "other@tellomi.app" {
+		t.Fatalf("redis rewritten to %q", got)
+	}
+}
+
+func TestEmailIdentityRecoveryDoesNotUseTheLoginCopy(t *testing.T) {
+	svc, _, emails, _, _ := harness(t)
+	ctx := context.Background()
+	prev := password.Swap(password.New(password.Options{}))
+	t.Cleanup(func() { password.Swap(prev) })
+	password.SeedIdentity(7, "user@tellomi.app")
+	if err := password.SeedRecovery(7, "cloud@tellomi.app", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveLoginEmail(ctx, 7, "other@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	svc.opt.IdentityEmail = password.IdentityEmail
+	svc.opt.IdentityOwner = password.IdentityOwner
+
+	got, err := svc.RequestPasswordRecovery(ctx, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*emails) != 1 || (*emails)[0].to != "cloud@tellomi.app" {
+		t.Fatalf("%#v", *emails)
+	}
+	if got.GetEmailPattern() != "c***@tellomi.app" || strings.Contains(got.GetEmailPattern(), "cloud") {
+		t.Fatal(got.GetEmailPattern())
+	}
+
+	if err := password.SeedRecovery(7, "", false); err != nil {
+		t.Fatal(err)
+	}
+	svc2, _, emails2, _, _ := harness(t)
+	if err := svc2.SaveLoginEmail(ctx, 7, "user@tellomi.app"); err != nil {
+		t.Fatal(err)
+	}
+	svc2.opt.IdentityEmail = password.IdentityEmail
+	svc2.opt.IdentityOwner = password.IdentityOwner
+	_, err = svc2.RequestPasswordRecovery(ctx, 7)
+	if rpcText(err) != "PASSWORD_RECOVERY_NA" {
+		t.Fatal(err)
+	}
+	if len(*emails2) != 0 {
+		t.Fatal(*emails2)
+	}
+}
+
 func TestRecoveryEmailStaysOffTheLoginIdentity(t *testing.T) {
 	svc, _, emails, _, _ := harness(t)
 	ctx := context.Background()
 	prev := password.Swap(password.New(password.Options{}))
 	t.Cleanup(func() { password.Swap(prev) })
 	password.SeedIdentity(7, "user@tellomi.app")
+	if err := password.SeedRecovery(7, "cloud@tellomi.app", true); err != nil {
+		t.Fatal(err)
+	}
 	svc.opt.IdentityEmail = password.IdentityEmail
 	svc.opt.IdentityOwner = password.IdentityOwner
 	if err := svc.SaveLoginEmail(ctx, 7, "user@tellomi.app"); err != nil {
@@ -124,6 +229,9 @@ func TestRecoveryEmailStaysOffTheLoginIdentity(t *testing.T) {
 	}
 	if _, err := svc.RequestPasswordRecovery(ctx, 7); err != nil {
 		t.Fatal(err)
+	}
+	if (*emails)[0].to != "cloud@tellomi.app" {
+		t.Fatalf("recovery destination %q", (*emails)[0].to)
 	}
 	code := (*emails)[0].code
 	settings := &mtproto.Account_PasswordInputSettings{
@@ -140,7 +248,7 @@ func TestRecoveryEmailStaysOffTheLoginIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovery == "user@tellomi.app" {
-		t.Fatal("login identity was copied into the recovery address")
+	if recovery != "recover@tellomi.app" {
+		t.Fatalf("recovery %q", recovery)
 	}
 }

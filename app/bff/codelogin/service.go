@@ -318,11 +318,45 @@ func (s *Service) guardSetupEmail(ctx context.Context, userID int64, canon, emai
 
 // LoginEmail returns the Redis login-email copy, or "" when none is set.
 // The cloud-password recovery address lives in user_passwords, not here.
+// Callers that send mail use safeAttachedLoginEmail so a divergent copy is
+// not a destination.
 func (s *Service) LoginEmail(ctx context.Context, userID int64) (string, error) {
 	if s == nil || userID == 0 {
 		return "", nil
 	}
 	return s.kv.GetCtx(ctx, loginEmailKey(userID))
+}
+
+// safeAttachedLoginEmail is the Redis copy when it may receive a code.
+// An email-only account's copy is usable only when it equals users.email.
+// A copy that belongs to another account's users.email is not usable.
+// An empty result means "do not send", not an error.
+func (s *Service) safeAttachedLoginEmail(ctx context.Context, userID int64) (string, error) {
+	raw, err := s.LoginEmail(ctx, userID)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return "", err
+	}
+	email, err := normalizeEmail(raw)
+	if err != nil {
+		return "", nil
+	}
+	mine, err := s.identityEmail(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if mine != "" && email != mine {
+		return "", nil
+	}
+	if s.opt.IdentityOwner != nil {
+		owner, err := s.opt.IdentityOwner(ctx, email)
+		if err != nil {
+			return "", err
+		}
+		if owner != 0 && owner != userID {
+			return "", nil
+		}
+	}
+	return email, nil
 }
 
 // RememberSignInCode indexes a login code so account.invalidateSignInCodes can drop it.

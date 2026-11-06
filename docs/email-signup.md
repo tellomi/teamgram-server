@@ -31,12 +31,16 @@ Three addresses stay separate. Nothing in this flow writes `users.email` after s
 | Store | What it is | Settings screen |
 | --- | --- | --- |
 | `users.email` | Login identity of an email-only account. `users.phone` is NULL. | `account.getPassword.login_email_pattern` is the masked address (`u***@tellomi.app`). The account already has a login email. |
-| Redis `tellomi:p0:loginemail:{userId}` | Attached login-email copy. For an email-only account it may only equal `users.email`. | Not a second identity. |
-| `user_passwords.email` | Cloud-password recovery address. Optional, and empty until the user sets one. | `has_recovery` / `email_unconfirmed_pattern`. An empty recovery email is not "this account has no email". |
+| Redis `tellomi:p0:loginemail:{userId}` | Attached login-email copy. For an email-only account a copy that is not `users.email` is ignored by every code sender. It is not deleted and it is not shown. | Not a second identity. A phone account may still keep a free address here. `login_email_pattern` stays empty for that account. |
+| `user_passwords.email` | Cloud-password recovery address. Optional, and empty until the user sets one. | `has_recovery` / `email_unconfirmed_pattern`. An empty recovery email is not "this account has no email". `auth.requestPasswordRecovery` sends only to this address when a cloud password exists. An email-only account with no cloud password gets `PASSWORD_RECOVERY_NA`. |
 
 `account.sendVerifyEmailCode` with `emailVerifyPurposeLoginChange` accepts the same `users.email` and returns `400 EMAIL_NOT_ALLOWED` for any other address. That call does not create a user and does not move the login identity. `emailVerifyPurposeLoginSetup` during an email `auth.sendCode` likewise refuses a second address. A phone account may still attach a free login email in Redis; an address that is already some account's `users.email` is `EMAIL_NOT_ALLOWED`.
 
-Clients should show `login_email_pattern` as the bound login email and should not open an empty bind form when it is set. Changing the login identity is not this RPC. The recovery-email field on the cloud-password screen stays an independent input.
+`login_email_pattern` is a mask (`u***@tellomi.app`), not the full address. There is no RPC that returns the full `users.email` to a logged-in client. A reinstall has no local cache: `account.getPassword` reads `users.email` for the user id already bound to the auth key and returns the same mask.
+
+`help.getPromoData` does not offer `SETUP_LOGIN_EMAIL` or `SETUP_LOGIN_EMAIL_NOSKIP`, even if `TELLOMI_SUGGESTIONS` lists them.
+
+Clients should show `login_email_pattern` as the bound login email and should not open an empty bind form when it is set. The mask is not a lookup key. Changing the login identity is not this RPC. The recovery-email field on the cloud-password screen stays an independent input. A phone account with an attached login email and an empty `login_email_pattern` is still a phone account.
 
 Migration: `teamgramd/deploy/sql/migrate-20261030-email.sql`. A fresh `1_teamgram.sql` already has the columns.
 

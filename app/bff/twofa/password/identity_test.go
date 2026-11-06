@@ -30,8 +30,9 @@ func TestLoginEmailPatternFromIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pw.GetLoginEmailPattern().GetValue() != "u***@tellomi.app" {
-		t.Fatalf("pattern %q", pw.GetLoginEmailPattern().GetValue())
+	pattern := pw.GetLoginEmailPattern().GetValue()
+	if pattern != "u***@tellomi.app" || strings.Contains(pattern, "user") || strings.Contains(pattern, "User") {
+		t.Fatalf("pattern %q", pattern)
 	}
 	if pw.GetHasPassword() || pw.GetHasRecovery() || pw.GetEmailUnconfirmedPattern() != nil {
 		t.Fatalf("recovery must stay independent: %+v", pw)

@@ -71,6 +71,11 @@ Email-only accounts keep the login identity in `users.email` (`users.phone` NULL
 
 `account.sendVerifyEmailCode` / `account.verifyEmail` with `emailVerifyPurposeLoginChange` or `emailVerifyPurposeLoginSetup` return `EMAIL_NOT_ALLOWED` when the address is not that `users.email`, or when it is already another account's `users.email`. The Redis key `tellomi:p0:loginemail:{userId}` is not updated in those cases. Confirming the same identity address is allowed. `auth.recoverPassword` may still store a different cloud-password recovery address in `user_passwords.email`; a refusal to copy that address onto the Redis login key does not abort recovery. No schema migration.
 
+A Redis copy that already differs from `users.email` is left in place. It is not scanned and not rewritten. Before any later `auth.sendCode` stores the identity address again, readers that send mail do not use that copy: `auth.requestPasswordRecovery` on an email-only account with no cloud password returns `PASSWORD_RECOVERY_NA`, and `auth.resetLoginEmail` for a phone account skips a copy that is another account's `users.email`. Email `auth.resetLoginEmail` sends to the address in the request. `help.getPromoData` drops `SETUP_LOGIN_EMAIL` and `SETUP_LOGIN_EMAIL_NOSKIP`. `login_email_pattern` is only the mask.
+
+- `app/bff/codelogin/methods.go`, `service.go` — mail destinations ignore a divergent or cross-user Redis copy.
+- `app/bff/helpdesk/suggestions.go` — those two suggestion names are not offered.
+
 - `app/bff/twofa/password/service.go`, `identity.go`, `mysql.go` — `login_email_pattern` from `SELECT email FROM users`.
 - `app/bff/codelogin/service.go`, `methods.go` — refuse a divergent or cross-user login email.
 - `app/bff/authorization/internal/core/p0_codes.go` — wires those checks to the password store's read of `users.email`.
