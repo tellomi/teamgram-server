@@ -206,6 +206,32 @@ func (m *MainAuthWrapper) applyAuthStateData(ctx context.Context, kData *authses
 	}
 }
 
+// bindingRevoked reloads a Normal session. AuthStateNormal used to stay
+// trusted for the life of the socket, so a missed updateAccountResetAuthorization
+// left the device logged in after its auth_users row was deleted.
+// A lookup error keeps the session: authsession being down must not log
+// every connection out. Logout and Deleted close it.
+func (m *MainAuthWrapper) bindingRevoked(ctx context.Context) bool {
+	if m == nil || m.state != mtproto.AuthStateNormal || m.authKeyId == 0 || m.cb == nil || m.cb.Dao == nil || m.cb.Dao.AuthsessionClient == nil {
+		return false
+	}
+	kData, err := m.cb.Dao.AuthsessionClient.AuthsessionGetAuthStateData(ctx, &authsession.TLAuthsessionGetAuthStateData{
+		AuthKeyId: m.authKeyId,
+	})
+	if err != nil || kData == nil {
+		if err != nil {
+			logx.WithContext(ctx).Errorf("bindingRevoked(%d) error: %v", m.authKeyId, err)
+		}
+		return false
+	}
+	if !authStateRevoked(int(kData.GetKeyState())) {
+		return false
+	}
+	logx.WithContext(ctx).Infof("bindingRevoked(%d) state %d", m.authKeyId, kData.GetKeyState())
+	m.changeAuthState(ctx, mtproto.AuthStateDeleted, int64(0))
+	return true
+}
+
 func (m *MainAuthWrapper) refreshAuthStateIfNeeded(ctx context.Context) {
 	if m.authKeyId == 0 || !shouldRefreshAuthState(m.state) {
 		return

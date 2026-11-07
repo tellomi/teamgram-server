@@ -206,6 +206,7 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 			// on event
 			c.svcCtx.AuthLogic.DeletePhoneCode(ctx, c.MD.PermAuthKeyId, phoneNumber, in.PhoneCodeHash)
 			c.pushSignInMessage(ctx, user.Id(), codeData.PhoneCode)
+			c.pushLoginSecurityNotice(user.Id())
 			if !verify.IsEmail(phoneNumber) {
 				c.onContactSignUp(ctx, c.MD.PermAuthKeyId, user.Id(), phoneNumber)
 			}

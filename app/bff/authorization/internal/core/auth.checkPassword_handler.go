@@ -66,6 +66,7 @@ func (c *AuthorizationCore) AuthCheckPassword(in *mtproto.TLAuthCheckPassword) (
 		return nil, mtproto.ErrInternalServerError
 	}
 	_ = deletion.Cancel(c.ctx, userID)
+	c.pushLoginSecurityNotice(userID)
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 		User: user.ToSelfUser(),
 	}).To_Auth_Authorization(), nil

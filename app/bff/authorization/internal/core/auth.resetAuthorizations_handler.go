@@ -32,10 +32,9 @@ import (
 // in-memory session. A later RPC on those keys loads the deleted binding
 // and fails as logged out (401 AUTH_KEY_UNREGISTERED).
 //
-// Official Telegram may also return 406 FRESH_RESET_AUTHORISATION_FORBIDDEN
-// when the current session is younger than 24 hours. This server does not:
-// account.resetAuthorization has no such gate, and the Devices action has
-// to work for a session that just signed in.
+// A session younger than 24 hours gets 406 FRESH_RESET_AUTHORISATION_FORBIDDEN
+// from authsession and nothing is deleted. That error is returned here.
+// Success is only returned after the other rows were actually revoked.
 func (c *AuthorizationCore) AuthResetAuthorizations(in *mtproto.TLAuthResetAuthorizations) (*mtproto.Bool, error) {
 	_ = in
 

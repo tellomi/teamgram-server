@@ -9,6 +9,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/session/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	authsessionclient "github.com/teamgram/teamgram-server/app/service/authsession/client"
+
+	"github.com/zeromicro/go-zero/core/syncx"
 )
 
 func TestAuthorizationResetTargetsOnlyTheNamedKey(t *testing.T) {
@@ -65,6 +67,71 @@ func TestPasswordNeededUser(t *testing.T) {
 	if _, ok = passwordNeededUser("AUTH_KEY_UNREGISTERED", 1); ok {
 		t.Fatal("unrelated error")
 	}
+}
+
+func TestNormalSessionRejectsRPCAfterRevocation(t *testing.T) {
+	const authKeyID int64 = 77
+	fake := &fakeAuthsessionClient{
+		authStateData: authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
+			AuthKeyId: authKeyID,
+			KeyState:  int32(mtproto.AuthStateLogout),
+			UserId:    9,
+		}).To_AuthKeyStateData(),
+	}
+	sess, wrapper := normalSession(t, authKeyID, fake)
+	if sess.onRpcRequest(context.Background(), "gate", "127.0.0.1", newInboxMsg(8), &mtproto.TLUsersGetUsers{}, nil) {
+		t.Fatal("revoked binding accepted a protected RPC")
+	}
+	if wrapper.state != mtproto.AuthStateDeleted {
+		t.Fatalf("state = %d, want deleted", wrapper.state)
+	}
+	if fake.getAuthStateDataCalls != 1 {
+		t.Fatalf("lookups = %d", fake.getAuthStateDataCalls)
+	}
+}
+
+func TestRevocationLookupErrorKeepsNormalSession(t *testing.T) {
+	const authKeyID int64 = 78
+	fake := &fakeAuthsessionClient{getErr: errors.New("authsession down")}
+	sess, wrapper := normalSession(t, authKeyID, fake)
+	if !sess.onRpcRequest(context.Background(), "gate", "127.0.0.1", newInboxMsg(9), &mtproto.TLUsersGetUsers{}, nil) {
+		t.Fatal("lookup error rejected a live session")
+	}
+	if wrapper.state != mtproto.AuthStateNormal {
+		t.Fatalf("state = %d, want normal", wrapper.state)
+	}
+}
+
+func TestAuthStateRevoked(t *testing.T) {
+	if !authStateRevoked(mtproto.AuthStateLogout) || !authStateRevoked(mtproto.AuthStateDeleted) {
+		t.Fatal("logout and deleted are revoked")
+	}
+	if authStateRevoked(mtproto.AuthStateNormal) || authStateRevoked(mtproto.AuthStateNeedPassword) {
+		t.Fatal("normal and password states stay")
+	}
+}
+
+func normalSession(t *testing.T, authKeyID int64, fake *fakeAuthsessionClient) (*session, *MainAuthWrapper) {
+	t.Helper()
+	manager := NewMainAuthWrapperManager(&dao.Dao{AuthsessionClient: fake})
+	client := authsession.MakeTLClientSession(&authsession.ClientSession{
+		AuthKeyId: authKeyID,
+		Layer:     232,
+	}).To_ClientSession()
+	wrapper := &MainAuthWrapper{
+		authKeyId:            authKeyID,
+		state:                mtproto.AuthStateNormal,
+		AuthUserId:           9,
+		client:               client,
+		cb:                   manager,
+		closeChan:            make(chan struct{}),
+		sessionDataChan:      make(chan interface{}, 1),
+		rpcDataChan:          make(chan interface{}, 1),
+		running:              syncx.NewAtomicBool(),
+		tmpRpcApiMessageList: make([]*rpcApiMessage, 0),
+	}
+	wrapper.mainAuth = newSessionList(mtproto.AuthKeyTypePerm, wrapper)
+	return newSession(1, wrapper.mainAuth), wrapper
 }
 
 func TestShouldRefreshAuthState(t *testing.T) {
@@ -132,11 +199,15 @@ var _ authsessionclient.AuthsessionClient = (*fakeAuthsessionClient)(nil)
 type fakeAuthsessionClient struct {
 	authStateData         *authsession.AuthKeyStateData
 	getAuthStateDataCalls int
+	getErr                error
 	userID                int64
 }
 
 func (f *fakeAuthsessionClient) AuthsessionGetAuthStateData(ctx context.Context, in *authsession.TLAuthsessionGetAuthStateData) (*authsession.AuthKeyStateData, error) {
 	f.getAuthStateDataCalls++
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	return f.authStateData, nil
 }
 

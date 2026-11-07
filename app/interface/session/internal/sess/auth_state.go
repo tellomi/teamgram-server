@@ -22,6 +22,17 @@ func authorizationResetTargets(wrapperAuthKeyID, updateAuthKeyID int64) bool {
 	return updateAuthKeyID != 0 && wrapperAuthKeyID == updateAuthKeyID
 }
 
+// authStateRevoked is a binding that must not serve another protected RPC.
+// NeedPassword and Normal stay. Logout and Deleted are the reset/logout rows.
+func authStateRevoked(state int) bool {
+	switch state {
+	case mtproto.AuthStateLogout, mtproto.AuthStateDeleted:
+		return true
+	default:
+		return false
+	}
+}
+
 func rpcErrorForAuthState(state int) error {
 	switch state {
 	case mtproto.AuthStateNew,

@@ -21,6 +21,7 @@
     "dedup_b": {"number": "9996610032", "code": "11111"},
     "parts": {"number": "9996610041", "code": "11111"},
     "sticker_owner": {"number": "9996610051", "code": "11111"},
-    "sticker_other": {"number": "9996610052", "code": "11111"}
+    "sticker_other": {"number": "9996610052", "code": "11111"},
+    "reset_pair": {"number": "9996610061", "code": "11111"}
   }
 }

@@ -252,6 +252,7 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 	c.Logger.Infof("auth.signIn outcome phone=%s hash=%s result=authorization user=%d",
 		maskPhone(phoneNumber), hashPrefix(phoneCodeHash), user.Id())
 	_ = deletion.Cancel(c.ctx, user.Id())
+	c.pushLoginSecurityNotice(user.Id())
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 		SetupPasswordRequired: false,
 		OtherwiseReloginDays:  nil,

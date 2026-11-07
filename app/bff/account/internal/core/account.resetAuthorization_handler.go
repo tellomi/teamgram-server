@@ -27,9 +27,12 @@ import (
 // AccountResetAuthorization
 // account.resetAuthorization#df77f3bc hash:long = Bool;
 func (c *AccountCore) AccountResetAuthorization(in *mtproto.TLAccountResetAuthorization) (*mtproto.Bool, error) {
+	// Hash 0 is the current session in account.getAuthorizations. It is not
+	// a device that can be revoked. Returning BoolFalse let clients treat
+	// the call as finished and drop the row. 400 HASH_INVALID does not.
 	if in.Hash == 0 {
 		c.Logger.Errorf("account.resetAuthorization#df77f3bc - hash is 0")
-		return mtproto.BoolFalse, nil
+		return nil, mtproto.ErrHashInvalid
 	}
 
 	tKeyIdList, err := c.svcCtx.Dao.AuthsessionClient.AuthsessionResetAuthorization(c.ctx, &authsession.TLAuthsessionResetAuthorization{

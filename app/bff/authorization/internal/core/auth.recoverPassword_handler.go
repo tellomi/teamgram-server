@@ -61,5 +61,6 @@ func (c *AuthorizationCore) AuthRecoverPassword(in *mtproto.TLAuthRecoverPasswor
 		AuthKeyId: c.authKey(),
 		UserId:    user.Id(),
 	})
+	c.pushLoginSecurityNotice(user.Id())
 	return codelogin.Authorization(user.ToSelfUser()), nil
 }

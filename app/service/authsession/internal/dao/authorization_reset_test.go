@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -21,6 +22,95 @@ func TestGeoIPPathPrefersEnv(t *testing.T) {
 	t.Setenv("GEOIP_MMDB", "")
 	if got := geoIPPath(); got != mmdb {
 		t.Fatalf("flag path = %q, want %q", got, mmdb)
+	}
+}
+
+func TestFreshResetWindowIsCurrentSessionAge(t *testing.T) {
+	now := int64(1_700_000_000)
+	older := now - 48*3600
+	newer := now - 3600
+
+	if !freshResetForbidden(newer, now) {
+		t.Fatal("a session logged on 1h ago must be refused")
+	}
+	if freshResetForbidden(older, now) {
+		t.Fatal("a session logged on 48h ago must be allowed")
+	}
+	if freshResetForbidden(newer, newer+freshResetWindowSeconds) {
+		t.Fatal("the same session must be allowed at exactly 24h")
+	}
+	if !freshResetForbidden(newer, newer+freshResetWindowSeconds-1) {
+		t.Fatal("the same session must be refused at 24h-1s")
+	}
+	if freshResetForbidden(0, now) || freshResetForbidden(-1, now) {
+		t.Fatal("a missing created time must not lock the account out")
+	}
+	if freshResetForbidden(now+30, now) {
+		t.Fatal("a created time in the future must not lock the account out")
+	}
+	if !freshResetForbidden(now, now) {
+		t.Fatal("a session created this second is still inside the window")
+	}
+}
+
+func TestResetDecisionDoesNotDeleteInsideTheWindow(t *testing.T) {
+	now := int64(1_700_000_000)
+	rows := []authUserRef{
+		{RowID: 1, AuthKeyID: 100, Hash: 11},
+		{RowID: 2, AuthKeyID: 200, Hash: 22},
+	}
+	// Device 2 logged on an hour ago. Device 1 has been on for two days.
+	// Login order does not matter: only the actor's created time does.
+	err := ResetAuthorizationError(200, now-3600, now, 11, true)
+	if !errors.Is(err, mtproto.ErrFreshResetAuthorisationForbidden) {
+		t.Fatalf("fresh actor: %v", err)
+	}
+	_, stayed := authUsersToReset(rows, 200, 11)
+	if len(stayed) != 1 || stayed[0] != 100 {
+		t.Fatalf("selection still names the old key %v; the handler must return before using it", stayed)
+	}
+
+	if err = ResetAuthorizationError(100, now-48*3600, now, 22, true); err != nil {
+		t.Fatalf("old actor matching hash: %v", err)
+	}
+	_, keys := authUsersToReset(rows, 100, 22)
+	if len(keys) != 1 || keys[0] != 200 {
+		t.Fatalf("old actor should revoke the other key, got %v", keys)
+	}
+
+	err = ResetAuthorizationError(100, now-48*3600, now, 99, false)
+	if !errors.Is(err, mtproto.ErrHashInvalid) {
+		t.Fatalf("missing hash: %v", err)
+	}
+	_, keys = authUsersToReset(rows, 100, 99)
+	if len(keys) != 0 {
+		t.Fatalf("missing hash selected %v", keys)
+	}
+
+	err = ResetAuthorizationError(100, now-48*3600, now, 11, false)
+	if !errors.Is(err, mtproto.ErrHashInvalid) {
+		t.Fatalf("own hash: %v", err)
+	}
+
+	if err = ResetAuthorizationError(0, now, now, 0, true); err != nil {
+		t.Fatalf("account deletion must skip the 24h gate: %v", err)
+	}
+	_, keys = authUsersToReset(rows, 0, 0)
+	if len(keys) != 2 {
+		t.Fatalf("account deletion keys = %v", keys)
+	}
+}
+
+func TestUnionAuthKeyIDsKeepsPermAndTemp(t *testing.T) {
+	got := UnionAuthKeyIDs([]int64{10, 0, 20, 10, 21, 0})
+	want := []int64{10, 20, 21}
+	if len(got) != len(want) {
+		t.Fatalf("ids = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ids = %v", got)
+		}
 	}
 }
 
