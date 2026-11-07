@@ -204,8 +204,8 @@ func hiddenFeaturePairs() []*mtproto.JSONObjectValue {
 		jsonPair("wallet_available", off),
 		// Android stores "enabled" when the key has never been seen. iOS treats
 		// a missing key as disabled. Send disabled so both stay off.
-		jsonPair("translations_manual_enabled", jsonString("disabled")),
-		jsonPair("translations_auto_enabled", jsonString("disabled")),
+		jsonPair("translations_manual_enabled", jsonString(translationSwitch(tellomiai.LocalReady()))),
+		jsonPair("translations_auto_enabled", jsonString(translationSwitch(tellomiai.AutoReady()))),
 		// Tellomi-only. Clients will read these; official builds ignore them.
 		jsonPair("tellomi_ai_compose_enabled", jsonBool(tellomiai.ComposeAdvertised())),
 		jsonPair("tellomi_ai_enabled", jsonBool(tellomiai.Advertised())),
@@ -229,6 +229,13 @@ func jsonBool(v bool) *mtproto.JSONValue {
 
 func jsonNumber(v float64) *mtproto.JSONValue {
 	return mtproto.MakeTLJsonNumber(&mtproto.JSONValue{Value_FLOAT64: v}).To_JSONValue()
+}
+
+func translationSwitch(on bool) string {
+	if on {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 func jsonString(v string) *mtproto.JSONValue {

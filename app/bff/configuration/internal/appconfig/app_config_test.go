@@ -1,6 +1,8 @@
 package appconfig
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -248,23 +250,30 @@ func TestTranslateAndComposeFlags(t *testing.T) {
 	}
 	off := AppConfigHash()
 	t.Setenv(tellomiai.EnvTranslate, "1")
-	if tellomiai.TranslateAdvertised() {
-		t.Fatal("translate advertised without an API key")
-	}
 	t.Setenv(tellomiai.EnvAPIKey, "test-key")
+	if tellomiai.TranslateAdvertised() {
+		t.Fatal("a Bailian key must not advertise translation")
+	}
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(local.Close)
+	t.Setenv(tellomiai.EnvTranslateURL, local.URL)
 	if !tellomiai.TranslateAdvertised() || tellomiai.ComposeAdvertised() {
-		t.Fatal("translate flag did not follow TELLOMI_TRANSLATE")
+		t.Fatal("healthy sidecar did not advertise translation")
 	}
 	if AppConfigHash() == off {
-		t.Fatal("app config hash ignored TELLOMI_TRANSLATE")
+		t.Fatal("app config hash ignored the local translator")
 	}
 	raw := mtproto.FromJSONValue(AppConfig())
 	obj := raw.(map[string]any)
 	if obj["tellomi_translate_enabled"] != true || obj["tellomi_ai_compose_enabled"] != false {
 		t.Fatalf("translate %#v compose %#v", obj["tellomi_translate_enabled"], obj["tellomi_ai_compose_enabled"])
 	}
-	if obj["translations_manual_enabled"] != "disabled" {
-		t.Fatalf("official translation UI = %#v", obj["translations_manual_enabled"])
+	if obj["translations_manual_enabled"] != "enabled" || obj["translations_auto_enabled"] != "disabled" {
+		t.Fatalf("manual %#v auto %#v", obj["translations_manual_enabled"], obj["translations_auto_enabled"])
 	}
 	t.Setenv(tellomiai.EnvCompose, "1")
 	if !tellomiai.ComposeAdvertised() {

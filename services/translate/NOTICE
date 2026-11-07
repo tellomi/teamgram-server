@@ -1,0 +1,19 @@
+Model: opus-mt-en-zh
+Publisher: Language Technology Research Group at the University of Helsinki (Helsinki-NLP)
+Source: https://huggingface.co/Helsinki-NLP/opus-mt-en-zh
+License: Creative Commons Attribution 4.0 International (CC-BY-4.0)
+https://creativecommons.org/licenses/by/4.0/
+Training data: OPUS (https://opus.nlpl.eu/), cited by the model card.
+
+This image does not ship the original PyTorch checkpoint. The image build
+converts it to CTranslate2 float32, the same weights in that runtime.
+Runtime: CTranslate2 (MIT) and SentencePiece (Apache-2.0).
+The published checkpoint repeats itself on the bare word "hello". The sidecar
+keeps a single copy of a hypothesis that is one token repeated, and otherwise
+returns the beam-4 string unchanged.
+
+Attribution when the translation feature is offered: "English-to-Chinese
+translation uses Helsinki-NLP opus-mt-en-zh (CC-BY-4.0)."
+
+The process translates locally. It does not call Bailian, Google, Apple, or
+Telegram, and it has no fallback to those services.
