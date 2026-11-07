@@ -22,5 +22,9 @@ type (
 )
 
 func New(c Config, plugin plugin.MessagesPlugin) *service.Service {
-	return service.New(svc.NewServiceContext(c, plugin))
+	svcCtx := svc.NewServiceContext(c, plugin)
+	if svcCtx.Dao != nil {
+		BindUsers(svcCtx.Dao.UserClient)
+	}
+	return service.New(svcCtx)
 }

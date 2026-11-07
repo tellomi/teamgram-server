@@ -440,7 +440,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCMessagesServer(grpcServer, messages_helper.New(msgCfg, nil))
 		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls())
 		mtproto.RegisterRPCScheduledMessagesServer(grpcServer, messages_helper.NewScheduled(msgCfg))
-		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage())
+		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage(msgCfg))
 		// Inline bots, callback buttons, attach menu, mini apps, prepared messages.
 		botChat := messages_helper.NewBotChat(msgCfg)
 		mtproto.RegisterRPCInlineBotServer(grpcServer, botChat)

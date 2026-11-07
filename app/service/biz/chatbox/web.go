@@ -1,6 +1,7 @@
 package chatbox
 
 import (
+	"context"
 	"net/url"
 	"strings"
 	"unicode/utf16"
@@ -8,24 +9,43 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+// InternalCard builds a page from data this server already has.
+// handled means the URL is an internal link and must not be fetched,
+// including when the page is webPageEmpty.
+var InternalCard func(ctx context.Context, u *url.URL) (page *mtproto.WebPage, chats []*mtproto.Chat, users []*mtproto.User, handled bool)
+
 // WebPage builds a webpage card for url.
 //
 // https://core.telegram.org/method/messages.getWebPage
-// The card is the page's Open Graph / meta tags. Fetches refuse private,
-// loopback, and link-local addresses, including bracketed IPv6 and
+// Internal tell.cc / t.me links are filled from local data. An external
+// page is fetched only when TELLOMI_SERVER_LINK_FETCH=1. That fetch refuses
+// private, loopback, and link-local addresses, including bracketed IPv6 and
 // localhost, and again after DNS and redirects.
 // A hash match returns webPageNotModified. An empty or non-http URL returns
 // WEBPAGE_CURL_FAILED. A page that cannot be loaded returns webPageEmpty,
-// or webPagePending when the failure may succeed on retry.
+// or webPagePending when a fetch was attempted and may succeed on retry.
 func WebPage(raw string, hash int32) (*mtproto.WebPage, error) {
-	page, err := describe(raw)
+	page, _, _, err := WebPageContext(context.Background(), raw, hash)
+	return page, err
+}
+
+// WebPageContext is WebPage plus the chats and users a native card refers to.
+func WebPageContext(ctx context.Context, raw string, hash int32) (*mtproto.WebPage, []*mtproto.Chat, []*mtproto.User, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	u, err := parseWebURL(raw)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, mtproto.ErrWebpageCurlFailed
 	}
-	if hash != 0 && hash == page.Hash {
-		return mtproto.MakeTLWebPageNotModified(&mtproto.WebPage{}).To_WebPage(), nil
+	page, chats, users, err := describeURL(ctx, u)
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	return page, nil
+	if hash != 0 && page.GetPredicateName() == mtproto.Predicate_webPage && hash == page.GetHash() {
+		return mtproto.MakeTLWebPageNotModified(&mtproto.WebPage{}).To_WebPage(), chats, users, nil
+	}
+	return page, chats, users, nil
 }
 
 // MediaForInputWebPage maps inputMediaWebPage to a client-decodable card.
@@ -34,16 +54,23 @@ func WebPage(raw string, hash int32) (*mtproto.WebPage, error) {
 // https://core.telegram.org/constructor/inputMediaWebPage
 // Official clients send an https link with messages.sendMedia and
 // inputMediaWebPage#c21b8849. The card is messageMediaWebPage#ddf10c3b
-// wrapping webPage#e89c45b2, built from the fetched Open Graph tags.
+// wrapping webPage#e89c45b2. Internal links are filled locally. External
+// pages are fetched only when TELLOMI_SERVER_LINK_FETCH=1.
 // optional:flags.2 sends the text with no media when the URL cannot be
-// described. Otherwise the error is WEBPAGE_CURL_FAILED.
+// parsed. Otherwise a bad URL is WEBPAGE_CURL_FAILED. A parsed URL with no
+// card is messageMediaWebPage wrapping webPageEmpty, which clients hide.
 // messageMediaUnsupported#9f84f49e is never returned: clients render that
 // constructor as the "unsupported message" placeholder.
 func MediaForInputWebPage(media *mtproto.InputMedia) (*mtproto.MessageMedia, error) {
+	return MediaForInputWebPageContext(context.Background(), media)
+}
+
+// MediaForInputWebPageContext is MediaForInputWebPage with a request context.
+func MediaForInputWebPageContext(ctx context.Context, media *mtproto.InputMedia) (*mtproto.MessageMedia, error) {
 	if media.GetPredicateName() != mtproto.Predicate_inputMediaWebPage {
 		return nil, mtproto.ErrMediaInvalid
 	}
-	page, err := describe(media.GetUrl())
+	page, _, _, err := WebPageContext(ctx, media.GetUrl(), 0)
 	if err != nil {
 		if media.GetOptional() {
 			return nil, nil
@@ -58,33 +85,49 @@ func MediaForInputWebPage(media *mtproto.InputMedia) (*mtproto.MessageMedia, err
 }
 
 // WebPagePreview returns the composer preview for the first link in text.
-// No link yields messageMediaEmpty, which is what clients render as "no preview".
+// No link, and a link with no card, yield messageMediaEmpty.
 // https://core.telegram.org/method/messages.getWebPagePreview
 func WebPagePreview(text string, entities []*mtproto.MessageEntity) *mtproto.MessageMedia {
-	raw := firstURL(text, entities)
+	media, _, _ := WebPagePreviewContext(context.Background(), text, entities)
+	return media
+}
+
+// WebPagePreviewContext is WebPagePreview plus the chats and users on the card.
+func WebPagePreviewContext(ctx context.Context, text string, entities []*mtproto.MessageEntity) (*mtproto.MessageMedia, []*mtproto.Chat, []*mtproto.User) {
+	raw := FirstURL(text, entities)
 	if raw == "" {
-		return mtproto.MakeTLMessageMediaEmpty(&mtproto.MessageMedia{}).To_MessageMedia()
+		return mtproto.MakeTLMessageMediaEmpty(&mtproto.MessageMedia{}).To_MessageMedia(), nil, nil
 	}
-	page, err := describe(raw)
-	if err != nil {
-		return mtproto.MakeTLMessageMediaEmpty(&mtproto.MessageMedia{}).To_MessageMedia()
+	page, chats, users, err := WebPageContext(ctx, raw, 0)
+	if err != nil || (page.GetPredicateName() != mtproto.Predicate_webPage && page.GetPredicateName() != mtproto.Predicate_webPagePending) {
+		return mtproto.MakeTLMessageMediaEmpty(&mtproto.MessageMedia{}).To_MessageMedia(), nil, nil
 	}
 	return mtproto.MakeTLMessageMediaWebPage(&mtproto.MessageMedia{
 		Webpage: page,
-	}).To_MessageMedia()
+	}).To_MessageMedia(), chats, users
 }
 
-func describe(raw string) (*mtproto.WebPage, error) {
-	u, err := parseWebURL(raw)
-	if err != nil {
-		return nil, mtproto.ErrWebpageCurlFailed
+func describeURL(ctx context.Context, u *url.URL) (*mtproto.WebPage, []*mtproto.Chat, []*mtproto.User, error) {
+	if InternalCard != nil {
+		page, chats, users, handled := InternalCard(ctx, u)
+		if handled {
+			if page == nil {
+				page = emptyPage(u)
+			}
+			return page, chats, users, nil
+		}
 	}
 	if page, ok := cachedWebPage(u.String()); ok {
-		return page, nil
+		return page, nil, nil, nil
 	}
 	page := fetchWebPage(u)
 	storeWebPage(u.String(), page)
-	return page, nil
+	return page, nil, nil, nil
+}
+
+// AcceptURL parses an http(s) URL and rejects blocked hosts.
+func AcceptURL(raw string) (*url.URL, error) {
+	return parseWebURL(raw)
 }
 
 func parseWebURL(raw string) (*url.URL, error) {
@@ -100,6 +143,11 @@ func parseWebURL(raw string) (*url.URL, error) {
 		return nil, mtproto.ErrWebpageCurlFailed
 	}
 	return u, nil
+}
+
+// FirstURL is the first link in text or in a text-url entity.
+func FirstURL(text string, entities []*mtproto.MessageEntity) string {
+	return firstURL(text, entities)
 }
 
 func firstURL(text string, entities []*mtproto.MessageEntity) string {

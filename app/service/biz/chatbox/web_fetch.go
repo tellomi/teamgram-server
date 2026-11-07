@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +40,18 @@ const (
 	webCacheTTL  = 10 * time.Minute
 	webFailTTL   = time.Minute
 	maxRedirects = 3
+
+	// EnvServerLinkFetch opts in to the server downloading an external page.
+	// Unset means messages.getWebPage does not open a connection to that site.
+	// Internal tell.cc / t.me cards do not use this switch.
+	EnvServerLinkFetch = "TELLOMI_SERVER_LINK_FETCH"
 )
+
+// ServerFetchEnabled reports whether this process may download external pages
+// for chat link cards. The default is off.
+func ServerFetchEnabled() bool {
+	return os.Getenv(EnvServerLinkFetch) == "1"
+}
 
 // pageMeta is the Open Graph / HTML meta card.
 type pageMeta struct {
@@ -107,6 +119,9 @@ func storeWebPage(key string, page *mtproto.WebPage) {
 }
 
 func fetchWebPage(u *url.URL) *mtproto.WebPage {
+	if !ServerFetchEnabled() {
+		return emptyPage(u)
+	}
 	res := loadWebPage(u)
 	if res.failed {
 		if res.pending {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 
@@ -206,6 +207,12 @@ func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*
 	//
 	//	return hasBot
 	//})
+
+	if !in.NoWebpage && outMessage.Media == nil {
+		if media := webpage.PreviewMedia(c.ctx, outMessage.Message, outMessage.Entities); media != nil {
+			outMessage.Media = media
+		}
+	}
 
 	if in.GetQuickReplyShortcut() != nil {
 		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
