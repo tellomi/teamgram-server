@@ -108,6 +108,7 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 			limit = in.GetQtsLimit().GetValue()
 		}
 		rDifference = secretchat.ApplyDifference(c.MD.UserId, in.GetQts(), limit, rDifference)
+		rDifference = withReactionUpdates(rDifference, chatbox.Shared().DifferenceReactions(c.ctx, c.MD.UserId, in.GetDate()))
 		attachDialogReactions(c.ctx, c.MD.UserId, rDifference.NewMessages)
 	}
 	idHelper.PickByMessages(rDifference.NewMessages...)
@@ -137,6 +138,32 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 		})
 
 	return rDifference, nil
+}
+
+// withReactionUpdates adds updateMessageReactions that arrived after the
+// client's difference date. The constructor has no pts, so this is not a pts
+// row. An empty pts difference becomes a normal difference so the client
+// stores the new date and does not ask for the same reactions again.
+func withReactionUpdates(diff *mtproto.Updates_Difference, extra []*mtproto.Update) *mtproto.Updates_Difference {
+	if diff == nil || len(extra) == 0 {
+		return diff
+	}
+	switch diff.GetPredicateName() {
+	case mtproto.Predicate_updates_differenceEmpty:
+		return mtproto.MakeTLUpdatesDifference(&mtproto.Updates_Difference{
+			NewEncryptedMessages: []*mtproto.EncryptedMessage{},
+			OtherUpdates:         extra,
+			State: mtproto.MakeTLUpdatesState(&mtproto.Updates_State{
+				Date: int32(time.Now().Unix()),
+				Seq:  diff.GetSeq(),
+			}).To_Updates_State(),
+		}).To_Updates_Difference()
+	case mtproto.Predicate_updates_difference, mtproto.Predicate_updates_differenceSlice:
+		diff.OtherUpdates = append(diff.OtherUpdates, extra...)
+		return diff
+	default:
+		return diff
+	}
 }
 
 // attachDialogReactions copies chatbox reactions onto private and basic-group

@@ -15,6 +15,12 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+func TestUnreadReactionDelta(t *testing.T) {
+	if unreadDelta(false, true) != 1 || unreadDelta(true, false) != -1 || unreadDelta(true, true) != 0 || unreadDelta(false, false) != 0 {
+		t.Fatal("unread badge delta")
+	}
+}
+
 func TestReactionHandlersPrivateChannelAndBot(t *testing.T) {
 	chatbox.ResetShared()
 	channel.Use(channel.New(channel.NewMemoryStore()))

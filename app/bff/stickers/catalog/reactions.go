@@ -3,6 +3,7 @@ package catalog
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/binary"
 	"hash/fnv"
 	"sync"
 
@@ -217,20 +218,29 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 
 // DocumentFile returns the bytes for a seeded sticker, emoji, or reaction icon.
 // upload.getFile serves these directly so a missing R2 object cannot stall the session.
+// Reaction ids are resolved before the sticker map: a hash collision must not
+// hand the client a different sticker, which it then draws beside the emoji.
 func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
+	if body, mime, ok = reactionFile(id); ok {
+		return body, mime, true
+	}
 	if body, mime, ok = GifFile(id); ok {
 		return body, mime, true
 	}
 	s.mu.Lock()
 	link := s.docs[id]
 	s.mu.Unlock()
-	if link != nil {
+	if link != nil && link.item != nil {
 		b, err := assetFS.ReadFile(link.item.AssetPath)
 		if err != nil || len(b) == 0 {
 			return nil, "", false
 		}
 		return b, link.item.MIME, true
 	}
+	return nil, "", false
+}
+
+func reactionFile(id int64) ([]byte, string, bool) {
 	for _, spec := range reactionSpecs() {
 		for _, slot := range reactionSlots {
 			if id != reactionSlotID(spec.code, slot.name) {
@@ -275,7 +285,7 @@ func reactionIconDocument(id int64, mime, name, alt string, w, h int32, size int
 	return mtproto.MakeTLDocument(&mtproto.Document{
 		Id:            id,
 		AccessHash:    stableID("reaction-access", mime, name),
-		FileReference: []byte{},
+		FileReference: reactionFileReference(id),
 		Date:          stickerDate,
 		MimeType:      mime,
 		Size2_INT32:   int32(size),
@@ -284,6 +294,12 @@ func reactionIconDocument(id int64, mime, name, alt string, w, h int32, size int
 		DcId:          1,
 		Attributes:    attrs,
 	}).To_Document()
+}
+
+func reactionFileReference(id int64) []byte {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(id))
+	return buf[:]
 }
 
 const maxRecentReactions = 50

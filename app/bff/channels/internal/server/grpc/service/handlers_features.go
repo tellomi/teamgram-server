@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -374,11 +375,19 @@ type ReactionsService struct {
 	Messages reactionMessageAPI
 	// Push delivers updates to other users. Nil in tests and when sync is not configured.
 	Push reactionPusher
+	// Dialogs updates dialog.unread_reactions_count. Nil in tests.
+	Dialogs reactionDialogs
 }
 
 // reactionPusher sends updates to one user's sessions.
 type reactionPusher interface {
 	SyncPushUpdates(ctx context.Context, in *sync.TLSyncPushUpdates) (*mtproto.Void, error)
+	SyncUpdatesNotMe(ctx context.Context, in *sync.TLSyncUpdatesNotMe) (*mtproto.Void, error)
+}
+
+// reactionDialogs adjusts the chat-list reaction badge.
+type reactionDialogs interface {
+	DialogUpdateUnreadCount(ctx context.Context, in *dialog.TLDialogUpdateUnreadCount) (*mtproto.Bool, error)
 }
 
 func (ReactionsService) MessagesGetAvailableReactions(ctx context.Context, in *mtproto.TLMessagesGetAvailableReactions) (*mtproto.Messages_AvailableReactions, error) {
@@ -413,13 +422,46 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 		catalog.Must().NoteReaction(self, emos)
 		return up, nil
 	}
+	before := authorReactionUnread(ctx, self, peer, in.GetMsgId())
 	up, err := chatbox.Shared().React(ctx, self, peer, in.GetMsgId(), emos, docs, in.GetBig())
 	if err != nil {
 		return nil, err
 	}
 	catalog.Must().NoteReaction(self, emos)
+	after := authorReactionUnread(ctx, self, peer, in.GetMsgId())
 	s.pushPeerReaction(ctx, self, peer, in.GetMsgId())
+	s.pushOwnOtherSessions(ctx, self, up)
+	s.addUnreadReactions(ctx, reactionAuthor(ctx, self, peer, in.GetMsgId()), self, unreadDelta(before, after))
 	return up, nil
+}
+
+func unreadDelta(before, after bool) int32 {
+	switch {
+	case !before && after:
+		return 1
+	case before && !after:
+		return -1
+	default:
+		return 0
+	}
+}
+
+func authorReactionUnread(ctx context.Context, reactor int64, peer *mtproto.PeerUtil, msgID int32) bool {
+	_, up := chatbox.Shared().PeerReactionUpdate(ctx, reactor, peer, msgID)
+	if up == nil {
+		return false
+	}
+	for _, row := range up.GetReactions_MESSAGEREACTIONS().GetRecentReactions() {
+		if row.GetUnread() {
+			return true
+		}
+	}
+	return false
+}
+
+func reactionAuthor(ctx context.Context, reactor int64, peer *mtproto.PeerUtil, msgID int32) int64 {
+	to, _ := chatbox.Shared().PeerReactionUpdate(ctx, reactor, peer, msgID)
+	return to
 }
 
 func (ReactionsService) MessagesGetTopReactions(ctx context.Context, in *mtproto.TLMessagesGetTopReactions) (*mtproto.Messages_Reactions, error) {
@@ -505,5 +547,32 @@ func (s ReactionsService) pushPeerReaction(ctx context.Context, self int64, peer
 	_, _ = s.Push.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{
 		UserId:  to,
 		Updates: mtproto.MakeUpdatesByUpdates(up),
+	})
+}
+
+func (s ReactionsService) pushOwnOtherSessions(ctx context.Context, self int64, up *mtproto.Updates) {
+	if s.Push == nil || self == 0 || up == nil {
+		return
+	}
+	_, authKey := actor(ctx)
+	if authKey == 0 {
+		return
+	}
+	_, _ = s.Push.SyncUpdatesNotMe(ctx, &sync.TLSyncUpdatesNotMe{
+		UserId:        self,
+		PermAuthKeyId: authKey,
+		Updates:       up,
+	})
+}
+
+func (s ReactionsService) addUnreadReactions(ctx context.Context, userID, peerID int64, delta int32) {
+	if s.Dialogs == nil || userID == 0 || peerID == 0 || delta == 0 {
+		return
+	}
+	_, _ = s.Dialogs.DialogUpdateUnreadCount(ctx, &dialog.TLDialogUpdateUnreadCount{
+		UserId:               userID,
+		PeerType:             mtproto.PEER_USER,
+		PeerId:               peerID,
+		UnreadReactionsCount: wrapperspb.Int32(delta),
 	})
 }
