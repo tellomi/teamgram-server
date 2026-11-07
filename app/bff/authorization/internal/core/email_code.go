@@ -204,6 +204,7 @@ func (c *AuthorizationCore) authSendEmailCode(authKeyId, sessionId int64, reques
 				UserId:    user.User.Id,
 			})
 			_ = c.svcCtx.Dao.DelFutureAuthToken(c.ctx, v)
+			c.pushLoginSecurityNotice(user.Id())
 			return mtproto.MakeTLAuthSentCodeSuccess(&mtproto.Auth_SentCode{
 				Authorization: mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 					SetupPasswordRequired: false,

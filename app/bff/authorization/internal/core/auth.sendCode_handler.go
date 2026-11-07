@@ -308,6 +308,7 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 
 				// Del
 				_ = c.svcCtx.Dao.DelFutureAuthToken(c.ctx, v)
+				c.pushLoginSecurityNotice(user.Id())
 
 				return mtproto.MakeTLAuthSentCodeSuccess(&mtproto.Auth_SentCode{
 					Authorization: mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{

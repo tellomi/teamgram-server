@@ -89,6 +89,77 @@ type authUserRef struct {
 	Hash      int64
 }
 
+// freshResetWindowSeconds is the official current-session age.
+// https://core.telegram.org/method/account.resetAuthorization
+// https://core.telegram.org/method/auth.resetAuthorizations
+// Less than 24 hours since THIS session logged on returns
+// 406 FRESH_RESET_AUTHORISATION_FORBIDDEN. The target session's age and
+// which device logged in first do not decide it.
+const freshResetWindowSeconds int64 = 24 * 60 * 60
+
+// freshResetForbidden reports the 24h gate for the actor session.
+// A missing or zero date_created does not lock the account out forever.
+// A created time in the future (clock skew) does not lock it out either.
+// Elapsed time of zero is a session that just logged on and is forbidden.
+func freshResetForbidden(createdUnix, nowUnix int64) bool {
+	if createdUnix <= 0 || nowUnix < createdUnix {
+		return false
+	}
+	return nowUnix-createdUnix < freshResetWindowSeconds
+}
+
+// ResetAuthorizationError is the decision applied before any auth_users row
+// is soft-deleted. accountDeletion (actor auth key 0) skips the 24h gate.
+// A non-zero hash that matches nothing is 400 HASH_INVALID, never success.
+func ResetAuthorizationError(actorAuthKeyID, createdUnix, nowUnix, hash int64, matched bool) error {
+	if actorAuthKeyID != 0 && freshResetForbidden(createdUnix, nowUnix) {
+		return mtproto.ErrFreshResetAuthorisationForbidden
+	}
+	if hash != 0 && !matched {
+		return mtproto.ErrHashInvalid
+	}
+	return nil
+}
+
+// UnionAuthKeyIDs keeps permanent and temporary key ids that must be told
+// to drop. Zero ids are skipped. The caller is not added here.
+func UnionAuthKeyIDs(ids []int64) []int64 {
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// AuthorizationCreated reads auth_users.date_created for the actor's
+// permanent key. found is false when that live row does not exist.
+// A stored zero is found, so the caller can tell "unknown" from "missing".
+func (d *Dao) AuthorizationCreated(ctx context.Context, authKeyId int64) (created int64, found bool, err error) {
+	if d == nil || authKeyId == 0 {
+		return 0, false, nil
+	}
+	var row struct {
+		DateCreated int64 `db:"date_created"`
+	}
+	err = d.QueryRowPartial(ctx, &row, "select date_created from auth_users where auth_key_id = ? and deleted = 0 limit 1", authKeyId)
+	if err != nil {
+		if errors.Is(err, sqlx.ErrNotFound) {
+			return 0, false, nil
+		}
+		logx.WithContext(ctx).Errorf("AuthorizationCreated(%d) error: %v", authKeyId, err)
+		return 0, false, err
+	}
+	return row.DateCreated, true, nil
+}
+
 // authUsersToReset selects rows to soft-delete.
 // hash 0 drops every key except excludeAuthKeyID (0 excludes nobody, used
 // when deleting the account). A non-zero hash drops that single other key.

@@ -138,6 +138,10 @@ func (c *session) onPing(ctx context.Context, gatewayId string, msgId *inboxMsg,
 		msgId,
 		ping)
 
+	if c.sessList != nil && c.sessList.cb != nil && c.sessList.cb.bindingRevoked(ctx) {
+		return
+	}
+
 	pong := &mtproto.TLPong{Data2: &mtproto.Pong{
 		MsgId:  msgId.msgId,
 		PingId: ping.PingId,
@@ -155,6 +159,10 @@ func (c *session) onPingDelayDisconnect(ctx context.Context, gatewayId string, m
 		gatewayId,
 		msgId,
 		pingDelayDisconnect)
+
+	if c.sessList != nil && c.sessList.cb != nil && c.sessList.cb.bindingRevoked(ctx) {
+		return
+	}
 
 	pong := &mtproto.TLPong{Data2: &mtproto.Pong{
 		MsgId:  msgId.msgId,

@@ -10,8 +10,11 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	"github.com/teamgram/teamgram-server/app/service/authsession/internal/dao"
 )
 
 // AuthsessionResetAuthorization
@@ -37,22 +40,51 @@ func (c *AuthsessionCore) AuthsessionResetAuthorization(in *authsession.TLAuthse
 		}
 	}
 
-	keyIdList := c.svcCtx.Dao.ResetAuthorization(c.ctx, in.UserId, excludeKeyId, in.Hash)
-	// log.Debugf("keyIdList: %v", keyIdList)
-
-	keyIdL2ist := make([]int64, 0, len(keyIdList))
-	for _, keyId := range keyIdList {
-		keyData, _ := c.svcCtx.Dao.QueryAuthKeyV2(c.ctx, keyId)
-		if keyData != nil {
-			if keyData.TempAuthKeyId != 0 {
-				keyIdL2ist = append(keyIdL2ist, keyData.TempAuthKeyId)
-			} else {
-				keyIdL2ist = append(keyIdL2ist, keyId)
-			}
+	// Account deletion passes auth_key_id 0 and must still clear every key.
+	// Any real session is gated on its own date_created before a row changes.
+	created := int64(0)
+	if in.AuthKeyId != 0 {
+		var found bool
+		var err error
+		created, found, err = c.svcCtx.Dao.AuthorizationCreated(c.ctx, excludeKeyId)
+		if err != nil {
+			c.Logger.Errorf("authsession.resetAuthorization - created: %v", err)
+			return nil, err
 		}
+		if !found {
+			c.Logger.Errorf("authsession.resetAuthorization - actor %d has no live auth_users row", excludeKeyId)
+			return nil, mtproto.ErrAuthKeyUnregistered
+		}
+	}
+	now := time.Now().Unix()
+	// matched=true here only evaluates the 24h gate. A fresh session is
+	// refused before ResetAuthorization, so a client cannot hide a device
+	// that was not actually revoked.
+	if err := dao.ResetAuthorizationError(in.AuthKeyId, created, now, in.Hash, true); err != nil {
+		c.Logger.Errorf("authsession.resetAuthorization - refused: %v", err)
+		return nil, err
+	}
+
+	keyIdList := c.svcCtx.Dao.ResetAuthorization(c.ctx, in.UserId, excludeKeyId, in.Hash)
+	if err := dao.ResetAuthorizationError(in.AuthKeyId, created, now, in.Hash, len(keyIdList) > 0); err != nil {
+		c.Logger.Errorf("authsession.resetAuthorization - hash: %v", err)
+		return nil, err
+	}
+
+	// Notify the permanent key and any temp keys bound to it. The in-memory
+	// session wrapper is keyed by the permanent id; a temp id is included so
+	// a wrapper registered under that id is dropped too.
+	notify := make([]int64, 0, len(keyIdList)*3)
+	for _, keyId := range keyIdList {
+		notify = append(notify, keyId)
+		keyData, _ := c.svcCtx.Dao.QueryAuthKeyV2(c.ctx, keyId)
+		if keyData == nil {
+			continue
+		}
+		notify = append(notify, keyData.GetTempAuthKeyId(), keyData.GetMediaTempAuthKeyId())
 	}
 
 	return &authsession.Vector_Long{
-		Datas: keyIdList,
+		Datas: dao.UnionAuthKeyIDs(notify),
 	}, nil
 }
