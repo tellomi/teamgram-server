@@ -3,7 +3,10 @@
 
 POST /v1/transcribe with the raw audio bytes (OGG/Opus, WAV, MP4, ...).
 Response is {"text": "..."} . SenseVoice ITN and punctuation are on.
-Emotion and event tags are removed.
+Emotion and event tags are removed. language="" at init is auto-detect.
+A request with X-ASR-Language: zh is the unsent-recording path: a non-empty
+result whose first language tag is not zh is rejected. Voice notes and
+round videos omit that header and stay auto-detect.
 
 The model is loaded from disk. This process never downloads weights.
 """
@@ -17,6 +20,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TAG = re.compile(r"<\|[^>|]{0,64}\|>")
+LANG = re.compile(r"<\|(zh|en|yue|ja|ko|nospeech)\|>")
 SAMPLE_RATE = 16000
 
 
@@ -24,6 +28,28 @@ def clean_text(text: str) -> str:
     if not text:
         return ""
     return TAG.sub("", text).strip()
+
+
+def detect_language(parts) -> str:
+    """First SenseVoice language tag. Empty when auto-detect did not emit one."""
+    for part in parts:
+        match = LANG.search(part or "")
+        if match:
+            return match.group(1)
+    return ""
+
+
+def reject_required_language(require: str, text: str, lang: str) -> bool:
+    """Draft asks for zh. Stored voice notes pass require="" and are never rejected.
+
+    Empty text stays a normal empty recognition so the caller can return
+    TRANSCRIPTION_FAILED. A non-empty result in another language, or with no
+    tag, is rejected.
+    """
+    require = (require or "").strip().lower()
+    if not require or not text:
+        return False
+    return lang != require
 
 
 def join_parts(parts):
@@ -90,17 +116,17 @@ class Engine:
         self.chunk_seconds = chunk_seconds
         self.lock = threading.Lock()
 
-    def transcribe(self, audio: bytes) -> str:
+    def transcribe(self, audio: bytes):
         # One clip at a time. The production container is capped at 1.5GB.
         with self.lock:
             pcm = decode_pcm(audio, timeout=60)
             return self._pcm(pcm)
 
-    def _pcm(self, pcm: bytes) -> str:
+    def _pcm(self, pcm: bytes):
         import numpy as np
 
         if len(pcm) < 2:
-            return ""
+            return "", ""
         if len(pcm) % 2:
             pcm = pcm[:-1]
         samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
@@ -117,7 +143,7 @@ class Engine:
             stream.accept_waveform(SAMPLE_RATE, chunk)
             self.recognizer.decode_stream(stream)
             parts.append(stream.result.text or "")
-        return join_parts(parts)
+        return join_parts(parts), detect_language(parts)
 
 
 def load_recognizer():
@@ -166,7 +192,7 @@ def make_handler(engine: Engine):
                 self._send(400, b'{"error":"short_body"}')
                 return
             try:
-                text = engine.transcribe(audio)
+                text, lang = engine.transcribe(audio)
             except TooLong:
                 self._send(400, b'{"error":"too_long"}')
                 return
@@ -178,7 +204,14 @@ def make_handler(engine: Engine):
                 print("asr failed:", err, file=sys.stderr)
                 self._send(500, b'{"error":"asr_failed"}')
                 return
-            self._send(200, json.dumps({"text": text}, ensure_ascii=False).encode("utf-8"))
+            require = self.headers.get("X-ASR-Language", "")
+            if reject_required_language(require, text, lang):
+                self._send(422, json.dumps({"error": "language", "language": lang}).encode("utf-8"))
+                return
+            body = {"text": text}
+            if lang:
+                body["language"] = lang
+            self._send(200, json.dumps(body, ensure_ascii=False).encode("utf-8"))
 
         def _send(self, code: int, body: bytes, content_type: str = "application/json"):
             self.send_response(code)

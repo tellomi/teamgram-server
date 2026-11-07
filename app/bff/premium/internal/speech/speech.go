@@ -95,10 +95,41 @@ func NewHandler(load Loader, fetch Fetcher, recognize Recognizer, push Notifier)
 }
 
 var senseTag = regexp.MustCompile(`<\|[^>|]{0,64}\|>`)
+var draftLangTag = regexp.MustCompile(`<\|(zh|en|yue|ja|ko|nospeech)\|>`)
+
+// ErrDraftLanguage is an unsent recording that is not Chinese. Stored voice
+// notes and round videos do not return this error.
+var ErrDraftLanguage = status.Error(mtproto.ErrBadRequest, "TRANSCRIPTION_LANG_UNSUPPORTED")
 
 // CleanText removes SenseVoice language, emotion, event, and ITN tags.
 func CleanText(text string) string {
 	return strings.TrimSpace(senseTag.ReplaceAllString(text, ""))
+}
+
+// DraftText keeps text only when every SenseVoice language tag is zh.
+// Auto-detect that did not emit a language tag is refused. CleanText for a
+// stored voice note does not call this.
+func DraftText(raw string) (string, error) {
+	tags := draftLangTag.FindAllStringSubmatch(raw, -1)
+	text := CleanText(raw)
+	if text == "" {
+		return "", mtproto.ErrTranscriptionFailed
+	}
+	if len(tags) == 0 {
+		return "", ErrDraftLanguage
+	}
+	for _, tag := range tags {
+		if tag[1] != "zh" {
+			return "", ErrDraftLanguage
+		}
+	}
+	return text, nil
+}
+
+// draftRecognizer is the HTTP sidecar path. It asks SenseVoice for Chinese
+// and returns cleaned text only after the sidecar reports language zh.
+type draftRecognizer interface {
+	TranscribeDraft(ctx context.Context, audio []byte, filename string) (string, error)
 }
 
 // Transcribe runs speech recognition and returns a final messages.transcribedAudio.
@@ -172,8 +203,20 @@ func (h *Handler) Transcribe(ctx context.Context, md *metadata.RpcMetadata, in *
 	return h.finish(ctx, md, peer, in.GetMsgId(), got, true), nil
 }
 
+func (h *Handler) recognizeDraft(ctx context.Context, audio []byte) (string, error) {
+	if d, ok := h.recognize.(draftRecognizer); ok {
+		return d.TranscribeDraft(ctx, audio, "draft.ogg")
+	}
+	raw, err := h.recognize.Transcribe(ctx, audio, "draft.ogg")
+	if err != nil {
+		return "", err
+	}
+	return DraftText(raw)
+}
+
 // Draft recognizes an unsent recording. It does not read a message, does not
 // push updateTranscribedAudio, and does not keep the audio after the call.
+// The recording must be Chinese. A stored voice note still uses Transcribe.
 func (h *Handler) Draft(ctx context.Context, md *metadata.RpcMetadata, audio []byte) (*mtproto.Messages_TranscribedAudio, error) {
 	if md == nil || md.GetUserId() == 0 {
 		return nil, mtproto.ErrUserIdInvalid
@@ -193,15 +236,20 @@ func (h *Handler) Draft(ctx context.Context, md *metadata.RpcMetadata, audio []b
 		callCtx, cancel = context.WithTimeout(ctx, recognizeTimeout)
 		defer cancel()
 	}
-	raw, err := h.recognize.Transcribe(callCtx, audio, "draft.ogg")
+	text, err := h.recognizeDraft(callCtx, audio)
 	if err != nil {
 		if status.Convert(err).Message() == "AUDIO_TOO_LONG" {
 			return nil, ErrAudioTooLong
 		}
+		if status.Convert(err).Message() == "TRANSCRIPTION_LANG_UNSUPPORTED" {
+			return nil, ErrDraftLanguage
+		}
+		if status.Convert(err).Message() == "TRANSCRIPTION_FAILED" {
+			return nil, mtproto.ErrTranscriptionFailed
+		}
 		logx.WithContext(ctx).Errorf("messages.transcribeDraft: recognizer: %v", err)
 		return nil, ErrTranscriptionUnavailable
 	}
-	text := CleanText(raw)
 	if text == "" {
 		return nil, mtproto.ErrTranscriptionFailed
 	}

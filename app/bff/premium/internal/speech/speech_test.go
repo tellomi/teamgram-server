@@ -450,3 +450,71 @@ func TestDraftTranscribeDoesNotNotifyOrKeepAudio(t *testing.T) {
 		t.Fatalf("auth %v", err)
 	}
 }
+
+func TestDraftRequiresChineseAndVoiceNotesStayAuto(t *testing.T) {
+	voice := NewHandler(
+		func(context.Context, int64, *mtproto.PeerUtil, int32) (Clip, error) {
+			return Clip{DocumentID: 3, Filename: "voice.ogg", Duration: 1}, nil
+		},
+		func(context.Context, Clip) ([]byte, error) { return []byte("OggS"), nil },
+		RecognizerFunc(func(context.Context, []byte, string) (string, error) {
+			return "<|en|><|NEUTRAL|>hello", nil
+		}),
+		nil,
+	)
+	out, err := voice.Transcribe(context.Background(), &metadata.RpcMetadata{UserId: 5}, &mtproto.TLMessagesTranscribeAudio{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 6}).To_InputPeer(),
+		MsgId: 3,
+	})
+	if err != nil || out.GetText() != "hello" {
+		t.Fatalf("voice note english %+v %v", out, err)
+	}
+
+	draft := NewHandler(nil, nil, RecognizerFunc(func(context.Context, []byte, string) (string, error) {
+		return "<|en|>hello", nil
+	}), nil)
+	_, err = draft.Draft(context.Background(), &metadata.RpcMetadata{UserId: 7}, []byte("OggS"))
+	if status.Convert(err).Message() != "TRANSCRIPTION_LANG_UNSUPPORTED" {
+		t.Fatalf("english draft %v", err)
+	}
+	yue := NewHandler(nil, nil, RecognizerFunc(func(context.Context, []byte, string) (string, error) {
+		return "<|yue|>未标注普通话", nil
+	}), nil)
+	_, err = yue.Draft(context.Background(), &metadata.RpcMetadata{UserId: 7}, []byte("OggS"))
+	if status.Convert(err).Message() != "TRANSCRIPTION_LANG_UNSUPPORTED" {
+		t.Fatalf("yue draft %v", err)
+	}
+	untagged := NewHandler(nil, nil, RecognizerFunc(func(context.Context, []byte, string) (string, error) {
+		return "hello", nil
+	}), nil)
+	_, err = untagged.Draft(context.Background(), &metadata.RpcMetadata{UserId: 7}, []byte("OggS"))
+	if status.Convert(err).Message() != "TRANSCRIPTION_LANG_UNSUPPORTED" {
+		t.Fatalf("untagged draft %v", err)
+	}
+}
+
+func TestHTTPDraftAsksForChinese(t *testing.T) {
+	var voiceHeader, draftHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-ASR-Language") == "" {
+			voiceHeader = "absent"
+			_, _ = w.Write([]byte(`{"text":"hello","language":"en"}`))
+			return
+		}
+		draftHeader = r.Header.Get("X-ASR-Language")
+		if draftHeader == "zh" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"error":"language","language":"en"}`))
+		}
+	}))
+	defer srv.Close()
+	h := &HTTPRecognizer{Endpoint: srv.URL + "/v1/transcribe", Client: srv.Client()}
+	got, err := h.Transcribe(context.Background(), []byte("abc"), "voice.ogg")
+	if err != nil || got != "hello" || voiceHeader != "absent" {
+		t.Fatalf("voice %q header %q err %v", got, voiceHeader, err)
+	}
+	_, err = h.TranscribeDraft(context.Background(), []byte("abc"), "draft.ogg")
+	if status.Convert(err).Message() != "TRANSCRIPTION_LANG_UNSUPPORTED" || draftHeader != "zh" {
+		t.Fatalf("draft header %q err %v", draftHeader, err)
+	}
+}
