@@ -58,10 +58,14 @@ attestations are off so ACR accepts the manifest.
 
 Staging deploys wait for the simulator UI acceptance workflow
 (`.github/workflows/ui-acceptance.yml`). It runs from the Actions tab
-(`workflow_dispatch`) and when a pull request is labeled `deploy-staging`,
-against `staging-api.tellomi.cn`. Do not pull a new image onto the staging
-host until that workflow's `ready-for-deploy` job is green. The checklist,
-screenshots, and secrets are in [e2e/ui/README.md](../e2e/ui/README.md).
+(`workflow_dispatch`) and when a pull request is labeled `deploy-staging`.
+The workflow has no default host or port. It refuses `10443`, `5222`, and
+`11443`, and it refuses `api.tellomi.cn`. The repo-expected staging ports
+are host TCP `10444` and host WebSocket `11444` from
+`docker-compose.staging.yaml`. Passing them does not mean they are
+deployed. Do not pull a new image onto the staging host until that
+workflow's `ready-for-deploy` job is green. The checklist, screenshots,
+and secrets are in [e2e/ui/README.md](../e2e/ui/README.md).
 This image-publish workflow is not that gate. Production deploys stay on
 `deploy-pull.sh` below.
 

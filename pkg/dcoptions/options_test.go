@@ -55,6 +55,24 @@ func TestParseProductionSpec(t *testing.T) {
 	}
 }
 
+func TestParseMixedTunnelStillPublishesProduction(t *testing.T) {
+	// Staging must not treat "contains 1:127.0.0.1:10444" as safe.
+	// Parse publishes both entries with this_port_only, and Android dials both.
+	opts, err := Parse("1:8.137.39.82:10443,1:127.0.0.1:10444")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts) != 2 {
+		t.Fatalf("len %d", len(opts))
+	}
+	if opts[0].GetIpAddress() != "8.137.39.82" || opts[0].GetPort() != 10443 || !opts[0].GetThisPortOnly() {
+		t.Fatalf("production entry %+v", opts[0])
+	}
+	if opts[1].GetIpAddress() != "127.0.0.1" || opts[1].GetPort() != 10444 || !opts[1].GetThisPortOnly() {
+		t.Fatalf("tunnel entry %+v", opts[1])
+	}
+}
+
 func TestParseTrimsEntries(t *testing.T) {
 	opts, err := Parse(" 1:127.0.0.1:10443, 1:127.0.0.1:5222 ")
 	if err != nil {

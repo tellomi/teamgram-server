@@ -1,9 +1,9 @@
-"""Point the shipped Android client at staging without rebuilding it.
+"""Point the shipped Android client at an already confirmed staging endpoint.
 
 tellomi/Telegram release APKs dial an IPv4 literal (gradle TELLOMI_PROFILE_DEV,
-currently 8.137.39.82:10443). A hosts entry cannot change that. On a rooted
-emulator, DNAT sends every TCP connection to that production port to
-staging-api.tellomi.cn on the staging MTProto port (default 11443).
+port 10443). A hosts entry cannot change that. On a rooted emulator, DNAT
+can send that dial to an explicit staging host. This file does not choose
+the host. It does not rewrite a missing DNS name to a production address.
 The client repositories are not modified.
 """
 
@@ -17,14 +17,147 @@ import sys
 
 # Port baked into release clients (TELLOMI_PROFILE_DEV / iOS seed_port).
 CLIENT_DIAL_PORT = "10443"
-# TCP port staging-api.tellomi.cn listens on.
-DEFAULT_STAGING_PORT = "11443"
+# Host ports published by docker-compose.staging.yaml. Not a deploy claim.
+STAGING_HOST_TCP = "10444"
+STAGING_HOST_WS = "11444"
+# Ports the non-staging compose file publishes. Acceptance must not dial them.
+REFUSED_PORTS = frozenset({CLIENT_DIAL_PORT, "5222", "11443"})
+REFUSED_HOSTS = frozenset({"api.tellomi.cn", "chat.tellomi.cn"})
+CONFIRMED_VALUE = "tellomi-staging"
+# Desktop SSH tunnel dials the runner's loopback. A public address is not
+# accepted because an evidence file says so.
+TUNNEL_HOST = "127.0.0.1"
+REQUIRED_EVIDENCE_LINES = (
+    "container=tellomi-staging-teamgram",
+    "listen=127.0.0.1:10444",
+    "project=tellomi-staging",
+    "datadir=data-staging",
+)
+# Operator attestation is not a capture from the host. The workflow must not
+# mint E2E_STAGING_EVIDENCE by writing its text input to a file.
+WORKFLOW_EVIDENCE_SOURCE = "workflow-input"
+PRODUCTION_MOUNT_ROOTS = (
+    "/opt/tellomi/teamgram-server/data",
+    "/opt/tellomi/secrets",
+)
+
+
+def require_confirmed_endpoint() -> tuple[str, str]:
+    """Fail closed unless the operator named an isolated staging endpoint.
+
+    There is no default host and no default port. A name that does not
+    resolve stays unresolved; nothing substitutes another address.
+    """
+    host = os.environ.get("E2E_API_HOST", "").strip().rstrip(".")
+    port = os.environ.get("E2E_API_PORT", "").strip()
+    confirmed = os.environ.get("E2E_STAGING_CONFIRMED", "").strip()
+    if confirmed != CONFIRMED_VALUE:
+        raise SystemExit(
+            "E2E_STAGING_CONFIRMED must be tellomi-staging, and only after "
+            "the endpoint is verified as the isolated tellomi-staging project "
+            "(its own data directory, not the production stack). Refusing to dial."
+        )
+    if not host:
+        raise SystemExit(
+            "E2E_API_HOST is required. This harness has no default host and "
+            "does not rewrite a missing DNS name to another address."
+        )
+    if host.lower() in REFUSED_HOSTS:
+        raise SystemExit(
+            f"{host} is a production hostname. Pass the confirmed staging endpoint."
+        )
+    if port in REFUSED_PORTS:
+        raise SystemExit(
+            f"E2E_API_PORT {port} is published by the non-staging compose file. "
+            "Refusing it. Host TCP 10444 and host WebSocket 11444 are the "
+            "staging file's ports. Setting them does not mean they are deployed."
+        )
+    if port != STAGING_HOST_TCP:
+        raise SystemExit(
+            "E2E_API_PORT must be 10444. UI acceptance speaks MTProto TCP. "
+            "11444 is the staging WebSocket publish and is refused here. "
+            "Port 10444 alone does not prove the process is isolated."
+        )
+    if host != TUNNEL_HOST:
+        raise SystemExit(
+            "E2E_API_HOST must be 127.0.0.1. A public IP is not accepted "
+            "because an evidence file was typed. This harness does not "
+            "authenticate the host."
+        )
+    if os.environ.get("E2E_STAGING_EVIDENCE_SOURCE", "").strip() == WORKFLOW_EVIDENCE_SOURCE:
+        raise SystemExit(
+            "workflow input is not a host capture. Refusing to dial. "
+            "Pasting lines into GitHub and writing them to a file does not "
+            "authenticate the staging host."
+        )
+    evidence = os.environ.get("E2E_STAGING_EVIDENCE", "").strip()
+    if not evidence:
+        raise SystemExit(
+            "E2E_STAGING_EVIDENCE is required. E2E_STAGING_CONFIRMED and "
+            "port 10444 are not proof of isolation. The file is an operator "
+            "attestation, not a host capture."
+        )
+    try:
+        with open(evidence, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise SystemExit(f"cannot read E2E_STAGING_EVIDENCE: {exc}") from exc
+    _require_attestation(text)
+    return host, port
+
+
+def _normalize_mount(path: str) -> str:
+    path = path.strip().replace("\\", "/")
+    if "\x00" in path:
+        raise SystemExit("mount path contains NUL")
+    absolute = path.startswith("/")
+    parts: list[str] = []
+    for part in path.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    normalized = "/" + "/".join(parts) if absolute else "/".join(parts)
+    if len(normalized) > 1:
+        normalized = normalized.rstrip("/")
+    return normalized or "/"
+
+
+def _require_attestation(text: str) -> None:
+    """Check operator attestation shape. This does not prove host identity."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    missing = [item for item in REQUIRED_EVIDENCE_LINES if item not in lines]
+    if missing:
+        raise SystemExit(
+            "staging attestation is missing exact lines "
+            + ", ".join(missing)
+            + ". A substring is not enough, and typing the lines is not a "
+            "host capture."
+        )
+    for line in lines:
+        if not line.lower().startswith("mount="):
+            continue
+        normalized = _normalize_mount(line.split("=", 1)[1])
+        for root in PRODUCTION_MOUNT_ROOTS:
+            if normalized == root or normalized.startswith(root + "/"):
+                raise SystemExit(
+                    f"staging attestation lists production mount {normalized}. "
+                    "Refusing to dial."
+                )
 
 
 def resolve_host(host: str) -> str:
-    infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise OSError(
+            f"no IPv4 address for {host}; not substituting another address"
+        ) from exc
     if not infos:
-        raise OSError(f"no IPv4 address for {host}")
+        raise OSError(f"no IPv4 address for {host}; not substituting another address")
     return infos[0][4][0]
 
 
@@ -119,18 +252,21 @@ def preflight(host: str, port: int, timeout: float = 20.0) -> str:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Staging network helpers")
+    parser.add_argument("--check", action="store_true")
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
-    host = os.environ.get("E2E_API_HOST", "staging-api.tellomi.cn").strip()
-    port = os.environ.get("E2E_API_PORT", DEFAULT_STAGING_PORT).strip()
+    host, port = require_confirmed_endpoint()
+    if args.check and not args.preflight and not args.apply:
+        print(f"staging endpoint accepted: {host}:{port}")
+        return 0
     if args.preflight:
         preflight(host, int(port))
     if args.apply:
         ip = resolve_host(host)
         apply_dnat(ip, port)
     if not args.preflight and not args.apply:
-        parser.error("pass --preflight and/or --apply")
+        parser.error("pass --check, --preflight, and/or --apply")
     return 0
 
 

@@ -6,10 +6,10 @@ seeing media. The server exchanges Diffie-Hellman values, relays
 call. coturn on the Chengdu Docker host (`8.137.39.82`) is the relay those
 addresses point at.
 
-Signaling uses the MTProto port the client already has: production TCP
-**10443**, staging `staging-api.tellomi.cn` TCP **11443**. TURN is a separate
-UDP/TCP listener. Restarting the `teamgram` container picks up the session
-route. This does not flush Redis.
+Signaling uses the MTProto TCP listener inside gnetway, container port
+**10443**. Container port **11443** is the WebSocket listener, not a raw
+MTProto `dcOption`. TURN is a separate UDP/TCP listener. Restarting the
+`teamgram` container picks up the session route. This does not flush Redis.
 
 ## Why calls did not connect
 
@@ -194,8 +194,14 @@ Aliyun security group **and** the host firewall, inbound, on `8.137.39.82`:
 | 3479 | UDP | Legacy `phoneConnection` reflector, published by the `teamgram` container. |
 | 3480 | UDP | Group-call SFU. Not required for 1:1. |
 
-Leave MTProto where it is. Production stays on TCP 10443 and staging on TCP 11443.
-Those ports carry `phone.*`. Media uses the TURN ports above.
+Leave MTProto where the compose files publish it. The non-staging file
+publishes host TCP **10443** and host WebSocket **11443**.
+`docker-compose.staging.yaml` publishes host TCP **10444** (container 10443)
+and host WebSocket **11444** (container 11443). That is the repo layout for a
+future isolated project. It is not a statement that those host ports are
+listening, and public TCP 11443 is not staging MTProto. `phone.*` uses
+whichever MTProto port the client already reached. Media uses the TURN ports
+above.
 
 Outbound from the host must be allowed so coturn can answer phones. Relay
 ports are inbound to the server, not a wide-open outbound policy.

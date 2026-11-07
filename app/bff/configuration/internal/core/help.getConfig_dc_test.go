@@ -100,6 +100,22 @@ func TestHelpGetConfigDCOptionsInvalidDoesNotCrash(t *testing.T) {
 	}
 }
 
+func TestHelpGetConfigStagingTunnelDC(t *testing.T) {
+	restoreConfig(t)
+	loadCheckedInConfig(t)
+	t.Setenv("TELLOMI_DC_OPTIONS", "1:127.0.0.1:10444")
+	t.Setenv("TELLOMI_DC_TXT_DOMAIN", "-")
+
+	got := callGetConfig(t)
+	opts := got.GetDcOptions()
+	if len(opts) != 1 || opts[0].GetIpAddress() != "127.0.0.1" || opts[0].GetPort() != 10444 {
+		t.Fatalf("options %+v", opts)
+	}
+	if !opts[0].GetThisPortOnly() {
+		t.Fatal("this_port_only")
+	}
+}
+
 func TestHelpGetConfigDCTxtDomainBlank(t *testing.T) {
 	restoreConfig(t)
 	loadCheckedInConfig(t)

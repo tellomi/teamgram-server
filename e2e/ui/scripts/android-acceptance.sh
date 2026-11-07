@@ -6,9 +6,8 @@ root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 artifact_dir="${ARTIFACT_DIR:-${root}/ui-artifacts/android}"
 mkdir -p "$artifact_dir"
-export E2E_API_HOST="${E2E_API_HOST:-staging-api.tellomi.cn}"
-export E2E_API_PORT="${E2E_API_PORT:-11443}"
 export PATH="${PATH}:${HOME}/.maestro/bin"
+python3 e2e/ui/scripts/redirect.py --check
 
 bash e2e/ui/scripts/install_maestro.sh
 python3 e2e/ui/scripts/accounts.py --write "${artifact_dir}/accounts.env"
