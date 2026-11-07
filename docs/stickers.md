@@ -125,6 +125,6 @@ With only the default, sticker and reaction hashes stay the same, because the se
 
 - The rest of Twemoji, Fluent, and Noto beyond the seeded characters.
 - `.webm` video stickers.
-- Masks, dice sets, and user-created packs (`stickers.createStickerSet` stays unimplemented).
+- Masks and dice sets. User-created packs are `stickers.createStickerSet`: an empty `short_name` is assigned on the server, and each sticker must already be a `messages.uploadMedia` document (`image/webp`, `image/png`, `application/x-tgsticker`, or `video/webm`). Chat file upload is unchanged.
 - Animated emoji that a client refuses because the Lottie is larger than 512×512.
 - Per-language keyword lists other than English.

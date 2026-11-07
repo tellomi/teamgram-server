@@ -289,6 +289,145 @@ func TestSetThumbAndChangeSticker(t *testing.T) {
 	}
 }
 
+type uploadedDocs struct {
+	byID map[int64]*Item
+}
+
+func (uploadedDocs) saveInstall(int64, int64, installRow) error { return nil }
+func (uploadedDocs) saveRecent(int64, recentRow, bool) error    { return nil }
+func (uploadedDocs) saveFaved(int64, int64, int32, bool) error  { return nil }
+func (u uploadedDocs) findDocument(id int64) (*Item, bool) {
+	item, ok := u.byID[id]
+	if !ok {
+		return nil, false
+	}
+	cp := *item
+	return &cp, true
+}
+
+func TestCreateStickerSetAssignsEmptyShortName(t *testing.T) {
+	s := newService(builtinPacks())
+	const user int64 = 42
+	const other int64 = 43
+	webp := &Item{
+		DocumentID: 9001,
+		AccessHash: 77,
+		MIME:       "image/webp",
+		FileName:   "sticker.webp",
+		Width:      512,
+		Height:     512,
+		Size:       36,
+	}
+	pdf := &Item{DocumentID: 9002, AccessHash: 78, MIME: "application/pdf", FileName: "note.pdf", Size: 10}
+	s.persist = uploadedDocs{byID: map[int64]*Item{webp.DocumentID: webp, pdf.DocumentID: pdf}}
+
+	created, err := s.CreateSet(CreateInput{
+		Self:  user,
+		Owner: mtproto.MakeTLInputUserSelf(nil).To_InputUser(),
+		Title: "Mine",
+		Stickers: []*mtproto.InputStickerSetItem{
+			mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{
+				Document: inputItem(webp),
+				Emoji:    "🫥",
+			}).To_InputStickerSetItem(),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := created.GetSet()
+	if set.GetShortName() == "" || !shortNameRE.MatchString(set.GetShortName()) {
+		t.Fatalf("short name %q", set.GetShortName())
+	}
+	if set.GetCount() != 1 || len(created.GetDocuments()) != 1 {
+		t.Fatalf("empty set %#v", set)
+	}
+	doc := created.GetDocuments()[0]
+	if doc.GetPredicateName() != mtproto.Predicate_document || doc.GetId() != webp.DocumentID || doc.GetAccessHash() != webp.AccessHash {
+		t.Fatalf("document %#v", doc)
+	}
+	if doc.GetFileReference() == nil || doc.GetMimeType() != "image/webp" || doc.GetDcId() == 0 {
+		t.Fatalf("document fields mime=%s dc=%d ref=%v", doc.GetMimeType(), doc.GetDcId(), doc.GetFileReference())
+	}
+	var sawSticker, sawSize bool
+	for _, attr := range doc.GetAttributes() {
+		switch attr.GetPredicateName() {
+		case mtproto.Predicate_documentAttributeSticker:
+			sawSticker = attr.GetAlt() == "🫥" && attr.GetStickerset().GetId() == set.GetId()
+		case mtproto.Predicate_documentAttributeImageSize:
+			sawSize = attr.GetW() == 512 && attr.GetH() == 512
+		}
+	}
+	if !sawSticker || !sawSize {
+		t.Fatalf("attributes %#v", doc.GetAttributes())
+	}
+	again, err := s.GetSet(user, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: set.GetShortName()}).To_InputStickerSet(), 0)
+	if err != nil || again.GetDocuments()[0].GetId() != webp.DocumentID {
+		t.Fatalf("get %#v %v", again, err)
+	}
+
+	if _, err = s.CreateSet(CreateInput{
+		Self:      user,
+		Title:     "Bad",
+		ShortName: "no",
+		Stickers: []*mtproto.InputStickerSetItem{
+			mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{Document: inputItem(webp), Emoji: "😀"}).To_InputStickerSetItem(),
+		},
+	}); status.Convert(err).Message() != "PACK_SHORT_NAME_INVALID" {
+		t.Fatalf("short name: %v", err)
+	}
+	if _, err = s.CreateSet(CreateInput{
+		Self:  user,
+		Title: "Missing",
+		Stickers: []*mtproto.InputStickerSetItem{
+			mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{
+				Document: mtproto.MakeTLInputDocument(&mtproto.InputDocument{Id: 1, AccessHash: 1}).To_InputDocument(),
+				Emoji:    "😀",
+			}).To_InputStickerSetItem(),
+		},
+	}); status.Convert(err).Message() != "STICKER_DOCUMENT_INVALID" {
+		t.Fatalf("missing: %v", err)
+	}
+	if _, err = s.CreateSet(CreateInput{
+		Self:  user,
+		Title: "Paper",
+		Stickers: []*mtproto.InputStickerSetItem{
+			mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{Document: inputItem(pdf), Emoji: "😀"}).To_InputStickerSetItem(),
+		},
+	}); status.Convert(err).Message() != "STICKER_MIME_INVALID" {
+		t.Fatalf("mime: %v", err)
+	}
+	if _, err = s.CreateSet(CreateInput{
+		Self:  user,
+		Owner: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: other, AccessHash: 1}).To_InputUser(),
+		Title: "Stolen",
+		Stickers: []*mtproto.InputStickerSetItem{
+			mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{Document: inputItem(webp), Emoji: "😀"}).To_InputStickerSetItem(),
+		},
+	}); status.Convert(err).Message() != "USER_ID_INVALID" {
+		t.Fatalf("owner: %v", err)
+	}
+	setIn := mtproto.MakeTLInputStickerSetID(&mtproto.InputStickerSet{Id: set.GetId(), AccessHash: set.GetAccessHash()}).To_InputStickerSet()
+	if err = s.DeleteSet(other, setIn); status.Convert(err).Message() != "STICKERSET_INVALID" {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err = s.AddSticker(other, setIn, mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{Document: inputItem(webp), Emoji: "😀"}).To_InputStickerSetItem()); status.Convert(err).Message() != "STICKERSET_INVALID" {
+		t.Fatalf("add: %v", err)
+	}
+}
+
+func TestUploadedDocumentAttributes(t *testing.T) {
+	item := &Item{Width: 512, Height: 512, FileName: "upload"}
+	applyUploadedAttributes(item, `[{"predicate_name":"documentAttributeImageSize","w":320,"h":480},{"predicate_name":"documentAttributeFilename","file_name":"sticker.webp"},{"predicate_name":"documentAttributeSticker","alt":""}]`)
+	if item.Width != 320 || item.Height != 480 || item.FileName != "sticker.webp" {
+		t.Fatalf("%#v", item)
+	}
+	applyUploadedAttributes(item, "not-json")
+	if item.Width != 320 {
+		t.Fatal("bad json overwrote the size")
+	}
+}
+
 func stickerInput(doc *mtproto.Document, emoji string) *mtproto.InputStickerSetItem {
 	return mtproto.MakeTLInputStickerSetItem(&mtproto.InputStickerSetItem{
 		Document: inputDoc(doc),

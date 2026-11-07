@@ -331,8 +331,13 @@ func (s *Service) CreateSet(in CreateInput) (*mtproto.Messages_StickerSet, error
 	if err != nil {
 		return nil, err
 	}
+	// iOS MediaEditorScreen creates a pack with shortName "". Official
+	// clients expect the server to assign a link name. A non-empty name is
+	// still checked; an invalid or taken name is not rewritten.
 	shortName := strings.TrimSpace(in.ShortName)
-	if err = s.shortNameAvailable(shortName); err != nil {
+	if shortName == "" {
+		shortName = s.uniqueShort(slugTitle(title))
+	} else if err = s.shortNameAvailable(shortName); err != nil {
 		if err == mtproto.ErrShortNameInvalid {
 			return nil, mtproto.ErrPackShortNameInvalid
 		}
@@ -856,22 +861,39 @@ func (s *Service) resolveStickerItem(doc *mtproto.InputDocument, emoji string, c
 		}
 		return item, nil
 	}
-	if mp, ok := s.mysql(); ok {
-		item, found := mp.findDocument(doc.GetId())
-		if found {
-			if doc.GetAccessHash() != 0 && doc.GetAccessHash() != item.AccessHash {
-				return nil, mtproto.ErrStickerDocumentInvalid
-			}
-			if !stickerMIME(item.MIME) {
-				return nil, mtproto.ErrStickerMimeInvalid
-			}
-			item.Emoticon = emoji
-			item.MaskCoords = coords
-			item.Keywords = keywords
-			return item, nil
+	// messages.uploadMedia writes the file into the documents table. That
+	// row is not a catalog sticker until this pack claims it.
+	if item, found := s.lookupUploaded(doc.GetId()); found {
+		if doc.GetAccessHash() != 0 && doc.GetAccessHash() != item.AccessHash {
+			return nil, mtproto.ErrStickerDocumentInvalid
 		}
+		if !stickerMIME(item.MIME) {
+			return nil, mtproto.ErrStickerMimeInvalid
+		}
+		item.Emoticon = emoji
+		item.MaskCoords = coords
+		item.Keywords = keywords
+		return item, nil
 	}
 	return nil, mtproto.ErrStickerDocumentInvalid
+}
+
+// uploadedDocumentFinder is the documents table, or a test double.
+// mysqlPersist implements it. A persister that does not is ignored.
+type uploadedDocumentFinder interface {
+	findDocument(id int64) (*Item, bool)
+}
+
+func (s *Service) lookupUploaded(id int64) (*Item, bool) {
+	finder, ok := s.persist.(uploadedDocumentFinder)
+	if !ok || id == 0 {
+		return nil, false
+	}
+	item, found := finder.findDocument(id)
+	if !found || item == nil || item.DocumentID == 0 {
+		return nil, false
+	}
+	return cloneItem(item), true
 }
 
 func (s *Service) resolveGif(doc *mtproto.InputDocument) (gifRow, error) {

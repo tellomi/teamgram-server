@@ -27,6 +27,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestSendReactionThumbsUp` | The recipient reacts 👍 to a private message and it does not show up as `MessageReactions` on that message for both sides. The two sides number the same message differently, so this also catches a reaction stored under the wrong side's id. |
 | `TestAvailableReactionsDownloadable` | `messages.getAvailableReactions` is empty, or a static icon's `upload.getFile` does not return bytes within 10s. |
 | `TestStickerSetUploadGetFile` | `messages.getStickerSet` (Twemoji, then AnimatedEmoji) has no document, or `upload.getFile` does not return bytes within 10s. |
+| `TestCreateStickerPack` | iOS `messages.uploadMedia` of a WebP plus `stickers.createStickerSet` with an empty `short_name` does not return a sticker set whose document `upload.getFile` matches the upload, a non-sticker document is accepted into a pack, an unknown document does not return `STICKER_DOCUMENT_INVALID`, a missing upload part does not return `FILE_PART_1_MISSING`, or another user can delete the pack. |
 | `TestUsernameFourCharacters` | A 4-character username cannot be checked and set, or a 3-character name is accepted. |
 | `TestTellomiUsernameOccupied` | `account.checkUsername` for `tellomi`, `Tellomi`, or `TELLOMI` does not return `USERNAME_OCCUPIED`. |
 | `TestOfficialUsernamesOccupied` | `account.checkUsername` for an appendix D name (`support`, `news`, `help`, `admin`, `stickers`, `premium`, or a case variant of `tellomi`) does not return `USERNAME_OCCUPIED`. |
