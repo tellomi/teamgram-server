@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
 
 // Gap is the qts feed for one user after the cursor the client already applied.
@@ -30,6 +31,8 @@ func ApplyDifference(userID int64, clientQts, limit int32, diff *mtproto.Updates
 		limit = 100
 	}
 	msgs, others, last, more := Default().Gap(userID, clientQts, limit)
+	msgs = dropExpiredSecret(msgs)
+	others = dropExpiredSecretUpdates(others)
 	cur := Current(userID)
 	if diff == nil {
 		diff = mtproto.MakeTLUpdatesDifferenceEmpty(&mtproto.Updates_Difference{
@@ -94,6 +97,40 @@ func ApplyDifference(userID int64, clientQts, limit int32, diff *mtproto.Updates
 		stampState(diff, qts)
 		return diff
 	}
+}
+
+func dropExpiredSecret(msgs []*mtproto.EncryptedMessage) []*mtproto.EncryptedMessage {
+	if !msgexpiry.Enabled() {
+		return msgs
+	}
+	now := int32(time.Now().Unix())
+	kept := make([]*mtproto.EncryptedMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if m == nil {
+			continue
+		}
+		if !msgexpiry.Default().Readable(msgexpiry.KindSecret, int64(m.GetChatId()), narrowID(m.GetRandomId()), now) {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	return kept
+}
+
+func dropExpiredSecretUpdates(ups []*mtproto.Update) []*mtproto.Update {
+	if !msgexpiry.Enabled() {
+		return ups
+	}
+	now := int32(time.Now().Unix())
+	kept := make([]*mtproto.Update, 0, len(ups))
+	for _, u := range ups {
+		em := u.GetMessage_ENCRYPTEDMESSAGE()
+		if em != nil && !msgexpiry.Default().Readable(msgexpiry.KindSecret, int64(em.GetChatId()), narrowID(em.GetRandomId()), now) {
+			continue
+		}
+		kept = append(kept, u)
+	}
+	return kept
 }
 
 func stampState(diff *mtproto.Updates_Difference, qts int32) {
