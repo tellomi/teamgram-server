@@ -20,6 +20,44 @@ func testCore(md *metadata.RpcMetadata) *LangpackCore {
 	}
 }
 
+func TestLoginLanguageSwitchWorksBeforeSignIn(t *testing.T) {
+	c := testCore(nil)
+	langs, err := c.LangpackGetLanguages(&mtproto.TLLangpackGetLanguages{LangPack: "android"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, lang := range langs.Datas {
+		seen[lang.GetLangCode()] = true
+	}
+	if !seen["zh-hans"] || !seen["en"] {
+		t.Fatalf("login list missing zh-hans or en: %v", seen)
+	}
+	zh, err := c.LangpackGetLangPack(&mtproto.TLLangpackGetLangPack{LangPack: "android", LangCode: "zh-hans"})
+	if err != nil || zh.GetLangCode() != "zh-hans" || len(zh.GetStrings()) < 1000 {
+		t.Fatalf("zh pack %s %d %v", zh.GetLangCode(), len(zh.GetStrings()), err)
+	}
+	en, err := c.LangpackGetLangPack(&mtproto.TLLangpackGetLangPack{LangPack: "ios", LangCode: "en"})
+	if err != nil || en.GetLangCode() != "en" || len(en.GetStrings()) < 1000 {
+		t.Fatalf("en pack %s %d %v", en.GetLangCode(), len(en.GetStrings()), err)
+	}
+	zhStr, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "zh-CN", Keys: []string{"ChooseYourLanguage"}})
+	if err != nil || len(zhStr.Datas) != 1 || zhStr.Datas[0].GetValue() == "" {
+		t.Fatalf("zh string %+v %v", zhStr, err)
+	}
+	enStr, err := c.LangpackGetStrings(&mtproto.TLLangpackGetStrings{LangPack: "android", LangCode: "en", Keys: []string{"ChooseYourLanguage"}})
+	if err != nil || len(enStr.Datas) != 1 || enStr.Datas[0].GetValue() == "" {
+		t.Fatalf("en string %+v %v", enStr, err)
+	}
+	if zhStr.Datas[0].GetValue() == enStr.Datas[0].GetValue() {
+		t.Fatalf("language switch would not change ChooseYourLanguage: %q", zhStr.Datas[0].GetValue())
+	}
+	diff, err := c.LangpackGetDifference(&mtproto.TLLangpackGetDifference{LangPack: "android", LangCode: "en", FromVersion: 0})
+	if err != nil || diff.GetLangCode() != "en" || len(diff.GetStrings()) < 1000 {
+		t.Fatalf("difference %s %d %v", diff.GetLangCode(), len(diff.GetStrings()), err)
+	}
+}
+
 func TestGetLanguagesUsesConnectionLangPack(t *testing.T) {
 	t.Setenv("TELLOMI_LANGPACK_HIDDEN", "hi,th,el")
 	c := testCore(&metadata.RpcMetadata{Langpack: "ios", LangCode: "en", SystemLangCode: "zh-Hans"})

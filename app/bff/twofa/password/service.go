@@ -110,6 +110,11 @@ func ConfigureFromEnv(dsn string) {
 			if !cfg.Email.Enabled() {
 				return "", mtproto.ErrEmailNotSetup
 			}
+			if lim := verify.SharedEmail(); lim != nil {
+				if err := lim.AllowSend(ctx, "email", to, ""); err != nil {
+					return "", verify.EmailQuotaError(err)
+				}
+			}
 			if err := sender.SendCode(ctx, to, code); err != nil {
 				if errors.Is(err, verify.ErrEmailDisabled) {
 					return "", mtproto.ErrEmailNotSetup

@@ -47,13 +47,16 @@ type SMSConfig struct {
 	// Provider is "fixed" (dev code 12345) or "aliyun".
 	Provider           string
 	AllowInternational bool
-	CodeLength         int
-	Region             string
-	SignName           string
-	TemplateCode       string
-	Endpoint           string
-	AccessKeyID        string
-	AccessKeySecret    string
+	// Countries is the E.164 calling-code allow list. Default is 86.
+	// AllowInternational ignores it and accepts any valid number.
+	Countries       []string
+	CodeLength      int
+	Region          string
+	SignName        string
+	TemplateCode    string
+	Endpoint        string
+	AccessKeyID     string
+	AccessKeySecret string
 }
 
 type EmailConfig struct {
@@ -125,6 +128,7 @@ func Load() Config {
 		SMS: SMSConfig{
 			Provider:           smsProvider,
 			AllowInternational: envBool("TELLOMI_SMS_ALLOW_INTERNATIONAL", false),
+			Countries:          countryAllow(),
 			CodeLength:         codeLen,
 			Region:             envString("TELLOMI_ALIYUN_REGION", DefaultRegion),
 			SignName:           envString("TELLOMI_ALIYUN_SMS_SIGN_NAME", DefaultSMSSignName),
@@ -132,6 +136,20 @@ func Load() Config {
 			Endpoint:           envString("TELLOMI_ALIYUN_SMS_ENDPOINT", DefaultSMSEndpoint),
 			AccessKeyID:        strings.TrimSpace(os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")),
 			AccessKeySecret:    strings.TrimSpace(os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")),
+		},
+		Limits: Limits{
+			ResendSeconds: envInt("TELLOMI_SMS_RESEND_SECONDS", 60),
+			DailyPhone:    envInt("TELLOMI_SMS_DAILY_LIMIT", 10),
+			DailyIP:       envIntAllowZero("TELLOMI_SMS_IP_DAILY_LIMIT", 0),
+			MaxAttempts:   envInt("TELLOMI_SMS_MAX_ATTEMPTS", 5),
+			TTLSeconds:    envInt("TELLOMI_SMS_CODE_TTL_SECONDS", 180),
+		},
+		EmailLimits: Limits{
+			ResendSeconds: envInt("TELLOMI_EMAIL_RESEND_SECONDS", 60),
+			DailyPhone:    envInt("TELLOMI_EMAIL_DAILY_LIMIT", 10),
+			DailyIP:       envIntAllowZero("TELLOMI_EMAIL_IP_DAILY_LIMIT", 0),
+			MaxAttempts:   envInt("TELLOMI_EMAIL_MAX_ATTEMPTS", 5),
+			TTLSeconds:    envInt("TELLOMI_EMAIL_CODE_TTL_SECONDS", 180),
 		},
 		Email: EmailConfig{
 			Provider:        emailProvider,
@@ -149,21 +167,25 @@ func Load() Config {
 			AccessKeyID:     strings.TrimSpace(os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")),
 			AccessKeySecret: strings.TrimSpace(os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")),
 		},
-		Limits: Limits{
-			ResendSeconds: envInt("TELLOMI_SMS_RESEND_SECONDS", 60),
-			DailyPhone:    envInt("TELLOMI_SMS_DAILY_LIMIT", 10),
-			DailyIP:       envInt("TELLOMI_SMS_IP_DAILY_LIMIT", 30),
-			MaxAttempts:   envInt("TELLOMI_SMS_MAX_ATTEMPTS", 5),
-			TTLSeconds:    envInt("TELLOMI_SMS_CODE_TTL_SECONDS", 180),
-		},
-		EmailLimits: Limits{
-			ResendSeconds: envInt("TELLOMI_EMAIL_RESEND_SECONDS", 60),
-			DailyPhone:    envInt("TELLOMI_EMAIL_DAILY_LIMIT", 10),
-			DailyIP:       envInt("TELLOMI_EMAIL_IP_DAILY_LIMIT", 30),
-			MaxAttempts:   envInt("TELLOMI_EMAIL_MAX_ATTEMPTS", 5),
-			TTLSeconds:    envInt("TELLOMI_EMAIL_CODE_TTL_SECONDS", 180),
-		},
 	}
+}
+
+func countryAllow() []string {
+	raw := strings.TrimSpace(os.Getenv("TELLOMI_SMS_COUNTRY_ALLOW"))
+	if raw == "" {
+		return []string{"86"}
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimPrefix(strings.TrimSpace(part), "+")
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"86"}
+	}
+	return out
 }
 
 func envString(key, def string) string {
@@ -181,6 +203,18 @@ func envInt(key string, def int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
+
+func envIntAllowZero(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
 		return def
 	}
 	return n

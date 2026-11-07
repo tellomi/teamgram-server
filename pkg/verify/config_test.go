@@ -11,6 +11,9 @@ func TestLoadDefaultsUseLogEmail(t *testing.T) {
 	t.Setenv("TELLOMI_EMAIL_CODE_LENGTH", "")
 	t.Setenv("TELLOMI_EMAIL_RESEND_SECONDS", "")
 	t.Setenv("TELLOMI_EMAIL_DAILY_LIMIT", "")
+	t.Setenv("TELLOMI_SMS_DAILY_LIMIT", "")
+	t.Setenv("TELLOMI_SMS_IP_DAILY_LIMIT", "")
+	t.Setenv("TELLOMI_SMS_COUNTRY_ALLOW", "")
 	t.Setenv("TELLOMI_EMAIL_IP_DAILY_LIMIT", "")
 	t.Setenv("TELLOMI_EMAIL_MAX_ATTEMPTS", "")
 	t.Setenv("TELLOMI_EMAIL_CODE_TTL_SECONDS", "")
@@ -59,11 +62,14 @@ func TestLoadDefaultsUseLogEmail(t *testing.T) {
 	if cfg.Email.SetupRequired {
 		t.Fatal("email setup is not required by default")
 	}
-	if cfg.Limits.ResendSeconds != 60 || cfg.Limits.DailyPhone != 10 || cfg.Limits.MaxAttempts != 5 {
+	if cfg.Limits.ResendSeconds != 60 || cfg.Limits.DailyPhone != 10 || cfg.Limits.DailyIP != 0 || cfg.Limits.MaxAttempts != 5 {
 		t.Fatalf("limits %+v", cfg.Limits)
 	}
-	if cfg.EmailLimits.ResendSeconds != 60 || cfg.EmailLimits.DailyPhone != 10 || cfg.EmailLimits.DailyIP != 30 || cfg.EmailLimits.MaxAttempts != 5 || cfg.EmailLimits.TTLSeconds != 180 {
+	if cfg.EmailLimits.ResendSeconds != 60 || cfg.EmailLimits.DailyPhone != 10 || cfg.EmailLimits.DailyIP != 0 || cfg.EmailLimits.MaxAttempts != 5 || cfg.EmailLimits.TTLSeconds != 180 {
 		t.Fatalf("email limits %+v", cfg.EmailLimits)
+	}
+	if len(cfg.SMS.Countries) != 1 || cfg.SMS.Countries[0] != "86" {
+		t.Fatalf("countries %+v", cfg.SMS.Countries)
 	}
 }
 

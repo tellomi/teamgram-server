@@ -43,37 +43,30 @@ func (c *AuthorizationCore) prepareSMSCode(codeData *model.PhoneCodeTransaction)
 	codeData.PhoneCodeExpired = int32(time.Now().Unix()) + int32(ttl)
 }
 
-// guardSMS applies the +86 rule and send quotas. Fixed mode and test numbers
-// never reach it. Test numbers return before the SMS branch.
+// guardSMS applies the country allow list and the daily quota before any
+// provider call. Test numbers return before this. Fixed mode still counts,
+// and still refuses a number outside the allow list, so a dev sender is not
+// a way around the cap.
 func (c *AuthorizationCore) guardSMS(phone string) error {
-	if !c.aliyunSMS() {
+	if c.svcCtx == nil {
 		return nil
 	}
-	if _, err := verify.FormatAliyunPhone(phone, c.svcCtx.Verify.SMS.AllowInternational); err != nil {
+	sms := c.svcCtx.Verify.SMS
+	if err := verify.RequireCountry(phone, sms.AllowInternational, sms.Countries); err != nil {
 		return mtproto.ErrPhoneNumberInvalid
 	}
-	if c.svcCtx.Limiter == nil {
+	lim := c.svcCtx.Limiter
+	if lim == nil {
+		lim = verify.SharedSMS()
+	}
+	if lim == nil {
 		return nil
 	}
-	err := c.svcCtx.Limiter.AllowSend(c.ctx, "sms", phone, c.clientIP())
+	err := lim.AllowSend(c.ctx, "sms", phone, c.clientIP())
 	if err == nil {
 		return nil
 	}
-	var lim *verify.LimitError
-	if errors.As(err, &lim) {
-		if lim.Daily {
-			return mtproto.ErrPhoneNumberFlood
-		}
-		retry := lim.Retry
-		if retry <= 0 {
-			retry = c.svcCtx.Verify.Limits.ResendSeconds
-		}
-		if retry <= 0 {
-			retry = 60
-		}
-		return mtproto.NewErrFloodWaitX(int32(retry))
-	}
-	return err
+	return verify.PhoneQuotaError(err)
 }
 
 func (c *AuthorizationCore) sendSMS(phone string, codeData *model.PhoneCodeTransaction) error {

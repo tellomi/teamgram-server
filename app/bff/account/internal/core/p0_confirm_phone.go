@@ -43,30 +43,8 @@ func (c *AccountCore) deliverConfirmSMS(ctx context.Context, phone, code string)
 	if c == nil || c.svcCtx == nil || c.svcCtx.AuthLogic == nil || c.svcCtx.AuthLogic.VerifyCodeInterface == nil {
 		return "", mtproto.ErrSmsCodeCreateFailed
 	}
-	cfg := verify.Load()
-	if cfg.SMS.Provider == verify.ProviderAliyun {
-		if _, err := verify.FormatAliyunPhone(phone, cfg.SMS.AllowInternational); err != nil {
-			return "", mtproto.ErrPhoneNumberInvalid
-		}
-		if c.svcCtx.Dao != nil && c.svcCtx.Dao.Cache() != nil {
-			if err := verify.NewLimiter(c.svcCtx.Dao.Cache(), cfg.Limits).AllowSend(ctx, "sms", phone, confirmClientIP(c)); err != nil {
-				var lim *verify.LimitError
-				if errors.As(err, &lim) {
-					if lim.Daily {
-						return "", mtproto.ErrPhoneNumberFlood
-					}
-					retry := lim.Retry
-					if retry <= 0 {
-						retry = cfg.Limits.ResendSeconds
-					}
-					if retry <= 0 {
-						retry = 60
-					}
-					return "", mtproto.NewErrFloodWaitX(int32(retry))
-				}
-				return "", err
-			}
-		}
+	if err := guardChangePhone(c, phone); err != nil {
+		return "", err
 	}
 	timeout := verify.SMSSendTimeout
 	if timeout <= 0 {
@@ -86,6 +64,28 @@ func (c *AccountCore) deliverConfirmSMS(ctx context.Context, phone, code string)
 		extra = code
 	}
 	return extra, nil
+}
+
+func guardChangePhone(c *AccountCore, phone string) error {
+	cfg := verify.Load()
+	if err := verify.RequireCountry(phone, cfg.SMS.AllowInternational, cfg.SMS.Countries); err != nil {
+		return mtproto.ErrPhoneNumberInvalid
+	}
+	lim := verify.SharedSMS()
+	if lim == nil && c != nil && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.Cache() != nil {
+		lim = verify.NewLimiter(c.svcCtx.Dao.Cache(), cfg.Limits)
+	}
+	if lim == nil {
+		return nil
+	}
+	ctx := context.Background()
+	if c != nil && c.ctx != nil {
+		ctx = c.ctx
+	}
+	if err := lim.AllowSend(ctx, "sms", phone, confirmClientIP(c)); err != nil {
+		return verify.PhoneQuotaError(err)
+	}
+	return nil
 }
 
 func confirmClientIP(c *AccountCore) string {

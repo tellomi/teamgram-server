@@ -26,3 +26,34 @@ func FormatAliyunPhone(digits string, allowInternational bool) (string, error) {
 	}
 	return digits, nil
 }
+
+// RequireCountry rejects a number outside the allow list before any SMS send.
+// allowInternational accepts any non-empty number. An empty list means +86 only.
+func RequireCountry(digits string, allowInternational bool, countries []string) error {
+	digits = strings.TrimPrefix(strings.TrimSpace(digits), "+")
+	if digits == "" {
+		return ErrInternationalDisabled
+	}
+	if allowInternational {
+		return nil
+	}
+	if len(countries) == 0 {
+		countries = []string{"86"}
+	}
+	for _, code := range countries {
+		code = strings.TrimPrefix(strings.TrimSpace(code), "+")
+		if code == "" {
+			continue
+		}
+		if code == "86" {
+			if IsChina(digits) {
+				return nil
+			}
+			continue
+		}
+		if strings.HasPrefix(digits, code) {
+			return nil
+		}
+	}
+	return ErrInternationalDisabled
+}
