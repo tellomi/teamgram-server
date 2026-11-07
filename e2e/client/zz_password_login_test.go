@@ -28,7 +28,9 @@ func TestCloudPasswordReloginAndDisable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(client.Close)
-	if _, err = client.Login(ctx, phone, "Password"); err != nil {
+	// The display name is not the cloud password. "Password" is in the
+	// signup lexicon, so a new account cannot use it.
+	if _, err = client.Login(ctx, phone, "Ada"); err != nil {
 		t.Fatal(err)
 	}
 	if err = setCloudPassword(ctx, client, "secret"); err != nil {
@@ -99,7 +101,7 @@ func TestCloudPasswordReloginAndDisable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(client.Close)
-	self, err := client.Login(ctx, phone, "Password")
+	self, err := client.Login(ctx, phone, "Ada")
 	if err != nil {
 		t.Fatalf("login without password: %v", err)
 	}
