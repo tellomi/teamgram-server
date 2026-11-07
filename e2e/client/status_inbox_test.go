@@ -43,25 +43,36 @@ func TestOtherSessionReceivesOnlineStatus(t *testing.T) {
 		t.Fatalf("repeat updateStatus: %v", err)
 	}
 	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		for _, obj := range other.Pushed() {
-			up, ok := obj.(*mtproto.Updates)
-			if !ok {
-				continue
-			}
-			for _, u := range up.GetUpdates() {
-				if u.GetPredicateName() == mtproto.Predicate_updateUserStatus {
-					return true, nil
-				}
-			}
-			if up.GetUpdate() != nil && up.GetUpdate().GetPredicateName() == mtproto.Predicate_updateUserStatus {
-				return true, nil
-			}
-		}
-		return false, nil
+		return sawUserStatus(other.Pushed()), nil
 	})
 	if err != nil {
 		t.Fatalf("other session did not receive updateUserStatus: %v", err)
 	}
+}
+
+func sawUserStatus(objs []mtproto.TLObject) bool {
+	for _, obj := range objs {
+		var ups []*mtproto.Update
+		switch v := obj.(type) {
+		case *mtproto.TLUpdates:
+			ups = v.GetUpdates()
+		case *mtproto.TLUpdatesCombined:
+			ups = v.GetUpdates()
+		case *mtproto.TLUpdateShort:
+			ups = []*mtproto.Update{v.GetUpdate()}
+		case *mtproto.Updates:
+			ups = v.GetUpdates()
+			if v.GetUpdate() != nil {
+				ups = append(ups, v.GetUpdate())
+			}
+		}
+		for _, u := range ups {
+			if u.GetPredicateName() == mtproto.Predicate_updateUserStatus {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // TestChannelReadInboxSurvivesReconnect checks the reader, not only the sender.
