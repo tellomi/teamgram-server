@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	syncpb "github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -58,46 +59,52 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		}).To_UserStatus()
 	}
 
-	// threading.GoSafe()
 	threading.GoSafe(func() {
-		c.svcCtx.Dao.UserClient.UserUpdateLastSeen(
-			contextx.ValueOnlyFrom(c.ctx),
-			&userpb.TLUserUpdateLastSeen{
-				Id:         c.MD.UserId,
-				LastSeenAt: now,
-				Expires:    expires,
+		if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.UserClient == nil {
+			return
+		}
+		ctx := contextx.ValueOnlyFrom(c.ctx)
+		_, _ = c.svcCtx.UserClient.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
+			Id:         c.MD.UserId,
+			LastSeenAt: now,
+			Expires:    expires,
+		})
+		if c.svcCtx.SyncClient == nil {
+			return
+		}
+		ids, err := c.svcCtx.UserClient.UserGetContactIdList(ctx, &userpb.TLUserGetContactIdList{
+			UserId: c.MD.UserId,
+		})
+		if err != nil || ids == nil {
+			return
+		}
+		blocked := func(id int64) bool {
+			// Either direction hides the status: the contact blocked this
+			// user, or this user blocked the contact.
+			one, err1 := c.svcCtx.UserClient.UserBlockedByUser(ctx, &userpb.TLUserBlockedByUser{
+				UserId: id, PeerUserId: c.MD.UserId,
 			})
+			two, err2 := c.svcCtx.UserClient.UserBlockedByUser(ctx, &userpb.TLUserBlockedByUser{
+				UserId: c.MD.UserId, PeerUserId: id,
+			})
+			return (err1 == nil && mtproto.FromBool(one)) || (err2 == nil && mtproto.FromBool(two))
+		}
+		deliverUserStatus(c.MD.UserId, c.MD.PermAuthKeyId, pushUpdates, ids.GetDatas(), blocked,
+			func(id int64, up *mtproto.Updates) {
+				_, _ = c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
+					UserId:  id,
+					Updates: up,
+				})
+			},
+			func(self, auth int64, up *mtproto.Updates) {
+				_, _ = c.svcCtx.SyncClient.SyncUpdatesNotMe(ctx, &syncpb.TLSyncUpdatesNotMe{
+					UserId:        self,
+					PermAuthKeyId: auth,
+					Updates:       up,
+				})
+			},
+		)
 	})
-
-	// TODO: push
-	//// log.Debugf("account.updateStatus - reply: {true}")
-	//return model.WrapperGoFunc(mtproto.BoolTrue, func() {
-	//	// log.Debugf("ready push to other contacts...")
-	//	// push to other contacts.
-	//	contactIdList := s.UserFacade.GetContactUserIdList(context.Background(), md.UserId)
-	//	blockedIdList := s.UserFacade.CheckBlockUserList(context.Background(), md.UserId, contactIdList)
-	//
-	//	// TODO(@benqi): push updateUserStatus规则
-	//	for _, id := range contactIdList {
-	//		if md.UserId == id {
-	//			// why??
-	//			continue
-	//		}
-	//
-	//		if blocked, _ := container2.Contains(id, blockedIdList); blocked {
-	//			continue
-	//		}
-	//
-	//		// log.Debugf("check blocked...")
-	//		blocked := s.UserFacade.IsBlockedByUser(context.Background(), md.UserId, id)
-	//		if blocked {
-	//			continue
-	//		}
-	//
-	//		sync_client.PushUpdates(context.Background(), id, pushUpdates)
-	//	}
-	//
-	//}).(*mtproto.Bool), nil
 
 	return mtproto.BoolTrue, nil
 }
