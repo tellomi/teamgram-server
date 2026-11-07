@@ -54,6 +54,9 @@ func mockPieces(job tellomiai.Job) []string {
 			case "world":
 				out[i] = strings.Replace(text, "world", "世界", 1)
 				continue
+			case "thanks":
+				out[i] = "谢谢"
+				continue
 			}
 		}
 		if (job.ToLang == "en" || strings.HasPrefix(job.ToLang, "en-")) && trimmed == "thanks" {
@@ -174,17 +177,17 @@ func TestTranslateRichTextAndBlocks(t *testing.T) {
 		t.Fatal("vectors")
 	}
 
-	if _, err := Translate(context.Background(), 1, &mtproto.TLMessagesTranslateRichMessage{ToLang: "en"}, nil); status.Convert(err).Message() != "PEER_ID_INVALID" {
+	if _, err := Translate(context.Background(), 1, &mtproto.TLMessagesTranslateRichMessage{ToLang: "en"}, nil); status.Convert(err).Message() != "TO_LANG_INVALID" {
 		t.Fatal(err)
 	}
 	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 4}).To_InputPeer()
 	if _, err := Translate(context.Background(), 1, &mtproto.TLMessagesTranslateRichMessage{
 		ToLang: "en", Peer: peer,
-	}, nil); status.Convert(err).Message() != "MESSAGE_IDS_EMPTY" {
+	}, nil); status.Convert(err).Message() != "TO_LANG_INVALID" {
 		t.Fatal(err)
 	}
 	if _, err := Translate(context.Background(), 1, &mtproto.TLMessagesTranslateRichMessage{
-		ToLang: "en", Peer: peer, Id: []int32{0},
+		ToLang: "zh", Peer: peer, Id: []int32{0},
 	}, nil); status.Convert(err).Message() != "MESSAGE_ID_INVALID" {
 		t.Fatal(err)
 	}
@@ -206,11 +209,11 @@ func TestTranslateRichTextAndBlocks(t *testing.T) {
 		t.Fatal("stored bold dropped")
 	}
 	loaded, err := Translate(context.Background(), 9, &mtproto.TLMessagesTranslateRichMessage{
-		ToLang: "en", Peer: peer, Id: []int32{8},
+		ToLang: "zh", Peer: peer, Id: []int32{8},
 	}, func(context.Context, int64, *mtproto.PeerUtil, int32) (string, []*mtproto.MessageEntity, bool) {
 		return "thanks", nil, true
 	})
-	if err != nil || visible(loaded.GetResult()[0]) != "thank you" {
+	if err != nil || visible(loaded.GetResult()[0]) != "谢谢" {
 		t.Fatalf("load %v %#v", err, loaded)
 	}
 }

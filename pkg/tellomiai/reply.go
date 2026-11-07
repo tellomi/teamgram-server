@@ -75,9 +75,16 @@ func Advertised() bool {
 }
 
 // TranslateAdvertised is help.getAppConfig tellomi_translate_enabled.
-// It is true only when TELLOMI_TRANSLATE=1 and TELLOMI_AI_API_KEY is set.
+// It is true only when the self-hosted translator answers /health.
+// TELLOMI_AI_API_KEY does not turn it on.
 func TranslateAdvertised() bool {
-	return envOn(EnvTranslate) && strings.TrimSpace(getenv(EnvAPIKey)) != ""
+	if LocalReady() {
+		return true
+	}
+	hookMu.RLock()
+	hook := hookFn
+	hookMu.RUnlock()
+	return hook != nil && envOn(EnvTranslate)
 }
 
 // ComposeAdvertised is help.getAppConfig tellomi_ai_compose_enabled.

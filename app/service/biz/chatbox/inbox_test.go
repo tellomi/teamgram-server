@@ -163,13 +163,11 @@ func TestTranslateModelAndPeerFlag(t *testing.T) {
 	if got := string(utf16.Decode(units[ent.GetOffset() : ent.GetOffset()+ent.GetLength()])); got != url {
 		t.Fatalf("url span %q", got)
 	}
-	en, err := TranslateText(ctx, TranslateInput{Text: "你好", ToLang: "en"})
-	if err != nil || en.GetText() != "hello" {
-		t.Fatalf("en %+v %v", en, err)
+	if _, err := TranslateText(ctx, TranslateInput{Text: "你好", ToLang: "en"}); err != mtproto.ErrToLangInvalid {
+		t.Fatalf("en-to is not offered: %v", err)
 	}
-	fr, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "fr"})
-	if err != nil || fr.GetText() != "bonjour" {
-		t.Fatalf("fr %+v %v", fr, err)
+	if _, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "fr"}); err != mtproto.ErrToLangInvalid {
+		t.Fatalf("fr is not offered: %v", err)
 	}
 	b.RememberPlain(ctx, 3, peer, 11, "hello", nil)
 	text, _, ok := b.LookupPlain(ctx, 3, peer, 11)

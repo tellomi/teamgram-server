@@ -181,21 +181,10 @@ func ValidToLang(code string) bool {
 	return ok
 }
 
-// supportedLangs is the to_lang set messages.translateText accepts.
-// Codes outside this set return TO_LANG_INVALID.
+// supportedLangs is English to simplified Chinese only.
+// Any other to_lang is TO_LANG_INVALID. There is no third-party fallback.
 var supportedLangs = map[string]struct{}{
-	"af": {}, "am": {}, "ar": {}, "az": {}, "be": {}, "bg": {}, "bn": {},
-	"bs": {}, "ca": {}, "cs": {}, "cy": {}, "da": {}, "de": {}, "el": {},
-	"en": {}, "en-us": {}, "en-gb": {}, "eo": {}, "es": {}, "et": {},
-	"eu": {}, "fa": {}, "fi": {}, "fr": {}, "ga": {}, "gl": {}, "gu": {},
-	"he": {}, "hi": {}, "hr": {}, "hu": {}, "hy": {}, "id": {}, "is": {},
-	"it": {}, "ja": {}, "ka": {}, "kk": {}, "km": {}, "kn": {}, "ko": {},
-	"ky": {}, "lo": {}, "lt": {}, "lv": {}, "mk": {}, "ml": {}, "mn": {},
-	"mr": {}, "ms": {}, "my": {}, "nb": {}, "ne": {}, "nl": {}, "nn": {},
-	"no": {}, "pa": {}, "pl": {}, "pt": {}, "pt-br": {}, "ro": {}, "ru": {},
-	"si": {}, "sk": {}, "sl": {}, "sq": {}, "sr": {}, "sv": {}, "sw": {},
-	"ta": {}, "te": {}, "th": {}, "tr": {}, "uk": {}, "ur": {}, "uz": {},
-	"vi": {}, "zh": {}, "zh-cn": {}, "zh-tw": {}, "zh-hans": {}, "zh-hant": {},
+	"zh": {}, "zh-cn": {}, "zh-hans": {},
 }
 
 func itoa(n int) string {

@@ -1,0 +1,11 @@
+Intended model, not shipped in this repository and not loaded by server.py yet.
+
+Name: opus-mt-en-zh
+Source: Helsinki-NLP / Language Technology at the University of Helsinki
+https://huggingface.co/Helsinki-NLP/opus-mt-en-zh
+License: CC-BY-4.0
+Approximate size: 300MB (Marian encoder/decoder, about 298MB of weights)
+
+This checkout does not contain the weights. server.py answers /health with
+503 until a reviewed runtime is pointed at a local model directory.
+Do not treat TELLOMI_TRANSLATE=1 or a Bailian key as permission to translate.

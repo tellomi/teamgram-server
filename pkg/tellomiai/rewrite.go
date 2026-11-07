@@ -74,11 +74,15 @@ func SetModerate(fn func(context.Context, string) string) {
 	hookMu.Unlock()
 }
 
-// Rewrite calls qwen-plus through Bailian, then deepseek-v3 on the same API
-// when the primary call fails. A content-safety block does not use the fallback.
-// The feature flag for job.Mode must be on. Otherwise the result is ErrDisabled.
+// Rewrite translates with the self-hosted sidecar only. Compose that is not
+// a translation still uses the configured assistant. A translation is never
+// sent to Bailian, and a sidecar failure does not fall back to it.
 func Rewrite(ctx context.Context, job Job) ([]string, error) {
-	if !advertised(job.Mode) {
+	if isTranslate(job) {
+		if !translateReady() {
+			return nil, ErrDisabled
+		}
+	} else if !advertised(job.Mode) {
 		return nil, ErrDisabled
 	}
 	if ctx == nil {
@@ -117,7 +121,39 @@ func advertised(mode string) bool {
 	return TranslateAdvertised()
 }
 
+func isTranslate(job Job) bool {
+	return job.Mode == ModeTranslate || ChineseTarget(job.ToLang)
+}
+
+func translateReady() bool {
+	hookMu.RLock()
+	hook := hookFn
+	hookMu.RUnlock()
+	if hook != nil && envOn(EnvTranslate) {
+		return true
+	}
+	return LocalReady()
+}
+
 func rewriteChunked(ctx context.Context, job Job, texts []string) ([]string, error) {
+	if isTranslate(job) {
+		hookMu.RLock()
+		hook := hookFn
+		hookMu.RUnlock()
+		if hook != nil {
+			chunk := job
+			chunk.Texts = texts
+			got, err := hook(ctx, chunk)
+			if err != nil {
+				return nil, err
+			}
+			if len(got) != len(texts) {
+				return nil, errors.New("tellomi ai: rewrite shape")
+			}
+			return got, nil
+		}
+		return translateLocal(ctx, texts, job.ToLang)
+	}
 	hookMu.RLock()
 	hook := hookFn
 	hookMu.RUnlock()

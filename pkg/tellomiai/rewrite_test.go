@@ -2,8 +2,6 @@ package tellomiai
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,84 +54,51 @@ func TestRewriteHookAndSafety(t *testing.T) {
 	}
 }
 
-func TestRewritePrimaryFallsBackToDeepSeek(t *testing.T) {
+func TestTranslateDoesNotCallBailian(t *testing.T) {
 	t.Setenv(EnvTranslate, "1")
 	t.Setenv(EnvAPIKey, "test-key")
-	t.Setenv(EnvModelPrimary, defaultPrimary)
-	t.Setenv(EnvModelFallback, defaultFallback)
+	t.Setenv(EnvTranslateURL, "")
 	SetHook(nil)
-	var models []string
-	var system string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			http.NotFound(w, r)
-			return
-		}
-		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-			http.Error(w, "auth", http.StatusUnauthorized)
-			return
-		}
-		raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-		var body struct {
-			Model    string `json:"model"`
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Errorf("body: %v", err)
-		}
-		models = append(models, body.Model)
-		for _, msg := range body.Messages {
-			if msg.Role == "system" {
-				system = msg.Content
-			}
-		}
-		if strings.Contains(string(raw), "test-key") {
-			http.Error(w, "key echoed", http.StatusInternalServerError)
-			return
-		}
-		if body.Model == defaultPrimary {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(`{"error":{"message":"unavailable"}}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[\"你好\"]"}}],"usage":{"total_tokens":3}}`))
+	cachedHealth = healthCache{}
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls++
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv(EnvBaseURL, srv.URL)
-	got, err := Rewrite(context.Background(), Job{Mode: ModeTranslate, Texts: []string{"hello"}, ToLang: "zh-hans"})
-	if err != nil || len(got) != 1 || got[0] != "你好" {
-		t.Fatalf("%v %#v", err, got)
+	if _, err := Rewrite(context.Background(), Job{Mode: ModeTranslate, Texts: []string{"hello"}, ToLang: "zh-hans"}); err != ErrDisabled {
+		t.Fatalf("%v", err)
 	}
-	if len(models) != 2 || models[0] != defaultPrimary || models[1] != defaultFallback {
-		t.Fatalf("models %v", models)
-	}
-	if system == "" || strings.Contains(system, "官方助手") || !strings.Contains(system, "JSON") {
-		t.Fatalf("system %q", system)
+	if calls != 0 {
+		t.Fatalf("bailian calls %d", calls)
 	}
 }
 
-func TestRewriteSafetyDoesNotFallBack(t *testing.T) {
+func TestTranslateSidecarFailureDoesNotFallBack(t *testing.T) {
 	t.Setenv(EnvTranslate, "1")
 	t.Setenv(EnvAPIKey, "test-key")
-	t.Setenv(EnvModelPrimary, defaultPrimary)
-	t.Setenv(EnvModelFallback, defaultFallback)
 	SetHook(nil)
-	var calls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"error":{"code":"data_inspection_failed","message":"Input data may contain inappropriate content."}}`))
+	var bailian int
+	bail := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		bailian++
 	}))
-	t.Cleanup(srv.Close)
-	t.Setenv(EnvBaseURL, srv.URL)
-	if _, err := Rewrite(context.Background(), Job{Mode: ModeTranslate, Texts: []string{"hello"}, ToLang: "en"}); err != ErrSafety {
+	t.Cleanup(bail.Close)
+	t.Setenv(EnvBaseURL, bail.URL)
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(local.Close)
+	t.Setenv(EnvTranslateURL, local.URL)
+	cachedHealth = healthCache{}
+	if _, err := Rewrite(context.Background(), Job{Mode: ModeTranslate, Texts: []string{"hello"}, ToLang: "zh"}); err != ErrLocal {
 		t.Fatalf("%v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("calls %d", calls)
+	if bailian != 0 {
+		t.Fatalf("fallback calls %d", bailian)
 	}
 }
 

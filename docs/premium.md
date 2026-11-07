@@ -85,11 +85,11 @@ The same document hides entry points official clients already know how to read. 
 | `starref_program_allowed` | `false` | Creating a bot referral program (Desktop). |
 | `starref_connect_allowed` | `false` | Joining a referral program (Desktop). |
 | `wallet_available` | `false` | Wallet row. Desktop defaults this to true when absent. Android's Gram earnings row on standalone builds is not gated by this key. |
-| `translations_manual_enabled` | `disabled` | Manual translation. Android's stored default is `enabled`. |
-| `translations_auto_enabled` | `disabled` | Automatic translation. Same Android default. |
+| `translations_manual_enabled` | `disabled` until the local translator `/health` is 200 | Manual English-to-Chinese. See `docs/api/translate.md`. |
+| `translations_auto_enabled` | `disabled` unless that health check passes and `TELLOMI_TRANSLATE_AUTO=1` | Automatic translation. Per-chat off switch stays `messages.togglePeerTranslations`. |
 | `tellomi_ai_compose_enabled` | `false` | Tellomi key. True only when `TELLOMI_AI_COMPOSE=1` and `TELLOMI_AI_API_KEY` is set. Official clients ignore it. |
 | `tellomi_ai_enabled` | `false` | Tellomi key. True only when `TELLOMI_AI=1` and `TELLOMI_AI_API_KEY` is set. Official clients ignore it. See `docs/api/tellomi-ai.md`. |
-| `tellomi_translate_enabled` | `false` | Tellomi key. True only when `TELLOMI_TRANSLATE=1` and `TELLOMI_AI_API_KEY` is set. Official clients ignore it. `translations_manual_enabled` stays `disabled`. |
+| `tellomi_translate_enabled` | `false` | True only when the self-hosted translator is healthy. A Bailian key does not set it. |
 | `tellomi_announce_enabled` | `false` | Tellomi key. True only when `TELLOMI_ANNOUNCE=1` and `TELLOMI_ANNOUNCE_KEY` decodes to at least 32 bytes. Official clients ignore it. See `docs/api/announce.md`. |
 | `tellomi_personalized_recommend_default` | `false` | Tellomi key. True only when `TELLOMI_ABOUT_DISCLOSURE=1` and `TELLOMI_ALGORITHM_FILING_NUMBER` is set. That true is the privacy-switch default (on), not a stored per-user choice. Official clients ignore it. |
 | `tellomi_algorithm_filing_number` | omitted | Tellomi key. The About page filing number. Present only in the same case as the row above. |
