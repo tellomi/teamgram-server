@@ -158,6 +158,32 @@ func (c *Client) OutboxMaxID(ctx context.Context, kind string, peerID int64) (in
 	return 0, false, nil
 }
 
+// InboxMaxID returns dialog.read_inbox_max_id for the peer.
+func (c *Client) InboxMaxID(ctx context.Context, kind string, peerID int64) (int32, bool, error) {
+	dialogs, err := c.Dialogs(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, d := range dialogs {
+		if d == nil || d.GetPeer() == nil {
+			continue
+		}
+		var id int64
+		switch kind {
+		case "user":
+			id = d.GetPeer().GetUserId()
+		case "chat":
+			id = d.GetPeer().GetChatId()
+		case "channel":
+			id = d.GetPeer().GetChannelId()
+		}
+		if id == peerID {
+			return d.GetReadInboxMaxId(), true, nil
+		}
+	}
+	return 0, false, nil
+}
+
 func (c *Client) ChatAccess(ctx context.Context, chatID int64) (int64, bool, error) {
 	page, err := c.dialogPage(ctx)
 	if err != nil {
