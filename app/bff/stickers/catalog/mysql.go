@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -556,15 +557,17 @@ func (m mysqlPersist) deleteGif(userID, documentID int64) error {
 }
 
 func (m mysqlPersist) findDocument(id int64) (*Item, bool) {
-	var access int64
-	var size int
-	var mime, name string
-	err := m.db.QueryRow(`SELECT access_hash, file_size, mime_type, uploaded_file_name FROM documents WHERE document_id=? LIMIT 1`, id).Scan(&access, &size, &mime, &name)
+	var access, size int64
+	var mime, name, attrs string
+	err := m.db.QueryRow(`SELECT access_hash, file_size, mime_type, uploaded_file_name, IFNULL(attributes,'') FROM documents WHERE document_id=? LIMIT 1`, id).Scan(&access, &size, &mime, &name, &attrs)
 	if err != nil {
 		return nil, false
 	}
-	if name == "" {
-		name = "sticker"
+	if size < 0 {
+		size = 0
+	}
+	if size > int64(^uint32(0)>>1) {
+		size = int64(^uint32(0) >> 1)
 	}
 	item := &Item{
 		DocumentID: id,
@@ -575,6 +578,10 @@ func (m mysqlPersist) findDocument(id int64) (*Item, bool) {
 		Width:      512,
 		Height:     512,
 	}
+	applyUploadedAttributes(item, attrs)
+	if item.FileName == "" {
+		item.FileName = "sticker.webp"
+	}
 	switch strings.ToLower(mime) {
 	case "application/x-tgsticker":
 		item.Animated = true
@@ -582,4 +589,38 @@ func (m mysqlPersist) findDocument(id int64) (*Item, bool) {
 		item.Video = true
 	}
 	return item, true
+}
+
+// applyUploadedAttributes copies size and filename off the documents.attributes
+// JSON written by media.SaveDocumentV2. A bad blob leaves the 512 defaults.
+func applyUploadedAttributes(item *Item, raw string) {
+	if item == nil || raw == "" {
+		return
+	}
+	var attrs []struct {
+		PredicateName string `json:"predicate_name"`
+		W             int32  `json:"w"`
+		H             int32  `json:"h"`
+		FileName      string `json:"file_name"`
+	}
+	if err := json.Unmarshal([]byte(raw), &attrs); err != nil {
+		return
+	}
+	for _, attr := range attrs {
+		switch attr.PredicateName {
+		case "documentAttributeImageSize":
+			if attr.W > 0 && attr.H > 0 {
+				item.Width = attr.W
+				item.Height = attr.H
+			}
+		case "documentAttributeFilename":
+			if attr.FileName != "" {
+				item.FileName = attr.FileName
+			}
+		case "documentAttributeAnimated":
+			item.Animated = true
+		case "documentAttributeVideo":
+			item.Video = true
+		}
+	}
 }
