@@ -24,6 +24,8 @@ const (
 	MaxDuration = 300
 	// MaxBytes bounds a voice note or video-note download before it is sent to ASR.
 	MaxBytes = 48 << 20
+	// DraftMaxBytes bounds an unsent recording. It is not written to storage.
+	DraftMaxBytes = 8 << 20
 )
 
 // ErrAudioTooLong is returned when the clip is over MaxDuration or MaxBytes.
@@ -168,6 +170,52 @@ func (h *Handler) Transcribe(ctx context.Context, md *metadata.RpcMetadata, in *
 	got := cachedResult{ID: transcriptionID(clip.DocumentID, md.GetUserId(), peer, in.GetMsgId()), Text: text}
 	h.cache.put(got, keys...)
 	return h.finish(ctx, md, peer, in.GetMsgId(), got, true), nil
+}
+
+// Draft recognizes an unsent recording. It does not read a message, does not
+// push updateTranscribedAudio, and does not keep the audio after the call.
+func (h *Handler) Draft(ctx context.Context, md *metadata.RpcMetadata, audio []byte) (*mtproto.Messages_TranscribedAudio, error) {
+	if md == nil || md.GetUserId() == 0 {
+		return nil, mtproto.ErrUserIdInvalid
+	}
+	if h == nil || h.recognize == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
+	if len(audio) == 0 {
+		return nil, mtproto.ErrMediaEmpty
+	}
+	if len(audio) > DraftMaxBytes {
+		return nil, ErrAudioTooLong
+	}
+	callCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		callCtx, cancel = context.WithTimeout(ctx, recognizeTimeout)
+		defer cancel()
+	}
+	raw, err := h.recognize.Transcribe(callCtx, audio, "draft.ogg")
+	if err != nil {
+		if status.Convert(err).Message() == "AUDIO_TOO_LONG" {
+			return nil, ErrAudioTooLong
+		}
+		logx.WithContext(ctx).Errorf("messages.transcribeDraft: recognizer: %v", err)
+		return nil, ErrTranscriptionUnavailable
+	}
+	text := CleanText(raw)
+	if text == "" {
+		return nil, mtproto.ErrTranscriptionFailed
+	}
+	weekly := int32(0)
+	if premium.TranscribeEnabled() {
+		weekly = int32(premium.TranscribeTrialWeekly)
+	}
+	return mtproto.MakeTLMessagesTranscribedAudio(&mtproto.Messages_TranscribedAudio{
+		Pending:               false,
+		TranscriptionId:       int64(md.GetUserId()&0xffffffff) ^ int64(len(text)),
+		Text:                  text,
+		TrialRemainsNum:       wrapperspb.Int32(weekly),
+		TrialRemainsUntilDate: wrapperspb.Int32(0),
+	}).To_Messages_TranscribedAudio(), nil
 }
 
 func (h *Handler) finish(ctx context.Context, md *metadata.RpcMetadata, peer *mtproto.PeerUtil, msgID int32, got cachedResult, notify bool) *mtproto.Messages_TranscribedAudio {

@@ -15,6 +15,7 @@ import (
 	dfspb "github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -389,5 +390,63 @@ func TestTranscribedAudioTrialFlagBits(t *testing.T) {
 	got, ok := decoded.(*mtproto.TLMessagesTranscribedAudio)
 	if !ok || got.GetPending() || got.GetText() != "hi" || got.GetTrialRemainsNum().GetValue() != 3 || got.GetTrialRemainsUntilDate().GetValue() != 0 {
 		t.Fatalf("decoded %T %#v", decoded, got)
+	}
+}
+
+func TestDraftTranscribeDoesNotNotifyOrKeepAudio(t *testing.T) {
+	var pushed bool
+	var saw []byte
+	h := NewHandler(nil, nil, RecognizerFunc(func(_ context.Context, audio []byte, _ string) (string, error) {
+		saw = append([]byte(nil), audio...)
+		return "<|zh|>未发送的话", nil
+	}), notifierFunc(func(context.Context, *sync.TLSyncUpdatesNotMe) (*mtproto.Void, error) {
+		pushed = true
+		return nil, nil
+	}))
+	in := &mtproto.TLMessagesTranscribeAudio{}
+	in.SetDraftAudio([]byte("OggS-draft"))
+	buf := mtproto.NewEncodeBuf(64)
+	if err := in.Encode(buf, mtproto.Layer); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	if binary.LittleEndian.Uint32(raw[:4]) != uint32(mtproto.DraftTranscribeConstructor) {
+		t.Fatalf("constructor %x", raw[:4])
+	}
+	decoded := &mtproto.TLMessagesTranscribeAudio{Constructor: mtproto.DraftTranscribeConstructor}
+	if err := decoded.Decode(mtproto.NewDecodeBuf(raw[4:])); err != nil {
+		t.Fatal(err)
+	}
+	wire, err := proto.Marshal(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var forwarded mtproto.TLMessagesTranscribeAudio
+	if err := proto.Unmarshal(wire, &forwarded); err != nil {
+		t.Fatal(err)
+	}
+	audio := forwarded.DraftAudio()
+	if string(audio) != "OggS-draft" {
+		t.Fatalf("audio %q", audio)
+	}
+	out, err := h.Draft(context.Background(), &metadata.RpcMetadata{UserId: 7}, audio)
+	forwarded.ClearDraftAudio()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushed {
+		t.Fatal("draft notified another session")
+	}
+	if out.GetText() != "未发送的话" || out.GetPending() {
+		t.Fatalf("%+v", out)
+	}
+	if string(saw) != "OggS-draft" {
+		t.Fatalf("recognizer saw %q", saw)
+	}
+	if len(forwarded.DraftAudio()) != 0 {
+		t.Fatal("audio stayed on the request")
+	}
+	if _, err := h.Draft(context.Background(), nil, []byte("abc")); status.Convert(err).Message() != "USER_ID_INVALID" {
+		t.Fatalf("auth %v", err)
 	}
 }

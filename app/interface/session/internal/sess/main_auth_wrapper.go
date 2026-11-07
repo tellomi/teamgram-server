@@ -760,7 +760,8 @@ func rpcTimeout(msg mtproto.TLObject) time.Duration {
 	case *mtproto.TLMessagesSendMedia,
 		*mtproto.TLMessagesSendMultiMedia,
 		*mtproto.TLMessagesUploadMedia,
-		*mtproto.TLMessagesEditMessage:
+		*mtproto.TLMessagesEditMessage,
+		*mtproto.TLMessagesTranscribeAudio:
 		return 60 * time.Second
 	default:
 		return defaultRPCTimeout

@@ -13899,6 +13899,11 @@ var clazzIdRegisters2 = map[int32]func() TLObject{
 			Constructor: 647928393,
 		}
 	},
+	2115054151: func() TLObject { // 0x7e11da47 messages.transcribeDraft
+		return &TLMessagesTranscribeAudio{
+			Constructor: DraftTranscribeConstructor,
+		}
+	},
 	2132608815: func() TLObject { // 0x7f1d072f
 		return &TLMessagesRateTranscribedAudio{
 			Constructor: 2132608815,
