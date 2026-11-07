@@ -28,7 +28,11 @@ func TestOtherSessionReceivesOnlineStatus(t *testing.T) {
 	if _, err = other.Login(ctx, phone, "Alice"); err != nil {
 		t.Fatal(err)
 	}
-	_ = other.Pushed()
+	// updates.getState is what marks this connection as the updates session
+	// and registers it online. Until then, updatesNotMe has nowhere to send.
+	if _, _, _, err = other.State(ctx); err != nil {
+		t.Fatal(err)
+	}
 	call := func() error {
 		_, err := a.Invoke(ctx, &mtproto.TLAccountUpdateStatus{
 			Constructor: mtproto.CRC32_account_updateStatus,
