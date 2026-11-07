@@ -275,6 +275,11 @@ func decodeSince(rows []queued, after, limit int32) ([]*mtproto.EncryptedMessage
 		last = row.qts
 		if upd.GetPredicateName() == mtproto.Predicate_updateNewEncryptedMessage && upd.GetMessage_ENCRYPTEDMESSAGE() != nil {
 			msgs = append(msgs, upd.GetMessage_ENCRYPTEDMESSAGE())
+			// The qts cursor is updates.State.qts on the difference. This
+			// update also carries qts. Leaving it in other_updates makes a
+			// client apply the live qts gap check (local+1 < qts) and call
+			// getDifference again.
+			continue
 		}
 		others = append(others, upd)
 	}

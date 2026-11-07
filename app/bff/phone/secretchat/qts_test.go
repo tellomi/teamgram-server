@@ -42,6 +42,85 @@ func TestOfflineRecipientCatchesTheInvite(t *testing.T) {
 	}
 }
 
+func TestOldClientLocalQtsZeroDoesNotSpin(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	empty := mtproto.MakeTLUpdatesDifferenceEmpty(&mtproto.Updates_Difference{
+		Date: 10, Seq: 1,
+	}).To_Updates_Difference()
+	if Current(2) != 0 {
+		t.Fatal("getState qts")
+	}
+	idle := ApplyDifference(2, 0, 100, empty)
+	if idle.GetPredicateName() != mtproto.Predicate_updates_differenceEmpty {
+		t.Fatalf("client with no secret updates got %s", idle.GetPredicateName())
+	}
+
+	waiting, _, err := Default().Request(1, 2, 42, []byte{9}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := input(waiting)
+	if _, _, err = Default().Accept(2, peer, []byte{8}, 3, 11); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = Default().Send(1, peer, 100, []byte("cipher-text"), nil, false, 12); err != nil {
+		t.Fatal(err)
+	}
+	serverQts := Current(2)
+	if serverQts == 0 {
+		t.Fatal("getState qts stayed 0 after a secret update")
+	}
+
+	local := int32(0)
+	var sawCipher bool
+	for step := 0; step < 8; step++ {
+		page := ApplyDifference(2, local, 1, empty)
+		switch page.GetPredicateName() {
+		case mtproto.Predicate_updates_differenceSlice:
+			next := page.GetIntermediateState().GetQts()
+			if next <= local {
+				t.Fatalf("slice qts %d did not pass local %d", next, local)
+			}
+			for _, upd := range page.GetOtherUpdates() {
+				if upd.GetQts() != 0 {
+					t.Fatalf("other_updates carried qts %d", upd.GetQts())
+				}
+			}
+			if len(page.GetNewEncryptedMessages()) > 0 {
+				sawCipher = true
+			}
+			local = next
+		case mtproto.Predicate_updates_difference:
+			next := page.GetState().GetQts()
+			if next != serverQts {
+				t.Fatalf("final qts %d, getState %d", next, serverQts)
+			}
+			for _, upd := range page.GetOtherUpdates() {
+				if upd.GetQts() != 0 {
+					t.Fatalf("other_updates carried qts %d", upd.GetQts())
+				}
+			}
+			if len(page.GetNewEncryptedMessages()) > 0 {
+				sawCipher = true
+			}
+			local = next
+			again := ApplyDifference(2, local, 100, empty)
+			if again.GetPredicateName() != mtproto.Predicate_updates_differenceEmpty {
+				t.Fatalf("caught-up getDifference returned %s", again.GetPredicateName())
+			}
+			if !sawCipher {
+				t.Fatal("qts=0 client never received the encrypted message")
+			}
+			return
+		default:
+			t.Fatalf("getDifference returned %s", page.GetPredicateName())
+		}
+	}
+	t.Fatal("getDifference did not finish")
+}
+
 func TestApplyDifferenceReplacesEmpty(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
@@ -108,8 +187,11 @@ func TestTwoInstancesShareOneBackend(t *testing.T) {
 	if more || last == 0 || len(msgs) != 1 || string(msgs[0].GetBytes()) != "cipher-text" {
 		t.Fatalf("rest msgs=%d last=%d more=%v", len(msgs), last, more)
 	}
-	if others[0].GetQts() != events[0].Update.GetQts() {
-		t.Fatalf("queued qts %d live %d", others[0].GetQts(), events[0].Update.GetQts())
+	if len(others) != 0 {
+		t.Fatal("encrypted message was also placed in other_updates")
+	}
+	if events[0].Update.GetQts() != last {
+		t.Fatalf("live qts %d queue %d", events[0].Update.GetQts(), last)
 	}
 	// A third instance, after the first two are discarded, still reads the queue.
 	c := New(be)
