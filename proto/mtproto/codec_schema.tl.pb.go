@@ -156970,7 +156970,7 @@ func (m *TLMessagesTranscribedAudio) Encode(x *EncodeBuf, layer int32) error {
 				flags |= 1 << 1
 			}
 			if m.GetTrialRemainsUntilDate() != nil {
-				flags |= 1 << 1
+				flags |= 1 << 2
 			}
 
 			return flags
@@ -157035,7 +157035,7 @@ func (m *TLMessagesTranscribedAudio) Decode(dBuf *DecodeBuf) error {
 			m.SetTrialRemainsNum(&wrapperspb.Int32Value{Value: dBuf.Int()})
 		}
 
-		if (flags & (1 << 1)) != 0 {
+		if (flags & (1 << 2)) != 0 {
 			m.SetTrialRemainsUntilDate(&wrapperspb.Int32Value{Value: dBuf.Int()})
 		}
 

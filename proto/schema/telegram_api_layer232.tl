@@ -1597,7 +1597,7 @@ inputInvoiceStarGiftAuctionBid#1ecafa10 flags:# hide_name:flags.0?true update_bi
 
 payments.exportedInvoice#aed0cbd9 url:string = payments.ExportedInvoice;
 
-messages.transcribedAudio#cfb9d957 flags:# pending:flags.0?true transcription_id:long text:string trial_remains_num:flags.1?int trial_remains_until_date:flags.1?int = messages.TranscribedAudio;
+messages.transcribedAudio#cfb9d957 flags:# pending:flags.0?true transcription_id:long text:string trial_remains_num:flags.1?int trial_remains_until_date:flags.2?int = messages.TranscribedAudio;
 
 help.premiumPromo#5334759c status_text:string status_entities:Vector<MessageEntity> video_sections:Vector<string> videos:Vector<Document> period_options:Vector<PremiumSubscriptionOption> users:Vector<User> = help.PremiumPromo;
 
