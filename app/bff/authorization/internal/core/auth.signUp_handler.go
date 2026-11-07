@@ -106,11 +106,14 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 		return nil, err
 	}
 
-	// TODO(@benqi): register name ruler
 	// check first name invalid
 	if in.FirstName == "" {
 		c.Logger.Errorf("check first_name error - empty")
 		err = mtproto.ErrFirstnameInvalid
+		return nil, err
+	}
+	if err = rejectSignupName(c.ctx, in.FirstName, in.LastName); err != nil {
+		c.Logger.Errorf("check signup name error - %v", err)
 		return nil, err
 	}
 
