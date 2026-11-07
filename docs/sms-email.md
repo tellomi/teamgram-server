@@ -21,8 +21,10 @@ Aliyun mode:
 
 - Code length is `TELLOMI_SMS_CODE_LENGTH` (5 or 6, default 5 in fixed mode, 6 when the value is unset and Aliyun is on). `auth.sentCodeTypeSms` reports that length.
 - The code is stored on the existing phone-code redis record until `TELLOMI_SMS_CODE_TTL_SECONDS` (default 180). Wrong checks stop after `TELLOMI_SMS_MAX_ATTEMPTS` (default 5), then `FLOOD_WAIT_900`.
-- Resend cooldown is `TELLOMI_SMS_RESEND_SECONDS` (default 60) per phone. Daily caps are `TELLOMI_SMS_DAILY_LIMIT` (default 10) per phone and `TELLOMI_SMS_IP_DAILY_LIMIT` (default 30) per client IP. Over the daily cap the RPC returns `PHONE_NUMBER_FLOOD`; inside the cooldown it returns `FLOOD_WAIT_<seconds>`.
-- Only `+86` mobiles are sent, as the 11-digit national number. Any other country returns `PHONE_NUMBER_INVALID` unless `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` (Aliyun uses the same `SendSms` API with country code + number).
+- Resend cooldown is `TELLOMI_SMS_RESEND_SECONDS` (default 60) per phone. The daily cap is `TELLOMI_SMS_DAILY_LIMIT` (default 10) per phone, counted on the Asia/Shanghai calendar day. The counter is a Redis `INCR` on one key per phone per day, so a restart or a second bff process sees the same total. The 11th send returns `PHONE_NUMBER_FLOOD` and does not call the SMS provider. Inside the cooldown the RPC is `FLOOD_WAIT_<seconds>`.
+- `PHONE_NUMBER_FLOOD` is the login-screen error. The Android sendCode handler this server tracks shows the dedicated "too many codes" alert for that text. `FLOOD_WAIT` on that screen is a generic flood string and does not show how long to wait, so the daily cap does not use it. The seconds until the next Shanghai midnight are still computed and returned as `retry_after` on the account-deletion HTTP API.
+- `TELLOMI_SMS_IP_DAILY_LIMIT` is off when unset or `0`. A suggested cap, if it is turned on later, is 30 sends per client IP per Shanghai day. It is not enabled.
+- Only calling codes in `TELLOMI_SMS_COUNTRY_ALLOW` (default `86`) are sent. Any other country returns `PHONE_NUMBER_INVALID` and does not call the SMS provider, including when `TELLOMI_SMS_PROVIDER` is `fixed`. `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` accepts any valid number. Aliyun still sends a mainland number as the 11-digit national form.
 - Template parameter JSON is `{"code":"<digits>"}`. The production template text is `您的验证码为：${code}，请勿泄露于他人！`.
 - A provider or network failure returns `400 SMS_CODE_CREATE_FAILED`. Missing access keys fail before any dial. A client built with an empty sign or template does too. Unset `TELLOMI_ALIYUN_SMS_SIGN_NAME` and `TELLOMI_ALIYUN_SMS_TEMPLATE_CODE` are not empty: they fall back to `重庆半格智能` and `SMS_338570180`. None of these stop process startup.
 - The Dysmsapi HTTP call is capped at 10 seconds (`pkg/verify.SMSSendTimeout`, dial capped at 5 seconds). `auth.sendCode` / `auth.resendCode` used to call `http.DefaultClient`, which has no timeout. A blackholed `dysmsapi.aliyuncs.com` (or a signature/template the account cannot use, if the API never answers) held the RPC open and the Android send button spun until the socket died. The client now receives `SMS_CODE_CREATE_FAILED` inside that window. Android shows that text and stops the spinner (`error.code != -1000`).
@@ -74,7 +76,7 @@ Credentials use the standard Aliyun variables. Do not put secrets in git or in y
 | `disabled`, `none`, `off` | Email `auth.sendCode` returns `EMAIL_NOT_SETUP`. Phone SMS is unchanged. |
 | anything else, including `aliyun_dm` | Treated as disabled. Aliyun DirectMail is not the P0 sender. |
 
-The code length is `TELLOMI_EMAIL_CODE_LENGTH` (4 through 8, default 6). `auth.sentCodeTypeEmailCode` reports that length and a masked `email_pattern`. Sign-in compares the submitted `phone_code` or `emailVerificationCode` to the stored code. Quotas use a separate redis prefix from SMS, so an email send does not consume the SMS daily cap.
+The code length is `TELLOMI_EMAIL_CODE_LENGTH` (4 through 8, default 6). `auth.sentCodeTypeEmailCode` reports that length and a masked `email_pattern`. Sign-in compares the submitted `phone_code` or `emailVerificationCode` to the stored code. Quotas use a separate redis prefix from SMS, so an email send does not consume the SMS daily cap. `TELLOMI_EMAIL_DAILY_LIMIT` (default 10) is the same Shanghai-day Redis counter. The 11th email code returns `PHONE_NUMBER_FLOOD` and does not call Resend, Postal, or the log sender. That covers `auth.sendCode`, `auth.resendCode`, `account.sendVerifyEmailCode`, a login email change, and `account.resendPasswordEmail`.
 
 Production mail is Resend over HTTPS. SMTP is not used. Outbound TCP 25 and 587 stay unused. The process starts without a Resend API key; the key is required only when a send runs.
 
@@ -122,11 +124,12 @@ JSON body: `to` (one address), `from` (`Tellomi <noreply@tellomi.app>` by defaul
 | `TELLOMI_ALIYUN_SMS_SIGN_NAME` | `重庆半格智能` | Sms sign name |
 | `TELLOMI_ALIYUN_SMS_TEMPLATE_CODE` | `SMS_338570180` | Sms template code |
 | `TELLOMI_ALIYUN_SMS_ENDPOINT` | `https://dysmsapi.aliyuncs.com/` | Optional endpoint override |
-| `TELLOMI_SMS_ALLOW_INTERNATIONAL` | `false` | Allow non-`+86` numbers |
+| `TELLOMI_SMS_ALLOW_INTERNATIONAL` | `false` | Allow numbers outside `TELLOMI_SMS_COUNTRY_ALLOW` |
+| `TELLOMI_SMS_COUNTRY_ALLOW` | `86` | Comma-separated calling codes. `86` means a mainland mobile |
 | `TELLOMI_SMS_CODE_LENGTH` | `6` when Aliyun and unset; fixed mode stays 5 | `4`–`8` |
 | `TELLOMI_SMS_RESEND_SECONDS` | `60` | Per-phone resend cooldown |
-| `TELLOMI_SMS_DAILY_LIMIT` | `10` | Per-phone daily cap |
-| `TELLOMI_SMS_IP_DAILY_LIMIT` | `30` | Per-IP daily cap for SMS |
+| `TELLOMI_SMS_DAILY_LIMIT` | `10` | Per-phone cap per Asia/Shanghai day |
+| `TELLOMI_SMS_IP_DAILY_LIMIT` | `0` (off) | Optional per-IP cap. Suggested value is `30`. Unset does not count IPs |
 | `TELLOMI_SMS_MAX_ATTEMPTS` | `5` | Wrong SMS code attempts |
 | `TELLOMI_SMS_CODE_TTL_SECONDS` | `180` | Redis TTL / SMS code expiry |
 | `TELLOMI_EMAIL_PROVIDER` | `log` | `log`, `resend`, `postal`, or `disabled` |
@@ -135,8 +138,8 @@ JSON body: `to` (one address), `from` (`Tellomi <noreply@tellomi.app>` by defaul
 | `TELLOMI_RESEND_API_KEY` | empty | Resend API key. Required only when provider is `resend` |
 | `TELLOMI_EMAIL_CODE_LENGTH` | `6` | `4`–`8` |
 | `TELLOMI_EMAIL_RESEND_SECONDS` | `60` | Per-address resend cooldown |
-| `TELLOMI_EMAIL_DAILY_LIMIT` | `10` | Per-address daily cap |
-| `TELLOMI_EMAIL_IP_DAILY_LIMIT` | `30` | Per-IP daily cap for email |
+| `TELLOMI_EMAIL_DAILY_LIMIT` | `10` | Per-address cap per Asia/Shanghai day |
+| `TELLOMI_EMAIL_IP_DAILY_LIMIT` | `0` (off) | Optional per-IP cap. Suggested value is `30`. Unset does not count IPs |
 | `TELLOMI_EMAIL_MAX_ATTEMPTS` | `5` | Wrong email code attempts |
 | `TELLOMI_EMAIL_CODE_TTL_SECONDS` | `180` | Email code expiry |
 | `TELLOMI_POSTAL_BASE_URL` | empty | Legacy Postal HTTP origin. Required only when provider is `postal` |

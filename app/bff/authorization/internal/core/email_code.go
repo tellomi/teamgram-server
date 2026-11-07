@@ -77,28 +77,21 @@ func (c *AuthorizationCore) prepareEmailCode(codeData *model.PhoneCodeTransactio
 }
 
 func (c *AuthorizationCore) guardEmail(email string) error {
-	if c.svcCtx == nil || c.svcCtx.EmailLimiter == nil {
+	if c.svcCtx == nil {
 		return nil
 	}
-	err := c.svcCtx.EmailLimiter.AllowSend(c.ctx, "email", email, c.clientIP())
+	lim := c.svcCtx.EmailLimiter
+	if lim == nil {
+		lim = verify.SharedEmail()
+	}
+	if lim == nil {
+		return nil
+	}
+	err := lim.AllowSend(c.ctx, "email", email, c.clientIP())
 	if err == nil {
 		return nil
 	}
-	var lim *verify.LimitError
-	if errors.As(err, &lim) {
-		if lim.Daily {
-			return mtproto.ErrPhoneNumberFlood
-		}
-		retry := lim.Retry
-		if retry <= 0 {
-			retry = c.svcCtx.Verify.EmailLimits.ResendSeconds
-		}
-		if retry <= 0 {
-			retry = 60
-		}
-		return mtproto.NewErrFloodWaitX(int32(retry))
-	}
-	return err
+	return verify.EmailQuotaError(err)
 }
 
 func (c *AuthorizationCore) sendEmail(email string, codeData *model.PhoneCodeTransaction) error {

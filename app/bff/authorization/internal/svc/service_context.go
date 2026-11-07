@@ -49,14 +49,17 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 	auth := logic.NewAuthSignLogic(d, code2)
 	auth.MaxAttempts = cfg.Limits.MaxAttempts
 	auth.EmailMaxAttempts = cfg.EmailLimits.MaxAttempts
+	smsLim := verify.NewLimiter(d.Cache(), cfg.Limits)
+	emailLim := verify.NewLimiter(d.Cache(), cfg.EmailLimits)
+	verify.UseSharedLimiters(smsLim, emailLim)
 	return &ServiceContext{
 		Config:       c,
 		Dao:          d,
 		AuthLogic:    auth,
 		Plugin:       plugin,
 		Verify:       cfg,
-		Limiter:      verify.NewLimiter(d.Cache(), cfg.Limits),
-		EmailLimiter: verify.NewLimiter(d.Cache(), cfg.EmailLimits),
+		Limiter:      smsLim,
+		EmailLimiter: emailLim,
 		EmailSender:  verify.NewEmailSender(cfg.Email),
 	}
 }

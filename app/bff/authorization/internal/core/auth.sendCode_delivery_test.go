@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -132,3 +134,82 @@ func TestSendCodeFixedProviderReturnsWithoutBlocking(t *testing.T) {
 		t.Fatalf("fixed provider waited %s", time.Since(start))
 	}
 }
+
+func TestSendCodeRejectsNonChinaBeforeSMS(t *testing.T) {
+	sender := &scriptedSender{}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.Verify.SMS.Countries = []string{"86"}
+	codeData := &model.PhoneCodeTransaction{State: model.CodeStateSend, PhoneCode: "123456", PhoneCodeHash: "hash"}
+	err := c.finishSendCode("14155552671", false, nil, codeData)
+	if sender.called {
+		t.Fatal("non-+86 number called the SMS provider")
+	}
+	if rpcErrorCode(err) != "PHONE_NUMBER_INVALID" {
+		t.Fatalf("error %v", err)
+	}
+}
+
+func TestSendCodeDailyCapSkipsProvider(t *testing.T) {
+	kv := &countKV{}
+	lim := verify.NewLimiter(kv, verify.Limits{ResendSeconds: 60, DailyPhone: 1})
+	ctx := context.Background()
+	phone := "8613800138000"
+	if err := lim.AllowSend(ctx, "sms", phone, ""); err != nil {
+		t.Fatal(err)
+	}
+	delete(kv.m, "tellomi:code:cd:sms:"+phone)
+	sender := &scriptedSender{}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.Limiter = lim
+	c.svcCtx.Verify.SMS.Countries = []string{"86"}
+	codeData := &model.PhoneCodeTransaction{State: model.CodeStateSend, PhoneCode: "123456", PhoneCodeHash: "hash"}
+	err := c.finishSendCode(phone, false, nil, codeData)
+	if sender.called {
+		t.Fatal("over-limit send called the SMS provider")
+	}
+	if rpcErrorCode(err) != "PHONE_NUMBER_FLOOD" {
+		t.Fatalf("error %v", err)
+	}
+}
+
+type countKV struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func (m *countKV) GetCtx(_ context.Context, key string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		return "", nil
+	}
+	return m.m[key], nil
+}
+
+func (m *countKV) SetexCtx(_ context.Context, key, value string, _ int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		m.m = map[string]string{}
+	}
+	m.m[key] = value
+	return nil
+}
+
+func (m *countKV) IncrCtx(_ context.Context, key string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		m.m = map[string]string{}
+	}
+	n := 1
+	if v := m.m[key]; v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			n = parsed + 1
+		}
+	}
+	m.m[key] = strconv.Itoa(n)
+	return int64(n), nil
+}
+
+func (m *countKV) ExpireCtx(context.Context, string, int) error { return nil }

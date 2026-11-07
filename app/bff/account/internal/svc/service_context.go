@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/account/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/account/plugin"
 	"github.com/teamgram/teamgram-server/pkg/code"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 type ServiceContext struct {
@@ -38,6 +39,8 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 	if code2 == nil {
 		code2 = code.NewVerifyCode(c.Code)
 	}
+	cfg := verify.Load()
+	verify.UseSharedLimiters(verify.NewLimiter(d.Cache(), cfg.Limits), verify.NewLimiter(d.Cache(), cfg.EmailLimits))
 
 	return &ServiceContext{
 		Config:    c,

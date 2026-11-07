@@ -156,6 +156,9 @@ func (c *AccountCore) AccountSendChangePhoneCode(in *mtproto.TLAccountSendChange
 			}
 
 			c.Logger.Infof("send code by sms")
+			if err := guardChangePhone(c, phoneNumber); err != nil {
+				return err
+			}
 			extraData, err2 := c.svcCtx.AuthLogic.VerifyCodeInterface.SendSmsVerifyCode(
 				context.Background(),
 				phoneNumber,
