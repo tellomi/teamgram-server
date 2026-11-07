@@ -566,6 +566,7 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 		return err
 	}
 	s.pushOutboxRead(ctx, ch.ID, maxID, advanced)
+	s.pushInboxRead(ctx, ch.ID, user, st.ReadInboxMaxID, st.ReadInboxMaxID > prevInbox)
 	s.syncDialogRead(ctx, ch.ID, user)
 	for _, id := range advanced {
 		s.syncDialogRead(ctx, ch.ID, id)
@@ -637,6 +638,23 @@ func (s *Service) advanceOthersOutbox(ctx context.Context, channelID, reader int
 		advanced = append(advanced, p.UserID)
 	}
 	return advanced, nil
+}
+
+// pushInboxRead tells the reader's other sessions that this device moved
+// the inbox cursor. A repeat of the same max id does not push again.
+func (s *Service) pushInboxRead(ctx context.Context, channelID, reader int64, maxID int32, advanced bool) {
+	if !advanced || reader == 0 || maxID <= 0 {
+		return
+	}
+	h := s.hooks()
+	if h.Push == nil {
+		return
+	}
+	upd := mtproto.MakeTLUpdateReadChannelInbox(&mtproto.Update{
+		ChannelId: channelID,
+		MaxId:     maxID,
+	}).To_Update()
+	h.Push(ctx, reader, nil, s.pack(ctx, reader, channelID, upd))
 }
 
 func (s *Service) pushOutboxRead(ctx context.Context, channelID int64, maxID int32, users []int64) {
