@@ -18,8 +18,11 @@ func TestChannelUsernamePolicy(t *testing.T) {
 	ch := created.Chats[0]
 	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
 
-	if _, err := svc.CheckUsername(ctx, 7, in, "admin"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
-		t.Fatalf("admin: %v", err)
+	if _, err := svc.CheckUsername(ctx, 7, in, "admin_01"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("admin_01: %v", err)
+	}
+	if _, err := svc.CheckUsername(ctx, 7, in, "admin"); err != nil {
+		t.Fatalf("allowlisted exact admin: %v", err)
 	}
 	if _, err := svc.CheckUsername(ctx, 7, in, "admin01"); err != nil {
 		t.Fatalf("admin01: %v", err)

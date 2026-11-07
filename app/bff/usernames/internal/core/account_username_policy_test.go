@@ -15,9 +15,9 @@ func TestAccountUsernamePolicyDeniesBeforeTheTable(t *testing.T) {
 	t.Setenv(usernamepolicy.EnvEnabled, "1")
 	c := &UsernamesCore{ctx: context.Background(), MD: &metadata.RpcMetadata{UserId: 7}}
 
-	_, err := c.AccountCheckUsername(&mtproto.TLAccountCheckUsername{Username: "admin"})
+	_, err := c.AccountCheckUsername(&mtproto.TLAccountCheckUsername{Username: "wechat"})
 	if status.Convert(err).Message() != "USERNAME_OCCUPIED" {
-		t.Fatalf("check admin: %v", err)
+		t.Fatalf("check wechat: %v", err)
 	}
 	if err := c.updateUsername(7, "", "wechat"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
 		t.Fatalf("update wechat: %v", err)
@@ -41,6 +41,18 @@ func TestAccountUsernamePolicyAllowsThroughToTheTable(t *testing.T) {
 	}()
 	if !reached {
 		t.Fatal("admin01 should pass policy and reach the user client")
+	}
+	reached = false
+	func() {
+		defer func() {
+			if recover() != nil {
+				reached = true
+			}
+		}()
+		_, _ = c.AccountCheckUsername(&mtproto.TLAccountCheckUsername{Username: "admin"})
+	}()
+	if !reached {
+		t.Fatal("allowlisted exact admin should pass policy and reach the username table")
 	}
 	reached = false
 	func() {

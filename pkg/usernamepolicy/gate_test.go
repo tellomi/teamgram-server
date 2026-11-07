@@ -110,7 +110,15 @@ func TestGateOn(t *testing.T) {
 	if err := RejectUser(ctx, 7, ""); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"admin", "admin_01", "support_88", "tellomi_xxx", "tel1omi", "wechat", "google", "apple", "telegram"} {
+	// Exact appendix D names are on the published allowlist, so the lexicon
+	// lets them through. The username table is what stops a stranger.
+	// Variants are not on the allowlist.
+	for _, name := range []string{"admin", "tellomi", "support", "news"} {
+		if err := RejectUser(ctx, 7, name); err != nil {
+			t.Fatalf("allowlisted exact %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"admin_01", "support_88", "tellomi_xxx", "tel1omi", "wechat", "google", "apple", "telegram"} {
 		err := RejectUser(ctx, 7, name)
 		if status.Convert(err).Message() != "USERNAME_OCCUPIED" {
 			t.Fatalf("%s: %v", name, err)
@@ -129,15 +137,12 @@ func TestGateOn(t *testing.T) {
 	if err := RejectUser(ctx, 777000, "admin_01"); err == nil {
 		t.Fatal("official variant was allowed")
 	}
-	if err := RejectUser(ctx, 7, "admin"); err == nil {
-		t.Fatal("stranger used admin")
-	}
 	if err := RejectUser(ctx, 777001, "tellomi"); err != nil {
 		t.Fatalf("official tellomi: %v", err)
 	}
-	// news is not a policy term. The username table already holds it.
-	// Policy still lets the official channel through, and still blocks
-	// a reserved name on any other channel.
+	if err := RejectUser(ctx, 7, "admin"); err != nil {
+		t.Fatalf("allowlisted exact admin: %v", err)
+	}
 	if err := RejectChannel(ctx, 1073800001, "news"); err != nil {
 		t.Fatalf("official news channel: %v", err)
 	}
@@ -153,8 +158,45 @@ func TestGateOn(t *testing.T) {
 	if err := RejectBot(ctx, 7, "newsbot"); err != nil {
 		t.Fatalf("newsbot: %v", err)
 	}
-	// Official policy reserves help on slug only. A channel public name hits it.
-	if err := RejectChannel(ctx, 9, "help"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
-		t.Fatalf("help slug: %v", err)
+	// Exact "help" is an appendix D allowlist name. The username table occupies it.
+	// help's own rule is exact, so help_01 is not a hit. wechat_01 is.
+	if err := RejectChannel(ctx, 9, "help"); err != nil {
+		t.Fatalf("allowlisted exact help: %v", err)
+	}
+	if err := RejectChannel(ctx, 9, "wechat_01"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("wechat_01: %v", err)
+	}
+}
+
+func TestGateOnCnLexicon(t *testing.T) {
+	t.Setenv(EnvEnabled, "1")
+	ctx := context.Background()
+	err := RejectDisplay(ctx, mtproto.PEER_USER, 7, "成克杰")
+	if status.Convert(err).Message() != "FIRSTNAME_INVALID" {
+		t.Fatalf("成克杰: %v", err)
+	}
+	if strings.Contains(err.Error(), "成克杰") || strings.Contains(err.Error(), "regional") {
+		t.Fatalf("error leaked the term: %v", err)
+	}
+	for _, name := range []string{"贪污", "双开", "Ada"} {
+		if err := RejectDisplay(ctx, mtproto.PEER_USER, 7, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if err := RejectUser(ctx, 7, "chengkejie"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("chengkejie: %v", err)
+	}
+	if err := RejectUser(ctx, 7, "chengkejie_01"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("chengkejie_01: %v", err)
+	}
+	// Published pinyin rules use an underscore boundary. They do not strip digits.
+	if err := RejectUser(ctx, 7, "chengkejie88"); err != nil {
+		t.Fatalf("chengkejie88: %v", err)
+	}
+	if err := RejectUser(ctx, 7, "tanwu"); err != nil {
+		t.Fatalf("tanwu: %v", err)
+	}
+	if err := RejectUser(ctx, 7, "shuangkai"); err != nil {
+		t.Fatalf("shuangkai: %v", err)
 	}
 }
