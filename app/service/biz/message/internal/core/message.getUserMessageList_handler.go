@@ -10,9 +10,12 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
 
 // MessageGetUserMessageList
@@ -30,5 +33,6 @@ func (c *MessageCore) MessageGetUserMessageList(in *message.TLMessageGetUserMess
 			rValueList.Datas = append(rValueList.GetDatas(), c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
 		})
 
+	rValueList.Datas = msgexpiry.FilterBoxes(rValueList.Datas, int32(time.Now().Unix()))
 	return rValueList, nil
 }

@@ -31,6 +31,7 @@ func (d *Dao) MakeMessageBox(ctx context.Context, selfUserId int64, do *dataobje
 		MediaUnread:       do.MediaUnread,
 		Pinned:            do.Pinned, // TODO
 		Reaction:          do.Reaction,
+		TtlPeriod:         do.TtlPeriod,
 	}).To_MessageBox()
 	// Message
 	_ = jsonx.UnmarshalFromString(do.MessageData, &box.Message)

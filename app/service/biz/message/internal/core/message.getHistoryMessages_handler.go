@@ -11,9 +11,11 @@ package core
 
 import (
 	"math"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
 
 // From android client
@@ -333,6 +335,6 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 		}
 	}
 	return &message.Vector_MessageBox{
-		Datas: boxList,
+		Datas: msgexpiry.FilterBoxes(boxList, int32(time.Now().Unix())),
 	}, nil
 }
