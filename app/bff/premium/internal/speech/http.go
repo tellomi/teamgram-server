@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -29,7 +30,27 @@ func RecognizerFromEnv() Recognizer {
 	}
 	return &HTTPRecognizer{
 		Endpoint: strings.TrimRight(base, "/") + "/v1/transcribe",
-		Client:   &http.Client{Timeout: timeout},
+		Client:   asrClient(timeout),
+	}
+}
+
+// asrClient keeps the long read timeout for a real transcription, but a
+// sidecar that does not accept a connection fails in under a second. The
+// session acks the RPC only after the handler returns, and the client
+// regression gives that about two seconds.
+func asrClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   500 * time.Millisecond,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			MaxIdleConns:          4,
+			IdleConnTimeout:       30 * time.Second,
+			ExpectContinueTimeout: time.Second,
+		},
 	}
 }
 

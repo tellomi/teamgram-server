@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
@@ -153,6 +154,18 @@ func TestClipFromRoundVideo(t *testing.T) {
 	}).To_Message()
 	if _, err := clipFromMessage(plain); status.Convert(err).Message() != "MEDIA_EMPTY" {
 		t.Fatalf("plain text err %v", err)
+	}
+}
+
+func TestRecognizerDialFailsFast(t *testing.T) {
+	t.Setenv("TELLOMI_ASR_URL", "http://192.0.2.1:81")
+	start := time.Now()
+	_, err := RecognizerFromEnv().(*HTTPRecognizer).Transcribe(context.Background(), []byte("abc"), "voice.ogg")
+	if err == nil {
+		t.Fatal("blackhole returned text")
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("dial took %s", time.Since(start))
 	}
 }
 
