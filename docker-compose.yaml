@@ -172,7 +172,6 @@ services:
       # apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
       TELLOMI_DC_OPTIONS: ${TELLOMI_DC_OPTIONS:-}
       TELLOMI_DC_TXT_DOMAIN: ${TELLOMI_DC_TXT_DOMAIN:-}
-      # Username reserve / sensitive-word check (M5). Unset is off.
       # help.getAppConfig faq_link. Unset stays https://tellomi.cn/faq.
       # 1 switches it to https://tellomi.cn/help (D-40). The page is not
       # served by this container.
@@ -184,6 +183,9 @@ services:
       TELLOMI_ALGORITHM_FILING_NUMBER: ${TELLOMI_ALGORITHM_FILING_NUMBER:-}
       TELLOMI_AI_PUBLIC_MODEL: ${TELLOMI_AI_PUBLIC_MODEL:-}
       TELLOMI_AI_REGISTRATION_NUMBER: ${TELLOMI_AI_REGISTRATION_NUMBER:-}
+      # Lexicon check (M5). Only the value 1 turns it on. Empty means the
+      # code default: off. This default does not say what production has
+      # already set, and this file does not turn production on.
       TELLOMI_USERNAME_POLICY: ${TELLOMI_USERNAME_POLICY:-}
       # Aliyun Green / Bailian text moderation for Han display names,
       # bios, and group titles.
