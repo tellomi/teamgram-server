@@ -14,8 +14,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"sync"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 	"google.golang.org/grpc/status"
 )
 
@@ -48,6 +50,7 @@ type chat struct {
 	fingerprint int64
 	phase       phase
 	historyGone bool
+	ttl         int32
 }
 
 type sentRec struct {
@@ -311,6 +314,22 @@ func (s *Store) Read(self int64, peer *mtproto.InputEncryptedChat, maxDate, now 
 	return []Event{ev}, nil
 }
 
+// SetTTL records the secret chat's self-destruct timer in seconds. Zero
+// disables it. The ciphertext stays until the expiry switch is on.
+func (s *Store) SetTTL(self int64, peer *mtproto.InputEncryptedChat, ttl int32) error {
+	if ttl < 0 {
+		return mtproto.ErrTtlPeriodInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.live(self, peer)
+	if err != nil {
+		return err
+	}
+	c.ttl = ttl
+	return s.be.SaveChat(c)
+}
+
 // Send forwards an encrypted payload. service selects encryptedMessageService.
 // file is set for messages.sendEncryptedFile.
 // https://core.telegram.org/method/messages.sendEncrypted
@@ -339,6 +358,17 @@ func (s *Store) Send(self int64, peer *mtproto.InputEncryptedChat, randomID int6
 		return nil, nil, err
 	}
 	msg := encryptedMessage(c.id, randomID, now, data, file, service)
+	if c.ttl > 0 {
+		fileID := int64(0)
+		if file != nil {
+			fileID = file.GetId()
+		}
+		msgexpiry.Default().Register(msgexpiry.Record{
+			Kind: msgexpiry.KindSecret, Scope: int64(c.id), ID: narrowID(randomID),
+			Date: now, TTL: c.ttl, FileID: fileID,
+			Users: []int64{c.admin, c.participant},
+		})
+	}
 	ev, err := s.enqueue(c.other(self), mtproto.MakeTLUpdateNewEncryptedMessage(&mtproto.Update{
 		Message_ENCRYPTEDMESSAGE: msg,
 	}).To_Update())
@@ -374,7 +404,18 @@ func (s *Store) LookupEncrypted(id int64) (*mtproto.EncryptedFile, int32, bool) 
 	if !ok || rec.file == nil {
 		return nil, 0, false
 	}
+	if msgexpiry.Default().BlocksDownload(id, int32(time.Now().Unix())) {
+		return nil, 0, false
+	}
 	return cloneFile(rec.file), rec.chatID, true
+}
+
+func narrowID(v int64) int32 {
+	n := int32(v)
+	if n == 0 {
+		return 1
+	}
+	return n
 }
 
 // PeerUser is the other member. The chat may still be waiting.

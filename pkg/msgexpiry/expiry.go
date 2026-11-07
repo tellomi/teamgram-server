@@ -15,9 +15,9 @@ const (
 	// EnvEnabled hides expired messages from history and get-message reads.
 	// Unset or any value other than 1 leaves every stored row readable.
 	EnvEnabled = "TELLOMI_MESSAGE_EXPIRY"
-	// EnvSweep allows a caller to delete rows that are already expired.
-	// The channel read path is the only caller, and only after this is 1.
-	// There is no process-wide job and no migration that backfills a ttl.
+	// EnvSweep allows Sweep and, when it is already 1 at process start, the
+	// in-memory ledger loop. It does not scan MySQL and does not touch backups.
+	// The channel store still mark-deletes on read only when this is 1.
 	EnvSweep = "TELLOMI_MESSAGE_EXPIRY_SWEEP"
 )
 

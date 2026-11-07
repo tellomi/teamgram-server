@@ -20,6 +20,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
@@ -28,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
 
 // downloadFile is set by tests. Production uses DFS.
@@ -129,7 +131,7 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 		return nil, mtproto.ErrLocationInvalid
 	}
 
-	if c.mediaExpired(location) {
+	if msgexpiry.Default().BlocksDownload(location.GetId(), int32(time.Now().Unix())) || c.mediaExpired(location) {
 		// FILE_ID_INVALID is what clients already handle for a file that is
 		// gone: they stop the download and keep the thumbnail. FILE_REFERENCE_*
 		// would make them refetch the message and retry forever.

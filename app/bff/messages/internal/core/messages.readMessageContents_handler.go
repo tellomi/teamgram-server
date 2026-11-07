@@ -20,12 +20,14 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
 
 // MessagesReadMessageContents
@@ -60,7 +62,9 @@ func (c *MessagesCore) MessagesReadMessageContents(in *mtproto.TLMessagesReadMes
 		}
 	}
 	contents := make([]*msgpb.ContentMessage, 0, len(messages.GetDatas()))
+	now := int32(time.Now().Unix())
 	for _, m := range messages.GetDatas() {
+		noteExpiry(c.MD.UserId, m, now)
 		// TODO(@benqi): check peer??
 		// peer := model.FromPeer(m.Message.ToId)
 		if m.Message.GetMentioned() {
@@ -115,4 +119,40 @@ func (c *MessagesCore) MessagesReadMessageContents(in *mtproto.TLMessagesReadMes
 				}).To_Update()),
 			})
 		}).(*mtproto.Messages_AffectedMessages), nil
+}
+
+// noteExpiry records a view-once open and a private ttl in this process so
+// upload.getFile can refuse the bytes. It does not delete a database row.
+func noteExpiry(user int64, box *mtproto.MessageBox, now int32) {
+	if box == nil || box.GetMessage() == nil {
+		return
+	}
+	fileID := int64(0)
+	mediaTTL := int32(0)
+	if media := box.GetMessage().GetMedia(); media != nil {
+		if media.GetTtlSeconds() != nil {
+			mediaTTL = media.GetTtlSeconds().GetValue()
+		}
+		if doc := media.GetDocument(); doc != nil {
+			fileID = doc.GetId()
+		}
+	}
+	other := box.GetPeerId()
+	if box.GetSenderUserId() != user {
+		other = box.GetSenderUserId()
+	}
+	users := []int64{user, other}
+	if mediaTTL > 0 {
+		msgexpiry.Default().Register(msgexpiry.Record{
+			Kind: msgexpiry.KindViewOnce, Scope: user, ID: box.GetMessageId(),
+			Date: box.GetMessage().GetDate(), TTL: mediaTTL, FileID: fileID, Users: users,
+		})
+		msgexpiry.Default().Open(user, box.GetMessageId())
+	}
+	if box.GetTtlPeriod() > 0 {
+		msgexpiry.Default().Register(msgexpiry.Record{
+			Kind: msgexpiry.KindPrivate, Scope: user, ID: box.GetMessageId(),
+			Date: box.GetMessage().GetDate(), TTL: box.GetTtlPeriod(), FileID: fileID, Users: users,
+		})
+	}
 }

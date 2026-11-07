@@ -7,7 +7,13 @@
 | `TELLOMI_MESSAGE_EXPIRY` | 空 | `1` 时，`ttl_period > 0` 且 `date + ttl <= now` 的消息不再从历史、按 id 读取、频道增量里返回正文。`ttl_period = 0` 的行永远留着。 |
 | `TELLOMI_MESSAGE_EXPIRY_SWEEP` | 空 | `1` 时，频道成员读历史会把已经到期的频道消息标成删除，并向成员推 `updateDeleteChannelMessages`。第二次调用不再删除。私聊行只是读路径隐藏，这条开关不会去删私聊表。 |
 
-频道到期看频道上的 `ttl_period`，不是某一条消息单独的值。私聊看消息行上的 `ttl_period`，没有列的时候看消息体内的 `ttl_period`。
+频道到期看频道上的 `ttl_period`。私聊看消息行上的 `ttl_period`。查看一次看媒体上的 `ttl_seconds`：`messages.readMessageContents` 打开之后，本进程里的 `upload.getFile` 不再返回该文件。秘密聊天看 `SetTTL` 记下的秒数；到期后 `upload.getFile` 和 `updates.getDifference` 不再交出密文。服务器不解密。
+
+这四类在 `pkg/msgexpiry` 的账本里分开。清扫一类不会删另一类。第二次清扫同一条记录不再删除。对方和自己的用户 id 都会列在失效名单里，重连后再读仍是不可读。
+
+`TELLOMI_MESSAGE_EXPIRY_SWEEP=1` 在进程启动时才会跑账本里的定时清扫。它只遍历本进程内存里的记录，不扫描 `messages` 表，不改备份，不碰对象存储里的历史文件。重启后这份内存账本是空的，所以一次重启不会接着去删重启前的生产行。频道存储上的标删仍是 239 的行为：只有清扫开关为 `1` 而且有人读该频道时，才会标删已经到期的频道消息。生产不要设这个开关。
+
+法律和备份：读路径隐藏和下载拒绝都不是销毁备份。已经进备份的库和对象不会被这次清扫改写。查看一次是「打开后本进程不再下发」，和「时间到了就隐藏」不是同一条规则。秘密聊天清掉的是服务器上的密文副本，不是两端设备里的明文。
 
 ## 上线
 
