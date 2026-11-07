@@ -27,7 +27,9 @@ const (
 )
 
 // ErrAudioTooLong is returned when the clip is over MaxDuration or MaxBytes.
-var ErrAudioTooLong = status.Error(mtproto.ErrBadRequest, "AUDIO_TOO_LONG")
+// The client-visible code is MSG_VOICE_TOO_LONG, the name messages.transcribeAudio
+// documents and the one iOS maps to "too long" instead of a generic failure.
+var ErrAudioTooLong = status.Error(mtproto.ErrBadRequest, "MSG_VOICE_TOO_LONG")
 
 // ErrTranscriptionUnavailable is a recognizer outage (sidecar down, timeout,
 // non-200). It is not TRANSCRIPTION_FAILED, which clients show as "no speech
@@ -152,7 +154,7 @@ func (h *Handler) Transcribe(ctx context.Context, md *metadata.RpcMetadata, in *
 	}
 	raw, err := h.recognize.Transcribe(callCtx, audio, clip.Filename)
 	if err != nil {
-		if status.Convert(err).Message() == "AUDIO_TOO_LONG" {
+		if status.Convert(err).Message() == "MSG_VOICE_TOO_LONG" {
 			return nil, ErrAudioTooLong
 		}
 		logx.WithContext(ctx).Errorf("messages.transcribeAudio: recognizer: %v", err)

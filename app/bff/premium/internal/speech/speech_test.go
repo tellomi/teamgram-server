@@ -2,6 +2,7 @@ package speech
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	dfspb "github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestTranscribeVoiceCachesAndStripsTags(t *testing.T) {
@@ -116,7 +118,7 @@ func TestTranscribeRejectsLongVoice(t *testing.T) {
 		Peer:  mtproto.MakeTLInputPeerSelf(&mtproto.InputPeer{}).To_InputPeer(),
 		MsgId: 4,
 	})
-	if status.Convert(err).Message() != "AUDIO_TOO_LONG" {
+	if status.Convert(err).Message() != "MSG_VOICE_TOO_LONG" {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -329,5 +331,63 @@ func TestRecognizerErrorIsUnavailable(t *testing.T) {
 	})
 	if status.Convert(err).Message() != "TRANSCRIPTION_UNAVAILABLE" {
 		t.Fatalf("err %v", err)
+	}
+}
+
+func TestTranscribeRoundVideoReturnsFinalText(t *testing.T) {
+	t.Setenv(premium.EnvTranscribeEnabled, "true")
+	h := NewHandler(
+		func(context.Context, int64, *mtproto.PeerUtil, int32) (Clip, error) {
+			return Clip{DocumentID: 9, Filename: "round.mp4", Duration: 4, Size: 8}, nil
+		},
+		func(context.Context, Clip) ([]byte, error) { return []byte("fake-mp4"), nil },
+		RecognizerFunc(func(_ context.Context, audio []byte, name string) (string, error) {
+			if name != "round.mp4" || string(audio) != "fake-mp4" {
+				t.Fatalf("recognizer got %s %q", name, audio)
+			}
+			return "你好", nil
+		}),
+		nil,
+	)
+	out, err := h.Transcribe(context.Background(), &metadata.RpcMetadata{UserId: 7}, &mtproto.TLMessagesTranscribeAudio{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 8}).To_InputPeer(),
+		MsgId: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.GetPending() || out.GetText() != "你好" || out.GetTranscriptionId() == 0 {
+		t.Fatalf("pending=%v id=%d text=%q", out.GetPending(), out.GetTranscriptionId(), out.GetText())
+	}
+}
+
+func TestTranscribedAudioTrialFlagBits(t *testing.T) {
+	obj := mtproto.MakeTLMessagesTranscribedAudio(&mtproto.Messages_TranscribedAudio{
+		Pending:               false,
+		TranscriptionId:       9,
+		Text:                  "hi",
+		TrialRemainsNum:       wrapperspb.Int32(3),
+		TrialRemainsUntilDate: wrapperspb.Int32(0),
+	})
+	buf := mtproto.NewEncodeBuf(64)
+	if err := obj.Encode(buf, 232); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	if len(raw) < 8 || binary.LittleEndian.Uint32(raw[:4]) != 0xcfb9d957 {
+		t.Fatalf("constructor %x", raw)
+	}
+	flags := binary.LittleEndian.Uint32(raw[4:8])
+	if flags != (1<<1)|(1<<2) {
+		t.Fatalf("flags %d, want trial count on bit 1 and until date on bit 2", flags)
+	}
+	back := mtproto.NewDecodeBuf(raw)
+	decoded := back.Object()
+	if err := back.GetError(); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := decoded.(*mtproto.TLMessagesTranscribedAudio)
+	if !ok || got.GetPending() || got.GetText() != "hi" || got.GetTrialRemainsNum().GetValue() != 3 || got.GetTrialRemainsUntilDate().GetValue() != 0 {
+		t.Fatalf("decoded %T %#v", decoded, got)
 	}
 }
