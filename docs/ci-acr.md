@@ -122,6 +122,12 @@ them. The container is limited to 1.5GB and 2 CPUs. `deploy-pull.sh` already
 pulls and recreates this image; it does not need a separate step. The model license is
 `services/asr/NOTICE`.
 
+`translate` is the English-to-Chinese sidecar (`services/translate`,
+Helsinki-NLP opus-mt-en-zh, CC-BY-4.0). The workflow publishes that image too.
+`deploy-pull.sh` does not start it. The compose service is behind the
+`translate` profile and teamgram leaves `TELLOMI_TRANSLATE_URL` empty until
+someone sets it. See `docs/api/translate.md`.
+
 `docker-compose.geoip.yaml` bind-mounts the DB-IP Lite city MMDB into
 `teamgram`. Omit that `-f` and the next `up` drops the mount. The database
 file is not in git. Before the first deploy with this script, set

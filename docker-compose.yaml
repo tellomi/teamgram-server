@@ -394,6 +394,37 @@ services:
     networks:
       - teamgram_net
 
+  # English-to-Chinese Opus-MT. Not started by a default `up` or by
+  # deploy-pull.sh. Start it only after deciding the host has about 1GB
+  # free for this container, then point teamgram at it:
+  #   TELLOMI_TRANSLATE_URL=http://translate:8091
+  # TELLOMI_TRANSLATE_AUTO stays unset unless automatic translation is wanted.
+  # The chat process keeps the translation switches off until /health is 200.
+  translate:
+    profiles: ["translate"]
+    image: "${TELLOMI_IMAGE_REGISTRY:-crpi-tge4xmtf4iip17mq.cn-chengdu.personal.cr.aliyuncs.com/tellomi}/translate:${TELLOMI_IMAGE_TAG:-local}"
+    build:
+      context: ./services/translate
+    restart: unless-stopped
+    mem_limit: 1024m
+    cpus: 1
+    environment:
+      TELLOMI_TRANSLATE_THREADS: "2"
+      OMP_NUM_THREADS: "2"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - teamgram_net
+
   # RTMP ingest for phone.getGroupCallStreamRtmpUrl. This accepts the push;
   # it is not bridged into the group-call SFU (see app/bff/phone/LIMITATIONS.md).
   mediamtx:
