@@ -55,6 +55,30 @@ func Messages(userID int64, updates *mtproto.Updates) []Incoming {
 	mtproto.VisitUpdates(userID, updates, map[string]mtproto.UpdateVisitedFunc{
 		mtproto.Predicate_updateNewMessage:        visit,
 		mtproto.Predicate_updateNewChannelMessage: visit,
+		mtproto.Predicate_updateNewEncryptedMessage: func(_ int64, update *mtproto.Update, _ []*mtproto.User, _ []*mtproto.Chat, _ int32) {
+			msg := update.GetMessage_ENCRYPTEDMESSAGE()
+			if msg == nil || msg.GetChatId() == 0 {
+				return
+			}
+			// The ciphertext stays on the qts update. The push only wakes the device.
+			out = append(out, Incoming{
+				UserID: userID,
+				MsgID:  msg.GetChatId(),
+				LocKey: "ENCRYPTED_MESSAGE",
+			})
+		},
+		mtproto.Predicate_updateEncryption: func(_ int64, update *mtproto.Update, _ []*mtproto.User, _ []*mtproto.Chat, _ int32) {
+			chat := update.GetChat()
+			if chat == nil || chat.GetPredicateName() != mtproto.Predicate_encryptedChatRequested || chat.GetId() == 0 {
+				return
+			}
+			out = append(out, Incoming{
+				UserID:   userID,
+				MsgID:    chat.GetId(),
+				SenderID: chat.GetAdminId(),
+				LocKey:   "ENCRYPTED_MESSAGE",
+			})
+		},
 	})
 	return out
 }

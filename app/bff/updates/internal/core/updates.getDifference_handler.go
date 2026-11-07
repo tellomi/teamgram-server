@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
@@ -63,10 +64,10 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 
 	switch updatesDiff.GetPredicateName() {
 	case updates.Predicate_differenceEmpty:
-		return mtproto.MakeTLUpdatesDifferenceEmpty(&mtproto.Updates_Difference{
+		rDifference = mtproto.MakeTLUpdatesDifferenceEmpty(&mtproto.Updates_Difference{
 			Date: updatesDiff.GetState().GetDate(),
 			Seq:  updatesDiff.GetState().GetSeq(),
-		}).To_Updates_Difference(), nil
+		}).To_Updates_Difference()
 	case updates.Predicate_difference:
 		// The historical path stamps "now" so a client with a stale date
 		// does not immediately ask again. Strict mode keeps the merged date.
@@ -102,6 +103,11 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 	}
 
 	if rDifference != nil {
+		limit := int32(0)
+		if in.GetQtsLimit() != nil {
+			limit = in.GetQtsLimit().GetValue()
+		}
+		rDifference = secretchat.ApplyDifference(c.MD.UserId, in.GetQts(), limit, rDifference)
 		attachDialogReactions(c.ctx, c.MD.UserId, rDifference.NewMessages)
 	}
 	idHelper.PickByMessages(rDifference.NewMessages...)

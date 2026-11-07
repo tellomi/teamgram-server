@@ -125,7 +125,7 @@ func TestSecretChatFlow(t *testing.T) {
 	}
 	roundTrip(t, sent, 0x560f8935)
 	msgUp := pushed[len(pushed)-1]
-	if msgUp.user != 2 || msgUp.upd.Updates[0].GetQts() != 0 {
+	if msgUp.user != 2 || msgUp.upd.Updates[0].GetQts() == 0 {
 		t.Fatalf("qts %+v", msgUp.upd.Updates[0])
 	}
 	if msgUp.upd.Updates[0].GetMessage_ENCRYPTEDMESSAGE().GetFile().GetPredicateName() != mtproto.Predicate_encryptedFileEmpty {

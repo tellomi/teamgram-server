@@ -1,13 +1,13 @@
 // Package secretchat stores secret-chat state for the layer-232 encrypted RPCs.
 //
 // The server never sees the Diffie-Hellman secret and does not decrypt
-// payloads. It checks g_a / g_b, remembers who the two devices are, and
-// forwards ciphertext. State is in-process: a restart drops chats that were
-// not finished. Updates are pushed live with qts left at 0 because
-// updates.getDifference does not yet return a qts queue; a non-zero qts would
-// make clients call getDifference and then reset.
+// payloads. It checks g_a / g_b, remembers who the two users are, and
+// forwards ciphertext. Chats and the qts queue are shared: a restart or
+// another process reads the same backend. Live pushes still go out, and
+// updates.getDifference returns anything the client has not applied.
 //
 // https://core.telegram.org/api/end-to-end
+// https://core.telegram.org/api/updates
 package secretchat
 
 import (
@@ -63,48 +63,60 @@ type sentKey struct {
 
 // keptFile is an EncryptedFile produced by messages.uploadEncryptedFile.
 // The bytes live in DFS; this record is what sendEncryptedFile attaches so
-// the peer sees size, dc_id, and key_fingerprint. It dies with the process,
-// same as the chat itself.
+// the peer sees size, dc_id, and key_fingerprint.
 type keptFile struct {
 	file   *mtproto.EncryptedFile
 	chatID int32
 }
 
-// Store is the process-wide secret-chat table.
+// Store is the secret-chat table for one backend. Two stores that share a
+// backend are two processes: a request on one is visible to accept on the other.
 type Store struct {
 	mu      sync.Mutex
-	chats   map[int32]*chat
-	sent    map[sentKey]sentRec
+	be      Backend
 	reports map[int32][]int64
-	files   map[int64]keptFile
 }
 
 var (
 	gate    sync.Mutex
-	current = newStore()
+	active  Backend = newMem()
+	current *Store
 )
 
-func newStore() *Store {
-	return &Store{
-		chats:   map[int32]*chat{},
-		sent:    map[sentKey]sentRec{},
-		reports: map[int32][]int64{},
-		files:   map[int64]keptFile{},
+func newStore(be Backend) *Store {
+	if be == nil {
+		be = newMem()
 	}
+	return &Store{be: be, reports: map[int32][]int64{}}
+}
+
+func init() {
+	current = newStore(active)
+}
+
+// New binds a store to backend. Tests use it for a second process.
+func New(be Backend) *Store {
+	return newStore(be)
 }
 
 // Default is the store the bff handlers share.
 func Default() *Store {
 	gate.Lock()
 	defer gate.Unlock()
+	if current == nil {
+		current = newStore(active)
+	}
 	return current
 }
 
-// Reset drops every chat. Tests call it.
+// Reset drops in-memory chats. It does not delete MySQL rows.
 func Reset() {
 	gate.Lock()
-	current = newStore()
-	gate.Unlock()
+	defer gate.Unlock()
+	if m, ok := active.(*memBackend); ok {
+		m.clear()
+	}
+	current = newStore(active)
 }
 
 // Request starts a secret chat. randomID is the chat id.
@@ -115,24 +127,28 @@ func (s *Store) Request(admin, participant int64, randomID int32, ga []byte, now
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.chats[randomID]; ok {
+	if _, ok := s.be.Chat(randomID); ok {
 		return nil, nil, status.Error(mtproto.ErrBadRequest, "RANDOM_ID_DUPLICATE")
 	}
 	c := &chat{
 		id: randomID, access: newAccess(), date: now,
 		admin: admin, participant: participant, ga: clone(ga), phase: phaseWaiting,
 	}
-	s.chats[c.id] = c
+	if err := s.be.SaveChat(c); err != nil {
+		return nil, nil, err
+	}
 	requested := mtproto.MakeTLEncryptedChatRequested(&mtproto.EncryptedChat{
 		Id: c.id, AccessHash: c.access, Date: c.date,
 		AdminId: c.admin, ParticipantId: c.participant, GA: clone(c.ga),
 	}).To_EncryptedChat()
-	return waiting(c), []Event{{
-		UserID: participant,
-		Update: mtproto.MakeTLUpdateEncryption(&mtproto.Update{
-			Chat: requested, Date_INT32: now,
-		}).To_Update(),
-	}}, nil
+	ev, err := s.enqueue(participant, mtproto.MakeTLUpdateEncryption(&mtproto.Update{
+		Chat: requested, Date_INT32: now,
+	}).To_Update())
+	if err != nil {
+		_ = s.be.DeleteChat(c.id)
+		return nil, nil, err
+	}
+	return waiting(c), []Event{ev}, nil
 }
 
 // Accept confirms the chat. The caller must be the participant.
@@ -157,13 +173,17 @@ func (s *Store) Accept(self int64, peer *mtproto.InputEncryptedChat, gb []byte, 
 	c.gb = clone(gb)
 	c.fingerprint = fingerprint
 	c.date = now
+	if err = s.be.SaveChat(c); err != nil {
+		return nil, nil, err
+	}
 	forAdmin := accepted(c, c.gb)
-	return accepted(c, c.ga), []Event{{
-		UserID: c.admin,
-		Update: mtproto.MakeTLUpdateEncryption(&mtproto.Update{
-			Chat: forAdmin, Date_INT32: now,
-		}).To_Update(),
-	}}, nil
+	ev, err := s.enqueue(c.admin, mtproto.MakeTLUpdateEncryption(&mtproto.Update{
+		Chat: forAdmin, Date_INT32: now,
+	}).To_Update())
+	if err != nil {
+		return nil, nil, err
+	}
+	return accepted(c, c.ga), []Event{ev}, nil
 }
 
 // Discard closes the chat for both participants.
@@ -174,8 +194,8 @@ func (s *Store) Discard(self int64, chatID int32, deleteHistory bool, now int32)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c := s.chats[chatID]
-	if c == nil || (self != c.admin && self != c.participant) {
+	c, ok := s.be.Chat(chatID)
+	if !ok || (self != c.admin && self != c.participant) {
 		return nil, mtproto.ErrEncryptionIdInvalid
 	}
 	if c.phase == phaseDiscarded {
@@ -183,12 +203,11 @@ func (s *Store) Discard(self int64, chatID int32, deleteHistory bool, now int32)
 	}
 	c.phase = phaseDiscarded
 	c.historyGone = deleteHistory
+	if err := s.be.SaveChat(c); err != nil {
+		return nil, err
+	}
 	if deleteHistory {
-		for key := range s.sent {
-			if key.chat == chatID {
-				delete(s.sent, key)
-			}
-		}
+		_ = s.be.DeleteSent(chatID)
 	}
 	other := c.participant
 	if self == c.participant {
@@ -197,20 +216,20 @@ func (s *Store) Discard(self int64, chatID int32, deleteHistory bool, now int32)
 	discarded := mtproto.MakeTLEncryptedChatDiscarded(&mtproto.EncryptedChat{
 		Id: c.id, HistoryDeleted: deleteHistory,
 	}).To_EncryptedChat()
-	return []Event{{
-		UserID: other,
-		Update: mtproto.MakeTLUpdateEncryption(&mtproto.Update{
-			Chat: discarded, Date_INT32: now,
-		}).To_Update(),
-	}}, nil
+	ev, err := s.enqueue(other, mtproto.MakeTLUpdateEncryption(&mtproto.Update{
+		Chat: discarded, Date_INT32: now,
+	}).To_Update())
+	if err != nil {
+		return nil, err
+	}
+	return []Event{ev}, nil
 }
 
 // DiscardAll closes every secret chat this user is in and drops the
 // ciphertext the process still holds. Already-discarded chats are skipped,
 // so a retried account deletion is safe. File ids are the encrypted-file
 // objects those chats uploaded; the caller may trash them when nothing else
-// references them. State is in-process, so a restart has already forgotten
-// chats that were not discarded here.
+// references them.
 func (s *Store) DiscardAll(userID int64, now int32) ([]Event, []int64) {
 	if s == nil || userID == 0 {
 		return nil, nil
@@ -220,25 +239,22 @@ func (s *Store) DiscardAll(userID int64, now int32) ([]Event, []int64) {
 	var events []Event
 	var files []int64
 	seen := map[int64]bool{}
-	for _, c := range s.chats {
-		if c == nil || (c.admin != userID && c.participant != userID) {
-			continue
-		}
-		if c.phase == phaseDiscarded {
+	for _, c := range s.be.ChatsFor(userID) {
+		if c == nil || c.phase == phaseDiscarded {
 			continue
 		}
 		c.phase = phaseDiscarded
 		c.historyGone = true
-		for key, rec := range s.sent {
-			if key.chat != c.id {
-				continue
-			}
-			if rec.file != nil && rec.file.GetId() != 0 && !seen[rec.file.GetId()] {
-				seen[rec.file.GetId()] = true
-				files = append(files, rec.file.GetId())
-			}
-			delete(s.sent, key)
+		if err := s.be.SaveChat(c); err != nil {
+			continue
 		}
+		for _, id := range s.be.SentFiles(c.id) {
+			if !seen[id] {
+				seen[id] = true
+				files = append(files, id)
+			}
+		}
+		_ = s.be.DeleteSent(c.id)
 		other := c.participant
 		if userID == c.participant {
 			other = c.admin
@@ -246,12 +262,13 @@ func (s *Store) DiscardAll(userID int64, now int32) ([]Event, []int64) {
 		discarded := mtproto.MakeTLEncryptedChatDiscarded(&mtproto.EncryptedChat{
 			Id: c.id, HistoryDeleted: true,
 		}).To_EncryptedChat()
-		events = append(events, Event{
-			UserID: other,
-			Update: mtproto.MakeTLUpdateEncryption(&mtproto.Update{
-				Chat: discarded, Date_INT32: now,
-			}).To_Update(),
-		})
+		ev, err := s.enqueue(other, mtproto.MakeTLUpdateEncryption(&mtproto.Update{
+			Chat: discarded, Date_INT32: now,
+		}).To_Update())
+		if err != nil {
+			continue
+		}
+		events = append(events, ev)
 	}
 	return events, files
 }
@@ -285,12 +302,13 @@ func (s *Store) Read(self int64, peer *mtproto.InputEncryptedChat, maxDate, now 
 	if err != nil {
 		return nil, err
 	}
-	return []Event{{
-		UserID: c.other(self),
-		Update: mtproto.MakeTLUpdateEncryptedMessagesRead(&mtproto.Update{
-			ChatId_INT32: c.id, MaxDate: maxDate, Date_INT32: now,
-		}).To_Update(),
-	}}, nil
+	ev, err := s.enqueue(c.other(self), mtproto.MakeTLUpdateEncryptedMessagesRead(&mtproto.Update{
+		ChatId_INT32: c.id, MaxDate: maxDate, Date_INT32: now,
+	}).To_Update())
+	if err != nil {
+		return nil, err
+	}
+	return []Event{ev}, nil
 }
 
 // Send forwards an encrypted payload. service selects encryptedMessageService.
@@ -313,21 +331,21 @@ func (s *Store) Send(self int64, peer *mtproto.InputEncryptedChat, randomID int6
 		return nil, nil, mtproto.ErrChatIdInvalid
 	}
 	key := sentKey{chat: c.id, random: randomID}
-	if prev, ok := s.sent[key]; ok {
+	if prev, ok := s.be.Sent(key); ok {
 		return prev.reply(), nil, nil
 	}
 	rec := sentRec{date: now, file: cloneFile(file), service: service}
-	s.sent[key] = rec
+	if err = s.be.SaveSent(key, rec); err != nil {
+		return nil, nil, err
+	}
 	msg := encryptedMessage(c.id, randomID, now, data, file, service)
-	return rec.reply(), []Event{{
-		UserID: c.other(self),
-		Update: mtproto.MakeTLUpdateNewEncryptedMessage(&mtproto.Update{
-			Message_ENCRYPTEDMESSAGE: msg,
-			// qts stays 0. getDifference does not ship a qts queue, so a
-			// gap here would make the client reset its secret-chat cursor.
-			Qts: 0,
-		}).To_Update(),
-	}}, nil
+	ev, err := s.enqueue(c.other(self), mtproto.MakeTLUpdateNewEncryptedMessage(&mtproto.Update{
+		Message_ENCRYPTEDMESSAGE: msg,
+	}).To_Update())
+	if err != nil {
+		return nil, nil, err
+	}
+	return rec.reply(), []Event{ev}, nil
 }
 
 // RememberEncrypted keeps the EncryptedFile returned by
@@ -341,7 +359,7 @@ func (s *Store) RememberEncrypted(chatID int32, file *mtproto.EncryptedFile) {
 		return
 	}
 	s.mu.Lock()
-	s.files[file.GetId()] = keptFile{file: cloned, chatID: chatID}
+	_ = s.be.SaveFile(file.GetId(), keptFile{file: cloned, chatID: chatID})
 	s.mu.Unlock()
 }
 
@@ -352,7 +370,7 @@ func (s *Store) LookupEncrypted(id int64) (*mtproto.EncryptedFile, int32, bool) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rec, ok := s.files[id]
+	rec, ok := s.be.File(id)
 	if !ok || rec.file == nil {
 		return nil, 0, false
 	}
@@ -409,11 +427,18 @@ func (s *Store) member(self int64, peer *mtproto.InputEncryptedChat) (*chat, err
 	if peer == nil || peer.GetChatId() == 0 || self == 0 {
 		return nil, mtproto.ErrChatIdInvalid
 	}
-	c := s.chats[peer.GetChatId()]
-	if c == nil || c.access != peer.GetAccessHash() || (self != c.admin && self != c.participant) {
+	c, ok := s.be.Chat(peer.GetChatId())
+	if !ok || c.access != peer.GetAccessHash() || (self != c.admin && self != c.participant) {
 		return nil, mtproto.ErrChatIdInvalid
 	}
 	return c, nil
+}
+
+func (s *Store) enqueue(userID int64, upd *mtproto.Update) (Event, error) {
+	if _, err := s.be.Append(userID, upd); err != nil {
+		return Event{}, err
+	}
+	return Event{UserID: userID, Update: upd}, nil
 }
 
 func (s *Store) live(self int64, peer *mtproto.InputEncryptedChat) (*chat, error) {

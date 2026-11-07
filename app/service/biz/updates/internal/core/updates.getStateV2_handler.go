@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 )
 
@@ -29,6 +30,9 @@ func (c *UpdatesCore) UpdatesGetStateV2(in *updates.TLUpdatesGetStateV2) (*mtpro
 		seq = -1
 	}
 	qts := c.svcCtx.Dao.IDGenClient2.CurrentQtsId(c.ctx, in.AuthKeyId)
+	if queued := secretchat.Current(in.UserId); queued > qts {
+		qts = queued
+	}
 	return mtproto.MakeTLUpdatesState(&mtproto.Updates_State{
 		Pts:         pts,
 		Qts:         qts,

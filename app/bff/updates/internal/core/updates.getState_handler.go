@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 )
 
@@ -33,6 +34,11 @@ func (c *UpdatesCore) UpdatesGetState(in *mtproto.TLUpdatesGetState) (*mtproto.U
 	if err != nil {
 		c.Logger.Errorf("updates.getState - error: %v", err)
 		return nil, err
+	}
+	// qts is per user. The updates service still reports the legacy
+	// auth-key counter, which stays 0 until a secret-chat update is queued.
+	if qts := secretchat.Current(c.MD.UserId); qts > rValue.GetQts() {
+		rValue.Qts = qts
 	}
 
 	return rValue, nil

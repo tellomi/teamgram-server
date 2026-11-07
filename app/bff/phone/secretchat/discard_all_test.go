@@ -9,15 +9,19 @@ import (
 func TestDiscardAllDropsHistoryAndIsRetryable(t *testing.T) {
 	Reset()
 	s := Default()
-	if _, _, err := s.Request(1, 2, 42, []byte{2}, 10); err != nil {
+	waiting, _, err := s.Request(1, 2, 42, []byte{2}, 10)
+	if err != nil {
 		t.Fatal(err)
 	}
-	s.mu.Lock()
-	s.chats[42].phase = phaseAccepted
-	s.sent[sentKey{chat: 42, random: 9}] = sentRec{
-		file: mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{Id: 99}).To_EncryptedFile(),
+	peer := mtproto.MakeTLInputEncryptedChat(&mtproto.InputEncryptedChat{
+		ChatId: waiting.GetId(), AccessHash: waiting.GetAccessHash(),
+	}).To_InputEncryptedChat()
+	if _, _, err = s.Accept(2, peer, []byte{3}, 1, 11); err != nil {
+		t.Fatal(err)
 	}
-	s.mu.Unlock()
+	if _, _, err = s.Send(1, peer, 9, []byte("cipher"), mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{Id: 99}).To_EncryptedFile(), false, 12); err != nil {
+		t.Fatal(err)
+	}
 	events, files := s.DiscardAll(1, 20)
 	if len(events) != 1 || events[0].UserID != 2 || events[0].Update.GetChat().GetHistoryDeleted() != true {
 		t.Fatalf("events = %+v", events)
