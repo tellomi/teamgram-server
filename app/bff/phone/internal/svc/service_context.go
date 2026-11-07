@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/relay"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/sfu"
+	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	msgclient "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/client"
@@ -56,6 +57,9 @@ func New(c config.Config, clients Clients) *ServiceContext {
 	}
 	if err := phonecall.UseDSN(c.MySQL); err != nil {
 		logx.Errorf("phone mysql: %v", err)
+	}
+	if err := secretchat.UseDSN(c.MySQL); err != nil {
+		logx.Errorf("secret chat mysql: %v", err)
 	}
 	if len(clients.User.Etcd.Hosts) > 0 || len(clients.User.Endpoints) > 0 {
 		sc.Users = user_client.NewUserClient(rpcx.GetCachedRpcClient(clients.User))

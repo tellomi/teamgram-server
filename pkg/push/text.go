@@ -156,6 +156,7 @@ func trimShownName(body, subtitle, title string) string {
 // enPhrases are the bodies previously hard-coded in previewBody.
 var enPhrases = map[string]string{
 	"MESSAGE_NOTEXT":       "sent you a message",
+	"ENCRYPTED_MESSAGE":    "sent you a secret chat message",
 	"MESSAGE_PHOTO":        "sent you a photo",
 	"MESSAGE_PHOTO_SECRET": "sent you a self-destructing photo",
 	"MESSAGE_VIDEO":        "sent you a video",

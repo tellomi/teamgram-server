@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 	"github.com/teamgram/teamgram-server/pkg/diffstrict"
@@ -104,6 +105,9 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 	}).To_Updates_State()
 	if diffstrict.Enabled() {
 		state.Qts = c.svcCtx.Dao.IDGenClient2.CurrentQtsId(c.ctx, in.AuthKeyId)
+		if queued := secretchat.Current(in.UserId); queued > state.Qts {
+			state.Qts = queued
+		}
 	}
 
 	if len(updateList) >= int(limit) {
