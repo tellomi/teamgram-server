@@ -169,6 +169,10 @@ func (c *PremiumCore) MessagesTranscribeAudio(in *mtproto.TLMessagesTranscribeAu
 	if c.svcCtx == nil || c.svcCtx.Speech == nil {
 		return nil, mtproto.ErrInternalServerError
 	}
+	if audio := in.DraftAudio(); len(audio) > 0 {
+		in.ClearDraftAudio()
+		return c.svcCtx.Speech.Draft(c.ctx, c.MD, audio)
+	}
 	return c.svcCtx.Speech.Transcribe(c.ctx, c.MD, in)
 }
 

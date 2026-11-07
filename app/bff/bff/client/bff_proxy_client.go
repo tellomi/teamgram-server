@@ -168,7 +168,7 @@ func (c *BFFProxyClient) InvokeContext(ctx context.Context, rpcMetaData *metadat
 	if _, ok := ctx.Deadline(); !ok {
 		timeout := 10 * time.Second
 		switch object.(type) {
-		case *mtproto.TLMessagesSendMedia, *mtproto.TLMessagesSendMultiMedia, *mtproto.TLMessagesUploadMedia, *mtproto.TLMessagesEditMessage:
+		case *mtproto.TLMessagesSendMedia, *mtproto.TLMessagesSendMultiMedia, *mtproto.TLMessagesUploadMedia, *mtproto.TLMessagesEditMessage, *mtproto.TLMessagesTranscribeAudio:
 			timeout = 60 * time.Second
 		case *mtproto.TLUploadGetFile, *mtproto.TLUploadGetFileHashes, *mtproto.TLUploadSaveFilePart, *mtproto.TLUploadSaveBigFilePart:
 			timeout = 12 * time.Second

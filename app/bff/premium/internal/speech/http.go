@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -29,7 +30,27 @@ func RecognizerFromEnv() Recognizer {
 	}
 	return &HTTPRecognizer{
 		Endpoint: strings.TrimRight(base, "/") + "/v1/transcribe",
-		Client:   &http.Client{Timeout: timeout},
+		Client:   asrClient(timeout),
+	}
+}
+
+// asrClient keeps the long read timeout for a real transcription, but a
+// sidecar that does not accept a connection fails in under a second. The
+// session acks the RPC only after the handler returns, and the client
+// regression gives that about two seconds.
+func asrClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   500 * time.Millisecond,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			MaxIdleConns:          4,
+			IdleConnTimeout:       30 * time.Second,
+			ExpectContinueTimeout: time.Second,
+		},
 	}
 }
 
@@ -40,22 +61,48 @@ type HTTPRecognizer struct {
 }
 
 type asrResponse struct {
-	Text  string `json:"text"`
-	Error string `json:"error"`
+	Text     string `json:"text"`
+	Language string `json:"language"`
+	Error    string `json:"error"`
 }
 
-// Transcribe implements Recognizer.
+// Transcribe implements Recognizer. It does not set a language, so stored
+// voice notes and round videos stay on SenseVoice auto-detect.
 func (h *HTTPRecognizer) Transcribe(ctx context.Context, audio []byte, filename string) (string, error) {
+	text, _, err := h.post(ctx, audio, filename, "")
+	return text, err
+}
+
+// TranscribeDraft asks the sidecar for Chinese. A non-zh language, or a
+// sidecar that does not report one, is TRANSCRIPTION_LANG_UNSUPPORTED.
+func (h *HTTPRecognizer) TranscribeDraft(ctx context.Context, audio []byte, filename string) (string, error) {
+	text, lang, err := h.post(ctx, audio, filename, "zh")
+	if err != nil {
+		return "", err
+	}
+	if text == "" {
+		return "", nil
+	}
+	if lang != "zh" {
+		return "", ErrDraftLanguage
+	}
+	return text, nil
+}
+
+func (h *HTTPRecognizer) post(ctx context.Context, audio []byte, filename, language string) (string, string, error) {
 	if h == nil || h.Endpoint == "" {
-		return "", fmt.Errorf("asr endpoint is unset")
+		return "", "", fmt.Errorf("asr endpoint is unset")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.Endpoint, bytes.NewReader(audio))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	if filename != "" {
 		req.Header.Set("X-Audio-Name", filename)
+	}
+	if language != "" {
+		req.Header.Set("X-ASR-Language", language)
 	}
 	client := h.Client
 	if client == nil {
@@ -63,23 +110,26 @@ func (h *HTTPRecognizer) Transcribe(ctx context.Context, audio []byte, filename 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var parsed asrResponse
 	_ = json.Unmarshal(body, &parsed)
 	if resp.StatusCode == http.StatusBadRequest && parsed.Error == "too_long" {
-		return "", ErrAudioTooLong
+		return "", "", ErrAudioTooLong
+	}
+	if parsed.Error == "language" {
+		return "", parsed.Language, ErrDraftLanguage
 	}
 	if resp.StatusCode != http.StatusOK {
 		if parsed.Error == "" {
 			parsed.Error = resp.Status
 		}
-		return "", fmt.Errorf("asr %s: %s", resp.Status, parsed.Error)
+		return "", "", fmt.Errorf("asr %s: %s", resp.Status, parsed.Error)
 	}
-	return parsed.Text, nil
+	return parsed.Text, parsed.Language, nil
 }

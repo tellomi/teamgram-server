@@ -307854,6 +307854,10 @@ func (m *TLMessagesTranscribeAudio) Encode(x *EncodeBuf, layer int32) error {
 		m.GetPeer().Encode(x, layer)
 		x.Int(m.GetMsgId())
 
+	case 0x7e11da47:
+		x.UInt(0x7e11da47)
+		x.StringBytes(m.DraftAudio())
+
 	default:
 		// log.Errorf("")
 	}
@@ -307876,6 +307880,10 @@ func (m *TLMessagesTranscribeAudio) Decode(dBuf *DecodeBuf) error {
 		m.Peer = m1
 
 		m.MsgId = dBuf.Int()
+		return dBuf.GetError()
+
+	case 0x7e11da47:
+		m.SetDraftAudio(dBuf.StringBytes())
 		return dBuf.GetError()
 
 	default:
