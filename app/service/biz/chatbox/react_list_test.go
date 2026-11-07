@@ -9,6 +9,32 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestDifferenceReactionsAreCatchUpNotALoop(t *testing.T) {
+	b := newBook(nil)
+	now := time.Unix(1_700_000_200, 0)
+	b.now = func() time.Time { return now }
+	ctx := context.Background()
+	peer4 := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	if _, err := b.React(ctx, 4, peer4, 10, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	ups := b.DifferenceReactions(ctx, 9, 0)
+	if len(ups) != 1 || ups[0].GetPredicateName() != mtproto.Predicate_updateMessageReactions {
+		t.Fatalf("catch-up %+v", ups)
+	}
+	rx := ups[0].GetReactions_MESSAGEREACTIONS()
+	if len(rx.GetRecentReactions()) != 1 || !rx.GetRecentReactions()[0].GetUnread() {
+		t.Fatalf("recent %#v", rx.GetRecentReactions())
+	}
+	again := b.DifferenceReactions(ctx, 9, ups[0].GetReactions_MESSAGEREACTIONS().GetRecentReactions()[0].GetDate())
+	if len(again) != 0 {
+		t.Fatalf("same date was returned again: %d", len(again))
+	}
+	if mine := b.DifferenceReactions(ctx, 4, 0); len(mine) != 0 {
+		t.Fatal("the reactor was given their own reaction as unread")
+	}
+}
+
 func TestPrivateReactionListAndRefresh(t *testing.T) {
 	b := newBook(nil)
 	now := time.Unix(1_700_000_100, 0)

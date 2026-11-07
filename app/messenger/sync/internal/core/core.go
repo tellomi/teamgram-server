@@ -182,6 +182,18 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 				needPush = true
 			}
 		},
+		mtproto.Predicate_updateMessageReactions: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// The constructor has no pts. Mark it for delivery anyway so every
+			// online session of the message author is told. getDifference
+			// carries the same update from the reaction store, not from pts.
+			needPush = true
+		},
 		mtproto.Predicate_updatePeerSettings: func(
 			userId int64,
 			update *mtproto.Update,

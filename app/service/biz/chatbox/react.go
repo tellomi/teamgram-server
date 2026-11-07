@@ -385,6 +385,96 @@ func (b *Book) ApplyReactions(ctx context.Context, self int64, peer *mtproto.Pee
 	}
 }
 
+// DifferenceReactions is the updateMessageReactions list a user still needs
+// after updates.getDifference(date). updateMessageReactions has no pts, so
+// this is the catch-up instead of a pts row. Rows at or before since are
+// omitted so the next difference, which carries a later date, does not repeat
+// them.
+func (b *Book) DifferenceReactions(ctx context.Context, userID int64, since int32) []*mtproto.Update {
+	if b == nil || userID == 0 {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []*mtproto.Update
+	for key, doc := range b.react {
+		peer, ok := peerFromReactKey(key, userID)
+		if !ok || doc == nil {
+			continue
+		}
+		view := b.viewLocked(ctx, userID, peer, doc)
+		seen := map[int32]bool{}
+		for _, item := range view.Items {
+			if item.UserID == userID || item.Date <= since || seen[item.MsgID] {
+				continue
+			}
+			seen[item.MsgID] = true
+			out = append(out, reactionUpdate(peer, item.MsgID, view, userID))
+			if len(out) >= 50 {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+// MessageHasUnreadReaction reports whether userID has an unread reaction
+// from someone else on msgID. msgID is that user's own message id.
+func (b *Book) MessageHasUnreadReaction(ctx context.Context, userID int64, peer *mtproto.PeerUtil, msgID int32) bool {
+	if b == nil || userID == 0 || peer == nil || msgID <= 0 {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, userID, peer)
+	if err != nil || doc == nil {
+		return false
+	}
+	doc = b.viewLocked(ctx, userID, peer, doc)
+	readAt := doc.Read[userID]
+	for _, item := range doc.Items {
+		if item.MsgID == msgID && item.UserID != userID && item.Date > readAt {
+			return true
+		}
+	}
+	return false
+}
+
+func peerFromReactKey(key string, self int64) (*mtproto.PeerUtil, bool) {
+	if strings.HasPrefix(key, "react:dm:") {
+		parts := strings.Split(strings.TrimPrefix(key, "react:dm:"), ":")
+		if len(parts) != 2 {
+			return nil, false
+		}
+		a, errA := strconv.ParseInt(parts[0], 10, 64)
+		b, errB := strconv.ParseInt(parts[1], 10, 64)
+		if errA != nil || errB != nil {
+			return nil, false
+		}
+		other := a
+		if other == self {
+			other = b
+		}
+		if other == 0 || other == self {
+			return nil, false
+		}
+		return &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: other}, true
+	}
+	if !strings.HasPrefix(key, "react:") {
+		return nil, false
+	}
+	parts := strings.Split(strings.TrimPrefix(key, "react:"), ":")
+	if len(parts) != 2 {
+		return nil, false
+	}
+	kind, errK := strconv.ParseInt(parts[0], 10, 32)
+	id, errI := strconv.ParseInt(parts[1], 10, 64)
+	if errK != nil || errI != nil || id == 0 {
+		return nil, false
+	}
+	return &mtproto.PeerUtil{PeerType: int32(kind), PeerId: id}, true
+}
+
 func (b *Book) storeReact(ctx context.Context, self int64, peer *mtproto.PeerUtil, doc *reactDoc) error {
 	key := dialogReactKey(self, peer)
 	b.react[key] = doc

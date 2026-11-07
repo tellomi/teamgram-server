@@ -67,6 +67,31 @@ func Messages(userID int64, updates *mtproto.Updates) []Incoming {
 				LocKey: "ENCRYPTED_MESSAGE",
 			})
 		},
+		mtproto.Predicate_updateMessageReactions: func(userID int64, update *mtproto.Update, _ []*mtproto.User, _ []*mtproto.Chat, _ int32) {
+			// https://core.telegram.org/api/push-updates REACT_*
+			// The update has no message body, so the banner is REACT_NOTEXT.
+			rx := update.GetReactions_MESSAGEREACTIONS()
+			if rx == nil || update.GetMsgId_INT32() == 0 {
+				return
+			}
+			var sender int64
+			for _, row := range rx.GetRecentReactions() {
+				id := row.GetPeerId().GetUserId()
+				if id != 0 && id != userID {
+					sender = id
+					break
+				}
+			}
+			if sender == 0 {
+				return
+			}
+			out = append(out, Incoming{
+				UserID:   userID,
+				MsgID:    update.GetMsgId_INT32(),
+				SenderID: sender,
+				LocKey:   "REACT_NOTEXT",
+			})
+		},
 		mtproto.Predicate_updateEncryption: func(_ int64, update *mtproto.Update, _ []*mtproto.User, _ []*mtproto.Chat, _ int32) {
 			chat := update.GetChat()
 			if chat == nil || chat.GetPredicateName() != mtproto.Predicate_encryptedChatRequested || chat.GetId() == 0 {

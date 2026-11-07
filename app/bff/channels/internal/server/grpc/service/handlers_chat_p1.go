@@ -37,7 +37,7 @@ func (ReactionsService) MessagesGetUnreadReactions(ctx context.Context, in *mtpr
 // MessagesReadReactions marks reactions in the dialog as read.
 //
 // https://core.telegram.org/method/messages.readReactions
-func (ReactionsService) MessagesReadReactions(ctx context.Context, in *mtproto.TLMessagesReadReactions) (*mtproto.Messages_AffectedHistory, error) {
+func (s ReactionsService) MessagesReadReactions(ctx context.Context, in *mtproto.TLMessagesReadReactions) (*mtproto.Messages_AffectedHistory, error) {
 	self, _ := actor(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -46,8 +46,15 @@ func (ReactionsService) MessagesReadReactions(ctx context.Context, in *mtproto.T
 	if peer.IsChannel() {
 		return channel.Shared().ReadReactions(ctx, self, peer.PeerId, flag32(in.GetTopMsgId()))
 	}
+	unread, err := chatbox.Shared().UnreadReactions(ctx, self, peer, 0, 0, 100, 0, 0)
+	if err != nil {
+		return nil, err
+	}
 	if err := chatbox.Shared().ReadReactions(ctx, self, peer); err != nil {
 		return nil, err
+	}
+	if peer.IsUser() && len(unread) > 0 {
+		s.addUnreadReactions(ctx, self, peer.PeerId, -int32(len(unread)))
 	}
 	return chatbox.AffectedHistory(0, 0), nil
 }

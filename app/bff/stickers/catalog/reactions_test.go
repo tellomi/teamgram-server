@@ -54,6 +54,28 @@ func TestAvailableReactionsUseTheirOwnArt(t *testing.T) {
 	}
 }
 
+func TestReactionFileWinsOverStickerCollision(t *testing.T) {
+	s := newService(builtinPacks())
+	var id int64
+	for _, r := range s.Reactions(0).GetReactions() {
+		if r.GetReaction() == "👍" {
+			id = r.GetStaticIcon().GetId()
+		}
+	}
+	if id == 0 {
+		t.Fatal("no thumbs-up icon")
+	}
+	s.mu.Lock()
+	s.docs[id] = &linkedDoc{item: &Item{AssetPath: "assets/twemoji/1f436.webp", MIME: "image/webp"}}
+	s.mu.Unlock()
+	body, mime, ok := s.DocumentFile(id)
+	thumbs, _ := readAsset("assets/twemoji/1f44d.webp")
+	dog, _ := readAsset("assets/twemoji/1f436.webp")
+	if !ok || mime != "image/webp" || !bytes.Equal(body, thumbs) || bytes.Equal(body, dog) {
+		t.Fatal("reaction download returned the colliding sticker")
+	}
+}
+
 func TestOfficialEmojiVariation(t *testing.T) {
 	// Official reactions and Unicode fully-qualified forms.
 	// https://unicode.org/Public/emoji/latest/emoji-test.txt
