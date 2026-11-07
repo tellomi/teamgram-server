@@ -151,7 +151,7 @@ func TestPrivateUnreadReactionsAndDefault(t *testing.T) {
 }
 
 func TestWebPagePreview(t *testing.T) {
-	restore := stubWebFetch(pageMeta{Title: "Hello", Description: "A page", Site: "Tellomi"})
+	restore := stubWebFetch(t, pageMeta{Title: "Hello", Description: "A page", Site: "Tellomi"})
 	defer restore()
 	page, err := WebPage("https://tellomi.example/a", 0)
 	if err != nil || page.GetUrl_STRING() == "" || page.GetPredicateName() != mtproto.Predicate_webPage {
@@ -178,7 +178,7 @@ func TestWebPagePreview(t *testing.T) {
 }
 
 func TestInputWebPageIsDecodableCard(t *testing.T) {
-	restore := stubWebFetch(pageMeta{Title: "Apple", Site: "Apple"})
+	restore := stubWebFetch(t, pageMeta{Title: "Apple", Site: "Apple"})
 	defer restore()
 	in := mtproto.MakeTLInputMediaWebPage(&mtproto.InputMedia{
 		Url:             "https://apple.com",

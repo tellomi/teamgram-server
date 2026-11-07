@@ -8,6 +8,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -315,33 +316,48 @@ type WebPageService struct {
 // MessagesGetWebPage8D9692A3 is messages.getWebPage#8d9692a3.
 // https://core.telegram.org/method/messages.getWebPage
 func (WebPageService) MessagesGetWebPage8D9692A3(ctx context.Context, in *mtproto.TLMessagesGetWebPage8D9692A3) (*mtproto.Messages_WebPage, error) {
-	page, err := chatbox.WebPage(in.GetUrl(), in.GetHash())
+	page, chats, users, err := webpage.Get(ctx, in.GetUrl(), in.GetHash())
 	if err != nil {
 		return nil, err
 	}
+	if chats == nil {
+		chats = []*mtproto.Chat{}
+	}
+	if users == nil {
+		users = []*mtproto.User{}
+	}
 	return mtproto.MakeTLMessagesWebPage(&mtproto.Messages_WebPage{
 		Webpage: page,
-		Chats:   []*mtproto.Chat{},
-		Users:   []*mtproto.User{},
+		Chats:   chats,
+		Users:   users,
 	}).To_Messages_WebPage(), nil
 }
 
 // MessagesGetWebPage32CA8F91 is the older messages.getWebPage that returns WebPage.
 func (WebPageService) MessagesGetWebPage32CA8F91(ctx context.Context, in *mtproto.TLMessagesGetWebPage32CA8F91) (*mtproto.WebPage, error) {
-	return chatbox.WebPage(in.GetUrl(), in.GetHash())
+	page, _, _, err := webpage.Get(ctx, in.GetUrl(), in.GetHash())
+	return page, err
 }
 
 // MessagesGetWebPagePreview570D6F6F is messages.getWebPagePreview#570d6f6f.
 // https://core.telegram.org/method/messages.getWebPagePreview
 func (WebPageService) MessagesGetWebPagePreview570D6F6F(ctx context.Context, in *mtproto.TLMessagesGetWebPagePreview570D6F6F) (*mtproto.Messages_WebPagePreview, error) {
+	media, chats, users := webpage.Preview(ctx, in.GetMessage(), in.GetEntities())
+	if chats == nil {
+		chats = []*mtproto.Chat{}
+	}
+	if users == nil {
+		users = []*mtproto.User{}
+	}
 	return mtproto.MakeTLMessagesWebPagePreview(&mtproto.Messages_WebPagePreview{
-		Media: chatbox.WebPagePreview(in.GetMessage(), in.GetEntities()),
-		Chats: []*mtproto.Chat{},
-		Users: []*mtproto.User{},
+		Media: media,
+		Chats: chats,
+		Users: users,
 	}).To_Messages_WebPagePreview(), nil
 }
 
 // MessagesGetWebPagePreview8B68B0CC is the older preview that returns MessageMedia.
 func (WebPageService) MessagesGetWebPagePreview8B68B0CC(ctx context.Context, in *mtproto.TLMessagesGetWebPagePreview8B68B0CC) (*mtproto.MessageMedia, error) {
-	return chatbox.WebPagePreview(in.GetMessage(), in.GetEntities()), nil
+	media, _, _ := webpage.Preview(ctx, in.GetMessage(), in.GetEntities())
+	return media, nil
 }

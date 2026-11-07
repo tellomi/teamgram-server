@@ -19,7 +19,9 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-func stubWebFetch(meta pageMeta) func() {
+func stubWebFetch(t *testing.T, meta pageMeta) func() {
+	t.Helper()
+	t.Setenv(EnvServerLinkFetch, "1")
 	prev := loadWebPage
 	loadWebPage = func(*url.URL) fetchResult { return fetchResult{meta: meta} }
 	return func() { loadWebPage = prev }
@@ -77,7 +79,7 @@ func TestOpenGraphAndPhoto(t *testing.T) {
 	if meta.Title != "Hello" || meta.Description != "From the page" || meta.Site != "Example" || meta.ImageURL != "https://example.com/pic.jpg" {
 		t.Fatalf("meta %#v", meta)
 	}
-	restore := stubWebFetch(pageMeta{
+	restore := stubWebFetch(t, pageMeta{
 		Title: "Hello", Description: "From the page", Site: "Example",
 		Image: buf.Bytes(), ImageMIME: "image/jpeg",
 	})
@@ -101,7 +103,7 @@ func TestTallVideoPreviewKeepsAspect(t *testing.T) {
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 40}); err != nil {
 		t.Fatal(err)
 	}
-	restore := stubWebFetch(pageMeta{
+	restore := stubWebFetch(t, pageMeta{
 		Title: "Tall", Image: buf.Bytes(), ImageMIME: "image/jpeg",
 	})
 	defer restore()
@@ -123,7 +125,7 @@ func TestTallVideoPreviewKeepsAspect(t *testing.T) {
 		t.Fatal(err)
 	}
 	restore()
-	restore = stubWebFetch(pageMeta{
+	restore = stubWebFetch(t, pageMeta{
 		Title: "Douyin", OGType: "video.other", HasVideo: true,
 		VideoW: 720, VideoH: 1280,
 		Image: buf.Bytes(), ImageMIME: "image/jpeg",
@@ -227,6 +229,25 @@ func TestFetchOpenGraphImageUsesFinalURL(t *testing.T) {
 	}
 }
 
+func TestExternalFetchOffByDefault(t *testing.T) {
+	t.Setenv(EnvServerLinkFetch, "")
+	called := false
+	prev := loadWebPage
+	loadWebPage = func(*url.URL) fetchResult {
+		called = true
+		return fetchResult{meta: pageMeta{Title: "Apple"}}
+	}
+	defer func() { loadWebPage = prev }()
+	page, err := WebPage("https://www.apple.com/tellomi-fetch-off", 0)
+	if err != nil || called || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+		t.Fatalf("page %s called %v err %v", page.GetPredicateName(), called, err)
+	}
+	preview := WebPagePreview("https://www.apple.com/tellomi-fetch-off-preview", nil)
+	if preview.GetPredicateName() != mtproto.Predicate_messageMediaEmpty {
+		t.Fatalf("preview %s", preview.GetPredicateName())
+	}
+}
+
 func TestOneLineKeepsUTF8(t *testing.T) {
 	s := strings.Repeat("a", 299) + "é" + "z"
 	got := oneLine(s)
@@ -236,6 +257,7 @@ func TestOneLineKeepsUTF8(t *testing.T) {
 }
 
 func TestWebPageFailureShapes(t *testing.T) {
+	t.Setenv(EnvServerLinkFetch, "1")
 	prev := loadWebPage
 	defer func() { loadWebPage = prev }()
 	loadWebPage = func(*url.URL) fetchResult { return fetchResult{failed: true} }

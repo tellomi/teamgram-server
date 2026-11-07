@@ -1,5 +1,8 @@
 # Link preview API
 
+This document is the public JSON resolver on port 8801. It does not build the
+`webPage` attached to a chat message. Chat cards are `docs/api/client-link-preview.md`.
+
 Public read-only JSON for the Cloudflare Worker that renders tell.cc pages.
 tell.cc is the t.me host. The API resolves the same path shapes Telegram's
 t.me site does, and it returns only data that is already public.

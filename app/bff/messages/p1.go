@@ -1,17 +1,68 @@
 package messages_helper
 
 import (
+	"context"
+	"strings"
+
 	"github.com/teamgram/marmota/pkg/net/rpcx"
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
+	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
+	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // NewPolls serves messages.sendVote and the other poll RPCs.
 func NewPolls() *service.PollsService { return &service.PollsService{} }
 
 // NewWebPage serves messages.getWebPage and messages.getWebPagePreview.
-func NewWebPage() *service.WebPageService { return &service.WebPageService{} }
+func NewWebPage(c Config) *service.WebPageService {
+	BindUsers(user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)))
+	return &service.WebPageService{}
+}
+
+// BindUsers installs the public username lookup used by telegram_user cards.
+func BindUsers(c user_client.UserClient) {
+	if c == nil {
+		return
+	}
+	webpage.BindUserResolver(func(ctx context.Context, username string) (webpage.UserCard, bool) {
+		peer, err := c.UserResolveUsername(ctx, &user.TLUserResolveUsername{Username: username})
+		if err != nil || peer == nil || peer.GetUserId() == 0 {
+			return webpage.UserCard{}, false
+		}
+		card := webpage.UserCard{ID: peer.GetUserId(), Title: username}
+		list, err := c.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{Id: []int64{peer.GetUserId()}})
+		if err != nil || list == nil {
+			return card, true
+		}
+		for _, it := range list.GetDatas() {
+			data := it.GetUser()
+			if data == nil || data.GetId() != peer.GetUserId() {
+				continue
+			}
+			name := strings.TrimSpace(strings.TrimSpace(data.GetFirstName()) + " " + strings.TrimSpace(data.GetLastName()))
+			if name != "" {
+				card.Title = name
+			}
+			if data.GetAbout() != nil {
+				card.About = data.GetAbout().GetValue()
+			}
+			card.User = mtproto.MakeTLUser(&mtproto.User{
+				Id:         data.GetId(),
+				AccessHash: wrapperspb.Int64(data.GetAccessHash()),
+				FirstName:  wrapperspb.String(data.GetFirstName()),
+				LastName:   wrapperspb.String(data.GetLastName()),
+				Username:   wrapperspb.String(data.GetUsername()),
+			}).To_User()
+			break
+		}
+		return card, true
+	})
+}
 
 // NewScheduled serves the scheduled-message inbox. Sending a scheduled
 // message goes through messenger.msg, same as messages.sendMessage.

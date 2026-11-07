@@ -93736,6 +93736,23 @@ func (m *TLInputMediaWebPage) Encode(x *EncodeBuf, layer int32) error {
 			if m.GetOptional() == true {
 				flags |= 1 << 2
 			}
+			// Tellomi extension of inputMediaWebPage#c21b8849.
+			// Official layer 232 stops at flags.2. flags.3–6 carry a card the
+			// sending client fetched itself. A future official assignment of
+			// these bits has to replace this extension. See
+			// docs/api/client-link-preview.md.
+			if m.Data2.GetTitle() != "" {
+				flags |= 1 << 3
+			}
+			if m.Data2.GetDescription() != "" {
+				flags |= 1 << 4
+			}
+			if m.Data2.GetProvider_STRING() != "" {
+				flags |= 1 << 5
+			}
+			if photo := m.Data2.GetId_INPUTPHOTO(); photo != nil && photo.GetId() != 0 {
+				flags |= 1 << 6
+			}
 
 			return flags
 		}
@@ -93744,6 +93761,20 @@ func (m *TLInputMediaWebPage) Encode(x *EncodeBuf, layer int32) error {
 		var flags = getFlags()
 		x.UInt(flags)
 		x.String(m.GetUrl())
+		if (flags & (1 << 3)) != 0 {
+			x.String(m.Data2.GetTitle())
+		}
+		if (flags & (1 << 4)) != 0 {
+			x.String(m.Data2.GetDescription())
+		}
+		if (flags & (1 << 5)) != 0 {
+			x.String(m.Data2.GetProvider_STRING())
+		}
+		if (flags & (1 << 6)) != 0 {
+			if err := m.Data2.GetId_INPUTPHOTO().Encode(x, layer); err != nil {
+				return err
+			}
+		}
 
 		return nil
 
@@ -93771,6 +93802,22 @@ func (m *TLInputMediaWebPage) Decode(dBuf *DecodeBuf) error {
 			m.SetOptional(true)
 		}
 		m.SetUrl(dBuf.String())
+		// Tellomi extension. Official clients leave flags.3–6 unset.
+		// See docs/api/client-link-preview.md.
+		if (flags & (1 << 3)) != 0 {
+			m.Data2.Title = dBuf.String()
+		}
+		if (flags & (1 << 4)) != 0 {
+			m.Data2.Description = dBuf.String()
+		}
+		if (flags & (1 << 5)) != 0 {
+			m.Data2.Provider_STRING = dBuf.String()
+		}
+		if (flags & (1 << 6)) != 0 {
+			photo := &InputPhoto{}
+			photo.Decode(dBuf)
+			m.Data2.Id_INPUTPHOTO = photo
+		}
 		return dBuf.GetError()
 
 	default:

@@ -260,10 +260,15 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 ## Discover link cards
 
-`TELLOMI_LINK_PREVIEW=1` serves `POST /internal/v1/link-preview` on bff so content-engine can build a Discover card. Unset does not listen. The fetch is the same SSRF-protected Open Graph read as `messages.getWebPage`: private, loopback, and link-local addresses are refused before the request and again after DNS and redirects. Bracketed IPv6 and `localhost` are refused before the request. A block after DNS or a redirect is HTTP 400. A relative image URL is resolved against the final page URL. The JSON card is title, description, image URL, and site name. It does not use the public tell.cc resolver on port 8801. The contract is `docs/api/link-preview-card.md`.
+`TELLOMI_LINK_PREVIEW=1` serves `POST /internal/v1/link-preview` on bff so content-engine can build a Discover card. Unset does not listen. The fetch is the same SSRF-protected Open Graph read that chat used before external fetch was turned off: private, loopback, and link-local addresses are refused before the request and again after DNS and redirects. Bracketed IPv6 and `localhost` are refused before the request. A block after DNS or a redirect is HTTP 400. A relative image URL is resolved against the final page URL. The JSON card is title, description, image URL, and site name. It does not use the public tell.cc resolver on port 8801. The contract is `docs/api/link-preview-card.md`.
+
+Chat cards are separate. Internal `tell.cc` / `t.me` links are built from local data. External pages are not fetched unless `TELLOMI_SERVER_LINK_FETCH=1`. A sender that fetched Open Graph on-device submits it as `inputMediaWebPage` flags.3–6. The contract is `docs/api/client-link-preview.md`.
 
 | Call | File | Hook |
 | --- | --- | --- |
+| `messages.getWebPage` | `app/bff/messages/webpage` | `webpage.Get` |
+| `messages.sendMessage` | `app/bff/messages/internal/core/messages.sendMessage_handler.go` | `webpage.PreviewMedia` |
+| `messages.sendMedia` | `app/bff/messages/internal/core/core_messages_helper.go` | `webpage.Media` |
 | bff start | `app/bff/bff/internal/server/server.go` | `chatbox.StartLinkPreview` |
 
 ## Chat primary and standby (M8 / D-70)

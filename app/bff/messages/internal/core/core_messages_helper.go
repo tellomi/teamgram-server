@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
-	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
@@ -263,9 +263,11 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 	case mtproto.Predicate_inputMediaWebPage:
 		// inputMediaWebPage#c21b8849 flags:# force_large_media:flags.0?true force_small_media:flags.1?true optional:flags.2?true url:string = InputMedia;
 		// https://core.telegram.org/api/link-preview
-		// A https link is sent as this media. messageMediaUnsupported#9f84f49e
-		// is what the client draws as the paper-plane "unsupported message" bubble.
-		messageMedia, err = chatbox.MediaForInputWebPage(media)
+		// Tellomi flags.3–6 carry a card the sender fetched locally.
+		// See docs/api/client-link-preview.md.
+		// messageMediaUnsupported#9f84f49e is what the client draws as the
+		// paper-plane "unsupported message" bubble.
+		messageMedia, err = webpage.Media(c.ctx, media, c.uploadedPhoto)
 	case mtproto.Predicate_inputMediaPaidMedia:
 		// inputMediaPaidMedia#c4103386 flags:# stars_amount:long extended_media:Vector<InputMedia> payload:flags.0?string = InputMedia;
 
@@ -279,6 +281,29 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 	}
 
 	return
+}
+
+// uploadedPhoto is a photo the sender already stored with messages.uploadMedia.
+// A missing id is omitted. The Open Graph text is still unverified.
+func (c *MessagesCore) uploadedPhoto(ctx context.Context, in *mtproto.InputPhoto) *mtproto.Photo {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MediaClient == nil || in == nil || in.GetId() == 0 {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	sizes, err := c.svcCtx.Dao.MediaGetPhotoSizeList(ctx, &mediapb.TLMediaGetPhotoSizeList{SizeId: in.GetId()})
+	if err != nil || sizes == nil || len(sizes.GetSizes()) == 0 {
+		return nil
+	}
+	return mtproto.MakeTLPhoto(&mtproto.Photo{
+		Id:            in.GetId(),
+		AccessHash:    in.GetAccessHash(),
+		FileReference: in.GetFileReference(),
+		Date:          int32(time.Now().Unix()),
+		DcId:          sizes.GetDcId(),
+		Sizes:         sizes.GetSizes(),
+	}).To_Photo()
 }
 
 //// TODO(@benqi): mention...

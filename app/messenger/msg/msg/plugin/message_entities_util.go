@@ -9,6 +9,7 @@ package plugin
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -27,9 +28,13 @@ func RemakeMessage(ctx context.Context, plugin MsgPlugin, message *mtproto.Messa
 	if len(rIndexes) > 0 {
 		firstURL = message.Message[rIndexes[0][0]:rIndexes[0][1]]
 	}
-	if !noWebpage && firstURL != "" && plugin != nil {
+	if noWebpage {
+		if message.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaWebPage {
+			message.Media = nil
+		}
+	} else if firstURL != "" && plugin != nil && !keptWebPage(message.GetMedia()) {
 		webpage, _ := plugin.GetWebpagePreview(ctx, firstURL)
-		if webpage != nil {
+		if webpage.GetPredicateName() == mtproto.Predicate_webPage {
 			message.Media = mtproto.MakeTLMessageMediaWebPage(&mtproto.MessageMedia{
 				Webpage: webpage,
 			}).To_MessageMedia()
@@ -63,6 +68,23 @@ func RemakeMessage(ctx context.Context, plugin MsgPlugin, message *mtproto.Messa
 	message.Entities = entities
 	message.SanitizeEntities()
 	return message
+}
+
+// keptWebPage is a card already chosen for this message: an internal
+// telegram_* page, or a page the sending client submitted. A later preview
+// must not replace it.
+func keptWebPage(media *mtproto.MessageMedia) bool {
+	if media.GetPredicateName() != mtproto.Predicate_messageMediaWebPage {
+		return false
+	}
+	page := media.GetWebpage()
+	if page.GetPredicateName() != mtproto.Predicate_webPage {
+		return false
+	}
+	if strings.HasPrefix(page.GetType().GetValue(), "telegram_") {
+		return true
+	}
+	return page.GetAuthor().GetValue() == "unverified"
 }
 
 func normalizeClientEntities(entities []*mtproto.MessageEntity, fromID int64) []*mtproto.MessageEntity {

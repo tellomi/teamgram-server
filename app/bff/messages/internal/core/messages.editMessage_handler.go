@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 
@@ -143,6 +144,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		}
 		outMessage.Message = in.Message.Value
 		outMessage.Entities = nil
+		refreshInternalPreview(c, in.NoWebpage, in.Media != nil, outMessage)
 		//outMessage, _ = c.fixMessageEntities(c.MD.UserId, peer, in.NoWebpage, outMessage, func() bool {
 		//	hasBot := c.MD.IsBot
 		//	if !hasBot {
@@ -154,6 +156,8 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		//
 		//	return hasBot
 		//})
+	} else if in.NoWebpage {
+		refreshInternalPreview(c, true, in.Media != nil, outMessage)
 	}
 
 	rUpdates, err := c.svcCtx.Dao.MsgClient.MsgEditMessageV2(c.ctx, &msgpb.TLMsgEditMessageV2{
@@ -177,4 +181,32 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	}
 
 	return rUpdates, nil
+}
+
+// refreshInternalPreview attaches or clears a native internal link card when
+// the text of a message changes. A photo, file, or other media is left alone.
+func refreshInternalPreview(c *MessagesCore, noWebpage, hasMedia bool, out *mtproto.Message) {
+	if c == nil || out == nil || hasMedia {
+		return
+	}
+	kind := ""
+	if out.Media != nil {
+		kind = out.Media.GetPredicateName()
+	}
+	if kind != "" && kind != mtproto.Predicate_messageMediaEmpty && kind != mtproto.Predicate_messageMediaWebPage {
+		return
+	}
+	if noWebpage {
+		if kind == mtproto.Predicate_messageMediaWebPage {
+			out.Media = nil
+		}
+		return
+	}
+	if media := webpage.PreviewMedia(c.ctx, out.Message, out.Entities); media != nil {
+		out.Media = media
+		return
+	}
+	if kind == mtproto.Predicate_messageMediaWebPage {
+		out.Media = nil
+	}
 }

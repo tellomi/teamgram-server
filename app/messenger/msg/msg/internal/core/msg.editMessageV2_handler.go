@@ -68,6 +68,9 @@ func (c *MsgCore) MsgEditMessageV2(in *msg.TLMsgEditMessageV2) (*mtproto.Updates
 			if edited.Media != nil {
 				m.Media = mtproto.KeepTodoCompletions(m.GetMedia(), edited.Media)
 			}
+			if noWebpage && m.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaWebPage {
+				m.Media = nil
+			}
 			if edited.Entities != nil {
 				m.Entities = edited.Entities
 			}
