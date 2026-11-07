@@ -10,10 +10,10 @@ import (
 )
 
 // TestRichTranslateAndCompose is the chat-screen path that used to return
-// ENTERPRISE_IS_BLOCKED. Translation and compose call Bailian only when
-// TELLOMI_TRANSLATE / TELLOMI_AI_COMPOSE are on. CI leaves both off, so a
-// valid call is TRANSLATE_REQ_FAILED or AICOMPOSE_TIMEOUT rather than a
-// word-list or echo result.
+// ENTERPRISE_IS_BLOCKED. Translation uses the self-hosted sidecar only.
+// CI does not set TELLOMI_TRANSLATE_URL, so a Chinese request is
+// TRANSLATE_REQ_FAILED. Compose still uses Bailian when TELLOMI_AI_COMPOSE
+// is on; CI leaves that off, so a valid compose is AICOMPOSE_TIMEOUT.
 func TestRichTranslateAndCompose(t *testing.T) {
 	a, _, _, bSelf := sharedPair(t)
 	ctx, cancel := contextTimeout(40 * time.Second)
@@ -37,9 +37,10 @@ func TestRichTranslateAndCompose(t *testing.T) {
 
 	// peer and id share flag bit 0. An omitted id is not encoded, and the
 	// session drops the frame. An empty vector is the call with no message ids.
+	// to_lang is checked first, so this has to be Chinese to reach the id check.
 	_, err = a.Invoke(ctx, &mtproto.TLMessagesTranslateRichMessage{
 		Constructor: mtproto.CRC32_messages_translateRichMessage,
-		ToLang:      "en",
+		ToLang:      "zh",
 		Peer:        peer,
 		Id:          []int32{},
 	})
