@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 	"github.com/teamgram/teamgram-server/pkg/readtime"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/proto"
@@ -675,11 +676,61 @@ func (s *Service) HistoryByID(ctx context.Context, user, channelID int64, q Hist
 	return s.history(ctx, user, ch, q)
 }
 
+func withoutExpired(ch *Channel, all []*StoredMessage, now int32) []*StoredMessage {
+	if ch == nil || !msgexpiry.Enabled() {
+		return all
+	}
+	kept := make([]*StoredMessage, 0, len(all))
+	for _, stored := range all {
+		if stored != nil && msgexpiry.Expired(stored.Date, ch.TtlPeriod, now) {
+			continue
+		}
+		kept = append(kept, stored)
+	}
+	return kept
+}
+
+// sweepExpired marks already-expired channel messages deleted and tells every
+// member. A second call finds them deleted and pushes nothing. It does not
+// run unless TELLOMI_MESSAGE_EXPIRY_SWEEP=1, and nothing starts it at boot.
+func (s *Service) sweepExpired(ctx context.Context, ch *Channel, actor int64) {
+	if ch == nil || ch.TtlPeriod <= 0 || !msgexpiry.SweepEnabled() {
+		return
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return
+	}
+	now := int32(time.Now().Unix())
+	items := make([]msgexpiry.Item, 0, len(msgs))
+	for _, m := range msgs {
+		if m == nil {
+			continue
+		}
+		items = append(items, msgexpiry.Item{ID: m.ID, Date: m.Date, TTL: ch.TtlPeriod, Deleted: m.Deleted})
+	}
+	ids := msgexpiry.Plan(items, now)
+	if len(ids) == 0 {
+		return
+	}
+	pts, count, deleted, err := s.store.CommitDelete(ctx, ch.ID, ids)
+	if err != nil || count == 0 {
+		return
+	}
+	s.emit(ctx, actor, 0, ch.ID, func(viewer int64) *mtproto.Updates {
+		return s.updatesWith(ctx, viewer, ch, deleteUpdate(ch.ID, deleted, pts, count))
+	})
+}
+
 func (s *Service) history(ctx context.Context, user int64, ch *Channel, q HistoryQuery) (*mtproto.Messages_Messages, error) {
+	if msgexpiry.SweepEnabled() {
+		s.sweepExpired(ctx, ch, user)
+	}
 	all, err := s.store.ListMessages(ctx, ch.ID)
 	if err != nil {
 		return nil, err
 	}
+	all = withoutExpired(ch, all, int32(time.Now().Unix()))
 	page, total := selectHistory(all, q)
 	feat := s.features(ctx, ch.ID)
 	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
@@ -730,7 +781,7 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		if err != nil {
 			return nil, err
 		}
-		if stored == nil || stored.Deleted {
+		if stored == nil || stored.Deleted || msgexpiry.Enabled() && msgexpiry.Expired(stored.Date, ch.TtlPeriod, int32(time.Now().Unix())) {
 			msgs = append(msgs, mtproto.MakeTLMessageEmpty(&mtproto.Message{
 				Id:     id,
 				PeerId: mtproto.MakePeerChannel(ch.ID),
@@ -796,6 +847,14 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 		case KindNew:
 			body, err := unmarshalMessage(e.Payload)
 			if err != nil {
+				continue
+			}
+			if msgexpiry.Enabled() && msgexpiry.Expired(body.GetDate(), ch.TtlPeriod, int32(time.Now().Unix())) {
+				id := e.MessageID
+				if id == 0 {
+					id = body.GetId()
+				}
+				other = append(other, deleteUpdate(ch.ID, []int32{id}, e.Pts, e.PtsCount))
 				continue
 			}
 			view := viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user)

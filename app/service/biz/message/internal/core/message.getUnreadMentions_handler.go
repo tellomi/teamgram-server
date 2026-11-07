@@ -10,9 +10,12 @@
 package core
 
 import (
+	"math"
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
-	"math"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
 
 // MessageGetUnreadMentions
@@ -94,6 +97,6 @@ func (c *MessageCore) MessageGetUnreadMentions(in *message.TLMessageGetUnreadMen
 	}
 
 	return &message.Vector_MessageBox{
-		Datas: boxList,
+		Datas: msgexpiry.FilterBoxes(boxList, int32(time.Now().Unix())),
 	}, nil
 }
