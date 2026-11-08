@@ -134,7 +134,7 @@ func ContactMatters(userID int64, now time.Time) bool {
 func CheckCredential(userID int64, write bool, now time.Time) Decision {
 	s := Current()
 	if s == nil {
-		return Decision{Allowed: true, State: "off"}
+		return Decision{Allowed: false, Code: "ENFORCEMENT_DISABLED", State: "disabled"}
 	}
 	if userID == 0 {
 		return Decision{Allowed: false, Code: "ACCOUNT_STATE_UNKNOWN", State: stateUnknown, FailClosed: true}

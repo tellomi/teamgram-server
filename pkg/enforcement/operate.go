@@ -345,16 +345,21 @@ func (s *Service) decideLocked(userID int64, action string, stranger bool, now t
 	}
 	s.expireLocked(userID, now)
 	snap := s.snapshotLocked(userID, now)
+	snap.securityLock = s.locks[userID]
 	s.known[userID] = snap
 	return s.decideFrom(snap, action, stranger, false)
 }
 
 func (s *Service) decideFrom(snap snapshot, action string, stranger, failed bool) Decision {
 	d := Decision{Allowed: true, State: "normal", FailClosed: failed, CaseIDs: append([]string(nil), snap.cases...), EndsAt: snap.ends}
-	if !snap.restricts {
+	if !snap.restricts && !snap.securityLock {
 		return d
 	}
-	d.State = snap.code
+	if snap.restricts {
+		d.State = snap.code
+	} else if snap.securityLock {
+		d.State = KindSecurity
+	}
 	deny := false
 	switch action {
 	case "appeal", "read_notice", "logout", "identity":
@@ -367,10 +372,11 @@ func (s *Service) decideFrom(snap snapshot, action string, stranger, failed bool
 		} else if stranger && snap.scopes[ScopeStranger] {
 			deny = true
 		}
-	case "discover_post":
-		deny = snap.permanent || snap.readOnly || snap.scopes[ScopeDiscover]
-	case "discover_credential":
+	case "discover_read":
+		// PRD TC-18: a discover-post limit does not block browsing.
 		deny = snap.permanent
+	case "discover_post", "discover_credential":
+		deny = snap.permanent || snap.readOnly || snap.scopes[ScopeDiscover] || snap.securityLock
 	case "edit_profile":
 		deny = snap.permanent || snap.readOnly || snap.scopes[ScopeProfile]
 	case "change_identifier":
@@ -385,6 +391,8 @@ func (s *Service) decideFrom(snap snapshot, action string, stranger, failed bool
 			d.Code = "ACCOUNT_PERMANENT_DISABLED"
 		case snap.readOnly:
 			d.Code = "ACCOUNT_READ_ONLY"
+		case snap.securityLock && !snap.scopes[ScopeDiscover]:
+			d.Code = "ACCOUNT_SECURITY_LOCK"
 		default:
 			d.Code = "ACCOUNT_SCOPED_RESTRICTION"
 		}

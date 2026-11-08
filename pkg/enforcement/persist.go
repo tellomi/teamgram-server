@@ -165,6 +165,11 @@ var schemaDDL = []string{
 			auth_key BIGINT PRIMARY KEY,
 			proof VARCHAR(128) NOT NULL
 		)`,
+	`CREATE TABLE IF NOT EXISTS credential_subject (
+			sub VARCHAR(32) PRIMARY KEY,
+			user_id BIGINT NOT NULL,
+			KEY credential_subject_user (user_id)
+		)`,
 }
 
 func (s *Service) begin() error {

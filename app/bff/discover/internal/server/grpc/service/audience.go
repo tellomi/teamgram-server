@@ -82,6 +82,11 @@ func (s *Service) DiscoverGetAudienceToken(ctx context.Context, in *mtproto.TLDi
 	if err = discoverrel.Remember(ctx, userID, discoverauth.Pseudonym(keys.Pseudonym, userID)); err != nil {
 		logx.Errorf("discover relations: could not record subject")
 	}
+	if cur := enforcement.Current(); cur != nil {
+		if err = cur.RecordSubject(keys.Pseudonym, userID); err != nil {
+			logx.Errorf("discover audience: subject binding was not stored")
+		}
+	}
 	return mtproto.MakeDiscoverAudienceToken(issued.Token, int32(issued.Expires)), nil
 }
 

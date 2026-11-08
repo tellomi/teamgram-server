@@ -13,10 +13,12 @@
 | 状态 | 普通会话 | 读 | 写 | 发现读 | 发现写 |
 | --- | --- | --- | --- | --- | --- |
 | 无记录 | 允许 | 允许 | 允许 | 允许 | 允许 |
-| `scoped_restriction` | 允许 | 允许 | 只拒绝范围 | 允许，除非范围含 `discover_post` | 范围含 `discover_post` 时拒绝 |
+| `scoped_restriction` 且范围含 `discover_post` | 允许 | 允许 | 只拒绝该范围 | 允许浏览 | 拒绝发帖 |
 | `read_only_freeze` | 允许 | 允许 | 拒绝 | 允许 | 拒绝 |
 | `permanent_disabled` | 不签发 | 拒绝 | 拒绝 | 拒绝 | 拒绝 |
-| `security_lock` | 不签发 | 拒绝 | 拒绝 | 拒绝 | 拒绝 |
+| `security_lock` | 不签发普通会话 | 聊天阅读按安全恢复，不在本复查里放行聊天 | 拒绝 | 允许浏览 | 拒绝发帖和新凭证 |
+
+`discover_post` 不禁止发现浏览。这和 PRD TC-18 一致。上一版契约把「发现读」写成也会被这个范围拒绝，那个句子作废。`security_lock` 不是处罚记录；复查只在写和新凭证上返回 `ACCOUNT_SECURITY_LOCK`。没有锁记录时不会报这个状态。
 
 永久停用后的身份证明是处置凭证，不是普通 auth key，也不是发现 JWT。凭证只能读 777000 通知和提交自己的申诉。默认 15 分钟，过期后要重新核验。
 
@@ -52,10 +54,24 @@
 {"credential": "<discover JWT>", "write": true}
 ```
 
-服务端用现有 `discoverauth.Verify` 核对 HS256。用户号只从凭证的 `sub` 经 `discover_subject` 解析。请求里的 `user_id` 被忽略。静态 `Authorization: Bearer <共享密钥>` 不能指定用户。验签失败、主体未知、存储失败或超时都是 `allow: false`、`code: ACCOUNT_STATE_UNKNOWN`，HTTP 503。没有“允许”缓存。功能没安装时 `state` 是 `off`，这和存储故障不是同一件事。
+服务端用现有 `discoverauth.Verify` 核对 HS256。`sub` 不是用户号，也不能把看起来像数字的 `sub` 当成用户号。它是 `base64url(HMAC-SHA256(pseudonymKey, 十进制 user id) 的前 16 字节)`，新旧发现 JWT 都是这个算法。
+
+用户号只来自服务端自己写入的 `credential_subject`。签发 `discover.getEngineCredential` 或 `discover.getAudienceToken` 时，若处罚服务已安装，就用同一把 pseudonym key 把这个 `sub` 记下来。已经发出的旧票没有单独的 uid 字段；只要该用户被用同一把 key 记过一次，旧票的 `sub` 就能对上。这不是猜测。没有这行记录时返回 `status: unbound`、`code: SUBJECT_UNBOUND`、`allow: false`，不编一个用户号。显式补记是 `RecordSubject`，不在进程启动时扫描用户表。
+
+请求里的 `user_id` 被忽略。静态 Bearer 不能指定用户。
+
+| `status` | `allow` | 含义 |
+| --- | --- | --- |
+| `clear` | true | 已安装，读成功，这次操作没有被处罚或锁挡住 |
+| `enforced` | false | 已安装，读成功，按上表拒绝 |
+| `unbound` | false | 票验签通过，但没有服务端 sub 绑定 |
+| `unavailable` | false | 验签失败、存储失败或超时。不是「没有处罚」 |
+| `disabled` | false | 处理器或处罚服务没安装。不是成功放行 |
+
+没有「允许」缓存。`disabled` 和 `unavailable` 都是 HTTP 503。引擎不得把它们当成无处罚。
 
 ```json
-{"allow": false, "code": "ACCOUNT_PERMANENT_DISABLED", "state": "permanent_disabled"}
+{"allow": false, "status": "enforced", "code": "ACCOUNT_PERMANENT_DISABLED", "state": "permanent_disabled"}
 ```
 
 `allow: false` 时引擎必须拒绝这次读或写，不能因为 JWT 的 `exp` 还没到就放行。读用 `"write": false`。本仓测试覆盖这个判定。引擎进程这一批没有改，由引擎线按本文件接入。
@@ -87,9 +103,7 @@
 
 ## 客户端
 
-登录页在 OTP 和已设置的 2FA 都通过之后才看上面的码。永久停用进入处置页，不进聊天列表。只读和功能限制保持登录，被拒绝的操作展示状态和北京时间，不显示成网络错误。
-
-白名单（只读冻结和永久停用的处置凭证都保留）：提交申诉、补充说明、身份验证、阅读 777000 通知、退出。
+当前客户端保持官方 Telegram 行为。本文件不要求客户端接入自定义处置页。服务端仍对受保护操作返回上表错误码。处置 HTTP 只给已经持有一次性 proof 或处置凭证的调用方，不从客户端自报的用户号取数。
 
 ## 通知投递
 

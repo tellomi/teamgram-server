@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 )
 
 // RememberLoginProof keeps the verified phone_code_hash for this auth key
@@ -40,6 +42,51 @@ func (s *Service) TakeLoginProof(authKey int64) string {
 	var proof string
 	_ = s.db.QueryRow(`SELECT proof FROM login_proof WHERE auth_key = ?`, authKey).Scan(&proof)
 	return proof
+}
+
+// RecordSubject stores the discover sub for a user id. sub is
+// base64url(HMAC-SHA256(pseudonymKey, decimal user id)[:16]), the same value
+// already inside old and new feed JWTs. The sub string is not parsed as an
+// integer. This is not called during process startup.
+func (s *Service) RecordSubject(pseudonymKey []byte, userID int64) error {
+	if s == nil || userID <= 0 || len(pseudonymKey) == 0 {
+		return ErrNotFound
+	}
+	sub := discoverauth.EncodeSub(discoverauth.Pseudonym(pseudonymKey, userID))
+	if s.db == nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.subjects == nil {
+			s.subjects = map[string]int64{}
+		}
+		s.subjects[sub] = userID
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT INTO credential_subject (sub, user_id) VALUES (?,?) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id)`, sub, userID)
+	return err
+}
+
+// UserForSubject resolves a stored sub. A missing row is not an error and is
+// not a guessed user id.
+func (s *Service) UserForSubject(sub string) (int64, bool, error) {
+	if s == nil || sub == "" {
+		return 0, false, nil
+	}
+	if s.db == nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		id, ok := s.subjects[sub]
+		return id, ok, nil
+	}
+	var id int64
+	err := s.db.QueryRow(`SELECT user_id FROM credential_subject WHERE sub = ?`, sub).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return id, true, nil
 }
 
 // StashProof stores a one-time claim for a disposition grant. The proof is the

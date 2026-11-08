@@ -53,29 +53,53 @@ func (h CredentialHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		now = h.Now()
 	}
 	if h.Verify == nil {
-		writeDenied(w, http.StatusServiceUnavailable, "ACCOUNT_STATE_UNKNOWN", stateUnknown)
+		writeDeniedStatus(w, http.StatusServiceUnavailable, "disabled", "ENFORCEMENT_DISABLED", "disabled")
 		return
 	}
 	userID, err := h.Verify.Subject(ctx, body.Credential, now)
+	if errors.Is(err, ErrSubjectUnbound) {
+		writeDeniedStatus(w, http.StatusOK, "unbound", "SUBJECT_UNBOUND", "unbound")
+		return
+	}
 	if err != nil || userID == 0 {
-		writeDenied(w, http.StatusServiceUnavailable, "ACCOUNT_STATE_UNKNOWN", stateUnknown)
+		writeDeniedStatus(w, http.StatusServiceUnavailable, "unavailable", "ACCOUNT_STATE_UNKNOWN", stateUnknown)
 		return
 	}
 	// body.UserID is intentionally unused. The credential subject is the only identity.
 	d := CheckCredential(userID, body.Write, now)
-	status := http.StatusOK
-	if !d.Allowed && d.Code == "ACCOUNT_STATE_UNKNOWN" {
-		status = http.StatusServiceUnavailable
+	status, kind := http.StatusOK, "enforced"
+	switch {
+	case d.State == "disabled" || d.Code == "ENFORCEMENT_DISABLED":
+		status, kind = http.StatusServiceUnavailable, "disabled"
+		d.Allowed = false
+	case d.Code == "ACCOUNT_STATE_UNKNOWN" || d.Degraded:
+		status, kind = http.StatusServiceUnavailable, "unavailable"
+		d.Allowed = false
+	case d.Allowed:
+		kind = "clear"
 	}
 	writeJSON(w, status, map[string]any{
-		"allow": d.Allowed,
-		"code":  d.Code,
-		"state": d.State,
+		"allow":  d.Allowed,
+		"status": kind,
+		"code":   d.Code,
+		"state":  d.State,
 	})
 }
 
+// ErrSubjectUnbound means the JWT verified but no server-side sub binding exists.
+// It is not a guess and not a store outage.
+var ErrSubjectUnbound = errors.New("enforcement: credential subject is unbound")
+
 func writeDenied(w http.ResponseWriter, status int, code, state string) {
-	writeJSON(w, status, map[string]any{"allow": false, "code": code, "state": state})
+	kind := "unavailable"
+	if code == "ENFORCEMENT_DISABLED" {
+		kind = "disabled"
+	}
+	writeDeniedStatus(w, status, kind, code, state)
+}
+
+func writeDeniedStatus(w http.ResponseWriter, status int, kind, code, state string) {
+	writeJSON(w, status, map[string]any{"allow": false, "status": kind, "code": code, "state": state})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -100,7 +124,7 @@ func FeedSubject(signingKey []byte, lookup func(sub string) (int64, bool, error)
 		return 0, err
 	}
 	if !ok || userID == 0 {
-		return 0, errors.New("enforcement: credential subject is unknown")
+		return 0, ErrSubjectUnbound
 	}
 	return userID, nil
 }

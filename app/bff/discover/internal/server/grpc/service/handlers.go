@@ -56,5 +56,10 @@ func (s *Service) DiscoverGetEngineCredential(ctx context.Context, _ *mtproto.TL
 	if err = discoverrel.Remember(ctx, userID, discoverauth.Pseudonym(keys.Pseudonym, userID)); err != nil {
 		logx.Errorf("discover relations: could not record subject")
 	}
+	if cur := enforcement.Current(); cur != nil {
+		if err = cur.RecordSubject(keys.Pseudonym, userID); err != nil {
+			logx.Errorf("discover credential: subject binding was not stored")
+		}
+	}
 	return mtproto.MakeDiscoverEngineCredential(cred.Token, cred.Region, int32(cred.Expires)), nil
 }

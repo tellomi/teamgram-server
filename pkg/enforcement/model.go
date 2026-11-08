@@ -186,13 +186,14 @@ type Verdict struct {
 }
 
 type snapshot struct {
-	restricts bool
-	readOnly  bool
-	permanent bool
-	scopes    map[string]bool
-	code      string
-	ends      *time.Time
-	cases     []string
+	restricts    bool
+	readOnly     bool
+	permanent    bool
+	securityLock bool
+	scopes       map[string]bool
+	code         string
+	ends         *time.Time
+	cases        []string
 }
 
 // Service is safe for concurrent use. Two instances may share a Store.
@@ -229,6 +230,7 @@ type Service struct {
 	grants      map[string]*Grant
 	claims      map[string]*Grant
 	loginProof  map[int64]string
+	subjects    map[string]int64
 	known       map[int64]snapshot
 	failList    bool
 	failGet     bool

@@ -133,6 +133,96 @@ func TestMySQLSurvivesRestartAndRetriesNotice(t *testing.T) {
 	}
 }
 
+func TestDiscoverScopeAllowsReadAndSecurityLockDeniesPost(t *testing.T) {
+	s, _ := testSvc(true)
+	SetCurrent(s)
+	t.Cleanup(func() { SetCurrent(nil) })
+	now := s.clock()
+	end := now.Add(time.Hour)
+	if _, err := s.Create(Actor{ID: "a", Role: RoleAgent}, Sanction{
+		UserID: 4, Kind: KindScoped, Scopes: []string{ScopeDiscover},
+		ReasonCategory: "类别", PolicyClause: "条款", RuleVersion: "rule-1",
+		Start: now, End: &end, IdempotencyKey: "disc",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read := CheckCredential(4, false, now)
+	write := CheckCredential(4, true, now)
+	if !read.Allowed || read.Code != "" {
+		t.Fatalf("discover read %+v", read)
+	}
+	if write.Allowed || write.Code != "ACCOUNT_SCOPED_RESTRICTION" {
+		t.Fatalf("discover write %+v", write)
+	}
+	s.Lock(8)
+	lockedRead := CheckCredential(8, false, now)
+	lockedWrite := CheckCredential(8, true, now)
+	if !lockedRead.Allowed || lockedRead.State != KindSecurity {
+		t.Fatalf("lock read %+v", lockedRead)
+	}
+	if lockedWrite.Allowed || lockedWrite.Code != "ACCOUNT_SECURITY_LOCK" {
+		t.Fatalf("lock write %+v", lockedWrite)
+	}
+	s.FailList(true)
+	unknown := CheckCredential(99, true, now)
+	if unknown.Allowed || unknown.Code != "ACCOUNT_STATE_UNKNOWN" {
+		t.Fatalf("degraded %+v", unknown)
+	}
+	SetCurrent(nil)
+	off := CheckCredential(4, true, now)
+	if off.Allowed || off.Code != "ENFORCEMENT_DISABLED" || off.State != "disabled" {
+		t.Fatalf("disabled %+v", off)
+	}
+}
+
+func TestOldSubjectResolvesWithoutCallerUserID(t *testing.T) {
+	s, _ := testSvc(true)
+	SetCurrent(s)
+	t.Cleanup(func() { SetCurrent(nil) })
+	key := []byte("pseudonym-and-signing-key")
+	now := s.clock().UTC().Truncate(time.Second)
+	if err := s.RecordSubject(key, 42); err != nil {
+		t.Fatal(err)
+	}
+	token, err := discoverauth.Sign(key, discoverauth.Pseudonym(key, 42), discoverauth.RegionGlobal, now.Add(time.Hour).Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = discoverauth.Verify(key, token, now); err != nil {
+		t.Fatal(err)
+	}
+	h := CredentialHandler{Now: func() time.Time { return now }, Verify: subjectFunc(func(credential string, at time.Time) (int64, error) {
+		return FeedSubject(key, s.UserForSubject, credential, at)
+	})}
+	body := `{"credential":"` + token + `","write":true,"user_id":7}`
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":true`) || strings.Contains(rec.Body.String(), `"state":"permanent`) {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	other, err := discoverauth.Sign(key, discoverauth.Pseudonym(key, 7), discoverauth.RegionGlobal, now.Add(time.Hour).Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"`+other+`","write":false,"user_id":42}`))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "SUBJECT_UNBOUND") || strings.Contains(rec.Body.String(), `"allow":true`) {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	numeric := "42"
+	if id, ok, _ := s.UserForSubject(numeric); ok || id == 42 {
+		t.Fatal("numeric sub was treated as a user id")
+	}
+}
+
+type subjectFunc func(string, time.Time) (int64, error)
+
+func (f subjectFunc) Subject(_ context.Context, credential string, now time.Time) (int64, error) {
+	return f(credential, now)
+}
+
 func TestCredentialCheckUsesSignedSubject(t *testing.T) {
 	s, _ := testSvc(true)
 	SetCurrent(s)
