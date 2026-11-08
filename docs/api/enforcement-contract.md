@@ -56,7 +56,7 @@
 
 服务端用现有 `discoverauth.Verify` 核对 HS256。`sub` 不是用户号，也不能把看起来像数字的 `sub` 当成用户号。它是 `base64url(HMAC-SHA256(pseudonymKey, 十进制 user id) 的前 16 字节)`，新旧发现 JWT 都是这个算法。
 
-用户号只来自服务端自己写入的 `credential_subject`。签发 `discover.getEngineCredential` 或 `discover.getAudienceToken` 时，若处罚服务已安装，就用同一把 pseudonym key 把这个 `sub` 记下来。已经发出的旧票没有单独的 uid 字段；只要该用户被用同一把 key 记过一次，旧票的 `sub` 就能对上。这不是猜测。没有这行记录时返回 `status: unbound`、`code: SUBJECT_UNBOUND`、`allow: false`，不编一个用户号。显式补记是 `RecordSubject`，不在进程启动时扫描用户表。
+用户号只来自服务端自己写入的 `credential_subject`。签发 `discover.getEngineCredential` 或 `discover.getAudienceToken` 时，若处罚服务已安装，就用同一把 pseudonym key 把这个 `sub` 记下来。已经发出的旧票没有单独的 uid 字段；只要该用户被用同一把 key 记过一次，旧票的 `sub` 就能对上。这不是猜测。没有这行记录时返回 HTTP 403，`status` 和 `code` 都是 `enforcement_unavailable`，`allow: false`。不编用户号。这和 content-engine `1347091e256a1de1a971ed7685aa7154e72568ad` 的读写都拒绝一致。显式补记是 `RecordSubject`，不在进程启动时扫描用户表。请求头 `X-User-Id` 同样忽略。
 
 请求里的 `user_id` 被忽略。静态 Bearer 不能指定用户。
 
@@ -64,11 +64,13 @@
 | --- | --- | --- |
 | `clear` | true | 已安装，读成功，这次操作没有被处罚或锁挡住 |
 | `enforced` | false | 已安装，读成功，按上表拒绝 |
-| `unbound` | false | 票验签通过，但没有服务端 sub 绑定 |
-| `unavailable` | false | 验签失败、存储失败或超时。不是「没有处罚」 |
-| `disabled` | false | 处理器或处罚服务没安装。不是成功放行 |
+| `enforcement_unavailable` | false | HTTP 403。票验签通过但没有服务端 sub 绑定，或可信身份不足。读写都拒绝。不是处罚记录 |
+| `unavailable` | false | HTTP 503。验签失败、存储失败或超时。不是「没有处罚」 |
+| `disabled` | false | HTTP 503。处理器或处罚服务没安装。不是成功放行 |
 
-没有「允许」缓存。`disabled` 和 `unavailable` 都是 HTTP 503。引擎不得把它们当成无处罚。
+没有「允许」缓存。`401`、`403`、`5xx` 和无法解析的决定都不是放行。读请求如果超时或收到 5xx，不得把已经见到的 `permanent_disabled` 或 `security_lock` 清掉。写请求遇到超时或 5xx 直接拒绝。
+
+与 content-engine `1347091e256a1de1a971ed7685aa7154e72568ad` 对齐的是上面这组词。该引擎提交当时测到的服务端处理器仍是 `6710d1a3`，不能把那个结果当成这份契约已经联调通过。
 
 ```json
 {"allow": false, "status": "enforced", "code": "ACCOUNT_PERMANENT_DISABLED", "state": "permanent_disabled"}

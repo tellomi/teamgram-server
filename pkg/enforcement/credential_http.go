@@ -58,7 +58,9 @@ func (h CredentialHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	userID, err := h.Verify.Subject(ctx, body.Credential, now)
 	if errors.Is(err, ErrSubjectUnbound) {
-		writeDeniedStatus(w, http.StatusOK, "unbound", "SUBJECT_UNBOUND", "unbound")
+		// Engine 1347091 refuses both read and write on this status.
+		// It does not mean the account was sanctioned.
+		writeDeniedStatus(w, http.StatusForbidden, "enforcement_unavailable", "enforcement_unavailable", "unbound")
 		return
 	}
 	if err != nil || userID == 0 {

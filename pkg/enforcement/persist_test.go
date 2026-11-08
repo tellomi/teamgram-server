@@ -206,9 +206,10 @@ func TestOldSubjectResolvesWithoutCallerUserID(t *testing.T) {
 		t.Fatal(err)
 	}
 	req = httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"`+other+`","write":false,"user_id":42}`))
+	req.Header.Set("X-User-Id", "42")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "SUBJECT_UNBOUND") || strings.Contains(rec.Body.String(), `"allow":true`) {
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "enforcement_unavailable") || strings.Contains(rec.Body.String(), `"allow":true`) {
 		t.Fatal(rec.Code, rec.Body.String())
 	}
 	numeric := "42"
