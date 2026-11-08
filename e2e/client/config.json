@@ -24,6 +24,8 @@
     "sticker_other": {"number": "9996610052", "code": "11111"},
     "reset_pair": {"number": "9996610061", "code": "11111"},
     "notice": {"number": "9996610071", "code": "11111"},
-    "aged": {"number": "9996610072", "code": "11111"}
+    "aged": {"number": "9996610072", "code": "11111"},
+    "qr": {"number": "9996610073", "code": "11111"},
+    "qrpass": {"number": "9996610074", "code": "11111"}
   }
 }

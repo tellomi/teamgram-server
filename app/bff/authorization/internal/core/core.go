@@ -23,12 +23,12 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/svc"
+	"github.com/teamgram/teamgram-server/app/bff/authorization/loginnotice"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
@@ -115,58 +115,18 @@ func ensureLoginCodeSpoiler(text, code string, entities []*mtproto.MessageEntity
 	}).To_MessageEntity())
 }
 
-// shanghaiTime is the clock shown in the 777000 login notice.
-var shanghaiTime = time.FixedZone("CST", 8*3600)
+func resetLoginNoticeClaims() { loginnotice.Reset() }
 
-// loginNoticeAt suppresses a second notice for the same user and auth key.
-// Sending the admin message is not itself a login, and a success path must
-// not fan out a duplicate when two handlers both observe the same key.
-var (
-	loginNoticeMu sync.Mutex
-	loginNoticeAt = map[string]int64{}
-)
-
-func resetLoginNoticeClaims() {
-	loginNoticeMu.Lock()
-	loginNoticeAt = map[string]int64{}
-	loginNoticeMu.Unlock()
-}
-
-// claimLoginNotice is false for the service user and for a repeat of the
-// same auth key inside two minutes.
 func claimLoginNotice(userID, authKey int64, now time.Time) bool {
-	if userID == 0 || userID == 777000 {
-		return false
-	}
-	key := fmt.Sprintf("%d:%d", userID, authKey)
-	nowUnix := now.Unix()
-	loginNoticeMu.Lock()
-	defer loginNoticeMu.Unlock()
-	if prev, ok := loginNoticeAt[key]; ok && nowUnix-prev < 120 {
-		return false
-	}
-	loginNoticeAt[key] = nowUnix
-	return true
+	return loginnotice.Claim(userID, authKey, now)
 }
 
-// loginDeviceLabel is the client string from initConnection, then langpack.
-// That string is the lang pack ("android", "ios"), not the device model.
 func loginDeviceLabel(client, langpack string) string {
-	client = strings.TrimSpace(client)
-	if client != "" {
-		return client
-	}
-	return strings.TrimSpace(langpack)
+	return loginnotice.Label(client, langpack)
 }
 
-// loginNoticeDevice prefers the device model stored for the auth key.
-// The lang pack is only a fallback when that model was not written yet.
 func loginNoticeDevice(model, client, langpack string) string {
-	model = strings.TrimSpace(model)
-	if model != "" {
-		return model
-	}
-	return loginDeviceLabel(client, langpack)
+	return loginnotice.Device(model, client, langpack)
 }
 
 // loginDevice reads the device model for this permanent key. A lookup
@@ -193,66 +153,19 @@ func (c *AuthorizationCore) loginDevice() string {
 	return loginNoticeDevice(model, client, langpack)
 }
 
-// loginSecurityNotice is the Simplified Chinese 777000 chat message for a
-// finished login. It carries the device and Beijing time. It does not carry
-// a verification code, a token, or an auth key.
 func loginSecurityNotice(device string, when time.Time) (string, []*mtproto.MessageEntity) {
-	device = strings.TrimSpace(device)
-	if device == "" {
-		device = "未知设备"
-	}
-	stamp := when.In(shanghaiTime).Format("2006-01-02 15:04")
-	return mtproto.MakeTextAndMessageEntities([]mtproto.MessageBuildEntry{
-		{
-			Param:      "新设备登录提醒",
-			EntityType: mtproto.Predicate_messageEntityBold,
-		},
-		{
-			Text: fmt.Sprintf("\n你的账号于 %s（北京时间）在 %s 上登录。\n如果这是你本人的操作，可以忽略这条消息。如果不是，请到设置 > 设备中结束该会话。", stamp, device),
-		},
-	})
+	return loginnotice.Text(device, when)
 }
 
 // pushLoginSecurityNotice writes one in-app message from user 777000 after
 // a finished authorization. Failed sign-in, the signup-required result, and
-// SESSION_PASSWORD_NEEDED do not call this. The message is not a new-message
-// push to the user's contacts.
+// SESSION_PASSWORD_NEEDED do not call this. QR login without a cloud password
+// is sent by auth.acceptLoginToken, through the same claim map.
 func (c *AuthorizationCore) pushLoginSecurityNotice(userID int64) {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MsgClient == nil || c.MD == nil {
 		return
 	}
-	when := time.Now()
-	if !claimLoginNotice(userID, c.MD.PermAuthKeyId, when) {
-		return
-	}
-	device := c.loginDevice()
-	time.AfterFunc(2*time.Second, func() {
-		text, entities := loginSecurityNotice(device, when)
-		message := mtproto.MakeTLMessage(&mtproto.Message{
-			Out:      true,
-			Date:     int32(when.Unix()),
-			FromId:   mtproto.MakePeerUser(777000),
-			PeerId:   mtproto.MakeTLPeerUser(&mtproto.Peer{UserId: userID}).To_Peer(),
-			Message:  text,
-			Entities: entities,
-		}).To_Message()
-		c.svcCtx.Dao.MsgClient.MsgPushUserMessage(
-			context.Background(),
-			&msgpb.TLMsgPushUserMessage{
-				UserId:    777000,
-				AuthKeyId: 0,
-				PeerType:  mtproto.PEER_USER,
-				PeerId:    userID,
-				PushType:  1,
-				Message: msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
-					NoWebpage:    false,
-					Background:   false,
-					RandomId:     rand.Int63(),
-					Message:      message,
-					ScheduleDate: nil,
-				}).To_OutboxMessage(),
-			})
-	})
+	loginnotice.Push(c.svcCtx.Dao.MsgClient, userID, c.MD.PermAuthKeyId, c.loginDevice(), time.Now())
 }
 
 func (c *AuthorizationCore) pushSignInMessage(ctx context.Context, signInUserId int64, code string) {

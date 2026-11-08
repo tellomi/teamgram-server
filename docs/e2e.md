@@ -36,7 +36,9 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
 | `TestFreshLoginCannotResetOlderSession` | A session minutes old does not get `406 FRESH_RESET_AUTHORISATION_FORBIDDEN` from `auth.resetAuthorizations` and `account.resetAuthorization`, or the other device leaves the list or stops answering. |
 | `TestLoginNoticeFromServiceUser` | A finished login does not leave a 777000 message naming that `initConnection` device and a Beijing minute, the other session cannot read the same message, or a rejected code adds another `新设备登录提醒`. |
-| `TestLocalAgedResetDropsOtherSessions` | With `TELLOMI_E2E_LOCAL_RESET=1` and a loopback address, a synthetic user's local `auth_users.date_created` is moved back 25 hours and an aged session still cannot reset, a single reset or reset-all does not log the other key out on the next request and on reconnect, a fresh third session can reset the aged one, or the device list disagrees. The test refuses a non-loopback address. |
+| `TestQRLoginNoticeWithoutPassword` | A QR login with no cloud password does not leave a 777000 message naming the new device, the message names the scanner, or replaying the token or sending a bad token adds another notice. |
+| `TestQRLoginNoticeWithPassword` | A QR scan on an account with a cloud password writes the 777000 message before `auth.checkPassword`, the message is missing after the proof, it names the scanner, or a second copy is written. |
+| `TestLocalAgedResetDropsOtherSessions` | With `TELLOMI_E2E_LOCAL_RESET=1` and a loopback address, a synthetic user's local `auth_users.date_created` is moved back 25 hours and an aged session still cannot reset, a single reset or reset-all does not log the other key out on the next MTProto ping and request and on reconnect, a fresh third session can reset the aged one, or the device list disagrees. The test refuses a non-loopback address. gotd does not export `ping_delay_disconnect`; that constructor is covered by `TestNormalSessionDropsPingAfterRevocation`. |
 | `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
 | `TestTranscribeAudioIsNotPremiumOrStub` | `messages.transcribeAudio` on a text message returns `PREMIUM_ACCOUNT_REQUIRED` or `TRANSCRIPTION_FAILED`, or a zero message id does not return `MSG_ID_INVALID`. |
 | `TestInviteLinkSheet` | A supergroup or basic group invite sheet does not return a `https://tell.cc/+` link, `channels.getFullChannel` / `messages.getFullChat` omits that primary link, or creating an additional link with a title, `request_needed`, `expire_date`, and `usage_limit` fails. |
@@ -86,6 +88,8 @@ shape. The code is the digit after `99966` five times, which is what
 | password | 9996610008 | 11111 |
 | notice | 9996610071 | 11111 |
 | aged | 9996610072 | 11111 |
+| qr | 9996610073 | 11111 |
+| qrpass | 9996610074 | 11111 |
 
 `9996612345` is not code `12345`. The fixed code `12345` is only for numbers
 outside this range.

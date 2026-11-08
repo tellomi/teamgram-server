@@ -156,6 +156,7 @@ func (s *Server) Initialize() error {
 					UserClient:        c.BizServiceClient,
 					AuthSessionClient: c.AuthSessionClient,
 					SyncClient:        c.SyncClient,
+					MsgClient:         c.MsgClient,
 				},
 				nil))
 

@@ -88,6 +88,11 @@ func waitSecurityNotice(t *testing.T, ctx context.Context, c *Client, device str
 				if !strings.Contains(text, "新设备登录提醒") || !strings.Contains(text, device) {
 					continue
 				}
+				// History keeps older notices for this synthetic number.
+				// A message dated before this login is not this attempt.
+				if m.GetDate() != 0 && int64(m.GetDate())+30 < after.Unix() {
+					continue
+				}
 				if from := m.GetFromId(); from != nil && from.GetUserId() != 0 && from.GetUserId() != 777000 {
 					t.Fatalf("notice from user %d", from.GetUserId())
 				}

@@ -83,6 +83,9 @@ func TestLocalAgedResetDropsOtherSessions(t *testing.T) {
 	if _, ok := hashesForDevice(listAuthorizations(t, ctx, android), ProfileIOS.DeviceModel)[iosHash]; !ok {
 		t.Fatal("refused reset removed the iOS row")
 	}
+	if err = pingWithin(ctx, ios, 5*time.Second); err != nil {
+		t.Fatalf("live session ping: %v", err)
+	}
 
 	ageLocalUser(t, ctx, self.ID)
 	if _, err = android.Invoke(ctx, &mtproto.TLAccountResetAuthorization{
@@ -90,6 +93,9 @@ func TestLocalAgedResetDropsOtherSessions(t *testing.T) {
 		Hash:        iosHash,
 	}); err != nil {
 		t.Fatalf("aged single reset: %v", err)
+	}
+	if err = pingWithin(ctx, ios, 4*time.Second); err == nil {
+		t.Fatal("revoked session still answered MTProto ping")
 	}
 	expectLoggedOut(t, ctx, ios)
 	iosSession, ok := ios.Session()
@@ -229,6 +235,12 @@ func redactCommandOutput(out string) string {
 		b.WriteByte('\n')
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func pingWithin(ctx context.Context, c *Client, d time.Duration) error {
+	pingCtx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+	return c.Ping(pingCtx)
 }
 
 func expectLoggedOut(t *testing.T, ctx context.Context, c *Client) {

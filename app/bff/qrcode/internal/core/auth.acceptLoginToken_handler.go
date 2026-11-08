@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/authorization/loginnotice"
 	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/model"
 	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -54,7 +55,7 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		return nil, err
 	}
 
-	c.Logger.Infof("auth.acceptLoginToken - qrCode: %#v", qrCode)
+	c.Logger.Infof("auth.acceptLoginToken - state %d", qrCode.State)
 
 	if !qrCode.CheckByToken(in.Token) {
 		err := mtproto.ErrAuthTokenInvalid
@@ -95,12 +96,15 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		return nil, err
 	}
 
-	// Write the password step before the new device's auth key is bound.
-	// exportLoginToken then returns SESSION_PASSWORD_NEEDED instead of a login.
+	// A cloud password means this scan is not a finished login. The notice is
+	// sent later by auth.checkPassword, for this new key, after the proof
+	// matches. Sending it here would report a login that has not happened.
+	passwordNeeded := false
 	if has, hasErr := password.HasPassword(c.ctx, user.Id()); hasErr != nil {
 		c.Logger.Errorf("auth.acceptLoginToken - password: %v", hasErr)
 		return nil, hasErr
 	} else if has || (c.svcCtx.Plugin != nil && c.svcCtx.Plugin.CheckSessionPasswordNeeded(c.ctx, user.Id())) {
+		passwordNeeded = true
 		if err = password.NoteLogin(c.ctx, qrCode.PermAuthKeyId, user.Id()); err != nil {
 			c.Logger.Errorf("auth.acceptLoginToken - password: %v", err)
 			return nil, err
@@ -128,6 +132,16 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 	authorization.DateActive = authorization.DateCreated
 	authorization.Hash = hash.V
 
+	// The device is the new key's initConnection model, not the phone that
+	// scanned the code. A rejected or replayed token returned above.
+	if qrLoginNotifies(qrCode.State, passwordNeeded) && c.svcCtx.Dao != nil {
+		keyID := qrCode.PermAuthKeyId
+		if keyID == 0 {
+			keyID = qrCode.AuthKeyId
+		}
+		loginnotice.Push(c.svcCtx.Dao.MsgClient, user.Id(), keyID, loginnotice.Device(authorization.GetDeviceModel(), "", ""), time.Now())
+	}
+
 	c.svcCtx.Dao.SyncClient.SyncUpdatesMe(
 		c.ctx,
 		&sync.TLSyncUpdatesMe{
@@ -143,4 +157,11 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		})
 
 	return authorization, nil
+}
+
+// qrLoginNotifies is true only when this accept finishes the login.
+// A replayed or expired token is not state New. A cloud-password scan is
+// not finished until auth.checkPassword.
+func qrLoginNotifies(state int, passwordNeeded bool) bool {
+	return state == model.QRCodeStateNew && !passwordNeeded
 }
