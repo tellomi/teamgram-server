@@ -81,6 +81,17 @@ until clients carrying the new public key are widespread. See
 [SECURITY-OPS.md](SECURITY-OPS.md). The client build replaces Telegram’s
 production DC list and RSA key; that rebrand is outside this repository.
 TCP port **10443** is the abridged / intermediate / padded-intermediate listener.
+Compose publishes it on the host (`0.0.0.0:10443`), so `127.0.0.1:10443` on this machine is that stack.
+
+### Android emulator `local` on this same machine
+
+The existing Android build profile `-PTELLOMI_SERVER_PROFILE=local` puts `10.0.2.2:10443` in the DC list. Inside the Android emulator, `10.0.2.2` is the emulator's name for **the host machine's loopback**. An emulator that is running on the same machine as this compose stack therefore reaches `127.0.0.1:10443` on that host, which is this stack. It is not a different server.
+
+`10.0.2.2` on an emulator that is running on some other machine is **that** machine's loopback, not this one. Do not treat the two as the same address.
+
+Packages handed to a person still use `-PTELLOMI_SERVER_PROFILE=dev` (`8.137.39.82:10443`). `docs/TELLOMI_RULES.md` forbids shipping `10.0.2.2`. This page does not change that rule, the production DC, or `TestPhones`.
+
+The host-side check in this repository is `scripts/n05-local-check.sh`. It dials `127.0.0.1:10443` directly because it is not inside the emulator, and it refuses any non-loopback address.
 
 ## Prove the layer 232 codec
 

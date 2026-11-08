@@ -100,7 +100,7 @@ Overrides: `TELLOMI_E2E_ADDR`, `TELLOMI_E2E_API_ID`, `TELLOMI_E2E_API_HASH`,
 
 ## Run locally
 
-Start the stack (`docs/local-docker.md`), then:
+Start the stack (`docs/local-docker.md`). An Android emulator on that same machine uses the existing `local` profile: `10.0.2.2` is the emulator's name for the host loopback, so `10.0.2.2:10443` is this stack's `127.0.0.1:10443`. An emulator on another machine is that machine's loopback. Then:
 
 ```bash
 cd e2e/client
