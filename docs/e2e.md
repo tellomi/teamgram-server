@@ -34,6 +34,9 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestProfileAndChannelNames` | With `TELLOMI_USERNAME_POLICY=1`, `account.updateProfile` does not return 400 `FIRSTNAME_INVALID` / `LASTNAME_INVALID` for `admin` / `tellomi`, a normal name or bio is not saved, a megagroup titled `admin` or described as `tellomi` is created, a basic group titled `admin` or `tellomi` or described as `admin` is saved, a normal Chinese basic-group title is rejected, or a chat message containing those words is rejected. |
 | `TestLinksUseTellCC` | `help.getConfig` `me_url_prefix` is not a `tell.cc` URL. |
 | `TestReconnectAfterGatewayRestart` | After the `teamgram` container restarts, the previous auth key cannot `updates.getDifference` the message that was sent while the client was offline. |
+| `TestFreshLoginCannotResetOlderSession` | A session minutes old does not get `406 FRESH_RESET_AUTHORISATION_FORBIDDEN` from `auth.resetAuthorizations` and `account.resetAuthorization`, or the other device leaves the list or stops answering. |
+| `TestLoginNoticeFromServiceUser` | A finished login does not leave a 777000 message naming that `initConnection` device and a Beijing minute, the other session cannot read the same message, or a rejected code adds another `新设备登录提醒`. |
+| `TestLocalAgedResetDropsOtherSessions` | With `TELLOMI_E2E_LOCAL_RESET=1` and a loopback address, a synthetic user's local `auth_users.date_created` is moved back 25 hours and an aged session still cannot reset, a single reset or reset-all does not log the other key out on the next request and on reconnect, a fresh third session can reset the aged one, or the device list disagrees. The test refuses a non-loopback address. |
 | `TestCloudPasswordReloginAndDisable` | After `auth.logOut` on the same permanent key, `auth.signIn` does not return `SESSION_PASSWORD_NEEDED`, `account.getPassword` has no SRP challenge, `auth.checkPassword` does not authorize the key, or disabling 2FA with `passwordKdfAlgoUnknown` and an empty hash leaves `has_password` set. |
 | `TestTranscribeAudioIsNotPremiumOrStub` | `messages.transcribeAudio` on a text message returns `PREMIUM_ACCOUNT_REQUIRED` or `TRANSCRIPTION_FAILED`, or a zero message id does not return `MSG_ID_INVALID`. |
 | `TestInviteLinkSheet` | A supergroup or basic group invite sheet does not return a `https://tell.cc/+` link, `channels.getFullChannel` / `messages.getFullChat` omits that primary link, or creating an additional link with a title, `request_needed`, `expire_date`, and `usage_limit` fails. |
@@ -81,6 +84,8 @@ shape. The code is the digit after `99966` five times, which is what
 | reconnect_a | 9996610005 | 11111 |
 | reconnect_b | 9996610006 | 11111 |
 | password | 9996610008 | 11111 |
+| notice | 9996610071 | 11111 |
+| aged | 9996610072 | 11111 |
 
 `9996612345` is not code `12345`. The fixed code `12345` is only for numbers
 outside this range.
@@ -102,6 +107,11 @@ TELLOMI_E2E=1 TELLOMI_E2E_ADDR=127.0.0.1:10443 \
 `TELLOMI_E2E_RESTART=1` includes `TestReconnectAfterGatewayRestart`, which
 runs `docker compose restart teamgram`. Leave it unset when the target is
 not a local compose stack.
+
+`TELLOMI_E2E_LOCAL_RESET=1` includes `TestLocalAgedResetDropsOtherSessions`.
+It sets `auth_users.date_created` back 25 hours for the synthetic `aged`
+user inside the local `mysql` container. The address must be loopback. Leave
+it unset for any smoke pointed outside this machine.
 
 Without `TELLOMI_E2E`, only the offline checks run (layer wrapping and the
 server key fingerprint).

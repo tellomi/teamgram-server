@@ -101,6 +101,20 @@ const freshResetWindowSeconds int64 = 24 * 60 * 60
 // A missing or zero date_created does not lock the account out forever.
 // A created time in the future (clock skew) does not lock it out either.
 // Elapsed time of zero is a session that just logged on and is forbidden.
+// bindDateCreated is the created time stored when an auth key is bound.
+// A positive stored time is an existing login and stays, so the 24h gate
+// still measures that login. Reset writes date_created 0; the next bind of
+// that key starts at now instead of skipping the gate.
+func bindDateCreated(stored, now int64) int64 {
+	if stored > 0 {
+		return stored
+	}
+	if now > 0 {
+		return now
+	}
+	return 0
+}
+
 func freshResetForbidden(createdUnix, nowUnix int64) bool {
 	if createdUnix <= 0 || nowUnix < createdUnix {
 		return false

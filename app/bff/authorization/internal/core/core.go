@@ -30,6 +30,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/svc"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/env2"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
@@ -149,12 +150,47 @@ func claimLoginNotice(userID, authKey int64, now time.Time) bool {
 }
 
 // loginDeviceLabel is the client string from initConnection, then langpack.
+// That string is the lang pack ("android", "ios"), not the device model.
 func loginDeviceLabel(client, langpack string) string {
 	client = strings.TrimSpace(client)
 	if client != "" {
 		return client
 	}
 	return strings.TrimSpace(langpack)
+}
+
+// loginNoticeDevice prefers the device model stored for the auth key.
+// The lang pack is only a fallback when that model was not written yet.
+func loginNoticeDevice(model, client, langpack string) string {
+	model = strings.TrimSpace(model)
+	if model != "" {
+		return model
+	}
+	return loginDeviceLabel(client, langpack)
+}
+
+// loginDevice reads the device model for this permanent key. A lookup
+// failure falls back to the lang pack so the notice is still sent. The
+// lookup uses its own timeout: auth.signUp runs the notice after the RPC
+// context is already finished.
+func (c *AuthorizationCore) loginDevice() string {
+	client, langpack := "", ""
+	if c != nil && c.MD != nil {
+		client = c.MD.GetClient()
+		langpack = c.MD.GetLangpack()
+	}
+	model := ""
+	if c != nil && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.AuthsessionClient != nil && c.MD != nil && c.MD.PermAuthKeyId != 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		auth, err := c.svcCtx.Dao.AuthsessionGetAuthorization(ctx, &authsession.TLAuthsessionGetAuthorization{
+			AuthKeyId: c.MD.PermAuthKeyId,
+		})
+		cancel()
+		if err == nil && auth != nil {
+			model = auth.GetDeviceModel()
+		}
+	}
+	return loginNoticeDevice(model, client, langpack)
 }
 
 // loginSecurityNotice is the Simplified Chinese 777000 chat message for a
@@ -189,7 +225,7 @@ func (c *AuthorizationCore) pushLoginSecurityNotice(userID int64) {
 	if !claimLoginNotice(userID, c.MD.PermAuthKeyId, when) {
 		return
 	}
-	device := loginDeviceLabel(c.MD.GetClient(), c.MD.GetLangpack())
+	device := c.loginDevice()
 	time.AfterFunc(2*time.Second, func() {
 		text, entities := loginSecurityNotice(device, when)
 		message := mtproto.MakeTLMessage(&mtproto.Message{
