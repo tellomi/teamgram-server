@@ -44,6 +44,8 @@
 
 `POST /internal/v1/enforcement/credentials/check`
 
+处理函数是 `enforcement.CredentialHandler`。本进程默认不监听。调用方自己挂到隔离地址，并设置非空 Bearer。空密钥会拒绝全部请求。
+
 ```json
 {"user_id": 42, "write": true}
 ```

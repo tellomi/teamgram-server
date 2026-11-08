@@ -121,6 +121,44 @@ func TestMySQLSurvivesRestartAndRetriesNotice(t *testing.T) {
 	}
 }
 
+func TestCredentialCheckRefusesPermanentReadAndWrite(t *testing.T) {
+	s, _ := testSvc(true)
+	SetCurrent(s)
+	t.Cleanup(func() { SetCurrent(nil) })
+	row, err := s.Create(Actor{ID: "s1", Role: RoleSenior}, Sanction{
+		UserID: 42, Kind: KindPermanent, Permanent: true, ReasonCategory: "类别", PolicyClause: "条款", RuleVersion: "rule-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Approve(Actor{ID: "s2", Role: RoleSenior}, row.ID); err != nil {
+		t.Fatal(err)
+	}
+	h := CredentialHandler{Key: "local-test-key", Now: s.now}
+	for _, write := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"user_id":42,"write":`+boolJSON(write)+`}`))
+		req.Header.Set("Authorization", "Bearer local-test-key")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":false`) || !strings.Contains(rec.Body.String(), "ACCOUNT_PERMANENT_DISABLED") {
+			t.Fatalf("write %v %d %s", write, rec.Code, rec.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"user_id":42,"write":true}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatal(rec.Code)
+	}
+}
+
+func boolJSON(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
+
 func TestModelJudgeUsesCompleterContract(t *testing.T) {
 	var sawModel, sawUntrusted bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
