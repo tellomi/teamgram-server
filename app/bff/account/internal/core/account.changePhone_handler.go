@@ -20,11 +20,13 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 
 	"google.golang.org/grpc/status"
@@ -108,6 +110,14 @@ func (c *AccountCore) AccountChangePhone(in *mtproto.TLAccountChangePhone) (*mtp
 
 	_ = codeData
 	_ = err2
+
+	if err = enforcement.Reject(c.MD.UserId, "change_identifier", false, time.Now()); err != nil {
+		c.Logger.Errorf("account.changePhone - sanction")
+		return nil, err
+	}
+	if alt, taken := enforcement.SignupStage(phoneNumber, "phone", time.Now()); taken && alt.Code == "ACCOUNT_PERMANENT_DISABLED" {
+		return nil, mtproto.ErrPhoneNumberOccupied
+	}
 
 	user, _ = c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
 		Id: c.MD.UserId,

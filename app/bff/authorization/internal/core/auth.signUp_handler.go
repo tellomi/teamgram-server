@@ -21,6 +21,7 @@ package core
 import (
 	"context"
 	"math/rand"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
@@ -31,6 +32,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
@@ -161,6 +163,18 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 		firstName = in.FirstName
 		lastName  = in.LastName
 	)
+
+	kind := "phone"
+	if verify.IsEmail(phoneNumber) {
+		kind = "email"
+	}
+	if alt, taken := enforcement.SignupStage(phoneNumber, kind, time.Now()); taken {
+		c.Logger.Errorf("auth.signUp - identifier already bound")
+		if alt.Code != "" {
+			return nil, enforcement.RPC(alt.Code)
+		}
+		return nil, mtproto.ErrPhoneNumberOccupied
+	}
 
 	// Create new user
 	if user, err = c.svcCtx.UserClient.UserCreateNewUser(c.ctx, &userpb.TLUserCreateNewUser{

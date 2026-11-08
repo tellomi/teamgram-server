@@ -30,6 +30,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 )
@@ -198,6 +199,18 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 		c.svcCtx.AuthLogic.DeletePhoneCode(c.ctx, c.MD.PermAuthKeyId, in.PhoneNumber, phoneCodeHash)
 		c.Logger.Infof("auth.signIn - registered, next step auth.checkPassword: SESSION_PASSWORD_NEEDED")
 		return nil, mtproto.ErrSessionPasswordNeeded
+	}
+
+	kind := "phone"
+	if isEmail {
+		kind = "email"
+	}
+	stage := enforcement.LoginStage(user.Id(), phoneNumber, kind, true, time.Now())
+	if !stage.BindOrdinary {
+		if err = enforcement.RPC(stage.Code); err != nil {
+			c.Logger.Errorf("auth.signIn - sanction")
+			return nil, err
+		}
 	}
 
 	// Bind authKeyId and userId

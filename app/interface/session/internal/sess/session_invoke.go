@@ -23,10 +23,12 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	rpcmetadata "github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -488,6 +490,11 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 	case mtproto.AuthStateNormal:
 		if c.sessList.cb.bindingRevoked(ctx) {
 			c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(mtproto.ErrAuthKeyUnregistered))
+			msgId.state = RECEIVED | RESPONSE_GENERATED
+			return false
+		}
+		if enforcement.OrdinarySessionBlocked(c.sessList.cb.AuthUserId, time.Now()) {
+			c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(mtproto.ErrAccountPermanentDisabled))
 			msgId.state = RECEIVED | RESPONSE_GENERATED
 			return false
 		}

@@ -19,11 +19,15 @@
 package svc
 
 import (
+	"context"
+
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/plugin"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/pkg/code"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 )
@@ -52,6 +56,17 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 	smsLim := verify.NewLimiter(d.Cache(), cfg.Limits)
 	emailLim := verify.NewLimiter(d.Cache(), cfg.EmailLimits)
 	verify.UseSharedLimiters(smsLim, emailLim)
+	if svc := enforcement.InstallFromEnv(); svc != nil {
+		svc.SetSender(enforcement.AdminSender{Push: d.MsgClient})
+		svc.SetRevoker(func(userID int64) error {
+			_, err := d.AuthsessionClient.AuthsessionResetAuthorization(context.Background(), &authsession.TLAuthsessionResetAuthorization{
+				UserId:    userID,
+				AuthKeyId: 0,
+				Hash:      0,
+			})
+			return err
+		})
+	}
 	return &ServiceContext{
 		Config:       c,
 		Dao:          d,

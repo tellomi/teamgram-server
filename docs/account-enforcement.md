@@ -1,0 +1,83 @@
+# 账号处罚、解封与申诉
+
+主线基线 `e2868f536cad6633931b210c8e88aa42ebe5f66c`。本文件描述 `pkg/enforcement`。它没有接入生产，没有对真实用户发通知，也没有把 7696 词库接进来。
+
+## 2026-11-09 00:17 产品决定
+
+- 处罚生效后，隔离环境里用合成账号验证封禁、临时限制和解封。
+- 处罚与解封通知由已经存在的系统用户 **777000**（`@admin`）发送。不新建第二个 admin。
+- 申诉由已经存在的 **777001**（`@tellomi`，Tellomi AI）接收并判定。AI 可以维持或解除**当前这一条**仍生效的处罚，不要求每一条申诉都先人工批准。
+- 模型不可用、超时或证据不足时，申诉留在 `pending_review`。不加重处罚，不编造结论。
+- 人工复核员仍可追加撤销，用来纠错。发起人不能批自己的永久处罚。
+- 1/3/7/30 天档位、双审天数阈值、申诉 SLA 仍未批准。代码不把这些数字写成唯一档位。只有调用方给出的结束时间会生效。永久处罚必须由另一名 `senior` 批准后才生效。
+- `TELLOMI_ENFORCEMENT_STORE` 未设置为 `memory` 时，进程不安装这套逻辑，登录和发消息保持原样。
+- `TELLOMI_ENFORCEMENT_CREATE` 不是 `1` 时，不能新建处罚或标识限制。已经存在的记录继续执行。
+
+## 开关
+
+| 变量 | 默认 | 作用 |
+| --- | --- | --- |
+| `TELLOMI_ENFORCEMENT_STORE` | 空 | 只有 `memory` 才安装进程内记录。空着等于没有这套逻辑 |
+| `TELLOMI_ENFORCEMENT_CREATE` | 空 | `1` 才允许新建。关掉不清空已有记录 |
+
+内存记录随进程消失。持久化库和自动迁移不在这一批。不要把这张表放进聊天库的 `users` / `messages`。
+
+## 身份
+
+| 用户 | 用户名 | 用途 |
+| --- | --- | --- |
+| 777000 | `@admin` | 处罚、解封、申诉受理和结果通知。发送走与登录通知相同的 `MsgPushUserMessage`，`UserId` 固定为 777000 |
+| 777001 | `@tellomi` | 申诉判定。接口是 `pkg/tellomiai.Client.CompletePrompt`。本仓测试使用假 `Judge`，不是百炼联调 |
+
+通知在内存 outbox 里按 `处置编号:事件` 幂等。发送失败保持 `retry`，处罚不回滚。`Flush` 再送。已经 `sent` 的键不会再送。
+
+永久停用签发短时处置凭证（默认 15 分钟，技术有效期，不是处罚档位）。凭证不是普通 auth key，不能用来发消息。持有人可以读 777000 通知正文并提交申诉。普通会话在下一次受保护 RPC 上收到 `401 ACCOUNT_PERMANENT_DISABLED`。安装了 session revoker 时，批准永久处罚会调用现有 `AuthsessionResetAuthorization`。
+
+## 登录与错误
+
+发码响应不带处罚类型或期限。OTP 和已设置的 2FA 都通过之后才判定。
+
+| 码 | 含义 |
+| --- | --- |
+| `IDENTIFIER_RESTRICTED` | 这一个手机号或邮箱本身不能登录。账号状态不变 |
+| `ACCOUNT_READ_ONLY` | 可以登录，写操作拒绝 |
+| `ACCOUNT_SCOPED_RESTRICTION` | 可以登录，只拒绝列出的范围 |
+| `ACCOUNT_PERMANENT_DISABLED` | 不签发普通会话 |
+| `ACCOUNT_SECURITY_LOCK` | 安全锁。没有处罚记录，没有处罚通知 |
+
+`PHONE_NUMBER_BANNED` 仍只留给原来的空插件，不拿来表示账号处罚。
+
+同一 `user_id` 的手机号和邮箱走 `LoginStage`。已绑定标识不能走 `auth.signUp` 新建账号。
+
+## AI 判定
+
+模型只收到：案件编号、规则版本、条款、原因类别、证据引用、用户补充。用户补充是不可信文本。输出只能是 `uphold`、`lift`、`insufficient`。别的动作（包括新建永久处罚）改记为待复核。`lift` 只结束申诉指向的那一条仍生效案件。并行处罚不动。证据引用里带 `reporter` 或 `private_chat` 的项会被丢掉。
+
+## 覆盖
+
+| 需求 | 这一批 |
+| --- | --- |
+| REQ-ID-01 / REQ-EML-01 手机号与邮箱同一账号 | `TestPhoneAndEmailShareTheCase` |
+| REQ-ID-03 / REQ-ID-06 / REQ-ID-07 标识限制不连坐 | `TestIdentifierDoesNotPunishAccount` |
+| REQ-ID-05 已绑定标识不能新注册 | `SignupInstead` |
+| REQ-ST-02 功能限制仍可登录 | `TestReadOnlyWhitelistAndScoped` |
+| REQ-ST-03 只读与申诉白名单 | 同上 |
+| REQ-ST-04 / REQ-SES-05 永久停用与处置凭证 | `TestPermanentNeedsOtherSeniorAndGrant` |
+| REQ-ST-05 安全锁不是处罚 | `TestSecurityLockIsNotASanction` |
+| REQ-ST-06 并行与到期不误恢复 | `TestExpiryOverlapAndIdempotentNotice` |
+| REQ-AUTH-01 2FA 前不展示处罚 | `TestPermanentNeedsOtherSeniorAndGrant` |
+| REQ-AUTH-02 / REQ-AUTH-03 登录、注册、QR、发消息、资料、换绑、发现凭证、已有会话 | 各 handler 调用 `pkg/enforcement` |
+| REQ-TERM-05 到期幂等 | `TestConcurrentExpireOneNotice` |
+| REQ-NTF-03 通知失败与去重 | `TestNoticeRetryThenDedup`、`TestAdminPushUses777000` |
+| REQ-ADM-02 双人审批 | `TestPermanentNeedsOtherSeniorAndGrant` |
+| REQ-REL-01 / REQ-REL-03 关闭新建不清空 | `TestCreateOffWritesNothing`、`TestExistingRecordSurvivesCreateSwitch` |
+| REQ-REL-02 读失败时写保护、申诉仍可用 | `TestFailClosedUsesLastSnapshot` |
+| AI 维持 / 解除 / 证据不足 / 异常 / 注入 / 重复 | `TestAILiftUpholdInsufficientAndFailure`、`TestModelJudgeParsesAndRejectsGarbage` |
+
+未在本仓声称通过：真机三端、发现引擎对已发出 JWT 的拒绝、百炼真实调用、管理后台页面、邮件通知、旧客户端文案。
+
+## 跨仓
+
+- content-engine：本仓在永久停用时不再签发 `discover.getEngineCredential`。已经发出的 JWT 要由引擎在读/写时向本仓复查，或本仓后续把处罚版本写进 JWT。这一批没有改引擎。
+- Android / iOS：需要认识上面五个错误码，并在永久停用后走处置页。现有「此手机号码已被封禁。」不能当作账号处罚文案。这一批没有改客户端。
+- `pkg/tellomiai`：把 `*tellomiai.Client` 赋给 `enforcement.ModelJudge.Completer` 才是真实模型。测试里的 `fixedJudge` / `scripted` 不是联调。

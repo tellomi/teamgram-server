@@ -20,10 +20,12 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 
 	"google.golang.org/grpc/status"
@@ -59,6 +61,13 @@ func (c *AccountCore) AccountSendChangePhoneCode(in *mtproto.TLAccountSendChange
 	// 3. check number
 
 	// client phone number format: "+86 111 1111 1111"
+	if c.MD != nil {
+		if err := enforcement.Reject(c.MD.UserId, "change_identifier", false, time.Now()); err != nil {
+			c.Logger.Errorf("account.sendChangePhoneCode - sanction")
+			return nil, err
+		}
+	}
+
 	_, phoneNumber, err := phonenumber.CheckPhoneNumberInvalid(in.PhoneNumber)
 	if err != nil {
 		c.Logger.Errorf("check phone_number(%s) error - %v", in.PhoneNumber, err)
