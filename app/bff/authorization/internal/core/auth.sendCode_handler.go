@@ -286,6 +286,11 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 			id, _ := c.svcCtx.Dao.GetFutureAuthToken(c.ctx, v)
 			if id == user.Id() {
 				if stage := enforcement.LoginStage(user.Id(), phoneNumber, "phone", true, time.Now()); !stage.BindOrdinary {
+					if stage.Grant != nil {
+						if cur := enforcement.Current(); cur != nil {
+							_ = cur.StashProof(string(v), *stage.Grant)
+						}
+					}
 					if err = enforcement.RPC(stage.Code); err != nil {
 						return nil, err
 					}

@@ -129,16 +129,25 @@ func ContactMatters(userID int64, now time.Time) bool {
 // CheckCredential is the content-engine recheck for a credential that was
 // already issued. Permanent disable refuses both read and write. A read-only
 // freeze refuses write and allows read. A discover-post scope refuses write only.
+// There is no allow-cache. A store failure or a missing service snapshot is
+// ACCOUNT_STATE_UNKNOWN and not allowed. A nil service means the feature is off.
 func CheckCredential(userID int64, write bool, now time.Time) Decision {
 	s := Current()
-	if s == nil || userID == 0 {
-		return Decision{Allowed: true}
+	if s == nil {
+		return Decision{Allowed: true, State: "off"}
+	}
+	if userID == 0 {
+		return Decision{Allowed: false, Code: "ACCOUNT_STATE_UNKNOWN", State: stateUnknown, FailClosed: true}
 	}
 	action := "discover_read"
 	if write {
 		action = "discover_post"
 	}
-	return s.Decide(userID, action, false, now)
+	d := s.Decide(userID, action, false, now)
+	if d.Degraded {
+		return Decision{Allowed: false, Code: "ACCOUNT_STATE_UNKNOWN", State: stateUnknown, FailClosed: true}
+	}
+	return d
 }
 
 // OrdinarySessionBlocked reports a permanent disable for an already-bound session.

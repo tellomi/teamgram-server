@@ -17,10 +17,13 @@
 
 | 变量 | 默认 | 作用 |
 | --- | --- | --- |
-| `TELLOMI_ENFORCEMENT_STORE` | 空 | 只有 `memory` 才安装进程内记录。空着等于没有这套逻辑 |
+| `TELLOMI_ENFORCEMENT_STORE` | 空 | `memory` 不会安装。这个名字只存在于测试，不能当生产开关 |
 | `TELLOMI_ENFORCEMENT_CREATE` | 空 | `1` 才允许新建。关掉不清空已有记录 |
+| `TELLOMI_ENFORCEMENT_MYSQL` | 空 | 指向已经 `Migrate` 过的单独库。空着不安装。启动不建表 |
 
-持久记录只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库时打开。`TELLOMI_ENFORCEMENT_STORE=memory` 不会安装。聊天库名 `teamgram` 会被拒绝。表由 `OpenMySQL` 在那个库里 `CREATE TABLE IF NOT EXISTS` 创建，不进 `teamgramd/deploy/sql`，因此生产迁移脚本不会跑它们。回滚是在该库执行 `RollbackSQL`（按表 `DROP TABLE`），不碰聊天库。
+持久记录只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库，并且该库已经显式执行过 `Migrate` 时才打开。`OpenMySQL` 和进程启动不建表。聊天库名 `teamgram` 会被拒绝。表不进 `teamgramd/deploy/sql`。
+
+正常回滚是换回上一份二进制，不删除处罚、审计或 outbox。数据保留。仍带这份逻辑且指向同一库的二进制会继续执行已有处罚。没有生产用的 `DROP TABLE`。测试只删除它自己创建的 `tellomi_enforcement_test` 库，不能对其他库执行。
 
 内存 `New` 只给本包测试。进程安装路径不调用它。
 

@@ -2,15 +2,19 @@ package enforcement
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
-// OpenMySQL installs a service whose rows live in a database that is not the
-// chat schema. The database name teamgram is refused. Memory is not selected
-// from the environment.
+// ErrSchema means Migrate has not been run. OpenMySQL does not create tables.
+var ErrSchema = errors.New("enforcement: schema is not initialized")
+
+// OpenMySQL connects to a database that is not the chat schema. It does not
+// create or alter tables. Call Migrate first, as an explicit step.
 func OpenMySQL(dsn string, cfg Config) (*Service, error) {
 	if _, err := databaseName(dsn); err != nil {
 		return nil, err
@@ -19,18 +23,42 @@ func OpenMySQL(dsn string, cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetMaxOpenConns(8)
 	if err = db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
-	if err = ensureSchema(db); err != nil {
+	var n int
+	if err = db.QueryRow("SELECT COUNT(*) FROM sanction").Scan(&n); err != nil {
 		_ = db.Close()
-		return nil, err
+		return nil, ErrSchema
 	}
 	s := New(cfg)
 	s.db = db
 	return s, nil
+}
+
+// Migrate creates the enforcement tables if they are missing. It is not called
+// from process startup. A second call is a no-op. It does not drop data.
+func Migrate(dsn string) error {
+	if _, err := databaseName(dsn); err != nil {
+		return err
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err = db.Ping(); err != nil {
+		return err
+	}
+	for _, stmt := range schemaDDL {
+		if _, err = db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func databaseName(dsn string) (string, error) {
@@ -46,9 +74,8 @@ func databaseName(dsn string) (string, error) {
 	return name, nil
 }
 
-func ensureSchema(db *sql.DB) error {
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS sanction (
+var schemaDDL = []string{
+	`CREATE TABLE IF NOT EXISTS sanction (
 			id VARCHAR(32) PRIMARY KEY,
 			user_id BIGINT NOT NULL,
 			kind VARCHAR(32) NOT NULL,
@@ -67,7 +94,7 @@ func ensureSchema(db *sql.DB) error {
 			UNIQUE KEY sanction_idem (idempotency_key),
 			KEY sanction_user (user_id, status)
 		)`,
-		`CREATE TABLE IF NOT EXISTS sanction_event (
+	`CREATE TABLE IF NOT EXISTS sanction_event (
 			id VARCHAR(32) PRIMARY KEY,
 			sanction_id VARCHAR(32) NOT NULL,
 			event_type VARCHAR(32) NOT NULL,
@@ -76,7 +103,7 @@ func ensureSchema(db *sql.DB) error {
 			reason VARCHAR(512) NOT NULL DEFAULT '',
 			KEY sanction_event_case (sanction_id)
 		)`,
-		`CREATE TABLE IF NOT EXISTS notice_outbox (
+	`CREATE TABLE IF NOT EXISTS notice_outbox (
 			idempotency_key VARCHAR(160) PRIMARY KEY,
 			user_id BIGINT NOT NULL,
 			from_user BIGINT NOT NULL,
@@ -85,7 +112,7 @@ func ensureSchema(db *sql.DB) error {
 			status VARCHAR(16) NOT NULL,
 			attempts INT NOT NULL DEFAULT 0
 		)`,
-		`CREATE TABLE IF NOT EXISTS appeal (
+	`CREATE TABLE IF NOT EXISTS appeal (
 			id VARCHAR(32) PRIMARY KEY,
 			sanction_id VARCHAR(32) NOT NULL,
 			user_id BIGINT NOT NULL,
@@ -100,7 +127,7 @@ func ensureSchema(db *sql.DB) error {
 			attempts INT NOT NULL DEFAULT 0,
 			UNIQUE KEY appeal_case (sanction_id)
 		)`,
-		`CREATE TABLE IF NOT EXISTS audit_log (
+	`CREATE TABLE IF NOT EXISTS audit_log (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			at DATETIME(6) NOT NULL,
 			actor VARCHAR(64) NOT NULL,
@@ -108,32 +135,36 @@ func ensureSchema(db *sql.DB) error {
 			case_id VARCHAR(32) NOT NULL DEFAULT '',
 			detail VARCHAR(512) NOT NULL DEFAULT ''
 		)`,
-		`CREATE TABLE IF NOT EXISTS identifier_bind (
+	`CREATE TABLE IF NOT EXISTS identifier_bind (
 			kind VARCHAR(16) NOT NULL,
 			value VARCHAR(255) NOT NULL,
 			user_id BIGINT NOT NULL,
 			PRIMARY KEY (kind, value)
 		)`,
-		`CREATE TABLE IF NOT EXISTS identifier_block (
+	`CREATE TABLE IF NOT EXISTS identifier_block (
 			kind VARCHAR(16) NOT NULL,
 			value VARCHAR(255) NOT NULL,
 			PRIMARY KEY (kind, value)
 		)`,
-		`CREATE TABLE IF NOT EXISTS security_lock (
+	`CREATE TABLE IF NOT EXISTS security_lock (
 			user_id BIGINT PRIMARY KEY
 		)`,
-		`CREATE TABLE IF NOT EXISTS disposition_grant (
+	`CREATE TABLE IF NOT EXISTS disposition_grant (
 			token VARCHAR(128) PRIMARY KEY,
 			user_id BIGINT NOT NULL,
 			expires_at DATETIME(6) NOT NULL
 		)`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
-			return err
-		}
-	}
-	return nil
+	`CREATE TABLE IF NOT EXISTS disposition_claim (
+			proof VARCHAR(128) PRIMARY KEY,
+			token VARCHAR(128) NOT NULL,
+			user_id BIGINT NOT NULL,
+			expires_at DATETIME(6) NOT NULL,
+			used TINYINT NOT NULL DEFAULT 0
+		)`,
+	`CREATE TABLE IF NOT EXISTS login_proof (
+			auth_key BIGINT PRIMARY KEY,
+			proof VARCHAR(128) NOT NULL
+		)`,
 }
 
 func (s *Service) begin() error {
@@ -441,23 +472,5 @@ func saveAll(tx *sql.Tx, s *Service) error {
 		}
 	}
 	s.auditFrom = len(s.audits)
-	return nil
-}
-
-// RollbackSQL drops the enforcement tables in this database. It refuses the chat schema.
-func RollbackSQL(dsn string) error {
-	if _, err := databaseName(dsn); err != nil {
-		return err
-	}
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	for _, table := range []string{"disposition_grant", "security_lock", "identifier_block", "identifier_bind", "audit_log", "appeal", "notice_outbox", "sanction_event", "sanction"} {
-		if _, err = db.Exec("DROP TABLE IF EXISTS " + table); err != nil {
-			return err
-		}
-	}
 	return nil
 }

@@ -192,6 +192,9 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 			c.Logger.Errorf("auth.signIn - password: %v", err)
 			return nil, err
 		}
+		if cur := enforcement.Current(); cur != nil {
+			_ = cur.RememberLoginProof(c.MD.PermAuthKeyId, phoneCodeHash)
+		}
 		_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
 			AuthKeyId: c.MD.PermAuthKeyId,
 			UserId:    user.User.Id,
@@ -207,6 +210,11 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 	}
 	stage := enforcement.LoginStage(user.Id(), phoneNumber, kind, true, time.Now())
 	if !stage.BindOrdinary {
+		if stage.Grant != nil && phoneCodeHash != "" {
+			if cur := enforcement.Current(); cur != nil {
+				_ = cur.StashProof(phoneCodeHash, *stage.Grant)
+			}
+		}
 		if err = enforcement.RPC(stage.Code); err != nil {
 			c.Logger.Errorf("auth.signIn - sanction")
 			return nil, err

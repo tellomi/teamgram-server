@@ -55,6 +55,13 @@ func (c *AuthorizationCore) AuthCheckPassword(in *mtproto.TLAuthCheckPassword) (
 	}
 	stage := enforcement.LoginStage(userID, "", "", true, time.Now())
 	if !stage.BindOrdinary {
+		if stage.Grant != nil {
+			if cur := enforcement.Current(); cur != nil {
+				if proof := cur.TakeLoginProof(c.authKey()); proof != "" {
+					_ = cur.StashProof(proof, *stage.Grant)
+				}
+			}
+		}
 		if err := enforcement.RPC(stage.Code); err != nil {
 			c.Logger.Errorf("auth.checkPassword - sanction")
 			return nil, err

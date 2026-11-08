@@ -1,7 +1,9 @@
 package enforcement
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 )
 
@@ -36,6 +39,15 @@ func TestMySQLSurvivesRestartAndRetriesNotice(t *testing.T) {
 	cfg := Config{CreateEnabled: true, GrantSecret: []byte("persist-grant"), Sender: box, Now: func() time.Time {
 		return time.Date(2026, 11, 9, 2, 0, 0, 0, time.UTC)
 	}}
+	if _, err := OpenMySQL(dsn, cfg); err != ErrSchema {
+		t.Fatal("OpenMySQL created schema or connected without Migrate:", err)
+	}
+	if err := Migrate(dsn); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(dsn); err != nil {
+		t.Fatal(err)
+	}
 	first, err := OpenMySQL(dsn, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +133,7 @@ func TestMySQLSurvivesRestartAndRetriesNotice(t *testing.T) {
 	}
 }
 
-func TestCredentialCheckRefusesPermanentReadAndWrite(t *testing.T) {
+func TestCredentialCheckUsesSignedSubject(t *testing.T) {
 	s, _ := testSvc(true)
 	SetCurrent(s)
 	t.Cleanup(func() { SetCurrent(nil) })
@@ -134,21 +146,189 @@ func TestCredentialCheckRefusesPermanentReadAndWrite(t *testing.T) {
 	if _, err = s.Approve(Actor{ID: "s2", Role: RoleSenior}, row.ID); err != nil {
 		t.Fatal(err)
 	}
-	h := CredentialHandler{Key: "local-test-key", Now: s.now}
+	now := s.clock()
+	h := CredentialHandler{Now: func() time.Time { return now }, Verify: subjectMap{"user-42": 42, "user-7": 7}}
 	for _, write := range []bool{false, true} {
-		req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"user_id":42,"write":`+boolJSON(write)+`}`))
-		req.Header.Set("Authorization", "Bearer local-test-key")
+		body := `{"credential":"user-42","write":` + boolJSON(write) + `,"user_id":7}`
+		req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer shared-static-key")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":false`) || !strings.Contains(rec.Body.String(), "ACCOUNT_PERMANENT_DISABLED") {
 			t.Fatalf("write %v %d %s", write, rec.Code, rec.Body.String())
 		}
 	}
-	req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"user_id":42,"write":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"user-7","write":true,"user_id":42}`))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatal(rec.Code)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":true`) {
+		t.Fatalf("other subject was judged as the self-reported user: %s", rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"missing","write":true,"user_id":42}`))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), `"allow":true`) {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	if err := ListenLoopback("0.0.0.0:9", h); err == nil {
+		t.Fatal("routable listener was accepted")
+	}
+}
+
+type subjectMap map[string]int64
+
+func (m subjectMap) Subject(_ context.Context, credential string, _ time.Time) (int64, error) {
+	id, ok := m[credential]
+	if !ok {
+		return 0, errors.New("unknown credential")
+	}
+	return id, nil
+}
+
+func TestDispositionRouteReadsOwnNoticeAndAppeal(t *testing.T) {
+	s, _ := testSvc(true)
+	SetCurrent(s)
+	t.Cleanup(func() { SetCurrent(nil) })
+	now := s.clock()
+	end := now.Add(time.Hour)
+	row, err := s.Create(Actor{ID: "s1", Role: RoleSenior}, Sanction{
+		UserID: 42, Kind: KindPermanent, Permanent: true, ReasonCategory: "类别", PolicyClause: "条款", RuleVersion: "rule-1",
+		Start: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Approve(Actor{ID: "s2", Role: RoleSenior}, row.ID); err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.Create(Actor{ID: "agent", Role: RoleAgent}, Sanction{
+		UserID: 7, Kind: KindReadOnly, ReasonCategory: "类别", PolicyClause: "条款", RuleVersion: "rule-1",
+		Start: now, End: &end, IdempotencyKey: "other-disposition",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := s.Stage(42, "", "", true, now)
+	if login.Grant == nil {
+		t.Fatal("no grant")
+	}
+	if err = s.StashProof("hash-42", *login.Grant); err != nil {
+		t.Fatal(err)
+	}
+	h := DispositionHandler{Now: func() time.Time { return now }}
+	claim := postJSON(t, h, "/internal/v1/enforcement/disposition/claim", `{"proof":"hash-42","user_id":7}`, "")
+	if claim.Code != http.StatusOK || !strings.Contains(claim.Body.String(), login.Grant.Token) {
+		t.Fatal(claim.Code, claim.Body.String())
+	}
+	again := postJSON(t, h, "/internal/v1/enforcement/disposition/claim", `{"proof":"hash-42"}`, "")
+	if again.Code == http.StatusOK {
+		t.Fatal("proof was claimed twice")
+	}
+	notes := postJSON(t, h, "/internal/v1/enforcement/disposition/notices", `{"user_id":7}`, "Disposition "+login.Grant.Token)
+	if notes.Code != http.StatusOK || !strings.Contains(notes.Body.String(), row.ID) || strings.Contains(notes.Body.String(), "user 7") {
+		t.Fatal(notes.Code, notes.Body.String())
+	}
+	appeal := postJSON(t, h, "/internal/v1/enforcement/disposition/appeals", `{"sanction_id":"`+row.ID+`","text":"please review","user_id":7}`, "Disposition "+login.Grant.Token)
+	if appeal.Code != http.StatusOK || !strings.Contains(appeal.Body.String(), "pending_review") {
+		t.Fatal(appeal.Code, appeal.Body.String())
+	}
+	foreign := postJSON(t, h, "/internal/v1/enforcement/disposition/appeals", `{"sanction_id":"`+other.ID+`","text":"steal","user_id":42}`, "Disposition "+login.Grant.Token)
+	if foreign.Code == http.StatusOK {
+		t.Fatal("grant appealed another user's case")
+	}
+	missing := postJSON(t, h, "/internal/v1/enforcement/disposition/send", `{}`, "Disposition "+login.Grant.Token)
+	if missing.Code != http.StatusNotFound {
+		t.Fatal(missing.Code)
+	}
+}
+
+func postJSON(t *testing.T, h http.Handler, path, body, auth string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestTwoServicesKeepSeparateCases(t *testing.T) {
+	dsn := openEnforcementDB(t)
+	if err := Migrate(dsn); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{CreateEnabled: true, GrantSecret: []byte("persist-grant"), Now: func() time.Time {
+		return time.Date(2026, 11, 9, 3, 0, 0, 0, time.UTC)
+	}}
+	a, err := OpenMySQL(dsn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenMySQL(dsn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.db.Close()
+	defer b.db.Close()
+	end := cfg.Now().Add(time.Hour)
+	errCh := make(chan error, 2)
+	go func() {
+		_, err := a.Create(Actor{ID: "agent", Role: RoleAgent}, Sanction{
+			UserID: 1, Kind: KindReadOnly, ReasonCategory: "类别", PolicyClause: "条款", RuleVersion: "rule-1",
+			Start: cfg.Now(), End: &end, IdempotencyKey: "inst-a",
+		})
+		errCh <- err
+	}()
+	go func() {
+		_, err := b.Create(Actor{ID: "agent", Role: RoleAgent}, Sanction{
+			UserID: 2, Kind: KindReadOnly, ReasonCategory: "类别", PolicyClause: "条款", RuleVersion: "rule-1",
+			Start: cfg.Now(), End: &end, IdempotencyKey: "inst-b",
+		})
+		errCh <- err
+	}()
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := OpenMySQL(dsn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.db.Close()
+	if d := c.Decide(1, "send_message", false, cfg.Now()); d.Allowed {
+		t.Fatal("instance A case missing")
+	}
+	if d := c.Decide(2, "send_message", false, cfg.Now()); d.Allowed {
+		t.Fatal("instance B case missing")
+	}
+}
+
+func TestFeedSubjectIgnoresCallerUserID(t *testing.T) {
+	key := []byte("signing-key-for-feed-subject")
+	now := time.Now().UTC().Truncate(time.Second)
+	pseudo := discoverauth.Pseudonym(key, 42)
+	token, err := discoverauth.Sign(key, pseudo, discoverauth.RegionGlobal, now.Add(time.Hour).Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := discoverauth.EncodeSub(pseudo)
+	lookup := func(got string) (int64, bool, error) {
+		if got != sub {
+			return 0, false, nil
+		}
+		return 42, true, nil
+	}
+	id, err := FeedSubject(key, lookup, token, now)
+	if err != nil || id != 42 {
+		t.Fatal(err, id)
+	}
+	if _, err = FeedSubject([]byte("different-signing-key"), lookup, token, now); err == nil {
+		t.Fatal("a token signed by another key was accepted")
+	}
+	if _, err = FeedSubject(key, lookup, token, now.Add(2*time.Hour)); err == nil {
+		t.Fatal("an expired token was accepted")
 	}
 }
 

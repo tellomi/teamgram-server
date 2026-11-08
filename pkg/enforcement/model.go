@@ -227,6 +227,8 @@ type Service struct {
 	idBlock     map[string]bool
 	locks       map[int64]bool
 	grants      map[string]*Grant
+	claims      map[string]*Grant
+	loginProof  map[int64]string
 	known       map[int64]snapshot
 	failList    bool
 	failGet     bool
@@ -279,6 +281,7 @@ func New(cfg Config) *Service {
 		idBlock:      map[string]bool{},
 		locks:        map[int64]bool{},
 		grants:       map[string]*Grant{},
+		claims:       map[string]*Grant{},
 		known:        map[int64]snapshot{},
 	}
 }

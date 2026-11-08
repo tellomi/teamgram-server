@@ -44,19 +44,46 @@
 
 `POST /internal/v1/enforcement/credentials/check`
 
-处理函数是 `enforcement.CredentialHandler`。本进程默认不监听。调用方自己挂到隔离地址，并设置非空 Bearer。空密钥会拒绝全部请求。
+处理函数是 `enforcement.CredentialHandler`。本进程默认不监听。`ListenLoopback` 只接受 `127.0.0.1` 或 `::1`，拒绝 `0.0.0.0` 和其他地址。非本机的链路要由调用方自己做 TLS，本进程不在可路由地址上提供明文端口。处理函数不会根据请求去访问任何 URL。
+
+请求体是发现凭证本身，不是调用方填写的用户号：
 
 ```json
-{"user_id": 42, "write": true}
+{"credential": "<discover JWT>", "write": true}
 ```
+
+服务端用现有 `discoverauth.Verify` 核对 HS256。用户号只从凭证的 `sub` 经 `discover_subject` 解析。请求里的 `user_id` 被忽略。静态 `Authorization: Bearer <共享密钥>` 不能指定用户。验签失败、主体未知、存储失败或超时都是 `allow: false`、`code: ACCOUNT_STATE_UNKNOWN`，HTTP 503。没有“允许”缓存。功能没安装时 `state` 是 `off`，这和存储故障不是同一件事。
 
 ```json
 {"allow": false, "code": "ACCOUNT_PERMANENT_DISABLED", "state": "permanent_disabled"}
 ```
 
-`allow: false` 时引擎必须拒绝这次读或写，不能因为 JWT 的 `exp` 还没到就放行。读用 `"write": false`。本仓测试覆盖这个判定。引擎进程本身这一批没有改。
+`allow: false` 时引擎必须拒绝这次读或写，不能因为 JWT 的 `exp` 还没到就放行。读用 `"write": false`。本仓测试覆盖这个判定。引擎进程这一批没有改，由引擎线按本文件接入。
 
-失败策略：复查调用失败时，写操作拒绝；读操作在引擎尚未拿到该用户的停用结论前不要清空本地聊天。拿到 `ACCOUNT_PERMANENT_DISABLED` 后，读写都拒绝。
+失败策略：复查调用失败、超时或未知状态时，读和写都拒绝。不要把未知状态缓存成允许，也不要把它写成一条新的永久处罚。拿到 `ACCOUNT_PERMANENT_DISABLED` 后，读写都拒绝。
+
+## 处置凭证路由
+
+永久停用的登录不绑定普通会话。服务端把处置凭证暂存在这次已核验的 `phone_code_hash`（或未来登录令牌）上，只能领取一次。
+
+`POST /internal/v1/enforcement/disposition/claim`
+
+```json
+{"proof": "<phone_code_hash>"}
+```
+
+```json
+{"token": "<grant>", "expires": "2026-11-09T03:15:00Z"}
+```
+
+之后：
+
+`POST /internal/v1/enforcement/disposition/notices`  
+`POST /internal/v1/enforcement/disposition/appeals`
+
+`Authorization: Disposition <grant>`
+
+申诉正文只有 `sanction_id` 和 `text`。用户号来自凭证记录。用这张凭证申诉别人的案件会被拒绝。这两条路由不能发消息；未知路径是 404。默认不监听，挂载规则与上面的复查接口相同。
 
 ## 客户端
 
