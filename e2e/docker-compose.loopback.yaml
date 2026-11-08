@@ -1,0 +1,36 @@
+# Test-only host port bind. Not for production and not started by itself.
+#
+# docker-compose.yaml publishes teamgram ports as "10443:10443", which Docker
+# binds on 0.0.0.0. docs/e2e.md tells the client to dial 127.0.0.1:10443.
+# Those are different: the client uses loopback, but the published port is
+# still reachable on other host interfaces.
+#
+# This overlay replaces only the teamgram host binds with 127.0.0.1.
+# Container listeners stay where they are. Coturn host networking, production
+# .env, and the default compose file are unchanged.
+#
+#   docker compose -f docker-compose.yaml -f e2e/docker-compose.loopback.yaml config
+#
+# Do not pass this file to a production or staging deploy.
+
+services:
+  teamgram:
+    ports: !override
+      - "127.0.0.1:10443:10443"
+      - "127.0.0.1:11443:11443"
+      - "127.0.0.1:3479:3479/udp"
+      - "127.0.0.1:3480:3480/udp"
+      - "127.0.0.1:20450:20450"
+      - "127.0.0.1:20010:20010"
+      - "127.0.0.1:20020:20020"
+      - "127.0.0.1:20640:20640"
+      - "127.0.0.1:20110:20110"
+      - "127.0.0.1:5222:5222"
+      - "127.0.0.1:8801:8801"
+      - "127.0.0.1:8802:8802"
+      - "127.0.0.1:20660:20660"
+      - "127.0.0.1:20650:20650"
+      - "127.0.0.1:20030:20030"
+      - "127.0.0.1:20120:20120"
+      - "127.0.0.1:20670:20670"
+      - "127.0.0.1:20420:20420"

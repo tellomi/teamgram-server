@@ -151,3 +151,20 @@ TELLOMI_E2E_ADDR=203.0.113.10:10443 ./scripts/smoke-e2e.sh
 ```
 
 Staging on another port is `docs/staging.md`.
+
+## Loopback and published ports
+
+The client address in this file is `127.0.0.1:10443`. That is where the e2e
+process dials. `docker-compose.yaml` publishes teamgram as `10443:10443`
+with no host IP, so Docker binds that port on `0.0.0.0`. A client that uses
+loopback does not by itself stop another interface from reaching the same
+port.
+
+`e2e/docker-compose.loopback.yaml` is a test-only overlay. It replaces the
+teamgram host binds with `127.0.0.1`. It does not change container listeners,
+production `.env`, or the default compose file, and it is not applied unless
+that `-f` is passed. Check the merge without starting anything:
+
+```bash
+docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.loopback.yaml config
+```
