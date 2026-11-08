@@ -2,6 +2,7 @@ package enforcement
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"sync"
@@ -207,6 +208,10 @@ type Service struct {
 	judge        Judge
 	revoker      func(userID int64) error
 	revoked      map[int64]int
+	db           *sql.DB
+	tx           *sql.Tx
+	auditFrom    int
+	eventFrom    int
 
 	rows        map[string]*Sanction
 	order       []string

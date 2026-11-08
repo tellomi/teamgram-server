@@ -20,7 +20,11 @@
 | `TELLOMI_ENFORCEMENT_STORE` | 空 | 只有 `memory` 才安装进程内记录。空着等于没有这套逻辑 |
 | `TELLOMI_ENFORCEMENT_CREATE` | 空 | `1` 才允许新建。关掉不清空已有记录 |
 
-内存记录随进程消失。持久化库和自动迁移不在这一批。不要把这张表放进聊天库的 `users` / `messages`。
+持久记录只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库时打开。`TELLOMI_ENFORCEMENT_STORE=memory` 不会安装。聊天库名 `teamgram` 会被拒绝。表由 `OpenMySQL` 在那个库里 `CREATE TABLE IF NOT EXISTS` 创建，不进 `teamgramd/deploy/sql`，因此生产迁移脚本不会跑它们。回滚是在该库执行 `RollbackSQL`（按表 `DROP TABLE`），不碰聊天库。
+
+内存 `New` 只给本包测试。进程安装路径不调用它。
+
+通知与案件同事务写入 outbox。投递发生在提交之后。失败保持 `retry` 并可在重启后继续。已成功的键不重投。若消息系统已接收但状态更新丢失，会再投一次。这是至少一次，不是外部 exactly-once。契约见 [api/enforcement-contract.md](api/enforcement-contract.md)。
 
 ## 身份
 

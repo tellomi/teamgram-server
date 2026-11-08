@@ -12,8 +12,18 @@ import (
 // timed cases longer than a configured dual-approval window, stay pending
 // until a different senior approves. The initiator cannot approve.
 func (s *Service) Create(actor Actor, in Sanction) (Sanction, error) {
+	row, err := s.createLocked(actor, in)
+	s.deliver()
+	return row, err
+}
+
+func (s *Service) createLocked(actor Actor, in Sanction) (row Sanction, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err = s.begin(); err != nil {
+		return Sanction{}, err
+	}
+	defer func() { err = s.finish(err) }()
 	if !s.create {
 		return Sanction{}, ErrCreateDisabled
 	}
@@ -35,6 +45,9 @@ func (s *Service) Create(actor Actor, in Sanction) (Sanction, error) {
 	}
 	in.ID = newID()
 	in.Initiator = actor.ID
+	if in.Start.IsZero() {
+		in.Start = s.clock()
+	}
 	in.Start = in.Start.UTC()
 	if in.End != nil {
 		t := in.End.UTC()
@@ -54,7 +67,7 @@ func (s *Service) Create(actor Actor, in Sanction) (Sanction, error) {
 	} else {
 		in.Status = StatusActive
 	}
-	row := in
+	row = in
 	s.rows[row.ID] = &row
 	s.order = append(s.order, row.ID)
 	s.byUser[row.UserID] = append(s.byUser[row.UserID], row.ID)
@@ -70,31 +83,54 @@ func (s *Service) Create(actor Actor, in Sanction) (Sanction, error) {
 
 // Approve activates a pending case. The approver must be a different senior.
 func (s *Service) Approve(actor Actor, id string) (Sanction, error) {
+	row, err := s.approveLocked(actor, id)
+	s.deliver()
+	return row, err
+}
+
+func (s *Service) approveLocked(actor Actor, id string) (row Sanction, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	row := s.rows[id]
-	if row == nil {
+	if err = s.begin(); err != nil {
+		return Sanction{}, err
+	}
+	defer func() { err = s.finish(err) }()
+	got := s.rows[id]
+	if got == nil {
 		return Sanction{}, ErrNotFound
 	}
+	row = *got
 	if actor.Role != RoleSenior || actor.ID == "" || actor.ID == row.Initiator {
 		s.auditLocked(actor.ID, "approve_refused", id, actor.Role)
 		return Sanction{}, ErrRole
 	}
 	if row.Status != StatusPendingApproval {
-		return *row, nil
+		return row, nil
 	}
 	row.Status = StatusActive
 	row.Approver = actor.ID
+	got.Status = StatusActive
+	got.Approver = actor.ID
 	s.events = append(s.events, Event{ID: newID(), SanctionID: id, Type: "approve", Actor: actor.ID, At: s.clock()})
 	s.auditLocked(actor.ID, "approve", id, "")
-	s.onActiveLocked(row)
-	return *row, nil
+	s.onActiveLocked(got)
+	return row, nil
 }
 
 // Revoke appends a human correction. It does not delete the case.
 func (s *Service) Revoke(actor Actor, id, reason string) (Sanction, error) {
+	row, err := s.revokeLocked(actor, id, reason)
+	s.deliver()
+	return row, err
+}
+
+func (s *Service) revokeLocked(actor Actor, id, reason string) (out Sanction, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err = s.begin(); err != nil {
+		return Sanction{}, err
+	}
+	defer func() { err = s.finish(err) }()
 	row := s.rows[id]
 	if row == nil {
 		return Sanction{}, ErrNotFound
@@ -122,6 +158,8 @@ func (s *Service) Revoke(actor Actor, id, reason string) (Sanction, error) {
 func (s *Service) BindIdentifier(userID int64, kind, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.begin()
+	defer func() { _ = s.finish(nil) }()
 	if userID == 0 || value == "" {
 		return
 	}
@@ -129,9 +167,13 @@ func (s *Service) BindIdentifier(userID int64, kind, value string) {
 }
 
 // RestrictIdentifier blocks one identifier and does not change the account.
-func (s *Service) RestrictIdentifier(actor Actor, kind, value string) error {
+func (s *Service) RestrictIdentifier(actor Actor, kind, value string) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err = s.begin(); err != nil {
+		return err
+	}
+	defer func() { err = s.finish(err) }()
 	if !s.create {
 		return ErrCreateDisabled
 	}
@@ -146,15 +188,19 @@ func (s *Service) RestrictIdentifier(actor Actor, kind, value string) error {
 // Lock is a security lock. It writes no sanction and no penalty notice.
 func (s *Service) Lock(userID int64) {
 	s.mu.Lock()
+	_ = s.begin()
 	s.locks[userID] = true
 	s.auditLocked("security", "security_lock", "", "")
+	_ = s.finish(nil)
 	s.mu.Unlock()
 }
 
 func (s *Service) Unlock(userID int64) {
 	s.mu.Lock()
+	_ = s.begin()
 	delete(s.locks, userID)
 	s.auditLocked("security", "security_unlock", "", "")
+	_ = s.finish(nil)
 	s.mu.Unlock()
 }
 
@@ -187,11 +233,24 @@ func templateFor(kind string) string {
 
 // Stage is the login decision. passwordSatisfied false returns no sanction detail.
 func (s *Service) Stage(userID int64, identifier, kind string, passwordSatisfied bool, now time.Time) Login {
+	out := s.stageLocked(userID, identifier, kind, passwordSatisfied, now)
+	s.deliver()
+	return out
+}
+
+func (s *Service) stageLocked(userID int64, identifier, kind string, passwordSatisfied bool, now time.Time) Login {
 	if s == nil {
 		return Login{BindOrdinary: true}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.begin(); err != nil {
+		if snap, ok := s.known[userID]; ok && snap.permanent {
+			return Login{Code: "ACCOUNT_PERMANENT_DISABLED"}
+		}
+		return Login{BindOrdinary: true}
+	}
+	defer func() { _ = s.finish(nil) }()
 	if !passwordSatisfied {
 		return Login{WaitPassword: true}
 	}
@@ -249,6 +308,8 @@ func (s *Service) issueLocked(userID int64, now time.Time) Grant {
 func (s *Service) UseGrant(token string, now time.Time) (Grant, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.begin()
+	defer func() { _ = s.finish(nil) }()
 	g := s.grants[token]
 	if g == nil || !now.Before(g.Expires) {
 		return Grant{}, false
@@ -258,11 +319,24 @@ func (s *Service) UseGrant(token string, now time.Time) (Grant, bool) {
 
 // Decide is the shared action check.
 func (s *Service) Decide(userID int64, action string, stranger bool, now time.Time) Decision {
+	out := s.decideLocked(userID, action, stranger, now)
+	s.deliver()
+	return out
+}
+
+func (s *Service) decideLocked(userID int64, action string, stranger bool, now time.Time) Decision {
 	if s == nil {
 		return Decision{Allowed: true}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.begin(); err != nil {
+		if snap, ok := s.known[userID]; ok && snap.restricts {
+			return s.decideFrom(snap, action, stranger, true)
+		}
+		return Decision{Allowed: true, Degraded: true}
+	}
+	defer func() { _ = s.finish(nil) }()
 	if s.failList {
 		if snap, ok := s.known[userID]; ok && snap.restricts {
 			return s.decideFrom(snap, action, stranger, true)
@@ -399,16 +473,25 @@ func (s *Service) refreshKnownLocked(userID int64) {
 
 // SubmitAppeal opens or returns the one open appeal for a case.
 func (s *Service) SubmitAppeal(userID int64, sanctionID, text string) (Appeal, error) {
+	out, err := s.submitAppeal(userID, sanctionID, text)
+	s.deliver()
+	return out, err
+}
+
+func (s *Service) submitAppeal(userID int64, sanctionID, text string) (Appeal, error) {
 	s.mu.Lock()
+	_ = s.begin()
 	row := s.rows[sanctionID]
 	if row == nil || row.UserID != userID {
+		_ = s.finish(nil)
 		s.mu.Unlock()
 		return Appeal{}, ErrNotFound
 	}
 	if id, ok := s.byCase[sanctionID]; ok {
-		existing := s.appeals[id]
+		existing := *s.appeals[id]
+		_ = s.finish(nil)
 		s.mu.Unlock()
-		return *existing, nil
+		return existing, nil
 	}
 	a := &Appeal{
 		ID: newID(), SanctionID: sanctionID, UserID: userID,
@@ -424,17 +507,28 @@ func (s *Service) SubmitAppeal(userID int64, sanctionID, text string) (Appeal, e
 		EvidenceRef: row.EvidenceRef, UserText: text,
 	}
 	j := s.judge
+	_ = s.finish(nil)
 	s.mu.Unlock()
 	if j == nil {
 		s.mu.Lock()
-		a.Status = AppealPendingReview
+		_ = s.begin()
+		if cur := s.appeals[a.ID]; cur != nil {
+			cur.Status = AppealPendingReview
+			a = cur
+		}
+		_ = s.finish(nil)
 		s.mu.Unlock()
 		return *a, nil
 	}
 	v, err := j.Decide(brief)
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	_ = s.begin()
+	if cur := s.appeals[a.ID]; cur != nil {
+		a = cur
+	}
 	s.applyVerdictLocked(a, v, err)
+	_ = s.finish(nil)
+	s.mu.Unlock()
 	return *a, nil
 }
 
@@ -528,38 +622,55 @@ func (s *Service) queueNoticeLocked(row *Sanction, template, event string) {
 	n := &Notice{Key: key, UserID: row.UserID, From: AdminUserID, Template: template, Body: body, Status: "pending"}
 	s.notices[key] = n
 	s.noticeOrder = append(s.noticeOrder, key)
-	s.flushOneLocked(n)
 }
 
-func (s *Service) flushOneLocked(n *Notice) {
-	if n.Status == "sent" || s.sender == nil {
+// deliver tries pending notices after the sanction transaction has committed.
+// A successful messenger accept followed by a lost status update is retried,
+// so delivery is at-least-once, not exactly-once. A failed accept leaves status retry.
+func (s *Service) deliver() {
+	if s == nil {
 		return
 	}
-	sender := s.sender
-	body, key, user := n.Body, n.Key, n.UserID
-	n.Attempts++
-	s.mu.Unlock()
-	err := sender.SendFromAdmin(user, key, body)
 	s.mu.Lock()
-	if err != nil {
-		n.Status = "retry"
-		s.auditLocked("777000", "notice_retry", n.Key, "")
-		return
+	sender := s.sender
+	var batch []Notice
+	if sender != nil {
+		for _, key := range s.noticeOrder {
+			n := s.notices[key]
+			if n != nil && n.Status != "sent" {
+				batch = append(batch, *n)
+			}
+		}
 	}
-	n.Status = "sent"
-	s.auditLocked("777000", "notice_sent", n.Key, "")
+	s.mu.Unlock()
+	for _, n := range batch {
+		err := sender.SendFromAdmin(n.UserID, n.Key, n.Body)
+		s.mu.Lock()
+		cur := s.notices[n.Key]
+		if cur != nil && cur.Status != "sent" {
+			cur.Attempts++
+			if err != nil {
+				cur.Status = "retry"
+				s.auditLocked("777000", "notice_retry", n.Key, "")
+			} else {
+				cur.Status = "sent"
+				s.auditLocked("777000", "notice_sent", n.Key, "")
+			}
+			_ = s.markNotice(cur)
+		}
+		s.mu.Unlock()
+	}
 }
 
 // Flush retries pending notices. A sent key is not sent again.
 func (s *Service) Flush() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, key := range s.noticeOrder {
-		n := s.notices[key]
-		if n != nil && n.Status != "sent" {
-			s.flushOneLocked(n)
-		}
+	if s.db != nil {
+		s.mu.Lock()
+		_ = s.begin()
+		_ = s.finish(nil)
+		s.mu.Unlock()
 	}
+	s.deliver()
 }
 
 func (s *Service) Notices(userID int64) []Notice {

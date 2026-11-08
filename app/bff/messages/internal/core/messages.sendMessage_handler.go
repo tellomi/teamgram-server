@@ -25,7 +25,6 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
-	"github.com/teamgram/teamgram-server/pkg/enforcement"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/threading"
@@ -48,7 +47,7 @@ func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*
 		peer.PeerType = mtproto.PEER_USER
 	}
 
-	if err := enforcement.Reject(c.MD.UserId, "send_message", peer.IsUser() && !peer.IsSelfUser(c.MD.UserId), time.Now()); err != nil {
+	if err := c.blockSend(peer); err != nil {
 		c.Logger.Errorf("messages.sendMessage - sanction")
 		return nil, err
 	}

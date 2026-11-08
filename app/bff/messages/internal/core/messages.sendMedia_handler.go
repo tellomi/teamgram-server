@@ -58,6 +58,11 @@ func (c *MessagesCore) MessagesSendMedia(in *mtproto.TLMessagesSendMedia) (*mtpr
 		return nil, err
 	}
 
+	if err = c.blockSend(peer); err != nil {
+		c.Logger.Errorf("messages.sendMedia - sanction")
+		return nil, err
+	}
+
 	if len(in.Message) > 4000 {
 		err = mtproto.ErrMediaCaptionTooLong
 		c.Logger.Errorf("messages.sendMedia: %v", err)

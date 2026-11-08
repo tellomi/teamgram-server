@@ -64,6 +64,11 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 	   }
 	*/
 
+	if err = c.blockSend(toPeer); err != nil {
+		c.Logger.Errorf("messages.forwardMessages - sanction")
+		return nil, err
+	}
+
 	switch toPeer.PeerType {
 	case mtproto.PEER_SELF:
 		toPeer.PeerType = mtproto.PEER_USER
