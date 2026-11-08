@@ -149,6 +149,82 @@ func TestSendCodeRejectsNonChinaBeforeSMS(t *testing.T) {
 	}
 }
 
+func TestEmailEleventhDoesNotCallSender(t *testing.T) {
+	kv := &countKV{}
+	lim := verify.NewLimiter(kv, verify.Limits{ResendSeconds: 60, DailyPhone: 10})
+	mail := &countingMail{}
+	c := newDeliveryCore(verify.ProviderFixed, &scriptedSender{})
+	c.svcCtx.EmailLimiter = lim
+	c.svcCtx.EmailSender = mail
+	c.svcCtx.Verify.Email.Provider = verify.ProviderLog
+	c.svcCtx.Verify.Email.CodeLength = 6
+	ctx := context.Background()
+	_ = ctx
+	addr := "user@example.com"
+	for i := 0; i < 10; i++ {
+		clearQuotaCooldown(kv, "email", addr)
+		codeData := &model.PhoneCodeTransaction{State: model.CodeStateSend, PhoneCodeHash: "hash"}
+		if err := c.sendEmail(addr, codeData); err != nil {
+			t.Fatalf("send %d: %v", i+1, err)
+		}
+	}
+	if mail.n != 10 {
+		t.Fatalf("sender calls %d", mail.n)
+	}
+	clearQuotaCooldown(kv, "email", addr)
+	err := c.sendEmail(addr, &model.PhoneCodeTransaction{State: model.CodeStateSend, PhoneCodeHash: "hash"})
+	if mail.n != 10 {
+		t.Fatal("eleventh email called the sender")
+	}
+	if rpcErrorCode(err) != "PHONE_NUMBER_FLOOD" {
+		t.Fatalf("error %v", err)
+	}
+}
+
+func TestSMSTimeoutConsumesTheDailySlot(t *testing.T) {
+	old := verify.SMSSendTimeout
+	verify.SMSSendTimeout = 40 * time.Millisecond
+	t.Cleanup(func() { verify.SMSSendTimeout = old })
+
+	kv := &countKV{}
+	lim := verify.NewLimiter(kv, verify.Limits{ResendSeconds: 60, DailyPhone: 1})
+	sender := &scriptedSender{block: true}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.Limiter = lim
+	c.svcCtx.Verify.SMS.Countries = []string{"86"}
+	phone := "8613800138000"
+	codeData := &model.PhoneCodeTransaction{State: model.CodeStateSend, PhoneCode: "123456", PhoneCodeHash: "hash"}
+	err := c.sendSMS(phone, codeData)
+	if !sender.called || rpcErrorCode(err) != "SMS_CODE_CREATE_FAILED" {
+		t.Fatalf("timeout called=%v err=%v", sender.called, err)
+	}
+	sender.called = false
+	clearQuotaCooldown(kv, "sms", phone)
+	err = c.sendSMS(phone, codeData)
+	if sender.called {
+		t.Fatal("the send after a timed-out attempt called the provider")
+	}
+	if rpcErrorCode(err) != "PHONE_NUMBER_FLOOD" {
+		t.Fatalf("error %v", err)
+	}
+}
+
+func clearQuotaCooldown(kv *countKV, kind, target string) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if kv.m == nil {
+		return
+	}
+	delete(kv.m, "tellomi:code:cd:"+kind+":"+target)
+}
+
+type countingMail struct{ n int }
+
+func (m *countingMail) SendCode(context.Context, string, string) error {
+	m.n++
+	return nil
+}
+
 func TestSendCodeDailyCapSkipsProvider(t *testing.T) {
 	kv := &countKV{}
 	lim := verify.NewLimiter(kv, verify.Limits{ResendSeconds: 60, DailyPhone: 1})
