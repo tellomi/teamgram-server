@@ -206,6 +206,10 @@ services:
       TELLOMI_DISCOVER: ${TELLOMI_DISCOVER:-}
       TELLOMI_DISCOVER_SIGNING_KEY: ${TELLOMI_DISCOVER_SIGNING_KEY:-}
       TELLOMI_DISCOVER_PSEUDONYM_KEY: ${TELLOMI_DISCOVER_PSEUDONYM_KEY:-}
+      # Client feed keys in help.getAppConfig. Unset adds nothing.
+      # Not TELLOMI_DISCOVER_ENGINE_URL. See docs/discover-engine-auth.md.
+      TELLOMI_DISCOVER_FEED: ${TELLOMI_DISCOVER_FEED:-}
+      TELLOMI_DISCOVER_FEED_BASE_URL: ${TELLOMI_DISCOVER_FEED_BASE_URL:-}
       # Live contact / close-friend checks for content-engine. Unset is off.
       # See docs/discover-relations.md. Do not publish this port.
       TELLOMI_DISCOVER_RELATIONS: ${TELLOMI_DISCOVER_RELATIONS:-}

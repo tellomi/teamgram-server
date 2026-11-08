@@ -50,6 +50,19 @@ constructor id 是去掉 `#id` 之后那一行的 CRC32（和 Telegram 一样，
 
 开关开着但密钥缺失、太短或两把相同，方法仍返回 `DISCOVER_DISABLED`，进程不退出。日志不写密钥和 token。
 
+`TELLOMI_DISCOVER_FEED` 不签发凭证。它只决定 `help.getAppConfig` 要不要告诉客户端去连引擎。不是 `1`，或者下面的地址不是一个 https 源，这两个键都不出现，文档和 hash 与没设时相同。设为 `1` 且地址是合法 https 源时才写入：
+
+| 键 | 值 |
+| --- | --- |
+| `tellomi_discover_feed_enabled` | `true` |
+| `tellomi_discover_feed_base_url` | 规范后的 `https://主机[:端口]` |
+
+地址只保留主机和可选端口。带用户信息、路径、查询、片段、空主机或端口不在 1 到 65535 的，都不发布。`http` 不发布。客户端自己的 https 校验不改。
+
+这是客户端配置，不是广告。关系、资料、推送、删号回调仍各自默认关闭。`TELLOMI_DISCOVER_ENGINE_URL` 只给删号回调用，可以是环回上的 `http`，不要把它当成客户端的 feed 地址。
+
+本机验收用临时密钥和测试 CA，不复制生产密钥或生产证书。模拟器跑在同一台机器上时，示例地址是 `https://10.0.2.2:8443`（示例，不是生产域名）。引擎 `ENGINE_FEED_AUTH_KEYS` 的第一把用同一次生成的 `TELLOMI_DISCOVER_SIGNING_KEY`。`TELLOMI_DISCOVER` 仍须是 `1`，否则 `discover.getEngineCredential` 继续返回 `DISCOVER_DISABLED`。
+
 同一开关、同一对密钥也签发可见名单 `discover.getAudienceToken`。客户端契约在 `docs/api/discover-ai.md` 的「客户端：可见名单」。
 
 ## 和 D-44 的关系

@@ -3,7 +3,9 @@ package appconfig
 import (
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
@@ -59,6 +61,9 @@ func AppConfigHash() int32 {
 		notice = 1
 	}
 	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, about.HashFragment())
+	if origin, ok := discoverFeedOrigin(); ok {
+		fmt.Fprintf(h, " feed=1 %s", origin)
+	}
 	sum := int32(h.Sum32() & 0x7fffffff)
 	if sum == 0 {
 		return 1
@@ -124,7 +129,63 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 	pairs = append(pairs, pair("reactions_user_max", premium.FeatureReactions)...)
 	pairs = append(pairs, pair("upload_max_fileparts", premium.FeatureUpload)...)
 	pairs = append(pairs, aboutPairs()...)
+	if origin, ok := discoverFeedOrigin(); ok {
+		pairs = append(pairs,
+			jsonPair("tellomi_discover_feed_enabled", jsonBool(true)),
+			jsonPair("tellomi_discover_feed_base_url", jsonString(origin)),
+		)
+	}
 	return pairs
+}
+
+const (
+	// EnvDiscoverFeed publishes the client feed keys. Only the exact value 1
+	// does. Credential issuing stays on TELLOMI_DISCOVER.
+	EnvDiscoverFeed = "TELLOMI_DISCOVER_FEED"
+	// EnvDiscoverFeedURL is the HTTPS origin the client uses for the feed.
+	// It is not TELLOMI_DISCOVER_ENGINE_URL.
+	EnvDiscoverFeedURL = "TELLOMI_DISCOVER_FEED_BASE_URL"
+)
+
+// discoverFeedOrigin is the client feed origin, or false when the keys must
+// stay absent. The default (unset, or any value other than 1, or a URL that
+// is not an https origin) adds nothing, so the previous config and hash
+// stay the same.
+func discoverFeedOrigin() (string, bool) {
+	if strings.TrimSpace(os.Getenv(EnvDiscoverFeed)) != "1" {
+		return "", false
+	}
+	return httpsOrigin(os.Getenv(EnvDiscoverFeedURL))
+}
+
+// httpsOrigin accepts an https URL whose only meaningful parts are the host
+// and an optional port. A path, query, fragment, userinfo, empty host, or
+// port outside 1..65535 is rejected. The result is https:// plus the host.
+func httpsOrigin(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.ContainsAny(raw, " \t\r\n") {
+		return "", false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u == nil {
+		return "", false
+	}
+	if !strings.EqualFold(u.Scheme, "https") || u.Opaque != "" || u.User != nil {
+		return "", false
+	}
+	if u.Hostname() == "" || u.Host == "" {
+		return "", false
+	}
+	if u.Path != "" || u.RawPath != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", false
+	}
+	if p := u.Port(); p != "" {
+		n, conv := strconv.Atoi(p)
+		if conv != nil || n < 1 || n > 65535 {
+			return "", false
+		}
+	}
+	return "https://" + u.Host, true
 }
 
 // aboutPairs are Tellomi keys for the privacy switch and the About page.

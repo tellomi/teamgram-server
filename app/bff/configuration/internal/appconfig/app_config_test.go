@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/about"
 	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
@@ -32,6 +33,8 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 	t.Setenv(about.EnvAlgorithmFiling, "")
 	t.Setenv(about.EnvAIModel, "")
 	t.Setenv(about.EnvAIRegistration, "")
+	t.Setenv(EnvDiscoverFeed, "")
+	t.Setenv(EnvDiscoverFeedURL, "")
 	premium.Reload()
 	t.Cleanup(func() { premium.Reload() })
 
@@ -91,6 +94,9 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 		t.Fatalf("emoji_blocklist = %#v", blocklist)
 	}
 	assertHiddenFeatures(t, obj)
+	if _, ok := obj["tellomi_discover_feed_enabled"]; ok || obj["tellomi_discover_feed_base_url"] != nil {
+		t.Fatalf("default feed keys %#v %#v", obj["tellomi_discover_feed_enabled"], obj["tellomi_discover_feed_base_url"])
+	}
 	if obj["transcribe_audio_trial_weekly_number"] != float64(0) ||
 		obj["transcribe_audio_trial_duration_max"] != float64(0) ||
 		obj["transcribe_audio_trial_cooldown_until"] != float64(0) {
@@ -152,6 +158,90 @@ func assertHiddenFeatures(t *testing.T, obj map[string]any) {
 			t.Fatalf("%s = %#v", key, obj[key])
 		}
 	}
+}
+
+func TestDiscoverFeedConfig(t *testing.T) {
+	t.Setenv(discoverauth.EnvEnabled, "")
+	t.Setenv(EnvDiscoverFeed, "")
+	t.Setenv(EnvDiscoverFeedURL, "")
+	base := AppConfigHash()
+	if _, ok := configMap(t)["tellomi_discover_feed_enabled"]; ok {
+		t.Fatal("unset published a feed key")
+	}
+
+	for _, url := range []string{
+		"",
+		"   ",
+		"http://10.0.2.2:8443",
+		"https://user:secret@10.0.2.2:8443",
+		"https://10.0.2.2:8443/v1",
+		"https://10.0.2.2:8443/",
+		"https://10.0.2.2:8443?x=1",
+		"https://10.0.2.2:8443#frag",
+		"https://10.0.2.2:0",
+		"https://10.0.2.2:65536",
+		"https://10.0.2.2:abc",
+		"https://",
+		"https:///feed",
+	} {
+		t.Setenv(EnvDiscoverFeed, "1")
+		t.Setenv(EnvDiscoverFeedURL, url)
+		obj := configMap(t)
+		if _, ok := obj["tellomi_discover_feed_enabled"]; ok || obj["tellomi_discover_feed_base_url"] != nil {
+			t.Fatalf("%q published %#v", url, obj["tellomi_discover_feed_base_url"])
+		}
+		if AppConfigHash() != base {
+			t.Fatalf("%q changed the default hash", url)
+		}
+	}
+
+	t.Setenv(EnvDiscoverFeed, "true")
+	t.Setenv(EnvDiscoverFeedURL, "https://10.0.2.2:8443")
+	if _, ok := configMap(t)["tellomi_discover_feed_enabled"]; ok || AppConfigHash() != base {
+		t.Fatal("a non-1 switch published the feed")
+	}
+
+	t.Setenv(EnvDiscoverFeed, "1")
+	t.Setenv(EnvDiscoverFeedURL, " https://10.0.2.2:8443 ")
+	obj := configMap(t)
+	if obj["tellomi_discover_feed_enabled"] != true || obj["tellomi_discover_feed_base_url"] != "https://10.0.2.2:8443" {
+		t.Fatalf("enabled %#v %#v", obj["tellomi_discover_feed_enabled"], obj["tellomi_discover_feed_base_url"])
+	}
+	on := AppConfigHash()
+	if on == base {
+		t.Fatal("a valid feed did not change the hash")
+	}
+	if discoverauth.Enabled() {
+		t.Fatal("the feed switch issued credentials")
+	}
+
+	t.Setenv(EnvDiscoverFeedURL, "https://[::1]:8443")
+	obj = configMap(t)
+	if obj["tellomi_discover_feed_base_url"] != "https://[::1]:8443" {
+		t.Fatalf("ipv6 %#v", obj["tellomi_discover_feed_base_url"])
+	}
+	if AppConfigHash() == on {
+		t.Fatal("a different origin kept the same hash")
+	}
+
+	t.Setenv(EnvDiscoverFeed, "")
+	t.Setenv(EnvDiscoverFeedURL, "")
+	if AppConfigHash() != base {
+		t.Fatal("clearing the feed did not restore the default hash")
+	}
+	if _, ok := configMap(t)["tellomi_discover_feed_enabled"]; ok {
+		t.Fatal("cleared feed still published")
+	}
+}
+
+func configMap(t *testing.T) map[string]any {
+	t.Helper()
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("app config is %T", raw)
+	}
+	return obj
 }
 
 func TestTranscribeTrialFollowsEnv(t *testing.T) {
