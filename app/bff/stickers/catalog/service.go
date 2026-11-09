@@ -8,6 +8,8 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // Service answers the sticker and emoji RPCs from one in-memory catalog.
@@ -111,7 +113,7 @@ func (s *Service) EmojiStickers(userID, hash int64) *mtproto.Messages_AllSticker
 
 func (s *Service) listStickers(userID, hash int64, emoji bool) *mtproto.Messages_AllStickers {
 	return s.listInstalled(userID, hash, func(p *Pack) bool {
-		return !p.system() && p.Emojis == emoji && !p.Masks
+		return !p.system() && !p.foreignSeed() && p.Emojis == emoji && !p.Masks
 	})
 }
 
@@ -143,7 +145,11 @@ func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool
 		}
 		return rows[i].p.ID < rows[j].p.ID
 	})
-	var sets []*mtproto.StickerSet
+	// Hash the visible pack ids before building StickerSet objects. A client
+	// that already has this install list gets allStickersNotModified without
+	// walking every document into a TL value. getAllStickers has no offset;
+	// the objects themselves are set metadata, not the sticker bytes.
+	var kept []row
 	var ids []int64
 	for _, row := range rows {
 		var keep bool
@@ -151,14 +157,15 @@ func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool
 		if !keep {
 			continue
 		}
-		sets = append(sets, row.p.tl(true, false))
+		kept = append(kept, row)
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesAllStickersNotModified(&mtproto.Messages_AllStickers{}).To_Messages_AllStickers()
 	}
-	if sets == nil {
-		sets = []*mtproto.StickerSet{}
+	sets := make([]*mtproto.StickerSet, 0, len(kept))
+	for _, row := range kept {
+		sets = append(sets, row.p.tl(true, false))
 	}
 	return mtproto.MakeTLMessagesAllStickers(&mtproto.Messages_AllStickers{
 		Hash: sum,
@@ -166,15 +173,40 @@ func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool
 	}).To_Messages_AllStickers()
 }
 
+// featuredPageSize is the first page messages.getFeaturedStickers returns.
+// The sticker panel replaces its trending list with that page. Further
+// pages are messages.getOldFeaturedStickers. count is the full list.
+const featuredPageSize = 100
+
 func (s *Service) Featured(userID, hash int64, emoji bool) *mtproto.Messages_FeaturedStickers {
+	return s.featuredPage(userID, hash, emoji, 0, featuredPageSize, true)
+}
+
+// OldFeatured answers messages.getOldFeaturedStickers. offset is an index
+// into the same featured list, and limit is the page size (default and max
+// are featuredPageSize).
+func (s *Service) OldFeatured(userID, hash int64, offset, limit int32) *mtproto.Messages_FeaturedStickers {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > featuredPageSize {
+		limit = featuredPageSize
+	}
+	return s.featuredPage(userID, hash, false, offset, limit, false)
+}
+
+func (s *Service) featuredPage(userID, hash int64, emoji bool, offset, limit int32, firstPage bool) *mtproto.Messages_FeaturedStickers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var sets []*mtproto.StickerSetCovered
+	type feat struct {
+		p      *Pack
+		unread bool
+	}
+	var all []feat
 	var ids []int64
-	var unread []int64
 	seen := s.state(userID).featuredRead
 	for _, p := range s.packs {
-		if !p.Featured || p.system() || p.Emojis != emoji {
+		if !p.Featured || p.system() || p.foreignSeed() || p.Emojis != emoji {
 			continue
 		}
 		var keep bool
@@ -182,28 +214,69 @@ func (s *Service) Featured(userID, hash int64, emoji bool) *mtproto.Messages_Fea
 		if !keep {
 			continue
 		}
-		sets = append(sets, p.covered(false, false))
-		if seen == nil || !seen[p.ID] {
-			unread = append(unread, p.ID)
+		unread := seen == nil || !seen[p.ID]
+		if unread {
 			ids = append(ids, p.ID)
 		}
+		all = append(all, feat{p: p, unread: unread})
 	}
+	total := len(all)
+	// The hash covers the whole featured list, including unread, so a new
+	// pack or a read changes it. Building covers is deferred until the hash
+	// misses, and then only the requested page is encoded.
 	sum := hash64(ids)
-	if hash != 0 && hash == sum {
-		return mtproto.MakeTLMessagesFeaturedStickersNotModified(&mtproto.Messages_FeaturedStickers{}).To_Messages_FeaturedStickers()
+	if !firstPage {
+		var pageIDs []int64
+		page := sliceFeat(all, offset, limit)
+		for _, row := range page {
+			var keep bool
+			pageIDs, keep = appendPackKey(pageIDs, row.p)
+			if !keep {
+				continue
+			}
+			if row.unread {
+				pageIDs = append(pageIDs, row.p.ID)
+			}
+		}
+		sum = hash64(pageIDs)
 	}
-	if sets == nil {
-		sets = []*mtproto.StickerSetCovered{}
+	if hash != 0 && hash == sum {
+		return mtproto.MakeTLMessagesFeaturedStickersNotModified(&mtproto.Messages_FeaturedStickers{
+			Count: int32(total),
+		}).To_Messages_FeaturedStickers()
+	}
+	page := sliceFeat(all, offset, limit)
+	sets := make([]*mtproto.StickerSetCovered, 0, len(page))
+	var unread []int64
+	for _, row := range page {
+		sets = append(sets, row.p.covered(false, false))
+		if row.unread {
+			unread = append(unread, row.p.ID)
+		}
 	}
 	if unread == nil {
 		unread = []int64{}
 	}
 	return mtproto.MakeTLMessagesFeaturedStickers(&mtproto.Messages_FeaturedStickers{
-		Count:  int32(len(sets)),
+		Count:  int32(total),
 		Hash:   sum,
 		Sets:   sets,
 		Unread: unread,
 	}).To_Messages_FeaturedStickers()
+}
+
+func sliceFeat[T any](all []T, offset, limit int32) []T {
+	if offset < 0 {
+		offset = 0
+	}
+	if int(offset) >= len(all) || limit <= 0 {
+		return nil
+	}
+	end := int(offset) + int(limit)
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[int(offset):end]
 }
 
 func (s *Service) GetSet(userID int64, in *mtproto.InputStickerSet, hash int32) (*mtproto.Messages_StickerSet, error) {
@@ -311,17 +384,17 @@ func (s *Service) Uninstall(userID int64, in *mtproto.InputStickerSet) error {
 func (s *Service) SearchSets(q string, hash int64, emojiOnly bool) *mtproto.Messages_FoundStickerSets {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	q = strings.ToLower(strings.TrimSpace(q))
-	var sets []*mtproto.StickerSetCovered
+	q = foldText(q)
+	var matched []*Pack
 	var ids []int64
 	for _, p := range s.packs {
-		if p.system() {
+		if p.system() || p.foreignSeed() {
 			continue
 		}
-		if emojiOnly && !p.Emojis {
+		if p.Emojis != emojiOnly {
 			continue
 		}
-		if q != "" && !strings.Contains(strings.ToLower(p.Title), q) && !strings.Contains(strings.ToLower(p.ShortName), q) {
+		if q != "" && !strings.Contains(foldText(p.Title), q) && !strings.Contains(foldText(p.ShortName), q) && !packMatchesQuery(p, q) {
 			continue
 		}
 		var keep bool
@@ -329,19 +402,39 @@ func (s *Service) SearchSets(q string, hash int64, emojiOnly bool) *mtproto.Mess
 		if !keep {
 			continue
 		}
-		sets = append(sets, p.covered(false, false))
+		matched = append(matched, p)
 	}
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesFoundStickerSetsNotModified(&mtproto.Messages_FoundStickerSets{}).To_Messages_FoundStickerSets()
 	}
-	if sets == nil {
-		sets = []*mtproto.StickerSetCovered{}
+	sets := make([]*mtproto.StickerSetCovered, 0, len(matched))
+	for _, p := range matched {
+		sets = append(sets, p.covered(false, false))
 	}
 	return mtproto.MakeTLMessagesFoundStickerSets(&mtproto.Messages_FoundStickerSets{
 		Hash: sum,
 		Sets: sets,
 	}).To_Messages_FoundStickerSets()
+}
+
+// packMatchesQuery is true when a sticker in the pack carries the query as
+// an emoticon or as a keyword. The sticker panel's pack search sends the
+// typed text here, including Chinese words and a single emoji.
+func packMatchesQuery(p *Pack, q string) bool {
+	if p == nil || q == "" {
+		return false
+	}
+	langs := searchLangs(nil, q)
+	for _, item := range p.visibleItems() {
+		if item == nil {
+			continue
+		}
+		if emojiEqual(item.Emoticon, q) || item.keywordHit(q, langs) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtproto.Messages_Stickers {
@@ -354,14 +447,14 @@ func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtp
 		return stickersResult(nil, nil, hash)
 	}
 	for _, p := range s.packs {
-		if p.system() {
+		if p.system() || p.foreignSeed() {
 			continue
 		}
 		if custom != p.Emojis {
 			continue
 		}
 		for _, item := range p.Items {
-			if item.Emoticon != emoticon || seen[item.DocumentID] || emojiblock.Blocked(item.Emoticon) {
+			if !emojiEqual(item.Emoticon, emoticon) || seen[item.DocumentID] || emojiblock.Blocked(item.Emoticon) {
 				continue
 			}
 			seen[item.DocumentID] = true
@@ -383,49 +476,103 @@ func stickersResult(docs []*mtproto.Document, ids []int64, hash int64) *mtproto.
 	return mtproto.MakeTLMessagesStickers(&mtproto.Messages_Stickers{Hash: sum, Stickers: docs}).To_Messages_Stickers()
 }
 
+// searchPageSize is the default and maximum page for messages.searchStickers.
+// Android sends limit 100 and follows next_offset.
+const searchPageSize = 100
+
+// SearchDocuments is the unpaged keyword search used by in-process tests.
 func (s *Service) SearchDocuments(q string, emoji bool, hash int64) *mtproto.Messages_FoundStickers {
+	return s.SearchStickers(q, "", nil, emoji, 0, 0, hash)
+}
+
+// SearchStickers answers messages.searchStickers.
+// q is the text typed in the sticker panel. emoticon is the concatenation
+// of emoji that the client's local keyword list already matched. langCodes
+// are the keyboard languages (Android sends one, often zh-CN or zh-Hans).
+// limit 0 returns every match and omits next_offset; a positive limit pages.
+func (s *Service) SearchStickers(q, emoticon string, langCodes []string, emoji bool, offset, limit int32, hash int64) *mtproto.Messages_FoundStickers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	q = strings.ToLower(strings.TrimSpace(q))
-	var docs []*mtproto.Document
-	var ids []int64
+	q = strings.TrimSpace(q)
+	langs := searchLangs(langCodes, q)
+	type hit struct {
+		item *Item
+		pack *Pack
+	}
+	var hits []hit
 	seen := map[int64]bool{}
+	if q == "" && strings.TrimSpace(emoticon) == "" {
+		return stickersFound(nil, nil, hash, 0, false)
+	}
 	for _, p := range s.packs {
-		if p.system() || p.Emojis != emoji {
+		if p.system() || p.foreignSeed() || p.Emojis != emoji {
 			continue
 		}
 		for _, item := range p.Items {
 			if seen[item.DocumentID] || emojiblock.Blocked(item.Emoticon) {
 				continue
 			}
-			if q != "" && item.Emoticon != q && !hasKeyword(item, q) {
+			if !stickerMatches(item, q, emoticon, langs) {
 				continue
 			}
 			seen[item.DocumentID] = true
-			docs = append(docs, item.document(p))
-			ids = append(ids, item.DocumentID)
+			hits = append(hits, hit{item: item, pack: p})
 		}
 	}
+	more := false
+	next := int32(0)
+	if limit > 0 {
+		if offset < 0 {
+			offset = 0
+		}
+		if int(offset) >= len(hits) {
+			return stickersFound(nil, nil, hash, 0, false)
+		}
+		end := int(offset) + int(limit)
+		if end < len(hits) {
+			more = true
+			next = int32(end)
+		} else {
+			end = len(hits)
+		}
+		hits = hits[int(offset):end]
+	}
+	docs := make([]*mtproto.Document, 0, len(hits))
+	ids := make([]int64, 0, len(hits))
+	for _, h := range hits {
+		docs = append(docs, h.item.document(h.pack))
+		ids = append(ids, h.item.DocumentID)
+	}
+	return stickersFound(docs, ids, hash, next, more)
+}
+
+func stickerMatches(item *Item, q, emoticon string, langs []string) bool {
+	if q != "" && (emojiEqual(item.Emoticon, q) || item.keywordHit(q, langs)) {
+		return true
+	}
+	if emoticon != "" && emojiListed(item.Emoticon, emoticon) {
+		return true
+	}
+	return false
+}
+
+func stickersFound(docs []*mtproto.Document, ids []int64, hash int64, next int32, more bool) *mtproto.Messages_FoundStickers {
 	sum := hash64(ids)
 	if hash != 0 && hash == sum {
-		return mtproto.MakeTLMessagesFoundStickersNotModified(&mtproto.Messages_FoundStickers{}).To_Messages_FoundStickers()
+		out := &mtproto.Messages_FoundStickers{}
+		if more {
+			out.NextOffset = wrapperspb.Int32(next)
+		}
+		return mtproto.MakeTLMessagesFoundStickersNotModified(out).To_Messages_FoundStickers()
 	}
 	if docs == nil {
 		docs = []*mtproto.Document{}
 	}
-	return mtproto.MakeTLMessagesFoundStickers(&mtproto.Messages_FoundStickers{
-		Hash:     sum,
-		Stickers: docs,
-	}).To_Messages_FoundStickers()
-}
-
-func hasKeyword(item *Item, q string) bool {
-	for _, word := range item.Keywords {
-		if strings.Contains(strings.ToLower(word), q) {
-			return true
-		}
+	out := &mtproto.Messages_FoundStickers{Hash: sum, Stickers: docs}
+	if more {
+		out.NextOffset = wrapperspb.Int32(next)
 	}
-	return false
+	return mtproto.MakeTLMessagesFoundStickers(out).To_Messages_FoundStickers()
 }
 
 func (s *Service) Recent(userID, hash int64, attached bool) *mtproto.Messages_RecentStickers {
@@ -597,59 +744,6 @@ func (s *Service) Documents(ids []int64) *mtproto.Vector_Document {
 		out.Datas = append(out.Datas, link.item.document(link.pack))
 	}
 	return out
-}
-
-func (s *Service) Keywords(lang string, from int32) *mtproto.EmojiKeywordsDifference {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	version := emojiKeywordVersion()
-	diff := &mtproto.EmojiKeywordsDifference{
-		LangCode:    lang,
-		FromVersion: from,
-		Version:     version,
-		Keywords:    []*mtproto.EmojiKeyword{},
-	}
-	if from >= version {
-		return mtproto.MakeTLEmojiKeywordsDifference(diff).To_EmojiKeywordsDifference()
-	}
-	grouped := map[string][]string{}
-	var order []string
-	for _, link := range s.docs {
-		if emojiblock.Blocked(link.item.Emoticon) {
-			continue
-		}
-		for _, word := range link.item.Keywords {
-			key := strings.ToLower(word)
-			if _, ok := grouped[key]; !ok {
-				order = append(order, key)
-			}
-			if !contains(grouped[key], link.item.Emoticon) {
-				grouped[key] = append(grouped[key], link.item.Emoticon)
-			}
-		}
-	}
-	for _, key := range order {
-		diff.Keywords = append(diff.Keywords, mtproto.MakeTLEmojiKeyword(&mtproto.EmojiKeyword{
-			Keyword:   key,
-			Emoticons: grouped[key],
-		}).To_EmojiKeyword())
-	}
-	return mtproto.MakeTLEmojiKeywordsDifference(diff).To_EmojiKeywordsDifference()
-}
-
-func contains(list []string, v string) bool {
-	for _, item := range list {
-		if item == v {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) Languages() *mtproto.Vector_EmojiLanguage {
-	return &mtproto.Vector_EmojiLanguage{Datas: []*mtproto.EmojiLanguage{
-		mtproto.MakeTLEmojiLanguage(&mtproto.EmojiLanguage{LangCode: "en"}).To_EmojiLanguage(),
-	}}
 }
 
 func (s *Service) docByFamily(emoticon, family string) *linkedDoc {

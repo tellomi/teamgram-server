@@ -73,9 +73,27 @@ type Item struct {
 	StorageClass string
 	ObjectPath   string
 	AssetPath    string
+	// Keywords are untagged words. A word with Han, kana, or hangul is
+	// simplified Chinese; anything else is English. LangKeywords holds
+	// words tagged with a canonical language code (zh-hans, zh-hant, en).
 	Keywords     []string
+	LangKeywords map[string][]string
 	Size         int32
 	MaskCoords   *mtproto.MaskCoords
+}
+
+// foreignSeed is a placeholder pack shipped for development (Twemoji,
+// Fluent Emoji, Noto Emoji). The sticker panel does not list it.
+func (p *Pack) foreignSeed() bool {
+	if p == nil {
+		return false
+	}
+	switch p.ShortName {
+	case ShortTwemoji, ShortFluent, ShortNoto:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Pack) system() bool {

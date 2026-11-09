@@ -542,6 +542,22 @@ func (m *MinioUtil) GetStickerFile(ctx context.Context, path string, offset int6
 	return m.getRange(ctx, ClassStickers, path, offset, limit)
 }
 
+// StatClass returns the stored size of a class object. A missing object is ErrNotFound.
+func (m *MinioUtil) StatClass(ctx context.Context, class, path string) (int64, error) {
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return 0, err
+	}
+	info, err := m.client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+	return info.Size, nil
+}
+
 func (m *MinioUtil) PutEmojiFile(ctx context.Context, path string, r io.Reader) (minio.UploadInfo, error) {
 	return m.put(ctx, ClassEmoji, path, r, -1, contentTypeFor(path))
 }

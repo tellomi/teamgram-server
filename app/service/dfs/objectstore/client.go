@@ -6,6 +6,7 @@ package objectstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 )
+
+// ErrNotFound is a missing object. Import uses it to decide whether to upload.
+var ErrNotFound = errors.New("object does not exist")
 
 // testRoundTripper is set by tests that talk to a local TLS server.
 var testRoundTripper http.RoundTripper
@@ -75,6 +79,18 @@ func (c *Client) Put(ctx context.Context, class, path, contentType string, body 
 		return fmt.Errorf("put %s/%s: %w", class, path, err)
 	}
 	return nil
+}
+
+// Size is the stored object size. A missing object returns ErrNotFound.
+func (c *Client) Size(ctx context.Context, class, path string) (int64, error) {
+	if c == nil || c.u == nil {
+		return 0, fmt.Errorf("object storage client is nil")
+	}
+	n, err := c.u.StatClass(ctx, class, path)
+	if errors.Is(err, minio_util.ErrNotFound) {
+		return 0, ErrNotFound
+	}
+	return n, err
 }
 
 // Get reads the object upload.getFile reads for this class and path.

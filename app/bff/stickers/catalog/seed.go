@@ -79,13 +79,16 @@ func builtinPacks() []*Pack {
 		}
 	}
 	packs := []*Pack{
-		newPack(ShortTwemoji, "Twemoji", KindSticker, false, false, true, true,
+		// Twemoji, Fluent, and Noto stay fetchable by short name so an old
+		// message can still resolve. They are not featured, not installed,
+		// and foreignSeed hides them from the sticker panel.
+		newPack(ShortTwemoji, "Twemoji", KindSticker, false, false, false, false,
 			"CC-BY-4.0", "Twemoji by Twitter, Inc. and contributors",
 			"https://github.com/jdecked/twemoji", twemoji),
-		newPack(ShortFluent, "Fluent Emoji", KindSticker, false, false, true, true,
+		newPack(ShortFluent, "Fluent Emoji", KindSticker, false, false, false, false,
 			"MIT", "Fluent Emoji by Microsoft",
 			"https://github.com/microsoft/fluentui-emoji", fluent),
-		newPack(ShortNoto, "Noto Emoji", KindCustomEmoji, true, true, true, true,
+		newPack(ShortNoto, "Noto Emoji", KindCustomEmoji, true, true, false, false,
 			"OFL-1.1 AND Apache-2.0", "Noto Emoji Animation by Google",
 			"https://github.com/googlefonts/noto-emoji", noto),
 		newPack(ShortAnimatedEmoji, "Animated Emoji", KindAnimatedEmoji, true, true, false, false,

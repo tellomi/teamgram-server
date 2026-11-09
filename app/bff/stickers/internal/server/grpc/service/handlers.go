@@ -46,7 +46,7 @@ func (s *Service) MessagesGetFeaturedStickers(ctx context.Context, in *mtproto.T
 }
 
 func (s *Service) MessagesGetOldFeaturedStickers(ctx context.Context, in *mtproto.TLMessagesGetOldFeaturedStickers) (*mtproto.Messages_FeaturedStickers, error) {
-	return cat().Featured(userID(ctx), in.GetHash(), false), nil
+	return cat().OldFeatured(userID(ctx), in.GetHash(), in.GetOffset(), in.GetLimit()), nil
 }
 
 func (s *Service) MessagesReadFeaturedStickers(ctx context.Context, in *mtproto.TLMessagesReadFeaturedStickers) (*mtproto.Bool, error) {
@@ -99,10 +99,19 @@ func (s *Service) MessagesGetStickers(ctx context.Context, in *mtproto.TLMessage
 
 func (s *Service) MessagesSearchStickers(ctx context.Context, in *mtproto.TLMessagesSearchStickers) (*mtproto.Messages_FoundStickers, error) {
 	q := in.GetQ()
+	emo := in.GetEmoticon()
+	// Older callers put the whole query in emoticon and leave q empty.
+	// Android sends both: q is the typed text and emoticon is the emoji
+	// concatenation from the local keyword list.
 	if q == "" {
-		q = in.GetEmoticon()
+		q = emo
+		emo = ""
 	}
-	return cat().SearchDocuments(q, in.GetEmojis(), in.GetHash()), nil
+	limit := in.GetLimit()
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	return cat().SearchStickers(q, emo, in.GetLangCode(), in.GetEmojis(), in.GetOffset(), limit, in.GetHash()), nil
 }
 
 func (s *Service) MessagesGetEmojiKeywords(ctx context.Context, in *mtproto.TLMessagesGetEmojiKeywords) (*mtproto.EmojiKeywordsDifference, error) {
@@ -114,7 +123,7 @@ func (s *Service) MessagesGetEmojiKeywordsDifference(ctx context.Context, in *mt
 }
 
 func (s *Service) MessagesGetEmojiKeywordsLanguages(ctx context.Context, in *mtproto.TLMessagesGetEmojiKeywordsLanguages) (*mtproto.Vector_EmojiLanguage, error) {
-	return cat().Languages(), nil
+	return cat().Languages(in.GetLangCodes()), nil
 }
 
 func (s *Service) MessagesGetEmojiURL(ctx context.Context, in *mtproto.TLMessagesGetEmojiURL) (*mtproto.EmojiURL, error) {

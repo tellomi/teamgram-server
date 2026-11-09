@@ -116,7 +116,6 @@ func TestBlocklistExtraDropsCatalogEmoji(t *testing.T) {
 	s := newService(builtinPacks())
 	const user int64 = 4
 	grin := emojiFromCode("1f600")
-	before := s.AllStickers(user, 0).GetHash()
 	setBefore, err := s.GetSet(user, shortName(ShortTwemoji), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -129,16 +128,15 @@ func TestBlocklistExtraDropsCatalogEmoji(t *testing.T) {
 	t.Setenv(emojiblock.EnvFile, "")
 	emojiblock.Reload()
 
-	all := s.AllStickers(user, 0)
-	if all.GetHash() == before {
-		t.Fatal("sticker list hash did not change after an item was blocked")
-	}
-	if all.GetPredicateName() != mtproto.Predicate_messages_allStickers {
-		t.Fatalf("predicate %s", all.GetPredicateName())
+	if s.AllStickers(user, 0).GetPredicateName() != mtproto.Predicate_messages_allStickers {
+		t.Fatal("getAllStickers did not return a list")
 	}
 	setAfter, err := s.GetSet(user, shortName(ShortTwemoji), 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if setAfter.GetSet().GetHash() == setBefore.GetSet().GetHash() {
+		t.Fatal("sticker set hash did not change after an item was blocked")
 	}
 	if hasAlt(setAfter.GetDocuments(), grin) {
 		t.Fatal("blocked grinning face is still in the sticker set")

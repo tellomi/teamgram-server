@@ -10,8 +10,10 @@ func TestFeaturedAndStickerSetRoundTrip(t *testing.T) {
 	s := Must()
 	for _, emoji := range []bool{false, true} {
 		featured := s.Featured(1, 0, emoji)
-		if len(featured.GetSets()) == 0 || len(featured.GetUnread()) == 0 {
-			t.Fatalf("emoji=%v featured sets=%d unread=%d", emoji, len(featured.GetSets()), len(featured.GetUnread()))
+		for _, set := range featured.GetSets() {
+			if set.GetSet().GetShortName() == ShortTwemoji || set.GetSet().GetShortName() == ShortFluent || set.GetSet().GetShortName() == ShortNoto {
+				t.Fatalf("foreign seed still featured: %s", set.GetSet().GetShortName())
+			}
 		}
 		got, ok := roundTrip(t, featured).(*mtproto.TLMessagesFeaturedStickers)
 		if !ok {
