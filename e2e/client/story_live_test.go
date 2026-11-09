@@ -21,6 +21,11 @@ func TestLiveStubClearsWhenTheStreamEnds(t *testing.T) {
 	ensureStoryAdvert(t)
 	ctx, cancel := contextTimeout(3 * time.Minute)
 	defer cancel()
+	// A login that has not called updates.getState is not an updates session.
+	// The server has nowhere to deliver storyItemDeleted until this returns.
+	if _, _, _, err := b.State(ctx); err != nil {
+		t.Fatal(err)
+	}
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
 
 	storyID, callID, access := startLive(t, ctx, a, bSelf)
