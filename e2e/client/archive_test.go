@@ -371,7 +371,7 @@ func channelAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, chat := range chatsOf(obj) {
+	for _, chat := range dialogChats(obj) {
 		if chat != nil && chat.GetId() == id {
 			if hash := chatAccessHash(chat); hash != 0 {
 				return hash
@@ -380,6 +380,19 @@ func channelAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64
 	}
 	t.Fatalf("channel access %d", id)
 	return 0
+}
+
+func dialogChats(obj mtproto.TLObject) []*mtproto.Chat {
+	switch d := obj.(type) {
+	case *mtproto.TLMessagesDialogs:
+		return d.GetChats()
+	case *mtproto.TLMessagesDialogsSlice:
+		return d.GetChats()
+	case *mtproto.TLMessagesPeerDialogs:
+		return d.GetChats()
+	default:
+		return nil
+	}
 }
 
 func userAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64 {
