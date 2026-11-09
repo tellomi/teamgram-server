@@ -21,6 +21,8 @@ package phonenumber
 import (
 	"strings"
 	"sync"
+
+	"github.com/nyaruka/phonenumbers"
 )
 
 // TestPhoneRange is a dev login range, shaped like Telegram's test DC numbers
@@ -83,8 +85,9 @@ func NormalizeDigits(phone string) string {
 }
 
 // LookupKeys returns the phone spellings that should be treated as the same
-// number: the raw compact form, the digit form, a leading '+' variant, and
-// the international 00 prefix stripped. Callers match on any shared key.
+// number: the raw compact form, the digit form, a leading '+' variant, the
+// international 00 prefix stripped, and the +86 form of a bare mainland
+// mobile. Callers match on any shared key.
 func LookupKeys(phone string) []string {
 	var keys []string
 	add := func(s string) {
@@ -114,7 +117,56 @@ func LookupKeys(phone string) []string {
 		add(rest)
 		add("+" + rest)
 	}
+	// Address books on iOS often store a mainland mobile with no country
+	// code (13800138000). Signup stores the E.164 digits (8613800138000).
+	// Tellomi's default region is CN, so a bare national number gains that
+	// prefix. A number that already carries + or 00 is left as written.
+	if !hasExplicitCallingCode(trimmed) {
+		for _, extra := range chinaMobileAliases(digits) {
+			add(extra)
+		}
+	}
 	return keys
+}
+
+func hasExplicitCallingCode(phone string) bool {
+	compact := stripPhoneSeparators(strings.TrimSpace(phone))
+	if strings.HasPrefix(compact, "+") {
+		return true
+	}
+	digits := NormalizeDigits(compact)
+	return strings.HasPrefix(digits, "00") && len(digits) > 4
+}
+
+// chinaMobileNational is an 11-digit mainland mobile, 1[3-9] followed by 9 digits.
+func chinaMobileNational(digits string) bool {
+	if len(digits) != 11 || digits[0] != '1' {
+		return false
+	}
+	return digits[1] >= '3' && digits[1] <= '9'
+}
+
+// chinaMobileAliases returns the E.164 spellings of a national mainland
+// mobile, including a single trunk 0 (0138...). Empty when the digits are
+// not a valid CN number, so a foreign number is not relabeled as +86.
+func chinaMobileAliases(digits string) []string {
+	national := digits
+	switch {
+	case chinaMobileNational(national):
+	case len(national) == 12 && national[0] == '0' && chinaMobileNational(national[1:]):
+		national = national[1:]
+	default:
+		return nil
+	}
+	parsed, err := phonenumbers.Parse(national, "CN")
+	if err != nil || !phonenumbers.IsValidNumberForRegion(parsed, "CN") {
+		return nil
+	}
+	e164 := phonenumbers.NormalizeDigitsOnly(phonenumbers.Format(parsed, phonenumbers.E164))
+	if e164 == "" || e164 == national {
+		return nil
+	}
+	return []string{e164, "+" + e164}
 }
 
 func stripPhoneSeparators(phone string) string {
