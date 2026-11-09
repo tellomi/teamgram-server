@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/sfu"
@@ -64,6 +65,14 @@ type group struct {
 	randomID        int32
 	rtmpKey         string
 	paidStars       *int64
+	// liveStory is a stories.startLive room. It is not a chat voice chat:
+	// discarding it must not write a service message into a dialog.
+	liveStory  bool
+	audience   []int64
+	hostJoined bool
+	hostLeft   bool
+	endReason  string
+	liveTimer  func()
 }
 
 func canAdmin(g *group, user int64, manage bool) bool {
@@ -229,6 +238,9 @@ func (e *Engine) recipients(g *group) []int64 {
 			add(id)
 		}
 	}
+	for _, id := range g.audience {
+		add(id)
+	}
 	return ids
 }
 
@@ -241,6 +253,7 @@ func (e *Engine) groupUpdates(viewer int64, g *group, changed []*part, extra []*
 	ups = append(ups, mtproto.MakeTLUpdateGroupCall(&mtproto.Update{
 		Peer_PEER:      peer,
 		Call_GROUPCALL: e.groupTL(g, viewer),
+		LiveStory:      g.liveStory,
 	}).To_Update())
 	if len(changed) > 0 {
 		var parts []*mtproto.GroupCallParticipant
@@ -431,6 +444,11 @@ func (e *Engine) JoinGroup(in JoinGroup) (*mtproto.Updates, error) {
 	p.videoStopped = in.VideoStopped
 	p.video = groups
 	g.version++
+	if g.liveStory && in.UserID == g.creator {
+		g.hostJoined = true
+		g.hostLeft = false
+		e.armLiveLocked(g, liveGoneWait, "quiet")
+	}
 	var extra []*mtproto.Update
 	extra = append(extra, mtproto.MakeTLUpdateGroupCallConnection(&mtproto.Update{
 		Params: dataJSON(answer),
@@ -467,6 +485,10 @@ func (e *Engine) LeaveGroup(user, id, access int64, source int32) (*mtproto.Upda
 	}
 	found.left = true
 	g.version++
+	if g.liveStory && user == g.creator {
+		g.hostLeft = true
+		e.armLiveLocked(g, liveGoneWait, "gone")
+	}
 	if e.media != nil {
 		e.media.Leave(g.id, partKey(found.peerType, found.peerID))
 	}
@@ -499,6 +521,10 @@ func (e *Engine) DiscardGroup(user, id, access int64, manage bool) (*mtproto.Upd
 		dur = 0
 	}
 	delete(e.byPeer, partKey(g.peerType, g.peerID))
+	if g.liveTimer != nil {
+		g.liveTimer()
+		g.liveTimer = nil
+	}
 	if e.media != nil {
 		for _, p := range g.parts {
 			e.media.Leave(g.id, partKey(p.peerType, p.peerID))
@@ -506,16 +532,170 @@ func (e *Engine) DiscardGroup(user, id, access int64, manage bool) (*mtproto.Upd
 	}
 	up := e.fanout(g, user, g.creatorAuth, nil, nil)
 	var ev *GroupEnd
-	if g.peerID != 0 {
+	// A live story is not a chat. Writing messageActionGroupCall into the
+	// host's dialog leaves a call bubble after the ring should already be gone.
+	if g.peerID != 0 && !g.liveStory {
 		ev = &GroupEnd{
 			From: user, PeerType: g.peerType, PeerID: g.peerID, RandomID: newID(),
 			Action: mtproto.MakeMessageActionGroupCall(inputCall(g.id, g.access), dur),
 		}
 	}
-	bind := bindIfChat(g)
+	var bind *Bind
+	if !g.liveStory {
+		bind = bindIfChat(g)
+	}
+	var live *LiveEnd
+	if g.liveStory {
+		reason := g.endReason
+		if reason == "" {
+			reason = "discard"
+		}
+		live = &LiveEnd{CallID: g.id, Access: g.access, Host: g.creator, Reason: reason}
+	}
 	e.mu.Unlock()
 	e.finishGroup(ev, bind)
+	e.emitLive(live)
 	return up, nil
+}
+
+const (
+	// liveJoinWait is how long a stories.startLive room stays up when the
+	// host never connects. liveGoneWait is the same gap after the host
+	// leaves, the session drops, or their media goes quiet.
+	liveJoinWait = 30 * time.Second
+	liveGoneWait = 15 * time.Second
+)
+
+// CreateLiveStory is the group call behind stories.startLive. The peer is
+// the host, not a chat. audience receives updateGroupCall with live_story.
+type CreateLiveStory struct {
+	Host, Auth int64
+	Random     int32
+	RTMP       bool
+	Audience   []int64
+}
+
+func (e *Engine) CreateLiveStory(in CreateLiveStory) (int64, int64, *mtproto.Updates, error) {
+	if in.Host == 0 {
+		return 0, 0, nil, mtproto.ErrPeerIdInvalid
+	}
+	e.mu.Lock()
+	rkey := fmt.Sprintf("live:%d:%d", in.Host, in.Random)
+	if id, ok := e.byRandom[rkey]; ok {
+		if g := e.groups[id]; g != nil && !g.discarded && g.liveStory {
+			up := e.groupUpdates(in.Host, g, nil, nil)
+			e.mu.Unlock()
+			return g.id, g.access, up, nil
+		}
+	}
+	pkey := partKey(mtproto.PEER_USER, in.Host)
+	if id, ok := e.byPeer[pkey]; ok {
+		if g := e.groups[id]; g != nil && !g.discarded {
+			if !g.liveStory {
+				e.mu.Unlock()
+				return 0, 0, nil, mtproto.ErrGroupcallAlreadyStarted
+			}
+			e.mu.Unlock()
+			if _, err := e.DiscardGroup(in.Host, g.id, g.access, true); err != nil && err != mtproto.ErrGroupcallAlreadyDiscarded {
+				return 0, 0, nil, err
+			}
+			e.mu.Lock()
+		}
+	}
+	now := int32(e.now().Unix())
+	g := &group{
+		id: newID(), access: newID(), peerType: mtproto.PEER_USER, peerID: in.Host,
+		creator: in.Host, creatorAuth: in.Auth, date: now, rtmp: in.RTMP,
+		version: 1, invite: randHex(8), speakerInvite: randHex(8),
+		byKey: map[string]*part{}, subs: map[int64]bool{},
+		chains: map[int32][][]byte{}, msgByID: map[int32]*gmsg{}, msgByRandom: map[string]int32{},
+		randomID: in.Random, rtmpKey: randHex(8), liveStory: true,
+		audience: append([]int64(nil), in.Audience...),
+	}
+	e.groups[g.id] = g
+	e.byPeer[pkey] = g.id
+	e.byRandom[rkey] = g.id
+	e.armLiveLocked(g, liveJoinWait, "join")
+	up := e.fanout(g, in.Host, in.Auth, nil, nil)
+	e.mu.Unlock()
+	return g.id, g.access, up, nil
+}
+
+// NoteHostOffline starts the disconnect timer for a live the user is hosting.
+// Session close does not reach this process; callers that can see the drop
+// (and tests) use this. Leave and a quiet media socket arm the same timer.
+func (e *Engine) NoteHostOffline(user, auth int64) {
+	if e == nil || user == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, g := range e.groups {
+		if g == nil || !g.liveStory || g.discarded || g.creator != user {
+			continue
+		}
+		if auth != 0 && g.creatorAuth != 0 && g.creatorAuth != auth {
+			continue
+		}
+		g.hostLeft = true
+		e.armLiveLocked(g, liveGoneWait, "gone")
+	}
+}
+
+func (e *Engine) armLiveLocked(g *group, d time.Duration, kind string) {
+	if g == nil || e.after == nil {
+		return
+	}
+	if g.liveTimer != nil {
+		g.liveTimer()
+		g.liveTimer = nil
+	}
+	id, access := g.id, g.access
+	g.liveTimer = e.after(d, func() { e.fireLive(id, access, kind) })
+}
+
+func (e *Engine) fireLive(id, access int64, kind string) {
+	e.mu.Lock()
+	g := e.groups[id]
+	if g == nil || g.access != access || !g.liveStory || g.discarded {
+		e.mu.Unlock()
+		return
+	}
+	switch kind {
+	case "join":
+		if g.hostJoined {
+			e.mu.Unlock()
+			return
+		}
+	case "gone":
+		if !g.hostLeft {
+			e.mu.Unlock()
+			return
+		}
+	case "quiet":
+		if g.hostLeft || !e.liveQuietLocked(g) {
+			if !g.hostLeft && g.hostJoined {
+				e.armLiveLocked(g, liveGoneWait, "quiet")
+			}
+			e.mu.Unlock()
+			return
+		}
+	default:
+		e.mu.Unlock()
+		return
+	}
+	g.endReason = kind
+	host := g.creator
+	e.mu.Unlock()
+	_, _ = e.DiscardGroup(host, id, access, true)
+}
+
+func (e *Engine) liveQuietLocked(g *group) bool {
+	if g == nil || g.rtmp || e.media == nil || !g.hostJoined || g.hostLeft {
+		return false
+	}
+	found, quiet := e.media.Quiet(g.id, partKey(mtproto.PEER_USER, g.creator), liveGoneWait)
+	return found && quiet
 }
 
 func (e *Engine) GetGroup(viewer, id, access int64, limit int32) (*mtproto.Phone_GroupCall, error) {

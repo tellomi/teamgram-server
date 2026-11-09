@@ -439,6 +439,19 @@ func (s *mysqlStore) ListActiveByOwners(ctx context.Context, kind Kind, ids []in
 	return out, nil
 }
 
+// pageActive reads the next non-deleted, unexpired stories of one kind.
+// The cursor is (owner_id, story_id), which matches the primary key after
+// owner_kind. expire_date is applied so expired rows are not paged.
+func (s *mysqlStore) pageActive(ctx context.Context, kind Kind, now int32, afterOwner int64, afterStory int32, limit int) ([]*Record, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	return s.list(ctx, `SELECT `+storyCols+` FROM stories
+WHERE owner_kind=? AND deleted=0 AND expire_date>? AND (owner_id>? OR (owner_id=? AND story_id>?))
+ORDER BY owner_id, story_id
+LIMIT ?`, kind, now, afterOwner, afterOwner, afterStory, limit)
+}
+
 func mysqlPlaceholders(n int) string {
 	if n <= 0 {
 		return ""

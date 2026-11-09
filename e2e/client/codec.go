@@ -18,9 +18,11 @@ const crcVector = 0x1cb5c415
 // Langs is set when the elements are langPackLanguage, so the language
 // picker test can see which codes were offered.
 type tlVector struct {
-	Count  int32
-	Langs  []*mtproto.TLLangPackLanguage
-	Hashes []*mtproto.FileHash
+	Count   int32
+	Langs   []*mtproto.TLLangPackLanguage
+	Hashes  []*mtproto.FileHash
+	Users   []*mtproto.User
+	Stories []*mtproto.RecentStory
 }
 
 func (v *tlVector) Encode(*mtproto.EncodeBuf, int32) error { return nil }
@@ -130,6 +132,28 @@ func decodeTL(raw []byte) (mtproto.TLObject, error) {
 						return nil, fmt.Errorf("fileHash vector element %T", obj)
 					}
 					v.Hashes = append(v.Hashes, hash.To_FileHash())
+				}
+			default:
+				// users.getUsers and stories.getPeerMaxIDs. A vector of some
+				// other type stays a count, which is all the startup check needs.
+				d := mtproto.NewDecodeBuf(raw[8:])
+				for i := int32(0); i < n; i++ {
+					obj := d.Object()
+					if err := d.GetError(); err != nil {
+						return v, nil
+					}
+					switch item := obj.(type) {
+					case *mtproto.User:
+						v.Users = append(v.Users, item)
+					case *mtproto.TLUser:
+						v.Users = append(v.Users, item.To_User())
+					case *mtproto.RecentStory:
+						v.Stories = append(v.Stories, item)
+					case *mtproto.TLRecentStory:
+						v.Stories = append(v.Stories, item.To_RecentStory())
+					default:
+						return v, nil
+					}
 				}
 			}
 		}

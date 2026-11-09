@@ -77,6 +77,7 @@ import (
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
@@ -280,6 +281,12 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCGroupCallsServer(grpcServer, phoneSvc)
 		mtproto.RegisterRPCConferenceCallsServer(grpcServer, phoneSvc)
 		mtproto.RegisterRPCSecretChatsServer(grpcServer, phoneSvc)
+		phoneSvc.SetLiveEnd(func(callID int64) {
+			_ = story.Shared().EndLiveByCall(context.Background(), callID)
+		})
+		story.Shared().SetLiveStarter(func(ctx context.Context, host, auth int64, rtmp bool, random int32, audience []int64) (int64, int64, *mtproto.Updates, error) {
+			return phoneSvc.StartLiveStory(host, auth, rtmp, random, audience)
+		})
 
 		walletSvc := wallet_helper.New()
 		mtproto.RegisterRPCWalletServer(grpcServer, walletSvc)

@@ -3,6 +3,7 @@ package svc
 import (
 	"context"
 	"errors"
+	"fmt"
 	gosync "sync"
 
 	"github.com/teamgram/proto/mtproto"
@@ -115,6 +116,14 @@ func applyStoryMax(ctx context.Context, users storyMaxUsers, syncer storyPusher,
 		}
 		seen[viewer] = true
 		pushOne(viewer, im.ToUser(viewer))
+	}
+	// The column write and the cache drop already ran. A read that still
+	// shows a different max filled Redis from a stale load. Leave the dirty
+	// row so the next pass drops the cache again. The push above used the
+	// live ring when that lookup succeeded, so clients are not handed the
+	// stale column.
+	if im.User.StoriesMaxId != maxID {
+		return fmt.Errorf("story max %d: cache has %d", userID, im.User.StoriesMaxId)
 	}
 	return nil
 }

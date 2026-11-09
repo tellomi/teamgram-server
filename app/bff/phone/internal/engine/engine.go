@@ -51,6 +51,15 @@ type GroupEnd struct {
 	RandomID int64
 }
 
+// LiveEnd is a stories.startLive room that is no longer on air.
+// Reason is "discard", "gone" (host left or the session dropped), or "quiet"
+// (the host joined and then sent no media).
+type LiveEnd struct {
+	CallID, Access int64
+	Host           int64
+	Reason         string
+}
+
 // Bind is the chat/channel → group call row.
 type Bind struct {
 	PeerType         int32
@@ -68,6 +77,7 @@ type Engine struct {
 	onCall  func(CallEnd)
 	onGroup func(GroupEnd)
 	onBind  func(Bind)
+	onLive  func(LiveEnd)
 	allow   func(caller, callee int64) (call bool, p2p bool)
 	users   func(viewer int64, ids []int64) []*mtproto.User
 	chats   func(viewer int64, peerType int32, peerID int64) []*mtproto.Chat
@@ -120,6 +130,7 @@ type Options struct {
 	OnCall  func(CallEnd)
 	OnGroup func(GroupEnd)
 	OnBind  func(Bind)
+	OnLive  func(LiveEnd)
 	Allow   func(caller, callee int64) (call bool, p2p bool)
 	Users   func(viewer int64, ids []int64) []*mtproto.User
 	Chats   func(viewer int64, peerType int32, peerID int64) []*mtproto.Chat
@@ -132,7 +143,7 @@ func New(o Options) *Engine {
 	cfg := o.Config.Normalized()
 	e := &Engine{
 		cfg: cfg, relay: o.Relay, media: o.Media,
-		push: o.Push, onCall: o.OnCall, onGroup: o.OnGroup, onBind: o.OnBind,
+		push: o.Push, onCall: o.OnCall, onGroup: o.OnGroup, onBind: o.OnBind, onLive: o.OnLive,
 		allow: o.Allow, users: o.Users, chats: o.Chats, members: o.Members,
 		now: o.Now, after: o.After,
 		calls: map[int64]*call{}, byUser: map[int64]int64{}, byRandom: map[string]int64{},
@@ -181,6 +192,29 @@ func (e *Engine) deliver(notes []Note) {
 func (e *Engine) finishCall(end *CallEnd) {
 	if end != nil && e.onCall != nil {
 		e.onCall(*end)
+	}
+}
+
+// SetOnLive registers the stories hook. The bff wires it after both
+// services exist. A nil hook still discards the call.
+func (e *Engine) SetOnLive(fn func(LiveEnd)) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	e.onLive = fn
+	e.mu.Unlock()
+}
+
+func (e *Engine) emitLive(ev *LiveEnd) {
+	if ev == nil {
+		return
+	}
+	e.mu.Lock()
+	fn := e.onLive
+	e.mu.Unlock()
+	if fn != nil {
+		fn(*ev)
 	}
 }
 

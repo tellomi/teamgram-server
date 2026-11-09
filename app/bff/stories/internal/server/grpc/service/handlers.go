@@ -607,11 +607,11 @@ func (s *Service) StoriesStartLive(ctx context.Context, in *mtproto.TLStoriesSta
 	if in.GetCaption() != nil {
 		caption = in.GetCaption().GetValue()
 	}
-	up, err := story.Shared().Send(ctx, story.SendRequest{
+	up, err := story.Shared().BeginLive(ctx, story.SendRequest{
 		Actor: md.GetUserId(), AuthKey: md.GetPermAuthKeyId(), Owner: owner, AccessHash: hash,
 		Caption: caption, Entities: in.GetEntities(), Rules: rules, RandomID: in.GetRandomId(),
-		Pinned: in.GetPinned(), Noforwards: in.GetNoforwards(), Live: true,
-	})
+		Pinned: in.GetPinned(), Noforwards: in.GetNoforwards(),
+	}, in.GetRtmpStream())
 	if err != nil {
 		return nil, err
 	}

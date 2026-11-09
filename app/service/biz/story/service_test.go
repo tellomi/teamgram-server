@@ -401,8 +401,8 @@ func TestChannelStoriesRing(t *testing.T) {
 		t.Fatalf("chats to send %+v", chats)
 	}
 	maxes := svc.PeerMaxIDs(ctx, 7, []Owner{owner})
-	if maxes[0].GetMaxId().GetValue() == 0 || !maxes[0].GetLive() {
-		t.Fatalf("peer max %+v", maxes[0])
+	if maxes[0].GetMaxId().GetValue() != id || maxes[0].GetLive() {
+		t.Fatalf("unbound empty live stub is not a ring %+v", maxes[0])
 	}
 	buf := mtproto.NewEncodeBuf(512)
 	if err = refreshed[0].Encode(buf, mtproto.Layer); err != nil {
