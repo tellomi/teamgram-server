@@ -1,6 +1,10 @@
 package sess
 
-import "github.com/teamgram/proto/mtproto"
+import (
+	"context"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 func shouldRefreshAuthState(state int) bool {
 	switch state {
@@ -20,6 +24,20 @@ func shouldRefreshAuthState(state int) bool {
 // terminate the caller.
 func authorizationResetTargets(wrapperAuthKeyID, updateAuthKeyID int64) bool {
 	return updateAuthKeyID != 0 && wrapperAuthKeyID == updateAuthKeyID
+}
+
+// pingRevoked reports that this session must not answer ping.
+// bindingRevoked only reloads a Normal session. After
+// updateAccountResetAuthorization the wrapper is already Deleted, and
+// that early return used to let onPing send pong anyway.
+func (c *session) pingRevoked(ctx context.Context) bool {
+	if c == nil || c.sessList == nil || c.sessList.cb == nil {
+		return false
+	}
+	if authStateRevoked(c.sessList.cb.state) {
+		return true
+	}
+	return c.sessList.cb.bindingRevoked(ctx)
 }
 
 // authStateRevoked is a binding that must not serve another protected RPC.

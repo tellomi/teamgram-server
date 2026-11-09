@@ -138,7 +138,7 @@ func (c *session) onPing(ctx context.Context, gatewayId string, msgId *inboxMsg,
 		msgId,
 		ping)
 
-	if c.sessList != nil && c.sessList.cb != nil && c.sessList.cb.bindingRevoked(ctx) {
+	if c.pingRevoked(ctx) {
 		return
 	}
 
@@ -160,7 +160,7 @@ func (c *session) onPingDelayDisconnect(ctx context.Context, gatewayId string, m
 		msgId,
 		pingDelayDisconnect)
 
-	if c.sessList != nil && c.sessList.cb != nil && c.sessList.cb.bindingRevoked(ctx) {
+	if c.pingRevoked(ctx) {
 		return
 	}
 
