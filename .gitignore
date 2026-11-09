@@ -37,6 +37,8 @@ __pycache__/
 #deploy data
 # DB-IP / GeoIP databases stay on the host. docker-compose.geoip.yaml bind-mounts one.
 *.mmdb
+# CI prefetch for the image build. scripts/fetch-ip2region-xdb.sh fills this.
+deploy/ip2region/cache/*.xdb
 
 data/*
 data-staging/

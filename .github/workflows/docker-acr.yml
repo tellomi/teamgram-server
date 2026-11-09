@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 # An older master build must not finish after a newer one and move :latest backwards.
 concurrency:
@@ -39,6 +40,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache ip2region xdb
+        if: matrix.image == 'teamgram'
+        uses: ./.github/actions/ip2region-xdb
+        with:
+          dest: deploy/ip2region/cache
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
