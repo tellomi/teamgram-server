@@ -53,34 +53,37 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 		notifySettingsList []*userpb.PeerPeerNotifySettings
 	)
 
+	// messages.peerDialogs.state is the cursor for updates.getDifference.
+	// It has to be taken before the dialog rows. A write that lands while
+	// those rows are loaded is then still covered by the difference. Reading
+	// state in parallel let pts move past a top message the client never saw.
+	state, err = c.svcCtx.Dao.UpdatesClient.UpdatesGetStateV2(c.ctx, &updates.TLUpdatesGetStateV2{
+		AuthKeyId: c.MD.PermAuthKeyId,
+		UserId:    c.MD.UserId,
+	})
+	if err != nil {
+		c.Logger.Errorf("messages.getPinnedDialogs - error: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+
+	var (
+		folder dialog.DialogExtList
+		pinned dialog.DialogExtList
+	)
 	err = mr.Finish(
 		func() error {
-			var err2 error
-			state, err2 = c.svcCtx.Dao.UpdatesClient.UpdatesGetStateV2(c.ctx, &updates.TLUpdatesGetStateV2{
-				AuthKeyId: c.MD.PermAuthKeyId,
-				UserId:    c.MD.UserId,
+			if folderId != 0 {
+				return nil
+			}
+			dialogFolder, err2 := c.svcCtx.Dao.DialogClient.DialogGetDialogFolder(c.ctx, &dialog.TLDialogGetDialogFolder{
+				UserId:   c.MD.UserId,
+				FolderId: 1,
 			})
 			if err2 != nil {
 				c.Logger.Errorf("messages.getPinnedDialogs - error: %v", err2)
-				return mtproto.ErrInternalServerError
+				return err2
 			}
-
-			return nil
-		},
-		func() error {
-			if folderId == 0 {
-				dialogFolder, err2 := c.svcCtx.Dao.DialogClient.DialogGetDialogFolder(c.ctx, &dialog.TLDialogGetDialogFolder{
-					UserId:   c.MD.UserId,
-					FolderId: 1,
-				})
-				if err2 != nil {
-					c.Logger.Errorf("messages.getPinnedDialogs - error: %v", err2)
-					return err2
-				}
-
-				dialogExtList = append(dialogExtList, dialogFolder.GetDatas()...)
-			}
-
+			folder = dialogFolder.GetDatas()
 			return nil
 		},
 		func() error {
@@ -91,10 +94,8 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 			if err2 != nil {
 				c.Logger.Errorf("messages.getPinnedDialogs - error: %v", err2)
 				return err2
-			} else {
-				dialogExtList = append(dialogExtList, dList.GetDatas()...)
 			}
-
+			pinned = dList.GetDatas()
 			return nil
 		},
 	)
@@ -102,6 +103,7 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 		c.Logger.Errorf("messages.getPinnedDialogs - getPeerDialogs error: %v", err)
 		return nil, err
 	}
+	dialogExtList = append(folder, pinned...)
 
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())

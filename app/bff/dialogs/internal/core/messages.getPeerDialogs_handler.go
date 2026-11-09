@@ -80,20 +80,19 @@ func (c *DialogsCore) MessagesGetPeerDialogs(in *mtproto.TLMessagesGetPeerDialog
 		notifySettingsList []*userpb.PeerPeerNotifySettings
 	)
 
-	err = mr.Finish(
-		func() error {
-			var err2 error
-			state, err2 = c.svcCtx.Dao.UpdatesClient.UpdatesGetStateV2(c.ctx, &updates.TLUpdatesGetStateV2{
-				AuthKeyId: c.MD.PermAuthKeyId,
-				UserId:    c.MD.UserId,
-			})
-			if err2 != nil {
-				c.Logger.Errorf("messages.getPeerDialogs - getState error: %v", err2)
-				return err2
-			}
+	// Same cursor rule as getPinnedDialogs: state is read before the dialog
+	// rows so getDifference from this state still covers a write that lands
+	// during the dialog load.
+	state, err = c.svcCtx.Dao.UpdatesClient.UpdatesGetStateV2(c.ctx, &updates.TLUpdatesGetStateV2{
+		AuthKeyId: c.MD.PermAuthKeyId,
+		UserId:    c.MD.UserId,
+	})
+	if err != nil {
+		c.Logger.Errorf("messages.getPeerDialogs - getState error: %v", err)
+		return nil, err
+	}
 
-			return nil
-		},
+	err = mr.Finish(
 		func() error {
 			if len(peerDialogIdList) > 0 {
 				dList, err2 := c.svcCtx.Dao.DialogClient.DialogGetDialogsByIdList(c.ctx, &dialog.TLDialogGetDialogsByIdList{
