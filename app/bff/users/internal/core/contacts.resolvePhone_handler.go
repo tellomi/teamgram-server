@@ -80,9 +80,13 @@ func (c *UsersCore) ContactsResolvePhone(in *mtproto.TLContactsResolvePhone) (*m
 		return nil, mtproto.ErrPhoneNotOccupied
 	}
 
+	resolvedUser := resolved.ToUnsafeUser(me)
+	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, []*mtproto.User{resolvedUser}, map[int64]int32{
+		resolved.Id(): mtproto.StoryColumn(resolved),
+	})
 	return mtproto.MakeTLContactsResolvedPeer(&mtproto.Contacts_ResolvedPeer{
 		Peer:  mtproto.MakePeerUser(id.GetV()),
 		Chats: []*mtproto.Chat{},
-		Users: []*mtproto.User{resolved.ToUnsafeUser(me)},
+		Users: []*mtproto.User{resolvedUser},
 	}).To_Contacts_ResolvedPeer(), nil
 }

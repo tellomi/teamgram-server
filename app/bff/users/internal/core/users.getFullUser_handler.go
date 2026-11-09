@@ -347,6 +347,9 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 	unsafeUser := user.ToUnsafeUser(me)
 	patchBotUsernameFromImmutable(unsafeUser, user)
+	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, []*mtproto.User{unsafeUser}, map[int64]int32{
+		user.Id(): mtproto.StoryColumn(user),
+	})
 
 	return mtproto.MakeTLUsersUserFull(&mtproto.Users_UserFull{
 		FullUser: userFull,

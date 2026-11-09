@@ -161,7 +161,13 @@ func (s *Service) chats(ctx context.Context, viewer int64, owners ...Owner) []*m
 }
 
 func (s *Service) storyUpdates(ctx context.Context, viewer int64, rec *Record, withRandom bool) *mtproto.Updates {
-	item := s.present(ctx, viewer, rec, nil)
+	var item *mtproto.StoryItem
+	if s.expiredFull(rec) && !s.keepsExpiredStory(ctx, viewer, rec) {
+		item = s.deletedItem(rec.id())
+		withRandom = false
+	} else {
+		item = s.present(ctx, viewer, rec, nil)
+	}
 	ups := []*mtproto.Update{}
 	if withRandom && rec.RandomID != 0 {
 		ups = append(ups, mtproto.MakeTLUpdateStoryID(&mtproto.Update{
@@ -179,6 +185,20 @@ func (s *Service) storyUpdates(ctx context.Context, viewer int64, rec *Record, w
 		Chats:   s.chats(ctx, viewer, rec.Owner),
 		Date:    s.now(),
 	}).To_Updates()
+}
+
+func (s *Service) expiredFull(rec *Record) bool {
+	return rec != nil && !rec.Deleted && rec.Item != nil && rec.Item.ExpireDate <= s.now()
+}
+
+func (s *Service) keepsExpiredStory(ctx context.Context, viewer int64, rec *Record) bool {
+	if rec == nil {
+		return false
+	}
+	if rec.Owner.Kind == KindUser {
+		return viewer == rec.Owner.ID
+	}
+	return s.isManager(ctx, viewer, rec.Owner)
 }
 
 func (s *Service) deletedItem(id int32) *mtproto.StoryItem {

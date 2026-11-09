@@ -353,6 +353,8 @@ func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
 		return user
 	}
 
+	defer m.finishStoryAdvert(user)
+
 	// contact
 	contact := selfUser.GetContactData(m.Id())
 	if contact != nil {
@@ -395,9 +397,6 @@ func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
 		allowTimestamp = m.CheckPrivacy(STATUS_TIMESTAMP, selfUser.Id())
 	}
 	user.Status = MakeUserStatus(m.LastSeenAt, allowTimestamp)
-
-	//// TODO: check stories_unavailable
-	// user.StoriesUnavailable = false
 
 	return user
 }
@@ -458,6 +457,8 @@ func (m *ImmutableUser) ToSelfUser() *User {
 		user.Status = nil
 		user.StoriesUnavailable = true
 	}
+
+	defer m.finishStoryAdvert(user)
 
 	if len(m.Usernames()) > 1 {
 		user.Username = nil
@@ -596,6 +597,8 @@ func (m *ImmutableUser) ToUser(selfUserId int64) *User {
 		return user
 	}
 
+	defer m.finishStoryAdvert(user)
+
 	reverseContact := m.GetReverseContactData(selfUserId)
 	if reverseContact != nil {
 		user.Contact = true
@@ -624,8 +627,17 @@ func (m *ImmutableUser) ToUser(selfUserId int64) *User {
 	allowTimestamp := m.CheckPrivacy(STATUS_TIMESTAMP, selfUserId)
 	user.Status = MakeUserStatus(m.LastSeenAt, allowTimestamp)
 
-	// TODO: check stories_unavailable
-	// user.StoriesUnavailable = false
-
 	return user
+}
+
+// finishStoryAdvert sets stories_unavailable when no recentStory was copied
+// from users.stories_max_id. Bots stay on the flag their constructor set.
+func (m *ImmutableUser) finishStoryAdvert(user *User) {
+	if user == nil || user.Bot || user.Deleted {
+		return
+	}
+	if user.StoriesMaxId_FLAGRECENTSTORY == nil {
+		user.StoriesUnavailable = true
+		user.StoriesMaxId_FLAGINT32 = nil
+	}
 }

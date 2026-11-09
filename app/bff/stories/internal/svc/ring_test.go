@@ -8,6 +8,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -140,6 +141,77 @@ func TestApplyStoryMaxAllowAllStaysVisibleWithoutForwardEdge(t *testing.T) {
 	users := newStoryPrivacyUsers(false, mtproto.Predicate_privacyValueAllowAll, []int64{storyReverseOnly}, nil)
 	byUser := pushStoryPrivacy(t, users, 5)
 	assertStoryUser(t, byUser[storyReverseOnly], 5, true, "Reverse", true)
+}
+
+func TestApplyStoryMaxPushesExtraAudience(t *testing.T) {
+	SetRingAudience(func(context.Context, int64) []int64 { return []int64{15} })
+	t.Cleanup(func() { SetRingAudience(nil) })
+	users := newStoryPrivacyUsers(true, mtproto.Predicate_privacyValueAllowContacts, []int64{storyMutual}, map[int64]bool{storyMutual: true})
+	syncer := &fakeStorySync{}
+	if err := applyStoryMax(context.Background(), users, syncer, storyAuthorID, 0); err != nil {
+		t.Fatal(err)
+	}
+	byUser := storyPushes(t, syncer)
+	extra := byUser[15]
+	if extra == nil || extra.GetStoriesMaxId_FLAGRECENTSTORY() != nil || !extra.GetStoriesUnavailable() {
+		t.Fatalf("extra %+v", extra)
+	}
+	if byUser[storyMutual] == nil || byUser[storyAuthorID] == nil {
+		t.Fatalf("missing self or contact %+v", byUser)
+	}
+}
+
+func TestApplyStoryMaxPaintsPerViewerRing(t *testing.T) {
+	prev := story.Shared()
+	svc := story.New(story.NewMemoryStore())
+	story.Use(svc)
+	t.Cleanup(func() {
+		story.Use(prev)
+		mtproto.EnableStoryRings(nil)
+		SetRingAudience(nil)
+	})
+	svc.MarkCloseFriend(storyAuthorID, 11)
+	media := mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+		Photo_FLAGPHOTO: mtproto.MakeTLPhoto(&mtproto.Photo{Id: 9}).To_Photo(),
+	}).To_MessageMedia()
+	up, err := svc.Send(context.Background(), story.SendRequest{
+		Actor: storyAuthorID, Owner: story.Owner{Kind: story.KindUser, ID: storyAuthorID},
+		Media: media, RandomID: 1,
+		Rules: []*mtproto.PrivacyRule{mtproto.MakeTLPrivacyValueAllowCloseFriends(nil).To_PrivacyRule()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id int32
+	for _, u := range up.Updates {
+		if u.GetPredicateName() == mtproto.Predicate_updateStoryID {
+			id = u.GetId_INT32()
+		}
+	}
+	if id == 0 {
+		t.Fatal("missing story id")
+	}
+	story.EnableUserRingPaint()
+	SetRingAudience(func(context.Context, int64) []int64 { return []int64{11} })
+	users := newStoryPrivacyUsers(true, mtproto.Predicate_privacyValueAllowContacts, []int64{storyMutual}, map[int64]bool{storyMutual: true})
+	syncer := &fakeStorySync{}
+	if err = applyStoryMax(context.Background(), users, syncer, storyAuthorID, id); err != nil {
+		t.Fatal(err)
+	}
+	byUser := storyPushes(t, syncer)
+	if storyRing(byUser[storyAuthorID]) != id || byUser[storyAuthorID].GetStoriesUnavailable() {
+		t.Fatalf("self %+v", byUser[storyAuthorID])
+	}
+	if storyRing(byUser[11]) != id || byUser[11].GetStoriesUnavailable() {
+		t.Fatalf("close friend %+v", byUser[11])
+	}
+	other := byUser[storyMutual]
+	if other == nil || storyRing(other) != 0 || !other.GetStoriesUnavailable() {
+		t.Fatalf("other contact %+v", other)
+	}
+	if other.GetPhoto().GetPhotoId() != 42 {
+		t.Fatalf("privacy photo %d", other.GetPhoto().GetPhotoId())
+	}
 }
 
 func TestApplyStoryMaxSkipsViewerPushWhenContactsFail(t *testing.T) {

@@ -378,6 +378,9 @@ func TestChannelStoriesRing(t *testing.T) {
 	if len(refreshed) != 1 || refreshed[0].GetStoriesMaxId_FLAGRECENTSTORY().GetMaxId().GetValue() != id {
 		t.Fatalf("channel ring %+v", refreshed)
 	}
+	if refreshed[0].GetStoriesUnavailable() {
+		t.Fatal("active channel set stories_unavailable")
+	}
 	full, err := channel.Shared().GetFullChannel(ctx, 7, mtproto.MakeTLInputChannel(&mtproto.InputChannel{
 		ChannelId: ch.Id, AccessHash: ch.AccessHash_FLAGINT64.GetValue(),
 	}).To_InputChannel())
@@ -786,7 +789,7 @@ func TestExpiredChannelStoryPushesClearedRing(t *testing.T) {
 		t.Fatalf("channel refresh %d", len(channelUpdates))
 	}
 	up := channelUpdates[0]
-	if len(up.Chats) != 1 || up.Chats[0].GetStoriesMaxId_FLAGRECENTSTORY() != nil {
+	if len(up.Chats) != 1 || up.Chats[0].GetStoriesMaxId_FLAGRECENTSTORY() != nil || !up.Chats[0].GetStoriesUnavailable() {
 		t.Fatalf("channel still advertising %+v", up.Chats)
 	}
 	svc.ReleaseExpired(ctx)

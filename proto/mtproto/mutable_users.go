@@ -18,6 +18,8 @@
 
 package mtproto
 
+import "context"
+
 func (m *MutableUsers) GetUnsafeUser(selfId, id int64) (*User, error) {
 	if len(m.Users) == 0 {
 		return nil, ErrUserIdInvalid
@@ -34,7 +36,7 @@ func (m *MutableUsers) GetUnsafeUser(selfId, id int64) (*User, error) {
 		return nil, ErrUserIdInvalid
 	}
 
-	return to.ToUnsafeUser(me), nil
+	return paintImmutable(selfId, to, to.ToUnsafeUser(me)), nil
 }
 
 func (m *MutableUsers) GetUnsafeUserSelf(id int64) (*User, error) {
@@ -47,7 +49,7 @@ func (m *MutableUsers) GetUnsafeUserSelf(id int64) (*User, error) {
 		return nil, ErrUserIdInvalid
 	}
 
-	return me.ToSelfUser(), nil
+	return paintImmutable(id, me, me.ToSelfUser()), nil
 }
 
 func (m *MutableUsers) findImmutableUser(id int64) *ImmutableUser {
@@ -92,14 +94,25 @@ func (m *MutableUsers) GetUserListByIdList(selfId int64, id ...int64) []*User {
 		return users
 	}
 
+	column := make(map[int64]int32, len(id))
 	for _, id2 := range id {
 		to := m.findImmutableUser(id2)
-		if to != nil {
-			users = append(users, to.ToUnsafeUser(me))
+		if to == nil {
+			continue
 		}
+		users = append(users, to.ToUnsafeUser(me))
+		column[to.Id()] = StoryColumn(to)
 	}
-
+	PaintUserStoryRings(context.Background(), selfId, users, column)
 	return users
+}
+
+func paintImmutable(viewer int64, im *ImmutableUser, user *User) *User {
+	if im == nil || user == nil {
+		return user
+	}
+	PaintUserStoryRings(context.Background(), viewer, []*User{user}, map[int64]int32{im.Id(): StoryColumn(im)})
+	return user
 }
 
 func (m *MutableUsers) Visit(cb func(it *ImmutableUser)) {

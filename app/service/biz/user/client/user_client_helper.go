@@ -36,7 +36,11 @@ func (m *UserClientHelper) GetUserSelf(ctx context.Context, id int64) (*mtproto.
 	if err != nil {
 		return nil, err
 	}
-	return user.ToSelfUser(), nil
+	self := user.ToSelfUser()
+	mtproto.PaintUserStoryRings(ctx, id, []*mtproto.User{self}, map[int64]int32{
+		id: mtproto.StoryColumn(user),
+	})
+	return self, nil
 }
 
 func (m *UserClientHelper) GetUserById(ctx context.Context, selfId, id int64) (*mtproto.User, error) {
