@@ -36,15 +36,15 @@ func TestLiveStubClearsWhenTheStreamEnds(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	clearCtx, clearCancel := contextTimeout(25 * time.Second)
+	clearCtx, clearCancel := contextTimeout(20 * time.Second)
 	defer clearCancel()
 	if err := waitUntil(clearCtx, 300*time.Millisecond, func() (bool, error) {
-		return !viewerSeesStory(clearCtx, b, aSelf.ID, peerForB, storyID), nil
+		if viewerSeesStory(clearCtx, b, aSelf.ID, peerForB, storyID) {
+			return false, nil
+		}
+		return pushedStoryCleared(b.Pushed(), storyID, aSelf.ID), nil
 	}); err != nil {
-		t.Fatalf("discard left story %d up: %v", storyID, err)
-	}
-	if !pushedStoryDeleted(b.Pushed(), storyID) {
-		t.Fatalf("discard cleared story %d on read but did not push storyItemDeleted (%s)", storyID, pushSummary(b.Pushed()))
+		t.Fatalf("discard story %d: stillUp=%v pushes=%s", storyID, viewerSeesStory(clearCtx, b, aSelf.ID, peerForB, storyID), pushSummary(b.Pushed()))
 	}
 
 	storyID, _, _ = startLive(t, ctx, a)
@@ -87,11 +87,18 @@ func TestOrphanLiveStubRepair(t *testing.T) {
 	if addr == "" {
 		addr = "127.0.0.1:10443"
 	}
+	// The published port stays open while the process is stopping. Wait
+	// until it drops, then until the new process is actually accepting RPCs,
+	// or every later test dials a half-started gateway.
+	_ = waitTCPDown(ctx, addr)
 	if err := waitTCP(ctx, addr); err != nil {
 		t.Fatal(err)
 	}
-	// The restart drops sessions. Log in again as the same accounts; the
-	// stub is still on that user until the repair deletes it.
+	select {
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	case <-time.After(8 * time.Second):
+	}
 	a, b, aSelf, _ = sharedPair(t)
 	peerForB = inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
 	ctx, cancel = contextTimeout(2 * time.Minute)
@@ -240,12 +247,17 @@ func peerStoryItems(obj mtproto.TLObject) []*mtproto.StoryItem {
 	}
 }
 
-func pushedStoryDeleted(objs []mtproto.TLObject, storyID int32) bool {
+func pushedStoryCleared(objs []mtproto.TLObject, storyID int32, host int64) bool {
 	for _, obj := range objs {
 		for _, u := range updatesOf(obj) {
 			item := u.GetStory()
 			if item.GetId() == storyID && item.GetPredicateName() == mtproto.Predicate_storyItemDeleted {
 				return true
+			}
+			if u.GetPredicateName() == mtproto.Predicate_updateUser && u.GetUserId() == host {
+				if user := userByID(usersOf(obj), host); user != nil && !ringLive(user) {
+					return true
+				}
 			}
 		}
 	}
@@ -277,6 +289,12 @@ func ringLive(user *mtproto.User) bool {
 
 func usersOf(obj mtproto.TLObject) []*mtproto.User {
 	switch v := obj.(type) {
+	case *mtproto.TLUpdates:
+		return v.GetUsers()
+	case *mtproto.TLUpdatesCombined:
+		return v.GetUsers()
+	case *mtproto.Updates:
+		return v.GetUsers()
 	case *mtproto.Vector_User:
 		return v.GetDatas()
 	case *tlVector:

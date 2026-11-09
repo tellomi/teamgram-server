@@ -216,6 +216,12 @@ func (s *Service) EndLive(ctx context.Context, owner Owner, storyID int32) error
 		s.unbindLive(owner, storyID)
 		return nil
 	}
+	// Capture viewers before the row is deleted. RingPushAudience skips
+	// deleted stories, and a public live is visible to private dialogs too.
+	viewers := s.audience(ctx, rec.Sender, rec)
+	if owner.Kind == KindUser {
+		viewers = append(viewers, s.RingPushAudience(ctx, owner.ID)...)
+	}
 	rec.Item.Live = false
 	if mediaEmpty(rec.Item.Media) {
 		// An empty startLive body is not a story once the stream is gone.
@@ -233,7 +239,7 @@ func (s *Service) EndLive(ctx context.Context, owner Owner, storyID int32) error
 	} else {
 		s.syncChannelAdvert(ctx, owner)
 	}
-	s.fanout(ctx, rec.Sender, 0, rec)
+	s.fanoutIDs(ctx, rec.Sender, 0, rec, viewers)
 	return nil
 }
 

@@ -446,7 +446,16 @@ func (s *Service) push(ctx context.Context, userID int64, exclude []int64, up *m
 }
 
 func (s *Service) fanout(ctx context.Context, actor, auth int64, rec *Record) {
-	for _, uid := range s.audience(ctx, actor, rec) {
+	s.fanoutIDs(ctx, actor, auth, rec, s.audience(ctx, actor, rec))
+}
+
+func (s *Service) fanoutIDs(ctx context.Context, actor, auth int64, rec *Record, ids []int64) {
+	seen := map[int64]bool{}
+	for _, uid := range ids {
+		if uid == 0 || seen[uid] {
+			continue
+		}
+		seen[uid] = true
 		up := s.storyUpdates(ctx, uid, rec, uid == actor)
 		var exclude []int64
 		if uid == actor && auth != 0 {
