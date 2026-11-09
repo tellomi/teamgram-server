@@ -2,6 +2,10 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Verification quotas (A05 / A06)
+
+Phone and email codes share `pkg/verify.Limiter`. The counter is one Redis `INCR` per target per Asia/Shanghai calendar day. The default cap is 10 (`TELLOMI_SMS_DAILY_LIMIT`, `TELLOMI_EMAIL_DAILY_LIMIT`). The 11th call returns `PHONE_NUMBER_FLOOD` before the SMS or email sender runs. A number outside `TELLOMI_SMS_COUNTRY_ALLOW` (default `86`) returns `PHONE_NUMBER_INVALID` before that sender. `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` accepts other countries again. Resend, change-phone, confirm-phone, login email, and cloud-password email use this gate. The contract for clients is `docs/api/verification-limits.md`.
+
 ## Cloud password (SRP)
 
 `account.getPassword` used to report that no password was set, and `account.updatePasswordSettings` did not store a verifier. `auth.checkPassword` did not check one. Login copied the user id into `SESSION_PASSWORD_NEEDED_<id>` so the session process could enter the password step; upstream iOS compares the error text exactly.

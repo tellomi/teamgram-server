@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 )
 
 type memKV struct {
@@ -125,6 +127,88 @@ func TestDailyCapUsesShanghaiDayAndIsAtomic(t *testing.T) {
 	}
 	if kv.m["tellomi:code:day:sms:phone:8613800138000:20261108"] != "1" {
 		t.Fatalf("next day %#v", kv.m)
+	}
+}
+
+func TestShanghaiMidnightIsTheResetBoundary(t *testing.T) {
+	kv := &memKV{}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 10})
+	lim.limits.ResendSeconds = 0
+	ctx := context.Background()
+	phone := "8613800138000"
+	// 15:59:59 UTC is 23:59:59 in Asia/Shanghai, still 7 November.
+	lim.now = func() time.Time { return time.Date(2026, 11, 7, 15, 59, 59, 0, time.UTC) }
+	for i := 0; i < 10; i++ {
+		if err := lim.AllowSend(ctx, "sms", phone, ""); err != nil {
+			t.Fatalf("send %d: %v", i+1, err)
+		}
+	}
+	err := lim.AllowSend(ctx, "sms", phone, "")
+	le, ok := err.(*LimitError)
+	if !ok || !le.Daily || le.Retry != 1 {
+		t.Fatalf("one second before midnight: %#v", err)
+	}
+	if kv.m["tellomi:code:day:sms:phone:"+phone+":20261107"] != "11" {
+		t.Fatalf("old day counter %#v", kv.m)
+	}
+	// 16:00:00 UTC is 00:00:00 Asia/Shanghai on 8 November.
+	lim.now = func() time.Time { return time.Date(2026, 11, 7, 16, 0, 0, 0, time.UTC) }
+	if err := lim.AllowSend(ctx, "sms", phone, ""); err != nil {
+		t.Fatal(err)
+	}
+	if kv.m["tellomi:code:day:sms:phone:"+phone+":20261108"] != "1" {
+		t.Fatalf("midnight key %#v", kv.m)
+	}
+}
+
+func TestPasteAndSIMFormsShareOneDailyKey(t *testing.T) {
+	forms := []string{
+		"+86 138 0013 8000",
+		"8613800138000",
+		"+86-138-0013-8000",
+		"008613800138000",
+		"+8613800138000",
+	}
+	var key string
+	for _, form := range forms {
+		_, digits, err := phonenumber.CheckPhoneNumberInvalid(form)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		if key == "" {
+			key = digits
+		}
+		if digits != key {
+			t.Fatalf("%s normalized to %s, want %s", form, digits, key)
+		}
+	}
+	foreignForms := []string{"+1 415 555 2671", "0014155552671", "+44 20 7946 0958"}
+	for _, form := range foreignForms {
+		_, digits, err := phonenumber.CheckPhoneNumberInvalid(form)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		if err := RequireCountry(digits, false, nil); err != ErrInternationalDisabled {
+			t.Fatalf("%s (%s) was accepted", form, digits)
+		}
+		if err := RequireCountry(digits, true, []string{"86"}); err != nil {
+			t.Fatalf("allow international rejected %s: %v", form, err)
+		}
+	}
+
+	kv := &memKV{}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 10})
+	lim.limits.ResendSeconds = 0
+	ctx := context.Background()
+	for i := 0; i < 10; i++ {
+		if err := lim.AllowSend(ctx, "sms", key, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := lim.AllowSend(ctx, "sms", key, "")
+	le, ok := err.(*LimitError)
+	if !ok || !le.Daily {
+		t.Fatalf("eleventh paste form: %#v", err)
 	}
 }
 
