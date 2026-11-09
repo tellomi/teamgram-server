@@ -42,7 +42,7 @@ func TestInlineQuerySendAndExpiry(t *testing.T) {
 	b := newBook(nil)
 	b.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
 	ctx := context.Background()
-	if _, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "hi", ""); err != mtproto.ErrBotInvalid {
+	if _, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "hi", "", nil); err != mtproto.ErrBotInvalid {
 		t.Fatalf("missing bot: %v", err)
 	}
 	if err := b.PutBot(ctx, testBot()); err != nil {
@@ -54,10 +54,10 @@ func TestInlineQuerySendAndExpiry(t *testing.T) {
 	if err := b.PutBot(ctx, off); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.InlineResults(ctx, 3, userIn(71), peerIn(9), "hi", ""); err != mtproto.ErrBotInlineDisabled {
+	if _, err := b.InlineResults(ctx, 3, userIn(71), peerIn(9), "hi", "", nil); err != mtproto.ErrBotInlineDisabled {
 		t.Fatalf("inline off: %v", err)
 	}
-	empty, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "hi", "")
+	empty, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "hi", "", nil)
 	if err != nil || empty.QueryId == 0 || len(empty.Results) != 0 || empty.Users[0].GetId() != 70 {
 		t.Fatalf("empty %+v %v", empty, err)
 	}
@@ -67,7 +67,7 @@ func TestInlineQuerySendAndExpiry(t *testing.T) {
 	if err := b.SetInlineAnswer(ctx, 70, "hi", false, 60, []*mtproto.BotInlineResult{article("a", "hello")}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "hi", "")
+	got, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "hi", "", nil)
 	if err != nil || len(got.Results) != 1 || got.Results[0].GetId() != "a" || got.CacheTime != 60 {
 		t.Fatalf("cached %+v %v", got, err)
 	}
@@ -79,7 +79,7 @@ func TestInlineQuerySendAndExpiry(t *testing.T) {
 	if _, _, err := b.TakeInlineResult(ctx, 3, peerIn(9), got.QueryId, "a", 12, false, false, false, 0, nil); err != mtproto.ErrInlineResultExpired {
 		t.Fatalf("expired: %v", err)
 	}
-	if _, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "way too long "+string(make([]byte, 300)), ""); err != mtproto.ErrMessageTooLong {
+	if _, err := b.InlineResults(ctx, 3, userIn(70), peerIn(9), "way too long "+string(make([]byte, 300)), "", nil); err != mtproto.ErrMessageTooLong {
 		t.Fatalf("long query: %v", err)
 	}
 }

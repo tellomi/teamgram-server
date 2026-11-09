@@ -37,8 +37,8 @@ const (
 )
 
 // Apply edits cfg from TELLOMI_DC_OPTIONS and TELLOMI_DC_TXT_DOMAIN.
-// A valid options spec replaces dc_options and sets webfile_dc_id to 1
-// (the file ships DC 4, and no DC 4 address exists). An empty options
+// A valid options spec replaces dc_options and sets webfile_dc_id to 1.
+// The checked-in file also ships 1 (DC 4 does not exist). An empty options
 // variable leaves both fields as they were. An invalid spec is logged
 // once and also leaves them as they were. The process keeps running.
 func Apply(cfg *mtproto.TLConfig) {

@@ -36,6 +36,7 @@ func (c *UserCore) UserResolveUsername(in *user.TLUserResolveUsername) (*mtproto
 	case "gif":
 	case "pic":
 	case "bing":
+	case "venue":
 	default:
 		if !user.CheckUsernameInvalid(username) {
 			err = mtproto.ErrUsernameInvalid

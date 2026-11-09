@@ -77,8 +77,11 @@ func TestHelpGetConfigDCOptionsUnsetMatchesFile(t *testing.T) {
 	if len(got.GetDcOptions()) != 0 {
 		t.Fatalf("dc_options %+v", got.GetDcOptions())
 	}
-	if got.GetWebfileDcId() != 4 {
+	if got.GetWebfileDcId() != 1 {
 		t.Fatalf("webfile_dc_id %d", got.GetWebfileDcId())
+	}
+	if got.GetVenueSearchUsername().GetValue() != "venue" {
+		t.Fatalf("venue_search_username %q", got.GetVenueSearchUsername().GetValue())
 	}
 	if got.GetDcTxtDomainName() != "apv2.stel.com" {
 		t.Fatalf("domain %q", got.GetDcTxtDomainName())
@@ -95,7 +98,7 @@ func TestHelpGetConfigDCOptionsInvalidDoesNotCrash(t *testing.T) {
 	if len(got.GetDcOptions()) != 0 {
 		t.Fatalf("invalid spec replaced dc_options: %+v", got.GetDcOptions())
 	}
-	if got.GetWebfileDcId() != 4 {
+	if got.GetWebfileDcId() != 1 {
 		t.Fatalf("webfile_dc_id %d", got.GetWebfileDcId())
 	}
 }

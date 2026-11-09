@@ -125,7 +125,7 @@ JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. `pkg
 
 ## Datacenter addresses (`help.getConfig`)
 
-`teamgramd/bin/config.json` still ships `dc_options: []`, `dc_txt_domain_name: apv2.stel.com`, and `webfile_dc_id: 4`. `help.getConfig` clones that file once per request. When `TELLOMI_DC_OPTIONS` is a valid `dcId:ipv4:port` list, the clone's `dc_options` is replaced and `webfile_dc_id` is set to 1. Unset, empty, or invalid leaves both fields as loaded. An invalid spec is logged once and the process stays up. `TELLOMI_DC_TXT_DOMAIN` set to `-` blanks the TXT domain; empty leaves `apv2.stel.com`.
+`teamgramd/bin/config.json` ships `dc_options: []`, `dc_txt_domain_name: apv2.stel.com`, and `webfile_dc_id: 1`. `help.getConfig` clones that file once per request. When `TELLOMI_DC_OPTIONS` is a valid `dcId:ipv4:port` list, the clone's `dc_options` is replaced and `webfile_dc_id` is set to 1. Unset, empty, or invalid leaves both fields as loaded. An invalid spec is logged once and the process stays up. `TELLOMI_DC_TXT_DOMAIN` set to `-` blanks the TXT domain; empty leaves `apv2.stel.com`.
 
 The only upstream file is `app/bff/configuration/internal/core/help.getConfig_handler.go`, which calls `pkg/dcoptions.Apply` on the clone. Parsing and validation live in `pkg/dcoptions`.
 
