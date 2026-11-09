@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 	"strings"
 	"time"
 )
@@ -118,13 +119,24 @@ func (s *Service) approveLocked(actor Actor, id string) (row Sanction, err error
 }
 
 // Revoke appends a human correction. It does not delete the case.
+// The initiator and the approver are both refused.
 func (s *Service) Revoke(actor Actor, id, reason string) (Sanction, error) {
-	row, err := s.revokeLocked(actor, id, reason)
+	row, err := s.revokeLocked(actor, id, reason, false)
 	s.deliver()
 	return row, err
 }
 
-func (s *Service) revokeLocked(actor Actor, id, reason string) (out Sanction, err error) {
+// liftConfirmed is the 777001 admin confirmation. The caller has already
+// checked the username allowlist and an exact 「是」. The approver may lift.
+// The initiator still cannot. This is not an HTTP handler and it is not
+// mounted on the isolated e2e listener.
+func (s *Service) liftConfirmed(actor Actor, id, detail string) (Sanction, error) {
+	row, err := s.revokeLocked(actor, id, detail, true)
+	s.deliver()
+	return row, err
+}
+
+func (s *Service) revokeLocked(actor Actor, id, reason string, allowApprover bool) (out Sanction, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err = s.begin(); err != nil {
@@ -135,7 +147,11 @@ func (s *Service) revokeLocked(actor Actor, id, reason string) (out Sanction, er
 	if row == nil {
 		return Sanction{}, ErrNotFound
 	}
-	if actor.ID == "" || actor.ID == row.Initiator || (row.Approver != "" && actor.ID == row.Approver) {
+	same := actor.ID == "" || actor.ID == row.Initiator
+	if !allowApprover && row.Approver != "" && actor.ID == row.Approver {
+		same = true
+	}
+	if same {
 		s.auditLocked(actor.ID, "revoke_refused", id, "same person")
 		return Sanction{}, ErrRole
 	}
@@ -147,8 +163,12 @@ func (s *Service) revokeLocked(actor Actor, id, reason string) (out Sanction, er
 		return *row, nil
 	}
 	row.Status = StatusLifted
-	s.events = append(s.events, Event{ID: newID(), SanctionID: id, Type: "revoke", Actor: actor.ID, At: s.clock(), Reason: reason})
-	s.auditLocked(actor.ID, "revoke", id, reason)
+	action := "revoke"
+	if allowApprover {
+		action = "admin_lift"
+	}
+	s.events = append(s.events, Event{ID: newID(), SanctionID: id, Type: action, Actor: actor.ID, At: s.clock(), Reason: reason})
+	s.auditLocked(actor.ID, action, id, reason)
 	s.queueNoticeLocked(row, "T-05", "revoke")
 	s.refreshKnownLocked(row.UserID)
 	return *row, nil
@@ -708,6 +728,24 @@ func (s *Service) Sanction(id string) (Sanction, bool) {
 		return Sanction{}, false
 	}
 	return *row, true
+}
+
+// ActiveByUser returns the sanctions that still restrict this user.
+func (s *Service) ActiveByUser(userID int64) []Sanction {
+	if s == nil || userID == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Sanction
+	for _, id := range s.byUser[userID] {
+		row := s.rows[id]
+		if row != nil && row.Status == StatusActive {
+			out = append(out, *row)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func (s *Service) Appeal(id string) (Appeal, bool) {

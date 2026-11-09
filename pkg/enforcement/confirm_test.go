@@ -336,6 +336,252 @@ func confirmKey() []byte {
 	return raw
 }
 
+func TestParseLiftRequest(t *testing.T) {
+	kind, id, ok := parseLiftRequest("  解封案件 C0123456789abcdef  ")
+	if !ok || kind != "case" || id != "C0123456789abcdef" {
+		t.Fatalf("%s %s %v", kind, id, ok)
+	}
+	kind, id, ok = parseLiftRequest("解封案件 0123456789abcdef")
+	if !ok || kind != "case" || id != "0123456789abcdef" {
+		t.Fatalf("%s %s %v", kind, id, ok)
+	}
+	kind, id, ok = parseLiftRequest("\n解封用户 42\t")
+	if !ok || kind != "user" || id != "42" {
+		t.Fatalf("%s %s %v", kind, id, ok)
+	}
+	rejected := []string{
+		"", "解封", "解封案件", "解封用户", "解封案件  C0123456789abcdef",
+		"解封案件 C0123456789abcdef 请", "解封用户 42 请", "解封用户 @bad",
+		"解封用户 042", "解封用户 0", "解封用户 -3", "unban 42",
+		"是", "是 C0123456789abcdef", "解封案件 C0123456789abcde",
+		"解封案件 C0123456789ABCDE", "解封案件 案件",
+	}
+	for _, text := range rejected {
+		if _, _, ok := parseLiftRequest(text); ok {
+			t.Fatalf("%q was accepted", text)
+		}
+	}
+}
+
+func TestAdminUnbanUsesYesNoAndAudits(t *testing.T) {
+	c, out, svc := testConfirm(t, scriptAI{fn: substantiated}, "erel", "ada")
+	c.OnAccount(context.Background(), AccountInput{ReportID: 50, SubjectUserID: 50, Label: "50 @bad", Reason: "spam"})
+	banMsg := out.rows[0]
+	caseID := caseIDPattern.FindString(banMsg.text)
+	if caseID == "" {
+		t.Fatal(banMsg.text)
+	}
+	if yes := c.answer(context.Background(), 9, "ada", "是", banMsg.id); !strings.Contains(yes, "已封禁") {
+		t.Fatal(yes)
+	}
+	review, ok, err := svc.book().get(caseID)
+	if err != nil || !ok || review.SanctionID == "" {
+		t.Fatalf("%+v %v", review, err)
+	}
+	sanctionID := review.SanctionID
+	if d := svc.Decide(50, "send_message", false, svc.now()); d.Allowed {
+		t.Fatal("ban did not stick")
+	}
+	if ObserveAdmin(context.Background(), 4, "解封案件 "+sanctionID, 0) {
+		t.Fatal("non-admin unban was accepted")
+	}
+	if d := svc.Decide(50, "send_message", false, svc.now()); d.Allowed {
+		t.Fatal("non-admin unban lifted the sanction")
+	}
+	for _, loose := range []string{
+		"解封案件 " + sanctionID + " 请", "解封用户 @bad", "解封用户 050",
+		"是 " + sanctionID, "是的", "yes", "y", "解封",
+	} {
+		reply := c.answer(context.Background(), 9, "ada", loose, 0)
+		if reply == "" || strings.Contains(reply, "已解除") {
+			t.Fatalf("%q -> %s", loose, reply)
+		}
+	}
+	if d := svc.Decide(50, "send_message", false, svc.now()); d.Allowed {
+		t.Fatal("a loose reply lifted the sanction")
+	}
+
+	c.OnAccount(context.Background(), AccountInput{ReportID: 70, SubjectUserID: 70, Label: "70 @other", Reason: "spam"})
+	other := out.last()
+	otherID := caseIDPattern.FindString(other.text)
+	if named := c.answer(context.Background(), 9, "ada", "解封案件 "+otherID, 0); named != "没有找到这起处置。" {
+		t.Fatal(named)
+	}
+
+	opened := c.answer(context.Background(), 9, "ada", "  解封案件 "+caseID+"  ", 0)
+	if !strings.Contains(opened, "已发出确认") {
+		t.Fatal(opened)
+	}
+	prompt := sentTo(t, out, 9, sanctionID)
+	if !strings.Contains(prompt.text, "回复「是」解除") || !strings.Contains(prompt.text, "用户：50") {
+		t.Fatal(prompt.text)
+	}
+	if ambiguous := c.answer(context.Background(), 9, "ada", "是", 0); !strings.Contains(ambiguous, "回复对应") {
+		t.Fatal(ambiguous)
+	}
+	if loose := c.answer(context.Background(), 9, "ada", "是的", prompt.id); loose != helpText {
+		t.Fatal(loose)
+	}
+	if no := c.answer(context.Background(), 9, "ada", "否", prompt.id); !strings.Contains(no, "保持原处罚") {
+		t.Fatal(no)
+	}
+	if d := svc.Decide(50, "send_message", false, svc.now()); d.Allowed {
+		t.Fatal("否 lifted the sanction")
+	}
+	if d := svc.Decide(70, "send_message", false, svc.now()); !d.Allowed {
+		t.Fatal("the other report was banned")
+	}
+	closed, ok, err := svc.book().get(caseIDPattern.FindString(prompt.text))
+	if err != nil || !ok || closed.Status != reviewClosed || closed.AdminAnswer != "否" {
+		t.Fatalf("%+v %v", closed, err)
+	}
+
+	svc.SetCreateEnabled(false)
+	if again := c.answer(context.Background(), 9, "ada", "解封案件 "+sanctionID, 0); !strings.Contains(again, "已发出确认") {
+		t.Fatal(again)
+	}
+	second := sentTo(t, out, 9, "请确认是否解除")
+	if yes := c.answer(context.Background(), 9, "ada", " 是 ", second.id); !strings.Contains(yes, "已解除") || !strings.Contains(yes, sanctionID) {
+		t.Fatal(yes)
+	}
+	if d := svc.Decide(50, "send_message", false, svc.now()); !d.Allowed {
+		t.Fatalf("after lift %+v", d)
+	}
+	if d := svc.Decide(70, "send_message", false, svc.now()); !d.Allowed {
+		t.Fatal("lifting one user banned the other")
+	}
+	var body string
+	for _, n := range svc.Notices(50) {
+		if n.From == AdminUserID && n.Template == "T-05" {
+			body = n.Body
+		}
+	}
+	if !strings.Contains(body, "已撤销") || !strings.Contains(body, sanctionID) {
+		t.Fatalf("777000 notice: %q", body)
+	}
+	wantAt := svc.now()
+	var saw bool
+	for _, a := range svc.Audits() {
+		if a.Action == "admin_lift" && a.Actor == "ada" && a.CaseID == sanctionID && a.At.Equal(wantAt) &&
+			strings.Contains(a.Detail, "answer=是") && strings.Contains(a.Detail, "user=50") &&
+			strings.Contains(a.Detail, "reason=管理员确认解除") && strings.Contains(a.Detail, "review=") {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("audit: %+v", svc.Audits())
+	}
+	if _, err := svc.Revoke(Actor{ID: "ada", Role: RoleSenior}, sanctionID, "again"); err == nil {
+		t.Fatal("approver revoke still bypassed the role check")
+	}
+}
+
+func TestAdminUnbanUserAndRefusals(t *testing.T) {
+	c, out, svc := testConfirm(t, scriptAI{fn: substantiated}, "erel", "ada")
+	end := svc.now().Add(2 * time.Hour)
+	perm, err := svc.Create(Actor{ID: actorAI, Role: RoleAgent}, Sanction{
+		UserID: 60, Kind: KindPermanent, Permanent: true,
+		ReasonCategory: "辱骂", PolicyClause: "条款", RuleVersion: ruleConfirm,
+		EvidenceRef: "report:60", IdempotencyKey: "unban-perm", Start: svc.now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	perm, err = svc.Approve(Actor{ID: "ada", Role: RoleSenior}, perm.ID)
+	if err != nil || perm.Status != StatusActive {
+		t.Fatal(err, perm.Status)
+	}
+	ro, err := svc.Create(Actor{ID: "line", Role: RoleAgent}, Sanction{
+		UserID: 60, Kind: KindReadOnly, ReasonCategory: "只读", PolicyClause: "条款",
+		RuleVersion: ruleConfirm, EvidenceRef: "report:60b", IdempotencyKey: "unban-ro",
+		Start: svc.now(), End: &end,
+	})
+	if err != nil || ro.Status != StatusActive {
+		t.Fatal(err, ro.Status)
+	}
+	if ack := c.answer(context.Background(), 9, "ada", "解封用户 60", 0); !strings.Contains(ack, "已发出确认") {
+		t.Fatal(ack)
+	}
+	first := sentTo(t, out, 9, perm.ID)
+	second := sentTo(t, out, 9, ro.ID)
+	if first.id == 0 || second.id == 0 || first.id == second.id {
+		t.Fatalf("prompts %+v %+v", first, second)
+	}
+	if bare := c.answer(context.Background(), 9, "ada", "是", 0); !strings.Contains(bare, "回复对应") {
+		t.Fatal(bare)
+	}
+	if yes := c.answer(context.Background(), 9, "ada", "是", first.id); !strings.Contains(yes, "已解除") || !strings.Contains(yes, perm.ID) {
+		t.Fatal(yes)
+	}
+	if d := svc.Decide(60, "send_message", false, svc.now()); d.Allowed || d.Code != "ACCOUNT_READ_ONLY" {
+		t.Fatalf("both sanctions lifted: %+v", d)
+	}
+	if yes := c.answer(context.Background(), 9, "ada", "是", second.id); !strings.Contains(yes, ro.ID) {
+		t.Fatal(yes)
+	}
+	if d := svc.Decide(60, "send_message", false, svc.now()); !d.Allowed {
+		t.Fatalf("user still restricted: %+v", d)
+	}
+
+	own, err := svc.Create(Actor{ID: "erel", Role: RoleSenior}, Sanction{
+		UserID: 61, Kind: KindReadOnly, ReasonCategory: "只读", PolicyClause: "条款",
+		RuleVersion: ruleConfirm, EvidenceRef: "own", IdempotencyKey: "unban-own",
+		Start: svc.now(), End: &end,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack := c.answer(context.Background(), 8, "erel", "解封案件 "+own.ID, 0); !strings.Contains(ack, "已发出确认") {
+		t.Fatal(ack)
+	}
+	ownPrompt := sentTo(t, out, 8, own.ID)
+	if refused := c.answer(context.Background(), 8, "erel", "是", ownPrompt.id); !strings.Contains(refused, "自己发起") {
+		t.Fatal(refused)
+	}
+	if row, _ := svc.Sanction(own.ID); row.Status != StatusActive {
+		t.Fatal(row.Status)
+	}
+	adaPrompt := sentTo(t, out, 9, own.ID)
+	if yes := c.answer(context.Background(), 9, "ada", "是", adaPrompt.id); !strings.Contains(yes, "已解除") {
+		t.Fatal(yes)
+	}
+	if row, _ := svc.Sanction(own.ID); row.Status != StatusLifted {
+		t.Fatal(row.Status)
+	}
+
+	self, err := svc.Create(Actor{ID: "line", Role: RoleAgent}, Sanction{
+		UserID: 8, Kind: KindReadOnly, ReasonCategory: "只读", PolicyClause: "条款",
+		RuleVersion: ruleConfirm, EvidenceRef: "self", IdempotencyKey: "unban-self",
+		Start: svc.now(), End: &end,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply := c.answer(context.Background(), 8, "erel", "解封用户 8", 0); reply != "不能解除这个账号。" {
+		t.Fatal(reply)
+	}
+	if reply := c.answer(context.Background(), 9, "ada", "解封用户 777000", 0); reply != "不能解除这个账号。" {
+		t.Fatal(reply)
+	}
+	if row, _ := svc.Sanction(self.ID); row.Status != StatusActive {
+		t.Fatal(row.Status)
+	}
+}
+
+func sentTo(t *testing.T, b *sentBox, user int64, needle string) sentRow {
+	t.Helper()
+	var hit sentRow
+	for _, row := range b.rows {
+		if row.to == user && strings.Contains(row.text, needle) {
+			hit = row
+		}
+	}
+	if hit.id == 0 {
+		t.Fatalf("no message to %d containing %s", user, needle)
+	}
+	return hit
+}
+
 func TestContentReviewJSONRoundTrip(t *testing.T) {
 	body, _ := json.Marshal(ContentDecision{CaseID: "C0123456789abcdef", Decision: "pending_admin"})
 	if !strings.Contains(string(body), "pending_admin") {

@@ -11,6 +11,7 @@ import (
 const (
 	reviewAccount = "account"
 	reviewContent = "content"
+	reviewLift    = "lift"
 
 	reviewPending    = "pending"
 	reviewConfirming = "confirming"
@@ -19,6 +20,7 @@ const (
 	reviewRemoved    = "removed"
 	reviewKept       = "kept"
 	reviewClear      = "clear"
+	reviewLifted     = "lifted"
 )
 
 // ReviewCase is one AI decision waiting on an admin, or already decided.
