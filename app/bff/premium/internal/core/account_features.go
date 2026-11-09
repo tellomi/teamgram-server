@@ -169,7 +169,10 @@ func (c *PremiumCore) MessagesTranscribeAudio(in *mtproto.TLMessagesTranscribeAu
 	if c.svcCtx == nil || c.svcCtx.Speech == nil {
 		return nil, mtproto.ErrInternalServerError
 	}
-	if audio := in.DraftAudio(); len(audio) > 0 {
+	// An empty draft has no audio bytes, so the constructor is what keeps it
+	// off the stored-message path (that path answers MSG_ID_INVALID).
+	if in.GetConstructor() == mtproto.DraftTranscribeConstructor || len(in.DraftAudio()) > 0 {
+		audio := in.DraftAudio()
 		in.ClearDraftAudio()
 		return c.svcCtx.Speech.Draft(c.ctx, c.MD, audio)
 	}
