@@ -277,21 +277,53 @@ func composeArgs(extra ...string) []string {
 }
 
 func sendCode(ctx context.Context, c *Client, number string) (string, error) {
-	sent, err := c.Invoke(ctx, &mtproto.TLAuthSendCode{
-		Constructor: mtproto.CRC32_auth_sendCode,
-		PhoneNumber: number,
-		ApiId:       c.cfg.APIID,
-		ApiHash:     c.cfg.APIHash,
-		Settings:    mtproto.MakeTLCodeSettings(&mtproto.CodeSettings{}).To_CodeSettings(),
-	})
-	if err != nil {
-		return "", err
+	var last error
+	for attempt := 0; attempt < 3; attempt++ {
+		sent, err := c.Invoke(ctx, &mtproto.TLAuthSendCode{
+			Constructor: mtproto.CRC32_auth_sendCode,
+			PhoneNumber: number,
+			ApiId:       c.cfg.APIID,
+			ApiHash:     c.cfg.APIHash,
+			Settings:    mtproto.MakeTLCodeSettings(&mtproto.CodeSettings{}).To_CodeSettings(),
+		})
+		if err == nil {
+			code, ok := sent.(*mtproto.TLAuthSentCode)
+			if !ok || code.GetPhoneCodeHash() == "" {
+				return "", fmt.Errorf("auth.sendCode returned %T", sent)
+			}
+			return code.GetPhoneCodeHash(), nil
+		}
+		last = err
+		wait, ok := emailFloodWait(err)
+		if !ok {
+			return "", err
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(wait):
+		}
 	}
-	code, ok := sent.(*mtproto.TLAuthSentCode)
-	if !ok || code.GetPhoneCodeHash() == "" {
-		return "", fmt.Errorf("auth.sendCode returned %T", sent)
+	return "", last
+}
+
+// emailFloodWait is the existing 60s resend cooldown for one address.
+// Invoke only repeats a wait of 30s or less.
+func emailFloodWait(err error) (time.Duration, bool) {
+	rpc, ok := asRPCError(err)
+	if !ok || rpc.Code != 420 {
+		return 0, false
 	}
-	return code.GetPhoneCodeHash(), nil
+	var n int
+	if _, scanErr := fmt.Sscanf(rpc.Message, "FLOOD_WAIT_%d", &n); scanErr != nil {
+		if _, scanErr = fmt.Sscanf(rpc.Message, "FLOOD_WAIT (%d)", &n); scanErr != nil {
+			return 0, false
+		}
+	}
+	if n < 0 || n > 120 {
+		return 0, false
+	}
+	return time.Duration(n+1) * time.Second, true
 }
 
 func signIn(ctx context.Context, c *Client, number, hash, code string) (Self, error) {
