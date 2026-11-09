@@ -26,17 +26,14 @@ func MakeChatPhotoByPhoto(photo *Photo) (chatPhoto *ChatPhoto) {
 	//	dc_id:int = ChatPhoto;
 	switch photo.GetPredicateName() {
 	case Predicate_photo:
-		sizes := photo.GetSizes()
-		if len(sizes) == 0 {
-			// TODO(@benqi): log
+		if !photoHasProfileImage(photo) {
 			chatPhoto = MakeTLChatPhotoEmpty(nil).To_ChatPhoto()
 		} else {
-			// TODO(@benqi): check PhotoSize is photoSizeEmpty
 			chatPhoto = MakeTLChatPhoto(&ChatPhoto{
-				HasVideo:      len(photo.VideoSizes) > 0,
+				HasVideo:      len(photo.GetVideoSizes()) > 0,
 				PhotoId:       photo.GetId(),
-				StrippedThumb: nil,
-				DcId:          1,
+				StrippedThumb: profileStrippedThumb(photo),
+				DcId:          profilePhotoDC(photo),
 			}).To_ChatPhoto()
 		}
 	default:
@@ -49,17 +46,66 @@ func MakeChatPhotoByPhoto(photo *Photo) (chatPhoto *ChatPhoto) {
 func MakeUserProfilePhotoByPhoto(photo *Photo) (userProfilePhoto *UserProfilePhoto) {
 	switch photo.GetPredicateName() {
 	case Predicate_photo:
-		sizes := photo.GetSizes()
-		if len(sizes) > 0 {
-			userProfilePhoto = MakeTLUserProfilePhoto(&UserProfilePhoto{
-				HasVideo:      len(photo.VideoSizes) > 0,
-				PhotoId:       photo.GetId(),
-				StrippedThumb: nil,
-				DcId:          1,
-			}).To_UserProfilePhoto()
+		// A photo with only video sizes is an emoji or sticker avatar.
+		// The client still needs photo_id; otherwise the chat list keeps
+		// the placeholder.
+		if !photoHasProfileImage(photo) {
+			return nil
 		}
+		userProfilePhoto = MakeTLUserProfilePhoto(&UserProfilePhoto{
+			HasVideo:      len(photo.GetVideoSizes()) > 0,
+			PhotoId:       photo.GetId(),
+			StrippedThumb: profileStrippedThumb(photo),
+			DcId:          profilePhotoDC(photo),
+		}).To_UserProfilePhoto()
 	case Predicate_photoEmpty:
 		userProfilePhoto = MakeTLUserProfilePhotoEmpty(nil).To_UserProfilePhoto()
 	}
 	return
+}
+
+// photoHasProfileImage reports whether the client can show this photo.
+// Image sizes count. A video-only avatar (emoji markup, animated photo)
+// still has a photo_id the client downloads.
+func photoHasProfileImage(photo *Photo) bool {
+	if photo == nil {
+		return false
+	}
+	for _, sz := range photo.GetSizes() {
+		if sz == nil {
+			continue
+		}
+		switch sz.GetPredicateName() {
+		case Predicate_photoSizeEmpty:
+			continue
+		default:
+			return true
+		}
+	}
+	return len(photo.GetVideoSizes()) > 0
+}
+
+// profileStrippedThumb is the inline JPEG clients draw before upload.getFile
+// returns. Official iOS and Android use it for the dialog list, the chat
+// header, and message avatars. Without it they keep the placeholder.
+func profileStrippedThumb(photo *Photo) []byte {
+	for _, sz := range photo.GetSizes() {
+		if sz == nil {
+			continue
+		}
+		if sz.GetPredicateName() != Predicate_photoStrippedSize && sz.GetType() != PhotoSZStrippedType {
+			continue
+		}
+		if len(sz.GetBytes()) > 0 {
+			return sz.GetBytes()
+		}
+	}
+	return nil
+}
+
+func profilePhotoDC(photo *Photo) int32 {
+	if photo.GetDcId() > 0 {
+		return photo.GetDcId()
+	}
+	return 1
 }
