@@ -72,17 +72,8 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 
 	dialogExtList = c.mergeChannelDialogs(dialogExtList)
 	if len(dialogExtList) == 0 {
-		return mtproto.MakeTLMessagesDialogsSlice(&mtproto.Messages_Dialogs{
-			Dialogs:  []*mtproto.Dialog{},
-			Messages: []*mtproto.Message{},
-			Chats:    []*mtproto.Chat{},
-			Users:    []*mtproto.User{},
-			Count:    0,
-		}).To_Messages_Dialogs(), nil
+		return (&dialog.DialogsDataHelper{}).ToMessagesDialogs(0, dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, 0, limit)), nil
 	}
-
-	// messages.dialogsSlice.count is the whole folder view, not this page.
-	dialogCount := dialogExtList.Count()
 
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())
@@ -90,14 +81,9 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 		dialogEx.Dialog.NotifySettings = userpb.FindPeerPeerNotifySettings(notifySettingsList, peer2)
 	}
 
-	sort.Sort(sort.Reverse(dialogExtList))
-
-	dialogExtList = dialogExtList.GetDialogsByOffsetLimit(
-		in.OffsetDate,
-		in.OffsetId,
-		offsetPeer,
-		limit)
-
+	// Load every top message before paging. Order and count both need the
+	// rows fix() will actually return, and the order key is the message
+	// date, not dialogs.date2.
 	messageDialogs := dialogExtList.DoGetMessagesDialogs(
 		c.ctx,
 		c.MD.UserId,
@@ -120,9 +106,11 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 					UserId: c.MD.UserId,
 					IdList: msgIdList,
 				})
-				boxList.Walk(func(idx int, v *mtproto.MessageBox) {
-					msgList = append(msgList, v.ToMessage(c.MD.UserId))
-				})
+				if boxList != nil {
+					boxList.Walk(func(idx int, v *mtproto.MessageBox) {
+						msgList = append(msgList, v.ToMessage(c.MD.UserId))
+					})
+				}
 			}
 
 			return msgList
@@ -150,5 +138,24 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 			return c.channelChats(ctx, selfUserId, id...)
 		})
 
-	return messageDialogs.ToMessagesDialogs(dialogCount), nil
+	dialogExtList = dialogExtList.Keep(messageDialogs.FixedDialogs())
+	if len(dialogExtList) == 0 {
+		return (&dialog.DialogsDataHelper{}).ToMessagesDialogs(0, dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, 0, limit)), nil
+	}
+
+	dialogExtList.ApplyTopMessages(messageDialogs.Messages)
+	sort.Sort(sort.Reverse(dialogExtList))
+	// count is the folder after fix(), not the page and not the raw table size.
+	dialogCount := dialogExtList.Count()
+	page := dialogExtList.GetDialogsByOffsetLimit(
+		in.OffsetDate,
+		in.OffsetId,
+		offsetPeer,
+		limit)
+	// messages.dialogs only when this is the unoffset first page and the
+	// whole folder fits. An offset, even one that returns nothing, stays a
+	// slice carrying dialogCount.
+	fullList := dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, dialogCount, limit)
+
+	return messageDialogs.ForDialogs(page.TLDialogs()).ToMessagesDialogs(dialogCount, fullList), nil
 }

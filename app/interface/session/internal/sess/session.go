@@ -242,6 +242,10 @@ func SplitCloseStamp(clientIP string) (string, int64) {
 
 func (c *session) changeConnState(ctx context.Context, state int) {
 	c.connState = state
+	// File sockets (upload, download, getFile) are not generic. They must
+	// not mark the user online and must not clear that state on close.
+	// Several generic sessions can be up at once; trySetOffline looks at
+	// all of them.
 	if c.isAndroidPush || c.isGeneric {
 		if state == kStateOnline {
 			c.sessList.cb.setOnline(ctx)
@@ -449,6 +453,17 @@ func (c *session) onSessionConnClose(ctx context.Context, id string, closedAt in
 
 func (c *session) sessionOnline() bool {
 	return c.connState == kStateOnline
+}
+
+// keepsOnline is a generic chat session or the Android push session.
+// Upload, download, and getFile sockets are neither.
+func (c *session) keepsOnline() bool {
+	return c != nil && c.sessionOnline() && (c.isGeneric || c.isAndroidPush)
+}
+
+// holdsUpdates is a generic session that should receive live updates.
+func (c *session) holdsUpdates() bool {
+	return c != nil && c.sessionOnline() && c.isGeneric && !c.isAndroidPush
 }
 
 func (c *session) sessionClosed() bool {

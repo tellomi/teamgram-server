@@ -250,22 +250,87 @@ func (m *MainAuthWrapper) refreshAuthStateIfNeeded(ctx context.Context) {
 }
 
 func (m *MainAuthWrapper) resetAuth(kType int, authId int64) (lastAuthId int64) {
+	var reset *SessionList
 	switch kType {
 	case mtproto.AuthKeyTypeTemp:
-		lastAuthId = m.tempAuth.Reset(authId)
-		m.androidPushSession = nil
-		m.mainUpdatesSession = nil
+		reset = m.tempAuth
 	case mtproto.AuthKeyTypeMediaTemp:
-		lastAuthId = m.mediaTempAuth.Reset(authId)
+		reset = m.mediaTempAuth
 	default:
-		lastAuthId = m.mainAuth.Reset(authId)
-		m.androidPushSession = nil
-		m.mainUpdatesSession = nil
+		reset = m.mainAuth
 	}
-
-	// TODO: notify
-
+	if reset == nil {
+		return 0
+	}
+	lastAuthId = reset.Reset(authId)
+	// A temp-key or perm-key rebind replaces that key's session map only.
+	// The updates session often lives on the other key and has to stay the
+	// push target. Clearing it here is what dropped live updates on iOS
+	// while the client was still connected.
+	m.retargetAfterRebind(reset)
 	return
+}
+
+// retargetAfterRebind drops a push target only when that target belonged to
+// the key that was just replaced and no other generic session is still up.
+// A media or upload socket is not promoted into the updates session.
+func (m *MainAuthWrapper) retargetAfterRebind(reset *SessionList) {
+	if m.mainUpdatesSession != nil && m.mainUpdatesSession.sessList == reset {
+		if next := m.pickGenericSession(reset); next != nil {
+			m.mainUpdatesSession = next
+		} else {
+			m.mainUpdatesSession = nil
+		}
+	}
+	if m.androidPushSession != nil && m.androidPushSession.sessList == reset {
+		m.androidPushSession = nil
+	}
+}
+
+func (m *MainAuthWrapper) pickGenericSession(skip *SessionList) *session {
+	for _, list := range []*SessionList{m.mainAuth, m.tempAuth, m.mediaTempAuth} {
+		if list == nil || list == skip {
+			continue
+		}
+		for _, sess := range list.sessions {
+			if sess.holdsUpdates() {
+				return sess
+			}
+		}
+	}
+	return nil
+}
+
+// anyConnectionOnline reports whether a generic session or the Android push
+// session is still up. Upload, download, and getFile sockets do not count.
+func (m *MainAuthWrapper) anyConnectionOnline() bool {
+	if m == nil {
+		return false
+	}
+	if m.mainUpdatesSession.keepsOnline() || m.androidPushSession.keepsOnline() {
+		return true
+	}
+	for _, sess := range m.onlineSessions() {
+		if sess.keepsOnline() {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *MainAuthWrapper) onlineSessions() []*session {
+	var out []*session
+	for _, list := range []*SessionList{m.mainAuth, m.tempAuth, m.mediaTempAuth} {
+		if list == nil {
+			continue
+		}
+		for _, sess := range list.sessions {
+			if sess != nil && sess.sessionOnline() {
+				out = append(out, sess)
+			}
+		}
+	}
+	return out
 }
 
 func (m *MainAuthWrapper) setOnline(ctx context.Context) {
@@ -278,6 +343,10 @@ func (m *MainAuthWrapper) setOnline(ctx context.Context) {
 			m.onlineExpired,
 			m.authKeyId)
 
+		if m.cb == nil || m.cb.Dao == nil || m.cb.Dao.StatusClient == nil {
+			m.onlineExpired = date + 60
+			return
+		}
 		// s.setOnlineTTL(s.AuthUserId, s.authKeyId, getServerID(), s.Layer, 60)
 		_, _ = m.cb.Dao.StatusClient.StatusSetSessionOnline(
 			ctx,
@@ -303,16 +372,21 @@ func (m *MainAuthWrapper) setOnline(ctx context.Context) {
 }
 
 func (m *MainAuthWrapper) trySetOffline(ctx context.Context) {
-	if m.androidPushSession != nil && m.androidPushSession.sessionOnline() {
+	// One socket closing used to mark the whole auth key offline. Push then
+	// found no sessions and the new message was never delivered live.
+	if m.anyConnectionOnline() {
 		return
 	}
-	if m.mainUpdatesSession != nil && m.mainUpdatesSession.sessionOnline() {
-		return
+	if m.mainUpdatesSession != nil && !m.mainUpdatesSession.sessionOnline() {
+		m.mainUpdatesSession = nil
+	}
+	if m.androidPushSession != nil && !m.androidPushSession.sessionOnline() {
+		m.androidPushSession = nil
 	}
 
-	if m.AuthUserId > 0 {
+	if m.AuthUserId > 0 && m.cb != nil && m.cb.Dao != nil && m.cb.Dao.StatusClient != nil {
 		logx.WithContext(ctx).Infof("authSessions]]>> offline: %s", m)
-		m.cb.Dao.StatusClient.StatusSetSessionOffline(ctx, &status.TLStatusSetSessionOffline{
+		_, _ = m.cb.Dao.StatusClient.StatusSetSessionOffline(ctx, &status.TLStatusSetSessionOffline{
 			UserId:    m.AuthUserId,
 			AuthKeyId: m.authKeyId,
 		})
@@ -321,10 +395,10 @@ func (m *MainAuthWrapper) trySetOffline(ctx context.Context) {
 }
 
 func (m *MainAuthWrapper) delOnline(ctx context.Context) {
-	if m.AuthUserId > 0 {
+	if m.AuthUserId > 0 && m.cb != nil && m.cb.Dao != nil && m.cb.Dao.StatusClient != nil {
 		logx.Infof("authSessions]]>> delOnline: %s", m)
 
-		m.cb.Dao.StatusClient.StatusSetSessionOffline(ctx, &status.TLStatusSetSessionOffline{
+		_, _ = m.cb.Dao.StatusClient.StatusSetSessionOffline(ctx, &status.TLStatusSetSessionOffline{
 			UserId:    m.AuthUserId,
 			AuthKeyId: m.authKeyId,
 		})
@@ -629,8 +703,7 @@ func (m *MainAuthWrapper) Stop() {
 
 func (m *MainAuthWrapper) runLoop() {
 	defer func() {
-		if (m.mainUpdatesSession != nil && m.mainUpdatesSession.sessionOnline()) ||
-			(m.androidPushSession != nil && m.androidPushSession.sessionOnline()) {
+		if m.anyConnectionOnline() {
 			m.delOnline(context.Background())
 		}
 		m.finish.Done()
@@ -817,8 +890,7 @@ func (m *MainAuthWrapper) onTimer(ctx context.Context) {
 		sess.onTimer(ctx)
 	}
 
-	if (m.mainUpdatesSession != nil && m.mainUpdatesSession.sessionOnline()) ||
-		(m.androidPushSession != nil && m.androidPushSession.sessionOnline()) {
+	if m.anyConnectionOnline() {
 		m.setOnline(ctx)
 	}
 
@@ -1233,12 +1305,30 @@ func (m *MainAuthWrapper) onSyncData(ctx context.Context, syncMsg *syncData) {
 		}
 	}
 
-	if m.mainUpdatesSession != nil {
-		m.mainUpdatesSession.onSyncData(ctx, syncMsg.data.obj)
+	// Updates go to every generic session that is still connected. A file
+	// socket (upload, download, getFile) is not generic and must not see them.
+	seen := make(map[*session]struct{})
+	deliver := func(sess *session, obj mtproto.TLObject) {
+		if sess == nil || !sess.sessionOnline() {
+			return
+		}
+		if _, ok := seen[sess]; ok {
+			return
+		}
+		seen[sess] = struct{}{}
+		sess.onSyncData(ctx, obj)
 	}
-
-	if syncMsg.needAndroidPush && m.androidPushSession != nil {
-		m.androidPushSession.onSyncData(ctx, nil)
+	for _, sess := range m.onlineSessions() {
+		if !sess.holdsUpdates() {
+			continue
+		}
+		deliver(sess, syncMsg.data.obj)
+	}
+	if m.mainUpdatesSession.holdsUpdates() {
+		deliver(m.mainUpdatesSession, syncMsg.data.obj)
+	}
+	if syncMsg.needAndroidPush {
+		deliver(m.androidPushSession, nil)
 	}
 }
 

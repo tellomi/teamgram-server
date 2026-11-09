@@ -101,8 +101,31 @@ func (m *DialogsDataHelper) fix() {
 	m.Chats = chats
 }
 
-func (m *DialogsDataHelper) ToMessagesDialogs(count int32) *mtproto.Messages_Dialogs {
+// ToMessagesDialogs builds the messages.getDialogs reply.
+// count is the number of dialogs that can be returned, measured after fix().
+// fullList is true only for the first page with no offset when that count
+// fits in limit. The reply is then messages.dialogs. Every offset request,
+// including an empty page, is messages.dialogsSlice with that total, so the
+// client does not replace a non-empty folder with an empty list.
+func (m *DialogsDataHelper) ToMessagesDialogs(count int32, fullList bool) *mtproto.Messages_Dialogs {
+	before := len(m.Dialogs)
 	m.fix()
+	dropped := int32(before - len(m.Dialogs))
+	if dropped > 0 && count >= dropped {
+		count -= dropped
+	}
+	page := int32(len(m.Dialogs))
+	if count < page {
+		count = page
+	}
+	if fullList {
+		return mtproto.MakeTLMessagesDialogs(&mtproto.Messages_Dialogs{
+			Dialogs:  m.Dialogs,
+			Messages: m.Messages,
+			Chats:    m.Chats,
+			Users:    m.Users,
+		}).To_Messages_Dialogs()
+	}
 	return mtproto.MakeTLMessagesDialogsSlice(&mtproto.Messages_Dialogs{
 		Dialogs:  m.Dialogs,
 		Messages: m.Messages,
@@ -110,6 +133,29 @@ func (m *DialogsDataHelper) ToMessagesDialogs(count int32) *mtproto.Messages_Dia
 		Users:    m.Users,
 		Count:    count,
 	}).To_Messages_Dialogs()
+}
+
+// FixedDialogs runs fix() and returns the dialogs that can actually be sent.
+func (m *DialogsDataHelper) FixedDialogs() []*mtproto.Dialog {
+	if m == nil {
+		return nil
+	}
+	m.fix()
+	return m.Dialogs
+}
+
+// ForDialogs is the same loaded messages, users and chats, restricted to
+// one page of dialogs. fix() trims the related rows.
+func (m *DialogsDataHelper) ForDialogs(dialogs []*mtproto.Dialog) *DialogsDataHelper {
+	if m == nil {
+		return &DialogsDataHelper{Dialogs: dialogs}
+	}
+	return &DialogsDataHelper{
+		Dialogs:  dialogs,
+		Messages: m.Messages,
+		Chats:    m.Chats,
+		Users:    m.Users,
+	}
 }
 
 func (m *DialogsDataHelper) ToMessagesPeerDialogs(state *mtproto.Updates_State) *mtproto.Messages_PeerDialogs {
