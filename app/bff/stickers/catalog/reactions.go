@@ -57,7 +57,9 @@ func fallbackTGS() []byte {
 }
 
 // reactionSlots are the documents on availableReaction. static_icon is a
-// WebP (the chip). The other six are gzipped Lottie, matching Telegram.
+// full-bleed WebP. The other six are gzipped Lottie. center is the pill
+// icon: the same Lottie, inset so the glyph fills the center half of the
+// canvas. iOS draws that document at twice the pill slot.
 var reactionSlots = []struct {
 	name string
 	tgs  bool
@@ -77,7 +79,18 @@ func reactionReady(code string) bool {
 }
 
 func reactionSlotID(code, slot string) int64 {
+	if slot == "center" {
+		// New id so a client that cached the full-bleed center icon
+		// downloads this inset file. The previous id is still served.
+		return stableID("reaction-center-inset", code)
+	}
 	return stableID("reaction", slot, code)
+}
+
+// legacyCenterID is the center_icon id from before the pill inset.
+// upload.getFile still returns the inset bytes for it.
+func legacyCenterID(code string) int64 {
+	return stableID("reaction", "center", code)
 }
 
 type reactionFiles struct {
@@ -201,7 +214,10 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 			AroundAnimation:   docs["around"],
 			CenterIcon:        docs["center"],
 		}).To_AvailableReaction())
-		ids = append(ids, reactionSlotID(spec.code, "activate"))
+		// The center id is part of the hash. Changing the pill file has to
+		// miss messages.availableReactionsNotModified, or the client keeps
+		// drawing the previous document.
+		ids = append(ids, reactionSlotID(spec.code, "activate"), reactionSlotID(spec.code, "center"))
 	}
 	sum := int32(hash64(ids))
 	if hash != 0 && hash == sum {
@@ -243,7 +259,7 @@ func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
 func reactionFile(id int64) ([]byte, string, bool) {
 	for _, spec := range reactionSpecs() {
 		for _, slot := range reactionSlots {
-			if id != reactionSlotID(spec.code, slot.name) {
+			if id != reactionSlotID(spec.code, slot.name) && !legacyCenterHit(spec.code, slot.name, id) {
 				continue
 			}
 			body, mime := reactionSlotBytes(spec.code, slot.name, slot.tgs)
@@ -294,6 +310,10 @@ func reactionIconDocument(id int64, mime, name, alt string, w, h int32, size int
 		DcId:          1,
 		Attributes:    attrs,
 	}).To_Document()
+}
+
+func legacyCenterHit(code, slot string, id int64) bool {
+	return slot == "center" && id == legacyCenterID(code)
 }
 
 func reactionFileReference(id int64) []byte {

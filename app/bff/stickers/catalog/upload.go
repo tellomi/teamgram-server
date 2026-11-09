@@ -58,21 +58,26 @@ func uploadReactionAssets(ctx context.Context, client *objectstore.Client) error
 		return nil
 	}
 	seen := map[int64]bool{}
+	put := func(id int64, body []byte, mime string) error {
+		if id == 0 || seen[id] || len(body) == 0 {
+			return nil
+		}
+		seen[id] = true
+		path := strconv.FormatInt(id, 10) + ".dat"
+		return client.Put(ctx, "emoji", path, mime, body)
+	}
 	for _, spec := range reactionSpecs() {
 		for _, slot := range reactionSlots {
-			id := reactionSlotID(spec.code, slot.name)
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
 			body, mime := reactionSlotBytes(spec.code, slot.name, slot.tgs)
-			if len(body) == 0 {
-				continue
-			}
-			path := strconv.FormatInt(id, 10) + ".dat"
-			if err := client.Put(ctx, "emoji", path, mime, body); err != nil {
+			if err := put(reactionSlotID(spec.code, slot.name), body, mime); err != nil {
 				return err
 			}
+		}
+		// Rewrite the previous center_icon key as well. A store that still
+		// has that object would otherwise keep serving the full-bleed file.
+		body, mime := reactionSlotBytes(spec.code, "center", true)
+		if err := put(legacyCenterID(spec.code), body, mime); err != nil {
+			return err
 		}
 	}
 	return nil

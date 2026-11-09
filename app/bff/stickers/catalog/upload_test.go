@@ -71,6 +71,15 @@ func TestUploadAndGetUseTheSameObject(t *testing.T) {
 	if !fake.has("tellomi-prod-public-media", "emoji/"+emojiPath, tgs) {
 		t.Fatalf("emoji key missing, objects=%v", fake.keys("tellomi-prod-public-media"))
 	}
+	centerBody, centerMIME := reactionSlotBytes("1f44d", "center", true)
+	if centerMIME != "application/x-tgsticker" || !tgsCanvas512(centerBody) {
+		t.Fatal("center slot was not a 512 tgs")
+	}
+	centerKey := "emoji/" + fmt.Sprint(reactionSlotID("1f44d", "center")) + ".dat"
+	legacyKey := "emoji/" + fmt.Sprint(legacyCenterID("1f44d")) + ".dat"
+	if !fake.has("tellomi-prod-public-media", centerKey, centerBody) || !fake.has("tellomi-prod-public-media", legacyKey, centerBody) {
+		t.Fatal("reaction reload did not write the inset center icon")
+	}
 	for _, key := range fake.keys("tellomi-prod-public-media") {
 		if key == "stickers/44.dat" {
 			t.Fatal("seed pass uploaded an imported item with no embedded asset")
