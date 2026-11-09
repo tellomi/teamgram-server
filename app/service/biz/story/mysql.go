@@ -408,6 +408,111 @@ func (s *mysqlStore) ListByOwner(ctx context.Context, owner Owner) ([]*Record, e
 	return s.list(ctx, `SELECT `+storyCols+` FROM stories WHERE owner_kind=? AND owner_id=?`, owner.Kind, owner.ID)
 }
 
+// ListActiveByOwners reads every non-deleted story that has not expired.
+// now is the service clock, which is UNIX_TIMESTAMP in production, so a test
+// can move expiry without waiting.
+func (s *mysqlStore) ListActiveByOwners(ctx context.Context, kind Kind, ids []int64, now int32) ([]*Record, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const chunk = 200
+	var out []*Record
+	for start := 0; start < len(ids); start += chunk {
+		end := start + chunk
+		if end > len(ids) {
+			end = len(ids)
+		}
+		part := ids[start:end]
+		args := make([]any, 0, len(part)+2)
+		args = append(args, kind)
+		for _, id := range part {
+			args = append(args, id)
+		}
+		args = append(args, now)
+		q := `SELECT ` + storyCols + ` FROM stories WHERE owner_kind=? AND owner_id IN (` + mysqlPlaceholders(len(part)) + `) AND deleted=0 AND expire_date>?`
+		recs, err := s.list(ctx, q, args...)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, recs...)
+	}
+	return out, nil
+}
+
+func mysqlPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.TrimRight(strings.Repeat("?,", n), ",")
+}
+
+func (s *mysqlStore) closeFriendIDs(ctx context.Context, owner int64) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT contact_user_id FROM user_contacts
+WHERE owner_user_id=? AND close_friend<>0 AND is_deleted=0`, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// dialogPeers pages users who have a private dialog with owner.
+// peer_type 2 is a user. The scan stops at limit rows.
+func (s *mysqlStore) dialogPeers(ctx context.Context, owner int64, limit int) ([]int64, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	const page = 500
+	var out []int64
+	var after int64
+	for len(out) < limit {
+		n := page
+		if remain := limit - len(out); remain < n {
+			n = remain
+		}
+		rows, err := s.db.QueryContext(ctx, `
+SELECT user_id FROM dialogs
+WHERE peer_type=? AND peer_id=? AND deleted=0 AND user_id>?
+ORDER BY user_id
+LIMIT ?`, mtproto.PEER_USER, owner, after, n)
+		if err != nil {
+			return nil, err
+		}
+		var batch []int64
+		for rows.Next() {
+			var id int64
+			if err = rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			batch = append(batch, id)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 || batch[len(batch)-1] <= after {
+			break
+		}
+		out = append(out, batch...)
+		after = batch[len(batch)-1]
+		if len(batch) < n {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (s *mysqlStore) ListAll(ctx context.Context) ([]*Record, error) {
 	return s.list(ctx, `SELECT `+storyCols+` FROM stories`)
 }

@@ -7,6 +7,8 @@
 package user
 
 import (
+	"context"
+
 	"github.com/teamgram/proto/mtproto"
 )
 
@@ -26,7 +28,7 @@ func (m *Vector_ImmutableUser) GetUnsafeUser(selfId, id int64) (*mtproto.User, e
 		return nil, mtproto.ErrUserIdInvalid
 	}
 
-	return to.ToUnsafeUser(me), nil
+	return paintImmutable(selfId, to, to.ToUnsafeUser(me)), nil
 }
 
 func (m *Vector_ImmutableUser) GetUnsafeUserSelf(id int64) (*mtproto.User, error) {
@@ -39,7 +41,7 @@ func (m *Vector_ImmutableUser) GetUnsafeUserSelf(id int64) (*mtproto.User, error
 		return nil, mtproto.ErrUserIdInvalid
 	}
 
-	return me.ToSelfUser(), nil
+	return paintImmutable(id, me, me.ToSelfUser()), nil
 }
 
 func (m *Vector_ImmutableUser) findImmutableUser(id int64) *mtproto.ImmutableUser {
@@ -84,14 +86,27 @@ func (m *Vector_ImmutableUser) GetUserListByIdList(selfId int64, id ...int64) []
 		return users
 	}
 
+	column := make(map[int64]int32, len(id))
 	for _, id2 := range id {
 		to := m.findImmutableUser(id2)
-		if to != nil {
-			users = append(users, to.ToUnsafeUser(me))
+		if to == nil {
+			continue
 		}
+		users = append(users, to.ToUnsafeUser(me))
+		column[to.Id()] = mtproto.StoryColumn(to)
 	}
-
+	mtproto.PaintUserStoryRings(context.Background(), selfId, users, column)
 	return users
+}
+
+func paintImmutable(viewer int64, im *mtproto.ImmutableUser, user *mtproto.User) *mtproto.User {
+	if im == nil || user == nil {
+		return user
+	}
+	mtproto.PaintUserStoryRings(context.Background(), viewer, []*mtproto.User{user}, map[int64]int32{
+		im.Id(): mtproto.StoryColumn(im),
+	})
+	return user
 }
 
 func (m *Vector_ImmutableUser) Visit(cb func(it *mtproto.ImmutableUser)) {

@@ -266,27 +266,60 @@ func addresses(rec *Record, viewer int64) bool {
 }
 
 func (s *Service) PeerMaxIDs(ctx context.Context, viewer int64, owners []Owner) []*mtproto.RecentStory {
+	var userIDs []int64
+	for _, owner := range owners {
+		if owner.Kind == KindUser && owner.ok() {
+			userIDs = append(userIDs, owner.ID)
+		}
+	}
+	rings, _ := s.PeerMaxIDsBatch(ctx, viewer, userIDs)
 	out := make([]*mtproto.RecentStory, 0, len(owners))
 	for _, owner := range owners {
 		rs := &mtproto.RecentStory{}
-		if err := s.canViewPeer(ctx, viewer, owner, 0); err == nil {
-			recs, _ := s.filter(ctx, viewer, owner, false, false)
-			var max int32
-			var live bool
-			for _, rec := range recs {
-				if rec.id() >= max {
-					max = rec.id()
-					live = rec.Item.GetLive()
-				}
+		if owner.Kind == KindUser {
+			if ring := rings[owner.ID]; ring.MaxID > 0 {
+				rs.Live = ring.Live
+				rs.MaxId = &wrapperspb.Int32Value{Value: ring.MaxID}
 			}
-			if max > 0 {
-				rs.Live = live
-				rs.MaxId = &wrapperspb.Int32Value{Value: max}
+		} else if err := s.canViewPeer(ctx, viewer, owner, 0); err == nil {
+			recs, _ := s.filter(ctx, viewer, owner, false, false)
+			ring := s.visibleMax(ctx, viewer, recs)
+			if ring.MaxID > 0 {
+				rs.Live = ring.Live
+				rs.MaxId = &wrapperspb.Int32Value{Value: ring.MaxID}
 			}
 		}
 		out = append(out, mtproto.MakeTLRecentStory(rs).To_RecentStory())
 	}
 	return out
+}
+
+// PeerMaxIDsBatch is the live, privacy-aware max for many user owners.
+// One store read covers the whole id list. A missing id has no ring.
+func (s *Service) PeerMaxIDsBatch(ctx context.Context, viewer int64, ids []int64) (map[int64]UserRing, error) {
+	out := map[int64]UserRing{}
+	if s == nil || len(ids) == 0 {
+		return out, nil
+	}
+	ids = unique64(ids)
+	recs, err := s.store.ListActiveByOwners(ctx, KindUser, ids, s.now())
+	if err != nil {
+		return nil, err
+	}
+	byOwner := map[int64][]*Record{}
+	for _, rec := range recs {
+		if rec == nil || rec.Owner.Kind != KindUser {
+			continue
+		}
+		byOwner[rec.Owner.ID] = append(byOwner[rec.Owner.ID], rec)
+	}
+	for id, list := range byOwner {
+		ring := s.visibleMax(ctx, viewer, list)
+		if ring.MaxID > 0 {
+			out[id] = ring
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) ChatsToSend(ctx context.Context, actor int64) []*mtproto.Chat {

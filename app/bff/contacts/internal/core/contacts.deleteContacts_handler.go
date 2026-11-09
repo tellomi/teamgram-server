@@ -51,6 +51,7 @@ func (c *ContactsCore) ContactsDeleteContacts(in *mtproto.TLContactsDeleteContac
 		return nil, err
 	}
 
+	column := map[int64]int32{}
 	deleteUsers.VisitByMe(c.MD.UserId, func(me, it *mtproto.ImmutableUser) {
 		if me.Id() != it.Id() {
 			// TODO: mutual
@@ -90,9 +91,11 @@ func (c *ContactsCore) ContactsDeleteContacts(in *mtproto.TLContactsDeleteContac
 			cUser := it.ToUnsafeUser(me)
 			cUser.Contact = false
 			cUser.MutualContact = false
+			column[it.Id()] = mtproto.StoryColumn(it)
 			rUpdates.PushUser(cUser)
 		}
 	})
+	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, rUpdates.Users, column)
 
 	c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 		UserId:        c.MD.UserId,

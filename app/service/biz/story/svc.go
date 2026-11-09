@@ -27,6 +27,9 @@ type Hooks struct {
 	SetStoriesHidden func(ctx context.Context, userID, peerID int64, hidden bool)
 	Username         func(ctx context.Context, userID int64) string
 	MatchName        func(ctx context.Context, userID int64, q string) bool
+	// DialogPeers lists users who have a private dialog with owner, up to limit.
+	// MySQL is used when this is nil.
+	DialogPeers func(ctx context.Context, owner int64, limit int) ([]int64, error)
 }
 
 // Service implements stories for users and channels.

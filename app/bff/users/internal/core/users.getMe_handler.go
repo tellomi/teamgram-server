@@ -39,5 +39,9 @@ func (c *UsersCore) UsersGetMe(in *mtproto.TLUsersGetMe) (*mtproto.User, error) 
 		return nil, err
 	}
 
-	return user.ToSelfUser(), nil
+	self := user.ToSelfUser()
+	mtproto.PaintUserStoryRings(c.ctx, user.Id(), []*mtproto.User{self}, map[int64]int32{
+		user.Id(): mtproto.StoryColumn(user),
+	})
+	return self, nil
 }
