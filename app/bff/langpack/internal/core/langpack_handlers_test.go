@@ -107,6 +107,25 @@ func TestGetLangPackAliasesAndDifference(t *testing.T) {
 	if de.GetLangCode() != "de" || de.GetBaseLangCode().GetValue() != "en" || de.GetNativeName() != "Deutsch" {
 		t.Fatalf("%+v", de)
 	}
+	// A phone locale is regional. getLanguage must not error, and the
+	// response code stays the catalog code the language list already showed.
+	for _, tag := range []string{"de-DE", "fr-FR", "ja-JP", "en-US", "zh_Hans"} {
+		one, err := c.LangpackGetLanguage(&mtproto.TLLangpackGetLanguage{LangPack: "ios", LangCode: tag})
+		if err != nil {
+			t.Fatalf("%s: %v", tag, err)
+		}
+		pack, err := c.LangpackGetLangPack(&mtproto.TLLangpackGetLangPack{LangPack: "android", LangCode: tag})
+		if err != nil || pack.GetFromVersion() != 0 || len(pack.GetStrings()) < 1000 {
+			t.Fatalf("%s pack err=%v code=%s n=%d", tag, err, pack.GetLangCode(), len(pack.GetStrings()))
+		}
+		if pack.GetLangCode() != one.GetLangCode() {
+			t.Fatalf("%s language %s pack %s", tag, one.GetLangCode(), pack.GetLangCode())
+		}
+		diff, err := c.LangpackGetDifference(&mtproto.TLLangpackGetDifference{LangPack: "ios", LangCode: tag, FromVersion: 0})
+		if err != nil || diff.GetLangCode() != pack.GetLangCode() || len(diff.GetStrings()) < 1000 {
+			t.Fatalf("%s difference err=%v code=%s n=%d", tag, err, diff.GetLangCode(), len(diff.GetStrings()))
+		}
+	}
 }
 
 func TestLangPackWithoutSession(t *testing.T) {
