@@ -184,6 +184,7 @@ func (s *Server) Initialize() error {
 					SignInMessage:             c.SignInMessage,
 					SignInServiceNotification: c.SignInServiceNotification,
 					TestPhones:                c.TestPhones,
+					MysqlDSN:                  c.ChannelMySQL,
 				},
 				nil,
 				nil))
@@ -538,6 +539,7 @@ func (s *Server) Initialize() error {
 				AuthsessionClient: c.AuthSessionClient,
 				ChatClient:        c.BizServiceClient,
 				SyncClient:        c.SyncClient,
+				MysqlDSN:          c.ChannelMySQL,
 			},
 			nil,
 			nil)

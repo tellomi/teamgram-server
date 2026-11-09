@@ -28,9 +28,11 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/plugin"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	authsessionclient "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	"github.com/teamgram/teamgram-server/pkg/code"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/teamgram/teamgram-server/pkg/push"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -45,6 +47,7 @@ type ServiceContext struct {
 	Limiter      *verify.Limiter
 	EmailLimiter *verify.Limiter
 	EmailSender  verify.CodeSender
+	Devices      push.Store
 }
 
 func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin plugin.AuthorizationPlugin) *ServiceContext {
@@ -60,15 +63,16 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 	smsLim := verify.NewLimiter(d.Cache(), cfg.Limits)
 	emailLim := verify.NewLimiter(d.Cache(), cfg.EmailLimits)
 	verify.UseSharedLimiters(smsLim, emailLim)
+	var devices push.Store
+	if opened, err := push.OpenConfigured(c.MysqlDSN); err != nil {
+		logx.Errorf("push: open device store: %v", err)
+	} else if opened != nil {
+		devices = opened
+	}
 	if svc := enforcement.InstallFromEnv(); svc != nil {
 		svc.SetSender(enforcement.AdminSender{Push: d.MsgClient})
 		svc.SetRevoker(func(userID int64) error {
-			_, err := d.AuthsessionClient.AuthsessionResetAuthorization(context.Background(), &authsession.TLAuthsessionResetAuthorization{
-				UserId:    userID,
-				AuthKeyId: 0,
-				Hash:      0,
-			})
-			return err
+			return revokeUserSessions(context.Background(), d.AuthsessionClient, devices, userID)
 		})
 		if os.Getenv(enforcement.EnvE2E) == "1" {
 			go func() {
@@ -94,5 +98,25 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 		Limiter:      smsLim,
 		EmailLimiter: emailLim,
 		EmailSender:  verify.NewEmailSender(cfg.Email),
+		Devices:      devices,
 	}
+}
+
+// revokeUserSessions ends every login of userID and drops that user's push
+// registrations. Enforcement calls it. auth key 0 is "exclude nobody".
+// A device-store error is logged and does not fail the revocation: the
+// sessions are already reset, and ListByUser skips a logged-out key.
+func revokeUserSessions(ctx context.Context, client authsessionclient.AuthsessionClient, devices push.Store, userID int64) error {
+	_, err := client.AuthsessionResetAuthorization(ctx, &authsession.TLAuthsessionResetAuthorization{
+		UserId:    userID,
+		AuthKeyId: 0,
+		Hash:      0,
+	})
+	if err != nil {
+		return err
+	}
+	if uerr := push.UnregisterSession(ctx, devices, userID, 0); uerr != nil {
+		logx.WithContext(ctx).Errorf("push: unregister devices user=%d: %v", userID, uerr)
+	}
+	return nil
 }

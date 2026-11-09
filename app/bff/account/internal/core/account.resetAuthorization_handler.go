@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	"github.com/teamgram/teamgram-server/pkg/push"
 )
 
 // AccountResetAuthorization
@@ -46,7 +47,10 @@ func (c *AccountCore) AccountResetAuthorization(in *mtproto.TLAccountResetAuthor
 		return nil, err
 	}
 
-	for _, id := range tKeyIdList.Datas {
+	revoked := push.RevokedAuthKeys([]int64{c.MD.PermAuthKeyId, c.MD.AuthId}, tKeyIdList.GetDatas())
+	c.unregisterPushDevices(revoked...)
+
+	for _, id := range revoked {
 		// notify kill session
 		c.svcCtx.Dao.SyncClient.SyncUpdatesMe(
 			c.ctx,

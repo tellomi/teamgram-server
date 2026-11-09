@@ -35,10 +35,14 @@ func (c *AuthorizationCore) AuthLogOut(in *mtproto.TLAuthLogOut) (*mtproto.Auth_
 	if err != nil {
 		c.Logger.Errorf("auth.logOut - error: %v", err)
 		return nil, err
-	} else {
-		if c.svcCtx.Plugin != nil {
-			c.svcCtx.Plugin.OnAuthLogout(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId)
-		}
+	}
+	// The client usually calls account.unregisterDevice before this. Drop the
+	// rows here as well so a client that skips that call does not keep the
+	// token. A failure to delete is logged: the auth_users row is already
+	// gone, and ListByUser will not push to it.
+	c.unregisterPushDevices(logoutDeviceKeys(c.MD.PermAuthKeyId, c.MD.AuthId)...)
+	if c.svcCtx.Plugin != nil {
+		c.svcCtx.Plugin.OnAuthLogout(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId)
 	}
 
 	futureAuthToken := crypto.RandomBytes(64)

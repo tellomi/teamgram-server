@@ -1,6 +1,9 @@
 package push
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Device is one account.registerDevice row, keyed by auth key, user, and token type.
 type Device struct {
@@ -10,6 +13,10 @@ type Device struct {
 	Token      string
 	NoMuted    bool
 	AppSandbox bool
+	// UpdatedAt is when this registration was last written. MySQL orders
+	// ListByUser by devices.updated_at. The in-memory store and the sender
+	// use this field so the newest registration is not stuck behind older ones.
+	UpdatedAt time.Time
 	// Secret is the raw registerDevice secret. Telegram-iOS sends the 256-byte
 	// master notification key when encryption is enabled (APNs) and always for VoIP.
 	Secret []byte
@@ -37,6 +44,11 @@ type Store interface {
 	Upsert(ctx context.Context, d Device) error
 	// Delete removes the token for userID and otherUserIDs.
 	Delete(ctx context.Context, userID int64, tokenType int32, token string, otherUserIDs []int64) error
+	// DeleteAuthKey removes every token registered for userID and authKeyID.
+	// authKeyID 0 removes every device of that user. Deleting nothing is success.
+	// This is the server-side account.unregisterDevice for a session that was
+	// logged out or reset, when the client did not unregister first.
+	DeleteAuthKey(ctx context.Context, userID, authKeyID int64) error
 	ListByUser(ctx context.Context, userID int64) ([]Device, error)
 	// SetLockedPeriod stores account.updateDeviceLocked for every device of
 	// this user and auth key. period 0 clears the passcode.

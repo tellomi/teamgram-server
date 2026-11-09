@@ -24,14 +24,18 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/account/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/account/plugin"
 	"github.com/teamgram/teamgram-server/pkg/code"
+	"github.com/teamgram/teamgram-server/pkg/push"
 	"github.com/teamgram/teamgram-server/pkg/verify"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
 	Config config.Config
 	*dao.Dao
 	*logic.AuthLogic
-	Plugin plugin.AuthorizationPlugin
+	Plugin  plugin.AuthorizationPlugin
+	Devices push.Store
 }
 
 func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin plugin.AuthorizationPlugin) *ServiceContext {
@@ -41,11 +45,18 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 	}
 	cfg := verify.Load()
 	verify.UseSharedLimiters(verify.NewLimiter(d.Cache(), cfg.Limits), verify.NewLimiter(d.Cache(), cfg.EmailLimits))
+	var devices push.Store
+	if opened, err := push.OpenConfigured(c.MysqlDSN); err != nil {
+		logx.Errorf("push: open device store: %v", err)
+	} else if opened != nil {
+		devices = opened
+	}
 
 	return &ServiceContext{
 		Config:    c,
 		Dao:       dao.New(c),
 		AuthLogic: logic.NewAuthSignLogic(d, code2),
 		Plugin:    plugin,
+		Devices:   devices,
 	}
 }

@@ -7,11 +7,18 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/zeromicro/go-zero/core/logx"
 )
+
+// sendConcurrency is how many device pushes for one message run at once.
+// Each APNs round trip is about 220ms. Sending them one after another left
+// the phone that just registered waiting behind older devices. One failure
+// does not cancel the others: a dead token must not drop the live phone.
+const sendConcurrency = 4
 
 // SettingsReader loads per-chat and global notify settings.
 type SettingsReader interface {
@@ -163,25 +170,42 @@ func (s *Service) fillNames(ctx context.Context, m *Incoming) {
 }
 
 func (s *Service) send(ctx context.Context, devices []Device, m Incoming, d Decision) {
+	if len(devices) == 0 {
+		return
+	}
+	devices = append([]Device(nil), devices...)
+	sortDevicesNewestFirst(devices)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, sendConcurrency)
 	for _, dev := range devices {
-		// account.updateDeviceLocked: a passcode hides the message text.
-		dd := d
-		if dev.LockedPeriod > 0 {
-			dd.Preview = false
-		}
-		switch dev.TokenType {
-		case TokenAPNS:
-			s.sendAPNS(ctx, dev, m, dd)
-		case TokenFCM:
-			s.sendFCM(ctx, dev, m, dd)
-		case TokenHuawei:
-			s.sendHuawei(ctx, dev, m, dd)
-		case TokenXiaomi:
-			s.sendXiaomi(ctx, dev, m, dd)
-		case TokenAPNSVoIP:
-			// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
-		default:
-		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(dev Device) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.sendDevice(ctx, dev, m, d)
+		}(dev)
+	}
+	wg.Wait()
+}
+
+func (s *Service) sendDevice(ctx context.Context, dev Device, m Incoming, d Decision) {
+	// account.updateDeviceLocked: a passcode hides the message text.
+	if dev.LockedPeriod > 0 {
+		d.Preview = false
+	}
+	switch dev.TokenType {
+	case TokenAPNS:
+		s.sendAPNS(ctx, dev, m, d)
+	case TokenFCM:
+		s.sendFCM(ctx, dev, m, d)
+	case TokenHuawei:
+		s.sendHuawei(ctx, dev, m, d)
+	case TokenXiaomi:
+		s.sendXiaomi(ctx, dev, m, d)
+	case TokenAPNSVoIP:
+		// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
+	default:
 	}
 }
 

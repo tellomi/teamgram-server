@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,20 @@ func Open(dsn string) (*MySQL, error) {
 	db.SetMaxIdleConns(4)
 	db.SetConnMaxLifetime(time.Hour)
 	return &MySQL{db: db}, nil
+}
+
+// OpenConfigured opens the device store. TEAMGRAM_MYSQL_DSN overrides dsn.
+// An empty DSN returns a nil store and a nil error so logout can still
+// succeed when push storage is not configured.
+func OpenConfigured(dsn string) (*MySQL, error) {
+	if env := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN")); env != "" {
+		dsn = env
+	}
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" {
+		return nil, nil
+	}
+	return Open(dsn)
 }
 
 // MySQL is a Store and a settings/name lookup backed by the teamgram schema.
@@ -74,6 +89,18 @@ ON DUPLICATE KEY UPDATE
 	return err
 }
 
+func (m *MySQL) DeleteAuthKey(ctx context.Context, userID, authKeyID int64) error {
+	if userID == 0 {
+		return nil
+	}
+	if authKeyID == 0 {
+		_, err := m.db.ExecContext(ctx, `DELETE FROM devices WHERE user_id = ?`, userID)
+		return err
+	}
+	_, err := m.db.ExecContext(ctx, `DELETE FROM devices WHERE user_id = ? AND auth_key_id = ?`, userID, authKeyID)
+	return err
+}
+
 func (m *MySQL) Delete(ctx context.Context, userID int64, tokenType int32, token string, otherUserIDs []int64) error {
 	ids := append([]int64{userID}, otherUserIDs...)
 	placeholders := make([]string, len(ids))
@@ -88,17 +115,25 @@ func (m *MySQL) Delete(ctx context.Context, userID int64, tokenType int32, token
 	return err
 }
 
-func (m *MySQL) ListByUser(ctx context.Context, userID int64) ([]Device, error) {
-	// auths.lang_code is rewritten by every initConnection, so a language
-	// switch is visible on the next push without waiting for registerDevice.
-	// devices.lang_code is the snapshot taken at registration.
-	rows, err := m.db.QueryContext(ctx, `
+// listByUserQuery loads push registrations whose login is still live.
+// auth.logOut and the reset-authorization methods set auth_users.deleted.
+// A device row left behind by a client that never called account.unregisterDevice
+// must not be pushed. auths is only the language source: initConnection
+// rewrites auths.lang_code, and devices.lang_code is the registration snapshot.
+// Newest registrations are first so a phone that just registered is not queued
+// behind older sessions of the same account.
+const listByUserQuery = `
 SELECT d.auth_key_id, d.user_id, d.token_type, d.token, d.no_muted, d.app_sandbox, d.secret, d.other_uids, d.locked_period,
        COALESCE(NULLIF(a.lang_code, ''), d.lang_code),
        COALESCE(a.system_lang_code, '')
 FROM devices d
+JOIN auth_users au ON au.auth_key_id = d.auth_key_id AND au.user_id = d.user_id AND au.deleted = 0
 LEFT JOIN auths a ON a.auth_key_id = d.auth_key_id AND a.deleted = 0
-WHERE d.user_id = ? AND d.state = 0`, userID)
+WHERE d.user_id = ? AND d.state = 0
+ORDER BY d.updated_at DESC, d.id DESC`
+
+func (m *MySQL) ListByUser(ctx context.Context, userID int64) ([]Device, error) {
+	rows, err := m.db.QueryContext(ctx, listByUserQuery, userID)
 	if err != nil {
 		return nil, err
 	}
