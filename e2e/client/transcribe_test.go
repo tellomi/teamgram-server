@@ -52,3 +52,17 @@ func assertTranscribeError(t *testing.T, err error, want string) {
 		t.Fatalf("transcribeAudio returned %s, want %s", rpc.Message, want)
 	}
 }
+
+// TestTranscribeDraftReplies is the dictation request iOS sends as
+// messages.transcribeDraft. A decode failure used to drop it, so the client
+// waited until the voice bubble disappeared. Empty audio is rejected by the
+// handler and does not call the recognizer.
+func TestTranscribeDraftReplies(t *testing.T) {
+	a, _, _, _ := sharedPair(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	req := &mtproto.TLMessagesTranscribeAudio{}
+	req.SetDraftAudio(nil)
+	_, err := a.Invoke(ctx, req)
+	assertTranscribeError(t, err, "MEDIA_EMPTY")
+}

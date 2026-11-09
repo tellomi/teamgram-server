@@ -6,6 +6,14 @@ package mtproto
 // See docs/api/draft-transcribe.md.
 const DraftTranscribeConstructor TLConstructor = 0x7e11da47
 
+func init() {
+	// The wire id is 0x7e11da47. A hand-written map key of 2115054151 is
+	// 0x7e112a47, so NewTLObjectByClassID missed every dictation request.
+	registerLayer232Extra("messages_transcribeDraft", uint32(DraftTranscribeConstructor), func(c int32) TLObject {
+		return &TLMessagesTranscribeAudio{Constructor: TLConstructor(c)}
+	})
+}
+
 const draftAudioField = 15
 
 // SetDraftAudio marks this request as an unsent recording. The bytes travel
