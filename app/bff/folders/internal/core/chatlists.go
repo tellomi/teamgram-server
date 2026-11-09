@@ -549,6 +549,11 @@ func (c *FoldersCore) dialogsPresent(ids []int64) (map[int64]struct{}, error) {
 		return found, nil
 	}
 	for _, row := range res.GetDatas() {
+		// getDialogsByIdList invents a row with top_message 0 when the
+		// peer has never been a dialog. That row is not on the chat list.
+		if row.GetDialog().GetTopMessage() == 0 {
+			continue
+		}
 		id := dialogPeerID(row)
 		if id != 0 {
 			found[id] = struct{}{}

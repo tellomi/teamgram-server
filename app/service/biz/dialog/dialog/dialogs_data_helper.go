@@ -113,7 +113,11 @@ func (m *DialogsDataHelper) ToMessagesDialogs(count int32) *mtproto.Messages_Dia
 }
 
 func (m *DialogsDataHelper) ToMessagesPeerDialogs(state *mtproto.Updates_State) *mtproto.Messages_PeerDialogs {
-	// m.fix()
+	// Same filter as getDialogs. A dialog with top_message 0, or whose top
+	// message is not in this response, is not a chat-list row. iOS merges
+	// messages.peerDialogs into the chat list when a chat is opened; that
+	// empty row reloads the list and the scroll position jumps to the top.
+	m.fix()
 	return mtproto.MakeTLMessagesPeerDialogs(&mtproto.Messages_PeerDialogs{
 		Dialogs:  m.Dialogs,
 		Messages: m.Messages,
