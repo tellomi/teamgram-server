@@ -12,12 +12,11 @@ import (
 )
 
 // staticJPEGQuality matches Telegram's photo export (about 87). q95
-// re-encoded a 163KB original into a 329KB "x" size. Derivatives stay
-// baseline and carry no EXIF when they are re-encoded: the historical
-// encoder decoded to an image.Image, which drops orientation, then encoded
-// again. Do not autorotate here or the size ladder changes shape.
-// A derivative whose pixels are the source is the original file itself,
-// so it is not re-encoded and cannot grow past the upload.
+// re-encoded a 163KB original into a 329KB "x" size. Every stored size has
+// EXIF, XMP and IPTC removed. Orientation is applied to the pixels first
+// and the tag is then dropped, so a client does not rotate again. A
+// full-size JPEG with no rotation is stripped by removing segments, which
+// does not re-encode. Anything else is encoded at this quality.
 const staticJPEGQuality = 87
 
 // jpegShrinkQualities are tried, in order, when a downscale at
@@ -111,6 +110,17 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 		return nil, err
 	}
 	defer img.Close()
+	// Bake EXIF orientation into the pixels before any resize. The tag is
+	// not kept on the bytes we store. libvips applies all eight values.
+	oriented := false
+	if format == staticJPEG {
+		if o := img.Orientation(); o > 1 && o <= 8 {
+			if err = img.AutoRotate(); err != nil {
+				return nil, err
+			}
+			oriented = true
+		}
+	}
 	if err = keepFirstPage(img); err != nil {
 		return nil, err
 	}
@@ -154,36 +164,39 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 			return nil, err
 		}
 		w, h := resized.Width(), resized.Height()
-		// Same pixels as the prepared source: the largest ladder step (and
-		// any step the upload already fits). Re-encoding that step at q87
-		// made it larger than the file the client uploaded. Serve the
-		// original bytes instead. A crop (profile cover) changes pixels, so
-		// it still encodes.
-		samePixels := w == srcW && h == srcH && srcW == fileW && srcH == fileH && len(rb) > 0
+		// Same pixels as the file, and no EXIF rotation was applied: the
+		// largest step is the upload with privacy segments removed. That
+		// stays smaller than a q87 re-encode and does not keep GPS. A crop
+		// or an orientation change has different pixels, so it is encoded.
+		samePixels := !oriented && w == srcW && h == srcH && srcW == fileW && srcH == fileH && len(rb) > 0
 		var encoded []byte
 		reuse := false
-		if samePixels {
-			encoded = rb
-			reuse = true
-			resized.Close()
-		} else {
+		if samePixels && format == staticJPEG {
+			if stripped, ok := stripJPEGMetadata(rb); ok && len(stripped) > 0 && len(stripped) <= len(rb) {
+				encoded = stripped
+				reuse = true
+			}
+		}
+		if encoded == nil {
 			encoded, err = staticEncode(resized, format)
-			if err == nil && format == staticJPEG && len(encoded) > len(rb) && len(rb) > 0 {
+			if err == nil && format == staticJPEG {
+				encoded, err = finishJPEG(encoded)
+			}
+			if err == nil && format == staticJPEG && len(encoded) > len(rb) && len(rb) > 0 && !oriented {
 				encoded, err = shrinkJPEG(resized, len(rb))
 			}
-			resized.Close()
-			if err != nil {
-				return nil, err
-			}
+		}
+		resized.Close()
+		if err != nil {
+			return nil, err
 		}
 		if len(encoded) == 0 || w <= 0 || h <= 0 {
 			return nil, fmt.Errorf("govips: empty %s derivative", sz.Type)
 		}
-		// JPEG derivatives must not exceed the upload. PNG and WebP thumbs of a
-		// tiny source can be larger than that source; failing the upload
-		// would drop the photo. The largest JPEG step is the original file
-		// when the pixels match, which is the case that q95 inflated.
-		if !reuse && format == staticJPEG && len(rb) > 0 && len(encoded) > len(rb) {
+		// JPEG derivatives must not exceed the upload, except when EXIF
+		// orientation forced a re-encode of pixels that were stored sideways.
+		// PNG and WebP thumbs of a tiny source can be larger than that source.
+		if !reuse && !oriented && format == staticJPEG && len(rb) > 0 && len(encoded) > len(rb) {
 			return nil, fmt.Errorf("govips: %s derivative is %d bytes, larger than the %d byte original", sz.Type, len(encoded), len(rb))
 		}
 		out = append(out, derivedSize{
@@ -201,12 +214,26 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 	return out, nil
 }
 
+// finishJPEG removes any EXIF libvips wrote back (it keeps a minimal
+// orientation tag unless the segments are deleted).
+func finishJPEG(b []byte) ([]byte, error) {
+	stripped, ok := stripJPEGMetadata(b)
+	if !ok || len(stripped) == 0 || jpegHasPrivacy(stripped) {
+		return nil, fmt.Errorf("govips: jpeg still contains metadata")
+	}
+	return stripped, nil
+}
+
 // shrinkJPEG re-encodes until the buffer is no larger than limit.
-// The caller already tried staticJPEGQuality.
+// The caller already tried staticJPEGQuality. Each attempt is stripped.
 func shrinkJPEG(img *vips.ImageRef, limit int) ([]byte, error) {
 	var best []byte
 	for _, q := range jpegShrinkQualities {
 		out, err := exportJPEG(img, q)
+		if err != nil {
+			return nil, err
+		}
+		out, err = finishJPEG(out)
 		if err != nil {
 			return nil, err
 		}

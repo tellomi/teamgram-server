@@ -134,6 +134,23 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestMessageRandomIDIndexIsOnline(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261111-message-random-id.sql"))
+	if !strings.Contains(raw, "CALL teamgram_add_index('messages', 'sender_random_id'") {
+		t.Fatal("random_id index is not created through the idempotent helper")
+	}
+	stmt := "ALTER TABLE `messages` ADD INDEX `sender_random_id` (`sender_user_id`, `random_id`), ALGORITHM=INPLACE, LOCK=NONE"
+	if !strings.Contains(raw, stmt) {
+		t.Fatal("random_id index is not an online InnoDB add")
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToUpper(s), "ALTER ") {
+			t.Fatalf("raw ALTER is not idempotent: %s", s)
+		}
+	}
+}
+
 func TestOfficialAccountMigration(t *testing.T) {
 	dir := sqlDir(t)
 	raw := mustRead(t, filepath.Join(dir, "migrate-20261105-official-accounts.sql"))
