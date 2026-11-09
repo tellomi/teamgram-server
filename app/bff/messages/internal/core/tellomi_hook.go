@@ -12,8 +12,8 @@ import (
 
 // maybeTellomi replies as @tellomi after the user's private message is stored.
 // The feature flag is off unless TELLOMI_AI=1, and then this returns before
-// starting a goroutine. It does not run for scheduled messages, groups, or
-// the service account's own sends.
+// starting a goroutine. It does not run for scheduled messages or the service
+// account's own sends. Groups are handled by noteTellomi.
 func maybeTellomi(ctx context.Context, from int64, peer *mtproto.PeerUtil, text string, random int64, replyTo int32) {
 	if !tellomiPrivate(from, peer) {
 		return

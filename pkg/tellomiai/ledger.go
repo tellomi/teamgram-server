@@ -8,6 +8,9 @@ import (
 const (
 	defaultDaily  = 100
 	defaultMinute = 5
+	// ChatPerMinute is the extra cap for one basic group or supergroup.
+	// Private chats do not use it. It is shared by everyone in that chat.
+	ChatPerMinute = 20
 	smallAt       = 0.8
 )
 
@@ -16,15 +19,18 @@ const (
 // appended here for tests; production copies them to MySQL when that
 // recorder is installed.
 type Ledger struct {
-	mu            sync.Mutex
-	daily         map[string]int
-	minute        map[string]int
-	spent         map[string]float64
-	done          map[string]Result
-	busy          map[string]struct{}
-	records       []Record
-	Daily         int
-	Minute        int
+	mu      sync.Mutex
+	daily   map[string]int
+	minute  map[string]int
+	chatMin map[string]int
+	spent   map[string]float64
+	done    map[string]Result
+	busy    map[string]struct{}
+	records []Record
+	Daily   int
+	Minute  int
+	// ChatMinute is the per-chat cap. Zero means no chat cap.
+	ChatMinute    int
 	MonthBudget   float64
 	PricePerToken float64
 }
@@ -41,16 +47,18 @@ type Record struct {
 	At      time.Time
 }
 
-// NewLedger returns the spec limits: 100 a day, 5 a minute.
+// NewLedger returns the spec limits: 100 a day, 5 a minute, 20 a minute per chat.
 func NewLedger() *Ledger {
 	return &Ledger{
-		daily:  map[string]int{},
-		minute: map[string]int{},
-		spent:  map[string]float64{},
-		done:   map[string]Result{},
-		busy:   map[string]struct{}{},
-		Daily:  defaultDaily,
-		Minute: defaultMinute,
+		daily:      map[string]int{},
+		minute:     map[string]int{},
+		chatMin:    map[string]int{},
+		spent:      map[string]float64{},
+		done:       map[string]Result{},
+		busy:       map[string]struct{}{},
+		Daily:      defaultDaily,
+		Minute:     defaultMinute,
+		ChatMinute: ChatPerMinute,
 	}
 }
 
@@ -71,9 +79,16 @@ type gate struct {
 	Small   bool
 }
 
-// Begin reserves one use. A repeated event id returns the stored result
-// and does not reserve again. Limited is daily, minute, or budget.
+// Begin reserves one private use. A repeated event id returns the stored
+// result and does not reserve again. Limited is daily, minute, or budget.
 func (l *Ledger) Begin(user int64, event string, now time.Time) gate {
+	return l.BeginChat(user, event, "", now)
+}
+
+// BeginChat is Begin plus the per-chat minute cap. An empty chat skips that cap.
+// Limited is daily, minute, budget, or chat. A chat rejection does not consume
+// the user's own counters.
+func (l *Ledger) BeginChat(user int64, event, chat string, now time.Time) gate {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if event != "" {
@@ -84,6 +99,16 @@ func (l *Ledger) Begin(user int64, event string, now time.Time) gate {
 			return gate{Busy: true}
 		}
 		l.busy[event] = struct{}{}
+	}
+	if chat != "" && l.ChatMinute > 0 {
+		if l.chatMin == nil {
+			l.chatMin = map[string]int{}
+		}
+		ck := chatMinuteKey(chat, now)
+		if l.chatMin[ck] >= l.ChatMinute {
+			return gate{Limited: "chat"}
+		}
+		l.chatMin[ck]++
 	}
 	if l.MonthBudget > 0 && l.spent[monthKey(user, now)] >= l.MonthBudget {
 		return gate{Limited: "budget"}
@@ -143,6 +168,10 @@ func minuteKey(user int64, now time.Time) string {
 
 func monthKey(user int64, now time.Time) string {
 	return formatKey(user, now, "200601")
+}
+
+func chatMinuteKey(chat string, now time.Time) string {
+	return "chat:" + chat + ":" + now.UTC().Format("200601021504")
 }
 
 func formatKey(user int64, now time.Time, layout string) string {

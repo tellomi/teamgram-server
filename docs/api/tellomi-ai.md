@@ -4,13 +4,30 @@
 
 模型走阿里云百炼的 OpenAI 兼容接口。主模型 `qwen-plus`，月预算到 80% 换成 `qwen-turbo`，百炼失败或超时再换 `deepseek-v3`（仍是百炼上的模型名，这样内容安全还在）。内容安全拦下时不换模型，回复固定的「这个问题我暂时不能回答」。
 
-每次模型回复末尾单独一行是 `AI 生成`，并且这一行是 `messageEntityBold`。限额提示不加这行，也不是模型生成的。
+助手回复（私聊、群、以及下面的 complete 接口）不再在末尾加 `AI 生成`，也不再给这一行加 `messageEntityBold`。账号本身已经标明是 AI。限额提示同样不加这行，也不是模型生成的。举报审核发给管理员的通知如果原来带这一行，仍保留。
 
 ## 客户端：私聊
 
 不新增 TL。用户给 `@tellomi` 发普通 `messages.sendMessage`。服务端在消息已经写入之后，在后台回复。开关关闭时没有这步。
 
-定时消息不触发回复。群聊不在这一期。
+定时消息不触发回复。
+
+## 客户端：群
+
+普通群和超级群里，只有这两种消息会回复：
+
+- 用户名 mention `@tellomi`，或指向用户 777001 的 mention name（含 `inputMessageEntityMentionName`）
+- 回复的是 777001 自己发出的那一条
+
+客户端一条实体都没带时，正文里单独的 `@tellomi` 也算用户名 mention（服务端本来就会把它存成 mention）。带了别的实体、但没有上述 mention 的，不回复。
+
+频道（广播）不回复。777001 自己的消息不回复。机器人发的不回复。
+
+回复写进同一个群，`reply_to` 指向触发的那一条。模型只看到两段文字：触发消息去掉 `@tellomi` 之后的正文；如果这条是回复，再加上被回复那一条的正文。不读群里的其它历史。去掉 mention 之后两段都是空的，不调用模型。
+
+777001 必须已经是这个群的成员才能回复。`msg.sendMessageV2` 没有系统账号旁路：普通群里发送者没有参与者记录时返回 `CHAT_WRITE_FORBIDDEN`，超级群里不是成员时返回 `CHANNEL_PRIVATE`。这里先做同样的检查，不是成员就不调用模型。已退出或群已解散也不回复。频道即使 777001 是管理员也不回复。
+
+限额和私聊共用：每人每分钟 5 条，每天 100 条。另外每个群每分钟 20 条，满了就不再回复，也不发提示。个人限额的提示仍发进这个群，作为对触发消息的回复。
 
 `help.getAppConfig` 的 `tellomi_ai_enabled` 为 true 时，客户端可以显示入口。官方客户端不读这个键。
 
@@ -20,10 +37,11 @@
 
 | 情况 | 用户看到的文字 |
 | --- | --- |
-| 正常 | 模型文字，然后空行，然后 `AI 生成` |
+| 正常 | 模型文字，末尾没有 `AI 生成` |
 | 百炼内容安全（`data_inspection_failed` / `DataInspectionFailed`，以及回复侧的 `ResponseInspectionFailed`） | 这个问题我暂时不能回答 |
 | 当天第 101 次 | 今天的提问次数已用完 |
 | 一分钟内第 6 次 | 操作太频繁，请稍后再试 |
+| 同一个群一分钟第 21 次 | 不发消息 |
 | 月预算到 100% | 本月的提问额度已用完 |
 | 主模型和 DeepSeek 都超时 | 不发第二条消息。用户自己的那条已经发出 |
 
@@ -56,14 +74,14 @@ Content-Type: application/json
 
 ```json
 {
-  "text": "回答\n\nAI 生成",
+  "text": "回答",
   "model": "qwen-plus",
   "ai_generated": true,
   "refused": false
 }
 ```
 
-引擎把 `text` 写成官方账号的评论，带 `ai_generated`，不走帖子机审（D-52）。`refused: true` 仍要写上，这是内容安全的固定句，也带 `AI 生成`。`limited` 为 `daily`、`minute` 或 `budget` 时 `ai_generated` 是 false，把 `text` 写出来给用户看。
+引擎把 `text` 写成官方账号的评论，带 `ai_generated`，不走帖子机审（D-52）。`refused: true` 仍要写上，这是内容安全的固定句，正文就是「这个问题我暂时不能回答」，不再加 `AI 生成`。`limited` 为 `daily`、`minute` 或 `budget` 时 `ai_generated` 是 false，把 `text` 写出来给用户看。群里的每分钟 20 条上限不会出现在这个接口。
 
 同一把 `event_id` 再调一次会拿回同一段文字，不会再次计次、也不会再调模型。
 

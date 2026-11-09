@@ -14,7 +14,8 @@ import (
 const (
 	// AccountID is the official @tellomi user (migrate-20261105).
 	AccountID int64 = 777001
-	// Label is the visible mark on every model reply.
+	// Label is the mark report-review notices still append. Assistant replies
+	// (private and group) do not: the account itself is already marked as AI.
 	Label = "AI 生成"
 	// Refusal is the fixed sentence when Bailian content safety blocks a turn.
 	Refusal = "这个问题我暂时不能回答"
@@ -48,6 +49,24 @@ type Sender interface {
 	Send(ctx context.Context, toUser int64, text string, ai bool) error
 }
 
+// GroupSender delivers one reply into the group the question came from.
+// replyTo is the id of the triggering message in that chat.
+type GroupSender interface {
+	SendGroup(ctx context.Context, peerType int32, peerID int64, replyTo int32, text string, ai bool) error
+}
+
+// GroupAsk is one group turn that already passed the mention or reply check.
+// Text is the model prompt (mention stripped, plus the one replied-to message).
+// ReplyTo is the id to set on the outgoing message.
+type GroupAsk struct {
+	From     int64
+	PeerType int32
+	PeerID   int64
+	ReplyTo  int32
+	Text     string
+	Random   int64
+}
+
 // Recorder persists replies. A nil recorder keeps them only on the ledger.
 type Recorder interface {
 	Save(ctx context.Context, rec Record) error
@@ -59,6 +78,7 @@ type Service struct {
 	Client   *Client
 	Ledger   *Ledger
 	Sender   Sender
+	Group    GroupSender
 	Recorder Recorder
 	Now      func() time.Time
 }
@@ -92,6 +112,15 @@ func TranslateAdvertised() bool {
 // TELLOMI_AI is a separate switch for the @tellomi account.
 func ComposeAdvertised() bool {
 	return envOn(EnvCompose) && strings.TrimSpace(getenv(EnvAPIKey)) != ""
+}
+
+// Ready is an enabled service for an in-process caller. Start builds the same
+// shape from the environment.
+func Ready(client *Client, ledger *Ledger) *Service {
+	if ledger == nil {
+		ledger = NewLedger()
+	}
+	return &Service{enabled: true, Client: client, Ledger: ledger}
 }
 
 // Enabled reports whether private replies and the engine endpoint are live.
@@ -139,10 +168,45 @@ func ObservePrivate(ctx context.Context, from int64, text string, random int64) 
 	}
 }
 
+// ObserveGroup replies in the same basic group or supergroup. The caller has
+// already decided this message mentions @tellomi or replies to 777001, and
+// that 777001 can post there. A per-chat minute cap does not send a notice.
+func ObserveGroup(ctx context.Context, ask GroupAsk) {
+	installedMu.RLock()
+	s := active
+	installedMu.RUnlock()
+	if s == nil || !s.enabled || ask.From == 0 || ask.From == AccountID || ask.PeerID == 0 {
+		return
+	}
+	event := ""
+	if ask.Random != 0 {
+		event = "g:" + itoa(ask.From) + ":" + itoa(int64(ask.PeerType)) + ":" + itoa(ask.PeerID) + ":" + itoa(ask.Random)
+	}
+	res, err := s.ReplyChat(ctx, ask.From, ask.Text, event, ChatKey(ask.PeerType, ask.PeerID))
+	if err != nil {
+		logx.WithContext(ctx).Errorf("tellomi ai: group reply failed user=%d peer=%d", ask.From, ask.PeerID)
+		return
+	}
+	if res.Repeated || res.Limited == "chat" || res.Text == "" || s.Group == nil {
+		if s.Group == nil && !res.Repeated && res.Limited != "chat" && res.Text != "" {
+			logx.WithContext(ctx).Errorf("tellomi ai: group sender is not configured")
+		}
+		return
+	}
+	if err = s.Group.SendGroup(ctx, ask.PeerType, ask.PeerID, ask.ReplyTo, res.Text, res.AIGenerated); err != nil {
+		logx.WithContext(ctx).Errorf("tellomi ai: group send failed user=%d peer=%d", ask.From, ask.PeerID)
+	}
+}
+
 // Reply runs the quota checks and the model. event may be empty.
 // A content-safety block returns Refusal and does not call the fallback model.
 // A transport failure tries DeepSeek once, still through Bailian.
 func (s *Service) Reply(ctx context.Context, userID int64, text, event string) (Result, error) {
+	return s.ReplyChat(ctx, userID, text, event, "")
+}
+
+// ReplyChat is Reply with the per-chat minute cap. An empty chat is a private turn.
+func (s *Service) ReplyChat(ctx context.Context, userID int64, text, event, chat string) (Result, error) {
 	if s == nil || !s.enabled {
 		return Result{}, ErrDisabled
 	}
@@ -160,7 +224,7 @@ func (s *Service) Reply(ctx context.Context, userID int64, text, event string) (
 	if s.Now != nil {
 		now = s.Now().UTC()
 	}
-	g := s.Ledger.Begin(userID, event, now)
+	g := s.Ledger.BeginChat(userID, event, chat, now)
 	if g.Stored {
 		g.Result.Repeated = true
 		return g.Result, nil
@@ -179,7 +243,7 @@ func (s *Service) Reply(ctx context.Context, userID int64, text, event string) (
 	}
 	content, tokens, err := s.Client.Complete(ctx, model, text)
 	if errors.Is(err, ErrSafety) {
-		res := Result{Text: WithLabel(Refusal), Model: model, AIGenerated: true, Refused: true}
+		res := Result{Text: Refusal, Model: model, AIGenerated: true, Refused: true}
 		s.keep(ctx, userID, event, text, res, 0, now)
 		return res, nil
 	}
@@ -187,7 +251,7 @@ func (s *Service) Reply(ctx context.Context, userID int64, text, event string) (
 		content, tokens, err = s.Client.Complete(ctx, s.Client.Fallback, text)
 		model = s.Client.Fallback
 		if errors.Is(err, ErrSafety) {
-			res := Result{Text: WithLabel(Refusal), Model: model, AIGenerated: true, Refused: true}
+			res := Result{Text: Refusal, Model: model, AIGenerated: true, Refused: true}
 			s.keep(ctx, userID, event, text, res, 0, now)
 			return res, nil
 		}
@@ -197,7 +261,7 @@ func (s *Service) Reply(ctx context.Context, userID int64, text, event string) (
 		return Result{}, err
 	}
 	content = clip(content, 3500)
-	res := Result{Text: WithLabel(content), Model: model, AIGenerated: true}
+	res := Result{Text: content, Model: model, AIGenerated: true}
 	s.keep(ctx, userID, event, text, res, tokens, now)
 	return res, nil
 }
@@ -217,6 +281,7 @@ func (s *Service) keep(ctx context.Context, userID int64, event, prompt string, 
 }
 
 // WithLabel appends the visible AI mark on its own line.
+// Assistant chat replies do not call it. Report-review notices still do.
 func WithLabel(text string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -234,6 +299,9 @@ func limitText(kind string) string {
 		return MinuteMessage
 	case "budget":
 		return BudgetMessage
+	case "chat":
+		// The group cap is silent. A notice on every extra mention would flood the chat.
+		return ""
 	default:
 		return DailyMessage
 	}

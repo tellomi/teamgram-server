@@ -131,6 +131,28 @@ func (s *Service) defaultAllows(ch *Channel, allow func(*mtproto.ChatBannedRight
 	return allow(br)
 }
 
+// CanPost is the membership check msg.sendMessageV2 uses before it stores a
+// channel message. Broadcast channels are rejected so @tellomi does not answer
+// them, even when 777001 could post as an admin. A user who is not a member
+// gets the same error as a send.
+func (s *Service) CanPost(ctx context.Context, channelID, userID int64) error {
+	if s == nil || channelID == 0 || userID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if !ch.Megagroup || ch.Broadcast {
+		return mtproto.ErrChatWriteForbidden
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	return s.canPost(ch, p)
+}
+
 func (s *Service) canPost(ch *Channel, p *Participant) error {
 	if p == nil || !p.InChannel() {
 		return mtproto.ErrChannelPrivate

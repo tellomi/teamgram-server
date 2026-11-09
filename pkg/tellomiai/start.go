@@ -35,6 +35,9 @@ func Start(dsn string, sender Sender, subjects Subjects) {
 		Ledger: ledger,
 		Sender: sender,
 	}
+	if g, ok := sender.(GroupSender); ok {
+		svc.Group = g
+	}
 	if strings.TrimSpace(dsn) != "" {
 		db, err := OpenMySQL(dsn)
 		if err != nil {
