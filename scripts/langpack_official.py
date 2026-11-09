@@ -15,6 +15,10 @@ data/langpack/overrides and applied on top:
   string, the Tellomi wording wins in en, zh-hans, and zh-hant.
 - Every other key uses the official translation. Hosts and the Telegram name
   are rewritten (tell.cc, tellomi.cn, Tellomi).
+- A key that exists only in the Tellomi override is kept when it is a
+  Tellomi string (Tellomi.* and the brand names). APK configuration such as
+  SearchEngine1AutocompleteURL is translatable="false" and is not merged.
+  Stock Android stores those values as XML and rejects a bare "&".
 
 Re-running the script reuses data/langpack/overrides and a download cache.
 Pass --cache to choose the cache directory.
@@ -92,6 +96,44 @@ HASH_FORMS = (
 )
 BRAND_KEYS = {"AppName", "AppNameBeta", "Application.Name", "Watch.AppName"}
 FORMS = ("zero", "one", "two", "few", "many", "other")
+
+# SearchEngine1AutocompleteURL and its siblings are translatable="false"
+# in the Android APK. The official export does not ship them. The values
+# contain "&" that is not followed by a space ("client=chrome&q="), which
+# stock Android writes into XML unchanged and then fails to parse.
+NONTRANSLATABLE_ANDROID_KEY = re.compile(
+    r"^SearchEngine[0-9]+(?:Name|SearchURL|AutocompleteURL|PrivacyPolicyURL)$"
+)
+
+# Packs at this version replace a locale file that stock Android saved
+# before those URL strings were removed. It is one past the highest Android
+# pack version that still contained them (el 61638733).
+ANDROID_XML_FIX_VERSION = 61638734
+
+_STRING_TAG = re.compile(r"<string\b([^>]*)>(.*?)</string>", re.S)
+_NAME_ATTR = re.compile(r"""\bname\s*=\s*["']([^"']+)["']""")
+_NOT_TRANSLATABLE = re.compile(r"""\btranslatable\s*=\s*["']false["']""")
+
+
+def tellomi_owned_key(key: str) -> bool:
+    """Keys the override may add when the official export does not have them.
+
+    Tellomi.Discover.* and TellomiLogin* are product strings. AppName and
+    the other brand keys are too. Search engine URLs from strings.xml are not.
+    """
+    if key in BRAND_KEYS:
+        return True
+    return key.startswith("Tellomi.") or key.startswith("Tellomi")
+
+
+def is_url_value(text: str) -> bool:
+    t = (text or "").strip()
+    return t.startswith("http://") or t.startswith("https://")
+
+
+def forms_are_urls(forms: dict) -> bool:
+    texts = [v for v in forms.values() if isinstance(v, str) and v != ""]
+    return bool(texts) and all(is_url_value(v) for v in texts)
 
 
 def rewritten_key(key: str) -> bool:
@@ -192,8 +234,15 @@ def unescape_android(s: str) -> str:
 def parse_android(path: Path) -> list[tuple[str, str]]:
     text = path.read_text(encoding="utf-8", errors="replace")
     rows = []
-    for name, body in re.findall(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>', text, re.S):
-        rows.append((name, unescape_android(body)))
+    for attrs, body in _STRING_TAG.findall(text):
+        # Official exports omit translatable="false". Skip it anyway so an
+        # APK strings.xml fed through this parser cannot add SearchEngine URLs.
+        if _NOT_TRANSLATABLE.search(attrs):
+            continue
+        name = _NAME_ATTR.search(attrs)
+        if not name:
+            continue
+        rows.append((name.group(1), unescape_android(body)))
     return rows
 
 
@@ -372,9 +421,12 @@ def merge_lang(
     for entry in official:
         by_key[entry["key"]] = entry
         order.append(entry["key"])
-    # Fork-only keys and brand/diverged overrides.
+    # Fork-only keys. Tellomi strings and brand names stay. APK
+    # configuration (translatable="false" SearchEngine URLs) does not.
     for key, entry in tel.items():
         if key in by_key:
+            continue
+        if not tellomi_owned_key(key):
             continue
         order.append(key)
         by_key[key] = {"key": key, "version": entry.get("version") or 1, **_payload(entry)}
@@ -452,6 +504,12 @@ def build_doc(meta: tuple, platform: str, strings: list[dict], upstream: int, fi
     }
     if base:
         doc["base_lang_code"] = base
+    if platform == "android":
+        # Keep the cutover even when a later export raises the pack version,
+        # so a phone still below it keeps receiving a full replacement.
+        doc["android_xml_fix_version"] = ANDROID_XML_FIX_VERSION
+        if doc["version"] < ANDROID_XML_FIX_VERSION:
+            doc["version"] = ANDROID_XML_FIX_VERSION
     return doc
 
 
@@ -473,6 +531,11 @@ def apply_machine(root: Path, platform: str, code: str, strings: list[dict]) -> 
             continue
         if rewritten_key(key):
             raise SystemExit(f"refusing rewritten langpack key {path}: {key}")
+        if NONTRANSLATABLE_ANDROID_KEY.match(key):
+            continue
+        forms = {k: item.get(k, "") for k in ("value", *FORMS) if item.get(k)}
+        if forms_are_urls(forms):
+            continue
         have.add(key)
         extra.append(item)
     if extra:
