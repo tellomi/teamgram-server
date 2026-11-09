@@ -48,7 +48,8 @@ func (c *DfsCore) DfsUploadedProfilePhoto(in *dfs.TLDfsUploadedProfilePhoto) (*m
 	var (
 		photoId    = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
 		ext        = model.GetFileExtName(fileName)
-		sizeList   = make([]*mtproto.PhotoSize, 0, 3)
+		sizeList   = make([]*mtproto.PhotoSize, 0, 4)
+		smallJPEG  []byte
 		extType    = model.GetStorageFileTypeConstructor(ext)
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
 	)
@@ -69,9 +70,13 @@ func (c *DfsCore) DfsUploadedProfilePhoto(in *dfs.TLDfsUploadedProfilePhoto) (*m
 			H:     h,
 			Size2: int32(fileSize.Size),
 		}).To_PhotoSize())
+		if szType == mtproto.PhotoSZAType && smallJPEG == nil {
+			smallJPEG = append([]byte(nil), b...)
+		}
 
 		return nil
 	})
+	sizeList = appendStrippedSize(sizeList, smallJPEG)
 
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)

@@ -173,29 +173,15 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 		}
 	case mtproto.Predicate_inputPeerPhotoFileLocation:
 		//inputPeerPhotoFileLocation#37257e99 flags:# big:flags.0?true peer:InputPeer photo_id:long = InputFileLocation;
+		// big is the 640px profile (c). Otherwise the 160px list avatar (a).
+		// A missing size falls through to the next ladder step. An empty
+		// upload.file is a successful download to the client, which then
+		// caches the placeholder.
 
-		var (
-			path string
-		)
-
-		if location.GetBig() {
-			path = fmt.Sprintf("c/%d.dat", location.GetPhotoId())
-		} else {
-			path = fmt.Sprintf("a/%d.dat", location.GetPhotoId())
-		}
-		// log.Debugf("path: %s", path)
-		bytes, err = readFirst(
-			func() ([]byte, error) {
-				return c.svcCtx.Dao.GetAvatarFile(c.ctx, path, offset, limit)
-			},
-			func() ([]byte, error) {
-				return c.svcCtx.Dao.GetPhotoFile(c.ctx, path, offset, limit)
-			},
-		)
+		bytes, err = c.readPeerPhoto(location.GetPhotoId(), location.GetBig(), offset, limit)
 		if err != nil {
 			c.Logger.Infof("download file: %v", err)
-			err = nil
-			bytes = []byte{}
+			return nil, err
 		}
 		sType = int32(mtproto.CRC32_storage_fileJpeg)
 	case mtproto.Predicate_inputStickerSetThumb:

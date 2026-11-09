@@ -217,8 +217,9 @@ func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFil
 	}
 
 	var (
-		photoId  = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
-		sizeList = make([]*mtproto.PhotoSize, 0, 3)
+		photoId   = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		sizeList  = make([]*mtproto.PhotoSize, 0, 4)
+		smallJPEG []byte
 		// extType  = model.GetStorageFileTypeConstructor(ext)
 		fileSize minio.UploadInfo
 		//ext         = model.GetFileExtName(video.GetName())
@@ -245,9 +246,13 @@ func (c *DfsCore) uploadVideoSizeListV2(creatorId int64, video *mtproto.InputFil
 			H:     h,
 			Size2: int32(fileSize.Size),
 		}).To_PhotoSize())
+		if szType == mtproto.PhotoSZAType && smallJPEG == nil {
+			smallJPEG = append([]byte(nil), b...)
+		}
 
 		return nil
 	})
+	sizeList = appendStrippedSize(sizeList, smallJPEG)
 
 	if len(sizeList) == 0 {
 		err = mtproto.ErrImageProcessFailed
@@ -319,7 +324,8 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 	var (
 		photoId    = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
 		ext        = model.GetFileExtName(file.GetName())
-		sizeList   = make([]*mtproto.PhotoSize, 0, 3)
+		sizeList   = make([]*mtproto.PhotoSize, 0, 4)
+		smallJPEG  []byte
 		extType    = model.GetStorageFileTypeConstructor(ext)
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
 	)
@@ -345,9 +351,13 @@ func (c *DfsCore) uploadPhotoSizeListV2(creatorId int64, file *mtproto.InputFile
 			H:     h,
 			Size2: int32(fileSize.Size),
 		}).To_PhotoSize())
+		if szType == mtproto.PhotoSZAType && smallJPEG == nil {
+			smallJPEG = append([]byte(nil), b...)
+		}
 
 		return nil
 	})
+	sizeList = appendStrippedSize(sizeList, smallJPEG)
 
 	if err != nil || len(sizeList) == 0 {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)

@@ -60,7 +60,11 @@ func (c *CachePhotoData) ToPhoto() *mtproto.Photo {
 		return makePhotoEmpty(c.Id)
 	}
 
-	if len(c.SizeList) == 0 {
+	sizes := c.ToSizes()
+	videos := c.ToVideoSizes()
+	// An emoji or sticker avatar has video sizes and no image ladder.
+	// photoEmpty drops photo_id, so every chat list keeps the placeholder.
+	if len(sizes) == 0 && len(videos) == 0 {
 		return makePhotoEmpty(c.Id)
 	}
 
@@ -70,8 +74,8 @@ func (c *CachePhotoData) ToPhoto() *mtproto.Photo {
 		AccessHash:    c.Photo.AccessHash,
 		FileReference: []byte{},
 		Date:          int32(c.Photo.Date2),
-		Sizes:         c.ToSizes(),
-		VideoSizes:    c.ToVideoSizes(),
+		Sizes:         sizes,
+		VideoSizes:    videos,
 		DcId:          c.Photo.DcId,
 	}).To_Photo()
 }
