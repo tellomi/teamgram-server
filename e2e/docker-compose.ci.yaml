@@ -80,8 +80,13 @@ services:
       # not production switches. The database is tellomi_enforcement_e2e,
       # created by e2e/enforcementmigrate before this service starts.
       # TELLOMI_AI points at fakebailian, not DashScope.
+      TELLOMI_ENFORCEMENT_STORE: mysql
       TELLOMI_ENFORCEMENT_MYSQL: root:root@tcp(mysql:3306)/tellomi_enforcement_e2e?parseTime=true&charset=utf8mb4
       TELLOMI_ENFORCEMENT_CREATE: "1"
+      TELLOMI_ENFORCEMENT_REVIEW: "1"
+      TELLOMI_ENFORCEMENT_ADMINS: erel
+      TELLOMI_ENFORCEMENT_CONFIDENCE: "0.8"
+      TELLOMI_ENFORCEMENT_ADDR: 0.0.0.0:8820
       TELLOMI_ENFORCEMENT_E2E: ${TELLOMI_ENFORCEMENT_E2E:-}
       TELLOMI_ENFORCEMENT_SERVICE_KEY: ${TELLOMI_ENFORCEMENT_SERVICE_KEY:-}
       TELLOMI_AI: "1"

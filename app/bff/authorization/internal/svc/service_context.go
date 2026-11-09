@@ -21,6 +21,7 @@ package svc
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/dao"
@@ -73,6 +74,13 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 			go func() {
 				if err := enforcement.ServeIsolatedE2E(enforcement.E2ELoopbackAddr); err != nil {
 					logx.Error("enforcement: isolated e2e listener was not started")
+				}
+			}()
+		}
+		if addr := strings.TrimSpace(os.Getenv(enforcement.EnvAddr)); addr != "" && addr != "off" {
+			go func() {
+				if err := enforcement.ServeNetwork(addr); err != nil {
+					logx.Error("enforcement: network listener was not started")
 				}
 			}()
 		}

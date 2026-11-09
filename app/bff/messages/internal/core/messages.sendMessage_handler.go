@@ -240,7 +240,7 @@ func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*
 	chatbox.Shared().NoteSent(c.ctx, c.MD.UserId, peer, rUpdate)
 
 	if in.GetScheduleDate().GetValue() == 0 {
-		maybeTellomi(c.ctx, c.MD.UserId, peer, in.Message, in.RandomId)
+		maybeTellomi(c.ctx, c.MD.UserId, peer, in.Message, in.RandomId, replyToMsgID(in))
 	}
 
 	if in.ClearDraft {

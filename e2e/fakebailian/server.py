@@ -29,6 +29,25 @@ def action_for(text):
     return "insufficient"
 
 
+def review_json(text):
+    """Account and content review use their own JSON. Appeal text does not."""
+    if "enforcement-account-review" in text:
+        if "e2e-account-clear" in text:
+            body = {"substantiated": False, "confidence": 0.2, "reason": "不属实", "summary": "证据不足"}
+        else:
+            body = {"substantiated": True, "confidence": 0.95, "reason": "隔离假模型判定属实", "summary": "举报与证据一致"}
+        return json.dumps(body, ensure_ascii=False)
+    if "enforcement-content-review" in text:
+        if "e2e-content-uncertain" in text or "e2e-content-low" in text:
+            body = {"action": "uncertain", "confidence": 0.2, "reason": "不确定", "summary": "证据不足"}
+        elif "e2e-content-keep" in text:
+            body = {"action": "keep", "confidence": 0.95, "reason": "正常", "summary": "普通内容"}
+        else:
+            body = {"action": "remove", "confidence": 0.95, "reason": "违规", "summary": "正文违规"}
+        return json.dumps(body, ensure_ascii=False)
+    return ""
+
+
 def verdict(action):
     return json.dumps(
         {
@@ -63,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             payload = {}
         text = json.dumps(payload, ensure_ascii=False)
-        content = verdict(action_for(text))
+        content = review_json(text) or verdict(action_for(text))
         body = json.dumps(
             {"choices": [{"message": {"content": content}}], "model": MODEL}
         ).encode()

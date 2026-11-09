@@ -31,5 +31,5 @@ func TestMaybeTellomiDefaultOff(t *testing.T) {
 	if tellomiai.Enabled() {
 		t.Fatal("TELLOMI_AI is on in this test")
 	}
-	maybeTellomi(context.Background(), 9, &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: tellomiai.AccountID}, "hi", 1)
+	maybeTellomi(context.Background(), 9, &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: tellomiai.AccountID}, "hi", 1, 0)
 }

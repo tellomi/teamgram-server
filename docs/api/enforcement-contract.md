@@ -4,7 +4,7 @@
 
 ## 认证
 
-进程只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向**聊天库以外**的库时安装。库名 `teamgram` 会被拒绝。`TELLOMI_ENFORCEMENT_STORE=memory` 不会安装。`TELLOMI_ENFORCEMENT_CREATE=1` 才允许新建案件。
+进程只在 `TELLOMI_ENFORCEMENT_STORE=mysql` 且 `TELLOMI_ENFORCEMENT_MYSQL` 指向**聊天库以外**的库时安装。库名 `teamgram` 会被拒绝。`memory` 和空的 `TELLOMI_ENFORCEMENT_STORE` 不会安装。`TELLOMI_ENFORCEMENT_CREATE=1` 才允许新建案件。`TELLOMI_ENFORCEMENT_REVIEW=1` 才做举报确认和内容判定。
 
 申诉模型只在 `TELLOMI_AI=1` 且 `TELLOMI_AI_API_KEY` 已设置时使用现有的 `pkg/tellomiai.Client`。没有这两项时，申诉停在 `pending_review`，不调用模型。
 
@@ -42,7 +42,18 @@
 
 `POST /internal/v1/enforcement/credentials/check`
 
-处理函数是 `enforcement.CredentialHandler`。本进程默认不监听。`ListenLoopback` 只接受 `127.0.0.1` 或 `::1`，拒绝 `0.0.0.0` 和其他地址。非本机的链路要由调用方自己做 TLS，本进程不在可路由地址上提供明文端口。处理函数不会根据请求去访问任何 URL。
+处理函数是 `enforcement.CredentialHandler`。本进程默认不监听。`TELLOMI_ENFORCEMENT_ADDR=0.0.0.0:8820` 时，在容器网络里同时提供本接口和下面的内容接口。宿主机 compose 不映射 8820。`ListenLoopback` 仍只接受 `127.0.0.1` 或 `::1`，隔离演练用它。`ServeNetwork` 只接受 `0.0.0.0`、`::`、`127.0.0.1`、`::1`，拒绝写成某个公网 IP。处理函数不会根据请求去访问任何 URL。
+
+content-engine 使用：
+
+```
+ENGINE_ENFORCEMENT_URL=http://teamgram:8820
+ENGINE_ENFORCEMENT_KEY=<与 TELLOMI_ENFORCEMENT_SERVICE_KEY 相同的标准 base64>
+```
+
+`ENGINE_ENFORCEMENT_URL` 是 origin，没有路径。请求是 `POST http://teamgram:8820/internal/v1/enforcement/credentials/check`，`Authorization: Bearer <那串 base64>`。
+
+本仓的 GitHub 令牌读不到 content-engine 仓库，因此不能在这里核对引擎是否拒绝非 loopback 的 `http` origin。如果引擎只接受 `https` 或 `127.0.0.1`，它需要放行 compose 网络上的 `http://teamgram:8820`。不要把 8820 发布到宿主机；若引擎不能放行明文，应在引擎一侧加内部 TLS，而不是改成公网端口。
 
 `CheckCredential(userID, write bool, now)` 只在本进程内部使用：HTTP 层已经从凭证解出用户号之后才调用它。引擎不传 `userID`，也不调用这个函数。
 
@@ -87,6 +98,44 @@ Authorization: Bearer <标准 base64(服务密钥)>
 `allow: false` 时引擎必须拒绝这次读或写，不能因为 JWT 的 `exp` 还没到就放行。读用 `"write": false`。本仓测试覆盖这个判定。引擎进程这一批没有改，由引擎线按本文件接入。
 
 失败策略：复查调用失败、超时或未知状态时，读和写都拒绝。不要把未知状态缓存成允许，也不要把它写成一条新的永久处罚。拿到 `ACCOUNT_PERMANENT_DISABLED` 后，读写都拒绝。
+
+## 内容判定
+
+content-engine 自己调用。本仓不改引擎。账号封禁不走这里。
+
+`POST /internal/v1/enforcement/content/review`
+
+鉴权与凭证复查相同。`TELLOMI_ENFORCEMENT_REVIEW` 不是 `1`，或模型不可用时，返回 HTTP 503，`status` 为 `unavailable` 或 `disabled`。不要把 503 当成下架或保留。
+
+```json
+{"post_id":"post-9","comment_id":"","author_user_id":34,"text":"正文","report_count":1}
+```
+
+`post_id` 和 `comment_id` 至少有一个。
+
+`200`
+
+```json
+{"case_id":"C0123456789abcdef","decision":"remove","confidence":0.96,"reason":"理由"}
+```
+
+`decision` 是 `remove`、`keep` 或 `pending_admin`。置信度不低于 `TELLOMI_ENFORCEMENT_CONFIDENCE`（默认 0.8）且模型给出 `remove` 或 `keep` 时，当场返回，不打扰管理员。低于阈值，或模型给出 `uncertain`，`decision` 是 `pending_admin`，并按账号确认的同一方式私聊管理员。
+
+管理员回复之后，引擎再查：
+
+`POST /internal/v1/enforcement/content/decision`
+
+```json
+{"case_id":"C0123456789abcdef"}
+```
+
+`200`
+
+```json
+{"case_id":"C0123456789abcdef","decision":"remove","confidence":0.4,"reason":"理由","admin":"erel","answer":"是"}
+```
+
+`pending_admin` 表示还没回复。`remove` 是下架，`keep` 是保留。没有这个案件是 HTTP 404。密钥不对是 HTTP 401，响应体与凭证复查的 401 相同。
 
 ## 处置凭证路由
 

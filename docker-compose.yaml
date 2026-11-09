@@ -273,6 +273,19 @@ services:
       TELLOMI_REPORT_SNAPSHOT: ${TELLOMI_REPORT_SNAPSHOT:-}
       TELLOMI_REPORT_SNAPSHOT_BUCKET: ${TELLOMI_REPORT_SNAPSHOT_BUCKET:-}
       TELLOMI_REPORT_ETA_HOURS: ${TELLOMI_REPORT_ETA_HOURS:-}
+      # Account enforcement. Unset is off. STORE=mysql installs the separate
+      # database in TELLOMI_ENFORCEMENT_MYSQL after the operator runs
+      # /app/bin/enforcement-migrate once. Do not publish 8820.
+      # See docs/account-enforcement.md and docs/api/enforcement-contract.md.
+      TELLOMI_ENFORCEMENT_STORE: ${TELLOMI_ENFORCEMENT_STORE:-}
+      TELLOMI_ENFORCEMENT_MYSQL: ${TELLOMI_ENFORCEMENT_MYSQL:-}
+      TELLOMI_ENFORCEMENT_CREATE: ${TELLOMI_ENFORCEMENT_CREATE:-}
+      TELLOMI_ENFORCEMENT_REVIEW: ${TELLOMI_ENFORCEMENT_REVIEW:-}
+      TELLOMI_ENFORCEMENT_ADMINS: ${TELLOMI_ENFORCEMENT_ADMINS:-}
+      TELLOMI_ENFORCEMENT_CONFIDENCE: ${TELLOMI_ENFORCEMENT_CONFIDENCE:-}
+      TELLOMI_ENFORCEMENT_SERVICE_KEY: ${TELLOMI_ENFORCEMENT_SERVICE_KEY:-}
+      TELLOMI_ENFORCEMENT_ADDR: ${TELLOMI_ENFORCEMENT_ADDR:-}
+      TELLOMI_ENFORCEMENT_E2E: ${TELLOMI_ENFORCEMENT_E2E:-}
       # Rewrites teamgram:<password>@tcp(mysql:3306) in /app/etc2 at start.
       # The dev default matches the database created by docker-compose-env.yaml.
       # Production .env sets MYSQL_PASSWORD. See docs/SECURITY-OPS.md.
