@@ -46,6 +46,10 @@ func (c *UsernamesCore) AccountCheckUsername(in *mtproto.TLAccountCheckUsername)
 	if err := usernamepolicy.RejectUser(c.ctx, c.MD.UserId, in.GetUsername()); err != nil {
 		return nil, err
 	}
+	if err := c.rejectVenueClaim(in.GetUsername(), c.MD.UserId); err != nil {
+		c.Logger.Errorf("account.checkUsername#2714d86c - venue: %v", err)
+		return nil, usernameRPCError(err)
+	}
 
 	existed, err := c.svcCtx.Dao.UserClient.UserCheckAccountUsername(c.ctx, &user.TLUserCheckAccountUsername{
 		UserId:   c.MD.UserId,

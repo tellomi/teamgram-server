@@ -82,6 +82,9 @@ func (c *UsernamesCore) updateUsername(userId int64, from, username2 string) err
 		if err := usernamepolicy.RejectUser(c.ctx, userId, username2); err != nil {
 			return err
 		}
+		if err := c.rejectVenueClaim(username2, userId); err != nil {
+			return err
+		}
 
 		ok, err := c.svcCtx.Dao.UserClient.UserUpdateUsernameByUsername(c.ctx, &userpb.TLUserUpdateUsernameByUsername{
 			PeerType: mtproto.PEER_USER,

@@ -19,7 +19,7 @@ is still:
 | --- | --- |
 | `dc_options` | `[]` |
 | `dc_txt_domain_name` | `apv2.stel.com` |
-| `webfile_dc_id` | `4` |
+| `webfile_dc_id` | `1` |
 | `this_dc` | `1` |
 
 `docker-compose.yaml` does not mount the file. With `TELLOMI_DC_OPTIONS`
@@ -180,7 +180,7 @@ the empty file back. The env survives recreate.
 1. Remove `TELLOMI_DC_OPTIONS` from `.env`, or set it empty. Leave
    `TELLOMI_DC_TXT_DOMAIN` empty to restore `apv2.stel.com`.
 2. Recreate `teamgram`. Do not `FLUSHALL` Redis.
-3. `help.getConfig` returns `dc_options: []` and `webfile_dc_id: 4` again,
+3. `help.getConfig` returns `dc_options: []` and `webfile_dc_id: 1` again,
    matching the file in the image.
 4. Phones that already adopted the list do not move back. Plan the overlap
    in the previous section before withdrawing an IP those phones stored.

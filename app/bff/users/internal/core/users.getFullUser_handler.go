@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	profile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -58,6 +59,15 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		HasTo:   true,
 		To:      []int64{c.MD.UserId, peerId},
 	})
+	if mtproto.IsBotVenue(peerId) {
+		var row *mtproto.ImmutableUser
+		if err == nil && mutableUsers != nil {
+			row, _ = mutableUsers.GetImmutableUser(peerId)
+		}
+		if row == nil {
+			return venueBotFull(peerId), nil
+		}
+	}
 	if err != nil {
 		c.Logger.Errorf("users.getFullUser - error: %v", err)
 		return nil, err
@@ -356,4 +366,17 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		Chats:    chats,
 		Users:    []*mtproto.User{unsafeUser},
 	}).To_Users_UserFull(), nil
+}
+
+func venueBotFull(peerID int64) *mtproto.Users_UserFull {
+	bot := catalog.VenueBotUser()
+	full := mtproto.MakeTLUserFull(&mtproto.UserFull{
+		Id:    peerID,
+		About: wrapperspb.String("搜索地点"),
+	}).To_UserFull()
+	return mtproto.MakeTLUsersUserFull(&mtproto.Users_UserFull{
+		FullUser: full,
+		Chats:    []*mtproto.Chat{},
+		Users:    []*mtproto.User{bot},
+	}).To_Users_UserFull()
 }

@@ -70,7 +70,7 @@ func finish(ctx context.Context, c msg_client.MsgClient, self, auth, random int6
 
 func (s BotChatService) MessagesGetInlineBotResults(ctx context.Context, in *mtproto.TLMessagesGetInlineBotResults) (*mtproto.Messages_BotResults, error) {
 	self, _ := selfID(ctx)
-	return chatbox.Shared().InlineResults(ctx, self, in.GetBot(), in.GetPeer(), in.GetQuery(), in.GetOffset())
+	return chatbox.Shared().InlineResults(ctx, self, in.GetBot(), in.GetPeer(), in.GetQuery(), in.GetOffset(), in.GetGeoPoint())
 }
 
 func (s BotChatService) MessagesSetInlineBotResults(ctx context.Context, in *mtproto.TLMessagesSetInlineBotResults) (*mtproto.Bool, error) {

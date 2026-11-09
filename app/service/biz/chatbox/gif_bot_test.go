@@ -10,7 +10,7 @@ import (
 func TestGifBotInlineRoundTrip(t *testing.T) {
 	b := newBook(nil)
 	ctx := context.Background()
-	got, err := b.InlineResults(ctx, 3, userIn(mtproto.BotGifId), peerIn(9), "", "")
+	got, err := b.InlineResults(ctx, 3, userIn(mtproto.BotGifId), peerIn(9), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestGifBotInlineRoundTrip(t *testing.T) {
 	if doc.GetId() != hit.GetDocument().GetId() || doc.GetMimeType() != "video/mp4" {
 		t.Fatalf("sent media %#v", req.Message.GetMedia())
 	}
-	filtered, err := b.InlineResults(ctx, 3, userIn(mtproto.BotGifId), peerIn(9), "purple", "")
+	filtered, err := b.InlineResults(ctx, 3, userIn(mtproto.BotGifId), peerIn(9), "purple", "", nil)
 	if err != nil || len(filtered.GetResults()) != 1 {
 		t.Fatalf("filter %d %v", len(filtered.GetResults()), err)
 	}

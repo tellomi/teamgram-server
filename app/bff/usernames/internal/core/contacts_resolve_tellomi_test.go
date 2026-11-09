@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -81,6 +82,87 @@ func TestContactsResolveUsernameTellomi(t *testing.T) {
 	if ai.GetUsername().GetValue() != "tellomi" {
 		t.Fatalf("username = %q", ai.GetUsername().GetValue())
 	}
+}
+
+func TestContactsResolveVenueFree(t *testing.T) {
+	c := usernameCore(t, tellomiResolver{})
+	got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: "Venue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPeer().GetUserId() != mtproto.BotVenueId {
+		t.Fatalf("peer %d", got.GetPeer().GetUserId())
+	}
+	var bot *mtproto.User
+	for _, u := range got.GetUsers() {
+		if u.GetId() == mtproto.BotVenueId {
+			bot = u
+		}
+	}
+	if bot == nil || !bot.GetBot() || !bot.GetBotInlineGeo() || bot.GetUsername().GetValue() != "venue" {
+		t.Fatalf("venue bot %#v", bot)
+	}
+	if bot.GetFirstName().GetValue() != "位置" {
+		t.Fatalf("name %q", bot.GetFirstName().GetValue())
+	}
+}
+
+func TestContactsResolveVenueTaken(t *testing.T) {
+	c := usernameCore(t, scriptedResolver{users: map[string]int64{"venue": 555}})
+	got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: "venue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPeer().GetUserId() != 555 {
+		t.Fatalf("peer %d", got.GetPeer().GetUserId())
+	}
+	for _, u := range got.GetUsers() {
+		if u.GetId() == mtproto.BotVenueId {
+			t.Fatal("bot replaced a real user")
+		}
+	}
+}
+
+type scriptedResolver struct {
+	userclient.UserClient
+	users map[string]int64
+}
+
+func (s scriptedResolver) UserResolveUsername(_ context.Context, in *userpb.TLUserResolveUsername) (*mtproto.Peer, error) {
+	id, ok := s.users[strings.ToLower(in.GetUsername())]
+	if !ok {
+		return nil, mtproto.ErrUsernameNotOccupied
+	}
+	return mtproto.MakePeerUser(id), nil
+}
+
+func (s scriptedResolver) UserGetMutableUsers(_ context.Context, in *userpb.TLUserGetMutableUsers) (*userpb.Vector_ImmutableUser, error) {
+	users := make([]*mtproto.ImmutableUser, 0, len(in.GetId()))
+	for _, id := range in.GetId() {
+		name := ""
+		if id == 555 {
+			name = "venue"
+		}
+		users = append(users, mtproto.MakeTLImmutableUser(&mtproto.ImmutableUser{
+			User: mtproto.MakeTLUserData(&mtproto.UserData{
+				Id: id, FirstName: "Person", Username: name, UserType: userpb.UserTypeRegular,
+			}).To_UserData(),
+		}).To_ImmutableUser())
+	}
+	return &userpb.Vector_ImmutableUser{Datas: users}, nil
+}
+
+func usernameCore(t *testing.T, client userclient.UserClient) *UsernamesCore {
+	t.Helper()
+	const viewer int64 = 42
+	buf, err := proto.Marshal(&rpcmeta.RpcMetadata{UserId: viewer, PermAuthKeyId: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
+	return New(ctx, &svc.ServiceContext{Dao: &dao.Dao{UserClient: client}})
 }
 
 func TestContactsResolveGifBot(t *testing.T) {

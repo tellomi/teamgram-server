@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -45,7 +46,32 @@ func (c *UsersCore) UsersGetUsers(in *mtproto.TLUsersGetUsers) (*mtproto.Vector_
 		To: []int64{c.MD.UserId},
 	})
 
+	var users []*mtproto.User
+	if mUsers != nil {
+		users = mUsers.GetUserListByIdList(c.MD.UserId, idList...)
+	}
 	return &mtproto.Vector_User{
-		Datas: mUsers.GetUserListByIdList(c.MD.UserId, idList...),
+		Datas: appendVenueBot(users, idList),
 	}, nil
+}
+
+// appendVenueBot adds the built-in @venue user when id 110 was requested and
+// the database has no row for it. A real user 110, if one existed, is kept.
+func appendVenueBot(users []*mtproto.User, ids []int64) []*mtproto.User {
+	want := false
+	for _, id := range ids {
+		if id == mtproto.BotVenueId {
+			want = true
+			break
+		}
+	}
+	if !want {
+		return users
+	}
+	for _, u := range users {
+		if u.GetId() == mtproto.BotVenueId {
+			return users
+		}
+	}
+	return append(users, catalog.VenueBotUser())
 }

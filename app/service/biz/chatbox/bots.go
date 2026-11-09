@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/location"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -547,7 +548,7 @@ func unpackResults(raw [][]byte) ([]*mtproto.BotInlineResult, error) {
 }
 
 // InlineResults implements messages.getInlineBotResults.
-func (b *Book) InlineResults(ctx context.Context, self int64, bot *mtproto.InputUser, peer *mtproto.InputPeer, query, offset string) (*mtproto.Messages_BotResults, error) {
+func (b *Book) InlineResults(ctx context.Context, self int64, bot *mtproto.InputUser, peer *mtproto.InputPeer, query, offset string, geo *mtproto.InputGeoPoint) (*mtproto.Messages_BotResults, error) {
 	if utf16Len(query) > 256 {
 		return nil, mtproto.ErrMessageTooLong
 	}
@@ -561,6 +562,9 @@ func (b *Book) InlineResults(ctx context.Context, self int64, bot *mtproto.Input
 	}
 	if botID == mtproto.BotGifId {
 		return b.gifInline(ctx, self, p, query)
+	}
+	if botID == mtproto.BotVenueId {
+		return b.venueInline(ctx, self, p, query, offset, geo)
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -626,6 +630,34 @@ func (b *Book) storeQueryLocked(ctx context.Context, self, botID int64, peer *mt
 	b.queries[q.ID] = q
 	_ = b.save(ctx, queryKey(q.ID), q)
 	return q
+}
+
+func (b *Book) venueInline(ctx context.Context, self int64, peer *mtproto.PeerUtil, query, offset string, geo *mtproto.InputGeoPoint) (*mtproto.Messages_BotResults, error) {
+	results, next := location.Search(ctx, self, geo, query, offset)
+	raw, err := packResults(results)
+	if err != nil {
+		raw = nil
+		results = nil
+		next = ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	q := b.storeQueryLocked(ctx, self, mtproto.BotVenueId, peer, query, &cachedAnswer{
+		CacheTime:  300,
+		NextOffset: next,
+		Results:    raw,
+	})
+	unpacked, err := unpackResults(q.Results)
+	if err != nil {
+		unpacked = nil
+	}
+	return mtproto.MakeTLMessagesBotResults(&mtproto.Messages_BotResults{
+		QueryId:    q.ID,
+		NextOffset: mtproto.MakeFlagsString(q.NextOffset),
+		Results:    unpacked,
+		CacheTime:  300,
+		Users:      []*mtproto.User{catalog.VenueBotUser()},
+	}).To_Messages_BotResults(), nil
 }
 
 func (b *Book) gifInline(ctx context.Context, self int64, peer *mtproto.PeerUtil, query string) (*mtproto.Messages_BotResults, error) {
@@ -840,9 +872,32 @@ func (b *Book) TakeInlineResult(ctx context.Context, self int64, peer *mtproto.I
 	if botID == mtproto.BotGifId && len(users) == 0 {
 		users = []*mtproto.User{catalog.GifBotUser()}
 	}
+	if botID == mtproto.BotVenueId && len(users) == 0 {
+		users = []*mtproto.User{catalog.VenueBotUser()}
+	}
 	b.mu.Unlock()
 	if hit == nil || hit.SendMessage == nil {
 		return nil, nil, mtproto.ErrInlineResultExpired
+	}
+	if media := inlineVenueMedia(hit.SendMessage); media != nil {
+		msg := b.textMessage(self, p, "", silent)
+		msg.Media = media
+		msg.ReplyMarkup = hit.SendMessage.ReplyMarkup
+		if !hideVia {
+			msg.ViaBotId = wrapperspb.Int64(botID)
+		}
+		msg.ReplyTo = replyHeader(reply)
+		if schedule > 0 {
+			ups, err := b.Schedule(ctx, self, p, schedule, []*mtproto.Message{msg})
+			return nil, ups, err
+		}
+		if random == 0 {
+			random = b.freshID()
+		}
+		return &SendReq{
+			Peer: p, RandomID: random, Background: background, Message: msg,
+			Fallback: localUpdates(msg, users),
+		}, nil, nil
 	}
 	text := hit.SendMessage.Message
 	if hit.GetDocument() != nil && hit.GetDocument().GetPredicateName() == mtproto.Predicate_document {
@@ -893,6 +948,35 @@ func (b *Book) TakeInlineResult(ctx context.Context, self int64, peer *mtproto.I
 		Peer: p, RandomID: random, NoWebpage: hit.SendMessage.NoWebpage,
 		Background: background, Message: msg, Fallback: localUpdates(msg, users),
 	}, nil, nil
+}
+
+func inlineVenueMedia(send *mtproto.BotInlineMessage) *mtproto.MessageMedia {
+	if send == nil {
+		return nil
+	}
+	switch send.GetPredicateName() {
+	case mtproto.Predicate_botInlineMessageMediaVenue:
+		if strings.TrimSpace(send.GetTitle()) == "" && strings.TrimSpace(send.GetVenueId()) == "" {
+			return nil
+		}
+		location.Stamp(send.Geo)
+		return mtproto.MakeTLMessageMediaVenue(&mtproto.MessageMedia{
+			Geo:       send.Geo,
+			Title:     send.GetTitle(),
+			Address:   send.GetAddress(),
+			Provider:  send.GetProvider(),
+			VenueId:   send.GetVenueId(),
+			VenueType: send.GetVenueType(),
+		}).To_MessageMedia()
+	case mtproto.Predicate_botInlineMessageMediaGeo:
+		if send.Geo == nil {
+			return nil
+		}
+		location.Stamp(send.Geo)
+		return mtproto.MakeTLMessageMediaGeo(&mtproto.MessageMedia{Geo: send.Geo}).To_MessageMedia()
+	default:
+		return nil
+	}
 }
 
 func (b *Book) textMessage(self int64, peer *mtproto.PeerUtil, text string, silent bool) *mtproto.Message {
