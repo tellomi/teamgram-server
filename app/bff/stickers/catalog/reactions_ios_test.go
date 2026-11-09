@@ -2,6 +2,9 @@ package catalog
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"io"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -94,6 +97,147 @@ func TestIOSParsesAvailableReactions(t *testing.T) {
 	if !tgsCanvas512(fallbackTGS()) {
 		t.Fatal("fallback tgs is not 512x512")
 	}
+}
+
+// TestCenterIconFitsReactionPill checks the document the official iOS pill
+// draws. ReactionIconView scales a builtin center_icon to twice the 20pt
+// slot and does not clip, so the glyph has to occupy the center half of
+// the 512 canvas. static_icon stays the full-bleed WebP chip. The list
+// hash includes the center document id, and the previous id still
+// downloads the inset file.
+func TestCenterIconFitsReactionPill(t *testing.T) {
+	s := newService(builtinPacks())
+	msg := s.Reactions(0)
+	got := map[string]*mtproto.AvailableReaction{}
+	var activateAndCenter []int64
+	var activateOnly []int64
+	for _, r := range msg.GetReactions() {
+		got[r.GetReaction()] = r
+		activateAndCenter = append(activateAndCenter, r.GetActivateAnimation().GetId(), r.GetCenterIcon().GetId())
+		activateOnly = append(activateOnly, r.GetActivateAnimation().GetId())
+	}
+	if int32(hash64(activateAndCenter)) != msg.GetHash() {
+		t.Fatal("available reactions hash does not cover center_icon")
+	}
+	if int32(hash64(activateOnly)) == msg.GetHash() {
+		t.Fatal("hash ignores center_icon, so clients keep the old pill file")
+	}
+	for _, emo := range iosDefaultReactions {
+		r := got[emo]
+		if r == nil {
+			t.Fatalf("missing %s", emo)
+		}
+		center := r.GetCenterIcon()
+		static := r.GetStaticIcon()
+		if center.GetId() == static.GetId() || center.GetId() == r.GetAppearAnimation().GetId() {
+			t.Fatalf("%s center_icon reuses another slot", emo)
+		}
+		if center.GetMimeType() != "application/x-tgsticker" {
+			t.Fatalf("%s center mime %s", emo, center.GetMimeType())
+		}
+		if static.GetMimeType() != "image/webp" {
+			t.Fatalf("%s static mime %s", emo, static.GetMimeType())
+		}
+		assertAttrSize(t, emo, "center_icon", center, 512, 512)
+		assertAttrSize(t, emo, "static_icon", static, 72, 72)
+		if hasCustomEmoji(center) || hasCustomEmoji(static) {
+			t.Fatalf("%s reaction icon is a custom emoji", emo)
+		}
+		body, mime, ok := s.DocumentFile(center.GetId())
+		if !ok || mime != "application/x-tgsticker" || !tgsCanvas512(body) {
+			t.Fatalf("%s center file", emo)
+		}
+		scale, ax, ay, px, py, name := lottieRoot(t, body)
+		if name != "pill-inset" || scale != centerIconScale || ax != 256 || ay != 256 || px != 256 || py != 256 {
+			t.Fatalf("%s center layout name=%s scale=%v anchor=%v,%v pos=%v,%v", emo, name, scale, ax, ay, px, py)
+		}
+		appear, _, ok := s.DocumentFile(r.GetAppearAnimation().GetId())
+		if !ok {
+			t.Fatalf("%s appear", emo)
+		}
+		if _, _, _, _, _, appearName := lottieRoot(t, appear); appearName == "pill-inset" {
+			t.Fatalf("%s appear animation was inset", emo)
+		}
+		if bytes.Equal(body, appear) {
+			t.Fatalf("%s center icon is the full-bleed appear animation", emo)
+		}
+		code := codeOfReaction(emo)
+		legacy := legacyCenterID(code)
+		if legacy == center.GetId() {
+			t.Fatalf("%s kept the full-bleed document id", emo)
+		}
+		old, oldMIME, ok := s.DocumentFile(legacy)
+		if !ok || oldMIME != mime || !bytes.Equal(old, body) {
+			t.Fatalf("%s previous center id does not serve the inset file", emo)
+		}
+	}
+}
+
+func codeOfReaction(emo string) string {
+	for _, spec := range reactionSpecs() {
+		if emojiFromCode(spec.code) == emo {
+			return spec.code
+		}
+	}
+	return ""
+}
+
+func assertAttrSize(t *testing.T, emo, name string, doc *mtproto.Document, w, h int32) {
+	t.Helper()
+	for _, attr := range doc.GetAttributes() {
+		if attr.GetPredicateName() == mtproto.Predicate_documentAttributeImageSize {
+			if attr.GetW() == w && attr.GetH() == h {
+				return
+			}
+			t.Fatalf("%s %s size %dx%d, want %dx%d", emo, name, attr.GetW(), attr.GetH(), w, h)
+		}
+	}
+	t.Fatalf("%s %s has no image size", emo, name)
+}
+
+func hasCustomEmoji(doc *mtproto.Document) bool {
+	for _, attr := range doc.GetAttributes() {
+		if attr.GetPredicateName() == mtproto.Predicate_documentAttributeCustomEmoji {
+			return true
+		}
+	}
+	return false
+}
+
+func lottieRoot(t *testing.T, raw []byte) (scale, ax, ay, px, py float64, name string) {
+	t.Helper()
+	r, err := gzip.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	var doc map[string]any
+	if err = json.NewDecoder(io.LimitReader(r, 8<<20)).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	layers, _ := doc["layers"].([]any)
+	if len(layers) != 1 {
+		t.Fatalf("root layers %d", len(layers))
+	}
+	layer, _ := layers[0].(map[string]any)
+	name, _ = layer["nm"].(string)
+	ks, _ := layer["ks"].(map[string]any)
+	scale = vecComponent(ks["s"], 0)
+	ax = vecComponent(ks["a"], 0)
+	ay = vecComponent(ks["a"], 1)
+	px = vecComponent(ks["p"], 0)
+	py = vecComponent(ks["p"], 1)
+	return scale, ax, ay, px, py, name
+}
+
+func vecComponent(prop any, i int) float64 {
+	m, _ := prop.(map[string]any)
+	k, _ := m["k"].([]any)
+	if i >= len(k) {
+		return 0
+	}
+	f, _ := k[i].(float64)
+	return f
 }
 
 func assertIOSReactionDocuments(t *testing.T, emo string, r *mtproto.AvailableReaction) {

@@ -1,10 +1,13 @@
 # Reaction animation provenance
 
 Telegram's reaction picker needs a real animated emoji for every slot on
-`availableReaction`: `appear_animation`, `select_animation`,
-`activate_animation`, `effect_animation`, `around_animation`, and
-`center_icon` are gzipped Lottie (`.tgs`, 512×512,
-`application/x-tgsticker`). `static_icon` is a 72×72 WebP used as the chip.
+`availableReaction`. `appear_animation`, `select_animation`,
+`activate_animation`, `effect_animation`, and `around_animation` are
+gzipped Lottie (`.tgs`, 512×512, `application/x-tgsticker`).
+`center_icon` is that Lottie again, with the glyph scaled to the center
+half of the canvas. Official iOS draws `center_icon` at twice the
+reaction-pill slot and does not clip, so a full-bleed sticker overflows
+the pill. `static_icon` is a 72×72 WebP.
 
 These bytes are **not** copied from the Telegram client. Telegram's own
 reaction pack is not published under a license we can ship. The motion is
@@ -16,12 +19,16 @@ for `application/x-tgsticker`. The still chip is
 [Twemoji](https://github.com/jdecked/twemoji) 72×72 PNG converted to WebP
 (CC-BY-4.0).
 
-Each slot is a distinct document id. The six animated slots of one emoji share
+Each slot is a distinct document id. The animated slots of one emoji share
 the same Noto file, because that is the legally available animation for the
-emoji. `upload.getFile` reads the bytes from this binary. On startup the same
-objects are also written to Cloudflare R2 (or MinIO) under
-`emoji/<document id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`, using the dfs
-S3 client. A missing object does not stall the session.
+emoji. `center_icon` is that file with one more precomp at 50% scale.
+Its document id changed so clients download the inset file; the previous
+id still resolves to the same bytes. `upload.getFile` reads the bytes from
+this binary. On startup the same objects are also written to
+Cloudflare R2 (or MinIO) under `emoji/<document id>.dat` in
+`TELLOMI_S3_BUCKET_PUBLIC_MEDIA`, using the dfs S3 client, and the previous
+center id is overwritten with the inset file. A missing object does not
+stall the session. There is no SQL change.
 
 Codes added for the default double-tap set that were previously an empty
 fallback Lottie: `1f970` 🥰, `1f44f` 👏, `1f601` 😁, `1f914` 🤔, `1f631` 😱.
