@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"github.com/teamgram/marmota/pkg/stores/kv"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	gokv "github.com/zeromicro/go-zero/core/stores/kv"
 )
 
 // Profile links and free-message links.
 //
-// contacts.exportContactToken returns https://t.me/contact/<token>
+// contacts.exportContactToken returns brand.LinkBase()+"/contact/<token>"
 // (core.telegram.org/api/links). The link stays valid until expires.
 //
 // contacts.exportNoPaidMessagesToken returns a link whose free= query
@@ -291,17 +292,15 @@ type errToken string
 
 func (e errToken) Error() string { return string(e) }
 
-// NormalizeContactToken accepts the raw token or a t.me / tg contact link.
+// NormalizeContactToken accepts the raw token, a tell.cc contact link, or a
+// legacy t.me / telegram.me / tg contact link.
 func NormalizeContactToken(raw string) string {
 	raw = strings.TrimSpace(raw)
-	for _, p := range []string{
-		"https://t.me/contact/",
-		"http://t.me/contact/",
-		"https://telegram.me/contact/",
-		"tg://contact?token=",
-	} {
-		if strings.HasPrefix(strings.ToLower(raw), strings.ToLower(p)) {
-			raw = raw[len(p):]
+	low := strings.ToLower(raw)
+	for _, p := range contactLinkPrefixes() {
+		pl := strings.ToLower(p)
+		if strings.HasPrefix(low, pl) {
+			raw = raw[len(pl):]
 			break
 		}
 	}
@@ -323,18 +322,35 @@ func NormalizeNoPaidToken(raw string) string {
 	return raw
 }
 
+// contactLinkPrefixes are stripped from an imported profile token.
+// The brand host follows TELLOMI_LINK_BASE_URL. Legacy Telegram hosts stay
+// so a link issued before the short-link rename still imports.
+func contactLinkPrefixes() []string {
+	base := strings.TrimRight(brand.LinkBase(), "/")
+	return []string{
+		base + "/contact/",
+		"https://" + brand.ShortHost + "/contact/",
+		"http://" + brand.ShortHost + "/contact/",
+		"https://t.me/contact/",
+		"http://t.me/contact/",
+		"https://telegram.me/contact/",
+		"tg://contact?token=",
+	}
+}
+
 // ContactLink is the https profile link from core.telegram.org/api/links.
 func ContactLink(token string) string {
-	return "https://t.me/contact/" + token
+	return strings.TrimRight(brand.LinkBase(), "/") + "/contact/" + token
 }
 
 // NoPaidLink is the link Desktop turns into tg://contact?token=&free= or
 // tg://resolve?domain=&free=.
 func NoPaidLink(username, contactToken, freeToken string) string {
+	base := strings.TrimRight(brand.LinkBase(), "/")
 	if usernameOK(username) {
-		return "https://t.me/" + username + "?free=" + freeToken
+		return base + "/" + username + "?free=" + freeToken
 	}
-	return "https://t.me/contact/" + contactToken + "?free=" + freeToken
+	return base + "/contact/" + contactToken + "?free=" + freeToken
 }
 
 func usernameOK(name string) bool {

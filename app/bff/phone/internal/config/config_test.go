@@ -6,8 +6,73 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/zeromicro/go-zero/core/conf"
 )
+
+func TestCallLinkPrefixFollowsLinkBase(t *testing.T) {
+	t.Setenv("TELLOMI_LINK_BASE_URL", "")
+	t.Setenv("TEAMGRAM_TME_HOST", "")
+	if got := (Config{}).Normalized().CallLinkPrefix; got != brand.CallPrefix {
+		t.Fatalf("empty %q", got)
+	}
+	if brand.CallPrefix != strings.TrimRight(brand.LinkBase(), "/")+"/call/" {
+		t.Fatalf("CallPrefix %q is not LinkBase()/call/", brand.CallPrefix)
+	}
+	if got := (Config{CallLinkPrefix: "https://t.me/call/"}).Normalized().CallLinkPrefix; got != "https://tell.cc/call/" {
+		t.Fatalf("legacy yaml %q", got)
+	}
+	if got := (Config{CallLinkPrefix: "https://telegram.dog/call/"}).Normalized().CallLinkPrefix; got != "https://tell.cc/call/" {
+		t.Fatalf("telegram.dog yaml %q", got)
+	}
+	t.Setenv("TELLOMI_LINK_BASE_URL", "links.example")
+	want := "https://links.example/call/"
+	for _, configured := range []string{"", "https://t.me/call/", "https://tell.cc/call/", "https://calls.internal/join/"} {
+		if got := (Config{CallLinkPrefix: configured}).Normalized().CallLinkPrefix; got != want {
+			t.Fatalf("env over %q = %q", configured, got)
+		}
+	}
+	t.Setenv("TELLOMI_LINK_BASE_URL", "")
+	t.Setenv("TEAMGRAM_TME_HOST", "https://share.example")
+	if got := (Config{CallLinkPrefix: "https://tell.cc/call/"}).Normalized().CallLinkPrefix; got != "https://share.example/call/" {
+		t.Fatalf("TEAMGRAM_TME_HOST %q", got)
+	}
+}
+
+func TestShippedCallLinkPrefixUsesBrand(t *testing.T) {
+	t.Setenv("TELLOMI_LINK_BASE_URL", "")
+	t.Setenv("TEAMGRAM_TME_HOST", "")
+	files := []string{
+		"../../../../../teamgramd/etc/bff.yaml",
+		"../../../../../teamgramd/etc2/bff.yaml",
+		"../../../../bff/bff/etc/bff.yaml",
+	}
+	for _, path := range files {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		block := phoneBlock(string(body))
+		if strings.Contains(block, "t.me") || strings.Contains(block, "telegram.me") || strings.Contains(block, "telegram.dog") {
+			t.Fatalf("%s phone block still names a Telegram short host:\n%s", path, block)
+		}
+		dir := t.TempDir()
+		snippet := filepath.Join(dir, "phone.yaml")
+		if err := os.WriteFile(snippet, []byte(block), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var loaded struct {
+			Phone Config `json:",optional"`
+		}
+		if err := conf.Load(snippet, &loaded); err != nil {
+			t.Fatalf("load %s: %v", path, err)
+		}
+		got := loaded.Phone.Normalized().CallLinkPrefix
+		if got != brand.LinkBase()+"/call/" || strings.Contains(got, "t.me") {
+			t.Fatalf("%s call prefix %q", path, got)
+		}
+	}
+}
 
 func TestRTMPURLDefault(t *testing.T) {
 	t.Setenv("TELLOMI_RTMP_URL", "")

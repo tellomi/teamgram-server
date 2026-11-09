@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -9,6 +10,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/contacts/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/internal/svc"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/status"
 )
@@ -38,7 +40,7 @@ func TestContactAndNoPaidTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exp.GetUrl() == "" || exp.GetExpires() == 0 {
+	if exp.GetExpires() == 0 || !strings.HasPrefix(exp.GetUrl(), brand.LinkBase()+"/contact/") || strings.Contains(exp.GetUrl(), "t.me") {
 		t.Fatalf("export %#v", exp)
 	}
 	got, err := c.ContactsImportContactToken(&mtproto.TLContactsImportContactToken{Token: exp.GetUrl()})
@@ -48,6 +50,10 @@ func TestContactAndNoPaidTokens(t *testing.T) {
 	if _, err := c.ContactsImportContactToken(&mtproto.TLContactsImportContactToken{Token: ""}); status.Convert(err).Message() != "IMPORT_TOKEN_INVALID" {
 		t.Fatalf("empty token %v", err)
 	}
+	legacy := "https://t.me/contact/" + strings.TrimPrefix(exp.GetUrl(), brand.LinkBase()+"/contact/")
+	if again, err := c.ContactsImportContactToken(&mtproto.TLContactsImportContactToken{Token: legacy}); err != nil || again.GetId() != 7 {
+		t.Fatalf("legacy import %#v %v", again, err)
+	}
 
 	free, err := c.ContactsExportNoPaidMessagesToken(&mtproto.TLContactsExportNoPaidMessagesToken{Temporary: true})
 	if err != nil {
@@ -56,7 +62,7 @@ func TestContactAndNoPaidTokens(t *testing.T) {
 	if free.GetExpires() == 0 || free.GetToken() == "" {
 		t.Fatalf("free %#v", free)
 	}
-	if free.GetUrl() != "https://t.me/ada?free="+free.GetToken() {
+	if free.GetUrl() != dao.NoPaidLink("ada", "", free.GetToken()) || strings.Contains(free.GetUrl(), "t.me") {
 		t.Fatalf("url %s", free.GetUrl())
 	}
 	c.MD.UserId = 9

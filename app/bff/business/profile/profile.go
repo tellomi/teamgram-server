@@ -3,8 +3,8 @@
 // Hours, location, greeting, away message, intro, and chat links are what
 // account.updateBusiness* and account.*BusinessChatLink write. users.getFullUser
 // reads the same book so a later profile fetch shows the saved fields.
-// A restart drops the book. Links are not published to a public t.me host;
-// the slug is only resolved by account.resolveBusinessChatLink on this process.
+// A restart drops the book. The link field is brand.LinkBase()+"/m/<slug>".
+// account.resolveBusinessChatLink resolves the slug on this process.
 package profile
 
 import (
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -425,7 +426,7 @@ func linkTL(item *linkRow) *mtproto.BusinessChatLink {
 		title = wrapperspb.String(item.title)
 	}
 	return mtproto.MakeTLBusinessChatLink(&mtproto.BusinessChatLink{
-		Link:     "https://t.me/m/" + item.slug,
+		Link:     brand.LinkBase() + "/m/" + item.slug,
 		Message:  item.message,
 		Entities: cloneEntities(item.entities),
 		Title:    title,
