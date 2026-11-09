@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -33,6 +34,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache ip2region xdb
+        uses: ./.github/actions/ip2region-xdb
+        with:
+          dest: deploy/ip2region/cache
 
       - name: Set up Go
         uses: actions/setup-go@v5
