@@ -36,6 +36,7 @@ type packManifest struct {
 	Title            string         `json:"title"`
 	ShortName        string         `json:"short_name"`
 	Type             string         `json:"type"`
+	Emojis           bool           `json:"emojis"`
 	Featured         bool           `json:"featured"`
 	InstalledDefault bool           `json:"installed_default"`
 	License          string         `json:"license"`
@@ -130,7 +131,7 @@ func readPack(root string, opt ImportOptions) ([]*Pack, map[int64]string, error)
 	if err = json.Unmarshal(body, &man); err != nil {
 		return nil, nil, fmt.Errorf("manifest: %w", err)
 	}
-	video, err := packType(man.Type)
+	video, custom, err := packType(man.Type, man.Emojis)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -150,7 +151,10 @@ func readPack(root string, opt ImportOptions) ([]*Pack, map[int64]string, error)
 		return nil, nil, err
 	}
 	limit := maxStaticStickers
-	if video {
+	switch {
+	case custom:
+		limit = maxEmojiStickers
+	case video:
 		limit = maxAnimatedStickers
 	}
 	type built struct {
@@ -190,6 +194,7 @@ func readPack(root string, opt ImportOptions) ([]*Pack, map[int64]string, error)
 			Width:        stickerSide,
 			Height:       stickerSide,
 			Video:        video,
+			CustomEmoji:  custom,
 			StorageClass: "stickers",
 			Keywords:     en,
 			LangKeywords: langs,
@@ -232,13 +237,18 @@ func readPack(root string, opt ImportOptions) ([]*Pack, map[int64]string, error)
 			paths[item.DocumentID] = row.path
 			items = append(items, item)
 		}
+		kind := KindSticker
+		if custom {
+			kind = KindCustomEmoji
+		}
 		packs = append(packs, &Pack{
 			ID:               stableID("pack", short),
 			AccessHash:       stableID("pack-access", short),
 			ShortName:        short,
 			Title:            title,
-			Kind:             KindSticker,
+			Kind:             kind,
 			Official:         true,
+			Emojis:           custom,
 			Videos:           video,
 			Featured:         man.Featured || opt.Featured,
 			InstalledDefault: man.InstalledDefault || opt.InstalledDefault,
@@ -251,14 +261,18 @@ func readPack(root string, opt ImportOptions) ([]*Pack, map[int64]string, error)
 	return packs, paths, nil
 }
 
-func packType(raw string) (video bool, err error) {
+func packType(raw string, emojis bool) (video, custom bool, err error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "static", "webp":
-		return false, nil
+		return false, emojis, nil
 	case "video", "webm":
-		return true, nil
+		return true, emojis, nil
+	case "custom_emoji", "emoji", "emojis":
+		return false, true, nil
+	case "custom_emoji_video", "emoji_video":
+		return true, true, nil
 	default:
-		return false, fmt.Errorf("type %q must be static or video", raw)
+		return false, false, fmt.Errorf("type %q must be static, video, or custom_emoji", raw)
 	}
 }
 

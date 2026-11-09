@@ -8,12 +8,13 @@ The packs are openly licensed. Telegram's own sticker sets are not downloaded or
 
 | RPC | Behavior |
 |---|---|
-| `messages.getAllStickers` | Installed regular packs. Twemoji is installed for every user until they uninstall it. The reply is set metadata, not sticker bytes. A matching hash is `messages.allStickersNotModified` and does not rebuild those sets. |
+| `messages.getAllStickers` | Installed regular packs. A pack with `installed_default` is in this list for every user until that user uninstalls it. Twemoji and Fluent Emoji are not in the list. The reply is set metadata, not sticker bytes. A matching hash is `messages.allStickersNotModified` and does not rebuild those sets. |
 | `messages.getStickerSet` | By id, short name, or the system constructors `inputStickerSetAnimatedEmoji`, `AnimatedEmojiAnimations`, `EmojiGenericAnimations`, `PremiumGifts`, `EmojiDefaultStatuses`, `EmojiDefaultTopicIcons`, `EmojiChannelDefaultStatuses`. |
-| `messages.getFeaturedStickers` / `messages.getFeaturedEmojiStickers` | The first 100 featured packs. `count` is the full list. A matching hash is `messages.featuredStickersNotModified`. |
+| `messages.getFeaturedStickers` / `messages.getFeaturedEmojiStickers` | The first 100 featured packs (`count` is the full list). Imported packs are featured. Twemoji, Fluent Emoji, and Noto Emoji are not. A matching hash is `messages.featuredStickersNotModified`. |
+| `messages.getEmojiStickers` | Installed custom-emoji packs, including imported packs with `emojis` set, for every user until that user uninstalls one. |
 | `messages.getOldFeaturedStickers` | The same featured list, paged. `offset` is the index and `limit` defaults to 100. |
 | `messages.installStickerSet` / `messages.uninstallStickerSet` | Per-user install state. Uninstalling Twemoji sticks; it is not forced back. |
-| `messages.searchStickerSets` / `messages.searchEmojiStickerSets` | Title and short-name search. The match is a UTF-8 substring after Unicode case fold and fullwidth fold, so `猫猫1` matches `猫猫１` and `ｆＬｕｅｎｔ` matches `Fluent`. |
+| `messages.searchStickerSets` / `messages.searchEmojiStickerSets` | Title, short name, sticker keyword, and emoticon search. The match is a UTF-8 substring after Unicode case fold and fullwidth fold, so `猫猫1` matches `猫猫１`, `开心` matches a sticker keyword, and 🙂 matches that sticker's emoticon. Twemoji, Fluent Emoji, and Noto Emoji are left out. |
 | `messages.getStickers` / `messages.searchStickers` | Documents for an emoji or a keyword. Emoji match ignores `U+FE0E` and `U+FE0F`. Keyword match is a folded substring of that sticker's keywords. `limit` defaults to 100 and `next_offset` continues the page. |
 | `messages.getRecentStickers` / `messages.saveRecentSticker` / `messages.clearRecentStickers` | The last 50 stickers the user sent. |
 | `messages.getFavedStickers` / `messages.faveSticker` | Up to 200 favorites. |
@@ -103,7 +104,13 @@ TELLOMI_S3_BUCKET_PUBLIC_MEDIA=tellomi-public-media \
 go run ./app/bff/stickers/cmd/importstickers -dir ./chinese-bqb -featured
 ```
 
-`-featured` marks every imported pack featured. `-installed-default` installs every imported pack for every user until they uninstall it. Either flag also turns on when the manifest sets the same field. Inside Compose, pass the flags after the entrypoint:
+Packs from `-dir` are featured and installed for every user. `messages.getAllStickers` (or `messages.getEmojiStickers` when the manifest sets `emojis`) returns them until that user uninstalls one. `-featured=false` or `-installed-default=false` leaves the manifest flag. `-drop-foreign-seeds` unfeatures and uninstalls Twemoji, Fluent Emoji, and Noto Emoji. It is safe to run again. Deploy this build before restarting bff, then run it so a previous process does not mark those packs featured on startup:
+
+```
+go run ./app/bff/stickers/cmd/importstickers -drop-foreign-seeds
+```
+
+`type` `custom_emoji` (or `"emojis": true` with `static` or `video`) is a custom-emoji set. A static one holds at most 200 stickers. Documents are marked free custom emoji, and the set is served by `messages.getEmojiStickers` and `messages.getFeaturedEmojiStickers`. Inside Compose, pass the flags after the entrypoint:
 
 ```
 docker compose exec teamgram /app/bin/importstickers \
@@ -115,15 +122,14 @@ The command is safe to run again. Pack and document ids come from the short name
 
 A static pack holds at most 120 stickers. A video pack holds at most 50. A larger manifest is split, in order, into `标题 1/2`, `标题 2/2`, and so on. The first part keeps `short_name`. Later parts append the part number (`PandaHead`, `PandaHead2`). A manifest with more than 20000 stickers is rejected.
 
-`type` is `static` or `video` (`webp` and `webm` are accepted aliases). A static file is a 512×512 WebP, at most 1MB. A video file is a 512×512 VP9 WebM, at most 3 seconds and 256KB. `short_name` matches `^[A-Za-z][A-Za-z0-9_]{4,31}$`. `title` is 1 to 64 characters. Each sticker needs an `emoticon`. `keywords` is a string, an array, or a language map. An untagged array is stored as written: Han, kana, and hangul words are simplified Chinese and other words are English. A language map may use `zh-hans`, `zh-hant`, `zh-CN`, `zh`, or `en`. At most 32 keywords, each at most 64 characters.
+`type` is `static`, `video`, or `custom_emoji` (`webp`, `webm`, `emoji`, and `custom_emoji_video` are accepted aliases). `"emojis": true` with `static` or `video` is the same as a custom-emoji set. A static file is a 512×512 WebP, at most 1MB. A video file is a 512×512 VP9 WebM, at most 3 seconds and 256KB. A static pack holds at most 120 stickers, a video pack 50, and a custom-emoji pack 200. `short_name` matches `^[A-Za-z][A-Za-z0-9_]{4,31}$`. `title` is 1 to 64 characters. Each sticker needs an `emoticon`. `keywords` is a string, an array, or a language map. An untagged array is stored as written: Han, kana, and hangul words are simplified Chinese and other words are English. A language map may use `zh-hans`, `zh-hant`, `zh-CN`, `zh`, or `en`. At most 32 keywords, each at most 64 characters.
 
 ```json
 {
   "title": "熊猫头",
   "short_name": "PandaHead",
   "type": "static",
-  "featured": true,
-  "installed_default": false,
+  "emojis": false,
   "license": "",
   "attribution": "ChineseBQB",
   "source_url": "https://github.com/zhaoolee/ChineseBQB",

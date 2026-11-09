@@ -94,14 +94,14 @@ func TestChineseKeywordSearch(t *testing.T) {
 	if len(sets.GetSets()) != 1 || sets.GetSets()[0].GetSet().GetTitle() != "猫猫１号" {
 		t.Fatalf("width-folded title search %#v", sets.GetSets())
 	}
-	if len(s.SearchSets("熊猫", 0, false).GetSets()) != 0 {
-		t.Fatal("title search matched a keyword")
+	byWord := s.SearchSets("熊猫", 0, false)
+	if len(byWord.GetSets()) != 1 || byWord.GetSets()[0].GetSet().GetShortName() != "PandaHead" {
+		t.Fatalf("keyword pack search %#v", byWord.GetSets())
 	}
-	fluent := s.SearchSets("ｆＬｕＥｎＴ", 0, false)
-	if len(fluent.GetSets()) != 1 || fluent.GetSets()[0].GetSet().GetShortName() != ShortFluent {
-		t.Fatalf("fullwidth title search %#v", fluent.GetSets())
+	if len(s.SearchSets("ｆＬｕＥｎＴ", 0, false).GetSets()) != 0 {
+		t.Fatal("foreign seed pack is still in pack search")
 	}
-	if again := s.SearchSets("ｆＬｕＥｎＴ", fluent.GetHash(), false); again.GetPredicateName() != mtproto.Predicate_messages_foundStickerSetsNotModified {
+	if again := s.SearchSets("熊猫", byWord.GetHash(), false); again.GetPredicateName() != mtproto.Predicate_messages_foundStickerSetsNotModified {
 		t.Fatalf("search sets hash %s", again.GetPredicateName())
 	}
 
@@ -127,9 +127,80 @@ func TestChineseKeywordSearch(t *testing.T) {
 		t.Fatalf("second page %#v", page2.GetStickers())
 	}
 
-	heart := emojiFromCode("2764") + "\uFE0F"
-	if len(s.StickersByEmoji(heart, 0, false).GetStickers()) == 0 {
+	bare := emojiFromCode("2764")
+	s.addPack(&Pack{
+		ID: 9010, AccessHash: 1, ShortName: "Hearts", Title: "红心",
+		Kind: KindSticker, InstalledDefault: true,
+		Items: []*Item{{
+			DocumentID: 9011, AccessHash: 1, Emoticon: bare,
+			MIME: "image/webp", FileName: "heart.webp", Width: 512, Height: 512,
+		}},
+	})
+	if len(s.StickersByEmoji(bare+"\uFE0F", 0, false).GetStickers()) == 0 {
 		t.Fatal("heart with variation selector did not match")
+	}
+}
+
+func TestImportedPackIsDefaultInstalledUntilRemoved(t *testing.T) {
+	s := newService(builtinPacks())
+	const smile = "\U0001F642"
+	item := &Item{
+		DocumentID: 9101, AccessHash: 1, Emoticon: smile,
+		MIME: "image/webp", FileName: "happy.webp", Width: 512, Height: 512,
+		Keywords: []string{"开心"},
+	}
+	s.addPack(&Pack{
+		ID: 9100, AccessHash: 1, ShortName: "HappyBQB", Title: "开心包",
+		Kind: KindSticker, Official: true, Featured: true, InstalledDefault: true,
+		Items: []*Item{item},
+	})
+	emojiItem := &Item{
+		DocumentID: 9102, AccessHash: 1, Emoticon: smile,
+		MIME: "image/webp", FileName: "happy-emoji.webp", Width: 512, Height: 512,
+		CustomEmoji: true, Keywords: []string{"开心"},
+	}
+	s.addPack(&Pack{
+		ID: 9103, AccessHash: 1, ShortName: "HappyEmoji", Title: "开心表情",
+		Kind: KindCustomEmoji, Official: true, Emojis: true, Featured: true, InstalledDefault: true,
+		Items: []*Item{emojiItem},
+	})
+
+	for _, user := range []int64{1, 2} {
+		if !listed(s.AllStickers(user, 0), "HappyBQB") {
+			t.Fatalf("user %d is missing the default sticker pack", user)
+		}
+		if !listed(s.EmojiStickers(user, 0), "HappyEmoji") {
+			t.Fatalf("user %d is missing the default custom-emoji pack", user)
+		}
+	}
+	if len(s.Featured(1, 0, false).GetSets()) == 0 || len(s.Featured(1, 0, true).GetSets()) == 0 {
+		t.Fatal("default packs are not featured")
+	}
+	sets := s.SearchSets("开心", 0, false)
+	if len(sets.GetSets()) != 1 || sets.GetSets()[0].GetSet().GetShortName() != "HappyBQB" {
+		t.Fatalf("pack search 开心 %#v", sets.GetSets())
+	}
+	byEmoji := s.SearchSets(smile, 0, false)
+	if len(byEmoji.GetSets()) != 1 || byEmoji.GetSets()[0].GetSet().GetShortName() != "HappyBQB" {
+		t.Fatalf("pack search emoji %#v", byEmoji.GetSets())
+	}
+	docs := s.SearchStickers("开心", "", []string{"zh-hans"}, false, 0, 20, 0)
+	if len(docs.GetStickers()) != 1 || docs.GetStickers()[0].GetId() != 9101 {
+		t.Fatalf("sticker search %#v", docs.GetStickers())
+	}
+	kw := s.Keywords("zh-CN", 0)
+	if kw.GetLangCode() != "zh-CN" || !keywordHas(kw, "开心", smile) {
+		t.Fatalf("keywords %#v", kw.GetKeywords())
+	}
+	in := mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: "HappyBQB"}).To_InputStickerSet()
+	if err := s.Uninstall(1, in); err != nil {
+		t.Fatal(err)
+	}
+	if listed(s.AllStickers(1, 0), "HappyBQB") {
+		t.Fatal("uninstall did not remove the pack for that user")
+	}
+	if !listed(s.AllStickers(2, 0), "HappyBQB") {
+		t.Fatal("uninstall removed the pack for another user")
 	}
 }
 

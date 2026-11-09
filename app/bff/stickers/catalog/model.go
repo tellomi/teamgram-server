@@ -82,6 +82,20 @@ type Item struct {
 	MaskCoords   *mtproto.MaskCoords
 }
 
+// foreignSeed is a placeholder pack shipped for development (Twemoji,
+// Fluent Emoji, Noto Emoji). The sticker panel does not list it.
+func (p *Pack) foreignSeed() bool {
+	if p == nil {
+		return false
+	}
+	switch p.ShortName {
+	case ShortTwemoji, ShortFluent, ShortNoto:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Pack) system() bool {
 	switch p.Kind {
 	case KindSticker, KindCustomEmoji:

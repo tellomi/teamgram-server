@@ -12,15 +12,9 @@ func TestBuiltinPacksInstalledWithThumbs(t *testing.T) {
 	s := newService(builtinPacks())
 	const user int64 = 7
 	all := s.AllStickers(user, 0)
-	want := map[string]bool{ShortTwemoji: false, ShortFluent: false}
 	for _, set := range all.GetSets() {
-		if _, ok := want[set.GetShortName()]; ok {
-			want[set.GetShortName()] = set.GetInstalledDate() != nil && set.GetCount() > 0
-		}
-	}
-	for name, ok := range want {
-		if !ok {
-			t.Fatalf("%s is not installed with documents", name)
+		if set.GetShortName() == ShortTwemoji || set.GetShortName() == ShortFluent {
+			t.Fatalf("%s is still installed", set.GetShortName())
 		}
 	}
 	got, err := s.GetSet(user, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{
@@ -55,8 +49,8 @@ func TestBuiltinPacksInstalledWithThumbs(t *testing.T) {
 		t.Fatalf("recent %s", recent.GetPredicateName())
 	}
 	featured := s.Featured(user, 0, false)
-	if featured.GetPredicateName() != mtproto.Predicate_messages_featuredStickers || len(featured.GetSets()) == 0 {
-		t.Fatal("featured stickers are empty")
+	if featured.GetPredicateName() != mtproto.Predicate_messages_featuredStickers || len(featured.GetSets()) != 0 {
+		t.Fatal("foreign seed packs are featured")
 	}
 }
 

@@ -87,6 +87,32 @@ func TestPreparedPackSplitAndDryRun(t *testing.T) {
 	}
 }
 
+func TestCustomEmojiManifest(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.webp"), webpVP8X(512, 512), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{
+  "title": "开心表情",
+  "short_name": "HappyEmoji",
+  "type": "custom_emoji",
+  "stickers": [{"file":"a.webp","emoticon":"🙂","keywords":{"zh-hans":["开心"]}}]
+}`
+	if err := os.WriteFile(filepath.Join(root, manifestName), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packs, _, err := ReadPrepared(root, ImportOptions{Featured: true, InstalledDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packs) != 1 || !packs[0].Emojis || packs[0].Kind != KindCustomEmoji || !packs[0].Featured || !packs[0].InstalledDefault {
+		t.Fatalf("pack %#v", packs[0])
+	}
+	if !packs[0].Items[0].CustomEmoji || packs[0].Items[0].Emoticon != "🙂" {
+		t.Fatalf("item %#v", packs[0].Items[0])
+	}
+}
+
 func TestVideoManifest(t *testing.T) {
 	root := t.TempDir()
 	body := sampleWebM(1.5, "V_VP9", 512, 512)

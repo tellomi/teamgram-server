@@ -139,22 +139,21 @@ func TestManageStickersAndGifs(t *testing.T) {
 		t.Fatalf("document %#v %v", attached, err)
 	}
 
-	fluent := shortName(ShortFluent)
-	if err = s.Toggle(user, false, true, false, []*mtproto.InputStickerSet{fluent}); err != nil {
+	if err = s.Toggle(user, false, true, false, []*mtproto.InputStickerSet{setIn}); err != nil {
 		t.Fatal(err)
 	}
 	arch := s.ArchivedStickers(user, false, false, 0, 50)
-	if arch.GetCount() != 1 || arch.GetSets()[0].GetSet().GetShortName() != ShortFluent {
+	if arch.GetCount() != 1 || arch.GetSets()[0].GetSet().GetShortName() != "MineSet" {
 		t.Fatalf("archived %#v", arch.GetSets())
 	}
-	if listedInAll(s.AllStickers(user, 0), ShortFluent) {
+	if listedInAll(s.AllStickers(user, 0), "MineSet") {
 		t.Fatal("archived set is still installed in the panel")
 	}
-	if err = s.Toggle(user, false, false, true, []*mtproto.InputStickerSet{fluent}); err != nil {
+	if err = s.Toggle(user, false, false, true, []*mtproto.InputStickerSet{setIn}); err != nil {
 		t.Fatal(err)
 	}
-	if !listedInAll(s.AllStickers(user, 0), ShortFluent) {
-		t.Fatal("unarchive did not install Fluent")
+	if !listedInAll(s.AllStickers(user, 0), "MineSet") {
+		t.Fatal("unarchive did not install the set")
 	}
 
 	before := s.AllStickers(user, 0).GetSets()
@@ -173,6 +172,14 @@ func TestManageStickersAndGifs(t *testing.T) {
 		t.Fatalf("reorder first %d want %d", after[0].GetId(), order[0])
 	}
 
+	s.addPack(&Pack{
+		ID: 88001, AccessHash: 1, ShortName: "FeatMine", Title: "精选",
+		Kind: KindSticker, Featured: true,
+		Items: []*Item{{
+			DocumentID: 88002, AccessHash: 1, Emoticon: "😀",
+			MIME: "image/webp", FileName: "a.webp", Width: 512, Height: 512,
+		}},
+	})
 	featured := s.Featured(user, 0, false)
 	if len(featured.GetUnread()) == 0 {
 		t.Fatal("featured stickers started read")

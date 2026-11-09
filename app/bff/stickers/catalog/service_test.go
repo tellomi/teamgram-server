@@ -37,20 +37,13 @@ func TestCatalogAPIs(t *testing.T) {
 	if all.GetPredicateName() != mtproto.Predicate_messages_allStickers {
 		t.Fatalf("all stickers predicate %s", all.GetPredicateName())
 	}
-	var sawTwemoji bool
 	for _, set := range all.GetSets() {
-		if set.GetShortName() == ShortTwemoji {
-			sawTwemoji = true
-			if set.GetInstalledDate() == nil {
-				t.Fatal("twemoji is not installed")
-			}
-		}
-		if set.GetShortName() == ShortAnimatedEmoji {
+		switch set.GetShortName() {
+		case ShortTwemoji, ShortFluent, ShortNoto:
+			t.Fatalf("foreign seed %s is still in the sticker panel", set.GetShortName())
+		case ShortAnimatedEmoji:
 			t.Fatal("system animated set was listed in getAllStickers")
 		}
-	}
-	if !sawTwemoji {
-		t.Fatal("twemoji was not installed by default")
 	}
 	again := s.AllStickers(user, all.GetHash())
 	if again.GetPredicateName() != mtproto.Predicate_messages_allStickersNotModified {
@@ -58,8 +51,10 @@ func TestCatalogAPIs(t *testing.T) {
 	}
 
 	emojiSets := s.EmojiStickers(user, 0)
-	if len(emojiSets.GetSets()) == 0 || emojiSets.GetSets()[0].GetShortName() != ShortNoto {
-		t.Fatalf("emoji stickers %#v", emojiSets.GetSets())
+	for _, set := range emojiSets.GetSets() {
+		if set.GetShortName() == ShortNoto {
+			t.Fatal("Noto is still installed in the emoji panel")
+		}
 	}
 
 	animated := mtproto.MakeTLInputStickerSetAnimatedEmoji(&mtproto.InputStickerSet{}).To_InputStickerSet()
@@ -101,33 +96,17 @@ func TestCatalogAPIs(t *testing.T) {
 		}
 	}
 
-	featured := s.Featured(0, 0, false)
-	if len(featured.GetSets()) == 0 {
-		t.Fatal("no featured sticker sets")
+	if len(s.Featured(0, 0, false).GetSets()) != 0 {
+		t.Fatal("foreign seed packs are still featured")
 	}
-	found := s.SearchSets("fluent", 0, false)
-	if len(found.GetSets()) != 1 || found.GetSets()[0].GetSet().GetShortName() != ShortFluent {
-		t.Fatalf("search %#v", found.GetSets())
+	if len(s.SearchSets("fluent", 0, false).GetSets()) != 0 {
+		t.Fatal("foreign seed packs are still in pack search")
 	}
-	if _, err = s.Install(user, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: ShortFluent}).To_InputStickerSet(), false); err != nil {
-		t.Fatal(err)
+	tw, err := s.GetSet(user, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: ShortTwemoji}).To_InputStickerSet(), 0)
+	if err != nil || len(tw.GetDocuments()) == 0 {
+		t.Fatalf("twemoji getStickerSet: %v", err)
 	}
-	if !listed(s.AllStickers(user, 0), ShortFluent) {
-		t.Fatal("install did not add Fluent")
-	}
-	if err = s.Uninstall(user, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{ShortName: ShortTwemoji}).To_InputStickerSet()); err != nil {
-		t.Fatal(err)
-	}
-	if listed(s.AllStickers(user, 0), ShortTwemoji) {
-		t.Fatal("uninstall left Twemoji installed")
-	}
-
-	grin := emojiFromCode("1f600")
-	docs := s.StickersByEmoji(grin, 0, false)
-	if len(docs.GetStickers()) == 0 {
-		t.Fatal("no static sticker for grinning face")
-	}
-	id := docs.GetStickers()[0].GetId()
+	id := tw.GetDocuments()[0].GetId()
 	if err = s.SaveRecent(user, id, false, false); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +142,7 @@ func TestCatalogAPIs(t *testing.T) {
 	if same.GetPredicateName() != mtproto.Predicate_messages_availableReactionsNotModified {
 		t.Fatalf("reactions hash %s", same.GetPredicateName())
 	}
+	grin := emojiFromCode("1f600")
 	customDocs := s.Documents(s.CustomEmojiIDs(grin))
 	if len(customDocs.Datas) == 0 || customDocs.Datas[0].GetId() == 0 {
 		t.Fatal("custom emoji documents missing")

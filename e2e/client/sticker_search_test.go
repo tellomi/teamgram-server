@@ -53,8 +53,14 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		Q:           "ｆＬｕＥｎＴ",
 	})
 	sets, ok := found.(*mtproto.TLMessagesFoundStickerSets)
-	if !ok || len(sets.GetSets()) == 0 || sets.GetSets()[0].GetSet().GetShortName() != "FluentEmoji" {
-		t.Fatalf("fullwidth set search = %T %#v", found, found)
+	if !ok {
+		t.Fatalf("set search = %T", found)
+	}
+	for _, set := range sets.GetSets() {
+		switch set.GetSet().GetShortName() {
+		case "Twemoji", "FluentEmoji", "NotoEmoji":
+			t.Fatalf("foreign seed still searchable: %s", set.GetSet().GetShortName())
+		}
 	}
 	same := invokeOK(t, a, &mtproto.TLMessagesSearchStickerSets{
 		Constructor: mtproto.CRC32_messages_searchStickerSets,
@@ -71,17 +77,22 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		LangCode:    []string{"en"},
 		Limit:       20,
 	})
-	docs, ok := stickers.(*mtproto.TLMessagesFoundStickers)
-	if !ok || len(docs.GetStickers()) == 0 {
-		t.Fatalf("keyword search = %T %#v", stickers, stickers)
+	if _, ok = stickers.(*mtproto.TLMessagesFoundStickers); !ok {
+		t.Fatalf("keyword search = %T", stickers)
 	}
 
 	all := invokeOK(t, a, &mtproto.TLMessagesGetAllStickers{
 		Constructor: mtproto.CRC32_messages_getAllStickers,
 	})
 	installed, ok := all.(*mtproto.TLMessagesAllStickers)
-	if !ok || len(installed.GetSets()) == 0 || installed.GetHash() == 0 {
-		t.Fatalf("all stickers = %T %#v", all, all)
+	if !ok || installed.GetHash() == 0 {
+		t.Fatalf("all stickers = %T %+v", all, all)
+	}
+	for _, set := range installed.GetSets() {
+		switch set.GetShortName() {
+		case "Twemoji", "FluentEmoji", "NotoEmoji":
+			t.Fatalf("foreign seed still installed: %s", set.GetShortName())
+		}
 	}
 	again := invokeOK(t, a, &mtproto.TLMessagesGetAllStickers{
 		Constructor: mtproto.CRC32_messages_getAllStickers,
@@ -95,8 +106,14 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		Constructor: mtproto.CRC32_messages_getFeaturedStickers,
 	})
 	page, ok := featured.(*mtproto.TLMessagesFeaturedStickers)
-	if !ok || page.GetCount() < 1 || len(page.GetSets()) == 0 || int(page.GetCount()) < len(page.GetSets()) {
+	if !ok || int(page.GetCount()) < len(page.GetSets()) {
 		t.Fatalf("featured = %T %+v", featured, featured)
+	}
+	for _, set := range page.GetSets() {
+		switch set.GetSet().GetShortName() {
+		case "Twemoji", "FluentEmoji", "NotoEmoji":
+			t.Fatalf("foreign seed still featured: %s", set.GetSet().GetShortName())
+		}
 	}
 	cached := invokeOK(t, a, &mtproto.TLMessagesGetFeaturedStickers{
 		Constructor: mtproto.CRC32_messages_getFeaturedStickers,
@@ -111,7 +128,7 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		Limit:       10,
 	})
 	oldPage, ok := old.(*mtproto.TLMessagesFeaturedStickers)
-	if !ok || oldPage.GetCount() != page.GetCount() || len(oldPage.GetSets()) == 0 {
+	if !ok || oldPage.GetCount() != page.GetCount() {
 		t.Fatalf("old featured = %T %+v", old, old)
 	}
 }

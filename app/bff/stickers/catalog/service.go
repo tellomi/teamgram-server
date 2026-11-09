@@ -113,7 +113,7 @@ func (s *Service) EmojiStickers(userID, hash int64) *mtproto.Messages_AllSticker
 
 func (s *Service) listStickers(userID, hash int64, emoji bool) *mtproto.Messages_AllStickers {
 	return s.listInstalled(userID, hash, func(p *Pack) bool {
-		return !p.system() && p.Emojis == emoji && !p.Masks
+		return !p.system() && !p.foreignSeed() && p.Emojis == emoji && !p.Masks
 	})
 }
 
@@ -206,7 +206,7 @@ func (s *Service) featuredPage(userID, hash int64, emoji bool, offset, limit int
 	var ids []int64
 	seen := s.state(userID).featuredRead
 	for _, p := range s.packs {
-		if !p.Featured || p.system() || p.Emojis != emoji {
+		if !p.Featured || p.system() || p.foreignSeed() || p.Emojis != emoji {
 			continue
 		}
 		var keep bool
@@ -388,13 +388,13 @@ func (s *Service) SearchSets(q string, hash int64, emojiOnly bool) *mtproto.Mess
 	var matched []*Pack
 	var ids []int64
 	for _, p := range s.packs {
-		if p.system() {
+		if p.system() || p.foreignSeed() {
 			continue
 		}
-		if emojiOnly && !p.Emojis {
+		if p.Emojis != emojiOnly {
 			continue
 		}
-		if q != "" && !strings.Contains(foldText(p.Title), q) && !strings.Contains(foldText(p.ShortName), q) {
+		if q != "" && !strings.Contains(foldText(p.Title), q) && !strings.Contains(foldText(p.ShortName), q) && !packMatchesQuery(p, q) {
 			continue
 		}
 		var keep bool
@@ -418,6 +418,25 @@ func (s *Service) SearchSets(q string, hash int64, emojiOnly bool) *mtproto.Mess
 	}).To_Messages_FoundStickerSets()
 }
 
+// packMatchesQuery is true when a sticker in the pack carries the query as
+// an emoticon or as a keyword. The sticker panel's pack search sends the
+// typed text here, including Chinese words and a single emoji.
+func packMatchesQuery(p *Pack, q string) bool {
+	if p == nil || q == "" {
+		return false
+	}
+	langs := searchLangs(nil, q)
+	for _, item := range p.visibleItems() {
+		if item == nil {
+			continue
+		}
+		if emojiEqual(item.Emoticon, q) || item.keywordHit(q, langs) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtproto.Messages_Stickers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -428,7 +447,7 @@ func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtp
 		return stickersResult(nil, nil, hash)
 	}
 	for _, p := range s.packs {
-		if p.system() {
+		if p.system() || p.foreignSeed() {
 			continue
 		}
 		if custom != p.Emojis {
@@ -486,7 +505,7 @@ func (s *Service) SearchStickers(q, emoticon string, langCodes []string, emoji b
 		return stickersFound(nil, nil, hash, 0, false)
 	}
 	for _, p := range s.packs {
-		if p.system() || p.Emojis != emoji {
+		if p.system() || p.foreignSeed() || p.Emojis != emoji {
 			continue
 		}
 		for _, item := range p.Items {
