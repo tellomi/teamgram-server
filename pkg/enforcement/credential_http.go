@@ -2,15 +2,22 @@ package enforcement
 
 import (
 	"context"
+	"crypto/hmac"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 )
+
+// EnvServiceKey is standard base64 of at least 32 bytes. The caller sends
+// that same base64 as Authorization: Bearer. Unset means the check refuses.
+const EnvServiceKey = "TELLOMI_ENFORCEMENT_SERVICE_KEY"
 
 const stateUnknown = "unknown"
 
@@ -22,11 +29,30 @@ type SubjectVerifier interface {
 }
 
 // CredentialHandler answers content-engine read/write checks.
-// It does not call out to any URL in the request, and it does not accept a
-// shared bearer as permission to name a user.
+// It does not call out to any URL in the request. Key is the service secret
+// from configuration. The bearer proves the caller; it does not name a user.
+// An empty Key refuses every check.
 type CredentialHandler struct {
 	Verify SubjectVerifier
+	Key    []byte
 	Now    func() time.Time
+}
+
+// LoadServiceKey reads EnvServiceKey. An empty, undecodable, or short value
+// is an error. The handler does not read this variable itself.
+func LoadServiceKey() ([]byte, error) {
+	raw := strings.TrimSpace(os.Getenv(EnvServiceKey))
+	if raw == "" {
+		return nil, errors.New("enforcement: service key is not configured")
+	}
+	buf, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		buf, err = base64.RawStdEncoding.DecodeString(raw)
+	}
+	if err != nil || len(buf) < 32 {
+		return nil, errors.New("enforcement: service key is not configured")
+	}
+	return buf, nil
 }
 
 func (h CredentialHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +63,10 @@ func (h CredentialHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= 0 {
 		writeDenied(w, http.StatusGatewayTimeout, "ACCOUNT_STATE_UNKNOWN", stateUnknown)
+		return
+	}
+	if !serviceAuthorized(r, h.Key) {
+		writeDeniedStatus(w, http.StatusUnauthorized, "unauthorized", "unauthorized", "unauthorized")
 		return
 	}
 	var body struct {
@@ -91,6 +121,23 @@ func (h CredentialHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ErrSubjectUnbound means the JWT verified but no server-side sub binding exists.
 // It is not a guess and not a store outage.
 var ErrSubjectUnbound = errors.New("enforcement: credential subject is unbound")
+
+// serviceAuthorized matches the bearer check used by discoverpush, announce,
+// and discoverrel. The key is compared in constant time. A missing key,
+// a missing header, and a wrong secret all fail the same way.
+func serviceAuthorized(r *http.Request, key []byte) bool {
+	const prefix = "Bearer "
+	header := r.Header.Get("Authorization")
+	token, ok := strings.CutPrefix(header, prefix)
+	if !ok || len(key) == 0 {
+		return false
+	}
+	got, err := base64.StdEncoding.DecodeString(strings.TrimSpace(token))
+	if err != nil || len(got) != len(key) {
+		return false
+	}
+	return hmac.Equal(got, key)
+}
 
 func writeDenied(w http.ResponseWriter, status int, code, state string) {
 	kind := "unavailable"

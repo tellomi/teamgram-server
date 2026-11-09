@@ -20,6 +20,7 @@
 | `TELLOMI_ENFORCEMENT_STORE` | 空 | `memory` 不会安装。这个名字只存在于测试，不能当生产开关 |
 | `TELLOMI_ENFORCEMENT_CREATE` | 空 | `1` 才允许新建。关掉不清空已有记录 |
 | `TELLOMI_ENFORCEMENT_MYSQL` | 空 | 指向已经 `Migrate` 过的单独库。空着不安装。启动不建表 |
+| `TELLOMI_ENFORCEMENT_SERVICE_KEY` | 空 | 凭证复查的服务间密钥，至少 32 字节的标准 base64。空着或无效时该端点拒绝，不放行 |
 
 持久记录只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库，并且该库已经显式执行过 `Migrate` 时才打开。`OpenMySQL` 和进程启动不建表。聊天库名 `teamgram` 会被拒绝。表不进 `teamgramd/deploy/sql`。
 

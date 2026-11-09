@@ -38,39 +38,47 @@
 
 ## 发现引擎：已发出的 JWT
 
-本进程签发新凭证时，永久停用直接拒绝。已经发出、尚未过期的 JWT 不在本进程里保存明文。引擎在每次读和写之前调用：
-
-`CheckCredential(userID, write bool, now)`
-
-约定的 HTTP 形状（引擎来拉，不是本进程主动推）：
+本进程签发新凭证时，永久停用直接拒绝。已经发出、尚未过期的 JWT 不在本进程里保存明文。引擎在每次读和写之前调用 HTTP，不是进程内函数。
 
 `POST /internal/v1/enforcement/credentials/check`
 
 处理函数是 `enforcement.CredentialHandler`。本进程默认不监听。`ListenLoopback` 只接受 `127.0.0.1` 或 `::1`，拒绝 `0.0.0.0` 和其他地址。非本机的链路要由调用方自己做 TLS，本进程不在可路由地址上提供明文端口。处理函数不会根据请求去访问任何 URL。
 
-请求体是发现凭证本身，不是调用方填写的用户号：
+`CheckCredential(userID, write bool, now)` 只在本进程内部使用：HTTP 层已经从凭证解出用户号之后才调用它。引擎不传 `userID`，也不调用这个函数。
+
+请求：
+
+```http
+POST /internal/v1/enforcement/credentials/check
+Authorization: Bearer <标准 base64(服务密钥)>
+```
 
 ```json
 {"credential": "<discover JWT>", "write": true}
 ```
 
+服务密钥只从配置 `TELLOMI_ENFORCEMENT_SERVICE_KEY` 读取。值是至少 32 字节的标准 base64，和 `discoverpush`、`announce`、`discoverrel` 的服务间密钥同一比较方式：请求头里的 Bearer 先按标准 base64 解码，再与配置中的原始字节做常量时间比较。未配置、请求没带这个头、密钥错误、或不是 `Bearer`，都返回 HTTP 401，响应体相同，`allow: false`，`status` 为 `unauthorized`。响应不区分是哪一种。这个 Bearer 只证明调用方身份，不能指定用户。`f54863fc` 还没有这道校验；content-engine `9352515` 对那个头的联调因此不会带上它。
+
+进入处理函数时，若请求上下文的截止时间已经过去，返回 HTTP 504，`status` 为 `unavailable`，`allow: false`。处理函数不另外计时。验签失败和存储失败仍是 HTTP 503 `unavailable`。
+
 服务端用现有 `discoverauth.Verify` 核对 HS256。`sub` 不是用户号，也不能把看起来像数字的 `sub` 当成用户号。它是 `base64url(HMAC-SHA256(pseudonymKey, 十进制 user id) 的前 16 字节)`，新旧发现 JWT 都是这个算法。
 
 用户号只来自服务端自己写入的 `credential_subject`。签发 `discover.getEngineCredential` 或 `discover.getAudienceToken` 时，若处罚服务已安装，就用同一把 pseudonym key 把这个 `sub` 记下来。已经发出的旧票没有单独的 uid 字段；只要该用户被用同一把 key 记过一次，旧票的 `sub` 就能对上。这不是猜测。没有这行记录时返回 HTTP 403，`status` 和 `code` 都是 `enforcement_unavailable`，`allow: false`。不编用户号。这和 content-engine `1347091e256a1de1a971ed7685aa7154e72568ad` 的读写都拒绝一致。显式补记是 `RecordSubject`，不在进程启动时扫描用户表。请求头 `X-User-Id` 同样忽略。
 
-请求里的 `user_id` 被忽略。静态 Bearer 不能指定用户。
+请求里的 `user_id` 被忽略。服务 Bearer 不能指定用户。
 
 | `status` | `allow` | 含义 |
 | --- | --- | --- |
 | `clear` | true | 已安装，读成功，这次操作没有被处罚或锁挡住 |
 | `enforced` | false | 已安装，读成功，按上表拒绝 |
 | `enforcement_unavailable` | false | HTTP 403。票验签通过但没有服务端 sub 绑定，或可信身份不足。读写都拒绝。不是处罚记录 |
-| `unavailable` | false | HTTP 503。验签失败、存储失败或超时。不是「没有处罚」 |
+| `unavailable` | false | HTTP 503。验签失败或存储失败。不是「没有处罚」。只有请求上下文在进入处理函数时已经过期，才返回 HTTP 504，状态仍是 `unavailable` |
 | `disabled` | false | HTTP 503。处理器或处罚服务没安装。不是成功放行 |
+| `unauthorized` | false | HTTP 401。服务密钥未配置、缺失或错误。三种情况的响应体相同 |
 
 没有「允许」缓存。`401`、`403`、`5xx` 和无法解析的决定都不是放行。读请求如果超时或收到 5xx，不得把已经见到的 `permanent_disabled` 或 `security_lock` 清掉。写请求遇到超时或 5xx 直接拒绝。
 
-与 content-engine `1347091e256a1de1a971ed7685aa7154e72568ad` 对齐的是上面这组词。该引擎提交当时测到的服务端处理器仍是 `6710d1a3`，不能把那个结果当成这份契约已经联调通过。
+处罚词与 content-engine `1347091e256a1de1a971ed7685aa7154e72568ad` 一致。该引擎 `9352515` 对服务端 `f54863fc` 做了本机 `127.0.0.1` 联调。服务密钥这道校验新于那个头，所以那次联调没有覆盖 401。`6710d1a3` 不能代表当前实现。
 
 ```json
 {"allow": false, "status": "enforced", "code": "ACCOUNT_PERMANENT_DISABLED", "state": "permanent_disabled"}

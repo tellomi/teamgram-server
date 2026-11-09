@@ -54,7 +54,8 @@ func TestLoopbackContract(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	cred := CredentialHandler{Now: func() time.Time { return now }, Verify: subjectFunc(func(token string, at time.Time) (int64, error) {
+	svcKey := testServiceKey()
+	cred := CredentialHandler{Now: func() time.Time { return now }, Key: svcKey, Verify: subjectFunc(func(token string, at time.Time) (int64, error) {
 		return FeedSubject(key, s.UserForSubject, token, at)
 	})}
 	mux.Handle("/internal/v1/enforcement/credentials/check", cred)
@@ -85,6 +86,7 @@ func TestLoopbackContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		authorizeService(req, svcKey)
 		if header != "" {
 			req.Header.Set("X-User-Id", header)
 		}

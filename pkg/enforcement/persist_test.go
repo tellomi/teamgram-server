@@ -1,8 +1,10 @@
 package enforcement
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -191,11 +193,13 @@ func TestOldSubjectResolvesWithoutCallerUserID(t *testing.T) {
 	if _, err = discoverauth.Verify(key, token, now); err != nil {
 		t.Fatal(err)
 	}
-	h := CredentialHandler{Now: func() time.Time { return now }, Verify: subjectFunc(func(credential string, at time.Time) (int64, error) {
+	svcKey := testServiceKey()
+	h := CredentialHandler{Now: func() time.Time { return now }, Key: svcKey, Verify: subjectFunc(func(credential string, at time.Time) (int64, error) {
 		return FeedSubject(key, s.UserForSubject, credential, at)
 	})}
 	body := `{"credential":"` + token + `","write":true,"user_id":7}`
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(body))
+	authorizeService(req, svcKey)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":true`) || strings.Contains(rec.Body.String(), `"state":"permanent`) {
@@ -206,6 +210,7 @@ func TestOldSubjectResolvesWithoutCallerUserID(t *testing.T) {
 		t.Fatal(err)
 	}
 	req = httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"`+other+`","write":false,"user_id":42}`))
+	authorizeService(req, svcKey)
 	req.Header.Set("X-User-Id", "42")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -216,6 +221,14 @@ func TestOldSubjectResolvesWithoutCallerUserID(t *testing.T) {
 	if id, ok, _ := s.UserForSubject(numeric); ok || id == 42 {
 		t.Fatal("numeric sub was treated as a user id")
 	}
+}
+
+func testServiceKey() []byte {
+	return bytes.Repeat([]byte{0x5a}, 32)
+}
+
+func authorizeService(req *http.Request, key []byte) {
+	req.Header.Set("Authorization", "Bearer "+base64.StdEncoding.EncodeToString(key))
 }
 
 type subjectFunc func(string, time.Time) (int64, error)
@@ -238,11 +251,12 @@ func TestCredentialCheckUsesSignedSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := s.clock()
-	h := CredentialHandler{Now: func() time.Time { return now }, Verify: subjectMap{"user-42": 42, "user-7": 7}}
+	svcKey := testServiceKey()
+	h := CredentialHandler{Now: func() time.Time { return now }, Key: svcKey, Verify: subjectMap{"user-42": 42, "user-7": 7}}
 	for _, write := range []bool{false, true} {
 		body := `{"credential":"user-42","write":` + boolJSON(write) + `,"user_id":7}`
 		req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer shared-static-key")
+		authorizeService(req, svcKey)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":false`) || !strings.Contains(rec.Body.String(), "ACCOUNT_PERMANENT_DISABLED") {
@@ -250,12 +264,14 @@ func TestCredentialCheckUsesSignedSubject(t *testing.T) {
 		}
 	}
 	req := httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"user-7","write":true,"user_id":42}`))
+	authorizeService(req, svcKey)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"allow":true`) {
 		t.Fatalf("other subject was judged as the self-reported user: %s", rec.Body.String())
 	}
 	req = httptest.NewRequest(http.MethodPost, "/internal/v1/enforcement/credentials/check", strings.NewReader(`{"credential":"missing","write":true,"user_id":42}`))
+	authorizeService(req, svcKey)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), `"allow":true`) {
