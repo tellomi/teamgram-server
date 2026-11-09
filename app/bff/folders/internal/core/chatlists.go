@@ -756,6 +756,19 @@ func missingRefs(inv storedInvite, joined *mtproto.DialogFilter, hidden []peerRe
 	return out
 }
 
+// countStoredFolders is the number of real folders. dialogFilterDefault
+// (id 0) is always on the client and does not consume dialog_filters_limit.
+func countStoredFolders(rows []*dialog.DialogFilterExt) int {
+	n := 0
+	for _, row := range rows {
+		if row == nil || row.GetId() == dialog.DialogFilterDefaultID {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 func (c *FoldersCore) countJoined(rows []*dialog.DialogFilterExt) int {
 	n := 0
 	for _, row := range rows {
