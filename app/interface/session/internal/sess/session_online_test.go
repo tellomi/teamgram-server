@@ -9,10 +9,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/status/status"
 )
 
-// A second connection on the same auth key stays up while the updates
-// session's socket closes. The user must stay online and the push target
-// must stay in place, or the next message is never pushed live.
-func TestOfflineWaitsForEveryConnection(t *testing.T) {
+// A second generic session stays up while one updates socket closes. The
+// user must stay online and the push target must stay in place.
+func TestOfflineWaitsForEveryGenericConnection(t *testing.T) {
 	rec := &recordingStatus{}
 	m := newTestWrapper(rec)
 
@@ -20,6 +19,7 @@ func TestOfflineWaitsForEveryConnection(t *testing.T) {
 	updates.isGeneric = true
 	m.mainUpdatesSession = updates
 	other := onlineSession(m, m.tempAuth, 2)
+	other.isGeneric = true
 
 	updates.changeConnState(context.Background(), kStateOffline)
 	if len(rec.offline) != 0 {
@@ -32,7 +32,6 @@ func TestOfflineWaitsForEveryConnection(t *testing.T) {
 		t.Fatal("the other connection was taken down")
 	}
 
-	other.isGeneric = true
 	other.changeConnState(context.Background(), kStateOffline)
 	if len(rec.offline) != 1 || rec.offline[0] != m.authKeyId {
 		t.Fatalf("offline calls %v", rec.offline)
@@ -77,6 +76,7 @@ func TestRebindRetargetsWhenUpdatesSessionIsReplaced(t *testing.T) {
 	temp.isGeneric = true
 	m.mainUpdatesSession = temp
 	perm := onlineSession(m, m.mainAuth, 11)
+	perm.isGeneric = true
 	m.tempAuth.authId = 50
 
 	m.resetAuth(mtproto.AuthKeyTypeTemp, 77)
@@ -101,29 +101,62 @@ func TestRebindDropsPushTargetWhenNothingRemains(t *testing.T) {
 	}
 }
 
-func TestUpdatesGoToEveryOnlineSession(t *testing.T) {
+func TestUpdatesGoToEveryGenericSession(t *testing.T) {
 	m := newTestWrapper(nil)
 	first := onlineSession(m, m.mainAuth, 1)
 	first.isGeneric = true
 	first.canSync = true
 	m.mainUpdatesSession = first
 	second := onlineSession(m, m.tempAuth, 2)
+	second.isGeneric = true
 	second.canSync = true
-	closed := onlineSession(m, m.mediaTempAuth, 3)
-	closed.changeConnState(context.Background(), kStateOffline)
+	file := onlineSession(m, m.mediaTempAuth, 3)
 
 	m.onSyncData(context.Background(), &syncData{
 		data: &messageData{obj: mtproto.MakeTLUpdatesTooLong(nil)},
 	})
 
-	if first.outQueue.oMsgs.Len() == 0 {
-		t.Fatal("updates session received nothing")
+	if first.outQueue.oMsgs.Len() == 0 || second.outQueue.oMsgs.Len() == 0 {
+		t.Fatal("a generic session received nothing")
 	}
-	if second.outQueue.oMsgs.Len() == 0 {
-		t.Fatal("second connection received nothing")
+	if file.outQueue.oMsgs.Len() != 0 {
+		t.Fatal("file connection received an update")
 	}
-	if closed.outQueue.oMsgs.Len() != 0 {
-		t.Fatal("closed connection was still a push target")
+}
+
+func TestFileConnectionDoesNotHoldOnline(t *testing.T) {
+	rec := &recordingStatus{}
+	m := newTestWrapper(rec)
+	main := onlineSession(m, m.mainAuth, 1)
+	main.isGeneric = true
+	m.mainUpdatesSession = main
+	file := onlineSession(m, m.mediaTempAuth, 3)
+
+	file.changeConnState(context.Background(), kStateOffline)
+	if len(rec.offline) != 0 {
+		t.Fatal("closing a file socket marked the user offline")
+	}
+	file.connState = kStateOnline
+	main.changeConnState(context.Background(), kStateOffline)
+	if len(rec.offline) != 1 {
+		t.Fatal("user stayed online on a file socket alone")
+	}
+	if file.outQueue.oMsgs.Len() != 0 {
+		t.Fatal("file socket was given updates")
+	}
+}
+
+func TestRebindDoesNotPromoteFileSession(t *testing.T) {
+	m := newTestWrapper(nil)
+	temp := onlineSession(m, m.tempAuth, 22)
+	temp.isGeneric = true
+	m.mainUpdatesSession = temp
+	_ = onlineSession(m, m.mediaTempAuth, 33)
+	m.tempAuth.authId = 50
+
+	m.resetAuth(mtproto.AuthKeyTypeTemp, 79)
+	if m.mainUpdatesSession != nil {
+		t.Fatal("file socket became the updates session")
 	}
 }
 

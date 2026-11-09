@@ -201,14 +201,47 @@ func TestDialogsWhenTotalFitsInLimit(t *testing.T) {
 	}
 }
 
-func TestLastPageIsDialogsNotSlice(t *testing.T) {
+func TestOffsetPageIsSliceWithTotal(t *testing.T) {
 	h := returnableHelper(1)
-	out := h.ToMessagesDialogs(5, true)
-	if out.GetPredicateName() != mtproto.Predicate_messages_dialogs {
+	out := h.ToMessagesDialogs(5, false)
+	if out.GetPredicateName() != mtproto.Predicate_messages_dialogsSlice {
 		t.Fatalf("predicate %s", out.GetPredicateName())
 	}
-	if len(out.GetDialogs()) != 1 {
-		t.Fatalf("dialogs %d", len(out.GetDialogs()))
+	if out.GetCount() != 5 || len(out.GetDialogs()) != 1 {
+		t.Fatalf("count %d dialogs %d", out.GetCount(), len(out.GetDialogs()))
+	}
+}
+
+func TestOffsetEmptyPageKeepsTotalCount(t *testing.T) {
+	out := (&DialogsDataHelper{}).ToMessagesDialogs(4, false)
+	if out.GetPredicateName() != mtproto.Predicate_messages_dialogsSlice {
+		t.Fatalf("predicate %s", out.GetPredicateName())
+	}
+	if out.GetCount() != 4 || len(out.GetDialogs()) != 0 {
+		t.Fatalf("count %d dialogs %d", out.GetCount(), len(out.GetDialogs()))
+	}
+}
+
+func TestFullDialogListOnlyWithoutOffset(t *testing.T) {
+	empty := &mtproto.PeerUtil{PeerType: mtproto.PEER_EMPTY}
+	if !FullDialogList(0, 0, empty, 3, 10) {
+		t.Fatal("first page that fits should be messages.dialogs")
+	}
+	if !FullDialogList(0, 0, nil, 0, 100) {
+		t.Fatal("empty folder on the first page should be messages.dialogs")
+	}
+	if FullDialogList(0, 0, empty, 11, 10) {
+		t.Fatal("first page over the limit should be a slice")
+	}
+	peer := peerUtil(mtproto.PEER_USER, 5)
+	if FullDialogList(20, 5, peer, 3, 100) {
+		t.Fatal("offset page should stay a slice even when the total fits in limit")
+	}
+	if FullDialogList(20, 5, peer, 8, 100) {
+		t.Fatal("offset page should stay a slice")
+	}
+	if FullDialogList(0, 5, empty, 1, 100) {
+		t.Fatal("offset_id alone should stay a slice")
 	}
 }
 
@@ -230,11 +263,11 @@ func TestCountAfterFixDropsUnreturnable(t *testing.T) {
 		TopMessage: 0,
 	}).To_Dialog())
 	out := h.ToMessagesDialogs(2, false)
-	if out.GetPredicateName() != mtproto.Predicate_messages_dialogs {
+	if out.GetPredicateName() != mtproto.Predicate_messages_dialogsSlice {
 		t.Fatalf("predicate %s", out.GetPredicateName())
 	}
-	if len(out.GetDialogs()) != 1 || out.GetDialogs()[0].GetTopMessage() != 1 {
-		t.Fatalf("dialogs %+v", out.GetDialogs())
+	if out.GetCount() != 1 || len(out.GetDialogs()) != 1 || out.GetDialogs()[0].GetTopMessage() != 1 {
+		t.Fatalf("count %d dialogs %+v", out.GetCount(), out.GetDialogs())
 	}
 }
 

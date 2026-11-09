@@ -103,10 +103,11 @@ func (m *DialogsDataHelper) fix() {
 
 // ToMessagesDialogs builds the messages.getDialogs reply.
 // count is the number of dialogs that can be returned, measured after fix().
-// exhausted means this page already holds every dialog still below the
-// cursor, including a first page whose total fits in limit. That reply is
-// messages.dialogs. A page with more rows below it is messages.dialogsSlice.
-func (m *DialogsDataHelper) ToMessagesDialogs(count int32, exhausted bool) *mtproto.Messages_Dialogs {
+// fullList is true only for the first page with no offset when that count
+// fits in limit. The reply is then messages.dialogs. Every offset request,
+// including an empty page, is messages.dialogsSlice with that total, so the
+// client does not replace a non-empty folder with an empty list.
+func (m *DialogsDataHelper) ToMessagesDialogs(count int32, fullList bool) *mtproto.Messages_Dialogs {
 	before := len(m.Dialogs)
 	m.fix()
 	dropped := int32(before - len(m.Dialogs))
@@ -117,7 +118,7 @@ func (m *DialogsDataHelper) ToMessagesDialogs(count int32, exhausted bool) *mtpr
 	if count < page {
 		count = page
 	}
-	if exhausted || count <= page {
+	if fullList {
 		return mtproto.MakeTLMessagesDialogs(&mtproto.Messages_Dialogs{
 			Dialogs:  m.Dialogs,
 			Messages: m.Messages,

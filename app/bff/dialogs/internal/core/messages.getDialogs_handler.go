@@ -72,12 +72,7 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 
 	dialogExtList = c.mergeChannelDialogs(dialogExtList)
 	if len(dialogExtList) == 0 {
-		return mtproto.MakeTLMessagesDialogs(&mtproto.Messages_Dialogs{
-			Dialogs:  []*mtproto.Dialog{},
-			Messages: []*mtproto.Message{},
-			Chats:    []*mtproto.Chat{},
-			Users:    []*mtproto.User{},
-		}).To_Messages_Dialogs(), nil
+		return (&dialog.DialogsDataHelper{}).ToMessagesDialogs(0, dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, 0, limit)), nil
 	}
 
 	for _, dialogEx := range dialogExtList {
@@ -145,12 +140,7 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 
 	dialogExtList = dialogExtList.Keep(messageDialogs.FixedDialogs())
 	if len(dialogExtList) == 0 {
-		return mtproto.MakeTLMessagesDialogs(&mtproto.Messages_Dialogs{
-			Dialogs:  []*mtproto.Dialog{},
-			Messages: []*mtproto.Message{},
-			Chats:    []*mtproto.Chat{},
-			Users:    []*mtproto.User{},
-		}).To_Messages_Dialogs(), nil
+		return (&dialog.DialogsDataHelper{}).ToMessagesDialogs(0, dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, 0, limit)), nil
 	}
 
 	dialogExtList.ApplyTopMessages(messageDialogs.Messages)
@@ -162,7 +152,10 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 		in.OffsetId,
 		offsetPeer,
 		limit)
-	exhausted := dialogExtList.PageIsTail(page, limit)
+	// messages.dialogs only when this is the unoffset first page and the
+	// whole folder fits. An offset, even one that returns nothing, stays a
+	// slice carrying dialogCount.
+	fullList := dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, dialogCount, limit)
 
-	return messageDialogs.ForDialogs(page.TLDialogs()).ToMessagesDialogs(dialogCount, exhausted), nil
+	return messageDialogs.ForDialogs(page.TLDialogs()).ToMessagesDialogs(dialogCount, fullList), nil
 }

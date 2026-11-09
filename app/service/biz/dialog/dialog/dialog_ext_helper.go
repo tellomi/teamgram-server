@@ -91,6 +91,17 @@ func emptyDialogPage(m DialogExtList) DialogExtList {
 	return m[:0]
 }
 
+// FullDialogList is messages.dialogs rather than messages.dialogsSlice.
+// That constructor is only the first page (offset_date 0, offset_id 0,
+// empty offset_peer) when the whole returnable folder fits in limit.
+// Any offset is a slice, even when the page is empty.
+func FullDialogList(offsetDate, offsetId int32, offsetPeer *mtproto.PeerUtil, count, limit int32) bool {
+	if limit <= 0 || count > limit {
+		return false
+	}
+	return dialogsFirstPage(offsetDate, offsetId, offsetPeer)
+}
+
 func dialogsFirstPage(offsetDate, offsetId int32, offsetPeer *mtproto.PeerUtil) bool {
 	if offsetPeer != nil && !offsetPeer.IsEmpty() {
 		return false

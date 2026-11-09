@@ -272,14 +272,11 @@ func (m *MainAuthWrapper) resetAuth(kType int, authId int64) (lastAuthId int64) 
 }
 
 // retargetAfterRebind drops a push target only when that target belonged to
-// the key that was just replaced and no other connection is still up.
+// the key that was just replaced and no other generic session is still up.
+// A media or upload socket is not promoted into the updates session.
 func (m *MainAuthWrapper) retargetAfterRebind(reset *SessionList) {
 	if m.mainUpdatesSession != nil && m.mainUpdatesSession.sessList == reset {
-		if next := m.pickOnlineSession(reset); next != nil {
-			next.isGeneric = true
-			if !next.isAndroidPush {
-				next.canSync = true
-			}
+		if next := m.pickGenericSession(reset); next != nil {
 			m.mainUpdatesSession = next
 		} else {
 			m.mainUpdatesSession = nil
@@ -290,13 +287,13 @@ func (m *MainAuthWrapper) retargetAfterRebind(reset *SessionList) {
 	}
 }
 
-func (m *MainAuthWrapper) pickOnlineSession(skip *SessionList) *session {
+func (m *MainAuthWrapper) pickGenericSession(skip *SessionList) *session {
 	for _, list := range []*SessionList{m.mainAuth, m.tempAuth, m.mediaTempAuth} {
 		if list == nil || list == skip {
 			continue
 		}
 		for _, sess := range list.sessions {
-			if sess != nil && sess.sessionOnline() && !sess.isHttp {
+			if sess.holdsUpdates() {
 				return sess
 			}
 		}
@@ -304,20 +301,17 @@ func (m *MainAuthWrapper) pickOnlineSession(skip *SessionList) *session {
 	return nil
 }
 
-// anyConnectionOnline reports whether any socket on this auth key is still up.
-// Online status and the push target follow that, not a single session pointer.
+// anyConnectionOnline reports whether a generic session or the Android push
+// session is still up. Upload, download, and getFile sockets do not count.
 func (m *MainAuthWrapper) anyConnectionOnline() bool {
 	if m == nil {
 		return false
 	}
-	if m.mainUpdatesSession != nil && m.mainUpdatesSession.sessionOnline() {
-		return true
-	}
-	if m.androidPushSession != nil && m.androidPushSession.sessionOnline() {
+	if m.mainUpdatesSession.keepsOnline() || m.androidPushSession.keepsOnline() {
 		return true
 	}
 	for _, sess := range m.onlineSessions() {
-		if sess != nil {
+		if sess.keepsOnline() {
 			return true
 		}
 	}
@@ -1311,9 +1305,8 @@ func (m *MainAuthWrapper) onSyncData(ctx context.Context, syncMsg *syncData) {
 		}
 	}
 
-	// Official servers deliver the update to every connected session, not only
-	// the one pointer remembered as mainUpdatesSession. A second socket that
-	// is still up has to receive it when the first flips offline.
+	// Updates go to every generic session that is still connected. A file
+	// socket (upload, download, getFile) is not generic and must not see them.
 	seen := make(map[*session]struct{})
 	deliver := func(sess *session, obj mtproto.TLObject) {
 		if sess == nil || !sess.sessionOnline() {
@@ -1326,12 +1319,12 @@ func (m *MainAuthWrapper) onSyncData(ctx context.Context, syncMsg *syncData) {
 		sess.onSyncData(ctx, obj)
 	}
 	for _, sess := range m.onlineSessions() {
-		if sess.isAndroidPush {
+		if !sess.holdsUpdates() {
 			continue
 		}
 		deliver(sess, syncMsg.data.obj)
 	}
-	if m.mainUpdatesSession != nil && !m.mainUpdatesSession.isAndroidPush {
+	if m.mainUpdatesSession.holdsUpdates() {
 		deliver(m.mainUpdatesSession, syncMsg.data.obj)
 	}
 	if syncMsg.needAndroidPush {
