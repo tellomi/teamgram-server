@@ -14,9 +14,10 @@ import (
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
-// StartTellomi wires private replies from user 777001 through messenger.msg.
+// StartTellomi wires replies from user 777001 through messenger.msg.
 // TELLOMI_AI unset returns before any client is built. A missing API key is
-// logged inside tellomiai.Start and does not stop bff.
+// logged inside tellomiai.Start and does not stop bff. The same sender posts
+// private replies and group replies.
 func StartTellomi(conf zrpc.RpcClientConf, dsn string) {
 	if !tellomiai.Advertised() {
 		return
@@ -37,37 +38,57 @@ func (s aiSender) Send(ctx context.Context, to int64, text string, ai bool) erro
 	return err
 }
 
+func (s aiSender) SendGroup(ctx context.Context, peerType int32, peerID int64, replyTo int32, text string, ai bool) error {
+	if s.c == nil {
+		return errNoMsg
+	}
+	_, err := s.c.MsgSendMessageV2(ctx, buildAIGroupMessage(peerType, peerID, replyTo, text, ai, time.Now().UnixNano()))
+	return err
+}
+
 var errNoMsg = errText("tellomi ai: msg client is nil")
 
 type errText string
 
 func (e errText) Error() string { return string(e) }
 
-// buildAIMessage is a private-chat message from @tellomi. When ai is set and
-// the text ends with the visible label, that label is messageEntityBold.
-func buildAIMessage(to int64, text string, ai bool, random int64) *msg.TLMsgSendMessageV2 {
-	var entities []*mtproto.MessageEntity
-	if ai && strings.HasSuffix(text, tellomiai.Label) {
-		prefix := strings.TrimSuffix(text, tellomiai.Label)
-		entities = []*mtproto.MessageEntity{
-			mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{
-				Offset: int32(mtproto.UTF16Len(prefix)),
-				Length: int32(mtproto.UTF16Len(tellomiai.Label)),
-			}).To_MessageEntity(),
-		}
+// labelEntities bolds a trailing AI mark. Assistant replies no longer end
+// with that mark, so they get no entity. Report-review notices still do.
+func labelEntities(text string, ai bool) []*mtproto.MessageEntity {
+	if !ai || !strings.HasSuffix(text, tellomiai.Label) {
+		return nil
+	}
+	prefix := strings.TrimSuffix(text, tellomiai.Label)
+	return []*mtproto.MessageEntity{
+		mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{
+			Offset: int32(mtproto.UTF16Len(prefix)),
+			Length: int32(mtproto.UTF16Len(tellomiai.Label)),
+		}).To_MessageEntity(),
+	}
+}
+
+func aiOutbox(peerType int32, peerID int64, text string, ai bool, replyTo int32, random int64) *msg.TLMsgSendMessageV2 {
+	var reply *mtproto.MessageReplyHeader
+	if replyTo != 0 {
+		reply = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+			ReplyToMsgId:           replyTo,
+			ReplyToMsgId_INT32:     replyTo,
+			ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(replyTo),
+		}).To_MessageReplyHeader()
 	}
 	out := mtproto.MakeTLMessage(&mtproto.Message{
 		Out:      true,
 		FromId:   mtproto.MakePeerUser(tellomiai.AccountID),
-		PeerId:   mtproto.MakePeerUser(to),
+		PeerId:   mtproto.MakePeer(peerType, peerID),
+		ReplyTo:  reply,
 		Date:     int32(time.Now().Unix()),
 		Message:  text,
-		Entities: entities,
+		Entities: labelEntities(text, ai),
 	}).To_Message()
 	return &msg.TLMsgSendMessageV2{
 		UserId:   tellomiai.AccountID,
-		PeerType: mtproto.PEER_USER,
-		PeerId:   to,
+		PeerType: peerType,
+		PeerId:   peerID,
 		Message: []*msg.OutboxMessage{
 			msg.MakeTLOutboxMessage(&msg.OutboxMessage{
 				RandomId: random,
@@ -75,4 +96,15 @@ func buildAIMessage(to int64, text string, ai bool, random int64) *msg.TLMsgSend
 			}).To_OutboxMessage(),
 		},
 	}
+}
+
+// buildAIMessage is a private-chat message from @tellomi.
+func buildAIMessage(to int64, text string, ai bool, random int64) *msg.TLMsgSendMessageV2 {
+	return aiOutbox(mtproto.PEER_USER, to, text, ai, 0, random)
+}
+
+// buildAIGroupMessage posts into the same group, as a reply to the triggering message.
+// msg.sendMessageV2 still requires 777001 to be a member of that group.
+func buildAIGroupMessage(peerType int32, peerID int64, replyTo int32, text string, ai bool, random int64) *msg.TLMsgSendMessageV2 {
+	return aiOutbox(peerType, peerID, text, ai, replyTo, random)
 }

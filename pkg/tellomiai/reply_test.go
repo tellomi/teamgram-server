@@ -89,7 +89,7 @@ func TestSafetyDoesNotCallDeepSeek(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Refused || !res.AIGenerated || res.Text != WithLabel(Refusal) {
+	if !res.Refused || !res.AIGenerated || res.Text != Refusal || strings.Contains(res.Text, Label) {
 		t.Fatalf("%#v", res)
 	}
 	if calls := sc.calls(); len(calls) != 1 || calls[0] != defaultPrimary {
@@ -117,7 +117,7 @@ func TestPrimaryFailureUsesDeepSeekOnBailian(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Model != defaultFallback || !strings.HasSuffix(res.Text, Label) || !res.AIGenerated {
+	if res.Model != defaultFallback || res.Text != "你好" || strings.Contains(res.Text, Label) || !res.AIGenerated {
 		t.Fatalf("%#v", res)
 	}
 	calls := sc.calls()
@@ -213,7 +213,7 @@ func TestPrivateReplyOnce(t *testing.T) {
 	ObservePrivate(context.Background(), 9, "你好", 99)
 	ObservePrivate(context.Background(), 9, "你好", 99)
 	ObservePrivate(context.Background(), AccountID, "你好", 1)
-	if sent.n != 1 || !sent.ai || !strings.HasSuffix(sent.text, Label) || !strings.Contains(sent.text, "你好") {
+	if sent.n != 1 || !sent.ai || sent.text != "你好" || strings.Contains(sent.text, Label) {
 		t.Fatalf("sent n=%d ai=%v text=%q", sent.n, sent.ai, sent.text)
 	}
 	if len(sc.calls()) != 1 {
@@ -233,6 +233,93 @@ func TestDisabledDoesNotCallModel(t *testing.T) {
 	ObservePrivate(context.Background(), 9, "你好", 1)
 	if Advertised() {
 		t.Fatal("advertised without the flag")
+	}
+}
+
+type memGroup struct {
+	n        int
+	peerType int32
+	peerID   int64
+	replyTo  int32
+	text     string
+	ai       bool
+}
+
+func (m *memGroup) SendGroup(_ context.Context, peerType int32, peerID int64, replyTo int32, text string, ai bool) error {
+	m.n++
+	m.peerType = peerType
+	m.peerID = peerID
+	m.replyTo = replyTo
+	m.text = text
+	m.ai = ai
+	return nil
+}
+
+func TestGroupReplyOmitsLabelAndRepliesOnce(t *testing.T) {
+	svc, sc, _ := testService(t, "", time.Second)
+	sent := &memGroup{}
+	svc.Group = sent
+	Use(svc)
+	t.Cleanup(func() { Use(nil) })
+	ask := GroupAsk{From: 9, PeerType: 3, PeerID: 40, ReplyTo: 7, Text: GroupPrompt("你好", "上一句"), Random: 5}
+	ObserveGroup(context.Background(), ask)
+	ObserveGroup(context.Background(), ask)
+	ObserveGroup(context.Background(), GroupAsk{From: AccountID, PeerType: 3, PeerID: 40, ReplyTo: 8, Text: "你好", Random: 6})
+	if sent.n != 1 || sent.peerType != 3 || sent.peerID != 40 || sent.replyTo != 7 || !sent.ai || sent.text != "你好" || strings.Contains(sent.text, Label) {
+		t.Fatalf("sent %+v", sent)
+	}
+	if len(sc.calls()) != 1 {
+		t.Fatalf("calls %v", sc.calls())
+	}
+	recs := svc.Ledger.Records()
+	if len(recs) != 1 || recs[0].Prompt != "上一句\n\n你好" {
+		t.Fatalf("prompt %q", recs[0].Prompt)
+	}
+}
+
+func TestGroupChatCapIsSilentAndPerChat(t *testing.T) {
+	svc, sc, _ := testService(t, "", time.Second)
+	svc.Ledger.Minute = 100
+	svc.Ledger.ChatMinute = 2
+	sent := &memGroup{}
+	svc.Group = sent
+	Use(svc)
+	t.Cleanup(func() { Use(nil) })
+	ask := func(user, random int64, peer int64) {
+		ObserveGroup(context.Background(), GroupAsk{From: user, PeerType: 3, PeerID: peer, ReplyTo: 1, Text: "问", Random: random})
+	}
+	ask(9, 1, 40)
+	ask(10, 2, 40)
+	ask(11, 3, 40)
+	ask(12, 4, 41)
+	if sent.n != 3 {
+		t.Fatalf("sent %d, want the two in chat 40 and the one in chat 41", sent.n)
+	}
+	if len(sc.calls()) != 3 {
+		t.Fatalf("model calls %v", sc.calls())
+	}
+	if sent.text != "你好" || strings.Contains(sent.text, Label) {
+		t.Fatalf("text %q", sent.text)
+	}
+}
+
+func TestGroupUsesTheSameUserMinuteCap(t *testing.T) {
+	svc, sc, _ := testService(t, "", time.Second)
+	sent := &memSend{}
+	group := &memGroup{}
+	svc.Sender = sent
+	svc.Group = group
+	Use(svc)
+	t.Cleanup(func() { Use(nil) })
+	for i := 0; i < 5; i++ {
+		ObservePrivate(context.Background(), 9, "问", int64(i+1))
+	}
+	ObserveGroup(context.Background(), GroupAsk{From: 9, PeerType: 4, PeerID: 70, ReplyTo: 3, Text: "问", Random: 9})
+	if len(sc.calls()) != 5 {
+		t.Fatalf("sixth turn still called the model: %d", len(sc.calls()))
+	}
+	if group.n != 1 || group.ai || group.text != MinuteMessage || group.replyTo != 3 || group.peerID != 70 {
+		t.Fatalf("group limit %+v", group)
 	}
 }
 
@@ -292,7 +379,7 @@ func TestEngineCompleteE2E(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != 200 || !res.AIGenerated || !strings.HasSuffix(res.Text, Label) {
+	if resp.StatusCode != 200 || !res.AIGenerated || res.Text != "你好" || strings.Contains(res.Text, Label) {
 		t.Fatalf("status %d %#v", resp.StatusCode, res)
 	}
 	resp2 := post(body)
