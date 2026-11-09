@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"sync"
@@ -14,15 +15,25 @@ import (
 
 // Service answers the sticker and emoji RPCs from one in-memory catalog.
 type Service struct {
-	mu           sync.Mutex
-	packs        []*Pack
-	byID         map[int64]*Pack
-	byShort      map[string]*Pack
-	docs         map[int64]*linkedDoc
-	users        map[int64]*userState
-	reactionUses map[string]int64
-	persist      persister
-	now          func() int32
+	mu                   sync.Mutex
+	packs                []*Pack
+	byID                 map[int64]*Pack
+	byShort              map[string]*Pack
+	docs                 map[int64]*linkedDoc
+	users                map[int64]*userState
+	reactionUses         map[string]int64
+	persist              persister
+	now                  func() int32
+	userPush             UserPush
+	recentUserFn         func(context.Context) ([]int64, error)
+	stickerVersion       int64
+	stickerVersionLoaded bool
+	gifVersion           int64
+	gifVersionLoaded     bool
+	catalogIDs           map[int64]bool
+	broadcastMu          sync.Mutex
+	broadcasting         bool
+	pendingKinds         kindFlags
 }
 
 type linkedDoc struct {
@@ -145,10 +156,11 @@ func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool
 		}
 		return rows[i].p.ID < rows[j].p.ID
 	})
-	// Hash the visible pack ids before building StickerSet objects. A client
-	// that already has this install list gets allStickersNotModified without
-	// walking every document into a TL value. getAllStickers has no offset;
-	// the objects themselves are set metadata, not the sticker bytes.
+	// Hash each visible pack's id, document ids, and title before building
+	// StickerSet objects. A client that already has this install list gets
+	// allStickersNotModified without walking every document into a TL value.
+	// getAllStickers has no offset; the objects themselves are set metadata,
+	// not the sticker bytes. An in-place edit changes the hash.
 	var kept []row
 	var ids []int64
 	for _, row := range rows {

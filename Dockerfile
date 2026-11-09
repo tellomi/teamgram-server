@@ -52,6 +52,8 @@ COPY . .
 RUN ./build.sh
 # Sticker seed tool. Assets are embedded in the binary. Lands at /app/bin/importstickers.
 RUN cd app/bff/stickers/cmd/importstickers && go build -o /app/teamgramd/bin/importstickers
+# GIF panel catalog. The operator runs it; the bff reloads the rows.
+RUN cd app/bff/stickers/cmd/importgifs && go build -o /app/teamgramd/bin/importgifs
 # Official account avatar seed tool (docs/official-avatars.md). Lands at /app/bin/seedofficialavatars.
 RUN cd app/bff/userchannelprofiles/officialavatars/cmd/seedofficialavatars && go build -o /app/teamgramd/bin/seedofficialavatars
 # One-shot profile stripped-thumb backfill (docs/official-avatars.md). The operator runs it.
@@ -101,7 +103,7 @@ COPY --from=ip2region /out/ /app/data/ip2region/
 # so the workflow cannot push a partial image.
 COPY scripts/verify-teamgram-binaries.sh /tmp/verify-teamgram-binaries.sh
 COPY docker-compose.yaml docker-compose-env.yaml docker-compose.staging.yaml docker-compose.geoip.yaml /tmp/compose/
-RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/seedofficialavatars /app/bin/backfillstripped /app/bin/enforcement-migrate /app/bin/runall-docker.sh \
+RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/importgifs /app/bin/seedofficialavatars /app/bin/backfillstripped /app/bin/enforcement-migrate /app/bin/runall-docker.sh \
     && bash /tmp/verify-teamgram-binaries.sh /app /tmp/compose \
     && rm -rf /tmp/verify-teamgram-binaries.sh /tmp/compose
 # Exec form so the entrypoint is PID 1. Shell form wraps it in `sh -c`,

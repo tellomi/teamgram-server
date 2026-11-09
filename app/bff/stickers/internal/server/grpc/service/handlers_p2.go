@@ -23,6 +23,7 @@ func (s *Service) MessagesReorderStickerSets(ctx context.Context, in *mtproto.TL
 	if err := cat().Reorder(userID(ctx), in.GetMasks(), in.GetEmojis(), in.GetOrder()); err != nil {
 		return nil, err
 	}
+	s.pushNotMe(ctx, catalog.StickerOrderUpdate(in.GetMasks(), in.GetEmojis(), in.GetOrder()))
 	return mtproto.BoolTrue, nil
 }
 
@@ -30,6 +31,7 @@ func (s *Service) MessagesToggleStickerSets(ctx context.Context, in *mtproto.TLM
 	if err := cat().Toggle(userID(ctx), in.GetUninstall(), in.GetArchive(), in.GetUnarchive(), in.GetStickersets()); err != nil {
 		return nil, err
 	}
+	s.pushSets(ctx, cat().NotifySets(in.GetStickersets()))
 	return mtproto.BoolTrue, nil
 }
 

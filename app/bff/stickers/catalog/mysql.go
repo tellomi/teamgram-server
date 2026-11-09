@@ -121,6 +121,31 @@ CREATE TABLE IF NOT EXISTS tellomi_saved_gifs (
   PRIMARY KEY (user_id, document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS tellomi_catalog_version (
+  name VARCHAR(32) NOT NULL,
+  version BIGINT NOT NULL,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS tellomi_gif_clips (
+  id BIGINT NOT NULL,
+  access_hash BIGINT NOT NULL,
+  code VARCHAR(64) NOT NULL,
+  title VARCHAR(128) NOT NULL,
+  keywords TEXT NOT NULL,
+  mime_type VARCHAR(64) NOT NULL,
+  file_size INT NOT NULL,
+  width INT NOT NULL,
+  height INT NOT NULL,
+  duration DOUBLE NOT NULL DEFAULT 1,
+  file_name VARCHAR(128) NOT NULL,
+  object_path VARCHAR(255) NOT NULL,
+  thumb_path VARCHAR(255) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY tellomi_gif_clips_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 ALTER TABLE tellomi_sticker_items MODIFY keywords TEXT NOT NULL;
 `
 
@@ -147,6 +172,10 @@ func (s *Service) attachMySQL(dsn string) error {
 		return err
 	}
 	if err = upsertPacks(ctx, db, s.packs); err != nil {
+		_ = db.Close()
+		return err
+	}
+	if err = bumpCatalogVersion(ctx, db, catalogStickers); err != nil {
 		_ = db.Close()
 		return err
 	}
@@ -405,6 +434,9 @@ func (s *Service) loadManageState(ctx context.Context, db *sql.DB) error {
 	if err = reads.Err(); err != nil {
 		return err
 	}
+	if err = s.loadGifCatalog(ctx, db); err != nil {
+		return err
+	}
 	gifs, err := db.QueryContext(ctx, `SELECT user_id, document_id, access_hash, date_ts, mime_type, file_size, width, height, file_name, video FROM tellomi_saved_gifs ORDER BY date_ts DESC`)
 	if err != nil {
 		return err
@@ -472,46 +504,23 @@ JOIN tellomi_sticker_packs p ON p.id = o.pack_id`)
 }
 
 // loadImportedPacks reads catalog packs written by importstickers -dir.
-// Seed packs and user-owned packs are already in memory and are left as they are.
+// Packs already in memory are refreshed when the row changed. The catalog
+// version recorded here is what the reload loop compares.
 func (s *Service) loadImportedPacks(ctx context.Context, db *sql.DB) error {
-	rows, err := db.QueryContext(ctx, `
-SELECT id, access_hash, short_name, title, kind, official, masks, emojis, animated, videos, text_color, featured, installed_default, license, attribution, source_url
-FROM tellomi_sticker_packs ORDER BY id`)
+	loaded, err := readImportedPacks(ctx, db)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var p Pack
-		var official, masks, emojis, animated, videos, textColor, featured, installed int
-		if err = rows.Scan(&p.ID, &p.AccessHash, &p.ShortName, &p.Title, &p.Kind, &official, &masks, &emojis, &animated, &videos, &textColor, &featured, &installed, &p.License, &p.Attribution, &p.SourceURL); err != nil {
-			return err
-		}
-		if s.byID[p.ID] != nil {
-			continue
-		}
-		key := strings.ToLower(p.ShortName)
-		if _, taken := s.byShort[key]; taken {
-			logx.Errorf("stickers skip imported pack %s: short name is taken", p.ShortName)
-			continue
-		}
-		p.Official = official != 0
-		p.Masks = masks != 0
-		p.Emojis = emojis != 0
-		p.Animated = animated != 0
-		p.Videos = videos != 0
-		p.TextColor = textColor != 0
-		p.Featured = featured != 0
-		p.InstalledDefault = installed != 0
-		items, err := loadPackItems(ctx, db, p.ID)
-		if err != nil {
-			return err
-		}
-		p.Items = items
-		imported := p
-		s.addPack(&imported)
+	s.applyImported(loaded, true)
+	v, err := catalogVersion(ctx, db, catalogStickers)
+	if err != nil {
+		return err
 	}
-	return rows.Err()
+	s.mu.Lock()
+	s.stickerVersion = v
+	s.stickerVersionLoaded = true
+	s.mu.Unlock()
+	return nil
 }
 
 func loadPackItems(ctx context.Context, db *sql.DB, packID int64) ([]*Item, error) {
@@ -565,7 +574,7 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			return err
 		}
 	}
-	return nil
+	return bumpCatalogVersion(ctx, m.db, catalogStickers)
 }
 
 func (m mysqlPersist) savePrepared(ctx context.Context, packs []*Pack) error {
@@ -577,7 +586,7 @@ func (m mysqlPersist) savePrepared(ctx context.Context, packs []*Pack) error {
 			return err
 		}
 	}
-	return nil
+	return bumpCatalogVersion(ctx, m.db, catalogStickers)
 }
 
 func deleteStaleItems(ctx context.Context, db *sql.DB, p *Pack) error {
@@ -681,7 +690,7 @@ func (m mysqlPersist) deleteOwnedPack(packID int64) error {
 			return err
 		}
 	}
-	return nil
+	return bumpCatalogVersion(context.Background(), m.db, catalogStickers)
 }
 
 func (m mysqlPersist) saveFeaturedRead(userID, packID int64) error {

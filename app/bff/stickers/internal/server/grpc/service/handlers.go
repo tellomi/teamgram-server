@@ -31,13 +31,19 @@ func (s *Service) MessagesGetStickerSet(ctx context.Context, in *mtproto.TLMessa
 }
 
 func (s *Service) MessagesInstallStickerSet(ctx context.Context, in *mtproto.TLMessagesInstallStickerSet) (*mtproto.Messages_StickerSetInstallResult, error) {
-	return cat().Install(userID(ctx), in.GetStickerset(), mtproto.FromBool(in.GetArchived()))
+	res, err := cat().Install(userID(ctx), in.GetStickerset(), mtproto.FromBool(in.GetArchived()))
+	if err != nil {
+		return nil, err
+	}
+	s.pushNotMe(ctx, cat().NotifyInstall(userID(ctx), in.GetStickerset()))
+	return res, nil
 }
 
 func (s *Service) MessagesUninstallStickerSet(ctx context.Context, in *mtproto.TLMessagesUninstallStickerSet) (*mtproto.Bool, error) {
 	if err := cat().Uninstall(userID(ctx), in.GetStickerset()); err != nil {
 		return nil, err
 	}
+	s.pushSets(ctx, cat().NotifySets([]*mtproto.InputStickerSet{in.GetStickerset()}))
 	return mtproto.BoolTrue, nil
 }
 
