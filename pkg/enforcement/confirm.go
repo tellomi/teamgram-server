@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +38,7 @@ const (
 	accountMarker = "enforcement-account-review"
 	contentMarker = "enforcement-content-review"
 
-	helpText = "请只回复「是」或「否」（也可回复 是的、yes、y，或 否、no、n）。有多起案件时，请回复对应那条，或写上案件号。"
+	helpText = "请只回复「是」或「否」。有多起案件时，请回复对应那条。"
 )
 
 // Directory reads chat identity. It does not write chat tables.
@@ -329,7 +328,7 @@ func (c *Confirmer) answer(ctx context.Context, from int64, admin, text string, 
 		return "暂时不能处理，请稍后再试。"
 	}
 	if !found {
-		return "没有找到对应的待确认案件。有多起时请回复对应那条，或写上案件号。"
+		return "没有找到对应的待确认案件。有多起时请回复对应那条。"
 	}
 	claimed, won, err := c.Svc.book().claim(row.ID)
 	if err != nil || !won {
@@ -487,12 +486,12 @@ func (c *Confirmer) notify(ctx context.Context, text string) string {
 }
 
 func accountAsk(row ReviewCase) string {
-	return fmt.Sprintf("举报已核实，请确认是否封禁这个账号。\n案件号：%s\n被举报用户：%s\nAI 理由：%s\n证据摘要：%s\n回复「是」封禁，回复「否」关闭且不封禁。有多起待确认时，请回复本条，或在回复里写上案件号。",
+	return fmt.Sprintf("举报已核实，请确认是否封禁这个账号。\n案件号：%s\n被举报用户：%s\nAI 理由：%s\n证据摘要：%s\n回复「是」封禁，回复「否」关闭且不封禁。有多起待确认时，请回复本条。",
 		row.ID, clipRunes(row.SubjectLabel, 120), clipRunes(row.AIReason, 300), clipRunes(row.Summary, 300))
 }
 
 func contentAsk(row ReviewCase) string {
-	return fmt.Sprintf("这条内容不确定，请确认是否下架。\n案件号：%s\n对象：%s\nAI 理由：%s\n证据摘要：%s\n回复「是」下架，回复「否」保留。有多起待确认时，请回复本条，或在回复里写上案件号。",
+	return fmt.Sprintf("这条内容不确定，请确认是否下架。\n案件号：%s\n对象：%s\nAI 理由：%s\n证据摘要：%s\n回复「是」下架，回复「否」保留。有多起待确认时，请回复本条。",
 		row.ID, clipRunes(row.ContentRef, 120), clipRunes(row.AIReason, 300), clipRunes(row.Summary, 300))
 }
 
@@ -674,27 +673,16 @@ func contentRef(in ContentInput) string {
 	return clipRunes(ref, 250)
 }
 
-// parseAdminText accepts 是/是的/yes/y and 否/no/n, optionally with one case id.
+// parseAdminText accepts a decision only when the reply is exactly 是 or 否.
+// Surrounding whitespace is ignored. Any other character, including a case id,
+// 是的, yes, y, no, or n, is not a decision.
 func parseAdminText(text string) (answer, caseID string, ok bool) {
-	ids := caseIDPattern.FindAllString(text, -1)
-	cleaned := strings.TrimSpace(caseIDPattern.ReplaceAllString(text, " "))
-	cleaned = strings.Join(strings.Fields(cleaned), "")
-	switch strings.ToLower(cleaned) {
-	case "是", "是的", "yes", "y":
-		answer = "yes"
-	case "否", "no", "n":
-		answer = "no"
-	default:
-		return "", "", false
-	}
-	switch len(ids) {
-	case 0:
-		return answer, "", true
-	case 1:
-		return answer, ids[0], true
+	switch strings.TrimSpace(text) {
+	case "是":
+		return "yes", "", true
+	case "否":
+		return "no", "", true
 	default:
 		return "", "", false
 	}
 }
-
-var caseIDPattern = regexp.MustCompile(`C[0-9a-f]{16}`)
