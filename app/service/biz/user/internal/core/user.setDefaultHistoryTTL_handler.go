@@ -27,10 +27,13 @@ import (
 // UserSetDefaultHistoryTTL
 // user.setDefaultHistoryTTL user_id:long ttl:int = Bool;
 func (c *UserCore) UserSetDefaultHistoryTTL(in *user.TLUserSetDefaultHistoryTTL) (*mtproto.Bool, error) {
-	_, _, _ = c.svcCtx.Dao.DefaultHistoryTtlDAO.InsertOrUpdate(c.ctx, &dataobject.DefaultHistoryTtlDO{
+	if _, _, err := c.svcCtx.Dao.DefaultHistoryTtlDAO.InsertOrUpdate(c.ctx, &dataobject.DefaultHistoryTtlDO{
 		UserId: in.GetUserId(),
 		Period: in.GetTtl(),
-	})
+	}); err != nil {
+		c.Logger.Errorf("user.setDefaultHistoryTTL - error: %v", err)
+		return nil, err
+	}
 
 	return mtproto.BoolTrue, nil
 }
