@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -10,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/business/internal/svc"
 	"github.com/teamgram/teamgram-server/app/bff/business/profile"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -171,7 +173,11 @@ func TestBusinessProfileAndLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustEncode(t, link)
-	slug := link.GetLink()[len("https://t.me/m/"):]
+	prefix := brand.LinkBase() + "/m/"
+	if !strings.HasPrefix(link.GetLink(), prefix) || strings.Contains(link.GetLink(), "t.me") {
+		t.Fatalf("link %s", link.GetLink())
+	}
+	slug := strings.TrimPrefix(link.GetLink(), prefix)
 	edited, err := svc.AccountEditBusinessChatLink(ctx, &mtproto.TLAccountEditBusinessChatLink{
 		Slug: slug,
 		Link: mtproto.MakeTLInputBusinessChatLink(&mtproto.InputBusinessChatLink{Message: "ask later"}).To_InputBusinessChatLink(),

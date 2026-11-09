@@ -2,8 +2,11 @@ package dao
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 func TestContactTokenRoundTrip(t *testing.T) {
@@ -73,10 +76,56 @@ func TestNoPaidTokenRevokeAndGrant(t *testing.T) {
 	if got := NormalizeNoPaidToken("https://t.me/ada?free=" + next.Token + "&x=1"); got != next.Token {
 		t.Fatalf("normalize %q", got)
 	}
-	if got := NoPaidLink("ada", "", next.Token); got != "https://t.me/ada?free="+next.Token {
+	if got := NoPaidLink("ada", "", next.Token); got != brand.LinkBase()+"/ada?free="+next.Token {
 		t.Fatalf("username link %s", got)
 	}
-	if got := NoPaidLink("", "contacttok", next.Token); got != "https://t.me/contact/contacttok?free="+next.Token {
+	if got := NoPaidLink("", "contacttok", next.Token); got != brand.LinkBase()+"/contact/contacttok?free="+next.Token {
 		t.Fatalf("contact link %s", got)
+	}
+}
+
+func TestGeneratedLinksUseBrandHost(t *testing.T) {
+	t.Setenv("TELLOMI_LINK_BASE_URL", "")
+	t.Setenv("TEAMGRAM_TME_HOST", "")
+	if got := ContactLink("abc"); got != "https://tell.cc/contact/abc" {
+		t.Fatalf("contact %s", got)
+	}
+	if got := NoPaidLink("ada", "", "tok"); got != "https://tell.cc/ada?free=tok" {
+		t.Fatalf("username %s", got)
+	}
+	if got := NoPaidLink("bad name", "contacttok", "tok"); got != "https://tell.cc/contact/contacttok?free=tok" {
+		t.Fatalf("fallback %s", got)
+	}
+	for _, got := range []string{ContactLink("abc"), NoPaidLink("ada", "", "tok")} {
+		if strings.Contains(got, "t.me") || strings.Contains(got, "telegram.me") || strings.Contains(got, "telegram.dog") {
+			t.Fatalf("generated link %s", got)
+		}
+	}
+	if got := NormalizeContactToken(ContactLink("abc") + "?free=x"); got != "abc" {
+		t.Fatalf("round trip %s", got)
+	}
+	for _, raw := range []string{
+		"https://t.me/contact/abc?free=x",
+		"http://t.me/contact/abc",
+		"https://telegram.me/contact/abc&x",
+		"tg://contact?token=abc",
+		"https://tell.cc/contact/abc",
+	} {
+		if got := NormalizeContactToken(raw); got != "abc" {
+			t.Fatalf("NormalizeContactToken(%q) = %q", raw, got)
+		}
+	}
+	t.Setenv("TELLOMI_LINK_BASE_URL", "links.example")
+	if got := ContactLink("abc"); got != "https://links.example/contact/abc" {
+		t.Fatalf("env contact %s", got)
+	}
+	if got := NoPaidLink("ada", "", "tok"); got != "https://links.example/ada?free=tok" {
+		t.Fatalf("env username %s", got)
+	}
+	if got := NormalizeContactToken("https://links.example/contact/abc?free=1"); got != "abc" {
+		t.Fatalf("env normalize %s", got)
+	}
+	if got := NormalizeContactToken("https://t.me/contact/abc"); got != "abc" {
+		t.Fatalf("legacy still imports under a custom base: %s", got)
 	}
 }

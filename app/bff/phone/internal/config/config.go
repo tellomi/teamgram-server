@@ -139,9 +139,9 @@ func (c Config) Normalized() Config {
 	if c.ConfirmTimeout <= 0 {
 		c.ConfirmTimeout = 30
 	}
-	if c.CallLinkPrefix == "" {
-		c.CallLinkPrefix = brand.CallPrefix
-	}
+	// Group-call invites use brand.LinkBase()+"/call/". TELLOMI_LINK_BASE_URL
+	// and TEAMGRAM_TME_HOST select that host.
+	c.CallLinkPrefix = strings.TrimRight(brand.LinkBase(), "/") + "/call/"
 	// TELLOMI_RTMP_URL is the public ingest base returned by
 	// phone.getGroupCallStreamRtmpUrl. An empty value keeps the yaml
 	// setting, which itself defaults to the local MediaMTX address.

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -285,7 +286,7 @@ func starRefURL(rec *botRec, kind string, id int64) string {
 	if name == "" {
 		name = "id" + strconv.FormatInt(rec.id, 10)
 	}
-	return "https://t.me/" + name + "?start=starref_" + kind + "_" + strconv.FormatInt(id, 10)
+	return brand.LinkBase() + "/" + name + "?start=starref_" + kind + "_" + strconv.FormatInt(id, 10)
 }
 
 func findLink(key string, botID int64) *starRefLink {

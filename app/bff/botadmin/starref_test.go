@@ -2,12 +2,31 @@ package botadmin
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
+
+func TestStarRefURLUsesBrandHost(t *testing.T) {
+	t.Setenv("TELLOMI_LINK_BASE_URL", "")
+	t.Setenv("TEAMGRAM_TME_HOST", "")
+	rec := &botRec{id: 9, names: []uname{{name: "newsbot", active: true}}}
+	if got := starRefURL(rec, "user", 3); got != "https://tell.cc/newsbot?start=starref_user_3" {
+		t.Fatal(got)
+	}
+	rec.names = nil
+	if got := starRefURL(rec, "channel", 4); got != "https://tell.cc/id9?start=starref_channel_4" {
+		t.Fatal(got)
+	}
+	t.Setenv("TELLOMI_LINK_BASE_URL", "https://links.example")
+	if got := starRefURL(rec, "channel", 4); got != "https://links.example/id9?start=starref_channel_4" {
+		t.Fatal(got)
+	}
+}
 
 func selfPeer() *mtproto.InputPeer {
 	return mtproto.MakeTLInputPeerSelf(nil).To_InputPeer()
@@ -43,6 +62,9 @@ func TestStarRefConnect(t *testing.T) {
 		t.Fatal(err, one)
 	}
 	link := got.GetConnectedBots()[0].GetUrl()
+	if !strings.HasPrefix(link, brand.LinkBase()+"/newsbot?start=starref_") || strings.Contains(link, "t.me") {
+		t.Fatalf("link %s", link)
+	}
 	revoked, err := EditConnectedStarRefBot(8, peer, link, true)
 	if err != nil || !revoked.GetConnectedBots()[0].GetRevoked() {
 		t.Fatal(err, revoked)
