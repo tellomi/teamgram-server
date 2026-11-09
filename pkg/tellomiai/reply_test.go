@@ -255,6 +255,48 @@ func (m *memGroup) SendGroup(_ context.Context, peerType int32, peerID int64, re
 	return nil
 }
 
+func TestObserveGroupResolvesPendingReplyAfterTheModel(t *testing.T) {
+	svc, sc, _ := testService(t, "", time.Second)
+	sent := &memGroup{}
+	svc.Group = sent
+	Use(svc)
+	t.Cleanup(func() { Use(nil) })
+
+	var resolvedWhen int
+	ObserveGroup(context.Background(), GroupAsk{
+		From: 9, PeerType: 3, PeerID: 40, ReplyTo: 0, Text: "问", Random: 21,
+		PendingReply: func(context.Context) int32 {
+			resolvedWhen = len(sc.calls())
+			return 15
+		},
+	})
+	if resolvedWhen != 1 || sent.n != 1 || sent.replyTo != 15 || sent.peerID != 40 || !sent.ai || sent.text != "你好" {
+		t.Fatalf("resolved when model calls=%d sent=%+v", resolvedWhen, sent)
+	}
+
+	sent.n = 0
+	ObserveGroup(context.Background(), GroupAsk{
+		From: 10, PeerType: 3, PeerID: 41, ReplyTo: 0, Text: "问", Random: 22,
+		PendingReply: func(context.Context) int32 { return 0 },
+	})
+	if sent.n != 1 || sent.replyTo != 0 || sent.peerID != 41 || sent.text != "你好" {
+		t.Fatalf("unresolved reply was dropped: %+v", sent)
+	}
+
+	called := false
+	sent.n = 0
+	ObserveGroup(context.Background(), GroupAsk{
+		From: 11, PeerType: 4, PeerID: 70, ReplyTo: 7, Text: "问", Random: 23,
+		PendingReply: func(context.Context) int32 {
+			called = true
+			return 99
+		},
+	})
+	if called || sent.n != 1 || sent.replyTo != 7 || sent.peerType != 4 || sent.peerID != 70 {
+		t.Fatalf("known reply id was rewritten called=%v sent=%+v", called, sent)
+	}
+}
+
 func TestGroupReplyOmitsLabelAndRepliesOnce(t *testing.T) {
 	svc, sc, _ := testService(t, "", time.Second)
 	sent := &memGroup{}

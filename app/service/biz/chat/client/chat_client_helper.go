@@ -25,6 +25,12 @@ func NewChatClientHelper(cli zrpc.Client) *ChatClientHelper {
 	}
 }
 
+// NewDirectChatClient wraps an already-built ChatClient. Tests use it so
+// membership checks run through Client() without an RPC connection.
+func NewDirectChatClient(cli ChatClient) *ChatClientHelper {
+	return &ChatClientHelper{cli: cli}
+}
+
 func (m *ChatClientHelper) Client() ChatClient {
 	return m.cli
 }

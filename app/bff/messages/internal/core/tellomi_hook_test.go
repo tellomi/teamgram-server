@@ -201,10 +201,14 @@ func TestSupergroupReplySkipsHistoryAndNonMembers(t *testing.T) {
 
 type hookCalls struct {
 	calls []string
+	trace *callTrace
 }
 
 func (h *hookCalls) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.calls = append(h.calls, r.URL.Path)
+	if h.trace != nil {
+		h.trace.add("model")
+	}
 	_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"你好"}}],"usage":{"total_tokens":3}}`))
 }
 
@@ -236,6 +240,7 @@ type hookGroup struct {
 	replyTo int32
 	text    string
 	ai      bool
+	trace   *callTrace
 }
 
 func (m *hookGroup) SendGroup(_ context.Context, _ int32, peerID int64, replyTo int32, text string, ai bool) error {
@@ -244,6 +249,9 @@ func (m *hookGroup) SendGroup(_ context.Context, _ int32, peerID int64, replyTo 
 	m.replyTo = replyTo
 	m.text = text
 	m.ai = ai
+	if m.trace != nil {
+		m.trace.add("send")
+	}
 	return nil
 }
 
@@ -255,6 +263,10 @@ type fakeMsgs struct {
 	userIn       *message.TLMessageGetUserMessage
 	peerIn       *message.TLMessageGetPeerUserMessage
 	box          *mtproto.MessageBox
+	peerBox      *mtproto.MessageBox
+	peerFail     int // >0: that many misses, then the box; <0: always miss
+	peerLeft     int
+	trace        *callTrace
 }
 
 func (f *fakeMsgs) MessageGetUserMessage(_ context.Context, in *message.TLMessageGetUserMessage) (*mtproto.MessageBox, error) {
@@ -266,6 +278,21 @@ func (f *fakeMsgs) MessageGetUserMessage(_ context.Context, in *message.TLMessag
 func (f *fakeMsgs) MessageGetPeerUserMessage(_ context.Context, in *message.TLMessageGetPeerUserMessage) (*mtproto.MessageBox, error) {
 	f.peerCalls++
 	f.peerIn = in
+	if f.peerFail < 0 || f.peerLeft < f.peerFail {
+		if f.peerFail > 0 {
+			f.peerLeft++
+		}
+		if f.trace != nil {
+			f.trace.add("miss")
+		}
+		return nil, mtproto.ErrMsgIdInvalid
+	}
+	if f.trace != nil {
+		f.trace.add("hit")
+	}
+	if f.peerBox != nil {
+		return f.peerBox, nil
+	}
 	return f.box, nil
 }
 

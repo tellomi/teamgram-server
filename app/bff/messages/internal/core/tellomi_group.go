@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -11,6 +12,14 @@ import (
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/threading"
+)
+
+// A basic-group send returns before fan-out writes 777001's inbox row.
+// After the model returns, the reply checks again on this interval, then
+// sends with no reply_to rather than dropping the answer. Tests shorten them.
+var (
+	tellomiBoxEvery = 200 * time.Millisecond
+	tellomiBoxFor   = 3 * time.Second
 )
 
 // noteTellomi replies as @tellomi after a message is stored.
@@ -88,14 +97,25 @@ func (c *MessagesCore) answerTellomiGroup(ctx context.Context, from int64, peerT
 	if prompt == "" {
 		return
 	}
-	tellomiai.ObserveGroup(ctx, tellomiai.GroupAsk{
+	ask := tellomiai.GroupAsk{
 		From: from, PeerType: peerType, PeerID: peerID,
 		ReplyTo: replyID, Text: prompt, Random: random,
-	})
+	}
+	// replyID 0 on a basic group means the inbox row was not visible yet.
+	// The model still runs. ObserveGroup resolves the id again before send.
+	if replyID == 0 && peerType == mtproto.PEER_CHAT {
+		ask.PendingReply = func(ctx context.Context) int32 {
+			return c.awaitTellomiBoxID(ctx, from, sentID)
+		}
+	}
+	tellomiai.ObserveGroup(ctx, ask)
 }
 
 // groupContext loads at most the one message this send replies to, and the
 // id of the triggering message in 777001's own box. It does not list history.
+// A basic-group box id that is not visible yet is pending: reply id 0 and
+// ok true, so mention detection, the reply-to-777001 check, and the model
+// call still run. Supergroups already share one message id and skip the lookup.
 func (c *MessagesCore) groupContext(ctx context.Context, from int64, peerType int32, peerID int64, replyTo, sentID int32) (replied string, replyToAI bool, replyID int32, ok bool) {
 	if sentID == 0 {
 		return "", false, 0, false
@@ -115,9 +135,39 @@ func (c *MessagesCore) groupContext(ctx context.Context, from int64, peerType in
 	}
 	mapped, found := c.tellomiBoxID(ctx, from, sentID)
 	if !found {
-		return replied, replyToAI, 0, false
+		logx.WithContext(ctx).Errorf("tellomi ai: group box id pending chat=%d", peerID)
+		return replied, replyToAI, 0, true
 	}
 	return replied, replyToAI, mapped, true
+}
+
+// awaitTellomiBoxID polls 777001's inbox until the triggering message shows
+// up or the short wait ends. Zero means send the reply with no reply_to.
+func (c *MessagesCore) awaitTellomiBoxID(ctx context.Context, from int64, sentID int32) int32 {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(tellomiBoxFor)
+	for {
+		if id, ok := c.tellomiBoxID(ctx, from, sentID); ok {
+			return id
+		}
+		remain := time.Until(deadline)
+		if remain <= 0 {
+			return 0
+		}
+		step := tellomiBoxEvery
+		if remain < step {
+			step = remain
+		}
+		timer := time.NewTimer(step)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return 0
+		case <-timer.C:
+		}
+	}
 }
 
 func (c *MessagesCore) oneReplied(ctx context.Context, from int64, peerType int32, peerID int64, replyTo int32) (int64, string, bool) {

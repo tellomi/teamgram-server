@@ -57,7 +57,8 @@ type GroupSender interface {
 
 // GroupAsk is one group turn that already passed the mention or reply check.
 // Text is the model prompt (mention stripped, plus the one replied-to message).
-// ReplyTo is the id to set on the outgoing message.
+// ReplyTo is the id to set on the outgoing message. Zero, with PendingReply
+// set, means a basic-group inbox id is not visible yet.
 type GroupAsk struct {
 	From     int64
 	PeerType int32
@@ -65,6 +66,9 @@ type GroupAsk struct {
 	ReplyTo  int32
 	Text     string
 	Random   int64
+	// PendingReply, when set, runs after the model returns and before SendGroup,
+	// and only when ReplyTo is still 0. A zero result sends the reply with no reply_to.
+	PendingReply func(ctx context.Context) int32
 }
 
 // Recorder persists replies. A nil recorder keeps them only on the ledger.
@@ -171,6 +175,8 @@ func ObservePrivate(ctx context.Context, from int64, text string, random int64) 
 // ObserveGroup replies in the same basic group or supergroup. The caller has
 // already decided this message mentions @tellomi or replies to 777001, and
 // that 777001 can post there. A per-chat minute cap does not send a notice.
+// PendingReply, when ReplyTo is still 0, runs after the model returns and
+// before SendGroup. The model call does not wait on the inbox row.
 func ObserveGroup(ctx context.Context, ask GroupAsk) {
 	installedMu.RLock()
 	s := active
@@ -193,7 +199,11 @@ func ObserveGroup(ctx context.Context, ask GroupAsk) {
 		}
 		return
 	}
-	if err = s.Group.SendGroup(ctx, ask.PeerType, ask.PeerID, ask.ReplyTo, res.Text, res.AIGenerated); err != nil {
+	replyTo := ask.ReplyTo
+	if replyTo == 0 && ask.PendingReply != nil {
+		replyTo = ask.PendingReply(ctx)
+	}
+	if err = s.Group.SendGroup(ctx, ask.PeerType, ask.PeerID, replyTo, res.Text, res.AIGenerated); err != nil {
 		logx.WithContext(ctx).Errorf("tellomi ai: group send failed user=%d peer=%d", ask.From, ask.PeerID)
 	}
 }
