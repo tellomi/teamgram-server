@@ -5,8 +5,8 @@
 // empty). It does not delete rows or objects. Run it by hand, in batches.
 // Pass -after with the last id from the previous run to resume.
 //
-//	backfillstripped -f /app/etc/dfs.yaml -dry-run
-//	backfillstripped -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379
+//	backfillstripped -f /app/etc2/dfs.yaml -dry-run
+//	backfillstripped -f /app/etc2/dfs.yaml -dry-run=false -redis redis:6379
 package main
 
 import (
@@ -28,12 +28,12 @@ import (
 )
 
 func main() {
-	configFile := flag.String("f", "/app/etc/dfs.yaml", "dfs yaml, for the MySQL DSN and object storage")
+	configFile := flag.String("f", strippedbackfill.ContainerDFSConfig, "dfs yaml inside the teamgram container, for the MySQL DSN and object storage")
 	dryRun := flag.Bool("dry-run", true, "read photos and report what would be stored, without writing")
 	batch := flag.Int("batch", 50, "profile photos to load per query")
 	after := flag.Int64("after", 0, "resume after this photo id (the last id printed by the previous run)")
 	maxN := flag.Int("max", 0, "stop after this many photos; 0 walks every profile photo")
-	redisAddr := flag.String("redis", "", "redis host:port. Drops photo#, user_data.2#, and chat# for each stored thumb. Empty leaves those caches until they expire (about 7 days)")
+	redisAddr := flag.String("redis", "", "redis host:port. On the compose network this is redis:6379. Drops photo#, user_data.2#, and chat# for each stored thumb. Empty leaves those caches until they expire (about 7 days)")
 	flag.Parse()
 
 	var c config.Config
