@@ -8,7 +8,6 @@ package dao
 
 import (
 	"context"
-	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
@@ -55,10 +54,6 @@ inputMediaDice#e66fbf7b emoticon:string = InputMedia;
 //}
 
 func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, media *mtproto.InputMedia) (messageMedia *mtproto.MessageMedia, err error) {
-	var (
-		now = int32(time.Now().Unix())
-	)
-
 	switch media.PredicateName {
 	case mtproto.Predicate_inputMediaEmpty:
 		// inputMediaEmpty#9664f57f = InputMedia;
@@ -94,21 +89,20 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 		//	ttl_seconds:flags.0?int = InputMedia;
 
 		mediaPhoto := media.To_InputMediaPhoto()
-		sizeList, _ := d.MediaGetPhotoSizeList(ctx, &mediapb.TLMediaGetPhotoSizeList{
-			SizeId: mediaPhoto.GetId_INPUTPHOTO().GetId(),
+		photoIn := mediaPhoto.GetId_INPUTPHOTO()
+		var photo *mtproto.Photo
+		photo, err = catalog.ResolveInputPhoto(photoIn, func() (*mtproto.Photo, error) {
+			if photoIn == nil {
+				return nil, mtproto.ErrMediaInvalid
+			}
+			return d.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoIn.GetId()})
 		})
-
-		photo := mtproto.MakeTLPhoto(&mtproto.Photo{
-			Id:          mediaPhoto.GetId_INPUTPHOTO().GetId(),
-			HasStickers: false,
-			AccessHash:  mediaPhoto.GetId_INPUTPHOTO().GetAccessHash(),
-			Date:        now,
-			Sizes:       sizeList.Sizes,
-			DcId:        sizeList.DcId,
-		})
+		if err != nil {
+			return
+		}
 
 		messageMedia = mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
-			Photo_FLAGPHOTO: photo.To_Photo(),
+			Photo_FLAGPHOTO: photo,
 			TtlSeconds:      mediaPhoto.GetTtlSeconds(),
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaGeoPoint:

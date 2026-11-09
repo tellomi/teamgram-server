@@ -316,6 +316,60 @@ func legacyCenterHit(code, slot string, id int64) bool {
 	return slot == "center" && id == legacyCenterID(code)
 }
 
+// ReactionIssued is the access_hash values and file_reference this process
+// puts on a reaction icon. The effect document id is issued twice: the
+// picker names the file "<code>-effect.tgs" and messages.getAvailableEffects
+// names it "<code>.tgs". Both hashes are valid. ref is empty when id is not
+// a reaction icon.
+func ReactionIssued(id int64) (access []int64, ref []byte, ok bool) {
+	if id == 0 {
+		return nil, nil, false
+	}
+	for _, spec := range reactionSpecs() {
+		for _, slot := range reactionSlots {
+			slotID := reactionSlotID(spec.code, slot.name)
+			if id != slotID && !legacyCenterHit(spec.code, slot.name, id) {
+				continue
+			}
+			access = append(access, reactionAccess(spec.code, slot.name, slot.tgs))
+			if slot.name == "effect" {
+				access = append(access, stableID("reaction-access", "application/x-tgsticker", spec.code+".tgs"))
+			}
+			return uniqueInt64(access), reactionFileReference(id), true
+		}
+		if id == stableID("reaction", "anim", spec.code) {
+			access = append(access,
+				reactionAccess(spec.code, "effect", true),
+				stableID("reaction-access", "application/x-tgsticker", spec.code+".tgs"),
+			)
+			return uniqueInt64(access), reactionFileReference(id), true
+		}
+	}
+	return nil, nil, false
+}
+
+func reactionAccess(code, slot string, tgs bool) int64 {
+	mime, name := "image/webp", code+".webp"
+	if tgs {
+		mime = "application/x-tgsticker"
+		name = code + "-" + slot + ".tgs"
+	}
+	return stableID("reaction-access", mime, name)
+}
+
+func uniqueInt64(ids []int64) []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
 func reactionFileReference(id int64) []byte {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], uint64(id))

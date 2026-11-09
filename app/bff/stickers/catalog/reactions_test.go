@@ -7,6 +7,43 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestReactionIssuedMatchesPickerAndEffects(t *testing.T) {
+	s := newService(builtinPacks())
+	icon := s.Reactions(0).GetReactions()[0].GetStaticIcon()
+	hashes, ref, ok := ReactionIssued(icon.GetId())
+	if !ok || !bytes.Equal(ref, icon.GetFileReference()) || !containsInt64(hashes, icon.GetAccessHash()) {
+		t.Fatalf("static issued hashes %v ref %d ok %v", hashes, len(ref), ok)
+	}
+	effect := s.AvailableEffects(0).GetDocuments()
+	var effectDoc *mtproto.Document
+	for _, doc := range effect {
+		if doc.GetMimeType() == "application/x-tgsticker" {
+			effectDoc = doc
+			break
+		}
+	}
+	if effectDoc == nil {
+		t.Fatal("no effect document")
+	}
+	hashes, ref, ok = ReactionIssued(effectDoc.GetId())
+	if !ok || !bytes.Equal(ref, effectDoc.GetFileReference()) || !containsInt64(hashes, effectDoc.GetAccessHash()) {
+		t.Fatalf("effect issued hashes %v", hashes)
+	}
+	picker := s.Reactions(0).GetReactions()[0].GetEffectAnimation()
+	if picker.GetId() != effectDoc.GetId() || !containsInt64(hashes, picker.GetAccessHash()) {
+		t.Fatal("picker effect hash is not issued for the same id")
+	}
+}
+
+func containsInt64(xs []int64, v int64) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAvailableReactionsUseTheirOwnArt(t *testing.T) {
 	s := newService(builtinPacks())
 	msg := s.Reactions(0)

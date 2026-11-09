@@ -106,6 +106,10 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-tellomi-attachments}
+      # Media access_hash checks. enforce rejects a wrong hash. log records
+      # the denial and allows the call, so a bad rollout can be rolled back
+      # by recreating this container. See docs/media-dedup.md.
+      TELLOMI_MEDIA_ACCESS_ENFORCE: ${TELLOMI_MEDIA_ACCESS_ENFORCE:-enforce}
       # Chat media retention (docs/media-retention.md). Off unless enabled.
       # Free chats keep photos/videos/voice/files for DAYS after upload;
       # chats with an active subscriber keep them forever (GRACE_DAYS after

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
@@ -12,6 +11,7 @@ import (
 // MediaAPI is the slice of the media service stories use for photos and videos.
 type MediaAPI interface {
 	MediaUploadPhotoFile(ctx context.Context, in *mediapb.TLMediaUploadPhotoFile) (*mtproto.Photo, error)
+	MediaGetPhoto(ctx context.Context, in *mediapb.TLMediaGetPhoto) (*mtproto.Photo, error)
 	MediaGetPhotoSizeList(ctx context.Context, in *mediapb.TLMediaGetPhotoSizeList) (*mediapb.PhotoSizeList, error)
 	MediaUploadedDocumentMedia(ctx context.Context, in *mediapb.TLMediaUploadedDocumentMedia) (*mtproto.MessageMedia, error)
 	MediaGetDocument(ctx context.Context, in *mediapb.TLMediaGetDocument) (*mtproto.Document, error)
@@ -23,7 +23,6 @@ func ResolveMedia(ctx context.Context, owner int64, in *mtproto.InputMedia, api 
 	if in == nil {
 		return nil, mtproto.ErrMediaInvalid
 	}
-	now := int32(time.Now().Unix())
 	switch in.PredicateName {
 	case mtproto.Predicate_inputMediaEmpty:
 		return mtproto.MakeTLMessageMediaEmpty(nil).To_MessageMedia(), nil
@@ -47,20 +46,14 @@ func ResolveMedia(ctx context.Context, owner int64, in *mtproto.InputMedia, api 
 		}).To_MessageMedia(), nil
 	case mtproto.Predicate_inputMediaPhoto:
 		photoIn := in.To_InputMediaPhoto().GetId_INPUTPHOTO()
-		if photoIn == nil {
-			return nil, mtproto.ErrMediaInvalid
-		}
-		photo := mtproto.MakeTLPhoto(&mtproto.Photo{
-			Id:         photoIn.GetId(),
-			AccessHash: photoIn.GetAccessHash(),
-			Date:       now,
-			DcId:       1,
-		}).To_Photo()
-		if api != nil {
-			if sizes, err := api.MediaGetPhotoSizeList(ctx, &mediapb.TLMediaGetPhotoSizeList{SizeId: photoIn.GetId()}); err == nil && sizes != nil {
-				photo.Sizes = sizes.Sizes
-				photo.DcId = sizes.DcId
+		photo, err := catalog.ResolveInputPhoto(photoIn, func() (*mtproto.Photo, error) {
+			if api == nil || photoIn == nil {
+				return nil, mtproto.ErrMediaInvalid
 			}
+			return api.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoIn.GetId()})
+		})
+		if err != nil {
+			return nil, err
 		}
 		return mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
 			Spoiler:         in.GetSpoiler(),
@@ -106,20 +99,14 @@ func ResolveMedia(ctx context.Context, owner int64, in *mtproto.InputMedia, api 
 	}
 }
 
-func stubDocument(id, access int64, mime string, date int32) *mtproto.Document {
-	return mtproto.MakeTLDocument(&mtproto.Document{
-		Id:         id,
-		AccessHash: access,
-		Date:       date,
-		MimeType:   mime,
-		DcId:       1,
-		Attributes: []*mtproto.DocumentAttribute{},
-	}).To_Document()
-}
+// mediaLookup is set by tests. Production leaves it nil and uses the media service.
+var mediaLookup MediaAPI
 
 func (s *Service) mediaOf(ctx context.Context, owner int64, in *mtproto.InputMedia) (*mtproto.MessageMedia, error) {
 	var api MediaAPI
-	if s.svcCtx != nil {
+	if mediaLookup != nil {
+		api = mediaLookup
+	} else if s != nil && s.svcCtx != nil && s.svcCtx.MediaClient != nil {
 		api = s.svcCtx.MediaClient
 	}
 	return ResolveMedia(ctx, owner, in, api)
@@ -129,10 +116,14 @@ func (s *Service) musicOf(ctx context.Context, in *mtproto.InputDocument) *mtpro
 	if in == nil || in.GetId() == 0 {
 		return nil
 	}
-	if s.svcCtx != nil && s.svcCtx.MediaClient != nil {
-		if doc, err := s.svcCtx.MediaClient.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: in.GetId()}); err == nil && doc != nil {
-			return doc
+	doc, err := catalog.ResolveInputDocument(in, func() (*mtproto.Document, error) {
+		if s == nil || s.svcCtx == nil || s.svcCtx.MediaClient == nil {
+			return nil, mtproto.ErrMediaInvalid
 		}
+		return s.svcCtx.MediaClient.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: in.GetId()})
+	})
+	if err != nil {
+		return nil
 	}
-	return stubDocument(in.GetId(), in.GetAccessHash(), "audio/mpeg", int32(time.Now().Unix()))
+	return doc
 }

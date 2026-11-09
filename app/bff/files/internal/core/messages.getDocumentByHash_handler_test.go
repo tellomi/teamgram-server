@@ -58,7 +58,7 @@ func TestGetDocumentByHashTraceHitAndEmpty(t *testing.T) {
 		Sha256:      sha,
 		MimeType:    plaintext,
 		Size2_INT64: 64,
-	})
+	}, nil)
 	if err != nil || emptyDoc.GetPredicateName() != mtproto.Predicate_documentEmpty {
 		t.Fatalf("nil lookup %+v %v", emptyDoc, err)
 	}
@@ -70,7 +70,7 @@ func TestGetDocumentByHashTraceHitAndEmpty(t *testing.T) {
 		MimeType:    plaintext,
 		Size2_INT32: 42,
 		Size2_INT64: 99,
-	})
+	}, nil)
 	if err != nil || oldSize.GetPredicateName() != mtproto.Predicate_documentEmpty {
 		t.Fatalf("old constructor %+v %v", oldSize, err)
 	}
@@ -90,7 +90,7 @@ func TestGetDocumentByHashTraceHitAndEmpty(t *testing.T) {
 		Sha256:      sha,
 		MimeType:    plaintext,
 		Size2_INT64: 64,
-	})
+	}, func(*mtproto.Document) (bool, error) { return true, nil })
 	if err != nil || hit.GetId() != 7 || hit.GetAccessHash() != accessHash {
 		t.Fatalf("hit %+v %v", hit, err)
 	}
@@ -100,7 +100,7 @@ func TestGetDocumentByHashTraceHitAndEmpty(t *testing.T) {
 		Sha256:      sha,
 		MimeType:    plaintext,
 		Size2_INT64: 64,
-	})
+	}, nil)
 	if err != nil || miss.GetPredicateName() != mtproto.Predicate_documentEmpty {
 		t.Fatalf("stored empty %+v %v", miss, err)
 	}
@@ -110,7 +110,7 @@ func TestGetDocumentByHashTraceHitAndEmpty(t *testing.T) {
 		Sha256:      sha,
 		MimeType:    plaintext,
 		Size2_INT64: 64,
-	}); err == nil {
+	}, nil); err == nil {
 		t.Fatal("expected lookup error")
 	}
 
@@ -172,6 +172,32 @@ type fakeHashFinder struct {
 	sha  string
 	size int64
 	mime string
+}
+
+func TestGetDocumentByHashHidesPrivateDocument(t *testing.T) {
+	sha := bytesRepeat(0x33, 32)
+	finder := &fakeHashFinder{id: 9}
+	docs := &fakeDocs{doc: mtproto.MakeTLDocument(&mtproto.Document{
+		Id: 9, AccessHash: 99, MimeType: "video/mp4", DcId: 1,
+	}).To_Document()}
+	in := &mtproto.TLMessagesGetDocumentByHash{
+		Constructor: mtproto.CRC32_messages_getDocumentByHash_b1f2061f,
+		Sha256:      sha,
+		MimeType:    "video/mp4",
+		Size2_INT64: 10,
+	}
+	hidden, err := lookupDocumentByHash(context.Background(), logx.WithContext(context.Background()), finder, docs, in, func(*mtproto.Document) (bool, error) {
+		return false, nil
+	})
+	if err != nil || hidden.GetPredicateName() != mtproto.Predicate_documentEmpty || hidden.GetAccessHash() != 0 {
+		t.Fatalf("private %+v %v", hidden, err)
+	}
+	shown, err := lookupDocumentByHash(context.Background(), logx.WithContext(context.Background()), finder, docs, in, func(*mtproto.Document) (bool, error) {
+		return true, nil
+	})
+	if err != nil || shown.GetId() != 9 || shown.GetAccessHash() != 99 {
+		t.Fatalf("visible %+v %v", shown, err)
+	}
 }
 
 func (f *fakeHashFinder) FindDocument(ctx context.Context, shaHex string, size int64, mime string) (int64, error) {
