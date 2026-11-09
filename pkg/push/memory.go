@@ -2,7 +2,9 @@ package push
 
 import (
 	"context"
+	"sort"
 	"sync"
+	"time"
 )
 
 // MemoryStore is an in-process Store for tests and for processes that have no MySQL.
@@ -41,6 +43,9 @@ func (s *MemoryStore) Upsert(_ context.Context, d Device) error {
 	if d.LangCode == "" {
 		d.LangCode = lang
 	}
+	if d.UpdatedAt.IsZero() {
+		d.UpdatedAt = time.Now()
+	}
 	s.devices = append(kept, cloneDevice(d))
 	return nil
 }
@@ -55,6 +60,27 @@ func (s *MemoryStore) Delete(_ context.Context, userID int64, tokenType int32, t
 	kept := make([]Device, 0, len(s.devices))
 	for _, old := range s.devices {
 		if _, ok := ids[old.UserID]; ok && old.TokenType == tokenType && old.Token == token {
+			continue
+		}
+		kept = append(kept, old)
+	}
+	s.devices = kept
+	return nil
+}
+
+func (s *MemoryStore) DeleteAuthKey(_ context.Context, userID, authKeyID int64) error {
+	if userID == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := make([]Device, 0, len(s.devices))
+	for _, old := range s.devices {
+		if old.UserID != userID {
+			kept = append(kept, old)
+			continue
+		}
+		if authKeyID == 0 || old.AuthKeyID == authKeyID {
 			continue
 		}
 		kept = append(kept, old)
@@ -83,7 +109,26 @@ func (s *MemoryStore) ListByUser(_ context.Context, userID int64) ([]Device, err
 			out = append(out, cloneDevice(d))
 		}
 	}
+	sortDevicesNewestFirst(out)
 	return out, nil
+}
+
+// sortDevicesNewestFirst puts the latest registration first. A zero time
+// sorts last so a row that never recorded a time does not jump the queue.
+func sortDevicesNewestFirst(devices []Device) {
+	sort.SliceStable(devices, func(i, j int) bool {
+		a, b := devices[i].UpdatedAt, devices[j].UpdatedAt
+		if a.IsZero() != b.IsZero() {
+			return !a.IsZero()
+		}
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		if devices[i].AuthKeyID != devices[j].AuthKeyID {
+			return devices[i].AuthKeyID > devices[j].AuthKeyID
+		}
+		return devices[i].Token > devices[j].Token
+	})
 }
 
 func cloneDevice(d Device) Device {

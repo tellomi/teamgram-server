@@ -34,4 +34,7 @@ type Config struct {
 	AuthsessionClient zrpc.RpcClientConf
 	ChatClient        zrpc.RpcClientConf
 	SyncClient        *kafka.KafkaProducerConf
+	// MysqlDSN is the teamgram database that holds devices. The bff process
+	// passes ChannelMySQL. TEAMGRAM_MYSQL_DSN overrides it.
+	MysqlDSN string `json:",optional"`
 }

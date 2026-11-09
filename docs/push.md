@@ -65,11 +65,35 @@ The body is the text after `|` in the iOS string (`PUSH_MESSAGE_AUDIO` → `🎤
 
 `account.unregisterDevice` deletes that token for the current user and `other_uids`.
 
+`auth.logOut` deletes the device rows for the permanent auth key, and for the temporary key when the device was stored on it. A logout with no permanent key removes every device row for that user, because that unbind drops every session. `account.resetAuthorization` and `auth.resetAuthorizations` delete the rows of the sessions they revoke and leave the caller's row. `account.deleteAccount` and an enforcement reset of every session delete every device row for that user. A failure to delete the row is logged and does not fail the RPC. The next push also skips a row whose `auth_users` binding is missing or `deleted = 1`, so a row that survived the delete is not sent.
+
+## Logged-out rows already in the database
+
+Rows registered before that delete existed are removed by hand. The command is safe to run again; the second run deletes nothing. It does not print tokens or secrets.
+
+Back up `devices` first. The dump holds tokens and secrets. Do not commit it.
+
+```bash
+mysqldump --single-transaction --no-tablespaces teamgram devices \
+  > "devices-before-push-cleanup-$(date -u +%Y%m%dT%H%M%SZ).sql"
+```
+
+Use the same MySQL credentials as `TEAMGRAM_MYSQL_DSN`. Keep the file until a logged-in phone still gets a message and a logged-out phone does not. Then:
+
+```bash
+go run ./cmd/push-device-cleanup -dry-run
+go run ./cmd/push-device-cleanup -backup-done
+```
+
+`-dry-run` prints the count and does not write. Without `-backup-done` the command does not delete. `-dsn` overrides `TEAMGRAM_MYSQL_DSN` and is not logged.
+
+This is not a startup migration. Deleting the rows needs the backup above, so it does not run when a process starts.
+
 Telegram-iOS sends the 256-byte master notification key as `secret` when APNs encryption is on, and always for VoIP (`token_type` 9). The key id the extension looks up is the last 8 bytes of SHA1 of that secret. Message alerts skip VoIP tokens. An incoming call uses them.
 
 ## When a message is pushed
 
-`sync.pushUpdates` is the recipient's new-message path. For each `updateNewMessage` that is not outgoing, sync loads that user's devices and sends. Pushes are sent whether or not another session is online, which is what Telegram does: an iOS app in the background is often still marked online, and the client drops the banner while it is in the foreground.
+`sync.pushUpdates` is the recipient's new-message path. For each `updateNewMessage` that is not outgoing, sync loads that user's devices and sends. A device is included only when `auth_users` for that auth key and user is still live (`deleted = 0`). The rows are ordered newest first. Up to four devices are sent at the same time; each one is still logged on its own. Pushes are sent whether or not another session is online, which is what Telegram does: an iOS app in the background is often still marked online, and the client drops the banner while it is in the foreground.
 
 The chat's `user_notify_settings` row wins over the global users/chats/channels row. `mute_until` in the future suppresses the push. A mention is still sent. `show_previews = 0` switches a text message to `MESSAGE_NOTEXT`, omits the message text, and leaves the outer `title` and `subtitle` off.
 

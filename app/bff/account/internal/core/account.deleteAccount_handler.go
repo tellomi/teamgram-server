@@ -29,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/push"
 )
 
 // AccountDeleteAccount
@@ -154,6 +155,11 @@ func (c *AccountCore) purgeAccount(me *mtproto.UserData, reason string) (*mtprot
 		AuthKeyId: 0,
 		UserId:    c.MD.UserId,
 	})
+	// auth key 0 drops every devices row for this user. The wipe path deletes
+	// the same rows when it is configured; deleting twice is a no-op.
+	if err := push.UnregisterSession(c.ctx, c.svcCtx.Devices, c.MD.UserId, 0); err != nil {
+		c.Logger.Errorf("account.deleteAccount - unregister devices user=%d: %v", c.MD.UserId, err)
+	}
 	c.Logger.Infof("account.deleteAccount - deleted user=%d", c.MD.UserId)
 	return mtproto.BoolTrue, nil
 }
