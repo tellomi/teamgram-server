@@ -11,6 +11,7 @@ import (
 // https://core.telegram.org/api/folders
 //
 // The order vector includes 0 for dialogFilterDefault (the All chats folder).
+// Storage upserts that id so a later getDialogFilters keeps the position.
 // An empty vector is a no-op success. Unknown positive ids are left untouched
 // by storage and still echoed in updateDialogFilterOrder.
 func (c *FoldersCore) MessagesUpdateDialogFiltersOrder(in *mtproto.TLMessagesUpdateDialogFiltersOrder) (*mtproto.Bool, error) {

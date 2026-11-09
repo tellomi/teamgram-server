@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
@@ -251,6 +252,21 @@ func TestMissingAndHidePeers(t *testing.T) {
 	left := subtractRefs(inv.Peers, []peerRef{{Kind: "channel", ID: 1}})
 	if len(left) != 1 || left[0].ID != 2 {
 		t.Fatalf("subtract %+v", left)
+	}
+}
+
+func TestCountStoredFoldersSkipsAllChats(t *testing.T) {
+	rows := []*dialog.DialogFilterExt{
+		nil,
+		{Id: dialog.DialogFilterDefaultID, Order: 3},
+		folderRow(2, 2),
+		folderRow(3, 1),
+	}
+	if n := countStoredFolders(rows); n != 2 {
+		t.Fatalf("slots %d", n)
+	}
+	if n := countStoredFolders(nil); n != 0 {
+		t.Fatalf("empty %d", n)
 	}
 }
 

@@ -26,6 +26,7 @@
     "notice": {"number": "9996610071", "code": "11111"},
     "aged": {"number": "9996610072", "code": "11111"},
     "qr": {"number": "9996610073", "code": "11111"},
-    "qrpass": {"number": "9996610074", "code": "11111"}
+    "qrpass": {"number": "9996610074", "code": "11111"},
+    "folders": {"number": "9996610091", "code": "11111"}
   }
 }
