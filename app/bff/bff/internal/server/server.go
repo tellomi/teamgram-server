@@ -451,7 +451,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCPreparedInlineMessagesServer(grpcServer, botChat)
 		// Managed bots: create, profile, usernames, verification, and affiliate programs.
 		botAdmin := bots_helper.New(c.BizServiceClient)
-		bots_helper.StartTellomi(c.MsgClient, c.ChannelMySQL)
+		bots_helper.StartTellomi(c.MsgClient, c.BizServiceClient, c.ChannelMySQL)
 		// Launch notices. Unset returns immediately and is not on the login path.
 		bots_helper.StartAnnounce(c.MsgClient, c.ChannelMySQL)
 		// Unified reports. Review and the decision listener stay off unless configured.

@@ -17,14 +17,6 @@ const (
 	// Label is the mark report-review notices still append. Assistant replies
 	// (private and group) do not: the account itself is already marked as AI.
 	Label = "AI 生成"
-	// Refusal is the fixed sentence when Bailian content safety blocks a turn.
-	Refusal = "这个问题我暂时不能回答"
-	// DailyMessage is shown on the 101st question of the day.
-	DailyMessage = "今天的提问次数已用完"
-	// MinuteMessage is shown on the 6th question in a minute.
-	MinuteMessage = "操作太频繁，请稍后再试"
-	// BudgetMessage is shown when the monthly budget is spent.
-	BudgetMessage = "本月的提问额度已用完"
 )
 
 // ErrDisabled means TELLOMI_AI is off or the API key is missing.
@@ -66,9 +58,12 @@ type GroupAsk struct {
 	ReplyTo  int32
 	Text     string
 	Random   int64
-	// PendingReply, when set, runs after the model returns and before SendGroup,
+	// PendingReply, when set, runs after the turn is decided and before SendGroup,
 	// and only when ReplyTo is still 0. A zero result sends the reply with no reply_to.
 	PendingReply func(ctx context.Context) int32
+	// NoText is a sticker, media without a caption, or a mention with nothing left to ask.
+	// The model is not called.
+	NoText bool
 }
 
 // Recorder persists replies. A nil recorder keeps them only on the ledger.
@@ -77,14 +72,18 @@ type Recorder interface {
 }
 
 // Service is the @tellomi account. enabled is false until Start.
+// A disabled service still answers with DisabledMessage when someone messages it.
 type Service struct {
 	enabled  bool
 	Client   *Client
+	Models   Completer
 	Ledger   *Ledger
 	Sender   Sender
 	Group    GroupSender
 	Recorder Recorder
+	Allow    *Allow
 	Now      func() time.Time
+	notices  noticeLog
 }
 
 var (
@@ -141,15 +140,25 @@ func Use(s *Service) {
 	installedMu.Unlock()
 }
 
+// Installed reports whether a service, including a disabled one, is in this process.
+func Installed() bool {
+	installedMu.RLock()
+	defer installedMu.RUnlock()
+	return active != nil
+}
+
 // ObservePrivate replies when a person messages @tellomi.
-// It returns immediately when the feature is off, including when from is
-// the service account itself. random is messages.sendMessage random_id;
-// the same pair is answered once.
+// random is messages.sendMessage random_id; the same pair is answered once.
+// A switched-off service still sends DisabledMessage and does not call the model.
 func ObservePrivate(ctx context.Context, from int64, text string, random int64) {
 	installedMu.RLock()
 	s := active
 	installedMu.RUnlock()
-	if s == nil || !s.enabled || from == 0 || from == AccountID {
+	if s == nil || from == 0 || from == AccountID {
+		return
+	}
+	if !s.enabled {
+		s.emit(ctx, from, "", false, GroupAsk{}, Result{Text: Text(KindDisabled), Limited: KindDisabled})
 		return
 	}
 	event := ""
@@ -158,82 +167,87 @@ func ObservePrivate(ctx context.Context, from int64, text string, random int64) 
 	}
 	res, err := s.Reply(ctx, from, text, event)
 	if err != nil {
-		logx.WithContext(ctx).Errorf("tellomi ai: private reply failed user=%d", from)
-		return
-	}
-	if res.Repeated || s.Sender == nil {
-		if s.Sender == nil && !res.Repeated {
-			logx.WithContext(ctx).Errorf("tellomi ai: sender is not configured")
+		if errors.Is(err, ErrBusy) || errors.Is(err, ErrDisabled) {
+			return
 		}
+		logx.WithContext(ctx).Errorf("tellomi ai: private reply failed user=%d", from)
+		s.emit(ctx, from, "", false, GroupAsk{}, Result{Text: Text(KindBusy), Limited: KindBusy})
 		return
 	}
-	if err = s.Sender.Send(ctx, from, res.Text, res.AIGenerated); err != nil {
-		logx.WithContext(ctx).Errorf("tellomi ai: send failed user=%d", from)
-	}
+	s.emit(ctx, from, "", false, GroupAsk{}, res)
 }
 
 // ObserveGroup replies in the same basic group or supergroup. The caller has
 // already decided this message mentions @tellomi or replies to 777001, and
-// that 777001 can post there. A per-chat minute cap does not send a notice.
-// PendingReply, when ReplyTo is still 0, runs after the model returns and
-// before SendGroup. The model call does not wait on the inbox row.
+// that 777001 can post there. PendingReply, when ReplyTo is still 0, runs
+// after the turn is decided and before SendGroup. The model call does not
+// wait on the inbox row. NoText is a sticker, other media without a caption,
+// or a mention that left no text.
 func ObserveGroup(ctx context.Context, ask GroupAsk) {
 	installedMu.RLock()
 	s := active
 	installedMu.RUnlock()
-	if s == nil || !s.enabled || ask.From == 0 || ask.From == AccountID || ask.PeerID == 0 {
+	if s == nil || ask.From == 0 || ask.From == AccountID || ask.PeerID == 0 {
+		return
+	}
+	chat := ChatKey(ask.PeerType, ask.PeerID)
+	if !s.enabled {
+		s.emit(ctx, ask.From, chat, true, ask, Result{Text: Text(KindDisabled), Limited: KindDisabled})
 		return
 	}
 	event := ""
 	if ask.Random != 0 {
 		event = "g:" + itoa(ask.From) + ":" + itoa(int64(ask.PeerType)) + ":" + itoa(ask.PeerID) + ":" + itoa(ask.Random)
 	}
-	res, err := s.ReplyChat(ctx, ask.From, ask.Text, event, ChatKey(ask.PeerType, ask.PeerID))
+	res, err := s.reply(ctx, ask.From, ask.Text, event, chat, ask.NoText)
 	if err != nil {
-		logx.WithContext(ctx).Errorf("tellomi ai: group reply failed user=%d peer=%d", ask.From, ask.PeerID)
-		return
-	}
-	if res.Repeated || res.Limited == "chat" || res.Text == "" || s.Group == nil {
-		if s.Group == nil && !res.Repeated && res.Limited != "chat" && res.Text != "" {
-			logx.WithContext(ctx).Errorf("tellomi ai: group sender is not configured")
+		if errors.Is(err, ErrBusy) || errors.Is(err, ErrDisabled) {
+			return
 		}
+		logx.WithContext(ctx).Errorf("tellomi ai: group reply failed user=%d peer=%d", ask.From, ask.PeerID)
+		s.emit(ctx, ask.From, chat, true, ask, Result{Text: Text(KindBusy), Limited: KindBusy})
 		return
 	}
-	replyTo := ask.ReplyTo
-	if replyTo == 0 && ask.PendingReply != nil {
-		replyTo = ask.PendingReply(ctx)
-	}
-	if err = s.Group.SendGroup(ctx, ask.PeerType, ask.PeerID, replyTo, res.Text, res.AIGenerated); err != nil {
-		logx.WithContext(ctx).Errorf("tellomi ai: group send failed user=%d peer=%d", ask.From, ask.PeerID)
-	}
+	s.emit(ctx, ask.From, chat, true, ask, res)
 }
 
-// Reply runs the quota checks and the model. event may be empty.
-// A content-safety block returns Refusal and does not call the fallback model.
-// A transport failure tries DeepSeek once, still through Bailian.
+// Reply runs the allowlist, the quota checks, and the model. event may be empty.
+// A content-safety block returns the blocked sentence and does not call the fallback model.
+// A transport failure tries the fallback model once, still through Bailian.
+// Fixed fallbacks are returned as a Result and do not call the model.
+// A model or timeout failure is still an error so the engine can retry; chat delivery
+// turns that error into BusyMessage without another model call.
 func (s *Service) Reply(ctx context.Context, userID int64, text, event string) (Result, error) {
-	return s.ReplyChat(ctx, userID, text, event, "")
+	return s.reply(ctx, userID, text, event, "", false)
 }
 
 // ReplyChat is Reply with the per-chat minute cap. An empty chat is a private turn.
 func (s *Service) ReplyChat(ctx context.Context, userID int64, text, event, chat string) (Result, error) {
+	return s.reply(ctx, userID, text, event, chat, false)
+}
+
+func (s *Service) reply(ctx context.Context, userID int64, text, event, chat string, noText bool) (Result, error) {
 	if s == nil || !s.enabled {
 		return Result{}, ErrDisabled
 	}
-	text = clip(strings.TrimSpace(text), 4000)
-	if text == "" || userID == 0 || userID == AccountID {
+	if userID == 0 || userID == AccountID {
 		return Result{}, errors.New("tellomi ai: empty turn")
 	}
-	if s.Client == nil {
-		return Result{}, errors.New("tellomi ai: client is not configured")
+	allowed, err := s.permitted(ctx, userID)
+	if err != nil {
+		return Result{Text: Text(KindBusy), Limited: KindBusy}, nil
+	}
+	if !allowed {
+		return Result{Text: Text(KindAllow), Limited: KindAllow}, nil
+	}
+	text = clip(strings.TrimSpace(text), 4000)
+	if noText || text == "" {
+		return Result{Text: Text(KindInput), Limited: KindInput}, nil
 	}
 	if s.Ledger == nil {
 		s.Ledger = NewLedger()
 	}
-	now := time.Now().UTC()
-	if s.Now != nil {
-		now = s.Now().UTC()
-	}
+	now := s.now()
 	g := s.Ledger.BeginChat(userID, event, chat, now)
 	if g.Stored {
 		g.Result.Repeated = true
@@ -247,21 +261,22 @@ func (s *Service) ReplyChat(ctx context.Context, userID int64, text, event, chat
 		s.keep(ctx, userID, event, text, res, 0, now)
 		return res, nil
 	}
-	model := s.Client.Primary
+	primary, small, fallback := s.modelNames()
+	model := primary
 	if g.Small {
-		model = s.Client.Small
+		model = small
 	}
-	content, tokens, err := s.Client.Complete(ctx, model, text)
+	content, tokens, err := s.complete(ctx, model, text)
 	if errors.Is(err, ErrSafety) {
-		res := Result{Text: Refusal, Model: model, AIGenerated: true, Refused: true}
+		res := Result{Text: Text(KindBlocked), Model: model, AIGenerated: true, Refused: true}
 		s.keep(ctx, userID, event, text, res, 0, now)
 		return res, nil
 	}
-	if err != nil && s.Client.Fallback != "" && s.Client.Fallback != model {
-		content, tokens, err = s.Client.Complete(ctx, s.Client.Fallback, text)
-		model = s.Client.Fallback
+	if err != nil && fallback != "" && fallback != model {
+		content, tokens, err = s.complete(ctx, fallback, text)
+		model = fallback
 		if errors.Is(err, ErrSafety) {
-			res := Result{Text: Refusal, Model: model, AIGenerated: true, Refused: true}
+			res := Result{Text: Text(KindBlocked), Model: model, AIGenerated: true, Refused: true}
 			s.keep(ctx, userID, event, text, res, 0, now)
 			return res, nil
 		}
@@ -274,6 +289,70 @@ func (s *Service) ReplyChat(ctx context.Context, userID int64, text, event, chat
 	res := Result{Text: content, Model: model, AIGenerated: true}
 	s.keep(ctx, userID, event, text, res, tokens, now)
 	return res, nil
+}
+
+func (s *Service) permitted(ctx context.Context, userID int64) (bool, error) {
+	if c := currentRealName(); c != nil {
+		return c.Verified(ctx, userID)
+	}
+	if s == nil || s.Allow == nil {
+		return true, nil
+	}
+	return s.Allow.Allowed(ctx, userID)
+}
+
+func (s *Service) now() time.Time {
+	if s != nil && s.Now != nil {
+		return s.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func (s *Service) modelNames() (primary, small, fallback string) {
+	if s != nil && s.Client != nil {
+		return s.Client.Primary, s.Client.Small, s.Client.Fallback
+	}
+	return defaultPrimary, defaultSmall, defaultFallback
+}
+
+func (s *Service) complete(ctx context.Context, model, prompt string) (string, int, error) {
+	if s != nil && s.Models != nil {
+		return s.Models.Complete(ctx, model, prompt)
+	}
+	if s == nil || s.Client == nil {
+		return "", 0, errors.New("tellomi ai: client is not configured")
+	}
+	return s.Client.Complete(ctx, model, prompt)
+}
+
+func (s *Service) emit(ctx context.Context, from int64, chat string, group bool, ask GroupAsk, res Result) {
+	if res.Repeated || res.Text == "" {
+		return
+	}
+	if !s.notices.admit(res.Limited, from, chat, group, s.now()) {
+		return
+	}
+	if group {
+		if s.Group == nil {
+			logx.WithContext(ctx).Errorf("tellomi ai: group sender is not configured")
+			return
+		}
+		replyTo := ask.ReplyTo
+		if replyTo == 0 && ask.PendingReply != nil {
+			replyTo = ask.PendingReply(ctx)
+		}
+		if err := s.Group.SendGroup(ctx, ask.PeerType, ask.PeerID, replyTo, res.Text, res.AIGenerated); err != nil {
+			logx.WithContext(ctx).Errorf("tellomi ai: group send failed user=%d peer=%d", from, ask.PeerID)
+		}
+		return
+	}
+	if s.Sender == nil {
+		logx.WithContext(ctx).Errorf("tellomi ai: sender is not configured")
+		return
+	}
+	if err := s.Sender.Send(ctx, from, res.Text, res.AIGenerated); err != nil {
+		logx.WithContext(ctx).Errorf("tellomi ai: send failed user=%d", from)
+	}
 }
 
 func (s *Service) keep(ctx context.Context, userID int64, event, prompt string, res Result, tokens int, now time.Time) {
@@ -301,20 +380,6 @@ func WithLabel(text string) string {
 		return text
 	}
 	return text + "\n\n" + Label
-}
-
-func limitText(kind string) string {
-	switch kind {
-	case "minute":
-		return MinuteMessage
-	case "budget":
-		return BudgetMessage
-	case "chat":
-		// The group cap is silent. A notice on every extra mention would flood the chat.
-		return ""
-	default:
-		return DailyMessage
-	}
 }
 
 func clip(s string, n int) string {
