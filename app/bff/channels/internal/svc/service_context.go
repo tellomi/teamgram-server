@@ -2,9 +2,11 @@ package svc
 
 import (
 	"context"
-	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"os"
+	"strings"
 
 	"github.com/teamgram/marmota/pkg/net/rpcx"
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/config"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
@@ -14,16 +16,20 @@ import (
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
+	"github.com/teamgram/teamgram-server/pkg/archive"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type ServiceContext struct {
-	Config      config.Config
-	UserClient  user_client.UserClient
-	MediaClient media_client.MediaClient
+	Config       config.Config
+	UserClient   user_client.UserClient
+	MediaClient  media_client.MediaClient
+	DialogClient dialog_client.DialogClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -41,13 +47,17 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if len(c.MediaClient.Etcd.Hosts) > 0 {
 		mediaClient = media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient))
 	}
-	installChannelHooks(c)
-	return &ServiceContext{Config: c, UserClient: users, MediaClient: mediaClient}
+	return &ServiceContext{
+		Config:       c,
+		UserClient:   users,
+		MediaClient:  mediaClient,
+		DialogClient: installChannelHooks(c, users),
+	}
 }
 
-func installChannelHooks(c config.Config) {
+func installChannelHooks(c config.Config, users user_client.UserClient) dialog_client.DialogClient {
 	var dialogs dialog_client.DialogClient
-	if len(c.DialogClient.Etcd.Hosts) > 0 {
+	if len(c.DialogClient.Etcd.Hosts) > 0 || len(c.DialogClient.Endpoints) > 0 {
 		dialogs = dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c.DialogClient))
 	}
 	var syncer sync_client.SyncClient
@@ -87,5 +97,50 @@ func installChannelHooks(c config.Config) {
 				Date2:           &wrapperspb.Int64Value{Value: date},
 			})
 		},
+		Incoming: channelIncoming(users, dialogs, syncer, channelPts(c)),
 	})
+	return dialogs
+}
+
+func channelPts(c config.Config) archive.SeqWriter {
+	var next archive.SeqPts
+	if len(c.IdgenClient.Etcd.Hosts) > 0 || len(c.IdgenClient.Endpoints) > 0 {
+		gen := idgen_client.NewIDGenClient2(rpcx.GetCachedRpcClient(c.IdgenClient))
+		next = &gen
+	}
+	dsn := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN"))
+	if dsn == "" {
+		dsn = strings.TrimSpace(c.ChannelMySQL)
+	}
+	var save archive.SavePts
+	if dsn != "" {
+		save = archive.SavePtsSQL(sqlx.NewMySQL(&sqlx.Config{DSN: dsn}))
+	}
+	return archive.SeqWriter{Next: next, Save: save}
+}
+
+func channelIncoming(users user_client.UserClient, dialogs dialog_client.DialogClient, syncer sync_client.SyncClient, pts archive.SeqWriter) func(context.Context, int64, int64, int64, bool) {
+	return func(ctx context.Context, userID, channelID, sender int64, broadcast bool) {
+		if users == nil || dialogs == nil {
+			return
+		}
+		class := archive.ClassGroup
+		if broadcast {
+			class = archive.ClassBroadcast
+		}
+		ups := archive.Apply(ctx, archive.Clients{Dialog: dialogs, User: users}, pts, archive.Incoming{
+			Owner:    userID,
+			PeerType: mtproto.PEER_CHANNEL,
+			PeerID:   channelID,
+			Sender:   sender,
+			Class:    class,
+		})
+		if len(ups) == 0 || syncer == nil {
+			return
+		}
+		_, _ = syncer.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{
+			UserId:  userID,
+			Updates: mtproto.MakeUpdatesByUpdates(ups...),
+		})
+	}
 }

@@ -50,10 +50,13 @@ func defaultChannelBanned() int64 {
 	return int64(rights.ToBannedRights())
 }
 
-// Hooks fan out channel updates and dialog rows. Both are optional.
+// Hooks fan out channel updates and dialog rows. All three are optional.
+// Incoming runs for every member except the sender after a new channel message.
+// broadcast is true for channels and false for supergroups.
 type Hooks struct {
-	Push   func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates)
-	Dialog func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64)
+	Push     func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates)
+	Dialog   func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64)
+	Incoming func(ctx context.Context, userID, channelID, sender int64, broadcast bool)
 }
 
 // Service is the channel and supergroup implementation.

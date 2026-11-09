@@ -134,10 +134,10 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 			date int32,
 		) {
 			if syncType == syncTypeUserNotMe {
-				// c.svcCtx.Dao.AddToPtsQueue(c.ctx, userId, update.Pts_INT32, update.PtsCount, update)
-				// removed in pure push mode
+				// The folders handler already stored this pts. Sync only delivers it.
 			}
-			// pts_count 0: deliver the archive change without opening a difference gap.
+			// Deliver the archive change to the user's other sessions. pts_count 1
+			// is replayed by updates.getDifference; pts_count 0 is applied in place.
 			needPush = true
 		},
 		mtproto.Predicate_updateDialogFilter: func(

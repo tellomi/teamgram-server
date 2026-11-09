@@ -41,6 +41,7 @@ import (
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
+	"github.com/teamgram/teamgram-server/pkg/archive"
 	"github.com/teamgram/teamgram-server/pkg/deduplication"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -146,6 +147,26 @@ func installChannelHooks(c config.Config, d *dao.Dao) {
 				ReadOutboxMaxId: &wrapperspb.Int32Value{Value: readOutbox},
 				UnreadCount:     &wrapperspb.Int32Value{Value: unread},
 				Date2:           &wrapperspb.Int64Value{Value: date},
+			})
+		},
+		Incoming: func(ctx context.Context, userID, channelID, sender int64, broadcast bool) {
+			class := archive.ClassGroup
+			if broadcast {
+				class = archive.ClassBroadcast
+			}
+			ups := d.ArchiveIncoming(ctx, archive.Incoming{
+				Owner:    userID,
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerID:   channelID,
+				Sender:   sender,
+				Class:    class,
+			})
+			if len(ups) == 0 || d.SyncClient == nil {
+				return
+			}
+			_, _ = d.SyncClient.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{
+				UserId:  userID,
+				Updates: mtproto.MakeUpdatesByUpdates(ups...),
 			})
 		},
 	})

@@ -215,12 +215,14 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 				UnreadMark:           false,
 				DraftType:            0,
 				DraftMessageData:     "null",
-				FolderId:             0,
-				FolderPinned:         0,
-				HasScheduled:         false,
-				TtlPeriod:            0,
-				ThemeEmoticon:        "",
-				Date2:                date,
+				// folder_id is not in InsertOrUpdate's ON DUPLICATE KEY UPDATE.
+				// Leaving this zero must stay that way: writing it would unarchive the chat.
+				FolderId:      0,
+				FolderPinned:  0,
+				HasScheduled:  false,
+				TtlPeriod:     0,
+				ThemeEmoticon: "",
+				Date2:         date,
 			}
 			if inBox.Mentioned {
 				dialogDO.UnreadMentionsCount = 1

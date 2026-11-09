@@ -339,5 +339,6 @@ func (d *Dao) GetDialogListByIdList(ctx context.Context, userId int64, idList []
 		return nil, err
 	}
 
+	d.applyStoredFolderIDs(ctx, userId, dlgExtList)
 	return dlgExtList, nil
 }

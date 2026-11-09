@@ -387,7 +387,27 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		}
 		return s.updatesWith(ctx, viewer, ch, cloned...)
 	})
+	s.notifyIncoming(ctx, channelID, sender, ch)
 	return updates, nil
+}
+
+// notifyIncoming lets the host move unmuted archived channels back to the
+// main list. The sender's own post stays where they put it.
+func (s *Service) notifyIncoming(ctx context.Context, channelID, sender int64, ch *Channel) {
+	h := s.hooks()
+	if h.Incoming == nil || ch == nil || sender == 0 {
+		return
+	}
+	parts, err := s.store.ListParticipants(ctx, channelID)
+	if err != nil {
+		return
+	}
+	for _, p := range parts {
+		if p.State != StateNormal || p.UserID == 0 || p.UserID == sender {
+			continue
+		}
+		h.Incoming(ctx, p.UserID, channelID, sender, ch.Broadcast)
+	}
 }
 
 func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, messageID int32, apply func(*mtproto.Message)) (*mtproto.Updates, error) {
