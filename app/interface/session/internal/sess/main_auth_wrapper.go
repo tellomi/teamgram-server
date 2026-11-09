@@ -1078,7 +1078,10 @@ func (m *MainAuthWrapper) onSessionNew(ctx context.Context, connMsg *connData) {
 		sess = newSession(connMsg.sessionId, sList)
 		sList.sessions[connMsg.sessionId] = sess
 	} else {
-		sess.sessionState = kSessionStateNew
+		// The same (auth key, session id) came back after a TCP drop.
+		// Official servers send new_session_created only for a session id
+		// they have not seen yet. Resetting sessionState made every
+		// foreground resume look new, and the client dropped in-flight RPCs.
 		logx.WithContext(ctx).Infof("onSessionNew - session(%d) found, conn: %s", m.authKeyId, connMsg)
 	}
 
