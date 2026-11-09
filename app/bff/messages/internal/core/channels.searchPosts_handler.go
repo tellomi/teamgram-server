@@ -38,11 +38,44 @@ func (c *MessagesCore) ChannelsSearchPosts(in *mtproto.TLChannelsSearchPosts) (*
 		res.SearchFlood = postsearch.Shared().Spend(c.ctx, c.MD.UserId)
 		c.fillPostChats(res)
 		c.fillPostUsers(res)
+		pinVectors(res)
 		if sealed := sealMessages(res, c.layer()); sealed != nil {
 			res = sealed
+			pinVectors(res)
 		}
 	}
 	return res, nil
+}
+
+// pinVectors sets the TL name and constructor on every chat and user.
+// Session encoding drops an object whose name was cleared in transit and
+// whose constructor is still zero.
+func pinVectors(res *mtproto.Messages_Messages) {
+	if res == nil {
+		return
+	}
+	for _, chat := range res.Chats {
+		if chat == nil {
+			continue
+		}
+		if chat.PredicateName == "" {
+			chat.PredicateName = mtproto.Predicate_channel
+		}
+		if chat.Constructor == 0 {
+			chat.Constructor = mtproto.TLConstructor(mtproto.GetClazzID(chat.PredicateName, mtproto.Layer))
+		}
+	}
+	for _, user := range res.Users {
+		if user == nil {
+			continue
+		}
+		if user.PredicateName == "" {
+			user.PredicateName = mtproto.Predicate_userEmpty
+		}
+		if user.Constructor == 0 {
+			user.Constructor = mtproto.TLConstructor(mtproto.GetClazzID(user.PredicateName, mtproto.Layer))
+		}
+	}
 }
 
 func (c *MessagesCore) layer() int32 {
