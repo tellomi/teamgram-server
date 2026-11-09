@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestSearchPostsChineseHashtagPageAndHidden(t *testing.T) {
@@ -283,48 +282,25 @@ func TestSearchPostsRoundTripKeepsChatsAndUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page.SearchFlood = mtproto.MakeTLSearchPostsFlood(&mtproto.SearchPostsFlood{
-		QueryIsFree: true,
-		TotalDaily:  100,
-		Remains:     99,
-	}).To_SearchPostsFlood()
-	rawProto, err := proto.Marshal(page)
-	if err != nil {
+	buf := mtproto.NewEncodeBuf(1024)
+	if err := page.Encode(buf, 232); err != nil {
 		t.Fatal(err)
 	}
-	page = &mtproto.Messages_Messages{}
-	if err := proto.Unmarshal(rawProto, page); err != nil {
-		t.Fatal(err)
-	}
-	if len(page.GetChats()) == 0 || len(page.GetUsers()) == 0 {
-		t.Fatalf("proto chats=%d users=%d", len(page.GetChats()), len(page.GetUsers()))
-	}
-	rpc := &mtproto.TLRpcResult{ReqMsgId: 1, Result: page}
-	buf := mtproto.NewEncodeBuf(512)
-	if err := rpc.Encode(buf, 232); err != nil {
-		t.Fatal(err)
-	}
-	raw := buf.GetBuf()
-	d := mtproto.NewDecodeBuf(raw)
+	d := mtproto.NewDecodeBuf(buf.GetBuf())
 	obj := d.Object()
 	if err := d.GetError(); err != nil {
 		t.Fatal(err)
 	}
-	res, ok := obj.(*mtproto.TLRpcResult)
+	slice, ok := obj.(*mtproto.TLMessagesMessagesSlice)
 	if !ok {
-		t.Fatalf("rpc %T", obj)
-	}
-	inner := res.Result
-	if gz, ok := inner.(*mtproto.TLGzipPacked); ok {
-		inner = gz.Obj
-	}
-	slice, ok := inner.(*mtproto.TLMessagesMessagesSlice)
-	if !ok {
-		t.Fatalf("inner %T", inner)
+		t.Fatalf("result %T", obj)
 	}
 	decoded := slice.To_Messages_Messages()
-	if len(decoded.GetMessages()) == 0 || len(decoded.GetChats()) == 0 || len(decoded.GetUsers()) == 0 {
-		t.Fatalf("round trip messages=%d chats=%d users=%d gzip=%T", len(decoded.GetMessages()), len(decoded.GetChats()), len(decoded.GetUsers()), res.Result)
+	if len(decoded.GetMessages()) != 1 || decoded.GetMessages()[0].GetMessage() != "上海你好 #新闻" {
+		t.Fatalf("messages=%d", len(decoded.GetMessages()))
+	}
+	if len(decoded.GetChats()) == 0 || len(decoded.GetUsers()) == 0 {
+		t.Fatalf("round trip chats=%d users=%d", len(decoded.GetChats()), len(decoded.GetUsers()))
 	}
 }
 

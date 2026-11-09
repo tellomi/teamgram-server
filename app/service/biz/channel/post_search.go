@@ -52,6 +52,12 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, q PostQuery) (*mt
 		if body.GetPeerId().GetChannelId() == 0 && channelID != 0 {
 			body.PeerId = mtproto.MakePeerChannel(channelID)
 		}
+		if body.PredicateName == "" {
+			body.PredicateName = mtproto.Predicate_message
+		}
+		if body.GetMedia() != nil && body.GetMedia().GetPredicateName() == "" {
+			body.Media = nil
+		}
 		sender := stored.SenderID
 		if id := body.GetFromId().GetUserId(); id != 0 {
 			sender = id

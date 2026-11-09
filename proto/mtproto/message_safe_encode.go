@@ -1,6 +1,10 @@
 package mtproto
 
-import "fmt"
+import (
+	"fmt"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
+)
 
 // Encode serializes one message. Entities are filtered again here so a push,
 // getHistory, or getDifference cannot skip the UTF-16 check. A panic or
@@ -10,6 +14,15 @@ import "fmt"
 func (m *Message) Encode(x *EncodeBuf, layer int32) (err error) {
 	if m == nil {
 		return fmt.Errorf("nil message")
+	}
+	// views and forwards share one flag. The decoder reads both integers
+	// when that flag is set. A post that only has a view count has to send
+	// forwards as 0, or the next vector is consumed as the forward count.
+	if m.GetViews() != nil && m.GetForwards() == nil {
+		m.Forwards = &wrapperspb.Int32Value{Value: 0}
+	}
+	if m.GetForwards() != nil && m.GetViews() == nil {
+		m.Views = &wrapperspb.Int32Value{Value: 0}
 	}
 	m.SanitizeEntities()
 	start := x.GetOffset()

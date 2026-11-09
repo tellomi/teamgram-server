@@ -1,8 +1,6 @@
 package core
 
 import (
-	"fmt"
-
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/postsearch"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -40,11 +38,6 @@ func (c *MessagesCore) ChannelsSearchPosts(in *mtproto.TLChannelsSearchPosts) (*
 		res.SearchFlood = postsearch.Shared().Spend(c.ctx, c.MD.UserId)
 		c.fillPostChats(res)
 		c.fillPostUsers(res)
-		// The counts ride on the first post. A client that loses the vectors
-		// still shows whether the handler attached them.
-		if len(res.GetMessages()) > 0 && res.Messages[0] != nil {
-			res.Messages[0].Message = fmt.Sprintf("%s c=%d u=%d", res.Messages[0].GetMessage(), len(res.GetChats()), len(res.GetUsers()))
-		}
 	}
 	return res, nil
 }
