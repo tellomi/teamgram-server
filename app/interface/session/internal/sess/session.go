@@ -242,12 +242,14 @@ func SplitCloseStamp(clientIP string) (string, int64) {
 
 func (c *session) changeConnState(ctx context.Context, state int) {
 	c.connState = state
-	if c.isAndroidPush || c.isGeneric {
-		if state == kStateOnline {
-			c.sessList.cb.setOnline(ctx)
-		} else if state == kStateOffline {
-			c.sessList.cb.trySetOffline(ctx)
-		}
+	// Online follows every socket on this auth key. A file connection closing
+	// must not clear the user while the chat socket is still up, and the last
+	// socket closing must clear it even when that socket was not the updates
+	// session.
+	if state == kStateOnline {
+		c.sessList.cb.setOnline(ctx)
+	} else if state == kStateOffline {
+		c.sessList.cb.trySetOffline(ctx)
 	}
 }
 

@@ -25,10 +25,10 @@ func (c *UpdatesCore) UpdatesGetStateV2(in *updates.TLUpdatesGetStateV2) (*mtpro
 		pts = c.svcCtx.Dao.IDGenClient2.NextPtsId(c.ctx, in.UserId)
 	}
 
-	seq := c.svcCtx.Dao.IDGenClient2.CurrentSeqId(c.ctx, in.AuthKeyId)
-	if seq == 0 {
-		seq = -1
-	}
+	// seq 0 means this auth key has not stored a seq yet. A negative seq is
+	// not a counter: clients compare it with their local seq and then reload
+	// state from getPeerDialogs, which is what jumped the chat list.
+	seq := nonNegativeSeq(c.svcCtx.Dao.IDGenClient2.CurrentSeqId(c.ctx, in.AuthKeyId))
 	qts := c.svcCtx.Dao.IDGenClient2.CurrentQtsId(c.ctx, in.AuthKeyId)
 	if queued := secretchat.Current(in.UserId); queued > qts {
 		qts = queued
