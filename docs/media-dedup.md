@@ -38,7 +38,11 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 
 再次发送同一个 `InputDocument` 或 `InputPhoto`（同一 `id` + `access_hash` + `file_reference`）仍然引用已有记录，不重新上传。重新选文件再发会走上传路径；字节相同则命中 `media_blobs`，新行指向已有对象。
 
-`messages.getDocumentByHash` 按官方 TL：`sha256`（32 字节）+ `size` + `mime_type` 命中则返回已有 Document（含它自己的 `access_hash`），否则 `documentEmpty`。旧构造 `#338e2464` 的 size 是 int，当前 `#b1f2061f` 是 long。这是客户端在发送贴纸、GIF、已知文件前按 hash 取已有 Document 的接口；上传路径不会因为 hash 相同就把别人的 `access_hash` 交给上传者。
+`messages.getDocumentByHash` 按官方 TL：`sha256`（32 字节）+ `size` + `mime_type`。命中且调用者可以看这份文件时，返回那条 Document（含它自己的 `access_hash`）；否则 `documentEmpty`。可以看，指公开贴纸 / emoji / 反应 / 面板 GIF，或调用者自己的消息箱（含转发）和已保存 GIF 里已经有这份 document。别人的私有文件不会因为 hash 相同就把 `access_hash` 交出来。同一份字节再上传仍是新的 id 和 `access_hash`。旧构造 `#338e2464` 的 size 是 int，当前 `#b1f2061f` 是 long。
+
+`upload.getFile` 和 `upload.getFileHashes` 要求 location 上的 `access_hash` 与照片、文档、加密文件或贴纸目录里签发的值逐位相同。`access_hash=0` 不是通配。`inputPeerPhotoFileLocation` 没有文件 hash：对方必须可见，且 `photo_id` 是这个 peer 的头像。`file_reference` 只在服务端存过非空值时才校验，对不上返回 `FILE_REFERENCE_EXPIRED`。错误 hash 或找不到 id 返回 `FILE_ID_INVALID`。`messages.sendMedia`、`sendMultiMedia`、`editMessage`、`uploadMedia` 里的 `inputMediaPhoto` / `inputMediaDocument`（含贴纸）同样校验，对不上返回 `MEDIA_INVALID`。
+
+环境变量 `TELLOMI_MEDIA_ACCESS_ENFORCE`：默认 `enforce`（拒绝）。设为 `log` 时只打日志并放行，用来在不换镜像的情况下回滚。其它值仍按拒绝处理。
 
 删一条消息不会删对象，也不会放掉 `media_blob_refs`。保留任务扫掉一条 document/photo 时，只要还有别的引用，就不删那份对象。最后一条引用在同一事务里删掉 blob 行（不留下 `ref_count = 0`），并把对象键写入 `media_blob_gc`；对象本身随后删除。删除失败留下孤儿对象和 gc 行，不留下悬空引用。账号清理在搬走对象之前先放掉这条引用；别的引用还在就不搬。
 

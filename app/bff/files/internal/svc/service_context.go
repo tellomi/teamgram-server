@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/files/plugin"
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/mediaaccess"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -40,6 +41,9 @@ type ServiceContext struct {
 	Retention *retention.Checker
 	// Blobs looks up documents by sha256 for messages.getDocumentByHash.
 	Blobs *mediablob.Store
+	// Access checks encrypted files, peer photos, and whether the caller
+	// already has a document. Nil when Mysql is unset.
+	Access *mediaaccess.Store
 }
 
 func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2 plugin.StreamFilesPlugin) *ServiceContext {
@@ -61,6 +65,12 @@ func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2
 			logx.Errorf("files: messages.getDocumentByHash lookup disabled: %v", err)
 		} else {
 			svcCtx.Blobs = blobs
+		}
+		access, err := mediaaccess.Open(c.Mysql)
+		if err != nil {
+			logx.Errorf("files: media access checks disabled: %v", err)
+		} else {
+			svcCtx.Access = access
 		}
 	}
 	return svcCtx
