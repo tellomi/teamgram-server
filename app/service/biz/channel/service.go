@@ -63,9 +63,10 @@ type Hooks struct {
 type Service struct {
 	store Store
 
-	mu     sync.Mutex
-	push   Hooks
-	loaded bool
+	mu          sync.Mutex
+	push        Hooks
+	loaded      bool
+	ttlBackfill bool
 }
 
 func New(store Store) *Service {

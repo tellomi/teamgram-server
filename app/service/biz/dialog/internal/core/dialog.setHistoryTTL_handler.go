@@ -39,6 +39,16 @@ func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtp
 	// timer from before this write until the cache entry expires.
 	// CachedConn.Exec deletes those keys only when the callback returns nil,
 	// so a rolled-back write leaves the previous cache entry in place.
+	keys := historyTTLCacheKeys(in.UserId, in.PeerType, in.PeerId)
+	if in.PeerType == mtproto.PEER_CHAT {
+		var members []struct {
+			UserID int64 `db:"user_id"`
+		}
+		_ = c.svcCtx.Dao.DB.QueryRows(c.ctx, &members, "select user_id from dialogs where peer_type = ? and peer_id = ? and deleted = 0", in.PeerType, in.PeerId)
+		for _, member := range members {
+			keys = append(keys, dialog.GetDialogCacheKeyByPeer(member.UserID, in.PeerType, in.PeerId))
+		}
+	}
 	_, _, err := c.svcCtx.Dao.CachedConn.Exec(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
@@ -47,12 +57,11 @@ func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtp
 			}
 			return 0, 1, nil
 		},
-		historyTTLCacheKeys(in.UserId, in.PeerType, in.PeerId)...)
+		keys...)
 	if err != nil {
 		c.Logger.Errorf("dialog.setHistoryTTL - error: %v", err)
 		return nil, err
 	}
-
 	return mtproto.BoolTrue, nil
 }
 
@@ -69,7 +78,23 @@ func historyTTLCacheKeys(userID int64, peerType int32, peerID int64) []string {
 // returns an error, because it returns that error from the transaction body.
 func writeHistoryTTL(ctx context.Context, conn *sqlx.DB, store historyTTLStore, in *dialog.TLDialogSetHistoryTTL) error {
 	result := sqlx.TxWrapper(ctx, conn, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-		result.Err = applyHistoryTTL(tx, store, in)
+		if err := applyHistoryTTL(tx, store, in); err != nil {
+			result.Err = err
+			return
+		}
+		// One timer for a basic group. Every member dialog and the chat row
+		// are updated in this same transaction, so a later send from any
+		// member stamps the same ttl_period.
+		if in.PeerType != mtproto.PEER_CHAT {
+			return
+		}
+		if _, err := tx.Exec("update dialogs set ttl_period = ? where peer_type = ? and peer_id = ?", in.TtlPeriod, in.PeerType, in.PeerId); err != nil {
+			result.Err = err
+			return
+		}
+		if _, err := tx.Exec("update chats set ttl_period = ? where id = ?", in.TtlPeriod, in.PeerId); err != nil {
+			result.Err = err
+		}
 	})
 	return result.Err
 }

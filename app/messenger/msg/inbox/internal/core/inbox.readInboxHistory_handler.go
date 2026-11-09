@@ -19,8 +19,6 @@
 package core
 
 import (
-	"fmt"
-
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -34,20 +32,11 @@ import (
 func (c *InboxCore) InboxReadInboxHistory(in *inbox.TLInboxReadInboxHistory) (*mtproto.Void, error) {
 	var (
 		maxId       = in.MaxId
-		did         = mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
 		unreadCount int32
 	)
 
 	if maxId > in.ReadInboxMaxId {
-		readCount := c.svcCtx.Dao.CommonDAO.CalcSizeByWhere(
-			c.ctx,
-			c.svcCtx.Dao.MessagesDAO.CalcTableName(in.UserId),
-			fmt.Sprintf("user_id = %d AND dialog_id1 = %d AND dialog_id2 = %d AND sender_user_id <> %d AND user_message_box_id > %d AND user_message_box_id <= %d AND deleted = 0",
-				in.UserId, did.A, did.B, in.UserId, in.ReadInboxMaxId, maxId))
-		unreadCount = in.UnreadCount - int32(readCount)
-		if unreadCount < 0 {
-			unreadCount = 0
-		}
+		unreadCount = c.svcCtx.Dao.RemainingUnread(c.ctx, in.UserId, in.PeerType, in.PeerId, in.ReadInboxMaxId, maxId, in.UnreadCount)
 	}
 
 	_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(
@@ -109,10 +98,11 @@ func (c *InboxCore) InboxReadInboxHistory(in *inbox.TLInboxReadInboxHistory) (*m
 	}
 
 	updateReadHistoryInbox := mtproto.MakeTLUpdateReadHistoryInbox(&mtproto.Update{
-		Peer_PEER: mtproto.MakePeer(in.PeerType, in.PeerId),
-		MaxId:     maxId,
-		Pts_INT32: pts,
-		PtsCount:  ptsCount,
+		Peer_PEER:        mtproto.MakePeer(in.PeerType, in.PeerId),
+		MaxId:            maxId,
+		StillUnreadCount: unreadCount,
+		Pts_INT32:        pts,
+		PtsCount:         ptsCount,
 	}).To_Update()
 	if isUseV3 {
 		// V3: pts allocated here, must persist

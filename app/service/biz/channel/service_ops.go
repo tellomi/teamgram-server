@@ -235,12 +235,16 @@ func serviceMessage(sender, channelID int64, action *mtproto.MessageAction) *mtp
 }
 
 func (s *Service) appendMessage(ctx context.Context, channelID, sender, randomID int64, msg *mtproto.Message) (int32, int32, error) {
+	if msg == nil {
+		return 0, 0, mtproto.ErrMessageEmpty
+	}
 	if msg.Date == 0 {
 		msg.Date = int32(time.Now().Unix())
 	}
-	if msg != nil {
-		msg.SanitizeEntities()
+	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil && ch.TtlPeriod > 0 {
+		msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
 	}
+	msg.SanitizeEntities()
 	var stored *mtproto.Message
 	id, pts, reused, err := s.store.CommitNew(ctx, channelID, sender, randomID, msg.Date, func(messageID, pts int32) []byte {
 		m := proto.Clone(msg).(*mtproto.Message)
@@ -692,9 +696,14 @@ func (s *Service) pushInboxRead(ctx context.Context, channelID, reader int64, ma
 	if h.Push == nil {
 		return
 	}
+	var still int32
+	if st, err := s.store.GetRead(ctx, channelID, reader); err == nil && st != nil {
+		still = st.UnreadCount
+	}
 	upd := mtproto.MakeTLUpdateReadChannelInbox(&mtproto.Update{
-		ChannelId: channelID,
-		MaxId:     maxID,
+		ChannelId:        channelID,
+		MaxId:            maxID,
+		StillUnreadCount: still,
 	}).To_Update()
 	h.Push(ctx, reader, nil, s.pack(ctx, reader, channelID, upd))
 }

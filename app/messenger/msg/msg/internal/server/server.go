@@ -12,6 +12,7 @@ package server
 import (
 	"flag"
 
+	"github.com/teamgram/teamgram-server/app/messenger/msg/historyttl"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/internal/config"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/internal/svc"
@@ -38,6 +39,7 @@ func (s *Server) Initialize() error {
 
 	logx.Infov(redact.Value(c))
 	ctx := svc.NewServiceContext(c, nil)
+	historyttl.Start(ctx.Dao)
 	s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
 
 	go func() {

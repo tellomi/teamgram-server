@@ -27,8 +27,8 @@ func TestMakeDialogTTLPeriodOnlyWhenPositive(t *testing.T) {
 		})
 		flag := got.GetDialog().GetTtlPeriod()
 		if tc.set {
-			if flag == nil || flag.GetValue() != tc.want {
-				t.Fatalf("period %d flag %#v", tc.period, flag)
+			if flag == nil || flag.GetValue() != tc.want || got.GetTtlPeriod() != tc.want {
+				t.Fatalf("period %d flag %#v ext %d", tc.period, flag, got.GetTtlPeriod())
 			}
 			continue
 		}
