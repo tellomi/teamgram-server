@@ -621,6 +621,17 @@ func (e *Engine) CreateLiveStory(in CreateLiveStory) (int64, int64, *mtproto.Upd
 	return g.id, g.access, up, nil
 }
 
+// LiveCallAlive is false once the room has been discarded or never existed.
+func (e *Engine) LiveCallAlive(id int64) bool {
+	if e == nil || id == 0 {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	g := e.groups[id]
+	return g != nil && !g.discarded && g.liveStory
+}
+
 // NoteHostOffline starts the disconnect timer for a live the user is hosting.
 // Session close does not reach this process; callers that can see the drop
 // (and tests) use this. Leave and a quiet media socket arm the same timer.

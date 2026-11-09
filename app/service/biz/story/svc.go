@@ -396,7 +396,7 @@ func (s *Service) advertises(rec *Record) (ok, live bool) {
 	if rec == nil || rec.Item == nil || rec.Deleted {
 		return false, false
 	}
-	onAir := rec.Item.GetLive() && s.liveBound(rec.Owner, rec.id())
+	onAir := s.onAir(rec)
 	if onAir {
 		return true, true
 	}

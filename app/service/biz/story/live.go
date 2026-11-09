@@ -28,6 +28,9 @@ type liveBook struct {
 	byCall  map[int64]liveBind
 	byStory map[Owner]map[int32]int64
 	starter LiveStarter
+	// alive reports whether the group call is still up. Nil means the
+	// in-memory bind is enough, which is what unit tests use.
+	alive func(callID int64) bool
 
 	repairOwner int64
 	repairStory int32
@@ -42,6 +45,18 @@ func (s *Service) SetLiveStarter(fn LiveStarter) {
 	}
 	s.mu.Lock()
 	s.lives.starter = fn
+	s.mu.Unlock()
+}
+
+// SetCallAlive lets the phone engine say a bound call was discarded.
+// Reads then stop advertising the stub even if the end callback was missed,
+// and the repair loop deletes it.
+func (s *Service) SetCallAlive(fn func(callID int64) bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.lives.alive = fn
 	s.mu.Unlock()
 }
 
@@ -127,10 +142,31 @@ func (s *Service) bindLive(callID, access int64, owner Owner, story int32) {
 }
 
 func (s *Service) liveBound(owner Owner, story int32) bool {
+	return s.boundCall(owner, story) != 0
+}
+
+func (s *Service) boundCall(owner Owner, story int32) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.lives.byStory[owner][story]
-	return ok
+	return s.lives.byStory[owner][story]
+}
+
+// onAir is a live story whose group call still exists.
+func (s *Service) onAir(rec *Record) bool {
+	if rec == nil || rec.Item == nil || !rec.Item.GetLive() {
+		return false
+	}
+	callID := s.boundCall(rec.Owner, rec.id())
+	if callID == 0 {
+		return false
+	}
+	s.mu.Lock()
+	alive := s.lives.alive
+	s.mu.Unlock()
+	if alive == nil {
+		return true
+	}
+	return alive(callID)
 }
 
 func (s *Service) unbindLive(owner Owner, story int32) {
@@ -229,13 +265,14 @@ func (s *Service) repairUnboundLives(ctx context.Context) {
 		if rec == nil || rec.Item == nil || !rec.Item.GetLive() || !rec.active(now) {
 			continue
 		}
-		if s.liveBound(rec.Owner, rec.id()) {
+		if s.onAir(rec) {
 			continue
 		}
-		if now-rec.Item.Date < liveUnboundGrace {
-			continue
+		// A bound call that the engine has already discarded, or a stub that
+		// never got a call and is past the start window.
+		if s.liveBound(rec.Owner, rec.id()) || now-rec.Item.Date >= liveUnboundGrace {
+			_ = s.EndLive(ctx, rec.Owner, rec.id())
 		}
-		_ = s.EndLive(ctx, rec.Owner, rec.id())
 	}
 	s.mu.Lock()
 	if full || len(recs) < 128 {

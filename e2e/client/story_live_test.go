@@ -23,41 +23,43 @@ func TestLiveStubClearsWhenTheStreamEnds(t *testing.T) {
 	defer cancel()
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
 
-	id, access := startLive(t, ctx, a)
+	storyID, callID, access := startLive(t, ctx, a)
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return viewerSeesLive(ctx, b, aSelf.ID, peerForB), nil
+		return viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
-		t.Fatalf("contact never saw the live ring: %v", err)
+		t.Fatalf("contact never saw live story %d: %v", storyID, err)
 	}
 
 	if _, err := a.Invoke(ctx, &mtproto.TLPhoneDiscardGroupCall{
 		Constructor: mtproto.CRC32_phone_discardGroupCall,
-		Call:        mtproto.MakeTLInputGroupCall(&mtproto.InputGroupCall{Id: id, AccessHash: access}).To_InputGroupCall(),
+		Call:        mtproto.MakeTLInputGroupCall(&mtproto.InputGroupCall{Id: callID, AccessHash: access}).To_InputGroupCall(),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		if viewerSeesLive(ctx, b, aSelf.ID, peerForB) {
-			return false, nil
-		}
-		return pushedClear(b.Pushed(), aSelf.ID), nil
+	clearCtx, clearCancel := contextTimeout(25 * time.Second)
+	defer clearCancel()
+	if err := waitUntil(clearCtx, 300*time.Millisecond, func() (bool, error) {
+		return !viewerSeesStory(clearCtx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
-		t.Fatalf("discard left the live ring up: %v", err)
+		t.Fatalf("discard left story %d up: %v", storyID, err)
+	}
+	if !pushedStoryDeleted(b.Pushed(), storyID) {
+		t.Fatalf("discard cleared story %d on read but did not push storyItemDeleted (%s)", storyID, pushSummary(b.Pushed()))
 	}
 
-	startLive(t, ctx, a)
+	storyID, _, _ = startLive(t, ctx, a)
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return viewerSeesLive(ctx, b, aSelf.ID, peerForB), nil
+		return viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
-		t.Fatalf("second live was not visible: %v", err)
+		t.Fatalf("second live story %d was not visible: %v", storyID, err)
 	}
 	// The host never joins. The server ends the room on its own.
-	ctx, cancel = contextTimeout(90 * time.Second)
-	defer cancel()
-	if err := waitUntil(ctx, time.Second, func() (bool, error) {
-		return !viewerSeesLive(ctx, b, aSelf.ID, peerForB), nil
+	timeoutCtx, timeoutCancel := contextTimeout(45 * time.Second)
+	defer timeoutCancel()
+	if err := waitUntil(timeoutCtx, time.Second, func() (bool, error) {
+		return !viewerSeesStory(timeoutCtx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
-		t.Fatalf("host join timeout left the live ring up: %v", err)
+		t.Fatalf("host join timeout left story %d up: %v", storyID, err)
 	}
 }
 
@@ -72,11 +74,11 @@ func TestOrphanLiveStubRepair(t *testing.T) {
 	ctx, cancel := contextTimeout(3 * time.Minute)
 	defer cancel()
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
-	startLive(t, ctx, a)
+	storyID, _, _ := startLive(t, ctx, a)
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return viewerSeesLive(ctx, b, aSelf.ID, peerForB), nil
+		return viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
-		t.Fatalf("live ring before restart: %v", err)
+		t.Fatalf("live story %d before restart: %v", storyID, err)
 	}
 	if err := restartTeamgram(ctx); err != nil {
 		t.Fatal(err)
@@ -95,13 +97,13 @@ func TestOrphanLiveStubRepair(t *testing.T) {
 	ctx, cancel = contextTimeout(2 * time.Minute)
 	defer cancel()
 	if err := waitUntil(ctx, time.Second, func() (bool, error) {
-		return !viewerSeesLive(ctx, b, aSelf.ID, peerForB), nil
+		return !viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
-		t.Fatalf("orphaned live stub still on the ring after restart: %v", err)
+		t.Fatalf("orphaned live story %d still on the ring after restart: %v", storyID, err)
 	}
 }
 
-func startLive(t *testing.T, ctx context.Context, host *Client) (int64, int64) {
+func startLive(t *testing.T, ctx context.Context, host *Client) (storyID int32, callID, access int64) {
 	t.Helper()
 	res := invokeOK(t, host, &mtproto.TLStoriesStartLive{
 		Constructor: mtproto.CRC32_stories_startLive,
@@ -112,13 +114,19 @@ func startLive(t *testing.T, ctx context.Context, host *Client) (int64, int64) {
 		},
 	})
 	for _, u := range updatesOf(res) {
+		if u.GetStory().GetId() != 0 && u.GetStory().GetPredicateName() != mtproto.Predicate_storyItemDeleted {
+			storyID = u.GetStory().GetId()
+		}
 		call := u.GetCall_GROUPCALL()
 		if call != nil && call.GetId() != 0 {
-			return call.GetId(), call.GetAccessHash()
+			callID = call.GetId()
+			access = call.GetAccessHash()
 		}
 	}
-	t.Fatalf("startLive did not return a group call: %T %+v", res, res)
-	return 0, 0
+	if storyID == 0 || callID == 0 {
+		t.Fatalf("startLive story=%d call=%d response %T", storyID, callID, res)
+	}
+	return storyID, callID, access
 }
 
 func updatesOf(obj mtproto.TLObject) []*mtproto.Update {
@@ -134,7 +142,24 @@ func updatesOf(obj mtproto.TLObject) []*mtproto.Update {
 	}
 }
 
-func viewerSeesLive(ctx context.Context, viewer *Client, host int64, peer *mtproto.InputPeer) bool {
+func viewerSeesStory(ctx context.Context, viewer *Client, host int64, peer *mtproto.InputPeer, storyID int32) bool {
+	if storyID != 0 {
+		res, err := viewer.Invoke(ctx, &mtproto.TLStoriesGetPeerStories{
+			Constructor: mtproto.CRC32_stories_getPeerStories,
+			Peer:        peer,
+		})
+		if err == nil {
+			for _, item := range peerStoryItems(res) {
+				if item.GetId() == storyID && item.GetPredicateName() != mtproto.Predicate_storyItemDeleted {
+					return true
+				}
+			}
+		}
+	}
+	return userHasRing(ctx, viewer, host, peer)
+}
+
+func userHasRing(ctx context.Context, viewer *Client, host int64, peer *mtproto.InputPeer) bool {
 	ask := func(req mtproto.TLObject) bool {
 		res, err := viewer.Invoke(ctx, req)
 		if err != nil {
@@ -204,32 +229,39 @@ func viewerSeesLive(ctx context.Context, viewer *Client, host int64, peer *mtpro
 	return false
 }
 
-func pushedClear(objs []mtproto.TLObject, host int64) bool {
+func peerStoryItems(obj mtproto.TLObject) []*mtproto.StoryItem {
+	switch v := obj.(type) {
+	case *mtproto.TLStoriesPeerStories:
+		return v.GetStories().GetStories()
+	case *mtproto.Stories_PeerStories:
+		return v.GetStories().GetStories()
+	default:
+		return nil
+	}
+}
+
+func pushedStoryDeleted(objs []mtproto.TLObject, storyID int32) bool {
 	for _, obj := range objs {
-		var ups []*mtproto.Update
-		var users []*mtproto.User
-		switch v := obj.(type) {
-		case *mtproto.TLUpdates:
-			ups = v.GetUpdates()
-			users = v.GetUsers()
-		case *mtproto.Updates:
-			ups = v.GetUpdates()
-			users = v.GetUsers()
-		case *mtproto.TLUpdateShort:
-			ups = []*mtproto.Update{v.GetUpdate()}
-		}
-		for _, u := range ups {
-			if u.GetStory().GetPredicateName() == mtproto.Predicate_storyItemDeleted {
+		for _, u := range updatesOf(obj) {
+			item := u.GetStory()
+			if item.GetId() == storyID && item.GetPredicateName() == mtproto.Predicate_storyItemDeleted {
 				return true
-			}
-			if u.GetPredicateName() == mtproto.Predicate_updateUser && u.GetUserId() == host {
-				if user := userByID(users, host); user != nil && !ringLive(user) {
-					return true
-				}
 			}
 		}
 	}
 	return false
+}
+
+func pushSummary(objs []mtproto.TLObject) string {
+	n := len(objs)
+	if n > 8 {
+		objs = objs[n-8:]
+	}
+	parts := make([]string, 0, len(objs))
+	for _, obj := range objs {
+		parts = append(parts, obj.String())
+	}
+	return strings.Join(parts, " | ")
 }
 
 func ringLive(user *mtproto.User) bool {

@@ -69,6 +69,14 @@ func NewWithEngine(eng *engine.Engine) *Service {
 	return &Service{eng: eng, svc: &svc.ServiceContext{Config: config.Config{}.Normalized()}}
 }
 
+// LiveCallAlive reports whether a stories.startLive room is still running.
+func (s *Service) LiveCallAlive(callID int64) bool {
+	if s == nil || s.eng == nil || callID == 0 {
+		return false
+	}
+	return s.eng.LiveCallAlive(callID)
+}
+
 // StartLiveStory opens the group call for stories.startLive.
 func (s *Service) StartLiveStory(host, auth int64, rtmp bool, random int32, audience []int64) (int64, int64, *mtproto.Updates, error) {
 	if s == nil || s.eng == nil {
