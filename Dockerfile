@@ -1,6 +1,7 @@
-# ip2region xdb (v4 and v6) from the official v3.18.0 tag. The script checks
-# deploy/ip2region/SHA256SUMS and fails the image build on mismatch.
-# See docs/ip2region.md.
+# ip2region xdb (v4 and v6), pinned in scripts/fetch-ip2region-xdb.sh.
+# CI may place the verified files in deploy/ip2region/cache first. The
+# script checks deploy/ip2region/SHA256SUMS and fails the image build
+# on mismatch. See docs/ip2region.md.
 FROM ubuntu:latest AS ip2region
 # archive.ubuntu.com occasionally refuses the connection mid-build.
 RUN n=0; \
@@ -15,7 +16,14 @@ RUN n=0; \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY scripts/fetch-ip2region-xdb.sh deploy/ip2region/SHA256SUMS /src/
+# Optional prefetch. A checkout without the xdb files still builds: the
+# script downloads and checks SHA256 when either file is missing.
+COPY deploy/ip2region/cache/ /src/cache/
 RUN chmod +x /src/fetch-ip2region-xdb.sh \
+    && mkdir -p /out \
+    && if [ -f /src/cache/ip2region_v4.xdb ] && [ -f /src/cache/ip2region_v6.xdb ]; then \
+         cp -f /src/cache/ip2region_v4.xdb /src/cache/ip2region_v6.xdb /out/; \
+       fi \
     && /src/fetch-ip2region-xdb.sh /out \
     && rm -f /out/.fetch.lock
 

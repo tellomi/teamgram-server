@@ -69,6 +69,36 @@ func TestPasswordNeededUser(t *testing.T) {
 	}
 }
 
+func TestDeletedSessionDoesNotAnswerPing(t *testing.T) {
+	const authKeyID int64 = 80
+	for _, name := range []string{"ping", "ping_delay"} {
+		t.Run(name, func(t *testing.T) {
+			fake := &fakeAuthsessionClient{}
+			sess, wrapper := normalSession(t, authKeyID, fake)
+			wrapper.state = mtproto.AuthStateDeleted
+			switch name {
+			case "ping":
+				sess.onPing(context.Background(), "gate", newInboxMsg(3), &mtproto.TLPing{
+					Constructor: mtproto.CRC32_ping,
+					PingId:      5,
+				})
+			default:
+				sess.onPingDelayDisconnect(context.Background(), "gate", newInboxMsg(4), &mtproto.TLPingDelayDisconnect{
+					Constructor:     mtproto.CRC32_ping_delay_disconnect,
+					PingId:          6,
+					DisconnectDelay: 1,
+				})
+			}
+			if wrapper.state != mtproto.AuthStateDeleted {
+				t.Fatalf("state = %d, want deleted", wrapper.state)
+			}
+			if fake.getAuthStateDataCalls != 0 {
+				t.Fatalf("lookups = %d, want 0", fake.getAuthStateDataCalls)
+			}
+		})
+	}
+}
+
 func TestNormalSessionDropsPingAfterRevocation(t *testing.T) {
 	const authKeyID int64 = 79
 	for _, name := range []string{"ping", "ping_delay"} {

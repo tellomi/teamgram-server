@@ -1,0 +1,48 @@
+# Restore the pinned ip2region v4/v6 xdb, or download and verify them.
+# The cache key is the commit pin in scripts/fetch-ip2region-xdb.sh plus
+# the SHA256SUMS file, so a new database does not reuse the old files.
+
+name: ip2region xdb
+description: Restore or download the pinned ip2region v4 and v6 xdb files
+
+inputs:
+  dest:
+    description: Directory that receives ip2region_v4.xdb and ip2region_v6.xdb
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Pin ip2region cache key
+      id: pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        commit="$(sed -n 's/^commit="\([0-9a-f]\{40\}\)"/\1/p' scripts/fetch-ip2region-xdb.sh | head -1)"
+        if [[ -z "$commit" ]]; then
+          echo "ip2region commit pin not found in scripts/fetch-ip2region-xdb.sh" >&2
+          exit 1
+        fi
+        sums="$(sha256sum deploy/ip2region/SHA256SUMS | awk '{ print $1 }')"
+        # Cache keys cannot contain slashes. The commit and the checksum file
+        # still decide which bytes are stored.
+        slug="$(printf '%s' '${{ inputs.dest }}' | tr '/ ' '--')"
+        echo "key=ip2region-xdb-${commit}-${sums}-${slug}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore ip2region xdb cache
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.dest }}
+        key: ${{ steps.pin.outputs.key }}
+
+    - name: Download ip2region xdb
+      shell: bash
+      run: bash scripts/fetch-ip2region-xdb.sh "${{ inputs.dest }}"
+
+    - name: Save ip2region xdb cache
+      if: success() && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.dest }}
+        key: ${{ steps.pin.outputs.key }}
