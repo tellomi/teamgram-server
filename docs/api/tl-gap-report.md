@@ -73,7 +73,7 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.getPollResults` | partial | `poll_hash` is checked. Same voter-list limit as send. |
 | `messages.getPollVotes` | partial | `option` and `offset` are forwarded. |
 | `messages.search` | partial | User, basic-group, and channel filters, dates, and `top_msg_id` work (#170). `hash`, `saved_reaction`, and `saved_peer_id` are still empty. `inputMessagesFilterMyMentions` is not a channel filter. |
-| `messages.searchGlobal` | partial | Kind flags, dates (#165), folder, and the rate/peer/id cursor (#170) are applied. `community` and the media `filter` are not. |
+| `messages.searchGlobal` | partial | Kind flags, dates (#165), folder, and the rate/peer/id cursor (#170) are applied. Photo, video, document, url, music, voice, and round-voice filters are applied, including an empty query. `community` is not. |
 | `messages.getSearchCounters` | partial | `saved_peer_id` is an empty vector. `top_msg_id` is ignored. An unsupported filter is count 0, not an error. |
 | `messages.getSearchResultsCalendar` | partial | User and basic-group media calendar works. `offset_id_offset` is not set. Channel history is weak. |
 | `messages.getSearchResultsPositions` | partial | Same scan as the calendar. |

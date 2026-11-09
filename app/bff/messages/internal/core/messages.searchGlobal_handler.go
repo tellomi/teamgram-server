@@ -20,6 +20,7 @@ package core
 
 import (
 	"math"
+	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -39,7 +40,11 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		return nil, err
 	}
 
-	if in.Q == "" {
+	q := strings.TrimSpace(in.Q)
+	filterOn := globalFilterUseful(in.Filter)
+	// Official clients load a media tab with an empty query. Only a text
+	// search with no media filter is SEARCH_QUERY_EMPTY.
+	if q == "" && !filterOn {
 		err := mtproto.ErrSearchQueryEmpty
 		c.Logger.Errorf("messages.searchGlobal - error: %v", err)
 		return nil, err
@@ -77,7 +82,7 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 	}
 	useFolder := in.GetFolderId() != nil
 	fetchLimit := limit
-	if (scope.narrows() || cur.Active || useFolder) && fetchLimit > 0 {
+	if (scope.narrows() || cur.Active || useFolder || filterOn) && fetchLimit > 0 {
 		fetchLimit *= 8
 		if fetchLimit > 200 {
 			fetchLimit = 200
@@ -90,17 +95,37 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages()
 
-	boxList, err := c.svcCtx.Dao.MessageClient.MessageSearchGlobal(
-		c.ctx,
-		&messagepb.TLMessageSearchGlobal{
-			UserId: c.MD.UserId,
-			Q:      in.Q,
-			Offset: offsetId,
-			Limit:  fetchLimit,
+	var (
+		boxList *mtproto.MessageBoxList
+		err     error
+	)
+	if q == "" {
+		kind, _ := globalMediaKind(in.Filter)
+		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchByMediaType(c.ctx, &messagepb.TLMessageSearchByMediaType{
+			UserId:    c.MD.UserId,
+			PeerType:  messagepb.SearchGlobalPeerType,
+			MediaType: kind,
+			Offset:    offsetId,
+			Limit:     fetchLimit,
 		})
+	} else {
+		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchGlobal(
+			c.ctx,
+			&messagepb.TLMessageSearchGlobal{
+				UserId: c.MD.UserId,
+				Q:      q,
+				Offset: offsetId,
+				Limit:  fetchLimit,
+			})
+	}
 	if err != nil {
 		c.Logger.Errorf("messages.searchGlobal - error: %v", err)
 		return rValues, nil
+	}
+	if filterOn {
+		boxList = keepBoxes(boxList, func(m *mtproto.Message) bool {
+			return messageMatchesGlobalFilter(m, in.Filter)
+		})
 	}
 	if scope.narrows() {
 		kinds := map[int64]channelKind{}
@@ -123,6 +148,9 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		folder, useFolder = c.globalFolder(in.GetFolderId().GetValue())
 	}
 	boxList = filterGlobalPage(boxList, cur, folder, useFolder, limit)
+	if boxList == nil {
+		return rValues, nil
+	}
 
 	boxList.Visit(c.MD.UserId,
 		func(messageList []*mtproto.Message) {

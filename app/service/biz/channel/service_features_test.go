@@ -230,7 +230,7 @@ func TestTopicsReactionsPinsSearchSendAsPersonal(t *testing.T) {
 	if _, err := svc.UpdateUsername(ctx, 1, 0, inCh(ch), "forumtag"); err != nil {
 		t.Fatal(err)
 	}
-	posts, err := svc.SearchPosts(ctx, 1, "", "tag", 0, 10)
+	posts, err := svc.SearchPosts(ctx, 1, PostQuery{Needle: "tag", Limit: 10})
 	if err != nil || posts.Count == 0 {
 		t.Fatalf("search posts %#v %v", posts, err)
 	}

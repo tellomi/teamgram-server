@@ -22,6 +22,13 @@ type Store interface {
 	FindByMigratedChat(ctx context.Context, chatID int64) (*Channel, error)
 	ListChannels(ctx context.Context, ids []int64) ([]*Channel, error)
 	ListByUser(ctx context.Context, userID int64) ([]*Channel, error)
+	// SearchPosts returns channel posts newest first. Limit is the maximum
+	// number of rows. The caller asks for one extra row to know the page continues.
+	SearchPosts(ctx context.Context, self int64, q PostQuery) ([]*StoredMessage, error)
+	// SearchPublic returns public channels and groups whose title or username
+	// matches q. Deleted, banned, and restricted channels are left out, and so
+	// is a channel that banned or kicked self.
+	SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error)
 
 	PutParticipant(ctx context.Context, p *Participant) error
 	GetParticipant(ctx context.Context, channelID, userID int64) (*Participant, error)
@@ -60,4 +67,16 @@ type Store interface {
 	UpsertImporter(ctx context.Context, row *StoredImporter) error
 	ListImporters(ctx context.Context, channelID int64) ([]*StoredImporter, error)
 	DeleteImporter(ctx context.Context, link string, userID int64) error
+}
+
+// PostQuery is one page of channels.searchPosts.
+// Needle is the raw text, not a LIKE pattern. OffsetRate 0 and OffsetID 0
+// start at the newest post. A positive OffsetRate is the previous page's
+// date; rows are strictly older in (date, channel, message id) order.
+type PostQuery struct {
+	Needle     string
+	OffsetRate int32
+	OffsetPeer int64
+	OffsetID   int32
+	Limit      int32
 }
