@@ -8,8 +8,9 @@ import (
 // Alert is one APNs payload plus the JSON sealed inside "p".
 type Alert struct {
 	// Outer is the JSON object POSTed to APNs. It carries aps.alert loc-key /
-	// loc-args, a localized body fallback, mutable-content, and the custom
-	// from_id / chat_id / msg_id fields.
+	// loc-args, a literal title when previews are on, a localized body
+	// fallback, mutable-content, and the custom from_id / chat_id / msg_id
+	// fields.
 	Outer []byte
 	// Inner is the JSON the NotificationService reads after decrypting "p".
 	// It has no loc-key: the extension only renders aps.alert when loc-key is
@@ -80,10 +81,23 @@ func BuildAlert(m Incoming, d Decision, secret []byte, lang string) (Alert, erro
 	outerAlert := map[string]any{
 		"loc-key":  key,
 		"loc-args": args,
-		// body is the localized fallback. Apple shows loc-key when that string
-		// exists and ignores body; the Notification Service shows this text
-		// from the decrypted payload, which is what a Chinese user actually sees.
+		// body is the text or phrase with the "Name: " prefix already removed.
+		// loc-key and loc-args stay the official Telegram values. Apple uses
+		// loc-key as the body when the app has that string. title is the
+		// literal sender or chat name, shown when the extension times out.
+		// NotificationService.swift copies title, subtitle, and body from
+		// the decrypted alert.
 		"body": body,
+	}
+	// show_previews off, and a passcode lock (the caller clears Preview),
+	// leave the name off the lock screen. loc-key and loc-args are unchanged.
+	if d.Preview {
+		if title != "" {
+			outerAlert["title"] = title
+		}
+		if subtitle != "" {
+			outerAlert["subtitle"] = subtitle
+		}
 	}
 	outerAPS := map[string]any{
 		"alert":           outerAlert,
