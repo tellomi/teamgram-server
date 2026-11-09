@@ -65,6 +65,7 @@ func (s *Service) ReleaseExpired(ctx context.Context) {
 	now := s.now()
 	s.repairMySQLAdverts(ctx)
 	s.reconcilePersisted(ctx)
+	s.repairUnboundLives(ctx)
 
 	s.mu.Lock()
 	since := s.foldedThrough
