@@ -17,13 +17,13 @@ import (
 // restart that drops the in-memory call all have to delete that stub and push
 // an update so the ring is gone. A stub must not stay live with nothing to open.
 func TestLiveStubClearsWhenTheStreamEnds(t *testing.T) {
-	a, b, aSelf, _ := sharedPair(t)
+	a, b, aSelf, bSelf := sharedPair(t)
 	ensureStoryAdvert(t)
 	ctx, cancel := contextTimeout(3 * time.Minute)
 	defer cancel()
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
 
-	storyID, callID, access := startLive(t, ctx, a)
+	storyID, callID, access := startLive(t, ctx, a, bSelf)
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		return viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
@@ -47,7 +47,7 @@ func TestLiveStubClearsWhenTheStreamEnds(t *testing.T) {
 		t.Fatalf("discard story %d: stillUp=%v pushes=%s", storyID, viewerSeesStory(clearCtx, b, aSelf.ID, peerForB, storyID), pushSummary(b.Pushed()))
 	}
 
-	storyID, _, _ = startLive(t, ctx, a)
+	storyID, _, _ = startLive(t, ctx, a, bSelf)
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		return viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
@@ -74,7 +74,7 @@ func TestOrphanLiveStubRepair(t *testing.T) {
 	ctx, cancel := contextTimeout(3 * time.Minute)
 	defer cancel()
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
-	storyID, _, _ := startLive(t, ctx, a)
+	storyID, _, _ := startLive(t, ctx, a, bobSelf)
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		return viewerSeesStory(ctx, b, aSelf.ID, peerForB, storyID), nil
 	}); err != nil {
@@ -110,7 +110,7 @@ func TestOrphanLiveStubRepair(t *testing.T) {
 	}
 }
 
-func startLive(t *testing.T, ctx context.Context, host *Client) (storyID int32, callID, access int64) {
+func startLive(t *testing.T, ctx context.Context, host *Client, viewer Self) (storyID int32, callID, access int64) {
 	t.Helper()
 	res := invokeOK(t, host, &mtproto.TLStoriesStartLive{
 		Constructor: mtproto.CRC32_stories_startLive,
@@ -118,6 +118,9 @@ func startLive(t *testing.T, ctx context.Context, host *Client) (storyID int32, 
 		RandomId:    time.Now().UnixNano(),
 		PrivacyRules: []*mtproto.InputPrivacyRule{
 			mtproto.MakeTLInputPrivacyValueAllowAll(nil).To_InputPrivacyRule(),
+			mtproto.MakeTLInputPrivacyValueAllowUsers(&mtproto.InputPrivacyRule{
+				Users: []*mtproto.InputUser{inputUser(viewer.ID, viewer.AccessHash)},
+			}).To_InputPrivacyRule(),
 		},
 	})
 	for _, u := range updatesOf(res) {
@@ -258,6 +261,9 @@ func pushedStoryCleared(objs []mtproto.TLObject, storyID int32, host int64) bool
 				if user := userByID(usersOf(obj), host); user != nil && !ringLive(user) {
 					return true
 				}
+			}
+			if u.GetLiveStory() && u.GetCall_GROUPCALL().GetPredicateName() == mtproto.Predicate_groupCallDiscarded {
+				return true
 			}
 		}
 	}
