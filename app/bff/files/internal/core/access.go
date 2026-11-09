@@ -68,6 +68,12 @@ func (c *FilesCore) authorizeLocation(location *mtproto.InputFileLocation) error
 
 func (c *FilesCore) authorizeDocument(location *mtproto.InputFileLocation) error {
 	id := location.GetId()
+	if hashes, ref, ok := catalog.ReactionIssued(id); ok {
+		if !issuedHash(location.GetAccessHash(), hashes) {
+			return mtproto.ErrFileIdInvalid
+		}
+		return mediaaccess.Reference(location.GetFileReference(), ref)
+	}
 	if hash, _, ok := catalog.Must().DocumentAccess(id); ok {
 		return mediaaccess.DocumentDownload(id, location.GetAccessHash(), location.GetFileReference(), true, hash, nil)
 	}
@@ -89,6 +95,15 @@ func (c *FilesCore) authorizeDocument(location *mtproto.InputFileLocation) error
 		ref = doc.GetFileReference()
 	}
 	return mediaaccess.DocumentDownload(id, location.GetAccessHash(), location.GetFileReference(), found, stored, ref)
+}
+
+func issuedHash(got int64, hashes []int64) bool {
+	for _, hash := range hashes {
+		if mediaaccess.SameHash(got, hash) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *FilesCore) authorizePhoto(location *mtproto.InputFileLocation) error {

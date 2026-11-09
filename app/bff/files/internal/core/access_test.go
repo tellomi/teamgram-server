@@ -49,6 +49,30 @@ func TestGetFileRequiresStickerAccessHash(t *testing.T) {
 	}
 }
 
+func TestGetFileReactionIcon(t *testing.T) {
+	t.Setenv("TELLOMI_CDN_PUBLIC_KEYS", "")
+	icon := catalog.Must().Reactions(0).GetReactions()[0].GetStaticIcon()
+	c := fileCore()
+	_, err := c.UploadGetFile(&mtproto.TLUploadGetFile{
+		Location: mtproto.MakeTLInputDocumentFileLocation(&mtproto.InputFileLocation{
+			Id: icon.GetId(), AccessHash: 1, FileReference: icon.GetFileReference(),
+		}).To_InputFileLocation(),
+		Limit: 32,
+	})
+	if err != mtproto.ErrFileIdInvalid {
+		t.Fatalf("bad reaction hash: %v", err)
+	}
+	got, err := c.UploadGetFile(&mtproto.TLUploadGetFile{
+		Location: mtproto.MakeTLInputDocumentFileLocation(&mtproto.InputFileLocation{
+			Id: icon.GetId(), AccessHash: icon.GetAccessHash(), FileReference: icon.GetFileReference(),
+		}).To_InputFileLocation(),
+		Limit: 64,
+	})
+	if err != nil || len(got.GetBytes()) == 0 {
+		t.Fatalf("reaction download %v bytes %d", err, len(got.GetBytes()))
+	}
+}
+
 func TestGetFileMissingPhotoIsFileIDInvalid(t *testing.T) {
 	t.Setenv("TELLOMI_CDN_PUBLIC_KEYS", "")
 	c := fileCore()
