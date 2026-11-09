@@ -47,6 +47,7 @@ func Start(d *dao.Dao) {
 			interval = time.Duration(n) * time.Second
 		}
 	}
+	logx.Infof("history ttl: sweeper every %s", interval)
 	go loop(d, interval)
 }
 
@@ -62,7 +63,7 @@ func loop(d *dao.Dao, interval time.Duration) {
 func run(d *dao.Dao) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	acquired, err := withLock(ctx, d.DB, func() {
+	acquired, err := withLock(ctx, d, func() {
 		now := int32(time.Now().Unix())
 		if n, err := backfillBoxes(ctx, d, 30); err != nil {
 			logx.Errorf("history ttl backfill: %v", err)
@@ -91,24 +92,21 @@ func run(d *dao.Dao) {
 	}
 }
 
-func withLock(ctx context.Context, db *sqlx.DB, fn func()) (bool, error) {
-	var acquired bool
-	err := db.Transact(ctx, func(tx *sqlx.Tx) error {
-		var row struct {
-			Got int64 `db:"got"`
-		}
-		if err := tx.QueryRow(&row, "select get_lock(?, 0) as got", lockName); err != nil {
-			return err
-		}
-		if row.Got != 1 {
-			return nil
-		}
-		acquired = true
-		defer func() { _, _ = tx.Exec("select release_lock(?)", lockName) }()
+func withLock(ctx context.Context, d *dao.Dao, fn func()) (bool, error) {
+	if d.Redis == nil {
 		fn()
-		return nil
-	})
-	return acquired, err
+		return true, nil
+	}
+	// GET_LOCK is tied to one MySQL connection. A pooled transaction can
+	// take the lock on one connection and release it on another, which
+	// leaves the lock stuck and every later pass skips the sweep.
+	ok, err := d.Redis.SetnxExCtx(ctx, lockName, "1", 120)
+	if err != nil || !ok {
+		return false, err
+	}
+	defer func() { _, _ = d.Redis.DelCtx(ctx, lockName) }()
+	fn()
+	return true, nil
 }
 
 type dueBox struct {

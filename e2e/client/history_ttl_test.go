@@ -137,7 +137,16 @@ func TestHistoryTTLGroupAndChannel(t *testing.T) {
 		if err != nil {
 			return false, err
 		}
-		return idOfText(left, text) != 0, nil
+		id := idOfText(left, text)
+		if id == 0 {
+			return false, nil
+		}
+		for _, msg := range left {
+			if msg.GetId() == id && msg.GetTtlPeriod().GetValue() != 1 {
+				return false, fmt.Errorf("group ttl_period = %d", msg.GetTtlPeriod().GetValue())
+			}
+		}
+		return true, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
