@@ -24,6 +24,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/mediaaccess"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -47,6 +48,16 @@ type hashFinder interface {
 	FindDocument(ctx context.Context, shaHex string, size int64, mime string) (int64, error)
 }
 
+// hashLister returns every live row with this hash. The oldest row may
+// belong to someone else; the handler keeps one the caller may see.
+type hashLister interface {
+	FindDocumentIDs(ctx context.Context, shaHex string, size int64, mime string) ([]int64, error)
+}
+
+// docAllow reports whether this caller may receive the document. A false
+// result becomes documentEmpty. An error fails the RPC.
+type docAllow func(doc *mtproto.Document) (bool, error)
+
 // documentGetter loads the document row for a hash hit.
 type documentGetter interface {
 	MediaGetDocument(ctx context.Context, in *media.TLMediaGetDocument) (*mtproto.Document, error)
@@ -69,21 +80,35 @@ func (c *FilesCore) MessagesGetDocumentByHash(in *mtproto.TLMessagesGetDocumentB
 	if c != nil && c.ctx != nil {
 		ctx = c.ctx
 	}
-	return lookupDocumentByHash(ctx, log, blobs, docs, in)
+	return lookupDocumentByHash(ctx, log, blobs, docs, in, c.allowDocument)
+}
+
+func (c *FilesCore) allowDocument(doc *mtproto.Document) (bool, error) {
+	ok, err := c.documentReadable(doc)
+	if err != nil || ok {
+		return ok, err
+	}
+	if mediaaccess.LogOnly() {
+		if c != nil && c.Logger != nil {
+			c.Logger.Errorf("media access: getDocumentByHash document %d would be documentEmpty (%s=log)", doc.GetId(), mediaaccess.EnvEnforce)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // lookupDocumentByHash runs the hash lookup and records hit versus
 // documentEmpty on one span. The span does not carry the sha256, the
 // mime string, or the document access_hash.
-func lookupDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, docs documentGetter, in *mtproto.TLMessagesGetDocumentByHash) (*mtproto.Document, error) {
+func lookupDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, docs documentGetter, in *mtproto.TLMessagesGetDocumentByHash, allow docAllow) (*mtproto.Document, error) {
 	size := documentByHashSize(in)
 	ctx, finish := mediaotel.BeginDocumentLookup(ctx)
-	doc, err := findDocumentByHash(ctx, log, blobs, docs, in)
+	doc, err := findDocumentByHash(ctx, log, blobs, docs, in, allow)
 	finish(documentLookupResult(doc, err), size)
 	return doc, err
 }
 
-func findDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, docs documentGetter, in *mtproto.TLMessagesGetDocumentByHash) (*mtproto.Document, error) {
+func findDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, docs documentGetter, in *mtproto.TLMessagesGetDocumentByHash, allow docAllow) (*mtproto.Document, error) {
 	empty := mtproto.MakeTLDocumentEmpty(nil).To_Document()
 	if in == nil || blobs == nil {
 		return empty, nil
@@ -92,27 +117,52 @@ func findDocumentByHash(ctx context.Context, log logx.Logger, blobs hashFinder, 
 	if len(sum) != 32 || in.GetMimeType() == "" {
 		return empty, nil
 	}
-	id, err := blobs.FindDocument(ctx, hex.EncodeToString(sum), documentByHashSize(in), in.GetMimeType())
+	ids, err := documentIDsByHash(ctx, blobs, hex.EncodeToString(sum), documentByHashSize(in), in.GetMimeType())
 	if err != nil {
 		if log != nil {
 			log.Errorf("messages.getDocumentByHash: %v", err)
 		}
 		return nil, err
 	}
-	if id == 0 || docs == nil {
+	if len(ids) == 0 || docs == nil {
 		return empty, nil
 	}
-	doc, err := docs.MediaGetDocument(ctx, &media.TLMediaGetDocument{Id: id})
-	if err != nil {
-		if log != nil {
-			log.Errorf("messages.getDocumentByHash document %d: %v", id, err)
+	for _, id := range ids {
+		doc, err := docs.MediaGetDocument(ctx, &media.TLMediaGetDocument{Id: id})
+		if err != nil {
+			if log != nil {
+				log.Errorf("messages.getDocumentByHash document %d: %v", id, err)
+			}
+			return nil, err
 		}
+		if doc == nil || doc.GetPredicateName() == mtproto.Predicate_documentEmpty || doc.GetId() == 0 {
+			continue
+		}
+		// A missing allow function hides the row. Production always passes one.
+		// Returning the document by default would hand out a private access_hash.
+		if allow == nil {
+			continue
+		}
+		ok, err := allow(doc)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return doc, nil
+		}
+	}
+	return empty, nil
+}
+
+func documentIDsByHash(ctx context.Context, blobs hashFinder, shaHex string, size int64, mime string) ([]int64, error) {
+	if lister, ok := blobs.(hashLister); ok {
+		return lister.FindDocumentIDs(ctx, shaHex, size, mime)
+	}
+	id, err := blobs.FindDocument(ctx, shaHex, size, mime)
+	if err != nil || id == 0 {
 		return nil, err
 	}
-	if doc == nil || doc.GetPredicateName() == mtproto.Predicate_documentEmpty || doc.GetId() == 0 {
-		return empty, nil
-	}
-	return doc, nil
+	return []int64{id}, nil
 }
 
 func documentLookupResult(doc *mtproto.Document, err error) string {

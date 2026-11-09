@@ -35,6 +35,9 @@ import (
 func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mtproto.Updates, error) {
 	ids := make([]int64, 0, len(in.GetMultiMedia()))
 	for _, item := range in.GetMultiMedia() {
+		if err := c.authorizeReferencedMedia(item.GetMedia()); err != nil {
+			return nil, err
+		}
 		ids = append(ids, item.GetRandomId())
 	}
 	return c.onceOutgoingIDs(ids, func() (*mtproto.Updates, error) {

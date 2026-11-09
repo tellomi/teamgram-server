@@ -400,6 +400,7 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 				sUserList.Visit(func(it *mtproto.ImmutableUser) {
 					toUsers = append(toUsers, it.ToUser(participant.UserId))
 				})
+				paintStoryUsers(participant.UserId, sUserList, toUsers)
 				_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(ctx, &inbox.TLInboxSendUserMessageToInboxV2{
 					UserId:        participant.UserId,
 					Out:           participant.UserId == fromUserId,
@@ -752,6 +753,7 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				sUserList.Visit(func(it *mtproto.ImmutableUser) {
 					toUsers = append(toUsers, it.ToUser(participant.UserId))
 				})
+				paintStoryUsers(participant.UserId, sUserList, toUsers)
 				_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(ctx, &inbox.TLInboxSendUserMessageToInboxV2{
 					UserId:        participant.UserId,
 					Out:           participant.UserId == fromUserId,

@@ -295,6 +295,10 @@ func (m *MinioUtil) PutClassBytes(ctx context.Context, class, path, contentType 
 	return m.put(ctx, class, path, bytes.NewReader(buf), int64(len(buf)), contentType)
 }
 
+// getRange may answer from the chunk LRU. The key is the object identity
+// (class, path, offset, limit), not the caller's access_hash. upload.getFile
+// and upload.getFileHashes authorize that hash before they call into dfs, on
+// every request. A failed check never reaches this cache.
 func (m *MinioUtil) getRange(ctx context.Context, class, path string, offset int64, limit int32) ([]byte, error) {
 	if m == nil || m.chunks == nil || !cacheableReadClass(class) {
 		return m.getRangeUncached(ctx, class, path, offset, limit)

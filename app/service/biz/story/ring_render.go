@@ -38,9 +38,13 @@ func (s *Service) visibleMax(ctx context.Context, viewer int64, recs []*Record) 
 		if rec == nil || rec.Item == nil || !s.privacyAllows(ctx, rec, viewer) {
 			continue
 		}
+		ok, live := s.advertises(rec)
+		if !ok {
+			continue
+		}
 		if rec.id() >= ring.MaxID {
 			ring.MaxID = rec.id()
-			ring.Live = rec.Item.GetLive()
+			ring.Live = live
 		}
 	}
 	return ring

@@ -59,6 +59,11 @@ type Service struct {
 	haveUserTable     bool
 	persistLogged     bool
 	expireOnce        sync.Once
+
+	// Live streams. A story with Item.Live stays on the ring until the call
+	// is discarded, the host leaves, or the host's media goes quiet. The
+	// maps are process-local, like the group call itself.
+	lives liveBook
 }
 
 func New(store Store) *Service {
@@ -311,6 +316,11 @@ func (s *Service) visible(ctx context.Context, viewer int64, rec *Record, includ
 	if !includeExpired && !rec.active(s.now()) {
 		return false
 	}
+	if !includeExpired {
+		if ok, _ := s.advertises(rec); !ok {
+			return false
+		}
+	}
 	if !s.privacyAllows(ctx, rec, viewer) {
 		return false
 	}
@@ -365,12 +375,35 @@ func (s *Service) activeMax(ctx context.Context, owner Owner) (max int32, live b
 	}
 	now := s.now()
 	for _, r := range recs {
-		if r.active(now) && r.id() >= max {
-			max = r.id()
-			live = r.Item.GetLive()
+		if !r.active(now) {
+			continue
 		}
+		ok, onAir := s.advertises(r)
+		if !ok || r.id() < max {
+			continue
+		}
+		max = r.id()
+		live = onAir
 	}
 	return max, live, nil
+}
+
+// advertises reports whether a story may draw a chat-list ring, and whether
+// that ring is live. recentStory.live is set only while this process still
+// has the group call. An empty stories.startLive body with no call is not a
+// story: opening it shows nothing.
+func (s *Service) advertises(rec *Record) (ok, live bool) {
+	if rec == nil || rec.Item == nil || rec.Deleted {
+		return false, false
+	}
+	onAir := s.onAir(rec)
+	if onAir {
+		return true, true
+	}
+	if rec.Item.GetLive() && mediaEmpty(rec.Item.Media) {
+		return false, false
+	}
+	return true, false
 }
 
 func (s *Service) audience(ctx context.Context, actor int64, rec *Record) []int64 {
@@ -413,7 +446,16 @@ func (s *Service) push(ctx context.Context, userID int64, exclude []int64, up *m
 }
 
 func (s *Service) fanout(ctx context.Context, actor, auth int64, rec *Record) {
-	for _, uid := range s.audience(ctx, actor, rec) {
+	s.fanoutIDs(ctx, actor, auth, rec, s.audience(ctx, actor, rec))
+}
+
+func (s *Service) fanoutIDs(ctx context.Context, actor, auth int64, rec *Record, ids []int64) {
+	seen := map[int64]bool{}
+	for _, uid := range ids {
+		if uid == 0 || seen[uid] {
+			continue
+		}
+		seen[uid] = true
 		up := s.storyUpdates(ctx, uid, rec, uid == actor)
 		var exclude []int64
 		if uid == actor && auth != 0 {

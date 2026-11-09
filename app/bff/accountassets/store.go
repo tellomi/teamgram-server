@@ -98,6 +98,22 @@ func (s *store) nextID() int64 {
 	return s.seq + 1000
 }
 
+// DocumentAccess is the access_hash of a theme, wallpaper, or ringtone
+// document this process issued. Files in another process do not see it.
+func DocumentAccess(id int64) (int64, bool) {
+	if id == 0 {
+		return 0, false
+	}
+	s := shared()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec := s.docs[id]
+	if rec == nil || rec.doc == nil {
+		return 0, false
+	}
+	return rec.doc.GetAccessHash(), true
+}
+
 func accessOf(id int64) int64 {
 	h := uint64(id)*0x9E3779B185EBCA87 + 0xC2B2AE3D27D4EB4F
 	out := int64(h & 0x7fffffffffffffff)

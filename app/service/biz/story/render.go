@@ -245,10 +245,12 @@ func (s *Service) AttachChannel(ctx context.Context, viewer, channelID int64) ch
 	}
 	max, live := int32(0), false
 	for _, rec := range active {
-		if rec.id() >= max {
-			max = rec.id()
-			live = rec.Item.GetLive()
+		ok, onAir := s.advertises(rec)
+		if !ok || rec.id() < max {
+			continue
 		}
+		max = rec.id()
+		live = onAir
 	}
 	var ps *mtproto.PeerStories
 	if len(active) > 0 {

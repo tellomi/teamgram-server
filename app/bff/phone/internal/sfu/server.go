@@ -54,6 +54,7 @@ type endpoint struct {
 	enc      *srtp.Context
 	ready    atomic.Bool
 	record   atomic.Bool
+	lastSeen atomic.Int64
 	server   *Server
 }
 
@@ -143,6 +144,34 @@ func (s *Server) Join(callID int64, key, offerJSON, endpointID string) (answer s
 	s.calls[callID] = append(s.calls[callID], ep)
 	s.mu.Unlock()
 	return answer, offer.AudioSSRC, len(offer.VideoGroups) > 0, nil
+}
+
+// Leave removes one participant.
+func (ep *endpoint) touch() {
+	if ep != nil {
+		ep.lastSeen.Store(time.Now().UnixNano())
+	}
+}
+
+// Quiet reports whether key has an endpoint that has sent nothing for d.
+// No endpoint means the host has not reached the socket yet.
+func (s *Server) Quiet(callID int64, key string, d time.Duration) (found, quiet bool) {
+	if s == nil || d <= 0 {
+		return false, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, ep := range s.calls[callID] {
+		if ep == nil || ep.key != key {
+			continue
+		}
+		seen := ep.lastSeen.Load()
+		if seen == 0 {
+			return true, true
+		}
+		return true, time.Since(time.Unix(0, seen)) >= d
+	}
+	return false, false
 }
 
 // Leave removes one participant.
@@ -265,6 +294,7 @@ func (s *Server) bind(ep *endpoint, addr *net.UDPAddr) {
 		ep.addr = addr
 		s.byAddr[addr.String()] = ep
 	}
+	ep.touch()
 	if !ep.started {
 		ep.started = true
 		go ep.handshake()
@@ -278,6 +308,7 @@ func (s *Server) onDTLS(pkt []byte, addr *net.UDPAddr) {
 	if ep == nil {
 		return
 	}
+	ep.touch()
 	select {
 	case ep.dtlsIn <- pkt:
 	default:
@@ -292,6 +323,7 @@ func (s *Server) onMedia(pkt []byte, addr *net.UDPAddr) {
 	if ep == nil || !ep.ready.Load() || ep.dec == nil {
 		return
 	}
+	ep.touch()
 	var packet rtp.Packet
 	if err := packet.Unmarshal(pkt); err != nil {
 		return

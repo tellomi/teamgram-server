@@ -324,6 +324,7 @@ func (c *MsgCore) editChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 			sUserList.Visit(func(it *mtproto.ImmutableUser) {
 				toUsers = append(toUsers, it.ToUser(participant.UserId))
 			})
+			paintStoryUsers(participant.UserId, sUserList, toUsers)
 			_, err2 = c.svcCtx.Dao.InboxClient.InboxEditMessageToInboxV2(
 				c.ctx,
 				&inbox.TLInboxEditMessageToInboxV2{

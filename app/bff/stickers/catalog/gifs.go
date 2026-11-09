@@ -41,6 +41,20 @@ var gifClips = []gifClip{
 func gifID(code string) int64     { return stableID("gif", code) }
 func gifAccess(code string) int64 { return stableID("gif-access", code) }
 
+// GifAccess is the access_hash issued for a GIF in the public panel.
+func GifAccess(id int64) (int64, bool) {
+	if clip, ok := gifClipByID(id); ok {
+		return gifAccess(clip.code), true
+	}
+	if clip, ok := importedGifByID(id); ok {
+		if clip.access != 0 {
+			return clip.access, true
+		}
+		return gifAccess(clip.code), true
+	}
+	return 0, false
+}
+
 func gifClipByID(id int64) (gifClip, bool) {
 	for _, clip := range gifClips {
 		if gifID(clip.code) == id {
