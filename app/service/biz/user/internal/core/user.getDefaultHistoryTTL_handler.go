@@ -30,7 +30,11 @@ func (c *UserCore) UserGetDefaultHistoryTTL(in *user.TLUserGetDefaultHistoryTTL)
 		Period: 0,
 	}).To_DefaultHistoryTTL()
 
-	do, _ := c.svcCtx.Dao.DefaultHistoryTtlDAO.Select(c.ctx, in.GetUserId())
+	do, err := c.svcCtx.Dao.DefaultHistoryTtlDAO.Select(c.ctx, in.GetUserId())
+	if err != nil {
+		c.Logger.Errorf("user.getDefaultHistoryTTL - error: %v", err)
+		return nil, err
+	}
 	if do != nil {
 		rV.Period = do.Period
 	}
