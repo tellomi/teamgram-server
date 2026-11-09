@@ -45,18 +45,41 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, q PostQuery) (*mt
 		if err != nil || body == nil {
 			continue
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, self))
-		senders = append(senders, stored.SenderID)
-		if !seen[stored.ChannelID] {
-			seen[stored.ChannelID] = true
-			if ch, err := s.store.GetChannel(ctx, stored.ChannelID); err == nil && ch != nil {
-				chats = append(chats, s.ChatFor(ctx, self, ch))
-			}
+		channelID := stored.ChannelID
+		if id := body.GetPeerId().GetChannelId(); id != 0 {
+			channelID = id
+		}
+		if body.GetPeerId().GetChannelId() == 0 && channelID != 0 {
+			body.PeerId = mtproto.MakePeerChannel(channelID)
+		}
+		sender := stored.SenderID
+		if id := body.GetFromId().GetUserId(); id != 0 {
+			sender = id
+		}
+		var ch *Channel
+		if channelID != 0 {
+			ch, _ = s.store.GetChannel(ctx, channelID)
+		}
+		if sender == 0 && ch != nil {
+			sender = ch.CreatorID
+		}
+		if sender == 0 {
+			sender = self
+		}
+		if body.GetFromId().GetUserId() == 0 && !chIsBroadcast(ch) {
+			body.FromId = mtproto.MakePeerUser(sender)
+		}
+		msgs = append(msgs, viewMessage(body, sender, self))
+		senders = append(senders, sender)
+		if channelID != 0 && !seen[channelID] {
+			seen[channelID] = true
+			chats = append(chats, postSearchChat(s, ctx, self, ch, channelID))
 		}
 	}
 	if chats == nil {
 		chats = []*mtproto.Chat{}
 	}
+	senders = append(senders, self)
 	out := mtproto.MakeTLMessagesMessagesSlice(&mtproto.Messages_Messages{
 		Inexact:  inexact,
 		Count:    int32(len(msgs)),
@@ -96,6 +119,24 @@ func (s *Service) Hidden(ctx context.Context, id int64) bool {
 		return false
 	}
 	return channelHidden(ch)
+}
+
+func chIsBroadcast(ch *Channel) bool {
+	return ch != nil && ch.Broadcast && !ch.Megagroup
+}
+
+func postSearchChat(s *Service, ctx context.Context, self int64, ch *Channel, channelID int64) *mtproto.Chat {
+	if ch != nil && s != nil {
+		if chat := s.ChatFor(ctx, self, ch); chat != nil {
+			return chat
+		}
+	}
+	return mtproto.MakeTLChannel(&mtproto.Chat{
+		Broadcast: true,
+		Id:        channelID,
+		Title:     "",
+		Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
+	}).To_Chat()
 }
 
 func postNeedle(raw string) (string, error) {

@@ -36,14 +36,47 @@ func (c *MessagesCore) ChannelsSearchPosts(in *mtproto.TLChannelsSearchPosts) (*
 	}
 	if res != nil {
 		res.SearchFlood = postsearch.Shared().Spend(c.ctx, c.MD.UserId)
+		c.fillPostChats(res)
 		c.fillPostUsers(res)
 	}
 	return res, nil
 }
 
-func (c *MessagesCore) fillPostUsers(res *mtproto.Messages_Messages) {
-	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || res == nil {
+func (c *MessagesCore) fillPostChats(res *mtproto.Messages_Messages) {
+	if res == nil || len(res.GetMessages()) == 0 {
 		return
+	}
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, msg := range res.Messages {
+		id := msg.GetPeerId().GetChannelId()
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	layer := int32(mtproto.Layer)
+	if c.MD != nil && c.MD.Layer > 0 {
+		layer = c.MD.Layer
+	}
+	chats := channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...)
+	if len(chats) == 0 {
+		chats = res.Chats
+	}
+	res.Chats = encodableChats(layer, ids, chats)
+}
+
+func (c *MessagesCore) fillPostUsers(res *mtproto.Messages_Messages) {
+	if c == nil || res == nil {
+		return
+	}
+	layer := int32(mtproto.Layer)
+	if c.MD != nil && c.MD.Layer > 0 {
+		layer = c.MD.Layer
 	}
 	seen := map[int64]struct{}{}
 	var ids []int64
@@ -57,20 +90,89 @@ func (c *MessagesCore) fillPostUsers(res *mtproto.Messages_Messages) {
 		seen[id] = struct{}{}
 		ids = append(ids, id)
 	}
+	if c.MD != nil {
+		add(c.MD.UserId)
+	}
 	for _, user := range res.Users {
 		add(user.GetId())
 	}
 	for _, msg := range res.Messages {
 		add(msg.GetFromId().GetUserId())
 	}
-	if len(ids) == 0 {
-		return
+	if c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.UserClient != nil && c.MD != nil && len(ids) > 0 {
+		users, err := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{Id: ids})
+		if err == nil && users != nil {
+			if got := users.GetUserListByIdList(c.MD.UserId, ids...); len(got) > 0 {
+				res.Users = got
+			}
+		}
 	}
-	users, err := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{Id: ids})
-	if err != nil || users == nil {
-		return
+	res.Users = encodableUsers(layer, ids, res.Users)
+}
+
+func encodableChats(layer int32, ids []int64, chats []*mtproto.Chat) []*mtproto.Chat {
+	var out []*mtproto.Chat
+	have := map[int64]bool{}
+	for _, chat := range chats {
+		if chat == nil || chat.GetId() == 0 || !tlEncodes(layer, chat) {
+			continue
+		}
+		out = append(out, chat)
+		have[chat.GetId()] = true
 	}
-	if got := users.GetUserListByIdList(c.MD.UserId, ids...); len(got) > 0 {
-		res.Users = got
+	for _, id := range ids {
+		if have[id] {
+			continue
+		}
+		chat := mtproto.MakeTLChannel(&mtproto.Chat{
+			Broadcast: true,
+			Id:        id,
+			Title:     "",
+			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
+		}).To_Chat()
+		if tlEncodes(layer, chat) {
+			out = append(out, chat)
+			have[id] = true
+		}
 	}
+	if out == nil {
+		out = []*mtproto.Chat{}
+	}
+	return out
+}
+
+func encodableUsers(layer int32, ids []int64, users []*mtproto.User) []*mtproto.User {
+	var out []*mtproto.User
+	have := map[int64]bool{}
+	for _, user := range users {
+		if user == nil || user.GetId() == 0 || !tlEncodes(layer, user) {
+			continue
+		}
+		out = append(out, user)
+		have[user.GetId()] = true
+	}
+	for _, id := range ids {
+		if have[id] {
+			continue
+		}
+		user := mtproto.MakeTLUserEmpty(&mtproto.User{Id: id}).To_User()
+		if tlEncodes(layer, user) {
+			out = append(out, user)
+		}
+	}
+	if out == nil {
+		out = []*mtproto.User{}
+	}
+	return out
+}
+
+func tlEncodes(layer int32, obj mtproto.TLObject) bool {
+	if obj == nil {
+		return false
+	}
+	if layer <= 0 {
+		layer = mtproto.Layer
+	}
+	buf := mtproto.NewEncodeBuf(512)
+	return obj.Encode(buf, layer) == nil
 }

@@ -261,6 +261,42 @@ func TestSearchPublicChineseTitle(t *testing.T) {
 	}
 }
 
+func TestSearchPostsRoundTripKeepsChatsAndUsers(t *testing.T) {
+	svc, ctx := newTest(t)
+	news, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "中文新闻", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := news.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.UpdateUsername(ctx, 7, 0, in, "roundtrip"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Send(ctx, 7, ch.Id, 0, []Outgoing{{
+		RandomID: 1,
+		Message:  &mtproto.Message{Message: "上海你好 #新闻", Date: 10},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := svc.SearchPosts(ctx, 7, PostQuery{Needle: "海", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := mtproto.NewEncodeBuf(512)
+	if err := page.Encode(buf, 232); err != nil {
+		t.Fatal(err)
+	}
+	decoded := &mtproto.Messages_Messages{}
+	d := mtproto.NewDecodeBuf(buf.GetBuf())
+	decoded.Decode(d)
+	if err := d.GetError(); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.GetMessages()) == 0 || len(decoded.GetChats()) == 0 || len(decoded.GetUsers()) == 0 {
+		t.Fatalf("round trip messages=%d chats=%d users=%d", len(decoded.GetMessages()), len(decoded.GetChats()), len(decoded.GetUsers()))
+	}
+}
+
 func TestLikeContainsEscapes(t *testing.T) {
 	if got := likeContains(`100%_a\b`); got != `%100\%\_a\\b%` {
 		t.Fatalf("pattern %q", got)

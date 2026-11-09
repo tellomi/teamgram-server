@@ -66,7 +66,11 @@ func TestGlobalSearchFree(t *testing.T) {
 		t.Fatalf("single character posts %+v", messageTexts(posts))
 	}
 	if len(posts.GetChats()) == 0 || len(posts.GetUsers()) == 0 {
-		t.Fatalf("vectors chats=%d users=%d", len(posts.GetChats()), len(posts.GetUsers()))
+		var peer *mtproto.Peer
+		if len(posts.GetMessages()) > 0 {
+			peer = posts.GetMessages()[0].GetPeerId()
+		}
+		t.Fatalf("vectors chats=%d users=%d msgs=%d peer=%v", len(posts.GetChats()), len(posts.GetUsers()), len(posts.GetMessages()), peer)
 	}
 	if posts.GetSearchFlood().GetStarsAmount() != 0 || !posts.GetSearchFlood().GetQueryIsFree() || posts.GetSearchFlood().GetRemains() != 99 {
 		t.Fatalf("search flood %+v", posts.GetSearchFlood())
