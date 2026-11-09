@@ -83,7 +83,7 @@ func TestBasicGroupInboxRace(t *testing.T) {
 		calls := len(sc.calls)
 		c := basicCore(fake, tellomiai.AccountID, 9)
 		start := time.Now()
-		c.answerTellomiGroup(context.Background(), 9, mtproto.PEER_CHAT, basicChatID, "@tellomi 你好", mention, 101, 0, 4944)
+		c.answerTellomiGroup(context.Background(), 9, mtproto.PEER_CHAT, basicChatID, "@tellomi 你好", mention, 101, 0, 4944, false)
 		if time.Since(start) > time.Second {
 			t.Fatal("a hit on the next lookup waited out the full window")
 		}
@@ -124,7 +124,7 @@ func TestBasicGroupInboxRace(t *testing.T) {
 		before := len(ai.Ledger.Records())
 		calls := len(sc.calls)
 		c := basicCore(fake, tellomiai.AccountID, 11)
-		c.answerTellomiGroup(context.Background(), 11, mtproto.PEER_CHAT, basicChatID, "不对", nil, 103, 8, 4945)
+		c.answerTellomiGroup(context.Background(), 11, mtproto.PEER_CHAT, basicChatID, "不对", nil, 103, 8, 4945, false)
 		if sent.n != 1 || sent.replyTo != 55 || sent.text != "你好" {
 			t.Fatalf("sent %+v", sent)
 		}
@@ -157,7 +157,7 @@ func TestBasicGroupInboxRace(t *testing.T) {
 		sent.n = 0
 		calls := len(sc.calls)
 		c := basicCore(fake, tellomiai.AccountID, 10)
-		c.answerTellomiGroup(context.Background(), 10, mtproto.PEER_CHAT, basicChatID, "@tellomi 还在吗", mention, 102, 0, 4946)
+		c.answerTellomiGroup(context.Background(), 10, mtproto.PEER_CHAT, basicChatID, "@tellomi 还在吗", mention, 102, 0, 4946, false)
 		if sent.n != 1 || sent.peerID != basicChatID || sent.replyTo != 0 || sent.text != "你好" || !sent.ai {
 			t.Fatalf("sent %+v", sent)
 		}
@@ -179,7 +179,7 @@ func TestBasicGroupInboxRace(t *testing.T) {
 		sent.n = 0
 		calls := len(sc.calls)
 		c := basicCore(fake, tellomiai.AccountID, 12)
-		c.answerTellomiGroup(context.Background(), 12, mtproto.PEER_CHAT, basicChatID, "@tellomi 你好", mention, 104, 0, 4947)
+		c.answerTellomiGroup(context.Background(), 12, mtproto.PEER_CHAT, basicChatID, "@tellomi 你好", mention, 104, 0, 4947, false)
 		if sent.n != 1 || sent.replyTo != 55 || fake.peerCalls != 1 || len(sc.calls) != calls+1 {
 			t.Fatalf("sent %+v peer=%d model=%d", sent, fake.peerCalls, len(sc.calls)-calls)
 		}
@@ -205,7 +205,7 @@ func TestBasicGroupInboxRace(t *testing.T) {
 		sent.n = 0
 		c := basicCore(fake, 13)
 		start := time.Now()
-		c.answerTellomiGroup(context.Background(), 13, mtproto.PEER_CHAT, basicChatID, "@tellomi 你好", mention, 105, 0, 4948)
+		c.answerTellomiGroup(context.Background(), 13, mtproto.PEER_CHAT, basicChatID, "@tellomi 你好", mention, 105, 0, 4948, false)
 		if time.Since(start) > time.Second {
 			t.Fatal("membership failure waited on the inbox")
 		}
@@ -226,7 +226,7 @@ func TestBasicGroupInboxRace(t *testing.T) {
 		calls := len(sc.calls)
 		c := &MessagesCore{ctx: context.Background(), svcCtx: &svc.ServiceContext{Dao: &dao.Dao{MessageClient: fake}}}
 		start := time.Now()
-		c.answerTellomiGroup(context.Background(), 14, mtproto.PEER_CHANNEL, chID, "@tellomi 你好", mention, 106, 0, 42)
+		c.answerTellomiGroup(context.Background(), 14, mtproto.PEER_CHANNEL, chID, "@tellomi 你好", mention, 106, 0, 42, false)
 		if time.Since(start) > time.Second {
 			t.Fatal("supergroup waited on a basic-group inbox row")
 		}

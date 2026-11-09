@@ -226,11 +226,12 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 ## @tellomi AI (M4, phase 1 server)
 
-`TELLOMI_AI=1` plus `TELLOMI_AI_API_KEY` replies to private messages sent to user 777001 and can serve `POST /internal/v1/ai/complete` for a content-engine @mention. Both stay off otherwise. `messages.sendMessage` returns the user's update before the reply is generated. Login and session routing are unchanged. The contract is `docs/api/tellomi-ai.md`. `tellomi_ai_reply` is `teamgramd/deploy/sql/migrate-20261106-tellomi-ai.sql`.
+`TELLOMI_AI=1` plus `TELLOMI_AI_API_KEY` replies to private messages sent to user 777001 and can serve `POST /internal/v1/ai/complete` for a content-engine @mention. The model runs only for usernames in `TELLOMI_AI_ALLOW_USERNAMES` (default `erel,lfnuebfci,pikaqiu`; `*` allows everyone) and ids in `TELLOMI_AI_ALLOW_USER_IDS`. Anyone else, an empty or non-text message, a quota, a content-safety block, and a model failure each get a fixed sentence and do not ask the model to write that sentence. With the flag off, the same chats get the not-open sentence and the engine endpoint stays down. `messages.sendMessage` returns the user's update before the reply is generated. Login and session routing are unchanged. The contract is `docs/api/tellomi-ai.md`. `tellomi_ai_reply` is `teamgramd/deploy/sql/migrate-20261106-tellomi-ai.sql`.
 
 | Call | File | Hook |
 | --- | --- | --- |
-| `messages.sendMessage` | `app/bff/messages/internal/core/messages.sendMessage_handler.go` | `maybeTellomi`, only after a successful send, only when the flag is on |
+| `messages.sendMessage` | `app/bff/messages/internal/core/messages.sendMessage_handler.go` | `maybeTellomi`, only after a successful send |
+| `messages.sendMedia` / `messages.sendMultiMedia` | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go` | `noteTellomi`; a caption is text, media without text is the text-only sentence |
 | bff start | `app/bff/bff/internal/server/server.go` | `bots.StartTellomi` |
 | app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_ai_enabled` |
 

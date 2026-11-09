@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -27,7 +28,7 @@ var (
 // supergroups reply only to a mention of @tellomi or a reply to 777001.
 // Broadcast channels, bots, and 777001 itself are ignored. Scheduled sends
 // are not passed here.
-func (c *MessagesCore) noteTellomi(from int64, peer *mtproto.PeerUtil, text string, entities []*mtproto.MessageEntity, random int64, replyTo int32, sent *mtproto.Updates) {
+func (c *MessagesCore) noteTellomi(from int64, peer *mtproto.PeerUtil, text string, entities []*mtproto.MessageEntity, random int64, replyTo int32, sent *mtproto.Updates, media bool) {
 	if peer == nil || from == 0 || from == tellomiai.AccountID {
 		return
 	}
@@ -35,7 +36,7 @@ func (c *MessagesCore) noteTellomi(from int64, peer *mtproto.PeerUtil, text stri
 		maybeTellomi(c.ctx, from, peer, text, random, replyTo)
 		return
 	}
-	if c.skipGroup(from, peer) || !tellomiai.Enabled() {
+	if c.skipGroup(from, peer) || !tellomiai.Installed() {
 		return
 	}
 	sentID := sentMessageID(sent)
@@ -49,7 +50,7 @@ func (c *MessagesCore) noteTellomi(from int64, peer *mtproto.PeerUtil, text stri
 	}
 	ctx = contextx.ValueOnlyFrom(ctx)
 	threading.GoSafe(func() {
-		c.answerTellomiGroup(ctx, from, peer.PeerType, peer.PeerId, text, copied, random, replyTo, sentID)
+		c.answerTellomiGroup(ctx, from, peer.PeerType, peer.PeerId, text, copied, random, replyTo, sentID, media)
 	})
 }
 
@@ -80,7 +81,7 @@ func sentMessageID(up *mtproto.Updates) int32 {
 // answerTellomiGroup posts one reply into the same chat. The model sees only
 // the triggering text (mention removed) and, when this message is a reply,
 // that one replied-to message. It does not read the rest of the chat.
-func (c *MessagesCore) answerTellomiGroup(ctx context.Context, from int64, peerType int32, peerID int64, text string, entities []*mtproto.MessageEntity, random int64, replyTo, sentID int32) {
+func (c *MessagesCore) answerTellomiGroup(ctx context.Context, from int64, peerType int32, peerID int64, text string, entities []*mtproto.MessageEntity, random int64, replyTo, sentID int32, media bool) {
 	if from == 0 || from == tellomiai.AccountID || peerID == 0 || sentID == 0 {
 		return
 	}
@@ -94,12 +95,15 @@ func (c *MessagesCore) answerTellomiGroup(ctx context.Context, from int64, peerT
 		return
 	}
 	prompt := tellomiai.GroupPrompt(question, replied)
-	if prompt == "" {
-		return
+	// A sticker or other media with no caption is not a question, even when
+	// the message it replies to has text. A bare @mention is the same.
+	noText := (media && strings.TrimSpace(question) == "") || prompt == ""
+	if noText {
+		prompt = ""
 	}
 	ask := tellomiai.GroupAsk{
 		From: from, PeerType: peerType, PeerID: peerID,
-		ReplyTo: replyID, Text: prompt, Random: random,
+		ReplyTo: replyID, Text: prompt, Random: random, NoText: noText,
 	}
 	// replyID 0 on a basic group means the inbox row was not visible yet.
 	// The model still runs. ObserveGroup resolves the id again before send.

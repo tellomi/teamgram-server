@@ -9,21 +9,28 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
 // StartTellomi wires replies from user 777001 through messenger.msg.
-// TELLOMI_AI unset returns before any client is built. A missing API key is
-// logged inside tellomiai.Start and does not stop bff. The same sender posts
-// private replies and group replies.
-func StartTellomi(conf zrpc.RpcClientConf, dsn string) {
+// TELLOMI_AI unset still installs the sender so a fixed "not open" reply can
+// be delivered. The model client is built only when the flag and API key are
+// set. A missing API key is logged inside tellomiai.Start and does not stop
+// bff. The same sender posts private replies and group replies.
+// userConf is the user service, used to resolve the allowlist usernames.
+func StartTellomi(msgConf, userConf zrpc.RpcClientConf, dsn string) {
+	client := msg_client.NewMsgClient(rpcx.GetCachedRpcClient(msgConf))
+	sender := aiSender{client}
 	if !tellomiai.Advertised() {
+		tellomiai.StartClosed(sender)
 		return
 	}
-	client := msg_client.NewMsgClient(rpcx.GetCachedRpcClient(conf))
-	tellomiai.Start(dsn, aiSender{client}, nil)
+	var users tellomiai.UsernameDirectory
+	users = userDirectory{c: userclient.NewUserClient(rpcx.GetCachedRpcClient(userConf))}
+	tellomiai.Start(dsn, sender, nil, users)
 }
 
 type aiSender struct {

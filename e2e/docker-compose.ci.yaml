@@ -94,6 +94,8 @@ services:
       TELLOMI_AI_BASE_URL: http://fakebailian:18099
       TELLOMI_AI_MODEL_PRIMARY: e2e-fake-bailian
       TELLOMI_AI_ADDR: "off"
+      # CI users are not the production allowlist. * keeps the fake model reachable.
+      TELLOMI_AI_ALLOW_USERNAMES: "*"
       TELLOMI_REPORT_REVIEW: "0"
     # dfs checks the attachments bucket once at startup.
     depends_on:

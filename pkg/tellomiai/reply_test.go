@@ -46,6 +46,10 @@ func (s *scripted) handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"code":"DataInspectionFailed","message":"Input data may contain inappropriate content.","request_id":"r"}`))
 		return
+	case "content-filter":
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"code":"content_filter","message":"blocked by content filter"}}`))
+		return
 	case "down":
 		if body.Model == defaultPrimary {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -97,6 +101,17 @@ func TestSafetyDoesNotCallDeepSeek(t *testing.T) {
 	}
 	if len(svc.Ledger.Records()) != 1 || !svc.Ledger.Records()[0].Refused {
 		t.Fatal("refusal was not kept")
+	}
+}
+
+func TestContentFilterUsesTheBlockedSentence(t *testing.T) {
+	svc, sc, _ := testService(t, "content-filter", time.Second)
+	res, err := svc.Reply(context.Background(), 9, "不行", "e-filter")
+	if err != nil || !res.Refused || res.Text != Refusal {
+		t.Fatalf("%v %#v", err, res)
+	}
+	if len(sc.calls()) != 1 {
+		t.Fatalf("fallback ran: %v", sc.calls())
 	}
 }
 
@@ -242,6 +257,7 @@ type memGroup struct {
 	peerID   int64
 	replyTo  int32
 	text     string
+	texts    []string
 	ai       bool
 }
 
@@ -251,6 +267,7 @@ func (m *memGroup) SendGroup(_ context.Context, peerType int32, peerID int64, re
 	m.peerID = peerID
 	m.replyTo = replyTo
 	m.text = text
+	m.texts = append(m.texts, text)
 	m.ai = ai
 	return nil
 }
@@ -319,7 +336,7 @@ func TestGroupReplyOmitsLabelAndRepliesOnce(t *testing.T) {
 	}
 }
 
-func TestGroupChatCapIsSilentAndPerChat(t *testing.T) {
+func TestGroupChatCapNotifiesOnceAndIsPerChat(t *testing.T) {
 	svc, sc, _ := testService(t, "", time.Second)
 	svc.Ledger.Minute = 100
 	svc.Ledger.ChatMinute = 2
@@ -333,15 +350,22 @@ func TestGroupChatCapIsSilentAndPerChat(t *testing.T) {
 	ask(9, 1, 40)
 	ask(10, 2, 40)
 	ask(11, 3, 40)
+	ask(13, 5, 40)
 	ask(12, 4, 41)
-	if sent.n != 3 {
-		t.Fatalf("sent %d, want the two in chat 40 and the one in chat 41", sent.n)
+	if sent.n != 4 {
+		t.Fatalf("sent %d, want two answers in chat 40, one cap notice, and one answer in chat 41", sent.n)
 	}
 	if len(sc.calls()) != 3 {
 		t.Fatalf("model calls %v", sc.calls())
 	}
-	if sent.text != "你好" || strings.Contains(sent.text, Label) {
-		t.Fatalf("text %q", sent.text)
+	notices := 0
+	for _, text := range sent.texts {
+		if text == ChatMessage {
+			notices++
+		}
+	}
+	if notices != 1 || sent.text != "你好" || strings.Contains(sent.text, Label) {
+		t.Fatalf("texts %v last %q", sent.texts, sent.text)
 	}
 }
 

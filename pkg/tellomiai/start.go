@@ -13,7 +13,9 @@ import (
 // Start turns the service on when TELLOMI_AI=1 and TELLOMI_AI_API_KEY is set.
 // A missing key is logged and does not stop bff. Login is not involved.
 // addr "off" still answers private chats and does not listen for the engine.
-func Start(dsn string, sender Sender, subjects Subjects) {
+// users resolves TELLOMI_AI_ALLOW_USERNAMES. A nil directory with a username
+// list fails closed (the busy sentence) until the lookup is available.
+func Start(dsn string, sender Sender, subjects Subjects, users UsernameDirectory) {
 	if !Advertised() {
 		return
 	}
@@ -34,6 +36,7 @@ func Start(dsn string, sender Sender, subjects Subjects) {
 		),
 		Ledger: ledger,
 		Sender: sender,
+		Allow:  AllowFromEnv(users),
 	}
 	if g, ok := sender.(GroupSender); ok {
 		svc.Group = g
@@ -85,6 +88,16 @@ func Start(dsn string, sender Sender, subjects Subjects) {
 			logx.Errorf("tellomi ai http failed")
 		}
 	}()
+}
+
+// StartClosed installs a service that does not call the model.
+// Private messages and group mentions still receive DisabledMessage.
+func StartClosed(sender Sender) {
+	svc := &Service{enabled: false, Sender: sender}
+	if g, ok := sender.(GroupSender); ok {
+		svc.Group = g
+	}
+	Use(svc)
 }
 
 func decodeKey(raw string) ([]byte, error) {
