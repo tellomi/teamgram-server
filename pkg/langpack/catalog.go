@@ -238,11 +238,12 @@ func (c *Catalog) lookup(platform, code string) (*loaded, bool) {
 	if langs == nil {
 		return nil, false
 	}
-	canon, ok := CanonicalLang(code)
-	if !ok {
-		canon = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(code), "_", "-"))
-	}
-	l, ok := langs[canon]
+	// Settings and the phone locale send regional tags (de-DE, fr-FR,
+	// ja-JP, en-US, zh_Hans). iOS aborts the whole language switch when
+	// getLanguage returns an error. The difference still reports the
+	// catalog code (de, not de-DE): that is the code getLanguages listed,
+	// and both clients compare the response against it.
+	l, ok := langs[packCode(code)]
 	return l, ok
 }
 
