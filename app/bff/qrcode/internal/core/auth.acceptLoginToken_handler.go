@@ -29,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -80,6 +81,13 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		err := mtproto.ErrAuthTokenInvalid
 		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
 		return nil, err
+	}
+
+	if stage := enforcement.LoginStage(c.MD.UserId, "", "", true, time.Now()); !stage.BindOrdinary {
+		if err = enforcement.RPC(stage.Code); err != nil {
+			c.Logger.Errorf("auth.acceptLoginToken - sanction")
+			return nil, err
+		}
 	}
 
 	c.svcCtx.Dao.UpdateCacheQRLoginCode(c.ctx, keyId, map[string]string{

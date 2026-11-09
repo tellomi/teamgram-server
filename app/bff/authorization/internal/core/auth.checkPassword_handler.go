@@ -19,10 +19,13 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/account/deletion"
 	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 )
 
 // AuthCheckPassword
@@ -49,6 +52,20 @@ func (c *AuthorizationCore) AuthCheckPassword(in *mtproto.TLAuthCheckPassword) (
 	if err := password.Verify(c.ctx, userID, c.authKey(), proof); err != nil {
 		c.Logger.Errorf("auth.checkPassword - error: %v", err)
 		return nil, err
+	}
+	stage := enforcement.LoginStage(userID, "", "", true, time.Now())
+	if !stage.BindOrdinary {
+		if stage.Grant != nil {
+			if cur := enforcement.Current(); cur != nil {
+				if proof := cur.TakeLoginProof(c.authKey()); proof != "" {
+					_ = cur.StashProof(proof, *stage.Grant)
+				}
+			}
+		}
+		if err := enforcement.RPC(stage.Code); err != nil {
+			c.Logger.Errorf("auth.checkPassword - sanction")
+			return nil, err
+		}
 	}
 	if err := password.ClearLogin(c.ctx, c.authKey()); err != nil {
 		c.Logger.Errorf("auth.checkPassword - clear login: %v", err)

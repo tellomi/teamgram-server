@@ -55,6 +55,18 @@ services:
   # start it. The trial quota stays 0 so clients hide the button.
   asr:
     profiles: ["donotstart"]
+  # Local stand-in for Bailian. It is not DashScope. No host port is
+  # published; only the teamgram container can call it on the compose network.
+  fakebailian:
+    image: python:3.12-alpine
+    volumes:
+      - ./e2e/fakebailian/server.py:/server.py:ro
+    command: ["python", "-u", "/server.py"]
+    environment:
+      FAKE_BAILIAN_KEY: e2e-fake-not-production
+      PORT: "18099"
+    networks:
+      - teamgram_net
   teamgram:
     environment:
       TELLOMI_TRANSCRIBE_ENABLED: "false"
@@ -64,10 +76,26 @@ services:
       # Do not call www.tellomi.cn from CI. Production leaves this empty so
       # latest.json drives help.getAppUpdate.
       TELLOMI_APP_UPDATE_MANIFEST: "off"
+      # Isolated enforcement for TestAccountEnforcementBanAndLift. These are
+      # not production switches. The database is tellomi_enforcement_e2e,
+      # created by e2e/enforcementmigrate before this service starts.
+      # TELLOMI_AI points at fakebailian, not DashScope.
+      TELLOMI_ENFORCEMENT_MYSQL: root:root@tcp(mysql:3306)/tellomi_enforcement_e2e?parseTime=true&charset=utf8mb4
+      TELLOMI_ENFORCEMENT_CREATE: "1"
+      TELLOMI_ENFORCEMENT_E2E: ${TELLOMI_ENFORCEMENT_E2E:-}
+      TELLOMI_ENFORCEMENT_SERVICE_KEY: ${TELLOMI_ENFORCEMENT_SERVICE_KEY:-}
+      TELLOMI_AI: "1"
+      TELLOMI_AI_API_KEY: e2e-fake-not-production
+      TELLOMI_AI_BASE_URL: http://fakebailian:18099
+      TELLOMI_AI_MODEL_PRIMARY: e2e-fake-bailian
+      TELLOMI_AI_ADDR: "off"
+      TELLOMI_REPORT_REVIEW: "0"
     # dfs checks the attachments bucket once at startup.
     depends_on:
       minio-mc:
         condition: service_completed_successfully
+      fakebailian:
+        condition: service_started
   coturn:
     profiles: ["donotstart"]
   mediamtx:

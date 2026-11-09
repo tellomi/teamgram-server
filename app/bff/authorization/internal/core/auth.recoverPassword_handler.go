@@ -19,10 +19,13 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/codelogin"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 )
 
 // AuthRecoverPassword
@@ -56,6 +59,12 @@ func (c *AuthorizationCore) AuthRecoverPassword(in *mtproto.TLAuthRecoverPasswor
 	if user == nil {
 		c.Logger.Errorf("auth.recoverPassword - user is nil")
 		return nil, mtproto.ErrInternalServerError
+	}
+	if stage := enforcement.LoginStage(user.Id(), "", "", true, time.Now()); !stage.BindOrdinary {
+		if err = enforcement.RPC(stage.Code); err != nil {
+			c.Logger.Errorf("auth.recoverPassword - sanction")
+			return nil, err
+		}
 	}
 	_, _ = c.svcCtx.Dao.AuthsessionClient.AuthsessionBindAuthKeyUser(c.ctx, &authsession.TLAuthsessionBindAuthKeyUser{
 		AuthKeyId: c.authKey(),

@@ -58,6 +58,10 @@ func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMed
 		err = mtproto.ErrPeerIdInvalid
 		return nil, err
 	}
+	if err = c.blockSend(peer); err != nil {
+		c.Logger.Errorf("messages.sendMultiMedia - sanction")
+		return nil, err
+	}
 
 	// 1. draft
 	//if request.GetClearDraft() {

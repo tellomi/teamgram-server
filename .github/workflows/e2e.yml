@@ -26,6 +26,10 @@ jobs:
       # 127.0.0.1 is this job only. Production .env stays empty.
       TELLOMI_DC_OPTIONS: 1:127.0.0.1:10443,1:127.0.0.1:5222
       TELLOMI_E2E_DC_OPTIONS: 1:127.0.0.1:10443,1:127.0.0.1:5222
+      # Isolated enforcement listener inside the CI container. The value is
+      # 32 bytes of the letter E, standard base64. It is not a production key.
+      TELLOMI_ENFORCEMENT_E2E: "1"
+      TELLOMI_ENFORCEMENT_SERVICE_KEY: RUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUU=
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +38,29 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
+
+      - name: Start MySQL and migrate the isolated enforcement database
+        env:
+          TELLOMI_ENFORCEMENT_MYSQL: root:root@tcp(127.0.0.1:3306)/tellomi_enforcement_e2e?parseTime=true&charset=utf8mb4
+        run: |
+          docker compose \
+            -f docker-compose-env.yaml \
+            -f docker-compose.yaml \
+            -f e2e/docker-compose.ci.yaml \
+            up -d mysql
+          for i in $(seq 1 60); do
+            if docker compose \
+              -f docker-compose-env.yaml \
+              -f docker-compose.yaml \
+              -f e2e/docker-compose.ci.yaml \
+              exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot >/dev/null 2>&1; then
+              go run ./e2e/enforcementmigrate
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "mysql did not accept connections"
+          exit 1
 
       - name: Start the compose stack
         run: |

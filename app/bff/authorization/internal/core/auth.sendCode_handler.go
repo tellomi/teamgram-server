@@ -20,6 +20,7 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
@@ -28,6 +29,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	statuspb "github.com/teamgram/teamgram-server/app/service/status/status"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/teamgram/teamgram-server/pkg/verify"
 
@@ -283,6 +285,16 @@ func (c *AuthorizationCore) authSendCode(authKeyId, sessionId int64, request *mt
 		for _, v := range request.Settings.GetLogoutTokens() {
 			id, _ := c.svcCtx.Dao.GetFutureAuthToken(c.ctx, v)
 			if id == user.Id() {
+				if stage := enforcement.LoginStage(user.Id(), phoneNumber, "phone", true, time.Now()); !stage.BindOrdinary {
+					if stage.Grant != nil {
+						if cur := enforcement.Current(); cur != nil {
+							_ = cur.StashProof(string(v), *stage.Grant)
+						}
+					}
+					if err = enforcement.RPC(stage.Code); err != nil {
+						return nil, err
+					}
+				}
 				if c.needsCloudPassword(user.Id()) {
 					if c.authKey() == 0 {
 						c.Logger.Errorf("auth.sendCode - password step has no perm auth key")

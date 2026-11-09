@@ -2,9 +2,17 @@
 # deploy/ip2region/SHA256SUMS and fails the image build on mismatch.
 # See docs/ip2region.md.
 FROM ubuntu:latest AS ip2region
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+# archive.ubuntu.com occasionally refuses the connection mid-build.
+RUN n=0; \
+    while [ "$n" -lt 5 ]; do \
+      n=$((n+1)); \
+      apt-get update \
+        && apt-get install -y --no-install-recommends ca-certificates curl \
+        && break; \
+      if [ "$n" -eq 5 ]; then exit 1; fi; \
+      sleep 15; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY scripts/fetch-ip2region-xdb.sh deploy/ip2region/SHA256SUMS /src/
 RUN chmod +x /src/fetch-ip2region-xdb.sh \
@@ -16,10 +24,17 @@ FROM golang:1.23.0 AS gotool
 # Build on the same Ubuntu release as the runtime image so the dfs binary
 # links the libvips it will load. Chengdu does not build this image.
 FROM ubuntu:latest AS builder
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates gcc libc6-dev pkg-config libvips-dev git \
-    && rm -rf /var/lib/apt/lists/*
+RUN n=0; \
+    while [ "$n" -lt 5 ]; do \
+      n=$((n+1)); \
+      apt-get update \
+        && apt-get install -y --no-install-recommends \
+            ca-certificates gcc libc6-dev pkg-config libvips-dev git \
+        && break; \
+      if [ "$n" -eq 5 ]; then exit 1; fi; \
+      sleep 15; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=gotool /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:${PATH} \
     CGO_ENABLED=1 \
@@ -40,18 +55,25 @@ FROM ubuntu:latest
 # /etc/ssl/certs/ca-certificates.crt, Go rejects the R2 API certificate
 # and dfs exits in MustNewMinioClient before it listens. Leave
 # SSL_CERT_FILE and SSL_CERT_DIR unset; crypto/x509 reads that bundle.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates ffmpeg psmisc default-mysql-client \
-    && if apt-cache show libvips42t64 >/dev/null 2>&1; then \
-         apt-get install -y --no-install-recommends libvips42t64; \
-       elif apt-cache show libvips42 >/dev/null 2>&1; then \
-         apt-get install -y --no-install-recommends libvips42; \
-       else \
-         echo "libvips runtime library not found" >&2; \
-         exit 1; \
-       fi \
-    && apt-get clean \
+RUN n=0; \
+    while [ "$n" -lt 5 ]; do \
+      n=$((n+1)); \
+      apt-get update \
+        && apt-get install -y --no-install-recommends \
+            ca-certificates ffmpeg psmisc default-mysql-client \
+        && if apt-cache show libvips42t64 >/dev/null 2>&1; then \
+             apt-get install -y --no-install-recommends libvips42t64; \
+           elif apt-cache show libvips42 >/dev/null 2>&1; then \
+             apt-get install -y --no-install-recommends libvips42; \
+           else \
+             echo "libvips runtime library not found" >&2; \
+             exit 1; \
+           fi \
+        && break; \
+      if [ "$n" -eq 5 ]; then exit 1; fi; \
+      sleep 15; \
+    done; \
+    apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/verify-ca-bundle.sh /tmp/verify-ca-bundle.sh
 # Fail the image when the trust store did not survive package install.

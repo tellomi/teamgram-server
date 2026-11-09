@@ -47,6 +47,11 @@ func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*
 		peer.PeerType = mtproto.PEER_USER
 	}
 
+	if err := c.blockSend(peer); err != nil {
+		c.Logger.Errorf("messages.sendMessage - sanction")
+		return nil, err
+	}
+
 	if in.Message == "" {
 		err := mtproto.ErrMessageEmpty
 		c.Logger.Errorf("message empty: %v", err)

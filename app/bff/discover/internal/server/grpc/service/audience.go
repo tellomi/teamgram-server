@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/discoverrel"
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/status"
@@ -70,6 +71,9 @@ func (s *Service) DiscoverGetAudienceToken(ctx context.Context, in *mtproto.TLDi
 	if s.now != nil {
 		now = time.Unix(s.now(), 0)
 	}
+	if err = enforcement.Reject(userID, "discover_credential", false, now); err != nil {
+		return nil, err
+	}
 	issued, err := discoverauth.IssueAudience(keys.Signing, keys.Pseudonym, userID, in.GetKind(), in.GetUserIds(), now)
 	if err != nil {
 		logx.Errorf("discover audience: issue failed")
@@ -77,6 +81,11 @@ func (s *Service) DiscoverGetAudienceToken(ctx context.Context, in *mtproto.TLDi
 	}
 	if err = discoverrel.Remember(ctx, userID, discoverauth.Pseudonym(keys.Pseudonym, userID)); err != nil {
 		logx.Errorf("discover relations: could not record subject")
+	}
+	if cur := enforcement.Current(); cur != nil {
+		if err = cur.RecordSubject(keys.Pseudonym, userID); err != nil {
+			logx.Errorf("discover audience: subject binding was not stored")
+		}
 	}
 	return mtproto.MakeDiscoverAudienceToken(issued.Token, int32(issued.Expires)), nil
 }

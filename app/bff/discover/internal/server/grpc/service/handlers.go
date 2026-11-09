@@ -7,6 +7,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/discoverrel"
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/status"
@@ -40,6 +41,9 @@ func (s *Service) DiscoverGetEngineCredential(ctx context.Context, _ *mtproto.TL
 	if s.now != nil {
 		now = time.Unix(s.now(), 0)
 	}
+	if err = enforcement.Reject(userID, "discover_credential", false, now); err != nil {
+		return nil, err
+	}
 	mainland := false
 	if s.mainland != nil {
 		mainland = s.mainland(clientIP)
@@ -51,6 +55,11 @@ func (s *Service) DiscoverGetEngineCredential(ctx context.Context, _ *mtproto.TL
 	}
 	if err = discoverrel.Remember(ctx, userID, discoverauth.Pseudonym(keys.Pseudonym, userID)); err != nil {
 		logx.Errorf("discover relations: could not record subject")
+	}
+	if cur := enforcement.Current(); cur != nil {
+		if err = cur.RecordSubject(keys.Pseudonym, userID); err != nil {
+			logx.Errorf("discover credential: subject binding was not stored")
+		}
 	}
 	return mtproto.MakeDiscoverEngineCredential(cred.Token, cred.Region, int32(cred.Expires)), nil
 }

@@ -1555,6 +1555,26 @@ var (
 	// | 400 | PHONE_NUMBER_BANNED | The provided phone number is banned from telegram. |
 	ErrPhoneNumberBanned = status.Error(ErrBadRequest, "PHONE_NUMBER_BANNED")
 
+	// ErrIdentifierRestricted is an identifier-level block. It is not an account sanction.
+	// | 400 | IDENTIFIER_RESTRICTED | This phone number or email cannot be used to sign in. |
+	ErrIdentifierRestricted = status.Error(ErrBadRequest, "IDENTIFIER_RESTRICTED")
+
+	// ErrAccountScopedRestriction
+	// | 403 | ACCOUNT_SCOPED_RESTRICTION | A platform sanction blocks this action. |
+	ErrAccountScopedRestriction = status.Error(ErrForbidden, "ACCOUNT_SCOPED_RESTRICTION")
+
+	// ErrAccountReadOnly
+	// | 403 | ACCOUNT_READ_ONLY | The account is in a read-only freeze. |
+	ErrAccountReadOnly = status.Error(ErrForbidden, "ACCOUNT_READ_ONLY")
+
+	// ErrAccountPermanentDisabled
+	// | 401 | ACCOUNT_PERMANENT_DISABLED | The account is permanently disabled. Ordinary sessions are not issued. |
+	ErrAccountPermanentDisabled = status.Error(ErrUnauthorized, "ACCOUNT_PERMANENT_DISABLED")
+
+	// ErrAccountSecurityLock is not a sanction.
+	// | 401 | ACCOUNT_SECURITY_LOCK | The account is locked for recovery, not a penalty. |
+	ErrAccountSecurityLock = status.Error(ErrUnauthorized, "ACCOUNT_SECURITY_LOCK")
+
 	// ErrStickerGifDimensions
 	// | 400 | STICKER_GIF_DIMENSIONS | The specified video sticker has invalid dimensions. |
 	ErrStickerGifDimensions = status.Error(ErrBadRequest, "STICKER_GIF_DIMENSIONS")
