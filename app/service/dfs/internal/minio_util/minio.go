@@ -40,6 +40,9 @@ import (
 type MinioUtil struct {
 	c      *MinioConfig
 	client *minio.Client
+	// chunks caches photo and document ranges from upload.getFile.
+	// Nil disables it (both caps are 0).
+	chunks *chunkCache
 }
 
 // BucketError is returned when a configured bucket is missing or not accessible.
@@ -122,7 +125,7 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		return nil, fmt.Errorf("object storage client: %w", err)
 	}
 	// A fixed region skips GetBucketLocation. R2 expects "auto".
-	u := &MinioUtil{c: &cfg, client: client}
+	u := &MinioUtil{c: &cfg, client: client, chunks: newChunkCacheFromEnv()}
 	if err := u.verifyBuckets(context.Background()); err != nil {
 		return nil, err
 	}
@@ -293,6 +296,15 @@ func (m *MinioUtil) PutClassBytes(ctx context.Context, class, path, contentType 
 }
 
 func (m *MinioUtil) getRange(ctx context.Context, class, path string, offset int64, limit int32) ([]byte, error) {
+	if m == nil || m.chunks == nil || !cacheableReadClass(class) {
+		return m.getRangeUncached(ctx, class, path, offset, limit)
+	}
+	return m.chunks.getOrLoad(ctx, chunkKey(class, path, offset, limit), func(ctx context.Context) ([]byte, error) {
+		return m.getRangeUncached(ctx, class, path, offset, limit)
+	})
+}
+
+func (m *MinioUtil) getRangeUncached(ctx context.Context, class, path string, offset int64, limit int32) ([]byte, error) {
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return nil, err
@@ -540,6 +552,41 @@ func (m *MinioUtil) PutStickerBytes(ctx context.Context, path string, buf []byte
 
 func (m *MinioUtil) GetStickerFile(ctx context.Context, path string, offset int64, limit int32) ([]byte, error) {
 	return m.getRange(ctx, ClassStickers, path, offset, limit)
+}
+
+// ClassHead is the size and ETag of one object under a storage class.
+type ClassHead struct {
+	Size int64
+	ETag string
+}
+
+// ListClass returns every object under a class prefix. The map key is the
+// path inside the class (stickers/42.dat is "42.dat"). A missing bucket
+// returns the client error so the caller can fall back to uploading.
+func (m *MinioUtil) ListClass(ctx context.Context, class string) (map[string]ClassHead, error) {
+	if m == nil || m.client == nil {
+		return nil, fmt.Errorf("object storage client is nil")
+	}
+	bucket, key, err := resolveLocation(m.c, class, "_")
+	if err != nil {
+		return nil, err
+	}
+	prefix := strings.TrimSuffix(key, "_")
+	out := map[string]ClassHead{}
+	for info := range m.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}) {
+		if info.Err != nil {
+			return nil, info.Err
+		}
+		rel := strings.TrimPrefix(info.Key, prefix)
+		if rel == "" {
+			continue
+		}
+		out[rel] = ClassHead{Size: info.Size, ETag: info.ETag}
+	}
+	return out, nil
 }
 
 // StatClass returns the stored size of a class object. A missing object is ErrNotFound.

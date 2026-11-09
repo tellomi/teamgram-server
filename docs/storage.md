@@ -138,6 +138,22 @@ call GetBucketLocation) and `BucketLookup` set to path style. Server-side
 encryption headers from MinIO's `encrypt` package are not sent; secret-chat
 files are already encrypted by the client.
 
+## Download cache
+
+`upload.getFile` for photo sizes and documents keeps a local LRU of the bytes
+it just read. A repeat of the same offset and limit does not call R2 again.
+The cache is per process. Caps are bytes. `0` turns that tier off.
+
+```
+TELLOMI_DFS_CHUNK_CACHE_MEM=67108864
+TELLOMI_DFS_CHUNK_CACHE_DISK=536870912
+TELLOMI_DFS_CHUNK_CACHE_DIR=/tmp/tellomi-dfs-chunk-cache
+```
+
+Unset, those are 64MiB in memory and 512MiB on disk under the temp directory.
+Photo and document objects are immutable for a key, so a hit is not rechecked.
+Restart the dfs process after lowering a cap; the next start evicts down to it.
+
 ## Content identity
 
 New uploads of the same bytes share one object. dfs hashes the merged file

@@ -11,11 +11,19 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
-// staticJPEGQuality matches disintegration/imaging's default JPEG encode
-// quality. Derivatives are baseline and carry no EXIF: the historical
+// staticJPEGQuality matches Telegram's photo export (about 87). q95
+// re-encoded a 163KB original into a 329KB "x" size. Derivatives stay
+// baseline and carry no EXIF when they are re-encoded: the historical
 // encoder decoded to an image.Image, which drops orientation, then encoded
 // again. Do not autorotate here or the size ladder changes shape.
-const staticJPEGQuality = 95
+// A derivative whose pixels are the source is the original file itself,
+// so it is not re-encoded and cannot grow past the upload.
+const staticJPEGQuality = 87
+
+// jpegShrinkQualities are tried, in order, when a downscale at
+// staticJPEGQuality is still larger than the upload. The first result that
+// fits is kept.
+var jpegShrinkQualities = []int{75, 60, 45, 30}
 
 type staticFormat int
 
@@ -63,10 +71,11 @@ func staticFormatOf(extName string) (staticFormat, bool) {
 }
 
 type derivedSize struct {
-	szType  string
-	localId int
-	w, h    int32
-	b       []byte
+	szType        string
+	localId       int
+	w, h          int32
+	b             []byte
+	reuseOriginal bool
 }
 
 // reSizeStatic encodes every derivative before cb runs. A govips error
@@ -108,6 +117,10 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 	if err = preparePixels(img); err != nil {
 		return nil, err
 	}
+	// fileW/fileH are the decoded file. prepareABC may cover-crop, and those
+	// pixels are not the original bytes. Reuse the upload only when nothing
+	// has changed the geometry.
+	fileW, fileH := img.Width(), img.Height()
 	if isABC {
 		if err = prepareABC(img); err != nil {
 			return nil, err
@@ -117,10 +130,11 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 		return nil, fmt.Errorf("govips: empty image")
 	}
 
-	widthLimited := img.Width() >= img.Height()
-	longEdge := img.Height()
+	srcW, srcH := img.Width(), img.Height()
+	widthLimited := srcW >= srcH
+	longEdge := srcH
 	if widthLimited {
-		longEdge = img.Width()
+		longEdge = srcW
 	}
 	szList := mtproto.ReSizeInfoPhotoList
 	if isABC {
@@ -139,27 +153,77 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 		if err != nil {
 			return nil, err
 		}
-		encoded, err := staticEncode(resized, format)
 		w, h := resized.Width(), resized.Height()
-		resized.Close()
-		if err != nil {
-			return nil, err
+		// Same pixels as the prepared source: the largest ladder step (and
+		// any step the upload already fits). Re-encoding that step at q87
+		// made it larger than the file the client uploaded. Serve the
+		// original bytes instead. A crop (profile cover) changes pixels, so
+		// it still encodes.
+		samePixels := w == srcW && h == srcH && srcW == fileW && srcH == fileH && len(rb) > 0
+		var encoded []byte
+		reuse := false
+		if samePixels {
+			encoded = rb
+			reuse = true
+			resized.Close()
+		} else {
+			encoded, err = staticEncode(resized, format)
+			if err == nil && format == staticJPEG && len(encoded) > len(rb) && len(rb) > 0 {
+				encoded, err = shrinkJPEG(resized, len(rb))
+			}
+			resized.Close()
+			if err != nil {
+				return nil, err
+			}
 		}
 		if len(encoded) == 0 || w <= 0 || h <= 0 {
 			return nil, fmt.Errorf("govips: empty %s derivative", sz.Type)
 		}
+		// JPEG derivatives must not exceed the upload. PNG and WebP thumbs of a
+		// tiny source can be larger than that source; failing the upload
+		// would drop the photo. The largest JPEG step is the original file
+		// when the pixels match, which is the case that q95 inflated.
+		if !reuse && format == staticJPEG && len(rb) > 0 && len(encoded) > len(rb) {
+			return nil, fmt.Errorf("govips: %s derivative is %d bytes, larger than the %d byte original", sz.Type, len(encoded), len(rb))
+		}
 		out = append(out, derivedSize{
-			szType:  sz.Type,
-			localId: sz.LocalId,
-			w:       int32(w),
-			h:       int32(h),
-			b:       encoded,
+			szType:        sz.Type,
+			localId:       sz.LocalId,
+			w:             int32(w),
+			h:             int32(h),
+			b:             encoded,
+			reuseOriginal: reuse,
 		})
 		if stop {
 			break
 		}
 	}
 	return out, nil
+}
+
+// shrinkJPEG re-encodes until the buffer is no larger than limit.
+// The caller already tried staticJPEGQuality.
+func shrinkJPEG(img *vips.ImageRef, limit int) ([]byte, error) {
+	var best []byte
+	for _, q := range jpegShrinkQualities {
+		out, err := exportJPEG(img, q)
+		if err != nil {
+			return nil, err
+		}
+		if best == nil || len(out) < len(best) {
+			best = out
+		}
+		if len(out) <= limit {
+			return out, nil
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("govips: empty jpeg")
+	}
+	if len(best) > limit {
+		return nil, fmt.Errorf("govips: jpeg %d bytes exceeds original %d", len(best), limit)
+	}
+	return best, nil
 }
 
 func keepFirstPage(img *vips.ImageRef) error {
@@ -272,20 +336,30 @@ func resizeLongEdge(src *vips.ImageRef, widthLimited bool, edge int) (*vips.Imag
 	return ref, nil
 }
 
+func exportJPEG(img *vips.ImageRef, quality int) ([]byte, error) {
+	if img.HasAlpha() {
+		if err := img.Flatten(&vips.Color{R: 255, G: 255, B: 255}); err != nil {
+			return nil, err
+		}
+	}
+	if quality < 1 {
+		quality = 1
+	}
+	if quality > 100 {
+		quality = 100
+	}
+	params := vips.NewJpegExportParams()
+	params.Quality = quality
+	params.StripMetadata = true
+	params.Interlace = false
+	out, _, err := img.ExportJpeg(params)
+	return out, err
+}
+
 func encodeStaticImage(img *vips.ImageRef, format staticFormat) ([]byte, error) {
 	switch format {
 	case staticJPEG:
-		if img.HasAlpha() {
-			if err := img.Flatten(&vips.Color{R: 255, G: 255, B: 255}); err != nil {
-				return nil, err
-			}
-		}
-		params := vips.NewJpegExportParams()
-		params.Quality = staticJPEGQuality
-		params.StripMetadata = true
-		params.Interlace = false
-		out, _, err := img.ExportJpeg(params)
-		return out, err
+		return exportJPEG(img, staticJPEGQuality)
 	case staticPNG:
 		params := vips.NewPngExportParams()
 		params.StripMetadata = true

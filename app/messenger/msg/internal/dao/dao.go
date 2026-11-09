@@ -40,12 +40,17 @@ type Dao struct {
 }
 
 func (d *Dao) DoIdempotent(ctx context.Context, senderUserId int64, deDuplicateKey string, v any, cb func(ctx context.Context, v any) error) (bool, error) {
+	// The lock covers inbox persistence, which is what a concurrent resend
+	// waits on. Photo bytes are written before this lock. 15s is long enough
+	// for that insert and short enough that a crashed holder does not stall
+	// the retry. The cached RPC result lasts 90s; after that
+	// FindOutboxByRandomID still returns the committed row.
 	return idempotent.DoIdempotent(
 		ctx,
 		d.Redis,
 		fmt.Sprintf("idempotent#%d@%s", senderUserId, deDuplicateKey),
 		v,
-		5,
+		15,
 		90,
 		cb)
 }

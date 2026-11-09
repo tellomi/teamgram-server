@@ -111,6 +111,19 @@ type loaded struct {
 type Catalog struct {
 	platforms       map[string]map[string]*loaded
 	androidXMLDrops map[string]int
+
+	// diffCache stores built langpack.getLangPack / getDifference payloads.
+	// The key includes the pack version, so a version bump misses. Callers
+	// must not mutate the returned difference.
+	diffMu    sync.Mutex
+	diffCache map[diffKey]*mtproto.LangPackDifference
+}
+
+type diffKey struct {
+	platform string
+	code     string
+	from     int32
+	version  int32
 }
 
 // NewCatalog builds a catalog from already-decoded languages.
@@ -401,6 +414,13 @@ func (c *Catalog) Difference(platform, code string, fromVersion int32) (*mtproto
 		fromVersion = 0
 	}
 	platform = NormalizePlatform(platform)
+	key := diffKey{platform: platform, code: l.meta.Code, from: fromVersion, version: l.meta.Version}
+	c.diffMu.Lock()
+	if hit := c.diffCache[key]; hit != nil {
+		c.diffMu.Unlock()
+		return hit, nil
+	}
+	c.diffMu.Unlock()
 	// Stock Android writes the difference into an XML file and, on the next
 	// launch, merges the next difference into that file. A file that failed
 	// to parse comes back as an empty map, so a partial difference would
@@ -424,12 +444,30 @@ func (c *Catalog) Difference(platform, code string, fromVersion int32) (*mtproto
 	if strings == nil {
 		strings = []*mtproto.LangPackString{}
 	}
-	return mtproto.MakeTLLangPackDifference(&mtproto.LangPackDifference{
+	diff := mtproto.MakeTLLangPackDifference(&mtproto.LangPackDifference{
 		LangCode:    l.meta.Code,
 		FromVersion: fromVersion,
 		Version:     l.meta.Version,
 		Strings:     strings,
-	}).To_LangPackDifference(), nil
+	}).To_LangPackDifference()
+	c.storeDiff(key, diff)
+	return diff, nil
+}
+
+// storeDiff keeps one payload per platform, code, and from-version at the
+// current pack version. Older versions of the same pack are dropped.
+func (c *Catalog) storeDiff(key diffKey, diff *mtproto.LangPackDifference) {
+	c.diffMu.Lock()
+	defer c.diffMu.Unlock()
+	if c.diffCache == nil {
+		c.diffCache = map[diffKey]*mtproto.LangPackDifference{}
+	}
+	for old := range c.diffCache {
+		if old.platform == key.platform && old.code == key.code && old.version != key.version {
+			delete(c.diffCache, old)
+		}
+	}
+	c.diffCache[key] = diff
 }
 
 // Strings implements langpack.getStrings.

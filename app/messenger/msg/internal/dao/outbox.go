@@ -700,6 +700,29 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 // advanceSavedMessagesDialog sets top_message on the self dialog when a
 // message is saved. Update by user id alone so a peer_type 1 row is not left
 // at top_message 0 after a peer_type 2 send, or the reverse.
+// FindOutboxByRandomID returns the sender's message for this client random_id.
+// A second sendMedia with the same random_id must return this row instead of
+// inserting another one. random_id 0 is used by service messages and is not
+// an idempotency key.
+func (d *Dao) FindOutboxByRandomID(ctx context.Context, fromUserID, randomID int64) (*mtproto.MessageBox, bool) {
+	if d == nil || d.MessagesDAO == nil || fromUserID == 0 || randomID == 0 {
+		return nil, false
+	}
+	do, err := d.MessagesDAO.SelectByRandomId(ctx, d.MessagesDAO.CalcTableName(fromUserID), fromUserID, randomID)
+	if err != nil || do == nil || do.UserMessageBoxId == 0 {
+		return nil, false
+	}
+	box := makeMessageBoxByDO(do)
+	if box.Message == nil || box.MessageId == 0 {
+		return nil, false
+	}
+	box.PtsCount = 1
+	if pts := d.IDGenClient2.CurrentPtsId(ctx, fromUserID); pts > 0 {
+		box.Pts = pts
+	}
+	return box, true
+}
+
 func (d *Dao) advanceSavedMessagesDialog(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, topMessage int32, date2 int64) {
 	if peer == nil || fromId == 0 || peer.PeerId != fromId || topMessage <= 0 {
 		return

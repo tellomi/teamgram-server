@@ -199,6 +199,14 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 		&rUpdates,
 		func(ctx context.Context, v any) error {
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: begin '_, err = c.svcCtx.Dao.DoIdempotent('")
+			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
+				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+			); ok {
+				*v.(**mtproto.Updates) = ups
+				return nil
+			}
 			box, err2 := c.svcCtx.Dao.SendUserMessageV2(ctx, fromUserId, toUserId, outBox, true)
 			if err2 != nil {
 				c.Logger.Errorf("msg.sendMessageV2 - error: %v", err2)
@@ -366,6 +374,14 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 		strconv.FormatInt(outBox.RandomId, 10),
 		&rUpdates,
 		func(ctx context.Context, v any) error {
+			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
+				func(idList []int64) []*mtproto.User { return sUserList.GetUserListByIdList(fromUserId, idList...) },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{chat.ToUnsafeChat(fromUserId)} },
+				func([]int64) []*mtproto.Chat { return nil },
+			); ok {
+				*v.(**mtproto.Updates) = ups
+				return nil
+			}
 			box, err2 := c.svcCtx.Dao.SendChatMessageV2(ctx, fromUserId, peerChatId, outBox)
 			if err2 != nil {
 				c.Logger.Error(err2.Error())
@@ -508,6 +524,14 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 				boxList    []*mtproto.MessageBox
 				updateList []*mtproto.Update
 			)
+			if ups, ok := c.replayedOutbox(ctx, fromUserId, outboxRandomIDs(outBoxList),
+				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+			); ok {
+				*v.(**mtproto.Updates) = ups
+				return nil
+			}
 
 			for _, outBox := range outBoxList {
 				box, err2 := c.svcCtx.Dao.SendUserMessageV2(ctx, fromUserId, toUserId, outBox, true)
@@ -688,6 +712,14 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				boxList    []*mtproto.MessageBox
 				updateList []*mtproto.Update
 			)
+			if ups, ok := c.replayedOutbox(ctx, fromUserId, outboxRandomIDs(outBoxList),
+				func(idList []int64) []*mtproto.User { return sUserList.GetUserListByIdList(fromUserId, idList...) },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{chat.ToUnsafeChat(fromUserId)} },
+				func([]int64) []*mtproto.Chat { return nil },
+			); ok {
+				*v.(**mtproto.Updates) = ups
+				return nil
+			}
 
 			for _, outBox := range outBoxList {
 				box, err2 := c.svcCtx.Dao.SendChatMessageV2(ctx, fromUserId, peerChatId, outBox)
@@ -838,6 +870,14 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 		&rUpdates,
 		func(ctx context.Context, v any) error {
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: begin '_, err = c.svcCtx.Dao.DoIdempotent('")
+			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
+				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+			); ok {
+				*v.(**mtproto.Updates) = ups
+				return nil
+			}
 			box, err2 := c.svcCtx.Dao.SendUserMessageV3(ctx, fromUserId, toUserId, outBox, true)
 			if err2 != nil {
 				c.Logger.Error(err2.Error())
