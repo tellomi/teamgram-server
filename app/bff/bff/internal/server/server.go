@@ -456,6 +456,7 @@ func (s *Server) Initialize() error {
 		bots_helper.StartAnnounce(c.MsgClient, c.ChannelMySQL)
 		// Unified reports. Review and the decision listener stay off unless configured.
 		bots_helper.StartReports(c.MsgClient, c.ChannelMySQL)
+		bots_helper.StartEnforcementReview(c.MsgClient, c.ChannelMySQL)
 		mtproto.RegisterRPCBotsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCBotVerificationIconsServer(grpcServer, botAdmin)
 		mtproto.RegisterRPCAffiliateProgramsServer(grpcServer, botAdmin)

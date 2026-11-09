@@ -1,6 +1,7 @@
 package enforcement
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -31,13 +32,19 @@ func Current() *Service {
 	return current
 }
 
-// InstallFromEnv opens TELLOMI_ENFORCEMENT_MYSQL when it names a database other
-// than the chat schema. Memory is never installed from the environment.
-// TELLOMI_ENFORCEMENT_CREATE=1 allows new cases. An empty DSN installs nothing.
-// When TELLOMI_AI=1 and TELLOMI_AI_API_KEY are set, appeals use pkg/tellomiai.Client.
+// InstallFromEnv opens the persistent store only when
+// TELLOMI_ENFORCEMENT_STORE=mysql and TELLOMI_ENFORCEMENT_MYSQL names a
+// database other than the chat schema. The value memory, and an empty
+// value, do not install anything. TELLOMI_ENFORCEMENT_CREATE=1 allows new
+// cases. When TELLOMI_AI=1 and TELLOMI_AI_API_KEY are set, appeals use
+// pkg/tellomiai.Client.
 func InstallFromEnv() *Service {
-	dsn := strings.TrimSpace(os.Getenv("TELLOMI_ENFORCEMENT_MYSQL"))
-	if dsn == "" || os.Getenv("TELLOMI_ENFORCEMENT_STORE") == "memory" {
+	if strings.TrimSpace(os.Getenv(EnvStore)) != StoreMySQL {
+		return nil
+	}
+	dsn := strings.TrimSpace(os.Getenv(EnvMySQL))
+	if dsn == "" {
+		logx.Error("enforcement: TELLOMI_ENFORCEMENT_STORE=mysql but TELLOMI_ENFORCEMENT_MYSQL is empty")
 		return nil
 	}
 	cfg := Config{CreateEnabled: os.Getenv("TELLOMI_ENFORCEMENT_CREATE") == "1"}
@@ -57,7 +64,11 @@ func InstallFromEnv() *Service {
 	}
 	s, err := OpenMySQL(dsn, cfg)
 	if err != nil {
-		logx.Errorf("enforcement: separate database was not installed")
+		if errors.Is(err, ErrSchema) {
+			logx.Error("enforcement: schema is not initialized; run /app/bin/enforcement-migrate once")
+		} else {
+			logx.Error("enforcement: separate database was not installed")
+		}
 		return nil
 	}
 	SetCurrent(s)

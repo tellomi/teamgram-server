@@ -1,6 +1,6 @@
 # 账号处罚、解封与申诉
 
-主线基线 `e2868f536cad6633931b210c8e88aa42ebe5f66c`。本文件描述 `pkg/enforcement`。它没有接入生产，没有对真实用户发通知，也没有把 7696 词库接进来。
+本文件描述 `pkg/enforcement`。7696 词库不参与判定。生产开关是 `TELLOMI_ENFORCEMENT_STORE=mysql`，库由操作员单独建好并执行一次迁移之后才会安装。未安装时登录和发消息保持原样。
 
 ## 2026-11-09 00:17 产品决定
 
@@ -10,20 +10,50 @@
 - 模型不可用、超时或证据不足时，申诉留在 `pending_review`。不加重处罚，不编造结论。
 - 人工复核员仍可追加撤销，用来纠错。发起人不能批自己的永久处罚。
 - 1/3/7/30 天档位、双审天数阈值、申诉 SLA 仍未批准。代码不把这些数字写成唯一档位。只有调用方给出的结束时间会生效。永久处罚必须由另一名 `senior` 批准后才生效。
-- `TELLOMI_ENFORCEMENT_STORE` 未设置为 `memory` 时，进程不安装这套逻辑，登录和发消息保持原样。
+- `TELLOMI_ENFORCEMENT_STORE` 不是 `mysql` 时，进程不安装这套逻辑，登录和发消息保持原样。`memory` 只出现在测试里，不会安装。
 - `TELLOMI_ENFORCEMENT_CREATE` 不是 `1` 时，不能新建处罚或标识限制。已经存在的记录继续执行。
+- `TELLOMI_ENFORCEMENT_REVIEW` 不是 `1` 时，举报不会送给管理员确认，内容接口也不做判定。
 
 ## 开关
 
 | 变量 | 默认 | 作用 |
 | --- | --- | --- |
-| `TELLOMI_ENFORCEMENT_STORE` | 空 | `memory` 不会安装。这个名字只存在于测试，不能当生产开关 |
+| `TELLOMI_ENFORCEMENT_STORE` | 空 | `mysql` 才安装持久库。`memory` 和空值都不安装 |
 | `TELLOMI_ENFORCEMENT_CREATE` | 空 | `1` 才允许新建。关掉不清空已有记录 |
-| `TELLOMI_ENFORCEMENT_MYSQL` | 空 | 指向已经 `Migrate` 过的单独库。空着不安装。启动不建表 |
-| `TELLOMI_ENFORCEMENT_SERVICE_KEY` | 空 | 凭证复查的服务间密钥，至少 32 字节的标准 base64。空着或无效时该端点拒绝，不放行 |
+| `TELLOMI_ENFORCEMENT_MYSQL` | 空 | 单独库的 DSN，不能是 `teamgram`。库要先执行过迁移。空着不安装。启动不建表 |
+| `TELLOMI_ENFORCEMENT_REVIEW` | 空 | `1` 才把属实的账号举报交给管理员，并打开内容判定 |
+| `TELLOMI_ENFORCEMENT_ADMINS` | 空 | 逗号分隔的用户名，一开始是 `erel`。只有这些人的「是 / 否」生效 |
+| `TELLOMI_ENFORCEMENT_CONFIDENCE` | `0.8` | 内容自主判定的置信度下限。低于它就交给管理员 |
+| `TELLOMI_ENFORCEMENT_SERVICE_KEY` | 空 | 凭证复查和内容接口的服务间密钥，至少 32 字节的标准 base64。空着或无效时该端点拒绝，不放行 |
+| `TELLOMI_ENFORCEMENT_ADDR` | 空 | `0.0.0.0:8820` 才在容器网络里监听。`off` 或空着不监听。不要把这个端口映射到宿主机 |
 | `TELLOMI_ENFORCEMENT_E2E` | 空 | 只有 `1` 才在 `127.0.0.1:8819` 挂隔离演练路由。生产不要设置 |
 
-持久记录只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库，并且该库已经显式执行过 `Migrate` 时才打开。`OpenMySQL` 和进程启动不建表。聊天库名 `teamgram` 会被拒绝。表不进 `teamgramd/deploy/sql`。
+真实百炼还要 `TELLOMI_AI=1`、`TELLOMI_AI_API_KEY`、`TELLOMI_AI_BASE_URL`（默认 `https://dashscope.aliyuncs.com/compatible-mode/v1`）、`TELLOMI_AI_MODEL_PRIMARY`（默认 `qwen-plus`）。备用模型是 `TELLOMI_AI_MODEL_SMALL` 和 `TELLOMI_AI_MODEL_FALLBACK`。测试指向 `e2e/fakebailian`，不调用百炼。
+
+## 管理员确认
+
+用户走现有举报（`TELLOMI_REPORT_*`，发现举报仍转到 `teamgram:8816`）。`TELLOMI_ENFORCEMENT_REVIEW=1` 时，Tellomi AI 对照被举报消息、资料和以往举报做判断。属实才由用户 777001（`@tellomi`）私聊给 `TELLOMI_ENFORCEMENT_ADMINS` 里的账号，正文有证据摘要、被举报用户、理由和案件号，请对方回复「是」或「否」。
+
+在和 `@tellomi` 的私聊里，允许名单上的账号回复「是 / 是的 / yes / y」就封禁，「否 / no / n」就关闭且不封禁。最好回复那条案件消息；有多起待确认时要带上案件号。其他文字会收到一句短提示。名单外的人说「是」不会封禁。
+
+封禁走现有逻辑：AI 以 `agent` 发起永久处罚，管理员以 `senior` 批准。777000 发通知，登录和发消息按永久停用拒绝，申诉仍由 777001 判定。每次 AI 结论和管理员答复都写入 `audit_log`（谁、何时、理由、答复）。
+
+内容（帖子和评论）由 AI 自主决定。置信度达到 `TELLOMI_ENFORCEMENT_CONFIDENCE` 的 `remove` / `keep` 直接返回给 content-engine。拿不准的走同一套管理员确认。content-engine 的改动不在本仓，接口见 [api/enforcement-contract.md](api/enforcement-contract.md)。
+
+## 一次迁移
+
+启动不建表。操作员在宿主机先建库和用户，部署含 `/app/bin/enforcement-migrate` 的镜像之后执行一次：
+
+```bash
+docker compose -p tellomi \
+  -f docker-compose-env.yaml -f docker-compose.yaml \
+  -f docker-compose.geoip.yaml -f docker-compose.tellomi.yaml \
+  exec -T teamgram /app/bin/enforcement-migrate
+```
+
+然后再创建一次 teamgram 容器，进程才能在已有表上安装。再跑一次是空操作，不删数据。库名 `teamgram` 会被拒绝。没有生产用的 `DROP TABLE`。
+
+持久记录只在 `TELLOMI_ENFORCEMENT_STORE=mysql` 且 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库，并且该库已经显式执行过 `/app/bin/enforcement-migrate` 时才打开。`OpenMySQL` 和进程启动不建表。聊天库名 `teamgram` 会被拒绝。表不进 `teamgramd/deploy/sql`。
 
 正常回滚是换回上一份二进制，不删除处罚、审计或 outbox。数据保留。仍带这份逻辑且指向同一库的二进制会继续执行已有处罚。没有生产用的 `DROP TABLE`。测试只删除它自己创建的 `tellomi_enforcement_test` 库，不能对其他库执行。
 

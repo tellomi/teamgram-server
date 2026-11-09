@@ -153,6 +153,7 @@ func (s *Service) Submit(ctx context.Context, in Submission) (*Row, error) {
 	s.writeSnapshot(work, row, in.Evidence)
 	s.sendReceipt(work, row)
 	s.review(work, row, in.Evidence)
+	dispatchAccount(row, in.Evidence)
 	return row, nil
 }
 

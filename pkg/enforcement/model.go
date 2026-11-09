@@ -211,6 +211,7 @@ type Service struct {
 	revoked      map[int64]int
 	db           *sql.DB
 	tx           *sql.Tx
+	reviews      *reviewBook
 	auditFrom    int
 	eventFrom    int
 
@@ -285,6 +286,7 @@ func New(cfg Config) *Service {
 		grants:       map[string]*Grant{},
 		claims:       map[string]*Grant{},
 		known:        map[int64]snapshot{},
+		reviews:      newReviewBook(nil),
 	}
 }
 

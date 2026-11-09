@@ -36,6 +36,9 @@ func OpenMySQL(dsn string, cfg Config) (*Service, error) {
 	}
 	s := New(cfg)
 	s.db = db
+	if s.reviews != nil {
+		s.reviews.db = db
+	}
 	return s, nil
 }
 
@@ -169,6 +172,27 @@ var schemaDDL = []string{
 			sub VARCHAR(32) PRIMARY KEY,
 			user_id BIGINT NOT NULL,
 			KEY credential_subject_user (user_id)
+		)`,
+	`CREATE TABLE IF NOT EXISTS review_case (
+			id VARCHAR(32) PRIMARY KEY,
+			kind VARCHAR(16) NOT NULL,
+			status VARCHAR(32) NOT NULL,
+			report_id BIGINT NOT NULL DEFAULT 0,
+			subject_user_id BIGINT NOT NULL DEFAULT 0,
+			subject_label VARCHAR(160) NOT NULL DEFAULT '',
+			content_ref VARCHAR(255) NOT NULL DEFAULT '',
+			summary VARCHAR(512) NOT NULL DEFAULT '',
+			ai_reason VARCHAR(512) NOT NULL DEFAULT '',
+			ai_action VARCHAR(32) NOT NULL DEFAULT '',
+			confidence DOUBLE NOT NULL DEFAULT 0,
+			sanction_id VARCHAR(32) NOT NULL DEFAULT '',
+			admin_user VARCHAR(64) NOT NULL DEFAULT '',
+			admin_answer VARCHAR(16) NOT NULL DEFAULT '',
+			deliveries VARCHAR(512) NOT NULL DEFAULT '',
+			created_at DATETIME(6) NOT NULL,
+			decided_at DATETIME(6) NULL,
+			KEY review_status (status),
+			KEY review_report (report_id, kind)
 		)`,
 }
 
