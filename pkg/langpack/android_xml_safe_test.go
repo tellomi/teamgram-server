@@ -104,21 +104,30 @@ func TestAndroidOldVersionReplacedWithFullPack(t *testing.T) {
 	}
 	cat := DefaultCatalog()
 	const cached = int32(61570955) // zh-hans version that shipped the broken URLs
+	// Production 35aed0c stored this version even when the XML parse failed.
+	// An equal getDifference is empty, so the cutover has to sit strictly above it.
+	const production = int32(61638734)
 	fix := cat.AndroidXMLFixVersion("android", "zh-hans")
 	ver, ok := cat.Version("android", "zh-hans")
-	if !ok || fix <= cached || ver < fix {
+	if !ok || fix <= production || fix <= cached || ver < fix {
 		t.Fatalf("zh-hans version %d fix %d ok %v", ver, fix, ok)
 	}
 	full, err := cat.Difference("android", "zh-hans", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, from := range []int32{cached, production} {
+		got, err := cat.Difference("android", "zh-hans", from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.GetLangCode() != "zh-hans" || got.GetFromVersion() != 0 || got.GetVersion() != ver || len(got.GetStrings()) != len(full.GetStrings()) {
+			t.Fatalf("from %d diff lang=%s from_version=%d version=%d strings=%d full=%d", from, got.GetLangCode(), got.GetFromVersion(), got.GetVersion(), len(got.GetStrings()), len(full.GetStrings()))
+		}
+	}
 	got, err := cat.Difference("android", "zh-hans", cached)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if got.GetFromVersion() != 0 || got.GetVersion() != ver || len(got.GetStrings()) != len(full.GetStrings()) {
-		t.Fatalf("cached diff from_version=%d version=%d strings=%d full=%d", got.GetFromVersion(), got.GetVersion(), len(got.GetStrings()), len(full.GetStrings()))
 	}
 	if len(got.GetStrings()) < 10000 {
 		t.Fatalf("full pack strings %d", len(got.GetStrings()))
@@ -131,6 +140,67 @@ func TestAndroidOldVersionReplacedWithFullPack(t *testing.T) {
 	ios, err := cat.Difference("ios", "zh-hans", 22454343)
 	if err != nil || ios.GetFromVersion() != 22454343 {
 		t.Fatalf("ios from_version %d %v", ios.GetFromVersion(), err)
+	}
+}
+
+// TestAndroidLanguageMetadataAndCoreKeys is the contract stock
+// LocaleController reads before it saves a pack. lang_code matches the
+// short name the client derived from getLanguages. plural_code stays zh so
+// the plural table matches. The new official keys and the product strings
+// the export does not ship are present, and the login mail is not English.
+func TestAndroidLanguageMetadataAndCoreKeys(t *testing.T) {
+	if err := DefaultError(); err != nil {
+		t.Fatal(err)
+	}
+	cat := DefaultCatalog()
+	lang, err := cat.Language("android", "zh-hans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lang.GetLangCode() != "zh-hans" || lang.GetPluralCode() != "zh" || lang.GetBaseLangCode().GetValue() != "en" || !lang.GetOfficial() {
+		t.Fatalf("language %+v", lang)
+	}
+	keys := []string{"Settings", "CompactMode", "TopicsSidebar", "AreTyping", "Reactions_one", "TellomiMapChooserPoint", "PrivacyPolicyUrl"}
+	got, err := cat.Strings("android", "zh-hans", keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	en, err := cat.Strings("android", "en", []string{"Settings", "AreTyping"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"Settings":               "设置",
+		"CompactMode":            "紧凑模式",
+		"TopicsSidebar":          "侧边栏",
+		"AreTyping":              "正在输入…",
+		"Reactions_one":          "%d 个回应",
+		"TellomiMapChooserPoint": "打开地图",
+		"PrivacyPolicyUrl":       "https://tellomi.cn/privacy",
+	}
+	for i, key := range keys {
+		if got[i].GetKey() != key || got[i].GetValue() != want[key] {
+			t.Fatalf("%s got %q (%s) want %q", key, got[i].GetValue(), got[i].GetPredicateName(), want[key])
+		}
+	}
+	if got[0].GetValue() == en[0].GetValue() {
+		t.Fatal("Settings is still English")
+	}
+	mail, err := cat.Strings("ios", "zh-hans", []string{"Login.EmailCodeBody", "Login.InvalidPhoneEmailBody", "Appstore.Fast.Chat6", "AppUpgrade.Running"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range mail {
+		if s.GetPredicateName() != "langPackString" || s.GetValue() == "" {
+			t.Fatalf("missing %s %+v", s.GetKey(), s)
+		}
+		low := strings.ToLower(s.GetValue())
+		if strings.Contains(low, "i'm trying") || strings.Contains(low, "little sister") || strings.Contains(low, "optimizing tellomi") {
+			t.Fatalf("%s still English %q", s.GetKey(), s.GetValue())
+		}
+	}
+	if !strings.Contains(mail[1].GetValue(), "MNC") || !strings.Contains(mail[1].GetValue(), "%1$@") {
+		t.Fatalf("login mail placeholders %q", mail[1].GetValue())
 	}
 }
 

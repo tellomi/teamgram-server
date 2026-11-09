@@ -32,6 +32,7 @@ import json
 import re
 import sys
 import urllib.request
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -105,10 +106,14 @@ NONTRANSLATABLE_ANDROID_KEY = re.compile(
     r"^SearchEngine[0-9]+(?:Name|SearchURL|AutocompleteURL|PrivacyPolicyURL)$"
 )
 
-# Packs at this version replace a locale file that stock Android saved
-# before those URL strings were removed. It is one past the highest Android
-# pack version that still contained them (el 61638733).
-ANDROID_XML_FIX_VERSION = 61638734
+# Production served every Android pack at this version (35aed0c). Stock
+# LocaleController stores localeInfo.version even when the written XML fails
+# to parse, and langpack.getDifference at an equal from_version is empty, so
+# that broken file is not replaced. The import raises the cutover above this
+# and above every Android export version. getDifference then returns the
+# whole pack with from_version 0, which is the client's full-file replace.
+SERVED_ANDROID_VERSION = 61638734
+ANDROID_XML_FIX_VERSION = SERVED_ANDROID_VERSION
 
 _STRING_TAG = re.compile(r"<string\b([^>]*)>(.*?)</string>", re.S)
 _NAME_ATTR = re.compile(r"""\bname\s*=\s*["']([^"']+)["']""")
@@ -153,10 +158,12 @@ def rewrite_link(text: str) -> str:
     contain those letters and are not links. The lookbehind and the word
     boundary keep the match off those identifiers.
     """
+    # \b is a Unicode boundary, so it does not match telegram.org before から.
+    # The edges are ASCII, matching the rest of the brand rule.
     text = re.sub(r"(?i)(?<![A-Za-z0-9])https?://(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)", "https://tell.cc", text)
     text = re.sub(r"(?i)https?://(?:www\.)?((?:[a-z0-9-]+\.)*)telegram\.org", r"https://\1tellomi.cn", text)
-    text = re.sub(r"(?i)(?<![A-Za-z0-9])(?:t\.me|telegram\.me|telegram\.dog)\b", "tell.cc", text)
-    text = re.sub(r"(?i)(?<![A-Za-z0-9])telegram\.org\b", "tellomi.cn", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])(?:t\.me|telegram\.me|telegram\.dog)(?![A-Za-z0-9])", "tell.cc", text)
+    text = re.sub(r"(?i)(?<![A-Za-z0-9])telegram\.org(?![A-Za-z0-9])", "tellomi.cn", text)
     return text
 
 
@@ -198,6 +205,17 @@ def brand(text: str) -> str:
 
 def _ascii_word(ch: str) -> bool:
     return ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch == "_"
+
+
+def brand_machine_item(item: dict) -> dict:
+    """Machine text is not passed through brand_entries. Rewrite hosts here."""
+    out = dict(item)
+    if isinstance(out.get("value"), str):
+        out["value"] = brand(out["value"])
+    for form in FORMS:
+        if isinstance(out.get(form), str):
+            out[form] = brand(out[form])
+    return out
 
 
 def has_telegram_word(text: str) -> bool:
@@ -421,12 +439,16 @@ def merge_lang(
     for entry in official:
         by_key[entry["key"]] = entry
         order.append(entry["key"])
-    # Fork-only keys. Tellomi strings and brand names stay. APK
-    # configuration (translatable="false" SearchEngine URLs) does not.
+    # Fork-only keys. The English override is a full catalog, so only Tellomi
+    # strings are added there. A curated zh-hans / zh-hant override also keeps
+    # product strings the export does not ship (AreTyping, Reactions_one).
+    # SearchEngine URLs are translatable="false" and are never added.
     for key, entry in tel.items():
         if key in by_key:
             continue
-        if not tellomi_owned_key(key):
+        if rewritten_key(key) or NONTRANSLATABLE_ANDROID_KEY.match(key):
+            continue
+        if lang == "en" and not tellomi_owned_key(key):
             continue
         order.append(key)
         by_key[key] = {"key": key, "version": entry.get("version") or 1, **_payload(entry)}
@@ -481,6 +503,83 @@ def write_gz(path: Path, doc: dict) -> None:
         plain.unlink()
 
 
+def android_escape(text: str) -> str:
+    """Stock Android 13.1.1 LocaleController.escapeString."""
+    if "[CDATA" in text:
+        return text
+    return text.replace("<", "&lt;").replace(">", "&gt;").replace("& ", "&amp; ")
+
+
+def android_entry_safe(item: dict) -> bool:
+    """True when escapeString output parses as XML element text.
+
+    A key must also be an XML Name. A leading digit is a legal JSON key and
+    an illegal name attribute, and one bad entry makes the client throw the
+    whole file away.
+    """
+    key = item.get("key") or ""
+    if not re.fullmatch(r"[A-Za-z_:][A-Za-z0-9_.:-]*", key):
+        return False
+    texts = []
+    if any(item.get(form) for form in FORMS):
+        texts = [item.get(form) or "" for form in FORMS if item.get(form)]
+    else:
+        texts = [item.get("value") or ""]
+    parts = []
+    for i, text in enumerate(texts):
+        if any(ord(ch) < 32 and ch not in "\t\n\r" for ch in text):
+            return False
+        parts.append(f'<string name="k{i}">{android_escape(text)}</string>')
+    blob = "<?xml version=\"1.0\" encoding=\"utf-8\"?><resources>" + "".join(parts) + "</resources>"
+    try:
+        ET.fromstring(blob)
+    except ET.ParseError:
+        return False
+    return True
+
+
+_BROKEN_CDATA = re.compile(r"<! ?\[ ?CDATA ?\[|\]\]>")
+_BOLD_TAG = re.compile(r"<\s*b\s*>(.*?)<\s*/\s*b\s*>", re.I | re.S)
+
+
+def repair_android_text(text: str) -> str:
+    """Turn a machine-broken CDATA bold into the markdown the English string uses.
+
+    "<! [CDATA [<b>]]>Tellomi" is not XML. "**Tellomi**" is, and the client
+    renders it as bold. A value that is already safe is left untouched.
+    """
+    if "[CDATA" not in text and "<b" not in text.lower():
+        return text
+    text = _BROKEN_CDATA.sub("", text)
+    text = _BOLD_TAG.sub(lambda m: "**" + m.group(1).strip() + "**", text)
+    return text
+
+
+def repair_android_item(item: dict) -> dict | None:
+    if android_entry_safe(item):
+        return item
+    repaired = dict(item)
+    for field in ("value", *FORMS):
+        value = repaired.get(field)
+        if isinstance(value, str):
+            repaired[field] = repair_android_text(value)
+    if android_entry_safe(repaired):
+        return repaired
+    return None
+
+
+def drop_android_unsafe(strings: list[dict]) -> tuple[list[dict], list[str]]:
+    kept = []
+    dropped = []
+    for item in strings:
+        repaired = repair_android_item(item)
+        if repaired is None:
+            dropped.append(item.get("key") or "")
+            continue
+        kept.append(repaired)
+    return kept, dropped
+
+
 def build_doc(meta: tuple, platform: str, strings: list[dict], upstream: int, filename: str) -> dict:
     code, name, native, plural, rtl, base = meta
     version = upstream
@@ -513,6 +612,58 @@ def build_doc(meta: tuple, platform: str, strings: list[dict], upstream: int, fi
     return doc
 
 
+def _entry_signature(item: dict) -> tuple:
+    """Identity of a parsed entry ({plural}) or a packed string (zero/one/...)."""
+    if "plural" in item:
+        return ("p", tuple((form, item["plural"].get(form, "")) for form in FORMS))
+    forms = tuple((form, item.get(form) or "") for form in FORMS if item.get(form))
+    if forms and "value" not in item:
+        return ("p", forms)
+    return ("v", item.get("value", ""))
+
+
+def apply_reviewed(root: Path, platform: str, code: str, strings: list[dict], english: dict[str, dict]) -> list[dict]:
+    """Replace strings official left in English with a reviewed translation.
+
+    data/langpack/reviewed holds only those keys. A later export that is no
+    longer the English text wins, so a real translation is not overwritten.
+    """
+    path = root / "reviewed" / platform / f"{code}.json.gz"
+    doc = load_doc(path)
+    if not doc:
+        return strings
+    repl = {}
+    for item in doc.get("strings") or []:
+        key = item.get("key")
+        if key and not rewritten_key(key):
+            repl[key] = item
+    if not repl:
+        return strings
+    out = []
+    used = set()
+    replaced = 0
+    for item in strings:
+        key = item["key"]
+        rev = repl.get(key)
+        en = english.get(key)
+        if rev is None or en is None or _entry_signature(item) != _entry_signature(en):
+            out.append(item)
+            continue
+        merged = dict(rev)
+        merged["version"] = max(int(item.get("version") or 1), int(rev.get("version") or 1))
+        out.append(merged)
+        used.add(key)
+        replaced += 1
+    for key, rev in repl.items():
+        if key in used or any(item["key"] == key for item in out):
+            continue
+        out.append(dict(rev))
+        replaced += 1
+    if replaced:
+        print(f"reviewed {platform}/{code}: {replaced}")
+    return out
+
+
 def apply_machine(root: Path, platform: str, code: str, strings: list[dict]) -> list[dict]:
     """Reapply reviewed-later machine translations for keys the export still lacks.
 
@@ -537,7 +688,7 @@ def apply_machine(root: Path, platform: str, code: str, strings: list[dict]) -> 
         if forms_are_urls(forms):
             continue
         have.add(key)
-        extra.append(item)
+        extra.append(brand_machine_item(item))
     if extra:
         print(f"machine {platform}/{code}: +{len(extra)}")
     return strings + extra
@@ -597,6 +748,17 @@ def main() -> int:
         print(f"{len(errors)} downloads failed", file=sys.stderr)
         return 1
 
+    # One past every Android export, and past the version already stored on
+    # phones. A language whose export is older is raised to the same cutover
+    # so getDifference replaces that file too.
+    global ANDROID_XML_FIX_VERSION
+    highest = SERVED_ANDROID_VERSION
+    for (platform, _code), (_path, _filename, upstream) in fetched.items():
+        if platform == "android" and upstream > highest:
+            highest = upstream
+    ANDROID_XML_FIX_VERSION = highest + 1
+    print(f"android xml cutover {ANDROID_XML_FIX_VERSION}")
+
     manifest = {
         "source": "https://translations.telegram.org/{code}/{platform}/export",
         "note": "Public export. No login. Version is the integer in the export filename.",
@@ -622,6 +784,11 @@ def main() -> int:
                 official = parse_body(path, platform)
             strings = merge_lang(code, official, overrides, diverged, upstream, official_en)
             strings = apply_machine(args.out, platform, code, strings)
+            strings = apply_reviewed(args.out, platform, code, strings, official_en)
+            if platform == "android":
+                strings, dropped = drop_android_unsafe(strings)
+                if dropped:
+                    print(f"unsafe android {code}: dropped {dropped[:8]}")
             doc = build_doc(meta, platform, strings, upstream, filename)
             dest = args.out / platform / f"{code}.json.gz"
             write_gz(dest, doc)
