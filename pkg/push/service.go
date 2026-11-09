@@ -2,7 +2,10 @@ package push
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
@@ -192,11 +195,44 @@ func (s *Service) sendAPNS(ctx context.Context, dev Device, m Incoming, d Decisi
 		return
 	}
 	err = s.apns.Send(ctx, dev.Token, dev.AppSandbox, alert.Outer)
+	status, reason := apnsStatus(err)
+	// key_id is the first 8 bytes of the id carried at the front of p.
+	// The secret and the rest of p are not logged.
+	logx.WithContext(ctx).Infof("push: apns user=%d msg=%d key_id=%s bytes=%d status=%d reason=%s",
+		m.UserID, m.MsgID, apnsKeyIDHex(alert.Outer), len(alert.Outer), status, reason)
 	if err == nil {
 		return
 	}
 	s.forgetIfUnregistered(ctx, dev, err)
 	logx.WithContext(ctx).Errorf("push: apns user=%d msg=%d token=%s: %v", m.UserID, m.MsgID, tokenTail(dev.Token), err)
+}
+
+func apnsStatus(err error) (int, string) {
+	if err == nil {
+		return http.StatusOK, ""
+	}
+	var ae *APNSError
+	if errors.As(err, &ae) {
+		return ae.Status, ae.Reason
+	}
+	return 0, err.Error()
+}
+
+// apnsKeyIDHex is the first 8 bytes of the notification key id inside p,
+// hex-encoded. p is key id (8) || msg_key (16) || ciphertext. An alert with
+// no p returns "-".
+func apnsKeyIDHex(outer []byte) string {
+	var wrap struct {
+		P string `json:"p"`
+	}
+	if err := json.Unmarshal(outer, &wrap); err != nil || wrap.P == "" {
+		return "-"
+	}
+	raw, err := decodeP(wrap.P)
+	if err != nil || len(raw) < 8 {
+		return "-"
+	}
+	return hex.EncodeToString(raw[:8])
 }
 
 // sendVoIP rings token_type 9 devices, and token types 2 and 13 when those

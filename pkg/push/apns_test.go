@@ -1,20 +1,28 @@
 package push
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/teamgram/proto/mtproto"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 func TestAPNSRequestShape(t *testing.T) {
@@ -238,6 +246,161 @@ func (r rewriteHost) RoundTrip(req *http.Request) (*http.Response, error) {
 		return http.DefaultTransport.RoundTrip(req)
 	}
 	return r.base.RoundTrip(req)
+}
+
+func TestSendAPNSLogsStatusAndKeyID(t *testing.T) {
+	secret := bytes.Repeat([]byte{0x3c}, 256)
+	sum := sha1.Sum(secret)
+	wantID := hex.EncodeToString(sum[len(sum)-8:])
+	msg := Incoming{
+		UserID: 9, MsgID: 42, SenderID: 3, SenderName: "Ada",
+		Text: "hello", LocKey: "MESSAGE_TEXT", PeerType: mtproto.PEER_USER, PeerID: 3,
+	}
+	prev := logx.Reset()
+	sink := &infoLog{}
+	logx.SetLevel(logx.InfoLevel)
+	logx.SetWriter(sink)
+	t.Cleanup(func() {
+		logx.Reset()
+		if prev != nil {
+			logx.SetWriter(prev)
+		}
+	})
+
+	dev := Device{UserID: 9, TokenType: TokenAPNS, Token: "deadbeefcafebabe", Secret: secret}
+	svc := &Service{store: &MemoryStore{}, apns: nil, now: time.Now}
+
+	t.Run("ok", func(t *testing.T) {
+		sink.reset()
+		client, srv, posted := apnsWithStatus(t, http.StatusOK, "")
+		defer srv.Close()
+		svc.apns = client
+		svc.sendAPNS(context.Background(), dev, msg, Decision{Send: true, Preview: true})
+		line := sink.find("push: apns")
+		if line == "" {
+			t.Fatalf("info lines %#v", sink.lines())
+		}
+		sentID, sentNext := keyIDAndNext(t, posted())
+		want := fmt.Sprintf("push: apns user=%d msg=%d key_id=%s bytes=%d status=%d reason=", msg.UserID, msg.MsgID, sentID, len(posted()), http.StatusOK)
+		if !strings.Contains(line, want) {
+			t.Fatalf("line %q\nwant substring %q", line, want)
+		}
+		if sentID != wantID || strings.Contains(line, sentNext) || strings.Contains(line, hex.EncodeToString(secret)) || strings.Contains(line, dev.Token) {
+			t.Fatalf("log included key material or the token: %s", line)
+		}
+	})
+
+	t.Run("rejected", func(t *testing.T) {
+		sink.reset()
+		client, srv, _ := apnsWithStatus(t, http.StatusBadRequest, "BadDeviceToken")
+		defer srv.Close()
+		svc.apns = client
+		svc.sendAPNS(context.Background(), dev, msg, Decision{Send: true, Preview: true})
+		line := sink.find("push: apns")
+		want := fmt.Sprintf("status=%d reason=%s", http.StatusBadRequest, "BadDeviceToken")
+		if !strings.Contains(line, want) || !strings.Contains(line, "key_id="+wantID) {
+			t.Fatalf("line %q", line)
+		}
+		if strings.Contains(line, hex.EncodeToString(secret)) || strings.Contains(line, dev.Token) {
+			t.Fatalf("log included key material or the token: %s", line)
+		}
+	})
+}
+
+func keyIDAndNext(t *testing.T, outer []byte) (string, string) {
+	t.Helper()
+	raw, err := decodeP(mustP(t, outer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hex.EncodeToString(raw[:8]), hex.EncodeToString(raw[8:16])
+}
+
+func mustP(t *testing.T, outer []byte) string {
+	t.Helper()
+	var wrap struct {
+		P string `json:"p"`
+	}
+	if err := json.Unmarshal(outer, &wrap); err != nil || wrap.P == "" {
+		t.Fatal(err, wrap.P)
+	}
+	return wrap.P
+}
+
+func apnsWithStatus(t *testing.T, status int, reason string) (*APNS, *httptest.Server, func() []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	var posted []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posted, _ = io.ReadAll(r.Body)
+		w.WriteHeader(status)
+		if reason != "" {
+			_, _ = w.Write([]byte(`{"reason":"` + reason + `"}`))
+		}
+	}))
+	client, err := NewAPNS(Config{
+		KeyID: "KEYID12345", TeamID: "TEAMID1234", Topic: "app.tellomi.ios", KeyPEM: pemBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.httpClient = srv.Client()
+	base := srv.Client().Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	client.httpClient.Transport = rewriteHost{base: base, dst: srv.URL}
+	return client, srv, func() []byte {
+		return append([]byte(nil), posted...)
+	}
+}
+
+type infoLog struct {
+	mu   sync.Mutex
+	info []string
+}
+
+func (s *infoLog) Alert(any)                   {}
+func (s *infoLog) Close() error                { return nil }
+func (s *infoLog) Debug(any, ...logx.LogField) {}
+func (s *infoLog) Error(any, ...logx.LogField) {}
+func (s *infoLog) Severe(any)                  {}
+func (s *infoLog) Slow(any, ...logx.LogField)  {}
+func (s *infoLog) Stack(any)                   {}
+func (s *infoLog) Stat(any, ...logx.LogField)  {}
+func (s *infoLog) Info(v any, _ ...logx.LogField) {
+	s.mu.Lock()
+	s.info = append(s.info, fmt.Sprint(v))
+	s.mu.Unlock()
+}
+
+func (s *infoLog) lines() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.info...)
+}
+
+func (s *infoLog) reset() {
+	s.mu.Lock()
+	s.info = nil
+	s.mu.Unlock()
+}
+
+func (s *infoLog) find(substr string) string {
+	for _, line := range s.lines() {
+		if strings.Contains(line, substr) {
+			return line
+		}
+	}
+	return ""
 }
 
 func TestJWTCache(t *testing.T) {
