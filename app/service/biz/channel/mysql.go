@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/readtime"
 )
@@ -29,7 +31,22 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	// Tables created before post search still need these columns.
+	for _, stmt := range []string{
+		`ALTER TABLE channels ADD COLUMN restricted TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE channels ADD COLUMN banned TINYINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE channel_messages ADD COLUMN message TEXT NULL`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil && !alreadyColumn(err) {
+			return err
+		}
+	}
 	return nil
+}
+
+func alreadyColumn(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1060
 }
 
 func (s *mysqlStore) AllocID(ctx context.Context) (int64, error) {
@@ -73,12 +90,12 @@ INSERT INTO channels (
   id, access_hash, creator_user_id, title, about, username, photo_id,
   broadcast, megagroup, forum, signatures, pts, top_message, participants_count,
   date2, migrated_from_chat_id, migrated_from_max_id, ttl_period, address,
-  default_banned_rights, deleted, version)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  default_banned_rights, deleted, restricted, banned, version)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		ch.ID, ch.AccessHash, ch.CreatorID, ch.Title, ch.About, nullString(ch.Username), ch.PhotoID,
 		boolInt(ch.Broadcast), boolInt(ch.Megagroup), boolInt(ch.Forum), boolInt(ch.Signatures),
 		ch.Pts, ch.TopMessage, ch.ParticipantsCount, ch.Date, ch.MigratedFromChatID, ch.MigratedFromMaxID,
-		ch.TtlPeriod, ch.Address, ch.DefaultBanned, boolInt(ch.Deleted), ch.Version,
+		ch.TtlPeriod, ch.Address, ch.DefaultBanned, boolInt(ch.Deleted), boolInt(ch.Restricted), boolInt(ch.Banned), ch.Version,
 	); err != nil {
 		return err
 	}
@@ -104,11 +121,11 @@ func (s *mysqlStore) SaveChannel(ctx context.Context, ch *Channel) error {
 UPDATE channels SET access_hash=?, creator_user_id=?, title=?, about=?, username=?, photo_id=?,
   broadcast=?, megagroup=?, forum=?, signatures=?, participants_count=?,
   date2=?, migrated_from_chat_id=?, migrated_from_max_id=?, ttl_period=?, address=?,
-  default_banned_rights=?, deleted=?, version=? WHERE id=?`,
+  default_banned_rights=?, deleted=?, restricted=?, banned=?, version=? WHERE id=?`,
 		ch.AccessHash, ch.CreatorID, ch.Title, ch.About, nullString(ch.Username), ch.PhotoID,
 		boolInt(ch.Broadcast), boolInt(ch.Megagroup), boolInt(ch.Forum), boolInt(ch.Signatures),
 		ch.ParticipantsCount, ch.Date, ch.MigratedFromChatID, ch.MigratedFromMaxID,
-		ch.TtlPeriod, ch.Address, ch.DefaultBanned, boolInt(ch.Deleted), ch.Version, ch.ID)
+		ch.TtlPeriod, ch.Address, ch.DefaultBanned, boolInt(ch.Deleted), boolInt(ch.Restricted), boolInt(ch.Banned), ch.Version, ch.ID)
 	return err
 }
 
@@ -308,8 +325,8 @@ func (s *mysqlStore) CommitNew(ctx context.Context, channelID, senderID, randomI
 		return 0, 0, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `
-INSERT INTO channel_messages (channel_id, message_id, sender_user_id, date2, edit_date, random_id, pts, deleted, message_data)
-VALUES (?,?,?,?,0,?,?,0,?)`, channelID, top, senderID, date, randomID, pts, payload); err != nil {
+INSERT INTO channel_messages (channel_id, message_id, sender_user_id, date2, edit_date, random_id, pts, deleted, message_data, message)
+VALUES (?,?,?,?,0,?,?,0,?,?)`, channelID, top, senderID, date, randomID, pts, payload, messagePlain(payload)); err != nil {
 		return 0, 0, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `
@@ -346,7 +363,7 @@ func (s *mysqlStore) CommitEdit(ctx context.Context, channelID int64, messageID 
 		return 0, err
 	}
 	pts++
-	if _, err = tx.ExecContext(ctx, `UPDATE channel_messages SET message_data=?, edit_date=? WHERE channel_id=? AND message_id=?`, data, editDate, channelID, messageID); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE channel_messages SET message_data=?, edit_date=?, message=? WHERE channel_id=? AND message_id=?`, data, editDate, messagePlain(data), channelID, messageID); err != nil {
 		return 0, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE channels SET pts=? WHERE id=?`, pts, channelID); err != nil {
@@ -408,7 +425,7 @@ VALUES (?,?,?,?,0,?,?)`, channelID, pts, len(deleted), KindDelete, idText, []byt
 }
 
 func (s *mysqlStore) ReplaceMessageBody(ctx context.Context, channelID int64, id int32, data []byte) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE channel_messages SET message_data=? WHERE channel_id=? AND message_id=? AND deleted=0`, data, channelID, id)
+	res, err := s.db.ExecContext(ctx, `UPDATE channel_messages SET message_data=?, message=? WHERE channel_id=? AND message_id=? AND deleted=0`, data, messagePlain(data), channelID, id)
 	if err != nil {
 		return err
 	}
@@ -552,7 +569,7 @@ func (s *mysqlStore) ListReadMarks(ctx context.Context, ownerUserID, peerDialogI
 	return out, rows.Err()
 }
 
-const channelSelect = `SELECT id, access_hash, creator_user_id, title, about, username, photo_id, broadcast, megagroup, forum, signatures, pts, top_message, participants_count, date2, migrated_from_chat_id, migrated_from_max_id, ttl_period, address, default_banned_rights, deleted, version FROM channels`
+const channelSelect = `SELECT id, access_hash, creator_user_id, title, about, username, photo_id, broadcast, megagroup, forum, signatures, pts, top_message, participants_count, date2, migrated_from_chat_id, migrated_from_max_id, ttl_period, address, default_banned_rights, deleted, restricted, banned, version FROM channels`
 
 const participantSelect = `SELECT channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2 FROM channel_participants`
 
@@ -565,10 +582,10 @@ type scanner interface {
 func scanChannel(row scanner) (*Channel, error) {
 	var ch Channel
 	var username sql.NullString
-	var broadcast, megagroup, forum, signatures, deleted int
+	var broadcast, megagroup, forum, signatures, deleted, restricted, banned int
 	err := row.Scan(&ch.ID, &ch.AccessHash, &ch.CreatorID, &ch.Title, &ch.About, &username, &ch.PhotoID,
 		&broadcast, &megagroup, &forum, &signatures, &ch.Pts, &ch.TopMessage, &ch.ParticipantsCount, &ch.Date,
-		&ch.MigratedFromChatID, &ch.MigratedFromMaxID, &ch.TtlPeriod, &ch.Address, &ch.DefaultBanned, &deleted, &ch.Version)
+		&ch.MigratedFromChatID, &ch.MigratedFromMaxID, &ch.TtlPeriod, &ch.Address, &ch.DefaultBanned, &deleted, &restricted, &banned, &ch.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -580,6 +597,8 @@ func scanChannel(row scanner) (*Channel, error) {
 	ch.Forum = forum != 0
 	ch.Signatures = signatures != 0
 	ch.Deleted = deleted != 0
+	ch.Restricted = restricted != 0
+	ch.Banned = banned != 0
 	return &ch, nil
 }
 

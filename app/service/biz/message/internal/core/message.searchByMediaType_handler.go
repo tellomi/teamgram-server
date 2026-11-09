@@ -22,10 +22,12 @@ func (c *MessageCore) MessageSearchByMediaType(in *message.TLMessageSearchByMedi
 		boxList []*mtproto.MessageBox
 	)
 
-	switch in.GetMediaType() {
-	case mtproto.MEDIA_PHONE_CALL:
+	switch {
+	case in.GetPeerType() == message.SearchGlobalPeerType && in.GetPeerId() == 0:
+		boxList = c.searchGlobalMedia(in.UserId, in.MediaType, in.Offset, in.Limit)
+	case in.GetMediaType() == mtproto.MEDIA_PHONE_CALL:
 		boxList = c.searchByPhoneCall(in.UserId, in.Offset, in.Limit)
-	case mtproto.MEDIA_PHOTOVIDEO:
+	case in.GetMediaType() == mtproto.MEDIA_PHOTOVIDEO:
 		boxList = c.searchByPhotoVideoMediaType(in.UserId, in.PeerType, in.PeerId, in.Offset, in.Limit)
 	default:
 		boxList = c.searchByMediaType(in.UserId, in.PeerType, in.PeerId, in.MediaType, in.Offset, in.Limit)
@@ -91,6 +93,31 @@ func (c *MessageCore) searchByMediaType(
 		boxList = []*mtproto.MessageBox{}
 	}
 
+	return
+}
+
+func (c *MessageCore) searchGlobalMedia(userId int64, mediaType, offset, limit int32) (boxList []*mtproto.MessageBox) {
+	types := []int32{mediaType}
+	matchURL := false
+	switch mediaType {
+	case mtproto.MEDIA_PHOTOVIDEO:
+		types = []int32{mtproto.MEDIA_PHOTOVIDEO, mtproto.MEDIA_PHOTOS_ONLY, mtproto.MEDIA_VIDEOS_ONLY}
+	case mtproto.MEDIA_URL:
+		matchURL = true
+	}
+	_, _ = c.svcCtx.Dao.MessagesDAO.SearchGlobalByMediaWithCB(
+		c.ctx,
+		userId,
+		offset,
+		limit,
+		types,
+		matchURL,
+		func(sz, i int, v *dataobject.MessagesDO) {
+			boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, userId, v))
+		})
+	if boxList == nil {
+		boxList = []*mtproto.MessageBox{}
+	}
 	return
 }
 

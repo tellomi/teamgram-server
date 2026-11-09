@@ -1,10 +1,13 @@
 package core
 
-import "github.com/teamgram/proto/mtproto"
+import (
+	"strings"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 // globalQuery is the part of messages.searchGlobal that can be applied
-// after the text search: peer kind and date. folder_id, offset_rate, and
-// offset_peer are still not applied.
+// after the text search: peer kind and date.
 type globalQuery struct {
 	UsersOnly      bool
 	GroupsOnly     bool
@@ -52,6 +55,96 @@ func (q globalQuery) allows(peerType int32, peerID int64, date int32, kinds map[
 	default:
 		return false
 	}
+}
+
+// globalFilterUseful is a media filter the global search screen sends.
+// An empty query with one of these filters returns that media. An empty
+// query with any other filter is SEARCH_QUERY_EMPTY.
+func globalFilterUseful(filter *mtproto.MessagesFilter) bool {
+	if filter == nil {
+		return false
+	}
+	switch mtproto.FromMessagesFilter(filter) {
+	case mtproto.FilterPhotoVideo, mtproto.FilterPhotos, mtproto.FilterVideo,
+		mtproto.FilterDocument, mtproto.FilterUrl, mtproto.FilterMusic,
+		mtproto.FilterVoice, mtproto.FilterRoundVoice:
+		return true
+	default:
+		return false
+	}
+}
+
+// globalMediaKind is the stored message_filter_type for a global media scan.
+// Voice and round video notes share MEDIA_AUDIO; the caller splits them.
+func globalMediaKind(filter *mtproto.MessagesFilter) (int32, bool) {
+	switch mtproto.FromMessagesFilter(filter) {
+	case mtproto.FilterPhotos:
+		return mtproto.MEDIA_PHOTOS_ONLY, true
+	case mtproto.FilterVideo:
+		return mtproto.MEDIA_VIDEOS_ONLY, true
+	case mtproto.FilterPhotoVideo:
+		return mtproto.MEDIA_PHOTOVIDEO, true
+	case mtproto.FilterDocument:
+		return mtproto.MEDIA_FILE, true
+	case mtproto.FilterUrl:
+		return mtproto.MEDIA_URL, true
+	case mtproto.FilterMusic:
+		return mtproto.MEDIA_MUSIC, true
+	case mtproto.FilterVoice, mtproto.FilterRoundVoice:
+		return mtproto.MEDIA_AUDIO, true
+	default:
+		return 0, false
+	}
+}
+
+// messageMatchesGlobalFilter reports whether one message belongs in the
+// client's filter. Url matches a url/textUrl/email entity, webpage media,
+// or a message whose text contains a URL.
+func messageMatchesGlobalFilter(msg *mtproto.Message, filter *mtproto.MessagesFilter) bool {
+	if !globalFilterUseful(filter) {
+		return true
+	}
+	switch mtproto.FromMessagesFilter(filter) {
+	case mtproto.FilterPhotos:
+		return mtproto.GetMediaType(msg) == mtproto.MEDIA_PHOTOS_ONLY
+	case mtproto.FilterVideo:
+		return mtproto.GetMediaType(msg) == mtproto.MEDIA_VIDEOS_ONLY
+	case mtproto.FilterPhotoVideo:
+		t := mtproto.GetMediaType(msg)
+		return t == mtproto.MEDIA_PHOTOS_ONLY || t == mtproto.MEDIA_VIDEOS_ONLY || t == mtproto.MEDIA_PHOTOVIDEO
+	case mtproto.FilterDocument:
+		return mtproto.GetMediaType(msg) == mtproto.MEDIA_FILE
+	case mtproto.FilterUrl:
+		return messageHasURL(msg)
+	case mtproto.FilterMusic:
+		return mtproto.IsMusicMessage(msg) || mtproto.GetMediaType(msg) == mtproto.MEDIA_MUSIC
+	case mtproto.FilterVoice:
+		return mtproto.IsVoiceMessage(msg)
+	case mtproto.FilterRoundVoice:
+		return mtproto.IsRoundVideoMessage(msg)
+	default:
+		return true
+	}
+}
+
+func messageHasURL(msg *mtproto.Message) bool {
+	if msg == nil {
+		return false
+	}
+	if mtproto.GetMediaType(msg) == mtproto.MEDIA_URL {
+		return true
+	}
+	for _, entity := range msg.GetEntities() {
+		switch entity.GetPredicateName() {
+		case mtproto.Predicate_messageEntityUrl, mtproto.Predicate_messageEntityTextUrl, mtproto.Predicate_messageEntityEmail:
+			return true
+		}
+	}
+	if msg.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaWebPage {
+		return true
+	}
+	text := strings.ToLower(msg.GetMessage())
+	return strings.Contains(text, "http://") || strings.Contains(text, "https://") || strings.Contains(text, "www.")
 }
 
 func filterGlobalBoxes(list *mtproto.MessageBoxList, q globalQuery, kinds map[int64]channelKind, limit int32) *mtproto.MessageBoxList {

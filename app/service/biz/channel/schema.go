@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS channels (
   address VARCHAR(255) NOT NULL DEFAULT '',
   default_banned_rights BIGINT NOT NULL DEFAULT 0,
   deleted TINYINT NOT NULL DEFAULT 0,
+  restricted TINYINT NOT NULL DEFAULT 0,
+  banned TINYINT NOT NULL DEFAULT 0,
   version INT NOT NULL DEFAULT 1,
   PRIMARY KEY (id),
   UNIQUE KEY channels_username (username),
@@ -55,6 +57,7 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   pts INT NOT NULL DEFAULT 0,
   deleted TINYINT NOT NULL DEFAULT 0,
   message_data MEDIUMBLOB NOT NULL,
+  message TEXT NULL,
   PRIMARY KEY (channel_id, message_id),
   KEY channel_messages_random (channel_id, sender_user_id, random_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

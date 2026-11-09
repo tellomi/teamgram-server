@@ -51,7 +51,11 @@ type Channel struct {
 	Address            string
 	DefaultBanned      int64
 	Deleted            bool
-	Version            int32
+	// Restricted and Banned hide the channel from global search.
+	// Restricted is a platform content restriction. Banned is a channel ban.
+	Restricted bool
+	Banned     bool
+	Version    int32
 }
 
 func (c *Channel) clone() *Channel {

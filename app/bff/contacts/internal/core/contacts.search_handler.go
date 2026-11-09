@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -104,6 +105,16 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 		}
 	}
 
+	// Public channel and group titles, including Chinese. Username search
+	// above only matches the username table.
+	if pubs, err := channel.Shared().SearchPublic(c.ctx, c.MD.UserId, q, limit); err != nil {
+		c.Logger.Errorf("contacts.search public - error: %v", err)
+	} else {
+		for _, ch := range pubs {
+			idHelper.PickByPeerUtil(mtproto.PEER_CHANNEL, ch.ID)
+		}
+	}
+
 	idHelper.Visit(
 		func(userIdList []int64) {
 			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
@@ -111,10 +122,19 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 					Id: userIdList,
 				})
 
+			var kept []int64
 			users.Visit(func(it *mtproto.ImmutableUser) {
 				if it.Deleted() {
 					return
 				}
+				kind := contactUser
+				if it.IsBot() {
+					kind = contactBot
+				}
+				if !contactHitAllowed(in.GetBroadcasts(), in.GetBots(), kind) {
+					return
+				}
+				kept = append(kept, it.Id())
 
 				peer := mtproto.MakeTLPeerUser(&mtproto.Peer{
 					UserId: it.Id(),
@@ -126,7 +146,7 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 				}
 			})
 
-			found.Users = users.GetUserListByIdList(c.MD.UserId, userIdList...)
+			found.Users = users.GetUserListByIdList(c.MD.UserId, kept...)
 		},
 		func(chatIdList []int64) {
 		},
@@ -134,7 +154,17 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 			if c.svcCtx.Plugin != nil {
 				chats := c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, channelIdList...)
 				for _, ch := range chats {
-					if ch.PredicateName == mtproto.Predicate_chatEmpty {
+					if ch.PredicateName == mtproto.Predicate_chatEmpty || ch.PredicateName == mtproto.Predicate_channelForbidden {
+						continue
+					}
+					if channel.Shared().Hidden(c.ctx, ch.GetId()) {
+						continue
+					}
+					kind := contactGroup
+					if ch.GetBroadcast() && !ch.GetMegagroup() {
+						kind = contactChannel
+					}
+					if !contactHitAllowed(in.GetBroadcasts(), in.GetBots(), kind) {
 						continue
 					}
 					found.Chats = append(found.Chats, ch)

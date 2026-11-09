@@ -800,65 +800,6 @@ func (s *Service) SetPersonalChannel(ctx context.Context, self int64, in *mtprot
 	return s.store.SetPersonalChannel(ctx, self, ch.ID)
 }
 
-func (s *Service) SearchPosts(ctx context.Context, self int64, query, hashtag string, offsetID, limit int32) (*mtproto.Messages_Messages, error) {
-	if limit <= 0 || limit > 50 {
-		limit = 20
-	}
-	needle := strings.ToLower(strings.TrimPrefix(query, "#"))
-	if hashtag != "" {
-		needle = strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	}
-	list, err := s.store.ListByUser(ctx, self)
-	if err != nil {
-		return nil, err
-	}
-	var msgs []*mtproto.Message
-	var chats []*mtproto.Chat
-	seen := map[int64]bool{}
-	for _, ch := range list {
-		if ch.Username == "" && !ch.Broadcast && !ch.Megagroup {
-			continue
-		}
-		all, err := s.store.ListMessages(ctx, ch.ID)
-		if err != nil {
-			continue
-		}
-		for _, stored := range all {
-			if stored.Deleted || (offsetID > 0 && stored.ID >= offsetID) {
-				continue
-			}
-			body, err := unmarshalMessage(stored.Data)
-			if err != nil {
-				continue
-			}
-			text := strings.ToLower(body.GetMessage())
-			if needle != "" && !strings.Contains(text, needle) {
-				continue
-			}
-			msgs = append(msgs, viewMessage(body, stored.SenderID, self))
-			if !seen[ch.ID] {
-				seen[ch.ID] = true
-				chats = append(chats, s.ChatFor(ctx, self, ch))
-			}
-			if int32(len(msgs)) >= limit {
-				break
-			}
-		}
-	}
-	if msgs == nil {
-		msgs = []*mtproto.Message{}
-	}
-	if chats == nil {
-		chats = []*mtproto.Chat{}
-	}
-	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
-		Count:    int32(len(msgs)),
-		Messages: msgs,
-		Chats:    chats,
-		Users:    []*mtproto.User{},
-	}).To_Messages_Messages(), nil
-}
-
 // ChannelSearch is messages.search against one channel.
 type ChannelSearch struct {
 	Q        string
