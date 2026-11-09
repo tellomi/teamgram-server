@@ -3,6 +3,7 @@ package enforcement
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -38,7 +39,8 @@ const (
 	accountMarker = "enforcement-account-review"
 	contentMarker = "enforcement-content-review"
 
-	helpText = "请只回复「是」或「否」。有多起案件时，请回复对应那条。"
+	helpText  = "请只回复「是」或「否」。有多起案件时，请回复对应那条。"
+	liftUsage = "解除处罚请只发「解封案件」加处置编号或案件号，或「解封用户」加用户号。然后对确认消息回复「是」或「否」。"
 )
 
 // Directory reads chat identity. It does not write chat tables.
@@ -318,6 +320,9 @@ func ObserveAdmin(ctx context.Context, from int64, text string, replyTo int32) b
 }
 
 func (c *Confirmer) answer(ctx context.Context, from int64, admin, text string, replyTo int32) string {
+	if looksLikeLift(text) {
+		return c.openLiftRequest(ctx, from, admin, text)
+	}
 	answer, caseID, ok := parseAdminText(text)
 	if !ok {
 		return helpText
@@ -337,6 +342,9 @@ func (c *Confirmer) answer(ctx context.Context, from int64, admin, text string, 
 	claimed.AdminUser = admin
 	claimed.AdminAnswer = answerWord(answer)
 	claimed.DecidedAt = c.now()
+	if claimed.Kind == reviewLift {
+		return c.finishLift(from, admin, answer, claimed)
+	}
 	if answer == "no" {
 		if claimed.Kind == reviewContent {
 			claimed.Status = reviewKept
@@ -671,6 +679,246 @@ func contentRef(in ContentInput) string {
 		ref += " comment:" + strings.TrimSpace(in.CommentID)
 	}
 	return clipRunes(ref, 250)
+}
+
+// openLiftRequest starts a confirmation for one active sanction. The command
+// itself does not lift. A later reply of exactly 是 does, and exactly 否 does not.
+func (c *Confirmer) openLiftRequest(ctx context.Context, from int64, admin, text string) string {
+	if !c.allows(admin) || c.Svc == nil {
+		return ""
+	}
+	kind, token, ok := parseLiftRequest(text)
+	if !ok {
+		return liftUsage
+	}
+	rows, msg := c.liftCandidates(kind, token)
+	if msg != "" {
+		return msg
+	}
+	for _, row := range rows {
+		if row.UserID == from || protectedUser(row.UserID) {
+			c.Svc.RecordAudit(admin, "admin_lift_refused", row.ID, "protected")
+			return "不能解除这个账号。"
+		}
+	}
+	var created, waiting int
+	for _, row := range rows {
+		if c.liftWaiting(row.ID) {
+			waiting++
+			continue
+		}
+		if err := c.askLift(ctx, admin, row); err != nil {
+			logx.Error("enforcement: lift confirmation was not stored")
+			return "暂时不能处理，请稍后再试。"
+		}
+		created++
+	}
+	if created == 0 && waiting > 0 {
+		return "这起解除还在等确认。请回复对应那条。"
+	}
+	if created == 0 {
+		return "没有找到仍生效的处置。"
+	}
+	return "已发出确认。请对那条消息回复「是」或「否」。有多起时请分别回复。"
+}
+
+func (c *Confirmer) liftCandidates(kind, token string) ([]Sanction, string) {
+	if kind == "user" {
+		id, err := strconv.ParseInt(token, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, liftUsage
+		}
+		if protectedUser(id) {
+			return nil, "不能解除这个账号。"
+		}
+		rows := c.Svc.ActiveByUser(id)
+		if len(rows) == 0 {
+			return nil, "这个用户没有仍生效的处置。"
+		}
+		return rows, ""
+	}
+	row, msg := c.sanctionByToken(token)
+	if msg != "" {
+		return nil, msg
+	}
+	if protectedUser(row.UserID) {
+		return nil, "不能解除这个账号。"
+	}
+	if row.Status != StatusActive {
+		return nil, "这起处置已经解除。"
+	}
+	return []Sanction{row}, ""
+}
+
+func (c *Confirmer) sanctionByToken(token string) (Sanction, string) {
+	id := token
+	if strings.HasPrefix(token, "C") {
+		got, ok, err := c.Svc.book().get(token)
+		if err != nil {
+			return Sanction{}, "暂时不能处理，请稍后再试。"
+		}
+		if !ok || got.Kind == reviewContent || got.SanctionID == "" {
+			return Sanction{}, "没有找到这起处置。"
+		}
+		id = got.SanctionID
+	}
+	row, ok := c.Svc.Sanction(id)
+	if !ok {
+		return Sanction{}, "没有找到这起处置。"
+	}
+	return row, ""
+}
+
+func (c *Confirmer) liftWaiting(sanctionID string) bool {
+	rows, err := c.Svc.book().pending()
+	if err != nil {
+		return false
+	}
+	for _, row := range rows {
+		if row.Kind == reviewLift && row.SanctionID == sanctionID {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Confirmer) askLift(ctx context.Context, admin string, row Sanction) error {
+	id := "C" + newID()
+	review := ReviewCase{
+		ID: id, Kind: reviewLift, Status: reviewPending,
+		SubjectUserID: row.UserID, SubjectLabel: fmt.Sprintf("用户 %d", row.UserID),
+		SanctionID: row.ID, Summary: clipRunes(row.ReasonCategory, 300),
+		AIReason: row.Kind, AIAction: "lift", CreatedAt: c.now(),
+	}
+	if err := c.Svc.book().insert(review); err != nil {
+		return err
+	}
+	review.Deliveries = c.notify(ctx, liftAsk(review, row))
+	if err := c.Svc.book().save(review); err != nil {
+		return err
+	}
+	c.Svc.RecordAudit(admin, "admin_lift_ask", row.ID, fmt.Sprintf("user=%d review=%s", row.UserID, id))
+	return nil
+}
+
+func (c *Confirmer) finishLift(from int64, admin, answer string, claimed ReviewCase) string {
+	if !c.allows(admin) || protectedUser(claimed.SubjectUserID) || claimed.SubjectUserID == 0 || claimed.SubjectUserID == from {
+		claimed.Status = reviewPending
+		_ = c.Svc.book().save(claimed)
+		c.Svc.RecordAudit(admin, "admin_lift_refused", claimed.SanctionID, "protected")
+		return "不能解除这个账号。案件号：" + claimed.ID
+	}
+	if answer == "no" {
+		claimed.Status = reviewClosed
+		if err := c.Svc.book().save(claimed); err != nil {
+			logx.Error("enforcement: lift close was not stored")
+		}
+		c.Svc.RecordAudit(admin, "admin_lift_no", claimed.SanctionID, "answer=否 review="+claimed.ID)
+		return "已保持原处罚。案件号：" + claimed.ID
+	}
+	before, ok := c.Svc.Sanction(claimed.SanctionID)
+	if !ok {
+		claimed.Status = reviewClosed
+		_ = c.Svc.book().save(claimed)
+		return "没有找到这起处置。案件号：" + claimed.ID
+	}
+	if before.Status != StatusActive {
+		claimed.Status = reviewLifted
+		_ = c.Svc.book().save(claimed)
+		return "这起处置已经解除。案件号：" + claimed.ID
+	}
+	detail := fmt.Sprintf("answer=是 user=%d review=%s reason=管理员确认解除", claimed.SubjectUserID, claimed.ID)
+	lifted, err := c.Svc.liftConfirmed(Actor{ID: admin, Role: RoleSenior}, claimed.SanctionID, detail)
+	if errors.Is(err, ErrRole) {
+		claimed.Status = reviewPending
+		_ = c.Svc.book().save(claimed)
+		c.Svc.RecordAudit(admin, "admin_lift_refused", claimed.SanctionID, "initiator")
+		return "不能解除自己发起的处置。案件号：" + claimed.ID
+	}
+	if err != nil || lifted.Status != StatusLifted {
+		claimed.Status = reviewPending
+		_ = c.Svc.book().save(claimed)
+		c.Svc.RecordAudit(admin, "admin_lift_failed", claimed.SanctionID, "answer=是")
+		logx.Error("enforcement: confirm did not lift the sanction")
+		return "没能完成解除，请稍后再试。案件号：" + claimed.ID
+	}
+	claimed.Status = reviewLifted
+	if err = c.Svc.book().save(claimed); err != nil {
+		logx.Error("enforcement: lift was applied but the review row was not updated")
+	}
+	return "已解除。案件号：" + claimed.ID + " 处置编号：" + claimed.SanctionID
+}
+
+func liftAsk(review ReviewCase, row Sanction) string {
+	return fmt.Sprintf("请确认是否解除这起处置。\n案件号：%s\n处置编号：%s\n用户：%d\n类型：%s\n理由：%s\n回复「是」解除并通知该用户，回复「否」保持原处罚。有多起待确认时，请回复本条。",
+		review.ID, row.ID, row.UserID, row.Kind, clipRunes(row.ReasonCategory, 120))
+}
+
+func looksLikeLift(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(text), "解封")
+}
+
+// parseLiftRequest accepts one command only. The body, after trimming the
+// ends, is the verb, one space, and the id. A second space, a username, or
+// an extra word is not a command.
+func parseLiftRequest(text string) (kind, id string, ok bool) {
+	text = strings.TrimSpace(text)
+	switch {
+	case strings.HasPrefix(text, "解封案件"):
+		return liftToken(text, "解封案件", "case")
+	case strings.HasPrefix(text, "解封用户"):
+		return liftToken(text, "解封用户", "user")
+	default:
+		return "", "", false
+	}
+}
+
+func liftToken(text, verb, kind string) (string, string, bool) {
+	rest := text[len(verb):]
+	if !strings.HasPrefix(rest, " ") {
+		return "", "", false
+	}
+	id := rest[1:]
+	if id == "" || strings.ContainsAny(id, " \t\r\n") {
+		return "", "", false
+	}
+	switch kind {
+	case "case":
+		if validCaseToken(id) {
+			return kind, id, true
+		}
+	case "user":
+		if validUserToken(id) {
+			return kind, id, true
+		}
+	}
+	return "", "", false
+}
+
+func validCaseToken(id string) bool {
+	hexID := id
+	if strings.HasPrefix(id, "C") {
+		hexID = id[1:]
+	}
+	if len(hexID) != 16 {
+		return false
+	}
+	for _, r := range hexID {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validUserToken(id string) bool {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || n <= 0 {
+		return false
+	}
+	return strconv.FormatInt(n, 10) == id
 }
 
 // parseAdminText accepts a decision only when the reply is exactly 是 or 否.

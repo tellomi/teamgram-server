@@ -38,6 +38,21 @@
 
 封禁走现有逻辑：AI 以 `agent` 发起永久处罚，管理员以 `senior` 批准。777000 发通知，登录和发消息按永久停用拒绝，申诉仍由 777001 判定。每次 AI 结论和管理员答复都写入 `audit_log`（谁、何时、理由、答复）。
 
+## 管理员解除
+
+生产里解除一条仍生效的处罚，走上面同一条 777001 私聊，不新开端口，也不新增 HTTP。`127.0.0.1:8819` 的撤销只在 `TELLOMI_ENFORCEMENT_E2E=1` 时给隔离演练用，生产不要设置。
+
+允许名单上的账号把正文去掉首尾空白后，正好发成下面两种之一：
+
+- `解封案件`、一个空格、处置编号（16 位小写十六进制）或确认案件号（`C` 加 16 位小写十六进制）
+- `解封用户`、一个空格、用户号（十进制，不带前导 0，不写用户名）
+
+多一个字、多一个空格、写成用户名、yes，或在「是」后面带编号，都不会解除。这条命令本身也不解除。777001 再发一条确认，写明案件号、处置编号、用户、类型和理由。只有回复正好是「是」才解除，正好是「否」就保持原处罚。有多起待确认（包括还没批的封禁）时，必须回复对应那一条。
+
+解除不删行，状态改为 `lifted`。发起人不能解除自己发起的处罚。批准过这起处罚的管理员可以解除：生产里批准封禁的就是这份允许名单，没有第二条通道，而且这一步已经过了名单和「是」。直接调用 `Revoke` 的其他路径（包括隔离演练）仍然拒绝批准人。不能解除 777000–777005，也不能解除自己。`TELLOMI_ENFORCEMENT_CREATE` 关掉之后，已经生效的处置仍可以这样解除。
+
+777000 用模板 T-05 通知被解除的用户。同一次写入在 `audit_log` 留下一行：管理员、时间、动作 `admin_lift`、处置编号，以及 `answer=是`、用户号、确认案件号和理由「管理员确认解除」。回复「否」另记一行 `admin_lift_no`，处罚不变。
+
 内容（帖子和评论）由 AI 自主决定。置信度达到 `TELLOMI_ENFORCEMENT_CONFIDENCE` 的 `remove` / `keep` 直接返回给 content-engine。拿不准的走同一套管理员确认。content-engine 的改动不在本仓，接口见 [api/enforcement-contract.md](api/enforcement-contract.md)。
 
 ## 一次迁移
@@ -112,6 +127,7 @@ docker compose -p tellomi \
 | REQ-REL-01 / REQ-REL-03 关闭新建不清空 | `TestCreateOffWritesNothing`、`TestExistingRecordSurvivesCreateSwitch` |
 | REQ-REL-02 读失败时写保护、申诉仍可用 | `TestFailClosedUsesLastSnapshot` |
 | AI 维持 / 解除 / 证据不足 / 异常 / 注入 / 重复 | `TestAILiftUpholdInsufficientAndFailure`、`TestModelJudgeParsesAndRejectsGarbage` |
+| 允许名单管理员解除指定案件或用户 | `TestAdminUnbanUsesYesNoAndAudits`、`TestAdminUnbanUserAndRefusals`、`TestLiftConfirmedAllowsApproverAndRevokeDoesNot` |
 
 未在本仓声称通过：真机三端、百炼真实调用、管理后台页面、外部邮件、旧客户端文案。隔离作业 `TestAccountEnforcementBanAndLift` 用 `e2e/fakebailian/server.py`，那是本地假百炼，不是 DashScope。
 

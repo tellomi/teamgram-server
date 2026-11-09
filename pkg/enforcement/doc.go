@@ -11,6 +11,8 @@
 //
 // Notices are private messages from user 777000 (@admin), the seeded service
 // account. Appeals are decided by user 777001 (@tellomi) through a Judge.
+// An allowlisted admin lifts one active sanction in that same private chat,
+// after a second message that is exactly 「是」. That path does not listen.
 // Tests supply a fake Judge. That is not a live model call. A model error,
 // timeout, or insufficient evidence leaves the appeal pending and does not
 // add a sanction.

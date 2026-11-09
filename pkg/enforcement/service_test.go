@@ -32,6 +32,68 @@ func activeTimed(user int64, kind string, scopes []string, end time.Time) Sancti
 	}
 }
 
+func TestLiftConfirmedAllowsApproverAndRevokeDoesNot(t *testing.T) {
+	s, _ := testSvc(true)
+	row, err := s.Create(Actor{ID: "tellomi-ai", Role: RoleAgent}, Sanction{
+		UserID: 43, Kind: KindPermanent, Permanent: true,
+		ReasonCategory: "辱骂", PolicyClause: "条款", RuleVersion: "rule-1",
+		EvidenceRef: "evidence-1", IdempotencyKey: "lift-perm", Start: s.clock(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Approve(Actor{ID: "erel", Role: RoleSenior}, row.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Revoke(Actor{ID: "erel", Role: RoleSenior}, row.ID, "直接撤销"); !errors.Is(err, ErrRole) {
+		t.Fatalf("approver revoke: %v", err)
+	}
+	if d := s.Decide(43, "send_message", false, s.clock()); d.Allowed {
+		t.Fatal("approver revoke lifted the ban")
+	}
+	detail := "answer=是 user=43 review=C0123456789abcdef reason=管理员确认解除"
+	got, err := s.liftConfirmed(Actor{ID: "erel", Role: RoleSenior}, row.ID, detail)
+	if err != nil || got.Status != StatusLifted {
+		t.Fatal(err, got.Status)
+	}
+	if d := s.Decide(43, "send_message", false, s.clock()); !d.Allowed {
+		t.Fatalf("after confirmed lift %+v", d)
+	}
+	var saw bool
+	for _, a := range s.Audits() {
+		if a.Action == "admin_lift" && a.Actor == "erel" && a.CaseID == row.ID && a.Detail == detail && a.At.Equal(s.clock()) {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("audit %+v", s.Audits())
+	}
+	var body string
+	for _, n := range s.Notices(43) {
+		if n.From == AdminUserID && n.Template == "T-05" {
+			body = n.Body
+		}
+	}
+	if !strings.Contains(body, "已撤销") || !strings.Contains(body, row.ID) {
+		t.Fatalf("notice %q", body)
+	}
+	end := s.clock().Add(time.Hour)
+	own, err := s.Create(Actor{ID: "erel", Role: RoleSenior}, Sanction{
+		UserID: 44, Kind: KindReadOnly, ReasonCategory: "只读", PolicyClause: "条款",
+		RuleVersion: "rule-1", EvidenceRef: "evidence-1", IdempotencyKey: "lift-own",
+		Start: s.clock(), End: &end,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.liftConfirmed(Actor{ID: "erel", Role: RoleSenior}, own.ID, detail); !errors.Is(err, ErrRole) {
+		t.Fatalf("initiator lift: %v", err)
+	}
+	if got, _ := s.Sanction(own.ID); got.Status != StatusActive {
+		t.Fatal(got.Status)
+	}
+}
+
 func TestCreateOffWritesNothing(t *testing.T) {
 	s, _ := testSvc(false)
 	_, err := s.Create(Actor{ID: "a", Role: RoleAgent}, activeTimed(9, KindReadOnly, nil, time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)))
