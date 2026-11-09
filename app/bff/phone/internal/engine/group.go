@@ -521,8 +521,9 @@ func (e *Engine) DiscardGroup(user, id, access int64, manage bool) (*mtproto.Upd
 		dur = 0
 	}
 	delete(e.byPeer, partKey(g.peerType, g.peerID))
+	var stop func()
 	if g.liveTimer != nil {
-		g.liveTimer()
+		stop = g.liveTimer
 		g.liveTimer = nil
 	}
 	if e.media != nil {
@@ -530,7 +531,6 @@ func (e *Engine) DiscardGroup(user, id, access int64, manage bool) (*mtproto.Upd
 			e.media.Leave(g.id, partKey(p.peerType, p.peerID))
 		}
 	}
-	up := e.fanout(g, user, g.creatorAuth, nil, nil)
 	var ev *GroupEnd
 	// A live story is not a chat. Writing messageActionGroupCall into the
 	// host's dialog leaves a call bubble after the ring should already be gone.
@@ -553,6 +553,12 @@ func (e *Engine) DiscardGroup(user, id, access int64, manage bool) (*mtproto.Upd
 		live = &LiveEnd{CallID: g.id, Access: g.access, Host: g.creator, Reason: reason}
 	}
 	e.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
+	// Fan-out loads user objects, which ask whether this live call is still
+	// up. That must not run under e.mu.
+	up := e.fanout(g, user, g.creatorAuth, nil, nil)
 	e.finishGroup(ev, bind)
 	e.emitLive(live)
 	return up, nil
@@ -622,11 +628,16 @@ func (e *Engine) CreateLiveStory(in CreateLiveStory) (int64, int64, *mtproto.Upd
 }
 
 // LiveCallAlive is false once the room has been discarded or never existed.
+// TryLock matters: group-call fan-out loads user objects while e.mu is held,
+// and painting those users asks whether this call is still up. Blocking here
+// deadlocks discard and join.
 func (e *Engine) LiveCallAlive(id int64) bool {
 	if e == nil || id == 0 {
 		return false
 	}
-	e.mu.Lock()
+	if !e.mu.TryLock() {
+		return true
+	}
 	defer e.mu.Unlock()
 	g := e.groups[id]
 	return g != nil && !g.discarded && g.liveStory
