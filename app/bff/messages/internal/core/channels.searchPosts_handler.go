@@ -59,24 +59,26 @@ func (c *MessagesCore) fillPostChats(res *mtproto.Messages_Messages) {
 	if len(ids) == 0 {
 		return
 	}
-	layer := int32(mtproto.Layer)
-	if c.MD != nil && c.MD.Layer > 0 {
-		layer = c.MD.Layer
+	if chats := channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...); len(chats) > 0 {
+		res.Chats = chats
+		return
 	}
-	chats := channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...)
-	if len(chats) == 0 {
-		chats = res.Chats
+	if len(res.Chats) > 0 {
+		return
 	}
-	res.Chats = encodableChats(layer, ids, chats)
+	for _, id := range ids {
+		res.Chats = append(res.Chats, mtproto.MakeTLChannel(&mtproto.Chat{
+			Broadcast: true,
+			Id:        id,
+			Title:     "",
+			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
+		}).To_Chat())
+	}
 }
 
 func (c *MessagesCore) fillPostUsers(res *mtproto.Messages_Messages) {
 	if c == nil || res == nil {
 		return
-	}
-	layer := int32(mtproto.Layer)
-	if c.MD != nil && c.MD.Layer > 0 {
-		layer = c.MD.Layer
 	}
 	seen := map[int64]struct{}{}
 	var ids []int64
@@ -107,72 +109,10 @@ func (c *MessagesCore) fillPostUsers(res *mtproto.Messages_Messages) {
 			}
 		}
 	}
-	res.Users = encodableUsers(layer, ids, res.Users)
-}
-
-func encodableChats(layer int32, ids []int64, chats []*mtproto.Chat) []*mtproto.Chat {
-	var out []*mtproto.Chat
-	have := map[int64]bool{}
-	for _, chat := range chats {
-		if chat == nil || chat.GetId() == 0 || !tlEncodes(layer, chat) {
-			continue
-		}
-		out = append(out, chat)
-		have[chat.GetId()] = true
+	if len(res.Users) > 0 {
+		return
 	}
 	for _, id := range ids {
-		if have[id] {
-			continue
-		}
-		chat := mtproto.MakeTLChannel(&mtproto.Chat{
-			Broadcast: true,
-			Id:        id,
-			Title:     "",
-			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
-		}).To_Chat()
-		if tlEncodes(layer, chat) {
-			out = append(out, chat)
-			have[id] = true
-		}
+		res.Users = append(res.Users, mtproto.MakeTLUserEmpty(&mtproto.User{Id: id}).To_User())
 	}
-	if out == nil {
-		out = []*mtproto.Chat{}
-	}
-	return out
-}
-
-func encodableUsers(layer int32, ids []int64, users []*mtproto.User) []*mtproto.User {
-	var out []*mtproto.User
-	have := map[int64]bool{}
-	for _, user := range users {
-		if user == nil || user.GetId() == 0 || !tlEncodes(layer, user) {
-			continue
-		}
-		out = append(out, user)
-		have[user.GetId()] = true
-	}
-	for _, id := range ids {
-		if have[id] {
-			continue
-		}
-		user := mtproto.MakeTLUserEmpty(&mtproto.User{Id: id}).To_User()
-		if tlEncodes(layer, user) {
-			out = append(out, user)
-		}
-	}
-	if out == nil {
-		out = []*mtproto.User{}
-	}
-	return out
-}
-
-func tlEncodes(layer int32, obj mtproto.TLObject) bool {
-	if obj == nil {
-		return false
-	}
-	if layer <= 0 {
-		layer = mtproto.Layer
-	}
-	buf := mtproto.NewEncodeBuf(512)
-	return obj.Encode(buf, layer) == nil
 }
