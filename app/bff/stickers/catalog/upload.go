@@ -27,7 +27,9 @@ func uploadAssets(ctx context.Context, packs []*Pack) error {
 	for _, p := range packs {
 		for _, item := range p.Items {
 			dedupe := item.StorageClass + "/" + item.ObjectPath
-			if item.ObjectPath == "" || seen[dedupe] {
+			// Packs imported with -dir have no embedded asset; their bytes
+			// were uploaded by uploadPrepared, so the seed pass skips them.
+			if item.ObjectPath == "" || item.AssetPath == "" || seen[dedupe] {
 				continue
 			}
 			seen[dedupe] = true

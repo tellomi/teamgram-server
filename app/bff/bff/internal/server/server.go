@@ -188,7 +188,10 @@ func (s *Server) Initialize() error {
 				nil,
 				nil))
 
-		stickerSvc := stickers_helper.New(stickers_helper.Config{MySQL: c.ChannelMySQL})
+		stickerSvc := stickers_helper.New(stickers_helper.Config{
+			MySQL:      c.ChannelMySQL,
+			SyncClient: c.SyncClient,
+		})
 		mtproto.RegisterRPCStickersServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCGifsServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCEmojiServer(grpcServer, stickerSvc)

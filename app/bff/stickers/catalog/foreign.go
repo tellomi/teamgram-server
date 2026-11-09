@@ -54,6 +54,9 @@ func DropForeignSeeds(dsn string) error {
 	if _, err = db.ExecContext(ctx, `DELETE r FROM tellomi_featured_reads r JOIN tellomi_sticker_packs p ON p.id = r.pack_id WHERE p.short_name IN (`+in+`)`, names...); err != nil {
 		return err
 	}
+	if err = bumpCatalogVersion(ctx, db, catalogStickers); err != nil {
+		return err
+	}
 	log.Printf("importstickers: drop-foreign-seeds updated %d packs and removed %d installs", packs, installs)
 	return nil
 }

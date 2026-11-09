@@ -41,20 +41,20 @@ func documentIDs(items []*Item) []int64 {
 	return ids
 }
 
-// appendPackKey mixes a pack into a list hash. An unfiltered pack contributes
-// only its id. A pack that lost items also contributes the visible document
-// hash, so clients do not keep a notModified result that still shows them.
-// An empty visible pack is omitted.
+// appendPackKey mixes a pack into a list hash. The pack id, the visible
+// document ids, and the title all contribute, so an in-place edit (a new
+// sticker, a removed sticker, or a renamed pack) changes getAllStickers,
+// getMaskStickers, and getEmojiStickers. An empty visible pack is omitted.
 func appendPackKey(ids []int64, p *Pack) ([]int64, bool) {
 	visible := p.visibleItems()
 	if len(visible) == 0 {
 		return ids, false
 	}
-	ids = append(ids, p.ID)
-	if len(visible) != len(p.Items) {
-		ids = append(ids, hash64(documentIDs(visible)))
-	}
-	return ids, true
+	return append(ids, p.ID, hash64(documentIDs(visible)), titleKey(p.Title)), true
+}
+
+func titleKey(title string) int64 {
+	return stableID("sticker-title", title)
 }
 
 func withoutBlocked(emos []string) []string {
