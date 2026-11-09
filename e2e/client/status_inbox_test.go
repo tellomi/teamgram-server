@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -12,27 +13,29 @@ import (
 // rule. Contacts learn the new status. The same user's other devices do not
 // get updateUserStatus for themselves. A second identical call must not fail.
 func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
-	a, b, aSelf, _ := sharedPair(t)
+	a, _, aSelf, _ := sharedPair(t)
 	cfg := requireE2E(t)
-	ctx, cancel := contextTimeout(45 * time.Second)
+	ctx, cancel := contextTimeout(90 * time.Second)
 	defer cancel()
-	phone, err := cfg.Phone("alice")
+	alicePhone, err := cfg.Phone("alice")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := Dial(ctx, cfg, ProfileAndroid)
+	bobPhone, err := cfg.Phone("bob")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(other.Close)
-	if _, err = other.Login(ctx, phone, "Alice"); err != nil {
-		t.Fatal(err)
-	}
+	// updates.getState registers the socket online. The status push is
+	// delivered only to those online sessions, and a long suite leaves the
+	// shared Bob socket past that TTL.
+	other := loginFresh(t, ctx, cfg, ProfileAndroid, alicePhone, "Alice")
 	if _, _, _, err = other.State(ctx); err != nil {
 		t.Fatal(err)
 	}
-	beforeOther := len(other.Pushed())
-	beforeBob := len(b.Pushed())
+	contact := loginFresh(t, ctx, cfg, ProfileIOS, bobPhone, "Bob")
+	if _, _, _, err = contact.State(ctx); err != nil {
+		t.Fatal(err)
+	}
 	call := func() error {
 		_, err := a.Invoke(ctx, &mtproto.TLAccountUpdateStatus{
 			Constructor: mtproto.CRC32_account_updateStatus,
@@ -47,21 +50,27 @@ func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 		t.Fatalf("repeat updateStatus: %v", err)
 	}
 	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return sawUserStatusFor(pushedSince(b.Pushed(), beforeBob), aSelf.ID), nil
+		return sawUserStatusFor(contact.Pushed(), aSelf.ID), nil
 	})
 	if err != nil {
 		t.Fatalf("contact did not receive updateUserStatus: %v", err)
 	}
-	if sawUserStatusFor(pushedSince(other.Pushed(), beforeOther), aSelf.ID) {
+	if sawUserStatusFor(other.Pushed(), aSelf.ID) {
 		t.Fatal("another session of the same user received updateUserStatus")
 	}
 }
 
-func pushedSince(objs []mtproto.TLObject, n int) []mtproto.TLObject {
-	if n < 0 || n > len(objs) {
-		return objs
+func loginFresh(t *testing.T, ctx context.Context, cfg Config, profile Profile, phone Phone, first string) *Client {
+	t.Helper()
+	c, err := Dial(ctx, cfg, profile)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return objs[n:]
+	t.Cleanup(c.Close)
+	if _, err = c.Login(ctx, phone, first); err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
 
 func sawUserStatusFor(objs []mtproto.TLObject, userID int64) bool {
