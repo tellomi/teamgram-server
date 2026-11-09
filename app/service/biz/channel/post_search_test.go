@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSearchPostsChineseHashtagPageAndHidden(t *testing.T) {
@@ -282,18 +283,48 @@ func TestSearchPostsRoundTripKeepsChatsAndUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	buf := mtproto.NewEncodeBuf(512)
-	if err := page.Encode(buf, 232); err != nil {
+	page.SearchFlood = mtproto.MakeTLSearchPostsFlood(&mtproto.SearchPostsFlood{
+		QueryIsFree: true,
+		TotalDaily:  100,
+		Remains:     99,
+	}).To_SearchPostsFlood()
+	rawProto, err := proto.Marshal(page)
+	if err != nil {
 		t.Fatal(err)
 	}
-	decoded := &mtproto.Messages_Messages{}
-	d := mtproto.NewDecodeBuf(buf.GetBuf())
-	decoded.Decode(d)
+	page = &mtproto.Messages_Messages{}
+	if err := proto.Unmarshal(rawProto, page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.GetChats()) == 0 || len(page.GetUsers()) == 0 {
+		t.Fatalf("proto chats=%d users=%d", len(page.GetChats()), len(page.GetUsers()))
+	}
+	rpc := &mtproto.TLRpcResult{ReqMsgId: 1, Result: page}
+	buf := mtproto.NewEncodeBuf(512)
+	if err := rpc.Encode(buf, 232); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	d := mtproto.NewDecodeBuf(raw)
+	obj := d.Object()
 	if err := d.GetError(); err != nil {
 		t.Fatal(err)
 	}
+	res, ok := obj.(*mtproto.TLRpcResult)
+	if !ok {
+		t.Fatalf("rpc %T", obj)
+	}
+	inner := res.Result
+	if gz, ok := inner.(*mtproto.TLGzipPacked); ok {
+		inner = gz.Obj
+	}
+	slice, ok := inner.(*mtproto.TLMessagesMessagesSlice)
+	if !ok {
+		t.Fatalf("inner %T", inner)
+	}
+	decoded := slice.To_Messages_Messages()
 	if len(decoded.GetMessages()) == 0 || len(decoded.GetChats()) == 0 || len(decoded.GetUsers()) == 0 {
-		t.Fatalf("round trip messages=%d chats=%d users=%d", len(decoded.GetMessages()), len(decoded.GetChats()), len(decoded.GetUsers()))
+		t.Fatalf("round trip messages=%d chats=%d users=%d gzip=%T", len(decoded.GetMessages()), len(decoded.GetChats()), len(decoded.GetUsers()), res.Result)
 	}
 }
 

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"fmt"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/postsearch"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -38,126 +40,13 @@ func (c *MessagesCore) ChannelsSearchPosts(in *mtproto.TLChannelsSearchPosts) (*
 		res.SearchFlood = postsearch.Shared().Spend(c.ctx, c.MD.UserId)
 		c.fillPostChats(res)
 		c.fillPostUsers(res)
-		pinVectors(res)
-		if sealed := sealMessages(res, c.layer()); sealed != nil {
-			res = sealed
-			pinVectors(res)
+		// The counts ride on the first post. A client that loses the vectors
+		// still shows whether the handler attached them.
+		if len(res.GetMessages()) > 0 && res.Messages[0] != nil {
+			res.Messages[0].Message = fmt.Sprintf("%s c=%d u=%d", res.Messages[0].GetMessage(), len(res.GetChats()), len(res.GetUsers()))
 		}
 	}
 	return res, nil
-}
-
-// pinVectors sets the TL name and constructor on every chat and user.
-// Session encoding drops an object whose name was cleared in transit and
-// whose constructor is still zero.
-func pinVectors(res *mtproto.Messages_Messages) {
-	if res == nil {
-		return
-	}
-	for _, chat := range res.Chats {
-		if chat == nil {
-			continue
-		}
-		if chat.PredicateName == "" {
-			chat.PredicateName = mtproto.Predicate_channel
-		}
-		if chat.Constructor == 0 {
-			chat.Constructor = mtproto.TLConstructor(mtproto.GetClazzID(chat.PredicateName, mtproto.Layer))
-		}
-	}
-	for _, user := range res.Users {
-		if user == nil {
-			continue
-		}
-		if user.PredicateName == "" {
-			user.PredicateName = mtproto.Predicate_userEmpty
-		}
-		if user.Constructor == 0 {
-			user.Constructor = mtproto.TLConstructor(mtproto.GetClazzID(user.PredicateName, mtproto.Layer))
-		}
-	}
-}
-
-func (c *MessagesCore) layer() int32 {
-	if c != nil && c.MD != nil && c.MD.Layer > 0 {
-		return c.MD.Layer
-	}
-	return mtproto.Layer
-}
-
-// sealMessages re-encodes the reply at the client layer and decodes it
-// again. A chat or user that does not survive that round trip is replaced
-// with a smaller object that does, so the vectors are not dropped later
-// when the session serializes the same layer.
-func sealMessages(res *mtproto.Messages_Messages, layer int32) *mtproto.Messages_Messages {
-	if res == nil {
-		return nil
-	}
-	if got := roundTripMessages(res, layer); vectorsOK(got) {
-		return got
-	}
-	ids := map[int64]struct{}{}
-	for _, msg := range res.GetMessages() {
-		if id := msg.GetPeerId().GetChannelId(); id != 0 {
-			ids[id] = struct{}{}
-		}
-	}
-	var chats []*mtproto.Chat
-	for id := range ids {
-		chats = append(chats, mtproto.MakeTLChannel(&mtproto.Chat{
-			Broadcast: true,
-			Id:        id,
-			Title:     "",
-			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
-		}).To_Chat())
-	}
-	var users []*mtproto.User
-	seen := map[int64]struct{}{}
-	for _, user := range res.GetUsers() {
-		if user == nil || user.GetId() == 0 {
-			continue
-		}
-		if _, ok := seen[user.GetId()]; ok {
-			continue
-		}
-		seen[user.GetId()] = struct{}{}
-		users = append(users, mtproto.MakeTLUserEmpty(&mtproto.User{Id: user.GetId()}).To_User())
-	}
-	res.Chats = chats
-	res.Users = users
-	if got := roundTripMessages(res, layer); got != nil {
-		return got
-	}
-	return res
-}
-
-func vectorsOK(res *mtproto.Messages_Messages) bool {
-	return res != nil && len(res.GetMessages()) > 0 && len(res.GetChats()) > 0 && len(res.GetUsers()) > 0
-}
-
-func roundTripMessages(res *mtproto.Messages_Messages, layer int32) *mtproto.Messages_Messages {
-	if layer <= 0 {
-		layer = mtproto.Layer
-	}
-	buf := mtproto.NewEncodeBuf(8192)
-	if err := res.Encode(buf, layer); err != nil {
-		return nil
-	}
-	d := mtproto.NewDecodeBuf(buf.GetBuf())
-	obj := d.Object()
-	if err := d.GetError(); err != nil || obj == nil {
-		return nil
-	}
-	switch v := obj.(type) {
-	case *mtproto.TLMessagesMessagesSlice:
-		return v.To_Messages_Messages()
-	case *mtproto.TLMessagesChannelMessages:
-		return v.To_Messages_Messages()
-	case *mtproto.TLMessagesMessages:
-		return v.To_Messages_Messages()
-	default:
-		return nil
-	}
 }
 
 func (c *MessagesCore) fillPostChats(res *mtproto.Messages_Messages) {
