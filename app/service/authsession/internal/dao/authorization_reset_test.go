@@ -25,6 +25,22 @@ func TestGeoIPPathPrefersEnv(t *testing.T) {
 	}
 }
 
+func TestBindDateCreatedRestartsOnlyAClearedRow(t *testing.T) {
+	now := int64(1_700_000_000)
+	if bindDateCreated(now-48*3600, now) != now-48*3600 {
+		t.Fatal("a live session keeps its age")
+	}
+	if bindDateCreated(0, now) != now {
+		t.Fatal("a cleared created time starts at this bind")
+	}
+	if bindDateCreated(-5, now) != now {
+		t.Fatal("a negative stored time starts at this bind")
+	}
+	if bindDateCreated(0, 0) != 0 {
+		t.Fatal("no clock")
+	}
+}
+
 func TestFreshResetWindowIsCurrentSessionAge(t *testing.T) {
 	now := int64(1_700_000_000)
 	older := now - 48*3600

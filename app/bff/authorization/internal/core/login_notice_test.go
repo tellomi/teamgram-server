@@ -67,3 +67,22 @@ func TestLoginDeviceLabelPrefersClient(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+func TestLoginNoticeDevicePrefersModel(t *testing.T) {
+	if loginNoticeDevice(" Samsung SM-S928B ", "android", "ios") != "Samsung SM-S928B" {
+		t.Fatal("model")
+	}
+	if loginNoticeDevice("", "android", "ios") != "android" {
+		t.Fatal("lang pack fallback")
+	}
+	if loginNoticeDevice(" ", "", "ios") != "ios" {
+		t.Fatal("empty model")
+	}
+	text, _ := loginSecurityNotice(loginNoticeDevice("iPhone 16", "ios", "ios"), time.Date(2026, 11, 8, 0, 5, 0, 0, time.UTC))
+	if !strings.Contains(text, "iPhone 16") || !strings.Contains(text, "2026-11-08 08:05") {
+		t.Fatalf("composed notice: %q", text)
+	}
+	if strings.Contains(text, "验证码") {
+		t.Fatal("composed notice has a code label")
+	}
+}

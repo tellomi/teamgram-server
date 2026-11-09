@@ -200,6 +200,16 @@ func (c *Client) Close() {
 
 func (c *Client) SetProfile(p Profile) { c.profile = p }
 
+// Ping sends MTProto ping and waits for pong. gotd 0.163 does not export
+// ping_delay_disconnect; that constructor stays covered by the session unit
+// test.
+func (c *Client) Ping(ctx context.Context) error {
+	if c == nil || c.conn == nil {
+		return fmt.Errorf("no connection")
+	}
+	return c.conn.Ping(ctx)
+}
+
 func (c *Client) Session() (gotdmt.Session, bool) { return c.handler.Session() }
 
 // Invoke sends one RPC and decodes the layer 232 result.

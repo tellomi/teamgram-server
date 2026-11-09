@@ -30,4 +30,5 @@ type Config struct {
 	UserClient        zrpc.RpcClientConf
 	AuthSessionClient zrpc.RpcClientConf
 	SyncClient        *kafka.KafkaProducerConf
+	MsgClient         zrpc.RpcClientConf
 }

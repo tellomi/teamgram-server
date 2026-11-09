@@ -302,6 +302,22 @@ Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describe
 | --- | --- | --- |
 | `help.getAppConfig` | `app/bff/configuration/internal/appconfig/app_config.go` | `pkg/about` |
 
+## Login notice and session reset (N05 / N06)
+
+`auth.signIn`, `auth.signUp`, `auth.checkPassword`, `auth.recoverPassword`, a future-auth-token `auth.sendCode` that finishes the login, and `auth.acceptLoginToken` when the account has no cloud password write one private message from user 777000. The text is Simplified Chinese. It names the new session's `initConnection` device model and the Beijing minute (UTC+8, no DST). It does not include the verification code, a token, or an auth key. A rejected code, `SESSION_PASSWORD_NEEDED`, `authorizationSignUpRequired`, a bad or replayed QR token, and a QR scan that still needs `auth.checkPassword` do not write it. The password scan writes it from `auth.checkPassword` after the proof matches, for that new key. The same user and auth key inside two minutes claims the message once. The same device model is what `auth.signIn` puts in the older service notification.
+
+`account.resetAuthorization` and `auth.resetAuthorizations` return `406 FRESH_RESET_AUTHORISATION_FORBIDDEN` when the actor's own `auth_users.date_created` is under 24 hours. Nothing is deleted in that case. The target's age does not decide it. At 24 hours the other row is soft-deleted, and the old socket rechecks the binding on the next protected RPC, `ping`, and `ping_delay_disconnect`. A missed online update still fails the next RPC. Reconnect loads the deleted binding as logged out (`401 AUTH_KEY_UNREGISTERED`). Reset used to leave `date_created = 0` on that key; binding it again now starts the 24h gate at the new bind (`dao.bindDateCreated`). A live row keeps its original time.
+
+`TELLOMI_MESSAGE_EXPIRY` and `TELLOMI_MESSAGE_EXPIRY_SWEEP` stay unset. This does not enable expiry cleanup.
+
+| Piece | File |
+| --- | --- |
+| Notice text and device model | `app/bff/authorization/loginnotice`, `app/bff/authorization/internal/core/core.go` |
+| QR login without a cloud password | `app/bff/qrcode/internal/core/auth.acceptLoginToken_handler.go` |
+| Service-notification device | `app/bff/authorization/internal/core/auth.signIn_handler.go` |
+| 24h gate and cleared `date_created` | `app/service/authsession/internal/dao/authorization.go`, `app/service/authsession/internal/dal/dao/mysql_dao/auth_users_dao.go` |
+| Next RPC / ping | `app/interface/session/internal/sess/session_invoke.go`, `session_service_messages.go` |
+
 ## Official usernames (M5 P0 / D-27 / D-55 / D-60)
 
 `account.checkUsername` reads the `username` table. The old `z_init.sql` wrote `tellomi` only on `users` (id 777000, `user_type` 4) and left `username` empty, so the name could still be taken. The rows that occupy the name live in Tellomi migrations, not in a second copy of the schema:

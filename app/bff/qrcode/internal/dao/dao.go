@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/marmota/pkg/stores/kv"
 	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/config"
+	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -33,6 +34,7 @@ type Dao struct {
 	user_client.UserClient
 	authsession_client.AuthsessionClient
 	sync_client.SyncClient
+	msg_client.MsgClient
 }
 
 func New(c config.Config) *Dao {
@@ -41,5 +43,6 @@ func New(c config.Config) *Dao {
 		UserClient:        user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		AuthsessionClient: authsession_client.NewAuthsessionClient(rpcx.GetCachedRpcClient(c.AuthSessionClient)),
 		SyncClient:        sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient)),
+		MsgClient:         msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
 }

@@ -232,6 +232,7 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 	c.svcCtx.AuthLogic.DeletePhoneCode(c.ctx, c.MD.PermAuthKeyId, in.PhoneNumber, phoneCodeHash)
 
 	region, _ := c.svcCtx.Dao.GetCountryAndRegionByIp(c.MD.ClientAddr)
+	device := c.loginDevice()
 
 	var (
 		now     = time.Now()
@@ -239,7 +240,7 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 	)
 
 	if len(c.svcCtx.Config.SignInServiceNotification) == 0 {
-		signInN = mtproto.MakeSignInServiceNotification(selfUser, c.MD.PermAuthKeyId, c.MD.Client, region, c.MD.ClientAddr)
+		signInN = mtproto.MakeSignInServiceNotification(selfUser, c.MD.PermAuthKeyId, device, region, c.MD.ClientAddr)
 	} else {
 		signInN = mtproto.MakeTLUpdateServiceNotification(&mtproto.Update{
 			Popup:          false,
@@ -255,7 +256,7 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 			map[string]interface{}{
 				"name":     mtproto.GetUserName(selfUser),
 				"now":      now.UTC(),
-				"client":   c.MD.Client,
+				"client":   device,
 				"region":   region,
 				"clientIp": c.MD.ClientAddr,
 			})

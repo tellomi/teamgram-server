@@ -32,14 +32,19 @@ func NewAuthUsersDAO(db *sqlx.DB) *AuthUsersDAO {
 	}
 }
 
+// authUserBindUpdate matches dao.bindDateCreated. A positive date_created
+// stays, so an old session is not made young. A cleared value (reset writes
+// 0) takes the new bind time, so the 24h gate applies to that login.
+const authUserBindUpdate = "hash = values(hash), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0"
+
 // InsertOrUpdates
-// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), deleted = 0
+// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0
 func (dao *AuthUsersDAO) InsertOrUpdates(ctx context.Context, do *dataobject.AuthUsersDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), deleted = 0"
+	query = "insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update " + authUserBindUpdate
 
 	r, err = dao.db.NamedExec(ctx, query, do)
 	if err != nil {
@@ -61,13 +66,13 @@ func (dao *AuthUsersDAO) InsertOrUpdates(ctx context.Context, do *dataobject.Aut
 }
 
 // InsertOrUpdatesTx
-// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), deleted = 0
+// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0
 func (dao *AuthUsersDAO) InsertOrUpdatesTx(tx *sqlx.Tx, do *dataobject.AuthUsersDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), deleted = 0"
+	query = "insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update " + authUserBindUpdate
 
 	r, err = tx.NamedExec(query, do)
 	if err != nil {
