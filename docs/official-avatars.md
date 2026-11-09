@@ -76,15 +76,25 @@ Dry-run is the default. Inside the teamgram container, after this image
 is deployed:
 
 ```bash
-docker exec tellomi-teamgram-1 /app/bin/backfillstripped -f /app/etc/dfs.yaml -dry-run
+docker exec tellomi-teamgram-1 /app/bin/backfillstripped -f /app/etc2/dfs.yaml -dry-run
 docker exec tellomi-teamgram-1 /app/bin/backfillstripped \
-  -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379 -batch 50
+  -f /app/etc2/dfs.yaml -dry-run=false -redis redis:6379 -batch 50
 # stop after 500 photos, then continue
 docker exec tellomi-teamgram-1 /app/bin/backfillstripped \
-  -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379 -max 500
+  -f /app/etc2/dfs.yaml -dry-run=false -redis redis:6379 -max 500
 docker exec tellomi-teamgram-1 /app/bin/backfillstripped \
-  -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379 -after <last>
+  -f /app/etc2/dfs.yaml -dry-run=false -redis redis:6379 -after <last>
 ```
+
+The container starts dfs from `/app/etc2/dfs.yaml`
+(`teamgramd/bin/runall-docker.sh` passes `../etc2/dfs.yaml`, and the
+working directory is `/app/bin`). That file uses MySQL at `mysql:3306`
+and Redis at `redis:6379`. The yaml under `/app/etc` is the host-network
+file and points MySQL and Redis at loopback. Inside this container that
+loopback is not Redis and not MySQL. The binary default for `-f` is
+`/app/etc2/dfs.yaml`. `-redis` stays empty unless it is set, so a write
+does not drop `photo#`, `user_data.2#`, or `chat#` until
+`-redis redis:6379` is passed.
 
 The dfs yaml supplies the MySQL DSN and object storage. `TELLOMI_S3_*`
 overrides those settings the same way the dfs process does. Photos come
