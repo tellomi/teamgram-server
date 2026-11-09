@@ -30,14 +30,16 @@ func TestNewSessionStillAnnouncedOnReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(again.Close)
+	// new_session_created is the reply to the first content message, not to
+	// the TCP handshake. updates.getState is that message.
+	if _, _, _, err = again.State(ctx); err != nil {
+		t.Fatalf("updates.getState after reconnect: %v", err)
+	}
 	restored, ok := again.Session()
 	if !ok || restored.ID == 0 {
 		t.Fatal("reconnect did not receive new_session_created")
 	}
 	if restored.ID == sess.ID {
 		t.Fatal("reconnect reused the previous session id; this test would no longer prove a new session")
-	}
-	if _, _, _, err = again.State(ctx); err != nil {
-		t.Fatalf("updates.getState after reconnect: %v", err)
 	}
 }
