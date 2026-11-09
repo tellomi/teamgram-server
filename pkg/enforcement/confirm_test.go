@@ -7,11 +7,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+var caseIDPattern = regexp.MustCompile(`C[0-9a-f]{16}`)
 
 func TestParseAdminsIsExtensible(t *testing.T) {
 	got := ParseAdmins(" @Erel, erel, ada , ,")
@@ -21,27 +24,30 @@ func TestParseAdminsIsExtensible(t *testing.T) {
 }
 
 func TestParseAdminText(t *testing.T) {
-	yes := []string{"是", " 是的 ", "yes", "Y", "是 C0123456789abcdef"}
-	for _, text := range yes {
+	for _, text := range []string{"是", " 是 ", "\t是\n", "\u3000是\u3000"} {
 		answer, id, ok := parseAdminText(text)
-		if !ok || answer != "yes" {
+		if !ok || answer != "yes" || id != "" {
 			t.Fatalf("%q -> %s %s %v", text, answer, id, ok)
 		}
 	}
-	if _, id, ok := parseAdminText("否 C0123456789abcdef"); !ok || id != "C0123456789abcdef" {
-		t.Fatal(id, ok)
-	}
-	for _, text := range []string{"否", "no", "N"} {
-		answer, _, ok := parseAdminText(text)
-		if !ok || answer != "no" {
-			t.Fatal(text)
+	for _, text := range []string{"否", " 否 ", "\n否\t", "\u3000否\u3000"} {
+		answer, id, ok := parseAdminText(text)
+		if !ok || answer != "no" || id != "" {
+			t.Fatalf("%q -> %s %s %v", text, answer, id, ok)
 		}
 	}
-	if _, _, ok := parseAdminText("好的"); ok {
-		t.Fatal("other text was accepted")
+	rejected := []string{
+		"", " ", "是的", " 是的 ", "是 的", "yes", "Y", "y", "YES", "Yes",
+		"no", "N", "n", "NO", "否的", "是否", "是是", "是。", "是!",
+		"好的", "是 C0123456789abcdef", "否 C0123456789abcdef",
+		"  是   C0123456789abcdef  ", "是 C0123456789abcdef C0123456789abcdee",
+		"yes C0123456789abcdef", "是的 C0123456789abcdef", "no C0123456789abcdef",
+		"y C0123456789abcdef", "C0123456789abcdef",
 	}
-	if _, _, ok := parseAdminText("是 C0123456789abcdef C0123456789abcdee"); ok {
-		t.Fatal("two case ids were accepted")
+	for _, text := range rejected {
+		if answer, id, ok := parseAdminText(text); ok {
+			t.Fatalf("%q was accepted as %s %s", text, answer, id)
+		}
 	}
 }
 
@@ -160,10 +166,25 @@ func TestAccountYesBansAndNoDoesNot(t *testing.T) {
 		t.Fatal("cases collided")
 	}
 	ambiguous := c.answer(context.Background(), 8, "erel", "是", 0)
-	if !strings.Contains(ambiguous, "案件号") {
+	if !strings.Contains(ambiguous, "回复对应") {
 		t.Fatal(ambiguous)
 	}
-	yes := c.answer(context.Background(), 9, "ada", "是的", second.id)
+	if named := c.answer(context.Background(), 8, "erel", "是 "+secondID, 0); named != helpText {
+		t.Fatal(named)
+	}
+	for _, loose := range []string{"是的", "yes", "y", "Y", "no", "n"} {
+		reply := c.answer(context.Background(), 9, "ada", loose, second.id)
+		if reply != helpText {
+			t.Fatalf("%q -> %s", loose, reply)
+		}
+	}
+	if d := svc.Decide(43, "send_message", false, svc.now()); !d.Allowed {
+		t.Fatal("a loose reply banned the account")
+	}
+	if d := svc.Decide(42, "send_message", false, svc.now()); !d.Allowed {
+		t.Fatal("a loose reply banned the other account")
+	}
+	yes := c.answer(context.Background(), 9, "ada", " 是 ", second.id)
 	if !strings.Contains(yes, "已封禁") || !strings.Contains(yes, secondID) {
 		t.Fatal(yes)
 	}
@@ -195,7 +216,14 @@ func TestAccountYesBansAndNoDoesNot(t *testing.T) {
 	if !sawYes || !sawAI {
 		t.Fatalf("audit: %+v", svc.audits)
 	}
-	no := c.answer(context.Background(), 8, "erel", "否 "+caseID, 0)
+	if namedNo := c.answer(context.Background(), 8, "erel", "否 "+caseID, 0); namedNo != helpText {
+		t.Fatal(namedNo)
+	}
+	still, ok, err := svc.book().get(caseID)
+	if err != nil || !ok || still.Status != reviewPending {
+		t.Fatalf("case id reply changed the case: %+v %v", still, err)
+	}
+	no := c.answer(context.Background(), 8, "erel", " 否 ", msg.id)
 	if !strings.Contains(no, "没有封禁") {
 		t.Fatal(no)
 	}
@@ -241,7 +269,14 @@ func TestContentAutonomyAndAdmin(t *testing.T) {
 	if !strings.Contains(out.last().text, low.CaseID) {
 		t.Fatal(out.last().text)
 	}
-	ack := c.answer(context.Background(), 8, "erel", "yes "+low.CaseID, 0)
+	if ack := c.answer(context.Background(), 8, "erel", "yes "+low.CaseID, 0); ack != helpText {
+		t.Fatal(ack)
+	}
+	pending, ok, err := c.ContentStatus(low.CaseID)
+	if err != nil || !ok || pending.Decision != "pending_admin" {
+		t.Fatalf("%+v %v", pending, err)
+	}
+	ack := c.answer(context.Background(), 8, "erel", " 是 ", 0)
 	if !strings.Contains(ack, "下架") {
 		t.Fatal(ack)
 	}
