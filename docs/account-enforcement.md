@@ -21,6 +21,7 @@
 | `TELLOMI_ENFORCEMENT_CREATE` | 空 | `1` 才允许新建。关掉不清空已有记录 |
 | `TELLOMI_ENFORCEMENT_MYSQL` | 空 | 指向已经 `Migrate` 过的单独库。空着不安装。启动不建表 |
 | `TELLOMI_ENFORCEMENT_SERVICE_KEY` | 空 | 凭证复查的服务间密钥，至少 32 字节的标准 base64。空着或无效时该端点拒绝，不放行 |
+| `TELLOMI_ENFORCEMENT_E2E` | 空 | 只有 `1` 才在 `127.0.0.1:8819` 挂隔离演练路由。生产不要设置 |
 
 持久记录只在 `TELLOMI_ENFORCEMENT_MYSQL` 指向单独的库，并且该库已经显式执行过 `Migrate` 时才打开。`OpenMySQL` 和进程启动不建表。聊天库名 `teamgram` 会被拒绝。表不进 `teamgramd/deploy/sql`。
 
@@ -82,10 +83,10 @@
 | REQ-REL-02 读失败时写保护、申诉仍可用 | `TestFailClosedUsesLastSnapshot` |
 | AI 维持 / 解除 / 证据不足 / 异常 / 注入 / 重复 | `TestAILiftUpholdInsufficientAndFailure`、`TestModelJudgeParsesAndRejectsGarbage` |
 
-未在本仓声称通过：真机三端、发现引擎对已发出 JWT 的拒绝、百炼真实调用、管理后台页面、邮件通知、旧客户端文案。
+未在本仓声称通过：真机三端、百炼真实调用、管理后台页面、外部邮件、旧客户端文案。隔离作业 `TestAccountEnforcementBanAndLift` 用 `e2e/fakebailian/server.py`，那是本地假百炼，不是 DashScope。
 
 ## 跨仓
 
 - content-engine：本仓在永久停用时不再签发 `discover.getEngineCredential`。已经发出的 JWT 要由引擎在读/写时向本仓复查，或本仓后续把处罚版本写进 JWT。这一批没有改引擎。
 - Android / iOS：需要认识上面五个错误码，并在永久停用后走处置页。现有「此手机号码已被封禁。」不能当作账号处罚文案。这一批没有改客户端。
-- `pkg/tellomiai`：把 `*tellomiai.Client` 赋给 `enforcement.ModelJudge.Completer` 才是真实模型。测试里的 `fixedJudge` / `scripted` 不是联调。
+- `pkg/tellomiai`：把 `*tellomiai.Client` 赋给 `enforcement.ModelJudge.Completer` 才是真实模型。测试里的 `fixedJudge` / `scripted` 不是联调。客户端回归里的 `TELLOMI_AI_BASE_URL` 指向 `fakebailian`，模型名是 `e2e-fake-bailian`。

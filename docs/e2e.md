@@ -45,6 +45,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestMediaDedupTwoAccounts` | Two accounts uploading the same video do not share one `documents.file_path` and one `media_blobs` row, either download fails, deleting one message breaks the other download, `messages.getDocumentByHash` misses that sha256+size+mime, or a different mime does not return `documentEmpty`. |
 | `TestMediaDedupPhotoGifAndFile` | Two accounts uploading the same JPEG as a photo, the same JPEG as an image document, the same plain file, or the same small GIF do not share one blob and one object key, either download fails, deleting one photo message breaks the other photo, a different JPEG reuses the first photo's object, or a document thumb size is recorded for only one of the two uploads. |
 | `TestMediaFileHashesAndBlobGC` | `upload.getFileHashes` does not return the 128 KiB SHA-256 parts of the file, `offset` does not skip earlier parts, a negative offset is not `OFFSET_INVALID`, deleting one message releases the blob, retention deletes the object while another `media_blob_refs` row remains, or the last reference leaves a `media_blobs` row or a `media_blob_gc` row. |
+| `TestAccountEnforcementBanAndLift` | The isolated phone or email account did not follow the sanction chain: 777000 notice delivery, a temporary freeze that still logs in and rejects `messages.sendMessage`, a permanent sign-in without a session, disposition notice and appeal, fake-model lift of only that case, or the human revoke audit. Skipped unless `TELLOMI_ENFORCEMENT_E2E=1`. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).
@@ -108,6 +109,17 @@ server key fingerprint).
 
 `TestProfileAndChannelNames` needs `TELLOMI_USERNAME_POLICY=1` on the server.
 The CI compose overlay sets it. A local stack does not, unless `.env` does.
+
+`TestAccountEnforcementBanAndLift` needs the CI overlay, not the default
+compose file. Before teamgram starts, `go run ./e2e/enforcementmigrate`
+creates database `tellomi_enforcement_e2e` on local MySQL. The overlay sets
+`TELLOMI_ENFORCEMENT_CREATE=1` and points `TELLOMI_AI_BASE_URL` at the
+`fakebailian` container. That process is `e2e/fakebailian/server.py`. It is
+not DashScope and it holds no production key. The disposition and operator
+routes listen on `127.0.0.1:8819` inside the teamgram container only. The
+test reaches them with `docker compose exec`. A local run also needs
+`TELLOMI_E2E=1` and `TELLOMI_ENFORCEMENT_E2E=1`. Without those, the test
+skips. Production compose and `.env` do not set them.
 
 ## CI
 

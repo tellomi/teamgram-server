@@ -20,6 +20,7 @@ package svc
 
 import (
 	"context"
+	"os"
 
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/dao"
@@ -30,6 +31,8 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"github.com/teamgram/teamgram-server/pkg/verify"
+
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 type ServiceContext struct {
@@ -66,6 +69,13 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 			})
 			return err
 		})
+		if os.Getenv(enforcement.EnvE2E) == "1" {
+			go func() {
+				if err := enforcement.ServeIsolatedE2E(enforcement.E2ELoopbackAddr); err != nil {
+					logx.Error("enforcement: isolated e2e listener was not started")
+				}
+			}()
+		}
 	}
 	return &ServiceContext{
 		Config:       c,
