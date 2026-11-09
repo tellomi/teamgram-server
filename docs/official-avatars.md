@@ -57,3 +57,36 @@ docker exec -e TEAMGRAM_MYSQL_DSN='root:...@tcp(mysql:3306)/teamgram?charset=utf
 ```
 
 Run one seeder at a time; channels are processed sequentially.
+
+## Stripped thumbs for photos already stored
+
+Profile photos uploaded before the inline thumb was saved have no size `i`.
+Clients then keep the placeholder until `upload.getFile` returns, and a
+cached empty download never shows the JPEG. `backfillstripped` reads the
+stored JPEG (size `a`, then `b` / `c` / `d`, then the message ladder) and
+inserts `photo_sizes` size `i`. It does not delete or replace objects.
+A photo that already has those bytes is skipped, so the command can be
+run again. Pass `-after` with the last id it prints to resume.
+
+The user and chat caches keep the old photo for about seven days. Pass
+`-redis` so those entries (`photo#`, `user_data.2#`, `chat#`) are dropped.
+That is not `FLUSHALL`.
+
+Dry-run is the default. Inside the teamgram container, after this image
+is deployed:
+
+```bash
+docker exec tellomi-teamgram-1 /app/bin/backfillstripped -f /app/etc/dfs.yaml -dry-run
+docker exec tellomi-teamgram-1 /app/bin/backfillstripped \
+  -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379 -batch 50
+# stop after 500 photos, then continue
+docker exec tellomi-teamgram-1 /app/bin/backfillstripped \
+  -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379 -max 500
+docker exec tellomi-teamgram-1 /app/bin/backfillstripped \
+  -f /app/etc/dfs.yaml -dry-run=false -redis 127.0.0.1:6379 -after <last>
+```
+
+The dfs yaml supplies the MySQL DSN and object storage. `TELLOMI_S3_*`
+overrides those settings the same way the dfs process does. Photos come
+from `users.photo_id`, `user_profile_photos`, `chats.photo_id`, and
+`channels.photo_id`. A missing `channels` table is ignored.
