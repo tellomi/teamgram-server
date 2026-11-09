@@ -73,7 +73,11 @@ type Item struct {
 	StorageClass string
 	ObjectPath   string
 	AssetPath    string
+	// Keywords are untagged words. A word with Han, kana, or hangul is
+	// simplified Chinese; anything else is English. LangKeywords holds
+	// words tagged with a canonical language code (zh-hans, zh-hant, en).
 	Keywords     []string
+	LangKeywords map[string][]string
 	Size         int32
 	MaskCoords   *mtproto.MaskCoords
 }

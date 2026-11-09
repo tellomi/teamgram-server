@@ -1135,6 +1135,12 @@ func cloneItem(item *Item) *Item {
 	if item.Keywords != nil {
 		cp.Keywords = append([]string(nil), item.Keywords...)
 	}
+	if item.LangKeywords != nil {
+		cp.LangKeywords = make(map[string][]string, len(item.LangKeywords))
+		for lang, words := range item.LangKeywords {
+			cp.LangKeywords[lang] = append([]string(nil), words...)
+		}
+	}
 	if item.MaskCoords != nil {
 		coords := *item.MaskCoords
 		cp.MaskCoords = &coords

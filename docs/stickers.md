@@ -8,15 +8,16 @@ The packs are openly licensed. Telegram's own sticker sets are not downloaded or
 
 | RPC | Behavior |
 |---|---|
-| `messages.getAllStickers` | Installed regular packs. Twemoji is installed for every user until they uninstall it. |
+| `messages.getAllStickers` | Installed regular packs. Twemoji is installed for every user until they uninstall it. The reply is set metadata, not sticker bytes. A matching hash is `messages.allStickersNotModified` and does not rebuild those sets. |
 | `messages.getStickerSet` | By id, short name, or the system constructors `inputStickerSetAnimatedEmoji`, `AnimatedEmojiAnimations`, `EmojiGenericAnimations`, `PremiumGifts`, `EmojiDefaultStatuses`, `EmojiDefaultTopicIcons`, `EmojiChannelDefaultStatuses`. |
-| `messages.getFeaturedStickers` / `messages.getFeaturedEmojiStickers` | Featured regular packs and the Noto custom-emoji pack. |
+| `messages.getFeaturedStickers` / `messages.getFeaturedEmojiStickers` | The first 100 featured packs. `count` is the full list. A matching hash is `messages.featuredStickersNotModified`. |
+| `messages.getOldFeaturedStickers` | The same featured list, paged. `offset` is the index and `limit` defaults to 100. |
 | `messages.installStickerSet` / `messages.uninstallStickerSet` | Per-user install state. Uninstalling Twemoji sticks; it is not forced back. |
-| `messages.searchStickerSets` / `messages.searchEmojiStickerSets` | Title and short-name search. |
-| `messages.getStickers` / `messages.searchStickers` | Documents for an emoji or a keyword. |
+| `messages.searchStickerSets` / `messages.searchEmojiStickerSets` | Title and short-name search. The match is a UTF-8 substring after Unicode case fold and fullwidth fold, so `猫猫1` matches `猫猫１` and `ｆＬｕｅｎｔ` matches `Fluent`. |
+| `messages.getStickers` / `messages.searchStickers` | Documents for an emoji or a keyword. Emoji match ignores `U+FE0E` and `U+FE0F`. Keyword match is a folded substring of that sticker's keywords. `limit` defaults to 100 and `next_offset` continues the page. |
 | `messages.getRecentStickers` / `messages.saveRecentSticker` / `messages.clearRecentStickers` | The last 50 stickers the user sent. |
 | `messages.getFavedStickers` / `messages.faveSticker` | Up to 200 favorites. |
-| `messages.getEmojiKeywords` / `Difference` / `Languages` | English keywords for the seeded emoji. Version is `1`. |
+| `messages.getEmojiKeywords` / `Difference` / `Languages` | Keywords aggregated per language from sticker keywords. English stays version `1` until that list changes. `zh-hans`, `zh-CN`, and `zh` all read simplified Chinese. The reply `lang_code` is the code the client sent. |
 | `messages.getCustomEmojiDocuments` / `messages.searchCustomEmoji` | Noto documents, marked free so they are not premium-gated. |
 | `messages.getEmojiStickers` | The installed Noto custom-emoji pack. |
 | `messages.getAvailableReactions` | 👍❤️🔥🥰👏😁🤔😢🎉🙏👎😱 plus the other seeded reactions. Animations are 512×512 `.tgs`, with a small fallback Lottie when Noto has no file. |
@@ -41,7 +42,21 @@ The seed is a few dozen common emoji, not the full Unicode set. Files live in `a
 
 Noto's Lottie files are 1024×1024 at 60 fps. Telegram's sticker upload rules ask for 512×512. The client player may still play them; if a particular animation does not render, the Twemoji WebP for the same character is the static fallback in the sticker panel and on reaction buttons.
 
-There is no `.webm` video-sticker pack in this seed. `stickerSet.videos` is false.
+There is no `.webm` video-sticker pack in this seed. `stickerSet.videos` is false for the seed. Prepared video packs imported with `importstickers -dir` set it.
+
+## Sticker panel search
+
+Official clients do not send one language code.
+
+Android opens the sticker search field and calls `messages.getEmojiKeywords` (or `Difference`, once a version is cached) for `AndroidUtilities.getCurrentKeyboardLanguage()`. That is the IME language tag with `_` rewritten to `-`: a Chinese keyboard sends `zh-CN`, `zh-Hans`, or `zh`. The sticker results themselves are `messages.searchStickers` with `q` set to the typed text, `lang_code` set to that first language, `limit` 100, and `emoticon` set to the emoji concatenation of an exact local keyword hit. `messages.searchStickerSets` is the pack-title search and has no language argument.
+
+iOS syncs keywords from `ManagedSynchronizeEmojiKeywordsOperations` with the app language (`zh-hans` for simplified Chinese). A later difference update is kept only when the reply `lang_code` equals the code iOS asked for. iOS does not call `messages.getEmojiKeywordsLanguages`.
+
+Desktop calls `messages.getEmojiKeywordsLanguages` with its keyboard languages and then fetches only the codes in the reply. It discards a keyword list whose `lang_code` is not the code it requested.
+
+The server therefore echoes the requested code, and treats `zh`, `zh-CN`, `zh-Hans`, and `zh-hans` as one simplified list. `zh-TW`, `zh-HK`, and `zh-hant` are traditional. English is unchanged. A Han query also searches the Chinese lists when the IME language is English. Untagged keywords that contain Han, kana, or hangul are simplified Chinese. Any other untagged keyword is English. Words tagged in the import manifest stay on that language.
+
+Restart bff after an import. The process loads imported packs from MySQL at startup, and clients refetch keywords when that language's version changes.
 
 ## Storage
 
@@ -49,7 +64,7 @@ Document bytes are written through the dfs S3 client (`MinioConfig.ApplyEnv`, th
 
 | Class | Bucket | Key |
 |---|---|---|
-| Twemoji and Fluent | `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` | `stickers/<document id>.dat` |
+| Twemoji, Fluent, and imported WebP or WebM | `TELLOMI_S3_BUCKET_PUBLIC_MEDIA` | `stickers/<document id>.dat` |
 | Noto TGS | the same bucket | `emoji/<document id>.dat` |
 
 `upload.getFile` serves a seeded document from the binary when the id matches, then dfs reads `stickers/<id>.dat` and `emoji/<id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`. A set thumbnail (`inputStickerSetThumb`) is rewritten to the cover document.
@@ -60,7 +75,7 @@ The bff uploads those objects in the background when `TELLOMI_S3_ENDPOINT`, the 
 
 ## Database
 
-`teamgramd/deploy/sql/migrate-20261029-stickers.sql` creates `tellomi_sticker_packs`, `tellomi_sticker_items`, `tellomi_sticker_installs`, `tellomi_sticker_recent`, and `tellomi_sticker_faved`. The bff runs the same statements on startup when `ChannelMySQL` or `TEAMGRAM_MYSQL_DSN` is set, then upserts the seed. Running it again updates the same rows.
+`teamgramd/deploy/sql/migrate-20261029-stickers.sql` creates `tellomi_sticker_packs`, `tellomi_sticker_items`, `tellomi_sticker_installs`, `tellomi_sticker_recent`, and `tellomi_sticker_faved`. The bff runs the same statements on startup when `ChannelMySQL` or `TEAMGRAM_MYSQL_DSN` is set, then upserts the seed. Running it again updates the same rows. `migrate-20261121-sticker-keywords.sql` widens `tellomi_sticker_items.keywords` to `TEXT`. The bff applies that `ALTER` on startup. A sticker with more than one keyword language is stored as JSON. An English-only list stays newline-separated.
 
 The link-preview table `sticker_sets` is separate. A successful upsert also writes a public row there so `/addstickers/<short name>` can resolve. That write is skipped if the preview table is absent.
 
@@ -69,6 +84,67 @@ Without MySQL the catalog still serves from memory. Installs, recents, and favor
 ## Import
 
 The image builds `importstickers` in the Go stage and copies it to `/app/bin/importstickers`. The converted emoji are embedded in that binary. It does not fetch packs from the network. Running it again updates the same rows and objects.
+
+### Prepared packs
+
+`-dir` reads a directory of packs that are already converted. The directory is one pack when it contains `manifest.json`. Otherwise each immediate child directory with a `manifest.json` is a pack. A real run also upserts the built-in emoji packs. `-dry-run` validates and prints the plan, and does not need MySQL or S3.
+
+```
+go run ./app/bff/stickers/cmd/importstickers -dir ./chinese-bqb -featured -dry-run
+```
+
+```
+TEAMGRAM_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true' \
+TELLOMI_S3_ENDPOINT=http://127.0.0.1:9000 \
+TELLOMI_S3_ACCESS_KEY_ID=minio \
+TELLOMI_S3_SECRET_ACCESS_KEY=miniostorage \
+TELLOMI_S3_BUCKET_ATTACHMENTS=tellomi-attachments \
+TELLOMI_S3_BUCKET_PUBLIC_MEDIA=tellomi-public-media \
+go run ./app/bff/stickers/cmd/importstickers -dir ./chinese-bqb -featured
+```
+
+`-featured` marks every imported pack featured. `-installed-default` installs every imported pack for every user until they uninstall it. Either flag also turns on when the manifest sets the same field. Inside Compose, pass the flags after the entrypoint:
+
+```
+docker compose exec teamgram /app/bin/importstickers \
+  -dsn 'teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true' \
+  -dir /packs/chinese-bqb -featured
+```
+
+The command is safe to run again. Pack and document ids come from the short name and file name, so the same manifest updates the same rows. An object already stored at the same byte size is not uploaded again. A crash mid-upload continues on the next run. Stickers removed from the manifest are removed from the pack. Restart bff after the import so the running process loads the new packs.
+
+A static pack holds at most 120 stickers. A video pack holds at most 50. A larger manifest is split, in order, into `标题 1/2`, `标题 2/2`, and so on. The first part keeps `short_name`. Later parts append the part number (`PandaHead`, `PandaHead2`). A manifest with more than 20000 stickers is rejected.
+
+`type` is `static` or `video` (`webp` and `webm` are accepted aliases). A static file is a 512×512 WebP, at most 1MB. A video file is a 512×512 VP9 WebM, at most 3 seconds and 256KB. `short_name` matches `^[A-Za-z][A-Za-z0-9_]{4,31}$`. `title` is 1 to 64 characters. Each sticker needs an `emoticon`. `keywords` is a string, an array, or a language map. An untagged array is stored as written: Han, kana, and hangul words are simplified Chinese and other words are English. A language map may use `zh-hans`, `zh-hant`, `zh-CN`, `zh`, or `en`. At most 32 keywords, each at most 64 characters.
+
+```json
+{
+  "title": "熊猫头",
+  "short_name": "PandaHead",
+  "type": "static",
+  "featured": true,
+  "installed_default": false,
+  "license": "",
+  "attribution": "ChineseBQB",
+  "source_url": "https://github.com/zhaoolee/ChineseBQB",
+  "stickers": [
+    {
+      "file": "001.webp",
+      "emoticon": "😂",
+      "keywords": {
+        "zh-hans": ["熊猫头", "笑哭"],
+        "en": ["panda", "lol"]
+      }
+    }
+  ]
+}
+```
+
+`file` is relative to the manifest directory. `license` is at most 64 characters, `attribution` 512, and `source_url` 255.
+
+### Built-in emoji
+
+Without `-dir`, the command only upserts the embedded emoji packs.
 
 From a checkout, with MySQL and S3 credentials in the environment:
 
@@ -119,12 +195,10 @@ TELLOMI_EMOJI_BLOCKLIST=1F44D, U+1F525
 
 That blocks 👍 and 🔥 in addition to 🇹🇼. A code-point pair has to stay in one entry: `1F1E8-1F1F3` is one emoji, while `1F1E8,1F1F3` is two entries.
 
-With only the default, sticker and reaction hashes stay the same, because the seeded packs do not contain 🇹🇼. Adding an entry that removes an item changes that set's hash and the list hash, so clients refetch. The emoji-keyword version stays `1` until an extra entry is configured.
+With only the default, sticker and reaction hashes stay the same, because the seeded packs do not contain 🇹🇼. Adding an entry that removes an item changes that set's hash and the list hash, so clients refetch. The English emoji-keyword version stays `1` until an extra entry removes a seeded emoji, or an imported sticker adds an English keyword. Simplified Chinese and traditional Chinese have their own versions.
 
 ## Still missing
 
 - The rest of Twemoji, Fluent, and Noto beyond the seeded characters.
-- `.webm` video stickers.
 - Masks and dice sets. User-created packs are `stickers.createStickerSet`: an empty `short_name` is assigned on the server, and each sticker must already be a `messages.uploadMedia` document (`image/webp`, `image/png`, `application/x-tgsticker`, or `video/webm`). Chat file upload is unchanged.
 - Animated emoji that a client refuses because the Lottie is larger than 512×512.
-- Per-language keyword lists other than English.

@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS tellomi_sticker_items (
   storage_class VARCHAR(16) NOT NULL,
   object_path VARCHAR(255) NOT NULL,
   asset_path VARCHAR(255) NOT NULL,
-  keywords VARCHAR(512) NOT NULL DEFAULT '',
+  keywords TEXT NOT NULL,
   PRIMARY KEY (pack_id, document_id),
   KEY tellomi_sticker_items_doc (document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS tellomi_saved_gifs (
   video TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, document_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE tellomi_sticker_items MODIFY keywords TEXT NOT NULL;
 `
 
 type mysqlPersist struct {
@@ -209,7 +211,7 @@ ON DUPLICATE KEY UPDATE
   asset_path=VALUES(asset_path), keywords=VALUES(keywords)`,
 				p.ID, item.DocumentID, item.AccessHash, item.Emoticon, i, item.MIME, item.Size, item.Width, item.Height,
 				b(item.Animated), b(item.Video), b(item.CustomEmoji), item.FileName, item.StorageClass, item.ObjectPath,
-				item.AssetPath, strings.Join(item.Keywords, "\n"))
+				item.AssetPath, encodeKeywords(item))
 			if err != nil {
 				return err
 			}
@@ -381,6 +383,9 @@ func (s *Service) loadManageState(ctx context.Context, db *sql.DB) error {
 	if err := s.loadOwnedPacks(ctx, db); err != nil {
 		return err
 	}
+	if err := s.loadImportedPacks(ctx, db); err != nil {
+		return err
+	}
 	reads, err := db.QueryContext(ctx, `SELECT user_id, pack_id FROM tellomi_featured_reads`)
 	if err != nil {
 		return err
@@ -466,6 +471,49 @@ JOIN tellomi_sticker_packs p ON p.id = o.pack_id`)
 	return rows.Err()
 }
 
+// loadImportedPacks reads catalog packs written by importstickers -dir.
+// Seed packs and user-owned packs are already in memory and are left as they are.
+func (s *Service) loadImportedPacks(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `
+SELECT id, access_hash, short_name, title, kind, official, masks, emojis, animated, videos, text_color, featured, installed_default, license, attribution, source_url
+FROM tellomi_sticker_packs ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p Pack
+		var official, masks, emojis, animated, videos, textColor, featured, installed int
+		if err = rows.Scan(&p.ID, &p.AccessHash, &p.ShortName, &p.Title, &p.Kind, &official, &masks, &emojis, &animated, &videos, &textColor, &featured, &installed, &p.License, &p.Attribution, &p.SourceURL); err != nil {
+			return err
+		}
+		if s.byID[p.ID] != nil {
+			continue
+		}
+		key := strings.ToLower(p.ShortName)
+		if _, taken := s.byShort[key]; taken {
+			logx.Errorf("stickers skip imported pack %s: short name is taken", p.ShortName)
+			continue
+		}
+		p.Official = official != 0
+		p.Masks = masks != 0
+		p.Emojis = emojis != 0
+		p.Animated = animated != 0
+		p.Videos = videos != 0
+		p.TextColor = textColor != 0
+		p.Featured = featured != 0
+		p.InstalledDefault = installed != 0
+		items, err := loadPackItems(ctx, db, p.ID)
+		if err != nil {
+			return err
+		}
+		p.Items = items
+		imported := p
+		s.addPack(&imported)
+	}
+	return rows.Err()
+}
+
 func loadPackItems(ctx context.Context, db *sql.DB, packID int64) ([]*Item, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT document_id, access_hash, emoticon, mime_type, file_size, width, height, animated, video, custom_emoji, file_name, storage_class, object_path, asset_path, keywords
@@ -485,9 +533,7 @@ FROM tellomi_sticker_items WHERE pack_id=? ORDER BY sort_order`, packID)
 		item.Animated = animated != 0
 		item.Video = video != 0
 		item.CustomEmoji = custom != 0
-		if keywords != "" {
-			item.Keywords = strings.Split(keywords, "\n")
-		}
+		item.Keywords, item.LangKeywords = decodeKeywords(keywords)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -515,11 +561,112 @@ INSERT INTO tellomi_sticker_items
 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.ID, item.DocumentID, item.AccessHash, item.Emoticon, i, item.MIME, item.Size, item.Width, item.Height,
 			b(item.Animated), b(item.Video), b(item.CustomEmoji), item.FileName, item.StorageClass, item.ObjectPath,
-			item.AssetPath, strings.Join(item.Keywords, "\n")); err != nil {
+			item.AssetPath, encodeKeywords(item)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (m mysqlPersist) savePrepared(ctx context.Context, packs []*Pack) error {
+	if err := upsertPacks(ctx, m.db, packs); err != nil {
+		return err
+	}
+	for _, p := range packs {
+		if err := deleteStaleItems(ctx, m.db, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deleteStaleItems(ctx context.Context, db *sql.DB, p *Pack) error {
+	if p == nil {
+		return nil
+	}
+	if len(p.Items) == 0 {
+		_, err := db.ExecContext(ctx, `DELETE FROM tellomi_sticker_items WHERE pack_id=?`, p.ID)
+		return err
+	}
+	query := `DELETE FROM tellomi_sticker_items WHERE pack_id=? AND document_id NOT IN (?`
+	args := make([]any, 0, len(p.Items)+1)
+	args = append(args, p.ID, p.Items[0].DocumentID)
+	for _, item := range p.Items[1:] {
+		query += ",?"
+		args = append(args, item.DocumentID)
+	}
+	query += ")"
+	_, err := db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func encodeKeywords(item *Item) string {
+	if item == nil {
+		return ""
+	}
+	if len(item.LangKeywords) == 0 {
+		return strings.Join(item.Keywords, "\n")
+	}
+	m := map[string][]string{}
+	if len(item.Keywords) > 0 {
+		m["en"] = append([]string(nil), item.Keywords...)
+	}
+	for lang, words := range item.LangKeywords {
+		canon := canonicalEmojiLang(lang)
+		if canon == "" || len(words) == 0 {
+			continue
+		}
+		if canon == "en" {
+			m["en"] = append(m["en"], words...)
+			continue
+		}
+		m[canon] = append(m[canon], words...)
+	}
+	if len(m) == 0 {
+		return ""
+	}
+	if len(m) == 1 && m["en"] != nil && len(item.LangKeywords) == 0 {
+		return strings.Join(m["en"], "\n")
+	}
+	body, err := json.Marshal(m)
+	if err != nil {
+		return strings.Join(item.Keywords, "\n")
+	}
+	return string(body)
+}
+
+func decodeKeywords(raw string) ([]string, map[string][]string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if strings.HasPrefix(raw, "{") {
+		var m map[string][]string
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			return strings.Split(raw, "\n"), nil
+		}
+		en := m["en"]
+		delete(m, "en")
+		langs := map[string][]string{}
+		for lang, words := range m {
+			canon := canonicalEmojiLang(lang)
+			if canon == "" || canon == "en" || len(words) == 0 {
+				if canon == "en" {
+					en = append(en, words...)
+				}
+				continue
+			}
+			langs[canon] = append(langs[canon], words...)
+		}
+		if len(langs) == 0 {
+			langs = nil
+		}
+		if len(en) == 0 {
+			en = nil
+		}
+		return en, langs
+	}
+	return strings.Split(raw, "\n"), nil
 }
 
 func (m mysqlPersist) deleteOwnedPack(packID int64) error {

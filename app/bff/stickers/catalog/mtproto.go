@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"sort"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/dcoptions"
 
@@ -91,9 +93,52 @@ func (p *Pack) full(installed, archived bool) *mtproto.Messages_StickerSet {
 	return mtproto.MakeTLMessagesStickerSet(&mtproto.Messages_StickerSet{
 		Set:       p.tl(installed, archived),
 		Packs:     p.packs(),
-		Keywords:  []*mtproto.StickerKeyword{},
+		Keywords:  p.stickerKeywords(),
 		Documents: p.documents(),
 	}).To_Messages_StickerSet()
+}
+
+// stickerKeywords is the per-document keyword list clients search inside an
+// installed pack. Android getAnimatedEmojiByKeywords matches these with
+// substring contains, after toLowerCase, so the strings are case-folded.
+func (p *Pack) stickerKeywords() []*mtproto.StickerKeyword {
+	items := p.visibleItems()
+	out := make([]*mtproto.StickerKeyword, 0, len(items))
+	for _, item := range items {
+		words := item.searchWords()
+		if len(words) == 0 {
+			continue
+		}
+		out = append(out, mtproto.MakeTLStickerKeyword(&mtproto.StickerKeyword{
+			DocumentId: item.DocumentID,
+			Keyword:    words,
+		}).To_StickerKeyword())
+	}
+	return out
+}
+
+func (item *Item) searchWords() []string {
+	if item == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(words []string) {
+		for _, w := range words {
+			w = foldText(w)
+			if w == "" || seen[w] {
+				continue
+			}
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	add(item.Keywords)
+	for _, words := range item.LangKeywords {
+		add(words)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (item *Item) document(p *Pack) *mtproto.Document {
