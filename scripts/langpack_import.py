@@ -147,11 +147,27 @@ def unescape_android(s: str) -> str:
     return s
 
 
+_STRING_TAG = re.compile(r"<string\b([^>]*)>(.*?)</string>", re.S)
+_NAME_ATTR = re.compile(r"""\bname\s*=\s*["']([^"']+)["']""")
+_NOT_TRANSLATABLE = re.compile(r"""\btranslatable\s*=\s*["']false["']""")
+
+
 def parse_android(path: Path) -> list[tuple[str, str]]:
+    """Read Android string resources. translatable="false" entries are skipped.
+
+    Those are client configuration (SearchEngine URL templates and the like),
+    not translations. The official export does not ship them, and a bare "&"
+    in a URL makes stock Android reject the saved language file.
+    """
     text = path.read_text(encoding="utf-8", errors="replace")
     rows = []
-    for name, body in re.findall(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>', text, re.S):
-        rows.append((name, unescape_android(body)))
+    for attrs, body in _STRING_TAG.findall(text):
+        if _NOT_TRANSLATABLE.search(attrs):
+            continue
+        name = _NAME_ATTR.search(attrs)
+        if not name:
+            continue
+        rows.append((name.group(1), unescape_android(body)))
     return rows
 
 

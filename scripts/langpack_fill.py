@@ -33,7 +33,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from langpack_official import LANGS, PLATFORMS, brand as official_brand, rewritten_key  # noqa: E402
+from langpack_official import (  # noqa: E402
+    LANGS,
+    NONTRANSLATABLE_ANDROID_KEY,
+    PLATFORMS,
+    brand as official_brand,
+    forms_are_urls,
+    rewritten_key,
+)
 
 FORMS = ("zero", "one", "two", "few", "many", "other")
 
@@ -109,6 +116,63 @@ def corrupt_key(key: str) -> bool:
     # Those keys are not real strings. Do not copy them into other languages.
     # The same tell.cc check refuses the key in langpack_official.py.
     return rewritten_key(key)
+
+
+def source_key_fillable(key: str, forms: dict[str, str]) -> bool:
+    """False for values that must not be copied out of English.
+
+    URL strings are configuration, not translations. SearchEngineN* keys are
+    not in the official export (they are translatable="false" in the APK).
+    Tellomi-owned keys are also absent from that export and are still filled;
+    merge_lang is what admits them into English.
+    """
+    if corrupt_key(key) or NONTRANSLATABLE_ANDROID_KEY.match(key):
+        return False
+    return not forms_are_urls(forms)
+
+
+_CDATA_OPEN = "<![CDATA["
+
+
+def cdata_fragments(text: str) -> list[str] | None:
+    """Payloads of <![CDATA[...]]>, or None when a [CDATA marker is broken.
+
+    Machine translation has turned "<![CDATA[" into "<! [CDATA [". escapeString
+    then leaves the "<" in place and the Android XML parse fails.
+    """
+    text = text or ""
+    if "[CDATA" not in text:
+        return []
+    parts: list[str] = []
+    i = 0
+    while i < len(text):
+        j = text.find("[CDATA", i)
+        if j < 0:
+            return parts
+        if j >= 2 and text.startswith(_CDATA_OPEN, j - 2):
+            end = text.find("]]>", j + len(_CDATA_OPEN) - 2)
+            if end < 0:
+                return None
+            parts.append(text[j + 7 : end])
+            i = end + 3
+            continue
+        return None
+    return parts
+
+
+def cdata_matches(src: str, dst: str) -> bool:
+    got = cdata_fragments(src)
+    want = cdata_fragments(dst)
+    if got is None or want is None:
+        return False
+    return got == want
+
+
+def forms_cdata_ok(src: dict[str, str], dst: dict[str, str]) -> bool:
+    for name in set(src) | set(dst):
+        if not cdata_matches(src.get(name, ""), dst.get(name, "")):
+            return False
+    return True
 
 
 def placeholders(text: str) -> list[str]:
@@ -441,6 +505,8 @@ def main() -> int:
                 if corrupt_key(key):
                     continue
                 src_forms = entry_forms(item)
+                if not source_key_fillable(key, src_forms):
+                    continue
                 existing = have.get(key)
                 if existing is None:
                     if code == "zh-hant" and key in hans_forms:
@@ -486,10 +552,15 @@ def main() -> int:
         def add(code: str, key: str, forms: dict[str, str], via: str, src_forms: dict[str, str]) -> None:
             if key in by[code]:
                 return
+            if not source_key_fillable(key, src_forms):
+                return
             if not forms_ok(src_forms, forms):
                 forms = fallback_forms(src_forms, forms)
             if not forms_ok(src_forms, forms):
                 problems.append(f"{platform}/{code} {key} placeholder mismatch")
+                return
+            if not forms_cdata_ok(src_forms, forms):
+                problems.append(f"{platform}/{code} {key} CDATA does not match English")
                 return
             version = int(loaded[code].get("version") or 1) + 1
             item = to_string(key, forms, version, via)
@@ -517,6 +588,8 @@ def main() -> int:
                 if corrupt_key(key) or key in by[code]:
                     continue
                 src = entry_forms(item)
+                if not source_key_fillable(key, src):
+                    continue
                 forms = google_forms(src, tl, translator)
                 if code == "zh-hant":
                     forms = convert_forms(forms, s2t)
@@ -534,6 +607,8 @@ def main() -> int:
                 if corrupt_key(key) or key not in by[code]:
                     continue
                 src = entry_forms(item)
+                if not source_key_fillable(key, src):
+                    continue
                 if "value" in src:
                     continue
                 existing = by[code][key]
@@ -558,6 +633,9 @@ def main() -> int:
                     filled = fallback_forms(missing, filled)
                 if not forms_ok(missing, filled):
                     problems.append(f"{platform}/{code} {key} plural placeholder mismatch")
+                    continue
+                if not forms_cdata_ok(missing, filled):
+                    problems.append(f"{platform}/{code} {key} CDATA does not match English")
                     continue
                 noted = list(existing.get("mt_forms") or [])
                 for name, text in filled.items():
