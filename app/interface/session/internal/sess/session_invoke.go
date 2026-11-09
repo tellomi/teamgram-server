@@ -20,6 +20,8 @@ package sess
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -34,6 +36,45 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
+// decodeWrappedQuery reads the inner RPC of invokeWithLayer and the other
+// wrappers. A constructor the codec does not know is an RPC error, not a
+// dropped request.
+func (c *session) decodeWrappedQuery(ctx context.Context, gatewayId string, msgId *inboxMsg, raw []byte) mtproto.TLObject {
+	dBuf := mtproto.NewDecodeBuf(raw)
+	query := dBuf.Object()
+	if err := dBuf.GetError(); err != nil || query == nil {
+		if err == nil {
+			err = mtproto.ErrInputRequestInvalid
+		}
+		c.rejectUndecodedQuery(ctx, gatewayId, msgId, raw, err)
+		return nil
+	}
+	return query
+}
+
+func (c *session) rejectUndecodedQuery(ctx context.Context, gatewayId string, msgId *inboxMsg, raw []byte, err error) {
+	ctor := "unknown"
+	if len(raw) >= 4 {
+		id := int32(binary.LittleEndian.Uint32(raw[:4]))
+		ctor = fmt.Sprintf("0x%08x", uint32(id))
+		if name := mtproto.ConstructorName(id); name != "" {
+			ctor += " " + name
+		}
+	}
+	reqID := int64(0)
+	seqno := int32(0)
+	if msgId != nil {
+		reqID = msgId.msgId
+		seqno = msgId.seqNo
+	}
+	logx.WithContext(ctx).Errorf("undecoded query - msg_id: %d, seqno: %d, constructor: %s, err: %v", reqID, seqno, ctor, err)
+	if msgId == nil || msgId.msgId == 0 {
+		return
+	}
+	c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(decodeFailureStatus(err)))
+	msgId.state = RECEIVED | RESPONSE_GENERATED
+}
+
 func (c *session) onInvokeWithLayer(ctx context.Context, gatewayId, clientIp string, msgId *inboxMsg, request *mtproto.TLInvokeWithLayer) {
 	logx.WithContext(ctx).Infof("onInvokeWithLayer - request data: {sess: %s, conn_id: %s, msg_id: %d, seq_no: %d, request: {%s}}",
 		c,
@@ -47,15 +88,8 @@ func (c *session) onInvokeWithLayer(ctx context.Context, gatewayId, clientIp str
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -77,15 +111,8 @@ func (c *session) onInvokeAfterMsg(ctx context.Context, gatewayId, clientIp stri
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -105,15 +132,8 @@ func (c *session) onInvokeAfterMsgs(ctx context.Context, gatewayId, clientIp str
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -191,15 +211,8 @@ func (c *session) onInvokeWithoutUpdates(ctx context.Context, gatewayId, clientI
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -219,15 +232,8 @@ func (c *session) onInvokeWithMessagesRange(ctx context.Context, gatewayId, clie
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -247,15 +253,8 @@ func (c *session) onInvokeWithTakeout(ctx context.Context, gatewayId, clientIp s
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -288,15 +287,8 @@ func (c *session) onInvokeWithBusinessConnection(ctx context.Context, gatewayId,
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -318,15 +310,8 @@ func (c *session) onInvokeWithGooglePlayIntegrity(ctx context.Context, gatewayId
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -349,15 +334,8 @@ func (c *session) onInvokeWithApnsSecret(ctx context.Context, gatewayId, clientI
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -379,15 +357,8 @@ func (c *session) onInvokeWithReCaptcha(ctx context.Context, gatewayId, clientIp
 		return
 	}
 
-	dBuf := mtproto.NewDecodeBuf(request.Query)
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %v", dBuf.GetError())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.Query)
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 
@@ -404,15 +375,8 @@ func (c *session) onInitConnection(ctx context.Context, gatewayId, clientIp stri
 
 	c.sessList.cb.onUpdateInitConnection(ctx, clientIp, request)
 
-	dBuf := mtproto.NewDecodeBuf(request.GetQuery())
-	query := dBuf.Object()
-	if dBuf.GetError() != nil {
-		logx.WithContext(ctx).Errorf("dBuf query error: %s", dBuf.GetError().Error())
-		return
-	}
-
+	query := c.decodeWrappedQuery(ctx, gatewayId, msgId, request.GetQuery())
 	if query == nil {
-		logx.WithContext(ctx).Errorf("decode buf is nil, query: %v", query)
 		return
 	}
 

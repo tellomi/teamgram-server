@@ -472,6 +472,11 @@ func (m *DecodeBuf) Vector() []TLObject {
 }
 */
 
+// ConstructorName is the predicate registered for a class id, or "".
+func ConstructorName(classID int32) string {
+	return clazzIdNameRegisters2[classID]
+}
+
 func (m *DecodeBuf) Object() (r TLObject) {
 	classID := m.Int()
 	if m.err != nil {

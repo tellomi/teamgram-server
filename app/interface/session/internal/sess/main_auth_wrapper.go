@@ -8,6 +8,7 @@ package sess
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -1026,8 +1027,7 @@ func (m *MainAuthWrapper) onSessionData(ctx context.Context, sessionMsg *session
 	err := message2.Decode(dBuf)
 	mtproto.PutDecodeBuf(dBuf)
 	if err != nil {
-		// TODO(@benqi): close frontend conn??
-		logx.WithContext(ctx).Errorf("onSessionData - error: {%s}, data: {sessions: %s, gate_id: %d}", err, m, sessionMsg.gatewayId)
+		m.answerDecodeFailure(ctx, "onSessionData", sessionMsg.authType, sessionMsg.gatewayId, sessionMsg.sessionId, sessionMsg.salt, nil, sessionMsg.buf, message2, err)
 		return
 	}
 
@@ -1070,8 +1070,7 @@ func (m *MainAuthWrapper) onSessionHttpData(ctx context.Context, sessionMsg *ses
 	err := message2.Decode(dBuf)
 	mtproto.PutDecodeBuf(dBuf)
 	if err != nil {
-		// TODO(@benqi): close frontend conn??
-		logx.WithContext(ctx).Errorf("onSessionHttpData - error: {%s}, data: {sessions: %s, gate_id: %s}", err, m, sessionMsg.gatewayId)
+		m.answerDecodeFailure(ctx, "onSessionHttpData", sessionMsg.authType, sessionMsg.gatewayId, sessionMsg.sessionId, sessionMsg.salt, sessionMsg.resChannel, sessionMsg.buf, message2, err)
 		return
 	}
 
@@ -1096,6 +1095,75 @@ func (m *MainAuthWrapper) onSessionHttpData(ctx context.Context, sessionMsg *ses
 	sess.httpQueue.Push(sessionMsg.resChannel)
 	sess.onSessionConnNew(ctx, sessionMsg.gatewayId)
 	sess.onSessionMessageData(ctx, sessionMsg.gatewayId, sessionMsg.clientIp, sessionMsg.salt, message2)
+}
+
+// answerDecodeFailure logs the constructor the codec rejected and, when the
+// message is an RPC the client is waiting on, returns rpc_error. A content
+// related message has an odd seqno. Service messages stay unanswered.
+func (m *MainAuthWrapper) answerDecodeFailure(ctx context.Context, where string, authType int, gatewayID string, sessionID, clientSalt int64, httpCh chan interface{}, buf []byte, message *mtproto.TLMessage2, err error) {
+	ctor := messageConstructor(buf)
+	name := ""
+	if ctor != 0 || len(buf) >= 20 {
+		name = mtproto.ConstructorName(ctor)
+	}
+	label := "unknown"
+	if len(buf) >= 20 {
+		label = fmt.Sprintf("0x%08x", uint32(ctor))
+		if name != "" {
+			label += " " + name
+		}
+	}
+	msgID := int64(0)
+	seqno := int32(0)
+	if message != nil {
+		msgID = message.MsgId
+		seqno = message.Seqno
+	}
+	logx.WithContext(ctx).Errorf("%s - error: {%s}, msg_id: %d, seqno: %d, constructor: %s, sessions: %s, gate_id: %s",
+		where, err, msgID, seqno, label, m, gatewayID)
+	if message == nil || msgID == 0 || seqno&1 == 0 {
+		return
+	}
+
+	sList := m.getSessionList(authType)
+	// A corrupt packet must not become the stored salt. Borrow the client's
+	// salt only for this reply, then drop it. Answering with salt 0 makes
+	// iOS drop the auth key.
+	if sList.cacheSalt == nil {
+		now := int32(time.Now().Unix())
+		sList.cacheSalt = mtproto.MakeTLFutureSalt(&mtproto.FutureSalt{
+			ValidSince: now,
+			ValidUntil: now + 30*60,
+			Salt:       clientSalt,
+		})
+		defer func() { sList.cacheSalt = nil }()
+	}
+	sess, ok := sList.sessions[sessionID]
+	if !ok {
+		sess = newSession(sessionID, sList)
+		sList.sessions[sessionID] = sess
+	}
+	if httpCh != nil {
+		sess.isHttp = true
+		sess.httpQueue.Push(httpCh)
+	}
+	sess.onSessionConnNew(ctx, gatewayID)
+	sess.sendRpcResultToQueue(ctx, gatewayID, msgID, mtproto.NewRpcError(decodeFailureStatus(err)))
+	sess.sendQueueToGateway(ctx, gatewayID)
+}
+
+func messageConstructor(buf []byte) int32 {
+	if len(buf) < 20 {
+		return 0
+	}
+	return int32(binary.LittleEndian.Uint32(buf[16:20]))
+}
+
+func decodeFailureStatus(err error) error {
+	if err != nil && strings.Contains(err.Error(), "can't find registered classId") {
+		return mtproto.ErrInputConstructorInvalid
+	}
+	return mtproto.ErrInputRequestInvalid
 }
 
 func (m *MainAuthWrapper) onSessionClosed(ctx context.Context, connMsg *connData) {

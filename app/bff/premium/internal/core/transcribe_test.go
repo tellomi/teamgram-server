@@ -46,3 +46,38 @@ func TestMessagesTranscribeAudioIgnoresPremium(t *testing.T) {
 		t.Fatalf("pending=%v text=%q calls=%d", out.GetPending(), out.GetText(), calls)
 	}
 }
+
+// The session resolves messages.transcribeDraft through NewTLObjectByClassID.
+// Calling Decode on a hand-built object skips that lookup.
+func TestDecodedTranscribeDraftReachesHandler(t *testing.T) {
+	audio := []byte("OggS\x00dictation")
+	req := &mtproto.TLMessagesTranscribeAudio{}
+	req.SetDraftAudio(audio)
+	buf := mtproto.NewEncodeBuf(64)
+	if err := req.Encode(buf, mtproto.Layer); err != nil {
+		t.Fatal(err)
+	}
+	d := mtproto.NewDecodeBuf(buf.GetBuf())
+	obj := d.Object()
+	if err := d.GetError(); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := obj.(*mtproto.TLMessagesTranscribeAudio)
+	if !ok {
+		t.Fatalf("%T", obj)
+	}
+	var saw []byte
+	h := speech.NewHandler(nil, nil, speech.RecognizerFunc(func(_ context.Context, in []byte, _ string) (string, error) {
+		saw = append([]byte(nil), in...)
+		return "<|zh|>你好", nil
+	}), nil)
+	c := withUser(7)
+	c.svcCtx = &svc.ServiceContext{Speech: h}
+	out, err := c.MessagesTranscribeAudio(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.GetText() != "你好" || string(saw) != string(audio) {
+		t.Fatalf("text %q saw %q", out.GetText(), saw)
+	}
+}
