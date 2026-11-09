@@ -39,6 +39,9 @@ class RewriteValuesOnlyTest(unittest.TestCase):
         self.assertEqual(rewrite_link("https://t.me/tellomi"), "https://tell.cc/tellomi")
         self.assertEqual(rewrite_link("see t.me/name"), "see tell.cc/name")
         self.assertEqual(rewrite_link("https://telegram.org/faq"), "https://tellomi.cn/faq")
+        self.assertEqual(rewrite_link("詳しくはtelegram.orgからどうぞ。"), "詳しくはtellomi.cnからどうぞ。")
+        self.assertEqual(rewrite_link("desktop.telegram.orgから"), "desktop.tellomi.cnから")
+        self.assertEqual(brand("詳しくはtelegram.orgからどうぞ。"), "詳しくはtellomi.cnからどうぞ。")
 
     def test_brand_entries_copies_keys(self):
         out = brand_entries([
@@ -82,6 +85,23 @@ class ForkOnlyKeyTest(unittest.TestCase):
         self.assertIn("Tellomi.Settings.Help", keys)
         self.assertNotIn("SearchEngine1AutocompleteURL", keys)
         self.assertNotIn("AreTyping", keys)
+
+    def test_curated_override_keeps_strings_the_export_does_not_ship(self):
+        official = [{"key": "Hello", "value": "Hi"}]
+        overrides = {
+            "zh-hans": {
+                "AreTyping": {"key": "AreTyping", "value": "正在输入…", "version": 3},
+                "SearchEngine1AutocompleteURL": {
+                    "key": "SearchEngine1AutocompleteURL",
+                    "value": "https://suggestqueries.google.com/complete/search?client=chrome&q=",
+                    "version": 1,
+                },
+            }
+        }
+        out = merge_lang("zh-hans", official, overrides, set(), 10, {"Hello": {"key": "Hello", "value": "Hi"}})
+        keys = {item["key"]: item for item in out}
+        self.assertEqual(keys["AreTyping"]["value"], "正在输入…")
+        self.assertNotIn("SearchEngine1AutocompleteURL", keys)
 
     def test_android_import_skips_translatable_false(self):
         body = """<?xml version="1.0" encoding="utf-8"?>
