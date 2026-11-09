@@ -29,6 +29,45 @@ func TestDialogOrderDateThenPeer(t *testing.T) {
 	}
 }
 
+func TestPeerDialogsOmitEmptyRows(t *testing.T) {
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:     80,
+		PeerId: mtproto.MakePeer(mtproto.PEER_USER, 9),
+	}).To_Message()
+	helper := &DialogsDataHelper{
+		Dialogs: []*mtproto.Dialog{
+			mtproto.MakeTLDialog(&mtproto.Dialog{
+				Peer:       mtproto.MakePeer(mtproto.PEER_USER, 9),
+				TopMessage: 80,
+			}).To_Dialog(),
+			mtproto.MakeTLDialog(&mtproto.Dialog{
+				Peer:       mtproto.MakePeer(mtproto.PEER_USER, 4),
+				TopMessage: 0,
+			}).To_Dialog(),
+			mtproto.MakeTLDialog(&mtproto.Dialog{
+				Peer:       mtproto.MakePeer(mtproto.PEER_USER, 5),
+				TopMessage: 50,
+			}).To_Dialog(),
+		},
+		Messages: []*mtproto.Message{msg},
+		Users: []*mtproto.User{
+			mtproto.MakeTLUser(&mtproto.User{Id: 9}).To_User(),
+			mtproto.MakeTLUser(&mtproto.User{Id: 4}).To_User(),
+			mtproto.MakeTLUser(&mtproto.User{Id: 5}).To_User(),
+		},
+	}
+	out := helper.ToMessagesPeerDialogs(nil)
+	if len(out.GetDialogs()) != 1 || out.GetDialogs()[0].GetTopMessage() != 80 {
+		t.Fatalf("dialogs %+v", out.GetDialogs())
+	}
+	if len(out.GetMessages()) != 1 || out.GetMessages()[0].GetId() != 80 {
+		t.Fatalf("messages %+v", out.GetMessages())
+	}
+	if len(out.GetUsers()) != 1 || out.GetUsers()[0].GetId() != 9 {
+		t.Fatalf("users %+v", out.GetUsers())
+	}
+}
+
 func TestOffsetAtPositionZero(t *testing.T) {
 	list := sortedDialogs(DialogExtList{
 		testDialog(mtproto.PEER_USER, 1, 30, 1, false, 0),
