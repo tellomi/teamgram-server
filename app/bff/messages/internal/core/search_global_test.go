@@ -78,6 +78,29 @@ func TestGlobalFilterEmptyQueryAndChineseURL(t *testing.T) {
 	}
 }
 
+func TestSealMessagesKeepsChatsAndUsers(t *testing.T) {
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Message: "上海你好",
+		PeerId:  mtproto.MakePeerChannel(42),
+	}).To_Message()
+	res := mtproto.MakeTLMessagesMessagesSlice(&mtproto.Messages_Messages{
+		Count:    1,
+		Messages: []*mtproto.Message{msg},
+		Topics:   []*mtproto.ForumTopic{},
+		Chats: []*mtproto.Chat{mtproto.MakeTLChannel(&mtproto.Chat{
+			Broadcast: true,
+			Id:        42,
+			Title:     "中文",
+			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
+		}).To_Chat()},
+		Users: []*mtproto.User{mtproto.MakeTLUser(&mtproto.User{Id: 7, Self: true}).To_User()},
+	}).To_Messages_Messages()
+	got := sealMessages(res, 232)
+	if !vectorsOK(got) {
+		t.Fatalf("sealed chats=%d users=%d", len(got.GetChats()), len(got.GetUsers()))
+	}
+}
+
 func TestFilterGlobalBoxesByKindAndDate(t *testing.T) {
 	user := &mtproto.MessageBox{PeerType: mtproto.PEER_USER, PeerId: 1, Message: &mtproto.Message{Date: 100, Message: "a"}}
 	group := &mtproto.MessageBox{PeerType: mtproto.PEER_CHAT, PeerId: 2, Message: &mtproto.Message{Date: 200, Message: "b"}}

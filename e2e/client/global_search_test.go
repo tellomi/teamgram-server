@@ -67,10 +67,14 @@ func TestGlobalSearchFree(t *testing.T) {
 	}
 	if len(posts.GetChats()) == 0 || len(posts.GetUsers()) == 0 {
 		var peer *mtproto.Peer
+		var text string
+		var views *wrapperspb.Int32Value
 		if len(posts.GetMessages()) > 0 {
 			peer = posts.GetMessages()[0].GetPeerId()
+			text = posts.GetMessages()[0].GetMessage()
+			views = posts.GetMessages()[0].GetViews()
 		}
-		t.Fatalf("vectors chats=%d users=%d msgs=%d peer=%v", len(posts.GetChats()), len(posts.GetUsers()), len(posts.GetMessages()), peer)
+		t.Fatalf("vectors chats=%d users=%d msgs=%d peer=%v views=%v text=%q pred=%s", len(posts.GetChats()), len(posts.GetUsers()), len(posts.GetMessages()), peer, views, text, posts.GetPredicateName())
 	}
 	if posts.GetSearchFlood().GetStarsAmount() != 0 || !posts.GetSearchFlood().GetQueryIsFree() || posts.GetSearchFlood().GetRemains() != 99 {
 		t.Fatalf("search flood %+v", posts.GetSearchFlood())

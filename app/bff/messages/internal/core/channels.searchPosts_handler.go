@@ -38,8 +38,93 @@ func (c *MessagesCore) ChannelsSearchPosts(in *mtproto.TLChannelsSearchPosts) (*
 		res.SearchFlood = postsearch.Shared().Spend(c.ctx, c.MD.UserId)
 		c.fillPostChats(res)
 		c.fillPostUsers(res)
+		if sealed := sealMessages(res, c.layer()); sealed != nil {
+			res = sealed
+		}
 	}
 	return res, nil
+}
+
+func (c *MessagesCore) layer() int32 {
+	if c != nil && c.MD != nil && c.MD.Layer > 0 {
+		return c.MD.Layer
+	}
+	return mtproto.Layer
+}
+
+// sealMessages re-encodes the reply at the client layer and decodes it
+// again. A chat or user that does not survive that round trip is replaced
+// with a smaller object that does, so the vectors are not dropped later
+// when the session serializes the same layer.
+func sealMessages(res *mtproto.Messages_Messages, layer int32) *mtproto.Messages_Messages {
+	if res == nil {
+		return nil
+	}
+	if got := roundTripMessages(res, layer); vectorsOK(got) {
+		return got
+	}
+	ids := map[int64]struct{}{}
+	for _, msg := range res.GetMessages() {
+		if id := msg.GetPeerId().GetChannelId(); id != 0 {
+			ids[id] = struct{}{}
+		}
+	}
+	var chats []*mtproto.Chat
+	for id := range ids {
+		chats = append(chats, mtproto.MakeTLChannel(&mtproto.Chat{
+			Broadcast: true,
+			Id:        id,
+			Title:     "",
+			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
+		}).To_Chat())
+	}
+	var users []*mtproto.User
+	seen := map[int64]struct{}{}
+	for _, user := range res.GetUsers() {
+		if user == nil || user.GetId() == 0 {
+			continue
+		}
+		if _, ok := seen[user.GetId()]; ok {
+			continue
+		}
+		seen[user.GetId()] = struct{}{}
+		users = append(users, mtproto.MakeTLUserEmpty(&mtproto.User{Id: user.GetId()}).To_User())
+	}
+	res.Chats = chats
+	res.Users = users
+	if got := roundTripMessages(res, layer); got != nil {
+		return got
+	}
+	return res
+}
+
+func vectorsOK(res *mtproto.Messages_Messages) bool {
+	return res != nil && len(res.GetMessages()) > 0 && len(res.GetChats()) > 0 && len(res.GetUsers()) > 0
+}
+
+func roundTripMessages(res *mtproto.Messages_Messages, layer int32) *mtproto.Messages_Messages {
+	if layer <= 0 {
+		layer = mtproto.Layer
+	}
+	buf := mtproto.NewEncodeBuf(8192)
+	if err := res.Encode(buf, layer); err != nil {
+		return nil
+	}
+	d := mtproto.NewDecodeBuf(buf.GetBuf())
+	obj := d.Object()
+	if err := d.GetError(); err != nil || obj == nil {
+		return nil
+	}
+	switch v := obj.(type) {
+	case *mtproto.TLMessagesMessagesSlice:
+		return v.To_Messages_Messages()
+	case *mtproto.TLMessagesChannelMessages:
+		return v.To_Messages_Messages()
+	case *mtproto.TLMessagesMessages:
+		return v.To_Messages_Messages()
+	default:
+		return nil
+	}
 }
 
 func (c *MessagesCore) fillPostChats(res *mtproto.Messages_Messages) {
@@ -61,12 +146,17 @@ func (c *MessagesCore) fillPostChats(res *mtproto.Messages_Messages) {
 	}
 	if chats := channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...); len(chats) > 0 {
 		res.Chats = chats
-		return
 	}
-	if len(res.Chats) > 0 {
-		return
+	have := map[int64]bool{}
+	for _, chat := range res.Chats {
+		if chat != nil {
+			have[chat.GetId()] = true
+		}
 	}
 	for _, id := range ids {
+		if have[id] {
+			continue
+		}
 		res.Chats = append(res.Chats, mtproto.MakeTLChannel(&mtproto.Chat{
 			Broadcast: true,
 			Id:        id,
@@ -109,10 +199,16 @@ func (c *MessagesCore) fillPostUsers(res *mtproto.Messages_Messages) {
 			}
 		}
 	}
-	if len(res.Users) > 0 {
-		return
+	have := map[int64]bool{}
+	for _, user := range res.Users {
+		if user != nil {
+			have[user.GetId()] = true
+		}
 	}
 	for _, id := range ids {
+		if have[id] {
+			continue
+		}
 		res.Users = append(res.Users, mtproto.MakeTLUserEmpty(&mtproto.User{Id: id}).To_User())
 	}
 }
