@@ -36,8 +36,10 @@ func (c *UserCore) UserGetGlobalPrivacySettings(in *user.TLUserGetGlobalPrivacyS
 	//	new_noncontact_peers_require_premium:flags.4?true = GlobalPrivacySettings;
 	do, err := c.svcCtx.Dao.UserGlobalPrivacySettingsDAO.Select(c.ctx, in.UserId)
 	if err != nil {
+		// A missing row is (nil, nil) and stays the empty settings object.
+		// A database error is not that row.
 		c.Logger.Errorf("user.getGlobalPrivacySettings - error: %v", err)
-		return rV, nil
+		return nil, err
 	} else if do == nil {
 		c.Logger.Infof("user.getGlobalPrivacySettings - not found by %d", in.UserId)
 		return rV, nil

@@ -28,14 +28,17 @@ func (c *UserCore) UserSetGlobalPrivacySettings(in *user.TLUserSetGlobalPrivacyS
 		archiveAndMuteNewNoncontactPeers = in.GetSettings().GetArchiveAndMuteNewNoncontactPeers_FLAGBOOLEAN()
 	}
 
-	c.svcCtx.Dao.UserGlobalPrivacySettingsDAO.InsertOrUpdate(c.ctx, &dataobject.UserGlobalPrivacySettingsDO{
+	if _, _, err := c.svcCtx.Dao.UserGlobalPrivacySettingsDAO.InsertOrUpdate(c.ctx, &dataobject.UserGlobalPrivacySettingsDO{
 		UserId:                           in.UserId,
 		ArchiveAndMuteNewNoncontactPeers: archiveAndMuteNewNoncontactPeers,
 		KeepArchivedUnmuted:              in.GetSettings().GetKeepArchivedUnmuted(),
 		KeepArchivedFolders:              in.GetSettings().GetKeepArchivedFolders(),
 		HideReadMarks:                    in.GetSettings().GetHideReadMarks(),
 		NewNoncontactPeersRequirePremium: in.GetSettings().GetNewNoncontactPeersRequirePremium(),
-	})
+	}); err != nil {
+		c.Logger.Errorf("user.setGlobalPrivacySettings - error: %v", err)
+		return nil, err
+	}
 
 	return mtproto.BoolTrue, nil
 }
