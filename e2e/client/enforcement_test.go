@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -371,12 +373,37 @@ func emailCodePattern(email string) *regexp.Regexp {
 
 func teamgramLogs(t *testing.T) string {
 	t.Helper()
-	cmd := exec.Command("docker", composeArgs("logs", "--since", "3m", "teamgram")...)
+	// bff writes Log.Mode file under /app/logs/bff, which compose mounts at
+	// data/logs. docker logs does not contain the email code line.
+	root := os.Getenv("TELLOMI_E2E_ROOT")
+	if root == "" {
+		root = "."
+	}
+	var b strings.Builder
+	_ = filepath.Walk(filepath.Join(root, "data", "logs"), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || info.Size() == 0 {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		if info.Size() > 2<<20 {
+			_, _ = f.Seek(info.Size()-(2<<20), io.SeekStart)
+		}
+		raw, _ := io.ReadAll(f)
+		b.Write(raw)
+		b.WriteByte('\n')
+		return nil
+	})
+	cmd := exec.Command("docker", composeArgs("exec", "-T", "teamgram", "bash", "-c", `grep -R -h "tellomi email verification code to=" /app/logs 2>/dev/null || true`)...)
 	if dir := os.Getenv("TELLOMI_E2E_ROOT"); dir != "" {
 		cmd.Dir = dir
 	}
-	out, _ := cmd.CombinedOutput()
-	return string(out)
+	out, _ := cmd.Output()
+	b.Write(out)
+	return b.String()
 }
 
 func waitAdmin(t *testing.T, ctx context.Context, c *Client, needle string) {
