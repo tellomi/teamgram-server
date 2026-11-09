@@ -191,6 +191,10 @@ func (c *MessagesCore) MessagesSendMedia(in *mtproto.TLMessagesSendMedia) (*mtpr
 	}
 	chatbox.Shared().NoteSent(c.ctx, c.MD.UserId, peer, rUpdate)
 
+	if in.GetScheduleDate().GetValue() == 0 {
+		c.noteTellomi(c.MD.UserId, peer, in.Message, in.Entities, in.RandomId, replyTarget(in.GetReplyToMsgId(), in.GetReplyTo()), rUpdate, true)
+	}
+
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {

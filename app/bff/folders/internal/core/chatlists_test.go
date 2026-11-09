@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 )
 
 func TestParseInviteSlug(t *testing.T) {
@@ -27,8 +29,23 @@ func TestParseInviteSlug(t *testing.T) {
 	if !ok || gotOwner != 9 || gotID != 3 {
 		t.Fatalf("roundtrip %s -> %d %d %v", slug, gotOwner, gotID, ok)
 	}
-	if !strings.HasPrefix(inviteURL(slug), "https://t.me/addlist/c9_3_") {
+	if !strings.HasPrefix(inviteURL(slug), brand.LinkBase()+"/addlist/c9_3_") {
 		t.Fatal(inviteURL(slug))
+	}
+}
+
+func TestInviteURLUsesBrandHost(t *testing.T) {
+	t.Setenv("TELLOMI_LINK_BASE_URL", "")
+	t.Setenv("TEAMGRAM_TME_HOST", "")
+	if got := inviteURL("c9_3_abcd"); got != "https://tell.cc/addlist/c9_3_abcd" {
+		t.Fatal(got)
+	}
+	if strings.Contains(inviteURL("c9_3_abcd"), "t.me") {
+		t.Fatal(inviteURL("c9_3_abcd"))
+	}
+	t.Setenv("TELLOMI_LINK_BASE_URL", "https://links.example")
+	if got := inviteURL("c9_3_abcd"); got != "https://links.example/addlist/c9_3_abcd" {
+		t.Fatal(got)
 	}
 }
 
@@ -235,6 +252,21 @@ func TestMissingAndHidePeers(t *testing.T) {
 	left := subtractRefs(inv.Peers, []peerRef{{Kind: "channel", ID: 1}})
 	if len(left) != 1 || left[0].ID != 2 {
 		t.Fatalf("subtract %+v", left)
+	}
+}
+
+func TestCountStoredFoldersSkipsAllChats(t *testing.T) {
+	rows := []*dialog.DialogFilterExt{
+		nil,
+		{Id: dialog.DialogFilterDefaultID, Order: 3},
+		folderRow(2, 2),
+		folderRow(3, 1),
+	}
+	if n := countStoredFolders(rows); n != 2 {
+		t.Fatalf("slots %d", n)
+	}
+	if n := countStoredFolders(nil); n != 0 {
+		t.Fatalf("empty %d", n)
 	}
 }
 

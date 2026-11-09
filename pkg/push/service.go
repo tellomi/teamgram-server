@@ -2,13 +2,23 @@ package push
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/zeromicro/go-zero/core/logx"
 )
+
+// sendConcurrency is how many device pushes for one message run at once.
+// Each APNs round trip is about 220ms. Sending them one after another left
+// the phone that just registered waiting behind older devices. One failure
+// does not cancel the others: a dead token must not drop the live phone.
+const sendConcurrency = 4
 
 // SettingsReader loads per-chat and global notify settings.
 type SettingsReader interface {
@@ -160,25 +170,42 @@ func (s *Service) fillNames(ctx context.Context, m *Incoming) {
 }
 
 func (s *Service) send(ctx context.Context, devices []Device, m Incoming, d Decision) {
+	if len(devices) == 0 {
+		return
+	}
+	devices = append([]Device(nil), devices...)
+	sortDevicesNewestFirst(devices)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, sendConcurrency)
 	for _, dev := range devices {
-		// account.updateDeviceLocked: a passcode hides the message text.
-		dd := d
-		if dev.LockedPeriod > 0 {
-			dd.Preview = false
-		}
-		switch dev.TokenType {
-		case TokenAPNS:
-			s.sendAPNS(ctx, dev, m, dd)
-		case TokenFCM:
-			s.sendFCM(ctx, dev, m, dd)
-		case TokenHuawei:
-			s.sendHuawei(ctx, dev, m, dd)
-		case TokenXiaomi:
-			s.sendXiaomi(ctx, dev, m, dd)
-		case TokenAPNSVoIP:
-			// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
-		default:
-		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(dev Device) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.sendDevice(ctx, dev, m, d)
+		}(dev)
+	}
+	wg.Wait()
+}
+
+func (s *Service) sendDevice(ctx context.Context, dev Device, m Incoming, d Decision) {
+	// account.updateDeviceLocked: a passcode hides the message text.
+	if dev.LockedPeriod > 0 {
+		d.Preview = false
+	}
+	switch dev.TokenType {
+	case TokenAPNS:
+		s.sendAPNS(ctx, dev, m, d)
+	case TokenFCM:
+		s.sendFCM(ctx, dev, m, d)
+	case TokenHuawei:
+		s.sendHuawei(ctx, dev, m, d)
+	case TokenXiaomi:
+		s.sendXiaomi(ctx, dev, m, d)
+	case TokenAPNSVoIP:
+		// Message alerts never use a PushKit token. Incoming calls go through sendVoIP.
+	default:
 	}
 }
 
@@ -192,11 +219,44 @@ func (s *Service) sendAPNS(ctx context.Context, dev Device, m Incoming, d Decisi
 		return
 	}
 	err = s.apns.Send(ctx, dev.Token, dev.AppSandbox, alert.Outer)
+	status, reason := apnsStatus(err)
+	// key_id is the first 8 bytes of the id carried at the front of p.
+	// The secret and the rest of p are not logged.
+	logx.WithContext(ctx).Infof("push: apns user=%d msg=%d key_id=%s bytes=%d status=%d reason=%s",
+		m.UserID, m.MsgID, apnsKeyIDHex(alert.Outer), len(alert.Outer), status, reason)
 	if err == nil {
 		return
 	}
 	s.forgetIfUnregistered(ctx, dev, err)
 	logx.WithContext(ctx).Errorf("push: apns user=%d msg=%d token=%s: %v", m.UserID, m.MsgID, tokenTail(dev.Token), err)
+}
+
+func apnsStatus(err error) (int, string) {
+	if err == nil {
+		return http.StatusOK, ""
+	}
+	var ae *APNSError
+	if errors.As(err, &ae) {
+		return ae.Status, ae.Reason
+	}
+	return 0, err.Error()
+}
+
+// apnsKeyIDHex is the first 8 bytes of the notification key id inside p,
+// hex-encoded. p is key id (8) || msg_key (16) || ciphertext. An alert with
+// no p returns "-".
+func apnsKeyIDHex(outer []byte) string {
+	var wrap struct {
+		P string `json:"p"`
+	}
+	if err := json.Unmarshal(outer, &wrap); err != nil || wrap.P == "" {
+		return "-"
+	}
+	raw, err := decodeP(wrap.P)
+	if err != nil || len(raw) < 8 {
+		return "-"
+	}
+	return hex.EncodeToString(raw[:8])
 }
 
 // sendVoIP rings token_type 9 devices, and token types 2 and 13 when those

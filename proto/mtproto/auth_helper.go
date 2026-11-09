@@ -6,6 +6,8 @@
 
 package mtproto
 
+import "fmt"
+
 const (
 	AuthStateUnknown      = 0
 	AuthStateNew          = 1
@@ -62,4 +64,14 @@ func (k *AuthKeyInfo) BoundPermAuthKeyId() int64 {
 		return k.AuthKeyId
 	}
 	return 0
+}
+
+// AuthKeyLogLabel is the only form of an auth key that logs may contain.
+// The key bytes themselves are never included.
+func AuthKeyLogLabel(k *AuthKeyInfo) string {
+	if k == nil {
+		return "auth_key_id=0"
+	}
+	return fmt.Sprintf("auth_key_id=%d auth_key_type=%d perm_auth_key_id=%d temp_auth_key_id=%d media_temp_auth_key_id=%d",
+		k.AuthKeyId, k.AuthKeyType, k.PermAuthKeyId, k.TempAuthKeyId, k.MediaTempAuthKeyId)
 }

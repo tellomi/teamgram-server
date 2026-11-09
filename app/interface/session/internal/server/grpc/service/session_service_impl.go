@@ -22,14 +22,14 @@ import (
 // session.queryAuthKey auth_key_id:long = AuthKeyInfo;
 func (s *Service) SessionQueryAuthKey(ctx context.Context, request *session.TLSessionQueryAuthKey) (*mtproto.AuthKeyInfo, error) {
 	c := core.New(ctx, s.svcCtx)
-	c.Logger.Debugf("session.queryAuthKey - metadata: %s, request: %s", c.MD, request)
+	c.Logger.Debugf("session.queryAuthKey - auth_key_id: %d", request.GetAuthKeyId())
 
 	r, err := c.SessionQueryAuthKey(request)
 	if err != nil {
 		return nil, err
 	}
 
-	c.Logger.Debugf("session.queryAuthKey - reply: %s", r)
+	c.Logger.Debugf("session.queryAuthKey - reply: %s", mtproto.AuthKeyLogLabel(r))
 	return r, err
 }
 
@@ -37,7 +37,7 @@ func (s *Service) SessionQueryAuthKey(ctx context.Context, request *session.TLSe
 // session.setAuthKey auth_key:AuthKeyInfo future_salt:FutureSalt expires_in:int = Bool;
 func (s *Service) SessionSetAuthKey(ctx context.Context, request *session.TLSessionSetAuthKey) (*mtproto.Bool, error) {
 	c := core.New(ctx, s.svcCtx)
-	c.Logger.Debugf("session.setAuthKey - metadata: %s, request: %s", c.MD, request)
+	c.Logger.Debugf("session.setAuthKey - %s expires_in: %d", mtproto.AuthKeyLogLabel(request.GetAuthKey()), request.GetExpiresIn())
 
 	r, err := c.SessionSetAuthKey(request)
 	if err != nil {

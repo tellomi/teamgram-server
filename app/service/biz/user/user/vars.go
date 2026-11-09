@@ -29,59 +29,64 @@ const (
 )
 
 const (
-	BotGifId          = int64(101)
-	BotGifName        = "gif"
-	BotVidId          = int64(102)
-	BotVidName        = "vid"
-	BotPicId          = int64(103)
-	BotPicName        = "pic"
-	BotBingId         = int64(104)
-	BotBingName       = "bing"
-	BotWikiId         = int64(105)
-	BotWikiName       = "wiki"
-	BotImdbId         = int64(106)
-	BotImdbName       = "imdb"
-	BotBoldId         = int64(107)
-	BotBoldName       = "bold"
-	BotYoutubeId      = int64(108)
-	BotYoutubeName    = "youtube"
-	BotMusicId        = int64(109)
-	BotMusicName      = "music"
-	BotFoursquareId   = int64(110)
+	BotGifId       = int64(101)
+	BotGifName     = "gif"
+	BotVidId       = int64(102)
+	BotVidName     = "vid"
+	BotPicId       = int64(103)
+	BotPicName     = "pic"
+	BotBingId      = int64(104)
+	BotBingName    = "bing"
+	BotWikiId      = int64(105)
+	BotWikiName    = "wiki"
+	BotImdbId      = int64(106)
+	BotImdbName    = "imdb"
+	BotBoldId      = int64(107)
+	BotBoldName    = "bold"
+	BotYoutubeId   = int64(108)
+	BotYoutubeName = "youtube"
+	BotMusicId     = int64(109)
+	BotMusicName   = "music"
+	BotVenueId     = int64(110)
+	BotVenueName   = "venue"
+	BotStickerId   = int64(111)
+	BotStickerName = "sticker"
+
+	// BotFoursquareId is the historical name of the reserved id 110.
+	// The built-in bot username is venue, not foursquare.
+	BotFoursquareId   = BotVenueId
 	BotFoursquareName = "foursquare"
-	BotStickerId      = int64(111)
-	BotStickerName    = "sticker"
 )
 
 var (
 	botIdNameMap = map[int64]string{
-		BotFatherId:     BotFatherName,
-		BotGifId:        BotGifName,
-		BotVidId:        BotVidName,
-		BotPicId:        BotPicName,
-		BotBingId:       BotBingName,
-		BotWikiId:       BotWikiName,
-		BotImdbId:       BotImdbName,
-		BotBoldId:       BotBoldName,
-		BotYoutubeId:    BotYoutubeName,
-		BotMusicId:      BotMusicName,
-		BotFoursquareId: BotFoursquareName,
-		BotStickerId:    BotStickerName,
+		BotFatherId:  BotFatherName,
+		BotGifId:     BotGifName,
+		BotVidId:     BotVidName,
+		BotPicId:     BotPicName,
+		BotBingId:    BotBingName,
+		BotWikiId:    BotWikiName,
+		BotImdbId:    BotImdbName,
+		BotBoldId:    BotBoldName,
+		BotYoutubeId: BotYoutubeName,
+		BotMusicId:   BotMusicName,
+		BotVenueId:   BotVenueName,
+		BotStickerId: BotStickerName,
 	}
 
 	botNameIdMap = map[string]int64{
-		BotFatherName:     BotFatherId,
-		BotGifName:        BotGifId,
-		BotVidName:        BotVidId,
-		BotPicName:        BotPicId,
-		BotBingName:       BotBingId,
-		BotWikiName:       BotWikiId,
-		BotImdbName:       BotImdbId,
-		BotBoldName:       BotBoldId,
-		BotYoutubeName:    BotYoutubeId,
-		BotMusicName:      BotMusicId,
-		BotFoursquareName: BotFoursquareId,
-		BotStickerName:    BotStickerId,
+		BotFatherName:  BotFatherId,
+		BotGifName:     BotGifId,
+		BotVidName:     BotVidId,
+		BotPicName:     BotPicId,
+		BotBingName:    BotBingId,
+		BotWikiName:    BotWikiId,
+		BotImdbName:    BotImdbId,
+		BotBoldName:    BotBoldId,
+		BotYoutubeName: BotYoutubeId,
+		BotMusicName:   BotMusicId,
+		BotVenueName:   BotVenueId,
+		BotStickerName: BotStickerId,
 	}
 )
 
@@ -111,6 +116,10 @@ func IsBotGif(id int64) bool {
 	return id == BotGifId
 }
 
+func IsBotVenue(id int64) bool {
+	return id == BotVenueId
+}
+
 func IsBotFoursquare(id int64) bool {
-	return id == BotFoursquareId
+	return IsBotVenue(id)
 }

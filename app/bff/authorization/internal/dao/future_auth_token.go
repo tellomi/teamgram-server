@@ -19,6 +19,10 @@ const (
 )
 
 func (d *Dao) PutFutureAuthToken(ctx context.Context, futureAuthToken []byte, authKeyId int64) error {
+	// A process with no redis still has to finish logout. The token is not stored.
+	if d == nil || d.kv == nil {
+		return nil
+	}
 	k := futureAuthTokenPrefix + hash.Md5Hex(futureAuthToken)
 	return d.kv.SetexCtx(ctx, k, strconv.FormatInt(authKeyId, 10), futureAuthTokenTimeout)
 }

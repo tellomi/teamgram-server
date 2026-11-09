@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	langpackdata "github.com/teamgram/teamgram-server/data/langpack"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -93,7 +94,11 @@ type Language struct {
 	BaseLangCode    string
 	TranslationsURL string
 	Version         int32
-	Strings         []Entry
+	// AndroidXMLFixVersion is the first Android pack version whose strings
+	// survive stock Android's XML writer. Zero means this pack has no such
+	// cutover. A client still below it receives the whole pack.
+	AndroidXMLFixVersion int32
+	Strings              []Entry
 }
 
 type loaded struct {
@@ -104,13 +109,17 @@ type loaded struct {
 
 // Catalog is every platform pack loaded at startup.
 type Catalog struct {
-	platforms map[string]map[string]*loaded
+	platforms       map[string]map[string]*loaded
+	androidXMLDrops map[string]int
 }
 
 // NewCatalog builds a catalog from already-decoded languages.
 // platforms maps platform -> lang code -> language.
 func NewCatalog(platforms map[string]map[string]*Language) *Catalog {
-	c := &Catalog{platforms: map[string]map[string]*loaded{}}
+	c := &Catalog{
+		platforms:       map[string]map[string]*loaded{},
+		androidXMLDrops: map[string]int{},
+	}
 	for platform, langs := range platforms {
 		platform = NormalizePlatform(platform)
 		dst := map[string]*loaded{}
@@ -118,7 +127,11 @@ func NewCatalog(platforms map[string]map[string]*Language) *Catalog {
 			if lang == nil {
 				continue
 			}
-			dst[code] = indexLanguage(platform, lang)
+			loadedLang, dropped := indexLanguage(platform, lang)
+			dst[code] = loadedLang
+			if platform == "android" {
+				c.androidXMLDrops[code] = dropped
+			}
 		}
 		if len(dst) > 0 {
 			c.platforms[platform] = dst
@@ -127,20 +140,27 @@ func NewCatalog(platforms map[string]map[string]*Language) *Catalog {
 	return c
 }
 
-func indexLanguage(platform string, lang *Language) *loaded {
+func indexLanguage(platform string, lang *Language) (*loaded, int) {
 	l := &loaded{
 		meta:   *lang,
 		byKey:  map[string]Entry{},
 		plural: map[string]Entry{},
 	}
+	kept := make([]Entry, 0, len(lang.Strings))
+	dropped := 0
 	maxV := lang.Version
 	for _, e := range lang.Strings {
+		if platform == "android" && !androidEntrySafe(e) {
+			dropped++
+			continue
+		}
 		if e.Version <= 0 {
 			e.Version = 1
 		}
 		if e.Version > maxV {
 			maxV = e.Version
 		}
+		kept = append(kept, e)
 		l.byKey[e.Key] = e
 		if e.Plural != nil && e.Plural.any() {
 			for _, suf := range suffixTable(platform) {
@@ -151,13 +171,14 @@ func indexLanguage(platform string, lang *Language) *loaded {
 			}
 		}
 	}
+	l.meta.Strings = kept
 	if l.meta.Version < maxV {
 		l.meta.Version = maxV
 	}
 	if l.meta.Version <= 0 {
 		l.meta.Version = 1
 	}
-	return l
+	return l, dropped
 }
 
 type suffix struct {
@@ -380,6 +401,15 @@ func (c *Catalog) Difference(platform, code string, fromVersion int32) (*mtproto
 		fromVersion = 0
 	}
 	platform = NormalizePlatform(platform)
+	// Stock Android writes the difference into an XML file and, on the next
+	// launch, merges the next difference into that file. A file that failed
+	// to parse comes back as an empty map, so a partial difference would
+	// replace the whole language with a handful of strings. from_version 0
+	// is the client's signal to replace the file. Clients already at the
+	// fix version keep the normal incremental difference.
+	if platform == "android" && fromVersion > 0 && l.meta.AndroidXMLFixVersion > 0 && fromVersion < l.meta.AndroidXMLFixVersion {
+		fromVersion = 0
+	}
 	var strings []*mtproto.LangPackString
 	for _, e := range l.meta.Strings {
 		ver := e.Version
@@ -475,17 +505,18 @@ func plainString(key, value string) *mtproto.LangPackString {
 }
 
 type filePack struct {
-	LangCode        string       `json:"lang_code"`
-	Name            string       `json:"name"`
-	NativeName      string       `json:"native_name"`
-	PluralCode      string       `json:"plural_code"`
-	Official        bool         `json:"official"`
-	RTL             bool         `json:"rtl"`
-	Beta            bool         `json:"beta"`
-	BaseLangCode    string       `json:"base_lang_code"`
-	TranslationsURL string       `json:"translations_url"`
-	Version         int32        `json:"version"`
-	Strings         []fileString `json:"strings"`
+	LangCode             string       `json:"lang_code"`
+	Name                 string       `json:"name"`
+	NativeName           string       `json:"native_name"`
+	PluralCode           string       `json:"plural_code"`
+	Official             bool         `json:"official"`
+	RTL                  bool         `json:"rtl"`
+	Beta                 bool         `json:"beta"`
+	BaseLangCode         string       `json:"base_lang_code"`
+	TranslationsURL      string       `json:"translations_url"`
+	Version              int32        `json:"version"`
+	AndroidXMLFixVersion int32        `json:"android_xml_fix_version,omitempty"`
+	Strings              []fileString `json:"strings"`
 }
 
 type fileString struct {
@@ -581,7 +612,48 @@ func Load(fsys fs.FS) (*Catalog, error) {
 			platforms[platform] = langs
 		}
 	}
-	return NewCatalog(platforms), nil
+	cat := NewCatalog(platforms)
+	cat.logAndroidXMLDrops()
+	return cat, nil
+}
+
+// AndroidXMLDrops is how many strings indexLanguage removed from an Android
+// pack because stock Android could not store them as XML. A repaired pack
+// is zero.
+func (c *Catalog) AndroidXMLDrops(code string) int {
+	if c == nil {
+		return 0
+	}
+	return c.androidXMLDrops[packCode(code)]
+}
+
+// AndroidXMLFixVersion is the Android pack version that replaces a cached
+// locale file. Zero means the pack has no cutover.
+func (c *Catalog) AndroidXMLFixVersion(platform, code string) int32 {
+	l, ok := c.lookup(platform, code)
+	if !ok {
+		return 0
+	}
+	return l.meta.AndroidXMLFixVersion
+}
+
+func (c *Catalog) logAndroidXMLDrops() {
+	if c == nil {
+		return
+	}
+	total := 0
+	codes := make([]string, 0, len(c.androidXMLDrops))
+	for code, n := range c.androidXMLDrops {
+		total += n
+		if n > 0 {
+			codes = append(codes, code)
+		}
+	}
+	sort.Strings(codes)
+	for _, code := range codes {
+		logx.Errorf("langpack: android %s dropped %d strings that stock Android cannot store as XML", code, c.androidXMLDrops[code])
+	}
+	logx.Infof("langpack: android xml guard dropped %d strings", total)
 }
 
 func knownPlatformDir(name string) bool {
@@ -624,16 +696,17 @@ func decodeLanguage(body []byte) (*Language, error) {
 		return nil, errSkipLegacyPack
 	}
 	lang := &Language{
-		Code:            raw.LangCode,
-		Name:            raw.Name,
-		NativeName:      raw.NativeName,
-		PluralCode:      raw.PluralCode,
-		Official:        raw.Official,
-		RTL:             raw.RTL,
-		Beta:            raw.Beta,
-		BaseLangCode:    raw.BaseLangCode,
-		TranslationsURL: brand.Rewrite(raw.TranslationsURL),
-		Version:         raw.Version,
+		Code:                 raw.LangCode,
+		Name:                 raw.Name,
+		NativeName:           raw.NativeName,
+		PluralCode:           raw.PluralCode,
+		Official:             raw.Official,
+		RTL:                  raw.RTL,
+		Beta:                 raw.Beta,
+		BaseLangCode:         raw.BaseLangCode,
+		TranslationsURL:      brand.Rewrite(raw.TranslationsURL),
+		Version:              raw.Version,
+		AndroidXMLFixVersion: raw.AndroidXMLFixVersion,
 	}
 	if canon, ok := CanonicalLang(lang.Code); ok {
 		lang.Code = canon

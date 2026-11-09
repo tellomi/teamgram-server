@@ -119,6 +119,37 @@ func (s *memoryStore) ListByOwner(ctx context.Context, owner Owner) ([]*Record, 
 	return s.listLocked(owner), nil
 }
 
+func (s *memoryStore) ListActiveByOwners(ctx context.Context, kind Kind, ids []int64, now int32) ([]*Record, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	want := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Record
+	for owner, byID := range s.stories {
+		if owner.Kind != kind || !want[owner.ID] {
+			continue
+		}
+		for _, rec := range byID {
+			if rec == nil || rec.Deleted || rec.Item == nil || rec.Item.ExpireDate <= now {
+				continue
+			}
+			out = append(out, cloneRecord(rec))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Owner.ID != out[j].Owner.ID {
+			return out[i].Owner.ID < out[j].Owner.ID
+		}
+		return out[i].id() < out[j].id()
+	})
+	return out, nil
+}
+
 func (s *memoryStore) listLocked(owner Owner) []*Record {
 	out := make([]*Record, 0, len(s.stories[owner]))
 	for _, rec := range s.stories[owner] {

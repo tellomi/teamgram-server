@@ -23,11 +23,18 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/location"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 )
+
+func stampedGeo(in *mtproto.InputGeoPoint) *mtproto.GeoPoint {
+	g := mtproto.MakeGeoPointByInput(in)
+	location.Stamp(g)
+	return g
+}
 
 // MessagesUploadMedia
 // messages.uploadMedia#519bc2b1 peer:InputPeer media:InputMedia = MessageMedia;
@@ -102,7 +109,7 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 		// inputMediaGeoPoint#f9c44144 geo_point:InputGeoPoint = InputMedia;
 
 		messageMedia = mtproto.MakeTLMessageMediaGeo(&mtproto.MessageMedia{
-			Geo: mtproto.MakeGeoPointByInput(media.To_InputMediaGeoPoint().GetGeoPoint()),
+			Geo: stampedGeo(media.To_InputMediaGeoPoint().GetGeoPoint()),
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaContact:
 		// inputMediaContact#f8ab7dfb
@@ -186,7 +193,7 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 		venue := media.To_InputMediaVenue()
 		// messageMediaVenue#2ec0533f geo:GeoPoint title:string address:string provider:string venue_id:string venue_type:string = MessageMedia;
 		messageMedia = mtproto.MakeTLMessageMediaVenue(&mtproto.MessageMedia{
-			Geo:       mtproto.MakeGeoPointByInput(venue.GetGeoPoint()),
+			Geo:       stampedGeo(venue.GetGeoPoint()),
 			Title:     venue.GetTitle(),
 			Address:   venue.GetAddress(),
 			Provider:  venue.GetProvider_STRING(),
@@ -215,7 +222,7 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 		// inputMediaGeoLive#971fa843 flags:# stopped:flags.0?true geo_point:InputGeoPoint heading:flags.2?int period:flags.1?int proximity_notification_radius:flags.3?int = InputMedia;
 
 		messageMedia = mtproto.MakeTLMessageMediaGeoLive(&mtproto.MessageMedia{
-			Geo:    mtproto.MakeGeoPointByInput(media.To_InputMediaGeoLive().GetGeoPoint()),
+			Geo:    stampedGeo(media.To_InputMediaGeoLive().GetGeoPoint()),
 			Period: media.To_InputMediaGeoLive().GetPeriod().GetValue(),
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaPoll:

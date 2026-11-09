@@ -58,6 +58,8 @@ func TestUploadAndGetUseTheSameObject(t *testing.T) {
 			{StorageClass: "emoji", ObjectPath: emojiPath, AssetPath: "assets/noto/1f600.tgs", MIME: "application/x-tgsticker"},
 			// A second pack row for the same emoji object must not be a second key.
 			{StorageClass: "emoji", ObjectPath: emojiPath, AssetPath: "assets/noto/1f600.tgs", MIME: "application/x-tgsticker"},
+			// A pack imported with -dir has no embedded asset and must not fail the seed pass.
+			{StorageClass: "stickers", ObjectPath: "44.dat", MIME: "image/webp"},
 		},
 	}}
 	if err = uploadAssets(context.Background(), packs); err != nil {
@@ -68,6 +70,11 @@ func TestUploadAndGetUseTheSameObject(t *testing.T) {
 	}
 	if !fake.has("tellomi-prod-public-media", "emoji/"+emojiPath, tgs) {
 		t.Fatalf("emoji key missing, objects=%v", fake.keys("tellomi-prod-public-media"))
+	}
+	for _, key := range fake.keys("tellomi-prod-public-media") {
+		if key == "stickers/44.dat" {
+			t.Fatal("seed pass uploaded an imported item with no embedded asset")
+		}
 	}
 	if len(fake.keys("tellomi-prod-attachments")) != 0 {
 		t.Fatalf("stickers were written to the attachments bucket: %v", fake.keys("tellomi-prod-attachments"))

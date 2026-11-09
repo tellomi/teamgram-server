@@ -19,6 +19,7 @@
 package core
 
 import (
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -230,6 +231,22 @@ func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMed
 		return nil, err
 	}
 	chatbox.Shared().NoteSent(c.ctx, c.MD.UserId, peer, rUpdate)
+
+	if in.GetScheduleDate().GetValue() == 0 && len(in.MultiMedia) > 0 {
+		caption := ""
+		var ents []*mtproto.MessageEntity
+		random := in.MultiMedia[0].RandomId
+		for _, media := range in.MultiMedia {
+			if strings.TrimSpace(media.GetMessage()) == "" {
+				continue
+			}
+			caption = media.GetMessage()
+			ents = media.GetEntities()
+			random = media.RandomId
+			break
+		}
+		c.noteTellomi(c.MD.UserId, peer, caption, ents, random, replyTarget(in.GetReplyToMsgId(), in.GetReplyTo()), rUpdate, caption == "")
+	}
 
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)

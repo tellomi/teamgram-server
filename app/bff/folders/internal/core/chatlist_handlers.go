@@ -228,7 +228,7 @@ func (c *FoldersCore) ChatlistsJoinChatlistInvite(in *mtproto.TLChatlistsJoinCha
 	if err != nil {
 		return nil, err
 	}
-	if c.countJoined(rows) >= c.joinedCap() || len(rows) >= premium.Limit(premium.FeatureDialogFilters, c.premiumMember()) {
+	if c.countJoined(rows) >= c.joinedCap() || countStoredFolders(rows) >= premium.Limit(premium.FeatureDialogFilters, c.premiumMember()) {
 		return nil, mtproto.ErrChatlistsTooMuch
 	}
 	title := inv.Title

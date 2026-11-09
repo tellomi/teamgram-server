@@ -73,10 +73,13 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 	if LookupStories != nil && ch != nil {
 		att := LookupStories(ctx, viewer, ch.ID)
 		if att.MaxID > 0 {
+			chat.StoriesUnavailable = false
 			chat.StoriesMaxId_FLAGRECENTSTORY = mtproto.MakeTLRecentStory(&mtproto.RecentStory{
 				Live:  att.Live,
 				MaxId: &wrapperspb.Int32Value{Value: att.MaxID},
 			}).To_RecentStory()
+		} else if !chat.Min {
+			chat.StoriesUnavailable = true
 		}
 		chat.StoriesHidden = att.Hidden
 	}

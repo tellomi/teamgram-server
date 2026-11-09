@@ -46,7 +46,7 @@
       "value": "gif"
     },
     "venue_search_username": {
-      "value": "foursquare"
+      "value": "venue"
     },
     "img_search_username": {
       "value": "bing"
@@ -56,7 +56,7 @@
     },
     "caption_length_max": 200,
     "message_length_max": 4096,
-    "webfile_dc_id": 4,
+    "webfile_dc_id": 1,
     "suggested_lang_code": {
       "value": "en"
     },

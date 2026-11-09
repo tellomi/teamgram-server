@@ -231,226 +231,226 @@
     "android/en": {
       "source_file": "android_en_v61510239.xml",
       "source_version": 61510239,
-      "strings": 11823,
-      "bytes_gz": 190223,
-      "version": 61510242
+      "strings": 11795,
+      "bytes_gz": 189847,
+      "version": 61638734
     },
     "android/ar": {
       "source_file": "android_ar_v61561860.xml",
       "source_version": 61561860,
-      "strings": 11823,
-      "bytes_gz": 248204,
-      "version": 61561863
+      "strings": 11795,
+      "bytes_gz": 247772,
+      "version": 61638734
     },
     "android/be": {
       "source_file": "android_be_v61501749.xml",
       "source_version": 61501749,
-      "strings": 11823,
-      "bytes_gz": 268426,
-      "version": 61501752
+      "strings": 11795,
+      "bytes_gz": 268010,
+      "version": 61638734
     },
     "android/ca": {
       "source_file": "android_ca_v61550386.xml",
       "source_version": 61550386,
-      "strings": 11823,
-      "bytes_gz": 224353,
-      "version": 61550389
+      "strings": 11795,
+      "bytes_gz": 223955,
+      "version": 61638734
     },
     "android/cs": {
       "source_file": "android_cs_v61557644.xml",
       "source_version": 61557644,
-      "strings": 11823,
-      "bytes_gz": 240418,
-      "version": 61557647
+      "strings": 11795,
+      "bytes_gz": 240011,
+      "version": 61638734
     },
     "android/de": {
       "source_file": "android_de_v61527273.xml",
       "source_version": 61527273,
-      "strings": 11823,
-      "bytes_gz": 232987,
-      "version": 61527276
+      "strings": 11795,
+      "bytes_gz": 232612,
+      "version": 61638734
     },
     "android/el": {
       "source_file": "android_el_v61638730.xml",
       "source_version": 61638730,
-      "strings": 11823,
-      "bytes_gz": 274421,
-      "version": 61638733
+      "strings": 11795,
+      "bytes_gz": 273953,
+      "version": 61638734
     },
     "android/es": {
       "source_file": "android_es_v61544495.xml",
       "source_version": 61544495,
-      "strings": 11823,
-      "bytes_gz": 222180,
-      "version": 61544498
+      "strings": 11795,
+      "bytes_gz": 221800,
+      "version": 61638734
     },
     "android/fa": {
       "source_file": "android_fa_v61544497.xml",
       "source_version": 61544497,
-      "strings": 11823,
-      "bytes_gz": 247200,
-      "version": 61544500
+      "strings": 11795,
+      "bytes_gz": 246771,
+      "version": 61638734
     },
     "android/fi": {
       "source_file": "android_fi_v61515898.xml",
       "source_version": 61515898,
-      "strings": 11823,
-      "bytes_gz": 225962,
-      "version": 61515901
+      "strings": 11795,
+      "bytes_gz": 225570,
+      "version": 61638734
     },
     "android/fr": {
       "source_file": "android_fr_v61544262.xml",
       "source_version": 61544262,
-      "strings": 11823,
-      "bytes_gz": 233088,
-      "version": 61544265
+      "strings": 11795,
+      "bytes_gz": 232688,
+      "version": 61638734
     },
     "android/he": {
       "source_file": "android_he_v61528866.xml",
       "source_version": 61528866,
-      "strings": 11823,
-      "bytes_gz": 229647,
-      "version": 61528869
+      "strings": 11795,
+      "bytes_gz": 229251,
+      "version": 61638734
     },
     "android/hi": {
       "source_file": "android_hi_v61638730.xml",
       "source_version": 61638730,
-      "strings": 11823,
-      "bytes_gz": 261244,
-      "version": 61638732
+      "strings": 11795,
+      "bytes_gz": 260812,
+      "version": 61638734
     },
     "android/id": {
       "source_file": "android_id_v61394708.xml",
       "source_version": 61394708,
-      "strings": 11823,
-      "bytes_gz": 217233,
-      "version": 61394711
+      "strings": 11795,
+      "bytes_gz": 216844,
+      "version": 61638734
     },
     "android/it": {
       "source_file": "android_it_v61520490.xml",
       "source_version": 61520490,
-      "strings": 11823,
-      "bytes_gz": 220771,
-      "version": 61520493
+      "strings": 11795,
+      "bytes_gz": 220387,
+      "version": 61638734
     },
     "android/ja": {
       "source_file": "android_ja_v61521017.xml",
       "source_version": 61521017,
-      "strings": 11823,
-      "bytes_gz": 229625,
-      "version": 61521020
+      "strings": 11795,
+      "bytes_gz": 229182,
+      "version": 61638734
     },
     "android/ko": {
       "source_file": "android_ko_v61426723.xml",
       "source_version": 61426723,
-      "strings": 11823,
-      "bytes_gz": 235996,
-      "version": 61426726
+      "strings": 11795,
+      "bytes_gz": 235573,
+      "version": 61638734
     },
     "android/ms": {
       "source_file": "android_ms_v61465153.xml",
       "source_version": 61465153,
-      "strings": 11823,
-      "bytes_gz": 215046,
-      "version": 61465156
+      "strings": 11795,
+      "bytes_gz": 214655,
+      "version": 61638734
     },
     "android/nb": {
       "source_file": "android_nb_v61522313.xml",
       "source_version": 61522313,
-      "strings": 11823,
-      "bytes_gz": 221001,
-      "version": 61522316
+      "strings": 11795,
+      "bytes_gz": 220603,
+      "version": 61638734
     },
     "android/nl": {
       "source_file": "android_nl_v61559278.xml",
       "source_version": 61559278,
-      "strings": 11823,
-      "bytes_gz": 226631,
-      "version": 61559281
+      "strings": 11795,
+      "bytes_gz": 226233,
+      "version": 61638734
     },
     "android/pl": {
       "source_file": "android_pl_v61489112.xml",
       "source_version": 61489112,
-      "strings": 11823,
-      "bytes_gz": 237410,
-      "version": 61489115
+      "strings": 11795,
+      "bytes_gz": 237025,
+      "version": 61638734
     },
     "android/pt-br": {
       "source_file": "android_pt-br_v61524288.xml",
       "source_version": 61524288,
-      "strings": 11823,
-      "bytes_gz": 226102,
-      "version": 61524291
+      "strings": 11795,
+      "bytes_gz": 225706,
+      "version": 61638734
     },
     "android/ro": {
       "source_file": "android_ro_v61551805.xml",
       "source_version": 61551805,
-      "strings": 11823,
-      "bytes_gz": 231469,
-      "version": 61551808
+      "strings": 11795,
+      "bytes_gz": 231072,
+      "version": 61638734
     },
     "android/ru": {
       "source_file": "android_ru_v61543901.xml",
       "source_version": 61543901,
-      "strings": 11823,
-      "bytes_gz": 259552,
-      "version": 61543904
+      "strings": 11795,
+      "bytes_gz": 259123,
+      "version": 61638734
     },
     "android/sv": {
       "source_file": "android_sv_v61517729.xml",
       "source_version": 61517729,
-      "strings": 11823,
-      "bytes_gz": 224129,
-      "version": 61517732
+      "strings": 11795,
+      "bytes_gz": 223746,
+      "version": 61638734
     },
     "android/th": {
       "source_file": "android_th_v61638730.xml",
       "source_version": 61638730,
-      "strings": 11823,
-      "bytes_gz": 242540,
-      "version": 61638732
+      "strings": 11795,
+      "bytes_gz": 242090,
+      "version": 61638734
     },
     "android/tr": {
       "source_file": "android_tr_v61540013.xml",
       "source_version": 61540013,
-      "strings": 11823,
-      "bytes_gz": 235988,
-      "version": 61540016
+      "strings": 11795,
+      "bytes_gz": 235581,
+      "version": 61638734
     },
     "android/uk": {
       "source_file": "android_uk_v61549555.xml",
       "source_version": 61549555,
-      "strings": 11823,
-      "bytes_gz": 257488,
-      "version": 61549558
+      "strings": 11795,
+      "bytes_gz": 257068,
+      "version": 61638734
     },
     "android/uz": {
       "source_file": "android_uz_v61558903.xml",
       "source_version": 61558903,
-      "strings": 11823,
-      "bytes_gz": 226611,
-      "version": 61558906
+      "strings": 11795,
+      "bytes_gz": 226210,
+      "version": 61638734
     },
     "android/vi": {
       "source_file": "android_vi_v61426236.xml",
       "source_version": 61426236,
-      "strings": 11823,
-      "bytes_gz": 223705,
-      "version": 61426239
+      "strings": 11795,
+      "bytes_gz": 223301,
+      "version": 61638734
     },
     "android/zh-hans": {
       "source_file": "android_zh-hans_v61570949.xml",
       "source_version": 61570949,
-      "strings": 11938,
-      "bytes_gz": 240791,
-      "version": 61570955
+      "strings": 11910,
+      "bytes_gz": 240375,
+      "version": 61638734
     },
     "android/zh-hant": {
       "source_file": "android_zh-hant_v61519200.xml",
       "source_version": 61519200,
-      "strings": 11938,
-      "bytes_gz": 235351,
-      "version": 61519205
+      "strings": 11910,
+      "bytes_gz": 234949,
+      "version": 61638734
     },
     "tdesktop/en": {
       "source_file": "tdesktop_en_v6016588.strings",

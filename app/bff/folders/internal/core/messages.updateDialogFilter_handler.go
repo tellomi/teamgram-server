@@ -10,8 +10,8 @@ import (
 // https://core.telegram.org/method/messages.updateDialogFilter
 // https://core.telegram.org/api/folders
 //
-// filter omitted deletes the folder. id 0 is the default "All chats" folder
-// (dialogFilterDefault) and is not stored.
+// filter omitted deletes the folder. id 0 is dialogFilterDefault ("All chats").
+// This method rejects it. updateDialogFiltersOrder stores its position.
 func (c *FoldersCore) MessagesUpdateDialogFilter(in *mtproto.TLMessagesUpdateDialogFilter) (*mtproto.Bool, error) {
 	if in.GetId() <= 0 {
 		return nil, mtproto.ErrFilterIdInvalid

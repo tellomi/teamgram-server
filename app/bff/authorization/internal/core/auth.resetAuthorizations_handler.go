@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	"github.com/teamgram/teamgram-server/pkg/push"
 )
 
 // AuthResetAuthorizations
@@ -53,10 +54,10 @@ func (c *AuthorizationCore) AuthResetAuthorizations(in *mtproto.TLAuthResetAutho
 		return nil, err
 	}
 
-	for _, id := range tKeyIdList.GetDatas() {
-		if id == 0 || id == c.MD.PermAuthKeyId {
-			continue
-		}
+	revoked := push.RevokedAuthKeys([]int64{c.MD.PermAuthKeyId, c.MD.AuthId}, tKeyIdList.GetDatas())
+	c.unregisterPushDevices(revoked...)
+
+	for _, id := range revoked {
 		// Same signals as account.resetAuthorization: refresh the other
 		// client, then drop that auth key's session.
 		_, _ = c.svcCtx.Dao.SyncClient.SyncUpdatesMe(c.ctx, &sync.TLSyncUpdatesMe{

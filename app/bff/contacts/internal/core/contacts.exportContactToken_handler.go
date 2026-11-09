@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/internal/dao"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -12,7 +13,7 @@ import (
 //
 // Generates a temporary profile link for the currently logged-in user.
 // https://core.telegram.org/method/contacts.exportContactToken
-// The https form is t.me/contact/<token> (https://core.telegram.org/api/links).
+// The https form is brand.LinkBase()+"/contact/<token>" (https://core.telegram.org/api/links).
 func (c *ContactsCore) ContactsExportContactToken(in *mtproto.TLContactsExportContactToken) (*mtproto.ExportedContactToken, error) {
 	_ = in
 	if c.MD == nil || c.MD.UserId == 0 {
@@ -28,7 +29,7 @@ func (c *ContactsCore) ContactsExportContactToken(in *mtproto.TLContactsExportCo
 		return nil, mtproto.ErrInternalServerError
 	}
 	return mtproto.MakeTLExportedContactToken(&mtproto.ExportedContactToken{
-		Url:     "https://t.me/contact/" + token,
+		Url:     dao.ContactLink(token),
 		Expires: expires,
 	}).To_ExportedContactToken(), nil
 }

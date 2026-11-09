@@ -46,17 +46,52 @@ func (c *FoldersCore) loadFilters() ([]*mtproto.DialogFilter, bool, error) {
 	return filtersFromExt(res.GetDatas()), mtproto.FromBool(tags), nil
 }
 
-func filtersFromExt(rows []*dialog.DialogFilterExt) []*mtproto.DialogFilter {
-	if len(rows) == 0 {
-		return []*mtproto.DialogFilter{}
+// allChatsFilter is dialogFilterDefault, the "All chats" tab.
+// Official clients do not insert it themselves. A reply that omits it makes
+// stock Telegram-iOS treat the current tab as deleted and call scrollToTop
+// on every folder refresh.
+func allChatsFilter() *mtproto.DialogFilter {
+	return mtproto.MakeTLDialogFilterDefault(nil).To_DialogFilter()
+}
+
+// isAllChatsRow reports a stored dialogFilterDefault. Id 0 is that folder
+// even when the JSON is missing. messages.updateDialogFilter rejects id 0;
+// messages.updateDialogFiltersOrder is what writes the row.
+func isAllChatsRow(row *dialog.DialogFilterExt) bool {
+	if row == nil {
+		return false
 	}
+	if row.GetId() == dialog.DialogFilterDefaultID {
+		return true
+	}
+	filter := row.GetDialogFilter()
+	return filter != nil && filter.GetPredicateName() == mtproto.Predicate_dialogFilterDefault
+}
+
+// filtersFromExt returns the folder vector official clients compare.
+// dialogFilterDefault is included once: at its stored order_value, or first
+// when the user has never moved All chats. Other folders keep order_value
+// order (higher first). An empty table is [dialogFilterDefault], not [].
+func filtersFromExt(rows []*dialog.DialogFilterExt) []*mtproto.DialogFilter {
 	sorted := append([]*dialog.DialogFilterExt(nil), rows...)
 	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i] == nil || sorted[j] == nil {
+			return sorted[i] != nil
+		}
 		return sorted[i].GetOrder() > sorted[j].GetOrder()
 	})
-	out := make([]*mtproto.DialogFilter, 0, len(sorted))
+	out := make([]*mtproto.DialogFilter, 0, len(sorted)+1)
+	seenDefault := false
 	for _, row := range sorted {
-		if row == nil || row.GetDialogFilter() == nil {
+		if row == nil {
+			continue
+		}
+		if isAllChatsRow(row) {
+			if seenDefault {
+				continue
+			}
+			seenDefault = true
+			out = append(out, allChatsFilter())
 			continue
 		}
 		filter := prepareStoredFilter(row.GetDialogFilter())
@@ -64,6 +99,9 @@ func filtersFromExt(rows []*dialog.DialogFilterExt) []*mtproto.DialogFilter {
 			continue
 		}
 		out = append(out, filter)
+	}
+	if !seenDefault {
+		out = append([]*mtproto.DialogFilter{allChatsFilter()}, out...)
 	}
 	return out
 }

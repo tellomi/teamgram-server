@@ -60,7 +60,7 @@ func AppConfigHash() int32 {
 	if announce.Advertised() {
 		notice = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, about.HashFragment())
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d venue=%s %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, mtproto.BotVenueName, about.HashFragment())
 	if origin, ok := discoverFeedOrigin(); ok {
 		fmt.Fprintf(h, " feed=1 %s", origin)
 	}
@@ -104,6 +104,7 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		jsonPair("reactions_default", jsonString(catalog.DefaultReactionEmoji)),
 		jsonPair("emoji_blocklist", emojiBlocklistValue()),
 		jsonPair("stories_posting", jsonString("enabled")),
+		jsonPair("stories_venue_search_username", jsonString(mtproto.BotVenueName)),
 		jsonPair("pm_read_date_expire_period", n(604800)),
 		// Same 7 days as dao.AuthorizationAutoconfirmPeriod. Clients that
 		// already default to 604800 stay aligned with getAuthorizations.

@@ -125,7 +125,7 @@ JPEG tests skip when `app/service/dfs/internal/imaging/testdata` is absent. `pkg
 
 ## Datacenter addresses (`help.getConfig`)
 
-`teamgramd/bin/config.json` still ships `dc_options: []`, `dc_txt_domain_name: apv2.stel.com`, and `webfile_dc_id: 4`. `help.getConfig` clones that file once per request. When `TELLOMI_DC_OPTIONS` is a valid `dcId:ipv4:port` list, the clone's `dc_options` is replaced and `webfile_dc_id` is set to 1. Unset, empty, or invalid leaves both fields as loaded. An invalid spec is logged once and the process stays up. `TELLOMI_DC_TXT_DOMAIN` set to `-` blanks the TXT domain; empty leaves `apv2.stel.com`.
+`teamgramd/bin/config.json` ships `dc_options: []`, `dc_txt_domain_name: apv2.stel.com`, and `webfile_dc_id: 1`. `help.getConfig` clones that file once per request. When `TELLOMI_DC_OPTIONS` is a valid `dcId:ipv4:port` list, the clone's `dc_options` is replaced and `webfile_dc_id` is set to 1. Unset, empty, or invalid leaves both fields as loaded. An invalid spec is logged once and the process stays up. `TELLOMI_DC_TXT_DOMAIN` set to `-` blanks the TXT domain; empty leaves `apv2.stel.com`.
 
 The only upstream file is `app/bff/configuration/internal/core/help.getConfig_handler.go`, which calls `pkg/dcoptions.Apply` on the clone. Parsing and validation live in `pkg/dcoptions`.
 
@@ -226,11 +226,12 @@ There is no separate bot primary-username rename RPC. `bots.checkUsername` is th
 
 ## @tellomi AI (M4, phase 1 server)
 
-`TELLOMI_AI=1` plus `TELLOMI_AI_API_KEY` replies to private messages sent to user 777001 and can serve `POST /internal/v1/ai/complete` for a content-engine @mention. Both stay off otherwise. `messages.sendMessage` returns the user's update before the reply is generated. Login and session routing are unchanged. The contract is `docs/api/tellomi-ai.md`. `tellomi_ai_reply` is `teamgramd/deploy/sql/migrate-20261106-tellomi-ai.sql`.
+`TELLOMI_AI=1` plus `TELLOMI_AI_API_KEY` replies to private messages sent to user 777001 and can serve `POST /internal/v1/ai/complete` for a content-engine @mention. The model runs only for usernames in `TELLOMI_AI_ALLOW_USERNAMES` (default `erel,lfnuebfci,pikaqiu`; `*` allows everyone) and ids in `TELLOMI_AI_ALLOW_USER_IDS`. Anyone else, an empty or non-text message, a quota, a content-safety block, and a model failure each get a fixed sentence and do not ask the model to write that sentence. With the flag off, the same chats get the not-open sentence and the engine endpoint stays down. `messages.sendMessage` returns the user's update before the reply is generated. Login and session routing are unchanged. The contract is `docs/api/tellomi-ai.md`. `tellomi_ai_reply` is `teamgramd/deploy/sql/migrate-20261106-tellomi-ai.sql`.
 
 | Call | File | Hook |
 | --- | --- | --- |
-| `messages.sendMessage` | `app/bff/messages/internal/core/messages.sendMessage_handler.go` | `maybeTellomi`, only after a successful send, only when the flag is on |
+| `messages.sendMessage` | `app/bff/messages/internal/core/messages.sendMessage_handler.go` | `maybeTellomi`, only after a successful send |
+| `messages.sendMedia` / `messages.sendMultiMedia` | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go` | `noteTellomi`; a caption is text, media without text is the text-only sentence |
 | bff start | `app/bff/bff/internal/server/server.go` | `bots.StartTellomi` |
 | app config | `app/bff/configuration/internal/appconfig/app_config.go` | `tellomi_ai_enabled` |
 

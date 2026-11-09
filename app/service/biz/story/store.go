@@ -9,6 +9,9 @@ type Store interface {
 	Get(ctx context.Context, owner Owner, id int32) (*Record, error)
 	FindByRandom(ctx context.Context, owner Owner, sender, randomID int64) (*Record, error)
 	ListByOwner(ctx context.Context, owner Owner) ([]*Record, error)
+	// ListActiveByOwners returns non-deleted stories with expire_date > now
+	// for the given owners of one kind, in one read.
+	ListActiveByOwners(ctx context.Context, kind Kind, ids []int64, now int32) ([]*Record, error)
 	ListAll(ctx context.Context) ([]*Record, error)
 	// OwnersExpiredBetween lists peers with a non-deleted story whose
 	// expire_date is after `after` and at or before `now`.

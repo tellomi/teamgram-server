@@ -53,6 +53,7 @@ func (c *ContactsCore) ContactsImportContacts(in *mtproto.TLContactsImportContac
 	if users == nil {
 		users = []*mtproto.User{}
 	}
+	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, users, nil)
 	popular := imported.GetPopularInvites()
 	if popular == nil {
 		popular = []*mtproto.PopularContact{}

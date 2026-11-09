@@ -37,6 +37,12 @@ const (
 	systemPrompt = "你是 Tellomi 的官方助手 @tellomi。只回复文字，不生成图片。回答简短。"
 )
 
+// Completer is the model call the assistant uses. *Client implements it.
+// Fixed fallbacks must not call it. A test double should fail the test if they do.
+type Completer interface {
+	Complete(ctx context.Context, model, prompt string) (string, int, error)
+}
+
 // ErrSafety means Bailian content inspection rejected the prompt or the completion.
 var ErrSafety = errors.New("tellomi ai: content safety")
 
@@ -186,6 +192,9 @@ func safetyBody(body []byte) bool {
 		"datainspectionfailed",
 		"response_inspection_failed",
 		"responseinspectionfailed",
+		"content_filter",
+		"contentfilter",
+		"content filter",
 		"inappropriate content",
 	} {
 		if strings.Contains(s, needle) {

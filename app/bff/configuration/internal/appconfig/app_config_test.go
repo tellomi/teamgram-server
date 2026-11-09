@@ -434,6 +434,13 @@ func TestAboutDisclosureDefaultsOff(t *testing.T) {
 	}
 }
 
+func TestStoriesVenueSearchUsername(t *testing.T) {
+	obj := configMap(t)
+	if obj["stories_venue_search_username"] != "venue" {
+		t.Fatalf("stories_venue_search_username %#v", obj["stories_venue_search_username"])
+	}
+}
+
 func TestHelpCenterFlag(t *testing.T) {
 	t.Setenv(brand.EnvHelpCenter, "")
 	raw := mtproto.FromJSONValue(AppConfig())

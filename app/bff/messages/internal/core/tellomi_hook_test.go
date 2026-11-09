@@ -53,7 +53,7 @@ func TestMaybeTellomiDefaultOff(t *testing.T) {
 	if !person.skipGroup(9, &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: 8}) {
 		t.Fatal("a private chat with someone else is not a group turn")
 	}
-	c.noteTellomi(9, &mtproto.PeerUtil{PeerType: mtproto.PEER_CHAT, PeerId: 4}, "@tellomi hi", nil, 1, 0, nil)
+	c.noteTellomi(9, &mtproto.PeerUtil{PeerType: mtproto.PEER_CHAT, PeerId: 4}, "@tellomi hi", nil, 1, 0, nil, false)
 }
 
 func TestBasicMemberAndSingleMessageRead(t *testing.T) {
@@ -149,7 +149,7 @@ func TestSupergroupReplySkipsHistoryAndNonMembers(t *testing.T) {
 	ents := []*mtproto.MessageEntity{
 		mtproto.MakeTLMessageEntityMention(&mtproto.MessageEntity{Offset: 0, Length: 8}).To_MessageEntity(),
 	}
-	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "@tellomi 你好", ents, 11, priorID, 42)
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "@tellomi 你好", ents, 11, priorID, 42, false)
 	if sent.n != 1 || sent.replyTo != 42 || sent.peerID != ch.Id || sent.text != "你好" || sent.ai != true {
 		t.Fatalf("sent %+v", sent)
 	}
@@ -164,19 +164,19 @@ func TestSupergroupReplySkipsHistoryAndNonMembers(t *testing.T) {
 		t.Fatalf("model calls %d", len(sc.calls))
 	}
 
-	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "不对", nil, 16, priorID, 45)
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "不对", nil, 16, priorID, 45, false)
 	if sent.n != 2 || len(sc.calls) != 2 || ai.Ledger.Records()[1].Prompt != "上一句答案\n\n不对" {
 		t.Fatalf("reply to 777001 sent=%d calls=%d recs=%#v", sent.n, len(sc.calls), ai.Ledger.Records())
 	}
 	bare := []*mtproto.MessageEntity{
 		mtproto.MakeTLMessageEntityMention(&mtproto.MessageEntity{Offset: 0, Length: 8}).To_MessageEntity(),
 	}
-	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "@tellomi", bare, 15, 0, 44)
-	if sent.n != 2 || len(sc.calls) != 2 {
-		t.Fatal("a bare mention with nothing left to ask called the model")
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "@tellomi", bare, 15, 0, 44, false)
+	if sent.n != 3 || len(sc.calls) != 2 || sent.text != tellomiai.TextOnlyMessage || sent.ai {
+		t.Fatal("a bare mention should get the text-only sentence and must not call the model")
 	}
-	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "大家好", nil, 12, 0, 43)
-	if sent.n != 2 || len(sc.calls) != 2 {
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "大家好", nil, 12, 0, 43, false)
+	if sent.n != 3 || len(sc.calls) != 2 {
 		t.Fatalf("unrelated message was answered sent=%d calls=%d", sent.n, len(sc.calls))
 	}
 
@@ -184,8 +184,8 @@ func TestSupergroupReplySkipsHistoryAndNonMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, broadcast.Chats[0].Id, "@tellomi 你好", ents, 13, 0, 1)
-	if sent.n != 2 || len(sc.calls) != 2 {
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, broadcast.Chats[0].Id, "@tellomi 你好", ents, 13, 0, 1, false)
+	if sent.n != 3 || len(sc.calls) != 2 {
 		t.Fatal("a broadcast channel was answered")
 	}
 
@@ -193,9 +193,14 @@ func TestSupergroupReplySkipsHistoryAndNonMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, closed.Chats[0].Id, "@tellomi 你好", ents, 14, 0, 1)
-	if sent.n != 2 || len(sc.calls) != 2 {
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, closed.Chats[0].Id, "@tellomi 你好", ents, 14, 0, 1, false)
+	if sent.n != 3 || len(sc.calls) != 2 {
 		t.Fatal("answered a supergroup 777001 has not joined")
+	}
+
+	c.answerTellomiGroup(ctx, 9, mtproto.PEER_CHANNEL, ch.Id, "", nil, 17, priorID, 46, true)
+	if sent.n != 4 || len(sc.calls) != 2 || sent.text != tellomiai.TextOnlyMessage || sent.ai || sent.replyTo != 46 {
+		t.Fatalf("a sticker reply called the model or was dropped sent=%+v calls=%d", sent, len(sc.calls))
 	}
 }
 

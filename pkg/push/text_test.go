@@ -152,8 +152,11 @@ func TestChineseFallbackBody(t *testing.T) {
 	if apsAlert["body"] != "🎤 语音消息" {
 		t.Fatalf("outer body %#v", apsAlert["body"])
 	}
-	if apsAlert["title"] != nil {
-		t.Fatal("outer alert has no title; the name is a loc-arg")
+	if apsAlert["title"] != "林" {
+		t.Fatalf("outer title %#v", apsAlert["title"])
+	}
+	if _, ok := apsAlert["subtitle"]; ok {
+		t.Fatal("private chat outer alert has a subtitle")
 	}
 	plain, err := DecryptNotification(secret, outer["p"].(string))
 	if err != nil {

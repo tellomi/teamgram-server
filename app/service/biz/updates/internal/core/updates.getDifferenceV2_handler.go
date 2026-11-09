@@ -55,7 +55,7 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 				Pts:         lastPts,
 				Date:        int32(lastDate),
 				UnreadCount: 0,
-				Seq:         lastSeq,
+				Seq:         nonNegativeSeq(lastSeq),
 			}).To_Updates_State(),
 		}).To_Difference(), nil
 	} else if len(updateList) >= int(limit) {
@@ -101,7 +101,7 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 		Pts:         lastPts,
 		Date:        int32(lastDate),
 		UnreadCount: 0,
-		Seq:         lastSeq,
+		Seq:         nonNegativeSeq(lastSeq),
 	}).To_Updates_State()
 	if diffstrict.Enabled() {
 		state.Qts = c.svcCtx.Dao.IDGenClient2.CurrentQtsId(c.ctx, in.AuthKeyId)

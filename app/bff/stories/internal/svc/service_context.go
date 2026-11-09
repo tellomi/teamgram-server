@@ -124,5 +124,9 @@ func installHooks(users user_client.UserClient, c config.Config) {
 				strings.Contains(strings.ToLower(data.GetUsername()), q)
 		},
 	})
+	story.EnableUserRingPaint()
+	SetRingAudience(func(ctx context.Context, owner int64) []int64 {
+		return story.Shared().RingPushAudience(ctx, owner)
+	})
 	story.Shared().WatchExpiries()
 }

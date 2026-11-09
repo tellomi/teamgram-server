@@ -169,8 +169,18 @@ services:
       # read-only mount at /etc/tellomi/mtproto/. See docs/SECURITY-OPS.md.
       TELLOMI_MTPROTO_EXTRA_KEY_FILE: ${TELLOMI_MTPROTO_EXTRA_KEY_FILE:-}
       TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT: ${TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT:-}
+      # Venue search (@venue) and Android location previews. Unset
+      # TELLOMI_AMAP_KEY: the bot returns an empty list and upload.getWebFile
+      # keeps WEBFILE_NOT_AVAILABLE. TELLOMI_TENCENT_LBS_KEY is used only
+      # when AMap is configured and that call fails. Never commit the keys.
+      TELLOMI_AMAP_KEY: ${TELLOMI_AMAP_KEY:-}
+      TELLOMI_AMAP_SIG: ${TELLOMI_AMAP_SIG:-}
+      TELLOMI_TENCENT_LBS_KEY: ${TELLOMI_TENCENT_LBS_KEY:-}
+      TELLOMI_AMAP_QPS: ${TELLOMI_AMAP_QPS:-3}
+      TELLOMI_AMAP_DAILY: ${TELLOMI_AMAP_DAILY:-5000}
+      TELLOMI_VENUE_REDIS: ${TELLOMI_VENUE_REDIS:-redis:6379}
       # help.getConfig dc_options. Empty leaves teamgramd/bin/config.json
-      # (an empty list, webfile_dc_id 4). A valid spec replaces the list and
+      # (an empty list, webfile_dc_id 1). A valid spec replaces the list and
       # sets webfile_dc_id to 1. "-" in TELLOMI_DC_TXT_DOMAIN blanks
       # apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
       TELLOMI_DC_OPTIONS: ${TELLOMI_DC_OPTIONS:-}
@@ -250,6 +260,18 @@ services:
       TELLOMI_AI_PRICE_PER_1K: ${TELLOMI_AI_PRICE_PER_1K:-}
       TELLOMI_AI_INTERNAL_KEY: ${TELLOMI_AI_INTERNAL_KEY:-}
       TELLOMI_AI_ADDR: ${TELLOMI_AI_ADDR:-}
+      # Blank keeps the code default: erel,lfnuebfci,pikaqiu. * allows everyone.
+      TELLOMI_AI_ALLOW_USERNAMES: ${TELLOMI_AI_ALLOW_USERNAMES:-}
+      TELLOMI_AI_ALLOW_USER_IDS: ${TELLOMI_AI_ALLOW_USER_IDS:-}
+      TELLOMI_AI_MSG_NOT_ALLOWED: ${TELLOMI_AI_MSG_NOT_ALLOWED:-}
+      TELLOMI_AI_MSG_DAILY: ${TELLOMI_AI_MSG_DAILY:-}
+      TELLOMI_AI_MSG_MINUTE: ${TELLOMI_AI_MSG_MINUTE:-}
+      TELLOMI_AI_MSG_CHAT: ${TELLOMI_AI_MSG_CHAT:-}
+      TELLOMI_AI_MSG_BUSY: ${TELLOMI_AI_MSG_BUSY:-}
+      TELLOMI_AI_MSG_BLOCKED: ${TELLOMI_AI_MSG_BLOCKED:-}
+      TELLOMI_AI_MSG_TEXT_ONLY: ${TELLOMI_AI_MSG_TEXT_ONLY:-}
+      TELLOMI_AI_MSG_DISABLED: ${TELLOMI_AI_MSG_DISABLED:-}
+      TELLOMI_AI_MSG_BUDGET: ${TELLOMI_AI_MSG_BUDGET:-}
       # messages.translateText / translateRichMessage. Unset is off.
       # Requires TELLOMI_AI_API_KEY. Off or a model failure is TRANSLATE_REQ_FAILED.
       TELLOMI_TRANSLATE: ${TELLOMI_TRANSLATE:-}

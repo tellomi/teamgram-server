@@ -3,6 +3,7 @@ package svc
 import (
 	"context"
 	"errors"
+	gosync "sync"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -58,25 +59,103 @@ func applyStoryMax(ctx context.Context, users storyMaxUsers, syncer storyPusher,
 		logx.WithContext(ctx).Errorf("story max user %d: %v", userID, err)
 		return nil
 	}
-	pushStoryUser(ctx, syncer, userID, userID, im.ToSelfUser())
+	column := im.User.StoriesMaxId
+	reverse := reverseViewerIDs(im, userID)
+	extras := ringAudience(ctx, userID)
+	viewers := make([]int64, 0, 1+len(reverse)+len(extras))
+	viewers = append(viewers, userID)
+	viewers = append(viewers, reverse...)
+	viewers = append(viewers, extras...)
+	var rings map[int64]story.UserRing
+	useLive := false
+	if mtproto.StoryRingsEnabled() {
+		got, ringErr := story.Shared().ViewerRings(ctx, userID, column, viewers)
+		if ringErr != nil {
+			logx.WithContext(ctx).Errorf("story max rings %d: %v", userID, ringErr)
+		} else {
+			rings = got
+			useLive = true
+		}
+	}
+	pushOne := func(to int64, rendered *mtproto.User) {
+		if useLive {
+			ring := rings[to]
+			mtproto.ApplyStoryRing(rendered, ring.MaxID, ring.Live)
+		}
+		pushStoryUser(ctx, syncer, to, userID, rendered)
+	}
+	pushOne(userID, im.ToSelfUser())
 	// Reverse contacts are who added this user. Their push is a non-min user,
 	// so a missing forward edge would hide a "my contacts" photo, phone, and
 	// last seen. Skip those pushes instead of sending that user. The stored
 	// max is already corrected for the next fetch.
-	if err = attachForwardContacts(ctx, users, im); err != nil {
-		logx.WithContext(ctx).Errorf("story max contacts %d: %v", userID, err)
-		return nil
+	attached := true
+	if len(reverse) > 0 {
+		if err = attachForwardContacts(ctx, users, im); err != nil {
+			logx.WithContext(ctx).Errorf("story max contacts %d: %v", userID, err)
+			attached = false
+		}
 	}
 	seen := map[int64]bool{userID: true}
+	if attached {
+		for _, viewer := range reverse {
+			if seen[viewer] {
+				continue
+			}
+			seen[viewer] = true
+			pushOne(viewer, im.ToUser(viewer))
+		}
+	}
+	for _, viewer := range extras {
+		if viewer == 0 || seen[viewer] {
+			continue
+		}
+		if !attached && im.GetReverseContactData(viewer) != nil {
+			continue
+		}
+		seen[viewer] = true
+		pushOne(viewer, im.ToUser(viewer))
+	}
+	return nil
+}
+
+func reverseViewerIDs(im *mtproto.ImmutableUser, self int64) []int64 {
+	if im == nil {
+		return nil
+	}
+	var out []int64
+	seen := map[int64]bool{self: true}
 	for _, contact := range im.GetReverseContacts() {
 		viewer := contact.GetUserId()
 		if viewer == 0 || seen[viewer] {
 			continue
 		}
 		seen[viewer] = true
-		pushStoryUser(ctx, syncer, viewer, userID, im.ToUser(viewer))
+		out = append(out, viewer)
 	}
-	return nil
+	return out
+}
+
+var (
+	audienceMu gosync.Mutex
+	audienceFn func(ctx context.Context, owner int64) []int64
+)
+
+// SetRingAudience adds users who could have seen a ring besides reverse contacts.
+func SetRingAudience(fn func(ctx context.Context, owner int64) []int64) {
+	audienceMu.Lock()
+	audienceFn = fn
+	audienceMu.Unlock()
+}
+
+func ringAudience(ctx context.Context, owner int64) []int64 {
+	audienceMu.Lock()
+	fn := audienceFn
+	audienceMu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx, owner)
 }
 
 // attachForwardContacts fills im.Contacts from the same loader a new-message

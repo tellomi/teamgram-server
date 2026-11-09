@@ -184,11 +184,15 @@ func (s *Server) Initialize() error {
 					SignInMessage:             c.SignInMessage,
 					SignInServiceNotification: c.SignInServiceNotification,
 					TestPhones:                c.TestPhones,
+					MysqlDSN:                  c.ChannelMySQL,
 				},
 				nil,
 				nil))
 
-		stickerSvc := stickers_helper.New(stickers_helper.Config{MySQL: c.ChannelMySQL})
+		stickerSvc := stickers_helper.New(stickers_helper.Config{
+			MySQL:      c.ChannelMySQL,
+			SyncClient: c.SyncClient,
+		})
 		mtproto.RegisterRPCStickersServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCGifsServer(grpcServer, stickerSvc)
 		mtproto.RegisterRPCEmojiServer(grpcServer, stickerSvc)
@@ -451,7 +455,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCPreparedInlineMessagesServer(grpcServer, botChat)
 		// Managed bots: create, profile, usernames, verification, and affiliate programs.
 		botAdmin := bots_helper.New(c.BizServiceClient)
-		bots_helper.StartTellomi(c.MsgClient, c.ChannelMySQL)
+		bots_helper.StartTellomi(c.MsgClient, c.BizServiceClient, c.ChannelMySQL)
 		// Launch notices. Unset returns immediately and is not on the login path.
 		bots_helper.StartAnnounce(c.MsgClient, c.ChannelMySQL)
 		// Unified reports. Review and the decision listener stay off unless configured.
@@ -535,6 +539,7 @@ func (s *Server) Initialize() error {
 				AuthsessionClient: c.AuthSessionClient,
 				ChatClient:        c.BizServiceClient,
 				SyncClient:        c.SyncClient,
+				MysqlDSN:          c.ChannelMySQL,
 			},
 			nil,
 			nil)

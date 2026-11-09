@@ -44,6 +44,7 @@ func Open(dsn string) *Service {
 			logx.Errorf("stickers upload: %v", err)
 		}
 	}()
+	s.startReloadLoop()
 	return s
 }
 

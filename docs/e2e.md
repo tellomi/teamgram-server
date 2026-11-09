@@ -92,6 +92,7 @@ shape. The code is the digit after `99966` five times, which is what
 | aged | 9996610072 | 11111 |
 | qr | 9996610073 | 11111 |
 | qrpass | 9996610074 | 11111 |
+| folders | 9996610091 | 11111 |
 
 `9996612345` is not code `12345`. The fixed code `12345` is only for numbers
 outside this range.

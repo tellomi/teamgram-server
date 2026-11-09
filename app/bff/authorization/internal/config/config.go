@@ -41,4 +41,7 @@ type Config struct {
 	// TestPhones are dev login ranges. Nil uses Telegram's 99966XYYYY
 	// pattern. An empty list disables test numbers.
 	TestPhones []phonenumber.TestPhoneRange `json:",optional"`
+	// MysqlDSN is the teamgram database that holds devices. The bff process
+	// passes ChannelMySQL. TEAMGRAM_MYSQL_DSN overrides it.
+	MysqlDSN string `json:",optional"`
 }

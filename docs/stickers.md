@@ -57,7 +57,7 @@ Desktop calls `messages.getEmojiKeywordsLanguages` with its keyboard languages a
 
 The server therefore echoes the requested code, and treats `zh`, `zh-CN`, `zh-Hans`, and `zh-hans` as one simplified list. `zh-TW`, `zh-HK`, and `zh-hant` are traditional. English is unchanged. A Han query also searches the Chinese lists when the IME language is English. Untagged keywords that contain Han, kana, or hangul are simplified Chinese. Any other untagged keyword is English. Words tagged in the import manifest stay on that language.
 
-Restart bff after an import. The process loads imported packs from MySQL at startup, and clients refetch keywords when that language's version changes.
+The running bff reloads imported packs about every 45 seconds. A new or edited pack is swapped into memory under the same lock the sticker RPCs take, and clients with a session active in the last 7 days receive `updateStickerSets` so they refetch. Offline clients still notice the change: `messages.getAllStickers`, `messages.getMaskStickers`, and `messages.getEmojiStickers` hash the visible pack id together with the document ids and the title, so an in-place edit is not `notModified`. Keyword versions are computed from the packs in memory, so they move when a reload changes keywords. A process restart is not required.
 
 ## Storage
 
@@ -118,7 +118,7 @@ docker compose exec teamgram /app/bin/importstickers \
   -dir /packs/chinese-bqb -featured
 ```
 
-The command is safe to run again. Pack and document ids come from the short name and file name, so the same manifest updates the same rows. An object already stored at the same byte size is not uploaded again. A crash mid-upload continues on the next run. Stickers removed from the manifest are removed from the pack. Restart bff after the import so the running process loads the new packs.
+The command is safe to run again. Pack and document ids come from the short name and file name, so the same manifest updates the same rows. An object already stored at the same byte size is not uploaded again. A crash mid-upload continues on the next run. Stickers removed from the manifest are removed from the pack. Each successful write bumps `tellomi_catalog_version`, and the running bff loads the change on its next pass. Install, uninstall, archive, and reorder push `updateNewStickerSet`, `updateStickerSets`, or `updateStickerSetsOrder` to the user's other sessions.
 
 A static pack holds at most 120 stickers. A video pack holds at most 50. A larger manifest is split, in order, into `标题 1/2`, `标题 2/2`, and so on. The first part keeps `short_name`. Later parts append the part number (`PandaHead`, `PandaHead2`). A manifest with more than 20000 stickers is rejected.
 
@@ -179,6 +179,52 @@ docker compose run --rm --no-deps --entrypoint /app/bin/importstickers teamgram 
 ```
 
 Session must route `/mtproto.RPCStickers`, `/mtproto.RPCEmoji`, and `/mtproto.RPCCustomEmojis` to `bff.bff` (`teamgramd/etc2/session.yaml` in this container). Without those routes the client never reaches this catalog.
+
+## GIF panel
+
+`messages.getSavedGifs` returns the six built-in clips when the user has not saved any GIFs, then any clips in `tellomi_gif_clips`. `messages.getInlineBotResults` for @gif matches a title, a file code, or a keyword. A keyword may be Chinese: `猫咪` matches a clip whose keywords include `猫`.
+
+`importgifs` uploads `.mp4` and `.gif` files with the same DFS client as `importstickers` (`stickers/<document id>.dat` in `TELLOMI_S3_BUCKET_PUBLIC_MEDIA`). An optional `<name>.jpg` next to the clip is the JPEG poster. The bff reloads the table on the same pass as sticker packs. Built-in clips stay in the binary.
+
+A directory with `manifest.json` is one catalog. Without a manifest, each `.mp4` or `.gif` in the directory is a clip, and `<name>.json` can supply the same fields. `-dry-run` only validates.
+
+```
+go run ./app/bff/stickers/cmd/importgifs -dir ./gifs -dry-run
+```
+
+```
+TEAMGRAM_MYSQL_DSN='user:pass@tcp(127.0.0.1:3306)/teamgram?charset=utf8mb4&parseTime=true' \
+TELLOMI_S3_ENDPOINT=http://127.0.0.1:9000 \
+TELLOMI_S3_ACCESS_KEY_ID=minio \
+TELLOMI_S3_SECRET_ACCESS_KEY=miniostorage \
+TELLOMI_S3_BUCKET_ATTACHMENTS=tellomi-attachments \
+TELLOMI_S3_BUCKET_PUBLIC_MEDIA=tellomi-public-media \
+go run ./app/bff/stickers/cmd/importgifs -dir ./gifs
+```
+
+Inside Compose, the binary is `/app/bin/importgifs`. Pass the DSN the bff uses:
+
+```
+docker compose exec teamgram /app/bin/importgifs \
+  -dsn 'teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true' \
+  -dir /packs/gifs
+```
+
+```json
+{
+  "clips": [
+    {
+      "file": "cat.mp4",
+      "title": "猫咪",
+      "keywords": ["猫", "可爱"],
+      "width": 160,
+      "height": 120
+    }
+  ]
+}
+```
+
+`file` is relative to the manifest directory. `keywords` is a string, an array, or a language map, the same shape as a sticker. A file name must match `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`. `clip0` through `clip5` are reserved for the built-in clips. The command is safe to run again: the file name is the document id.
 
 ## Emoji blocklist
 

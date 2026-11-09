@@ -13,6 +13,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
 	"google.golang.org/grpc/status"
@@ -23,12 +24,11 @@ import (
 // https://core.telegram.org/api/config#chatlist-invites-limit-default
 // https://core.telegram.org/api/config#chatlists-joined-limit-default
 const (
-	chatlistInvitesFree     = 3
-	chatlistInvitesPremium  = 100
-	chatlistsJoinedFree     = 2
-	chatlistsJoinedPremium  = 20
-	chatlistInviteTitleMax  = 255
-	chatlistInviteURLPrefix = "https://t.me/addlist/"
+	chatlistInvitesFree    = 3
+	chatlistInvitesPremium = 100
+	chatlistsJoinedFree    = 2
+	chatlistsJoinedPremium = 20
+	chatlistInviteTitleMax = 255
 )
 
 // slugRe is c{ownerUserId}_{filterId}_{16 hex}. The owner id is in the slug so
@@ -146,7 +146,7 @@ func newInviteSlug(owner int64, filterID int32) (string, error) {
 }
 
 func inviteURL(slug string) string {
-	return chatlistInviteURLPrefix + slug
+	return brand.LinkBase() + "/addlist/" + slug
 }
 
 func decodeInvites(blob string) []storedInvite {
@@ -754,6 +754,19 @@ func missingRefs(inv storedInvite, joined *mtproto.DialogFilter, hidden []peerRe
 		out = append(out, ref)
 	}
 	return out
+}
+
+// countStoredFolders is the number of real folders. dialogFilterDefault
+// (id 0) is always on the client and does not consume dialog_filters_limit.
+func countStoredFolders(rows []*dialog.DialogFilterExt) int {
+	n := 0
+	for _, row := range rows {
+		if row == nil || row.GetId() == dialog.DialogFilterDefaultID {
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func (c *FoldersCore) countJoined(rows []*dialog.DialogFilterExt) int {

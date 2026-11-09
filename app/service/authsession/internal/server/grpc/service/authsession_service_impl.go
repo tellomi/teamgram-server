@@ -157,14 +157,14 @@ func (s *Service) AuthsessionGetFutureSalts(ctx context.Context, request *authse
 // authsession.queryAuthKey auth_key_id:long = AuthKeyInfo;
 func (s *Service) AuthsessionQueryAuthKey(ctx context.Context, request *authsession.TLAuthsessionQueryAuthKey) (*mtproto.AuthKeyInfo, error) {
 	c := core.New(ctx, s.svcCtx)
-	c.Logger.Debugf("authsession.queryAuthKey - metadata: {%s}, request: {%s}", c.MD, request)
+	c.Logger.Debugf("authsession.queryAuthKey - auth_key_id: %d", request.GetAuthKeyId())
 
 	r, err := c.AuthsessionQueryAuthKey(request)
 	if err != nil {
 		return nil, err
 	}
 
-	c.Logger.Debugf("authsession.queryAuthKey - reply: {%s}", r)
+	c.Logger.Debugf("authsession.queryAuthKey - reply: %s", mtproto.AuthKeyLogLabel(r))
 	return r, err
 }
 
@@ -172,7 +172,7 @@ func (s *Service) AuthsessionQueryAuthKey(ctx context.Context, request *authsess
 // authsession.setAuthKey auth_key:AuthKeyInfo future_salt:FutureSalt expires_in:int = Bool;
 func (s *Service) AuthsessionSetAuthKey(ctx context.Context, request *authsession.TLAuthsessionSetAuthKey) (*mtproto.Bool, error) {
 	c := core.New(ctx, s.svcCtx)
-	c.Logger.Debugf("authsession.setAuthKey - metadata: {%s}, request: {%s}", c.MD, request)
+	c.Logger.Debugf("authsession.setAuthKey - %s expires_in: %d", mtproto.AuthKeyLogLabel(request.GetAuthKey()), request.GetExpiresIn())
 
 	r, err := c.AuthsessionSetAuthKey(request)
 	if err != nil {
