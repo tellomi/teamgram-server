@@ -142,9 +142,16 @@ func TestArchiveIncomingRules(t *testing.T) {
 	if _, err := b.SendText(ctx, aPeer, fmt.Sprintf("seed-%d", time.Now().UnixNano()), nil); err != nil {
 		t.Fatal(err)
 	}
-	waitFolder(t, ctx, a, "user", bPeer.GetUserId(), 0)
-
+	// An earlier test may already have archived and muted this pair.
+	err := waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
+		return dialogFolder(t, ctx, a, 0, "user", bPeer.GetUserId()) == 0 || dialogFolder(t, ctx, a, 1, "user", bPeer.GetUserId()) == 1, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	setMute(t, ctx, a, bPeer, 0)
+	editPeerFolder(t, ctx, a, bPeer, 0)
+	waitFolder(t, ctx, a, "user", bPeer.GetUserId(), 0)
 	setPrivacy(t, ctx, a, false, true, false)
 	editPeerFolder(t, ctx, a, bPeer, 1)
 	if _, err := b.SendText(ctx, aPeer, fmt.Sprintf("keep-%d", time.Now().UnixNano()), nil); err != nil {
@@ -280,11 +287,7 @@ func peerDialogFolder(t *testing.T, ctx context.Context, c *Client, kind string,
 	case "chat":
 		peer = inputPeerChat(id)
 	case "channel":
-		hash, ok, err := c.ChatAccess(ctx, id)
-		if err != nil || !ok {
-			t.Fatalf("channel access %d: %v", id, err)
-		}
-		peer = inputPeerChannel(id, hash)
+		peer = inputPeerChannel(id, channelAccess(t, ctx, c, id))
 	}
 	obj, err := c.Invoke(ctx, &mtproto.TLMessagesGetPeerDialogs{
 		Constructor: mtproto.CRC32_messages_getPeerDialogs,
@@ -352,6 +355,31 @@ func peerKindID(peer *mtproto.Peer) string {
 	default:
 		return ""
 	}
+}
+
+func channelAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64 {
+	t.Helper()
+	if hash, ok, err := c.ChatAccess(ctx, id); err == nil && ok && hash != 0 {
+		return hash
+	}
+	obj, err := c.Invoke(ctx, &mtproto.TLMessagesGetDialogs{
+		Constructor: mtproto.CRC32_messages_getDialogs,
+		OffsetPeer:  inputPeerEmpty(),
+		Limit:       100,
+		FolderId:    &wrapperspb.Int32Value{Value: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chat := range chatsOf(obj) {
+		if chat != nil && chat.GetId() == id {
+			if hash := chatAccessHash(chat); hash != 0 {
+				return hash
+			}
+		}
+	}
+	t.Fatalf("channel access %d", id)
+	return 0
 }
 
 func userAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64 {
