@@ -89,18 +89,11 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 			})
 			return (err1 == nil && mtproto.FromBool(one)) || (err2 == nil && mtproto.FromBool(two))
 		}
-		deliverUserStatus(c.MD.UserId, c.MD.PermAuthKeyId, pushUpdates, ids.GetDatas(), blocked,
+		deliverUserStatus(c.MD.UserId, pushUpdates, ids.GetDatas(), blocked,
 			func(id int64, up *mtproto.Updates) {
 				_, _ = c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
 					UserId:  id,
 					Updates: up,
-				})
-			},
-			func(self, auth int64, up *mtproto.Updates) {
-				_, _ = c.svcCtx.SyncClient.SyncUpdatesNotMe(ctx, &syncpb.TLSyncUpdatesNotMe{
-					UserId:        self,
-					PermAuthKeyId: auth,
-					Updates:       up,
 				})
 			},
 		)

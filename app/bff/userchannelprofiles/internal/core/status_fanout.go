@@ -24,16 +24,15 @@ func statusRecipients(self int64, contacts []int64, blocked func(int64) bool) []
 	return out
 }
 
-// deliverUserStatus pushes updateUserStatus to the remaining contacts and,
-// when this session has an auth key, to the user's other sessions.
-// Calling it again with the same contacts yields the same recipients.
-func deliverUserStatus(self, authKey int64, updates *mtproto.Updates, contacts []int64, blocked func(int64) bool, pushContact func(int64, *mtproto.Updates), pushOtherSessions func(int64, int64, *mtproto.Updates)) {
-	if pushContact != nil {
-		for _, id := range statusRecipients(self, contacts, blocked) {
-			pushContact(id, updates)
-		}
+// deliverUserStatus pushes updateUserStatus to the remaining contacts.
+// Official clients do not receive their own online or offline status on
+// their other sessions. Calling it again with the same contacts yields
+// the same recipients.
+func deliverUserStatus(self int64, updates *mtproto.Updates, contacts []int64, blocked func(int64) bool, pushContact func(int64, *mtproto.Updates)) {
+	if pushContact == nil {
+		return
 	}
-	if authKey != 0 && pushOtherSessions != nil {
-		pushOtherSessions(self, authKey, updates)
+	for _, id := range statusRecipients(self, contacts, blocked) {
+		pushContact(id, updates)
 	}
 }

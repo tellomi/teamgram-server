@@ -8,11 +8,11 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-// TestOtherSessionReceivesOnlineStatus is the regression for account.updateStatus.
-// One login goes online. The other login of the same account must see
-// updateUserStatus, and a second identical call must not fail.
-func TestOtherSessionReceivesOnlineStatus(t *testing.T) {
-	a, _, _, _ := sharedPair(t)
+// TestOwnStatusIsNotPushedToOtherSessions is the official account.updateStatus
+// rule. Contacts learn the new status. The same user's other devices do not
+// get updateUserStatus for themselves. A second identical call must not fail.
+func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
+	a, b, aSelf, _ := sharedPair(t)
 	cfg := requireE2E(t)
 	ctx, cancel := contextTimeout(45 * time.Second)
 	defer cancel()
@@ -28,11 +28,11 @@ func TestOtherSessionReceivesOnlineStatus(t *testing.T) {
 	if _, err = other.Login(ctx, phone, "Alice"); err != nil {
 		t.Fatal(err)
 	}
-	// updates.getState is what marks this connection as the updates session
-	// and registers it online. Until then, updatesNotMe has nowhere to send.
 	if _, _, _, err = other.State(ctx); err != nil {
 		t.Fatal(err)
 	}
+	beforeOther := len(other.Pushed())
+	beforeBob := len(b.Pushed())
 	call := func() error {
 		_, err := a.Invoke(ctx, &mtproto.TLAccountUpdateStatus{
 			Constructor: mtproto.CRC32_account_updateStatus,
@@ -47,14 +47,24 @@ func TestOtherSessionReceivesOnlineStatus(t *testing.T) {
 		t.Fatalf("repeat updateStatus: %v", err)
 	}
 	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return sawUserStatus(other.Pushed()), nil
+		return sawUserStatusFor(pushedSince(b.Pushed(), beforeBob), aSelf.ID), nil
 	})
 	if err != nil {
-		t.Fatalf("other session did not receive updateUserStatus: %v", err)
+		t.Fatalf("contact did not receive updateUserStatus: %v", err)
+	}
+	if sawUserStatusFor(pushedSince(other.Pushed(), beforeOther), aSelf.ID) {
+		t.Fatal("another session of the same user received updateUserStatus")
 	}
 }
 
-func sawUserStatus(objs []mtproto.TLObject) bool {
+func pushedSince(objs []mtproto.TLObject, n int) []mtproto.TLObject {
+	if n < 0 || n > len(objs) {
+		return objs
+	}
+	return objs[n:]
+}
+
+func sawUserStatusFor(objs []mtproto.TLObject, userID int64) bool {
 	for _, obj := range objs {
 		var ups []*mtproto.Update
 		switch v := obj.(type) {
@@ -71,7 +81,7 @@ func sawUserStatus(objs []mtproto.TLObject) bool {
 			}
 		}
 		for _, u := range ups {
-			if u.GetPredicateName() == mtproto.Predicate_updateUserStatus {
+			if u.GetPredicateName() == mtproto.Predicate_updateUserStatus && (userID == 0 || u.GetUserId() == userID) {
 				return true
 			}
 		}
