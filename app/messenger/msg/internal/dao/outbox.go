@@ -425,6 +425,9 @@ func (d *Dao) DeleteMessages(ctx context.Context, userId int64, msgIds []int32) 
 	if tR.Err != nil {
 		return nil, nil, tR.Err
 	}
+	// The wipe committed with the delete. Releasing before that commit would
+	// still see the live row and skip the purge queue.
+	releaseDeletedBoxes(ctx, userId, msgDOList)
 
 	topMessage, _ := getLastTopMessage(topMessageIndex)
 	d.CachedConn.Exec(

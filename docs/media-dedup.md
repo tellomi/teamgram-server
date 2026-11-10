@@ -44,7 +44,9 @@ dfs 和 media 都要能连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media �
 
 环境变量 `TELLOMI_MEDIA_ACCESS_ENFORCE`：默认 `enforce`（拒绝）。设为 `log` 时只打日志并放行，用来在不换镜像的情况下回滚。其它值仍按拒绝处理。
 
-删一条消息不会删对象，也不会放掉 `media_blob_refs`。保留任务扫掉一条 document/photo 时，只要还有别的引用，就不删那份对象。最后一条引用在同一事务里删掉 blob 行（不留下 `ref_count = 0`），并把对象键写入 `media_blob_gc`；对象本身随后删除。删除失败留下孤儿对象和 gc 行，不留下悬空引用。账号清理在搬走对象之前先放掉这条引用；别的引用还在就不搬。
+用户删除消息会清掉正文，并放掉这条消息箱对 `photo_id` / `document_id` 的引用。转发和别的消息箱还指着同一个 id 时，对象留着。同一份字节的再次上传是另一行 `media_blob_refs`，`ref_count` 要到 0 才删对象。头像、故事、贴纸、已保存的 GIF、定时消息、`media_external_refs` 里的外部引用（含 content-engine 登记的 id）也算持有者。最后一条引用进 `media_purge_queue`，过了宽限期再放掉 `media_blob_refs` 并删除全部尺寸和视频缩略图。见 [media-purge.md](media-purge.md)。
+
+保留任务扫掉一条 document/photo 时，只要还有别的引用，就不删那份对象。最后一条引用在同一事务里删掉 blob 行（不留下 `ref_count = 0`），并把对象键写入 `media_blob_gc`；对象本身随后删除。删除失败留下孤儿对象和 gc 行，不留下悬空引用。账号清理在搬走对象之前先放掉这条引用；别的引用还在就不搬。保留任务仍留下图片缩略图 `s`/`i`/`j`。用户删除不是这条路径，缩略图也删。
 
 ## 待办
 

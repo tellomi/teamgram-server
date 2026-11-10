@@ -11,6 +11,7 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -68,6 +69,7 @@ func OpenSQL(dsn string, shards int) (*SQL, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	mediapurge.Bind(db)
 	if shards <= 1 {
 		shards = 1
 	}
@@ -190,7 +192,7 @@ func (s *SQL) CommitDelete(ctx context.Context, userID int64, ids []int32, pts, 
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	q := `UPDATE ` + s.table(userID) + ` SET deleted=1 WHERE user_id=? AND user_message_box_id IN (` + ph + `) AND deleted=0`
+	q := `UPDATE ` + s.table(userID) + ` SET deleted=1, message='', message_data=CAST('{}' AS JSON) WHERE user_id=? AND user_message_box_id IN (` + ph + `) AND deleted=0`
 	if _, err = tx.ExecContext(ctx, q, args...); err != nil {
 		return err
 	}

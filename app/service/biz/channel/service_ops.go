@@ -731,8 +731,10 @@ func withoutExpired(ch *Channel, all []*StoredMessage, now int32) []*StoredMessa
 }
 
 // sweepExpired marks already-expired channel messages deleted and tells every
-// member. A second call finds them deleted and pushes nothing. It does not
-// run unless TELLOMI_MESSAGE_EXPIRY_SWEEP=1, and nothing starts it at boot.
+// member. CommitDelete wipes the body and drops media refs, same as
+// channels.deleteMessages. A second call finds them deleted and pushes
+// nothing. It does not run unless TELLOMI_MESSAGE_EXPIRY_SWEEP=1, and
+// nothing starts it at boot.
 func (s *Service) sweepExpired(ctx context.Context, ch *Channel, actor int64) {
 	if ch == nil || ch.TtlPeriod <= 0 || !msgexpiry.SweepEnabled() {
 		return

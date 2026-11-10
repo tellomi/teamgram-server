@@ -77,6 +77,10 @@ func (dao *MessagesDAO) InsertOrReturnId(ctx context.Context, do *dataobject.Mes
 	rowsAffected, err = r.RowsAffected()
 	if err != nil {
 		logx.WithContext(ctx).Errorf("rowsAffected in InsertOrReturnId(%v), error: %v", do, err)
+		return
+	}
+	if rowsAffected > 0 {
+		noteUserBox(ctx, do)
 	}
 
 	return
@@ -107,6 +111,10 @@ func (dao *MessagesDAO) InsertOrReturnIdTx(tx *sqlx.Tx, do *dataobject.MessagesD
 	rowsAffected, err = r.RowsAffected()
 	if err != nil {
 		logx.WithContext(tx.Context()).Errorf("rowsAffected in InsertOrReturnId(%v), error: %v", do, err)
+		return
+	}
+	if rowsAffected > 0 {
+		noteUserBox(tx.Context(), do)
 	}
 
 	return
@@ -775,18 +783,19 @@ func (dao *MessagesDAO) SelectDialogLastMessageListWithCB(ctx context.Context, u
 }
 
 // DeleteMessagesByMessageIdList
-// update messages set deleted = 1 where user_id = :user_id and user_message_box_id in (:idList) and deleted = 0
+// update messages set deleted = 1, message = ”, message_data = '{}' where user_id = :user_id and user_message_box_id in (:idList) and deleted = 0
 func (dao *MessagesDAO) DeleteMessagesByMessageIdList(ctx context.Context, userId int64, idList []int32) (rowsAffected int64, err error) {
 
 	if len(idList) == 0 {
 		return
 	}
+	kept, _ := dao.SelectByMessageIdList(ctx, userId, idList)
 
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = fmt.Sprintf(strings.Replace("update __TABLE__ set deleted = 1 where user_id = ? and user_message_box_id in (%s) and deleted = 0", "__TABLE__", dao.CalcTableName(userId), -1), sqlx.InInt32List(idList))
+	query = fmt.Sprintf(strings.Replace("update __TABLE__ set deleted = 1, message = '', message_data = CAST('{}' AS JSON) where user_id = ? and user_message_box_id in (%s) and deleted = 0", "__TABLE__", dao.CalcTableName(userId), -1), sqlx.InInt32List(idList))
 
 	rResult, err = dao.db.Exec(ctx, query, userId)
 
@@ -798,13 +807,17 @@ func (dao *MessagesDAO) DeleteMessagesByMessageIdList(ctx context.Context, userI
 	rowsAffected, err = rResult.RowsAffected()
 	if err != nil {
 		logx.WithContext(ctx).Errorf("rowsAffected in DeleteMessagesByMessageIdList(_), error: %v", err)
+		return
+	}
+	if rowsAffected > 0 {
+		releaseUserBoxes(ctx, userId, kept)
 	}
 
 	return
 }
 
 // DeleteMessagesByMessageIdListTx
-// update messages set deleted = 1 where user_id = :user_id and user_message_box_id in (:idList) and deleted = 0
+// update messages set deleted = 1, message = ”, message_data = '{}' where user_id = :user_id and user_message_box_id in (:idList) and deleted = 0
 func (dao *MessagesDAO) DeleteMessagesByMessageIdListTx(tx *sqlx.Tx, userId int64, idList []int32) (rowsAffected int64, err error) {
 
 	if len(idList) == 0 {
@@ -814,7 +827,7 @@ func (dao *MessagesDAO) DeleteMessagesByMessageIdListTx(tx *sqlx.Tx, userId int6
 		query   string
 		rResult sql.Result
 	)
-	query = fmt.Sprintf(strings.Replace("update __TABLE__ set deleted = 1 where user_id = ? and user_message_box_id in (%s) and deleted = 0", "__TABLE__", dao.CalcTableName(userId), -1), sqlx.InInt32List(idList))
+	query = fmt.Sprintf(strings.Replace("update __TABLE__ set deleted = 1, message = '', message_data = CAST('{}' AS JSON) where user_id = ? and user_message_box_id in (%s) and deleted = 0", "__TABLE__", dao.CalcTableName(userId), -1), sqlx.InInt32List(idList))
 
 	rResult, err = tx.Exec(query, userId)
 
@@ -1517,6 +1530,10 @@ func (dao *MessagesDAO) UpdateEditMessage(ctx context.Context, messageData strin
 	rowsAffected, err = rResult.RowsAffected()
 	if err != nil {
 		logx.WithContext(ctx).Errorf("rowsAffected in UpdateEditMessage(_), error: %v", err)
+		return
+	}
+	if rowsAffected > 0 {
+		noteUserBox(ctx, &dataobject.MessagesDO{UserId: userId, UserMessageBoxId: userMessageBoxId, MessageData: messageData})
 	}
 
 	return
@@ -1541,6 +1558,10 @@ func (dao *MessagesDAO) UpdateEditMessageTx(tx *sqlx.Tx, messageData string, mes
 	rowsAffected, err = rResult.RowsAffected()
 	if err != nil {
 		logx.WithContext(tx.Context()).Errorf("rowsAffected in UpdateEditMessage(_), error: %v", err)
+		return
+	}
+	if rowsAffected > 0 {
+		noteUserBox(tx.Context(), &dataobject.MessagesDO{UserId: userId, UserMessageBoxId: userMessageBoxId, MessageData: messageData})
 	}
 
 	return

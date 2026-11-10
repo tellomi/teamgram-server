@@ -24,6 +24,8 @@ cd ${TEAMGRAMAPP}/service/media/cmd/media
 go build -o ${INSTALL}/bin/media
 cd ${TEAMGRAMAPP}/service/media/cmd/mediaretention
 go build -o ${INSTALL}/bin/mediaretention
+cd ${TEAMGRAMAPP}/service/media/cmd/mediapurge
+go build -o ${INSTALL}/bin/mediapurge
 
 echo "build authsession ..."
 cd ${TEAMGRAMAPP}/service/authsession/cmd/authsession

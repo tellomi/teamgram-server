@@ -339,6 +339,7 @@ func (e *Engine) wipePeer(ctx context.Context, boxOwner, deletedUser int64, peer
 		if err = e.Store.CommitDelete(ctx, boxOwner, ids, end, int32(len(ids)), mtproto.GetUpdateType(upd), raw); err != nil {
 			return n, err
 		}
+		releaseWipedBoxes(ctx, boxOwner, boxes)
 		_ = e.push(ctx, boxOwner, upd)
 		n += len(ids)
 		if len(boxes) < e.batch() {
