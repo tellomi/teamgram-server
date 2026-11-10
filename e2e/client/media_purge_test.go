@@ -25,11 +25,11 @@ func TestMediaPurgeCopies(t *testing.T) {
 	bToC := userPeer(t, cfg, b, "purge_c", "PurgeC")
 	cToB := userPeer(t, cfg, c, "purge_b", "PurgeB")
 
-	photoBytes := testJPEG(t, 320, 240, 3)
+	photoBytes := testJPEG(t, 320, 240, 0x5a)
 	photo, photoMsg := sendPhotoBytes(t, a, aToB, "purge.jpg", photoBytes)
-	videoPayload := []byte("tellomi-purge-video-v1")
+	videoPayload := []byte("tellomi-purge-video-copies-v1")
 	video, videoMsg := sendPayload(t, a, aToB, "video/mp4", "purge.mp4", videoPayload)
-	voicePayload := []byte("tellomi-purge-voice-v1")
+	voicePayload := []byte("tellomi-purge-voice-copies-v1")
 	voice, voiceMsg := sendVoiceBytes(t, a, aToB, "purge-voice", voicePayload)
 
 	photoFwd := forwardReturning(t, b, bToA, func(m *mtproto.Message) bool {
@@ -60,7 +60,7 @@ func TestMediaPurgeCopies(t *testing.T) {
 		})))); !strings.Contains(peerBody, fmt.Sprintf("%d", photo.GetId())) {
 		t.Fatalf("delete-for-me wiped B's copy: %s", peerBody)
 	}
-	size := largestPhotoSize(t, photo)
+	size := fullPhotoSize(t, photo)
 	if len(waitNonEmpty(t, b, photoLocation(photo, size))) == 0 || len(waitNonEmpty(t, c, photoLocation(photo, size))) == 0 {
 		t.Fatal("photo download failed while B or C still has a copy")
 	}
@@ -265,6 +265,22 @@ func TestMediaPurgeChannelDelete(t *testing.T) {
 	if strings.Contains(body, secret) {
 		t.Fatalf("channel row still contains the secret: %s", body)
 	}
+}
+
+func fullPhotoSize(t *testing.T, p *mtproto.Photo) string {
+	t.Helper()
+	have := map[string]bool{}
+	for _, sz := range p.GetSizes() {
+		if sz.GetType() != "" {
+			have[sz.GetType()] = true
+		}
+	}
+	for _, want := range []string{"y", "x", "w", "m", "0"} {
+		if have[want] {
+			return want
+		}
+	}
+	return largestPhotoSize(t, p)
 }
 
 func userPeer(t *testing.T, cfg Config, c *Client, name, first string) *mtproto.InputPeer {

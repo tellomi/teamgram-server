@@ -150,6 +150,9 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 			return rep, err
 		}
 		_ = blobs.AckGC(ctx, o.Class, o.Path)
+		if err = s.expirePath(ctx, o.Class, o.Path, now); err != nil {
+			return rep, err
+		}
 		rep.Objects++
 		rep.Bytes += o.Bytes
 	}

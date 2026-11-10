@@ -3,6 +3,7 @@ package mediapurge
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
@@ -193,19 +194,59 @@ func (s *Store) pathHeld(ctx context.Context, class, path string, except Media) 
 	if except.Kind == KindDocument {
 		docID = except.ID
 	}
+	// A document row keeps file_path after its blob ref is released. That
+	// string is not a live holder. Only a document that still has a blob
+	// ref, or a video thumb owned by one, blocks deletion.
 	ok, err := s.exists(ctx, `
-SELECT 1 FROM documents WHERE file_path=? AND document_id<>? AND expired_at=0 LIMIT 1`, path, docID)
+SELECT 1 FROM documents d
+JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=d.document_id
+WHERE d.file_path=? AND d.document_id<>? AND d.expired_at=0
+LIMIT 1`, mediablob.KindDocument, path, docID)
 	if err != nil || ok {
 		return ok, err
 	}
 	ok, err = s.exists(ctx, `
 SELECT 1 FROM video_sizes v
 JOIN documents d ON d.video_thumb_id = v.video_size_id
-WHERE v.file_path=? AND d.document_id<>? AND d.expired_at=0 LIMIT 1`, path, docID)
+JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=d.document_id
+WHERE v.file_path=? AND d.document_id<>? AND d.expired_at=0
+LIMIT 1`, mediablob.KindDocument, path, docID)
 	if err != nil || ok {
 		return ok, err
 	}
 	return false, nil
+}
+
+// expirePath marks every document or photo that used this key and no longer
+// has a blob ref. A re-upload sibling is expired together with the last copy
+// so upload.getFile fails for both ids.
+func (s *Store) expirePath(ctx context.Context, class, path string, now time.Time) error {
+	if path == "" {
+		return nil
+	}
+	at := now.Unix()
+	if class == "" || class == mediablob.ClassDocuments {
+		_, err := s.db.ExecContext(ctx, `
+UPDATE documents d
+LEFT JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=d.document_id
+SET d.expired_at=?
+WHERE d.file_path=? AND d.expired_at=0 AND r.id IS NULL`, mediablob.KindDocument, at, path)
+		if err != nil && !missing(err) && !missingColumn(err) {
+			return err
+		}
+	}
+	if class == "" || class == mediablob.ClassPhotos || class == classVideos {
+		_, err := s.db.ExecContext(ctx, `
+UPDATE photos p
+JOIN photo_sizes s ON s.photo_size_id = IF(p.size_id<>0, p.size_id, p.photo_id)
+LEFT JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=p.photo_id
+SET p.expired_at=?
+WHERE s.file_path=? AND p.expired_at=0 AND r.id IS NULL`, mediablob.KindPhoto, at, path)
+		if err != nil && !missing(err) && !missingColumn(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func blobKind(kind string) string {
