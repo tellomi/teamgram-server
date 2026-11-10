@@ -359,6 +359,9 @@ services:
         max-file: "5"
     ports:
       - "10443:10443"
+      # Private PROXY v1 listener for the host nginx stream (plain MTProto
+      # on 443). Loopback only. Never "10444:10444". See docs/ops/mtproto-443.md.
+      - "127.0.0.1:10444:10444"
       - "11443:11443"
       - "3479:3479/udp"
       - "3480:3480/udp"
