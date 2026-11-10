@@ -147,7 +147,8 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 	}
 	if rel.Found && !rel.Remove {
 		// The row keeps file_path after this ref is gone. Mark it expired so
-		// a later pass does not treat that leftover path as a legacy holder.
+		// upload.getFile stops and a later pass does not treat that leftover
+		// path as a legacy holder of the shared object.
 		if err = s.markExpired(ctx, m, now); err != nil {
 			return rep, err
 		}
@@ -181,9 +182,13 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 		rep.Objects++
 		rep.Bytes += o.Bytes
 	}
-	// A sibling document still uses every key. Leave this id downloadable.
+	// A sibling still uses the key, so the object stays. This id does not:
+	// its messages are gone, and upload.getFile refuses expired_at.
 	if heldAny && rep.Objects == 0 {
 		rep.Shared = 1
+		if err = s.markExpired(ctx, m, now); err != nil {
+			return rep, err
+		}
 		return s.finish(ctx, m, rep)
 	}
 	if err = s.markExpired(ctx, m, now); err != nil {
