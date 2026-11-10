@@ -104,12 +104,14 @@ func TestMediaPurgeCopies(t *testing.T) {
 		Id:          []int32{cPhoto, cVideo, cVoice},
 	})
 
+	// Revoke returns after the caller's rows are deleted. The other side is
+	// deleted by the inbox consumer, and that is what writes the purge row
+	// once no copy remains. An immediate count races that Kafka handoff.
 	for _, pair := range []struct {
 		kind string
 		id   int64
 	}{{"photo", photo.GetId()}, {"document", video.GetId()}, {"document", voice.GetId()}} {
-		n := strings.TrimSpace(mustSQL(t, fmt.Sprintf(
-			`SELECT COUNT(*) FROM media_purge_queue WHERE media_kind='%s' AND media_id=%d`, pair.kind, pair.id)))
+		n := waitPurgeQueue(t, pair.kind, pair.id)
 		if n != "1" {
 			t.Fatalf("queue %s %d count %s, want 1", pair.kind, pair.id, n)
 		}
@@ -419,6 +421,20 @@ func blobRefCount(t *testing.T, documentID int64) string {
 	t.Helper()
 	return strings.TrimSpace(mustSQL(t, fmt.Sprintf(
 		`SELECT COALESCE(MAX(b.ref_count),0) FROM media_blobs b JOIN media_blob_refs r ON r.blob_id=b.id WHERE r.ref_kind='document' AND r.ref_id=%d`, documentID)))
+}
+
+func waitPurgeQueue(t *testing.T, kind string, id int64) string {
+	t.Helper()
+	q := fmt.Sprintf(`SELECT COUNT(*) FROM media_purge_queue WHERE media_kind='%s' AND media_id=%d`, kind, id)
+	deadline := time.Now().Add(15 * time.Second)
+	var n string
+	for {
+		n = strings.TrimSpace(mustSQL(t, q))
+		if n == "1" || time.Now().After(deadline) {
+			return n
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 func runPurge(t *testing.T) string {
