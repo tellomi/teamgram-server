@@ -80,6 +80,17 @@ func (c GnetwayConfig) IsTcp(addr string) bool {
 	return false
 }
 
+// IsProxyProtocolV1 reports whether addr is exactly a listener configured
+// with PPV1. The comparison is the full address string, not the port and
+// not a wildcard. "0.0.0.0:10444" does not match "127.0.0.1:10444".
+//
+// gnet copies the listening socket's address onto every accepted
+// connection (teamgram/gnet acceptor_unix.go: newStreamConn(...,
+// el.listeners[fd].addr, remoteAddr)). That address is
+// net.ResolveTCPAddr of the configured string, from tcpSocket, not
+// getsockname of the accepted fd. A client that dials 127.0.0.1:10444
+// still has LocalAddr "0.0.0.0:10444" when the listener was configured
+// as 0.0.0.0:10444. OnOpen passes c.LocalAddr().String() here.
 func (c GnetwayConfig) IsProxyProtocolV1(addr string) bool {
 	for _, server := range c.Server {
 		if server.PPV1 {

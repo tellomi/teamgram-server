@@ -236,8 +236,6 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		}
 
 		if bytes.HasPrefix(ppv1, pp.V1Identifier) {
-			logx.Errorf("conn(%s) ppv1 data: %s", c, hex.EncodeToString(ppv1))
-
 			r := bytes.NewReader(ppv1)
 			h, err := pp.ReadHeader(r)
 			if err != nil {
@@ -248,11 +246,19 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 					return
 				}
 			}
+			// The peeked buffer usually also holds the obfuscated init,
+			// whose first 56 bytes are the ephemeral transport key. Log
+			// only the parsed source address.
+			if h.Source == nil {
+				logx.Errorf("conn(%s) ppv1 header has no source address", c)
+				return gnet.Close
+			}
 			if host, _, err := net.SplitHostPort(h.Source.String()); err == nil {
 				ctx.setClientIp(host)
 			} else {
 				ctx.setClientIp(h.Source.String())
 			}
+			logx.Infof("ppv1 accepted client_ip=%s local=%s", ctx.clientIp, c.LocalAddr().String())
 			_, _ = c.Discard(len(ppv1) - r.Len())
 			ctx.ppv1 = false
 

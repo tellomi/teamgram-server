@@ -39,6 +39,12 @@ Gnetway:
     - Proto: websocket
       Addresses:
         - 0.0.0.0:11443
+    # Host nginx stream forwards non-TLS 443 here with PROXY v1.
+    # Separate group so 10443 and 5222 stay PPV1 off. Loopback publish only.
+    - Proto: tcp
+      PPV1: true
+      Addresses:
+        - 0.0.0.0:10444
   Multicore: false
   SendBuf: 65536
   ReceiveBuf: 65536
