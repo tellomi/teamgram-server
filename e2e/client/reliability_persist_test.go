@@ -20,7 +20,8 @@ import (
 // and reads them back. The datastores stay up. A story whose expire_date is
 // already past is absent after that restart.
 func TestReliabilityPersistenceAcrossRestart(t *testing.T) {
-	s := newReliabilityStack(t)
+	// Restarts every teamgram process. Not parallel with the other tests.
+	s := useReliabilityStack(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 

@@ -88,21 +88,53 @@ type reliabilityStack struct {
 }
 
 var (
-	binOnce sync.Once
-	binErr  error
+	binOnce     sync.Once
+	binErr      error
+	stackOnce   sync.Once
+	sharedStack *reliabilityStack
+	stackErr    error
 )
 
-func newReliabilityStack(t *testing.T) *reliabilityStack {
-	t.Helper()
-	root := reliabilityRoot(t)
-	// A photo put that hits object-store retries can take several seconds
-	// before the rpc_result. The regression suite keeps the shorter default.
-	_ = os.Setenv("TELLOMI_E2E_ACK_RETRIES", "8")
-	if err := buildReliabilityBins(root); err != nil {
-		t.Fatalf("build services: %v", err)
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if sharedStack != nil {
+		sharedStack.shutdown()
 	}
-	if err := checkServicePorts(); err != nil {
-		t.Fatal(err)
+	os.Exit(code)
+}
+
+// reliabilityStack is one set of datastores and processes for the package.
+// Session revocation and multi-device sync only touch their own users, so
+// they run in parallel on this stack. Persistence restarts processes and
+// upload kills dfs, so those two stay sequential and do not overlap the
+// parallel tests.
+func useReliabilityStack(t *testing.T) *reliabilityStack {
+	t.Helper()
+	_ = os.Setenv("TELLOMI_E2E_ACK_RETRIES", "8")
+	stackOnce.Do(func() {
+		sharedStack, stackErr = startReliabilityStack()
+	})
+	if stackErr != nil {
+		t.Fatalf("stack: %v", stackErr)
+	}
+	t.Cleanup(func() {
+		if t.Failed() {
+			sharedStack.dumpLogs(t)
+		}
+	})
+	return sharedStack
+}
+
+func startReliabilityStack() (*reliabilityStack, error) {
+	root, err := reliabilityRootDir()
+	if err != nil {
+		return nil, err
+	}
+	if err = buildReliabilityBins(root); err != nil {
+		return nil, err
+	}
+	if err = checkServicePorts(); err != nil {
+		return nil, err
 	}
 	s := &reliabilityStack{
 		root:  root,
@@ -116,32 +148,41 @@ func newReliabilityStack(t *testing.T) *reliabilityStack {
 			RSAKeyFile: filepath.Join(root, "teamgramd/bin/server_pkcs1.key"),
 		},
 	}
-	t.Cleanup(func() { s.Close(t) })
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	if err := s.startDatastores(ctx); err != nil {
-		t.Fatalf("datastores: %v", err)
+	if err = s.startDatastores(ctx); err != nil {
+		s.shutdown()
+		return nil, err
 	}
-	if err := s.startProcesses(); err != nil {
-		t.Fatalf("services: %v", err)
+	if err = s.startProcesses(); err != nil {
+		s.shutdown()
+		return nil, err
 	}
-	return s
+	return s, nil
 }
 
 func reliabilityRoot(t *testing.T) string {
 	t.Helper()
-	if v := os.Getenv("TELLOMI_E2E_ROOT"); v != "" {
-		return v
-	}
-	wd, err := os.Getwd()
+	root, err := reliabilityRootDir()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return root
+}
+
+func reliabilityRootDir() (string, error) {
+	if v := os.Getenv("TELLOMI_E2E_ROOT"); v != "" {
+		return v, nil
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
 	root := filepath.Clean(filepath.Join(wd, "../.."))
 	if _, err := os.Stat(filepath.Join(root, "teamgramd/bin/server_pkcs1.key")); err != nil {
-		t.Fatalf("repo root %s: %v", root, err)
+		return "", fmt.Errorf("repo root %s: %w", root, err)
 	}
-	return root
+	return root, nil
 }
 
 func reliabilityPhone(suffix string) Phone {
@@ -156,40 +197,20 @@ func buildReliabilityBins(root string) error {
 }
 
 func buildReliabilityBinsOnce(root string) error {
-	if _, err := exec.LookPath("pkg-config"); err != nil {
-		return fmt.Errorf("pkg-config is required to link libvips into dfs")
-	}
-	if err := exec.Command("pkg-config", "--exists", "vips").Run(); err != nil {
-		return fmt.Errorf("libvips is required to build dfs (pkg-config vips): %w", err)
-	}
-	sem := make(chan struct{}, 4)
-	var wg sync.WaitGroup
-	errc := make(chan error, len(reliabilityServices))
-	env := append(os.Environ(), "CGO_ENABLED=1")
-	for _, svc := range reliabilityServices {
-		wg.Add(1)
-		go func(svc svcSpec) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			out := filepath.Join(root, "teamgramd/bin", svc.name)
-			cmd := exec.Command("go", "build", "-o", out, "./"+svc.pkg)
-			cmd.Dir = root
-			cmd.Env = env
-			buf, err := cmd.CombinedOutput()
-			if err != nil {
-				errc <- fmt.Errorf("%s: %w\n%s", svc.name, err, tailBytes(buf, 4000))
+	if os.Getenv("TELLOMI_RELIABILITY_SKIP_BUILD") == "1" {
+		for _, svc := range reliabilityServices {
+			if _, err := os.Stat(filepath.Join(root, "teamgramd/bin", svc.name)); err != nil {
+				return fmt.Errorf("TELLOMI_RELIABILITY_SKIP_BUILD=1 but %s is missing", svc.name)
 			}
-		}(svc)
-	}
-	wg.Wait()
-	close(errc)
-	for err := range errc {
-		if err != nil {
-			return err
 		}
+		return nil
 	}
-	return nil
+	cmd := exec.Command("bash", filepath.Join(root, "e2e/client/reliability_build.sh"))
+	cmd.Dir = root
+	cmd.Env = os.Environ()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func checkServicePorts() error {
@@ -670,18 +691,14 @@ func waitPortFree(port int, d time.Duration) error {
 	return fmt.Errorf("still in use")
 }
 
-func (s *reliabilityStack) Close(t *testing.T) {
+func (s *reliabilityStack) shutdown() {
 	s.procMu.Lock()
 	if s.closed {
 		s.procMu.Unlock()
 		return
 	}
 	s.closed = true
-	failed := t != nil && t.Failed()
 	s.procMu.Unlock()
-	if failed {
-		s.dumpLogs(t)
-	}
 	s.stopProcesses()
 	if s.db != nil {
 		_ = s.db.Close()
@@ -697,7 +714,7 @@ func (s *reliabilityStack) Close(t *testing.T) {
 	for _, c := range conts {
 		_ = c.Terminate(ctx)
 	}
-	if s.dir != "" && !failed {
+	if s.dir != "" {
 		_ = os.RemoveAll(s.dir)
 	}
 }

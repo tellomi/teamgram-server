@@ -16,7 +16,9 @@ import (
 // other auth key before the RPC returns: the next request is 401
 // AUTH_KEY_UNREGISTERED, including a reconnect with the saved key.
 func TestReliabilitySessionRevocation(t *testing.T) {
-	s := newReliabilityStack(t)
+	// Own users only. Runs alongside multi-device sync on the shared stack.
+	t.Parallel()
+	s := useReliabilityStack(t)
 	phone := reliabilityPhone("0301")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()

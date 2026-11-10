@@ -19,7 +19,8 @@ import (
 // Killing dfs while a PUT is in flight fails that RPC; after dfs is back the
 // same bytes upload and download.
 func TestReliabilityUploadFailureRecovery(t *testing.T) {
-	s := newReliabilityStack(t)
+	// Kills dfs and points the object store at HTTP 500. Not parallel.
+	s := useReliabilityStack(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 	c, _ := s.login(t, ProfileIOS, reliabilityPhone("0331"), "Upload")

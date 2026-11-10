@@ -16,7 +16,9 @@ import (
 // the same message or read state. The session that did not send the message
 // can read it from updates.getDifference.
 func TestReliabilityMultiDeviceSync(t *testing.T) {
-	s := newReliabilityStack(t)
+	// Own users only. Runs alongside session revocation on the shared stack.
+	t.Parallel()
+	s := useReliabilityStack(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
