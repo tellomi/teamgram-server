@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -535,28 +536,22 @@ func stringParts(s *mtproto.LangPackString) []string {
 	return parts
 }
 
-func hasTelegramBrand(s string) bool {
-	low := strings.ToLower(s)
-	for i := 0; i+8 <= len(low); {
-		j := strings.Index(low[i:], "telegram")
-		if j < 0 {
-			return false
+// markdownLink keeps the visible label and drops the target. (telegram) and
+// (web) are client actions, not the product name.
+var markdownLink = regexp.MustCompile(`\[[^\[\]]*\]\([^)\n]*\)`)
+
+func withoutMarkdownTargets(s string) string {
+	return markdownLink.ReplaceAllStringFunc(s, func(m string) string {
+		i := strings.Index(m, "](")
+		if i < 0 {
+			return m
 		}
-		j += i
-		end := j + len("telegram")
-		prevOK := j == 0 || !isWordByte(low[j-1])
-		nextWord := end < len(low) && isWordByte(low[end])
-		nextOrg := strings.HasPrefix(low[end:], ".org")
-		if prevOK && !nextWord && !nextOrg {
-			return true
-		}
-		i = end
-	}
-	return false
+		return m[:i+1]
+	})
 }
 
-func isWordByte(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '_'
+func hasTelegramBrand(s string) bool {
+	return strings.Contains(strings.ToLower(withoutMarkdownTargets(s)), "telegram")
 }
 
 func TestEmbeddedPacksLoad(t *testing.T) {

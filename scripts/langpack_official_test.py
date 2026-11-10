@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import gzip
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from langpack_import import parse_android
 from langpack_official import (
+    apply_reviewed,
     brand,
     brand_entries,
     merge_lang,
@@ -42,6 +45,12 @@ class RewriteValuesOnlyTest(unittest.TestCase):
         self.assertEqual(rewrite_link("詳しくはtelegram.orgからどうぞ。"), "詳しくはtellomi.cnからどうぞ。")
         self.assertEqual(rewrite_link("desktop.telegram.orgから"), "desktop.tellomi.cnから")
         self.assertEqual(brand("詳しくはtelegram.orgからどうぞ。"), "詳しくはtellomi.cnからどうぞ。")
+        self.assertEqual(brand("subscribing to __Telegram Premium.__"), "subscribing to __Tellomi Premium.__")
+        self.assertEqual(brand("Kuka tahansa Telegramin käyttäjä"), "Kuka tahansa Tellomiin käyttäjä")
+        self.assertEqual(brand("https://tell.cc/TelegramTipsDE"), "https://tellomi.cn/premium")
+        self.assertEqual(brand("https://t.me/TelegramTips"), "https://tellomi.cn/premium")
+        self.assertEqual(brand("See [the app](telegram) today."), "See [the app](telegram) today.")
+        self.assertEqual(brand("TELEGRAMIIN"), "TELLOMIIIN")
 
     def test_brand_entries_copies_keys(self):
         out = brand_entries([
@@ -118,6 +127,48 @@ class ForkOnlyKeyTest(unittest.TestCase):
             official = dict(parse_official_android(path))
         self.assertEqual(imported, {"Hello": "Hi"})
         self.assertEqual(official, {"Hello": "Hi"})
+
+
+class ReviewedPinTest(unittest.TestCase):
+    def test_pin_replaces_a_translation_that_is_not_english(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "reviewed" / "android" / "de.json.gz"
+            path.parent.mkdir(parents=True)
+            doc = {
+                "lang_code": "de",
+                "strings": [
+                    {
+                        "key": "CaptionPremiumSubtitle",
+                        "pin": True,
+                        "version": 5,
+                        "other": "Tellomi Premium",
+                    },
+                    {
+                        "key": "Login.EmailCodeBody",
+                        "version": 4,
+                        "value": "Kurzer Code",
+                    },
+                ],
+            }
+            with gzip.open(path, "wt", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+            english = {
+                "CaptionPremiumSubtitle": {"key": "CaptionPremiumSubtitle", "plural": {"other": "Tellomi Premium"}},
+                "Login.EmailCodeBody": {"key": "Login.EmailCodeBody", "value": "Short code"},
+                "Hello": {"key": "Hello", "value": "Hi"},
+            }
+            strings = [
+                {"key": "CaptionPremiumSubtitle", "version": 9, "other": "__Telegram Premium__"},
+                {"key": "Login.EmailCodeBody", "version": 9, "value": "Echter Satz"},
+                {"key": "Hello", "version": 9, "value": "Hi"},
+            ]
+            out = {item["key"]: item for item in apply_reviewed(root, "android", "de", strings, english)}
+        self.assertEqual(out["CaptionPremiumSubtitle"]["other"], "Tellomi Premium")
+        self.assertNotIn("pin", out["CaptionPremiumSubtitle"])
+        self.assertEqual(out["CaptionPremiumSubtitle"]["version"], 9)
+        self.assertEqual(out["Login.EmailCodeBody"]["value"], "Echter Satz")
+        self.assertEqual(out["Hello"]["value"], "Hi")
 
 
 if __name__ == "__main__":
