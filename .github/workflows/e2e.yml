@@ -68,6 +68,13 @@ jobs:
           echo "mysql did not accept connections"
           exit 1
 
+      - name: Secret qts schema on MySQL
+        env:
+          CGO_ENABLED: "0"
+          # Compose default for this job. Not a production credential.
+          TELLOMI_SCHEMA_TEST_DSN: root:root@tcp(127.0.0.1:3306)/mysql?charset=utf8mb4&parseTime=true
+        run: go test ./app/bff/phone/secretchat/ -count=1 -timeout 3m -run 'TestSecretQtsSchemaMySQL|TestSecretQtsMigrationMySQL'
+
       - name: Start the compose stack
         run: |
           # e2e/docker-compose.ci.yaml only swaps the object-storage image

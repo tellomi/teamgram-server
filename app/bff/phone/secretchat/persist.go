@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
+	"strings"
 	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -314,11 +315,34 @@ func openSQL(dsn string) (*sqlBackend, error) {
 		_ = conn.Close()
 		return nil, err
 	}
-	if _, err = conn.Exec(schema); err != nil {
+	// The startup DSN does not set multiStatements. MySQL 8.0 parses the
+	// script as one query and returns 1064 at the next CREATE
+	// (secret_qts_state). Each statement is IF NOT EXISTS.
+	if err = applySchema(conn); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
 	return &sqlBackend{db: conn}, nil
+}
+
+func applySchema(db *sql.DB) error {
+	return execScript(db, schema)
+}
+
+// execScript splits on ';'. That assumes the script has no semicolon
+// inside a string literal or a comment. schema is only CREATE TABLE
+// statements, so each piece is one statement.
+func execScript(db *sql.DB, script string) error {
+	for _, stmt := range strings.Split(script, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UseDSN points every secret chat in this process at MySQL. An empty dsn
