@@ -79,8 +79,12 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var gone bool
+	// One getHistory can miss a row that is still stored. Treat the message as
+	// deleted only when both histories have lost it and getDifference has the
+	// delete update with pts. The sweeper writes that update after the row
+	// is marked deleted, so the two reads are not the same instant.
 	deadline := time.Now().Add(40 * time.Second)
+	var lastA, lastB mtproto.TLObject
 	for time.Now().Before(deadline) {
 		leftA, err := a.History(ctx, peerForA, 40)
 		if err != nil {
@@ -90,9 +94,17 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if idOfText(leftA, drop) == 0 && idOfText(leftB, drop) == 0 && idOfText(leftA, keep) != 0 && idOfText(leftB, keep) != 0 {
-			gone = true
-			break
+		lastA, err = a.Difference(ctx, ptsA, qtsA, dateA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lastB, err = b.Difference(ctx, ptsB, qtsB, dateB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		histGone := idOfText(leftA, drop) == 0 && idOfText(leftB, drop) == 0 && idOfText(leftA, keep) != 0 && idOfText(leftB, keep) != 0
+		if histGone && differenceDeletes(lastA, idA) && differenceDeletes(lastB, idB) {
+			return
 		}
 		select {
 		case <-ctx.Done():
@@ -100,24 +112,7 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	if !gone {
-		t.Fatal("drop stayed or keep disappeared")
-	}
-
-	diffA, err := a.Difference(ctx, ptsA, qtsA, dateA)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !differenceDeletes(diffA, idA) {
-		t.Fatalf("sender getDifference missing updateDeleteMessages for %d", idA)
-	}
-	diffB, err := b.Difference(ctx, ptsB, qtsB, dateB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !differenceDeletes(diffB, idB) {
-		t.Fatalf("recipient getDifference missing updateDeleteMessages for %d", idB)
-	}
+	t.Fatalf("auto-delete did not remove %q for both sides with updateDeleteMessages (sender id %d %T, recipient id %d %T)", drop, idA, lastA, idB, lastB)
 }
 
 func TestHistoryTTLGroupAndChannel(t *testing.T) {
