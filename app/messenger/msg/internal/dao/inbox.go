@@ -172,6 +172,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 			Mentioned:         inBox.Mentioned,
 			MediaUnread:       inBox.MediaUnread,
 			Date2:             date,
+			TtlPeriod:         historyPeriod(message),
 			Deleted:           false,
 		}
 
@@ -220,7 +221,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 				FolderId:      0,
 				FolderPinned:  0,
 				HasScheduled:  false,
-				TtlPeriod:     0,
+				TtlPeriod:     historyPeriod(message),
 				ThemeEmoticon: "",
 				Date2:         date,
 			}
@@ -261,6 +262,13 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 			return 0, 0, err
 		},
 		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
+	// The inbox peer for a private chat is the sender, not the value this
+	// function uses as `peer` (that one names the recipient).
+	ttlPeer := peer
+	if peer != nil && peer.PeerType == mtproto.PEER_USER {
+		ttlPeer = &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: fromId}
+	}
+	d.ensureDialogTTL(ctx, toUserId, ttlPeer)
 
 	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
 	inBox.PtsCount = 1

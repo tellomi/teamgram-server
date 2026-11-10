@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/marmota/pkg/stores/kv"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/historyttl"
 	inbox_client "github.com/teamgram/teamgram-server/app/messenger/msg/inbox/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/internal/config"
@@ -84,6 +85,9 @@ func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext
 	} else {
 		ttlmedia.Start(st)
 	}
+	// The docker image runs app/messenger/msg, which builds this context.
+	// Starting here covers that process and the standalone msg binary.
+	historyttl.Start(svcCtx.Dao)
 	return svcCtx
 }
 

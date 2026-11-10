@@ -11,6 +11,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/readtime"
+	"google.golang.org/protobuf/proto"
 )
 
 type mysqlStore struct {
@@ -36,6 +37,8 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 		`ALTER TABLE channels ADD COLUMN restricted TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE channels ADD COLUMN banned TINYINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE channel_messages ADD COLUMN message TEXT NULL`,
+		`ALTER TABLE channel_messages ADD COLUMN ttl_period INT NOT NULL DEFAULT 0`,
+		`ALTER TABLE channel_messages ADD KEY channel_messages_ttl (ttl_period, date2)`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil && !alreadyColumn(err) {
 			return err
@@ -46,7 +49,18 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 
 func alreadyColumn(err error) bool {
 	var me *mysql.MySQLError
-	return errors.As(err, &me) && me.Number == 1060
+	return errors.As(err, &me) && (me.Number == 1060 || me.Number == 1061)
+}
+
+func ttlFromPayload(b []byte) int32 {
+	var msg mtproto.Message
+	if err := proto.Unmarshal(b, &msg); err != nil {
+		return 0
+	}
+	if msg.TtlPeriod == nil {
+		return 0
+	}
+	return msg.TtlPeriod.Value
 }
 
 func (s *mysqlStore) AllocID(ctx context.Context) (int64, error) {
@@ -325,8 +339,8 @@ func (s *mysqlStore) CommitNew(ctx context.Context, channelID, senderID, randomI
 		return 0, 0, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `
-INSERT INTO channel_messages (channel_id, message_id, sender_user_id, date2, edit_date, random_id, pts, deleted, message_data, message)
-VALUES (?,?,?,?,0,?,?,0,?,?)`, channelID, top, senderID, date, randomID, pts, payload, messagePlain(payload)); err != nil {
+INSERT INTO channel_messages (channel_id, message_id, sender_user_id, date2, edit_date, random_id, pts, deleted, message_data, message, ttl_period)
+VALUES (?,?,?,?,0,?,?,0,?,?,?)`, channelID, top, senderID, date, randomID, pts, payload, messagePlain(payload), ttlFromPayload(payload)); err != nil {
 		return 0, 0, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `

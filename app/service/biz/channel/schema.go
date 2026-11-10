@@ -58,8 +58,10 @@ CREATE TABLE IF NOT EXISTS channel_messages (
   deleted TINYINT NOT NULL DEFAULT 0,
   message_data MEDIUMBLOB NOT NULL,
   message TEXT NULL,
+  ttl_period INT NOT NULL DEFAULT 0,
   PRIMARY KEY (channel_id, message_id),
-  KEY channel_messages_random (channel_id, sender_user_id, random_id)
+  KEY channel_messages_random (channel_id, sender_user_id, random_id),
+  KEY channel_messages_ttl (ttl_period, date2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS channel_pts_updates (

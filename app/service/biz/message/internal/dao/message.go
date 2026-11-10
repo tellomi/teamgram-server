@@ -12,6 +12,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 	"github.com/zeromicro/go-zero/core/jsonx"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func (d *Dao) MakeMessageBox(ctx context.Context, selfUserId int64, do *dataobject.MessagesDO) (box *mtproto.MessageBox) {
@@ -36,6 +37,11 @@ func (d *Dao) MakeMessageBox(ctx context.Context, selfUserId int64, do *dataobje
 	// Message
 	_ = jsonx.UnmarshalFromString(do.MessageData, &box.Message)
 	box.Message = box.Message.FixData()
+	// Rows stamped by the expiry backfill have the column set and an older
+	// JSON body without the flag. Clients read message.ttl_period.
+	if box.Message != nil && box.Message.GetTtlPeriod().GetValue() == 0 && do.TtlPeriod > 0 {
+		box.Message.TtlPeriod = &wrapperspb.Int32Value{Value: do.TtlPeriod}
+	}
 
 	// poll
 	if d.Plugin != nil {

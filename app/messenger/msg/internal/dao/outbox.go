@@ -106,6 +106,7 @@ func (d *Dao) sendMessageToOutbox(ctx context.Context, fromId int64, peer *mtpro
 		// Pts:              pts,
 		// PtsCount:         ptsCount,
 		// mType, mData := mtproto.EncodeMessage(message)
+		d.stampHistoryTTL(ctx, fromId, peer, message)
 		message.SanitizeEntities()
 		mData, _ := jsonx.Marshal(message)
 		outMsgBox := &mtproto.MessageBox{
@@ -149,6 +150,7 @@ func (d *Dao) sendMessageToOutbox(ctx context.Context, fromId int64, peer *mtpro
 			Mentioned:         false,
 			MediaUnread:       message.MediaUnread,
 			Date2:             int64(outMsgBox.Message.Date),
+			TtlPeriod:         historyPeriod(message),
 			SavedPeerType:     savedPeerUtil.PeerType,
 			SavedPeerId:       savedPeerUtil.PeerId,
 			Deleted:           false,
@@ -637,6 +639,7 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 				Mentioned:         false,
 				MediaUnread:       message.GetMediaUnread(),
 				Date2:             int64(outMsgBox.Message.Date),
+				TtlPeriod:         historyPeriod(message),
 				SavedPeerType:     savedPeerUtil.PeerType,
 				SavedPeerId:       savedPeerUtil.PeerId,
 				Deleted:           false,
@@ -677,6 +680,7 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 	// row forward before the dialog service drops its cache of this peer.
 	if tR.Err == nil {
 		d.advanceSavedMessagesDialog(ctx, fromId, peer, outBoxMsgId, int64(message.GetDate()))
+		d.ensureDialogTTL(ctx, fromId, peer)
 	}
 
 	_, err := d.DialogClient.DialogInsertOrUpdateDialog(
@@ -778,6 +782,7 @@ func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtp
 		}
 	}
 
+	d.stampHistoryTTL(ctx, fromId, peer, message)
 	message.Out = out
 	message.Id = outBoxMsgId
 	message.MediaUnread = mtproto.CheckHasMediaUnread(message)
@@ -806,7 +811,7 @@ func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtp
 		CommentGroupMsgId: 0,
 		ReplyToMsgId:      0,
 		ReplyToTopId:      0,
-		TtlPeriod:         0,
+		TtlPeriod:         historyPeriod(message),
 		HasReaction:       false,
 	}).To_MessageBox()
 
@@ -866,6 +871,7 @@ func (d *Dao) sendMessageToOutboxV3(ctx context.Context, fromId int64, peer *mtp
 		}
 	}
 
+	d.stampHistoryTTL(ctx, fromId, peer, message)
 	message.Out = out
 	message.Id = outBoxMsgId
 	message.MediaUnread = mtproto.CheckHasMediaUnread(message)
@@ -894,7 +900,7 @@ func (d *Dao) sendMessageToOutboxV3(ctx context.Context, fromId int64, peer *mtp
 		CommentGroupMsgId: 0,
 		ReplyToMsgId:      0,
 		ReplyToTopId:      0,
-		TtlPeriod:         0,
+		TtlPeriod:         historyPeriod(message),
 		HasReaction:       false,
 	}).To_MessageBox()
 

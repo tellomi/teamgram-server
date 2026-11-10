@@ -89,6 +89,69 @@ func TestExpiredMessagesStayUntilTheSwitch(t *testing.T) {
 	}
 }
 
+func TestExpireDueDeletesBothSidesAndIsIdempotent(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "expire")
+	in := inCh(ch)
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetHistoryTTL(ctx, 1, 0, ch.Id, 30); err != nil {
+		t.Fatal(err)
+	}
+	now := int32(time.Now().Unix())
+	if _, _, err := svc.appendMessage(ctx, ch.Id, 1, 11, mtproto.MakeTLMessage(&mtproto.Message{
+		Date:    now - 120,
+		Message: "gone",
+		FromId:  mtproto.MakePeerUser(1),
+	}).To_Message()); err != nil {
+		t.Fatal(err)
+	}
+	keptID, _, err := svc.appendMessage(ctx, ch.Id, 1, 12, mtproto.MakeTLMessage(&mtproto.Message{
+		Date:    now,
+		Message: "stay",
+		FromId:  mtproto.MakePeerUser(1),
+	}).To_Message())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var deletes []int32
+	svc.SetHooks(Hooks{Push: func(_ context.Context, userID int64, _ []int64, updates *mtproto.Updates) {
+		if userID != 2 || updates == nil {
+			return
+		}
+		for _, up := range updates.GetUpdates() {
+			if up.GetPredicateName() == mtproto.Predicate_updateDeleteChannelMessages && up.GetPts_INT32() > 0 && up.GetPtsCount() > 0 {
+				deletes = append(deletes, up.GetMessages()...)
+			}
+		}
+	}})
+	n, err := svc.ExpireDue(ctx, now, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || len(deletes) != 1 {
+		t.Fatalf("deleted %d ids %#v, want the one expired post", n, deletes)
+	}
+	if !historyHas(t, svc, ctx, 2, in, "stay") || historyHas(t, svc, ctx, 2, in, "gone") {
+		t.Fatal("expired channel post still in history, or the live one was removed")
+	}
+	hist, err := svc.History(ctx, 2, in, HistoryQuery{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, msg := range hist.GetMessages() {
+		if msg.GetId() == keptID && msg.GetTtlPeriod().GetValue() != 30 {
+			t.Fatalf("stamped ttl = %d", msg.GetTtlPeriod().GetValue())
+		}
+	}
+	again, err := svc.ExpireDue(ctx, now, 50)
+	if err != nil || again != 0 {
+		t.Fatalf("second pass deleted %d (%v), want 0", again, err)
+	}
+}
+
 func historyHas(t *testing.T, svc *Service, ctx context.Context, user int64, in *mtproto.InputChannel, text string) bool {
 	t.Helper()
 	hist, err := svc.History(ctx, user, in, HistoryQuery{Limit: 50})
