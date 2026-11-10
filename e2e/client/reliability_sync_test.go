@@ -58,9 +58,9 @@ func TestReliabilityMultiDeviceSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertSamePts(t, a1, a2, beforePts)
-	if got := historyText(t, ctx, a2, a2Peer, msgID); got != "sync-body" {
-		t.Fatalf("other session history %q", got)
-	}
+	// pts can move before this session's getHistory sees the row. One read
+	// then reports an empty history. Retry until the text is there.
+	waitHistoryText(t, a2, a2Peer, msgID, "sync-body")
 	diff, err := a2.Difference(ctx, beforePts, beforeQts, beforeDate)
 	if err != nil {
 		t.Fatal(err)
@@ -76,12 +76,8 @@ func TestReliabilityMultiDeviceSync(t *testing.T) {
 		Message:     &wrapperspb.StringValue{Value: "sync-edited"},
 	})
 	assertSamePts(t, a1, a2, beforePts)
-	if got := historyText(t, ctx, a1, peer, msgID); got != "sync-edited" {
-		t.Fatalf("sender history %q", got)
-	}
-	if got := historyText(t, ctx, a2, a2Peer, msgID); got != "sync-edited" {
-		t.Fatalf("other session history after edit %q", got)
-	}
+	waitHistoryText(t, a1, peer, msgID, "sync-edited")
+	waitHistoryText(t, a2, a2Peer, msgID, "sync-edited")
 
 	// Private chats number a message separately on each side. The peer reads
 	// its own id. The sender's read_outbox_max_id then covers the sender's id.
@@ -119,11 +115,23 @@ func TestReliabilityMultiDeviceSync(t *testing.T) {
 		Id:          []int32{msgID},
 	})
 	assertSamePts(t, a1, a2, beforePts)
-	if got := historyText(t, ctx, a1, peer, msgID); got != "" {
-		t.Fatalf("sender still has %q", got)
-	}
-	if got := historyText(t, ctx, a2, a2Peer, msgID); got != "" {
-		t.Fatalf("other session still has %q", got)
+	waitHistoryText(t, a1, peer, msgID, "")
+	waitHistoryText(t, a2, a2Peer, msgID, "")
+}
+
+// waitHistoryText polls getHistory until this box shows want, or 8s pass.
+// An empty want means the id is gone or messageEmpty.
+func waitHistoryText(t *testing.T, c *Client, peer *mtproto.InputPeer, id int32, want string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	var got string
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		got = historyText(t, ctx, c, peer, id)
+		return got == want, nil
+	})
+	if err != nil {
+		t.Fatalf("history id %d = %q, want %q: %v", id, got, want, err)
 	}
 }
 
