@@ -247,6 +247,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 
 	if in.GetScheduleDate().GetValue() == 0 {
 		c.noteTellomi(c.MD.UserId, peer, in.Message, in.Entities, in.RandomId, replyToMsgID(in), rUpdate, false)
+		noteCrashReports(c.ctx, c.MD.UserId, peer, outMessage, rUpdate)
 	}
 
 	if in.ClearDraft {

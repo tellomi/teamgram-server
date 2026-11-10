@@ -85,6 +85,7 @@ import (
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
+	"github.com/teamgram/teamgram-server/pkg/crashreport"
 	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -493,6 +494,8 @@ func (s *Server) Initialize() error {
 		bots_helper.StartTellomi(c.MsgClient, c.BizServiceClient, c.ChannelMySQL)
 		// Launch notices. Unset returns immediately and is not on the login path.
 		bots_helper.StartAnnounce(c.MsgClient, c.ChannelMySQL)
+		// Crash-report bot. The listener stays off until TELLOMI_CRASH_REPORT_TOKEN is set.
+		crashreport.Start(c.ChannelMySQL)
 		// Unified reports. Review and the decision listener stay off unless configured.
 		bots_helper.StartReports(c.MsgClient, c.ChannelMySQL)
 		bots_helper.StartEnforcementReview(c.MsgClient, c.ChannelMySQL)

@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/about"
 	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/crashreport"
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -457,5 +458,24 @@ func TestHelpCenterFlag(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["faq_link"] != "https://tellomi.cn/help" {
 		t.Fatalf("faq_link = %#v", obj["faq_link"])
+	}
+}
+
+func TestCrashReportBotConfig(t *testing.T) {
+	t.Setenv(crashreport.EnvBot, "")
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_crash_report_bot"] != crashreport.DefaultUsername {
+		t.Fatalf("bot %#v", obj["tellomi_crash_report_bot"])
+	}
+	off := AppConfigHash()
+	t.Setenv(crashreport.EnvBot, "OtherBot")
+	if AppConfigHash() == off {
+		t.Fatal("app config hash ignored TELLOMI_CRASH_REPORT_BOT")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_crash_report_bot"] != "OtherBot" {
+		t.Fatalf("bot %#v", obj["tellomi_crash_report_bot"])
 	}
 }

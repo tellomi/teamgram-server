@@ -129,6 +129,9 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 		}
 		rep.Released = 1
 		for _, o := range objs {
+			if protectedObject(o.Class, o.Path) {
+				continue
+			}
 			held, err := s.pathHeld(ctx, o.Class, o.Path, m)
 			if err != nil {
 				return rep, err
@@ -166,6 +169,10 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 	}
 	heldAny := false
 	for _, o := range objs {
+		if protectedObject(o.Class, o.Path) {
+			heldAny = true
+			continue
+		}
 		held, err := s.pathHeld(ctx, o.Class, o.Path, m)
 		if err != nil {
 			return rep, err

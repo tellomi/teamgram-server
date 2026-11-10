@@ -206,6 +206,7 @@ func (m *MinioUtil) RemoveClassObject(ctx context.Context, class, path string) e
 	switch class {
 	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles:
 	default:
+		// crash-reports is not a chat-media class, so this path refuses it.
 		return fmt.Errorf("refusing to remove %s/%s: only chat media classes can be removed", class, path)
 	}
 	return m.removeKey(ctx, class, path, false)
@@ -224,6 +225,59 @@ func trashClass(class string) bool {
 }
 
 // Endpoint is the configured S3 host, without credentials.
+// CopyClassObject copies one object onto the crash-reports class. The
+// destination class is the only one this accepts, so chat media cannot be
+// overwritten through it.
+func (m *MinioUtil) CopyClassObject(ctx context.Context, srcClass, srcPath, dstClass, dstPath string) error {
+	if m == nil || m.client == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if dstClass != ClassCrashReports {
+		return fmt.Errorf("refusing to copy into %s", dstClass)
+	}
+	switch srcClass {
+	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles, ClassCrashReports:
+	default:
+		return fmt.Errorf("refusing to copy from %s", srcClass)
+	}
+	srcBucket, srcKey, err := resolveLocation(m.c, srcClass, srcPath)
+	if err != nil {
+		return err
+	}
+	dstBucket, dstKey, err := resolveLocation(m.c, dstClass, dstPath)
+	if err != nil {
+		return err
+	}
+	_, err = m.client.CopyObject(ctx, minio.CopyDestOptions{Bucket: dstBucket, Object: dstKey}, minio.CopySrcOptions{Bucket: srcBucket, Object: srcKey})
+	if err != nil {
+		logx.WithContext(ctx).Errorf("CopyObject %s/%s -> %s/%s error: %v", srcBucket, srcKey, dstBucket, dstKey, err)
+	}
+	return err
+}
+
+// PresignClass returns a GET URL for a crash-report object. Other classes
+// are refused so this helper cannot sign chat media.
+func (m *MinioUtil) PresignClass(ctx context.Context, class, path string, expiry time.Duration) (string, error) {
+	if m == nil || m.client == nil {
+		return "", fmt.Errorf("object storage client is nil")
+	}
+	if class != ClassCrashReports {
+		return "", fmt.Errorf("refusing to sign %s", class)
+	}
+	if expiry <= 0 {
+		expiry = 15 * time.Minute
+	}
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return "", err
+	}
+	u, err := m.client.PresignedGetObject(ctx, bucket, key, expiry, nil)
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
 func (m *MinioUtil) Endpoint() string {
 	if m == nil || m.c == nil {
 		return ""
@@ -404,7 +458,7 @@ func (m *MinioUtil) GetFileObject(ctx context.Context, bucket, path string) (*mi
 func (m *MinioUtil) resolveRead(bucketOrClass, path string) (string, string, error) {
 	switch bucketOrClass {
 	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles,
-		ClassAvatars, ClassStickers, ClassEmoji, ClassWallpapers, ClassBackups:
+		ClassAvatars, ClassStickers, ClassEmoji, ClassWallpapers, ClassBackups, ClassCrashReports:
 		return resolveLocation(m.c, bucketOrClass, path)
 	default:
 		// Historical callers passed the physical bucket. Map it back to a class
