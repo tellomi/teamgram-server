@@ -19,6 +19,8 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -27,28 +29,40 @@ import (
 // DialogSetHistoryTTL
 // dialog.setHistoryTTL user_id:long peer_type:int peer_id:long ttl_period:int = Bool;
 func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtproto.Bool, error) {
-	sqlx.TxWrapper(c.ctx, c.svcCtx.Dao.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-		c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-			tx,
-			map[string]interface{}{
-				"ttl_period": in.TtlPeriod,
-			},
-			in.UserId,
-			in.PeerType,
-			in.PeerId)
-		// The other side of a private chat stores the same timer. A chat
-		// id is not a user id, so the reverse row is only written for users.
-		if in.PeerType == mtproto.PEER_USER {
-			c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-				tx,
-				map[string]interface{}{
-					"ttl_period": in.TtlPeriod,
-				},
-				in.PeerId,
+	// Drop the cached dialog. getDialogs and getFullUser otherwise keep the
+	// timer from before this write until the cache entry expires.
+	keys := []string{dialog.GetDialogCacheKeyByPeer(in.UserId, in.PeerType, in.PeerId)}
+	if in.PeerType == mtproto.PEER_USER && in.PeerId != in.UserId {
+		keys = append(keys, dialog.GetDialogCacheKeyByPeer(in.PeerId, in.PeerType, in.UserId))
+	}
+	c.svcCtx.Dao.CachedConn.Exec(
+		c.ctx,
+		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+			if _, err := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(
+				ctx,
+				map[string]interface{}{"ttl_period": in.TtlPeriod},
+				in.UserId,
 				in.PeerType,
-				in.UserId)
-		}
-	})
+				in.PeerId,
+			); err != nil {
+				return 0, 0, err
+			}
+			// The other side of a private chat stores the same timer. A chat
+			// id is not a user id, so the reverse row is only written for users.
+			if in.PeerType == mtproto.PEER_USER && in.PeerId != in.UserId {
+				if _, err := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(
+					ctx,
+					map[string]interface{}{"ttl_period": in.TtlPeriod},
+					in.PeerId,
+					in.PeerType,
+					in.UserId,
+				); err != nil {
+					return 0, 0, err
+				}
+			}
+			return 0, 1, nil
+		},
+		keys...)
 
 	return mtproto.BoolTrue, nil
 }

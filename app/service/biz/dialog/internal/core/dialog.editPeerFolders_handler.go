@@ -10,9 +10,11 @@
 package core
 
 import (
+	"context"
 	"sort"
 	"time"
 
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/internal/dal/dataobject"
@@ -91,6 +93,21 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 			dialogPinnedList = dialogPinnedList[:cap]
 		}
 	}
+
+	// getDialogs reads these lists and the dialog row from cache. Without
+	// dropping them, a chat stays in the main list until the entry expires.
+	keys := []string{
+		dialog.GetPinnedDialogIdListCacheKey(in.UserId),
+		dialog.GetNotPinnedDialogIdListCacheKey(in.UserId),
+		dialog.GetFolderPinnedDialogIdListCacheKey(in.UserId),
+		dialog.GetFolderNotPinnedDialogIdListCacheKey(in.UserId),
+	}
+	for _, id := range in.PeerDialogList {
+		keys = append(keys, dialog.GetDialogCacheKey(in.UserId, id))
+	}
+	c.svcCtx.Dao.CachedConn.Exec(c.ctx, func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+		return 0, 1, nil
+	}, keys...)
 
 	return &dialog.Vector_DialogPinnedExt{
 		Datas: dialogPinnedList,
