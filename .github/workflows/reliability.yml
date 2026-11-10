@@ -1,0 +1,61 @@
+# Server reliability. Runs on every pull request. Docker is already on the
+# GitHub-hosted runner. The job does not start production compose and does
+# not change branch protection by itself. After the first green run, require
+# the check "Server reliability / reliability". See docs/testing.md.
+
+name: Server reliability
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reliability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reliability:
+    name: reliability
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: |
+            go.sum
+            e2e/client/go.sum
+
+      - name: Cache container images
+        uses: actions/cache@v4
+        with:
+          path: /tmp/reliability-images
+          key: reliability-images-v1
+
+      - name: Build services and load images
+        env:
+          RELIABILITY_IMAGE_CACHE: /tmp/reliability-images
+        run: |
+          chmod +x e2e/client/reliability_build.sh e2e/client/reliability_images.sh
+          bash e2e/client/reliability_build.sh &
+          build_pid=$!
+          bash e2e/client/reliability_images.sh &
+          image_pid=$!
+          fail=0
+          wait "$build_pid" || fail=1
+          wait "$image_pid" || fail=1
+          exit "$fail"
+
+      - name: Reliability integration tests
+        working-directory: e2e/client
+        env:
+          TELLOMI_RELIABILITY_SKIP_BUILD: "1"
+          TELLOMI_E2E_ROOT: ${{ github.workspace }}
+        run: ../../teamgramd/bin/reliability.test -test.count=1 -test.timeout 8m -test.v -test.run 'TestReliability'

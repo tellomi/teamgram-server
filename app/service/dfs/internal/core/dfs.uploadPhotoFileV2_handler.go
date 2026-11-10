@@ -83,6 +83,9 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		return nil, err
 	}
+	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassPhotos, claim.Path) {
+		claim.Reused = false
+	}
 	// One span for this upload: claim (hit or miss) and whether the
 	// original object was written. Derivative sizes are not the blob.
 	var objectWritten bool
@@ -186,7 +189,9 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	if err = runBounded(c.ctx, photoPutConcurrency, puts); err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
-		return nil, mtproto.ErrImageProcessFailed
+		// Decode failures already returned IMAGE_PROCESS_FAILED. A put
+		// error is the object store, and clients retry 500.
+		return nil, mtproto.ErrInternalServerError
 	}
 	if !claim.Reused {
 		objectWritten = true

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -126,6 +128,21 @@ func DialSession(ctx context.Context, cfg Config, profile Profile, sess gotdmt.S
 	return dial(ctx, cfg, profile, sess)
 }
 
+// ackRetries is 2 unless TELLOMI_E2E_ACK_RETRIES is set. A storage RPC can
+// take a few seconds before the rpc_result; the default still matches the
+// regression suite.
+func ackRetries() int {
+	v := os.Getenv("TELLOMI_E2E_ACK_RETRIES")
+	if v == "" {
+		return 2
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return 2
+	}
+	return n
+}
+
 func dial(ctx context.Context, cfg Config, profile Profile, sess gotdmt.Session) (*Client, error) {
 	pub, err := cfg.PublicKey()
 	if err != nil {
@@ -136,7 +153,7 @@ func dial(ctx context.Context, cfg Config, profile Profile, sess gotdmt.Session)
 		DC:                cfg.DC,
 		PublicKeys:        []exchange.PublicKey{pub},
 		Handler:           h,
-		MaxRetries:        2,
+		MaxRetries:        ackRetries(),
 		RetryInterval:     time.Second,
 		CompressThreshold: -1,
 		RequestTimeout: func(uint32) time.Duration {

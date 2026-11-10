@@ -19,36 +19,73 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 )
 
+// historyTTLStore is the dialog row writer. *mysql_dao.DialogsDAO implements it.
+// Tests pass a fake so both sides of a private chat can be asserted without MySQL.
+type historyTTLStore interface {
+	UpdateCustomMapTx(tx *sqlx.Tx, cMap map[string]interface{}, userId int64, peerType int32, peerId int64) (int64, error)
+}
+
 // DialogSetHistoryTTL
 // dialog.setHistoryTTL user_id:long peer_type:int peer_id:long ttl_period:int = Bool;
 func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtproto.Bool, error) {
-	sqlx.TxWrapper(c.ctx, c.svcCtx.Dao.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-		c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-			tx,
-			map[string]interface{}{
-				"ttl_period": in.TtlPeriod,
-			},
-			in.UserId,
-			in.PeerType,
-			in.PeerId)
-		// The other side of a private chat stores the same timer. A chat
-		// id is not a user id, so the reverse row is only written for users.
-		if in.PeerType == mtproto.PEER_USER {
-			c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-				tx,
-				map[string]interface{}{
-					"ttl_period": in.TtlPeriod,
-				},
-				in.PeerId,
-				in.PeerType,
-				in.UserId)
-		}
-	})
+	// Drop the cached dialog. getDialogs and getFullUser otherwise keep the
+	// timer from before this write until the cache entry expires.
+	// CachedConn.Exec deletes those keys only when the callback returns nil,
+	// so a rolled-back write leaves the previous cache entry in place.
+	_, _, err := c.svcCtx.Dao.CachedConn.Exec(
+		c.ctx,
+		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+			if err := writeHistoryTTL(ctx, conn, c.svcCtx.Dao.DialogsDAO, in); err != nil {
+				return 0, 0, err
+			}
+			return 0, 1, nil
+		},
+		historyTTLCacheKeys(in.UserId, in.PeerType, in.PeerId)...)
+	if err != nil {
+		c.Logger.Errorf("dialog.setHistoryTTL - error: %v", err)
+		return nil, err
+	}
 
 	return mtproto.BoolTrue, nil
+}
+
+func historyTTLCacheKeys(userID int64, peerType int32, peerID int64) []string {
+	keys := []string{dialog.GetDialogCacheKeyByPeer(userID, peerType, peerID)}
+	if peerType == mtproto.PEER_USER && peerID != userID {
+		keys = append(keys, dialog.GetDialogCacheKeyByPeer(peerID, peerType, userID))
+	}
+	return keys
+}
+
+// writeHistoryTTL stores the timer on both sides of a private chat in one
+// transaction. TxWrapper rolls the first update back when applyHistoryTTL
+// returns an error, because it returns that error from the transaction body.
+func writeHistoryTTL(ctx context.Context, conn *sqlx.DB, store historyTTLStore, in *dialog.TLDialogSetHistoryTTL) error {
+	result := sqlx.TxWrapper(ctx, conn, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+		result.Err = applyHistoryTTL(tx, store, in)
+	})
+	return result.Err
+}
+
+func applyHistoryTTL(tx *sqlx.Tx, store historyTTLStore, in *dialog.TLDialogSetHistoryTTL) error {
+	ttl := map[string]interface{}{"ttl_period": in.TtlPeriod}
+	if _, err := store.UpdateCustomMapTx(tx, ttl, in.UserId, in.PeerType, in.PeerId); err != nil {
+		return err
+	}
+	// The other side of a private chat stores the same timer. A chat id is
+	// not a user id, so the reverse row is only written for users. Saved
+	// messages are one row.
+	if in.PeerType == mtproto.PEER_USER && in.PeerId != in.UserId {
+		if _, err := store.UpdateCustomMapTx(tx, ttl, in.PeerId, in.PeerType, in.UserId); err != nil {
+			return err
+		}
+	}
+	return nil
 }

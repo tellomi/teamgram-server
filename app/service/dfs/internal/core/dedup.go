@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
 
@@ -119,6 +121,17 @@ func (c *DfsCore) claimDocumentReader(ctx context.Context, documentID int64, r i
 		return mediablob.Claim{Path: fmt.Sprintf("%d.dat", documentID), SHA256: sum, Size: n}, nil
 	}
 	return claim, nil
+}
+
+// objectMissing is true when this claim's key is not in the object store.
+// A crash between the blob claim and the put leaves that row. The next
+// upload of the same bytes must write the object instead of trusting the row.
+func (c *DfsCore) objectMissing(ctx context.Context, class, path string) bool {
+	if path == "" || c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MinioUtil == nil {
+		return false
+	}
+	_, err := c.svcCtx.Dao.StatClass(ctx, class, path)
+	return errors.Is(err, minio_util.ErrNotFound)
 }
 
 func (c *DfsCore) claimDocument(ctx context.Context, documentID int64, sha string, size int64) (mediablob.Claim, error) {

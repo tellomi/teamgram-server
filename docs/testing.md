@@ -42,3 +42,13 @@ Require these checks on `master`. The names are the ones GitHub shows after the 
 - `Compose config / minio-profile`
 - `Go test / go-test`
 - `Client regression / e2e`
+- `Server reliability / reliability`
+
+`Server reliability / reliability` is `.github/workflows/reliability.yml`. It builds the service binaries in one compile per cgo mode, compiles the `e2e/client` reliability test at the same time, and runs that binary. The suite starts one MySQL, Redis, etcd, Kafka, and object-store set with pinned tags, then the teamgram processes. Redis is the SSDB stand-in from `teamgramd/etc2/dfs.yaml`. The object store is the pinned MinIO-compatible image used as a local R2 stand-in. Session revocation and multi-device sync use different users and run together. Persistence restarts the processes and upload kills dfs, so those two run one at a time on that same set. The job caches the Go build and the pulled images. It does not start production compose and does not read production credentials. GitHub offers the check name after the first run; add it then. The job timeout is 12 minutes.
+
+Run it locally with Docker and libvips:
+
+```
+cd e2e/client
+go test -tags reliability -count=1 -timeout 8m -run 'TestReliability' .
+```
