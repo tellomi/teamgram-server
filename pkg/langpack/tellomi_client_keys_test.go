@@ -172,32 +172,35 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 			t.Fatalf("%s %s %s got %q (%v) want %q", tc.platform, tc.code, tc.key, value, err, tc.value)
 		}
 	}
-	// Chinese of the 105 PR 162 keys must not all be the English text.
-	var differ int
-	enPack := readPackVersions(t, "../../data/langpack/ios/en.json.gz")
-	hans := readPackVersions(t, "../../data/langpack/ios/zh-hans.json.gz")
-	hant := readPackVersions(t, "../../data/langpack/ios/zh-hant.json.gz")
-	enText := readPackText(t, "../../data/langpack/ios/en.json.gz")
-	hansText := readPackText(t, "../../data/langpack/ios/zh-hans.json.gz")
-	hantText := readPackText(t, "../../data/langpack/ios/zh-hant.json.gz")
-	for _, key := range ios162 {
-		if _, ok := enPack.strings[key]; !ok {
-			t.Fatalf("ios en missing %s", key)
+	// zh-hans and zh-hant must not keep the English text for a Tellomi key
+	// that has Chinese. A string that is the same in Chinese (PDF) may match.
+	for _, platform := range []string{"android", "ios"} {
+		keys := androidKeys
+		if platform == "ios" {
+			keys = iosKeys
 		}
-		if hans.strings[key] != hans.version || hant.strings[key] != hant.version {
-			t.Fatalf("ios chinese %s not at pack version", key)
-		}
-		if hansText[key] != enText[key] {
-			differ++
-		}
-		if hantText[key] == "" || hansText[key] == "" {
-			t.Fatalf("empty ios chinese %s", key)
+		enText := readPackText(t, "../../data/langpack/"+platform+"/en.json.gz")
+		hansText := readPackText(t, "../../data/langpack/"+platform+"/zh-hans.json.gz")
+		hantText := readPackText(t, "../../data/langpack/"+platform+"/zh-hant.json.gz")
+		for _, key := range keys {
+			en, hans, hant := enText[key], hansText[key], hantText[key]
+			if hans == "" || hant == "" {
+				t.Fatalf("%s %s empty hans %q hant %q", platform, key, hans, hant)
+			}
+			if hans == en && hant == en {
+				continue
+			}
+			if hans == en || hant == en {
+				t.Fatalf("%s %s still English hans %q hant %q en %q", platform, key, hans, hant, en)
+			}
 		}
 	}
-	if differ < 90 {
-		t.Fatalf("ios zh-hans translations differing from English: %d of 105", differ)
+	if hans := readPackText(t, "../../data/langpack/ios/zh-hans.json.gz"); hans["Story.Privacy.CategoryMutualFollowers"] != "互关好友" || hans["Story.Privacy.WhoCanViewMoment"] != "谁可以看" {
+		t.Fatalf("ios story hans needs review copy: %+v", []string{hans["Story.Privacy.CategoryMutualFollowers"], hans["Story.Privacy.WhoCanViewMoment"]})
 	}
-	_ = hantText
+	if hant := readPackText(t, "../../data/langpack/ios/zh-hant.json.gz"); hant["Story.Privacy.CategoryMutualFollowers"] != "互關好友" || hant["Story.Privacy.WhoCanViewMoment"] != "誰可以看" {
+		t.Fatalf("ios story hant needs review copy: %+v", []string{hant["Story.Privacy.CategoryMutualFollowers"], hant["Story.Privacy.WhoCanViewMoment"]})
+	}
 
 	ver, ok := cat.Version("android", "zh-hans")
 	if !ok || ver != 61730401 {

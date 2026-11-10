@@ -284,6 +284,39 @@ def printf_accepts(conv_kind: str, arg_kind: str) -> bool:
     return conv_kind == arg_kind
 
 
+# Android keys whose English is shared with another row, so a one-to-one
+# match is ambiguous. The iOS string is the traditional text to copy.
+ANDROID_IOS_HANT = {
+    "Moments_Publish": "Moments.Publish",
+    "Moments_Composer_Title": "Moments.Composer.Title",
+    "Moments_Segment_Following": "Moments.Segment.Following",
+    "Moments_FollowingState": "Moments.FollowingState",
+    "Moments_Title": "Moments.Title",
+    "Moments_Search": "Moments.Search",
+    "Moments_WhoCanSee": "Moments.WhoCanSee",
+}
+# Written for review. The clients ship these two keys in English only.
+STORY_ZH = {
+    "Story.Privacy.CategoryMutualFollowers": {"zh-hans": "互关好友", "zh-hant": "互關好友"},
+    "Story.Privacy.WhoCanViewMoment": {"zh-hans": "谁可以看", "zh-hant": "誰可以看"},
+}
+
+
+def _norm_en(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower()).rstrip(".")
+
+
+def _adapt_ios_hant(android_en: str, ios_hant: str) -> str | None:
+    """Use the iOS traditional string if Android's placeholders still fit.
+
+    iOS uses %@ where Android uses %s. Other mismatches stay on OpenCC.
+    """
+    text = (ios_hant or "").replace("%@", "%s")
+    if not text or not placeholders_ok(android_en, text):
+        return None
+    return text
+
+
 def placeholders_ok(english: str, translated: str) -> bool:
     args: dict[int, str] = {}
     for idx, kind in printf_args(english):
@@ -791,6 +824,115 @@ def client_main(args: argparse.Namespace, root: Path) -> int:
     return 1 if any_missing and not args.apply else 0
 
 
+def _opencc_s2twp():
+    try:
+        import opencc
+    except ImportError:
+        print("opencc is required (pip install opencc-python-reimplemented)", file=sys.stderr)
+        return None
+    return opencc.OpenCC("s2twp")
+
+
+def traditional_android(android_en: dict[str, str], android_hans: dict[str, str], ios_en: dict[str, str], ios_hant: dict[str, str], keys: list[str]) -> dict[str, tuple[str, str]]:
+    """Traditional text for Android keys that are still the English string.
+
+    Prefer one iOS #162 traditional string when the English matches exactly
+    one Android key and one iOS key, or an explicit pair. Otherwise OpenCC
+    s2twp of the simplified string.
+    """
+    converter = _opencc_s2twp()
+    if converter is None:
+        raise SystemExit(1)
+    ios_moments = {key: value for key, value in ios_en.items() if key.startswith("Moments")}
+    by_en: dict[str, list[str]] = {}
+    for key, value in ios_moments.items():
+        by_en.setdefault(_norm_en(value), []).append(key)
+    android_by_en: dict[str, list[str]] = {}
+    for key in keys:
+        android_by_en.setdefault(_norm_en(android_en.get(key, "")), []).append(key)
+    out: dict[str, tuple[str, str]] = {}
+    for key in keys:
+        hans = android_hans.get(key, "")
+        eng = android_en.get(key, "")
+        if not hans:
+            continue
+        ios_key = ANDROID_IOS_HANT.get(key)
+        source = ""
+        text = None
+        if ios_key:
+            text = _adapt_ios_hant(eng, ios_hant.get(ios_key, ""))
+            source = f"ios:{ios_key}" if text else ""
+        elif key not in ANDROID_IOS_HANT:
+            norm = _norm_en(eng)
+            ios_hits = by_en.get(norm) or []
+            android_hits = android_by_en.get(norm) or []
+            if len(ios_hits) == 1 and len(android_hits) == 1:
+                text = _adapt_ios_hant(eng, ios_hant.get(ios_hits[0], ""))
+                source = f"ios:{ios_hits[0]}" if text else ""
+        if not text:
+            text = converter.convert(hans)
+            source = "opencc:s2twp"
+        if not placeholders_ok(eng, text):
+            text = hans
+            source = "opencc-kept-hans"
+        out[key] = (text, source)
+    return out
+
+
+def _replace_values(path: Path, updates: dict[str, str]) -> int:
+    """Replace string values in place. Pack version and string versions stay."""
+    doc = load_doc(path)
+    changed = 0
+    for item in doc.get("strings") or []:
+        new = updates.get(item.get("key"))
+        if new is None or item.get("value") == new:
+            continue
+        item["value"] = new
+        changed += 1
+    if changed:
+        write_gz(path, doc)
+    return changed
+
+
+def fill_traditional(root: Path) -> int:
+    manifest = load_manifest(root)
+    if manifest is None:
+        print("missing tellomi client key manifest", file=sys.stderr)
+        return 1
+    android_keys = manifest_keys(manifest, "android")
+    ios_keys = manifest_keys(manifest, "ios")
+
+    def pack_text(platform: str, code: str) -> dict[str, str]:
+        doc = load_doc(root / platform / f"{code}.json.gz")
+        return {item["key"]: item.get("value", "") for item in doc.get("strings") or []}
+
+    a_en, a_hans, a_hant = pack_text("android", "en"), pack_text("android", "zh-hans"), pack_text("android", "zh-hant")
+    i_en, i_hans, i_hant = pack_text("ios", "en"), pack_text("ios", "zh-hans"), pack_text("ios", "zh-hant")
+    fallback = [key for key in android_keys if key.startswith("Moments") and a_hant.get(key) == a_en.get(key)]
+    chosen = traditional_android(a_en, a_hans, i_en, i_hant, fallback)
+    ios_n = sum(1 for _text, source in chosen.values() if source.startswith("ios:"))
+    opencc_n = sum(1 for _text, source in chosen.values() if source.startswith("opencc"))
+    print(f"android zh-hant: {len(chosen)} Moments keys, {ios_n} from iOS traditional, {opencc_n} OpenCC s2twp")
+    updates = {key: text for key, (text, _source) in chosen.items() if text != a_hant.get(key)}
+    pack_n = _replace_values(root / "android" / "zh-hant.json.gz", updates)
+    reviewed_n = _replace_values(root / "reviewed" / "android" / "zh-hant.json.gz", updates)
+    print(f"  wrote android zh-hant pack {pack_n}, reviewed {reviewed_n}")
+
+    story_pack = 0
+    for code in ("zh-hans", "zh-hant"):
+        story_updates = {}
+        current = i_hans if code == "zh-hans" else i_hant
+        for key, texts in STORY_ZH.items():
+            if current.get(key) == i_en.get(key):
+                story_updates[key] = texts[code]
+        story_pack += _replace_values(root / "ios" / f"{code}.json.gz", story_updates)
+        _replace_values(root / "reviewed" / "ios" / f"{code}.json.gz", story_updates)
+        print(f"  ios {code} story keys written: {list(story_updates)}")
+    if story_pack == 0 and not updates:
+        print("traditional fill: nothing to change")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Langpack gap versus English, and Tellomi client keys")
     parser.add_argument("--android", type=Path, help="tellomi/Telegram checkout on master")
@@ -800,9 +942,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--android-ref", action="append", default=[], help="extra Android ref, or pr:N")
     parser.add_argument("--ios-ref", action="append", default=[], help="extra iOS ref, or pr:N")
     parser.add_argument("--apply", action="store_true", help="write packs, reviewed pins, and the key manifest")
+    parser.add_argument(
+        "--fill-traditional",
+        action="store_true",
+        help="fill Android zh-hant Moments keys and the two iOS story keys without bumping versions",
+    )
     parser.add_argument("--root", type=Path, default=None, help="langpack directory (default data/langpack)")
     args = parser.parse_args(argv)
     root = args.root or Path(__file__).resolve().parent.parent / "data" / "langpack"
+    if args.fill_traditional:
+        return fill_traditional(root)
     failed = False
     if args.android or args.ios or args.apply:
         if client_main(args, root) != 0:
