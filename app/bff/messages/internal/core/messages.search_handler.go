@@ -26,6 +26,7 @@ import (
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/pagelimit"
 )
 
 // MessagesSearch
@@ -51,9 +52,7 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		offsetId = math.MaxInt32
 	}
 
-	if limit > 50 {
-		limit = 50
-	}
+	limit = pagelimit.Cap(limit)
 
 	peer := mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
 	if peer.IsChannel() {

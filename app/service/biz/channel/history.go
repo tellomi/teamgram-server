@@ -2,7 +2,9 @@ package channel
 
 import "sort"
 
-func normalizeLimit(limit int32) int32 {
+// pageLimit is the messages.getHistory page size. Missing means 20.
+// Anything above 100 is clamped to 100, which is what official clients send.
+func pageLimit(limit int32) int32 {
 	if limit <= 0 {
 		return 20
 	}
@@ -10,6 +12,10 @@ func normalizeLimit(limit int32) int32 {
 		return 100
 	}
 	return limit
+}
+
+func normalizeLimit(limit int32) int32 {
+	return pageLimit(limit)
 }
 
 // selectHistory returns a page of non-deleted messages and the total live count.

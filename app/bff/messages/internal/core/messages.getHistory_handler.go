@@ -25,6 +25,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/pagelimit"
 	"github.com/zeromicro/go-zero/core/mr"
 )
 
@@ -41,9 +42,10 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 		limit = in.Limit
 	)
 
-	if limit > 50 {
-		limit = 50
-	}
+	// Official clients ask for up to 100. A larger limit is clamped, not
+	// replaced, so offset / add_offset / min_id / max_id still describe the
+	// same window.
+	limit = pagelimit.Cap(limit)
 
 	switch peer.PeerType {
 	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:

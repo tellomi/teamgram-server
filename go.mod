@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/IBM/sarama v1.43.2
+	github.com/alicebob/miniredis/v2 v2.36.1
 	github.com/bwmarrin/snowflake v0.3.1-0.20221123153919-bc74ab286f15
 	github.com/chai2010/webp v1.4.0
 	github.com/davidbyttow/govips/v2 v2.16.0
@@ -39,7 +40,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/alicebob/miniredis/v2 v2.36.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

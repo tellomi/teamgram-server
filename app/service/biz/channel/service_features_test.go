@@ -215,7 +215,7 @@ func TestTopicsReactionsPinsSearchSendAsPersonal(t *testing.T) {
 	if _, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{RandomID: 6, Message: reply}}); err != nil {
 		t.Fatal(err)
 	}
-	replies, err := svc.Replies(ctx, 1, ch.Id, msgID, 0, 10)
+	replies, err := svc.Replies(ctx, 1, ch.Id, msgID, HistoryQuery{Limit: 10})
 	if err != nil || replies.Count != 1 {
 		t.Fatalf("replies %#v %v", replies, err)
 	}

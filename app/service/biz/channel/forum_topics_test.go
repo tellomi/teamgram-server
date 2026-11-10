@@ -78,7 +78,7 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 		t.Fatalf("outside=%v inside=%v ids=%d/%d", sawOutside, sawInside, outsideID, insideID)
 	}
 
-	replies, err := svc.Replies(ctx, 1, ch.Id, hello.ID, 0, 20)
+	replies, err := svc.Replies(ctx, 1, ch.Id, hello.ID, HistoryQuery{Limit: 20})
 	if err != nil {
 		t.Fatal(err)
 	}

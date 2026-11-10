@@ -156,13 +156,7 @@ func postNeedle(raw string) (string, error) {
 }
 
 func saneLimit(limit int32) int32 {
-	if limit <= 0 {
-		return 20
-	}
-	if limit > 50 {
-		return 50
-	}
-	return limit
+	return pageLimit(limit)
 }
 
 // likeContains is a LIKE pattern that matches needle anywhere.
