@@ -20,6 +20,6 @@
 ## 合入 / 出包闸门
 
 - CI 绿 + 评审后 squash 合入 `master`；不直推默认分支。
-- `master` 保护要求这四项检查（名称见 `docs/testing.md`）：`API coverage / coverage`、`Client regression / e2e`、`Compose config / minio-profile`、`Go test / go-test`。
+- `master` 保护要求这些检查（名称见 `docs/testing.md`）：`API coverage / coverage`、`Client regression / e2e`、`Compose config / minio-profile`、`Go test / go-test`、`Server reliability / reliability`。
 - 改或新增 RPC：`e2e/client` 用例与覆盖文档进同一 PR。
 - 跨仓契约变更：契约 PR 先合，实现 PR 同批合齐。

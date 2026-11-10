@@ -1,0 +1,41 @@
+# Server reliability. Runs on every pull request. Docker is already on the
+# GitHub-hosted runner. The job does not start production compose and does
+# not change branch protection by itself. After the first green run, require
+# the check "Server reliability / reliability". See docs/testing.md.
+
+name: Server reliability
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reliability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reliability:
+    name: reliability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - name: Install libvips
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gcc pkg-config libvips-dev
+
+      - name: Reliability integration tests
+        working-directory: e2e/client
+        env:
+          CGO_ENABLED: "1"
+          TELLOMI_E2E_ROOT: ${{ github.workspace }}
+        run: go test -tags reliability -count=1 -timeout 13m -v -run 'TestReliability' .
