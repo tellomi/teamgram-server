@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/redact"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -103,7 +104,16 @@ func Start(dsn string) {
 	go func() {
 		logx.Infof("crash report listening on %s", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logx.Error("crash report: http failed")
+			logx.Errorf("crash report: http failed: %s", listenErrText(err))
 		}
 	}()
+}
+
+// listenErrText is the listen failure written to the log. A password in a
+// DSN-shaped error is masked. The admin token is not part of this error.
+func listenErrText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return redact.DSN(err.Error())
 }
