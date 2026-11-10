@@ -111,6 +111,8 @@ func TestMediaPurgeCopies(t *testing.T) {
 		}
 	}
 	runPurge(t)
+	// upload.getFile caches "not expired" for a minute after the downloads above.
+	time.Sleep(65 * time.Second)
 	expectFileGone(t, a, photoLocation(photo, size))
 	expectFileGone(t, b, docLocation(video))
 	expectFileGone(t, c, docLocation(voice))
@@ -212,6 +214,8 @@ func TestMediaPurgeDedupRefCount(t *testing.T) {
 	if got := blobRefCount(t, docB.GetId()); got != "0" && got != "" {
 		t.Fatalf("ref_count after both deletes %s, want 0", got)
 	}
+	// B downloaded docB before this purge, which caches "not expired" for a minute.
+	time.Sleep(65 * time.Second)
 	expectFileGone(t, a, docLocation(docA))
 	expectFileGone(t, b, docLocation(docB))
 }

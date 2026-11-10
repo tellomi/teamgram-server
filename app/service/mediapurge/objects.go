@@ -215,10 +215,15 @@ SELECT 1 FROM photo_sizes s
 JOIN photos p ON s.photo_size_id = IF(p.size_id<>0, p.size_id, p.photo_id)
 LEFT JOIN media_blob_refs r ON r.ref_kind='photo' AND r.ref_id=p.photo_id
 WHERE s.file_path=? AND p.expired_at=0 AND r.id IS NULL LIMIT 1`},
+		// Document thumbs are stored in media_photo_paths under the document
+		// id. Those rows are not legacy photos: a document or photo blob ref
+		// for the same id still tracks them.
 		{"legacy-photo-path", `
 SELECT 1 FROM media_photo_paths p
-LEFT JOIN media_blob_refs r ON r.ref_kind='photo' AND r.ref_id=p.photo_id
-WHERE p.file_path=? AND r.id IS NULL LIMIT 1`},
+JOIN photos ph ON ph.photo_id=p.photo_id AND ph.expired_at=0
+LEFT JOIN media_blob_refs rp ON rp.ref_kind='photo' AND rp.ref_id=p.photo_id
+LEFT JOIN media_blob_refs rd ON rd.ref_kind='document' AND rd.ref_id=p.photo_id
+WHERE p.file_path=? AND rp.id IS NULL AND rd.id IS NULL LIMIT 1`},
 		{"legacy-video-thumb", `
 SELECT 1 FROM video_sizes v
 JOIN documents d ON d.video_thumb_id = v.video_size_id
