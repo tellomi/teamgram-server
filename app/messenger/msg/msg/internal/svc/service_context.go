@@ -37,7 +37,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/deduplication"
 
@@ -74,7 +76,39 @@ func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext
 		svcCtx.MsgPlugin = svcCtx.Dao
 	}
 	installChannelHooks(c, svcCtx.Dao)
+	installStoryPaint(c, svcCtx.Dao.UserClient)
 	return svcCtx
+}
+
+// installStoryPaint lets message updates render recentStory from active
+// stories. The user cache can still hold a max after expiry; without this,
+// the next message paints the ring back on. The expiry watcher stays in the
+// bff process.
+func installStoryPaint(c config.Config, users user_client.UserClient) {
+	if c.Mysql.DSN == "" {
+		return
+	}
+	if err := story.UseDSN(c.Mysql.DSN); err != nil {
+		logx.Errorf("story mysql: %v", err)
+		return
+	}
+	story.Shared().SetHooks(story.Hooks{
+		IsContact: func(ctx context.Context, owner, viewer int64) bool {
+			if users == nil {
+				return false
+			}
+			ok, err := users.UserCheckContact(ctx, &user.TLUserCheckContact{UserId: owner, Id: viewer})
+			return err == nil && mtproto.FromBool(ok)
+		},
+		IsCloseFriend: func(ctx context.Context, owner, viewer int64) bool {
+			if users == nil {
+				return false
+			}
+			contact, err := users.UserGetContact(ctx, &user.TLUserGetContact{UserId: owner, Id: viewer})
+			return err == nil && contact.GetCloseFriend()
+		},
+	})
+	story.EnableUserRingPaint()
 }
 
 func installChannelHooks(c config.Config, d *dao.Dao) {

@@ -66,6 +66,7 @@ func TestLiveStoryRing(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := storyID(t, up)
+	svc.bindLive(99, 1, Owner{Kind: KindUser, ID: 1}, id)
 	column := svc.liveColumn(ctx, 1)
 	rendered := paintRing(ctx, 9, ringOwner(1, column), column)
 	assertRing(t, rendered, id, true)

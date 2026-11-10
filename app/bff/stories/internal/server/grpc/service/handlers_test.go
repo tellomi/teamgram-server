@@ -26,6 +26,8 @@ func withUser(userID, auth int64) context.Context {
 
 func TestStoryReportUsesSessionLang(t *testing.T) {
 	story.Use(story.New(story.NewMemoryStore()))
+	mediaLookup = &fakeMedia{}
+	t.Cleanup(func() { mediaLookup = nil })
 	svc := New(&svc.ServiceContext{})
 	md := &rpcmd.RpcMetadata{UserId: 3, PermAuthKeyId: 30, LangCode: "zh-hans"}
 	buf, _ := proto.Marshal(md)
@@ -70,6 +72,8 @@ func TestStoryReportUsesSessionLang(t *testing.T) {
 
 func TestHandlersSendAndFetch(t *testing.T) {
 	story.Use(story.New(story.NewMemoryStore()))
+	mediaLookup = &fakeMedia{}
+	t.Cleanup(func() { mediaLookup = nil })
 	svc := New(&svc.ServiceContext{})
 	ctx := withUser(3, 30)
 	up, err := svc.StoriesSendStory(ctx, &mtproto.TLStoriesSendStory{
@@ -148,6 +152,17 @@ func (f *fakeMedia) MediaUploadPhotoFile(ctx context.Context, in *mediapb.TLMedi
 	return mtproto.MakeTLPhoto(&mtproto.Photo{Id: 55, AccessHash: 1, Date: 1, DcId: 1}).To_Photo(), nil
 }
 
+func (f *fakeMedia) MediaGetPhoto(ctx context.Context, in *mediapb.TLMediaGetPhoto) (*mtproto.Photo, error) {
+	return mtproto.MakeTLPhoto(&mtproto.Photo{
+		Id:         in.GetPhotoId(),
+		AccessHash: 5,
+		DcId:       1,
+		Sizes: []*mtproto.PhotoSize{
+			mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{Type: "m", W: 1, H: 1, Size2: 1}).To_PhotoSize(),
+		},
+	}).To_Photo(), nil
+}
+
 func (f *fakeMedia) MediaGetPhotoSizeList(ctx context.Context, in *mediapb.TLMediaGetPhotoSizeList) (*mediapb.PhotoSizeList, error) {
 	return &mediapb.PhotoSizeList{}, nil
 }
@@ -165,6 +180,8 @@ func (f *fakeMedia) MediaGetDocument(ctx context.Context, in *mediapb.TLMediaGet
 
 func TestLegacyConstructorsAndPeerSearch(t *testing.T) {
 	story.Use(story.New(story.NewMemoryStore()))
+	mediaLookup = &fakeMedia{}
+	t.Cleanup(func() { mediaLookup = nil })
 	svc := New(&svc.ServiceContext{})
 	ctx := withUser(3, 30)
 	if _, err := svc.StoriesSendStory(ctx, &mtproto.TLStoriesSendStory{

@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -111,6 +112,50 @@ type loaded struct {
 type Catalog struct {
 	platforms       map[string]map[string]*loaded
 	androidXMLDrops map[string]int
+
+	// built stores one protobuf pack per (lang_pack, lang_code, version).
+	// A version change misses and the previous entry is dropped. Callers
+	// must not mutate the returned objects.
+	diffMu   sync.Mutex
+	built    map[builtKey]*builtPack
+	building map[builtKey]*builtFlight
+	partial  map[diffKey]*mtproto.LangPackDifference
+	langs    map[langKey][]*mtproto.LangPackLanguage
+}
+
+type builtKey struct {
+	platform string
+	code     string
+	version  int32
+}
+
+type diffKey struct {
+	platform string
+	code     string
+	from     int32
+	version  int32
+}
+
+type langKey struct {
+	platform string
+	hidden   string
+	stamp    string
+}
+
+type builtItem struct {
+	version int32
+	parts   []*mtproto.LangPackString
+}
+
+type builtPack struct {
+	full  *mtproto.LangPackDifference
+	items []builtItem
+	byKey map[string][]*mtproto.LangPackString
+}
+
+type builtFlight struct {
+	ch   chan struct{}
+	pack *builtPack
 }
 
 // NewCatalog builds a catalog from already-decoded languages.
@@ -316,7 +361,15 @@ func (c *Catalog) Languages(platform string) ([]*mtproto.LangPackLanguage, error
 	if c == nil || !c.HasPlatform(platform) {
 		return nil, ErrUnknownPack
 	}
-	langs := c.platforms[NormalizePlatform(platform)]
+	platform = NormalizePlatform(platform)
+	key := langKey{platform: platform, hidden: hiddenLangRaw(), stamp: c.versionStamp(platform)}
+	c.diffMu.Lock()
+	if hit := c.langs[key]; hit != nil {
+		c.diffMu.Unlock()
+		return append([]*mtproto.LangPackLanguage(nil), hit...), nil
+	}
+	c.diffMu.Unlock()
+	langs := c.platforms[platform]
 	hidden := hiddenLangSet()
 	var codes []string
 	seen := map[string]bool{}
@@ -350,7 +403,13 @@ func (c *Catalog) Languages(platform string) ([]*mtproto.LangPackLanguage, error
 	for _, code := range codes {
 		out = append(out, c.languageInfo(platform, langs[code]))
 	}
-	return out, nil
+	c.diffMu.Lock()
+	if c.langs == nil {
+		c.langs = map[langKey][]*mtproto.LangPackLanguage{}
+	}
+	c.langs[key] = out
+	c.diffMu.Unlock()
+	return append([]*mtproto.LangPackLanguage(nil), out...), nil
 }
 
 // Language implements langpack.getLanguage.
@@ -410,26 +469,153 @@ func (c *Catalog) Difference(platform, code string, fromVersion int32) (*mtproto
 	if platform == "android" && fromVersion > 0 && l.meta.AndroidXMLFixVersion > 0 && fromVersion < l.meta.AndroidXMLFixVersion {
 		fromVersion = 0
 	}
+	pack := c.ensureBuilt(platform, l)
+	if fromVersion <= 0 {
+		return pack.full, nil
+	}
+	if fromVersion >= l.meta.Version {
+		return mtproto.MakeTLLangPackDifference(&mtproto.LangPackDifference{
+			LangCode:    l.meta.Code,
+			FromVersion: fromVersion,
+			Version:     l.meta.Version,
+			Strings:     []*mtproto.LangPackString{},
+		}).To_LangPackDifference(), nil
+	}
+	key := diffKey{platform: platform, code: l.meta.Code, from: fromVersion, version: l.meta.Version}
+	c.diffMu.Lock()
+	if hit := c.partial[key]; hit != nil {
+		c.diffMu.Unlock()
+		return hit, nil
+	}
+	c.diffMu.Unlock()
 	var strings []*mtproto.LangPackString
+	for _, item := range pack.items {
+		if item.version <= fromVersion {
+			continue
+		}
+		strings = append(strings, item.parts...)
+	}
+	if strings == nil {
+		strings = []*mtproto.LangPackString{}
+	}
+	diff := mtproto.MakeTLLangPackDifference(&mtproto.LangPackDifference{
+		LangCode:    l.meta.Code,
+		FromVersion: fromVersion,
+		Version:     l.meta.Version,
+		Strings:     strings,
+	}).To_LangPackDifference()
+	c.diffMu.Lock()
+	if c.partial == nil {
+		c.partial = map[diffKey]*mtproto.LangPackDifference{}
+	}
+	if hit := c.partial[key]; hit != nil {
+		c.diffMu.Unlock()
+		return hit, nil
+	}
+	c.partial[key] = diff
+	c.diffMu.Unlock()
+	return diff, nil
+}
+
+// ensureBuilt returns the protobuf pack for this version. Concurrent callers
+// share one build. A different version replaces the previous pack.
+func (c *Catalog) ensureBuilt(platform string, l *loaded) *builtPack {
+	key := builtKey{platform: platform, code: l.meta.Code, version: l.meta.Version}
+	c.diffMu.Lock()
+	if c.built == nil {
+		c.built = map[builtKey]*builtPack{}
+		c.building = map[builtKey]*builtFlight{}
+	}
+	if hit := c.built[key]; hit != nil {
+		c.diffMu.Unlock()
+		return hit
+	}
+	if flight := c.building[key]; flight != nil {
+		c.diffMu.Unlock()
+		<-flight.ch
+		return flight.pack
+	}
+	flight := &builtFlight{ch: make(chan struct{})}
+	c.building[key] = flight
+	c.diffMu.Unlock()
+
+	pack := buildPack(platform, l)
+
+	c.diffMu.Lock()
+	for old := range c.built {
+		if old.platform == key.platform && old.code == key.code && old.version != key.version {
+			delete(c.built, old)
+		}
+	}
+	for old := range c.partial {
+		if old.platform == key.platform && old.code == key.code && old.version != key.version {
+			delete(c.partial, old)
+		}
+	}
+	c.built[key] = pack
+	delete(c.building, key)
+	flight.pack = pack
+	close(flight.ch)
+	c.diffMu.Unlock()
+	return pack
+}
+
+func buildPack(platform string, l *loaded) *builtPack {
+	items := make([]builtItem, 0, len(l.meta.Strings))
+	byKey := make(map[string][]*mtproto.LangPackString, len(l.byKey)+len(l.plural))
+	var all []*mtproto.LangPackString
 	for _, e := range l.meta.Strings {
 		ver := e.Version
 		if ver <= 0 {
 			ver = 1
 		}
-		if ver <= fromVersion {
+		parts := e.mtproto(platform)
+		items = append(items, builtItem{version: ver, parts: parts})
+		all = append(all, parts...)
+	}
+	for key, e := range l.byKey {
+		byKey[key] = e.mtproto(platform)
+	}
+	for key, e := range l.plural {
+		if _, ok := byKey[key]; ok {
 			continue
 		}
-		strings = append(strings, e.mtproto(platform)...)
+		val := pluralValueForKey(e, key, platform)
+		if val == "" && e.Plural != nil {
+			val = e.Plural.Other
+		}
+		byKey[key] = []*mtproto.LangPackString{plainString(key, val)}
 	}
-	if strings == nil {
-		strings = []*mtproto.LangPackString{}
+	if all == nil {
+		all = []*mtproto.LangPackString{}
 	}
-	return mtproto.MakeTLLangPackDifference(&mtproto.LangPackDifference{
-		LangCode:    l.meta.Code,
-		FromVersion: fromVersion,
-		Version:     l.meta.Version,
-		Strings:     strings,
-	}).To_LangPackDifference(), nil
+	return &builtPack{
+		full: mtproto.MakeTLLangPackDifference(&mtproto.LangPackDifference{
+			LangCode:    l.meta.Code,
+			FromVersion: 0,
+			Version:     l.meta.Version,
+			Strings:     all,
+		}).To_LangPackDifference(),
+		items: items,
+		byKey: byKey,
+	}
+}
+
+func (c *Catalog) versionStamp(platform string) string {
+	langs := c.platforms[NormalizePlatform(platform)]
+	codes := make([]string, 0, len(langs))
+	for code := range langs {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	var b strings.Builder
+	for _, code := range codes {
+		b.WriteString(code)
+		b.WriteByte('=')
+		b.WriteString(strconv.FormatInt(int64(langs[code].meta.Version), 10))
+		b.WriteByte(';')
+	}
+	return b.String()
 }
 
 // Strings implements langpack.getStrings.
@@ -442,18 +628,11 @@ func (c *Catalog) Strings(platform, code string, keys []string) ([]*mtproto.Lang
 		return nil, ErrUnknownLang
 	}
 	platform = NormalizePlatform(platform)
+	pack := c.ensureBuilt(platform, l)
 	out := make([]*mtproto.LangPackString, 0, len(keys))
 	for _, key := range keys {
-		if e, ok := l.byKey[key]; ok {
-			out = append(out, e.mtproto(platform)...)
-			continue
-		}
-		if e, ok := l.plural[key]; ok {
-			val := pluralValueForKey(e, key, platform)
-			if val == "" {
-				val = e.Plural.Other
-			}
-			out = append(out, plainString(key, val))
+		if parts, ok := pack.byKey[key]; ok {
+			out = append(out, parts...)
 			continue
 		}
 		out = append(out, mtproto.MakeTLLangPackStringDeleted(&mtproto.LangPackString{Key: key}).To_LangPackString())
@@ -733,11 +912,25 @@ func DefaultCatalog() *Catalog {
 	defaultOnce.Do(func() {
 		if dir := strings.TrimSpace(os.Getenv("TELLOMI_LANGPACK_DIR")); dir != "" {
 			defaultCat, defaultErr = Load(os.DirFS(dir))
-			return
+		} else {
+			defaultCat, defaultErr = Load(langpackdata.FS)
 		}
-		defaultCat, defaultErr = Load(langpackdata.FS)
+		if defaultCat != nil {
+			go defaultCat.prewarm()
+		}
 	})
 	return defaultCat
+}
+
+// prewarm builds the packs the login screen and the first sync ask for,
+// so that request is not the one that walks every string.
+func (c *Catalog) prewarm() {
+	for _, platform := range []string{"android", "ios", "tdesktop", "macos"} {
+		_, _ = c.Languages(platform)
+		for _, code := range []string{"en", "zh-hans", "zh-hant"} {
+			_, _ = c.Difference(platform, code, 0)
+		}
+	}
 }
 
 // DefaultError is the error from loading DefaultCatalog, if any.

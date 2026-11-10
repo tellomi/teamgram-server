@@ -499,7 +499,14 @@ type ThreadsService struct {
 
 func (ThreadsService) MessagesGetReplies(ctx context.Context, in *mtproto.TLMessagesGetReplies) (*mtproto.Messages_Messages, error) {
 	self, _ := actor(ctx)
-	return channel.Shared().Replies(ctx, self, channelID(in.GetPeer(), self), in.GetMsgId(), in.GetOffsetId(), in.GetLimit())
+	return channel.Shared().Replies(ctx, self, channelID(in.GetPeer(), self), in.GetMsgId(), channel.HistoryQuery{
+		OffsetID:   in.GetOffsetId(),
+		OffsetDate: in.GetOffsetDate(),
+		AddOffset:  in.GetAddOffset(),
+		Limit:      in.GetLimit(),
+		MaxID:      in.GetMaxId(),
+		MinID:      in.GetMinId(),
+	})
 }
 
 func (ThreadsService) MessagesGetDiscussionMessage(ctx context.Context, in *mtproto.TLMessagesGetDiscussionMessage) (*mtproto.Messages_DiscussionMessage, error) {

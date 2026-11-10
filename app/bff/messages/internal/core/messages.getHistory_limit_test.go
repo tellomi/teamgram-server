@@ -15,18 +15,6 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
-func TestHistoryPageLimitOfficialCap(t *testing.T) {
-	if historyPageLimit(100) != 100 || historyPageLimit(60) != 60 || historyPageLimit(1) != 1 {
-		t.Fatal("limits inside the official maximum were changed")
-	}
-	if historyPageLimit(101) != 100 || historyPageLimit(1000) != 100 {
-		t.Fatal("limits above 100 were not clamped to 100")
-	}
-	if historyPageLimit(0) != 0 || historyPageLimit(-1) != -1 {
-		t.Fatal("non-positive limit was rewritten")
-	}
-}
-
 func TestGetHistoryPassesOfficialLimitDownstream(t *testing.T) {
 	h := &historyMsg{}
 	c := &MessagesCore{

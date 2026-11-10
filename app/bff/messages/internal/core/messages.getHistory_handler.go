@@ -25,18 +25,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/pagelimit"
 	"github.com/zeromicro/go-zero/core/mr"
 )
-
-// historyPageLimit is the page size messages.getHistory may return.
-// Official clients request up to 100. A non-positive limit is unchanged
-// so an explicit empty page stays empty.
-func historyPageLimit(limit int32) int32 {
-	if limit > 100 {
-		return 100
-	}
-	return limit
-}
 
 // MessagesGetHistory
 // messages.getHistory#4423e6c5 peer:InputPeer offset_id:int offset_date:int add_offset:int limit:int max_id:int min_id:int hash:long = messages.Messages;
@@ -48,8 +39,13 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 		chat *mtproto.MutableChat
 		//channel   *channelpb.MutableChannel
 		//isChannel bool
-		limit = historyPageLimit(in.Limit)
+		limit = in.Limit
 	)
+
+	// Official clients ask for up to 100. A larger limit is clamped, not
+	// replaced, so offset / add_offset / min_id / max_id still describe the
+	// same window.
+	limit = pagelimit.Cap(limit)
 
 	switch peer.PeerType {
 	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:

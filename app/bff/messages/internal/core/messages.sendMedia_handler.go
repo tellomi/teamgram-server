@@ -32,6 +32,15 @@ import (
 // MessagesSendMedia
 // messages.sendMedia#e25ff8e0 flags:# silent:flags.5?true background:flags.6?true clear_draft:flags.7?true noforwards:flags.14?true peer:InputPeer reply_to_msg_id:flags.0?int media:InputMedia message:string random_id:long reply_markup:flags.2?ReplyMarkup entities:flags.3?Vector<MessageEntity> schedule_date:flags.10?int send_as:flags.13?InputPeer = Updates;
 func (c *MessagesCore) MessagesSendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Updates, error) {
+	if err := c.authorizeReferencedMedia(in.GetMedia()); err != nil {
+		return nil, err
+	}
+	return c.onceOutgoing(in.GetRandomId(), func() (*mtproto.Updates, error) {
+		return c.sendMedia(in)
+	})
+}
+
+func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Updates, error) {
 	var (
 		peer       *mtproto.PeerUtil
 		linkChatId int64

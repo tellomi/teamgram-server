@@ -828,9 +828,7 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 	if err != nil {
 		return nil, err
 	}
-	if q.Limit <= 0 || q.Limit > 50 {
-		q.Limit = 20
-	}
+	q.Limit = pageLimit(q.Limit)
 	text := strings.ToLower(q.Q)
 	all, err := s.store.ListMessages(ctx, ch.ID)
 	if err != nil {
@@ -1535,7 +1533,7 @@ func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids [
 	return s.updatesWith(ctx, self, ch, ups...), nil
 }
 
-func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID, offsetID, limit int32) (*mtproto.Messages_Messages, error) {
+func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int32, q HistoryQuery) (*mtproto.Messages_Messages, error) {
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
@@ -1544,9 +1542,6 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID, off
 	targets := []int64{ch.ID}
 	if f.LinkedChatID != 0 {
 		targets = append(targets, f.LinkedChatID)
-	}
-	if limit <= 0 || limit > 50 {
-		limit = 20
 	}
 	var msgs []*mtproto.Message
 	var chats []*mtproto.Chat
@@ -1562,7 +1557,13 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID, off
 			topicID = f.Topics[i].ID
 		}
 		for _, stored := range all {
-			if stored.Deleted || (offsetID > 0 && stored.ID >= offsetID) {
+			if stored == nil || stored.Deleted {
+				continue
+			}
+			if q.MinID > 0 && stored.ID <= q.MinID {
+				continue
+			}
+			if q.MaxID > 0 && stored.ID >= q.MaxID {
 				continue
 			}
 			body, err := unmarshalMessage(stored.Data)
@@ -1570,16 +1571,12 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID, off
 				continue
 			}
 			msgs = append(msgs, viewMessage(body, stored.SenderID, self))
-			if int32(len(msgs)) >= limit {
-				break
-			}
 		}
 	}
-	if msgs == nil {
-		msgs = []*mtproto.Message{}
-	}
+	total := int32(len(msgs))
+	msgs = pageDescAt(msgs, q.OffsetID, q.OffsetDate, q.AddOffset, q.Limit)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
-		Pts: ch.Pts, Count: int32(len(msgs)), Messages: msgs, Chats: chats, Users: []*mtproto.User{},
+		Pts: ch.Pts, Count: total, Messages: nonempty(msgs), Chats: chats, Users: []*mtproto.User{},
 	}).To_Messages_Messages(), nil
 }
 
@@ -1596,7 +1593,7 @@ func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, 
 	if err != nil {
 		return nil, err
 	}
-	replies, err := s.Replies(ctx, self, channelID, msgID, 0, 20)
+	replies, err := s.Replies(ctx, self, channelID, msgID, HistoryQuery{Limit: 20})
 	if err != nil {
 		return nil, err
 	}

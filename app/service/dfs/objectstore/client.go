@@ -81,6 +81,30 @@ func (c *Client) Put(ctx context.Context, class, path, contentType string, body 
 	return nil
 }
 
+// Head is the size and ETag of one object. ETag is the S3 value, quotes included.
+type Head struct {
+	Size int64
+	ETag string
+}
+
+// List returns objects already stored for a class, keyed by the path Put uses.
+// The sticker seed compares these ETags to the embedded bytes and skips
+// unchanged objects.
+func (c *Client) List(ctx context.Context, class string) (map[string]Head, error) {
+	if c == nil || c.u == nil {
+		return nil, fmt.Errorf("object storage client is nil")
+	}
+	raw, err := c.u.ListClass(ctx, class)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Head, len(raw))
+	for path, h := range raw {
+		out[path] = Head{Size: h.Size, ETag: h.ETag}
+	}
+	return out, nil
+}
+
 // Size is the stored object size. A missing object returns ErrNotFound.
 func (c *Client) Size(ctx context.Context, class, path string) (int64, error) {
 	if c == nil || c.u == nil {

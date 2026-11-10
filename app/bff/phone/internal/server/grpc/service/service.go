@@ -69,6 +69,37 @@ func NewWithEngine(eng *engine.Engine) *Service {
 	return &Service{eng: eng, svc: &svc.ServiceContext{Config: config.Config{}.Normalized()}}
 }
 
+// LiveCallAlive reports whether a stories.startLive room is still running.
+func (s *Service) LiveCallAlive(callID int64) bool {
+	if s == nil || s.eng == nil || callID == 0 {
+		return false
+	}
+	return s.eng.LiveCallAlive(callID)
+}
+
+// StartLiveStory opens the group call for stories.startLive.
+func (s *Service) StartLiveStory(host, auth int64, rtmp bool, random int32, audience []int64) (int64, int64, *mtproto.Updates, error) {
+	if s == nil || s.eng == nil {
+		return 0, 0, nil, mtproto.ErrGroupcallInvalid
+	}
+	return s.eng.CreateLiveStory(engine.CreateLiveStory{
+		Host: host, Auth: auth, RTMP: rtmp, Random: random, Audience: audience,
+	})
+}
+
+// SetLiveEnd receives discard, leave-timeout, and quiet-media ends.
+// callID is the group call that just went off air.
+func (s *Service) SetLiveEnd(fn func(callID int64)) {
+	if s == nil || s.eng == nil {
+		return
+	}
+	s.eng.SetOnLive(func(ev engine.LiveEnd) {
+		if fn != nil && ev.CallID != 0 {
+			fn(ev.CallID)
+		}
+	})
+}
+
 func (s *Service) md(ctx context.Context) (*rpcmd.RpcMetadata, error) {
 	md := rpcmd.RpcMetadataFromIncoming(ctx)
 	if md == nil || md.GetUserId() == 0 {

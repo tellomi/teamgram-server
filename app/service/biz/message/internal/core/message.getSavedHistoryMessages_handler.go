@@ -74,6 +74,7 @@ func (c *MessageCore) MessageGetSavedHistoryMessages(in *message.TLMessageGetSav
 	switch loadType {
 	case loadTypeBackward:
 		boxList = c.svcCtx.Dao.GetOffsetIdBackwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, offsetDate, addOffset+limit, hash)
+		boxList = trimNewestFirst(boxList, addOffset, limit)
 	case loadTypeFirstAroundDate:
 		boxList1 := c.svcCtx.GetOffsetIdForwardSavedHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, -addOffset, hash)
 		for i, j := 0, len(boxList1)-1; i < j; i, j = i+1, j-1 {

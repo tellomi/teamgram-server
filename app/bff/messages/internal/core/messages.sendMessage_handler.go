@@ -33,6 +33,12 @@ import (
 // MessagesSendMessage
 // messages.sendMessage#d9d75a4 flags:# no_webpage:flags.1?true silent:flags.5?true background:flags.6?true clear_draft:flags.7?true noforwards:flags.14?true peer:InputPeer reply_to_msg_id:flags.0?int message:string random_id:long reply_markup:flags.2?ReplyMarkup entities:flags.3?Vector<MessageEntity> schedule_date:flags.10?int send_as:flags.13?InputPeer = Updates;
 func (c *MessagesCore) MessagesSendMessage(in *mtproto.TLMessagesSendMessage) (*mtproto.Updates, error) {
+	return c.onceOutgoing(in.GetRandomId(), func() (*mtproto.Updates, error) {
+		return c.sendText(in)
+	})
+}
+
+func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Updates, error) {
 	var (
 		peer = mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
 	)

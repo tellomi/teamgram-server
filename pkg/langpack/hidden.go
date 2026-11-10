@@ -28,11 +28,16 @@ func HiddenLang(code string) bool {
 	return hide
 }
 
-func hiddenLangSet() map[string]struct{} {
+func hiddenLangRaw() string {
 	raw, ok := os.LookupEnv(hiddenLangEnv)
 	if !ok {
-		raw = defaultHiddenLangs
+		return defaultHiddenLangs
 	}
+	return raw
+}
+
+func hiddenLangSet() map[string]struct{} {
+	raw := hiddenLangRaw()
 	set := make(map[string]struct{})
 	for _, part := range strings.Split(raw, ",") {
 		part = packCode(part)

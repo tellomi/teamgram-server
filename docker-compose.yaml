@@ -106,6 +106,10 @@ services:
       TELLOMI_MINIO_BUCKET_PHOTOS: ${TELLOMI_MINIO_BUCKET_PHOTOS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_DOCUMENTS: ${TELLOMI_MINIO_BUCKET_DOCUMENTS:-tellomi-attachments}
       TELLOMI_MINIO_BUCKET_VIDEOS: ${TELLOMI_MINIO_BUCKET_VIDEOS:-tellomi-attachments}
+      # Media access_hash checks. enforce rejects a wrong hash. log records
+      # the denial and allows the call, so a bad rollout can be rolled back
+      # by recreating this container. See docs/media-dedup.md.
+      TELLOMI_MEDIA_ACCESS_ENFORCE: ${TELLOMI_MEDIA_ACCESS_ENFORCE:-enforce}
       # Chat media retention (docs/media-retention.md). Off unless enabled.
       # Free chats keep photos/videos/voice/files for DAYS after upload;
       # chats with an active subscriber keep them forever (GRACE_DAYS after
@@ -179,6 +183,11 @@ services:
       TELLOMI_AMAP_QPS: ${TELLOMI_AMAP_QPS:-3}
       TELLOMI_AMAP_DAILY: ${TELLOMI_AMAP_DAILY:-5000}
       TELLOMI_VENUE_REDIS: ${TELLOMI_VENUE_REDIS:-redis:6379}
+      # Per-user flood limits. enforce returns FLOOD_WAIT_X. log only records.
+      # off disables them. TELLOMI_FLOOD_REDIS overrides session.yaml Cache.
+      TELLOMI_FLOOD_MODE: ${TELLOMI_FLOOD_MODE:-enforce}
+      TELLOMI_FLOOD_LIMITS: ${TELLOMI_FLOOD_LIMITS:-}
+      TELLOMI_FLOOD_REDIS: ${TELLOMI_FLOOD_REDIS:-}
       # help.getConfig dc_options. Empty leaves teamgramd/bin/config.json
       # (an empty list, webfile_dc_id 1). A valid spec replaces the list and
       # sets webfile_dc_id to 1. "-" in TELLOMI_DC_TXT_DOMAIN blanks

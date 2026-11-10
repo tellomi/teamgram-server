@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
+	"github.com/teamgram/teamgram-server/pkg/pagelimit"
 )
 
 // MessageSearch
@@ -31,9 +32,7 @@ func (c *MessageCore) MessageSearch(in *message.TLMessageSearch) (*mtproto.Messa
 	if offset == 0 {
 		offset = math.MaxInt32
 	}
-	if limit > 50 {
-		limit = 50
-	}
+	limit = pagelimit.Cap(limit)
 
 	switch in.PeerType {
 	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
@@ -63,7 +62,7 @@ func (c *MessageCore) MessageSearch(in *message.TLMessageSearch) (*mtproto.Messa
 				dialogId.B,
 				in.Offset,
 				"%"+q+"%",
-				in.Limit,
+				limit,
 				func(sz, i int, v *dataobject.MessagesDO) {
 					boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
 				})

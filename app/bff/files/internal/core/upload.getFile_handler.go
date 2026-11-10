@@ -86,12 +86,13 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 	case mtproto.Predicate_inputTakeoutFileLocation:
 		// inputTakeoutFileLocation#29be5899 = InputFileLocation;
 		//
-	case mtproto.Predicate_inputPhotoFileLocation:
+	case mtproto.Predicate_inputPhotoFileLocation, mtproto.Predicate_inputPhotoLegacyFileLocation:
 		// inputPhotoFileLocation#40181ffe
 		//	id:long
 		//	access_hash:long
 		//	file_reference:bytes
 		//	thumb_size:string = InputFileLocation;
+		// inputPhotoLegacyFileLocation carries the same id and access_hash.
 		//
 	case mtproto.Predicate_inputPeerPhotoFileLocation:
 		// inputPeerPhotoFileLocation#37257e99 flags:#
@@ -129,6 +130,11 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 	default:
 		c.Logger.Errorf("upload.getFile - error: invalid location")
 		return nil, mtproto.ErrLocationInvalid
+	}
+
+	if err := c.authorize(location); err != nil {
+		c.Logger.Errorf("upload.getFile - access: %v", err)
+		return nil, err
 	}
 
 	if msgexpiry.Default().BlocksDownload(location.GetId(), int32(time.Now().Unix())) || c.mediaExpired(location) {

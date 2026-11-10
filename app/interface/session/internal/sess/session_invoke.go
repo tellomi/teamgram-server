@@ -476,6 +476,12 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 		}
 	}
 
+	if d := c.floodDecision(ctx, clientIp, query); !d.Allowed {
+		c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(mtproto.NewErrFloodWaitX(d.WaitSec)))
+		msgId.state = RECEIVED | RESPONSE_GENERATED
+		return false
+	}
+
 	msgId.state = RECEIVED | RPC_PROCESSING
 
 	c.sessList.cb.tmpRpcApiMessageList = append(

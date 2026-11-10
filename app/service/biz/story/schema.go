@@ -1,7 +1,10 @@
 package story
 
-// schemaSQL is applied when MySQL opens. The same statements live in
-// teamgramd/deploy/sql/migrate-20261029-stories.sql.
+// schemaSQL is applied when MySQL opens. The original tables also live in
+// teamgramd/deploy/sql/migrate-20261029-stories.sql. story_deletions is
+// created here and in migrate-20261123-story-deletions.sql so a restart
+// and a migration run both install it. CREATE TABLE IF NOT EXISTS is safe
+// to run on a database that is serving traffic.
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS story_counters (
   owner_kind TINYINT NOT NULL,
@@ -86,5 +89,16 @@ CREATE TABLE IF NOT EXISTS story_reports (
   date2 INT NOT NULL,
   PRIMARY KEY (id),
   KEY story_reports_owner (owner_kind, owner_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS story_deletions (
+  viewer_user_id BIGINT NOT NULL,
+  owner_kind TINYINT NOT NULL,
+  owner_id BIGINT NOT NULL,
+  story_id INT NOT NULL,
+  deleted_at INT NOT NULL,
+  PRIMARY KEY (viewer_user_id, owner_kind, owner_id, story_id),
+  KEY story_deletions_viewer_at (viewer_user_id, deleted_at),
+  KEY story_deletions_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `

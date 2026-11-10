@@ -9,7 +9,6 @@ package core
 import (
 	"context"
 	"math/rand"
-	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
@@ -47,10 +46,6 @@ func (c *MessagesCore) doClearDraft(ctx context.Context, userId int64, authKeyId
 }
 
 func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMedia *mtproto.MessageMedia, err error) {
-	var (
-		now = int32(time.Now().Unix())
-	)
-
 	switch media.PredicateName {
 	case mtproto.Predicate_inputMediaEmpty:
 		// inputMediaEmpty#9664f57f = InputMedia;
@@ -87,22 +82,21 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		//	ttl_seconds:flags.0?int = InputMedia;
 
 		mediaPhoto := media.To_InputMediaPhoto()
-		sizeList, _ := c.svcCtx.Dao.MediaClient.MediaGetPhotoSizeList(c.ctx, &mediapb.TLMediaGetPhotoSizeList{
-			SizeId: mediaPhoto.GetId_INPUTPHOTO().GetId(),
+		photoIn := mediaPhoto.GetId_INPUTPHOTO()
+		photo, err2 := catalog.ResolveInputPhoto(photoIn, func() (*mtproto.Photo, error) {
+			if photoIn == nil {
+				return nil, mtproto.ErrMediaInvalid
+			}
+			return c.svcCtx.Dao.MediaClient.MediaGetPhoto(c.ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoIn.GetId()})
 		})
-
-		photo := mtproto.MakeTLPhoto(&mtproto.Photo{
-			Id:          mediaPhoto.GetId_INPUTPHOTO().GetId(),
-			HasStickers: false,
-			AccessHash:  mediaPhoto.GetId_INPUTPHOTO().GetAccessHash(),
-			Date:        now,
-			Sizes:       sizeList.Sizes,
-			DcId:        sizeList.DcId,
-		})
+		if err2 != nil {
+			err = err2
+			return
+		}
 
 		messageMedia = mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
 			Spoiler:         mediaPhoto.GetSpoiler(),
-			Photo_FLAGPHOTO: photo.To_Photo(),
+			Photo_FLAGPHOTO: photo,
 			TtlSeconds:      mediaPhoto.GetTtlSeconds(),
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaGeoPoint:
@@ -292,18 +286,13 @@ func (c *MessagesCore) uploadedPhoto(ctx context.Context, in *mtproto.InputPhoto
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	sizes, err := c.svcCtx.Dao.MediaGetPhotoSizeList(ctx, &mediapb.TLMediaGetPhotoSizeList{SizeId: in.GetId()})
-	if err != nil || sizes == nil || len(sizes.GetSizes()) == 0 {
+	photo, err := catalog.ResolveInputPhoto(in, func() (*mtproto.Photo, error) {
+		return c.svcCtx.Dao.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: in.GetId()})
+	})
+	if err != nil || photo == nil || len(photo.GetSizes()) == 0 {
 		return nil
 	}
-	return mtproto.MakeTLPhoto(&mtproto.Photo{
-		Id:            in.GetId(),
-		AccessHash:    in.GetAccessHash(),
-		FileReference: in.GetFileReference(),
-		Date:          int32(time.Now().Unix()),
-		DcId:          sizes.GetDcId(),
-		Sizes:         sizes.GetSizes(),
-	}).To_Photo()
+	return photo
 }
 
 //// TODO(@benqi): mention...

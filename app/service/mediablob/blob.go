@@ -436,6 +436,34 @@ LIMIT 1`, shaHex, size, mime).Scan(&id)
 	return id, err
 }
 
+// FindDocumentIDs returns live documents with this hash, oldest first.
+// Callers pick one the user may see instead of always taking the oldest row.
+func (s *Store) FindDocumentIDs(ctx context.Context, shaHex string, size int64, mime string) ([]int64, error) {
+	if s == nil || s.db == nil || shaHex == "" || mime == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT document_id FROM documents
+WHERE sha256 = ? AND file_size = ? AND mime_type = ? AND expired_at = 0
+ORDER BY id ASC
+LIMIT 32`, shaHex, size, mime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if id != 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
 // SavePhotoPath records the object key for one size of a photo.
 func (s *Store) SavePhotoPath(ctx context.Context, photoID int64, sizeType, path string) error {
 	if s == nil || s.db == nil || photoID == 0 || sizeType == "" || path == "" {

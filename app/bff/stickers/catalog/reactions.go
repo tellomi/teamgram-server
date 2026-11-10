@@ -57,7 +57,9 @@ func fallbackTGS() []byte {
 }
 
 // reactionSlots are the documents on availableReaction. static_icon is a
-// WebP (the chip). The other six are gzipped Lottie, matching Telegram.
+// full-bleed WebP. The other six are gzipped Lottie. center is the pill
+// icon: the same Lottie, inset so the glyph fills the center half of the
+// canvas. iOS draws that document at twice the pill slot.
 var reactionSlots = []struct {
 	name string
 	tgs  bool
@@ -77,7 +79,18 @@ func reactionReady(code string) bool {
 }
 
 func reactionSlotID(code, slot string) int64 {
+	if slot == "center" {
+		// New id so a client that cached the full-bleed center icon
+		// downloads this inset file. The previous id is still served.
+		return stableID("reaction-center-inset", code)
+	}
 	return stableID("reaction", slot, code)
+}
+
+// legacyCenterID is the center_icon id from before the pill inset.
+// upload.getFile still returns the inset bytes for it.
+func legacyCenterID(code string) int64 {
+	return stableID("reaction", "center", code)
 }
 
 type reactionFiles struct {
@@ -163,7 +176,29 @@ func reactionSpecs() []struct {
 // Reactions is messages.getAvailableReactions. Every entry has its own
 // static icon and a distinct appear/select/activate/effect/around/center
 // animation. A code without those files is omitted.
+// The built payload is cached until the emoji blocklist fingerprint
+// changes. A matching hash still returns availableReactionsNotModified.
 func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
+	fp := emojiblock.Fingerprint()
+	s.mu.Lock()
+	full, sum, ok := s.reactionFull, s.reactionHash, s.reactionFull != nil && s.reactionFP == fp
+	s.mu.Unlock()
+	if !ok {
+		full = s.buildReactions()
+		sum = full.GetHash()
+		s.mu.Lock()
+		s.reactionFull = full
+		s.reactionHash = sum
+		s.reactionFP = fp
+		s.mu.Unlock()
+	}
+	if hash != 0 && hash == sum {
+		return mtproto.MakeTLMessagesAvailableReactionsNotModified(&mtproto.Messages_AvailableReactions{}).To_Messages_AvailableReactions()
+	}
+	return full
+}
+
+func (s *Service) buildReactions() *mtproto.Messages_AvailableReactions {
 	var reactions []*mtproto.AvailableReaction
 	var ids []int64
 	for _, spec := range reactionSpecs() {
@@ -201,12 +236,12 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 			AroundAnimation:   docs["around"],
 			CenterIcon:        docs["center"],
 		}).To_AvailableReaction())
-		ids = append(ids, reactionSlotID(spec.code, "activate"))
+		// The center id is part of the hash. Changing the pill file has to
+		// miss messages.availableReactionsNotModified, or the client keeps
+		// drawing the previous document.
+		ids = append(ids, reactionSlotID(spec.code, "activate"), reactionSlotID(spec.code, "center"))
 	}
 	sum := int32(hash64(ids))
-	if hash != 0 && hash == sum {
-		return mtproto.MakeTLMessagesAvailableReactionsNotModified(&mtproto.Messages_AvailableReactions{}).To_Messages_AvailableReactions()
-	}
 	if reactions == nil {
 		reactions = []*mtproto.AvailableReaction{}
 	}
@@ -243,7 +278,7 @@ func (s *Service) DocumentFile(id int64) (body []byte, mime string, ok bool) {
 func reactionFile(id int64) ([]byte, string, bool) {
 	for _, spec := range reactionSpecs() {
 		for _, slot := range reactionSlots {
-			if id != reactionSlotID(spec.code, slot.name) {
+			if id != reactionSlotID(spec.code, slot.name) && !legacyCenterHit(spec.code, slot.name, id) {
 				continue
 			}
 			body, mime := reactionSlotBytes(spec.code, slot.name, slot.tgs)
@@ -294,6 +329,64 @@ func reactionIconDocument(id int64, mime, name, alt string, w, h int32, size int
 		DcId:          1,
 		Attributes:    attrs,
 	}).To_Document()
+}
+
+func legacyCenterHit(code, slot string, id int64) bool {
+	return slot == "center" && id == legacyCenterID(code)
+}
+
+// ReactionIssued is the access_hash values and file_reference this process
+// puts on a reaction icon. The effect document id is issued twice: the
+// picker names the file "<code>-effect.tgs" and messages.getAvailableEffects
+// names it "<code>.tgs". Both hashes are valid. ref is empty when id is not
+// a reaction icon.
+func ReactionIssued(id int64) (access []int64, ref []byte, ok bool) {
+	if id == 0 {
+		return nil, nil, false
+	}
+	for _, spec := range reactionSpecs() {
+		for _, slot := range reactionSlots {
+			slotID := reactionSlotID(spec.code, slot.name)
+			if id != slotID && !legacyCenterHit(spec.code, slot.name, id) {
+				continue
+			}
+			access = append(access, reactionAccess(spec.code, slot.name, slot.tgs))
+			if slot.name == "effect" {
+				access = append(access, stableID("reaction-access", "application/x-tgsticker", spec.code+".tgs"))
+			}
+			return uniqueInt64(access), reactionFileReference(id), true
+		}
+		if id == stableID("reaction", "anim", spec.code) {
+			access = append(access,
+				reactionAccess(spec.code, "effect", true),
+				stableID("reaction-access", "application/x-tgsticker", spec.code+".tgs"),
+			)
+			return uniqueInt64(access), reactionFileReference(id), true
+		}
+	}
+	return nil, nil, false
+}
+
+func reactionAccess(code, slot string, tgs bool) int64 {
+	mime, name := "image/webp", code+".webp"
+	if tgs {
+		mime = "application/x-tgsticker"
+		name = code + "-" + slot + ".tgs"
+	}
+	return stableID("reaction-access", mime, name)
+}
+
+func uniqueInt64(ids []int64) []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 func reactionFileReference(id int64) []byte {

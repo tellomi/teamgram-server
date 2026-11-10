@@ -65,10 +65,15 @@ func (c *FilesCore) UploadGetFileHashes(in *mtproto.TLUploadGetFileHashes) (*mtp
 		mtproto.Predicate_inputSecureFileLocation,
 		mtproto.Predicate_inputTakeoutFileLocation,
 		mtproto.Predicate_inputPhotoFileLocation,
+		mtproto.Predicate_inputPhotoLegacyFileLocation,
 		mtproto.Predicate_inputPeerPhotoFileLocation:
 	default:
 		c.Logger.Errorf("upload.getFileHashes - invalid location %s", location.GetPredicateName())
 		return nil, mtproto.ErrLocationInvalid
+	}
+	if err := c.authorize(location); err != nil {
+		c.Logger.Errorf("upload.getFileHashes - access: %v", err)
+		return nil, err
 	}
 	if c.mediaExpired(location) {
 		c.Logger.Infof("upload.getFileHashes - %s %d expired by media retention", location.GetPredicateName(), location.GetId())

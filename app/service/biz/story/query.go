@@ -205,6 +205,11 @@ func (s *Service) GetAll(ctx context.Context, viewer int64, hidden, next bool, s
 		}
 		parts = append(parts, strconv.Itoa(int(b.owner.Kind))+":"+strconv.FormatInt(b.owner.ID, 10)+":"+strconv.Itoa(len(b.recs))+":"+strconv.Itoa(int(max)))
 	}
+	deleted, err := s.deletionHashParts(ctx, viewer)
+	if err != nil {
+		return nil, err
+	}
+	parts = append(parts, deleted...)
 	sum := hashState(hidden, parts)
 	if state != "" && state == sum {
 		return mtproto.MakeTLStoriesAllStoriesNotModified(&mtproto.Stories_AllStories{

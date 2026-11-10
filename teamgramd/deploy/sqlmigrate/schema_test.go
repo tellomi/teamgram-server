@@ -74,6 +74,11 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 			t.Errorf("media_blob_gc.%s missing after migrations", col)
 		}
 	}
+	for _, col := range []string{"viewer_user_id", "owner_kind", "owner_id", "story_id", "deleted_at"} {
+		if !cols["story_deletions"][col] {
+			t.Errorf("story_deletions.%s missing after migrations", col)
+		}
+	}
 	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed"} {
 		if !cols["auth_users"][col] {
 			t.Errorf("auth_users.%s missing after migrations", col)
@@ -130,6 +135,23 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 	for _, name := range []string{"teamgram_add_column", "teamgram_drop_column", "teamgram_add_index", "teamgram_drop_index", "teamgram_change_column", "teamgram_fail_if_set"} {
 		if !strings.Contains(helpers, "PROCEDURE "+name) {
 			t.Errorf("helper %s missing", name)
+		}
+	}
+}
+
+func TestMessageRandomIDIndexIsOnline(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261111-message-random-id.sql"))
+	if !strings.Contains(raw, "CALL teamgram_add_index('messages', 'sender_random_id'") {
+		t.Fatal("random_id index is not created through the idempotent helper")
+	}
+	stmt := "ALTER TABLE `messages` ADD INDEX `sender_random_id` (`sender_user_id`, `random_id`), ALGORITHM=INPLACE, LOCK=NONE"
+	if !strings.Contains(raw, stmt) {
+		t.Fatal("random_id index is not an online InnoDB add")
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToUpper(s), "ALTER ") {
+			t.Fatalf("raw ALTER is not idempotent: %s", s)
 		}
 	}
 }

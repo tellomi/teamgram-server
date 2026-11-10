@@ -118,4 +118,22 @@ func TestSendResolvesCatalogBeforeEmptyDocument(t *testing.T) {
 	if err != nil || got.GetId() != 42 {
 		t.Fatalf("stored doc %v %v", got, err)
 	}
+	zero := mtproto.MakeTLInputDocument(&mtproto.InputDocument{Id: 42, AccessHash: 0}).To_InputDocument()
+	if _, err = ResolveInputDocument(zero, func() (*mtproto.Document, error) {
+		return stored, nil
+	}); err != mtproto.ErrMediaInvalid {
+		t.Fatalf("zero hash err %v", err)
+	}
+	photo := mtproto.MakeTLPhoto(&mtproto.Photo{Id: 9, AccessHash: 11, DcId: 1}).To_Photo()
+	gotPhoto, err := ResolveInputPhoto(mtproto.MakeTLInputPhoto(&mtproto.InputPhoto{Id: 9, AccessHash: 11}).To_InputPhoto(), func() (*mtproto.Photo, error) {
+		return photo, nil
+	})
+	if err != nil || gotPhoto.GetAccessHash() != 11 {
+		t.Fatalf("photo %v %v", gotPhoto, err)
+	}
+	if _, err = ResolveInputPhoto(mtproto.MakeTLInputPhoto(&mtproto.InputPhoto{Id: 9, AccessHash: 1}).To_InputPhoto(), func() (*mtproto.Photo, error) {
+		return photo, nil
+	}); err != mtproto.ErrMediaInvalid {
+		t.Fatalf("photo bad hash %v", err)
+	}
 }

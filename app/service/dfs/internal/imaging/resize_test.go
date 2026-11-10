@@ -138,6 +138,103 @@ func TestCallbackErrorStopsTheLadder(t *testing.T) {
 	}
 }
 
+func TestJPEGQualityMatchesTelegram(t *testing.T) {
+	if staticJPEGQuality < 85 || staticJPEGQuality > 87 {
+		t.Fatalf("jpeg quality %d, want 85–87", staticJPEGQuality)
+	}
+}
+
+func TestDerivedJPEGNeverExceedsOriginal(t *testing.T) {
+	// A noisy upload already compressed at q60. q95 re-encode of the full
+	// frame was about twice the original (163KB -> 329KB in production).
+	raw := noisyJPEG(t, 640, 480, 60)
+	got := resizeAll(t, raw, ".jpg", false)
+	var largest derivedSize
+	for _, sz := range got {
+		if len(sz.b) > len(raw) {
+			t.Fatalf("size %s is %d bytes, original is %d", sz.szType, len(sz.b), len(raw))
+		}
+		if sz.w*sz.h > largest.w*largest.h {
+			largest = sz
+		}
+	}
+	if largest.w != 640 || largest.h != 480 || !bytes.Equal(largest.b, raw) {
+		t.Fatalf("largest size = %s %dx%d equal=%v (%d bytes, original %d)", largest.szType, largest.w, largest.h, bytes.Equal(largest.b, raw), len(largest.b), len(raw))
+	}
+	decoded, err := jpeg.Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q95 bytes.Buffer
+	if err = jpeg.Encode(&q95, decoded, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("noisy 640x480 q60 original %d bytes; q95 re-encode %d bytes; largest %s kept original; ladder %v", len(raw), q95.Len(), largest.szType, sizeReport(got))
+}
+
+func TestSmoothJPEGDownscalesStaySmaller(t *testing.T) {
+	raw := solid(t, 1280, 720, staticJPEG)
+	got := resizeAll(t, raw, ".jpg", false)
+	for _, sz := range got {
+		if len(sz.b) > len(raw) {
+			t.Fatalf("size %s is %d bytes, original is %d", sz.szType, len(sz.b), len(raw))
+		}
+	}
+	t.Logf("1280x720 original %d bytes; %s", len(raw), sizeReport(got))
+}
+
+func sizeReport(s []derivedSize) string {
+	out := ""
+	for _, sz := range s {
+		if out != "" {
+			out += " "
+		}
+		flag := ""
+		if sz.reuseOriginal {
+			flag = "*"
+		}
+		out += fmtSize(sz.szType, flag, len(sz.b))
+	}
+	return out
+}
+
+func fmtSize(kind, flag string, n int) string {
+	return kind + flag + "=" + itoa(n)
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b [16]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(b[i:])
+}
+
+func noisyJPEG(t *testing.T, w, h, quality int) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	// Deterministic noise. A low-quality encode of this is hard to beat
+	// with a higher-quality re-encode of the same pixels.
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			n := uint32(x*374761393 + y*668265263)
+			n = (n ^ (n >> 13)) * 1274126177
+			img.SetNRGBA(x, y, color.NRGBA{R: uint8(n), G: uint8(n >> 8), B: uint8(n >> 16), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 func TestGIFStaysOffGovips(t *testing.T) {
 	orig := staticEncode
 	t.Cleanup(func() { staticEncode = orig })
