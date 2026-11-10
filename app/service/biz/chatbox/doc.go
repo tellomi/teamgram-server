@@ -9,6 +9,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 )
 
 // docDB is the optional MySQL backing for chatbox aggregates. BFF and the
@@ -155,6 +156,7 @@ func UseDSN(dsn string) error {
 	}
 	// The capped reports document is retired. Rows now live in the reports table.
 	_, _ = db.ExecContext(ctx, `DELETE FROM chatbox_doc WHERE doc_key=?`, "reports")
+	mediapurge.Bind(db)
 	regMu.Lock()
 	prev := shared
 	shared = newBook(sqlDocs{db: db})

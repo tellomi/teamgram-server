@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 )
 
 var (
@@ -86,5 +87,6 @@ func OpenMySQL(dsn string) (*Service, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	mediapurge.Bind(db)
 	return New(newMySQLStore(db)), nil
 }

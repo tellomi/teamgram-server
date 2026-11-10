@@ -337,6 +337,7 @@ VALUES (?,?,?,?,?,?,?)`, channelID, pts, 1, KindNew, top, "", payload); err != n
 	if err = tx.Commit(); err != nil {
 		return 0, 0, false, err
 	}
+	noteChannelMedia(ctx, channelID, top, payload)
 	return top, pts, false, nil
 }
 
@@ -374,7 +375,11 @@ INSERT INTO channel_pts_updates (channel_id, pts, pts_count, kind, message_id, m
 VALUES (?,?,?,?,?,?,?)`, channelID, pts, 1, KindEdit, messageID, "", data); err != nil {
 		return 0, err
 	}
-	return pts, tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	noteChannelMedia(ctx, channelID, messageID, data)
+	return pts, nil
 }
 
 func (s *mysqlStore) CommitDelete(ctx context.Context, channelID int64, ids []int32) (int32, int32, []int32, error) {
@@ -392,14 +397,24 @@ func (s *mysqlStore) CommitDelete(ctx context.Context, channelID int64, ids []in
 		return 0, 0, nil, err
 	}
 	var deleted []int32
+	bodies := map[int32][]byte{}
 	for _, id := range ids {
-		res, err := tx.ExecContext(ctx, `UPDATE channel_messages SET deleted=1 WHERE channel_id=? AND message_id=? AND deleted=0`, channelID, id)
+		var body []byte
+		err = tx.QueryRowContext(ctx, `SELECT message_data FROM channel_messages WHERE channel_id=? AND message_id=? AND deleted=0`, channelID, id).Scan(&body)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE channel_messages SET deleted=1, message='', message_data=? WHERE channel_id=? AND message_id=? AND deleted=0`, []byte{}, channelID, id)
 		if err != nil {
 			return 0, 0, nil, err
 		}
 		n, _ := res.RowsAffected()
 		if n > 0 {
 			deleted = append(deleted, id)
+			bodies[id] = body
 		}
 	}
 	if len(deleted) == 0 {
@@ -421,6 +436,7 @@ VALUES (?,?,?,?,0,?,?)`, channelID, pts, len(deleted), KindDelete, idText, []byt
 	if err = tx.Commit(); err != nil {
 		return 0, 0, nil, err
 	}
+	releaseChannelMedia(ctx, channelID, bodies)
 	return pts, int32(len(deleted)), deleted, nil
 }
 
@@ -433,6 +449,7 @@ func (s *mysqlStore) ReplaceMessageBody(ctx context.Context, channelID int64, id
 	if n == 0 {
 		return mtproto.ErrMessageIdInvalid
 	}
+	noteChannelMedia(ctx, channelID, id, data)
 	return nil
 }
 

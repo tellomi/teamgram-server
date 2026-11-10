@@ -35,6 +35,14 @@
     "qrpass": {"number": "9996610074", "code": "11111"},
     "search": {"number": "9996610081", "code": "11111"},
     "folders": {"number": "9996610091", "code": "11111"},
-    "hashcache": {"number": "9996610101", "code": "11111"}
+    "hashcache": {"number": "9996610101", "code": "11111"},
+    "purge_a": {"number": "9996610111", "code": "11111"},
+    "purge_b": {"number": "9996610112", "code": "11111"},
+    "purge_c": {"number": "9996610113", "code": "11111"},
+    "purge_hist_a": {"number": "9996610114", "code": "11111"},
+    "purge_hist_b": {"number": "9996610115", "code": "11111"},
+    "purge_dedup_a": {"number": "9996610116", "code": "11111"},
+    "purge_dedup_b": {"number": "9996610117", "code": "11111"},
+    "purge_ch_a": {"number": "9996610118", "code": "11111"}
   }
 }

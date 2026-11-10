@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -62,6 +63,7 @@ func (b *Book) Schedule(ctx context.Context, owner int64, peer *mtproto.PeerUtil
 		return nil, mtproto.ErrScheduleTooMuch
 	}
 	var ups []*mtproto.Update
+	var noted []*mtproto.Message
 	for _, msg := range msgs {
 		if msg == nil || (msg.Message == "" && msg.Media == nil) {
 			return nil, mtproto.ErrMessageEmpty
@@ -79,6 +81,7 @@ func (b *Book) Schedule(ctx context.Context, owner int64, peer *mtproto.PeerUtil
 			return nil, err
 		}
 		doc.Items = append(doc.Items, schedItem{ID: cp.Id, When: when, Msg: raw})
+		noted = append(noted, cp)
 		ups = append(ups, mtproto.MakeTLUpdateNewScheduledMessage(&mtproto.Update{
 			Message_MESSAGE: cp,
 		}).To_Update())
@@ -87,6 +90,7 @@ func (b *Book) Schedule(ctx context.Context, owner int64, peer *mtproto.PeerUtil
 	if err := b.save(ctx, key, doc); err != nil {
 		return nil, err
 	}
+	noteScheduled(ctx, owner, peer, noted, true)
 	return mtproto.MakeUpdatesByUpdates(ups...), nil
 }
 
@@ -179,6 +183,7 @@ func (b *Book) TakeScheduled(ctx context.Context, owner int64, peer *mtproto.Pee
 	if err := b.save(ctx, key, doc); err != nil {
 		return nil, err
 	}
+	noteScheduled(ctx, owner, peer, taken, false)
 	return taken, nil
 }
 
@@ -209,6 +214,7 @@ func (b *Book) RestoreScheduled(ctx context.Context, owner int64, peer *mtproto.
 	}
 	b.sched[key] = doc
 	_ = b.save(ctx, key, doc)
+	noteScheduled(ctx, owner, peer, msgs, true)
 }
 
 // DeleteScheduled removes messages and returns updateDeleteScheduledMessages.
@@ -260,6 +266,33 @@ func (b *Book) loadSched(ctx context.Context, key string) (*schedDoc, error) {
 	}
 	b.sched[key] = doc
 	return doc, nil
+}
+
+func noteScheduled(ctx context.Context, owner int64, peer *mtproto.PeerUtil, msgs []*mtproto.Message, live bool) {
+	if peer == nil || owner == 0 || len(msgs) == 0 || mediapurge.Default() == nil {
+		return
+	}
+	boxes := make([]mediapurge.Box, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg == nil || msg.Id == 0 {
+			continue
+		}
+		boxes = append(boxes, mediapurge.Box{
+			Kind:     mediapurge.BoxScheduled,
+			Owner:    owner,
+			PeerType: peer.PeerType,
+			PeerID:   peer.PeerId,
+			ID:       msg.Id,
+			Media:    mediapurge.FromMessage(msg),
+		})
+	}
+	if live {
+		for _, box := range boxes {
+			_ = mediapurge.Default().Note(ctx, box)
+		}
+		return
+	}
+	mediapurge.ReleaseKnown(ctx, boxes)
 }
 
 func hashMessages(msgs []*mtproto.Message) int64 {
