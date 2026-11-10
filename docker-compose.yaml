@@ -173,10 +173,15 @@ services:
       # read-only mount at /etc/tellomi/mtproto/. See docs/SECURITY-OPS.md.
       TELLOMI_MTPROTO_EXTRA_KEY_FILE: ${TELLOMI_MTPROTO_EXTRA_KEY_FILE:-}
       TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT: ${TELLOMI_MTPROTO_EXTRA_KEY_FINGERPRINT:-}
-      # Venue search (@venue) and Android location previews. Unset
-      # TELLOMI_AMAP_KEY: the bot returns an empty list and upload.getWebFile
-      # keeps WEBFILE_NOT_AVAILABLE. TELLOMI_TENCENT_LBS_KEY is used only
-      # when AMap is configured and that call fails. Never commit the keys.
+      # Venue search (@venue). iOS uses Apple Maps when all three Apple
+      # variables are set. Android uses AMap when TELLOMI_AMAP_KEY is set.
+      # With neither, the bot returns an empty list. upload.getWebFile keeps
+      # WEBFILE_NOT_AVAILABLE without an AMap key. TELLOMI_TENCENT_LBS_KEY
+      # is used only when AMap is configured and that call fails.
+      # Never commit the keys. See docs/venue.md.
+      TELLOMI_APPLE_MAPS_TEAM_ID: ${TELLOMI_APPLE_MAPS_TEAM_ID:-}
+      TELLOMI_APPLE_MAPS_KEY_ID: ${TELLOMI_APPLE_MAPS_KEY_ID:-}
+      TELLOMI_APPLE_MAPS_PRIVATE_KEY_PATH: ${TELLOMI_APPLE_MAPS_PRIVATE_KEY_PATH:-}
       TELLOMI_AMAP_KEY: ${TELLOMI_AMAP_KEY:-}
       TELLOMI_AMAP_SIG: ${TELLOMI_AMAP_SIG:-}
       TELLOMI_TENCENT_LBS_KEY: ${TELLOMI_TENCENT_LBS_KEY:-}

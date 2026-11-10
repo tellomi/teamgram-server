@@ -108,8 +108,10 @@ func TestSearchHereAndNearby(t *testing.T) {
 
 func TestSearchEmptyWithoutKeyOrOutsideChina(t *testing.T) {
 	var hits int32
+	var loc string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
+		loc = r.URL.Query().Get("location")
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -120,12 +122,15 @@ func TestSearchEmptyWithoutKeyOrOutsideChina(t *testing.T) {
 	if got, _ := Search(ctx, 1, point, "", ""); len(got) != 0 || hits != 0 {
 		t.Fatalf("unset amap key returned %d hits %d", len(got), hits)
 	}
-	ctx = WithClient(context.Background(), New(Options{
+	ctx = WithPlatform(WithClient(context.Background(), New(Options{
 		AMapKey: "k", AMapBase: srv.URL, QPS: 100, Daily: 100, UserPerMin: 100,
-	}))
+	})), platformAndroid)
 	nyc := mtproto.MakeTLInputGeoPoint(&mtproto.InputGeoPoint{Lat: 40.7128, Long: -74.006}).To_InputGeoPoint()
-	if got, _ := Search(ctx, 1, nyc, "cafe", ""); len(got) != 0 || atomic.LoadInt32(&hits) != 0 {
+	if got, _ := Search(ctx, 1, nyc, "cafe", ""); len(got) != 0 || atomic.LoadInt32(&hits) != 1 {
 		t.Fatalf("outside china %d hits %d", len(got), hits)
+	}
+	if loc != "-74.006000,40.712800" {
+		t.Fatalf("location %s, want WGS-84", loc)
 	}
 	if got, _ := Search(ctx, 1, nil, "cafe", ""); len(got) != 0 {
 		t.Fatal("missing point")

@@ -18,6 +18,21 @@ import (
 
 const upstreamTimeout = 2 * time.Second
 
+// scrubCoords drops URL query strings. Those carry the user's coordinates.
+func scrubCoords(s string) string {
+	for {
+		i := strings.Index(s, "?")
+		if i < 0 {
+			return s
+		}
+		j := strings.Index(s[i:], `"`)
+		if j < 0 {
+			return s[:i]
+		}
+		s = s[:i] + s[i+j:]
+	}
+}
+
 // redact strips API keys from a string before it is logged.
 func redact(s, key, sig, tencent string) string {
 	for _, secret := range []string{key, sig, tencent} {
@@ -32,7 +47,7 @@ func redact(s, key, sig, tencent string) string {
 func (c *Client) logUpstream(ctx context.Context, provider, path, status, infocode string, started time.Time, err error) {
 	ms := time.Since(started).Milliseconds()
 	if err != nil {
-		logx.WithContext(ctx).Errorf("venue upstream provider=%s path=%s ms=%d err=%s", provider, path, ms, redact(err.Error(), c.amapKey, c.amapSig, c.tencentKey))
+		logx.WithContext(ctx).Errorf("venue upstream provider=%s path=%s ms=%d err=%s", provider, path, ms, scrubCoords(redact(err.Error(), c.amapKey, c.amapSig, c.tencentKey)))
 		return
 	}
 	logx.WithContext(ctx).Infof("venue upstream provider=%s path=%s status=%s infocode=%s ms=%d", provider, path, status, infocode, ms)

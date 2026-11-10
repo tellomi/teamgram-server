@@ -22,6 +22,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
@@ -50,6 +51,7 @@ import (
 	folders_helper "github.com/teamgram/teamgram-server/app/bff/folders"
 	iv_helper "github.com/teamgram/teamgram-server/app/bff/iv"
 	langpack_helper "github.com/teamgram/teamgram-server/app/bff/langpack"
+	"github.com/teamgram/teamgram-server/app/bff/location"
 	messages_helper "github.com/teamgram/teamgram-server/app/bff/messages"
 	miscellaneous_helper "github.com/teamgram/teamgram-server/app/bff/miscellaneous"
 	notification_helper "github.com/teamgram/teamgram-server/app/bff/notification"
@@ -76,6 +78,8 @@ import (
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
 	webbrowserhelper "github.com/teamgram/teamgram-server/app/bff/webbrowser"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
@@ -457,6 +461,24 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCScheduledMessagesServer(grpcServer, messages_helper.NewScheduled(msgCfg))
 		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage(msgCfg))
 		// Inline bots, callback buttons, attach menu, mini apps, prepared messages.
+		auth := authsession_client.NewAuthsessionClient(rpcx.GetCachedRpcClient(c.AuthSessionClient))
+		location.BindSession(func(ctx context.Context, authKeyID int64) (location.SessionHint, bool) {
+			ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+			defer cancel()
+			var hint location.SessionHint
+			if packed, err := auth.AuthsessionGetLangPack(ctx, &authsession.TLAuthsessionGetLangPack{AuthKeyId: authKeyID}); err == nil && packed != nil {
+				hint.LangPack = packed.GetV()
+			}
+			if row, err := auth.AuthsessionGetAuthorization(ctx, &authsession.TLAuthsessionGetAuthorization{AuthKeyId: authKeyID}); err == nil && row != nil {
+				hint.DeviceModel = row.GetDeviceModel()
+				hint.SystemVersion = row.GetSystemVersion()
+				hint.ApiID = row.GetApiId()
+			}
+			if hint.LangPack == "" && hint.DeviceModel == "" && hint.SystemVersion == "" && hint.ApiID == 0 {
+				return hint, false
+			}
+			return hint, true
+		})
 		botChat := messages_helper.NewBotChat(msgCfg)
 		mtproto.RegisterRPCInlineBotServer(grpcServer, botChat)
 		mtproto.RegisterRPCBotMenuServer(grpcServer, botChat)

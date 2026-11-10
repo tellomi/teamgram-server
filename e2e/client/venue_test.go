@@ -107,7 +107,7 @@ func TestVenueConfigAndWebFile(t *testing.T) {
 			t.Fatalf("row type %s send %s", row.GetType(), row.GetSendMessage().GetPredicateName())
 		}
 		provider := row.GetSendMessage().GetProvider()
-		if provider != "amap" && provider != "tencent" {
+		if provider != "amap" && provider != "tencent" && provider != "apple" {
 			t.Fatalf("provider %s", provider)
 		}
 	}

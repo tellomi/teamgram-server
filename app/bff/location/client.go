@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
@@ -27,6 +28,13 @@ const (
 	EnvDaily = "TELLOMI_AMAP_DAILY"
 	// EnvRedis is host:port for the shared cache. Unset uses an in-process cache.
 	EnvRedis = "TELLOMI_VENUE_REDIS"
+	// EnvAppleTeam is the 10-character Apple Developer Team ID.
+	EnvAppleTeam = "TELLOMI_APPLE_MAPS_TEAM_ID"
+	// EnvAppleKeyID is the 10-character Maps key id (kid).
+	EnvAppleKeyID = "TELLOMI_APPLE_MAPS_KEY_ID"
+	// EnvAppleKey is the path of the Maps .p8 private key. All three Apple
+	// variables must be set or the Apple provider stays off.
+	EnvAppleKey = "TELLOMI_APPLE_MAPS_PRIVATE_KEY_PATH"
 
 	defaultQPS   = 3
 	defaultDaily = 5000
@@ -41,21 +49,29 @@ type Options struct {
 	TencentKey  string
 	AMapBase    string
 	TencentBase string
-	HTTP        *http.Client
-	Cache       Cache
-	QPS         float64
-	Daily       int
-	UserPerMin  float64
-	Now         func() time.Time
+	// AppleTeamID, AppleKeyID, and AppleKeyPEM enable the Apple Maps provider.
+	// AppleKeyPath is read when AppleKeyPEM is empty.
+	AppleTeamID  string
+	AppleKeyID   string
+	AppleKeyPEM  []byte
+	AppleKeyPath string
+	AppleBase    string
+	HTTP         *http.Client
+	Cache        Cache
+	QPS          float64
+	Daily        int
+	UserPerMin   float64
+	Now          func() time.Time
 }
 
-// Client talks to AMap and, when that fails, Tencent LBS.
+// Client talks to Apple Maps and AMap. Tencent LBS is the AMap fallback.
 type Client struct {
 	amapKey     string
 	amapSig     string
 	tencentKey  string
 	amapBase    string
 	tencentBase string
+	apple       *appleAuth
 	http        *http.Client
 	cache       Cache
 	gate        *gate
@@ -106,8 +122,12 @@ func New(opts Options) *Client {
 	if opts.TencentBase == "" {
 		opts.TencentBase = "https://apis.map.qq.com"
 	}
+	if opts.AppleBase == "" {
+		opts.AppleBase = "https://maps-api.apple.com"
+	}
 	opts.AMapBase = strings.TrimRight(opts.AMapBase, "/")
 	opts.TencentBase = strings.TrimRight(opts.TencentBase, "/")
+	opts.AppleBase = strings.TrimRight(opts.AppleBase, "/")
 	c := &Client{
 		amapKey:     opts.AMapKey,
 		amapSig:     opts.AMapSig,
@@ -119,6 +139,7 @@ func New(opts Options) *Client {
 		now:         opts.Now,
 		inflight:    map[string]*flight{},
 	}
+	c.apple = newApple(opts, c.now)
 	burst := opts.QPS
 	if burst < 1 {
 		burst = 1
@@ -164,13 +185,17 @@ func processClient() *Client {
 			}
 		}
 		proc = New(Options{
-			AMapKey:    strings.TrimSpace(os.Getenv(EnvAMapKey)),
-			AMapSig:    strings.TrimSpace(os.Getenv(EnvAMapSig)),
-			TencentKey: strings.TrimSpace(os.Getenv(EnvTencentKey)),
-			QPS:        envFloat(EnvQPS, defaultQPS),
-			Daily:      envInt(EnvDaily, defaultDaily),
-			Cache:      cache,
+			AMapKey:      strings.TrimSpace(os.Getenv(EnvAMapKey)),
+			AMapSig:      strings.TrimSpace(os.Getenv(EnvAMapSig)),
+			TencentKey:   strings.TrimSpace(os.Getenv(EnvTencentKey)),
+			AppleTeamID:  strings.TrimSpace(os.Getenv(EnvAppleTeam)),
+			AppleKeyID:   strings.TrimSpace(os.Getenv(EnvAppleKeyID)),
+			AppleKeyPath: strings.TrimSpace(os.Getenv(EnvAppleKey)),
+			QPS:          envFloat(EnvQPS, defaultQPS),
+			Daily:        envInt(EnvDaily, defaultDaily),
+			Cache:        cache,
 		})
+		logx.Infof("venue providers apple=%t amap=%t", proc.apple != nil, proc.amapKey != "")
 	})
 	return proc
 }
