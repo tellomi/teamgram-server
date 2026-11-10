@@ -41,10 +41,10 @@ func documentIDs(items []*Item) []int64 {
 	return ids
 }
 
-// appendPackKey mixes a pack into a list hash. The pack id, the visible
-// document ids, and the title all contribute, so an in-place edit (a new
-// sticker, a removed sticker, or a renamed pack) changes getAllStickers,
-// getMaskStickers, and getEmojiStickers. An empty visible pack is omitted.
+// appendPackKey mixes a pack into the messages.searchStickerSets hash.
+// The pack id, the visible document ids, and the title all contribute.
+// An empty visible pack is omitted. Installed-list hashes do not use this;
+// official clients hash each set's 32-bit StickerSet.hash instead.
 func appendPackKey(ids []int64, p *Pack) ([]int64, bool) {
 	visible := p.visibleItems()
 	if len(visible) == 0 {

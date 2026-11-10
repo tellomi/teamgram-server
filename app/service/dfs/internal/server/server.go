@@ -14,6 +14,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/server/http"
 	"github.com/zeromicro/go-zero/rest"
 
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/config"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/svc"
@@ -43,6 +44,9 @@ func (s *Server) Initialize() error {
 		return err
 	}
 	logx.Infov(redact.Value(c))
+	// Official sticker and emoji ids, so downloadFile can skip the documents
+	// bucket. A failure here leaves the built-in index and the old fallback.
+	catalog.WatchPublicObjects(c.Mysql.DSN)
 	ctx := svc.NewServiceContext(c)
 
 	s.grpcSrv = grpc.New(ctx, c.RpcServerConf)

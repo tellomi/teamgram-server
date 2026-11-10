@@ -162,22 +162,20 @@ func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool
 		}
 		return rows[i].p.ID < rows[j].p.ID
 	})
-	// Hash each visible pack's id, document ids, and title before building
-	// StickerSet objects. A client that already has this install list gets
-	// allStickersNotModified without walking every document into a TL value.
-	// getAllStickers has no offset; the objects themselves are set metadata,
-	// not the sticker bytes. An in-place edit changes the hash.
+	// Official clients hash each non-archived set's StickerSet.hash
+	// (32-bit, sign-extended) in the order the list is returned.
+	// Android calcStickersHash / iOS combineInt64Hash. The objects are
+	// built only when that hash misses.
 	var kept []row
-	var ids []int64
+	var setHashes []int64
 	for _, row := range rows {
-		var keep bool
-		ids, keep = appendPackKey(ids, row.p)
-		if !keep {
+		if len(row.p.visibleItems()) == 0 {
 			continue
 		}
 		kept = append(kept, row)
+		setHashes = append(setHashes, int64(row.p.stickerSetHash()))
 	}
-	sum := hash64(ids)
+	sum := telegramHash(setHashes)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesAllStickersNotModified(&mtproto.Messages_AllStickers{}).To_Messages_AllStickers()
 	}
@@ -197,7 +195,7 @@ func (s *Service) listInstalledLocked(userID, hash int64, match func(*Pack) bool
 const featuredPageSize = 100
 
 func (s *Service) Featured(userID, hash int64, emoji bool) *mtproto.Messages_FeaturedStickers {
-	return s.featuredPage(userID, hash, emoji, 0, featuredPageSize, true)
+	return s.featuredPage(userID, hash, emoji, 0, featuredPageSize)
 }
 
 // OldFeatured answers messages.getOldFeaturedStickers. offset is an index
@@ -210,60 +208,40 @@ func (s *Service) OldFeatured(userID, hash int64, offset, limit int32) *mtproto.
 	if limit <= 0 || limit > featuredPageSize {
 		limit = featuredPageSize
 	}
-	return s.featuredPage(userID, hash, false, offset, limit, false)
+	return s.featuredPage(userID, hash, false, offset, limit)
 }
 
-func (s *Service) featuredPage(userID, hash int64, emoji bool, offset, limit int32, firstPage bool) *mtproto.Messages_FeaturedStickers {
+type featuredRow struct {
+	p      *Pack
+	unread bool
+}
+
+func (s *Service) featuredPage(userID, hash int64, emoji bool, offset, limit int32) *mtproto.Messages_FeaturedStickers {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	type feat struct {
-		p      *Pack
-		unread bool
-	}
-	var all []feat
-	var ids []int64
+	var all []featuredRow
 	seen := s.state(userID).featuredRead
 	for _, p := range s.packs {
 		if !p.Featured || p.system() || p.foreignSeed() || p.Emojis != emoji {
 			continue
 		}
-		var keep bool
-		ids, keep = appendPackKey(ids, p)
-		if !keep {
+		if len(p.visibleItems()) == 0 {
 			continue
 		}
 		unread := seen == nil || !seen[p.ID]
-		if unread {
-			ids = append(ids, p.ID)
-		}
-		all = append(all, feat{p: p, unread: unread})
+		all = append(all, featuredRow{p: p, unread: unread})
 	}
 	total := len(all)
-	// The hash covers the whole featured list, including unread, so a new
-	// pack or a read changes it. Building covers is deferred until the hash
-	// misses, and then only the requested page is encoded.
-	sum := hash64(ids)
-	if !firstPage {
-		var pageIDs []int64
-		page := sliceFeat(all, offset, limit)
-		for _, row := range page {
-			var keep bool
-			pageIDs, keep = appendPackKey(pageIDs, row.p)
-			if !keep {
-				continue
-			}
-			if row.unread {
-				pageIDs = append(pageIDs, row.p.ID)
-			}
-		}
-		sum = hash64(pageIDs)
-	}
+	// Clients replace their featured list with this page and hash set id,
+	// plus 1 after each unread set (calcFeaturedStickersHash). The hash is
+	// that page, which is the list they will send back.
+	page := sliceFeat(all, offset, limit)
+	sum := featuredClientHash(page)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesFeaturedStickersNotModified(&mtproto.Messages_FeaturedStickers{
 			Count: int32(total),
 		}).To_Messages_FeaturedStickers()
 	}
-	page := sliceFeat(all, offset, limit)
 	sets := make([]*mtproto.StickerSetCovered, 0, len(page))
 	var unread []int64
 	for _, row := range page {
@@ -281,6 +259,25 @@ func (s *Service) featuredPage(userID, hash int64, emoji bool, offset, limit int
 		Sets:   sets,
 		Unread: unread,
 	}).To_Messages_FeaturedStickers()
+}
+
+// featuredClientHash is Android calcFeaturedStickersHash: set id, then 1
+// when that set is unread. An empty page is 0.
+func featuredClientHash(rows []featuredRow) int64 {
+	if len(rows) == 0 {
+		return 0
+	}
+	ids := make([]int64, 0, len(rows)*2)
+	for _, row := range rows {
+		if row.p == nil {
+			continue
+		}
+		ids = append(ids, row.p.ID)
+		if row.unread {
+			ids = append(ids, 1)
+		}
+	}
+	return telegramHash(ids)
 }
 
 func sliceFeat[T any](all []T, offset, limit int32) []T {
@@ -484,7 +481,7 @@ func (s *Service) StickersByEmoji(emoticon string, hash int64, custom bool) *mtp
 }
 
 func stickersResult(docs []*mtproto.Document, ids []int64, hash int64) *mtproto.Messages_Stickers {
-	sum := hash64(ids)
+	sum := telegramDocumentHash(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesStickersNotModified(&mtproto.Messages_Stickers{}).To_Messages_Stickers()
 	}
@@ -620,7 +617,7 @@ func (s *Service) recentLocked(userID, hash int64, attached bool) *mtproto.Messa
 		dates = append(dates, row.Date)
 		ids = append(ids, row.DocumentID)
 	}
-	sum := hash64(ids)
+	sum := telegramDocumentHash(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesRecentStickersNotModified(&mtproto.Messages_RecentStickers{}).To_Messages_RecentStickers()
 	}
@@ -705,7 +702,7 @@ func (s *Service) Faved(userID, hash int64) *mtproto.Messages_FavedStickers {
 		}).To_StickerPack())
 		ids = append(ids, row.DocumentID)
 	}
-	sum := hash64(ids)
+	sum := telegramDocumentHash(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesFavedStickersNotModified(&mtproto.Messages_FavedStickers{}).To_Messages_FavedStickers()
 	}

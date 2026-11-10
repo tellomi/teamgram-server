@@ -5,11 +5,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -18,6 +21,11 @@ const (
 	// diskChunkMin is the smallest chunk worth a file. Smaller reads stay
 	// in the memory LRU only.
 	diskChunkMin = 32 << 10
+	// negativeCacheTTL remembers an R2 miss so a retry does not stat the
+	// same missing key on every request. It is short so a late upload is
+	// visible without a process restart.
+	negativeCacheTTL = 30 * time.Second
+	negativeCacheCap = 4096
 )
 
 // chunkCache is a two-tier LRU of upload.getFile ranges. Documents already
@@ -39,6 +47,8 @@ type chunkCache struct {
 	diskIdx   map[string]*list.Element
 
 	inflight map[string]*chunkCall
+	neg      map[string]time.Time
+	now      func() time.Time
 
 	hits   atomic.Int64
 	misses atomic.Int64
@@ -81,6 +91,8 @@ func newChunkCache(memCap, diskCap int64, dir string) *chunkCache {
 		disk:     list.New(),
 		diskIdx:  map[string]*list.Element{},
 		inflight: map[string]*chunkCall{},
+		neg:      map[string]time.Time{},
+		now:      time.Now,
 	}
 	if diskCap > 0 && dir != "" {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -119,6 +131,10 @@ func (c *chunkCache) getOrLoad(ctx context.Context, key string, load func(contex
 		c.hits.Add(1)
 		return data, nil
 	}
+	if c.negative(key) {
+		c.hits.Add(1)
+		return nil, ErrNotFound
+	}
 	call, leader := c.begin(key)
 	if !leader {
 		select {
@@ -135,6 +151,8 @@ func (c *chunkCache) getOrLoad(ctx context.Context, key string, load func(contex
 	data, err := load(ctx)
 	if err == nil && len(data) > 0 {
 		c.put(key, data)
+	} else if err != nil && errors.Is(err, ErrNotFound) {
+		c.rememberMiss(key)
 	}
 	c.finish(key, call, data, err)
 	c.misses.Add(1)
@@ -253,9 +271,87 @@ func (c *chunkCache) addDiskLocked(key string, data []byte) {
 	}
 }
 
+func (c *chunkCache) clock() time.Time {
+	if c == nil || c.now == nil {
+		return time.Now()
+	}
+	return c.now()
+}
+
+func (c *chunkCache) negative(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	until, ok := c.neg[key]
+	if !ok {
+		return false
+	}
+	if !c.clock().Before(until) {
+		delete(c.neg, key)
+		return false
+	}
+	return true
+}
+
+func (c *chunkCache) rememberMiss(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.neg == nil {
+		c.neg = map[string]time.Time{}
+	}
+	if len(c.neg) >= negativeCacheCap {
+		now := c.clock()
+		for k, until := range c.neg {
+			if !now.Before(until) {
+				delete(c.neg, k)
+			}
+		}
+		if len(c.neg) >= negativeCacheCap {
+			c.neg = map[string]time.Time{}
+		}
+	}
+	c.neg[key] = c.clock().Add(negativeCacheTTL)
+}
+
+// forgetPath drops cached ranges for one object so a write is visible
+// before the negative-cache TTL.
+func (c *chunkCache) forgetPath(class, path string) {
+	if c == nil {
+		return
+	}
+	prefix := class + "\x00" + path + "\x00"
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key := range c.neg {
+		if strings.HasPrefix(key, prefix) {
+			delete(c.neg, key)
+		}
+	}
+	for key, el := range c.memIdx {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		ent := el.Value.(*memEntry)
+		c.mem.Remove(el)
+		delete(c.memIdx, key)
+		c.memBytes -= int64(len(ent.data))
+	}
+	for key, el := range c.diskIdx {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		ent := el.Value.(*diskEntry)
+		c.disk.Remove(el)
+		delete(c.diskIdx, key)
+		c.diskBytes -= ent.size
+		if ent.name != "" {
+			_ = os.Remove(ent.name)
+		}
+	}
+}
+
 func cacheableReadClass(class string) bool {
 	switch class {
-	case ClassPhotos, ClassDocuments:
+	case ClassPhotos, ClassDocuments, ClassStickers, ClassEmoji, ClassAvatars:
 		return true
 	default:
 		return false

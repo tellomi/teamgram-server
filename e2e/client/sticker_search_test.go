@@ -85,7 +85,7 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		Constructor: mtproto.CRC32_messages_getAllStickers,
 	})
 	installed, ok := all.(*mtproto.TLMessagesAllStickers)
-	if !ok || installed.GetHash() == 0 {
+	if !ok {
 		t.Fatalf("all stickers = %T %+v", all, all)
 	}
 	for _, set := range installed.GetSets() {
@@ -98,7 +98,16 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		Constructor: mtproto.CRC32_messages_getAllStickers,
 		Hash:        installed.GetHash(),
 	})
-	if _, ok = again.(*mtproto.TLMessagesAllStickersNotModified); !ok {
+	// An empty install list hashes to 0. Clients send 0 to force a refresh,
+	// so that reply is the list. A non-zero hash is the client hash.
+	if installed.GetHash() == 0 {
+		if len(installed.GetSets()) != 0 {
+			t.Fatalf("non-empty all stickers hashed to 0")
+		}
+		if _, ok = again.(*mtproto.TLMessagesAllStickers); !ok {
+			t.Fatalf("hash 0 all stickers = %T", again)
+		}
+	} else if _, ok = again.(*mtproto.TLMessagesAllStickersNotModified); !ok {
 		t.Fatalf("all stickers hash = %T", again)
 	}
 
@@ -119,7 +128,14 @@ func TestStickerSearchAndKeywordLanguages(t *testing.T) {
 		Constructor: mtproto.CRC32_messages_getFeaturedStickers,
 		Hash:        page.GetHash(),
 	})
-	if _, ok = cached.(*mtproto.TLMessagesFeaturedStickersNotModified); !ok {
+	if page.GetHash() == 0 {
+		if len(page.GetSets()) != 0 {
+			t.Fatal("non-empty featured list hashed to 0")
+		}
+		if _, ok = cached.(*mtproto.TLMessagesFeaturedStickers); !ok {
+			t.Fatalf("hash 0 featured = %T", cached)
+		}
+	} else if _, ok = cached.(*mtproto.TLMessagesFeaturedStickersNotModified); !ok {
 		t.Fatalf("featured hash = %T", cached)
 	}
 	old := invokeOK(t, a, &mtproto.TLMessagesGetOldFeaturedStickers{

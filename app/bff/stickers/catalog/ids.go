@@ -34,6 +34,45 @@ func hash64(ids []int64) int64 {
 	return out
 }
 
+// clientDocumentHashLimit is MediaDataController.calcDocumentsHash's default
+// maxCount. getRecentStickers, getFavedStickers, getStickers, and
+// getSavedGifs hash only the first 200 document ids.
+const clientDocumentHashLimit = 200
+
+// telegramHash is the list hash official clients compute.
+// Android MediaDataController.calcHash (Java long >>>) and iOS
+// combineInt64Hash (UInt64) both do, for each value v:
+//
+//	acc ^= acc >> 21
+//	acc ^= acc << 35
+//	acc ^= acc >> 4
+//	acc += v
+//
+// Shifts are logical. An empty list is 0. A client hash of 0 still means
+// "send the list"; callers keep that guard. Per-set StickerSet.hash stays
+// on hash64.
+func telegramHash(ids []int64) int64 {
+	if len(ids) == 0 {
+		return 0
+	}
+	var acc uint64
+	for _, id := range ids {
+		acc ^= acc >> 21
+		acc ^= acc << 35
+		acc ^= acc >> 4
+		acc += uint64(id)
+	}
+	return int64(acc)
+}
+
+// telegramDocumentHash hashes at most the first 200 ids.
+func telegramDocumentHash(ids []int64) int64 {
+	if len(ids) > clientDocumentHashLimit {
+		ids = ids[:clientDocumentHashLimit]
+	}
+	return telegramHash(ids)
+}
+
 func emojiFromCode(code string) string {
 	v, err := strconv.ParseUint(code, 16, 32)
 	if err != nil {

@@ -34,6 +34,7 @@
     "qr": {"number": "9996610073", "code": "11111"},
     "qrpass": {"number": "9996610074", "code": "11111"},
     "search": {"number": "9996610081", "code": "11111"},
-    "folders": {"number": "9996610091", "code": "11111"}
+    "folders": {"number": "9996610091", "code": "11111"},
+    "hashcache": {"number": "9996610101", "code": "11111"}
   }
 }
