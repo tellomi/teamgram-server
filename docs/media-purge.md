@@ -18,6 +18,8 @@ The object is deleted only when all of these are true:
 
 `ref_count` then drops by one. The R2 object, including every photo size and video thumb, is deleted only when that was the last blob ref. Another document that still shares the hash keeps the object, and `upload.getFile` for the remaining id still works.
 
+A key is also kept when anything serves it without a `media_blob_refs` row. That includes a legacy `documents.file_path` or photo size from before dedup, a catalog sticker or GIF object path, and `media_external_refs`. The worker skips that key. The dry-run line counts it as `kept_legacy`. A document whose blob ref this purge already released is marked expired, so the leftover path is not treated as one of those holders.
+
 ## Queue
 
 The delete enqueues `media_purge_queue` with `available_at = now + grace`. The default grace is 24h (`TELLOMI_MEDIA_PURGE_GRACE`, a Go duration or a number of seconds). The worker re-checks holders after that. A forward that landed in the meantime cancels the row. A failed object delete leaves the row and retries; deleting a missing object is success.
@@ -42,7 +44,7 @@ docker compose ... exec teamgram /app/bin/mediapurge -f /app/etc2/media.yaml -ba
 ```
 
 ```
-media purge DRY_RUN: backfilled=N live_refs=N deleted_messages_with_media=N candidates=N would_free_blobs=N would_free_objects=N would_free_bytes=N photos=N documents=N kept_message=N kept_pinned=N kept_channel=N kept_avatar=N kept_story=N kept_sticker=N kept_saved=N kept_scheduled=N kept_external=N kept_shared_blob=N
+media purge DRY_RUN: backfilled=N live_refs=N deleted_messages_with_media=N candidates=N would_free_blobs=N would_free_objects=N would_free_bytes=N photos=N documents=N kept_message=N kept_pinned=N kept_channel=N kept_avatar=N kept_story=N kept_sticker=N kept_saved=N kept_scheduled=N kept_external=N kept_shared_blob=N kept_legacy=N
 ```
 
 `-dry-run=false` processes the queue. It still does not delete the historical candidates above; those stay until an operator enqueues them after a backup. `-grace=0` processes ids whose grace has not elapsed, after the same holder check.

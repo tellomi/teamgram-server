@@ -3,7 +3,6 @@ package mediapurge
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 )
@@ -190,63 +189,83 @@ func (s *Store) pathHeld(ctx context.Context, class, path string, except Media) 
 	if inUse {
 		return true, nil
 	}
-	var docID int64
-	if except.Kind == KindDocument {
-		docID = except.ID
-	}
-	// A document row keeps file_path after its blob ref is released. That
-	// string is not a live holder. Only a document that still has a blob
-	// ref, or a video thumb owned by one, blocks deletion.
-	ok, err := s.exists(ctx, `
-SELECT 1 FROM documents d
-JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=d.document_id
-WHERE d.file_path=? AND d.document_id<>? AND d.expired_at=0
-LIMIT 1`, mediablob.KindDocument, path, docID)
-	if err != nil || ok {
-		return ok, err
-	}
-	ok, err = s.exists(ctx, `
-SELECT 1 FROM video_sizes v
-JOIN documents d ON d.video_thumb_id = v.video_size_id
-JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=d.document_id
-WHERE v.file_path=? AND d.document_id<>? AND d.expired_at=0
-LIMIT 1`, mediablob.KindDocument, path, docID)
-	if err != nil || ok {
-		return ok, err
-	}
-	return false, nil
+	held, _, err := s.outsideHolder(ctx, class, path)
+	return held, err
 }
 
-// expirePath marks every document or photo that used this key and no longer
-// has a blob ref. A re-upload sibling is expired together with the last copy
-// so upload.getFile fails for both ids.
-func (s *Store) expirePath(ctx context.Context, class, path string, now time.Time) error {
+// outsideHolder is fail-closed. A key is held when any document, photo,
+// sticker, GIF, or external ref still serves it without a media_blob_refs
+// row: legacy uploads, catalog stickers and emoji, avatars, and feed
+// registrations. A query error is returned so the caller does not delete.
+// A missing table is not a holder.
+func (s *Store) outsideHolder(ctx context.Context, class, path string) (bool, string, error) {
 	if path == "" {
-		return nil
+		return false, "", nil
 	}
-	at := now.Unix()
-	if class == "" || class == mediablob.ClassDocuments {
-		_, err := s.db.ExecContext(ctx, `
-UPDATE documents d
-LEFT JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=d.document_id
-SET d.expired_at=?
-WHERE d.file_path=? AND d.expired_at=0 AND r.id IS NULL`, mediablob.KindDocument, at, path)
-		if err != nil && !missing(err) && !missingColumn(err) {
-			return err
+	checks := []struct {
+		why string
+		q   string
+	}{
+		{"legacy-document", `
+SELECT 1 FROM documents d
+LEFT JOIN media_blob_refs r ON r.ref_kind='document' AND r.ref_id=d.document_id
+WHERE d.file_path=? AND d.expired_at=0 AND r.id IS NULL LIMIT 1`},
+		{"legacy-photo", `
+SELECT 1 FROM photo_sizes s
+JOIN photos p ON s.photo_size_id = IF(p.size_id<>0, p.size_id, p.photo_id)
+LEFT JOIN media_blob_refs r ON r.ref_kind='photo' AND r.ref_id=p.photo_id
+WHERE s.file_path=? AND p.expired_at=0 AND r.id IS NULL LIMIT 1`},
+		{"legacy-photo-path", `
+SELECT 1 FROM media_photo_paths p
+LEFT JOIN media_blob_refs r ON r.ref_kind='photo' AND r.ref_id=p.photo_id
+WHERE p.file_path=? AND r.id IS NULL LIMIT 1`},
+		{"legacy-video-thumb", `
+SELECT 1 FROM video_sizes v
+JOIN documents d ON d.video_thumb_id = v.video_size_id
+LEFT JOIN media_blob_refs r ON r.ref_kind='document' AND r.ref_id=d.document_id
+WHERE v.file_path=? AND d.expired_at=0 AND r.id IS NULL LIMIT 1`},
+		{"sticker", `SELECT 1 FROM tellomi_sticker_items WHERE object_path=? LIMIT 1`},
+		{"gif", `SELECT 1 FROM tellomi_gif_clips WHERE object_path=? OR thumb_path=? LIMIT 1`},
+		{"external-document", `
+SELECT 1 FROM media_external_refs e
+JOIN documents d ON e.media_kind='document' AND e.media_id=d.document_id
+WHERE d.file_path=? AND d.expired_at=0 LIMIT 1`},
+		{"external-photo", `
+SELECT 1 FROM media_external_refs e
+JOIN photo_sizes s ON e.media_kind='photo'
+JOIN photos p ON p.photo_id=e.media_id AND s.photo_size_id = IF(p.size_id<>0, p.size_id, p.photo_id)
+WHERE s.file_path=? AND p.expired_at=0 LIMIT 1`},
+	}
+	for _, c := range checks {
+		args := []any{path}
+		if c.why == "gif" {
+			args = []any{path, path}
+		}
+		ok, err := s.exists(ctx, c.q, args...)
+		if err != nil {
+			return false, "", err
+		}
+		if ok {
+			return true, c.why + " " + class + "/" + path, nil
 		}
 	}
-	if class == "" || class == mediablob.ClassPhotos || class == classVideos {
-		_, err := s.db.ExecContext(ctx, `
-UPDATE photos p
-JOIN photo_sizes s ON s.photo_size_id = IF(p.size_id<>0, p.size_id, p.photo_id)
-LEFT JOIN media_blob_refs r ON r.ref_kind=? AND r.ref_id=p.photo_id
-SET p.expired_at=?
-WHERE s.file_path=? AND p.expired_at=0 AND r.id IS NULL`, mediablob.KindPhoto, at, path)
-		if err != nil && !missing(err) && !missingColumn(err) {
-			return err
+	return false, "", nil
+}
+
+// blockedOutside reports whether any object key of m is served by a holder
+// that is not a media_blob_refs row.
+func (s *Store) blockedOutside(ctx context.Context, m Media, objs []Object) (bool, string, error) {
+	for _, o := range objs {
+		held, why, err := s.outsideHolder(ctx, o.Class, o.Path)
+		if err != nil || held {
+			return held, why, err
 		}
 	}
-	return nil
+	// The id itself may have no blob ref and no enumerated object row yet.
+	// Its documents.file_path / photo size paths are already in objs when
+	// the row exists. Nothing further to prove.
+	_ = m
+	return false, "", nil
 }
 
 func blobKind(kind string) string {

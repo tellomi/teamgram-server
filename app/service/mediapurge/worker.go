@@ -24,6 +24,7 @@ type Result struct {
 	Objects  int
 	Bytes    int64
 	Shared   int
+	Legacy   int
 	Errors   int
 	Samples  []string
 }
@@ -33,8 +34,8 @@ func (r Result) String() string {
 	if r.DryRun {
 		mode = "DRY_RUN"
 	}
-	return fmt.Sprintf("media purge %s: due=%d held=%d released=%d objects=%d bytes=%d shared_blob=%d errors=%d",
-		mode, r.Due, r.Held, r.Released, r.Objects, r.Bytes, r.Shared, r.Errors)
+	return fmt.Sprintf("media purge %s: due=%d held=%d released=%d objects=%d bytes=%d shared_blob=%d kept_legacy=%d errors=%d",
+		mode, r.Due, r.Held, r.Released, r.Objects, r.Bytes, r.Shared, r.Legacy, r.Errors)
 }
 
 // Run processes due queue rows. Dry-run only logs. ignoreGrace processes
@@ -72,6 +73,7 @@ func (s *Store) Run(ctx context.Context, del Deleter, now time.Time, batch int, 
 		rep.Objects += one.Objects
 		rep.Bytes += one.Bytes
 		rep.Shared += one.Shared
+		rep.Legacy += one.Legacy
 		if len(rep.Samples) < 8 && (one.Released > 0 || one.Objects > 0) {
 			rep.Samples = append(rep.Samples, fmt.Sprintf("%s %d objects=%d", it.Kind, it.ID, one.Objects))
 		}
@@ -97,6 +99,22 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 	objs, err := s.Objects(ctx, m)
 	if err != nil {
 		return rep, err
+	}
+	blocked, why, err := s.blockedOutside(ctx, m, objs)
+	if err != nil {
+		return rep, err
+	}
+	if blocked {
+		// Fail closed. Do not release the blob ref and do not delete the key.
+		rep.Legacy = 1
+		logger.Printf("media purge: skip %s %d held outside media_blob_refs (%s)", m.Kind, m.ID, why)
+		if len(rep.Samples) < 8 {
+			rep.Samples = append(rep.Samples, "legacy "+why)
+		}
+		if !dryRun {
+			return s.finish(ctx, m, rep)
+		}
+		return rep, nil
 	}
 	kind := blobKind(m.Kind)
 	blobs := mediablob.New(s.db)
@@ -128,12 +146,22 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 		return rep, err
 	}
 	if rel.Found && !rel.Remove {
+		// The row keeps file_path after this ref is gone. Mark it expired so
+		// a later pass does not treat that leftover path as a legacy holder.
+		if err = s.markExpired(ctx, m, now); err != nil {
+			return rep, err
+		}
 		rep.Shared = 1
 		return s.finish(ctx, m, rep)
 	}
 	rep.Released = 1
 	if del == nil && len(objs) > 0 {
 		return rep, fmt.Errorf("object storage is not configured")
+	}
+	// Expire this id before the path check. Its file_path remains after the
+	// blob ref is released, and that leftover must not look like a legacy holder.
+	if err = s.markExpired(ctx, m, now); err != nil {
+		return rep, err
 	}
 	heldAny := false
 	for _, o := range objs {
@@ -150,9 +178,6 @@ func (s *Store) one(ctx context.Context, del Deleter, now time.Time, m Media, dr
 			return rep, err
 		}
 		_ = blobs.AckGC(ctx, o.Class, o.Path)
-		if err = s.expirePath(ctx, o.Class, o.Path, now); err != nil {
-			return rep, err
-		}
 		rep.Objects++
 		rep.Bytes += o.Bytes
 	}

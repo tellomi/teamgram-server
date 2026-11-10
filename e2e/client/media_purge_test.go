@@ -283,6 +283,40 @@ func fullPhotoSize(t *testing.T, p *mtproto.Photo) string {
 	return largestPhotoSize(t, p)
 }
 
+// TestMediaPurgeLegacyKeepsObject strips the blob ref from an uploaded
+// document so it looks like a pre-dedup row (file_path only). Deleting the
+// message must not remove that object.
+func TestMediaPurgeLegacyKeepsObject(t *testing.T) {
+	cfg := requireE2E(t)
+	a, _ := loginNamed(t, cfg, ProfileIOS, "purge_a", "PurgeA")
+	aToB := userPeer(t, cfg, a, "purge_b", "PurgeB")
+	payload := []byte("tellomi-purge-legacy-file-v1")
+	doc, msg := sendPayload(t, a, aToB, "application/octet-stream", "legacy.bin", payload)
+	path := strings.TrimSpace(mustSQL(t, fmt.Sprintf(`SELECT file_path FROM documents WHERE document_id=%d`, doc.GetId())))
+	if path != fmt.Sprintf("%d.dat", doc.GetId()) {
+		t.Fatalf("origin file_path %q", path)
+	}
+	mustSQL(t, fmt.Sprintf(`DELETE FROM media_blob_refs WHERE ref_kind='document' AND ref_id=%d`, doc.GetId()))
+	mustSQL(t, fmt.Sprintf(`DELETE FROM media_blobs WHERE file_path='%s' AND storage_class='documents'`, path))
+	mustSQL(t, fmt.Sprintf(`UPDATE documents SET blob_id=0 WHERE document_id=%d`, doc.GetId()))
+	if n := strings.TrimSpace(mustSQL(t, fmt.Sprintf(
+		`SELECT COUNT(*) FROM media_blob_refs WHERE ref_kind='document' AND ref_id=%d`, doc.GetId()))); n != "0" {
+		t.Fatalf("blob ref remains: %s", n)
+	}
+	invokeOK(t, a, &mtproto.TLMessagesDeleteMessages{
+		Constructor: mtproto.CRC32_messages_deleteMessages,
+		Revoke:      true,
+		Id:          []int32{msg},
+	})
+	out := runPurge(t)
+	if strings.Contains(out, "kept_legacy=0") {
+		t.Fatalf("dry-run did not keep the legacy key:\n%s", out)
+	}
+	if !bytes.Equal(waitFile(t, a, docLocation(doc), payload), payload) {
+		t.Fatal("legacy document was deleted")
+	}
+}
+
 func userPeer(t *testing.T, cfg Config, c *Client, name, first string) *mtproto.InputPeer {
 	t.Helper()
 	ph, err := cfg.Phone(name)
@@ -370,11 +404,12 @@ func blobRefCount(t *testing.T, documentID int64) string {
 		`SELECT COALESCE(MAX(b.ref_count),0) FROM media_blobs b JOIN media_blob_refs r ON r.blob_id=b.id WHERE r.ref_kind='document' AND r.ref_id=%d`, documentID)))
 }
 
-func runPurge(t *testing.T) {
+func runPurge(t *testing.T) string {
 	t.Helper()
 	out, err := composeExec(2*time.Minute, "", "/app/bin/mediapurge", "-f", "/app/etc2/media.yaml", "-dry-run=false", "-backfill=false", "-grace=0")
 	t.Logf("mediapurge:\n%s", out)
 	if err != nil {
 		t.Fatalf("mediapurge: %v\n%s", err, out)
 	}
+	return out
 }

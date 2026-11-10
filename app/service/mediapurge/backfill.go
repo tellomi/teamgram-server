@@ -29,12 +29,13 @@ type Report struct {
 	KeptScheduled    int
 	KeptExternal     int
 	KeptShared       int
+	KeptLegacy       int
 	Samples          []string
 }
 
 func (r Report) String() string {
-	return fmt.Sprintf("media purge DRY_RUN: backfilled=%d live_refs=%d deleted_messages_with_media=%d candidates=%d would_free_blobs=%d would_free_objects=%d would_free_bytes=%d photos=%d documents=%d kept_message=%d kept_pinned=%d kept_channel=%d kept_avatar=%d kept_story=%d kept_sticker=%d kept_saved=%d kept_scheduled=%d kept_external=%d kept_shared_blob=%d",
-		r.Backfilled, r.LiveRefs, r.DeletedMessages, r.Candidates, r.WouldFreeBlobs, r.WouldFreeObjects, r.WouldFreeBytes, r.Photos, r.Documents, r.KeptMessage, r.KeptPinned, r.KeptChannel, r.KeptAvatar, r.KeptStory, r.KeptSticker, r.KeptSaved, r.KeptScheduled, r.KeptExternal, r.KeptShared)
+	return fmt.Sprintf("media purge DRY_RUN: backfilled=%d live_refs=%d deleted_messages_with_media=%d candidates=%d would_free_blobs=%d would_free_objects=%d would_free_bytes=%d photos=%d documents=%d kept_message=%d kept_pinned=%d kept_channel=%d kept_avatar=%d kept_story=%d kept_sticker=%d kept_saved=%d kept_scheduled=%d kept_external=%d kept_shared_blob=%d kept_legacy=%d",
+		r.Backfilled, r.LiveRefs, r.DeletedMessages, r.Candidates, r.WouldFreeBlobs, r.WouldFreeObjects, r.WouldFreeBytes, r.Photos, r.Documents, r.KeptMessage, r.KeptPinned, r.KeptChannel, r.KeptAvatar, r.KeptStory, r.KeptSticker, r.KeptSaved, r.KeptScheduled, r.KeptExternal, r.KeptShared, r.KeptLegacy)
 }
 
 // Backfill inserts message_media_refs for live user boxes, channel messages,
@@ -254,6 +255,21 @@ func (s *Store) DryRun(ctx context.Context, backfill bool) (Report, error) {
 			rep.KeptShared++
 			continue
 		}
+		objs, err := s.Objects(ctx, c.m)
+		if err != nil {
+			return rep, err
+		}
+		blocked, why, err := s.blockedOutside(ctx, c.m, objs)
+		if err != nil {
+			return rep, err
+		}
+		if blocked {
+			rep.KeptLegacy++
+			if len(rep.Samples) < 8 {
+				rep.Samples = append(rep.Samples, "legacy "+why)
+			}
+			continue
+		}
 		if c.blob != 0 {
 			if !seenBlob[c.blob] {
 				seenBlob[c.blob] = true
@@ -261,10 +277,6 @@ func (s *Store) DryRun(ctx context.Context, backfill bool) (Report, error) {
 			}
 		} else {
 			rep.WouldFreeBlobs++
-		}
-		objs, err := s.Objects(ctx, c.m)
-		if err != nil {
-			return rep, err
 		}
 		for _, o := range objs {
 			held, err := s.pathHeld(ctx, o.Class, o.Path, c.m)
