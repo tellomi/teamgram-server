@@ -31,6 +31,10 @@ func TestMediaPurgeCopies(t *testing.T) {
 	video, videoMsg := sendPayload(t, a, aToB, "video/mp4", "purge.mp4", videoPayload)
 	voicePayload := []byte("tellomi-purge-voice-copies-v1")
 	voice, voiceMsg := sendVoiceBytes(t, a, aToB, "purge-voice", voicePayload)
+	videoKeys := storedObjects(t, documentObjectKeys(t, video.GetId()))
+	if len(videoKeys) == 0 {
+		t.Fatal("video upload did not store an object")
+	}
 
 	photoFwd := forwardReturning(t, b, bToA, func(m *mtproto.Message) bool {
 		return m.GetMedia().GetPhoto_FLAGPHOTO().GetId() == photo.GetId()
@@ -111,6 +115,7 @@ func TestMediaPurgeCopies(t *testing.T) {
 		}
 	}
 	runPurge(t)
+	requireObjectsDeleted(t, videoKeys)
 	// upload.getFile caches "not expired" for a minute after the downloads above.
 	time.Sleep(65 * time.Second)
 	expectFileGone(t, a, photoLocation(photo, size))
@@ -189,6 +194,12 @@ func TestMediaPurgeDedupRefCount(t *testing.T) {
 	if docA.GetId() == docB.GetId() {
 		t.Fatal("re-upload reused the document id")
 	}
+	// The shared blob is one object. Capture it before either delete releases
+	// the ref row the path is read from.
+	shared := storedObjects(t, append(documentObjectKeys(t, docA.GetId()), documentObjectKeys(t, docB.GetId())...))
+	if len(shared) == 0 {
+		t.Fatal("dedup upload did not store an object")
+	}
 	before := blobRefCount(t, docA.GetId())
 	if before != "2" {
 		t.Fatalf("ref_count %s, want 2", before)
@@ -205,12 +216,14 @@ func TestMediaPurgeDedupRefCount(t *testing.T) {
 	if !bytes.Equal(waitFile(t, b, docLocation(docB), payload), payload) {
 		t.Fatal("shared object deleted while B's message remains")
 	}
+	requireObjectsStored(t, shared)
 	invokeOK(t, b, &mtproto.TLMessagesDeleteMessages{
 		Constructor: mtproto.CRC32_messages_deleteMessages,
 		Revoke:      true,
 		Id:          []int32{msgB},
 	})
 	runPurge(t)
+	requireObjectsDeleted(t, shared)
 	if got := blobRefCount(t, docB.GetId()); got != "0" && got != "" {
 		t.Fatalf("ref_count after both deletes %s, want 0", got)
 	}

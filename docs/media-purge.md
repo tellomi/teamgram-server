@@ -32,6 +32,21 @@ The delete enqueues `media_purge_queue` with `available_at = now + grace`. The d
 | `TELLOMI_MEDIA_PURGE_INTERVAL` | `1m` | |
 | `TELLOMI_MEDIA_PURGE_BATCH` | `100` | |
 
+## Enabling object deletion
+
+`docker-compose.yaml` passes these into the `teamgram` container. `.env.example` leaves the worker off and dry-run on. A delete still enqueues. Nothing is removed from R2 or MinIO until a queued row is past its grace and the worker is running live.
+
+Set both on the host `.env` and recreate the container. Leave the grace at 24h.
+
+```
+TELLOMI_MEDIA_PURGE_ENABLED=1
+TELLOMI_MEDIA_PURGE_DRY_RUN=0
+```
+
+`ENABLED=1` with dry-run left at its default only logs. `DRY_RUN=0` without `ENABLED=1` does not start the loop. The one-shot command below is not this switch.
+
+Each due row is checked again before the object is removed: live messages, pins, channel posts, stories, scheduled messages, avatars, stickers, saved GIFs, `media_external_refs`, and a legacy `file_path` that has no blob ref. A holder cancels that row. The delete uses the same `TELLOMI_S3_*` client as uploads, so a production endpoint of `https://<accountid>.r2.cloudflarestorage.com` removes the R2 object (bucket `TELLOMI_S3_BUCKET_ATTACHMENTS`, key `<class>/<path>`). A missing object is success. A failed delete leaves the row and retries. Avatars, stickers, emoji, and wallpapers are not removed on this path.
+
 The worker log line is `media purge DRY_RUN:` or `media purge LIVE:` and counts due, held, released, objects, bytes, shared blobs, and errors. It does not log message text or file bytes.
 
 ## One-off report

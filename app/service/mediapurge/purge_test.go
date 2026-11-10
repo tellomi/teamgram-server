@@ -1,6 +1,7 @@
 package mediapurge
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +72,23 @@ func TestGraceDefault(t *testing.T) {
 	t.Setenv(EnvGrace, "0")
 	if Grace() != 0 {
 		t.Fatalf("grace %s", Grace())
+	}
+}
+
+func TestComposeLeavesPurgeOff(t *testing.T) {
+	raw, err := os.ReadFile("../../../docker-compose.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, line := range []string{
+		"TELLOMI_MEDIA_PURGE_ENABLED: ${TELLOMI_MEDIA_PURGE_ENABLED:-false}",
+		"TELLOMI_MEDIA_PURGE_DRY_RUN: ${TELLOMI_MEDIA_PURGE_DRY_RUN:-true}",
+		"TELLOMI_MEDIA_PURGE_GRACE: ${TELLOMI_MEDIA_PURGE_GRACE:-24h}",
+	} {
+		if !strings.Contains(text, line) {
+			t.Fatalf("docker-compose.yaml missing %s", line)
+		}
 	}
 }
 
