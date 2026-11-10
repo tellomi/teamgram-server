@@ -23,6 +23,8 @@
     "access_b": {"number": "9996610034", "code": "11111"},
     "access_c": {"number": "9996610035", "code": "11111"},
     "access_d": {"number": "9996610036", "code": "11111"},
+    "media_retry_a": {"number": "9996610037", "code": "11111"},
+    "media_retry_b": {"number": "9996610038", "code": "11111"},
     "parts": {"number": "9996610041", "code": "11111"},
     "sticker_owner": {"number": "9996610051", "code": "11111"},
     "sticker_other": {"number": "9996610052", "code": "11111"},

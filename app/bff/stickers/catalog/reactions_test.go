@@ -3,6 +3,7 @@ package catalog
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 )
@@ -89,6 +90,41 @@ func TestAvailableReactionsUseTheirOwnArt(t *testing.T) {
 	if _, ok := reactionAssets("0000"); ok {
 		t.Fatal("missing code was treated as complete")
 	}
+}
+
+func TestAvailableReactionsAreCachedUntilTheBlocklistChanges(t *testing.T) {
+	s := newService(builtinPacks())
+	start := time.Now()
+	first := s.Reactions(0)
+	cold := time.Since(start)
+	start = time.Now()
+	second := s.Reactions(0)
+	warm := time.Since(start)
+	if first != second {
+		t.Fatal("available reactions were rebuilt")
+	}
+	if len(first.GetReactions()) == 0 || first.GetHash() == 0 {
+		t.Fatal("empty reaction list")
+	}
+	// The cached payload must carry the same access_hash ReactionIssued
+	// accepts. upload.getFile checks that function, not the cached object.
+	for _, reaction := range second.GetReactions() {
+		for _, doc := range []*mtproto.Document{
+			reaction.GetStaticIcon(), reaction.GetAppearAnimation(), reaction.GetSelectAnimation(),
+			reaction.GetActivateAnimation(), reaction.GetEffectAnimation(), reaction.GetAroundAnimation(),
+			reaction.GetCenterIcon(),
+		} {
+			hashes, ref, ok := ReactionIssued(doc.GetId())
+			if !ok || !bytes.Equal(ref, doc.GetFileReference()) || !containsInt64(hashes, doc.GetAccessHash()) {
+				t.Fatalf("%s icon %d cached hash %d issued %v", reaction.GetReaction(), doc.GetId(), doc.GetAccessHash(), hashes)
+			}
+		}
+	}
+	same := s.Reactions(first.GetHash())
+	if same.GetPredicateName() != mtproto.Predicate_messages_availableReactionsNotModified {
+		t.Fatalf("hash %d returned %s", first.GetHash(), same.GetPredicateName())
+	}
+	t.Logf("reactions cold %s warm %s count %d", cold, warm, len(first.GetReactions()))
 }
 
 func TestReactionFileWinsOverStickerCollision(t *testing.T) {

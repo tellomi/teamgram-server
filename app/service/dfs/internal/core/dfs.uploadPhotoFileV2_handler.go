@@ -10,6 +10,8 @@
 package core
 
 import (
+	"bytes"
+	"context"
 	"crypto/md5"
 	"fmt"
 	"math/rand"
@@ -102,60 +104,122 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		photo.Sizes = sizes
 		return photo, nil
 	}
-	if !claim.Reused {
-		info, err := c.svcCtx.Dao.PutPhotoFile(c.ctx, claim.Path, cacheData)
-		if err != nil {
-			c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-			c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
-			return nil, mtproto.ErrImageProcessFailed
-		}
-		objectWritten = true
-		bytesWritten = int64(len(cacheData))
-		if info.Size > 0 {
-			bytesWritten = info.Size
-		}
-	}
-	c.rememberPhotoPath(c.ctx, photoId, "0", claim.Path)
 	originPaths := c.originSizePaths(c.ctx, claim)
 
+	type pendingSize struct {
+		szType string
+		w, h   int32
+		bytes  []byte
+		path   string
+		size   int32
+		write  bool
+	}
+	var pending []pendingSize
 	err = imaging.ReSizeImage(cacheData, ext, false, func(szType string, localId int, w, h int32, b []byte) error {
-		// secretId := int64(extType)<<32 | int64(rand.Uint32())
 		// Hash hit keeps the first upload's key (ADR-0083 open question 1).
 		path, write := photoSizeObject(originPaths, szType, photoId)
-		size := int32(len(b))
-		if write {
-			// c.Logger.Debugf("path: %s", path)
-			fileSize, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, b)
-			if err != nil {
-				c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
-				return err
+		// The largest step that was not resized is the original file.
+		// Point it at the original object instead of putting those bytes
+		// again. The path row is written before the RPC returns; if it
+		// cannot be recorded, the conventional key is written so a client
+		// that asks for this size type can still fetch it.
+		if write && bytes.Equal(b, cacheData) && claim.Path != "" {
+			if c.savePhotoPath(c.ctx, photoId, szType, claim.Path) == nil {
+				path = claim.Path
+				write = false
 			}
-			size = int32(fileSize.Size)
 		}
-		c.rememberPhotoPath(c.ctx, photoId, szType, path)
-
-		sizeList = append(sizeList, mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
-			Type:  szType,
-			W:     w,
-			H:     h,
-			Size2: size,
-		}).To_PhotoSize())
-
+		pending = append(pending, pendingSize{
+			szType: szType,
+			w:      w,
+			h:      h,
+			bytes:  b,
+			path:   path,
+			size:   int32(len(b)),
+			write:  write,
+		})
 		return nil
 	})
-
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
-		err = mtproto.ErrImageProcessFailed
-		return nil, err
-	} else if len(sizeList) == 0 {
-		err = mtproto.ErrImageProcessFailed
+		return nil, mtproto.ErrImageProcessFailed
+	}
+	if len(pending) == 0 {
+		c.Logger.Errorf("dfs.uploadPhotoFile - no sizes")
+		c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
+		return nil, mtproto.ErrImageProcessFailed
+	}
+
+	// Original plus every derived object. The RPC returns only after each
+	// advertised size is durable. A client that calls upload.getFile for a
+	// size in photo.sizes must not observe a missing object.
+	puts := make([]func(context.Context) error, 0, len(pending)+1)
+	if !claim.Reused {
+		puts = append(puts, func(ctx context.Context) error {
+			info, err := c.svcCtx.Dao.PutPhotoFile(ctx, claim.Path, cacheData)
+			if err != nil {
+				return err
+			}
+			fileSize = info
+			return nil
+		})
+	}
+	for i := range pending {
+		if !pending[i].write {
+			continue
+		}
+		i := i
+		body := pending[i].bytes
+		path := pending[i].path
+		puts = append(puts, func(ctx context.Context) error {
+			info, err := c.svcCtx.Dao.PutPhotoFile(ctx, path, body)
+			if err != nil {
+				return err
+			}
+			if info.Size > 0 {
+				pending[i].size = int32(info.Size)
+			}
+			return nil
+		})
+	}
+	if err = runBounded(c.ctx, photoPutConcurrency, puts); err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindPhoto, photoId)
-		return nil, err
+		return nil, mtproto.ErrImageProcessFailed
+	}
+	if !claim.Reused {
+		objectWritten = true
+		bytesWritten = int64(len(cacheData))
+		if fileSize.Size > 0 {
+			bytesWritten = fileSize.Size
+		}
+	}
+	c.rememberPhotoPath(c.ctx, photoId, "0", claim.Path)
+	for i := range pending {
+		c.rememberPhotoPath(c.ctx, photoId, pending[i].szType, pending[i].path)
+		sizeList = append(sizeList, mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
+			Type:  pending[i].szType,
+			W:     pending[i].w,
+			H:     pending[i].h,
+			Size2: pending[i].size,
+		}).To_PhotoSize())
 	}
 
 	photo.Sizes = sizeList
 	return photo, nil
+}
+
+// savePhotoPath records the object key a size type is fetched from.
+// A nil blob store cannot record it; the caller then writes the
+// conventional <type>/<id>.dat key, which is what download falls back to.
+func (c *DfsCore) savePhotoPath(ctx context.Context, photoID int64, sizeType, path string) error {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil {
+		return fmt.Errorf("dfs: photo path store is not configured")
+	}
+	if err := c.svcCtx.Dao.Blobs.SavePhotoPath(ctx, photoID, sizeType, path); err != nil {
+		c.Logger.Errorf("dfs.savePhotoPath %s - %v", sizeType, err)
+		return err
+	}
+	return nil
 }

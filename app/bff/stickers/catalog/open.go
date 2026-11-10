@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -68,7 +67,8 @@ func open(dsn string) *Service {
 }
 
 func (s *Service) uploadSeed() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	return uploadAssets(ctx, s.packs)
+	// Open already runs this in a goroutine, so it does not block process
+	// startup. There is no single deadline: one slow object times out on
+	// its own and the rest still upload. Unchanged keys are skipped.
+	return uploadAssets(context.Background(), s.packs)
 }

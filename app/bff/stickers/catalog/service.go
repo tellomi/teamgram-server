@@ -34,6 +34,12 @@ type Service struct {
 	broadcastMu          sync.Mutex
 	broadcasting         bool
 	pendingKinds         kindFlags
+	// reactionFull is the last messages.getAvailableReactions payload.
+	// reactionFP is emojiblock.Fingerprint() for that payload. A blocklist
+	// change misses. reactionHash is the TL hash inside the payload.
+	reactionFP   int64
+	reactionHash int32
+	reactionFull *mtproto.Messages_AvailableReactions
 }
 
 type linkedDoc struct {

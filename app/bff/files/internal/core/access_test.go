@@ -9,6 +9,59 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/mediaaccess"
 )
 
+func TestCacheWarmDoesNotServeWrongAccessHash(t *testing.T) {
+	t.Setenv("TELLOMI_CDN_PUBLIC_KEYS", "")
+	const (
+		fileID int64 = 55
+		issued int64 = 77
+	)
+	// The map is the dfs chunk cache: keyed by file id, consulted only after
+	// upload.getFile has accepted the access_hash.
+	origin := 0
+	cache := map[int64][]byte{}
+	downloadFile = func(_ context.Context, loc *mtproto.InputFileLocation, _ int64, _ int32) (*mtproto.Upload_File, error) {
+		if b, ok := cache[loc.GetId()]; ok {
+			return mtproto.MakeTLUploadFile(&mtproto.Upload_File{Bytes: append([]byte(nil), b...)}).To_Upload_File(), nil
+		}
+		origin++
+		cache[loc.GetId()] = []byte("private-photo-bytes")
+		return mtproto.MakeTLUploadFile(&mtproto.Upload_File{Bytes: append([]byte(nil), cache[loc.GetId()]...)}).To_Upload_File(), nil
+	}
+	authorizeDownload = func(_ *FilesCore, location *mtproto.InputFileLocation) error {
+		if location.GetId() != fileID || location.GetAccessHash() != issued {
+			return mtproto.ErrFileIdInvalid
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		downloadFile = nil
+		authorizeDownload = nil
+	})
+	c := fileCore()
+	photo := func(hash int64) *mtproto.InputFileLocation {
+		return mtproto.MakeTLInputPhotoFileLocation(&mtproto.InputFileLocation{
+			Id: fileID, AccessHash: hash, ThumbSize: "x",
+		}).To_InputFileLocation()
+	}
+	good := &mtproto.TLUploadGetFile{Location: photo(issued), Limit: 64}
+	got, err := c.UploadGetFile(good)
+	if err != nil || string(got.GetBytes()) != "private-photo-bytes" || origin != 1 {
+		t.Fatalf("warm err %v origin %d bytes %q", err, origin, got.GetBytes())
+	}
+	got, err = c.UploadGetFile(good)
+	if err != nil || string(got.GetBytes()) != "private-photo-bytes" || origin != 1 {
+		t.Fatalf("cached read err %v origin %d", err, origin)
+	}
+	denied, err := c.UploadGetFile(&mtproto.TLUploadGetFile{Location: photo(1), Limit: 64})
+	if err != mtproto.ErrFileIdInvalid || origin != 1 || denied != nil && len(denied.GetBytes()) != 0 {
+		t.Fatalf("stranger err %v origin %d file %v", err, origin, denied)
+	}
+	_, err = c.UploadGetFileHashes(&mtproto.TLUploadGetFileHashes{Location: photo(1)})
+	if err != mtproto.ErrFileIdInvalid || origin != 1 {
+		t.Fatalf("stranger hashes err %v origin %d", err, origin)
+	}
+}
+
 func TestGetFileRequiresStickerAccessHash(t *testing.T) {
 	t.Setenv("TELLOMI_CDN_PUBLIC_KEYS", "")
 	set, err := catalog.Must().GetSet(0, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{

@@ -176,7 +176,29 @@ func reactionSpecs() []struct {
 // Reactions is messages.getAvailableReactions. Every entry has its own
 // static icon and a distinct appear/select/activate/effect/around/center
 // animation. A code without those files is omitted.
+// The built payload is cached until the emoji blocklist fingerprint
+// changes. A matching hash still returns availableReactionsNotModified.
 func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
+	fp := emojiblock.Fingerprint()
+	s.mu.Lock()
+	full, sum, ok := s.reactionFull, s.reactionHash, s.reactionFull != nil && s.reactionFP == fp
+	s.mu.Unlock()
+	if !ok {
+		full = s.buildReactions()
+		sum = full.GetHash()
+		s.mu.Lock()
+		s.reactionFull = full
+		s.reactionHash = sum
+		s.reactionFP = fp
+		s.mu.Unlock()
+	}
+	if hash != 0 && hash == sum {
+		return mtproto.MakeTLMessagesAvailableReactionsNotModified(&mtproto.Messages_AvailableReactions{}).To_Messages_AvailableReactions()
+	}
+	return full
+}
+
+func (s *Service) buildReactions() *mtproto.Messages_AvailableReactions {
 	var reactions []*mtproto.AvailableReaction
 	var ids []int64
 	for _, spec := range reactionSpecs() {
@@ -220,9 +242,6 @@ func (s *Service) Reactions(hash int32) *mtproto.Messages_AvailableReactions {
 		ids = append(ids, reactionSlotID(spec.code, "activate"), reactionSlotID(spec.code, "center"))
 	}
 	sum := int32(hash64(ids))
-	if hash != 0 && hash == sum {
-		return mtproto.MakeTLMessagesAvailableReactionsNotModified(&mtproto.Messages_AvailableReactions{}).To_Messages_AvailableReactions()
-	}
 	if reactions == nil {
 		reactions = []*mtproto.AvailableReaction{}
 	}
