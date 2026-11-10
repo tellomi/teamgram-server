@@ -41,4 +41,12 @@ type Store interface {
 	PinnedTop(ctx context.Context, owner Owner) ([]int32, error)
 
 	SaveReport(ctx context.Context, r *Report) error
+
+	// SaveDeletions records that each viewer still needs updateStory with
+	// storyItemDeleted for this story. A repeat is idempotent.
+	SaveDeletions(ctx context.Context, owner Owner, storyID, deletedAt int32, viewers []int64) error
+	// ListDeletions returns deletions with deleted_at > since, oldest first.
+	ListDeletions(ctx context.Context, viewer int64, since int32, limit int) ([]Deletion, error)
+	// DeletionMarks is one watermark per owner this viewer was told about.
+	DeletionMarks(ctx context.Context, viewer int64) ([]DeletionMark, error)
 }

@@ -21,6 +21,14 @@ type memoryStore struct {
 	albums    map[Owner]map[int32]*Album
 	pinned    map[Owner][]int32
 	reports   []*Report
+	deletions []storedDeletion
+}
+
+type storedDeletion struct {
+	viewer  int64
+	owner   Owner
+	storyID int32
+	at      int32
 }
 
 func NewMemoryStore() Store {
@@ -399,4 +407,109 @@ func (s *memoryStore) SaveReport(ctx context.Context, r *Report) error {
 	cp.StoryIDs = append([]int32(nil), r.StoryIDs...)
 	s.reports = append(s.reports, &cp)
 	return nil
+}
+
+func (s *memoryStore) SaveDeletions(ctx context.Context, owner Owner, storyID, deletedAt int32, viewers []int64) error {
+	if storyID == 0 || len(viewers) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := int64(deletedAt) - int64(deletionReplayWindow)
+	if cutoff > 0 {
+		kept := s.deletions[:0]
+		for _, row := range s.deletions {
+			if int64(row.at) >= cutoff {
+				kept = append(kept, row)
+			}
+		}
+		s.deletions = kept
+	}
+	for _, viewer := range viewers {
+		if viewer == 0 {
+			continue
+		}
+		found := false
+		for i := range s.deletions {
+			row := &s.deletions[i]
+			if row.viewer == viewer && row.owner == owner && row.storyID == storyID {
+				if deletedAt > row.at {
+					row.at = deletedAt
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			s.deletions = append(s.deletions, storedDeletion{viewer: viewer, owner: owner, storyID: storyID, at: deletedAt})
+		}
+	}
+	return nil
+}
+
+func (s *memoryStore) ListDeletions(ctx context.Context, viewer int64, since int32, limit int) ([]Deletion, error) {
+	if viewer == 0 || limit <= 0 {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Deletion
+	for _, row := range s.deletions {
+		if row.viewer != viewer || row.at <= since {
+			continue
+		}
+		out = append(out, Deletion{Owner: row.owner, StoryID: row.storyID, At: row.at})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].At == out[j].At {
+			if out[i].Owner.Kind == out[j].Owner.Kind {
+				if out[i].Owner.ID == out[j].Owner.ID {
+					return out[i].StoryID > out[j].StoryID
+				}
+				return out[i].Owner.ID > out[j].Owner.ID
+			}
+			return out[i].Owner.Kind > out[j].Owner.Kind
+		}
+		return out[i].At > out[j].At
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
+func (s *memoryStore) DeletionMarks(ctx context.Context, viewer int64) ([]DeletionMark, error) {
+	if viewer == 0 {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byOwner := map[Owner]*DeletionMark{}
+	var order []Owner
+	for _, row := range s.deletions {
+		if row.viewer != viewer {
+			continue
+		}
+		mark := byOwner[row.owner]
+		if mark == nil {
+			mark = &DeletionMark{Owner: row.owner}
+			byOwner[row.owner] = mark
+			order = append(order, row.owner)
+		}
+		mark.Count++
+		if row.storyID > mark.MaxID {
+			mark.MaxID = row.storyID
+		}
+		if row.at > mark.MaxAt {
+			mark.MaxAt = row.at
+		}
+	}
+	out := make([]DeletionMark, 0, len(order))
+	for _, owner := range order {
+		out = append(out, *byOwner[owner])
+	}
+	return out, nil
 }

@@ -333,6 +333,7 @@ func (s *Service) deleteUserMySQL(ctx context.Context, ms *mysqlStore, actor, au
 	deleted := make([]int32, 0, len(removed))
 	for _, rec := range removed {
 		deleted = append(deleted, rec.id())
+		s.rememberDeletion(ctx, rec)
 		s.fanout(ctx, actor, auth, rec)
 	}
 	return deleted, nil
@@ -378,6 +379,7 @@ func (s *Service) Delete(ctx context.Context, actor, auth int64, owner Owner, ac
 	}
 	unlock()
 	for _, rec := range removed {
+		s.rememberDeletion(ctx, rec)
 		s.fanout(ctx, actor, auth, rec)
 	}
 	if deleted == nil {

@@ -813,6 +813,106 @@ func (s *mysqlStore) SaveReport(ctx context.Context, r *Report) error {
 	return err
 }
 
+func (s *mysqlStore) SaveDeletions(ctx context.Context, owner Owner, storyID, deletedAt int32, viewers []int64) error {
+	if s == nil || s.db == nil || storyID == 0 || len(viewers) == 0 {
+		return nil
+	}
+	cutoff := int64(deletedAt) - int64(deletionReplayWindow)
+	if cutoff > 0 {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM story_deletions WHERE deleted_at < ? LIMIT 500`, cutoff); err != nil {
+			return err
+		}
+	}
+	const chunk = 200
+	for start := 0; start < len(viewers); start += chunk {
+		end := start + chunk
+		if end > len(viewers) {
+			end = len(viewers)
+		}
+		part := viewers[start:end]
+		var b strings.Builder
+		b.WriteString(`INSERT INTO story_deletions (viewer_user_id, owner_kind, owner_id, story_id, deleted_at) VALUES `)
+		args := make([]any, 0, len(part)*5)
+		for _, id := range part {
+			if id == 0 {
+				continue
+			}
+			if len(args) > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(`(?,?,?,?,?)`)
+			args = append(args, id, owner.Kind, owner.ID, storyID, deletedAt)
+		}
+		if len(args) == 0 {
+			continue
+		}
+		b.WriteString(` ON DUPLICATE KEY UPDATE deleted_at=GREATEST(deleted_at, VALUES(deleted_at))`)
+		if _, err := s.db.ExecContext(ctx, b.String(), args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *mysqlStore) ListDeletions(ctx context.Context, viewer int64, since int32, limit int) ([]Deletion, error) {
+	if s == nil || s.db == nil || viewer == 0 || limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT owner_kind, owner_id, story_id, deleted_at
+FROM story_deletions
+WHERE viewer_user_id=? AND deleted_at>?
+ORDER BY deleted_at DESC, owner_kind DESC, owner_id DESC, story_id DESC
+LIMIT ?`, viewer, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Deletion
+	for rows.Next() {
+		var row Deletion
+		var kind int
+		if err = rows.Scan(&kind, &row.Owner.ID, &row.StoryID, &row.At); err != nil {
+			return nil, err
+		}
+		row.Owner.Kind = Kind(kind)
+		out = append(out, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
+func (s *mysqlStore) DeletionMarks(ctx context.Context, viewer int64) ([]DeletionMark, error) {
+	if s == nil || s.db == nil || viewer == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT owner_kind, owner_id, COUNT(*), MAX(story_id), MAX(deleted_at)
+FROM story_deletions
+WHERE viewer_user_id=?
+GROUP BY owner_kind, owner_id`, viewer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeletionMark
+	for rows.Next() {
+		var mark DeletionMark
+		var kind int
+		if err = rows.Scan(&kind, &mark.Owner.ID, &mark.Count, &mark.MaxID, &mark.MaxAt); err != nil {
+			return nil, err
+		}
+		mark.Owner.Kind = Kind(kind)
+		out = append(out, mark)
+	}
+	return out, rows.Err()
+}
+
 func boolInt(v bool) int {
 	if v {
 		return 1

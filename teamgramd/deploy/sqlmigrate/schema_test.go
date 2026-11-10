@@ -74,6 +74,11 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 			t.Errorf("media_blob_gc.%s missing after migrations", col)
 		}
 	}
+	for _, col := range []string{"viewer_user_id", "owner_kind", "owner_id", "story_id", "deleted_at"} {
+		if !cols["story_deletions"][col] {
+			t.Errorf("story_deletions.%s missing after migrations", col)
+		}
+	}
 	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed"} {
 		if !cols["auth_users"][col] {
 			t.Errorf("auth_users.%s missing after migrations", col)

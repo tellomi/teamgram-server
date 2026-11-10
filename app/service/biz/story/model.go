@@ -83,6 +83,23 @@ type Album struct {
 	StoryIDs []int32
 }
 
+// Deletion is one story a viewer missed while offline.
+type Deletion struct {
+	Owner   Owner
+	StoryID int32
+	At      int32
+}
+
+// DeletionMark is the per-owner watermark mixed into stories.getAllStories
+// state. Count moves when a lower id is deleted after a higher one, in the
+// same second, so the hash is not stuck on max(story_id).
+type DeletionMark struct {
+	Owner Owner
+	Count int32
+	MaxID int32
+	MaxAt int32
+}
+
 // Report is a stored stories.report submission.
 type Report struct {
 	Reporter int64

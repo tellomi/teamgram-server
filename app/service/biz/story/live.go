@@ -233,6 +233,9 @@ func (s *Service) EndLive(ctx context.Context, owner Owner, storyID int32) error
 	if err = s.store.Save(ctx, rec); err != nil {
 		return err
 	}
+	if rec.Deleted {
+		s.rememberDeletion(ctx, rec)
+	}
 	s.unbindLive(owner, storyID)
 	if owner.Kind == KindUser {
 		s.syncUserMax(ctx, owner)
