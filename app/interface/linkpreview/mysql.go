@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"google.golang.org/protobuf/proto"
 
@@ -57,7 +59,7 @@ type MySQL struct {
 }
 
 func OpenMySQL(dsn string) (*MySQL, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

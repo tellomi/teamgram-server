@@ -32,10 +32,11 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	"github.com/teamgram/teamgram-server/teamgramd/deploy/seqrepair"
 
@@ -51,7 +52,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "missing -dsn or TEAMGRAM_MYSQL_DSN")
 		os.Exit(2)
 	}
-	db, err := sql.Open("mysql", *dsn)
+	db, err := mysqltls.Open(*dsn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

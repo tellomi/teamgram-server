@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/teamgram-server/app/bff/folders/internal/config"
@@ -46,7 +48,7 @@ func New(c config.Config) *Dao {
 		dsn = strings.TrimSpace(c.MysqlDSN)
 	}
 	if dsn != "" {
-		d.SavePts = archive.SavePtsSQL(sqlx.NewMySQL(&sqlx.Config{DSN: dsn}))
+		d.SavePts = archive.SavePtsSQL(mysqltls.NewMySQL(&sqlx.Config{DSN: dsn}))
 	}
 	return d
 }

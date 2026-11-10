@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -44,7 +46,7 @@ func UseDSN(dsn string) error {
 	if dsn == "" {
 		return nil
 	}
-	conn, err := sql.Open("mysql", dsn)
+	conn, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}

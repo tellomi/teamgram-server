@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -78,6 +79,11 @@ func openStore(dsn string) Store {
 		dsn = env
 	}
 	if dsn == "" {
+		return newMemoryStore()
+	}
+	dsn, err := mysqltls.Apply(dsn)
+	if err != nil {
+		logx.Errorf("cloud password: mysql tls: %v", err)
 		return newMemoryStore()
 	}
 	db, err := openDatabase("mysql", dsn)

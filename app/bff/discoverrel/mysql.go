@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -15,7 +17,7 @@ type MySQL struct {
 
 // OpenMySQL opens the teamgram database. The DSN is not logged.
 func OpenMySQL(dsn string) (*MySQL, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +37,8 @@ func (m *MySQL) Save(ctx context.Context, userID int64, sub []byte) error {
 		return errBad
 	}
 	_, err := m.db.ExecContext(ctx, `
-INSERT INTO discover_subject (sub, user_id) VALUES (?, ?) AS new
-ON DUPLICATE KEY UPDATE user_id = new.user_id`, sub, userID)
+INSERT INTO discover_subject (sub, user_id) VALUES (?, ?)
+ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)`, sub, userID)
 	return err
 }
 

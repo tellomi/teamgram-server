@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -72,7 +74,7 @@ func ConfigureMySQL(dsn string) {
 	if dsn == "" {
 		return
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		logx.Errorf("account deletion: mysql open failed, schedule stays in memory: %v", err)
 		return

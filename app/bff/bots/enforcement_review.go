@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
@@ -111,7 +113,7 @@ func openChatDir(dsn string) (*chatDir, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("empty dsn")
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

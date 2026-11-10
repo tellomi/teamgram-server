@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
@@ -114,7 +116,7 @@ func channelPts(c config.Config) archive.SeqWriter {
 	}
 	var save archive.SavePts
 	if dsn != "" {
-		save = archive.SavePtsSQL(sqlx.NewMySQL(&sqlx.Config{DSN: dsn}))
+		save = archive.SavePtsSQL(mysqltls.NewMySQL(&sqlx.Config{DSN: dsn}))
 	}
 	return archive.SeqWriter{Next: next, Save: save}
 }

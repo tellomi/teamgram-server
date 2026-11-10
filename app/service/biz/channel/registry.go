@@ -2,13 +2,13 @@ package channel
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/teamgram-server/app/service/mediapurge"
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 )
 
 var (
@@ -70,7 +70,7 @@ func UseDSN(dsn string) error {
 
 // OpenMySQL connects, creates the channel tables, and returns a service.
 func OpenMySQL(dsn string) (*Service, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

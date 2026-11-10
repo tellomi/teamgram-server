@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/stores/kv"
 
@@ -96,7 +98,7 @@ func Heal(ctx context.Context, dsn string, store KV) (*Cache, error) {
 		logx.Error("seqfloor: Mysql.DSN is empty; id counters will not be healed from the database. A Redis flush will issue ids from 1 again.")
 		return nil, nil
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("seqfloor: open mysql: %w", err)
 	}

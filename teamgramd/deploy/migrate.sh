@@ -41,6 +41,13 @@ MYSQL_PASSWORD="${MYSQL_PASSWORD:-teamgram}"
 MYSQL_DATABASE="${MYSQL_DATABASE:-teamgram}"
 
 mysql_cli() {
+  # The mysql client cannot set a TLS ServerName. verify-full in the Go
+  # services checks TEAMGRAM_MYSQL_TLS_SERVER_NAME; this script checks the
+  # CA chain only, which is what succeeds against the PolarDB public endpoint.
+  local ssl_args=()
+  if [ -n "${TEAMGRAM_MYSQL_TLS_CA:-}" ]; then
+    ssl_args+=(--ssl-mode=VERIFY_CA --ssl-ca="${TEAMGRAM_MYSQL_TLS_CA}")
+  fi
   MYSQL_PWD="$MYSQL_PASSWORD" mysql \
     --protocol=TCP \
     --connect-timeout=5 \
@@ -48,6 +55,7 @@ mysql_cli() {
     -P "$MYSQL_PORT" \
     -u "$MYSQL_USER" \
     --default-character-set=utf8mb4 \
+    "${ssl_args[@]}" \
     "$MYSQL_DATABASE" \
     "$@"
 }

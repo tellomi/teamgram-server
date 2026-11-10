@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/officialavatars"
@@ -110,7 +112,7 @@ type mysqlChannels struct {
 }
 
 func openChannels(dsn string) (*mysqlChannels, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

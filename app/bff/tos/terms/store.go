@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -75,7 +77,7 @@ func openStore(dsn string) Store {
 }
 
 func newMySQLStore(dsn string) (*mysqlStore, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

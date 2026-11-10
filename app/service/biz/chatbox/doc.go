@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediapurge"
@@ -137,7 +139,7 @@ func UseDSN(dsn string) error {
 	if dsn == "" {
 		return nil
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}

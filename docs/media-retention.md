@@ -67,9 +67,9 @@ media retention DRY_RUN: cutoff=... scanned documents=N photos=N; exempt=N subsc
   the cached `Checker` used by `upload.getFile`.
 - Candidates are `documents` / `photos` with `expired_at = 0` and an upload
   time (`date2`, else `created_at`) older than the cutoff.
-- Holders come from `messages` through functional indexes on
-  `$.media.document.id` and `$.media.photo_FLAGPHOTO.id`
-  (`migrate-20261103-media-retention.sql`), basic-group members from
+- Holders come from `messages` through the generated columns
+  `media_document_id` and `media_photo_id`
+  (`migrate-20261125-media-json-columns.sql`), basic-group members from
   `chat_participants`, and channel members for channels whose
   `channel_messages` carry the media (decoded once per run).
 - Expiry deletes the objects from the attachments bucket and sets

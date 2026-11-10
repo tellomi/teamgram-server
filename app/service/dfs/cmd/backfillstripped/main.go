@@ -11,12 +11,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/config"
@@ -44,7 +45,7 @@ func main() {
 	if c.Mysql.DSN == "" {
 		log.Fatal("mysql DSN is empty in the dfs config")
 	}
-	db, err := sql.Open("mysql", c.Mysql.DSN)
+	db, err := mysqltls.Open(c.Mysql.DSN)
 	if err != nil {
 		log.Fatal(err)
 	}

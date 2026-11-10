@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -64,7 +66,7 @@ func UseDSN(dsn string) error {
 
 // OpenMySQL connects, creates the story tables, and returns a service.
 func OpenMySQL(dsn string) (*Service, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

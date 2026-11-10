@@ -5,10 +5,11 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
@@ -39,7 +40,7 @@ func run(dsn string) error {
 	}
 	admin := *cfg
 	admin.DBName = "mysql"
-	db, err := sql.Open("mysql", admin.FormatDSN())
+	db, err := mysqltls.Open(admin.FormatDSN())
 	if err != nil {
 		return err
 	}
