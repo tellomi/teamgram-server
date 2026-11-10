@@ -41,8 +41,7 @@ func TestStickerLinkUsesTitleNotShortName(t *testing.T) {
 	for _, raw := range []string{
 		"https://tell.cc/addstickers/" + short,
 		"https://www.tell.cc/addstickers/" + short,
-		"https://t.me/addstickers/" + short,
-		"http://telegram.me/AddStickers/" + short,
+		"https://tellomi.cn/addstickers/" + short,
 	} {
 		page, _, _, err := chatbox.WebPageContext(context.Background(), raw, 0)
 		if err != nil {
@@ -68,6 +67,19 @@ func TestStickerLinkUsesTitleNotShortName(t *testing.T) {
 		}
 		if page.GetAttributes()[0].GetEmojis() {
 			t.Fatal("sticker pack marked as emoji")
+		}
+	}
+	for _, raw := range []string{
+		"https://t.me/addstickers/" + short,
+		"http://telegram.me/AddStickers/" + short,
+		"https://telegram.dog/addstickers/" + short,
+	} {
+		page, _, _, err := chatbox.WebPageContext(context.Background(), raw, 0)
+		if err != nil {
+			t.Fatal(raw, err)
+		}
+		if page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+			t.Fatalf("%s was an internal card %s %s", raw, page.GetPredicateName(), page.GetType().GetValue())
 		}
 	}
 
@@ -153,7 +165,7 @@ func TestChannelUserAndMessageCards(t *testing.T) {
 		t.Fatalf("about %q chats %d", page.GetDescription().GetValue(), len(chats))
 	}
 
-	msg, msgChats, _, err := chatbox.WebPageContext(ctx, fmt.Sprintf("https://t.me/%s/%d", newsName, mid), 0)
+	msg, msgChats, _, err := chatbox.WebPageContext(ctx, fmt.Sprintf("https://tell.cc/%s/%d", newsName, mid), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,13 +275,19 @@ func TestChannelUserAndMessageCards(t *testing.T) {
 			return UserCard{}, false
 		}
 	})
-	quiet, _, _, err := chatbox.WebPageContext(ctx, "https://t.me/quiet", 0)
+	quiet, _, _, err := chatbox.WebPageContext(ctx, "https://tell.cc/quiet", 0)
 	if err != nil || quiet.GetType().GetValue() != "telegram_user" || quiet.GetDescription().GetValue() != "You can contact @quiet right away." {
 		t.Fatalf("empty bio %s %q %v", quiet.GetType().GetValue(), quiet.GetDescription().GetValue(), err)
 	}
-	bot, _, _, err := chatbox.WebPageContext(ctx, "https://telegram.me/helperbot", 0)
+	bot, _, _, err := chatbox.WebPageContext(ctx, "https://tellomi.cn/helperbot", 0)
 	if err != nil || bot.GetType().GetValue() != "telegram_bot" || bot.GetPhoto().GetId() != 55 || bot.GetPhoto().GetAccessHash() != 66 {
 		t.Fatalf("bot %s photo %#v %v", bot.GetType().GetValue(), bot.GetPhoto(), err)
+	}
+	for _, raw := range []string{"https://t.me/quiet", "https://telegram.me/helperbot", "https://telegram.dog/pupi"} {
+		foreign, _, _, err := chatbox.WebPageContext(ctx, raw, 0)
+		if err != nil || foreign.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+			t.Fatalf("%s became %s %s %v", raw, foreign.GetPredicateName(), foreign.GetType().GetValue(), err)
+		}
 	}
 	if len(users) != 1 || users[0].GetId() != 42 {
 		t.Fatalf("users %#v", users)
@@ -388,8 +406,8 @@ func TestBasicGroupInviteAndLocalizedCounts(t *testing.T) {
 	hash := "1" + strings.Repeat("b", 19)
 	for _, raw := range []string{
 		"https://tell.cc/+" + hash,
-		"https://t.me/joinchat/" + hash,
-		"https://telegram.me/joinchat/" + hash,
+		"https://www.tell.cc/joinchat/" + hash,
+		"https://tellomi.cn/joinchat/" + hash,
 	} {
 		page, chats, _, err := chatbox.WebPageContext(context.Background(), raw, 0)
 		if err != nil {
@@ -403,6 +421,15 @@ func TestBasicGroupInviteAndLocalizedCounts(t *testing.T) {
 		}
 		if !strings.Contains(page.GetDescription().GetValue(), "3") || !strings.Contains(page.GetDescription().GetValue(), "member") {
 			t.Fatalf("members %q", page.GetDescription().GetValue())
+		}
+	}
+	for _, raw := range []string{
+		"https://t.me/+" + hash,
+		"https://telegram.me/joinchat/" + hash,
+	} {
+		page, _, _, err := chatbox.WebPageContext(context.Background(), raw, 0)
+		if err != nil || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+			t.Fatalf("%s %s %v", raw, page.GetPredicateName(), err)
 		}
 	}
 

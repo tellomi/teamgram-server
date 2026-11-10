@@ -57,7 +57,7 @@ func TestSendMediaUserCardSurvives(t *testing.T) {
 	if name == "" {
 		t.Fatal("could not claim a username")
 	}
-	for _, raw := range []string{"https://t.me/" + name, "https://tell.cc/" + name} {
+	for _, raw := range []string{"https://tell.cc/" + name, "https://www.tell.cc/" + name} {
 		raw := raw
 		t.Run(raw, func(t *testing.T) {
 			ctx, cancel := contextTimeout(30 * time.Second)

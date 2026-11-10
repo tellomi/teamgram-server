@@ -49,7 +49,7 @@ const (
 
 	// EnvServerLinkFetch opts in to the server downloading an external page.
 	// Unset means messages.getWebPage does not open a connection to that site.
-	// Internal tell.cc / t.me cards do not use this switch.
+	// Internal tell.cc / tellomi.cn cards do not use this switch.
 	EnvServerLinkFetch = "TELLOMI_SERVER_LINK_FETCH"
 
 	// EnvLinkFetchProxy is an optional HTTP proxy used only by this fetcher.

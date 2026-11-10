@@ -8,7 +8,7 @@
 
 `messages.getWebPage`、`messages.getWebPagePreview`，以及 `messages.sendMessage`（没有 `no_webpage`）会给下面这些链接直接生成卡片。数据来自本进程里的贴纸目录、频道和用户名，不访问外网。
 
-主机：`tell.cc`、`www.tell.cc`、`t.me`、`telegram.me`、`telegram.dog`，以及 `TELLOMI_LINK_BASE_URL` 指到的主机。
+主机：`tell.cc`、`www.tell.cc`、`tellomi.cn`、`www.tellomi.cn`，以及 `TELLOMI_LINK_BASE_URL` 指到的 Tellomi 主机。`t.me`、`telegram.me`、`telegram.dog` 是 Telegram 的，不当成内部卡片；抓取关闭时没有卡片，打开 `TELLOMI_SERVER_LINK_FETCH` 后按外站处理。`TELLOMI_LINK_BASE_URL` 如果仍写成这几个 Telegram 主机，也不会生成 Tellomi 卡片。
 
 | 路径 | `webPage.type` |
 | --- | --- |

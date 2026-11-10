@@ -20,7 +20,7 @@ type UserCard struct {
 	User     *mtproto.User
 }
 
-// GroupCard is a basic-group invite (t.me/+hash, t.me/joinchat/hash).
+// GroupCard is a basic-group invite (tell.cc/+hash, tell.cc/joinchat/hash).
 type GroupCard struct {
 	Title   string
 	About   string

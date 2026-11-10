@@ -1,8 +1,10 @@
 // Package webpage builds native link cards for messages.getWebPage,
 // messages.getWebPagePreview, and messages.sendMessage.
 //
-// Internal tell.cc and t.me links are filled from data this process already
-// has. External pages are not downloaded unless TELLOMI_SERVER_LINK_FETCH=1.
+// Internal tell.cc and tellomi.cn links are filled from data this process
+// already has. t.me, telegram.me, and telegram.dog belong to Telegram and
+// are ordinary external URLs. External pages are not downloaded unless
+// TELLOMI_SERVER_LINK_FETCH=1.
 // A card the sending client fetched itself is accepted by ClientMedia.
 package webpage
 
@@ -431,8 +433,12 @@ func viewerID(ctx context.Context) int64 {
 func internalHost(host string) bool {
 	host = trimHost(host)
 	switch host {
-	case "tell.cc", "t.me", "telegram.me", "telegram.dog":
+	case "tell.cc", "tellomi.cn":
 		return true
+	case "t.me", "telegram.me", "telegram.dog":
+		// Telegram's short-link hosts. A TELLOMI_LINK_BASE_URL that still
+		// names one of them must not turn it into a Tellomi card.
+		return false
 	}
 	if base, err := url.Parse(brand.LinkBase()); err == nil && trimHost(base.Hostname()) == host && host != "" {
 		return true
