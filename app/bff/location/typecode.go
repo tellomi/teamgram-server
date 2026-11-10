@@ -14,6 +14,8 @@ func VenueType(typecode string) string {
 		return "travel/trainstation"
 	case strings.HasPrefix(typecode, "1503"):
 		return "travel/subway"
+	case strings.HasPrefix(typecode, "0505"):
+		return "food/cafe"
 	}
 	prefix := typecode
 	if len(prefix) > 2 {
@@ -84,6 +86,43 @@ func TencentVenueType(category string) string {
 		if strings.Contains(head, "火车") || strings.Contains(head, "火车站") {
 			return "travel/trainstation"
 		}
+		return "building/default"
+	}
+}
+
+// AppleVenueType maps an Apple Maps POI category onto a Foursquare path.
+// Official clients load the row icon from ss3.4sqi.net using that path
+// (categories_v2/<path>_64.png on Android, _88.png on iOS) and pick the
+// row color from the first segment.
+func AppleVenueType(category string) string {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "cafe":
+		return "food/cafe"
+	case "restaurant", "bakery", "brewery", "winery", "foodmarket":
+		return "food/default"
+	case "hotel":
+		return "travel/hotel"
+	case "park", "nationalpark", "beach", "campground":
+		return "parks_outdoors/default"
+	case "store":
+		return "shops/default"
+	case "nightlife":
+		return "nightlife/default"
+	case "hospital", "pharmacy":
+		return "building/medical"
+	case "school", "university", "library":
+		return "education/default"
+	case "museum", "movietheater", "theater", "amusementpark", "aquarium", "zoo":
+		return "arts_entertainment/default"
+	case "airport":
+		return "travel/airport"
+	case "publictransport", "carrental", "gasstation", "marina":
+		return "travel/default"
+	case "fitnesscenter", "stadium":
+		return "building/gym"
+	case "bank", "atm":
+		return "shops/financial"
+	default:
 		return "building/default"
 	}
 }

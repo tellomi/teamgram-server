@@ -5,6 +5,7 @@ import "testing"
 func TestVenueType(t *testing.T) {
 	cases := map[string]string{
 		"050301": "food/default",
+		"050500": "food/cafe",
 		"06":     "shops/default",
 		"07":     "shops/default",
 		"0801":   "arts_entertainment/default",
@@ -41,5 +42,26 @@ func TestTencentVenueType(t *testing.T) {
 	}
 	if got := TencentVenueType("酒店"); got != "travel/hotel" {
 		t.Fatal(got)
+	}
+}
+
+func TestAppleVenueType(t *testing.T) {
+	cases := map[string]string{
+		"Cafe":       "food/cafe",
+		"Restaurant": "food/default",
+		"Hotel":      "travel/hotel",
+		"Park":       "parks_outdoors/default",
+		"Store":      "shops/default",
+		"Nightlife":  "nightlife/default",
+		"Hospital":   "building/medical",
+		"Airport":    "travel/airport",
+		"School":     "education/default",
+		"Museum":     "arts_entertainment/default",
+		"":           "building/default",
+	}
+	for in, want := range cases {
+		if got := AppleVenueType(in); got != want {
+			t.Errorf("%s → %s, want %s", in, got, want)
+		}
 	}
 }
