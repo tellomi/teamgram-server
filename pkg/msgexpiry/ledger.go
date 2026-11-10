@@ -77,6 +77,9 @@ func (l *Ledger) Register(r Record) {
 	cp := r
 	cp.Users = append([]int64(nil), r.Users...)
 	l.items[k] = &cp
+	if cp.Kind == KindSecret {
+		saveSecret(cp)
+	}
 }
 
 // Open marks a view-once record as seen. Other kinds are left alone.
@@ -151,6 +154,9 @@ func (l *Ledger) Sweep(now int32) []Record {
 		cp := *rec
 		cp.Users = append([]int64(nil), rec.Users...)
 		out = append(out, cp)
+		if cp.Kind == KindSecret {
+			markSecretSwept(cp)
+		}
 	}
 	return out
 }
