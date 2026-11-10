@@ -27,6 +27,7 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"google.golang.org/grpc/status"
 )
 
 func stampedGeo(in *mtproto.InputGeoPoint) *mtproto.GeoPoint {
@@ -146,7 +147,9 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 			Media:   media,
 		})
 		if err2 != nil {
-			if mtproto.IsFilePartMissing(err2) {
+			// FILE_PART_* and a storage 500 are the client's error. Other
+			// failures stay MEDIA_INVALID.
+			if mtproto.IsFilePartMissing(err2) || rpcCode(err2) == int(mtproto.ErrInternal) {
 				err = err2
 			} else {
 				err = mtproto.ErrMediaInvalid
@@ -256,4 +259,12 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 	}
 
 	return
+}
+
+func rpcCode(err error) int {
+	st, ok := status.FromError(err)
+	if !ok {
+		return 0
+	}
+	return int(st.Code())
 }

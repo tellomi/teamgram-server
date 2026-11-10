@@ -11,14 +11,12 @@ package core
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"image"
 	"io"
 	"math/rand"
 
 	"github.com/teamgram/marmota/pkg/bytes2"
-	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
@@ -216,39 +214,44 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		c.ctx, finishUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
 	}
 	applyDocumentSize(document, claim.Size)
+	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
+		claim.Reused = false
+	}
 	if !claim.Reused {
 		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
 	}
 
-	uploadScheduled = true
-	return threading2.WrapperGoFunc(
-		c.ctx,
-		document,
-		func(ctx context.Context) {
-			if finishUpload == nil {
-				return
+	// The object has to be durable before the RPC returns. A 5xx from the
+	// store is INTERNAL_SERVER_ERROR, and the claim is dropped so the same
+	// bytes can be uploaded again.
+	if !claim.Reused {
+		var body io.Reader
+		if len(cacheData) > 0 {
+			body = bytes.NewReader(cacheData)
+		} else {
+			body = c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo)
+		}
+		info, err2 := c.svcCtx.Dao.PutDocumentFile(c.ctx, claim.Path, body)
+		if err2 != nil {
+			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err2)
+			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			if finishUpload != nil {
+				finishUpload(false, 0)
+				uploadScheduled = true
 			}
-			wrote := false
-			var written int64
-			defer func() { finishUpload(wrote, written) }()
-			if claim.Reused {
-				return
-			}
-			var body io.Reader
-			if len(cacheData) > 0 {
-				body = bytes.NewReader(cacheData)
-			} else {
-				body = c.svcCtx.Dao.NewSSDBReader(r.DfsFileInfo)
-			}
-			info, err2 := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, body)
-			if err2 != nil {
-				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err2)
-				return
-			}
-			written = claim.Size
+			return nil, mtproto.ErrInternalServerError
+		}
+		if finishUpload != nil {
+			written := claim.Size
 			if info.Size > 0 {
 				written = info.Size
 			}
-			wrote = true
-		}).(*mtproto.Document), nil
+			finishUpload(true, written)
+			uploadScheduled = true
+		}
+	} else if finishUpload != nil {
+		finishUpload(false, 0)
+		uploadScheduled = true
+	}
+	return document, nil
 }
