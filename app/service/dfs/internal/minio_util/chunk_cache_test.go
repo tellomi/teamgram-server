@@ -118,7 +118,7 @@ func TestEmptyAndErrorsAreNotCached(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		_, err := c.getOrLoad(context.Background(), key, func(context.Context) ([]byte, error) {
 			n++
-			return nil, osNotFound()
+			return nil, context.DeadlineExceeded
 		})
 		if err == nil {
 			t.Fatal("expected error")
@@ -126,6 +126,70 @@ func TestEmptyAndErrorsAreNotCached(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("error was cached, loads=%d", n)
+	}
+	emptyKey := chunkKey(ClassDocuments, "empty.dat", 0, 32)
+	n = 0
+	for i := 0; i < 2; i++ {
+		got, err := c.getOrLoad(context.Background(), emptyKey, func(context.Context) ([]byte, error) {
+			n++
+			return []byte{}, nil
+		})
+		if err != nil || len(got) != 0 {
+			t.Fatalf("empty read %d %v", len(got), err)
+		}
+	}
+	if n != 2 {
+		t.Fatalf("empty success was cached, loads=%d", n)
+	}
+}
+
+func TestNegativeCacheExpires(t *testing.T) {
+	c := newChunkCache(1<<20, 0, t.TempDir())
+	now := time.Now()
+	c.now = func() time.Time { return now }
+	key := chunkKey(ClassStickers, "9.dat", 0, 32)
+	n := 0
+	load := func(context.Context) ([]byte, error) {
+		n++
+		return nil, ErrNotFound
+	}
+	if _, err := c.getOrLoad(context.Background(), key, load); err == nil {
+		t.Fatal("expected miss")
+	}
+	if _, err := c.getOrLoad(context.Background(), key, load); err == nil {
+		t.Fatal("expected cached miss")
+	}
+	if n != 1 {
+		t.Fatalf("second miss hit storage, loads=%d", n)
+	}
+	now = now.Add(negativeCacheTTL + time.Second)
+	if _, err := c.getOrLoad(context.Background(), key, load); err == nil {
+		t.Fatal("expected miss after ttl")
+	}
+	if n != 2 {
+		t.Fatalf("expired miss was not loaded, loads=%d", n)
+	}
+}
+
+func TestStickerClassIsCacheable(t *testing.T) {
+	if !cacheableReadClass(ClassStickers) || !cacheableReadClass(ClassEmoji) || !cacheableReadClass(ClassAvatars) {
+		t.Fatal("sticker, emoji, and avatar reads are not cached")
+	}
+	c := newChunkCache(1<<20, 0, t.TempDir())
+	body := []byte("sticker-bytes")
+	key := chunkKey(ClassStickers, "42.dat", 0, 128)
+	n := 0
+	load := func(context.Context) ([]byte, error) {
+		n++
+		return body, nil
+	}
+	got, err := c.getOrLoad(context.Background(), key, load)
+	if err != nil || string(got) != string(body) {
+		t.Fatal(err)
+	}
+	got, err = c.getOrLoad(context.Background(), key, load)
+	if err != nil || string(got) != string(body) || n != 1 {
+		t.Fatalf("second sticker read loads=%d err=%v", n, err)
 	}
 }
 

@@ -200,7 +200,7 @@ func BundledGifs(hash int64) *mtproto.Messages_SavedGifs {
 	for _, doc := range docs {
 		ids = append(ids, doc.GetId())
 	}
-	sum := hash64(ids)
+	sum := telegramDocumentHash(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesSavedGifsNotModified(&mtproto.Messages_SavedGifs{}).To_Messages_SavedGifs()
 	}

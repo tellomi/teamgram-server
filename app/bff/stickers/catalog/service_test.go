@@ -45,9 +45,14 @@ func TestCatalogAPIs(t *testing.T) {
 			t.Fatal("system animated set was listed in getAllStickers")
 		}
 	}
-	again := s.AllStickers(user, all.GetHash())
-	if again.GetPredicateName() != mtproto.Predicate_messages_allStickersNotModified {
-		t.Fatalf("hash %d did not hit notModified (%s)", all.GetHash(), again.GetPredicateName())
+	// No pack is installed by default, so the client hash is 0. A request
+	// hash of 0 always returns the list.
+	if all.GetHash() != 0 {
+		t.Fatalf("empty getAllStickers hash %d", all.GetHash())
+	}
+	again := s.AllStickers(user, 0)
+	if again.GetPredicateName() != mtproto.Predicate_messages_allStickers {
+		t.Fatalf("hash 0 returned %s", again.GetPredicateName())
 	}
 
 	emojiSets := s.EmojiStickers(user, 0)

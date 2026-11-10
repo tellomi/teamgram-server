@@ -184,8 +184,12 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 			path := fmt.Sprintf("%s/%d.dat", mtproto.PhotoSZMediumType, documentId)
 			if shared := c.originSizePaths(c.ctx, claim)[mtproto.PhotoSZMediumType]; shared != "" {
 				path = shared
-			} else {
-				c.svcCtx.Dao.PutPhotoFile(c.ctx, path, mThumbData.Bytes())
+			} else if _, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, mThumbData.Bytes()); err != nil {
+				// A photo_sizes row for an object that was never stored makes
+				// clients retry the empty download forever.
+				c.Logger.Errorf("dfs.uploadDocumentFile - thumb put: %v", err)
+				c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+				return nil, err
 			}
 			c.rememberPhotoPath(c.ctx, documentId, mtproto.PhotoSZMediumType, path)
 

@@ -156,6 +156,59 @@ func TestMissingBucketIsAClearError(t *testing.T) {
 	}
 }
 
+func TestStickerSecondReadServedFromCache(t *testing.T) {
+	fake := newS3Fake()
+	fake.allow("tellomi-attachments", "tellomi-public-media", "tellomi-backups")
+	fake.mu.Lock()
+	fake.objects["tellomi-public-media"]["stickers/7.dat"] = []byte("WEBP")
+	fake.mu.Unlock()
+	srv, cfg := fake.server(t)
+	defer srv.Close()
+	client, err := NewMinioClient(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	before := fake.readCount()
+	got, err := client.GetStickerFile(ctx, "7.dat", 0, 64)
+	if err != nil || string(got) != "WEBP" {
+		t.Fatalf("first %q %v", got, err)
+	}
+	mid := fake.readCount()
+	if mid == before {
+		t.Fatal("first sticker read did not touch storage")
+	}
+	got, err = client.GetStickerFile(ctx, "7.dat", 0, 64)
+	if err != nil || string(got) != "WEBP" {
+		t.Fatalf("second %q %v", got, err)
+	}
+	if fake.readCount() != mid {
+		t.Fatalf("second sticker read touched storage (%d -> %d)", mid, fake.readCount())
+	}
+
+	missBefore := fake.readCount()
+	if _, err = client.GetStickerFile(ctx, "missing.dat", 0, 16); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing sticker err = %v", err)
+	}
+	missMid := fake.readCount()
+	if missMid == missBefore {
+		t.Fatal("first miss did not touch storage")
+	}
+	if _, err = client.GetStickerFile(ctx, "missing.dat", 0, 16); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cached miss err = %v", err)
+	}
+	if fake.readCount() != missMid {
+		t.Fatalf("cached sticker miss touched storage (%d -> %d)", missMid, fake.readCount())
+	}
+	if _, err = client.PutClassBytes(ctx, ClassStickers, "missing.dat", "image/webp", []byte("NEW")); err != nil {
+		t.Fatal(err)
+	}
+	got, err = client.GetStickerFile(ctx, "missing.dat", 0, 16)
+	if err != nil || string(got) != "NEW" {
+		t.Fatalf("read after put %q %v", got, err)
+	}
+}
+
 func TestPrecreatedBucketsRoundTrip(t *testing.T) {
 	fake := newS3Fake()
 	fake.allow("tellomi-attachments", "tellomi-public-media", "tellomi-backups")
@@ -359,6 +412,7 @@ type s3fake struct {
 	objects   map[string]map[string][]byte
 	uploads   map[string]*upload
 	forbidden []string
+	reads     int
 }
 
 type upload struct {
@@ -380,6 +434,18 @@ func (s *s3fake) allow(names ...string) {
 		s.buckets[name] = true
 		s.objects[name] = map[string][]byte{}
 	}
+}
+
+func (s *s3fake) readCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reads
+}
+
+func (s *s3fake) noteRead() {
+	s.mu.Lock()
+	s.reads++
+	s.mu.Unlock()
 }
 
 func (s *s3fake) has(bucket, key, body string) bool {
@@ -474,8 +540,10 @@ func (s *s3fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodHead && key != "":
+		s.noteRead()
 		s.stat(w, bucket, key)
 	case r.Method == http.MethodGet && key != "":
+		s.noteRead()
 		s.get(w, r, bucket, key)
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+r.URL.RequestURI(), http.StatusNotImplemented)

@@ -247,7 +247,7 @@ func (s *Service) SavedGifs(userID, hash int64) *mtproto.Messages_SavedGifs {
 		docs = append(docs, row.document())
 		ids = append(ids, row.DocumentID)
 	}
-	sum := hash64(ids)
+	sum := telegramDocumentHash(ids)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesSavedGifsNotModified(&mtproto.Messages_SavedGifs{}).To_Messages_SavedGifs()
 	}

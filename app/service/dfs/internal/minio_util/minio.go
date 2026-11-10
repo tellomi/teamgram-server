@@ -191,6 +191,10 @@ func (m *MinioUtil) put(ctx context.Context, class, path string, r io.Reader, si
 		logx.WithContext(ctx).Errorf("PutObject %s/%s (%s) error: %v", bucket, key, class, err)
 		return info, err
 	}
+	// A miss recorded before this write must not hide the new object.
+	if m.chunks != nil {
+		m.chunks.forgetPath(class, path)
+	}
 	return info, nil
 }
 
@@ -484,6 +488,26 @@ func readClamped(ctx context.Context, object *minio.Object, offset int64, limit 
 
 func (m *MinioUtil) GetPhotoFile(ctx context.Context, path string, offset int64, limit int32) ([]byte, error) {
 	return m.getRange(ctx, ClassPhotos, path, offset, limit)
+}
+
+// Stat returns the object size. A missing object is ErrNotFound.
+func (m *MinioUtil) Stat(ctx context.Context, class, path string) (int64, error) {
+	if m == nil || m.client == nil {
+		return 0, fmt.Errorf("object storage client is nil")
+	}
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return 0, err
+	}
+	info, err := m.client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return 0, ErrNotFound
+		}
+		logx.WithContext(ctx).Errorf("StatObject %s/%s error: %v", bucket, key, err)
+		return 0, err
+	}
+	return info.Size, nil
 }
 
 func (m *MinioUtil) PutPhotoFile(ctx context.Context, path string, buf []byte) (minio.UploadInfo, error) {

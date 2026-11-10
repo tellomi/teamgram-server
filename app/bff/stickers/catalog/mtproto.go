@@ -30,7 +30,7 @@ func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 		Title:      p.Title,
 		ShortName:  p.ShortName,
 		Count:      int32(len(items)),
-		Hash:       int32(hash64(documentIDs(items))),
+		Hash:       p.stickerSetHash(),
 	}
 	// thumb_dc_id, thumb_version, and thumbs share flags.4. Writing only the
 	// ints makes a client read the next field as a vector and fail with
@@ -47,6 +47,17 @@ func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 
 func (p *Pack) docIDs() []int64 {
 	return documentIDs(p.visibleItems())
+}
+
+// stickerSetHash is the 32-bit StickerSet.hash clients fold into
+// getAllStickers, getMaskStickers, and getEmojiStickers. It is the low
+// 32 bits of the document-id hash, which may be negative. The list hash
+// sign-extends that int32. A title change does not change it.
+func (p *Pack) stickerSetHash() int32 {
+	if p == nil {
+		return 0
+	}
+	return int32(hash64(documentIDs(p.visibleItems())))
 }
 
 func (p *Pack) documents() []*mtproto.Document {

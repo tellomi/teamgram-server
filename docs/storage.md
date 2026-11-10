@@ -54,7 +54,25 @@ stays on `photos/` or `videos/` so `upload.getFile` does not change, and a
 public copy is written under `avatars/`. Wallpapers are the same: the document
 and its thumb stay on `documents/` and `photos/`, with a copy under
 `wallpapers/`. `upload.getFile` tries the canonical key first and then the
-public prefix, so a public-only object still downloads.
+public prefix, so a public-only object still downloads. A catalog sticker
+or emoji (`catalog.DocumentAccess` / `PublicDocumentID`, storage class
+`stickers` or `emoji`) is read from that public prefix directly, so the
+request does not pay for a `documents/` miss first.
+
+A `photo_sizes` row whose object is missing used to make `upload.getFile`
+return an empty `upload.file`. Clients treat that as success and retry.
+The download now rebuilds a JPEG with ffmpeg when the source document is
+a video or image that fits in memory, and otherwise returns
+`FILE_ID_INVALID`. Rows already stored that way are repaired by
+`backfillthumbs`, which is dry-run unless `-dry-run=false`:
+
+```
+docker exec tellomi-teamgram-1 /app/bin/backfillthumbs -f /app/etc2/dfs.yaml -dry-run
+docker exec tellomi-teamgram-1 /app/bin/backfillthumbs -f /app/etc2/dfs.yaml -dry-run=false
+```
+
+`FLAG` lines are rows it could not rebuild. It does not delete rows or
+objects. Resume a partial walk with `-after` and the last id it prints.
 
 Story media uses the normal photo and document upload, so it lives under
 `photos/` and `documents/` in the attachments bucket. Voice notes are

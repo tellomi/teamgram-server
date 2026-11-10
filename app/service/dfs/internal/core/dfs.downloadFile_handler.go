@@ -10,17 +10,59 @@
 package core
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
+	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
+	"golang.org/x/sync/singleflight"
 )
+
+// downloadFlight coalesces identical in-flight getFile reads. The chunk
+// cache does this again for a cacheable class; this also covers the
+// catalog routing and a thumb rebuild that has not been stored yet.
+// The key is the object, not the access_hash. upload.getFile checks that
+// hash before it calls dfs.
+var downloadFlight singleflight.Group
 
 // DfsDownloadFile
 // dfs.downloadFile location:InputFileLocation offset:int limit:int = upload.File;
 func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_File, error) {
+	v, err, _ := downloadFlight.Do(downloadFlightKey(in), func() (any, error) {
+		return c.downloadFileBody(in)
+	})
+	if err != nil || v == nil {
+		return nil, err
+	}
+	return cloneUploadFile(v.(*mtproto.Upload_File)), nil
+}
+
+func downloadFlightKey(in *dfs.TLDfsDownloadFile) string {
+	loc := in.GetLocation()
+	if loc == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%s\x00%d\x00%d\x00%s\x00%d\x00%d",
+		loc.GetPredicateName(), loc.GetId(), loc.GetPhotoId(), loc.GetThumbSize(), in.GetOffset(), in.GetLimit())
+}
+
+func cloneUploadFile(in *mtproto.Upload_File) *mtproto.Upload_File {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Bytes != nil {
+		out.Bytes = append([]byte(nil), in.Bytes...)
+	}
+	return &out
+}
+
+func (c *DfsCore) downloadFileBody(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_File, error) {
 	var (
 		bytes []byte
 		sType int32
@@ -60,32 +102,57 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 		//	thumb_size:string = InputFileLocation;
 
 		if location.GetThumbSize() == "" {
-			// fileLocation := location.To_InputDocumentFileLocation()
-			path := c.svcCtx.Dao.DocumentObjectPath(c.ctx, location.GetId())
-			bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, path, c.svcCtx.Dao.MinioUtil.GetDocumentFile)
-			if err != nil {
-				// Seeded stickers and emoji live in the public bucket, not
-				// documents/. Try those keys first so a sticker download is one
-				// round trip. Probing documents first used up the RPC deadline
-				// on the misses and the call returned context deadline exceeded.
-				bytes, err = readFirst(
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetStickerFile(c.ctx, path, offset, limit)
-					},
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetEmojiFile(c.ctx, path, offset, limit)
-					},
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetDocumentFile(c.ctx, path, offset, limit)
-					},
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetWallpaperFile(c.ctx, path, offset, limit)
-					},
-				)
+			// Official sticker and emoji documents live in the public
+			// bucket. Reading documents/ first is an R2 miss on every
+			// download. User files stay on the documents path.
+			if class, key, ok := catalog.PublicObject(location.GetId()); ok {
+				bytes, err = c.readPublicDocument(class, key, offset, limit)
+				if errors.Is(err, io.EOF) {
+					// A read past the end is a short success. An empty
+					// object at offset 0 is a miss.
+					if offset > 0 || len(bytes) > 0 {
+						if bytes == nil {
+							bytes = []byte{}
+						}
+						err = nil
+					} else {
+						err = minio_util.ErrNotFound
+					}
+				}
 				if err != nil {
-					c.Logger.Errorf("download file: %v", err)
-					err = nil
-					bytes = []byte{}
+					c.Logger.Errorf("download catalog %s/%s: %v", class, key, err)
+					if errors.Is(err, minio_util.ErrNotFound) {
+						return nil, mtproto.ErrFileIdInvalid
+					}
+					return nil, err
+				}
+			} else {
+				path := c.svcCtx.Dao.DocumentObjectPath(c.ctx, location.GetId())
+				bytes, err = c.svcCtx.Dao.GetCacheFile(c.ctx, location.GetId(), offset, limit, path, c.svcCtx.Dao.MinioUtil.GetDocumentFile)
+				if err != nil {
+					// A catalog id the index has not loaded yet, or a
+					// wallpaper stored only on the public prefix.
+					bytes, err = readFirst(
+						func() ([]byte, error) {
+							return c.svcCtx.Dao.GetStickerFile(c.ctx, path, offset, limit)
+						},
+						func() ([]byte, error) {
+							return c.svcCtx.Dao.GetEmojiFile(c.ctx, path, offset, limit)
+						},
+						func() ([]byte, error) {
+							return c.svcCtx.Dao.GetDocumentFile(c.ctx, path, offset, limit)
+						},
+						func() ([]byte, error) {
+							return c.svcCtx.Dao.GetWallpaperFile(c.ctx, path, offset, limit)
+						},
+					)
+					if err != nil {
+						c.Logger.Errorf("download file: %v", err)
+						if errors.Is(err, minio_util.ErrNotFound) {
+							return nil, mtproto.ErrFileIdInvalid
+						}
+						return nil, err
+					}
 				}
 			}
 			sType = int32(location.GetAccessHash() >> 32)
@@ -115,10 +182,9 @@ func (c *DfsCore) DfsDownloadFile(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_Fi
 				)
 				sType = int32(mtproto.CRC32_storage_fileJpeg)
 			}
+			bytes, err = c.finishDocumentThumb(location, offset, limit, bytes, err)
 			if err != nil {
-				c.Logger.Errorf("download file: %v", err)
-				err = nil
-				bytes = []byte{}
+				return nil, err
 			}
 		}
 	case mtproto.Predicate_inputSecureFileLocation:

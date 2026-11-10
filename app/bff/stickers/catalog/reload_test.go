@@ -11,18 +11,22 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-func TestAppendPackKeyChangesWhenPackIsEdited(t *testing.T) {
+func TestInstalledListHashFollowsSetHash(t *testing.T) {
 	s := newService(nil)
 	pack := hotPack(9001, "HelloPack", "Hello", false, false)
 	s.addPack(pack)
-	regular := s.AllStickers(1, 0).GetHash()
+	regular := s.AllStickers(1, 0)
+	if regular.GetHash() != telegramHash([]int64{int64(regular.GetSets()[0].GetHash())}) {
+		t.Fatal("getAllStickers hash is not the sign-extended set hash")
+	}
 	pack.Title = "Hello 2"
-	renamed := s.AllStickers(1, 0).GetHash()
-	if renamed == regular {
-		t.Fatal("title edit left getAllStickers hash unchanged")
+	// Clients hash StickerSet.hash, which is the document list. A title
+	// edit does not change that, so the list hash stays put.
+	if s.AllStickers(1, 0).GetHash() != regular.GetHash() {
+		t.Fatal("title edit changed getAllStickers hash")
 	}
 	pack.Items = append(pack.Items, stickerItem(43, "😁", false))
-	if s.AllStickers(1, 0).GetHash() == renamed {
+	if s.AllStickers(1, 0).GetHash() == regular.GetHash() {
 		t.Fatal("document edit left getAllStickers hash unchanged")
 	}
 
@@ -31,8 +35,8 @@ func TestAppendPackKeyChangesWhenPackIsEdited(t *testing.T) {
 	masks.addPack(mask)
 	maskHash := masks.MaskStickers(1, 0).GetHash()
 	mask.Title = "Mask 2"
-	if masks.MaskStickers(1, 0).GetHash() == maskHash {
-		t.Fatal("title edit left getMaskStickers hash unchanged")
+	if masks.MaskStickers(1, 0).GetHash() != maskHash {
+		t.Fatal("title edit changed getMaskStickers hash")
 	}
 
 	emoji := newService(nil)
@@ -80,11 +84,19 @@ func TestApplyImportedAddsAndReplaces(t *testing.T) {
 	if err != nil || got.GetSet().GetTitle() != "Hello 2" {
 		t.Fatalf("replaced title %v %v", got.GetSet().GetTitle(), err)
 	}
+	if s.AllStickers(1, 0).GetHash() != before {
+		t.Fatal("title edit changed the list hash; clients hash StickerSet.hash")
+	}
+	edited := clonePack(next)
+	edited.Items = append(edited.Items, stickerItem(99, "😁", false))
+	if diff = s.applyImported([]*Pack{edited}, true); diff.updated != 1 {
+		t.Fatalf("document update %+v", diff)
+	}
 	if s.AllStickers(1, 0).GetHash() == before {
-		t.Fatal("replaced pack did not change the list hash")
+		t.Fatal("document edit did not change the list hash")
 	}
 
-	again := clonePack(next)
+	again := clonePack(edited)
 	if diff = s.applyImported([]*Pack{again}, true); diff.any() {
 		t.Fatalf("unchanged pack was rewritten: %+v", diff)
 	}

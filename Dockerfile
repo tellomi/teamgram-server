@@ -58,6 +58,8 @@ RUN cd app/bff/stickers/cmd/importgifs && go build -o /app/teamgramd/bin/importg
 RUN cd app/bff/userchannelprofiles/officialavatars/cmd/seedofficialavatars && go build -o /app/teamgramd/bin/seedofficialavatars
 # One-shot profile stripped-thumb backfill (docs/official-avatars.md). The operator runs it.
 RUN cd app/service/dfs/cmd/backfillstripped && go build -o /app/teamgramd/bin/backfillstripped
+# One-shot rebuild of missing document thumbnails (docs/storage.md). The operator runs it.
+RUN cd app/service/dfs/cmd/backfillthumbs && go build -o /app/teamgramd/bin/backfillthumbs
 # One-time enforcement schema. The operator runs it; startup does not.
 RUN cd cmd/enforcement-migrate && go build -o /app/teamgramd/bin/enforcement-migrate
 
@@ -103,7 +105,7 @@ COPY --from=ip2region /out/ /app/data/ip2region/
 # so the workflow cannot push a partial image.
 COPY scripts/verify-teamgram-binaries.sh /tmp/verify-teamgram-binaries.sh
 COPY docker-compose.yaml docker-compose-env.yaml docker-compose.staging.yaml docker-compose.geoip.yaml /tmp/compose/
-RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/importgifs /app/bin/seedofficialavatars /app/bin/backfillstripped /app/bin/enforcement-migrate /app/bin/runall-docker.sh \
+RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/importgifs /app/bin/seedofficialavatars /app/bin/backfillstripped /app/bin/backfillthumbs /app/bin/enforcement-migrate /app/bin/runall-docker.sh \
     && bash /tmp/verify-teamgram-binaries.sh /app /tmp/compose \
     && rm -rf /tmp/verify-teamgram-binaries.sh /tmp/compose
 # Exec form so the entrypoint is PID 1. Shell form wraps it in `sh -c`,
