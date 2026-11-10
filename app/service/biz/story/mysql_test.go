@@ -40,5 +40,12 @@ func TestMySQLRoundTrip(t *testing.T) {
 	if got.Stories.Stories[0].GetCaption().GetValue() != "mysql" {
 		t.Fatalf("caption %q", got.Stories.Stories[0].GetCaption().GetValue())
 	}
+	if _, err = reopened.Delete(ctx, owner.ID, 0, owner, 0, []int32{id}); err != nil {
+		t.Fatal(err)
+	}
+	ups := reopened.DifferenceDeletions(ctx, owner.ID, now-1)
+	if len(ups) != 1 || ups[0].GetStory().GetPredicateName() != mtproto.Predicate_storyItemDeleted || ups[0].GetStory().GetId() != id {
+		t.Fatalf("mysql difference %+v", ups)
+	}
 	_ = mtproto.Layer
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	"github.com/teamgram/teamgram-server/app/service/biz/updates/updates"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/diffstrict"
@@ -108,11 +109,22 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 			limit = in.GetQtsLimit().GetValue()
 		}
 		rDifference = secretchat.ApplyDifference(c.MD.UserId, in.GetQts(), limit, rDifference)
-		rDifference = withReactionUpdates(rDifference, chatbox.Shared().DifferenceReactions(c.ctx, c.MD.UserId, in.GetDate()))
+		caughtUp := chatbox.Shared().DifferenceReactions(c.ctx, c.MD.UserId, in.GetDate())
+		// Story deletes are a transient push. Replay the ones this viewer
+		// missed so a reconnect clears a cached ring.
+		caughtUp = append(caughtUp, story.Shared().DifferenceDeletions(c.ctx, c.MD.UserId, in.GetDate())...)
+		rDifference = withReactionUpdates(rDifference, caughtUp, in.GetPts(), in.GetQts())
 		attachDialogReactions(c.ctx, c.MD.UserId, rDifference.NewMessages)
 	}
 	idHelper.PickByMessages(rDifference.NewMessages...)
 	idHelper.PickByUpdates(rDifference.OtherUpdates...)
+	// updateStory carries the owner. Loading that user paints
+	// stories_unavailable once the story is gone, which drops the ring.
+	for _, upd := range rDifference.GetOtherUpdates() {
+		if upd.GetPredicateName() == mtproto.Predicate_updateStory {
+			idHelper.PickByPeer(upd.GetPeer_PEER())
+		}
+	}
 
 	// Drop zero-length and out-of-range entities before this reply is encoded.
 	// Encoding each message also recovers, so one bad row cannot fail the
@@ -140,11 +152,13 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 	return rDifference, nil
 }
 
-// withReactionUpdates adds updateMessageReactions that arrived after the
-// client's difference date. The constructor has no pts, so this is not a pts
-// row. An empty pts difference becomes a normal difference so the client
-// stores the new date and does not ask for the same reactions again.
-func withReactionUpdates(diff *mtproto.Updates_Difference, extra []*mtproto.Update) *mtproto.Updates_Difference {
+// withReactionUpdates adds updates that have no pts (reactions, story
+// deletes) and arrived after the client's difference date. An empty pts
+// difference becomes a normal difference so the client stores the new date
+// and does not ask for the same rows again. pts and qts are the cursors the
+// client already sent: differenceEmpty does not carry them, and writing 0
+// would rewind the session.
+func withReactionUpdates(diff *mtproto.Updates_Difference, extra []*mtproto.Update, pts, qts int32) *mtproto.Updates_Difference {
 	if diff == nil || len(extra) == 0 {
 		return diff
 	}
@@ -154,15 +168,34 @@ func withReactionUpdates(diff *mtproto.Updates_Difference, extra []*mtproto.Upda
 			NewEncryptedMessages: []*mtproto.EncryptedMessage{},
 			OtherUpdates:         extra,
 			State: mtproto.MakeTLUpdatesState(&mtproto.Updates_State{
+				Pts:  pts,
+				Qts:  qts,
 				Date: int32(time.Now().Unix()),
 				Seq:  diff.GetSeq(),
 			}).To_Updates_State(),
 		}).To_Updates_Difference()
 	case mtproto.Predicate_updates_difference, mtproto.Predicate_updates_differenceSlice:
 		diff.OtherUpdates = append(diff.OtherUpdates, extra...)
+		fillCursor(diff.State, pts, qts)
+		fillCursor(diff.IntermediateState, pts, qts)
 		return diff
 	default:
 		return diff
+	}
+}
+
+// fillCursor copies the client's pts and qts onto a state that lost them
+// when an empty difference was turned into a slice. A state that already
+// has a cursor is left alone.
+func fillCursor(state *mtproto.Updates_State, pts, qts int32) {
+	if state == nil {
+		return
+	}
+	if state.Pts == 0 {
+		state.Pts = pts
+	}
+	if state.Qts == 0 {
+		state.Qts = qts
 	}
 }
 
