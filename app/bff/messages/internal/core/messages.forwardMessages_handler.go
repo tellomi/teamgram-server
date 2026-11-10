@@ -211,6 +211,11 @@ func (c *MessagesCore) makeForwardMessages(
 	for i := len(messageList.Datas) - 1; i >= 0; i-- {
 		box := messageList.Datas[i]
 		m := box.Message
+		// Official clients do not forward self-destructing media. ttl_seconds
+		// stays set after the file is expired, so an opened copy is refused too.
+		if mtproto.TTLSeconds(m) != 0 {
+			return nil, mtproto.ErrChatForwardsRestricted
+		}
 		// TODO(@benqi): rid is 0
 
 		if m.GetGroupedId() != nil {

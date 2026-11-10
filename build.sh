@@ -27,6 +27,10 @@ go build -o ${INSTALL}/bin/mediaretention
 cd ${TEAMGRAMAPP}/service/media/cmd/mediapurge
 go build -o ${INSTALL}/bin/mediapurge
 
+echo "build ttlexpire ..."
+cd ${TEAMGRAMAPP}/messenger/msg/cmd/ttlexpire
+go build -o ${INSTALL}/bin/ttlexpire
+
 echo "build authsession ..."
 cd ${TEAMGRAMAPP}/service/authsession/cmd/authsession
 go build -o ${INSTALL}/bin/authsession

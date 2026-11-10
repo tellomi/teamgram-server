@@ -46,6 +46,8 @@
     "purge_ch_a": {"number": "9996610118", "code": "11111"},
     "archive_a": {"number": "9996610121", "code": "11111"},
     "archive_b": {"number": "9996610122", "code": "11111"},
-    "archive_c": {"number": "9996610123", "code": "11111"}
+    "archive_c": {"number": "9996610123", "code": "11111"},
+    "ttl_a": {"number": "9996610131", "code": "11111"},
+    "ttl_b": {"number": "9996610132", "code": "11111"}
   }
 }

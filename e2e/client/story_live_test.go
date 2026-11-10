@@ -152,6 +152,12 @@ func updatesOf(obj mtproto.TLObject) []*mtproto.Update {
 		return v.GetUpdates()
 	case *mtproto.Updates:
 		return v.GetUpdates()
+	case *mtproto.TLUpdateShort:
+		return []*mtproto.Update{v.GetUpdate()}
+	case *mtproto.TLUpdatesDifference:
+		return v.GetOtherUpdates()
+	case *mtproto.TLUpdatesDifferenceSlice:
+		return v.GetOtherUpdates()
 	default:
 		return nil
 	}

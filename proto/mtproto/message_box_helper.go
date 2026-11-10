@@ -165,7 +165,10 @@ func CheckHasMention(entities []*MessageEntity, userId int64) bool {
 }
 
 func CheckHasMediaUnread(m *Message) bool {
-	return IsVoiceMessage(m) || IsRoundVideoMessage(m)
+	// Voice and round video are unread until playback. Any ttl_seconds media
+	// (view-once or a timed photo/video/voice) is unread until
+	// messages.readMessageContents, which is what tells the sender to blank it.
+	return IsVoiceMessage(m) || IsRoundVideoMessage(m) || TTLSeconds(m) > 0
 }
 
 func (m *MessageBox) ToMessage(toUserId int64) *Message {
