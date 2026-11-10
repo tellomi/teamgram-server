@@ -33,9 +33,6 @@ func (s *Service) capture(ctx context.Context, in Incoming) error {
 	if s == nil || in.SenderID == 0 || in.MsgID == 0 || in.SenderID == AccountID {
 		return nil
 	}
-	if s.objects == nil {
-		return fmt.Errorf("object storage is not configured")
-	}
 	when := in.When
 	if when.IsZero() {
 		when = time.Now()
@@ -43,6 +40,7 @@ func (s *Service) capture(ctx context.Context, in Incoming) error {
 	kind := "text"
 	name := in.Filename
 	mime := in.Mime
+	status := StatusStored
 	var size int64
 	var path string
 	if in.DocumentID != 0 {
@@ -60,24 +58,38 @@ func (s *Service) capture(ctx context.Context, in Incoming) error {
 		if mime == "" {
 			mime = src.Mime
 		}
-		path = ObjectPath(when, in.SenderID, in.MsgID, name)
-		if err = s.objects.Copy(ctx, src.Class, src.Path, path); err != nil {
-			return err
-		}
 		size = src.Size
+		if size > MaxBytes() {
+			status = StatusSkipped
+		} else {
+			if s.objects == nil {
+				return fmt.Errorf("object storage is not configured")
+			}
+			path = ObjectPath(when, in.SenderID, in.MsgID, name)
+			if err = s.objects.Copy(ctx, src.Class, src.Path, path); err != nil {
+				return err
+			}
+		}
 	} else {
 		body := []byte(in.Text)
+		size = int64(len(body))
 		if name == "" {
 			name = "message.txt"
 		}
 		if mime == "" {
 			mime = "text/plain"
 		}
-		path = ObjectPath(when, in.SenderID, in.MsgID, name)
-		if err := s.objects.Put(ctx, path, mime, body); err != nil {
-			return err
+		if size > MaxBytes() {
+			status = StatusSkipped
+		} else {
+			if s.objects == nil {
+				return fmt.Errorf("object storage is not configured")
+			}
+			path = ObjectPath(when, in.SenderID, in.MsgID, name)
+			if err := s.objects.Put(ctx, path, mime, body); err != nil {
+				return err
+			}
 		}
-		size = int64(len(body))
 	}
 	caption := ""
 	message := in.Text
@@ -98,6 +110,7 @@ func (s *Service) capture(ctx context.Context, in Incoming) error {
 		ContentType:  mime,
 		StorageClass: Class,
 		StorageKey:   FullKey(path),
+		Status:       status,
 	})
 }
 

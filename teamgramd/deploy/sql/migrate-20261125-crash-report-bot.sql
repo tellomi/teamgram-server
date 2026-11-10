@@ -48,11 +48,14 @@ CREATE TABLE IF NOT EXISTS crash_reports (
   content_type VARCHAR(128) NOT NULL DEFAULT '',
   storage_class VARCHAR(64) NOT NULL DEFAULT 'crash-reports',
   storage_key VARCHAR(512) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'stored',
   PRIMARY KEY (id),
   UNIQUE KEY uniq_crash_msg (sender_user_id, msg_id),
   KEY idx_crash_created (created_at),
   KEY idx_crash_sender (sender_user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL teamgram_add_column('crash_reports', 'status', 'ALTER TABLE `crash_reports` ADD `status` VARCHAR(16) NOT NULL DEFAULT ''stored''');
 
 SET @bad = (SELECT username FROM username WHERE username = 'TellomiBot' AND NOT (peer_type = 2 AND peer_id = 777006) LIMIT 1);
 CALL teamgram_fail_if_set(@bad, 'crash bot username taken: ');
@@ -68,9 +71,10 @@ CALL teamgram_fail_if_set(@bad_token, 'crash bot token taken: ');
 
 INSERT IGNORE INTO users (id, user_type, access_hash, secret_key_id, first_name, last_name, username, phone, country_code, verified, support, about, is_bot) VALUES (777006, 3, 8100000000000777006, 0, 'Tellomi 反馈', '', 'TellomiBot', NULL, '', 1, 0, '把崩溃日志发到这里。', 1);
 
-UPDATE users
-SET username = 'TellomiBot', first_name = 'Tellomi 反馈'
-WHERE id = 777006 AND user_type = 3 AND is_bot = 1 AND username = '';
+SET @teamgram_stmt = 'UPDATE users SET username = ''TellomiBot'', first_name = ''Tellomi 反馈'' WHERE id = 777006 AND user_type = 3 AND is_bot = 1 AND username = ''''';
+PREPARE teamgram_ps FROM @teamgram_stmt;
+EXECUTE teamgram_ps;
+DEALLOCATE PREPARE teamgram_ps;
 
 INSERT IGNORE INTO bots (bot_id, bot_type, creator_user_id, token, description, bot_chat_history, bot_nochats, bot_info_version) VALUES (777006, 0, 0, 'tellomi-crash-collector', 'Tellomi crash reports', 0, 1, 1);
 

@@ -259,6 +259,7 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 			break
 		}
 		c.noteTellomi(c.MD.UserId, peer, caption, ents, random, replyTarget(in.GetReplyToMsgId(), in.GetReplyTo()), rUpdate, caption == "")
+		noteCrashReports(c.ctx, c.MD.UserId, peer, nil, rUpdate)
 	}
 
 	if in.ClearDraft {

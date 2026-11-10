@@ -17,6 +17,9 @@ import (
 type Service struct {
 	db      *sql.DB
 	objects Objects
+	// docs and saveRow override MySQL in tests.
+	docs    func(context.Context, int64) (docSource, error)
+	saveRow func(context.Context, Row) error
 }
 
 // New is the collector the CLI uses. objects may be nil; list then omits download URLs.
@@ -70,6 +73,12 @@ func Start(dsn string) {
 	}
 	svc := &Service{db: db, objects: objs}
 	Use(svc)
+	var dbName string
+	if err = db.QueryRowContext(ctx, `SELECT IFNULL(username,'') FROM users WHERE id = ?`, AccountID).Scan(&dbName); err != nil {
+		logx.Error("crash report: bot username was not read; publishing TellomiBot")
+		dbName = DefaultUsername
+	}
+	UseDBUsername(dbName)
 	token := strings.TrimSpace(os.Getenv(EnvToken))
 	if token == "" {
 		logx.Info("crash report: query listener is off")
@@ -80,7 +89,7 @@ func Start(dsn string) {
 		addr = defaultAddr
 	}
 	if !AddrAllowed(addr) {
-		logx.Error("crash report: listen address is not loopback or private; listener is off")
+		logx.Error("crash report: listen address is not loopback; listener is off")
 		return
 	}
 	srv := &http.Server{

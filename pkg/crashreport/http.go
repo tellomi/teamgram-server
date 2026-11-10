@@ -126,8 +126,8 @@ func tokenOK(r *http.Request, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
-// AddrAllowed reports whether addr is safe to bind: loopback, a private
-// address, or a host name that resolves only to those. 0.0.0.0 is refused.
+// AddrAllowed reports whether addr is loopback: 127.0.0.1, ::1, or localhost.
+// Private-network addresses are refused.
 func AddrAllowed(addr string) bool {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
 	if err != nil || host == "" {
@@ -140,7 +140,7 @@ func AddrAllowed(addr string) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsLoopback() || ip.IsPrivate()
+	return ip.IsLoopback()
 }
 
 func writeErr(w http.ResponseWriter, code int, msg string) {

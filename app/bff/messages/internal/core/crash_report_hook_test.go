@@ -43,3 +43,30 @@ func TestNoteCrashReportCapturesBotPeer(t *testing.T) {
 		t.Fatalf("captured a message that was not sent to the bot: %d", calls)
 	}
 }
+
+func TestAlbumSendsAreCapturedEvenWhenStoreFails(t *testing.T) {
+	var ids []int32
+	prev := saveCrash
+	saveCrash = func(_ context.Context, in crashreport.Incoming) error {
+		ids = append(ids, in.MsgID)
+		if in.MsgID == 1 {
+			return errCrashStore
+		}
+		return nil
+	}
+	t.Cleanup(func() { saveCrash = prev })
+	sent := &mtproto.Updates{Updates: []*mtproto.Update{
+		{Message_MESSAGE: &mtproto.Message{Id: 1, Message: "a.zip"}},
+		{Message_MESSAGE: &mtproto.Message{Id: 2, Message: "b.zip"}},
+	}}
+	noteCrashReports(context.Background(), 9, &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: crashreport.AccountID}, nil, sent)
+	if len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+		t.Fatalf("album ids %v", ids)
+	}
+}
+
+var errCrashStore = errString("store failed")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }

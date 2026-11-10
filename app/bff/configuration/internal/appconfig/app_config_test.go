@@ -462,6 +462,7 @@ func TestHelpCenterFlag(t *testing.T) {
 }
 
 func TestCrashReportBotConfig(t *testing.T) {
+	t.Cleanup(func() { crashreport.UseDBUsername(crashreport.DefaultUsername) })
 	t.Setenv(crashreport.EnvBot, "")
 	raw := mtproto.FromJSONValue(AppConfig())
 	obj := raw.(map[string]any)
@@ -470,12 +471,15 @@ func TestCrashReportBotConfig(t *testing.T) {
 	}
 	off := AppConfigHash()
 	t.Setenv(crashreport.EnvBot, "OtherBot")
-	if AppConfigHash() == off {
-		t.Fatal("app config hash ignored TELLOMI_CRASH_REPORT_BOT")
+	if AppConfigHash() != off || crashreport.Username() != crashreport.DefaultUsername {
+		t.Fatal("a mismatched env name was published")
+	}
+	if !crashreport.UseDBUsername(crashreport.DefaultUsername) {
+		t.Fatal("startup did not notice the mismatched env name")
 	}
 	raw = mtproto.FromJSONValue(AppConfig())
 	obj = raw.(map[string]any)
-	if obj["tellomi_crash_report_bot"] != "OtherBot" {
+	if obj["tellomi_crash_report_bot"] != crashreport.DefaultUsername {
 		t.Fatalf("bot %#v", obj["tellomi_crash_report_bot"])
 	}
 }

@@ -37,26 +37,33 @@ func TestObjectPathAndHints(t *testing.T) {
 }
 
 func TestUsernameDefault(t *testing.T) {
+	t.Cleanup(func() { published.Store("") })
 	t.Setenv(EnvBot, "")
 	if Username() != DefaultUsername {
 		t.Fatal(Username())
 	}
 	t.Setenv(EnvBot, "@OtherBot")
-	if Username() != "OtherBot" {
-		t.Fatal(Username())
-	}
-	t.Setenv(EnvBot, "no")
 	if Username() != DefaultUsername {
-		t.Fatal(Username())
+		t.Fatalf("env replaced the published name: %s", Username())
+	}
+	if !UseDBUsername("TellomiBot") {
+		t.Fatal("mismatched env was not reported")
+	}
+	if Username() != DefaultUsername {
+		t.Fatalf("published %s", Username())
+	}
+	t.Setenv(EnvBot, "TellomiBot")
+	if UseDBUsername("TellomiBot") {
+		t.Fatal("matching env was reported as a mismatch")
 	}
 }
 
 func TestAddrAllowed(t *testing.T) {
-	if !AddrAllowed("127.0.0.1:8818") || !AddrAllowed("[::1]:8818") || !AddrAllowed("10.0.0.4:8818") || !AddrAllowed("localhost:8818") {
-		t.Fatal("private addresses were refused")
+	if !AddrAllowed("127.0.0.1:8818") || !AddrAllowed("[::1]:8818") || !AddrAllowed("localhost:8818") {
+		t.Fatal("loopback addresses were refused")
 	}
-	if AddrAllowed("0.0.0.0:8818") || AddrAllowed("8.8.8.8:8818") || AddrAllowed("8818") {
-		t.Fatal("public bind was allowed")
+	if AddrAllowed("10.0.0.4:8818") || AddrAllowed("192.168.1.1:8818") || AddrAllowed("172.16.0.1:8818") || AddrAllowed("0.0.0.0:8818") || AddrAllowed("8.8.8.8:8818") || AddrAllowed("8818") {
+		t.Fatal("non-loopback bind was allowed")
 	}
 }
 
@@ -154,6 +161,64 @@ func TestMigrationDoesNotTouchOtherUsers(t *testing.T) {
 	}
 	if !strings.Contains(text, "WHERE id = 777006 AND user_type = 3 AND is_bot = 1 AND username = ''") {
 		t.Fatal("user update is not limited to the empty crash-bot row")
+	}
+}
+
+type countObjects struct {
+	copies int
+	puts   int
+}
+
+func (c *countObjects) Copy(context.Context, string, string, string) error {
+	c.copies++
+	return nil
+}
+
+func (c *countObjects) Put(context.Context, string, string, []byte) error {
+	c.puts++
+	return nil
+}
+
+func (c *countObjects) Presign(context.Context, string, time.Duration) (string, error) {
+	return "https://example/signed", nil
+}
+
+func TestOverCapSkipsCopy(t *testing.T) {
+	t.Setenv(EnvMaxBytes, "100")
+	if MaxBytes() != 100 {
+		t.Fatalf("cap %d", MaxBytes())
+	}
+	t.Setenv(EnvMaxBytes, "")
+	if MaxBytes() != DefaultMaxBytes {
+		t.Fatalf("default cap %d", MaxBytes())
+	}
+	t.Setenv(EnvMaxBytes, "100")
+	objs := &countObjects{}
+	var saved Row
+	s := &Service{
+		objects: objs,
+		docs: func(context.Context, int64) (docSource, error) {
+			return docSource{Class: "documents", Path: "1.dat", Size: 101, Name: "big.zip", Mime: "application/zip"}, nil
+		},
+		saveRow: func(_ context.Context, row Row) error {
+			saved = row
+			return nil
+		},
+	}
+	if err := s.capture(context.Background(), Incoming{SenderID: 9, MsgID: 3, DocumentID: 5, Filename: "big.zip"}); err != nil {
+		t.Fatal(err)
+	}
+	if objs.copies != 0 || objs.puts != 0 || saved.Status != StatusSkipped || saved.StorageKey != "" || saved.FileSize != 101 {
+		t.Fatalf("copies %d puts %d row %+v", objs.copies, objs.puts, saved)
+	}
+	s.docs = func(context.Context, int64) (docSource, error) {
+		return docSource{Class: "documents", Path: "1.dat", Size: 40, Name: "ok.zip", Mime: "application/zip"}, nil
+	}
+	if err := s.capture(context.Background(), Incoming{SenderID: 9, MsgID: 4, DocumentID: 6, Filename: "ok.zip"}); err != nil {
+		t.Fatal(err)
+	}
+	if objs.copies != 1 || saved.Status != StatusStored || saved.StorageKey == "" || saved.FileSize != 40 {
+		t.Fatalf("copies %d row %+v", objs.copies, saved)
 	}
 }
 

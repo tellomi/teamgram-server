@@ -32,6 +32,7 @@ type Row struct {
 	ContentType  string    `json:"content_type"`
 	StorageClass string    `json:"storage_class"`
 	StorageKey   string    `json:"storage_key"`
+	Status       string    `json:"status"`
 	DownloadURL  string    `json:"download_url,omitempty"`
 }
 
@@ -169,6 +170,7 @@ CREATE TABLE IF NOT EXISTS crash_reports (
   content_type VARCHAR(128) NOT NULL DEFAULT '',
   storage_class VARCHAR(64) NOT NULL DEFAULT 'crash-reports',
   storage_key VARCHAR(512) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'stored',
   PRIMARY KEY (id),
   UNIQUE KEY uniq_crash_msg (sender_user_id, msg_id),
   KEY idx_crash_created (created_at),
@@ -176,13 +178,19 @@ CREATE TABLE IF NOT EXISTS crash_reports (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
 
 func (s *Service) save(ctx context.Context, row Row) error {
+	if s != nil && s.saveRow != nil {
+		return s.saveRow(ctx, row)
+	}
 	if s == nil || s.db == nil {
 		return fmt.Errorf("crash report store is not configured")
 	}
+	if row.Status == "" {
+		row.Status = StatusStored
+	}
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO crash_reports
-  (sender_user_id, msg_id, kind, filename, caption, message_text, device_info, app_info, file_size, content_type, storage_class, storage_key)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  (sender_user_id, msg_id, kind, filename, caption, message_text, device_info, app_info, file_size, content_type, storage_class, storage_key, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   filename = VALUES(filename),
   caption = VALUES(caption),
@@ -192,13 +200,17 @@ ON DUPLICATE KEY UPDATE
   file_size = VALUES(file_size),
   content_type = VALUES(content_type),
   storage_class = VALUES(storage_class),
-  storage_key = VALUES(storage_key)`,
+  storage_key = VALUES(storage_key),
+  status = VALUES(status)`,
 		row.SenderUserID, row.MsgID, row.Kind, clip(row.Filename, 255), clip(row.Caption, 4096), row.Message,
-		clip(row.Device, 512), clip(row.App, 512), row.FileSize, clip(row.ContentType, 128), row.StorageClass, clip(row.StorageKey, 512))
+		clip(row.Device, 512), clip(row.App, 512), row.FileSize, clip(row.ContentType, 128), row.StorageClass, clip(row.StorageKey, 512), clip(row.Status, 16))
 	return err
 }
 
 func (s *Service) document(ctx context.Context, id int64) (docSource, error) {
+	if s != nil && s.docs != nil {
+		return s.docs(ctx, id)
+	}
 	var src docSource
 	if id == 0 || s == nil || s.db == nil {
 		return src, fmt.Errorf("document %d is not stored", id)
@@ -265,7 +277,7 @@ func (s *Service) list(ctx context.Context, q Query) ([]Row, error) {
 		toUnix = q.To.UTC().Unix()
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, created_at, sender_user_id, msg_id, kind, filename, caption, IFNULL(message_text,''), device_info, app_info, file_size, content_type, storage_class, storage_key
+SELECT id, created_at, sender_user_id, msg_id, kind, filename, caption, IFNULL(message_text,''), device_info, app_info, file_size, content_type, storage_class, storage_key, status
 FROM crash_reports
 WHERE (? = 0 OR created_at >= FROM_UNIXTIME(?))
   AND (? = 0 OR created_at <= FROM_UNIXTIME(?))
@@ -285,7 +297,7 @@ LIMIT ?`,
 	var out []Row
 	for rows.Next() {
 		var row Row
-		if err = rows.Scan(&row.ID, &row.CreatedAt, &row.SenderUserID, &row.MsgID, &row.Kind, &row.Filename, &row.Caption, &row.Message, &row.Device, &row.App, &row.FileSize, &row.ContentType, &row.StorageClass, &row.StorageKey); err != nil {
+		if err = rows.Scan(&row.ID, &row.CreatedAt, &row.SenderUserID, &row.MsgID, &row.Kind, &row.Filename, &row.Caption, &row.Message, &row.Device, &row.App, &row.FileSize, &row.ContentType, &row.StorageClass, &row.StorageKey, &row.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
