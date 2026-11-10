@@ -23,11 +23,12 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
-	siteTelegram = "Telegram"
+	siteTellomi = "Tellomi"
 
 	maxTitleRunes       = 128
 	maxDescriptionRunes = 400
@@ -234,7 +235,7 @@ func peerPage(ctx context.Context, raw, name string) (*mtproto.WebPage, []*mtpro
 		if card.User != nil {
 			users = []*mtproto.User{card.User}
 		}
-		return makePage(raw, "telegram_user", card.Title, card.About, nil), nil, users
+		return userPage(raw, name, card), nil, users
 	}
 	return empty(raw), nil, nil
 }
@@ -264,13 +265,43 @@ func messagePage(ctx context.Context, raw string, chat *mtproto.Chat, id int32) 
 	return makePage(raw, "telegram_message", chat.GetTitle(), clamp(text, maxMessageRunes), nil), []*mtproto.Chat{chat}
 }
 
+func userPage(raw, name string, card UserCard) *mtproto.WebPage {
+	typ := "telegram_user"
+	if card.Bot {
+		typ = "telegram_bot"
+	}
+	user := name
+	if card.Username != "" {
+		user = card.Username
+	}
+	return makePage(raw, typ, card.Title, userDescription(card.About, user), attachPhoto(card.Photo))
+}
+
+func userDescription(about, username string) string {
+	if strings.TrimSpace(about) != "" {
+		return about
+	}
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	if username == "" {
+		return ""
+	}
+	return fmt.Sprintf("You can contact @%s right away.", username)
+}
+
 func channelPage(ctx context.Context, raw string, chat *mtproto.Chat) *mtproto.WebPage {
-	return makePage(raw, channelType(chat), chat.GetTitle(), channelDescription(ctx, chat), nil)
+	return makePage(raw, channelType(chat), chat.GetTitle(), channelDescription(ctx, chat), attachPhoto(chatPhoto(ctx, chat)))
 }
 
 func channelType(chat *mtproto.Chat) string {
+	request := chat.GetJoinRequest() && chat.GetLeft()
 	if chat.GetMegagroup() {
+		if request {
+			return "telegram_megagroup_request"
+		}
 		return "telegram_megagroup"
+	}
+	if request {
+		return "telegram_channel_request"
 	}
 	return "telegram_channel"
 }
@@ -289,25 +320,27 @@ func channelDescription(ctx context.Context, chat *mtproto.Chat) string {
 	if n <= 0 {
 		return ""
 	}
-	if chat.GetMegagroup() {
-		if n == 1 {
-			return "1 member"
-		}
-		return fmt.Sprintf("%d members", n)
-	}
-	if n == 1 {
-		return "1 subscriber"
-	}
-	return fmt.Sprintf("%d subscribers", n)
+	return audienceLine(ctx, n, !chat.GetMegagroup())
 }
 
 func invitePage(ctx context.Context, raw, hash string) (*mtproto.WebPage, []*mtproto.Chat) {
+	if basicInviteHash(hash) {
+		return groupInvitePage(ctx, raw, hash)
+	}
 	inv, _, err := channel.Shared().CheckInvite(ctx, viewerID(ctx), hash)
 	if err != nil || inv == nil {
 		return empty(raw), nil
 	}
 	if chat := inv.GetChat(); chat != nil && chat.GetPredicateName() == mtproto.Predicate_channel {
 		return channelPage(ctx, raw, chat), []*mtproto.Chat{chat}
+	}
+	if chat := inv.GetChat(); chat != nil && chat.GetPredicateName() == mtproto.Predicate_chat {
+		return groupPage(ctx, raw, GroupCard{
+			Title:   chat.GetTitle(),
+			Members: chat.GetParticipantsCount_FLAGINT32().GetValue(),
+			Photo:   chatPhoto(ctx, chat),
+			Chat:    chat,
+		}), []*mtproto.Chat{chat}
 	}
 	title := strings.TrimSpace(inv.GetTitle())
 	if title == "" {
@@ -318,13 +351,54 @@ func invitePage(ctx context.Context, raw, hash string) (*mtproto.WebPage, []*mtp
 		desc = inv.GetAbout().GetValue()
 	}
 	if desc == "" && inv.GetParticipantsCount() > 0 {
-		desc = fmt.Sprintf("%d members", inv.GetParticipantsCount())
+		desc = audienceLine(ctx, inv.GetParticipantsCount(), inv.GetBroadcast() && !inv.GetMegagroup())
 	}
-	typ := "telegram_channel"
+	return makePage(raw, inviteType(inv), title, desc, attachPhoto(usablePhoto(inv.GetPhoto()))), nil
+}
+
+func inviteType(inv *mtproto.ChatInvite) string {
 	if inv.GetMegagroup() {
-		typ = "telegram_megagroup"
+		if inv.GetRequestNeeded() {
+			return "telegram_megagroup_request"
+		}
+		return "telegram_megagroup"
 	}
-	return makePage(raw, typ, title, desc, nil), nil
+	if inv.GetBroadcast() || inv.GetChannel() {
+		if inv.GetRequestNeeded() {
+			return "telegram_channel_request"
+		}
+		return "telegram_channel"
+	}
+	return "telegram_chat"
+}
+
+func groupInvitePage(ctx context.Context, raw, hash string) (*mtproto.WebPage, []*mtproto.Chat) {
+	card, ok := lookupGroupCard(ctx, hash)
+	if !ok || strings.TrimSpace(card.Title) == "" {
+		return empty(raw), nil
+	}
+	var chats []*mtproto.Chat
+	if card.Chat != nil {
+		chats = []*mtproto.Chat{card.Chat}
+	}
+	return groupPage(ctx, raw, card), chats
+}
+
+func groupPage(ctx context.Context, raw string, card GroupCard) *mtproto.WebPage {
+	desc := strings.TrimSpace(card.About)
+	if desc == "" && card.Members > 0 {
+		desc = audienceLine(ctx, card.Members, false)
+	}
+	return makePage(raw, "telegram_chat", card.Title, desc, attachPhoto(card.Photo))
+}
+
+// basicInviteHash is a basic-group invite. Channel hashes start with a letter.
+func basicInviteHash(hash string) bool {
+	if hash == "" {
+		return false
+	}
+	c := hash[0]
+	return c >= '0' && c <= '9'
 }
 
 func lookupChannel(ctx context.Context, name string) (*mtproto.Chat, bool) {
@@ -454,7 +528,7 @@ func makePage(raw, typ, title, desc string, extra func(*mtproto.WebPage)) *mtpro
 		DisplayUrl:     displayURL(raw),
 		Hash:           sum,
 		Type:           wrapperspb.String(typ),
-		SiteName:       wrapperspb.String(siteTelegram),
+		SiteName:       wrapperspb.String(siteTellomi),
 		Title:          wrapperspb.String(title),
 		Date:           int32(time.Now().Unix()),
 	}).To_WebPage()
@@ -486,6 +560,204 @@ func hash32(parts ...string) int32 {
 		return 1
 	}
 	return sum
+}
+
+func attachPhoto(photo *mtproto.Photo) func(*mtproto.WebPage) {
+	return func(p *mtproto.WebPage) {
+		if usablePhoto(photo) != nil {
+			p.Photo = photo
+		}
+	}
+}
+
+func usablePhoto(photo *mtproto.Photo) *mtproto.Photo {
+	if photo == nil || photo.GetId() == 0 || photo.GetPredicateName() == mtproto.Predicate_photoEmpty {
+		return nil
+	}
+	return photo
+}
+
+func chatPhoto(ctx context.Context, chat *mtproto.Chat) *mtproto.Photo {
+	ph := chat.GetPhoto()
+	if ph == nil || ph.GetPhotoId() == 0 {
+		return nil
+	}
+	return storedPhoto(ctx, ph.GetPhotoId())
+}
+
+// audienceLine is the official member or subscriber line. The wording comes
+// from the viewer's langpack (Conversation.StatusMembers / StatusSubscribers
+// on iOS, Members / Subscribers on Android). English is the fallback.
+func audienceLine(ctx context.Context, n int32, subscribers bool) string {
+	if n < 0 {
+		n = 0
+	}
+	if text := localizedCount(ctx, n, subscribers); text != "" {
+		return text
+	}
+	if subscribers {
+		if n == 1 {
+			return "1 subscriber"
+		}
+		return fmt.Sprintf("%d subscribers", n)
+	}
+	if n == 1 {
+		return "1 member"
+	}
+	return fmt.Sprintf("%d members", n)
+}
+
+func localizedCount(ctx context.Context, n int32, subscribers bool) string {
+	md := metadata.RpcMetadataFromIncoming(ctx)
+	if md == nil || strings.TrimSpace(md.GetLangCode()) == "" {
+		return ""
+	}
+	lang := strings.TrimSpace(md.GetLangCode())
+	platform := langpack.NormalizePlatform(md.GetLangpack())
+	if platform == "" {
+		platform = "ios"
+	}
+	keys := []string{"Conversation.StatusMembers"}
+	if subscribers {
+		keys = []string{"Conversation.StatusSubscribers"}
+	}
+	if platform == "android" {
+		if subscribers {
+			keys = append([]string{"Subscribers"}, keys...)
+		} else {
+			keys = append([]string{"Members"}, keys...)
+		}
+	}
+	cat := langpack.DefaultCatalog()
+	if cat == nil {
+		return ""
+	}
+	code, _ := langpack.CanonicalLang(lang)
+	if code == "" {
+		code = lang
+	}
+	plural := "en"
+	if info, err := cat.Language(platform, code); err == nil && info.GetPluralCode() != "" {
+		plural = info.GetPluralCode()
+	}
+	form := pluralCategory(plural, n)
+	for _, key := range keys {
+		for _, pack := range []string{platform, "ios", "android"} {
+			rows, err := cat.Strings(pack, code, []string{key})
+			if err != nil || len(rows) == 0 {
+				continue
+			}
+			text := pluralText(rows[0], form)
+			if text == "" {
+				continue
+			}
+			return fillCount(text, n)
+		}
+	}
+	return ""
+}
+
+func pluralText(s *mtproto.LangPackString, form string) string {
+	if s == nil || s.GetPredicateName() == mtproto.Predicate_langPackStringDeleted {
+		return ""
+	}
+	if s.GetPredicateName() != mtproto.Predicate_langPackStringPluralized {
+		return s.GetValue()
+	}
+	pick := func(v *wrapperspb.StringValue) string {
+		if v == nil {
+			return ""
+		}
+		return v.GetValue()
+	}
+	var text string
+	switch form {
+	case "zero":
+		text = pick(s.GetZeroValue())
+	case "one":
+		text = pick(s.GetOneValue())
+	case "two":
+		text = pick(s.GetTwoValue())
+	case "few":
+		text = pick(s.GetFewValue())
+	case "many":
+		text = pick(s.GetManyValue())
+	}
+	if text == "" {
+		text = s.GetOtherValue()
+	}
+	return text
+}
+
+func fillCount(format string, n int32) string {
+	num := strconv.FormatInt(int64(n), 10)
+	out := format
+	replaced := false
+	for _, token := range []string{"%1$@", "%@", "%1$d", "%d"} {
+		if strings.Contains(out, token) {
+			out = strings.ReplaceAll(out, token, num)
+			replaced = true
+		}
+	}
+	if !replaced {
+		return strings.TrimSpace(format)
+	}
+	return strings.TrimSpace(out)
+}
+
+func pluralCategory(code string, n int32) string {
+	if n < 0 {
+		n = -n
+	}
+	switch code {
+	case "zh", "ja", "ko", "vi", "th", "id", "ms", "lo", "km":
+		return "other"
+	case "fr":
+		if n < 2 {
+			return "one"
+		}
+		return "other"
+	case "ru", "uk", "be", "sr", "hr", "bs":
+		mod10 := n % 10
+		mod100 := n % 100
+		if mod10 == 1 && mod100 != 11 {
+			return "one"
+		}
+		if mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) {
+			return "few"
+		}
+		return "many"
+	case "pl":
+		if n == 1 {
+			return "one"
+		}
+		mod10 := n % 10
+		mod100 := n % 100
+		if mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) {
+			return "few"
+		}
+		return "many"
+	case "ar":
+		switch {
+		case n == 0:
+			return "zero"
+		case n == 1:
+			return "one"
+		case n == 2:
+			return "two"
+		case n%100 >= 3 && n%100 <= 10:
+			return "few"
+		case n%100 >= 11:
+			return "many"
+		default:
+			return "other"
+		}
+	default:
+		if n == 1 {
+			return "one"
+		}
+		return "other"
+	}
 }
 
 func clamp(s string, max int) string {

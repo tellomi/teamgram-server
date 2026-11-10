@@ -3,6 +3,9 @@ package chatbox
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -25,6 +28,7 @@ import (
 	dimaging "github.com/disintegration/imaging"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/objectstore"
+	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/dcoptions"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/charset"
@@ -34,17 +38,24 @@ import (
 )
 
 const (
-	webTimeout   = 8 * time.Second
-	webHTMLLimit = 1 << 20
-	webImgLimit  = 2 << 20
-	webCacheTTL  = 10 * time.Minute
-	webFailTTL   = time.Minute
-	maxRedirects = 3
+	webConnectTimeout = 3 * time.Second
+	webTimeout        = 5 * time.Second
+	webHTMLLimit      = 1 << 20
+	webImgLimit       = 2 << 20
+	webPositiveTTL    = 24 * time.Hour
+	webNegativeTTL    = 20 * time.Minute
+	maxRedirects      = 3
+	webUserAgent      = "Mozilla/5.0 (compatible; TellomiBot/1.0; +https://tellomi.cn/bot)"
 
 	// EnvServerLinkFetch opts in to the server downloading an external page.
 	// Unset means messages.getWebPage does not open a connection to that site.
 	// Internal tell.cc / t.me cards do not use this switch.
 	EnvServerLinkFetch = "TELLOMI_SERVER_LINK_FETCH"
+
+	// EnvLinkFetchProxy is an optional HTTP proxy used only by this fetcher.
+	// SSRF checks run on the target before the request is handed to the proxy.
+	// HTTP_PROXY and HTTPS_PROXY are ignored.
+	EnvLinkFetchProxy = "TELLOMI_LINK_FETCH_PROXY"
 )
 
 // ServerFetchEnabled reports whether this process may download external pages
@@ -87,42 +98,52 @@ func blockedTargetErr() error {
 // webHTTPClient is replaced by tests. Production uses safeClient.
 var webHTTPClient = safeClient
 
+// vetRequest is replaced by tests that fetch a local server on a random port.
+var vetRequest = vetTarget
+
 // loadWebPage is replaced by tests. Production fetches the URL.
 var loadWebPage = fetchRemote
 
-type webCacheEntry struct {
-	page  *mtproto.WebPage
-	until time.Time
-}
-
-var webCache sync.Map
-
-func cachedWebPage(key string) (*mtproto.WebPage, bool) {
-	v, ok := webCache.Load(key)
-	if !ok {
-		return nil, false
+func fetchWebPage(ctx context.Context, u *url.URL) *mtproto.WebPage {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	ent := v.(webCacheEntry)
-	if time.Now().After(ent.until) {
-		webCache.Delete(key)
-		return nil, false
-	}
-	return ent.page, true
-}
-
-func storeWebPage(key string, page *mtproto.WebPage) {
-	ttl := webCacheTTL
-	if page.GetPredicateName() != mtproto.Predicate_webPage {
-		ttl = webFailTTL
-	}
-	webCache.Store(key, webCacheEntry{page: page, until: time.Now().Add(ttl)})
-}
-
-func fetchWebPage(u *url.URL) *mtproto.WebPage {
 	if !ServerFetchEnabled() {
 		return emptyPage(u)
 	}
-	res := loadWebPage(u)
+	key := pageCacheKey(u)
+	if page, ok := pageCacheGet(ctx, key); ok {
+		return page
+	}
+	v, err, _ := webFlight.Do(key, func() (any, error) {
+		if page, ok := pageCacheGet(ctx, key); ok {
+			return page, nil
+		}
+		release, allowed := acquireFetch(u.Hostname())
+		if !allowed {
+			return emptyPage(u), nil
+		}
+		defer release()
+		res := loadWebPage(u)
+		page := pageFromFetch(u, res)
+		ttl := webPositiveTTL
+		if page.GetPredicateName() != mtproto.Predicate_webPage {
+			ttl = webNegativeTTL
+		}
+		pageCacheSet(ctx, key, page, ttl)
+		return page, nil
+	})
+	if err != nil || v == nil {
+		return emptyPage(u)
+	}
+	page, _ := v.(*mtproto.WebPage)
+	if page == nil {
+		return emptyPage(u)
+	}
+	return page
+}
+
+func pageFromFetch(u *url.URL, res fetchResult) *mtproto.WebPage {
 	if res.failed {
 		if res.pending {
 			return pendingPage(u)
@@ -281,13 +302,23 @@ func blockedHost(hostport string) bool {
 }
 
 func safeClient() *http.Client {
-	dialer := &net.Dialer{Timeout: webTimeout}
+	proxyURL := linkFetchProxy()
+	dialer := &net.Dialer{Timeout: webConnectTimeout}
 	transport := &http.Transport{
-		Proxy: nil, // never honor HTTP_PROXY; that is an SSRF bypass
+		// nil ignores HTTP_PROXY. A configured proxy is explicit and is not
+		// taken from the environment.
+		Proxy: httpProxy(proxyURL),
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if proxyURL != nil {
+				// The dial is to the proxy. The target was checked first.
+				return dialer.DialContext(ctx, network, addr)
+			}
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
+			}
+			if port != "80" && port != "443" {
+				return nil, blockedTargetErr()
 			}
 			if ip := net.ParseIP(host); ip != nil {
 				if blockedIP(ip) {
@@ -324,14 +355,83 @@ func safeClient() *http.Client {
 			if len(via) >= maxRedirects {
 				return mtproto.ErrWebpageCurlFailed
 			}
-			if blockedHost(req.URL.Host) {
-				return blockedTargetErr()
-			}
-			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-				return mtproto.ErrWebpageCurlFailed
+			if err := vetRequest(req.Context(), req.URL); err != nil {
+				return err
 			}
 			return nil
 		},
+	}
+}
+
+func httpProxy(proxyURL *url.URL) func(*http.Request) (*url.URL, error) {
+	if proxyURL == nil {
+		return nil
+	}
+	return func(*http.Request) (*url.URL, error) {
+		return proxyURL, nil
+	}
+}
+
+func linkFetchProxy() *url.URL {
+	raw := strings.TrimSpace(os.Getenv(EnvLinkFetchProxy))
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil
+	}
+	return u
+}
+
+// vetTarget rejects a URL that must not be fetched: a non-80/443 port, a
+// private address, or a name that resolves to one. Callers run this before
+// a proxy sees the request. A DNS failure is returned as-is so the caller
+// can treat it as a fetch error rather than an SSRF block.
+func vetTarget(ctx context.Context, u *url.URL) error {
+	if u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return blockedTargetErr()
+	}
+	if !allowedWebPort(u) || blockedHost(u.Host) {
+		return blockedTargetErr()
+	}
+	host := strings.Trim(hostOnly(u.Host), "[]")
+	if ip := net.ParseIP(host); ip != nil {
+		if blockedIP(ip) {
+			return blockedTargetErr()
+		}
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return err
+	}
+	if len(ips) == 0 {
+		return mtproto.ErrWebpageCurlFailed
+	}
+	for _, ip := range ips {
+		if blockedIP(ip.IP) {
+			return blockedTargetErr()
+		}
+	}
+	return nil
+}
+
+func allowedWebPort(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	port := u.Port()
+	switch u.Scheme {
+	case "https":
+		return port == "" || port == "443"
+	case "http":
+		return port == "" || port == "80"
+	default:
+		return false
 	}
 }
 
@@ -372,11 +472,14 @@ func httpGet(u *url.URL, limit int64) ([]byte, string, error) {
 }
 
 func httpGetContext(ctx context.Context, u *url.URL, limit int64) ([]byte, string, *url.URL, error) {
+	if err := vetRequest(ctx, u); err != nil {
+		return nil, "", nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", nil, err
 	}
-	req.Header.Set("User-Agent", "TellomiBot/1.0")
+	req.Header.Set("User-Agent", webUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,image/*;q=0.8")
 	resp, err := webHTTPClient().Do(req)
 	if err != nil {
@@ -578,18 +681,34 @@ func oneLine(s string) string {
 type storedPhoto struct {
 	body []byte
 	mime string
+	path string
 }
 
 var webPhotos sync.Map
 
 // WebPhoto is the og:image bytes for upload.getFile.
 func WebPhoto(id int64) (body []byte, mime string, ok bool) {
-	v, found := webPhotos.Load(id)
-	if !found {
+	if v, found := webPhotos.Load(id); found {
+		p := v.(storedPhoto)
+		return p.body, p.mime, len(p.body) > 0
+	}
+	path := fmt.Sprintf("0/%d.dat", id)
+	raw, err := readWebPhotoObject(path)
+	if err != nil || len(raw) == 0 {
 		return nil, "", false
 	}
-	p := v.(storedPhoto)
-	return p.body, p.mime, len(p.body) > 0
+	webPhotos.Store(id, storedPhoto{body: raw, mime: "image/jpeg", path: path})
+	return raw, "image/jpeg", true
+}
+
+func readWebPhotoObject(path string) ([]byte, error) {
+	client, err := objectstore.Open()
+	if err != nil || client == nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), webTimeout)
+	defer cancel()
+	return client.GetPhoto(ctx, path)
 }
 
 func storeWebPhoto(raw []byte, mime string) *mtproto.Photo {
@@ -602,12 +721,9 @@ func storeWebPhoto(raw []byte, mime string) *mtproto.Photo {
 		return nil
 	}
 	body := jpg.Bytes()
-	id := int64(webHash(string(body[:min(64, len(body))])))
-	if id < 0 {
-		id = -id
-	}
-	webPhotos.Store(id, storedPhoto{body: body, mime: "image/jpeg"})
-	putWebPhotoDFS(id, body)
+	id := webPhotoID(body)
+	path := persistWebPhoto(id, body)
+	webPhotos.Store(id, storedPhoto{body: body, mime: "image/jpeg", path: path})
 	b := img.Bounds()
 	_ = format
 	_ = mime
@@ -650,12 +766,65 @@ func init() {
 	image.RegisterFormat("gif", "GIF8", gif.Decode, gif.DecodeConfig)
 }
 
-func putWebPhotoDFS(id int64, body []byte) {
+func webPhotoID(body []byte) int64 {
+	sum := sha256.Sum256(body)
+	id := int64(binary.BigEndian.Uint64(sum[:8]) & 0x7fffffffffffffff)
+	if id == 0 {
+		return 1
+	}
+	return id
+}
+
+// writeWebObject and claimWebBlob are replaced by tests. Production writes
+// the JPEG through R2 dedup (ADR-0082) when MySQL and object storage are set.
+var writeWebObject = writeWebPhotoObject
+var claimWebBlob = claimWebPhotoBlob
+
+func persistWebPhoto(id int64, body []byte) string {
+	sum := sha256.Sum256(body)
+	path := fmt.Sprintf("0/%d.dat", id)
+	if got, reused := claimWebBlob(hex.EncodeToString(sum[:]), int64(len(body)), path); got != "" {
+		path = got
+		if reused {
+			return path
+		}
+	}
+	_ = writeWebObject(path, body)
+	return path
+}
+
+func claimWebPhotoBlob(sha string, size int64, proposed string) (string, bool) {
+	store := webBlobStore()
+	if store == nil {
+		return proposed, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	claim, err := store.Claim(ctx, mediablob.ClassPhotos, mediablob.KindPhoto, photoIDFromPath(proposed), sha, size, proposed)
+	if err != nil || claim.Path == "" {
+		return proposed, false
+	}
+	return claim.Path, claim.Reused
+}
+
+func photoIDFromPath(path string) int64 {
+	base := strings.TrimSuffix(path, ".dat")
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	id, err := strconv.ParseInt(base, 10, 64)
+	if err != nil || id == 0 {
+		return 1
+	}
+	return id
+}
+
+func writeWebPhotoObject(path string, body []byte) error {
 	client, err := objectstore.Open()
 	if err != nil || client == nil {
-		return
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	_ = client.Put(ctx, "photos", strconv.FormatInt(id, 10)+".dat", "image/jpeg", body)
+	return client.PutPhoto(ctx, path, "image/jpeg", body)
 }

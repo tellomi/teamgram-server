@@ -68,7 +68,10 @@ func (c *MsgCore) MsgEditMessageV2(in *msg.TLMsgEditMessageV2) (*mtproto.Updates
 			if edited.Media != nil {
 				m.Media = mtproto.KeepTodoCompletions(m.GetMedia(), edited.Media)
 			}
-			if noWebpage && m.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaWebPage {
+			// inputMediaWebPage arrives as messageMediaWebPage. no_webpage
+			// removes a card the edit did not replace. It must not drop the
+			// card this edit just attached.
+			if noWebpage && edited.GetMedia().GetPredicateName() != mtproto.Predicate_messageMediaWebPage && m.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaWebPage {
 				m.Media = nil
 			}
 			if edited.Entities != nil {

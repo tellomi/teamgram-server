@@ -117,12 +117,7 @@ func describeURL(ctx context.Context, u *url.URL) (*mtproto.WebPage, []*mtproto.
 			return page, chats, users, nil
 		}
 	}
-	if page, ok := cachedWebPage(u.String()); ok {
-		return page, nil, nil, nil
-	}
-	page := fetchWebPage(u)
-	storeWebPage(u.String(), page)
-	return page, nil, nil, nil
+	return fetchWebPage(ctx, u), nil, nil, nil
 }
 
 // AcceptURL parses an http(s) URL and rejects blocked hosts.

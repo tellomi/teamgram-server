@@ -29,9 +29,10 @@ func RemakeMessage(ctx context.Context, plugin MsgPlugin, message *mtproto.Messa
 		firstURL = message.Message[rIndexes[0][0]:rIndexes[0][1]]
 	}
 	if noWebpage {
-		if message.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaWebPage {
-			message.Media = nil
-		}
+		// no_webpage only blocks a caption URL from growing a second card.
+		// sendMedia and editMessage(inputMediaWebPage) already put the card
+		// on the message. Official iOS sends a link that way once a preview
+		// exists, and wiping messageMediaWebPage drops the bubble.
 	} else if firstURL != "" && plugin != nil && !keptWebPage(message.GetMedia()) {
 		webpage, _ := plugin.GetWebpagePreview(ctx, firstURL)
 		if webpage.GetPredicateName() == mtproto.Predicate_webPage {

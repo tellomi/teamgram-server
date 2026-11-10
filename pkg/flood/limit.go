@@ -32,6 +32,7 @@ const (
 	BucketAccountStatus  = "account_status"
 	BucketAccountUpdate  = "account_update"
 	BucketReport         = "report"
+	BucketWebPreview     = "web_preview"
 )
 
 // Rule is a token bucket. Burst is the bucket size. Rate is tokens added
@@ -99,6 +100,10 @@ func defaultRules() map[string]Rule {
 		// Reports. A multi-select report fits in the burst. The report
 		// service keeps its own hourly cap on top of this.
 		BucketReport: {Burst: 15, Rate: 0.05},
+		// messages.getWebPagePreview while a link is typed. A few calls as
+		// the draft changes fit in the burst. One a second after that is
+		// faster than a person and stops a loop that would fetch the web.
+		BucketWebPreview: {Burst: 20, Rate: 1},
 	}
 }
 
@@ -307,6 +312,10 @@ func chargesFor(in Request) []charge {
 		}
 	case classReport:
 		if c, ok := subjectCharge(BucketReport, in); ok {
+			out = append(out, c)
+		}
+	case classWebPreview:
+		if c, ok := subjectCharge(BucketWebPreview, in); ok {
 			out = append(out, c)
 		}
 	}

@@ -2,15 +2,19 @@ package webpage
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	rpcmd "github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	gmd "google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -49,6 +53,9 @@ func TestStickerLinkUsesTitleNotShortName(t *testing.T) {
 		}
 		if page.GetTitle().GetValue() != "erel" {
 			t.Fatalf("%s title %q", raw, page.GetTitle().GetValue())
+		}
+		if page.GetSiteName().GetValue() != "Tellomi" {
+			t.Fatalf("%s site %q", raw, page.GetSiteName().GetValue())
 		}
 		if !strings.Contains(page.GetUrl_STRING(), short) || strings.Contains(page.GetTitle().GetValue(), short) {
 			t.Fatalf("url %q title %q", page.GetUrl_STRING(), page.GetTitle().GetValue())
@@ -139,6 +146,9 @@ func TestChannelUserAndMessageCards(t *testing.T) {
 	if page.GetType().GetValue() != "telegram_channel" || page.GetTitle().GetValue() != "Erel News" {
 		t.Fatalf("channel %s %q", page.GetType().GetValue(), page.GetTitle().GetValue())
 	}
+	if page.GetSiteName().GetValue() != "Tellomi" {
+		t.Fatalf("site %q", page.GetSiteName().GetValue())
+	}
 	if page.GetDescription().GetValue() != "daily notes" || len(chats) != 1 || chats[0].GetId() != newsChat.Id {
 		t.Fatalf("about %q chats %d", page.GetDescription().GetValue(), len(chats))
 	}
@@ -195,6 +205,17 @@ func TestChannelUserAndMessageCards(t *testing.T) {
 	if err != nil || inv.GetType().GetValue() != "telegram_megagroup" || inv.GetTitle().GetValue() != "Erel Group" {
 		t.Fatalf("invite %s %q %v link %s", inv.GetType().GetValue(), inv.GetTitle().GetValue(), err, link.GetLink())
 	}
+	if _, err := svc.ToggleJoinRequest(ctx, 11, 0, inputCh(group.Chats[0]), true); err != nil {
+		t.Fatal(err)
+	}
+	asked, _, _, err := chatbox.WebPageContext(ctx, "https://tell.cc/"+groupName, 0)
+	if err != nil || asked.GetType().GetValue() != "telegram_megagroup_request" {
+		t.Fatalf("join request %s %v", asked.GetType().GetValue(), err)
+	}
+	askedInv, _, _, err := chatbox.WebPageContext(ctx, link.GetLink(), 0)
+	if err != nil || askedInv.GetType().GetValue() != "telegram_megagroup_request" {
+		t.Fatalf("invite request %s %v", askedInv.GetType().GetValue(), err)
+	}
 
 	defer BindUserResolver(nil)
 	BindUserResolver(func(context.Context, string) (UserCard, bool) {
@@ -224,6 +245,31 @@ func TestChannelUserAndMessageCards(t *testing.T) {
 	}
 	if userPage.GetType().GetValue() != "telegram_user" || userPage.GetTitle().GetValue() != "普皮" || userPage.GetDescription().GetValue() != "hello" {
 		t.Fatalf("user %s %q %q", userPage.GetType().GetValue(), userPage.GetTitle().GetValue(), userPage.GetDescription().GetValue())
+	}
+	if userPage.GetSiteName().GetValue() != "Tellomi" || userPage.GetPhoto() != nil {
+		t.Fatalf("site %q photo %#v", userPage.GetSiteName().GetValue(), userPage.GetPhoto())
+	}
+	BindUserResolver(func(_ context.Context, name string) (UserCard, bool) {
+		switch name {
+		case "quiet":
+			return UserCard{ID: 7, Title: "Quiet", Username: "quiet", User: mtproto.MakeTLUser(&mtproto.User{Id: 7}).To_User()}, true
+		case "helperbot":
+			return UserCard{
+				ID: 8, Title: "Helper", Username: "helperbot", Bot: true,
+				Photo: mtproto.MakeTLPhoto(&mtproto.Photo{Id: 55, AccessHash: 66, DcId: 2}).To_Photo(),
+				User:  mtproto.MakeTLUser(&mtproto.User{Id: 8, Bot: true}).To_User(),
+			}, true
+		default:
+			return UserCard{}, false
+		}
+	})
+	quiet, _, _, err := chatbox.WebPageContext(ctx, "https://t.me/quiet", 0)
+	if err != nil || quiet.GetType().GetValue() != "telegram_user" || quiet.GetDescription().GetValue() != "You can contact @quiet right away." {
+		t.Fatalf("empty bio %s %q %v", quiet.GetType().GetValue(), quiet.GetDescription().GetValue(), err)
+	}
+	bot, _, _, err := chatbox.WebPageContext(ctx, "https://telegram.me/helperbot", 0)
+	if err != nil || bot.GetType().GetValue() != "telegram_bot" || bot.GetPhoto().GetId() != 55 || bot.GetPhoto().GetAccessHash() != 66 {
+		t.Fatalf("bot %s photo %#v %v", bot.GetType().GetValue(), bot.GetPhoto(), err)
 	}
 	if len(users) != 1 || users[0].GetId() != 42 {
 		t.Fatalf("users %#v", users)
@@ -325,6 +371,78 @@ func TestClientSubmittedCard(t *testing.T) {
 	if official.GetUrl() != "https://www.apple.com" || official.GetTitle() != "" || ClientSupplied(official) {
 		t.Fatalf("official %#v", official)
 	}
+}
+
+func TestBasicGroupInviteAndLocalizedCounts(t *testing.T) {
+	defer BindGroupResolver(nil)
+	defer BindPhotoLoader(nil)
+	photo := mtproto.MakeTLPhoto(&mtproto.Photo{Id: 9, AccessHash: 90, DcId: 1}).To_Photo()
+	BindGroupResolver(func(context.Context, string) (GroupCard, bool) {
+		return GroupCard{
+			Title:   "Room",
+			Members: 3,
+			Photo:   photo,
+			Chat:    mtproto.MakeTLChat(&mtproto.Chat{Id: 4, Title: "Room"}).To_Chat(),
+		}, true
+	})
+	hash := "1" + strings.Repeat("b", 19)
+	for _, raw := range []string{
+		"https://tell.cc/+" + hash,
+		"https://t.me/joinchat/" + hash,
+		"https://telegram.me/joinchat/" + hash,
+	} {
+		page, chats, _, err := chatbox.WebPageContext(context.Background(), raw, 0)
+		if err != nil {
+			t.Fatal(raw, err)
+		}
+		if page.GetType().GetValue() != "telegram_chat" || page.GetTitle().GetValue() != "Room" {
+			t.Fatalf("%s %s %q", raw, page.GetType().GetValue(), page.GetTitle().GetValue())
+		}
+		if page.GetPhoto().GetId() != 9 || page.GetPhoto().GetAccessHash() != 90 || len(chats) != 1 {
+			t.Fatalf("%s photo %#v chats %d", raw, page.GetPhoto(), len(chats))
+		}
+		if !strings.Contains(page.GetDescription().GetValue(), "3") || !strings.Contains(page.GetDescription().GetValue(), "member") {
+			t.Fatalf("members %q", page.GetDescription().GetValue())
+		}
+	}
+
+	BindPhotoLoader(func(_ context.Context, id int64) *mtproto.Photo {
+		if id != 42 {
+			return nil
+		}
+		return mtproto.MakeTLPhoto(&mtproto.Photo{Id: 42, AccessHash: 100, DcId: 2}).To_Photo()
+	})
+	if got := storedPhoto(context.Background(), 42); got.GetAccessHash() != 100 {
+		t.Fatalf("stored photo %#v", got)
+	}
+	if storedPhoto(context.Background(), 1) != nil {
+		t.Fatal("unknown photo was returned")
+	}
+
+	zh := withLang(t, "zh-hans", "ios")
+	if got := audienceLine(zh, 3, false); got != "3 位成员" {
+		t.Fatalf("zh members %q", got)
+	}
+	if got := audienceLine(zh, 1, true); got != "1 位订阅者" {
+		t.Fatalf("zh subscribers %q", got)
+	}
+	if got := audienceLine(context.Background(), 1, true); got != "1 subscriber" {
+		t.Fatalf("en subscriber %q", got)
+	}
+	if got := audienceLine(context.Background(), 4, false); got != "4 members" {
+		t.Fatalf("en members %q", got)
+	}
+}
+
+func withLang(t *testing.T, code, pack string) context.Context {
+	t.Helper()
+	buf, err := proto.Marshal(&rpcmd.RpcMetadata{LangCode: code, Langpack: pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gmd.NewIncomingContext(context.Background(), gmd.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
 }
 
 func pageHash(t *testing.T, short string) int32 {

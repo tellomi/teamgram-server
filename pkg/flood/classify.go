@@ -3,17 +3,18 @@ package flood
 import "strings"
 
 const (
-	classOther    = ""
-	classSend     = "send"
-	classSendCode = "send_code"
-	classSignIn   = "sign_in"
-	classImport   = "import"
-	classResolve  = "resolve"
-	classSearch   = "search"
-	classUpload   = "upload"
-	classStatus   = "status"
-	classAccount  = "account"
-	classReport   = "report"
+	classOther      = ""
+	classSend       = "send"
+	classSendCode   = "send_code"
+	classSignIn     = "sign_in"
+	classImport     = "import"
+	classResolve    = "resolve"
+	classSearch     = "search"
+	classUpload     = "upload"
+	classStatus     = "status"
+	classAccount    = "account"
+	classReport     = "report"
+	classWebPreview = "web_preview"
 )
 
 // classOf maps a predicate (messages_sendMessage) to a bucket class.
@@ -36,6 +37,8 @@ func classOf(method string) string {
 		return classResolve
 	case name == "contacts_search":
 		return classSearch
+	case name == "messages_getWebPagePreview570D6F6F" || name == "messages_getWebPagePreview8B68B0CC":
+		return classWebPreview
 	case name == "upload_saveFilePart" || name == "upload_saveBigFilePart":
 		return classUpload
 	case name == "account_updateStatus":

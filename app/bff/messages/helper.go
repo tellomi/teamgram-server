@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/svc"
 	"github.com/teamgram/teamgram-server/app/bff/messages/plugin"
+	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 )
 
 type (
@@ -24,7 +25,11 @@ type (
 func New(c Config, plugin plugin.MessagesPlugin) *service.Service {
 	svcCtx := svc.NewServiceContext(c, plugin)
 	if svcCtx.Dao != nil {
-		BindUsers(svcCtx.Dao.UserClient)
+		var chats chat_client.ChatClient
+		if svcCtx.Dao.ChatClient != nil {
+			chats = svcCtx.Dao.ChatClient.Client()
+		}
+		BindPreview(svcCtx.Dao.UserClient, svcCtx.Dao.MediaClient, chats)
 	}
 	return service.New(svcCtx)
 }

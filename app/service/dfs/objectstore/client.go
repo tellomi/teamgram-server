@@ -141,6 +141,30 @@ const (
 	ClassEncryptedFiles = minio_util.ClassEncryptedFiles
 )
 
+// PutPhoto writes a JPEG into the photos class. path is the object name
+// inside that class, such as "0/<id>.dat".
+func (c *Client) PutPhoto(ctx context.Context, path, contentType string, body []byte) error {
+	if c == nil || c.u == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if _, err := c.u.PutClassBytes(ctx, ClassPhotos, path, contentType, body); err != nil {
+		return fmt.Errorf("put photo %s: %w", path, err)
+	}
+	return nil
+}
+
+// GetPhoto reads a photo object written by PutPhoto.
+func (c *Client) GetPhoto(ctx context.Context, path string) ([]byte, error) {
+	if c == nil || c.u == nil {
+		return nil, fmt.Errorf("object storage client is nil")
+	}
+	body, err := c.u.GetPhotoFile(ctx, path, 0, 2<<20)
+	if errors.Is(err, minio_util.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+	return body, err
+}
+
 // Delete removes one chat-media object (documents, photos, videos or
 // encryptedfiles). Public media classes are refused. A missing object is
 // not an error, so a retried sweep is safe.

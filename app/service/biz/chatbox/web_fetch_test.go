@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
@@ -12,11 +13,17 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf8"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 	"golang.org/x/text/encoding/simplifiedchinese"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func stubWebFetch(t *testing.T, meta pageMeta) func() {
@@ -198,7 +205,9 @@ func TestFetchOpenGraphImageUsesFinalURL(t *testing.T) {
 
 	prevClient := webHTTPClient
 	prevFilter := filterImageURL
+	prevVet := vetRequest
 	webHTTPClient = func() *http.Client { return &http.Client{Timeout: webTimeout} }
+	vetRequest = func(context.Context, *url.URL) error { return nil }
 	// The land host is loopback. Keep the resolved URL so the assertion can
 	// see it; production drops that address in safeImageURL.
 	var resolved string
@@ -209,6 +218,7 @@ func TestFetchOpenGraphImageUsesFinalURL(t *testing.T) {
 	defer func() {
 		webHTTPClient = prevClient
 		filterImageURL = prevFilter
+		vetRequest = prevVet
 	}()
 
 	u, err := url.Parse(hop.URL + "/go")
@@ -245,6 +255,222 @@ func TestExternalFetchOffByDefault(t *testing.T) {
 	preview := WebPagePreview("https://www.apple.com/tellomi-fetch-off-preview", nil)
 	if preview.GetPredicateName() != mtproto.Predicate_messageMediaEmpty {
 		t.Fatalf("preview %s", preview.GetPredicateName())
+	}
+}
+
+func TestConcurrentFetchIsOneRequest(t *testing.T) {
+	resetFetchLimits()
+	t.Setenv(EnvServerLinkFetch, "1")
+	var n atomic.Int32
+	prev := loadWebPage
+	loadWebPage = func(*url.URL) fetchResult {
+		n.Add(1)
+		time.Sleep(40 * time.Millisecond)
+		return fetchResult{meta: pageMeta{Title: "Once"}}
+	}
+	defer func() { loadWebPage = prev }()
+	const raw = "https://cache-hit.example/card"
+	var wg sync.WaitGroup
+	errCh := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			page, err := WebPage(raw, 0)
+			if err != nil || page.GetTitle().GetValue() != "Once" {
+				errCh <- fmt.Errorf("%v title %q", err, page.GetTitle().GetValue())
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatal(err)
+	}
+	if n.Load() != 1 {
+		t.Fatalf("fetches = %d, want 1", n.Load())
+	}
+}
+
+func TestDomainRateLimitDoesNotFetch(t *testing.T) {
+	resetFetchLimits()
+	t.Setenv(EnvServerLinkFetch, "1")
+	var n atomic.Int32
+	prev := loadWebPage
+	loadWebPage = func(*url.URL) fetchResult {
+		n.Add(1)
+		return fetchResult{meta: pageMeta{Title: "Ok"}}
+	}
+	defer func() { loadWebPage = prev }()
+	for i := 0; i < webDomainBurst; i++ {
+		page, err := WebPage(fmt.Sprintf("https://rate-limit.example/p%d", i), 0)
+		if err != nil || page.GetPredicateName() != mtproto.Predicate_webPage {
+			t.Fatalf("call %d %s %v", i, page.GetPredicateName(), err)
+		}
+	}
+	over, err := WebPage("https://rate-limit.example/over", 0)
+	if err != nil || over.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+		t.Fatalf("over limit %s %v", over.GetPredicateName(), err)
+	}
+	if int(n.Load()) != webDomainBurst {
+		t.Fatalf("fetches = %d, want %d", n.Load(), webDomainBurst)
+	}
+}
+
+func TestNegativeCacheSkipsSecondFetch(t *testing.T) {
+	resetFetchLimits()
+	t.Setenv(EnvServerLinkFetch, "1")
+	var n atomic.Int32
+	prev := loadWebPage
+	loadWebPage = func(*url.URL) fetchResult {
+		n.Add(1)
+		return fetchResult{failed: true}
+	}
+	defer func() { loadWebPage = prev }()
+	const raw = "https://negative-cache.example/missing"
+	page, err := WebPage(raw, 0)
+	if err != nil || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+		t.Fatalf("first %s %v", page.GetPredicateName(), err)
+	}
+	page, err = WebPage(raw, 0)
+	if err != nil || page.GetPredicateName() != mtproto.Predicate_webPageEmpty || n.Load() != 1 {
+		t.Fatalf("second fetches %d %s %v", n.Load(), page.GetPredicateName(), err)
+	}
+}
+
+func TestProxyAndPortsDoNotFetchPrivateTargets(t *testing.T) {
+	var hits atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits.Add(1)
+	}))
+	defer proxy.Close()
+	t.Setenv(EnvLinkFetchProxy, proxy.URL)
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9")
+	t.Setenv("http_proxy", "http://127.0.0.1:9")
+	for _, raw := range []string{
+		"http://127.0.0.1/secret",
+		"http://10.1.2.3/a",
+		"http://169.254.169.254/latest",
+		"http://1.1.1.1:8080/",
+		"https://example.com:8443/a",
+	} {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := fetchOpenGraph(context.Background(), u)
+		if !res.failed || !res.blocked {
+			t.Fatalf("%s %+v", raw, res)
+		}
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("proxy saw %d requests", hits.Load())
+	}
+	t.Setenv(EnvLinkFetchProxy, "")
+	c := safeClient()
+	tr, _ := c.Transport.(*http.Transport)
+	if tr == nil || tr.Proxy != nil {
+		req, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+		if tr != nil && tr.Proxy != nil {
+			got, err := tr.Proxy(req)
+			if err != nil || got != nil {
+				t.Fatalf("env proxy leaked: %v %v", got, err)
+			}
+		}
+	}
+}
+
+func TestRedisPageCacheRoundTrip(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rds, err := redis.NewRedis(redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := redisCli
+	redisCli = rds
+	t.Cleanup(func() { redisCli = prev })
+	page := mtproto.MakeTLWebPage(&mtproto.WebPage{
+		Id:         7,
+		Url_STRING: "https://cache.example/a",
+		Type:       wrappersString("article"),
+		Title:      wrappersString("Cached"),
+	}).To_WebPage()
+	pageCacheSet(context.Background(), "abc", page, time.Hour)
+	localPages = &memoryPages{}
+	got, ok := pageCacheGet(context.Background(), "abc")
+	if !ok || got.GetPredicateName() != mtproto.Predicate_webPage || got.GetTitle().GetValue() != "Cached" {
+		t.Fatalf("redis page %#v ok %v", got, ok)
+	}
+}
+
+func wrappersString(s string) *wrapperspb.StringValue {
+	return wrapperspb.String(s)
+}
+
+func TestRedisGlobalSlotCap(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rds, err := redis.NewRedis(redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := redisCli
+	redisCli = rds
+	t.Cleanup(func() { redisCli = prev })
+	var releases []func()
+	for i := 0; i < webGlobalSlots; i++ {
+		release, decided, ok := acquireRedisSlot()
+		if !decided || !ok || release == nil {
+			t.Fatalf("slot %d decided %v ok %v", i, decided, ok)
+		}
+		releases = append(releases, release)
+	}
+	_, decided, ok := acquireRedisSlot()
+	if !decided || ok {
+		t.Fatalf("over cap decided %v ok %v", decided, ok)
+	}
+	releases[0]()
+	_, decided, ok = acquireRedisSlot()
+	if !decided || !ok {
+		t.Fatalf("after release decided %v ok %v", decided, ok)
+	}
+}
+
+func TestWebPhotoDedupSkipsSecondWrite(t *testing.T) {
+	var writes atomic.Int32
+	prevWrite := writeWebObject
+	prevClaim := claimWebBlob
+	seen := map[string]bool{}
+	var mu sync.Mutex
+	writeWebObject = func(string, []byte) error {
+		writes.Add(1)
+		return nil
+	}
+	claimWebBlob = func(sha string, size int64, proposed string) (string, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if seen[sha] {
+			return proposed, true
+		}
+		seen[sha] = true
+		return proposed, false
+	}
+	defer func() {
+		writeWebObject = prevWrite
+		claimWebBlob = prevClaim
+	}()
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 40}); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.Bytes()
+	a := storeWebPhoto(raw, "image/jpeg")
+	b := storeWebPhoto(raw, "image/jpeg")
+	if a == nil || b == nil || a.GetId() != b.GetId() || a.GetAccessHash() != a.GetId() {
+		t.Fatalf("a %#v b %#v", a, b)
+	}
+	if writes.Load() != 1 {
+		t.Fatalf("writes %d", writes.Load())
 	}
 }
 

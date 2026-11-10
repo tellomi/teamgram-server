@@ -29,6 +29,8 @@ func TestClassOfAbuseMethods(t *testing.T) {
 		{"messages_reportSpam", classReport},
 		{"account_reportPeer", classReport},
 		{"updates_getState", classOther},
+		{"messages_getWebPagePreview570D6F6F", classWebPreview},
+		{"messages_getWebPagePreview8B68B0CC", classWebPreview},
 		{"messages_getHistory", classOther},
 		{"account_getAccountTTL", classOther},
 		{"upload_getFile", classOther},
