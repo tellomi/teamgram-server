@@ -16,7 +16,9 @@ Objects larger than `TELLOMI_CRASH_REPORT_MAX_BYTES` (default 20 MiB) are not co
 
 ## Query
 
-The HTTP listener starts only when `TELLOMI_CRASH_REPORT_TOKEN` is set. It binds to `TELLOMI_CRASH_REPORT_ADDR` (default `127.0.0.1:8818`). Only loopback is accepted (`127.0.0.1`, `::1`, or `localhost`). A private-network address is refused. Do not publish the port.
+The HTTP listener starts only when `TELLOMI_CRASH_REPORT_TOKEN` is set. It binds to `TELLOMI_CRASH_REPORT_ADDR` (default `127.0.0.1:8819`). Port 8818 is already bound by another listener in the bff process. Only loopback is accepted (`127.0.0.1`, `::1`, or `localhost`). A private-network address is refused. Do not publish the port. A failed bind is logged with the listen error. A password inside a DSN-shaped error is masked. The admin token is not part of that error and is not logged.
+
+The isolated enforcement drill listens on `127.0.0.1:8819` when `TELLOMI_ENFORCEMENT_E2E=1`. Production leaves that variable unset. The client regression job sets `TELLOMI_CRASH_REPORT_ADDR=127.0.0.1:8818` so the two listeners do not share a port.
 
 ```
 GET /internal/v1/crash-reports?from=<unix>&to=<unix>&sender=<user id>&device=<substring>&limit=<1-200>

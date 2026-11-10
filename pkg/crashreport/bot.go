@@ -27,7 +27,7 @@ const (
 	DisplayName     = "Tellomi 反馈"
 	AccountID       = int64(777006)
 	Class           = "crash-reports"
-	defaultAddr     = "127.0.0.1:8818"
+	defaultAddr     = "127.0.0.1:8819"
 	// DefaultMaxBytes is 20 MiB.
 	DefaultMaxBytes int64 = 20 << 20
 	StatusStored          = "stored"
