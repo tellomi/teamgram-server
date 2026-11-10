@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,11 +81,12 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 	}
 
 	// One getHistory can miss a row that is still stored. Treat the message as
-	// deleted only when both histories have lost it and getDifference has the
-	// delete update with pts. The sweeper writes that update after the row
-	// is marked deleted, so the two reads are not the same instant.
+	// deleted only when both histories have lost it and getDifference carries
+	// updateDeleteMessages for that id. The sweeper writes the pts row after
+	// the message is marked deleted, so the two reads are not the same instant.
 	deadline := time.Now().Add(40 * time.Second)
 	var lastA, lastB mtproto.TLObject
+	var histGone bool
 	for time.Now().Before(deadline) {
 		leftA, err := a.History(ctx, peerForA, 40)
 		if err != nil {
@@ -102,7 +104,7 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		histGone := idOfText(leftA, drop) == 0 && idOfText(leftB, drop) == 0 && idOfText(leftA, keep) != 0 && idOfText(leftB, keep) != 0
+		histGone = idOfText(leftA, drop) == 0 && idOfText(leftB, drop) == 0 && idOfText(leftA, keep) != 0 && idOfText(leftB, keep) != 0
 		if histGone && differenceDeletes(lastA, idA) && differenceDeletes(lastB, idB) {
 			return
 		}
@@ -112,7 +114,8 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
-	t.Fatalf("auto-delete did not remove %q for both sides with updateDeleteMessages (sender id %d %T, recipient id %d %T)", drop, idA, lastA, idB, lastB)
+	t.Fatalf("auto-delete historyGone=%v senderDelete=%v recipientDelete=%v text=%q sender id %d %T (%s) recipient id %d %T (%s)",
+		histGone, differenceDeletes(lastA, idA), differenceDeletes(lastB, idB), drop, idA, lastA, summarizeUpdates(lastA), idB, lastB, summarizeUpdates(lastB))
 }
 
 func TestHistoryTTLGroupAndChannel(t *testing.T) {
@@ -240,7 +243,10 @@ func differenceDeletes(obj mtproto.TLObject, messageID int32) bool {
 		if up.GetPredicateName() != mtproto.Predicate_updateDeleteMessages && up.GetPredicateName() != mtproto.Predicate_updateDeleteChannelMessages {
 			continue
 		}
-		if up.GetPts_INT32() == 0 || up.GetPtsCount() == 0 {
+		// getDifference folds every delete onto the final pts and clears
+		// pts_count. The live push still carries the real pts_count. A client
+		// applying the difference uses the message ids and state.pts.
+		if up.GetPts_INT32() == 0 {
 			continue
 		}
 		for _, id := range up.GetMessages() {
@@ -250,6 +256,18 @@ func differenceDeletes(obj mtproto.TLObject, messageID int32) bool {
 		}
 	}
 	return false
+}
+
+func summarizeUpdates(obj mtproto.TLObject) string {
+	ups := differenceUpdates(obj)
+	if len(ups) == 0 {
+		return "no other_updates"
+	}
+	parts := make([]string, 0, len(ups))
+	for _, up := range ups {
+		parts = append(parts, fmt.Sprintf("%s pts=%d count=%d ids=%v", up.GetPredicateName(), up.GetPts_INT32(), up.GetPtsCount(), up.GetMessages()))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func differenceUpdates(obj mtproto.TLObject) []*mtproto.Update {
