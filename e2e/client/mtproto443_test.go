@@ -224,22 +224,33 @@ func adaptStream(t *testing.T, root, dir string) string {
 func startNginx(t *testing.T, dir, stream string) string {
 	t.Helper()
 	name := fmt.Sprintf("mtproto443-nginx-%d", os.Getpid())
-	modules := []string{
-		"/usr/lib/nginx/modules/ngx_stream_module.so",
-		"/etc/nginx/modules/ngx_stream_module.so",
+	// nginx:1.24.0 from nginx.org (the official image) builds stream and
+	// ssl_preread into the binary (--with-stream, not =dynamic). The
+	// modules directory in that package is empty, so load_module fails.
+	// A dynamic build still works if one of the .so paths exists.
+	attempts := []struct {
+		label string
+		mod   string
+	}{
+		{label: "static"},
+		{label: "usr-lib", mod: "/usr/lib/nginx/modules/ngx_stream_module.so"},
+		{label: "etc", mod: "/etc/nginx/modules/ngx_stream_module.so"},
 	}
-	var last []byte
-	for _, mod := range modules {
+	var failures []string
+	for _, attempt := range attempts {
 		conf := filepath.Join(dir, "nginx.conf")
-		body := fmt.Sprintf(`load_module %s;
-worker_processes 1;
+		load := ""
+		if attempt.mod != "" {
+			load = "load_module " + attempt.mod + ";\n"
+		}
+		body := load + `worker_processes 1;
 error_log /dev/stderr info;
 pid /tmp/nginx-mtproto443.pid;
 events { worker_connections 128; }
 stream {
     include /etc/nginx/chengdu-stream.conf;
 }
-`, mod)
+`
 		if err := os.WriteFile(conf, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -248,8 +259,8 @@ stream {
 			"-v", stream+":/etc/nginx/chengdu-stream.conf:ro",
 			"nginx:1.24.0", "-t")
 		out, err := test.CombinedOutput()
-		last = out
 		if err != nil {
+			failures = append(failures, attempt.label+": "+string(out))
 			continue
 		}
 		run := exec.Command("docker", "run", "-d", "--name", name, "--network", "host", "--entrypoint", "nginx",
@@ -258,11 +269,11 @@ stream {
 			"nginx:1.24.0", "-g", "daemon off;")
 		out, err = run.CombinedOutput()
 		if err != nil {
-			t.Fatalf("nginx start: %v\n%s", err, out)
+			t.Fatalf("nginx start (%s): %v\n%s", attempt.label, err, out)
 		}
 		return name
 	}
-	t.Fatalf("nginx -t failed for stream module paths\n%s", last)
+	t.Fatalf("nginx -t failed\n%s", strings.Join(failures, "\n"))
 	return ""
 }
 
