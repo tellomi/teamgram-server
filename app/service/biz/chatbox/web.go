@@ -17,7 +17,7 @@ var InternalCard func(ctx context.Context, u *url.URL) (page *mtproto.WebPage, c
 // WebPage builds a webpage card for url.
 //
 // https://core.telegram.org/method/messages.getWebPage
-// Internal tell.cc / t.me links are filled from local data. An external
+// Internal tell.cc / tellomi.cn links are filled from local data. An external
 // page is fetched only when TELLOMI_SERVER_LINK_FETCH=1. That fetch refuses
 // private, loopback, and link-local addresses, including bracketed IPv6 and
 // localhost, and again after DNS and redirects.
@@ -117,12 +117,7 @@ func describeURL(ctx context.Context, u *url.URL) (*mtproto.WebPage, []*mtproto.
 			return page, chats, users, nil
 		}
 	}
-	if page, ok := cachedWebPage(u.String()); ok {
-		return page, nil, nil, nil
-	}
-	page := fetchWebPage(u)
-	storeWebPage(u.String(), page)
-	return page, nil, nil, nil
+	return fetchWebPage(ctx, u), nil, nil, nil
 }
 
 // AcceptURL parses an http(s) URL and rejects blocked hosts.

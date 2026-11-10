@@ -6,12 +6,17 @@ import (
 
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
+	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -20,9 +25,82 @@ func NewPolls() *service.PollsService { return &service.PollsService{} }
 
 // NewWebPage serves messages.getWebPage and messages.getWebPagePreview.
 func NewWebPage(c Config) *service.WebPageService {
-	BindUsers(user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)))
+	BindPreview(
+		user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
+		media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient)),
+		chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
+	)
 	return &service.WebPageService{}
 }
+
+// BindPreview installs username, photo, and basic-group lookups for link cards.
+func BindPreview(users user_client.UserClient, media media_client.MediaClient, chats chat_client.ChatClient) {
+	BindUsers(users)
+	if media != nil {
+		webpage.BindPhotoLoader(func(ctx context.Context, photoID int64) *mtproto.Photo {
+			photo, err := media.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoID})
+			if err != nil || photo == nil || photo.GetId() == 0 || photo.GetPredicateName() == mtproto.Predicate_photoEmpty {
+				return nil
+			}
+			return photo
+		})
+	}
+	if chats != nil {
+		webpage.BindGroupResolver(func(ctx context.Context, hash string) (webpage.GroupCard, bool) {
+			ext, err := chats.ChatCheckChatInvite(ctx, &chat.TLChatCheckChatInvite{
+				SelfId: viewerFrom(ctx),
+				Hash:   hash,
+			})
+			if err != nil || ext == nil {
+				return webpage.GroupCard{}, false
+			}
+			return groupCardFrom(ext), true
+		})
+	}
+}
+
+func viewerFrom(ctx context.Context) int64 {
+	md := metadata.RpcMetadataFromIncoming(ctx)
+	if md == nil {
+		return 0
+	}
+	return md.UserId
+}
+
+func groupCardFrom(ext *chat.ChatInviteExt) webpage.GroupCard {
+	if ext == nil {
+		return webpage.GroupCard{}
+	}
+	if ext.GetChat() != nil {
+		ch := ext.GetChat().ToUnsafeChat(viewerZero)
+		card := webpage.GroupCard{
+			Title:   ext.GetChat().Title(),
+			About:   ext.GetChat().About(),
+			Members: ext.GetChat().ParticipantsCount(),
+			Photo:   ext.GetChat().Photo(),
+			Chat:    ch,
+		}
+		if card.Title == "" && ch != nil {
+			card.Title = ch.GetTitle()
+		}
+		return card
+	}
+	about := ""
+	if ext.GetAbout() != nil {
+		about = ext.GetAbout().GetValue()
+	}
+	return webpage.GroupCard{
+		Title:   ext.GetTitle(),
+		About:   about,
+		Members: ext.GetParticipantsCount(),
+		Photo:   ext.GetPhoto(),
+	}
+}
+
+// viewerZero is only used when ToUnsafeChat needs a self id for flags that
+// do not change the title or the photo. The real viewer is applied by the
+// chat service before it returns the invite.
+const viewerZero = 0
 
 // BindUsers installs the public username lookup used by telegram_user cards.
 func BindUsers(c user_client.UserClient) {
@@ -34,8 +112,12 @@ func BindUsers(c user_client.UserClient) {
 		if err != nil || peer == nil || peer.GetUserId() == 0 {
 			return webpage.UserCard{}, false
 		}
-		card := webpage.UserCard{ID: peer.GetUserId(), Title: username}
-		list, err := c.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{Id: []int64{peer.GetUserId()}})
+		card := webpage.UserCard{ID: peer.GetUserId(), Title: username, Username: username}
+		viewer := viewerFrom(ctx)
+		list, err := c.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{
+			Id: []int64{peer.GetUserId()},
+			To: []int64{viewer},
+		})
 		if err != nil || list == nil {
 			return card, true
 		}
@@ -51,13 +133,25 @@ func BindUsers(c user_client.UserClient) {
 			if data.GetAbout() != nil {
 				card.About = data.GetAbout().GetValue()
 			}
-			card.User = mtproto.MakeTLUser(&mtproto.User{
+			if data.GetUsername() != "" {
+				card.Username = data.GetUsername()
+			}
+			card.Bot = it.IsBot()
+			if photo := it.Photo(); photo != nil && it.CheckPrivacy(mtproto.PROFILE_PHOTO, viewer) {
+				card.Photo = photo
+			}
+			tl := mtproto.MakeTLUser(&mtproto.User{
+				Bot:        card.Bot,
 				Id:         data.GetId(),
 				AccessHash: wrapperspb.Int64(data.GetAccessHash()),
 				FirstName:  wrapperspb.String(data.GetFirstName()),
 				LastName:   wrapperspb.String(data.GetLastName()),
-				Username:   wrapperspb.String(data.GetUsername()),
+				Username:   wrapperspb.String(card.Username),
 			}).To_User()
+			if card.Photo != nil {
+				tl.Photo = mtproto.MakeUserProfilePhotoByPhoto(card.Photo)
+			}
+			card.User = tl
 			break
 		}
 		return card, true

@@ -59,8 +59,13 @@ func TestRemakeKeepsClientAndInternalCards(t *testing.T) {
 	}
 
 	out = RemakeMessage(ctx, plug, client, 1, true, nil)
+	if out.GetMedia().GetWebpage().GetTitle().GetValue() != "iPhone" {
+		t.Fatalf("no_webpage stripped an explicit webpage: %#v", out.GetMedia())
+	}
+	plainNo := mtproto.MakeTLMessage(&mtproto.Message{Message: "https://www.apple.com"}).To_Message()
+	out = RemakeMessage(ctx, plug, plainNo, 1, true, nil)
 	if out.GetMedia() != nil {
-		t.Fatalf("no_webpage kept media %#v", out.GetMedia())
+		t.Fatalf("no_webpage fetched a card %#v", out.GetMedia())
 	}
 
 	plain := mtproto.MakeTLMessage(&mtproto.Message{Message: "https://www.apple.com"}).To_Message()
