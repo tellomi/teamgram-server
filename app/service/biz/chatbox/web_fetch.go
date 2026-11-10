@@ -692,7 +692,9 @@ func WebPhoto(id int64) (body []byte, mime string, ok bool) {
 		p := v.(storedPhoto)
 		return p.body, p.mime, len(p.body) > 0
 	}
-	path := fmt.Sprintf("0/%d.dat", id)
+	// Not photos/0/<id>.dat. That key is a normal uploaded photo. Treating it
+	// as a link-preview image forces access_hash == id and breaks getFile.
+	path := webPhotoPath(id)
 	raw, err := readWebPhotoObject(path)
 	if err != nil || len(raw) == 0 {
 		return nil, "", false
@@ -782,7 +784,7 @@ var claimWebBlob = claimWebPhotoBlob
 
 func persistWebPhoto(id int64, body []byte) string {
 	sum := sha256.Sum256(body)
-	path := fmt.Sprintf("0/%d.dat", id)
+	path := webPhotoPath(id)
 	if got, reused := claimWebBlob(hex.EncodeToString(sum[:]), int64(len(body)), path); got != "" {
 		path = got
 		if reused {
@@ -805,6 +807,10 @@ func claimWebPhotoBlob(sha string, size int64, proposed string) (string, bool) {
 		return proposed, false
 	}
 	return claim.Path, claim.Reused
+}
+
+func webPhotoPath(id int64) string {
+	return fmt.Sprintf("linkpreview/%d.dat", id)
 }
 
 func photoIDFromPath(path string) int64 {

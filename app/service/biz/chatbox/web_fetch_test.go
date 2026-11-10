@@ -472,6 +472,9 @@ func TestWebPhotoDedupSkipsSecondWrite(t *testing.T) {
 	if writes.Load() != 1 {
 		t.Fatalf("writes %d", writes.Load())
 	}
+	if strings.HasPrefix(webPhotoPath(a.GetId()), "0/") {
+		t.Fatalf("preview path %s collides with a photo original", webPhotoPath(a.GetId()))
+	}
 }
 
 func TestOneLineKeepsUTF8(t *testing.T) {
