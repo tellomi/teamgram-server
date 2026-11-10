@@ -49,11 +49,7 @@ func TestReliabilityMultiDeviceSync(t *testing.T) {
 	}
 	back := inputPeerUser(selfID, selfHash)
 
-	beforePts, beforeQts, beforeDate := callState(t, a1)
-	pts2, _, _ := callState(t, a2)
-	if beforePts != pts2 {
-		t.Fatalf("pts before send %d and %d", beforePts, pts2)
-	}
+	beforePts, beforeQts, beforeDate := matchedState(t, a1, a2)
 
 	msgID, err := a1.SendText(ctx, peer, "sync-body", nil)
 	if err != nil {
@@ -85,14 +81,34 @@ func TestReliabilityMultiDeviceSync(t *testing.T) {
 		t.Fatalf("other session history after edit %q", got)
 	}
 
-	if err := peerClient.ReadHistory(ctx, back, msgID); err != nil {
+	// Private chats number a message separately on each side. The peer reads
+	// its own id. The sender's read_outbox_max_id then covers the sender's id.
+	var peerMsg int32
+	if err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		msgs, err := peerClient.History(ctx, back, 20)
+		if err != nil {
+			return false, err
+		}
+		peerMsg = idOfText(msgs, "sync-edited")
+		return peerMsg != 0, nil
+	}); err != nil {
+		t.Fatalf("peer never received the edited message: %v", err)
+	}
+	if err = peerClient.ReadHistory(ctx, back, peerMsg); err != nil {
 		t.Fatal(err)
 	}
 	assertSamePts(t, a1, a2, beforePts)
-	read1 := dialogFor(t, ctx, a1, peerID, 0).GetReadOutboxMaxId()
-	read2 := dialogFor(t, ctx, a2, peerID, 0).GetReadOutboxMaxId()
-	if read1 != msgID || read2 != msgID {
-		t.Fatalf("read_outbox_max_id %d and %d, want %d", read1, read2, msgID)
+	if err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		d1 := findDialog(t, ctx, a1, peerID, 0)
+		d2 := findDialog(t, ctx, a2, peerID, 0)
+		if d1 == nil || d2 == nil {
+			return false, nil
+		}
+		read1 := d1.GetReadOutboxMaxId()
+		read2 := d2.GetReadOutboxMaxId()
+		return read1 == read2 && read1 >= msgID, nil
+	}); err != nil {
+		t.Fatalf("read_outbox_max_id %d and %d, want both >= %d: %v", outboxMax(findDialog(t, ctx, a1, peerID, 0)), outboxMax(findDialog(t, ctx, a2, peerID, 0)), msgID, err)
 	}
 
 	invokeOK(t, a1, &mtproto.TLMessagesDeleteMessages{
@@ -109,15 +125,59 @@ func TestReliabilityMultiDeviceSync(t *testing.T) {
 	}
 }
 
+func matchedState(t *testing.T, a, b *Client) (pts, qts, date int32) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	var lastA, lastB int32
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		var err error
+		pts, qts, date, err = a.State(ctx)
+		if err != nil {
+			return false, err
+		}
+		var q2, d2 int32
+		lastB, q2, d2, err = b.State(ctx)
+		if err != nil {
+			return false, err
+		}
+		lastA = pts
+		_ = q2
+		_ = d2
+		return pts == lastB, nil
+	})
+	if err != nil {
+		t.Fatalf("pts %d and %d did not match: %v", lastA, lastB, err)
+	}
+	return pts, qts, date
+}
+
+func outboxMax(d *mtproto.Dialog) int32 {
+	if d == nil {
+		return -1
+	}
+	return d.GetReadOutboxMaxId()
+}
+
 func assertSamePts(t *testing.T, a, b *Client, before int32) {
 	t.Helper()
-	pa, _, _ := callState(t, a)
-	pb, _, _ := callState(t, b)
-	if pa != pb {
-		t.Fatalf("pts %d and %d", pa, pb)
-	}
-	if pa <= before {
-		t.Fatalf("pts %d did not advance past %d", pa, before)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	var lastA, lastB int32
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		pa, _, _, err := a.State(ctx)
+		if err != nil {
+			return false, err
+		}
+		pb, _, _, err := b.State(ctx)
+		if err != nil {
+			return false, err
+		}
+		lastA, lastB = pa, pb
+		return pa == pb && pa > before, nil
+	})
+	if err != nil {
+		t.Fatalf("pts %d and %d, want the same value above %d: %v", lastA, lastB, before, err)
 	}
 }
 
