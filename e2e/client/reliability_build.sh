@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Build the teamgram processes the reliability suite runs.
-# Only dfs links libvips, so the other binaries build with CGO off and can
-# overlap the libvips install. CI caches the Go build cache around this script.
+# idgen, status, authsession, media, biz, sync, session, and gnetway are pure
+# Go and build while libvips installs. msg, bff, and dfs import cgo image
+# libraries (webp, and libvips for dfs) and wait for that install.
+# CI caches the Go build cache around this script.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -22,16 +24,14 @@ build_one() {
   CGO_ENABLED="$cgo" go build -o "teamgramd/bin/${name}" "./${pkg}"
 }
 
-# name, package. dfs is last because it waits for libvips.
+# name, package. These do not import cgo.
 others=(
   "idgen app/service/idgen/cmd/idgen"
   "status app/service/status/cmd/status"
   "authsession app/service/authsession/cmd/authsession"
   "media app/service/media/cmd/media"
   "biz app/service/biz/biz/cmd/biz"
-  "msg app/messenger/msg/cmd/msg"
   "sync app/messenger/sync/cmd/sync"
-  "bff app/bff/bff/cmd/bff"
   "session app/interface/session/cmd/session"
   "gnetway app/interface/gnetway/cmd/gnetway"
 )
@@ -60,4 +60,18 @@ done
 if [ -n "$apt_pid" ]; then
   wait "$apt_pid"
 fi
-build_one dfs app/service/dfs/cmd/dfs 1
+# webp (msg, bff) and libvips (dfs). dfs is the long compile, so it starts
+# first and overlaps the other two.
+fail=0
+build_one dfs app/service/dfs/cmd/dfs 1 &
+dfs_pid=$!
+build_one msg app/messenger/msg/cmd/msg 1 &
+msg_pid=$!
+wait "$msg_pid" || fail=1
+build_one bff app/bff/bff/cmd/bff 1 &
+bff_pid=$!
+wait "$bff_pid" || fail=1
+wait "$dfs_pid" || fail=1
+if [ "$fail" -ne 0 ]; then
+  exit 1
+fi
