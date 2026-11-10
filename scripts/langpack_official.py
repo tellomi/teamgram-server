@@ -113,7 +113,12 @@ NONTRANSLATABLE_ANDROID_KEY = re.compile(
 # and above every Android export version. getDifference then returns the
 # whole pack with from_version 0, which is the client's full-file replace.
 SERVED_ANDROID_VERSION = 61638734
-ANDROID_XML_FIX_VERSION = SERVED_ANDROID_VERSION
+# Phones already stored 61730399 (XML-safe packs) and then 61730400 (rebrand).
+# A later import must not move the full-replace threshold backwards, or a
+# client at the previous cutover would get an empty difference and keep the
+# old strings.
+ANDROID_FULL_REPLACE_FLOOR = 61730400
+ANDROID_XML_FIX_VERSION = ANDROID_FULL_REPLACE_FLOOR
 
 _STRING_TAG = re.compile(r"<string\b([^>]*)>(.*?)</string>", re.S)
 _NAME_ATTR = re.compile(r"""\bname\s*=\s*["']([^"']+)["']""")
@@ -167,44 +172,70 @@ def rewrite_link(text: str) -> str:
     return text
 
 
+# Markdown link targets are client actions ([Open](telegram), [site](web)).
+# The label is prose. The target is an identifier and stays as written.
+_MD_LINK = re.compile(r"(\[[^\[\]]*\])\(([^)]*)\)")
+# Tips channels (t.me/TelegramTips, tell.cc/TelegramTipsDE, …) are not a
+# Tellomi page. The whole value becomes the premium page.
+_TIPS_URL = re.compile(
+    r"https?://(?:www\.)?(?:tell\.cc|t\.me|telegram\.me|telegram\.dog)/TelegramTips[A-Za-z0-9/_-]*",
+    re.I,
+)
+
+
+def shield_markdown_targets(text: str) -> tuple[str, list[str]]:
+    slots: list[str] = []
+
+    def hold(match: re.Match[str]) -> str:
+        target = match.group(2)
+        low = target.lower()
+        if low.startswith("http://") or low.startswith("https://") or "t.me" in low or "telegram." in low:
+            return match.group(1) + "(" + rewrite_link(target) + ")"
+        slots.append(target)
+        return f"{match.group(1)}(\u0001{len(slots) - 1}\u0001)"
+
+    return _MD_LINK.sub(hold, text), slots
+
+
+def restore_markdown_targets(text: str, slots: list[str]) -> str:
+    for i, target in enumerate(slots):
+        text = text.replace(f"\u0001{i}\u0001", target)
+    return text
+
+
+def _tellomi_case(word: str) -> str:
+    if word.isupper():
+        return "TELLOMI"
+    if word[:1].isupper():
+        return "Tellomi"
+    return "tellomi"
+
+
 def brand(text: str) -> str:
+    """Replace the product name and Telegram hosts in a string value.
+
+    The stem is replaced even when a translation glues a case ending on
+    (Telegramin, Telegramu) or wraps the name in markdown underscores
+    (__Telegram Premium__). Key names are not passed here. A markdown link
+    target such as (telegram) or (web) is a client identifier and is kept.
+    A tips-channel URL is the premium page, not tell.cc/TelegramTips.
+    """
     if not text:
         return text
-    if "telegram" not in text.lower() and "t.me" not in text.lower():
-        return text
-    text = rewrite_link(text)
-    # Walk the lowercased copy so TElegram and Telegramı both match.
-    # The boundary is ASCII, the same rule as the Go test: Turkish ı is not
-    # a word byte, so the product name is still replaced.
+    if _TIPS_URL.fullmatch(text.strip()):
+        return "https://tellomi.cn/premium"
     low = text.lower()
-    out = []
-    i = 0
-    while True:
-        j = low.find("telegram", i)
-        if j < 0:
-            out.append(text[i:])
-            break
-        end = j + len("telegram")
-        prev_ok = j == 0 or not _ascii_word(low[j - 1])
-        next_word = end < len(low) and _ascii_word(low[end])
-        if prev_ok and not next_word and not low.startswith(".org", end):
-            word = text[j:end]
-            if word.isupper():
-                repl = "TELLOMI"
-            elif word[:1].isupper():
-                repl = "Tellomi"
-            else:
-                repl = "tellomi"
-            out.append(text[i:j])
-            out.append(repl)
-        else:
-            out.append(text[i:end])
-        i = end
-    return "".join(out)
+    if "telegram" not in low and "t.me" not in low and "telegram.me" not in low and "telegram.dog" not in low and "telegram.org" not in low:
+        return text
+    text, slots = shield_markdown_targets(text)
+    text = rewrite_link(text)
+    text = _TIPS_URL.sub("https://tellomi.cn/premium", text)
 
+    def repl(match: re.Match[str]) -> str:
+        return _tellomi_case(match.group(0))
 
-def _ascii_word(ch: str) -> bool:
-    return ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch == "_"
+    text = re.sub(r"(?i)telegram", repl, text)
+    return restore_markdown_targets(text, slots)
 
 
 def brand_machine_item(item: dict) -> dict:
@@ -219,19 +250,13 @@ def brand_machine_item(item: dict) -> dict:
 
 
 def has_telegram_word(text: str) -> bool:
-    low = text.lower()
-    start = 0
-    while True:
-        j = low.find("telegram", start)
-        if j < 0:
-            return False
-        end = j + len("telegram")
-        prev_ok = j == 0 or not _ascii_word(low[j - 1])
-        next_word = end < len(low) and _ascii_word(low[end])
-        next_org = low.startswith(".org", end)
-        if prev_ok and not next_word and not next_org:
-            return True
-        start = end
+    """True when a value still shows the Telegram name.
+
+    Inflected and markdown-wrapped forms count. A markdown link target does
+    not: (telegram) is a client action, not the product name.
+    """
+    shielded, _ = shield_markdown_targets(text or "")
+    return "telegram" in shielded.lower()
 
 
 def unescape_android(s: str) -> str:
@@ -622,11 +647,22 @@ def _entry_signature(item: dict) -> tuple:
     return ("v", item.get("value", ""))
 
 
-def apply_reviewed(root: Path, platform: str, code: str, strings: list[dict], english: dict[str, dict]) -> list[dict]:
-    """Replace strings official left in English with a reviewed translation.
+def _without_pin(rev: dict, version: int) -> dict:
+    item = {k: v for k, v in rev.items() if k != "pin"}
+    item["version"] = version
+    return item
 
-    data/langpack/reviewed holds only those keys. A later export that is no
-    longer the English text wins, so a real translation is not overwritten.
+
+def apply_reviewed(root: Path, platform: str, code: str, strings: list[dict], english: dict[str, dict]) -> list[dict]:
+    """Reapply data/langpack/reviewed on top of a fresh export.
+
+    An unpinned string is a translation of text the export left in English.
+    A later export that is no longer the English text wins, so a real
+    translation is not overwritten.
+
+    A pinned string is a Tellomi fix (branding or an Android format crash).
+    Pin wins over the export so the next import does not drop it. The pin
+    field itself is not written into the served pack.
     """
     path = root / "reviewed" / platform / f"{code}.json.gz"
     doc = load_doc(path)
@@ -646,18 +682,19 @@ def apply_reviewed(root: Path, platform: str, code: str, strings: list[dict], en
         key = item["key"]
         rev = repl.get(key)
         en = english.get(key)
-        if rev is None or en is None or _entry_signature(item) != _entry_signature(en):
+        pinned = bool(rev and rev.get("pin"))
+        if rev is None or (not pinned and (en is None or _entry_signature(item) != _entry_signature(en))):
             out.append(item)
             continue
-        merged = dict(rev)
-        merged["version"] = max(int(item.get("version") or 1), int(rev.get("version") or 1))
-        out.append(merged)
+        version = max(int(item.get("version") or 1), int(rev.get("version") or 1))
+        out.append(_without_pin(rev, version))
         used.add(key)
         replaced += 1
     for key, rev in repl.items():
         if key in used or any(item["key"] == key for item in out):
             continue
-        out.append(dict(rev))
+        version = int(rev.get("version") or 1)
+        out.append(_without_pin(rev, version))
         replaced += 1
     if replaced:
         print(f"reviewed {platform}/{code}: {replaced}")
@@ -756,7 +793,7 @@ def main() -> int:
     for (platform, _code), (_path, _filename, upstream) in fetched.items():
         if platform == "android" and upstream > highest:
             highest = upstream
-    ANDROID_XML_FIX_VERSION = highest + 1
+    ANDROID_XML_FIX_VERSION = max(highest + 1, ANDROID_FULL_REPLACE_FLOOR)
     print(f"android xml cutover {ANDROID_XML_FIX_VERSION}")
 
     manifest = {
