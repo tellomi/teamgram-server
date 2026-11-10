@@ -145,6 +145,44 @@ func TestLookupKeysShareCanonicalDigits(t *testing.T) {
 	}
 }
 
+func TestLookupKeysBareChinaMobileMatchesStoredE164(t *testing.T) {
+	bare := LookupKeys("13800138000")
+	spaced := LookupKeys("139 1234 5678")
+	trunk := LookupKeys("015012345678")
+	stored := LookupKeys("8613800138000")
+	if !sharesKey(bare, stored) || !sharesKey(spaced, LookupKeys("8613912345678")) || !sharesKey(trunk, LookupKeys("8615012345678")) {
+		t.Fatalf("national keys do not overlap stored E.164:\n%v\n%v\n%v", bare, spaced, trunk)
+	}
+	if !hasKey(bare, "8613800138000") {
+		t.Fatalf("SQL lookup keys %v do not include the stored phone", bare)
+	}
+	intl := LookupKeys("8613800138000")
+	if hasKey(intl, "868613800138000") {
+		t.Fatalf("country code was applied twice: %v", intl)
+	}
+	foreign := LookupKeys("79161234567")
+	if hasKey(foreign, "8679161234567") {
+		t.Fatalf("foreign number gained a CN prefix: %v", foreign)
+	}
+	us := LookupKeys("+1 415 555 2671")
+	if sharesKey(us, LookupKeys("8614155552671")) {
+		t.Fatalf("explicit +1 was rewritten as CN: %v", us)
+	}
+	testPhone := LookupKeys("9996610001")
+	if hasKey(testPhone, "869996610001") {
+		t.Fatalf("test number gained a CN prefix: %v", testPhone)
+	}
+}
+
+func hasKey(keys []string, want string) bool {
+	for _, k := range keys {
+		if k == want {
+			return true
+		}
+	}
+	return false
+}
+
 func sharesKey(a, b []string) bool {
 	set := map[string]struct{}{}
 	for _, k := range a {

@@ -33,6 +33,40 @@ func inputContact(clientID int64, phone, first, last string) *mtproto.InputConta
 	}
 }
 
+func TestPlanContactImportMatchesBareChinaMobile(t *testing.T) {
+	plan := PlanContactImport(10, []*mtproto.InputContact{
+		inputContact(100, "13800138000", "Li", "Na"),
+		inputContact(101, "139-1234-5678", "Wang", ""),
+		inputContact(102, "015012345678", "Zhao", ""),
+	}, []RegisteredPhone{
+		{ID: 20, Phone: "8613800138000"},
+		{ID: 21, Phone: "8613912345678"},
+		{ID: 22, Phone: "8615012345678"},
+	}, nil, nil)
+
+	if len(plan.Matches) != 3 || len(plan.Unregistered) != 0 {
+		t.Fatalf("matches %#v unregistered %#v", plan.Matches, plan.Unregistered)
+	}
+	if plan.Matches[0].UserID != 20 || plan.Matches[0].Phone != "8613800138000" || plan.Matches[0].ClientID != 100 {
+		t.Fatalf("bare match %#v", plan.Matches[0])
+	}
+	if plan.Matches[1].UserID != 21 || plan.Matches[2].UserID != 22 {
+		t.Fatalf("matches %#v", plan.Matches)
+	}
+	if !hasPhone(plan.LookupPhones, "8613800138000") {
+		t.Fatalf("lookup phones %v", plan.LookupPhones)
+	}
+}
+
+func hasPhone(phones []string, want string) bool {
+	for _, phone := range phones {
+		if phone == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPlanContactImportMatchesFormattedPhone(t *testing.T) {
 	plan := PlanContactImport(10, []*mtproto.InputContact{
 		inputContact(100, "+86 138-0013-8000", "Li", "Na"),
