@@ -39,14 +39,22 @@ func clientDocumentHash(docs []*mtproto.Document) int64 {
 
 func TestClientListHashNotModified(t *testing.T) {
 	cfg := requireE2E(t)
-	c, _ := loginNamed(t, cfg, ProfileIOS, "hashcache", "Hash")
+	c, self := loginNamed(t, cfg, ProfileIOS, "hashcache", "Hash")
+
+	// The compose stack ships no installed pack, so getAllStickers is empty
+	// and its hash is 0. Create one pack, then hash it the way a client does.
+	doc := uploadStickerDocument(t, c, "image/webp", "sticker.webp", tinyStickerWEBP)
+	created := createStickerSet(t, c, self, "", []*mtproto.InputStickerSetItem{stickerItem(doc, "😀")})
+	if created.GetSet().GetHash() == 0 {
+		t.Fatal("created set has no hash")
+	}
 
 	all := invokeOK(t, c, &mtproto.TLMessagesGetAllStickers{
 		Constructor: mtproto.CRC32_messages_getAllStickers,
 	})
 	installed, ok := all.(*mtproto.TLMessagesAllStickers)
-	if !ok {
-		t.Fatalf("getAllStickers %T", all)
+	if !ok || len(installed.GetSets()) == 0 {
+		t.Fatalf("getAllStickers %T %+v", all, all)
 	}
 	var setHashes []int64
 	for _, set := range installed.GetSets() {
@@ -55,11 +63,8 @@ func TestClientListHashNotModified(t *testing.T) {
 		}
 		setHashes = append(setHashes, int64(set.GetHash()))
 	}
-	if installed.GetHash() != clientListHash(setHashes) {
+	if installed.GetHash() != clientListHash(setHashes) || installed.GetHash() == 0 {
 		t.Fatalf("getAllStickers server %d client %d (%d sets)", installed.GetHash(), clientListHash(setHashes), len(setHashes))
-	}
-	if installed.GetHash() == 0 {
-		t.Fatal("getAllStickers is empty; the client hash guard cannot return NotModified")
 	}
 	again := invokeOK(t, c, &mtproto.TLMessagesGetAllStickers{
 		Constructor: mtproto.CRC32_messages_getAllStickers,
@@ -68,14 +73,16 @@ func TestClientListHashNotModified(t *testing.T) {
 	if _, ok = again.(*mtproto.TLMessagesAllStickersNotModified); !ok {
 		t.Fatalf("getAllStickers NotModified %T", again)
 	}
-	if installed.GetHash() != 1 {
-		wrong := invokeOK(t, c, &mtproto.TLMessagesGetAllStickers{
-			Constructor: mtproto.CRC32_messages_getAllStickers,
-			Hash:        1,
-		})
-		if _, ok = wrong.(*mtproto.TLMessagesAllStickers); !ok {
-			t.Fatalf("mismatched hash %T", wrong)
-		}
+	miss := int64(1)
+	if installed.GetHash() == miss {
+		miss = 2
+	}
+	wrong := invokeOK(t, c, &mtproto.TLMessagesGetAllStickers{
+		Constructor: mtproto.CRC32_messages_getAllStickers,
+		Hash:        miss,
+	})
+	if _, ok = wrong.(*mtproto.TLMessagesAllStickers); !ok {
+		t.Fatalf("mismatched hash %T", wrong)
 	}
 
 	checkAll := func(name string, req func(int64) mtproto.TLObject) {
