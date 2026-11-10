@@ -419,9 +419,11 @@ func sameTopic(f *Features, msgID, top int32) bool {
 }
 
 func pageDesc(msgs []*mtproto.Message, offsetID, addOffset, limit int32) []*mtproto.Message {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
+	return pageDescAt(msgs, offsetID, 0, addOffset, limit)
+}
+
+func pageDescAt(msgs []*mtproto.Message, offsetID, offsetDate, addOffset, limit int32) []*mtproto.Message {
+	limit = pageLimit(limit)
 	for i := 0; i < len(msgs); i++ {
 		for j := i + 1; j < len(msgs); j++ {
 			if msgs[j].Id > msgs[i].Id {
@@ -433,6 +435,19 @@ func pageDesc(msgs []*mtproto.Message, offsetID, addOffset, limit int32) []*mtpr
 	if offsetID > 0 {
 		for start < len(msgs) && msgs[start].Id >= offsetID {
 			start++
+		}
+	}
+	if offsetDate > 0 {
+		found := false
+		for i := start; i < len(msgs); i++ {
+			if msgs[i].GetDate() < offsetDate {
+				start = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			start = len(msgs)
 		}
 	}
 	start += int(addOffset)

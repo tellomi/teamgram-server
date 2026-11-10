@@ -21,6 +21,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/session/internal/config"
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
+	"github.com/teamgram/teamgram-server/pkg/flood"
 
 	"github.com/zeromicro/go-zero/zrpc"
 )
@@ -36,6 +37,7 @@ type Dao struct {
 	UseStreamGateway bool
 	streamingGateway *StreamingGateway
 	*RpcShardingManager
+	Flood *flood.Limiter
 }
 
 func New(c config.Config) *Dao {
@@ -56,6 +58,7 @@ func New(c config.Config) *Dao {
 	}
 
 	d.watchGateway(c.GatewayClient)
+	d.Flood = openFlood(c)
 
 	return d
 }

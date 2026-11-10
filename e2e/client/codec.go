@@ -23,6 +23,7 @@ type tlVector struct {
 	Hashes  []*mtproto.FileHash
 	Users   []*mtproto.User
 	Stories []*mtproto.RecentStory
+	Strings []*mtproto.LangPackString
 }
 
 func (v *tlVector) Encode(*mtproto.EncodeBuf, int32) error { return nil }
@@ -151,6 +152,10 @@ func decodeTL(raw []byte) (mtproto.TLObject, error) {
 						v.Stories = append(v.Stories, item)
 					case *mtproto.TLRecentStory:
 						v.Stories = append(v.Stories, item.To_RecentStory())
+					case *mtproto.LangPackString:
+						v.Strings = append(v.Strings, item)
+					case *mtproto.TLLangPackString:
+						v.Strings = append(v.Strings, item.To_LangPackString())
 					default:
 						return v, nil
 					}

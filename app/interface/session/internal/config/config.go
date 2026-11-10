@@ -12,6 +12,7 @@ package config
 import (
 	"github.com/teamgram/teamgram-server/pkg/conf"
 
+	"github.com/zeromicro/go-zero/core/stores/cache"
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
@@ -22,6 +23,8 @@ type Config struct {
 	GatewayClient    zrpc.RpcClientConf
 	BFFProxyClients  conf.BFFProxyClients
 	UseStreamGateway bool `json:",default=false"`
+	// Cache is the Redis already listed in session.yaml. Flood limits use it.
+	Cache cache.CacheConf `json:",optional"`
 }
 
 // Routine routine.

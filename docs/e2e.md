@@ -23,6 +23,9 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads up to its own id for that message. |
 | `TestBasicGroupReadOutbox` | Same for a basic group. |
 | `TestSupergroupReadOutbox` | Same for a megagroup (`channels.readHistory`). |
+| `TestHistoryLimit100` | `messages.getHistory` with `limit=100` returns at most 50 messages from a channel that has 60, `offset_id` / `add_offset` / `min_id` / `max_id` select the wrong window, or `channels.getMessages` drops ids from that page. |
+| `TestLangPackWarmIsFast` | The second `langpack.getLangPack` for android zh-hans is as slow as the first, a client already at the current version gets a non-empty difference, or `ChooseYourLanguage` is the same in zh-hans and en. |
+| `TestFloodWaitOnImportContacts` | Seventy `updates.getState` calls return `FLOOD_WAIT`, a loop of `contacts.importContacts` never does, or a `getState` after that flood fails. |
 | `TestBadEntitiesDoNotBreakGetDifference` | A message with a zero-length entity and a duplicated entity makes `updates.getDifference` or `messages.getHistory` fail for the sender or the recipient. |
 | `TestSendReactionThumbsUp` | The recipient reacts 👍 to a private message and it does not show up as `MessageReactions` on that message for both sides. The two sides number the same message differently, so this also catches a reaction stored under the wrong side's id. |
 | `TestAvailableReactionsDownloadable` | `messages.getAvailableReactions` is empty, or a static icon's `upload.getFile` does not return bytes within 10s. |

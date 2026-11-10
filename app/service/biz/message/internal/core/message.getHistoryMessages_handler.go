@@ -291,6 +291,7 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 			}
 			// c.svcCtx.Dao.MessageClient.MessageGet
 			boxList = c.svcCtx.Dao.GetOffsetDateBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetDate, minId, maxId, addOffset+limit, hash)
+			boxList = trimNewestFirst(boxList, addOffset, limit)
 		case loadTypeFirstAroundDate:
 			boxList1 := c.svcCtx.GetOffsetDateForwardHistoryMessages(c.ctx, selfUserId, peer, offsetDate, minId, maxId, -addOffset, hash)
 			for i, j := 0, len(boxList1)-1; i < j; i, j = i+1, j-1 {
@@ -315,6 +316,7 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 			}
 			// c.svcCtx.Dao.MessageClient.MessageGet
 			boxList = c.svcCtx.Dao.GetOffsetIdBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, addOffset+limit, hash)
+			boxList = trimNewestFirst(boxList, addOffset, limit)
 		case loadTypeFirstAroundDate:
 			boxList1 := c.svcCtx.GetOffsetIdForwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, -addOffset, hash)
 			for i, j := 0, len(boxList1)-1; i < j; i, j = i+1, j-1 {

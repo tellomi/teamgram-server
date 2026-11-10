@@ -183,6 +183,11 @@ services:
       TELLOMI_AMAP_QPS: ${TELLOMI_AMAP_QPS:-3}
       TELLOMI_AMAP_DAILY: ${TELLOMI_AMAP_DAILY:-5000}
       TELLOMI_VENUE_REDIS: ${TELLOMI_VENUE_REDIS:-redis:6379}
+      # Per-user flood limits. enforce returns FLOOD_WAIT_X. log only records.
+      # off disables them. TELLOMI_FLOOD_REDIS overrides session.yaml Cache.
+      TELLOMI_FLOOD_MODE: ${TELLOMI_FLOOD_MODE:-enforce}
+      TELLOMI_FLOOD_LIMITS: ${TELLOMI_FLOOD_LIMITS:-}
+      TELLOMI_FLOOD_REDIS: ${TELLOMI_FLOOD_REDIS:-}
       # help.getConfig dc_options. Empty leaves teamgramd/bin/config.json
       # (an empty list, webfile_dc_id 1). A valid spec replaces the list and
       # sets webfile_dc_id to 1. "-" in TELLOMI_DC_TXT_DOMAIN blanks
