@@ -379,6 +379,94 @@ def manifest_keys(doc: dict, platform: str) -> list[str]:
     return sorted(keys)
 
 
+ALLOWLIST_NAME = "tellomi-english-allowlist.json"
+# Whole values that are names. A sentence is not a brand, so this cannot
+# hide an untranslated phrase. Documented in the allowlist file.
+BRAND_VALUES = {"PDF", "Tellomi", "TELLOMI"}
+
+
+def load_allowlist(root: Path) -> dict | None:
+    path = root / ALLOWLIST_NAME
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def tellomi_not_english(root: Path) -> bool:
+    """Fail when a Tellomi value equals its English string and is not allowlisted.
+
+    data/langpack/tellomi-english-allowlist.json is the list. brands match the
+    whole value (PDF, Tellomi). entries name one platform, language, and key,
+    and the reason says why that language keeps the English word. A stale
+    entry, whose pack value is no longer that English string, also fails.
+    """
+    doc = load_manifest(root)
+    allow = load_allowlist(root)
+    if doc is None or allow is None:
+        print("tellomi english: manifest or allowlist missing")
+        return True
+    brands = set(allow.get("brands") or [])
+    if not brands <= BRAND_VALUES or not brands:
+        print(f"tellomi english: brand list {sorted(brands)} is not the documented set")
+        return True
+    allowed: dict[tuple[str, str, str], dict] = {}
+    for row in allow.get("entries") or []:
+        reason = (row.get("reason") or "").strip()
+        if not reason or not row.get("platform") or not row.get("code") or not row.get("key"):
+            print(f"tellomi english: entry missing a field {row}")
+            return True
+        allowed[(row["platform"], row["code"], row["key"])] = row
+    failed = False
+    seen_entries: set[tuple[str, str, str]] = set()
+    print("| platform | code | tellomi | equal English | allowlisted |")
+    print("|---|---|---:|---:|---:|")
+    for platform in CLIENT_PLATFORMS:
+        need = manifest_keys(doc, platform)
+        if not need:
+            continue
+        en_doc = load_doc(root / platform / "en.json.gz")
+        en_text = {item["key"]: item.get("value", "") for item in en_doc.get("strings") or []}
+        for path in sorted((root / platform).glob("*.json.gz")):
+            code = path.name[: -len(".json.gz")]
+            pack = load_doc(path)
+            text = {item["key"]: item.get("value", "") for item in pack.get("strings") or []}
+            equal = 0
+            allow_n = 0
+            for key in need:
+                english = en_text.get(key, "")
+                value = text.get(key, "")
+                if code == "en":
+                    continue
+                if value != english:
+                    continue
+                equal += 1
+                row = allowed.get((platform, code, key))
+                if value in brands:
+                    allow_n += 1
+                    if row is not None:
+                        seen_entries.add((platform, code, key))
+                        if row.get("value") != value:
+                            failed = True
+                            print(f"allowlist value drifted {platform}/{code} {key}")
+                    continue
+                if row is None or row.get("value") != value:
+                    failed = True
+                    print(f"tellomi still English {platform}/{code} {key}: {value!r}")
+                    continue
+                seen_entries.add((platform, code, key))
+                allow_n += 1
+            if code != "en":
+                print(f"| {platform} | {code} | {len(need)} | {equal} | {allow_n} |")
+    for key, row in allowed.items():
+        if key in seen_entries:
+            continue
+        failed = True
+        print(f"allowlist entry is not an English copy anymore: {row}")
+    if not failed:
+        print("tellomi english: every non-English pack differs from English, except the allowlist")
+    return failed
+
+
 def manifest_missing(root: Path) -> bool:
     doc = load_manifest(root)
     if doc is None:
@@ -959,6 +1047,8 @@ def main(argv: list[str] | None = None) -> int:
     if english_gap(root):
         failed = True
     if manifest_missing(root):
+        failed = True
+    if tellomi_not_english(root):
         failed = True
     return 1 if failed else 0
 

@@ -1,0 +1,1060 @@
+{
+  "note": "Tellomi values that are intentionally the same as English. brands match the whole string (PDF, Tellomi). entries are proper nouns, the product name when it is the same word, and labels this pack already writes in English (the official string for that word is English too). scripts/langpack_gap.py fails when any other Tellomi value equals English.",
+  "brands": [
+    "PDF",
+    "Tellomi",
+    "TELLOMI"
+  ],
+  "entries": [
+    {
+      "platform": "android",
+      "code": "ar",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "be",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_Article",
+      "value": "Article",
+      "reason": "same as AttachArticle"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_Search",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ca",
+      "key": "Moments_Title",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "android",
+      "code": "cs",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "cs",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "cs",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "cs",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_Notif_System",
+      "value": "System",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_Sort_Hot",
+      "value": "Top",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "android",
+      "code": "de",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "el",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "es",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "es",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "es",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "fa",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "fi",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_Audience_Contacts",
+      "value": "Contacts",
+      "reason": "same as Contacts"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_Notif_Interactions",
+      "value": "Interactions",
+      "reason": "same as InteractionsChartTitle"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_Search",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "android",
+      "code": "fr",
+      "key": "Moments_Title",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "android",
+      "code": "he",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "hi",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_City_Beijing",
+      "value": "Beijing",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "id",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "it",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "it",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "it",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "it",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "it",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "it",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "ja",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "ja",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ko",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_City_Beijing",
+      "value": "Beijing",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "ms",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_City_Beijing",
+      "value": "Beijing",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_Notif_System",
+      "value": "System",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_Send",
+      "value": "Send",
+      "reason": "same as Send"
+    },
+    {
+      "platform": "android",
+      "code": "nb",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_Tool_Sticker",
+      "value": "Sticker",
+      "reason": "same as AttachSticker"
+    },
+    {
+      "platform": "android",
+      "code": "nl",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "pl",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "pl",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "pl",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "pl",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "pl",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "pl",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "pt-br",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "pt-br",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "pt-br",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "pt-br",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_City_Beijing",
+      "value": "Beijing",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "ro",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "ru",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_City_Shanghai",
+      "value": "Shanghai",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_Notif_System",
+      "value": "System",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "sv",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "th",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "tr",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "tr",
+      "key": "Moments_City_Guangzhou",
+      "value": "Guangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "tr",
+      "key": "Moments_City_Hangzhou",
+      "value": "Hangzhou",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "tr",
+      "key": "Moments_City_Shenzhen",
+      "value": "Shenzhen",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "tr",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "uk",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "uz",
+      "key": "Moments_City_Chengdu",
+      "value": "Chengdu",
+      "reason": "proper noun written the same way in this language"
+    },
+    {
+      "platform": "android",
+      "code": "uz",
+      "key": "Moments_OK",
+      "value": "OK",
+      "reason": "same as OK"
+    },
+    {
+      "platform": "android",
+      "code": "uz",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "uz",
+      "key": "Moments_Report_Spam",
+      "value": "Spam",
+      "reason": "same as ReportChatSpam"
+    },
+    {
+      "platform": "android",
+      "code": "uz",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "vi",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "vi",
+      "key": "Moments_Tool_Video",
+      "value": "Video",
+      "reason": "same as AttachVideo"
+    },
+    {
+      "platform": "android",
+      "code": "zh-hans",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "android",
+      "code": "zh-hant",
+      "key": "Moments_Pdf",
+      "value": "PDF",
+      "reason": "brand name"
+    },
+    {
+      "platform": "ios",
+      "code": "ca",
+      "key": "Moments.Search",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "ca",
+      "key": "Moments.Settings.Title",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "ca",
+      "key": "Moments.Title",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "de",
+      "key": "Moments.Notif.System",
+      "value": "System",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "ios",
+      "code": "de",
+      "key": "Moments.Sort.Hot",
+      "value": "Top",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "ios",
+      "code": "fr",
+      "key": "Moments.Audience.Contacts",
+      "value": "Contacts",
+      "reason": "same as Contacts.Title"
+    },
+    {
+      "platform": "ios",
+      "code": "fr",
+      "key": "Moments.Notif.Interactions",
+      "value": "Interactions",
+      "reason": "same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "fr",
+      "key": "Moments.Search",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "fr",
+      "key": "Moments.Settings.Title",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "fr",
+      "key": "Moments.Title",
+      "value": "Moments",
+      "reason": "product name is the same word in this language"
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Notif.System",
+      "value": "System",
+      "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Notif.System",
+      "value": "System",
+      "reason": "loanword this language writes the same way"
+    }
+  ]
+}
