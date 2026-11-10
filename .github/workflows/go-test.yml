@@ -47,3 +47,4 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check -q opencc-python-reimplemented
           python3 -m unittest langpack_official_test langpack_fill_test langpack_zh_test
+          python3 langpack_gap.py

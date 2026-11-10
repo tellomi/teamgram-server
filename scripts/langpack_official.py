@@ -96,6 +96,16 @@ HASH_FORMS = (
     ("#other", "other"),
 )
 BRAND_KEYS = {"AppName", "AppNameBeta", "Application.Name", "Watch.AppName"}
+# Product keys whose names do not start with Tellomi or Moments.
+TELLOMI_EXTRA_KEYS = {
+    "Login.CodeFloodWait",
+    "Story.Privacy.CategoryMutualFollowers",
+    "Story.Privacy.WhoCanViewMoment",
+    "SettingsTools",
+    "MainTabsMenuSettings",
+    "MainTabsHideLabels",
+    "MainTabsButtons",
+}
 FORMS = ("zero", "one", "two", "few", "many", "other")
 
 # SearchEngine1AutocompleteURL and its siblings are translatable="false"
@@ -128,12 +138,12 @@ _NOT_TRANSLATABLE = re.compile(r"""\btranslatable\s*=\s*["']false["']""")
 def tellomi_owned_key(key: str) -> bool:
     """Keys the override may add when the official export does not have them.
 
-    Tellomi.Discover.* and TellomiLogin* are product strings. AppName and
-    the other brand keys are too. Search engine URLs from strings.xml are not.
+    Tellomi.Discover.* , Moments.*, menu/tab names, and the brand keys are
+    product strings. Search engine URLs from strings.xml are not.
     """
-    if key in BRAND_KEYS:
+    if key in BRAND_KEYS or key in TELLOMI_EXTRA_KEYS:
         return True
-    return key.startswith("Tellomi.") or key.startswith("Tellomi")
+    return key.startswith("Tellomi") or key.startswith("Moments")
 
 
 def is_url_value(text: str) -> bool:

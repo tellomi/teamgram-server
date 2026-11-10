@@ -132,9 +132,26 @@ func TestAndroidOldVersionReplacedWithFullPack(t *testing.T) {
 	if len(got.GetStrings()) < 10000 {
 		t.Fatalf("full pack strings %d", len(got.GetStrings()))
 	}
-	empty, err := cat.Difference("android", "zh-hans", fix)
-	if err != nil || len(empty.GetStrings()) != 0 || empty.GetFromVersion() != fix || empty.GetVersion() != ver {
-		t.Fatalf("at fix version %+v %v", empty, err)
+	// Strings added after the XML cutover are an incremental difference.
+	// from_version stays at the cutover so the client merges them into the
+	// file it already parsed. A client at the pack version is caught up.
+	// When the pack version is still the cutover, that difference is empty.
+	partial, err := cat.Difference("android", "zh-hans", fix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ver == fix {
+		if len(partial.GetStrings()) != 0 || partial.GetFromVersion() != fix || partial.GetVersion() != ver {
+			t.Fatalf("at fix version %+v", partial)
+		}
+	} else {
+		if partial.GetFromVersion() != fix || partial.GetVersion() != ver || len(partial.GetStrings()) == 0 {
+			t.Fatalf("incremental after cutover from=%d ver=%d n=%d", partial.GetFromVersion(), partial.GetVersion(), len(partial.GetStrings()))
+		}
+		caughtUp, err := cat.Difference("android", "zh-hans", ver)
+		if err != nil || len(caughtUp.GetStrings()) != 0 || caughtUp.GetFromVersion() != ver {
+			t.Fatalf("caught up %+v %v", caughtUp, err)
+		}
 	}
 	// iOS does not write XML and must keep the incremental from_version.
 	ios, err := cat.Difference("ios", "zh-hans", 22454343)
