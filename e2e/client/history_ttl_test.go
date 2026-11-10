@@ -27,6 +27,11 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 	if err := setHistoryTTL(ctx, a, peerForA, 1); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		cx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		_ = setHistoryTTL(cx, a, peerForA, 0)
+	})
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		d, ok, err := dialogOf(a, ctx, "user", bSelf.ID)
 		if err != nil || !ok {
