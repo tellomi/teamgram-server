@@ -329,6 +329,9 @@ func applySchema(db *sql.DB) error {
 	return execScript(db, schema)
 }
 
+// execScript splits on ';'. That assumes the script has no semicolon
+// inside a string literal or a comment. schema is only CREATE TABLE
+// statements, so each piece is one statement.
 func execScript(db *sql.DB, script string) error {
 	for _, stmt := range strings.Split(script, ";") {
 		stmt = strings.TrimSpace(stmt)

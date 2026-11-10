@@ -21,6 +21,23 @@ import (
 
 var schemaSeq atomic.Int64
 
+func TestSchemaSplitsIntoCreateStatements(t *testing.T) {
+	n := 0
+	for _, stmt := range strings.Split(schema, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		n++
+		if !strings.HasPrefix(stmt, "CREATE") {
+			t.Fatalf("split piece does not start with CREATE (semicolon inside a literal or comment?):\n%s", stmt)
+		}
+	}
+	if n != 5 {
+		t.Fatalf("statements = %d, want 5", n)
+	}
+}
+
 func TestSecretQtsSchemaMySQL(t *testing.T) {
 	dsn := openSchemaDSN(t)
 	db := openMySQL(t, dsn)
