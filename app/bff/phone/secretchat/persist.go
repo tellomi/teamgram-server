@@ -10,6 +10,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS secret_chats (
   key_fingerprint BIGINT NOT NULL DEFAULT 0,
   phase TINYINT NOT NULL,
   history_deleted TINYINT NOT NULL DEFAULT 0,
+  ttl_period INT NOT NULL DEFAULT 0,
   PRIMARY KEY (chat_id),
   KEY idx_secret_chats_admin (admin_id),
   KEY idx_secret_chats_participant (participant_id)
@@ -341,23 +343,27 @@ func UseDSN(dsn string) error {
 	active = be
 	current = newStore(be)
 	gate.Unlock()
+	if err = msgexpiry.AttachSecretDB(be.db); err != nil {
+		logx.Errorf("secret chat expiry: %v", err)
+	}
 	return nil
 }
 
 func (s *sqlBackend) SaveChat(c *chat) error {
 	_, err := s.db.Exec(`
-INSERT INTO secret_chats (chat_id, access_hash, date, admin_id, participant_id, g_a, g_b, key_fingerprint, phase, history_deleted)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO secret_chats (chat_id, access_hash, date, admin_id, participant_id, g_a, g_b, key_fingerprint, phase, history_deleted, ttl_period)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   access_hash = VALUES(access_hash), date = VALUES(date), admin_id = VALUES(admin_id),
   participant_id = VALUES(participant_id), g_a = VALUES(g_a), g_b = VALUES(g_b),
-  key_fingerprint = VALUES(key_fingerprint), phase = VALUES(phase), history_deleted = VALUES(history_deleted)`,
-		c.id, c.access, c.date, c.admin, c.participant, c.ga, c.gb, c.fingerprint, int(c.phase), boolByte(c.historyGone))
+  key_fingerprint = VALUES(key_fingerprint), phase = VALUES(phase), history_deleted = VALUES(history_deleted),
+  ttl_period = VALUES(ttl_period)`,
+		c.id, c.access, c.date, c.admin, c.participant, c.ga, c.gb, c.fingerprint, int(c.phase), boolByte(c.historyGone), c.ttl)
 	return err
 }
 
 func (s *sqlBackend) Chat(id int32) (*chat, bool) {
-	row := s.db.QueryRow(`SELECT chat_id, access_hash, date, admin_id, participant_id, g_a, g_b, key_fingerprint, phase, history_deleted FROM secret_chats WHERE chat_id = ?`, id)
+	row := s.db.QueryRow(`SELECT chat_id, access_hash, date, admin_id, participant_id, g_a, g_b, key_fingerprint, phase, history_deleted, ttl_period FROM secret_chats WHERE chat_id = ?`, id)
 	c, err := scanChat(row)
 	if err != nil {
 		return nil, false
@@ -366,7 +372,7 @@ func (s *sqlBackend) Chat(id int32) (*chat, bool) {
 }
 
 func (s *sqlBackend) ChatsFor(userID int64) []*chat {
-	rows, err := s.db.Query(`SELECT chat_id, access_hash, date, admin_id, participant_id, g_a, g_b, key_fingerprint, phase, history_deleted
+	rows, err := s.db.Query(`SELECT chat_id, access_hash, date, admin_id, participant_id, g_a, g_b, key_fingerprint, phase, history_deleted, ttl_period
 FROM secret_chats WHERE admin_id = ? OR participant_id = ?`, userID, userID)
 	if err != nil {
 		return nil
@@ -534,7 +540,7 @@ func scanChat(row chatScanner) (*chat, error) {
 	var phaseN int
 	var history int
 	var gb []byte
-	if err := row.Scan(&c.id, &c.access, &c.date, &c.admin, &c.participant, &c.ga, &gb, &c.fingerprint, &phaseN, &history); err != nil {
+	if err := row.Scan(&c.id, &c.access, &c.date, &c.admin, &c.participant, &c.ga, &gb, &c.fingerprint, &phaseN, &history, &c.ttl); err != nil {
 		return nil, err
 	}
 	c.phase = phase(phaseN)

@@ -42,6 +42,12 @@ msg 进程里的清扫每次启动先跑一遍，之后默认每 2 秒一轮（`
 
 云端历史的自动删除和查看一次都不读 `TELLOMI_MESSAGE_EXPIRY` / `TELLOMI_MESSAGE_EXPIRY_SWEEP`。这两个变量如果还开着，只作用于旧的内存账本，不删 `messages` 行，也不代替上面的清扫。
 
+## 秘密聊天
+
+秘密聊天的自毁秒数写在 `secret_chats.ttl_period`。重启后 `messages.sendEncrypted` 仍用这个秒数。已经发出的密文记在 `secret_message_expiry`，只在 `TELLOMI_MESSAGE_EXPIRY=1` 时拒绝 `upload.getFile` 和 `updates.getDifference` 里的那条密文。这个开关默认关。它不删普通私聊，也不代替查看一次。服务器不解密。
+
+迁移 `migrate-20261124-secret-chat-ttl.sql` 在 `migrate-20261120-secret-qts.sql` 建好 `secret_chats` 之后才加列。更早的文件会在表还不存在时失败。
+
 ## 上线
 
 部署新镜像后 msg 进程自己开始清扫，不需要另开开关，也不需要 `FLUSHALL`。
