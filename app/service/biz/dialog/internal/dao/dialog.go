@@ -23,6 +23,14 @@ import (
 // MakeDialog
 // ////////////////////////////////////////////////////////////////////////////////////
 func (d *Dao) MakeDialog(dialogDO *dataobject.DialogsDO) *dialog.DialogExt {
+	// A positive ttl_period is the auto-delete timer. Zero means the timer is
+	// off, and a negative value is not a timer. MakeFlagsInt32 already drops
+	// zero; the <= 0 check also drops a negative column so getDialogs does
+	// not send a flag clients read as "delete immediately".
+	ttlPeriod := mtproto.MakeFlagsInt32(dialogDO.TtlPeriod)
+	if dialogDO.TtlPeriod <= 0 {
+		ttlPeriod = nil
+	}
 	dialog2 := mtproto.MakeTLDialog(&mtproto.Dialog{
 		Pinned:               false,
 		UnreadMark:           dialogDO.UnreadMark, // TODO(@benqi)
@@ -38,7 +46,7 @@ func (d *Dao) MakeDialog(dialogDO *dataobject.DialogsDO) *dialog.DialogExt {
 		Pts:                  nil,
 		Draft:                nil,
 		FolderId:             mtproto.MakeFlagsInt32(dialogDO.FolderId),
-		TtlPeriod:            mtproto.MakeFlagsInt32(dialogDO.TtlPeriod),
+		TtlPeriod:            ttlPeriod,
 	}).To_Dialog()
 	// fix unreadCount
 	if dialog2.UnreadMentionsCount < 0 {
