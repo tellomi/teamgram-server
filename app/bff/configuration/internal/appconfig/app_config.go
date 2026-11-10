@@ -13,6 +13,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/about"
 	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/crashreport"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
@@ -60,7 +61,7 @@ func AppConfigHash() int32 {
 	if announce.Advertised() {
 		notice = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d venue=%s %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, mtproto.BotVenueName, about.HashFragment())
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d venue=%s crashbot=%s %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, mtproto.BotVenueName, crashreport.Username(), about.HashFragment())
 	if origin, ok := discoverFeedOrigin(); ok {
 		fmt.Fprintf(h, " feed=1 %s", origin)
 	}
@@ -273,6 +274,8 @@ func hiddenFeaturePairs() []*mtproto.JSONObjectValue {
 		jsonPair("tellomi_ai_enabled", jsonBool(tellomiai.Advertised())),
 		jsonPair("tellomi_translate_enabled", jsonBool(tellomiai.TranslateAdvertised())),
 		jsonPair("tellomi_announce_enabled", jsonBool(announce.Advertised())),
+		// iOS and Android look this username up and send crash logs there.
+		jsonPair("tellomi_crash_report_bot", jsonString(crashreport.Username())),
 	}
 }
 

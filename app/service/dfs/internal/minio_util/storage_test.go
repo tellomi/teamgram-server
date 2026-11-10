@@ -86,6 +86,7 @@ func TestLocationPrefixes(t *testing.T) {
 		{ClassEmoji, "e/1.webp", "tellomi-public-media", "emoji/e/1.webp"},
 		{ClassWallpapers, "8.dat", "tellomi-public-media", "wallpapers/8.dat"},
 		{ClassBackups, "nightly/db.sql", "tellomi-backups", "nightly/db.sql"},
+		{ClassCrashReports, "2026/11/10/9/3_log.zip", "tellomi-attachments", "crash-reports/2026/11/10/9/3_log.zip"},
 	}
 	for _, tc := range cases {
 		bucket, key, err := resolveLocation(cfg, tc.class, tc.path)

@@ -110,6 +110,25 @@ func TestFromEnvDryRunDefaultsOn(t *testing.T) {
 	}
 }
 
+func TestCrashReportsAreNotDeletable(t *testing.T) {
+	if !protectedObject("crash-reports", "2026/11/10/9/3_log.zip") {
+		t.Fatal("class")
+	}
+	if !protectedObject("documents", "crash-reports/2026/11/10/9/3_log.zip") {
+		t.Fatal("path")
+	}
+	if protectedObject("documents", "12.dat") || protectedObject("photos", "0/9.dat") {
+		t.Fatal("chat media was protected")
+	}
+	src, err := os.ReadFile("worker.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(src), "protectedObject(o.Class, o.Path)") < 2 {
+		t.Fatal("purge worker does not skip crash-report objects on the dry-run and live paths")
+	}
+}
+
 func TestResultString(t *testing.T) {
 	if !strings.Contains((Result{DryRun: true, Due: 3}).String(), "DRY_RUN") {
 		t.Fatal(Result{DryRun: true}.String())

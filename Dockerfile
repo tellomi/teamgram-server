@@ -62,6 +62,8 @@ RUN cd app/service/dfs/cmd/backfillstripped && go build -o /app/teamgramd/bin/ba
 RUN cd app/service/dfs/cmd/backfillthumbs && go build -o /app/teamgramd/bin/backfillthumbs
 # One-time enforcement schema. The operator runs it; startup does not.
 RUN cd cmd/enforcement-migrate && go build -o /app/teamgramd/bin/enforcement-migrate
+# Crash-report bot ensure/list. The operator runs it. See docs/crash-reports.md.
+RUN cd app/service/crashreport/cmd/crashreport && go build -o /app/teamgramd/bin/crashreport
 
 FROM ubuntu:latest
 # libvips is only needed by the dfs binary inside this image. The package
@@ -105,7 +107,7 @@ COPY --from=ip2region /out/ /app/data/ip2region/
 # so the workflow cannot push a partial image.
 COPY scripts/verify-teamgram-binaries.sh /tmp/verify-teamgram-binaries.sh
 COPY docker-compose.yaml docker-compose-env.yaml docker-compose.staging.yaml docker-compose.geoip.yaml /tmp/compose/
-RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/importgifs /app/bin/seedofficialavatars /app/bin/backfillstripped /app/bin/backfillthumbs /app/bin/enforcement-migrate /app/bin/runall-docker.sh \
+RUN chmod +x /app/docker/entrypoint.sh /app/deploy/migrate.sh /app/bin/importstickers /app/bin/importgifs /app/bin/seedofficialavatars /app/bin/backfillstripped /app/bin/backfillthumbs /app/bin/enforcement-migrate /app/bin/crashreport /app/bin/runall-docker.sh \
     && bash /tmp/verify-teamgram-binaries.sh /app /tmp/compose \
     && rm -rf /tmp/verify-teamgram-binaries.sh /tmp/compose
 # Exec form so the entrypoint is PID 1. Shell form wraps it in `sh -c`,

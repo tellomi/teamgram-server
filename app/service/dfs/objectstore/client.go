@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 )
@@ -198,6 +199,40 @@ func (c *Client) MoveToTrash(ctx context.Context, class, path string) error {
 		return fmt.Errorf("trash %s/%s: %w", class, path, err)
 	}
 	return nil
+}
+
+// CopyToCrashReport copies a chat-media object onto the crash-reports prefix.
+func (c *Client) CopyToCrashReport(ctx context.Context, srcClass, srcPath, dstPath string) error {
+	if c == nil || c.u == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if err := c.u.CopyClassObject(ctx, srcClass, srcPath, minio_util.ClassCrashReports, dstPath); err != nil {
+		return fmt.Errorf("copy crash report: %w", err)
+	}
+	return nil
+}
+
+// PutCrashReport writes a small object (a text report) under crash-reports/.
+func (c *Client) PutCrashReport(ctx context.Context, path, contentType string, body []byte) error {
+	if c == nil || c.u == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if _, err := c.u.PutClassBytes(ctx, minio_util.ClassCrashReports, path, contentType, body); err != nil {
+		return fmt.Errorf("put crash report: %w", err)
+	}
+	return nil
+}
+
+// PresignCrashReport returns a time-limited GET URL for one crash-report object.
+func (c *Client) PresignCrashReport(ctx context.Context, path string, ttl time.Duration) (string, error) {
+	if c == nil || c.u == nil {
+		return "", fmt.Errorf("object storage client is nil")
+	}
+	u, err := c.u.PresignClass(ctx, minio_util.ClassCrashReports, path, ttl)
+	if err != nil {
+		return "", fmt.Errorf("sign crash report: %w", err)
+	}
+	return u, nil
 }
 
 // DeleteTrash removes the trash/ copy written by MoveToTrash.

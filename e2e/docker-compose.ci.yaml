@@ -97,6 +97,10 @@ services:
       # CI users are not the production allowlist. * keeps the fake model reachable.
       TELLOMI_AI_ALLOW_USERNAMES: "*"
       TELLOMI_REPORT_REVIEW: "0"
+      # Crash-report query listener. The token is a CI fixture, not a production secret.
+      # It is only reachable on 127.0.0.1 inside this container.
+      TELLOMI_CRASH_REPORT_TOKEN: e2e-crash-report-not-production
+      TELLOMI_CRASH_REPORT_ADDR: 127.0.0.1:8818
     # dfs checks the attachments bucket once at startup.
     depends_on:
       minio-mc:

@@ -105,6 +105,9 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 		c.Logger.Errorf("messages.forwardMessages - error: %v", err)
 		return nil, err
 	}
+	if in.GetScheduleDate().GetValue() == 0 {
+		noteCrashReports(c.ctx, c.MD.UserId, toPeer, nil, rUpdates)
+	}
 
 	return rUpdates, err
 }

@@ -18,6 +18,8 @@ const (
 	ClassEmoji          = "emoji"
 	ClassWallpapers     = "wallpapers"
 	ClassBackups        = "backups"
+	// ClassCrashReports is the crash-log prefix. Purge does not delete it.
+	ClassCrashReports = "crash-reports"
 )
 
 func resolveLocation(c *MinioConfig, class, path string) (bucket, key string, err error) {
@@ -29,9 +31,12 @@ func resolveLocation(c *MinioConfig, class, path string) (bucket, key string, er
 		return "", "", err
 	}
 	switch class {
-	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles:
+	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles, ClassCrashReports:
 		if c.Bucket.Attachments != "" {
 			return c.Bucket.Attachments, class + "/" + path, nil
+		}
+		if class == ClassCrashReports {
+			return legacyBucket(c, ClassDocuments), class + "/" + path, nil
 		}
 		return legacyBucket(c, class), path, nil
 	case ClassAvatars, ClassStickers, ClassEmoji, ClassWallpapers:

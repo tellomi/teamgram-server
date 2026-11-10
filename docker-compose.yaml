@@ -307,6 +307,13 @@ services:
       TELLOMI_ANNOUNCE_ADDR: ${TELLOMI_ANNOUNCE_ADDR:-}
       TELLOMI_ANNOUNCE_FROM: ${TELLOMI_ANNOUNCE_FROM:-}
       TELLOMI_ANNOUNCE_GAP_MS: ${TELLOMI_ANNOUNCE_GAP_MS:-}
+      # Crash-report query API. Unset token leaves the listener off.
+      # The address must be loopback (default 127.0.0.1:8818). Do not publish it.
+      # A name other than user 777006's username is logged and not published.
+      TELLOMI_CRASH_REPORT_BOT: ${TELLOMI_CRASH_REPORT_BOT:-}
+      TELLOMI_CRASH_REPORT_TOKEN: ${TELLOMI_CRASH_REPORT_TOKEN:-}
+      TELLOMI_CRASH_REPORT_ADDR: ${TELLOMI_CRASH_REPORT_ADDR:-}
+      TELLOMI_CRASH_REPORT_MAX_BYTES: ${TELLOMI_CRASH_REPORT_MAX_BYTES:-}
       # User reports. The @admin receipt does not need these. Review follows
       # TELLOMI_AI when TELLOMI_REPORT_REVIEW is empty. HTTP is Discover ingest.
       # See docs/api/reports.md. Do not publish this port.

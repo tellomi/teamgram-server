@@ -48,6 +48,7 @@
     "archive_b": {"number": "9996610122", "code": "11111"},
     "archive_c": {"number": "9996610123", "code": "11111"},
     "ttl_a": {"number": "9996610131", "code": "11111"},
-    "ttl_b": {"number": "9996610132", "code": "11111"}
+    "ttl_b": {"number": "9996610132", "code": "11111"},
+    "crash_sender": {"number": "9996610141", "code": "11111"}
   }
 }

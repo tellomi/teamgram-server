@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/about"
 	"github.com/teamgram/teamgram-server/pkg/announce"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/crashreport"
 	"github.com/teamgram/teamgram-server/pkg/discoverauth"
 	"github.com/teamgram/teamgram-server/pkg/emojiblock"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -457,5 +458,28 @@ func TestHelpCenterFlag(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["faq_link"] != "https://tellomi.cn/help" {
 		t.Fatalf("faq_link = %#v", obj["faq_link"])
+	}
+}
+
+func TestCrashReportBotConfig(t *testing.T) {
+	t.Cleanup(func() { crashreport.UseDBUsername(crashreport.DefaultUsername) })
+	t.Setenv(crashreport.EnvBot, "")
+	raw := mtproto.FromJSONValue(AppConfig())
+	obj := raw.(map[string]any)
+	if obj["tellomi_crash_report_bot"] != crashreport.DefaultUsername {
+		t.Fatalf("bot %#v", obj["tellomi_crash_report_bot"])
+	}
+	off := AppConfigHash()
+	t.Setenv(crashreport.EnvBot, "OtherBot")
+	if AppConfigHash() != off || crashreport.Username() != crashreport.DefaultUsername {
+		t.Fatal("a mismatched env name was published")
+	}
+	if !crashreport.UseDBUsername(crashreport.DefaultUsername) {
+		t.Fatal("startup did not notice the mismatched env name")
+	}
+	raw = mtproto.FromJSONValue(AppConfig())
+	obj = raw.(map[string]any)
+	if obj["tellomi_crash_report_bot"] != crashreport.DefaultUsername {
+		t.Fatalf("bot %#v", obj["tellomi_crash_report_bot"])
 	}
 }

@@ -20,6 +20,8 @@ The object is deleted only when all of these are true:
 
 A key is also kept when anything serves it without a `media_blob_refs` row. That includes a legacy `documents.file_path` or photo size from before dedup, a catalog sticker or GIF object path, and `media_external_refs`. The worker skips that key. The dry-run line counts it as `kept_legacy`. A document whose blob ref this purge already released is marked expired, so the leftover path is not treated as one of those holders.
 
+Objects in the `crash-reports` class, and any path whose key starts with `crash-reports/`, are also skipped. Those are copies of logs sent to @TellomiBot. Deleting the chat message can still expire the original document id. The crash-report copy stays. See [crash-reports.md](crash-reports.md).
+
 ## Queue
 
 The delete enqueues `media_purge_queue` with `available_at = now + grace`. The default grace is 24h (`TELLOMI_MEDIA_PURGE_GRACE`, a Go duration or a number of seconds). The worker re-checks holders after that. A forward that landed in the meantime cancels the row. A failed object delete leaves the row and retries; deleting a missing object is success.

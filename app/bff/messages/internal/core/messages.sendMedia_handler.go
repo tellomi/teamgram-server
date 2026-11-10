@@ -202,6 +202,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 
 	if in.GetScheduleDate().GetValue() == 0 {
 		c.noteTellomi(c.MD.UserId, peer, in.Message, in.Entities, in.RandomId, replyTarget(in.GetReplyToMsgId(), in.GetReplyTo()), rUpdate, true)
+		noteCrashReports(c.ctx, c.MD.UserId, peer, outMessage, rUpdate)
 	}
 
 	if in.ClearDraft {
