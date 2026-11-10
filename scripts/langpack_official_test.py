@@ -72,8 +72,13 @@ class ForkOnlyKeyTest(unittest.TestCase):
         self.assertTrue(tellomi_owned_key("Tellomi.Settings.Help"))
         self.assertTrue(tellomi_owned_key("TellomiLoginWithPhone"))
         self.assertTrue(tellomi_owned_key("AppName"))
+        self.assertTrue(tellomi_owned_key("Moments_Title"))
+        self.assertTrue(tellomi_owned_key("Moments.Title"))
+        self.assertTrue(tellomi_owned_key("MainTabsMenuSettings"))
+        self.assertTrue(tellomi_owned_key("Login.CodeFloodWait"))
         self.assertFalse(tellomi_owned_key("SearchEngine1AutocompleteURL"))
         self.assertFalse(tellomi_owned_key("AreTyping"))
+        self.assertFalse(tellomi_owned_key("MainTabsChats"))
 
     def test_merge_keeps_tellomi_keys_and_drops_apk_configuration(self):
         official = [{"key": "Hello", "value": "Hi"}]

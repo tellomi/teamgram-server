@@ -84,7 +84,13 @@ func TestTellomiSettingsKeys(t *testing.T) {
 					}
 				}
 			}
-			diff, err := cat.Difference(platform, code, ver-1)
+			// Ask from the version before these strings, not from the pack tip.
+			// A later fill raises the pack version without rewriting these rows.
+			from := packStringVersion(t, platform, code, "Tellomi.Settings.Group.Account") - 1
+			if from < 0 {
+				from = 0
+			}
+			diff, err := cat.Difference(platform, code, from)
 			if err != nil {
 				t.Fatal(platform, code, err)
 			}
@@ -156,4 +162,37 @@ func readPackMT(t *testing.T, path string) map[string]packMTItem {
 		out[s.Key] = packMTItem{value: s.Value, mt: s.MT, via: s.Via}
 	}
 	return out
+}
+
+func packStringVersion(t *testing.T, platform, code, key string) int32 {
+	t.Helper()
+	fh, err := os.Open("../../data/langpack/" + platform + "/" + code + ".json.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fh.Close()
+	zr, err := gzip.NewReader(fh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	var doc struct {
+		Strings []struct {
+			Key     string `json:"key"`
+			Version int32  `json:"version"`
+		} `json:"strings"`
+	}
+	if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range doc.Strings {
+		if s.Key == key {
+			if s.Version < 1 {
+				t.Fatalf("%s %s %s version %d", platform, code, key, s.Version)
+			}
+			return s.Version
+		}
+	}
+	t.Fatalf("%s %s missing %s", platform, code, key)
+	return 0
 }

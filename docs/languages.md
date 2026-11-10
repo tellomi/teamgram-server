@@ -60,9 +60,9 @@ Untranslated strings that are an exact copy of the official English text are omi
 
 The Android export gained 91 keys after the previous import (for example `CompactMode`, `TopicsSidebar`, `AgentStart`). Those keys are in every Android pack. Strings the official iOS export left in English — login email templates, a few `PUSH_*` lines, and the App Store preview copy — are translated and marked `mt`, and `data/langpack/reviewed` keeps them across a later import. `Login.OpenFragment` stays "打开 Fragment".
 
-Every Android pack is version `61730400`. `langpack.getLanguages` / `getLanguage` report `lang_code` `zh-hans` (the client lowercases and turns `-` into `_`), `plural_code` `zh`, `base_lang_code` `en`, and `official`. Stock Android `hasBaseLang()` is false for an official pack, so it does not download the English base; missing keys use the APK string. The plural code stays `zh`, which is the code the plural-rule table is registered under.
+Every Android pack is version `61730401`. `android_xml_fix_version` stays `61730400`. `langpack.getLanguages` / `getLanguage` report `lang_code` `zh-hans` (the client lowercases and turns `-` into `_`), `plural_code` `zh`, `base_lang_code` `en`, and `official`. Those three codes match the official Telegram catalog (`zh-hans` / `zh-hant` on translations.telegram.org) and are left as they are. Stock Android `hasBaseLang()` is false for an official pack, so it does not download the English base. `LocaleController.applyLanguage` builds the Android `Locale` from `plural_code` first, so `zh` becomes `Locale("zh")`. Built-in assets are keyed by `locale.toLanguageTag()` (`values-zh-rCN` is `zh-CN`, `values-zh-rTW` is `zh-TW`), and there is no `zh` asset, so a key missing from the cloud pack is the English built-in string. The Tellomi-only keys are therefore stored in the pack itself. A phone at `61730400` receives them from `langpack.getDifference`. A phone at `61730401` receives an empty difference. Each iOS pack version moves forward by one the same way. The plural code stays `zh`, which is the code the plural-rule table is registered under.
 
-Production `35aed0c` already served these packs at `61638734` with the bare `&` removed. `LocaleController` still stores `localeInfo.version` when `getLocaleFileStrings` fails, and it only replaces the file on `from_version == 0`. `langpack.getDifference` at `61638734` was therefore empty, and a phone that had saved the broken file kept it until something asked for the whole pack. The XML-safe cutover was `61730399`. The rebrand that removed the remaining Telegram name is `61730400`, which is the same full-replace cutover moved forward: `android_xml_fix_version` is `61730400`. `getDifference` with `0 < from_version < 61730400` returns the whole pack and `from_version=0`, so a phone still at `61638734` or `61730399` replaces the cached file. A client already at `61730400` receives an empty difference. `getLangPack` is unchanged: it is always `from_version=0`.
+Production `35aed0c` already served these packs at `61638734` with the bare `&` removed. `LocaleController` still stores `localeInfo.version` when `getLocaleFileStrings` fails, and it only replaces the file on `from_version == 0`. `langpack.getDifference` at `61638734` was therefore empty, and a phone that had saved the broken file kept it until something asked for the whole pack. The XML-safe cutover was `61730399`. The rebrand that removed the remaining Telegram name is `61730400`, which is the same full-replace cutover moved forward: `android_xml_fix_version` is `61730400`. `getDifference` with `0 < from_version < 61730400` returns the whole pack and `from_version=0`, so a phone still at `61638734` or `61730399` replaces the cached file. Before the Tellomi key fill, a client already at `61730400` received an empty difference. `getLangPack` is unchanged: it is always `from_version=0`.
 
 A value that contains `<` is escaped to `&lt;` by the client. On the next read that sets `reloadLastFile`, so `applyLanguage` asks for `getLangPack` again. The file is still applied. Strings that are not XML-safe are dropped before they are served; Greek `SentAppCode` is repaired to `**Tellomi**` instead of a broken `<![CDATA[` marker. The packs do not contain `SearchEngine[0-9]+(Name|SearchURL|AutocompleteURL|PrivacyPolicyURL)`.
 
@@ -80,6 +80,22 @@ Keys that are not in the official export are machine-translated and stored with 
 python3 scripts/langpack_official.py --codes el,th,hi
 python3 scripts/langpack_fill.py
 python3 scripts/langpack_gap.py
+```
+
+Tellomi product keys (navigation, Moments, login) are compared with the client catalogs by `scripts/langpack_gap.py`. The working trees are Android `master` and iOS `release/ios`. Extra open PRs are `pr:N` refs: the command fetches the head and reads translation tables in the PR body. `--apply` writes every Android and iOS language, bumps that pack's version by one, and refreshes `data/langpack/tellomi-client-keys.json`. `go test ./pkg/langpack` fails if any listed key is missing.
+
+```bash
+python3 scripts/langpack_gap.py \
+  --android /path/to/Telegram \
+  --ios /path/to/Telegram-iOS \
+  --upstream-android /tmp/upstream/android-en.xml \
+  --upstream-ios /tmp/upstream/ios-en.strings \
+  --android-ref pr:134 \
+  --android-ref pr:135 \
+  --ios-ref pr:161 \
+  --ios-ref pr:160 \
+  --ios-ref pr:162 \
+  --apply
 ```
 
 ## Deploy
