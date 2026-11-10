@@ -47,10 +47,9 @@ CREATE TABLE IF NOT EXISTS media_external_refs (
 // It is valid JSON and contains no text and no media.
 const Tombstone = `{}`
 
-// The expressions match the functional indexes in
-// migrate-20261103-media-retention.sql. MySQL uses the index only when the
-// query repeats them verbatim.
+// Generated columns from migrate-20261125-media-json-columns.sql.
+// Filtering on the column is what makes MySQL use the secondary index.
 const (
-	exprDocumentID = "JSON_VALUE(message_data, '$.media.document.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR)"
-	exprPhotoID    = "JSON_VALUE(message_data, '$.media.photo_FLAGPHOTO.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR)"
+	exprDocumentID = "media_document_id"
+	exprPhotoID    = "media_photo_id"
 )

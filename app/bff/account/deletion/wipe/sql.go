@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
@@ -15,10 +17,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// The JSON paths match the functional indexes used by media retention.
+// Generated columns from migrate-20261125-media-json-columns.sql.
 const (
-	exprDocumentID = "JSON_VALUE(message_data, '$.media.document.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR)"
-	exprPhotoID    = "JSON_VALUE(message_data, '$.media.photo_FLAGPHOTO.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR)"
+	exprDocumentID = "media_document_id"
+	exprPhotoID    = "media_photo_id"
 )
 
 const gcSchema = `
@@ -52,7 +54,7 @@ type SQL struct {
 
 // OpenSQL opens MySQL and creates the garbage-collection queue if needed.
 func OpenSQL(dsn string, shards int) (*SQL, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

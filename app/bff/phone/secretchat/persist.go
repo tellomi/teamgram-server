@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/teamgram/proto/mtproto"
@@ -306,7 +308,7 @@ type sqlBackend struct {
 }
 
 func openSQL(dsn string) (*sqlBackend, error) {
-	conn, err := sql.Open("mysql", dsn)
+	conn, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

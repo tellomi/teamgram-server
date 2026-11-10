@@ -2,11 +2,12 @@ package catalog
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -156,7 +157,7 @@ func ReloadPublicObjects(ctx context.Context, dsn string) error {
 	if dsn == "" {
 		return nil
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}

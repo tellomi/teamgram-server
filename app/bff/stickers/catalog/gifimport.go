@@ -19,6 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/teamgram-server/app/service/dfs/objectstore"
 )
 
@@ -311,7 +313,7 @@ func ImportGifs(dsn, dir string, opt GifImportOptions) error {
 	if client == nil {
 		return fmt.Errorf("object storage is not configured (TELLOMI_S3_*)")
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}

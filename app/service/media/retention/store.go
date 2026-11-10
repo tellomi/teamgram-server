@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/proto"
 )
 
-// The JSON paths of message media in messages.message_data. The migration
-// creates functional indexes on exactly these expressions; MySQL only uses
-// an index when the query repeats the expression verbatim.
+// Generated columns from migrate-20261125-media-json-columns.sql. Filtering
+// on the column is what makes MySQL use the secondary index. The values
+// match the old signed JSON extraction: NULL when the path is missing or
+// the conversion fails.
 const (
-	exprDocumentID = "JSON_VALUE(message_data, '$.media.document.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR)"
-	exprPhotoID    = "JSON_VALUE(message_data, '$.media.photo_FLAGPHOTO.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR)"
+	exprDocumentID = "media_document_id"
+	exprPhotoID    = "media_photo_id"
 )
 
 // Peer types in messages.peer_type.
@@ -53,7 +56,7 @@ type SQLStore struct {
 }
 
 func OpenSQL(dsn string) (*SQLStore, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +134,7 @@ func (s *SQLStore) MessageHolders(ctx context.Context, kind Kind, id int64) ([]H
 	default:
 		return nil, nil
 	}
-	// IN (?) matches the index expression; MySQL picks a range scan.
+	// The predicate is the generated column, so MySQL can range-scan its index.
 	rows, err := s.DB.QueryContext(ctx, `SELECT DISTINCT user_id, peer_type, peer_id FROM messages WHERE `+expr+` IN (?) AND deleted = 0`, id)
 	if err != nil {
 		return nil, fmt.Errorf("message holders of %s %d: %w", kind, id, err)

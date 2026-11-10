@@ -2,12 +2,13 @@ package catalog
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 )
 
 // foreignSeedNames are the placeholder packs. They stay fetchable by short
@@ -29,7 +30,7 @@ func DropForeignSeeds(dsn string) error {
 	if dsn == "" {
 		return fmt.Errorf("TEAMGRAM_MYSQL_DSN or -dsn is required")
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}

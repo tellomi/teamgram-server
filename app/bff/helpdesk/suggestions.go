@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -48,7 +50,7 @@ func Open(dsn string, offer []string) *Suggestions {
 	if dsn == "" {
 		return st
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		logx.Errorf("helpdesk: mysql unavailable, suggestions stay in memory: %v", err)
 		return st

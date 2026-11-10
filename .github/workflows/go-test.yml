@@ -16,7 +16,7 @@ jobs:
   test:
     name: go-test
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,6 +38,9 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go test ./...
+
+      - name: MySQL 8.0.13 migrations and JSON equivalence
+        run: TEAMGRAM_MYSQL_COMPAT=1 go test ./teamgramd/deploy/sqlmigrate/ -count=1 -timeout 25m -run 'TestMySQLCompat'
 
       - name: Langpack host rewrite
         working-directory: scripts

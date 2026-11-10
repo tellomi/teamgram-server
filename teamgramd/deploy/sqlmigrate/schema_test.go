@@ -58,6 +58,11 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["users"]["email"] {
 		t.Fatal("users.email missing after migrations")
 	}
+	for _, col := range []string{"media_document_id", "media_photo_id"} {
+		if !cols["messages"][col] {
+			t.Errorf("messages.%s missing after migrations", col)
+		}
+	}
 	if !cols["documents"]["sha256"] || !cols["documents"]["blob_id"] {
 		t.Fatal("documents sha256/blob_id missing after migrations")
 	}
@@ -364,6 +369,69 @@ func TestAdvertSQLIsNotAppliedOnStartup(t *testing.T) {
 	}
 }
 
+func TestMediaJSONColumnsMigration(t *testing.T) {
+	dir := sqlDir(t)
+	raw := mustRead(t, filepath.Join(dir, "migrate-20261125-media-json-columns.sql"))
+	for _, s := range []string{
+		"$.media.document.id",
+		"$.media.photo_FLAGPHOTO.id",
+		"GENERATED ALWAYS AS",
+		"STORED",
+		"JSON_EXTRACT",
+		"JSON_UNQUOTE",
+		"REGEXP_REPLACE",
+		"ALGORITHM=COPY, LOCK=SHARED",
+		"write-freeze",
+		"PREPARE teamgram_ps FROM @teamgram_stmt",
+		"ADD COLUMN `media_document_id`",
+		"ADD COLUMN `media_photo_id`",
+		"ADD INDEX `media_document_id`",
+		"ADD INDEX `media_photo_id`",
+		"DROP INDEX `media_document_id`",
+		"DROP INDEX `media_photo_id`",
+	} {
+		if !strings.Contains(raw, s) {
+			t.Errorf("media json migration missing %s", s)
+		}
+	}
+	if strings.Count(raw, "ADD COLUMN `media_document_id`") != 1 || strings.Count(raw, "ADD COLUMN `media_photo_id`") != 1 {
+		t.Fatal("media id columns are not added exactly once")
+	}
+	alter := raw[strings.Index(raw, "ADD COLUMN `media_document_id`"):]
+	if !strings.Contains(alter, "ADD COLUMN `media_photo_id`") || !strings.Contains(alter, "ADD INDEX `media_photo_id`") {
+		t.Fatal("both columns and both indexes are not in one ALTER")
+	}
+	if strings.Contains(raw, "TRIM(LEADING '' \t") || strings.Contains(raw, "TRIM(LEADING '' \\t") {
+		t.Fatal("TRIM still removes a space+tab prefix instead of each whitespace character")
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(s, "--") {
+			continue
+		}
+		if strings.Contains(s, "JSON_VALUE") {
+			t.Fatalf("executable JSON_VALUE remains: %s", s)
+		}
+	}
+	old := mustRead(t, filepath.Join(dir, "migrate-20261103-media-retention.sql"))
+	if strings.Contains(old, "JSON_VALUE") {
+		t.Fatal("media-retention migration still creates a JSON_VALUE index")
+	}
+	root := filepath.Join(dir, "..", "..", "..")
+	for _, rel := range []string{
+		"app/service/media/retention/store.go",
+		"app/service/mediapurge/schema.go",
+		"app/bff/account/deletion/wipe/sql.go",
+		"pkg/mediaaccess/store.go",
+		filepath.Join("e2e", "client", "media_retention_test.go"),
+	} {
+		text := mustRead(t, filepath.Join(root, rel))
+		if strings.Contains(text, "JSON_VALUE") {
+			t.Errorf("%s still queries JSON_VALUE", rel)
+		}
+	}
+}
+
 func TestMigrateScriptParsesDSN(t *testing.T) {
 	script := filepath.Join("..", "migrate.sh")
 	if _, err := os.Stat(script); err != nil {
@@ -376,6 +444,34 @@ func TestMigrateScriptParsesDSN(t *testing.T) {
 	}
 	if out != "teamgram secret db.internal 3307 teamgram" {
 		t.Fatalf("parsed dsn = %q", out)
+	}
+}
+
+func TestMigrateScriptSSLArgs(t *testing.T) {
+	script := filepath.Join("..", "migrate.sh")
+	dir := t.TempDir()
+	mock := filepath.Join(dir, "mysql")
+	if err := os.WriteFile(mock, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(ca string) string {
+		t.Helper()
+		cmd := "source " + script + "\nMYSQL_PASSWORD=secret mysql_cli -e 'SELECT 1'\n"
+		c := exec.Command("bash", "-c", cmd)
+		c.Env = []string{"PATH=" + dir + ":" + os.Getenv("PATH"), "TEAMGRAM_MYSQL_TLS_CA=" + ca}
+		out, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatalf("ca %q: %v\n%s", ca, err, out)
+		}
+		return string(out)
+	}
+	plain := run("")
+	if strings.Contains(plain, "ssl-mode") || strings.Contains(plain, "ssl-ca") {
+		t.Fatalf("ssl flags without a CA:\n%s", plain)
+	}
+	with := run("/opt/tellomi/ca.pem")
+	if !strings.Contains(with, "--ssl-mode=VERIFY_CA") || !strings.Contains(with, "--ssl-ca=/opt/tellomi/ca.pem") {
+		t.Fatalf("ssl flags:\n%s", with)
 	}
 }
 
@@ -434,6 +530,16 @@ func applyMigration(cols map[string]map[string]bool, text string) {
 			if c := colRe.FindStringSubmatch(line); c != nil {
 				set[c[1]] = true
 			}
+		}
+	}
+	for _, col := range []string{"media_document_id", "media_photo_id"} {
+		if strings.Contains(text, "ADD COLUMN `"+col+"`") {
+			set := cols["messages"]
+			if set == nil {
+				set = map[string]bool{}
+				cols["messages"] = set
+			}
+			set[col] = true
 		}
 	}
 	// date_actived -> date_active

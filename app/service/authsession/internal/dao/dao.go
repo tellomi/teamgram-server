@@ -12,8 +12,9 @@ package dao
 import (
 	"flag"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/teamgram-server/app/service/authsession/internal/config"
 	"github.com/teamgram/teamgram-server/pkg/geoip"
 
@@ -46,7 +47,7 @@ func geoIPPath() string {
 }
 
 func New(c config.Config) *Dao {
-	db := sqlx.NewMySQL(&c.Mysql)
+	db := mysqltls.NewMySQL(&c.Mysql)
 
 	return &Dao{
 		Mysql:      newMysqlDao(db),

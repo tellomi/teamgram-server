@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -32,7 +34,7 @@ type MySQL struct {
 
 // OpenMySQL opens the teamgram database.
 func OpenMySQL(dsn string) (*MySQL, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

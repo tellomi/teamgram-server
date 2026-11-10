@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/teamgram/proto/mtproto"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -50,7 +52,7 @@ func OpenSaved(dsn string) *SQLSaved {
 	if dsn == "" {
 		return nil
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil
 	}

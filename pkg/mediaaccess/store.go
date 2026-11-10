@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	"github.com/go-sql-driver/mysql"
 )
 
@@ -20,7 +22,7 @@ func Open(dsn string) (*Store, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, nil
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +59,7 @@ func (s *Store) UserSeesDocument(ctx context.Context, userID, docID int64) (bool
 	err := s.db.QueryRowContext(ctx, `
 SELECT 1 FROM messages
 WHERE user_id = ? AND deleted = 0
-AND JSON_VALUE(message_data, '$.media.document.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR) = ?
+AND media_document_id = ?
 LIMIT 1`, userID, docID).Scan(&one)
 	if err == nil {
 		return true, nil

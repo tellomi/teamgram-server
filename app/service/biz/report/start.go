@@ -2,7 +2,6 @@ package report
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"net"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -86,7 +87,7 @@ func UseDSN(dsn string) error {
 // OpenMySQL connects, creates the reports tables, backfills story_reports,
 // and returns a service. Review and snapshots stay off.
 func OpenMySQL(dsn string) (*Service, error) {
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

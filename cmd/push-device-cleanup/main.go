@@ -8,11 +8,12 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	"github.com/teamgram/teamgram-server/pkg/push"
 
@@ -41,7 +42,7 @@ func run(ctx context.Context, dsn string, dryRun, backupDone bool) error {
 	} else if !backupDone {
 		fmt.Fprintln(os.Stderr, backupInstructions())
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -20,7 +22,7 @@ func Open(dsn string) (*MySQL, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("empty mysql dsn")
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}

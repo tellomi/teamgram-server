@@ -13,6 +13,7 @@ import (
 	"github.com/IBM/sarama"
 	kafka "github.com/teamgram/marmota/pkg/mq"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/stores/cache"
 	"github.com/zeromicro/go-zero/core/stores/redis"
@@ -129,10 +130,15 @@ func Retry(ctx context.Context, name string, fn func() error) error {
 }
 
 // MustMySQL opens MySQL, backing off while the server refuses connections.
+// TLS setup is not retried: a bad CA file fails before the dial loop.
 func MustMySQL(c *sqlx.Config) *sqlx.DB {
+	prepared, err := mysqltls.Prepare(c)
+	if err != nil {
+		logx.Must(err)
+	}
 	return mustValue("mysql", func() (db *sqlx.DB, err error) {
 		defer recoverErr(&err)
-		db = sqlx.NewMySQL(c)
+		db = sqlx.NewMySQL(prepared)
 		return db, nil
 	})
 }

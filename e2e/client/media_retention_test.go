@@ -164,7 +164,7 @@ UPDATE photos SET date2 = %d WHERE photo_id = %d;`, old, joinIDs(ids), old, phot
 	expectBytes("young", docLocation(youngDoc))
 
 	// Text survives: the message that carried the expired file is still there.
-	if n := strings.TrimSpace(mustSQL(t, fmt.Sprintf(`SELECT COUNT(*) FROM messages WHERE user_id = %d AND deleted = 0 AND JSON_VALUE(message_data, '$.media.document.id' RETURNING SIGNED NULL ON EMPTY NULL ON ERROR) IN (%d)`, dave.ID, freeDoc.GetId()))); n == "0" {
+	if n := strings.TrimSpace(mustSQL(t, fmt.Sprintf(`SELECT COUNT(*) FROM messages WHERE user_id = %d AND deleted = 0 AND media_document_id IN (%d)`, dave.ID, freeDoc.GetId()))); n == "0" {
 		t.Error("message with expired media was removed")
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+
 	mysqldriver "github.com/go-sql-driver/mysql"
 )
 
@@ -19,7 +21,7 @@ func OpenMySQL(dsn string, cfg Config) (*Service, error) {
 	if _, err := databaseName(dsn); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +50,7 @@ func Migrate(dsn string) error {
 	if _, err := databaseName(dsn); err != nil {
 		return err
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
 		return err
 	}
