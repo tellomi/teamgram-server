@@ -30,12 +30,46 @@ func TestTranscribeAudioIsNotPremiumOrStub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = a.Invoke(ctx, &mtproto.TLMessagesTranscribeAudio{
-		Constructor: mtproto.CRC32_messages_transcribeAudio,
-		Peer:        peer,
-		MsgId:       id,
+	// sendMessage can return an id before this session's get-message read
+	// sees the row. That read answers MSG_ID_INVALID until the row is there.
+	// Once history shows the text, a text message must be MEDIA_EMPTY.
+	ready, cancelReady := context.WithTimeout(ctx, 8*time.Second)
+	defer cancelReady()
+	var last string
+	err = waitUntil(ready, 200*time.Millisecond, func() (bool, error) {
+		msgs, herr := a.History(ready, peer, 30)
+		if herr != nil {
+			return false, herr
+		}
+		if idOfText(msgs, "not a voice note") != id {
+			last = "history missing the text"
+			return false, nil
+		}
+		_, terr := a.Invoke(ready, &mtproto.TLMessagesTranscribeAudio{
+			Constructor: mtproto.CRC32_messages_transcribeAudio,
+			Peer:        peer,
+			MsgId:       id,
+		})
+		rpc, ok := asRPCError(terr)
+		if !ok {
+			return false, terr
+		}
+		last = rpc.Message
+		msg := strings.ToUpper(rpc.Message)
+		if strings.Contains(msg, "PREMIUM_ACCOUNT_REQUIRED") || strings.Contains(msg, "TRANSCRIPTION_FAILED") {
+			return false, terr
+		}
+		if strings.Contains(msg, "MEDIA_EMPTY") {
+			return true, nil
+		}
+		if strings.Contains(msg, "MSG_ID_INVALID") {
+			return false, nil
+		}
+		return false, terr
 	})
-	assertTranscribeError(t, err, "MEDIA_EMPTY")
+	if err != nil {
+		t.Fatalf("transcribeAudio last %q: %v", last, err)
+	}
 }
 
 func assertTranscribeError(t *testing.T, err error, want string) {
