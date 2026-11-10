@@ -16,7 +16,7 @@ import (
 )
 
 // TestTTLMediaExpiry covers view-once photo, timed video, and view-once voice
-// between two 999661 accounts. B opens each one. A is pushed
+// between ttl_a and ttl_b. B opens each one. A is pushed
 // updateReadMessagesContents with a date. After expiry both histories show
 // the empty media form, getFile fails, forward is refused, and B's second
 // session sees the same read update.
@@ -25,14 +25,22 @@ func TestTTLMediaExpiry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	a := dialTTL(t, ctx, cfg, ProfileIOS, "9996610111", "TTLAlice")
-	b := dialTTL(t, ctx, cfg, ProfileIOS, "9996610112", "TTLBob")
-	b2 := dialTTL(t, ctx, cfg, ProfileAndroid, "9996610112", "TTLBob")
-	bobID, bobHash, err := a.ImportPhone(ctx, "9996610112", "TTLBob")
+	aPhone, err := cfg.Phone("ttl_a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	aliceID, aliceHash, err := b.ImportPhone(ctx, "9996610111", "TTLAlice")
+	bPhone, err := cfg.Phone("ttl_b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := dialTTL(t, ctx, cfg, ProfileIOS, aPhone.Number, "TTLAlice")
+	b := dialTTL(t, ctx, cfg, ProfileIOS, bPhone.Number, "TTLBob")
+	b2 := dialTTL(t, ctx, cfg, ProfileAndroid, bPhone.Number, "TTLBob")
+	bobID, bobHash, err := a.ImportPhone(ctx, bPhone.Number, "TTLBob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliceID, aliceHash, err := b.ImportPhone(ctx, aPhone.Number, "TTLAlice")
 	if err != nil {
 		t.Fatal(err)
 	}
