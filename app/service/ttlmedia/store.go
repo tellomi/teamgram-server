@@ -355,8 +355,11 @@ func (s *Store) save(ctx context.Context, b boxRow, raw string) error {
 	if qtable == "" {
 		return nil
 	}
+	// Leave media_unread for the inbox consumer. It sends
+	// updateReadMessagesContents only while the column is still set, and this
+	// rewrite often commits before that consumer runs.
 	_, err := s.db.ExecContext(ctx, `
-UPDATE `+qtable+` SET message_data = ?, media_unread = 0
+UPDATE `+qtable+` SET message_data = ?
 WHERE user_id = ? AND user_message_box_id = ? AND deleted = 0`, raw, b.UserID, b.BoxID)
 	return err
 }

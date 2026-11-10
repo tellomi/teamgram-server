@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,14 +25,14 @@ func TestTTLMediaExpiry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
-	a := dialTTL(t, ctx, cfg, ProfileIOS, "9996610090", "TTLAlice")
-	b := dialTTL(t, ctx, cfg, ProfileIOS, "9996610091", "TTLBob")
-	b2 := dialTTL(t, ctx, cfg, ProfileAndroid, "9996610091", "TTLBob")
-	bobID, bobHash, err := a.ImportPhone(ctx, "9996610091", "TTLBob")
+	a := dialTTL(t, ctx, cfg, ProfileIOS, "9996610111", "TTLAlice")
+	b := dialTTL(t, ctx, cfg, ProfileIOS, "9996610112", "TTLBob")
+	b2 := dialTTL(t, ctx, cfg, ProfileAndroid, "9996610112", "TTLBob")
+	bobID, bobHash, err := a.ImportPhone(ctx, "9996610112", "TTLBob")
 	if err != nil {
 		t.Fatal(err)
 	}
-	aliceID, aliceHash, err := b.ImportPhone(ctx, "9996610090", "TTLAlice")
+	aliceID, aliceHash, err := b.ImportPhone(ctx, "9996610111", "TTLAlice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,14 +61,27 @@ func TestTTLMediaExpiry(t *testing.T) {
 			t.Fatal("timed video was sent without media_unread")
 		}
 		before := time.Now()
+		aPts, aQts, aDate, err := a.State(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
 		readContents(t, ctx, b, bID)
-		if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-			date, ok := pushedReadContents(a.Pushed(), aID)
+		wait, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := waitUntil(wait, 300*time.Millisecond, func() (bool, error) {
+			if date, ok := pushedReadContents(a.Pushed(), aID); ok && freshDate(date, before) {
+				return true, nil
+			}
+			diff, err := a.Difference(ctx, aPts, aQts, aDate)
+			if err != nil {
+				return false, err
+			}
+			date, ok := readContentsIn(diff, aID)
 			return ok && freshDate(date, before), nil
 		}); err != nil {
-			t.Fatalf("sender was not pushed updateReadMessagesContents with date: %v", err)
+			t.Fatalf("sender was not pushed updateReadMessagesContents with date: %v; pushed=%s", err, pushedSummary(a.Pushed()))
 		}
-		if err := waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
+		if err := waitUntil(wait, 400*time.Millisecond, func() (bool, error) {
 			if date, ok := pushedReadContents(b2.Pushed(), bID); ok && freshDate(date, before) {
 				return true, nil
 			}
@@ -130,14 +144,27 @@ func dialTTL(t *testing.T, ctx context.Context, cfg Config, profile Profile, num
 func openAndCheck(t *testing.T, ctx context.Context, a, b, b2 *Client, aToB, bToA *mtproto.InputPeer, aID, bID int32, loc *mtproto.InputFileLocation) {
 	t.Helper()
 	before := time.Now()
+	aPts, aQts, aDate, err := a.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	readContents(t, ctx, b, bID)
-	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		date, ok := pushedReadContents(a.Pushed(), aID)
+	wait, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := waitUntil(wait, 300*time.Millisecond, func() (bool, error) {
+		if date, ok := pushedReadContents(a.Pushed(), aID); ok && freshDate(date, before) {
+			return true, nil
+		}
+		diff, err := a.Difference(ctx, aPts, aQts, aDate)
+		if err != nil {
+			return false, err
+		}
+		date, ok := readContentsIn(diff, aID)
 		return ok && freshDate(date, before), nil
 	}); err != nil {
-		t.Fatalf("sender was not pushed updateReadMessagesContents with date on %d: %v", aID, err)
+		t.Fatalf("sender was not pushed updateReadMessagesContents with date on %d: %v; pushed=%s", aID, err, pushedSummary(a.Pushed()))
 	}
-	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+	if err := waitUntil(wait, 300*time.Millisecond, func() (bool, error) {
 		date, ok := pushedReadContents(b2.Pushed(), bID)
 		if ok && freshDate(date, before) {
 			return true, nil
@@ -157,7 +184,7 @@ func openAndCheck(t *testing.T, ctx context.Context, a, b, b2 *Client, aToB, bTo
 		d, ok := readContentsIn(diff, bID)
 		return ok && freshDate(d, before), nil
 	}); err != nil {
-		t.Fatalf("second session did not sync read contents for %d: %v", bID, err)
+		t.Fatalf("second session did not sync read contents for %d: %v; pushed=%s", bID, err, pushedSummary(b2.Pushed()))
 	}
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		return expiredTTL(historyMsg(t, ctx, a, aToB, aID)) && expiredTTL(historyMsg(t, ctx, b, bToA, bID)), nil
@@ -254,6 +281,19 @@ func expectForwardRefused(t *testing.T, ctx context.Context, c *Client, from, to
 	}
 }
 
+func pushedSummary(objs []mtproto.TLObject) string {
+	var b strings.Builder
+	for _, obj := range objs {
+		for _, u := range updatesOf(obj) {
+			fmt.Fprintf(&b, "%s%v ", u.GetPredicateName(), u.GetMessages())
+		}
+	}
+	if b.Len() == 0 {
+		return "none"
+	}
+	return b.String()
+}
+
 func pushedReadContents(objs []mtproto.TLObject, msgID int32) (int32, bool) {
 	for _, obj := range objs {
 		if date, ok := readContentsIn(obj, msgID); ok {
@@ -264,19 +304,7 @@ func pushedReadContents(objs []mtproto.TLObject, msgID int32) (int32, bool) {
 }
 
 func readContentsIn(obj mtproto.TLObject, msgID int32) (int32, bool) {
-	var ups []*mtproto.Update
-	switch v := obj.(type) {
-	case *mtproto.TLUpdates:
-		ups = v.GetUpdates()
-	case *mtproto.TLUpdatesCombined:
-		ups = v.GetUpdates()
-	case *mtproto.TLUpdateShort:
-		ups = []*mtproto.Update{v.GetUpdate()}
-	case *mtproto.TLUpdatesDifference:
-		ups = v.GetOtherUpdates()
-	case *mtproto.TLUpdatesDifferenceSlice:
-		ups = v.GetOtherUpdates()
-	}
+	ups := updatesOf(obj)
 	for _, u := range ups {
 		if u.GetPredicateName() != mtproto.Predicate_updateReadMessagesContents {
 			continue
