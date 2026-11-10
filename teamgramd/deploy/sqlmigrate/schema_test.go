@@ -379,17 +379,30 @@ func TestMediaJSONColumnsMigration(t *testing.T) {
 		"STORED",
 		"JSON_EXTRACT",
 		"JSON_UNQUOTE",
+		"REGEXP_REPLACE",
+		"ALGORITHM=COPY, LOCK=SHARED",
+		"write-freeze",
 		"PREPARE teamgram_ps FROM @teamgram_stmt",
-		"CALL teamgram_add_column('messages', 'media_document_id'",
-		"CALL teamgram_add_column('messages', 'media_photo_id'",
-		"CALL teamgram_add_index('messages', 'media_document_id'",
-		"CALL teamgram_add_index('messages', 'media_photo_id'",
+		"ADD COLUMN `media_document_id`",
+		"ADD COLUMN `media_photo_id`",
+		"ADD INDEX `media_document_id`",
+		"ADD INDEX `media_photo_id`",
 		"DROP INDEX `media_document_id`",
 		"DROP INDEX `media_photo_id`",
 	} {
 		if !strings.Contains(raw, s) {
 			t.Errorf("media json migration missing %s", s)
 		}
+	}
+	if strings.Count(raw, "ADD COLUMN `media_document_id`") != 1 || strings.Count(raw, "ADD COLUMN `media_photo_id`") != 1 {
+		t.Fatal("media id columns are not added exactly once")
+	}
+	alter := raw[strings.Index(raw, "ADD COLUMN `media_document_id`"):]
+	if !strings.Contains(alter, "ADD COLUMN `media_photo_id`") || !strings.Contains(alter, "ADD INDEX `media_photo_id`") {
+		t.Fatal("both columns and both indexes are not in one ALTER")
+	}
+	if strings.Contains(raw, "TRIM(LEADING '' \t") || strings.Contains(raw, "TRIM(LEADING '' \\t") {
+		t.Fatal("TRIM still removes a space+tab prefix instead of each whitespace character")
 	}
 	for _, line := range strings.Split(raw, "\n") {
 		s := strings.TrimSpace(line)
@@ -517,6 +530,16 @@ func applyMigration(cols map[string]map[string]bool, text string) {
 			if c := colRe.FindStringSubmatch(line); c != nil {
 				set[c[1]] = true
 			}
+		}
+	}
+	for _, col := range []string{"media_document_id", "media_photo_id"} {
+		if strings.Contains(text, "ADD COLUMN `"+col+"`") {
+			set := cols["messages"]
+			if set == nil {
+				set = map[string]bool{}
+				cols["messages"] = set
+			}
+			set[col] = true
 		}
 	}
 	// date_actived -> date_active
