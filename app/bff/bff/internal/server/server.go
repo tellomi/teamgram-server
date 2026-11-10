@@ -243,6 +243,7 @@ func (s *Server) Initialize() error {
 				DialogClient:  c.BizServiceClient,
 				MediaClient:   c.MediaClient,
 				SyncClient:    c.SyncClient,
+				IdgenClient:   c.IdgenClient,
 			}))
 		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
 		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment(c.BizServiceClient))
@@ -417,6 +418,8 @@ func (s *Server) Initialize() error {
 			UserClient:    c.BizServiceClient,
 			ChatClient:    c.BizServiceClient,
 			SyncClient:    c.SyncClient,
+			IdgenClient:   c.IdgenClient,
+			MysqlDSN:      c.ChannelMySQL,
 		})
 		mtproto.RegisterRPCFoldersServer(grpcServer, folderSvc)
 		mtproto.RegisterRPCFolderTagsServer(grpcServer, folderSvc)

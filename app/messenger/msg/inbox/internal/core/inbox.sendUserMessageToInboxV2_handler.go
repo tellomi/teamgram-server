@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/pkg/archive"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -164,6 +165,8 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				err   error
 			)
 
+			peerType, peerID := inboxDialogPeer(in)
+			existed, folderID := c.inboxFolder(in.UserId, peerType, peerID)
 			switch in.PeerType {
 			case mtproto.PEER_USER:
 				inBox, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
@@ -259,6 +262,24 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 			}
 
 			c.persistPtsUpdate(c.ctx, inBox.UserId, updateNewMessage)
+			// Message pts is stored first. A folder move takes the next pts so
+			// getDifference replays the message and then the archive change.
+			if !existed || folderID == 1 {
+				class := inboxPeerClass(in.PeerType)
+				if in.PeerType == mtproto.PEER_USER {
+					class = c.userClass(in.UserId, peerID)
+				}
+				for _, upd := range c.svcCtx.Dao.ArchiveIncoming(c.ctx, archive.Incoming{
+					Owner:    in.UserId,
+					PeerType: peerType,
+					PeerID:   peerID,
+					Sender:   in.FromId,
+					Class:    class,
+					Created:  !existed,
+				}) {
+					pushUpdates.PushBackUpdate(upd)
+				}
+			}
 
 			if isBot {
 				if c.svcCtx.Dao.BotSyncClient != nil {

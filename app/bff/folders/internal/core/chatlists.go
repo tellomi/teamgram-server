@@ -13,6 +13,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/archive"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
@@ -283,19 +284,13 @@ func updatesOf(upds ...*mtproto.Update) *mtproto.Updates {
 	return mtproto.MakeUpdatesByUpdates(upds...)
 }
 
-// folderPeerUpdates is the folders.editPeerFolders result.
-// pts and pts_count stay 0 so clients apply the archive change without
-// opening an updates.getDifference gap. Sync delivers the same update to
-// other sessions in pure push mode.
-func folderPeerUpdates(peers []*mtproto.FolderPeer) *mtproto.Updates {
-	if peers == nil {
-		peers = []*mtproto.FolderPeer{}
-	}
-	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateFolderPeers(&mtproto.Update{
-		FolderPeers: peers,
-		Pts_INT32:   0,
-		PtsCount:    0,
-	}).To_Update())
+// folderPeerUpdates is the folders.editPeerFolders result. pts is the user's
+// next pts and pts_count is 1 when that pts was stored in user_pts_updates.
+// Other sessions receive the same update. A session that misses the push
+// loads it from updates.getDifference. pts 0 is only used when idgen is not
+// configured; clients then apply the folder move without a difference gap.
+func folderPeerUpdates(peers []*mtproto.FolderPeer, pts int32) *mtproto.Updates {
+	return mtproto.MakeUpdatesByUpdates(archive.NewFolderPeersUpdate(peers, pts))
 }
 
 func refFromInput(self int64, peer *mtproto.InputPeer) (peerRef, error) {

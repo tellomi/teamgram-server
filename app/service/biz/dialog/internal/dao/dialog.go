@@ -135,5 +135,6 @@ func (d *Dao) GetDialogByPeerDialogId(ctx context.Context, userId, peerDialogId 
 		return nil, err
 	}
 
+	d.applyStoredFolderIDs(ctx, userId, []*dialog.DialogExt{dlgExt})
 	return dlgExt, nil
 }

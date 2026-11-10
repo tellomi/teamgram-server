@@ -43,6 +43,9 @@
     "purge_hist_b": {"number": "9996610115", "code": "11111"},
     "purge_dedup_a": {"number": "9996610116", "code": "11111"},
     "purge_dedup_b": {"number": "9996610117", "code": "11111"},
-    "purge_ch_a": {"number": "9996610118", "code": "11111"}
+    "purge_ch_a": {"number": "9996610118", "code": "11111"},
+    "archive_a": {"number": "9996610121", "code": "11111"},
+    "archive_b": {"number": "9996610122", "code": "11111"},
+    "archive_c": {"number": "9996610123", "code": "11111"}
   }
 }

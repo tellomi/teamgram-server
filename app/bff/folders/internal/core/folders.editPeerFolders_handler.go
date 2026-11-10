@@ -1,8 +1,11 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/pkg/archive"
 )
 
 // FoldersEditPeerFolders
@@ -90,9 +93,36 @@ func (c *FoldersCore) FoldersEditPeerFolders(in *mtproto.TLFoldersEditPeerFolder
 			return nil, err
 		}
 	}
-	upd := folderPeerUpdates(folderPeers)
+	upd := folderPeerUpdates(folderPeers, c.allocFolderPts(folderPeers))
 	if len(upd.GetUpdates()) == 1 {
 		c.pushNotMe(upd.GetUpdates()[0])
 	}
 	return upd, nil
+}
+
+// allocFolderPts stores updateFolderPeers on the user's pts sequence and
+// returns that pts. Zero means the process has no idgen or MySQL client;
+// the update is still pushed, with pts_count 0.
+func (c *FoldersCore) allocFolderPts(peers []*mtproto.FolderPeer) int32 {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.NextPts == nil || c.userID() == 0 {
+		return 0
+	}
+	writer := archive.SeqWriter{Next: ptsFunc(c.svcCtx.Dao.NextPts), Save: c.svcCtx.Dao.SavePts}
+	upd, err := writer.FolderPeers(c.ctx, c.userID(), peers)
+	if err != nil {
+		c.Logger.Errorf("folders.editPeerFolders - pts: %v", err)
+	}
+	if upd == nil {
+		return 0
+	}
+	return upd.GetPts_INT32()
+}
+
+type ptsFunc func(ctx context.Context, userID int64) int32
+
+func (f ptsFunc) NextPtsId(ctx context.Context, key int64) int32 {
+	if f == nil {
+		return 0
+	}
+	return f(ctx, key)
 }

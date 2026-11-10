@@ -7,14 +7,15 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 )
 
-func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList) dialog.DialogExtList {
+func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID int32) dialog.DialogExtList {
 	if c.svcCtx.Plugin == nil {
-		return list
+		return keepFolder(list, folderID)
 	}
 	extras, err := c.svcCtx.Plugin.ListChannelDialogs(c.ctx, c.MD.UserId)
 	if err != nil || len(extras) == 0 {
-		return list
+		return keepFolder(list, folderID)
 	}
+	c.stampChannelFolders(extras)
 	have := map[int64]bool{}
 	for _, ext := range extras {
 		if peer := ext.GetDialog().GetPeer(); peer != nil {
@@ -29,7 +30,79 @@ func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList) dialog.Dial
 		}
 		out = append(out, ext)
 	}
-	return append(out, extras...)
+	for _, ext := range extras {
+		if ext == nil || ext.GetDialog() == nil {
+			continue
+		}
+		if ext.GetDialog().GetFolderId().GetValue() != folderID {
+			continue
+		}
+		out = append(out, ext)
+	}
+	return keepFolder(out, folderID)
+}
+
+// stampChannelFolders copies dialogs.folder_id onto channel dialogs. The
+// channel store does not keep the archive bit, so a bare channel dialog would
+// always be reported in the main list.
+func (c *DialogsCore) stampChannelFolders(list dialog.DialogExtList) {
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.DialogClient == nil || len(list) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(list))
+	for _, ext := range list {
+		peer := ext.GetDialog().GetPeer()
+		if peer == nil || peer.GetChannelId() == 0 {
+			continue
+		}
+		ids = append(ids, mtproto.MakePeerDialogId(mtproto.PEER_CHANNEL, peer.GetChannelId()))
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := c.svcCtx.Dao.DialogClient.DialogGetDialogsByIdList(c.ctx, &dialog.TLDialogGetDialogsByIdList{
+		UserId: c.MD.UserId,
+		IdList: ids,
+	})
+	if err != nil || rows == nil {
+		return
+	}
+	folderOf := map[int64]int32{}
+	for _, row := range rows.GetDatas() {
+		peer := row.GetDialog().GetPeer()
+		if peer == nil || peer.GetChannelId() == 0 || row.GetDialog().GetTopMessage() == 0 {
+			continue
+		}
+		folderOf[peer.GetChannelId()] = row.GetDialog().GetFolderId().GetValue()
+	}
+	for _, ext := range list {
+		peer := ext.GetDialog().GetPeer()
+		if peer == nil {
+			continue
+		}
+		if folderID, ok := folderOf[peer.GetChannelId()]; ok {
+			ext.Dialog.FolderId = mtproto.MakeFlagsInt32(folderID)
+		}
+	}
+}
+
+func keepFolder(list dialog.DialogExtList, folderID int32) dialog.DialogExtList {
+	out := make(dialog.DialogExtList, 0, len(list))
+	for _, ext := range list {
+		if ext == nil || ext.GetDialog() == nil {
+			continue
+		}
+		if ext.GetDialog().GetPredicateName() == mtproto.Predicate_dialogFolder {
+			if folderID == 0 {
+				out = append(out, ext)
+			}
+			continue
+		}
+		if ext.GetDialog().GetFolderId().GetValue() == folderID {
+			out = append(out, ext)
+		}
+	}
+	return out
 }
 
 func (c *DialogsCore) ensureChannelPeers(list dialog.DialogExtList, peers []*mtproto.PeerUtil) dialog.DialogExtList {
@@ -48,6 +121,7 @@ func (c *DialogsCore) ensureChannelPeers(list dialog.DialogExtList, peers []*mtp
 		}
 		ext, err := c.svcCtx.Plugin.GetChannelDialogById(c.ctx, c.MD.UserId, peer.PeerId)
 		if err == nil && ext != nil {
+			c.stampChannelFolders(dialog.DialogExtList{ext})
 			list = append(list, ext)
 			have[peer.PeerId] = true
 		}

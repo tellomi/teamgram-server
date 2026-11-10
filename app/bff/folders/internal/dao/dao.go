@@ -1,12 +1,19 @@
 package dao
 
 import (
+	"context"
+	"os"
+	"strings"
+
 	"github.com/teamgram/marmota/pkg/net/rpcx"
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/teamgram-server/app/bff/folders/internal/config"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
+	"github.com/teamgram/teamgram-server/pkg/archive"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 )
 
@@ -15,6 +22,8 @@ type Dao struct {
 	user_client.UserClient
 	chat_client.ChatClient
 	sync_client.SyncClient
+	NextPts func(ctx context.Context, userID int64) int32
+	SavePts archive.SavePts
 }
 
 func New(c config.Config) *Dao {
@@ -27,6 +36,17 @@ func New(c config.Config) *Dao {
 	// the standalone folders process; the in-process bff always sets this.
 	if c.ChatClient.Etcd.Key != "" || len(c.ChatClient.Endpoints) > 0 {
 		d.ChatClient = chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient))
+	}
+	if len(c.IdgenClient.Etcd.Hosts) > 0 || len(c.IdgenClient.Endpoints) > 0 {
+		gen := idgen_client.NewIDGenClient2(rpcx.GetCachedRpcClient(c.IdgenClient))
+		d.NextPts = gen.NextPtsId
+	}
+	dsn := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN"))
+	if dsn == "" {
+		dsn = strings.TrimSpace(c.MysqlDSN)
+	}
+	if dsn != "" {
+		d.SavePts = archive.SavePtsSQL(sqlx.NewMySQL(&sqlx.Config{DSN: dsn}))
 	}
 	return d
 }

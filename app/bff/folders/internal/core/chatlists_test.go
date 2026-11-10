@@ -168,7 +168,7 @@ func TestChatlistResultsEncode(t *testing.T) {
 			Peer:     peerRef{Kind: "channel", ID: 8}.peer(),
 			FolderId: 1,
 		}).To_FolderPeer(),
-	})
+	}, 0)
 	mustEncode(t, archived)
 	if archived.GetUpdates()[0].GetPtsCount() != 0 {
 		t.Fatal("pts_count")

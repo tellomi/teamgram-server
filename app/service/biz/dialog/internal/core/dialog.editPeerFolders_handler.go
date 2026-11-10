@@ -79,7 +79,10 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 	sort.Sort(sd)
 
 	// update
-	c.svcCtx.Dao.DialogsDAO.UpdatePeerDialogListFolderId(c.ctx, in.FolderId, in.UserId, in.PeerDialogList)
+	if _, err := c.svcCtx.Dao.DialogsDAO.UpdatePeerDialogListFolderId(c.ctx, in.FolderId, in.UserId, in.PeerDialogList); err != nil {
+		c.Logger.Errorf("dialog.editPeerFolders - error: %v", err)
+		return nil, err
+	}
 
 	if in.FolderId == 0 {
 		cap := pinnedCap(c, in.UserId)
@@ -96,18 +99,16 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 
 	// getDialogs reads these lists and the dialog row from cache. Without
 	// dropping them, a chat stays in the main list until the entry expires.
-	keys := []string{
-		dialog.GetPinnedDialogIdListCacheKey(in.UserId),
-		dialog.GetNotPinnedDialogIdListCacheKey(in.UserId),
-		dialog.GetFolderPinnedDialogIdListCacheKey(in.UserId),
-		dialog.GetFolderNotPinnedDialogIdListCacheKey(in.UserId),
-	}
-	for _, id := range in.PeerDialogList {
-		keys = append(keys, dialog.GetDialogCacheKey(in.UserId, id))
-	}
-	c.svcCtx.Dao.CachedConn.Exec(c.ctx, func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-		return 0, 1, nil
-	}, keys...)
+	// CachedConn.Exec deletes the keys whenever the callback returns a nil
+	// error. The rows-affected count is not consulted, so (0, 0, nil) evicts
+	// the same way (0, 1, nil) does. This runs after the pin trim so a
+	// following read cannot cache the pre-trim pin list.
+	c.svcCtx.Dao.CachedConn.Exec(
+		c.ctx,
+		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+			return 0, 0, nil
+		},
+		dialogCacheKeys(in.UserId, in.PeerDialogList)...)
 
 	return &dialog.Vector_DialogPinnedExt{
 		Datas: dialogPinnedList,
@@ -117,6 +118,20 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 type userPremiumRow struct {
 	Premium           int   `db:"premium"`
 	PremiumExpireDate int64 `db:"premium_expire_date"`
+}
+
+func dialogCacheKeys(userID int64, peerDialogIDs []int64) []string {
+	keys := make([]string, 0, len(peerDialogIDs)+4)
+	for _, id := range peerDialogIDs {
+		keys = append(keys, dialog.GetDialogCacheKey(userID, id))
+	}
+	keys = append(keys,
+		dialog.GetPinnedDialogIdListCacheKey(userID),
+		dialog.GetNotPinnedDialogIdListCacheKey(userID),
+		dialog.GetFolderPinnedDialogIdListCacheKey(userID),
+		dialog.GetFolderNotPinnedDialogIdListCacheKey(userID),
+	)
+	return keys
 }
 
 func pinnedCap(c *DialogCore, userID int64) int {

@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 )
 
@@ -44,6 +45,16 @@ func (s *Service) ChannelsGetFullChannel(ctx context.Context, in *mtproto.TLChan
 		return nil, err
 	}
 	full.Users = s.users(ctx, md.GetUserId(), md.GetUserId())
+	if full.GetFullChat() != nil && s.svcCtx.DialogClient != nil && full.GetFullChat().GetId() != 0 {
+		ext, err := s.svcCtx.DialogClient.DialogGetDialogById(ctx, &dialog.TLDialogGetDialogById{
+			UserId:   md.GetUserId(),
+			PeerType: mtproto.PEER_CHANNEL,
+			PeerId:   full.GetFullChat().GetId(),
+		})
+		if err == nil && ext != nil && ext.GetDialog() != nil {
+			full.FullChat.FolderId = ext.GetDialog().GetFolderId()
+		}
+	}
 	return full, nil
 }
 
