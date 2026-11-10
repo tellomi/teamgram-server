@@ -58,4 +58,4 @@ jobs:
         env:
           TELLOMI_RELIABILITY_SKIP_BUILD: "1"
           TELLOMI_E2E_ROOT: ${{ github.workspace }}
-        run: go test -tags reliability -count=1 -timeout 8m -v -run 'TestReliability' .
+        run: ../../teamgramd/bin/reliability.test -test.count=1 -test.timeout 8m -test.v -test.run 'TestReliability'
