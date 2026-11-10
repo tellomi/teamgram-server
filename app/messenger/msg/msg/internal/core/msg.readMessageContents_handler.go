@@ -11,12 +11,15 @@ package core
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/app/service/ttlmedia"
+	"github.com/zeromicro/go-zero/core/jsonx"
 )
 
 // MsgReadMessageContents
@@ -35,6 +38,17 @@ func (c *MsgCore) MsgReadMessageContents(in *msg.TLMsgReadMessageContents) (*mtp
 
 	if ptsCount > 0 {
 		pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.UserId, int(ptsCount))
+		// The reader's other devices sync through getDifference. The live
+		// push is SyncUpdatesNotMe in the bff; this row is what an offline
+		// session replays. date is the open time Android uses for the countdown.
+		ids := make([]int32, 0, len(in.Id))
+		for _, m := range in.Id {
+			ids = append(ids, m.Id)
+		}
+		upd := mtproto.MakeUpdateReadMessagesContents(ids, pts, ptsCount, int32(time.Now().Unix()))
+		if _, err := c.svcCtx.Dao.AddToPtsQueueE(c.ctx, in.UserId, pts, ptsCount, upd); err != nil {
+			c.Logger.Errorf("readMessageContents - persist reader pts: %v", err)
+		}
 	} else {
 		ptsCount = 0
 		pts = c.svcCtx.Dao.IDGenClient2.CurrentPtsId(c.ctx, in.UserId)
@@ -121,6 +135,7 @@ func (c *MsgCore) readMediaUnreadMessageContents(in *msg.TLMsgReadMessageContent
 			if m.MediaUnread {
 				ptsCount++
 				c.svcCtx.Dao.MessagesDAO.UpdateMediaUnread(c.ctx, in.UserId, m.Id)
+				due, dialogID := c.noteTTLOpen(in.UserId, m.Id)
 				if in.UserId != in.PeerId {
 					c.svcCtx.Dao.InboxClient.InboxReadMediaUnreadToInboxV2(
 						c.ctx, &inbox.TLInboxReadMediaUnreadToInboxV2{
@@ -129,6 +144,13 @@ func (c *MsgCore) readMediaUnreadMessageContents(in *msg.TLMsgReadMessageContent
 							PeerId:          in.UserId,
 							DialogMessageId: m.DialogMessageId,
 						})
+				}
+				if due {
+					if st := ttlmedia.Default(); st != nil {
+						if err := st.Strip(c.ctx, dialogID); err != nil {
+							c.Logger.Errorf("ttl media strip dialog %d: %v", dialogID, err)
+						}
+					}
 				}
 			}
 		}
@@ -140,6 +162,7 @@ func (c *MsgCore) readMediaUnreadMessageContents(in *msg.TLMsgReadMessageContent
 			if m.MediaUnread {
 				ptsCount++
 				c.svcCtx.Dao.MessagesDAO.UpdateMediaUnread(c.ctx, in.UserId, m.Id)
+				due, dialogID := c.noteTTLOpen(in.UserId, m.Id)
 				c.svcCtx.Dao.InboxClient.InboxReadMediaUnreadToInboxV2(
 					c.ctx, &inbox.TLInboxReadMediaUnreadToInboxV2{
 						UserId:          m.SendUserId,
@@ -147,6 +170,13 @@ func (c *MsgCore) readMediaUnreadMessageContents(in *msg.TLMsgReadMessageContent
 						PeerId:          in.PeerId,
 						DialogMessageId: m.DialogMessageId,
 					})
+				if due {
+					if st := ttlmedia.Default(); st != nil {
+						if err := st.Strip(c.ctx, dialogID); err != nil {
+							c.Logger.Errorf("ttl media strip dialog %d: %v", dialogID, err)
+						}
+					}
+				}
 			}
 		}
 
@@ -195,4 +225,33 @@ func (c *MsgCore) readReactionUnreadMessageContents(in *msg.TLMsgReadMessageCont
 			dialog.GetDialogCacheKey(in.UserId, mtproto.MakePeerDialogId(in.PeerType, in.PeerId)))
 	}
 	return 0, nil
+}
+
+// noteTTLOpen starts the self-destruct clock when the recipient opens ttl
+// media. The sender's own outgoing copy is not an open: official clients
+// start the timer only on the incoming side. A saved-message chat is the
+// exception, because the reader is the only participant.
+func (c *MsgCore) noteTTLOpen(userID int64, boxID int32) (bool, int64) {
+	st := ttlmedia.Default()
+	if st == nil {
+		return false, 0
+	}
+	do, err := c.svcCtx.Dao.MessagesDAO.SelectByMessageId(c.ctx, userID, boxID)
+	if err != nil || do == nil {
+		return false, 0
+	}
+	selfChat := do.PeerType == mtproto.PEER_SELF || (do.PeerType == mtproto.PEER_USER && do.PeerId == userID)
+	if do.SenderUserId == userID && !selfChat {
+		return false, 0
+	}
+	var msg mtproto.Message
+	if jsonx.UnmarshalFromString(do.MessageData, &msg) != nil {
+		return false, 0
+	}
+	due, err := st.Opened(c.ctx, do.DialogMessageId, &msg, int32(time.Now().Unix()))
+	if err != nil {
+		c.Logger.Errorf("ttl media open dialog %d: %v", do.DialogMessageId, err)
+		return false, 0
+	}
+	return due, do.DialogMessageId
 }

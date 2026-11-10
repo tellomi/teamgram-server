@@ -41,6 +41,7 @@ import (
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
+	"github.com/teamgram/teamgram-server/app/service/ttlmedia"
 	"github.com/teamgram/teamgram-server/pkg/archive"
 	"github.com/teamgram/teamgram-server/pkg/deduplication"
 
@@ -78,6 +79,11 @@ func NewServiceContext(c config.Config, plugin plugin.MsgPlugin) *ServiceContext
 	}
 	installChannelHooks(c, svcCtx.Dao)
 	installStoryPaint(c, svcCtx.Dao.UserClient)
+	if st, err := ttlmedia.Open(c.Mysql.DSN); err != nil {
+		logx.Errorf("ttl media: %v", err)
+	} else {
+		ttlmedia.Start(st)
+	}
 	return svcCtx
 }
 

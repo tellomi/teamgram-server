@@ -19,6 +19,8 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -52,11 +54,8 @@ func (c *InboxCore) InboxReadMediaUnreadToInboxV2(in *inbox.TLInboxReadMediaUnre
 		return nil, mtproto.ErrInternalServerError
 	}
 
-	updateReadMessagesContents := mtproto.MakeTLUpdateReadMessagesContents(&mtproto.Update{
-		Messages:  []int32{unreadDO.UserMessageBoxId},
-		Pts_INT32: pts,
-		PtsCount:  1,
-	}).To_Update()
+	updateReadMessagesContents := mtproto.MakeUpdateReadMessagesContents(
+		[]int32{unreadDO.UserMessageBoxId}, pts, 1, int32(time.Now().Unix()))
 	c.persistPtsUpdate(c.ctx, in.UserId, updateReadMessagesContents)
 
 	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{

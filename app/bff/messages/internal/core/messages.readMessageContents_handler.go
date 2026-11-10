@@ -112,17 +112,14 @@ func (c *MessagesCore) MessagesReadMessageContents(in *mtproto.TLMessagesReadMes
 			c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(ctx, &sync.TLSyncUpdatesNotMe{
 				UserId:        c.MD.UserId,
 				PermAuthKeyId: c.MD.PermAuthKeyId,
-				Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateReadMessagesContents(&mtproto.Update{
-					Messages:  in.Id,
-					Pts_INT32: affected.Pts,
-					PtsCount:  affected.PtsCount,
-				}).To_Update()),
+				Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeUpdateReadMessagesContents(
+					in.Id, affected.Pts, affected.PtsCount, now)),
 			})
 		}).(*mtproto.Messages_AffectedMessages), nil
 }
 
-// noteExpiry records a view-once open and a private ttl in this process so
-// upload.getFile can refuse the bytes. It does not delete a database row.
+// noteExpiry records a view-once open in this process. The durable clock,
+// the expired message body, and the getFile refusal live in the msg service.
 func noteExpiry(user int64, box *mtproto.MessageBox, now int32) {
 	if box == nil || box.GetMessage() == nil {
 		return
