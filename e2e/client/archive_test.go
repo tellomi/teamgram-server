@@ -415,7 +415,7 @@ func userAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, u := range usersOf(obj) {
+	for _, u := range archiveUsers(obj) {
 		if u != nil && u.GetId() == id && u.GetAccessHash() != nil {
 			return u.GetAccessHash().GetValue()
 		}
@@ -424,7 +424,7 @@ func userAccess(t *testing.T, ctx context.Context, c *Client, id int64) int64 {
 	return 0
 }
 
-func usersOf(obj mtproto.TLObject) []*mtproto.User {
+func archiveUsers(obj mtproto.TLObject) []*mtproto.User {
 	switch d := obj.(type) {
 	case *mtproto.TLMessagesDialogs:
 		return d.GetUsers()
@@ -451,7 +451,7 @@ func editPeerFolder(t *testing.T, ctx context.Context, c *Client, peer *mtproto.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, upd := range updatesOf(obj) {
+	for _, upd := range archiveUpdates(obj) {
 		if upd.GetPredicateName() == mtproto.Predicate_updateFolderPeers {
 			return upd
 		}
@@ -460,7 +460,7 @@ func editPeerFolder(t *testing.T, ctx context.Context, c *Client, peer *mtproto.
 	return nil
 }
 
-func updatesOf(obj mtproto.TLObject) []*mtproto.Update {
+func archiveUpdates(obj mtproto.TLObject) []*mtproto.Update {
 	switch v := obj.(type) {
 	case *mtproto.TLUpdates:
 		return v.GetUpdates()
