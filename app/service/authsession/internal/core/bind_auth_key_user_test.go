@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/app/service/authsession/internal/config"
 	"github.com/teamgram/teamgram-server/app/service/authsession/internal/dao"
@@ -61,8 +62,12 @@ func TestBindAuthKeyUserNormalizesTempKey(t *testing.T) {
 		AuthKeyId: temp,
 		UserId:    other,
 	})
-	if !errors.Is(err, dao.ErrAuthKeyUserConflict) {
+	if !errors.Is(err, mtproto.ErrAuthKeyUnregistered) {
 		t.Fatalf("second owner err=%v", err)
+	}
+	rpc := mtproto.NewRpcError(err)
+	if rpc.GetErrorCode() != 401 || rpc.GetErrorMessage() != "AUTH_KEY_UNREGISTERED" {
+		t.Fatalf("client would see code=%d message=%s", rpc.GetErrorCode(), rpc.GetErrorMessage())
 	}
 	owner2, hash2, deleted2 := oneUser(t, db, perm)
 	if owner2 != owner || hash2 != hash || deleted2 != deleted {

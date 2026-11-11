@@ -177,7 +177,7 @@ func (c *AuthsessionCore) AuthsessionBindTempAuthKey(in *authsession.TLAuthsessi
 			if exist := c.svcCtx.Dao.GetAuthKeyUserId(c.ctx, bindAuthKeyInner.GetPermAuthKeyId()); exist == 0 {
 				if _, err = c.svcCtx.Dao.BindAuthKeyUser(c.ctx, bindAuthKeyInner.GetPermAuthKeyId(), uid); err != nil {
 					c.Logger.Errorf("auth.bindTempAuthKey - bind user on perm key: %v", err)
-					return nil, err
+					return nil, mapBindAuthKeyUserError(err)
 				}
 			}
 		}
