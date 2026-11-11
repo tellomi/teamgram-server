@@ -188,14 +188,29 @@ func qrAcceptAfterWrite(writeErr error, state int, readErr error, release func()
 
 // releaseClaimScript deletes the key only when its value is still the owner
 // token from this attempt. A newer claim with a different token stays.
-const releaseClaimScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`
+// ARGV[1] is this attempt's owner token. ARGV[2] is the qr state hash.
+// The claim is removed only when that hash is still New (or absent) and the
+// token still matches. Accepted state keeps the claim for its real owner.
+const releaseClaimScript = `
+local stateKey = ARGV[2]
+if stateKey ~= nil and stateKey ~= '' then
+  local state = redis.call('HGET', stateKey, 'state')
+  if state and state ~= false and state ~= '1' then
+    return 0
+  end
+end
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`
 
 // ReleaseQRLogin deletes the claim only when it is still this attempt's token.
 func (d *Dao) ReleaseQRLogin(ctx context.Context, keyId int64, token string) error {
 	if d == nil || d.kv == nil || keyId == 0 || token == "" {
 		return fmt.Errorf("qr claim unavailable")
 	}
-	_, err := d.kv.EvalCtx(ctx, releaseClaimScript, fmt.Sprintf("qr_claim_%d", keyId), token)
+	_, err := d.kv.EvalCtx(ctx, releaseClaimScript, fmt.Sprintf("qr_claim_%d", keyId), token, genQRLoginCodeKey(keyId))
 	return err
 }
 

@@ -73,9 +73,15 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 	}
 
 	switch qrCode.State {
-	case model.QRCodeStateNew, model.QRCodeStateAccepted, model.QRCodeStateSuccess:
-		// Accepted or Success can be this user's own retry after a lost
-		// response or a failed bind. A different user is rejected below.
+	case model.QRCodeStateNew:
+	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+		// The record already names who accepted it. Another caller must not
+		// reach user lookup or bind this device to themselves.
+		if qrCode.UserId != c.MD.UserId {
+			err := mtproto.ErrAuthTokenAccepted
+			c.Logger.Errorf("auth.acceptLoginToken - other user")
+			return nil, err
+		}
 	default:
 		err := mtproto.ErrAuthTokenInvalid
 		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
@@ -95,7 +101,7 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		c.Logger.Errorf("auth.acceptLoginToken - claim: %v", claimErr)
 		return nil, claimErr
 	}
-	switch decideQRAccept(qrCode.State, claimed, claimOwnerID(token), c.MD.UserId) {
+	switch decideQRAccept(qrCode.State, claimed, claimOwnerID(token), c.MD.UserId, qrCode.UserId) {
 	case qrReject:
 		err := mtproto.ErrAuthTokenAccepted
 		c.Logger.Errorf("auth.acceptLoginToken - already claimed")
@@ -198,12 +204,15 @@ const (
 // New while this user already owns the claim, so the retry must mark and
 // continue. Accepted or Success for that same owner resumes the bind.
 // Another user's claim is rejected.
-func decideQRAccept(state int, won bool, owner, caller int64) int {
+func decideQRAccept(state int, won bool, owner, caller, recordedUser int64) int {
 	if caller == 0 || owner != caller {
 		return qrReject
 	}
 	switch state {
 	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+		if recordedUser != caller {
+			return qrReject
+		}
 		return qrResume
 	case model.QRCodeStateNew:
 		_ = won

@@ -37,7 +37,19 @@ func TestIndependentReleaseKeepsTheNewOwner(t *testing.T) {
 	if err != nil || got != "8:new" {
 		t.Fatalf("new owner deleted: %q %v", got, err)
 	}
-	if _, err = rds.EvalCtx(ctx, releaseClaimScript, []string{"qr_claim_9"}, "8:new"); err != nil {
+	if err = rds.HsetCtx(ctx, "qr_codes_9", "state", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = rds.EvalCtx(ctx, releaseClaimScript, []string{"qr_claim_9"}, "8:new", "qr_codes_9"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = rds.GetCtx(ctx, "qr_claim_9"); got != "8:new" {
+		t.Fatalf("accepted state deleted the claim: %q", got)
+	}
+	if err = rds.HsetCtx(ctx, "qr_codes_9", "state", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = rds.EvalCtx(ctx, releaseClaimScript, []string{"qr_claim_9"}, "8:new", "qr_codes_9"); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ = rds.GetCtx(ctx, "qr_claim_9"); got != "" {
