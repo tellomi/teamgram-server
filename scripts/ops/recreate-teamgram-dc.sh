@@ -65,6 +65,11 @@ if [[ "$1" == "rollback" ]]; then
     echo "backup container ${BAK} is missing or not usable; production left unchanged" >&2
     exit 1
   fi
+  if ! docker inspect "$NAME" >/dev/null 2>&1; then
+    docker rename "$BAK" "$NAME"
+    docker start "$NAME"
+    exit 0
+  fi
   docker stop "$NAME"
   docker rename "$NAME" "${NAME}.rollback-hold"
   docker rename "$BAK" "$NAME"

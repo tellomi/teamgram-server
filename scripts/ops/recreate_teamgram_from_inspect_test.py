@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixture check: recreate keeps ports, networks, and non-DC env."""
 
+import gzip
 import json
 import os
 import struct
@@ -182,7 +183,8 @@ class FrameTest(unittest.TestCase):
     def test_gzip_result_after_unrelated_frame(self):
         hg = self.hg
         req_id = 7
-        packed = zlib.compress(self._config())
+        packed = gzip.compress(self._config())
+        self.assertTrue(packed.startswith(b"\x1f\x8b"))
         gzip_obj = hg.GZIP_PACKED.to_bytes(4, "little") + hg.tl_bytes(packed)
         first = self._outer((0x9EC20908).to_bytes(4, "little") + b"\x33" * 24)
         second = self._outer(self._rpc(req_id, gzip_obj))
@@ -194,6 +196,19 @@ class FrameTest(unittest.TestCase):
         ]
         opts = hg.dc_options_from_packets(packets, auth, req_id)
         self.assertEqual([o["port"] for o in opts], [10443, 443])
+
+    def test_zlib_payload_is_a_readable_error(self):
+        hg = self.hg
+        req_id = 9
+        packed = zlib.compress(self._config())
+        self.assertFalse(packed.startswith(b"\x1f\x8b"))
+        zlib_obj = hg.GZIP_PACKED.to_bytes(4, "little") + hg.tl_bytes(packed)
+        with self.assertRaises(ValueError) as caught:
+            hg.find_rpc_results(self._rpc(req_id, zlib_obj), req_id)
+        message = str(caught.exception)
+        self.assertNotIn("Traceback", message)
+        self.assertNotIn("incorrect header", message)
+        self.assertIn("1f8b", message)
 
     def test_reads_dc_option_blob(self):
         hg = self.hg

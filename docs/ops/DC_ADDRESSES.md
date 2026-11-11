@@ -294,8 +294,9 @@ chmod 755 /var/backups/recreate-teamgram-dc.sh /var/backups/recreate_teamgram_fr
 /var/backups/recreate-teamgram-dc.sh apply
 ```
 
-`apply` 自己会调用 `help.getConfig`，等 bff 起来（大约 8 秒，最多重试约
-30 秒）。健康标准是读回的四条，顺序不限：
+`apply` 自己会调用 `help.getConfig`。bff 大约 8 秒才起来。健康检查最多
+6 次，每次脚本超时 8 秒，失败后再等 5 秒，最坏约 6×(8+5) 秒。健康标准是
+读回的四条，顺序不限：
 
 ```
 1 8.137.198.240 10443 ipv6=0
@@ -335,8 +336,9 @@ set -euo pipefail
 
 `rollback` 先检查 `tellomi-main-teamgram.dc-bak` 在、镜像名非空、状态是
 created、running、exited 或 paused。不满足就直接退出，不停止、不改名生产
-容器。检查通过后才停当前容器，把备份改回 `tellomi-main-teamgram` 并
-start。再跑一次读取脚本会再建一把未登录 auth key。读回来的
+容器。生产容器已经不在、备份仍可用时，直接把备份改名为
+`tellomi-main-teamgram` 并 start。两边都在时，才停当前容器，把备份改回原名
+并 start。再跑一次读取脚本会再建一把未登录 auth key。读回来的
 `help.getConfig` 应与 apply 之前一致。已经存下地址的手机会继续先拨那个地址。
 要让它们离开 240，先按上面的重叠列表同时公布新旧地址。发现失败时客户端仍会
 试种子域名 `api.tellomi.cn`。

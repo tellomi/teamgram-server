@@ -8,6 +8,7 @@ for each dcOption. Does not print the auth key or the RSA key.
 """
 
 import argparse
+import gzip
 import hashlib
 import os
 import socket
@@ -15,7 +16,6 @@ import struct
 import subprocess
 import sys
 import time
-import zlib
 
 REQ_PQ = 0xBE7E8EF1
 RES_PQ = 0x05162463
@@ -321,10 +321,14 @@ def _ctor(buf):
 
 
 def unwrap_gzip(buf):
+    """MTProto gzip_packed is a gzip stream (header 1f 8b), not a raw zlib stream."""
     if _ctor(buf) != GZIP_PACKED:
         return buf
-    packed, _ = tl_read_bytes(buf, 4)
-    return zlib.decompress(packed)
+    try:
+        packed, _ = tl_read_bytes(buf, 4)
+        return gzip.decompress(packed)
+    except (OSError, ValueError, IndexError, struct.error):
+        raise ValueError("gzip_packed: cannot decompress (expected gzip header 1f8b)") from None
 
 
 def find_rpc_results(obj, req_msg_id):
