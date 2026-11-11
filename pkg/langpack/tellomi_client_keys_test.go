@@ -123,7 +123,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 				t.Fatalf("%s %s lang %q plural %q", tc.platform, code, pack.lang, pack.plural)
 			}
 			if tc.platform == "android" {
-				if pack.version != 61730403 || pack.fix != 61730400 {
+				if pack.version != 61730404 || pack.fix != 61730400 {
 					t.Fatalf("android %s version %d fix %d", code, pack.version, pack.fix)
 				}
 			}
@@ -139,10 +139,10 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 					t.Fatalf("%s %s missing %s", tc.platform, code, key)
 				}
 				// Changed or new strings are at the pack version. Strings this
-				// fill left alone stay at the previous pack, or up to three
-				// further back if they were already unchanged in #298, #299,
-				// and #302.
-				if ver < pack.version-4 || ver > pack.version {
+				// fill left alone stay at an earlier pack, up to four behind
+				// after the #302 crash-prompt bump and this Moments follow-up
+				// on the 11 languages that had no iOS .lproj.
+				if ver < pack.version-5 || ver > pack.version {
 					t.Fatalf("%s %s %s string version %d pack %d", tc.platform, code, key, ver, pack.version)
 				}
 			}
@@ -219,6 +219,25 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 		{"ios", "zh-hant", "Moments.Outbox.Incomplete", "附件不見了，所以這則動態沒有送出。"},
 		{"ios", "zh-hant", "Moments_Comment_SendFailed", "留言沒有送出，內容還在。"},
 		{"ios", "zh-hant", "Moments_Audience_Kept", "沒能修改可見範圍，你的選擇還在。"},
+		{"ios", "ja", "Moments.Draft.Message", "この投稿を下書きとして保存しますか、それとも破棄しますか？"},
+		{"ios", "ja", "Moments.Outbox.Title", "投稿は送信されませんでした"},
+		{"ios", "ja", "Moments_Audience_Kept", "公開範囲を変更できませんでした。選択内容はそのままです。"},
+		{"ios", "ja", "CrashReport.Prompt.Title", "新しいクラッシュログがあります"},
+		{"ios", "ja", "CrashReport.Prompt.NotNow", "今はしない"},
+		{"ios", "th", "Moments.Draft.Message", "บันทึกโพสต์นี้เป็นฉบับร่าง หรือจะทิ้ง?"},
+		{"ios", "th", "Moments.Outbox.Title", "โพสต์ยังไม่ได้ส่ง"},
+		{"ios", "th", "Moments_Audience_Kept", "ไม่สามารถเปลี่ยนผู้ที่สามารถเห็นสิ่งนี้ได้ การเลือกของคุณยังคงเดิม"},
+		{"ios", "th", "CrashReport.Prompt.Title", "มีบันทึกความขัดข้องใหม่"},
+		{"ios", "th", "CrashReport.Prompt.NotNow", "ไม่ใช่ตอนนี้"},
+		{"ios", "he", "Moments.Draft.Message", "לשמור את הפוסט הזה כטיוטה או לזרוק אותו?"},
+		{"ios", "he", "Moments.Outbox.Title", "הפוסט לא נשלח"},
+		{"ios", "he", "Moments_Audience_Kept", "לא ניתן היה לשנות את מי שיכול לראות. הבחירה שלך נשמרה."},
+		{"ios", "he", "CrashReport.Prompt.Title", "יומן קריסה חדש"},
+		{"ios", "he", "CrashReport.Prompt.NotNow", "לא כעת"},
+		{"android", "en", "Moments_Audience_Kept", "Couldn't change the audience. Your selection was kept."},
+		{"android", "zh-hans", "Moments_Audience_Kept", "没能修改可见范围，你的选择还在。"},
+		{"android", "zh-hant", "Moments_Audience_Kept", "沒能修改可見範圍，你的選擇還在。"},
+		{"android", "ja", "Moments_Audience_Kept", "公開範囲を変更できませんでした。選択内容はそのままです。"},
 	}
 	for _, tc := range checks {
 		got, err := cat.Strings(tc.platform, tc.code, []string{tc.key})
@@ -263,7 +282,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	assertTellomiNotEnglish(t, "ios", iosKeys)
 
 	ver, ok := cat.Version("android", "zh-hans")
-	if !ok || ver != 61730403 {
+	if !ok || ver != 61730404 {
 		t.Fatalf("android zh-hans version %d", ver)
 	}
 	// 61730400 is the full-replace cutover. A phone still there receives the
@@ -310,6 +329,27 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	if _, ok := zhSeen["Moments_Title"]; ok {
 		t.Fatalf("android zh increment resent unchanged Moments_Title")
 	}
+	// A phone already at 61730403 receives only the updated audience-kept copy.
+	audDiff, err := cat.Difference("android", "zh-hans", 61730403)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audSeen := map[string]string{}
+	for _, s := range audDiff.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			audSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	if audDiff.GetFromVersion() != 61730403 || audDiff.GetVersion() != ver || audSeen["Moments_Audience_Kept"] != "没能修改可见范围，你的选择还在。" {
+		t.Fatalf("android audience increment from %d version %d %q", audDiff.GetFromVersion(), audDiff.GetVersion(), audSeen["Moments_Audience_Kept"])
+	}
+	if _, ok := audSeen["Moments_Title"]; ok {
+		t.Fatalf("android audience increment resent unchanged Moments_Title")
+	}
+	if _, ok := audSeen["Moments_Draft_Message"]; ok {
+		t.Fatalf("android audience increment resent unchanged Moments_Draft_Message")
+	}
+
 	ja, err := cat.Difference("android", "ja", 61730401)
 	if err != nil {
 		t.Fatal(err)
@@ -541,16 +581,17 @@ type packVersions struct {
 	strings map[string]int32
 }
 
-// iosPackVersion is one past the versions shipped in #302.
+// iosPackVersion is one past the versions shipped in #302, plus one more
+// for the 11 languages that received native Moments and CrashReport copy.
 var iosPackVersion = map[string]int32{
-	"ar": 22452761, "be": 22420173, "ca": 22412801, "cs": 22418782,
-	"de": 22431605, "el": 22202262, "en": 22347353, "es": 22412203,
-	"fa": 22437416, "fi": 22410857, "fr": 22391562, "he": 22452945,
-	"hi": 22202262, "id": 22321178, "it": 22388321, "ja": 22418208,
-	"ko": 22454173, "ms": 22352694, "nb": 22420486, "nl": 22449825,
-	"pl": 22392161, "pt-br": 22431436, "ro": 22444910, "ru": 22421470,
-	"sv": 22427917, "th": 22202262, "tr": 22434112, "uk": 22460359,
-	"uz": 22449136, "vi": 22347893, "zh-hans": 22454355, "zh-hant": 22421540,
+	"ar": 22452761, "be": 22420173, "ca": 22412801, "cs": 22418783,
+	"de": 22431605, "el": 22202263, "en": 22347353, "es": 22412203,
+	"fa": 22437416, "fi": 22410858, "fr": 22391562, "he": 22452946,
+	"hi": 22202263, "id": 22321178, "it": 22388321, "ja": 22418209,
+	"ko": 22454173, "ms": 22352694, "nb": 22420487, "nl": 22449825,
+	"pl": 22392161, "pt-br": 22431436, "ro": 22444911, "ru": 22421470,
+	"sv": 22427918, "th": 22202263, "tr": 22434112, "uk": 22460359,
+	"uz": 22449136, "vi": 22347894, "zh-hans": 22454355, "zh-hant": 22421540,
 }
 
 // pluralCodeByLang is the plural_code each pack already ships. This fill must

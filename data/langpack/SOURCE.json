@@ -36,8 +36,8 @@
       "source_file": "ios_cs_v22418772.strings",
       "source_version": 22418772,
       "strings": 12783,
-      "bytes_gz": 258527,
-      "version": 22418782
+      "bytes_gz": 258506,
+      "version": 22418783
     },
     "ios/de": {
       "source_file": "ios_de_v22431595.strings",
@@ -50,8 +50,8 @@
       "source_file": "ios_el_v22202254.strings",
       "source_version": 22202254,
       "strings": 12783,
-      "bytes_gz": 304289,
-      "version": 22202262
+      "bytes_gz": 304333,
+      "version": 22202263
     },
     "ios/es": {
       "source_file": "ios_es_v22412193.strings",
@@ -71,8 +71,8 @@
       "source_file": "ios_fi_v22410847.strings",
       "source_version": 22410847,
       "strings": 12783,
-      "bytes_gz": 240689,
-      "version": 22410857
+      "bytes_gz": 240650,
+      "version": 22410858
     },
     "ios/fr": {
       "source_file": "ios_fr_v22391552.strings",
@@ -85,15 +85,15 @@
       "source_file": "ios_he_v22452936.strings",
       "source_version": 22452936,
       "strings": 12783,
-      "bytes_gz": 245188,
-      "version": 22452945
+      "bytes_gz": 245149,
+      "version": 22452946
     },
     "ios/hi": {
       "source_file": "ios_hi_v22202254.strings",
       "source_version": 22202254,
       "strings": 12783,
-      "bytes_gz": 288335,
-      "version": 22202262
+      "bytes_gz": 288337,
+      "version": 22202263
     },
     "ios/id": {
       "source_file": "ios_id_v22321168.strings",
@@ -113,8 +113,8 @@
       "source_file": "ios_ja_v22418199.strings",
       "source_version": 22418199,
       "strings": 12783,
-      "bytes_gz": 244922,
-      "version": 22418208
+      "bytes_gz": 244897,
+      "version": 22418209
     },
     "ios/ko": {
       "source_file": "ios_ko_v22454164.strings",
@@ -134,8 +134,8 @@
       "source_file": "ios_nb_v22420476.strings",
       "source_version": 22420476,
       "strings": 12783,
-      "bytes_gz": 235501,
-      "version": 22420486
+      "bytes_gz": 235455,
+      "version": 22420487
     },
     "ios/nl": {
       "source_file": "ios_nl_v22449815.strings",
@@ -162,8 +162,8 @@
       "source_file": "ios_ro_v22444901.strings",
       "source_version": 22444901,
       "strings": 12783,
-      "bytes_gz": 247136,
-      "version": 22444910
+      "bytes_gz": 247119,
+      "version": 22444911
     },
     "ios/ru": {
       "source_file": "ios_ru_v22421461.strings",
@@ -176,15 +176,15 @@
       "source_file": "ios_sv_v22427907.strings",
       "source_version": 22427907,
       "strings": 12783,
-      "bytes_gz": 238044,
-      "version": 22427917
+      "bytes_gz": 238008,
+      "version": 22427918
     },
     "ios/th": {
       "source_file": "ios_th_v22202254.strings",
       "source_version": 22202254,
       "strings": 12783,
-      "bytes_gz": 271914,
-      "version": 22202262
+      "bytes_gz": 271864,
+      "version": 22202263
     },
     "ios/tr": {
       "source_file": "ios_tr_v22434102.strings",
@@ -211,8 +211,8 @@
       "source_file": "ios_vi_v22347884.strings",
       "source_version": 22347884,
       "strings": 12783,
-      "bytes_gz": 242450,
-      "version": 22347893
+      "bytes_gz": 242438,
+      "version": 22347894
     },
     "ios/zh-hans": {
       "source_file": "ios_zh-hans_v22454343.strings",
@@ -232,225 +232,225 @@
       "source_file": "android_en_v61510239.xml",
       "source_version": 61510239,
       "strings": 12081,
-      "bytes_gz": 193797,
-      "version": 61730403
+      "bytes_gz": 193801,
+      "version": 61730404
     },
     "android/ar": {
       "source_file": "android_ar_v61561860.xml",
       "source_version": 61561860,
       "strings": 12081,
-      "bytes_gz": 252911,
-      "version": 61730403
+      "bytes_gz": 252913,
+      "version": 61730404
     },
     "android/be": {
       "source_file": "android_be_v61501749.xml",
       "source_version": 61501749,
       "strings": 12081,
-      "bytes_gz": 273179,
-      "version": 61730403
+      "bytes_gz": 273194,
+      "version": 61730404
     },
     "android/ca": {
       "source_file": "android_ca_v61550386.xml",
       "source_version": 61550386,
       "strings": 12081,
-      "bytes_gz": 228703,
-      "version": 61730403
+      "bytes_gz": 228711,
+      "version": 61730404
     },
     "android/cs": {
       "source_file": "android_cs_v61557644.xml",
       "source_version": 61557644,
       "strings": 12081,
-      "bytes_gz": 245335,
-      "version": 61730403
+      "bytes_gz": 245350,
+      "version": 61730404
     },
     "android/de": {
       "source_file": "android_de_v61527273.xml",
       "source_version": 61527273,
       "strings": 12081,
-      "bytes_gz": 237595,
-      "version": 61730403
+      "bytes_gz": 237600,
+      "version": 61730404
     },
     "android/el": {
       "source_file": "android_el_v61638730.xml",
       "source_version": 61638730,
       "strings": 12081,
-      "bytes_gz": 279167,
-      "version": 61730403
+      "bytes_gz": 279171,
+      "version": 61730404
     },
     "android/es": {
       "source_file": "android_es_v61544495.xml",
       "source_version": 61544495,
       "strings": 12081,
-      "bytes_gz": 226482,
-      "version": 61730403
+      "bytes_gz": 226485,
+      "version": 61730404
     },
     "android/fa": {
       "source_file": "android_fa_v61544497.xml",
       "source_version": 61544497,
       "strings": 12081,
-      "bytes_gz": 251721,
-      "version": 61730403
+      "bytes_gz": 251729,
+      "version": 61730404
     },
     "android/fi": {
       "source_file": "android_fi_v61515898.xml",
       "source_version": 61515898,
       "strings": 12081,
-      "bytes_gz": 230706,
-      "version": 61730403
+      "bytes_gz": 230703,
+      "version": 61730404
     },
     "android/fr": {
       "source_file": "android_fr_v61544262.xml",
       "source_version": 61544262,
       "strings": 12081,
-      "bytes_gz": 237617,
-      "version": 61730403
+      "bytes_gz": 237616,
+      "version": 61730404
     },
     "android/he": {
       "source_file": "android_he_v61528866.xml",
       "source_version": 61528866,
       "strings": 12081,
-      "bytes_gz": 233928,
-      "version": 61730403
+      "bytes_gz": 233929,
+      "version": 61730404
     },
     "android/hi": {
       "source_file": "android_hi_v61638730.xml",
       "source_version": 61638730,
       "strings": 12081,
-      "bytes_gz": 265890,
-      "version": 61730403
+      "bytes_gz": 265910,
+      "version": 61730404
     },
     "android/id": {
       "source_file": "android_id_v61394708.xml",
       "source_version": 61394708,
       "strings": 12081,
-      "bytes_gz": 221323,
-      "version": 61730403
+      "bytes_gz": 221333,
+      "version": 61730404
     },
     "android/it": {
       "source_file": "android_it_v61520490.xml",
       "source_version": 61520490,
       "strings": 12081,
-      "bytes_gz": 225114,
-      "version": 61730403
+      "bytes_gz": 225119,
+      "version": 61730404
     },
     "android/ja": {
       "source_file": "android_ja_v61521017.xml",
       "source_version": 61521017,
       "strings": 12081,
-      "bytes_gz": 234304,
-      "version": 61730403
+      "bytes_gz": 234317,
+      "version": 61730404
     },
     "android/ko": {
       "source_file": "android_ko_v61426723.xml",
       "source_version": 61426723,
       "strings": 12081,
-      "bytes_gz": 240533,
-      "version": 61730403
+      "bytes_gz": 240539,
+      "version": 61730404
     },
     "android/ms": {
       "source_file": "android_ms_v61465153.xml",
       "source_version": 61465153,
       "strings": 12081,
-      "bytes_gz": 219181,
-      "version": 61730403
+      "bytes_gz": 219191,
+      "version": 61730404
     },
     "android/nb": {
       "source_file": "android_nb_v61522313.xml",
       "source_version": 61522313,
       "strings": 12081,
-      "bytes_gz": 225155,
-      "version": 61730403
+      "bytes_gz": 225161,
+      "version": 61730404
     },
     "android/nl": {
       "source_file": "android_nl_v61559278.xml",
       "source_version": 61559278,
       "strings": 12081,
-      "bytes_gz": 230966,
-      "version": 61730403
+      "bytes_gz": 230968,
+      "version": 61730404
     },
     "android/pl": {
       "source_file": "android_pl_v61489112.xml",
       "source_version": 61489112,
       "strings": 12081,
       "bytes_gz": 242347,
-      "version": 61730403
+      "version": 61730404
     },
     "android/pt-br": {
       "source_file": "android_pt-br_v61524288.xml",
       "source_version": 61524288,
       "strings": 12081,
-      "bytes_gz": 230397,
-      "version": 61730403
+      "bytes_gz": 230402,
+      "version": 61730404
     },
     "android/ro": {
       "source_file": "android_ro_v61551805.xml",
       "source_version": 61551805,
       "strings": 12081,
-      "bytes_gz": 235848,
-      "version": 61730403
+      "bytes_gz": 235856,
+      "version": 61730404
     },
     "android/ru": {
       "source_file": "android_ru_v61543901.xml",
       "source_version": 61543901,
       "strings": 12081,
       "bytes_gz": 264552,
-      "version": 61730403
+      "version": 61730404
     },
     "android/sv": {
       "source_file": "android_sv_v61517729.xml",
       "source_version": 61517729,
       "strings": 12081,
-      "bytes_gz": 228574,
-      "version": 61730403
+      "bytes_gz": 228584,
+      "version": 61730404
     },
     "android/th": {
       "source_file": "android_th_v61638730.xml",
       "source_version": 61638730,
       "strings": 12081,
-      "bytes_gz": 247101,
-      "version": 61730403
+      "bytes_gz": 247116,
+      "version": 61730404
     },
     "android/tr": {
       "source_file": "android_tr_v61540013.xml",
       "source_version": 61540013,
       "strings": 12081,
-      "bytes_gz": 240408,
-      "version": 61730403
+      "bytes_gz": 240405,
+      "version": 61730404
     },
     "android/uk": {
       "source_file": "android_uk_v61549555.xml",
       "source_version": 61549555,
       "strings": 12081,
-      "bytes_gz": 262451,
-      "version": 61730403
+      "bytes_gz": 262454,
+      "version": 61730404
     },
     "android/uz": {
       "source_file": "android_uz_v61558903.xml",
       "source_version": 61558903,
       "strings": 12081,
-      "bytes_gz": 231134,
-      "version": 61730403
+      "bytes_gz": 231136,
+      "version": 61730404
     },
     "android/vi": {
       "source_file": "android_vi_v61426236.xml",
       "source_version": 61426236,
       "strings": 12081,
-      "bytes_gz": 228058,
-      "version": 61730403
+      "bytes_gz": 228067,
+      "version": 61730404
     },
     "android/zh-hans": {
       "source_file": "android_zh-hans_v61570949.xml",
       "source_version": 61570949,
       "strings": 12196,
-      "bytes_gz": 245004,
-      "version": 61730403
+      "bytes_gz": 245006,
+      "version": 61730404
     },
     "android/zh-hant": {
       "source_file": "android_zh-hant_v61519200.xml",
       "source_version": 61519200,
       "strings": 12196,
-      "bytes_gz": 239684,
-      "version": 61730403
+      "bytes_gz": 239685,
+      "version": 61730404
     },
     "tdesktop/en": {
       "source_file": "tdesktop_en_v6016588.strings",
