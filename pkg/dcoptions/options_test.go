@@ -16,6 +16,7 @@ import (
 
 func TestFileDC(t *testing.T) {
 	t.Setenv(envOptions, "")
+	t.Setenv(envPublic, "8.137.198.240")
 	if FileDC() != 1 {
 		t.Fatalf("default dc %d", FileDC())
 	}
@@ -97,6 +98,7 @@ func TestParseRejects(t *testing.T) {
 func TestApplyUnsetKeepsFile(t *testing.T) {
 	t.Setenv(envOptions, "")
 	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "")
 	cfg := fileShape()
 	Apply(cfg)
 	if got := cfg.GetDcOptions(); len(got) != 1 || got[0].GetIpAddress() != "203.0.113.9" {
@@ -110,6 +112,7 @@ func TestApplyUnsetKeepsFile(t *testing.T) {
 func TestApplyInvalidKeepsFile(t *testing.T) {
 	t.Setenv(envOptions, "1:api.tellomi.cn:10443")
 	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "")
 	cfg := fileShape()
 	Apply(cfg)
 	if got := cfg.GetDcOptions(); len(got) != 1 || got[0].GetPort() != 9 {
@@ -123,6 +126,7 @@ func TestApplyInvalidKeepsFile(t *testing.T) {
 func TestApplyReplacesAndFixesWebfile(t *testing.T) {
 	t.Setenv(envOptions, "1:8.137.39.82:10443,1:8.137.39.82:5222")
 	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "")
 	cfg := fileShape()
 	Apply(cfg)
 	opts := cfg.GetDcOptions()
@@ -142,6 +146,7 @@ func TestApplyReplacesAndFixesWebfile(t *testing.T) {
 
 func TestApplyDomain(t *testing.T) {
 	t.Setenv(envOptions, "")
+	t.Setenv(envPublic, "")
 	cfg := fileShape()
 
 	t.Setenv(envDomain, "dc.example")
@@ -167,6 +172,7 @@ func TestApplyDomain(t *testing.T) {
 func TestApplyInvalidSpecStillAppliesDomain(t *testing.T) {
 	t.Setenv(envOptions, "not-an-address")
 	t.Setenv(envDomain, "-")
+	t.Setenv(envPublic, "")
 	cfg := fileShape()
 	Apply(cfg)
 	if cfg.GetWebfileDcId() != 4 || len(cfg.GetDcOptions()) != 1 {
@@ -180,6 +186,148 @@ func TestApplyInvalidSpecStillAppliesDomain(t *testing.T) {
 func TestApplyNil(t *testing.T) {
 	Apply(nil)
 	Apply(&mtproto.TLConfig{})
+}
+
+func TestParseRelayPorts(t *testing.T) {
+	opts, err := Parse("1:8.137.198.240:10443,1:8.137.198.240:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts) != 2 {
+		t.Fatalf("len %d", len(opts))
+	}
+	for i, port := range []int32{10443, 443} {
+		opt := opts[i]
+		if opt.GetId() != 1 || opt.GetIpAddress() != "8.137.198.240" || opt.GetPort() != port {
+			t.Fatalf("entry %d id=%d ip=%s port=%d", i, opt.GetId(), opt.GetIpAddress(), opt.GetPort())
+		}
+		if opt.GetIpv6() || opt.GetMediaOnly() || opt.GetCdn() || !opt.GetThisPortOnly() {
+			t.Fatalf("flags ipv6=%v media=%v cdn=%v thisPort=%v", opt.GetIpv6(), opt.GetMediaOnly(), opt.GetCdn(), opt.GetThisPortOnly())
+		}
+	}
+}
+
+func TestApplyPublicHostRewritesOriginAndKeepsFlags(t *testing.T) {
+	t.Setenv(envOptions, "")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	origin := &mtproto.DcOption{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            1,
+		IpAddress:     "8.156.40.105",
+		Port:          10443,
+		MediaOnly:     true,
+		ThisPortOnly:  true,
+	}
+	cdnOpt := &mtproto.DcOption{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            2,
+		IpAddress:     "10.20.0.218",
+		Port:          443,
+		Cdn:           true,
+		ThisPortOnly:  true,
+	}
+	domainOpt := &mtproto.DcOption{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            1,
+		IpAddress:     "api.tellomi.cn",
+		Port:          10443,
+		ThisPortOnly:  true,
+	}
+	cfg := fileShape()
+	cfg.SetThisDc(7)
+	cfg.SetDcOptions([]*mtproto.DcOption{origin, cdnOpt, domainOpt})
+	Apply(cfg)
+	if origin.GetIpAddress() != "8.156.40.105" || cdnOpt.GetIpAddress() != "10.20.0.218" {
+		t.Fatal("Apply wrote into the caller's dcOption")
+	}
+	opts := cfg.GetDcOptions()
+	if len(opts) != 3 {
+		t.Fatalf("len %d", len(opts))
+	}
+	if opts[0].GetIpAddress() != "8.137.198.240" || opts[0].GetPort() != 10443 || !opts[0].GetMediaOnly() || opts[0].GetCdn() {
+		t.Fatalf("media %+v", opts[0])
+	}
+	if opts[1].GetIpAddress() != "8.137.198.240" || opts[1].GetPort() != 443 || !opts[1].GetCdn() || opts[1].GetId() != 2 || opts[1].GetMediaOnly() {
+		t.Fatalf("cdn %+v", opts[1])
+	}
+	if opts[2].GetIpAddress() != "api.tellomi.cn" || opts[2].GetPort() != 10443 {
+		t.Fatalf("domain %+v", opts[2])
+	}
+	if cfg.GetDcTxtDomainName() != "apv2.stel.com" || cfg.GetThisDc() != 7 || cfg.GetWebfileDcId() != 1 {
+		t.Fatalf("domain %q this %d webfile %d", cfg.GetDcTxtDomainName(), cfg.GetThisDc(), cfg.GetWebfileDcId())
+	}
+	if FileDC() != 1 {
+		t.Fatalf("file dc %d", FileDC())
+	}
+}
+
+func TestApplyPublicHostFillsEmptyList(t *testing.T) {
+	t.Setenv(envOptions, "")
+	t.Setenv(envDomain, "dc.example")
+	t.Setenv(envPublic, " 8.137.198.240 ")
+	cfg := &mtproto.TLConfig{Data2: &mtproto.Config{
+		PredicateName:   mtproto.Predicate_config,
+		DcTxtDomainName: "apv2.stel.com",
+		WebfileDcId:     4,
+		ThisDc:          1,
+	}}
+	Apply(cfg)
+	opts := cfg.GetDcOptions()
+	if len(opts) != 2 {
+		t.Fatalf("len %d", len(opts))
+	}
+	for i, port := range []int32{10443, 443} {
+		opt := opts[i]
+		if opt.GetPredicateName() != mtproto.Predicate_dcOption || opt.GetId() != 1 || opt.GetIpAddress() != "8.137.198.240" || opt.GetPort() != port {
+			t.Fatalf("entry %d id=%d ip=%s port=%d predicate=%s", i, opt.GetId(), opt.GetIpAddress(), opt.GetPort(), opt.GetPredicateName())
+		}
+		if opt.GetIpv6() || opt.GetMediaOnly() || opt.GetCdn() || opt.GetStatic() || opt.GetTcpoOnly() || !opt.GetThisPortOnly() || len(opt.GetSecret()) != 0 {
+			t.Fatalf("entry %d flags", i)
+		}
+	}
+	if cfg.GetWebfileDcId() != 1 || cfg.GetDcTxtDomainName() != "dc.example" || cfg.GetThisDc() != 1 {
+		t.Fatalf("webfile %d domain %q this %d", cfg.GetWebfileDcId(), cfg.GetDcTxtDomainName(), cfg.GetThisDc())
+	}
+}
+
+func TestApplyPublicHostRewritesOptionsList(t *testing.T) {
+	t.Setenv(envOptions, "1:8.156.40.105:10443,1:8.156.40.105:443")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
+	Apply(cfg)
+	opts := cfg.GetDcOptions()
+	if len(opts) != 2 || opts[0].GetPort() != 10443 || opts[1].GetPort() != 443 {
+		t.Fatalf("%+v", opts)
+	}
+	for _, opt := range opts {
+		if opt.GetIpAddress() != "8.137.198.240" || opt.GetMediaOnly() || opt.GetCdn() || !opt.GetThisPortOnly() {
+			t.Fatalf("%+v", opt)
+		}
+	}
+}
+
+func TestApplyPublicHostInvalidLeavesList(t *testing.T) {
+	for _, host := range []string{"api.tellomi.cn", "8.137.198.240:10443", "2001:db8::1", "08.137.198.240"} {
+		t.Run(host, func(t *testing.T) {
+			t.Setenv(envOptions, "")
+			t.Setenv(envDomain, "")
+			t.Setenv(envPublic, host)
+			cfg := fileShape()
+			Apply(cfg)
+			got := cfg.GetDcOptions()
+			if len(got) != 1 || got[0].GetIpAddress() != "203.0.113.9" || got[0].GetPort() != 9 {
+				t.Fatalf("%+v", got)
+			}
+			if cfg.GetWebfileDcId() != 4 {
+				t.Fatalf("webfile %d", cfg.GetWebfileDcId())
+			}
+		})
+	}
 }
 
 func fileShape() *mtproto.TLConfig {

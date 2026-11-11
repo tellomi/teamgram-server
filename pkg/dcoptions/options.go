@@ -6,7 +6,8 @@
 //   http://www.apache.org/licenses/LICENSE-2.0
 
 // Package dcoptions fills help.getConfig dc_options from the environment.
-// teamgramd/bin/config.json stays an empty list. Unset means that empty list.
+// teamgramd/bin/config.json stays an empty list. With TELLOMI_DC_OPTIONS and
+// TELLOMI_PUBLIC_DC_HOST both unset, that empty list is what the RPC returns.
 package dcoptions
 
 import (
@@ -19,11 +20,15 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/zeromicro/go-zero/core/logx"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
 	envOptions = "TELLOMI_DC_OPTIONS"
 	envDomain  = "TELLOMI_DC_TXT_DOMAIN"
+	// envPublic is the IPv4 clients should dial. It does not change gnetway
+	// bind addresses, etcd, or any other process's host.
+	envPublic = "TELLOMI_PUBLIC_DC_HOST"
 
 	// domainBlank is the only value that clears dc_txt_domain_name.
 	// Compose always passes the variable through, so an empty value has to
@@ -36,11 +41,24 @@ const (
 	maxDCID    = 65535
 )
 
-// Apply edits cfg from TELLOMI_DC_OPTIONS and TELLOMI_DC_TXT_DOMAIN.
+// publicPorts are the TCP ports a Tellomi client can use on the public relay.
+// 10443 is the seed port. 443 is the plain MTProto port that relay forwards.
+// 5222 is not in this pair: the relay does not forward it.
+var publicPorts = []int32{10443, 443}
+
+// Apply edits cfg from TELLOMI_DC_OPTIONS, TELLOMI_PUBLIC_DC_HOST, and
+// TELLOMI_DC_TXT_DOMAIN.
+//
 // A valid options spec replaces dc_options and sets webfile_dc_id to 1.
 // The checked-in file also ships 1 (DC 4 does not exist). An empty options
 // variable leaves both fields as they were. An invalid spec is logged
 // once and also leaves them as they were. The process keeps running.
+//
+// A valid TELLOMI_PUBLIC_DC_HOST then replaces every IPv4 in that list.
+// Ports, DC ids, and flags (including media_only and cdn) stay. A domain
+// or IPv6 address stays as written. dc_txt_domain_name is not touched.
+// An empty list becomes DC 1 on 10443 and 443 at that host. An invalid
+// host is logged once and does not change the list.
 func Apply(cfg *mtproto.TLConfig) {
 	if cfg == nil || cfg.GetData2() == nil {
 		return
@@ -54,7 +72,76 @@ func Apply(cfg *mtproto.TLConfig) {
 			cfg.SetWebfileDcId(1)
 		}
 	}
+	if host, ok := publicHost(); ok {
+		cfg.SetDcOptions(publishHost(cfg.GetDcOptions(), host))
+		cfg.SetWebfileDcId(1)
+	}
 	applyDomain(cfg)
+}
+
+func publicHost() (string, bool) {
+	raw, ok := os.LookupEnv(envPublic)
+	if !ok {
+		return "", false
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	if !ipv4Address(raw) || net.ParseIP(raw).To4().String() != raw {
+		logInvalidHost(raw)
+		return "", false
+	}
+	return raw, true
+}
+
+func publishHost(opts []*mtproto.DcOption, host string) []*mtproto.DcOption {
+	out := rewriteIPv4(opts, host)
+	if len(out) == 0 {
+		return defaultPublicOptions(host)
+	}
+	return out
+}
+
+func rewriteIPv4(opts []*mtproto.DcOption, host string) []*mtproto.DcOption {
+	if len(opts) == 0 {
+		return nil
+	}
+	out := make([]*mtproto.DcOption, 0, len(opts))
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		cloned, ok := proto.Clone(opt).(*mtproto.DcOption)
+		if !ok || cloned == nil {
+			continue
+		}
+		if ipv4Address(cloned.GetIpAddress()) {
+			cloned.IpAddress = host
+		}
+		out = append(out, cloned)
+	}
+	return out
+}
+
+func defaultPublicOptions(host string) []*mtproto.DcOption {
+	out := make([]*mtproto.DcOption, 0, len(publicPorts))
+	for _, port := range publicPorts {
+		out = append(out, &mtproto.DcOption{
+			PredicateName: mtproto.Predicate_dcOption,
+			Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+			Id:            1,
+			IpAddress:     host,
+			Port:          port,
+			ThisPortOnly:  true,
+		})
+	}
+	return out
+}
+
+func ipv4Address(ip string) bool {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	return parsed != nil && parsed.To4() != nil
 }
 
 // Parse checks a compact list: dcId:ipv4:port,dcId:ipv4:port.
@@ -96,8 +183,7 @@ func parseEntry(part string) (*mtproto.DcOption, error) {
 		return nil, fmt.Errorf("%q: dc id: %w", part, err)
 	}
 	ip := fields[1]
-	parsed := net.ParseIP(ip)
-	if parsed == nil || parsed.To4() == nil || parsed.To4().String() != ip {
+	if !ipv4Address(ip) || net.ParseIP(ip).To4().String() != ip {
 		return nil, fmt.Errorf("%q: ipv4 literal required, got %q", part, ip)
 	}
 	port, err := parseCanonicalInt(fields[2], 1, 65535)
@@ -177,4 +263,23 @@ func logInvalid(spec string, err error) {
 		shown = shown[:200] + "..."
 	}
 	logx.Errorf("help.getConfig: TELLOMI_DC_OPTIONS %q is invalid (%v); leaving dc_options unchanged", shown, err)
+}
+
+var invalidHostLog struct {
+	sync.Mutex
+	host string
+}
+
+func logInvalidHost(host string) {
+	invalidHostLog.Lock()
+	defer invalidHostLog.Unlock()
+	if host == invalidHostLog.host {
+		return
+	}
+	invalidHostLog.host = host
+	shown := host
+	if len(shown) > 200 {
+		shown = shown[:200] + "..."
+	}
+	logx.Errorf("help.getConfig: TELLOMI_PUBLIC_DC_HOST %q is invalid; leaving published addresses unchanged", shown)
 }

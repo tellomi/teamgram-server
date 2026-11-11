@@ -109,6 +109,41 @@ func TestPlainListenerIgnoresProxyHeader(t *testing.T) {
 	}
 }
 
+func TestRelayFrontendProxyKeepsClientIP(t *testing.T) {
+	before := EntryTotals()
+	gw := startProxyGateway(t, "v1v2", "127.0.0.1/32", true)
+	front443 := proxyV2(0x11, net.ParseIP("203.0.113.50").To4(), net.ParseIP("8.137.198.240").To4(), 40000, 443)
+	if err := gw.handshake(front443, "203.0.113.50"); err != nil {
+		t.Fatal(err)
+	}
+	front10443 := proxyV1("TCP4", "203.0.113.51", "8.137.198.240", 40001, 10443)
+	if err := gw.handshake(front10443, "203.0.113.51"); err != nil {
+		t.Fatal(err)
+	}
+	gw.waitClientIP(t, "203.0.113.50")
+	gw.waitClientIP(t, "203.0.113.51")
+	for _, peer := range []string{"127.0.0.1", "8.137.198.240", "8.156.40.105", "10.20.0.218"} {
+		if gw.redis.Exists("flood:send_code_ip:ip:" + peer) {
+			t.Fatalf("send_code_ip stored %s instead of the header source", peer)
+		}
+		for _, ip := range gw.pipe.ClientIPs() {
+			if ip == peer {
+				t.Fatalf("auths.client_ip stored %s", peer)
+			}
+		}
+	}
+	after := EntryTotals()
+	if got := after.Conns[entryRelay240443] - before.Conns[entryRelay240443]; got != 1 {
+		t.Fatalf("relay240_443 connections %+d", got)
+	}
+	if got := after.Conns[entryRelay10445] - before.Conns[entryRelay10445]; got != 1 {
+		t.Fatalf("relay_10445 connections %+d", got)
+	}
+	if got := after.Conns[entryDirect10443] - before.Conns[entryDirect10443]; got != 0 {
+		t.Fatalf("direct_10443 connections %+d", got)
+	}
+}
+
 func TestPPV1StaysOptional(t *testing.T) {
 	gw := startProxyGateway(t, "v1v2", "127.0.0.1/32", true)
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+gw.ppv1, time.Second)

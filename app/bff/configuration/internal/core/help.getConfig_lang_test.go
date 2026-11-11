@@ -14,6 +14,7 @@ func TestHelpGetConfigSuggestedLangFromSystem(t *testing.T) {
 	t.Setenv("TELLOMI_LANGPACK_HIDDEN", "hi,th,el")
 	t.Setenv("TELLOMI_DC_OPTIONS", "")
 	t.Setenv("TELLOMI_DC_TXT_DOMAIN", "")
+	t.Setenv("TELLOMI_PUBLIC_DC_HOST", "")
 
 	cases := []struct {
 		lang, system, want string

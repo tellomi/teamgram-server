@@ -22,17 +22,28 @@ is still:
 | `webfile_dc_id` | `1` |
 | `this_dc` | `1` |
 
-`docker-compose.yaml` does not mount the file. With `TELLOMI_DC_OPTIONS`
-unset, `help.getConfig` returns that empty list. Merging the env hook does
-not move production clients. Do not commit a production IP into the file. A
-container started without the env would then publish it forever.
+`docker-compose.yaml` does not mount the file. With `TELLOMI_DC_OPTIONS` and
+`TELLOMI_PUBLIC_DC_HOST` unset, `help.getConfig` returns that empty list.
+Merging the env hook does not move production clients. Do not commit a
+production IP into the file. A container started without the env would then
+publish it forever.
 
 A `dcOption` without `predicate_name: dcOption` is dropped by the encoder.
 The list on the wire looks empty. The env hook always sets that predicate.
 
+## Where a reply comes from
+
+`help.getConfig` does not read a database. `bff` loads `./config.json` once
+at process start, clones it on each call, then applies the environment.
+Nothing else fills `dc_options`. The checked-in file is an empty list, so a
+process with the variables unset publishes no address. This repository does
+not contain the host `.env`, so it cannot show the value a running
+production process is publishing. `8.156.40.105` and `8.137.198.240` are
+not in `config.json`.
+
 ## Environment
 
-`docker-compose.yaml` passes both variables into `teamgram`. Set them in the
+`docker-compose.yaml` passes the variables into `teamgram`. Set them in the
 host `.env` and recreate the container. Docker does not update a running
 process environment. Each `help.getConfig` reads the variables, so a recreated
 container picks them up without editing `config.json`.
@@ -79,13 +90,14 @@ Each entry on the wire:
 `this_port_only` is for clients that read it, including Android. They dial
 the declared port. `10443` is not one of the ports those clients substitute
 (`443`, `80`, `5222`). iOS ignores the flag. During discovery it still probes
-`80` and `5222` in addition to the declared port. `5222` is open on gnetway.
-`80` is not. `10443` has no extra 5 second delay, so it is chosen when it
-answers. A capture that shows `80` or `5222` is that probe, not a rewritten
-address set.
+`80` and `5222` in addition to the declared port. `5222` is open on the origin gnetway. `80` is not. `10443` has no extra 5
+second delay, so it is chosen when it answers. A capture that shows `80` or
+`5222` is that probe, not a rewritten address set. The public relay does not
+forward `5222`, so that probe against the relay address does not connect.
 
-gnetway on production listens on `8.137.39.82` TCP `10443` and `5222`, plus
-WebSocket `11443`. `11443` is not an MTProto `dcOption`. Do not put
+The origin gnetway listens on `0.0.0.0:10443` and `0.0.0.0:5222` inside the
+container, plus WebSocket `11443`. Those binds are not the address published
+in `dc_options`. `11443` is not an MTProto `dcOption`. Do not put
 `api.tellomi.cn` in the list.
 
 ### `TELLOMI_DC_TXT_DOMAIN`
@@ -102,21 +114,64 @@ off). Android may still use it and would resolve Telegram's
 `apv2.stel.com`. Blank it when publishing DC addresses. It is not blanked
 automatically. An invalid `TELLOMI_DC_OPTIONS` still applies a domain change.
 
+### `TELLOMI_PUBLIC_DC_HOST`
+
+The IPv4 clients should dial. Read only while building this reply. It does
+not change gnetway listen addresses, the private PROXY bind, etcd, MySQL,
+Redis, or `TELLOMI_CALL_IP` / TURN.
+
+| Value | Result |
+| --- | --- |
+| unset or empty | leave the addresses already chosen |
+| canonical dotted IPv4 | replace every IPv4 in `dc_options`. Ports, DC ids, `media_only`, `cdn`, and the other flags stay. A hostname or IPv6 in `ip_address` stays. `dc_txt_domain_name` is not this field. |
+| anything else | one error log (`help.getConfig: TELLOMI_PUBLIC_DC_HOST ... is invalid`), the list stays, the process stays up |
+
+A valid host on an empty list (the checked-in file, and `TELLOMI_DC_OPTIONS`
+unset) publishes two DC 1 options: that host on `10443` and on `443`, with
+`this_port_only`, not `media_only`, not `cdn`. `webfile_dc_id` becomes 1.
+
+`TELLOMI_DC_OPTIONS` still builds flags itself, and those entries have
+`media_only` and `cdn` false. A `cdn` or `media_only` entry is rewritten
+only when it was loaded from `config.json` and the options variable did not
+replace the list. The checked-in file has neither.
+
+`help.getCdnConfig` publishes RSA keys from `TELLOMI_CDN_PUBLIC_KEYS`. It
+does not publish an IP. Empty keys mean there is no CDN address. Photos and
+documents store `dc_id` from the first id in `TELLOMI_DC_OPTIONS`, or 1.
+Clients resolve that id through `dc_options`, so they follow the rewritten
+address. There is no second media host in this code.
+
+Do not publish `5222` on the relay. It forwards `443` and `10443` only. A
+client that stores `5222` on that host keeps a blackhole.
+
 ## What production should set
 
-On the Chengdu host `.env`, then recreate `teamgram`. Do not put this in git.
+On the origin host `.env` (the machine behind the relay), then recreate
+`teamgram`. Do not put this in git. Do not write it into `config.json`.
 
 ```
-TELLOMI_DC_OPTIONS=1:8.137.39.82:10443,1:8.137.39.82:5222
+TELLOMI_PUBLIC_DC_HOST=8.137.198.240
+TELLOMI_DC_OPTIONS=1:8.137.198.240:10443,1:8.137.198.240:443
 TELLOMI_DC_TXT_DOMAIN=-
 ```
 
-Both TCP ports are what gnetway already accepts. Publishing only `10443` is
-enough for the Tellomi seed port. Publishing `5222` as well gives a client
-that prefers the classic port an address that answers. Leave `11443` out.
+`8.137.198.240` is the public relay. It forwards TCP `443` and `10443` with
+PROXY protocol to the origin. `8.156.40.105` and `10.20.0.218` stay off
+this list. Clients that learn `8.156.40.105` dial the origin directly and
+skip the relay.
+
+If `TELLOMI_DC_OPTIONS` is already empty, `TELLOMI_PUBLIC_DC_HOST` alone
+publishes the two ports above. If the variable is set, change it in the
+same edit. A previous value of `8.137.39.82` or `8.156.40.105`, or a `5222`
+port, must not be left in place: the host rewrite would keep that port and
+point it at the relay.
 
 `TELLOMI_DC_TXT_DOMAIN=-` is recommended so Android backup discovery does not
 point at Telegram. Omit it, or leave it empty, to keep `apv2.stel.com`.
+Leave `11443` out. It is WebSocket, not an MTProto `dcOption`.
+
+`TELLOMI_CALL_IP` and the TURN host are UDP. This relay does not forward
+them. Do not point calls at `8.137.198.240` from this change.
 
 ## Clients persist the list
 
@@ -142,16 +197,21 @@ Changing the server IP later: publish the old and new addresses together,
 wait through the overlap, then drop the old ones.
 
 ```
-TELLOMI_DC_OPTIONS=1:<old>:10443,1:<old>:5222,1:<new>:10443,1:<new>:5222
+TELLOMI_DC_OPTIONS=1:<old>:10443,1:<old>:443,1:<new>:10443,1:<new>:443
+TELLOMI_PUBLIC_DC_HOST=
 ```
+
+Leave `TELLOMI_PUBLIC_DC_HOST` empty for that overlap. A set host rewrites
+every IPv4 in the list, so the old address would not be published.
 
 ## Test IP
 
 Same check as Telegram-iOS PR #55. The test IP must speak MTProto (this
-gnetway, or an address that forwards to `8.137.39.82:10443`). Use the env
-var. Do not hand-edit `/app/bin/config.json` in a running container: `bff`
-will not see a file change until restart, and the next image recreate puts
-the empty file back. The env survives recreate.
+gnetway, or an address that forwards to it). Use the env var. Leave
+`TELLOMI_PUBLIC_DC_HOST` empty while the test list is a different address,
+or the host rewrite replaces it. Do not hand-edit `/app/bin/config.json`
+in a running container: `bff` will not see a file change until restart, and
+the next image recreate puts the empty file back. The env survives recreate.
 
 1. Set `TELLOMI_DC_OPTIONS` to the test IP, DC 1, port `10443` (and `5222`
    if that port is open there). Example: `1:203.0.113.10:10443`. Recreate
@@ -177,10 +237,54 @@ the empty file back. The env survives recreate.
 
 ## Roll back
 
-1. Remove `TELLOMI_DC_OPTIONS` from `.env`, or set it empty. Leave
-   `TELLOMI_DC_TXT_DOMAIN` empty to restore `apv2.stel.com`.
-2. Recreate `teamgram`. Do not `FLUSHALL` Redis.
-3. `help.getConfig` returns `dc_options: []` and `webfile_dc_id: 1` again,
-   matching the file in the image.
+1. Remove `TELLOMI_PUBLIC_DC_HOST` from `.env`, or set it empty. Remove
+   `TELLOMI_DC_OPTIONS`, or set it empty, to publish no address again.
+   Leave `TELLOMI_DC_TXT_DOMAIN` empty to restore `apv2.stel.com`. To keep
+   serving a direct address during the change, put that address back in
+   `TELLOMI_DC_OPTIONS` instead of clearing it, and leave the public host
+   empty so it is not rewritten.
+2. Recreate `teamgram`. Do not `FLUSHALL` Redis. Do not change gnetway
+   bind addresses or the private PROXY listener to roll this back.
+3. `help.getConfig` returns `dc_options: []` and `webfile_dc_id: 1` when
+   both variables are empty, matching the file in the image.
 4. Phones that already adopted the list do not move back. Plan the overlap
    in the previous section before withdrawing an IP those phones stored.
+   Failed discovery can still try the seed hostname `api.tellomi.cn`.
+
+## 上线与回滚（240 转发）
+
+对外公布的地址和内部监听地址不是同一个配置。客户端看到的是
+`help.getConfig` 的 `dc_options`。gnetway 仍监听容器里的 `0.0.0.0:10443`，
+私网 PROXY 仍绑在 origin 自己的地址上。不要为了这次切换去改 etcd、MySQL、
+Redis，也不要改 `TELLOMI_CALL_IP`。
+
+生产 `.env` 在 origin 上改，不写进 git，不写进 `config.json`。
+
+上线：
+
+1. 看当前 `TELLOMI_DC_OPTIONS`。仓库里的默认是空。空列表加上只设置
+   `TELLOMI_PUBLIC_DC_HOST=8.137.198.240`，下一次 `help.getConfig` 公布
+   DC 1 的 `8.137.198.240:10443` 和 `8.137.198.240:443`，`this_port_only`
+   为真，`media_only` 和 `cdn` 为假。IPv4 仍是 IPv4。域名仍只放在
+   `dc_txt_domain_name`，不放进 `ip_address`。
+2. 如果 `TELLOMI_DC_OPTIONS` 已经有值，同一次修改把它改成
+   `1:8.137.198.240:10443,1:8.137.198.240:443`。旧值若是 `8.156.40.105`
+   或 `8.137.39.82`，或者带了 `5222`，不能留着。`TELLOMI_PUBLIC_DC_HOST`
+   只换 IPv4、保留端口。240 不转发 `5222`，留着会被客户端存成打不通的地址。
+3. 设置 `TELLOMI_DC_TXT_DOMAIN=-`，避免安卓备用发现去解析 `apv2.stel.com`。
+4. 重建 `teamgram` 容器。不要 `FLUSHALL` Redis。
+5. 用客户端读一次 `help.getConfig`，确认两条 `dcOption` 的地址是
+   `8.137.198.240`，端口是 `10443` 和 `443`，没有 `8.156.40.105` 和
+   `10.20.0.218`。`help.getCdnConfig` 在 `TELLOMI_CDN_PUBLIC_KEYS` 为空时
+   没有公钥，也没有 IP。媒体文件的 `dc_id` 仍是 1，客户端按上面的
+   `dc_options` 去下载。
+
+回滚：
+
+1. 清空 `TELLOMI_PUBLIC_DC_HOST`。若要回到「不下发地址」，同时清空
+   `TELLOMI_DC_OPTIONS`。`TELLOMI_DC_TXT_DOMAIN` 留空会恢复
+   `apv2.stel.com`。
+2. 重建 `teamgram`。不要 `FLUSHALL`。
+3. `help.getConfig` 回到 `dc_options: []`。已经存下 240 的手机会继续先拨
+   240。要让它们离开 240，先按上一节的重叠列表同时公布新旧地址，等客户端
+   拿到新列表，再撤掉 240。发现失败时客户端仍会试种子域名 `api.tellomi.cn`。

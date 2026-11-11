@@ -206,9 +206,12 @@ services:
       TELLOMI_FLOOD_REDIS: ${TELLOMI_FLOOD_REDIS:-}
       # help.getConfig dc_options. Empty leaves teamgramd/bin/config.json
       # (an empty list, webfile_dc_id 1). A valid spec replaces the list and
-      # sets webfile_dc_id to 1. "-" in TELLOMI_DC_TXT_DOMAIN blanks
-      # apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
+      # sets webfile_dc_id to 1. TELLOMI_PUBLIC_DC_HOST rewrites IPv4 in
+      # that list, or publishes :10443 and :443 when the list is empty.
+      # It does not change listen addresses. "-" in TELLOMI_DC_TXT_DOMAIN
+      # blanks apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
       TELLOMI_DC_OPTIONS: ${TELLOMI_DC_OPTIONS:-}
+      TELLOMI_PUBLIC_DC_HOST: ${TELLOMI_PUBLIC_DC_HOST:-}
       TELLOMI_DC_TXT_DOMAIN: ${TELLOMI_DC_TXT_DOMAIN:-}
       # help.getAppConfig faq_link. Unset stays https://tellomi.cn/faq.
       # 1 switches it to https://tellomi.cn/help (D-40). The page is not

@@ -78,7 +78,7 @@
 | `app/bff/files/cdn/cdn.go` | 进程内缓存。AES-256-CTR，密文按 128 KiB 做 SHA-256。单文件不超过 8 MiB，最多 32 个，TTL 1 小时。`upload.getFile` 在客户端带 `cdn_supported` 且缓存装得下时可以返回 `upload.fileCdnRedirect` |
 | `helpdesk.PublicKeys` | 读 `TELLOMI_CDN_PUBLIC_KEYS`。空则 `help.getCdnConfig` 的 `public_keys` 为空，三条 CDN 方法返回 `FILE_TOKEN_INVALID`，客户端继续走 `upload.getFile` |
 | `cdn_handlers_test.go`、`upload.getFile_cdn_test.go`、`app/bff/files/cdn/cdn_test.go` | 覆盖未发布时的 `FILE_TOKEN_INVALID`，以及发布密钥后的重定向 / 重传 |
-| `pkg/dcoptions.Parse`、`help.getConfig_dc_test.go`、[DC_ADDRESSES.md](ops/DC_ADDRESSES.md) | `TELLOMI_DC_OPTIONS` 只接受 `dcId:ipv4:port`。每个 `dcOption` 的 `cdn` 固定为 false。生产列表是 DC 1 的 `8.137.39.82:10443` 和 `:5222`，没有第二条带 `cdn` 的 DC |
+| `pkg/dcoptions.Parse`、`help.getConfig_dc_test.go`、[DC_ADDRESSES.md](ops/DC_ADDRESSES.md) | `TELLOMI_DC_OPTIONS` 只接受 `dcId:ipv4:port`，由它生成的项 `cdn` 仍为 false。`TELLOMI_PUBLIC_DC_HOST` 只替换 IPv4，或在列表为空时公布 `10443` 和 `443`，不把 `cdn` 设为 true。仓库里的 `config.json` 没有 `cdn:true` 的 DC |
 
 未做：没有在 `dc_options` 里广告一个 `cdn:true` 的独立 DC，也没有只接受 `upload.getCdnFile` 的另一套进程。密钥即便配上，密文仍由当前这个 files 进程在内存里现加密，不是发到另一个 CDN DC。
 
