@@ -121,7 +121,55 @@ content-engine：
 
 这些行只在 `TELLOMI_DISCOVER_RELATIONS=1` 且关系密钥、MySQL 都可用时写入：用户成功调用 `discover.getEngineCredential` 或 `discover.getAudienceToken` 之后，bff 记下这次调用者的 `sub → user_id`。开关没开，或者这个人还没拿过凭证，`users` 是空数组。表是 `teamgramd/deploy/sql/migrate-20261104-discover-subject.sql`。
 
-没连上 MySQL 是 `503`，正文 `{"error":"unavailable"}`。表还没建时按「还没有这个 sub」回答，`users` 为空。
+没连上 MySQL 是 `503`，响应头 `Retry-After: 5`，正文 `{"error":"unavailable","retry_after":5}`。这次失败不要记成「没有这个 sub」。表还没建时，正向接口仍按「还没有这个 sub」回答，`users` 为空。反查接口不是这样，见下一节。
+
+### 按 users.id 反查 sub
+
+`POST /internal/v1/reports/subjects/by-users`
+
+鉴权、监听与正向接口相同，不新开端口。content-engine 用它把聊天资料页传来的数字用户 id 解析成发现身份。这个接口不写 `reports`，也不发 `@admin`。它不判断访问者是否被屏蔽、是不是未成年人、列表是否对访问者可见；那些仍由 content-engine 按访问者自己做。
+
+```json
+{"user_ids":[34,35,36,37]}
+```
+
+`user_ids` 为 1 到 32 个正整数。`0`、负数、空数组、非整数或超过 32 个是 `400`，没有 `Retry-After`。正文必须是单个 JSON 对象，而且读完这个值之后就是结尾。尾随的 `]`、`}` 或其他值都是 `400`。对象里只能有一个键，并且必须正好是 `user_ids`：再出现一次、写成 `USER_IDS` 这种只差大小写的名字，或出现别的字段，都是 `400`。重复的 id 只保留第一次出现的顺序。未带合法 `Authorization` 是 `401`，没有 `Retry-After`。只接受 `POST`。
+
+两次读取（`users` 与 `discover_subject`）在同一个只读可重复读事务里完成。任一读失败，整次是依赖失败，不会混用前后两个快照拼出结果。
+
+`200` 表示每一个去重后的 id 都分类完成。数组长度与去重后的请求相同，顺序一致。省略某个 id 不表示任何一种结果。
+
+```json
+{"users":[
+  {"user_id":34,"status":"mapped","sub":"<16 字节 sub 的 base64url，无填充>"},
+  {"user_id":35,"status":"empty"},
+  {"user_id":36,"status":"not_found"},
+  {"user_id":37,"status":"closed"}
+]}
+```
+
+| status | 含义 | `sub` |
+| --- | --- | --- |
+| `mapped` | `users` 有这个 id，`deleted = 0` 且 `restricted = 0`，并且 `discover_subject` 有一条 16 字节 `sub` | 必有，base64url，无填充 |
+| `empty` | 账号条件同上，并且这次读取确认 `discover_subject` 没有该 `user_id`。这是经授权且确实为空的主页：账号存在、未删除、未受限、从未建立发现身份 | 没有该字段 |
+| `not_found` | `users` 没有这个 id。身份不存在。`discover_subject` 里的孤儿行也不返回 | 没有该字段 |
+| `closed` | `users.deleted <> 0` 或 `users.restricted <> 0`。已删除或受限。有合法 `sub` 也不返回 | 没有该字段 |
+
+`empty` 只说明 teamgram 确认了账号状态，并且发现身份确实没有建立。它不是「这位访问者可以看列表」。content-engine 在对外返回空列表之前，仍要做目标级隐私判断。`not_found` 和 `closed` 都不是空主页，不能记成「没有主页」，也不能回公开接口的 `200` 空列表。
+
+`mapped` 只说明这个 teamgram 账号对应一个发现身份。该主页在 content-engine 里是否已删除，由 content-engine 自己的资料行决定。
+
+依赖失败是 `503`，不是 `200`，也不能是空的 `users`。范围包括：数据库没连上、`users` 或 `discover_subject` 不存在或不可读、查询或扫描失败、读到的 `sub` 不是 16 字节、同一 `user_id` 有两条不同的 `sub`、同一 id 的 `deleted` / `restricted` 互相矛盾。响应头 `Retry-After: 5`，正文：
+
+```json
+{"error":"unavailable","retry_after":5}
+```
+
+这次响应里没有用户结果。调用方至少等待 5 秒再试，不得把请求中的任何一个 id 记成 `not_found`、`closed` 或 `empty`，也不得写入否定缓存。
+
+若一份 `200` 缺了请求过的 id、缺了 `status`、`status` 不是上表四值、`mapped` 没有合法 `sub`，或非 `mapped` 带了 `sub`，调用方应把它当成依赖失败，而不是空主页。本服务不会故意返回这种正文。
+
+和正向 `POST /internal/v1/reports/subjects` 不同：那里在 `discover_subject` 还没建时仍可返回空数组。反查不行。缺表和缺库都是 `503`。
 
 可选：发帖前的分类走 `POST /internal/v1/moderation/review`，正文 `{"post_id":"post-9","text":"...","media_keys":["photos/1"]}`，响应 `{"verdict":"violation"}`。`verdict` 是 `violation`、`ok` 或 `uncertain`。机审没开时直接是 `uncertain`，不调用模型，也不写 `reports`。
 

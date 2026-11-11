@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -71,7 +72,7 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	}
 
 	var (
-		photoId    = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		photoId    = c.nextID()
 		ext        = model.GetFileExtName(file.GetName())
 		sizeList   = make([]*mtproto.PhotoSize, 0, 3)
 		extType    = model.GetStorageFileTypeConstructor(ext)
@@ -85,6 +86,11 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	}
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassPhotos, claim.Path) {
 		claim.Reused = false
+	}
+	subject := c.ledgerSubject(in.GetCreator())
+	if noteErr := uploadledger.AllowClaim(subject, claim.Reused, claim.Size); noteErr != nil {
+		c.Logger.Errorf("dfs.uploadPhotoFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(noteErr))
 	}
 	// One span for this upload: claim (hit or miss) and whether the
 	// original object was written. Derivative sizes are not the blob.
@@ -105,6 +111,11 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	// Same bytes as an earlier photo: one object, this row's own access_hash.
 	if sizes, ok := c.reusedPhotoSizes(c.ctx, photoId, claim); ok {
 		photo.Sizes = sizes
+		if err := uploadledger.CommitClaim(subject, claim.Reused, claim.Size); err != nil {
+			c.Logger.Errorf("dfs.uploadPhotoFile - budget")
+			return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(err))
+		}
+		releaseUploadHold(subject, file.GetId_INT64())
 		return photo, nil
 	}
 	originPaths := c.originSizePaths(c.ctx, claim)
@@ -212,6 +223,11 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	}
 
 	photo.Sizes = sizeList
+	if err := uploadledger.CommitClaim(subject, claim.Reused, claim.Size); err != nil {
+		c.Logger.Errorf("dfs.uploadPhotoFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(err))
+	}
+	releaseUploadHold(subject, file.GetId_INT64())
 	return photo, nil
 }
 

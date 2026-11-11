@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -241,7 +242,7 @@ func (c *Client) Invoke(ctx context.Context, req mtproto.TLObject) (mtproto.TLOb
 			return obj, nil
 		}
 		last = err
-		wait, ok := floodWait(err)
+		wait, ok := retryWait(err)
 		if !ok {
 			return nil, err
 		}
@@ -270,6 +271,27 @@ func (c *Client) invokeOnce(ctx context.Context, req mtproto.TLObject) (mtproto.
 		return nil, err
 	}
 	return out.obj, nil
+}
+
+// retryWait is how long to wait before sending the same RPC again.
+// FLOOD_WAIT is the server's own pause. A MySQL deadlock is the 1213
+// error that asks the caller to restart the transaction.
+func retryWait(err error) (time.Duration, bool) {
+	if wait, ok := floodWait(err); ok {
+		return wait, true
+	}
+	if deadlock(err) {
+		return 200 * time.Millisecond, true
+	}
+	return 0, false
+}
+
+func deadlock(err error) bool {
+	rpc, ok := asRPCError(err)
+	if !ok || rpc.Code < 500 {
+		return false
+	}
+	return strings.Contains(rpc.Message, "Deadlock") || strings.Contains(rpc.Message, "Error 1213")
 }
 
 func floodWait(err error) (time.Duration, bool) {

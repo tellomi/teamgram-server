@@ -124,9 +124,7 @@ func openBindMySQL(t *testing.T) (*sql.DB, string) {
 		if err != nil {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		err = db.PingContext(ctx)
-		cancel()
+		err = pingMySQL(db)
 		if err != nil {
 			_ = db.Close()
 			continue
@@ -152,10 +150,10 @@ func openBindMySQL(t *testing.T) (*sql.DB, string) {
 	}
 	t.Cleanup(func() { _ = admin.Close() })
 	schema := fmt.Sprintf("auth_bind_core_%d", os.Getpid())
-	if _, err := admin.Exec("DROP DATABASE IF EXISTS " + schema); err != nil {
+	if err := execMySQL(admin, "DROP DATABASE IF EXISTS "+schema); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := admin.Exec("CREATE DATABASE " + schema); err != nil {
+	if err := execMySQL(admin, "CREATE DATABASE "+schema); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = admin.Exec("DROP DATABASE IF EXISTS " + schema) })
@@ -170,7 +168,7 @@ func openBindMySQL(t *testing.T) (*sql.DB, string) {
 		if stmt == "" {
 			continue
 		}
-		if _, err := db.Exec(stmt); err != nil {
+		if err := execMySQL(db, stmt); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -206,11 +204,53 @@ func startBindMySQL(t *testing.T) (string, error) {
 				return "", fmt.Errorf("docker port %q", portOut)
 			}
 			hostport := fields[len(fields)-1]
-			return hostport[strings.LastIndex(hostport, ":")+1:], nil
+			port := hostport[strings.LastIndex(hostport, ":")+1:]
+			probeDSN := fmt.Sprintf("root:root@tcp(127.0.0.1:%s)/mysql?charset=utf8mb4&parseTime=true", port)
+			probeDB, openErr := sql.Open("mysql", probeDSN)
+			if openErr != nil {
+				return "", openErr
+			}
+			pingErr := pingMySQL(probeDB)
+			_ = probeDB.Close()
+			if pingErr != nil {
+				time.Sleep(time.Second)
+				continue
+			}
+			return port, nil
 		}
 		time.Sleep(time.Second)
 	}
 	return "", errors.New("mysql container did not become ready")
+}
+
+func pingMySQL(db *sql.DB) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err = db.PingContext(ctx)
+		cancel()
+		if err == nil || !mysqlInvalid(err) {
+			return err
+		}
+		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+	}
+	return err
+}
+
+func execMySQL(db *sql.DB, query string) error {
+	var err error
+	for i := 0; i < 5; i++ {
+		_, err = db.Exec(query)
+		if err == nil || !mysqlInvalid(err) {
+			return err
+		}
+		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+	}
+	return err
+}
+
+func mysqlInvalid(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid connection")
 }
 
 func bindDSNWithSchema(dsn, schema string) string {

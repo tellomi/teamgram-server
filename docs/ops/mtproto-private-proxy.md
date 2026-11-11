@@ -37,6 +37,30 @@ The header source is written with `setClientIp` into the same string that
 `initConnection` stores in `auths.client_ip` and that `send_code_ip` /
 `sign_in_ip` use as the bucket key. There is no new column.
 
+A relay that forwards public `443` and `10443` puts those destination ports
+in the header. The stored address is the header source, not the relay socket
+and not the origin address. Destination `443` is counted as `relay240_443`.
+Destination `10443` is counted as `relay_10445`. `TestRelayFrontendProxyKeepsClientIP`
+opens both and checks the auth client IP.
+
+## Entry counters
+
+gnetway counts accepted native connections and their later socket bytes.
+The Prometheus names are `gnetway_entry_conn_total` and
+`gnetway_entry_bytes_total`. The only class label is one of `direct_10443`,
+`relay_10445`, `relay240_443`, or `relay_unknown`. `dir` on the byte counter
+is `in` or `out`. There is no address, auth key, session id, or user id.
+
+`direct_10443` is a connection accepted on port 10443. A PROXY header on
+that socket is not read and does not change the class. `relay_10445` is a
+header accepted from a trusted peer whose destination port is 10443 (the
+240:10443 frontend, forwarded to this private listener). `relay240_443` is
+the same admission whose destination port is 443. Any other destination
+port is `relay_unknown`. The three accepted classes do not overlap, so they
+must not be added to the older proxy-admit log lines. Bytes start after the
+PROXY header is removed. `gnetway_entry_reject_total{reason}` counts closes
+that never become a connection; `reason` is a fixed token, not the peer.
+
 ## Before enabling it
 
 Confirm the process can bind `10.20.0.218` and that an accepted connection's

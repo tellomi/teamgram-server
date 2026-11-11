@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"testing"
 	"time"
@@ -106,6 +107,70 @@ func TestPlainListenerIgnoresProxyHeader(t *testing.T) {
 		if ip == "203.0.113.9" {
 			t.Fatal("plain listener stored the PROXY header address")
 		}
+	}
+}
+
+func TestHelpGetConfigScriptReadsDCOption(t *testing.T) {
+	gw := startProxyGateway(t, "v1v2", "127.0.0.1/32", true)
+	host, port, err := net.SplitHostPort(gw.plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(
+		"python3", repoPath(t, "scripts/ops/help-getconfig-dc.py"),
+		"--host", host,
+		"--port", port,
+		"--private-key-file", repoPath(t, "teamgramd/bin/server_pkcs1.key"),
+		"--timeout", "3",
+	)
+	out, err := cmd.CombinedOutput()
+	// This gateway has no bff, so the script times out waiting for the RPC
+	// body. initConnection is still handled, which is what records client_ip.
+	if err == nil {
+		t.Fatalf("stub gateway answered help.getConfig: %s", out)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(gw.pipe.ClientIPs()) > 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("help.getConfig script did not complete initConnection: %s", out)
+}
+
+func TestRelayFrontendProxyKeepsClientIP(t *testing.T) {
+	before := EntryTotals()
+	gw := startProxyGateway(t, "v1v2", "127.0.0.1/32", true)
+	front443 := proxyV2(0x11, net.ParseIP("203.0.113.50").To4(), net.ParseIP("8.137.198.240").To4(), 40000, 443)
+	if err := gw.handshake(front443, "203.0.113.50"); err != nil {
+		t.Fatal(err)
+	}
+	front10443 := proxyV1("TCP4", "203.0.113.51", "8.137.198.240", 40001, 10443)
+	if err := gw.handshake(front10443, "203.0.113.51"); err != nil {
+		t.Fatal(err)
+	}
+	gw.waitClientIP(t, "203.0.113.50")
+	gw.waitClientIP(t, "203.0.113.51")
+	for _, peer := range []string{"127.0.0.1", "8.137.198.240", "8.156.40.105", "10.20.0.218"} {
+		if gw.redis.Exists("flood:send_code_ip:ip:" + peer) {
+			t.Fatalf("send_code_ip stored %s instead of the header source", peer)
+		}
+		for _, ip := range gw.pipe.ClientIPs() {
+			if ip == peer {
+				t.Fatalf("auths.client_ip stored %s", peer)
+			}
+		}
+	}
+	after := EntryTotals()
+	if got := after.Conns[entryRelay240443] - before.Conns[entryRelay240443]; got != 1 {
+		t.Fatalf("relay240_443 connections %+d", got)
+	}
+	if got := after.Conns[entryRelay10445] - before.Conns[entryRelay10445]; got != 1 {
+		t.Fatalf("relay_10445 connections %+d", got)
+	}
+	if got := after.Conns[entryDirect10443] - before.Conns[entryDirect10443]; got != 0 {
+		t.Fatalf("direct_10443 connections %+d", got)
 	}
 }
 

@@ -21,6 +21,7 @@ package core
 import (
 	"encoding/binary"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -64,20 +65,29 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		return nil, err
 	}
 
-	if qrCode.ExpireAt >= time.Now().Unix() {
-		//s.AuthCore.DeleteQRCode(ctx, keyId)
-		//err := mtproto.ErrAuthTokenExpired
-		//log.Errorf("auth.acceptLoginToken - error: %v", err)
-		//return nil, err
+	now := time.Now().Unix()
+	if model.QRExpired(qrCode.ExpireAt, now) {
+		err := mtproto.ErrAuthTokenExpired
+		c.Logger.Errorf("auth.acceptLoginToken - expired")
+		return nil, err
 	}
 
 	switch qrCode.State {
 	case model.QRCodeStateNew:
-		// ok
-	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+	case model.QRCodeStateSuccess:
+		// A finished login must not run again. A failed attempt stays Accepted
+		// and can be resumed by the same user below.
 		err := mtproto.ErrAuthTokenAccepted
-		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
+		c.Logger.Errorf("auth.acceptLoginToken - finished")
 		return nil, err
+	case model.QRCodeStateAccepted:
+		// The record already names who accepted it. Another caller must not
+		// reach user lookup or bind this device to themselves.
+		if qrCode.UserId != c.MD.UserId {
+			err := mtproto.ErrAuthTokenAccepted
+			c.Logger.Errorf("auth.acceptLoginToken - other user")
+			return nil, err
+		}
 	default:
 		err := mtproto.ErrAuthTokenInvalid
 		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
@@ -91,10 +101,26 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		}
 	}
 
-	c.svcCtx.Dao.UpdateCacheQRLoginCode(c.ctx, keyId, map[string]string{
-		"user_id": strconv.FormatInt(c.MD.UserId, 10),
-		"state":   strconv.Itoa(model.QRCodeStateAccepted),
-	})
+	remain := int(qrCode.ExpireAt - now)
+	claimed, token, claimErr := c.svcCtx.Dao.ClaimQRLogin(c.ctx, keyId, c.MD.UserId, remain)
+	if claimErr != nil {
+		c.Logger.Errorf("auth.acceptLoginToken - claim: %v", claimErr)
+		return nil, claimErr
+	}
+	switch decideQRAccept(qrCode.State, claimed, claimOwnerID(token), c.MD.UserId, qrCode.UserId) {
+	case qrReject:
+		err := mtproto.ErrAuthTokenAccepted
+		c.Logger.Errorf("auth.acceptLoginToken - already claimed")
+		return nil, err
+	case qrMark:
+		if err = c.svcCtx.Dao.MarkQRAccepted(c.ctx, keyId, c.MD.UserId, token); err != nil {
+			c.Logger.Errorf("auth.acceptLoginToken - state")
+			return nil, err
+		}
+	case qrResume:
+		// The claim and the accepted state are already ours. Continue the
+		// user lookup and bind; do not take the token away from this user.
+	}
 
 	user, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
 		Id: c.MD.UserId,
@@ -164,6 +190,9 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 			}).To_Updates(),
 		})
 
+	_ = c.svcCtx.Dao.UpdateCacheQRLoginCode(c.ctx, keyId, map[string]string{
+		"state": strconv.Itoa(model.QRCodeStateSuccess),
+	})
 	return authorization, nil
 }
 
@@ -172,4 +201,49 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 // not finished until auth.checkPassword.
 func qrLoginNotifies(state int, passwordNeeded bool) bool {
 	return state == model.QRCodeStateNew && !passwordNeeded
+}
+
+const (
+	qrMark = iota
+	qrResume
+	qrReject
+)
+
+// decideQRAccept is the retry rule. A lost SETNX response leaves the state
+// New while this user already owns the claim, so the retry must mark and
+// continue. Accepted or Success for that same owner resumes the bind.
+// Another user's claim is rejected.
+func decideQRAccept(state int, won bool, owner, caller, recordedUser int64) int {
+	if caller == 0 || owner != caller {
+		return qrReject
+	}
+	switch state {
+	case model.QRCodeStateSuccess:
+		return qrReject
+	case model.QRCodeStateAccepted:
+		if recordedUser != caller {
+			return qrReject
+		}
+		return qrResume
+	case model.QRCodeStateNew:
+		_ = won
+		return qrMark
+	default:
+		return qrReject
+	}
+}
+
+func claimOwnerID(token string) int64 {
+	if token == "" {
+		return 0
+	}
+	head := token
+	if i := strings.IndexByte(token, ':'); i >= 0 {
+		head = token[:i]
+	}
+	id, err := strconv.ParseInt(head, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
 }

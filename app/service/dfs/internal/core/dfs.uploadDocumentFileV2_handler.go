@@ -23,13 +23,14 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 // DfsUploadDocumentFileV2
 // dfs.uploadDocumentFileV2 creator:long media:InputMedia = Document;
 func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*mtproto.Document, error) {
 	var (
-		documentId = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		documentId = c.nextID()
 		//idgen.GetUUID()
 		file      = in.GetMedia().GetFile()
 		cacheData []byte
@@ -217,6 +218,11 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
 		claim.Reused = false
 	}
+	subject := c.ledgerSubject(in.GetCreator())
+	if noteErr := uploadledger.AllowClaim(subject, claim.Reused, claim.Size); noteErr != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(noteErr))
+	}
 	if !claim.Reused {
 		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
 	}
@@ -253,5 +259,16 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		finishUpload(false, 0)
 		uploadScheduled = true
 	}
+	if err := uploadledger.CommitClaim(subject, claim.Reused, claim.Size); err != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(err))
+	}
+	releaseUploadHold(subject, file.GetId_INT64())
 	return document, nil
+}
+
+func releaseUploadHold(user, fileID int64) {
+	if led := uploadledger.Shared(); led != nil {
+		led.ReleaseFile(user, fileID)
+	}
 }
