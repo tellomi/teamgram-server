@@ -43,7 +43,7 @@
       "source_file": "ios_de_v22431595.strings",
       "source_version": 22431595,
       "strings": 12779,
-      "bytes_gz": 247849,
+      "bytes_gz": 247846,
       "version": 22431603
     },
     "ios/el": {
@@ -218,14 +218,14 @@
       "source_file": "ios_zh-hans_v22454343.strings",
       "source_version": 22454343,
       "strings": 12779,
-      "bytes_gz": 250628,
+      "bytes_gz": 250615,
       "version": 22454353
     },
     "ios/zh-hant": {
       "source_file": "ios_zh-hant_v22421528.strings",
       "source_version": 22421528,
       "strings": 12779,
-      "bytes_gz": 247012,
+      "bytes_gz": 247001,
       "version": 22421538
     },
     "android/en": {
@@ -442,14 +442,14 @@
       "source_file": "android_zh-hans_v61570949.xml",
       "source_version": 61570949,
       "strings": 12196,
-      "bytes_gz": 245003,
+      "bytes_gz": 245004,
       "version": 61730403
     },
     "android/zh-hant": {
       "source_file": "android_zh-hant_v61519200.xml",
       "source_version": 61519200,
       "strings": 12196,
-      "bytes_gz": 239683,
+      "bytes_gz": 239684,
       "version": 61730403
     },
     "tdesktop/en": {

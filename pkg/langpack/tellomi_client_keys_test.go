@@ -207,10 +207,10 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 			}
 		}
 	}
-	if hans := readPackText(t, "../../data/langpack/ios/zh-hans.json.gz"); hans["Story.Privacy.CategoryMutualFollowers"] != "互相关注" || hans["Story.Privacy.WhoCanViewMoment"] != "修改可见范围" {
+	if hans := readPackText(t, "../../data/langpack/ios/zh-hans.json.gz"); hans["Story.Privacy.CategoryMutualFollowers"] != "互相关注" || hans["Story.Privacy.WhoCanViewMoment"] != "谁可以看" {
 		t.Fatalf("ios story hans needs review copy: %+v", []string{hans["Story.Privacy.CategoryMutualFollowers"], hans["Story.Privacy.WhoCanViewMoment"]})
 	}
-	if hant := readPackText(t, "../../data/langpack/ios/zh-hant.json.gz"); hant["Story.Privacy.CategoryMutualFollowers"] != "互相關注" || hant["Story.Privacy.WhoCanViewMoment"] != "修改可見範圍" {
+	if hant := readPackText(t, "../../data/langpack/ios/zh-hant.json.gz"); hant["Story.Privacy.CategoryMutualFollowers"] != "互相關注" || hant["Story.Privacy.WhoCanViewMoment"] != "誰可以看" {
 		t.Fatalf("ios story hant needs review copy: %+v", []string{hant["Story.Privacy.CategoryMutualFollowers"], hant["Story.Privacy.WhoCanViewMoment"]})
 	}
 	assertTellomiNotEnglish(t, "android", androidKeys)
@@ -254,8 +254,12 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 			zhSeen[s.GetKey()] = s.GetValue()
 		}
 	}
-	if zhSeen["Moments_Audience_Mutual"] != "互相关注" || zhSeen["Moments_WhoCanSee"] != "修改可见范围" || zhSeen["Moments_Recommendations"] != "推荐" || zhSeen["Moments_Personalized"] != "个性化推荐" || zhSeen["Moments_ExternalShare"] != "其他应用" || zhSeen["Moments_VideoTooLongN"] != "请把视频裁剪到 %1$d 秒以内" {
-		t.Fatalf("android zh increment copy %+v", []string{zhSeen["Moments_Audience_Mutual"], zhSeen["Moments_WhoCanSee"], zhSeen["Moments_Recommendations"], zhSeen["Moments_Personalized"], zhSeen["Moments_ExternalShare"], zhSeen["Moments_VideoTooLongN"]})
+	if zhSeen["Moments_Audience_Mutual"] != "互相关注" || zhSeen["Moments_ChangeAudience"] != "修改可见范围" || zhSeen["Moments_Recommendations"] != "推荐" || zhSeen["Moments_Personalized"] != "个性化推荐" || zhSeen["Moments_ExternalShare"] != "其他应用" || zhSeen["Moments_VideoTooLongN"] != "请把视频裁剪到 %1$d 秒以内" {
+		t.Fatalf("android zh increment copy %+v", []string{zhSeen["Moments_Audience_Mutual"], zhSeen["Moments_ChangeAudience"], zhSeen["Moments_Recommendations"], zhSeen["Moments_Personalized"], zhSeen["Moments_ExternalShare"], zhSeen["Moments_VideoTooLongN"]})
+	}
+	// Moments_WhoCanSee is a page title, not the own-post menu item; it stays on the master wording and version.
+	if _, ok := zhSeen["Moments_WhoCanSee"]; ok {
+		t.Fatalf("android zh increment resent unchanged Moments_WhoCanSee")
 	}
 	if _, ok := zhSeen["Moments_Title"]; ok {
 		t.Fatalf("android zh increment resent unchanged Moments_Title")
@@ -335,8 +339,12 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 			iosSeen[s.GetKey()] = s.GetValue()
 		}
 	}
-	if iosInc.GetFromVersion() != 22454352 || iosSeen["Story.Privacy.WhoCanViewMoment"] != "修改可见范围" || iosSeen["Moments.Audience.Mutual"] != "互相关注" || iosSeen["Moments.Outbox.Title"] != "动态未发送" || iosSeen["Moments.Settings.Recommendations"] != "推荐" {
-		t.Fatalf("ios zh increment copy from %d %+v", iosInc.GetFromVersion(), []string{iosSeen["Story.Privacy.WhoCanViewMoment"], iosSeen["Moments.Audience.Mutual"], iosSeen["Moments.Outbox.Title"], iosSeen["Moments.Settings.Recommendations"]})
+	if iosInc.GetFromVersion() != 22454352 || iosSeen["Story.Privacy.CategoryMutualFollowers"] != "互相关注" || iosSeen["Moments.Audience.Mutual"] != "互相关注" || iosSeen["Moments.Outbox.Title"] != "动态未发送" || iosSeen["Moments.Settings.Recommendations"] != "推荐" {
+		t.Fatalf("ios zh increment copy from %d %+v", iosInc.GetFromVersion(), []string{iosSeen["Story.Privacy.CategoryMutualFollowers"], iosSeen["Moments.Audience.Mutual"], iosSeen["Moments.Outbox.Title"], iosSeen["Moments.Settings.Recommendations"]})
+	}
+	// Story.Privacy.WhoCanViewMoment is the composer/nav title, not the own-post menu item.
+	if _, ok := iosSeen["Story.Privacy.WhoCanViewMoment"]; ok {
+		t.Fatalf("ios zh increment resent unchanged Story.Privacy.WhoCanViewMoment")
 	}
 }
 
