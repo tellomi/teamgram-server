@@ -11,6 +11,9 @@ type bucketState struct {
 	tokens float64
 	ts     time.Time
 	ready  bool
+	// gen changes on every take. A rejected request may delete the bucket
+	// only when gen is still the value that request wrote.
+	gen uint64
 }
 
 const (
@@ -53,15 +56,17 @@ func (m *Memory) Len() int {
 }
 
 func (m *Memory) Take(ctx context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, error) {
-	allowed, wait, _, err := m.take(ctx, key, rule, now)
+	allowed, wait, _, _, err := m.take(ctx, key, rule, now)
 	return allowed, wait, err
 }
 
-// take reports fresh when this call inserted a subject key that a later
-// rejection in the same request may drop. The overflow key is never fresh.
-func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, bool, error) {
+// take reports fresh when this call inserted a subject key. gen is the
+// bucket version written by this call. A later rejection may delete the key
+// only if gen is unchanged, so a concurrent spend is not erased. The
+// overflow key is never fresh.
+func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, bool, uint64, error) {
 	if m == nil {
-		return true, 0, false, nil
+		return true, 0, false, 0, nil
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -71,23 +76,23 @@ func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (
 		key = overflowKey(key)
 		overflow = true
 	}
-	allowed, wait, fresh := m.takeKey(key, rule, now)
+	allowed, wait, fresh, gen := m.takeKey(key, rule, now)
 	if !overflow || !allowed {
-		return allowed, wait, fresh, nil
+		return allowed, wait, fresh, gen, nil
 	}
 	// The per-bucket overflow token is already spent. The shared gate uses
 	// its own rule, so this spend cannot be refilled by another method.
-	gateOK, gateWait, _ := m.takeKey(memoryGate, gateRule, now)
+	gateOK, gateWait, _, _ := m.takeKey(memoryGate, gateRule, now)
 	if !gateOK && gateWait > wait {
 		wait = gateWait
 	}
 	if !gateOK {
-		return false, wait, false, nil
+		return false, wait, false, gen, nil
 	}
-	return true, 0, false, nil
+	return true, 0, false, gen, nil
 }
 
-func (m *Memory) takeKey(key string, rule Rule, now time.Time) (bool, time.Duration, bool) {
+func (m *Memory) takeKey(key string, rule Rule, now time.Time) (bool, time.Duration, bool, uint64) {
 	st, ok := m.m[key]
 	fresh := false
 	if !ok {
@@ -101,8 +106,9 @@ func (m *Memory) takeKey(key string, rule Rule, now time.Time) (bool, time.Durat
 		ts = now
 	}
 	allowed, wait, next := takeToken(tokens, ts, now, rule)
-	m.m[key] = bucketState{tokens: next, ts: now, ready: true}
-	return allowed, wait, fresh
+	st.gen++
+	m.m[key] = bucketState{tokens: next, ts: now, ready: true, gen: st.gen}
+	return allowed, wait, fresh, st.gen
 }
 
 func (m *Memory) subjectCount() int {
@@ -130,15 +136,21 @@ func isOverflowKey(key string) bool {
 	return key == memoryOverflow || strings.HasPrefix(key, memoryOverflow+":")
 }
 
-// Drop removes a key that this rejected request created. It is not used for
-// a bucket that already recorded an earlier allow.
-func (m *Memory) Drop(key string) {
-	if m == nil || key == "" || isOverflowKey(key) {
-		return
+// dropIfCurrent removes a key only when gen is still the version this
+// request wrote. A later take changes gen, and that bucket is left in place
+// so the other request's token is not thrown away.
+func (m *Memory) dropIfCurrent(key string, gen uint64) bool {
+	if m == nil || key == "" || gen == 0 || isOverflowKey(key) {
+		return false
 	}
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.m[key]
+	if !ok || st.gen != gen {
+		return false
+	}
 	delete(m.m, key)
-	m.mu.Unlock()
+	return true
 }
 
 // Refund puts back the single token this request spent. The bucket stays,

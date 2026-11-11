@@ -277,6 +277,7 @@ type localSpend struct {
 	key   string
 	rule  Rule
 	fresh bool
+	gen   uint64
 }
 
 // Allow spends a token on each bucket that applies. A Redis error on a
@@ -315,12 +316,13 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 				continue
 			}
 			var fresh bool
-			allowed, wait, fresh, err = l.local.take(ctx, key, rule, now)
+			var gen uint64
+			allowed, wait, fresh, gen, err = l.local.take(ctx, key, rule, now)
 			if err != nil {
 				continue
 			}
 			if allowed {
-				spentLocal = append(spentLocal, localSpend{key: key, rule: rule, fresh: fresh})
+				spentLocal = append(spentLocal, localSpend{key: key, rule: rule, fresh: fresh, gen: gen})
 			}
 			floodDecisions.Inc(ch.bucket, "local_fallback")
 		}
@@ -359,12 +361,12 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 		ok.Allowed = true
 		return ok
 	}
-	// A rejected request puts back the one token it spent. A phone seen for
-	// the first time is removed, so a limited IP cannot fill the table with
-	// new numbers. A phone that already had sends keeps its bucket.
+	// A rejected request puts back the one token it spent. A phone bucket
+	// this request created is removed only when nobody else has taken it
+	// since. Otherwise that other spend stays, and this request refunds
+	// just its own token.
 	for _, s := range spentLocal {
-		if s.fresh {
-			l.local.Drop(s.key)
+		if s.fresh && l.local.dropIfCurrent(s.key, s.gen) {
 			continue
 		}
 		l.local.Refund(s.key, s.rule)

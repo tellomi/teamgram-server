@@ -3,6 +3,7 @@ package flood
 import (
 	"context"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -323,6 +324,92 @@ func TestIndependentRejectedPhonesDoNotFillLocalTable(t *testing.T) {
 	}
 	if allows != 3 {
 		t.Fatalf("fresh phone and ip allowed %d", allows)
+	}
+}
+
+// blockIPStore fails every Redis take. The first Take of blockKey, after
+// Arm, waits until Release so a second request can spend the same phone.
+type blockIPStore struct {
+	blockKey string
+	armed    bool
+	entered  chan struct{}
+	release  chan struct{}
+	mu       sync.Mutex
+	held     bool
+}
+
+func (b *blockIPStore) Arm() {
+	b.mu.Lock()
+	b.armed = true
+	b.mu.Unlock()
+}
+
+func (b *blockIPStore) Take(_ context.Context, key string, _ Rule, _ time.Time) (bool, time.Duration, error) {
+	b.mu.Lock()
+	hold := b.armed && !b.held && key == b.blockKey
+	if hold {
+		b.held = true
+	}
+	b.mu.Unlock()
+	if hold {
+		close(b.entered)
+		<-b.release
+	}
+	return false, 0, context.DeadlineExceeded
+}
+
+func TestIndependentRejectDoesNotDropConcurrentPhoneSpend(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0)
+	ipKey := "flood:" + BucketSendCodeIP + ":ip:203.0.113.8"
+	st := &blockIPStore{
+		blockKey: ipKey,
+		entered:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	lim := New(st, Config{
+		Mode: ModeEnforce,
+		Rules: map[string]Rule{
+			BucketSendCodePhone: {Burst: 2, Rate: 0},
+			BucketSendCodeIP:    {Burst: 1, Rate: 0},
+		},
+	})
+	lim.now = func() time.Time { return now }
+	if d := lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "100", IP: "203.0.113.8"}); !d.Allowed {
+		t.Fatalf("seed %+v", d)
+	}
+	st.Arm()
+
+	var rejected Decision
+	done := make(chan struct{})
+	go func() {
+		rejected = lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "200", IP: "203.0.113.8"})
+		close(done)
+	}()
+	select {
+	case <-st.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("rejected request did not reach the IP check")
+	}
+	// Same phone, a new IP. This spend must survive the first request's
+	// rejection. Dropping the whole phone bucket here would restore a full
+	// burst and allow more than 2 sends.
+	if d := lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "200", IP: "198.51.100.1"}); !d.Allowed {
+		t.Fatalf("concurrent phone spend %+v", d)
+	}
+	close(st.release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("rejected request did not finish")
+	}
+	if rejected.Allowed {
+		t.Fatalf("limited IP was allowed %+v", rejected)
+	}
+	third := lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "200", IP: "198.51.100.2"})
+	fourth := lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "200", IP: "198.51.100.3"})
+	if !third.Allowed || fourth.Allowed {
+		t.Fatalf("burst 2 after the raced rejection: third=%v fourth=%v", third.Allowed, fourth.Allowed)
 	}
 }
 
