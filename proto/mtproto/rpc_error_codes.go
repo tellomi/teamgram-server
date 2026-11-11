@@ -2734,6 +2734,12 @@ var (
 	// | 500 | TRANSLATE_REQ_FAILED | Translation failed, please try again later. |
 	ErrTranslateReqFailed = status.Error(ErrInternal, "TRANSLATE_REQ_FAILED")
 
+	// ErrTranslateBusy is the same text as TRANSLATE_REQ_FAILED with code 400.
+	// The local translator returned HTTP 503 and did not start the request.
+	// Code 500 is resent by the client transport (RequestFlagFailOnServerErrors
+	// is unset on messages.translateText). Code 400 is delivered once.
+	ErrTranslateBusy = status.Error(ErrBadRequest, "TRANSLATE_REQ_FAILED")
+
 	// ErrAiComposeTimeout
 	// | 500 | AICOMPOSE_TIMEOUT | A timeout occurred while composing the message. |
 	ErrAiComposeTimeout = status.Error(ErrInternal, "AICOMPOSE_TIMEOUT")

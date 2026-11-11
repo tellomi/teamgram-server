@@ -295,3 +295,14 @@ func TestComposeRichUsesModel(t *testing.T) {
 		t.Fatalf("safety: %v", err)
 	}
 }
+
+func TestBusyTranslateIsBadRequest(t *testing.T) {
+	err := failJob(tellomiai.Job{Mode: tellomiai.ModeTranslate}, tellomiai.ErrSidecarBusy)
+	st := status.Convert(err)
+	if st.Code() != mtproto.ErrBadRequest || st.Message() != "TRANSLATE_REQ_FAILED" {
+		t.Fatalf("code %v message %s", st.Code(), st.Message())
+	}
+	if err == mtproto.ErrTranslateReqFailed {
+		t.Fatal("503 was mapped to the 500 error clients resend")
+	}
+}

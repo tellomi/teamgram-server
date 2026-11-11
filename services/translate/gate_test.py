@@ -99,6 +99,8 @@ def test_unhealthy_without_model():
 
 def test_bad_env_keeps_default():
     assert server.positive_int("TELLOMI_TRANSLATE_MAX_INFLIGHT", 1) == 1
+    assert server.DEFAULT_INFLIGHT == 2
+    assert server.DEFAULT_QUEUE == 8
 
 
 if __name__ == "__main__":

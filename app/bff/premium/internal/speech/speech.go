@@ -34,9 +34,12 @@ const (
 var ErrAudioTooLong = status.Error(mtproto.ErrBadRequest, "MSG_VOICE_TOO_LONG")
 
 // ErrTranscriptionUnavailable is a recognizer outage (sidecar down, timeout,
-// non-200). It is not TRANSCRIPTION_FAILED, which clients show as "no speech
-// detected" and which is reserved for audio that really has no words. 400, not
-// 500: clients resend some 500s on their own.
+// HTTP 503 overloaded, any other non-200). It is not TRANSCRIPTION_FAILED,
+// which clients show as "no speech detected" and which is reserved for audio
+// that really has no words. 400, not 500: the Android transport resends a 500
+// when RequestFlagFailOnServerErrors is unset, which messages.transcribeAudio
+// does not set. A 400 is delivered once. TranscribeButton then finishes the
+// bubble (empty text) instead of leaving it spinning.
 var ErrTranscriptionUnavailable = status.Error(mtproto.ErrBadRequest, "TRANSCRIPTION_UNAVAILABLE")
 
 // Clip is the document a voice note or round video stores in dfs.

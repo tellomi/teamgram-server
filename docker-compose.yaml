@@ -470,10 +470,10 @@ services:
       OMP_NUM_THREADS: "2"
       MKL_NUM_THREADS: "2"
       OPENBLAS_NUM_THREADS: "2"
-      # Request slots, separate from the thread env above. 1 running and 2
+      # Request slots, separate from the thread env above. 2 running and 8
       # waiting; further POSTs get 503. GET /healthz does not take a slot.
-      ASR_MAX_INFLIGHT: "1"
-      ASR_MAX_QUEUE: "2"
+      ASR_MAX_INFLIGHT: "2"
+      ASR_MAX_QUEUE: "8"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -505,10 +505,10 @@ services:
     environment:
       TELLOMI_TRANSLATE_THREADS: "2"
       OMP_NUM_THREADS: "2"
-      # Request slots, separate from TELLOMI_TRANSLATE_THREADS. 1 running
-      # and 2 waiting; further POSTs get 503. GET /health does not take a slot.
-      TELLOMI_TRANSLATE_MAX_INFLIGHT: "1"
-      TELLOMI_TRANSLATE_MAX_QUEUE: "2"
+      # Request slots, separate from TELLOMI_TRANSLATE_THREADS. 2 running
+      # and 8 waiting; further POSTs get 503. GET /health does not take a slot.
+      TELLOMI_TRANSLATE_MAX_INFLIGHT: "2"
+      TELLOMI_TRANSLATE_MAX_QUEUE: "8"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8091/health"]
       interval: 10s

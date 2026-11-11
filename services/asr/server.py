@@ -24,6 +24,11 @@ TAG = re.compile(r"<\|[^>|]{0,64}\|>")
 LANG = re.compile(r"<\|(zh|en|yue|ja|ko|nospeech)\|>")
 SAMPLE_RATE = 16000
 
+# Two clips can run at once, and eight more may wait. A 4 vCPU host can
+# hold that without refusing a small group. Further POSTs get 503 at once.
+DEFAULT_INFLIGHT = 2
+DEFAULT_QUEUE = 8
+
 
 def clean_text(text: str) -> str:
     if not text:
@@ -295,11 +300,11 @@ def main():
         chunk_seconds=int(os.environ.get("ASR_CHUNK_SECONDS", "30")),
     )
     port = int(os.environ.get("ASR_PORT", "8080"))
-    # One clip runs at a time on the 1 CPU cap. Two more may wait. The rest
-    # are refused. These are request slots, not OMP/MKL thread counts.
+    # Request slots, not OMP/MKL thread counts. Defaults are DEFAULT_INFLIGHT
+    # and DEFAULT_QUEUE. A full gate responds 503 immediately.
     admission = Admission(
-        positive_int("ASR_MAX_INFLIGHT", 1),
-        positive_int("ASR_MAX_QUEUE", 2, allow_zero=True),
+        positive_int("ASR_MAX_INFLIGHT", DEFAULT_INFLIGHT),
+        positive_int("ASR_MAX_QUEUE", DEFAULT_QUEUE, allow_zero=True),
     )
     server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(engine, admission))
     server.serve_forever()

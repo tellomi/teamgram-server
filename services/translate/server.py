@@ -24,6 +24,11 @@ MAX_TEXTS = 32
 MAX_CHARS = 2000
 ZH = {"zh", "zh-cn", "zh-hans"}
 
+# Two translations can run at once, and eight more may wait. Further POSTs
+# get 503 at once. These are request slots, not intra_threads.
+DEFAULT_INFLIGHT = 2
+DEFAULT_QUEUE = 8
+
 # Filled by load(). None means the process is up but unhealthy.
 ENGINE = None
 LOAD_ERROR = "model_missing"
@@ -250,11 +255,9 @@ def main():
     ok = load()
     if not ok:
         print("translate unhealthy:", LOAD_ERROR, file=sys.stderr)
-    # One translation runs at a time. Two more may wait. The rest are
-    # refused. These are request slots, not intra_threads.
     ADMISSION = Admission(
-        positive_int("TELLOMI_TRANSLATE_MAX_INFLIGHT", 1),
-        positive_int("TELLOMI_TRANSLATE_MAX_QUEUE", 2, allow_zero=True),
+        positive_int("TELLOMI_TRANSLATE_MAX_INFLIGHT", DEFAULT_INFLIGHT),
+        positive_int("TELLOMI_TRANSLATE_MAX_QUEUE", DEFAULT_QUEUE, allow_zero=True),
     )
     port = int(os.environ.get("PORT", "8091"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

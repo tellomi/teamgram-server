@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -86,6 +87,21 @@ func TestTranslateModelAndPeerFlag(t *testing.T) {
 	if _, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "zh-hans"}); err != mtproto.ErrTranslateReqFailed {
 		t.Fatalf("flag: %v", err)
 	}
+	t.Setenv("TELLOMI_TRANSLATE", "1")
+	tellomiai.SetHook(func(context.Context, tellomiai.Job) ([]string, error) {
+		return nil, tellomiai.ErrSidecarBusy
+	})
+	t.Cleanup(func() { tellomiai.SetHook(nil) })
+	_, err := TranslateText(ctx, TranslateInput{Text: "hello", ToLang: "zh-hans"})
+	st := status.Convert(err)
+	if st.Code() != mtproto.ErrBadRequest || st.Message() != "TRANSLATE_REQ_FAILED" {
+		t.Fatalf("busy code %v message %s", st.Code(), st.Message())
+	}
+	if err == mtproto.ErrTranslateReqFailed {
+		t.Fatal("busy translate used the 500 error clients resend")
+	}
+	tellomiai.SetHook(nil)
+	t.Setenv("TELLOMI_TRANSLATE", "")
 	t.Setenv("TELLOMI_TRANSLATE", "1")
 	t.Setenv("TELLOMI_AI_API_KEY", "test-key")
 	tellomiai.SetHook(func(_ context.Context, job tellomiai.Job) ([]string, error) {

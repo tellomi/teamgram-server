@@ -33,6 +33,8 @@ def post(base, body=b"abc"):
 
 def test_limits_and_env():
     assert server.positive_int("ASR_MAX_INFLIGHT_UNSET", 1) == 1
+    assert server.DEFAULT_INFLIGHT == 2
+    assert server.DEFAULT_QUEUE == 8
     assert server.Admission(1, 0).try_acquire() is not None
 
 
