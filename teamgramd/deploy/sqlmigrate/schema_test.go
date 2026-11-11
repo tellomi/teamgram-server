@@ -144,6 +144,39 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestDialogHistoryIndexIsOnline(t *testing.T) {
+	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261126-dialog-history-index.sql"))
+	if !strings.Contains(raw, "CALL teamgram_add_index('messages', 'messages_dialog_history'") {
+		t.Fatal("dialog history index is not created through the idempotent helper")
+	}
+	stmt := "ALTER TABLE `messages` ADD INDEX `messages_dialog_history` (`user_id`, `dialog_id1`, `dialog_id2`, `deleted`, `user_message_box_id`), ALGORITHM=INPLACE, LOCK=NONE"
+	if !strings.Contains(raw, stmt) {
+		t.Fatal("dialog history index is not an online InnoDB add")
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToUpper(s), "ALTER ") {
+			t.Fatalf("raw ALTER is not idempotent: %s", s)
+		}
+	}
+	query := mustRead(t, filepath.Join("..", "..", "..", "app", "service", "biz", "message", "internal", "dal", "dao", "mysql_dao", "dialog_history_query.go"))
+	for _, piece := range []string{
+		"user_id = ?",
+		"dialog_id1 = ?",
+		"dialog_id2 = ?",
+		"deleted = 0",
+		"user_message_box_id < ?",
+		"user_message_box_id > ?",
+		"user_message_box_id >= ?",
+		"order by user_message_box_id desc",
+		"order by user_message_box_id asc",
+	} {
+		if !strings.Contains(query, piece) {
+			t.Fatalf("SelectDialogHistory no longer matches the index: missing %s", piece)
+		}
+	}
+}
+
 func TestMessageRandomIDIndexIsOnline(t *testing.T) {
 	raw := mustRead(t, filepath.Join(sqlDir(t), "migrate-20261111-message-random-id.sql"))
 	if !strings.Contains(raw, "CALL teamgram_add_index('messages', 'sender_random_id'") {
