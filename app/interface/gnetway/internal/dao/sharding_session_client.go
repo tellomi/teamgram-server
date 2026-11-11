@@ -40,6 +40,18 @@ type ShardingSessionClient struct {
 	failCounters map[string]int
 }
 
+// NewFixedShardingSessionClient serves one in-process session endpoint.
+// Production discovery stays in NewShardingSessionClient.
+func NewFixedShardingSessionClient(client sessionclient.SessionClient) *ShardingSessionClient {
+	sess := &ShardingSessionClient{
+		dispatcher:   hash.NewConsistentHash(),
+		sessions:     map[string]sessionclient.SessionClient{"local": client},
+		failCounters: map[string]int{},
+	}
+	sess.dispatcher.Add("local")
+	return sess
+}
+
 func NewShardingSessionClient(c config.Config) *ShardingSessionClient {
 	sess := &ShardingSessionClient{
 		dispatcher:   hash.NewConsistentHash(),
