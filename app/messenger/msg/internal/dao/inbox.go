@@ -131,13 +131,18 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	if message != nil {
 		message.SanitizeEntities()
 	}
+	// Private-chat inbox `peer` names the recipient. Stamp and store the
+	// sender, which is the dialog peer already used by getHistory (via
+	// dialog_id) and by the dialogs row written below.
+	msgPeer := inboxMessagePeer(fromId, peer)
+	d.stampHistoryTTL(ctx, toUserId, msgPeer, message)
 	mData, _ := jsonx.Marshal(message)
 	// mType, mData := mtproto.EncodeMessage(message)
 	inBox := &mtproto.MessageBox{
 		UserId:            toUserId,
 		SenderUserId:      fromId,
 		PeerType:          peer.PeerType,
-		PeerId:            peer.PeerId,
+		PeerId:            msgPeer.PeerId,
 		MessageId:         inBoxMsgId,
 		DialogId1:         dialogId.A,
 		DialogId2:         dialogId.B,
@@ -239,7 +244,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 					_, _, _ = d.HashTagsDAO.InsertOrUpdateTx(tx, &dataobject.HashTagsDO{
 						UserId:           inBox.UserId,
 						PeerType:         peer.PeerType,
-						PeerId:           peer.PeerId,
+						PeerId:           msgPeer.PeerId,
 						HashTag:          entity.GetUrl(),
 						HashTagMessageId: inBox.MessageId,
 					})
@@ -262,13 +267,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 			return 0, 0, err
 		},
 		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
-	// The inbox peer for a private chat is the sender, not the value this
-	// function uses as `peer` (that one names the recipient).
-	ttlPeer := peer
-	if peer != nil && peer.PeerType == mtproto.PEER_USER {
-		ttlPeer = &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: fromId}
-	}
-	d.ensureDialogTTL(ctx, toUserId, ttlPeer)
+	d.ensureDialogTTL(ctx, toUserId, msgPeer)
 
 	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
 	inBox.PtsCount = 1
@@ -508,7 +507,7 @@ func (d *Dao) EditUserInboxMessage(ctx context.Context, fromId, peerId int64, me
 		UserId:            peerId,
 		SenderUserId:      0,
 		PeerType:          mtproto.PEER_USER,
-		PeerId:            peerId,
+		PeerId:            fromId,
 		MessageId:         message.Id,
 		DialogId1:         0,
 		DialogId2:         0,
