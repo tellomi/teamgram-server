@@ -197,6 +197,18 @@
         "MainTabsHideLabels",
         "MainTabsMenuSettings",
         "SettingsTools"
+      ],
+      "pr:136": [
+        "Moments_Recommendations",
+        "Moments_Personalized",
+        "Moments_PersonalizedInfo",
+        "Moments_VideoTooLongN"
+      ],
+      "pr:137": [
+        "Moments_ExternalShare",
+        "Moments_ShareBlocked",
+        "Moments_QuoteUnavailable",
+        "Moments_QuoteInvalid"
       ]
     }
   },
@@ -438,6 +450,19 @@
         "Moments.WhoCanSee",
         "Moments_Audience_Kept",
         "Moments_Comment_SendFailed"
+      ],
+      "pr:163": [
+        "Moments.Draft.Message",
+        "Moments.Outbox.Incomplete",
+        "Moments.Outbox.Later",
+        "Moments.Outbox.Retry",
+        "Moments.Outbox.Text",
+        "Moments.Outbox.Title"
+      ],
+      "pr:164": [
+        "Moments.Settings.Personalized",
+        "Moments.Settings.PersonalizedInfo",
+        "Moments.Settings.Recommendations"
       ]
     }
   }
