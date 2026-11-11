@@ -25,6 +25,13 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 	if _, err := a.SendText(ctx, peerForA, keep, nil); err != nil {
 		t.Fatal(err)
 	}
+	// Message dates are whole seconds. PeriodAt applies a timer to every
+	// message whose date is greater than or equal to the action, including
+	// one sent earlier in that same second. Wait for the next second so this
+	// row stays a "sent before the timer" message.
+	if err := waitUntilNextSecond(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := setHistoryTTL(ctx, a, peerForA, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -311,6 +318,18 @@ func TestHistoryTTLBothDirections(t *testing.T) {
 		}
 	}
 	t.Fatalf("both-directions historyGone=%v A=%s B=%s", histGone, summarizeUpdates(lastA), summarizeUpdates(lastB))
+}
+
+func waitUntilNextSecond(ctx context.Context) error {
+	deadline := time.Now().Truncate(time.Second).Add(time.Second + 20*time.Millisecond)
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func setHistoryTTL(ctx context.Context, c *Client, peer *mtproto.InputPeer, period int32) error {
