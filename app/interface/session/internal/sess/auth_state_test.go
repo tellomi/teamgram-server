@@ -265,6 +265,7 @@ type fakeAuthsessionClient struct {
 	authStateData         *authsession.AuthKeyStateData
 	getAuthStateDataCalls int
 	getErr                error
+	userErr               error
 	userID                int64
 }
 
@@ -295,6 +296,9 @@ func (f *fakeAuthsessionClient) AuthsessionGetLangCode(context.Context, *authses
 	return nil, nil
 }
 func (f *fakeAuthsessionClient) AuthsessionGetUserId(context.Context, *authsession.TLAuthsessionGetUserId) (*mtproto.Int64, error) {
+	if f != nil && f.userErr != nil {
+		return nil, f.userErr
+	}
 	if f == nil || f.userID == 0 {
 		return nil, nil
 	}

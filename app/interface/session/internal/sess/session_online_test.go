@@ -7,6 +7,8 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/interface/session/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
+
+	"github.com/zeromicro/go-zero/core/syncx"
 )
 
 // A second generic session stays up while one updates socket closes. The
@@ -169,6 +171,7 @@ func newTestWrapper(rec *recordingStatus) *MainAuthWrapper {
 		authKeyId:  469193,
 		AuthUserId: 7,
 		cb:         &MainAuthWrapperManager{Dao: d},
+		running:    syncx.NewAtomicBool(),
 	}
 	m.tempAuth = newSessionList(mtproto.AuthKeyTypeTemp, m)
 	m.mediaTempAuth = newSessionList(mtproto.AuthKeyTypeMediaTemp, m)
@@ -188,16 +191,22 @@ func onlineSession(m *MainAuthWrapper, list *SessionList, id int64) *session {
 }
 
 type recordingStatus struct {
-	offline []int64
+	offline     []int64
+	offlineUser []int64
+	onlineUser  []int64
 }
 
-func (r *recordingStatus) StatusSetSessionOnline(context.Context, *status.TLStatusSetSessionOnline) (*mtproto.Bool, error) {
+func (r *recordingStatus) StatusSetSessionOnline(_ context.Context, in *status.TLStatusSetSessionOnline) (*mtproto.Bool, error) {
+	if in != nil {
+		r.onlineUser = append(r.onlineUser, in.GetUserId())
+	}
 	return mtproto.BoolTrue, nil
 }
 
 func (r *recordingStatus) StatusSetSessionOffline(_ context.Context, in *status.TLStatusSetSessionOffline) (*mtproto.Bool, error) {
 	if in != nil {
 		r.offline = append(r.offline, in.GetAuthKeyId())
+		r.offlineUser = append(r.offlineUser, in.GetUserId())
 	}
 	return mtproto.BoolTrue, nil
 }

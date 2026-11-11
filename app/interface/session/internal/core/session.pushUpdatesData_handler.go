@@ -31,7 +31,7 @@ func (c *SessionCore) SessionPushUpdatesData(in *session.TLSessionPushUpdatesDat
 		c.Logger.Errorf("session.pushUpdatesData - %v", err)
 		return nil, err
 	}
-	_ = mainAuth.SyncDataArrived(c.ctx, in.Notification, in.Updates)
+	_ = mainAuth.SyncDataArrived(c.ctx, in.Notification, in.Updates, session.PushUpdatesUser(in))
 
 	return mtproto.BoolTrue, nil
 }
