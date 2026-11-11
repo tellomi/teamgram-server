@@ -61,9 +61,13 @@ request does not pay for a `documents/` miss first.
 
 A `photo_sizes` row whose object is missing used to make `upload.getFile`
 return an empty `upload.file`. Clients treat that as success and retry.
-The download now rebuilds a JPEG with ffmpeg when the source document is
-a video or image that fits in memory, and otherwise returns
-`FILE_ID_INVALID`. Rows already stored that way are repaired by
+The download tries the recorded key, then `<type>/<id>.dat`, then the
+deduped origin's key. A JPEG, PNG, or GIF document is resized with the
+same encoder as upload. A video is rebuilt with ffmpeg; one larger than
+32MiB is streamed to disk up to 256MiB. Anything else, including a video
+above that cap, returns `FILE_ID_INVALID`. A storage timeout or a refused
+read is returned as that error and is not rewritten to `FILE_ID_INVALID`.
+Rows already stored without an object are repaired by
 `backfillthumbs`, which is dry-run unless `-dry-run=false`:
 
 ```

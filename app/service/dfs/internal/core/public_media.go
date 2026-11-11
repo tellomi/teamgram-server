@@ -13,7 +13,7 @@ import (
 // A short read at the end of an object that does exist stops the search:
 // the next prefix is a different file, not the rest of this one.
 func readFirst(reads ...func() ([]byte, error)) ([]byte, error) {
-	var last error
+	var hard, last error
 	for _, read := range reads {
 		b, err := read()
 		if errors.Is(err, io.EOF) {
@@ -26,11 +26,20 @@ func readFirst(reads ...func() ([]byte, error)) ([]byte, error) {
 			return b, nil
 		}
 		if err != nil && !errors.Is(err, minio_util.ErrNotFound) {
+			// A later miss must not turn a timeout or a refused read into
+			// "object does not exist". Callers map that miss to
+			// FILE_ID_INVALID.
+			if hard == nil {
+				hard = err
+			}
+			continue
+		}
+		if errors.Is(err, minio_util.ErrNotFound) && last == nil {
 			last = err
 		}
-		if errors.Is(err, minio_util.ErrNotFound) {
-			last = err
-		}
+	}
+	if hard != nil {
+		return nil, hard
 	}
 	if last == nil {
 		return []byte{}, nil
