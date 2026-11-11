@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 )
 
 // Rebind the permanent key from user A to user B. The status hash can still
@@ -99,6 +100,106 @@ func TestSetOnlineDoesNotRepublishReboundKey(t *testing.T) {
 	}
 	if len(rec.offlineUser) != 0 {
 		t.Fatalf("owned key was evicted: %v", rec.offlineUser)
+	}
+}
+
+func TestChangeAuthStateDefaultDoesNotDropOnline(t *testing.T) {
+	// These are the states with no explicit case. Production does not pass
+	// them to MainAuthWrapper.changeAuthState: temp-key bind uses
+	// SessionList.changeAuthState, and reconnect reloads through
+	// applyAuthStateData.
+	states := []int{
+		mtproto.AuthStateNew,
+		mtproto.AuthStatePermBound,
+		mtproto.AuthStateWaitInit,
+		mtproto.AuthStateUnauthorized,
+		99,
+	}
+	for _, state := range states {
+		rec := &recordingStatus{}
+		m := newOwnerWrapper(rec, 11, nil)
+		m.changeAuthState(context.Background(), state, int64(0))
+		if len(rec.offline) != 0 || len(rec.offlineUser) != 0 {
+			t.Fatalf("state %d deleted online: keys %v users %v", state, rec.offline, rec.offlineUser)
+		}
+		if m.AuthUserId != 0 {
+			t.Fatalf("state %d left user %d", state, m.AuthUserId)
+		}
+	}
+}
+
+func TestLoginReconnectAndTempBindKeepOnline(t *testing.T) {
+	ctx := context.Background()
+
+	rec := &recordingStatus{}
+	loggingIn := newOwnerWrapper(rec, 0, nil)
+	loggingIn.changeAuthState(ctx, mtproto.AuthStateNormal, int64(11))
+	if loggingIn.AuthUserId != 11 || len(rec.offline) != 0 {
+		t.Fatalf("login user %d offline %v", loggingIn.AuthUserId, rec.offline)
+	}
+
+	rec = &recordingStatus{}
+	again := newOwnerWrapper(rec, 11, nil)
+	again.state = mtproto.AuthStateUnauthorized
+	again.applyAuthStateData(ctx, authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
+		KeyState: mtproto.AuthStateNormal,
+		UserId:   11,
+	}).To_AuthKeyStateData())
+	if again.AuthUserId != 11 || again.state != mtproto.AuthStateNormal || len(rec.offline) != 0 {
+		t.Fatalf("reconnect user %d state %d offline %v", again.AuthUserId, again.state, rec.offline)
+	}
+
+	rec = &recordingStatus{}
+	temp := newOwnerWrapper(rec, 11, nil)
+	temp.mainAuth.changeAuthState(mtproto.AuthStatePermBound)
+	if temp.AuthUserId != 11 || temp.mainAuth.state != mtproto.AuthStatePermBound || len(rec.offline) != 0 {
+		t.Fatalf("temp bind user %d list state %d offline %v", temp.AuthUserId, temp.mainAuth.state, rec.offline)
+	}
+}
+
+func TestSameUserTwoDevicesBothReceive(t *testing.T) {
+	phone := newOwnerWrapper(nil, 11, nil)
+	desktop := newOwnerWrapper(nil, 11, nil)
+	a := onlineGeneric(phone)
+	b := onlineGeneric(desktop)
+	deliverSync(phone, 11)
+	deliverSync(desktop, 11)
+	if a.outQueue.oMsgs.Len() != 1 || b.outQueue.oMsgs.Len() != 1 {
+		t.Fatalf("queues phone %d desktop %d", a.outQueue.oMsgs.Len(), b.outQueue.oMsgs.Len())
+	}
+}
+
+func TestSameDeviceTwoAccountsEachReceiveOwnUpdate(t *testing.T) {
+	accountA := newOwnerWrapper(nil, 11, nil)
+	accountB := newOwnerWrapper(nil, 22, nil)
+	a := onlineGeneric(accountA)
+	b := onlineGeneric(accountB)
+	deliverSync(accountA, 11)
+	deliverSync(accountB, 22)
+	deliverSync(accountB, 11)
+	if a.outQueue.oMsgs.Len() != 1 {
+		t.Fatalf("account A queue %d", a.outQueue.oMsgs.Len())
+	}
+	if b.outQueue.oMsgs.Len() != 1 {
+		t.Fatalf("account B queue %d, want only its own update", b.outQueue.oMsgs.Len())
+	}
+}
+
+func TestReconnectThenUpdateArrives(t *testing.T) {
+	m := newOwnerWrapper(nil, 11, nil)
+	sess := onlineGeneric(m)
+	ctx := context.Background()
+	sess.changeConnState(ctx, kStateOffline)
+	if sess.sessionOnline() {
+		t.Fatal("socket was still online")
+	}
+	sess.changeConnState(ctx, kStateOnline)
+	if !sess.sessionOnline() {
+		t.Fatal("reconnect left the session offline")
+	}
+	deliverSync(m, 11)
+	if sess.outQueue.oMsgs.Len() != 1 {
+		t.Fatalf("queue after reconnect %d", sess.outQueue.oMsgs.Len())
 	}
 }
 

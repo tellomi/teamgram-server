@@ -187,7 +187,13 @@ func (m *MainAuthWrapper) changeAuthState(ctx context.Context, state int, stateD
 		}
 		m.AuthUserId = newUserId
 	default:
-		m.delOnline(ctx)
+		// States that fall through: New (1), PermBound (2), WaitInit (3),
+		// Unauthorized (4), and any value outside 0..8. None of the
+		// production callers pass them here. Temp-key bind uses
+		// SessionList.changeAuthState. A reconnect reloads through
+		// applyAuthStateData, and that default does not touch the online
+		// hash. Deleting the hash from this branch would drop pushes for a
+		// user who is still signed in.
 		m.AuthUserId = 0
 	}
 }
@@ -449,10 +455,11 @@ func (m *MainAuthWrapper) authKeyOwner(ctx context.Context) (int64, bool) {
 }
 
 // rejectSync reports that this update must not be written to the connection.
-// expectedUser is the user sync looked up in the online-session hash. A key
-// rebound to someone else fails that comparison, or was already marked when
-// changeAuthState refused the switch. The owner lookup itself happens in
-// sync, before the push, and again here only when refreshing online state.
+// expectedUser is the user sync looked up in the online-session hash and
+// stamped on the push. A key rebound to someone else fails that comparison,
+// or was already marked when changeAuthState refused the switch. The auth
+// key's current owner is not looked up on this path; setOnline does that
+// on its existing refresh interval.
 func (m *MainAuthWrapper) rejectSync(ctx context.Context, expectedUser int64) bool {
 	if m == nil {
 		return true

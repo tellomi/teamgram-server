@@ -17,7 +17,6 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/session/session"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/internal/svc"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
-	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -212,13 +211,6 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 func (c *SyncCore) pushUpdatesToSession(syncType SyncType, userId, permAuthKeyId int64, hasServerId *wrapperspb.StringValue, authKeyId, sessionId *wrapperspb.Int64Value, pushData *mtproto.Updates, notification bool) {
 	if syncType == syncTypeUserMe && hasServerId != nil {
 		c.Logger.Debugf("pushUpdatesToSession - pushData: {server_id: %v, auth_key_id: %v}", hasServerId, authKeyId)
-		keyID := permAuthKeyId
-		if keyID == 0 && authKeyId != nil {
-			keyID = authKeyId.GetValue()
-		}
-		if !c.authKeyServes(userId, keyID) {
-			return
-		}
 		if sessionId != nil {
 			msg := &session.TLSessionPushSessionUpdatesData{
 				PermAuthKeyId: permAuthKeyId,
@@ -242,7 +234,7 @@ func (c *SyncCore) pushUpdatesToSession(syncType SyncType, userId, permAuthKeyId
 		})
 		c.Logger.Debugf("statusList - #%v", statusList)
 		for _, sess := range statusList.GetUserSessions() {
-			if sess == nil || !c.authKeyServes(userId, sess.AuthKeyId) {
+			if sess == nil {
 				continue
 			}
 			if syncType == syncTypeUserNotMe && sess.AuthKeyId == permAuthKeyId {
@@ -291,7 +283,7 @@ func (c *SyncCore) pushUpdatesExcept(userId int64, excludes []int64, pushData *m
 		UserId: userId,
 	})
 	for _, sess := range statusList.GetUserSessions() {
-		if sess == nil || !c.authKeyServes(userId, sess.AuthKeyId) {
+		if sess == nil {
 			continue
 		}
 		if _, ok := skip[sess.AuthKeyId]; ok {
@@ -305,7 +297,9 @@ func (c *SyncCore) pushUpdatesExcept(userId int64, excludes []int64, pushData *m
 }
 
 // pushUpdates stamps the expected user and sends one session push.
-// authKeyServes has already accepted the key for this user.
+// The session compares that user with its own before writing to the socket.
+// This path does not call authsession: a group fan-out would do that once
+// per member per device.
 func (c *SyncCore) pushUpdates(serverID string, authKeyID int64, notification bool, pushData *mtproto.Updates, userID int64) {
 	msg := &session.TLSessionPushUpdatesData{
 		PermAuthKeyId: authKeyID,
@@ -314,36 +308,4 @@ func (c *SyncCore) pushUpdates(serverID string, authKeyID int64, notification bo
 	}
 	session.SetPushUpdatesUser(msg, userID)
 	_ = c.svcCtx.Dao.PushUpdatesToSession(c.ctx, serverID, msg)
-}
-
-// authKeyServes reports whether this auth key may receive updates for userID.
-// A known owner other than userID is a stale online-session field: it is
-// removed and the push is not sent. An unknown owner (authsession down, or
-// no client configured) keeps the previous route.
-func (c *SyncCore) authKeyServes(userID, authKeyID int64) bool {
-	owner, ok := c.authKeyOwner(authKeyID)
-	if !ok || owner == userID {
-		return true
-	}
-	c.Logger.Errorf("pushUpdatesToSession - authKey %d belongs to %d, not %d; evict stale route", authKeyID, owner, userID)
-	if userID > 0 && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.StatusClient != nil {
-		_, _ = c.svcCtx.Dao.StatusClient.StatusSetSessionOffline(c.ctx, &status.TLStatusSetSessionOffline{
-			UserId:    userID,
-			AuthKeyId: authKeyID,
-		})
-	}
-	return false
-}
-
-func (c *SyncCore) authKeyOwner(authKeyID int64) (int64, bool) {
-	if authKeyID == 0 || c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.AuthsessionClient == nil {
-		return 0, false
-	}
-	got, err := c.svcCtx.Dao.AuthsessionClient.AuthsessionGetUserId(c.ctx, &authsession.TLAuthsessionGetUserId{
-		AuthKeyId: authKeyID,
-	})
-	if err != nil || got == nil || got.GetV() == 0 {
-		return 0, false
-	}
-	return got.GetV(), true
 }

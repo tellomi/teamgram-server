@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 func TestPushUpdatesUserRoundTrip(t *testing.T) {
@@ -67,8 +68,27 @@ func TestPushSessionUpdatesUserRoundTrip(t *testing.T) {
 func TestPushUpdatesUserZeroClearsStamp(t *testing.T) {
 	msg := &TLSessionPushUpdatesData{}
 	SetPushUpdatesUser(msg, 11)
-	SetPushUpdatesUser(msg, 0)
+	msg.UserId = 0
 	if got := PushUpdatesUser(msg); got != 0 {
 		t.Fatalf("user = %d", got)
+	}
+}
+
+func TestPushUserFieldsAreInTheDescriptor(t *testing.T) {
+	assertUserField(t, (&TLSessionPushUpdatesData{}).ProtoReflect().Descriptor(), 6)
+	assertUserField(t, (&TLSessionPushSessionUpdatesData{}).ProtoReflect().Descriptor(), 7)
+}
+
+func assertUserField(t *testing.T, md protoreflect.MessageDescriptor, number protoreflect.FieldNumber) {
+	t.Helper()
+	fd := md.Fields().ByName("user_id")
+	if fd == nil {
+		t.Fatalf("%s has no user_id field", md.Name())
+	}
+	if fd.Number() != number {
+		t.Fatalf("%s user_id number = %d, want %d", md.Name(), fd.Number(), number)
+	}
+	if fd.Kind() != protoreflect.Int64Kind {
+		t.Fatalf("%s user_id kind = %s", md.Name(), fd.Kind())
 	}
 }
