@@ -102,7 +102,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 				t.Fatalf("%s %s lang %q plural %q", tc.platform, code, pack.lang, pack.plural)
 			}
 			if tc.platform == "android" {
-				if pack.version != 61730402 || pack.fix != 61730400 {
+				if pack.version != 61730403 || pack.fix != 61730400 {
 					t.Fatalf("android %s version %d fix %d", code, pack.version, pack.fix)
 				}
 			}
@@ -117,9 +117,10 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 				if !ok {
 					t.Fatalf("%s %s missing %s", tc.platform, code, key)
 				}
-				// Changed strings are at the pack version. Strings this fill
-				// left alone stay one version behind, which is the previous pack.
-				if ver != pack.version && ver != pack.version-1 {
+				// Changed or new strings are at the pack version. Strings this
+				// fill left alone stay at the previous pack, or one further
+				// back if they were already unchanged in #298.
+				if ver < pack.version-2 || ver > pack.version {
 					t.Fatalf("%s %s %s string version %d pack %d", tc.platform, code, key, ver, pack.version)
 				}
 			}
@@ -206,17 +207,17 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 			}
 		}
 	}
-	if hans := readPackText(t, "../../data/langpack/ios/zh-hans.json.gz"); hans["Story.Privacy.CategoryMutualFollowers"] != "互关好友" || hans["Story.Privacy.WhoCanViewMoment"] != "谁可以看" {
+	if hans := readPackText(t, "../../data/langpack/ios/zh-hans.json.gz"); hans["Story.Privacy.CategoryMutualFollowers"] != "互相关注" || hans["Story.Privacy.WhoCanViewMoment"] != "修改可见范围" {
 		t.Fatalf("ios story hans needs review copy: %+v", []string{hans["Story.Privacy.CategoryMutualFollowers"], hans["Story.Privacy.WhoCanViewMoment"]})
 	}
-	if hant := readPackText(t, "../../data/langpack/ios/zh-hant.json.gz"); hant["Story.Privacy.CategoryMutualFollowers"] != "互關好友" || hant["Story.Privacy.WhoCanViewMoment"] != "誰可以看" {
+	if hant := readPackText(t, "../../data/langpack/ios/zh-hant.json.gz"); hant["Story.Privacy.CategoryMutualFollowers"] != "互相關注" || hant["Story.Privacy.WhoCanViewMoment"] != "修改可見範圍" {
 		t.Fatalf("ios story hant needs review copy: %+v", []string{hant["Story.Privacy.CategoryMutualFollowers"], hant["Story.Privacy.WhoCanViewMoment"]})
 	}
 	assertTellomiNotEnglish(t, "android", androidKeys)
 	assertTellomiNotEnglish(t, "ios", iosKeys)
 
 	ver, ok := cat.Version("android", "zh-hans")
-	if !ok || ver != 61730402 {
+	if !ok || ver != 61730403 {
 		t.Fatalf("android zh-hans version %d", ver)
 	}
 	// 61730400 is the full-replace cutover. A phone still there receives the
@@ -237,11 +238,27 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	if seen["MainTabsMenuSettings"] != "选单设定" || seen["TellomiMenuSettings"] != "选单设定" || seen["Moments_Title"] != "动态" {
 		t.Fatalf("android getDifference menu %+v", []string{seen["MainTabsMenuSettings"], seen["TellomiMenuSettings"], seen["Moments_Title"]})
 	}
-	// Chinese had no new wording at 61730402, so a phone already at 61730401
-	// is caught up. Japanese was still English and must receive the translation.
-	caughtZh, err := cat.Difference("android", "zh-hans", 61730401)
-	if err != nil || len(caughtZh.GetStrings()) != 0 || caughtZh.GetFromVersion() != 61730401 {
-		t.Fatalf("android zh caught up %+v %v", caughtZh, err)
+	// Chinese has new wording at 61730403. A phone already at 61730402
+	// receives the changed audience labels and the new recommendation keys.
+	// Moments_Title did not change, so it stays out of that incremental diff.
+	zhInc, err := cat.Difference("android", "zh-hans", 61730402)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zhInc.GetFromVersion() != 61730402 || zhInc.GetVersion() != ver || len(zhInc.GetStrings()) == 0 {
+		t.Fatalf("android zh increment from %d version %d n %d", zhInc.GetFromVersion(), zhInc.GetVersion(), len(zhInc.GetStrings()))
+	}
+	zhSeen := map[string]string{}
+	for _, s := range zhInc.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			zhSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	if zhSeen["Moments_Audience_Mutual"] != "互相关注" || zhSeen["Moments_WhoCanSee"] != "修改可见范围" || zhSeen["Moments_Recommendations"] != "推荐" || zhSeen["Moments_Personalized"] != "个性化推荐" || zhSeen["Moments_ExternalShare"] != "其他应用" || zhSeen["Moments_VideoTooLongN"] != "请把视频裁剪到 %1$d 秒以内" {
+		t.Fatalf("android zh increment copy %+v", []string{zhSeen["Moments_Audience_Mutual"], zhSeen["Moments_WhoCanSee"], zhSeen["Moments_Recommendations"], zhSeen["Moments_Personalized"], zhSeen["Moments_ExternalShare"], zhSeen["Moments_VideoTooLongN"]})
+	}
+	if _, ok := zhSeen["Moments_Title"]; ok {
+		t.Fatalf("android zh increment resent unchanged Moments_Title")
 	}
 	ja, err := cat.Difference("android", "ja", 61730401)
 	if err != nil {
@@ -269,7 +286,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	}
 
 	iosVer, ok := cat.Version("ios", "zh-hans")
-	if !ok || iosVer != 22454352 {
+	if !ok || iosVer != 22454353 {
 		t.Fatalf("ios zh-hans version %d", iosVer)
 	}
 	// The Chinese Moments title did not change, so it stays at the previous
@@ -305,8 +322,21 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 		t.Fatalf("ios ja Moments.Title %q from %d", jaMoments, jaIOS.GetFromVersion())
 	}
 	hantVer, ok := cat.Version("ios", "zh-hant")
-	if !ok || hantVer != 22421537 {
+	if !ok || hantVer != 22421538 {
 		t.Fatalf("ios zh-hant version %d", hantVer)
+	}
+	iosInc, err := cat.Difference("ios", "zh-hans", 22454352)
+	if err != nil {
+		t.Fatal(err)
+	}
+	iosSeen := map[string]string{}
+	for _, s := range iosInc.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			iosSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	if iosInc.GetFromVersion() != 22454352 || iosSeen["Story.Privacy.WhoCanViewMoment"] != "修改可见范围" || iosSeen["Moments.Audience.Mutual"] != "互相关注" || iosSeen["Moments.Outbox.Title"] != "动态未发送" || iosSeen["Moments.Settings.Recommendations"] != "推荐" {
+		t.Fatalf("ios zh increment copy from %d %+v", iosInc.GetFromVersion(), []string{iosSeen["Story.Privacy.WhoCanViewMoment"], iosSeen["Moments.Audience.Mutual"], iosSeen["Moments.Outbox.Title"], iosSeen["Moments.Settings.Recommendations"]})
 	}
 }
 
@@ -413,16 +443,16 @@ type packVersions struct {
 	strings map[string]int32
 }
 
-// iosPackVersion is one past the versions shipped in #297.
+// iosPackVersion is one past the versions shipped in #298.
 var iosPackVersion = map[string]int32{
-	"ar": 22452758, "be": 22420170, "ca": 22412798, "cs": 22418779,
-	"de": 22431602, "el": 22202259, "en": 22347350, "es": 22412200,
-	"fa": 22437413, "fi": 22410854, "fr": 22391559, "he": 22452942,
-	"hi": 22202259, "id": 22321175, "it": 22388318, "ja": 22418205,
-	"ko": 22454170, "ms": 22352691, "nb": 22420483, "nl": 22449822,
-	"pl": 22392158, "pt-br": 22431433, "ro": 22444907, "ru": 22421467,
-	"sv": 22427914, "th": 22202259, "tr": 22434109, "uk": 22460356,
-	"uz": 22449133, "vi": 22347890, "zh-hans": 22454352, "zh-hant": 22421537,
+	"ar": 22452759, "be": 22420171, "ca": 22412799, "cs": 22418780,
+	"de": 22431603, "el": 22202260, "en": 22347351, "es": 22412201,
+	"fa": 22437414, "fi": 22410855, "fr": 22391560, "he": 22452943,
+	"hi": 22202260, "id": 22321176, "it": 22388319, "ja": 22418206,
+	"ko": 22454171, "ms": 22352692, "nb": 22420484, "nl": 22449823,
+	"pl": 22392159, "pt-br": 22431434, "ro": 22444908, "ru": 22421468,
+	"sv": 22427915, "th": 22202260, "tr": 22434110, "uk": 22460357,
+	"uz": 22449134, "vi": 22347891, "zh-hans": 22454353, "zh-hant": 22421538,
 }
 
 // pluralCodeByLang is the plural_code each pack already ships. This fill must
