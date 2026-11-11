@@ -24,6 +24,11 @@ const (
 	EnvBucketBackups      = "TELLOMI_S3_BUCKET_BACKUPS"
 	EnvPublicMediaBaseURL = "TELLOMI_S3_PUBLIC_MEDIA_BASE_URL"
 	EnvAttachmentsBaseURL = "TELLOMI_S3_ATTACHMENTS_BASE_URL"
+	// EnvHTTPProxy is an HTTP CONNECT proxy used only by this object-storage
+	// client. Empty means dial the endpoint directly. It does not set the
+	// process HTTP_PROXY, so push, AI, and link preview stay on their own
+	// transports.
+	EnvHTTPProxy = "TELLOMI_S3_HTTP_PROXY"
 )
 
 // BucketConfig names the physical buckets.
@@ -73,6 +78,10 @@ type MinioConfig struct {
 
 	PublicMediaBaseURL string `json:",optional"`
 	AttachmentsBaseURL string `json:",optional"`
+	// HTTPProxy is host:port or an http:// URL. Empty dials the endpoint
+	// directly and does not read HTTP_PROXY. https:// is refused.
+	// TELLOMI_S3_HTTP_PROXY overrides it. Only this S3 client uses it.
+	HTTPProxy string `json:",optional"`
 
 	// BucketProbeAttempts is how many times startup checks each bucket.
 	// Zero means the default. Tests set 1. Missing buckets are not created.
@@ -98,6 +107,7 @@ func (c *MinioConfig) SetTransportForTest(rt http.RoundTripper) {
 func (c MinioConfig) Redacted() MinioConfig {
 	c.AccessKeyID = redact.Credential(c.AccessKeyID)
 	c.SecretAccessKey = redact.Credential(c.SecretAccessKey)
+	c.HTTPProxy = redactProxy(c.HTTPProxy)
 	return c
 }
 
@@ -149,6 +159,9 @@ func (c *MinioConfig) ApplyEnv() error {
 	}
 	if v, ok := os.LookupEnv(EnvAttachmentsBaseURL); ok {
 		c.AttachmentsBaseURL = strings.TrimRight(strings.TrimSpace(v), "/")
+	}
+	if v, ok := os.LookupEnv(EnvHTTPProxy); ok {
+		c.HTTPProxy = strings.TrimSpace(v)
 	}
 	return c.normalize()
 }

@@ -25,6 +25,7 @@ handlers. `upload.getFile` reads those objects back.
 | `TELLOMI_S3_BUCKET_BACKUPS` | no | empty | Backup jobs. Unset or empty skips the check and `PutBackup` returns an error. |
 | `TELLOMI_S3_PUBLIC_MEDIA_BASE_URL` | no | empty | CDN origin for public objects, for example `https://media.tellomi.app`. |
 | `TELLOMI_S3_ATTACHMENTS_BASE_URL` | no | empty | CDN origin for private objects, for example `https://cdn3.tellomi.app`. Callers must still authorize the download. |
+| `TELLOMI_S3_HTTP_PROXY` | no | empty | HTTP CONNECT proxy for this S3 client only, `host:port` or an `http://` URL. Empty dials the endpoint directly. Production uses `172.19.44.222:3128`. It does not set process `HTTP_PROXY`. |
 
 Environment values replace the `Minio` block in `dfs.yaml`. Docker Compose
 passes them into the `teamgram` service (`docker-compose.yaml`). A non-empty
@@ -155,6 +156,22 @@ The client is `github.com/minio/minio-go/v7` with `Region` set (so it does not
 call GetBucketLocation) and `BucketLookup` set to path style. Server-side
 encryption headers from MinIO's `encrypt` package are not sent; secret-chat
 files are already encrypted by the client.
+
+`TELLOMI_S3_HTTP_PROXY` (or the yaml `HTTPProxy` field) installs an HTTP
+CONNECT proxy on that client's `http.Transport` only. The value is `host:port`
+or `http://host:port`. `https://` is refused so a proxy password is not written
+onto a cleartext socket. Parse errors and startup logs drop userinfo.
+CONNECT is sent only to the configured endpoint host and port; another target
+is rejected before the proxy is dialed. The Host header, TLS certificate
+check, and SigV4 signature stay aimed at that endpoint. A refused CONNECT or
+a timeout is returned; the client does not dial the endpoint directly when a
+proxy is set. Empty does not read `HTTP_PROXY` or `HTTPS_PROXY`. Push, AI,
+link preview, and any client that builds its own `minio.New` are not affected.
+Link preview keeps `TELLOMI_MINIO_*`.
+
+Production sets `TELLOMI_S3_HTTP_PROXY=http://172.19.44.222:3128` on the dfs
+process only. Do not set a process-wide `HTTP_PROXY`. The proxy ACL still has
+to allow only this account's R2 hostname and port. There is no database migration.
 
 ## Download cache
 
