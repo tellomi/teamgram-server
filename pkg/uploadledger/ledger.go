@@ -83,9 +83,12 @@ type counter struct {
 }
 
 type hold struct {
-	n  int64
-	at time.Time
+	n    int64
+	at   time.Time
+	file int64
 }
+
+const maxMeterEvents = 32
 
 // Ledger meters one process, or delegates to Redis when constructed with
 // NewRedis. Network bytes are every received byte. A retry and a same-length
@@ -192,22 +195,33 @@ func UserFrom(ctx context.Context) int64 {
 
 // NoteClaim records a finished object. A reuse is one logical reference and
 // does not add entity bytes. peer is ignored.
-func NoteClaim(user int64, reused bool, size int64) error {
+func NoteClaim(user, fileID int64, reused bool, size int64) error {
 	led := Shared()
 	if led == nil || user == 0 {
 		return nil
 	}
-	var err error
-	if reused {
-		err = led.CommitReuse(user, 0)
-	} else {
-		err = led.CommitNew(user, size)
-	}
-	if err != nil {
+	if err := led.allowClaim(reused, user, size); err != nil {
 		return err
 	}
-	led.ReleaseHold(user, size)
+	led.ReleaseFile(user, fileID)
 	return nil
+}
+
+// AllowClaim reports whether this object may be stored. It does not release
+// holds and does not write anything.
+func AllowClaim(user int64, reused bool, size int64) error {
+	led := Shared()
+	if led == nil || user == 0 {
+		return nil
+	}
+	return led.allowClaim(reused, user, size)
+}
+
+func (l *Ledger) allowClaim(reused bool, user, size int64) error {
+	if reused {
+		return l.CommitReuse(user, 0)
+	}
+	return l.CommitNew(user, size)
 }
 
 // Users is how many subjects currently occupy the local ledger.
@@ -220,25 +234,21 @@ func (l *Ledger) Users() int {
 	return len(l.seen)
 }
 
-// ReleaseHold drops unfinished bytes after a successful commit. It does not
-// change network or entity meters.
-func (l *Ledger) ReleaseHold(user, n int64) {
-	if l == nil || user == 0 || n <= 0 {
+// ReleaseFile drops holds for one upload id. Other files stay reserved.
+func (l *Ledger) ReleaseFile(user, fileID int64) {
+	if l == nil || user == 0 {
 		return
 	}
 	if l.redis != nil {
-		l.redis.release(user, n)
+		l.redis.releaseFile(user, fileID)
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	left := n
 	for id, h := range l.holds[user] {
-		if left <= 0 {
-			break
+		if h.file == fileID {
+			delete(l.holds[user], id)
 		}
-		delete(l.holds[user], id)
-		left -= h.n
 	}
 }
 
@@ -276,12 +286,12 @@ func (l *Ledger) ChargeNetwork(user, n int64) error {
 }
 
 // Reserve holds unfinished bytes and returns the id Cancel must use.
-func (l *Ledger) Reserve(user, n int64) (int64, error) {
+func (l *Ledger) Reserve(user, fileID, n int64) (int64, error) {
 	if l == nil || user == 0 || n <= 0 || l.mode == ModeOff {
 		return 0, nil
 	}
 	if l.redis != nil {
-		return l.redis.reserve(user, n, l.lim.Hold, l.lim.Window, l.mode == ModeEnforce)
+		return l.redis.reserve(user, fileID, n, l.lim.Hold, l.lim.Window, l.mode == ModeEnforce)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -303,7 +313,7 @@ func (l *Ledger) Reserve(user, n int64) (int64, error) {
 	}
 	l.nextHold++
 	id := l.nextHold
-	bucket[id] = hold{n: n, at: now}
+	bucket[id] = hold{n: n, at: now, file: fileID}
 	return id, nil
 }
 
@@ -400,6 +410,10 @@ func (l *Ledger) allow(bucket map[int64]*counter, user, n, limit int64, now time
 func (l *Ledger) bump(bucket map[int64]*counter, user, n int64, now time.Time) {
 	c := l.liveCounter(bucket, user, now)
 	c.events = append(c.events, meterEvent{at: now, n: n})
+	for len(c.events) > maxMeterEvents {
+		c.events[0].n += c.events[1].n
+		c.events = append(c.events[:1], c.events[2:]...)
+	}
 	c.n += n
 }
 

@@ -47,6 +47,10 @@ func (c *DfsCore) claimDocumentBytes(ctx context.Context, documentID int64, data
 
 func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data []byte, async bool) (mediablob.Claim, error) {
 	claim := c.claimDocumentBytes(ctx, documentID, data)
+	user := uploadledger.UserFrom(ctx)
+	if err := uploadledger.AllowClaim(user, claim.Reused, claim.Size); err != nil {
+		return claim, err
+	}
 	claim, err := storeClaimedDocument(ctx, c.Logger, claim, async, func(ctx context.Context) (int64, error) {
 		info, err := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, bytes.NewReader(data))
 		if err != nil {
@@ -63,8 +67,8 @@ func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data
 		return claim.Size, nil
 	})
 	if err == nil {
-		if noteErr := uploadledger.NoteClaim(uploadledger.UserFrom(ctx), claim.Reused, claim.Size); noteErr != nil {
-			return claim, noteErr
+		if led := uploadledger.Shared(); led != nil {
+			led.ReleaseFile(user, documentID)
 		}
 	}
 	return claim, err

@@ -10,9 +10,9 @@ import (
 
 type redisAdder interface {
 	add(kind string, user, n, limit int64, window time.Duration, enforce bool) error
-	reserve(user, n, limit int64, window time.Duration, enforce bool) (int64, error)
+	reserve(user, fileID, n, limit int64, window time.Duration, enforce bool) (int64, error)
 	cancel(id int64)
-	release(user, n int64)
+	releaseFile(user, fileID int64)
 	book(user int64, window time.Duration) Book
 }
 
@@ -77,7 +77,10 @@ if enforce == '1' and lim > 0 and total + add > lim then
   return {0, left}
 end
 local id = redis.call('INCR', KEYS[2])
-redis.call('HSET', KEYS[3], tostring(id), add)
+local fileId = ARGV[5]
+redis.call('HSET', KEYS[3], tostring(id), add .. ':' .. fileId)
+redis.call('SET', 'tellomi:up:holdid:' .. id, ARGV[6])
+redis.call('EXPIRE', 'tellomi:up:holdid:' .. id, ttl)
 redis.call('INCRBY', KEYS[1], add)
 if redis.call('TTL', KEYS[1]) < 0 then
   redis.call('EXPIRE', KEYS[1], ttl)
@@ -89,12 +92,13 @@ return {1, id}
 const cancelScript = `
 local user = redis.call('GET', KEYS[1])
 if not user then return 0 end
-local n = redis.call('HGET', 'tellomi:up:holds:' .. user, ARGV[1])
-if not n then return 0 end
+local raw = redis.call('HGET', 'tellomi:up:holds:' .. user, ARGV[1])
+if not raw then return 0 end
+local n = tonumber(string.match(raw, '^(%d+)')) or 0
 redis.call('HDEL', 'tellomi:up:holds:' .. user, ARGV[1])
-redis.call('DECRBY', 'tellomi:up:hold:' .. user, n)
+if n > 0 then redis.call('DECRBY', 'tellomi:up:hold:' .. user, n) end
 redis.call('DEL', KEYS[1])
-return 1
+return n
 `
 
 func (b *redisBackend) add(kind string, user, n, limit int64, window time.Duration, enforce bool) error {
@@ -122,7 +126,7 @@ func (b *redisBackend) add(kind string, user, n, limit int64, window time.Durati
 	return nil
 }
 
-func (b *redisBackend) reserve(user, n, limit int64, window time.Duration, enforce bool) (int64, error) {
+func (b *redisBackend) reserve(user, fileID, n, limit int64, window time.Duration, enforce bool) (int64, error) {
 	userS := strconv.FormatInt(user, 10)
 	flag := "0"
 	if enforce {
@@ -132,21 +136,21 @@ func (b *redisBackend) reserve(user, n, limit int64, window time.Duration, enfor
 		"tellomi:up:hold:" + userS,
 		"tellomi:up:holdseq",
 		"tellomi:up:holds:" + userS,
-	}, n, limit, int(window/time.Second), flag)
+	}, n, limit, int(window/time.Second), flag, fileID, userS)
 	if err != nil {
-		if enforce {
-			return 0, &Limited{Wait: time.Second}
-		}
-		return 0, nil
+		return 0, &Limited{Wait: time.Second}
 	}
 	ok, id := pair(res)
 	if ok == 0 {
-		return 0, &Limited{Wait: time.Duration(id) * time.Second}
+		wait := time.Duration(id) * time.Second
+		if wait < time.Second {
+			wait = window
+		}
+		return 0, &Limited{Wait: wait}
 	}
-	_, _ = b.r.EvalCtx(context.Background(),
-		`redis.call('SET', KEYS[1], ARGV[1]); redis.call('EXPIRE', KEYS[1], ARGV[2]); return 1`,
-		[]string{"tellomi:up:holdid:" + strconv.FormatInt(id, 10)},
-		userS, int(window/time.Second))
+	if id == 0 {
+		return 0, &Limited{Wait: time.Second}
+	}
 	return id, nil
 }
 
@@ -156,15 +160,24 @@ func (b *redisBackend) cancel(id int64) {
 		strconv.FormatInt(id, 10))
 }
 
-func (b *redisBackend) release(user, n int64) {
-	key := "tellomi:up:hold:" + strconv.FormatInt(user, 10)
+func (b *redisBackend) releaseFile(user, fileID int64) {
+	userS := strconv.FormatInt(user, 10)
 	_, _ = b.r.EvalCtx(context.Background(), `
-local cur = tonumber(redis.call('GET', KEYS[1]) or '0')
-local drop = tonumber(ARGV[1])
-if drop > cur then drop = cur end
-if drop > 0 then redis.call('DECRBY', KEYS[1], drop) end
-return drop
-`, []string{key}, n)
+local want = ARGV[1]
+local fields = redis.call('HGETALL', KEYS[1])
+local dropped = 0
+for i = 1, #fields, 2 do
+  local id = fields[i]
+  local n, file = string.match(fields[i + 1], '^(%d+):(%-?%d+)$')
+  if file == want then
+    redis.call('HDEL', KEYS[1], id)
+    redis.call('DEL', 'tellomi:up:holdid:' .. id)
+    dropped = dropped + (tonumber(n) or 0)
+  end
+end
+if dropped > 0 then redis.call('DECRBY', KEYS[2], dropped) end
+return dropped
+`, []string{"tellomi:up:holds:" + userS, "tellomi:up:hold:" + userS}, strconv.FormatInt(fileID, 10))
 }
 
 func (b *redisBackend) book(user int64, window time.Duration) Book {

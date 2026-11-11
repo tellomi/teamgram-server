@@ -62,7 +62,7 @@ func TestUploadWithoutSendDoesNotChargeEntity(t *testing.T) {
 	if err := l.ChargeNetwork(7, 40); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.Reserve(7, 40); err != nil {
+	if _, err := l.Reserve(7, 1, 40); err != nil {
 		t.Fatal(err)
 	}
 	if b := l.Book(7); b.Network != 40 || b.Entity != 0 || b.Refs != 0 || b.Hold != 40 {
@@ -78,11 +78,11 @@ func TestCancelRefundsOnlyThatHold(t *testing.T) {
 	if err := l.CommitNew(7, 10); err != nil {
 		t.Fatal(err)
 	}
-	first, err := l.Reserve(7, 40)
+	first, err := l.Reserve(7, 1, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := l.Reserve(7, 40)
+	second, err := l.Reserve(7, 1, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,14 +102,14 @@ func TestReviewFailureCannotRefundSuccessfulConcurrentDuplicate(t *testing.T) {
 	if err := l.ChargeNetwork(7, 40); err != nil {
 		t.Fatal(err)
 	}
-	okID, err := l.Reserve(7, 40)
+	okID, err := l.Reserve(7, 1, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := l.ChargeNetwork(7, 40); err != nil {
 		t.Fatal(err)
 	}
-	failID, err := l.Reserve(7, 40)
+	failID, err := l.Reserve(7, 1, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,16 +159,16 @@ func TestIndependentFinishedClaimReleasesHold(t *testing.T) {
 	l := New(Limits{Network: 100, Entity: 80, Hold: 40, Refs: 10, Window: time.Hour})
 	Use(l)
 	t.Cleanup(func() { Use(nil) })
-	if _, err := l.Reserve(7, 40); err != nil {
+	if _, err := l.Reserve(7, 1, 40); err != nil {
 		t.Fatal(err)
 	}
-	if err := NoteClaim(7, false, 40); err != nil {
+	if err := NoteClaim(7, 1, false, 40); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.Reserve(7, 1); err != nil {
+	if _, err := l.Reserve(7, 1, 1); err != nil {
 		t.Fatalf("finished upload kept the hold: %v %+v", err, l.Book(7))
 	}
-	if err := NoteClaim(7, false, 80); err == nil {
+	if err := NoteClaim(7, 1, false, 80); err == nil {
 		t.Fatal("entity cap was ignored")
 	}
 }
@@ -199,6 +199,80 @@ func TestIndependentRefSubjectsAreCapped(t *testing.T) {
 	}
 	if n := l.Users(); n > maxUsers+1 {
 		t.Fatalf("ref-only subjects %d", n)
+	}
+}
+
+func TestIndependentMeterEventsStayBounded(t *testing.T) {
+	l := New(Limits{Network: 1 << 20, Window: time.Hour})
+	for i := 0; i < 200; i++ {
+		if err := l.ChargeNetwork(7, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := l.netEvents(7); n > maxMeterEvents {
+		t.Fatalf("events %d", n)
+	}
+	if l.Book(7).Network != 200 {
+		t.Fatalf("%+v", l.Book(7))
+	}
+}
+
+func (l *Ledger) netEvents(user int64) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if c := l.net[user]; c != nil {
+		return len(c.events)
+	}
+	return 0
+}
+
+func TestIndependentReleaseFileDoesNotClearAnother(t *testing.T) {
+	l := New(Limits{Hold: 200, Entity: 200, Window: time.Hour})
+	Use(l)
+	t.Cleanup(func() { Use(nil) })
+	if _, err := l.Reserve(7, 1, 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(7, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := NoteClaim(7, 2, false, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.Book(7).Hold; got != 100 {
+		t.Fatalf("other file hold %d", got)
+	}
+}
+
+func TestRedisCancelDoesNotClearTheNewHold(t *testing.T) {
+	mr := miniredis.RunT(t)
+	l, err := openRedis(mr.Addr(), Limits{Hold: 500, Window: time.Hour}, ModeEnforce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldID, err := l.Reserve(7, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newID, err := l.Reserve(7, 2, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Cancel(oldID)
+	if got := l.Book(7).Hold; got != 40 {
+		t.Fatalf("hold after canceling %d is %d, new id %d", oldID, got, newID)
+	}
+}
+
+func TestRedisReserveMappingFailureIsClosed(t *testing.T) {
+	mr := miniredis.RunT(t)
+	l, err := openRedis(mr.Addr(), Limits{Hold: 500, Window: time.Hour}, ModeEnforce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr.Close()
+	if _, err = l.Reserve(7, 1, 20); err == nil {
+		t.Fatal("reserve succeeded without a hold id mapping")
 	}
 }
 

@@ -218,7 +218,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
 		claim.Reused = false
 	}
-	if noteErr := uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size); noteErr != nil {
+	if noteErr := uploadledger.AllowClaim(in.GetCreator(), claim.Reused, claim.Size); noteErr != nil {
 		c.Logger.Errorf("dfs.uploadDocumentFile - budget")
 		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(noteErr))
 	}
@@ -258,5 +258,12 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		finishUpload(false, 0)
 		uploadScheduled = true
 	}
+	releaseUploadHold(in.GetCreator(), file.GetId_INT64())
 	return document, nil
+}
+
+func releaseUploadHold(user, fileID int64) {
+	if led := uploadledger.Shared(); led != nil {
+		led.ReleaseFile(user, fileID)
+	}
 }
