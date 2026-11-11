@@ -100,3 +100,16 @@ func TestFloodWait(t *testing.T) {
 		t.Fatal("non-420 accepted")
 	}
 }
+
+func TestDeadlockIsRetried(t *testing.T) {
+	wait, ok := retryWait(&tgerr.Error{Code: 500, Message: "Error 1213 (40001): Deadlock found when trying to get lock; try restarting transaction"})
+	if !ok || wait != 200*time.Millisecond {
+		t.Fatalf("deadlock wait %s %v", wait, ok)
+	}
+	if _, ok = retryWait(&tgerr.Error{Code: 500, Message: "INTERNAL_SERVER_ERROR"}); ok {
+		t.Fatal("unrelated 500 was retried")
+	}
+	if _, ok = retryWait(&tgerr.Error{Code: 400, Message: "Deadlock found"}); ok {
+		t.Fatal("non-500 deadlock was retried")
+	}
+}

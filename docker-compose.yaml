@@ -204,6 +204,10 @@ services:
       TELLOMI_FLOOD_MODE: ${TELLOMI_FLOOD_MODE:-enforce}
       TELLOMI_FLOOD_LIMITS: ${TELLOMI_FLOOD_LIMITS:-}
       TELLOMI_FLOOD_REDIS: ${TELLOMI_FLOOD_REDIS:-}
+      # Upload byte ledger. log records and does not reject. enforce needs the
+      # shared Redis below; without it the process stays in log mode.
+      TELLOMI_UPLOAD_LEDGER_MODE: ${TELLOMI_UPLOAD_LEDGER_MODE:-log}
+      TELLOMI_UPLOAD_LEDGER_REDIS: ${TELLOMI_UPLOAD_LEDGER_REDIS:-}
       # help.getConfig dc_options. Empty leaves teamgramd/bin/config.json
       # (an empty list, webfile_dc_id 1). A valid spec replaces the list and
       # sets webfile_dc_id to 1. TELLOMI_PUBLIC_DC_HOST rewrites dotted
