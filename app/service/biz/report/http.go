@@ -24,14 +24,40 @@ const (
 	maxReportSubs = 32
 )
 
+// subjectRetryAfter is the Retry-After delay, in seconds, for a dependency
+// failure of this listener. The JSON field retry_after carries the same
+// number. Callers must not cache any id from that response.
+const subjectRetryAfter = 5
+
+const (
+	// subjectMapped is a live account with one 16-byte discover_subject row.
+	subjectMapped = "mapped"
+	// subjectEmpty is a live account whose discover_subject read succeeded
+	// and found no row: an authorized empty discover identity.
+	subjectEmpty = "empty"
+	// subjectNotFound means users has no such id.
+	subjectNotFound = "not_found"
+	// subjectClosed means users.deleted or users.restricted is set.
+	subjectClosed = "closed"
+)
+
+// subjectHit is one classified users.id from POST .../subjects/by-users.
+// Sub is set only when Status is subjectMapped, and then it is 16 bytes.
+type subjectHit struct {
+	UserID int64
+	Status string
+	Sub    []byte
+}
+
 // Subjects resolves content-engine subs through discover_subject.
-// The map key is the canonical base64url (no padding) of the 16-byte sub.
-// Subs that are not in the table are omitted.
+// The map key of Users is the canonical base64url (no padding) of the
+// 16-byte sub. Subs that are not in the table are omitted.
 type Subjects interface {
 	Users(ctx context.Context, subs [][]byte) (map[string]int64, error)
-	// Subs is the reverse map: teamgram users.id → 16-byte sub.
-	// Unknown ids are omitted.
-	Subs(ctx context.Context, userIDs []int64) (map[int64][]byte, error)
+	// Subs classifies every requested id, in the same order, with no gaps.
+	// A non-nil error means the read did not finish. An empty or partial
+	// slice is not an authoritative answer.
+	Subs(ctx context.Context, userIDs []int64) ([]subjectHit, error)
 }
 
 // Handler is the internal report listener. It is mounted only when
@@ -290,22 +316,52 @@ func (h Handler) subjectsByUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	found, err := dir.Subs(r.Context(), ids)
-	if err != nil {
+	if err != nil || !subjectResultsOK(ids, found) {
 		writeErr(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	users := make([]subjectUser, 0)
-	for _, id := range ids {
-		sub := found[id]
-		if len(sub) != 16 {
-			continue
+	users := make([]subjectByUser, 0, len(found))
+	for _, hit := range found {
+		item := subjectByUser{UserID: hit.UserID, Status: hit.Status}
+		if hit.Status == subjectMapped {
+			item.Sub = base64.RawURLEncoding.EncodeToString(hit.Sub)
 		}
-		users = append(users, subjectUser{
-			Sub:    base64.RawURLEncoding.EncodeToString(sub),
-			UserID: id,
-		})
+		users = append(users, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+// subjectByUser is one by-users result. Status is always set. Sub is set
+// only for subjectMapped; omitempty keeps it off the other three statuses.
+type subjectByUser struct {
+	UserID int64  `json:"user_id"`
+	Status string `json:"status"`
+	Sub    string `json:"sub,omitempty"`
+}
+
+func subjectResultsOK(ids []int64, got []subjectHit) bool {
+	if len(got) != len(ids) {
+		return false
+	}
+	for i, id := range ids {
+		hit := got[i]
+		if hit.UserID != id {
+			return false
+		}
+		switch hit.Status {
+		case subjectMapped:
+			if len(hit.Sub) != 16 {
+				return false
+			}
+		case subjectEmpty, subjectNotFound, subjectClosed:
+			if len(hit.Sub) != 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (h Handler) subjectDir() Subjects {
@@ -469,6 +525,11 @@ func authorized(r *http.Request, key []byte) bool {
 }
 
 func writeErr(w http.ResponseWriter, status int, code string) {
+	if status == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", strconv.Itoa(subjectRetryAfter))
+		writeJSON(w, status, map[string]any{"error": code, "retry_after": subjectRetryAfter})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": code})
 }
 

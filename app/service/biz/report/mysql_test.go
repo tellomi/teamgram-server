@@ -156,15 +156,71 @@ CREATE TABLE IF NOT EXISTS discover_subject (
 		t.Fatalf("%+v", parsed.Users)
 	}
 
-	rec = postJSON(t, h, token, pathSubjectsByUsers, `{"user_ids":[`+strconv.FormatInt(userID, 10)+`,99]}`)
+	bare := userID + 1
+	gone := userID + 2
+	held := userID + 3
+	unknownID := userID + 4
+	goneSub := bytes.Repeat([]byte{11}, 16)
+	heldSub := bytes.Repeat([]byte{12}, 16)
+	probe, probeErr := store.db.QueryContext(ctx, `SELECT id, deleted, restricted FROM users WHERE id=?`, int64(0))
+	if probeErr != nil {
+		if !isNoTable(probeErr) {
+			t.Fatal(probeErr)
+		}
+		rec = postJSON(t, h, token, pathSubjectsByUsers, `{"user_ids":[`+strconv.FormatInt(userID, 10)+`]}`)
+		assertUnavailable(t, rec)
+		return
+	}
+	_ = probe.Close()
+	if err = probe.Err(); err != nil {
+		t.Fatal(err)
+	}
+	ids := []int64{userID, bare, gone, held}
+	t.Cleanup(func() {
+		for _, id := range ids {
+			_, _ = store.db.ExecContext(context.Background(), `DELETE FROM users WHERE id=?`, id)
+		}
+		_, _ = store.db.ExecContext(context.Background(), `DELETE FROM discover_subject WHERE sub=? OR sub=?`, goneSub, heldSub)
+	})
+	for _, id := range ids {
+		_, _ = store.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, id)
+	}
+	if _, err = store.db.ExecContext(ctx, `INSERT INTO users (id, access_hash, country_code, deleted, restricted) VALUES (?,?,?,?,?),(?,?,?,?,?),(?,?,?,?,?),(?,?,?,?,?)`,
+		userID, 1, "CN", 0, 0,
+		bare, 1, "CN", 0, 0,
+		gone, 1, "CN", 1, 0,
+		held, 1, "CN", 0, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.ExecContext(ctx, `INSERT INTO discover_subject (sub, user_id) VALUES (?,?),(?,?)`, goneSub, gone, heldSub, held); err != nil {
+		t.Fatal(err)
+	}
+	body = `{"user_ids":[` + strconv.FormatInt(userID, 10) + `,` + strconv.FormatInt(bare, 10) + `,` + strconv.FormatInt(gone, 10) + `,` + strconv.FormatInt(held, 10) + `,` + strconv.FormatInt(unknownID, 10) + `]}`
+	rec = postJSON(t, h, token, pathSubjectsByUsers, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("by-users %d %s", rec.Code, rec.Body.String())
 	}
-	parsed.Users = nil
-	if err = json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+	got := decodeByUsers(t, rec.Body.Bytes())
+	want := []subjectByUser{
+		{UserID: userID, Status: subjectMapped, Sub: base64.RawURLEncoding.EncodeToString(known)},
+		{UserID: bare, Status: subjectEmpty},
+		{UserID: gone, Status: subjectClosed},
+		{UserID: held, Status: subjectClosed},
+		{UserID: unknownID, Status: subjectNotFound},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("by-users %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("by-users %d %+v", i, got[i])
+		}
+	}
+	closed, err := OpenMySQL(dsn)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Users) != 1 || parsed.Users[0].UserID != userID || parsed.Users[0].Sub != base64.RawURLEncoding.EncodeToString(known) {
-		t.Fatalf("by-users %+v", parsed.Users)
-	}
+	_ = closed.store.(*mysqlStore).db.Close()
+	rec = postJSON(t, Handler{Service: closed, Key: h.Key}, token, pathSubjectsByUsers, body)
+	assertUnavailable(t, rec)
 }

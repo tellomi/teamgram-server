@@ -1,11 +1,13 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -97,43 +99,135 @@ SELECT sub, user_id FROM discover_subject WHERE sub IN (`+placeholders(len(subs)
 	return out, rows.Err()
 }
 
-// Subs reads discover_subject by teamgram users.id. A missing table is an
-// empty result.
-func (m *mysqlStore) Subs(ctx context.Context, userIDs []int64) (map[int64][]byte, error) {
-	out := map[int64][]byte{}
-	if m == nil || m.db == nil || len(userIDs) == 0 {
-		return out, nil
+// errSubjectsUnavailable is a dependency failure of the by-users lookup.
+// Missing database, missing table, and a failed query all use it. Callers
+// must not treat the failure as an empty homepage.
+var errSubjectsUnavailable = errors.New("subjects unavailable")
+
+// errSubjectCorrupt means a scanned row cannot be trusted: the sub is not
+// 16 bytes, one user id maps to two different subs, or the same id comes
+// back with contradictory deleted/restricted flags.
+var errSubjectCorrupt = errors.New("subject corrupt")
+
+// Subs classifies each users.id. Every requested id is returned in order.
+// A missing database, a missing users or discover_subject table, a failed
+// read, or a corrupt sub is an error. It is not an empty slice.
+func (m *mysqlStore) Subs(ctx context.Context, userIDs []int64) ([]subjectHit, error) {
+	if len(userIDs) == 0 {
+		return []subjectHit{}, nil
 	}
-	args := make([]any, 0, len(userIDs))
+	if m == nil || m.db == nil {
+		return nil, errSubjectsUnavailable
+	}
 	for _, id := range userIDs {
-		if id > 0 {
-			args = append(args, id)
+		if id <= 0 {
+			return nil, errSubjectsUnavailable
 		}
 	}
-	if len(args) == 0 {
-		return out, nil
-	}
-	rows, err := m.db.QueryContext(ctx, `
-SELECT sub, user_id FROM discover_subject WHERE user_id IN (`+placeholders(len(args))+`)`, args...)
+	accounts, err := m.subjectAccounts(ctx, userIDs)
 	if err != nil {
-		if isNoTable(err) {
-			return out, nil
-		}
 		return nil, err
 	}
+	subs, err := m.subjectSubs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]subjectHit, 0, len(userIDs))
+	for _, id := range userIDs {
+		account, ok := accounts[id]
+		if !ok {
+			out = append(out, subjectHit{UserID: id, Status: subjectNotFound})
+			continue
+		}
+		if account.deleted || account.restricted {
+			out = append(out, subjectHit{UserID: id, Status: subjectClosed})
+			continue
+		}
+		sub, ok := subs[id]
+		if !ok {
+			out = append(out, subjectHit{UserID: id, Status: subjectEmpty})
+			continue
+		}
+		out = append(out, subjectHit{UserID: id, Status: subjectMapped, Sub: sub})
+	}
+	return out, nil
+}
+
+type subjectAccount struct {
+	deleted    bool
+	restricted bool
+}
+
+func (m *mysqlStore) subjectAccounts(ctx context.Context, userIDs []int64) (map[int64]subjectAccount, error) {
+	rows, err := m.db.QueryContext(ctx, `
+SELECT id, deleted, restricted FROM users WHERE id IN (`+placeholders(len(userIDs))+`)`, idArgs(userIDs)...)
+	if err != nil {
+		return nil, subjectsFailed(err)
+	}
 	defer rows.Close()
+	out := make(map[int64]subjectAccount, len(userIDs))
+	for rows.Next() {
+		var id, deleted, restricted int64
+		if err = rows.Scan(&id, &deleted, &restricted); err != nil {
+			return nil, subjectsFailed(err)
+		}
+		if id <= 0 {
+			return nil, errSubjectCorrupt
+		}
+		next := subjectAccount{deleted: deleted != 0, restricted: restricted != 0}
+		if prev, ok := out[id]; ok && prev != next {
+			return nil, errSubjectCorrupt
+		}
+		out[id] = next
+	}
+	if err = rows.Err(); err != nil {
+		return nil, subjectsFailed(err)
+	}
+	return out, nil
+}
+
+func (m *mysqlStore) subjectSubs(ctx context.Context, userIDs []int64) (map[int64][]byte, error) {
+	rows, err := m.db.QueryContext(ctx, `
+SELECT sub, user_id FROM discover_subject WHERE user_id IN (`+placeholders(len(userIDs))+`)`, idArgs(userIDs)...)
+	if err != nil {
+		return nil, subjectsFailed(err)
+	}
+	defer rows.Close()
+	out := make(map[int64][]byte, len(userIDs))
 	for rows.Next() {
 		var sub []byte
 		var id int64
 		if err = rows.Scan(&sub, &id); err != nil {
-			return nil, err
+			return nil, subjectsFailed(err)
 		}
-		if len(sub) != 16 || id <= 0 {
-			continue
+		if id <= 0 || len(sub) != 16 {
+			return nil, errSubjectCorrupt
+		}
+		sub = append([]byte(nil), sub...)
+		if prev, ok := out[id]; ok && !bytes.Equal(prev, sub) {
+			return nil, errSubjectCorrupt
 		}
 		out[id] = sub
 	}
-	return out, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, subjectsFailed(err)
+	}
+	return out, nil
+}
+
+func idArgs(ids []int64) []any {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return args
+}
+
+func subjectsFailed(err error) error {
+	if err == nil || errors.Is(err, errSubjectsUnavailable) || errors.Is(err, errSubjectCorrupt) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errSubjectsUnavailable, err)
 }
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {
