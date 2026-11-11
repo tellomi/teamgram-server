@@ -64,11 +64,11 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		return nil, err
 	}
 
-	if qrCode.ExpireAt >= time.Now().Unix() {
-		//s.AuthCore.DeleteQRCode(ctx, keyId)
-		//err := mtproto.ErrAuthTokenExpired
-		//log.Errorf("auth.acceptLoginToken - error: %v", err)
-		//return nil, err
+	now := time.Now().Unix()
+	if model.QRExpired(qrCode.ExpireAt, now) {
+		err := mtproto.ErrAuthTokenExpired
+		c.Logger.Errorf("auth.acceptLoginToken - expired")
+		return nil, err
 	}
 
 	switch qrCode.State {
@@ -91,6 +91,17 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		}
 	}
 
+	remain := int(qrCode.ExpireAt - now)
+	claimed, claimErr := c.svcCtx.Dao.ClaimQRLogin(c.ctx, keyId, c.MD.UserId, remain)
+	if claimErr != nil {
+		c.Logger.Errorf("auth.acceptLoginToken - claim: %v", claimErr)
+		return nil, claimErr
+	}
+	if !claimed {
+		err := mtproto.ErrAuthTokenAccepted
+		c.Logger.Errorf("auth.acceptLoginToken - already claimed")
+		return nil, err
+	}
 	c.svcCtx.Dao.UpdateCacheQRLoginCode(c.ctx, keyId, map[string]string{
 		"user_id": strconv.FormatInt(c.MD.UserId, 10),
 		"state":   strconv.Itoa(model.QRCodeStateAccepted),

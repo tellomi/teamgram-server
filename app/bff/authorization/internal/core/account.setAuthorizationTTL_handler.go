@@ -27,26 +27,34 @@ import (
 // account.setAuthorizationTTL#bf899aa0 authorization_ttl_days:int = Bool;
 func (c *AuthorizationCore) AccountSetAuthorizationTTL(in *mtproto.TLAccountSetAuthorizationTTL) (*mtproto.Bool, error) {
 	value := in.GetAuthorizationTtlDays()
-	switch value {
-	case 30:
-	case 90:
-	case 180:
-	case 182:
-	case 183:
-	case 365:
-	case 548:
-	case 730:
-	default:
-		// err := mtproto.ErrTtlDaysInvalid
-		c.Logger.Errorf("account.setAuthorizationTTL - error: %s", in)
-		// return nil, err
+	if !ValidAuthorizationTTLDays(value) {
+		c.Logger.Errorf("account.setAuthorizationTTL - invalid days")
+		return nil, mtproto.ErrTtlDaysInvalid
 	}
 
-	_, _ = c.svcCtx.Dao.UserClient.UserSetAuthorizationTTL(
+	result, err := c.svcCtx.Dao.UserClient.UserSetAuthorizationTTL(
 		c.ctx,
 		&user.TLUserSetAuthorizationTTL{
 			UserId: c.MD.UserId,
-			Ttl:    in.AuthorizationTtlDays,
+			Ttl:    value,
 		})
-	return mtproto.BoolTrue, nil
+	if err != nil {
+		c.Logger.Errorf("account.setAuthorizationTTL - store: %v", err)
+		return nil, err
+	}
+	if result == nil {
+		return mtproto.BoolTrue, nil
+	}
+	return result, nil
+}
+
+// ValidAuthorizationTTLDays is the set official clients send. Anything else
+// is TTL_DAYS_INVALID and is not stored.
+func ValidAuthorizationTTLDays(days int32) bool {
+	switch days {
+	case 30, 90, 180, 182, 183, 365, 548, 730:
+		return true
+	default:
+		return false
+	}
 }

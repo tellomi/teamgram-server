@@ -26,10 +26,13 @@ import (
 // UserSetAuthorizationTTL
 // user.setAuthorizationTTL user_id:long ttl:int = Bool;
 func (c *UserCore) UserSetAuthorizationTTL(in *user.TLUserSetAuthorizationTTL) (*mtproto.Bool, error) {
-	_, _ = c.svcCtx.Dao.UsersDAO.UpdateAuthorizationTTL(
+	if _, err := c.svcCtx.Dao.UsersDAO.UpdateAuthorizationTTL(
 		c.ctx,
 		in.Ttl,
-		in.UserId)
+		in.UserId); err != nil {
+		c.Logger.Errorf("user.setAuthorizationTTL - store: %v", err)
+		return nil, err
+	}
 
 	return mtproto.BoolTrue, nil
 }

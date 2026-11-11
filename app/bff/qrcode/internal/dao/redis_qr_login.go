@@ -116,6 +116,25 @@ func (d *Dao) PutCacheQRLoginCode(ctx context.Context, keyId int64, qrCode *mode
 	return
 }
 
+// ClaimQRLogin is the single-use gate. SetnxEx is atomic across processes
+// and DCs that share this Redis. The second caller gets false.
+func (d *Dao) ClaimQRLogin(ctx context.Context, keyId, userID int64, seconds int) (bool, error) {
+	if d == nil || d.kv == nil || keyId == 0 || userID == 0 {
+		return false, fmt.Errorf("qr claim unavailable")
+	}
+	return claimOnce(ctx, d.kv.SetnxExCtx, fmt.Sprintf("qr_claim_%d", keyId), strconv.FormatInt(userID, 10), seconds)
+}
+
+func claimOnce(ctx context.Context, setnx func(context.Context, string, string, int) (bool, error), key, user string, seconds int) (bool, error) {
+	if setnx == nil || key == "" || user == "" {
+		return false, fmt.Errorf("qr claim unavailable")
+	}
+	if seconds < 1 {
+		seconds = 1
+	}
+	return setnx(ctx, key, user, seconds)
+}
+
 func (d *Dao) UpdateCacheQRLoginCode(ctx context.Context, keyId int64, values map[string]string) (err error) {
 	var (
 		key = genQRLoginCodeKey(keyId)
