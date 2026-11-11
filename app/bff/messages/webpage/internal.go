@@ -127,23 +127,59 @@ func IsPending(media *mtproto.MessageMedia) bool {
 	return media.GetWebpage().GetPredicateName() == mtproto.Predicate_webPagePending
 }
 
-// ApplyFetchedPage replaces a pending card with the fetched page, or
-// removes the card when the fetch produced no preview. EditHide should be
-// set by the caller so the pending-to-final transition is not shown as an
-// ordinary edit.
+// ApplyFetchedPage replaces a pending card with the fetched page, or with
+// webPageEmpty (same id/url) when the fetch definitively failed. Official
+// clients hide messageMediaWebPage wrapping webPageEmpty and match the
+// pending placeholder by id. EditHide should be set by the caller so the
+// pending-to-final transition is not shown as an ordinary edit.
 func ApplyFetchedPage(msg *mtproto.Message, page *mtproto.WebPage) {
 	if msg == nil {
 		return
 	}
-	if media := chatbox.MediaFromPage(page); media != nil {
-		if old := msg.GetMedia(); old != nil {
-			media.ForceLargeMedia = old.GetForceLargeMedia()
-			media.ForceSmallMedia = old.GetForceSmallMedia()
+	if page != nil && page.GetPredicateName() == mtproto.Predicate_webPage {
+		if media := chatbox.MediaFromPage(page); media != nil {
+			if old := msg.GetMedia(); old != nil {
+				media.ForceLargeMedia = old.GetForceLargeMedia()
+				media.ForceSmallMedia = old.GetForceSmallMedia()
+			}
+			msg.Media = media
+			return
 		}
-		msg.Media = media
-		return
 	}
-	msg.Media = nil
+	empty := failedWebPage(msg, page)
+	media := mtproto.MakeTLMessageMediaWebPage(&mtproto.MessageMedia{Webpage: empty}).To_MessageMedia()
+	if old := msg.GetMedia(); old != nil {
+		media.ForceLargeMedia = old.GetForceLargeMedia()
+		media.ForceSmallMedia = old.GetForceSmallMedia()
+	}
+	msg.Media = media
+}
+
+func failedWebPage(msg *mtproto.Message, page *mtproto.WebPage) *mtproto.WebPage {
+	var id int64
+	var raw string
+	if old := msg.GetMedia().GetWebpage(); old != nil {
+		id = old.GetId()
+		raw = old.GetUrl_STRING()
+		if raw == "" && old.GetUrl_FLAGSTRING() != nil {
+			raw = old.GetUrl_FLAGSTRING().GetValue()
+		}
+	}
+	if page != nil && page.GetPredicateName() == mtproto.Predicate_webPageEmpty {
+		if page.GetId() != 0 {
+			id = page.GetId()
+		}
+		if page.GetUrl_STRING() != "" {
+			raw = page.GetUrl_STRING()
+		} else if page.GetUrl_FLAGSTRING() != nil && page.GetUrl_FLAGSTRING().GetValue() != "" {
+			raw = page.GetUrl_FLAGSTRING().GetValue()
+		}
+	}
+	return mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{
+		Id:             id,
+		Url_STRING:     raw,
+		Url_FLAGSTRING: wrapperspb.String(raw),
+	}).To_WebPage()
 }
 
 func internalType(typ string) bool {

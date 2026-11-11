@@ -42,8 +42,9 @@ func TestPreviewMediaExternalPendingThenFetched(t *testing.T) {
 	}
 
 	ApplyFetchedPage(msg, mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{Id: pendingID, Url_STRING: raw}).To_WebPage())
-	if msg.GetMedia() != nil {
-		t.Fatal("empty fetch should drop the card")
+	got := msg.GetMedia().GetWebpage()
+	if got == nil || got.GetPredicateName() != mtproto.Predicate_webPageEmpty || got.GetId() != pendingID {
+		t.Fatalf("empty fetch should become webPageEmpty id=%d, got %#v", pendingID, msg.GetMedia())
 	}
 }
 

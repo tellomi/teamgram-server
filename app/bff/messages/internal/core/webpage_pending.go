@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -89,20 +91,67 @@ func (c *MessagesCore) resolvePendingWebpage(parent context.Context, job Pending
 	ctx, cancel := context.WithTimeout(parent, pendingWebpageTimeout)
 	defer cancel()
 	page, err := fetchPendingPage(ctx, raw)
-	// A fetch error, a still-pending result, or an empty page must not
-	// leave webPagePending on the message. Clear the card with EditHide.
+	if err != nil {
+		c.Logger.Errorf("pending webpage fetch: %v", err)
+	}
 	// The fetch context is not reused for Get/Edit: fetchRemote and
 	// httpGetContext currently use context.Background(), so a 20s fetch
 	// deadline can expire long before the HTTP/DNS call returns.
-	if err != nil || page == nil || page.GetPredicateName() != mtproto.Predicate_webPage {
-		if err != nil {
-			c.Logger.Errorf("pending webpage fetch: %v", err)
-		}
-		page = nil
+	apply, retry := pendingFetchOutcome(page, err)
+	if retry {
+		c.retryOrFinishPending(job, time.Now())
+		return
 	}
-	switch c.commitPendingWebpage(nil, job, page) {
+	switch c.commitPendingWebpage(nil, job, apply) {
 	case pendingCommitDone, pendingCommitGone:
 		untrackPendingJob(job.UserID, job.MsgID)
+	case pendingCommitRetry:
+		c.retryOrFinishPending(job, time.Now())
+	}
+}
+
+// pendingFetchOutcome follows Telegram's pending → webPage / webPageEmpty
+// split: a definitive miss (NXDOMAIN, webPageEmpty) is applied immediately
+// as webPageEmpty; a timeout or a still-pending result is retried until the cap.
+func pendingFetchOutcome(page *mtproto.WebPage, err error) (apply *mtproto.WebPage, retry bool) {
+	if err != nil {
+		if pendingFetchRetryable(err) {
+			return nil, true
+		}
+		return nil, false
+	}
+	if page != nil && page.GetPredicateName() == mtproto.Predicate_webPage {
+		return page, false
+	}
+	if page != nil && page.GetPredicateName() == mtproto.Predicate_webPagePending {
+		return nil, true
+	}
+	return nil, false
+}
+
+func pendingFetchRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") ||
+		strings.Contains(msg, "deadline") || strings.Contains(msg, "connection refused")
+}
+
+func (c *MessagesCore) retryOrFinishPending(job PendingWebpageJob, now time.Time) {
+	updated, giveUp := failPendingJob(job, now)
+	if !giveUp {
+		return
+	}
+	// Cap reached: finish as a definitive miss (webPageEmpty + EditHide).
+	switch c.commitPendingWebpage(nil, updated, nil) {
+	case pendingCommitDone, pendingCommitGone:
+		untrackPendingJob(job.UserID, job.MsgID)
+	default:
+		tombstonePendingJob(updated)
 	}
 }
 
@@ -186,12 +235,21 @@ func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebp
 }
 
 func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
-	jobs := mergePendingJobs(duePendingJobs(now), orphanPendingJobs(now))
+	// Ensure first so Due sees stored attempts and skips tombstones.
+	// Raw orphan rows are not merged: an orphan hook would otherwise
+	// reintroduce a capped job with Attempts=0 and loop forever.
+	for _, job := range orphanPendingJobs(now) {
+		ensurePendingJob(job)
+	}
+	jobs := duePendingJobs(now)
 	cleared := 0
 	for _, job := range jobs {
+		if pendingJobIsTombstone(job, now) {
+			continue
+		}
 		if pendingJobShouldGiveUp(job, now) {
-			// Last EditHide attempt before dropping the row. If it still
-			// fails, untrack and let the orphan scan pick the card up later.
+			// Last attempt: finish as webPageEmpty. Failure keeps a tombstone
+			// so the orphan scan cannot requeue this card forever.
 			status := c.commitPendingWebpage(nil, job, nil)
 			if status == pendingCommitDone {
 				untrackPendingJob(job.UserID, job.MsgID)
@@ -202,7 +260,7 @@ func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
 				untrackPendingJob(job.UserID, job.MsgID)
 				continue
 			}
-			untrackPendingJob(job.UserID, job.MsgID)
+			tombstonePendingJob(job)
 			pendingJobGiveUpLog(job, now, pendingJobGiveUpReason(job))
 			continue
 		}
@@ -214,9 +272,11 @@ func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
 		case pendingCommitGone:
 			untrackPendingJob(job.UserID, job.MsgID)
 		case pendingCommitRetry:
+			// Already tried EditHide this tick. Cap → tombstone, do not
+			// requeue through the orphan scan.
 			updated, giveUp := failPendingJob(job, now)
 			if giveUp {
-				untrackPendingJob(job.UserID, job.MsgID)
+				tombstonePendingJob(updated)
 				pendingJobGiveUpLog(updated, now, pendingJobGiveUpReason(updated))
 			}
 		}
