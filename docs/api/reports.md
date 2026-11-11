@@ -123,6 +123,26 @@ content-engine：
 
 没连上 MySQL 是 `503`，正文 `{"error":"unavailable"}`。表还没建时按「还没有这个 sub」回答，`users` 为空。
 
+### 按 users.id 反查 sub
+
+`POST /internal/v1/reports/subjects/by-users`
+
+鉴权与上面相同。挂在同一条 `TELLOMI_REPORT_HTTP` 监听上，不新开端口。
+
+```json
+{"user_ids":[34]}
+```
+
+`user_ids` 1 到 32 个，必须是正整数。`0`、负数、空数组或超过 32 个是 `400`。重复的 id 只查一次。
+
+`200` 的正文形状与正向接口相同：
+
+```json
+{"users":[{"sub":"<16 字节 sub 的 base64url，无填充>","user_id":34}]}
+```
+
+`discover_subject` 里没有的 id 不出现。这个接口不写 `reports`，也不发 `@admin`。没连上 MySQL 是 `503`。表还没建时 `users` 为空。content-engine 用它把聊天资料页传来的数字用户 id 解析成发现主页。
+
 可选：发帖前的分类走 `POST /internal/v1/moderation/review`，正文 `{"post_id":"post-9","text":"...","media_keys":["photos/1"]}`，响应 `{"verdict":"violation"}`。`verdict` 是 `violation`、`ok` 或 `uncertain`。机审没开时直接是 `uncertain`，不调用模型，也不写 `reports`。
 
 人审结论是 `POST /internal/v1/reports/{id}/decision`，正文 `{"decision":"violation"}` 或 `{"decision":"clear"}`。`no_violation` 与 `clear` 相同。

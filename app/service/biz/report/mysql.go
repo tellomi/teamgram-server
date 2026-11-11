@@ -97,6 +97,45 @@ SELECT sub, user_id FROM discover_subject WHERE sub IN (`+placeholders(len(subs)
 	return out, rows.Err()
 }
 
+// Subs reads discover_subject by teamgram users.id. A missing table is an
+// empty result.
+func (m *mysqlStore) Subs(ctx context.Context, userIDs []int64) (map[int64][]byte, error) {
+	out := map[int64][]byte{}
+	if m == nil || m.db == nil || len(userIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id > 0 {
+			args = append(args, id)
+		}
+	}
+	if len(args) == 0 {
+		return out, nil
+	}
+	rows, err := m.db.QueryContext(ctx, `
+SELECT sub, user_id FROM discover_subject WHERE user_id IN (`+placeholders(len(args))+`)`, args...)
+	if err != nil {
+		if isNoTable(err) {
+			return out, nil
+		}
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sub []byte
+		var id int64
+		if err = rows.Scan(&sub, &id); err != nil {
+			return nil, err
+		}
+		if len(sub) != 16 || id <= 0 {
+			continue
+		}
+		out[id] = sub
+	}
+	return out, rows.Err()
+}
+
 func ensureSchema(ctx context.Context, db *sql.DB) error {
 	for _, stmt := range []string{schemaReports, schemaNotices} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {

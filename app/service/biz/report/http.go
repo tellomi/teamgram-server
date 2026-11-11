@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	pathPending    = "/internal/v1/reports/pending"
-	pathIngest     = "/internal/v1/reports"
-	pathSubjects   = "/internal/v1/reports/subjects"
-	pathModeration = "/internal/v1/moderation/review"
-	maxBody        = 64 << 10
+	pathPending         = "/internal/v1/reports/pending"
+	pathIngest          = "/internal/v1/reports"
+	pathSubjects        = "/internal/v1/reports/subjects"
+	pathSubjectsByUsers = "/internal/v1/reports/subjects/by-users"
+	pathModeration      = "/internal/v1/moderation/review"
+	maxBody             = 64 << 10
 	// maxReportSubs is one report's reporter and author, with room for a
 	// short batch. content-engine sends the subs it still cannot map.
 	maxReportSubs = 32
@@ -28,6 +29,9 @@ const (
 // Subs that are not in the table are omitted.
 type Subjects interface {
 	Users(ctx context.Context, subs [][]byte) (map[string]int64, error)
+	// Subs is the reverse map: teamgram users.id → 16-byte sub.
+	// Unknown ids are omitted.
+	Subs(ctx context.Context, userIDs []int64) (map[int64][]byte, error)
 }
 
 // Handler is the internal report listener. It is mounted only when
@@ -35,6 +39,7 @@ type Subjects interface {
 //
 //	POST /internal/v1/reports
 //	POST /internal/v1/reports/subjects
+//	POST /internal/v1/reports/subjects/by-users
 //	POST /internal/v1/reports/{id}/decision
 //	GET  /internal/v1/reports/pending
 //	POST /internal/v1/moderation/review
@@ -84,6 +89,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.subjects(w, r)
+		return
+	case pathSubjectsByUsers:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.subjectsByUsers(w, r)
 		return
 	case pathModeration:
 		if r.Method != http.MethodPost {
@@ -241,6 +253,57 @@ func (h Handler) subjects(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		users = append(users, subjectUser{Sub: key, UserID: id})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+type subjectsByUsersBody struct {
+	UserIDs []int64 `json:"user_ids"`
+}
+
+func (h Handler) subjectsByUsers(w http.ResponseWriter, r *http.Request) {
+	var body subjectsByUsersBody
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if len(body.UserIDs) == 0 || len(body.UserIDs) > maxReportSubs {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	ids := make([]int64, 0, len(body.UserIDs))
+	seen := map[int64]struct{}{}
+	for _, id := range body.UserIDs {
+		if id <= 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	dir := h.subjectDir()
+	if dir == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	found, err := dir.Subs(r.Context(), ids)
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	users := make([]subjectUser, 0)
+	for _, id := range ids {
+		sub := found[id]
+		if len(sub) != 16 {
+			continue
+		}
+		users = append(users, subjectUser{
+			Sub:    base64.RawURLEncoding.EncodeToString(sub),
+			UserID: id,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
 }

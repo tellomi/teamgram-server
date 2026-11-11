@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -153,5 +154,17 @@ CREATE TABLE IF NOT EXISTS discover_subject (
 	}
 	if len(parsed.Users) != 1 || parsed.Users[0].UserID != userID || parsed.Users[0].Sub != base64.RawURLEncoding.EncodeToString(known) {
 		t.Fatalf("%+v", parsed.Users)
+	}
+
+	rec = postJSON(t, h, token, pathSubjectsByUsers, `{"user_ids":[`+strconv.FormatInt(userID, 10)+`,99]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("by-users %d %s", rec.Code, rec.Body.String())
+	}
+	parsed.Users = nil
+	if err = json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Users) != 1 || parsed.Users[0].UserID != userID || parsed.Users[0].Sub != base64.RawURLEncoding.EncodeToString(known) {
+		t.Fatalf("by-users %+v", parsed.Users)
 	}
 }
