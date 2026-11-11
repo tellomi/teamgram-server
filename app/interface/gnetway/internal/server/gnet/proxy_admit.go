@@ -251,6 +251,7 @@ func (s *Server) expireProxyHeaders() {
 			if ctx == nil || ctx.proxy == nil || now.Before(ctx.proxy.deadline) {
 				return
 			}
+			noteEntryReject("timeout")
 			logx.Errorf("proxy reject reason=timeout peer=%s local=%s", ctx.proxy.peer, c.LocalAddr().String())
 			s.proxyWaiting.Delete(connId)
 			_ = c.Close()
@@ -266,6 +267,7 @@ func (s *Server) readProxyHeader(c gnet.Conn, ctx *connContext) gnet.Action {
 	}
 	local := c.LocalAddr().String()
 	if time.Now().After(admit.deadline) {
+		noteEntryReject("timeout")
 		logx.Errorf("proxy reject reason=timeout peer=%s local=%s", admit.peer, local)
 		s.finishProxyWait(c, ctx)
 		return gnet.Close
@@ -280,6 +282,7 @@ func (s *Server) readProxyHeader(c gnet.Conn, ctx *connContext) gnet.Action {
 		return gnet.None
 	case proxyNotHeader:
 		if admit.spec.require {
+			noteEntryReject(reason)
 			logx.Errorf("proxy reject reason=%s peer=%s local=%s", reason, admit.peer, local)
 			s.finishProxyWait(c, ctx)
 			return gnet.Close
@@ -289,31 +292,37 @@ func (s *Server) readProxyHeader(c gnet.Conn, ctx *connContext) gnet.Action {
 		s.finishProxyWait(c, ctx)
 		return gnet.None
 	case proxyReject:
+		noteEntryReject(reason)
 		logx.Errorf("proxy reject reason=%s peer=%s local=%s", reason, admit.peer, local)
 		s.finishProxyWait(c, ctx)
 		return gnet.Close
 	case proxyOK:
 		if n < len(buf) && looksLikeProxyHeader(buf[n:]) {
+			noteEntryReject("duplicate")
 			logx.Errorf("proxy reject reason=duplicate peer=%s local=%s", admit.peer, local)
 			s.finishProxyWait(c, ctx)
 			return gnet.Close
 		}
 		host, ok := headerHost(h.Source)
 		if !ok {
+			noteEntryReject("bad_header")
 			logx.Errorf("proxy reject reason=bad_header peer=%s local=%s", admit.peer, local)
 			s.finishProxyWait(c, ctx)
 			return gnet.Close
 		}
 		if _, err := c.Discard(n); err != nil {
+			noteEntryReject("discard")
 			logx.Errorf("proxy reject reason=discard peer=%s local=%s", admit.peer, local)
 			s.finishProxyWait(c, ctx)
 			return gnet.Close
 		}
 		ctx.setClientIp(host)
+		ctx.assignEntry(classifyNativeEntry(tcpPort(c.LocalAddr()), true, destPort(h.Destination)))
 		logx.Infof("proxy accepted client_ip=%s peer=%s local=%s", host, admit.peer, local)
 		s.finishProxyWait(c, ctx)
 		return gnet.None
 	default:
+		noteEntryReject("bad_header")
 		logx.Errorf("proxy reject reason=bad_header peer=%s local=%s", admit.peer, local)
 		s.finishProxyWait(c, ctx)
 		return gnet.Close
