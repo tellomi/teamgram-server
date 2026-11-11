@@ -87,7 +87,10 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassPhotos, claim.Path) {
 		claim.Reused = false
 	}
-	uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size)
+	if noteErr := uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size); noteErr != nil {
+		c.Logger.Errorf("dfs.uploadPhotoFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(noteErr))
+	}
 	// One span for this upload: claim (hit or miss) and whether the
 	// original object was written. Derivative sizes are not the blob.
 	var objectWritten bool

@@ -63,7 +63,9 @@ func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data
 		return claim.Size, nil
 	})
 	if err == nil {
-		uploadledger.NoteClaim(uploadledger.UserFrom(ctx), claim.Reused, claim.Size)
+		if noteErr := uploadledger.NoteClaim(uploadledger.UserFrom(ctx), claim.Reused, claim.Size); noteErr != nil {
+			return claim, noteErr
+		}
 	}
 	return claim, err
 }

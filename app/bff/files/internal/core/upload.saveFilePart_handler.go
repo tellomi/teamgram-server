@@ -41,10 +41,10 @@ func (c *FilesCore) UploadSaveFilePart(in *mtproto.TLUploadSaveFilePart) (*mtpro
 		Big:            false,
 		FileTotalParts: nil,
 	})
+	if led := uploadledger.Shared(); led != nil {
+		led.Cancel(hold)
+	}
 	if err != nil {
-		if led := uploadledger.Shared(); led != nil {
-			led.Cancel(hold)
-		}
 		c.Logger.Errorf("upload.saveFilePart - error: %v", err)
 		return nil, err
 	}

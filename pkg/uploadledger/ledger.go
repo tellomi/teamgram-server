@@ -71,9 +71,15 @@ func DefaultLimits() Limits {
 	}
 }
 
+type meterEvent struct {
+	at time.Time
+	n  int64
+}
+
 type counter struct {
-	n     int64
-	start time.Time
+	n      int64
+	start  time.Time
+	events []meterEvent
 }
 
 type hold struct {
@@ -94,6 +100,7 @@ type Ledger struct {
 	refs     map[int64]*counter
 	holdSum  map[int64]*counter
 	holds    map[int64]map[int64]hold
+	seen     map[int64]time.Time
 	nextHold int64
 	redis    redisAdder
 }
@@ -118,6 +125,7 @@ func newLedger(lim Limits, mode string) *Ledger {
 		refs:    map[int64]*counter{},
 		holdSum: map[int64]*counter{},
 		holds:   map[int64]map[int64]hold{},
+		seen:    map[int64]time.Time{},
 	}
 }
 
@@ -184,16 +192,54 @@ func UserFrom(ctx context.Context) int64 {
 
 // NoteClaim records a finished object. A reuse is one logical reference and
 // does not add entity bytes. peer is ignored.
-func NoteClaim(user int64, reused bool, size int64) {
+func NoteClaim(user int64, reused bool, size int64) error {
 	led := Shared()
 	if led == nil || user == 0 {
-		return
+		return nil
 	}
+	var err error
 	if reused {
-		_ = led.CommitReuse(user, 0)
+		err = led.CommitReuse(user, 0)
+	} else {
+		err = led.CommitNew(user, size)
+	}
+	if err != nil {
+		return err
+	}
+	led.ReleaseHold(user, size)
+	return nil
+}
+
+// Users is how many subjects currently occupy the local ledger.
+func (l *Ledger) Users() int {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.seen)
+}
+
+// ReleaseHold drops unfinished bytes after a successful commit. It does not
+// change network or entity meters.
+func (l *Ledger) ReleaseHold(user, n int64) {
+	if l == nil || user == 0 || n <= 0 {
 		return
 	}
-	_ = led.CommitNew(user, size)
+	if l.redis != nil {
+		l.redis.release(user, n)
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	left := n
+	for id, h := range l.holds[user] {
+		if left <= 0 {
+			break
+		}
+		delete(l.holds[user], id)
+		left -= h.n
+	}
 }
 
 // Book is one uploader's meters inside the window.
@@ -209,7 +255,7 @@ func (l *Ledger) Book(user int64) Book {
 		return Book{}
 	}
 	if l.redis != nil {
-		return l.redis.book(user)
+		return l.redis.book(user, l.lim.Window)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -240,9 +286,9 @@ func (l *Ledger) Reserve(user, n int64) (int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
-	user = l.slot(user)
-	if err := l.allow(l.holdSum, user, n, l.lim.Hold, now); err != nil {
-		return 0, err
+	user = l.slot(user, now)
+	if l.mode == ModeEnforce && l.lim.Hold > 0 && l.holdValue(user, now)+n > l.lim.Hold {
+		return 0, &Limited{Wait: l.lim.Window}
 	}
 	bucket := l.holds[user]
 	if bucket == nil {
@@ -255,7 +301,6 @@ func (l *Ledger) Reserve(user, n int64) (int64, error) {
 		}
 		return 0, nil
 	}
-	l.bump(l.holdSum, user, n, now)
 	l.nextHold++
 	id := l.nextHold
 	bucket[id] = hold{n: n, at: now}
@@ -274,18 +319,11 @@ func (l *Ledger) Cancel(id int64) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for user, bucket := range l.holds {
-		h, ok := bucket[id]
-		if !ok {
+	for _, bucket := range l.holds {
+		if _, ok := bucket[id]; !ok {
 			continue
 		}
 		delete(bucket, id)
-		if c := l.holdSum[user]; c != nil {
-			c.n -= h.n
-			if c.n < 0 {
-				c.n = 0
-			}
-		}
 		return
 	}
 }
@@ -312,7 +350,7 @@ func (l *Ledger) add(kind string, bucket map[int64]*counter, user, n, limit int6
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
-	user = l.slot(user)
+	user = l.slot(user, now)
 	if err := l.allow(bucket, user, n, limit, now); err != nil {
 		return err
 	}
@@ -320,22 +358,29 @@ func (l *Ledger) add(kind string, bucket map[int64]*counter, user, n, limit int6
 	return nil
 }
 
-func (l *Ledger) slot(user int64) int64 {
-	if _, ok := l.net[user]; ok {
+func (l *Ledger) slot(user int64, now time.Time) int64 {
+	for id, at := range l.seen {
+		if id == overflowUser {
+			continue
+		}
+		if now.Sub(at) >= l.lim.Window {
+			delete(l.seen, id)
+			delete(l.net, id)
+			delete(l.entity, id)
+			delete(l.refs, id)
+			delete(l.holdSum, id)
+			delete(l.holds, id)
+		}
+	}
+	if _, ok := l.seen[user]; ok {
+		l.seen[user] = now
 		return user
 	}
-	if _, ok := l.entity[user]; ok {
-		return user
-	}
-	if _, ok := l.refs[user]; ok {
-		return user
-	}
-	if _, ok := l.holdSum[user]; ok {
-		return user
-	}
-	if len(l.net) >= maxUsers {
+	if len(l.seen) >= maxUsers {
+		l.seen[overflowUser] = now
 		return overflowUser
 	}
+	l.seen[user] = now
 	return user
 }
 
@@ -354,6 +399,7 @@ func (l *Ledger) allow(bucket map[int64]*counter, user, n, limit int64, now time
 
 func (l *Ledger) bump(bucket map[int64]*counter, user, n int64, now time.Time) {
 	c := l.liveCounter(bucket, user, now)
+	c.events = append(c.events, meterEvent{at: now, n: n})
 	c.n += n
 }
 
@@ -371,10 +417,26 @@ func (l *Ledger) live(bucket map[int64]*counter, user int64, now time.Time) int6
 
 func (l *Ledger) liveCounter(bucket map[int64]*counter, user int64, now time.Time) *counter {
 	c := bucket[user]
-	if c == nil || now.Sub(c.start) >= l.lim.Window {
+	if c == nil {
 		c = &counter{start: now}
 		bucket[user] = c
 	}
+	dst := c.events[:0]
+	var sum int64
+	start := now
+	for _, ev := range c.events {
+		if now.Sub(ev.at) >= l.lim.Window {
+			continue
+		}
+		dst = append(dst, ev)
+		sum += ev.n
+		if ev.at.Before(start) {
+			start = ev.at
+		}
+	}
+	c.events = dst
+	c.n = sum
+	c.start = start
 	return c
 }
 
@@ -391,9 +453,11 @@ func (l *Ledger) remaining(bucket map[int64]*counter, user int64, now time.Time)
 }
 
 func (l *Ledger) holdValue(user int64, now time.Time) int64 {
-	c := l.holdSum[user]
-	if c == nil || now.Sub(c.start) >= l.lim.Window {
-		return 0
+	var sum int64
+	for _, h := range l.holds[user] {
+		if now.Sub(h.at) < l.lim.Window {
+			sum += h.n
+		}
 	}
-	return c.n
+	return sum
 }

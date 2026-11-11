@@ -218,7 +218,10 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
 		claim.Reused = false
 	}
-	uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size)
+	if noteErr := uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size); noteErr != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(noteErr))
+	}
 	if !claim.Reused {
 		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
 	}

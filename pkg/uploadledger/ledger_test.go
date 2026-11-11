@@ -155,6 +155,53 @@ func TestConcurrentDevicesStayInsideCap(t *testing.T) {
 	}
 }
 
+func TestIndependentFinishedClaimReleasesHold(t *testing.T) {
+	l := New(Limits{Network: 100, Entity: 80, Hold: 40, Refs: 10, Window: time.Hour})
+	Use(l)
+	t.Cleanup(func() { Use(nil) })
+	if _, err := l.Reserve(7, 40); err != nil {
+		t.Fatal(err)
+	}
+	if err := NoteClaim(7, false, 40); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Reserve(7, 1); err != nil {
+		t.Fatalf("finished upload kept the hold: %v %+v", err, l.Book(7))
+	}
+	if err := NoteClaim(7, false, 80); err == nil {
+		t.Fatal("entity cap was ignored")
+	}
+}
+
+func TestIndependentRollingWindow(t *testing.T) {
+	l := New(Limits{Network: 10, Window: time.Hour})
+	now := time.Unix(1_700_000_000, 0)
+	l.now = func() time.Time { return now }
+	if err := l.ChargeNetwork(7, 1); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(59 * time.Minute)
+	if err := l.ChargeNetwork(7, 8); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if err := l.ChargeNetwork(7, 8); err == nil {
+		t.Fatalf("rolling hour allowed %+v", l.Book(7))
+	}
+}
+
+func TestIndependentRefSubjectsAreCapped(t *testing.T) {
+	l := New(Limits{Refs: 1 << 20, Window: time.Hour})
+	for i := int64(1); i <= 8212; i++ {
+		if err := l.CommitReuse(i, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := l.Users(); n > maxUsers+1 {
+		t.Fatalf("ref-only subjects %d", n)
+	}
+}
+
 func TestRedisWindowIsSharedByTwoProcesses(t *testing.T) {
 	mr := miniredis.RunT(t)
 	a, err := openRedis(mr.Addr(), Limits{Network: 100, Window: time.Hour}, ModeEnforce)
