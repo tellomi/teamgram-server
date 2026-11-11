@@ -212,24 +212,16 @@ func (c *SyncCore) pushUpdatesToSession(syncType SyncType, userId, permAuthKeyId
 	if syncType == syncTypeUserMe && hasServerId != nil {
 		c.Logger.Debugf("pushUpdatesToSession - pushData: {server_id: %v, auth_key_id: %v}", hasServerId, authKeyId)
 		if sessionId != nil {
-			_ = c.svcCtx.Dao.PushSessionUpdatesToSession(
-				c.ctx,
-				hasServerId.GetValue(),
-				&session.TLSessionPushSessionUpdatesData{
-					PermAuthKeyId: permAuthKeyId,
-					AuthKeyId:     authKeyId.GetValue(),
-					SessionId:     sessionId.GetValue(),
-					Updates:       pushData,
-				})
+			msg := &session.TLSessionPushSessionUpdatesData{
+				PermAuthKeyId: permAuthKeyId,
+				AuthKeyId:     authKeyId.GetValue(),
+				SessionId:     sessionId.GetValue(),
+				Updates:       pushData,
+			}
+			session.SetPushSessionUpdatesUser(msg, userId)
+			_ = c.svcCtx.Dao.PushSessionUpdatesToSession(c.ctx, hasServerId.GetValue(), msg)
 		} else {
-			_ = c.svcCtx.Dao.PushUpdatesToSession(
-				c.ctx,
-				hasServerId.GetValue(),
-				&session.TLSessionPushUpdatesData{
-					PermAuthKeyId: permAuthKeyId,
-					Notification:  notification,
-					Updates:       pushData,
-				})
+			c.pushUpdates(hasServerId.GetValue(), permAuthKeyId, notification, pushData, userId)
 		}
 	} else {
 		var (
@@ -242,6 +234,9 @@ func (c *SyncCore) pushUpdatesToSession(syncType SyncType, userId, permAuthKeyId
 		})
 		c.Logger.Debugf("statusList - #%v", statusList)
 		for _, sess := range statusList.GetUserSessions() {
+			if sess == nil {
+				continue
+			}
 			if syncType == syncTypeUserNotMe && sess.AuthKeyId == permAuthKeyId {
 				continue
 			}
@@ -257,15 +252,7 @@ func (c *SyncCore) pushUpdatesToSession(syncType SyncType, userId, permAuthKeyId
 		c.Logger.Debugf("serverIdKeyIdList - #%v", serverIdKeyIdList)
 		for serverId, keyIdList := range serverIdKeyIdList {
 			for _, keyId := range keyIdList {
-				// log.Debugf("serverIdKeyIdList - #%v", serverIdKeyIdList)
-				_ = c.svcCtx.Dao.PushUpdatesToSession(
-					c.ctx,
-					serverId,
-					&session.TLSessionPushUpdatesData{
-						PermAuthKeyId: keyId,
-						Notification:  notification,
-						Updates:       pushData,
-					})
+				c.pushUpdates(serverId, keyId, notification, pushData, userId)
 			}
 		}
 
@@ -296,19 +283,29 @@ func (c *SyncCore) pushUpdatesExcept(userId int64, excludes []int64, pushData *m
 		UserId: userId,
 	})
 	for _, sess := range statusList.GetUserSessions() {
+		if sess == nil {
+			continue
+		}
 		if _, ok := skip[sess.AuthKeyId]; ok {
 			continue
 		}
 		if _, ok := skip[sess.PermAuthKeyId]; ok {
 			continue
 		}
-		_ = c.svcCtx.Dao.PushUpdatesToSession(
-			c.ctx,
-			sess.Gateway,
-			&session.TLSessionPushUpdatesData{
-				PermAuthKeyId: sess.AuthKeyId,
-				Notification:  notification,
-				Updates:       pushData,
-			})
+		c.pushUpdates(sess.Gateway, sess.AuthKeyId, notification, pushData, userId)
 	}
+}
+
+// pushUpdates stamps the expected user and sends one session push.
+// The session compares that user with its own before writing to the socket.
+// This path does not call authsession: a group fan-out would do that once
+// per member per device.
+func (c *SyncCore) pushUpdates(serverID string, authKeyID int64, notification bool, pushData *mtproto.Updates, userID int64) {
+	msg := &session.TLSessionPushUpdatesData{
+		PermAuthKeyId: authKeyID,
+		Notification:  notification,
+		Updates:       pushData,
+	}
+	session.SetPushUpdatesUser(msg, userID)
+	_ = c.svcCtx.Dao.PushUpdatesToSession(c.ctx, serverID, msg)
 }

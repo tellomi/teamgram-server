@@ -133,6 +133,9 @@ message TL_session_pushUpdatesData {
   int64 perm_auth_key_id = 3;
   bool notification = 4;
   mtproto.Updates updates = 5;
+  // User the update is for. Sync stamps it; session checks it before writing
+  // to a connection. Field 6 was unused.
+  int64 user_id = 6;
 }
 
 //--------------------------------------------------------------------------------------------
@@ -142,6 +145,8 @@ message TL_session_pushSessionUpdatesData {
   int64 auth_key_id = 4;
   int64 session_id = 5;
   mtproto.Updates updates = 6;
+  // Same role as TL_session_pushUpdatesData.user_id. Field 7 was unused.
+  int64 user_id = 7;
 }
 
 //--------------------------------------------------------------------------------------------

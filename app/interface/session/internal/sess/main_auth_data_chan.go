@@ -79,10 +79,11 @@ type syncSessionDataCtx struct {
 }
 
 type syncSessionData struct {
-	authType  int
-	authId    int64
-	sessionId int64
-	data      *messageData
+	authType       int
+	authId         int64
+	sessionId      int64
+	data           *messageData
+	expectedUserId int64
 }
 
 type syncDataCtx struct {
@@ -93,4 +94,5 @@ type syncDataCtx struct {
 type syncData struct {
 	needAndroidPush bool
 	data            *messageData
+	expectedUserId  int64
 }
