@@ -45,6 +45,7 @@ func TestMySQLCompat(t *testing.T) {
 			if srv.jsonFunc {
 				checkLegacyFunctionalIndex(t, bin, srv.name, port, dir)
 			}
+			checkSubjectsByUsers(t, db, port)
 		})
 	}
 }
@@ -347,27 +348,50 @@ func startMySQL(t *testing.T, bin, image, name string) string {
 		t.Fatalf("start %s: %v\n%s", image, err, out)
 	}
 	t.Cleanup(func() { _ = runDocker(t, bin, "rm", "-f", name) })
-	deadline := time.Now().Add(2 * time.Minute)
+	// The image starts a temporary server to initialize the datadir, and that
+	// server answers SELECT 1 before the entrypoint kills it. The next client
+	// then gets ERROR 2013 (errno 104) at "reading initial communication
+	// packet". Wait until init has finished, then require two successful
+	// queries a second apart so the real server is the one that answered.
+	deadline := time.Now().Add(3 * time.Minute)
 	var last []byte
+	initDone := false
+	stable := 0
 	for time.Now().Before(deadline) {
+		if !initDone {
+			logs, _ := runDockerOutput(t, bin, "logs", name)
+			last = logs
+			if strings.Contains(string(logs), "MySQL init process done. Ready for start up.") {
+				initDone = true
+			} else {
+				time.Sleep(time.Second)
+				continue
+			}
+		}
 		out, err = runDockerOutput(t, bin, "exec", name, "mysql", "-uroot", "-proot", "-N", "-e", "SELECT 1")
 		if err == nil && strings.Contains(string(out), "1") {
-			portOut, err := runDockerOutput(t, bin, "port", name, "3306")
-			if err != nil {
-				t.Fatal(err)
+			stable++
+			if stable >= 2 {
+				portOut, perr := runDockerOutput(t, bin, "port", name, "3306")
+				if perr != nil {
+					t.Fatal(perr)
+				}
+				// 127.0.0.1:32768
+				fields := strings.Fields(string(portOut))
+				if len(fields) == 0 {
+					t.Fatalf("port output %q", portOut)
+				}
+				hostport := strings.TrimSpace(fields[len(fields)-1])
+				port := hostport[strings.LastIndex(hostport, ":")+1:]
+				if port == "" || port == hostport {
+					t.Fatalf("port output %q", portOut)
+				}
+				return port
 			}
-			// 127.0.0.1:32768
-			fields := strings.Fields(string(portOut))
-			if len(fields) == 0 {
-				t.Fatalf("port output %q", portOut)
-			}
-			hostport := strings.TrimSpace(fields[len(fields)-1])
-			port := hostport[strings.LastIndex(hostport, ":")+1:]
-			if port == "" || port == hostport {
-				t.Fatalf("port output %q", portOut)
-			}
-			return port
+			time.Sleep(time.Second)
+			continue
 		}
+		stable = 0
 		last = out
 		time.Sleep(time.Second)
 	}
