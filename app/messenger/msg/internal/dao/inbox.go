@@ -259,7 +259,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		return nil, tR.Err
 	}
 
-	_, _, _ = d.CachedConn.Exec(
+	_, _, _ = d.ExecInvalidate(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdate(ctx, dialogDO)
@@ -447,7 +447,7 @@ func (d *Dao) DeleteInboxMessages(ctx context.Context, deleteUserId int64, peer 
 			// return
 		}
 		if dlgDO != nil {
-			d.CachedConn.Exec(
+			d.ExecInvalidate(
 				ctx,
 				func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 					_, err2 = d.DialogsDAO.UpdateCustomMap(

@@ -246,7 +246,7 @@ func fixDialog(ctx context.Context, d *dao.Dao, userID int64, boxes []historyttl
 	if err != nil {
 		return err
 	}
-	_, _, err = d.CachedConn.Exec(ctx, func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+	_, _, err = d.ExecInvalidate(ctx, func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 		_, err2 := d.DialogsDAO.UpdateCustomMap(ctx, map[string]interface{}{
 			"top_message":  lastID,
 			"unread_count": unread,

@@ -97,7 +97,7 @@ func (c *MsgCore) readMentionedMessageContents(in *msg.TLMsgReadMessageContents)
 				sz = 0
 			}
 
-			c.svcCtx.Dao.CachedConn.Exec(
+			c.svcCtx.Dao.ExecInvalidate(
 				c.ctx,
 				func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 					_, err2 := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(
@@ -208,7 +208,7 @@ func (c *MsgCore) readReactionUnreadMessageContents(in *msg.TLMsgReadMessageCont
 	}
 
 	if unreadReactionsCount > 0 {
-		c.svcCtx.Dao.CachedConn.Exec(
+		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				_, err2 := c.svcCtx.Dao.DialogsDAO.UpdateUnreadCount(
