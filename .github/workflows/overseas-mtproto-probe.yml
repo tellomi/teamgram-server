@@ -1,0 +1,47 @@
+# Read-only overseas MTProto probe of production. This does not replace the
+# Server reliability integration tests in reliability.yml, and it does not
+# run on every pull request (those only run the local unit tests).
+name: Overseas MTProto probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/overseas-mtproto-probe.yml"
+      - "tools/overseas_probe/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: overseas-mtproto-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Local probe self-tests
+        run: python3 -m unittest discover -s tools/overseas_probe -p 'test_*.py' -v
+
+  probe:
+    name: probe
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: unit-tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read-only public MTProto probes
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python3 tools/overseas_probe/run_probes.py
