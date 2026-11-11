@@ -34,7 +34,11 @@ func (c *AuthsessionCore) AuthsessionBindAuthKeyUser(in *authsession.TLAuthsessi
 		return nil, mtproto.ErrAuthKeyPermEmpty
 	}
 
-	hash := c.svcCtx.Dao.BindAuthKeyUser(c.ctx, permID, in.GetUserId())
+	hash, err := c.svcCtx.Dao.BindAuthKeyUser(c.ctx, permID, in.GetUserId())
+	if err != nil {
+		c.Logger.Errorf("bindAuthKeyUser perm_auth_key_id=%d user_id=%d: %v", permID, in.GetUserId(), err)
+		return nil, err
+	}
 
 	return &mtproto.Int64{V: hash}, nil
 }
