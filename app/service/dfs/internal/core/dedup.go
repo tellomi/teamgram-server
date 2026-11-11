@@ -47,16 +47,19 @@ func (c *DfsCore) claimDocumentBytes(ctx context.Context, documentID int64, data
 
 func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data []byte, async bool) (mediablob.Claim, error) {
 	claim := c.claimDocumentBytes(ctx, documentID, data)
-	user := uploadledger.UserFrom(ctx)
+	user := c.ledgerSubjectFrom(ctx, 0)
 	if err := uploadledger.AllowClaim(user, claim.Reused, claim.Size); err != nil {
 		return claim, err
 	}
-	claim, err := storeClaimedDocument(ctx, c.Logger, claim, async, func(ctx context.Context) (int64, error) {
+	write := func(ctx context.Context) (int64, error) {
+		if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MinioUtil == nil {
+			return 0, fmt.Errorf("dfs: missing document writer")
+		}
 		info, err := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, bytes.NewReader(data))
 		if err != nil {
 			// The async path used to log and continue. Sync callers log the
 			// returned error themselves.
-			if async {
+			if async && c.Logger != nil {
 				c.Logger.Errorf("dfs.PutDocumentFile %s - %v", claim.Path, err)
 			}
 			return 0, err
@@ -65,13 +68,31 @@ func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data
 			return info.Size, nil
 		}
 		return claim.Size, nil
-	})
-	if err == nil {
-		if led := uploadledger.Shared(); led != nil {
-			led.ReleaseFile(user, documentID)
-		}
 	}
-	return claim, err
+	// Async returns before the object is durable. Record the bytes when the
+	// upload is accepted, and drop that record if the background write fails.
+	// The caller releases the upload-file hold only after the whole request
+	// succeeds. The new document id is not that file id.
+	if async && !claim.Reused {
+		if err := uploadledger.CommitClaim(user, claim.Reused, claim.Size); err != nil {
+			return claim, err
+		}
+		return storeClaimedDocument(ctx, c.Logger, claim, true, func(ctx context.Context) (int64, error) {
+			n, err := write(ctx)
+			if err != nil {
+				uploadledger.RefundClaim(user, claim.Reused, claim.Size)
+			}
+			return n, err
+		})
+	}
+	stored, err := storeClaimedDocument(ctx, c.Logger, claim, false, write)
+	if err != nil {
+		return stored, err
+	}
+	if err := uploadledger.CommitClaim(user, stored.Reused, stored.Size); err != nil {
+		return stored, err
+	}
+	return stored, nil
 }
 
 // storeClaimedDocument records the claim on one upload span and writes the
@@ -252,6 +273,13 @@ func (c *DfsCore) rememberPhotoPath(ctx context.Context, photoID int64, sizeType
 
 // abandonClaim drops a reference when the upload returns an error before
 // the document or photo row is saved. A shared object stays.
+// abandonStored drops a document claim and the entity or reference bytes
+// recorded for it. The upload-file hold stays until a later success.
+func (c *DfsCore) abandonStored(creator, documentID int64, claim mediablob.Claim) {
+	c.abandonClaim(c.ctx, mediablob.KindDocument, documentID)
+	uploadledger.RefundClaim(c.ledgerSubject(creator), claim.Reused, claim.Size)
+}
+
 func (c *DfsCore) abandonClaim(ctx context.Context, kind string, id int64) {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.Blobs == nil || id == 0 {
 		return

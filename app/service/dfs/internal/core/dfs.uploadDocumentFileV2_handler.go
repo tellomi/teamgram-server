@@ -30,7 +30,7 @@ import (
 // dfs.uploadDocumentFileV2 creator:long media:InputMedia = Document;
 func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*mtproto.Document, error) {
 	var (
-		documentId = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		documentId = c.nextID()
 		//idgen.GetUUID()
 		file      = in.GetMedia().GetFile()
 		cacheData []byte
@@ -218,7 +218,8 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
 		claim.Reused = false
 	}
-	if noteErr := uploadledger.AllowClaim(in.GetCreator(), claim.Reused, claim.Size); noteErr != nil {
+	subject := c.ledgerSubject(in.GetCreator())
+	if noteErr := uploadledger.AllowClaim(subject, claim.Reused, claim.Size); noteErr != nil {
 		c.Logger.Errorf("dfs.uploadDocumentFile - budget")
 		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(noteErr))
 	}
@@ -258,7 +259,11 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		finishUpload(false, 0)
 		uploadScheduled = true
 	}
-	releaseUploadHold(in.GetCreator(), file.GetId_INT64())
+	if err := uploadledger.CommitClaim(subject, claim.Reused, claim.Size); err != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - budget")
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(err))
+	}
+	releaseUploadHold(subject, file.GetId_INT64())
 	return document, nil
 }
 

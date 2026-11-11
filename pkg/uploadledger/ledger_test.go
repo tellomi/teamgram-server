@@ -300,3 +300,134 @@ func TestRedisWindowIsSharedByTwoProcesses(t *testing.T) {
 		t.Fatalf("after the window: %v", err)
 	}
 }
+
+func TestIndependentMergeKeepsNewerTimestamp(t *testing.T) {
+	l := New(Limits{Network: 200, Window: time.Hour})
+	now := time.Unix(1_700_000_000, 0)
+	l.now = func() time.Time { return now }
+	if err := l.ChargeNetwork(7, 1); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(50 * time.Minute)
+	for i := 0; i < 250; i++ {
+		if err := l.ChargeNetwork(7, 1); err != nil {
+			break
+		}
+	}
+	if got := l.Book(7).Network; got != 200 {
+		t.Fatalf("filled %d", got)
+	}
+	// The first byte is 70 minutes old. Bytes merged into it must keep the
+	// later stamp, or the 200 cap admits another window of traffic.
+	now = now.Add(20 * time.Minute)
+	var extra int
+	for i := 0; i < 250; i++ {
+		if err := l.ChargeNetwork(7, 1); err != nil {
+			break
+		}
+		extra++
+	}
+	if extra != 0 {
+		t.Fatalf("cap 200 admitted %d more bytes after the old stamp expired", extra)
+	}
+}
+
+func TestIndependentAllowClaimDoesNotRecord(t *testing.T) {
+	l := New(Limits{Entity: 100, Refs: 10, Window: time.Hour})
+	Use(l)
+	t.Cleanup(func() { Use(nil) })
+	if err := AllowClaim(7, false, 40); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.Book(7).Entity; got != 0 {
+		t.Fatalf("probe recorded %d", got)
+	}
+	if err := CommitClaim(7, false, 40); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.Book(7).Entity; got != 40 {
+		t.Fatalf("entity %d", got)
+	}
+	RefundClaim(7, false, 40)
+	if got := l.Book(7).Entity; got != 0 {
+		t.Fatalf("refund left %d", got)
+	}
+}
+
+func TestIndependentLogModeAllowsWhenRedisIsDown(t *testing.T) {
+	mr := miniredis.RunT(t)
+	l, err := openRedis(mr.Addr(), Limits{Network: 10, Hold: 10, Entity: 10, Window: time.Hour}, ModeLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mr.Close()
+	if err = l.ChargeNetwork(7, 100); err != nil {
+		t.Fatalf("log mode rejected network: %v", err)
+	}
+	if _, err = l.Reserve(7, 1, 100); err != nil {
+		t.Fatalf("log mode rejected reserve: %v", err)
+	}
+	if err = l.CommitNew(7, 100); err != nil {
+		t.Fatalf("log mode rejected entity: %v", err)
+	}
+	if err = AllowClaim(7, false, 100); err != nil {
+		t.Fatalf("log mode rejected probe: %v", err)
+	}
+}
+
+func TestIndependentRedisMeterIsBucketed(t *testing.T) {
+	mr := miniredis.RunT(t)
+	l, err := openRedis(mr.Addr(), Limits{Network: 1 << 40, Window: time.Hour}, ModeEnforce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2000; i++ {
+		if err = l.ChargeNetwork(7, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := l.Book(7).Network; got != 2000 {
+		t.Fatalf("network %d", got)
+	}
+	fields, err := mr.HKeys("tellomi:up:net:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) == 0 || len(fields) > 61 {
+		t.Fatalf("buckets %d", len(fields))
+	}
+	members, err := mr.ZMembers("tellomi:up:net:7:t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != len(fields) {
+		t.Fatalf("time index %d fields %d", len(members), len(fields))
+	}
+}
+
+func TestIndependentRedisBucketKeepsRecentBytes(t *testing.T) {
+	mr := miniredis.RunT(t)
+	start := time.Unix(1_700_000_000, 0).UTC()
+	mr.SetTime(start)
+	l, err := openRedis(mr.Addr(), Limits{Network: 200, Window: time.Hour}, ModeEnforce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = l.ChargeNetwork(7, 100); err != nil {
+		t.Fatal(err)
+	}
+	mr.SetTime(start.Add(30 * time.Minute))
+	if err = l.ChargeNetwork(7, 100); err != nil {
+		t.Fatal(err)
+	}
+	mr.SetTime(start.Add(70 * time.Minute))
+	if got := l.Book(7).Network; got != 100 {
+		t.Fatalf("network %d, the recent bucket expired with the old one", got)
+	}
+	if err = l.ChargeNetwork(7, 100); err != nil {
+		t.Fatalf("recent 100 plus 100: %v", err)
+	}
+	if err = l.ChargeNetwork(7, 1); err == nil {
+		t.Fatal("cap 200 allowed another byte")
+	}
+}

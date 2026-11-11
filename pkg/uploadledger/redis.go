@@ -10,6 +10,8 @@ import (
 
 type redisAdder interface {
 	add(kind string, user, n, limit int64, window time.Duration, enforce bool) error
+	probe(kind string, user, n, limit int64, window time.Duration, enforce bool) error
+	refund(kind string, user, n int64, window time.Duration)
 	reserve(user, fileID, n, limit int64, window time.Duration, enforce bool) (int64, error)
 	cancel(id int64)
 	releaseFile(user, fileID int64)
@@ -30,39 +32,101 @@ func openRedis(addr string, lim Limits, mode string) (*Ledger, error) {
 	return led, nil
 }
 
+// Meter bytes live in at most 60 time buckets. The hash field is the bucket
+// start and the zset score is the latest write into that bucket, so a merged
+// bucket keeps the newer timestamp. A full scan is a scan of those buckets.
 const addScript = `
 local add = tonumber(ARGV[1])
 local lim = tonumber(ARGV[2])
 local window = tonumber(ARGV[3])
 local enforce = ARGV[4]
 local now = tonumber(redis.call('TIME')[1])
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - window)
-local rows = redis.call('ZRANGE', KEYS[1], 0, -1)
+local width = math.floor(window / 60)
+if width < 1 then width = 1 end
+local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now - window)
+for _, b in ipairs(expired) do
+  redis.call('HDEL', KEYS[1], b)
+end
+if #expired > 0 then
+  redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now - window)
+end
+local fields = redis.call('HGETALL', KEYS[1])
 local cur = 0
-for _, member in ipairs(rows) do
-  local amt = tonumber(string.match(member, ':(%d+)$')) or 0
-  cur = cur + amt
+for i = 2, #fields, 2 do
+  cur = cur + (tonumber(fields[i]) or 0)
 end
 if enforce == '1' and lim > 0 and cur + add > lim then
   return {0, window}
 end
-local id = redis.call('INCR', KEYS[2])
-redis.call('ZADD', KEYS[1], now, id .. ':' .. add)
-redis.call('EXPIRE', KEYS[1], window)
-redis.call('EXPIRE', KEYS[2], window)
+local bucket = tostring(now - (now % width))
+redis.call('HINCRBY', KEYS[1], bucket, add)
+redis.call('ZADD', KEYS[2], now, bucket)
+redis.call('EXPIRE', KEYS[1], window + width)
+redis.call('EXPIRE', KEYS[2], window + width)
+return {1, window}
+`
+
+const probeScript = `
+local add = tonumber(ARGV[1])
+local lim = tonumber(ARGV[2])
+local window = tonumber(ARGV[3])
+local enforce = ARGV[4]
+if enforce ~= '1' or lim <= 0 then
+  return {1, window}
+end
+local now = tonumber(redis.call('TIME')[1])
+local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now - window)
+for _, b in ipairs(expired) do
+  redis.call('HDEL', KEYS[1], b)
+end
+if #expired > 0 then
+  redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now - window)
+end
+local fields = redis.call('HGETALL', KEYS[1])
+local cur = 0
+for i = 2, #fields, 2 do
+  cur = cur + (tonumber(fields[i]) or 0)
+end
+if cur + add > lim then
+  return {0, window}
+end
 return {1, window}
 `
 
 const sumScript = `
-local now = tonumber(redis.call('TIME')[1])
 local window = tonumber(ARGV[1])
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - window)
-local rows = redis.call('ZRANGE', KEYS[1], 0, -1)
+local now = tonumber(redis.call('TIME')[1])
+local expired = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now - window)
+for _, b in ipairs(expired) do
+  redis.call('HDEL', KEYS[1], b)
+end
+if #expired > 0 then
+  redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now - window)
+end
+local fields = redis.call('HGETALL', KEYS[1])
 local cur = 0
-for _, member in ipairs(rows) do
-  cur = cur + (tonumber(string.match(member, ':(%d+)$')) or 0)
+for i = 2, #fields, 2 do
+  cur = cur + (tonumber(fields[i]) or 0)
 end
 return cur
+`
+
+const refundScript = `
+local left = tonumber(ARGV[1])
+local members = redis.call('ZREVRANGE', KEYS[2], 0, -1)
+for _, b in ipairs(members) do
+  if left <= 0 then break end
+  local cur = tonumber(redis.call('HGET', KEYS[1], b) or '0')
+  if cur <= left then
+    left = left - cur
+    redis.call('HDEL', KEYS[1], b)
+    redis.call('ZREM', KEYS[2], b)
+  else
+    redis.call('HINCRBY', KEYS[1], b, -left)
+    left = 0
+  end
+end
+return left
 `
 
 const reserveScript = `
@@ -107,7 +171,7 @@ func (b *redisBackend) add(kind string, user, n, limit int64, window time.Durati
 	if enforce {
 		flag = "1"
 	}
-	res, err := b.r.EvalCtx(context.Background(), addScript, []string{key, key + ":seq"},
+	res, err := b.r.EvalCtx(context.Background(), addScript, []string{key, key + ":t"},
 		n, limit, int(window/time.Second), flag)
 	if err != nil {
 		if enforce {
@@ -126,6 +190,36 @@ func (b *redisBackend) add(kind string, user, n, limit int64, window time.Durati
 	return nil
 }
 
+func (b *redisBackend) probe(kind string, user, n, limit int64, window time.Duration, enforce bool) error {
+	key := "tellomi:up:" + kind + ":" + strconv.FormatInt(user, 10)
+	flag := "0"
+	if enforce {
+		flag = "1"
+	}
+	res, err := b.r.EvalCtx(context.Background(), probeScript, []string{key, key + ":t"},
+		n, limit, int(window/time.Second), flag)
+	if err != nil {
+		if enforce {
+			return &Limited{Wait: time.Second}
+		}
+		return nil
+	}
+	ok, left := pair(res)
+	if ok == 0 {
+		wait := time.Duration(left) * time.Second
+		if wait < time.Second {
+			wait = window
+		}
+		return &Limited{Wait: wait}
+	}
+	return nil
+}
+
+func (b *redisBackend) refund(kind string, user, n int64, window time.Duration) {
+	key := "tellomi:up:" + kind + ":" + strconv.FormatInt(user, 10)
+	_, _ = b.r.EvalCtx(context.Background(), refundScript, []string{key, key + ":t"}, n, int(window/time.Second))
+}
+
 func (b *redisBackend) reserve(user, fileID, n, limit int64, window time.Duration, enforce bool) (int64, error) {
 	userS := strconv.FormatInt(user, 10)
 	flag := "0"
@@ -137,7 +231,10 @@ func (b *redisBackend) reserve(user, fileID, n, limit int64, window time.Duratio
 		"tellomi:up:holdseq",
 		"tellomi:up:holds:" + userS,
 	}, n, limit, int(window/time.Second), flag, fileID, userS)
-	if err != nil {
+	if err != nil || res == nil {
+		if !enforce {
+			return 0, nil
+		}
 		return 0, &Limited{Wait: time.Second}
 	}
 	ok, id := pair(res)
@@ -149,6 +246,9 @@ func (b *redisBackend) reserve(user, fileID, n, limit int64, window time.Duratio
 		return 0, &Limited{Wait: wait}
 	}
 	if id == 0 {
+		if !enforce {
+			return 0, nil
+		}
 		return 0, &Limited{Wait: time.Second}
 	}
 	return id, nil
@@ -191,8 +291,9 @@ func (b *redisBackend) book(user int64, window time.Duration) Book {
 }
 
 func (b *redisBackend) sum(kind string, user int64, window int) int64 {
+	key := "tellomi:up:" + kind + ":" + strconv.FormatInt(user, 10)
 	res, err := b.r.EvalCtx(context.Background(), sumScript,
-		[]string{"tellomi:up:" + kind + ":" + strconv.FormatInt(user, 10)}, window)
+		[]string{key, key + ":t"}, window)
 	if err != nil {
 		return 0
 	}

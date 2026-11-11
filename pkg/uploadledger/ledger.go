@@ -208,13 +208,39 @@ func NoteClaim(user, fileID int64, reused bool, size int64) error {
 }
 
 // AllowClaim reports whether this object may be stored. It does not release
-// holds and does not write anything.
+// holds and does not record the bytes. CommitClaim records them after the
+// object write succeeds. RefundClaim removes that record when a later step
+// of the same upload fails.
 func AllowClaim(user int64, reused bool, size int64) error {
 	led := Shared()
 	if led == nil || user == 0 {
 		return nil
 	}
+	return led.probeClaim(reused, user, size)
+}
+
+// CommitClaim records a finished object after its bytes are stored.
+func CommitClaim(user int64, reused bool, size int64) error {
+	led := Shared()
+	if led == nil || user == 0 {
+		return nil
+	}
 	return led.allowClaim(reused, user, size)
+}
+
+// RefundClaim removes a CommitClaim record. Network bytes and holds stay.
+func RefundClaim(user int64, reused bool, size int64) {
+	led := Shared()
+	if led == nil || user == 0 {
+		return
+	}
+	if reused {
+		led.refund("refs", led.refs, user, 1)
+		return
+	}
+	if size > 0 {
+		led.refund("entity", led.entity, user, size)
+	}
 }
 
 func (l *Ledger) allowClaim(reused bool, user, size int64) error {
@@ -350,6 +376,63 @@ func (l *Ledger) CommitReuse(user, peer int64) error {
 	return l.add("refs", l.refs, user, 1, l.lim.Refs)
 }
 
+func (l *Ledger) probeClaim(reused bool, user, size int64) error {
+	if reused {
+		return l.probe("refs", l.refs, user, 1, l.lim.Refs)
+	}
+	return l.probe("entity", l.entity, user, size, l.lim.Entity)
+}
+
+func (l *Ledger) probe(kind string, bucket map[int64]*counter, user, n, limit int64) error {
+	if l == nil || user == 0 || n <= 0 || l.mode == ModeOff {
+		return nil
+	}
+	if l.redis != nil {
+		return l.redis.probe(kind, user, n, limit, l.lim.Window, l.mode == ModeEnforce)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.allow(bucket, user, n, limit, l.now())
+}
+
+func (l *Ledger) refund(kind string, bucket map[int64]*counter, user, n int64) {
+	if l == nil || user == 0 || n <= 0 || l.mode == ModeOff {
+		return
+	}
+	if l.redis != nil {
+		l.redis.refund(kind, user, n, l.lim.Window)
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	c := l.liveCounter(bucket, user, now)
+	left := n
+	for i := len(c.events) - 1; i >= 0 && left > 0; i-- {
+		if c.events[i].n <= left {
+			left -= c.events[i].n
+			c.events = append(c.events[:i], c.events[i+1:]...)
+			continue
+		}
+		c.events[i].n -= left
+		left = 0
+	}
+	var sum int64
+	start := now
+	for _, ev := range c.events {
+		sum += ev.n
+		if ev.at.Before(start) {
+			start = ev.at
+		}
+	}
+	c.n = sum
+	if len(c.events) == 0 {
+		c.start = now
+	} else {
+		c.start = start
+	}
+}
+
 func (l *Ledger) add(kind string, bucket map[int64]*counter, user, n, limit int64) error {
 	if l == nil || user == 0 || n <= 0 || l.mode == ModeOff {
 		return nil
@@ -410,9 +493,11 @@ func (l *Ledger) allow(bucket map[int64]*counter, user, n, limit int64, now time
 func (l *Ledger) bump(bucket map[int64]*counter, user, n int64, now time.Time) {
 	c := l.liveCounter(bucket, user, now)
 	c.events = append(c.events, meterEvent{at: now, n: n})
+	// Fold the older event into the newer one. Keeping the oldest stamp
+	// drops recent bytes when that stamp leaves the window.
 	for len(c.events) > maxMeterEvents {
-		c.events[0].n += c.events[1].n
-		c.events = append(c.events[:1], c.events[2:]...)
+		c.events[1].n += c.events[0].n
+		c.events = c.events[1:]
 	}
 	c.n += n
 }
