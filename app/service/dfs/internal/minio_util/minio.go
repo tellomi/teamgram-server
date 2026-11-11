@@ -106,6 +106,9 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		// Default dial is 30s and the header wait is a minute. upload.getFile's
 		// RPC deadline is shorter, so a dead endpoint becomes
 		// "context deadline exceeded" before the sticker fallback runs.
+		// These also bound the TCP connect to TELLOMI_S3_HTTP_PROXY and the
+		// TLS handshake after CONNECT. A hung proxy does not fall back to a
+		// direct dial.
 		base.DialContext = (&net.Dialer{
 			Timeout:   3 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -113,6 +116,11 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		base.TLSHandshakeTimeout = 3 * time.Second
 		base.ResponseHeaderTimeout = 5 * time.Second
 		transport = base
+	}
+	var err error
+	transport, err = applyObjectHTTPProxy(transport, cfg.HTTPProxy)
+	if err != nil {
+		return nil, err
 	}
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:        credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
