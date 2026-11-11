@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -175,8 +176,9 @@ func configurePendingJobsDB(db *sql.DB) {
 	if db == nil {
 		return
 	}
-	// messages BFF has no existing MySQL pool (RPC-only Dao). This dedicated
-	// pool is capped at 2 open / 1 idle so it stays inside the #308 budget
+	// The messages BFF Dao is still RPC-only; we open a dedicated pool
+	// from the same ChannelMySQL DSN the other BFF DAOs use, capped at
+	// 2 open / 1 idle so it stays inside the #308 budget
 	// (add "messages bff pending_webpage_jobs 2/1" to that table).
 	db.SetMaxOpenConns(pendingJobsMaxOpenConns)
 	db.SetMaxIdleConns(pendingJobsMaxIdleConns)
@@ -206,28 +208,61 @@ func ensurePendingJobsSchema(db *sql.DB) error {
 	return nil
 }
 
+// pendingJobConfigDSN is the service MySQL DSN from messages Config.ChannelMySQL
+// (filled by the all-in-one bff from its existing ChannelMySQL).
+var pendingJobConfigDSN string
+
+// openPendingJobsDatabase, pingPendingJobsDB, and ensurePendingJobsSchemaFn
+// are replaced in tests so store selection can be asserted without a live server.
+var openPendingJobsDatabase = sql.Open
+
+var pingPendingJobsDB = func(db *sql.DB) error {
+	if db == nil {
+		return errors.New("nil db")
+	}
+	return db.Ping()
+}
+
+var ensurePendingJobsSchemaFn = ensurePendingJobsSchema
+
+func setPendingJobConfigDSN(dsn string) {
+	pendingJobConfigDSN = strings.TrimSpace(dsn)
+}
+
+// pendingJobDSN is the DSN the rest of the service already uses.
+// TEAMGRAM_MYSQL_DSN, when already set, overrides it the same way other
+// BFFs do. No new production env var is introduced.
+func pendingJobDSN() string {
+	if env := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN")); env != "" {
+		return env
+	}
+	return strings.TrimSpace(pendingJobConfigDSN)
+}
+
 func openPendingJobStore() PendingJobStore {
 	mem := newMemoryPendingJobs()
-	dsn := os.Getenv("TEAMGRAM_MYSQL_DSN")
+	dsn := pendingJobDSN()
 	if dsn == "" {
+		logx.Errorf("pending webpage jobs: no service MySQL DSN (ChannelMySQL was empty); using in-memory store. Job persistence and the messages orphan scan are disabled. This is not safe for production.")
 		return mem
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := openPendingJobsDatabase("mysql", dsn)
 	if err != nil {
-		logx.Errorf("pending webpage jobs: open: %v", err)
+		logx.Errorf("pending webpage jobs: open mysql failed; falling back to in-memory store. Job persistence and the messages orphan scan are disabled: %v", err)
 		return mem
 	}
 	configurePendingJobsDB(db)
-	if err = db.Ping(); err != nil {
-		logx.Errorf("pending webpage jobs: ping: %v", err)
+	if err = pingPendingJobsDB(db); err != nil {
+		logx.Errorf("pending webpage jobs: ping mysql failed; falling back to in-memory store. Job persistence and the messages orphan scan are disabled: %v", err)
 		_ = db.Close()
 		return mem
 	}
-	if err = ensurePendingJobsSchema(db); err != nil {
-		logx.Errorf("pending webpage jobs: schema: %v", err)
+	if err = ensurePendingJobsSchemaFn(db); err != nil {
+		logx.Errorf("pending webpage jobs: schema failed; falling back to in-memory store. Job persistence and the messages orphan scan are disabled: %v", err)
 		_ = db.Close()
 		return mem
 	}
+	logx.Infof("pending webpage jobs: using MySQL store")
 	return &mysqlPendingJobs{db: db, fallback: mem}
 }
 

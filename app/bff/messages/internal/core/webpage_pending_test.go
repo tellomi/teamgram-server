@@ -677,9 +677,6 @@ func TestPendingOrphanScanBounds(t *testing.T) {
 	if pendingOrphanLookback != 24*time.Hour {
 		t.Fatalf("lookback %s, want 24h", pendingOrphanLookback)
 	}
-	if pendingOrphanScanEvery < 10*time.Minute || pendingOrphanScanEvery > 15*time.Minute {
-		t.Fatalf("orphan interval %s: want 10–15min", pendingOrphanScanEvery)
-	}
 	if pendingSweepEvery != 15*time.Second {
 		t.Fatalf("due-job tick %s, want 15s", pendingSweepEvery)
 	}
@@ -688,7 +685,7 @@ func TestPendingOrphanScanBounds(t *testing.T) {
 	}
 }
 
-func TestOrphanScanDueOnlyAtStartupAndInterval(t *testing.T) {
+func TestOrphanScanDueOnlyAtStartup(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	if !orphanScanDue(time.Time{}, now) {
 		t.Fatal("startup must scan orphans")
@@ -696,11 +693,11 @@ func TestOrphanScanDueOnlyAtStartupAndInterval(t *testing.T) {
 	if orphanScanDue(now, now.Add(pendingSweepEvery)) {
 		t.Fatal("15s due-job tick must not rescan messages")
 	}
-	if orphanScanDue(now, now.Add(pendingOrphanScanEvery-time.Second)) {
-		t.Fatal("scan fired before the 15m interval")
+	if orphanScanDue(now, now.Add(15*time.Minute)) {
+		t.Fatal("orphan scan must not run on a later tick")
 	}
-	if !orphanScanDue(now, now.Add(pendingOrphanScanEvery)) {
-		t.Fatal("scan should fire at the 15m interval")
+	if orphanScanDue(now, now.Add(24*time.Hour)) {
+		t.Fatal("orphan scan is startup-only, not periodic")
 	}
 }
 
