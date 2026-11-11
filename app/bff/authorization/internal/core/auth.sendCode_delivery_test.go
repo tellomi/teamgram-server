@@ -309,9 +309,54 @@ func (m *countKV) TtlCtx(_ context.Context, key string) (int, error) {
 	}
 	return 60, nil
 }
+func (m *countKV) EvalCtx(_ context.Context, _ string, phoneKey string, args ...any) (any, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		m.m = map[string]string{}
+	}
+	return evalMapQuota(m.m, phoneKey, args), nil
+}
+
 func (m *countKV) DecrCtx(_ context.Context, key string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.m, key)
 	return 0, nil
+}
+
+func evalMapQuota(m map[string]string, phoneKey string, args []any) int64 {
+	if len(args) < 6 {
+		return -1
+	}
+	caps := [3]int{}
+	for i := 0; i < 3; i++ {
+		switch n := args[i].(type) {
+		case int:
+			caps[i] = n
+		case int64:
+			caps[i] = int(n)
+		}
+	}
+	ipKey, _ := args[4].(string)
+	globalKey, _ := args[5].(string)
+	keys := []string{phoneKey, ipKey, globalKey}
+	cur := func(key string) int {
+		if key == "" {
+			return 0
+		}
+		n, _ := strconv.Atoi(m[key])
+		return n
+	}
+	for i := 0; i < 3; i++ {
+		if caps[i] > 0 && cur(keys[i])+1 > caps[i] {
+			return int64(i + 1)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if caps[i] > 0 && keys[i] != "" {
+			m[keys[i]] = strconv.Itoa(cur(keys[i]) + 1)
+		}
+	}
+	return 0
 }

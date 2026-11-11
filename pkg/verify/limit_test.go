@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
 type memKV struct {
@@ -131,6 +133,69 @@ func (m *memKV) IncrCtx(ctx context.Context, key string) (int64, error) {
 	return int64(n), nil
 }
 
+func (m *memKV) EvalCtx(_ context.Context, _ string, phoneKey string, args ...any) (any, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.expireErr != nil {
+		return nil, m.expireErr
+	}
+	if len(args) < 6 {
+		return int64(-1), nil
+	}
+	phoneCap := argInt(args[0])
+	ipCap := argInt(args[1])
+	globalCap := argInt(args[2])
+	ttl := argInt(args[3])
+	ipKey, _ := args[4].(string)
+	globalKey, _ := args[5].(string)
+	cur := func(key string) int {
+		if key == "" {
+			return 0
+		}
+		m.sweep(key)
+		n, _ := strconv.Atoi(m.m[key])
+		return n
+	}
+	spend := func(key string, cap int) {
+		if cap <= 0 || key == "" {
+			return
+		}
+		n := cur(key) + 1
+		if m.m == nil {
+			m.m = map[string]string{}
+		}
+		m.m[key] = strconv.Itoa(n)
+		if m.exp == nil {
+			m.exp = map[string]time.Time{}
+		}
+		m.exp[key] = m.clock().Add(time.Duration(ttl) * time.Second)
+	}
+	if phoneCap > 0 && cur(phoneKey)+1 > phoneCap {
+		return int64(1), nil
+	}
+	if ipCap > 0 && cur(ipKey)+1 > ipCap {
+		return int64(2), nil
+	}
+	if globalCap > 0 && cur(globalKey)+1 > globalCap {
+		return int64(3), nil
+	}
+	spend(phoneKey, phoneCap)
+	spend(ipKey, ipCap)
+	spend(globalKey, globalCap)
+	return int64(0), nil
+}
+
+func argInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
 func (m *memKV) ExpireCtx(_ context.Context, key string, seconds int) error {
 	if m.expireErr != nil {
 		return m.expireErr
@@ -242,7 +307,7 @@ func TestShanghaiMidnightIsTheResetBoundary(t *testing.T) {
 	if !ok || !le.Daily || le.Retry != 1 {
 		t.Fatalf("one second before midnight: %#v", err)
 	}
-	if kv.m["tellomi:code:day:sms:phone:"+phone+":20261107"] != "11" {
+	if kv.m["tellomi:code:day:sms:phone:"+phone+":20261107"] != "10" {
 		t.Fatalf("old day counter %#v", kv.m)
 	}
 	// 16:00:00 UTC is 00:00:00 Asia/Shanghai on 8 November.
@@ -413,6 +478,9 @@ func (failKV) TtlCtx(context.Context, string) (int, error) { return 0, context.D
 func (failKV) DecrCtx(context.Context, string) (int64, error) {
 	return 0, context.DeadlineExceeded
 }
+func (failKV) EvalCtx(context.Context, string, string, ...any) (any, error) {
+	return nil, context.DeadlineExceeded
+}
 
 func TestReviewRejectedRetryDoesNotExtendCooldown(t *testing.T) {
 	now := time.Date(2026, 11, 12, 10, 0, 0, 0, shanghai)
@@ -444,6 +512,91 @@ func TestReviewExpireFailureMustNotAdmit(t *testing.T) {
 	if err = lim.AllowSend(context.Background(), "sms", "8613800138000", "203.0.113.8"); err != nil {
 		t.Fatalf("recovered send: %v", err)
 	}
+}
+
+func TestIndependentRedisScriptDoesNotSpendUnsentPhone(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rds, err := redis.NewRedis(redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv := redisKV{r: rds}
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, shanghai)
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 1, DailyIP: 1})
+	lim.now = func() time.Time { return now }
+	ctx := context.Background()
+	if err = lim.AllowSend(ctx, "sms", "8613800000001", "203.0.113.8"); err != nil {
+		t.Fatal(err)
+	}
+	err = lim.AllowSend(ctx, "sms", "8613800000002", "203.0.113.8")
+	le, ok := err.(*LimitError)
+	if !ok || !le.Daily {
+		t.Fatalf("ip reject %#v", err)
+	}
+	day := now.Format("20060102")
+	if v, _ := rds.GetCtx(ctx, "tellomi:code:day:sms:phone:8613800000002:"+day); v != "" {
+		t.Fatalf("unsent phone %q", v)
+	}
+	_, _ = rds.DelCtx(ctx, "tellomi:code:cd:sms:8613800000002")
+	if err = lim.AllowSend(ctx, "sms", "8613800000002", "203.0.113.9"); err != nil {
+		t.Fatalf("new ip: %v", err)
+	}
+}
+
+type redisKV struct{ r *redis.Redis }
+
+func (s redisKV) GetCtx(ctx context.Context, key string) (string, error) {
+	return s.r.GetCtx(ctx, key)
+}
+func (s redisKV) SetexCtx(ctx context.Context, key, value string, seconds int) error {
+	return s.r.SetexCtx(ctx, key, value, seconds)
+}
+func (s redisKV) SetnxExCtx(ctx context.Context, key, value string, seconds int) (bool, error) {
+	return s.r.SetnxExCtx(ctx, key, value, seconds)
+}
+func (s redisKV) TtlCtx(ctx context.Context, key string) (int, error) { return s.r.TtlCtx(ctx, key) }
+func (s redisKV) IncrCtx(ctx context.Context, key string) (int64, error) {
+	return s.r.IncrCtx(ctx, key)
+}
+func (s redisKV) DecrCtx(ctx context.Context, key string) (int64, error) {
+	return s.r.DecrCtx(ctx, key)
+}
+func (s redisKV) ExpireCtx(ctx context.Context, key string, seconds int) error {
+	return s.r.ExpireCtx(ctx, key, seconds)
+}
+func (s redisKV) EvalCtx(ctx context.Context, script string, key string, args ...any) (any, error) {
+	return s.r.EvalCtx(ctx, script, []string{key}, args...)
+}
+
+func TestIndependentUnsentPhoneSurvivesRefundFailure(t *testing.T) {
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, shanghai)
+	base := &memKV{}
+	kv := &decrFailKV{memKV: base}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 1, DailyIP: 1})
+	lim.now = func() time.Time { return now }
+	ctx := context.Background()
+	if err := lim.AllowSend(ctx, "sms", "8613800000001", "203.0.113.8"); err != nil {
+		t.Fatal(err)
+	}
+	err := lim.AllowSend(ctx, "sms", "8613800000002", "203.0.113.8")
+	le, ok := err.(*LimitError)
+	if !ok || !le.Daily {
+		t.Fatalf("ip reject %#v", err)
+	}
+	day := now.In(shanghai).Format("20060102")
+	if v := base.m["tellomi:code:day:sms:phone:8613800000002:"+day]; v != "" {
+		t.Fatalf("unsent phone locked at %q", v)
+	}
+	delete(base.m, "tellomi:code:cd:sms:8613800000002")
+	if err = lim.AllowSend(ctx, "sms", "8613800000002", "203.0.113.9"); err != nil {
+		t.Fatalf("new ip still locked: %v", err)
+	}
+}
+
+type decrFailKV struct{ *memKV }
+
+func (d decrFailKV) DecrCtx(context.Context, string) (int64, error) {
+	return 0, context.DeadlineExceeded
 }
 
 func TestReviewIPRejectionDoesNotSpendUnsentPhoneQuota(t *testing.T) {
