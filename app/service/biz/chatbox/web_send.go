@@ -55,7 +55,7 @@ func ParseExternalURL(raw string) (*url.URL, error) {
 // must call the returned restore function.
 func InstallTestLoader(title, site, description string) (restore func()) {
 	prev := loadWebPage
-	loadWebPage = func(*url.URL) fetchResult {
+	loadWebPage = func(context.Context, *url.URL) fetchResult {
 		return fetchResult{meta: pageMeta{Title: title, Site: site, Description: description}}
 	}
 	return func() { loadWebPage = prev }

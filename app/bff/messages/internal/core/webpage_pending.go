@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -27,13 +28,9 @@ const pendingCommitTimeout = 10 * time.Second
 // than pendingWebpageMaxAge inside this window can be retried with EditHide.
 // Kept to one day: production EXPLAIN on messages is a table scan (no
 // date2-leading index; the only date2 key is messages_ttl_due (ttl_period,
-// date2)), so a 7-day LIKE '%webPagePending%' every 15s would not hold at
-// 100k-user scale.
+// date2)). After jobs persist in MySQL this scan is a startup-only
+// fallback, not a periodic full-table LIKE.
 const pendingOrphanLookback = 24 * time.Hour
-
-// pendingOrphanScanEvery is how often the messages table is scanned for
-// orphans. Due jobs still use pendingSweepEvery and the created_unix index.
-const pendingOrphanScanEvery = 15 * time.Minute
 
 type pendingCommitStatus int
 
@@ -321,20 +318,21 @@ func mergePendingJobs(due, orphans []PendingWebpageJob) []PendingWebpageJob {
 	return out
 }
 
-// orphanScanDue is true on the first (startup) call and then once every
-// pendingOrphanScanEvery. 15s job ticks must not scan messages.
+// orphanScanDue is true only for the first (startup) sweep. After jobs
+// persist in MySQL, Due() on pending_webpage_jobs (created_unix index)
+// is the recovery path. A periodic LIKE '%webPagePending%' on messages
+// is a full table scan and would not hold at 100k-user scale. 15s job
+// ticks must not scan messages.
 func orphanScanDue(last, now time.Time) bool {
-	if last.IsZero() {
-		return true
-	}
-	return !now.Before(last.Add(pendingOrphanScanEvery))
+	_ = now
+	return last.IsZero()
 }
 
 // StartPendingWebpageSweep runs once at startup and then on a ticker.
 // Due jobs older than pendingWebpageMaxAge (60s) are cleared with EditHide
 // every pendingSweepEvery, limited to pendingSweepLimit rows, using the
 // created_unix index. The messages orphan scan (LIKE '%webPagePending%')
-// runs only at startup and every pendingOrphanScanEvery.
+// runs only at startup, as a fallback for cards that never got a job row.
 func StartPendingWebpageSweep(ctx context.Context, run func(now time.Time) int) {
 	if run == nil {
 		return
@@ -377,13 +375,20 @@ func (c *MessagesCore) startPendingWebpageSweep(ctx context.Context) {
 	})
 }
 
-// StartPendingWebpageSweeper loads the job store and starts the 60s safety net.
+var startPendingWebpageSweeperOnce sync.Once
+
+// StartPendingWebpageSweeper loads the job store from the service MySQL
+// DSN (Config.ChannelMySQL) and starts the due-job sweeper. Safe to call
+// from both the standalone messages server and the all-in-one bff helper.
 func StartPendingWebpageSweeper(svcCtx *svc.ServiceContext) {
 	if svcCtx == nil {
 		return
 	}
-	c := New(context.Background(), svcCtx)
-	c.startPendingWebpageSweep(context.Background())
+	setPendingJobConfigDSN(svcCtx.Config.ChannelMySQL)
+	startPendingWebpageSweeperOnce.Do(func() {
+		c := New(context.Background(), svcCtx)
+		c.startPendingWebpageSweep(context.Background())
+	})
 }
 
 // shouldAutoAttachWebpage is the sendMessage policy: a client that already

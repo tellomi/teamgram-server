@@ -30,7 +30,7 @@ func stubWebFetch(t *testing.T, meta pageMeta) func() {
 	t.Helper()
 	t.Setenv(EnvServerLinkFetch, "1")
 	prev := loadWebPage
-	loadWebPage = func(*url.URL) fetchResult { return fetchResult{meta: meta} }
+	loadWebPage = func(context.Context, *url.URL) fetchResult { return fetchResult{meta: meta} }
 	return func() { loadWebPage = prev }
 }
 
@@ -243,7 +243,7 @@ func TestExternalFetchOffByDefault(t *testing.T) {
 	t.Setenv(EnvServerLinkFetch, "")
 	called := false
 	prev := loadWebPage
-	loadWebPage = func(*url.URL) fetchResult {
+	loadWebPage = func(context.Context, *url.URL) fetchResult {
 		called = true
 		return fetchResult{meta: pageMeta{Title: "Apple"}}
 	}
@@ -263,7 +263,7 @@ func TestConcurrentFetchIsOneRequest(t *testing.T) {
 	t.Setenv(EnvServerLinkFetch, "1")
 	var n atomic.Int32
 	prev := loadWebPage
-	loadWebPage = func(*url.URL) fetchResult {
+	loadWebPage = func(context.Context, *url.URL) fetchResult {
 		n.Add(1)
 		time.Sleep(40 * time.Millisecond)
 		return fetchResult{meta: pageMeta{Title: "Once"}}
@@ -297,7 +297,7 @@ func TestDomainRateLimitDoesNotFetch(t *testing.T) {
 	t.Setenv(EnvServerLinkFetch, "1")
 	var n atomic.Int32
 	prev := loadWebPage
-	loadWebPage = func(*url.URL) fetchResult {
+	loadWebPage = func(context.Context, *url.URL) fetchResult {
 		n.Add(1)
 		return fetchResult{meta: pageMeta{Title: "Ok"}}
 	}
@@ -322,7 +322,7 @@ func TestNegativeCacheSkipsSecondFetch(t *testing.T) {
 	t.Setenv(EnvServerLinkFetch, "1")
 	var n atomic.Int32
 	prev := loadWebPage
-	loadWebPage = func(*url.URL) fetchResult {
+	loadWebPage = func(context.Context, *url.URL) fetchResult {
 		n.Add(1)
 		return fetchResult{failed: true}
 	}
@@ -489,14 +489,63 @@ func TestWebPageFailureShapes(t *testing.T) {
 	t.Setenv(EnvServerLinkFetch, "1")
 	prev := loadWebPage
 	defer func() { loadWebPage = prev }()
-	loadWebPage = func(*url.URL) fetchResult { return fetchResult{failed: true} }
+	loadWebPage = func(context.Context, *url.URL) fetchResult { return fetchResult{failed: true} }
 	page, err := WebPage("https://example.com/missing-page", 0)
 	if err != nil || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
 		t.Fatalf("empty %+v %v", page, err)
 	}
-	loadWebPage = func(*url.URL) fetchResult { return fetchResult{failed: true, pending: true} }
+	loadWebPage = func(context.Context, *url.URL) fetchResult { return fetchResult{failed: true, pending: true} }
 	page, err = WebPage("https://example.com/slow-page", 0)
 	if err != nil || page.GetPredicateName() != mtproto.Predicate_webPagePending || page.GetDate() == 0 {
 		t.Fatalf("pending %+v %v", page, err)
+	}
+}
+
+func TestFetchRemoteHonorsDeadlineOnHangingResolver(t *testing.T) {
+	t.Setenv(EnvServerLinkFetch, "1")
+
+	ln, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	// The socket is never read or written, so DNS queries hang until ctx ends.
+
+	prevResolver := webResolver
+	webResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "udp", ln.LocalAddr().String())
+		},
+	}
+	prevLoad := loadWebPage
+	loadWebPage = fetchRemote
+	t.Cleanup(func() {
+		webResolver = prevResolver
+		loadWebPage = prevLoad
+	})
+
+	const deadline = 80 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+	start := time.Now()
+	page, _, _, err := WebPageContext(ctx, "http://tellomi-hanging-dns.invalid/preview", 0)
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("fetch hung past deadline: %s", elapsed)
+	}
+	if elapsed < deadline/2 {
+		t.Fatalf("returned too fast (%s); hanging resolver may not have been used", elapsed)
+	}
+	if err != nil {
+		t.Fatalf("WebPageContext: %v", err)
+	}
+	if page == nil || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+		got := "nil"
+		if page != nil {
+			got = page.GetPredicateName()
+		}
+		t.Fatalf("got %s, want webPageEmpty", got)
 	}
 }

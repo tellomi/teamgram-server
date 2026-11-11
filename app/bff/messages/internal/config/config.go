@@ -36,4 +36,11 @@ type Config struct {
 	MessageClient zrpc.RpcClientConf
 	MediaClient   zrpc.RpcClientConf
 	SyncClient    *kafka.KafkaProducerConf
+
+	// ChannelMySQL is the teamgram database DSN already used by the other
+	// BFF DAOs. The all-in-one bff process passes its ChannelMySQL so
+	// pending webpage jobs share that same connection source.
+	// TEAMGRAM_MYSQL_DSN, if already set, overrides it the same way other
+	// BFFs do. This is not a new production env var.
+	ChannelMySQL string `json:",optional"`
 }

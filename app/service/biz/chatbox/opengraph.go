@@ -110,7 +110,7 @@ func safeImageURL(ctx context.Context, raw string) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err := webLookupIP(ctx, host)
 	if err != nil || len(ips) == 0 {
 		return ""
 	}
