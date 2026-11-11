@@ -1363,6 +1363,622 @@
       "key": "CrashReport.Prompt.Send",
       "value": "Send Log",
       "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments.Draft.Message",
+      "value": "Save this post as a draft, or discard it?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments.Outbox.Title",
+      "value": "Post not sent",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments.Outbox.Text",
+      "value": "A post is still waiting to be sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments.Outbox.Retry",
+      "value": "Try again",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments.Outbox.Later",
+      "value": "Not now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments.Outbox.Incomplete",
+      "value": "An attachment is missing, so this post was not sent.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments_Comment_SendFailed",
+      "value": "Couldn't send this comment. Your text is still here.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "Moments_Audience_Kept",
+      "value": "Couldn't change the audience. Your selection was kept.",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with these Moments draft/outbox/comment/audience keys; English was copied rather than invented."
     }
   ]
 }
