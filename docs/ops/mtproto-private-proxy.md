@@ -37,6 +37,12 @@ The header source is written with `setClientIp` into the same string that
 `initConnection` stores in `auths.client_ip` and that `send_code_ip` /
 `sign_in_ip` use as the bucket key. There is no new column.
 
+A relay that forwards public `443` and `10443` puts those destination ports
+in the header. The stored address is the header source, not the relay socket
+and not the origin address. Destination `443` is counted as `relay240_443`.
+Destination `10443` is counted as `relay_10445`. `TestRelayFrontendProxyKeepsClientIP`
+opens both and checks the auth client IP.
+
 ## Entry counters
 
 gnetway counts accepted native connections and their later socket bytes.
