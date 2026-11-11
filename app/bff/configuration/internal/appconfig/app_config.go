@@ -41,7 +41,8 @@ func AppConfig() *mtproto.JSONValue {
 
 // AppConfigHash is the hash clients send back on help.getAppConfig.
 // It changes when the premium policy, the public link hosts, the help URL,
-// the emoji blocklist, or a Tellomi feature flag changes.
+// the emoji blocklist, a Tellomi feature flag, or the autologin / url-auth
+// / whitelist domain lists change.
 func AppConfigHash() int32 {
 	h := fnv.New32a()
 	weekly, duration, cooldown := transcribeTrial()
@@ -61,7 +62,7 @@ func AppConfigHash() int32 {
 	if announce.Advertised() {
 		notice = 1
 	}
-	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d venue=%s crashbot=%s %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, mtproto.BotVenueName, crashreport.Username(), about.HashFragment())
+	fmt.Fprintf(h, "policy=%d brand=%s help=%s reaction=%s blocklist=%s transcribe=%d:%d:%d autoconfirm=%d ai=%d translate=%d compose=%d announce=%d venue=%s crashbot=%s %s %s", premium.AppConfigHash(), brand.LinkPrefix, brand.HelpURL(), catalog.DefaultReactionEmoji, strings.Join(emojiblock.List(), "\x00"), weekly, duration, cooldown, authorizationAutoconfirmPeriod, ai, translate, compose, notice, mtproto.BotVenueName, crashreport.Username(), about.HashFragment(), domainListHashInput())
 	if origin, ok := discoverFeedOrigin(); ok {
 		fmt.Fprintf(h, " feed=1 %s", origin)
 	}
@@ -84,11 +85,10 @@ func appConfigPairs() []*mtproto.JSONObjectValue {
 		}
 	}
 	chatsDef, chatsPrem := premium.DialogFilterChatLimit()
-	domains := jsonArray(jsonString(brand.ShortHost), jsonString(brand.SiteHost))
 	pairs := []*mtproto.JSONObjectValue{
-		jsonPair("autologin_domains", domains),
-		jsonPair("url_auth_domains", domains),
-		jsonPair("whitelisted_domains", domains),
+		jsonPair("autologin_domains", domainListValue(autologinDomains())),
+		jsonPair("url_auth_domains", domainListValue(urlAuthDomains())),
+		jsonPair("whitelisted_domains", domainListValue(whitelistedDomains())),
 		jsonPair("premium_link", jsonString(brand.PremiumURL)),
 		jsonPair("support_link", jsonString(brand.SupportURL)),
 		jsonPair("faq_link", jsonString(brand.HelpURL())),
@@ -301,6 +301,32 @@ func translationSwitch(on bool) string {
 		return "enabled"
 	}
 	return "disabled"
+}
+
+// Short-link root hosts (tell.cc) and the official site host (tellomi.cn)
+// must not appear in autologin_domains or url_auth_domains. Official
+// Android clients treat url_auth_domains as "open in an external browser"
+// and would otherwise force tell.cc links out of the app. Web SSO, if
+// needed later, should use a dedicated host.
+func autologinDomains() []string { return nil }
+func urlAuthDomains() []string   { return nil }
+
+func whitelistedDomains() []string {
+	return []string{brand.ShortHost, brand.SiteHost}
+}
+
+func domainListValue(hosts []string) *mtproto.JSONValue {
+	vals := make([]*mtproto.JSONValue, 0, len(hosts))
+	for _, host := range hosts {
+		vals = append(vals, jsonString(host))
+	}
+	return jsonArray(vals...)
+}
+
+func domainListHashInput() string {
+	return "autologin=" + strings.Join(autologinDomains(), ",") +
+		" urlauth=" + strings.Join(urlAuthDomains(), ",") +
+		" whitelist=" + strings.Join(whitelistedDomains(), ",")
 }
 
 func jsonString(v string) *mtproto.JSONValue {

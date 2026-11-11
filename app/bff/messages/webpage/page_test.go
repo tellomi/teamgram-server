@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -99,6 +100,50 @@ func TestStickerLinkUsesTitleNotShortName(t *testing.T) {
 	}
 	if PreviewMedia(context.Background(), "https://www.apple.com", nil) != nil {
 		t.Fatal("external url was attached on send")
+	}
+}
+
+func TestSiteHostOrdinaryPagesAreNotInternal(t *testing.T) {
+	ordinary := []string{
+		"https://tellomi.cn",
+		"https://tellomi.cn/",
+		"https://www.tellomi.cn",
+		"https://www.tellomi.cn/",
+		"https://tellomi.cn/legal/privacy/",
+		"https://tellomi.cn/legal/terms/",
+		"https://tellomi.cn/faq",
+		"https://tellomi.cn/help",
+		"https://tellomi.cn/support",
+		"https://tellomi.cn/premium",
+		"https://tellomi.cn/antispam",
+		"https://www.tellomi.cn/helperbot",
+	}
+	for _, raw := range ordinary {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, chats, users, handled := resolve(context.Background(), u)
+		if handled || page != nil || len(chats) != 0 || len(users) != 0 {
+			t.Fatalf("%s treated as an internal short link handled=%v predicate=%s", raw, handled, page.GetPredicateName())
+		}
+	}
+
+	internalEmpty := []string{
+		"https://tellomi.cn/joinchat/x",
+		"https://www.tellomi.cn/addstickers",
+		"https://tell.cc/",
+		"https://www.tell.cc/",
+	}
+	for _, raw := range internalEmpty {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, _, _, handled := resolve(context.Background(), u)
+		if !handled || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+			t.Fatalf("%s should stay an internal empty card handled=%v predicate=%s", raw, handled, page.GetPredicateName())
+		}
 	}
 }
 
@@ -279,7 +324,7 @@ func TestChannelUserAndMessageCards(t *testing.T) {
 	if err != nil || quiet.GetType().GetValue() != "telegram_user" || quiet.GetDescription().GetValue() != "You can contact @quiet right away." {
 		t.Fatalf("empty bio %s %q %v", quiet.GetType().GetValue(), quiet.GetDescription().GetValue(), err)
 	}
-	bot, _, _, err := chatbox.WebPageContext(ctx, "https://tellomi.cn/helperbot", 0)
+	bot, _, _, err := chatbox.WebPageContext(ctx, "https://tell.cc/helperbot", 0)
 	if err != nil || bot.GetType().GetValue() != "telegram_bot" || bot.GetPhoto().GetId() != 55 || bot.GetPhoto().GetAccessHash() != 66 {
 		t.Fatalf("bot %s photo %#v %v", bot.GetType().GetValue(), bot.GetPhoto(), err)
 	}

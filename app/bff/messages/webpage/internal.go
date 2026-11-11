@@ -1,9 +1,13 @@
 // Package webpage builds native link cards for messages.getWebPage,
 // messages.getWebPagePreview, and messages.sendMessage.
 //
-// Internal tell.cc and tellomi.cn links are filled from data this process
-// already has. t.me, telegram.me, and telegram.dog belong to Telegram and
-// are ordinary external URLs. External pages are not downloaded unless
+// Internal tell.cc short-link routes are filled from data this process
+// already has. tellomi.cn is the official website: only dedicated short-link
+// routes (joinchat, addstickers, addemoji, /s/, /c/, /+hash, and the other
+// t.me-shaped commands this resolver already handles) stay internal there.
+// The site root and ordinary pages fall through to external OG fetch.
+// t.me, telegram.me, and telegram.dog belong to Telegram and are ordinary
+// external URLs. External pages are not downloaded unless
 // TELLOMI_SERVER_LINK_FETCH=1.
 // A card the sending client fetched itself is accepted by ClientMedia.
 package webpage
@@ -87,6 +91,12 @@ func internalType(typ string) bool {
 
 func resolve(ctx context.Context, u *url.URL) (*mtproto.WebPage, []*mtproto.Chat, []*mtproto.User, bool) {
 	if u == nil || !internalHost(u.Hostname()) {
+		return nil, nil, nil, false
+	}
+	// Official website hosts are not short-link hosts. Only dedicated
+	// tell.cc-shaped routes stay internal so the site root and ordinary
+	// pages (legal, FAQ, help, marketing paths) can be OG-fetched.
+	if siteWebsiteHost(u.Hostname()) && !dedicatedShortLinkPath(u) {
 		return nil, nil, nil, false
 	}
 	raw := canonical(u)
@@ -428,6 +438,35 @@ func viewerID(ctx context.Context) int64 {
 		return 0
 	}
 	return md.UserId
+}
+
+// siteWebsiteHost is the official marketing/legal site, including www.
+func siteWebsiteHost(host string) bool {
+	return trimHost(host) == brand.SiteHost
+}
+
+// dedicatedShortLinkPath reports whether path is a reserved short-link
+// route this resolver actually handles (joinchat, addstickers, /s/,
+// /c/, /+hash, and the other t.me-shaped commands in resolve). Bare
+// first-segment names such as /help or /faq are website pages, not
+// usernames, when the host is tellomi.cn.
+func dedicatedShortLinkPath(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	segs := segments(u.Path)
+	if len(segs) == 0 {
+		return false
+	}
+	head := strings.ToLower(segs[0])
+	if strings.HasPrefix(head, "+") {
+		return true
+	}
+	switch head {
+	case "addstickers", "addemoji", "joinchat", "s", "c", "proxy", "socks", "share", "boost":
+		return true
+	}
+	return false
 }
 
 func internalHost(host string) bool {
