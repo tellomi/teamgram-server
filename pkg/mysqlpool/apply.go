@@ -3,6 +3,7 @@ package mysqlpool
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,8 +53,12 @@ func Shared(dsn string) (*sql.DB, error) {
 	sharedMu.Lock()
 	defer sharedMu.Unlock()
 	if ent, ok := shared[dsn]; ok {
-		ent.n++
-		return ent.db, nil
+		if closedDB(ent.db) {
+			delete(shared, dsn)
+		} else {
+			ent.n++
+			return ent.db, nil
+		}
 	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -64,9 +69,24 @@ func Shared(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
+// closedDB reports whether db was closed. A live pool is not dialed: Conn
+// returns immediately when the pool has an idle connection, and a closed
+// pool returns "sql: database is closed" without a dial.
+func closedDB(db *sql.DB) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return strings.Contains(err.Error(), "database is closed")
+	}
+	_ = conn.Close()
+	return false
+}
+
 // Discard releases one user of a shared pool. The *sql.DB is closed when
-// the last user releases it. A pool this process did not share is closed
-// immediately.
+// the last user releases it. Callers must not call Close on a shared pool:
+// that closes it for every other user. A pool this process did not share is
+// closed immediately.
 func Discard(db *sql.DB) error {
 	if db == nil {
 		return nil

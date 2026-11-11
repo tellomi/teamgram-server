@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,6 +117,36 @@ func TestSharedDedupesAndDiscard(t *testing.T) {
 		t.Fatal("last discard did not drop the pool")
 	}
 	_ = Discard(db4)
+}
+
+func TestClosedSharedPoolIsReplaced(t *testing.T) {
+	ResetSharedForTest()
+	t.Cleanup(ResetSharedForTest)
+	t.Setenv("TELLOMI_MYSQL_POOL", "dfs")
+	const dsn = "user:pass@tcp(127.0.0.1:1)/teamgram?timeout=50ms"
+	db1, err := Shared(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A one-shot reader that calls Close instead of Discard used to leave
+	// this pointer in the map. The next opener must not receive it.
+	if err = db1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db2, err := Shared(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if db2 == db1 {
+		t.Fatal("closed pool was reused")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	err = db2.PingContext(ctx)
+	if err != nil && strings.Contains(err.Error(), "database is closed") {
+		t.Fatal(err)
+	}
+	_ = Discard(db2)
 }
 
 func TestWithAcquireCancelAndDeadline(t *testing.T) {

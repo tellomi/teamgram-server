@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -161,7 +162,8 @@ func ReloadPublicObjects(ctx context.Context, dsn string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	// Release the shared process pool. db.Close would close it for dfs too.
+	defer mysqlpool.Discard(db)
 	rows, err := db.QueryContext(ctx, publicObjectSQL)
 	if err != nil {
 		return err
