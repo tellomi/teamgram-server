@@ -121,7 +121,8 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 		if !spec.allows(ip) {
 			// Do not read the following bytes. A header from an untrusted
 			// peer must not become client_ip, and the connection is not a
-			// plain MTProto fallback.
+			// plain MTProto fallback. The reject counter has no address.
+			noteEntryReject("untrusted_peer")
 			logx.Errorf("proxy reject reason=untrusted_peer peer=%s local=%s", host, local)
 			return nil, gnet.Close
 		}
@@ -154,6 +155,8 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	s.conns.Store(c.ConnId(), c)
 	if ctx.proxy != nil {
 		s.proxyWaiting.Store(c.ConnId(), struct{}{})
+	} else {
+		ctx.assignEntry(classifyNativeEntry(tcpPort(c.LocalAddr()), false, 0))
 	}
 
 	proto := "tcp"
@@ -253,6 +256,14 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			return action
 		}
 	}
+	// Count bytes that are still buffered after a PROXY header is removed.
+	// onTcpData then consumes them; the next event counts only the new tail.
+	countInbound(ctx, inboundBuffered(c))
+	defer func() {
+		if ctx.entry != "" {
+			ctx.unconsumed = inboundBuffered(c)
+		}
+	}()
 	if ctx.ppv1 {
 		ppv1, err := c.Peek(-1)
 		if err != nil {
@@ -654,7 +665,11 @@ func UnThreadSafeWrite(c gnet.Conn, msg interface{}) error {
 			return err
 		}
 	} else {
-		_, err = c.Write(data)
+		n, werr := c.Write(data)
+		err = werr
+		if n > 0 {
+			addEntryBytes(ctx.entry, 0, int64(n))
+		}
 		if err != nil {
 			logx.Errorf("conn(%s) c.Write(data) - error: %v ", c, err)
 		}
