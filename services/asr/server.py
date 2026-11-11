@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import threading
+from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TAG = re.compile(r"<\|[^>|]{0,64}\|>")
@@ -161,7 +162,63 @@ def load_recognizer():
     )
 
 
-def make_handler(engine: Engine):
+def positive_int(name: str, default: int, allow_zero: bool = False) -> int:
+    """Read a request-limit env var. Empty or invalid keeps default."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if allow_zero:
+        return value if value >= 0 else default
+    return value if value >= 1 else default
+
+
+class Admission:
+    """Caps running work and how many requests may wait for a slot.
+
+    try_acquire returns a context manager, or None when both the running
+    set and the wait queue are full. None means the caller responds 503
+    and does not wait. A waiting caller blocks only until a running slot
+    frees; the number of those waiters is `queue`.
+    """
+
+    def __init__(self, inflight: int, queue: int):
+        if inflight < 1:
+            raise ValueError("inflight")
+        if queue < 0:
+            raise ValueError("queue")
+        self.inflight = inflight
+        self.queue = queue
+        self._slots = threading.BoundedSemaphore(inflight + queue)
+        self._run = threading.BoundedSemaphore(inflight)
+
+    def try_acquire(self):
+        if not self._slots.acquire(blocking=False):
+            return None
+        return _Hold(self)
+
+
+class _Hold:
+    def __init__(self, admission: Admission):
+        self._admission = admission
+        self._entered = False
+
+    def __enter__(self):
+        self._admission._run.acquire()
+        self._entered = True
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._entered:
+            self._admission._run.release()
+        self._admission._slots.release()
+        return False
+
+
+def make_handler(engine: Engine, admission: Admission = None):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -191,8 +248,16 @@ def make_handler(engine: Engine):
             if len(audio) != length:
                 self._send(400, b'{"error":"short_body"}')
                 return
+            hold = nullcontext()
+            if admission is not None:
+                taken = admission.try_acquire()
+                if taken is None:
+                    self._send(503, b'{"error":"overloaded"}')
+                    return
+                hold = taken
             try:
-                text, lang = engine.transcribe(audio)
+                with hold:
+                    text, lang = engine.transcribe(audio)
             except TooLong:
                 self._send(400, b'{"error":"too_long"}')
                 return
@@ -230,7 +295,13 @@ def main():
         chunk_seconds=int(os.environ.get("ASR_CHUNK_SECONDS", "30")),
     )
     port = int(os.environ.get("ASR_PORT", "8080"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(engine))
+    # One clip runs at a time on the 1 CPU cap. Two more may wait. The rest
+    # are refused. These are request slots, not OMP/MKL thread counts.
+    admission = Admission(
+        positive_int("ASR_MAX_INFLIGHT", 1),
+        positive_int("ASR_MAX_QUEUE", 2, allow_zero=True),
+    )
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(engine, admission))
     server.serve_forever()
 
 

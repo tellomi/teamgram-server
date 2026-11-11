@@ -67,6 +67,10 @@ echo "build linkpreview ..."
 cd ${TEAMGRAMAPP}/interface/linkpreview/cmd/linkpreview
 go build -o ${INSTALL}/bin/linkpreview
 
+echo "build healthd ..."
+cd ${TEAMGRAMAPP}/../cmd/healthd
+go build -o ${INSTALL}/bin/healthd
+
 #echo "build httpserver ..."
 #cd ${TEAMGRAMAPP}/interface/httpserver/cmd/httpserver
 #go build -o ${INSTALL}/bin/httpserver

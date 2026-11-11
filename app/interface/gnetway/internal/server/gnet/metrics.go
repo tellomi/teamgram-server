@@ -68,6 +68,14 @@ var (
 		Labels:    []string{},
 	})
 
+	metricInflightShed = metric.NewCounterVec(&metric.CounterVecOpts{
+		Namespace: namespace,
+		Subsystem: "inflight",
+		Name:      "shed_total",
+		Help:      "Inbound messages refused because the gateway in-flight limit was full.",
+		Labels:    []string{},
+	})
+
 	metricCodecDecodeError = metric.NewCounterVec(&metric.CounterVecOpts{
 		Namespace: namespace,
 		Subsystem: "codec",

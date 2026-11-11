@@ -42,25 +42,37 @@ import (
 )
 
 func (s *Server) asyncRunIfError(connId int64, msgId int64, execb func() error, retcb func(c gnet.Conn, msgId int64, err error)) {
+	release, ok := s.beginInflight()
+	if !ok {
+		return
+	}
 	if err := s.pool.Submit(func() {
+		defer release()
 		if err := execb(); err != nil {
 			s.eng.Trigger(connId, func(c gnet.Conn) {
 				retcb(c, msgId, err)
 			})
 		}
 	}); err != nil {
+		release()
 		logx.Errorf("asyncRunIfError - pool.Submit error: %v, connId: %d", err, connId)
 	}
 }
 
 func (s *Server) asyncRun(connId int64, execb func() error, retcb func(c gnet.Conn)) {
+	release, ok := s.beginInflight()
+	if !ok {
+		return
+	}
 	if err := s.pool.Submit(func() {
+		defer release()
 		if err := execb(); err == nil {
 			s.eng.Trigger(connId, func(c gnet.Conn) {
 				retcb(c)
 			})
 		}
 	}); err != nil {
+		release()
 		logx.Errorf("asyncRun - pool.Submit error: %v, connId: %d", err, connId)
 	}
 }
@@ -72,14 +84,35 @@ func (s *Server) asyncRun2(
 	mmsg []byte,
 	execb func(kId int64, mmsg []byte) (interface{}, error),
 	retcb func(c gnet.Conn, needAck bool, mmsg []byte, in interface{}, err error)) {
+	release, ok := s.beginInflight()
+	if !ok {
+		return
+	}
 	if err := s.pool.Submit(func() {
+		defer release()
 		r, err := execb(kId, mmsg)
 		s.eng.Trigger(connId, func(c gnet.Conn) {
 			retcb(c, needAck, mmsg, r, err)
 		})
 	}); err != nil {
+		release()
 		logx.Errorf("asyncRun2 - pool.Submit error: %v, connId: %d, keyId: %d", err, connId, kId)
 	}
+}
+
+// beginInflight takes one gateway slot. A full gate sheds the message:
+// the socket stays up and the work is not queued.
+func (s *Server) beginInflight() (func(), bool) {
+	if s == nil || s.inflight == nil {
+		return func() {}, true
+	}
+	release, ok := s.inflight.TryAcquire()
+	if !ok {
+		metricInflightShed.Inc()
+		logx.Statf("gateway inflight full, shedding")
+		return nil, false
+	}
+	return release, true
 }
 
 // OnBoot fires when the engine is ready for accepting connections.

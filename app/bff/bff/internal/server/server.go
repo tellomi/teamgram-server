@@ -86,6 +86,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
 	"github.com/teamgram/teamgram-server/pkg/crashreport"
+	"github.com/teamgram/teamgram-server/pkg/inflight"
 	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -655,6 +656,11 @@ func (s *Server) Initialize() error {
 	})
 
 	// logx.Must(err)
+
+	// Shed RPCs once this many handlers are running. 256 is above the
+	// observed production MySQL session peak and stops a backlog from
+	// forming in this process. TELLOMI_BFF_MAX_INFLIGHT overrides it.
+	s.grpcSrv.AddUnaryInterceptors(inflight.UnaryServer(inflight.FromEnv("TELLOMI_BFF_MAX_INFLIGHT", 256)))
 
 	go func() {
 		s.grpcSrv.Start()

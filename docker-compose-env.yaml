@@ -65,9 +65,16 @@ services:
       ETCD_INITIAL_CLUSTER_TOKEN: teamgram-etcd
       ETCD_INITIAL_CLUSTER_STATE: new
       ETCD_AUTO_COMPACTION_RETENTION: 1
+      ETCDCTL_API: "3"
     volumes:
       - ./data/etcd:/etcd-data
     restart: always
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health", "--endpoints=http://127.0.0.1:2379"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - teamgram_net
 
@@ -108,8 +115,9 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
     restart: always
+    # App user, not root. ping speaks the MySQL protocol and then exits.
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u\"$$MYSQL_USER\" -p\"$$MYSQL_PASSWORD\" --protocol=tcp || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

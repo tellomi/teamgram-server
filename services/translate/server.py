@@ -15,6 +15,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL_DIR = os.environ.get("TELLOMI_TRANSLATE_MODEL", "/opt/translate/model").strip()
@@ -26,6 +27,62 @@ ZH = {"zh", "zh-cn", "zh-hans"}
 # Filled by load(). None means the process is up but unhealthy.
 ENGINE = None
 LOAD_ERROR = "model_missing"
+# Set by main. None disables the cap (tests that call translate directly).
+ADMISSION = None
+
+
+def positive_int(name: str, default: int, allow_zero: bool = False) -> int:
+    """Read a request-limit env var. Empty or invalid keeps default."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if allow_zero:
+        return value if value >= 0 else default
+    return value if value >= 1 else default
+
+
+class Admission:
+    """Caps running translations and how many requests may wait.
+
+    try_acquire returns a context manager, or None when the running set
+    and the wait queue are both full. The caller then responds 503.
+    """
+
+    def __init__(self, inflight: int, queue: int):
+        if inflight < 1:
+            raise ValueError("inflight")
+        if queue < 0:
+            raise ValueError("queue")
+        self.inflight = inflight
+        self.queue = queue
+        self._slots = threading.BoundedSemaphore(inflight + queue)
+        self._run = threading.BoundedSemaphore(inflight)
+
+    def try_acquire(self):
+        if not self._slots.acquire(blocking=False):
+            return None
+        return _Hold(self)
+
+
+class _Hold:
+    def __init__(self, admission: Admission):
+        self._admission = admission
+        self._entered = False
+
+    def __enter__(self):
+        self._admission._run.acquire()
+        self._entered = True
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._entered:
+            self._admission._run.release()
+        self._admission._slots.release()
+        return False
 
 
 class Engine:
@@ -155,10 +212,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "texts"})
                 return
             clean.append(item)
+        hold = nullcontext()
+        if ADMISSION is not None:
+            taken = ADMISSION.try_acquire()
+            if taken is None:
+                self._send(503, {"error": "overloaded"})
+                return
+            hold = taken
         try:
-            started = time.perf_counter()
-            out = ENGINE.translate(clean)
-            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            with hold:
+                started = time.perf_counter()
+                out = ENGINE.translate(clean)
+                elapsed_ms = int((time.perf_counter() - started) * 1000)
         except Exception as err:
             print("translate failed:", err, file=sys.stderr)
             self._send(503, {"error": "runtime_not_loaded"})
@@ -181,9 +246,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global ADMISSION
     ok = load()
     if not ok:
         print("translate unhealthy:", LOAD_ERROR, file=sys.stderr)
+    # One translation runs at a time. Two more may wait. The rest are
+    # refused. These are request slots, not intra_threads.
+    ADMISSION = Admission(
+        positive_int("TELLOMI_TRANSLATE_MAX_INFLIGHT", 1),
+        positive_int("TELLOMI_TRANSLATE_MAX_QUEUE", 2, allow_zero=True),
+    )
     port = int(os.environ.get("PORT", "8091"))
     ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
