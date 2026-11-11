@@ -38,6 +38,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 )
 
 const (
@@ -69,13 +70,15 @@ func Apply(dsn string) (string, error) {
 	return withTLSName(dsn, ConfigName)
 }
 
-// Open is sql.Open("mysql", ...) after Apply.
+// Open is the shared process pool for dsn after Apply.
+// The same DSN returns the same *sql.DB. Limits come from pkg/mysqlpool.
+// A failed Ping should call mysqlpool.Discard so the next Open can retry.
 func Open(dsn string) (*sql.DB, error) {
 	dsn, err := Apply(dsn)
 	if err != nil {
 		return nil, err
 	}
-	return sql.Open("mysql", dsn)
+	return mysqlpool.Shared(dsn)
 }
 
 // Prepare copies c and applies TLS to DSN and ReadDSN.
@@ -109,7 +112,11 @@ func NewMySQL(c *sqlx.Config) *sqlx.DB {
 	if err != nil {
 		panic(err)
 	}
-	return sqlx.NewMySQL(cp)
+	db := sqlx.NewMySQL(cp)
+	// go-zero's own pool defaults to 64. Clamp it to this process's budget
+	// before the first query uses it.
+	mysqlpool.ClampSQLX(db)
+	return db
 }
 
 // BuildConfig builds the tls.Config Apply registers.

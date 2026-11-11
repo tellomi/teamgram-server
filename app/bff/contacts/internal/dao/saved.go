@@ -56,8 +56,6 @@ func OpenSaved(dsn string) *SQLSaved {
 	if err != nil {
 		return nil
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
 	return &SQLSaved{db: db}
 }
 

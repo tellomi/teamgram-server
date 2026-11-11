@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/redact"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -58,7 +59,7 @@ func Start(dsn string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err = Ensure(ctx, db); err != nil {
-		db.Close()
+		mysqlpool.Discard(db)
 		if errors.Is(err, ErrConflict) {
 			logx.Error("crash report: bot id or username belongs to a different account; collector is off")
 		} else {
@@ -68,7 +69,7 @@ func Start(dsn string) {
 	}
 	objs, err := OpenObjects()
 	if err != nil {
-		db.Close()
+		mysqlpool.Discard(db)
 		logx.Error("crash report: object storage is unavailable; collector is off")
 		return
 	}

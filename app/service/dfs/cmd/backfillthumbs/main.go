@@ -48,8 +48,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(4)
-	db.SetConnMaxLifetime(time.Hour)
 
 	log.Printf("thumb backfill: dry_run=%v batch=%d after=%d max=%d", *dryRun, *batch, *after, *maxN)
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)

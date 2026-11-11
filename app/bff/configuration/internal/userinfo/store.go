@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -53,13 +54,10 @@ func Open(dsn string) *Store {
 		logx.Errorf("userinfo: mysql unavailable, using memory: %v", err)
 		return st
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		logx.Errorf("userinfo: mysql unavailable, using memory: %v", err)
 		return st
 	}
@@ -72,7 +70,7 @@ CREATE TABLE IF NOT EXISTS tellomi_user_info (
   date_ts INT NOT NULL,
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		logx.Errorf("userinfo: schema: %v", err)
 		return st
 	}
