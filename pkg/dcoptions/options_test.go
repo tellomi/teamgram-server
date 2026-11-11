@@ -311,8 +311,116 @@ func TestApplyPublicHostRewritesOptionsList(t *testing.T) {
 	}
 }
 
+func TestApplyPublicHostKeepsProductionDC2(t *testing.T) {
+	spec := "1:8.137.198.240:10443,1:8.137.198.240:443,2:8.137.198.240:10443,2:8.137.198.240:443"
+	t.Setenv(envOptions, spec)
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
+	Apply(cfg)
+	opts := cfg.GetDcOptions()
+	wantID := []int32{1, 1, 2, 2}
+	wantPort := []int32{10443, 443, 10443, 443}
+	if len(opts) != len(wantID) {
+		t.Fatalf("len %d", len(opts))
+	}
+	for i, opt := range opts {
+		if opt.GetId() != wantID[i] || opt.GetPort() != wantPort[i] || opt.GetIpAddress() != "8.137.198.240" {
+			t.Fatalf("entry %d id=%d ip=%s port=%d", i, opt.GetId(), opt.GetIpAddress(), opt.GetPort())
+		}
+	}
+}
+
+func TestApplyPublicHostDropsUnforwardedPort(t *testing.T) {
+	t.Setenv(envOptions, "1:8.156.40.105:10443,1:8.156.40.105:5222,2:8.156.40.105:443,2:8.156.40.105:80")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
+	Apply(cfg)
+	opts := cfg.GetDcOptions()
+	if len(opts) != 2 {
+		t.Fatalf("len %d %+v", len(opts), opts)
+	}
+	if opts[0].GetId() != 1 || opts[0].GetPort() != 10443 || opts[0].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("first %+v", opts[0])
+	}
+	if opts[1].GetId() != 2 || opts[1].GetPort() != 443 || opts[1].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("second %+v", opts[1])
+	}
+	for _, opt := range opts {
+		if opt.GetPort() == 5222 || opt.GetPort() == 80 || opt.GetIpAddress() == "8.156.40.105" {
+			t.Fatalf("published %s:%d", opt.GetIpAddress(), opt.GetPort())
+		}
+	}
+
+	t.Setenv(envOptions, "2:8.156.40.105:5222")
+	only := fileShape()
+	Apply(only)
+	fallback := only.GetDcOptions()
+	if len(fallback) != 2 || fallback[0].GetId() != 1 || fallback[0].GetPort() != 10443 || fallback[1].GetPort() != 443 {
+		t.Fatalf("fallback %+v", fallback)
+	}
+	for _, opt := range fallback {
+		if opt.GetPort() == 5222 || opt.GetId() == 2 {
+			t.Fatalf("5222-only list kept DC2 or 5222: %+v", opt)
+		}
+	}
+}
+
+func TestApplyPublicHostLeavesMappedIPv6(t *testing.T) {
+	t.Setenv(envOptions, "")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	mapped := &mtproto.DcOption{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            1,
+		IpAddress:     "::ffff:8.156.40.105",
+		Port:          10443,
+		Ipv6:          true,
+		ThisPortOnly:  true,
+	}
+	mappedFlagOff := &mtproto.DcOption{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            2,
+		IpAddress:     "::ffff:10.20.0.218",
+		Port:          443,
+		Ipv6:          false,
+		ThisPortOnly:  true,
+	}
+	flaggedV4 := &mtproto.DcOption{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            2,
+		IpAddress:     "8.156.40.105",
+		Port:          10443,
+		Ipv6:          true,
+		ThisPortOnly:  true,
+	}
+	cfg := fileShape()
+	cfg.SetDcOptions([]*mtproto.DcOption{mapped, mappedFlagOff, flaggedV4})
+	Apply(cfg)
+	if mapped.GetIpAddress() != "::ffff:8.156.40.105" {
+		t.Fatal("Apply wrote into the caller's dcOption")
+	}
+	opts := cfg.GetDcOptions()
+	if len(opts) != 3 {
+		t.Fatalf("len %d", len(opts))
+	}
+	if opts[0].GetIpAddress() != "::ffff:8.156.40.105" || !opts[0].GetIpv6() || opts[0].GetPort() != 10443 {
+		t.Fatalf("mapped %+v", opts[0])
+	}
+	if opts[1].GetIpAddress() != "::ffff:10.20.0.218" || opts[1].GetIpv6() || opts[1].GetId() != 2 || opts[1].GetPort() != 443 {
+		t.Fatalf("mapped flag off %+v", opts[1])
+	}
+	if opts[2].GetIpAddress() != "8.156.40.105" || !opts[2].GetIpv6() || opts[2].GetPort() != 10443 {
+		t.Fatalf("ipv6 flag %+v", opts[2])
+	}
+}
+
 func TestApplyPublicHostInvalidLeavesList(t *testing.T) {
-	for _, host := range []string{"api.tellomi.cn", "8.137.198.240:10443", "2001:db8::1", "08.137.198.240"} {
+	for _, host := range []string{"api.tellomi.cn", "8.137.198.240:10443", "2001:db8::1", "::ffff:8.137.198.240", "08.137.198.240"} {
 		t.Run(host, func(t *testing.T) {
 			t.Setenv(envOptions, "")
 			t.Setenv(envDomain, "")

@@ -225,6 +225,66 @@ func TestHelpGetConfigKeepsMediaAndCDNFlags(t *testing.T) {
 	}
 }
 
+func TestHelpGetConfigPublicHostDrops5222(t *testing.T) {
+	restoreConfig(t)
+	loadCheckedInConfig(t)
+	t.Setenv("TELLOMI_DC_OPTIONS", "1:8.156.40.105:10443,1:8.156.40.105:5222,2:8.156.40.105:443")
+	t.Setenv("TELLOMI_DC_TXT_DOMAIN", "")
+	t.Setenv("TELLOMI_PUBLIC_DC_HOST", "8.137.198.240")
+
+	got := callGetConfig(t)
+	opts := got.GetDcOptions()
+	if len(opts) != 2 {
+		t.Fatalf("len %d", len(opts))
+	}
+	if opts[0].GetId() != 1 || opts[0].GetPort() != 10443 || opts[0].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("first id=%d ip=%s port=%d", opts[0].GetId(), opts[0].GetIpAddress(), opts[0].GetPort())
+	}
+	if opts[1].GetId() != 2 || opts[1].GetPort() != 443 || opts[1].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("second id=%d ip=%s port=%d", opts[1].GetId(), opts[1].GetIpAddress(), opts[1].GetPort())
+	}
+	wire := roundTripConfig(t, got)
+	for _, opt := range wire.GetDcOptions() {
+		if opt.GetPort() == 5222 || opt.GetIpAddress() == "8.156.40.105" {
+			t.Fatalf("wire published %s:%d", opt.GetIpAddress(), opt.GetPort())
+		}
+	}
+}
+
+func TestHelpGetConfigPublicHostKeepsMappedIPv6(t *testing.T) {
+	restoreConfig(t)
+	loadCheckedInConfig(t)
+	t.Setenv("TELLOMI_DC_OPTIONS", "")
+	t.Setenv("TELLOMI_DC_TXT_DOMAIN", "")
+	t.Setenv("TELLOMI_PUBLIC_DC_HOST", "8.137.198.240")
+	config.SetDcOptions([]*mtproto.DcOption{{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            2,
+		IpAddress:     "::ffff:8.156.40.105",
+		Port:          443,
+		Ipv6:          true,
+		ThisPortOnly:  true,
+	}})
+
+	got := callGetConfig(t)
+	opts := got.GetDcOptions()
+	if len(opts) != 1 {
+		t.Fatalf("len %d", len(opts))
+	}
+	if opts[0].GetIpAddress() != "::ffff:8.156.40.105" || !opts[0].GetIpv6() || opts[0].GetId() != 2 || opts[0].GetPort() != 443 {
+		t.Fatalf("ip=%s ipv6=%v id=%d port=%d", opts[0].GetIpAddress(), opts[0].GetIpv6(), opts[0].GetId(), opts[0].GetPort())
+	}
+	wire := roundTripConfig(t, got)
+	w := wire.GetDcOptions()
+	if len(w) != 1 {
+		t.Fatalf("wire len %d", len(w))
+	}
+	if w[0].GetIpAddress() != "::ffff:8.156.40.105" || !w[0].GetIpv6() {
+		t.Fatalf("wire ip=%s ipv6=%v", w[0].GetIpAddress(), w[0].GetIpv6())
+	}
+}
+
 func assertRelayOptions(t *testing.T, opts []*mtproto.DcOption) {
 	t.Helper()
 	if len(opts) != 2 {

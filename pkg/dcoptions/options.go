@@ -54,11 +54,14 @@ var publicPorts = []int32{10443, 443}
 // variable leaves both fields as they were. An invalid spec is logged
 // once and also leaves them as they were. The process keeps running.
 //
-// A valid TELLOMI_PUBLIC_DC_HOST then replaces every IPv4 in that list.
-// Ports, DC ids, and flags (including media_only and cdn) stay. A domain
-// or IPv6 address stays as written. dc_txt_domain_name is not touched.
-// An empty list becomes DC 1 on 10443 and 443 at that host. An invalid
-// host is logged once and does not change the list.
+// A valid TELLOMI_PUBLIC_DC_HOST then replaces a canonical dotted IPv4.
+// An ipv6 flag, or a literal that is not dotted IPv4 (including
+// ::ffff:x.x.x.x), is left as written. Ports other than 10443 and 443 are
+// removed from the published list and logged once. The process stays up.
+// DC ids and flags on a kept entry stay. dc_txt_domain_name is not touched.
+// An empty list, or a list whose every entry was dropped, becomes DC 1 on
+// 10443 and 443. That fallback does not invent DC 2. An invalid host is
+// logged once and does not change the list.
 func Apply(cfg *mtproto.TLConfig) {
 	if cfg == nil || cfg.GetData2() == nil {
 		return
@@ -88,7 +91,7 @@ func publicHost() (string, bool) {
 	if raw == "" {
 		return "", false
 	}
-	if !ipv4Address(raw) || net.ParseIP(raw).To4().String() != raw {
+	if !canonicalIPv4Literal(raw) {
 		logInvalidHost(raw)
 		return "", false
 	}
@@ -96,18 +99,22 @@ func publicHost() (string, bool) {
 }
 
 func publishHost(opts []*mtproto.DcOption, host string) []*mtproto.DcOption {
-	out := rewriteIPv4(opts, host)
+	out, dropped := rewriteIPv4(opts, host)
+	if len(dropped) > 0 {
+		logDroppedPorts(dropped)
+	}
 	if len(out) == 0 {
 		return defaultPublicOptions(host)
 	}
 	return out
 }
 
-func rewriteIPv4(opts []*mtproto.DcOption, host string) []*mtproto.DcOption {
+func rewriteIPv4(opts []*mtproto.DcOption, host string) ([]*mtproto.DcOption, []string) {
 	if len(opts) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]*mtproto.DcOption, 0, len(opts))
+	var dropped []string
 	for _, opt := range opts {
 		if opt == nil {
 			continue
@@ -116,12 +123,35 @@ func rewriteIPv4(opts []*mtproto.DcOption, host string) []*mtproto.DcOption {
 		if !ok || cloned == nil {
 			continue
 		}
-		if ipv4Address(cloned.GetIpAddress()) {
+		if !relayPort(cloned.GetPort()) {
+			dropped = append(dropped, fmt.Sprintf("%d:%s:%d", cloned.GetId(), cloned.GetIpAddress(), cloned.GetPort()))
+			continue
+		}
+		if rewriteDottedIPv4(cloned) {
 			cloned.IpAddress = host
 		}
 		out = append(out, cloned)
 	}
-	return out
+	return out, dropped
+}
+
+func relayPort(port int32) bool {
+	for _, allowed := range publicPorts {
+		if port == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// rewriteDottedIPv4 reports whether ip_address is a dotted IPv4 the public
+// host may replace. The ipv6 flag wins. A literal containing ':' is IPv6,
+// including the IPv4-mapped form ::ffff:x.x.x.x, even when net.IP.To4 is set.
+func rewriteDottedIPv4(opt *mtproto.DcOption) bool {
+	if opt.GetIpv6() {
+		return false
+	}
+	return canonicalIPv4Literal(opt.GetIpAddress())
 }
 
 func defaultPublicOptions(host string) []*mtproto.DcOption {
@@ -139,9 +169,16 @@ func defaultPublicOptions(host string) []*mtproto.DcOption {
 	return out
 }
 
-func ipv4Address(ip string) bool {
-	parsed := net.ParseIP(strings.TrimSpace(ip))
-	return parsed != nil && parsed.To4() != nil
+func canonicalIPv4Literal(ip string) bool {
+	if ip == "" || strings.Contains(ip, ":") {
+		return false
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	v4 := parsed.To4()
+	return v4 != nil && v4.String() == ip
 }
 
 // Parse checks a compact list: dcId:ipv4:port,dcId:ipv4:port.
@@ -183,7 +220,7 @@ func parseEntry(part string) (*mtproto.DcOption, error) {
 		return nil, fmt.Errorf("%q: dc id: %w", part, err)
 	}
 	ip := fields[1]
-	if !ipv4Address(ip) || net.ParseIP(ip).To4().String() != ip {
+	if !canonicalIPv4Literal(ip) {
 		return nil, fmt.Errorf("%q: ipv4 literal required, got %q", part, ip)
 	}
 	port, err := parseCanonicalInt(fields[2], 1, 65535)
@@ -282,4 +319,24 @@ func logInvalidHost(host string) {
 		shown = shown[:200] + "..."
 	}
 	logx.Errorf("help.getConfig: TELLOMI_PUBLIC_DC_HOST %q is invalid; leaving published addresses unchanged", shown)
+}
+
+var droppedPortLog struct {
+	sync.Mutex
+	spec string
+}
+
+func logDroppedPorts(dropped []string) {
+	spec := strings.Join(dropped, ",")
+	droppedPortLog.Lock()
+	defer droppedPortLog.Unlock()
+	if spec == droppedPortLog.spec {
+		return
+	}
+	droppedPortLog.spec = spec
+	shown := spec
+	if len(shown) > 200 {
+		shown = shown[:200] + "..."
+	}
+	logx.Errorf("help.getConfig: TELLOMI_PUBLIC_DC_HOST dropped dc_options whose port is not 10443 or 443 (%s); those entries are not published", shown)
 }
