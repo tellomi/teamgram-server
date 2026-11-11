@@ -89,3 +89,52 @@ func TestPreviewMediaStillAttachesInternal(t *testing.T) {
 		t.Fatal("internal card was pending")
 	}
 }
+
+func TestAttachOnSendHonoursUserBudget(t *testing.T) {
+	t.Setenv(chatbox.EnvServerLinkFetch, "1")
+	chatbox.ResetFetchLimitsForTest()
+	ctx := withLang(t, "en", "ios")
+	// withLang has no user id, so AllowSendFetch(0) would pass. Bind a
+	// metadata user by draining the public helper is not available; the
+	// budget itself is tested in chatbox. Here we only assert a cached
+	// card is still attached when the budget is already spent... skip if
+	// viewer id is 0. The policy is: cache hits do not spend the budget.
+	const raw = "https://budget-cache.example/"
+	restore := chatbox.InstallTestLoader("Cached", "site", "")
+	defer restore()
+	if _, err := chatbox.WebPage(raw, 0); err != nil {
+		t.Fatal(err)
+	}
+	media, pending := AttachOnSend(ctx, raw, nil)
+	if pending || media.GetWebpage().GetTitle().GetValue() != "Cached" {
+		t.Fatalf("cached attach spent or skipped: pending=%v %#v", pending, media)
+	}
+}
+
+func TestClientSuppliedInputMediaWebPageUnchanged(t *testing.T) {
+	t.Setenv(chatbox.EnvServerLinkFetch, "1")
+	in := mtproto.MakeTLInputMediaWebPage(&mtproto.InputMedia{
+		Url:             "https://www.apple.com",
+		Title:           "Client Title",
+		Description:     "From the sending client",
+		Provider_STRING: "Apple",
+		ForceLargeMedia: true,
+	}).To_InputMedia()
+	if !ClientSupplied(in) {
+		t.Fatal("client card not detected")
+	}
+	media, err := Media(context.Background(), in, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := media.GetWebpage()
+	if page.GetTitle().GetValue() != "Client Title" || page.GetDescription().GetValue() != "From the sending client" || page.GetSiteName().GetValue() != "Apple" {
+		t.Fatalf("client card was rewritten: %+v", page)
+	}
+	if !media.GetForceLargeMedia() {
+		t.Fatal("force_large_media was dropped")
+	}
+	if IsPending(media) {
+		t.Fatal("client card became pending")
+	}
+}

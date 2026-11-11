@@ -112,6 +112,9 @@ func AttachOnSend(ctx context.Context, text string, entities []*mtproto.MessageE
 	if page, ok := chatbox.CachedExternalPage(ctx, raw); ok {
 		return chatbox.MediaFromPage(page), false
 	}
+	if !chatbox.AllowSendFetch(viewerID(ctx)) {
+		return nil, false
+	}
 	pending := chatbox.PendingExternalPage(raw)
 	if pending == nil {
 		return nil, false

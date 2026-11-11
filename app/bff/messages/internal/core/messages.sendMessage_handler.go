@@ -219,7 +219,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 	//	return hasBot
 	//})
 
-	if !in.NoWebpage && outMessage.Media == nil {
+	if shouldAutoAttachWebpage(in.NoWebpage, outMessage.Media) {
 		if media, _ := webpage.AttachOnSend(c.ctx, outMessage.Message, outMessage.Entities); media != nil {
 			outMessage.Media = media
 		}

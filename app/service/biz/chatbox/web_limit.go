@@ -14,6 +14,10 @@ const (
 	webDomainBurst = 5
 	webDomainRate  = 1.0 // tokens per second
 	webGlobalSlots = 8
+	// Per-user budget for starting a new external fetch (sendMessage
+	// pending cards). 20/minute with a burst of 20.
+	webUserBurst = 20
+	webUserRate  = 20.0 / 60.0
 )
 
 // acquireFetch spends one per-domain token and one global fetch slot.
@@ -141,6 +145,9 @@ func resetFetchLimits() {
 	domainMu.Lock()
 	domains = map[string]*domainBucket{}
 	domainMu.Unlock()
+	userMu.Lock()
+	users = map[int64]*domainBucket{}
+	userMu.Unlock()
 	for {
 		select {
 		case <-webSlots:
@@ -149,3 +156,102 @@ func resetFetchLimits() {
 		}
 	}
 }
+
+var (
+	userMu sync.Mutex
+	users  = map[int64]*domainBucket{}
+)
+
+// AllowSendFetch is the attach-time budget for a new external card.
+// It spends one per-user token and refuses when the process already has
+// webGlobalSlots fetches in flight. Over the limit, ok is false and the
+// caller attaches no card and returns no error.
+func AllowSendFetch(userID int64) bool {
+	if !userAllow(userID, time.Now()) {
+		return false
+	}
+	if !globalSlotAvailable() {
+		// Refund the user token so a full global cap does not burn budget.
+		refundUser(userID, time.Now())
+		return false
+	}
+	return true
+}
+
+func globalSlotAvailable() bool {
+	if r := linkRedis(); r != nil {
+		n, err := r.Get("webpage:slots")
+		if err == nil {
+			i, convErr := strconv.ParseInt(n, 10, 64)
+			if convErr == nil {
+				return i < int64(webGlobalSlots)
+			}
+		}
+		// Redis present but unreadable: fall through to the in-process peek.
+	}
+	return len(webSlots) < webGlobalSlots
+}
+
+func userAllow(userID int64, now time.Time) bool {
+	if userID == 0 {
+		return true
+	}
+	if r := linkRedis(); r != nil {
+		allowed, _, err := flood.NewRedisStore(r).Take(context.Background(), "webpage:user:"+strconv.FormatInt(userID, 10), flood.Rule{
+			Burst: webUserBurst,
+			Rate:  webUserRate,
+		}, now)
+		if err == nil {
+			return allowed
+		}
+	}
+	userMu.Lock()
+	defer userMu.Unlock()
+	return takeBucket(users, userID, webUserBurst, webUserRate, now)
+}
+
+func refundUser(userID int64, now time.Time) {
+	if userID == 0 {
+		return
+	}
+	userMu.Lock()
+	defer userMu.Unlock()
+	b := users[userID]
+	if b == nil || !b.init {
+		return
+	}
+	b.tokens++
+	if b.tokens > webUserBurst {
+		b.tokens = webUserBurst
+	}
+	b.ts = now
+}
+
+func takeBucket(m map[int64]*domainBucket, id int64, burst int, rate float64, now time.Time) bool {
+	b := m[id]
+	if b == nil {
+		b = &domainBucket{}
+		m[id] = b
+	}
+	if !b.init {
+		b.tokens = float64(burst)
+		b.ts = now
+		b.init = true
+	}
+	elapsed := now.Sub(b.ts).Seconds()
+	if elapsed > 0 {
+		b.tokens += elapsed * rate
+		if b.tokens > float64(burst) {
+			b.tokens = float64(burst)
+		}
+		b.ts = now
+	}
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+// ResetFetchLimitsForTest empties domain, user, and global fetch caps.
+func ResetFetchLimitsForTest() { resetFetchLimits() }

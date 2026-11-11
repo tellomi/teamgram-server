@@ -36,19 +36,19 @@
 
 私密频道的消息不会放进卡片。找不到的 short name、用户名，返回 `webPageEmpty`，不会改去抓这个网址。
 
-`messages.sendMessage`（没有 `no_webpage`）会自动挂上内部 `telegram_*` 卡片。打开 `TELLOMI_SERVER_LINK_FETCH=1` 后，外站网址也会挂卡片：缓存命中时直接挂 `webPage`；未缓存时先挂 `webPagePending`（`id` 与最终 `webPage` 相同），后台抓取完成后对发送方和接收方推 `updateEditMessage`（`edit_hide`），把卡片换成抓到的 `webPage`，抓取失败则拿掉占位卡片。抓取关闭时外站网址仍然只是文字，也可以由发送方用下面的 `messages.sendMedia` + `inputMediaWebPage` 提交。`no_webpage` 不给纯文字再挂卡片；编辑时如果没有换上新的 `inputMediaWebPage`，也会按同样规则刷新或拿掉卡片。`messages.sendMedia` 里的 `inputMediaWebPage` 本身就是卡片，会留下来。
+`messages.sendMessage`（没有 `no_webpage`）会自动挂上内部 `telegram_*` 卡片。打开 `TELLOMI_SERVER_LINK_FETCH=1` 后，外站网址也会挂卡片：缓存命中时直接挂 `webPage`；未缓存时先挂 `webPagePending`（`id` 与最终 `webPage` 相同），后台抓取完成后对发送方和接收方推 `updateEditMessage`（`edit_hide`），把卡片换成抓到的 `webPage`。抓取出错、结果仍是 `webPagePending`、或进程在 20 秒内重启导致后台 goroutine 丢失时，都会拿掉占位卡片（`edit_hide`）；启动时和之后会按 `pending_webpage_jobs`（按 `created_unix` 建索引，每轮最多 100 条）清掉超过 60 秒仍为 pending 的消息。普通群的这次编辑会对每个正常成员走 `InboxEditMessageToInboxV2`（`updateEditMessage`）；频道/超级群走 `channel.Edit`，对每个正常成员推 `updateEditChannelMessage`。客户端自己用 `sendMedia` + `inputMediaWebPage` 提交的卡片，以及 `no_webpage` / `invert_media`，行为与原来相同，不会被自动挂卡或这次更新改掉。抓取关闭时外站网址仍然只是文字，也可以由发送方用下面的 `messages.sendMedia` + `inputMediaWebPage` 提交。`no_webpage` 不给纯文字再挂卡片；编辑时如果没有换上新的 `inputMediaWebPage`，也会按同样规则刷新或拿掉卡片。`messages.sendMedia` 里的 `inputMediaWebPage` 本身就是卡片，会留下来。
 
 ## 外站抓取默认关闭
 
 聊天里的外站抓取默认关闭。`TELLOMI_SERVER_LINK_FETCH` 不是 `1` 时，`messages.getWebPage("https://www.apple.com")` 返回 `webPageEmpty`，不会发出 HTTP 请求。部署之后再打开这个开关。
 
-打开之后，同一条规范化 URL（sha256）在 Redis 里共享：成功缓存约 24 小时，失败缓存 20 分钟。同一个 URL 同时只有一次抓取。每个域名大约每秒 1 次、突发 5 次；全局同时大约 8 个连接。超过限额直接返回 `webPageEmpty`，不发请求，也不写入失败缓存。`messages.getWebPagePreview` 另外走现有的按用户洪水桶（`web_preview`）。
+打开之后，同一条规范化 URL（sha256）在 Redis 里共享：成功缓存约 24 小时，失败缓存 20 分钟。同一个 URL 同时只有一次抓取。每个域名大约每秒 1 次、突发 5 次；全局同时大约 8 个连接。给 `sendMessage` 挂外站卡片时，另外有按用户的抓取预算（每分钟 20 次、突发 20）和挂卡前的全局限额检查。超过限额时不挂卡片、也不返回错误，正常用户无感。超过域名或全局抓取限额的 `getWebPage` 仍返回 `webPageEmpty`，不发请求，也不写入失败缓存。`messages.getWebPagePreview` 另外走现有的按用户洪水桶（`web_preview`）。
 
 连接超时 3 秒，整次请求 5 秒。HTML 最多 1MB，图片最多 2MB，最多 3 次跳转，只允许 80 和 443 端口。内网、回环、链路本地地址在拨号前拒绝，DNS 结果在拨号时再查一次，跳转同样检查。不读取 `HTTP_PROXY`。`TELLOMI_LINK_FETCH_PROXY` 只给这个抓取器用；目标先通过上面的检查，才交给代理。
 
 `User-Agent` 是 `Mozilla/5.0 (compatible; TellomiBot/1.0; +https://tellomi.cn/bot)`。卡片图片按内容哈希写入对象存储（ADR-0082）：相同字节只留一份对象，`access_hash` 等于照片 id，对方可以下载。
 
-缓存 Redis 用 `TELLOMI_LINK_CACHE_REDIS`，空则用 `TELLOMI_FLOOD_REDIS`。都没有时，缓存和限额只在本进程里。图片去重用 `TEAMGRAM_MYSQL_DSN` 里的 `media_blobs`；没配数据库时仍然把对象写到照片桶。
+缓存 Redis 用 `TELLOMI_LINK_CACHE_REDIS`，空则用 `TELLOMI_FLOOD_REDIS`。当前生产未配置这两项，外站页面缓存和限额都只在本进程内存里，进程重启会丢掉（不会为这次改动去配 Redis）。图片去重用 `TEAMGRAM_MYSQL_DSN` 里的 `media_blobs`；没配数据库时仍然把对象写到照片桶。
 
 失败是 `webPageEmpty`，可能重试的失败是 `webPagePending`。`TELLOMI_LINK_PREVIEW` 只控制发现页的 `POST /internal/v1/link-preview`（默认关闭，见 `docs/api/link-preview-card.md`），不控制 `messages.getWebPage`。
 
