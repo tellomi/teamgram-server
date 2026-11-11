@@ -135,6 +135,71 @@ func claimOnce(ctx context.Context, setnx func(context.Context, string, string, 
 	return setnx(ctx, key, user, seconds)
 }
 
+// MarkQRAccepted records the scan. A failed write that left the token New
+// releases this user's claim so a retry can take it. A write that landed
+// keeps the claim and returns nil so the same attempt can finish the bind.
+// A failed read keeps the claim, which blocks a second user.
+func (d *Dao) MarkQRAccepted(ctx context.Context, keyId, userID int64) error {
+	err := d.UpdateCacheQRLoginCode(ctx, keyId, map[string]string{
+		"user_id": strconv.FormatInt(userID, 10),
+		"state":   strconv.Itoa(model.QRCodeStateAccepted),
+	})
+	state := model.QRCodeStateNew
+	var readErr error
+	if err != nil {
+		var again *model.QRCodeTransaction
+		again, readErr = d.GetCacheQRLoginCode(ctx, keyId)
+		if again != nil {
+			state = again.State
+		}
+	}
+	return qrAcceptAfterWrite(err, state, readErr, func() error {
+		return d.ReleaseQRLogin(ctx, keyId, userID)
+	})
+}
+
+// qrAcceptAfterWrite decides whether a failed state write still leaves the
+// claim held. New or unreadable state releases only when the read succeeded
+// and was still New. Any other state means the write landed.
+func qrAcceptAfterWrite(writeErr error, state int, readErr error, release func() error) error {
+	if writeErr == nil {
+		return nil
+	}
+	if readErr != nil || state == model.QRCodeStateNew {
+		if readErr == nil && release != nil {
+			_ = release()
+		}
+		return writeErr
+	}
+	return nil
+}
+
+// ReleaseQRLogin deletes the claim only when it still names userID.
+func (d *Dao) ReleaseQRLogin(ctx context.Context, keyId, userID int64) error {
+	if d == nil || d.kv == nil || keyId == 0 || userID == 0 {
+		return fmt.Errorf("qr claim unavailable")
+	}
+	key := fmt.Sprintf("qr_claim_%d", keyId)
+	got, err := d.kv.GetCtx(ctx, key)
+	if err != nil || got != strconv.FormatInt(userID, 10) {
+		return err
+	}
+	_, err = d.kv.DelCtx(ctx, key)
+	return err
+}
+
+// QRClaimOwner is the user id stored in the claim, or 0 when it is absent.
+func (d *Dao) QRClaimOwner(ctx context.Context, keyId int64) (int64, error) {
+	if d == nil || d.kv == nil || keyId == 0 {
+		return 0, fmt.Errorf("qr claim unavailable")
+	}
+	got, err := d.kv.GetCtx(ctx, fmt.Sprintf("qr_claim_%d", keyId))
+	if err != nil || got == "" {
+		return 0, err
+	}
+	return strconv.ParseInt(got, 10, 64)
+}
+
 func (d *Dao) UpdateCacheQRLoginCode(ctx context.Context, keyId int64, values map[string]string) (err error) {
 	var (
 		key = genQRLoginCodeKey(keyId)

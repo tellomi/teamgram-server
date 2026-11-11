@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -14,6 +15,33 @@ func TestQRExpiredBoundary(t *testing.T) {
 	}
 	if model.QRExpired(100, 99) {
 		t.Fatal("live token refused")
+	}
+}
+
+func TestReviewQRStateFailureStopsBeforeBinding(t *testing.T) {
+	released := false
+	err := qrAcceptAfterWrite(errors.New("hmset"), model.QRCodeStateNew, nil, func() error {
+		released = true
+		return nil
+	})
+	if err == nil || !released {
+		t.Fatalf("new token err=%v released=%v", err, released)
+	}
+	released = false
+	err = qrAcceptAfterWrite(errors.New("hmset"), model.QRCodeStateAccepted, nil, func() error {
+		released = true
+		return nil
+	})
+	if err != nil || released {
+		t.Fatalf("landed write err=%v released=%v", err, released)
+	}
+	released = false
+	err = qrAcceptAfterWrite(errors.New("hmset"), model.QRCodeStateNew, errors.New("read"), func() error {
+		released = true
+		return nil
+	})
+	if err == nil || released {
+		t.Fatalf("unreadable state err=%v released=%v", err, released)
 	}
 }
 

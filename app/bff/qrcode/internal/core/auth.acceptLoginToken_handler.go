@@ -20,7 +20,6 @@ package core
 
 import (
 	"encoding/binary"
-	"strconv"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -98,14 +97,17 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		return nil, claimErr
 	}
 	if !claimed {
-		err := mtproto.ErrAuthTokenAccepted
-		c.Logger.Errorf("auth.acceptLoginToken - already claimed")
+		owner, ownerErr := c.svcCtx.Dao.QRClaimOwner(c.ctx, keyId)
+		again, againErr := c.svcCtx.Dao.GetCacheQRLoginCode(c.ctx, keyId)
+		if ownerErr != nil || againErr != nil || owner != c.MD.UserId || again == nil || again.State != model.QRCodeStateAccepted {
+			err := mtproto.ErrAuthTokenAccepted
+			c.Logger.Errorf("auth.acceptLoginToken - already claimed")
+			return nil, err
+		}
+	} else if err = c.svcCtx.Dao.MarkQRAccepted(c.ctx, keyId, c.MD.UserId); err != nil {
+		c.Logger.Errorf("auth.acceptLoginToken - state")
 		return nil, err
 	}
-	c.svcCtx.Dao.UpdateCacheQRLoginCode(c.ctx, keyId, map[string]string{
-		"user_id": strconv.FormatInt(c.MD.UserId, 10),
-		"state":   strconv.Itoa(model.QRCodeStateAccepted),
-	})
 
 	user, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
 		Id: c.MD.UserId,

@@ -38,12 +38,16 @@ func (c *AuthorizationCore) AccountSetAuthorizationTTL(in *mtproto.TLAccountSetA
 			UserId: c.MD.UserId,
 			Ttl:    value,
 		})
+	return ttlReply(result, err)
+}
+
+// ttlReply returns the stored Bool. A nil result is an error, not success.
+func ttlReply(result *mtproto.Bool, err error) (*mtproto.Bool, error) {
 	if err != nil {
-		c.Logger.Errorf("account.setAuthorizationTTL - store: %v", err)
 		return nil, err
 	}
 	if result == nil {
-		return mtproto.BoolTrue, nil
+		return nil, mtproto.ErrInternalServerError
 	}
 	return result, nil
 }
