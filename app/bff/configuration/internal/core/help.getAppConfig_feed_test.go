@@ -89,3 +89,39 @@ func jsonEqual(a, b any) bool {
 		return a == b
 	}
 }
+
+func TestGetAppConfigStaleHashReturnsNewConfig(t *testing.T) {
+	c := New(context.Background(), nil)
+	// A client that cached the previous document (when tell.cc and
+	// tellomi.cn were still autologin/url_auth domains) sends that old
+	// hash. It must not receive appConfigNotModified.
+	const staleHash int32 = 1
+	if staleHash == appconfig.AppConfigHash() {
+		t.Fatal("stale fixture accidentally matches the current hash")
+	}
+	got, err := c.HelpGetAppConfig61E3F854(&mtproto.TLHelpGetAppConfig61E3F854{Hash: staleHash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPredicateName() != mtproto.Predicate_help_appConfig {
+		t.Fatalf("stale hash predicate %s", got.GetPredicateName())
+	}
+	if got.GetHash() != appconfig.AppConfigHash() || got.GetHash() == staleHash {
+		t.Fatalf("returned hash %d current %d", got.GetHash(), appconfig.AppConfigHash())
+	}
+	obj, _ := mtproto.FromJSONValue(got.GetConfig()).(map[string]any)
+	for _, key := range []string{"autologin_domains", "url_auth_domains"} {
+		domains, _ := obj[key].([]any)
+		if len(domains) != 0 {
+			t.Fatalf("%s = %#v", key, domains)
+		}
+	}
+
+	cached, err := c.HelpGetAppConfig61E3F854(&mtproto.TLHelpGetAppConfig61E3F854{Hash: got.GetHash()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.GetPredicateName() != mtproto.Predicate_help_appConfigNotModified {
+		t.Fatalf("current hash predicate %s", cached.GetPredicateName())
+	}
+}

@@ -86,9 +86,15 @@ func TestAppConfigPremiumPolicy(t *testing.T) {
 			t.Fatalf("%s = %q", key, s)
 		}
 	}
-	domains, _ := obj["autologin_domains"].([]any)
-	if len(domains) != 2 || domains[0] != "tell.cc" || domains[1] != "tellomi.cn" {
-		t.Fatalf("autologin_domains = %#v", domains)
+	for _, key := range []string{"autologin_domains", "url_auth_domains"} {
+		domains, _ := obj[key].([]any)
+		if len(domains) != 0 {
+			t.Fatalf("%s = %#v, want no short-link root domains", key, domains)
+		}
+	}
+	whitelist, _ := obj["whitelisted_domains"].([]any)
+	if len(whitelist) != 2 || whitelist[0] != "tell.cc" || whitelist[1] != "tellomi.cn" {
+		t.Fatalf("whitelisted_domains = %#v", whitelist)
 	}
 	blocklist, _ := obj["emoji_blocklist"].([]any)
 	if len(blocklist) != 1 || blocklist[0] != emojiblock.TaiwanFlag {
@@ -481,5 +487,20 @@ func TestCrashReportBotConfig(t *testing.T) {
 	obj = raw.(map[string]any)
 	if obj["tellomi_crash_report_bot"] != crashreport.DefaultUsername {
 		t.Fatalf("bot %#v", obj["tellomi_crash_report_bot"])
+	}
+}
+
+func TestAppConfigRemovesShortLinkAuthDomains(t *testing.T) {
+	obj := configMap(t)
+	for _, key := range []string{"autologin_domains", "url_auth_domains"} {
+		domains, _ := obj[key].([]any)
+		for _, domain := range domains {
+			if domain == "tell.cc" || domain == "tellomi.cn" {
+				t.Fatalf("%s still lists short-link root %#v", key, domains)
+			}
+		}
+	}
+	if got := domainListHashInput(); got != "autologin= urlauth= whitelist=tell.cc,tellomi.cn" {
+		t.Fatalf("domain list hash input %q", got)
 	}
 }
