@@ -118,9 +118,9 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 					t.Fatalf("%s %s missing %s", tc.platform, code, key)
 				}
 				// Changed or new strings are at the pack version. Strings this
-				// fill left alone stay at the previous pack, or one further
-				// back if they were already unchanged in #298.
-				if ver < pack.version-2 || ver > pack.version {
+				// fill left alone stay at the previous pack, or up to two
+				// further back if they were already unchanged in #298 and #299.
+				if ver < pack.version-3 || ver > pack.version {
 					t.Fatalf("%s %s %s string version %d pack %d", tc.platform, code, key, ver, pack.version)
 				}
 			}
@@ -290,7 +290,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	}
 
 	iosVer, ok := cat.Version("ios", "zh-hans")
-	if !ok || iosVer != 22454353 {
+	if !ok || iosVer != 22454354 {
 		t.Fatalf("ios zh-hans version %d", iosVer)
 	}
 	// The Chinese Moments title did not change, so it stays at the previous
@@ -326,7 +326,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 		t.Fatalf("ios ja Moments.Title %q from %d", jaMoments, jaIOS.GetFromVersion())
 	}
 	hantVer, ok := cat.Version("ios", "zh-hant")
-	if !ok || hantVer != 22421538 {
+	if !ok || hantVer != 22421539 {
 		t.Fatalf("ios zh-hant version %d", hantVer)
 	}
 	iosInc, err := cat.Difference("ios", "zh-hans", 22454352)
@@ -345,6 +345,25 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	// Story.Privacy.WhoCanViewMoment is the composer/nav title, not the own-post menu item.
 	if _, ok := iosSeen["Story.Privacy.WhoCanViewMoment"]; ok {
 		t.Fatalf("ios zh increment resent unchanged Story.Privacy.WhoCanViewMoment")
+	}
+
+	// A phone already at the #299 pack (22454353) receives only the new crash-prompt keys.
+	crashDiff, err := cat.Difference("ios", "zh-hans", 22454353)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crashSeen := map[string]string{}
+	for _, s := range crashDiff.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			crashSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	wantText := "应用意外关闭了。\n\n要把崩溃日志发给我们，帮我们修好这个问题吗？"
+	if crashDiff.GetFromVersion() != 22454353 || crashDiff.GetVersion() != iosVer || crashSeen["CrashReport.Prompt.Title"] != "有新的崩溃日志" || crashSeen["CrashReport.Prompt.Text"] != wantText || crashSeen["CrashReport.Prompt.NotNow"] != "以后再说" || crashSeen["CrashReport.Prompt.Send"] != "发送日志" {
+		t.Fatalf("ios crash-prompt increment from %d version %d %+v", crashDiff.GetFromVersion(), crashDiff.GetVersion(), []string{crashSeen["CrashReport.Prompt.Title"], crashSeen["CrashReport.Prompt.Text"], crashSeen["CrashReport.Prompt.NotNow"], crashSeen["CrashReport.Prompt.Send"]})
+	}
+	if _, ok := crashSeen["Moments.Title"]; ok {
+		t.Fatalf("ios crash-prompt increment resent unchanged Moments.Title")
 	}
 }
 
@@ -451,16 +470,16 @@ type packVersions struct {
 	strings map[string]int32
 }
 
-// iosPackVersion is one past the versions shipped in #298.
+// iosPackVersion is one past the versions shipped in #299.
 var iosPackVersion = map[string]int32{
-	"ar": 22452759, "be": 22420171, "ca": 22412799, "cs": 22418780,
-	"de": 22431603, "el": 22202260, "en": 22347351, "es": 22412201,
-	"fa": 22437414, "fi": 22410855, "fr": 22391560, "he": 22452943,
-	"hi": 22202260, "id": 22321176, "it": 22388319, "ja": 22418206,
-	"ko": 22454171, "ms": 22352692, "nb": 22420484, "nl": 22449823,
-	"pl": 22392159, "pt-br": 22431434, "ro": 22444908, "ru": 22421468,
-	"sv": 22427915, "th": 22202260, "tr": 22434110, "uk": 22460357,
-	"uz": 22449134, "vi": 22347891, "zh-hans": 22454353, "zh-hant": 22421538,
+	"ar": 22452760, "be": 22420172, "ca": 22412800, "cs": 22418781,
+	"de": 22431604, "el": 22202261, "en": 22347352, "es": 22412202,
+	"fa": 22437415, "fi": 22410856, "fr": 22391561, "he": 22452944,
+	"hi": 22202261, "id": 22321177, "it": 22388320, "ja": 22418207,
+	"ko": 22454172, "ms": 22352693, "nb": 22420485, "nl": 22449824,
+	"pl": 22392160, "pt-br": 22431435, "ro": 22444909, "ru": 22421469,
+	"sv": 22427916, "th": 22202261, "tr": 22434111, "uk": 22460358,
+	"uz": 22449135, "vi": 22347892, "zh-hans": 22454354, "zh-hant": 22421539,
 }
 
 // pluralCodeByLang is the plural_code each pack already ships. This fill must
