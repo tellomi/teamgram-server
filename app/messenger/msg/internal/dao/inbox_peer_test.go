@@ -31,3 +31,12 @@ func TestInboxMessagePeerNil(t *testing.T) {
 		t.Fatal("nil peer should stay nil")
 	}
 }
+
+func TestInboxMessagePeerSavedMessagesKeepsSelf(t *testing.T) {
+	self := int64(717)
+	peer := &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: self}
+	got := inboxMessagePeer(self, peer)
+	if got == nil || got.PeerType != mtproto.PEER_USER || got.PeerId != self {
+		t.Fatalf("saved-messages inbox peer = %#v, want self %d", got, self)
+	}
+}

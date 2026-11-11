@@ -507,7 +507,7 @@ func (d *Dao) EditUserInboxMessage(ctx context.Context, fromId, peerId int64, me
 		UserId:            peerId,
 		SenderUserId:      0,
 		PeerType:          mtproto.PEER_USER,
-		PeerId:            peerId,
+		PeerId:            fromId,
 		MessageId:         message.Id,
 		DialogId1:         0,
 		DialogId2:         0,
