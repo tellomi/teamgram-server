@@ -12,24 +12,63 @@ type bucketState struct {
 	ready  bool
 }
 
-// Memory is a process-local token bucket. Tests use it. Production uses Redis
-// so a second session process sees the same counters.
+const (
+	memoryMaxKeys  = 4096
+	memoryTTL      = 24 * time.Hour
+	memoryOverflow = "flood:local:overflow"
+)
+
+// Memory is a process-local token bucket. Tests use it. Production uses it
+// only while Redis is down, and only for high-cost buckets. The map expires
+// entries after memoryTTL and stops inserting once it is full. A full map
+// shares one overflow bucket instead of evicting a limited subject back to
+// a fresh burst.
 type Memory struct {
-	mu sync.Mutex
-	m  map[string]bucketState
+	mu      sync.Mutex
+	m       map[string]bucketState
+	maxKeys int
+	ttl     time.Duration
 }
 
 func NewMemory() *Memory {
-	return &Memory{m: map[string]bucketState{}}
+	return &Memory{m: map[string]bucketState{}, maxKeys: memoryMaxKeys, ttl: memoryTTL}
 }
 
-func (m *Memory) Take(_ context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, error) {
+func (m *Memory) Len() int {
 	if m == nil {
-		return true, 0, nil
+		return 0
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	st := m.m[key]
+	return len(m.m)
+}
+
+func (m *Memory) Take(ctx context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, error) {
+	allowed, wait, _, err := m.take(ctx, key, rule, now)
+	return allowed, wait, err
+}
+
+// take reports fresh when this call inserted a subject key that a later
+// rejection in the same request may drop. The overflow key is never fresh.
+func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, bool, error) {
+	if m == nil {
+		return true, 0, false, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pruneLocked(now)
+	st, ok := m.m[key]
+	fresh := false
+	if !ok {
+		if len(m.m) >= m.maxKeys {
+			key = memoryOverflow
+			st, ok = m.m[key]
+		}
+		if !ok {
+			fresh = key != memoryOverflow
+			st = bucketState{}
+		}
+	}
 	tokens := st.tokens
 	ts := st.ts
 	if !st.ready {
@@ -38,7 +77,30 @@ func (m *Memory) Take(_ context.Context, key string, rule Rule, now time.Time) (
 	}
 	allowed, wait, next := takeToken(tokens, ts, now, rule)
 	m.m[key] = bucketState{tokens: next, ts: now, ready: true}
-	return allowed, wait, nil
+	return allowed, wait, fresh, nil
+}
+
+// Drop removes a key inserted and then rejected in the same request.
+func (m *Memory) Drop(key string) {
+	if m == nil || key == "" || key == memoryOverflow {
+		return
+	}
+	m.mu.Lock()
+	delete(m.m, key)
+	m.mu.Unlock()
+}
+
+func (m *Memory) pruneLocked(now time.Time) {
+	ttl := m.ttl
+	if ttl <= 0 {
+		ttl = memoryTTL
+	}
+	cut := now.Add(-ttl)
+	for key, st := range m.m {
+		if st.ready && !st.ts.After(cut) {
+			delete(m.m, key)
+		}
+	}
 }
 
 func takeToken(tokens float64, ts, now time.Time, rule Rule) (allowed bool, wait time.Duration, next float64) {

@@ -290,6 +290,7 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 	var worstID string
 	enforceHit := false
 	enforceSet := false
+	var freshLocal []string
 	for _, ch := range charges {
 		mode := l.modeOf(ch.bucket)
 		if mode == ModeOff {
@@ -307,9 +308,13 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 			if mode != ModeEnforce || !highCost(ch.bucket) || l.local == nil {
 				continue
 			}
-			allowed, wait, err = l.local.Take(ctx, key, rule, now)
+			var fresh bool
+			allowed, wait, fresh, err = l.local.take(ctx, key, rule, now)
 			if err != nil {
 				continue
+			}
+			if allowed && fresh {
+				freshLocal = append(freshLocal, key)
 			}
 			floodDecisions.Inc(ch.bucket, "local_fallback")
 		}
@@ -347,6 +352,9 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 		logx.WithContext(ctx).Infof("flood: log-only %s %s would wait %ds method %s", ok.Bucket, ok.Scope, ok.WaitSec, in.Method)
 		ok.Allowed = true
 		return ok
+	}
+	for _, key := range freshLocal {
+		l.local.Drop(key)
 	}
 	logx.WithContext(ctx).Infof("flood: FLOOD_WAIT_%d %s %s method %s", ok.WaitSec, ok.Bucket, ok.Scope, in.Method)
 	ok.Allowed = false
