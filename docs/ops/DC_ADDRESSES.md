@@ -138,12 +138,16 @@ fallback does not copy the address onto a different DC id. An empty input
 (no DC id at all) is the only case that publishes DC 1 alone. Do not clear
 `TELLOMI_DC_OPTIONS` when DC 2 must stay: an empty list does not keep DC 2.
 
-At process start, `this_dc` and the file DC (the first id in
-`TELLOMI_DC_OPTIONS`, or 1 when that variable is empty or invalid) must
-each have a published `10443` or `443` address. If either does not, the
-process panics and exits. It does not keep serving. Example: options are
-only `2:<origin>:5222` and `this_dc` is 1. DC 2 falls back to its own
-`10443` and `443`. DC 1 is not invented. Startup exits.
+`this_dc` and the file DC (the first id in `TELLOMI_DC_OPTIONS`, or 1
+when that variable is empty or invalid) must each have a published `10443`
+or `443` address before the rewrite is used. If either does not, the
+rewrite is not applied, an error is logged, and the process keeps serving
+the list already loaded. An invalid `TELLOMI_DC_OPTIONS` is the same:
+the whole spec is refused, including a leading DC id `0`, and the public
+host is not applied, so a later DC is not replaced by a synthesized DC 1.
+A `dcOption` loaded from the file with DC id `0` is not published. Example:
+options are only `2:<origin>:5222` and `this_dc` is 1. DC 1 is not invented
+and the origin address stays in the reply.
 
 `TELLOMI_DC_OPTIONS` still builds flags itself, and those entries have
 `media_only` and `cdn` false. A `cdn` or `media_only` entry is rewritten
@@ -285,13 +289,13 @@ origin container is recreated from its inspect, not from compose.
 
 ```bash
 set -euo pipefail
+umask 077
 chmod 755 /var/backups/recreate-teamgram-dc.sh /var/backups/recreate_teamgram_from_inspect.py /var/backups/help-getconfig-dc.py
 /var/backups/recreate-teamgram-dc.sh apply
-/var/backups/help-getconfig-dc.py --host 127.0.0.1 --port 10443
 ```
 
-`help-getconfig-dc.py` 会连本机 `10443`，做一次 MTProto 握手，调用
-`help.getConfig`，把每条 `dcOption` 打成 `id ip port`。期望四行：
+`apply` 自己会调用 `help.getConfig`，等 bff 起来（大约 8 秒，最多重试约
+30 秒）。健康标准是读回的四条，顺序不限：
 
 ```
 1 8.137.198.240 10443 ipv6=0
@@ -300,15 +304,25 @@ chmod 755 /var/backups/recreate-teamgram-dc.sh /var/backups/recreate_teamgram_fr
 2 8.137.198.240 443 ipv6=0
 ```
 
-没有 `5222`，没有 `8.156.40.105`，没有 `10.20.0.218`。脚本非 0 表示没有
-读到 `dcOption`。不要只看 `printenv`。
+密钥在容器里的 `/app/bin/server_pkcs1.key`。脚本用 `--workdir /app/bin`
+只取出公钥。对不上这四条，或调用失败，`apply` 会自动用
+`tellomi-main-teamgram.dc-bak` 回滚。不要只看容器是不是 Running，也不要
+只看 `printenv`。`runall` 末尾的空 wait 会让 bff 退出后容器仍显示 Running。
+
+每次运行 `help-getconfig-dc.py` 都会在服务器上新建一把未登录的 auth key。
+它不写用户、不打验证码。不要把它放进定时任务。
+
+inspect 和 create JSON 含全部环境变量，权限是 `0600`。
+
+没有 `5222`，没有 `8.156.40.105`，没有 `10.20.0.218`。
 
 `apply` 会把当前容器改名为 `tellomi-main-teamgram.dc-bak`。这个名字是固定
-的。备份容器还在时脚本拒绝再次 apply，避免覆盖备份。新容器若启动后退出
-（例如 `this_dc` 或文件 DC 没有 `10443`/`443` 地址，进程会 panic），脚本
-会删掉失败的容器，把备份改回原名并重新 start。
+的。备份容器还在时脚本拒绝再次 apply，避免覆盖备份。配置若让 `this_dc`
+或文件 DC 没有地址，bff 不会退出：它记下错误并继续用改写前的
+`dc_options`。所以上面的四条对不上时才会回滚。
 
-不要清空 `TELLOMI_DC_OPTIONS`。空列表只会生成 DC 1。生产列表必须保留 DC 2。
+不要清空 `TELLOMI_DC_OPTIONS`。空列表只会生成 DC 1。DC id `0` 会让整段
+`TELLOMI_DC_OPTIONS` 失效，改写不会启用。生产列表必须保留 DC 2。
 不要 `FLUSHALL`。
 
 回滚：
@@ -316,11 +330,13 @@ chmod 755 /var/backups/recreate-teamgram-dc.sh /var/backups/recreate_teamgram_fr
 ```bash
 set -euo pipefail
 /var/backups/recreate-teamgram-dc.sh rollback
-/var/backups/help-getconfig-dc.py --host 127.0.0.1 --port 10443
+/var/backups/help-getconfig-dc.py --host 127.0.0.1 --port 10443 --workdir /app/bin
 ```
 
-`rollback` 停掉当前容器，把 `tellomi-main-teamgram.dc-bak` 改回
-`tellomi-main-teamgram` 并 start，然后删掉这次失败或待撤回的容器。读回来的
+`rollback` 先检查 `tellomi-main-teamgram.dc-bak` 在、镜像名非空、状态是
+created、running、exited 或 paused。不满足就直接退出，不停止、不改名生产
+容器。检查通过后才停当前容器，把备份改回 `tellomi-main-teamgram` 并
+start。再跑一次读取脚本会再建一把未登录 auth key。读回来的
 `help.getConfig` 应与 apply 之前一致。已经存下地址的手机会继续先拨那个地址。
 要让它们离开 240，先按上面的重叠列表同时公布新旧地址。发现失败时客户端仍会
 试种子域名 `api.tellomi.cn`。

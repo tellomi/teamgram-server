@@ -3,9 +3,11 @@
 
 import json
 import os
+import struct
 import sys
 import tempfile
 import unittest
+import zlib
 
 sys.path.insert(0, os.path.dirname(__file__))
 import recreate_teamgram_from_inspect as rec
@@ -114,23 +116,89 @@ class RecreateTest(unittest.TestCase):
         self.assertIn("10445/tcp", body["HostConfig"]["PortBindings"])
 
 
-class ParseTest(unittest.TestCase):
-    def test_reads_dc_option_blob(self):
+class FrameTest(unittest.TestCase):
+    def setUp(self):
         import importlib.util
         path = os.path.join(os.path.dirname(__file__), "help-getconfig-dc.py")
         spec = importlib.util.spec_from_file_location("help_getconfig_dc", path)
-        hg = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(hg)
+        self.hg = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.hg)
 
-        def tl_string(buf):
-            return hg.tl_bytes(buf)
+    def _option(self, dc_id, ip, port):
+        hg = self.hg
+        return (
+            hg.DC_OPTION.to_bytes(4, "little")
+            + (1 << 5).to_bytes(4, "little")
+            + dc_id.to_bytes(4, "little", signed=True)
+            + hg.tl_bytes(ip.encode())
+            + port.to_bytes(4, "little", signed=True)
+        )
 
-        blob = hg.DC_OPTION.to_bytes(4, "little")
-        blob += (1 << 5).to_bytes(4, "little")
-        blob += (2).to_bytes(4, "little", signed=True)
-        blob += tl_string(b"8.137.198.240")
-        blob += (443).to_bytes(4, "little", signed=True)
-        found = hg.parse_dc_options(b"\x00" * 8 + blob)
+    def _config(self):
+        body = (0xCC1A241E).to_bytes(4, "little") + b"\x11" * 8
+        body += self._option(1, "8.137.198.240", 10443)
+        body += self._option(2, "8.137.198.240", 443)
+        return body
+
+    def _outer(self, obj):
+        raw = struct.pack("<qqqi", 1, 2, 3, 4) + struct.pack("<i", len(obj)) + obj
+        pad = len(raw) % 16
+        if pad:
+            pad = 16 - pad
+        if pad < 12:
+            pad += 16
+        return raw + b"\x00" * pad
+
+    def _rpc(self, req_id, result):
+        return self.hg.RPC_RESULT.to_bytes(4, "little") + struct.pack("<q", req_id) + result
+
+    def _message(self, body):
+        return struct.pack("<qii", 9, 1, len(body)) + body
+
+    def test_container_then_result_and_msg_key(self):
+        hg = self.hg
+        req_id = 42
+        new_session = (0x9EC20908).to_bytes(4, "little") + b"\x22" * 24
+        container = (
+            hg.MSG_CONTAINER.to_bytes(4, "little")
+            + struct.pack("<i", 2)
+            + self._message(new_session)
+            + self._message(self._rpc(req_id, self._config()))
+        )
+        plain = self._outer(container)
+        auth = os.urandom(256)
+        auth_id = int.from_bytes(hg.sha1(auth)[12:], "little", signed=True)
+        packet = hg.encrypt_server_frame(plain, auth, auth_id)
+        opts = hg.dc_options_from_packets([packet], auth, req_id)
+        self.assertEqual([(o["id"], o["ip"], o["port"]) for o in opts], [
+            (1, "8.137.198.240", 10443),
+            (2, "8.137.198.240", 443),
+        ])
+        bad = bytearray(packet)
+        bad[8] ^= 0xFF
+        with self.assertRaises(ValueError):
+            hg.decrypt_server_frame(bytes(bad), auth)
+
+    def test_gzip_result_after_unrelated_frame(self):
+        hg = self.hg
+        req_id = 7
+        packed = zlib.compress(self._config())
+        gzip_obj = hg.GZIP_PACKED.to_bytes(4, "little") + hg.tl_bytes(packed)
+        first = self._outer((0x9EC20908).to_bytes(4, "little") + b"\x33" * 24)
+        second = self._outer(self._rpc(req_id, gzip_obj))
+        auth = os.urandom(256)
+        auth_id = int.from_bytes(hg.sha1(auth)[12:], "little", signed=True)
+        packets = [
+            hg.encrypt_server_frame(first, auth, auth_id),
+            hg.encrypt_server_frame(second, auth, auth_id),
+        ]
+        opts = hg.dc_options_from_packets(packets, auth, req_id)
+        self.assertEqual([o["port"] for o in opts], [10443, 443])
+
+    def test_reads_dc_option_blob(self):
+        hg = self.hg
+        blob = b"\x00" * 8 + self._option(2, "8.137.198.240", 443)
+        found = hg.parse_dc_options(blob)
         self.assertEqual(found, [{"id": 2, "ip": "8.137.198.240", "port": 443, "ipv6": False}])
 
 

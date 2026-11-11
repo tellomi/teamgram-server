@@ -15,6 +15,7 @@ import struct
 import subprocess
 import sys
 import time
+import zlib
 
 REQ_PQ = 0xBE7E8EF1
 RES_PQ = 0x05162463
@@ -29,7 +30,12 @@ INVOKE_LAYER = 0xDA9B0D0D
 INIT_CONN = 0xC1CD5EA9
 HELP_GET_CONFIG = 0xC4F9186B
 RPC_RESULT = 0xF35C6D01
+RPC_ERROR = 0x2144CA19
+MSG_CONTAINER = 0x73F1F8DC
+GZIP_PACKED = 0x3072CFA1
+VECTOR = 0x1CB5C415
 DC_OPTION = 0x18B7A10D
+CONFIG_CTORS = {0xCC1A241E, 0x232566AC, 0x330B4067}
 LAYER = 232
 
 
@@ -281,6 +287,103 @@ def unencrypted(body):
     return struct.pack("<QQI", 0, msg_id, len(body)) + body
 
 
+def decrypt_server_frame(packet, auth):
+    """Decrypt one server message and check its msg_key. x = 8."""
+    if len(packet) < 24 or (len(packet) - 24) % 16:
+        raise ValueError("short encrypted frame")
+    got_key = packet[8:24]
+    aes_key, aes_iv = server_aes(got_key, auth)
+    plain = ige_decrypt(packet[24:], aes_key, aes_iv)
+    expect = sha256(auth[96:128] + plain)[8:24]
+    if expect != got_key:
+        raise ValueError("msg_key mismatch")
+    return plain
+
+
+def server_aes(msg_key, auth):
+    sha_a = sha256(msg_key + auth[8:44])
+    sha_b = sha256(auth[48:84] + msg_key)
+    aes_key = sha_a[:8] + sha_b[8:24] + sha_a[24:32]
+    aes_iv = sha_b[:8] + sha_a[8:24] + sha_b[24:32]
+    return aes_key, aes_iv
+
+
+def encrypt_server_frame(plain, auth, auth_key_id):
+    msg_key = sha256(auth[96:128] + plain)[8:24]
+    aes_key, aes_iv = server_aes(msg_key, auth)
+    return struct.pack("<q", auth_key_id) + msg_key + ige_encrypt(plain, aes_key, aes_iv)
+
+
+def _ctor(buf):
+    if len(buf) < 4:
+        return 0
+    return struct.unpack_from("<I", buf, 0)[0]
+
+
+def unwrap_gzip(buf):
+    if _ctor(buf) != GZIP_PACKED:
+        return buf
+    packed, _ = tl_read_bytes(buf, 4)
+    return zlib.decompress(packed)
+
+
+def find_rpc_results(obj, req_msg_id):
+    """Return result bodies for req_msg_id, walking containers and gzip."""
+    obj = unwrap_gzip(obj)
+    ctor = _ctor(obj)
+    if ctor == MSG_CONTAINER:
+        off = 4
+        if off + 4 <= len(obj) and _ctor(obj[off:]) == VECTOR:
+            off += 4
+        if off + 4 > len(obj):
+            return []
+        count = struct.unpack_from("<i", obj, off)[0]
+        off += 4
+        found = []
+        for _ in range(max(0, count)):
+            if off + 16 > len(obj):
+                break
+            off += 12
+            blen = struct.unpack_from("<i", obj, off)[0]
+            off += 4
+            if blen < 0 or off + blen > len(obj):
+                break
+            found.extend(find_rpc_results(obj[off:off + blen], req_msg_id))
+            off += blen
+        return found
+    if ctor == RPC_RESULT:
+        if len(obj) < 12:
+            return []
+        rid = struct.unpack_from("<q", obj, 4)[0]
+        if rid != req_msg_id:
+            return []
+        return [unwrap_gzip(obj[12:])]
+    return []
+
+
+def results_from_plain(plain, req_msg_id):
+    if len(plain) < 32:
+        return []
+    length = struct.unpack_from("<i", plain, 28)[0]
+    if length < 0 or 32 + length > len(plain):
+        return []
+    return find_rpc_results(plain[32:32 + length], req_msg_id)
+
+
+def dc_options_from_packets(packets, auth, req_msg_id):
+    """Decrypt each packet, require msg_key, and return dc_options of the matching rpc_result."""
+    for packet in packets:
+        plain = decrypt_server_frame(packet, auth)
+        for result in results_from_plain(plain, req_msg_id):
+            ctor = _ctor(result)
+            if ctor == RPC_ERROR:
+                raise ValueError("rpc_error")
+            if ctor not in CONFIG_CTORS:
+                continue
+            return parse_dc_options(result)
+    return None
+
+
 def parse_dc_options(blob):
     sig = DC_OPTION.to_bytes(4, "little")
     found = []
@@ -312,7 +415,7 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=10443)
     parser.add_argument("--container", default="tellomi-main-teamgram")
-    parser.add_argument("--workdir", default="/app")
+    parser.add_argument("--workdir", default="/app/bin")
     parser.add_argument("--public-key-file")
     parser.add_argument("--private-key-file", help="local PKCS1 key; only the public half is used")
     parser.add_argument("--parse-file", help="decode a captured RPC body instead of dialing")
@@ -427,21 +530,25 @@ def main():
     enc_msg = ige_encrypt(payload, aes_key, aes_iv)
     packet = struct.pack("<q", auth_key_id) + msg_key + enc_msg
     conn.send(packet)
-    result = conn.recv_payload()
-    # skip auth_key_id(8) + msg_key(16), decrypt the rest is not aligned here;
-    # the abridged payload is the encrypted message. Decrypt with the same
-    # derivation after reading msg_key from the packet.
-    if len(result) < 24:
-        raise SystemExit("short encrypted result")
-    got_key = result[8:24]
-    sha_a = sha256(got_key + auth[8:44])
-    sha_b = sha256(auth[48:84] + got_key)
-    aes_key = sha_a[:8] + sha_b[8:24] + sha_a[24:32]
-    aes_iv = sha_b[:8] + sha_a[8:24] + sha_b[24:32]
-    plain = ige_decrypt(result[24:], aes_key, aes_iv)
-    opts = parse_dc_options(plain)
+    deadline = time.monotonic() + args.timeout
+    opts = None
+    while time.monotonic() < deadline:
+        conn.sock.settimeout(max(0.1, deadline - time.monotonic()))
+        try:
+            frame = conn.recv_payload()
+        except (TimeoutError, socket.timeout):
+            break
+        try:
+            found = dc_options_from_packets([frame], auth, msg_id)
+        except ValueError as err:
+            raise SystemExit(str(err))
+        if found is not None:
+            opts = found
+            break
+    if opts is None:
+        raise SystemExit("help.getConfig rpc_result not received")
     if not opts:
-        raise SystemExit("help.getConfig returned no dcOption")
+        raise SystemExit("help.getConfig dc_options is empty")
     for opt in opts:
         sys.stdout.write("%d %s %d ipv6=%d\n" % (opt["id"], opt["ip"], opt["port"], int(opt["ipv6"])))
 

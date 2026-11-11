@@ -64,9 +64,6 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	if err := dcoptions.Check(&config); err != nil {
-		panic(err)
-	}
 }
 
 // HelpGetConfig

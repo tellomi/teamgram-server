@@ -9,6 +9,7 @@ It does not print env values.
 """
 
 import json
+import os
 import socket
 import sys
 
@@ -172,8 +173,11 @@ def main(argv):
         "TELLOMI_DC_OPTIONS": options,
         "TELLOMI_DC_TXT_DOMAIN": domain,
     })
-    with open(out_path, "w", encoding="utf-8") as fh:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(out_path, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(body, fh)
+    os.chmod(out_path, 0o600)
     ports = body["HostConfig"].get("PortBindings") or {}
     sys.stdout.write("create json written; 10445/tcp bindings %d\n" % len(ports.get("10445/tcp") or []))
 

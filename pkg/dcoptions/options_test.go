@@ -238,7 +238,7 @@ func TestApplyPublicHostRewritesOriginAndKeepsFlags(t *testing.T) {
 		ThisPortOnly:  true,
 	}
 	cfg := fileShape()
-	cfg.SetThisDc(7)
+	cfg.SetThisDc(1)
 	cfg.SetDcOptions([]*mtproto.DcOption{origin, cdnOpt, domainOpt})
 	Apply(cfg)
 	if origin.GetIpAddress() != "8.156.40.105" || cdnOpt.GetIpAddress() != "10.20.0.218" {
@@ -268,7 +268,7 @@ func TestApplyPublicHostRewritesOriginAndKeepsFlags(t *testing.T) {
 	if domain == nil || domain.GetIpAddress() != "api.tellomi.cn" || domain.GetPort() != 10443 || domain.GetId() != 1 {
 		t.Fatalf("domain %+v", domain)
 	}
-	if cfg.GetDcTxtDomainName() != "apv2.stel.com" || cfg.GetThisDc() != 7 || cfg.GetWebfileDcId() != 1 {
+	if cfg.GetDcTxtDomainName() != "apv2.stel.com" || cfg.GetThisDc() != 1 || cfg.GetWebfileDcId() != 1 {
 		t.Fatalf("domain %q this %d webfile %d", cfg.GetDcTxtDomainName(), cfg.GetThisDc(), cfg.GetWebfileDcId())
 	}
 	if FileDC() != 1 {
@@ -392,22 +392,92 @@ func TestApplyPublicHostFallsBackPerDC(t *testing.T) {
 	t.Setenv(envPublic, "8.137.198.240")
 	cfg := fileShape()
 	cfg.SetThisDc(1)
+	before := rewriteRefusedLogCount.Load()
 	Apply(cfg)
+	if rewriteRefusedLogCount.Load() == before {
+		t.Fatal("refused rewrite was not logged")
+	}
 	opts := cfg.GetDcOptions()
-	if len(opts) != 2 || opts[0].GetId() != 2 || opts[0].GetPort() != 10443 || opts[1].GetId() != 2 || opts[1].GetPort() != 443 {
-		t.Fatalf("%+v", opts)
+	if len(opts) != 1 || opts[0].GetId() != 2 || opts[0].GetPort() != 5222 || opts[0].GetIpAddress() != "8.156.40.105" {
+		t.Fatalf("rewrite ran despite this_dc: %+v", opts)
 	}
 	for _, opt := range opts {
-		if opt.GetId() == 1 || opt.GetIpAddress() != "8.137.198.240" || opt.GetPort() == 5222 {
-			t.Fatalf("cross-dc or 5222: %+v", opt)
+		if opt.GetId() == 1 {
+			t.Fatalf("synthesized DC1: %+v", opt)
 		}
 	}
 	if err := Check(cfg); err == nil {
 		t.Fatal("this_dc 1 was left without an address")
 	}
+
+	okCfg := fileShape()
+	okCfg.SetThisDc(2)
+	Apply(okCfg)
+	got := okCfg.GetDcOptions()
+	if len(got) != 2 || got[0].GetId() != 2 || got[0].GetPort() != 10443 || got[1].GetId() != 2 || got[1].GetPort() != 443 {
+		t.Fatalf("per-dc fallback %+v", got)
+	}
+	for _, opt := range got {
+		if opt.GetId() == 1 || opt.GetIpAddress() != "8.137.198.240" || opt.GetPort() == 5222 {
+			t.Fatalf("cross-dc or 5222: %+v", opt)
+		}
+	}
+}
+
+func TestInvalidOptionSpecDoesNotPublishDC1(t *testing.T) {
+	t.Setenv(envOptions, "0:8.137.198.240:10443,2:8.137.198.240:443")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
+	cfg.SetThisDc(1)
+	cfg.SetDcOptions([]*mtproto.DcOption{{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            2,
+		IpAddress:     "203.0.113.9",
+		Port:          10443,
+		ThisPortOnly:  true,
+	}})
+	Apply(cfg)
+	opts := cfg.GetDcOptions()
+	if len(opts) != 1 || opts[0].GetId() != 2 || opts[0].GetIpAddress() != "203.0.113.9" || opts[0].GetPort() != 10443 {
+		t.Fatalf("%+v", opts)
+	}
+}
+
+func TestFileDCIDZeroIsNotPublished(t *testing.T) {
+	t.Setenv(envOptions, "")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
 	cfg.SetThisDc(2)
-	if err := Check(cfg); err != nil {
-		t.Fatal(err)
+	cfg.SetDcOptions([]*mtproto.DcOption{
+		{
+			PredicateName: mtproto.Predicate_dcOption,
+			Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+			Id:            0,
+			IpAddress:     "8.156.40.105",
+			Port:          10443,
+			ThisPortOnly:  true,
+		},
+		{
+			PredicateName: mtproto.Predicate_dcOption,
+			Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+			Id:            2,
+			IpAddress:     "8.156.40.105",
+			Port:          443,
+			ThisPortOnly:  true,
+		},
+	})
+	Apply(cfg)
+	for _, opt := range cfg.GetDcOptions() {
+		if opt.GetId() <= 0 {
+			t.Fatalf("published dc %d", opt.GetId())
+		}
+	}
+	opts := cfg.GetDcOptions()
+	if len(opts) != 1 || opts[0].GetId() != 2 || opts[0].GetIpAddress() != "8.156.40.105" {
+		t.Fatalf("rewrite ran or DC2 dropped: %+v", opts)
 	}
 }
 
@@ -521,6 +591,7 @@ func fileShape() *mtproto.TLConfig {
 		PredicateName:   mtproto.Predicate_config,
 		DcTxtDomainName: "apv2.stel.com",
 		WebfileDcId:     4,
+		ThisDc:          1,
 		DcOptions: []*mtproto.DcOption{{
 			PredicateName: mtproto.Predicate_dcOption,
 			Id:            1,
