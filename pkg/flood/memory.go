@@ -130,6 +130,17 @@ func isOverflowKey(key string) bool {
 	return key == memoryOverflow || strings.HasPrefix(key, memoryOverflow+":")
 }
 
+// Drop removes a key that this rejected request created. It is not used for
+// a bucket that already recorded an earlier allow.
+func (m *Memory) Drop(key string) {
+	if m == nil || key == "" || isOverflowKey(key) {
+		return
+	}
+	m.mu.Lock()
+	delete(m.m, key)
+	m.mu.Unlock()
+}
+
 // Refund puts back the single token this request spent. The bucket stays,
 // so earlier sends are not forgotten.
 func (m *Memory) Refund(key string, rule Rule) {

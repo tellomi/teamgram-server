@@ -261,8 +261,8 @@ func TestReviewOutageRejectsDoNotGrowMemoryForever(t *testing.T) {
 			t.Fatalf("ip cap did not hold at %d %+v", i, d)
 		}
 	}
-	if n := lim.local.Len(); n > 1100 {
-		t.Fatalf("rejected phones grew without bound: %d", n)
+	if n := lim.local.Len(); n > 4 {
+		t.Fatalf("rejected phones kept %d local keys", n)
 	}
 	before := lim.local.Len()
 	lim.local.maxKeys = 2
@@ -280,6 +280,49 @@ func TestReviewOutageRejectsDoNotGrowMemoryForever(t *testing.T) {
 	_ = lim.Allow(context.Background(), Request{Method: "auth_sendCode", Phone: "1999", IP: "203.0.113.9"})
 	if n := lim.local.Len(); n > 4 {
 		t.Fatalf("entries survived 24h: %d", n)
+	}
+}
+
+func TestIndependentRejectedPhonesDoNotFillLocalTable(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0)
+	lim := New(errStore{err: context.DeadlineExceeded}, Config{
+		Mode: ModeEnforce,
+		Rules: map[string]Rule{
+			BucketSendCodePhone: {Burst: 5, Rate: 0},
+			BucketSendCodeIP:    {Burst: 1, Rate: 0},
+		},
+	})
+	lim.now = func() time.Time { return now }
+	for i := 0; i < 4106; i++ {
+		d := lim.Allow(ctx, Request{
+			Method: "auth_sendCode",
+			Phone:  strconv.Itoa(100000 + i),
+			IP:     "203.0.113.8",
+		})
+		if i == 0 && !d.Allowed {
+			t.Fatalf("first phone %+v", d)
+		}
+		if i > 0 && d.Allowed {
+			t.Fatalf("phone %d allowed %+v", i, d)
+		}
+	}
+	if n := lim.local.Len(); n > 4 {
+		t.Fatalf("rejected phones left %d keys", n)
+	}
+	allows := 0
+	for i := 0; i < 3; i++ {
+		d := lim.Allow(ctx, Request{
+			Method: "auth_sendCode",
+			Phone:  strconv.Itoa(900000 + i),
+			IP:     "198.51.100." + strconv.Itoa(i+1),
+		})
+		if d.Allowed {
+			allows++
+		}
+	}
+	if allows != 3 {
+		t.Fatalf("fresh phone and ip allowed %d", allows)
 	}
 }
 

@@ -274,8 +274,9 @@ type charge struct {
 }
 
 type localSpend struct {
-	key  string
-	rule Rule
+	key   string
+	rule  Rule
+	fresh bool
 }
 
 // Allow spends a token on each bucket that applies. A Redis error on a
@@ -307,22 +308,21 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 		}
 		key := "flood:" + ch.bucket + ":" + ch.scope + ":" + ch.id
 		allowed, wait, err := l.store.Take(ctx, key, rule, now)
-		usedLocal := false
 		if err != nil {
 			logx.WithContext(ctx).Errorf("flood: redis %s: %v", ch.bucket, err)
 			floodDecisions.Inc(ch.bucket, "store_error")
 			if mode != ModeEnforce || !highCost(ch.bucket) || l.local == nil {
 				continue
 			}
-			allowed, wait, _, err = l.local.take(ctx, key, rule, now)
+			var fresh bool
+			allowed, wait, fresh, err = l.local.take(ctx, key, rule, now)
 			if err != nil {
 				continue
 			}
-			usedLocal = true
+			if allowed {
+				spentLocal = append(spentLocal, localSpend{key: key, rule: rule, fresh: fresh})
+			}
 			floodDecisions.Inc(ch.bucket, "local_fallback")
-		}
-		if usedLocal && allowed {
-			spentLocal = append(spentLocal, localSpend{key: key, rule: rule})
 		}
 		if allowed {
 			floodDecisions.Inc(ch.bucket, "allow")
@@ -359,10 +359,14 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 		ok.Allowed = true
 		return ok
 	}
-	// The request was rejected, so put back the one local token this request
-	// spent. Deleting the bucket would forget earlier sends and let the same
-	// phone go through again.
+	// A rejected request puts back the one token it spent. A phone seen for
+	// the first time is removed, so a limited IP cannot fill the table with
+	// new numbers. A phone that already had sends keeps its bucket.
 	for _, s := range spentLocal {
+		if s.fresh {
+			l.local.Drop(s.key)
+			continue
+		}
 		l.local.Refund(s.key, s.rule)
 	}
 	logx.WithContext(ctx).Infof("flood: FLOOD_WAIT_%d %s %s method %s", ok.WaitSec, ok.Bucket, ok.Scope, in.Method)
