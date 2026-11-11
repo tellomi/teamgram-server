@@ -178,6 +178,91 @@ func TestParseLimits(t *testing.T) {
 	}
 }
 
+type errStore struct{ err error }
+
+func (e errStore) Take(context.Context, string, Rule, time.Time) (bool, time.Duration, error) {
+	return false, 0, e.err
+}
+
+func TestPerBucketModeRollback(t *testing.T) {
+	lim := New(NewMemory(), Config{
+		Mode: ModeLog,
+		Modes: map[string]string{
+			BucketSend: BucketModeEnforce(),
+		},
+		Rules: map[string]Rule{
+			BucketGlobal: {Burst: 1, Rate: 0},
+			BucketSend:   {Burst: 1, Rate: 0},
+		},
+	})
+	read := Request{Method: "updates_getState", UserID: 1}
+	_ = lim.Allow(context.Background(), read)
+	d := lim.Allow(context.Background(), read)
+	if !d.Allowed || !d.Limited {
+		t.Fatalf("read stayed log %+v", d)
+	}
+	send := Request{Method: "messages_sendMessage", UserID: 1}
+	if !lim.Allow(context.Background(), send).Allowed {
+		t.Fatal("first send")
+	}
+	d = lim.Allow(context.Background(), send)
+	if d.Allowed || !d.Limited || d.Bucket != BucketSend || d.WaitSec < 1 {
+		t.Fatalf("send enforce %+v", d)
+	}
+}
+
+func BucketModeEnforce() string { return ModeEnforce }
+
+func TestRedisOutageBoundsHighCostOnly(t *testing.T) {
+	lim := New(errStore{err: context.DeadlineExceeded}, Config{
+		Mode: ModeEnforce,
+		Rules: map[string]Rule{
+			BucketGlobal: {Burst: 1, Rate: 0},
+			BucketSend:   {Burst: 1, Rate: 0},
+		},
+	})
+	read := Request{Method: "updates_getState", UserID: 9}
+	for i := 0; i < 5; i++ {
+		if d := lim.Allow(context.Background(), read); !d.Allowed || d.Limited {
+			t.Fatalf("read %d %+v", i, d)
+		}
+	}
+	send := Request{Method: "messages_sendMessage", UserID: 9}
+	if !lim.Allow(context.Background(), send).Allowed {
+		t.Fatal("local fallback first send")
+	}
+	d := lim.Allow(context.Background(), send)
+	if d.Allowed || d.Bucket != BucketSend || d.WaitSec < 1 {
+		t.Fatalf("local fallback bound %+v", d)
+	}
+}
+
+func TestJitterStaysInsideTenPercent(t *testing.T) {
+	a := jitterWait(BucketSend, "1", 100)
+	b := jitterWait(BucketSend, "2", 100)
+	if a < 100 || a > 110 || b < 100 || b > 110 {
+		t.Fatalf("jitter %d %d", a, b)
+	}
+	if jitterWait(BucketSend, "1", 100) != a {
+		t.Fatal("jitter changed for the same subject")
+	}
+}
+
+func TestBucketModeEnv(t *testing.T) {
+	t.Setenv("TELLOMI_FLOOD_MODE", "log")
+	t.Setenv("TELLOMI_FLOOD_BUCKET_MODE", "send:enforce, global:off, nope:enforce, upload:maybe")
+	cfg := ConfigFromEnv()
+	if cfg.Mode != ModeLog || cfg.Modes[BucketSend] != ModeEnforce || cfg.Modes[BucketGlobal] != ModeOff {
+		t.Fatalf("%s %#v", cfg.Mode, cfg.Modes)
+	}
+	if _, ok := cfg.Modes["nope"]; ok {
+		t.Fatal("unknown bucket mode applied")
+	}
+	if _, ok := cfg.Modes[BucketUpload]; ok {
+		t.Fatal("bad mode applied")
+	}
+}
+
 func TestStartupBurstFits(t *testing.T) {
 	lim := New(NewMemory(), DefaultConfig())
 	in := Request{Method: "updates_getState", UserID: 42}
