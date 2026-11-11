@@ -273,6 +273,11 @@ type charge struct {
 	id     string
 }
 
+type localSpend struct {
+	key  string
+	rule Rule
+}
+
 // Allow spends a token on each bucket that applies. A Redis error on a
 // read bucket allows that bucket. A Redis error on an enforce high-cost
 // bucket falls back to the process-local bucket so one replica stays bounded.
@@ -290,7 +295,7 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 	var worstID string
 	enforceHit := false
 	enforceSet := false
-	var freshLocal []string
+	var spentLocal []localSpend
 	for _, ch := range charges {
 		mode := l.modeOf(ch.bucket)
 		if mode == ModeOff {
@@ -302,21 +307,22 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 		}
 		key := "flood:" + ch.bucket + ":" + ch.scope + ":" + ch.id
 		allowed, wait, err := l.store.Take(ctx, key, rule, now)
+		usedLocal := false
 		if err != nil {
 			logx.WithContext(ctx).Errorf("flood: redis %s: %v", ch.bucket, err)
 			floodDecisions.Inc(ch.bucket, "store_error")
 			if mode != ModeEnforce || !highCost(ch.bucket) || l.local == nil {
 				continue
 			}
-			var fresh bool
-			allowed, wait, fresh, err = l.local.take(ctx, key, rule, now)
+			allowed, wait, _, err = l.local.take(ctx, key, rule, now)
 			if err != nil {
 				continue
 			}
-			if allowed && fresh {
-				freshLocal = append(freshLocal, key)
-			}
+			usedLocal = true
 			floodDecisions.Inc(ch.bucket, "local_fallback")
+		}
+		if usedLocal && allowed {
+			spentLocal = append(spentLocal, localSpend{key: key, rule: rule})
 		}
 		if allowed {
 			floodDecisions.Inc(ch.bucket, "allow")
@@ -353,8 +359,11 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 		ok.Allowed = true
 		return ok
 	}
-	for _, key := range freshLocal {
-		l.local.Drop(key)
+	// The request was rejected, so put back the one local token this request
+	// spent. Deleting the bucket would forget earlier sends and let the same
+	// phone go through again.
+	for _, s := range spentLocal {
+		l.local.Refund(s.key, s.rule)
 	}
 	logx.WithContext(ctx).Infof("flood: FLOOD_WAIT_%d %s %s method %s", ok.WaitSec, ok.Bucket, ok.Scope, in.Method)
 	ok.Allowed = false

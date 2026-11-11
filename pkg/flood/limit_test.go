@@ -261,9 +261,10 @@ func TestReviewOutageRejectsDoNotGrowMemoryForever(t *testing.T) {
 			t.Fatalf("ip cap did not hold at %d %+v", i, d)
 		}
 	}
-	if n := lim.local.Len(); n > 4 {
-		t.Fatalf("rejected phones kept %d local keys", n)
+	if n := lim.local.Len(); n > 1100 {
+		t.Fatalf("rejected phones grew without bound: %d", n)
 	}
+	before := lim.local.Len()
 	lim.local.maxKeys = 2
 	lim.cfg.Rules[BucketSend] = Rule{Burst: 1, Rate: 0}
 	for i := 0; i < 20; i++ {
@@ -272,13 +273,47 @@ func TestReviewOutageRejectsDoNotGrowMemoryForever(t *testing.T) {
 			UserID: int64(1000 + i),
 		})
 	}
-	if n := lim.local.Len(); n > 8 {
-		t.Fatalf("overflow grew to %d", n)
+	if n := lim.local.Len() - before; n > 6 {
+		t.Fatalf("overflow grew by %d", n)
 	}
 	now = now.Add(24 * time.Hour)
 	_ = lim.Allow(context.Background(), Request{Method: "auth_sendCode", Phone: "1999", IP: "203.0.113.9"})
 	if n := lim.local.Len(); n > 4 {
 		t.Fatalf("entries survived 24h: %d", n)
+	}
+}
+
+func TestIndependentRejectedRequestDoesNotResetPhoneBucket(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0)
+	lim := New(errStore{err: context.DeadlineExceeded}, Config{
+		Mode: ModeEnforce,
+		Rules: map[string]Rule{
+			BucketSendCodePhone: {Burst: 2, Rate: 0},
+			BucketSendCodeIP:    {Burst: 1, Rate: 0},
+		},
+	})
+	lim.now = func() time.Time { return now }
+	// Fixed order: two different phones share an IP cap of one, then the
+	// first phone is asked again. A rejection must not delete that phone's
+	// remaining tokens.
+	steps := []Request{
+		{Method: "auth_sendCode", Phone: "8613800000001", IP: "203.0.113.1"},
+		{Method: "auth_sendCode", Phone: "8613800000001", IP: "203.0.113.1"},
+		{Method: "auth_sendCode", Phone: "8613800000001", IP: "203.0.113.2"},
+		{Method: "auth_sendCode", Phone: "8613800000001", IP: "203.0.113.3"},
+		{Method: "auth_sendCode", Phone: "8613800000001", IP: "203.0.113.4"},
+	}
+	allows := 0
+	for i, req := range steps {
+		d := lim.Allow(ctx, req)
+		t.Logf("step %d allowed=%v bucket=%s wait=%d", i, d.Allowed, d.Bucket, d.WaitSec)
+		if d.Allowed {
+			allows++
+		}
+	}
+	if allows != 2 {
+		t.Fatalf("phone sent %d times with burst 2", allows)
 	}
 }
 
