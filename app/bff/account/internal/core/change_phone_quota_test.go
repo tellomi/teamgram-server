@@ -78,3 +78,29 @@ func (m *quotaKV) IncrCtx(_ context.Context, key string) (int64, error) {
 }
 
 func (m *quotaKV) ExpireCtx(context.Context, string, int) error { return nil }
+func (m *quotaKV) SetnxExCtx(_ context.Context, key, value string, _ int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		m.m = map[string]string{}
+	}
+	if _, ok := m.m[key]; ok {
+		return false, nil
+	}
+	m.m[key] = value
+	return true, nil
+}
+func (m *quotaKV) TtlCtx(_ context.Context, key string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.m[key]; !ok {
+		return -2, nil
+	}
+	return 60, nil
+}
+func (m *quotaKV) DecrCtx(_ context.Context, key string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.m, key)
+	return 0, nil
+}

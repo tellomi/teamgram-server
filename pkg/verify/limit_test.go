@@ -11,14 +11,97 @@ import (
 )
 
 type memKV struct {
-	mu sync.Mutex
-	m  map[string]string
+	mu        sync.Mutex
+	m         map[string]string
+	exp       map[string]time.Time
+	now       func() time.Time
+	expireErr error
+}
+
+func (m *memKV) clock() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
+}
+
+func (m *memKV) sweep(key string) {
+	if m.exp == nil || m.m == nil {
+		return
+	}
+	exp, ok := m.exp[key]
+	if !ok || exp.IsZero() {
+		return
+	}
+	if !m.clock().Before(exp) {
+		delete(m.m, key)
+		delete(m.exp, key)
+	}
 }
 
 func (m *memKV) GetCtx(ctx context.Context, key string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.sweep(key)
 	return m.m[key], nil
+}
+
+func (m *memKV) SetnxExCtx(ctx context.Context, key, value string, seconds int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		m.m = map[string]string{}
+	}
+	m.sweep(key)
+	if _, ok := m.m[key]; ok {
+		return false, nil
+	}
+	m.m[key] = value
+	if m.exp == nil {
+		m.exp = map[string]time.Time{}
+	}
+	m.exp[key] = m.clock().Add(time.Duration(seconds) * time.Second)
+	return true, nil
+}
+
+func (m *memKV) TtlCtx(ctx context.Context, key string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sweep(key)
+	if _, ok := m.m[key]; !ok {
+		return -2, nil
+	}
+	exp, ok := m.exp[key]
+	if !ok || exp.IsZero() {
+		return -1, nil
+	}
+	remain := exp.Sub(m.clock())
+	sec := int((remain + time.Second - 1) / time.Second)
+	if sec < 1 {
+		return 1, nil
+	}
+	return sec, nil
+}
+
+func (m *memKV) DecrCtx(ctx context.Context, key string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		m.m = map[string]string{}
+	}
+	n := 0
+	if v := m.m[key]; v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			n = parsed - 1
+		}
+	}
+	if n <= 0 {
+		delete(m.m, key)
+		delete(m.exp, key)
+		return 0, nil
+	}
+	m.m[key] = strconv.Itoa(n)
+	return int64(n), nil
 }
 
 func (m *memKV) SetexCtx(ctx context.Context, key, value string, seconds int) error {
@@ -48,7 +131,18 @@ func (m *memKV) IncrCtx(ctx context.Context, key string) (int64, error) {
 	return int64(n), nil
 }
 
-func (m *memKV) ExpireCtx(context.Context, string, int) error { return nil }
+func (m *memKV) ExpireCtx(_ context.Context, key string, seconds int) error {
+	if m.expireErr != nil {
+		return m.expireErr
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.exp == nil {
+		m.exp = map[string]time.Time{}
+	}
+	m.exp[key] = m.clock().Add(time.Duration(seconds) * time.Second)
+	return nil
+}
 
 func TestLimiterResendAndDailyCap(t *testing.T) {
 	kv := &memKV{}
@@ -312,6 +406,68 @@ func (failKV) IncrCtx(context.Context, string) (int64, error) {
 	return 0, context.DeadlineExceeded
 }
 func (failKV) ExpireCtx(context.Context, string, int) error { return context.DeadlineExceeded }
+func (failKV) SetnxExCtx(context.Context, string, string, int) (bool, error) {
+	return false, context.DeadlineExceeded
+}
+func (failKV) TtlCtx(context.Context, string) (int, error) { return 0, context.DeadlineExceeded }
+func (failKV) DecrCtx(context.Context, string) (int64, error) {
+	return 0, context.DeadlineExceeded
+}
+
+func TestReviewRejectedRetryDoesNotExtendCooldown(t *testing.T) {
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, shanghai)
+	kv := &memKV{now: func() time.Time { return now }}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 10})
+	lim.now = func() time.Time { return now }
+	ctx := context.Background()
+	if err := lim.AllowSend(ctx, "sms", "8613800138000", "203.0.113.8"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(59 * time.Second)
+	err := lim.AllowSend(ctx, "sms", "8613800138000", "203.0.113.8")
+	le, ok := err.(*LimitError)
+	if !ok || le.Retry > 2 {
+		t.Fatalf("retry extended the window: %#v", err)
+	}
+}
+
+func TestReviewExpireFailureMustNotAdmit(t *testing.T) {
+	kv := &memKV{expireErr: context.DeadlineExceeded}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 10})
+	err := lim.AllowSend(context.Background(), "sms", "8613800138000", "203.0.113.8")
+	le, ok := err.(*LimitError)
+	if !ok || le == nil || le.Daily || le.Retry > storeRetry {
+		t.Fatalf("expire failure admitted or locked the day: %#v", err)
+	}
+	kv.expireErr = nil
+	delete(kv.m, "tellomi:code:cd:sms:8613800138000")
+	if err = lim.AllowSend(context.Background(), "sms", "8613800138000", "203.0.113.8"); err != nil {
+		t.Fatalf("recovered send: %v", err)
+	}
+}
+
+func TestReviewIPRejectionDoesNotSpendUnsentPhoneQuota(t *testing.T) {
+	now := time.Date(2026, 11, 12, 10, 0, 0, 0, shanghai)
+	kv := &memKV{}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 2, DailyIP: 1})
+	lim.now = func() time.Time { return now }
+	ctx := context.Background()
+	if err := lim.AllowSend(ctx, "sms", "8613800000001", "203.0.113.8"); err != nil {
+		t.Fatal(err)
+	}
+	err := lim.AllowSend(ctx, "sms", "8613800000002", "203.0.113.8")
+	le, ok := err.(*LimitError)
+	if !ok || !le.Daily {
+		t.Fatalf("%#v", err)
+	}
+	day := now.In(shanghai).Format("20060102")
+	if v := kv.m["tellomi:code:day:sms:phone:8613800000002:"+day]; v != "" {
+		t.Fatalf("unsent phone quota spent %q", v)
+	}
+	if v := kv.m["tellomi:code:day:sms:phone:8613800000001:"+day]; v != "1" {
+		t.Fatalf("sent phone quota %q", v)
+	}
+}
 
 func stringsContain(s, part string) bool {
 	return len(part) > 0 && len(s) >= len(part) && (s == part || len(s) > 0 && contains(s, part))

@@ -17,9 +17,15 @@ var shanghai = time.FixedZone("Asia/Shanghai", 8*60*60)
 type KV interface {
 	GetCtx(ctx context.Context, key string) (string, error)
 	SetexCtx(ctx context.Context, key, value string, seconds int) error
+	SetnxExCtx(ctx context.Context, key, value string, seconds int) (bool, error)
+	TtlCtx(ctx context.Context, key string) (int, error)
 	IncrCtx(ctx context.Context, key string) (int64, error)
+	DecrCtx(ctx context.Context, key string) (int64, error)
 	ExpireCtx(ctx context.Context, key string, seconds int) error
 }
+
+// storeRetry is the wait after a cache error. It is not the rest of the day.
+const storeRetry = 5
 
 // LimitError is a send quota failure. Retry is the suggested wait in seconds.
 type LimitError struct {
@@ -92,51 +98,94 @@ func (l *Limiter) AllowSend(ctx context.Context, kind, target, ip string) error 
 		return nil
 	}
 	if l.limits.ResendSeconds > 0 {
-		coolKey := "tellomi:code:cd:" + kind + ":" + target
-		n, err := l.kv.IncrCtx(ctx, coolKey)
-		if err != nil {
-			return &LimitError{Retry: l.limits.ResendSeconds}
-		}
-		_ = l.kv.ExpireCtx(ctx, coolKey, l.limits.ResendSeconds)
-		if n > 1 {
-			return &LimitError{Retry: l.limits.ResendSeconds}
+		if err := l.cooldown(ctx, "tellomi:code:cd:"+kind+":"+target); err != nil {
+			return err
 		}
 	}
 
 	day := l.now().In(shanghai).Format("20060102")
-	if err := l.bump(ctx, "tellomi:code:day:"+kind+":phone:"+target+":"+day, l.limits.DailyPhone); err != nil {
+	var held []string
+	rollback := func() {
+		for _, key := range held {
+			_, _ = l.kv.DecrCtx(ctx, key)
+		}
+	}
+	phoneKey := "tellomi:code:day:" + kind + ":phone:" + target + ":" + day
+	if err := l.reserve(ctx, phoneKey, l.limits.DailyPhone, &held); err != nil {
+		rollback()
 		return err
 	}
 	// A per-IP cap stays off unless DailyIP is set above zero. Many phones
 	// on one NAT address share it; one phone does not fill it alone when
-	// the cap is above the per-phone cap.
+	// the cap is above the per-phone cap. A rejection here returns the
+	// phone reservation because the provider was not called.
 	if ip != "" && l.limits.DailyIP > 0 {
-		if err := l.bump(ctx, "tellomi:code:day:"+kind+":ip:"+ip+":"+day, l.limits.DailyIP); err != nil {
+		ipKey := "tellomi:code:day:" + kind + ":ip:" + ip + ":" + day
+		if err := l.reserve(ctx, ipKey, l.limits.DailyIP, &held); err != nil {
+			rollback()
 			return err
 		}
 	}
 	if l.limits.DailyGlobal > 0 {
-		if err := l.bump(ctx, "tellomi:code:day:"+kind+":global:"+day, l.limits.DailyGlobal); err != nil {
+		globalKey := "tellomi:code:day:" + kind + ":global:" + day
+		if err := l.reserve(ctx, globalKey, l.limits.DailyGlobal, &held); err != nil {
+			rollback()
 			return err
 		}
 	}
 	return nil
 }
 
-func (l *Limiter) bump(ctx context.Context, key string, cap int) error {
+// cooldown places the resend key with its TTL in one SET NX EX. A later
+// rejection reads the remaining TTL and does not refresh it. A store error
+// does not admit the send.
+func (l *Limiter) cooldown(ctx context.Context, key string) error {
+	ok, err := l.kv.SetnxExCtx(ctx, key, "1", l.limits.ResendSeconds)
+	if err != nil {
+		return &LimitError{Retry: l.limits.ResendSeconds}
+	}
+	if ok {
+		return nil
+	}
+	ttl, err := l.kv.TtlCtx(ctx, key)
+	if err != nil {
+		return &LimitError{Retry: l.limits.ResendSeconds}
+	}
+	if ttl < 0 {
+		if err = l.kv.ExpireCtx(ctx, key, l.limits.ResendSeconds); err != nil {
+			return &LimitError{Retry: storeRetry}
+		}
+		return &LimitError{Retry: l.limits.ResendSeconds}
+	}
+	if ttl < 1 {
+		ttl = 1
+	}
+	if ttl > l.limits.ResendSeconds {
+		ttl = l.limits.ResendSeconds
+	}
+	return &LimitError{Retry: ttl}
+}
+
+// reserve increments key. On success the key is appended to held so a later
+// rejection can return it. The bucket that itself exceeds cap is not appended,
+// so the rollback does not refund a real daily spend. A cache or TTL error
+// undoes this increment and does not admit.
+func (l *Limiter) reserve(ctx context.Context, key string, cap int, held *[]string) error {
 	if cap <= 0 {
 		return nil
 	}
 	n, err := l.kv.IncrCtx(ctx, key)
 	if err != nil {
-		return &LimitError{Retry: l.secondsUntilNextDay()}
+		return &LimitError{Retry: storeRetry}
 	}
-	// The TTL is the rest of the Shanghai day plus one hour, recomputed from
-	// now, so a restart or a second instance does not extend the window.
-	_ = l.kv.ExpireCtx(ctx, key, l.secondsUntilNextDay()+3600)
+	if err = l.kv.ExpireCtx(ctx, key, l.secondsUntilNextDay()+3600); err != nil {
+		_, _ = l.kv.DecrCtx(ctx, key)
+		return &LimitError{Retry: storeRetry}
+	}
 	if int(n) > cap {
 		return &LimitError{Daily: true, Retry: l.secondsUntilNextDay()}
 	}
+	*held = append(*held, key)
 	return nil
 }
 
