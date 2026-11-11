@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -235,4 +236,196 @@ func chatboxPending(t *testing.T, raw string) *mtproto.MessageMedia {
 		t.Fatalf("want pending, got %#v", media)
 	}
 	return media
+}
+
+type failingEdits struct {
+	msgclient.MsgClient
+	err   error
+	calls int
+}
+
+func (f *failingEdits) MsgEditMessageV2(_ context.Context, in *msgpb.TLMsgEditMessageV2) (*mtproto.Updates, error) {
+	f.calls++
+	return nil, f.err
+}
+
+func withPendingJobStore(t *testing.T) *memoryPendingJobs {
+	t.Helper()
+	prev := pendingJobs
+	store := newMemoryPendingJobs()
+	pendingJobs = store
+	t.Cleanup(func() { pendingJobs = prev })
+	return store
+}
+
+func withGiveUpLog(t *testing.T) *[]PendingWebpageJob {
+	t.Helper()
+	prev := pendingJobGiveUpLog
+	var got []PendingWebpageJob
+	pendingJobGiveUpLog = func(job PendingWebpageJob, _ time.Time, _ string) {
+		got = append(got, job)
+	}
+	t.Cleanup(func() { pendingJobGiveUpLog = prev })
+	return &got
+}
+
+func stalePendingJob(msgID int32, created time.Time) PendingWebpageJob {
+	return PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: msgID, Created: created}
+}
+
+func TestSweepDeletesJobWhenMessageGone(t *testing.T) {
+	store := withPendingJobStore(t)
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: &pendingBoxes{}, MsgClient: edits}})
+	store.Put(stalePendingJob(21, time.Now().Add(-61*time.Second)))
+
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 0 {
+		t.Fatalf("cleared %d, want 0 (message gone is not an edit)", n)
+	}
+	if len(edits.edits) != 0 {
+		t.Fatalf("edited a missing message: %#v", edits.edits)
+	}
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("gone message left a job: %+v", due)
+	}
+}
+
+func TestSweepDeletesJobWhenNoLongerPending(t *testing.T) {
+	store := withPendingJobStore(t)
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      22,
+		Message: "https://already-fetched.example/",
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 22, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	store.Put(stalePendingJob(22, time.Now().Add(-61*time.Second)))
+
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 1 {
+		t.Fatalf("cleared %d, want 1", n)
+	}
+	if len(edits.edits) != 0 {
+		t.Fatalf("edited a non-pending message: %#v", edits.edits)
+	}
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("non-pending message left a job: %+v", due)
+	}
+}
+
+func TestSweepRetriesOnEditFailureWithBackoff(t *testing.T) {
+	store := withPendingJobStore(t)
+	const raw = "https://edit-fails.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      23,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 23, SenderUserId: 7, Message: msg}}
+	edits := &failingEdits{err: errors.New("permission denied")}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	created := time.Now().Add(-61 * time.Second)
+	store.Put(stalePendingJob(23, created))
+
+	now := time.Now()
+	if n := c.sweepStalePendingWebpages(now); n != 0 {
+		t.Fatalf("cleared %d after a failed edit", n)
+	}
+	if edits.calls != 1 {
+		t.Fatalf("edit calls %d, want 1", edits.calls)
+	}
+	if due := store.Due(now, pendingWebpageMaxAge, 10); len(due) != 0 {
+		t.Fatalf("failed job was immediately due again: %+v", due)
+	}
+	later := store.Due(now.Add(pendingSweepEvery+time.Second), pendingWebpageMaxAge, 10)
+	if len(later) != 1 || later[0].MsgID != 23 || later[0].Attempts != 1 {
+		t.Fatalf("backoff job: %+v", later)
+	}
+}
+
+func TestSweepGivesUpAfterMaxAttempts(t *testing.T) {
+	store := withPendingJobStore(t)
+	gaveUp := withGiveUpLog(t)
+	const raw = "https://give-up-attempts.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      24,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 24, SenderUserId: 7, Message: msg}}
+	edits := &failingEdits{err: errors.New("session gone")}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	job := stalePendingJob(24, time.Now().Add(-61*time.Second))
+	store.Put(job)
+	// Put resets attempts; write 9 failures directly.
+	store.mu.Lock()
+	job = store.jobs[store.key(job.UserID, job.MsgID)]
+	job.Attempts = pendingJobMaxAttempts - 1
+	store.jobs[store.key(job.UserID, job.MsgID)] = job
+	store.mu.Unlock()
+
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 0 {
+		t.Fatalf("cleared %d, want 0", n)
+	}
+	if edits.calls != 1 {
+		t.Fatalf("edit calls %d, want 1 (the last attempt)", edits.calls)
+	}
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("job not dropped after max attempts: %+v", due)
+	}
+	if len(*gaveUp) != 1 || (*gaveUp)[0].Attempts != pendingJobMaxAttempts {
+		t.Fatalf("give-up log: %+v", *gaveUp)
+	}
+}
+
+func TestSweepGivesUpAfterOneHour(t *testing.T) {
+	store := withPendingJobStore(t)
+	gaveUp := withGiveUpLog(t)
+	const raw = "https://give-up-age.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      25,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 25, SenderUserId: 7, Message: msg}}
+	edits := &failingEdits{err: errors.New("should not be called")}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	store.Put(stalePendingJob(25, time.Now().Add(-pendingJobGiveUpAfter-time.Second)))
+
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 0 {
+		t.Fatalf("cleared %d, want 0", n)
+	}
+	if edits.calls != 0 {
+		t.Fatalf("gave up after 1h still tried to edit (%d)", edits.calls)
+	}
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("1h job was not dropped: %+v", due)
+	}
+	if len(*gaveUp) != 1 {
+		t.Fatalf("give-up log: %+v", *gaveUp)
+	}
+}
+
+func TestConfigurePendingJobsDBCapsPool(t *testing.T) {
+	db, err := sql.Open("mysql", "pending_jobs:pending_jobs@tcp(127.0.0.1:1)/pending_jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	configurePendingJobsDB(db)
+	if got := db.Stats().MaxOpenConnections; got != pendingJobsMaxOpenConns {
+		t.Fatalf("MaxOpenConns=%d, want %d", got, pendingJobsMaxOpenConns)
+	}
+}
+
+func TestPendingJobShouldGiveUp(t *testing.T) {
+	now := time.Now()
+	if pendingJobShouldGiveUp(PendingWebpageJob{Attempts: 9, Created: now}, now) {
+		t.Fatal("9 attempts should still retry")
+	}
+	if !pendingJobShouldGiveUp(PendingWebpageJob{Attempts: 10, Created: now}, now) {
+		t.Fatal("10 attempts should give up")
+	}
+	if !pendingJobShouldGiveUp(PendingWebpageJob{Attempts: 1, Created: now.Add(-pendingJobGiveUpAfter)}, now) {
+		t.Fatal("1h-old job should give up")
+	}
 }

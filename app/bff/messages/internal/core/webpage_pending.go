@@ -20,6 +20,14 @@ import (
 
 const pendingWebpageTimeout = 20 * time.Second
 
+type pendingCommitStatus int
+
+const (
+	pendingCommitDone  pendingCommitStatus = iota // edited, or no longer pending
+	pendingCommitGone                             // message no longer exists
+	pendingCommitRetry                            // transient get/edit failure
+)
+
 // fetchPendingPage is the background fetch. Tests replace it.
 var fetchPendingPage = func(ctx context.Context, raw string) (*mtproto.WebPage, error) {
 	page, _, _, err := chatbox.WebPageContext(ctx, raw, 0)
@@ -84,14 +92,15 @@ func (c *MessagesCore) resolvePendingWebpage(parent context.Context, job Pending
 		}
 		page = nil
 	}
-	if c.commitPendingWebpage(ctx, job, page) {
+	switch c.commitPendingWebpage(ctx, job, page) {
+	case pendingCommitDone, pendingCommitGone:
 		untrackPendingJob(job.UserID, job.MsgID)
 	}
 }
 
-func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebpageJob, page *mtproto.WebPage) bool {
+func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebpageJob, page *mtproto.WebPage) pendingCommitStatus {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.MessageClient == nil || c.svcCtx.MsgClient == nil {
-		return false
+		return pendingCommitRetry
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -100,15 +109,23 @@ func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebp
 		UserId: job.UserID,
 		IdList: []int32{job.MsgID},
 	})
-	if err != nil || boxes == nil || len(boxes.GetDatas()) != 1 {
-		return false
+	if err != nil {
+		c.Logger.Errorf("pending webpage load: %v", err)
+		return pendingCommitRetry
+	}
+	if boxes == nil || len(boxes.GetDatas()) == 0 {
+		return pendingCommitGone
+	}
+	if len(boxes.GetDatas()) != 1 {
+		c.Logger.Errorf("pending webpage load: unexpected box count %d", len(boxes.GetDatas()))
+		return pendingCommitRetry
 	}
 	dst, _ := proto.Clone(boxes.Datas[0]).(*mtproto.MessageBox)
 	if dst == nil || dst.Message == nil {
-		return false
+		return pendingCommitGone
 	}
 	if !webpage.IsPending(dst.Message.GetMedia()) {
-		return true
+		return pendingCommitDone
 	}
 	out := dst.Message
 	webpage.ApplyFetchedPage(out, page)
@@ -126,21 +143,35 @@ func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebp
 		DstMessage: dst,
 	}); err != nil {
 		c.Logger.Errorf("pending webpage edit: %v", err)
-		return false
+		return pendingCommitRetry
 	}
-	return true
+	return pendingCommitDone
 }
 
 func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
 	jobs := duePendingJobs(now)
 	cleared := 0
 	for _, job := range jobs {
+		if pendingJobShouldGiveUp(job, now) {
+			untrackPendingJob(job.UserID, job.MsgID)
+			pendingJobGiveUpLog(job, now, pendingJobGiveUpReason(job))
+			continue
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		ok := c.commitPendingWebpage(ctx, job, nil)
+		status := c.commitPendingWebpage(ctx, job, nil)
 		cancel()
-		if ok {
+		switch status {
+		case pendingCommitDone:
 			untrackPendingJob(job.UserID, job.MsgID)
 			cleared++
+		case pendingCommitGone:
+			untrackPendingJob(job.UserID, job.MsgID)
+		case pendingCommitRetry:
+			updated, giveUp := failPendingJob(job, now)
+			if giveUp {
+				untrackPendingJob(job.UserID, job.MsgID)
+				pendingJobGiveUpLog(updated, now, pendingJobGiveUpReason(updated))
+			}
 		}
 	}
 	return cleared
