@@ -394,6 +394,18 @@ func TestReportSubjectsByUsers(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("neg %d", rec.Code)
 	}
+	rec = postJSON(t, h, token, pathSubjectsByUsers, `{"user_ids":[34]}{"user_ids":[35]}`)
+	if rec.Code != http.StatusBadRequest || rec.Header().Get("Retry-After") != "" {
+		t.Fatalf("trailing %d %q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	rec = postJSON(t, h, token, pathSubjectsByUsers, `{"user_ids":[34],"user_ids":[35]}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate key %d %s", rec.Code, rec.Body.String())
+	}
+	rec = postJSON(t, h, token, pathSubjectsByUsers, `{"user_ids":[34],"extra":true}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field %d %s", rec.Code, rec.Body.String())
+	}
 	tooMany := `{"user_ids":[` + strings.TrimRight(strings.Repeat(`34,`, maxReportSubs+1), ",") + `]}`
 	rec = postJSON(t, h, token, pathSubjectsByUsers, tooMany)
 	if rec.Code != http.StatusBadRequest {

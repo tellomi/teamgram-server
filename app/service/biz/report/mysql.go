@@ -124,11 +124,19 @@ func (m *mysqlStore) Subs(ctx context.Context, userIDs []int64) ([]subjectHit, e
 			return nil, errSubjectsUnavailable
 		}
 	}
-	accounts, err := m.subjectAccounts(ctx, userIDs)
+	tx, err := m.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if err != nil {
+		return nil, subjectsFailed(err)
+	}
+	defer tx.Rollback()
+	accounts, err := subjectAccounts(ctx, tx, userIDs)
 	if err != nil {
 		return nil, err
 	}
-	subs, err := m.subjectSubs(ctx, userIDs)
+	subs, err := subjectSubs(ctx, tx, userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -158,8 +166,12 @@ type subjectAccount struct {
 	restricted bool
 }
 
-func (m *mysqlStore) subjectAccounts(ctx context.Context, userIDs []int64) (map[int64]subjectAccount, error) {
-	rows, err := m.db.QueryContext(ctx, `
+type dbQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func subjectAccounts(ctx context.Context, q dbQueryer, userIDs []int64) (map[int64]subjectAccount, error) {
+	rows, err := q.QueryContext(ctx, `
 SELECT id, deleted, restricted FROM users WHERE id IN (`+placeholders(len(userIDs))+`)`, idArgs(userIDs)...)
 	if err != nil {
 		return nil, subjectsFailed(err)
@@ -186,8 +198,8 @@ SELECT id, deleted, restricted FROM users WHERE id IN (`+placeholders(len(userID
 	return out, nil
 }
 
-func (m *mysqlStore) subjectSubs(ctx context.Context, userIDs []int64) (map[int64][]byte, error) {
-	rows, err := m.db.QueryContext(ctx, `
+func subjectSubs(ctx context.Context, q dbQueryer, userIDs []int64) (map[int64][]byte, error) {
+	rows, err := q.QueryContext(ctx, `
 SELECT sub, user_id FROM discover_subject WHERE user_id IN (`+placeholders(len(userIDs))+`)`, idArgs(userIDs)...)
 	if err != nil {
 		return nil, subjectsFailed(err)

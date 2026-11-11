@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"encoding/base64"
@@ -287,9 +288,72 @@ type subjectsByUsersBody struct {
 	UserIDs []int64 `json:"user_ids"`
 }
 
-func (h Handler) subjectsByUsers(w http.ResponseWriter, r *http.Request) {
+// decodeByUsersBody rejects a second JSON value, a repeated object key, and
+// any field other than user_ids. encoding/json otherwise keeps the last
+// duplicate and ignores the tail.
+func decodeByUsersBody(r io.Reader) (subjectsByUsersBody, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, maxBody+1))
+	if err != nil || len(raw) > maxBody || jsonHasDuplicateKeys(raw) {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
 	var body subjectsByUsersBody
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxBody)).Decode(&body); err != nil {
+	if err = dec.Decode(&body); err != nil || dec.More() {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	return body, nil
+}
+
+func jsonHasDuplicateKeys(raw []byte) bool {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dup, _ := jsonValueHasDuplicateKeys(dec)
+	return dup
+}
+
+func jsonValueHasDuplicateKeys(dec *json.Decoder) (bool, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return false, err
+	}
+	switch tok {
+	case json.Delim('{'):
+		seen := map[string]struct{}{}
+		for dec.More() {
+			keyTok, err := dec.Token()
+			if err != nil {
+				return false, err
+			}
+			key, ok := keyTok.(string)
+			if !ok {
+				return true, nil
+			}
+			if _, ok := seen[key]; ok {
+				return true, nil
+			}
+			seen[key] = struct{}{}
+			if dup, err := jsonValueHasDuplicateKeys(dec); dup || err != nil {
+				return dup, err
+			}
+		}
+		_, err = dec.Token()
+		return false, err
+	case json.Delim('['):
+		for dec.More() {
+			if dup, err := jsonValueHasDuplicateKeys(dec); dup || err != nil {
+				return dup, err
+			}
+		}
+		_, err = dec.Token()
+		return false, err
+	default:
+		return false, nil
+	}
+}
+
+func (h Handler) subjectsByUsers(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeByUsersBody(r.Body)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request")
 		return
 	}

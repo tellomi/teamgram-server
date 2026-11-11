@@ -306,7 +306,15 @@ type scriptConn struct{ q driver.QueryerContext }
 
 func (c *scriptConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("prepare") }
 func (c *scriptConn) Close() error                        { return nil }
-func (c *scriptConn) Begin() (driver.Tx, error)           { return nil, errors.New("begin") }
+func (c *scriptConn) Begin() (driver.Tx, error)           { return scriptTx{}, nil }
+func (c *scriptConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
+	return scriptTx{}, nil
+}
+
+type scriptTx struct{}
+
+func (scriptTx) Commit() error   { return nil }
+func (scriptTx) Rollback() error { return nil }
 func (c *scriptConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	return c.q.QueryContext(ctx, query, args)
 }
