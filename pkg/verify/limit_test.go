@@ -225,3 +225,103 @@ func TestEmailAndSMSQuotasAreSeparate(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCooldownIsOneWinnerUnderConcurrency(t *testing.T) {
+	kv := &memKV{}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 60, DailyPhone: 10, DailyIP: 50})
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	errCh := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- lim.AllowSend(ctx, "sms", "8613800138000", "203.0.113.8")
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	okN := 0
+	for err := range errCh {
+		if err == nil {
+			okN++
+			continue
+		}
+		le, ok := err.(*LimitError)
+		if !ok || le.Daily || le.Retry != 60 {
+			t.Fatalf("cooldown race: %#v", err)
+		}
+		if stringsContain(err.Error(), "8613800138000") || stringsContain(err.Error(), "203.0.113") {
+			t.Fatalf("error names the target: %v", err)
+		}
+	}
+	if okN != 1 {
+		t.Fatalf("allowed %d sends", okN)
+	}
+}
+
+func TestStoreErrorDoesNotSend(t *testing.T) {
+	lim := NewLimiter(failKV{}, Limits{ResendSeconds: 60, DailyPhone: 10})
+	err := lim.AllowSend(context.Background(), "sms", "8613800138000", "203.0.113.8")
+	le, ok := err.(*LimitError)
+	if !ok || le.Retry != 60 || stringsContain(err.Error(), "86138") {
+		t.Fatalf("%#v", err)
+	}
+}
+
+func TestGlobalAndIPBudgets(t *testing.T) {
+	kv := &memKV{}
+	lim := NewLimiter(kv, Limits{ResendSeconds: 0, DailyPhone: 10, DailyIP: 3, DailyGlobal: 4})
+	ctx := context.Background()
+	phones := []string{"8613800000001", "8613800000002", "8613800000003", "8613800000004", "8613800000005"}
+	okN := 0
+	for _, phone := range phones {
+		err := lim.AllowSend(ctx, "sms", phone, "203.0.113.9")
+		if err == nil {
+			okN++
+			continue
+		}
+		le, ok := err.(*LimitError)
+		if !ok || !le.Daily {
+			t.Fatalf("%s %#v", phone, err)
+		}
+	}
+	if okN != 3 {
+		t.Fatalf("ip cap allowed %d", okN)
+	}
+	kv.m = map[string]string{}
+	okN = 0
+	for i, phone := range phones {
+		err := lim.AllowSend(ctx, "sms", phone, "198.51.100."+strconv.Itoa(i+1))
+		if err == nil {
+			okN++
+		}
+	}
+	if okN != 4 {
+		t.Fatalf("global cap allowed %d", okN)
+	}
+}
+
+type failKV struct{}
+
+func (failKV) GetCtx(context.Context, string) (string, error) { return "", context.DeadlineExceeded }
+func (failKV) SetexCtx(context.Context, string, string, int) error {
+	return context.DeadlineExceeded
+}
+func (failKV) IncrCtx(context.Context, string) (int64, error) {
+	return 0, context.DeadlineExceeded
+}
+func (failKV) ExpireCtx(context.Context, string, int) error { return context.DeadlineExceeded }
+
+func stringsContain(s, part string) bool {
+	return len(part) > 0 && len(s) >= len(part) && (s == part || len(s) > 0 && contains(s, part))
+}
+
+func contains(s, part string) bool {
+	for i := 0; i+len(part) <= len(s); i++ {
+		if s[i:i+len(part)] == part {
+			return true
+		}
+	}
+	return false
+}

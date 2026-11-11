@@ -3,7 +3,6 @@ package verify
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -86,18 +85,21 @@ func SharedEmail() *Limiter {
 }
 
 // AllowSend records one send. A non-nil error means the send must not happen.
+// The cooldown is one INCR, so two processes cannot both observe an empty
+// key and both call the provider. A store error is a cooldown, not a send.
 func (l *Limiter) AllowSend(ctx context.Context, kind, target, ip string) error {
 	if l == nil || l.kv == nil || target == "" {
 		return nil
 	}
-	coolKey := "tellomi:code:cd:" + kind + ":" + target
 	if l.limits.ResendSeconds > 0 {
-		if v, err := l.kv.GetCtx(ctx, coolKey); err == nil && v != "" {
-			retry := l.limits.ResendSeconds
-			if n, conv := strconv.Atoi(v); conv == nil && n > 0 {
-				retry = n
-			}
-			return &LimitError{Retry: retry}
+		coolKey := "tellomi:code:cd:" + kind + ":" + target
+		n, err := l.kv.IncrCtx(ctx, coolKey)
+		if err != nil {
+			return &LimitError{Retry: l.limits.ResendSeconds}
+		}
+		_ = l.kv.ExpireCtx(ctx, coolKey, l.limits.ResendSeconds)
+		if n > 1 {
+			return &LimitError{Retry: l.limits.ResendSeconds}
 		}
 	}
 
@@ -105,14 +107,18 @@ func (l *Limiter) AllowSend(ctx context.Context, kind, target, ip string) error 
 	if err := l.bump(ctx, "tellomi:code:day:"+kind+":phone:"+target+":"+day, l.limits.DailyPhone); err != nil {
 		return err
 	}
-	// A per-IP cap stays off unless DailyIP is set above zero.
+	// A per-IP cap stays off unless DailyIP is set above zero. Many phones
+	// on one NAT address share it; one phone does not fill it alone when
+	// the cap is above the per-phone cap.
 	if ip != "" && l.limits.DailyIP > 0 {
 		if err := l.bump(ctx, "tellomi:code:day:"+kind+":ip:"+ip+":"+day, l.limits.DailyIP); err != nil {
 			return err
 		}
 	}
-	if l.limits.ResendSeconds > 0 {
-		_ = l.kv.SetexCtx(ctx, coolKey, strconv.Itoa(l.limits.ResendSeconds), l.limits.ResendSeconds)
+	if l.limits.DailyGlobal > 0 {
+		if err := l.bump(ctx, "tellomi:code:day:"+kind+":global:"+day, l.limits.DailyGlobal); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -123,7 +129,7 @@ func (l *Limiter) bump(ctx context.Context, key string, cap int) error {
 	}
 	n, err := l.kv.IncrCtx(ctx, key)
 	if err != nil {
-		return err
+		return &LimitError{Retry: l.secondsUntilNextDay()}
 	}
 	// The TTL is the rest of the Shanghai day plus one hour, recomputed from
 	// now, so a restart or a second instance does not extend the window.
