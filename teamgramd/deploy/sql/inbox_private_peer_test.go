@@ -8,14 +8,22 @@ import (
 )
 
 func TestInboxPrivatePeerMigrationIsIdempotentUpdate(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("migrate-20261111-inbox-private-peer.sql"))
+	mig, err := os.ReadFile(filepath.Join("migrate-20261111-inbox-private-peer.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	sql := string(raw)
+	helpers, err := os.ReadFile(filepath.Join("0_migrate_helpers.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(mig)
+	body := string(helpers)
+	if !strings.Contains(sql, "CALL tellomi_fix_inbox_private_peer();") {
+		t.Fatal("migration must CALL tellomi_fix_inbox_private_peer")
+	}
 	upper := strings.ToUpper(sql)
-	if strings.Contains(upper, "DELETE ") || strings.Contains(upper, "DROP TABLE") {
-		t.Fatal("migration must not delete or drop user tables")
+	if strings.Contains(upper, "DELETE ") || strings.Contains(upper, "DROP TABLE") || strings.Contains(upper, "DROP PROCEDURE") {
+		t.Fatal("migrate file must not delete, drop tables, or declare procedures")
 	}
 	for _, need := range []string{
 		"SET peer_id = sender_user_id",
@@ -26,8 +34,8 @@ func TestInboxPrivatePeerMigrationIsIdempotentUpdate(t *testing.T) {
 		"TABLE_NAME = 'messages' OR TABLE_NAME REGEXP '^messages_[0-9]+$'",
 		"messages_bak",
 	} {
-		if !strings.Contains(sql, need) {
-			t.Fatalf("migration missing %q", need)
+		if !strings.Contains(body, need) {
+			t.Fatalf("helper procedure missing %q", need)
 		}
 	}
 }
