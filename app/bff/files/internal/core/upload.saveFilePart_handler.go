@@ -21,12 +21,19 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 // UploadSaveFilePart
 // upload.saveFilePart#b304a621 file_id:long file_part:int bytes:bytes = Bool;
 func (c *FilesCore) UploadSaveFilePart(in *mtproto.TLUploadSaveFilePart) (*mtproto.Bool, error) {
-	_, err := c.svcCtx.Dao.DfsClient.DfsWriteFilePartData(c.ctx, &dfs.TLDfsWriteFilePartData{
+	subject := uploadSubject(c)
+	fresh, err := chargeUploadPart(subject, in.FileId, in.FilePart, in.Bytes)
+	if err != nil {
+		c.Logger.Errorf("upload.saveFilePart - budget")
+		return nil, mtproto.NewErrFloodWaitX(60)
+	}
+	_, err = c.svcCtx.Dao.DfsClient.DfsWriteFilePartData(c.ctx, &dfs.TLDfsWriteFilePartData{
 		Creator:        c.MD.PermAuthKeyId,
 		FileId:         in.FileId,
 		FilePart:       in.FilePart,
@@ -35,9 +42,30 @@ func (c *FilesCore) UploadSaveFilePart(in *mtproto.TLUploadSaveFilePart) (*mtpro
 		FileTotalParts: nil,
 	})
 	if err != nil {
+		if fresh {
+			uploadledger.Shared().RefundPart(subject, in.FileId, int(in.FilePart), int64(len(in.Bytes)))
+		}
 		c.Logger.Errorf("upload.saveFilePart - error: %v", err)
 		return nil, err
 	}
 
 	return mtproto.BoolTrue, nil
+}
+
+func uploadSubject(c *FilesCore) int64 {
+	if c == nil || c.MD == nil {
+		return 0
+	}
+	if c.MD.UserId != 0 {
+		return c.MD.UserId
+	}
+	return c.MD.PermAuthKeyId
+}
+
+func chargeUploadPart(subject, fileID int64, part int32, body []byte) (bool, error) {
+	led := uploadledger.Shared()
+	if led == nil {
+		return false, nil
+	}
+	return led.ChargePart(subject, fileID, int(part), int64(len(body)))
 }

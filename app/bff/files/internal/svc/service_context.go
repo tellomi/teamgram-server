@@ -27,6 +27,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaaccess"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -47,6 +48,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2 plugin.StreamFilesPlugin) *ServiceContext {
+	uploadledger.Use(uploadledger.New(uploadledger.DefaultLimits()))
 	svcCtx := &ServiceContext{
 		Config:  c,
 		Dao:     dao.New(c),
