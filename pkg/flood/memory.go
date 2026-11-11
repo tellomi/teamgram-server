@@ -2,6 +2,7 @@ package flood
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,7 +17,15 @@ const (
 	memoryMaxKeys  = 4096
 	memoryTTL      = 24 * time.Hour
 	memoryOverflow = "flood:local:overflow"
+	// memoryGate is the conservative total for every overflow bucket. Its
+	// rate does not change with the caller, so a fast method cannot refill
+	// a slow one.
+	memoryGate = memoryOverflow + ":gate"
 )
+
+// gateRule is one action per 100s once the subject map is full. It is not
+// the caller's burst.
+var gateRule = Rule{Burst: 1, Rate: 0.01}
 
 // Memory is a process-local token bucket. Tests use it. Production uses it
 // only while Redis is down, and only for high-cost buckets. The map expires
@@ -57,17 +66,33 @@ func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pruneLocked(now)
+	overflow := false
+	if _, ok := m.m[key]; !ok && m.subjectCount() >= m.maxKeys {
+		key = overflowKey(key)
+		overflow = true
+	}
+	allowed, wait, fresh := m.takeKey(key, rule, now)
+	if !overflow || !allowed {
+		return allowed, wait, fresh, nil
+	}
+	// The per-bucket overflow token is already spent. The shared gate uses
+	// its own rule, so this spend cannot be refilled by another method.
+	gateOK, gateWait, _ := m.takeKey(memoryGate, gateRule, now)
+	if !gateOK && gateWait > wait {
+		wait = gateWait
+	}
+	if !gateOK {
+		return false, wait, false, nil
+	}
+	return true, 0, false, nil
+}
+
+func (m *Memory) takeKey(key string, rule Rule, now time.Time) (bool, time.Duration, bool) {
 	st, ok := m.m[key]
 	fresh := false
 	if !ok {
-		if len(m.m) >= m.maxKeys {
-			key = memoryOverflow
-			st, ok = m.m[key]
-		}
-		if !ok {
-			fresh = key != memoryOverflow
-			st = bucketState{}
-		}
+		fresh = !isOverflowKey(key)
+		st = bucketState{}
 	}
 	tokens := st.tokens
 	ts := st.ts
@@ -77,12 +102,37 @@ func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (
 	}
 	allowed, wait, next := takeToken(tokens, ts, now, rule)
 	m.m[key] = bucketState{tokens: next, ts: now, ready: true}
-	return allowed, wait, fresh, nil
+	return allowed, wait, fresh
+}
+
+func (m *Memory) subjectCount() int {
+	n := 0
+	for key := range m.m {
+		if !isOverflowKey(key) {
+			n++
+		}
+	}
+	return n
+}
+
+func overflowKey(key string) string {
+	bucket := "unknown"
+	rest := strings.TrimPrefix(key, "flood:")
+	if i := strings.IndexByte(rest, ':'); i >= 0 {
+		bucket = rest[:i]
+	} else if rest != "" {
+		bucket = rest
+	}
+	return memoryOverflow + ":" + bucket
+}
+
+func isOverflowKey(key string) bool {
+	return key == memoryOverflow || strings.HasPrefix(key, memoryOverflow+":")
 }
 
 // Drop removes a key inserted and then rejected in the same request.
 func (m *Memory) Drop(key string) {
-	if m == nil || key == "" || key == memoryOverflow {
+	if m == nil || key == "" || isOverflowKey(key) {
 		return
 	}
 	m.mu.Lock()

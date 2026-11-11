@@ -282,6 +282,54 @@ func TestReviewOutageRejectsDoNotGrowMemoryForever(t *testing.T) {
 	}
 }
 
+func TestIndependentOverflowDoesNotRefillAcrossRules(t *testing.T) {
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0)
+	mem := NewMemory()
+	mem.maxKeys = 1
+	slow := Rule{Burst: 1, Rate: 0.01}
+	fast := Rule{Burst: 100, Rate: 100}
+	if ok, _, err := mem.Take(ctx, "flood:upload_part:user:1", Rule{Burst: 1, Rate: 0}, now); err != nil || !ok {
+		t.Fatalf("saturate %v %v", ok, err)
+	}
+	if ok, _, err := mem.Take(ctx, "flood:send_code_phone:phone:8613800000001", slow, now); err != nil || !ok {
+		t.Fatalf("first code %v %v", ok, err)
+	}
+	now = now.Add(time.Second)
+	if _, _, err := mem.Take(ctx, "flood:send:user:9", fast, now); err != nil {
+		t.Fatal(err)
+	}
+	ok, wait, err := mem.Take(ctx, "flood:send_code_phone:phone:8613800000002", slow, now)
+	if err != nil || ok {
+		t.Fatalf("fast rule refilled send-code ok=%v wait=%s err=%v", ok, wait, err)
+	}
+	if wait < 90*time.Second {
+		t.Fatalf("send-code wait %s, want about 100s", wait)
+	}
+
+	lim := New(errStore{err: context.DeadlineExceeded}, Config{
+		Mode: ModeEnforce,
+		Rules: map[string]Rule{
+			BucketSendCodePhone: slow,
+			BucketSend:          fast,
+		},
+	})
+	lim.local.maxKeys = 1
+	lim.now = func() time.Time { return now }
+	if _, _, err := lim.local.Take(ctx, "flood:upload_part:user:1", Rule{Burst: 1, Rate: 0}, now); err != nil {
+		t.Fatal(err)
+	}
+	if d := lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "8613800000001"}); !d.Allowed {
+		t.Fatalf("limiter first code %+v", d)
+	}
+	now = now.Add(time.Second)
+	_ = lim.Allow(ctx, Request{Method: "messages_sendMessage", UserID: 9})
+	d := lim.Allow(ctx, Request{Method: "auth_sendCode", Phone: "8613800000002"})
+	if d.Allowed || d.WaitSec < 90 {
+		t.Fatalf("limiter overflow %+v", d)
+	}
+}
+
 func TestJitterStaysInsideTenPercent(t *testing.T) {
 	a := jitterWait(BucketSend, "1", 100)
 	b := jitterWait(BucketSend, "2", 100)
