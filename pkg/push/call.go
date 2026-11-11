@@ -124,9 +124,13 @@ func BuildCall(c Call, secret []byte) ([]byte, error) {
 	if len(secret) < 128 {
 		return nil, fmt.Errorf("voip push requires the device secret")
 	}
-	raw, err := encodeUpdates(c.Updates)
+	updates := compactCallUpdates(c.Updates, c.CallerID)
+	raw, err := encodeUpdates(updates)
 	if err != nil {
 		return nil, err
+	}
+	if packed := gzipPack(raw); len(packed) > 0 && len(packed) < len(raw) {
+		raw = packed
 	}
 	updatesB64 := base64.RawURLEncoding.EncodeToString(raw)
 	name := c.CallerName
@@ -136,21 +140,16 @@ func BuildCall(c Call, secret []byte) ([]byte, error) {
 	callID := strconv.FormatInt(c.CallID, 10)
 	callAH := strconv.FormatInt(c.AccessHash, 10)
 	fromID := strconv.FormatInt(c.CallerID, 10)
-	custom := map[string]string{
-		"call_id": callID,
-		"call_ah": callAH,
-		"from_id": fromID,
-		"updates": updatesB64,
-	}
-	// PushKit decrypts "p" and reads updates from that JSON. call_id and
-	// call_ah are strings: the client uses `as? String` then Int64().
+	// Telegram-iOS PushKit decrypts "p" and reads updates from that JSON
+	// only. call_id / call_ah / from_id stay strings (`as? String`). The
+	// official envelope also carries loc-key, aps, and those ids; it does
+	// not repeat the updates blob on the outer object or in custom.
 	inner := map[string]any{
 		"loc-key": locKeyPhoneCallRequest,
 		"call_id": callID,
 		"call_ah": callAH,
 		"from_id": fromID,
 		"updates": updatesB64,
-		"custom":  custom,
 		"aps": map[string]any{
 			"alert": map[string]any{
 				"loc-key":  locKeyPhoneCallRequest,
@@ -180,8 +179,6 @@ func BuildCall(c Call, secret []byte) ([]byte, error) {
 		"call_id": callID,
 		"call_ah": callAH,
 		"from_id": fromID,
-		"updates": updatesB64,
-		"custom":  custom,
 		"p":       p,
 	}
 	if c.UserID != 0 {
@@ -275,6 +272,68 @@ func BuildAndroidCall(c Call, secret []byte) (android []byte, huawei string, err
 	return out, p, nil
 }
 
+const gzipPackedConstructor = 0x3072cfa1 // gzip_packed#3072cfa1
+
+// compactCallUpdates keeps phoneCallRequested and a slim caller user.
+// Production requestCall updates also include the callee and full
+// user photo/status/color objects. Repeating that blob in the envelope
+// and again inside p is what pushed the body over Apple's 5120-byte
+// VoIP limit, so PushKit never woke a background callee.
+func compactCallUpdates(u *mtproto.Updates, callerID int64) *mtproto.Updates {
+	req := phoneRequested(u)
+	if req == nil {
+		return u
+	}
+	var callUpdate *mtproto.Update
+	mtproto.VisitUpdates(0, u, map[string]mtproto.UpdateVisitedFunc{
+		mtproto.Predicate_updatePhoneCall: func(_ int64, update *mtproto.Update, _ []*mtproto.User, _ []*mtproto.Chat, _ int32) {
+			if callUpdate != nil || update == nil {
+				return
+			}
+			call := update.GetPhoneCall()
+			if call != nil && call.GetId() == req.GetId() && call.GetPredicateName() == mtproto.Predicate_phoneCallRequested {
+				callUpdate = update
+			}
+		},
+	})
+	if callUpdate == nil {
+		return u
+	}
+	var users []*mtproto.User
+	if slim := slimUser(callerUser(u, callerID)); slim != nil {
+		users = []*mtproto.User{slim}
+	}
+	return mtproto.MakeUpdatesByUpdatesUsers(users, callUpdate)
+}
+
+func slimUser(u *mtproto.User) *mtproto.User {
+	if u == nil {
+		return nil
+	}
+	return mtproto.MakeTLUser(&mtproto.User{
+		Id:            u.GetId(),
+		AccessHash:    u.AccessHash,
+		FirstName:     u.FirstName,
+		LastName:      u.LastName,
+		Username:      u.Username,
+		Phone:         u.Phone,
+		Bot:           u.GetBot(),
+		Verified:      u.GetVerified(),
+		Fake:          u.GetFake(),
+		Scam:          u.GetScam(),
+		Deleted:       u.GetDeleted(),
+		Min:           u.GetMin(),
+		Premium:       u.GetPremium(),
+		Support:       u.GetSupport(),
+		Restricted:    u.GetRestricted(),
+		Contact:       u.GetContact(),
+		MutualContact: u.GetMutualContact(),
+		CloseFriend:   u.GetCloseFriend(),
+		LangCode:      u.LangCode,
+		Usernames:     u.Usernames,
+	}).To_User()
+}
+
 func encodeUpdates(u *mtproto.Updates) (raw []byte, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -294,4 +353,48 @@ func encodeUpdates(u *mtproto.Updates) (raw []byte, err error) {
 		return nil, fmt.Errorf("encoded updates constructor 0x%x, want updates#74ae4240", ctor)
 	}
 	return raw, nil
+}
+
+// gzipPack wraps TL bytes in gzip_packed#3072cfa1, which
+// Telegram-iOS AccountStateManager.extractIncomingCallUpdate unwraps first.
+func gzipPack(raw []byte) []byte {
+	if len(raw) == 0 {
+		return nil
+	}
+	buf := mtproto.NewEncodeBuf(len(raw) + 64)
+	gz := &mtproto.TLGzipPacked{PackedData: raw}
+	if err := gz.Encode(buf, mtproto.Layer); err != nil {
+		return nil
+	}
+	out := append([]byte(nil), buf.GetBuf()...)
+	if len(out) < 4 || binary.LittleEndian.Uint32(out[:4]) != gzipPackedConstructor {
+		return nil
+	}
+	return out
+}
+
+// decodeCallUpdates unwraps an optional gzip_packed envelope and decodes
+// updates#74ae4240, matching extractIncomingCallUpdate on Telegram-iOS.
+func decodeCallUpdates(raw []byte) (*mtproto.Updates, error) {
+	if len(raw) < 4 {
+		return nil, fmt.Errorf("encoded updates too short")
+	}
+	if binary.LittleEndian.Uint32(raw[:4]) == gzipPackedConstructor {
+		gz := &mtproto.TLGzipPacked{}
+		if err := gz.Decode(mtproto.NewDecodeBuf(raw[4:])); err != nil {
+			return nil, err
+		}
+		raw = gz.PackedData
+	}
+	if len(raw) < 4 {
+		return nil, fmt.Errorf("encoded updates too short")
+	}
+	if binary.LittleEndian.Uint32(raw[:4]) != updatesConstructor {
+		return nil, fmt.Errorf("encoded updates constructor 0x%x, want updates#74ae4240", binary.LittleEndian.Uint32(raw[:4]))
+	}
+	got := &mtproto.Updates{}
+	if err := got.Decode(mtproto.NewDecodeBuf(raw)); err != nil {
+		return nil, err
+	}
+	return got, nil
 }
