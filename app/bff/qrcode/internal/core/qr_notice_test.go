@@ -22,8 +22,8 @@ func TestIndependentQRRetryReachesResume(t *testing.T) {
 	if decideQRAccept(model.QRCodeStateAccepted, true, 43, 43, 42) != qrReject {
 		t.Fatal("new claim ignored the recorded user")
 	}
-	if decideQRAccept(model.QRCodeStateSuccess, false, 7, 7, 7) != qrResume {
-		t.Fatal("same owner could not re-read authorization")
+	if decideQRAccept(model.QRCodeStateSuccess, false, 7, 7, 7) != qrReject {
+		t.Fatal("finished login was resumed")
 	}
 	if claimOwnerID("7:99") != 7 || claimOwnerID("8") != 8 {
 		t.Fatal("owner token")

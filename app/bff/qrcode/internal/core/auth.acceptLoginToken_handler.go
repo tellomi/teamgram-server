@@ -74,7 +74,13 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 
 	switch qrCode.State {
 	case model.QRCodeStateNew:
-	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+	case model.QRCodeStateSuccess:
+		// A finished login must not run again. A failed attempt stays Accepted
+		// and can be resumed by the same user below.
+		err := mtproto.ErrAuthTokenAccepted
+		c.Logger.Errorf("auth.acceptLoginToken - finished")
+		return nil, err
+	case model.QRCodeStateAccepted:
 		// The record already names who accepted it. Another caller must not
 		// reach user lookup or bind this device to themselves.
 		if qrCode.UserId != c.MD.UserId {
@@ -184,6 +190,9 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 			}).To_Updates(),
 		})
 
+	_ = c.svcCtx.Dao.UpdateCacheQRLoginCode(c.ctx, keyId, map[string]string{
+		"state": strconv.Itoa(model.QRCodeStateSuccess),
+	})
 	return authorization, nil
 }
 
@@ -209,7 +218,9 @@ func decideQRAccept(state int, won bool, owner, caller, recordedUser int64) int 
 		return qrReject
 	}
 	switch state {
-	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+	case model.QRCodeStateSuccess:
+		return qrReject
+	case model.QRCodeStateAccepted:
 		if recordedUser != caller {
 			return qrReject
 		}
