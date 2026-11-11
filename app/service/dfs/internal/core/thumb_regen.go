@@ -1,16 +1,23 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	_ "image/gif"
+	_ "image/png"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
@@ -35,6 +42,86 @@ const maxThumbStream int64 = 256 << 20
 var errThumbPermanent = errors.New("thumb cannot be rebuilt")
 
 const thumbRegenCooldown = 30 * time.Second
+
+// A rebuild uses its own ffmpeg process. Two may run at once, and their
+// temp files share a 512MiB disk budget. A third waits until the request
+// context ends instead of starting another unbounded job.
+const (
+	maxThumbRebuilds = 2
+	maxThumbDisk     = 2 * maxThumbStream
+	thumbFFmpegLimit = 20 * time.Second
+)
+
+var (
+	thumbSlots     = make(chan struct{}, maxThumbRebuilds)
+	thumbDisk      atomic.Int64
+	runThumbFFmpeg = defaultThumbFFmpeg
+)
+
+func acquireThumbSlot(ctx context.Context, disk int64) (func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if disk < 1 {
+		disk = 1
+	}
+	if !reserveThumbDisk(disk) {
+		return nil, errors.New("thumb rebuild disk budget")
+	}
+	select {
+	case thumbSlots <- struct{}{}:
+		return func() {
+			<-thumbSlots
+			releaseThumbDisk(disk)
+		}, nil
+	case <-ctx.Done():
+		releaseThumbDisk(disk)
+		return nil, ctx.Err()
+	}
+}
+
+func reserveThumbDisk(n int64) bool {
+	for {
+		cur := thumbDisk.Load()
+		if cur+n > maxThumbDisk {
+			return false
+		}
+		if thumbDisk.CompareAndSwap(cur, cur+n) {
+			return true
+		}
+	}
+}
+
+func releaseThumbDisk(n int64) {
+	thumbDisk.Add(-n)
+}
+
+func defaultThumbFFmpeg(ctx context.Context, path string) ([]byte, error) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return nil, fmt.Errorf("%w: %v", errThumbPermanent, err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, thumbFFmpegLimit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-nostdin", "-nostats", "-loglevel", "error",
+		"-i", path,
+		"-frames:v", "1",
+		"-f", "image2pipe", "-vcodec", "mjpeg",
+		"pipe:1")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("%w: ffmpeg", errThumbPermanent)
+	}
+	if stdout.Len() == 0 {
+		return nil, fmt.Errorf("%w: ffmpeg produced no frame", errThumbPermanent)
+	}
+	return stdout.Bytes(), nil
+}
 
 var thumbRegenFail struct {
 	sync.Mutex
@@ -127,7 +214,7 @@ func (c *DfsCore) regenerateDocumentThumb(id int64, size string) ([]byte, error)
 		if _, putErr := c.svcCtx.Dao.PutPhotoFile(c.ctx, path, body); putErr != nil {
 			// The JPEG is already in hand. A failed cache write must not
 			// become FILE_ID_INVALID for this download.
-			c.Logger.Errorf("dfs.regenerateThumb %s: %v", path, putErr)
+			c.Logger.Errorf("dfs.regenerateThumb put: %v", putErr)
 		}
 	}
 	return body, nil
@@ -174,31 +261,49 @@ func (c *DfsCore) rebuildThumbJPEG(id int64) ([]byte, error) {
 	case "jpeg", "png", "gif":
 		return nil, fmt.Errorf("%w: still image did not decode", errThumbPermanent)
 	}
-	if c.svcCtx.FFmpegUtil == nil {
-		return nil, fmt.Errorf("%w: ffmpeg unavailable", errThumbPermanent)
+	return c.jpegFromVideoBytes(src)
+}
+
+func (c *DfsCore) jpegFromVideoBytes(src []byte) ([]byte, error) {
+	ctx := context.Background()
+	if c != nil && c.ctx != nil {
+		ctx = c.ctx
 	}
-	if _, err = exec.LookPath("ffmpeg"); err != nil {
-		return nil, fmt.Errorf("%w: %v", errThumbPermanent, err)
+	release, err := acquireThumbSlot(ctx, maxThumbStream)
+	if err != nil {
+		return nil, err
 	}
-	frame, err := c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(src)
-	if err != nil || len(frame) == 0 {
-		return nil, fmt.Errorf("%w: ffmpeg produced no frame", errThumbPermanent)
+	defer release()
+	f, err := os.CreateTemp("", "tellomi-thumb-*")
+	if err != nil {
+		return nil, err
 	}
-	jpg, err := thumbbackfill.FitJPEG(frame)
-	if err != nil || len(jpg) == 0 {
-		return nil, fmt.Errorf("%w: %v", errThumbPermanent, err)
+	name := f.Name()
+	defer os.Remove(name)
+	if _, err = f.Write(src); err != nil {
+		f.Close()
+		return nil, err
 	}
-	return jpg, nil
+	if err = f.Close(); err != nil {
+		return nil, err
+	}
+	return finishVideoFrame(ctx, name)
 }
 
 func (c *DfsCore) frameFromStoredDocument(path string) ([]byte, error) {
-	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.FFmpegUtil == nil {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil {
 		return nil, fmt.Errorf("%w: ffmpeg unavailable", errThumbPermanent)
 	}
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, fmt.Errorf("%w: %v", errThumbPermanent, err)
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	obj, err := c.svcCtx.Dao.GetFileObject(c.ctx, minio_util.ClassDocuments, path)
+	release, err := acquireThumbSlot(ctx, maxThumbStream)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	obj, err := c.svcCtx.Dao.GetFileObject(ctx, minio_util.ClassDocuments, path)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +314,7 @@ func (c *DfsCore) frameFromStoredDocument(path string) ([]byte, error) {
 	}
 	name := f.Name()
 	defer os.Remove(name)
-	written, err := io.Copy(f, io.LimitReader(obj, maxThumbStream+1))
+	written, err := copyThumb(ctx, f, io.LimitReader(obj, maxThumbStream+1))
 	if err != nil {
 		f.Close()
 		return nil, err
@@ -221,15 +326,46 @@ func (c *DfsCore) frameFromStoredDocument(path string) ([]byte, error) {
 	if err = f.Close(); err != nil {
 		return nil, err
 	}
-	frame, err := c.svcCtx.FFmpegUtil.GetFirstFrame(name)
+	return finishVideoFrame(ctx, name)
+}
+
+func finishVideoFrame(ctx context.Context, path string) ([]byte, error) {
+	frame, err := runThumbFFmpeg(ctx, path)
 	if err != nil || len(frame) == 0 {
+		if err != nil && !errors.Is(err, errThumbPermanent) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%w: ffmpeg produced no frame", errThumbPermanent)
 	}
 	jpg, err := thumbbackfill.FitJPEG(frame)
-	if err != nil || len(jpg) == 0 {
-		return nil, fmt.Errorf("%w: %v", errThumbPermanent, err)
+	if err != nil || !jpegDecodable(jpg) {
+		return nil, fmt.Errorf("%w: frame is not a jpeg", errThumbPermanent)
 	}
 	return jpg, nil
+}
+
+func copyThumb(ctx context.Context, dst io.Writer, src io.Reader) (int64, error) {
+	buf := make([]byte, 32*1024)
+	var n int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return n, err
+		}
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[:nr])
+			n += int64(nw)
+			if ew != nil {
+				return n, ew
+			}
+		}
+		if er != nil {
+			if errors.Is(er, io.EOF) {
+				return n, nil
+			}
+			return n, er
+		}
+	}
 }
 
 func (c *DfsCore) thumbSourceFallback(id int64, docPath string) ([]byte, error) {
@@ -380,7 +516,7 @@ func (c *DfsCore) photoSizePaths(id int64, size string) []string {
 	}
 	rows, err := c.svcCtx.Dao.Blobs.ListPhotoSizes(c.ctx, id)
 	if err != nil {
-		c.Logger.Errorf("dfs.photoSizePaths %d: %v", id, err)
+		c.Logger.Errorf("dfs.photoSizePaths: %v", err)
 		return nil
 	}
 	var out []string
@@ -468,9 +604,20 @@ func thumbFromDocumentBytes(src []byte) ([]byte, bool) {
 	default:
 		return nil, false
 	}
+	if _, _, err := image.Decode(bytes.NewReader(src)); err != nil {
+		return nil, false
+	}
 	jpg, err := thumbbackfill.FitJPEG(src)
-	if err != nil || len(jpg) == 0 || stillKind(jpg) != "jpeg" {
+	if err != nil || !jpegDecodable(jpg) {
 		return nil, false
 	}
 	return jpg, true
+}
+
+func jpegDecodable(b []byte) bool {
+	if len(b) < 4 || b[0] != 0xff || b[1] != 0xd8 {
+		return false
+	}
+	_, err := jpeg.Decode(bytes.NewReader(b))
+	return err == nil
 }

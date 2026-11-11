@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -160,7 +159,7 @@ func (c *DfsCore) downloadFileBody(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_F
 		} else {
 			paths := c.documentThumbPaths(location.GetId(), location.GetThumbSize())
 			isVideo := mtproto.PhotoSizeIsVideo(location.GetThumbSize())
-			c.Logger.Infof("path: %s", strings.Join(paths, ","))
+			c.Logger.Infof("document thumb candidates: %d", len(paths))
 			if isVideo {
 				bytes, err = c.readDocumentThumb(offset, limit, paths, c.svcCtx.Dao.GetVideoFile, c.svcCtx.Dao.GetAvatarFile)
 				sType = int32(mtproto.CRC32_storage_fileMp4)
