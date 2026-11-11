@@ -706,10 +706,32 @@ func (c *session) sendDirectToGateway(ctx context.Context, gatewayId string, con
 	return rB, err
 }
 
+// gatewaySendTimeout bounds a gateway write that arrived with no deadline.
+// Those writes run on the session loop. The RPC worker answers a handler in
+// defaultRPCTimeout and queues the result, but the loop does not deliver it
+// until the write returns. An unbounded write leaves the client waiting
+// until its own deadline. messages.getDialogs hit that in e2e: the main-list
+// call returned and the archive-list call stayed out until the test context
+// ended.
+const gatewaySendTimeout = 10 * time.Second
+
+// boundGatewaySend adds gatewaySendTimeout when ctx has no deadline.
+func boundGatewaySend(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, gatewaySendTimeout)
+}
+
 func (c *session) sendRawDirectToGateway(ctx context.Context, gatewayId string, raw *mtproto.TLMessageRawData) (bool, error) {
 	if c.connState != kStateOnline {
 		return false, nil
 	}
+	ctx, cancel := boundGatewaySend(ctx)
+	defer cancel()
 
 	salt := c.sessList.cacheSalt.GetSalt()
 

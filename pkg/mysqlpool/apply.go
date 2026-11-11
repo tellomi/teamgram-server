@@ -46,33 +46,60 @@ var (
 	shared   = map[string]*sharedDB{}
 )
 
+// closedDBHook runs at the start of a closed-pool probe, before any
+// connection is taken. Tests use it to prove the probe does not hold
+// sharedMu. Production leaves it nil.
+var closedDBHook func()
+
 // Shared returns the process-wide pool for dsn. A second call with the same
 // dsn returns the same *sql.DB and keeps it open until every Discard has
 // run. sql.Open does not dial; a bad server fails on the first query.
+//
+// The closed-pool probe takes a connection. It must not run while sharedMu
+// is held: the goroutine that owns the last connection has to Discard or
+// Shared to put it back, and those calls need the same mutex. Holding the
+// mutex across Conn deadlocks that goroutine until the probe's own timeout.
 func Shared(dsn string) (*sql.DB, error) {
 	sharedMu.Lock()
-	defer sharedMu.Unlock()
 	if ent, ok := shared[dsn]; ok {
-		if closedDB(ent.db) {
-			delete(shared, dsn)
-		} else {
-			ent.n++
-			return ent.db, nil
+		db := ent.db
+		sharedMu.Unlock()
+		if !closedDB(db) {
+			sharedMu.Lock()
+			if cur, ok := shared[dsn]; ok && cur.db == db {
+				cur.n++
+				sharedMu.Unlock()
+				return db, nil
+			}
+			sharedMu.Unlock()
+			return Shared(dsn)
 		}
+		sharedMu.Lock()
+		cur, ok := shared[dsn]
+		if !ok || cur.db != db {
+			sharedMu.Unlock()
+			return Shared(dsn)
+		}
+		delete(shared, dsn)
 	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
+		sharedMu.Unlock()
 		return nil, err
 	}
 	Apply(db, Resolve(ProcessName(), KindSQL))
 	shared[dsn] = &sharedDB{db: db, n: 1}
+	sharedMu.Unlock()
 	return db, nil
 }
 
-// closedDB reports whether db was closed. A live pool is not dialed: Conn
-// returns immediately when the pool has an idle connection, and a closed
-// pool returns "sql: database is closed" without a dial.
+// closedDB reports whether db was closed. A live pool is not dialed when an
+// idle connection is available. A closed pool returns "sql: database is
+// closed" without a dial. The caller must not hold sharedMu.
 func closedDB(db *sql.DB) bool {
+	if closedDBHook != nil {
+		closedDBHook()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	conn, err := db.Conn(ctx)

@@ -65,6 +65,52 @@ func TestUnknownProcessIsSmall(t *testing.T) {
 	}
 }
 
+func TestClosedProbeDoesNotHoldSharedLock(t *testing.T) {
+	ResetSharedForTest()
+	t.Cleanup(func() {
+		closedDBHook = nil
+		ResetSharedForTest()
+	})
+	t.Setenv("TELLOMI_MYSQL_POOL", "linkpreview")
+	const dsn = "user:pass@tcp(127.0.0.1:1)/probe_lock?timeout=50ms"
+	db, err := Shared(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	closedDBHook = func() {
+		close(entered)
+		<-release
+	}
+	second := make(chan struct{})
+	go func() {
+		_, _ = Shared(dsn)
+		close(second)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closed-pool probe did not start")
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = Discard(db)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Discard waited while the closed-pool probe ran")
+	}
+	close(release)
+	select {
+	case <-second:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closed-pool probe did not finish")
+	}
+}
+
 func TestSharedDedupesAndDiscard(t *testing.T) {
 	ResetSharedForTest()
 	t.Cleanup(ResetSharedForTest)
