@@ -1055,6 +1055,314 @@
       "key": "Moments.Notif.System",
       "value": "System",
       "reason": "loanword this language writes the same way"
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "cs",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "el",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "fi",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "he",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "hi",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ja",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "nb",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "ro",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "sv",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "th",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "CrashReport.Prompt.Title",
+      "value": "New Crash Log Available",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "CrashReport.Prompt.Text",
+      "value": "The app closed unexpectedly.\n\nWould you like to send a crash log to help us fix the issue?",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "CrashReport.Prompt.NotNow",
+      "value": "Not Now",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
+    },
+    {
+      "platform": "ios",
+      "code": "vi",
+      "key": "CrashReport.Prompt.Send",
+      "value": "Send Log",
+      "reason": "Telegram-iOS has no Localizable.strings for this language with CrashReport.Prompt keys; English was copied rather than invented."
     }
   ]
 }
