@@ -394,8 +394,8 @@ func TestSweepGivesUpAfterOneHour(t *testing.T) {
 	if n := c.sweepStalePendingWebpages(time.Now()); n != 0 {
 		t.Fatalf("cleared %d, want 0", n)
 	}
-	if edits.calls != 0 {
-		t.Fatalf("gave up after 1h still tried to edit (%d)", edits.calls)
+	if edits.calls != 1 {
+		t.Fatalf("1h give-up should try one last EditHide, calls=%d", edits.calls)
 	}
 	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
 		t.Fatalf("1h job was not dropped: %+v", due)
@@ -427,5 +427,146 @@ func TestPendingJobShouldGiveUp(t *testing.T) {
 	}
 	if !pendingJobShouldGiveUp(PendingWebpageJob{Attempts: 1, Created: now.Add(-pendingJobGiveUpAfter)}, now) {
 		t.Fatal("1h-old job should give up")
+	}
+}
+
+type ctxAwareBoxes struct {
+	messageclient.MessageClient
+	box          *mtproto.MessageBox
+	canceledGets int
+	liveGets     int
+}
+
+func (f *ctxAwareBoxes) MessageGetUserMessageList(ctx context.Context, in *message.TLMessageGetUserMessageList) (*message.Vector_MessageBox, error) {
+	if ctx != nil && ctx.Err() != nil {
+		f.canceledGets++
+		// Production footgun: a canceled ctx can yield an empty success.
+		return &message.Vector_MessageBox{}, nil
+	}
+	f.liveGets++
+	if f.box == nil {
+		return &message.Vector_MessageBox{}, nil
+	}
+	return &message.Vector_MessageBox{Datas: []*mtproto.MessageBox{f.box}}, nil
+}
+
+func TestResolvePendingWebpageCommitsAfterFetchTimeout(t *testing.T) {
+	t.Setenv("TELLOMI_SERVER_LINK_FETCH", "1")
+	const raw = "https://this-domain-does-not-exist-tellomi-305-test.invalid/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      68,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &ctxAwareBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 68, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	withPendingFetch(t, func(ctx context.Context, _ string) (*mtproto.WebPage, error) {
+		// Simulate fetchRemote, which ignores the deadline and returns only
+		// after the parent context has already expired.
+		if ctx != nil {
+			<-ctx.Done()
+		}
+		return mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{}).To_WebPage(), nil
+	})
+	parent, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	c.resolvePendingWebpage(parent, PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 68}, raw)
+	if boxes.canceledGets != 0 {
+		t.Fatalf("Get used a canceled context %d time(s)", boxes.canceledGets)
+	}
+	if boxes.liveGets == 0 {
+		t.Fatal("Get was not called with a live context")
+	}
+	if len(edits.edits) != 1 {
+		t.Fatalf("edits %d after fetch timeout, want 1", len(edits.edits))
+	}
+	out := edits.edits[0].GetNewMessage().GetMessage()
+	if out.GetMedia() != nil || !out.GetEditHide() {
+		t.Fatalf("timeout path left a card or skipped edit_hide: %#v", out)
+	}
+}
+
+func TestResolvePendingWebpageClearsOnDNSEmptyPage(t *testing.T) {
+	t.Setenv("TELLOMI_SERVER_LINK_FETCH", "1")
+	const raw = "https://nxdomain-empty.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      37,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 37, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	// WebPageContext returns (webPageEmpty, nil) on NXDOMAIN, not an error.
+	withPendingFetch(t, func(context.Context, string) (*mtproto.WebPage, error) {
+		return mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{}).To_WebPage(), nil
+	})
+	c.resolvePendingWebpage(context.Background(), PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 37}, raw)
+	if len(edits.edits) != 1 {
+		t.Fatalf("edits %d, want 1", len(edits.edits))
+	}
+	if edits.edits[0].GetNewMessage().GetMessage().GetMedia() != nil {
+		t.Fatal("DNS empty page left a card")
+	}
+	if !edits.edits[0].GetNewMessage().GetMessage().GetEditHide() {
+		t.Fatal("edit_hide not set")
+	}
+}
+
+func TestPendingLoadStatusCanceledOrErroredGetIsRetry(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := pendingLoadStatus(nil, canceled, 0); got != pendingCommitRetry {
+		t.Fatalf("canceled empty Get: %v, want Retry", got)
+	}
+	if got := pendingLoadStatus(errors.New("rpc failed"), context.Background(), 0); got != pendingCommitRetry {
+		t.Fatalf("errored Get: %v, want Retry", got)
+	}
+	if got := pendingLoadStatus(nil, context.Background(), 0); got != pendingCommitGone {
+		t.Fatalf("live empty Get: %v, want Gone", got)
+	}
+	if got := pendingLoadStatus(nil, context.Background(), 1); got != pendingCommitDone {
+		t.Fatalf("live non-empty Get: %v, want load-ok", got)
+	}
+}
+
+func TestSweepRecoversOrphanPendingWithoutJobRow(t *testing.T) {
+	store := withPendingJobStore(t)
+	const raw = "https://orphan-pending.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      68,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 68, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	prev := scanOrphanPendingJobs
+	scanOrphanPendingJobs = func(time.Time, time.Duration, int) []PendingWebpageJob {
+		return []PendingWebpageJob{stalePendingJob(68, time.Now().Add(-2*time.Minute))}
+	}
+	t.Cleanup(func() { scanOrphanPendingJobs = prev })
+
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("precondition: store should be empty, got %+v", due)
+	}
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 1 {
+		t.Fatalf("cleared %d, want 1 orphan", n)
+	}
+	if len(edits.edits) != 1 || edits.edits[0].GetNewMessage().GetMessage().GetId() != 68 {
+		t.Fatalf("orphan edit: %#v", edits.edits)
+	}
+	if edits.edits[0].GetNewMessage().GetMessage().GetMedia() != nil || !edits.edits[0].GetNewMessage().GetMessage().GetEditHide() {
+		t.Fatal("orphan pending was not cleared with edit_hide")
+	}
+}
+
+func TestPendingMessageTableOK(t *testing.T) {
+	if !pendingMessageTableOK("messages") || !pendingMessageTableOK("messages_3") {
+		t.Fatal("expected messages / messages_N to be allowed")
+	}
+	if pendingMessageTableOK("messages_pending") || pendingMessageTableOK("users") || pendingMessageTableOK("messages_") {
+		t.Fatal("rejected names were allowed")
 	}
 }

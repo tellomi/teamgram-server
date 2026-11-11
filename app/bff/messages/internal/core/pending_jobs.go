@@ -1,8 +1,10 @@
 package core
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -37,6 +39,10 @@ const (
 	pendingJobsDeleteSQL = "DELETE FROM `pending_webpage_jobs` WHERE `user_id`=? AND `msg_id`=?"
 	pendingJobsDueSQL    = "SELECT `user_id`,`msg_id`,`peer_type`,`peer_id`,`auth_key_id`,`created_unix`,`attempts`,`next_retry_unix` FROM `pending_webpage_jobs` WHERE `created_unix`<=? AND (`next_retry_unix`<=? OR `attempts`>=? OR `created_unix`<=?) ORDER BY `created_unix` ASC LIMIT ?"
 	pendingJobsFailSQL   = "UPDATE `pending_webpage_jobs` SET `attempts`=?, `next_retry_unix`=? WHERE `user_id`=? AND `msg_id`=?"
+	// Outgoing rows only (sender_user_id = user_id): one EditHide fans out
+	// to the peer, so inbox copies are not scanned separately.
+	pendingOrphanSelectSQL = "SELECT `user_id`,`user_message_box_id`,`peer_type`,`peer_id`,`date2` FROM `%s` WHERE `deleted`=0 AND `sender_user_id`=`user_id` AND `date2`<=? AND `date2`>=? AND `message_data` LIKE '%%webPagePending%%' ORDER BY `date2` ASC LIMIT ?"
+	pendingOrphanTablesSQL = "SELECT `table_name` FROM information_schema.tables WHERE table_schema = DATABASE() AND (`table_name` = 'messages' OR `table_name` REGEXP '^messages_[0-9]+$')"
 )
 
 // PendingWebpageJob is one message still showing webPagePending.
@@ -366,4 +372,109 @@ func failPendingJob(job PendingWebpageJob, now time.Time) (PendingWebpageJob, bo
 		return recordPendingJobFailure(job, now)
 	}
 	return pendingJobs.Fail(job, now)
+}
+
+// scanOrphanPendingJobs finds webPagePending cards that have no job row
+// (for example after a canceled Get was mistaken for Gone). Tests replace it.
+var scanOrphanPendingJobs = defaultScanOrphanPendingJobs
+
+func orphanPendingJobs(now time.Time) []PendingWebpageJob {
+	if scanOrphanPendingJobs == nil {
+		return nil
+	}
+	return scanOrphanPendingJobs(now, pendingWebpageMaxAge, pendingSweepLimit)
+}
+
+func defaultScanOrphanPendingJobs(now time.Time, olderThan time.Duration, limit int) []PendingWebpageJob {
+	s, ok := pendingJobs.(*mysqlPendingJobs)
+	if !ok || s == nil {
+		return nil
+	}
+	return s.Orphans(now, olderThan, limit)
+}
+
+func (s *mysqlPendingJobs) Orphans(now time.Time, olderThan time.Duration, limit int) []PendingWebpageJob {
+	if s == nil || s.db == nil || limit <= 0 {
+		return nil
+	}
+	if olderThan <= 0 {
+		olderThan = pendingWebpageMaxAge
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pendingCommitTimeout)
+	defer cancel()
+	tables, err := pendingMessageTables(ctx, s.db)
+	if err != nil {
+		logx.Errorf("pending webpage jobs: orphan tables: %v", err)
+		tables = []string{"messages"}
+	}
+	newest := now.Add(-olderThan).UTC().Unix()
+	oldest := now.Add(-pendingOrphanLookback).UTC().Unix()
+	out := make([]PendingWebpageJob, 0)
+	remain := limit
+	for _, table := range tables {
+		if remain <= 0 {
+			break
+		}
+		if !pendingMessageTableOK(table) {
+			continue
+		}
+		rows, err := s.db.QueryContext(ctx, fmt.Sprintf(pendingOrphanSelectSQL, table), newest, oldest, remain)
+		if err != nil {
+			logx.Errorf("pending webpage jobs: orphan scan %s: %v", table, err)
+			continue
+		}
+		for rows.Next() {
+			var job PendingWebpageJob
+			var created int64
+			if err := rows.Scan(&job.UserID, &job.MsgID, &job.PeerType, &job.PeerID, &created); err != nil {
+				logx.Errorf("pending webpage jobs: orphan scan: %v", err)
+				continue
+			}
+			job.Created = time.Unix(created, 0).UTC()
+			out = append(out, job)
+			remain--
+		}
+		_ = rows.Close()
+	}
+	return out
+}
+
+func pendingMessageTableOK(name string) bool {
+	if name == "messages" {
+		return true
+	}
+	if len(name) < 10 || name[:9] != "messages_" {
+		return false
+	}
+	for _, r := range name[9:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func pendingMessageTables(ctx context.Context, db *sql.DB) ([]string, error) {
+	if db == nil {
+		return []string{"messages"}, nil
+	}
+	rows, err := db.QueryContext(ctx, pendingOrphanTablesSQL)
+	if err != nil {
+		return []string{"messages"}, err
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return tables, err
+		}
+		if name != "" {
+			tables = append(tables, name)
+		}
+	}
+	if len(tables) == 0 {
+		return []string{"messages"}, nil
+	}
+	return tables, nil
 }

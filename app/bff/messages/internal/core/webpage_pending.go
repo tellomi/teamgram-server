@@ -19,6 +19,11 @@ import (
 )
 
 const pendingWebpageTimeout = 20 * time.Second
+const pendingCommitTimeout = 10 * time.Second
+
+// pendingOrphanLookback bounds the no-job-row recovery scan. Cards older
+// than pendingWebpageMaxAge inside this window can be retried with EditHide.
+const pendingOrphanLookback = 7 * 24 * time.Hour
 
 type pendingCommitStatus int
 
@@ -86,34 +91,66 @@ func (c *MessagesCore) resolvePendingWebpage(parent context.Context, job Pending
 	page, err := fetchPendingPage(ctx, raw)
 	// A fetch error, a still-pending result, or an empty page must not
 	// leave webPagePending on the message. Clear the card with EditHide.
-	if err != nil || page.GetPredicateName() != mtproto.Predicate_webPage {
+	// The fetch context is not reused for Get/Edit: fetchRemote and
+	// httpGetContext currently use context.Background(), so a 20s fetch
+	// deadline can expire long before the HTTP/DNS call returns.
+	if err != nil || page == nil || page.GetPredicateName() != mtproto.Predicate_webPage {
 		if err != nil {
 			c.Logger.Errorf("pending webpage fetch: %v", err)
 		}
 		page = nil
 	}
-	switch c.commitPendingWebpage(ctx, job, page) {
+	switch c.commitPendingWebpage(nil, job, page) {
 	case pendingCommitDone, pendingCommitGone:
 		untrackPendingJob(job.UserID, job.MsgID)
 	}
+}
+
+func contextCanceled(ctx context.Context) bool {
+	return ctx != nil && ctx.Err() != nil
+}
+
+// pendingLoadStatus classifies MessageGetUserMessageList. An error or a
+// canceled/deadline-exceeded context is always Retry: an empty result in
+// that state is not proof that the message is gone. Gone is only returned
+// after a successful Get with a live context and zero rows.
+func pendingLoadStatus(err error, ctx context.Context, n int) pendingCommitStatus {
+	if err != nil || contextCanceled(ctx) {
+		return pendingCommitRetry
+	}
+	if n == 0 {
+		return pendingCommitGone
+	}
+	return pendingCommitDone // meaning "load ok, continue" — caller must not untrack yet
 }
 
 func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebpageJob, page *mtproto.WebPage) pendingCommitStatus {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.MessageClient == nil || c.svcCtx.MsgClient == nil {
 		return pendingCommitRetry
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	boxes, err := c.svcCtx.MessageClient.MessageGetUserMessageList(ctx, &message.TLMessageGetUserMessageList{
+	// Never inherit the fetch context. A canceled parent makes gRPC return
+	// an empty success or a deadline error, which used to be treated as Gone
+	// and untracked the job without EditHide.
+	commitCtx, cancel := context.WithTimeout(context.Background(), pendingCommitTimeout)
+	defer cancel()
+	_ = ctx // caller may pass a live or canceled ctx; it is not used for RPCs
+	boxes, err := c.svcCtx.MessageClient.MessageGetUserMessageList(commitCtx, &message.TLMessageGetUserMessageList{
 		UserId: job.UserID,
 		IdList: []int32{job.MsgID},
 	})
-	if err != nil {
-		c.Logger.Errorf("pending webpage load: %v", err)
-		return pendingCommitRetry
+	n := 0
+	if boxes != nil {
+		n = len(boxes.GetDatas())
 	}
-	if boxes == nil || len(boxes.GetDatas()) == 0 {
+	switch pendingLoadStatus(err, commitCtx, n) {
+	case pendingCommitRetry:
+		if err != nil {
+			c.Logger.Errorf("pending webpage load: %v", err)
+		} else if contextCanceled(commitCtx) {
+			c.Logger.Errorf("pending webpage load: context %v", commitCtx.Err())
+		}
+		return pendingCommitRetry
+	case pendingCommitGone:
 		return pendingCommitGone
 	}
 	if len(boxes.GetDatas()) != 1 {
@@ -131,7 +168,7 @@ func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebp
 	webpage.ApplyFetchedPage(out, page)
 	out.EditHide = true
 	out.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
-	if _, err = c.svcCtx.MsgClient.MsgEditMessageV2(ctx, &msgpb.TLMsgEditMessageV2{
+	if _, err = c.svcCtx.MsgClient.MsgEditMessageV2(commitCtx, &msgpb.TLMsgEditMessageV2{
 		UserId:    job.UserID,
 		AuthKeyId: job.AuthKeyID,
 		PeerType:  job.PeerType,
@@ -149,17 +186,27 @@ func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebp
 }
 
 func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
-	jobs := duePendingJobs(now)
+	jobs := mergePendingJobs(duePendingJobs(now), orphanPendingJobs(now))
 	cleared := 0
 	for _, job := range jobs {
 		if pendingJobShouldGiveUp(job, now) {
+			// Last EditHide attempt before dropping the row. If it still
+			// fails, untrack and let the orphan scan pick the card up later.
+			status := c.commitPendingWebpage(nil, job, nil)
+			if status == pendingCommitDone {
+				untrackPendingJob(job.UserID, job.MsgID)
+				cleared++
+				continue
+			}
+			if status == pendingCommitGone {
+				untrackPendingJob(job.UserID, job.MsgID)
+				continue
+			}
 			untrackPendingJob(job.UserID, job.MsgID)
 			pendingJobGiveUpLog(job, now, pendingJobGiveUpReason(job))
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		status := c.commitPendingWebpage(ctx, job, nil)
-		cancel()
+		status := c.commitPendingWebpage(nil, job, nil)
 		switch status {
 		case pendingCommitDone:
 			untrackPendingJob(job.UserID, job.MsgID)
@@ -175,6 +222,29 @@ func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
 		}
 	}
 	return cleared
+}
+
+func mergePendingJobs(due, orphans []PendingWebpageJob) []PendingWebpageJob {
+	seen := make(map[[2]int64]struct{}, len(due)+len(orphans))
+	out := make([]PendingWebpageJob, 0, len(due)+len(orphans))
+	add := func(job PendingWebpageJob) {
+		key := [2]int64{job.UserID, int64(job.MsgID)}
+		if job.UserID == 0 || job.MsgID == 0 {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, job)
+	}
+	for _, job := range due {
+		add(job)
+	}
+	for _, job := range orphans {
+		add(job)
+	}
+	return out
 }
 
 // StartPendingWebpageSweep runs once at startup and then on a ticker.
