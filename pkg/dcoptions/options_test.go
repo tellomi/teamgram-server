@@ -248,14 +248,25 @@ func TestApplyPublicHostRewritesOriginAndKeepsFlags(t *testing.T) {
 	if len(opts) != 3 {
 		t.Fatalf("len %d", len(opts))
 	}
-	if opts[0].GetIpAddress() != "8.137.198.240" || opts[0].GetPort() != 10443 || !opts[0].GetMediaOnly() || opts[0].GetCdn() {
-		t.Fatalf("media %+v", opts[0])
+	var media, cdnEntry, domain *mtproto.DcOption
+	for _, opt := range opts {
+		switch {
+		case opt.GetMediaOnly():
+			media = opt
+		case opt.GetCdn():
+			cdnEntry = opt
+		default:
+			domain = opt
+		}
 	}
-	if opts[1].GetIpAddress() != "8.137.198.240" || opts[1].GetPort() != 443 || !opts[1].GetCdn() || opts[1].GetId() != 2 || opts[1].GetMediaOnly() {
-		t.Fatalf("cdn %+v", opts[1])
+	if media == nil || media.GetIpAddress() != "8.137.198.240" || media.GetPort() != 10443 || media.GetCdn() || media.GetId() != 1 {
+		t.Fatalf("media %+v", media)
 	}
-	if opts[2].GetIpAddress() != "api.tellomi.cn" || opts[2].GetPort() != 10443 {
-		t.Fatalf("domain %+v", opts[2])
+	if cdnEntry == nil || cdnEntry.GetIpAddress() != "8.137.198.240" || cdnEntry.GetPort() != 443 || cdnEntry.GetId() != 2 || cdnEntry.GetMediaOnly() {
+		t.Fatalf("cdn %+v", cdnEntry)
+	}
+	if domain == nil || domain.GetIpAddress() != "api.tellomi.cn" || domain.GetPort() != 10443 || domain.GetId() != 1 {
+		t.Fatalf("domain %+v", domain)
 	}
 	if cfg.GetDcTxtDomainName() != "apv2.stel.com" || cfg.GetThisDc() != 7 || cfg.GetWebfileDcId() != 1 {
 		t.Fatalf("domain %q this %d webfile %d", cfg.GetDcTxtDomainName(), cfg.GetThisDc(), cfg.GetWebfileDcId())
@@ -353,17 +364,84 @@ func TestApplyPublicHostDropsUnforwardedPort(t *testing.T) {
 		}
 	}
 
-	t.Setenv(envOptions, "2:8.156.40.105:5222")
-	only := fileShape()
-	Apply(only)
-	fallback := only.GetDcOptions()
-	if len(fallback) != 2 || fallback[0].GetId() != 1 || fallback[0].GetPort() != 10443 || fallback[1].GetPort() != 443 {
-		t.Fatalf("fallback %+v", fallback)
+	t.Setenv(envOptions, "1:8.156.40.105:5222,2:8.156.40.105:443")
+	mixed := fileShape()
+	mixed.SetThisDc(1)
+	Apply(mixed)
+	got := mixed.GetDcOptions()
+	if len(got) != 3 {
+		t.Fatalf("mixed len %d %+v", len(got), got)
 	}
-	for _, opt := range fallback {
-		if opt.GetPort() == 5222 || opt.GetId() == 2 {
-			t.Fatalf("5222-only list kept DC2 or 5222: %+v", opt)
+	if got[0].GetId() != 1 || got[0].GetPort() != 10443 || got[0].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("dc1 10443 %+v", got[0])
+	}
+	if got[1].GetId() != 1 || got[1].GetPort() != 443 || got[1].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("dc1 443 %+v", got[1])
+	}
+	if got[2].GetId() != 2 || got[2].GetPort() != 443 || got[2].GetIpAddress() != "8.137.198.240" {
+		t.Fatalf("dc2 %+v", got[2])
+	}
+	if err := Check(mixed); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyPublicHostFallsBackPerDC(t *testing.T) {
+	t.Setenv(envOptions, "2:8.156.40.105:5222")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
+	cfg.SetThisDc(1)
+	Apply(cfg)
+	opts := cfg.GetDcOptions()
+	if len(opts) != 2 || opts[0].GetId() != 2 || opts[0].GetPort() != 10443 || opts[1].GetId() != 2 || opts[1].GetPort() != 443 {
+		t.Fatalf("%+v", opts)
+	}
+	for _, opt := range opts {
+		if opt.GetId() == 1 || opt.GetIpAddress() != "8.137.198.240" || opt.GetPort() == 5222 {
+			t.Fatalf("cross-dc or 5222: %+v", opt)
 		}
+	}
+	if err := Check(cfg); err == nil {
+		t.Fatal("this_dc 1 was left without an address")
+	}
+	cfg.SetThisDc(2)
+	if err := Check(cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckRejectsFileDCWithoutAddress(t *testing.T) {
+	t.Setenv(envOptions, "not-a-spec")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	cfg := fileShape()
+	cfg.SetThisDc(2)
+	cfg.SetDcOptions([]*mtproto.DcOption{{
+		PredicateName: mtproto.Predicate_dcOption,
+		Constructor:   mtproto.TLConstructor_CRC32_dcOption,
+		Id:            2,
+		IpAddress:     "8.156.40.105",
+		Port:          10443,
+		ThisPortOnly:  true,
+	}})
+	if FileDC() != 1 {
+		t.Fatalf("file dc %d", FileDC())
+	}
+	if err := Check(cfg); err == nil {
+		t.Fatal("file dc 1 has no address")
+	}
+}
+
+func TestDroppedPortWarningLogsEveryCall(t *testing.T) {
+	t.Setenv(envOptions, "1:8.156.40.105:5222,1:8.156.40.105:10443")
+	t.Setenv(envDomain, "")
+	t.Setenv(envPublic, "8.137.198.240")
+	before := droppedPortLogCount.Load()
+	Apply(fileShape())
+	Apply(fileShape())
+	if got := droppedPortLogCount.Load() - before; got != 2 {
+		t.Fatalf("drop logs %d, want 2", got)
 	}
 }
 

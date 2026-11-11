@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -57,11 +58,15 @@ var publicPorts = []int32{10443, 443}
 // A valid TELLOMI_PUBLIC_DC_HOST then replaces a canonical dotted IPv4.
 // An ipv6 flag, or a literal that is not dotted IPv4 (including
 // ::ffff:x.x.x.x), is left as written. Ports other than 10443 and 443 are
-// removed from the published list and logged once. The process stays up.
-// DC ids and flags on a kept entry stay. dc_txt_domain_name is not touched.
-// An empty list, or a list whose every entry was dropped, becomes DC 1 on
-// 10443 and 443. That fallback does not invent DC 2. An invalid host is
-// logged once and does not change the list.
+// removed and logged on every call. Each DC that remains with no port falls
+// back to that same DC on 10443 and 443. An empty input is DC 1 only.
+// The fallback never copies one DC's address onto another id.
+// dc_txt_domain_name is not touched. An invalid host is logged once and
+// does not change the list.
+//
+// Check reports an error when the public host is set and this_dc or the
+// file DC has no published 10443 or 443 address. The server process exits
+// on that error at startup.
 func Apply(cfg *mtproto.TLConfig) {
 	if cfg == nil || cfg.GetData2() == nil {
 		return
@@ -82,6 +87,39 @@ func Apply(cfg *mtproto.TLConfig) {
 	applyDomain(cfg)
 }
 
+// Check reports whether a client can reach this_dc and the file DC after
+// Apply. It is a no-op when TELLOMI_PUBLIC_DC_HOST is unset or invalid.
+// The bff calls it at startup and exits when it returns an error.
+func Check(cfg *mtproto.TLConfig) error {
+	if _, ok := publicHost(); !ok {
+		return nil
+	}
+	if cfg == nil || cfg.GetData2() == nil {
+		return fmt.Errorf("help.getConfig: config is empty")
+	}
+	clone, ok := proto.Clone(cfg).(*mtproto.TLConfig)
+	if !ok || clone == nil || clone.GetData2() == nil {
+		return fmt.Errorf("help.getConfig: config could not be cloned")
+	}
+	Apply(clone)
+	have := map[int32]struct{}{}
+	for _, opt := range clone.GetDcOptions() {
+		if opt == nil || opt.GetIpAddress() == "" || !relayPort(opt.GetPort()) {
+			continue
+		}
+		have[opt.GetId()] = struct{}{}
+	}
+	this := cfg.GetThisDc()
+	if _, ok := have[this]; !ok {
+		return fmt.Errorf("help.getConfig: this_dc %d has no published address on 10443 or 443", this)
+	}
+	fileDC := FileDC()
+	if _, ok := have[fileDC]; !ok {
+		return fmt.Errorf("help.getConfig: file dc %d has no published address on 10443 or 443", fileDC)
+	}
+	return nil
+}
+
 func publicHost() (string, bool) {
 	raw, ok := os.LookupEnv(envPublic)
 	if !ok {
@@ -99,21 +137,32 @@ func publicHost() (string, bool) {
 }
 
 func publishHost(opts []*mtproto.DcOption, host string) []*mtproto.DcOption {
-	out, dropped := rewriteIPv4(opts, host)
+	groups, dropped := groupByDC(opts, host)
 	if len(dropped) > 0 {
 		logDroppedPorts(dropped)
 	}
-	if len(out) == 0 {
+	if len(groups) == 0 {
 		return defaultPublicOptions(host)
+	}
+	out := make([]*mtproto.DcOption, 0, len(groups)*2)
+	for _, g := range groups {
+		if len(g.kept) == 0 {
+			out = append(out, relayOptions(g.id, host)...)
+			continue
+		}
+		out = append(out, g.kept...)
 	}
 	return out
 }
 
-func rewriteIPv4(opts []*mtproto.DcOption, host string) ([]*mtproto.DcOption, []string) {
-	if len(opts) == 0 {
-		return nil, nil
-	}
-	out := make([]*mtproto.DcOption, 0, len(opts))
+type dcGroup struct {
+	id   int32
+	kept []*mtproto.DcOption
+}
+
+func groupByDC(opts []*mtproto.DcOption, host string) ([]dcGroup, []string) {
+	var groups []dcGroup
+	index := map[int32]int{}
 	var dropped []string
 	for _, opt := range opts {
 		if opt == nil {
@@ -123,16 +172,23 @@ func rewriteIPv4(opts []*mtproto.DcOption, host string) ([]*mtproto.DcOption, []
 		if !ok || cloned == nil {
 			continue
 		}
+		id := cloned.GetId()
+		at, seen := index[id]
+		if !seen {
+			groups = append(groups, dcGroup{id: id})
+			at = len(groups) - 1
+			index[id] = at
+		}
 		if !relayPort(cloned.GetPort()) {
-			dropped = append(dropped, fmt.Sprintf("%d:%s:%d", cloned.GetId(), cloned.GetIpAddress(), cloned.GetPort()))
+			dropped = append(dropped, fmt.Sprintf("%d:%s:%d", id, cloned.GetIpAddress(), cloned.GetPort()))
 			continue
 		}
 		if rewriteDottedIPv4(cloned) {
 			cloned.IpAddress = host
 		}
-		out = append(out, cloned)
+		groups[at].kept = append(groups[at].kept, cloned)
 	}
-	return out, dropped
+	return groups, dropped
 }
 
 func relayPort(port int32) bool {
@@ -155,12 +211,16 @@ func rewriteDottedIPv4(opt *mtproto.DcOption) bool {
 }
 
 func defaultPublicOptions(host string) []*mtproto.DcOption {
+	return relayOptions(1, host)
+}
+
+func relayOptions(id int32, host string) []*mtproto.DcOption {
 	out := make([]*mtproto.DcOption, 0, len(publicPorts))
 	for _, port := range publicPorts {
 		out = append(out, &mtproto.DcOption{
 			PredicateName: mtproto.Predicate_dcOption,
 			Constructor:   mtproto.TLConstructor_CRC32_dcOption,
-			Id:            1,
+			Id:            id,
 			IpAddress:     host,
 			Port:          port,
 			ThisPortOnly:  true,
@@ -321,20 +381,11 @@ func logInvalidHost(host string) {
 	logx.Errorf("help.getConfig: TELLOMI_PUBLIC_DC_HOST %q is invalid; leaving published addresses unchanged", shown)
 }
 
-var droppedPortLog struct {
-	sync.Mutex
-	spec string
-}
+var droppedPortLogCount atomic.Int64
 
 func logDroppedPorts(dropped []string) {
-	spec := strings.Join(dropped, ",")
-	droppedPortLog.Lock()
-	defer droppedPortLog.Unlock()
-	if spec == droppedPortLog.spec {
-		return
-	}
-	droppedPortLog.spec = spec
-	shown := spec
+	droppedPortLogCount.Add(1)
+	shown := strings.Join(dropped, ",")
 	if len(shown) > 200 {
 		shown = shown[:200] + "..."
 	}
