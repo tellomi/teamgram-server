@@ -6,11 +6,16 @@ import run_probes as r
 class TargetGateTests(unittest.TestCase):
     def test_required_targets_are_new_ip_and_api_domain(self):
         required = {(host, port) for _name, host, port, _dc, req in r.TARGETS if req}
+        self.assertIn(
+            ("api-10443", "api.tellomi.cn", 10443, 1, True),
+            r.TARGETS,
+        )
         self.assertEqual(
             required,
             {
                 ("8.156.40.105", 443),
                 ("8.156.40.105", 10443),
+                ("api.tellomi.cn", 10443),
                 ("api.tellomi.cn", 443),
             },
         )

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """GitHub-hosted runner only: no authentication, production writes, or secrets.
 
-Required gate: new ECS 8.156.40.105 on 443 and 10443, plus api.tellomi.cn:443.
+Required gate: new ECS 8.156.40.105 on 443 and 10443, plus api.tellomi.cn on 10443 and 443
+(the same order new Android 14.0.13 and iOS #165 clients use after the IP).
 The retired SWAS IP 8.137.39.82 is probed only as informational context.
 """
 import datetime
@@ -20,6 +21,7 @@ CST = datetime.timezone(datetime.timedelta(hours=8))
 TARGETS = (
     ("ecs-443", "8.156.40.105", 443, 1, True),
     ("ecs-10443", "8.156.40.105", 10443, 1, True),
+    ("api-10443", "api.tellomi.cn", 10443, 1, True),
     ("api-443", "api.tellomi.cn", 443, 1, True),
     ("old-10443", "8.137.39.82", 10443, 1, False),
     ("old-5222", "8.137.39.82", 5222, 1, False),
@@ -138,7 +140,7 @@ def main():
         vantage_valid=gate_ok,
         https_ok=https_ok,
         gate_note=(
-            "required: 8.156.40.105:443, 8.156.40.105:10443, api.tellomi.cn:443; "
+            "required: 8.156.40.105:443, 8.156.40.105:10443, api.tellomi.cn:10443, api.tellomi.cn:443; "
             "8.137.39.82 is informational only"
         ),
     )
