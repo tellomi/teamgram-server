@@ -41,7 +41,7 @@ func (c *DialogCore) DialogToggleDialogPin(in *dialog.TLDialogToggleDialogPin) (
 	}
 
 	if folderId == 0 {
-		c.svcCtx.Dao.CachedConn.Exec(
+		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				c.svcCtx.Dao.DialogsDAO.UpdatePeerDialogListPinned(c.ctx, pinned, in.UserId, []int64{peerDialogId})
@@ -50,7 +50,7 @@ func (c *DialogCore) DialogToggleDialogPin(in *dialog.TLDialogToggleDialogPin) (
 			dialog.GetDialogCacheKey(in.GetUserId(), peerDialogId),
 			dialog.GetPinnedDialogIdListCacheKey(in.GetUserId()))
 	} else {
-		c.svcCtx.Dao.CachedConn.Exec(
+		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				c.svcCtx.Dao.DialogsDAO.UpdateFolderPeerDialogListPinned(c.ctx, pinned, in.UserId, []int64{peerDialogId})

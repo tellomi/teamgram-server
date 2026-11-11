@@ -103,7 +103,7 @@ func (c *DialogCore) DialogEditPeerFolders(in *dialog.TLDialogEditPeerFolders) (
 	// error. The rows-affected count is not consulted, so (0, 0, nil) evicts
 	// the same way (0, 1, nil) does. This runs after the pin trim so a
 	// following read cannot cache the pre-trim pin list.
-	c.svcCtx.Dao.CachedConn.Exec(
+	c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			return 0, 0, nil

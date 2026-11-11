@@ -58,7 +58,7 @@ func (c *DialogCore) DialogUpdateDialogFiltersOrder(in *dialog.TLDialogUpdateDia
 		break
 	}
 
-	_, _, err := c.svcCtx.Dao.CachedConn.Exec(
+	_, _, err := c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			var writeErr error

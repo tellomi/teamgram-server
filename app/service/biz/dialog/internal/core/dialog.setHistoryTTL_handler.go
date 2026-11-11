@@ -37,8 +37,10 @@ type historyTTLStore interface {
 func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtproto.Bool, error) {
 	// Drop the cached dialog. getDialogs and getFullUser otherwise keep the
 	// timer from before this write until the cache entry expires.
-	// CachedConn.Exec deletes those keys only when the callback returns nil,
-	// so a rolled-back write leaves the previous cache entry in place.
+	// ExecInvalidate deletes those keys only when the callback returns nil,
+	// so a rolled-back write leaves the previous cache entry in place, and
+	// then deletes them again after a short delay so an in-flight getDialogs
+	// cannot SetEx the pre-write object.
 	keys := historyTTLCacheKeys(in.UserId, in.PeerType, in.PeerId)
 	if in.PeerType == mtproto.PEER_CHAT {
 		var members []struct {
@@ -49,7 +51,7 @@ func (c *DialogCore) DialogSetHistoryTTL(in *dialog.TLDialogSetHistoryTTL) (*mtp
 			keys = append(keys, dialog.GetDialogCacheKeyByPeer(member.UserID, in.PeerType, in.PeerId))
 		}
 	}
-	_, _, err := c.svcCtx.Dao.CachedConn.Exec(
+	_, _, err := c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			if err := writeHistoryTTL(ctx, conn, c.svcCtx.Dao.DialogsDAO, in); err != nil {

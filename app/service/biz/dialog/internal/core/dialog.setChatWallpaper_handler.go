@@ -29,7 +29,7 @@ import (
 // DialogSetChatWallpaper
 // dialog.setChatWallpaper flags:# user_id:long peer_type:int peer_id:long wallpaper_id:long wallpaper_overridden:flags.0?true = Bool;
 func (c *DialogCore) DialogSetChatWallpaper(in *dialog.TLDialogSetChatWallpaper) (*mtproto.Bool, error) {
-	c.svcCtx.Dao.CachedConn.Exec(
+	c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			var (

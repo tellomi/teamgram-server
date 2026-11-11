@@ -10,6 +10,8 @@
 package dao
 
 import (
+	"time"
+
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/internal/config"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
@@ -19,6 +21,10 @@ import (
 type Dao struct {
 	*Mysql
 	sqlc.CachedConn
+	// InvalidateDelay waits before the second DelCache after a dialog
+	// write. Zero means dialog.DefaultCacheInvalidateDelay. Tests set a
+	// short delay so they can wait for the goroutine.
+	InvalidateDelay time.Duration
 }
 
 // New new a dao and return.

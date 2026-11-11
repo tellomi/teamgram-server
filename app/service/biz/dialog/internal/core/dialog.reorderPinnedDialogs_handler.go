@@ -34,7 +34,7 @@ func (c *DialogCore) DialogReorderPinnedDialogs(in *dialog.TLDialogReorderPinned
 	}
 
 	if folderId == 0 {
-		c.svcCtx.Dao.CachedConn.Exec(
+		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				tR := sqlx.TxWrapper(
@@ -73,7 +73,7 @@ func (c *DialogCore) DialogReorderPinnedDialogs(in *dialog.TLDialogReorderPinned
 			},
 			append(keyList, dialog.GetPinnedDialogIdListCacheKey(in.GetUserId()))...)
 	} else {
-		c.svcCtx.Dao.CachedConn.Exec(
+		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				tR := sqlx.TxWrapper(

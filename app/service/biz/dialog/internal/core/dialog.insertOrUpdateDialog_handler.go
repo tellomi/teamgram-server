@@ -47,7 +47,7 @@ func (c *DialogCore) DialogInsertOrUpdateDialog(in *dialog.TLDialogInsertOrUpdat
 
 	cMap["deleted"] = 0
 
-	_, rowsAffected, err := c.svcCtx.Dao.CachedConn.Exec(
+	_, rowsAffected, err := c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			r, err := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(
@@ -97,7 +97,7 @@ func (c *DialogCore) DialogInsertOrUpdateDialog(in *dialog.TLDialogInsertOrUpdat
 			dlgDO.PinnedMsgId = in.GetPinnedMsgId().GetValue()
 		}
 
-		c.svcCtx.Dao.CachedConn.Exec(
+		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				_, _, err2 := c.svcCtx.Dao.DialogsDAO.InsertIgnore(c.ctx, dlgDO)
