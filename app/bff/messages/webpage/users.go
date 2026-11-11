@@ -25,6 +25,7 @@ type GroupCard struct {
 	Title   string
 	About   string
 	Members int32
+	Inviter string
 	Photo   *mtproto.Photo
 	Chat    *mtproto.Chat
 }

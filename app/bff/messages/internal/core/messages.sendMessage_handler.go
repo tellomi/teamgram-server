@@ -220,7 +220,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 	//})
 
 	if !in.NoWebpage && outMessage.Media == nil {
-		if media := webpage.PreviewMedia(c.ctx, outMessage.Message, outMessage.Entities); media != nil {
+		if media, _ := webpage.AttachOnSend(c.ctx, outMessage.Message, outMessage.Entities); media != nil {
 			outMessage.Media = media
 		}
 	}
@@ -243,6 +243,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		c.Logger.Errorf("messages.sendMessage#fa88427a - error: %v", err)
 		return nil, err
 	}
+	c.schedulePendingWebpage(peer, outMessage.Media, outMessage.Message, outMessage.Entities, rUpdate, in.GetScheduleDate().GetValue() != 0)
 	chatbox.Shared().NoteSent(c.ctx, c.MD.UserId, peer, rUpdate)
 
 	if in.GetScheduleDate().GetValue() == 0 {

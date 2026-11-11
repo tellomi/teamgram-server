@@ -180,7 +180,7 @@ func pageFromFetch(u *url.URL, res fetchResult) *mtproto.WebPage {
 		}
 	}
 	page := mtproto.MakeTLWebPage(&mtproto.WebPage{
-		Id:          int64(sum),
+		Id:          pageID(u),
 		Url_STRING:  u.String(),
 		DisplayUrl:  display,
 		Hash:        sum,
@@ -248,9 +248,20 @@ func webHash(parts ...string) int32 {
 	return sum
 }
 
+func pageID(u *url.URL) int64 {
+	if u == nil {
+		return 1
+	}
+	id := int64(webHash(u.String(), "id"))
+	if id == 0 {
+		return 1
+	}
+	return id
+}
+
 func emptyPage(u *url.URL) *mtproto.WebPage {
 	return mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{
-		Id:             int64(webHash(u.String(), "empty")),
+		Id:             pageID(u),
 		Url_STRING:     u.String(),
 		Url_FLAGSTRING: wrapperspb.String(u.String()),
 	}).To_WebPage()
@@ -258,7 +269,7 @@ func emptyPage(u *url.URL) *mtproto.WebPage {
 
 func pendingPage(u *url.URL) *mtproto.WebPage {
 	return mtproto.MakeTLWebPagePending(&mtproto.WebPage{
-		Id:             int64(webHash(u.String(), "pending")),
+		Id:             pageID(u),
 		Url_STRING:     u.String(),
 		Url_FLAGSTRING: wrapperspb.String(u.String()),
 		Date:           int32(time.Now().Add(time.Minute).Unix()),

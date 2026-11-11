@@ -464,8 +464,11 @@ func TestBasicGroupInviteAndLocalizedCounts(t *testing.T) {
 		if page.GetPhoto().GetId() != 9 || page.GetPhoto().GetAccessHash() != 90 || len(chats) != 1 {
 			t.Fatalf("%s photo %#v chats %d", raw, page.GetPhoto(), len(chats))
 		}
-		if !strings.Contains(page.GetDescription().GetValue(), "3") || !strings.Contains(page.GetDescription().GetValue(), "member") {
-			t.Fatalf("members %q", page.GetDescription().GetValue())
+		if page.GetDescription().GetValue() != "You're invited to join this group on Tellomi." {
+			t.Fatalf("invite desc %q", page.GetDescription().GetValue())
+		}
+		if strings.Contains(strings.ToLower(page.GetDescription().GetValue()), "telegram") {
+			t.Fatalf("brand leaked Telegram: %q", page.GetDescription().GetValue())
 		}
 	}
 	for _, raw := range []string{

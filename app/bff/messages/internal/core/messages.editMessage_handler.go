@@ -91,6 +91,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			c.Logger.Errorf("messages.editMessage - error: %v", err)
 			return nil, err
 		}
+		c.schedulePendingWebpage(peer, draft.Media, draft.Message, draft.Entities, rUpdates, false)
 		return rUpdates, nil
 	default:
 		c.Logger.Errorf("invalid peer: %v", in.Peer)
@@ -184,6 +185,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - error: %v", err)
 		return nil, err
 	}
+	c.schedulePendingWebpage(peer, outMessage.Media, outMessage.Message, outMessage.Entities, rUpdates, in.GetScheduleDate().GetValue() != 0)
 
 	return rUpdates, nil
 }
