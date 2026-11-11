@@ -62,21 +62,16 @@ func TestResolvePendingWebpageClearsOnError(t *testing.T) {
 	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 9, SenderUserId: 7, Message: msg}}
 	edits := &pendingEdits{}
 	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	media := msg.GetMedia()
 	withPendingFetch(t, func(context.Context, string) (*mtproto.WebPage, error) {
-		return nil, errors.New("timeout")
+		return nil, errors.New("no such host")
 	})
 	job := PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 9}
 	c.resolvePendingWebpage(context.Background(), job, raw)
 	if len(edits.edits) != 1 {
 		t.Fatalf("edits %d", len(edits.edits))
 	}
-	out := edits.edits[0].GetNewMessage().GetMessage()
-	if out.GetMedia() != nil {
-		t.Fatalf("card left after error: %#v", out.GetMedia())
-	}
-	if !out.GetEditHide() {
-		t.Fatal("edit_hide not set")
-	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), media)
 }
 
 func TestResolvePendingWebpageClearsWhenStillPending(t *testing.T) {
@@ -93,15 +88,16 @@ func TestResolvePendingWebpageClearsWhenStillPending(t *testing.T) {
 	withPendingFetch(t, func(context.Context, string) (*mtproto.WebPage, error) {
 		return chatboxPending(t, raw).GetWebpage(), nil
 	})
-	c.resolvePendingWebpage(context.Background(), PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 11}, raw)
-	if len(edits.edits) != 1 {
-		t.Fatalf("edits %d", len(edits.edits))
+	store := withPendingJobStore(t)
+	job := PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 11, Created: time.Now()}
+	store.Put(job)
+	c.resolvePendingWebpage(context.Background(), job, raw)
+	if len(edits.edits) != 0 {
+		t.Fatalf("still-pending should retry, not edit: %#v", edits.edits)
 	}
-	if edits.edits[0].GetNewMessage().GetMessage().GetMedia() != nil {
-		t.Fatal("still-pending result left a card")
-	}
-	if !edits.edits[0].GetNewMessage().GetMessage().GetEditHide() {
-		t.Fatal("edit_hide not set")
+	due := store.Due(time.Now().Add(pendingSweepEvery+time.Second), 0, 10)
+	if len(due) != 1 || due[0].Attempts != 1 {
+		t.Fatalf("expected one retryable job, got %+v", due)
 	}
 }
 
@@ -133,9 +129,7 @@ func TestSweepClearsStalePendingAfter60s(t *testing.T) {
 	if len(edits.edits) != 1 || edits.edits[0].GetNewMessage().GetMessage().GetId() != 13 {
 		t.Fatalf("swept the wrong edit: %#v", edits.edits)
 	}
-	if edits.edits[0].GetNewMessage().GetMessage().GetMedia() != nil || !edits.edits[0].GetNewMessage().GetMessage().GetEditHide() {
-		t.Fatal("stale pending was not cleared with edit_hide")
-	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), msg.GetMedia())
 	if due := store.Due(time.Now(), pendingWebpageMaxAge, 10); len(due) != 0 {
 		t.Fatalf("stale job was not untracked: %+v", due)
 	}
@@ -176,9 +170,14 @@ func TestApplyFetchedPageKeepsInvertMedia(t *testing.T) {
 	if msg.GetMedia().GetWebpage().GetTitle().GetValue() != "Hi" {
 		t.Fatal("page not applied")
 	}
+	pendingID := msg.GetMedia().GetWebpage().GetId()
 	webpage.ApplyFetchedPage(msg, nil)
-	if !msg.GetInvertMedia() || msg.GetMedia() != nil {
+	if !msg.GetInvertMedia() {
 		t.Fatal("clearing the card changed invert_media")
+	}
+	got := msg.GetMedia().GetWebpage()
+	if got == nil || got.GetPredicateName() != mtproto.Predicate_webPageEmpty || got.GetId() != pendingID {
+		t.Fatalf("clearing should write webPageEmpty, got %#v", msg.GetMedia())
 	}
 }
 
@@ -236,6 +235,23 @@ func chatboxPending(t *testing.T, raw string) *mtproto.MessageMedia {
 		t.Fatalf("want pending, got %#v", media)
 	}
 	return media
+}
+
+func wantEmptyWebpage(t *testing.T, msg *mtproto.Message, pending *mtproto.MessageMedia) {
+	t.Helper()
+	if msg == nil {
+		t.Fatal("nil message")
+	}
+	page := msg.GetMedia().GetWebpage()
+	if page == nil || page.GetPredicateName() != mtproto.Predicate_webPageEmpty {
+		t.Fatalf("want webPageEmpty, got %#v", msg.GetMedia())
+	}
+	if pending != nil && pending.GetWebpage() != nil && page.GetId() != pending.GetWebpage().GetId() {
+		t.Fatalf("empty id %d != pending id %d", page.GetId(), pending.GetWebpage().GetId())
+	}
+	if !msg.GetEditHide() {
+		t.Fatal("edit_hide not set")
+	}
 }
 
 type failingEdits struct {
@@ -394,8 +410,8 @@ func TestSweepGivesUpAfterOneHour(t *testing.T) {
 	if n := c.sweepStalePendingWebpages(time.Now()); n != 0 {
 		t.Fatalf("cleared %d, want 0", n)
 	}
-	if edits.calls != 0 {
-		t.Fatalf("gave up after 1h still tried to edit (%d)", edits.calls)
+	if edits.calls != 1 {
+		t.Fatalf("1h give-up should try one last EditHide, calls=%d", edits.calls)
 	}
 	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
 		t.Fatalf("1h job was not dropped: %+v", due)
@@ -428,4 +444,300 @@ func TestPendingJobShouldGiveUp(t *testing.T) {
 	if !pendingJobShouldGiveUp(PendingWebpageJob{Attempts: 1, Created: now.Add(-pendingJobGiveUpAfter)}, now) {
 		t.Fatal("1h-old job should give up")
 	}
+}
+
+type ctxAwareBoxes struct {
+	messageclient.MessageClient
+	box          *mtproto.MessageBox
+	canceledGets int
+	liveGets     int
+}
+
+func (f *ctxAwareBoxes) MessageGetUserMessageList(ctx context.Context, in *message.TLMessageGetUserMessageList) (*message.Vector_MessageBox, error) {
+	if ctx != nil && ctx.Err() != nil {
+		f.canceledGets++
+		// Production footgun: a canceled ctx can yield an empty success.
+		return &message.Vector_MessageBox{}, nil
+	}
+	f.liveGets++
+	if f.box == nil {
+		return &message.Vector_MessageBox{}, nil
+	}
+	return &message.Vector_MessageBox{Datas: []*mtproto.MessageBox{f.box}}, nil
+}
+
+func TestResolvePendingWebpageRetriesOnFetchTimeoutThenEmptiesAtCap(t *testing.T) {
+	t.Setenv("TELLOMI_SERVER_LINK_FETCH", "1")
+	const raw = "https://this-domain-does-not-exist-tellomi-305-test.invalid/"
+	media := chatboxPending(t, raw)
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      68,
+		Message: raw,
+		Media:   media,
+	}).To_Message()
+	boxes := &ctxAwareBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 68, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	store := withPendingJobStore(t)
+	job := PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 68, Created: time.Now()}
+	store.Put(job)
+	withPendingFetch(t, func(ctx context.Context, _ string) (*mtproto.WebPage, error) {
+		// Production uses pendingWebpageTimeout (20s). A short parent
+		// deadline stands in so the test does not wait the full 20s.
+		// fetchRemote currently ignores the deadline and can return
+		// after ctx is already done; treat that as a retryable timeout.
+		if ctx != nil {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return nil, context.DeadlineExceeded
+	})
+	parent, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	c.resolvePendingWebpage(parent, job, raw)
+	cancel()
+	if len(edits.edits) != 0 {
+		t.Fatalf("timeout should retry, not edit yet: %#v", edits.edits)
+	}
+	due := store.Due(time.Now().Add(pendingSweepEvery+time.Second), 0, 10)
+	if len(due) != 1 || due[0].Attempts != 1 {
+		t.Fatalf("timeout should bump attempts, got %+v", due)
+	}
+
+	store.mu.Lock()
+	held := store.jobs[store.key(job.UserID, job.MsgID)]
+	held.Attempts = pendingJobMaxAttempts - 1
+	held.NextRetry = time.Time{}
+	store.jobs[store.key(job.UserID, job.MsgID)] = held
+	store.mu.Unlock()
+
+	parent, cancel = context.WithTimeout(context.Background(), 40*time.Millisecond)
+	c.resolvePendingWebpage(parent, held, raw)
+	cancel()
+	if boxes.canceledGets != 0 {
+		t.Fatalf("Get used a canceled context %d time(s)", boxes.canceledGets)
+	}
+	if boxes.liveGets == 0 {
+		t.Fatal("Get was not called with a live context after the cap")
+	}
+	if len(edits.edits) != 1 {
+		t.Fatalf("edits %d after retry cap, want 1", len(edits.edits))
+	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), media)
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("capped timeout job was not untracked: %+v", due)
+	}
+}
+
+func TestResolvePendingWebpageClearsOnDNSEmptyPage(t *testing.T) {
+	t.Setenv("TELLOMI_SERVER_LINK_FETCH", "1")
+	const raw = "https://nxdomain-empty.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      37,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 37, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	// WebPageContext returns (webPageEmpty, nil) on NXDOMAIN, not an error.
+	withPendingFetch(t, func(context.Context, string) (*mtproto.WebPage, error) {
+		return mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{}).To_WebPage(), nil
+	})
+	c.resolvePendingWebpage(context.Background(), PendingWebpageJob{UserID: 7, PeerType: mtproto.PEER_USER, PeerID: 8, MsgID: 37}, raw)
+	if len(edits.edits) != 1 {
+		t.Fatalf("edits %d, want 1", len(edits.edits))
+	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), msg.GetMedia())
+}
+
+func TestPendingLoadStatusCanceledOrErroredGetIsRetry(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := pendingLoadStatus(nil, canceled, 0); got != pendingCommitRetry {
+		t.Fatalf("canceled empty Get: %v, want Retry", got)
+	}
+	if got := pendingLoadStatus(errors.New("rpc failed"), context.Background(), 0); got != pendingCommitRetry {
+		t.Fatalf("errored Get: %v, want Retry", got)
+	}
+	if got := pendingLoadStatus(nil, context.Background(), 0); got != pendingCommitGone {
+		t.Fatalf("live empty Get: %v, want Gone", got)
+	}
+	if got := pendingLoadStatus(nil, context.Background(), 1); got != pendingCommitDone {
+		t.Fatalf("live non-empty Get: %v, want load-ok", got)
+	}
+}
+
+func TestSweepRecoversOrphanPendingWithoutJobRow(t *testing.T) {
+	store := withPendingJobStore(t)
+	const raw = "https://orphan-pending.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      68,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 68, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	prev := scanOrphanPendingJobs
+	scanOrphanPendingJobs = func(time.Time, time.Duration, int) []PendingWebpageJob {
+		return []PendingWebpageJob{stalePendingJob(68, time.Now().Add(-2*time.Minute))}
+	}
+	t.Cleanup(func() { scanOrphanPendingJobs = prev })
+
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("precondition: store should be empty, got %+v", due)
+	}
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 1 {
+		t.Fatalf("cleared %d, want 1 orphan", n)
+	}
+	if len(edits.edits) != 1 || edits.edits[0].GetNewMessage().GetMessage().GetId() != 68 {
+		t.Fatalf("orphan edit: %#v", edits.edits)
+	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), msg.GetMedia())
+}
+
+func TestEnsureDoesNotResetAttemptsAndTombstoneIsNotRequeued(t *testing.T) {
+	store := withPendingJobStore(t)
+	const raw = "https://tombstone-orphan.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      70,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 70, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+
+	job := stalePendingJob(70, time.Now().Add(-2*time.Minute))
+	store.Put(job)
+	store.mu.Lock()
+	held := store.jobs[store.key(job.UserID, job.MsgID)]
+	held.Attempts = 4
+	held.NextRetry = time.Now().Add(time.Hour)
+	store.jobs[store.key(job.UserID, job.MsgID)] = held
+	store.mu.Unlock()
+	store.Ensure(stalePendingJob(70, time.Now().Add(-2*time.Minute)))
+	store.mu.Lock()
+	got := store.jobs[store.key(job.UserID, job.MsgID)]
+	store.mu.Unlock()
+	if got.Attempts != 4 {
+		t.Fatalf("Ensure reset attempts to %d", got.Attempts)
+	}
+
+	store.Tombstone(got)
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("tombstone was due: %+v", due)
+	}
+	prev := scanOrphanPendingJobs
+	scanOrphanPendingJobs = func(time.Time, time.Duration, int) []PendingWebpageJob {
+		return []PendingWebpageJob{stalePendingJob(70, time.Now().Add(-2*time.Minute))}
+	}
+	t.Cleanup(func() { scanOrphanPendingJobs = prev })
+	if n := c.sweepStalePendingWebpages(time.Now()); n != 0 {
+		t.Fatalf("tombstone sweep cleared %d", n)
+	}
+	if len(edits.edits) != 0 {
+		t.Fatalf("tombstone was requeued and edited: %#v", edits.edits)
+	}
+	if due := store.Due(time.Now(), 0, 10); len(due) != 0 {
+		t.Fatalf("tombstone became due after orphan Ensure: %+v", due)
+	}
+}
+
+func TestPendingFetchOutcomeClassifiesTimeoutAndNXDOMAIN(t *testing.T) {
+	if apply, retry := pendingFetchOutcome(nil, context.DeadlineExceeded); apply != nil || !retry {
+		t.Fatalf("20s timeout / deadline: apply=%v retry=%v", apply, retry)
+	}
+	if apply, retry := pendingFetchOutcome(nil, context.Canceled); apply != nil || !retry {
+		t.Fatalf("canceled fetch: apply=%v retry=%v", apply, retry)
+	}
+	empty := mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{Id: 1}).To_WebPage()
+	if apply, retry := pendingFetchOutcome(empty, nil); retry || apply != nil {
+		// apply is nil; commitPendingWebpage(nil page) writes webPageEmpty from the pending card.
+		t.Fatalf("NXDOMAIN empty page should finish now: apply=%v retry=%v", apply, retry)
+	}
+	if apply, retry := pendingFetchOutcome(nil, errors.New("no such host")); retry || apply != nil {
+		t.Fatalf("NXDOMAIN error should finish now: apply=%v retry=%v", apply, retry)
+	}
+}
+
+func TestPendingMessageTableOK(t *testing.T) {
+	if !pendingMessageTableOK("messages") || !pendingMessageTableOK("messages_3") {
+		t.Fatal("expected messages / messages_N to be allowed")
+	}
+	if pendingMessageTableOK("messages_pending") || pendingMessageTableOK("users") || pendingMessageTableOK("messages_") {
+		t.Fatal("rejected names were allowed")
+	}
+}
+
+func TestPendingOrphanScanBounds(t *testing.T) {
+	if pendingOrphanLookback < time.Hour || pendingOrphanLookback > 24*time.Hour {
+		t.Fatalf("lookback %s: want 1h–1d", pendingOrphanLookback)
+	}
+	if pendingOrphanLookback != 24*time.Hour {
+		t.Fatalf("lookback %s, want 24h", pendingOrphanLookback)
+	}
+	if pendingOrphanScanEvery < 10*time.Minute || pendingOrphanScanEvery > 15*time.Minute {
+		t.Fatalf("orphan interval %s: want 10–15min", pendingOrphanScanEvery)
+	}
+	if pendingSweepEvery != 15*time.Second {
+		t.Fatalf("due-job tick %s, want 15s", pendingSweepEvery)
+	}
+	if pendingSweepLimit != 100 {
+		t.Fatalf("batch limit %d, want 100", pendingSweepLimit)
+	}
+}
+
+func TestOrphanScanDueOnlyAtStartupAndInterval(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	if !orphanScanDue(time.Time{}, now) {
+		t.Fatal("startup must scan orphans")
+	}
+	if orphanScanDue(now, now.Add(pendingSweepEvery)) {
+		t.Fatal("15s due-job tick must not rescan messages")
+	}
+	if orphanScanDue(now, now.Add(pendingOrphanScanEvery-time.Second)) {
+		t.Fatal("scan fired before the 15m interval")
+	}
+	if !orphanScanDue(now, now.Add(pendingOrphanScanEvery)) {
+		t.Fatal("scan should fire at the 15m interval")
+	}
+}
+
+func TestSweepSkipsOrphanScanWhenNotDue(t *testing.T) {
+	store := withPendingJobStore(t)
+	const raw = "https://orphan-skip.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      71,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 71, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	calls := 0
+	prev := scanOrphanPendingJobs
+	scanOrphanPendingJobs = func(time.Time, time.Duration, int) []PendingWebpageJob {
+		calls++
+		return []PendingWebpageJob{stalePendingJob(71, time.Now().Add(-2*time.Minute))}
+	}
+	t.Cleanup(func() { scanOrphanPendingJobs = prev })
+
+	if n := c.sweepPendingWebpages(time.Now(), false); n != 0 {
+		t.Fatalf("cleared %d without an orphan scan", n)
+	}
+	if calls != 0 {
+		t.Fatalf("orphan hook called %d time(s) on a due-job-only tick", calls)
+	}
+	if len(edits.edits) != 0 {
+		t.Fatalf("edited without a job row: %#v", edits.edits)
+	}
+	if n := c.sweepPendingWebpages(time.Now(), true); n != 1 {
+		t.Fatalf("cleared %d, want 1 on an orphan tick", n)
+	}
+	if calls != 1 {
+		t.Fatalf("orphan hook calls %d, want 1", calls)
+	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), msg.GetMedia())
+	_ = store
 }
