@@ -11,12 +11,14 @@ import (
 )
 
 // stampHistoryTTL copies the dialog's auto-delete timer onto a message that
-// is about to be stored. Both the sender's box and the inbox copies share
-// this message value, so one stamp covers every participant.
+// is about to be stored. The outbox and inbox processes each call this
+// before they persist their own box. The inbox cannot rely on copying
+// ttl_period from the message object: that field may be missing after the
+// RPC from msg, which would leave the receiver's row at 0.
 //
-// A lookup that finds no timer leaves a period that was already set. The
-// inbox process persists the message the msg process already stamped and
-// must not clear it when its own lookup races the dialog write.
+// A lookup that finds no timer leaves a period that was already set, so a
+// later inbox lookup that races the dialog write does not clear a stamp
+// the outbox already applied.
 func (d *Dao) stampHistoryTTL(ctx context.Context, userID int64, peer *mtproto.PeerUtil, message *mtproto.Message) {
 	if d == nil || message == nil || peer == nil {
 		return

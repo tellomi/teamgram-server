@@ -122,24 +122,23 @@ func stampScope(ctx context.Context, d *dao.Dao, peerType int32, peerID, hint in
 			}
 		}
 	}
-	var actions []ttl.Action
-	for userID := range owners {
-		found, err := loadActions(ctx, d, userID, peerType, peerID)
-		if err != nil {
-			return 0, err
-		}
-		actions = append(actions, found...)
-	}
-	if len(actions) == 0 {
-		return 0, nil
-	}
 	var n int
 	for userID := range owners {
-		// Private chats store the other user as peer_id. Group rows all use the chat id.
+		// Private chats: the conversation peer is the other user. Group
+		// rows all use the chat id. Scan and stamp by dialog_id, because
+		// some inbox rows historically stored messages.peer_id as the
+		// box owner and a peer_id filter would miss them.
 		peer := peerID
 		ptype := peerType
 		if peerType == mtproto.PEER_USER && userID == peerID && hint > 0 {
 			peer = hint
+		}
+		actions, err := loadActions(ctx, d, userID, ptype, peer)
+		if err != nil {
+			return n, err
+		}
+		if len(actions) == 0 {
+			continue
 		}
 		stamped, err := stampUser(ctx, d, userID, ptype, peer, actions)
 		if err != nil {
@@ -158,7 +157,8 @@ type actionRow struct {
 func loadActions(ctx context.Context, d *dao.Dao, userID int64, peerType int32, peerID int64) ([]ttl.Action, error) {
 	var rows []actionRow
 	table := d.MessagesDAO.CalcTableName(userID)
-	err := d.DB.QueryRows(ctx, &rows, "select date2, message_data from "+table+" where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0 and message_data like '%messageActionSetMessagesTTL%'", userID, peerType, peerID)
+	d1, d2 := dialogIDs(userID, peerType, peerID)
+	err := d.DB.QueryRows(ctx, &rows, "select date2, message_data from "+table+" where user_id = ? and dialog_id1 = ? and dialog_id2 = ? and deleted = 0 and message_data like '%messageActionSetMessagesTTL%'", userID, d1, d2)
 	if err != nil {
 		return nil, err
 	}
@@ -181,13 +181,19 @@ type plainRow struct {
 	Date int64 `db:"date2"`
 }
 
+func dialogIDs(userID int64, peerType int32, peerID int64) (int64, int64) {
+	did := mtproto.MakeDialogId(userID, peerType, peerID)
+	return did.A, did.B
+}
+
 func stampUser(ctx context.Context, d *dao.Dao, userID int64, peerType int32, peerID int64, actions []ttl.Action) (int, error) {
 	table := d.MessagesDAO.CalcTableName(userID)
+	d1, d2 := dialogIDs(userID, peerType, peerID)
 	var n int
 	var after int32
 	for {
 		var rows []plainRow
-		err := d.DB.QueryRows(ctx, &rows, "select user_message_box_id, date2 from "+table+" where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0 and ttl_period = 0 and user_message_box_id > ? order by user_message_box_id limit 500", userID, peerType, peerID, after)
+		err := d.DB.QueryRows(ctx, &rows, "select user_message_box_id, date2 from "+table+" where user_id = ? and dialog_id1 = ? and dialog_id2 = ? and deleted = 0 and ttl_period = 0 and user_message_box_id > ? order by user_message_box_id limit 500", userID, d1, d2, after)
 		if err != nil {
 			return n, err
 		}
