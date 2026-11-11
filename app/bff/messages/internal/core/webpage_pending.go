@@ -25,7 +25,15 @@ const pendingCommitTimeout = 10 * time.Second
 
 // pendingOrphanLookback bounds the no-job-row recovery scan. Cards older
 // than pendingWebpageMaxAge inside this window can be retried with EditHide.
-const pendingOrphanLookback = 7 * 24 * time.Hour
+// Kept to one day: production EXPLAIN on messages is a table scan (no
+// date2-leading index; the only date2 key is messages_ttl_due (ttl_period,
+// date2)), so a 7-day LIKE '%webPagePending%' every 15s would not hold at
+// 100k-user scale.
+const pendingOrphanLookback = 24 * time.Hour
+
+// pendingOrphanScanEvery is how often the messages table is scanned for
+// orphans. Due jobs still use pendingSweepEvery and the created_unix index.
+const pendingOrphanScanEvery = 15 * time.Minute
 
 type pendingCommitStatus int
 
@@ -235,11 +243,17 @@ func (c *MessagesCore) commitPendingWebpage(ctx context.Context, job PendingWebp
 }
 
 func (c *MessagesCore) sweepStalePendingWebpages(now time.Time) int {
+	return c.sweepPendingWebpages(now, true)
+}
+
+func (c *MessagesCore) sweepPendingWebpages(now time.Time, scanOrphans bool) int {
 	// Ensure first so Due sees stored attempts and skips tombstones.
 	// Raw orphan rows are not merged: an orphan hook would otherwise
 	// reintroduce a capped job with Attempts=0 and loop forever.
-	for _, job := range orphanPendingJobs(now) {
-		ensurePendingJob(job)
+	if scanOrphans {
+		for _, job := range orphanPendingJobs(now) {
+			ensurePendingJob(job)
+		}
 	}
 	jobs := duePendingJobs(now)
 	cleared := 0
@@ -307,11 +321,20 @@ func mergePendingJobs(due, orphans []PendingWebpageJob) []PendingWebpageJob {
 	return out
 }
 
+// orphanScanDue is true on the first (startup) call and then once every
+// pendingOrphanScanEvery. 15s job ticks must not scan messages.
+func orphanScanDue(last, now time.Time) bool {
+	if last.IsZero() {
+		return true
+	}
+	return !now.Before(last.Add(pendingOrphanScanEvery))
+}
+
 // StartPendingWebpageSweep runs once at startup and then on a ticker.
-// Jobs older than pendingWebpageMaxAge (60s) are cleared with EditHide,
-// so a restart that drops an in-flight goroutine cannot leave
-// webPagePending on a message forever. Each tick is limited to
-// pendingSweepLimit rows, using the created_unix index.
+// Due jobs older than pendingWebpageMaxAge (60s) are cleared with EditHide
+// every pendingSweepEvery, limited to pendingSweepLimit rows, using the
+// created_unix index. The messages orphan scan (LIKE '%webPagePending%')
+// runs only at startup and every pendingOrphanScanEvery.
 func StartPendingWebpageSweep(ctx context.Context, run func(now time.Time) int) {
 	if run == nil {
 		return
@@ -340,8 +363,13 @@ func (c *MessagesCore) startPendingWebpageSweep(ctx context.Context) {
 	if c == nil {
 		return
 	}
+	var lastOrphan time.Time
 	StartPendingWebpageSweep(ctx, func(now time.Time) int {
-		n := c.sweepStalePendingWebpages(now)
+		scanOrphans := orphanScanDue(lastOrphan, now)
+		if scanOrphans {
+			lastOrphan = now
+		}
+		n := c.sweepPendingWebpages(now, scanOrphans)
 		if n > 0 {
 			logx.Infof("pending webpage sweep cleared %d stale card(s)", n)
 		}

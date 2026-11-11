@@ -669,3 +669,75 @@ func TestPendingMessageTableOK(t *testing.T) {
 		t.Fatal("rejected names were allowed")
 	}
 }
+
+func TestPendingOrphanScanBounds(t *testing.T) {
+	if pendingOrphanLookback < time.Hour || pendingOrphanLookback > 24*time.Hour {
+		t.Fatalf("lookback %s: want 1h–1d", pendingOrphanLookback)
+	}
+	if pendingOrphanLookback != 24*time.Hour {
+		t.Fatalf("lookback %s, want 24h", pendingOrphanLookback)
+	}
+	if pendingOrphanScanEvery < 10*time.Minute || pendingOrphanScanEvery > 15*time.Minute {
+		t.Fatalf("orphan interval %s: want 10–15min", pendingOrphanScanEvery)
+	}
+	if pendingSweepEvery != 15*time.Second {
+		t.Fatalf("due-job tick %s, want 15s", pendingSweepEvery)
+	}
+	if pendingSweepLimit != 100 {
+		t.Fatalf("batch limit %d, want 100", pendingSweepLimit)
+	}
+}
+
+func TestOrphanScanDueOnlyAtStartupAndInterval(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	if !orphanScanDue(time.Time{}, now) {
+		t.Fatal("startup must scan orphans")
+	}
+	if orphanScanDue(now, now.Add(pendingSweepEvery)) {
+		t.Fatal("15s due-job tick must not rescan messages")
+	}
+	if orphanScanDue(now, now.Add(pendingOrphanScanEvery-time.Second)) {
+		t.Fatal("scan fired before the 15m interval")
+	}
+	if !orphanScanDue(now, now.Add(pendingOrphanScanEvery)) {
+		t.Fatal("scan should fire at the 15m interval")
+	}
+}
+
+func TestSweepSkipsOrphanScanWhenNotDue(t *testing.T) {
+	store := withPendingJobStore(t)
+	const raw = "https://orphan-skip.example/"
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      71,
+		Message: raw,
+		Media:   chatboxPending(t, raw),
+	}).To_Message()
+	boxes := &pendingBoxes{box: &mtproto.MessageBox{UserId: 7, MessageId: 71, SenderUserId: 7, Message: msg}}
+	edits := &pendingEdits{}
+	c := New(context.Background(), &svc.ServiceContext{Dao: &dao.Dao{MessageClient: boxes, MsgClient: edits}})
+	calls := 0
+	prev := scanOrphanPendingJobs
+	scanOrphanPendingJobs = func(time.Time, time.Duration, int) []PendingWebpageJob {
+		calls++
+		return []PendingWebpageJob{stalePendingJob(71, time.Now().Add(-2*time.Minute))}
+	}
+	t.Cleanup(func() { scanOrphanPendingJobs = prev })
+
+	if n := c.sweepPendingWebpages(time.Now(), false); n != 0 {
+		t.Fatalf("cleared %d without an orphan scan", n)
+	}
+	if calls != 0 {
+		t.Fatalf("orphan hook called %d time(s) on a due-job-only tick", calls)
+	}
+	if len(edits.edits) != 0 {
+		t.Fatalf("edited without a job row: %#v", edits.edits)
+	}
+	if n := c.sweepPendingWebpages(time.Now(), true); n != 1 {
+		t.Fatalf("cleared %d, want 1 on an orphan tick", n)
+	}
+	if calls != 1 {
+		t.Fatalf("orphan hook calls %d, want 1", calls)
+	}
+	wantEmptyWebpage(t, edits.edits[0].GetNewMessage().GetMessage(), msg.GetMedia())
+	_ = store
+}
