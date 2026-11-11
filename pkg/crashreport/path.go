@@ -9,8 +9,13 @@ import (
 )
 
 var (
-	deviceRE = regexp.MustCompile(`(?i)\b(iphone(?:\d+,?\d*)?|ipad(?:\d+,?\d*)?|ios[\d.]{0,8}|android[\d.]{0,8})\b`)
-	appRE    = regexp.MustCompile(`(?i)(?:\bapp[=: ]+|\btellomi[-/ ])([0-9]+(?:\.[0-9]+){1,3})`)
+	// deviceAssignRE / appAssignRE prefer the caption fields the iOS client
+	// sends: "app=<version> device=<device>". The looser patterns still run
+	// when those labels are absent.
+	deviceAssignRE = regexp.MustCompile(`(?i)\bdevice[=: ]+([^\s]+)`)
+	appAssignRE    = regexp.MustCompile(`(?i)\bapp[=: ]+([0-9]+(?:\.[0-9]+){1,3})`)
+	deviceRE       = regexp.MustCompile(`(?i)\b(iphone(?:\d+,?\d*)?|ipad(?:\d+,?\d*)?|ios[\d.]{0,8}|android[\d.]{0,8})\b`)
+	appRE          = regexp.MustCompile(`(?i)(?:\bapp[=: ]+|\btellomi[-/ ])([0-9]+(?:\.[0-9]+){1,3})`)
 )
 
 // ObjectPath is the key inside the crash-reports class:
@@ -71,13 +76,20 @@ func safeName(name string) string {
 }
 
 // Hints pulls a short device and app token out of the filename, caption, and
-// message. Empty strings mean nothing matched; the raw fields are still stored.
+// message. Explicit app= / device= caption fields win over a token found in
+// the filename (Tellomi-iOS-<version>-crash.zip would otherwise report "iOS"
+// and hide "iPhone15,2"). Empty strings mean nothing matched; the raw fields
+// are still stored.
 func Hints(filename, caption, message string) (device, app string) {
 	blob := filename + "\n" + caption + "\n" + message
-	if m := deviceRE.FindStringSubmatch(blob); len(m) > 1 {
+	if m := deviceAssignRE.FindStringSubmatch(blob); len(m) > 1 {
+		device = trimHint(m[1])
+	} else if m := deviceRE.FindStringSubmatch(blob); len(m) > 1 {
 		device = trimHint(m[1])
 	}
-	if m := appRE.FindStringSubmatch(blob); len(m) > 1 {
+	if m := appAssignRE.FindStringSubmatch(blob); len(m) > 1 {
+		app = trimHint(m[1])
+	} else if m := appRE.FindStringSubmatch(blob); len(m) > 1 {
 		app = trimHint(m[1])
 	}
 	return device, app

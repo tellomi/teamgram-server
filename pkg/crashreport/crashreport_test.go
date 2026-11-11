@@ -31,6 +31,12 @@ func TestObjectPathAndHints(t *testing.T) {
 	if app != "14.0.3" {
 		t.Fatalf("app %q", app)
 	}
+	// The iOS client sends this exact document shape. The filename contains
+	// "iOS" and the version, but the caption's device=/app= fields win.
+	device, app = Hints("Tellomi-iOS-14.0.3-crash.zip", "app=14.0.3 device=iPhone15,2", "")
+	if device != "iPhone15,2" || app != "14.0.3" {
+		t.Fatalf("ios zip hints device %q app %q", device, app)
+	}
 	if d, a := Hints("note.txt", "hello", ""); d != "" || a != "" {
 		t.Fatalf("plain hints %q %q", d, a)
 	}
@@ -219,6 +225,43 @@ func TestOverCapSkipsCopy(t *testing.T) {
 	}
 	if objs.copies != 1 || saved.Status != StatusStored || saved.StorageKey == "" || saved.FileSize != 40 {
 		t.Fatalf("copies %d row %+v", objs.copies, saved)
+	}
+}
+
+func TestCaptureIOSCrashZipShape(t *testing.T) {
+	const (
+		name    = "Tellomi-iOS-14.0.3-crash.zip"
+		caption = "app=14.0.3 device=iPhone15,2"
+	)
+	objs := &countObjects{}
+	var saved Row
+	s := &Service{
+		objects: objs,
+		docs: func(context.Context, int64) (docSource, error) {
+			return docSource{Class: "documents", Path: "1.dat", Size: 27, Name: name, Mime: "application/zip"}, nil
+		},
+		saveRow: func(_ context.Context, row Row) error {
+			saved = row
+			return nil
+		},
+	}
+	in := Incoming{
+		SenderID:   9,
+		MsgID:      11,
+		When:       time.Date(2026, 11, 11, 5, 0, 0, 0, time.UTC),
+		Text:       caption,
+		Filename:   name,
+		Mime:       "application/zip",
+		DocumentID: 55,
+	}
+	if err := s.capture(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if objs.copies != 1 || objs.puts != 0 {
+		t.Fatalf("copies %d puts %d", objs.copies, objs.puts)
+	}
+	if saved.Kind != "document" || saved.Filename != name || saved.ContentType != "application/zip" || saved.Caption != caption || saved.Message != caption || saved.App != "14.0.3" || saved.Device != "iPhone15,2" || saved.FileSize != 27 || saved.Status != StatusStored || saved.StorageKey != "crash-reports/2026/11/11/9/11_Tellomi-iOS-14.0.3-crash.zip" {
+		t.Fatalf("row %+v", saved)
 	}
 }
 

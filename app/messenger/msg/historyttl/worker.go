@@ -181,7 +181,10 @@ func deleteUser(ctx context.Context, d *dao.Dao, userID int64, list []historyttl
 	}
 	byDialog := map[[2]int64][]historyttl.Box{}
 	for _, box := range list {
-		byDialog[[2]int64{int64(box.PeerType), box.PeerID}] = append(byDialog[[2]int64{int64(box.PeerType), box.PeerID}], box)
+		row := raw[[2]int64{box.UserID, int64(box.BoxID)}]
+		// Group by dialog_id. Inbox rows may have messages.peer_id set to
+		// the box owner, which would mix every private chat into one bucket.
+		byDialog[[2]int64{row.Dialog1, row.Dialog2}] = append(byDialog[[2]int64{row.Dialog1, row.Dialog2}], box)
 	}
 	for _, boxes := range byDialog {
 		row := raw[[2]int64{boxes[0].UserID, int64(boxes[0].BoxID)}]
@@ -205,8 +208,29 @@ func deleteUser(ctx context.Context, d *dao.Dao, userID int64, list []historyttl
 	return int(affected), nil
 }
 
+// dialogPeer is the conversation peer used to look up dialogs. Prefer
+// dialog_id1/dialog_id2: they are what getHistory uses, and they stay
+// correct when an inbox row's messages.peer_id was written as the
+// recipient (the box owner).
+func dialogPeer(userID int64, box historyttl.Box, dialog1, dialog2 int64) (int32, int64) {
+	if dialog1 != 0 || dialog2 != 0 {
+		did := mtproto.DialogID{A: dialog1, B: dialog2}
+		if did.A < 0 {
+			if box.PeerType != 0 {
+				return box.PeerType, did.B
+			}
+			return mtproto.PEER_CHAT, did.B
+		}
+		return mtproto.PEER_USER, mtproto.GetPeerIdByDialogId(userID, did)
+	}
+	if box.PeerType == mtproto.PEER_USER && box.PeerID == userID && box.SenderID != 0 && box.SenderID != userID {
+		return box.PeerType, box.SenderID
+	}
+	return box.PeerType, box.PeerID
+}
+
 func fixDialog(ctx context.Context, d *dao.Dao, userID int64, boxes []historyttl.Box, dialog1, dialog2 int64) error {
-	peerType, peerID := boxes[0].PeerType, boxes[0].PeerID
+	peerType, peerID := dialogPeer(userID, boxes[0], dialog1, dialog2)
 	headDO, err := d.DialogsDAO.SelectDialog(ctx, userID, peerType, peerID)
 	if err != nil || headDO == nil {
 		return err

@@ -44,6 +44,42 @@ func TestNoteCrashReportCapturesBotPeer(t *testing.T) {
 	}
 }
 
+func TestNoteCrashReportCapturesIOSZipShape(t *testing.T) {
+	var got crashreport.Incoming
+	var calls int
+	prev := saveCrash
+	saveCrash = func(_ context.Context, in crashreport.Incoming) error {
+		calls++
+		got = in
+		return nil
+	}
+	t.Cleanup(func() { saveCrash = prev })
+
+	const (
+		name    = "Tellomi-iOS-14.0.3-crash.zip"
+		caption = "app=14.0.3 device=iPhone15,2"
+	)
+	doc := mtproto.MakeTLDocument(&mtproto.Document{
+		Id:       55,
+		MimeType: "application/zip",
+		Attributes: []*mtproto.DocumentAttribute{
+			mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{FileName: name}).To_DocumentAttribute(),
+		},
+	}).To_Document()
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Id:      7,
+		Date:    1700000000,
+		Message: caption,
+		Media: mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{
+			Document: doc,
+		}).To_MessageMedia(),
+	}).To_Message()
+	noteCrashReports(context.Background(), 9, &mtproto.PeerUtil{PeerType: mtproto.PEER_USER, PeerId: crashreport.AccountID}, msg, nil)
+	if calls != 1 || got.SenderID != 9 || got.MsgID != 7 || got.DocumentID != 55 || got.Filename != name || got.Mime != "application/zip" || got.Text != caption {
+		t.Fatalf("calls %d %+v", calls, got)
+	}
+}
+
 func TestAlbumSendsAreCapturedEvenWhenStoreFails(t *testing.T) {
 	var ids []int32
 	prev := saveCrash

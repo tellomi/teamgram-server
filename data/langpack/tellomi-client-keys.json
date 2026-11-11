@@ -463,6 +463,12 @@
         "Moments.Settings.Personalized",
         "Moments.Settings.PersonalizedInfo",
         "Moments.Settings.Recommendations"
+      ],
+      "pr:166": [
+        "CrashReport.Prompt.Title",
+        "CrashReport.Prompt.Text",
+        "CrashReport.Prompt.NotNow",
+        "CrashReport.Prompt.Send"
       ]
     }
   }
