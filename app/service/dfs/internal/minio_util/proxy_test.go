@@ -16,6 +16,102 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
+func TestReviewUnsetProxyIgnoresProcessEnv(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://10.1.2.3:3128")
+	t.Setenv("HTTPS_PROXY", "http://10.1.2.3:3128")
+	t.Setenv("http_proxy", "http://10.1.2.3:3128")
+	t.Setenv("https_proxy", "http://10.1.2.3:3128")
+	base, err := minio.DefaultTransport(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, err := applyObjectHTTPProxy(base, "", "account.r2.cloudflarestorage.com", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := rt.(*http.Transport)
+	req, err := http.NewRequest(http.MethodGet, "https://account.r2.cloudflarestorage.com/bucket/key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Proxy != nil {
+		u, perr := tr.Proxy(req)
+		if perr != nil || u != nil {
+			t.Fatalf("empty config selected process proxy %v %v", u, perr)
+		}
+	}
+}
+
+func TestReviewHTTPSProxyNeverGetsPlaintext(t *testing.T) {
+	_, err := parseObjectProxy("https://user:s3cret@10.0.0.8:3128")
+	if err == nil {
+		t.Fatal("https proxy accepted")
+	}
+	if strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "user:") {
+		t.Fatalf("credentials in error: %v", err)
+	}
+}
+
+func TestReviewInvalidProxyRedaction(t *testing.T) {
+	raw := "http://user:s3cret@example.test"
+	_, err := parseObjectProxy(raw)
+	if err == nil {
+		t.Fatal("proxy without a port accepted")
+	}
+	if strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "user:s3cret") {
+		t.Fatalf("credentials in error: %v", err)
+	}
+	got := redactProxy("ftp://user:s3cret@example.test:9")
+	if strings.Contains(got, "s3cret") {
+		t.Fatalf("redacted %s", got)
+	}
+}
+
+func TestReviewProxyRejectsUnconfiguredHost(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var accepted atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			c.Close()
+		}
+	}()
+	base, err := minio.DefaultTransport(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		d := net.Dialer{Timeout: time.Second}
+		return d.DialContext(ctx, network, addr)
+	}
+	rt, err := applyObjectHTTPProxy(base, "http://"+ln.Addr().String(), "account.r2.cloudflarestorage.com", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := rt.(*http.Transport)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = tr.DialContext(ctx, "tcp", "evil.example:443")
+	if err == nil {
+		t.Fatal("unexpected target was dialed")
+	}
+	if accepted.Load() != 0 {
+		t.Fatalf("proxy accepted %d connections", accepted.Load())
+	}
+	_, _ = tr.DialContext(ctx, "tcp", "account.r2.cloudflarestorage.com:443")
+	if accepted.Load() == 0 {
+		t.Fatal("configured endpoint did not reach the proxy")
+	}
+}
+
 func TestObjectProxyUnsetIgnoresProcessProxy(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	t.Setenv("http_proxy", "http://127.0.0.1:1")

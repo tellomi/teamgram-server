@@ -14,23 +14,34 @@ import (
 )
 
 // applyObjectHTTPProxy sends this transport's TCP connections through raw
-// with HTTP CONNECT. An empty raw leaves the transport unchanged, so the
-// endpoint is dialed directly. The process HTTP_PROXY environment is not
-// read and http.DefaultTransport is not modified.
+// with HTTP CONNECT. An empty raw dials endpoint directly and does not
+// consult HTTP_PROXY or HTTPS_PROXY. http.DefaultTransport is not modified.
 //
-// The proxy is dialed instead of the origin. CONNECT failure and the
-// connect deadline are returned to the caller. There is no direct-dial
-// fallback. TLS and the signed Host header still name the origin: the
-// proxy only sees the CONNECT target.
-func applyObjectHTTPProxy(rt http.RoundTripper, raw string) (http.RoundTripper, error) {
+// The proxy is dialed instead of the origin, and only for that configured
+// endpoint. Any other address is refused before a CONNECT is written.
+// CONNECT failure and the connect deadline are returned to the caller.
+// There is no direct-dial fallback. TLS and the signed Host header still
+// name the origin: the proxy only sees the CONNECT target.
+func applyObjectHTTPProxy(rt http.RoundTripper, raw, endpoint string, useSSL bool) (http.RoundTripper, error) {
 	proxy, err := parseObjectProxy(raw)
-	if err != nil || proxy == nil {
-		return rt, err
+	if err != nil {
+		return nil, err
 	}
 	base, ok := rt.(*http.Transport)
 	if !ok || base == nil {
+		if proxy == nil {
+			return rt, nil
+		}
 		return nil, fmt.Errorf("%s requires the object storage HTTP transport", EnvHTTPProxy)
 	}
+	// DefaultTransport.Proxy is ProxyFromEnvironment. Leaving it in place
+	// would send a remote endpoint through the process proxy even when this
+	// setting is empty. nil means dial the endpoint directly.
+	base.Proxy = nil
+	if proxy == nil {
+		return base, nil
+	}
+	allowed := objectAddr(endpoint, useSSL)
 	dial := base.DialContext
 	if dial == nil {
 		dial = (&net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second}).DialContext
@@ -41,10 +52,12 @@ func applyObjectHTTPProxy(rt http.RoundTripper, raw string) (http.RoundTripper, 
 	}
 	// Transport.Proxy would send cleartext requests to the proxy in
 	// absolute form and would use a one-minute CONNECT deadline. Dialing
-	// the proxy ourselves keeps one path for http and https and lets the
-	// handshake timeout bound CONNECT.
-	base.Proxy = nil
+	// the proxy ourselves keeps one path and lets the handshake timeout
+	// bound CONNECT.
 	base.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if !sameEndpoint(addr, allowed) {
+			return nil, fmt.Errorf("object storage proxy refused unexpected target")
+		}
 		conn, err := dial(ctx, network, proxy.Host)
 		if err != nil {
 			return nil, err
@@ -100,24 +113,76 @@ func parseObjectProxy(raw string) (*url.URL, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.Hostname() == "" {
-		return nil, fmt.Errorf("invalid %s %q", EnvHTTPProxy, strings.TrimSpace(raw))
+		return nil, fmt.Errorf("invalid %s %s", EnvHTTPProxy, redactProxy(raw))
 	}
 	switch u.Scheme {
-	case "http", "https":
+	case "http":
+	case "https":
+		return nil, fmt.Errorf("invalid %s %s: https proxies are refused so proxy credentials are not sent in cleartext; use http://host:port", EnvHTTPProxy, redactProxy(raw))
 	default:
-		return nil, fmt.Errorf("invalid %s %q: scheme must be http or https", EnvHTTPProxy, strings.TrimSpace(raw))
+		return nil, fmt.Errorf("invalid %s %s: scheme must be http", EnvHTTPProxy, redactProxy(raw))
 	}
 	if u.Port() == "" {
-		return nil, fmt.Errorf("invalid %s %q: port is required", EnvHTTPProxy, strings.TrimSpace(raw))
+		return nil, fmt.Errorf("invalid %s %s: port is required", EnvHTTPProxy, redactProxy(raw))
 	}
 	return u, nil
 }
 
-func redactProxy(raw string) string {
-	u, err := parseObjectProxy(raw)
-	if err != nil || u == nil || u.User == nil {
-		return strings.TrimSpace(raw)
+func objectAddr(endpoint string, useSSL bool) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return ""
 	}
-	u.User = url.User("***")
-	return u.String()
+	if strings.Contains(endpoint, "://") {
+		if u, err := url.Parse(endpoint); err == nil && u.Host != "" {
+			endpoint = u.Host
+		}
+	}
+	if _, _, err := net.SplitHostPort(endpoint); err == nil {
+		return endpoint
+	}
+	if useSSL {
+		return net.JoinHostPort(endpoint, "443")
+	}
+	return net.JoinHostPort(endpoint, "80")
+}
+
+func sameEndpoint(addr, allowed string) bool {
+	if addr == "" || allowed == "" {
+		return false
+	}
+	return addr == allowed
+}
+
+func redactProxy(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	candidate := raw
+	if !strings.Contains(candidate, "://") {
+		candidate = "http://" + candidate
+	}
+	if u, err := url.Parse(candidate); err == nil && u.User != nil {
+		u.User = url.User("redacted")
+		out := u.String()
+		if !strings.Contains(raw, "://") {
+			out = strings.TrimPrefix(out, "http://")
+		}
+		return out
+	}
+	return maskUserinfo(raw)
+}
+
+func maskUserinfo(raw string) string {
+	prefix := ""
+	rest := raw
+	if i := strings.Index(raw, "://"); i >= 0 {
+		prefix = raw[:i+3]
+		rest = raw[i+3:]
+	}
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		return prefix + "redacted@" + rest[at+1:]
+	}
+	return raw
 }

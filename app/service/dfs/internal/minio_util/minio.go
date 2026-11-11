@@ -118,7 +118,7 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		transport = base
 	}
 	var err error
-	transport, err = applyObjectHTTPProxy(transport, cfg.HTTPProxy)
+	transport, err = applyObjectHTTPProxy(transport, cfg.HTTPProxy, cfg.Endpoint, cfg.UseSSL)
 	if err != nil {
 		return nil, err
 	}

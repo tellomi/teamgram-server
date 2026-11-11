@@ -158,12 +158,20 @@ encryption headers from MinIO's `encrypt` package are not sent; secret-chat
 files are already encrypted by the client.
 
 `TELLOMI_S3_HTTP_PROXY` (or the yaml `HTTPProxy` field) installs an HTTP
-CONNECT proxy on that client's `http.Transport` only. The Host header, TLS
-certificate check, and SigV4 signature stay aimed at the configured endpoint.
-A refused CONNECT or a timeout is returned; the client does not dial the
-endpoint directly when a proxy is set. Unset, the transport is the same as
-before. Push, AI, link preview, and any client that builds its own
-`minio.New` are not affected. Link preview keeps `TELLOMI_MINIO_*`.
+CONNECT proxy on that client's `http.Transport` only. The value is `host:port`
+or `http://host:port`. `https://` is refused so a proxy password is not written
+onto a cleartext socket. Parse errors and startup logs drop userinfo.
+CONNECT is sent only to the configured endpoint host and port; another target
+is rejected before the proxy is dialed. The Host header, TLS certificate
+check, and SigV4 signature stay aimed at that endpoint. A refused CONNECT or
+a timeout is returned; the client does not dial the endpoint directly when a
+proxy is set. Empty does not read `HTTP_PROXY` or `HTTPS_PROXY`. Push, AI,
+link preview, and any client that builds its own `minio.New` are not affected.
+Link preview keeps `TELLOMI_MINIO_*`.
+
+Production sets `TELLOMI_S3_HTTP_PROXY=http://172.19.44.222:3128` on the dfs
+process only. Do not set a process-wide `HTTP_PROXY`. The proxy ACL still has
+to allow only this account's R2 hostname and port. There is no database migration.
 
 ## Download cache
 

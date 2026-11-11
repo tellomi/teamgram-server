@@ -78,8 +78,9 @@ type MinioConfig struct {
 
 	PublicMediaBaseURL string `json:",optional"`
 	AttachmentsBaseURL string `json:",optional"`
-	// HTTPProxy is host:port or an http(s) URL. Empty dials the endpoint
-	// directly. TELLOMI_S3_HTTP_PROXY overrides it. Only this S3 client uses it.
+	// HTTPProxy is host:port or an http:// URL. Empty dials the endpoint
+	// directly and does not read HTTP_PROXY. https:// is refused.
+	// TELLOMI_S3_HTTP_PROXY overrides it. Only this S3 client uses it.
 	HTTPProxy string `json:",optional"`
 
 	// BucketProbeAttempts is how many times startup checks each bucket.
