@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,10 @@ import (
 const (
 	defaultChunkMemBytes  int64 = 64 << 20
 	defaultChunkDiskBytes int64 = 512 << 20
+	// defaultChunkCacheDir is on the host data volume so a container
+	// replace does not wipe the disk LRU. /tmp is the overlay and
+	// starts empty after every deploy.
+	defaultChunkCacheDir = "/data/tellomi/dfs-chunk-cache"
 	// diskChunkMin is the smallest chunk worth a file. Smaller reads stay
 	// in the memory LRU only.
 	diskChunkMin = 32 << 10
@@ -71,14 +76,17 @@ type chunkCall struct {
 	err  error
 }
 
+func chunkCacheDirFromEnv() string {
+	if dir := os.Getenv("TELLOMI_DFS_CHUNK_CACHE_DIR"); dir != "" {
+		return dir
+	}
+	return defaultChunkCacheDir
+}
+
 func newChunkCacheFromEnv() *chunkCache {
 	mem := envBytes("TELLOMI_DFS_CHUNK_CACHE_MEM", defaultChunkMemBytes)
 	disk := envBytes("TELLOMI_DFS_CHUNK_CACHE_DISK", defaultChunkDiskBytes)
-	dir := os.Getenv("TELLOMI_DFS_CHUNK_CACHE_DIR")
-	if dir == "" {
-		dir = filepath.Join(os.TempDir(), "tellomi-dfs-chunk-cache")
-	}
-	return newChunkCache(mem, disk, dir)
+	return newChunkCache(mem, disk, chunkCacheDirFromEnv())
 }
 
 func newChunkCache(memCap, diskCap int64, dir string) *chunkCache {
@@ -97,6 +105,8 @@ func newChunkCache(memCap, diskCap int64, dir string) *chunkCache {
 	if diskCap > 0 && dir != "" {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			c.diskCap = 0
+		} else {
+			c.loadDisk()
 		}
 	}
 	if c.memCap <= 0 && c.diskCap <= 0 {
@@ -200,9 +210,7 @@ func (c *chunkCache) get(key string) ([]byte, bool) {
 		c.disk.Remove(el)
 		delete(c.diskIdx, key)
 		c.diskBytes -= ent.size
-		if ent.name != "" {
-			_ = os.Remove(ent.name)
-		}
+		removeDiskFile(ent.name)
 		return nil, false
 	}
 	c.addMemLocked(key, data)
@@ -258,6 +266,10 @@ func (c *chunkCache) addDiskLocked(key string, data []byte) {
 		_ = os.Remove(tmp)
 		return
 	}
+	if err := os.WriteFile(name+".key", []byte(key), 0o600); err != nil {
+		_ = os.Remove(name)
+		return
+	}
 	el := c.disk.PushFront(&diskEntry{key: key, name: name, size: int64(len(data))})
 	c.diskIdx[key] = el
 	c.diskBytes += int64(len(data))
@@ -267,7 +279,66 @@ func (c *chunkCache) addDiskLocked(key string, data []byte) {
 		c.disk.Remove(back)
 		delete(c.diskIdx, ent.key)
 		c.diskBytes -= ent.size
-		_ = os.Remove(ent.name)
+		removeDiskFile(ent.name)
+	}
+}
+
+func removeDiskFile(name string) {
+	if name == "" {
+		return
+	}
+	_ = os.Remove(name)
+	_ = os.Remove(name + ".key")
+}
+
+// loadDisk rebuilds the disk LRU from files left by a previous process
+// so a redeploy can keep serving cached ranges without going back to R2.
+// Files are named sha256(key); the original key is in the sibling .key file.
+func (c *chunkCache) loadDisk() {
+	ents, err := os.ReadDir(c.dir)
+	if err != nil {
+		return
+	}
+	type item struct {
+		key, name string
+		size      int64
+		mod       time.Time
+	}
+	var items []item
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".key") {
+			continue
+		}
+		dataPath := filepath.Join(c.dir, name)
+		keyb, err := os.ReadFile(dataPath + ".key")
+		if err != nil || len(keyb) == 0 {
+			continue
+		}
+		st, err := e.Info()
+		if err != nil || st.Size() < diskChunkMin || st.Size() > c.diskCap {
+			continue
+		}
+		items = append(items, item{key: string(keyb), name: dataPath, size: st.Size(), mod: st.ModTime()})
+	}
+	// Oldest first, PushFront, so the newest entry ends at the front.
+	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, it := range items {
+		if _, ok := c.diskIdx[it.key]; ok {
+			continue
+		}
+		if c.diskBytes+it.size > c.diskCap {
+			removeDiskFile(it.name)
+			continue
+		}
+		el := c.disk.PushFront(&diskEntry{key: it.key, name: it.name, size: it.size})
+		c.diskIdx[it.key] = el
+		c.diskBytes += it.size
 	}
 }
 
@@ -343,9 +414,7 @@ func (c *chunkCache) forgetPath(class, path string) {
 		c.disk.Remove(el)
 		delete(c.diskIdx, key)
 		c.diskBytes -= ent.size
-		if ent.name != "" {
-			_ = os.Remove(ent.name)
-		}
+		removeDiskFile(ent.name)
 	}
 }
 

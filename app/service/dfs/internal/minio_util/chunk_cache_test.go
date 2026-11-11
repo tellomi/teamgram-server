@@ -3,6 +3,7 @@ package minio_util
 import (
 	"bytes"
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -194,3 +195,39 @@ func TestStickerClassIsCacheable(t *testing.T) {
 }
 
 func osNotFound() error { return ErrNotFound }
+
+func TestChunkCacheDiskSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	const n = 36 << 10
+	big := bytes.Repeat([]byte("r"), n)
+	key := chunkKey(ClassPhotos, "y/restart.dat", 0, 1024)
+	c1 := newChunkCache(40<<10, 1<<20, dir)
+	if _, err := c1.getOrLoad(context.Background(), key, func(context.Context) ([]byte, error) {
+		return big, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c2 := newChunkCache(40<<10, 1<<20, dir)
+	loads := 0
+	got, err := c2.getOrLoad(context.Background(), key, func(context.Context) ([]byte, error) {
+		loads++
+		return []byte("should-not-load"), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loads != 0 || !bytes.Equal(got, big) {
+		t.Fatalf("restart disk hit loads=%d got %d bytes", loads, len(got))
+	}
+}
+
+func TestChunkCacheDirDefaultsUnderData(t *testing.T) {
+	t.Setenv("TELLOMI_DFS_CHUNK_CACHE_DIR", "")
+	if got := chunkCacheDirFromEnv(); got != defaultChunkCacheDir || !strings.HasPrefix(got, "/data/") {
+		t.Fatalf("default dir %q", got)
+	}
+	t.Setenv("TELLOMI_DFS_CHUNK_CACHE_DIR", "/tmp/custom")
+	if got := chunkCacheDirFromEnv(); got != "/tmp/custom" {
+		t.Fatalf("override %q", got)
+	}
+}
