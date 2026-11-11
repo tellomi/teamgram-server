@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 // DfsUploadDocumentFileV2
@@ -217,6 +218,7 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
 		claim.Reused = false
 	}
+	uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size)
 	if !claim.Reused {
 		c.svcCtx.Dao.SetCacheFileInfo(c.ctx, documentId, r.DfsFileInfo)
 	}

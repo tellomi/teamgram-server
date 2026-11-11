@@ -4,77 +4,122 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
 )
 
-func TestSamePartRetryIsIdempotent(t *testing.T) {
-	l := New(Limits{Network: 100, Window: time.Hour})
-	fresh, err := l.ChargePart(7, 9, 0, 40)
-	if err != nil || !fresh {
-		t.Fatal(err, fresh)
+func TestRetryAndChangedBytesBothCount(t *testing.T) {
+	l := New(Limits{Network: 200, Window: time.Hour})
+	if err := l.ChargeNetwork(7, 40); err != nil {
+		t.Fatal(err)
 	}
-	fresh, err = l.ChargePart(7, 9, 0, 40)
-	if err != nil || fresh {
-		t.Fatal(err, fresh)
+	if err := l.ChargeNetwork(7, 40); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.ChargeNetwork(7, 50); err != nil {
+		t.Fatal(err)
+	}
+	if l.Book(7).Network != 130 {
+		t.Fatalf("%+v", l.Book(7))
+	}
+}
+
+func TestReviewOldPartMustBeMeteredAfterWindow(t *testing.T) {
+	l := New(Limits{Network: 50, Window: time.Hour})
+	now := time.Unix(1_700_000_000, 0)
+	l.now = func() time.Time { return now }
+	if err := l.ChargeNetwork(7, 40); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Hour)
+	if err := l.ChargeNetwork(7, 40); err != nil {
+		t.Fatalf("old part was not metered again: %v book=%+v", err, l.Book(7))
 	}
 	if l.Book(7).Network != 40 {
 		t.Fatalf("%+v", l.Book(7))
 	}
 }
 
-func TestChangedBytesChargeAgain(t *testing.T) {
-	l := New(Limits{Network: 100, Window: time.Hour})
-	if _, err := l.ChargePart(7, 9, 0, 40); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := l.ChargePart(7, 9, 0, 50); err != nil {
-		t.Fatal(err)
-	}
-	if l.Book(7).Network != 90 {
-		t.Fatalf("%+v", l.Book(7))
-	}
-}
-
 func TestOverLimitDoesNotRecord(t *testing.T) {
 	l := New(Limits{Network: 30, Window: time.Hour})
-	if _, err := l.ChargePart(7, 1, 0, 20); err != nil {
+	if err := l.ChargeNetwork(7, 20); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.ChargePart(7, 1, 1, 20); err != ErrLimited {
-		t.Fatalf("%v", err)
+	err := l.ChargeNetwork(7, 20)
+	if err == nil {
+		t.Fatal("over limit stored")
 	}
 	if l.Book(7).Network != 20 {
 		t.Fatalf("%+v", l.Book(7))
+	}
+	if WaitOf(err) < 1 {
+		t.Fatal(err)
 	}
 }
 
 func TestUploadWithoutSendDoesNotChargeEntity(t *testing.T) {
 	l := New(Limits{Network: 100, Entity: 100, Hold: 100, Window: time.Hour})
-	if _, err := l.ChargePart(7, 1, 0, 40); err != nil {
+	if err := l.ChargeNetwork(7, 40); err != nil {
 		t.Fatal(err)
 	}
-	if b := l.Book(7); b.Network != 40 || b.Entity != 0 || b.Refs != 0 {
+	if _, err := l.Reserve(7, 40); err != nil {
+		t.Fatal(err)
+	}
+	if b := l.Book(7); b.Network != 40 || b.Entity != 0 || b.Refs != 0 || b.Hold != 40 {
 		t.Fatalf("%+v", b)
 	}
 }
 
-func TestCancelRefundsHoldOnly(t *testing.T) {
-	l := New(Limits{Network: 100, Entity: 100, Hold: 100, Window: time.Hour})
-	if _, err := l.ChargePart(7, 1, 0, 40); err != nil {
-		t.Fatal(err)
-	}
-	if err := l.Reserve(7, 40); err != nil {
+func TestCancelRefundsOnlyThatHold(t *testing.T) {
+	l := New(Limits{Network: 200, Entity: 100, Hold: 200, Window: time.Hour})
+	if err := l.ChargeNetwork(7, 40); err != nil {
 		t.Fatal(err)
 	}
 	if err := l.CommitNew(7, 10); err != nil {
 		t.Fatal(err)
 	}
-	l.Cancel(7, 40)
-	b := l.Book(7)
-	if b.Network != 40 || b.Entity != 10 || b.Hold != 0 {
-		t.Fatalf("cancel refunded stored bytes %+v", b)
-	}
-	if err := l.Reserve(7, 40); err != nil {
+	first, err := l.Reserve(7, 40)
+	if err != nil {
 		t.Fatal(err)
+	}
+	second, err := l.Reserve(7, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Cancel(first)
+	b := l.Book(7)
+	if b.Network != 40 || b.Entity != 10 || b.Hold != 40 {
+		t.Fatalf("cancel touched stored bytes %+v", b)
+	}
+	l.Cancel(second)
+	if l.Book(7).Hold != 0 {
+		t.Fatalf("%+v", l.Book(7))
+	}
+}
+
+func TestReviewFailureCannotRefundSuccessfulConcurrentDuplicate(t *testing.T) {
+	l := New(Limits{Network: 100, Hold: 100, Window: time.Hour})
+	if err := l.ChargeNetwork(7, 40); err != nil {
+		t.Fatal(err)
+	}
+	okID, err := l.Reserve(7, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.ChargeNetwork(7, 40); err != nil {
+		t.Fatal(err)
+	}
+	failID, err := l.Reserve(7, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Cancel(failID)
+	b := l.Book(7)
+	if b.Network != 80 || b.Hold != 40 {
+		t.Fatalf("failure refunded the successful receive %+v", b)
+	}
+	if okID == failID {
+		t.Fatal("hold ids collided")
 	}
 }
 
@@ -99,10 +144,10 @@ func TestConcurrentDevicesStayInsideCap(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		go func(part int) {
+		go func() {
 			defer wg.Done()
-			_, _ = l.ChargePart(7, 3, part, 100)
-		}(i)
+			_ = l.ChargeNetwork(7, 100)
+		}()
 	}
 	wg.Wait()
 	if b := l.Book(7); b.Network != 1000 {
@@ -110,31 +155,27 @@ func TestConcurrentDevicesStayInsideCap(t *testing.T) {
 	}
 }
 
-func TestWindowDropsOldCharges(t *testing.T) {
-	l := New(Limits{Network: 50, Window: time.Hour})
-	now := time.Unix(1_700_000_000, 0)
-	l.now = func() time.Time { return now }
-	if _, err := l.ChargePart(7, 1, 0, 40); err != nil {
+func TestRedisWindowIsSharedByTwoProcesses(t *testing.T) {
+	mr := miniredis.RunT(t)
+	a, err := openRedis(mr.Addr(), Limits{Network: 100, Window: time.Hour}, ModeEnforce)
+	if err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(2 * time.Hour)
-	if _, err := l.ChargePart(7, 1, 1, 40); err != nil {
+	b, err := openRedis(mr.Addr(), Limits{Network: 100, Window: time.Hour}, ModeEnforce)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if l.Book(7).Network != 40 {
-		t.Fatalf("%+v", l.Book(7))
+	if err = a.ChargeNetwork(7, 60); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestFailedStoreRefundLetsRetryThrough(t *testing.T) {
-	l := New(Limits{Network: 40, Window: time.Hour})
-	fresh, err := l.ChargePart(7, 1, 0, 40)
-	if err != nil || !fresh {
-		t.Fatal(err, fresh)
+	if err = b.ChargeNetwork(7, 50); err == nil {
+		t.Fatal("second process did not see the first charge")
 	}
-	l.RefundPart(7, 1, 0, 40)
-	fresh, err = l.ChargePart(7, 1, 0, 40)
-	if err != nil || !fresh {
-		t.Fatalf("retry after refund %v fresh=%v book=%+v", err, fresh, l.Book(7))
+	if a.Book(7).Network != 60 || b.Book(7).Network != 60 {
+		t.Fatalf("a %+v b %+v", a.Book(7), b.Book(7))
+	}
+	mr.FastForward(2 * time.Hour)
+	if err = b.ChargeNetwork(7, 40); err != nil {
+		t.Fatalf("after the window: %v", err)
 	}
 }

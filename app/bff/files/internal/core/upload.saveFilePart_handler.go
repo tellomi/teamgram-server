@@ -28,10 +28,10 @@ import (
 // upload.saveFilePart#b304a621 file_id:long file_part:int bytes:bytes = Bool;
 func (c *FilesCore) UploadSaveFilePart(in *mtproto.TLUploadSaveFilePart) (*mtproto.Bool, error) {
 	subject := uploadSubject(c)
-	fresh, err := chargeUploadPart(subject, in.FileId, in.FilePart, in.Bytes)
+	hold, err := chargeUploadPart(subject, in.Bytes)
 	if err != nil {
 		c.Logger.Errorf("upload.saveFilePart - budget")
-		return nil, mtproto.NewErrFloodWaitX(60)
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(err))
 	}
 	_, err = c.svcCtx.Dao.DfsClient.DfsWriteFilePartData(c.ctx, &dfs.TLDfsWriteFilePartData{
 		Creator:        c.MD.PermAuthKeyId,
@@ -42,8 +42,8 @@ func (c *FilesCore) UploadSaveFilePart(in *mtproto.TLUploadSaveFilePart) (*mtpro
 		FileTotalParts: nil,
 	})
 	if err != nil {
-		if fresh {
-			uploadledger.Shared().RefundPart(subject, in.FileId, int(in.FilePart), int64(len(in.Bytes)))
+		if led := uploadledger.Shared(); led != nil {
+			led.Cancel(hold)
 		}
 		c.Logger.Errorf("upload.saveFilePart - error: %v", err)
 		return nil, err
@@ -62,10 +62,13 @@ func uploadSubject(c *FilesCore) int64 {
 	return c.MD.PermAuthKeyId
 }
 
-func chargeUploadPart(subject, fileID int64, part int32, body []byte) (bool, error) {
+func chargeUploadPart(subject int64, body []byte) (int64, error) {
 	led := uploadledger.Shared()
-	if led == nil {
-		return false, nil
+	if led == nil || subject == 0 || len(body) == 0 {
+		return 0, nil
 	}
-	return led.ChargePart(subject, fileID, int(part), int64(len(body)))
+	if err := led.ChargeNetwork(subject, int64(len(body))); err != nil {
+		return 0, err
+	}
+	return led.Reserve(subject, int64(len(body)))
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -86,6 +87,7 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassPhotos, claim.Path) {
 		claim.Reused = false
 	}
+	uploadledger.NoteClaim(in.GetCreator(), claim.Reused, claim.Size)
 	// One span for this upload: claim (hit or miss) and whether the
 	// original object was written. Derivative sizes are not the blob.
 	var objectWritten bool

@@ -48,7 +48,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2 plugin.StreamFilesPlugin) *ServiceContext {
-	uploadledger.Use(uploadledger.New(uploadledger.DefaultLimits()))
+	uploadledger.InstallFromEnv()
 	svcCtx := &ServiceContext{
 		Config:  c,
 		Dao:     dao.New(c),

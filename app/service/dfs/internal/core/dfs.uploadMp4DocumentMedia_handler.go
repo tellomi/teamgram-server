@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute, videoW, videoH int32) []*mtproto.DocumentAttribute {
@@ -84,7 +85,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 		c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
 		return nil, err
 	}
-	claim, err := c.storeDocumentBytes(c.ctx, documentId, mp4Bytes, true)
+	claim, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, mp4Bytes, true)
 	if err != nil {
 		c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)

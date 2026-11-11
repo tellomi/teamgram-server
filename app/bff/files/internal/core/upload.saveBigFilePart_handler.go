@@ -30,10 +30,10 @@ import (
 // upload.saveBigFilePart#de7b673d file_id:long file_part:int file_total_parts:int bytes:bytes = Bool;
 func (c *FilesCore) UploadSaveBigFilePart(in *mtproto.TLUploadSaveBigFilePart) (*mtproto.Bool, error) {
 	subject := uploadSubject(c)
-	fresh, err := chargeUploadPart(subject, in.FileId, in.FilePart, in.Bytes)
+	hold, err := chargeUploadPart(subject, in.Bytes)
 	if err != nil {
 		c.Logger.Errorf("upload.saveBigFilePart - budget")
-		return nil, mtproto.NewErrFloodWaitX(60)
+		return nil, mtproto.NewErrFloodWaitX(uploadledger.WaitOf(err))
 	}
 	_, err = c.svcCtx.Dao.DfsClient.DfsWriteFilePartData(c.ctx, &dfs.TLDfsWriteFilePartData{
 		Creator:        c.MD.PermAuthKeyId,
@@ -44,8 +44,8 @@ func (c *FilesCore) UploadSaveBigFilePart(in *mtproto.TLUploadSaveBigFilePart) (
 		FileTotalParts: &wrapperspb.Int32Value{Value: in.FileTotalParts},
 	})
 	if err != nil {
-		if fresh && uploadledger.Shared() != nil {
-			uploadledger.Shared().RefundPart(subject, in.FileId, int(in.FilePart), int64(len(in.Bytes)))
+		if led := uploadledger.Shared(); led != nil {
+			led.Cancel(hold)
 		}
 		c.Logger.Errorf("upload.saveFilePart - error: %v", err)
 		return nil, err

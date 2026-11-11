@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 const (
@@ -111,7 +112,7 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		return nil, err
 	}
 
-	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifData, false)
+	stored, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, gifData, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
@@ -213,7 +214,7 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		return nil, err
 	}
-	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
+	stored, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
@@ -315,7 +316,7 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		return nil, err
 	}
 
-	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
+	stored, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)

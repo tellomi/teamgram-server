@@ -13,6 +13,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/config"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/ffmpegutil"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 type ServiceContext struct {
@@ -22,6 +23,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	uploadledger.InstallFromEnv()
 	return &ServiceContext{
 		Config:     c,
 		Dao:        dao.New(c),

@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -46,7 +47,7 @@ func (c *DfsCore) claimDocumentBytes(ctx context.Context, documentID int64, data
 
 func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data []byte, async bool) (mediablob.Claim, error) {
 	claim := c.claimDocumentBytes(ctx, documentID, data)
-	return storeClaimedDocument(ctx, c.Logger, claim, async, func(ctx context.Context) (int64, error) {
+	claim, err := storeClaimedDocument(ctx, c.Logger, claim, async, func(ctx context.Context) (int64, error) {
 		info, err := c.svcCtx.Dao.PutDocumentFile(ctx, claim.Path, bytes.NewReader(data))
 		if err != nil {
 			// The async path used to log and continue. Sync callers log the
@@ -61,6 +62,10 @@ func (c *DfsCore) storeDocumentBytes(ctx context.Context, documentID int64, data
 		}
 		return claim.Size, nil
 	})
+	if err == nil {
+		uploadledger.NoteClaim(uploadledger.UserFrom(ctx), claim.Reused, claim.Size)
+	}
+	return claim, err
 }
 
 // storeClaimedDocument records the claim on one upload span and writes the
