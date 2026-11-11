@@ -70,25 +70,7 @@ func (m *MySQL) Upsert(ctx context.Context, d Device) error {
 	if d.AppSandbox {
 		sandbox = 1
 	}
-	_, err := m.db.ExecContext(ctx,
-		`DELETE FROM devices WHERE user_id = ? AND token_type = ? AND token = ? AND auth_key_id <> ?`,
-		d.UserID, d.TokenType, d.Token, d.AuthKeyID)
-	if err != nil {
-		return err
-	}
-	_, err = m.db.ExecContext(ctx, `
-INSERT INTO devices (auth_key_id, user_id, token_type, token, no_muted, locked_period, app_sandbox, secret, other_uids, lang_code, state)
-VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0)
-ON DUPLICATE KEY UPDATE
-  token = VALUES(token),
-  no_muted = VALUES(no_muted),
-  app_sandbox = VALUES(app_sandbox),
-  secret = VALUES(secret),
-  other_uids = VALUES(other_uids),
-  lang_code = IF(VALUES(lang_code) = '', lang_code, VALUES(lang_code)),
-  state = 0`,
-		d.AuthKeyID, d.UserID, d.TokenType, d.Token, noMuted, sandbox, secret, other, d.LangCode)
-	return err
+	return m.upsertRegistration(ctx, d, secret, other, noMuted, sandbox)
 }
 
 func (m *MySQL) DeleteAuthKey(ctx context.Context, userID, authKeyID int64) error {

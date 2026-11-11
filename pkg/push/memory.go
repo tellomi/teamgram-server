@@ -23,6 +23,11 @@ func (s *MemoryStore) Upsert(_ context.Context, d Device) error {
 	var locked int32
 	var lang string
 	for _, old := range s.devices {
+		// A token identifies an installation. Only accounts declared by its
+		// latest registration may continue to receive pushes on it.
+		if old.TokenType == d.TokenType && old.Token == d.Token && !registrationOwns(d, old.UserID) {
+			continue
+		}
 		if old.UserID == d.UserID && old.TokenType == d.TokenType && old.Token == d.Token && old.AuthKeyID != d.AuthKeyID {
 			continue
 		}

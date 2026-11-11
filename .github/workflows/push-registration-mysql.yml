@@ -1,0 +1,34 @@
+name: Push registration MySQL
+on:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  mysql-registration:
+    name: mysql-registration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: integration-fixture
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pintegration-fixture"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Real MySQL transfer, concurrency and idempotent migration
+        env:
+          TEAMGRAM_MYSQL_DSN: "root:integration-fixture@tcp(127.0.0.1:3306)/mysql?charset=utf8mb4&parseTime=true"
+          TEAMGRAM_REQUIRE_PUSH_MYSQL: "1"
+        run: go test -race ./pkg/push -run '^TestRegistration' -count=1 -v -timeout=5m
