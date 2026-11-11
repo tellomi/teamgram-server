@@ -22,6 +22,7 @@ import (
 	"flag"
 
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/messages/internal/core"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/svc"
 	"github.com/teamgram/teamgram-server/pkg/configload"
@@ -47,6 +48,7 @@ func (s *Server) Initialize() error {
 
 	logx.Infov(redact.Value(c))
 	ctx := svc.NewServiceContext(c, nil)
+	core.StartPendingWebpageSweeper(ctx)
 	s.grpcSrv = grpc.New(ctx, c.RpcServerConf)
 
 	go func() {

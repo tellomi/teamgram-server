@@ -74,15 +74,76 @@ func Preview(ctx context.Context, text string, entities []*mtproto.MessageEntity
 	return chatbox.WebPagePreviewContext(ctx, text, entities)
 }
 
-// PreviewMedia is the card attached to a plain text send. Only internal
-// telegram_* pages are attached. External pages stay text until the client
-// submits a card with messages.sendMedia.
+// PreviewMedia is the card attached to a plain text send. Internal
+// telegram_* pages are always attached. When TELLOMI_SERVER_LINK_FETCH=1,
+// an external URL is also attached: a cached webPage immediately, or
+// webPagePending when the page still has to be fetched. The caller should
+// then FinishPending so both sides receive updateEditMessage (and can
+// match the stable webpage id) once the fetch completes.
+// External pages stay text when fetch is off, when no_webpage is set, or
+// when the URL has a cached empty result.
 func PreviewMedia(ctx context.Context, text string, entities []*mtproto.MessageEntity) *mtproto.MessageMedia {
-	media, _, _ := Preview(ctx, text, entities)
-	if !internalType(media.GetWebpage().GetType().GetValue()) {
-		return nil
-	}
+	media, _ := AttachOnSend(ctx, text, entities)
 	return media
+}
+
+// AttachOnSend is PreviewMedia plus whether the card is still a pending
+// placeholder that needs a background fetch.
+func AttachOnSend(ctx context.Context, text string, entities []*mtproto.MessageEntity) (*mtproto.MessageMedia, bool) {
+	raw := chatbox.FirstURL(text, entities)
+	if raw == "" {
+		return nil, false
+	}
+	u, err := chatbox.ParseExternalURL(raw)
+	if err != nil {
+		return nil, false
+	}
+	if page, chats, users, handled := resolve(ctx, u); handled {
+		_ = chats
+		_ = users
+		if !internalType(page.GetType().GetValue()) {
+			return nil, false
+		}
+		return chatbox.MediaFromPage(page), false
+	}
+	if !chatbox.ServerFetchEnabled() {
+		return nil, false
+	}
+	if page, ok := chatbox.CachedExternalPage(ctx, raw); ok {
+		return chatbox.MediaFromPage(page), false
+	}
+	if !chatbox.AllowSendFetch(viewerID(ctx)) {
+		return nil, false
+	}
+	pending := chatbox.PendingExternalPage(raw)
+	if pending == nil {
+		return nil, false
+	}
+	return chatbox.MediaFromPage(pending), true
+}
+
+// IsPending reports a webPagePending card that still needs a fetch.
+func IsPending(media *mtproto.MessageMedia) bool {
+	return media.GetWebpage().GetPredicateName() == mtproto.Predicate_webPagePending
+}
+
+// ApplyFetchedPage replaces a pending card with the fetched page, or
+// removes the card when the fetch produced no preview. EditHide should be
+// set by the caller so the pending-to-final transition is not shown as an
+// ordinary edit.
+func ApplyFetchedPage(msg *mtproto.Message, page *mtproto.WebPage) {
+	if msg == nil {
+		return
+	}
+	if media := chatbox.MediaFromPage(page); media != nil {
+		if old := msg.GetMedia(); old != nil {
+			media.ForceLargeMedia = old.GetForceLargeMedia()
+			media.ForceSmallMedia = old.GetForceSmallMedia()
+		}
+		msg.Media = media
+		return
+	}
+	msg.Media = nil
 }
 
 func internalType(typ string) bool {
@@ -113,13 +174,13 @@ func resolve(ctx context.Context, u *url.URL) (*mtproto.WebPage, []*mtproto.Chat
 		if len(segs) != 2 || !shortRE.MatchString(segs[1]) {
 			return empty(raw), nil, nil, true
 		}
-		page := stickerPage(raw, segs[1], false)
+		page := stickerPage(ctx, raw, segs[1], false)
 		return page, nil, nil, true
 	case "addemoji":
 		if len(segs) != 2 || !shortRE.MatchString(segs[1]) {
 			return empty(raw), nil, nil, true
 		}
-		page := stickerPage(raw, segs[1], true)
+		page := stickerPage(ctx, raw, segs[1], true)
 		return page, nil, nil, true
 	case "joinchat":
 		if len(segs) != 2 || !hashRE.MatchString(segs[1]) {
@@ -188,7 +249,7 @@ func resolve(ctx context.Context, u *url.URL) (*mtproto.WebPage, []*mtproto.Chat
 	}
 }
 
-func stickerPage(raw, short string, pathEmoji bool) *mtproto.WebPage {
+func stickerPage(ctx context.Context, raw, short string, pathEmoji bool) *mtproto.WebPage {
 	set, err := catalog.Must().GetSet(0, mtproto.MakeTLInputStickerSetShortName(&mtproto.InputStickerSet{
 		ShortName: short,
 	}).To_InputStickerSet(), 0)
@@ -202,7 +263,7 @@ func stickerPage(raw, short string, pathEmoji bool) *mtproto.WebPage {
 		n = int32(len(docs))
 	}
 	emoji := st.GetEmojis() || pathEmoji
-	return makePage(raw, "telegram_stickerset", st.GetTitle(), packDescription(n, emoji), func(p *mtproto.WebPage) {
+	return makePage(raw, "telegram_stickerset", st.GetTitle(), packDescription(ctx, n, emoji), func(p *mtproto.WebPage) {
 		var preview []*mtproto.Document
 		if len(docs) > 0 {
 			limit := len(docs)
@@ -222,20 +283,8 @@ func stickerPage(raw, short string, pathEmoji bool) *mtproto.WebPage {
 	})
 }
 
-func packDescription(n int32, emoji bool) string {
-	if n < 0 {
-		n = 0
-	}
-	if emoji {
-		if n == 1 {
-			return "Free emoji pack with 1 emoji."
-		}
-		return fmt.Sprintf("Free emoji pack with %d emoji.", n)
-	}
-	if n == 1 {
-		return "Free stickerpack with 1 sticker."
-	}
-	return fmt.Sprintf("Free stickerpack with %d stickers.", n)
+func packDescription(ctx context.Context, n int32, emoji bool) string {
+	return packLine(ctx, n, emoji)
 }
 
 func peerPage(ctx context.Context, raw, name string) (*mtproto.WebPage, []*mtproto.Chat, []*mtproto.User) {
@@ -247,7 +296,7 @@ func peerPage(ctx context.Context, raw, name string) (*mtproto.WebPage, []*mtpro
 		if card.User != nil {
 			users = []*mtproto.User{card.User}
 		}
-		return userPage(raw, name, card), nil, users
+		return userPage(ctx, raw, name, card), nil, users
 	}
 	return empty(raw), nil, nil
 }
@@ -277,7 +326,7 @@ func messagePage(ctx context.Context, raw string, chat *mtproto.Chat, id int32) 
 	return makePage(raw, "telegram_message", chat.GetTitle(), clamp(text, maxMessageRunes), nil), []*mtproto.Chat{chat}
 }
 
-func userPage(raw, name string, card UserCard) *mtproto.WebPage {
+func userPage(ctx context.Context, raw, name string, card UserCard) *mtproto.WebPage {
 	typ := "telegram_user"
 	if card.Bot {
 		typ = "telegram_bot"
@@ -286,10 +335,10 @@ func userPage(raw, name string, card UserCard) *mtproto.WebPage {
 	if card.Username != "" {
 		user = card.Username
 	}
-	return makePage(raw, typ, card.Title, userDescription(card.About, user), attachPhoto(card.Photo))
+	return makePage(raw, typ, card.Title, userDescription(ctx, card.About, user), attachPhoto(card.Photo))
 }
 
-func userDescription(about, username string) string {
+func userDescription(ctx context.Context, about, username string) string {
 	if strings.TrimSpace(about) != "" {
 		return about
 	}
@@ -297,7 +346,7 @@ func userDescription(about, username string) string {
 	if username == "" {
 		return ""
 	}
-	return fmt.Sprintf("You can contact @%s right away.", username)
+	return contactLine(ctx, username)
 }
 
 func channelPage(ctx context.Context, raw string, chat *mtproto.Chat) *mtproto.WebPage {
@@ -344,7 +393,18 @@ func invitePage(ctx context.Context, raw, hash string) (*mtproto.WebPage, []*mtp
 		return empty(raw), nil
 	}
 	if chat := inv.GetChat(); chat != nil && chat.GetPredicateName() == mtproto.Predicate_channel {
-		return channelPage(ctx, raw, chat), []*mtproto.Chat{chat}
+		page := channelPage(ctx, raw, chat)
+		if about := strings.TrimSpace(channelAbout(ctx, chat)); about == "" {
+			kind := "channel"
+			if chat.GetMegagroup() {
+				kind = "group"
+			}
+			desc := inviteLine(ctx, "", kind)
+			if desc != "" {
+				page.Description = wrapperspb.String(desc)
+			}
+		}
+		return page, []*mtproto.Chat{chat}
 	}
 	if chat := inv.GetChat(); chat != nil && chat.GetPredicateName() == mtproto.Predicate_chat {
 		return groupPage(ctx, raw, GroupCard{
@@ -358,13 +418,15 @@ func invitePage(ctx context.Context, raw, hash string) (*mtproto.WebPage, []*mtp
 	if title == "" {
 		return empty(raw), nil
 	}
-	desc := ""
+	about := ""
 	if inv.GetAbout() != nil {
-		desc = inv.GetAbout().GetValue()
+		about = inv.GetAbout().GetValue()
 	}
-	if desc == "" && inv.GetParticipantsCount() > 0 {
-		desc = audienceLine(ctx, inv.GetParticipantsCount(), inv.GetBroadcast() && !inv.GetMegagroup())
+	kind := "group"
+	if inv.GetBroadcast() && !inv.GetMegagroup() {
+		kind = "channel"
 	}
+	desc := inviteDescription(ctx, about, "", inv.GetParticipantsCount(), kind)
 	return makePage(raw, inviteType(inv), title, desc, attachPhoto(usablePhoto(inv.GetPhoto()))), nil
 }
 
@@ -397,11 +459,31 @@ func groupInvitePage(ctx context.Context, raw, hash string) (*mtproto.WebPage, [
 }
 
 func groupPage(ctx context.Context, raw string, card GroupCard) *mtproto.WebPage {
-	desc := strings.TrimSpace(card.About)
-	if desc == "" && card.Members > 0 {
-		desc = audienceLine(ctx, card.Members, false)
-	}
+	desc := inviteDescription(ctx, card.About, card.Inviter, card.Members, "group")
 	return makePage(raw, "telegram_chat", card.Title, desc, attachPhoto(card.Photo))
+}
+
+func inviteDescription(ctx context.Context, about, inviter string, members int32, kind string) string {
+	if strings.TrimSpace(about) != "" {
+		return about
+	}
+	if line := inviteLine(ctx, inviter, kind); line != "" {
+		return line
+	}
+	if members > 0 {
+		return audienceLine(ctx, members, kind == "channel")
+	}
+	return ""
+}
+
+// channelAbout is the channel's own about, if any, without falling back
+// to a member/subscriber line.
+func channelAbout(ctx context.Context, chat *mtproto.Chat) string {
+	full, err := channel.Shared().GetFullChannel(ctx, viewerID(ctx), inputChannel(chat))
+	if err == nil && full.GetFullChat() != nil {
+		return strings.TrimSpace(full.GetFullChat().GetAbout())
+	}
+	return ""
 }
 
 // basicInviteHash is a basic-group invite. Channel hashes start with a letter.
