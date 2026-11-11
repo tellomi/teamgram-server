@@ -431,6 +431,36 @@ func TestReportSubjectsByUsers(t *testing.T) {
 	}
 }
 
+func TestReview3StrictByUsersRequest(t *testing.T) {
+	s, _, _ := testService(t)
+	h := Handler{
+		Service:  s,
+		Key:      bytesKey(t),
+		Subjects: mapSubjects{users: map[string]int64{}},
+	}
+	token := base64.StdEncoding.EncodeToString(h.Key)
+	for _, body := range []string{
+		`{"user_ids":[34]}]`,
+		`{"user_ids":[34]}}`,
+		`{"user_ids":[34]}]{"user_ids":[35]}`,
+		`{"user_ids":[34],"USER_IDS":[35]}`,
+		`{"USER_IDS":[34]}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			if _, err := decodeByUsersBody(strings.NewReader(body)); err == nil {
+				t.Fatal("decoder accepted")
+			}
+			rec := postJSON(t, h, token, pathSubjectsByUsers, body)
+			if rec.Code != http.StatusBadRequest || rec.Header().Get("Retry-After") != "" {
+				t.Fatalf("%d %q %s", rec.Code, rec.Header().Get("Retry-After"), rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), `"users"`) || strings.Contains(rec.Body.String(), `"user_id"`) {
+				t.Fatalf("handler used an id: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestSubjectsByUsersContract(t *testing.T) {
 	s, _, _ := testService(t)
 	known := bytes.Repeat([]byte{7}, 16)

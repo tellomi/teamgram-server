@@ -288,67 +288,49 @@ type subjectsByUsersBody struct {
 	UserIDs []int64 `json:"user_ids"`
 }
 
-// decodeByUsersBody rejects a second JSON value, a repeated object key, and
-// any field other than user_ids. encoding/json otherwise keeps the last
-// duplicate and ignores the tail.
+// decodeByUsersBody accepts one JSON object whose only key is exactly
+// user_ids. encoding/json would bind USER_IDS to the same field and would
+// treat a trailing ] or } as the end of input. Both are rejected: a key is
+// kept only when it is the contracted name, a second binding of that field
+// is an error, and the value after the object must be EOF.
 func decodeByUsersBody(r io.Reader) (subjectsByUsersBody, error) {
 	raw, err := io.ReadAll(io.LimitReader(r, maxBody+1))
-	if err != nil || len(raw) > maxBody || jsonHasDuplicateKeys(raw) {
+	if err != nil || len(raw) > maxBody {
 		return subjectsByUsersBody{}, errors.New("bad json")
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var body subjectsByUsersBody
-	if err = dec.Decode(&body); err != nil || dec.More() {
-		return subjectsByUsersBody{}, errors.New("bad json")
-	}
-	return body, nil
-}
-
-func jsonHasDuplicateKeys(raw []byte) bool {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dup, _ := jsonValueHasDuplicateKeys(dec)
-	return dup
-}
-
-func jsonValueHasDuplicateKeys(dec *json.Decoder) (bool, error) {
 	tok, err := dec.Token()
-	if err != nil {
-		return false, err
+	if err != nil || tok != json.Delim('{') {
+		return subjectsByUsersBody{}, errors.New("bad json")
 	}
-	switch tok {
-	case json.Delim('{'):
-		seen := map[string]struct{}{}
-		for dec.More() {
-			keyTok, err := dec.Token()
-			if err != nil {
-				return false, err
-			}
-			key, ok := keyTok.(string)
-			if !ok {
-				return true, nil
-			}
-			if _, ok := seen[key]; ok {
-				return true, nil
-			}
-			seen[key] = struct{}{}
-			if dup, err := jsonValueHasDuplicateKeys(dec); dup || err != nil {
-				return dup, err
-			}
+	var ids []int64
+	bound := false
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return subjectsByUsersBody{}, errors.New("bad json")
 		}
-		_, err = dec.Token()
-		return false, err
-	case json.Delim('['):
-		for dec.More() {
-			if dup, err := jsonValueHasDuplicateKeys(dec); dup || err != nil {
-				return dup, err
-			}
+		key, ok := keyTok.(string)
+		// The struct tag binds case-insensitively. Fold first so USER_IDS is
+		// the same field as user_ids, then require the contracted spelling
+		// and a single binding. Any other key is not a field of this body.
+		if !ok || !strings.EqualFold(key, "user_ids") || key != "user_ids" || bound {
+			return subjectsByUsersBody{}, errors.New("bad json")
 		}
-		_, err = dec.Token()
-		return false, err
-	default:
-		return false, nil
+		bound = true
+		if err = dec.Decode(&ids); err != nil {
+			return subjectsByUsersBody{}, errors.New("bad json")
+		}
 	}
+	end, err := dec.Token()
+	if err != nil || end != json.Delim('}') {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	var extra any
+	if err = dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	return subjectsByUsersBody{UserIDs: ids}, nil
 }
 
 func (h Handler) subjectsByUsers(w http.ResponseWriter, r *http.Request) {
