@@ -22,6 +22,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/model"
 
@@ -118,11 +120,21 @@ func (d *Dao) PutCacheQRLoginCode(ctx context.Context, keyId int64, qrCode *mode
 
 // ClaimQRLogin is the single-use gate. SetnxEx is atomic across processes
 // and DCs that share this Redis. The second caller gets false.
-func (d *Dao) ClaimQRLogin(ctx context.Context, keyId, userID int64, seconds int) (bool, error) {
+func (d *Dao) ClaimQRLogin(ctx context.Context, keyId, userID int64, seconds int) (bool, string, error) {
 	if d == nil || d.kv == nil || keyId == 0 || userID == 0 {
-		return false, fmt.Errorf("qr claim unavailable")
+		return false, "", fmt.Errorf("qr claim unavailable")
 	}
-	return claimOnce(ctx, d.kv.SetnxExCtx, fmt.Sprintf("qr_claim_%d", keyId), strconv.FormatInt(userID, 10), seconds)
+	key := fmt.Sprintf("qr_claim_%d", keyId)
+	token := strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	ok, err := claimOnce(ctx, d.kv.SetnxExCtx, key, token, seconds)
+	if err != nil || ok {
+		return ok, token, err
+	}
+	got, gerr := d.kv.GetCtx(ctx, key)
+	if gerr != nil {
+		return false, "", gerr
+	}
+	return false, got, nil
 }
 
 func claimOnce(ctx context.Context, setnx func(context.Context, string, string, int) (bool, error), key, user string, seconds int) (bool, error) {
@@ -139,7 +151,7 @@ func claimOnce(ctx context.Context, setnx func(context.Context, string, string, 
 // releases this user's claim so a retry can take it. A write that landed
 // keeps the claim and returns nil so the same attempt can finish the bind.
 // A failed read keeps the claim, which blocks a second user.
-func (d *Dao) MarkQRAccepted(ctx context.Context, keyId, userID int64) error {
+func (d *Dao) MarkQRAccepted(ctx context.Context, keyId, userID int64, token string) error {
 	err := d.UpdateCacheQRLoginCode(ctx, keyId, map[string]string{
 		"user_id": strconv.FormatInt(userID, 10),
 		"state":   strconv.Itoa(model.QRCodeStateAccepted),
@@ -154,7 +166,7 @@ func (d *Dao) MarkQRAccepted(ctx context.Context, keyId, userID int64) error {
 		}
 	}
 	return qrAcceptAfterWrite(err, state, readErr, func() error {
-		return d.ReleaseQRLogin(ctx, keyId, userID)
+		return d.ReleaseQRLogin(ctx, keyId, token)
 	})
 }
 
@@ -174,17 +186,16 @@ func qrAcceptAfterWrite(writeErr error, state int, readErr error, release func()
 	return nil
 }
 
-// ReleaseQRLogin deletes the claim only when it still names userID.
-func (d *Dao) ReleaseQRLogin(ctx context.Context, keyId, userID int64) error {
-	if d == nil || d.kv == nil || keyId == 0 || userID == 0 {
+// releaseClaimScript deletes the key only when its value is still the owner
+// token from this attempt. A newer claim with a different token stays.
+const releaseClaimScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`
+
+// ReleaseQRLogin deletes the claim only when it is still this attempt's token.
+func (d *Dao) ReleaseQRLogin(ctx context.Context, keyId int64, token string) error {
+	if d == nil || d.kv == nil || keyId == 0 || token == "" {
 		return fmt.Errorf("qr claim unavailable")
 	}
-	key := fmt.Sprintf("qr_claim_%d", keyId)
-	got, err := d.kv.GetCtx(ctx, key)
-	if err != nil || got != strconv.FormatInt(userID, 10) {
-		return err
-	}
-	_, err = d.kv.DelCtx(ctx, key)
+	_, err := d.kv.EvalCtx(ctx, releaseClaimScript, fmt.Sprintf("qr_claim_%d", keyId), token)
 	return err
 }
 
@@ -197,7 +208,11 @@ func (d *Dao) QRClaimOwner(ctx context.Context, keyId int64) (int64, error) {
 	if err != nil || got == "" {
 		return 0, err
 	}
-	return strconv.ParseInt(got, 10, 64)
+	head := got
+	if i := strings.IndexByte(got, ':'); i >= 0 {
+		head = got[:i]
+	}
+	return strconv.ParseInt(head, 10, 64)
 }
 
 func (d *Dao) UpdateCacheQRLoginCode(ctx context.Context, keyId int64, values map[string]string) (err error) {

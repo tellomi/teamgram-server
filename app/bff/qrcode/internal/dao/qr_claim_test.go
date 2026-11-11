@@ -6,7 +6,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/model"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
 func TestQRExpiredBoundary(t *testing.T) {
@@ -15,6 +17,31 @@ func TestQRExpiredBoundary(t *testing.T) {
 	}
 	if model.QRExpired(100, 99) {
 		t.Fatal("live token refused")
+	}
+}
+
+func TestIndependentReleaseKeepsTheNewOwner(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rds, err := redis.NewRedis(redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err = rds.SetCtx(ctx, "qr_claim_9", "8:new"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = rds.EvalCtx(ctx, releaseClaimScript, []string{"qr_claim_9"}, "7:old"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := rds.GetCtx(ctx, "qr_claim_9")
+	if err != nil || got != "8:new" {
+		t.Fatalf("new owner deleted: %q %v", got, err)
+	}
+	if _, err = rds.EvalCtx(ctx, releaseClaimScript, []string{"qr_claim_9"}, "8:new"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = rds.GetCtx(ctx, "qr_claim_9"); got != "" {
+		t.Fatalf("owner token was not deleted: %q", got)
 	}
 }
 

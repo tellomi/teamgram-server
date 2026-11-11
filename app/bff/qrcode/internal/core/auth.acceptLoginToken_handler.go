@@ -20,6 +20,8 @@ package core
 
 import (
 	"encoding/binary"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -71,12 +73,9 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 	}
 
 	switch qrCode.State {
-	case model.QRCodeStateNew:
-		// ok
-	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
-		err := mtproto.ErrAuthTokenAccepted
-		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
-		return nil, err
+	case model.QRCodeStateNew, model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+		// Accepted or Success can be this user's own retry after a lost
+		// response or a failed bind. A different user is rejected below.
 	default:
 		err := mtproto.ErrAuthTokenInvalid
 		c.Logger.Errorf("auth.acceptLoginToken - error: %v", err)
@@ -91,22 +90,24 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 	}
 
 	remain := int(qrCode.ExpireAt - now)
-	claimed, claimErr := c.svcCtx.Dao.ClaimQRLogin(c.ctx, keyId, c.MD.UserId, remain)
+	claimed, token, claimErr := c.svcCtx.Dao.ClaimQRLogin(c.ctx, keyId, c.MD.UserId, remain)
 	if claimErr != nil {
 		c.Logger.Errorf("auth.acceptLoginToken - claim: %v", claimErr)
 		return nil, claimErr
 	}
-	if !claimed {
-		owner, ownerErr := c.svcCtx.Dao.QRClaimOwner(c.ctx, keyId)
-		again, againErr := c.svcCtx.Dao.GetCacheQRLoginCode(c.ctx, keyId)
-		if ownerErr != nil || againErr != nil || owner != c.MD.UserId || again == nil || again.State != model.QRCodeStateAccepted {
-			err := mtproto.ErrAuthTokenAccepted
-			c.Logger.Errorf("auth.acceptLoginToken - already claimed")
+	switch decideQRAccept(qrCode.State, claimed, claimOwnerID(token), c.MD.UserId) {
+	case qrReject:
+		err := mtproto.ErrAuthTokenAccepted
+		c.Logger.Errorf("auth.acceptLoginToken - already claimed")
+		return nil, err
+	case qrMark:
+		if err = c.svcCtx.Dao.MarkQRAccepted(c.ctx, keyId, c.MD.UserId, token); err != nil {
+			c.Logger.Errorf("auth.acceptLoginToken - state")
 			return nil, err
 		}
-	} else if err = c.svcCtx.Dao.MarkQRAccepted(c.ctx, keyId, c.MD.UserId); err != nil {
-		c.Logger.Errorf("auth.acceptLoginToken - state")
-		return nil, err
+	case qrResume:
+		// The claim and the accepted state are already ours. Continue the
+		// user lookup and bind; do not take the token away from this user.
 	}
 
 	user, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
@@ -185,4 +186,44 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 // not finished until auth.checkPassword.
 func qrLoginNotifies(state int, passwordNeeded bool) bool {
 	return state == model.QRCodeStateNew && !passwordNeeded
+}
+
+const (
+	qrMark = iota
+	qrResume
+	qrReject
+)
+
+// decideQRAccept is the retry rule. A lost SETNX response leaves the state
+// New while this user already owns the claim, so the retry must mark and
+// continue. Accepted or Success for that same owner resumes the bind.
+// Another user's claim is rejected.
+func decideQRAccept(state int, won bool, owner, caller int64) int {
+	if caller == 0 || owner != caller {
+		return qrReject
+	}
+	switch state {
+	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+		return qrResume
+	case model.QRCodeStateNew:
+		_ = won
+		return qrMark
+	default:
+		return qrReject
+	}
+}
+
+func claimOwnerID(token string) int64 {
+	if token == "" {
+		return 0
+	}
+	head := token
+	if i := strings.IndexByte(token, ':'); i >= 0 {
+		head = token[:i]
+	}
+	id, err := strconv.ParseInt(head, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
 }
