@@ -112,7 +112,7 @@ type errBackend struct{ err error }
 
 func (e errBackend) load(context.Context, int64) (Record, error) { return Record{}, e.err }
 func (e errBackend) save(context.Context, int64, Record) error   { return e.err }
-func (e errBackend) forget(context.Context, []int64)             {}
+func (e errBackend) forget(context.Context, []int64) error       { return e.err }
 
 func TestKVErrorsDoNotLookLikeAFreshSkip(t *testing.T) {
 	readErr := errors.New("redis down")
@@ -155,4 +155,51 @@ func containsID(ids []int64, want int64) bool {
 		}
 	}
 	return false
+}
+
+type flakyEval struct {
+	scriptKV
+	failKey string
+	left    int
+}
+
+func (f *flakyEval) EvalCtx(ctx context.Context, script, key string, args ...any) (any, error) {
+	if key == f.failKey && f.left > 0 {
+		f.left--
+		return nil, errors.New("eval")
+	}
+	return f.scriptKV.EvalCtx(ctx, script, key, args...)
+}
+
+func TestEvalFailureIsReturnedAndRetryClears(t *testing.T) {
+	mr := miniredis.RunT(t)
+	store := kv.NewStore(cache.ClusterConf{{
+		RedisConf: redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType},
+		Weight:    100,
+	}})
+	const bob int64 = 9
+	raw := redisBE{kv: store}
+	b := &Book{be: redisBE{kv: &flakyEval{scriptKV: store, failKey: dataKey(bob), left: 1}}}
+	ctx := context.Background()
+	if err := raw.save(ctx, bob, Record{
+		Pushed: 300, HaveList: true, Gen: 0,
+		Viewers: []Viewer{{ID: 1, Exact: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := b.Forget(ctx, bob)
+	if err == nil || err.Error() != "eval" {
+		t.Fatalf("forget err %v", err)
+	}
+	kept, loadErr := b.Load(ctx, bob)
+	if loadErr != nil || !kept.HaveList || !kept.Viewers[0].Exact {
+		t.Fatalf("failed eval cleared the list: %+v %v", kept, loadErr)
+	}
+	if err = b.Forget(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	cleared, loadErr := b.Load(ctx, bob)
+	if loadErr != nil || cleared.HaveList || cleared.Pushed != 0 || len(cleared.Viewers) != 0 {
+		t.Fatalf("retry did not clear %d: %+v %v", bob, cleared, loadErr)
+	}
 }

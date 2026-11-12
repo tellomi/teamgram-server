@@ -113,7 +113,10 @@ func (c *ContactsCore) ContactsAddContact(in *mtproto.TLContactsAddContact) (*mt
 
 	// TODO(@benqi): 性能优化，复用users
 	c.pushContactStatuses(c.MD.UserId, id.PeerId)
-	statusbook.Shared().Forget(c.ctx, c.MD.UserId, id.PeerId)
+	if err := statusbook.Shared().Forget(c.ctx, c.MD.UserId, id.PeerId); err != nil {
+		c.Logger.Errorf("contacts.addContact forget audience: %v", err)
+		return nil, err
+	}
 
 	rUpdates := mtproto.MakeUpdatesByUpdatesUsers(
 		[]*mtproto.User{me, cUser},

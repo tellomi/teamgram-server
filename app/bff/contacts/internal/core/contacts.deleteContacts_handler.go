@@ -53,6 +53,7 @@ func (c *ContactsCore) ContactsDeleteContacts(in *mtproto.TLContactsDeleteContac
 	}
 
 	column := map[int64]int32{}
+	var forgetErr error
 	deleteUsers.VisitByMe(c.MD.UserId, func(me, it *mtproto.ImmutableUser) {
 		if me.Id() != it.Id() {
 			// TODO: mutual
@@ -60,7 +61,9 @@ func (c *ContactsCore) ContactsDeleteContacts(in *mtproto.TLContactsDeleteContac
 				UserId: c.MD.UserId,
 				Id:     it.Id(),
 			})
-			statusbook.Shared().Forget(c.ctx, c.MD.UserId, it.Id())
+			if err := statusbook.Shared().Forget(c.ctx, c.MD.UserId, it.Id()); err != nil && forgetErr == nil {
+				forgetErr = err
+			}
 
 			rUpdates.PushBackUpdate(
 				mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{
@@ -97,6 +100,10 @@ func (c *ContactsCore) ContactsDeleteContacts(in *mtproto.TLContactsDeleteContac
 			rUpdates.PushUser(cUser)
 		}
 	})
+	if forgetErr != nil {
+		c.Logger.Errorf("contacts.deleteContacts forget audience: %v", forgetErr)
+		return nil, forgetErr
+	}
 	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, rUpdates.Users, column)
 
 	c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{

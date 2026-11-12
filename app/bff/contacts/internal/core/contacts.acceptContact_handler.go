@@ -75,7 +75,10 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 
 	user.Contact = true
 	user.MutualContact = mtproto.FromBool(mutual)
-	statusbook.Shared().Forget(c.ctx, c.MD.UserId, id.PeerId)
+	if err := statusbook.Shared().Forget(c.ctx, c.MD.UserId, id.PeerId); err != nil {
+		c.Logger.Errorf("contacts.acceptContact forget audience: %v", err)
+		return nil, err
+	}
 	me, meErr := c.loadUser(c.MD.UserId, c.MD.UserId)
 	users := []*mtproto.User{user}
 	if meErr == nil && me != nil {

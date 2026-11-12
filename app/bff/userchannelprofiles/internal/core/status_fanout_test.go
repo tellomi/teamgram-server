@@ -251,6 +251,28 @@ func TestStatusPrivacyChangeStopsExactOnline(t *testing.T) {
 	}
 }
 
+func TestClearedListAfterForgetRetryDoesNotPushExact(t *testing.T) {
+	period := int64(mtproto.UserOnlinePeriod)
+	now := int64(1_700_000_000)
+	// The record left after a failed EVAL is still the exact list. The
+	// record left after the retry is empty, so the next heartbeat reloads.
+	cleared := statusbook.Record{Gen: 2}
+	exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + period)}).To_UserStatus()
+	var got string
+	res, err := runStatusHeartbeat(true, true, now, int32(period), now, now+period, exact, cleared, func() ([]statusDelivery, []statusbook.Viewer, error) {
+		return []statusDelivery{{
+			UserID: 1,
+			Status: mtproto.MakeTLUserStatusRecently(&mtproto.UserStatus{}).To_UserStatus(),
+		}}, []statusbook.Viewer{{ID: 1, ByMe: true}}, nil
+	}, func(row statusDelivery) error {
+		got = row.Status.GetPredicateName()
+		return nil
+	})
+	if err != nil || !res.Loaded || got == mtproto.Predicate_userStatusOnline || got == "" {
+		t.Fatalf("retry still pushed exact: %+v %q %v", res, got, err)
+	}
+}
+
 func TestStatusEdgesAlwaysReload(t *testing.T) {
 	push, reload := planStatusFanout(true, false, true, 300, 10)
 	if !push || !reload {

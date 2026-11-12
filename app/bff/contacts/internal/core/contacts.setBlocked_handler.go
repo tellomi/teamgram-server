@@ -136,6 +136,9 @@ func (c *ContactsCore) replaceMainBlocks(peers []*mtproto.PeerUtil) (*mtproto.Bo
 	for id := range want {
 		changed = append(changed, id)
 	}
-	statusbook.Shared().Forget(c.ctx, changed...)
+	if err := statusbook.Shared().Forget(c.ctx, changed...); err != nil {
+		c.Logger.Errorf("contacts.setBlocked forget audience: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }

@@ -41,16 +41,23 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	}
 
 	ruleList := mtproto.ToPrivacyRuleListByInput(c.MD.UserId, in.Rules)
-
-	if _, err := c.svcCtx.Dao.UserClient.UserSetPrivacy(c.ctx, &userpb.TLUserSetPrivacy{
-		UserId:  c.MD.UserId,
-		KeyType: int32(key),
-		Rules:   ruleList,
+	named := mtproto.NewIDListHelper()
+	named.PickByRules(ruleList)
+	if err := applyPrivacyChange(key, c.MD.UserId, named.UserIdList, func() ([]int64, []int64, error) {
+		return c.readStatusContacts(key)
+	}, func() error {
+		_, err := c.svcCtx.Dao.UserClient.UserSetPrivacy(c.ctx, &userpb.TLUserSetPrivacy{
+			UserId:  c.MD.UserId,
+			KeyType: int32(key),
+			Rules:   ruleList,
+		})
+		return err
+	}, func(ids []int64) error {
+		return statusbook.Shared().Forget(c.ctx, ids...)
 	}); err != nil {
 		c.Logger.Errorf("account.setPrivacy - error: %v", err)
 		return nil, err
 	}
-	c.forgetStatusAudiences(key, ruleList)
 
 	rValue := mtproto.MakeTLAccountPrivacyRules(&mtproto.Account_PrivacyRules{
 		Rules: ruleList,
@@ -94,25 +101,48 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	return rValue, nil
 }
 
-// forgetStatusAudiences drops every cached audience that might still name
-// this user. A last-seen change also drops the lists of people who added
-// them and of people they added, including when the new rules only name a
-// chat. Other privacy keys drop this user and anyone the rules name.
-func (c *PrivacySettingsCore) forgetStatusAudiences(key int, rules []*mtproto.PrivacyRule) {
-	named := mtproto.NewIDListHelper()
-	named.PickByRules(rules)
+// applyPrivacyChange reads both contact id lists before writing last-seen
+// privacy. Either read failing returns without writing, so a client retry
+// still sees the old rules. Forget runs after the write and its error is
+// returned; a failed clear leaves that generation unchanged.
+func applyPrivacyChange(key int, self int64, named []int64, read func() ([]int64, []int64, error), write func() error, forget func([]int64) error) error {
 	var forward, reverse []int64
-	if key == mtproto.STATUS_TIMESTAMP && c != nil && c.svcCtx != nil && c.svcCtx.Dao != nil {
-		if rows, err := c.svcCtx.Dao.UserGetContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId}); err != nil {
-			c.Logger.Errorf("account.setPrivacy status audience forward: %v", err)
-		} else if rows != nil {
-			forward = rows.GetDatas()
-		}
-		if rows, err := c.svcCtx.Dao.UserGetReverseContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId}); err != nil {
-			c.Logger.Errorf("account.setPrivacy status audience reverse: %v", err)
-		} else if rows != nil {
-			reverse = rows.GetDatas()
+	if key == mtproto.STATUS_TIMESTAMP {
+		var err error
+		forward, reverse, err = read()
+		if err != nil {
+			return err
 		}
 	}
-	statusbook.Shared().Forget(c.ctx, statusbook.StatusPrivacyForgetIDs(c.MD.UserId, named.UserIdList, forward, reverse)...)
+	if err := write(); err != nil {
+		return err
+	}
+	if forget == nil {
+		return nil
+	}
+	return forget(statusbook.StatusPrivacyForgetIDs(self, named, forward, reverse))
+}
+
+func (c *PrivacySettingsCore) readStatusContacts(key int) ([]int64, []int64, error) {
+	if key != mtproto.STATUS_TIMESTAMP {
+		return nil, nil, nil
+	}
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return nil, nil, mtproto.ErrInternalServerError
+	}
+	forward, err := c.svcCtx.Dao.UserGetContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId})
+	if err != nil || forward == nil {
+		if err == nil {
+			err = mtproto.ErrInternalServerError
+		}
+		return nil, nil, err
+	}
+	reverse, err := c.svcCtx.Dao.UserGetReverseContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId})
+	if err != nil || reverse == nil {
+		if err == nil {
+			err = mtproto.ErrInternalServerError
+		}
+		return nil, nil, err
+	}
+	return forward.GetDatas(), reverse.GetDatas(), nil
 }

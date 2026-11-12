@@ -65,7 +65,9 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 		}); err != nil {
 			return nil, err
 		}
-		statusbook.Shared().Forget(ctx, self, sender)
+		if err := statusbook.Shared().Forget(ctx, self, sender); err != nil {
+			return nil, err
+		}
 	}
 	if in.GetReportSpam() {
 		logx.WithContext(ctx).Infof("contacts.blockFromReplies report_spam user %d msg %d", sender, in.GetMsgId())

@@ -108,7 +108,9 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 			return
 		}
 		if res.Forget {
-			book.Forget(ctx, c.MD.UserId)
+			if err := book.Forget(ctx, c.MD.UserId); err != nil {
+				c.Logger.Errorf("account.updateStatus forget audience: %v", err)
+			}
 			return
 		}
 		if res.Save {

@@ -86,7 +86,7 @@ type body struct {
 type backend interface {
 	load(ctx context.Context, userID int64) (Record, error)
 	save(ctx context.Context, userID int64, rec Record) error
-	forget(ctx context.Context, userIDs []int64)
+	forget(ctx context.Context, userIDs []int64) error
 }
 
 // Book is the shared last-audience mark.
@@ -155,10 +155,11 @@ func (b *Book) Save(ctx context.Context, userID int64, rec Record) error {
 }
 
 // Forget drops the list and bumps its generation so a save that already
-// read the old list cannot write it back.
-func (b *Book) Forget(ctx context.Context, userIDs ...int64) {
+// read the old list cannot write it back. A store error is returned with
+// the generation of the failed id unchanged, so the caller can retry.
+func (b *Book) Forget(ctx context.Context, userIDs ...int64) error {
 	if b == nil || b.be == nil {
-		return
+		return nil
 	}
 	ids := make([]int64, 0, len(userIDs))
 	seen := make(map[int64]struct{}, len(userIDs))
@@ -173,9 +174,9 @@ func (b *Book) Forget(ctx context.Context, userIDs ...int64) {
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
-		return
+		return nil
 	}
-	b.be.forget(ctx, ids)
+	return b.be.forget(ctx, ids)
 }
 
 // OpenRecord is the record a heartbeat may trust. A read error yields an
@@ -263,7 +264,7 @@ func (m *mem) save(_ context.Context, userID int64, rec Record) error {
 	return nil
 }
 
-func (m *mem) forget(_ context.Context, userIDs []int64) {
+func (m *mem) forget(_ context.Context, userIDs []int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, id := range userIDs {
@@ -275,6 +276,7 @@ func (m *mem) forget(_ context.Context, userIDs []int64) {
 		s.expire = time.Time{}
 		m.m[id] = s
 	}
+	return nil
 }
 
 type scriptKV interface {
@@ -317,8 +319,12 @@ func (r redisBE) save(ctx context.Context, userID int64, rec Record) error {
 	return err
 }
 
-func (r redisBE) forget(ctx context.Context, userIDs []int64) {
+func (r redisBE) forget(ctx context.Context, userIDs []int64) error {
+	var first error
 	for _, id := range userIDs {
-		_, _ = r.kv.EvalCtx(ctx, forgetScript, dataKey(id))
+		if _, err := r.kv.EvalCtx(ctx, forgetScript, dataKey(id)); err != nil && first == nil {
+			first = err
+		}
 	}
+	return first
 }

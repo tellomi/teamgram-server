@@ -134,6 +134,8 @@ func (c *ContactsCore) deleteContactIDs(ids []int64) error {
 			return err
 		}
 	}
-	statusbook.Shared().Forget(c.ctx, append([]int64{c.MD.UserId}, ids...)...)
+	if err := statusbook.Shared().Forget(c.ctx, append([]int64{c.MD.UserId}, ids...)...); err != nil {
+		return err
+	}
 	return nil
 }

@@ -49,7 +49,10 @@ func (c *ContactsCore) ContactsImportContacts(in *mtproto.TLContactsImportContac
 	}
 
 	peerIDs := imported.GetUpdateIdList()
-	statusbook.Shared().Forget(c.ctx, append([]int64{c.MD.UserId}, peerIDs...)...)
+	if err := statusbook.Shared().Forget(c.ctx, append([]int64{c.MD.UserId}, peerIDs...)...); err != nil {
+		c.Logger.Errorf("contacts.importContacts forget audience: %v", err)
+		return nil, err
+	}
 	c.pushImportContactUpdates(peerIDs)
 
 	users := imported.GetUsers()
