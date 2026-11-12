@@ -303,7 +303,7 @@ func (c *DfsCore) frameFromStoredDocument(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer release()
-	obj, err := c.svcCtx.Dao.GetFileObject(ctx, minio_util.ClassDocuments, path)
+	obj, err := c.svcCtx.Dao.OpenClass(ctx, minio_util.ClassDocuments, path)
 	if err != nil {
 		return nil, err
 	}

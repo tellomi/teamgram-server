@@ -185,6 +185,14 @@ Production sets `TELLOMI_S3_HTTP_PROXY=http://172.19.44.222:3128` on the dfs
 process only. Do not set a process-wide `HTTP_PROXY`. The proxy ACL still has
 to allow only this account's R2 hostname and port. There is no database migration.
 
+## Local hot tier
+
+When `TELLOMI_MEDIA_HOT_TIER_ENABLED` is on, new chat media is written to
+a data-disk directory first and only copied to the object store after the
+current retention window. Reads prefer the local file and fall back to the
+bucket through `TELLOMI_S3_HTTP_PROXY`. A missing proxy is a startup error:
+the process will not dial R2 directly. See [media-hot-tier.md](media-hot-tier.md).
+
 ## Download cache
 
 `upload.getFile` for photo sizes and documents keeps a local LRU of the bytes
