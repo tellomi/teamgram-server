@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	// TTL bounds how long a missed invalidation can keep a list. A successful
-	// push refreshes it. The generation counter is not deleted with the list.
+	// TTL is how long a list loaded from contacts and privacy may be reused.
+	// A later heartbeat that only slides expires does not extend it, so a
+	// clear that never landed still dies. The generation counter is not
+	// deleted with the list and is not covered by this deadline.
 	TTL = 600
 	// MaxViewers bounds one user's cached audience. A larger list is not
 	// stored; the next heartbeat loads it again instead of keeping it.
@@ -30,14 +32,18 @@ const (
 const keyPrefix = "status_aud_v2:"
 
 // saveScript writes the audience only when the generation still matches the
-// one the caller read and the new expires is strictly later. Otherwise it
-// leaves the key alone.
+// one the caller read and the new expires is strictly later. ARGV[4] is 1
+// only for a full reload: that sets the absolute list deadline. A renewal
+// leaves that deadline alone, and does not recreate a list that has already
+// passed it. The generation field is never given a Redis expire.
 const saveScript = `
 local key = KEYS[1]
 local expect = tostring(ARGV[1])
 local newPushed = tonumber(ARGV[2])
 local body = ARGV[3]
-local ttl = tonumber(ARGV[4])
+local setTTL = ARGV[4]
+local now = tonumber(ARGV[5])
+local ttl = tonumber(ARGV[6])
 local gen = redis.call('HGET', key, 'gen')
 if gen == false or gen == nil then gen = '0' end
 if tostring(gen) ~= expect then return 0 end
@@ -45,8 +51,13 @@ local cur = redis.call('HGET', key, 'pushed')
 local curPushed = 0
 if cur and cur ~= false then curPushed = tonumber(cur) or 0 end
 if newPushed <= curPushed then return 0 end
+if setTTL == '1' then
+  redis.call('HSET', key, 'pushed', tostring(newPushed), 'body', body, 'exp', tostring(now + ttl))
+  return 1
+end
+local exp = tonumber(redis.call('HGET', key, 'exp') or '0')
+if exp == nil or exp <= now then return 0 end
 redis.call('HSET', key, 'pushed', tostring(newPushed), 'body', body)
-redis.call('EXPIRE', key, ttl)
 return 1
 `
 
@@ -54,7 +65,7 @@ return 1
 const forgetScript = `
 local key = KEYS[1]
 redis.call('HINCRBY', key, 'gen', 1)
-redis.call('HDEL', key, 'pushed', 'body')
+redis.call('HDEL', key, 'pushed', 'body', 'exp')
 redis.call('PERSIST', key)
 return 1
 `
@@ -76,6 +87,9 @@ type Record struct {
 	Viewers  []Viewer `json:"viewers,omitempty"`
 	HaveList bool     `json:"have_list,omitempty"`
 	Gen      int64    `json:"gen,omitempty"`
+	// SetTTL is true only when this save follows a full audience reload.
+	// Renewals leave the list deadline where the reload put it.
+	SetTTL bool `json:"-"`
 }
 
 type body struct {
@@ -84,22 +98,44 @@ type body struct {
 }
 
 type backend interface {
-	load(ctx context.Context, userID int64) (Record, error)
-	save(ctx context.Context, userID int64, rec Record) error
+	load(ctx context.Context, userID int64, now time.Time) (Record, error)
+	save(ctx context.Context, userID int64, rec Record, now time.Time) error
 	forget(ctx context.Context, userIDs []int64) error
 }
 
 // Book is the shared last-audience mark.
 type Book struct {
-	be backend
+	be  backend
+	now func() time.Time
 }
 
 // New uses Redis when conf is set and an in-process map otherwise.
 func New(conf gokv.KvConf) *Book {
+	b := &Book{now: time.Now}
 	if len(conf) == 0 {
-		return &Book{be: newMem()}
+		b.be = newMem()
+		return b
 	}
-	return &Book{be: redisBE{kv: kv.NewStore(conf)}}
+	b.be = redisBE{kv: kv.NewStore(conf)}
+	return b
+}
+
+// SetNow replaces the clock used for the list deadline. Tests use it.
+func (b *Book) SetNow(now func() time.Time) {
+	if b == nil {
+		return
+	}
+	if now == nil {
+		now = time.Now
+	}
+	b.now = now
+}
+
+func (b *Book) clock() time.Time {
+	if b == nil || b.now == nil {
+		return time.Now()
+	}
+	return b.now()
 }
 
 var (
@@ -136,7 +172,7 @@ func (b *Book) Load(ctx context.Context, userID int64) (Record, error) {
 	if b == nil || b.be == nil || userID == 0 {
 		return Record{}, nil
 	}
-	return b.be.load(ctx, userID)
+	return b.be.load(ctx, userID, b.clock())
 }
 
 // Save stores a newer expires and its audience when rec.Gen is still current.
@@ -151,7 +187,7 @@ func (b *Book) Save(ctx context.Context, userID int64, rec Record) error {
 		rec.Viewers = nil
 		rec.HaveList = false
 	}
-	return b.be.save(ctx, userID, rec)
+	return b.be.save(ctx, userID, rec, b.clock())
 }
 
 // Forget drops the list and bumps its generation so a save that already
@@ -232,34 +268,39 @@ type mem struct {
 
 func newMem() *mem { return &mem{m: map[int64]memSlot{}} }
 
-func (m *mem) load(_ context.Context, userID int64) (Record, error) {
+func listExpired(expire time.Time, now time.Time) bool {
+	return expire.IsZero() || !now.Before(expire)
+}
+
+func (m *mem) load(_ context.Context, userID int64, now time.Time) (Record, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.m[userID]
-	if !s.expire.IsZero() && time.Now().After(s.expire) {
-		s.pushed = 0
-		s.have = false
-		s.viewers = nil
-		s.expire = time.Time{}
-		m.m[userID] = s
-	}
 	if s.gen == 0 && s.pushed == 0 && !s.have {
 		return Record{}, nil
+	}
+	if listExpired(s.expire, now) {
+		return Record{Gen: s.gen}, nil
 	}
 	return Record{Pushed: s.pushed, Viewers: append([]Viewer(nil), s.viewers...), HaveList: s.have, Gen: s.gen}, nil
 }
 
-func (m *mem) save(_ context.Context, userID int64, rec Record) error {
+func (m *mem) save(_ context.Context, userID int64, rec Record, now time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.m[userID]
 	if s.gen != rec.Gen || rec.Pushed <= s.pushed {
 		return nil
 	}
+	if !rec.SetTTL && listExpired(s.expire, now) {
+		return nil
+	}
 	s.pushed = rec.Pushed
 	s.have = rec.HaveList
 	s.viewers = append([]Viewer(nil), rec.Viewers...)
-	s.expire = time.Now().Add(time.Duration(TTL) * time.Second)
+	if rec.SetTTL {
+		s.expire = now.Add(time.Duration(TTL) * time.Second)
+	}
 	m.m[userID] = s
 	return nil
 }
@@ -288,13 +329,14 @@ type redisBE struct {
 	kv scriptKV
 }
 
-func (r redisBE) load(ctx context.Context, userID int64) (Record, error) {
+func (r redisBE) load(ctx context.Context, userID int64, now time.Time) (Record, error) {
 	fields, err := r.kv.HgetallCtx(ctx, dataKey(userID))
 	if err != nil {
 		return Record{}, err
 	}
 	gen, _ := strconv.ParseInt(fields["gen"], 10, 64)
-	if fields["body"] == "" {
+	exp, _ := strconv.ParseInt(fields["exp"], 10, 64)
+	if fields["body"] == "" || exp <= now.Unix() {
 		return Record{Gen: gen}, nil
 	}
 	var decoded body
@@ -305,15 +347,21 @@ func (r redisBE) load(ctx context.Context, userID int64) (Record, error) {
 	return Record{Pushed: pushed, Viewers: decoded.Viewers, HaveList: decoded.HaveList, Gen: gen}, nil
 }
 
-func (r redisBE) save(ctx context.Context, userID int64, rec Record) error {
+func (r redisBE) save(ctx context.Context, userID int64, rec Record, now time.Time) error {
 	raw, err := json.Marshal(body{Viewers: rec.Viewers, HaveList: rec.HaveList})
 	if err != nil {
 		return err
+	}
+	setTTL := "0"
+	if rec.SetTTL {
+		setTTL = "1"
 	}
 	_, err = r.kv.EvalCtx(ctx, saveScript, dataKey(userID),
 		strconv.FormatInt(rec.Gen, 10),
 		strconv.FormatInt(rec.Pushed, 10),
 		string(raw),
+		setTTL,
+		strconv.FormatInt(now.Unix(), 10),
 		TTL,
 	)
 	return err

@@ -1,11 +1,16 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
+	"github.com/zeromicro/go-zero/core/stores/cache"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 )
 
 func TestStatusRecipientsFailClosedWithoutPrivacy(t *testing.T) {
@@ -271,6 +276,79 @@ func TestClearedListAfterForgetRetryDoesNotPushExact(t *testing.T) {
 	if err != nil || !res.Loaded || got == mtproto.Predicate_userStatusOnline || got == "" {
 		t.Fatalf("retry still pushed exact: %+v %q %v", res, got, err)
 	}
+}
+
+func TestStaleAudienceExpiresWithoutExtendingTTL(t *testing.T) {
+	run := func(t *testing.T, b *statusbook.Book) {
+		t.Helper()
+		start := time.Unix(1_700_000_000, 0)
+		now := start
+		b.SetNow(func() time.Time { return now })
+		ctx := context.Background()
+		const (
+			alice = int64(1)
+			bob   = int64(2)
+		)
+		// Forget failed, so the last full reload's exact list is still stored.
+		if err := b.Save(ctx, bob, statusbook.Record{
+			Pushed: start.Unix() + int64(mtproto.UserOnlinePeriod), HaveList: true, SetTTL: true,
+			Viewers: []statusbook.Viewer{{ID: alice, Exact: true}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		contact := start.Unix() + int64(mtproto.UserOnlinePeriod)
+		reloads := 0
+		exactPush := false
+		for step := 1; step <= 12; step++ {
+			now = start.Add(time.Duration(step*55) * time.Second)
+			if now.Unix() >= contact {
+				t.Fatalf("contact expired at %ds now %d expires %d", step*55, now.Unix(), contact)
+			}
+			rec, err := b.Load(ctx, bob)
+			if err != nil {
+				t.Fatal(err)
+			}
+			status := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now.Unix() + int64(mtproto.UserOnlinePeriod))}).To_UserStatus()
+			res, err := runStatusHeartbeat(true, true, now.Unix(), mtproto.UserOnlinePeriod, now.Unix(), now.Unix()+int64(mtproto.UserOnlinePeriod), status, rec, func() ([]statusDelivery, []statusbook.Viewer, error) {
+				reloads++
+				return []statusDelivery{{
+					UserID: alice,
+					Status: mtproto.MakeTLUserStatusRecently(&mtproto.UserStatus{}).To_UserStatus(),
+				}}, []statusbook.Viewer{{ID: alice, ByMe: true}}, nil
+			}, func(row statusDelivery) error {
+				if row.UserID == alice {
+					exactPush = row.Status.GetPredicateName() == mtproto.Predicate_userStatusOnline
+				}
+				return nil
+			})
+			if err != nil || !res.Save {
+				t.Fatalf("step %d: %+v %v", step, res, err)
+			}
+			if now.Unix() < start.Unix()+int64(statusbook.TTL) {
+				if res.Loaded || !exactPush {
+					t.Fatalf("step %ds reloaded or lost exact: loaded %v exact %v", step*55, res.Loaded, exactPush)
+				}
+			} else if exactPush || reloads == 0 {
+				t.Fatalf("step %ds still used the expired list: loaded %v exact %v reloads %d", step*55, res.Loaded, exactPush, reloads)
+			}
+			res.Next.SetTTL = res.Loaded
+			if err := b.Save(ctx, bob, res.Next); err != nil {
+				t.Fatal(err)
+			}
+			contact = res.Next.Pushed
+		}
+		if reloads == 0 {
+			t.Fatal("the expired list was never reloaded")
+		}
+	}
+	t.Run("memory", func(t *testing.T) { run(t, statusbook.New(nil)) })
+	t.Run("redis", func(t *testing.T) {
+		mr := miniredis.RunT(t)
+		run(t, statusbook.New(cache.ClusterConf{{
+			RedisConf: redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType},
+			Weight:    100,
+		}}))
+	})
 }
 
 func TestStatusEdgesAlwaysReload(t *testing.T) {

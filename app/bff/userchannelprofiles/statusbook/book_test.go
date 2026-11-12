@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/teamgram/marmota/pkg/stores/kv"
@@ -18,7 +19,7 @@ func TestSaveForgetAndOlderWrite(t *testing.T) {
 	if err != nil || got.Pushed != 0 || got.HaveList {
 		t.Fatalf("missing = %+v %v", got, err)
 	}
-	rec := Record{Pushed: 1_700_000_300, HaveList: true, Viewers: []Viewer{{ID: 2, Exact: true}}, Gen: got.Gen}
+	rec := Record{Pushed: 1_700_000_300, HaveList: true, Viewers: []Viewer{{ID: 2, Exact: true}}, Gen: got.Gen, SetTTL: true}
 	if err = b.Save(ctx, 7, rec); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestOversizedAudienceIsNotStored(t *testing.T) {
 	for i := range viewers {
 		viewers[i] = Viewer{ID: int64(i + 1), Exact: true}
 	}
-	if err := b.Save(ctx, 4, Record{Pushed: 100, HaveList: true, Viewers: viewers}); err != nil {
+	if err := b.Save(ctx, 4, Record{Pushed: 100, HaveList: true, Viewers: viewers, SetTTL: true}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := b.Load(ctx, 4)
@@ -74,7 +75,7 @@ func assertInFlightSaveDropped(t *testing.T, b *Book) {
 	ctx := context.Background()
 	const userID int64 = 8
 	if err := b.Save(ctx, userID, Record{
-		Pushed: 300, HaveList: true, Gen: 0,
+		Pushed: 300, HaveList: true, Gen: 0, SetTTL: true,
 		Viewers: []Viewer{{ID: 1, Exact: true}},
 	}); err != nil {
 		t.Fatal(err)
@@ -97,7 +98,7 @@ func assertInFlightSaveDropped(t *testing.T, b *Book) {
 		t.Fatalf("forget did not bump the generation: %+v", got)
 	}
 	if err = b.Save(ctx, userID, Record{
-		Pushed: 900, HaveList: true, Gen: got.Gen,
+		Pushed: 900, HaveList: true, Gen: got.Gen, SetTTL: true,
 		Viewers: []Viewer{{ID: 2}},
 	}); err != nil {
 		t.Fatal(err)
@@ -110,9 +111,11 @@ func assertInFlightSaveDropped(t *testing.T, b *Book) {
 
 type errBackend struct{ err error }
 
-func (e errBackend) load(context.Context, int64) (Record, error) { return Record{}, e.err }
-func (e errBackend) save(context.Context, int64, Record) error   { return e.err }
-func (e errBackend) forget(context.Context, []int64) error       { return e.err }
+func (e errBackend) load(context.Context, int64, time.Time) (Record, error) {
+	return Record{}, e.err
+}
+func (e errBackend) save(context.Context, int64, Record, time.Time) error { return e.err }
+func (e errBackend) forget(context.Context, []int64) error                { return e.err }
 
 func TestKVErrorsDoNotLookLikeAFreshSkip(t *testing.T) {
 	readErr := errors.New("redis down")
@@ -178,13 +181,15 @@ func TestEvalFailureIsReturnedAndRetryClears(t *testing.T) {
 		Weight:    100,
 	}})
 	const bob int64 = 9
+	at := time.Unix(1_700_000_000, 0)
 	raw := redisBE{kv: store}
 	b := &Book{be: redisBE{kv: &flakyEval{scriptKV: store, failKey: dataKey(bob), left: 1}}}
+	b.SetNow(func() time.Time { return at })
 	ctx := context.Background()
 	if err := raw.save(ctx, bob, Record{
-		Pushed: 300, HaveList: true, Gen: 0,
+		Pushed: 300, HaveList: true, Gen: 0, SetTTL: true,
 		Viewers: []Viewer{{ID: 1, Exact: true}},
-	}); err != nil {
+	}, at); err != nil {
 		t.Fatal(err)
 	}
 	err := b.Forget(ctx, bob)

@@ -116,6 +116,9 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		if res.Save {
 			// A write error leaves the previous mark, so the next heartbeat
 			// pushes again. It does not cancel the push just made.
+			// Only a full reload starts the 600s list deadline. A renewal
+			// keeps the deadline from that reload.
+			res.Next.SetTTL = res.Loaded
 			_ = book.Save(ctx, c.MD.UserId, res.Next)
 		}
 	})
