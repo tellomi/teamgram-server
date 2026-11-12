@@ -16,6 +16,8 @@ func TestNotifySettingsStickAndReachTheOtherSession(t *testing.T) {
 	cfg := requireE2E(t)
 	android, _ := loginNamed(t, cfg, ProfileAndroid, "notify_a", "NotifyA")
 	ios, _ := loginNamed(t, cfg, ProfileIOS, "notify_a", "NotifyA")
+	// The contact has to exist before importContacts will return them.
+	_, _ = loginNamed(t, cfg, ProfileAndroid, "notify_b", "NotifyB")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
