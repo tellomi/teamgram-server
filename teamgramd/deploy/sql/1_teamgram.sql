@@ -648,7 +648,7 @@ CREATE TABLE `user_notify_settings` (
   `show_previews` int(11) NOT NULL DEFAULT '-1',
   `silent` int(11) NOT NULL DEFAULT '-1',
   `mute_until` int(11) NOT NULL DEFAULT '-1',
-  `sound` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'default',
+  `sound` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '-1',
   `stories_muted` int(11) NOT NULL DEFAULT '-1',
   `stories_hide_sender` int(11) NOT NULL DEFAULT '-1',
   `ios_sound` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',

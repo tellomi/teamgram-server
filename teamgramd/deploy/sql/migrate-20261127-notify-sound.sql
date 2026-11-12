@@ -2,6 +2,9 @@
 -- Safe to run more than once. Existing rows keep show_previews, silent,
 -- mute_until and sound. The new columns default to unset (-1 or '').
 
+-- A missing sound is "-1" (inherit). The old default "default" made the
+-- first mute-only insert look like an explicit sound.
+CALL teamgram_change_column('user_notify_settings', 'sound', 'ALTER TABLE `user_notify_settings` MODIFY `sound` VARCHAR(255) NOT NULL DEFAULT ''-1''');
 CALL teamgram_add_column('user_notify_settings', 'stories_muted', 'ALTER TABLE `user_notify_settings` ADD `stories_muted` INT NOT NULL DEFAULT -1');
 CALL teamgram_add_column('user_notify_settings', 'stories_hide_sender', 'ALTER TABLE `user_notify_settings` ADD `stories_hide_sender` INT NOT NULL DEFAULT -1');
 CALL teamgram_add_column('user_notify_settings', 'ios_sound', 'ALTER TABLE `user_notify_settings` ADD `ios_sound` VARCHAR(1024) NOT NULL DEFAULT ''''');

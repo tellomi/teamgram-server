@@ -162,12 +162,26 @@ func makeDOByPeerNotifySettings(settings *mtproto.PeerNotifySettings) map[string
 	return mtproto.NotifyColumnUpdates(settings)
 }
 
+// notifyWriteColumns splits a partial update.
+// A first insert that only sets mute_until must store sound as "-1".
+// The column default is "default", and the read path treats that as an
+// explicit sound, so the chat would stop inheriting the global sound.
+// The duplicate-key update does not touch sound when the client omitted it.
+func notifyWriteColumns(settings *mtproto.PeerNotifySettings) (updates, insertOnly map[string]interface{}) {
+	updates = makeDOByPeerNotifySettings(settings)
+	insertOnly = map[string]interface{}{}
+	if _, ok := updates["sound"]; !ok {
+		insertOnly["sound"] = "-1"
+	}
+	return updates, insertOnly
+}
+
 func (d *Dao) SetUserPeerNotifySettings(ctx context.Context, id int64, peerType int32, peerId int64, settings *mtproto.PeerNotifySettings) error {
 	_, _, err := d.CachedConn.Exec(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			cMap := makeDOByPeerNotifySettings(settings)
-			return d.UserNotifySettingsDAO.InsertOrUpdateExt(ctx, id, peerType, peerId, cMap)
+			updates, insertOnly := notifyWriteColumns(settings)
+			return d.UserNotifySettingsDAO.InsertOrUpdateExt(ctx, id, peerType, peerId, updates, insertOnly)
 		},
 		genUserNotifySettingsCacheKey(id, peerType, peerId))
 
