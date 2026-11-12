@@ -2,8 +2,8 @@
 -- Rows from before this column existed stay 0. Their date_active is the
 -- bind time, not inactivity, and account.setAuthorizationTTL must not
 -- delete them on deploy. The first real request sets the flag and date_active
--- to now. Expiry starts only after that, once the session has been idle for
--- the full TTL.
+-- to now. A later request whose stored date_active is already past the TTL
+-- logs that session out instead of extending it.
 --
 -- Apply
 --   Containers run teamgramd/deploy/migrate.sh before the processes start.
@@ -14,4 +14,6 @@
 -- Safe to run more than once. This file does not delete rows and does not
 -- log anyone out.
 
-CALL teamgram_add_column('auth_users', 'activity_trusted', 'ALTER TABLE `auth_users` ADD `activity_trusted` TINYINT(1) NOT NULL DEFAULT 0 AFTER `date_active`');
+-- Add the column at the end of the table. AFTER date_active rebuilds the
+-- table on MySQL 8.0.13 through 8.0.28. An added trailing column is INSTANT.
+CALL teamgram_add_column('auth_users', 'activity_trusted', 'ALTER TABLE `auth_users` ADD `activity_trusted` TINYINT(1) NOT NULL DEFAULT 0');

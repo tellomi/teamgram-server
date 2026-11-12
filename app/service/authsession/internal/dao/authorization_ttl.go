@@ -4,33 +4,44 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
+	"github.com/teamgram/teamgram-server/app/service/authsession/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/pkg/authzttl"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // ApplyAuthorizationLifetime runs on a real RPC or ping (GetAuthStateData).
-// That call is activity, so date_active is refreshed before any expiry
-// decision. A session that is pinging now is not inactive. date_active left
-// over from bind, before activity was tracked, is not trusted and is not
-// inactivity either: the first ping stores now and starts the TTL clock.
+// A trusted row is judged on the date_active already stored. If that time is
+// past the TTL, this reconnect is a logout: the row is soft-deleted and the
+// push token is removed. Refreshing first would make that branch unreachable
+// and would keep a single-device account alive forever. An untrusted row is
+// the bind-time stamp from before activity was tracked. It is never expired.
+// Its first real request stores now and starts the clock.
 // now is the caller's clock so tests can pass a fixed time.
 func (d *Dao) ApplyAuthorizationLifetime(ctx context.Context, authKeyID int64, cData *CacheAuthData, now int64) {
 	if d == nil || cData == nil || cData.Revoked || cData.BindUser == nil || authKeyID == 0 || cData.UserId() == 0 {
 		return
 	}
+	if cData.BindUser.ActivityTrusted {
+		ttl, ok := d.authorizationTTLDays(ctx, cData.UserId())
+		if !ok {
+			return
+		}
+		last := cData.DateActivated()
+		if authzttl.Expired(last, now, ttl) {
+			if d.expireAuthorization(ctx, cData.UserId(), authKeyID, last) {
+				cData.BindUser = nil
+				cData.Revoked = true
+				return
+			}
+			d.reloadAuthorizationActivity(ctx, authKeyID, cData)
+			return
+		}
+	}
 	d.noteAuthorizationActivity(ctx, authKeyID, cData, now)
-	if cData.Revoked || cData.BindUser == nil || !cData.BindUser.ActivityTrusted {
-		return
-	}
-	ttl := d.authorizationTTLDays(ctx, cData.UserId())
-	if authzttl.Expired(cData.DateActivated(), now, ttl) {
-		d.expireAuthorization(ctx, cData.UserId(), authKeyID)
-		cData.BindUser = nil
-		cData.Revoked = true
-	}
 }
 
 type authActivityRow struct {
@@ -52,24 +63,29 @@ func (d *Dao) ExpireStaleAuthorizations(ctx context.Context, userID, keepAuthKey
 		logx.WithContext(ctx).Errorf("expire authorizations user_id=%d: %v", userID, err)
 		return
 	}
-	ttl := d.authorizationTTLDays(ctx, userID)
-	var stale []int64
+	ttl, ok := d.authorizationTTLDays(ctx, userID)
+	if !ok {
+		return
+	}
 	for _, row := range rows {
 		if row.AuthKeyID == 0 || row.AuthKeyID == keepAuthKeyID || row.ActivityTrusted == 0 {
 			continue
 		}
-		if authzttl.Expired(row.DateActive, now, ttl) {
-			stale = append(stale, row.AuthKeyID)
+		if !authzttl.Expired(row.DateActive, now, ttl) {
+			continue
 		}
-	}
-	for _, id := range stale {
-		d.expireAuthorization(ctx, userID, id)
+		d.expireAuthorization(ctx, userID, row.AuthKeyID, row.DateActive)
 	}
 }
 
-func (d *Dao) authorizationTTLDays(ctx context.Context, userID int64) int32 {
+// authorizationTTLDays reads the stored window. ok is false when the read
+// fails or the user row is missing. Callers must skip expiry in that case.
+// Guessing 180 days and deleting would log people out because the database
+// was briefly unreadable. A stored 0 still means the column default of 180,
+// because that read succeeded.
+func (d *Dao) authorizationTTLDays(ctx context.Context, userID int64) (int32, bool) {
 	if d == nil || userID == 0 {
-		return authzttl.DefaultDays
+		return 0, false
 	}
 	var row struct {
 		Days int32 `db:"authorization_ttl_days"`
@@ -79,31 +95,45 @@ func (d *Dao) authorizationTTLDays(ctx context.Context, userID int64) int32 {
 		if !errors.Is(err, sqlx.ErrNotFound) {
 			logx.WithContext(ctx).Errorf("authorization ttl user_id=%d: %v", userID, err)
 		}
-		return authzttl.DefaultDays
+		return 0, false
 	}
-	return authzttl.Days(row.Days)
+	return authzttl.Days(row.Days), true
 }
 
-func (d *Dao) expireAuthorization(ctx context.Context, userID, authKeyID int64) {
-	if d == nil || userID == 0 || authKeyID == 0 {
-		return
+// expireAuthorization soft-deletes one trusted row whose date_active is still
+// the value that was judged idle (notAfter). A concurrent ping that stored a
+// newer date_active matches zero rows, and its push token is left in place.
+// The bool is false when nothing was deleted.
+func (d *Dao) expireAuthorization(ctx context.Context, userID, authKeyID, notAfter int64) bool {
+	if d == nil || userID == 0 || authKeyID == 0 || notAfter <= 0 {
+		return false
 	}
+	var rows int64
 	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
 		if err := lockAuthIdentities(tx, []int64{authKeyID}); err != nil {
 			result.Err = err
 			return
 		}
-		_, err := tx.Exec("update auth_users set deleted = 1, date_created = 0, date_active = 0 where auth_key_id = ? and user_id = ? and deleted = 0", authKeyID, userID)
+		res, err := tx.Exec("update auth_users set deleted = 1, date_created = 0, date_active = 0 where auth_key_id = ? and user_id = ? and deleted = 0 and activity_trusted = 1 and date_active > 0 and date_active <= ?", authKeyID, userID, notAfter)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		rows, err = res.RowsAffected()
 		result.Err = err
 	})
 	if result.Err != nil {
 		logx.WithContext(ctx).Errorf("expire authorization user_id=%d auth_key_id=%d: %v", userID, authKeyID, result.Err)
-		return
+		return false
+	}
+	if rows == 0 {
+		return false
 	}
 	if err := d.bumpAuthBindGen(ctx, authKeyID); err != nil {
 		logx.WithContext(ctx).Errorf("expire authorization cache user_id=%d auth_key_id=%d: %v", userID, authKeyID, err)
 	}
 	d.deleteDeviceTokens(ctx, userID, []int64{authKeyID})
+	return true
 }
 
 // noteAuthorizationActivity stores this RPC or ping as date_active.
@@ -182,29 +212,100 @@ func keptAuthorizationHash(existing int64, deleted bool, proposed int64) int64 {
 }
 
 // AdoptTempAuthorization moves a login that was stored on a temporary key
-// onto the permanent key and drops the temporary row. auth.bindTempAuthKey
-// used to leave both rows, so one login showed up twice and resetting the
-// row on screen did not always name the key the gateway was still using.
+// onto the permanent key and drops the temporary row, in one transaction.
+// auth.bindTempAuthKey used to leave both rows, so one login showed up twice.
+// A retry after a committed move finds no live temp row, deletes any leftover
+// temp-key push token, and returns success.
 func (d *Dao) AdoptTempAuthorization(ctx context.Context, tempID, permID int64) error {
 	if d == nil || tempID == 0 || permID == 0 || tempID == permID {
 		return nil
 	}
-	uid := d.GetAuthKeyUserId(ctx, tempID)
-	if uid == 0 {
-		return nil
-	}
-	exist := d.GetAuthKeyUserId(ctx, permID)
-	if exist != 0 && exist != uid {
-		return ErrAuthKeyUserConflict
-	}
-	if exist == 0 {
-		if _, err := d.BindAuthKeyUser(ctx, permID, uid); err != nil {
-			return err
+	var (
+		uid     int64
+		moved   bool
+		markNew bool
+	)
+	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+		if err := lockAuthIdentities(tx, []int64{tempID, permID}); err != nil {
+			result.Err = err
+			return
 		}
+		var owner struct {
+			UserID int64 `db:"user_id"`
+		}
+		err := tx.QueryRowPartial(&owner, "select user_id from auth_users where auth_key_id = ? and deleted = 0 limit 1", tempID)
+		if errors.Is(err, sqlx.ErrNotFound) {
+			_, err = tx.Exec("delete from devices where auth_key_id = ?", tempID)
+			result.Err = err
+			return
+		}
+		if err != nil {
+			result.Err = err
+			return
+		}
+		uid = owner.UserID
+		owners, err := activeAuthOwners(tx, permID)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		if authBindConflicts(owners, uid) {
+			result.Err = ErrAuthKeyUserConflict
+			return
+		}
+		hasPerm := false
+		for _, id := range owners {
+			if id == uid {
+				hasPerm = true
+				break
+			}
+		}
+		if !hasPerm {
+			now := time.Now().Unix()
+			do := &dataobject.AuthUsersDO{
+				AuthKeyId:   permID,
+				UserId:      uid,
+				Hash:        newAuthorizationHash(),
+				DateCreated: now,
+				DateActive:  now,
+			}
+			var existing struct {
+				Hash    int64 `db:"hash"`
+				Deleted int32 `db:"deleted"`
+			}
+			err = tx.QueryRowPartial(&existing, "select hash, deleted from auth_users where auth_key_id = ? and user_id = ? limit 1", permID, uid)
+			if err != nil && !errors.Is(err, sqlx.ErrNotFound) {
+				result.Err = err
+				return
+			}
+			if err == nil {
+				do.Hash = keptAuthorizationHash(existing.Hash, existing.Deleted != 0, do.Hash)
+			}
+			_, rows, err := d.AuthUsersDAO.InsertOrUpdatesTx(tx, do)
+			if err != nil {
+				result.Err = err
+				return
+			}
+			markNew = rows == 1
+		}
+		if _, err = tx.Exec("update auth_users set deleted = 1, date_active = 0 where auth_key_id = ? and user_id = ? and deleted = 0", tempID, uid); err != nil {
+			result.Err = err
+			return
+		}
+		if _, err = tx.Exec("delete from devices where auth_key_id = ?", tempID); err != nil {
+			result.Err = err
+			return
+		}
+		moved = true
+	})
+	if result.Err != nil {
+		return result.Err
 	}
-	if !d.UnbindAuthUser(ctx, tempID, uid) {
-		return fmt.Errorf("unbind temp auth key %d", tempID)
+	if err := d.bumpAuthBindGens(ctx, []int64{tempID, permID}); err != nil {
+		logx.WithContext(ctx).Errorf("adopt temp authorization cache temp=%d perm=%d: %v", tempID, permID, err)
 	}
-	d.deleteDeviceTokens(ctx, uid, []int64{tempID})
+	if moved && markNew {
+		d.markNewAuthorizationUnconfirmed(ctx, uid, permID)
+	}
 	return nil
 }

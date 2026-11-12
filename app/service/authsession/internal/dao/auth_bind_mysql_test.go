@@ -216,6 +216,94 @@ func TestAuthBindMySQL(t *testing.T) {
 		}
 	})
 
+	t.Run("trusted idle session expires on its own ping", func(t *testing.T) {
+		const userID = int64(154)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		idle := time.Now().Unix() - 40*24*60*60
+		h.setActive(t, key, userID, idle)
+		h.setTrusted(t, key, userID)
+		h.insertDevice(t, key, userID, "idle-token")
+		if err := h.dao.bumpAuthBindGen(ctx, key); err != nil {
+			t.Fatal(err)
+		}
+		cData, err := h.dao.GetCacheAuthData(ctx, key)
+		if err != nil || cData == nil || cData.BindUser == nil || !cData.BindUser.ActivityTrusted {
+			t.Fatalf("cache before ping: %+v err %v", cData, err)
+		}
+		h.dao.ApplyAuthorizationLifetime(ctx, key, cData, time.Now().Unix())
+		if cData.BindUser != nil || !cData.Revoked {
+			t.Fatal("idle trusted ping was renewed")
+		}
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 1 {
+			t.Fatalf("row after ping: %+v", rows)
+		}
+		if n := h.deviceCount(t, userID, key); n != 0 {
+			t.Fatalf("push token left on an expired session: %d", n)
+		}
+	})
+
+	t.Run("ttl read error does not expire", func(t *testing.T) {
+		const userID = int64(155)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		h.setActive(t, key, userID, time.Now().Unix()-40*24*60*60)
+		h.setTrusted(t, key, userID)
+		h.insertDevice(t, key, userID, "ttl-err-token")
+		cData, err := h.dao.GetCacheAuthData(ctx, key)
+		if err != nil || cData == nil || cData.BindUser == nil {
+			t.Fatal(err)
+		}
+		if _, err := h.db.Exec(`RENAME TABLE users TO users_held`); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _, _ = h.db.Exec(`RENAME TABLE users_held TO users`) }()
+		h.dao.ApplyAuthorizationLifetime(ctx, key, cData, time.Now().Unix())
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 || cData.Revoked {
+			t.Fatalf("ttl read error deleted the session: %+v revoked %v", rows, cData.Revoked)
+		}
+		if n := h.deviceCount(t, userID, key); n != 1 {
+			t.Fatalf("token removed when ttl could not be read: %d", n)
+		}
+	})
+
+	t.Run("refreshed key is not deleted by a stale expiry", func(t *testing.T) {
+		const userID = int64(156)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		idle := time.Now().Unix() - 40*24*60*60
+		h.setActive(t, key, userID, time.Now().Unix()-60)
+		h.setTrusted(t, key, userID)
+		h.insertDevice(t, key, userID, "fresh-token")
+		if h.dao.expireAuthorization(ctx, userID, key, idle) {
+			t.Fatal("stale cutoff deleted a refreshed key")
+		}
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 {
+			t.Fatalf("row: %+v", rows)
+		}
+		if n := h.deviceCount(t, userID, key); n != 1 {
+			t.Fatalf("token removed: %d", n)
+		}
+	})
+
 	t.Run("tracked idle authorization expires and drops its push token", func(t *testing.T) {
 		const userID = int64(153)
 		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {

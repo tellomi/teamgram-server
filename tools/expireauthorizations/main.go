@@ -26,9 +26,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/redis/go-redis/v9"
 )
 
 const backupTable = `
@@ -125,8 +127,37 @@ SELECT device_id, auth_key_id, user_id, token_type, token, no_muted, locked_peri
 FROM auth_users_ttl_device_backup
 WHERE run_id = ?`
 
+// genCache is the auth_bind_gen / auth_data.2 Redis the session service reads.
+// INCR and DEL use the same key text as authsession's bumpAuthBindGen.
+type genCache interface {
+	Get(ctx context.Context, key string) (string, error)
+	Incr(ctx context.Context, key string) (int64, error)
+	Del(ctx context.Context, keys ...string) error
+}
+
+type redisGenCache struct {
+	client *redis.Client
+}
+
+func (c redisGenCache) Get(ctx context.Context, key string) (string, error) {
+	val, err := c.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	return val, err
+}
+
+func (c redisGenCache) Incr(ctx context.Context, key string) (int64, error) {
+	return c.client.Incr(ctx, key).Result()
+}
+
+func (c redisGenCache) Del(ctx context.Context, keys ...string) error {
+	return c.client.Del(ctx, keys...).Err()
+}
+
 func main() {
 	dsn := flag.String("dsn", "", "MySQL DSN for the teamgram schema")
+	redisAddr := flag.String("redis", "", "Redis host:port that holds auth_bind_gen; required with --apply")
 	apply := flag.Bool("apply", false, "soft-delete the rows this command would report")
 	rollback := flag.Int64("rollback", 0, "restore auth_users and device tokens from this backup run id")
 	flag.Parse()
@@ -136,6 +167,10 @@ func main() {
 	}
 	if *apply && *rollback != 0 {
 		fmt.Fprintln(os.Stderr, "choose either --apply or --rollback")
+		os.Exit(2)
+	}
+	if *apply && *redisAddr == "" {
+		fmt.Fprintln(os.Stderr, "redis is required with --apply so revoked keys leave the auth cache")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -150,6 +185,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "ping:", err.Error())
 		os.Exit(1)
 	}
+	var cache genCache
+	if *redisAddr != "" {
+		client := redis.NewClient(&redis.Options{Addr: *redisAddr})
+		defer client.Close()
+		if err = client.Ping(ctx).Err(); err != nil {
+			fmt.Fprintln(os.Stderr, "redis:", err.Error())
+			os.Exit(1)
+		}
+		cache = redisGenCache{client: client}
+	}
 	switch {
 	case *rollback != 0:
 		var n int64
@@ -159,13 +204,11 @@ func main() {
 		}
 	case *apply:
 		var runID, copied int64
-		runID, copied, err = applyRun(ctx, db)
-		if err == nil {
-			fmt.Printf("run_id=%d\n", runID)
-			fmt.Printf("expired=%d\n", copied)
-			if copied > 0 {
-				fmt.Println("rollback=expireauthorizations --dsn <dsn> --rollback " + fmt.Sprint(runID))
-			}
+		runID, copied, err = applyRun(ctx, db, cache)
+		fmt.Printf("run_id=%d\n", runID)
+		fmt.Printf("expired=%d\n", copied)
+		if err == nil && copied > 0 {
+			fmt.Println("rollback=expireauthorizations --dsn <dsn> --rollback " + fmt.Sprint(runID))
 		}
 	default:
 		var n int64
@@ -198,7 +241,7 @@ func ensureBackupTables(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-func applyRun(ctx context.Context, db *sql.DB) (runID, copied int64, err error) {
+func applyRun(ctx context.Context, db *sql.DB, cache genCache) (runID, copied int64, err error) {
 	n, err := countStale(ctx, db)
 	if err != nil {
 		return 0, 0, err
@@ -235,7 +278,76 @@ func applyRun(ctx context.Context, db *sql.DB) (runID, copied int64, err error) 
 	if err = tx.Commit(); err != nil {
 		return 0, 0, err
 	}
+	if cache == nil {
+		return runID, copied, nil
+	}
+	ids, err := backupKeyIDs(ctx, db, runID)
+	if err != nil {
+		return runID, copied, err
+	}
+	if err = bumpAuthGens(ctx, cache, ids); err != nil {
+		return runID, copied, err
+	}
 	return runID, copied, nil
+}
+
+func backupKeyIDs(ctx context.Context, db *sql.DB, runID int64) ([]int64, error) {
+	rows, err := db.QueryContext(ctx, "SELECT auth_key_id FROM auth_users_ttl_backup WHERE run_id = ?", runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// bumpAuthGens matches authsession bumpAuthBindGen. The generation moves
+// forward and the previous auth_data.2 slot is deleted, so a gateway that
+// still has the logged-in snapshot cannot keep serving it.
+func bumpAuthGens(ctx context.Context, cache genCache, ids []int64) error {
+	var first error
+	for _, id := range ids {
+		if id == 0 || cache == nil {
+			continue
+		}
+		genKey := fmt.Sprintf("auth_bind_gen#%d", id)
+		raw, err := cache.Get(ctx, genKey)
+		prev := int64(0)
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			continue
+		}
+		if raw != "" {
+			prev, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				if first == nil {
+					first = err
+				}
+				continue
+			}
+		}
+		slot := fmt.Sprintf("auth_data.2#%d#%d", id, prev)
+		if _, err = cache.Incr(ctx, genKey); err != nil {
+			if first == nil {
+				first = err
+			}
+			_ = cache.Del(ctx, slot)
+			continue
+		}
+		if err = cache.Del(ctx, slot); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 func rollbackRun(ctx context.Context, db *sql.DB, runID int64) (int64, error) {

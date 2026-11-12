@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestExpireAuthorizationsDryRunApplyRollback(t *testing.T) {
@@ -84,7 +86,19 @@ func TestExpireAuthorizationsDryRunApplyRollback(t *testing.T) {
 		t.Fatal("dry-run wrote auth_users")
 	}
 
-	runID, copied, err := applyRun(ctx, db)
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	if err := rdb.Set(ctx, "auth_bind_gen#101", "4", 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(ctx, "auth_data.2#101#4", "stale-login", 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rdb.Set(ctx, "auth_bind_gen#102", "1", 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	runID, copied, err := applyRun(ctx, db, redisGenCache{client: rdb})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +116,15 @@ func TestExpireAuthorizationsDryRunApplyRollback(t *testing.T) {
 	}
 	if c := tokenCount(t, db, 102); c != 1 {
 		t.Fatalf("live token %d", c)
+	}
+	if got, err := rdb.Get(ctx, "auth_bind_gen#101").Result(); err != nil || got != "5" {
+		t.Fatalf("auth_bind_gen#101 = %q err %v", got, err)
+	}
+	if n, err := rdb.Exists(ctx, "auth_data.2#101#4").Result(); err != nil || n != 0 {
+		t.Fatalf("stale auth cache still present: %d err %v", n, err)
+	}
+	if got, err := rdb.Get(ctx, "auth_bind_gen#102").Result(); err != nil || got != "1" {
+		t.Fatalf("live key generation changed to %q err %v", got, err)
 	}
 
 	restored, err := rollbackRun(ctx, db, runID)
