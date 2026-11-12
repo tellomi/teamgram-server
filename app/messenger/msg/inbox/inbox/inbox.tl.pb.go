@@ -611,6 +611,12 @@ type TLInboxDeleteUserHistoryToInbox struct {
 	PeerUserId  int64         `protobuf:"varint,4,opt,name=peer_user_id,json=peerUserId,proto3" json:"peer_user_id,omitempty"`
 	JustClear   bool          `protobuf:"varint,5,opt,name=just_clear,json=justClear,proto3" json:"just_clear,omitempty"`
 	MaxId       int32         `protobuf:"varint,6,opt,name=max_id,json=maxId,proto3" json:"max_id,omitempty"`
+	// Date window for revoke. Kafka JSON carries these. They are not part of
+	// the older TL payload. min_date_set / max_date_set stay when the value is 0.
+	MinDate    int32 `json:"min_date,omitempty"`
+	MaxDate    int32 `json:"max_date,omitempty"`
+	MinDateSet bool  `json:"min_date_set,omitempty"`
+	MaxDateSet bool  `json:"max_date_set,omitempty"`
 }
 
 func (x *TLInboxDeleteUserHistoryToInbox) Reset() {

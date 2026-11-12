@@ -226,6 +226,39 @@ func Page(rows []Row, limit int) (deleteRows []Row, offset int32) {
 	return deleteRows, offset
 }
 
+// PeerRevokeQuery is the window applied on the other participant.
+// maxID is the caller's max_id (0 means no id cap). Dates use the same
+// newer-than / older-than rules as the caller's page.
+func PeerRevokeQuery(maxID int32, justClear bool, dates Query) Query {
+	return Query{
+		MaxID:     maxID,
+		JustClear: justClear,
+		MinSet:    dates.MinSet,
+		MinDate:   dates.MinDate,
+		MaxSet:    dates.MaxSet,
+		MaxDate:   dates.MaxDate,
+	}
+}
+
+// SplitDeleted chooses the ids that get updateDeleteMessages.
+// A failed follow-up read must still announce every id the delete statement
+// accepted. Otherwise a retry no longer sees those rows and never writes the
+// pts update, so the messages stay gone on the server and come back in the
+// client that missed the update.
+func SplitDeleted(ids []int32, live map[int32]struct{}, confirmErr error) (deleted, failed []int32) {
+	if confirmErr != nil {
+		return append([]int32(nil), ids...), nil
+	}
+	for _, id := range ids {
+		if _, still := live[id]; still {
+			failed = append(failed, id)
+			continue
+		}
+		deleted = append(deleted, id)
+	}
+	return deleted, failed
+}
+
 // IsHistoryClear reports the service message just_clear leaves behind.
 func IsHistoryClear(m *mtproto.Message) bool {
 	return m.GetPredicateName() == mtproto.Predicate_messageService &&

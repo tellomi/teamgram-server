@@ -30,13 +30,19 @@ import (
 // InboxDeleteUserHistoryToInbox
 // inbox.deleteUserHistoryToInbox flags:# from_id:long peer_user_id:long just_clear:flags.1?true max_id:int = Void;
 //
-// max_id on this request is the caller's box id, not the peer's, so it is
-// not applied here. The caller revokes one page by dialog_message_id. This
-// method clears whatever of that dialog is still in the peer's box, one
-// page at a time, and returns the error when a page does not delete.
+// max_id and the date window are the caller's. Messages outside that window
+// stay, including a newer message than the one just_clear turns into
+// history clear. MaxId 0 means the caller did not cap ids.
 func (c *InboxCore) InboxDeleteUserHistoryToInbox(in *inbox.TLInboxDeleteUserHistoryToInbox) (*mtproto.Void, error) {
 	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, in.FromId)
-	q := deletehistory.Query{JustClear: in.GetJustClear()}
+	// The caller's max_id and date window. The newest message outside that
+	// window stays. MaxId 0 means the caller did not cap ids.
+	q := deletehistory.PeerRevokeQuery(in.GetMaxId(), in.GetJustClear(), deletehistory.Query{
+		MinSet:  in.MinDateSet,
+		MinDate: in.MinDate,
+		MaxSet:  in.MaxDateSet,
+		MaxDate: in.MaxDate,
+	})
 	var anchorID int32
 	var anchor *mtproto.Message
 	if q.JustClear {
@@ -98,7 +104,7 @@ func (c *InboxCore) InboxDeleteUserHistoryToInbox(in *inbox.TLInboxDeleteUserHis
 			Date:   anchor.GetDate(),
 			Action: mtproto.MakeTLMessageActionHistoryClear(nil).To_MessageAction(),
 		}).To_Message()
-		if _, err := c.svcCtx.Dao.EditUserOutboxMessage(c.ctx, in.PeerUserId, in.FromId, cleared); err != nil {
+		if err := c.svcCtx.Dao.SaveEditedMessage(c.ctx, in.PeerUserId, mtproto.PEER_USER, in.FromId, cleared); err != nil {
 			c.Logger.Errorf("inbox.deleteUserHistoryToInbox - error: %v", err)
 			return nil, err
 		}
@@ -132,11 +138,16 @@ func (c *InboxCore) pushInboxDelete(userID int64, peer *mtproto.PeerUtil, ids []
 	}).To_Update()
 	c.persistPtsUpdate(c.ctx, userID, del)
 	c.persistPtsUpdate(c.ctx, userID, read)
-	_, err := c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+	if _, err := c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
 		UserId:  userID,
 		Updates: mtproto.MakeUpdatesByUpdates(del, read),
-	})
-	return err
+	}); err != nil {
+		// The pts rows are already stored. A push error must not skip the
+		// rest of the peer's pages or allocate those pts again on a retry
+		// that no longer sees the rows.
+		c.Logger.Errorf("inbox.deleteHistory - sync: %v", err)
+	}
+	return nil
 }
 
 func inboxRows(rows []dataobject.MessagesDO) []deletehistory.Row {

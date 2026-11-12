@@ -90,20 +90,14 @@ func (c *MsgCore) deleteUserHistory(in *msg.TLMsgDeleteHistory) (*mtproto.Messag
 			return nil, err
 		}
 	}
-	live, err := c.svcCtx.Dao.LiveMessageBoxIDs(c.ctx, in.UserId, ids)
-	if err != nil {
-		c.Logger.Errorf("msg.deleteHistory - error: %v", err)
-		return nil, err
+	live, confirmErr := c.svcCtx.Dao.LiveMessageBoxIDs(c.ctx, in.UserId, ids)
+	if confirmErr != nil {
+		// The delete already committed. Announcing the requested ids is what
+		// lets the next getDifference drop them. Returning here would leave
+		// a deleted batch with no pts update.
+		c.Logger.Errorf("msg.deleteHistory - confirm: %v", confirmErr)
 	}
-	deleted := make([]int32, 0, len(ids))
-	failed := make([]int32, 0)
-	for _, id := range ids {
-		if _, still := live[id]; still {
-			failed = append(failed, id)
-			continue
-		}
-		deleted = append(deleted, id)
-	}
+	deleted, failed := deletehistory.SplitDeleted(ids, live, confirmErr)
 	offset = deletehistory.OffsetAfterFailure(offset, failed)
 	if len(ids) > 0 && len(deleted) == 0 {
 		err = mtproto.ErrInternalServerError
@@ -113,29 +107,50 @@ func (c *MsgCore) deleteUserHistory(in *msg.TLMsgDeleteHistory) (*mtproto.Messag
 
 	fullClear := !q.HasDates()
 	clearAnchor := fullClear && q.JustClear && offset == 0 && anchor != nil && !isHistoryClear(anchor)
-	if len(deleted) > 0 || clearAnchor {
-		if err = c.svcCtx.Dao.SetDialogTopMessage(c.ctx, in.UserId, peer); err != nil {
-			c.Logger.Errorf("msg.deleteHistory - top message: %v", err)
-			return nil, err
+	if clearAnchor {
+		cleared := historyClearMessage(in.UserId, peer, anchor)
+		// Save the body before any pts is reserved. The outbox edit helper
+		// also takes a pts, which would leave a gap with no stored update.
+		if err = c.svcCtx.Dao.SaveEditedMessage(c.ctx, in.UserId, in.PeerType, in.PeerId, cleared); err != nil {
+			c.Logger.Errorf("msg.deleteHistory - history clear: %v", err)
+			clearAnchor = false
+			if offset == 0 && anchor.GetId() > 0 {
+				offset = anchor.GetId()
+			}
+		} else {
+			anchor = cleared
 		}
 	}
 
 	pts, updates := c.historyDeleteUpdates(in, peer, deleted, anchor, clearAnchor, fullClear && (len(deleted) > 0 || clearAnchor))
+	if len(deleted) > 0 || clearAnchor {
+		if topErr := c.svcCtx.Dao.SetDialogTopMessage(c.ctx, in.UserId, peer); topErr != nil {
+			// pts for this batch are already stored. Failing the RPC would
+			// make the client retry ids that are no longer visible.
+			c.Logger.Errorf("msg.deleteHistory - top message: %v", topErr)
+		}
+	}
 	if len(updates) > 0 {
-		c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+		if _, syncErr := c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 			UserId:        in.UserId,
 			PermAuthKeyId: in.AuthKeyId,
 			Updates:       mtproto.MakeUpdatesByUpdates(updates...),
-		})
+		}); syncErr != nil {
+			c.Logger.Errorf("msg.deleteHistory - sync: %v", syncErr)
+		}
 	}
 	if clearAnchor && in.GetRevoke() && in.UserId != in.PeerId && in.PeerType == mtproto.PEER_USER {
-		// The peer's copies of the deleted messages are already gone. This
-		// turns the peer's remaining top message into history clear.
+		// Same max_id and date window as the caller. MaxId 0 is only used
+		// when the caller asked to clear the whole dialog.
 		_, _ = c.svcCtx.Dao.InboxClient.InboxDeleteUserHistoryToInbox(c.ctx, &inbox.TLInboxDeleteUserHistoryToInbox{
 			FromId:     in.UserId,
 			PeerUserId: in.PeerId,
 			JustClear:  true,
-			MaxId:      0,
+			MaxId:      in.GetMaxId(),
+			MinDate:    q.MinDate,
+			MaxDate:    q.MaxDate,
+			MinDateSet: q.MinSet,
+			MaxDateSet: q.MaxSet,
 		})
 	}
 
@@ -191,11 +206,9 @@ func (c *MsgCore) historyDeleteUpdates(in *msg.TLMsgDeleteHistory, peer *mtproto
 		}).To_Update())
 	}
 	if clearAnchor {
-		cleared := historyClearMessage(in.UserId, peer, anchor)
-		_, _ = c.svcCtx.Dao.EditUserOutboxMessage(c.ctx, in.UserId, in.PeerId, cleared)
 		cursor++
 		push(mtproto.MakeTLUpdateEditMessage(&mtproto.Update{
-			Message_MESSAGE: cleared,
+			Message_MESSAGE: anchor,
 			Pts_INT32:       cursor,
 			PtsCount:        1,
 		}).To_Update())

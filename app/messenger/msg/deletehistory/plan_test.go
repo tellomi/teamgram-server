@@ -113,6 +113,45 @@ func TestOffsetAfterFailureDoesNotReportDone(t *testing.T) {
 	}
 }
 
+func TestPeerWindowDoesNotDeleteOutsideMaxIDOrDates(t *testing.T) {
+	q := PeerRevokeQuery(50, true, Query{MinSet: true, MinDate: 100, MaxSet: true, MaxDate: 200})
+	rows := []Row{
+		{ID: 60, Date: 150},
+		{ID: 40, Date: 150},
+		{ID: 30, Date: 50},
+		{ID: 20, Date: 180},
+	}
+	var inside []Row
+	for _, row := range rows {
+		if Match(row.ID, row.Date, q) {
+			inside = append(inside, row)
+		}
+	}
+	if len(inside) != 2 || inside[0].ID != 40 || inside[1].ID != 20 {
+		t.Fatalf("window %v", inside)
+	}
+	// The anchor is the newest match, not a newer message the caller did not include.
+	page, offset := Page(inside[1:], Batch)
+	if len(page) != 1 || page[0].ID != 20 || offset != 0 {
+		t.Fatalf("page=%v offset=%d", page, offset)
+	}
+	sel := PageSelect(q, inside[0].ID, Batch+1)
+	if !sel.BeforeIDSet || sel.BeforeID != 40 || sel.AfterDate != 101 || sel.BeforeDate != 200 {
+		t.Fatalf("peer select %+v", sel)
+	}
+}
+
+func TestSplitDeletedAnnouncesWhenConfirmFails(t *testing.T) {
+	deleted, failed := SplitDeleted([]int32{3, 2, 1}, map[int32]struct{}{2: {}}, nil)
+	if len(deleted) != 2 || deleted[0] != 3 || deleted[1] != 1 || len(failed) != 1 || failed[0] != 2 {
+		t.Fatalf("deleted %v failed %v", deleted, failed)
+	}
+	deleted, failed = SplitDeleted([]int32{3, 2, 1}, nil, context.DeadlineExceeded)
+	if len(failed) != 0 || len(deleted) != 3 {
+		t.Fatalf("confirm failure must still announce the batch: deleted %v failed %v", deleted, failed)
+	}
+}
+
 func TestRangeSurvivesGRPCMetadata(t *testing.T) {
 	ctx := WithRange(context.Background(), Query{MinSet: true, MinDate: 10, MaxSet: true, MaxDate: 0})
 	out := AppendOutgoing(ctx)
