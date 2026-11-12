@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -79,13 +80,11 @@ func ConfigureMySQL(dsn string) {
 		logx.Errorf("account deletion: mysql open failed, schedule stays in memory: %v", err)
 		return
 	}
-	db.SetMaxOpenConns(4)
-	db.SetConnMaxLifetime(5 * time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
 		logx.Errorf("account deletion: mysql ping failed, schedule stays in memory: %v", err)
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return
 	}
 	if _, err = db.ExecContext(ctx, pendingSchema); err != nil {

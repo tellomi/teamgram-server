@@ -317,9 +317,8 @@ func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKe
 
 func (d *Dao) ResetAuthorization(ctx context.Context, userId int64, authKeyId, hash int64) []int64 {
 	var (
-		cacheKeyIdList []string
-		hashList       []int64
-		keyIdList      []int64
+		hashList  []int64
+		keyIdList []int64
 	)
 
 	var refs []authUserRef
@@ -330,20 +329,25 @@ func (d *Dao) ResetAuthorization(ctx context.Context, userId int64, authKeyId, h
 			refs = append(refs, authUserRef{RowID: v.Id, AuthKeyID: v.AuthKeyId, Hash: v.Hash})
 		})
 	hashList, keyIdList = authUsersToReset(refs, authKeyId, hash)
-	for _, id := range keyIdList {
-		cacheKeyIdList = append(cacheKeyIdList, genAuthDataCacheKey(id))
-	}
 	if len(keyIdList) == 0 {
 		return keyIdList
 	}
 
-	_, _, _ = d.CachedConn.Exec(
-		ctx,
-		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			_, _ = d.AuthUsersDAO.DeleteByHashList(ctx, hashList)
-			return 0, 0, nil
-		},
-		cacheKeyIdList...)
+	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+		if err := lockAuthIdentities(tx, keyIdList); err != nil {
+			result.Err = err
+			return
+		}
+		_, err := d.AuthUsersDAO.DeleteByHashListTx(tx, hashList)
+		result.Err = err
+	})
+	if result.Err != nil {
+		logx.WithContext(ctx).Errorf("resetAuthorization user_id=%d: %v", userId, result.Err)
+		return keyIdList
+	}
+	if err := d.bumpAuthBindGens(ctx, keyIdList); err != nil {
+		logx.WithContext(ctx).Errorf("resetAuthorization cache user_id=%d: %v", userId, err)
+	}
 
 	return keyIdList
 }

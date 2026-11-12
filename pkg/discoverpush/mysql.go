@@ -25,8 +25,6 @@ func OpenEvents(dsn string) (*MySQLEvents, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(1)
 	return &MySQLEvents{db: db}, nil
 }
 

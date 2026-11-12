@@ -147,7 +147,8 @@ skips. Production compose and `.env` do not set them.
 `.github/workflows/e2e.yml` runs on every pull request. The job sets
 `TELLOMI_DC_OPTIONS=1:127.0.0.1:10443,1:127.0.0.1:5222` for the teamgram
 container and the same value as `TELLOMI_E2E_DC_OPTIONS` for
-`TestHelpGetConfig`. That address is the CI host, not production.
+`TestHelpGetConfig`. `TELLOMI_PUBLIC_DC_HOST` is empty, so that address is
+not rewritten. It is the CI host, not production.
 The job starts
 `docker-compose-env.yaml` and `docker-compose.yaml` (MySQL, Redis, Kafka in
 KRaft, etcd, object storage, and the Teamgram image built in the job), then

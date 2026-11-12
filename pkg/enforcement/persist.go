@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -25,15 +25,13 @@ func OpenMySQL(dsn string, cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetMaxOpenConns(8)
 	if err = db.Ping(); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	var n int
 	if err = db.QueryRow("SELECT COUNT(*) FROM sanction").Scan(&n); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, ErrSchema
 	}
 	s := New(cfg)
@@ -54,7 +52,7 @@ func Migrate(dsn string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer mysqlpool.Discard(db)
 	if err = db.Ping(); err != nil {
 		return err
 	}

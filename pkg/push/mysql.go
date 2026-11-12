@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
@@ -26,9 +25,6 @@ func Open(dsn string) (*MySQL, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
-	db.SetConnMaxLifetime(time.Hour)
 	return &MySQL{db: db}, nil
 }
 

@@ -92,8 +92,10 @@ type Limits struct {
 	ResendSeconds int
 	DailyPhone    int
 	DailyIP       int
-	MaxAttempts   int
-	TTLSeconds    int
+	// DailyGlobal is the provider-wide cap for one Shanghai day. Zero is off.
+	DailyGlobal int
+	MaxAttempts int
+	TTLSeconds  int
 }
 
 // Load reads TELLOMI_* and the standard Aliyun credential variables.
@@ -141,6 +143,7 @@ func Load() Config {
 			ResendSeconds: envInt("TELLOMI_SMS_RESEND_SECONDS", 60),
 			DailyPhone:    envInt("TELLOMI_SMS_DAILY_LIMIT", 10),
 			DailyIP:       envIntAllowZero("TELLOMI_SMS_IP_DAILY_LIMIT", 0),
+			DailyGlobal:   envIntAllowZero("TELLOMI_SMS_GLOBAL_DAILY_LIMIT", 0),
 			MaxAttempts:   envInt("TELLOMI_SMS_MAX_ATTEMPTS", 5),
 			TTLSeconds:    envInt("TELLOMI_SMS_CODE_TTL_SECONDS", 180),
 		},
@@ -148,6 +151,7 @@ func Load() Config {
 			ResendSeconds: envInt("TELLOMI_EMAIL_RESEND_SECONDS", 60),
 			DailyPhone:    envInt("TELLOMI_EMAIL_DAILY_LIMIT", 10),
 			DailyIP:       envIntAllowZero("TELLOMI_EMAIL_IP_DAILY_LIMIT", 0),
+			DailyGlobal:   envIntAllowZero("TELLOMI_EMAIL_GLOBAL_DAILY_LIMIT", 0),
 			MaxAttempts:   envInt("TELLOMI_EMAIL_MAX_ATTEMPTS", 5),
 			TTLSeconds:    envInt("TELLOMI_EMAIL_CODE_TTL_SECONDS", 180),
 		},

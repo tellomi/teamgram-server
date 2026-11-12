@@ -124,6 +124,44 @@ func TestStoredSizesHaveNoGPSAndOrientationIsApplied(t *testing.T) {
 	}
 }
 
+func TestPhotoSizesFollowEXIF8And3(t *testing.T) {
+	const w, h = 200, 80
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{G: 180, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	for _, orientation := range []int{8, 3} {
+		raw := insertAfterSOI(buf.Bytes(), exifApp1(orientation))
+		var sizes []derivedSize
+		err := ReSizeImage(raw, ".jpg", false, func(sz string, _ int, dw, dh int32, b []byte) error {
+			sizes = append(sizes, derivedSize{szType: sz, w: dw, h: dh, b: b})
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("orientation %d: %v", orientation, err)
+		}
+		wantW, wantH := w, h
+		if orientation == 8 {
+			wantW, wantH = h, w
+		}
+		full := sizes[len(sizes)-1]
+		if full.w != int32(wantW) || full.h != int32(wantH) {
+			t.Fatalf("orientation %d full %s is %dx%d, want %dx%d", orientation, full.szType, full.w, full.h, wantW, wantH)
+		}
+		for _, sz := range sizes {
+			if (sz.w > sz.h) != (full.w > full.h) {
+				t.Fatalf("orientation %d size %s is %dx%d, full is %dx%d", orientation, sz.szType, sz.w, sz.h, full.w, full.h)
+			}
+		}
+	}
+}
+
 func sample(jpegBytes []byte, x, y int32) color.NRGBA {
 	img, err := jpeg.Decode(bytes.NewReader(jpegBytes))
 	if err != nil {

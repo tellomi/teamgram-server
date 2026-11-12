@@ -42,9 +42,11 @@ func TestMySQLCompat(t *testing.T) {
 			applyStartupAgain(t, bin, srv.name, dir)
 			db := openMySQL(t, port, "teamgram")
 			checkGeneratedMediaIDs(t, db, srv.jsonFunc)
+			checkDialogHistoryIndex(t, db)
 			if srv.jsonFunc {
 				checkLegacyFunctionalIndex(t, bin, srv.name, port, dir)
 			}
+			checkSubjectsByUsers(t, db, port)
 		})
 	}
 }
@@ -129,6 +131,189 @@ FROM messages WHERE user_id=? ORDER BY user_message_box_id`, userID)
 	if byCol != byFn || byCol != 3 {
 		t.Fatalf("document 123 rows column=%d json=%d", byCol, byFn)
 	}
+}
+
+// checkDialogHistoryIndex loads a hot dialog and a cold one, checks that
+// SelectDialogHistory's backward and forward pages match an in-memory filter,
+// and that EXPLAIN uses messages_dialog_history without a filesort.
+func checkDialogHistoryIndex(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var cols int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' AND INDEX_NAME = 'messages_dialog_history'`).Scan(&cols); err != nil {
+		t.Fatal(err)
+	}
+	if cols != 5 {
+		t.Fatalf("messages_dialog_history has %d columns, want 5", cols)
+	}
+	const (
+		user  = int64(910001)
+		hot1  = int64(11)
+		hot2  = int64(22)
+		cold1 = int64(33)
+		cold2 = int64(44)
+	)
+	if _, err := db.Exec(`DELETE FROM messages WHERE user_id = ?`, user); err != nil {
+		t.Fatal(err)
+	}
+	insert := `INSERT INTO messages
+		(user_id, user_message_box_id, dialog_id1, dialog_id2, dialog_message_id, sender_user_id, peer_type, peer_id, deleted)
+		VALUES (?,?,?,?,?,1,2,1,?)`
+	var live []int
+	for i := 1; i <= 400; i++ {
+		deleted := 0
+		if i%5 == 0 {
+			deleted = 1
+		} else {
+			live = append(live, i)
+		}
+		if _, err := db.Exec(insert, user, i, hot1, hot2, i, deleted); err != nil {
+			t.Fatalf("hot %d: %v", i, err)
+		}
+	}
+	for i := 1; i <= 40; i++ {
+		// user_message_box_id is unique per user, so the cold dialog cannot
+		// reuse the hot dialog's box ids.
+		if _, err := db.Exec(insert, user, 10000+i, cold1, cold2, i, 0); err != nil {
+			t.Fatalf("cold %d: %v", i, err)
+		}
+	}
+	analyzed, err := db.Query(`ANALYZE TABLE messages`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analyzed.Close()
+	// Newest live ids first. live is ascending, so reverse it.
+	wantDesc := make([]int, len(live))
+	for i := range live {
+		wantDesc[i] = live[len(live)-1-i]
+	}
+	page1 := historyPage(t, db, user, hot1, hot2, 0, true, 20)
+	if !sameInts(page1, wantDesc[:20]) {
+		t.Fatalf("backward page 1 %v, want %v", page1, wantDesc[:20])
+	}
+	cursor := page1[len(page1)-1]
+	page2 := historyPage(t, db, user, hot1, hot2, cursor, true, 20)
+	if !sameInts(page2, wantDesc[20:40]) {
+		t.Fatalf("backward page 2 %v, want %v", page2, wantDesc[20:40])
+	}
+	for _, id := range page2 {
+		if id >= cursor {
+			t.Fatalf("page 2 id %d is not below cursor %d", id, cursor)
+		}
+	}
+	forward := historyPage(t, db, user, hot1, hot2, cursor, false, 20)
+	// Forward is user_message_box_id >= cursor, oldest first, deleted skipped.
+	var wantFwd []int
+	for _, id := range live {
+		if id >= cursor {
+			wantFwd = append(wantFwd, id)
+			if len(wantFwd) == 20 {
+				break
+			}
+		}
+	}
+	if !sameInts(forward, wantFwd) {
+		t.Fatalf("forward page %v, want %v", forward, wantFwd)
+	}
+	cold := historyPage(t, db, user, cold1, cold2, 0, true, 50)
+	if len(cold) != 40 || cold[0] != 10040 || cold[len(cold)-1] != 10001 {
+		t.Fatalf("cold dialog page %v", cold)
+	}
+
+	key, extra := explainSelect(t, db, `EXPLAIN SELECT user_message_box_id FROM messages
+		WHERE user_id = ? AND dialog_id1 = ? AND dialog_id2 = ? AND deleted = 0 AND user_message_box_id < ?
+		ORDER BY user_message_box_id DESC LIMIT 20`, user, hot1, hot2, cursor)
+	t.Logf("EXPLAIN key=%s extra=%s", key, extra)
+	if key != "messages_dialog_history" {
+		t.Fatalf("EXPLAIN key %q, want messages_dialog_history (extra %s)", key, extra)
+	}
+	if strings.Contains(strings.ToLower(extra), "filesort") {
+		t.Fatalf("EXPLAIN still sorts: %s", extra)
+	}
+}
+
+func historyPage(t *testing.T, db *sql.DB, user, d1, d2 int64, cursor int, desc bool, limit int) []int {
+	t.Helper()
+	q := `SELECT user_message_box_id FROM messages
+		WHERE user_id = ? AND dialog_id1 = ? AND dialog_id2 = ? AND deleted = 0`
+	args := []any{user, d1, d2}
+	if cursor > 0 && desc {
+		q += ` AND user_message_box_id < ?`
+		args = append(args, cursor)
+	}
+	if cursor > 0 && !desc {
+		q += ` AND user_message_box_id >= ?`
+		args = append(args, cursor)
+	}
+	if desc {
+		q += ` ORDER BY user_message_box_id DESC LIMIT ?`
+	} else {
+		q += ` ORDER BY user_message_box_id ASC LIMIT ?`
+	}
+	args = append(args, limit)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var id int
+		if err = rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, id)
+	}
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func sameInts(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func explainSelect(t *testing.T, db *sql.DB, q string, args ...any) (key, extra string) {
+	t.Helper()
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	cols, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rows.Next() {
+		t.Fatal("EXPLAIN returned no row")
+	}
+	vals := make([]sql.NullString, len(cols))
+	ptrs := make([]any, len(cols))
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
+	if err = rows.Scan(ptrs...); err != nil {
+		t.Fatal(err)
+	}
+	for i, name := range cols {
+		switch strings.ToLower(name) {
+		case "key":
+			key = vals[i].String
+		case "extra":
+			extra = vals[i].String
+		}
+	}
+	return key, extra
 }
 
 func checkLegacyFunctionalIndex(t *testing.T, bin, container, port, dir string) {
@@ -347,27 +532,50 @@ func startMySQL(t *testing.T, bin, image, name string) string {
 		t.Fatalf("start %s: %v\n%s", image, err, out)
 	}
 	t.Cleanup(func() { _ = runDocker(t, bin, "rm", "-f", name) })
-	deadline := time.Now().Add(2 * time.Minute)
+	// The image starts a temporary server to initialize the datadir, and that
+	// server answers SELECT 1 before the entrypoint kills it. The next client
+	// then gets ERROR 2013 (errno 104) at "reading initial communication
+	// packet". Wait until init has finished, then require two successful
+	// queries a second apart so the real server is the one that answered.
+	deadline := time.Now().Add(3 * time.Minute)
 	var last []byte
+	initDone := false
+	stable := 0
 	for time.Now().Before(deadline) {
+		if !initDone {
+			logs, _ := runDockerOutput(t, bin, "logs", name)
+			last = logs
+			if strings.Contains(string(logs), "MySQL init process done. Ready for start up.") {
+				initDone = true
+			} else {
+				time.Sleep(time.Second)
+				continue
+			}
+		}
 		out, err = runDockerOutput(t, bin, "exec", name, "mysql", "-uroot", "-proot", "-N", "-e", "SELECT 1")
 		if err == nil && strings.Contains(string(out), "1") {
-			portOut, err := runDockerOutput(t, bin, "port", name, "3306")
-			if err != nil {
-				t.Fatal(err)
+			stable++
+			if stable >= 2 {
+				portOut, perr := runDockerOutput(t, bin, "port", name, "3306")
+				if perr != nil {
+					t.Fatal(perr)
+				}
+				// 127.0.0.1:32768
+				fields := strings.Fields(string(portOut))
+				if len(fields) == 0 {
+					t.Fatalf("port output %q", portOut)
+				}
+				hostport := strings.TrimSpace(fields[len(fields)-1])
+				port := hostport[strings.LastIndex(hostport, ":")+1:]
+				if port == "" || port == hostport {
+					t.Fatalf("port output %q", portOut)
+				}
+				return port
 			}
-			// 127.0.0.1:32768
-			fields := strings.Fields(string(portOut))
-			if len(fields) == 0 {
-				t.Fatalf("port output %q", portOut)
-			}
-			hostport := strings.TrimSpace(fields[len(fields)-1])
-			port := hostport[strings.LastIndex(hostport, ":")+1:]
-			if port == "" || port == hostport {
-				t.Fatalf("port output %q", portOut)
-			}
-			return port
+			time.Sleep(time.Second)
+			continue
 		}
+		stable = 0
 		last = out
 		time.Sleep(time.Second)
 	}

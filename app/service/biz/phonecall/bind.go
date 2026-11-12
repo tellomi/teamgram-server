@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -51,16 +52,16 @@ func UseDSN(dsn string) error {
 		return err
 	}
 	if err = conn.Ping(); err != nil {
-		_ = conn.Close()
+		_ = mysqlpool.Discard(conn)
 		return err
 	}
 	if _, err = conn.Exec(schema); err != nil {
-		_ = conn.Close()
+		_ = mysqlpool.Discard(conn)
 		return err
 	}
 	mu.Lock()
 	if db != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 	}
 	db = conn
 	mu.Unlock()

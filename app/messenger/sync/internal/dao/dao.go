@@ -55,3 +55,17 @@ func New(c config.Config) *Dao {
 	go d.watch(c.SessionClient)
 	return d
 }
+
+// SetSessionPusher registers one session node. Discovery replaces the map
+// when the etcd set changes; tests use this to observe a push.
+func (d *Dao) SetSessionPusher(serverID string, p SessionPusher) {
+	if d == nil || serverID == "" || p == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.sessionServers == nil {
+		d.sessionServers = make(map[string]SessionPusher)
+	}
+	d.sessionServers[serverID] = p
+}

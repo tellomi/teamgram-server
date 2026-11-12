@@ -26,6 +26,12 @@ import (
 	"strconv"
 )
 
+// QRExpired reports a token that must be refused. The boundary is inclusive:
+// now == expire_at is already too late.
+func QRExpired(expireAt, now int64) bool {
+	return expireAt <= 0 || now >= expireAt
+}
+
 const (
 	QRCodeStateNew      = 1
 	QRCodeStateAccepted = 2

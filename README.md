@@ -108,7 +108,7 @@ Notes under `clients/` describe the upstream Teamgram client forks. They are not
 ## Documentation
 
 - [Security operations](docs/SECURITY-OPS.md) — production RSA key, password locations, Chengdu deploy
-- [Datacenter addresses](docs/ops/DC_ADDRESSES.md) — `help.getConfig` `dc_options` from `TELLOMI_DC_OPTIONS`
+- [Datacenter addresses](docs/ops/DC_ADDRESSES.md) — `help.getConfig` `dc_options` from `TELLOMI_DC_OPTIONS` and `TELLOMI_PUBLIC_DC_HOST`
 - [Project specs](specs/README.md) — Architecture, protocol, dependencies, contributing, security, roadmap
 - [Service topology and configuration](docs/service-topology.md) — Ports, infrastructure, call graph ([中文](docs/service-topology-zh.md))
 - [Client regression](docs/e2e.md) — MTProto suite, required CI check, post-deploy smoke

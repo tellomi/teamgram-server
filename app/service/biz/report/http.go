@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"encoding/base64"
@@ -13,21 +14,51 @@ import (
 )
 
 const (
-	pathPending    = "/internal/v1/reports/pending"
-	pathIngest     = "/internal/v1/reports"
-	pathSubjects   = "/internal/v1/reports/subjects"
-	pathModeration = "/internal/v1/moderation/review"
-	maxBody        = 64 << 10
+	pathPending         = "/internal/v1/reports/pending"
+	pathIngest          = "/internal/v1/reports"
+	pathSubjects        = "/internal/v1/reports/subjects"
+	pathSubjectsByUsers = "/internal/v1/reports/subjects/by-users"
+	pathModeration      = "/internal/v1/moderation/review"
+	maxBody             = 64 << 10
 	// maxReportSubs is one report's reporter and author, with room for a
 	// short batch. content-engine sends the subs it still cannot map.
 	maxReportSubs = 32
 )
 
+// subjectRetryAfter is the Retry-After delay, in seconds, for a dependency
+// failure of this listener. The JSON field retry_after carries the same
+// number. Callers must not cache any id from that response.
+const subjectRetryAfter = 5
+
+const (
+	// subjectMapped is a live account with one 16-byte discover_subject row.
+	subjectMapped = "mapped"
+	// subjectEmpty is a live account whose discover_subject read succeeded
+	// and found no row: an authorized empty discover identity.
+	subjectEmpty = "empty"
+	// subjectNotFound means users has no such id.
+	subjectNotFound = "not_found"
+	// subjectClosed means users.deleted or users.restricted is set.
+	subjectClosed = "closed"
+)
+
+// subjectHit is one classified users.id from POST .../subjects/by-users.
+// Sub is set only when Status is subjectMapped, and then it is 16 bytes.
+type subjectHit struct {
+	UserID int64
+	Status string
+	Sub    []byte
+}
+
 // Subjects resolves content-engine subs through discover_subject.
-// The map key is the canonical base64url (no padding) of the 16-byte sub.
-// Subs that are not in the table are omitted.
+// The map key of Users is the canonical base64url (no padding) of the
+// 16-byte sub. Subs that are not in the table are omitted.
 type Subjects interface {
 	Users(ctx context.Context, subs [][]byte) (map[string]int64, error)
+	// Subs classifies every requested id, in the same order, with no gaps.
+	// A non-nil error means the read did not finish. An empty or partial
+	// slice is not an authoritative answer.
+	Subs(ctx context.Context, userIDs []int64) ([]subjectHit, error)
 }
 
 // Handler is the internal report listener. It is mounted only when
@@ -35,6 +66,7 @@ type Subjects interface {
 //
 //	POST /internal/v1/reports
 //	POST /internal/v1/reports/subjects
+//	POST /internal/v1/reports/subjects/by-users
 //	POST /internal/v1/reports/{id}/decision
 //	GET  /internal/v1/reports/pending
 //	POST /internal/v1/moderation/review
@@ -84,6 +116,13 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.subjects(w, r)
+		return
+	case pathSubjectsByUsers:
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "method")
+			return
+		}
+		h.subjectsByUsers(w, r)
 		return
 	case pathModeration:
 		if r.Method != http.MethodPost {
@@ -243,6 +282,132 @@ func (h Handler) subjects(w http.ResponseWriter, r *http.Request) {
 		users = append(users, subjectUser{Sub: key, UserID: id})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+type subjectsByUsersBody struct {
+	UserIDs []int64 `json:"user_ids"`
+}
+
+// decodeByUsersBody accepts one JSON object whose only key is exactly
+// user_ids. encoding/json would bind USER_IDS to the same field and would
+// treat a trailing ] or } as the end of input. Both are rejected: a key is
+// kept only when it is the contracted name, a second binding of that field
+// is an error, and the value after the object must be EOF.
+func decodeByUsersBody(r io.Reader) (subjectsByUsersBody, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, maxBody+1))
+	if err != nil || len(raw) > maxBody {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	var ids []int64
+	bound := false
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return subjectsByUsersBody{}, errors.New("bad json")
+		}
+		key, ok := keyTok.(string)
+		// The struct tag binds case-insensitively. Fold first so USER_IDS is
+		// the same field as user_ids, then require the contracted spelling
+		// and a single binding. Any other key is not a field of this body.
+		if !ok || !strings.EqualFold(key, "user_ids") || key != "user_ids" || bound {
+			return subjectsByUsersBody{}, errors.New("bad json")
+		}
+		bound = true
+		if err = dec.Decode(&ids); err != nil {
+			return subjectsByUsersBody{}, errors.New("bad json")
+		}
+	}
+	end, err := dec.Token()
+	if err != nil || end != json.Delim('}') {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	var extra any
+	if err = dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return subjectsByUsersBody{}, errors.New("bad json")
+	}
+	return subjectsByUsersBody{UserIDs: ids}, nil
+}
+
+func (h Handler) subjectsByUsers(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeByUsersBody(r.Body)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if len(body.UserIDs) == 0 || len(body.UserIDs) > maxReportSubs {
+		writeErr(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	ids := make([]int64, 0, len(body.UserIDs))
+	seen := map[int64]struct{}{}
+	for _, id := range body.UserIDs {
+		if id <= 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	dir := h.subjectDir()
+	if dir == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	found, err := dir.Subs(r.Context(), ids)
+	if err != nil || !subjectResultsOK(ids, found) {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	users := make([]subjectByUser, 0, len(found))
+	for _, hit := range found {
+		item := subjectByUser{UserID: hit.UserID, Status: hit.Status}
+		if hit.Status == subjectMapped {
+			item.Sub = base64.RawURLEncoding.EncodeToString(hit.Sub)
+		}
+		users = append(users, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+// subjectByUser is one by-users result. Status is always set. Sub is set
+// only for subjectMapped; omitempty keeps it off the other three statuses.
+type subjectByUser struct {
+	UserID int64  `json:"user_id"`
+	Status string `json:"status"`
+	Sub    string `json:"sub,omitempty"`
+}
+
+func subjectResultsOK(ids []int64, got []subjectHit) bool {
+	if len(got) != len(ids) {
+		return false
+	}
+	for i, id := range ids {
+		hit := got[i]
+		if hit.UserID != id {
+			return false
+		}
+		switch hit.Status {
+		case subjectMapped:
+			if len(hit.Sub) != 16 {
+				return false
+			}
+		case subjectEmpty, subjectNotFound, subjectClosed:
+			if len(hit.Sub) != 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (h Handler) subjectDir() Subjects {
@@ -406,6 +571,11 @@ func authorized(r *http.Request, key []byte) bool {
 }
 
 func writeErr(w http.ResponseWriter, status int, code string) {
+	if status == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", strconv.Itoa(subjectRetryAfter))
+		writeJSON(w, status, map[string]any{"error": code, "retry_after": subjectRetryAfter})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": code})
 }
 

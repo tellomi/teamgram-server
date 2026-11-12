@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	"github.com/teamgram/teamgram-server/pkg/tellomiai"
@@ -91,17 +92,14 @@ func OpenMySQL(dsn string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(4)
-	db.SetConnMaxLifetime(time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	if err = ensureSchema(ctx, db); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	store := newMySQLStore(db)

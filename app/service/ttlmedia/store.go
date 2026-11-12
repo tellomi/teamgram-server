@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -54,18 +55,15 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(2)
-	db.SetConnMaxLifetime(time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	s := &Store{db: db}
 	if err = s.ensure(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	mediapurge.Bind(db)

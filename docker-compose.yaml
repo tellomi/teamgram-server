@@ -30,7 +30,11 @@ services:
       TELLOMI_SMS_ALLOW_INTERNATIONAL: ${TELLOMI_SMS_ALLOW_INTERNATIONAL:-false}
       TELLOMI_SMS_COUNTRY_ALLOW: ${TELLOMI_SMS_COUNTRY_ALLOW:-86}
       TELLOMI_SMS_DAILY_LIMIT: ${TELLOMI_SMS_DAILY_LIMIT:-10}
+      TELLOMI_SMS_IP_DAILY_LIMIT: ${TELLOMI_SMS_IP_DAILY_LIMIT:-0}
+      TELLOMI_SMS_GLOBAL_DAILY_LIMIT: ${TELLOMI_SMS_GLOBAL_DAILY_LIMIT:-0}
       TELLOMI_EMAIL_DAILY_LIMIT: ${TELLOMI_EMAIL_DAILY_LIMIT:-10}
+      TELLOMI_EMAIL_IP_DAILY_LIMIT: ${TELLOMI_EMAIL_IP_DAILY_LIMIT:-0}
+      TELLOMI_EMAIL_GLOBAL_DAILY_LIMIT: ${TELLOMI_EMAIL_GLOBAL_DAILY_LIMIT:-0}
       TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-log}
       TELLOMI_EMAIL_FROM: ${TELLOMI_EMAIL_FROM:-noreply@tellomi.app}
       TELLOMI_EMAIL_FROM_NAME: ${TELLOMI_EMAIL_FROM_NAME:-Tellomi}
@@ -53,6 +57,9 @@ services:
       TELLOMI_S3_BUCKET_BACKUPS: ${TELLOMI_S3_BUCKET_BACKUPS-tellomi-backups}
       TELLOMI_S3_PUBLIC_MEDIA_BASE_URL: ${TELLOMI_S3_PUBLIC_MEDIA_BASE_URL:-}
       TELLOMI_S3_ATTACHMENTS_BASE_URL: ${TELLOMI_S3_ATTACHMENTS_BASE_URL:-}
+      # HTTP CONNECT proxy for the S3/R2 client only. Empty dials the endpoint
+      # directly. Does not set HTTP_PROXY for push, AI, or link preview.
+      TELLOMI_S3_HTTP_PROXY: ${TELLOMI_S3_HTTP_PROXY:-}
       # Disk LRU for upload.getFile. Must be a bind mount under /data so a
       # container replace does not wipe it. No new ports.
       TELLOMI_DFS_CHUNK_CACHE_DIR: ${TELLOMI_DFS_CHUNK_CACHE_DIR:-/data/tellomi/dfs-chunk-cache}
@@ -203,12 +210,21 @@ services:
       # off disables them. TELLOMI_FLOOD_REDIS overrides session.yaml Cache.
       TELLOMI_FLOOD_MODE: ${TELLOMI_FLOOD_MODE:-enforce}
       TELLOMI_FLOOD_LIMITS: ${TELLOMI_FLOOD_LIMITS:-}
+      TELLOMI_FLOOD_BUCKET_MODE: ${TELLOMI_FLOOD_BUCKET_MODE:-}
       TELLOMI_FLOOD_REDIS: ${TELLOMI_FLOOD_REDIS:-}
+      # Upload byte ledger. log records and does not reject. enforce needs the
+      # shared Redis below; without it the process stays in log mode.
+      TELLOMI_UPLOAD_LEDGER_MODE: ${TELLOMI_UPLOAD_LEDGER_MODE:-log}
+      TELLOMI_UPLOAD_LEDGER_REDIS: ${TELLOMI_UPLOAD_LEDGER_REDIS:-}
       # help.getConfig dc_options. Empty leaves teamgramd/bin/config.json
       # (an empty list, webfile_dc_id 1). A valid spec replaces the list and
-      # sets webfile_dc_id to 1. "-" in TELLOMI_DC_TXT_DOMAIN blanks
-      # apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
+      # sets webfile_dc_id to 1. TELLOMI_PUBLIC_DC_HOST rewrites dotted
+      # IPv4 in that list and drops ports other than 10443 and 443. An
+      # empty list publishes DC 1 on :10443 and :443 only.
+      # It does not change listen addresses. "-" in TELLOMI_DC_TXT_DOMAIN
+      # blanks apv2.stel.com; empty leaves it. See docs/ops/DC_ADDRESSES.md.
       TELLOMI_DC_OPTIONS: ${TELLOMI_DC_OPTIONS:-}
+      TELLOMI_PUBLIC_DC_HOST: ${TELLOMI_PUBLIC_DC_HOST:-}
       TELLOMI_DC_TXT_DOMAIN: ${TELLOMI_DC_TXT_DOMAIN:-}
       # help.getAppConfig faq_link. Unset stays https://tellomi.cn/faq.
       # 1 switches it to https://tellomi.cn/help (D-40). The page is not

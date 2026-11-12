@@ -26,8 +26,6 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
 	return &Store{db: db}, nil
 }
 

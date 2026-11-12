@@ -60,8 +60,6 @@ func OpenSQL(dsn string) (*SQLStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
 	return &SQLStore{DB: db}, nil
 }
 

@@ -110,6 +110,7 @@ type MainAuthWrapper struct {
 	finish               sync.WaitGroup
 	running              *syncx.AtomicBool
 	onlineExpired        int64
+	syncBlocked          bool // auth key changed owner; do not write updates here
 	clientType           int
 	nextNotifyId         int64
 	nextPushId           int64
@@ -154,17 +155,17 @@ func (m *MainAuthWrapper) changeAuthState(ctx context.Context, state int, stateD
 
 	switch state {
 	case mtproto.AuthStateUnknown:
-		// m.delOnline(ctx)
+		m.delOnline(ctx)
 		// m.AuthUserId = 0
 		m.cb.DeleteByAuthKeyId(m.authKeyId)
 		m.Stop()
 	case mtproto.AuthStateLogout:
-		// m.delOnline(ctx)
+		m.delOnline(ctx)
 		// m.AuthUserId = 0
 		m.cb.DeleteByAuthKeyId(m.authKeyId)
 		m.Stop()
 	case mtproto.AuthStateDeleted:
-		// m.delOnline(ctx)
+		m.delOnline(ctx)
 		// m.AuthUserId = 0
 		m.cb.DeleteByAuthKeyId(m.authKeyId)
 		m.Stop()
@@ -174,12 +175,25 @@ func (m *MainAuthWrapper) changeAuthState(ctx context.Context, state int, stateD
 		newUserId := stateData.(int64)
 		if m.AuthUserId != 0 && m.AuthUserId != newUserId {
 			// 一条 authKey 生命周期内出现多个 userId，视为异常：打高危日志但保留旧值，避免 owner 悄然漂移。
+			// The status hash still routes this auth key to the old user until
+			// it is removed. Drop that field now so the next push does not
+			// follow it onto this connection.
 			logx.WithContext(ctx).Errorf("changeAuthState - authKeyId %d switch user from %d to %d, keep original",
 				m.authKeyId, m.AuthUserId, newUserId)
+			m.syncBlocked = true
+			m.delOnline(ctx)
+			m.onlineExpired = time.Now().Unix() + 60
 			return
 		}
 		m.AuthUserId = newUserId
 	default:
+		// States that fall through: New (1), PermBound (2), WaitInit (3),
+		// Unauthorized (4), and any value outside 0..8. None of the
+		// production callers pass them here. Temp-key bind uses
+		// SessionList.changeAuthState. A reconnect reloads through
+		// applyAuthStateData, and that default does not touch the online
+		// hash. Deleting the hash from this branch would drop pushes for a
+		// user who is still signed in.
 		m.AuthUserId = 0
 	}
 }
@@ -337,6 +351,17 @@ func (m *MainAuthWrapper) setOnline(ctx context.Context) {
 	//setOnlineTTL(s.AuthUserId, s.authKeyId, getServerID(), s.Layer, 60)
 	date := time.Now().Unix()
 	if (m.onlineExpired == 0 || date > m.onlineExpired-kPingAddTimeout) && m.AuthUserId != 0 {
+		if owner, ok := m.authKeyOwner(ctx); ok {
+			if owner != m.AuthUserId {
+				logx.WithContext(ctx).Errorf("setOnline - authKeyId %d owner %d != session user %d, drop stale sync route",
+					m.authKeyId, owner, m.AuthUserId)
+				m.syncBlocked = true
+				m.evictSyncUser(ctx, m.AuthUserId)
+				m.onlineExpired = date + 60
+				return
+			}
+			m.syncBlocked = false
+		}
 		logx.WithContext(ctx).Infof("DEBUG] setOnline - set online: (date: %d, userId:%d, onlineExpired: %d, authKeyId: %d)",
 			date,
 			m.AuthUserId,
@@ -395,15 +420,67 @@ func (m *MainAuthWrapper) trySetOffline(ctx context.Context) {
 }
 
 func (m *MainAuthWrapper) delOnline(ctx context.Context) {
-	if m.AuthUserId > 0 && m.cb != nil && m.cb.Dao != nil && m.cb.Dao.StatusClient != nil {
-		logx.Infof("authSessions]]>> delOnline: %s", m)
-
-		_, _ = m.cb.Dao.StatusClient.StatusSetSessionOffline(ctx, &status.TLStatusSetSessionOffline{
-			UserId:    m.AuthUserId,
-			AuthKeyId: m.authKeyId,
-		})
-	}
+	m.evictSyncUser(ctx, m.AuthUserId)
 	m.onlineExpired = 0
+}
+
+// evictSyncUser removes this auth key from one user's online-session hash.
+// That hash is what sync uses to choose a connection. After a rebind the
+// field can still name this key for the previous user.
+func (m *MainAuthWrapper) evictSyncUser(ctx context.Context, userID int64) {
+	if userID <= 0 || m == nil || m.authKeyId == 0 || m.cb == nil || m.cb.Dao == nil || m.cb.Dao.StatusClient == nil {
+		return
+	}
+	logx.WithContext(ctx).Infof("authSessions]]>> delOnline: authKeyId %d user %d", m.authKeyId, userID)
+	_, _ = m.cb.Dao.StatusClient.StatusSetSessionOffline(ctx, &status.TLStatusSetSessionOffline{
+		UserId:    userID,
+		AuthKeyId: m.authKeyId,
+	})
+}
+
+// authKeyOwner is the user authsession currently binds to this permanent key.
+// A lookup error or an unbound key is not a known owner: callers keep the
+// existing route instead of treating an outage as a rebind.
+func (m *MainAuthWrapper) authKeyOwner(ctx context.Context) (int64, bool) {
+	if m == nil || m.authKeyId == 0 || m.cb == nil || m.cb.Dao == nil || m.cb.Dao.AuthsessionClient == nil {
+		return 0, false
+	}
+	got, err := m.cb.Dao.AuthsessionClient.AuthsessionGetUserId(ctx, &authsession.TLAuthsessionGetUserId{
+		AuthKeyId: m.authKeyId,
+	})
+	if err != nil || got == nil || got.GetV() == 0 {
+		return 0, false
+	}
+	return got.GetV(), true
+}
+
+// rejectSync reports that this update must not be written to the connection.
+// expectedUser is the user sync looked up in the online-session hash and
+// stamped on the push. A key rebound to someone else fails that comparison,
+// or was already marked when changeAuthState refused the switch. The auth
+// key's current owner is not looked up on this path; setOnline does that
+// on its existing refresh interval.
+func (m *MainAuthWrapper) rejectSync(ctx context.Context, expectedUser int64) bool {
+	if m == nil {
+		return true
+	}
+	if m.syncBlocked {
+		logx.WithContext(ctx).Errorf("rejectSync - authKeyId %d blocked after owner change, update for %d",
+			m.authKeyId, expectedUser)
+		if expectedUser > 0 {
+			m.evictSyncUser(ctx, expectedUser)
+		} else {
+			m.evictSyncUser(ctx, m.AuthUserId)
+		}
+		return true
+	}
+	if expectedUser > 0 && m.AuthUserId > 0 && expectedUser != m.AuthUserId {
+		logx.WithContext(ctx).Errorf("rejectSync - authKeyId %d session user %d, update for %d",
+			m.authKeyId, m.AuthUserId, expectedUser)
+		m.evictSyncUser(ctx, expectedUser)
+		return true
+	}
+	return false
 }
 
 func (m *MainAuthWrapper) getNextNotifyId() (id int64) {
@@ -1025,14 +1102,15 @@ func (m *MainAuthWrapper) SyncRpcResultDataArrived(ctx context.Context, kId int6
 	}
 }
 
-func (m *MainAuthWrapper) SyncSessionDataArrived(ctx context.Context, kId int64, sessionId int64, updates *mtproto.Updates) error {
+func (m *MainAuthWrapper) SyncSessionDataArrived(ctx context.Context, kId int64, sessionId int64, updates *mtproto.Updates, expectedUserId int64) error {
 	sData := &syncSessionDataCtx{
 		ctx: contextx.ValueOnlyFrom(ctx),
 		syncSessionData: syncSessionData{
-			authType:  mtproto.AuthKeyTypeUnknown,
-			authId:    kId,
-			sessionId: sessionId,
-			data:      &messageData{obj: updates},
+			authType:       mtproto.AuthKeyTypeUnknown,
+			authId:         kId,
+			sessionId:      sessionId,
+			data:           &messageData{obj: updates},
+			expectedUserId: expectedUserId,
 		},
 	}
 
@@ -1045,12 +1123,13 @@ func (m *MainAuthWrapper) SyncSessionDataArrived(ctx context.Context, kId int64,
 	}
 }
 
-func (m *MainAuthWrapper) SyncDataArrived(ctx context.Context, needAndroidPush bool, updates *mtproto.Updates) error {
+func (m *MainAuthWrapper) SyncDataArrived(ctx context.Context, needAndroidPush bool, updates *mtproto.Updates, expectedUserId int64) error {
 	sData := &syncDataCtx{
 		ctx: contextx.ValueOnlyFrom(ctx),
 		syncData: syncData{
 			needAndroidPush: needAndroidPush,
 			data:            &messageData{obj: updates},
+			expectedUserId:  expectedUserId,
 		},
 	}
 
@@ -1280,6 +1359,9 @@ func (m *MainAuthWrapper) onSyncRpcResultData(ctx context.Context, syncMsg *sync
 func (m *MainAuthWrapper) onSyncSessionData(ctx context.Context, syncMsg *syncSessionData) {
 	logx.WithContext(ctx).Infof("onSyncSessionData - receive data: {sess: %s}",
 		m)
+	if m.rejectSync(ctx, syncMsg.expectedUserId) {
+		return
+	}
 
 	sList := m.getSessionListById(syncMsg.authId)
 	if sList == nil {
@@ -1295,6 +1377,9 @@ func (m *MainAuthWrapper) onSyncSessionData(ctx context.Context, syncMsg *syncSe
 
 func (m *MainAuthWrapper) onSyncData(ctx context.Context, syncMsg *syncData) {
 	logx.WithContext(ctx).Info("authSessions - ", reflect.TypeOf(syncMsg.data.obj))
+	if m.rejectSync(ctx, syncMsg.expectedUserId) {
+		return
+	}
 
 	if upds, ok := syncMsg.data.obj.(*mtproto.Updates); ok {
 		if upds.PredicateName == mtproto.Predicate_updateAccountResetAuthorization {

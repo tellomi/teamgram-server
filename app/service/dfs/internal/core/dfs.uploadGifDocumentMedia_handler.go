@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 const (
@@ -91,7 +92,7 @@ func (c *DfsCore) DfsUploadGifDocumentMedia(in *dfs.TLDfsUploadGifDocumentMedia)
 
 func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fileInfo *model.DfsFileInfo) (*mtproto.Document, error) {
 	var (
-		documentId = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		documentId = c.nextID()
 		ext        = model.GetFileExtName(media.GetFile().GetName())
 		extType    = model.GetStorageFileTypeConstructor(ext)
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
@@ -111,7 +112,7 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		return nil, err
 	}
 
-	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifData, false)
+	stored, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, gifData, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
@@ -120,7 +121,7 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 	szList, err := c.uploadGifThumb(documentId, gifThumb, stored)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+		c.abandonStored(creatorId, documentId, stored)
 		return nil, err
 	}
 
@@ -148,12 +149,13 @@ func (c *DfsCore) uploadGifMedia(creatorId int64, media *mtproto.InputMedia, fil
 		},
 	}).To_Document()
 
+	releaseUploadHold(c.ledgerSubject(creatorId), file.GetId_INT64())
 	return finishGifDocument(document, gifData), nil
 }
 
 func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.InputMedia) (*mtproto.Document, error) {
 	var (
-		documentId = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		documentId = c.nextID()
 		ext        = model.GetFileExtName(media.GetFile().GetName())
 		extType    = model.GetStorageFileTypeConstructor(ext)
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
@@ -213,7 +215,7 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		return nil, err
 	}
-	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
+	stored, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
@@ -222,7 +224,7 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 	szList, err := c.uploadGifThumb(documentId, thumb, stored)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+		c.abandonStored(creatorId, documentId, stored)
 		return nil, err
 	}
 
@@ -260,12 +262,13 @@ func (c *DfsCore) uploadHasThumbGifMp4Media(creatorId int64, media *mtproto.Inpu
 		},
 	}).To_Document()
 
+	releaseUploadHold(c.ledgerSubject(creatorId), media.GetFile().GetId_INT64())
 	return finishGifDocument(document, gifMp4Data), nil
 }
 
 func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) (*mtproto.Document, error) {
 	var (
-		documentId = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		documentId = c.nextID()
 		ext        = model.GetFileExtName(media.GetFile().GetName())
 		extType    = model.GetStorageFileTypeConstructor(ext)
 		accessHash = int64(extType)<<32 | int64(rand.Uint32())
@@ -315,7 +318,7 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		return nil, err
 	}
 
-	stored, err := c.storeDocumentBytes(c.ctx, documentId, gifMp4Data, false)
+	stored, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, gifMp4Data, false)
 	if err != nil {
 		c.Logger.Errorf("dfs.uploadGifDocumentMedia - %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
@@ -333,7 +336,7 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		thumbData, err := c.svcCtx.FFmpegUtil.GetFirstFrameByPipe(gifMp4Data)
 		if err != nil {
 			c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
-			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			c.abandonStored(creatorId, documentId, stored)
 			return nil, err
 		}
 
@@ -341,14 +344,14 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		gifThumb, err = imaging.Decode(bytes.NewReader(thumbData))
 		if err != nil {
 			c.Logger.Errorf("convertGifToMp4Pipe - error: %v", err)
-			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			c.abandonStored(creatorId, documentId, stored)
 			return nil, err
 		}
 
 		szList, err = c.uploadGifThumb(documentId, gifThumb, stored)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadGifDocumentMedia - error: %v", err)
-			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			c.abandonStored(creatorId, documentId, stored)
 			return nil, err
 		}
 	}
@@ -394,6 +397,7 @@ func (c *DfsCore) uploadGifMp4Media(creatorId int64, media *mtproto.InputMedia) 
 		},
 	}).To_Document()
 
+	releaseUploadHold(c.ledgerSubject(creatorId), media.GetFile().GetId_INT64())
 	return finishGifDocument(document, gifMp4Data), nil
 }
 

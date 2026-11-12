@@ -87,6 +87,9 @@ func (s *Server) asyncRun2(
 func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	logx.Infof("gnetway server is listening")
 	s.eng = eng
+	if s.booted != nil {
+		close(s.booted)
+	}
 	return gnet.None
 }
 
@@ -112,12 +115,29 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	logx.Debugf("onNewConn - conn(%s)", c)
 
 	ctx := newConnContext()
-	if host, _, err := net.SplitHostPort(c.RemoteAddr().String()); err == nil {
+	local := c.LocalAddr().String()
+	if spec, ok := s.proxyListeners[local]; ok {
+		ip, host := peerIP(c.RemoteAddr())
+		if !spec.allows(ip) {
+			// Do not read the following bytes. A header from an untrusted
+			// peer must not become client_ip, and the connection is not a
+			// plain MTProto fallback. The reject counter has no address.
+			noteEntryReject("untrusted_peer")
+			logx.Errorf("proxy reject reason=untrusted_peer peer=%s local=%s", host, local)
+			return nil, gnet.Close
+		}
+		ctx.proxy = &proxyAdmit{
+			spec:     spec,
+			peer:     host,
+			peerHost: host,
+			deadline: time.Now().Add(proxyHeaderReadTimeout),
+		}
+	} else if host, _, err := net.SplitHostPort(c.RemoteAddr().String()); err == nil {
 		ctx.setClientIp(host)
 	} else {
 		ctx.setClientIp(c.RemoteAddr().String())
 	}
-	ctx.ppv1 = s.c.Gnetway.IsProxyProtocolV1(c.LocalAddr().String())
+	ctx.ppv1 = s.c.Gnetway.IsProxyProtocolV1(local)
 	ctx.tcp = s.c.Gnetway.IsTcp(c.LocalAddr().String())
 	ctx.websocket = s.c.Gnetway.IsWebsocket(c.LocalAddr().String())
 	ctx.http = s.c.Gnetway.IsHttp(c.LocalAddr().String())
@@ -133,6 +153,11 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	s.timeoutWheel.Add(c.ConnId(), ctx.closeDate)
 	c.SetContext(ctx)
 	s.conns.Store(c.ConnId(), c)
+	if ctx.proxy != nil {
+		s.proxyWaiting.Store(c.ConnId(), struct{}{})
+	} else {
+		ctx.assignEntry(classifyNativeEntry(tcpPort(c.LocalAddr()), false, 0))
+	}
 
 	proto := "tcp"
 	if ctx.websocket {
@@ -149,6 +174,7 @@ func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 // The parameter err is the last known connection error.
 func (s *Server) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	s.conns.Delete(c.ConnId())
+	s.proxyWaiting.Delete(c.ConnId())
 	logx.Debugf("onConnClosed - conn(%s), err: %v", c, err)
 
 	ctx, _ := c.Context().(*connContext)
@@ -224,6 +250,20 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		ctx.closeDate = s.CachedNow() + 300 + rand.Int63()%10
 	}
 	s.timeoutWheel.Move(c.ConnId(), oldCloseDate, ctx.closeDate)
+	if ctx.proxy != nil {
+		action = s.readProxyHeader(c, ctx)
+		if action != gnet.None || ctx.proxy != nil {
+			return action
+		}
+	}
+	// Count bytes that are still buffered after a PROXY header is removed.
+	// onTcpData then consumes them; the next event counts only the new tail.
+	countInbound(ctx, inboundBuffered(c))
+	defer func() {
+		if ctx.entry != "" {
+			ctx.unconsumed = inboundBuffered(c)
+		}
+	}()
 	if ctx.ppv1 {
 		ppv1, err := c.Peek(-1)
 		if err != nil {
@@ -292,6 +332,7 @@ func (s *Server) OnTick() (delay time.Duration, action gnet.Action) {
 
 	// Use time wheel to expire only connections in the current slot
 	// instead of iterating all connections.
+	s.expireProxyHeaders()
 	expiredConnIds := s.timeoutWheel.ExpireSlot(now)
 	for _, connId := range expiredConnIds {
 		s.eng.Trigger(connId, func(c gnet.Conn) {
@@ -624,7 +665,11 @@ func UnThreadSafeWrite(c gnet.Conn, msg interface{}) error {
 			return err
 		}
 	} else {
-		_, err = c.Write(data)
+		n, werr := c.Write(data)
+		err = werr
+		if n > 0 {
+			addEntryBytes(ctx.entry, 0, int64(n))
+		}
 		if err != nil {
 			logx.Errorf("conn(%s) c.Write(data) - error: %v ", c, err)
 		}

@@ -50,6 +50,12 @@ type connContext struct {
 	nextSeqNo  int32
 	closeDate  int64
 	ppv1       bool
+	// proxy is set only on a ProxyProtocol listener, until one header is accepted.
+	proxy *proxyAdmit
+	// entry is one fixed native class. It is empty for other listeners.
+	entry string
+	// unconsumed is inbound bytes already added to the entry counter.
+	unconsumed int
 }
 
 func newConnContext() *connContext {
