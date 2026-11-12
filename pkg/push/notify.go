@@ -36,7 +36,11 @@ func Decide(now int64, peer, global NotifySettings, mentioned, messageSilent boo
 		d.Preview = false
 	}
 	d.Silent = messageSilent || resolveInt(peer, global, peer.Silent, global.Silent, 0) == 1
-	if sound := resolveString(peer, global); sound != "" && sound != "-1" {
+	switch sound := resolveString(peer, global); sound {
+	case "", "-1":
+	case "none":
+		d.Sound = ""
+	default:
 		d.Sound = sound
 	}
 	if d.Silent {

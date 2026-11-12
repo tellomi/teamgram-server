@@ -150,7 +150,7 @@ func (dao *UserNotifySettingsDAO) SelectListWithCB(ctx context.Context, userId i
 
 	query := `
 	select 
-		id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound 
+		id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound 
 	from 
 		user_notify_settings 
 	where 

@@ -55,7 +55,7 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		peerChannel *mtproto.Chat
 	)
 
-	settings, err := mtproto.MakePeerNotifySettings(in.Settings)
+	settings, err := mtproto.MakePeerNotifySettings(in.GetSettings(), mtproto.NotifySoundSlot(c.MD.GetLangpack(), c.MD.GetClient()))
 	if err != nil {
 		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
 		return nil, err
@@ -116,8 +116,22 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
 		return nil, err
 	}
+	stored, err := c.svcCtx.Dao.UserClient.UserGetNotifySettings(c.ctx, &userpb.TLUserGetNotifySettings{
+		UserId:   c.MD.UserId,
+		PeerType: peer.PeerType,
+		PeerId:   peer.PeerId,
+	})
+	if err != nil {
+		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
+		return nil, err
+	}
+	if stored != nil {
+		settings = stored
+	}
 
-	// syncNotMe
+	// Other sessions of this user. The current session already applied the
+	// change locally. updateNotifySettings has no pts, so the live push is
+	// what an online device uses; a later getNotifySettings reads the row.
 	syncNotMeUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateNotifySettings(&mtproto.Update{
 		Peer_NOTIFYPEER: peer.ToNotifyPeer(),
 		NotifySettings:  settings,
@@ -132,11 +146,14 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		syncNotMeUpdates.AddSafeChat(peerChannel)
 	}
 
-	c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+	if _, err = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 		UserId:        c.MD.UserId,
 		PermAuthKeyId: c.MD.PermAuthKeyId,
 		Updates:       syncNotMeUpdates,
-	})
+	}); err != nil {
+		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
+		return nil, err
+	}
 
 	// return
 	return mtproto.BoolTrue, nil
