@@ -75,6 +75,7 @@ func runStatusHeartbeat(wasOnline, nowOnline bool, lastSeen int64, expires int32
 			Pushed:   newDeadline,
 			Viewers:  viewers,
 			HaveList: true,
+			Gen:      aud.Gen,
 		},
 		Save:   true,
 		Loaded: loaded,

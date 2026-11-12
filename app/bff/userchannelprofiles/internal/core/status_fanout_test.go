@@ -202,6 +202,55 @@ func TestBookWriteErrorStillPushesAndRetries(t *testing.T) {
 	}
 }
 
+func TestStatusPrivacyChangeStopsExactOnline(t *testing.T) {
+	period := int64(mtproto.UserOnlinePeriod)
+	now := int64(1_700_000_000)
+	const (
+		alice = int64(1)
+		bob   = int64(2)
+	)
+	// Bob's cached audience still says Alice may see an exact timestamp.
+	stale := statusbook.Record{
+		Pushed:   now + period,
+		HaveList: true,
+		Viewers:  []statusbook.Viewer{{ID: alice, Exact: true}},
+	}
+	exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + 55 + period)}).To_UserStatus()
+	var staleName string
+	if _, err := runStatusHeartbeat(true, true, now+55, int32(period), now+55, now+55+period, exact, stale, func() ([]statusDelivery, []statusbook.Viewer, error) {
+		t.Fatal("a warm list must not reload")
+		return nil, nil, nil
+	}, func(row statusDelivery) error {
+		if row.UserID == alice {
+			staleName = row.Status.GetPredicateName()
+		}
+		return nil
+	}); err != nil || staleName != mtproto.Predicate_userStatusOnline {
+		t.Fatalf("cached exact push = %s %v", staleName, err)
+	}
+	// Alice changed last seen to nobody, contacts only, or a chat exception.
+	// Bob is a contact either way, so his list is forgotten.
+	for _, mode := range []string{"nobody", "contacts", "chat exception"} {
+		fresh := statusbook.Record{Gen: stale.Gen + 1}
+		var got string
+		res, err := runStatusHeartbeat(true, true, now+110, int32(period), now+110, now+110+period, exact, fresh, func() ([]statusDelivery, []statusbook.Viewer, error) {
+			coarse := mtproto.MakeTLUserStatusRecently(&mtproto.UserStatus{}).To_UserStatus()
+			return []statusDelivery{{UserID: alice, Status: coarse}}, []statusbook.Viewer{{ID: alice, ByMe: true}}, nil
+		}, func(row statusDelivery) error {
+			if row.UserID == alice {
+				got = row.Status.GetPredicateName()
+			}
+			return nil
+		})
+		if err != nil || !res.Loaded {
+			t.Fatalf("%s: forgotten list did not reload: %+v %v", mode, res, err)
+		}
+		if got == mtproto.Predicate_userStatusOnline || got == "" {
+			t.Fatalf("%s: next heartbeat still pushed exact online (%q)", mode, got)
+		}
+	}
+}
+
 func TestStatusEdgesAlwaysReload(t *testing.T) {
 	push, reload := planStatusFanout(true, false, true, 300, 10)
 	if !push || !reload {

@@ -50,7 +50,7 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 		c.Logger.Errorf("account.setPrivacy - error: %v", err)
 		return nil, err
 	}
-	statusbook.Shared().Forget(c.ctx, c.MD.UserId)
+	c.forgetStatusAudiences(key, ruleList)
 
 	rValue := mtproto.MakeTLAccountPrivacyRules(&mtproto.Account_PrivacyRules{
 		Rules: ruleList,
@@ -66,9 +66,6 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	idHelper.PickByRules(ruleList)
 	idHelper.Visit(
 		func(userIdList []int64) {
-			// Drop this user's list and the lists of people named in the
-			// rules, so the next heartbeat does not reuse a stale audience.
-			statusbook.Shared().Forget(c.ctx, userIdList...)
 			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
 				&userpb.TLUserGetMutableUsers{
 					Id: userIdList,
@@ -95,4 +92,27 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	})
 
 	return rValue, nil
+}
+
+// forgetStatusAudiences drops every cached audience that might still name
+// this user. A last-seen change also drops the lists of people who added
+// them and of people they added, including when the new rules only name a
+// chat. Other privacy keys drop this user and anyone the rules name.
+func (c *PrivacySettingsCore) forgetStatusAudiences(key int, rules []*mtproto.PrivacyRule) {
+	named := mtproto.NewIDListHelper()
+	named.PickByRules(rules)
+	var forward, reverse []int64
+	if key == mtproto.STATUS_TIMESTAMP && c != nil && c.svcCtx != nil && c.svcCtx.Dao != nil {
+		if rows, err := c.svcCtx.Dao.UserGetContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId}); err != nil {
+			c.Logger.Errorf("account.setPrivacy status audience forward: %v", err)
+		} else if rows != nil {
+			forward = rows.GetDatas()
+		}
+		if rows, err := c.svcCtx.Dao.UserGetReverseContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId}); err != nil {
+			c.Logger.Errorf("account.setPrivacy status audience reverse: %v", err)
+		} else if rows != nil {
+			reverse = rows.GetDatas()
+		}
+	}
+	statusbook.Shared().Forget(c.ctx, statusbook.StatusPrivacyForgetIDs(c.MD.UserId, named.UserIdList, forward, reverse)...)
 }
