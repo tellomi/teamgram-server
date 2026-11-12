@@ -28,6 +28,11 @@ func TestNotifySettingsStickAndReachTheOtherSession(t *testing.T) {
 
 	peer := userPeer(t, cfg, android, "notify_b", "NotifyB")
 	target := mtproto.MakeTLInputNotifyPeer(&mtproto.InputNotifyPeer{Peer: peer}).To_InputNotifyPeer()
+	// Refresh the other session's online record immediately before the
+	// change. An idle socket drops out of the push list after about a minute.
+	if _, _, _, err := ios.State(ctx); err != nil {
+		t.Fatal(err)
+	}
 	invokeOK(t, android, &mtproto.TLAccountUpdateNotifySettings{
 		Constructor: mtproto.CRC32_account_updateNotifySettings,
 		Peer:        target,
@@ -70,7 +75,7 @@ func TestNotifySettingsStickAndReachTheOtherSession(t *testing.T) {
 		}
 		return false, nil
 	}); err != nil {
-		t.Fatalf("other session did not receive updateNotifySettings: %v", err)
+		t.Fatalf("other session did not receive updateNotifySettings: %v; pushed=%s", err, pushedSummary(ios.Pushed()))
 	}
 
 	again := notifySettings(t, ctx, ios, target)
