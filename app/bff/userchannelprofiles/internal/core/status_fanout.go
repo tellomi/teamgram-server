@@ -1,6 +1,9 @@
 package core
 
-import "github.com/teamgram/proto/mtproto"
+import (
+	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
+)
 
 // statusViewer says whether the subject allows this viewer to see an exact
 // timestamp, and whether the viewer allows the subject to see theirs.
@@ -9,36 +12,96 @@ import "github.com/teamgram/proto/mtproto"
 // stay empty: a failed load must not fan the exact status out.
 type statusViewer func(id int64) (targetAllows, viewerAllows, known bool)
 
-// statusRenewalSlack is how close the last pushed userStatusOnline.expires
-// may get before another foreground heartbeat reloads the audience and
-// pushes a new deadline. 120s is about two Android heartbeats (55s), so
-// contacts still show online when the renewal arrives, and the heartbeats
-// in between do not load contacts, privacy, or blocks.
-const statusRenewalSlack int64 = 120
-
-// shouldPushStatus decides whether contacts must be told.
-// Crossing offline and online always pushes. A foreground heartbeat pushes
-// only when the expires last sent to viewers is missing or has less than
-// statusRenewalSlack left. That mark is not the presence row: the row moves
-// on every heartbeat, and clients do not slide the absolute expires they
-// were given. Same-second repeats and a still-fresh deadline do not push.
-func shouldPushStatus(wasOnline, nowOnline bool, lastPushed, now int64) bool {
+// planStatusFanout decides a heartbeat. Crossing offline and online always
+// reloads the audience. While the user stays online, a later expires is
+// pushed from the cached recipient list and does not read contacts, privacy,
+// or blocks. The same or an older expires does not push. Without a list the
+// audience is loaded, including when the book read failed.
+func planStatusFanout(wasOnline, nowOnline, haveList bool, lastPushed, newDeadline int64) (push, reload bool) {
 	if wasOnline != nowOnline {
-		return true
+		return true, true
 	}
 	if !nowOnline {
-		return false
+		return false, false
 	}
-	if lastPushed <= now {
-		return true
+	if lastPushed > 0 && newDeadline <= lastPushed {
+		return false, false
 	}
-	return lastPushed-now < statusRenewalSlack
+	if !haveList {
+		return true, true
+	}
+	return true, false
 }
 
-// statusLoadsAudience is the gate in front of the contact, privacy, and
-// block reads. A renewal inside the slack returns false.
-func statusLoadsAudience(wasOnline, nowOnline bool, lastPushed, now int64) bool {
-	return shouldPushStatus(wasOnline, nowOnline, lastPushed, now)
+// heartbeatResult is one account.updateStatus fanout attempt.
+type heartbeatResult struct {
+	Next   statusbook.Record
+	Save   bool
+	Forget bool
+	Loaded bool
+}
+
+// runStatusHeartbeat pushes when planStatusFanout says so. A failed load or
+// any failed push leaves the book unchanged so the next heartbeat retries.
+// loaded is true only when contacts, privacy, and blocks were read.
+func runStatusHeartbeat(wasOnline, nowOnline bool, lastSeen int64, expires int32, now, newDeadline int64, exact *mtproto.UserStatus, aud statusbook.Record, load func() ([]statusDelivery, []statusbook.Viewer, error), push func(statusDelivery) error) (heartbeatResult, error) {
+	doPush, reload := planStatusFanout(wasOnline, nowOnline, aud.HaveList, aud.Pushed, newDeadline)
+	if !doPush {
+		return heartbeatResult{}, nil
+	}
+	viewers := aud.Viewers
+	var deliveries []statusDelivery
+	loaded := false
+	if reload || !aud.HaveList {
+		var err error
+		deliveries, viewers, err = load()
+		if err != nil {
+			return heartbeatResult{Loaded: true}, err
+		}
+		loaded = true
+	} else {
+		deliveries = deliveriesFromViewers(exact, lastSeen, expires, now, viewers)
+	}
+	for _, row := range deliveries {
+		if err := push(row); err != nil {
+			return heartbeatResult{Loaded: loaded}, err
+		}
+	}
+	if !nowOnline {
+		return heartbeatResult{Forget: true, Loaded: loaded}, nil
+	}
+	return heartbeatResult{
+		Next: statusbook.Record{
+			Pushed:   newDeadline,
+			Viewers:  viewers,
+			HaveList: true,
+		},
+		Save:   true,
+		Loaded: loaded,
+	}, nil
+}
+
+func deliveriesFromViewers(exact *mtproto.UserStatus, lastSeen int64, expires int32, now int64, viewers []statusbook.Viewer) []statusDelivery {
+	if exact == nil {
+		return nil
+	}
+	out := make([]statusDelivery, 0, len(viewers))
+	for _, v := range viewers {
+		if v.ID == 0 {
+			continue
+		}
+		targetAllows, viewerAllows := v.Exact, true
+		if !v.Exact {
+			targetAllows = false
+			viewerAllows = !v.ByMe
+		}
+		st := mtproto.PushStatusForViewer(exact, lastSeen, expires, targetAllows, viewerAllows, now)
+		if st == nil {
+			continue
+		}
+		out = append(out, statusDelivery{UserID: v.ID, Status: st})
+	}
+	return out
 }
 
 // statusRecipients is the deduped audience, self excluded. blocked skips
@@ -82,11 +145,17 @@ type statusDelivery struct {
 }
 
 func statusDeliveries(self int64, exact *mtproto.UserStatus, lastSeen int64, expires int32, now int64, forward, reverse []int64, visible statusViewer, blocked map[int64]struct{}) []statusDelivery {
+	deliveries, _ := statusAudience(self, exact, lastSeen, expires, now, forward, reverse, visible, blocked)
+	return deliveries
+}
+
+func statusAudience(self int64, exact *mtproto.UserStatus, lastSeen int64, expires int32, now int64, forward, reverse []int64, visible statusViewer, blocked map[int64]struct{}) ([]statusDelivery, []statusbook.Viewer) {
 	if visible == nil || exact == nil {
-		return nil
+		return nil, nil
 	}
 	seen := make(map[int64]struct{}, len(forward)+len(reverse))
 	out := make([]statusDelivery, 0, len(forward)+len(reverse))
+	viewers := make([]statusbook.Viewer, 0, len(forward)+len(reverse))
 	consider := func(id int64) {
 		if id == 0 || id == self {
 			return
@@ -109,6 +178,11 @@ func statusDeliveries(self int64, exact *mtproto.UserStatus, lastSeen int64, exp
 			return
 		}
 		out = append(out, statusDelivery{UserID: id, Status: st})
+		viewers = append(viewers, statusbook.Viewer{
+			ID:    id,
+			Exact: targetAllows && viewerAllows,
+			ByMe:  !viewerAllows,
+		})
 	}
 	for _, id := range forward {
 		consider(id)
@@ -116,7 +190,7 @@ func statusDeliveries(self int64, exact *mtproto.UserStatus, lastSeen int64, exp
 	for _, id := range reverse {
 		consider(id)
 	}
-	return out
+	return out, viewers
 }
 
 func userStatusPush(userID int64, status *mtproto.UserStatus, date int32) *mtproto.Updates {

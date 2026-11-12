@@ -66,6 +66,9 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	idHelper.PickByRules(ruleList)
 	idHelper.Visit(
 		func(userIdList []int64) {
+			// Drop this user's list and the lists of people named in the
+			// rules, so the next heartbeat does not reuse a stale audience.
+			statusbook.Shared().Forget(c.ctx, userIdList...)
 			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
 				&userpb.TLUserGetMutableUsers{
 					Id: userIdList,

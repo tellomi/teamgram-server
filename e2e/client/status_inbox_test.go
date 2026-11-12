@@ -11,10 +11,9 @@ import (
 
 // TestOwnStatusIsNotPushedToOtherSessions is the official account.updateStatus
 // rule. Contacts learn a real online/offline change. The same user's other
-// devices do not get updateUserStatus for themselves. A heartbeat that only
-// refreshes an already-open online window must still succeed. It does not
-// push again until the expires already sent is close to running out; the
-// unit test covers that sliding window.
+// devices do not get updateUserStatus for themselves. A later foreground
+// heartbeat still succeeds. The unit tests cover sliding the expires from
+// the cached audience without reloading contacts.
 func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	a, _, aSelf, _ := sharedPair(t)
 	cfg := requireE2E(t)

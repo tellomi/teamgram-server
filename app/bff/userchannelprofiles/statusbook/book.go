@@ -1,13 +1,13 @@
-// Package statusbook remembers the userStatusOnline.expires last pushed for
-// a user. Heartbeats consult it so a renewal does not reload the audience
-// until that deadline is close to running out. Contact, privacy, and block
-// changes delete the mark; the next heartbeat then loads a fresh audience.
-// Redis is used when KV is configured. Otherwise the mark stays in this
-// process, which is what unit tests and a single BFF get.
+// Package statusbook remembers who last received a user's online status and
+// the expires that was sent. A later heartbeat reuses that list to slide
+// userStatusOnline.expires and does not read contacts, privacy, or blocks
+// again. Contact, privacy, and block changes delete the list. Redis is used
+// when KV is configured. Otherwise the mark stays in this process.
 package statusbook
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"sync"
 	"time"
@@ -16,11 +16,35 @@ import (
 	gokv "github.com/zeromicro/go-zero/core/stores/kv"
 )
 
-// TTL bounds a missed invalidation. A foreground renewal happens well
-// inside this window, and a relationship change deletes the mark itself.
-const TTL = 600
+const (
+	// TTL bounds how long a missed invalidation can keep a list. A successful
+	// push refreshes it. The online window is 300s, so a live heartbeat
+	// rewrites the key before this expires.
+	TTL = 600
+	// MaxViewers bounds one user's cached audience. A larger list is not
+	// stored; the next heartbeat loads it again instead of keeping it.
+	MaxViewers = 512
+)
 
-const keyPrefix = "status_pushed_expires_v1:"
+const keyPrefix = "status_audience_v1:"
+
+// Viewer is one cached recipient. Exact is the precise online or offline
+// status. Otherwise the recipient gets the coarse bucket, and ByMe is set
+// when that bucket exists because they hid their own last seen.
+type Viewer struct {
+	ID    int64 `json:"id"`
+	Exact bool  `json:"exact,omitempty"`
+	ByMe  bool  `json:"by_me,omitempty"`
+}
+
+// Record is the last successful fanout. HaveList is false when the list was
+// never stored or was too large to keep. Pushed is the expires viewers were
+// given; zero means there is no mark.
+type Record struct {
+	Pushed   int64    `json:"pushed,omitempty"`
+	Viewers  []Viewer `json:"viewers,omitempty"`
+	HaveList bool     `json:"have_list,omitempty"`
+}
 
 type store interface {
 	GetCtx(ctx context.Context, key string) (string, error)
@@ -28,7 +52,7 @@ type store interface {
 	DelCtx(ctx context.Context, keys ...string) (int, error)
 }
 
-// Book is the last pushed expires for online status fanout.
+// Book is the shared last-audience mark.
 type Book struct {
 	kv store
 }
@@ -71,39 +95,49 @@ func key(userID int64) string {
 	return keyPrefix + strconv.FormatInt(userID, 10)
 }
 
-// Pushed returns the expires last sent to viewers. Zero means this process
-// has no mark (never pushed, forgotten, or the TTL elapsed). A store error
-// is returned to the caller; treating it as zero makes the next heartbeat
-// load the audience instead of skipping it.
-func (b *Book) Pushed(ctx context.Context, userID int64) (int64, error) {
+// Load returns the stored audience. A missing key is a zero record and a nil
+// error. A store error is returned so the caller still fans out, treating
+// the list as unknown instead of skipping the renewal.
+func (b *Book) Load(ctx context.Context, userID int64) (Record, error) {
 	if b == nil || b.kv == nil || userID == 0 {
-		return 0, nil
+		return Record{}, nil
 	}
 	raw, err := b.kv.GetCtx(ctx, key(userID))
 	if err != nil || raw == "" {
-		return 0, err
+		return Record{}, err
 	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return 0, nil
+	var rec Record
+	if json.Unmarshal([]byte(raw), &rec) != nil {
+		return Record{}, nil
 	}
-	return n, nil
+	return rec, nil
 }
 
-// Remember stores the expires just pushed. Zero forgets the mark.
-func (b *Book) Remember(ctx context.Context, userID, expires int64) error {
-	if b == nil || b.kv == nil || userID == 0 {
+// Save stores a newer expires and its audience. An older or equal expires
+// is left untouched so a slow heartbeat cannot overwrite a later one. A
+// list past MaxViewers is dropped and HaveList is false. A store error is
+// returned; the push itself has already happened.
+func (b *Book) Save(ctx context.Context, userID int64, rec Record) error {
+	if b == nil || b.kv == nil || userID == 0 || rec.Pushed <= 0 {
 		return nil
 	}
-	if expires <= 0 {
-		_, err := b.kv.DelCtx(ctx, key(userID))
+	if len(rec.Viewers) > MaxViewers {
+		rec.Viewers = nil
+		rec.HaveList = false
+	}
+	cur, err := b.Load(ctx, userID)
+	if err == nil && cur.Pushed >= rec.Pushed {
+		return nil
+	}
+	raw, err := json.Marshal(rec)
+	if err != nil {
 		return err
 	}
-	return b.kv.SetexCtx(ctx, key(userID), strconv.FormatInt(expires, 10), TTL)
+	return b.kv.SetexCtx(ctx, key(userID), string(raw), TTL)
 }
 
 // Forget drops marks after a contact, privacy, or block change so the next
-// heartbeat reloads who may see the status.
+// heartbeat loads who may see the status.
 func (b *Book) Forget(ctx context.Context, userIDs ...int64) {
 	if b == nil || b.kv == nil {
 		return
@@ -118,6 +152,15 @@ func (b *Book) Forget(ctx context.Context, userIDs ...int64) {
 		return
 	}
 	_, _ = b.kv.DelCtx(ctx, keys...)
+}
+
+// OpenRecord is the record a heartbeat may trust. A read error yields an
+// empty record so the renewal still runs.
+func OpenRecord(rec Record, err error) Record {
+	if err != nil {
+		return Record{}
+	}
+	return rec
 }
 
 type memVal struct {

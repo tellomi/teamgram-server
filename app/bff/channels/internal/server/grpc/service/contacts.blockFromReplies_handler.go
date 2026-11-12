@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -64,6 +65,7 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 		}); err != nil {
 			return nil, err
 		}
+		statusbook.Shared().Forget(ctx, self, sender)
 	}
 	if in.GetReportSpam() {
 		logx.WithContext(ctx).Infof("contacts.blockFromReplies report_spam user %d msg %d", sender, in.GetMsgId())

@@ -19,6 +19,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -87,75 +88,33 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		if !offline {
 			newDeadline = now + int64(expires)
 		}
-		// lastPushed is the expires viewers already have. The presence row
-		// above moves on every heartbeat, so it cannot be that mark.
-		lastPushed, pushedErr := statusbook.Shared().Pushed(ctx, c.MD.UserId)
-		if pushedErr != nil {
-			lastPushed = 0
-		}
-		// Edges always load. A renewal loads only once the pushed expires
-		// is inside the slack, so the 55s heartbeats in between do not.
-		if c.svcCtx.SyncClient == nil || !statusLoadsAudience(prevOnline, !offline, lastPushed, now) {
+		if c.svcCtx.SyncClient == nil {
 			return
 		}
-		ids, err := c.svcCtx.UserClient.UserGetContactIdList(ctx, &userpb.TLUserGetContactIdList{
-			UserId: c.MD.UserId,
-		})
-		if err != nil || ids == nil {
-			return
-		}
-		rev, err := c.svcCtx.UserClient.UserGetReverseContactIdList(ctx, &userpb.TLUserGetContactIdList{
-			UserId: c.MD.UserId,
-		})
-		if err != nil || rev == nil {
-			return
-		}
-		forward := ids.GetDatas()
-		reverse := rev.GetDatas()
-		candidates := append(append([]int64{c.MD.UserId}, forward...), reverse...)
-		got, err := c.svcCtx.UserClient.UserGetMutableUsersV2(ctx, &userpb.TLUserGetMutableUsersV2{
-			Id:      candidates,
-			Privacy: true,
-			HasTo:   true,
-			To:      []int64{c.MD.UserId},
-		})
-		if err != nil || got == nil {
-			return
-		}
-		me, ok := got.GetImmutableUser(c.MD.UserId)
-		if !ok || me == nil {
-			return
-		}
-		attachForwardContacts(me, forward)
-		blockedRows, err := c.svcCtx.UserClient.UserBlockedEitherWay(ctx, &userpb.TLUserCheckBlockUserList{
-			UserId: c.MD.UserId,
-			Id:     append(append([]int64{}, forward...), reverse...),
-		})
-		if err != nil || blockedRows == nil {
-			return
-		}
-		blocked := make(map[int64]struct{}, len(blockedRows.GetDatas()))
-		for _, id := range blockedRows.GetDatas() {
-			blocked[id] = struct{}{}
-		}
+		book := statusbook.Shared()
+		// A book read error is an empty record: the heartbeat still fans out.
+		stored, storedErr := book.Load(ctx, c.MD.UserId)
 		exact := pushUpdates.GetUpdate().GetStatus_USERSTATUS()
-		visible := func(id int64) (bool, bool, bool) {
-			viewer, found := got.GetImmutableUser(id)
-			if !found || viewer == nil {
-				return false, false, false
-			}
-			return me.CheckPrivacy(mtproto.STATUS_TIMESTAMP, id), viewer.CheckPrivacy(mtproto.STATUS_TIMESTAMP, c.MD.UserId), true
-		}
-		for _, row := range statusDeliveries(c.MD.UserId, exact, now, expires, now, forward, reverse, visible, blocked) {
-			_, _ = c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
+		res, err := runStatusHeartbeat(prevOnline, !offline, now, expires, now, newDeadline, exact, statusbook.OpenRecord(stored, storedErr), func() ([]statusDelivery, []statusbook.Viewer, error) {
+			return c.loadStatusAudience(ctx, now, expires, exact)
+		}, func(row statusDelivery) error {
+			_, err := c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
 				UserId:  row.UserID,
 				Updates: userStatusPush(c.MD.UserId, row.Status, int32(now)-1),
 			})
+			return err
+		})
+		if err != nil {
+			return
 		}
-		if offline {
-			statusbook.Shared().Forget(ctx, c.MD.UserId)
-		} else {
-			_ = statusbook.Shared().Remember(ctx, c.MD.UserId, newDeadline)
+		if res.Forget {
+			book.Forget(ctx, c.MD.UserId)
+			return
+		}
+		if res.Save {
+			// A write error leaves the previous mark, so the next heartbeat
+			// pushes again. It does not cancel the push just made.
+			_ = book.Save(ctx, c.MD.UserId, res.Next)
 		}
 	})
 
@@ -165,3 +124,60 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 func missingPresence(err error) bool {
 	return errors.Is(err, userpb.ErrPresenceNotFound)
 }
+
+func (c *UserChannelProfilesCore) loadStatusAudience(ctx context.Context, now int64, expires int32, exact *mtproto.UserStatus) ([]statusDelivery, []statusbook.Viewer, error) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.UserClient == nil {
+		return nil, nil, errStatusAudience
+	}
+	ids, err := c.svcCtx.UserClient.UserGetContactIdList(ctx, &userpb.TLUserGetContactIdList{
+		UserId: c.MD.UserId,
+	})
+	if err != nil || ids == nil {
+		return nil, nil, errStatusAudience
+	}
+	rev, err := c.svcCtx.UserClient.UserGetReverseContactIdList(ctx, &userpb.TLUserGetContactIdList{
+		UserId: c.MD.UserId,
+	})
+	if err != nil || rev == nil {
+		return nil, nil, errStatusAudience
+	}
+	forward := ids.GetDatas()
+	reverse := rev.GetDatas()
+	candidates := append(append([]int64{c.MD.UserId}, forward...), reverse...)
+	got, err := c.svcCtx.UserClient.UserGetMutableUsersV2(ctx, &userpb.TLUserGetMutableUsersV2{
+		Id:      candidates,
+		Privacy: true,
+		HasTo:   true,
+		To:      []int64{c.MD.UserId},
+	})
+	if err != nil || got == nil {
+		return nil, nil, errStatusAudience
+	}
+	me, ok := got.GetImmutableUser(c.MD.UserId)
+	if !ok || me == nil {
+		return nil, nil, errStatusAudience
+	}
+	attachForwardContacts(me, forward)
+	blockedRows, err := c.svcCtx.UserClient.UserBlockedEitherWay(ctx, &userpb.TLUserCheckBlockUserList{
+		UserId: c.MD.UserId,
+		Id:     append(append([]int64{}, forward...), reverse...),
+	})
+	if err != nil || blockedRows == nil {
+		return nil, nil, errStatusAudience
+	}
+	blocked := make(map[int64]struct{}, len(blockedRows.GetDatas()))
+	for _, id := range blockedRows.GetDatas() {
+		blocked[id] = struct{}{}
+	}
+	visible := func(id int64) (bool, bool, bool) {
+		viewer, found := got.GetImmutableUser(id)
+		if !found || viewer == nil {
+			return false, false, false
+		}
+		return me.CheckPrivacy(mtproto.STATUS_TIMESTAMP, id), viewer.CheckPrivacy(mtproto.STATUS_TIMESTAMP, c.MD.UserId), true
+	}
+	deliveries, viewers := statusAudience(c.MD.UserId, exact, now, expires, now, forward, reverse, visible, blocked)
+	return deliveries, viewers, nil
+}
+
+var errStatusAudience = errors.New("status audience unavailable")

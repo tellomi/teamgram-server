@@ -1,9 +1,11 @@
 package core
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 )
 
 func TestStatusRecipientsFailClosedWithoutPrivacy(t *testing.T) {
@@ -64,83 +66,198 @@ func TestStatusDeliveryReverseRule(t *testing.T) {
 	}
 }
 
-func TestOnlineHeartbeatSlidesExpires(t *testing.T) {
-	const seen int64 = 1_700_000_000
+func TestHeartbeatIntervalsDoNotLapseOrReload(t *testing.T) {
 	period := int64(mtproto.UserOnlinePeriod)
-	// The contact is holding the expires from the transition that came online.
-	contactExpires := seen + period
-	lastPushed := contactExpires
-	if !mtproto.PresenceOnline(seen+55, seen, mtproto.UserOnlinePeriod) {
-		t.Fatal("a heartbeat 55s later is still inside the open window")
-	}
-	if statusLoadsAudience(true, true, lastPushed, seen+55) {
-		t.Fatal("a heartbeat 55s into a fresh window must not load the audience")
-	}
-	if !shouldPushStatus(true, false, lastPushed, seen+55) {
-		t.Fatal("going offline is a transition")
-	}
-	if !shouldPushStatus(false, true, 0, seen+55) {
-		t.Fatal("coming online is a transition")
-	}
-	if shouldPushStatus(false, false, 0, seen+55) {
-		t.Fatal("an offline update while already offline is not a transition")
-	}
-	if !shouldPushStatus(true, true, seen+80, seen) {
-		t.Fatal("a pushed expires inside the slack must be renewed")
-	}
-
-	// Twelve foreground heartbeats at 55s. Most do not push. The contact's
-	// known expires still never lapses.
-	cursor := seen
-	loads := 0
-	for i := 0; i < 12; i++ {
-		cursor += 55
-		if cursor >= contactExpires {
-			t.Fatalf("contact went offline at step %d now %d expires %d", i, cursor, contactExpires)
-		}
-		if statusLoadsAudience(true, true, lastPushed, cursor) {
+	for _, gap := range []int64{55, 130, 180, 250, 299} {
+		const start int64 = 1_700_000_000
+		now := start
+		var aud statusbook.Record
+		var contact int64
+		wasOnline := false
+		loads := 0
+		load := func() ([]statusDelivery, []statusbook.Viewer, error) {
 			loads++
-			lastPushed = cursor + period
-			contactExpires = lastPushed
+			return []statusDelivery{{UserID: 2}}, []statusbook.Viewer{{ID: 2, Exact: true}}, nil
 		}
-	}
-	if loads == 0 {
-		t.Fatal("the open window was never renewed")
-	}
-	if loads >= 12 {
-		t.Fatalf("every heartbeat loaded the audience (%d)", loads)
+		var pushedExpires int32
+		for step := 0; step < 6; step++ {
+			if step > 0 {
+				now += gap
+			}
+			if contact != 0 && now >= contact {
+				t.Fatalf("gap %d: contact expired at step %d now %d expires %d", gap, step, now, contact)
+			}
+			exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + period)}).To_UserStatus()
+			res, err := runStatusHeartbeat(wasOnline, true, now, int32(period), now, now+period, exact, aud, load, func(row statusDelivery) error {
+				if row.Status != nil {
+					pushedExpires = row.Status.GetExpires()
+				}
+				return nil
+			})
+			if err != nil || !res.Save {
+				t.Fatalf("gap %d step %d: %+v %v", gap, step, res, err)
+			}
+			if res.Loaded {
+				// counted inside load
+			}
+			aud = res.Next
+			contact = aud.Pushed
+			wasOnline = true
+		}
+		if loads >= 6 {
+			t.Fatalf("gap %d reloaded the audience on every heartbeat (%d)", gap, loads)
+		}
+		if loads != 1 {
+			t.Fatalf("gap %d loaded %d times, want the first heartbeat only", gap, loads)
+		}
+		if contact <= now {
+			t.Fatalf("gap %d left contact expires %d at now %d", gap, contact, now)
+		}
+		if int64(pushedExpires) != contact {
+			t.Fatalf("gap %d pushed expires %d, contact has %d", gap, pushedExpires, contact)
+		}
 	}
 }
 
-func TestRenewalDoesNotLoadAudienceEveryHeartbeat(t *testing.T) {
-	const start int64 = 1_700_000_000
+func TestFailedPushIsRetriedNextHeartbeat(t *testing.T) {
 	period := int64(mtproto.UserOnlinePeriod)
-	now := start
-	var lastPushed int64
-	wasOnline := false
-	contactExpires := int64(0)
-	loads := 0
-	for i := 0; i < 12; i++ {
+	now := int64(1_700_000_000)
+	aud := statusbook.Record{}
+	fail := true
+	pushes := 0
+	load := func() ([]statusDelivery, []statusbook.Viewer, error) {
+		return []statusDelivery{{UserID: 2}}, []statusbook.Viewer{{ID: 2, Exact: true}}, nil
+	}
+	for i := 0; i < 2; i++ {
 		if i > 0 {
 			now += 55
 		}
-		if contactExpires != 0 && now >= contactExpires {
-			t.Fatalf("contact went offline at heartbeat %d now %d expires %d", i, now, contactExpires)
-		}
-		if !statusLoadsAudience(wasOnline, true, lastPushed, now) {
-			wasOnline = true
+		exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + period)}).To_UserStatus()
+		res, err := runStatusHeartbeat(i > 0, true, now, int32(period), now, now+period, exact, aud, load, func(statusDelivery) error {
+			pushes++
+			if fail {
+				fail = false
+				return errors.New("sync")
+			}
+			return nil
+		})
+		if err != nil {
 			continue
 		}
+		if res.Save {
+			aud = res.Next
+		}
+	}
+	if pushes != 2 {
+		t.Fatalf("a failed push was not retried, pushes=%d", pushes)
+	}
+	if aud.Pushed != now+period {
+		t.Fatalf("successful retry did not stick, pushed=%d", aud.Pushed)
+	}
+}
+
+func TestBookReadErrorDoesNotSkipRenewal(t *testing.T) {
+	period := int64(mtproto.UserOnlinePeriod)
+	now := int64(1_700_000_000)
+	stored := statusbook.Record{Pushed: now + period, HaveList: true, Viewers: []statusbook.Viewer{{ID: 2, Exact: true}}}
+	aud := statusbook.OpenRecord(stored, errors.New("redis"))
+	loads := 0
+	pushes := 0
+	exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + 55 + period)}).To_UserStatus()
+	res, err := runStatusHeartbeat(true, true, now+55, int32(period), now+55, now+55+period, exact, aud, func() ([]statusDelivery, []statusbook.Viewer, error) {
 		loads++
-		lastPushed = now + period
-		contactExpires = lastPushed
-		wasOnline = true
+		return []statusDelivery{{UserID: 2}}, []statusbook.Viewer{{ID: 2, Exact: true}}, nil
+	}, func(statusDelivery) error {
+		pushes++
+		return nil
+	})
+	if err != nil || !res.Save || loads != 1 || pushes != 1 {
+		t.Fatalf("read error skipped renewal: %+v loads %d pushes %d err %v", res, loads, pushes, err)
 	}
-	if loads >= 12 {
-		t.Fatalf("audience loaders ran on every heartbeat (%d)", loads)
+}
+
+func TestBookWriteErrorStillPushesAndRetries(t *testing.T) {
+	period := int64(mtproto.UserOnlinePeriod)
+	now := int64(1_700_000_000)
+	aud := statusbook.Record{}
+	pushes := 0
+	load := func() ([]statusDelivery, []statusbook.Viewer, error) {
+		return []statusDelivery{{UserID: 2}}, []statusbook.Viewer{{ID: 2, Exact: true}}, nil
 	}
-	if loads < 2 {
-		t.Fatalf("coming online and at least one renewal should load, got %d", loads)
+	push := func(statusDelivery) error {
+		pushes++
+		return nil
+	}
+	exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + period)}).To_UserStatus()
+	res, err := runStatusHeartbeat(false, true, now, int32(period), now, now+period, exact, aud, load, push)
+	if err != nil || !res.Save || pushes != 1 {
+		t.Fatalf("first push %+v %v pushes %d", res, err, pushes)
+	}
+	// The book write failed, so the caller keeps the previous record.
+	now += 55
+	exact = mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + period)}).To_UserStatus()
+	res, err = runStatusHeartbeat(true, true, now, int32(period), now, now+period, exact, aud, load, push)
+	if err != nil || !res.Save || pushes != 2 {
+		t.Fatalf("write failure skipped the next renewal: %+v %v pushes %d", res, err, pushes)
+	}
+}
+
+func TestStatusEdgesAlwaysReload(t *testing.T) {
+	push, reload := planStatusFanout(true, false, true, 300, 10)
+	if !push || !reload {
+		t.Fatal("going offline reloads")
+	}
+	push, reload = planStatusFanout(false, true, true, 300, 400)
+	if !push || !reload {
+		t.Fatal("coming online reloads")
+	}
+	push, reload = planStatusFanout(false, false, true, 0, 10)
+	if push || reload {
+		t.Fatal("staying offline does not push")
+	}
+	push, reload = planStatusFanout(true, true, true, 400, 400)
+	if push || reload {
+		t.Fatal("the same expires is not pushed again")
+	}
+}
+
+func TestForgottenAudienceDropsRemovedViewer(t *testing.T) {
+	period := int64(mtproto.UserOnlinePeriod)
+	now := int64(1_700_000_000)
+	stale := statusbook.Record{
+		Pushed:   now + period,
+		HaveList: true,
+		Viewers:  []statusbook.Viewer{{ID: 2, Exact: true}, {ID: 3, Exact: true}},
+	}
+	var staleIDs []int64
+	exact := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + 55 + period)}).To_UserStatus()
+	_, err := runStatusHeartbeat(true, true, now+55, int32(period), now+55, now+55+period, exact, stale, func() ([]statusDelivery, []statusbook.Viewer, error) {
+		t.Fatal("a warm list must not reload")
+		return nil, nil, nil
+	}, func(row statusDelivery) error {
+		staleIDs = append(staleIDs, row.UserID)
+		return nil
+	})
+	if err != nil || len(staleIDs) != 2 {
+		t.Fatalf("cached push = %v %v", staleIDs, err)
+	}
+	// Privacy or block Forget clears the list. The next heartbeat loads
+	// again and must not keep the removed viewer.
+	fresh := statusbook.Record{}
+	var ids []int64
+	now += 55
+	exact = mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: int32(now + period)}).To_UserStatus()
+	res, err := runStatusHeartbeat(true, true, now, int32(period), now, now+period, exact, fresh, func() ([]statusDelivery, []statusbook.Viewer, error) {
+		return []statusDelivery{{UserID: 2}}, []statusbook.Viewer{{ID: 2, Exact: true}}, nil
+	}, func(row statusDelivery) error {
+		ids = append(ids, row.UserID)
+		return nil
+	})
+	if err != nil || !res.Loaded {
+		t.Fatalf("forgotten list did not reload: %+v %v", res, err)
+	}
+	if len(ids) != 1 || ids[0] != 2 {
+		t.Fatalf("removed viewer was pushed: %v", ids)
 	}
 }
 
