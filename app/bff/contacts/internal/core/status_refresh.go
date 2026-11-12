@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -62,7 +63,11 @@ func (c *ContactsCore) pushContactStatuses(selfID, peerID int64) {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.SyncClient == nil || selfID == 0 || peerID == 0 || selfID == peerID {
 		return
 	}
-	if c.blockedEither(selfID, peerID) {
+	blocked, err := c.blockedEither(selfID, peerID)
+	if err != nil || blocked {
+		if err != nil {
+			c.Logger.Errorf("contacts status refresh - block check: %v", err)
+		}
 		return
 	}
 	got, err := c.svcCtx.Dao.UserGetMutableUsersV2(c.ctx, &userpb.TLUserGetMutableUsersV2{
@@ -89,11 +94,23 @@ func (c *ContactsCore) pushContactStatuses(selfID, peerID int64) {
 	}
 }
 
-func (c *ContactsCore) blockedEither(selfID, peerID int64) bool {
+var errStatusBlockCheckUnavailable = errors.New("status block check unavailable")
+
+func interpretBlockChecks(err1 error, blocked1 bool, err2 error, blocked2 bool) (bool, error) {
+	if err1 != nil {
+		return true, err1
+	}
+	if err2 != nil {
+		return true, err2
+	}
+	return blocked1 || blocked2, nil
+}
+
+func (c *ContactsCore) blockedEither(selfID, peerID int64) (bool, error) {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil {
-		return false
+		return true, errStatusBlockCheckUnavailable
 	}
 	one, err1 := c.svcCtx.Dao.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{UserId: selfID, PeerUserId: peerID})
 	two, err2 := c.svcCtx.Dao.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{UserId: peerID, PeerUserId: selfID})
-	return (err1 == nil && mtproto.FromBool(one)) || (err2 == nil && mtproto.FromBool(two))
+	return interpretBlockChecks(err1, mtproto.FromBool(one), err2, mtproto.FromBool(two))
 }

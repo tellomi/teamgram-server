@@ -9,10 +9,21 @@ import "github.com/teamgram/proto/mtproto"
 // stay empty: a failed load must not fan the exact status out.
 type statusViewer func(id int64) (targetAllows, viewerAllows, known bool)
 
-// shouldPushStatus is true only when online/offline changed. A heartbeat
-// that refreshes an already-open window does not push.
-func shouldPushStatus(wasOnline, nowOnline bool) bool {
-	return wasOnline != nowOnline
+// shouldPushStatus decides whether contacts must be told.
+// Crossing offline and online always pushes. A foreground heartbeat also
+// pushes when the new userStatusOnline.expires is later than the deadline
+// already stored: official clients keep that absolute expires and do not
+// slide it themselves. Same-second repeats do not push. The gap between
+// heartbeats is far shorter than UserOnlinePeriod, so a contact still
+// holding the previous expires has not gone offline when the renewal arrives.
+func shouldPushStatus(wasOnline, nowOnline bool, prevDeadline, newDeadline int64) bool {
+	if wasOnline != nowOnline {
+		return true
+	}
+	if !nowOnline {
+		return false
+	}
+	return newDeadline > prevDeadline
 }
 
 // statusRecipients is the deduped audience, self excluded. blocked skips

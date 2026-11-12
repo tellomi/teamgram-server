@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -98,6 +99,21 @@ func TestContactStatusesFailClosed(t *testing.T) {
 		t.Fatalf("nil users returned %d statuses", len(got))
 	}
 	_ = exact
+}
+
+func TestBlockCheckFailsClosed(t *testing.T) {
+	blocked, err := interpretBlockChecks(errors.New("rpc"), false, nil, false)
+	if err == nil || !blocked {
+		t.Fatalf("error must not look unblocked: %v %v", blocked, err)
+	}
+	blocked, err = interpretBlockChecks(nil, false, nil, false)
+	if err != nil || blocked {
+		t.Fatalf("clear pair: %v %v", blocked, err)
+	}
+	blocked, err = interpretBlockChecks(nil, false, nil, true)
+	if err != nil || !blocked {
+		t.Fatalf("one side blocked: %v %v", blocked, err)
+	}
 }
 
 func TestUserStatusPushSkipsEmpty(t *testing.T) {

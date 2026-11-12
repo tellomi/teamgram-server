@@ -370,7 +370,7 @@ func privacyIsAllow(rules []*PrivacyRule, userId int64, isContact bool) bool {
 					}
 				}
 			case Predicate_privacyValueDisallowChatParticipants:
-				return true
+				// Membership is not available here. Do not treat the rule as allow.
 			}
 		}
 		return true
@@ -384,7 +384,7 @@ func privacyIsAllow(rules []*PrivacyRule, userId int64, isContact bool) bool {
 					}
 				}
 			case Predicate_privacyValueAllowChatParticipants:
-				return true
+				// Membership is not available here. Do not allow everyone.
 			case Predicate_privacyValueDisallowUsers:
 				for _, id := range r.Users {
 					if id == userId {
@@ -392,7 +392,7 @@ func privacyIsAllow(rules []*PrivacyRule, userId int64, isContact bool) bool {
 					}
 				}
 			case Predicate_privacyValueDisallowChatParticipants:
-				return true
+				// Membership is not available here. Do not allow a non-contact.
 			}
 		}
 		return isContact
@@ -406,7 +406,7 @@ func privacyIsAllow(rules []*PrivacyRule, userId int64, isContact bool) bool {
 					}
 				}
 			case Predicate_privacyValueAllowChatParticipants:
-				return true
+				// Membership is not available here. Do not allow everyone.
 			}
 		}
 		return false

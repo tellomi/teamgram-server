@@ -64,20 +64,49 @@ func TestStatusDeliveryReverseRule(t *testing.T) {
 	}
 }
 
-func TestHeartbeatDoesNotFanOut(t *testing.T) {
+func TestOnlineHeartbeatSlidesExpires(t *testing.T) {
 	const seen int64 = 1_700_000_000
-	was := mtproto.PresenceOnline(seen+30, seen, mtproto.UserOnlinePeriod)
-	if !was || shouldPushStatus(was, true) {
-		t.Fatal("refreshing an open online window is not a transition")
+	period := int64(mtproto.UserOnlinePeriod)
+	prevDeadline := seen + period
+	// Android sends account.updateStatus about every 55s while foreground.
+	now := seen + 55
+	if !mtproto.PresenceOnline(now, seen, mtproto.UserOnlinePeriod) {
+		t.Fatal("the heartbeat is still inside the open window")
 	}
-	if !shouldPushStatus(was, false) {
+	newDeadline := now + period
+	if !shouldPushStatus(true, true, prevDeadline, newDeadline) {
+		t.Fatal("a later online heartbeat must push the new expires")
+	}
+	if newDeadline <= now || prevDeadline <= now {
+		t.Fatal("the contact still holding the previous expires must not already be offline")
+	}
+	if shouldPushStatus(true, true, newDeadline, newDeadline) {
+		t.Fatal("the same expires is not a renewal")
+	}
+	if !shouldPushStatus(true, false, prevDeadline, now) {
 		t.Fatal("going offline is a transition")
 	}
-	if !shouldPushStatus(false, true) {
+	if !shouldPushStatus(false, true, 0, newDeadline) {
 		t.Fatal("coming online is a transition")
 	}
-	if shouldPushStatus(false, false) {
+	if shouldPushStatus(false, false, 0, now) {
 		t.Fatal("an offline update while already offline is not a transition")
+	}
+
+	// Twelve foreground heartbeats. Each one is pushed, and the contact's
+	// expires stays ahead of the clock.
+	contactExpires := prevDeadline
+	cursor := seen
+	for i := 0; i < 12; i++ {
+		cursor += 55
+		next := cursor + period
+		if cursor >= contactExpires {
+			t.Fatalf("contact went offline at step %d now %d expires %d", i, cursor, contactExpires)
+		}
+		if !shouldPushStatus(true, true, contactExpires, next) {
+			t.Fatalf("heartbeat %d did not renew", i)
+		}
+		contactExpires = next
 	}
 }
 

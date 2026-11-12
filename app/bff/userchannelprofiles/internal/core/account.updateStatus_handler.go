@@ -19,7 +19,7 @@
 package core
 
 import (
-	"strings"
+	"errors"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -66,9 +66,13 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		}
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		prevOnline := false
+		var prevDeadline int64
 		prev, prevErr := c.svcCtx.UserClient.UserGetLastSeen(ctx, &userpb.TLUserGetLastSeen{Id: c.MD.UserId})
 		if prevErr == nil && prev != nil {
 			prevOnline = mtproto.PresenceOnline(now, prev.GetLastSeenAt(), prev.GetExpires())
+			if prev.GetExpires() > 0 {
+				prevDeadline = prev.GetLastSeenAt() + int64(prev.GetExpires())
+			}
 		} else if prevErr != nil && !missingPresence(prevErr) {
 			_, _ = c.svcCtx.UserClient.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
 				Id:         c.MD.UserId,
@@ -82,8 +86,12 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 			LastSeenAt: now,
 			Expires:    expires,
 		})
-		// Heartbeats that only extend an open window do not push.
-		if c.svcCtx.SyncClient == nil || !shouldPushStatus(prevOnline, !offline) {
+		newDeadline := now
+		if !offline {
+			newDeadline = now + int64(expires)
+		}
+		// Same-second repeats are skipped. A later heartbeat pushes the new expires.
+		if c.svcCtx.SyncClient == nil || !shouldPushStatus(prevOnline, !offline, prevDeadline, newDeadline) {
 			return
 		}
 		ids, err := c.svcCtx.UserClient.UserGetContactIdList(ctx, &userpb.TLUserGetContactIdList{
@@ -146,5 +154,5 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 }
 
 func missingPresence(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "USER_ID_INVALID")
+	return errors.Is(err, userpb.ErrPresenceNotFound)
 }
