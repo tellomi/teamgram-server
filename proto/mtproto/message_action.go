@@ -212,6 +212,21 @@ func MakeMessageActionPaymentSent(currency string, totalAmount int64) *MessageAc
 	}).To_MessageAction()
 }
 
+// AnsweredPhoneCall reports a 1:1 call the callee already took.
+// Missed and busy stay unread. A hangup before the call connects has no
+// duration and stays unread. A connected hangup or disconnect carries a
+// duration. Voice and video use the same rule.
+func AnsweredPhoneCall(action *MessageAction) bool {
+	if action == nil || action.GetPredicateName() != Predicate_messageActionPhoneCall {
+		return false
+	}
+	switch action.GetReason().GetPredicateName() {
+	case Predicate_phoneCallDiscardReasonMissed, Predicate_phoneCallDiscardReasonBusy, "":
+		return false
+	}
+	return action.GetDuration().GetValue() > 0
+}
+
 // MakeMessageActionPhoneCall
 // messageActionPhoneCall#80e11a7f flags:# video:flags.2?true call_id:long reason:flags.0?PhoneCallDiscardReason duration:flags.1?int = MessageAction;
 func MakeMessageActionPhoneCall(video bool, callId int64, reason *PhoneCallDiscardReason, duration int32) *MessageAction {
