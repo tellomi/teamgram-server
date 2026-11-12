@@ -116,11 +116,24 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
 		return nil, err
 	}
+	// Push the stored row, not only the fields this request set. Another
+	// device applies updateNotifySettings as the new settings object, and a
+	// later getNotifySettings must return the same mute_until, show_previews
+	// and silent.
+	stored, err := c.svcCtx.Dao.UserClient.UserGetNotifySettings(c.ctx, &userpb.TLUserGetNotifySettings{
+		UserId:   c.MD.UserId,
+		PeerType: peer.PeerType,
+		PeerId:   peer.PeerId,
+	})
+	if err != nil {
+		c.Logger.Errorf("account.updateNotifySettings - read back: %v", err)
+		return nil, err
+	}
 
 	// syncNotMe
 	syncNotMeUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateNotifySettings(&mtproto.Update{
 		Peer_NOTIFYPEER: peer.ToNotifyPeer(),
-		NotifySettings:  settings,
+		NotifySettings:  stored,
 	}).To_Update())
 
 	switch peer.PeerType {
@@ -132,13 +145,15 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		syncNotMeUpdates.AddSafeChat(peerChannel)
 	}
 
-	c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+	if _, err = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 		UserId:        c.MD.UserId,
 		PermAuthKeyId: c.MD.PermAuthKeyId,
 		Updates:       syncNotMeUpdates,
-	})
+	}); err != nil {
+		c.Logger.Errorf("account.updateNotifySettings - sync: %v", err)
+		return nil, err
+	}
 
-	// return
 	return mtproto.BoolTrue, nil
 }
 

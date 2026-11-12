@@ -2,6 +2,10 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## account.updateNotifySettings
+
+`inputPeerNotifySettings.sound` is a `NotificationSound` (`notificationSoundDefault`, `notificationSoundNone`, `notificationSoundLocal`, `notificationSoundRingtone`), and stories has `stories_muted`, `stories_hide_sender` and `stories_sound`. Those fields used to be dropped; only `show_previews`, `silent`, `mute_until` and a legacy sound string were stored. They are now kept in `user_notify_settings.settings_json` (`teamgramd/deploy/sql/migrate-20261112-notify-settings-json.sql`; rollback is `CALL teamgram_drop_column('user_notify_settings', 'settings_json')`). One input sound is written to `ios_sound`, `android_sound` and `other_sound`. A field the request omits keeps its previous value. `MakeDefaultPeerNotifySettings` had `silent` true while the documented default and the users/chats/channels read path use false; the default is now `show_previews` true, `silent` false, `mute_until` 0. After a successful save the handler reads the row back and sends that object in `updateNotifySettings` to the account's other devices. A sync failure is returned instead of `boolTrue`.
+
 ## Verification quotas (A05 / A06)
 
 Phone and email codes share `pkg/verify.Limiter`. The counter is one Redis `INCR` per target per Asia/Shanghai calendar day. The default cap is 10 (`TELLOMI_SMS_DAILY_LIMIT`, `TELLOMI_EMAIL_DAILY_LIMIT`). The 11th call returns `PHONE_NUMBER_FLOOD` before the SMS or email sender runs. A number outside `TELLOMI_SMS_COUNTRY_ALLOW` (default `86`) returns `PHONE_NUMBER_INVALID` before that sender. `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` accepts other countries again. Resend, change-phone, confirm-phone, login email, and cloud-password email use this gate. The contract for clients is `docs/api/verification-limits.md`.

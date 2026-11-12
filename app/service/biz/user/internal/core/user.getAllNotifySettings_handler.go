@@ -12,26 +12,12 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
-
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-func makePeerNotifySettingsByDO(do *dataobject.UserNotifySettingsDO) (settings *mtproto.PeerNotifySettings) {
-	settings = mtproto.MakeTLPeerNotifySettings(nil).To_PeerNotifySettings()
-	if do.ShowPreviews != -1 {
-		settings.ShowPreviews = mtproto.ToBool(do.ShowPreviews == 1)
-	}
-	if do.Silent != -1 {
-		settings.Silent = mtproto.ToBool(do.Silent == 1)
-	}
-	if do.MuteUntil != -1 {
-		settings.MuteUntil = &wrapperspb.Int32Value{Value: do.MuteUntil}
-	}
-	if do.Sound != "-1" {
-		settings.Sound = &wrapperspb.StringValue{Value: do.Sound}
-	}
-	return
+func makePeerNotifySettingsByDO(do *dataobject.UserNotifySettingsDO) *mtproto.PeerNotifySettings {
+	return dao.PeerNotifyFromDO(do)
 }
 
 // UserGetAllNotifySettings

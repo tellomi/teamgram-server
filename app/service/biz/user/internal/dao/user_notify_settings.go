@@ -51,25 +51,8 @@ func (d *Dao) GetUserNotifySettings(ctx context.Context, id int64, peerType int3
 				return err
 			}
 
-			var (
-				notifySettings = v.(*mtproto.PeerNotifySettings)
-			)
-
-			if do == nil {
-				switch peerType {
-				case mtproto.PEER_USERS,
-					mtproto.PEER_CHATS,
-					mtproto.PEER_BROADCASTS:
-
-					notifySettings.ShowPreviews = mtproto.BoolTrue
-					notifySettings.Silent = mtproto.BoolFalse
-					notifySettings.MuteUntil = &wrapperspb.Int32Value{Value: 0}
-					notifySettings.Sound = &wrapperspb.StringValue{Value: "default"}
-				}
-			} else {
-				setPeerNotifySettingsByDO(notifySettings, do)
-			}
-
+			row := v.(*mtproto.PeerNotifySettings)
+			*row = *SettingsFromRow(peerType, do)
 			return nil
 		})
 	if err != nil {
@@ -123,20 +106,44 @@ func makeDOByPeerNotifySettings(settings *mtproto.PeerNotifySettings) (doMap map
 		doMap["mute_until"] = -1
 	}
 
-	if settings.Sound != nil {
-		doMap["sound"] = settings.Sound.Value
-	} else {
-		doMap["sound"] = "-1"
+	sound := "-1"
+	switch {
+	case settings.OtherSound != nil:
+		sound = mtproto.LegacySound(settings.OtherSound)
+	case settings.IosSound != nil:
+		sound = mtproto.LegacySound(settings.IosSound)
+	case settings.AndroidSound != nil:
+		sound = mtproto.LegacySound(settings.AndroidSound)
+	case settings.Sound != nil:
+		sound = settings.Sound.Value
 	}
+	doMap["sound"] = sound
+	extra, err := encodeNotifyExtra(settings)
+	if err != nil {
+		extra = ""
+	}
+	doMap["settings_json"] = extra
 
 	return
 }
 
 func (d *Dao) SetUserPeerNotifySettings(ctx context.Context, id int64, peerType int32, peerId int64, settings *mtproto.PeerNotifySettings) error {
-	_, _, err := d.CachedConn.Exec(
+	existingDO, err := d.UserNotifySettingsDAO.Select(ctx, id, peerType, peerId)
+	if err != nil {
+		return err
+	}
+	merged := MergePeerNotify(SettingsFromRow(peerType, existingDO), settings)
+	// A missing per-chat row is empty, not the global default. SettingsFromRow
+	// fills the global scopes, and merging a partial update on top of that
+	// default would persist silent=false as an explicit value. Keep the
+	// stored row as the base for those scopes too when nothing was saved yet.
+	if existingDO == nil {
+		merged = MergePeerNotify(nil, settings)
+	}
+	_, _, err = d.CachedConn.Exec(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			cMap := makeDOByPeerNotifySettings(settings)
+			cMap := makeDOByPeerNotifySettings(merged)
 			return d.UserNotifySettingsDAO.InsertOrUpdateExt(ctx, id, peerType, peerId, cMap)
 		},
 		genUserNotifySettingsCacheKey(id, peerType, peerId))

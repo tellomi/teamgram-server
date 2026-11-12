@@ -19,5 +19,6 @@ type UserNotifySettingsDO struct {
 	Silent       int32  `db:"silent" json:"silent"`
 	MuteUntil    int32  `db:"mute_until" json:"mute_until"`
 	Sound        string `db:"sound" json:"sound"`
+	SettingsJSON string `db:"settings_json" json:"settings_json"`
 	Deleted      bool   `db:"deleted" json:"deleted"`
 }

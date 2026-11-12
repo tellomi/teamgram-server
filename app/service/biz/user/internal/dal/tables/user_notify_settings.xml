@@ -18,7 +18,7 @@
     <operation name="SelectAll" result_set="list">
         <sql>
             SELECT
-                id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound
+                id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, settings_json
             FROM
                 user_notify_settings
             WHERE
@@ -29,7 +29,7 @@
     <operation name="Select">
         <sql>
             SELECT
-                id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound
+                id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, settings_json
             FROM
                 user_notify_settings
             WHERE
@@ -44,7 +44,7 @@
         </params>
         <sql>
             SELECT
-                id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound
+                id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, settings_json
             FROM
                 user_notify_settings
             WHERE
