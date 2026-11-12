@@ -19,6 +19,8 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -38,15 +40,49 @@ func (c *ContactsCore) ContactsGetStatuses(in *mtproto.TLContactsGetStatuses) (*
 	for _, id := range cList.GetDatas() {
 		idList = append(idList, id.ContactUserId)
 	}
+	if len(idList) == 0 {
+		return rList, nil
+	}
 
-	lastSeenList, _ := c.svcCtx.Dao.UserGetLastSeens(c.ctx, &userpb.TLUserGetLastSeens{
-		Id: idList,
+	got, err := c.svcCtx.Dao.UserGetMutableUsersV2(c.ctx, &userpb.TLUserGetMutableUsersV2{
+		Id:      append([]int64{c.MD.UserId}, idList...),
+		Privacy: true,
+		HasTo:   true,
+		To:      []int64{c.MD.UserId},
 	})
+	if err == nil && got != nil {
+		if me, ok := got.GetImmutableUser(c.MD.UserId); ok && me != nil {
+			setForwardContacts(me, idList)
+			for _, id := range idList {
+				peer, ok := got.GetImmutableUser(id)
+				if !ok || peer == nil {
+					continue
+				}
+				viewed := peer.ToUnsafeUser(me)
+				if viewed == nil || viewed.Status == nil {
+					continue
+				}
+				rList.Datas = append(rList.Datas, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
+					UserId: id,
+					Status: viewed.Status,
+				}).To_ContactStatus())
+			}
+			return rList, nil
+		}
+	}
 
+	// The user service was unreachable. Still honor the stored expires
+	// window instead of treating a 5 minute heartbeat as 1 minute.
+	lastSeenList, _ := c.svcCtx.Dao.UserGetLastSeens(c.ctx, &userpb.TLUserGetLastSeens{Id: idList})
+	now := time.Now().Unix()
 	for _, v := range lastSeenList.GetDatas() {
+		status := mtproto.PresenceStatus(v.LastSeenAt, v.Expires, true, now)
+		if status == nil {
+			continue
+		}
 		rList.Datas = append(rList.Datas, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
 			UserId: v.UserId,
-			Status: userpb.MakeUserStatus(v.LastSeenAt, true),
+			Status: status,
 		}).To_ContactStatus())
 	}
 

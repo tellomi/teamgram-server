@@ -132,7 +132,7 @@ func (d *Dao) CreateNewUserV2(
 	d.CachedConn.SetCache(ctx, genCacheUserDataCacheKey(userDO.Id), cacheUserData)
 
 	// 2. PutLastSeenAt
-	d.PutLastSeenAt(ctx, userDO.Id, now, 300)
+	d.PutLastSeenAt(ctx, userDO.Id, now, mtproto.UserOnlinePeriod)
 
 	return mtproto.MakeTLImmutableUser(&mtproto.ImmutableUser{
 		User:             cacheUserData.UserData,
@@ -301,7 +301,7 @@ func (d *Dao) GetImmutableUser(ctx context.Context, id int64, privacy bool, cont
 		func() {
 			lastSeenAt, _ := d.GetLastSeenAt(ctx, id)
 			if lastSeenAt != nil {
-				immutableUser.LastSeenAt = lastSeenAt.LastSeenAt
+				immutableUser.LastSeenAt = presenceCursor(lastSeenAt)
 			}
 		},
 		func() {
@@ -646,7 +646,7 @@ func (d *Dao) GetCacheImmutableUserListV2(ctx context.Context, idList2 []int64, 
 						noCaches[key] = lastSeenAt
 
 						if cUser, ok := mUsers[lastSeenAt.UserId]; ok {
-							cUser.LastSeenAt = lastSeenAt.LastSeenAt
+							cUser.LastSeenAt = presenceCursor(lastSeenAt)
 						}
 					}
 				} else {
@@ -686,7 +686,7 @@ func (d *Dao) GetCacheImmutableUserListV2(ctx context.Context, idList2 []int64, 
 				}
 
 				if cUser, ok := mUsers[lastSeenAt.UserId]; ok {
-					cUser.LastSeenAt = lastSeenAt.LastSeenAt
+					cUser.LastSeenAt = presenceCursor(lastSeenAt)
 				}
 
 				return lastSeenAt, nil
@@ -769,7 +769,7 @@ func (d *Dao) GetImmutableUserV2(ctx context.Context, id int64, privacy bool, ha
 		func() {
 			lastSeenAt, _ := d.GetLastSeenAt(ctx, id)
 			if lastSeenAt != nil {
-				immutableUser.LastSeenAt = lastSeenAt.LastSeenAt
+				immutableUser.LastSeenAt = presenceCursor(lastSeenAt)
 			}
 		},
 	}
@@ -902,7 +902,7 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 						noCaches[key] = lastSeenAt
 
 						if cUser, ok := mUsers[lastSeenAt.UserId]; ok {
-							cUser.LastSeenAt = lastSeenAt.LastSeenAt
+							cUser.LastSeenAt = presenceCursor(lastSeenAt)
 						}
 					}
 				} else {
@@ -931,7 +931,7 @@ func (d *Dao) GetMutableUsersV2(ctx context.Context, idList2 []int64, privacy bo
 				}
 
 				if cUser, ok := mUsers[lastSeenAt.UserId]; ok {
-					cUser.LastSeenAt = lastSeenAt.LastSeenAt
+					cUser.LastSeenAt = presenceCursor(lastSeenAt)
 				}
 
 				return lastSeenAt, nil

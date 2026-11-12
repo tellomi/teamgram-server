@@ -123,6 +123,7 @@ func (c *ContactsCore) pushImportContactUpdates(peerIDs []int64) {
 				importPeerSettings(selfID),
 			),
 		})
+		c.pushContactStatuses(selfID, id)
 	}
 }
 

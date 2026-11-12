@@ -91,6 +91,17 @@ func (c *ContactsCore) ContactsAddContact(in *mtproto.TLContactsAddContact) (*mt
 	cUser.FirstName = mtproto.MakeFlagsString(in.FirstName)
 	cUser.LastName = mtproto.MakeFlagsString(in.LastName)
 	cUser.Phone = mtproto.MakeFlagsString(in.Phone)
+	if me, ok := users.GetImmutableUser(c.MD.UserId); ok && me != nil {
+		if peer, ok := users.GetImmutableUser(id.PeerId); ok && peer != nil {
+			me.Contacts = append(me.Contacts, mtproto.MakeTLContactData(&mtproto.ContactData{
+				UserId:        c.MD.UserId,
+				ContactUserId: id.PeerId,
+			}).To_ContactData())
+			if _, forMe := contactStatusRefresh(me, peer); forMe != nil {
+				cUser.Status = forMe
+			}
+		}
+	}
 
 	me, _ := users.GetUnsafeUserSelf(c.MD.UserId)
 	if in.GetNote() != nil {
@@ -100,6 +111,8 @@ func (c *ContactsCore) ContactsAddContact(in *mtproto.TLContactsAddContact) (*mt
 	}
 
 	// TODO(@benqi): 性能优化，复用users
+	c.pushContactStatuses(c.MD.UserId, id.PeerId)
+
 	rUpdates := mtproto.MakeUpdatesByUpdatesUsers(
 		[]*mtproto.User{me, cUser},
 		mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{

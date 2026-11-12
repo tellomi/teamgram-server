@@ -45,7 +45,7 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 	)
 
 	if !offline {
-		expires = 300
+		expires = mtproto.UserOnlinePeriod
 		pushUpdates.Update.Status_USERSTATUS = mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{
 			Expires: int32(now) + expires,
 		}).To_UserStatus()
@@ -78,6 +78,27 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		if err != nil || ids == nil {
 			return
 		}
+		forward := ids.GetDatas()
+		var reverse []int64
+		var visible func(int64) bool
+		got, err2 := c.svcCtx.UserClient.UserGetMutableUsersV2(ctx, &userpb.TLUserGetMutableUsersV2{
+			Id:      []int64{c.MD.UserId},
+			Privacy: true,
+			HasTo:   true,
+		})
+		if err2 == nil && got != nil {
+			if me, ok := got.GetImmutableUser(c.MD.UserId); ok && me != nil {
+				attachForwardContacts(me, forward)
+				for _, row := range me.GetReverseContacts() {
+					if row.GetUserId() != 0 {
+						reverse = append(reverse, row.GetUserId())
+					}
+				}
+				visible = func(id int64) bool {
+					return me.CheckPrivacy(mtproto.STATUS_TIMESTAMP, id)
+				}
+			}
+		}
 		blocked := func(id int64) bool {
 			// Either direction hides the status: the contact blocked this
 			// user, or this user blocked the contact.
@@ -89,7 +110,7 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 			})
 			return (err1 == nil && mtproto.FromBool(one)) || (err2 == nil && mtproto.FromBool(two))
 		}
-		deliverUserStatus(c.MD.UserId, pushUpdates, ids.GetDatas(), blocked,
+		deliverUserStatus(c.MD.UserId, pushUpdates, forward, reverse, visible, blocked,
 			func(id int64, up *mtproto.Updates) {
 				_, _ = c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
 					UserId:  id,

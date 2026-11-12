@@ -19,21 +19,11 @@
 package user
 
 import (
-	"time"
-
 	"github.com/teamgram/proto/mtproto"
 )
 
-var (
-	userStatusEmpty = mtproto.MakeTLUserStatusEmpty(nil).To_UserStatus()
-)
-
 func MakeUserStatusOnline() *mtproto.UserStatus {
-	now := time.Now().Unix()
-	status := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{
-		Expires: int32(now + 60),
-	}).To_UserStatus()
-	return status
+	return mtproto.MakeUserStatusOnline()
 }
 
 func MakeUserStatusOffline(lastSeenAt int64) *mtproto.UserStatus {
@@ -87,29 +77,5 @@ func MakeUserStatusOffline(lastSeenAt int64) *mtproto.UserStatus {
 	// 60*60*24*30  month
 */
 func MakeUserStatus(lastSeenAt int64, allowTimestamp bool) *mtproto.UserStatus {
-	now := time.Now().Unix()
-
-	if allowTimestamp {
-		if now <= lastSeenAt+60 {
-			status := mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{
-				Expires: int32(lastSeenAt + 60),
-			}).To_UserStatus()
-			return status
-		} else {
-			status := mtproto.MakeTLUserStatusOffline(&mtproto.UserStatus{
-				WasOnline: int32(lastSeenAt),
-			}).To_UserStatus()
-			return status
-		}
-	} else {
-		if now-lastSeenAt >= 60*60*24*30 {
-			return nil
-		} else if now-lastSeenAt >= 60*60*24*7 {
-			return mtproto.MakeTLUserStatusLastMonth(nil).To_UserStatus()
-		} else if now-lastSeenAt >= 60*60*24*3 {
-			return mtproto.MakeTLUserStatusLastWeek(nil).To_UserStatus()
-		} else {
-			return mtproto.MakeTLUserStatusRecently(nil).To_UserStatus()
-		}
-	}
+	return mtproto.MakeUserStatus(lastSeenAt, allowTimestamp)
 }
