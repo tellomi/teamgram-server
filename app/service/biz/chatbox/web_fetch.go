@@ -101,7 +101,34 @@ var webHTTPClient = safeClient
 // vetRequest is replaced by tests that fetch a local server on a random port.
 var vetRequest = vetTarget
 
-// loadWebPage is replaced by tests. Production fetches the URL.
+// webResolver performs DNS for SSRF checks and the safe HTTP dialer.
+// Tests replace it with a Resolver whose Dial points at a hanging listener.
+var webResolver = net.DefaultResolver
+
+func webLookupIP(ctx context.Context, host string) ([]net.IPAddr, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	names, err := webResolver.LookupHost(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]net.IPAddr, 0, len(names))
+	for _, name := range names {
+		ip := net.ParseIP(name)
+		if ip == nil {
+			continue
+		}
+		out = append(out, net.IPAddr{IP: ip})
+	}
+	if len(out) == 0 {
+		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+	}
+	return out, nil
+}
+
+// loadWebPage is replaced by tests. Production fetches the URL and must
+// honor the request context so DNS and HTTP cancel at the deadline.
 var loadWebPage = fetchRemote
 
 func fetchWebPage(ctx context.Context, u *url.URL) *mtproto.WebPage {
@@ -124,7 +151,7 @@ func fetchWebPage(ctx context.Context, u *url.URL) *mtproto.WebPage {
 			return emptyPage(u), nil
 		}
 		defer release()
-		res := loadWebPage(u)
+		res := loadWebPage(ctx, u)
 		page := pageFromFetch(u, res)
 		ttl := webPositiveTTL
 		if page.GetPredicateName() != mtproto.Predicate_webPage {
@@ -180,7 +207,7 @@ func pageFromFetch(u *url.URL, res fetchResult) *mtproto.WebPage {
 		}
 	}
 	page := mtproto.MakeTLWebPage(&mtproto.WebPage{
-		Id:          int64(sum),
+		Id:          pageID(u),
 		Url_STRING:  u.String(),
 		DisplayUrl:  display,
 		Hash:        sum,
@@ -248,9 +275,20 @@ func webHash(parts ...string) int32 {
 	return sum
 }
 
+func pageID(u *url.URL) int64 {
+	if u == nil {
+		return 1
+	}
+	id := int64(webHash(u.String(), "id"))
+	if id == 0 {
+		return 1
+	}
+	return id
+}
+
 func emptyPage(u *url.URL) *mtproto.WebPage {
 	return mtproto.MakeTLWebPageEmpty(&mtproto.WebPage{
-		Id:             int64(webHash(u.String(), "empty")),
+		Id:             pageID(u),
 		Url_STRING:     u.String(),
 		Url_FLAGSTRING: wrapperspb.String(u.String()),
 	}).To_WebPage()
@@ -258,7 +296,7 @@ func emptyPage(u *url.URL) *mtproto.WebPage {
 
 func pendingPage(u *url.URL) *mtproto.WebPage {
 	return mtproto.MakeTLWebPagePending(&mtproto.WebPage{
-		Id:             int64(webHash(u.String(), "pending")),
+		Id:             pageID(u),
 		Url_STRING:     u.String(),
 		Url_FLAGSTRING: wrapperspb.String(u.String()),
 		Date:           int32(time.Now().Add(time.Minute).Unix()),
@@ -326,7 +364,7 @@ func safeClient() *http.Client {
 				}
 				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 			}
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			ips, err := webLookupIP(ctx, host)
 			if err != nil {
 				return nil, err
 			}
@@ -405,7 +443,7 @@ func vetTarget(ctx context.Context, u *url.URL) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err := webLookupIP(ctx, host)
 	if err != nil {
 		return err
 	}
@@ -435,8 +473,11 @@ func allowedWebPort(u *url.URL) bool {
 	}
 }
 
-func fetchRemote(u *url.URL) fetchResult {
-	body, ctype, final, err := httpGetContext(context.Background(), u, webHTMLLimit)
+func fetchRemote(ctx context.Context, u *url.URL) fetchResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	body, ctype, final, err := httpGetContext(ctx, u, webHTMLLimit)
 	if err != nil {
 		return fetchResult{failed: true, pending: temporaryFetchErr(err) && !errors.Is(err, errBlockedTarget), blocked: errors.Is(err, errBlockedTarget)}
 	}
@@ -448,7 +489,7 @@ func fetchRemote(u *url.URL) fetchResult {
 	if meta.ImageURL != "" {
 		if imgURL, err := u.Parse(meta.ImageURL); err == nil && (imgURL.Scheme == "http" || imgURL.Scheme == "https") {
 			if ip := net.ParseIP(hostOnly(imgURL.Host)); ip == nil || !blockedIP(ip) {
-				if raw, ictype, err := httpGet(imgURL, webImgLimit); err == nil && imageType(ictype, raw) {
+				if raw, ictype, _, err := httpGetContext(ctx, imgURL, webImgLimit); err == nil && imageType(ictype, raw) {
 					meta.Image = raw
 					meta.ImageMIME = ictype
 				}
@@ -460,6 +501,11 @@ func fetchRemote(u *url.URL) fetchResult {
 
 func temporaryFetchErr(err error) bool {
 	if err == nil {
+		return false
+	}
+	// The request context deadline (pendingWebpageTimeout) is the fetch budget.
+	// When it fires, return a finished failure (webPageEmpty), not webPagePending.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	msg := err.Error()

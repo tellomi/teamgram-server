@@ -25,8 +25,6 @@ func OpenMySQL(dsn string) (*MySQL, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(1)
 	return &MySQL{db: db}, nil
 }
 

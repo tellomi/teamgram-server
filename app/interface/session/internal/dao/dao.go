@@ -63,6 +63,18 @@ func New(c config.Config) *Dao {
 	return d
 }
 
+// NewDirect is the session dao used when gnetway and session run in one
+// process. It does not dial etcd. Production startup uses New.
+func NewDirect(auth authsession_client.AuthsessionClient, lim *flood.Limiter) *Dao {
+	return &Dao{
+		cache:             cache.NewLRUCache(1024 * 1024),
+		AuthsessionClient: auth,
+		eGateServers:      map[string]*Gateway{},
+		MyServerId:        "direct",
+		Flood:             lim,
+	}
+}
+
 func (d *Dao) InvokeContext(ctx context.Context, rpcMetaData *metadata.RpcMetadata, object mtproto.TLObject) (mtproto.TLObject, error) {
 	return d.BFFProxyClient.InvokeContext(ctx, rpcMetaData, object)
 }

@@ -64,6 +64,27 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	if len(ios162) != 105 {
 		t.Fatalf("ios pr:162 keys %d, want 105", len(ios162))
 	}
+	ios163 := doc.IOS.PullRequests["pr:163"]
+	if len(ios163) != 6 {
+		t.Fatalf("ios pr:163 keys %d, want 6", len(ios163))
+	}
+	for _, key := range []string{
+		"Moments.Draft.Message",
+		"Moments.Outbox.Title",
+		"Moments.Outbox.Text",
+		"Moments.Outbox.Retry",
+		"Moments.Outbox.Later",
+		"Moments.Outbox.Incomplete",
+	} {
+		if !containsKey(ios163, key) {
+			t.Fatalf("ios pr:163 manifest missing %s", key)
+		}
+	}
+	for _, key := range []string{"Moments_Comment_SendFailed", "Moments_Audience_Kept"} {
+		if !containsKey(ios162, key) {
+			t.Fatalf("ios pr:162 manifest missing %s", key)
+		}
+	}
 	androidKeys := doc.Android.all()
 	iosKeys := doc.IOS.all()
 	if len(androidKeys) < 100 || len(iosKeys) < 100 {
@@ -102,7 +123,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 				t.Fatalf("%s %s lang %q plural %q", tc.platform, code, pack.lang, pack.plural)
 			}
 			if tc.platform == "android" {
-				if pack.version != 61730403 || pack.fix != 61730400 {
+				if pack.version != 61730404 || pack.fix != 61730400 {
 					t.Fatalf("android %s version %d fix %d", code, pack.version, pack.fix)
 				}
 			}
@@ -118,9 +139,10 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 					t.Fatalf("%s %s missing %s", tc.platform, code, key)
 				}
 				// Changed or new strings are at the pack version. Strings this
-				// fill left alone stay at the previous pack, or one further
-				// back if they were already unchanged in #298.
-				if ver < pack.version-2 || ver > pack.version {
+				// fill left alone stay at an earlier pack, up to four behind
+				// after the #302 crash-prompt bump and this Moments follow-up
+				// on the 11 languages that had no iOS .lproj.
+				if ver < pack.version-5 || ver > pack.version {
 					t.Fatalf("%s %s %s string version %d pack %d", tc.platform, code, key, ver, pack.version)
 				}
 			}
@@ -173,6 +195,49 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 		{"ios", "zh-hant", "Tellomi.MenuSettings.Title", "選單設定"},
 		{"ios", "zh-hant", "Moments.Title", "動態"},
 		{"ios", "zh-hant", "Moments.Followers", "粉絲"},
+		{"ios", "en", "Moments.Draft.Message", "Save this post as a draft, or discard it?"},
+		{"ios", "en", "Moments.Outbox.Title", "Post not sent"},
+		{"ios", "en", "Moments.Outbox.Text", "A post is still waiting to be sent."},
+		{"ios", "en", "Moments.Outbox.Retry", "Try again"},
+		{"ios", "en", "Moments.Outbox.Later", "Not now"},
+		{"ios", "en", "Moments.Outbox.Incomplete", "An attachment is missing, so this post was not sent."},
+		{"ios", "en", "Moments_Comment_SendFailed", "Couldn't send this comment. Your text is still here."},
+		{"ios", "en", "Moments_Audience_Kept", "Couldn't change the audience. Your selection was kept."},
+		{"ios", "zh-hans", "Moments.Draft.Message", "把这条动态存成草稿，还是放弃？"},
+		{"ios", "zh-hans", "Moments.Outbox.Title", "动态没有发出"},
+		{"ios", "zh-hans", "Moments.Outbox.Text", "还有一条动态在等着发送。"},
+		{"ios", "zh-hans", "Moments.Outbox.Retry", "再试一次"},
+		{"ios", "zh-hans", "Moments.Outbox.Later", "以后再说"},
+		{"ios", "zh-hans", "Moments.Outbox.Incomplete", "附件不见了，所以这条动态没有发出。"},
+		{"ios", "zh-hans", "Moments_Comment_SendFailed", "评论没有发出去，内容还在。"},
+		{"ios", "zh-hans", "Moments_Audience_Kept", "没能修改可见范围，你的选择还在。"},
+		{"ios", "zh-hant", "Moments.Draft.Message", "要把這則動態存成草稿，還是放棄？"},
+		{"ios", "zh-hant", "Moments.Outbox.Title", "動態沒有送出"},
+		{"ios", "zh-hant", "Moments.Outbox.Text", "還有一則動態在等著傳送。"},
+		{"ios", "zh-hant", "Moments.Outbox.Retry", "再試一次"},
+		{"ios", "zh-hant", "Moments.Outbox.Later", "暫時不要"},
+		{"ios", "zh-hant", "Moments.Outbox.Incomplete", "附件不見了，所以這則動態沒有送出。"},
+		{"ios", "zh-hant", "Moments_Comment_SendFailed", "留言沒有送出，內容還在。"},
+		{"ios", "zh-hant", "Moments_Audience_Kept", "沒能修改可見範圍，你的選擇還在。"},
+		{"ios", "ja", "Moments.Draft.Message", "この投稿を下書きとして保存しますか、それとも破棄しますか？"},
+		{"ios", "ja", "Moments.Outbox.Title", "投稿は送信されませんでした"},
+		{"ios", "ja", "Moments_Audience_Kept", "公開範囲を変更できませんでした。選択内容はそのままです。"},
+		{"ios", "ja", "CrashReport.Prompt.Title", "新しいクラッシュログがあります"},
+		{"ios", "ja", "CrashReport.Prompt.NotNow", "今はしない"},
+		{"ios", "th", "Moments.Draft.Message", "บันทึกโพสต์นี้เป็นฉบับร่าง หรือจะทิ้ง?"},
+		{"ios", "th", "Moments.Outbox.Title", "โพสต์ยังไม่ได้ส่ง"},
+		{"ios", "th", "Moments_Audience_Kept", "ไม่สามารถเปลี่ยนผู้ที่สามารถเห็นสิ่งนี้ได้ การเลือกของคุณยังคงเดิม"},
+		{"ios", "th", "CrashReport.Prompt.Title", "มีบันทึกความขัดข้องใหม่"},
+		{"ios", "th", "CrashReport.Prompt.NotNow", "ไม่ใช่ตอนนี้"},
+		{"ios", "he", "Moments.Draft.Message", "לשמור את הפוסט הזה כטיוטה או לזרוק אותו?"},
+		{"ios", "he", "Moments.Outbox.Title", "הפוסט לא נשלח"},
+		{"ios", "he", "Moments_Audience_Kept", "לא ניתן היה לשנות את מי שיכול לראות. הבחירה שלך נשמרה."},
+		{"ios", "he", "CrashReport.Prompt.Title", "יומן קריסה חדש"},
+		{"ios", "he", "CrashReport.Prompt.NotNow", "לא כעת"},
+		{"android", "en", "Moments_Audience_Kept", "Couldn't change the audience. Your selection was kept."},
+		{"android", "zh-hans", "Moments_Audience_Kept", "没能修改可见范围，你的选择还在。"},
+		{"android", "zh-hant", "Moments_Audience_Kept", "沒能修改可見範圍，你的選擇還在。"},
+		{"android", "ja", "Moments_Audience_Kept", "公開範囲を変更できませんでした。選択内容はそのままです。"},
 	}
 	for _, tc := range checks {
 		got, err := cat.Strings(tc.platform, tc.code, []string{tc.key})
@@ -217,7 +282,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	assertTellomiNotEnglish(t, "ios", iosKeys)
 
 	ver, ok := cat.Version("android", "zh-hans")
-	if !ok || ver != 61730403 {
+	if !ok || ver != 61730404 {
 		t.Fatalf("android zh-hans version %d", ver)
 	}
 	// 61730400 is the full-replace cutover. A phone still there receives the
@@ -264,6 +329,27 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	if _, ok := zhSeen["Moments_Title"]; ok {
 		t.Fatalf("android zh increment resent unchanged Moments_Title")
 	}
+	// A phone already at 61730403 receives only the updated audience-kept copy.
+	audDiff, err := cat.Difference("android", "zh-hans", 61730403)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audSeen := map[string]string{}
+	for _, s := range audDiff.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			audSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	if audDiff.GetFromVersion() != 61730403 || audDiff.GetVersion() != ver || audSeen["Moments_Audience_Kept"] != "没能修改可见范围，你的选择还在。" {
+		t.Fatalf("android audience increment from %d version %d %q", audDiff.GetFromVersion(), audDiff.GetVersion(), audSeen["Moments_Audience_Kept"])
+	}
+	if _, ok := audSeen["Moments_Title"]; ok {
+		t.Fatalf("android audience increment resent unchanged Moments_Title")
+	}
+	if _, ok := audSeen["Moments_Draft_Message"]; ok {
+		t.Fatalf("android audience increment resent unchanged Moments_Draft_Message")
+	}
+
 	ja, err := cat.Difference("android", "ja", 61730401)
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +376,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 	}
 
 	iosVer, ok := cat.Version("ios", "zh-hans")
-	if !ok || iosVer != 22454353 {
+	if !ok || iosVer != 22454355 {
 		t.Fatalf("ios zh-hans version %d", iosVer)
 	}
 	// The Chinese Moments title did not change, so it stays at the previous
@@ -326,7 +412,7 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 		t.Fatalf("ios ja Moments.Title %q from %d", jaMoments, jaIOS.GetFromVersion())
 	}
 	hantVer, ok := cat.Version("ios", "zh-hant")
-	if !ok || hantVer != 22421538 {
+	if !ok || hantVer != 22421540 {
 		t.Fatalf("ios zh-hant version %d", hantVer)
 	}
 	iosInc, err := cat.Difference("ios", "zh-hans", 22454352)
@@ -339,12 +425,56 @@ func TestTellomiClientKeysInEveryPack(t *testing.T) {
 			iosSeen[s.GetKey()] = s.GetValue()
 		}
 	}
-	if iosInc.GetFromVersion() != 22454352 || iosSeen["Story.Privacy.CategoryMutualFollowers"] != "互相关注" || iosSeen["Moments.Audience.Mutual"] != "互相关注" || iosSeen["Moments.Outbox.Title"] != "动态未发送" || iosSeen["Moments.Settings.Recommendations"] != "推荐" {
+	if iosInc.GetFromVersion() != 22454352 || iosSeen["Story.Privacy.CategoryMutualFollowers"] != "互相关注" || iosSeen["Moments.Audience.Mutual"] != "互相关注" || iosSeen["Moments.Outbox.Title"] != "动态没有发出" || iosSeen["Moments.Settings.Recommendations"] != "推荐" {
 		t.Fatalf("ios zh increment copy from %d %+v", iosInc.GetFromVersion(), []string{iosSeen["Story.Privacy.CategoryMutualFollowers"], iosSeen["Moments.Audience.Mutual"], iosSeen["Moments.Outbox.Title"], iosSeen["Moments.Settings.Recommendations"]})
 	}
 	// Story.Privacy.WhoCanViewMoment is the composer/nav title, not the own-post menu item.
 	if _, ok := iosSeen["Story.Privacy.WhoCanViewMoment"]; ok {
 		t.Fatalf("ios zh increment resent unchanged Story.Privacy.WhoCanViewMoment")
+	}
+
+	// A phone already at the #299 pack (22454353) still receives the crash-prompt
+	// keys, plus the Moments wording updated after #302.
+	crashDiff, err := cat.Difference("ios", "zh-hans", 22454353)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crashSeen := map[string]string{}
+	for _, s := range crashDiff.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			crashSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	wantText := "应用意外关闭了。\n\n要把崩溃日志发给我们，帮我们修好这个问题吗？"
+	if crashDiff.GetFromVersion() != 22454353 || crashDiff.GetVersion() != iosVer || crashSeen["CrashReport.Prompt.Title"] != "有新的崩溃日志" || crashSeen["CrashReport.Prompt.Text"] != wantText || crashSeen["CrashReport.Prompt.NotNow"] != "以后再说" || crashSeen["CrashReport.Prompt.Send"] != "发送日志" {
+		t.Fatalf("ios crash-prompt increment from %d version %d %+v", crashDiff.GetFromVersion(), crashDiff.GetVersion(), []string{crashSeen["CrashReport.Prompt.Title"], crashSeen["CrashReport.Prompt.Text"], crashSeen["CrashReport.Prompt.NotNow"], crashSeen["CrashReport.Prompt.Send"]})
+	}
+	if _, ok := crashSeen["Moments.Title"]; ok {
+		t.Fatalf("ios crash-prompt increment resent unchanged Moments.Title")
+	}
+
+	// A phone already at the #302 pack (22454354) receives only the updated Moments copy.
+	momentsDiff, err := cat.Difference("ios", "zh-hans", 22454354)
+	if err != nil {
+		t.Fatal(err)
+	}
+	momentsSeen := map[string]string{}
+	for _, s := range momentsDiff.GetStrings() {
+		if s.GetPredicateName() == mtproto.Predicate_langPackString {
+			momentsSeen[s.GetKey()] = s.GetValue()
+		}
+	}
+	if momentsDiff.GetFromVersion() != 22454354 || momentsDiff.GetVersion() != iosVer || momentsSeen["Moments.Draft.Message"] != "把这条动态存成草稿，还是放弃？" || momentsSeen["Moments.Outbox.Title"] != "动态没有发出" || momentsSeen["Moments.Outbox.Text"] != "还有一条动态在等着发送。" || momentsSeen["Moments.Outbox.Retry"] != "再试一次" || momentsSeen["Moments.Outbox.Later"] != "以后再说" || momentsSeen["Moments.Outbox.Incomplete"] != "附件不见了，所以这条动态没有发出。" || momentsSeen["Moments_Audience_Kept"] != "没能修改可见范围，你的选择还在。" {
+		t.Fatalf("ios moments increment from %d version %d %+v", momentsDiff.GetFromVersion(), momentsDiff.GetVersion(), []string{momentsSeen["Moments.Draft.Message"], momentsSeen["Moments.Outbox.Title"], momentsSeen["Moments.Outbox.Text"], momentsSeen["Moments.Outbox.Retry"], momentsSeen["Moments.Outbox.Later"], momentsSeen["Moments.Outbox.Incomplete"], momentsSeen["Moments_Audience_Kept"]})
+	}
+	if _, ok := momentsSeen["Moments_Comment_SendFailed"]; ok {
+		t.Fatalf("ios moments increment resent unchanged Moments_Comment_SendFailed")
+	}
+	if _, ok := momentsSeen["Moments.Title"]; ok {
+		t.Fatalf("ios moments increment resent unchanged Moments.Title")
+	}
+	if _, ok := momentsSeen["CrashReport.Prompt.Title"]; ok {
+		t.Fatalf("ios moments increment resent unchanged CrashReport.Prompt.Title")
 	}
 }
 
@@ -451,16 +581,17 @@ type packVersions struct {
 	strings map[string]int32
 }
 
-// iosPackVersion is one past the versions shipped in #298.
+// iosPackVersion is one past the versions shipped in #302, plus one more
+// for the 11 languages that received native Moments and CrashReport copy.
 var iosPackVersion = map[string]int32{
-	"ar": 22452759, "be": 22420171, "ca": 22412799, "cs": 22418780,
-	"de": 22431603, "el": 22202260, "en": 22347351, "es": 22412201,
-	"fa": 22437414, "fi": 22410855, "fr": 22391560, "he": 22452943,
-	"hi": 22202260, "id": 22321176, "it": 22388319, "ja": 22418206,
-	"ko": 22454171, "ms": 22352692, "nb": 22420484, "nl": 22449823,
-	"pl": 22392159, "pt-br": 22431434, "ro": 22444908, "ru": 22421468,
-	"sv": 22427915, "th": 22202260, "tr": 22434110, "uk": 22460357,
-	"uz": 22449134, "vi": 22347891, "zh-hans": 22454353, "zh-hant": 22421538,
+	"ar": 22452761, "be": 22420173, "ca": 22412801, "cs": 22418783,
+	"de": 22431605, "el": 22202263, "en": 22347353, "es": 22412203,
+	"fa": 22437416, "fi": 22410858, "fr": 22391562, "he": 22452946,
+	"hi": 22202263, "id": 22321178, "it": 22388321, "ja": 22418209,
+	"ko": 22454173, "ms": 22352694, "nb": 22420487, "nl": 22449825,
+	"pl": 22392161, "pt-br": 22431436, "ro": 22444911, "ru": 22421470,
+	"sv": 22427918, "th": 22202263, "tr": 22434112, "uk": 22460359,
+	"uz": 22449136, "vi": 22347894, "zh-hans": 22454355, "zh-hant": 22421540,
 }
 
 // pluralCodeByLang is the plural_code each pack already ships. This fill must

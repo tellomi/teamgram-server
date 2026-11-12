@@ -115,7 +115,7 @@ Tellomi 安卓是 [tellomi/Telegram](https://github.com/tellomi/Telegram)，iOS 
 ## 文档
 
 - [安全运维](docs/SECURITY-OPS.md) — 生产 RSA 密钥、密码存放位置、成都部署
-- [数据中心地址](docs/ops/DC_ADDRESSES.md) — `help.getConfig` 的 `dc_options`，由 `TELLOMI_DC_OPTIONS` 下发
+- [数据中心地址](docs/ops/DC_ADDRESSES.md) — `help.getConfig` 的 `dc_options`，由 `TELLOMI_DC_OPTIONS` 和 `TELLOMI_PUBLIC_DC_HOST` 下发
 - [项目规范与设计文档（specs）](specs/README.md) — 架构、协议、依赖、贡献、安全、路线图
 - [服务拓扑与配置](docs/service-topology-zh.md) — 端口、基础设施、调用关系（[English](docs/service-topology.md)）
 - [CONTRIBUTING](CONTRIBUTING.md) · [SECURITY](SECURITY.md) · [CHANGELOG](CHANGELOG.md)

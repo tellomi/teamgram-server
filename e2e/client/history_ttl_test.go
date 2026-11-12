@@ -25,6 +25,13 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 	if _, err := a.SendText(ctx, peerForA, keep, nil); err != nil {
 		t.Fatal(err)
 	}
+	// Message dates are whole seconds. PeriodAt applies a timer to every
+	// message whose date is greater than or equal to the action, including
+	// one sent earlier in that same second. Wait for the next second so this
+	// row stays a "sent before the timer" message.
+	if err := waitUntilNextSecond(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := setHistoryTTL(ctx, a, peerForA, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +82,15 @@ func TestHistoryTTLDeletesBothSides(t *testing.T) {
 			return false, err
 		}
 		idB = idOfText(msgs, drop)
-		return idB != 0, nil
+		if idB == 0 {
+			return false, nil
+		}
+		for _, msg := range msgs {
+			if msg.GetId() == idB && msg.GetTtlPeriod().GetValue() != 1 {
+				return false, fmt.Errorf("recipient ttl_period = %d", msg.GetTtlPeriod().GetValue())
+			}
+		}
+		return true, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -201,6 +216,119 @@ func TestHistoryTTLGroupAndChannel(t *testing.T) {
 		return idOfText(left, post) == 0, nil
 	}); err != nil {
 		t.Fatalf("channel message was not deleted: %v", err)
+	}
+}
+
+// TestHistoryTTLBothDirections sets the timer first, then sends one
+// message each way, and checks that both clouds drop both messages and
+// that each side receives updateDeleteMessages.
+func TestHistoryTTLBothDirections(t *testing.T) {
+	a, b, _, bSelf := sharedPair(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	peerForA := inputPeerUser(bSelf.ID, bSelf.AccessHash)
+	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
+	if err := setHistoryTTL(ctx, a, peerForA, 1); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		_ = setHistoryTTL(cx, a, peerForA, 0)
+	})
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		d, ok, err := dialogOf(a, ctx, "user", bSelf.ID)
+		if err != nil || !ok {
+			return false, err
+		}
+		return d.GetTtlPeriod().GetValue() == 1, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ptsA, qtsA, dateA, err := a.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ptsB, qtsB, dateB, err := b.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromA := fmt.Sprintf("ttl-a-%d", time.Now().UnixNano())
+	fromB := fmt.Sprintf("ttl-b-%d", time.Now().UnixNano())
+	if _, err := a.SendText(ctx, peerForA, fromA, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.SendText(ctx, peerForB, fromB, nil); err != nil {
+		t.Fatal(err)
+	}
+	var aOnA, bOnA, aOnB, bOnB int32
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		leftA, err := a.History(ctx, peerForA, 40)
+		if err != nil {
+			return false, err
+		}
+		leftB, err := b.History(ctx, peerForB, 40)
+		if err != nil {
+			return false, err
+		}
+		aOnA, bOnA = idOfText(leftA, fromA), idOfText(leftA, fromB)
+		aOnB, bOnB = idOfText(leftB, fromA), idOfText(leftB, fromB)
+		if aOnA == 0 || bOnA == 0 || aOnB == 0 || bOnB == 0 {
+			return false, nil
+		}
+		for _, msg := range append(append([]*mtproto.Message{}, leftA...), leftB...) {
+			if (msg.GetId() == aOnA || msg.GetId() == bOnA || msg.GetId() == aOnB || msg.GetId() == bOnB) && msg.GetTtlPeriod().GetValue() != 1 {
+				return false, fmt.Errorf("ttl_period = %d for %q", msg.GetTtlPeriod().GetValue(), msg.GetMessage())
+			}
+		}
+		return true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(40 * time.Second)
+	var lastA, lastB mtproto.TLObject
+	var histGone bool
+	for time.Now().Before(deadline) {
+		leftA, err := a.History(ctx, peerForA, 40)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leftB, err := b.History(ctx, peerForB, 40)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lastA, err = a.Difference(ctx, ptsA, qtsA, dateA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lastB, err = b.Difference(ctx, ptsB, qtsB, dateB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		histGone = idOfText(leftA, fromA) == 0 && idOfText(leftA, fromB) == 0 && idOfText(leftB, fromA) == 0 && idOfText(leftB, fromB) == 0
+		if histGone && differenceDeletes(lastA, aOnA) && differenceDeletes(lastA, bOnA) && differenceDeletes(lastB, aOnB) && differenceDeletes(lastB, bOnB) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	t.Fatalf("both-directions historyGone=%v A=%s B=%s", histGone, summarizeUpdates(lastA), summarizeUpdates(lastB))
+}
+
+func waitUntilNextSecond(ctx context.Context) error {
+	deadline := time.Now().Truncate(time.Second).Add(time.Second + 20*time.Millisecond)
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 

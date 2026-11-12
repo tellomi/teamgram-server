@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -9,6 +10,30 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/files/cdn"
 	"github.com/zeromicro/go-zero/core/logx"
 )
+
+func TestHelpGetCdnConfigPublishesNoAddress(t *testing.T) {
+	t.Setenv("TELLOMI_CDN_PUBLIC_KEYS", "")
+	c := &FilesCore{
+		ctx:    context.Background(),
+		Logger: logx.WithContext(context.Background()),
+	}
+	got, err := c.HelpGetCdnConfig(&mtproto.TLHelpGetCdnConfig{Constructor: mtproto.CRC32_help_getCdnConfig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.GetPredicateName() != mtproto.Predicate_cdnConfig {
+		t.Fatalf("%v", got)
+	}
+	if len(got.GetPublicKeys()) != 0 {
+		t.Fatalf("public_keys %d", len(got.GetPublicKeys()))
+	}
+	text := got.String()
+	for _, ip := range []string{"8.156.40.105", "8.137.198.240", "10.20.0.218"} {
+		if strings.Contains(text, ip) {
+			t.Fatalf("cdn config contains %s", ip)
+		}
+	}
+}
 
 func TestCdnHandlersWithoutKeys(t *testing.T) {
 	t.Setenv("TELLOMI_CDN_PUBLIC_KEYS", "")

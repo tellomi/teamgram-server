@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -312,16 +313,15 @@ func openSQL(dsn string) (*sqlBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.SetMaxOpenConns(8)
 	if err = conn.Ping(); err != nil {
-		_ = conn.Close()
+		_ = mysqlpool.Discard(conn)
 		return nil, err
 	}
 	// The startup DSN does not set multiStatements. MySQL 8.0 parses the
 	// script as one query and returns 1064 at the next CREATE
 	// (secret_qts_state). Each statement is IF NOT EXISTS.
 	if err = applySchema(conn); err != nil {
-		_ = conn.Close()
+		_ = mysqlpool.Discard(conn)
 		return nil, err
 	}
 	return &sqlBackend{db: conn}, nil
@@ -364,7 +364,7 @@ func UseDSN(dsn string) error {
 	}
 	gate.Lock()
 	if prev, ok := active.(*sqlBackend); ok && prev.db != nil {
-		_ = prev.db.Close()
+		_ = mysqlpool.Discard(prev.db)
 	}
 	active = be
 	current = newStore(be)

@@ -96,7 +96,7 @@ func (c *DialogCore) DialogCreateDialogFilter(in *dialog.TLDialogCreateDialogFil
 	}
 
 	dialogExt.Id++
-	c.svcCtx.Dao.CachedConn.Exec(
+	c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			dialogExt.DialogFilter.Id = dialogExt.Id

@@ -35,7 +35,7 @@ func (c *DialogCore) DialogUpdateUnreadCount(in *dialog.TLDialogUpdateUnreadCoun
 		unreadReactionsCount = in.GetUnreadReactionsCount().GetValue()
 	)
 
-	_, _, err := c.svcCtx.Dao.CachedConn.Exec(
+	_, _, err := c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			_, err := c.svcCtx.Dao.DialogsDAO.UpdateUnreadCount(

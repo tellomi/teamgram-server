@@ -74,6 +74,8 @@ func (c *ConfigurationCore) HelpGetConfig(in *mtproto.TLHelpGetConfig) (*mtproto
 	rValue, _ := proto.Clone(&config).(*mtproto.TLConfig)
 	// TELLOMI_DC_OPTIONS replaces dc_options on this copy. Unset or invalid
 	// leaves the list loaded from config.json, which is empty in git.
+	// TELLOMI_PUBLIC_DC_HOST then rewrites dotted IPv4 on the copy and
+	// drops ports other than 10443 and 443. gnetway binds are not read.
 	dcoptions.Apply(rValue)
 	now := int32(time.Now().Unix())
 	rValue.SetDate(now)

@@ -52,6 +52,10 @@ type Server struct {
 	cachedNow      atomic.Int64 // cached unix timestamp, updated every OnTick
 	timeoutWheel   *timeoutWheel
 	conns          sync.Map // connId -> gnet.Conn, closed on SIGTERM
+	proxyListeners map[string]proxyListenerSpec
+	proxyWaiting   sync.Map // connId -> struct{}, header not yet accepted
+	// booted is closed from OnBoot when a test needs to wait until eng is set.
+	booted chan struct{}
 	inflight       *inflight.Gate
 }
 
@@ -129,8 +133,14 @@ func (s *Server) Close() {
 func (s *Server) Serve() {
 	// addrs := strings.Join(s.c.Gnetway.ToAddresses(), ",")
 	logx.Debugf("addrs: %s", s.c.Gnetway.ToAddresses())
+	listeners, err := buildProxyListeners(*s.c.Gnetway)
+	if err != nil {
+		logx.Error(err)
+		panic(err)
+	}
+	s.proxyListeners = listeners
 
-	err := gnet.Rotate(
+	err = gnet.Rotate(
 		s,
 		s.c.Gnetway.ToAddresses(),
 		gnet.WithMulticore(s.c.Gnetway.Multicore),

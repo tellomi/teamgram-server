@@ -76,8 +76,16 @@ func hostOnly(addr string) string {
 	if addr == "" {
 		return ""
 	}
+	// A comma-separated list is a forwarded header, not the address the
+	// gateway stored after trusted PROXY admission.
+	if strings.Contains(addr, ",") {
+		return ""
+	}
 	if host, _, err := net.SplitHostPort(addr); err == nil {
 		return host
+	}
+	if net.ParseIP(addr) == nil {
+		return ""
 	}
 	return addr
 }

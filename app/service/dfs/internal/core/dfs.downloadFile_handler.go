@@ -157,29 +157,14 @@ func (c *DfsCore) downloadFileBody(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_F
 			}
 			sType = int32(location.GetAccessHash() >> 32)
 		} else {
-			path := c.svcCtx.Dao.PhotoObjectPath(c.ctx, location.GetId(), location.GetThumbSize())
-
+			paths := c.documentThumbPaths(location.GetId(), location.GetThumbSize())
 			isVideo := mtproto.PhotoSizeIsVideo(location.GetThumbSize())
-			c.Logger.Infof("path: %s", path)
+			c.Logger.Infof("document thumb candidates: %d", len(paths))
 			if isVideo {
-				bytes, err = readFirst(
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetVideoFile(c.ctx, path, offset, limit)
-					},
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetAvatarFile(c.ctx, path, offset, limit)
-					},
-				)
+				bytes, err = c.readDocumentThumb(offset, limit, paths, c.svcCtx.Dao.GetVideoFile, c.svcCtx.Dao.GetAvatarFile)
 				sType = int32(mtproto.CRC32_storage_fileMp4)
 			} else {
-				bytes, err = readFirst(
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetPhotoFile(c.ctx, path, offset, limit)
-					},
-					func() ([]byte, error) {
-						return c.svcCtx.Dao.GetWallpaperFile(c.ctx, path, offset, limit)
-					},
-				)
+				bytes, err = c.readDocumentThumb(offset, limit, paths, c.svcCtx.Dao.GetPhotoFile, c.svcCtx.Dao.GetWallpaperFile)
 				sType = int32(mtproto.CRC32_storage_fileJpeg)
 			}
 			bytes, err = c.finishDocumentThumb(location, offset, limit, bytes, err)

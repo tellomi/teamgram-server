@@ -72,7 +72,7 @@ func (c *DialogCore) DialogInsertOrUpdateDialogFilter(in *dialog.TLDialogInsertO
 	}
 	isChatlist := filter.GetPredicateName() == mtproto.Predicate_dialogFilterChatlist
 
-	c.svcCtx.Dao.CachedConn.Exec(
+	c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			_, _, err2 := c.svcCtx.Dao.DialogFiltersDAO.InsertOrUpdate(

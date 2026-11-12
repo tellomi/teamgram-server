@@ -244,7 +244,7 @@ func (d *Dao) sendMessageToOutbox(ctx context.Context, fromId int64, peer *mtpro
 	switch tR.Data.(type) {
 	case *mtproto.MessageBox:
 		// TODO: use rpc
-		d.CachedConn.Exec(
+		d.ExecInvalidate(
 			ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				rowsAffected, err2 := d.DialogsDAO.UpdateOutboxDialog(
@@ -432,7 +432,7 @@ func (d *Dao) DeleteMessages(ctx context.Context, userId int64, msgIds []int32) 
 	releaseDeletedBoxes(ctx, userId, msgDOList)
 
 	topMessage, _ := getLastTopMessage(topMessageIndex)
-	d.CachedConn.Exec(
+	d.ExecInvalidate(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			_, err2 := d.DialogsDAO.UpdateOutboxDialog(
@@ -574,7 +574,7 @@ func (d *Dao) DeletePhoneCallHistory(ctx context.Context, userId int64) ([]int32
 
 		// TODO: performance optimization
 		lastMessageId, _ := d.MessagesDAO.SelectDialogLastMessageId(ctx, userId, dialogId.A, dialogId.B)
-		d.CachedConn.Exec(
+		d.ExecInvalidate(
 			ctx,
 			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 				_, err2 := d.DialogsDAO.UpdateCustomMap(
@@ -607,6 +607,10 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 	if message != nil {
 		message.SanitizeEntities()
 	}
+	// Same column lookup as V2/V3. The inbox consumer may rewrite the
+	// outbox from a box that already has ttl_period; stamp again so a
+	// missing flag still follows dialogs.ttl_period, not a stale cache.
+	d.stampHistoryTTL(ctx, fromId, peer, message)
 	mData, _ := jsonx.Marshal(outMsgBox.GetMessage())
 	outBoxMsgId := outMsgBox.MessageId
 

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -143,17 +144,14 @@ func UseDSN(dsn string) error {
 	if err != nil {
 		return err
 	}
-	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(4)
-	db.SetConnMaxLifetime(time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return err
 	}
 	if _, err = db.ExecContext(ctx, docSchema); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return err
 	}
 	// The capped reports document is retired. Rows now live in the reports table.

@@ -2,6 +2,7 @@ package flood
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -10,26 +11,94 @@ type bucketState struct {
 	tokens float64
 	ts     time.Time
 	ready  bool
+	// gen changes on every take. A rejected request may delete the bucket
+	// only when gen is still the value that request wrote.
+	gen uint64
 }
 
-// Memory is a process-local token bucket. Tests use it. Production uses Redis
-// so a second session process sees the same counters.
+const (
+	memoryMaxKeys  = 4096
+	memoryTTL      = 24 * time.Hour
+	memoryOverflow = "flood:local:overflow"
+	// memoryGate is the conservative total for every overflow bucket. Its
+	// rate does not change with the caller, so a fast method cannot refill
+	// a slow one.
+	memoryGate = memoryOverflow + ":gate"
+)
+
+// gateRule is one action per 100s once the subject map is full. It is not
+// the caller's burst.
+var gateRule = Rule{Burst: 1, Rate: 0.01}
+
+// Memory is a process-local token bucket. Tests use it. Production uses it
+// only while Redis is down, and only for high-cost buckets. The map expires
+// entries after memoryTTL and stops inserting once it is full. A full map
+// shares one overflow bucket instead of evicting a limited subject back to
+// a fresh burst.
 type Memory struct {
-	mu sync.Mutex
-	m  map[string]bucketState
+	mu      sync.Mutex
+	m       map[string]bucketState
+	maxKeys int
+	ttl     time.Duration
 }
 
 func NewMemory() *Memory {
-	return &Memory{m: map[string]bucketState{}}
+	return &Memory{m: map[string]bucketState{}, maxKeys: memoryMaxKeys, ttl: memoryTTL}
 }
 
-func (m *Memory) Take(_ context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, error) {
+func (m *Memory) Len() int {
 	if m == nil {
-		return true, 0, nil
+		return 0
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	st := m.m[key]
+	return len(m.m)
+}
+
+func (m *Memory) Take(ctx context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, error) {
+	allowed, wait, _, _, err := m.take(ctx, key, rule, now)
+	return allowed, wait, err
+}
+
+// take reports fresh when this call inserted a subject key. gen is the
+// bucket version written by this call. A later rejection may delete the key
+// only if gen is unchanged, so a concurrent spend is not erased. The
+// overflow key is never fresh.
+func (m *Memory) take(_ context.Context, key string, rule Rule, now time.Time) (bool, time.Duration, bool, uint64, error) {
+	if m == nil {
+		return true, 0, false, 0, nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pruneLocked(now)
+	overflow := false
+	if _, ok := m.m[key]; !ok && m.subjectCount() >= m.maxKeys {
+		key = overflowKey(key)
+		overflow = true
+	}
+	allowed, wait, fresh, gen := m.takeKey(key, rule, now)
+	if !overflow || !allowed {
+		return allowed, wait, fresh, gen, nil
+	}
+	// The per-bucket overflow token is already spent. The shared gate uses
+	// its own rule, so this spend cannot be refilled by another method.
+	gateOK, gateWait, _, _ := m.takeKey(memoryGate, gateRule, now)
+	if !gateOK && gateWait > wait {
+		wait = gateWait
+	}
+	if !gateOK {
+		return false, wait, false, gen, nil
+	}
+	return true, 0, false, gen, nil
+}
+
+func (m *Memory) takeKey(key string, rule Rule, now time.Time) (bool, time.Duration, bool, uint64) {
+	st, ok := m.m[key]
+	fresh := false
+	if !ok {
+		fresh = !isOverflowKey(key)
+		st = bucketState{}
+	}
 	tokens := st.tokens
 	ts := st.ts
 	if !st.ready {
@@ -37,8 +106,84 @@ func (m *Memory) Take(_ context.Context, key string, rule Rule, now time.Time) (
 		ts = now
 	}
 	allowed, wait, next := takeToken(tokens, ts, now, rule)
-	m.m[key] = bucketState{tokens: next, ts: now, ready: true}
-	return allowed, wait, nil
+	st.gen++
+	m.m[key] = bucketState{tokens: next, ts: now, ready: true, gen: st.gen}
+	return allowed, wait, fresh, st.gen
+}
+
+func (m *Memory) subjectCount() int {
+	n := 0
+	for key := range m.m {
+		if !isOverflowKey(key) {
+			n++
+		}
+	}
+	return n
+}
+
+func overflowKey(key string) string {
+	bucket := "unknown"
+	rest := strings.TrimPrefix(key, "flood:")
+	if i := strings.IndexByte(rest, ':'); i >= 0 {
+		bucket = rest[:i]
+	} else if rest != "" {
+		bucket = rest
+	}
+	return memoryOverflow + ":" + bucket
+}
+
+func isOverflowKey(key string) bool {
+	return key == memoryOverflow || strings.HasPrefix(key, memoryOverflow+":")
+}
+
+// dropIfCurrent removes a key only when gen is still the version this
+// request wrote. A later take changes gen, and that bucket is left in place
+// so the other request's token is not thrown away.
+func (m *Memory) dropIfCurrent(key string, gen uint64) bool {
+	if m == nil || key == "" || gen == 0 || isOverflowKey(key) {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.m[key]
+	if !ok || st.gen != gen {
+		return false
+	}
+	delete(m.m, key)
+	return true
+}
+
+// Refund puts back the single token this request spent. The bucket stays,
+// so earlier sends are not forgotten.
+func (m *Memory) Refund(key string, rule Rule) {
+	if m == nil || key == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st, ok := m.m[key]
+	if !ok {
+		return
+	}
+	st.tokens++
+	if rule.Burst > 0 && st.tokens > float64(rule.Burst) {
+		st.tokens = float64(rule.Burst)
+	}
+	st.ready = true
+	m.m[key] = st
+}
+
+func (m *Memory) pruneLocked(now time.Time) {
+	ttl := m.ttl
+	if ttl <= 0 {
+		ttl = memoryTTL
+	}
+	cut := now.Add(-ttl)
+	for key, st := range m.m {
+		if st.ready && !st.ts.After(cut) {
+			delete(m.m, key)
+		}
+	}
 }
 
 func takeToken(tokens float64, ts, now time.Time, rule Rule) (allowed bool, wait time.Duration, next float64) {

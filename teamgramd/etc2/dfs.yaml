@@ -54,6 +54,6 @@ SSDB:
 # Same database as service.media. Content-addressed dedup reads and writes media_blobs.
 Mysql:
   DSN: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true
-  Active: 16
-  Idle: 4
-  IdleTimeout: 4h
+  Active: 4
+  Idle: 2
+  IdleTimeout: 30m

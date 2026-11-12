@@ -21,31 +21,38 @@
 | `/+<hash>`、`/joinchat/<hash>` 是频道或超级群 | `telegram_channel`、`telegram_megagroup`，需要批准时带 `_request` |
 | `/+<hash>`、`/joinchat/<hash>` 是普通群 | `telegram_chat` |
 
-`site_name` 是 `Tellomi`。能看到头像时，卡片的 `photo` 是已经入库的 `Photo`（带签发的 `access_hash`），对方用 `upload.getFile` 下载。看不到头像（隐私）时不放 `photo`。
+`site_name` 在每一种内置语言里都是品牌名 `Tellomi`，不会写成 Telegram，英文也不例外。能看到头像时，卡片的 `photo` 是已经入库的 `Photo`（带签发的 `access_hash`），对方用 `upload.getFile` 下载。看不到头像（隐私）时不放 `photo`。
 
-用户没有简介时，说明是 `You can contact @用户名 right away.`。频道和超级群有简介时用简介，否则用订阅人数或成员数。人数按调用者的语言包复数来写（iOS 的 `Conversation.StatusSubscribers` / `Conversation.StatusMembers`，安卓的 `Subscribers` / `Members`）。没有语言时用英文。
+内部卡片的说明跟调用者的 `lang_code` 走，缺语言或未知语言时回落到英文：
 
-贴纸集和表情集都是 `telegram_stickerset`。表情集的 `webPageAttributeStickerSet` 带 `emojis`。说明文字由服务端写成 `Free stickerpack with N stickers.` 或 `Free emoji pack with N emoji.`。属性里最多带 5 张贴纸，`document` 是第一张，给缩略图用。`messages.getWebPage` 的 `chats` / `users` 里会带上对应的频道或用户。
+- 用户或机器人没有简介时，是「你可以立即联系 @用户名。」这一句的对应语言（英文是 `You can contact @username right away.`）。
+- 邀请链接（`/+hash`、`/joinchat/hash`）有邀请人时是「X 邀请你加入 Tellomi 上的这个群组 / 频道。」；没有邀请人时是「你被邀请加入 Tellomi 上的这个群组 / 频道。」有群简介时仍用简介。
+- 公开的频道 / 超级群用户名链接有简介时用简介，否则用订阅人数或成员数。人数按调用者的语言包复数来写（iOS 的 `Conversation.StatusSubscribers` / `Conversation.StatusMembers`，安卓的 `Subscribers` / `Members`）。
+- 贴纸集和表情集的说明是「包含 N 个贴纸的免费贴纸包。」或「包含 N 个表情的免费表情包。」的对应语言。
+
+一条消息上的卡片只存一份，发送时按发送方的语言写进 `message_data`，历史记录和对方第一次收到的 `updateNewMessage` 也是这份。`messages.getWebPage` / `messages.getWebPagePreview` 会按当前请求者的语言生成（对已存的内部说明，也可以按查看者语言重写生成文案；用户自己写的简介不会改）。
+
+贴纸集和表情集都是 `telegram_stickerset`。表情集的 `webPageAttributeStickerSet` 带 `emojis`。属性里最多带 5 张贴纸，`document` 是第一张，给缩略图用。`messages.getWebPage` 的 `chats` / `users` 里会带上对应的频道或用户。
 
 私密频道的消息不会放进卡片。找不到的 short name、用户名，返回 `webPageEmpty`，不会改去抓这个网址。
 
-`messages.sendMessage` 只自动挂上 `telegram_*` 卡片。外站网址在抓取关闭时仍然只是文字，等发送方用下面的方式提交卡片。`no_webpage` 不给纯文字再挂卡片；编辑时如果没有换上新的 `inputMediaWebPage`，也会拿掉已经挂上的内部卡片。`messages.sendMedia` 里的 `inputMediaWebPage` 本身就是卡片，会留下来。
+`messages.sendMessage`（没有 `no_webpage`）会自动挂上内部 `telegram_*` 卡片。打开 `TELLOMI_SERVER_LINK_FETCH=1` 后，外站网址也会挂卡片：缓存命中时直接挂 `webPage`；未缓存时先挂 `webPagePending`（`id` 与最终 `webPage` 相同），后台抓取完成后对发送方和接收方推 `updateEditMessage`（`edit_hide`），把卡片换成抓到的 `webPage`。抓取出错、结果仍是 `webPagePending`、或进程在 20 秒内重启导致后台 goroutine 丢失时，都会拿掉占位卡片（`edit_hide`）；启动时和之后会按 `pending_webpage_jobs`（按 `created_unix` 建索引，每轮最多 100 条）清掉超过 60 秒仍为 pending 的消息。普通群的这次编辑会对每个正常成员走 `InboxEditMessageToInboxV2`（`updateEditMessage`）；频道/超级群走 `channel.Edit`，对每个正常成员推 `updateEditChannelMessage`。客户端自己用 `sendMedia` + `inputMediaWebPage` 提交的卡片，以及 `no_webpage` / `invert_media`，行为与原来相同，不会被自动挂卡或这次更新改掉。抓取关闭时外站网址仍然只是文字，也可以由发送方用下面的 `messages.sendMedia` + `inputMediaWebPage` 提交。`no_webpage` 不给纯文字再挂卡片；编辑时如果没有换上新的 `inputMediaWebPage`，也会按同样规则刷新或拿掉卡片。`messages.sendMedia` 里的 `inputMediaWebPage` 本身就是卡片，会留下来。
 
 ## 外站抓取默认关闭
 
 聊天里的外站抓取默认关闭。`TELLOMI_SERVER_LINK_FETCH` 不是 `1` 时，`messages.getWebPage("https://www.apple.com")` 返回 `webPageEmpty`，不会发出 HTTP 请求。部署之后再打开这个开关。
 
-打开之后，同一条规范化 URL（sha256）在 Redis 里共享：成功缓存约 24 小时，失败缓存 20 分钟。同一个 URL 同时只有一次抓取。每个域名大约每秒 1 次、突发 5 次；全局同时大约 8 个连接。超过限额直接返回 `webPageEmpty`，不发请求，也不写入失败缓存。`messages.getWebPagePreview` 另外走现有的按用户洪水桶（`web_preview`）。
+打开之后，同一条规范化 URL（sha256）在 Redis 里共享：成功缓存约 24 小时，失败缓存 20 分钟。同一个 URL 同时只有一次抓取。每个域名大约每秒 1 次、突发 5 次；全局同时大约 8 个连接。给 `sendMessage` 挂外站卡片时，另外有按用户的抓取预算（每分钟 20 次、突发 20）和挂卡前的全局限额检查。超过限额时不挂卡片、也不返回错误，正常用户无感。超过域名或全局抓取限额的 `getWebPage` 仍返回 `webPageEmpty`，不发请求，也不写入失败缓存。`messages.getWebPagePreview` 另外走现有的按用户洪水桶（`web_preview`）。
 
 连接超时 3 秒，整次请求 5 秒。HTML 最多 1MB，图片最多 2MB，最多 3 次跳转，只允许 80 和 443 端口。内网、回环、链路本地地址在拨号前拒绝，DNS 结果在拨号时再查一次，跳转同样检查。不读取 `HTTP_PROXY`。`TELLOMI_LINK_FETCH_PROXY` 只给这个抓取器用；目标先通过上面的检查，才交给代理。
 
 `User-Agent` 是 `Mozilla/5.0 (compatible; TellomiBot/1.0; +https://tellomi.cn/bot)`。卡片图片按内容哈希写入对象存储（ADR-0082）：相同字节只留一份对象，`access_hash` 等于照片 id，对方可以下载。
 
-缓存 Redis 用 `TELLOMI_LINK_CACHE_REDIS`，空则用 `TELLOMI_FLOOD_REDIS`。都没有时，缓存和限额只在本进程里。图片去重用 `TEAMGRAM_MYSQL_DSN` 里的 `media_blobs`；没配数据库时仍然把对象写到照片桶。
+缓存 Redis 用 `TELLOMI_LINK_CACHE_REDIS`，空则用 `TELLOMI_FLOOD_REDIS`。当前生产未配置这两项，外站页面缓存和限额都只在本进程内存里，进程重启会丢掉（不会为这次改动去配 Redis）。图片去重用 `TEAMGRAM_MYSQL_DSN` 里的 `media_blobs`；没配数据库时仍然把对象写到照片桶。
 
 失败是 `webPageEmpty`，可能重试的失败是 `webPagePending`。`TELLOMI_LINK_PREVIEW` 只控制发现页的 `POST /internal/v1/link-preview`（默认关闭，见 `docs/api/link-preview-card.md`），不控制 `messages.getWebPage`。
 
-`messages.sendMessage` 只自动挂上内部 `telegram_*` 卡片。外站卡片在抓取打开后出现在 `messages.getWebPage` / `messages.getWebPagePreview`；发到对话里仍由发送方用 `messages.sendMedia` 和 `inputMediaWebPage` 提交。官方 iOS 在已经有预览时就是这样发的。服务端保留这条 `messageMediaWebPage`，不会因为 `sendMedia` 的出站 `no_webpage` 把它拿掉。`editMessage` 带上 `inputMediaWebPage` 时同样保留。
+打开抓取后，`messages.sendMessage` 也会给外站网址自动挂卡片（见上，含 `webPagePending` → `updateEditMessage`）。客户端仍然可以用 `messages.sendMedia` 和 `inputMediaWebPage` 提交自己抓好的卡片。服务端保留这条 `messageMediaWebPage`，不会因为 `sendMedia` 的出站 `no_webpage` 把它拿掉。`editMessage` 带上 `inputMediaWebPage` 时同样保留。
 
 8801 上的 `GET /linkpreview/v1/resolve` 是给 tell.cc 网页用的，不产生聊天里的 `webPage`。
 

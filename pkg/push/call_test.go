@@ -3,8 +3,8 @@ package push
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -41,11 +41,12 @@ func TestBuildCallMatchesPhoneCallRequest(t *testing.T) {
 	if len(args) != 1 || args[0] != "Ada Lovelace" {
 		t.Fatal(args)
 	}
-	custom := outer["custom"].(map[string]any)
-	if custom["call_id"] != "100" || custom["call_ah"] != "200" || custom["updates"] == "" {
-		t.Fatal(custom)
+	if _, ok := outer["updates"]; ok {
+		t.Fatal("outer envelope must not repeat the updates blob")
 	}
-	assertCallUpdates(t, custom["updates"].(string))
+	if _, ok := outer["custom"]; ok {
+		t.Fatal("outer envelope must not repeat updates inside custom")
+	}
 
 	plain, err := DecryptNotification(secret, outer["p"].(string))
 	if err != nil {
@@ -58,8 +59,8 @@ func TestBuildCallMatchesPhoneCallRequest(t *testing.T) {
 	if inner["loc-key"] != locKeyPhoneCallRequest || inner["call_id"] != "100" || inner["call_ah"] != "200" || inner["from_id"] != "3" {
 		t.Fatalf("%v", inner)
 	}
-	if inner["updates"] != custom["updates"] {
-		t.Fatal("decrypted updates differ from custom.updates")
+	if _, ok := inner["custom"]; ok {
+		t.Fatal("sealed p must not repeat updates inside custom")
 	}
 	assertCallUpdates(t, inner["updates"].(string))
 	if _, err := BuildCall(Call{CallID: 100, AccessHash: 200, CallerID: 3, Updates: updates}, nil); err == nil {
@@ -227,17 +228,7 @@ func requestedCall() *mtproto.PhoneCall {
 
 func assertCallUpdates(t *testing.T, encoded string) {
 	t.Helper()
-	raw, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if binary.LittleEndian.Uint32(raw[:4]) != updatesConstructor {
-		t.Fatalf("constructor 0x%x", binary.LittleEndian.Uint32(raw[:4]))
-	}
-	got := &mtproto.Updates{}
-	if err := got.Decode(mtproto.NewDecodeBuf(raw)); err != nil {
-		t.Fatal(err)
-	}
+	got := mustDecodeUpdates(t, encoded)
 	if len(got.GetUpdates()) != 1 || got.GetUpdates()[0].GetPhoneCall().GetPredicateName() != mtproto.Predicate_phoneCallRequested {
 		t.Fatalf("%+v", got.GetUpdates())
 	}
@@ -248,4 +239,125 @@ func assertCallUpdates(t *testing.T, encoded string) {
 	if callerUser(got, 3) == nil || callerUser(got, 3).GetFirstName().GetValue() != "Ada" {
 		t.Fatalf("users %+v", got.GetUsers())
 	}
+}
+
+func fatIncomingCallUpdates(t *testing.T) *mtproto.Updates {
+	t.Helper()
+	caller := mtproto.MakeTLUser(&mtproto.User{
+		Id:         3,
+		AccessHash: wrapperspb.Int64(99),
+		FirstName:  wrapperspb.String("Ada"),
+		LastName:   wrapperspb.String("Lovelace"),
+		Photo: mtproto.MakeTLUserProfilePhoto(&mtproto.UserProfilePhoto{
+			PhotoId: 99_000_000_000,
+			DcId:    2,
+		}).To_UserProfilePhoto(),
+	}).To_User()
+	users := []*mtproto.User{caller}
+	// Production requestCall also attaches the callee and other bulky
+	// user objects. Repeating those copies in the envelope and inside p
+	// is what pushed the official-looking JSON over 5120 bytes.
+	for i := 0; i < 6; i++ {
+		users = append(users, mtproto.MakeTLUser(&mtproto.User{
+			Id:        int64(20 + i),
+			FirstName: wrapperspb.String(strings.Repeat("X", 400)),
+			LastName:  wrapperspb.String(strings.Repeat("Y", 400)),
+		}).To_User())
+	}
+	return mtproto.MakeUpdatesByUpdatesUsers(users,
+		mtproto.MakeTLUpdatePhoneCall(&mtproto.Update{PhoneCall: requestedCall()}).To_Update())
+}
+
+func TestBuildCallStaysUnderVoIPLimitWithFatUsers(t *testing.T) {
+	secret := bytes.Repeat([]byte{0x5a}, 256)
+	fat := fatIncomingCallUpdates(t)
+	plainBuf := mtproto.NewEncodeBuf(8192)
+	if err := fat.Encode(plainBuf, mtproto.Layer); err != nil {
+		t.Fatal(err)
+	}
+	plainB64 := base64.RawURLEncoding.EncodeToString(plainBuf.GetBuf())
+	// The previous envelope repeated updates four times (outer, custom, and
+	// the same pair inside p). That combination exceeded Apple's limit.
+	if 4*len(plainB64) < voipPayloadLimit {
+		t.Fatalf("fixture not bulky enough: updates b64 %d, 4 copies %d", len(plainB64), 4*len(plainB64))
+	}
+
+	body, err := BuildCall(Call{
+		UserID: 9, CallID: 100, AccessHash: 200, CallerID: 3, CallerName: "Ada Lovelace", Updates: fat,
+	}, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) > voipPayloadLimit {
+		t.Fatalf("payload %d exceeds voip limit %d", len(body), voipPayloadLimit)
+	}
+	var outer map[string]any
+	if err := json.Unmarshal(body, &outer); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := outer["updates"]; ok {
+		t.Fatal("outer envelope must not repeat the updates blob")
+	}
+	plain, err := DecryptNotification(secret, outer["p"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inner map[string]any
+	if err := json.Unmarshal(plain, &inner); err != nil {
+		t.Fatal(err)
+	}
+	assertCallUpdates(t, inner["updates"].(string))
+	decoded := mustDecodeUpdates(t, inner["updates"].(string))
+	if got := callerUser(decoded, 3); got == nil || got.GetFirstName().GetValue() != "Ada" {
+		t.Fatalf("caller %+v", got)
+	}
+	if callerUser(decoded, 20) != nil {
+		t.Fatal("callee and filler users must be dropped from the voip updates")
+	}
+	if callerUser(decoded, 3).GetPhoto() != nil {
+		t.Fatal("caller photo must be stripped from the voip updates")
+	}
+}
+
+func TestBuildCallErrorsWhenPayloadStillExceedsLimit(t *testing.T) {
+	secret := bytes.Repeat([]byte{0x5a}, 256)
+	// FirstName is kept in the slim caller. crypto/rand bytes do not gzip
+	// well, so the sealed body stays over the APNs VoIP limit.
+	noise := make([]byte, 20000)
+	if _, err := rand.Read(noise); err != nil {
+		t.Fatal(err)
+	}
+	user := mtproto.MakeTLUser(&mtproto.User{
+		Id:         3,
+		AccessHash: wrapperspb.Int64(99),
+		FirstName:  wrapperspb.String(string(noise)),
+		LastName:   wrapperspb.String("Lovelace"),
+	}).To_User()
+	updates := mtproto.MakeUpdatesByUpdatesUsers([]*mtproto.User{user},
+		mtproto.MakeTLUpdatePhoneCall(&mtproto.Update{PhoneCall: requestedCall()}).To_Update())
+	body, err := BuildCall(Call{
+		UserID: 9, CallID: 100, AccessHash: 200, CallerID: 3, CallerName: "Ada Lovelace", Updates: updates,
+	}, secret)
+	if err == nil {
+		t.Fatalf("expected over-limit error, got %d-byte payload", len(body))
+	}
+	if !strings.Contains(err.Error(), "voip payload is") || !strings.Contains(err.Error(), "limit 5120") {
+		t.Fatalf("error %v", err)
+	}
+	if body != nil {
+		t.Fatal("over-limit payload must not be returned")
+	}
+}
+
+func mustDecodeUpdates(t *testing.T, encoded string) *mtproto.Updates {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeCallUpdates(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
 }

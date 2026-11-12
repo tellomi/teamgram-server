@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
+	"github.com/teamgram/teamgram-server/pkg/uploadledger"
 )
 
 func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute, videoW, videoH int32) []*mtproto.DocumentAttribute {
@@ -59,7 +60,7 @@ func makeMp4DocumentAttributes(attrs []*mtproto.DocumentAttribute, videoW, video
 // dfs.uploadMp4DocumentMedia creator:long media:InputMedia = Document;
 func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia) (*mtproto.Document, error) {
 	var (
-		documentId = c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+		documentId = c.nextID()
 
 		file      = in.GetMedia().GetFile()
 		creatorId = in.GetCreator()
@@ -84,7 +85,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 		c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
 		return nil, err
 	}
-	claim, err := c.storeDocumentBytes(c.ctx, documentId, mp4Bytes, true)
+	claim, err := c.storeDocumentBytes(uploadledger.WithUser(c.ctx, creatorId), documentId, mp4Bytes, true)
 	if err != nil {
 		c.Logger.Errorf("dfs.PutDocumentFile - error: %v", err)
 		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
@@ -97,6 +98,7 @@ func (c *DfsCore) DfsUploadMp4DocumentMedia(in *dfs.TLDfsUploadMp4DocumentMedia)
 	if thumbs == nil {
 		thumbs = c.mp4Thumbs(documentId, mp4Bytes, rot, videoW, videoH, claim)
 	}
+	releaseUploadHold(c.ledgerSubject(creatorId), file.GetId_INT64())
 	return c.plainMp4Document(documentId, accessHash, claim, media, videoW, videoH, thumbs, mp4Bytes), nil
 }
 

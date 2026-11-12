@@ -152,4 +152,4 @@ bash scripts/check-compose-limits.sh
 
 ## Datacenter addresses
 
-`help.getConfig` `dc_options` stays the empty list in `teamgramd/bin/config.json` unless `TELLOMI_DC_OPTIONS` is set. Clients that already stored an address keep it after the server list goes back to empty. See [DC addresses](ops/DC_ADDRESSES.md).
+`help.getConfig` `dc_options` stays the empty list in `teamgramd/bin/config.json` unless `TELLOMI_DC_OPTIONS` or `TELLOMI_PUBLIC_DC_HOST` is set. Clients that already stored an address keep it after the server list goes back to empty. See [DC addresses](ops/DC_ADDRESSES.md).

@@ -37,6 +37,12 @@ type Dao struct {
 	msg_client.MsgClient
 }
 
+// NewForTest builds a Dao around a cache. RPC clients stay nil so a handler
+// test can prove it returns before those calls.
+func NewForTest(store kv.ExtStore) *Dao {
+	return &Dao{kv: store}
+}
+
 func New(c config.Config) *Dao {
 	return &Dao{
 		kv:                kv.NewStore(c.KV),

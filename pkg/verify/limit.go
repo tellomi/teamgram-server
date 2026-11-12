@@ -18,9 +18,19 @@ var shanghai = time.FixedZone("Asia/Shanghai", 8*60*60)
 type KV interface {
 	GetCtx(ctx context.Context, key string) (string, error)
 	SetexCtx(ctx context.Context, key, value string, seconds int) error
+	SetnxExCtx(ctx context.Context, key, value string, seconds int) (bool, error)
+	TtlCtx(ctx context.Context, key string) (int, error)
 	IncrCtx(ctx context.Context, key string) (int64, error)
+	DecrCtx(ctx context.Context, key string) (int64, error)
 	ExpireCtx(ctx context.Context, key string, seconds int) error
+	// EvalCtx matches the process cache: one script, one key, then args.
+	// The phone key is KEYS[1]. IP and global keys travel as args and are
+	// updated in the same script so a rejection writes nothing.
+	EvalCtx(ctx context.Context, script string, key string, args ...any) (any, error)
 }
+
+// storeRetry is the wait after a cache error. It is not the rest of the day.
+const storeRetry = 5
 
 // LimitError is a send quota failure. Retry is the suggested wait in seconds.
 type LimitError struct {
@@ -86,52 +96,131 @@ func SharedEmail() *Limiter {
 }
 
 // AllowSend records one send. A non-nil error means the send must not happen.
+// The cooldown is one INCR, so two processes cannot both observe an empty
+// key and both call the provider. A store error is a cooldown, not a send.
 func (l *Limiter) AllowSend(ctx context.Context, kind, target, ip string) error {
 	if l == nil || l.kv == nil || target == "" {
 		return nil
 	}
-	coolKey := "tellomi:code:cd:" + kind + ":" + target
 	if l.limits.ResendSeconds > 0 {
-		if v, err := l.kv.GetCtx(ctx, coolKey); err == nil && v != "" {
-			retry := l.limits.ResendSeconds
-			if n, conv := strconv.Atoi(v); conv == nil && n > 0 {
-				retry = n
-			}
-			return &LimitError{Retry: retry}
+		if err := l.cooldown(ctx, "tellomi:code:cd:"+kind+":"+target); err != nil {
+			return err
 		}
 	}
 
 	day := l.now().In(shanghai).Format("20060102")
-	if err := l.bump(ctx, "tellomi:code:day:"+kind+":phone:"+target+":"+day, l.limits.DailyPhone); err != nil {
-		return err
-	}
-	// A per-IP cap stays off unless DailyIP is set above zero.
+	phoneKey := "tellomi:code:day:" + kind + ":phone:" + target + ":" + day
+	ipKey := ""
+	ipCap := 0
 	if ip != "" && l.limits.DailyIP > 0 {
-		if err := l.bump(ctx, "tellomi:code:day:"+kind+":ip:"+ip+":"+day, l.limits.DailyIP); err != nil {
-			return err
-		}
+		ipKey = "tellomi:code:day:" + kind + ":ip:" + ip + ":" + day
+		ipCap = l.limits.DailyIP
 	}
-	if l.limits.ResendSeconds > 0 {
-		_ = l.kv.SetexCtx(ctx, coolKey, strconv.Itoa(l.limits.ResendSeconds), l.limits.ResendSeconds)
+	globalKey := ""
+	globalCap := 0
+	if l.limits.DailyGlobal > 0 {
+		globalKey = "tellomi:code:day:" + kind + ":global:" + day
+		globalCap = l.limits.DailyGlobal
 	}
-	return nil
+	// One script checks every cap and then increments the ones that apply.
+	// A rejection writes nothing, so a failed refund cannot lock a number
+	// that was never allowed to send.
+	res, err := l.kv.EvalCtx(ctx, quotaScript, phoneKey,
+		l.limits.DailyPhone, ipCap, globalCap, l.secondsUntilNextDay()+3600, ipKey, globalKey)
+	if err != nil {
+		return &LimitError{Retry: storeRetry}
+	}
+	switch evalCode(res) {
+	case 0:
+		return nil
+	case 1, 2, 3:
+		return &LimitError{Daily: true, Retry: l.secondsUntilNextDay()}
+	default:
+		return &LimitError{Retry: storeRetry}
+	}
 }
 
-func (l *Limiter) bump(ctx context.Context, key string, cap int) error {
-	if cap <= 0 {
+// quotaScript is atomic in Redis: either every permitted counter moves, or
+// none do. Codes: 0 allow, 1 phone daily, 2 ip daily, 3 global daily.
+const quotaScript = `
+local phoneCap = tonumber(ARGV[1])
+local ipCap = tonumber(ARGV[2])
+local globalCap = tonumber(ARGV[3])
+local ttl = tonumber(ARGV[4])
+local ip = ARGV[5]
+local glob = ARGV[6]
+local phone = KEYS[1]
+local function cur(key)
+  if key == nil or key == '' then return 0 end
+  return tonumber(redis.call('GET', key) or '0')
+end
+local function spend(key, cap)
+  if cap > 0 and key ~= nil and key ~= '' then
+    redis.call('INCR', key)
+    redis.call('EXPIRE', key, ttl)
+  end
+end
+if phoneCap > 0 and cur(phone) + 1 > phoneCap then return 1 end
+if ipCap > 0 and cur(ip) + 1 > ipCap then return 2 end
+if globalCap > 0 and cur(glob) + 1 > globalCap then return 3 end
+spend(phone, phoneCap)
+spend(ip, ipCap)
+spend(glob, globalCap)
+return 0
+`
+
+func evalCode(res any) int64 {
+	switch v := res.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case string:
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return -1
+		}
+		return n
+	case []byte:
+		return evalCode(string(v))
+	case []any:
+		if len(v) == 0 {
+			return -1
+		}
+		return evalCode(v[0])
+	default:
+		return -1
+	}
+}
+
+// cooldown places the resend key with its TTL in one SET NX EX. A later
+// rejection reads the remaining TTL and does not refresh it. A store error
+// does not admit the send.
+func (l *Limiter) cooldown(ctx context.Context, key string) error {
+	ok, err := l.kv.SetnxExCtx(ctx, key, "1", l.limits.ResendSeconds)
+	if err != nil {
+		return &LimitError{Retry: l.limits.ResendSeconds}
+	}
+	if ok {
 		return nil
 	}
-	n, err := l.kv.IncrCtx(ctx, key)
+	ttl, err := l.kv.TtlCtx(ctx, key)
 	if err != nil {
-		return err
+		return &LimitError{Retry: l.limits.ResendSeconds}
 	}
-	// The TTL is the rest of the Shanghai day plus one hour, recomputed from
-	// now, so a restart or a second instance does not extend the window.
-	_ = l.kv.ExpireCtx(ctx, key, l.secondsUntilNextDay()+3600)
-	if int(n) > cap {
-		return &LimitError{Daily: true, Retry: l.secondsUntilNextDay()}
+	if ttl < 0 {
+		if err = l.kv.ExpireCtx(ctx, key, l.limits.ResendSeconds); err != nil {
+			return &LimitError{Retry: storeRetry}
+		}
+		return &LimitError{Retry: l.limits.ResendSeconds}
 	}
-	return nil
+	if ttl < 1 {
+		ttl = 1
+	}
+	if ttl > l.limits.ResendSeconds {
+		ttl = l.limits.ResendSeconds
+	}
+	return &LimitError{Retry: ttl}
 }
 
 func (l *Limiter) secondsUntilNextDay() int {

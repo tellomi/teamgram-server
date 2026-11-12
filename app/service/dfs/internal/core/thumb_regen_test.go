@@ -44,11 +44,17 @@ func TestResolveThumbDownload(t *testing.T) {
 	}
 
 	if _, err = resolveThumbDownload(0, 32, []byte{}, nil, func() ([]byte, error) {
-		return nil, errors.New("no ffmpeg")
+		return nil, errThumbPermanent
 	}); err != mtproto.ErrFileIdInvalid {
 		t.Fatalf("empty success %v", err)
 	}
 	if _, err = resolveThumbDownload(0, 32, nil, minio_util.ErrNotFound, nil); err != mtproto.ErrFileIdInvalid {
 		t.Fatalf("video thumb %v", err)
+	}
+	netErr = errors.New("r2 timeout")
+	if _, err = resolveThumbDownload(0, 32, nil, minio_util.ErrNotFound, func() ([]byte, error) {
+		return nil, netErr
+	}); err != netErr {
+		t.Fatalf("regen transport %v", err)
 	}
 }

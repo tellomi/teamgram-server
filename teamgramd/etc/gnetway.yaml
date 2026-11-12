@@ -45,6 +45,17 @@ Gnetway:
       PPV1: true
       Addresses:
         - 0.0.0.0:10444
+    # Private PROXY listener for an L4 relay. Leave it out to stay disabled.
+    # When ProxyProtocol is set, TrustedProxyCIDRs is required or the process
+    # refuses to start. Bind one private address, never 0.0.0.0. Do not put
+    # this on 10443, 5222, 11443, or 10444. Example, not enabled here:
+    # - Proto: tcp
+    #   ProxyProtocol: v1v2
+    #   RequireProxyHeader: true
+    #   TrustedProxyCIDRs:
+    #     - 172.19.44.222/32
+    #   Addresses:
+    #     - 10.20.0.218:10445
   Multicore: false
   SendBuf: 65536
   ReceiveBuf: 65536

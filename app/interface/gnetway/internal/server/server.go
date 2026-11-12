@@ -44,6 +44,11 @@ type Server struct {
 func (s *Server) Initialize() error {
 	var c config.Config
 	configload.MustLoad(*configFile, &c)
+	if c.Gnetway != nil {
+		if err := c.Gnetway.Validate(); err != nil {
+			return err
+		}
+	}
 
 	logx.Infov(redact.Value(c))
 

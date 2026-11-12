@@ -20,7 +20,7 @@ package dao
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"math/rand"
 	"strings"
 	"time"
@@ -36,12 +36,11 @@ import (
 )
 
 const (
+	// authDataPrefix is the auth_data cache. The live key also carries the
+	// bind generation (see genAuthDataCacheKey). A pre-generation entry
+	// auth_data.2#id is not read; the next lookup misses and loads MySQL.
 	authDataPrefix = "auth_data.2"
 )
-
-func genAuthDataCacheKey(id int64) string {
-	return fmt.Sprintf("%s#%d", authDataPrefix, id)
-}
 
 //
 //func genAuthUserCacheKey(id int64) string {
@@ -247,7 +246,7 @@ func (d *Dao) GetAuthKeyUserId(ctx context.Context, authKeyId int64) int64 {
 	return cData.UserId()
 }
 
-func (d *Dao) BindAuthKeyUser(ctx context.Context, authKeyId int64, userId int64) int64 {
+func (d *Dao) BindAuthKeyUser(ctx context.Context, authKeyId int64, userId int64) (int64, error) {
 	now := time.Now().Unix()
 	authUsersDO := &dataobject.AuthUsersDO{
 		AuthKeyId:   authKeyId,
@@ -257,68 +256,94 @@ func (d *Dao) BindAuthKeyUser(ctx context.Context, authKeyId int64, userId int64
 		DateActive:  now,
 	}
 
-	_, _, err := d.CachedConn.Exec(
-		ctx,
-		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			lastID, rows, err := d.AuthUsersDAO.InsertOrUpdates(ctx, authUsersDO)
-			if err != nil {
-				return 0, 0, err
-			}
-			// rows == 1 is an insert. ON DUPLICATE KEY UPDATE of an existing
-			// key reports 2 and keeps the flags already stored on that row.
-			if rows == 1 {
-				d.markNewAuthorizationUnconfirmed(ctx, userId, authKeyId)
-			}
-			return lastID, rows, nil
-		},
-		genAuthDataCacheKey(authKeyId))
-	if err != nil {
-		return 0
+	var rowsAffected int64
+	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+		if err := lockAuthIdentity(tx, authKeyId); err != nil {
+			result.Err = err
+			return
+		}
+		owners, err := activeAuthOwners(tx, authKeyId)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		// Another live owner blocks the write. A revoked row does not: the
+		// same user's row is revived below, and another user's revoked row
+		// stays revoked while this user gets a new row.
+		if authBindConflicts(owners, userId) {
+			result.Err = ErrAuthKeyUserConflict
+			return
+		}
+		_, rows, err := d.AuthUsersDAO.InsertOrUpdatesTx(tx, authUsersDO)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		rowsAffected = rows
+	})
+	if result.Err != nil {
+		return 0, result.Err
 	}
-
-	return authUsersDO.Hash
+	// The SQL is committed. Move the cache generation before anything else
+	// so an in-flight reader of the previous snapshot cannot republish it.
+	// A fence failure still leaves the row bound; the next read deletes the
+	// old slot and reloads. Returning that failure would look like the bind
+	// did not happen.
+	if err := d.bumpAuthBindGen(ctx, authKeyId); err != nil {
+		logx.WithContext(ctx).Errorf("bindAuthKeyUser cache fence auth_key_id=%d: %v", authKeyId, err)
+	}
+	// rows == 1 is an insert. ON DUPLICATE KEY UPDATE of an existing
+	// key reports 2 and keeps the flags already stored on that row.
+	if rowsAffected == 1 {
+		d.markNewAuthorizationUnconfirmed(ctx, userId, authKeyId)
+	}
+	return authUsersDO.Hash, nil
 }
 
 func (d *Dao) UnbindAuthUser(ctx context.Context, authKeyId int64, userId int64) bool {
-	var (
-		err error
-	)
-
 	if authKeyId == 0 {
-		var (
-			idList []string
-		)
+		var ids []int64
 		d.AuthUsersDAO.SelectAuthKeyIdsWithCB(
 			ctx,
 			userId,
 			func(sz, i int, v *dataobject.AuthUsersDO) {
-				idList = append(idList, genAuthDataCacheKey(v.AuthKeyId))
+				ids = append(ids, v.AuthKeyId)
 			})
-		if len(idList) > 0 {
-			_, _, err = d.CachedConn.Exec(
-				ctx,
-				func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-					_, err2 := d.AuthUsersDAO.DeleteUser(ctx, userId)
-					return 0, 0, err2
-				},
-				idList...)
+		if len(ids) == 0 {
+			return true
 		}
-	} else {
-		_, _, err = d.CachedConn.Exec(
-			ctx,
-			func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-				_, err2 := d.AuthUsersDAO.Delete(ctx, authKeyId, userId)
-				return 0, 0, err2
-			},
-			genAuthDataCacheKey(authKeyId))
+		result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+			if err := lockAuthIdentities(tx, ids); err != nil {
+				result.Err = err
+				return
+			}
+			_, err := d.AuthUsersDAO.DeleteUserTx(tx, userId)
+			result.Err = err
+		})
+		if result.Err != nil {
+			return false
+		}
+		return d.bumpAuthBindGens(ctx, ids) == nil
 	}
 
-	return err == nil
+	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+		if err := lockAuthIdentity(tx, authKeyId); err != nil && !errors.Is(err, ErrAuthKeyNotRegistered) {
+			result.Err = err
+			return
+		}
+		_, err := d.AuthUsersDAO.DeleteTx(tx, authKeyId, userId)
+		result.Err = err
+	})
+	if result.Err != nil {
+		return false
+	}
+	return d.bumpAuthBindGen(ctx, authKeyId) == nil
 }
 
 func (d *Dao) SetClientSessionInfo(ctx context.Context, session *authsession.ClientSession) error {
-	_, _, err := d.CachedConn.Exec(
+	_, _, err := d.execAuthData(
 		ctx,
+		session.GetAuthKeyId(),
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			do := &dataobject.AuthsDO{
 				AuthKeyId:      session.GetAuthKeyId(),
@@ -339,15 +364,15 @@ func (d *Dao) SetClientSessionInfo(ctx context.Context, session *authsession.Cli
 				do.Params = "null"
 			}
 			return d.AuthsDAO.InsertOrUpdate(ctx, do)
-		},
-		genAuthDataCacheKey(session.GetAuthKeyId()))
+		})
 
 	return err
 }
 
 func (d *Dao) SetLayer(ctx context.Context, in *authsession.TLAuthsessionSetLayer) error {
-	_, _, err := d.CachedConn.Exec(
+	_, _, err := d.execAuthData(
 		ctx,
+		in.GetAuthKeyId(),
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			return d.AuthsDAO.InsertOrUpdateLayer(
 				ctx,
@@ -357,15 +382,15 @@ func (d *Dao) SetLayer(ctx context.Context, in *authsession.TLAuthsessionSetLaye
 					ClientIp:   in.GetIp(),
 					DateActive: time.Now().Unix(),
 				})
-		},
-		genAuthDataCacheKey(in.GetAuthKeyId()))
+		})
 
 	return err
 }
 
 func (d *Dao) SetInitConnection(ctx context.Context, i *authsession.TLAuthsessionSetInitConnection) error {
-	_, _, err := d.CachedConn.Exec(
+	_, _, err := d.execAuthData(
 		ctx,
+		i.GetAuthKeyId(),
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			do := &dataobject.AuthsDO{
 				AuthKeyId:      i.GetAuthKeyId(),
@@ -385,15 +410,15 @@ func (d *Dao) SetInitConnection(ctx context.Context, i *authsession.TLAuthsessio
 				do.Params = "null"
 			}
 			return d.AuthsDAO.InsertOrUpdate(ctx, do)
-		},
-		genAuthDataCacheKey(i.GetAuthKeyId()))
+		})
 
 	return err
 }
 
 func (d *Dao) SetAndroidPushSessionId(ctx context.Context, userId, keyId, sessionId int64) error {
-	_, _, err := d.CachedConn.Exec(
+	_, _, err := d.execAuthData(
 		ctx,
+		keyId,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			_, err2 := d.AuthUsersDAO.UpdateAndroidPushSessionId(
 				ctx,
@@ -402,8 +427,7 @@ func (d *Dao) SetAndroidPushSessionId(ctx context.Context, userId, keyId, sessio
 				userId)
 
 			return 0, 0, err2
-		},
-		genAuthDataCacheKey(keyId))
+		})
 
 	return err
 
@@ -414,10 +438,18 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 		cData *CacheAuthData
 	)
 
-	err := d.CachedConn.QueryRow(
+	// Sample the generation before the DB read. QueryRow writes the snapshot
+	// under this key only. A bind or unbind that commits in between moves
+	// the generation, and this write cannot land on the new slot.
+	gen, err := d.authBindGen(ctx, authKeyId)
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.CachedConn.QueryRow(
 		ctx,
 		&cData,
-		genAuthDataCacheKey(authKeyId),
+		genAuthDataCacheKey(authKeyId, gen),
 		func(ctx context.Context, conn *sqlx.DB, v interface{}) error {
 			cacheAuthData := &CacheAuthData{
 				Client:   nil,
@@ -475,6 +507,7 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 				return sqlc.ErrNotFound
 			}
 			*v.(**CacheAuthData) = cacheAuthData
+			waitAuthLoadGate()
 
 			return nil
 		})
