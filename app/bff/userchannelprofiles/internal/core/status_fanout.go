@@ -9,21 +9,36 @@ import "github.com/teamgram/proto/mtproto"
 // stay empty: a failed load must not fan the exact status out.
 type statusViewer func(id int64) (targetAllows, viewerAllows, known bool)
 
+// statusRenewalSlack is how close the last pushed userStatusOnline.expires
+// may get before another foreground heartbeat reloads the audience and
+// pushes a new deadline. 120s is about two Android heartbeats (55s), so
+// contacts still show online when the renewal arrives, and the heartbeats
+// in between do not load contacts, privacy, or blocks.
+const statusRenewalSlack int64 = 120
+
 // shouldPushStatus decides whether contacts must be told.
-// Crossing offline and online always pushes. A foreground heartbeat also
-// pushes when the new userStatusOnline.expires is later than the deadline
-// already stored: official clients keep that absolute expires and do not
-// slide it themselves. Same-second repeats do not push. The gap between
-// heartbeats is far shorter than UserOnlinePeriod, so a contact still
-// holding the previous expires has not gone offline when the renewal arrives.
-func shouldPushStatus(wasOnline, nowOnline bool, prevDeadline, newDeadline int64) bool {
+// Crossing offline and online always pushes. A foreground heartbeat pushes
+// only when the expires last sent to viewers is missing or has less than
+// statusRenewalSlack left. That mark is not the presence row: the row moves
+// on every heartbeat, and clients do not slide the absolute expires they
+// were given. Same-second repeats and a still-fresh deadline do not push.
+func shouldPushStatus(wasOnline, nowOnline bool, lastPushed, now int64) bool {
 	if wasOnline != nowOnline {
 		return true
 	}
 	if !nowOnline {
 		return false
 	}
-	return newDeadline > prevDeadline
+	if lastPushed <= now {
+		return true
+	}
+	return lastPushed-now < statusRenewalSlack
+}
+
+// statusLoadsAudience is the gate in front of the contact, privacy, and
+// block reads. A renewal inside the slack returns false.
+func statusLoadsAudience(wasOnline, nowOnline bool, lastPushed, now int64) bool {
+	return shouldPushStatus(wasOnline, nowOnline, lastPushed, now)
 }
 
 // statusRecipients is the deduped audience, self excluded. blocked skips

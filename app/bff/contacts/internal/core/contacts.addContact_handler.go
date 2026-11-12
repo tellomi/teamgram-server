@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -112,6 +113,7 @@ func (c *ContactsCore) ContactsAddContact(in *mtproto.TLContactsAddContact) (*mt
 
 	// TODO(@benqi): 性能优化，复用users
 	c.pushContactStatuses(c.MD.UserId, id.PeerId)
+	statusbook.Shared().Forget(c.ctx, c.MD.UserId, id.PeerId)
 
 	rUpdates := mtproto.MakeUpdatesByUpdatesUsers(
 		[]*mtproto.User{me, cUser},

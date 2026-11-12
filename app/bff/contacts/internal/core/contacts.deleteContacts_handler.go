@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -59,6 +60,7 @@ func (c *ContactsCore) ContactsDeleteContacts(in *mtproto.TLContactsDeleteContac
 				UserId: c.MD.UserId,
 				Id:     it.Id(),
 			})
+			statusbook.Shared().Forget(c.ctx, c.MD.UserId, it.Id())
 
 			rUpdates.PushBackUpdate(
 				mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{

@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -49,6 +50,7 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 		c.Logger.Errorf("account.setPrivacy - error: %v", err)
 		return nil, err
 	}
+	statusbook.Shared().Forget(c.ctx, c.MD.UserId)
 
 	rValue := mtproto.MakeTLAccountPrivacyRules(&mtproto.Account_PrivacyRules{
 		Rules: ruleList,

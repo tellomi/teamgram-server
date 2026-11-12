@@ -67,46 +67,80 @@ func TestStatusDeliveryReverseRule(t *testing.T) {
 func TestOnlineHeartbeatSlidesExpires(t *testing.T) {
 	const seen int64 = 1_700_000_000
 	period := int64(mtproto.UserOnlinePeriod)
-	prevDeadline := seen + period
-	// Android sends account.updateStatus about every 55s while foreground.
-	now := seen + 55
-	if !mtproto.PresenceOnline(now, seen, mtproto.UserOnlinePeriod) {
-		t.Fatal("the heartbeat is still inside the open window")
+	// The contact is holding the expires from the transition that came online.
+	contactExpires := seen + period
+	lastPushed := contactExpires
+	if !mtproto.PresenceOnline(seen+55, seen, mtproto.UserOnlinePeriod) {
+		t.Fatal("a heartbeat 55s later is still inside the open window")
 	}
-	newDeadline := now + period
-	if !shouldPushStatus(true, true, prevDeadline, newDeadline) {
-		t.Fatal("a later online heartbeat must push the new expires")
+	if statusLoadsAudience(true, true, lastPushed, seen+55) {
+		t.Fatal("a heartbeat 55s into a fresh window must not load the audience")
 	}
-	if newDeadline <= now || prevDeadline <= now {
-		t.Fatal("the contact still holding the previous expires must not already be offline")
-	}
-	if shouldPushStatus(true, true, newDeadline, newDeadline) {
-		t.Fatal("the same expires is not a renewal")
-	}
-	if !shouldPushStatus(true, false, prevDeadline, now) {
+	if !shouldPushStatus(true, false, lastPushed, seen+55) {
 		t.Fatal("going offline is a transition")
 	}
-	if !shouldPushStatus(false, true, 0, newDeadline) {
+	if !shouldPushStatus(false, true, 0, seen+55) {
 		t.Fatal("coming online is a transition")
 	}
-	if shouldPushStatus(false, false, 0, now) {
+	if shouldPushStatus(false, false, 0, seen+55) {
 		t.Fatal("an offline update while already offline is not a transition")
 	}
+	if !shouldPushStatus(true, true, seen+80, seen) {
+		t.Fatal("a pushed expires inside the slack must be renewed")
+	}
 
-	// Twelve foreground heartbeats. Each one is pushed, and the contact's
-	// expires stays ahead of the clock.
-	contactExpires := prevDeadline
+	// Twelve foreground heartbeats at 55s. Most do not push. The contact's
+	// known expires still never lapses.
 	cursor := seen
+	loads := 0
 	for i := 0; i < 12; i++ {
 		cursor += 55
-		next := cursor + period
 		if cursor >= contactExpires {
 			t.Fatalf("contact went offline at step %d now %d expires %d", i, cursor, contactExpires)
 		}
-		if !shouldPushStatus(true, true, contactExpires, next) {
-			t.Fatalf("heartbeat %d did not renew", i)
+		if statusLoadsAudience(true, true, lastPushed, cursor) {
+			loads++
+			lastPushed = cursor + period
+			contactExpires = lastPushed
 		}
-		contactExpires = next
+	}
+	if loads == 0 {
+		t.Fatal("the open window was never renewed")
+	}
+	if loads >= 12 {
+		t.Fatalf("every heartbeat loaded the audience (%d)", loads)
+	}
+}
+
+func TestRenewalDoesNotLoadAudienceEveryHeartbeat(t *testing.T) {
+	const start int64 = 1_700_000_000
+	period := int64(mtproto.UserOnlinePeriod)
+	now := start
+	var lastPushed int64
+	wasOnline := false
+	contactExpires := int64(0)
+	loads := 0
+	for i := 0; i < 12; i++ {
+		if i > 0 {
+			now += 55
+		}
+		if contactExpires != 0 && now >= contactExpires {
+			t.Fatalf("contact went offline at heartbeat %d now %d expires %d", i, now, contactExpires)
+		}
+		if !statusLoadsAudience(wasOnline, true, lastPushed, now) {
+			wasOnline = true
+			continue
+		}
+		loads++
+		lastPushed = now + period
+		contactExpires = lastPushed
+		wasOnline = true
+	}
+	if loads >= 12 {
+		t.Fatalf("audience loaders ran on every heartbeat (%d)", loads)
+	}
+	if loads < 2 {
+		t.Fatalf("coming online and at least one renewal should load, got %d", loads)
 	}
 }
 

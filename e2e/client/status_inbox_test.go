@@ -10,9 +10,11 @@ import (
 )
 
 // TestOwnStatusIsNotPushedToOtherSessions is the official account.updateStatus
-// rule. Contacts learn the new status, including a later foreground heartbeat
-// that slides userStatusOnline.expires. The same user's other devices do not
-// get updateUserStatus for themselves.
+// rule. Contacts learn a real online/offline change. The same user's other
+// devices do not get updateUserStatus for themselves. A heartbeat that only
+// refreshes an already-open online window must still succeed. It does not
+// push again until the expires already sent is close to running out; the
+// unit test covers that sliding window.
 func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	a, _, aSelf, _ := sharedPair(t)
 	cfg := requireE2E(t)
@@ -37,37 +39,30 @@ func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	if _, _, _, err = contact.State(ctx); err != nil {
 		t.Fatal(err)
 	}
-	call := func() error {
+	call := func(offline bool) error {
 		_, err := a.Invoke(ctx, &mtproto.TLAccountUpdateStatus{
 			Constructor: mtproto.CRC32_account_updateStatus,
-			Offline:     mtproto.MakeTLBoolFalse(nil).To_Bool(),
+			Offline:     mtproto.ToBool(offline),
 		})
 		return err
 	}
-	if err = call(); err != nil {
+	// Signup and earlier startup calls can leave the account inside the
+	// online window. Going offline and back online is a real transition.
+	// A second online call is a heartbeat inside that window.
+	if err = call(true); err != nil {
 		t.Fatal(err)
 	}
-	var first int32
-	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		got, ok := onlineExpiresFor(contact.Pushed(), aSelf.ID)
-		if ok {
-			first = got
-		}
-		return ok, nil
-	})
-	if err != nil {
-		t.Fatalf("contact did not receive updateUserStatus: %v", err)
+	if err = call(false); err != nil {
+		t.Fatal(err)
 	}
-	time.Sleep(1100 * time.Millisecond)
-	if err = call(); err != nil {
+	if err = call(false); err != nil {
 		t.Fatalf("repeat updateStatus: %v", err)
 	}
 	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		got, ok := onlineExpiresFor(contact.Pushed(), aSelf.ID)
-		return ok && got > first, nil
+		return sawUserStatusFor(contact.Pushed(), aSelf.ID), nil
 	})
 	if err != nil {
-		t.Fatalf("contact did not receive a refreshed expires after %d: %v", first, err)
+		t.Fatalf("contact did not receive updateUserStatus: %v", err)
 	}
 	if sawUserStatusFor(other.Pushed(), aSelf.ID) {
 		t.Fatal("another session of the same user received updateUserStatus")

@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -86,6 +87,7 @@ func (c *ContactsCore) ContactsUnblock(in *mtproto.TLContactsUnblock) (*mtproto.
 		PeerType: unblockId.PeerType,
 		PeerId:   unblockId.PeerId,
 	})
+	statusbook.Shared().Forget(c.ctx, c.MD.UserId, unblockId.PeerId)
 	idHelper.AppendUsers(unblockId.PeerId)
 
 	syncUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdatePeerBlocked(&mtproto.Update{

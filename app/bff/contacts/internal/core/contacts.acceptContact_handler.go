@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -74,6 +75,7 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 
 	user.Contact = true
 	user.MutualContact = mtproto.FromBool(mutual)
+	statusbook.Shared().Forget(c.ctx, c.MD.UserId, id.PeerId)
 	me, meErr := c.loadUser(c.MD.UserId, c.MD.UserId)
 	users := []*mtproto.User{user}
 	if meErr == nil && me != nil {

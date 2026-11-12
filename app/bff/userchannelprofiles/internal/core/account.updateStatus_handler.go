@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	syncpb "github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/zeromicro/go-zero/core/contextx"
@@ -66,13 +67,9 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		}
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		prevOnline := false
-		var prevDeadline int64
 		prev, prevErr := c.svcCtx.UserClient.UserGetLastSeen(ctx, &userpb.TLUserGetLastSeen{Id: c.MD.UserId})
 		if prevErr == nil && prev != nil {
 			prevOnline = mtproto.PresenceOnline(now, prev.GetLastSeenAt(), prev.GetExpires())
-			if prev.GetExpires() > 0 {
-				prevDeadline = prev.GetLastSeenAt() + int64(prev.GetExpires())
-			}
 		} else if prevErr != nil && !missingPresence(prevErr) {
 			_, _ = c.svcCtx.UserClient.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
 				Id:         c.MD.UserId,
@@ -90,8 +87,15 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		if !offline {
 			newDeadline = now + int64(expires)
 		}
-		// Same-second repeats are skipped. A later heartbeat pushes the new expires.
-		if c.svcCtx.SyncClient == nil || !shouldPushStatus(prevOnline, !offline, prevDeadline, newDeadline) {
+		// lastPushed is the expires viewers already have. The presence row
+		// above moves on every heartbeat, so it cannot be that mark.
+		lastPushed, pushedErr := statusbook.Shared().Pushed(ctx, c.MD.UserId)
+		if pushedErr != nil {
+			lastPushed = 0
+		}
+		// Edges always load. A renewal loads only once the pushed expires
+		// is inside the slack, so the 55s heartbeats in between do not.
+		if c.svcCtx.SyncClient == nil || !statusLoadsAudience(prevOnline, !offline, lastPushed, now) {
 			return
 		}
 		ids, err := c.svcCtx.UserClient.UserGetContactIdList(ctx, &userpb.TLUserGetContactIdList{
@@ -147,6 +151,11 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 				UserId:  row.UserID,
 				Updates: userStatusPush(c.MD.UserId, row.Status, int32(now)-1),
 			})
+		}
+		if offline {
+			statusbook.Shared().Forget(ctx, c.MD.UserId)
+		} else {
+			_ = statusbook.Shared().Remember(ctx, c.MD.UserId, newDeadline)
 		}
 	})
 
