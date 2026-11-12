@@ -219,6 +219,16 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				in.Chats,
 				updateNewMessage)
 
+			if in.PeerType == mtproto.PEER_USER && mtproto.AnsweredPhoneCall(inBox.GetMessage().GetAction()) {
+				// The inbox row was stored with unread_count 0 and
+				// read_inbox_max_id on this message. Every session of the
+				// callee has to see that read, including one that missed the
+				// live update.
+				updateReadHistoryInbox := answeredCallReadUpdate(in.FromId, inBox.MessageId, c.svcCtx.Dao.NextPtsId(c.ctx, in.UserId))
+				c.persistPtsUpdate(c.ctx, in.UserId, updateReadHistoryInbox)
+				pushUpdates.PushFrontUpdate(updateReadHistoryInbox)
+			}
+
 			if in.PeerType == mtproto.PEER_CHAT {
 				switch inBox.GetMessage().GetAction().GetPredicateName() {
 				case mtproto.Predicate_messageActionChatMigrateTo:

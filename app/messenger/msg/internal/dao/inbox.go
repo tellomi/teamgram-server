@@ -37,6 +37,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// phoneCallInboxUnread is the dialogs.unread_count delta for one inbox row.
+// InsertOrUpdate adds this value. An answered call adds nothing.
+func phoneCallInboxUnread(message *mtproto.Message) int32 {
+	if message != nil && mtproto.AnsweredPhoneCall(message.GetAction()) {
+		return 0
+	}
+	return 1
+}
+
 // from outBox --> make inBox
 func (d *Dao) makeMessageInBox(fromId int64, peer *mtproto.PeerUtil, toUserId int64, clientRandomId int64, dialogMessageId int64, message *mtproto.Message) *mtproto.MessageBox {
 	mentioned := mtproto.CheckHasMention(message.Entities, toUserId)
@@ -193,13 +202,16 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 			//	rowsAffected int64
 			//)
 
+			// An answered call is already read for the callee. InsertOrUpdate
+			// adds unread_count, so the delta is 0. Missed and declined calls
+			// stay at 1.
 			dialogDO = &dataobject.DialogsDO{
 				UserId:           inBox.UserId,
 				PeerType:         peer.PeerType,
 				PeerId:           fromId,
 				PeerDialogId:     mtproto.MakePeerDialogId(mtproto.PEER_USER, fromId),
 				TopMessage:       inBoxMsgId,
-				UnreadCount:      1,
+				UnreadCount:      phoneCallInboxUnread(message),
 				DraftMessageData: "null",
 				Date2:            date,
 			}
@@ -264,6 +276,19 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdate(ctx, dialogDO)
 			logx.WithContext(ctx).Infof("lastInsertId:%d, rowsAffected: %d, result: %v, do: %v", lastInsertId, rowsAffected, err, dialogDO)
+			if err != nil || dialogDO.UnreadCount != 0 || dialogDO.PeerType != mtproto.PEER_USER {
+				return 0, 0, err
+			}
+			// The insert only adds unread_count. The callee's read cursor has
+			// to move to this service message or the client treats it as unread.
+			// read_inbox_max_id is one cursor. Moving it to this message marks
+			// every earlier message read, same as messages.readHistory, so the
+			// unread count is the remainder after that cursor (none).
+			_, err = d.DialogsDAO.UpdateCustomMap(ctx, map[string]interface{}{
+				"read_inbox_max_id": inBoxMsgId,
+				"unread_count":      0,
+				"unread_mark":       0,
+			}, dialogDO.UserId, dialogDO.PeerType, dialogDO.PeerId)
 			return 0, 0, err
 		},
 		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
