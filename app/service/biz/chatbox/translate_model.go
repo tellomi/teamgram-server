@@ -184,6 +184,9 @@ func modelErr(mode string, err error) error {
 	if errors.Is(err, tellomiai.ErrTooLong) {
 		return mtproto.ErrInputTextTooLong
 	}
+	if errors.Is(err, tellomiai.ErrSidecarBusy) {
+		return mtproto.ErrTranslateBusy
+	}
 	if mode == tellomiai.ModeCompose {
 		return mtproto.ErrAiComposeTimeout
 	}

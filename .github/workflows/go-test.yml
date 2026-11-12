@@ -42,6 +42,12 @@ jobs:
       - name: MySQL 8.0.13 migrations and JSON equivalence
         run: TEAMGRAM_MYSQL_COMPAT=1 go test ./teamgramd/deploy/sqlmigrate/ -count=1 -timeout 25m -run 'TestMySQLCompat'
 
+      - name: ASR and translate request limits
+        run: |
+          python3 services/asr/lang_test.py
+          python3 services/asr/gate_test.py
+          python3 services/translate/gate_test.py
+
       - name: Langpack host rewrite
         working-directory: scripts
         run: |

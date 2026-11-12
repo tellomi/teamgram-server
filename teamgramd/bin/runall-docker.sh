@@ -46,6 +46,10 @@ shutdown() {
 
 trap shutdown TERM INT
 
+# Packaged for the image healthcheck (`healthd -check`). Startup does not
+# probe dependencies; Docker runs that command on its own interval.
+test -x ./healthd
+
 start idgen ./idgen -f=../etc2/idgen.yaml
 sleep 1
 

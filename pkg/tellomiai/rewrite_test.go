@@ -94,7 +94,7 @@ func TestTranslateSidecarFailureDoesNotFallBack(t *testing.T) {
 	t.Cleanup(local.Close)
 	t.Setenv(EnvTranslateURL, local.URL)
 	cachedHealth = healthCache{}
-	if _, err := Rewrite(context.Background(), Job{Mode: ModeTranslate, Texts: []string{"hello"}, ToLang: "zh"}); err != ErrLocal {
+	if _, err := Rewrite(context.Background(), Job{Mode: ModeTranslate, Texts: []string{"hello"}, ToLang: "zh"}); err != ErrSidecarBusy {
 		t.Fatalf("%v", err)
 	}
 	if bailian != 0 {

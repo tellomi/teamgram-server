@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/config"
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/server/gnet/codec"
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/svc"
+	"github.com/teamgram/teamgram-server/pkg/inflight"
 
 	"github.com/panjf2000/gnet/v2"
 	"github.com/panjf2000/gnet/v2/pkg/logging"
@@ -55,6 +56,7 @@ type Server struct {
 	proxyWaiting   sync.Map // connId -> struct{}, header not yet accepted
 	// booted is closed from OnBoot when a test needs to wait until eng is set.
 	booted chan struct{}
+	inflight       *inflight.Gate
 }
 
 // CachedNow returns the cached unix timestamp (updated every OnTick interval).
@@ -83,6 +85,10 @@ func New(svcCtx *svc.ServiceContext, c config.Config) *Server {
 	s.cache = cache.NewLRUCache(int64(cacheSizeMB) * 1024 * 1024)
 
 	s.pool = goroutine.Default()
+	// 256 sits above the observed MySQL session peak (about 50) and still
+	// refuses work instead of queueing it when the gateway is overloaded.
+	// TELLOMI_GATEWAY_MAX_INFLIGHT overrides it. A bad value keeps 256.
+	s.inflight = inflight.FromEnv("TELLOMI_GATEWAY_MAX_INFLIGHT", 256)
 
 	s.c = &c
 	s.svcCtx = svcCtx

@@ -210,6 +210,9 @@ func failJob(job tellomiai.Job, err error) error {
 	if errors.Is(err, tellomiai.ErrTooLong) {
 		return mtproto.ErrInputTextTooLong
 	}
+	if errors.Is(err, tellomiai.ErrSidecarBusy) {
+		return mtproto.ErrTranslateBusy
+	}
 	if job.Mode == tellomiai.ModeCompose {
 		return mtproto.ErrAiComposeTimeout
 	}

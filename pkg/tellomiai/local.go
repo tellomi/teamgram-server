@@ -20,9 +20,15 @@ const (
 	EnvTranslateAuto = "TELLOMI_TRANSLATE_AUTO"
 )
 
-// ErrLocal is a self-hosted translator that is down or refused the request.
-// Callers must not send the text to another provider.
+// ErrLocal is a self-hosted translator that is down or refused the request
+// for a reason other than overload. Callers must not send the text to
+// another provider.
 var ErrLocal = errorsNew("tellomi translate: local sidecar")
+
+// ErrSidecarBusy is HTTP 503 from the local translator. The sidecar refused
+// the request immediately. Callers map this to a 400 RPC error. A 500 would
+// be resent by the client transport before the UI callback runs.
+var ErrSidecarBusy = errorsNew("tellomi translate: busy")
 
 func errorsNew(s string) error { return &localError{s} }
 
@@ -110,6 +116,9 @@ func translateLocal(ctx context.Context, texts []string, to string) ([]string, e
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, ErrLocal
+	}
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return nil, ErrSidecarBusy
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, ErrLocal

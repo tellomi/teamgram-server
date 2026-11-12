@@ -346,6 +346,44 @@ func TestRecognizerErrorIsUnavailable(t *testing.T) {
 	if status.Convert(err).Message() != "TRANSCRIPTION_UNAVAILABLE" {
 		t.Fatalf("err %v", err)
 	}
+	if status.Convert(err).Code() != mtproto.ErrBadRequest {
+		t.Fatalf("code %v", status.Convert(err).Code())
+	}
+}
+
+// HTTP 503 from the sidecar is a finished RPC, not a 500 the transport resends.
+func TestASR503IsRetryableBadRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"overloaded"}`))
+	}))
+	defer srv.Close()
+	rec := &HTTPRecognizer{Endpoint: srv.URL + "/v1/transcribe", Client: srv.Client()}
+	h := NewHandler(
+		func(context.Context, int64, *mtproto.PeerUtil, int32) (Clip, error) {
+			return Clip{DocumentID: 1, Filename: "voice.ogg", Duration: 1}, nil
+		},
+		func(context.Context, Clip) ([]byte, error) { return []byte("OggS"), nil },
+		rec,
+		nil,
+	)
+	started := time.Now()
+	_, err := h.Transcribe(context.Background(), &metadata.RpcMetadata{UserId: 1}, &mtproto.TLMessagesTranscribeAudio{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 2}).To_InputPeer(),
+		MsgId: 1,
+	})
+	if time.Since(started) > 2*time.Second {
+		t.Fatalf("503 took %s", time.Since(started))
+	}
+	st := status.Convert(err)
+	if st.Code() != mtproto.ErrBadRequest || st.Message() != "TRANSCRIPTION_UNAVAILABLE" {
+		t.Fatalf("stored voice code %v message %s", st.Code(), st.Message())
+	}
+	_, err = h.Draft(context.Background(), &metadata.RpcMetadata{UserId: 1}, []byte("OggS"))
+	st = status.Convert(err)
+	if st.Code() != mtproto.ErrBadRequest || st.Message() != "TRANSCRIPTION_UNAVAILABLE" {
+		t.Fatalf("draft code %v message %s", st.Code(), st.Message())
+	}
 }
 
 func TestTranscribeRoundVideoReturnsFinalText(t *testing.T) {

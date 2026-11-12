@@ -126,6 +126,8 @@ func (h *HTTPRecognizer) post(ctx context.Context, audio []byte, filename, langu
 		return "", parsed.Language, ErrDraftLanguage
 	}
 	if resp.StatusCode != http.StatusOK {
+		// 503 overloaded is included. The handler turns this into
+		// TRANSCRIPTION_UNAVAILABLE (400) without waiting.
 		if parsed.Error == "" {
 			parsed.Error = resp.Status
 		}
