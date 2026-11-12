@@ -6,60 +6,79 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-func allowContacts(id int64, forward map[int64]bool) func(int64) bool {
-	return func(viewer int64) bool { return forward[viewer] }
-}
-
-func TestStatusRecipientsIncludeReverseWhenEverybody(t *testing.T) {
-	forward := []int64{2, 0, 2}
-	reverse := []int64{2, 5, 1, 6}
-	everybody := func(int64) bool { return true }
-	got := statusRecipients(1, forward, reverse, everybody, nil)
-	if len(got) != 3 || got[0] != 2 || got[1] != 5 || got[2] != 6 {
-		t.Fatalf("everybody recipients %v", got)
+func TestStatusRecipientsFailClosedWithoutPrivacy(t *testing.T) {
+	if got := statusRecipients(1, []int64{2}, []int64{5}, nil, nil); len(got) != 0 {
+		t.Fatalf("missing privacy must not fan out, got %v", got)
 	}
-	again := statusRecipients(1, forward, reverse, everybody, nil)
-	if len(again) != len(got) || again[1] != got[1] {
-		t.Fatalf("repeat %v", again)
+	if got := statusDeliveries(1, mtproto.MakeUserStatusOnline(), 10, mtproto.UserOnlinePeriod, 10, []int64{2}, []int64{5}, nil, nil); len(got) != 0 {
+		t.Fatalf("missing privacy deliveries %v", got)
 	}
 }
 
-func TestStatusRecipientsContactsHideReverseOnly(t *testing.T) {
-	forward := map[int64]bool{2: true, 3: true}
-	blocked := map[int64]bool{3: true}
-	got := statusRecipients(1, []int64{2, 3}, []int64{5, 2}, allowContacts(1, forward), func(id int64) bool {
-		return blocked[id]
-	})
-	if len(got) != 1 || got[0] != 2 {
-		t.Fatalf("contacts recipients %v, want only the unblocked forward contact", got)
-	}
-}
-
-func TestStatusRecipientsAllowUserException(t *testing.T) {
-	visible := map[int64]bool{9: true}
-	got := statusRecipients(1, nil, []int64{8, 9}, func(id int64) bool { return visible[id] }, nil)
-	if len(got) != 1 || got[0] != 9 {
-		t.Fatalf("exception recipients %v", got)
-	}
-}
-
-func TestDeliverStatusReachesPrivacyAudience(t *testing.T) {
-	updates := mtproto.MakeTLUpdateShort(&mtproto.Updates{
-		Update: mtproto.MakeTLUpdateUserStatus(&mtproto.Update{UserId: 1}).To_Update(),
-	}).To_Updates()
-	var got []int64
-	push := func(id int64, up *mtproto.Updates) {
-		if up.GetUpdate().GetUserId() != 1 {
-			t.Fatalf("payload user %d", up.GetUpdate().GetUserId())
+func TestStatusDeliveryReverseRule(t *testing.T) {
+	const (
+		self = int64(1)
+		seen = int64(1_700_000_000)
+	)
+	now := seen + 20
+	exact := mtproto.PresenceStatus(seen, mtproto.UserOnlinePeriod, true, now)
+	// 2 shares both ways. 5 added me but hid their own last seen.
+	// 6 is someone I hid from, and they still share theirs.
+	visible := func(id int64) (bool, bool, bool) {
+		switch id {
+		case 2:
+			return true, true, true
+		case 5:
+			return true, false, true
+		case 6:
+			return false, true, true
+		case 7:
+			return false, false, false
+		default:
+			return false, false, true
 		}
-		got = append(got, id)
 	}
-	deliverUserStatus(1, updates, []int64{2}, []int64{5}, func(int64) bool { return true }, nil, push)
-	deliverUserStatus(1, updates, []int64{2}, []int64{5}, func(int64) bool { return true }, nil, push)
-	if len(got) != 4 || got[0] != 2 || got[1] != 5 || got[2] != 2 || got[3] != 5 {
-		t.Fatalf("pushes %v", got)
+	blocked := map[int64]struct{}{9: {}}
+	got := statusDeliveries(self, exact, seen, mtproto.UserOnlinePeriod, now, []int64{2, 9}, []int64{5, 6, 7, 2}, visible, blocked)
+	byID := map[int64]*mtproto.UserStatus{}
+	for _, row := range got {
+		byID[row.UserID] = row.Status
 	}
-	deliverUserStatus(1, updates, []int64{2}, nil, nil, nil, nil)
+	if _, ok := byID[9]; ok {
+		t.Fatal("blocked user was included")
+	}
+	if _, ok := byID[7]; ok {
+		t.Fatal("viewer with unknown privacy was included")
+	}
+	if byID[2].GetPredicateName() != mtproto.Predicate_userStatusOnline || byID[2].GetExpires() != exact.GetExpires() {
+		t.Fatalf("mutual exact: %+v", byID[2])
+	}
+	if byID[5].GetPredicateName() != mtproto.Predicate_userStatusRecently || !byID[5].GetByMe() {
+		t.Fatalf("viewer hid own last seen: %+v", byID[5])
+	}
+	if byID[5].GetPredicateName() == mtproto.Predicate_userStatusOnline || byID[5].GetWasOnline() != 0 {
+		t.Fatal("hidden viewer got an exact status")
+	}
+	if byID[6].GetPredicateName() != mtproto.Predicate_userStatusRecently || byID[6].GetByMe() {
+		t.Fatalf("I hid from them: %+v", byID[6])
+	}
+}
+
+func TestHeartbeatDoesNotFanOut(t *testing.T) {
+	const seen int64 = 1_700_000_000
+	was := mtproto.PresenceOnline(seen+30, seen, mtproto.UserOnlinePeriod)
+	if !was || shouldPushStatus(was, true) {
+		t.Fatal("refreshing an open online window is not a transition")
+	}
+	if !shouldPushStatus(was, false) {
+		t.Fatal("going offline is a transition")
+	}
+	if !shouldPushStatus(false, true) {
+		t.Fatal("coming online is a transition")
+	}
+	if shouldPushStatus(false, false) {
+		t.Fatal("an offline update while already offline is not a transition")
+	}
 }
 
 func TestAttachForwardContactsFeedsPrivacy(t *testing.T) {

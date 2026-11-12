@@ -19,6 +19,7 @@
 package core
 
 import (
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -64,12 +65,25 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 			return
 		}
 		ctx := contextx.ValueOnlyFrom(c.ctx)
+		prevOnline := false
+		prev, prevErr := c.svcCtx.UserClient.UserGetLastSeen(ctx, &userpb.TLUserGetLastSeen{Id: c.MD.UserId})
+		if prevErr == nil && prev != nil {
+			prevOnline = mtproto.PresenceOnline(now, prev.GetLastSeenAt(), prev.GetExpires())
+		} else if prevErr != nil && !missingPresence(prevErr) {
+			_, _ = c.svcCtx.UserClient.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
+				Id:         c.MD.UserId,
+				LastSeenAt: now,
+				Expires:    expires,
+			})
+			return
+		}
 		_, _ = c.svcCtx.UserClient.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
 			Id:         c.MD.UserId,
 			LastSeenAt: now,
 			Expires:    expires,
 		})
-		if c.svcCtx.SyncClient == nil {
+		// Heartbeats that only extend an open window do not push.
+		if c.svcCtx.SyncClient == nil || !shouldPushStatus(prevOnline, !offline) {
 			return
 		}
 		ids, err := c.svcCtx.UserClient.UserGetContactIdList(ctx, &userpb.TLUserGetContactIdList{
@@ -78,47 +92,59 @@ func (c *UserChannelProfilesCore) AccountUpdateStatus(in *mtproto.TLAccountUpdat
 		if err != nil || ids == nil {
 			return
 		}
+		rev, err := c.svcCtx.UserClient.UserGetReverseContactIdList(ctx, &userpb.TLUserGetContactIdList{
+			UserId: c.MD.UserId,
+		})
+		if err != nil || rev == nil {
+			return
+		}
 		forward := ids.GetDatas()
-		var reverse []int64
-		var visible func(int64) bool
-		got, err2 := c.svcCtx.UserClient.UserGetMutableUsersV2(ctx, &userpb.TLUserGetMutableUsersV2{
-			Id:      []int64{c.MD.UserId},
+		reverse := rev.GetDatas()
+		candidates := append(append([]int64{c.MD.UserId}, forward...), reverse...)
+		got, err := c.svcCtx.UserClient.UserGetMutableUsersV2(ctx, &userpb.TLUserGetMutableUsersV2{
+			Id:      candidates,
 			Privacy: true,
 			HasTo:   true,
+			To:      []int64{c.MD.UserId},
 		})
-		if err2 == nil && got != nil {
-			if me, ok := got.GetImmutableUser(c.MD.UserId); ok && me != nil {
-				attachForwardContacts(me, forward)
-				for _, row := range me.GetReverseContacts() {
-					if row.GetUserId() != 0 {
-						reverse = append(reverse, row.GetUserId())
-					}
-				}
-				visible = func(id int64) bool {
-					return me.CheckPrivacy(mtproto.STATUS_TIMESTAMP, id)
-				}
+		if err != nil || got == nil {
+			return
+		}
+		me, ok := got.GetImmutableUser(c.MD.UserId)
+		if !ok || me == nil {
+			return
+		}
+		attachForwardContacts(me, forward)
+		blockedRows, err := c.svcCtx.UserClient.UserBlockedEitherWay(ctx, &userpb.TLUserCheckBlockUserList{
+			UserId: c.MD.UserId,
+			Id:     append(append([]int64{}, forward...), reverse...),
+		})
+		if err != nil || blockedRows == nil {
+			return
+		}
+		blocked := make(map[int64]struct{}, len(blockedRows.GetDatas()))
+		for _, id := range blockedRows.GetDatas() {
+			blocked[id] = struct{}{}
+		}
+		exact := pushUpdates.GetUpdate().GetStatus_USERSTATUS()
+		visible := func(id int64) (bool, bool, bool) {
+			viewer, found := got.GetImmutableUser(id)
+			if !found || viewer == nil {
+				return false, false, false
 			}
+			return me.CheckPrivacy(mtproto.STATUS_TIMESTAMP, id), viewer.CheckPrivacy(mtproto.STATUS_TIMESTAMP, c.MD.UserId), true
 		}
-		blocked := func(id int64) bool {
-			// Either direction hides the status: the contact blocked this
-			// user, or this user blocked the contact.
-			one, err1 := c.svcCtx.UserClient.UserBlockedByUser(ctx, &userpb.TLUserBlockedByUser{
-				UserId: id, PeerUserId: c.MD.UserId,
+		for _, row := range statusDeliveries(c.MD.UserId, exact, now, expires, now, forward, reverse, visible, blocked) {
+			_, _ = c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
+				UserId:  row.UserID,
+				Updates: userStatusPush(c.MD.UserId, row.Status, int32(now)-1),
 			})
-			two, err2 := c.svcCtx.UserClient.UserBlockedByUser(ctx, &userpb.TLUserBlockedByUser{
-				UserId: c.MD.UserId, PeerUserId: id,
-			})
-			return (err1 == nil && mtproto.FromBool(one)) || (err2 == nil && mtproto.FromBool(two))
 		}
-		deliverUserStatus(c.MD.UserId, pushUpdates, forward, reverse, visible, blocked,
-			func(id int64, up *mtproto.Updates) {
-				_, _ = c.svcCtx.SyncClient.SyncPushUpdates(ctx, &syncpb.TLSyncPushUpdates{
-					UserId:  id,
-					Updates: up,
-				})
-			},
-		)
 	})
 
 	return mtproto.BoolTrue, nil
+}
+
+func missingPresence(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "USER_ID_INVALID")
 }

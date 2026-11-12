@@ -61,6 +61,8 @@ type UserClient interface {
 	UserDeleteContact(ctx context.Context, in *user.TLUserDeleteContact) (*mtproto.Bool, error)
 	UserGetContactList(ctx context.Context, in *user.TLUserGetContactList) (*user.Vector_ContactData, error)
 	UserGetContactIdList(ctx context.Context, in *user.TLUserGetContactIdList) (*user.Vector_Long, error)
+	UserGetReverseContactIdList(ctx context.Context, in *user.TLUserGetContactIdList) (*user.Vector_Long, error)
+	UserBlockedEitherWay(ctx context.Context, in *user.TLUserCheckBlockUserList) (*user.Vector_Long, error)
 	UserGetContact(ctx context.Context, in *user.TLUserGetContact) (*mtproto.ContactData, error)
 	UserAddContact(ctx context.Context, in *user.TLUserAddContact) (*mtproto.Bool, error)
 	UserCheckContact(ctx context.Context, in *user.TLUserCheckContact) (*mtproto.Bool, error)

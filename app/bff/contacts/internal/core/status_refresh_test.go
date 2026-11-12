@@ -60,6 +60,12 @@ func TestContactStatusRefreshRespectsPrivacy(t *testing.T) {
 	if forPeer.GetPredicateName() == mtproto.Predicate_userStatusOnline || forMe.GetPredicateName() == mtproto.Predicate_userStatusOnline {
 		t.Fatalf("one-way contacts-only must stay approximate: %s %s", forPeer.GetPredicateName(), forMe.GetPredicateName())
 	}
+	if !forPeer.GetByMe() {
+		t.Fatal("they hid their own last seen, so the status they see sets by_me")
+	}
+	if forMe.GetByMe() {
+		t.Fatal("I did not hide my last seen from them")
+	}
 
 	// Mutual contacts under the contacts rule see the exact window.
 	peer = statusUser(peerID, allowContacts, meID)
@@ -75,9 +81,23 @@ func TestContactStatusRefreshRespectsPrivacy(t *testing.T) {
 	if forPeer.GetPredicateName() == mtproto.Predicate_userStatusOnline || forPeer.GetWasOnline() != 0 {
 		t.Fatalf("disallow all must not push an exact status: %+v", forPeer)
 	}
-	if forMe.GetPredicateName() == mtproto.Predicate_userStatusOnline {
-		t.Fatal("hiding my last seen also hides theirs")
+	if forMe.GetPredicateName() == mtproto.Predicate_userStatusOnline || !forMe.GetByMe() {
+		t.Fatal("hiding my last seen also hides theirs and sets by_me")
 	}
+}
+
+func TestContactStatusesFailClosed(t *testing.T) {
+	exact := mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
+		UserId: 2,
+		Status: mtproto.MakeTLUserStatusOnline(&mtproto.UserStatus{Expires: 1}).To_UserStatus(),
+	}).To_ContactStatus()
+	if got := contactStatusesFromUsers(false, &mtproto.MutableUsers{Users: []*mtproto.ImmutableUser{}}, 1, []int64{2}); len(got) != 0 {
+		t.Fatalf("failed user load returned %d statuses", len(got))
+	}
+	if got := contactStatusesFromUsers(true, nil, 1, []int64{2}); len(got) != 0 {
+		t.Fatalf("nil users returned %d statuses", len(got))
+	}
+	_ = exact
 }
 
 func TestUserStatusPushSkipsEmpty(t *testing.T) {

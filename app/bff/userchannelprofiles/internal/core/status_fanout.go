@@ -2,14 +2,25 @@ package core
 
 import "github.com/teamgram/proto/mtproto"
 
-// statusRecipients is who may learn this user's exact online status.
-// forward is people this user added. reverse is people who added this user
-// but are not already in forward. visible reports this user's
-// privacyKeyStatusTimestamp rule toward that viewer: AllowAll includes both
-// directions, AllowContacts includes only forward, DisallowAll includes only
-// an explicit allow-user exception. Self, empty ids, duplicates, and blocked
-// users are left out. Official clients do not receive their own status.
-func statusRecipients(self int64, forward, reverse []int64, visible func(int64) bool, blocked func(int64) bool) []int64 {
+// statusViewer says whether the subject allows this viewer to see an exact
+// timestamp, and whether the viewer allows the subject to see theirs.
+// known is false when that viewer's rules were not loaded; they are skipped.
+// A nil statusViewer means the whole privacy load failed. Recipients then
+// stay empty: a failed load must not fan the exact status out.
+type statusViewer func(id int64) (targetAllows, viewerAllows, known bool)
+
+// shouldPushStatus is true only when online/offline changed. A heartbeat
+// that refreshes an already-open window does not push.
+func shouldPushStatus(wasOnline, nowOnline bool) bool {
+	return wasOnline != nowOnline
+}
+
+// statusRecipients is the deduped audience, self excluded. blocked skips
+// either direction. visible nil fails closed.
+func statusRecipients(self int64, forward, reverse []int64, visible statusViewer, blocked map[int64]struct{}) []int64 {
+	if visible == nil {
+		return nil
+	}
 	seen := make(map[int64]struct{}, len(forward)+len(reverse))
 	out := make([]int64, 0, len(forward)+len(reverse))
 	consider := func(id int64) {
@@ -20,11 +31,10 @@ func statusRecipients(self int64, forward, reverse []int64, visible func(int64) 
 			return
 		}
 		seen[id] = struct{}{}
-		if blocked != nil && blocked(id) {
-			return
-		}
-		if visible != nil && !visible(id) {
-			return
+		if blocked != nil {
+			if _, ban := blocked[id]; ban {
+				return
+			}
 		}
 		out = append(out, id)
 	}
@@ -37,15 +47,63 @@ func statusRecipients(self int64, forward, reverse []int64, visible func(int64) 
 	return out
 }
 
-// deliverUserStatus pushes one updateUserStatus to every remaining recipient.
-// Calling it again with the same inputs yields the same recipients.
-func deliverUserStatus(self int64, updates *mtproto.Updates, forward, reverse []int64, visible func(int64) bool, blocked func(int64) bool, pushContact func(int64, *mtproto.Updates)) {
-	if pushContact == nil {
-		return
+// statusDelivery is one updateUserStatus. The status is the exact online or
+// offline object when both sides share timestamps, and the same bucket
+// users.getUsers would return otherwise.
+type statusDelivery struct {
+	UserID int64
+	Status *mtproto.UserStatus
+}
+
+func statusDeliveries(self int64, exact *mtproto.UserStatus, lastSeen int64, expires int32, now int64, forward, reverse []int64, visible statusViewer, blocked map[int64]struct{}) []statusDelivery {
+	if visible == nil || exact == nil {
+		return nil
 	}
-	for _, id := range statusRecipients(self, forward, reverse, visible, blocked) {
-		pushContact(id, updates)
+	seen := make(map[int64]struct{}, len(forward)+len(reverse))
+	out := make([]statusDelivery, 0, len(forward)+len(reverse))
+	consider := func(id int64) {
+		if id == 0 || id == self {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		if blocked != nil {
+			if _, ban := blocked[id]; ban {
+				return
+			}
+		}
+		targetAllows, viewerAllows, known := visible(id)
+		if !known {
+			return
+		}
+		st := mtproto.PushStatusForViewer(exact, lastSeen, expires, targetAllows, viewerAllows, now)
+		if st == nil {
+			return
+		}
+		out = append(out, statusDelivery{UserID: id, Status: st})
 	}
+	for _, id := range forward {
+		consider(id)
+	}
+	for _, id := range reverse {
+		consider(id)
+	}
+	return out
+}
+
+func userStatusPush(userID int64, status *mtproto.UserStatus, date int32) *mtproto.Updates {
+	if status == nil {
+		return nil
+	}
+	return mtproto.MakeTLUpdateShort(&mtproto.Updates{
+		Update: mtproto.MakeTLUpdateUserStatus(&mtproto.Update{
+			UserId:            userID,
+			Status_USERSTATUS: status,
+		}).To_Update(),
+		Date: date,
+	}).To_Updates()
 }
 
 // attachForwardContacts lets CheckPrivacy see "my contacts" on a user loaded

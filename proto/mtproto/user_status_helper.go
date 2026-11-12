@@ -130,7 +130,7 @@ func PresenceStatus(lastSeenAt int64, expires int32, allowTimestamp bool, now in
 		if online {
 			seen = now
 		}
-		return approximateStatus(now, seen)
+		return approximateStatus(now, seen, false)
 	}
 	if online {
 		return MakeTLUserStatusOnline(&UserStatus{
@@ -150,13 +150,54 @@ func MakeUserStatus(lastSeenAt int64, allowTimestamp bool) *UserStatus {
 	return PresenceStatus(lastSeenAt, UserOnlinePeriod, allowTimestamp, time.Now().Unix())
 }
 
-func approximateStatus(now, seen int64) *UserStatus {
+func approximateStatus(now, seen int64, byMe bool) *UserStatus {
+	var st *UserStatus
 	if seen <= 0 || now-seen >= 60*60*24*30 {
 		return nil
 	} else if now-seen >= 60*60*24*7 {
-		return MakeTLUserStatusLastMonth(nil).To_UserStatus()
+		st = MakeTLUserStatusLastMonth(&UserStatus{ByMe: byMe}).To_UserStatus()
 	} else if now-seen >= 60*60*24*3 {
-		return MakeTLUserStatusLastWeek(nil).To_UserStatus()
+		st = MakeTLUserStatusLastWeek(&UserStatus{ByMe: byMe}).To_UserStatus()
+	} else {
+		st = MakeTLUserStatusRecently(&UserStatus{ByMe: byMe}).To_UserStatus()
 	}
-	return MakeTLUserStatusRecently(nil).To_UserStatus()
+	return st
+}
+
+// PresenceOnline reports whether a stored heartbeat is still inside its window.
+func PresenceOnline(now, lastSeenAt int64, expires int32) bool {
+	return lastSeenAt > 0 && expires > 0 && now < lastSeenAt+int64(expires)
+}
+
+// StatusForViewer is the status a viewer sees for targetLastSeen, which is a
+// PresenceCursor. Exact online or offline requires the target to allow the
+// viewer and the viewer to allow the target. Otherwise the same buckets
+// users.getUsers returns are used. by_me is set when the bucket exists
+// because the viewer hid their own last seen.
+func StatusForViewer(targetLastSeen int64, targetAllowsViewer, viewerAllowsTarget bool, now int64) *UserStatus {
+	if targetAllowsViewer && viewerAllowsTarget {
+		return PresenceStatus(targetLastSeen, UserOnlinePeriod, true, now)
+	}
+	st := PresenceStatus(targetLastSeen, UserOnlinePeriod, false, now)
+	if st != nil && !viewerAllowsTarget {
+		st.ByMe = true
+	}
+	return st
+}
+
+// PushStatusForViewer is StatusForViewer for a status update that was just
+// written. exact is the online or offline object stored for viewers who may
+// see the timestamp. Everyone else gets the bucket for that same instant.
+func PushStatusForViewer(exact *UserStatus, lastSeenAt int64, expires int32, targetAllowsViewer, viewerAllowsTarget bool, now int64) *UserStatus {
+	if exact == nil {
+		return nil
+	}
+	if targetAllowsViewer && viewerAllowsTarget {
+		return exact
+	}
+	st := PresenceStatus(lastSeenAt, expires, false, now)
+	if st != nil && !viewerAllowsTarget {
+		st.ByMe = true
+	}
+	return st
 }

@@ -19,8 +19,6 @@
 package core
 
 import (
-	"time"
-
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -50,41 +48,39 @@ func (c *ContactsCore) ContactsGetStatuses(in *mtproto.TLContactsGetStatuses) (*
 		HasTo:   true,
 		To:      []int64{c.MD.UserId},
 	})
-	if err == nil && got != nil {
-		if me, ok := got.GetImmutableUser(c.MD.UserId); ok && me != nil {
-			setForwardContacts(me, idList)
-			for _, id := range idList {
-				peer, ok := got.GetImmutableUser(id)
-				if !ok || peer == nil {
-					continue
-				}
-				viewed := peer.ToUnsafeUser(me)
-				if viewed == nil || viewed.Status == nil {
-					continue
-				}
-				rList.Datas = append(rList.Datas, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
-					UserId: id,
-					Status: viewed.Status,
-				}).To_ContactStatus())
-			}
-			return rList, nil
-		}
-	}
+	// Privacy could not be applied. Return no exact timestamps rather than
+	// marking every contact online from the raw presence row.
+	rows := contactStatusesFromUsers(err == nil && got != nil, got, c.MD.UserId, idList)
+	rList.Datas = rows
+	return rList, nil
+}
 
-	// The user service was unreachable. Still honor the stored expires
-	// window instead of treating a 5 minute heartbeat as 1 minute.
-	lastSeenList, _ := c.svcCtx.Dao.UserGetLastSeens(c.ctx, &userpb.TLUserGetLastSeens{Id: idList})
-	now := time.Now().Unix()
-	for _, v := range lastSeenList.GetDatas() {
-		status := mtproto.PresenceStatus(v.LastSeenAt, v.Expires, true, now)
-		if status == nil {
+// contactStatusesFromUsers builds contact statuses only when the user load
+// succeeded. A failed load returns no rows: exact last seen must not be
+// filled in for every contact.
+func contactStatusesFromUsers(loaded bool, got *mtproto.MutableUsers, self int64, idList []int64) []*mtproto.ContactStatus {
+	if !loaded || got == nil {
+		return []*mtproto.ContactStatus{}
+	}
+	me, ok := got.GetImmutableUser(self)
+	if !ok || me == nil {
+		return []*mtproto.ContactStatus{}
+	}
+	setForwardContacts(me, idList)
+	out := make([]*mtproto.ContactStatus, 0, len(idList))
+	for _, id := range idList {
+		peer, ok := got.GetImmutableUser(id)
+		if !ok || peer == nil {
 			continue
 		}
-		rList.Datas = append(rList.Datas, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
-			UserId: v.UserId,
-			Status: status,
+		viewed := peer.ToUnsafeUser(me)
+		if viewed == nil || viewed.Status == nil {
+			continue
+		}
+		out = append(out, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
+			UserId: id,
+			Status: viewed.Status,
 		}).To_ContactStatus())
 	}
-
-	return rList, nil
+	return out
 }
