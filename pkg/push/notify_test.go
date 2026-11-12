@@ -22,6 +22,10 @@ func TestDecideMutePreviewAndSilent(t *testing.T) {
 	if !inherited.Send || !inherited.Preview || inherited.Sound != "default" {
 		t.Fatalf("inherit: %+v", inherited)
 	}
+	none := Decide(now, NotifySettings{Found: true, ShowPreviews: 1, Silent: 0, MuteUntil: 0, Sound: "none"}, NotifySettings{}, false, false)
+	if !none.Send || none.Sound != "" {
+		t.Fatalf("notificationSoundNone: %+v", none)
+	}
 	messageSilent := Decide(now, NotifySettings{}, NotifySettings{}, false, true)
 	if !messageSilent.Silent || messageSilent.Sound != "" {
 		t.Fatalf("message silent: %+v", messageSilent)

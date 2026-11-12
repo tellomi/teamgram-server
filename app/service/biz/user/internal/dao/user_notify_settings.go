@@ -30,7 +30,8 @@ import (
 )
 
 const (
-	userNotifySettingsKeyPrefix = "user_notify_settings"
+	// v2 drops cached rows from before sound and stories columns were read.
+	userNotifySettingsKeyPrefix = "user_notify_settings_v2"
 )
 
 func genUserNotifySettingsCacheKey(id int64, peerType int32, peerId int64) string {
@@ -60,11 +61,7 @@ func (d *Dao) GetUserNotifySettings(ctx context.Context, id int64, peerType int3
 				case mtproto.PEER_USERS,
 					mtproto.PEER_CHATS,
 					mtproto.PEER_BROADCASTS:
-
-					notifySettings.ShowPreviews = mtproto.BoolTrue
-					notifySettings.Silent = mtproto.BoolFalse
-					notifySettings.MuteUntil = &wrapperspb.Int32Value{Value: 0}
-					notifySettings.Sound = &wrapperspb.StringValue{Value: "default"}
+					applyDefaultPeerNotifySettings(notifySettings)
 				}
 			} else {
 				setPeerNotifySettingsByDO(notifySettings, do)
@@ -79,7 +76,50 @@ func (d *Dao) GetUserNotifySettings(ctx context.Context, id int64, peerType int3
 	return settings, nil
 }
 
+func applyDefaultPeerNotifySettings(settings *mtproto.PeerNotifySettings) {
+	def := mtproto.MakeDefaultPeerNotifySettings()
+	settings.ShowPreviews = def.ShowPreviews
+	settings.Silent = def.Silent
+	settings.MuteUntil = def.MuteUntil
+	settings.Sound = def.Sound
+	settings.IosSound = def.IosSound
+	settings.AndroidSound = def.AndroidSound
+	settings.OtherSound = def.OtherSound
+	settings.StoriesMuted = def.StoriesMuted
+	settings.StoriesHideSender = def.StoriesHideSender
+	settings.StoriesIosSound = def.StoriesIosSound
+	settings.StoriesAndroidSound = def.StoriesAndroidSound
+	settings.StoriesOtherSound = def.StoriesOtherSound
+}
+
 func setPeerNotifySettingsByDO(settings *mtproto.PeerNotifySettings, do *dataobject.UserNotifySettingsDO) {
+	filled := peerNotifySettingsFromDO(do)
+	settings.ShowPreviews = filled.ShowPreviews
+	settings.Silent = filled.Silent
+	settings.MuteUntil = filled.MuteUntil
+	settings.Sound = filled.Sound
+	settings.IosSound = filled.IosSound
+	settings.AndroidSound = filled.AndroidSound
+	settings.OtherSound = filled.OtherSound
+	settings.StoriesMuted = filled.StoriesMuted
+	settings.StoriesHideSender = filled.StoriesHideSender
+	settings.StoriesIosSound = filled.StoriesIosSound
+	settings.StoriesAndroidSound = filled.StoriesAndroidSound
+	settings.StoriesOtherSound = filled.StoriesOtherSound
+}
+
+// PeerNotifySettingsFromDO builds the TL object stored for one row.
+// -1 and an empty sound are unset. A row that only has the legacy sound
+// column exposes that sound on every platform until a client writes its slot.
+func PeerNotifySettingsFromDO(do *dataobject.UserNotifySettingsDO) *mtproto.PeerNotifySettings {
+	return peerNotifySettingsFromDO(do)
+}
+
+func peerNotifySettingsFromDO(do *dataobject.UserNotifySettingsDO) *mtproto.PeerNotifySettings {
+	settings := mtproto.MakeTLPeerNotifySettings(nil).To_PeerNotifySettings()
+	if do == nil {
+		return settings
+	}
 	if do.ShowPreviews != -1 {
 		settings.ShowPreviews = mtproto.ToBool(do.ShowPreviews == 1)
 	}
@@ -89,55 +129,59 @@ func setPeerNotifySettingsByDO(settings *mtproto.PeerNotifySettings, do *dataobj
 	if do.MuteUntil != -1 {
 		settings.MuteUntil = &wrapperspb.Int32Value{Value: do.MuteUntil}
 	}
-	if do.Sound != "-1" {
+	if do.Sound != "" && do.Sound != "-1" {
 		settings.Sound = &wrapperspb.StringValue{Value: do.Sound}
 	}
+	if do.StoriesMuted != -1 {
+		settings.StoriesMuted = mtproto.ToBool(do.StoriesMuted == 1)
+	}
+	if do.StoriesHideSender != -1 {
+		settings.StoriesHideSender = mtproto.ToBool(do.StoriesHideSender == 1)
+	}
+	ios := mtproto.DecodeNotificationSound(do.IosSound)
+	android := mtproto.DecodeNotificationSound(do.AndroidSound)
+	other := mtproto.DecodeNotificationSound(do.OtherSound)
+	if ios == nil && android == nil && other == nil {
+		if legacy := mtproto.DecodeNotificationSound(do.Sound); legacy != nil {
+			ios, android, other = legacy, legacy, legacy
+		}
+	}
+	settings.IosSound = ios
+	settings.AndroidSound = android
+	settings.OtherSound = other
+	sios := mtproto.DecodeNotificationSound(do.StoriesIosSound)
+	sandroid := mtproto.DecodeNotificationSound(do.StoriesAndroidSound)
+	sother := mtproto.DecodeNotificationSound(do.StoriesOtherSound)
+	settings.StoriesIosSound = sios
+	settings.StoriesAndroidSound = sandroid
+	settings.StoriesOtherSound = sother
+	return settings
 }
 
-func makeDOByPeerNotifySettings(settings *mtproto.PeerNotifySettings) (doMap map[string]interface{}) {
-	doMap = map[string]interface{}{}
+func makeDOByPeerNotifySettings(settings *mtproto.PeerNotifySettings) map[string]interface{} {
+	return mtproto.NotifyColumnUpdates(settings)
+}
 
-	if settings.ShowPreviews != nil {
-		if mtproto.FromBool(settings.ShowPreviews) {
-			doMap["show_previews"] = 1
-		} else {
-			doMap["show_previews"] = 0
-		}
-	} else {
-		doMap["show_previews"] = -1
+// notifyWriteColumns splits a partial update.
+// A first insert that only sets mute_until must store sound as "-1".
+// The column default is "default", and the read path treats that as an
+// explicit sound, so the chat would stop inheriting the global sound.
+// The duplicate-key update does not touch sound when the client omitted it.
+func notifyWriteColumns(settings *mtproto.PeerNotifySettings) (updates, insertOnly map[string]interface{}) {
+	updates = makeDOByPeerNotifySettings(settings)
+	insertOnly = map[string]interface{}{}
+	if _, ok := updates["sound"]; !ok {
+		insertOnly["sound"] = "-1"
 	}
-
-	if settings.Silent != nil {
-		if mtproto.FromBool(settings.Silent) {
-			doMap["silent"] = 1
-		} else {
-			doMap["silent"] = 0
-		}
-	} else {
-		doMap["silent"] = -1
-	}
-
-	if settings.MuteUntil != nil {
-		doMap["mute_until"] = settings.MuteUntil.Value
-	} else {
-		doMap["mute_until"] = -1
-	}
-
-	if settings.Sound != nil {
-		doMap["sound"] = settings.Sound.Value
-	} else {
-		doMap["sound"] = "-1"
-	}
-
-	return
+	return updates, insertOnly
 }
 
 func (d *Dao) SetUserPeerNotifySettings(ctx context.Context, id int64, peerType int32, peerId int64, settings *mtproto.PeerNotifySettings) error {
 	_, _, err := d.CachedConn.Exec(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			cMap := makeDOByPeerNotifySettings(settings)
-			return d.UserNotifySettingsDAO.InsertOrUpdateExt(ctx, id, peerType, peerId, cMap)
+			updates, insertOnly := notifyWriteColumns(settings)
+			return d.UserNotifySettingsDAO.InsertOrUpdateExt(ctx, id, peerType, peerId, updates, insertOnly)
 		},
 		genUserNotifySettingsCacheKey(id, peerType, peerId))
 
