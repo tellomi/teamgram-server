@@ -32,24 +32,25 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 		peer = mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
 	)
 
+	minDate, maxDate, hasDate, err := deleteHistoryDates(in)
+	if err != nil {
+		c.Logger.Errorf("messages.deleteHistory - error: %v", err)
+		return nil, err
+	}
+	// Official clients only send min_date / max_date for private chats.
+	if hasDate && !peer.IsUser() {
+		c.Logger.Errorf("messages.deleteHistory - error: %v", mtproto.ErrChatRevokeDateUnsupported)
+		return nil, mtproto.ErrChatRevokeDateUnsupported
+	}
+
 	if peer.IsChannel() {
 		return c.deleteChannelHistory(peer, in)
 	}
 
 	if !peer.IsChatOrUser() {
-		err := mtproto.ErrPeerIdInvalid
+		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.deleteHistory - error: %v", err)
 		return nil, err
-	}
-
-	if in.GetMinDate() != nil || in.GetMaxDate() != nil {
-		// TODO: not impl
-		pts := c.svcCtx.Dao.IDGenClient2.CurrentPtsId(c.ctx, c.MD.UserId)
-		return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
-			Pts:      pts,
-			PtsCount: 0,
-			Offset:   0,
-		}).To_Messages_AffectedHistory(), nil
 	}
 
 	affectedHistory, err := c.svcCtx.Dao.MsgClient.MsgDeleteHistory(c.ctx, &msgpb.TLMsgDeleteHistory{
@@ -60,6 +61,8 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 		JustClear: in.GetJustClear(),
 		Revoke:    in.Revoke,
 		MaxId:     in.MaxId,
+		MinDate:   minDate,
+		MaxDate:   maxDate,
 	})
 
 	if err != nil {
@@ -67,24 +70,47 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 		return nil, err
 	}
 
-	if !in.GetJustClear() {
-		if peer.IsUser() {
+	// A date range leaves the chat in place. A full delete removes the dialog
+	// only after the last slice (offset 0); earlier slices still have messages.
+	if !in.GetJustClear() && !hasDate && affectedHistory.GetOffset() == 0 && peer.IsUser() {
+		c.svcCtx.Dao.DialogDeleteDialog(c.ctx, &dialog.TLDialogDeleteDialog{
+			UserId:   c.MD.UserId,
+			PeerType: peer.PeerType,
+			PeerId:   peer.PeerId,
+		})
+		if in.Revoke && !peer.IsSelf() {
 			c.svcCtx.Dao.DialogDeleteDialog(c.ctx, &dialog.TLDialogDeleteDialog{
-				UserId:   c.MD.UserId,
+				UserId:   peer.PeerId,
 				PeerType: peer.PeerType,
-				PeerId:   peer.PeerId,
+				PeerId:   c.MD.UserId,
 			})
-			if in.Revoke && !peer.IsSelf() {
-				c.svcCtx.Dao.DialogDeleteDialog(c.ctx, &dialog.TLDialogDeleteDialog{
-					UserId:   peer.PeerId,
-					PeerType: peer.PeerType,
-					PeerId:   c.MD.UserId,
-				})
-			}
 		}
 	}
 
 	return affectedHistory, nil
+}
+
+// deleteHistoryDates reads the optional inclusive range.
+// A missing flag or a zero value is an open bound.
+func deleteHistoryDates(in *mtproto.TLMessagesDeleteHistory) (minDate, maxDate int32, hasDate bool, err error) {
+	if in.GetMinDate() != nil {
+		minDate = in.GetMinDate().GetValue()
+		hasDate = true
+		if minDate < 0 {
+			return 0, 0, true, mtproto.ErrMinDateInvalid
+		}
+	}
+	if in.GetMaxDate() != nil {
+		maxDate = in.GetMaxDate().GetValue()
+		hasDate = true
+		if maxDate < 0 {
+			return 0, 0, true, mtproto.ErrMaxDateInvalid
+		}
+	}
+	if minDate > 0 && maxDate > 0 && minDate > maxDate {
+		return 0, 0, true, mtproto.ErrMaxDateInvalid
+	}
+	return minDate, maxDate, hasDate, nil
 }
 
 func (c *MessagesCore) deleteChannelHistory(peer *mtproto.PeerUtil, in *mtproto.TLMessagesDeleteHistory) (*mtproto.Messages_AffectedHistory, error) {
