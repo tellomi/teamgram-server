@@ -6,12 +6,14 @@ package flood
 
 import (
 	"context"
+	"hash/fnv"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/zeromicro/go-zero/core/logx"
+	"github.com/zeromicro/go-zero/core/metric"
 )
 
 const (
@@ -43,10 +45,21 @@ type Rule struct {
 }
 
 // Config is the process-wide limiter. Mode is off, log, or enforce.
+// Modes overrides Mode for one bucket so a high-cost write can enforce
+// while reads stay in log. Empty means that bucket uses Mode.
 type Config struct {
 	Mode  string
 	Rules map[string]Rule
+	Modes map[string]string
 }
+
+var floodDecisions = metric.NewCounterVec(&metric.CounterVecOpts{
+	Namespace: "teamgram",
+	Subsystem: "flood",
+	Name:      "decisions_total",
+	Help:      "Flood decisions. bucket and result are fixed tokens, not identities.",
+	Labels:    []string{"bucket", "result"},
+})
 
 // DefaultConfig is what production runs. The numbers are above what an
 // official client does at startup, while scrolling, and while uploading,
@@ -132,7 +145,39 @@ func ConfigFromEnv() Config {
 		}
 		cfg.Rules[name] = rule
 	}
+	if cfg.Modes == nil {
+		cfg.Modes = map[string]string{}
+	}
+	for _, part := range strings.Split(os.Getenv("TELLOMI_FLOOD_BUCKET_MODE"), ",") {
+		name, mode, ok := parseBucketMode(part)
+		if !ok {
+			continue
+		}
+		if _, known := cfg.Rules[name]; !known {
+			continue
+		}
+		cfg.Modes[name] = mode
+	}
 	return cfg
+}
+
+func parseBucketMode(part string) (string, string, bool) {
+	part = strings.TrimSpace(part)
+	name, mode, ok := strings.Cut(part, ":")
+	if !ok {
+		return "", "", false
+	}
+	name = strings.TrimSpace(name)
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case ModeOff:
+		return name, ModeOff, name != ""
+	case ModeLog:
+		return name, ModeLog, name != ""
+	case ModeEnforce:
+		return name, ModeEnforce, name != ""
+	default:
+		return "", "", false
+	}
 }
 
 func parseRule(part string) (string, Rule, bool) {
@@ -182,6 +227,7 @@ type Decision struct {
 // Limiter checks the buckets for one RPC.
 type Limiter struct {
 	store Store
+	local *Memory
 	cfg   Config
 	now   func() time.Time
 }
@@ -193,7 +239,32 @@ func New(store Store, cfg Config) *Limiter {
 	if cfg.Mode == "" {
 		cfg.Mode = ModeEnforce
 	}
-	return &Limiter{store: store, cfg: cfg, now: time.Now}
+	return &Limiter{store: store, local: NewMemory(), cfg: cfg, now: time.Now}
+}
+
+func (l *Limiter) modeOf(bucket string) string {
+	if l.cfg.Modes != nil {
+		switch l.cfg.Modes[bucket] {
+		case ModeOff, ModeLog, ModeEnforce:
+			return l.cfg.Modes[bucket]
+		}
+	}
+	if l.cfg.Mode == "" {
+		return ModeEnforce
+	}
+	return l.cfg.Mode
+}
+
+// highCost is a write that spends money or fans out. A Redis outage still
+// bounds these with the process-local bucket. Reads stay open.
+func highCost(bucket string) bool {
+	switch bucket {
+	case BucketSend, BucketSendCodePhone, BucketSendCodeIP, BucketSignInPhone, BucketSignInIP,
+		BucketImportContacts, BucketReport, BucketUpload, BucketWebPreview, BucketResolve:
+		return true
+	default:
+		return false
+	}
 }
 
 type charge struct {
@@ -202,8 +273,16 @@ type charge struct {
 	id     string
 }
 
-// Allow spends a token on each bucket that applies. Redis errors allow the
-// call: a cache outage must not turn into a flood of false FLOOD_WAIT.
+type localSpend struct {
+	key   string
+	rule  Rule
+	fresh bool
+	gen   uint64
+}
+
+// Allow spends a token on each bucket that applies. A Redis error on a
+// read bucket allows that bucket. A Redis error on an enforce high-cost
+// bucket falls back to the process-local bucket so one replica stays bounded.
 func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 	ok := Decision{Allowed: true}
 	if l == nil || l.store == nil || l.cfg.Mode == ModeOff {
@@ -215,31 +294,91 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 	}
 	now := l.now()
 	var worst time.Duration
+	var worstID string
+	enforceHit := false
+	enforceSet := false
+	var spentLocal []localSpend
 	for _, ch := range charges {
+		mode := l.modeOf(ch.bucket)
+		if mode == ModeOff {
+			continue
+		}
 		rule, known := l.cfg.Rules[ch.bucket]
 		if !known || rule.Burst < 1 {
 			continue
 		}
-		allowed, wait, err := l.store.Take(ctx, "flood:"+ch.bucket+":"+ch.scope+":"+ch.id, rule, now)
+		key := "flood:" + ch.bucket + ":" + ch.scope + ":" + ch.id
+		allowed, wait, err := l.store.Take(ctx, key, rule, now)
 		if err != nil {
 			logx.WithContext(ctx).Errorf("flood: redis %s: %v", ch.bucket, err)
-			return ok
+			floodDecisions.Inc(ch.bucket, "store_error")
+			if mode != ModeEnforce || !highCost(ch.bucket) || l.local == nil {
+				continue
+			}
+			var fresh bool
+			var gen uint64
+			allowed, wait, fresh, gen, err = l.local.take(ctx, key, rule, now)
+			if err != nil {
+				continue
+			}
+			if allowed {
+				spentLocal = append(spentLocal, localSpend{key: key, rule: rule, fresh: fresh, gen: gen})
+			}
+			floodDecisions.Inc(ch.bucket, "local_fallback")
 		}
 		if allowed {
+			floodDecisions.Inc(ch.bucket, "allow")
 			continue
 		}
-		if wait > worst {
+		floodDecisions.Inc(ch.bucket, "limited")
+		ok.Limited = true
+		if mode == ModeEnforce {
+			enforceHit = true
+			if !enforceSet || wait >= worst {
+				enforceSet = true
+				worst = wait
+				ok.Bucket = ch.bucket
+				ok.Scope = ch.scope
+				worstID = ch.id
+			}
+			continue
+		}
+		if !enforceHit && wait > worst {
 			worst = wait
 			ok.Bucket = ch.bucket
 			ok.Scope = ch.scope
+			worstID = ch.id
 		}
-		ok.Limited = true
 	}
 	if !ok.Limited {
 		return ok
 	}
-	sec := int32(worst / time.Second)
-	if worst%time.Second != 0 {
+	sec := waitSeconds(worst)
+	sec = jitterWait(ok.Bucket, worstID, sec)
+	ok.WaitSec = sec
+	if !enforceHit {
+		logx.WithContext(ctx).Infof("flood: log-only %s %s would wait %ds method %s", ok.Bucket, ok.Scope, ok.WaitSec, in.Method)
+		ok.Allowed = true
+		return ok
+	}
+	// A rejected request puts back the one token it spent. A phone bucket
+	// this request created is removed only when nobody else has taken it
+	// since. Otherwise that other spend stays, and this request refunds
+	// just its own token.
+	for _, s := range spentLocal {
+		if s.fresh && l.local.dropIfCurrent(s.key, s.gen) {
+			continue
+		}
+		l.local.Refund(s.key, s.rule)
+	}
+	logx.WithContext(ctx).Infof("flood: FLOOD_WAIT_%d %s %s method %s", ok.WaitSec, ok.Bucket, ok.Scope, in.Method)
+	ok.Allowed = false
+	return ok
+}
+
+func waitSeconds(wait time.Duration) int32 {
+	sec := int32(wait / time.Second)
+	if wait%time.Second != 0 {
 		sec++
 	}
 	if sec < 1 {
@@ -248,15 +387,26 @@ func (l *Limiter) Allow(ctx context.Context, in Request) Decision {
 	if sec > 3600 {
 		sec = 3600
 	}
-	ok.WaitSec = sec
-	if l.cfg.Mode == ModeLog {
-		logx.WithContext(ctx).Infof("flood: log-only %s %s would wait %ds method %s", ok.Bucket, ok.Scope, ok.WaitSec, in.Method)
-		ok.Allowed = true
-		return ok
+	return sec
+}
+
+// jitterWait spreads retries by at most 10 percent. The extra seconds depend
+// on the bucket and subject, not on the wall clock, so a retry sees the same
+// wait and two subjects do not line up.
+func jitterWait(bucket, id string, sec int32) int32 {
+	if sec <= 1 {
+		return sec
 	}
-	logx.WithContext(ctx).Infof("flood: FLOOD_WAIT_%d %s %s method %s", ok.WaitSec, ok.Bucket, ok.Scope, in.Method)
-	ok.Allowed = false
-	return ok
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(bucket))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(id))
+	extra := sec * int32(h.Sum32()%11) / 100
+	sum := sec + extra
+	if sum > 3600 {
+		return 3600
+	}
+	return sum
 }
 
 func chargesFor(in Request) []charge {

@@ -203,6 +203,7 @@ services:
       # off disables them. TELLOMI_FLOOD_REDIS overrides session.yaml Cache.
       TELLOMI_FLOOD_MODE: ${TELLOMI_FLOOD_MODE:-enforce}
       TELLOMI_FLOOD_LIMITS: ${TELLOMI_FLOOD_LIMITS:-}
+      TELLOMI_FLOOD_BUCKET_MODE: ${TELLOMI_FLOOD_BUCKET_MODE:-}
       TELLOMI_FLOOD_REDIS: ${TELLOMI_FLOOD_REDIS:-}
       # Upload byte ledger. log records and does not reject. enforce needs the
       # shared Redis below; without it the process stays in log mode.

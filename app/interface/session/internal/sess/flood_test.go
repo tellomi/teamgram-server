@@ -34,6 +34,21 @@ func TestSessionReturnsFloodWait(t *testing.T) {
 	}
 }
 
+func TestHostOnlyIgnoresForwardedLists(t *testing.T) {
+	if hostOnly("203.0.113.8, 198.51.100.1") != "" {
+		t.Fatal("forwarded list accepted")
+	}
+	if hostOnly("203.0.113.8:443") != "203.0.113.8" {
+		t.Fatal("host:port")
+	}
+	if hostOnly("not-an-ip") != "" {
+		t.Fatal("garbage accepted")
+	}
+	if hostOnly("203.0.113.8") != "203.0.113.8" {
+		t.Fatal("bare ip")
+	}
+}
+
 func TestSessionLogModeLetsTheCallThrough(t *testing.T) {
 	sess, _ := passwordSession(t, mtproto.AuthStateNormal, 42, 42)
 	sess.sessList.cb.cb.Flood = flood.New(flood.NewMemory(), flood.Config{
