@@ -55,7 +55,7 @@ func (d *Dao) makeMessageInBox(fromId int64, peer *mtproto.PeerUtil, toUserId in
 	}
 }
 
-func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, error) {
+func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, error) {
 	var (
 		inBoxMsgId = d.IDGenClient2.NextMessageBoxId(ctx, toUserId)
 		dialogId   = mtproto.MakeDialogId(fromId, peer.PeerType, peer.PeerId)
@@ -199,7 +199,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 				PeerId:           fromId,
 				PeerDialogId:     mtproto.MakePeerDialogId(mtproto.PEER_USER, fromId),
 				TopMessage:       inBoxMsgId,
-				UnreadCount:      1,
+				UnreadCount:      phoneCallInboxUnread(message),
 				DraftMessageData: "null",
 				Date2:            date,
 			}
@@ -256,14 +256,22 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	// TODO(@benqi): process duplicate
 
 	if tR.Err != nil {
-		return nil, tR.Err
+		return nil, nil, tR.Err
 	}
 
+	var answeredRead *AnsweredCallRead
 	_, _, _ = d.ExecInvalidate(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdate(ctx, dialogDO)
 			logx.WithContext(ctx).Infof("lastInsertId:%d, rowsAffected: %d, result: %v, do: %v", lastInsertId, rowsAffected, err, dialogDO)
+			if err != nil || dialogDO.PeerType != mtproto.PEER_USER || dialogDO.UnreadCount != 0 {
+				return 0, 0, err
+			}
+			// The insert added no unread. Move the read cursor onto this
+			// service message only when that does not mark an earlier
+			// incoming message read. The caller's dialog is the outbox path.
+			answeredRead, err = d.advanceAnsweredCallRead(ctx, dialogDO.UserId, dialogDO.PeerId, inBoxMsgId)
 			return 0, 0, err
 		},
 		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
@@ -272,16 +280,20 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
 	inBox.PtsCount = 1
 
-	return inBox, nil
+	return inBox, answeredRead, nil
 }
 
-func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
+func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, error) {
 	peer := &mtproto.PeerUtil{
 		PeerType: mtproto.PEER_USER,
 		PeerId:   toId,
 	}
 	message.Out = false
-	return d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	box, read, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	if err != nil {
+		return nil, nil, err
+	}
+	return box, read, nil
 }
 
 func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
@@ -290,7 +302,8 @@ func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId i
 		PeerId:   chatId,
 	}
 	message.Out = false
-	return d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	box, _, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	return box, err
 }
 
 func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int64, inBoxList []*inbox.InboxMessageData) ([]*mtproto.MessageBox, error) {
@@ -304,7 +317,7 @@ func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int6
 			PeerId:   toId,
 		}
 		box.Message.Out = false
-		inBox, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
+		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
 		boxList = append(boxList, inBox)
 	}
 
@@ -321,7 +334,7 @@ func (d *Dao) SendChatMultiMessageToInbox(ctx context.Context, fromId, chatId, t
 			PeerId:   chatId,
 		}
 		box.Message.Out = false
-		inBox, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
+		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
 		boxList = append(boxList, inBox)
 	}
 
