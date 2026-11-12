@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -161,15 +162,16 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 	} else {
 		for _, inbox2 := range in.GetBoxList() {
 			var (
-				inBox *mtproto.MessageBox
-				err   error
+				inBox    *mtproto.MessageBox
+				answered *dao.AnsweredCallRead
+				err      error
 			)
 
 			peerType, peerID := inboxDialogPeer(in)
 			existed, folderID := c.inboxFolder(in.UserId, peerType, peerID)
 			switch in.PeerType {
 			case mtproto.PEER_USER:
-				inBox, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
+				inBox, answered, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
 					in.FromId,
 					in.PeerId,
 					inbox2.GetDialogMessageId(),
@@ -262,6 +264,19 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 			}
 
 			c.persistPtsUpdate(c.ctx, inBox.UserId, updateNewMessage)
+			if answered != nil {
+				// The message pts was allocated inside SendUserMessageToInbox
+				// and stored just above. This read takes the next pts and is
+				// appended after updateNewMessage. getDifference and the live
+				// packet therefore both apply the message first. still_unread
+				// is the dialog remainder, not a forced zero: a newer message
+				// keeps its own unread count, and an earlier unread message
+				// keeps the cursor from moving at all.
+				readPts := c.svcCtx.Dao.NextPtsId(c.ctx, in.UserId)
+				updateReadHistoryInbox := answeredCallReadUpdate(in.FromId, answered.MaxID, answered.StillUnread, readPts)
+				c.persistPtsUpdate(c.ctx, in.UserId, updateReadHistoryInbox)
+				pushUpdates.PushBackUpdate(updateReadHistoryInbox)
+			}
 			// Message pts is stored first. A folder move takes the next pts so
 			// getDifference replays the message and then the archive change.
 			if !existed || folderID == 1 {
