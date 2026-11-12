@@ -13,10 +13,13 @@ func (c *NotificationCore) AccountGetReactionsNotifySettings(_ *mtproto.TLAccoun
 		return defaultReactionsNotifySettings(), nil
 	}
 	raw, ok, err := c.svcCtx.Reactions.Load(c.ctx, c.MD.UserId)
-	if err != nil || !ok || raw == "" {
-		if err != nil {
-			c.Logger.Errorf("account.getReactionsNotifySettings - error: %v", err)
-		}
+	if err != nil {
+		// A missing row is (!ok, nil) and stays the default settings.
+		// A store error is not that row.
+		c.Logger.Errorf("account.getReactionsNotifySettings - error: %v", err)
+		return nil, err
+	}
+	if !ok || raw == "" {
 		return defaultReactionsNotifySettings(), nil
 	}
 	settings, err := decodeReactions(raw)
