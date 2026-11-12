@@ -15,6 +15,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/deletehistory"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 
 	"github.com/zeromicro/go-zero/zrpc"
@@ -109,6 +110,9 @@ func (m *defaultMsgClient) MsgDeleteHistory(ctx context.Context, in *msg.TLMsgDe
 	if md != nil {
 		ctx, _ = metadata.RpcMetadataToOutgoing(ctx, md)
 	}
+	// min_date / max_date are not fields of the internal msg.deleteHistory
+	// request. They travel in metadata next to the user metadata.
+	ctx = deletehistory.AppendOutgoing(ctx)
 	client := msg.NewRPCMsgClient(m.cli.Conn())
 	return client.MsgDeleteHistory(ctx, in)
 }
