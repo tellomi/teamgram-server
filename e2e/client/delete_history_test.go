@@ -30,7 +30,6 @@ func TestDeleteHistoryByDateAndOtherDevice(t *testing.T) {
 	if err := waitUntilNextSecond(ctx); err != nil {
 		t.Fatal(err)
 	}
-	minDate := int32(time.Now().Unix())
 	mid := fmt.Sprintf("delhist-mid-%d", time.Now().UnixNano())
 	midID, err := a.SendText(ctx, aToB, mid, nil)
 	if err != nil {
@@ -39,11 +38,19 @@ func TestDeleteHistoryByDateAndOtherDevice(t *testing.T) {
 	if err := waitUntilNextSecond(ctx); err != nil {
 		t.Fatal(err)
 	}
-	maxDate := int32(time.Now().Unix()) - 1
 	late := fmt.Sprintf("delhist-late-%d", time.Now().UnixNano())
 	if _, err := a.SendText(ctx, aToB, late, nil); err != nil {
 		t.Fatal(err)
 	}
+	sent, err := a.History(ctx, aToB, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlyDate, midDate, lateDate := dateOfText(sent, early), dateOfText(sent, mid), dateOfText(sent, late)
+	if earlyDate == 0 || midDate == 0 || lateDate == 0 || earlyDate >= midDate || lateDate <= midDate {
+		t.Fatalf("message dates early=%d mid=%d late=%d", earlyDate, midDate, lateDate)
+	}
+	minDate, maxDate := midDate, midDate
 	pts, qts, date, err := a2.State(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -171,6 +178,15 @@ func deleteHistory(t *testing.T, ctx context.Context, c *Client, req *mtproto.TL
 		t.Fatalf("messages.deleteHistory returned %T", obj)
 		return nil
 	}
+}
+
+func dateOfText(msgs []*mtproto.Message, text string) int32 {
+	for _, msg := range msgs {
+		if msg.GetMessage() == text {
+			return msg.GetDate()
+		}
+	}
+	return 0
 }
 
 func assertHistoryTexts(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer, want map[string]bool) {

@@ -49,6 +49,10 @@
     "archive_c": {"number": "9996610123", "code": "11111"},
     "ttl_a": {"number": "9996610131", "code": "11111"},
     "ttl_b": {"number": "9996610132", "code": "11111"},
-    "crash_sender": {"number": "9996610141", "code": "11111"}
+    "crash_sender": {"number": "9996610141", "code": "11111"},
+    "delhist_a": {"number": "9996610151", "code": "11111"},
+    "delhist_b": {"number": "9996610152", "code": "11111"},
+    "delbatch_a": {"number": "9996610153", "code": "11111"},
+    "delbatch_b": {"number": "9996610154", "code": "11111"}
   }
 }
