@@ -463,6 +463,11 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 			return false
 		}
 	case mtproto.AuthStateNeedPassword:
+		if c.sessList.cb.bindingRevoked(ctx) {
+			c.replyUnauthorized(ctx, gatewayId, msgId.msgId)
+			msgId.state = RECEIVED | RESPONSE_GENERATED
+			return false
+		}
 		if !checkRpcWithoutLogin(query) {
 			c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(mtproto.ErrSessionPasswordNeeded))
 			msgId.state = RECEIVED | RESPONSE_GENERATED

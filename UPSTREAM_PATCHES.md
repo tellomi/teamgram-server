@@ -8,7 +8,7 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 `auth.bindTempAuthKey` used to copy the user onto the permanent key and leave the temporary key's `auth_users` row in place, so one login was two authorizations. The temporary row is soft-deleted after the permanent row exists.
 
-A revoked session answered the next protected RPC with `401 AUTH_KEY_UNREGISTERED` and dropped `ping` / `ping_delay_disconnect` with no error, so the long connection stayed up and the client did not return to the login page. Both now receive that 401. `account.setAuthorizationTTL` used to store `users.authorization_ttl_days` and never read it. An inactive key (default 180 days, the column default) is soft-deleted on the next auth-state read and omitted from `account.getAuthorizations`. Its `devices` row is deleted in the same step. `tools/expireauthorizations` is the dry-run / backup / rollback for rows already past that window. It is not run from deploy.
+A revoked session answered the next protected RPC with `401 AUTH_KEY_UNREGISTERED` and dropped `ping` / `ping_delay_disconnect` with no error, so the long connection stayed up and the client did not return to the login page. Both now receive that 401. `account.setAuthorizationTTL` used to store `users.authorization_ttl_days` and never read it. `auth_users.date_active` was only the bind time, so treating it as last activity on deploy would delete sessions that are still in use. A ping or RPC now stores `date_active` (at most once an hour) and sets `activity_trusted`. Expiry runs only after that tracked activity has been idle for the full TTL. Rows that have never recorded a ping stay. The caller that is pinging is refreshed before the check, so it is not deleted. `tools/expireauthorizations` uses the same rule. Its backup tables are created before the transaction, and `--rollback` restores the authorization row and the device token. It is not run from deploy.
 
 | Piece | File |
 | --- | --- |
@@ -17,7 +17,9 @@ A revoked session answered the next protected RPC with `401 AUTH_KEY_UNREGISTERE
 | auth state and bind | `app/service/authsession/internal/core/authsession.getAuthStateData_handler.go`, `authsession.bindTempAuthKey_handler.go` |
 | 401 on ping and the next RPC | `app/interface/session/internal/sess/auth_state.go`, `session_service_messages.go`, `session_invoke.go` |
 | inactivity rule | `pkg/authzttl` |
+| trusted activity column | `teamgramd/deploy/sql/migrate-20261112-authorization-activity.sql` |
 | operator script | `tools/expireauthorizations` |
+| password-step recheck | `app/interface/session/internal/sess/main_auth_wrapper.go` |
 
 ## Verification quotas (A05 / A06)
 

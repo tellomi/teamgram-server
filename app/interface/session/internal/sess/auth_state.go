@@ -28,7 +28,7 @@ func authorizationResetTargets(wrapperAuthKeyID, updateAuthKeyID int64) bool {
 }
 
 // pingRevoked reports that this session must not answer ping.
-// bindingRevoked only reloads a Normal session. After
+// bindingRevoked reloads Normal and NeedPassword. After
 // updateAccountResetAuthorization the wrapper is already Deleted, and
 // that early return used to let onPing send pong anyway.
 func (c *session) pingRevoked(ctx context.Context) bool {

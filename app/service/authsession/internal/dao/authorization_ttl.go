@@ -11,12 +11,18 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
-// ApplyAuthorizationLifetime enforces account.setAuthorizationTTL on one key.
-// An inactive binding is soft-deleted and the cache copy is marked revoked so
-// this request already fails. A live binding refreshes date_active at most
-// once per TouchGap. now is the caller's clock so tests can pass a fixed time.
+// ApplyAuthorizationLifetime runs on a real RPC or ping (GetAuthStateData).
+// That call is activity, so date_active is refreshed before any expiry
+// decision. A session that is pinging now is not inactive. date_active left
+// over from bind, before activity was tracked, is not trusted and is not
+// inactivity either: the first ping stores now and starts the TTL clock.
+// now is the caller's clock so tests can pass a fixed time.
 func (d *Dao) ApplyAuthorizationLifetime(ctx context.Context, authKeyID int64, cData *CacheAuthData, now int64) {
 	if d == nil || cData == nil || cData.Revoked || cData.BindUser == nil || authKeyID == 0 || cData.UserId() == 0 {
+		return
+	}
+	d.noteAuthorizationActivity(ctx, authKeyID, cData, now)
+	if cData.Revoked || cData.BindUser == nil || !cData.BindUser.ActivityTrusted {
 		return
 	}
 	ttl := d.authorizationTTLDays(ctx, cData.UserId())
@@ -24,31 +30,36 @@ func (d *Dao) ApplyAuthorizationLifetime(ctx context.Context, authKeyID int64, c
 		d.expireAuthorization(ctx, cData.UserId(), authKeyID)
 		cData.BindUser = nil
 		cData.Revoked = true
-		return
 	}
-	d.touchAuthorization(ctx, authKeyID, cData, now)
 }
 
-// ExpireStaleAuthorizations drops this user's inactive keys before the device
-// list is built. The caller's own key is left for ApplyAuthorizationLifetime,
-// which already ran on this request and would have revoked it if it were idle.
+type authActivityRow struct {
+	AuthKeyID       int64 `db:"auth_key_id"`
+	DateActive      int64 `db:"date_active"`
+	ActivityTrusted int32 `db:"activity_trusted"`
+}
+
+// ExpireStaleAuthorizations drops keys whose tracked activity is past the TTL.
+// The caller is skipped. A row that has never recorded a ping or RPC
+// (activity_trusted = 0) is kept: its date_active is the bind time.
 func (d *Dao) ExpireStaleAuthorizations(ctx context.Context, userID, keepAuthKeyID, now int64) {
 	if d == nil || userID == 0 {
 		return
 	}
-	rows, err := d.AuthUsersDAO.SelectListByUserId(ctx, userID)
+	var rows []authActivityRow
+	err := d.QueryRowsPartial(ctx, &rows, "select auth_key_id, date_active, activity_trusted from auth_users where user_id = ? and deleted = 0", userID)
 	if err != nil {
 		logx.WithContext(ctx).Errorf("expire authorizations user_id=%d: %v", userID, err)
 		return
 	}
 	ttl := d.authorizationTTLDays(ctx, userID)
 	var stale []int64
-	for i := range rows {
-		if rows[i].AuthKeyId == 0 || rows[i].AuthKeyId == keepAuthKeyID {
+	for _, row := range rows {
+		if row.AuthKeyID == 0 || row.AuthKeyID == keepAuthKeyID || row.ActivityTrusted == 0 {
 			continue
 		}
-		if authzttl.Expired(rows[i].DateActive, now, ttl) {
-			stale = append(stale, rows[i].AuthKeyId)
+		if authzttl.Expired(row.DateActive, now, ttl) {
+			stale = append(stale, row.AuthKeyID)
 		}
 	}
 	for _, id := range stale {
@@ -95,28 +106,49 @@ func (d *Dao) expireAuthorization(ctx context.Context, userID, authKeyID int64) 
 	d.deleteDeviceTokens(ctx, userID, []int64{authKeyID})
 }
 
-func (d *Dao) touchAuthorization(ctx context.Context, authKeyID int64, cData *CacheAuthData, now int64) {
+// noteAuthorizationActivity stores this RPC or ping as date_active.
+// An untrusted row is always refreshed, even when the bind-time stamp is
+// recent, so the TTL starts at this request. A trusted row is refreshed at
+// most once per TouchGap. A zero-row update is re-read so a concurrent touch
+// cannot be treated as inactivity.
+func (d *Dao) noteAuthorizationActivity(ctx context.Context, authKeyID int64, cData *CacheAuthData, now int64) {
 	if d == nil || d.DB == nil || cData == nil || cData.BindUser == nil || authKeyID == 0 {
 		return
 	}
 	last := cData.DateActivated()
-	if now-last < authzttl.TouchGap {
+	if cData.BindUser.ActivityTrusted && now-last < authzttl.TouchGap {
 		return
 	}
 	cutoff := now - authzttl.TouchGap
-	res, err := d.DB.Exec(ctx, "update auth_users set date_active = ? where auth_key_id = ? and user_id = ? and deleted = 0 and date_active <= ?", now, authKeyID, cData.UserId(), cutoff)
+	res, err := d.DB.Exec(ctx, "update auth_users set date_active = ?, activity_trusted = 1 where auth_key_id = ? and user_id = ? and deleted = 0 and (activity_trusted = 0 or date_active <= ?)", now, authKeyID, cData.UserId(), cutoff)
 	if err != nil {
 		logx.WithContext(ctx).Errorf("touch authorization auth_key_id=%d: %v", authKeyID, err)
 		return
 	}
 	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n > 0 {
+		cData.BindUser.DateActivated = now
+		cData.BindUser.ActivityTrusted = true
+		if err := d.bumpAuthBindGen(ctx, authKeyID); err != nil {
+			logx.WithContext(ctx).Errorf("touch authorization cache auth_key_id=%d: %v", authKeyID, err)
+		}
 		return
 	}
-	cData.BindUser.DateActivated = now
-	if err := d.bumpAuthBindGen(ctx, authKeyID); err != nil {
-		logx.WithContext(ctx).Errorf("touch authorization cache auth_key_id=%d: %v", authKeyID, err)
+	d.reloadAuthorizationActivity(ctx, authKeyID, cData)
+}
+
+func (d *Dao) reloadAuthorizationActivity(ctx context.Context, authKeyID int64, cData *CacheAuthData) {
+	var row authActivityRow
+	err := d.QueryRowPartial(ctx, &row, "select auth_key_id, date_active, activity_trusted from auth_users where auth_key_id = ? and user_id = ? and deleted = 0 limit 1", authKeyID, cData.UserId())
+	if err != nil {
+		if errors.Is(err, sqlx.ErrNotFound) {
+			cData.BindUser = nil
+			cData.Revoked = true
+		}
+		return
 	}
+	cData.BindUser.DateActivated = row.DateActive
+	cData.BindUser.ActivityTrusted = row.ActivityTrusted != 0
 }
 
 // deleteDeviceTokens removes push registrations for these keys.

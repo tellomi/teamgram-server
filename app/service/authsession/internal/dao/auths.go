@@ -53,6 +53,9 @@ type BindUser struct {
 	DateCreated          int64 `json:"date_created"`
 	DateActivated        int64 `json:"date_activated"`
 	AndroidPushSessionId int64 `json:"android_push_sessionId"`
+	// ActivityTrusted is set once a ping or RPC has stored date_active.
+	// A bind-time date_active is not trusted and is not inactivity.
+	ActivityTrusted bool `json:"activity_trusted,omitempty"`
 }
 
 type CacheAuthData struct {
@@ -536,6 +539,7 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 							DateCreated:          do.DateCreated,
 							DateActivated:        do.DateActive,
 							AndroidPushSessionId: do.AndroidPushSessionId,
+							ActivityTrusted:      do.ActivityTrusted,
 						}
 					} else if d.authUserDeleted(ctx, authKeyId) {
 						cacheAuthData.Revoked = true

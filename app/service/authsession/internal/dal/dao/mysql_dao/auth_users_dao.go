@@ -102,7 +102,7 @@ func (dao *AuthUsersDAO) Select(ctx context.Context, authKeyId int64) (rValue *d
 		query string
 		do    = &dataobject.AuthUsersDO{}
 	)
-	query = "select id, auth_key_id, user_id, hash, date_created, date_active, android_push_session_id from auth_users where auth_key_id = ? and deleted = 0"
+	query = "select id, auth_key_id, user_id, hash, date_created, date_active, activity_trusted, android_push_session_id from auth_users where auth_key_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowPartial(ctx, do, query, authKeyId)
 

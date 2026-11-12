@@ -137,6 +137,43 @@ func TestNormalSessionDropsPingAfterRevocation(t *testing.T) {
 	}
 }
 
+func TestPasswordPendingSessionDropsPingAfterRevocation(t *testing.T) {
+	const authKeyID int64 = 81
+	fake := &fakeAuthsessionClient{
+		authStateData: authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
+			AuthKeyId: authKeyID,
+			KeyState:  int32(mtproto.AuthStateLogout),
+			UserId:    9,
+		}).To_AuthKeyStateData(),
+	}
+	sess, wrapper := normalSession(t, authKeyID, fake)
+	wrapper.state = mtproto.AuthStateNeedPassword
+	sess.onPing(context.Background(), "gate", newInboxMsg(3), &mtproto.TLPing{
+		Constructor: mtproto.CRC32_ping,
+		PingId:      5,
+	})
+	if wrapper.state != mtproto.AuthStateDeleted {
+		t.Fatalf("state = %d, want deleted", wrapper.state)
+	}
+	if fake.getAuthStateDataCalls != 1 {
+		t.Fatalf("lookups = %d", fake.getAuthStateDataCalls)
+	}
+	assertUnauthorizedReply(t, sess)
+
+	fake.getAuthStateDataCalls = 0
+	sess, wrapper = normalSession(t, authKeyID, fake)
+	wrapper.state = mtproto.AuthStateNeedPassword
+	if sess.onRpcRequest(context.Background(), "gate", "127.0.0.1", newInboxMsg(8), &mtproto.TLAccountGetPassword{
+		Constructor: mtproto.CRC32_account_getPassword,
+	}, nil) {
+		t.Fatal("revoked password step accepted account.getPassword")
+	}
+	if wrapper.state != mtproto.AuthStateDeleted {
+		t.Fatalf("rpc state = %d, want deleted", wrapper.state)
+	}
+	assertUnauthorizedReply(t, sess)
+}
+
 func assertUnauthorizedReply(t *testing.T, sess *session) {
 	t.Helper()
 	if sess.outQueue.oMsgs.Len() == 0 {
