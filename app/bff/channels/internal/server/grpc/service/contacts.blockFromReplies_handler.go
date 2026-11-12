@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -62,6 +63,9 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 			PeerType: mtproto.PEER_USER,
 			PeerId:   sender,
 		}); err != nil {
+			return nil, err
+		}
+		if err := statusbook.Shared().Forget(ctx, self, sender); err != nil {
 			return nil, err
 		}
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
@@ -42,6 +43,7 @@ type Dao struct {
 func New(c config.Config) *Dao {
 	rel := book.New(c.KV)
 	book.Install(rel)
+	statusbook.Install(statusbook.New(c.KV))
 	d := &Dao{
 		UserClient: user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		ChatClient: chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),

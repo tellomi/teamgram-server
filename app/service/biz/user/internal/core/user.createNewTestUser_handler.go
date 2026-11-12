@@ -94,6 +94,10 @@ retry:
 		return nil, err2
 	}
 
+	// Same presence row as a normal signup. This does not rewrite a row that
+	// account.updateStatus already stored for a real user.
+	c.svcCtx.Dao.PutLastSeenAt(c.ctx, userDO.Id, now, mtproto.UserOnlinePeriod)
+
 	return mtproto.MakeTLImmutableUser(&mtproto.ImmutableUser{
 		User:             c.svcCtx.Dao.MakeUserDataByDO(userDO),
 		LastSeenAt:       now,

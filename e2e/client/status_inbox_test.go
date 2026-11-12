@@ -10,8 +10,10 @@ import (
 )
 
 // TestOwnStatusIsNotPushedToOtherSessions is the official account.updateStatus
-// rule. Contacts learn the new status. The same user's other devices do not
-// get updateUserStatus for themselves. A second identical call must not fail.
+// rule. Contacts learn a real online/offline change. The same user's other
+// devices do not get updateUserStatus for themselves. A later foreground
+// heartbeat still succeeds. The unit tests cover sliding the expires from
+// the cached audience without reloading contacts.
 func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	a, _, aSelf, _ := sharedPair(t)
 	cfg := requireE2E(t)
@@ -36,17 +38,23 @@ func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	if _, _, _, err = contact.State(ctx); err != nil {
 		t.Fatal(err)
 	}
-	call := func() error {
+	call := func(offline bool) error {
 		_, err := a.Invoke(ctx, &mtproto.TLAccountUpdateStatus{
 			Constructor: mtproto.CRC32_account_updateStatus,
-			Offline:     mtproto.MakeTLBoolFalse(nil).To_Bool(),
+			Offline:     mtproto.ToBool(offline),
 		})
 		return err
 	}
-	if err = call(); err != nil {
+	// Signup and earlier startup calls can leave the account inside the
+	// online window. Going offline and back online is a real transition.
+	// A second online call is a heartbeat inside that window.
+	if err = call(true); err != nil {
 		t.Fatal(err)
 	}
-	if err = call(); err != nil {
+	if err = call(false); err != nil {
+		t.Fatal(err)
+	}
+	if err = call(false); err != nil {
 		t.Fatalf("repeat updateStatus: %v", err)
 	}
 	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
@@ -73,7 +81,40 @@ func loginFresh(t *testing.T, ctx context.Context, cfg Config, profile Profile, 
 	return c
 }
 
+func onlineExpiresFor(objs []mtproto.TLObject, userID int64) (int32, bool) {
+	var max int32
+	var found bool
+	for _, u := range statusUpdates(objs) {
+		if userID != 0 && u.GetUserId() != userID {
+			continue
+		}
+		st := u.GetStatus_USERSTATUS()
+		if st.GetPredicateName() != mtproto.Predicate_userStatusOnline {
+			continue
+		}
+		if !found || st.GetExpires() > max {
+			max = st.GetExpires()
+			found = true
+		}
+	}
+	return max, found
+}
+
 func sawUserStatusFor(objs []mtproto.TLObject, userID int64) bool {
+	return len(statusUpdates(objs)) > 0 && (userID == 0 || userStatusMatches(objs, userID))
+}
+
+func userStatusMatches(objs []mtproto.TLObject, userID int64) bool {
+	for _, u := range statusUpdates(objs) {
+		if u.GetUserId() == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func statusUpdates(objs []mtproto.TLObject) []*mtproto.Update {
+	var out []*mtproto.Update
 	for _, obj := range objs {
 		var ups []*mtproto.Update
 		switch v := obj.(type) {
@@ -90,12 +131,12 @@ func sawUserStatusFor(objs []mtproto.TLObject, userID int64) bool {
 			}
 		}
 		for _, u := range ups {
-			if u.GetPredicateName() == mtproto.Predicate_updateUserStatus && (userID == 0 || u.GetUserId() == userID) {
-				return true
+			if u.GetPredicateName() == mtproto.Predicate_updateUserStatus {
+				out = append(out, u)
 			}
 		}
 	}
-	return false
+	return out
 }
 
 // TestChannelReadInboxSurvivesReconnect checks the reader, not only the sender.

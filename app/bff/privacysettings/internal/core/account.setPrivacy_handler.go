@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -40,11 +41,19 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	}
 
 	ruleList := mtproto.ToPrivacyRuleListByInput(c.MD.UserId, in.Rules)
-
-	if _, err := c.svcCtx.Dao.UserClient.UserSetPrivacy(c.ctx, &userpb.TLUserSetPrivacy{
-		UserId:  c.MD.UserId,
-		KeyType: int32(key),
-		Rules:   ruleList,
+	named := mtproto.NewIDListHelper()
+	named.PickByRules(ruleList)
+	if err := applyPrivacyChange(key, c.MD.UserId, named.UserIdList, func() ([]int64, []int64, error) {
+		return c.readStatusContacts(key)
+	}, func() error {
+		_, err := c.svcCtx.Dao.UserClient.UserSetPrivacy(c.ctx, &userpb.TLUserSetPrivacy{
+			UserId:  c.MD.UserId,
+			KeyType: int32(key),
+			Rules:   ruleList,
+		})
+		return err
+	}, func(ids []int64) error {
+		return statusbook.Shared().Forget(c.ctx, ids...)
 	}); err != nil {
 		c.Logger.Errorf("account.setPrivacy - error: %v", err)
 		return nil, err
@@ -90,4 +99,50 @@ func (c *PrivacySettingsCore) AccountSetPrivacy(in *mtproto.TLAccountSetPrivacy)
 	})
 
 	return rValue, nil
+}
+
+// applyPrivacyChange reads both contact id lists before writing last-seen
+// privacy. Either read failing returns without writing, so a client retry
+// still sees the old rules. Forget runs after the write and its error is
+// returned; a failed clear leaves that generation unchanged.
+func applyPrivacyChange(key int, self int64, named []int64, read func() ([]int64, []int64, error), write func() error, forget func([]int64) error) error {
+	var forward, reverse []int64
+	if key == mtproto.STATUS_TIMESTAMP {
+		var err error
+		forward, reverse, err = read()
+		if err != nil {
+			return err
+		}
+	}
+	if err := write(); err != nil {
+		return err
+	}
+	if forget == nil {
+		return nil
+	}
+	return forget(statusbook.StatusPrivacyForgetIDs(self, named, forward, reverse))
+}
+
+func (c *PrivacySettingsCore) readStatusContacts(key int) ([]int64, []int64, error) {
+	if key != mtproto.STATUS_TIMESTAMP {
+		return nil, nil, nil
+	}
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return nil, nil, mtproto.ErrInternalServerError
+	}
+	forward, err := c.svcCtx.Dao.UserGetContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId})
+	if err != nil || forward == nil {
+		if err == nil {
+			err = mtproto.ErrInternalServerError
+		}
+		return nil, nil, err
+	}
+	reverse, err := c.svcCtx.Dao.UserGetReverseContactIdList(c.ctx, &userpb.TLUserGetContactIdList{UserId: c.MD.UserId})
+	if err != nil || reverse == nil {
+		if err == nil {
+			err = mtproto.ErrInternalServerError
+		}
+		return nil, nil, err
+	}
+	return forward.GetDatas(), reverse.GetDatas(), nil
 }

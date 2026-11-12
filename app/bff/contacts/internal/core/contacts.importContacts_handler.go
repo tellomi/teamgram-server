@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -47,7 +48,12 @@ func (c *ContactsCore) ContactsImportContacts(in *mtproto.TLContactsImportContac
 		return emptyImportedContacts(), nil
 	}
 
-	c.pushImportContactUpdates(imported.GetUpdateIdList())
+	peerIDs := imported.GetUpdateIdList()
+	if err := statusbook.Shared().Forget(c.ctx, append([]int64{c.MD.UserId}, peerIDs...)...); err != nil {
+		c.Logger.Errorf("contacts.importContacts forget audience: %v", err)
+		return nil, err
+	}
+	c.pushImportContactUpdates(peerIDs)
 
 	users := imported.GetUsers()
 	if users == nil {
@@ -123,6 +129,7 @@ func (c *ContactsCore) pushImportContactUpdates(peerIDs []int64) {
 				importPeerSettings(selfID),
 			),
 		})
+		c.pushContactStatuses(selfID, id)
 	}
 }
 

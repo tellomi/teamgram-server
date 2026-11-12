@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -132,6 +133,9 @@ func (c *ContactsCore) deleteContactIDs(ids []int64) error {
 		}); err != nil {
 			return err
 		}
+	}
+	if err := statusbook.Shared().Forget(c.ctx, append([]int64{c.MD.UserId}, ids...)...); err != nil {
+		return err
 	}
 	return nil
 }

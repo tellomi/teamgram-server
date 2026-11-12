@@ -20,6 +20,7 @@ package config
 
 import (
 	kafka "github.com/teamgram/marmota/pkg/mq"
+	gokv "github.com/zeromicro/go-zero/core/stores/kv"
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
@@ -29,4 +30,5 @@ type Config struct {
 	UserClient  zrpc.RpcClientConf
 	MsgClient   zrpc.RpcClientConf
 	SyncClient  *kafka.KafkaProducerConf
+	KV          gokv.KvConf `json:",optional"`
 }

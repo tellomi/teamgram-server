@@ -391,12 +391,14 @@ func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
 		user.Photo = m.ProfilePhoto()
 	}
 
-	// status
-	allowTimestamp := selfUser.CheckPrivacy(STATUS_TIMESTAMP, m.Id())
-	if allowTimestamp {
-		allowTimestamp = m.CheckPrivacy(STATUS_TIMESTAMP, selfUser.Id())
-	}
-	user.Status = MakeUserStatus(m.LastSeenAt, allowTimestamp)
+	// Exact last seen requires both sides to share it. Hiding your own last
+	// seen from this user hides theirs from you, and that bucket sets by_me.
+	user.Status = StatusForViewer(
+		m.LastSeenAt,
+		m.CheckPrivacy(STATUS_TIMESTAMP, selfUser.Id()),
+		selfUser.CheckPrivacy(STATUS_TIMESTAMP, m.Id()),
+		time.Now().Unix(),
+	)
 
 	return user
 }

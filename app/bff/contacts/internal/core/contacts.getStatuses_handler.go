@@ -38,17 +38,49 @@ func (c *ContactsCore) ContactsGetStatuses(in *mtproto.TLContactsGetStatuses) (*
 	for _, id := range cList.GetDatas() {
 		idList = append(idList, id.ContactUserId)
 	}
-
-	lastSeenList, _ := c.svcCtx.Dao.UserGetLastSeens(c.ctx, &userpb.TLUserGetLastSeens{
-		Id: idList,
-	})
-
-	for _, v := range lastSeenList.GetDatas() {
-		rList.Datas = append(rList.Datas, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
-			UserId: v.UserId,
-			Status: userpb.MakeUserStatus(v.LastSeenAt, true),
-		}).To_ContactStatus())
+	if len(idList) == 0 {
+		return rList, nil
 	}
 
+	got, err := c.svcCtx.Dao.UserGetMutableUsersV2(c.ctx, &userpb.TLUserGetMutableUsersV2{
+		Id:      append([]int64{c.MD.UserId}, idList...),
+		Privacy: true,
+		HasTo:   true,
+		To:      []int64{c.MD.UserId},
+	})
+	// Privacy could not be applied. Return no exact timestamps rather than
+	// marking every contact online from the raw presence row.
+	rows := contactStatusesFromUsers(err == nil && got != nil, got, c.MD.UserId, idList)
+	rList.Datas = rows
 	return rList, nil
+}
+
+// contactStatusesFromUsers builds contact statuses only when the user load
+// succeeded. A failed load returns no rows: exact last seen must not be
+// filled in for every contact.
+func contactStatusesFromUsers(loaded bool, got *mtproto.MutableUsers, self int64, idList []int64) []*mtproto.ContactStatus {
+	if !loaded || got == nil {
+		return []*mtproto.ContactStatus{}
+	}
+	me, ok := got.GetImmutableUser(self)
+	if !ok || me == nil {
+		return []*mtproto.ContactStatus{}
+	}
+	setForwardContacts(me, idList)
+	out := make([]*mtproto.ContactStatus, 0, len(idList))
+	for _, id := range idList {
+		peer, ok := got.GetImmutableUser(id)
+		if !ok || peer == nil {
+			continue
+		}
+		viewed := peer.ToUnsafeUser(me)
+		if viewed == nil || viewed.Status == nil {
+			continue
+		}
+		out = append(out, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
+			UserId: id,
+			Status: viewed.Status,
+		}).To_ContactStatus())
+	}
+	return out
 }
