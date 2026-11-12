@@ -1,10 +1,12 @@
 // Package ttlmedia stores when a recipient opens view-once or timed media
 // and rewrites both copies to the expired form. Object deletion is not done
-// here. After the message JSON no longer names the file, mediapurge.Note
-// drops the ref and enqueues media_purge_queue. That worker (PR 284) deletes
-// the R2 object after its grace period, and only when nothing else still
-// references it. upload.getFile is refused immediately by documents/photos
-// expired_at, including during that grace window.
+// here. The same transaction that rewrites message_data first sets
+// documents/photos.expired_at (when nothing else still references the file)
+// and drops message_media_refs. upload.getFile reads expired_at before it
+// touches the dfs chunk cache, so a history row that already shows the
+// expired form cannot be downloaded. The purge worker (PR 284) deletes the
+// R2 object after its grace period, and only when nothing else still
+// references it.
 package ttlmedia
 
 import (
@@ -14,6 +16,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/media/retention"
 	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 	"github.com/zeromicro/go-zero/core/jsonx"
 )
@@ -36,6 +40,15 @@ type Store struct {
 
 	tablesMu sync.Mutex
 	tables   []string
+
+	// holdOutside, when set, replaces the mediapurge holder check. Production
+	// leaves it nil. Tests use it to separate "who else holds the file" from
+	// the order of the writes.
+	holdOutside func(ctx context.Context, kind string, id int64, own []boxRow) (bool, error)
+	// forget, when set, is called in addition to retention.Forget. Tests use
+	// it to observe that the getFile cache drop happens before the history
+	// rewrite.
+	forget func(kind string, id int64)
 }
 
 var (
@@ -209,7 +222,14 @@ ORDER BY expire_at LIMIT ?`, now, limit)
 
 // Strip rewrites every live user-box copy of dialogMessageID to the expired
 // form, drops mediapurge refs, and refuses getFile when nothing else holds
-// the file. A second call is a no-op aside from the same ref drop.
+// the file. View-once and timed media share this path. View-once is still
+// invoked from readMessageContents before that RPC returns.
+//
+// expired_at is updated before any message_data write, inside the same
+// transaction. A crash rolls the whole unit back, so a retry cannot observe
+// an expired history row whose file is still downloadable. A second call
+// finishes anything the previous attempt left (history already empty,
+// expired_at still 0) and is otherwise a no-op aside from the same ref drop.
 func (s *Store) Strip(ctx context.Context, dialogMessageID int64) error {
 	if s == nil || dialogMessageID == 0 {
 		return nil
@@ -230,57 +250,240 @@ func (s *Store) Strip(ctx context.Context, dialogMessageID int64) error {
 		}
 		boxes = append(boxes, part...)
 	}
-	seen := map[mtproto.RemovedMedia]bool{}
-	var removed []mtproto.RemovedMedia
-	for i := range boxes {
-		raw, gone, err := rewrite(boxes[i].MessageData)
-		if err != nil {
-			return err
-		}
-		for _, m := range gone {
-			if !seen[m] {
-				seen[m] = true
-				removed = append(removed, m)
-			}
-		}
-		if raw != boxes[i].MessageData {
-			if err = s.save(ctx, boxes[i], raw); err != nil {
-				return err
-			}
-			boxes[i].MessageData = raw
-		}
-	}
 	if len(boxes) == 0 {
 		// Nothing left to rewrite. Do not mark the file expired: a missed
 		// shard would still be showing it.
 		_, err = s.db.ExecContext(ctx, `UPDATE message_ttl_open SET stripped = 1 WHERE dialog_message_id = ?`, dialogMessageID)
 		return err
 	}
+	plans, removed, err := planStrip(boxes, fallback)
+	if err != nil {
+		return err
+	}
+	doomed, err := s.chooseExpired(ctx, removed, boxes)
+	if err != nil {
+		return err
+	}
+	return s.commitStrip(ctx, dialogMessageID, plans, doomed)
+}
+
+type stripPlan struct {
+	box     boxRow
+	raw     string
+	changed bool
+}
+
+func planStrip(boxes []boxRow, fallback mtproto.RemovedMedia) ([]stripPlan, []mtproto.RemovedMedia, error) {
+	seen := map[mtproto.RemovedMedia]bool{}
+	var removed []mtproto.RemovedMedia
+	plans := make([]stripPlan, len(boxes))
+	for i := range boxes {
+		raw, gone, err := rewrite(boxes[i].MessageData)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, m := range gone {
+			if seen[m] {
+				continue
+			}
+			seen[m] = true
+			removed = append(removed, m)
+		}
+		plans[i] = stripPlan{box: boxes[i], raw: raw, changed: raw != boxes[i].MessageData}
+	}
 	if len(removed) == 0 && fallback.ID != 0 && !seen[fallback] {
 		removed = append(removed, fallback)
 	}
-	purge := mediapurge.Default()
-	for _, b := range boxes {
-		if purge == nil {
-			return fmt.Errorf("ttl media: media purge store is not bound")
-		}
-		if err = purge.Note(ctx, mediapurge.Box{
-			Kind:  mediapurge.BoxUser,
-			Owner: b.UserID,
-			ID:    b.BoxID,
-			Media: mediapurge.FromJSON(b.MessageData),
-		}); err != nil {
-			return err
-		}
-	}
-	now := time.Now().Unix()
+	return plans, removed, nil
+}
+
+// chooseExpired decides which ids getFile must refuse. The check runs before
+// any write. Boxes in this dialog do not count: they are the copies this
+// transaction is about to detach. Any other holder keeps the file.
+func (s *Store) chooseExpired(ctx context.Context, removed []mtproto.RemovedMedia, boxes []boxRow) ([]mtproto.RemovedMedia, error) {
+	ready := map[string]bool{}
+	seen := map[mtproto.RemovedMedia]bool{}
+	var doomed []mtproto.RemovedMedia
 	for _, m := range removed {
-		if err = s.refuseDownload(ctx, m.Kind, m.ID, now); err != nil {
+		if m.ID == 0 || seen[m] {
+			continue
+		}
+		seen[m] = true
+		if m.Kind != mtproto.MediaKindPhoto && m.Kind != mtproto.MediaKindDocument {
+			continue
+		}
+		held, err := s.othersHold(ctx, m.Kind, m.ID, boxes)
+		if err != nil {
+			return nil, err
+		}
+		if held {
+			continue
+		}
+		ok, known := ready[m.Kind]
+		if !known {
+			ok, err = s.expireReady(ctx, m.Kind)
+			if err != nil {
+				return nil, err
+			}
+			ready[m.Kind] = ok
+		}
+		if !ok {
+			continue
+		}
+		doomed = append(doomed, m)
+	}
+	return doomed, nil
+}
+
+func (s *Store) othersHold(ctx context.Context, kind string, id int64, own []boxRow) (bool, error) {
+	if s.holdOutside != nil {
+		return s.holdOutside(ctx, kind, id, own)
+	}
+	p := mediapurge.Default()
+	if p == nil {
+		return false, fmt.Errorf("ttl media: media purge store is not bound")
+	}
+	except := make([]mediapurge.ExceptBox, len(own))
+	for i, b := range own {
+		except[i] = mediapurge.ExceptBox{Owner: b.UserID, ID: b.BoxID}
+	}
+	return p.HeldOutside(ctx, mediapurge.Media{Kind: kind, ID: id}, except)
+}
+
+func (s *Store) expireReady(ctx context.Context, kind string) (bool, error) {
+	table, _, ok := expireTarget(kind)
+	if !ok {
+		return false, nil
+	}
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'expired_at'`, table).Scan(&n)
+	if missing(err) || missingColumn(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func expireTarget(kind string) (table, col string, ok bool) {
+	switch kind {
+	case mtproto.MediaKindDocument:
+		return "documents", "document_id", true
+	case mtproto.MediaKindPhoto:
+		return "photos", "photo_id", true
+	default:
+		return "", "", false
+	}
+}
+
+// commitStrip publishes expired_at before message_data. Both commit together,
+// so a reader cannot see the expired history while expired_at is still 0.
+func (s *Store) commitStrip(ctx context.Context, dialogID int64, plans []stripPlan, doomed []mtproto.RemovedMedia) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().Unix()
+	doomedSet := make(map[mediapurge.Media]bool, len(doomed))
+	for _, m := range doomed {
+		key := mediapurge.Media{Kind: m.Kind, ID: m.ID}
+		doomedSet[key] = true
+		// Drop a cached "still downloadable" answer before the history row
+		// changes. upload.getFile checks expired_at before the dfs chunk
+		// cache, and it does not keep a negative expiry answer.
+		s.forgetDownload(m.Kind, m.ID)
+		if err = markExpiredTx(ctx, tx, m.Kind, m.ID, now); err != nil {
 			return err
 		}
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE message_ttl_open SET stripped = 1 WHERE dialog_message_id = ?`, dialogMessageID)
+	for _, p := range plans {
+		if !p.changed {
+			continue
+		}
+		if err = saveTx(ctx, tx, p.box, p.raw); err != nil {
+			return err
+		}
+	}
+	dropped := map[mediapurge.Media]bool{}
+	for _, p := range plans {
+		gone, err := mediapurge.SyncBoxTx(ctx, tx, mediapurge.Box{
+			Kind:  mediapurge.BoxUser,
+			Owner: p.box.UserID,
+			ID:    p.box.BoxID,
+			Media: mediapurge.FromJSON(p.raw),
+		})
+		if err != nil {
+			return err
+		}
+		for _, m := range gone {
+			dropped[m] = true
+		}
+	}
+	when := time.Now().Add(mediapurge.Grace())
+	queue := make([]mediapurge.Media, 0, len(dropped))
+	for m := range dropped {
+		if doomedSet[m] {
+			queue = append(queue, m)
+		}
+	}
+	sort.Slice(queue, func(i, j int) bool {
+		if queue[i].Kind == queue[j].Kind {
+			return queue[i].ID < queue[j].ID
+		}
+		return queue[i].Kind < queue[j].Kind
+	})
+	for _, m := range queue {
+		if err = mediapurge.EnqueueTx(ctx, tx, m, when); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE message_ttl_open SET stripped = 1 WHERE dialog_message_id = ?`, dialogID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func markExpiredTx(ctx context.Context, tx *sql.Tx, kind string, id, now int64) error {
+	table, col, ok := expireTarget(kind)
+	if !ok || id == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE `+table+` SET expired_at = ? WHERE `+col+` = ? AND expired_at = 0`, now, id)
 	return err
+}
+
+func saveTx(ctx context.Context, tx *sql.Tx, b boxRow, raw string) error {
+	qtable := quote(b.Table)
+	if qtable == "" {
+		return nil
+	}
+	// Leave media_unread for the inbox consumer. It sends
+	// updateReadMessagesContents only while the column is still set, and this
+	// rewrite often commits before that consumer runs.
+	_, err := tx.ExecContext(ctx, `
+UPDATE `+qtable+` SET message_data = ?
+WHERE user_id = ? AND user_message_box_id = ? AND deleted = 0`, raw, b.UserID, b.BoxID)
+	return err
+}
+
+// forgetDownload drops this process's cached "not expired" answer. The files
+// service that serves upload.getFile does not share this process's memory;
+// that check re-reads expired_at whenever the cached answer would have been
+// "still live".
+func (s *Store) forgetDownload(kind string, id int64) {
+	if s != nil && s.forget != nil {
+		s.forget(kind, id)
+	}
+	switch kind {
+	case mtproto.MediaKindPhoto:
+		retention.Forget(retention.KindPhoto, id)
+	case mtproto.MediaKindDocument:
+		retention.Forget(retention.KindDocument, id)
+	}
 }
 
 func (s *Store) savedMedia(ctx context.Context, dialogID int64) (mtproto.RemovedMedia, error) {
@@ -348,50 +551,6 @@ func rewrite(raw string) (string, []mtproto.RemovedMedia, error) {
 		return raw, nil, err
 	}
 	return string(buf), removed, nil
-}
-
-func (s *Store) save(ctx context.Context, b boxRow, raw string) error {
-	qtable := quote(b.Table)
-	if qtable == "" {
-		return nil
-	}
-	// Leave media_unread for the inbox consumer. It sends
-	// updateReadMessagesContents only while the column is still set, and this
-	// rewrite often commits before that consumer runs.
-	_, err := s.db.ExecContext(ctx, `
-UPDATE `+qtable+` SET message_data = ?
-WHERE user_id = ? AND user_message_box_id = ? AND deleted = 0`, raw, b.UserID, b.BoxID)
-	return err
-}
-
-// refuseDownload sets expired_at when mediapurge no longer sees a holder.
-// The object itself stays until the purge worker's grace elapses. getFile
-// already returns FILE_ID_INVALID for expired_at != 0, so the file is
-// refused during that window. A remaining holder keeps the row downloadable.
-func (s *Store) refuseDownload(ctx context.Context, kind string, id, now int64) error {
-	if id == 0 || (kind != mtproto.MediaKindPhoto && kind != mtproto.MediaKindDocument) {
-		return nil
-	}
-	store := mediapurge.Default()
-	if store == nil {
-		return nil
-	}
-	hold, err := store.QuickHold(ctx, mediapurge.Media{Kind: kind, ID: id})
-	if err != nil {
-		return err
-	}
-	if hold != mediapurge.HoldNone {
-		return nil
-	}
-	table, col := "documents", "document_id"
-	if kind == mtproto.MediaKindPhoto {
-		table, col = "photos", "photo_id"
-	}
-	_, err = s.db.ExecContext(ctx, `UPDATE `+table+` SET expired_at = ? WHERE `+col+` = ? AND expired_at = 0`, now, id)
-	if missing(err) || missingColumn(err) {
-		return nil
-	}
-	return err
 }
 
 func (s *Store) messageTables(ctx context.Context) ([]string, error) {
