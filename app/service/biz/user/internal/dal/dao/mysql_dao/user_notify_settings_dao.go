@@ -94,7 +94,7 @@ func (dao *UserNotifySettingsDAO) SelectAll(ctx context.Context, userId int64) (
 		query  string
 		values []dataobject.UserNotifySettingsDO
 	)
-	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = ? and deleted = 0"
+	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, IFNULL(settings_json, '') AS settings_json from user_notify_settings where user_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowsPartial(ctx, &values, query, userId)
 
@@ -115,7 +115,7 @@ func (dao *UserNotifySettingsDAO) SelectAllWithCB(ctx context.Context, userId in
 		query  string
 		values []dataobject.UserNotifySettingsDO
 	)
-	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = ? and deleted = 0"
+	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, IFNULL(settings_json, '') AS settings_json from user_notify_settings where user_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowsPartial(ctx, &values, query, userId)
 
@@ -143,7 +143,7 @@ func (dao *UserNotifySettingsDAO) Select(ctx context.Context, userId int64, peer
 		query string
 		do    = &dataobject.UserNotifySettingsDO{}
 	)
-	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0"
+	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, IFNULL(settings_json, '') AS settings_json from user_notify_settings where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowPartial(ctx, do, query, userId, peerType, peerId)
 

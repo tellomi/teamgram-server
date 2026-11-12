@@ -649,6 +649,7 @@ CREATE TABLE `user_notify_settings` (
   `silent` int(11) NOT NULL DEFAULT '-1',
   `mute_until` int(11) NOT NULL DEFAULT '-1',
   `sound` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'default',
+  `settings_json` text COLLATE utf8mb4_unicode_ci NULL,
   `deleted` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
