@@ -10,8 +10,10 @@ import (
 )
 
 // TestOwnStatusIsNotPushedToOtherSessions is the official account.updateStatus
-// rule. Contacts learn the new status. The same user's other devices do not
-// get updateUserStatus for themselves. A second identical call must not fail.
+// rule. Contacts learn a real online/offline change. The same user's other
+// devices do not get updateUserStatus for themselves. A heartbeat that only
+// refreshes an already-open online window must still succeed and does not
+// have to push again.
 func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	a, _, aSelf, _ := sharedPair(t)
 	cfg := requireE2E(t)
@@ -36,17 +38,22 @@ func TestOwnStatusIsNotPushedToOtherSessions(t *testing.T) {
 	if _, _, _, err = contact.State(ctx); err != nil {
 		t.Fatal(err)
 	}
-	call := func() error {
+	call := func(offline bool) error {
 		_, err := a.Invoke(ctx, &mtproto.TLAccountUpdateStatus{
 			Constructor: mtproto.CRC32_account_updateStatus,
-			Offline:     mtproto.MakeTLBoolFalse(nil).To_Bool(),
+			Offline:     mtproto.ToBool(offline),
 		})
 		return err
 	}
-	if err = call(); err != nil {
+	// Signup and earlier startup calls can leave the account inside the
+	// online window. Going offline and back online is a real transition.
+	if err = call(true); err != nil {
 		t.Fatal(err)
 	}
-	if err = call(); err != nil {
+	if err = call(false); err != nil {
+		t.Fatal(err)
+	}
+	if err = call(false); err != nil {
 		t.Fatalf("repeat updateStatus: %v", err)
 	}
 	err = waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
