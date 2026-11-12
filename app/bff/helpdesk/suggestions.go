@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -55,13 +56,10 @@ func Open(dsn string, offer []string) *Suggestions {
 		logx.Errorf("helpdesk: mysql unavailable, suggestions stay in memory: %v", err)
 		return st
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		logx.Errorf("helpdesk: mysql unavailable, suggestions stay in memory: %v", err)
 		return st
 	}

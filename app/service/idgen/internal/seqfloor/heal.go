@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -85,7 +86,7 @@ func (c *Cache) Close() error {
 	if c == nil || c.db == nil {
 		return nil
 	}
-	return c.db.Close()
+	return mysqlpool.Discard(c.db)
 }
 
 // Heal loads MAX(id) for every sequence family and raises Redis counters that
@@ -102,20 +103,18 @@ func Heal(ctx context.Context, dsn string, store KV) (*Cache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("seqfloor: open mysql: %w", err)
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, fmt.Errorf("seqfloor: ping mysql: %w", err)
 	}
 	floors, err := LoadFloors(ctx, db)
 	if err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	raised, kept, err := RaiseAll(ctx, store, floors)
 	if err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	logx.Infof("seqfloor: database floors=%d raised=%d already-ahead=%d (qts has no mysql sequence; qts_updates_ngen_* stays wherever redis left it)", len(floors), raised, kept)

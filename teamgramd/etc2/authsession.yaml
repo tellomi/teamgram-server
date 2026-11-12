@@ -26,9 +26,9 @@ Telemetry:
 
 Mysql:
   DSN: teamgram:teamgram@tcp(mysql:3306)/teamgram?charset=utf8mb4&parseTime=true
-  Active: 64
-  Idle: 64
-  IdleTimeout: 4h
+  Active: 8
+  Idle: 2
+  IdleTimeout: 30m
   
 Cache:
   - Host: redis:6379

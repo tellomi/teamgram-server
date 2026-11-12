@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -63,13 +64,10 @@ func OpenMySQL(dsn string) (*MySQL, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(4)
-	db.SetConnMaxLifetime(time.Hour)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return nil, err
 	}
 	if _, err = db.ExecContext(ctx, stickerSchema); err != nil {
@@ -82,7 +80,7 @@ func (m *MySQL) Close() error {
 	if m == nil || m.db == nil {
 		return nil
 	}
-	return m.db.Close()
+	return mysqlpool.Discard(m.db)
 }
 
 func (m *MySQL) PeerByUsername(ctx context.Context, username string) (*storedPeer, error) {

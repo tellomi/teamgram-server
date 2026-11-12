@@ -50,8 +50,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(4)
-	db.SetConnMaxLifetime(time.Hour)
 
 	store := minio_util.MustNewMinioClient(&c.Minio)
 	var cache strippedbackfill.Cache

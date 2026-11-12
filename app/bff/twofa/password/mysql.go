@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -70,8 +71,11 @@ type mysqlStore struct {
 	db *sql.DB
 }
 
-// openDatabase is sql.Open. Tests replace it to simulate a driver failure.
-var openDatabase = sql.Open
+// openDatabase opens the shared process pool. Tests replace it to simulate
+// a driver failure. Password checks do not depend on which *sql.DB is used.
+var openDatabase = func(_, dsn string) (*sql.DB, error) {
+	return mysqltls.Open(dsn)
+}
 
 func openStore(dsn string) Store {
 	dsn = strings.TrimSpace(dsn)
@@ -91,13 +95,11 @@ func openStore(dsn string) Store {
 		logx.Errorf("cloud password: mysql open failed, state stays in memory: %v", err)
 		return newMemoryStore()
 	}
-	db.SetMaxOpenConns(8)
-	db.SetConnMaxLifetime(5 * time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
 		logx.Errorf("cloud password: mysql ping failed, state stays in memory: %v", err)
-		_ = db.Close()
+		_ = mysqlpool.Discard(db)
 		return newMemoryStore()
 	}
 	if err = execSchema(ctx, db); err != nil {

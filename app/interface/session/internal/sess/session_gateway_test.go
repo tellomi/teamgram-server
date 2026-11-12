@@ -1,6 +1,7 @@
 package sess
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -42,6 +43,29 @@ func TestSplitCloseStamp(t *testing.T) {
 	ip, at = SplitCloseStamp("1.2.3.4")
 	if ip != "1.2.3.4" || at != 0 {
 		t.Fatalf("unstamped %q %d", ip, at)
+	}
+}
+
+func TestBoundGatewaySendKeepsAnExistingDeadline(t *testing.T) {
+	parent, stop := context.WithTimeout(context.Background(), time.Hour)
+	defer stop()
+	child, cancel := boundGatewaySend(parent)
+	defer cancel()
+	got, ok := child.Deadline()
+	want, _ := parent.Deadline()
+	if !ok || !got.Equal(want) {
+		t.Fatal("an existing deadline was replaced")
+	}
+
+	child, cancel = boundGatewaySend(context.Background())
+	defer cancel()
+	deadline, ok := child.Deadline()
+	if !ok {
+		t.Fatal("a background context was left unbounded")
+	}
+	wait := time.Until(deadline)
+	if wait < 9*time.Second || wait > gatewaySendTimeout {
+		t.Fatalf("gateway send bound = %s", wait)
 	}
 }
 
