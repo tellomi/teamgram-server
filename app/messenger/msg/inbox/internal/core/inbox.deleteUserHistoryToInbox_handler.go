@@ -20,115 +20,148 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/deletehistory"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/zeromicro/go-zero/core/jsonx"
 )
 
 // InboxDeleteUserHistoryToInbox
 // inbox.deleteUserHistoryToInbox flags:# from_id:long peer_user_id:long just_clear:flags.1?true max_id:int = Void;
+//
+// max_id on this request is the caller's box id, not the peer's, so it is
+// not applied here. The caller revokes one page by dialog_message_id. This
+// method clears whatever of that dialog is still in the peer's box, one
+// page at a time, and returns the error when a page does not delete.
 func (c *InboxCore) InboxDeleteUserHistoryToInbox(in *inbox.TLInboxDeleteUserHistoryToInbox) (*mtproto.Void, error) {
-	var (
-		pts, ptsCount int32
-		peer          = mtproto.MakePeerUtil(mtproto.PEER_USER, in.FromId)
-	)
-
-	lastMessage, deleteIds := c.svcCtx.Dao.GetLastMessageAndIdListByDialog(c.ctx, in.PeerUserId, peer)
-	if len(deleteIds) == 0 ||
-		len(deleteIds) == 1 &&
-			lastMessage.GetPredicateName() == mtproto.Predicate_messageService &&
-			lastMessage.GetAction().GetPredicateName() == mtproto.Predicate_messageActionHistoryClear {
-		return mtproto.EmptyVoid, nil
-	}
-
-	// TODO(@benqi): chat
-	pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.PeerUserId, len(deleteIds)+1)
-	ptsCount = int32(len(deleteIds) + 1)
-
-	if in.JustClear {
-		deleteIds = deleteIds[1:]
-		if _, err := c.svcCtx.Dao.DeleteByMessageIdList(c.ctx, in.PeerUserId, deleteIds); err != nil {
+	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, in.FromId)
+	q := deletehistory.Query{JustClear: in.GetJustClear()}
+	var anchorID int32
+	var anchor *mtproto.Message
+	if q.JustClear {
+		top, err := c.svcCtx.Dao.ListDialogDeletePage(c.ctx, in.PeerUserId, peer, deletehistory.PageSelect(q, 0, 1), true)
+		if err != nil {
+			c.Logger.Errorf("inbox.deleteUserHistoryToInbox - error: %v", err)
 			return nil, err
 		}
-
-		clearHistoryMessage := mtproto.MakeTLMessageService(&mtproto.Message{
-			Out:         true,
-			Mentioned:   false,
-			MediaUnread: false,
-			Silent:      false,
-			Post:        false,
-			Legacy:      false,
-			Id:          lastMessage.GetId(),
-			FromId:      mtproto.MakePeerUser(in.PeerUserId),
-			PeerId:      mtproto.MakePeerUser(in.FromId),
-			ReplyTo:     nil,
-			Date:        lastMessage.GetDate(),
-			Action:      mtproto.MakeTLMessageActionHistoryClear(nil).To_MessageAction(),
-			TtlPeriod:   nil,
+		if len(top) > 0 {
+			anchorID = top[0].UserMessageBoxId
+			anchor = inboxMessage(&top[0])
+		}
+	}
+	for {
+		rows, err := c.svcCtx.Dao.ListDialogDeletePage(c.ctx, in.PeerUserId, peer, deletehistory.PageSelect(q, anchorID, deletehistory.Batch+1), false)
+		if err != nil {
+			c.Logger.Errorf("inbox.deleteUserHistoryToInbox - error: %v", err)
+			return nil, err
+		}
+		page, offset := deletehistory.Page(inboxRows(rows), deletehistory.Batch)
+		if len(page) == 0 {
+			break
+		}
+		ids := inboxIDs(page)
+		if _, err = c.svcCtx.Dao.DeleteByMessageIdList(c.ctx, in.PeerUserId, ids); err != nil {
+			c.Logger.Errorf("inbox.deleteUserHistoryToInbox - error: %v", err)
+			return nil, err
+		}
+		live, err := c.svcCtx.Dao.LiveMessageBoxIDs(c.ctx, in.PeerUserId, ids)
+		if err != nil {
+			return nil, err
+		}
+		deleted := make([]int32, 0, len(ids))
+		for _, id := range ids {
+			if _, still := live[id]; !still {
+				deleted = append(deleted, id)
+			}
+		}
+		if len(deleted) == 0 {
+			c.Logger.Errorf("inbox.deleteUserHistoryToInbox - deleted none of %d", len(ids))
+			return nil, mtproto.ErrInternalServerError
+		}
+		if err = c.pushInboxDelete(in.PeerUserId, peer, deleted, deleted[0]); err != nil {
+			return nil, err
+		}
+		if offset == 0 || len(deleted) < len(ids) {
+			if len(deleted) < len(ids) {
+				return nil, mtproto.ErrInternalServerError
+			}
+			break
+		}
+	}
+	if q.JustClear && anchor != nil && !deletehistory.IsHistoryClear(anchor) {
+		cleared := mtproto.MakeTLMessageService(&mtproto.Message{
+			Out:    true,
+			Id:     anchor.GetId(),
+			FromId: mtproto.MakePeerUser(in.PeerUserId),
+			PeerId: mtproto.MakePeerUser(in.FromId),
+			Date:   anchor.GetDate(),
+			Action: mtproto.MakeTLMessageActionHistoryClear(nil).To_MessageAction(),
 		}).To_Message()
-
-		_, _ = c.svcCtx.Dao.EditUserOutboxMessage(c.ctx, in.PeerUserId, in.FromId, clearHistoryMessage)
-
-		updateDeleteMessages := mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
-			Messages:  deleteIds,
-			Pts_INT32: pts - 2,
-			PtsCount:  ptsCount - 2,
-		}).To_Update()
-		updateReadHistoryInbox := mtproto.MakeTLUpdateReadHistoryInbox(&mtproto.Update{
-			Peer_PEER: peer.ToPeer(),
-			MaxId:     lastMessage.Id,
-			Pts_INT32: pts - 1,
-			PtsCount:  1,
-		}).To_Update()
-		updateEditMessage := mtproto.MakeTLUpdateEditMessage(&mtproto.Update{
-			Message_MESSAGE: clearHistoryMessage,
+		if _, err := c.svcCtx.Dao.EditUserOutboxMessage(c.ctx, in.PeerUserId, in.FromId, cleared); err != nil {
+			c.Logger.Errorf("inbox.deleteUserHistoryToInbox - error: %v", err)
+			return nil, err
+		}
+		pts := c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.PeerUserId, 1)
+		upd := mtproto.MakeTLUpdateEditMessage(&mtproto.Update{
+			Message_MESSAGE: cleared,
 			Pts_INT32:       pts,
 			PtsCount:        1,
 		}).To_Update()
-		c.persistPtsUpdate(c.ctx, in.PeerUserId, updateDeleteMessages)
-		c.persistPtsUpdate(c.ctx, in.PeerUserId, updateReadHistoryInbox)
-		c.persistPtsUpdate(c.ctx, in.PeerUserId, updateEditMessage)
-
-		pushUpdates := mtproto.MakeUpdatesByUpdates(
-			updateDeleteMessages,
-			updateReadHistoryInbox,
-			updateEditMessage,
-		)
-		_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(
-			c.ctx,
-			&sync.TLSyncPushUpdates{
-				UserId:  in.PeerUserId,
-				Updates: pushUpdates,
-			})
-	} else {
-		if _, err := c.svcCtx.Dao.DeleteByMessageIdList(c.ctx, in.PeerUserId, deleteIds); err != nil {
-			return nil, err
-		}
-
-		updateDeleteMessages := mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
-			Messages:  deleteIds,
-			Pts_INT32: pts - 2,
-			PtsCount:  ptsCount - 2,
-		}).To_Update()
-		updateReadHistoryInbox := mtproto.MakeTLUpdateReadHistoryInbox(&mtproto.Update{
-			Peer_PEER: peer.ToPeer(),
-			MaxId:     lastMessage.Id,
-			Pts_INT32: pts - 1,
-			PtsCount:  1,
-		}).To_Update()
-		c.persistPtsUpdate(c.ctx, in.PeerUserId, updateDeleteMessages)
-		c.persistPtsUpdate(c.ctx, in.PeerUserId, updateReadHistoryInbox)
-
-		pushUpdates := mtproto.MakeUpdatesByUpdates(
-			updateDeleteMessages,
-			updateReadHistoryInbox,
-		)
-		c.svcCtx.Dao.SyncClient.SyncPushUpdates(
-			c.ctx,
-			&sync.TLSyncPushUpdates{
-				UserId:  in.PeerUserId,
-				Updates: pushUpdates,
-			})
+		c.persistPtsUpdate(c.ctx, in.PeerUserId, upd)
+		_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+			UserId:  in.PeerUserId,
+			Updates: mtproto.MakeUpdatesByUpdates(upd),
+		})
 	}
-
 	return mtproto.EmptyVoid, nil
+}
+
+func (c *InboxCore) pushInboxDelete(userID int64, peer *mtproto.PeerUtil, ids []int32, maxID int32) error {
+	pts := c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, userID, len(ids)+1)
+	del := mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
+		Messages:  ids,
+		Pts_INT32: pts - 1,
+		PtsCount:  int32(len(ids)),
+	}).To_Update()
+	read := mtproto.MakeTLUpdateReadHistoryInbox(&mtproto.Update{
+		Peer_PEER: peer.ToPeer(),
+		MaxId:     maxID,
+		Pts_INT32: pts,
+		PtsCount:  1,
+	}).To_Update()
+	c.persistPtsUpdate(c.ctx, userID, del)
+	c.persistPtsUpdate(c.ctx, userID, read)
+	_, err := c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+		UserId:  userID,
+		Updates: mtproto.MakeUpdatesByUpdates(del, read),
+	})
+	return err
+}
+
+func inboxRows(rows []dataobject.MessagesDO) []deletehistory.Row {
+	out := make([]deletehistory.Row, 0, len(rows))
+	for i := range rows {
+		out = append(out, deletehistory.Row{ID: rows[i].UserMessageBoxId, Date: rows[i].Date2})
+	}
+	return out
+}
+
+func inboxIDs(rows []deletehistory.Row) []int32 {
+	ids := make([]int32, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].ID
+	}
+	return ids
+}
+
+func inboxMessage(row *dataobject.MessagesDO) *mtproto.Message {
+	if row == nil || row.MessageData == "" {
+		return nil
+	}
+	m := new(mtproto.Message)
+	if err := jsonx.UnmarshalFromString(row.MessageData, m); err != nil {
+		return nil
+	}
+	return m.FixData()
 }
