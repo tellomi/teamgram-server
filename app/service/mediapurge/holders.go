@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -28,6 +30,35 @@ const (
 	HoldScheduled Hold = "scheduled"
 	HoldExternal  Hold = "external"
 )
+
+// ExceptBox is a user message the caller is about to detach. HeldOutside
+// does not treat it as a reason to keep the file.
+type ExceptBox struct {
+	Owner int64
+	ID    int32
+}
+
+// HeldOutside reports whether something other than own still references m.
+// own are the user boxes this operation is about to stop pointing at the
+// file. A query error is returned so the caller keeps the object.
+func (s *Store) HeldOutside(ctx context.Context, m Media, own []ExceptBox) (bool, error) {
+	if s == nil || s.db == nil {
+		return false, errors.New("media purge store is not bound")
+	}
+	if m.ID == 0 {
+		return false, nil
+	}
+	h, err := s.userMessageHoldExcept(ctx, m, own)
+	if err != nil || h != HoldNone {
+		return h != HoldNone, err
+	}
+	h, err = s.refHoldExcept(ctx, m, own)
+	if err != nil || h != HoldNone {
+		return h != HoldNone, err
+	}
+	h, err = s.pointHold(ctx, m)
+	return h != HoldNone, err
+}
 
 // QuickHold is the check a delete RPC runs. It uses the message functional
 // indexes, the ref table, and the small point-lookup tables. Channel,
@@ -99,6 +130,49 @@ func (s *Store) userMessageHold(ctx context.Context, m Media) (Hold, error) {
 	return HoldNone, nil
 }
 
+// userMessageHoldExcept is userMessageHold ignoring the boxes in own. The
+// exclusion is in the SQL so a LIMIT 1 cannot stop on the copy being stripped
+// and miss a different message that still shows the file.
+func (s *Store) userMessageHoldExcept(ctx context.Context, m Media, own []ExceptBox) (Hold, error) {
+	expr := exprDocumentID
+	if m.Kind == KindPhoto {
+		expr = exprPhotoID
+	}
+	tables, err := s.messageTables(ctx)
+	if err != nil {
+		return HoldNone, err
+	}
+	for _, table := range tables {
+		q := `SELECT pinned FROM ` + table + ` WHERE deleted=0 AND ` + expr + `=?`
+		args := []any{m.ID}
+		if len(own) > 0 {
+			parts := make([]string, len(own))
+			for i, b := range own {
+				parts[i] = "(user_id=? AND user_message_box_id=?)"
+				args = append(args, b.Owner, b.ID)
+			}
+			q += " AND NOT (" + strings.Join(parts, " OR ") + ")"
+		}
+		q += " LIMIT 1"
+		var pinned int
+		err = s.db.QueryRowContext(ctx, q, args...).Scan(&pinned)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			if missing(err) {
+				continue
+			}
+			return HoldNone, err
+		}
+		if pinned != 0 {
+			return HoldPinned, nil
+		}
+		return HoldMessage, nil
+	}
+	return HoldNone, nil
+}
+
 func (s *Store) refHold(ctx context.Context, m Media) (Hold, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT box_kind, owner_id, box_id FROM message_media_refs
@@ -143,6 +217,77 @@ WHERE media_kind=? AND media_id=? LIMIT 32`, m.Kind, m.ID)
 		}
 	}
 	return HoldNone, rows.Err()
+}
+
+// refHoldExcept ignores user-box refs in own. Channel and scheduled refs
+// still count. More than refExceptLimit rows is treated as a hold so a
+// truncated scan cannot expire a widely shared file.
+const refExceptLimit = 64
+
+func (s *Store) refHoldExcept(ctx context.Context, m Media, own []ExceptBox) (Hold, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT box_kind, owner_id, box_id FROM message_media_refs
+WHERE media_kind=? AND media_id=? LIMIT `+strconv.Itoa(refExceptLimit), m.Kind, m.ID)
+	if missing(err) {
+		return HoldNone, nil
+	}
+	if err != nil {
+		return HoldNone, err
+	}
+	defer rows.Close()
+	tables, err := s.messageTables(ctx)
+	if err != nil {
+		return HoldNone, err
+	}
+	n := 0
+	for rows.Next() {
+		n++
+		var kind int
+		var owner int64
+		var boxID int32
+		if err = rows.Scan(&kind, &owner, &boxID); err != nil {
+			return HoldNone, err
+		}
+		if kind != BoxChannel && kind != BoxScheduled && boxExcluded(own, owner, boxID) {
+			continue
+		}
+		switch kind {
+		case BoxChannel:
+			ok, err := s.exists(ctx, `SELECT 1 FROM channel_messages WHERE channel_id=? AND message_id=? AND deleted=0 LIMIT 1`, owner, boxID)
+			if err != nil {
+				return HoldNone, err
+			}
+			if ok {
+				return HoldChannel, nil
+			}
+		case BoxScheduled:
+			return HoldScheduled, nil
+		default:
+			ok, err := s.userBoxLive(ctx, tables, owner, boxID)
+			if err != nil {
+				return HoldNone, err
+			}
+			if ok {
+				return HoldMessage, nil
+			}
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return HoldNone, err
+	}
+	if n == refExceptLimit {
+		return HoldMessage, nil
+	}
+	return HoldNone, nil
+}
+
+func boxExcluded(own []ExceptBox, owner int64, id int32) bool {
+	for _, b := range own {
+		if b.Owner == owner && b.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) userBoxLive(ctx context.Context, tables []string, owner int64, boxID int32) (bool, error) {

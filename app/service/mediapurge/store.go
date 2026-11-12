@@ -38,6 +38,59 @@ func (s *Store) Ensure(ctx context.Context) error {
 	return nil
 }
 
+// SyncBoxTx replaces the refs for one box inside an open transaction. It
+// does not commit and does not enqueue. dropped is media this box no longer
+// references.
+func SyncBoxTx(ctx context.Context, tx *sql.Tx, box Box) (dropped []Media, err error) {
+	if tx == nil || box.Owner == 0 || box.ID == 0 {
+		return nil, nil
+	}
+	prev, err := boxRefs(ctx, tx, box)
+	if err != nil {
+		return nil, err
+	}
+	if err = deleteBoxRefs(ctx, tx, box); err != nil {
+		return nil, err
+	}
+	next := map[Media]struct{}{}
+	for _, m := range box.Medias() {
+		if _, ok := next[m]; ok {
+			continue
+		}
+		next[m] = struct{}{}
+		if _, err = tx.ExecContext(ctx, `
+INSERT INTO message_media_refs (box_kind, owner_id, peer_type, peer_id, box_id, media_kind, media_id)
+VALUES (?,?,?,?,?,?,?)
+ON DUPLICATE KEY UPDATE media_id = VALUES(media_id)`,
+			box.Kind, box.Owner, box.PeerType, box.PeerID, box.ID, m.Kind, m.ID); err != nil {
+			return nil, err
+		}
+	}
+	for _, m := range prev {
+		if _, ok := next[m]; ok {
+			continue
+		}
+		dropped = append(dropped, m)
+	}
+	return dropped, nil
+}
+
+// EnqueueTx records one media id on an open transaction. A second enqueue
+// keeps the earlier available_at so a repeat does not push the deadline out.
+func EnqueueTx(ctx context.Context, tx *sql.Tx, m Media, available time.Time) error {
+	if tx == nil || m.ID == 0 {
+		return nil
+	}
+	now := time.Now().Unix()
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO media_purge_queue (media_kind, media_id, enqueued_at, available_at)
+VALUES (?,?,?,?)
+ON DUPLICATE KEY UPDATE
+  available_at = LEAST(available_at, VALUES(available_at))`,
+		m.Kind, m.ID, now, available.Unix())
+	return err
+}
+
 // Note replaces the media rows for one live box. A message with no media
 // clears any previous rows for that box.
 func (s *Store) Note(ctx context.Context, box Box) error {
