@@ -1,6 +1,7 @@
 package sess
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -95,6 +96,7 @@ func TestDeletedSessionDoesNotAnswerPing(t *testing.T) {
 			if fake.getAuthStateDataCalls != 0 {
 				t.Fatalf("lookups = %d, want 0", fake.getAuthStateDataCalls)
 			}
+			assertUnauthorizedReply(t, sess)
 		})
 	}
 }
@@ -130,7 +132,19 @@ func TestNormalSessionDropsPingAfterRevocation(t *testing.T) {
 			if fake.getAuthStateDataCalls != 1 {
 				t.Fatalf("lookups = %d", fake.getAuthStateDataCalls)
 			}
+			assertUnauthorizedReply(t, sess)
 		})
+	}
+}
+
+func assertUnauthorizedReply(t *testing.T, sess *session) {
+	t.Helper()
+	if sess.outQueue.oMsgs.Len() == 0 {
+		t.Fatal("revoked session produced no reply")
+	}
+	raw := sess.outQueue.oMsgs.Front().Value.(*outboxMsg).msg
+	if raw == nil || !bytes.Contains(raw.Body, []byte("AUTH_KEY_UNREGISTERED")) {
+		t.Fatal("revoked session did not answer 401 AUTH_KEY_UNREGISTERED")
 	}
 }
 

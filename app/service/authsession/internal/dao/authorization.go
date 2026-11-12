@@ -248,6 +248,7 @@ type idxId struct {
 }
 
 func (d *Dao) GetAuthorizations(ctx context.Context, userId int64, excludeAuthKeyId int64) (authorizations []*mtproto.Authorization) {
+	d.ExpireStaleAuthorizations(ctx, userId, excludeAuthKeyId, time.Now().Unix())
 	doList, _ := d.AuthUsersDAO.SelectListByUserId(ctx, userId)
 	if len(doList) == 0 {
 		return
@@ -348,6 +349,7 @@ func (d *Dao) ResetAuthorization(ctx context.Context, userId int64, authKeyId, h
 	if err := d.bumpAuthBindGens(ctx, keyIdList); err != nil {
 		logx.WithContext(ctx).Errorf("resetAuthorization cache user_id=%d: %v", userId, err)
 	}
+	d.deleteDeviceTokens(ctx, userId, keyIdList)
 
 	return keyIdList
 }

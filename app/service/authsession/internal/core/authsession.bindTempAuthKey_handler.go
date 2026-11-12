@@ -171,15 +171,12 @@ func (c *AuthsessionCore) AuthsessionBindTempAuthKey(in *authsession.TLAuthsessi
 			bindAuthKeyInner.GetPermAuthKeyId())
 
 		// signUp may have attached the user to the temp key before bind.
-		// Move that authorization onto the permanent key so every later
-		// temp key that binds here stays logged in.
-		if uid := c.svcCtx.Dao.GetAuthKeyUserId(c.ctx, bindAuthKeyInner.GetTempAuthKeyId()); uid != 0 {
-			if exist := c.svcCtx.Dao.GetAuthKeyUserId(c.ctx, bindAuthKeyInner.GetPermAuthKeyId()); exist == 0 {
-				if _, err = c.svcCtx.Dao.BindAuthKeyUser(c.ctx, bindAuthKeyInner.GetPermAuthKeyId(), uid); err != nil {
-					c.Logger.Errorf("auth.bindTempAuthKey - bind user on perm key: %v", err)
-					return nil, mapBindAuthKeyUserError(err)
-				}
-			}
+		// Move that authorization onto the permanent key and drop the temp
+		// row. Leaving both made one login look like two devices, and
+		// resetting the row on screen did not name the key still in use.
+		if err = c.svcCtx.Dao.AdoptTempAuthorization(c.ctx, bindAuthKeyInner.GetTempAuthKeyId(), bindAuthKeyInner.GetPermAuthKeyId()); err != nil {
+			c.Logger.Errorf("auth.bindTempAuthKey - adopt user onto perm key: %v", err)
+			return nil, mapBindAuthKeyUserError(err)
 		}
 	}
 

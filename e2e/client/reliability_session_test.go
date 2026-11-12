@@ -57,6 +57,15 @@ func TestReliabilitySessionRevocation(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("aged account.resetAuthorization: %v", err)
 	}
+	// gotd's ping waits only for pong. The 401 AUTH_KEY_UNREGISTERED body is
+	// covered by the session unit test; here the long connection must not
+	// answer, and the next RPC must be that 401.
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	if err = ios.Ping(pingCtx); err == nil {
+		pingCancel()
+		t.Fatal("revoked session still answered MTProto ping")
+	}
+	pingCancel()
 	_, _, _, err = ios.State(ctx)
 	assertRPC(t, err, 401, "AUTH_KEY_UNREGISTERED")
 	iosSession, ok := ios.Session()
@@ -85,6 +94,12 @@ func TestReliabilitySessionRevocation(t *testing.T) {
 	if _, err = android.Invoke(ctx, &mtproto.TLAuthResetAuthorizations{Constructor: mtproto.CRC32_auth_resetAuthorizations}); err != nil {
 		t.Fatalf("aged auth.resetAuthorizations: %v", err)
 	}
+	pingCtx, pingCancel = context.WithTimeout(ctx, 5*time.Second)
+	if err = pixel.Ping(pingCtx); err == nil {
+		pingCancel()
+		t.Fatal("revoked session still answered MTProto ping")
+	}
+	pingCancel()
 	_, _, _, err = pixel.State(ctx)
 	assertRPC(t, err, 401, "AUTH_KEY_UNREGISTERED")
 	pixelSession, ok := pixel.Session()

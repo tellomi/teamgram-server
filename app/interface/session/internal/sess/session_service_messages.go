@@ -139,6 +139,8 @@ func (c *session) onPing(ctx context.Context, gatewayId string, msgId *inboxMsg,
 		ping)
 
 	if c.pingRevoked(ctx) {
+		c.replyUnauthorized(ctx, gatewayId, msgId.msgId)
+		msgId.state = RECEIVED | RESPONSE_GENERATED
 		return
 	}
 
@@ -161,6 +163,8 @@ func (c *session) onPingDelayDisconnect(ctx context.Context, gatewayId string, m
 		pingDelayDisconnect)
 
 	if c.pingRevoked(ctx) {
+		c.replyUnauthorized(ctx, gatewayId, msgId.msgId)
+		msgId.state = RECEIVED | RESPONSE_GENERATED
 		return
 	}
 
