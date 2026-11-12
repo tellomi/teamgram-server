@@ -51,6 +51,8 @@
     "ttl_b": {"number": "9996610132", "code": "11111"},
     "crash_sender": {"number": "9996610141", "code": "11111"},
     "hist_a": {"number": "9996610151", "code": "11111"},
-    "hist_b": {"number": "9996610152", "code": "11111"}
+    "hist_b": {"number": "9996610152", "code": "11111"},
+    "notify_a": {"number": "9996610161", "code": "11111"},
+    "notify_b": {"number": "9996610162", "code": "11111"}
   }
 }

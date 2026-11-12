@@ -336,6 +336,19 @@ Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describe
 
 `0_migrate_helpers.sql` gained `teamgram_fail_if_set`. A name that already belongs to someone else stops the script (`D-26`). `SIGNAL` cannot run from a prepared statement (MySQL 1295), so the migrations `CALL` the procedure. How to apply this on a database that is already running, including the backup, is [docs/official-usernames.md](docs/official-usernames.md).
 
+## Notify settings sound and other sessions
+
+`inputPeerNotifySettings` now carries `sound:NotificationSound`, `stories_muted`, `stories_hide_sender` and `stories_sound`. The old helper only copied `show_previews`, `silent`, `mute_until` and the legacy sound string, so a current client saved a ringtone that the next `account.getNotifySettings` did not return. The sound is stored on the platform slot from `initConnection.lang_pack` (`android` / `ios` / `other`) and returned in `peerNotifySettings` as `android_sound`, `ios_sound` or `other_sound` (and the matching stories slots). A field the client did not set is left unchanged. `account.updateNotifySettings` reads the stored row and pushes `updateNotifySettings` to the user's other sessions. `updateNotifySettings` is marked for session delivery. The default `silent` flag is false, matching the constructor comment that notifications are not silent until a client sets the flag.
+
+Columns are added by `teamgramd/deploy/sql/migrate-20261127-notify-sound.sql`. Existing `show_previews`, `silent`, `mute_until` and `sound` values stay. A row that only has the legacy `sound` string is still returned as a notification sound on every platform.
+
+| Piece | File |
+| --- | --- |
+| Sound types and default | `proto/mtproto/peer_notify_settings_helper.go` |
+| Row mapping | `app/service/biz/user/internal/dao/user_notify_settings.go` |
+| RPC and push | `app/bff/notification/internal/core/account.updateNotifySettings_handler.go` |
+| Delivery | `app/messenger/sync/internal/core/core.go` |
+
 ## messages.deleteHistory dates and pages
 
 `messages.deleteHistory` with `min_date` / `max_date` used to return `messages.affectedHistory` with `pts_count = 0` and `offset = 0` without deleting. Official clients then stop. `min_date` deletes messages strictly newer than the timestamp and `max_date` deletes messages strictly older than it. A negative bound is `MIN_DATE_INVALID` / `MAX_DATE_INVALID`. A chat or channel with either date is `CHAT_REVOKE_DATE_UNSUPPORTED`.

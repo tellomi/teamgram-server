@@ -194,6 +194,17 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 			// carries the same update from the reaction store, not from pts.
 			needPush = true
 		},
+		mtproto.Predicate_updateNotifySettings: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// account.updateNotifySettings must reach the user's other
+			// sessions. needPush also wakes a background Android session.
+			needPush = true
+		},
 		mtproto.Predicate_updatePeerSettings: func(
 			userId int64,
 			update *mtproto.Update,
