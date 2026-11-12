@@ -903,6 +903,12 @@ func (m *TLMsgDeleteHistory) Encode(x *mtproto.EncodeBuf, layer int32) error {
 		if m.GetRevoke() == true {
 			flags |= 1 << 1
 		}
+		if m.GetMinDate() != 0 {
+			flags |= 1 << 2
+		}
+		if m.GetMaxDate() != 0 {
+			flags |= 1 << 3
+		}
 
 		x.UInt(flags)
 
@@ -912,6 +918,12 @@ func (m *TLMsgDeleteHistory) Encode(x *mtproto.EncodeBuf, layer int32) error {
 		x.Int(m.GetPeerType())
 		x.Long(m.GetPeerId())
 		x.Int(m.GetMaxId())
+		if m.GetMinDate() != 0 {
+			x.Int(m.GetMinDate())
+		}
+		if m.GetMaxDate() != 0 {
+			x.Int(m.GetMaxDate())
+		}
 
 	default:
 		// log.Errorf("")
@@ -943,6 +955,12 @@ func (m *TLMsgDeleteHistory) Decode(dBuf *mtproto.DecodeBuf) error {
 			m.Revoke = true
 		}
 		m.MaxId = dBuf.Int()
+		if (flags & (1 << 2)) != 0 {
+			m.MinDate = dBuf.Int()
+		}
+		if (flags & (1 << 3)) != 0 {
+			m.MaxDate = dBuf.Int()
+		}
 		return dBuf.GetError()
 
 	default:

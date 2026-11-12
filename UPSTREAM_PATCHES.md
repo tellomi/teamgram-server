@@ -2,6 +2,10 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## messages.deleteHistory slices
+
+`messages.deleteHistory` used to answer `min_date` / `max_date` with a successful empty `messages.affectedHistory` and, for a full clear, load every message id and delete them in one statement while always returning `offset = 0`. A failure after that point left the messages in `getHistory`. One call now deletes at most 100 matching messages (`max_id`, inclusive `min_date`/`max_date`; a zero date is open). `offset` is how many matches remain, so the client calls the same request again. `pts_count` is the pts actually written for that slice (`updateDeleteMessages`, and on the last slice `updateReadHistoryInbox` plus `updateEditMessage` when `just_clear` rewrites the newest message). A failed slice is not committed; earlier slices stay deleted. Date bounds on a basic group or channel return `CHAT_REVOKE_DATE_UNSUPPORTED`. `TELLOMI_MESSAGE_EXPIRY` and `TELLOMI_MESSAGE_EXPIRY_SWEEP` are unchanged.
+
 ## Verification quotas (A05 / A06)
 
 Phone and email codes share `pkg/verify.Limiter`. The counter is one Redis `INCR` per target per Asia/Shanghai calendar day. The default cap is 10 (`TELLOMI_SMS_DAILY_LIMIT`, `TELLOMI_EMAIL_DAILY_LIMIT`). The 11th call returns `PHONE_NUMBER_FLOOD` before the SMS or email sender runs. A number outside `TELLOMI_SMS_COUNTRY_ALLOW` (default `86`) returns `PHONE_NUMBER_INVALID` before that sender. `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` accepts other countries again. Resend, change-phone, confirm-phone, login email, and cloud-password email use this gate. The contract for clients is `docs/api/verification-limits.md`.

@@ -152,6 +152,10 @@ message TL_msg_deleteHistory {
   bool just_clear = 7;
   bool revoke = 8;
   int32 max_id = 9;
+  // 0 means that bound is open. Messages with date2 in
+  // [min_date, max_date] are deleted.
+  int32 min_date = 10;
+  int32 max_date = 11;
 }
 
 //--------------------------------------------------------------------------------------------
