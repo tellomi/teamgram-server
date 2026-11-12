@@ -20,56 +20,54 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/deletehistory"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
-	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 )
 
 // InboxDeleteChatHistoryToInbox
 // inbox.deleteChatHistoryToInbox from_id:long peer_chat_id:long max_id:int = Void;
 func (c *InboxCore) InboxDeleteChatHistoryToInbox(in *inbox.TLInboxDeleteChatHistoryToInbox) (*mtproto.Void, error) {
-	var (
-		pts, ptsCount int32
-		peer          = mtproto.MakePeerUtil(mtproto.PEER_CHAT, in.PeerChatId)
-	)
-
-	lastMessage, deleteIds := c.svcCtx.Dao.GetLastMessageAndIdListByDialog(c.ctx, in.FromId, peer)
-	if len(deleteIds) == 0 ||
-		len(deleteIds) == 1 &&
-			lastMessage.GetPredicateName() == mtproto.Predicate_messageService &&
-			lastMessage.GetAction().GetPredicateName() == mtproto.Predicate_messageActionHistoryClear {
-		return mtproto.EmptyVoid, nil
+	peer := mtproto.MakePeerUtil(mtproto.PEER_CHAT, in.PeerChatId)
+	// max_id is the caller's box id. This user's own ids are unrelated, so
+	// the page walks every live message in the chat dialog.
+	q := deletehistory.Query{}
+	for {
+		rows, err := c.svcCtx.Dao.ListDialogDeletePage(c.ctx, in.FromId, peer, deletehistory.PageSelect(q, 0, deletehistory.Batch+1), false)
+		if err != nil {
+			c.Logger.Errorf("inbox.deleteChatHistoryToInbox - error: %v", err)
+			return nil, err
+		}
+		page, offset := deletehistory.Page(inboxRows(rows), deletehistory.Batch)
+		if len(page) == 0 {
+			return mtproto.EmptyVoid, nil
+		}
+		ids := inboxIDs(page)
+		if _, err = c.svcCtx.Dao.DeleteByMessageIdList(c.ctx, in.FromId, ids); err != nil {
+			c.Logger.Errorf("inbox.deleteChatHistoryToInbox - error: %v", err)
+			return nil, err
+		}
+		live, err := c.svcCtx.Dao.LiveMessageBoxIDs(c.ctx, in.FromId, ids)
+		if err != nil {
+			return nil, err
+		}
+		deleted := make([]int32, 0, len(ids))
+		for _, id := range ids {
+			if _, still := live[id]; !still {
+				deleted = append(deleted, id)
+			}
+		}
+		if len(deleted) == 0 {
+			c.Logger.Errorf("inbox.deleteChatHistoryToInbox - deleted none of %d", len(ids))
+			return nil, mtproto.ErrInternalServerError
+		}
+		if err = c.pushInboxDelete(in.FromId, peer, deleted, deleted[0]); err != nil {
+			return nil, err
+		}
+		if offset == 0 {
+			return mtproto.EmptyVoid, nil
+		}
+		if len(deleted) < len(ids) {
+			return nil, mtproto.ErrInternalServerError
+		}
 	}
-
-	// TODO(@benqi): chat
-	pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.FromId, len(deleteIds)+1)
-	ptsCount = int32(len(deleteIds) + 1)
-
-	if _, err := c.svcCtx.Dao.DeleteByMessageIdList(c.ctx, in.FromId, deleteIds); err != nil {
-		return nil, err
-	}
-
-	updateDeleteMessages := mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
-		Messages:  deleteIds,
-		Pts_INT32: pts - 2,
-		PtsCount:  ptsCount - 2,
-	}).To_Update()
-	updateReadHistoryInbox := mtproto.MakeTLUpdateReadHistoryInbox(&mtproto.Update{
-		Peer_PEER: peer.ToPeer(),
-		MaxId:     lastMessage.Id,
-		Pts_INT32: pts - 1,
-		PtsCount:  1,
-	}).To_Update()
-	c.persistPtsUpdate(c.ctx, in.FromId, updateDeleteMessages)
-	c.persistPtsUpdate(c.ctx, in.FromId, updateReadHistoryInbox)
-
-	pushUpdates := mtproto.MakeUpdatesByUpdates(updateDeleteMessages, updateReadHistoryInbox)
-
-	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(
-		c.ctx,
-		&sync.TLSyncPushUpdates{
-			UserId:  in.FromId,
-			Updates: pushUpdates,
-		})
-
-	return mtproto.EmptyVoid, nil
 }

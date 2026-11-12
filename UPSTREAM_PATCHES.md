@@ -349,6 +349,26 @@ Columns are added by `teamgramd/deploy/sql/migrate-20261127-notify-sound.sql`. E
 | RPC and push | `app/bff/notification/internal/core/account.updateNotifySettings_handler.go` |
 | Delivery | `app/messenger/sync/internal/core/core.go` |
 
+## messages.deleteHistory dates and pages
+
+`messages.deleteHistory` with `min_date` / `max_date` used to return `messages.affectedHistory` with `pts_count = 0` and `offset = 0` without deleting. Official clients then stop. `min_date` deletes messages strictly newer than the timestamp and `max_date` deletes messages strictly older than it. A negative bound is `MIN_DATE_INVALID` / `MAX_DATE_INVALID`. A chat or channel with either date is `CHAT_REVOKE_DATE_UNSUPPORTED`.
+
+A private chat or basic group is deleted in pages of 100. `offset` is the oldest id in the page when more messages match, and the client passes it back as `max_id` (`id <= max_id`). `offset` stays positive when a row in the page is still present, so a partial delete is not reported as finished. `pts` is allocated only for messages that the follow-up read shows are gone, and `updateDeleteMessages` lists only those ids. `just_clear` without a date window keeps the newest message and turns it into `messageActionHistoryClear` on the last page. The dialog row is removed only when the call finished a full clear (`offset = 0`, no dates, not `just_clear`).
+
+The date flags are not fields of the internal `msg.deleteHistory` request. The BFF stores them on the context and the msg client copies them into gRPC metadata.
+
+| Piece | File |
+| --- | --- |
+| Page planner | `app/messenger/msg/deletehistory/plan.go` |
+| Bounded read | `app/messenger/msg/internal/dao/history_delete.go` |
+| User and basic-group delete | `app/messenger/msg/msg/internal/core/delete_user_history.go` |
+| BFF | `app/bff/messages/internal/core/messages.deleteHistory_handler.go` |
+| Peer pages | `app/messenger/msg/inbox/internal/core/inbox.deleteUserHistoryToInbox_handler.go`, `inbox.deleteChatHistoryToInbox_handler.go` |
+
 ## Account enforcement
 
 `pkg/enforcement` records platform sanctions on a user id. `Migrate` creates tables in the database named by `TELLOMI_ENFORCEMENT_MYSQL`; that name cannot be `teamgram`, and `OpenMySQL` does not run DDL. `TELLOMI_ENFORCEMENT_STORE=mysql` is the production switch that opens `TELLOMI_ENFORCEMENT_MYSQL`. `memory` and an empty value do not install the gate. Tables are created only by `/app/bin/enforcement-migrate`, not at startup. A substantiated user report is confirmed by a username in `TELLOMI_ENFORCEMENT_ADMINS` before a permanent sanction is approved. That same allowlist lifts one active sanction in the 777001 chat: the command is `解封案件` plus a sanction or review id, or `解封用户` plus a numeric user id, and the lift happens only after a later reply that is exactly `是`. The command does not listen on a port. The initiator still cannot lift a sanction they created, and `Revoke` still refuses the approver. Content decisions are `POST /internal/v1/enforcement/content/review` on `TELLOMI_ENFORCEMENT_ADDR` (docker network, not a published port). `TELLOMI_ENFORCEMENT_CREATE=1` is required before a new case can be written. Existing cases stay in force when creation is turned off. Rolling back the binary does not drop sanction, audit, or outbox rows. Notices are private messages from user 777000, written to an outbox in the same transaction as the case and delivered afterwards at least once. Appeals use `Judge`. When `TELLOMI_AI=1` and `TELLOMI_AI_API_KEY` are set, that judge is `pkg/tellomiai.Client`. The 7696-term list is not an input. Login, signup, future-auth bind, password recovery, QR accept, send/edit/forward, profile edit, phone change, discover credential, audience token, and the session invoke path call the same gate. A permanent login stashes a one-time disposition grant on the verified phone-code hash; `DispositionHandler` then reads 777000 notices and files that user's appeal. Credential recheck verifies the discover JWT and ignores a caller-supplied user id. Detail is [docs/account-enforcement.md](docs/account-enforcement.md) and [docs/api/enforcement-contract.md](docs/api/enforcement-contract.md).
+
+## Answered call unread
+
+`messageActionPhoneCall` for a connected 1:1 call (hangup or disconnect with duration, voice and video) is written on the callee's inbox with unread delta 0. `read_inbox_max_id` moves onto that service message only when no earlier incoming message is still above the cursor. Otherwise the cursor and the existing unread count stay. Missed, busy, and a hangup with no duration still add one unread. The caller's outbox dialog is not updated. `updateReadHistoryInbox` is appended after `updateNewMessage` and takes the next pts. Files: `proto/mtproto/message_action.go`, `app/messenger/msg/internal/dao/inbox.go`, `app/messenger/msg/internal/dao/phone_call_read.go`, `app/messenger/msg/inbox/internal/core/inbox.sendUserMessageToInboxV2_handler.go`.

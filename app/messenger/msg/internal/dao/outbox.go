@@ -481,6 +481,20 @@ func (d *Dao) EditUserOutboxMessage(ctx context.Context, fromId, toId int64, mes
 	return d.editOutboxMessage(ctx, fromId, mtproto.PEER_USER, toId, message)
 }
 
+// SaveEditedMessage writes the edited body only.
+// editOutboxMessage also calls NextPtsId. History clear already reserved the
+// pts for updateEditMessage, so a second NextPtsId would be a gap with no
+// persisted update.
+func (d *Dao) SaveEditedMessage(ctx context.Context, userID int64, peerType int32, peerID int64, message *mtproto.Message) error {
+	if message == nil {
+		return nil
+	}
+	message.SanitizeEntities()
+	mData, _ := jsonx.Marshal(message)
+	_, err := d.MessagesDAO.UpdateEditMessage(ctx, string(mData), message.GetMessage(), userID, message.GetId())
+	return err
+}
+
 func (d *Dao) EditChatOutboxMessage(ctx context.Context, fromId, toId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
 	return d.editOutboxMessage(ctx, fromId, mtproto.PEER_CHAT, toId, message)
 }
