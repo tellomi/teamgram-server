@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -69,6 +70,38 @@ func (e *BucketError) Unwrap() error { return e.Err }
 // not log it; a photo often lives under only one of photos/ and avatars/.
 var ErrNotFound = errors.New("object does not exist")
 
+const (
+	r2DialTimeout           = 3 * time.Second
+	r2TLSHandshakeTimeout   = 3 * time.Second
+	r2ResponseHeaderTimeout = 5 * time.Second
+	r2KeepAlive             = 30 * time.Second
+	r2IdleConnTimeout       = 5 * time.Minute
+	r2MaxIdleConns          = 256
+	r2MaxIdleConnsPerHost   = 32
+	r2WarmupConns           = 4
+)
+
+// configureObjectTransport turns on keep-alive and a connection pool for
+// the (usually R2) object-storage endpoint. Chengdu to R2 often pays
+// 0.8–1.5s for a new TLS session, so idle connections are kept longer
+// than Go's default.
+func configureObjectTransport(t *http.Transport) *http.Transport {
+	if t == nil {
+		return t
+	}
+	t.DisableKeepAlives = false
+	t.MaxIdleConns = r2MaxIdleConns
+	t.MaxIdleConnsPerHost = r2MaxIdleConnsPerHost
+	t.IdleConnTimeout = r2IdleConnTimeout
+	t.DialContext = (&net.Dialer{
+		Timeout:   r2DialTimeout,
+		KeepAlive: r2KeepAlive,
+	}).DialContext
+	t.TLSHandshakeTimeout = r2TLSHandshakeTimeout
+	t.ResponseHeaderTimeout = r2ResponseHeaderTimeout
+	return t
+}
+
 func MustNewMinioClient(c *MinioConfig) *MinioUtil {
 	u, err := NewMinioClient(c)
 	if err != nil {
@@ -104,6 +137,28 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 	}
 	var transport http.RoundTripper
 	if cfg.transport != nil {
+		if base, ok := cfg.transport.(*http.Transport); ok {
+			// Keep the caller's TLS config (tests pin InsecureSkipVerify)
+			// and any timeouts they already set. Still apply keep-alive
+			// and pool caps.
+			dial := base.DialContext
+			tlsCfg := base.TLSClientConfig
+			tlsTO := base.TLSHandshakeTimeout
+			hdrTO := base.ResponseHeaderTimeout
+			configureObjectTransport(base)
+			if dial != nil {
+				base.DialContext = dial
+			}
+			if tlsCfg != nil {
+				base.TLSClientConfig = tlsCfg
+			}
+			if tlsTO > 0 {
+				base.TLSHandshakeTimeout = tlsTO
+			}
+			if hdrTO > 0 {
+				base.ResponseHeaderTimeout = hdrTO
+			}
+		}
 		transport = cfg.transport
 	} else {
 		base, err := minio.DefaultTransport(cfg.UseSSL)
@@ -113,16 +168,10 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		// Default dial is 30s and the header wait is a minute. upload.getFile's
 		// RPC deadline is shorter, so a dead endpoint becomes
 		// "context deadline exceeded" before the sticker fallback runs.
-		// These also bound the TCP connect to TELLOMI_S3_HTTP_PROXY and the
-		// TLS handshake after CONNECT. A hung proxy does not fall back to a
-		// direct dial.
-		base.DialContext = (&net.Dialer{
-			Timeout:   3 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext
-		base.TLSHandshakeTimeout = 3 * time.Second
-		base.ResponseHeaderTimeout = 5 * time.Second
-		transport = base
+		// Keep-alives and pool caps, plus the same dial/TLS/header
+		// timeouts as master so a hung TELLOMI_S3_HTTP_PROXY does not
+		// fall back to a direct dial.
+		transport = configureObjectTransport(base)
 	}
 	var err error
 	transport, err = applyObjectHTTPProxy(transport, cfg.HTTPProxy, cfg.Endpoint, cfg.UseSSL)
@@ -154,7 +203,33 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 			u.hot.start()
 		}
 	}
+	u.warmup(context.Background())
 	return u, nil
+}
+
+// warmup opens a few HTTP connections to the object store and leaves them
+// in the idle pool so the first upload.getFile after a deploy does not
+// pay a cold TCP+TLS handshake to R2. A failed warmup does not prevent
+// startup; the next request will dial again.
+func (m *MinioUtil) warmup(ctx context.Context) {
+	if m == nil || m.client == nil {
+		return
+	}
+	names, err := bucketsToCheck(m.c)
+	if err != nil || len(names) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i := 0; i < r2WarmupConns; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = m.client.BucketExists(ctx, names[0])
+		}()
+	}
+	wg.Wait()
 }
 
 func (m *MinioUtil) verifyBuckets(ctx context.Context) error {

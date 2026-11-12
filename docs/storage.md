@@ -202,12 +202,13 @@ The cache is per process. Caps are bytes. `0` turns that tier off.
 ```
 TELLOMI_DFS_CHUNK_CACHE_MEM=67108864
 TELLOMI_DFS_CHUNK_CACHE_DISK=536870912
-TELLOMI_DFS_CHUNK_CACHE_DIR=/tmp/tellomi-dfs-chunk-cache
+TELLOMI_DFS_CHUNK_CACHE_DIR=/data/tellomi/dfs-chunk-cache
 ```
 
-Unset, those are 64MiB in memory and 512MiB on disk under the temp directory.
-Photo and document objects are immutable for a key, so a hit is not rechecked.
-Restart the dfs process after lowering a cap; the next start evicts down to it.
+Unset, those are 64MiB in memory and 512MiB on disk under `/data/tellomi/dfs-chunk-cache`.
+The directory must be a host bind mount (compose: `./data/dfs-chunk-cache:/data/tellomi/dfs-chunk-cache`; production: `/data/tellomi/production-main-20261111/dfs-chunk-cache:/data/tellomi/dfs-chunk-cache`). `/tmp` lives on the container overlay and is empty after every image replace, which is why the default is no longer under `/tmp`. The disk LRU is rebuilt from the files on startup (each cached range has a sibling `.key`), so a redeploy can keep serving cached `upload.getFile` ranges without going back to R2. Photo and document objects are immutable for a key, so a hit is not rechecked. Restart the dfs process after lowering a cap; the next start evicts down to it.
+
+The object-storage HTTP client keeps a pool of idle TLS connections to the S3/R2 endpoint (keep-alive 30s, up to 32 idle connections per host, idle timeout 5 minutes) and opens a few of them during startup. A cold Chengdu→R2 TCP+TLS session is often 0.8–1.5s; reuse avoids paying that on the first `getFile` after a deploy. No new ports. The cache volume uses the existing data disk.
 
 ## Content identity
 

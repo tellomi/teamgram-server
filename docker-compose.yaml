@@ -60,6 +60,9 @@ services:
       # HTTP CONNECT proxy for the S3/R2 client only. Empty dials the endpoint
       # directly. Does not set HTTP_PROXY for push, AI, or link preview.
       TELLOMI_S3_HTTP_PROXY: ${TELLOMI_S3_HTTP_PROXY:-}
+      # Disk LRU for upload.getFile. Must be a bind mount under /data so a
+      # container replace does not wipe it. No new ports.
+      TELLOMI_DFS_CHUNK_CACHE_DIR: ${TELLOMI_DFS_CHUNK_CACHE_DIR:-/data/tellomi/dfs-chunk-cache}
       # Public RTMP ingest base returned by phone.getGroupCallStreamRtmpUrl.
       TELLOMI_RTMP_URL: ${TELLOMI_RTMP_URL:-rtmp://127.0.0.1:1935/live}
       # Empty disables the OTLP exporter. Set jaeger:4317 only when a collector is up.
@@ -366,6 +369,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-teamgram}
     volumes:
       - ./data/logs:/app/logs
+      - ${TELLOMI_DFS_CHUNK_CACHE_HOST_DIR:-./data/dfs-chunk-cache}:/data/tellomi/dfs-chunk-cache
       - ${TELLOMI_APNS_KEY_FILE:-/dev/null}:/etc/tellomi/apns/AuthKey.p8:ro
       - ${TELLOMI_FCM_CREDENTIALS_FILE:-/dev/null}:/etc/tellomi/fcm/service-account.json:ro
     logging:
