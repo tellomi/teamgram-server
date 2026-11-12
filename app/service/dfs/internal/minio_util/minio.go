@@ -23,8 +23,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
@@ -43,6 +45,7 @@ type MinioUtil struct {
 	// chunks caches photo and document ranges from upload.getFile.
 	// Nil disables it (both caps are 0).
 	chunks *chunkCache
+	hot    *hotTier
 }
 
 // BucketError is returned when a configured bucket is missing or not accessible.
@@ -86,6 +89,10 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 	}
 	if cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
 		return nil, fmt.Errorf("object storage credentials are empty (set %s and %s)", EnvAccessKeyID, EnvSecretAccessKey)
+	}
+	applyHotDefaults(&cfg.hot)
+	if err := validateHotTier(cfg.hot, cfg.HTTPProxy); err != nil {
+		return nil, err
 	}
 	region := cfg.Region
 	if region == "" {
@@ -137,6 +144,16 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 	if err := u.verifyBuckets(context.Background()); err != nil {
 		return nil, err
 	}
+	if cfg.hot.Enabled {
+		ht, err := newHotTier(cfg.hot, u)
+		if err != nil {
+			return nil, err
+		}
+		u.hot = ht
+		if !cfg.hot.noLoop {
+			u.hot.start()
+		}
+	}
 	return u, nil
 }
 
@@ -184,7 +201,39 @@ func contentTypeFor(path string) string {
 	return "binary/octet-stream"
 }
 
+func (m *MinioUtil) hotEnabled(class string) bool {
+	return m != nil && m.hot != nil && hotChatClass(class)
+}
+
+func (m *MinioUtil) putRemote(ctx context.Context, class, path string, r io.Reader, size int64, contentType string) (minio.UploadInfo, error) {
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return minio.UploadInfo{}, err
+	}
+	if contentType == "" {
+		contentType = contentTypeFor(path)
+	}
+	info, err := m.client.PutObject(ctx, bucket, key, r, size, minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	return info, err
+}
+
 func (m *MinioUtil) put(ctx context.Context, class, path string, r io.Reader, size int64, contentType string) (minio.UploadInfo, error) {
+	if m.hotEnabled(class) {
+		meta, err := m.hot.write(class, path, r, size)
+		if err != nil {
+			return minio.UploadInfo{}, err
+		}
+		if m.chunks != nil {
+			m.chunks.forgetPath(class, path)
+		}
+		bucket, key, err := resolveLocation(m.c, class, path)
+		if err != nil {
+			return minio.UploadInfo{}, err
+		}
+		return minio.UploadInfo{Bucket: bucket, Key: key, Size: meta.Size, ETag: `"` + meta.SHA256 + `"`}, nil
+	}
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return minio.UploadInfo{}, err
@@ -248,6 +297,14 @@ func (m *MinioUtil) CopyClassObject(ctx context.Context, srcClass, srcPath, dstC
 	default:
 		return fmt.Errorf("refusing to copy from %s", srcClass)
 	}
+	if m.hotEnabled(srcClass) && m.hot.has(srcClass, srcPath) {
+		data, err := m.hot.readRange(srcClass, srcPath, 0, 1<<30)
+		if err != nil {
+			return err
+		}
+		_, err = m.putRemote(ctx, dstClass, dstPath, bytes.NewReader(data), int64(len(data)), contentTypeFor(dstPath))
+		return err
+	}
 	srcBucket, srcKey, err := resolveLocation(m.c, srcClass, srcPath)
 	if err != nil {
 		return err
@@ -304,6 +361,11 @@ func (m *MinioUtil) MoveToTrash(ctx context.Context, class, path string) error {
 	if !trashClass(class) {
 		return fmt.Errorf("refusing to trash %s/%s", class, path)
 	}
+	if m.hotEnabled(class) {
+		if err := m.hot.moveToTrash(class, path); err != nil {
+			return err
+		}
+	}
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return err
@@ -336,6 +398,17 @@ func (m *MinioUtil) DeleteTrash(ctx context.Context, class, path string) error {
 func (m *MinioUtil) removeKey(ctx context.Context, class, path string, trash bool) error {
 	if m == nil || m.client == nil {
 		return fmt.Errorf("object storage client is nil")
+	}
+	if m.hotEnabled(class) {
+		var err error
+		if trash {
+			err = m.hot.deleteTrash(class, path)
+		} else {
+			err = m.hot.remove(class, path)
+		}
+		if err != nil {
+			return err
+		}
 	}
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
@@ -375,6 +448,13 @@ func (m *MinioUtil) getRange(ctx context.Context, class, path string, offset int
 }
 
 func (m *MinioUtil) getRangeUncached(ctx context.Context, class, path string, offset int64, limit int32) ([]byte, error) {
+	if m.hotEnabled(class) && m.hot.has(class, path) {
+		return m.hot.readRange(class, path, offset, limit)
+	}
+	return m.getRangeUncachedRemote(ctx, class, path, offset, limit)
+}
+
+func (m *MinioUtil) getRangeUncachedRemote(ctx context.Context, class, path string, offset int64, limit int32) ([]byte, error) {
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return nil, err
@@ -418,6 +498,9 @@ func isUnsatisfiable(err error) bool {
 }
 
 func (m *MinioUtil) readAll(ctx context.Context, class, path string) ([]byte, error) {
+	if m.hotEnabled(class) && m.hot.has(class, path) {
+		return m.hot.readRange(class, path, 0, 1<<30)
+	}
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return nil, err
@@ -463,6 +546,35 @@ func (m *MinioUtil) GetFileObject(ctx context.Context, bucket, path string) (*mi
 	return object, nil
 }
 
+// OpenClass opens a chat-media object as a stream. A hot-tier hit is a
+// local file; otherwise this is the object storage GET (which uses the
+// configured CONNECT proxy when one is set).
+func (m *MinioUtil) OpenClass(ctx context.Context, class, path string) (io.ReadCloser, error) {
+	if m.hotEnabled(class) && m.hot.has(class, path) {
+		f, _, err := m.hot.open(class, path)
+		return f, err
+	}
+	bucket, key, err := resolveLocation(m.c, class, path)
+	if err != nil {
+		return nil, err
+	}
+	object, err := m.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		if isNotFound(err) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if _, err := object.Stat(); err != nil {
+		object.Close()
+		if isNotFound(err) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return object, nil
+}
+
 func (m *MinioUtil) resolveRead(bucketOrClass, path string) (string, string, error) {
 	switch bucketOrClass {
 	case ClassDocuments, ClassPhotos, ClassVideos, ClassEncryptedFiles,
@@ -493,6 +605,9 @@ func (m *MinioUtil) GetPhotoFileData(ctx context.Context, path string) ([]byte, 
 }
 
 func (m *MinioUtil) GetFile(ctx context.Context, bucket, path string, offset int64, limit int32) ([]byte, error) {
+	if m.hotEnabled(bucket) && m.hot.has(bucket, path) {
+		return m.hot.readRange(bucket, path, offset, limit)
+	}
 	physical, key, err := m.resolveRead(bucket, path)
 	if err != nil {
 		logx.WithContext(ctx).Errorf("GetFile error: %v", err)
@@ -557,6 +672,19 @@ func (m *MinioUtil) Stat(ctx context.Context, class, path string) (int64, error)
 	if m == nil || m.client == nil {
 		return 0, fmt.Errorf("object storage client is nil")
 	}
+	if m.hotEnabled(class) && m.hot.has(class, path) {
+		f, meta, err := m.hot.open(class, path)
+		if err != nil {
+			return 0, err
+		}
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		return meta.Size, nil
+	}
+	return m.statRemote(ctx, class, path)
+}
+
+func (m *MinioUtil) statRemote(ctx context.Context, class, path string) (int64, error) {
 	bucket, key, err := resolveLocation(m.c, class, path)
 	if err != nil {
 		return 0, err
@@ -601,6 +729,18 @@ func (m *MinioUtil) PutDocumentFile(ctx context.Context, path string, r io.Reade
 }
 
 func (m *MinioUtil) FPutDocumentFile(ctx context.Context, path string, filePath string) (minio.UploadInfo, error) {
+	if m.hotEnabled(ClassDocuments) {
+		f, err := os.Open(filePath)
+		if err != nil {
+			return minio.UploadInfo{}, err
+		}
+		defer f.Close()
+		st, err := f.Stat()
+		if err != nil {
+			return minio.UploadInfo{}, err
+		}
+		return m.put(ctx, ClassDocuments, path, f, st.Size(), contentTypeFor(path))
+	}
 	bucket, key, err := resolveLocation(m.c, ClassDocuments, path)
 	if err != nil {
 		return minio.UploadInfo{}, err
@@ -681,18 +821,7 @@ func (m *MinioUtil) ListClass(ctx context.Context, class string) (map[string]Cla
 
 // StatClass returns the stored size of a class object. A missing object is ErrNotFound.
 func (m *MinioUtil) StatClass(ctx context.Context, class, path string) (int64, error) {
-	bucket, key, err := resolveLocation(m.c, class, path)
-	if err != nil {
-		return 0, err
-	}
-	info, err := m.client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
-	if err != nil {
-		if isNotFound(err) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-	return info.Size, nil
+	return m.Stat(ctx, class, path)
 }
 
 func (m *MinioUtil) PutEmojiFile(ctx context.Context, path string, r io.Reader) (minio.UploadInfo, error) {

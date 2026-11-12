@@ -91,6 +91,10 @@ type MinioConfig struct {
 	// Unexported for the same reason as pathStyleDisabled: go-zero 1.10 rejects
 	// duplicate json:"-" keys, and a RoundTripper cannot be loaded from yaml.
 	transport http.RoundTripper
+
+	// hot is filled from TELLOMI_MEDIA_HOT_TIER_* by ApplyEnv. Unexported so
+	// go-zero does not load it from yaml.
+	hot hotSettings
 }
 
 // SetTransportForTest installs an HTTP transport. Production leaves it nil
@@ -162,6 +166,9 @@ func (c *MinioConfig) ApplyEnv() error {
 	}
 	if v, ok := os.LookupEnv(EnvHTTPProxy); ok {
 		c.HTTPProxy = strings.TrimSpace(v)
+	}
+	if err := loadHotSettingsFromEnv(&c.hot); err != nil {
+		return err
 	}
 	return c.normalize()
 }
