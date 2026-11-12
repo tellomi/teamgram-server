@@ -136,6 +136,12 @@ func Decode(r io.Reader, opts ...imaging.DecodeOption) (image.Image, error) {
 	return imaging.Decode(r, opts...)
 }
 
+// DecodeOriented decodes r and bakes an EXIF orientation tag into the
+// pixels. The stored file bytes are left for the caller to write unchanged.
+func DecodeOriented(r io.Reader) (image.Image, error) {
+	return imaging.Decode(r, imaging.AutoOrientation(true))
+}
+
 func Resize(img image.Image, width, height int) *image.NRGBA {
 	return imaging.Resize(img, width, height, imaging.Lanczos)
 }

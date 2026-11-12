@@ -12,7 +12,6 @@ package core
 import (
 	"bytes"
 	"fmt"
-	"image"
 	"io"
 	"math/rand"
 
@@ -122,14 +121,6 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		}
 	}()
 	if isThumb {
-		var (
-			thumb image.Image
-			// photoId = idgen.GetUUID()
-			// ext2     = ".jpg"
-			// extType2 = model.GetStorageFileTypeConstructor(ext2)
-			// secretId = int64(extType2)<<32 | int64(rand.Uint32())
-		)
-
 		cacheData, err = r.ReadAll(c.ctx)
 		if err != nil {
 			c.Logger.Errorf("dfs.uploadDocumentFile - %v", err)
@@ -141,37 +132,19 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		c.ctx, finishUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
 		if sizes, ok := c.reusedPhotoSizes(c.ctx, documentId, claim); ok {
 			document.Thumbs = sizes
-		} else if thumb, err = imaging.Decode(bytes.NewReader(cacheData)); err != nil {
+		} else if strippedBytes, mThumb, decErr, buildErr := documentFileThumbs(cacheData); decErr != nil {
 			// ioutil.WriteFile("./t.jpg", cacheData, 0644)
-			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
+			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", decErr)
 			// The body is still these bytes. A bad image just has no thumb.
+		} else if buildErr != nil {
+			c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", buildErr)
+			c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+			return nil, buildErr
 		} else {
-			// build photoStrippedSize
-			stripped := bytes2.NewBuffer(make([]byte, 0, 4096))
-			if thumb.Bounds().Dx() >= thumb.Bounds().Dy() {
-				err = imaging.EncodeStripped(stripped, imaging.Resize(thumb, 40, 0), 30)
-			} else {
-				err = imaging.EncodeStripped(stripped, imaging.Resize(thumb, 0, 40), 30)
-			}
-			if err != nil {
-				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
-				c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
-				return nil, err
-			}
-
-			// upload thumb
-			var (
-				mThumbData = bytes2.NewBuffer(make([]byte, 0, len(cacheData)))
-				mThumb     image.Image
-			)
-			if thumb.Bounds().Dx() >= thumb.Bounds().Dy() {
-				mThumb = imaging.Resize(thumb, 320, 0)
-				// err = imaging.Encode(mThumbData, mThumb, 80)
-			} else {
-				mThumb = imaging.Resize(thumb, 0, 320)
-				// err = imaging.Encode(mThumbData, imaging.Resize(thumb, 0, 320), 80)
-			}
-
+			// cacheData is the original file, including its EXIF segment.
+			// The thumbs were rotated to the display orientation.
+			stripped := bytes2.NewBuffer(strippedBytes)
+			mThumbData := bytes2.NewBuffer(make([]byte, 0, len(cacheData)))
 			err = imaging.EncodeJpeg(mThumbData, mThumb)
 			if err != nil {
 				c.Logger.Errorf("dfs.uploadDocumentFile - error: %v", err)
