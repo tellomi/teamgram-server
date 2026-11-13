@@ -6,26 +6,31 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
+	"sync"
 	"time"
 )
 
 // A GET whose first response byte never arrives used to sit for
 // r2ResponseHeaderTimeout (5s). The S3 client then retried that wait, so
 // upload.getFile for a hot-tier miss measured 6.5–8.9s. These bounds are
-// the first-byte budget for one attempt and one retry. Puts are not
-// wrapped: the migrator still uses the transport header timeout.
+// the header wait after the request has been written, plus one retry.
+// Dial, CONNECT, and TLS are not included: Chengdu to R2 often spends
+// 0.8–1.5s on a new TLS session. Puts are not wrapped and keep the
+// transport's 5s ResponseHeaderTimeout.
 const (
 	r2FirstByteTimeout = 2 * time.Second
 	r2GetAttempts      = 2
 	r2GetRetryGap      = 50 * time.Millisecond
 )
 
-// fastFirstByte retries GET and HEAD when the origin does not send a
-// response header before r2FirstByteTimeout. The body of a successful
-// response is not cut off by that timer. After the attempts are spent, a
-// timeout is returned as context.DeadlineExceeded so the S3 client's own
-// retry loop does not multiply the wait.
+// fastFirstByte retries GET and HEAD when response headers do not arrive
+// within r2FirstByteTimeout after the request is written. Connection
+// setup is outside that budget. Once the first response byte arrives the
+// timer stops, so a large or slow body is not cancelled. After the
+// attempts are spent, a timeout is returned as context.DeadlineExceeded
+// so the S3 client's own retry loop does not multiply the wait.
 type fastFirstByte struct {
 	base http.RoundTripper
 }
@@ -73,24 +78,65 @@ func (f fastFirstByte) baseRoundTrip(req *http.Request) (*http.Response, error) 
 	return f.base.RoundTrip(req)
 }
 
-// roundOnce waits r2FirstByteTimeout for response headers. The timer is
-// stopped once they arrive, so a large object can still stream.
+// headerWait arms r2FirstByteTimeout only after WroteRequest. Dial, the
+// CONNECT proxy, and TLS happen before that and do not consume the budget.
+// GotFirstResponseByte disarms it so the body can stream.
+type headerWait struct {
+	mu      sync.Mutex
+	timer   *time.Timer
+	stopped bool
+	cancel  context.CancelFunc
+}
+
+func (h *headerWait) arm() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.stopped || h.timer != nil {
+		return
+	}
+	h.timer = time.AfterFunc(r2FirstByteTimeout, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.stopped {
+			return
+		}
+		h.cancel()
+	})
+}
+
+func (h *headerWait) stop() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.stopped = true
+	if h.timer != nil {
+		h.timer.Stop()
+		h.timer = nil
+	}
+}
+
+// roundOnce waits r2FirstByteTimeout for response headers after the
+// request is written. The timer is stopped on the first response byte, so
+// a large object can still stream.
 func (f fastFirstByte) roundOnce(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancel(req.Context())
-	timer := time.AfterFunc(r2FirstByteTimeout, cancel)
+	wait := &headerWait{cancel: cancel}
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			if info.Err == nil {
+				wait.arm()
+			}
+		},
+		GotFirstResponseByte: func() {
+			wait.stop()
+		},
+	})
 	resp, err := f.baseRoundTrip(req.Clone(ctx))
-	if !timer.Stop() {
+	wait.stop()
+	if err != nil {
 		cancel()
 		if resp != nil && resp.Body != nil {
 			resp.Body.Close()
 		}
-		if err == nil {
-			err = context.DeadlineExceeded
-		}
-		return nil, err
-	}
-	if err != nil {
-		cancel()
 		return nil, err
 	}
 	resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
