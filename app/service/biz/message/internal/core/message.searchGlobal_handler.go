@@ -29,15 +29,18 @@ func (c *MessageCore) MessageSearchGlobal(in *message.TLMessageSearchGlobal) (*m
 		offset = math.MaxInt32
 	}
 
-	rList, _ := c.svcCtx.Dao.MessagesDAO.SearchGlobalWithCB(
+	_, err := c.svcCtx.Dao.MessagesDAO.SearchGlobalTextWithCB(
 		c.ctx,
 		in.UserId,
-		offset, "%"+in.Q+"%",
+		offset,
+		in.Q,
 		in.Limit,
 		func(sz, i int, v *dataobject.MessagesDO) {
 			rValues = append(rValues, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
 		})
-	_ = rList
+	if err != nil {
+		return nil, err
+	}
 
 	if rValues == nil {
 		rValues = []*mtproto.MessageBox{}

@@ -19,14 +19,19 @@ WHERE m.deleted = 0
     WHERE bp.channel_id = c.id AND bp.user_id = ? AND (bp.state = ? OR bp.role = ?)
   )
   AND (
-    (c.broadcast = 1 AND c.username IS NOT NULL AND c.username <> '')
+    (? = 0 AND c.broadcast = 1 AND c.username IS NOT NULL AND c.username <> '')
     OR c.id IN (
       SELECT channel_id FROM channel_participants
       WHERE user_id = ? AND state = ? AND role <> ?
     )
   )
-  AND m.message LIKE ? ESCAPE '\\'`
-	args := []any{self, StateKicked, RoleBanned, self, StateNormal, RoleBanned, likeContains(q.Needle)}
+  AND m.message COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '\\'`
+	joinedOnly := 0
+	if q.JoinedOnly {
+		joinedOnly = 1
+	}
+	pattern := likeContains(q.Needle)
+	args := []any{self, StateKicked, RoleBanned, joinedOnly, self, StateNormal, RoleBanned, pattern}
 	if q.OffsetRate > 0 {
 		stmt += `
   AND (

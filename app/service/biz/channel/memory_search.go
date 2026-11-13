@@ -14,7 +14,11 @@ func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) 
 	var hits []*StoredMessage
 	for id, ch := range s.channels {
 		p := s.parts[id][self]
-		if !postSearchVisible(ch, p) {
+		visible := postSearchVisible(ch, p)
+		if q.JoinedOnly {
+			visible = joinedOnlyVisible(ch, p)
+		}
+		if !visible {
 			continue
 		}
 		for _, stored := range s.messages[id] {

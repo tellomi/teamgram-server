@@ -78,6 +78,81 @@ func TestGlobalFilterEmptyQueryAndChineseURL(t *testing.T) {
 	}
 }
 
+func TestMergeGlobalPrivateChannelAndGroup(t *testing.T) {
+	hello := &mtproto.MessageBox{
+		PeerType: mtproto.PEER_USER, PeerId: 7, MessageId: 4,
+		SenderUserId: 7,
+		Message:      &mtproto.Message{Id: 4, Date: 40, Message: "Hello"},
+	}
+	p019 := &mtproto.MessageBox{
+		PeerType: mtproto.PEER_CHAT, PeerId: 3, MessageId: 26,
+		SenderUserId: 1,
+		Message:      &mtproto.Message{Id: 26, Date: 30, Message: "p019"},
+	}
+	chn := &mtproto.MessageBox{
+		PeerType: mtproto.PEER_CHANNEL, PeerId: 9, MessageId: 19,
+		SenderUserId: 1,
+		Message:      &mtproto.Message{Id: 19, Date: 50, Message: "chn019"},
+	}
+	merged := mergeGlobalBoxes(&mtproto.MessageBoxList{BoxList: []*mtproto.MessageBox{hello, p019}}, []*mtproto.MessageBox{chn, chn})
+	sortGlobalBoxes(merged)
+	if len(merged.BoxList) != 3 || merged.BoxList[0].GetMessage().GetMessage() != "chn019" {
+		t.Fatalf("order %#v", texts(merged))
+	}
+	kinds := map[int64]channelKind{9: {Broadcast: true}}
+	users := filterGlobalBoxes(cloneBoxes(merged), globalQuery{UsersOnly: true}, kinds, 10)
+	if len(users.BoxList) != 1 || users.BoxList[0].GetMessage().GetMessage() != "Hello" {
+		t.Fatalf("users_only %#v", texts(users))
+	}
+	broad := filterGlobalBoxes(cloneBoxes(merged), globalQuery{BroadcastsOnly: true}, kinds, 10)
+	if len(broad.BoxList) != 1 || broad.BoxList[0].GetMessage().GetMessage() != "chn019" {
+		t.Fatalf("broadcasts_only %#v", texts(broad))
+	}
+	folder := map[string]bool{
+		peerKey(mtproto.PEER_USER, 7):    true,
+		peerKey(mtproto.PEER_CHAT, 3):    true,
+		peerKey(mtproto.PEER_CHANNEL, 9): true,
+	}
+	page := filterGlobalPage(cloneBoxes(merged), globalCursor{}, folder, true, 20)
+	if len(page.BoxList) != 3 {
+		t.Fatalf("folder kept %#v", texts(page))
+	}
+	withoutChannel := map[string]bool{
+		peerKey(mtproto.PEER_USER, 7): true,
+		peerKey(mtproto.PEER_CHAT, 3): true,
+	}
+	dropped := filterGlobalPage(cloneBoxes(merged), globalCursor{}, withoutChannel, true, 20)
+	if len(dropped.BoxList) != 2 {
+		t.Fatalf("channel must be in the folder map, got %#v", texts(dropped))
+	}
+}
+
+func TestAddJoinedChannelsRespectsArchive(t *testing.T) {
+	folder := map[string]bool{}
+	addJoinedChannels(folder, 0, []int64{9, 10}, map[int64]bool{10: true})
+	if !folder[peerKey(mtproto.PEER_CHANNEL, 9)] || folder[peerKey(mtproto.PEER_CHANNEL, 10)] {
+		t.Fatalf("main %#v", folder)
+	}
+	arch := map[string]bool{}
+	addJoinedChannels(arch, 1, []int64{9, 10}, map[int64]bool{10: true})
+	if arch[peerKey(mtproto.PEER_CHANNEL, 9)] || !arch[peerKey(mtproto.PEER_CHANNEL, 10)] {
+		t.Fatalf("archive %#v", arch)
+	}
+}
+
+func texts(list *mtproto.MessageBoxList) []string {
+	var out []string
+	for _, box := range list.GetBoxList() {
+		out = append(out, box.GetMessage().GetMessage())
+	}
+	return out
+}
+
+func cloneBoxes(list *mtproto.MessageBoxList) *mtproto.MessageBoxList {
+	out := &mtproto.MessageBoxList{BoxList: append([]*mtproto.MessageBox(nil), list.BoxList...)}
+	return out
+}
+
 func TestFilterGlobalBoxesByKindAndDate(t *testing.T) {
 	user := &mtproto.MessageBox{PeerType: mtproto.PEER_USER, PeerId: 1, Message: &mtproto.Message{Date: 100, Message: "a"}}
 	group := &mtproto.MessageBox{PeerType: mtproto.PEER_CHAT, PeerId: 2, Message: &mtproto.Message{Date: 200, Message: "b"}}

@@ -119,7 +119,13 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 	}
 	if err != nil {
 		c.Logger.Errorf("messages.searchGlobal - error: %v", err)
-		return rValues, nil
+		boxList = nil
+	}
+	if q != "" {
+		// Private and basic-group rows live in the user message table.
+		// Channel and supergroup posts live in channel_messages and are
+		// not copied there, so a channel post never matched this RPC.
+		boxList = c.mergeJoinedChannelHits(boxList, q, fetchLimit)
 	}
 	if filterOn {
 		boxList = keepBoxes(boxList, func(m *mtproto.Message) bool {
@@ -146,6 +152,10 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 	if useFolder {
 		folder, useFolder = c.globalFolder(in.GetFolderId().GetValue())
 	}
+	if useFolder {
+		folder = c.attachChannelFolders(folder, in.GetFolderId().GetValue())
+	}
+	sortGlobalBoxes(boxList)
 	boxList = filterGlobalPage(boxList, cur, folder, useFolder, limit)
 	if boxList == nil {
 		return rValues, nil

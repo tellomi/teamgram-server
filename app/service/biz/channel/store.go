@@ -73,10 +73,14 @@ type Store interface {
 // Needle is the raw text, not a LIKE pattern. OffsetRate 0 and OffsetID 0
 // start at the newest post. A positive OffsetRate is the previous page's
 // date; rows are strictly older in (date, channel, message id) order.
+// JoinedOnly limits the scan to channels the user has joined. Public
+// channels they have not joined stay out. messages.searchGlobal sets it.
+// channels.searchPosts leaves it false.
 type PostQuery struct {
 	Needle     string
 	OffsetRate int32
 	OffsetPeer int64
 	OffsetID   int32
 	Limit      int32
+	JoinedOnly bool
 }

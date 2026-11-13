@@ -64,8 +64,8 @@ func TestSavedExportAndReset(t *testing.T) {
 	if err != nil || len(got.GetDatas()) != 1 {
 		t.Fatalf("after reset %#v %v", got, err)
 	}
-	if n := c.savedCount(); n != 0 {
-		t.Fatalf("saved_count %d", n)
+	if n, err := c.savedCount(); err != nil || n != 0 {
+		t.Fatalf("saved_count %d %v", n, err)
 	}
 }
 

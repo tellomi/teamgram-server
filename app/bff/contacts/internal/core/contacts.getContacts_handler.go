@@ -20,41 +20,36 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
-	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 /*
-   private int getContactsHash(ArrayList<TLRPC.TL_contact> contacts) {
+   Current Android (ContactsController.getContactsHash):
+
+   private long getContactsHash(ArrayList<TLRPC.TL_contact> contacts) {
        long acc = 0;
        contacts = new ArrayList<>(contacts);
-       Collections.sort(contacts, (tl_contact, tl_contact2) -> {
-           if (tl_contact.user_id > tl_contact2.user_id) {
-               return 1;
-           } else if (tl_contact.user_id < tl_contact2.user_id) {
-               return -1;
-           }
-           return 0;
-       });
+       Collections.sort(contacts, (a, b) -> Long.compare(a.user_id, b.user_id));
        int count = contacts.size();
        for (int a = -1; a < count; a++) {
            if (a == -1) {
-               acc = ((acc * 20261) + 0x80000000L + getUserConfig().contactsSavedCount) % 0x80000000L;
+               acc = MediaDataController.calcHash(acc, getUserConfig().contactsSavedCount);
            } else {
-               TLRPC.TL_contact set = contacts.get(a);
-               acc = ((acc * 20261) + 0x80000000L + set.user_id) % 0x80000000L;
+               acc = MediaDataController.calcHash(acc, contacts.get(a).user_id);
            }
        }
-       return (int) acc;
+       return acc;
    }
+
+   calcHash shifts the accumulator, then adds the id. A matching non-zero
+   hash is contacts.contactsNotModified. Hash 0 always wants the full list.
+   NotModified does not rewrite the phone book and does not call
+   loadContacts again. A full list whose users are missing from the vector
+   does: processLoadedContacts then calls loadContacts(false, 0).
 */
 
 // ContactsGetContacts
 // contacts.getContacts#5dd69e12 hash:long = contacts.Contacts;
 func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*mtproto.Contacts_Contacts, error) {
-	var (
-		contacts *mtproto.Contacts_Contacts
-	)
-
 	contactList, err := c.contactRows()
 	if err != nil {
 		// A contact-list outage used to come back as an empty success.
@@ -62,12 +57,21 @@ func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*
 		c.Logger.Errorf("contacts.getContacts - error: %v", err)
 		contactList = nil
 	}
-	saved := c.savedCount()
+	saved, err := c.savedCount()
+	if err != nil {
+		// A failed read must not be reported as saved_count 0. That value
+		// is part of the hash, so the next successful read would look like
+		// a contact change and the client would fetch again.
+		c.Logger.Errorf("contacts.getContacts - saved_count: %v", err)
+		return nil, err
+	}
+	seen := map[int64]bool{}
 	tlContacts := make([]*mtproto.Contact, 0, len(contactList))
 	for _, row := range contactList {
-		if row == nil || row.GetContactUserId() == 0 {
+		if row == nil || row.GetContactUserId() == 0 || seen[row.GetContactUserId()] {
 			continue
 		}
+		seen[row.GetContactUserId()] = true
 		tlContacts = append(tlContacts, mtproto.MakeTLContact(&mtproto.Contact{
 			UserId: row.GetContactUserId(),
 			Mutual: mtproto.ToBool(row.GetMutualContact()),
@@ -76,47 +80,50 @@ func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*
 	if in.GetHash() != 0 && in.GetHash() == contactsHash(saved, tlContacts) {
 		return mtproto.MakeTLContactsContactsNotModified(nil).To_Contacts_Contacts(), nil
 	}
-
-	// 避免查询数据库时IN()条件为empty
-	if len(contactList) > 0 {
-		idList := make([]int64, 0, len(contactList))
-		for _, cV := range contactList {
-			idList = append(idList, cV.ContactUserId)
-		}
-
-		c.Logger.Infof("contactIdList - {%v}", idList)
-
-		users, _ := c.svcCtx.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
-			Id: append([]int64{c.MD.UserId}, idList...),
-			To: []int64{c.MD.UserId},
-		})
-		contacts = mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
-			Contacts:   tlContacts,
-			SavedCount: saved,
-			Users:      users.GetUserListByIdList(c.MD.UserId, idList...),
-		}).To_Contacts_Contacts()
-	} else {
-		contacts = mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
+	if len(tlContacts) == 0 {
+		return mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
 			Contacts:   []*mtproto.Contact{},
 			SavedCount: saved,
 			Users:      []*mtproto.User{},
-		}).To_Contacts_Contacts()
+		}).To_Contacts_Contacts(), nil
 	}
 
-	return contacts, nil
+	ids := make([]int64, 0, len(tlContacts))
+	for _, row := range tlContacts {
+		ids = append(ids, row.GetUserId())
+	}
+	users, err := c.contactUsers(ids)
+	if err != nil {
+		c.Logger.Errorf("contacts.getContacts - users: %v", err)
+		return nil, err
+	}
+	kept, keptUsers := visibleContacts(tlContacts, users)
+	if len(kept) == 0 {
+		// Every contact was unresolved. An empty success would replace the
+		// client's book with nothing. An error does not.
+		c.Logger.Errorf("contacts.getContacts - no user for %d contacts", len(tlContacts))
+		return nil, mtproto.ErrInternalServerError
+	}
+	// The client hashes the contacts it stored. Those are the ones that had
+	// a user in the previous reply. A contact we still cannot resolve is not
+	// part of that hash, so compare again after dropping it.
+	if in.GetHash() != 0 && in.GetHash() == contactsHash(saved, kept) {
+		return mtproto.MakeTLContactsContactsNotModified(nil).To_Contacts_Contacts(), nil
+	}
+	return mtproto.MakeTLContactsContacts(&mtproto.Contacts_Contacts{
+		Contacts:   kept,
+		SavedCount: saved,
+		Users:      keptUsers,
+	}).To_Contacts_Contacts(), nil
 }
 
 // savedCount is the number of phone-book rows that have no Telegram account.
-// contacts.resetSaved deletes those rows.
-func (c *ContactsCore) savedCount() int32 {
+// contacts.resetSaved deletes those rows. The error is returned to the
+// caller; it is not turned into 0.
+func (c *ContactsCore) savedCount() (int32, error) {
 	store := c.savedBook()
 	if store == nil || c.MD == nil {
-		return 0
+		return 0, nil
 	}
-	n, err := store.UnregisteredCount(c.ctx, c.MD.UserId)
-	if err != nil {
-		c.Logger.Errorf("contacts.getContacts - saved_count: %v", err)
-		return 0
-	}
-	return n
+	return store.UnregisteredCount(c.ctx, c.MD.UserId)
 }
