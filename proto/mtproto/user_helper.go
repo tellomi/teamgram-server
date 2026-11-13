@@ -19,17 +19,31 @@
 package mtproto
 
 func ToUserIdByInput(userSelfId int64, inputUser *InputUser) int64 {
+	if inputUser == nil {
+		return 0
+	}
 	switch inputUser.PredicateName {
 	case Predicate_inputUserEmpty:
 		return 0
 	case Predicate_inputUserSelf:
 		return userSelfId
-	case Predicate_inputUser:
+	case Predicate_inputUser, Predicate_inputUserFromMessage:
+		// inputUserFromMessage carries user_id. Android sends it for a user
+		// whose access_hash is 0 (a min user opened from a message). Dropping
+		// that id made privacy allow/disallow lists empty.
 		return inputUser.UserId
-	default:
-		// log.Errorf("invalid inputUser classID - %v", inputUser)
-		return 0
 	}
+	switch inputUser.Constructor {
+	case CRC32_inputUserSelf:
+		return userSelfId
+	case CRC32_inputUser, CRC32_inputUserFromMessage:
+		return inputUser.UserId
+	}
+	// Some callers fill user_id and leave predicate_name empty.
+	if inputUser.PredicateName == "" && inputUser.UserId > 0 {
+		return inputUser.UserId
+	}
+	return 0
 }
 
 func ToUserIdListByInput(userSelfId int64, inputUsers []*InputUser) []int64 {
