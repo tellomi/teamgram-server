@@ -60,7 +60,7 @@ func (c *ChatCore) ChatImportChatInvite2(in *chat.TLChatImportChatInvite2) (*cha
 	}
 	if chatInviteDO.UsageLimit > 0 {
 		sz := c.svcCtx.Dao.GetLinkInviteSize(c.ctx, chatInviteDO.Link)
-		if sz >= chatInviteDO.UsageLimit {
+		if invite.UsageExhausted(chatInviteDO.UsageLimit, int(sz)) {
 			err = mtproto.ErrInviteHashExpired
 			c.Logger.Errorf("chat.importChatInvite - error: %v", err)
 			return nil, err

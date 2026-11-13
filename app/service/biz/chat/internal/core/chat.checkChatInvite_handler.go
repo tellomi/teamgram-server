@@ -51,7 +51,7 @@ func (c *ChatCore) ChatCheckChatInvite(in *chat.TLChatCheckChatInvite) (*chat.Ch
 
 	if chatInviteDO.UsageLimit > 0 {
 		sz := c.svcCtx.Dao.GetLinkInviteSize(c.ctx, chatInviteDO.Link)
-		if sz >= chatInviteDO.UsageLimit {
+		if invite.UsageExhausted(chatInviteDO.UsageLimit, int(sz)) {
 			err = mtproto.ErrInviteHashExpired
 			c.Logger.Errorf("chat.checkChatInvite - error: %v", err)
 			return nil, err

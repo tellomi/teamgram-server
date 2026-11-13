@@ -58,7 +58,7 @@ func (s *Service) ExportInvite(ctx context.Context, self int64, in *mtproto.Inpu
 		return nil, err
 	}
 	now := time.Now().Unix()
-	if err := (invite.Export{
+	exp := invite.Export{
 		Legacy:        req.LegacyRevokePermanent,
 		RequestNeeded: req.RequestNeeded,
 		Expire:        int64(req.Expire),
@@ -67,9 +67,11 @@ func (s *Service) ExportInvite(ctx context.Context, self int64, in *mtproto.Inpu
 		Title:         req.Title,
 		TitleSet:      req.TitleSet,
 		Now:           now,
-	}).Validate(); err != nil {
+	}
+	if err := exp.Validate(); err != nil {
 		return nil, err
 	}
+	usage := exp.StoredUsage()
 	if req.LegacyRevokePermanent {
 		rows, err := s.store.ListInvites(ctx, ch.ID)
 		if err != nil {
@@ -95,7 +97,7 @@ func (s *Service) ExportInvite(ctx context.Context, self int64, in *mtproto.Inpu
 		AdminID:       self,
 		RequestNeeded: req.RequestNeeded,
 		ExpireDate:    int64(req.Expire),
-		UsageLimit:    req.Usage,
+		UsageLimit:    usage,
 		Title:         req.Title,
 		Date:          now,
 	})
@@ -164,10 +166,11 @@ func (s *Service) EditInvite(ctx context.Context, self int64, in *mtproto.InputC
 		inv.ExpireDate = int64(*req.Expire)
 	}
 	if req.Usage != nil {
-		if *req.Usage < 0 {
-			return nil, mtproto.ErrUsageLimitInvalid
+		stored, err := invite.NormalizeUsage(true, *req.Usage)
+		if err != nil {
+			return nil, err
 		}
-		inv.UsageLimit = *req.Usage
+		inv.UsageLimit = stored
 	}
 	if req.RequestNeeded != nil {
 		inv.RequestNeeded = *req.RequestNeeded
@@ -590,7 +593,7 @@ func inviteDead(inv *StoredInvite, usage int32, now int64) bool {
 	if inv.ExpireDate != 0 && now > inv.ExpireDate {
 		return true
 	}
-	if inv.UsageLimit > 0 && usage >= inv.UsageLimit {
+	if invite.UsageExhausted(inv.UsageLimit, int(usage)) {
 		return true
 	}
 	return false

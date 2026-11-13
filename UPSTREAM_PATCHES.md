@@ -410,6 +410,10 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
 
+## Invite usage_limit of 0
+
+Android sets `usage_limit` and sends 0 for no limit. `messages.exportChatInvite` and `messages.editExportedChatInvite` store 0 and omit the field on `chatInviteExported`. Below 0 or above 99999 is `USAGE_LIMIT_INVALID`. A stored 0 does not use up the link. Helpers: `pkg/invite.NormalizeUsage`, `pkg/invite.UsageExhausted`. Channels: `app/service/biz/channel/invite.go`. Basic groups: `chat.exportChatInvite_handler.go`, `chat.editExportedChatInvite_handler.go`, `chat.checkChatInvite_handler.go`, `chat.importChatInvite_handler.go`, `chat.importChatInvite2_handler.go`.
+
 ## Group send rights and invite start_date
 
 Basic-group `default_banned_rights` are checked on the chat send and edit paths in `msg.sendMessageV2` / `msg.editMessageV2` (`app/messenger/msg/msg/internal/core/msg.sendMessageV2_handler.go`, `msg.editMessageV2_handler.go`). The classifier lives in `proto/mtproto/chat_send_right.go` and is shared with megagroups. Service messages (pin notices) are not treated as member content. `messages.updatePinnedMessage` for a basic group refuses a non-admin when `pin_messages` is banned (`app/bff/messages/internal/core/messages.updatePinnedMessage_handler.go`). A temporary ban is the plain `CHAT_SEND_*_FORBIDDEN` code. `until_date` stays on `banned_rights`.
