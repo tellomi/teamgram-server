@@ -6,17 +6,8 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
-
-// globalFetchDate is the SQL ceiling for both message sources.
-// Zero means the first page. The value is offset_rate (a unix date), never
-// offset_id. A channel message id and a user box id are different spaces.
-func globalFetchDate(cur globalCursor) int32 {
-	if !cur.Active || cur.Rate <= 0 {
-		return 0
-	}
-	return cur.Rate
-}
 
 // globalCursor is messages.searchGlobal's (offset_rate, offset_peer, offset_id).
 // Results are ordered by date descending, then peer type, peer id, then message id descending.
@@ -28,20 +19,16 @@ type globalCursor struct {
 	MsgID    int32
 }
 
+func (c globalCursor) key() searchorder.Key {
+	return searchorder.Key{Date: c.Rate, PeerType: c.PeerType, PeerID: c.PeerID, MsgID: c.MsgID}
+}
+
 func olderThanCursor(date int32, peerType int32, peerID int64, msgID int32, cur globalCursor) bool {
 	if !cur.Active {
 		return true
 	}
-	if date != cur.Rate {
-		return date < cur.Rate
-	}
-	if peerType != cur.PeerType {
-		return peerType > cur.PeerType
-	}
-	if peerID != cur.PeerID {
-		return peerID > cur.PeerID
-	}
-	return msgID < cur.MsgID
+	row := searchorder.Key{Date: date, PeerType: peerType, PeerID: peerID, MsgID: msgID}
+	return row.OlderThan(cur.key())
 }
 
 func peerKey(peerType int32, peerID int64) string {

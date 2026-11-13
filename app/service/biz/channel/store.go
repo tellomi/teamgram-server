@@ -84,6 +84,15 @@ type PostQuery struct {
 	Limit      int32
 	JoinedOnly bool
 	// MaxDate keeps posts at or before this unix time. Zero means no cap.
-	// messages.searchGlobal sets it from offset_rate. It is not a message id.
+	// channels.searchPosts paging uses OffsetRate instead.
 	MaxDate int32
+	// GlobalOrder is messages.searchGlobal. Rows are date DESC, channel id ASC,
+	// message id DESC, and CursorOn skips anything that is not strictly after
+	// that tuple. It does not use the channels.searchPosts channel-id DESC order.
+	GlobalOrder    bool
+	CursorOn       bool
+	CursorDate     int32
+	CursorPeerType int32
+	CursorPeer     int64
+	CursorMsg      int32
 }

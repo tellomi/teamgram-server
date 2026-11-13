@@ -1,9 +1,11 @@
 package channel
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
 func TestSearchJoinedCaseChannelAndNotPublic(t *testing.T) {
@@ -35,21 +37,21 @@ func TestSearchJoinedCaseChannelAndNotPublic(t *testing.T) {
 	send(1, mineID, "Hello there", 2)
 	send(2, otherID, "chn019", 3)
 
-	joined, err := svc.SearchJoined(ctx, 1, "chn019", 20, 0)
+	joined, err := svc.SearchJoined(ctx, 1, "chn019", 20, searchorder.Key{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(joined) != 1 || joined[0].GetMessage().GetMessage() != "chn019" || joined[0].PeerId != mineID {
 		t.Fatalf("joined chn019 %#v", textsOf(joined))
 	}
-	hello, err := svc.SearchJoined(ctx, 1, "HELLO", 20, 0)
+	hello, err := svc.SearchJoined(ctx, 1, "HELLO", 20, searchorder.Key{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hello) != 1 || hello[0].GetMessage().GetMessage() != "Hello there" {
 		t.Fatalf("case %#v", textsOf(hello))
 	}
-	short, err := svc.SearchJoined(ctx, 1, "He", 20, 0)
+	short, err := svc.SearchJoined(ctx, 1, "He", 20, searchorder.Key{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func TestSearchJoinedReachesPastTheFirstWindow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first, err := svc.SearchJoined(ctx, 1, "hit", 200, 0)
+	first, err := svc.SearchJoined(ctx, 1, "hit", 200, searchorder.Key{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +96,13 @@ func TestSearchJoinedReachesPastTheFirstWindow(t *testing.T) {
 		}
 	}
 	// The 200th newest has date 1000-199. The next page must still see 1000-200.
-	next, err := svc.SearchJoined(ctx, 1, "hit", 5, 1000-199)
+	edge := first[len(first)-1]
+	next, err := svc.SearchJoined(ctx, 1, "hit", 5, searchorder.Key{
+		Date:     edge.GetMessage().GetDate(),
+		PeerType: mtproto.PEER_CHANNEL,
+		PeerID:   edge.GetPeerId(),
+		MsgID:    edge.GetMessageId(),
+	}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +117,69 @@ func TestSearchJoinedReachesPastTheFirstWindow(t *testing.T) {
 	}
 	if !saw {
 		t.Fatalf("201st post missing from %#v", textsOf(next))
+	}
+}
+
+func TestSearchJoinedEqualDatePagesDoNotSkip(t *testing.T) {
+	svc, ctx := newTest(t)
+	a, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "a", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "b", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []int64{a.Chats[0].Id, b.Chats[0].Id}
+	const per = 40
+	for n := 0; n < per; n++ {
+		for _, id := range ids {
+			if _, err := svc.Send(ctx, 1, id, 0, []Outgoing{{
+				RandomID: int64(id)*1000 + int64(n) + 1,
+				Message:  &mtproto.Message{Message: "same", Date: 50},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var got []searchorder.Key
+	var cur searchorder.Key
+	on := false
+	for page := 0; page < 30; page++ {
+		boxes, err := svc.SearchJoined(ctx, 1, "same", 7, cur, on)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(boxes) == 0 {
+			break
+		}
+		for _, box := range boxes {
+			key := searchorder.Key{Date: box.GetMessage().GetDate(), PeerType: mtproto.PEER_CHANNEL, PeerID: box.GetPeerId(), MsgID: box.GetMessageId()}
+			if len(got) > 0 && !searchorder.Newer(got[len(got)-1], key) && got[len(got)-1] != key {
+				t.Fatalf("out of order %#v then %#v", got[len(got)-1], key)
+			}
+			for _, prev := range got {
+				if prev == key {
+					t.Fatalf("duplicate %#v", key)
+				}
+			}
+			got = append(got, key)
+		}
+		last := boxes[len(boxes)-1]
+		cur = searchorder.Key{Date: last.GetMessage().GetDate(), PeerType: mtproto.PEER_CHANNEL, PeerID: last.GetPeerId(), MsgID: last.GetMessageId()}
+		on = true
+		if len(boxes) < 7 {
+			break
+		}
+	}
+	if len(got) != per*2 {
+		t.Fatalf("pages returned %d of %d", len(got), per*2)
+	}
+}
+
+func TestGlobalChannelSQLOrdersLikeTheMerge(t *testing.T) {
+	if !strings.Contains(globalChannelOrderSQL, "date2 DESC, m.channel_id ASC, m.message_id DESC") {
+		t.Fatal(globalChannelOrderSQL)
 	}
 }
 

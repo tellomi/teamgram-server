@@ -7,6 +7,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
 // globalQuery is the part of messages.searchGlobal that can be applied
@@ -156,7 +157,7 @@ func (c *MessagesCore) mergeJoinedChannelHits(list *mtproto.MessageBoxList, q st
 	if c == nil || c.MD == nil {
 		return list
 	}
-	extra, err := channel.Shared().SearchJoined(c.ctx, c.MD.UserId, q, limit, globalFetchDate(cur))
+	extra, err := channel.Shared().SearchJoined(c.ctx, c.MD.UserId, q, limit, cur.key(), cur.Active)
 	if err != nil {
 		c.Logger.Errorf("messages.searchGlobal channels: %v", err)
 		return list
@@ -208,18 +209,12 @@ func sortGlobalBoxes(list *mtproto.MessageBoxList) {
 }
 
 func globalNewer(a, b *mtproto.MessageBox) bool {
-	ad, at, aid, am := globalRank(a)
-	bd, bt, bid, bm := globalRank(b)
-	if ad != bd {
-		return ad > bd
-	}
-	if at != bt {
-		return at < bt
-	}
-	if aid != bid {
-		return aid < bid
-	}
-	return am > bm
+	return searchorder.Newer(globalKey(a), globalKey(b))
+}
+
+func globalKey(box *mtproto.MessageBox) searchorder.Key {
+	date, peerType, peerID, msgID := globalRank(box)
+	return searchorder.Key{Date: date, PeerType: peerType, PeerID: peerID, MsgID: msgID}
 }
 
 func globalRank(box *mtproto.MessageBox) (date, peerType int32, peerID int64, msgID int32) {

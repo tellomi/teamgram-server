@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -107,7 +108,7 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, q PostQuery) (*mt
 // It returns posts from channels the user has joined, newest first.
 // The match is a case-insensitive substring. There is no minimum length.
 // A public channel the user has not joined is not included.
-func (s *Service) SearchJoined(ctx context.Context, self int64, needle string, limit, maxDate int32) ([]*mtproto.MessageBox, error) {
+func (s *Service) SearchJoined(ctx context.Context, self int64, needle string, limit int32, cur searchorder.Key, on bool) ([]*mtproto.MessageBox, error) {
 	needle = strings.TrimSpace(needle)
 	if needle == "" || s == nil || s.store == nil {
 		return nil, nil
@@ -116,10 +117,15 @@ func (s *Service) SearchJoined(ctx context.Context, self int64, needle string, l
 		limit = 20
 	}
 	rows, err := s.store.SearchPosts(ctx, self, PostQuery{
-		Needle:     needle,
-		Limit:      limit,
-		JoinedOnly: true,
-		MaxDate:    maxDate,
+		Needle:         needle,
+		Limit:          limit,
+		JoinedOnly:     true,
+		GlobalOrder:    true,
+		CursorOn:       on,
+		CursorDate:     cur.Date,
+		CursorPeerType: cur.PeerType,
+		CursorPeer:     cur.PeerID,
+		CursorMsg:      cur.MsgID,
 	})
 	if err != nil {
 		return nil, err

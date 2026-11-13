@@ -12,19 +12,26 @@ func TestLikeSubstringEscapesAndGlobalSQLIsCaseInsensitive(t *testing.T) {
 	if got := likeSubstring(`100%_a\b`); got != `%100\%\_a\\b%` {
 		t.Fatalf("escaped %s", got)
 	}
-	if !strings.Contains(searchGlobalTextSQL, "utf8mb4_unicode_ci") {
+	sql := searchGlobalTextSelect + searchGlobalTextCursor + searchGlobalTextOrder
+	if !strings.Contains(sql, "utf8mb4_unicode_ci") {
 		t.Fatal("search must ignore case")
 	}
-	if !strings.Contains(searchGlobalTextSQL, "message = ''") || !strings.Contains(searchGlobalTextSQL, "message_data") {
+	if !strings.Contains(sql, "message = ''") || !strings.Contains(sql, "message_data") {
 		t.Fatal("empty plaintext column must fall back to message_data")
 	}
-	if strings.Contains(searchGlobalTextSQL, "sender_user_id =") {
+	if strings.Contains(searchGlobalTextSelect, "sender_user_id =") {
 		t.Fatal("search must include inbox and outbox")
 	}
-	if !strings.Contains(searchGlobalTextSQL, "date2 <= ?") {
-		t.Fatal("page bound must be the cursor date")
+	if !strings.Contains(sql, "date2 < ?") || !strings.Contains(sql, "peer_type > ?") || !strings.Contains(sql, "peer_id > ?") {
+		t.Fatal("cursor must be the date, peer, id tuple")
 	}
-	if strings.Contains(searchGlobalTextSQL, "user_message_box_id <") {
-		t.Fatal("a channel offset_id must not bound user box ids")
+	if !strings.Contains(sql, "peer_type = ? and peer_id = ? and user_message_box_id < ?") {
+		t.Fatal("box id is only the tie-break on the cursor peer")
+	}
+	if strings.Contains(searchGlobalTextSelect, "user_message_box_id <") {
+		t.Fatal("the first page must not bound box ids")
+	}
+	if !strings.Contains(searchGlobalTextOrder, "order by date2 desc, peer_type asc, peer_id asc, user_message_box_id desc") {
+		t.Fatal(searchGlobalTextOrder)
 	}
 }

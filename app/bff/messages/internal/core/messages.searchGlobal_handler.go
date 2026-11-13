@@ -27,6 +27,9 @@ import (
 	messagepb "github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/pagelimit"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // MessagesSearchGlobal
@@ -102,14 +105,16 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 			Limit:     fetchLimit,
 		})
 	} else {
-		// Offset is the cursor date. A channel offset_id must not be applied
-		// as user_message_box_id.
+		// The cursor tuple travels on the context. Offset is not a box id.
+		ctx := c.ctx
+		if cur.Active {
+			ctx = searchorder.WithOutgoing(ctx, cur.key())
+		}
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchGlobal(
-			c.ctx,
+			ctx,
 			&messagepb.TLMessageSearchGlobal{
 				UserId: c.MD.UserId,
 				Q:      q,
-				Offset: globalFetchDate(cur),
 				Limit:  fetchLimit,
 			})
 	}
@@ -181,5 +186,28 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 			}
 		})
 
-	return rValues, nil
+	return packGlobalResult(rValues, limit), nil
+}
+
+// packGlobalResult is messages.messages when this page is short of limit:
+// clients treat that constructor as the end of the search. A full page may
+// have more rows, so it is messages.messagesSlice with next_rate set to the
+// last message date. count is one past the page because the total is not
+// counted, and inexact says so. iOS stops on messages.messages. Android
+// hashtag search reads next_rate; without it the next call sends offset_rate 0.
+func packGlobalResult(page *mtproto.Messages_Messages, limit int32) *mtproto.Messages_Messages {
+	if page == nil || limit <= 0 || int32(len(page.GetMessages())) < limit {
+		return page
+	}
+	msgs := page.GetMessages()
+	last := msgs[len(msgs)-1]
+	return mtproto.MakeTLMessagesMessagesSlice(&mtproto.Messages_Messages{
+		Inexact:  true,
+		Count:    int32(len(msgs)) + 1,
+		NextRate: &wrapperspb.Int32Value{Value: last.GetDate()},
+		Messages: msgs,
+		Topics:   []*mtproto.ForumTopic{},
+		Chats:    page.GetChats(),
+		Users:    page.GetUsers(),
+	}).To_Messages_Messages()
 }

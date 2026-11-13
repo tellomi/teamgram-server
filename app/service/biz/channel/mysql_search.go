@@ -2,7 +2,13 @@ package channel
 
 import (
 	"context"
+
+	"github.com/teamgram/proto/mtproto"
 )
+
+// globalChannelOrderSQL matches pkg/searchorder among channel rows:
+// date descending, channel id ascending, message id descending.
+const globalChannelOrderSQL = ` ORDER BY m.date2 DESC, m.channel_id ASC, m.message_id DESC LIMIT ?`
 
 func (s *mysqlStore) SearchPosts(ctx context.Context, self int64, q PostQuery) ([]*StoredMessage, error) {
 	if q.Limit <= 0 {
@@ -32,11 +38,28 @@ WHERE m.deleted = 0
 	}
 	pattern := likeContains(q.Needle)
 	args := []any{self, StateKicked, RoleBanned, joinedOnly, self, StateNormal, RoleBanned, pattern}
-	if q.MaxDate > 0 {
+	if q.GlobalOrder && q.CursorOn {
+		// Same tuple as pkg/searchorder.Key.OlderThan. Peer type is fixed
+		// because every row is a channel. channel_id ASC matches the merge.
+		stmt += `
+  AND (
+    m.date2 < ?
+    OR (m.date2 = ? AND ? > ?)
+    OR (m.date2 = ? AND ? = ? AND m.channel_id > ?)
+    OR (m.date2 = ? AND ? = ? AND m.channel_id = ? AND m.message_id < ?)
+  )`
+		pt := int32(mtproto.PEER_CHANNEL)
+		args = append(args,
+			q.CursorDate,
+			q.CursorDate, pt, q.CursorPeerType,
+			q.CursorDate, pt, q.CursorPeerType, q.CursorPeer,
+			q.CursorDate, pt, q.CursorPeerType, q.CursorPeer, q.CursorMsg,
+		)
+	} else if q.MaxDate > 0 {
 		stmt += ` AND m.date2 <= ?`
 		args = append(args, q.MaxDate)
 	}
-	if q.OffsetRate > 0 {
+	if !q.GlobalOrder && q.OffsetRate > 0 {
 		stmt += `
   AND (
     m.date2 < ?
@@ -44,11 +67,15 @@ WHERE m.deleted = 0
     OR (m.date2 = ? AND m.channel_id = ? AND m.message_id < ?)
   )`
 		args = append(args, q.OffsetRate, q.OffsetRate, q.OffsetPeer, q.OffsetRate, q.OffsetPeer, q.OffsetID)
-	} else if q.OffsetID > 0 {
+	} else if !q.GlobalOrder && q.OffsetID > 0 {
 		stmt += ` AND m.message_id < ?`
 		args = append(args, q.OffsetID)
 	}
-	stmt += ` ORDER BY m.date2 DESC, m.channel_id DESC, m.message_id DESC LIMIT ?`
+	if q.GlobalOrder {
+		stmt += globalChannelOrderSQL
+	} else {
+		stmt += ` ORDER BY m.date2 DESC, m.channel_id DESC, m.message_id DESC LIMIT ?`
+	}
 	args = append(args, q.Limit)
 	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
