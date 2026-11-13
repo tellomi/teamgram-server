@@ -19,6 +19,7 @@
 package core
 
 import (
+	"math"
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
@@ -110,6 +111,9 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		if cur.Active {
 			ctx = searchorder.WithOutgoing(ctx, cur.key())
 		}
+		if scope.UsersOnly || scope.GroupsOnly || scope.BroadcastsOnly {
+			ctx = searchorder.WithPeerScope(ctx, scope.UsersOnly, scope.GroupsOnly, scope.BroadcastsOnly)
+		}
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchGlobal(
 			ctx,
 			&messagepb.TLMessageSearchGlobal{
@@ -186,25 +190,73 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 			}
 		})
 
-	return packGlobalResult(rValues, limit), nil
+	total, exact := c.globalResultCount(q, scope, boxList, useFolder || filterOn)
+	return packGlobalResult(rValues, limit, total, exact), nil
 }
 
-// packGlobalResult is messages.messages when this page is short of limit:
-// clients treat that constructor as the end of the search. A full page may
-// have more rows, so it is messages.messagesSlice with next_rate set to the
-// last message date. count is one past the page because the total is not
-// counted, and inexact says so. iOS stops on messages.messages. Android
-// hashtag search reads next_rate; without it the next call sends offset_rate 0.
-func packGlobalResult(page *mtproto.Messages_Messages, limit int32) *mtproto.Messages_Messages {
+// globalResultCount is the same full-result total on every page.
+// User rows come back on the message-service reply. Joined channel posts
+// are counted here. A folder or media filter is not subtracted, so the
+// total can be high and exact is false. A failed count is 0; the packer
+// then uses a value no loaded page can reach.
+func (c *MessagesCore) globalResultCount(q string, scope globalQuery, boxes *mtproto.MessageBoxList, approximate bool) (int32, bool) {
+	if q == "" || c == nil || c.MD == nil {
+		return 0, false
+	}
+	restrict := scope.UsersOnly || scope.GroupsOnly || scope.BroadcastsOnly
+	var userN int32
+	if boxes != nil {
+		userN = boxes.GetCount()
+	}
+	if userN == math.MaxInt32 {
+		return math.MaxInt32, false
+	}
+	var chN int32
+	onlyUsers := restrict && scope.UsersOnly && !scope.GroupsOnly && !scope.BroadcastsOnly
+	if !onlyUsers {
+		n, err := channel.Shared().CountJoined(c.ctx, c.MD.UserId, q, restrict, scope.BroadcastsOnly, scope.GroupsOnly)
+		if err != nil {
+			c.Logger.Errorf("messages.searchGlobal count: %v", err)
+			return 0, false
+		}
+		chN = n
+	}
+	sum := int64(userN) + int64(chN)
+	if sum > math.MaxInt32 {
+		return math.MaxInt32, false
+	}
+	return int32(sum), !approximate
+}
+
+// packGlobalResult is messages.messages when this page is short of limit.
+// iOS sets totalCount to that page's length, so the rendered count equals
+// totalCount and the search completes. Android FilteredSearchView sets
+// totalCount = res.count and stops when the accumulated list reaches it, so
+// a full page reports the whole result, the same number on every page.
+// next_rate is the last message date. inexact is set when that number is
+// only a ceiling. DialogsSearchAdapter and HashtagSearchController follow
+// the page size and next_rate, not this count.
+func packGlobalResult(page *mtproto.Messages_Messages, limit, total int32, exact bool) *mtproto.Messages_Messages {
 	if page == nil || limit <= 0 || int32(len(page.GetMessages())) < limit {
 		return page
 	}
 	msgs := page.GetMessages()
-	last := msgs[len(msgs)-1]
+	n := int32(len(msgs))
+	if exact && total == n {
+		// This page is the whole result. messages.messages completes both
+		// clients without another request.
+		return page
+	}
+	if total <= n {
+		// Unknown or below this page. Stay above every list the client can
+		// accumulate until a short page ends the search.
+		total = math.MaxInt32
+		exact = false
+	}
 	return mtproto.MakeTLMessagesMessagesSlice(&mtproto.Messages_Messages{
-		Inexact:  true,
-		Count:    int32(len(msgs)) + 1,
-		NextRate: &wrapperspb.Int32Value{Value: last.GetDate()},
+		Inexact:  !exact,
+		Count:    total,
+		NextRate: &wrapperspb.Int32Value{Value: msgs[len(msgs)-1].GetDate()},
 		Messages: msgs,
 		Topics:   []*mtproto.ForumTopic{},
 		Chats:    page.GetChats(),

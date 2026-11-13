@@ -39,6 +39,38 @@ const searchGlobalTextCursor = "" +
 
 const searchGlobalTextOrder = " order by date2 desc, peer_type asc, peer_id asc, user_message_box_id desc limit ?"
 
+// CountGlobalText is every matching row, not one page. restrict limits the
+// count to private chats (users) and/or basic groups. Channel posts are not
+// in this table.
+func (dao *MessagesDAO) CountGlobalText(ctx context.Context, userId int64, q string, restrict, users, groups bool) (int32, error) {
+	restrictN, usersN, groupsN := 0, 0, 0
+	if restrict {
+		restrictN = 1
+	}
+	if users {
+		usersN = 1
+	}
+	if groups {
+		groupsN = 1
+	}
+	pattern := likeSubstring(q)
+	query := strings.Replace(""+
+		"select count(*) as n from __TABLE__ where user_id = ? and deleted = 0 and ("+
+		"message COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '\\\\' "+
+		"OR (message = '' AND CAST(message_data AS CHAR) COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '\\\\')"+
+		") and (? = 0 or (? = 1 and peer_type in (1, 2)) or (? = 1 and peer_type = 3))",
+		"__TABLE__", dao.CalcTableName(userId), -1)
+	var row struct {
+		N int32 `db:"n"`
+	}
+	err := dao.db.QueryRowPartial(ctx, &row, query, userId, pattern, pattern, restrictN, usersN, groupsN)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("queryx in CountGlobalText(_), error: %v", err)
+		return 0, err
+	}
+	return row.N, nil
+}
+
 // likeSubstring is a LIKE pattern that matches q anywhere.
 // %, _, and \ in q are literals.
 func likeSubstring(q string) string {

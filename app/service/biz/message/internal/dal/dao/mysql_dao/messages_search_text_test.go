@@ -1,8 +1,12 @@
 package mysql_dao
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
 
 func TestLikeSubstringEscapesAndGlobalSQLIsCaseInsensitive(t *testing.T) {
@@ -33,5 +37,50 @@ func TestLikeSubstringEscapesAndGlobalSQLIsCaseInsensitive(t *testing.T) {
 	}
 	if !strings.Contains(searchGlobalTextOrder, "order by date2 desc, peer_type asc, peer_id asc, user_message_box_id desc") {
 		t.Fatal(searchGlobalTextOrder)
+	}
+}
+
+func TestEqualDateTupleQueryIsExecuted(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherFunc(func(expected, actual string) error {
+		if strings.Contains(actual, expected) {
+			return nil
+		}
+		return fmt.Errorf("SQL %s does not contain %s", actual, expected)
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	query := strings.Replace(searchGlobalTextSelect, "__TABLE__", "messages", 1) + searchGlobalTextCursor + searchGlobalTextOrder
+	// Page 2 after a user message on the same date: date 50, peer type 2, peer 7, box 9.
+	mock.ExpectQuery("date2 < ?").WithArgs(
+		int64(4), "%Hello%", "%Hello%",
+		int32(50),
+		int32(50), int32(2),
+		int32(50), int32(2), int64(7),
+		int32(50), int32(2), int64(7), int32(9),
+		int32(10),
+	).WillReturnRows(sqlmock.NewRows([]string{"user_message_box_id"}).AddRow(int32(8)))
+	rows, err := db.QueryContext(context.Background(), query,
+		int64(4), "%Hello%", "%Hello%",
+		int32(50),
+		int32(50), int32(2),
+		int32(50), int32(2), int64(7),
+		int32(50), int32(2), int64(7), int32(9),
+		int32(10),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("no row")
+	}
+	var id int32
+	if err := rows.Scan(&id); err != nil || id != 8 {
+		t.Fatalf("id %d %v", id, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -70,6 +70,37 @@ func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) 
 	return hits, nil
 }
 
+func (s *memoryStore) CountJoinedText(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int32
+	for id, ch := range s.channels {
+		if !joinedOnlyVisible(ch, s.parts[id][self]) {
+			continue
+		}
+		if restrict {
+			if ch.Broadcast && !ch.Megagroup && !broadcasts {
+				continue
+			}
+			if ch.Megagroup && !megagroups {
+				continue
+			}
+			if !ch.Broadcast && !ch.Megagroup {
+				continue
+			}
+		}
+		for _, stored := range s.messages[id] {
+			if stored == nil || stored.Deleted {
+				continue
+			}
+			if containsFold(messagePlain(stored.Data), needle) {
+				n++
+			}
+		}
+	}
+	return n, nil
+}
+
 func (s *memoryStore) SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

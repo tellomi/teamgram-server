@@ -15,6 +15,11 @@ const (
 	metaPeerType = "x-search-cursor-peer-type"
 	metaPeerID   = "x-search-cursor-peer-id"
 	metaMsgID    = "x-search-cursor-msg-id"
+
+	metaScope         = "x-search-scope"
+	metaScopeUsers    = "x-search-scope-users"
+	metaScopeGroups   = "x-search-scope-groups"
+	metaScopeChannels = "x-search-scope-channels"
 )
 
 type ctxKey struct{}
@@ -63,6 +68,51 @@ func parseI32(md metadata.MD, k string) (int32, error) {
 	}
 	n, err := strconv.ParseInt(vs[0], 10, 32)
 	return int32(n), err
+}
+
+type scopeStored struct {
+	on         bool
+	users      bool
+	groups     bool
+	broadcasts bool
+}
+
+type scopeKey struct{}
+
+// WithPeerScope tells the message service which peer kinds the count includes.
+// broadcasts-only means the user-message table contributes nothing.
+func WithPeerScope(ctx context.Context, users, groups, broadcasts bool) context.Context {
+	ctx = context.WithValue(ctx, scopeKey{}, scopeStored{on: true, users: users, groups: groups, broadcasts: broadcasts})
+	return metadata.AppendToOutgoingContext(ctx,
+		metaScope, "1",
+		metaScopeUsers, boolBit(users),
+		metaScopeGroups, boolBit(groups),
+		metaScopeChannels, boolBit(broadcasts),
+	)
+}
+
+// PeerScope reports a kind restriction. ok is false when the caller did not set one.
+func PeerScope(ctx context.Context) (users, groups, broadcasts bool, ok bool) {
+	if v, hit := ctx.Value(scopeKey{}).(scopeStored); hit && v.on {
+		return v.users, v.groups, v.broadcasts, true
+	}
+	md, hit := metadata.FromIncomingContext(ctx)
+	if !hit || len(md.Get(metaScope)) == 0 || md.Get(metaScope)[0] != "1" {
+		return false, false, false, false
+	}
+	return bit(md, metaScopeUsers), bit(md, metaScopeGroups), bit(md, metaScopeChannels), true
+}
+
+func boolBit(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
+}
+
+func bit(md metadata.MD, k string) bool {
+	vs := md.Get(k)
+	return len(vs) > 0 && vs[0] == "1"
 }
 
 func parseI64(md metadata.MD, k string) (int64, error) {

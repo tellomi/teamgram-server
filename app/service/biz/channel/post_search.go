@@ -163,6 +163,17 @@ func (s *Service) SearchJoined(ctx context.Context, self int64, needle string, l
 	return out, nil
 }
 
+// CountJoined is the number of joined posts whose text contains needle.
+// restrict keeps broadcasts and/or megagroups only. The count is the whole
+// result, not one page.
+func (s *Service) CountJoined(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error) {
+	needle = strings.TrimSpace(needle)
+	if needle == "" || s == nil || s.store == nil {
+		return 0, nil
+	}
+	return s.store.CountJoinedText(ctx, self, needle, restrict, broadcasts, megagroups)
+}
+
 // SearchPublic matches public channel and group titles and usernames.
 func (s *Service) SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error) {
 	q = strings.TrimSpace(strings.TrimPrefix(q, "@"))

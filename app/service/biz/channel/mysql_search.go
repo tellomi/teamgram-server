@@ -93,6 +93,41 @@ WHERE m.deleted = 0
 	return out, rows.Err()
 }
 
+func (s *mysqlStore) CountJoinedText(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error) {
+	restrictN, broadN, megaN := 0, 0, 0
+	if restrict {
+		restrictN = 1
+	}
+	if broadcasts {
+		broadN = 1
+	}
+	if megagroups {
+		megaN = 1
+	}
+	var n int32
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM channel_messages m
+JOIN channels c ON c.id = m.channel_id
+WHERE m.deleted = 0
+  AND c.deleted = 0 AND c.restricted = 0 AND c.banned = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM channel_participants bp
+    WHERE bp.channel_id = c.id AND bp.user_id = ? AND (bp.state = ? OR bp.role = ?)
+  )
+  AND c.id IN (
+    SELECT channel_id FROM channel_participants
+    WHERE user_id = ? AND state = ? AND role <> ?
+  )
+  AND m.message COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '\\'
+  AND (
+    ? = 0
+    OR (? = 1 AND c.broadcast = 1 AND c.megagroup = 0)
+    OR (? = 1 AND c.megagroup = 1)
+  )`, self, StateKicked, RoleBanned, self, StateNormal, RoleBanned, likeContains(needle), restrictN, broadN, megaN).Scan(&n)
+	return n, err
+}
+
 func (s *mysqlStore) SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error) {
 	pattern := likeContains(q)
 	rows, err := s.db.QueryContext(ctx, channelSelect+`

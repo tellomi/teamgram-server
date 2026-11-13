@@ -310,8 +310,8 @@ func TestEqualDateChannelStoreAndUserTuple(t *testing.T) {
 			break
 		}
 		if len(pageRows) == pageSize {
-			packed := packGlobalResult(&mtproto.Messages_Messages{Messages: keysAsMessages(pageRows)}, pageSize)
-			if packed.GetPredicateName() != mtproto.Predicate_messages_messagesSlice || packed.GetNextRate().GetValue() != 50 || !packed.GetInexact() || packed.GetCount() != pageSize+1 {
+			packed := packGlobalResult(&mtproto.Messages_Messages{Messages: keysAsMessages(pageRows)}, pageSize, int32(len(want)), true)
+			if packed.GetPredicateName() != mtproto.Predicate_messages_messagesSlice || packed.GetNextRate().GetValue() != 50 || packed.GetInexact() || packed.GetCount() != int32(len(want)) {
 				t.Fatalf("page %d slice pred %s rate %v count %d", page, packed.GetPredicateName(), packed.GetNextRate(), packed.GetCount())
 			}
 		}
@@ -375,9 +375,9 @@ func TestEqualDatePagesAcrossSources(t *testing.T) {
 		if len(page.BoxList) == 0 {
 			break
 		}
-		packed := packGlobalResult(&mtproto.Messages_Messages{Messages: messageTexts(page)}, pageSize)
+		packed := packGlobalResult(&mtproto.Messages_Messages{Messages: messageTexts(page)}, pageSize, int32(len(want)), true)
 		if int32(len(page.BoxList)) >= pageSize {
-			if packed.GetPredicateName() != mtproto.Predicate_messages_messagesSlice || packed.GetNextRate().GetValue() != page.BoxList[len(page.BoxList)-1].GetMessage().GetDate() || !packed.GetInexact() || packed.GetCount() != pageSize+1 {
+			if packed.GetPredicateName() != mtproto.Predicate_messages_messagesSlice || packed.GetNextRate().GetValue() != page.BoxList[len(page.BoxList)-1].GetMessage().GetDate() || packed.GetInexact() || packed.GetCount() != int32(len(want)) {
 				t.Fatalf("slice %#v next %v count %d", packed.GetPredicateName(), packed.GetNextRate(), packed.GetCount())
 			}
 			rates = append(rates, packed.GetNextRate().GetValue())
@@ -404,6 +404,52 @@ func messageTexts(list *mtproto.MessageBoxList) []*mtproto.Message {
 		out = append(out, box.GetMessage())
 	}
 	return out
+}
+
+func TestFilteredSearchCountDoesNotStopEarly(t *testing.T) {
+	const total int32 = 50
+	const page int32 = 20
+	var accumulated int32
+	for pageNo := 1; pageNo <= 3; pageNo++ {
+		n := page
+		if left := total - accumulated; left < n {
+			n = left
+		}
+		msgs := make([]*mtproto.Message, n)
+		for i := range msgs {
+			msgs[i] = &mtproto.Message{Id: accumulated + int32(i) + 1, Date: 100 - accumulated}
+		}
+		pageObj := mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{Messages: msgs}).To_Messages_Messages()
+		got := packGlobalResult(pageObj, page, total, true)
+		// Android FilteredSearchView: totalCount = res.count, then if the
+		// accumulated list is larger, raise it, and stop when it reaches it.
+		var clientTotal int32
+		if got.GetPredicateName() == mtproto.Predicate_messages_messagesSlice {
+			clientTotal = got.GetCount()
+			if got.GetNextRate().GetValue() == 0 {
+				t.Fatal("full page missing next_rate")
+			}
+		}
+		accumulated += n
+		if accumulated > clientTotal && got.GetPredicateName() == mtproto.Predicate_messages_messagesSlice {
+			clientTotal = accumulated
+		}
+		endReached := accumulated >= clientTotal && clientTotal > 0
+		if pageNo < 3 {
+			if endReached || clientTotal < accumulated {
+				t.Fatalf("page %d stopped at %d/%d", pageNo, accumulated, clientTotal)
+			}
+			// iOS completes when this page's length equals totalCount.
+			if n == got.GetCount() {
+				t.Fatalf("page %d ios would stop at %d", pageNo, n)
+			}
+		} else if got.GetPredicateName() != mtproto.Predicate_messages_messages {
+			t.Fatalf("last page %s", got.GetPredicateName())
+		}
+	}
+	if accumulated != total {
+		t.Fatalf("accumulated %d", accumulated)
+	}
 }
 
 func TestAddJoinedChannelsRespectsArchive(t *testing.T) {

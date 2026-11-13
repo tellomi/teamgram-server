@@ -25,6 +25,9 @@ type Store interface {
 	// SearchPosts returns channel posts newest first. Limit is the maximum
 	// number of rows. The caller asks for one extra row to know the page continues.
 	SearchPosts(ctx context.Context, self int64, q PostQuery) ([]*StoredMessage, error)
+	// CountJoinedText is the number of joined posts whose text contains needle.
+	// restrict limits the count to broadcasts and/or megagroups.
+	CountJoinedText(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error)
 	// SearchPublic returns public channels and groups whose title or username
 	// matches q. Deleted, banned, and restricted channels are left out, and so
 	// is a channel that banned or kicked self.
