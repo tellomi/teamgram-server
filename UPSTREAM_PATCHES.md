@@ -467,6 +467,17 @@ The stored pts and pts_count stay on the update. Adjacent updates of the same ki
 | --- | --- |
 | Difference merge | `app/service/biz/updates/internal/core/merge_updates_helper.go` |
 
+## messages.getAllDrafts (ISSUE-S-DRAFT-ALL-001)
+
+`dialog.getAllDrafts` loaded every `dialogs` row with `draft_type > 0` and then left the draft pointer nil, so `messages.getAllDrafts` always returned an empty `updates`. `messages.saveDraft` still wrote `dialogs.draft_message_data` and the BFF still pushed `updateDraftMessage` from the request, which is why another session saw the draft immediately and a later `messages.getAllDrafts` (including after login or reinstall) did not.
+
+The stored JSON is decoded in `stored_draft.go` the same way `Dao.MakeDialog` already decodes a single dialog. A blank or `null` column is skipped. One corrupt row is logged and does not drop the rest. `draftMessage` and `draftMessageEmpty` are both returned, because a cleared draft is stored as `draft_type = 1` and the same query is what `dialog.clearAllDrafts` uses.
+
+| Piece | File |
+| --- | --- |
+| Decode stored draft JSON | `app/service/biz/dialog/internal/core/stored_draft.go` |
+| `dialog.getAllDrafts` | `app/service/biz/dialog/internal/core/dialog.getAllDrafts_handler.go` |
+
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
