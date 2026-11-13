@@ -46,8 +46,6 @@ type mergeUpdatesHelper struct {
 	readHistoryInBoxList  []*list.Element
 	readHistoryOutBoxList []*list.Element
 	readMessagesContents  *list.Element
-	folderPeers           *list.Element
-	pinnedMessages        *list.Element
 	phoneCallRequest      *list.Element
 	otherUpdates          *list.List
 }
@@ -59,94 +57,34 @@ func newMergeUpdatesHelper() *mergeUpdatesHelper {
 	}
 }
 
-func (m *mergeUpdatesHelper) merge(update *mtproto.Update, pts int32) {
+// merge combines one getDifference window.
+//
+// Official clients apply a pts update only when localPts + pts_count == pts.
+// The update's own pts and pts_count stay. Same-type rows are folded only
+// when they are adjacent and the later pts continues the earlier one
+// (earlier.pts + later.pts_count == later.pts): the result keeps the later
+// pts and the sum of the counts. Folding across another update, or across
+// a hole, makes that walk fail.
+func (m *mergeUpdatesHelper) merge(update *mtproto.Update) {
 	switch update.PredicateName {
 	case mtproto.Predicate_updateNewMessage:
 		// updateNewMessage#1f2b0afd message:Message pts:int pts_count:int = Update;
 		m.newMessages = append(m.newMessages, update.Message_MESSAGE)
 	case mtproto.Predicate_updateDeleteMessages:
 		// updateDeleteMessages#a20db0e5 messages:Vector<int> pts:int pts_count:int = Update;
-		if m.deleteMessages == nil {
-			update.Pts_INT32 = pts
-			update.PtsCount = 0
-			m.deleteMessages = m.otherUpdates.PushBack(update)
-		} else {
-			tmp := m.deleteMessages.Value.(*mtproto.Update)
-			m.otherUpdates.Remove(m.deleteMessages)
-			tmp.Messages = append(tmp.Messages, update.Messages...)
-			m.deleteMessages = m.otherUpdates.PushBack(tmp)
-		}
+		m.foldMessageIDs(&m.deleteMessages, update)
 	case mtproto.Predicate_updateReadHistoryInbox:
 		// updateReadHistoryInbox#9c974fdf flags:# folder_id:flags.0?int peer:Peer max_id:int still_unread_count:int pts:int pts_count:int = Update;
-		var (
-			foundId = -1
-			inbox   *mtproto.Update
-		)
-		for n, e := range m.readHistoryInBoxList {
-			inbox = e.Value.(*mtproto.Update)
-			if inbox.GetFolderId().GetValue() == update.GetFolderId().GetValue() &&
-				equalPeer(inbox.GetPeer_PEER(), update.GetPeer_PEER()) {
-				if update.GetMaxId() > inbox.GetMaxId() {
-					inbox.MaxId = update.GetMaxId()
-				}
-				inbox.StillUnreadCount = update.StillUnreadCount
-
-				m.otherUpdates.Remove(e)
-				foundId = n
-				break
-			}
-		}
-		if foundId > 0 {
-			m.readHistoryInBoxList[foundId] = m.otherUpdates.PushBack(inbox)
-		} else {
-			update.Pts_INT32 = pts
-			update.PtsCount = 0
-			e := m.otherUpdates.PushBack(update)
-			m.readHistoryInBoxList = append(m.readHistoryInBoxList, e)
-		}
+		m.foldReadHistory(&m.readHistoryInBoxList, update, true)
 	case mtproto.Predicate_updateReadHistoryOutbox:
 		// updateReadHistoryOutbox#2f2f21bf peer:Peer max_id:int pts:int pts_count:int = Update;
-		var (
-			foundId = -1
-			outbox  *mtproto.Update
-		)
-		for n, e := range m.readHistoryOutBoxList {
-			outbox = e.Value.(*mtproto.Update)
-			if equalPeer(outbox.GetPeer_PEER(), update.GetPeer_PEER()) {
-				if update.GetMaxId() > outbox.GetMaxId() {
-					outbox.MaxId = update.GetMaxId()
-				}
-				m.otherUpdates.Remove(e)
-				foundId = n
-				break
-			}
-		}
-		if foundId > 0 {
-			// found
-			m.readHistoryOutBoxList[foundId] = m.otherUpdates.PushBack(outbox)
-		} else {
-			update.Pts_INT32 = pts
-			update.PtsCount = 0
-			e := m.otherUpdates.PushBack(update)
-			m.readHistoryOutBoxList = append(m.readHistoryOutBoxList, e)
-		}
+		m.foldReadHistory(&m.readHistoryOutBoxList, update, false)
 	case mtproto.Predicate_updateWebPage:
 		// updateWebPage#7f891213 webpage:WebPage pts:int pts_count:int = Update;
-		update.Pts_INT32 = pts
-		update.PtsCount = 0
 		m.otherUpdates.PushBack(update)
 	case mtproto.Predicate_updateReadMessagesContents:
 		// updateReadMessagesContents#68c13933 messages:Vector<int> pts:int pts_count:int = Update;
-		if m.readMessagesContents == nil {
-			update.Pts_INT32 = pts
-			update.PtsCount = 0
-			m.readMessagesContents = m.otherUpdates.PushBack(update)
-		} else {
-			tmp := m.readMessagesContents.Value.(*mtproto.Update)
-			m.otherUpdates.Remove(m.readMessagesContents)
-			tmp.Messages = append(tmp.Messages, update.Messages...)
-			m.readMessagesContents = m.otherUpdates.PushBack(tmp)
-		}
+		m.foldMessageIDs(&m.readMessagesContents, update)
 	case mtproto.Predicate_updateNewChannelMessage:
 		// updateNewChannelMessage#62ba04d9 message:Message pts:int pts_count:int = Update;
 		// ignore
@@ -158,28 +96,16 @@ func (m *mergeUpdatesHelper) merge(update *mtproto.Update, pts int32) {
 		// ignore
 	case mtproto.Predicate_updateEditMessage:
 		// updateEditMessage#e40370a3 message:Message pts:int pts_count:int = Update;
-		update.Pts_INT32 = pts
-		update.PtsCount = 0
 		m.otherUpdates.PushBack(update)
 	case mtproto.Predicate_updateChannelWebPage:
 		// updateChannelWebPage#40771900 channel_id:int webpage:WebPage pts:int pts_count:int = Update;
 		// ignore
 	case mtproto.Predicate_updateFolderPeers:
 		// updateFolderPeers#19360dc0 folder_peers:Vector<FolderPeer> pts:int pts_count:int = Update;
-		if m.folderPeers != nil {
-			m.otherUpdates.Remove(m.folderPeers)
-		}
-		update.Pts_INT32 = pts
-		update.PtsCount = 0
-		m.folderPeers = m.otherUpdates.PushBack(update)
+		m.otherUpdates.PushBack(update)
 	case mtproto.Predicate_updatePinnedMessages:
 		// updatePinnedMessages#ed85eab5 flags:# pinned:flags.0?true peer:Peer messages:Vector<int> pts:int pts_count:int = Update;
-		if m.pinnedMessages != nil {
-			m.otherUpdates.Remove(m.pinnedMessages)
-		}
-		update.Pts_INT32 = pts
-		update.PtsCount = 0
-		m.pinnedMessages = m.otherUpdates.PushBack(update)
+		m.otherUpdates.PushBack(update)
 	case mtproto.Predicate_updatePinnedChannelMessages:
 		// updatePinnedChannelMessages#8588878b flags:# pinned:flags.0?true channel_id:int messages:Vector<int> pts:int pts_count:int = Update;
 		// ignore
@@ -200,6 +126,59 @@ func (m *mergeUpdatesHelper) merge(update *mtproto.Update, pts int32) {
 		// TODO: merge
 		m.otherUpdates.PushBack(update)
 	}
+}
+
+// ptsContinues reports that next starts at the pts prev ends on.
+func ptsContinues(prev, next *mtproto.Update) bool {
+	if prev.GetPtsCount() <= 0 || next.GetPtsCount() <= 0 {
+		return false
+	}
+	return prev.GetPts_INT32()+next.GetPtsCount() == next.GetPts_INT32()
+}
+
+func applyLaterPts(dst, src *mtproto.Update) {
+	dst.Pts_INT32 = src.Pts_INT32
+	dst.PtsCount += src.PtsCount
+}
+
+// foldMessageIDs appends message ids when the previous update of this kind
+// is still the tail and its pts continues. Otherwise the update is kept.
+func (m *mergeUpdatesHelper) foldMessageIDs(slot **list.Element, update *mtproto.Update) {
+	if *slot != nil && *slot == m.otherUpdates.Back() && ptsContinues((*slot).Value.(*mtproto.Update), update) {
+		kept := (*slot).Value.(*mtproto.Update)
+		kept.Messages = append(kept.Messages, update.Messages...)
+		applyLaterPts(kept, update)
+		return
+	}
+	*slot = m.otherUpdates.PushBack(update)
+}
+
+// foldReadHistory reduces adjacent reads of one peer. inbox also carries
+// still_unread_count. The first list entry is included; a match at index 0
+// is the same fold as any later one.
+func (m *mergeUpdatesHelper) foldReadHistory(slots *[]*list.Element, update *mtproto.Update, inbox bool) {
+	var matched *list.Element
+	for _, e := range *slots {
+		prev := e.Value.(*mtproto.Update)
+		if inbox && prev.GetFolderId().GetValue() != update.GetFolderId().GetValue() {
+			continue
+		}
+		if equalPeer(prev.GetPeer_PEER(), update.GetPeer_PEER()) {
+			matched = e
+		}
+	}
+	if matched != nil && matched == m.otherUpdates.Back() && ptsContinues(matched.Value.(*mtproto.Update), update) {
+		kept := matched.Value.(*mtproto.Update)
+		if update.GetMaxId() > kept.GetMaxId() {
+			kept.MaxId = update.GetMaxId()
+		}
+		if inbox {
+			kept.StillUnreadCount = update.StillUnreadCount
+		}
+		applyLaterPts(kept, update)
+		return
+	}
+	*slots = append(*slots, m.otherUpdates.PushBack(update))
 }
 
 func (m *mergeUpdatesHelper) toUpdates() []*mtproto.Update {

@@ -91,7 +91,7 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 
 	merge := newMergeUpdatesHelper()
 	for _, update := range updateList {
-		merge.merge(update, lastPts)
+		merge.merge(update)
 	}
 
 	if lastSeq == 0 {
