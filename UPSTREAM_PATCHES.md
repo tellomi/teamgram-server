@@ -466,3 +466,14 @@ The stored pts and pts_count stay on the update. Adjacent updates of the same ki
 | Piece | File |
 | --- | --- |
 | Difference merge | `app/service/biz/updates/internal/core/merge_updates_helper.go` |
+
+## messages.getAllDrafts (ISSUE-S-DRAFT-ALL-001)
+
+`dialog.getAllDrafts` loaded every `dialogs` row with `draft_type > 0` and then left the draft pointer nil, so `messages.getAllDrafts` always returned an empty `updates`. `messages.saveDraft` still wrote `dialogs.draft_message_data` and the BFF still pushed `updateDraftMessage` from the request, which is why another session saw the draft immediately and a later `messages.getAllDrafts` (including after login or reinstall) did not.
+
+The stored JSON is decoded in `stored_draft.go` the same way `Dao.MakeDialog` already decodes a single dialog. A blank or `null` column is skipped. One corrupt row is logged and does not drop the rest. `draftMessage` and `draftMessageEmpty` are both returned, because a cleared draft is stored as `draft_type = 1` and the same query is what `dialog.clearAllDrafts` uses.
+
+| Piece | File |
+| --- | --- |
+| Decode stored draft JSON | `app/service/biz/dialog/internal/core/stored_draft.go` |
+| `dialog.getAllDrafts` | `app/service/biz/dialog/internal/core/dialog.getAllDrafts_handler.go` |
