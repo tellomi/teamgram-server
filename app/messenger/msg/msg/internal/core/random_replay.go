@@ -30,12 +30,7 @@ func (c *MsgCore) replayedOutbox(
 		if !ok {
 			return nil, false
 		}
-		updates = append(updates, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-			Pts_INT32:       box.Pts,
-			PtsCount:        box.PtsCount,
-			RandomId:        box.RandomId,
-			Message_MESSAGE: box.Message,
-		}).To_Update())
+		updates = append(updates, outgoingUpdate(box))
 	}
 	return mtproto.MakeReplyUpdates(users, chats, channels, updates...), true
 }
