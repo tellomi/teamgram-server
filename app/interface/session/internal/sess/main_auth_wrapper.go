@@ -221,13 +221,27 @@ func (m *MainAuthWrapper) applyAuthStateData(ctx context.Context, kData *authses
 	}
 }
 
-// bindingRevoked reloads a Normal session. AuthStateNormal used to stay
-// trusted for the life of the socket, so a missed updateAccountResetAuthorization
-// left the device logged in after its auth_users row was deleted.
-// A lookup error keeps the session: authsession being down must not log
-// every connection out. Logout and Deleted close it.
+// bindingRecheckState is a connection that already has a user and must
+// notice a revoked auth_users row. NeedPassword is that user before
+// auth.checkPassword; leaving it out kept answering ping after the key
+// was reset.
+func bindingRecheckState(state int) bool {
+	switch state {
+	case mtproto.AuthStateNormal, mtproto.AuthStateNeedPassword:
+		return true
+	default:
+		return false
+	}
+}
+
+// bindingRevoked reloads a signed-in session, including one waiting for the
+// cloud password. AuthStateNormal used to stay trusted for the life of the
+// socket, so a missed updateAccountResetAuthorization left the device logged
+// in after its auth_users row was deleted. A lookup error keeps the session:
+// authsession being down must not log every connection out. Logout and
+// Deleted close it.
 func (m *MainAuthWrapper) bindingRevoked(ctx context.Context) bool {
-	if m == nil || m.state != mtproto.AuthStateNormal || m.authKeyId == 0 || m.cb == nil || m.cb.Dao == nil || m.cb.Dao.AuthsessionClient == nil {
+	if m == nil || !bindingRecheckState(m.state) || m.authKeyId == 0 || m.cb == nil || m.cb.Dao == nil || m.cb.Dao.AuthsessionClient == nil {
 		return false
 	}
 	kData, err := m.cb.Dao.AuthsessionClient.AuthsessionGetAuthStateData(ctx, &authsession.TLAuthsessionGetAuthStateData{

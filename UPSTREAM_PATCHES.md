@@ -2,6 +2,25 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Authorization hash, revocation and TTL
+
+`auth_users.hash` used to be replaced on every `BindAuthKeyUser`. A second `auth.signIn` on the same permanent key (retry, future-auth token, cloud-password step) made `account.resetAuthorization` return `HASH_INVALID` for the hash the other device had just listed. A live row now keeps its hash. A row that was logged out, reset, or expired takes a new non-zero hash, and the 24 hour gate still uses `date_created`.
+
+`auth.bindTempAuthKey` used to copy the user onto the permanent key and leave the temporary key's `auth_users` row in place, so one login was two authorizations. The temporary row is soft-deleted after the permanent row exists.
+
+A revoked session answered the next protected RPC with `401 AUTH_KEY_UNREGISTERED` and dropped `ping` / `ping_delay_disconnect` with no error, so the long connection stayed up and the client did not return to the login page. Both now receive that 401. `account.setAuthorizationTTL` used to store `users.authorization_ttl_days` and never read it. `auth_users.date_active` was only the bind time, so treating it as last activity on deploy would delete sessions that are still in use. A ping or RPC stores `date_active` (at most once an hour) and sets `activity_trusted`. A trusted session whose stored `date_active` is already past the TTL is logged out on that request, including the only device on the account. The stamp is refreshed only when it is still inside the window. Rows that have never recorded a ping stay, and their first request starts the clock. A failed read of `authorization_ttl_days` does not delete anyone. The expiry update also requires `date_active` to still be the idle value, so a concurrent refresh is left alone. `tools/expireauthorizations` uses the same rule. Its backup tables are created before the transaction, and `--rollback` restores the authorization row and the device token. It is not run from deploy.
+
+| Piece | File |
+| --- | --- |
+| stable hash, temp-key adopt, TTL, push unbind | `app/service/authsession/internal/dao/auths.go`, `authorization.go`, `authorization_ttl.go` |
+| hash SQL | `app/service/authsession/internal/dal/dao/mysql_dao/auth_users_dao.go` |
+| auth state and bind | `app/service/authsession/internal/core/authsession.getAuthStateData_handler.go`, `authsession.bindTempAuthKey_handler.go` |
+| 401 on ping and the next RPC | `app/interface/session/internal/sess/auth_state.go`, `session_service_messages.go`, `session_invoke.go` |
+| inactivity rule | `pkg/authzttl` |
+| trusted activity column | `teamgramd/deploy/sql/migrate-20261112-authorization-activity.sql` |
+| operator script | `tools/expireauthorizations` |
+| password-step recheck | `app/interface/session/internal/sess/main_auth_wrapper.go` |
+
 ## Verification quotas (A05 / A06)
 
 Phone and email codes share `pkg/verify.Limiter`. The counter is one Redis `INCR` per target per Asia/Shanghai calendar day. The default cap is 10 (`TELLOMI_SMS_DAILY_LIMIT`, `TELLOMI_EMAIL_DAILY_LIMIT`). The 11th call returns `PHONE_NUMBER_FLOOD` before the SMS or email sender runs. A number outside `TELLOMI_SMS_COUNTRY_ALLOW` (default `86`) returns `PHONE_NUMBER_INVALID` before that sender. `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` accepts other countries again. Resend, change-phone, confirm-phone, login email, and cloud-password email use this gate. The contract for clients is `docs/api/verification-limits.md`.

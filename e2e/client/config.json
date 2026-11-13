@@ -29,6 +29,7 @@
     "sticker_owner": {"number": "9996610051", "code": "11111"},
     "sticker_other": {"number": "9996610052", "code": "11111"},
     "reset_pair": {"number": "9996610061", "code": "11111"},
+    "relogin": {"number": "9996610062", "code": "11111"},
     "notice": {"number": "9996610071", "code": "11111"},
     "aged": {"number": "9996610072", "code": "11111"},
     "qr": {"number": "9996610073", "code": "11111"},

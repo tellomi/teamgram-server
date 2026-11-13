@@ -88,6 +88,63 @@ func TestFreshLoginCannotResetOlderSession(t *testing.T) {
 	}
 }
 
+// TestReloginKeepsAuthorizationHash logs the same auth key in again.
+// account.getAuthorizations must still show one row for that device, and the
+// hash the other device already has must still reset it. A new auth key is a
+// new authorization; this test does not open a second connection.
+func TestReloginKeepsAuthorizationHash(t *testing.T) {
+	cfg := requireE2E(t)
+	phone, err := cfg.Phone("relogin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	ios, err := Dial(ctx, cfg, ProfileIOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ios.Close)
+	if _, err = ios.Login(ctx, phone, "Relogin"); err != nil {
+		t.Fatal(err)
+	}
+	android, err := Dial(ctx, cfg, ProfileAndroid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(android.Close)
+	if _, err = android.Login(ctx, phone, "Relogin"); err != nil {
+		t.Fatal(err)
+	}
+
+	before := hashesForDevice(listAuthorizations(t, ctx, android), ProfileIOS.DeviceModel)
+	if len(before) != 1 {
+		t.Fatalf("iOS rows before relogin = %d", len(before))
+	}
+	if _, err = ios.Login(ctx, phone, "Relogin"); err != nil {
+		t.Fatalf("same-key relogin: %v", err)
+	}
+	after := hashesForDevice(listAuthorizations(t, ctx, android), ProfileIOS.DeviceModel)
+	if len(after) != 1 {
+		t.Fatalf("iOS rows after relogin = %d", len(after))
+	}
+	for hash := range before {
+		if _, ok := after[hash]; !ok {
+			t.Fatalf("relogin replaced hash %d with %v", hash, after)
+		}
+	}
+	if otherDevices(listAuthorizations(t, ctx, android)) != 1 {
+		t.Fatal("same-key relogin added an authorization")
+	}
+	if _, _, _, err = ios.State(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err = android.State(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func listAuthorizations(t *testing.T, ctx context.Context, c *Client) []*mtproto.Authorization {
 	t.Helper()
 	res, err := c.Invoke(ctx, &mtproto.TLAccountGetAuthorizations{

@@ -84,7 +84,7 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 			t.Errorf("story_deletions.%s missing after migrations", col)
 		}
 	}
-	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed"} {
+	for _, col := range []string{"encrypted_requests_disabled", "call_requests_disabled", "unconfirmed", "activity_trusted"} {
 		if !cols["auth_users"][col] {
 			t.Errorf("auth_users.%s missing after migrations", col)
 		}

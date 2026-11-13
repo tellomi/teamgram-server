@@ -35,10 +35,12 @@ func NewAuthUsersDAO(db *sqlx.DB) *AuthUsersDAO {
 // authUserBindUpdate matches dao.bindDateCreated. A positive date_created
 // stays, so an old session is not made young. A cleared value (reset writes
 // 0) takes the new bind time, so the 24h gate applies to that login.
-const authUserBindUpdate = "hash = values(hash), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0"
+// A live row keeps its hash. A deleted row (reset, logout, TTL) takes the new
+// hash, and a stored hash of 0 is replaced because 0 is not a device hash.
+const authUserBindUpdate = "hash = if(deleted = 0 and hash <> 0, hash, values(hash)), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0"
 
 // InsertOrUpdates
-// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0
+// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = if(deleted = 0 and hash <> 0, hash, values(hash)), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0
 func (dao *AuthUsersDAO) InsertOrUpdates(ctx context.Context, do *dataobject.AuthUsersDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
@@ -66,7 +68,7 @@ func (dao *AuthUsersDAO) InsertOrUpdates(ctx context.Context, do *dataobject.Aut
 }
 
 // InsertOrUpdatesTx
-// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = values(hash), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0
+// insert into auth_users(auth_key_id, user_id, hash, date_created, date_active) values (:auth_key_id, :user_id, :hash, :date_created, :date_active) on duplicate key update hash = if(deleted = 0 and hash <> 0, hash, values(hash)), date_active = values(date_active), date_created = if(date_created > 0, date_created, values(date_created)), deleted = 0
 func (dao *AuthUsersDAO) InsertOrUpdatesTx(tx *sqlx.Tx, do *dataobject.AuthUsersDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
@@ -100,7 +102,7 @@ func (dao *AuthUsersDAO) Select(ctx context.Context, authKeyId int64) (rValue *d
 		query string
 		do    = &dataobject.AuthUsersDO{}
 	)
-	query = "select id, auth_key_id, user_id, hash, date_created, date_active, android_push_session_id from auth_users where auth_key_id = ? and deleted = 0"
+	query = "select id, auth_key_id, user_id, hash, date_created, date_active, activity_trusted, android_push_session_id from auth_users where auth_key_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowPartial(ctx, do, query, authKeyId)
 
