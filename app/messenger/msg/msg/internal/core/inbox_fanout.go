@@ -22,6 +22,14 @@ type inboxPublisher interface {
 // publishInboxFanout delivers every inbox request before returning.
 // One failure fails the send. Members already accepted by Kafka stay
 // accepted, which is the same partial outcome as the old sequential walk.
+//
+// Kafka key is the inbox owner (InboxSendUserMessageToInboxV2.user_id),
+// not the dialog. The sender copy and the recipient copy are different
+// keys, and each group member is its own key, so one send publishes at
+// most one record per partition. Parallel acks do not reorder that
+// partition. The next send from this auth key publishes only after this
+// call returns, and same-peer sends stay in client order on the session
+// lane, so successive records for one recipient stay in that order.
 func publishInboxFanout(ctx context.Context, cli inboxPublisher, reqs []*inbox.TLInboxSendUserMessageToInboxV2) error {
 	if len(reqs) == 0 {
 		return nil

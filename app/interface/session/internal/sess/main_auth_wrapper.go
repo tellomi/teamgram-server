@@ -117,6 +117,7 @@ type MainAuthWrapper struct {
 	nextPushId           int64
 	cb                   *MainAuthWrapperManager
 	tmpRpcApiMessageList []*rpcApiMessage
+	orders               *peerOrder
 }
 
 func NewMainAuthWrapper(mainAuthKeyId int64, authUserId int64, state int, client *authsession.ClientSession, androidPushId int64, cb *MainAuthWrapperManager) *MainAuthWrapper {
@@ -142,6 +143,7 @@ func NewMainAuthWrapper(mainAuthKeyId int64, authUserId int64, state int, client
 		running:              syncx.NewAtomicBool(),
 		cb:                   cb,
 		tmpRpcApiMessageList: make([]*rpcApiMessage, 0),
+		orders:               newPeerOrder(),
 	}
 	mainAuth.tempAuth = newSessionList(mtproto.AuthKeyTypeTemp, mainAuth)
 	mainAuth.mediaTempAuth = newSessionList(mtproto.AuthKeyTypeMediaTemp, mainAuth)
@@ -870,6 +872,10 @@ func (m *MainAuthWrapper) runLoop() {
 
 func (m *MainAuthWrapper) rpcRunLoop() {
 	slots := make(chan struct{}, sessionRPCConcurrency())
+	orders := m.orders
+	if orders == nil {
+		orders = newPeerOrder()
+	}
 	var inflight sync.WaitGroup
 	defer func() {
 		inflight.Wait()
@@ -911,8 +917,19 @@ func (m *MainAuthWrapper) rpcRunLoop() {
 				})
 				continue
 			}
+			var wait, release func()
+			if peer, all, ordered := mutationOrder(request.reqMsg); ordered {
+				if peer == "" {
+					all = true
+				}
+				wait, release = orders.reserve(peer, all)
+			}
 			startAuthRPC(slots, false, func() {
 				defer inflight.Done()
+				if wait != nil {
+					wait()
+					defer release()
+				}
 				m.finishRPC(request.ctx, request)
 			})
 		}
