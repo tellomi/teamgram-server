@@ -177,7 +177,7 @@ func (s *Service) GetAlbumStories(ctx context.Context, viewer int64, owner Owner
 		if err != nil {
 			return nil, err
 		}
-		if rec == nil || rec.Deleted || !s.privacyAllows(ctx, rec, viewer) {
+		if !s.exposed(ctx, viewer, rec) {
 			continue
 		}
 		recs = append(recs, rec)

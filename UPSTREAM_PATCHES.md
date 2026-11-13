@@ -410,6 +410,14 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
 
+## Group send rights and invite start_date
+
+Basic-group `default_banned_rights` are checked on the chat send and edit paths in `msg.sendMessageV2` / `msg.editMessageV2` (`app/messenger/msg/msg/internal/core/msg.sendMessageV2_handler.go`, `msg.editMessageV2_handler.go`). The classifier lives in `proto/mtproto/chat_send_right.go` and is shared with megagroups. Service messages (pin notices) are not treated as member content. `messages.updatePinnedMessage` for a basic group refuses a non-admin when `pin_messages` is banned (`app/bff/messages/internal/core/messages.updatePinnedMessage_handler.go`). A temporary ban is the plain `CHAT_SEND_*_FORBIDDEN` code. `until_date` stays on `banned_rights`.
+
+Invite links with a future `start_date` are `INVITE_HASH_EXPIRED` for basic groups (`chat.checkChatInvite`, `chat.importChatInvite`, `chat.importChatInvite2`) and for channels (`app/service/biz/channel/invite.go`). The predicate is `pkg/invite.NotStarted`.
+
+`messages.searchGlobal` also drops channel messages from before the member joined when prehistory is hidden (`dropPrehistoryBoxes` in `search_global.go`, called from `messages.searchGlobal_handler.go` after the joined-channel merge).
+
 ## Group info, delete, archive, and profile name
 
 `messages.editChatTitle`, `messages.editChatPhoto`, and `messages.editChatAbout` used `CanChangeInfo`, which is true for every admin and false for every other member. A basic group now follows `default_banned_rights.change_info`. The creator may always edit. An admin may when `admin_rights.change_info` is set. An admin without that right is treated as a member. A set `change_info` flag is a ban. Megagroups use the same rule and also the member's own `banned_rights`. A broadcast channel stays admin-only. The denial is `CHAT_ADMIN_REQUIRED`.

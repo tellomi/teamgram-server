@@ -91,6 +91,15 @@ CREATE TABLE IF NOT EXISTS story_reports (
   KEY story_reports_owner (owner_kind, owner_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS story_media (
+  media_id BIGINT NOT NULL,
+  owner_kind TINYINT NOT NULL,
+  owner_id BIGINT NOT NULL,
+  story_id INT NOT NULL,
+  PRIMARY KEY (media_id, owner_kind, owner_id, story_id),
+  KEY story_media_story (owner_kind, owner_id, story_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS story_deletions (
   viewer_user_id BIGINT NOT NULL,
   owner_kind TINYINT NOT NULL,

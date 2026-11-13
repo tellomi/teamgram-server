@@ -199,6 +199,39 @@ func (s *Service) canPost(ch *Channel, p *Participant) error {
 	return nil
 }
 
+// enforceContent applies default_banned_rights and the member's own
+// banned_rights to each message. Admins and the creator are not restricted.
+// The error is the plain CHAT_WRITE_FORBIDDEN or CHAT_SEND_*_FORBIDDEN code.
+// until_date stays on banned_rights.
+func (s *Service) enforceContent(ch *Channel, p *Participant, msgs []*mtproto.Message) error {
+	if ch == nil || p == nil || p.IsAdmin() {
+		return nil
+	}
+	rights := memberBans(ch, p)
+	now := int32(time.Now().Unix())
+	for _, msg := range msgs {
+		if err := mtproto.ChatSendForbidden(now, false, rights, msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func memberBans(ch *Channel, p *Participant) []*mtproto.ChatBannedRights {
+	var rights []*mtproto.ChatBannedRights
+	if ch != nil && ch.DefaultBanned != 0 {
+		if br := mtproto.BannedRights(ch.DefaultBanned).ToChatBannedRights(); br != nil {
+			rights = append(rights, br)
+		}
+	}
+	if p != nil && p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil {
+			rights = append(rights, br)
+		}
+	}
+	return rights
+}
+
 func (s *Service) refreshCount(ctx context.Context, channelID int64) (*Channel, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {
@@ -351,6 +384,13 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 	if err = s.canPost(ch, p); err != nil {
 		return nil, err
 	}
+	msgs := make([]*mtproto.Message, 0, len(batch))
+	for _, item := range batch {
+		msgs = append(msgs, item.Message)
+	}
+	if err = s.enforceContent(ch, p, msgs); err != nil {
+		return nil, err
+	}
 	feat := s.features(ctx, channelID)
 	if feat.SlowmodeSeconds > 0 && p != nil && !p.IsAdmin() {
 		if len(batch) > 1 {
@@ -455,6 +495,9 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
 	s.prepareOutgoing(ch, stored.SenderID, body)
+	if err = s.enforceContent(ch, p, []*mtproto.Message{body}); err != nil {
+		return nil, err
+	}
 	body.SanitizeEntities()
 	raw, err := proto.Marshal(body)
 	if err != nil {
@@ -834,7 +877,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		if stored.ID <= minID {
 			continue
 		}
-		if feat.HiddenPrehistory && (viewer == nil || !viewer.IsAdmin()) && viewer != nil && stored.Date < viewer.Date {
+		if prehistoryBlocks(feat, viewer, stored) {
 			continue
 		}
 		filtered = append(filtered, stored)
@@ -866,13 +909,15 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 	if err != nil {
 		return nil, err
 	}
+	feat := s.features(ctx, ch.ID)
+	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
 	msgs := make([]*mtproto.Message, 0, len(ids))
 	for _, id := range ids {
 		stored, err := s.store.GetMessage(ctx, ch.ID, id)
 		if err != nil {
 			return nil, err
 		}
-		if stored == nil || stored.Deleted || msgexpiry.Enabled() && msgexpiry.Expired(stored.Date, ch.TtlPeriod, int32(time.Now().Unix())) {
+		if stored == nil || stored.Deleted || msgexpiry.Enabled() && msgexpiry.Expired(stored.Date, ch.TtlPeriod, int32(time.Now().Unix())) || prehistoryBlocks(feat, viewer, stored) {
 			msgs = append(msgs, mtproto.MakeTLMessageEmpty(&mtproto.Message{
 				Id:     id,
 				PeerId: mtproto.MakePeerChannel(ch.ID),

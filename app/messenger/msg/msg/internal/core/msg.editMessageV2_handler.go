@@ -19,6 +19,8 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
@@ -291,6 +293,11 @@ func (c *MsgCore) editChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 
 			return hasBot
 		})
+
+	if err = mtproto.BasicGroupSendForbidden(chat, fromUserId, int32(time.Now().Unix()), []*mtproto.Message{editBox.Message}); err != nil {
+		c.Logger.Errorf("msg.editChatOutgoingMessageV2 - error: %v", err)
+		return nil, err
+	}
 
 	outBox, err2 := c.svcCtx.Dao.EditChatOutboxMessageV2(c.ctx, fromUserId, peerChatId, editBox, dstMessage)
 	if err != nil {

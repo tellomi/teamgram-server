@@ -584,6 +584,9 @@ func inviteDead(inv *StoredInvite, usage int32, now int64) bool {
 	if inv == nil || inv.Revoked {
 		return true
 	}
+	if invite.NotStarted(inv.StartDate, now) {
+		return true
+	}
 	if inv.ExpireDate != 0 && now > inv.ExpireDate {
 		return true
 	}
