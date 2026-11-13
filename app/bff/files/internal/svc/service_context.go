@@ -89,7 +89,7 @@ func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2
 
 func installStoryMediaHooks(svcCtx *ServiceContext) {
 	users := svcCtx.UserClient
-	story.Shared().SetHooks(story.Hooks{
+	story.Shared().MergeHooks(story.Hooks{
 		IsContact: func(ctx context.Context, owner, viewer int64) bool {
 			if users == nil {
 				return false

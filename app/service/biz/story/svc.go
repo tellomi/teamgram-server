@@ -91,6 +91,87 @@ func (s *Service) SetHooks(h Hooks) {
 	s.mu.Unlock()
 }
 
+// MergeHooks fills only the hooks that are still nil. A later caller, such
+// as the files helper in the combined BFF, must not replace Push, max-id,
+// or username hooks the stories helper already installed.
+func (s *Service) MergeHooks(add Hooks) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hooks.Push == nil {
+		s.hooks.Push = add.Push
+	}
+	if s.hooks.ContactIDs == nil {
+		s.hooks.ContactIDs = add.ContactIDs
+	}
+	if s.hooks.IsContact == nil {
+		s.hooks.IsContact = add.IsContact
+	}
+	if s.hooks.IsCloseFriend == nil {
+		s.hooks.IsCloseFriend = add.IsCloseFriend
+	}
+	if s.hooks.IsBlocked == nil {
+		s.hooks.IsBlocked = add.IsBlocked
+	}
+	if s.hooks.InChats == nil {
+		s.hooks.InChats = add.InChats
+	}
+	if s.hooks.SetUserMax == nil {
+		s.hooks.SetUserMax = add.SetUserMax
+	}
+	if s.hooks.SetStoriesHidden == nil {
+		s.hooks.SetStoriesHidden = add.SetStoriesHidden
+	}
+	if s.hooks.Username == nil {
+		s.hooks.Username = add.Username
+	}
+	if s.hooks.MatchName == nil {
+		s.hooks.MatchName = add.MatchName
+	}
+	if s.hooks.DialogPeers == nil {
+		s.hooks.DialogPeers = add.DialogPeers
+	}
+}
+
+// HooksSet reports which hooks are installed.
+type HooksSet struct {
+	Push             bool
+	ContactIDs       bool
+	IsContact        bool
+	IsCloseFriend    bool
+	IsBlocked        bool
+	InChats          bool
+	SetUserMax       bool
+	SetStoriesHidden bool
+	Username         bool
+	MatchName        bool
+	DialogPeers      bool
+}
+
+func (s *Service) HooksSet() HooksSet {
+	if s == nil {
+		return HooksSet{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h := s.hooks
+	return HooksSet{
+		Push:             h.Push != nil,
+		ContactIDs:       h.ContactIDs != nil,
+		IsContact:        h.IsContact != nil,
+		IsCloseFriend:    h.IsCloseFriend != nil,
+		IsBlocked:        h.IsBlocked != nil,
+		InChats:          h.InChats != nil,
+		SetUserMax:       h.SetUserMax != nil,
+		SetStoriesHidden: h.SetStoriesHidden != nil,
+		Username:         h.Username != nil,
+		MatchName:        h.MatchName != nil,
+		DialogPeers:      h.DialogPeers != nil,
+	}
+}
+
 func (s *Service) hooksCopy() Hooks {
 	s.mu.Lock()
 	defer s.mu.Unlock()

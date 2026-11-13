@@ -25,6 +25,9 @@ type Store interface {
 	// SearchPosts returns channel posts newest first. Limit is the maximum
 	// number of rows. The caller asks for one extra row to know the page continues.
 	SearchPosts(ctx context.Context, self int64, q PostQuery) ([]*StoredMessage, error)
+	// CountJoinedText is the number of joined posts whose text contains needle.
+	// restrict limits the count to broadcasts and/or megagroups.
+	CountJoinedText(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error)
 	// SearchPublic returns public channels and groups whose title or username
 	// matches q. Deleted, banned, and restricted channels are left out, and so
 	// is a channel that banned or kicked self.
@@ -73,10 +76,26 @@ type Store interface {
 // Needle is the raw text, not a LIKE pattern. OffsetRate 0 and OffsetID 0
 // start at the newest post. A positive OffsetRate is the previous page's
 // date; rows are strictly older in (date, channel, message id) order.
+// JoinedOnly limits the scan to channels the user has joined. Public
+// channels they have not joined stay out. messages.searchGlobal sets it.
+// channels.searchPosts leaves it false.
 type PostQuery struct {
 	Needle     string
 	OffsetRate int32
 	OffsetPeer int64
 	OffsetID   int32
 	Limit      int32
+	JoinedOnly bool
+	// MaxDate keeps posts at or before this unix time. Zero means no cap.
+	// channels.searchPosts paging uses OffsetRate instead.
+	MaxDate int32
+	// GlobalOrder is messages.searchGlobal. Rows are date DESC, channel id ASC,
+	// message id DESC, and CursorOn skips anything that is not strictly after
+	// that tuple. It does not use the channels.searchPosts channel-id DESC order.
+	GlobalOrder    bool
+	CursorOn       bool
+	CursorDate     int32
+	CursorPeerType int32
+	CursorPeer     int64
+	CursorMsg      int32
 }

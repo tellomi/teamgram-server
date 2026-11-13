@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -103,6 +104,76 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, q PostQuery) (*mt
 	return out, nil
 }
 
+// SearchJoined is the channel half of messages.searchGlobal.
+// It returns posts from channels the user has joined, newest first.
+// The match is a case-insensitive substring. There is no minimum length.
+// A public channel the user has not joined is not included.
+func (s *Service) SearchJoined(ctx context.Context, self int64, needle string, limit int32, cur searchorder.Key, on bool) ([]*mtproto.MessageBox, error) {
+	needle = strings.TrimSpace(needle)
+	if needle == "" || s == nil || s.store == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.store.SearchPosts(ctx, self, PostQuery{
+		Needle:         needle,
+		Limit:          limit,
+		JoinedOnly:     true,
+		GlobalOrder:    true,
+		CursorOn:       on,
+		CursorDate:     cur.Date,
+		CursorPeerType: cur.PeerType,
+		CursorPeer:     cur.PeerID,
+		CursorMsg:      cur.MsgID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*mtproto.MessageBox, 0, len(rows))
+	for _, stored := range rows {
+		if stored == nil || stored.Deleted {
+			continue
+		}
+		body, err := unmarshalMessage(stored.Data)
+		if err != nil || body == nil {
+			continue
+		}
+		if body.GetId() == 0 {
+			body.Id = stored.ID
+		}
+		if body.GetDate() == 0 {
+			body.Date = stored.Date
+		}
+		if body.GetPeerId().GetChannelId() == 0 {
+			body.PeerId = mtproto.MakePeerChannel(stored.ChannelID)
+		}
+		if body.PredicateName == "" {
+			body.PredicateName = mtproto.Predicate_message
+		}
+		out = append(out, mtproto.MakeTLMessageBox(&mtproto.MessageBox{
+			UserId:       self,
+			MessageId:    stored.ID,
+			SenderUserId: stored.SenderID,
+			PeerType:     mtproto.PEER_CHANNEL,
+			PeerId:       stored.ChannelID,
+			Message:      viewMessage(body, stored.SenderID, self),
+		}).To_MessageBox())
+	}
+	return out, nil
+}
+
+// CountJoined is the number of joined posts whose text contains needle.
+// restrict keeps broadcasts and/or megagroups only. The count is the whole
+// result, not one page.
+func (s *Service) CountJoined(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error) {
+	needle = strings.TrimSpace(needle)
+	if needle == "" || s == nil || s.store == nil {
+		return 0, nil
+	}
+	return s.store.CountJoinedText(ctx, self, needle, restrict, broadcasts, megagroups)
+}
+
 // SearchPublic matches public channel and group titles and usernames.
 func (s *Service) SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error) {
 	q = strings.TrimSpace(strings.TrimPrefix(q, "@"))
@@ -197,6 +268,16 @@ func postSearchVisible(ch *Channel, p *Participant) bool {
 	}
 	if ch.Broadcast && ch.Username != "" {
 		return true
+	}
+	return p != nil && p.State == StateNormal && p.Role != RoleBanned
+}
+
+// joinedOnlyVisible is messages.searchGlobal: a channel the user has joined,
+// including a private channel and a public one they belong to. A public
+// channel they have not joined is channels.searchPosts, not this user's chats.
+func joinedOnlyVisible(ch *Channel, p *Participant) bool {
+	if channelHidden(ch) || viewerBlocked(p) {
+		return false
 	}
 	return p != nil && p.State == StateNormal && p.Role != RoleBanned
 }

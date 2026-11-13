@@ -85,8 +85,8 @@ func TestChatSendForbiddenCodesAndUntil(t *testing.T) {
 			t.Fatalf("%s forever: %v", tc.name, err)
 		}
 		err = ChatSendForbidden(now, false, []*ChatBannedRights{banRights(temp, tc.set)}, tc.msg)
-		if err == nil || !strings.Contains(err.Error(), tc.want+"_1700003600") {
-			t.Fatalf("%s until: %v", tc.name, err)
+		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.want+"_") {
+			t.Fatalf("%s temporary ban must stay the plain code: %v", tc.name, err)
 		}
 		if err := ChatSendForbidden(now, true, []*ChatBannedRights{banRights(forever, tc.set)}, tc.msg); err != nil {
 			t.Fatalf("%s admin: %v", tc.name, err)

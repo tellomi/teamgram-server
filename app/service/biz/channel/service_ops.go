@@ -189,8 +189,8 @@ func (s *Service) canPost(ch *Channel, p *Participant) error {
 
 // enforceContent applies default_banned_rights and the member's own
 // banned_rights to each message. Admins and the creator are not restricted.
-// The error is CHAT_WRITE_FORBIDDEN or CHAT_SEND_*_FORBIDDEN, with the
-// until_date appended when the ban is temporary.
+// The error is the plain CHAT_WRITE_FORBIDDEN or CHAT_SEND_*_FORBIDDEN code.
+// until_date stays on banned_rights.
 func (s *Service) enforceContent(ch *Channel, p *Participant, msgs []*mtproto.Message) error {
 	if ch == nil || p == nil || p.IsAdmin() {
 		return nil

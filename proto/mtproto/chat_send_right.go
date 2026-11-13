@@ -2,95 +2,92 @@ package mtproto
 
 import (
 	"math"
-	"strconv"
 	"strings"
-
-	"google.golang.org/grpc/status"
 )
 
 // ChatSendForbidden is the 403 a member receives for one outgoing message.
 // admin skips member bans. rights are the default ban and any per-user ban;
-// a flag applies while now is still before its until_date. A temporary ban
-// appends that unix time, the same shape as FLOOD_WAIT, so the client can
-// show when the restriction ends. A forever ban (until_date 0 or MaxInt32)
-// is the plain CHAT_SEND_* / CHAT_WRITE_FORBIDDEN code.
+// a flag applies while now is still before its until_date. The error text is
+// the plain CHAT_SEND_*_FORBIDDEN or CHAT_WRITE_FORBIDDEN code. Android
+// AlertsCreator matches startsWith("CHAT_SEND_") and endsWith("FORBIDDEN").
+// until_date stays on banned_rights.
 func ChatSendForbidden(now int32, admin bool, rights []*ChatBannedRights, msg *Message) error {
 	if admin || msg == nil || msg.GetPredicateName() == Predicate_messageService {
 		return nil
 	}
-	if on, until := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendMessages() }); on {
-		return forbidUntil(ErrChatWriteForbidden, "CHAT_WRITE_FORBIDDEN", until)
+	if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendMessages() }); on {
+		return ErrChatWriteForbidden
 	}
 	if msg.GetViaBotId().GetValue() != 0 {
-		if on, until := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendInline() }); on {
-			return forbidUntil(ErrForbiddenChatSendInlineForbidden, "CHAT_SEND_INLINE_FORBIDDEN", until)
+		if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendInline() }); on {
+			return ErrForbiddenChatSendInlineForbidden
 		}
 	}
 	switch kindOf(msg) {
 	case sendPhoto:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendPhotos() }, ErrChatSendPhotosForbidden, "CHAT_SEND_PHOTOS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendPhotos() }, ErrChatSendPhotosForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendVideo:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendVideos() }, ErrChatSendVideosForbidden, "CHAT_SEND_VIDEOS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendVideos() }, ErrChatSendVideosForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendRound:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendRoundvideos() }, ErrChatSendRoundvideosForbidden, "CHAT_SEND_ROUNDVIDEOS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendVideos() }, ErrChatSendVideosForbidden, "CHAT_SEND_VIDEOS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendRoundvideos() }, ErrChatSendRoundvideosForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendVideos() }, ErrChatSendVideosForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendAudio:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendAudios() }, ErrChatSendAudiosForbidden, "CHAT_SEND_AUDIOS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendAudios() }, ErrChatSendAudiosForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendVoice:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendVoices() }, ErrChatSendVoicesForbidden, "CHAT_SEND_VOICES_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendVoices() }, ErrChatSendVoicesForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendDoc:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendDocs() }, ErrChatSendDocsForbidden, "CHAT_SEND_DOCS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendDocs() }, ErrChatSendDocsForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendSticker:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendStickers() }, ErrChatSendStickersForbidden, "CHAT_SEND_STICKERS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendStickers() }, ErrChatSendStickersForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendGif:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendGifs() }, ErrChatSendGifsForbidden, "CHAT_SEND_GIFS_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendGifs() }, ErrChatSendGifsForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendGame:
 		return firstBan(now, rights,
-			ban{func(r *ChatBannedRights) bool { return r.GetSendGames() }, ErrChatSendGameForbidden, "CHAT_SEND_GAME_FORBIDDEN"},
-			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN"},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendGames() }, ErrChatSendGameForbidden},
+			ban{func(r *ChatBannedRights) bool { return r.GetSendMedia() }, ErrChatSendMediaForbidden},
 		)
 	case sendPoll:
-		if on, until := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendPolls() }); on {
-			return forbidUntil(ErrChatSendPollForbidden, "CHAT_SEND_POLL_FORBIDDEN", until)
+		if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendPolls() }); on {
+			return ErrChatSendPollForbidden
 		}
 		return nil
 	case sendPlain:
-		if on, until := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendPlain() }); on {
-			return forbidUntil(ErrChatSendPlainForbidden, "CHAT_SEND_PLAIN_FORBIDDEN", until)
+		if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendPlain() }); on {
+			return ErrChatSendPlainForbidden
 		}
 		if messageEmbedsLink(msg) {
-			if on, until := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetEmbedLinks() }); on {
-				return forbidUntil(ErrChatSendWebpageForbidden, "CHAT_SEND_WEBPAGE_FORBIDDEN", until)
+			if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetEmbedLinks() }); on {
+				return ErrChatSendWebpageForbidden
 			}
 		}
 		return nil
 	default:
-		if on, until := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendMedia() }); on {
-			return forbidUntil(ErrChatSendMediaForbidden, "CHAT_SEND_MEDIA_FORBIDDEN", until)
+		if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendMedia() }); on {
+			return ErrChatSendMediaForbidden
 		}
 		return nil
 	}
@@ -158,15 +155,14 @@ const (
 )
 
 type ban struct {
-	on   func(*ChatBannedRights) bool
-	err  error
-	code string
+	on  func(*ChatBannedRights) bool
+	err error
 }
 
 func firstBan(now int32, rights []*ChatBannedRights, checks ...ban) error {
 	for _, c := range checks {
-		if on, until := banActive(rights, now, c.on); on {
-			return forbidUntil(c.err, c.code, until)
+		if on, _ := banActive(rights, now, c.on); on {
+			return c.err
 		}
 	}
 	return nil
@@ -192,13 +188,6 @@ func banActive(rights []*ChatBannedRights, now int32, flag func(*ChatBannedRight
 		}
 	}
 	return active, until
-}
-
-func forbidUntil(static error, code string, until int32) error {
-	if until == 0 || until == math.MaxInt32 {
-		return static
-	}
-	return status.Error(ErrForbidden, code+"_"+strconv.FormatInt(int64(until), 10))
 }
 
 func kindOf(msg *Message) sendKind {

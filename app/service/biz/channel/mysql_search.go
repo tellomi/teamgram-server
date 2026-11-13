@@ -2,7 +2,13 @@ package channel
 
 import (
 	"context"
+
+	"github.com/teamgram/proto/mtproto"
 )
+
+// globalChannelOrderSQL matches pkg/searchorder among channel rows:
+// date descending, channel id ascending, message id descending.
+const globalChannelOrderSQL = ` ORDER BY m.date2 DESC, m.channel_id ASC, m.message_id DESC LIMIT ?`
 
 func (s *mysqlStore) SearchPosts(ctx context.Context, self int64, q PostQuery) ([]*StoredMessage, error) {
 	if q.Limit <= 0 {
@@ -19,15 +25,41 @@ WHERE m.deleted = 0
     WHERE bp.channel_id = c.id AND bp.user_id = ? AND (bp.state = ? OR bp.role = ?)
   )
   AND (
-    (c.broadcast = 1 AND c.username IS NOT NULL AND c.username <> '')
+    (? = 0 AND c.broadcast = 1 AND c.username IS NOT NULL AND c.username <> '')
     OR c.id IN (
       SELECT channel_id FROM channel_participants
       WHERE user_id = ? AND state = ? AND role <> ?
     )
   )
-  AND m.message LIKE ? ESCAPE '\\'`
-	args := []any{self, StateKicked, RoleBanned, self, StateNormal, RoleBanned, likeContains(q.Needle)}
-	if q.OffsetRate > 0 {
+  AND m.message COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '\\'`
+	joinedOnly := 0
+	if q.JoinedOnly {
+		joinedOnly = 1
+	}
+	pattern := likeContains(q.Needle)
+	args := []any{self, StateKicked, RoleBanned, joinedOnly, self, StateNormal, RoleBanned, pattern}
+	if q.GlobalOrder && q.CursorOn {
+		// Same tuple as pkg/searchorder.Key.OlderThan. Peer type is fixed
+		// because every row is a channel. channel_id ASC matches the merge.
+		stmt += `
+  AND (
+    m.date2 < ?
+    OR (m.date2 = ? AND ? > ?)
+    OR (m.date2 = ? AND ? = ? AND m.channel_id > ?)
+    OR (m.date2 = ? AND ? = ? AND m.channel_id = ? AND m.message_id < ?)
+  )`
+		pt := int32(mtproto.PEER_CHANNEL)
+		args = append(args,
+			q.CursorDate,
+			q.CursorDate, pt, q.CursorPeerType,
+			q.CursorDate, pt, q.CursorPeerType, q.CursorPeer,
+			q.CursorDate, pt, q.CursorPeerType, q.CursorPeer, q.CursorMsg,
+		)
+	} else if q.MaxDate > 0 {
+		stmt += ` AND m.date2 <= ?`
+		args = append(args, q.MaxDate)
+	}
+	if !q.GlobalOrder && q.OffsetRate > 0 {
 		stmt += `
   AND (
     m.date2 < ?
@@ -35,11 +67,15 @@ WHERE m.deleted = 0
     OR (m.date2 = ? AND m.channel_id = ? AND m.message_id < ?)
   )`
 		args = append(args, q.OffsetRate, q.OffsetRate, q.OffsetPeer, q.OffsetRate, q.OffsetPeer, q.OffsetID)
-	} else if q.OffsetID > 0 {
+	} else if !q.GlobalOrder && q.OffsetID > 0 {
 		stmt += ` AND m.message_id < ?`
 		args = append(args, q.OffsetID)
 	}
-	stmt += ` ORDER BY m.date2 DESC, m.channel_id DESC, m.message_id DESC LIMIT ?`
+	if q.GlobalOrder {
+		stmt += globalChannelOrderSQL
+	} else {
+		stmt += ` ORDER BY m.date2 DESC, m.channel_id DESC, m.message_id DESC LIMIT ?`
+	}
 	args = append(args, q.Limit)
 	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
@@ -55,6 +91,41 @@ WHERE m.deleted = 0
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+func (s *mysqlStore) CountJoinedText(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error) {
+	restrictN, broadN, megaN := 0, 0, 0
+	if restrict {
+		restrictN = 1
+	}
+	if broadcasts {
+		broadN = 1
+	}
+	if megagroups {
+		megaN = 1
+	}
+	var n int32
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM channel_messages m
+JOIN channels c ON c.id = m.channel_id
+WHERE m.deleted = 0
+  AND c.deleted = 0 AND c.restricted = 0 AND c.banned = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM channel_participants bp
+    WHERE bp.channel_id = c.id AND bp.user_id = ? AND (bp.state = ? OR bp.role = ?)
+  )
+  AND c.id IN (
+    SELECT channel_id FROM channel_participants
+    WHERE user_id = ? AND state = ? AND role <> ?
+  )
+  AND m.message COLLATE utf8mb4_unicode_ci LIKE ? ESCAPE '\\'
+  AND (
+    ? = 0
+    OR (? = 1 AND c.broadcast = 1 AND c.megagroup = 0)
+    OR (? = 1 AND c.megagroup = 1)
+  )`, self, StateKicked, RoleBanned, self, StateNormal, RoleBanned, likeContains(needle), restrictN, broadN, megaN).Scan(&n)
+	return n, err
 }
 
 func (s *mysqlStore) SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error) {

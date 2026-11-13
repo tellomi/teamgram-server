@@ -40,8 +40,8 @@ func TestMegagroupSendRightsPinAndTopics(t *testing.T) {
 			mtproto.MakeTLDocumentAttributeVideo(&mtproto.DocumentAttribute{W: 10, H: 10}).To_DocumentAttribute(),
 		}}).To_Document(),
 	}).To_MessageMedia()}
-	if _, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 4, Message: vid}}); err == nil || !strings.Contains(err.Error(), "CHAT_SEND_VIDEOS_FORBIDDEN_") {
-		t.Fatalf("per-user video until: %v", err)
+	if _, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 4, Message: vid}}); err == nil || !strings.Contains(err.Error(), "CHAT_SEND_VIDEOS_FORBIDDEN") || strings.Contains(err.Error(), "CHAT_SEND_VIDEOS_FORBIDDEN_") {
+		t.Fatalf("per-user video until stays the plain code: %v", err)
 	}
 
 	open := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{}).To_ChatBannedRights()
