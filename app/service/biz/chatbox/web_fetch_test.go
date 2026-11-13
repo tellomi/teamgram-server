@@ -68,6 +68,27 @@ func TestBlockedWebIPs(t *testing.T) {
 	}
 }
 
+func TestOrdinaryPhotoDoesNotReadPersistedPreview(t *testing.T) {
+	var probed atomic.Int32
+	SetWebPhotoReaderForTest(func(string) ([]byte, error) {
+		probed.Add(1)
+		return []byte{0xff, 0xd8}, nil
+	})
+	t.Cleanup(func() { SetWebPhotoReaderForTest(nil) })
+
+	const id int64 = 2121303527006408704
+	if _, _, ok := WebPhotoForDownload(id, id+1); ok || probed.Load() != 0 {
+		t.Fatalf("ordinary photo ok, probed %d", probed.Load())
+	}
+	body, _, ok := WebPhotoForDownload(id, id)
+	if !ok || len(body) == 0 || probed.Load() != 1 {
+		t.Fatalf("preview ok %v probed %d", ok, probed.Load())
+	}
+	if _, _, ok = WebPhotoForDownload(id, id); !ok || probed.Load() != 1 {
+		t.Fatalf("second read probed %d", probed.Load())
+	}
+}
+
 func TestOpenGraphAndPhoto(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 8, 6))
 	var buf bytes.Buffer
