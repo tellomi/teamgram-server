@@ -53,14 +53,25 @@ func (s *Service) PhoneJoinGroupCall(ctx context.Context, in *mtproto.TLPhoneJoi
 		join.PeerType = mtproto.PEER_USER
 		join.PeerId = md.GetUserId()
 	}
-	member, manage := true, false
-	if join.PeerType == mtproto.PEER_CHANNEL || join.PeerType == mtproto.PEER_CHAT {
-		member, manage, err = s.perm(ctx, md.GetUserId(), join)
+	id, access, err := s.callIDs(in.GetCall())
+	if err != nil {
+		return nil, err
+	}
+	// Member follows the chat that owns the call. join_as only selects the
+	// peer the caller is allowed to appear as; it does not grant entry.
+	member := true
+	pt, pid, err := s.eng.GroupPeer(id, access)
+	if err != nil {
+		return nil, err
+	}
+	if pt == mtproto.PEER_CHANNEL || pt == mtproto.PEER_CHAT {
+		roomMember, public, err := s.callRoomAccess(ctx, md.GetUserId(), pt, pid)
 		if err != nil {
 			return nil, err
 		}
+		member = roomMember || public
 	}
-	id, access, err := s.callIDs(in.GetCall())
+	manage, err := s.joinAsAllowed(ctx, md.GetUserId(), join)
 	if err != nil {
 		return nil, err
 	}

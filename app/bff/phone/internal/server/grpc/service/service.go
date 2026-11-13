@@ -247,6 +247,59 @@ func peerOf(peerType int32, id int64) *mtproto.Peer {
 	}
 }
 
+// callRoomAccess reports whether user may enter a voice chat in peer.
+// public is true for a channel that has a username. A basic chat with no
+// chat client stays open, the same fallback perm uses.
+func (s *Service) callRoomAccess(ctx context.Context, user int64, peerType int32, peerID int64) (member, public bool, err error) {
+	switch peerType {
+	case mtproto.PEER_CHANNEL:
+		member, _, public, err = channel.Shared().CallJoin(ctx, user, peerID)
+		return member, public, err
+	case mtproto.PEER_CHAT:
+		if s == nil || s.svc == nil || s.svc.Chat == nil {
+			return true, false, nil
+		}
+		mc, err := s.svc.Chat.ChatGetMutableChat(ctx, &chat.TLChatGetMutableChat{ChatId: peerID})
+		if err != nil || mc == nil {
+			return false, false, mtproto.ErrPeerIdInvalid
+		}
+		p, ok := mc.GetImmutableChatParticipant(user)
+		if !ok || !p.IsChatMemberStateNormal() {
+			return false, false, nil
+		}
+		return true, false, nil
+	default:
+		return false, false, mtproto.ErrPeerIdInvalid
+	}
+}
+
+// joinAsAllowed reports whether user may appear in a call as join.
+// Manage is the join-as peer's call-admin bit, which is what a self join
+// used to leave false and a channel join used to copy.
+func (s *Service) joinAsAllowed(ctx context.Context, user int64, join *mtproto.PeerUtil) (bool, error) {
+	if join == nil {
+		return false, mtproto.ErrJoinAsPeerInvalid
+	}
+	switch join.PeerType {
+	case mtproto.PEER_USER:
+		if join.PeerId == user {
+			return false, nil
+		}
+		return false, mtproto.ErrJoinAsPeerInvalid
+	case mtproto.PEER_CHANNEL, mtproto.PEER_CHAT:
+		member, manage, err := s.perm(ctx, user, join)
+		if err != nil {
+			return false, err
+		}
+		if !member {
+			return false, mtproto.ErrJoinAsPeerInvalid
+		}
+		return manage, nil
+	default:
+		return false, mtproto.ErrJoinAsPeerInvalid
+	}
+}
+
 func (s *Service) perm(ctx context.Context, user int64, peer *mtproto.PeerUtil) (member, manage bool, err error) {
 	if peer == nil {
 		return false, false, mtproto.ErrPeerIdInvalid

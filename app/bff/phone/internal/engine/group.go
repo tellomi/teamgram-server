@@ -414,9 +414,15 @@ func (e *Engine) JoinGroup(in JoinGroup) (*mtproto.Updates, error) {
 	}
 	speaker := in.InviteHash != "" && in.InviteHash == g.speakerInvite
 	listener := in.InviteHash != "" && in.InviteHash == g.invite
-	if !g.conference && !in.Member && !speaker && !listener && in.UserID != g.creator {
+	// A chat call admits members and a hash from phone.exportGroupCallInvite.
+	// The handler sets Member for public rooms. Conferences and live stories
+	// have no chat membership. answerOffer already took a media seat.
+	if !g.conference && !g.liveStory && !in.Member && !speaker && !listener {
 		e.mu.Unlock()
-		return nil, mtproto.ErrInviteHashInvalid
+		if e.media != nil {
+			e.media.Leave(in.CallID, partKey(in.PeerType, in.PeerID))
+		}
+		return nil, mtproto.ErrForbiddenGroupcallForbidden
 	}
 	if ssrc != 0 {
 		for _, p := range g.parts {
