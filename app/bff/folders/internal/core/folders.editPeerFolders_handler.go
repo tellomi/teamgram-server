@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/archive"
 )
@@ -13,8 +14,9 @@ import (
 // https://core.telegram.org/method/folders.editPeerFolders
 //
 // folder_id 0 is the main list and 1 is the archive. The result carries
-// updateFolderPeers with pts_count 0 so the calling client applies it without
-// a difference gap. Other sessions receive the same update through sync.
+// updateFolderPeers. A stored pts uses pts_count 1; pts 0 keeps pts_count 0
+// so the calling client applies the move without a difference gap. Every
+// session of this user is pushed the same update.
 func (c *FoldersCore) FoldersEditPeerFolders(in *mtproto.TLFoldersEditPeerFolders) (*mtproto.Updates, error) {
 	if len(in.GetFolderPeers()) == 0 {
 		return mtproto.MakeEmptyUpdates(), nil
@@ -50,28 +52,14 @@ func (c *FoldersCore) FoldersEditPeerFolders(in *mtproto.TLFoldersEditPeerFolder
 		}
 		byPeer[mv.ref.key()] = mv
 	}
-	ids := make([]int64, 0, len(order))
-	for _, key := range order {
-		ids = append(ids, byPeer[key].ref.dialogID())
-	}
-	present, err := c.dialogsPresent(ids)
-	if err != nil {
-		c.Logger.Errorf("folders.editPeerFolders - dialogs: %v", err)
-		return nil, err
-	}
 	byFolder := map[int32][]int64{}
 	var folderPeers []*mtproto.FolderPeer
 	for _, key := range order {
 		mv := byPeer[key]
-		if _, ok := present[mv.ref.dialogID()]; !ok {
-			switch mv.ref.Kind {
-			case "channel":
-				return nil, mtproto.ErrChannelPrivate
-			case "chat":
-				return nil, mtproto.ErrChatIdInvalid
-			default:
-				return nil, mtproto.ErrPeerIdInvalid
-			}
+		// Pin and archive use the same dialog row. A row with top_message 0
+		// is still a dialog; getDialogsByIdList's placeholder is not.
+		if err := c.requireStoredDialog(mv.ref); err != nil {
+			return nil, err
 		}
 		byFolder[mv.folderID] = append(byFolder[mv.folderID], mv.ref.dialogID())
 		folderPeers = append(folderPeers, mtproto.MakeTLFolderPeer(&mtproto.FolderPeer{
@@ -94,10 +82,60 @@ func (c *FoldersCore) FoldersEditPeerFolders(in *mtproto.TLFoldersEditPeerFolder
 		}
 	}
 	upd := folderPeerUpdates(folderPeers, c.allocFolderPts(folderPeers))
-	if len(upd.GetUpdates()) == 1 {
-		c.pushNotMe(upd.GetUpdates()[0])
-	}
+	c.pushFolderPeers(upd)
 	return upd, nil
+}
+
+// requireStoredDialog accepts a dialog row that messages.toggleDialogPin can
+// already see. getDialogsByIdList invents a top_message 0 row for a missing
+// peer, and treating that as "not a dialog" made archive return
+// PEER_ID_INVALID for a user who had just been pinned.
+func (c *FoldersCore) requireStoredDialog(ref peerRef) error {
+	denied := mtproto.ErrPeerIdInvalid
+	switch ref.Kind {
+	case "channel":
+		denied = mtproto.ErrChannelPrivate
+	case "chat":
+		denied = mtproto.ErrChatIdInvalid
+	}
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.DialogClient == nil {
+		return denied
+	}
+	ext, err := c.svcCtx.Dao.DialogClient.DialogGetDialogById(c.ctx, &dialog.TLDialogGetDialogById{
+		UserId:   c.userID(),
+		PeerType: ref.peerType(),
+		PeerId:   ref.ID,
+	})
+	if err != nil {
+		if sameRPC(err, mtproto.ErrPeerIdInvalid) {
+			return denied
+		}
+		c.Logger.Errorf("folders.editPeerFolders - dialog: %v", err)
+		return err
+	}
+	if ext == nil || ext.GetDialog() == nil {
+		return denied
+	}
+	return nil
+}
+
+// pushFolderPeers delivers updateFolderPeers to every session of this user.
+// The RPC result is what the calling session applies. SyncUpdatesNotMe covers
+// the other online sessions. SyncPushUpdates also wakes a session that is
+// not in the online list.
+func (c *FoldersCore) pushFolderPeers(upd *mtproto.Updates) {
+	if upd == nil || len(upd.GetUpdates()) != 1 {
+		return
+	}
+	update := upd.GetUpdates()[0]
+	c.pushNotMe(update)
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.SyncClient == nil || c.MD == nil {
+		return
+	}
+	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+		UserId:  c.userID(),
+		Updates: mtproto.MakeUpdatesByUpdates(update),
+	})
 }
 
 // allocFolderPts stores updateFolderPeers on the user's pts sequence and

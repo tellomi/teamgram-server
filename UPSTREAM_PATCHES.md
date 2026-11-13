@@ -409,3 +409,22 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | User-message text query | `app/service/biz/message/internal/dal/dao/mysql_dao/messages_search_text.go`, `app/service/biz/message/internal/core/message.searchGlobal_handler.go` |
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
+
+## Group info, delete, archive, and profile name
+
+`messages.editChatTitle`, `messages.editChatPhoto`, and `messages.editChatAbout` used `CanChangeInfo`, which is true for every admin and false for every other member. A basic group now follows `default_banned_rights.change_info`. The creator may always edit. An admin may when `admin_rights.change_info` is set. An admin without that right is treated as a member. A set `change_info` flag is a ban. Megagroups use the same rule and also the member's own `banned_rights`. A broadcast channel stays admin-only. The denial is `CHAT_ADMIN_REQUIRED`.
+
+`messages.deleteMessages` with `revoke` deleted any basic-group message for every member. A member may still revoke their own messages. Deleting someone else's message for everyone requires `admin_rights.delete_messages`; the creator always may. Otherwise the RPC is `MESSAGE_DELETE_FORBIDDEN` and nothing is deleted. `channels.deleteMessages` returns that same error for a live message the caller cannot remove, instead of skipping it and reporting success.
+
+`folders.editPeerFolders` treated a dialog with `top_message` 0 as missing, because `dialog.getDialogsByIdList` invents that row. Archive of a user who had just been pinned then returned `PEER_ID_INVALID`. Archive now uses the same dialog row pin uses, for users, basic groups, and channels. `updateFolderPeers` is pushed to the account's other sessions and through `sync.pushUpdates`.
+
+`account.updateProfile` dropped the user cache inside `CachedConn.Exec`, then an overlapping `users.getUsers` could write the old name back. The key is dropped again after the commit. An omitted first-name or last-name flag no longer clears the other name. The new name is `updateUserName` plus `updateUser`, pushed to every session of the account and to contacts in both directions. `sync` delivers both constructors, including to a background session.
+
+| Piece | File |
+| --- | --- |
+| Basic-group info right | `proto/mtproto/chat_info_right.go`, `app/service/biz/chat/internal/core/chat.editChatTitle_handler.go`, `chat.editChatAbout_handler.go`, `chat.editChatPhoto_handler.go` |
+| Megagroup and channel info right | `app/service/biz/channel/service_ops.go` `canChangeInfo` |
+| Basic-group delete | `app/messenger/msg/msg/internal/core/msg.deleteMessages_handler.go`, `delete_rights.go` |
+| Channel delete | `app/service/biz/channel/service_ops.go` `Delete` |
+| Archive | `app/bff/folders/internal/core/folders.editPeerFolders_handler.go` |
+| Profile name cache and push | `app/service/biz/user/internal/dao/user.go`, `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go`, `profile_sync.go`, `app/messenger/sync/internal/core/core.go` |

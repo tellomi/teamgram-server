@@ -162,6 +162,9 @@ func (d *Dao) UpdateUserFirstAndLastName(ctx context.Context, id int64, firstNam
 		logx.WithContext(ctx).Errorf("updateUserFirstAndLastName - error: %v", err)
 		return false
 	}
+	// A users.getUsers that overlapped the write can put the old object back
+	// after Exec drops the key. Drop it again now that the row is committed.
+	_ = d.CachedConn.DelCache(ctx, genCacheUserDataCacheKey(id))
 
 	return true
 }

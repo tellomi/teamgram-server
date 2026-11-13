@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -87,29 +86,32 @@ func (c *UserChannelProfilesCore) AccountUpdateProfile(in *mtproto.TLAccountUpda
 		}
 	}
 
-	if in.GetFirstName().GetValue() != me.FirstName() ||
-		in.GetLastName().GetValue() != me.LastName() {
+	// An omitted flag keeps the stored name. Sending only first_name used to
+	// write last_name as empty.
+	first, last := me.FirstName(), me.LastName()
+	if in.GetFirstName() != nil {
+		first = in.GetFirstName().GetValue()
+	}
+	if in.GetLastName() != nil {
+		last = in.GetLastName().GetValue()
+	}
+	if first != me.FirstName() || last != me.LastName() {
 		if _, err = c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
 			UserId:    c.MD.UserId,
-			FirstName: in.GetFirstName().GetValue(),
-			LastName:  in.GetLastName().GetValue(),
+			FirstName: first,
+			LastName:  last,
 		}); err != nil {
 			c.Logger.Errorf("account.updateProfile - error: %v", err)
 		} else {
-			me.SetFirstName(in.GetFirstName().GetValue())
-			me.SetLastName(in.GetLastName().GetValue())
+			me.SetFirstName(first)
+			me.SetLastName(last)
+			if fresh, ferr := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
+				Id: c.MD.UserId,
+			}); ferr == nil && fresh != nil {
+				me = fresh
+			}
+			c.pushProfileName(me)
 		}
-
-		c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
-			UserId:        c.MD.UserId,
-			PermAuthKeyId: c.MD.PermAuthKeyId,
-			Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateUserName(&mtproto.Update{
-				UserId:    c.MD.UserId,
-				FirstName: in.GetFirstName().GetValue(),
-				LastName:  in.GetLastName().GetValue(),
-				Username:  me.Username(),
-			}).To_Update()),
-		})
 	}
 
 	return me.ToSelfUser(), nil

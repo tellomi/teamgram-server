@@ -194,6 +194,27 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 			// carries the same update from the reaction store, not from pts.
 			needPush = true
 		},
+		mtproto.Predicate_updateUserName: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// account.updateProfile must reach the account's other sessions
+			// and the contacts who were pushed this update. needPush also
+			// wakes a background session that is not in the online list.
+			needPush = true
+		},
+		mtproto.Predicate_updateUser: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
 		mtproto.Predicate_updateNotifySettings: func(
 			userId int64,
 			update *mtproto.Update,
