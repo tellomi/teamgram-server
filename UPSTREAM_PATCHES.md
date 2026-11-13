@@ -440,3 +440,13 @@ Invite links with a future `start_date` are `INVITE_HASH_EXPIRED` for basic grou
 | Channel delete | `app/service/biz/channel/service_ops.go` `Delete` |
 | Archive | `app/bff/folders/internal/core/folders.editPeerFolders_handler.go` |
 | Profile name cache and push | `app/service/biz/user/internal/dao/user.go`, `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go`, `profile_sync.go`, `app/messenger/sync/internal/core/core.go` |
+
+## updates.getDifference pts
+
+`updates.getDifference` rebuilt the window in `merge_updates_helper.merge` by writing the window's last pts onto `updateDeleteMessages`, `updateEditMessage`, `updateReadHistoryInbox`, `updateReadHistoryOutbox`, `updateReadMessagesContents`, `updateWebPage`, `updateFolderPeers`, and `updatePinnedMessages`, and setting `pts_count` to 0. Official clients apply a pts update only when `localPts + pts_count == pts`. After `messages.deleteHistory`, the calling session had already moved to `AffectedHistory.pts`, so the difference update was skipped, and a session that was still behind treated it as a gap. A cleared chat could keep its last message.
+
+The stored pts and pts_count stay on the update. Adjacent updates of the same kind are folded only when the later pts continues the earlier one (`earlier.pts + later.pts_count == later.pts`). The folded update keeps the later pts and the sum of the counts. A different update between two deletes is left between them. `messages.deleteHistory` persistence, date windows, and paging are unchanged. Live `SyncUpdatesNotMe` / `SyncPushUpdates` are unchanged.
+
+| Piece | File |
+| --- | --- |
+| Difference merge | `app/service/biz/updates/internal/core/merge_updates_helper.go` |

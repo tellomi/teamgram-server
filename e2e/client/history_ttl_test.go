@@ -371,9 +371,8 @@ func differenceDeletes(obj mtproto.TLObject, messageID int32) bool {
 		if up.GetPredicateName() != mtproto.Predicate_updateDeleteMessages && up.GetPredicateName() != mtproto.Predicate_updateDeleteChannelMessages {
 			continue
 		}
-		// getDifference folds every delete onto the final pts and clears
-		// pts_count. The live push still carries the real pts_count. A client
-		// applying the difference uses the message ids and state.pts.
+		// A delete without its own pts is not this message. getDifference
+		// keeps the stored pts and pts_count.
 		if up.GetPts_INT32() == 0 {
 			continue
 		}
