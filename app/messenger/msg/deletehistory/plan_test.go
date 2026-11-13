@@ -113,6 +113,80 @@ func TestOffsetAfterFailureDoesNotReportDone(t *testing.T) {
 	}
 }
 
+func TestPeerRevokeMaxIDUsesTheOtherBox(t *testing.T) {
+	// A's last box id is 19. The same message is box 44 on B.
+	if got := PeerRevokeMaxID(19, 44); got != 44 {
+		t.Fatalf("peer max_id %d, want B's box 44", got)
+	}
+	if got := PeerRevokeMaxID(0, 44); got != 0 {
+		t.Fatalf("max_id 0 stays uncapped, got %d", got)
+	}
+	if got := PeerRevokeMaxID(math.MaxInt32, 44); got != math.MaxInt32 {
+		t.Fatalf("max int stays uncapped, got %d", got)
+	}
+	if got := PeerRevokeMaxID(19, 0); got != 19 {
+		t.Fatalf("missing peer row keeps the caller id, got %d", got)
+	}
+	// A partial clear maps the included message, not every newer peer row.
+	if got := PeerRevokeMaxID(20, 120); got != 120 {
+		t.Fatalf("partial peer max_id %d", got)
+	}
+}
+
+func TestCallerLastMaxIDClearsPeerOwnLastAsHistoryClear(t *testing.T) {
+	// A boxes 16..19, B boxes 41..44. 19 and 44 are one message: B's own last
+	// send. just_clear keeps that message and turns it into historyClear.
+	const callerLast int32 = 19
+	const peerLast int32 = 44
+	peerRows := []Row{{ID: 44, Date: 4}, {ID: 43, Date: 3}, {ID: 42, Date: 2}, {ID: 41, Date: 1}}
+
+	peerMax := PeerRevokeMaxID(callerLast, peerLast)
+	q := PeerRevokeQuery(peerMax, true, Query{})
+	anchor := newestSelected(peerRows, PageSelect(q, 0, 1))
+	if anchor != peerLast {
+		t.Fatalf("historyClear anchor %d, want B's last message %d", anchor, peerLast)
+	}
+	del := PageSelect(q, anchor, Batch+1)
+	if !del.BeforeIDSet || del.BeforeID != peerLast {
+		t.Fatalf("delete bound %+v, want id < %d so the last message stays and becomes historyClear", del, peerLast)
+	}
+	var deleted []int32
+	for _, row := range peerRows {
+		if row.ID < del.BeforeID {
+			deleted = append(deleted, row.ID)
+		}
+	}
+	if len(deleted) != 3 || deleted[0] != 43 || deleted[2] != 41 {
+		t.Fatalf("deleted %v, want 43, 42, 41", deleted)
+	}
+
+	// The bug: A's 19 applied to B matches nothing. B's last message stays
+	// a normal message and no historyClear anchor is chosen.
+	rawTop := PageSelect(PeerRevokeQuery(callerLast, true, Query{}), 0, 1)
+	if got := newestSelected(peerRows, rawTop); got != 0 {
+		t.Fatalf("unmapped caller max_id selected peer box %d", got)
+	}
+}
+
+func newestSelected(rows []Row, sel Select) int32 {
+	if sel.Empty {
+		return 0
+	}
+	for _, row := range rows {
+		if sel.BeforeIDSet && row.ID >= sel.BeforeID {
+			continue
+		}
+		if sel.AfterDate > 0 && row.Date < sel.AfterDate {
+			continue
+		}
+		if sel.BeforeDate > 0 && row.Date >= sel.BeforeDate {
+			continue
+		}
+		return row.ID
+	}
+	return 0
+}
+
 func TestPeerWindowDoesNotDeleteOutsideMaxIDOrDates(t *testing.T) {
 	q := PeerRevokeQuery(50, true, Query{MinSet: true, MinDate: 100, MaxSet: true, MaxDate: 200})
 	rows := []Row{

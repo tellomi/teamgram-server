@@ -1,6 +1,8 @@
 package core
 
 import (
+	"math"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/deletehistory"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
@@ -140,13 +142,14 @@ func (c *MsgCore) deleteUserHistory(in *msg.TLMsgDeleteHistory) (*mtproto.Messag
 		}
 	}
 	if clearAnchor && in.GetRevoke() && in.UserId != in.PeerId && in.PeerType == mtproto.PEER_USER {
-		// Same max_id and date window as the caller. MaxId 0 is only used
-		// when the caller asked to clear the whole dialog.
+		// max_id is the caller's box id. The peer clear compares it with
+		// the peer's own box ids, which are a different sequence. Pass the
+		// peer's id of this anchor. 0 and MaxInt32 stay uncapped.
 		_, _ = c.svcCtx.Dao.InboxClient.InboxDeleteUserHistoryToInbox(c.ctx, &inbox.TLInboxDeleteUserHistoryToInbox{
 			FromId:     in.UserId,
 			PeerUserId: in.PeerId,
 			JustClear:  true,
-			MaxId:      in.GetMaxId(),
+			MaxId:      c.peerRevokeMaxID(in, anchorID),
 			MinDate:    q.MinDate,
 			MaxDate:    q.MaxDate,
 			MinDateSet: q.MinSet,
@@ -159,6 +162,34 @@ func (c *MsgCore) deleteUserHistory(in *msg.TLMsgDeleteHistory) (*mtproto.Messag
 		PtsCount: historyPtsCount(updates),
 		Offset:   offset,
 	}).To_Messages_AffectedHistory(), nil
+}
+
+// peerRevokeMaxID is the other participant's box id of anchorID.
+// anchorID is the newest caller message with id <= max_id, which just_clear
+// turns into historyClear and therefore does not revoke by dialog_message_id.
+// Leaving the caller's box id in place drops every peer row above that
+// number, including the peer's own last message, and no historyClear is sent.
+func (c *MsgCore) peerRevokeMaxID(in *msg.TLMsgDeleteHistory, anchorID int32) int32 {
+	callerMax := in.GetMaxId()
+	if callerMax <= 0 || callerMax >= math.MaxInt32 || anchorID <= 0 {
+		return callerMax
+	}
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MessagesDAO == nil {
+		return callerMax
+	}
+	mapped, err := c.svcCtx.Dao.MessagesDAO.SelectPeerUserMessage(c.ctx, in.PeerId, in.UserId, anchorID)
+	if err != nil {
+		c.Logger.Errorf("msg.deleteHistory - peer max_id: %v", err)
+		return deletehistory.PeerRevokeMaxID(callerMax, 0)
+	}
+	peerBox := int32(0)
+	if mapped != nil {
+		peerBox = mapped.UserMessageBoxId
+	}
+	if peerBox <= 0 {
+		c.Logger.Errorf("msg.deleteHistory - peer box for caller message %d not found", anchorID)
+	}
+	return deletehistory.PeerRevokeMaxID(callerMax, peerBox)
 }
 
 func (c *MsgCore) historyDeleteUpdates(in *msg.TLMsgDeleteHistory, peer *mtproto.PeerUtil, deleted []int32, anchor *mtproto.Message, clearAnchor, markRead bool) (int32, []*mtproto.Update) {

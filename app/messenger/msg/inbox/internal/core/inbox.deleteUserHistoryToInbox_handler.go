@@ -30,13 +30,15 @@ import (
 // InboxDeleteUserHistoryToInbox
 // inbox.deleteUserHistoryToInbox flags:# from_id:long peer_user_id:long just_clear:flags.1?true max_id:int = Void;
 //
-// max_id and the date window are the caller's. Messages outside that window
-// stay, including a newer message than the one just_clear turns into
-// history clear. MaxId 0 means the caller did not cap ids.
+// max_id is this user's box id of the newest message the caller included.
+// The caller's box ids are a different sequence and are translated before
+// this call. 0 and MaxInt32 mean the caller set no id cap. Dates are the
+// caller's window. Messages outside that window stay, including a newer
+// message than the one just_clear turns into history clear.
 func (c *InboxCore) InboxDeleteUserHistoryToInbox(in *inbox.TLInboxDeleteUserHistoryToInbox) (*mtproto.Void, error) {
 	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, in.FromId)
-	// The caller's max_id and date window. The newest message outside that
-	// window stays. MaxId 0 means the caller did not cap ids.
+	// This user's own box id, already translated from the caller. The newest
+	// message outside that window stays. MaxId 0 means no id cap.
 	q := deletehistory.PeerRevokeQuery(in.GetMaxId(), in.GetJustClear(), deletehistory.Query{
 		MinSet:  in.MinDateSet,
 		MinDate: in.MinDate,
