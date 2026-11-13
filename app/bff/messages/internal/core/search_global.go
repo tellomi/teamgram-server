@@ -1,9 +1,13 @@
 package core
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
 // globalQuery is the part of messages.searchGlobal that can be applied
@@ -145,6 +149,88 @@ func messageHasURL(msg *mtproto.Message) bool {
 	}
 	text := strings.ToLower(msg.GetMessage())
 	return strings.Contains(text, "http://") || strings.Contains(text, "https://") || strings.Contains(text, "www.")
+}
+
+// mergeJoinedChannelHits appends posts from channels the user has joined.
+// A failure leaves the user-message hits in place.
+func (c *MessagesCore) mergeJoinedChannelHits(list *mtproto.MessageBoxList, q string, limit int32, cur globalCursor) *mtproto.MessageBoxList {
+	if c == nil || c.MD == nil {
+		return list
+	}
+	extra, err := channel.Shared().SearchJoined(c.ctx, c.MD.UserId, q, limit, cur.key(), cur.Active)
+	if err != nil {
+		c.Logger.Errorf("messages.searchGlobal channels: %v", err)
+		return list
+	}
+	return mergeGlobalBoxes(list, extra)
+}
+
+func mergeGlobalBoxes(list *mtproto.MessageBoxList, extra []*mtproto.MessageBox) *mtproto.MessageBoxList {
+	if len(extra) == 0 {
+		return list
+	}
+	if list == nil {
+		list = &mtproto.MessageBoxList{}
+	}
+	seen := map[string]bool{}
+	for _, box := range list.BoxList {
+		if box == nil {
+			continue
+		}
+		seen[globalBoxKey(box)] = true
+	}
+	for _, box := range extra {
+		if box == nil || seen[globalBoxKey(box)] {
+			continue
+		}
+		seen[globalBoxKey(box)] = true
+		list.BoxList = append(list.BoxList, box)
+	}
+	return list
+}
+
+func globalBoxKey(box *mtproto.MessageBox) string {
+	id := box.GetMessageId()
+	if box.GetMessage() != nil && box.GetMessage().GetId() != 0 {
+		id = box.GetMessage().GetId()
+	}
+	return peerKey(box.GetPeerType(), box.GetPeerId()) + ":" + strconv.FormatInt(int64(id), 10)
+}
+
+// sortGlobalBoxes orders newest first: date, then peer type, peer id, message id.
+// That is the order messages.searchGlobal pages with (offset_rate, offset_peer, offset_id).
+func sortGlobalBoxes(list *mtproto.MessageBoxList) {
+	if list == nil || len(list.BoxList) < 2 {
+		return
+	}
+	sort.SliceStable(list.BoxList, func(i, j int) bool {
+		return globalNewer(list.BoxList[i], list.BoxList[j])
+	})
+}
+
+func globalNewer(a, b *mtproto.MessageBox) bool {
+	return searchorder.Newer(globalKey(a), globalKey(b))
+}
+
+func globalKey(box *mtproto.MessageBox) searchorder.Key {
+	date, peerType, peerID, msgID := globalRank(box)
+	return searchorder.Key{Date: date, PeerType: peerType, PeerID: peerID, MsgID: msgID}
+}
+
+func globalRank(box *mtproto.MessageBox) (date, peerType int32, peerID int64, msgID int32) {
+	if box == nil {
+		return 0, 0, 0, 0
+	}
+	peerType = box.GetPeerType()
+	peerID = box.GetPeerId()
+	msgID = box.GetMessageId()
+	if box.GetMessage() != nil {
+		date = box.GetMessage().GetDate()
+		if box.GetMessage().GetId() != 0 {
+			msgID = box.GetMessage().GetId()
+		}
+	}
+	return date, peerType, peerID, msgID
 }
 
 func filterGlobalBoxes(list *mtproto.MessageBoxList, q globalQuery, kinds map[int64]channelKind, limit int32) *mtproto.MessageBoxList {
