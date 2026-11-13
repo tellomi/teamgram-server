@@ -275,12 +275,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 					// TODO
 					return []*mtproto.Chat{}
 				},
-				mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-					Pts_INT32:       box.Pts,
-					PtsCount:        box.PtsCount,
-					RandomId:        box.RandomId,
-					Message_MESSAGE: box.Message,
-				}).To_Update())
+				outgoingUpdate(box))
 
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: *v.(**mtproto.Updates)")
 			return nil
@@ -431,12 +426,7 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 					// TODO
 					return nil
 				},
-				mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-					Pts_INT32:       box.Pts,
-					PtsCount:        box.PtsCount,
-					RandomId:        box.RandomId,
-					Message_MESSAGE: box.Message,
-				}).To_Update())
+				outgoingUpdate(box))
 
 			return nil
 		})
@@ -541,12 +531,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 					return err2
 				}
 				boxList = append(boxList, box)
-				updateList = append(updateList, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-					Pts_INT32:       box.Pts,
-					PtsCount:        box.PtsCount,
-					RandomId:        box.RandomId,
-					Message_MESSAGE: box.Message,
-				}).To_Update())
+				updateList = append(updateList, outgoingUpdate(box))
 			}
 
 			_, err2 := c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
@@ -729,12 +714,7 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 					return err
 				}
 				boxList = append(boxList, box)
-				updateList = append(updateList, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-					Pts_INT32:       box.Pts,
-					PtsCount:        box.PtsCount,
-					RandomId:        box.RandomId,
-					Message_MESSAGE: box.Message,
-				}).To_Update())
+				updateList = append(updateList, outgoingUpdate(box))
 			}
 
 			var (
@@ -953,12 +933,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 					// TODO
 					return []*mtproto.Chat{}
 				},
-				mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-					Pts_INT32:       box.Pts,
-					PtsCount:        box.PtsCount,
-					RandomId:        box.RandomId,
-					Message_MESSAGE: box.Message,
-				}).To_Update())
+				outgoingUpdate(box))
 
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: *v.(**mtproto.Updates)")
 			return nil

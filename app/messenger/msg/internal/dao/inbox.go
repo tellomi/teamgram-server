@@ -37,6 +37,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// cloneForInbox copies a message before the inbox row is written.
+// sendMessageToInbox also clones, but callers used to set Out=false on the
+// sender's own message first. That pointer is the messages.sendMessage
+// result. Android files an out=false message whose from_id is the sender
+// into Saved Messages (getDialogId), so the open 1:1 chat keeps the clock
+// until getHistory reloads the stored out=true copy.
+func cloneForInbox(message *mtproto.Message) *mtproto.Message {
+	if message == nil {
+		return nil
+	}
+	cloned, _ := proto.Clone(message).(*mtproto.Message)
+	if cloned == nil {
+		return nil
+	}
+	cloned.Out = false
+	return cloned
+}
+
 // from outBox --> make inBox
 func (d *Dao) makeMessageInBox(fromId int64, peer *mtproto.PeerUtil, toUserId int64, clientRandomId int64, dialogMessageId int64, message *mtproto.Message) *mtproto.MessageBox {
 	mentioned := mtproto.CheckHasMention(message.Entities, toUserId)
@@ -288,8 +306,7 @@ func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, di
 		PeerType: mtproto.PEER_USER,
 		PeerId:   toId,
 	}
-	message.Out = false
-	box, read, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	box, read, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -301,8 +318,7 @@ func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId i
 		PeerType: mtproto.PEER_CHAT,
 		PeerId:   chatId,
 	}
-	message.Out = false
-	box, _, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	box, _, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
 	return box, err
 }
 
@@ -316,8 +332,7 @@ func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int6
 			PeerType: mtproto.PEER_USER,
 			PeerId:   toId,
 		}
-		box.Message.Out = false
-		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
+		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
 		boxList = append(boxList, inBox)
 	}
 
@@ -333,8 +348,7 @@ func (d *Dao) SendChatMultiMessageToInbox(ctx context.Context, fromId, chatId, t
 			PeerType: mtproto.PEER_CHAT,
 			PeerId:   chatId,
 		}
-		box.Message.Out = false
-		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
+		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
 		boxList = append(boxList, inBox)
 	}
 

@@ -116,6 +116,9 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 	if len(about) > 255 {
 		about = about[:255]
 	}
+	if in.TtlPeriod < 0 || in.TtlPeriod > 366*86400 {
+		return nil, mtproto.ErrTtlPeriodInvalid
+	}
 	broadcast := in.Broadcast
 	megagroup := in.Megagroup
 	if !broadcast && !megagroup {
@@ -153,6 +156,15 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 	msg := serviceMessage(in.CreatorID, ch.ID, mtproto.MakeMessageActionChannelCreate(title))
 	if _, _, err := s.appendMessage(ctx, ch.ID, in.CreatorID, 0, msg); err != nil {
 		return nil, err
+	}
+	// Same rule as messages.createChat: ttl_period 0 is Off and writes no
+	// messageActionSetMessagesTTL. A positive period is this channel's own
+	// timer, so auto_setting_from stays unset.
+	if in.TtlPeriod > 0 {
+		ttlMsg := serviceMessage(in.CreatorID, ch.ID, mtproto.MakeMessageActionSetMessagesTTL(in.TtlPeriod))
+		if _, _, err := s.appendMessage(ctx, ch.ID, in.CreatorID, 0, ttlMsg); err != nil {
+			return nil, err
+		}
 	}
 	if ch.Forum {
 		s.ensureGeneralTopic(ctx, in.CreatorID, ch.ID)
