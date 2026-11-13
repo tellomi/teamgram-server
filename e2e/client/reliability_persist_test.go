@@ -40,6 +40,12 @@ func TestReliabilityPersistenceAcrossRestart(t *testing.T) {
 	if _, err = alice.SendText(ctx, peer, "persist-ttl", nil); err != nil {
 		t.Fatal(err)
 	}
+	// messages.sendMessage returns when Inbox-T accepts the record. The
+	// dialog row, including top_message, is written by the inbox consumer
+	// after that ack. folders.editPeerFolders answers PEER_ID_INVALID until
+	// that row is visible. Wait for it, then keep the same TTL and archive
+	// checks. This does not call messages.getPeerDialogs.
+	waitForStoredUserDialog(t, ctx, alice, bobSelf.ID)
 	invokeOK(t, alice, &mtproto.TLMessagesSetHistoryTTL{
 		Constructor: mtproto.CRC32_messages_setHistoryTTL,
 		Peer:        peer,
@@ -120,6 +126,26 @@ func TestReliabilityPersistenceAcrossRestart(t *testing.T) {
 	t.Cleanup(alice.Close)
 	if _, found := findStory(t, ctx, alice, storyID); found {
 		t.Fatal("expired story is still returned after restart")
+	}
+}
+
+func waitForStoredUserDialog(t *testing.T, ctx context.Context, c *Client, userID int64) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if d := findDialog(t, ctx, c, userID, 0); d != nil && d.GetTopMessage() > 0 {
+			return
+		}
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
+			t.Fatalf("dialog for %d was not stored with a message id", userID)
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			t.Fatalf("dialog for %d was not stored with a message id: %v", userID, ctx.Err())
+		case <-timer.C:
+		}
 	}
 }
 
