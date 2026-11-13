@@ -2,6 +2,7 @@ package presence
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -17,8 +18,9 @@ import (
 // explicit online or offline window itself.
 const TouchInterval int64 = 60
 
-// LastSeenWriter stores user_presences. The bff user client implements it.
-type LastSeenWriter interface {
+// LastSeenStore reads and stores user_presences. The bff user client implements it.
+type LastSeenStore interface {
+	UserGetLastSeen(ctx context.Context, in *userpb.TLUserGetLastSeen) (*userpb.LastSeenData, error)
 	UserUpdateLastSeen(ctx context.Context, in *userpb.TLUserUpdateLastSeen) (*mtproto.Bool, error)
 }
 
@@ -89,21 +91,53 @@ func (t *Toucher) Forget(userID int64) {
 	t.mu.Unlock()
 }
 
-// Unary refreshes last seen on ordinary authenticated RPCs. The stored
-// window is UserOnlinePeriod, the same value account.updateStatus online uses.
-// This does not push updateUserStatus; the explicit status RPC still does.
-func Unary(writer LastSeenWriter) grpc.UnaryServerInterceptor {
+// activityExpires is what an ordinary RPC stores in user_presences.expires.
+// An open online window is renewed for another UserOnlinePeriod. Offline,
+// expired, and missing rows stay at 0 so a later getDifference does not
+// show the user online.
+func activityExpires(lastSeenAt int64, expires int32, now int64) int32 {
+	if mtproto.PresenceOnline(now, lastSeenAt, expires) {
+		return mtproto.UserOnlinePeriod
+	}
+	return 0
+}
+
+// recordActivity refreshes last_seen_at. It renews expires only while the
+// stored window is still open. A read failure other than a missing row
+// writes nothing, so a database error cannot turn someone online or offline.
+func recordActivity(ctx context.Context, store LastSeenStore, userID, now int64) error {
+	if store == nil || userID == 0 || now <= 0 {
+		return nil
+	}
+	seen, err := store.UserGetLastSeen(ctx, &userpb.TLUserGetLastSeen{Id: userID})
+	expires := int32(0)
+	switch {
+	case err == nil && seen != nil:
+		expires = activityExpires(seen.GetLastSeenAt(), seen.GetExpires(), now)
+	case err == nil || errors.Is(err, userpb.ErrPresenceNotFound):
+		expires = 0
+	default:
+		return err
+	}
+	_, err = store.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
+		Id:         userID,
+		LastSeenAt: now,
+		Expires:    expires,
+	})
+	return err
+}
+
+// Unary refreshes last seen on ordinary authenticated RPCs. An open online
+// window is extended. An offline user only moves last_seen_at and keeps
+// expires at 0. This does not push updateUserStatus.
+func Unary(store LastSeenStore) grpc.UnaryServerInterceptor {
 	toucher := NewToucher(TouchInterval, func(ctx context.Context, userID, now int64) {
-		if writer == nil {
+		if store == nil {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		_, _ = writer.UserUpdateLastSeen(ctx, &userpb.TLUserUpdateLastSeen{
-			Id:         userID,
-			LastSeenAt: now,
-			Expires:    mtproto.UserOnlinePeriod,
-		})
+		_ = recordActivity(ctx, store, userID, now)
 	})
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		var userID int64
