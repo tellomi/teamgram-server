@@ -21,4 +21,10 @@ func TestLikeSubstringEscapesAndGlobalSQLIsCaseInsensitive(t *testing.T) {
 	if strings.Contains(searchGlobalTextSQL, "sender_user_id =") {
 		t.Fatal("search must include inbox and outbox")
 	}
+	if !strings.Contains(searchGlobalTextSQL, "date2 <= ?") {
+		t.Fatal("page bound must be the cursor date")
+	}
+	if strings.Contains(searchGlobalTextSQL, "user_message_box_id <") {
+		t.Fatal("a channel offset_id must not bound user box ids")
+	}
 }

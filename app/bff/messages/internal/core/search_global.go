@@ -152,11 +152,11 @@ func messageHasURL(msg *mtproto.Message) bool {
 
 // mergeJoinedChannelHits appends posts from channels the user has joined.
 // A failure leaves the user-message hits in place.
-func (c *MessagesCore) mergeJoinedChannelHits(list *mtproto.MessageBoxList, q string, limit int32) *mtproto.MessageBoxList {
+func (c *MessagesCore) mergeJoinedChannelHits(list *mtproto.MessageBoxList, q string, limit int32, cur globalCursor) *mtproto.MessageBoxList {
 	if c == nil || c.MD == nil {
 		return list
 	}
-	extra, err := channel.Shared().SearchJoined(c.ctx, c.MD.UserId, q, limit)
+	extra, err := channel.Shared().SearchJoined(c.ctx, c.MD.UserId, q, limit, globalFetchDate(cur))
 	if err != nil {
 		c.Logger.Errorf("messages.searchGlobal channels: %v", err)
 		return list

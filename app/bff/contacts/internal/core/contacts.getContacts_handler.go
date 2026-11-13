@@ -52,9 +52,13 @@ import (
 func (c *ContactsCore) ContactsGetContacts(in *mtproto.TLContactsGetContacts) (*mtproto.Contacts_Contacts, error) {
 	contactList, err := c.contactRows()
 	if err != nil {
-		// A contact-list outage used to come back as an empty success.
-		// Keep that so a startup getContacts does not spin the client.
 		c.Logger.Errorf("contacts.getContacts - error: %v", err)
+		// Hash 0 is the first load. An empty success keeps that from spinning.
+		// A client that already has a book sends a non-zero hash; an empty
+		// success would replace that book with nothing.
+		if in.GetHash() != 0 {
+			return nil, err
+		}
 		contactList = nil
 	}
 	saved, err := c.savedCount()

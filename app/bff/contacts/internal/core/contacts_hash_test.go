@@ -160,6 +160,22 @@ func TestGetContactsDoesNotWipeBookWhenUsersMissing(t *testing.T) {
 	}
 }
 
+func TestGetContactsListErrorKeepsBookWhenHashSet(t *testing.T) {
+	c := relCore(4, nil)
+	prev := fetchContactRows
+	t.Cleanup(func() { fetchContactRows = prev })
+	fetchContactRows = func(*ContactsCore) ([]*mtproto.ContactData, error) {
+		return nil, context.DeadlineExceeded
+	}
+	if _, err := c.ContactsGetContacts(&mtproto.TLContactsGetContacts{Hash: 99}); err == nil {
+		t.Fatal("non-zero hash must not replace the book with an empty success")
+	}
+	got, err := c.ContactsGetContacts(&mtproto.TLContactsGetContacts{})
+	if err != nil || got.GetPredicateName() != mtproto.Predicate_contacts_contacts || len(got.GetContacts()) != 0 {
+		t.Fatalf("hash 0 startup: %v %#v", err, got)
+	}
+}
+
 func TestGetContactsSavedCountErrorIsNotZero(t *testing.T) {
 	c := relCore(4, errSaved{})
 	prev := fetchContactRows

@@ -83,4 +83,7 @@ type PostQuery struct {
 	OffsetID   int32
 	Limit      int32
 	JoinedOnly bool
+	// MaxDate keeps posts at or before this unix time. Zero means no cap.
+	// messages.searchGlobal sets it from offset_rate. It is not a message id.
+	MaxDate int32
 }

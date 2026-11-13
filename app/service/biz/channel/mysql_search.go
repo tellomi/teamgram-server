@@ -32,6 +32,10 @@ WHERE m.deleted = 0
 	}
 	pattern := likeContains(q.Needle)
 	args := []any{self, StateKicked, RoleBanned, joinedOnly, self, StateNormal, RoleBanned, pattern}
+	if q.MaxDate > 0 {
+		stmt += ` AND m.date2 <= ?`
+		args = append(args, q.MaxDate)
+	}
 	if q.OffsetRate > 0 {
 		stmt += `
   AND (

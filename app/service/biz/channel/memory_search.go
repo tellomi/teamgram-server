@@ -25,6 +25,9 @@ func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) 
 			if stored == nil || stored.Deleted {
 				continue
 			}
+			if q.MaxDate > 0 && stored.Date > q.MaxDate {
+				continue
+			}
 			if !olderPost(stored.Date, stored.ChannelID, stored.ID, q) {
 				continue
 			}

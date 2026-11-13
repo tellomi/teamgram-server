@@ -19,7 +19,6 @@
 package core
 
 import (
-	"math"
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
@@ -51,16 +50,7 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		return nil, err
 	}
 
-	var (
-		offsetId = in.OffsetId
-		limit    = in.Limit
-	)
-
-	if offsetId == 0 {
-		offsetId = math.MaxInt32
-	}
-
-	limit = pagelimit.Cap(limit)
+	limit := pagelimit.Cap(in.Limit)
 	scope := globalQuery{
 		UsersOnly:      in.GetUsersOnly(),
 		GroupsOnly:     in.GetGroupsOnly(),
@@ -100,20 +90,26 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 	)
 	if q == "" {
 		kind, _ := globalMediaKind(in.Filter)
+		mediaOffset := in.OffsetId
+		if mediaOffset == 0 {
+			mediaOffset = 0x7fffffff
+		}
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchByMediaType(c.ctx, &messagepb.TLMessageSearchByMediaType{
 			UserId:    c.MD.UserId,
 			PeerType:  messagepb.SearchGlobalPeerType,
 			MediaType: kind,
-			Offset:    offsetId,
+			Offset:    mediaOffset,
 			Limit:     fetchLimit,
 		})
 	} else {
+		// Offset is the cursor date. A channel offset_id must not be applied
+		// as user_message_box_id.
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchGlobal(
 			c.ctx,
 			&messagepb.TLMessageSearchGlobal{
 				UserId: c.MD.UserId,
 				Q:      q,
-				Offset: offsetId,
+				Offset: globalFetchDate(cur),
 				Limit:  fetchLimit,
 			})
 	}
@@ -125,7 +121,7 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		// Private and basic-group rows live in the user message table.
 		// Channel and supergroup posts live in channel_messages and are
 		// not copied there, so a channel post never matched this RPC.
-		boxList = c.mergeJoinedChannelHits(boxList, q, fetchLimit)
+		boxList = c.mergeJoinedChannelHits(boxList, q, fetchLimit, cur)
 	}
 	if filterOn {
 		boxList = keepBoxes(boxList, func(m *mtproto.Message) bool {

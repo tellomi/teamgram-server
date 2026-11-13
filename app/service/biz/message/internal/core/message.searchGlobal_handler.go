@@ -25,14 +25,18 @@ func (c *MessageCore) MessageSearchGlobal(in *message.TLMessageSearchGlobal) (*m
 		rValues []*mtproto.MessageBox
 	)
 
-	if offset == 0 {
-		offset = math.MaxInt32
+	// Offset is the global cursor date (offset_rate), not a box id.
+	// A channel message id must not become user_message_box_id < ?.
+	// Zero means the first page: every stored date is allowed.
+	maxDate := int64(offset)
+	if maxDate <= 0 {
+		maxDate = math.MaxInt32
 	}
 
 	_, err := c.svcCtx.Dao.MessagesDAO.SearchGlobalTextWithCB(
 		c.ctx,
 		in.UserId,
-		offset,
+		maxDate,
 		in.Q,
 		in.Limit,
 		func(sz, i int, v *dataobject.MessagesDO) {

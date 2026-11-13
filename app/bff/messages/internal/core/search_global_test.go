@@ -127,6 +127,121 @@ func TestMergeGlobalPrivateChannelAndGroup(t *testing.T) {
 	}
 }
 
+func TestGlobalPagesDoNotMixMessageIDSpaces(t *testing.T) {
+	// Page 1 ends on a channel post whose id is 5. A private row with box id
+	// 100 is older by date. Bounding user rows with user_message_box_id < 5
+	// would drop it. Page 2 must still return it, and page 3 the next private.
+	channelHit := globalBox(mtproto.PEER_CHANNEL, 9, 5, 300, "chn019")
+	private := globalBox(mtproto.PEER_USER, 7, 100, 200, "Hello")
+	olderPrivate := globalBox(mtproto.PEER_USER, 7, 4, 100, "p019")
+	all := []*mtproto.MessageBox{channelHit, private, olderPrivate}
+
+	page1 := pageGlobalSources(all, globalCursor{}, 1, 200)
+	if len(page1.BoxList) != 1 || page1.BoxList[0].GetMessage().GetMessage() != "chn019" {
+		t.Fatalf("page 1 %#v", texts(page1))
+	}
+	cur := cursorOf(page1.BoxList[0])
+	if globalFetchDate(cur) != 300 {
+		t.Fatalf("cursor date %d", globalFetchDate(cur))
+	}
+	page2 := pageGlobalSources(all, cur, 1, 200)
+	if len(page2.BoxList) != 1 || page2.BoxList[0].GetMessage().GetMessage() != "Hello" || page2.BoxList[0].GetMessageId() != 100 {
+		t.Fatalf("page 2 %#v", texts(page2))
+	}
+	page3 := pageGlobalSources(all, cursorOf(page2.BoxList[0]), 1, 200)
+	if len(page3.BoxList) != 1 || page3.BoxList[0].GetMessage().GetMessage() != "p019" {
+		t.Fatalf("page 3 %#v", texts(page3))
+	}
+}
+
+func TestGlobalPageReachesChannelPastFetchCap(t *testing.T) {
+	var all []*mtproto.MessageBox
+	for i := 0; i < 201; i++ {
+		all = append(all, globalBox(mtproto.PEER_CHANNEL, 9, int32(i+1), int32(2000-i), "hit"))
+	}
+	private := globalBox(mtproto.PEER_USER, 7, 5000, 10, "Hello")
+	all = append(all, private)
+
+	first := pageGlobalSources(all, globalCursor{}, 200, 200)
+	if len(first.BoxList) != 200 || first.BoxList[len(first.BoxList)-1].GetMessage().GetDate() != 2000-199 {
+		t.Fatalf("window end date %d len %d", first.BoxList[len(first.BoxList)-1].GetMessage().GetDate(), len(first.BoxList))
+	}
+	next := pageGlobalSources(all, cursorOf(first.BoxList[len(first.BoxList)-1]), 1, 200)
+	if len(next.BoxList) != 1 || next.BoxList[0].GetMessage().GetDate() != 2000-200 {
+		t.Fatalf("201st %#v", texts(next))
+	}
+	// Walk until the private message, which is older than every channel post.
+	cur := globalCursor{}
+	var sawPrivate bool
+	for i := 0; i < 30 && !sawPrivate; i++ {
+		page := pageGlobalSources(all, cur, 20, 200)
+		if len(page.BoxList) == 0 {
+			break
+		}
+		for _, box := range page.BoxList {
+			if box.GetMessage().GetMessage() == "Hello" {
+				sawPrivate = true
+			}
+		}
+		cur = cursorOf(page.BoxList[len(page.BoxList)-1])
+	}
+	if !sawPrivate {
+		t.Fatal("private message behind 201 channel posts was not reachable")
+	}
+}
+
+func globalBox(peerType int32, peerID int64, id, date int32, text string) *mtproto.MessageBox {
+	return &mtproto.MessageBox{
+		PeerType:  peerType,
+		PeerId:    peerID,
+		MessageId: id,
+		Message:   &mtproto.Message{Id: id, Date: date, Message: text},
+	}
+}
+
+func cursorOf(box *mtproto.MessageBox) globalCursor {
+	return globalCursor{
+		Active:   true,
+		Rate:     box.GetMessage().GetDate(),
+		PeerType: box.GetPeerType(),
+		PeerID:   box.GetPeerId(),
+		MsgID:    box.GetMessage().GetId(),
+	}
+}
+
+// pageGlobalSources is the two SQL windows: each source keeps rows at or
+// before the cursor date, newest first, capped like the query limit. The
+// channel message id is not applied to user box ids. Tie-break is the
+// in-memory cursor.
+func pageGlobalSources(all []*mtproto.MessageBox, cur globalCursor, limit, fetchCap int32) *mtproto.MessageBoxList {
+	maxDate := globalFetchDate(cur)
+	var users, channels []*mtproto.MessageBox
+	for _, box := range all {
+		if maxDate > 0 && box.GetMessage().GetDate() > maxDate {
+			continue
+		}
+		if box.GetPeerType() == mtproto.PEER_CHANNEL {
+			channels = append(channels, box)
+			continue
+		}
+		users = append(users, box)
+	}
+	users = newestCap(users, fetchCap)
+	channels = newestCap(channels, fetchCap)
+	merged := mergeGlobalBoxes(&mtproto.MessageBoxList{BoxList: users}, channels)
+	sortGlobalBoxes(merged)
+	return filterGlobalPage(merged, cur, nil, false, limit)
+}
+
+func newestCap(boxes []*mtproto.MessageBox, cap int32) []*mtproto.MessageBox {
+	list := &mtproto.MessageBoxList{BoxList: append([]*mtproto.MessageBox(nil), boxes...)}
+	sortGlobalBoxes(list)
+	if cap > 0 && int32(len(list.BoxList)) > cap {
+		list.BoxList = list.BoxList[:cap]
+	}
+	return list.BoxList
+}
+
 func TestAddJoinedChannelsRespectsArchive(t *testing.T) {
 	folder := map[string]bool{}
 	addJoinedChannels(folder, 0, []int64{9, 10}, map[int64]bool{10: true})
