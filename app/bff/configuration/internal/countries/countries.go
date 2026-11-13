@@ -259,6 +259,7 @@ func buildCountriesList(lang string, base []countryBase) *mtproto.Help_Countries
 			CountryCodes: codes,
 		}).To_Help_Country())
 	}
+	countries = append(countries, testCountry())
 	sort.Slice(countries, func(i, j int) bool {
 		ni := countries[i].GetName().GetValue()
 		nj := countries[j].GetName().GetValue()
@@ -273,10 +274,51 @@ func buildCountriesList(lang string, base []countryBase) *mtproto.Help_Countries
 	}).To_Help_CountriesList()
 }
 
+// Dev login numbers are 99966XYYYY (country code 999, national 66XYYYY).
+// libphonenumber has no region 999, and the Android release build
+// (LoginActivity) copies help.getCountriesList over assets/countries.txt,
+// then refuses auth.sendCode with "Invalid country code" when the typed
+// code is not in that map. Returning 999 here is what lets a release APK
+// send the code. The row is hidden: iOS omits hidden countries from the
+// picker. This Android build does not read the flag, so the row is visible
+// there until the client skips hidden entries in the picker only.
+//
+// Prefix 66 is the test range after the calling code. Patterns are hints;
+// they are not a second validation gate. SMS behaviour stays in
+// phonenumber.TestPhoneCode: only 99966XYYYY skips the provider.
+const (
+	testCountryISO2    = "XT"
+	testCountryCode    = "999"
+	testCountryPrefix  = "66"
+	testCountryPattern = "66X XXXX"
+	testCountryName    = "Test"
+)
+
+func testCountry() *mtproto.Help_Country {
+	return mtproto.MakeTLHelpCountry(&mtproto.Help_Country{
+		Hidden:      true,
+		Iso2:        testCountryISO2,
+		DefaultName: testCountryName,
+		Name:        mtproto.MakeFlagsString(testCountryName),
+		CountryCodes: []*mtproto.Help_CountryCode{
+			mtproto.MakeTLHelpCountryCode(&mtproto.Help_CountryCode{
+				CountryCode: testCountryCode,
+				Prefixes:    []string{testCountryPrefix},
+				Patterns:    []string{testCountryPattern},
+			}).To_Help_CountryCode(),
+		},
+	}).To_Help_Country()
+}
+
 func countriesHash(lang string, countries []*mtproto.Help_Country) int32 {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(lang))
 	for _, c := range countries {
+		if c.GetHidden() {
+			_, _ = h.Write([]byte{1})
+		} else {
+			_, _ = h.Write([]byte{0})
+		}
 		_, _ = h.Write([]byte(c.GetIso2()))
 		_, _ = h.Write([]byte(c.GetDefaultName()))
 		_, _ = h.Write([]byte(c.GetName().GetValue()))
