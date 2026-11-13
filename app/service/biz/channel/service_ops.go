@@ -109,14 +109,26 @@ func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
 	if p == nil || !p.InChannel() {
 		return false
 	}
-	if p.IsCreator() || p.adminRights().CanChangeInfo() {
+	if p.IsCreator() {
 		return true
 	}
-	if ch.Broadcast {
+	// admin_rights.change_info is a grant. A member's stored admin bits are not.
+	if p.IsAdmin() && p.adminRights().CanChangeInfo() {
+		return true
+	}
+	// Broadcast channels are admin-only. Megagroups also honor the default
+	// ban and this member's own banned_rights.
+	if ch == nil || ch.Broadcast {
 		return false
 	}
+	now := int32(time.Now().Unix())
+	if p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil && !br.CanChangeInfo(now) {
+			return false
+		}
+	}
 	return s.defaultAllows(ch, func(br *mtproto.ChatBannedRights) bool {
-		return br.CanChangeInfo(int32(time.Now().Unix()))
+		return br.CanChangeInfo(now)
 	})
 }
 
@@ -569,11 +581,19 @@ func (s *Service) Delete(ctx context.Context, sender, channelID, actorAuth int64
 	var allowed []int32
 	for _, id := range ids {
 		stored, err := s.store.GetMessage(ctx, channelID, id)
-		if err != nil || stored == nil || stored.Deleted {
+		if err != nil {
+			return 0, 0, err
+		}
+		if stored == nil || stored.Deleted {
 			continue
 		}
-		if s.canModify(ch, p, stored, false) != nil {
-			continue
+		if err := s.canModify(ch, p, stored, false); err != nil {
+			if err == mtproto.ErrChannelPrivate {
+				return 0, 0, err
+			}
+			// A live message this member cannot remove for everyone is
+			// MESSAGE_DELETE_FORBIDDEN. Skipping it used to report success.
+			return 0, 0, mtproto.ErrMessageDeleteForbidden
 		}
 		allowed = append(allowed, id)
 	}

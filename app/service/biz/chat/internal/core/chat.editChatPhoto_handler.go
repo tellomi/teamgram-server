@@ -41,9 +41,8 @@ func (c *ChatCore) ChatEditChatPhoto(in *chat.TLChatEditChatPhoto) (*mtproto.Mut
 		return nil, err
 	}
 
-	// TODO(@benqi): check
 	// 400	CHAT_ADMIN_REQUIRED	You must be an admin in this chat to do this
-	if !me.CanChangeInfo() {
+	if !mtproto.ChatParticipantMayChangeInfo(me, chat2.DefaultBannedRights(), int32(now)) {
 		err = mtproto.ErrChatAdminRequired
 		return nil, err
 	}

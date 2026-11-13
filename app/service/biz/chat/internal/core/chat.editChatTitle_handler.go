@@ -58,9 +58,10 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 		return nil, err
 	}
 
-	// TODO(@benqi): check
+	// Creator, or an admin with change_info, or a member who is not banned
+	// by default_banned_rights.change_info.
 	// 400	CHAT_ADMIN_REQUIRED	You must be an admin in this chat to do this
-	if !me.CanChangeInfo() {
+	if !mtproto.ChatParticipantMayChangeInfo(me, chat2.DefaultBannedRights(), int32(now)) {
 		err = mtproto.ErrChatAdminRequired
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, err
