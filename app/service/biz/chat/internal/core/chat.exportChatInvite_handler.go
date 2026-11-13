@@ -37,20 +37,21 @@ func (c *ChatCore) ChatExportChatInvite(in *chat.TLChatExportChatInvite) (*mtpro
 
 	now := time.Now().Unix()
 	expire := int64(in.GetExpireDate().GetValue())
-	usage := in.GetUsageLimit().GetValue()
 	title := in.GetTitle().GetValue()
-	if err := (invite.Export{
+	exp := invite.Export{
 		Legacy:        in.LegacyRevokePermanent,
 		RequestNeeded: in.RequestNeeded,
 		Expire:        expire,
-		Usage:         usage,
+		Usage:         in.GetUsageLimit().GetValue(),
 		UsageSet:      in.GetUsageLimit() != nil,
 		Title:         title,
 		TitleSet:      in.GetTitle() != nil,
 		Now:           now,
-	}).Validate(); err != nil {
+	}
+	if err := exp.Validate(); err != nil {
 		return nil, err
 	}
+	usage := exp.StoredUsage()
 
 	// The share sheet sends legacy_revoke_permanent when the group has no
 	// primary link. That revokes the previous permanent link and writes a new one.

@@ -70,6 +70,7 @@ func TestInviteLinkSheet(t *testing.T) {
 		edited.GetInvite().GetUsageLimit().GetValue() != 3 {
 		t.Fatalf("edited %+v", edited.GetInvite())
 	}
+	assertUnlimitedUsage(t, ctx, a, channelPeer)
 
 	listObj, err := a.Invoke(ctx, &mtproto.TLMessagesGetExportedChatInvites{
 		Constructor: mtproto.CRC32_messages_getExportedChatInvites,
@@ -133,6 +134,7 @@ func TestInviteLinkSheet(t *testing.T) {
 	if basicExtra.GetTitle().GetValue() != "周末局" || !basicExtra.GetRequestNeeded() || basicExtra.GetUsageLimit().GetValue() != 10 {
 		t.Fatalf("basic new link %+v", basicExtra)
 	}
+	assertUnlimitedUsage(t, ctx, a, inputPeerChat(chatID))
 	basicFullObj, err := a.Invoke(ctx, &mtproto.TLMessagesGetFullChat{
 		Constructor: mtproto.CRC32_messages_getFullChat,
 		ChatId:      chatID,
@@ -143,6 +145,61 @@ func TestInviteLinkSheet(t *testing.T) {
 	basicFull := asChatFull(t, basicFullObj)
 	if basicFull.GetExportedInvite().GetLink() != basic.GetLink() {
 		t.Fatalf("messages.getFullChat exported_invite %+v", basicFull.GetExportedInvite())
+	}
+}
+
+// assertUnlimitedUsage is the Android LinkEditActivity payload: the usage_limit
+// flag is set and the value is 0. The reply must omit usage_limit. Editing a
+// limited link to 0 does the same. Negative values and values above 99999
+// are USAGE_LIMIT_INVALID.
+func assertUnlimitedUsage(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer) {
+	t.Helper()
+	open := exportInvite(t, ctx, c, &mtproto.TLMessagesExportChatInvite{
+		Constructor: mtproto.CRC32_messages_exportChatInvite_a455de90,
+		Peer:        peer,
+		UsageLimit:  &wrapperspb.Int32Value{Value: 0},
+		Title:       &wrapperspb.StringValue{Value: "不限"},
+	})
+	if open.GetUsageLimit() != nil || open.GetPermanent() || open.GetTitle().GetValue() != "不限" {
+		t.Fatalf("unlimited export %+v", open)
+	}
+	limited := exportInvite(t, ctx, c, &mtproto.TLMessagesExportChatInvite{
+		Constructor: mtproto.CRC32_messages_exportChatInvite_a455de90,
+		Peer:        peer,
+		UsageLimit:  &wrapperspb.Int32Value{Value: 99999},
+	})
+	if limited.GetUsageLimit().GetValue() != 99999 {
+		t.Fatalf("max %+v", limited)
+	}
+	cleared := editInvite(t, ctx, c, &mtproto.TLMessagesEditExportedChatInvite{
+		Constructor: mtproto.CRC32_messages_editExportedChatInvite,
+		Peer:        peer,
+		Link:        limited.GetLink(),
+		UsageLimit:  &wrapperspb.Int32Value{Value: 0},
+	})
+	if cleared.GetInvite().GetUsageLimit() != nil {
+		t.Fatalf("edit to unlimited %+v", cleared.GetInvite())
+	}
+	for _, n := range []int32{-1, 100000} {
+		_, err := c.Invoke(ctx, &mtproto.TLMessagesExportChatInvite{
+			Constructor: mtproto.CRC32_messages_exportChatInvite_a455de90,
+			Peer:        peer,
+			UsageLimit:  &wrapperspb.Int32Value{Value: n},
+		})
+		rpc, ok := asRPCError(err)
+		if !ok || rpc.Code != 400 || rpc.Message != "USAGE_LIMIT_INVALID" {
+			t.Fatalf("export usage %d: %v", n, err)
+		}
+		_, err = c.Invoke(ctx, &mtproto.TLMessagesEditExportedChatInvite{
+			Constructor: mtproto.CRC32_messages_editExportedChatInvite,
+			Peer:        peer,
+			Link:        open.GetLink(),
+			UsageLimit:  &wrapperspb.Int32Value{Value: n},
+		})
+		rpc, ok = asRPCError(err)
+		if !ok || rpc.Code != 400 || rpc.Message != "USAGE_LIMIT_INVALID" {
+			t.Fatalf("edit usage %d: %v", n, err)
+		}
 	}
 }
 
