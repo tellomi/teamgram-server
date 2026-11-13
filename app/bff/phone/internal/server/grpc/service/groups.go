@@ -65,9 +65,15 @@ func (s *Service) PhoneJoinGroupCall(ctx context.Context, in *mtproto.TLPhoneJoi
 		return nil, err
 	}
 	if pt == mtproto.PEER_CHANNEL || pt == mtproto.PEER_CHAT {
-		roomMember, public, err := s.callRoomAccess(ctx, md.GetUserId(), pt, pid)
+		roomMember, public, blocked, err := s.callRoomAccess(ctx, md.GetUserId(), pt, pid)
 		if err != nil {
 			return nil, err
+		}
+		// A kick or a view_messages ban wins over a public username and over
+		// an invite hash. Someone who never joined, or who left, may still
+		// enter a public channel.
+		if blocked {
+			return nil, mtproto.ErrForbiddenGroupcallForbidden
 		}
 		member = roomMember || public
 	}

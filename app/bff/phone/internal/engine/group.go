@@ -323,7 +323,11 @@ func (e *Engine) groupTL(g *group, viewer int64) *mtproto.GroupCall {
 	if video > 0 {
 		gc.UnmutedVideoCount = wrapperspb.Int32(video)
 	}
-	if g.invite != "" {
+	// A chat call's listener slug is an entry credential. getGroupCall and
+	// invite updates are readable with only the call id, so that slug is
+	// returned only by phone.exportGroupCallInvite. Conferences and live
+	// stories have no chat membership; their link stays on the object.
+	if g.invite != "" && (g.conference || g.liveStory) {
 		gc.InviteLink = wrapperspb.String(e.cfg.CallLinkPrefix + g.invite)
 	}
 	if g.paidStars != nil {
