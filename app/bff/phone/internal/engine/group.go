@@ -79,6 +79,33 @@ func canAdmin(g *group, user int64, manage bool) bool {
 	return g != nil && (user == g.creator || manage)
 }
 
+// viewerMayExport is phone.exportGroupCallInvite's rule for this viewer.
+// The call creator may export, and so may a chat admin MayManage accepts.
+func (e *Engine) viewerMayExport(g *group, viewer int64) bool {
+	if g == nil || viewer == 0 {
+		return false
+	}
+	manage := false
+	if e.mayManage != nil && g.peerID != 0 && (g.peerType == mtproto.PEER_CHAT || g.peerType == mtproto.PEER_CHANNEL) {
+		manage = e.mayManage(viewer, g.peerType, g.peerID)
+	}
+	return canAdmin(g, viewer, manage)
+}
+
+// MayExport reports whether user may see this call's invite link.
+func (e *Engine) MayExport(user, id, access int64) bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	g, err := e.loadGroup(id, access)
+	if err != nil {
+		return false
+	}
+	return e.viewerMayExport(g, user)
+}
+
 func partKey(peerType int32, id int64) string {
 	return fmt.Sprintf("%d:%d", peerType, id)
 }
@@ -323,7 +350,10 @@ func (e *Engine) groupTL(g *group, viewer int64) *mtproto.GroupCall {
 	if video > 0 {
 		gc.UnmutedVideoCount = wrapperspb.Int32(video)
 	}
-	if g.invite != "" {
+	// Official clients only receive invite_link when this viewer may call
+	// phone.exportGroupCallInvite. The listener slug is the join secret
+	// for a private room, so it stays off every other copy of the call.
+	if g.invite != "" && e.viewerMayExport(g, viewer) {
 		gc.InviteLink = wrapperspb.String(e.cfg.CallLinkPrefix + g.invite)
 	}
 	if g.paidStars != nil {
@@ -414,9 +444,15 @@ func (e *Engine) JoinGroup(in JoinGroup) (*mtproto.Updates, error) {
 	}
 	speaker := in.InviteHash != "" && in.InviteHash == g.speakerInvite
 	listener := in.InviteHash != "" && in.InviteHash == g.invite
-	if !g.conference && !in.Member && !speaker && !listener && in.UserID != g.creator {
+	// A chat call admits members and a hash from phone.exportGroupCallInvite.
+	// The handler sets Member for public rooms. Conferences and live stories
+	// have no chat membership. answerOffer already took a media seat.
+	if !g.conference && !g.liveStory && !in.Member && !speaker && !listener {
 		e.mu.Unlock()
-		return nil, mtproto.ErrInviteHashInvalid
+		if e.media != nil {
+			e.media.Leave(in.CallID, partKey(in.PeerType, in.PeerID))
+		}
+		return nil, mtproto.ErrForbiddenGroupcallForbidden
 	}
 	if ssrc != 0 {
 		for _, p := range g.parts {
