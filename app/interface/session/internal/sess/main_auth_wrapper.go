@@ -23,6 +23,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/session/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
+	"github.com/teamgram/teamgram-server/pkg/stagelog"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/jsonx"
@@ -116,6 +117,7 @@ type MainAuthWrapper struct {
 	nextPushId           int64
 	cb                   *MainAuthWrapperManager
 	tmpRpcApiMessageList []*rpcApiMessage
+	orders               *peerOrder
 }
 
 func NewMainAuthWrapper(mainAuthKeyId int64, authUserId int64, state int, client *authsession.ClientSession, androidPushId int64, cb *MainAuthWrapperManager) *MainAuthWrapper {
@@ -141,6 +143,7 @@ func NewMainAuthWrapper(mainAuthKeyId int64, authUserId int64, state int, client
 		running:              syncx.NewAtomicBool(),
 		cb:                   cb,
 		tmpRpcApiMessageList: make([]*rpcApiMessage, 0),
+		orders:               newPeerOrder(),
 	}
 	mainAuth.tempAuth = newSessionList(mtproto.AuthKeyTypeTemp, mainAuth)
 	mainAuth.mediaTempAuth = newSessionList(mtproto.AuthKeyTypeMediaTemp, mainAuth)
@@ -868,7 +871,14 @@ func (m *MainAuthWrapper) runLoop() {
 }
 
 func (m *MainAuthWrapper) rpcRunLoop() {
+	slots := make(chan struct{}, sessionRPCConcurrency())
+	orders := m.orders
+	if orders == nil {
+		orders = newPeerOrder()
+	}
+	var inflight sync.WaitGroup
 	defer func() {
+		inflight.Wait()
 		m.finish.Done()
 		close(m.rpcDataChan)
 	}()
@@ -877,36 +887,67 @@ func (m *MainAuthWrapper) rpcRunLoop() {
 		if apiRequest == nil {
 			logx.Infof("%s -> quit rpcRunLoop...", m)
 			return
-		} else {
-			batch := apiRequest.([]*rpcApiMessage)
-			threading.RunSafe(func() {
-				for _, request := range batch {
-					request := request
-					if isFileRPC(request.reqMsg) {
-						// upload.getFile used to run on this loop. A dfs read
-						// that waited on R2 blocked getDifference and sends,
-						// which is the client stuck on "Updating...".
-						threading.GoSafe(func() {
-							ctx, cancel := context.WithTimeout(request.ctx, fileRPCTimeout)
-							defer cancel()
-							if !acquireFileSlot(ctx) {
-								request.setResult(internalRPCResult(request.reqMsgId))
-								m.rpcDataChan <- request
-								return
-							}
-							defer func() { <-fileRPCSlots }()
-							m.finishRPC(ctx, request)
-						})
-						continue
+		}
+		batch := apiRequest.([]*rpcApiMessage)
+		qlen := 0
+		if stagelog.On() {
+			qlen = m.rpcQueue.Len()
+		}
+		for _, request := range batch {
+			request := request
+			if stagelog.On() {
+				request.queueLen = qlen
+			}
+			inflight.Add(1)
+			if isFileRPC(request.reqMsg) {
+				// upload.getFile used to run on this loop. A dfs read
+				// that waited on R2 blocked getDifference and sends,
+				// which is the client stuck on "Updating...".
+				threading.GoSafe(func() {
+					defer inflight.Done()
+					ctx, cancel := context.WithTimeout(request.ctx, fileRPCTimeout)
+					defer cancel()
+					if !acquireFileSlot(ctx) {
+						request.setResult(internalRPCResult(request.reqMsgId))
+						m.rpcDataChan <- request
+						return
 					}
-					m.finishRPC(request.ctx, request)
+					defer func() { <-fileRPCSlots }()
+					m.finishRPC(ctx, request)
+				})
+				continue
+			}
+			var wait, release func()
+			if peer, all, ordered := mutationOrder(request.reqMsg); ordered {
+				if peer == "" {
+					all = true
 				}
+				wait, release = orders.reserve(peer, all)
+			}
+			startAuthRPC(slots, false, func() {
+				defer inflight.Done()
+				if wait != nil {
+					wait()
+					defer release()
+				}
+				m.finishRPC(request.ctx, request)
 			})
 		}
 	}
 }
 
 func (m *MainAuthWrapper) finishRPC(ctx context.Context, request *rpcApiMessage) {
+	started := time.Now()
+	defer func() {
+		if !stagelog.On() || request == nil {
+			return
+		}
+		name := ""
+		if request.reqMsg != nil {
+			name = reflect.TypeOf(request.reqMsg).String()
+		}
+		stagelog.SessionDone(name, m.authKeyId, request.reqMsgId, request.gatewayAt, request.enqueuedAt, request.loopAt, request.queuedAt, started, time.Now(), request.queueLen)
+	}()
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, rpcTimeout(request.reqMsg))
@@ -967,6 +1008,17 @@ func internalRPCResult(reqMsgId int64) *mtproto.TLRpcResult {
 }
 
 func (m *MainAuthWrapper) sendToRpcQueue(ctx context.Context, rpcMessage []*rpcApiMessage) {
+	if len(rpcMessage) == 0 {
+		return
+	}
+	if stagelog.On() {
+		now := time.Now()
+		for _, msg := range rpcMessage {
+			if msg != nil && msg.queuedAt.IsZero() {
+				msg.queuedAt = now
+			}
+		}
+	}
 	m.rpcQueue.Push(rpcMessage)
 }
 
@@ -1027,16 +1079,23 @@ func (m *MainAuthWrapper) SessionClientNew(ctx context.Context, kType int, kId i
 }
 
 func (m *MainAuthWrapper) SessionDataArrived(ctx context.Context, kType int, kId int64, gatewayId, clientIp string, sessionId, salt int64, buf []byte) error {
+	var gatewayAt, enqueuedAt time.Time
+	if stagelog.On() {
+		gatewayAt, _, _ = stagelog.Marks(ctx)
+		enqueuedAt = time.Now()
+	}
 	sData := &sessionDataCtx{
 		ctx: contextx.ValueOnlyFrom(ctx),
 		sessionData: sessionData{
-			authType:  kType,
-			authId:    kId,
-			gatewayId: gatewayId,
-			clientIp:  clientIp,
-			sessionId: sessionId,
-			salt:      salt,
-			buf:       buf,
+			authType:   kType,
+			authId:     kId,
+			gatewayId:  gatewayId,
+			clientIp:   clientIp,
+			sessionId:  sessionId,
+			salt:       salt,
+			buf:        buf,
+			gatewayAt:  gatewayAt,
+			enqueuedAt: enqueuedAt,
 		},
 	}
 
@@ -1182,6 +1241,9 @@ func (m *MainAuthWrapper) onSessionNew(ctx context.Context, connMsg *connData) {
 }
 
 func (m *MainAuthWrapper) onSessionData(ctx context.Context, sessionMsg *sessionData) {
+	if stagelog.On() && sessionMsg != nil {
+		ctx = stagelog.WithMarks(ctx, sessionMsg.gatewayAt, sessionMsg.enqueuedAt, time.Now())
+	}
 	sList := m.getSessionList(sessionMsg.authType)
 
 	if sList.authId == 0 {

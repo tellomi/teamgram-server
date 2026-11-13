@@ -9,6 +9,7 @@ package sess
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 type connDataCtx struct {
@@ -35,13 +36,15 @@ type sessionDataCtx struct {
 }
 
 type sessionData struct {
-	authType  int
-	authId    int64
-	gatewayId string
-	clientIp  string
-	sessionId int64
-	salt      int64
-	buf       []byte
+	authType   int
+	authId     int64
+	gatewayId  string
+	clientIp   string
+	sessionId  int64
+	salt       int64
+	buf        []byte
+	gatewayAt  time.Time
+	enqueuedAt time.Time
 }
 
 type sessionHttpDataCtx struct {
