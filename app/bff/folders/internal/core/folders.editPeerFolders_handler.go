@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/archive"
 )
@@ -15,8 +14,9 @@ import (
 //
 // folder_id 0 is the main list and 1 is the archive. The result carries
 // updateFolderPeers. A stored pts uses pts_count 1; pts 0 keeps pts_count 0
-// so the calling client applies the move without a difference gap. Every
-// session of this user is pushed the same update.
+// so the calling client applies the move without a difference gap. Other
+// sessions of this user receive the same update. The caller is not pushed
+// again.
 func (c *FoldersCore) FoldersEditPeerFolders(in *mtproto.TLFoldersEditPeerFolders) (*mtproto.Updates, error) {
 	if len(in.GetFolderPeers()) == 0 {
 		return mtproto.MakeEmptyUpdates(), nil
@@ -119,23 +119,14 @@ func (c *FoldersCore) requireStoredDialog(ref peerRef) error {
 	return nil
 }
 
-// pushFolderPeers delivers updateFolderPeers to every session of this user.
-// The RPC result is what the calling session applies. SyncUpdatesNotMe covers
-// the other online sessions. SyncPushUpdates also wakes a session that is
-// not in the online list.
+// pushFolderPeers delivers updateFolderPeers to the account's other sessions.
+// The RPC result is what the calling session applies. A second push to the
+// same user would deliver the update to that session again.
 func (c *FoldersCore) pushFolderPeers(upd *mtproto.Updates) {
 	if upd == nil || len(upd.GetUpdates()) != 1 {
 		return
 	}
-	update := upd.GetUpdates()[0]
-	c.pushNotMe(update)
-	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.SyncClient == nil || c.MD == nil {
-		return
-	}
-	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
-		UserId:  c.userID(),
-		Updates: mtproto.MakeUpdatesByUpdates(update),
-	})
+	c.pushNotMe(upd.GetUpdates()[0])
 }
 
 // allocFolderPts stores updateFolderPeers on the user's pts sequence and

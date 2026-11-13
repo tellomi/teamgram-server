@@ -6,27 +6,21 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
-// profileNameUpdates is what account.updateProfile pushes after a name change.
-// updateUserName carries the new name. updateUser tells clients to replace
-// the cached user. The users vector is the same name, without the self flag,
-// so a contact session can apply it.
+// profileNameUpdates is the live account.updateProfile push. The name is
+// carried by updateUserName. The users vector stays empty: Android
+// processUpdateArray calls putUsers(users, false) and replaces the cached
+// non-min user, so a stub (or min) user would wipe access_hash, photo,
+// phone, and the contact flag. A full user would have to be built per
+// recipient; ToSelfUser must not be sent to contacts because it includes
+// the phone. Other sessions load the new name with users.getUsers after
+// the user-data cache key is dropped.
 func profileNameUpdates(userID int64, first, last, username string) *mtproto.Updates {
-	user := mtproto.MakeTLUser(&mtproto.User{
-		Id:        userID,
-		FirstName: mtproto.MakeFlagsString(first),
-		LastName:  mtproto.MakeFlagsString(last),
-		Username:  mtproto.MakeFlagsString(username),
-	}).To_User()
-	return mtproto.MakeUpdatesByUpdatesUsers(
-		[]*mtproto.User{user},
-		mtproto.MakeTLUpdateUserName(&mtproto.Update{
-			UserId:    userID,
-			FirstName: first,
-			LastName:  last,
-			Username:  username,
-		}).To_Update(),
-		mtproto.MakeTLUpdateUser(&mtproto.Update{UserId: userID}).To_Update(),
-	)
+	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateUserName(&mtproto.Update{
+		UserId:    userID,
+		FirstName: first,
+		LastName:  last,
+		Username:  username,
+	}).To_Update())
 }
 
 // profileNamePeers is who else should see the new name: people this user
@@ -52,16 +46,13 @@ func (c *UserChannelProfilesCore) pushProfileName(me *mtproto.ImmutableUser) {
 		return
 	}
 	updates := profileNameUpdates(c.MD.UserId, me.FirstName(), me.LastName(), me.Username())
+	// The RPC result is what the calling session applies. updatesNotMe is the
+	// other sessions of this account. Pushing the same user again would
+	// deliver the update to the caller a second time.
 	_, _ = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 		UserId:        c.MD.UserId,
 		PermAuthKeyId: c.MD.PermAuthKeyId,
 		Updates:       updates,
-	})
-	// SyncPushUpdates reaches every session of this account, including one
-	// that updatesNotMe skips, and wakes a background session.
-	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
-		UserId:  c.MD.UserId,
-		Updates: updates,
 	})
 	for _, id := range c.profileNameAudience() {
 		_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{

@@ -100,8 +100,8 @@ func TestArchiveUserWithEmptyTopMessage(t *testing.T) {
 	if folderOf(up.GetUpdates()[0], 9) != 1 {
 		t.Fatal("folder id")
 	}
-	if syncer.notMe != 1 || len(syncer.pushes) != 1 || syncer.pushes[0] != 7 {
-		t.Fatalf("push notMe=%d pushes=%v", syncer.notMe, syncer.pushes)
+	if syncer.notMe != 1 || len(syncer.pushes) != 0 {
+		t.Fatalf("other sessions only: notMe=%d pushes=%v", syncer.notMe, syncer.pushes)
 	}
 
 	if _, err := c.FoldersEditPeerFolders(userFolder(9, 0)); err != nil {

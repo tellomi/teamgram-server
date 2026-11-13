@@ -8,29 +8,26 @@ import (
 
 func TestProfileNameUpdates(t *testing.T) {
 	up := profileNameUpdates(7, "Ada", "Lovelace", "ada")
-	if len(up.GetUsers()) != 1 || up.GetUsers()[0].GetId() != 7 {
-		t.Fatalf("users %#v", up.GetUsers())
+	if len(up.GetUsers()) != 0 || len(up.GetChats()) != 0 {
+		t.Fatalf("partial user must not be attached: users=%#v chats=%#v", up.GetUsers(), up.GetChats())
 	}
-	if up.GetUsers()[0].GetFirstName().GetValue() != "Ada" || up.GetUsers()[0].GetSelf() {
-		t.Fatalf("public user %#v", up.GetUsers()[0])
-	}
-	var name, user bool
-	for _, upd := range up.GetUpdates() {
-		switch upd.GetPredicateName() {
-		case mtproto.Predicate_updateUserName:
-			name = true
-			if upd.GetFirstName() != "Ada" || upd.GetLastName() != "Lovelace" || upd.GetUsername() != "ada" || upd.GetUserId() != 7 {
-				t.Fatalf("updateUserName %#v", upd)
-			}
-		case mtproto.Predicate_updateUser:
-			user = upd.GetUserId() == 7
-		}
-	}
-	if !name || !user {
+	if len(up.GetUpdates()) != 1 || up.GetUpdates()[0].GetPredicateName() != mtproto.Predicate_updateUserName {
 		t.Fatalf("updates %#v", up.GetUpdates())
 	}
-	if err := up.Encode(mtproto.NewEncodeBuf(512), 232); err != nil {
+	upd := up.GetUpdates()[0]
+	if upd.GetFirstName() != "Ada" || upd.GetLastName() != "Lovelace" || upd.GetUsername() != "ada" || upd.GetUserId() != 7 {
+		t.Fatalf("updateUserName %#v", upd)
+	}
+	buf := mtproto.NewEncodeBuf(512)
+	if err := up.Encode(buf, 232); err != nil {
 		t.Fatal(err)
+	}
+	decoded := &mtproto.Updates{}
+	if err := decoded.Decode(mtproto.NewDecodeBuf(buf.GetBuf())); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.GetUsers()) != 0 || decoded.GetUpdates()[0].GetPredicateName() != mtproto.Predicate_updateUserName {
+		t.Fatalf("wire users=%#v updates=%#v", decoded.GetUsers(), decoded.GetUpdates())
 	}
 }
 
