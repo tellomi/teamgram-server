@@ -227,8 +227,8 @@ func Page(rows []Row, limit int) (deleteRows []Row, offset int32) {
 }
 
 // PeerRevokeQuery is the window applied on the other participant.
-// maxID is the caller's max_id (0 means no id cap). Dates use the same
-// newer-than / older-than rules as the caller's page.
+// maxID is that participant's own box id. Dates use the same newer-than /
+// older-than rules as the caller's page. 0 and MaxInt32 mean no id cap.
 func PeerRevokeQuery(maxID int32, justClear bool, dates Query) Query {
 	return Query{
 		MaxID:     maxID,
@@ -238,6 +238,25 @@ func PeerRevokeQuery(maxID int32, justClear bool, dates Query) Query {
 		MaxSet:    dates.MaxSet,
 		MaxDate:   dates.MaxDate,
 	}
+}
+
+// PeerRevokeMaxID maps a deleteHistory max_id into the other participant's
+// message box. callerMax is the request value, in the caller's box. peerBox
+// is the other participant's box id of the newest caller message with
+// id <= callerMax. Each user has a separate box sequence, so callerMax
+// cannot be compared with the other participant's ids.
+//
+// callerMax <= 0 and callerMax >= MaxInt32 are not box ids. deleteHistory
+// uses both for an uncapped clear, and upperBound treats MaxInt32 as no
+// bound. A missing peer row (peerBox <= 0) returns callerMax.
+func PeerRevokeMaxID(callerMax, peerBox int32) int32 {
+	if callerMax <= 0 || callerMax >= math.MaxInt32 {
+		return callerMax
+	}
+	if peerBox > 0 {
+		return peerBox
+	}
+	return callerMax
 }
 
 // SplitDeleted chooses the ids that get updateDeleteMessages.

@@ -54,6 +54,9 @@
     "hist_a": {"number": "9996610151", "code": "11111"},
     "hist_b": {"number": "9996610152", "code": "11111"},
     "notify_a": {"number": "9996610161", "code": "11111"},
-    "notify_b": {"number": "9996610162", "code": "11111"}
+    "notify_b": {"number": "9996610162", "code": "11111"},
+    "delhist_max_a": {"number": "9996610171", "code": "11111"},
+    "delhist_max_b": {"number": "9996610172", "code": "11111"},
+    "delhist_max_c": {"number": "9996610173", "code": "11111"}
   }
 }
