@@ -725,35 +725,105 @@ func oneLine(s string) string {
 }
 
 type storedPhoto struct {
-	body []byte
-	mime string
-	path string
+	body    []byte
+	mime    string
+	path    string
+	missing bool
 }
 
 var webPhotos sync.Map
 
-// WebPhoto is the og:image bytes for upload.getFile.
-func WebPhoto(id int64) (body []byte, mime string, ok bool) {
-	if v, found := webPhotos.Load(id); found {
-		p := v.(storedPhoto)
-		return p.body, p.mime, len(p.body) > 0
+// readWebObject loads one persisted link-preview object. Tests replace it.
+// Production reads object storage.
+var readWebObject = readWebPhotoObject
+
+// SetWebPhotoReaderForTest installs fn as the persisted link-preview read.
+// nil restores the production reader.
+func SetWebPhotoReaderForTest(fn func(path string) ([]byte, error)) {
+	if fn == nil {
+		readWebObject = readWebPhotoObject
+		return
 	}
-	// Not photos/0/<id>.dat. That key is a normal uploaded photo. Treating it
-	// as a link-preview image forces access_hash == id and breaks getFile.
+	readWebObject = fn
+}
+
+// WebPhoto is the og:image kept in this process. It does not touch object
+// storage: a miss is not a reason to dial.
+func WebPhoto(id int64) (body []byte, mime string, ok bool) {
+	body, mime, ok, _ = webPhotoMem(id)
+	return body, mime, ok
+}
+
+// WebPhotoForDownload is upload.getFile for a photo location.
+//
+// Bytes already stored in this process are returned for any id. A persisted
+// object is read only when accessHash == id, which is the hash storeWebPhoto
+// issues for a link preview. An ordinary photo uses a different hash. Probing
+// linkpreview/<id>.dat for that id calls objectstore.Open, and Open builds a
+// new S3 client (bucket probe plus connection warmup) on every call. That
+// probe is what made upload.getFile wait about 7s before dfs, including for
+// a thumbnail that was already on the hot tier.
+func WebPhotoForDownload(id, accessHash int64) (body []byte, mime string, ok bool) {
+	body, mime, ok, known := webPhotoMem(id)
+	if ok || known {
+		return body, mime, ok
+	}
+	if id == 0 || accessHash != id {
+		return nil, "", false
+	}
+	return loadPersistedWebPhoto(id)
+}
+
+func webPhotoMem(id int64) (body []byte, mime string, ok, known bool) {
+	v, found := webPhotos.Load(id)
+	if !found {
+		return nil, "", false, false
+	}
+	p := v.(storedPhoto)
+	if p.missing || len(p.body) == 0 {
+		return nil, "", false, true
+	}
+	return p.body, p.mime, true, true
+}
+
+func loadPersistedWebPhoto(id int64) ([]byte, string, bool) {
 	path := webPhotoPath(id)
-	raw, err := readWebPhotoObject(path)
+	raw, err := readWebObject(path)
 	if err != nil || len(raw) == 0 {
+		// A definitive miss stays missing. A timeout or a client that is
+		// still starting can succeed on a later download, so it is not cached.
+		if err == nil || errors.Is(err, objectstore.ErrNotFound) {
+			webPhotos.Store(id, storedPhoto{missing: true})
+		}
 		return nil, "", false
 	}
 	webPhotos.Store(id, storedPhoto{body: raw, mime: "image/jpeg", path: path})
 	return raw, "image/jpeg", true
 }
 
+var (
+	persistedWebMu  sync.Mutex
+	persistedWebCli *objectstore.Client
+)
+
 func readWebPhotoObject(path string) ([]byte, error) {
-	client, err := objectstore.Open()
-	if err != nil || client == nil {
-		return nil, err
+	// Open builds a new client and warms connections. One client per process
+	// is enough; a download must not pay that again.
+	persistedWebMu.Lock()
+	client := persistedWebCli
+	if client == nil {
+		opened, err := objectstore.Open()
+		if err != nil || opened == nil {
+			persistedWebMu.Unlock()
+			if err == nil {
+				err = errors.New("object storage is not configured")
+			}
+			return nil, err
+		}
+		persistedWebCli = opened
+		client = opened
 	}
+	persistedWebMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), webTimeout)
 	defer cancel()
 	return client.GetPhoto(ctx, path)

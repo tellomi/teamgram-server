@@ -91,7 +91,7 @@ func (c *FilesCore) UploadGetFileHashes(in *mtproto.TLUploadGetFileHashes) (*mtp
 // into the same SHA-256 parts as cdn.PartHashes.
 func (c *FilesCore) locationHashes(location *mtproto.InputFileLocation, offset int64) ([]*mtproto.FileHash, error) {
 	if location.GetPredicateName() == mtproto.Predicate_inputPhotoFileLocation {
-		if body, _, ok := chatbox.WebPhoto(location.GetId()); ok {
+		if body, _, ok := chatbox.WebPhotoForDownload(location.GetId(), location.GetAccessHash()); ok {
 			return cdn.PartHashes(body, offset)
 		}
 	}

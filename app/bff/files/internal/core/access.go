@@ -112,7 +112,7 @@ func issuedHash(got int64, hashes []int64) bool {
 
 func (c *FilesCore) authorizePhoto(location *mtproto.InputFileLocation) error {
 	id := location.GetId()
-	if _, _, ok := chatbox.WebPhoto(id); ok {
+	if _, _, ok := chatbox.WebPhotoForDownload(id, location.GetAccessHash()); ok {
 		return mediaaccess.PhotoDownload(id, location.GetAccessHash(), location.GetFileReference(), false, 0, nil, true)
 	}
 	photo, err := c.loadPhoto(id)
