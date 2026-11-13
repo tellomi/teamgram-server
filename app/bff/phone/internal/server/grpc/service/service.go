@@ -49,6 +49,12 @@ func New(sc *svc.ServiceContext) *Service {
 		Users:   s.loadUsers,
 		Chats:   s.loadChats,
 		Members: s.members,
+		// Same admin bit phone.exportGroupCallInvite checks. Must not call
+		// the engine: groupTL runs this while the engine lock is held.
+		MayManage: func(viewer int64, peerType int32, peerID int64) bool {
+			_, manage, err := s.perm(context.Background(), viewer, &mtproto.PeerUtil{PeerType: peerType, PeerId: peerID})
+			return err == nil && manage
+		},
 	})
 	channel.LookupGroupCall = func(ctx context.Context, channelID int64) channel.GroupCallAttach {
 		id, access, active, notEmpty, ok := phonecall.Lookup(mtproto.PEER_CHANNEL, channelID)
@@ -249,8 +255,9 @@ func peerOf(peerType int32, id int64) *mtproto.Peer {
 
 // callRoomAccess reports whether user may enter a voice chat in peer.
 // public is true for a channel that has a username. blocked is a kick or a
-// view_messages ban, which denies entry even when public is true. A basic
-// chat with no chat client stays open, the same fallback perm uses.
+// live view_messages ban; the handler must refuse those before it ORs
+// public into membership. A basic chat with no chat client stays open, the
+// same fallback perm uses.
 func (s *Service) callRoomAccess(ctx context.Context, user int64, peerType int32, peerID int64) (member, public, blocked bool, err error) {
 	switch peerType {
 	case mtproto.PEER_CHANNEL:
@@ -272,6 +279,32 @@ func (s *Service) callRoomAccess(ctx context.Context, user int64, peerType int32
 	default:
 		return false, false, false, mtproto.ErrPeerIdInvalid
 	}
+}
+
+// hidePrivateRoom is the phone.getGroupCall view of a private chat for
+// someone who must not learn it. Members and public username chats stay
+// visible. A kicked or view-banned user does not. Anyone else needs the
+// invite slug; id and access hash are not enough. Someone who may export
+// the invite still sees the room.
+func (s *Service) hidePrivateRoom(ctx context.Context, user, id, access int64, in *mtproto.InputGroupCall) bool {
+	if s == nil || s.eng == nil {
+		return false
+	}
+	pt, pid, err := s.eng.GroupPeer(id, access)
+	if err != nil || (pt != mtproto.PEER_CHANNEL && pt != mtproto.PEER_CHAT) {
+		return false
+	}
+	member, public, blocked, err := s.callRoomAccess(ctx, user, pt, pid)
+	if err != nil || blocked {
+		return true
+	}
+	if member || public {
+		return false
+	}
+	if s.eng.MayExport(user, id, access) {
+		return false
+	}
+	return !callInputIsSlug(in)
 }
 
 // joinAsAllowed reports whether user may appear in a call as join.

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,9 +18,11 @@ import (
 // TestJoinGroupCallRoomACL is phone.joinGroupCall against the chat that owns
 // the call. A private supergroup admits members and admins, and admits a
 // non-member only with the hash from phone.exportGroupCallInvite. A public
-// supergroup admits a non-member with no hash and with a wrong hash.
-// join_as is checked on its own: another user, or a channel the caller is
-// not in, is refused even when the caller may enter the call.
+// supergroup admits a non-member with no hash and with a wrong hash, and
+// refuses a user who was kicked or view-banned. join_as is checked on its
+// own: another user, or a channel the caller is not in, is refused even
+// when the caller may enter the call. invite_link is only present for a
+// viewer who may export it.
 func TestJoinGroupCallRoomACL(t *testing.T) {
 	prev := channel.Shared()
 	ch := channel.New(channel.NewMemoryStore())
@@ -52,6 +55,13 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	eng := engine.New(engine.Options{
 		Config: config.Config{PublicIP: "203.0.113.10", SFUPort: 3480}.Normalized(),
 		Now:    func() time.Time { return time.Unix(1_700_000_000, 0) },
+		MayManage: func(viewer int64, peerType int32, peerID int64) bool {
+			if peerType != mtproto.PEER_CHANNEL || peerID == 0 {
+				return false
+			}
+			_, manage, err := channel.Shared().CallAccess(context.Background(), viewer, peerID, 0)
+			return err == nil && manage
+		},
 	})
 	svc := NewWithEngine(eng)
 	peer := peerChannel(room)
@@ -60,6 +70,22 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := groupCallInput(t, up)
+	link, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: call})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := inviteSlug(t, link.GetLink())
+	speakerLink, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: call, CanSelfUnmute: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	speaker := inviteSlug(t, speakerLink.GetLink())
+	if speaker == hash {
+		t.Fatal("speaker invite matched the listener invite")
+	}
+	if got := callInviteLink(up); !strings.HasSuffix(got, "/"+hash) {
+		t.Fatalf("creator create update invite_link %q", got)
+	}
 
 	// The listener slug is not on the call object. A non-member who only has
 	// the call id cannot read it back from getGroupCall or inviteToGroupCall.
@@ -95,8 +121,15 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	if got := joinedSelf(t, memberJoin); got.GetPeer().GetUserId() != 11 || !got.GetMuted() || got.GetCanSelfUnmute() {
 		t.Fatalf("member %+v", got)
 	}
-	if _, err = joinCall(svc, 12, 120, call, selfPeer(), "", 502, true); err != nil {
+	if callInviteLink(memberJoin) != "" || strings.Contains(memberJoin.String(), hash) || strings.Contains(memberJoin.String(), speaker) {
+		t.Fatal("member join update carried an invite slug")
+	}
+	adminJoin, err := joinCall(svc, 12, 120, call, selfPeer(), "", 502, true)
+	if err != nil {
 		t.Fatalf("admin: %v", err)
+	}
+	if !strings.HasSuffix(callInviteLink(adminJoin), "/"+hash) {
+		t.Fatal("manage_call admin did not receive invite_link")
 	}
 	if _, err = joinCall(svc, 10, 100, call, selfPeer(), "", 503, true); err != nil {
 		t.Fatalf("creator: %v", err)
@@ -122,6 +155,58 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.HasSuffix(view.GetCall().GetInviteLink().GetValue(), "/"+hash) || view.GetCall().GetParticipantsCount() == 0 {
+		t.Fatalf("creator getGroupCall %+v", view.GetCall())
+	}
+	memberView, err := svc.PhoneGetGroupCall(withUser(11, 110), &mtproto.TLPhoneGetGroupCall{Call: call, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if memberView.GetCall().GetInviteLink().GetValue() != "" || strings.Contains(memberView.String(), hash) || strings.Contains(memberView.String(), speaker) {
+		t.Fatal("member getGroupCall carried an invite slug")
+	}
+	if memberView.GetCall().GetParticipantsCount() == 0 {
+		t.Fatal("member getGroupCall hid the room")
+	}
+	outsiderView, err = svc.PhoneGetGroupCall(withUser(13, 130), &mtproto.TLPhoneGetGroupCall{Call: call, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaked := privateRoomLeak(outsiderView, hash, speaker); leaked != "" {
+		t.Fatal(leaked)
+	}
+	outsiderParts, err := svc.PhoneGetGroupParticipants(withUser(13, 130), &mtproto.TLPhoneGetGroupParticipants{Call: call, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outsiderParts.GetParticipants()) != 0 || len(outsiderParts.GetUsers()) != 0 || strings.Contains(outsiderParts.String(), hash) {
+		t.Fatalf("private participants %+v", outsiderParts)
+	}
+	invited, err = svc.PhoneInviteToGroupCall(withUser(13, 130), &mtproto.TLPhoneInviteToGroupCall{
+		Call: call,
+		Users: []*mtproto.InputUser{
+			mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 16}).To_InputUser(),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callInviteLink(invited) != "" || strings.Contains(invited.String(), hash) || strings.Contains(invited.String(), speaker) {
+		t.Fatal("inviteToGroupCall carried an invite slug")
+	}
+	preview, err := svc.PhoneGetGroupCall(withUser(13, 130), &mtproto.TLPhoneGetGroupCall{
+		Call:  mtproto.MakeTLInputGroupCallSlug(&mtproto.InputGroupCall{Slug: hash}).To_InputGroupCall(),
+		Limit: 50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.GetCall().GetInviteLink().GetValue() != "" || strings.Contains(preview.String(), speaker) {
+		t.Fatal("slug preview published an invite link")
+	}
+	if previewUsers, _ := participantPeers(preview); !previewUsers[11] {
+		t.Fatal("slug preview hid the room from the invite holder")
+	}
 	users, channels := participantPeers(view)
 	for _, id := range []int64{10, 11, 12} {
 		if !users[id] {
@@ -142,20 +227,6 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	}
 	if _, err = joinCall(svc, 15, 150, call, selfPeer(), "", 514, true); rpcText(err) != "GROUPCALL_FORBIDDEN" {
 		t.Fatalf("member who left: %v", err)
-	}
-
-	link, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: call})
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash := inviteSlug(t, link.GetLink())
-	speakerLink, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: call, CanSelfUnmute: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	speaker := inviteSlug(t, speakerLink.GetLink())
-	if speaker == hash {
-		t.Fatal("speaker invite matched the listener invite")
 	}
 
 	admitted, err := joinCall(svc, 13, 130, call, selfPeer(), hash, 509, true)
@@ -208,8 +279,13 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	if _, err = joinCall(svc, 19, 190, pubCall, selfPeer(), "wrong-hash", 602, true); err != nil {
 		t.Fatalf("public non-member wrong hash: %v", err)
 	}
+	pubLink, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: pubCall})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubHash := inviteSlug(t, pubLink.GetLink())
 	pubIn := inputChannel(pub)
-	if _, err = ch.Invite(ctx, 10, 0, pubIn, []int64{21, 22}, nil); err != nil {
+	if _, err = ch.Invite(ctx, 10, 0, pubIn, []int64{21, 22, 23}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = ch.Leave(withUser(21, 210), 21, 0, pubIn); err != nil {
@@ -218,26 +294,56 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	if _, err = joinCall(svc, 21, 210, pubCall, selfPeer(), "", 603, true); err != nil {
 		t.Fatalf("public member who left: %v", err)
 	}
-	ban := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{
+	kick := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{
 		ViewMessages: true,
 		UntilDate:    2147483647,
 	}).To_ChatBannedRights()
-	if _, err = ch.EditBanned(ctx, 10, 0, pubIn, 22, ban); err != nil {
+	if _, err = ch.EditBanned(ctx, 10, 0, pubIn, 22, kick); err != nil {
 		t.Fatal(err)
 	}
-	seen := ch.VisibleChat(withUser(22, 220), 22, pub.GetId())
-	if seen == nil || !seen.GetLeft() || !seen.GetBannedRights().GetViewMessages() {
-		t.Fatalf("kicked chat %+v", seen)
+	kickedChat := ch.VisibleChat(withUser(22, 220), 22, pub.GetId())
+	if kickedChat == nil || !kickedChat.GetLeft() || !kickedChat.GetBannedRights().GetViewMessages() {
+		t.Fatalf("kicked chat %+v", kickedChat)
 	}
-	if _, err = joinCall(svc, 22, 220, pubCall, selfPeer(), "", 604, true); rpcText(err) != "GROUPCALL_FORBIDDEN" {
-		t.Fatalf("kicked public member: %v", err)
+	if _, err = joinCall(svc, 22, 220, pubCall, selfPeer(), "", 604, true); !groupCallForbidden(err) {
+		t.Fatalf("kicked public user: %v", err)
 	}
-	pubLink, err := svc.PhoneExportGroupCallInvite(ctx, &mtproto.TLPhoneExportGroupCallInvite{Call: pubCall})
+	if _, err = joinCall(svc, 22, 220, pubCall, selfPeer(), pubHash, 605, true); !groupCallForbidden(err) {
+		t.Fatalf("kicked public user with invite: %v", err)
+	}
+	kickedView, err := svc.PhoneGetGroupCall(withUser(22, 220), &mtproto.TLPhoneGetGroupCall{Call: pubCall, Limit: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = joinCall(svc, 22, 220, pubCall, selfPeer(), inviteSlug(t, pubLink.GetLink()), 605, true); rpcText(err) != "GROUPCALL_FORBIDDEN" {
-		t.Fatalf("kicked public member with invite hash: %v", err)
+	if leaked := privateRoomLeak(kickedView, pubHash, speaker); leaked != "" {
+		t.Fatal(leaked)
+	}
+	viewBan := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{
+		ViewMessages: true,
+		UntilDate:    2147483646,
+	}).To_ChatBannedRights()
+	if _, err = ch.EditBanned(ctx, 10, 0, pubIn, 23, viewBan); err != nil {
+		t.Fatal(err)
+	}
+	bannedChat := ch.VisibleChat(withUser(23, 230), 23, pub.GetId())
+	if bannedChat == nil || bannedChat.GetLeft() || !bannedChat.GetBannedRights().GetViewMessages() {
+		t.Fatalf("view-banned chat %+v", bannedChat)
+	}
+	if _, err = joinCall(svc, 23, 230, pubCall, selfPeer(), "", 606, true); !groupCallForbidden(err) {
+		t.Fatalf("view-banned public user: %v", err)
+	}
+	if _, err = joinCall(svc, 23, 230, pubCall, selfPeer(), pubHash, 607, true); !groupCallForbidden(err) {
+		t.Fatalf("view-banned public user with invite: %v", err)
+	}
+	plainView, err := svc.PhoneGetGroupCall(withUser(30, 300), &mtproto.TLPhoneGetGroupCall{Call: pubCall, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plainView.GetCall().GetInviteLink().GetValue() != "" || strings.Contains(plainView.String(), pubHash) {
+		t.Fatal("public non-member received invite_link")
+	}
+	if plainView.GetCall().GetParticipantsCount() == 0 {
+		t.Fatal("public getGroupCall hid the room")
 	}
 }
 
@@ -339,4 +445,40 @@ func rpcText(err error) string {
 		return ""
 	}
 	return status.Convert(err).Message()
+}
+
+func groupCallForbidden(err error) bool {
+	st := status.Convert(err)
+	return st.Code() == 403 && st.Message() == "GROUPCALL_FORBIDDEN"
+}
+
+func callInviteLink(up *mtproto.Updates) string {
+	for _, u := range up.GetUpdates() {
+		if g := u.GetCall_GROUPCALL(); g != nil {
+			return g.GetInviteLink().GetValue()
+		}
+	}
+	return ""
+}
+
+// privateRoomLeak reports a phone.getGroupCall payload that still tells a
+// non-member how to enter or who is inside.
+func privateRoomLeak(view *mtproto.Phone_GroupCall, slugs ...string) string {
+	if view == nil || view.GetCall() == nil {
+		return "missing call"
+	}
+	call := view.GetCall()
+	if call.GetInviteLink().GetValue() != "" || call.GetTitle().GetValue() != "" || call.GetParticipantsCount() != 0 || call.GetRecordVideoActive() {
+		return fmt.Sprintf("call shell %+v", call)
+	}
+	if len(view.GetParticipants()) != 0 || len(view.GetUsers()) != 0 || len(view.GetChats()) != 0 {
+		return fmt.Sprintf("roster participants=%d users=%d chats=%d", len(view.GetParticipants()), len(view.GetUsers()), len(view.GetChats()))
+	}
+	text := view.String()
+	for _, slug := range slugs {
+		if slug != "" && strings.Contains(text, slug) {
+			return "response contains " + slug
+		}
+	}
+	return ""
 }

@@ -69,9 +69,10 @@ func (s *Service) PhoneJoinGroupCall(ctx context.Context, in *mtproto.TLPhoneJoi
 		if err != nil {
 			return nil, err
 		}
-		// A kick or a view_messages ban wins over a public username and over
-		// an invite hash. Someone who never joined, or who left, may still
-		// enter a public channel.
+		// A kick or a view_messages ban is 403 GROUPCALL_FORBIDDEN even when
+		// the chat is public and even when invite_hash would otherwise match.
+		// public must not be OR-ed back in for that user. Someone who never
+		// joined, or who left, may still enter a public channel.
 		if blocked {
 			return nil, mtproto.ErrForbiddenGroupcallForbidden
 		}
@@ -176,7 +177,14 @@ func (s *Service) PhoneGetGroupCall(ctx context.Context, in *mtproto.TLPhoneGetG
 	if err != nil {
 		return nil, err
 	}
-	return s.eng.GetGroup(md.GetUserId(), id, access, in.GetLimit())
+	view, err := s.eng.GetGroup(md.GetUserId(), id, access, in.GetLimit())
+	if err != nil {
+		return nil, err
+	}
+	if s.hidePrivateRoom(ctx, md.GetUserId(), id, access, in.GetCall()) {
+		redactPrivateCall(view)
+	}
+	return view, nil
 }
 
 func (s *Service) PhoneGetGroupParticipants(ctx context.Context, in *mtproto.TLPhoneGetGroupParticipants) (*mtproto.Phone_GroupParticipants, error) {
@@ -199,7 +207,50 @@ func (s *Service) PhoneGetGroupParticipants(ctx context.Context, in *mtproto.TLP
 	if err != nil {
 		return nil, err
 	}
+	if s.hidePrivateRoom(ctx, md.GetUserId(), id, access, nil) {
+		if _, _, err = s.eng.GroupPeer(id, access); err != nil {
+			return nil, err
+		}
+		return mtproto.MakeTLPhoneGroupParticipants(&mtproto.Phone_GroupParticipants{
+			Participants: []*mtproto.GroupCallParticipant{},
+			Chats:        []*mtproto.Chat{},
+			Users:        []*mtproto.User{},
+		}).To_Phone_GroupParticipants(), nil
+	}
 	return s.eng.Participants(md.GetUserId(), id, access, in.GetSources(), peers, in.GetOffset(), in.GetLimit())
+}
+
+// callInputIsSlug reports inputGroupCallSlug. Holding that slug is the
+// invite, so phone.getGroupCall may preview the room without also handing
+// back invite_link.
+func callInputIsSlug(in *mtproto.InputGroupCall) bool {
+	if in == nil {
+		return false
+	}
+	if in.GetPredicateName() == mtproto.Predicate_inputGroupCallSlug {
+		return true
+	}
+	return in.GetId() == 0 && in.GetSlug() != ""
+}
+
+// redactPrivateCall removes the join secret and who is in a private room.
+// The caller already presented id and access_hash, so those stay.
+func redactPrivateCall(view *mtproto.Phone_GroupCall) {
+	if view == nil {
+		return
+	}
+	if call := view.GetCall(); call != nil {
+		call.InviteLink = nil
+		call.Title = nil
+		call.ParticipantsCount = 0
+		call.UnmutedVideoCount = nil
+		call.RecordStartDate = nil
+		call.RecordVideoActive = false
+	}
+	view.Participants = []*mtproto.GroupCallParticipant{}
+	view.Users = []*mtproto.User{}
+	view.Chats = []*mtproto.Chat{}
+	view.ParticipantsNextOffset = ""
 }
 
 func (s *Service) PhoneCheckGroupCall(ctx context.Context, in *mtproto.TLPhoneCheckGroupCall) (*mtproto.Vector_Int, error) {

@@ -79,6 +79,33 @@ func canAdmin(g *group, user int64, manage bool) bool {
 	return g != nil && (user == g.creator || manage)
 }
 
+// viewerMayExport is phone.exportGroupCallInvite's rule for this viewer.
+// The call creator may export, and so may a chat admin MayManage accepts.
+func (e *Engine) viewerMayExport(g *group, viewer int64) bool {
+	if g == nil || viewer == 0 {
+		return false
+	}
+	manage := false
+	if e.mayManage != nil && g.peerID != 0 && (g.peerType == mtproto.PEER_CHAT || g.peerType == mtproto.PEER_CHANNEL) {
+		manage = e.mayManage(viewer, g.peerType, g.peerID)
+	}
+	return canAdmin(g, viewer, manage)
+}
+
+// MayExport reports whether user may see this call's invite link.
+func (e *Engine) MayExport(user, id, access int64) bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	g, err := e.loadGroup(id, access)
+	if err != nil {
+		return false
+	}
+	return e.viewerMayExport(g, user)
+}
+
 func partKey(peerType int32, id int64) string {
 	return fmt.Sprintf("%d:%d", peerType, id)
 }
@@ -323,11 +350,10 @@ func (e *Engine) groupTL(g *group, viewer int64) *mtproto.GroupCall {
 	if video > 0 {
 		gc.UnmutedVideoCount = wrapperspb.Int32(video)
 	}
-	// A chat call's listener slug is an entry credential. getGroupCall and
-	// invite updates are readable with only the call id, so that slug is
-	// returned only by phone.exportGroupCallInvite. Conferences and live
-	// stories have no chat membership; their link stays on the object.
-	if g.invite != "" && (g.conference || g.liveStory) {
+	// Official clients only receive invite_link when this viewer may call
+	// phone.exportGroupCallInvite. The listener slug is the join secret
+	// for a private room, so it stays off every other copy of the call.
+	if g.invite != "" && e.viewerMayExport(g, viewer) {
 		gc.InviteLink = wrapperspb.String(e.cfg.CallLinkPrefix + g.invite)
 	}
 	if g.paidStars != nil {

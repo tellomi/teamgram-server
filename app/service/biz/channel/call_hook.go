@@ -25,8 +25,10 @@ func (s *Service) CallAccess(ctx context.Context, userID, channelID, accessHash 
 // CallJoin is the phone.joinGroupCall view of a channel. public is true when
 // the channel has a username, so someone who never joined, or who left, may
 // still enter its voice chat. blocked is a kick or a view_messages ban: that
-// person may not enter even when the channel is public. A zero access hash
-// skips the hash check; the call id was already resolved by the phone service.
+// person may not enter even when the channel is public. public stays true
+// so the handler cannot treat the username as a grant unless it also looks
+// at blocked. A zero access hash skips the hash check; the call id was
+// already resolved by the phone service.
 func (s *Service) CallJoin(ctx context.Context, userID, channelID int64) (member, manage, public, blocked bool, err error) {
 	return s.callAccess(ctx, userID, channelID, 0)
 }
@@ -50,17 +52,30 @@ func (s *Service) callAccess(ctx context.Context, userID, channelID, accessHash 
 	if err != nil {
 		return false, false, false, false, err
 	}
-	member = p != nil && p.InChannel()
-	if view, _ := s.viewBlocked(p); view || (p != nil && p.State == StateKicked) {
-		blocked = true
+	if participantCallBlocked(s, p) {
+		return false, false, public, true, nil
 	}
+	member = p != nil && p.InChannel()
 	if p.IsCreator() {
-		return member, true, public, blocked, nil
+		return member, true, public, false, nil
 	}
 	if p != nil && p.IsAdmin() && p.adminRights().CanManageCall() {
-		return member, true, public, blocked, nil
+		return member, true, public, false, nil
 	}
-	return member, false, public, blocked, nil
+	return member, false, public, false, nil
+}
+
+// participantCallBlocked is a kick (left, view_messages) or a view ban that
+// has not expired. Leaving on one's own is not a block.
+func participantCallBlocked(s *Service, p *Participant) bool {
+	if p == nil || s == nil {
+		return false
+	}
+	if p.State == StateKicked {
+		return true
+	}
+	blocked, _ := s.viewBlocked(p)
+	return blocked
 }
 
 // VisibleChat is the channel object a viewer is allowed to see.
