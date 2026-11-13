@@ -466,3 +466,7 @@ The stored pts and pts_count stay on the update. Adjacent updates of the same ki
 | Piece | File |
 | --- | --- |
 | Difference merge | `app/service/biz/updates/internal/core/merge_updates_helper.go` |
+
+## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
+
+`ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
