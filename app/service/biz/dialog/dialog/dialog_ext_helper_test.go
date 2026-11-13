@@ -57,14 +57,34 @@ func TestPeerDialogsOmitEmptyRows(t *testing.T) {
 		},
 	}
 	out := helper.ToMessagesPeerDialogs(nil)
-	if len(out.GetDialogs()) != 1 || out.GetDialogs()[0].GetTopMessage() != 80 {
+	if len(out.GetDialogs()) != 2 {
+		t.Fatalf("dialogs %+v", out.GetDialogs())
+	}
+	var sawLive, sawEmpty bool
+	for _, d := range out.GetDialogs() {
+		switch d.GetTopMessage() {
+		case 80:
+			sawLive = d.GetPeer().GetUserId() == 9
+		case 0:
+			sawEmpty = d.GetPeer().GetUserId() == 4
+		}
+	}
+	if !sawLive || !sawEmpty {
 		t.Fatalf("dialogs %+v", out.GetDialogs())
 	}
 	if len(out.GetMessages()) != 1 || out.GetMessages()[0].GetId() != 80 {
 		t.Fatalf("messages %+v", out.GetMessages())
 	}
-	if len(out.GetUsers()) != 1 || out.GetUsers()[0].GetId() != 9 {
+	ids := map[int64]bool{}
+	for _, u := range out.GetUsers() {
+		ids[u.GetId()] = true
+	}
+	if !ids[9] || !ids[4] || ids[5] {
 		t.Fatalf("users %+v", out.GetUsers())
+	}
+	list := helper.ToMessagesDialogs(3, true)
+	if len(list.GetDialogs()) != 1 || list.GetDialogs()[0].GetTopMessage() != 80 {
+		t.Fatalf("chat list should still omit the empty dialog: %+v", list.GetDialogs())
 	}
 }
 

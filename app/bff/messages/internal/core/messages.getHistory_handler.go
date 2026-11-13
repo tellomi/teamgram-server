@@ -168,6 +168,7 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 			//	chats = append(chats, channel.ToUnsafeChat(c.MD.UserId))
 			//}
 		})
+	users = c.ensureHistoryPeer(peer, users)
 
 	var (
 		rValues *mtproto.Messages_Messages
@@ -206,4 +207,38 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 	chatbox.Shared().ApplyReactions(c.ctx, c.MD.UserId, peer, messages)
 	mtproto.SanitizeOutgoingObject(rValues)
 	return rValues, nil
+}
+
+// ensureHistoryPeer puts the other user on an empty messages.getHistory.
+// Official Telegram returns that user even when the vector of messages is
+// empty. A valid user is not PEER_ID_INVALID just because no dialog row exists.
+func (c *MessagesCore) ensureHistoryPeer(peer *mtproto.PeerUtil, users []*mtproto.User) []*mtproto.User {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || peer == nil || c.MD == nil {
+		return users
+	}
+	var id int64
+	switch peer.PeerType {
+	case mtproto.PEER_SELF:
+		id = c.MD.UserId
+	case mtproto.PEER_USER:
+		id = peer.PeerId
+		if id == 0 {
+			id = c.MD.UserId
+		}
+	default:
+		return users
+	}
+	for _, u := range users {
+		if u.GetId() == id {
+			return users
+		}
+	}
+	mUsers, err := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
+		Id: []int64{c.MD.UserId, id},
+		To: []int64{c.MD.UserId},
+	})
+	if err != nil || mUsers == nil {
+		return users
+	}
+	return append(users, mUsers.GetUserListByIdList(c.MD.UserId, id)...)
 }
