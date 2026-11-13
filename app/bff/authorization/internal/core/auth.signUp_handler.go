@@ -206,6 +206,9 @@ func (c *AuthorizationCore) AuthSignUp(in *mtproto.TLAuthSignUp) (*mtproto.Auth_
 	// Record that id before returning so a matching Tos.UpdateId does not
 	// prompt this account on the next launch.
 	terms.Current().AcceptSignup(c.ctx, user.Id())
+	if !verify.IsEmail(phoneNumber) {
+		c.attachVerifiedSetupEmail(phoneNumber, user.Id())
+	}
 
 	return threading2.WrapperGoFunc(
 		c.ctx,

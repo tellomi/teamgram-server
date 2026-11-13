@@ -2,7 +2,7 @@
 
 SMS for `auth.sendCode` / `auth.resendCode` can use Aliyun Dysmsapi. Email OTP uses the same RPCs when `phone_number` contains `@`. See [email-signup.md](email-signup.md).
 
-Phone behavior does not change when email is enabled. The development phone code stays **12345**. The email code is a different value: the one that was logged or sent.
+Phone behavior does not change when email is enabled and `TELLOMI_EMAIL_SETUP_REQUIRED` is left at its default `false`. A phone with no login email still gets SMS or an in-app code. The development phone code stays **12345**. The email code is a different value: the one that was logged or sent. A phone that already has a verified login email gets that email code instead. See [email-signup.md](email-signup.md).
 
 ## SMS
 
@@ -144,7 +144,7 @@ JSON body: `to` (one address), `from` (`Tellomi <noreply@tellomi.app>` by defaul
 | `TELLOMI_EMAIL_CODE_TTL_SECONDS` | `180` | Email code expiry |
 | `TELLOMI_POSTAL_BASE_URL` | empty | Legacy Postal HTTP origin. Required only when provider is `postal` |
 | `TELLOMI_POSTAL_API_KEY` | empty | Legacy Postal `X-Server-API-Key`. Required only when provider is `postal` |
-| `TELLOMI_EMAIL_SETUP_REQUIRED` | `false` | Read at startup. Not used by the P0 login RPCs |
+| `TELLOMI_EMAIL_SETUP_REQUIRED` | `false` | When `true` and the email sender is enabled, `auth.sendCode` for a phone with no login email returns `auth.sentCodeTypeSetUpEmailRequired` and does not send SMS. Default `false` keeps SMS or an in-app code. A phone that already has a verified login email returns `auth.sentCodeTypeEmailCode` either way. The flag is read at process start |
 
 `Code.Name: none` in `teamgramd/etc/bff.yaml` is the yaml fallback for SMS. `TELLOMI_SMS_PROVIDER` overrides it when set to `aliyun`. Email does not use that yaml block.
 
@@ -180,7 +180,8 @@ Log mode (no Resend key and no Postal host):
 - `auth.sendCode` for an email returns `sentCodeTypeEmailCode` and the log line above.
 - `auth.signIn` accepts that code, not `12345`.
 - A new address then `auth.signUp` inserts `users.email` and a NULL `users.phone`.
-- `auth.sendCode` for `+86` still uses the SMS provider rules.
+- `auth.sendCode` for `+86` still uses the SMS provider rules when that phone has no login email and `TELLOMI_EMAIL_SETUP_REQUIRED` is unset.
+- `auth.sendCode` for a phone that has a login email returns `sentCodeTypeEmailCode`. `auth.signIn` then accepts `emailVerificationCode`.
 
 Resend (production OTP):
 

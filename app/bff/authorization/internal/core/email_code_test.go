@@ -55,6 +55,48 @@ func TestEmailLoginCode(t *testing.T) {
 	if err != mtproto.ErrPhoneCodeEmpty {
 		t.Fatal(err)
 	}
+	_, err = emailLoginCode(&mtproto.TLAuthSignIn{
+		PhoneCode_STRING: "012345",
+		EmailVerification: &mtproto.EmailVerification{
+			PredicateName: mtproto.Predicate_emailVerificationApple,
+			Token:         "tok",
+		},
+	})
+	if err != mtproto.ErrEmailInvalid {
+		t.Fatal(err)
+	}
+	_, err = emailLoginCode(&mtproto.TLAuthSignIn{
+		EmailVerification: &mtproto.EmailVerification{
+			PredicateName: mtproto.Predicate_emailVerificationCode,
+		},
+	})
+	if err != mtproto.ErrCodeInvalid {
+		t.Fatal(err)
+	}
+}
+
+func TestSignInCodeAcceptsEmailVerificationForAPhone(t *testing.T) {
+	code, err := signInCode(&mtproto.TLAuthSignIn{
+		PhoneNumber: "8613800138000",
+		EmailVerification: &mtproto.EmailVerification{
+			PredicateName: mtproto.Predicate_emailVerificationCode,
+			Code:          "654321",
+		},
+	})
+	if err != nil || code != "654321" {
+		t.Fatalf("%q %v", code, err)
+	}
+	code, err = signInCode(&mtproto.TLAuthSignIn{
+		PhoneNumber:      "8613800138000",
+		PhoneCode_STRING: "11111",
+	})
+	if err != nil || code != "11111" {
+		t.Fatalf("phone code %q %v", code, err)
+	}
+	_, err = signInCode(&mtproto.TLAuthSignIn{PhoneNumber: "8613800138000"})
+	if err != mtproto.ErrPhoneCodeEmpty {
+		t.Fatal(err)
+	}
 }
 
 func TestStoredCodeMatches(t *testing.T) {
