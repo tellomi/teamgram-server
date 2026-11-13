@@ -52,6 +52,12 @@ func (e Export) Validate() error {
 	return nil
 }
 
+// NotStarted reports a link whose start_date is still in the future.
+// A zero start_date means the link is usable immediately.
+func NotStarted(start, now int64) bool {
+	return start > 0 && now < start
+}
+
 // TitleOK reports whether an edited title is within the official limit.
 // An empty title clears the name.
 func TitleOK(title string) bool {

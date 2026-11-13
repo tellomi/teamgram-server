@@ -147,6 +147,35 @@ func messageHasURL(msg *mtproto.Message) bool {
 	return strings.Contains(text, "http://") || strings.Contains(text, "https://") || strings.Contains(text, "www.")
 }
 
+// dropPrehistoryBoxes removes channel messages from before the viewer joined
+// when that channel hides prehistory. blocked is consulted once per channel
+// by the caller if it caches. Admins are the caller's concern: blocked
+// returns false for them. searchGlobal (including a later rewrite) should
+// keep this call so the history rule stays next to messages.search.
+func dropPrehistoryBoxes(list *mtproto.MessageBoxList, blocked func(channelID int64, date int32) bool) *mtproto.MessageBoxList {
+	if list == nil || blocked == nil {
+		return list
+	}
+	kept := make([]*mtproto.MessageBox, 0, len(list.BoxList))
+	for _, box := range list.BoxList {
+		if box == nil {
+			continue
+		}
+		if box.GetPeerType() == mtproto.PEER_CHANNEL {
+			date := int32(0)
+			if box.GetMessage() != nil {
+				date = box.GetMessage().GetDate()
+			}
+			if blocked(box.GetPeerId(), date) {
+				continue
+			}
+		}
+		kept = append(kept, box)
+	}
+	list.BoxList = kept
+	return list
+}
+
 func filterGlobalBoxes(list *mtproto.MessageBoxList, q globalQuery, kinds map[int64]channelKind, limit int32) *mtproto.MessageBoxList {
 	if list == nil {
 		return list

@@ -142,6 +142,7 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		}
 		boxList = filterGlobalBoxes(boxList, scope, kinds, 0)
 	}
+	boxList = c.dropHiddenPrehistory(boxList)
 	var folder map[string]bool
 	if useFolder {
 		folder, useFolder = c.globalFolder(in.GetFolderId().GetValue())
@@ -176,4 +177,22 @@ func (c *MessagesCore) MessagesSearchGlobal(in *mtproto.TLMessagesSearchGlobal) 
 		})
 
 	return rValues, nil
+}
+
+// dropHiddenPrehistory applies channels.togglePreHistoryHidden to global
+// search. The predicate is cached per channel so a page does not reload the
+// same member row. A rewrite of this handler should keep the call.
+func (c *MessagesCore) dropHiddenPrehistory(list *mtproto.MessageBoxList) *mtproto.MessageBoxList {
+	if c == nil || c.MD == nil {
+		return list
+	}
+	gates := map[int64]channel.PrehistoryGate{}
+	return dropPrehistoryBoxes(list, func(channelID int64, date int32) bool {
+		g, ok := gates[channelID]
+		if !ok {
+			g = channel.Shared().PrehistoryGate(c.ctx, c.MD.UserId, channelID)
+			gates[channelID] = g
+		}
+		return g.Blocks(date)
+	})
 }

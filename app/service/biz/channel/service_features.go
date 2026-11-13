@@ -836,6 +836,7 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].ID > all[j].ID })
 	feat := s.features(ctx, ch.ID)
+	viewer, _ := s.store.GetParticipant(ctx, ch.ID, self)
 	var msgs []*mtproto.Message
 	for _, stored := range all {
 		if stored == nil || stored.Deleted {
@@ -860,6 +861,9 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 			continue
 		}
 		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
+			continue
+		}
+		if prehistoryBlocks(feat, viewer, stored) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
@@ -915,8 +919,11 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() && !p.adminRights().CanPinMessages() {
-		return nil, mtproto.ErrChatAdminRequired
+	if p == nil || !p.InChannel() {
+		return nil, mtproto.ErrChannelPrivate
+	}
+	if err = mtproto.MemberPinForbidden(int32(time.Now().Unix()), p.IsCreator() || p.adminRights().CanPinMessages(), memberBans(ch, p)); err != nil {
+		return nil, err
 	}
 	f := s.features(ctx, ch.ID)
 	if unpin {
@@ -957,8 +964,11 @@ func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64
 	if err != nil {
 		return 0, 0, err
 	}
-	if !p.IsCreator() && !p.adminRights().CanPinMessages() {
-		return 0, 0, mtproto.ErrChatAdminRequired
+	if p == nil || !p.InChannel() {
+		return 0, 0, mtproto.ErrChannelPrivate
+	}
+	if err = mtproto.MemberPinForbidden(int32(time.Now().Unix()), p.IsCreator() || p.adminRights().CanPinMessages(), memberBans(ch, p)); err != nil {
+		return 0, 0, err
 	}
 	f := s.features(ctx, ch.ID)
 	if f.PinnedMsgID == 0 {
@@ -990,6 +1000,9 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 	}
 	if !p.InChannel() {
 		return nil, nil, mtproto.ErrChannelPrivate
+	}
+	if err = mtproto.MemberTopicsForbidden(int32(time.Now().Unix()), p.IsCreator() || p.adminRights().CanManageTopics(), memberBans(ch, p)); err != nil {
+		return nil, nil, err
 	}
 	if title == "" {
 		return nil, nil, mtproto.ErrChatTitleEmpty
@@ -1552,6 +1565,8 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 		}
 		chats = append(chats, s.ChatFor(ctx, self, peerCh))
 		all, _ := s.store.ListMessages(ctx, id)
+		peerFeat := s.features(ctx, id)
+		peerViewer, _ := s.store.GetParticipant(ctx, id, self)
 		topicID := msgID
 		if i, ok := findTopic(f, msgID); ok {
 			topicID = f.Topics[i].ID
@@ -1564,6 +1579,9 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 				continue
 			}
 			if q.MaxID > 0 && stored.ID >= q.MaxID {
+				continue
+			}
+			if prehistoryBlocks(peerFeat, peerViewer, stored) {
 				continue
 			}
 			body, err := unmarshalMessage(stored.Data)
@@ -1587,6 +1605,10 @@ func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, 
 	}
 	stored, err := s.store.GetMessage(ctx, channelID, msgID)
 	if err != nil || stored == nil || stored.Deleted {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	viewer, _ := s.store.GetParticipant(ctx, channelID, self)
+	if prehistoryBlocks(s.features(ctx, channelID), viewer, stored) {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	body, err := unmarshalMessage(stored.Data)

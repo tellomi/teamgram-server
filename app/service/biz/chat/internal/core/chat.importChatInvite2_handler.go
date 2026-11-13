@@ -19,10 +19,12 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
-	"time"
+	"github.com/teamgram/teamgram-server/pkg/invite"
 )
 
 // ChatImportChatInvite2
@@ -42,6 +44,12 @@ func (c *ChatCore) ChatImportChatInvite2(in *chat.TLChatImportChatInvite2) (*cha
 	if chatInviteDO.Revoked {
 		c.Logger.Errorf("chat.checkChatInvite - error: invite hash %s expired", in.Hash)
 		err = mtproto.ErrInviteHashExpired
+		return nil, err
+	}
+
+	if invite.NotStarted(chatInviteDO.StartDate, time.Now().Unix()) {
+		err = mtproto.ErrInviteHashExpired
+		c.Logger.Errorf("chat.importChatInvite - error: %v", err)
 		return nil, err
 	}
 
