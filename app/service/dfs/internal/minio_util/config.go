@@ -105,6 +105,21 @@ func (c *MinioConfig) SetTransportForTest(rt http.RoundTripper) {
 	}
 }
 
+// SetHotTierForTest turns on the local hot tier and does not start the
+// background migrator. proxy is the CONNECT proxy the hot tier requires.
+func (c *MinioConfig) SetHotTierForTest(dir, proxy string) {
+	if c == nil {
+		return
+	}
+	c.hot = defaultHotSettings()
+	c.hot.Enabled = true
+	c.hot.Dir = dir
+	c.hot.noLoop = true
+	if proxy != "" {
+		c.HTTPProxy = proxy
+	}
+}
+
 // Redacted returns a copy safe to print at startup. AccessKeyID and
 // SecretAccessKey are masked. The receiver is not modified, so the client
 // still uses the real credentials.

@@ -10,7 +10,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5"
 	"fmt"
@@ -20,6 +19,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
+	"github.com/teamgram/teamgram-server/app/service/dfs/internal/minio_util"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaotel"
@@ -126,21 +126,23 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 		bytes  []byte
 		path   string
 		size   int32
-		write  bool
+		puts   []sizePut
 	}
+	// Hot tier: every size key getFile can ask for is written locally
+	// before this RPC returns. R2 is not on this path.
+	hot := c.svcCtx.Dao != nil && c.svcCtx.Dao.MinioUtil != nil && c.svcCtx.Dao.MinioUtil.StoresHot(minio_util.ClassPhotos)
 	var pending []pendingSize
 	err = imaging.ReSizeImage(cacheData, ext, false, func(szType string, localId int, w, h int32, b []byte) error {
 		// Hash hit keeps the first upload's key (ADR-0083 open question 1).
-		path, write := photoSizeObject(originPaths, szType, photoId)
-		// The largest step that was not resized is the original file.
-		// Point it at the original object instead of putting those bytes
-		// again. The path row is written before the RPC returns; if it
-		// cannot be recorded, the conventional key is written so a client
-		// that asks for this size type can still fetch it.
-		if write && bytes.Equal(b, cacheData) && claim.Path != "" {
-			if c.savePhotoPath(c.ctx, photoId, szType, claim.Path) == nil {
-				path = claim.Path
-				write = false
+		proposed, write := photoSizeObject(originPaths, szType, photoId)
+		record, puts := photoSizePuts(photoId, szType, proposed, b, cacheData, claim.Path, !write, hot)
+		// Hot tier off: an aliased size is stored only as the original.
+		// If that path cannot be recorded, write the conventional key so
+		// download still has an object to open.
+		if !hot && record != proposed {
+			if c.savePhotoPath(c.ctx, photoId, szType, record) != nil {
+				record = proposed
+				puts = []sizePut{{path: proposed, body: b}}
 			}
 		}
 		pending = append(pending, pendingSize{
@@ -148,9 +150,9 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 			w:      w,
 			h:      h,
 			bytes:  b,
-			path:   path,
+			path:   record,
 			size:   int32(len(b)),
-			write:  write,
+			puts:   puts,
 		})
 		return nil
 	})
@@ -166,36 +168,27 @@ func (c *DfsCore) DfsUploadPhotoFileV2(in *dfs.TLDfsUploadPhotoFileV2) (*mtproto
 	}
 
 	// Original plus every derived object. The RPC returns only after each
-	// advertised size is durable. A client that calls upload.getFile for a
-	// size in photo.sizes must not observe a missing object.
+	// advertised size is durable on the hot tier (or in R2 when that tier
+	// is off). A client that calls upload.getFile for a size in photo.sizes
+	// must not observe a missing object. None of these puts wait on R2
+	// while the hot tier is on.
 	puts := make([]func(context.Context) error, 0, len(pending)+1)
 	if !claim.Reused {
 		puts = append(puts, func(ctx context.Context) error {
-			info, err := c.svcCtx.Dao.PutPhotoFile(ctx, claim.Path, cacheData)
-			if err != nil {
+			if err := c.svcCtx.Dao.EnsureLocal(ctx, minio_util.ClassPhotos, claim.Path, cacheData); err != nil {
 				return err
 			}
-			fileSize = info
+			fileSize.Size = int64(len(cacheData))
 			return nil
 		})
 	}
 	for i := range pending {
-		if !pending[i].write {
-			continue
+		for _, sp := range pending[i].puts {
+			sp := sp
+			puts = append(puts, func(ctx context.Context) error {
+				return c.svcCtx.Dao.EnsureLocal(ctx, minio_util.ClassPhotos, sp.path, sp.body)
+			})
 		}
-		i := i
-		body := pending[i].bytes
-		path := pending[i].path
-		puts = append(puts, func(ctx context.Context) error {
-			info, err := c.svcCtx.Dao.PutPhotoFile(ctx, path, body)
-			if err != nil {
-				return err
-			}
-			if info.Size > 0 {
-				pending[i].size = int32(info.Size)
-			}
-			return nil
-		})
 	}
 	if err = runBounded(c.ctx, photoPutConcurrency, puts); err != nil {
 		c.Logger.Errorf("dfs.uploadPhotoFile - %v", err)
