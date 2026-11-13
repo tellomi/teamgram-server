@@ -31,6 +31,7 @@ import (
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	autosave_helper "github.com/teamgram/teamgram-server/app/bff/autosave"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/bff/internal/presence"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
@@ -82,6 +83,7 @@ import (
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
+	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
@@ -663,6 +665,9 @@ func (s *Server) Initialize() error {
 	// observed production MySQL session peak and stops a backlog from
 	// forming in this process. TELLOMI_BFF_MAX_INFLIGHT overrides it.
 	s.grpcSrv.AddUnaryInterceptors(inflight.UnaryServer(inflight.FromEnv("TELLOMI_BFF_MAX_INFLIGHT", 256)))
+	// Ordinary RPCs refresh last_seen_at at most once a minute. account.updateStatus
+	// still owns the explicit online and offline write.
+	s.grpcSrv.AddUnaryInterceptors(presence.Unary(user_client.NewUserClient(rpcx.GetCachedRpcClient(c.BizServiceClient))))
 
 	go func() {
 		s.grpcSrv.Start()
