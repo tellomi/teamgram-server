@@ -194,27 +194,15 @@ func (c *DfsCore) downloadFileBody(in *dfs.TLDfsDownloadFile) (*mtproto.Upload_F
 		//inputPhotoFileLocation#40181ffe id:long access_hash:long file_reference:bytes thumb_size:string = InputFileLocation;
 
 		isVideo := mtproto.PhotoSizeIsVideo(location.GetThumbSize())
-		path := c.svcCtx.Dao.PhotoObjectPath(c.ctx, location.GetId(), location.GetThumbSize())
-		// log.Debugf("path: %s", path)
 		if isVideo {
-			bytes, err = readFirst(
-				func() ([]byte, error) {
-					return c.svcCtx.Dao.GetVideoFile(c.ctx, path, offset, limit)
-				},
-				func() ([]byte, error) {
-					return c.svcCtx.Dao.GetAvatarFile(c.ctx, path, offset, limit)
-				},
-			)
+			bytes, err = c.readStoredPhoto(location.GetId(), location.GetThumbSize(), offset, limit, func(path string) ([]byte, error) {
+				return c.svcCtx.Dao.GetVideoFile(c.ctx, path, offset, limit)
+			})
 			sType = int32(mtproto.CRC32_storage_fileMp4)
 		} else {
-			bytes, err = readFirst(
-				func() ([]byte, error) {
-					return c.svcCtx.Dao.GetPhotoFile(c.ctx, path, offset, limit)
-				},
-				func() ([]byte, error) {
-					return c.svcCtx.Dao.GetAvatarFile(c.ctx, path, offset, limit)
-				},
-			)
+			bytes, err = c.readStoredPhoto(location.GetId(), location.GetThumbSize(), offset, limit, func(path string) ([]byte, error) {
+				return c.svcCtx.Dao.GetPhotoFile(c.ctx, path, offset, limit)
+			})
 			sType = int32(location.GetAccessHash() >> 32)
 		}
 		if err != nil {
