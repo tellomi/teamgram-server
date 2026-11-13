@@ -98,6 +98,53 @@ func (s *memoryStore) Save(ctx context.Context, rec *Record) error {
 	return nil
 }
 
+func (s *memoryStore) StoriesByMedia(ctx context.Context, mediaID int64) ([]MediaRef, error) {
+	if mediaID == 0 {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []MediaRef
+	for owner, bucket := range s.stories {
+		for id, rec := range bucket {
+			if rec == nil || rec.Item == nil {
+				continue
+			}
+			if storyMediaHit(rec.Item.GetMedia(), mediaID) {
+				out = append(out, MediaRef{Owner: owner, StoryID: id})
+			}
+		}
+	}
+	return out, nil
+}
+
+func storyMediaHit(media *mtproto.MessageMedia, id int64) bool {
+	if media == nil || id == 0 {
+		return false
+	}
+	if photo := media.GetPhoto_FLAGPHOTO(); photo != nil && photo.GetId() == id {
+		return true
+	}
+	if doc := media.GetDocument(); doc != nil && doc.GetId() == id {
+		return true
+	}
+	return false
+}
+
+func storyMediaIDs(media *mtproto.MessageMedia) []int64 {
+	if media == nil {
+		return nil
+	}
+	var ids []int64
+	if photo := media.GetPhoto_FLAGPHOTO(); photo != nil && photo.GetId() != 0 {
+		ids = append(ids, photo.GetId())
+	}
+	if doc := media.GetDocument(); doc != nil && doc.GetId() != 0 {
+		ids = append(ids, doc.GetId())
+	}
+	return ids
+}
+
 func (s *memoryStore) Get(ctx context.Context, owner Owner, id int32) (*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

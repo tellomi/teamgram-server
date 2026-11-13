@@ -409,3 +409,11 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | User-message text query | `app/service/biz/message/internal/dal/dao/mysql_dao/messages_search_text.go`, `app/service/biz/message/internal/core/message.searchGlobal_handler.go` |
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
+
+## Group send rights and invite start_date
+
+Basic-group `default_banned_rights` are checked on the chat send and edit paths in `msg.sendMessageV2` / `msg.editMessageV2` (`app/messenger/msg/msg/internal/core/msg.sendMessageV2_handler.go`, `msg.editMessageV2_handler.go`). The classifier lives in `proto/mtproto/chat_send_right.go` and is shared with megagroups. Service messages (pin notices) are not treated as member content. `messages.updatePinnedMessage` for a basic group refuses a non-admin when `pin_messages` is banned (`app/bff/messages/internal/core/messages.updatePinnedMessage_handler.go`). A temporary ban is the plain `CHAT_SEND_*_FORBIDDEN` code. `until_date` stays on `banned_rights`.
+
+Invite links with a future `start_date` are `INVITE_HASH_EXPIRED` for basic groups (`chat.checkChatInvite`, `chat.importChatInvite`, `chat.importChatInvite2`) and for channels (`app/service/biz/channel/invite.go`). The predicate is `pkg/invite.NotStarted`.
+
+`messages.searchGlobal` also drops channel messages from before the member joined when prehistory is hidden (`dropPrehistoryBoxes` in `search_global.go`, called from `messages.searchGlobal_handler.go` after the joined-channel merge).

@@ -19,10 +19,16 @@ import (
 // Hooks connect stories to contacts, usernames, and the update fanout.
 // All of them are optional. Tests use MarkContact instead of the contact hooks.
 type Hooks struct {
-	Push             func(ctx context.Context, userID int64, excludeAuth []int64, updates *mtproto.Updates)
-	ContactIDs       func(ctx context.Context, userID int64) ([]int64, error)
-	IsContact        func(ctx context.Context, owner, viewer int64) bool
-	IsCloseFriend    func(ctx context.Context, owner, viewer int64) bool
+	Push          func(ctx context.Context, userID int64, excludeAuth []int64, updates *mtproto.Updates)
+	ContactIDs    func(ctx context.Context, userID int64) ([]int64, error)
+	IsContact     func(ctx context.Context, owner, viewer int64) bool
+	IsCloseFriend func(ctx context.Context, owner, viewer int64) bool
+	// IsBlocked is true when either user has blocked the other, or the owner
+	// has put the viewer on the story blocklist (contacts.block my_stories_from).
+	IsBlocked func(ctx context.Context, owner, viewer int64) bool
+	// InChats reports whether viewer belongs to any of the chats. Nil means
+	// chat-participant privacy rules cannot grant access.
+	InChats          func(ctx context.Context, viewer int64, chats []int64) bool
 	SetUserMax       func(ctx context.Context, userID int64, maxID int32) error
 	SetStoriesHidden func(ctx context.Context, userID, peerID int64, hidden bool)
 	Username         func(ctx context.Context, userID int64) string
@@ -39,6 +45,7 @@ type Service struct {
 	hooks        Hooks
 	contacts     map[int64]map[int64]bool
 	closeFriends map[int64]map[int64]bool
+	blocked      map[int64]map[int64]bool
 	clock        func() int32
 
 	// Advertised active-story max. recentStory.max_id is this value, and it
@@ -74,6 +81,7 @@ func New(store Store) *Service {
 		store:        store,
 		contacts:     map[int64]map[int64]bool{},
 		closeFriends: map[int64]map[int64]bool{},
+		blocked:      map[int64]map[int64]bool{},
 	}
 }
 
@@ -81,6 +89,87 @@ func (s *Service) SetHooks(h Hooks) {
 	s.mu.Lock()
 	s.hooks = h
 	s.mu.Unlock()
+}
+
+// MergeHooks fills only the hooks that are still nil. A later caller, such
+// as the files helper in the combined BFF, must not replace Push, max-id,
+// or username hooks the stories helper already installed.
+func (s *Service) MergeHooks(add Hooks) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.hooks.Push == nil {
+		s.hooks.Push = add.Push
+	}
+	if s.hooks.ContactIDs == nil {
+		s.hooks.ContactIDs = add.ContactIDs
+	}
+	if s.hooks.IsContact == nil {
+		s.hooks.IsContact = add.IsContact
+	}
+	if s.hooks.IsCloseFriend == nil {
+		s.hooks.IsCloseFriend = add.IsCloseFriend
+	}
+	if s.hooks.IsBlocked == nil {
+		s.hooks.IsBlocked = add.IsBlocked
+	}
+	if s.hooks.InChats == nil {
+		s.hooks.InChats = add.InChats
+	}
+	if s.hooks.SetUserMax == nil {
+		s.hooks.SetUserMax = add.SetUserMax
+	}
+	if s.hooks.SetStoriesHidden == nil {
+		s.hooks.SetStoriesHidden = add.SetStoriesHidden
+	}
+	if s.hooks.Username == nil {
+		s.hooks.Username = add.Username
+	}
+	if s.hooks.MatchName == nil {
+		s.hooks.MatchName = add.MatchName
+	}
+	if s.hooks.DialogPeers == nil {
+		s.hooks.DialogPeers = add.DialogPeers
+	}
+}
+
+// HooksSet reports which hooks are installed.
+type HooksSet struct {
+	Push             bool
+	ContactIDs       bool
+	IsContact        bool
+	IsCloseFriend    bool
+	IsBlocked        bool
+	InChats          bool
+	SetUserMax       bool
+	SetStoriesHidden bool
+	Username         bool
+	MatchName        bool
+	DialogPeers      bool
+}
+
+func (s *Service) HooksSet() HooksSet {
+	if s == nil {
+		return HooksSet{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h := s.hooks
+	return HooksSet{
+		Push:             h.Push != nil,
+		ContactIDs:       h.ContactIDs != nil,
+		IsContact:        h.IsContact != nil,
+		IsCloseFriend:    h.IsCloseFriend != nil,
+		IsBlocked:        h.IsBlocked != nil,
+		InChats:          h.InChats != nil,
+		SetUserMax:       h.SetUserMax != nil,
+		SetStoriesHidden: h.SetStoriesHidden != nil,
+		Username:         h.Username != nil,
+		MatchName:        h.MatchName != nil,
+		DialogPeers:      h.DialogPeers != nil,
+	}
 }
 
 func (s *Service) hooksCopy() Hooks {
@@ -120,6 +209,13 @@ func (s *Service) MarkContact(a, b int64) {
 	addPair(s.contacts, b, a)
 }
 
+// MarkBlocked records that owner has blocked viewer. Either direction hides stories.
+func (s *Service) MarkBlocked(owner, viewer int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	addPair(s.blocked, owner, viewer)
+}
+
 // MarkCloseFriend records owner’s close-friend list. The friend is also a contact.
 func (s *Service) MarkCloseFriend(owner, friend int64) {
 	s.mu.Lock()
@@ -148,6 +244,30 @@ func (s *Service) isContact(ctx context.Context, owner, viewer int64) bool {
 		return true
 	}
 	return hook != nil && hook(ctx, owner, viewer)
+}
+
+func (s *Service) isBlocked(ctx context.Context, owner, viewer int64) bool {
+	if owner == 0 || viewer == 0 || owner == viewer {
+		return false
+	}
+	s.mu.Lock()
+	local := s.blocked[owner][viewer] || s.blocked[viewer][owner]
+	hook := s.hooks.IsBlocked
+	s.mu.Unlock()
+	if local {
+		return true
+	}
+	return hook != nil && hook(ctx, owner, viewer)
+}
+
+func (s *Service) inChats(ctx context.Context, viewer int64, chats []int64) bool {
+	if len(chats) == 0 {
+		return false
+	}
+	s.mu.Lock()
+	hook := s.hooks.InChats
+	s.mu.Unlock()
+	return hook != nil && hook(ctx, viewer, chats)
 }
 
 func (s *Service) isCloseFriend(ctx context.Context, owner, viewer int64) bool {
@@ -267,43 +387,126 @@ func (s *Service) privacyAllows(ctx context.Context, rec *Record, viewer int64) 
 	if rec.Owner.Kind == KindChannel && s.isManager(ctx, viewer, rec.Owner) {
 		return true
 	}
+	subject := privacySubject(rec)
+	if s.isBlocked(ctx, subject, viewer) {
+		return false
+	}
 	rules := rec.Item.GetPrivacy()
 	if len(rules) == 0 {
 		return true
 	}
-	for _, r := range rules {
-		if r.GetPredicateName() == mtproto.Predicate_privacyValueDisallowUsers && contains64(r.Users, viewer) {
-			return false
-		}
-	}
-	var allowAll, allowContacts, sawAllow bool
+	// Official order: disallow lists, then explicit allows, then the base rule.
+	// privacyValueDisallowAll is a deny. It used to fall through as allow
+	// because no allow* rule had been seen.
+	var (
+		allowAll, allowContacts, allowClose, disallowAll, disallowContacts bool
+		sawAllow                                                           bool
+	)
 	for _, r := range rules {
 		switch r.GetPredicateName() {
+		case mtproto.Predicate_privacyValueDisallowUsers:
+			if contains64(r.Users, viewer) {
+				return false
+			}
+		case mtproto.Predicate_privacyValueDisallowChatParticipants:
+			if s.inChats(ctx, viewer, r.Chats) {
+				return false
+			}
+		}
+	}
+	for _, r := range rules {
+		switch r.GetPredicateName() {
+		case mtproto.Predicate_privacyValueAllowUsers:
+			sawAllow = true
+			if contains64(r.Users, viewer) {
+				return true
+			}
+		case mtproto.Predicate_privacyValueAllowCloseFriends:
+			allowClose = true
+			sawAllow = true
+		case mtproto.Predicate_privacyValueAllowChatParticipants:
+			sawAllow = true
+			if s.inChats(ctx, viewer, r.Chats) {
+				return true
+			}
 		case mtproto.Predicate_privacyValueAllowAll:
 			allowAll = true
 			sawAllow = true
 		case mtproto.Predicate_privacyValueAllowContacts:
 			allowContacts = true
 			sawAllow = true
-		case mtproto.Predicate_privacyValueAllowCloseFriends:
-			sawAllow = true
-			if s.isCloseFriend(ctx, privacySubject(rec), viewer) {
-				return true
-			}
-		case mtproto.Predicate_privacyValueAllowUsers:
-			sawAllow = true
-			if contains64(r.Users, viewer) {
-				return true
-			}
+		case mtproto.Predicate_privacyValueDisallowAll:
+			disallowAll = true
+		case mtproto.Predicate_privacyValueDisallowContacts:
+			disallowContacts = true
 		}
+	}
+	if allowClose && s.isCloseFriend(ctx, subject, viewer) {
+		return true
+	}
+	if disallowContacts && s.isContact(ctx, subject, viewer) {
+		return false
+	}
+	if allowContacts && s.isContact(ctx, subject, viewer) {
+		return true
+	}
+	if disallowAll {
+		return false
 	}
 	if allowAll {
 		return true
 	}
-	if allowContacts && s.isContact(ctx, privacySubject(rec), viewer) {
+	return !sawAllow
+}
+
+// exposed is a story the viewer may be given. Expired stories stay visible
+// to the owner (archive) and when they are pinned. Everyone else receives
+// storyItemDeleted.
+func (s *Service) exposed(ctx context.Context, viewer int64, rec *Record) bool {
+	if rec == nil || rec.Deleted || rec.Item == nil {
+		return false
+	}
+	if !s.privacyAllows(ctx, rec, viewer) {
+		return false
+	}
+	if rec.active(s.now()) || rec.Item.Pinned {
 		return true
 	}
-	return !sawAllow
+	return s.ownsArchive(ctx, viewer, rec)
+}
+
+func (s *Service) ownsArchive(ctx context.Context, viewer int64, rec *Record) bool {
+	if rec == nil {
+		return false
+	}
+	if rec.Owner.Kind == KindUser && viewer == rec.Owner.ID {
+		return true
+	}
+	return rec.Owner.Kind == KindChannel && s.isManager(ctx, viewer, rec.Owner)
+}
+
+// AllowMediaDownload is upload.getFile for a photo or document that belongs
+// to a story. A file that is not story media is left to the normal hash
+// check. After expiry, only the owner and viewers of a still-pinned story
+// may fetch it.
+func (s *Service) AllowMediaDownload(ctx context.Context, viewer, mediaID int64) error {
+	if s == nil || s.store == nil || mediaID == 0 {
+		return nil
+	}
+	refs, err := s.store.StoriesByMedia(ctx, mediaID)
+	if err != nil || len(refs) == 0 {
+		return nil
+	}
+	for _, ref := range refs {
+		rec, err := s.store.Get(ctx, ref.Owner, ref.StoryID)
+		if err != nil {
+			return err
+		}
+		if s.exposed(ctx, viewer, rec) {
+			return nil
+		}
+	}
+	return mtproto.ErrFileReferenceExpired
 }
 
 func (s *Service) visible(ctx context.Context, viewer int64, rec *Record, includeExpired, pinnedOnly bool) bool {

@@ -39,14 +39,34 @@ func Shared() *Service {
 }
 
 // Use replaces the process-wide service. Hooks already installed are kept
-// when the replacement has none.
+// when the replacement has none. A live-call starter and the alive callback
+// move with the service, so a later MySQL open does not drop stories.startLive.
 func Use(s *Service) {
 	regMu.Lock()
 	defer regMu.Unlock()
-	if shared != nil && s != nil && s.hooksEmpty() {
-		s.SetHooks(shared.hooksCopy())
+	if shared != nil && s != nil {
+		if s.hooksEmpty() {
+			s.SetHooks(shared.hooksCopy())
+		}
+		s.keepLive(shared)
 	}
 	shared = s
+}
+
+func (s *Service) keepLive(prev *Service) {
+	if s == nil || prev == nil {
+		return
+	}
+	s.mu.Lock()
+	prev.mu.Lock()
+	if s.lives.starter == nil {
+		s.lives.starter = prev.lives.starter
+	}
+	if s.lives.alive == nil {
+		s.lives.alive = prev.lives.alive
+	}
+	prev.mu.Unlock()
+	s.mu.Unlock()
 }
 
 // UseDSN opens MySQL when dsn or TEAMGRAM_MYSQL_DSN is set.
@@ -55,6 +75,15 @@ func UseDSN(dsn string) error {
 		dsn = env
 	}
 	if dsn == "" {
+		return nil
+	}
+	// The combined BFF opens stories first, then the files helper calls
+	// UseDSN with the same database. Replacing the service would drop the
+	// phone live-call starter and the expiry watcher already running.
+	regMu.Lock()
+	open := shared != nil && shared.hasMySQL()
+	regMu.Unlock()
+	if open {
 		return nil
 	}
 	svc, err := OpenMySQL(dsn)
@@ -82,6 +111,14 @@ func OpenMySQL(dsn string) (*Service, error) {
 		return nil, err
 	}
 	return New(newMySQLStore(db)), nil
+}
+
+func (s *Service) hasMySQL() bool {
+	if s == nil {
+		return false
+	}
+	ms, ok := s.store.(*mysqlStore)
+	return ok && ms != nil && ms.db != nil
 }
 
 func ensureSchema(ctx context.Context, db *sql.DB) error {

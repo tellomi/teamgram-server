@@ -2543,6 +2543,14 @@ var (
 	// | 403 | CHAT_SEND_MEDIA_FORBIDDEN | You can't send media in this chat. |
 	ErrChatSendMediaForbidden = status.Error(ErrForbidden, "CHAT_SEND_MEDIA_FORBIDDEN")
 
+	// ErrChatSendRoundvideosForbidden
+	// | 403 | CHAT_SEND_ROUNDVIDEOS_FORBIDDEN | You can't send round videos to this chat. |
+	ErrChatSendRoundvideosForbidden = status.Error(ErrForbidden, "CHAT_SEND_ROUNDVIDEOS_FORBIDDEN")
+
+	// ErrChatSendWebpageForbidden
+	// | 403 | CHAT_SEND_WEBPAGE_FORBIDDEN | You can't embed links in this chat. |
+	ErrChatSendWebpageForbidden = status.Error(ErrForbidden, "CHAT_SEND_WEBPAGE_FORBIDDEN")
+
 	// ErrGroupcallAlreadyStarted
 	// | 403 | GROUPCALL_ALREADY_STARTED | The groupcall has already started, you can join directly using [phone.joinGroupCall](https://core.telegram.org/method/phone.joinGroupCall). |
 	ErrGroupcallAlreadyStarted = status.Error(ErrForbidden, "GROUPCALL_ALREADY_STARTED")

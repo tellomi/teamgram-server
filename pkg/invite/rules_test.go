@@ -34,3 +34,12 @@ func TestExportValidate(t *testing.T) {
 		t.Fatal("long title accepted")
 	}
 }
+
+func TestInviteNotStarted(t *testing.T) {
+	if NotStarted(0, 100) || NotStarted(50, 50) || NotStarted(40, 50) {
+		t.Fatal("a link with no future start_date is usable")
+	}
+	if !NotStarted(80, 50) {
+		t.Fatal("start_date in the future must be refused")
+	}
+}

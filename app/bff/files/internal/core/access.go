@@ -5,6 +5,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 	"github.com/teamgram/teamgram-server/pkg/mediaaccess"
@@ -94,7 +95,10 @@ func (c *FilesCore) authorizeDocument(location *mtproto.InputFileLocation) error
 		stored = doc.GetAccessHash()
 		ref = doc.GetFileReference()
 	}
-	return mediaaccess.DocumentDownload(id, location.GetAccessHash(), location.GetFileReference(), found, stored, ref)
+	if err := mediaaccess.DocumentDownload(id, location.GetAccessHash(), location.GetFileReference(), found, stored, ref); err != nil {
+		return err
+	}
+	return c.storyMedia(id)
 }
 
 func issuedHash(got int64, hashes []int64) bool {
@@ -122,7 +126,17 @@ func (c *FilesCore) authorizePhoto(location *mtproto.InputFileLocation) error {
 		stored = photo.GetAccessHash()
 		ref = photo.GetFileReference()
 	}
-	return mediaaccess.PhotoDownload(id, location.GetAccessHash(), location.GetFileReference(), found, stored, ref, false)
+	if err := mediaaccess.PhotoDownload(id, location.GetAccessHash(), location.GetFileReference(), found, stored, ref, false); err != nil {
+		return err
+	}
+	return c.storyMedia(id)
+}
+
+func (c *FilesCore) storyMedia(id int64) error {
+	if c == nil {
+		return nil
+	}
+	return story.Shared().AllowMediaDownload(c.ctx, c.userID(), id)
 }
 
 func (c *FilesCore) authorizeEncrypted(location *mtproto.InputFileLocation) error {

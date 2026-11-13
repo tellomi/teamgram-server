@@ -19,11 +19,16 @@
 package svc
 
 import (
+	"context"
 	"time"
 
+	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 	"github.com/teamgram/teamgram-server/app/bff/files/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/files/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/files/plugin"
+	"github.com/teamgram/teamgram-server/app/service/biz/story"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
 	"github.com/teamgram/teamgram-server/app/service/mediablob"
 	"github.com/teamgram/teamgram-server/pkg/mediaaccess"
@@ -56,6 +61,10 @@ func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2
 		Plugin2: plugin2,
 	}
 	if c.Mysql != "" {
+		// No-op when stories already opened this process's story service.
+		if err := story.UseDSN(c.Mysql); err != nil {
+			logx.Errorf("files: story media check disabled: %v", err)
+		}
 		store, err := retention.OpenSQL(c.Mysql)
 		if err != nil {
 			logx.Errorf("files: media retention check disabled: %v", err)
@@ -75,5 +84,40 @@ func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2
 			svcCtx.Access = access
 		}
 	}
+	installStoryMediaHooks(svcCtx)
 	return svcCtx
+}
+
+func installStoryMediaHooks(svcCtx *ServiceContext) {
+	users := svcCtx.UserClient
+	story.Shared().MergeHooks(story.Hooks{
+		IsContact: func(ctx context.Context, owner, viewer int64) bool {
+			if users == nil {
+				return false
+			}
+			ok, err := users.UserCheckContact(ctx, &user.TLUserCheckContact{UserId: owner, Id: viewer})
+			return err == nil && mtproto.FromBool(ok)
+		},
+		IsCloseFriend: func(ctx context.Context, owner, viewer int64) bool {
+			if users == nil {
+				return false
+			}
+			contact, err := users.UserGetContact(ctx, &user.TLUserGetContact{UserId: owner, Id: viewer})
+			return err == nil && contact.GetCloseFriend()
+		},
+		IsBlocked: func(ctx context.Context, owner, viewer int64) bool {
+			if book.Shared().StoryBlocked(ctx, owner, viewer) {
+				return true
+			}
+			if users == nil {
+				return false
+			}
+			a, err := users.UserIsBlockedByUser(ctx, &user.TLUserIsBlockedByUser{UserId: owner, PeerUserId: viewer})
+			if err == nil && mtproto.FromBool(a) {
+				return true
+			}
+			b, err := users.UserIsBlockedByUser(ctx, &user.TLUserIsBlockedByUser{UserId: viewer, PeerUserId: owner})
+			return err == nil && mtproto.FromBool(b)
+		},
+	})
 }

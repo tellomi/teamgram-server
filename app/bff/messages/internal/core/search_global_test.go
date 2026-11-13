@@ -10,6 +10,19 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
+func TestDropPrehistoryBoxes(t *testing.T) {
+	old := &mtproto.MessageBox{PeerType: mtproto.PEER_CHANNEL, PeerId: 9, Message: &mtproto.Message{Id: 1, Date: 10, Message: "old"}}
+	fresh := &mtproto.MessageBox{PeerType: mtproto.PEER_CHANNEL, PeerId: 9, Message: &mtproto.Message{Id: 2, Date: 50, Message: "new"}}
+	user := &mtproto.MessageBox{PeerType: mtproto.PEER_USER, PeerId: 3, Message: &mtproto.Message{Id: 3, Date: 10, Message: "dm"}}
+	list := &mtproto.MessageBoxList{BoxList: []*mtproto.MessageBox{old, fresh, user}}
+	got := dropPrehistoryBoxes(list, func(channelID int64, date int32) bool {
+		return channelID == 9 && date < 40
+	})
+	if len(got.BoxList) != 2 || got.BoxList[0].Message.Id != 2 || got.BoxList[1].PeerType != mtproto.PEER_USER {
+		t.Fatalf("prehistory filter %+v", got.BoxList)
+	}
+}
+
 func TestGlobalFilterEmptyQueryAndChineseURL(t *testing.T) {
 	if globalFilterUseful(nil) || globalFilterUseful(mtproto.MakeTLInputMessagesFilterEmpty(nil).To_MessagesFilter()) {
 		t.Fatal("empty filter should still reject an empty query")

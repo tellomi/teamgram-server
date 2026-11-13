@@ -356,6 +356,11 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 			return hasBot
 		})
 
+	if err = mtproto.BasicGroupSendForbidden(chat, fromUserId, int32(time.Now().Unix()), []*mtproto.Message{outBox.Message}); err != nil {
+		c.Logger.Errorf("msg.sendChatOutgoingMessageV2 - error: %v", err)
+		return nil, err
+	}
+
 	var (
 		rUpdates *mtproto.Updates
 	)
@@ -664,6 +669,15 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 
 				return hasBot
 			})
+	}
+
+	var bodies []*mtproto.Message
+	for _, outBox := range outBoxList {
+		bodies = append(bodies, outBox.GetMessage())
+	}
+	if err = mtproto.BasicGroupSendForbidden(chat, fromUserId, int32(time.Now().Unix()), bodies); err != nil {
+		c.Logger.Errorf("msg.sendChatOutgoingMessageList - error: %v", err)
+		return nil, err
 	}
 
 	//var (
