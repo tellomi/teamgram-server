@@ -281,7 +281,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	_, _, _ = d.ExecInvalidate(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdate(ctx, dialogDO)
+			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdateForward(ctx, dialogDO)
 			logx.WithContext(ctx).Infof("lastInsertId:%d, rowsAffected: %d, result: %v, do: %v", lastInsertId, rowsAffected, err, dialogDO)
 			if err != nil || dialogDO.PeerType != mtproto.PEER_USER || dialogDO.UnreadCount != 0 {
 				return 0, 0, err

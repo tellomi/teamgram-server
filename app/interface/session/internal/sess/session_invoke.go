@@ -31,6 +31,7 @@ import (
 	rpcmetadata "github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
+	"github.com/teamgram/teamgram-server/pkg/stagelog"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -493,16 +494,20 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 
 	msgId.state = RECEIVED | RPC_PROCESSING
 
+	gw, enq, loop := stagelog.Marks(ctx)
 	c.sessList.cb.tmpRpcApiMessageList = append(
 		c.sessList.cb.tmpRpcApiMessageList,
 		&rpcApiMessage{
-			ctx:       contextx.ValueOnlyFrom(ctx),
-			sessList:  c.sessList,
-			sessionId: c.sessionId,
-			clientIp:  clientIp,
-			reqMsgId:  msgId.msgId,
-			reqMsg:    query,
-			takeout:   takeout,
+			ctx:        contextx.ValueOnlyFrom(ctx),
+			sessList:   c.sessList,
+			sessionId:  c.sessionId,
+			clientIp:   clientIp,
+			reqMsgId:   msgId.msgId,
+			reqMsg:     query,
+			takeout:    takeout,
+			gatewayAt:  gw,
+			enqueuedAt: enq,
+			loopAt:     loop,
 		})
 
 	return true

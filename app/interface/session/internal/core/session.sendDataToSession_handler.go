@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/interface/session/session"
+	"github.com/teamgram/teamgram-server/pkg/stagelog"
 )
 
 // SessionSendDataToSession
@@ -36,6 +37,7 @@ func (c *SessionCore) SessionSendDataToSession(in *session.TLSessionSendDataToSe
 		return nil, err
 	}
 
+	ctx := stagelog.StampGateway(c.ctx)
 	mainAuth, err := c.getOrFetchMainAuthWrapper(data.PermAuthKeyId)
 	if err != nil {
 		c.Logger.Errorf("session.sendDataToSession - error: %v", err)
@@ -45,11 +47,11 @@ func (c *SessionCore) SessionSendDataToSession(in *session.TLSessionSendDataToSe
 	// ConnType == 1 signals a new session: create session before sending data,
 	// merging what was previously two separate RPCs (CreateSession + SendData).
 	if data.ConnType == 1 {
-		_ = mainAuth.SessionClientNew(c.ctx, int(data.KeyType), data.AuthKeyId, data.ServerId, data.SessionId)
+		_ = mainAuth.SessionClientNew(ctx, int(data.KeyType), data.AuthKeyId, data.ServerId, data.SessionId)
 	}
 
 	_ = mainAuth.SessionDataArrived(
-		c.ctx,
+		ctx,
 		int(data.KeyType),
 		data.AuthKeyId,
 		data.ServerId,

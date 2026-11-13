@@ -12,7 +12,6 @@ package dao
 import (
 	"context"
 	"fmt"
-	"github.com/teamgram/marmota/pkg/idempotent"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	inbox_client "github.com/teamgram/teamgram-server/app/messenger/msg/inbox/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
@@ -49,7 +48,12 @@ func (d *Dao) DoIdempotent(ctx context.Context, senderUserId int64, deDuplicateK
 	// for that insert and short enough that a crashed holder does not stall
 	// the retry. The cached RPC result lasts 90s; after that
 	// FindOutboxByRandomID still returns the committed row.
-	return idempotent.DoIdempotent(
+	// The waiter polls every 25ms. A 1s poll held the session RPC loop open
+	// after the leader had already finished.
+	if d == nil || d.Redis == nil {
+		return false, fmt.Errorf("idempotent redis is nil")
+	}
+	return doIdempotent(
 		ctx,
 		d.Redis,
 		fmt.Sprintf("idempotent#%d@%s", senderUserId, deDuplicateKey),

@@ -13,6 +13,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
@@ -23,6 +24,7 @@ import (
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/stagelog"
 
 	"github.com/zeromicro/go-zero/core/mr"
 	"github.com/zeromicro/go-zero/core/timex"
@@ -127,7 +129,11 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 	var (
 		idHelper = mtproto.NewIDListHelper(fromUserId, toUserId)
 		since2   = timex.Now()
+		stageAt  = time.Now()
 	)
+	defer func() {
+		stagelog.Infof("msg kind=user_send ms=%d", time.Since(stageAt).Milliseconds())
+	}()
 
 	idHelper.PickByMessage(outBox.GetMessage())
 
@@ -214,49 +220,36 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 			}
 
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: c.svcCtx.Dao.SendUserMessageV2")
-			_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
-				c.ctx,
-				&inbox.TLInboxSendUserMessageToInboxV2{
-					UserId:        fromUserId,
-					Out:           true,
-					FromId:        fromUserId,
-					FromAuthKeyId: fromAuthKeyId,
-					PeerType:      mtproto.PEER_USER,
-					PeerId:        toUserId,
-					BoxList:       []*mtproto.MessageBox{box},
-					Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
-					Chats:         nil,
-				})
-			if err2 != nil {
-				return err2
-			}
-
+			inboxReqs := []*inbox.TLInboxSendUserMessageToInboxV2{{
+				UserId:        fromUserId,
+				Out:           true,
+				FromId:        fromUserId,
+				FromAuthKeyId: fromAuthKeyId,
+				PeerType:      mtproto.PEER_USER,
+				PeerId:        toUserId,
+				BoxList:       []*mtproto.MessageBox{box},
+				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
+			}}
 			if fromUserId != toUserId {
-				c.Logger.WithDuration(timex.Since(since2)).Infof("end: c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(")
 				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
 					UserId:     toUserId,
 					PeerUserId: fromUserId,
 				})
-
 				if !mtproto.FromBool(blocked) {
-					c.Logger.WithDuration(timex.Since(since2)).Infof("end: c.svcCtx.Dao.UserClient.UserBlockedByUser")
-					_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
-						c.ctx,
-						&inbox.TLInboxSendUserMessageToInboxV2{
-							UserId:        toUserId,
-							Out:           false,
-							FromId:        fromUserId,
-							FromAuthKeyId: fromAuthKeyId,
-							PeerType:      mtproto.PEER_USER,
-							PeerId:        toUserId,
-							BoxList:       []*mtproto.MessageBox{box},
-							Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
-							Chats:         nil,
-						})
-					if err2 != nil {
-						return err2
-					}
+					inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
+						UserId:        toUserId,
+						Out:           false,
+						FromId:        fromUserId,
+						FromAuthKeyId: fromAuthKeyId,
+						PeerType:      mtproto.PEER_USER,
+						PeerId:        toUserId,
+						BoxList:       []*mtproto.MessageBox{box},
+						Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
+					})
 				}
+			}
+			if err2 = publishInboxFanout(c.ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
+				return err2
 			}
 
 			*v.(**mtproto.Updates) = mtproto.MakeReplyUpdates(
@@ -290,6 +283,10 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 }
 
 func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatId int64, outBox *msg.OutboxMessage) (*mtproto.Updates, error) {
+	stageAt := time.Now()
+	defer func() {
+		stagelog.Infof("msg kind=chat_send ms=%d", time.Since(stageAt).Milliseconds())
+	}()
 	var (
 		chat      *mtproto.MutableChat
 		sUserList *mtproto.MutableUsers
@@ -383,20 +380,17 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 				return err
 			}
 
+			var inboxReqs []*inbox.TLInboxSendUserMessageToInboxV2
 			chat.Walk(func(userId int64, participant *mtproto.ImmutableChatParticipant) error {
 				if !participant.IsChatMemberStateNormal() && !participant.IsChatMemberStateMigrated() {
 					return nil
 				}
-				if err2 != nil {
-					return nil
-				}
-
 				toUsers := make([]*mtproto.User, 0, sUserList.Length())
 				sUserList.Visit(func(it *mtproto.ImmutableUser) {
 					toUsers = append(toUsers, it.ToUser(participant.UserId))
 				})
 				paintStoryUsers(participant.UserId, sUserList, toUsers)
-				_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(ctx, &inbox.TLInboxSendUserMessageToInboxV2{
+				inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
 					UserId:        participant.UserId,
 					Out:           participant.UserId == fromUserId,
 					FromId:        fromUserId,
@@ -409,10 +403,9 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 				})
 				return nil
 			})
-
-			if err2 != nil {
+			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
 				c.Logger.Error(err2.Error())
-				return err
+				return err2
 			}
 
 			*v.(**mtproto.Updates) = mtproto.MakeReplyUpdates(
@@ -534,47 +527,36 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 				updateList = append(updateList, outgoingUpdate(box))
 			}
 
-			_, err2 := c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
-				c.ctx,
-				&inbox.TLInboxSendUserMessageToInboxV2{
-					UserId:        fromUserId,
-					Out:           true,
-					FromId:        fromUserId,
-					FromAuthKeyId: fromAuthKeyId,
-					PeerType:      mtproto.PEER_USER,
-					PeerId:        toUserId,
-					BoxList:       boxList,
-					Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
-					Chats:         nil,
-				})
-			if err2 != nil {
-				return err2
-			}
-
+			inboxReqs := []*inbox.TLInboxSendUserMessageToInboxV2{{
+				UserId:        fromUserId,
+				Out:           true,
+				FromId:        fromUserId,
+				FromAuthKeyId: fromAuthKeyId,
+				PeerType:      mtproto.PEER_USER,
+				PeerId:        toUserId,
+				BoxList:       boxList,
+				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
+			}}
 			if fromUserId != toUserId {
 				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
 					UserId:     toUserId,
 					PeerUserId: fromUserId,
 				})
-
 				if !mtproto.FromBool(blocked) {
-					_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
-						c.ctx,
-						&inbox.TLInboxSendUserMessageToInboxV2{
-							UserId:        toUserId,
-							Out:           false,
-							FromId:        fromUserId,
-							FromAuthKeyId: fromAuthKeyId,
-							PeerType:      mtproto.PEER_USER,
-							PeerId:        toUserId,
-							BoxList:       boxList,
-							Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
-							Chats:         nil,
-						})
-					if err2 != nil {
-						return err2
-					}
+					inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
+						UserId:        toUserId,
+						Out:           false,
+						FromId:        fromUserId,
+						FromAuthKeyId: fromAuthKeyId,
+						PeerType:      mtproto.PEER_USER,
+						PeerId:        toUserId,
+						BoxList:       boxList,
+						Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
+					})
 				}
+			}
+			if err2 := publishInboxFanout(c.ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
+				return err2
 			}
 
 			*v.(**mtproto.Updates) = mtproto.MakeReplyUpdates(
@@ -721,20 +703,17 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				err2 error
 			)
 
+			var inboxReqs []*inbox.TLInboxSendUserMessageToInboxV2
 			chat.Walk(func(userId int64, participant *mtproto.ImmutableChatParticipant) error {
 				if !participant.IsChatMemberStateNormal() {
 					return nil
 				}
-				if err2 != nil {
-					return nil
-				}
-
 				toUsers := make([]*mtproto.User, 0, sUserList.Length())
 				sUserList.Visit(func(it *mtproto.ImmutableUser) {
 					toUsers = append(toUsers, it.ToUser(participant.UserId))
 				})
 				paintStoryUsers(participant.UserId, sUserList, toUsers)
-				_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(ctx, &inbox.TLInboxSendUserMessageToInboxV2{
+				inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
 					UserId:        participant.UserId,
 					Out:           participant.UserId == fromUserId,
 					FromId:        fromUserId,
@@ -747,10 +726,9 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				})
 				return nil
 			})
-
-			if err2 != nil {
+			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
 				c.Logger.Error(err2.Error())
-				return err
+				return err2
 			}
 
 			*v.(**mtproto.Updates) = mtproto.MakeReplyUpdates(

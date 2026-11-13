@@ -10,21 +10,27 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	metadata "github.com/teamgram/proto/mtproto/rpc/metadata"
 )
 
 type rpcApiMessage struct {
-	ctx       context.Context
-	sessList  *SessionList
-	sessionId int64
-	clientIp  string
-	reqMsgId  int64
-	reqMsg    mtproto.TLObject
-	takeout   *metadata.Takeout
-	mu        sync.Mutex
-	rpcResult *mtproto.TLRpcResult
+	ctx        context.Context
+	sessList   *SessionList
+	sessionId  int64
+	clientIp   string
+	reqMsgId   int64
+	reqMsg     mtproto.TLObject
+	takeout    *metadata.Takeout
+	gatewayAt  time.Time
+	enqueuedAt time.Time
+	loopAt     time.Time
+	queuedAt   time.Time
+	queueLen   int
+	mu         sync.Mutex
+	rpcResult  *mtproto.TLRpcResult
 }
 
 // setResult keeps the first result. A deadline may already have stored
