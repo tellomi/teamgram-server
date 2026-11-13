@@ -147,6 +147,26 @@ func (c *AuthorizationCore) AuthResendCode(in *mtproto.TLAuthResendCode) (*mtpro
 			if isEmail {
 				return c.sendEmail(phoneNumber, codeData2)
 			}
+			// A phone whose current challenge is an email code must not be
+			// replaced with the test SMS code or a fresh SMS.
+			if codeData2.SentCodeType == model.SentCodeTypeSetUpEmailRequired {
+				codeData2.SentCodeType = model.SentCodeTypeSetUpEmailRequired
+				codeData2.NextCodeType = model.CodeTypeNone
+				codeData2.PhoneCode = ""
+				codeData2.PhoneCodeExtraData = ""
+				codeData2.State = model.CodeStateSent
+				return nil
+			}
+			if codeData2.SentCodeType == model.SentCodeTypeEmailCode {
+				email, err := c.verifiedLoginEmailForPhone(phoneNumber)
+				if err != nil {
+					return err
+				}
+				if email == "" {
+					return mtproto.ErrEmailNotSetup
+				}
+				return c.sendEmail(email, codeData2)
+			}
 
 			if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
 				codeData2.PhoneCode = code

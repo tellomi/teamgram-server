@@ -94,7 +94,7 @@ Email-only accounts keep the login identity in `users.email` (`users.phone` NULL
 
 `account.sendVerifyEmailCode` / `account.verifyEmail` with `emailVerifyPurposeLoginChange` or `emailVerifyPurposeLoginSetup` return `EMAIL_NOT_ALLOWED` when the address is not that `users.email`, or when it is already another account's `users.email`. The Redis key `tellomi:p0:loginemail:{userId}` is not updated in those cases. Confirming the same identity address is allowed. `auth.recoverPassword` may still store a different cloud-password recovery address in `user_passwords.email`; a refusal to copy that address onto the Redis login key does not abort recovery. No schema migration.
 
-A Redis copy that already differs from `users.email` is left in place. It is not scanned and not rewritten. Before any later `auth.sendCode` stores the identity address again, readers that send mail do not use that copy: `auth.requestPasswordRecovery` on an email-only account with no cloud password returns `PASSWORD_RECOVERY_NA`, and `auth.resetLoginEmail` for a phone account skips a copy that is another account's `users.email`. The 180-second `tellomi:p0:pendingemail` fallback is skipped the same way. Email `auth.resetLoginEmail` sends to the address in the request. `help.getPromoData` drops `SETUP_LOGIN_EMAIL` and `SETUP_LOGIN_EMAIL_NOSKIP`. `login_email_pattern` is only the mask.
+A Redis copy that already differs from `users.email` is left in place. It is not scanned and not rewritten. Before any later `auth.sendCode` stores the identity address again, readers that send mail do not use that copy: `auth.requestPasswordRecovery` on an email-only account with no cloud password returns `PASSWORD_RECOVERY_NA`, and `auth.resetLoginEmail` for a phone account skips a copy that is another account's `users.email`. The 180-second `tellomi:p0:pendingemail` fallback is skipped the same way. Email `auth.resetLoginEmail` sends to the address in the request. `help.getPromoData` drops `SETUP_LOGIN_EMAIL` and `SETUP_LOGIN_EMAIL_NOSKIP`. `login_email_pattern` is a mask of `users.email`, or of the safe Redis login email when `users.email` is empty. It is never the full address.
 
 An empty DSN, a failed `sql.Open`, a failed ping, a missing `users` row, or a non-address in `users.email` is not a confirmed phone account. `account.getPassword` then returns `INTERNAL_SERVER_ERROR` instead of a password object with an empty `login_email_pattern`. Recovery without a cloud password does not mail Redis. A confirmed phone row (NULL email) still may. Cloud-password recovery keeps using `user_passwords.email`.
 
@@ -108,6 +108,22 @@ An empty DSN, a failed `sql.Open`, a failed ping, a missing `users` row, or a no
 `auth.requestFirebaseSms` returns `boolFalse` for a well-formed request. Official Android treats that as "use `auth.resendCode` / `next_type`" (`PLAYINTEGRITY_REQUESTFIREBASESMS_FALSE`). Firebase is not used in mainland China. `PHONE_CODE_EMPTY` and `PHONE_NUMBER_INVALID` are still returned when the request itself is invalid.
 
 `account.sendConfirmPhoneCode` returns `HASH_INVALID` unless a confirmation hash was issued. `account.deleteAccount` still deletes immediately, so production does not mint that hash. When a hash exists, the SMS uses the same Aliyun login template, the 10 second cap, and `SMS_CODE_CREATE_FAILED`.
+
+## Official phone login email
+
+`auth.sendCode` for a real phone returns `auth.sentCodeTypeEmailCode` when that user has a verified login email (Redis `tellomi:p0:loginemail:{userId}`, or `users.email` when the Redis copy is empty). The code is sent with the existing email sender. `auth.signIn` accepts `email_verification` (`emailVerificationCode`) for that phone. Apple and Google tokens are `EMAIL_INVALID`. `TELLOMI_EMAIL_SETUP_REQUIRED` defaults to false. When it is true and the email sender is enabled, a phone with no login email returns `auth.sentCodeTypeSetUpEmailRequired` and no SMS. `account.verifyEmail` with `emailVerifyPurposeLoginSetup` then issues the SMS code inside `account.emailVerifiedLogin`. A disabled mailer ignores the flag and keeps SMS, so the flag cannot lock phone login. A phone that already has a login email does not fall back to SMS when mail is disabled (`EMAIL_NOT_SETUP`).
+
+`emailVerifyPurposeLoginChange` on a confirmed phone account (`users.email` NULL) may store the first login email. Email-only accounts still cannot replace `users.email` (`EMAIL_NOT_ALLOWED`). With no identity hook, a first `LoginChange` is still `EMAIL_NOT_SETUP`. `account.getPassword.login_email_pattern` shows the safe Redis address when `users.email` is empty.
+
+An address verified before the user exists is kept at `tellomi:p0:setupemail:{phone}` for 24 hours. `auth.signUp` copies it to the Redis login email. Legacy email-as-phone login is unchanged: `phone_number` containing `@` still signs in, and those rows stay `users.email` with `users.phone` NULL. No SQL migration.
+
+| Piece | File |
+| --- | --- |
+| phone sendCode / resend / sign-up attach | `app/bff/authorization/internal/core/auth.sendCode_handler.go`, `auth.resendCode_handler.go`, `auth.signUp_handler.go`, `phone_login_email.go` |
+| `auth.signIn` email verification | `app/bff/authorization/internal/core/auth.signIn_handler.go`, `email_code.go` |
+| setup stash, first Settings bind, verified address | `app/bff/codelogin/service.go` |
+| `login_email_pattern` | `app/bff/twofa/password/service.go` |
+| flag wiring | `app/bff/authorization/internal/svc/service_context.go`, `pkg/verify/config.go` |
 
 ## Trace export endpoint
 
