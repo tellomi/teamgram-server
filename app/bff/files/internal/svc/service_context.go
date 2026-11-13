@@ -61,6 +61,7 @@ func NewServiceContext(c config.Config, plugin1 plugin.ThumbFilesPlugin, plugin2
 		Plugin2: plugin2,
 	}
 	if c.Mysql != "" {
+		// No-op when stories already opened this process's story service.
 		if err := story.UseDSN(c.Mysql); err != nil {
 			logx.Errorf("files: story media check disabled: %v", err)
 		}
