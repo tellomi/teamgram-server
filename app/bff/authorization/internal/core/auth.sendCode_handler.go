@@ -374,6 +374,11 @@ func (c *AuthorizationCore) finishSendCode(phoneNumber string, phoneRegistered b
 		return nil
 	}
 
+	handled, err := c.officialPhoneLogin(phoneRegistered, user, codeData2)
+	if err != nil || handled {
+		return err
+	}
+
 	// Dev test ranges (99966XYYYY and any configured prefix) never hit
 	// an SMS gateway. The code is the DC digit repeated, or Code.
 	if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
