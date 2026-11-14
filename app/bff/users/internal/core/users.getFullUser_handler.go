@@ -141,21 +141,15 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 	// Premium is included. Gift prices would open a purchase flow, so they stay empty.
 	userFull.PremiumGifts = nil
-	// Business hours, location, greeting, away message, and intro are public
-	// profile fields. The business RPCs write the same process-local book.
+	// Hours, location, and intro are public. Greeting and away messages
+	// include the recipient and exclude-user lists, so only the owner sees them.
 	// Default admin rights a bot asks for when it is added to a group or channel.
 	// https://core.telegram.org/method/bots.setBotGroupDefaultAdminRights
 	if group, channel := botadmin.DefaultAdminRights(peerId); group != nil || channel != nil {
 		userFull.BotGroupAdminRights = group
 		userFull.BotBroadcastAdminRights = channel
 	}
-	if card := profile.Shared().Card(peerId); card != nil {
-		userFull.BusinessWorkHours = card.WorkHours
-		userFull.BusinessLocation = card.Location
-		userFull.BusinessGreetingMessage = card.Greeting
-		userFull.BusinessAwayMessage = card.Away
-		userFull.BusinessIntro = card.Intro
-	}
+	applyBusinessCard(userFull, c.MD.UserId, peerId, profile.Shared().Card(peerId))
 	mr.FinishVoid(
 		func() {
 			// blocked
