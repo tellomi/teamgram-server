@@ -341,6 +341,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBusinessLocationServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCBusinessOpeningHoursServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCCommunitiesServer(grpcServer, communities_helper.New())
+		communities_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
 		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
 		mtproto.RegisterRPCDiscoverServer(grpcServer, discover_helper.New(c.BizServiceClient))
@@ -530,10 +531,10 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCGatewayVerificationMessagesServer(grpcServer, messages_helper.NewDelivery())
 		// Chat themes, wallpapers, share themes, history import, todos,
 		// fact-checks, AI compose, emoji games, stats URL, suggested posts.
-		mtproto.RegisterRPCThemesServer(grpcServer, messages_helper.NewThemes())
-		mtproto.RegisterRPCWallpapersServer(grpcServer, messages_helper.NewWallpapers())
+		mtproto.RegisterRPCThemesServer(grpcServer, messages_helper.NewThemes(msgCfg))
+		mtproto.RegisterRPCWallpapersServer(grpcServer, messages_helper.NewWallpapers(msgCfg))
 		mtproto.RegisterRPCRingtoneServer(grpcServer, messages_helper.NewRingtones())
-		mtproto.RegisterRPCBusinessConnectedBotsServer(grpcServer, messages_helper.NewConnectedBots())
+		mtproto.RegisterRPCBusinessConnectedBotsServer(grpcServer, messages_helper.NewConnectedBots(msgCfg))
 		mtproto.RegisterRPCShareThemesServer(grpcServer, messages_helper.NewShareThemes())
 		mtproto.RegisterRPCImportedChatsServer(grpcServer, messages_helper.NewImportedChats())
 		mtproto.RegisterRPCTodoListsServer(grpcServer, messages_helper.NewTodoLists(msgCfg))
