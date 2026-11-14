@@ -7,7 +7,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 )
 
-func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID int32) dialog.DialogExtList {
+func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID int32, excludePinned bool) dialog.DialogExtList {
 	if c.svcCtx.Plugin == nil {
 		return keepFolder(list, folderID)
 	}
@@ -16,6 +16,16 @@ func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID in
 		return keepFolder(list, folderID)
 	}
 	c.stampChannelFolders(extras)
+	if excludePinned {
+		kept := extras[:0]
+		for _, ext := range extras {
+			if ext.GetDialog().GetPinned() {
+				continue
+			}
+			kept = append(kept, ext)
+		}
+		extras = kept
+	}
 	have := map[int64]bool{}
 	for _, ext := range extras {
 		if peer := ext.GetDialog().GetPeer(); peer != nil {
@@ -67,21 +77,44 @@ func (c *DialogsCore) stampChannelFolders(list dialog.DialogExtList) {
 	if err != nil || rows == nil {
 		return
 	}
-	folderOf := map[int64]int32{}
-	for _, row := range rows.GetDatas() {
+	applyChannelDialogRows(list, rows.GetDatas())
+}
+
+// applyChannelDialogRows copies the dialogs-table folder and pin onto channel
+// dialogs. The channel store does not keep either bit. A pinned channel was
+// replaced by an unpinned row, so getDialogs neither set pinned nor sorted it
+// first. Pin rank stays on Order; the chat-list sort reads that before date.
+func applyChannelDialogRows(list, rows dialog.DialogExtList) {
+	type saved struct {
+		folder int32
+		pinned bool
+		order  int64
+	}
+	state := map[int64]saved{}
+	for _, row := range rows {
 		peer := row.GetDialog().GetPeer()
-		if peer == nil || peer.GetChannelId() == 0 || row.GetDialog().GetTopMessage() == 0 {
+		if peer == nil || peer.GetChannelId() == 0 {
 			continue
 		}
-		folderOf[peer.GetChannelId()] = row.GetDialog().GetFolderId().GetValue()
+		state[peer.GetChannelId()] = saved{
+			folder: row.GetDialog().GetFolderId().GetValue(),
+			pinned: row.GetDialog().GetPinned(),
+			order:  row.GetOrder(),
+		}
 	}
 	for _, ext := range list {
 		peer := ext.GetDialog().GetPeer()
-		if peer == nil {
+		if peer == nil || ext.GetDialog() == nil {
 			continue
 		}
-		if folderID, ok := folderOf[peer.GetChannelId()]; ok {
-			ext.Dialog.FolderId = mtproto.MakeFlagsInt32(folderID)
+		row, ok := state[peer.GetChannelId()]
+		if !ok {
+			continue
+		}
+		ext.Dialog.FolderId = mtproto.MakeFlagsInt32(row.folder)
+		if row.pinned {
+			ext.Dialog.Pinned = true
+			ext.Order = row.order
 		}
 	}
 }

@@ -708,11 +708,30 @@ func (s *Service) syncDialogRead(ctx context.Context, channelID, userID int64) {
 	if err != nil || st == nil {
 		return
 	}
-	date := int64(ch.Date)
-	if msg, _ := s.store.GetMessage(ctx, channelID, ch.TopMessage); msg != nil {
-		date = int64(msg.Date)
+	top, date := s.liveTop(ctx, channelID, ch.TopMessage)
+	h.Dialog(ctx, userID, channelID, top, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount, int64(date))
+}
+
+// liveTop is the dialog top_message. channels.top_message is the next id
+// counter and stays put when the newest post is deleted, so a dialog that
+// still pointed at that id disappeared from getDialogs until another post
+// arrived. The visible top is the newest message that is still live.
+func (s *Service) liveTop(ctx context.Context, channelID int64, counter int32) (id, date int32) {
+	var created int32
+	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil {
+		created = ch.Date
 	}
-	h.Dialog(ctx, userID, channelID, ch.TopMessage, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount, date)
+	if s == nil || s.store == nil || counter <= 0 {
+		return 0, created
+	}
+	msg, err := s.store.LatestLiveMessage(ctx, channelID, counter)
+	if err != nil || msg == nil || msg.ID == 0 {
+		return 0, created
+	}
+	if msg.Date != 0 {
+		created = msg.Date
+	}
+	return msg.ID, created
 }
 
 // advanceOthersOutbox moves every other member's outbox up to maxID.
@@ -1056,9 +1075,10 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 		}
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
+	top, _ := s.liveTop(ctx, ch.ID, ch.TopMessage)
 	dlg := mtproto.MakeTLDialog(&mtproto.Dialog{
 		Peer:                mtproto.MakePeerChannel(ch.ID),
-		TopMessage:          ch.TopMessage,
+		TopMessage:          top,
 		ReadInboxMaxId:      st.ReadInboxMaxID,
 		ReadOutboxMaxId:     st.ReadOutboxMaxID,
 		UnreadCount:         st.UnreadCount,
@@ -1205,13 +1225,10 @@ func (s *Service) DialogsFor(ctx context.Context, userID int64) ([]DialogRow, er
 		if st == nil {
 			st = &ReadState{}
 		}
-		date := ch.Date
-		if msg, _ := s.store.GetMessage(ctx, ch.ID, ch.TopMessage); msg != nil {
-			date = msg.Date
-		}
+		top, date := s.liveTop(ctx, ch.ID, ch.TopMessage)
 		out = append(out, DialogRow{
 			ChannelID:           ch.ID,
-			TopMessage:          ch.TopMessage,
+			TopMessage:          top,
 			ReadInbox:           st.ReadInboxMaxID,
 			ReadOutbox:          st.ReadOutboxMaxID,
 			Unread:              st.UnreadCount,
@@ -1339,10 +1356,8 @@ func (s *Service) emit(ctx context.Context, actor, actorAuth, channelID int64, b
 	if err != nil {
 		return
 	}
-	date := int64(ch.Date)
-	if msg, _ := s.store.GetMessage(ctx, channelID, ch.TopMessage); msg != nil {
-		date = int64(msg.Date)
-	}
+	top, liveDate := s.liveTop(ctx, channelID, ch.TopMessage)
+	date := int64(liveDate)
 	for _, p := range parts {
 		if p.State != StateNormal {
 			continue
@@ -1359,7 +1374,7 @@ func (s *Service) emit(ctx context.Context, actor, actorAuth, channelID int64, b
 			if st == nil {
 				st = &ReadState{}
 			}
-			h.Dialog(ctx, p.UserID, channelID, ch.TopMessage, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount, date)
+			h.Dialog(ctx, p.UserID, channelID, top, st.ReadInboxMaxID, st.ReadOutboxMaxID, st.UnreadCount, date)
 		}
 	}
 }
