@@ -725,3 +725,23 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Channel admin rights (ISSUE-S-UNAME-ADMIN-001, DISCUSSION-ADMIN-001, ADMIN-HIDE-MEMBERS-001, ADMIN-DIRECT-001, CHAN-SUBLIST-001)
+
+`channels.updateUsername` treated `change_info` as enough to publish a username. `channelFull.can_set_username` was already creator-only, and that is the gate clients show. The RPC now matches it.
+
+`channels.setDiscussionGroup` allowed only the broadcast creator. An admin with `change_info` and `manage_linked_peers` on both sides was `CHAT_ADMIN_REQUIRED`, and `manage_linked_peers` (flag 19) was dropped when admin rights were stored. The bit is kept, and both the channel and the supergroup require the creator or those two rights.
+
+`channels.toggleParticipantsHidden` was creator-only. `change_info` is enough, same as `messages.toggleNoForwards`.
+
+`channels.updatePaidMessagesPrice` used the `change_info` gate. On a broadcast, `manage_direct_messages` can turn direct messages on. A megagroup still needs `change_info`.
+
+`channels.getParticipants` returned the full subscriber list to any broadcast member. Broadcast lists are admin-only (`CHAT_ADMIN_REQUIRED`). `channelFull.can_view_participants` follows that. Megagroups still list members unless `participants_hidden` is set.
+
+| Piece | File |
+| --- | --- |
+| username, subscriber list | `app/service/biz/channel/service.go` |
+| discussion link, hide members | `app/service/biz/channel/service_features.go` |
+| direct messages | `app/service/biz/channel/p1.go`, `service_ops.go` |
+| `can_view_participants` | `app/service/biz/channel/convert.go` |
+| `manage_linked_peers` bit | `proto/mtproto/chat_admin_rights.go` |

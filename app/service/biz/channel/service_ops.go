@@ -132,6 +132,43 @@ func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
 	})
 }
 
+// canLinkDiscussion is the channels.setDiscussionGroup gate.
+// The creator qualifies. An admin needs both change_info and
+// manage_linked_peers, on the broadcast and on the megagroup.
+func canLinkDiscussion(p *Participant) bool {
+	if p == nil || !p.InChannel() {
+		return false
+	}
+	if p.IsCreator() {
+		return true
+	}
+	if !p.IsAdmin() {
+		return false
+	}
+	rights := p.adminRights()
+	return rights.CanChangeInfo() && rights.CanManageLinkedPeers()
+}
+
+// canUpdatePaidMessages allows the creator, an admin with change_info,
+// and — on a broadcast — an admin with manage_direct_messages. That last
+// right is what the channel direct-message switch uses.
+func canUpdatePaidMessages(ch *Channel, p *Participant) bool {
+	if p == nil || !p.InChannel() {
+		return false
+	}
+	if p.IsCreator() {
+		return true
+	}
+	if !p.IsAdmin() {
+		return false
+	}
+	rights := p.adminRights()
+	if rights.CanChangeInfo() {
+		return true
+	}
+	return ch != nil && ch.Broadcast && rights.CanManageDirectMessages()
+}
+
 func (s *Service) defaultAllows(ch *Channel, allow func(*mtproto.ChatBannedRights) bool) bool {
 	if ch.DefaultBanned == 0 {
 		return true

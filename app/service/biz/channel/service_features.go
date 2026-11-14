@@ -342,7 +342,9 @@ func (s *Service) ToggleParticipantsHidden(ctx context.Context, self, actorAuth 
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() {
+	// channels.toggleParticipantsHidden needs change_info, same as
+	// messages.toggleNoForwards. The creator always qualifies.
+	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanChangeInfo()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
@@ -781,7 +783,7 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64,
 	if err != nil {
 		return err
 	}
-	if !bp.IsCreator() {
+	if !canLinkDiscussion(bp) {
 		return mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, bCh.ID)
@@ -792,7 +794,7 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64,
 		if err != nil {
 			return err
 		}
-		if !gCh.Megagroup || !gp.IsAdmin() {
+		if !gCh.Megagroup || !canLinkDiscussion(gp) {
 			return mtproto.ErrChatAdminRequired
 		}
 		newID = gCh.ID

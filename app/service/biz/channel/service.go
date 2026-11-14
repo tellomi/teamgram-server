@@ -26,21 +26,23 @@ func validChannelUsername(username string) bool {
 
 func allAdminRights() int32 {
 	return int32(mtproto.MakeChatAdminRightsHelper(&mtproto.ChatAdminRights{
-		ChangeInfo:     true,
-		PostMessages:   true,
-		EditMessages:   true,
-		DeleteMessages: true,
-		BanUsers:       true,
-		InviteUsers:    true,
-		PinMessages:    true,
-		AddAdmins:      true,
-		ManageCall:     true,
-		Other:          true,
-		ManageTopics:   true,
-		ManageRanks:    true,
-		PostStories:    true,
-		EditStories:    true,
-		DeleteStories:  true,
+		ChangeInfo:           true,
+		PostMessages:         true,
+		EditMessages:         true,
+		DeleteMessages:       true,
+		BanUsers:             true,
+		InviteUsers:          true,
+		PinMessages:          true,
+		AddAdmins:            true,
+		ManageCall:           true,
+		Other:                true,
+		ManageTopics:         true,
+		ManageRanks:          true,
+		PostStories:          true,
+		EditStories:          true,
+		DeleteStories:        true,
+		ManageDirectMessages: true,
+		ManageLinkedPeers:    true,
 	}))
 }
 
@@ -211,6 +213,11 @@ func (s *Service) GetParticipants(ctx context.Context, self int64, in *mtproto.I
 		if !ch.Public() {
 			return nil, mtproto.ErrChannelPrivate
 		}
+	}
+	// A broadcast subscriber list is admin-only. Megagroups still list
+	// members unless participants_hidden is on.
+	if ch.Broadcast && (p == nil || !p.IsAdmin()) {
+		return nil, mtproto.ErrChatAdminRequired
 	}
 	if feat := s.features(ctx, ch.ID); feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) {
 		return mtproto.MakeTLChannelsChannelParticipants(&mtproto.Channels_ChannelParticipants{
@@ -701,7 +708,9 @@ func (s *Service) UpdateUsername(ctx context.Context, self, actorAuth int64, in 
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() && !p.adminRights().CanChangeInfo() {
+	// channelFull.can_set_username is creator-only. change_info does not
+	// cover turning a private group into a public one.
+	if !p.IsCreator() {
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	username = strings.TrimSpace(username)
