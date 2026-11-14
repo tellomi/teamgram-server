@@ -648,3 +648,17 @@ No new table. No new production switch.
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
+
+## Business bot bar, quote text, and chat theme service messages
+
+`messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`.
+
+`messages.sendMessage`, `messages.sendMedia`, and `messages.sendMultiMedia` copied `inputReplyToMessage` and dropped `todo_item_id`. `quote_text` was stored without checking it against the original message. A quote that is not the UTF-16 slice at `quote_offset` is `QUOTE_TEXT_INVALID`.
+
+`messages.setChatTheme` and `messages.setChatWallPaper` used to return empty updates. The handlers now post `messageActionSetChatTheme` and `messageActionSetChatWallPaper` through `messenger.msg`, so both sides of the dialog receive the service message.
+
+| Piece | File |
+| --- | --- |
+| peer settings bar | `messages.getPeerSettings_handler.go`, `users.getFullUser_handler.go` |
+| quote and todo item | `reply_peer.go`, `reply_quote.go`, sendMessage / sendMedia / sendMultiMedia |
+| theme and wallpaper post | `p1_rest.go`, `chat_decor.go` |

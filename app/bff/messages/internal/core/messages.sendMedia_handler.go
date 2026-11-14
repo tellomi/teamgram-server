@@ -140,7 +140,11 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	} else if in.GetReplyTo() != nil {
 		switch in.ReplyTo.PredicateName {
 		case mtproto.Predicate_inputReplyToMessage:
-			outMessage.ReplyTo = replyHeaderFromInput(c.MD.UserId, peer, in.GetReplyTo())
+			header, qErr := c.replyHeaderChecked(peer, in.GetReplyTo())
+			if qErr != nil {
+				return nil, qErr
+			}
+			outMessage.ReplyTo = header
 		case mtproto.Predicate_inputReplyToStory:
 			// TODO:
 		}

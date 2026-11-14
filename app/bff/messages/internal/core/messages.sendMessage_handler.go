@@ -152,7 +152,11 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		replyTo := in.GetReplyTo()
 		switch in.ReplyTo.PredicateName {
 		case mtproto.Predicate_inputReplyToMessage:
-			outMessage.ReplyTo = replyHeaderFromInput(c.MD.UserId, peer, replyTo)
+			header, err := c.replyHeaderChecked(peer, replyTo)
+			if err != nil {
+				return nil, err
+			}
+			outMessage.ReplyTo = header
 
 		case mtproto.Predicate_inputReplyToStory:
 			// TODO:

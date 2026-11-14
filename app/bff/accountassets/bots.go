@@ -63,6 +63,9 @@ func (s *store) updateBot(self int64, in *mtproto.TLAccountUpdateConnectedBot) (
 	if err != nil {
 		return nil, err
 	}
+	if IsBusinessBot != nil && !IsBusinessBot(botID) {
+		return nil, mtproto.ErrBotBusinessMissing
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u := s.user(self)
@@ -100,16 +103,49 @@ func (s *store) updateBot(self int64, in *mtproto.TLAccountUpdateConnectedBot) (
 
 // ToggleConnectedBotPaused implements account.toggleConnectedBotPaused.
 // https://core.telegram.org/method/account.toggleConnectedBotPaused
+// IsBusinessBot reports whether id is a business bot (user.bot_business).
+// Nil accepts every connected bot. The bff installs a checker when the user
+// service is available; tests leave it nil.
+var IsBusinessBot func(id int64) bool
+
 func ToggleConnectedBotPaused(self int64, peer *mtproto.InputPeer, paused bool) (*mtproto.Bool, error) {
 	key, err := peerKeyOf(self, peer)
 	if err != nil {
 		return nil, err
 	}
+	// The connected bot is paused inside one private chat.
+	if key.kind != "user" || key.id == 0 || key.id == self {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
 	s := shared()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.user(self).paused[key] = paused
+	u := s.users[self]
+	if u == nil || len(u.bots) == 0 {
+		return nil, mtproto.ErrBotNotConnectedYet
+	}
+	if !hasBusinessBot(u) {
+		return nil, mtproto.ErrBotBusinessMissing
+	}
+	u.paused[key] = paused
 	return mtproto.BoolTrue, nil
+}
+
+func hasBusinessBot(u *userState) bool {
+	if u == nil {
+		return false
+	}
+	for _, id := range u.botOrder {
+		link := u.bots[id]
+		if link == nil {
+			continue
+		}
+		if IsBusinessBot != nil && !IsBusinessBot(link.id) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // DisablePeerConnectedBot implements account.disablePeerConnectedBot.
@@ -246,17 +282,90 @@ func cloneRecipients(in *mtproto.BusinessBotRecipients) *mtproto.BusinessBotReci
 }
 
 func botUser(id, access int64) *mtproto.User {
+	// bot and bot_info_version share flags.14. A bot user without the int
+	// makes official clients fail to parse account.connectedBots.
 	return mtproto.MakeTLUser(&mtproto.User{
-		Bot:         true,
-		BotBusiness: true,
-		Id:          id,
-		AccessHash:  wrapperspb.Int64(access),
-		FirstName:   wrapperspb.String("Bot"),
+		Bot:            true,
+		BotBusiness:    true,
+		Id:             id,
+		AccessHash:     wrapperspb.Int64(access),
+		FirstName:      wrapperspb.String("Bot"),
+		BotInfoVersion: wrapperspb.Int32(0),
 	}).To_User()
 }
 
 func connectionID(user, bot int64) string {
 	return fmt.Sprintf("%x-%x", user, bot)
+}
+
+func manageURL(link *botLink) string {
+	if link == nil {
+		return ""
+	}
+	return fmt.Sprintf("https://t.me/bot%d?start=biz_%s", link.id, link.conn)
+}
+
+// ApplyBusinessBar fills the business-bot fields the viewer sees on owner's
+// peerSettings. business_bot_id and business_bot_manage_url share flags.13,
+// so both are set together. The returned user is the bot, for the users vector.
+// https://core.telegram.org/constructor/peerSettings
+func ApplyBusinessBar(owner, viewer int64, settings *mtproto.PeerSettings) *mtproto.User {
+	if settings == nil || owner == 0 || viewer == 0 || owner == viewer {
+		return nil
+	}
+	s := shared()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.users[owner]
+	if u == nil {
+		return nil
+	}
+	key := peerKey{kind: "user", id: viewer}
+	if _, off := u.disabled[key]; off {
+		return nil
+	}
+	for _, id := range u.botOrder {
+		link := u.bots[id]
+		if link == nil || !covers(link, viewer) {
+			continue
+		}
+		if IsBusinessBot != nil && !IsBusinessBot(link.id) {
+			continue
+		}
+		paused := u.paused[key]
+		settings.BusinessBotId = wrapperspb.Int64(link.id)
+		settings.BusinessBotManageUrl = wrapperspb.String(manageURL(link))
+		settings.BusinessBotPaused = paused
+		settings.BusinessBotCanReply = link.rights.GetReply() && !paused
+		return botUser(link.id, link.access)
+	}
+	return nil
+}
+
+func covers(link *botLink, viewer int64) bool {
+	if link == nil || link.recipients == nil || viewer == 0 {
+		return false
+	}
+	r := link.recipients
+	for _, id := range r.ExcludeUsers {
+		if id == viewer {
+			return false
+		}
+	}
+	listed := false
+	for _, id := range r.Users {
+		if id == viewer {
+			listed = true
+			break
+		}
+	}
+	if r.ExcludeSelected && listed {
+		return false
+	}
+	if r.ExistingChats || r.NewChats || r.Contacts || r.NonContacts {
+		return true
+	}
+	return listed && !r.ExcludeSelected
 }
 
 // BotBusinessConnection implements account.getBotBusinessConnection.

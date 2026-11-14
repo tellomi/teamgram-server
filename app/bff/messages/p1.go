@@ -7,6 +7,7 @@ import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
@@ -223,16 +224,61 @@ func NewPaidMedia() *service.PaidMediaService { return &service.PaidMediaService
 func NewDelivery() *service.DeliveryService { return &service.DeliveryService{} }
 
 // NewThemes serves messages.setChatTheme and the account theme RPCs.
-func NewThemes() *service.ThemesService { return &service.ThemesService{} }
+// A config with a messenger client posts messageActionSetChatTheme into the
+// dialog. NewThemes() with no config keeps the local updates box.
+func NewThemes(c ...Config) *service.ThemesService {
+	s := &service.ThemesService{}
+	if len(c) > 0 && rpcReady(c[0].MsgClient) {
+		s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+	}
+	return s
+}
 
 // NewWallpapers serves messages.setChatWallPaper and the account wallpaper RPCs.
-func NewWallpapers() *service.WallpapersService { return &service.WallpapersService{} }
+func NewWallpapers(c ...Config) *service.WallpapersService {
+	s := &service.WallpapersService{}
+	if len(c) > 0 && rpcReady(c[0].MsgClient) {
+		s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+	}
+	return s
+}
+
+func rpcReady(c zrpc.RpcClientConf) bool {
+	return len(c.Endpoints) > 0 || len(c.Etcd.Hosts) > 0 || c.Target != ""
+}
 
 // NewRingtones serves account.getSavedRingtones, account.saveRingtone, and account.uploadRingtone.
 func NewRingtones() *service.RingtoneService { return &service.RingtoneService{} }
 
 // NewConnectedBots serves the connected business-bot RPCs.
-func NewConnectedBots() *service.ConnectedBotsService { return &service.ConnectedBotsService{} }
+// When the user service is configured, only a user with bot_business set
+// can be connected. Without that client, a positive user id is accepted.
+func NewConnectedBots(c ...Config) *service.ConnectedBotsService {
+	if len(c) > 0 && rpcReady(c[0].UserClient) {
+		users := user_client.NewUserClient(rpcx.GetCachedRpcClient(c[0].UserClient))
+		accountassets.IsBusinessBot = func(id int64) bool {
+			return userIsBusinessBot(users, id)
+		}
+	}
+	return &service.ConnectedBotsService{}
+}
+
+func userIsBusinessBot(users user_client.UserClient, id int64) bool {
+	if users == nil || id == 0 {
+		return false
+	}
+	got, err := users.UserGetMutableUsers(context.Background(), &user.TLUserGetMutableUsers{
+		Id: []int64{id},
+	})
+	if err != nil || got == nil {
+		return false
+	}
+	u, ok := got.GetImmutableUser(id)
+	if !ok || u == nil || u.User == nil || u.User.Bot == nil {
+		return false
+	}
+	return u.User.Bot.GetBotBusiness()
+}
 
 // NewShareThemes serves messages.setShareTheme and messages.getShareThemeBackdrops.
 func NewShareThemes() *service.ShareThemesService { return &service.ShareThemesService{} }

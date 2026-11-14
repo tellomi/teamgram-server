@@ -34,6 +34,17 @@ func TestReplyToAnotherChatKeepsTheQuote(t *testing.T) {
 	if same.GetQuoteText().GetValue() != "hello" || same.GetReplyToMsgId() != 15 {
 		t.Fatalf("same-dialog quote %+v", same)
 	}
+	if same.GetTodoItemId().GetValue() != 0 {
+		t.Fatal("todo id was invented")
+	}
+	withItem := mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
+		ReplyToMsgId: 15,
+		TodoItemId:   wrapperspb.Int32(3),
+	}).To_InputReplyTo()
+	itemHeader := replyHeaderFromInput(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), withItem)
+	if itemHeader.GetTodoItemId().GetValue() != 3 {
+		t.Fatalf("todo item id dropped %+v", itemHeader)
+	}
 }
 
 func TestDropAuthorClearsFwdFrom(t *testing.T) {
