@@ -26,7 +26,6 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // MessagesUpdatePinnedMessage
@@ -85,11 +84,13 @@ func (c *MessagesCore) rememberPin(peer *mtproto.PeerUtil, id int32, unpin bool)
 	if unpin {
 		pinned = 0
 	}
-	_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(c.ctx, &dialog.TLDialogInsertOrUpdateDialog{
+	// Update the existing dialog only. InsertOrUpdate would set deleted=0 and
+	// put a channel the pinner has already removed back into the chat list.
+	_, _ = c.svcCtx.Dao.DialogClient.DialogUpdateUserPinnedMessage(c.ctx, &dialog.TLDialogUpdateUserPinnedMessage{
 		UserId:      c.MD.UserId,
 		PeerType:    peer.PeerType,
 		PeerId:      peer.PeerId,
-		PinnedMsgId: &wrapperspb.Int32Value{Value: pinned},
+		PinnedMsgId: pinned,
 	})
 }
 

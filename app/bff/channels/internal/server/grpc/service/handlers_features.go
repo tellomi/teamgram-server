@@ -423,6 +423,11 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 		catalog.Must().NoteReaction(self, emos)
 		return up, nil
 	}
+	if peer != nil && peer.IsChat() {
+		if err := s.requireGroupReaction(ctx, self, peer, in.GetMsgId()); err != nil {
+			return nil, err
+		}
+	}
 	before := authorReactionUnread(ctx, self, peer, in.GetMsgId())
 	groupBefore := s.groupReactionUnread(ctx, self, peer, in.GetMsgId())
 	up, err := chatbox.Shared().React(ctx, self, peer, in.GetMsgId(), emos, docs, in.GetBig())
@@ -434,7 +439,7 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 	s.pushPeerReaction(ctx, self, peer, in.GetMsgId())
 	s.pushOwnOtherSessions(ctx, self, up)
 	if peer != nil && peer.IsChat() {
-		s.noteGroupReactionUnread(ctx, peer, in.GetMsgId(), groupBefore)
+		s.noteGroupReactionUnread(ctx, self, peer, in.GetMsgId(), groupBefore)
 	} else {
 		s.addUnreadReactions(ctx, reactionAuthor(ctx, self, peer, in.GetMsgId()), mtproto.PEER_USER, self, unreadDelta(before, after))
 	}
@@ -456,19 +461,47 @@ func (s ReactionsService) groupReactionUnread(ctx context.Context, self int64, p
 		if id == 0 || id == self {
 			continue
 		}
-		out[id] = chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, msgID)
+		out[id] = chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, chatbox.Shared().BoxIDFor(ctx, self, peer, msgID, id))
 	}
 	return out
 }
 
-func (s ReactionsService) noteGroupReactionUnread(ctx context.Context, peer *mtproto.PeerUtil, msgID int32, before map[int64]bool) {
+func (s ReactionsService) noteGroupReactionUnread(ctx context.Context, reactor int64, peer *mtproto.PeerUtil, msgID int32, before map[int64]bool) {
 	if peer == nil {
 		return
 	}
 	for id, was := range before {
-		now := chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, msgID)
+		box := chatbox.Shared().BoxIDFor(ctx, reactor, peer, msgID, id)
+		now := chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, box)
 		s.addUnreadReactions(ctx, id, peer.PeerType, peer.PeerId, unreadDelta(was, now))
 	}
+}
+
+// requireGroupReaction refuses a basic-group reaction from someone who is
+// not a current member, or who does not have that message in their own box.
+func (s ReactionsService) requireGroupReaction(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) error {
+	if peer == nil || !peer.IsChat() {
+		return nil
+	}
+	if s.Chats != nil {
+		list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+		if err != nil {
+			return err
+		}
+		member := false
+		if list != nil {
+			for _, id := range list.GetDatas() {
+				if id == self {
+					member = true
+					break
+				}
+			}
+		}
+		if !member {
+			return mtproto.ErrUserNotParticipant
+		}
+	}
+	return s.requirePrivateMessage(ctx, self, peer, msgID)
 }
 
 func unreadDelta(before, after bool) int32 {
@@ -609,7 +642,7 @@ func (s ReactionsService) pushGroupReactions(ctx context.Context, self int64, pe
 		if id == 0 || id == self {
 			continue
 		}
-		up := chatbox.Shared().GroupReactionUpdateFor(ctx, id, peer, msgID)
+		up := chatbox.Shared().GroupReactionUpdateFor(ctx, self, id, peer, msgID)
 		if up == nil {
 			continue
 		}
