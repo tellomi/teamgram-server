@@ -86,6 +86,50 @@ func (c *MsgCore) deleteUserHistory(in *msg.TLMsgDeleteHistory) (*mtproto.Messag
 			return nil, err
 		}
 	}
+	// A had already deleted these messages for themselves, so they are not
+	// in this page and the dialog-id revoke above does not see them.
+	// revoke still removes the whole chat for the other participant.
+	if in.GetRevoke() && in.UserId != in.PeerId && in.PeerType == mtproto.PEER_USER && !q.JustClear && !q.HasDates() && c.svcCtx.Dao.InboxClient != nil {
+		mapped := int32(0)
+		if in.GetMaxId() > 0 && in.GetMaxId() < math.MaxInt32 {
+			var mapErr error
+			mapped, mapErr = c.svcCtx.Dao.PeerBoxIncludingDeleted(c.ctx, in.PeerId, in.UserId, in.GetMaxId())
+			if mapErr != nil {
+				c.Logger.Errorf("msg.deleteHistory - peer box: %v", mapErr)
+				mapped = 0
+			}
+		}
+		peerMax := deletehistory.RevokePeerCap(in.GetMaxId(), mapped, len(ids) > 0)
+		req := &inbox.TLInboxDeleteUserHistoryToInbox{
+			FromId:     in.UserId,
+			PeerUserId: in.PeerId,
+			JustClear:  false,
+			MaxId:      peerMax,
+		}
+		if peerMax < 0 {
+			date, dateErr := c.svcCtx.Dao.CallerMessageDate(c.ctx, in.UserId, in.GetMaxId())
+			if dateErr != nil {
+				c.Logger.Errorf("msg.deleteHistory - caller date: %v", dateErr)
+				return nil, dateErr
+			}
+			bound := deletehistory.RevokePeerDateBound(date)
+			if bound <= 0 || bound > math.MaxInt32 {
+				// No peer id and no time. An unbounded max_id would delete
+				// messages the peer received after this one.
+				req = nil
+			} else {
+				req.MaxId = math.MaxInt32
+				req.MaxDateSet = true
+				req.MaxDate = int32(bound)
+			}
+		}
+		if req != nil {
+			if _, err = c.svcCtx.Dao.InboxClient.InboxDeleteUserHistoryToInbox(c.ctx, req); err != nil {
+				c.Logger.Errorf("msg.deleteHistory - revoke history: %v", err)
+				return nil, err
+			}
+		}
+	}
 	if len(ids) > 0 {
 		if _, err = c.svcCtx.Dao.DeleteByMessageIdList(c.ctx, in.UserId, ids); err != nil {
 			c.Logger.Errorf("msg.deleteHistory - error: %v", err)

@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 )
 
 // MessagesToggleNoForwards
@@ -32,6 +33,13 @@ func (c *MessagesCore) MessagesToggleNoForwards(in *mtproto.TLMessagesToggleNoFo
 		rUpdates *mtproto.Updates
 	)
 
+	if peer.IsUser() && !peer.IsSelfUser(c.MD.UserId) && peer.PeerId != 0 {
+		if err := chatbox.Shared().SetContentProtected(c.ctx, c.MD.UserId, peer.PeerId, mtproto.FromBool(in.Enabled)); err != nil {
+			c.Logger.Errorf("messages.toggleNoForwards - error: %v", err)
+			return nil, err
+		}
+		return mtproto.MakeUpdatesByUpdates(), nil
+	}
 	if peer.IsChannel() {
 		return channel.Shared().ToggleNoForwards(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, mtproto.MakeTLInputChannel(&mtproto.InputChannel{
 			ChannelId:  peer.PeerId,

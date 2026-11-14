@@ -46,8 +46,13 @@ func TestToggleNoForwardsRejectsForward(t *testing.T) {
 	}
 	userPeer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 2}).To_InputPeer()
 	owner := &MessagesCore{ctx: ctx, Logger: logx.WithContext(ctx), MD: &metadata.RpcMetadata{UserId: 1, PermAuthKeyId: 8}}
-	if _, err := owner.MessagesToggleNoForwards(&mtproto.TLMessagesToggleNoForwards{Peer: userPeer, Enabled: mtproto.BoolTrue}); status.Convert(err).Message() != "PEER_ID_INVALID" {
-		t.Fatalf("user peer: %v", err)
+	if _, err := owner.MessagesToggleNoForwards(&mtproto.TLMessagesToggleNoForwards{Peer: userPeer, Enabled: mtproto.BoolTrue}); err != nil {
+		t.Fatalf("private chat: %v", err)
+	}
+	if _, err := owner.MessagesToggleNoForwards(&mtproto.TLMessagesToggleNoForwards{
+		Peer: mtproto.MakeTLInputPeerEmpty(&mtproto.InputPeer{}).To_InputPeer(), Enabled: mtproto.BoolTrue,
+	}); status.Convert(err).Message() != "PEER_ID_INVALID" {
+		t.Fatalf("empty peer: %v", err)
 	}
 	up, err := owner.MessagesToggleNoForwards(&mtproto.TLMessagesToggleNoForwards{Peer: peer, Enabled: mtproto.BoolTrue})
 	if err != nil {
