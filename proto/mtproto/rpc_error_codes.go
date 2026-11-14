@@ -2346,6 +2346,16 @@ var (
 	// | 400 | BOT_NOT_CONNECTED_YET | No business bot is connected to the currently logged in user. |
 	// https://core.telegram.org/method/account.disablePeerConnectedBot
 	ErrBotNotConnectedYet = status.Error(ErrBadRequest, "BOT_NOT_CONNECTED_YET")
+
+	// ErrQuoteTextInvalid
+	// | 400 | QUOTE_TEXT_INVALID | The specified quote text is not a substring of the original message. |
+	// https://core.telegram.org/method/messages.sendMessage
+	ErrQuoteTextInvalid = status.Error(ErrBadRequest, "QUOTE_TEXT_INVALID")
+
+	// ErrImportNotAvailable
+	// | 400 | IMPORT_NOT_AVAILABLE | Chat history import is not available.
+	// https://core.telegram.org/method/messages.initHistoryImport
+	ErrImportNotAvailable = status.Error(ErrBadRequest, "IMPORT_NOT_AVAILABLE")
 )
 
 // 401 UNAUTHORIZED

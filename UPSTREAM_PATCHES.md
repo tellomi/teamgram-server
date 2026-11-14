@@ -649,6 +649,20 @@ No new table. No new production switch.
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
 
+## Business bot bar, quote text, and chat theme service messages
+
+`messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`. The overlay follows `businessBotRecipients`: a category matches only when the viewer really is a contact, a non-contact, an existing private chat, or a new private chat. `users` adds people unless `exclude_selected` is set, in which case those people are removed. `exclude_users` never sees the bar. A category whose lookup failed does not match.
+
+`messages.sendMessage`, `messages.sendMedia`, and `messages.sendMultiMedia` copied `inputReplyToMessage` and dropped `todo_item_id`. `quote_text` was stored without checking it against the original message. A quote that is not the UTF-16 slice at `quote_offset` is `QUOTE_TEXT_INVALID`.
+
+`messages.setChatTheme` and `messages.setChatWallPaper` used to return empty updates. The handlers now post `messageActionSetChatTheme` and `messageActionSetChatWallPaper` through `messenger.msg`, so both sides of the dialog receive the service message.
+
+| Piece | File |
+| --- | --- |
+| peer settings bar | `messages.getPeerSettings_handler.go`, `users.getFullUser_handler.go` |
+| quote and todo item | `reply_peer.go`, `reply_quote.go`, sendMessage / sendMedia / sendMultiMedia |
+| theme and wallpaper post | `p1_rest.go`, `chat_decor.go` |
+
 ## Live photos (layer 232) (ISSUE-S-PHOTO-LIVE-001)
 
 The official iOS and Android clients send a live photo as a photo plus a separately uploaded video document. A single send is `messages.sendMedia(inputMediaUploadedPhoto{live_photo, file, video})`. The iOS album path calls `messages.uploadMedia` with that media first, then sends `messages.sendMultiMedia` with `inputMediaPhoto{live_photo, id, video}`. The recipient reads `messageMediaPhoto.video`. iOS marks the image as live only when that field is present.

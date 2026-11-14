@@ -18,8 +18,14 @@ func TestChatTheme(t *testing.T) {
 		Theme: mtproto.MakeTLInputChatTheme(&mtproto.InputChatTheme{Emoticon: "🎄"}).To_InputChatTheme(),
 	}
 	up, err := SetChatTheme(1, in)
-	if err != nil || up.GetPredicateName() != mtproto.Predicate_updates {
+	if err != nil || up.GetPredicateName() != mtproto.Predicate_updates || serviceActionName(up) != mtproto.Predicate_messageActionSetChatTheme {
 		t.Fatalf("set: %v %#v", err, up)
+	}
+	if _, err := SetChatTheme(7, &mtproto.TLMessagesSetChatTheme{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 1, AccessHash: 1}).To_InputPeer(),
+		Theme: in.GetTheme(),
+	}); status.Convert(err).Message() != "EMOJI_NOT_MODIFIED" {
+		t.Fatalf("peer theme: %v", err)
 	}
 	if _, err := SetChatTheme(1, in); status.Convert(err).Message() != "EMOJI_NOT_MODIFIED" {
 		t.Fatalf("same: %v", err)
@@ -40,11 +46,30 @@ func TestWallpaper(t *testing.T) {
 	}
 	up, err := SetChatWallPaper(1, &mtproto.TLMessagesSetChatWallPaper{
 		Peer:      peer,
+		ForBoth:   true,
 		Wallpaper: mtproto.MakeTLInputWallPaperSlug(&mtproto.InputWallPaper{Slug: "ocean"}).To_InputWallPaper(),
 	})
-	if err != nil || len(up.GetUpdates()) != 1 || up.Updates[0].GetPredicateName() != mtproto.Predicate_updatePeerWallpaper {
+	if err != nil || serviceActionName(up) != mtproto.Predicate_messageActionSetChatWallPaper {
 		t.Fatalf("set: %v %#v", err, up)
 	}
+	var action *mtproto.MessageAction
+	for _, u := range up.GetUpdates() {
+		if a := u.GetMessage_MESSAGE().GetAction(); a != nil {
+			action = a
+		}
+	}
+	if action == nil || !action.GetForBoth() || action.GetWallpaper() == nil {
+		t.Fatalf("wallpaper action %#v", action)
+	}
+}
+
+func serviceActionName(up *mtproto.Updates) string {
+	for _, u := range up.GetUpdates() {
+		if a := u.GetMessage_MESSAGE().GetAction(); a != nil {
+			return a.GetPredicateName()
+		}
+	}
+	return ""
 }
 
 func TestHistoryImport(t *testing.T) {
@@ -68,28 +93,25 @@ func TestHistoryImport(t *testing.T) {
 	if _, err := InitHistoryImport(1, &mtproto.TLMessagesInitHistoryImport{Peer: peer}); status.Convert(err).Message() != "IMPORT_FILE_INVALID" {
 		t.Fatalf("file: %v", err)
 	}
-	job, err := InitHistoryImport(1, &mtproto.TLMessagesInitHistoryImport{
+	if _, err := InitHistoryImport(1, &mtproto.TLMessagesInitHistoryImport{
 		Peer:       peer,
 		File:       mtproto.MakeTLInputFile(&mtproto.InputFile{Id_INT64: 4, Parts: 1, Name: "chat.json"}).To_InputFile(),
 		MediaCount: 1,
-	})
-	if err != nil || job.GetId() == 0 {
-		t.Fatalf("init: %v %#v", err, job)
+	}); status.Convert(err).Message() != "IMPORT_NOT_AVAILABLE" {
+		t.Fatalf("init: %v", err)
 	}
-	media, err := UploadImportedMedia(1, &mtproto.TLMessagesUploadImportedMedia{
+	if _, err := UploadImportedMedia(1, &mtproto.TLMessagesUploadImportedMedia{
 		Peer:     peer,
-		ImportId: job.GetId(),
+		ImportId: 1,
 		FileName: "a.jpg",
 		Media:    mtproto.MakeTLInputMediaPhoto(&mtproto.InputMedia{}).To_InputMedia(),
-	})
-	if err != nil || media.GetPredicateName() != mtproto.Predicate_messageMediaEmpty {
-		t.Fatalf("upload: %v %#v", err, media)
+	}); status.Convert(err).Message() != "IMPORT_NOT_AVAILABLE" {
+		t.Fatalf("upload: %v", err)
 	}
-	ok, err := StartHistoryImport(1, &mtproto.TLMessagesStartHistoryImport{Peer: peer, ImportId: job.GetId()})
-	if err != nil || ok != mtproto.BoolTrue {
-		t.Fatalf("start: %v %#v", err, ok)
+	if _, err := StartHistoryImport(1, &mtproto.TLMessagesStartHistoryImport{Peer: peer, ImportId: 1}); status.Convert(err).Message() != "IMPORT_NOT_AVAILABLE" {
+		t.Fatalf("start: %v", err)
 	}
-	if _, err := StartHistoryImport(1, &mtproto.TLMessagesStartHistoryImport{Peer: peer, ImportId: 99}); status.Convert(err).Message() != "IMPORT_ID_INVALID" {
+	if _, err := StartHistoryImport(1, &mtproto.TLMessagesStartHistoryImport{Peer: peer}); status.Convert(err).Message() != "IMPORT_ID_INVALID" {
 		t.Fatalf("id: %v", err)
 	}
 }

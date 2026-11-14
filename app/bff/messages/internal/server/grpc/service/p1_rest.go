@@ -6,28 +6,39 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/aicompose"
 	"github.com/teamgram/teamgram-server/app/bff/messages/p1rest"
+	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 )
 
 // ThemesService serves messages.setChatTheme and the account theme RPCs.
 // https://core.telegram.org/api/themes
 type ThemesService struct {
 	mtproto.UnimplementedRPCThemesServer
+	Msg msg_client.MsgClient
 }
 
-func (ThemesService) MessagesSetChatTheme(ctx context.Context, in *mtproto.TLMessagesSetChatTheme) (*mtproto.Updates, error) {
-	self, _ := selfID(ctx)
-	return p1rest.SetChatTheme(self, in)
+func (s ThemesService) MessagesSetChatTheme(ctx context.Context, in *mtproto.TLMessagesSetChatTheme) (*mtproto.Updates, error) {
+	self, auth := selfID(ctx)
+	local, err := p1rest.SetChatTheme(self, in)
+	if err != nil {
+		return nil, err
+	}
+	return deliverService(ctx, s.Msg, self, auth, in.GetPeer(), local)
 }
 
 // WallpapersService serves messages.setChatWallPaper and the account wallpaper RPCs.
 // https://core.telegram.org/api/wallpapers
 type WallpapersService struct {
 	mtproto.UnimplementedRPCWallpapersServer
+	Msg msg_client.MsgClient
 }
 
-func (WallpapersService) MessagesSetChatWallPaper(ctx context.Context, in *mtproto.TLMessagesSetChatWallPaper) (*mtproto.Updates, error) {
-	self, _ := selfID(ctx)
-	return p1rest.SetChatWallPaper(self, in)
+func (s WallpapersService) MessagesSetChatWallPaper(ctx context.Context, in *mtproto.TLMessagesSetChatWallPaper) (*mtproto.Updates, error) {
+	self, auth := selfID(ctx)
+	local, err := p1rest.SetChatWallPaper(self, in)
+	if err != nil {
+		return nil, err
+	}
+	return deliverService(ctx, s.Msg, self, auth, in.GetPeer(), local)
 }
 
 // ShareThemesService serves messages.setShareTheme and messages.getShareThemeBackdrops.

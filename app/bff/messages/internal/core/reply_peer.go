@@ -20,6 +20,9 @@ func replyHeaderFromInput(self int64, dest *mtproto.PeerUtil, in *mtproto.InputR
 		header.QuoteEntities = in.GetQuoteEntities()
 		header.QuoteOffset = in.GetQuoteOffset()
 	}
+	if in.GetTodoItemId() != nil {
+		header.TodoItemId = in.GetTodoItemId()
+	}
 	if top := in.GetTopMsgId(); top != nil {
 		header.ReplyToTopId = top
 	}
