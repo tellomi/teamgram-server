@@ -130,11 +130,6 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	outMessage.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
 	outMessage.EditHide = false
 
-	// entities
-	if in.Entities != nil {
-		outMessage.Entities = in.Entities
-	}
-
 	// reply_markup
 	if in.ReplyMarkup != nil {
 		outMessage.ReplyMarkup = in.ReplyMarkup
@@ -158,8 +153,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			c.Logger.Errorf("message empty: %v", err)
 			return nil, err
 		}
-		outMessage.Message = in.Message.Value
-		outMessage.Entities = nil
+		applyEditEntities(outMessage, in.Message, in.Entities)
 		refreshInternalPreview(c, in.NoWebpage, in.Media != nil, outMessage)
 		//outMessage, _ = c.fixMessageEntities(c.MD.UserId, peer, in.NoWebpage, outMessage, func() bool {
 		//	hasBot := c.MD.IsBot
@@ -172,8 +166,13 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		//
 		//	return hasBot
 		//})
-	} else if in.NoWebpage {
-		refreshInternalPreview(c, true, in.Media != nil, outMessage)
+	} else {
+		if in.Entities != nil {
+			applyEditEntities(outMessage, nil, in.Entities)
+		}
+		if in.NoWebpage {
+			refreshInternalPreview(c, true, in.Media != nil, outMessage)
+		}
 	}
 
 	rUpdates, err := c.svcCtx.Dao.MsgClient.MsgEditMessageV2(c.ctx, &msgpb.TLMsgEditMessageV2{

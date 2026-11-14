@@ -79,6 +79,13 @@
     "live_a": {"number": "9996610241", "code": "11111"},
     "live_b": {"number": "9996610242", "code": "11111"},
     "comm_a": {"number": "9996610321", "code": "11111"},
-    "comm_b": {"number": "9996610322", "code": "11111"}
+    "comm_b": {"number": "9996610322", "code": "11111"},
+    "nsem_a": {"number": "9996610331", "code": "11111"},
+    "nsem_b": {"number": "9996610332", "code": "11111"},
+    "ttlfix_a": {"number": "9996610333", "code": "11111"},
+    "ttlfix_b": {"number": "9996610334", "code": "11111"},
+    "color_a": {"number": "9996610335", "code": "11111"},
+    "storyblk_a": {"number": "9996610336", "code": "11111"},
+    "storyblk_b": {"number": "9996610337", "code": "11111"}
   }
 }

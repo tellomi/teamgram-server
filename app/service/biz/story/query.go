@@ -574,11 +574,16 @@ func (s *Service) ViewsList(ctx context.Context, q ViewsQuery) (*mtproto.Stories
 		end = len(shown)
 	}
 	page := shown[offset:end]
+	ownerID := int64(0)
+	if q.Owner.Kind == KindUser {
+		ownerID = q.Owner.ID
+	}
 	outViews := make([]*mtproto.StoryView, 0, len(page))
 	for _, v := range page {
 		sv := mtproto.MakeTLStoryView(&mtproto.StoryView{
-			UserId: v.UserID,
-			Date:   v.Date,
+			UserId:               v.UserID,
+			Date:                 v.Date,
+			BlockedMyStoriesFrom: ownerID != 0 && s.storyBlockedFrom(ctx, ownerID, v.UserID),
 		}).To_StoryView()
 		if v.Reaction != "" {
 			sv.Reaction = mtproto.FromReaction(v.Reaction)

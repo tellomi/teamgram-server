@@ -70,8 +70,18 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if _, err := svc.MessageEditData(ctx, 3, ch.Id, msgID); err != mtproto.ErrMessageAuthorRequired {
 		t.Fatalf("other member: %v", err)
 	}
-	if caption, err := svc.MessageEditData(ctx, 1, ch.Id, msgID); err != nil || !caption {
-		t.Fatalf("creator edit data %v %v", caption, err)
+	// A supergroup owner cannot edit a member's message. getMessageEditData
+	// uses the same rule as messages.editMessage.
+	if _, err := svc.MessageEditData(ctx, 1, ch.Id, msgID); err != mtproto.ErrMessageAuthorRequired {
+		t.Fatalf("creator edit of a member message: %v", err)
+	}
+	own, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{RandomID: 18, Message: photo}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownID := own.Updates[0].GetMessage_MESSAGE().GetId()
+	if caption, err = svc.MessageEditData(ctx, 1, ch.Id, ownID); err != nil || !caption {
+		t.Fatalf("creator own caption %v %v", caption, err)
 	}
 	plain, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 9, Message: &mtproto.Message{Message: "text", Date: 21}}})
 	if err != nil {

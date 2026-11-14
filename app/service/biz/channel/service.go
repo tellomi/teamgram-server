@@ -876,6 +876,18 @@ func filterParticipants(all []*Participant, filter, q string) []*Participant {
 	return out
 }
 
+// listedAsBanned is the channels.getParticipants banned filter.
+// A timed mute whose until_date has passed is a normal member.
+func listedAsBanned(p *Participant, now int32) bool {
+	if p == nil {
+		return false
+	}
+	if p.State == StateKicked {
+		return true
+	}
+	return p.Role == RoleBanned && mtproto.IssuedBannedRights(p.BannedRights, now) != nil
+}
+
 func matchParticipant(p *Participant, filter, q string) bool {
 	switch filter {
 	case mtproto.Predicate_channelParticipantsAdmins:
@@ -883,7 +895,7 @@ func matchParticipant(p *Participant, filter, q string) bool {
 	case mtproto.Predicate_channelParticipantsKicked:
 		return p.State == StateKicked && (q == "" || strings.Contains(itoa64(p.UserID), q))
 	case mtproto.Predicate_channelParticipantsBanned:
-		if !(p.Role == RoleBanned || p.State == StateKicked) {
+		if !listedAsBanned(p, int32(time.Now().Unix())) {
 			return false
 		}
 		return q == "" || strings.Contains(itoa64(p.UserID), q) || strings.Contains(strings.ToLower(p.Rank), q)

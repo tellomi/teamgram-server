@@ -91,10 +91,13 @@ func emojiStatusList(hash int64) *mtproto.Account_EmojiStatuses {
 }
 
 func (c *PremiumCore) AccountUpdateColor(in *mtproto.TLAccountUpdateColor) (*mtproto.Bool, error) {
-	if c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || c.MD == nil {
+	colorID, emoji, hasColor := selectedColor(in)
+	if hasColor && !knownPeerColor(in.GetForProfile(), colorID) {
+		return nil, mtproto.ErrColorInvalid
+	}
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || c.MD == nil {
 		return nil, mtproto.ErrInternalServerError
 	}
-	colorID, emoji, hasColor := selectedColor(in)
 	feature := premium.FeatureNameColor
 	if in.GetForProfile() {
 		feature = premium.FeatureProfileColor

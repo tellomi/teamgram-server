@@ -5,6 +5,8 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/premium"
+
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -54,6 +56,33 @@ func colorLuma(c int32) float64 {
 	g := float64((c>>8)&0xff) / 255
 	b := float64(c&0xff) / 255
 	return 0.2126*r + 0.7152*g + 0.0722*b
+}
+
+func TestKnownPeerColorRejects999(t *testing.T) {
+	if !knownPeerColor(false, 0) || !knownPeerColor(false, int32(len(nameColors)-1)) {
+		t.Fatal("name color ids from help.getPeerColors were rejected")
+	}
+	if knownPeerColor(false, 999) || knownPeerColor(false, int32(len(nameColors))) || knownPeerColor(false, -1) {
+		t.Fatal("unknown name color was accepted")
+	}
+	if !knownPeerColor(true, 0) || knownPeerColor(true, 999) {
+		t.Fatal("profile color check does not follow help.getPeerProfileColors")
+	}
+	_, err := (&PremiumCore{}).AccountUpdateColor(&mtproto.TLAccountUpdateColor{
+		Color_FLAGINT32: &wrapperspb.Int32Value{Value: 999},
+	})
+	if status.Convert(err).Message() != "COLOR_INVALID" {
+		t.Fatalf("account.updateColor 999: %v", err)
+	}
+	_, err = (&PremiumCore{}).AccountUpdateColor(&mtproto.TLAccountUpdateColor{
+		ForProfile: true,
+		Color_FLAGPEERCOLOR: mtproto.MakeTLPeerColor(&mtproto.PeerColor{
+			Color: &wrapperspb.Int32Value{Value: 999},
+		}).To_PeerColor(),
+	})
+	if status.Convert(err).Message() != "COLOR_INVALID" {
+		t.Fatalf("profile color 999: %v", err)
+	}
 }
 
 func TestSelectedColor(t *testing.T) {

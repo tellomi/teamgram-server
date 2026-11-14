@@ -66,7 +66,7 @@ func (c *ChatCore) ChatEditChatDefaultBannedRights(in *chat.TLChatEditChatDefaul
 		return nil, err
 	}
 
-	chat2.Chat.DefaultBannedRights = bannedRights
+	chat2.Chat.DefaultBannedRights = mtproto.ActiveBannedRights(bannedRights, int32(now))
 	chat2.Chat.Version += 1
 	chat2.Chat.Date = now
 

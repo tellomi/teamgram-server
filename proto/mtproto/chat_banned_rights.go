@@ -140,6 +140,33 @@ func (m *ChatBannedRights) NoBanRights() bool {
 	return m == nil || !m.hasRights()
 }
 
+// Expired reports a timed restriction whose until_date has passed.
+// until_date 0 and 0x7fffffff do not expire. A value with no flags is not a ban.
+func (m *ChatBannedRights) Expired(now int32) bool {
+	if m == nil || !m.hasRights() {
+		return false
+	}
+	until := m.GetUntilDate()
+	if until == 0 || until == math.MaxInt32 {
+		return false
+	}
+	return now >= until
+}
+
+// ActiveBannedRights is the restriction a client should apply.
+// A timed ban whose until_date has passed is unrestricted, so the field is omitted.
+func ActiveBannedRights(br *ChatBannedRights, now int32) *ChatBannedRights {
+	if br == nil || br.NoBanRights() || br.Expired(now) {
+		return nil
+	}
+	return br
+}
+
+// IssuedBannedRights decodes a stored ban and drops it once until_date has passed.
+func IssuedBannedRights(bits int64, now int32) *ChatBannedRights {
+	return ActiveBannedRights(BannedRights(bits).ToChatBannedRights(), now)
+}
+
 func (m *ChatBannedRights) IsKick() bool {
 	return m.GetViewMessages() && m.GetUntilDate() == math.MaxInt32
 }

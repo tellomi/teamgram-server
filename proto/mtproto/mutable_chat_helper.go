@@ -51,7 +51,7 @@ func (m *MutableChat) MigratedTo() *InputChannel {
 }
 
 func (m *MutableChat) DefaultBannedRights() *ChatBannedRights {
-	return m.GetChat().GetDefaultBannedRights()
+	return ActiveBannedRights(m.GetChat().GetDefaultBannedRights(), int32(time.Now().Unix()))
 }
 
 func (m *MutableChat) Deactivated() bool {
