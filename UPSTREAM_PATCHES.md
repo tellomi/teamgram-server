@@ -725,3 +725,23 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Live location fields, album cap, external media, hidden forward name, sound exceptions (ISSUE-S-GEO-HEADING-001, ISSUE-S-ALBUM-MAX-001, ISSUE-S-MEDIA-EXTERNAL-001, ISSUE-S-PRIV-FWD-NAME-001, ISSUE-S-NOTIFY-COMPARE-SOUND-001)
+
+`inputMediaGeoLive` kept only lat/long and period. `heading`, `accuracy_radius`, and `proximity_notification_radius` are now copied in `MakeGeoPointByInput` and the three InputMedia converters (messages send, messages dao, `messages.uploadMedia`).
+
+`messages.sendMultiMedia` rejects more than 10 items with `MEDIA_INVALID` before any message is stored.
+
+`inputMediaPhotoExternal` and `inputMediaDocumentExternal` are not fetched. They used to be stored as `messageMediaUnsupported`. They now return `MEDIA_INVALID`.
+
+When forwards privacy hides the user link, `fwd_from.from_name` was the account username, so a user with no username showed a blank label. It is now the first and last name.
+
+`account.getNotifyExceptions` ignored `compare_sound`. With the flag set, a row is returned only when its sound (or stories sound) is not the default. A mute-only exception is left out.
+
+| Piece | File |
+| --- | --- |
+| geo fields | `proto/mtproto/geo_point.go`, messages `core_messages_helper.go`, `dao/media.go`, files `messages.uploadMedia_handler.go` |
+| album cap | `messages.sendMultiMedia_handler.go` |
+| external URL | the same three converters |
+| forward name | `messages.forwardMessages_handler.go` |
+| compare_sound | `account.getNotifyExceptions_handler.go` |

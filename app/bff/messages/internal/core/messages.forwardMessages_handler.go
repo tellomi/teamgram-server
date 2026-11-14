@@ -21,6 +21,7 @@ package core
 import (
 	"context"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -132,6 +133,19 @@ func (c *MessagesCore) checkForwardPrivacy(ctx context.Context, selfUserId, chec
 		return true
 	}
 	return mtproto.FromBool(ok)
+}
+
+// forwardDisplayName is the "forwarded from" label when forwards privacy
+// hides the user link. It is the first and last name, never the username.
+func (c *MessagesCore) forwardDisplayName(userID int64) string {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || userID == 0 {
+		return ""
+	}
+	im, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{Id: userID})
+	if err != nil || im == nil || im.GetUser() == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimSpace(im.FirstName()) + " " + strings.TrimSpace(im.LastName()))
 }
 
 func (c *MessagesCore) makeForwardMessages(
@@ -263,10 +277,9 @@ func (c *MessagesCore) makeForwardMessages(
 					if c.checkForwardPrivacy(c.ctx, fromId, c.MD.UserId) {
 						fwdFrom.FromId = mtproto.MakePeerUser(fromId)
 					} else {
-						uname, _ := c.svcCtx.Dao.UserClient.UserGetAccountUsername(c.ctx, &userpb.TLUserGetAccountUsername{
-							UserId: fromId,
-						})
-						fwdFrom.FromName = &wrapperspb.StringValue{Value: uname.GetUsername()}
+						// Forwards privacy hides the user link. Official clients
+						// show from_name as the display name, not the username.
+						fwdFrom.FromName = &wrapperspb.StringValue{Value: c.forwardDisplayName(fromId)}
 					}
 					m.Post = false
 					m.PostAuthor = nil
