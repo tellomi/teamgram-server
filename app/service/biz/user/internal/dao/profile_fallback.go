@@ -10,15 +10,25 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 )
 
+// hidePreviousFallbackSQL retires every other public photo. deleted = 1
+// removes it from the album. photo_id <> ? keeps the photo being set.
+const hidePreviousFallbackSQL = `update user_profile_photos
+	set deleted = 1, date2 = 0, fallback = 0
+	where user_id = ? and fallback = 1 and deleted = 0 and photo_id <> ?`
+
 // UpdateFallbackPhoto stores photoId as the public avatar shown when profile
 // photo privacy hides the main picture. It does not replace the main photo.
+// The previous public photo is deleted from the album.
 func (d *Dao) UpdateFallbackPhoto(ctx context.Context, userID, photoID int64) int64 {
 	if d == nil || userID == 0 || photoID <= 0 {
 		return 0
 	}
 	_, _, err := d.CachedConn.Exec(ctx, func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 		tR := sqlx.TxWrapper(ctx, conn, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-			_, result.Err = tx.Exec(`update user_profile_photos set fallback = 0 where user_id = ? and fallback = 1`, userID)
+			// The previous public photo is removed. Clearing only the flag
+			// would leave it in the album. The main avatar has fallback = 0,
+			// so this update does not touch it, and users.photo_id is not written.
+			_, result.Err = tx.Exec(hidePreviousFallbackSQL, userID, photoID)
 			if result.Err != nil {
 				return
 			}
