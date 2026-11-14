@@ -23,7 +23,7 @@ func (s *Service) lookup(ctx context.Context, in *mtproto.InputChannel) (*Channe
 	if ch == nil || ch.Deleted {
 		return nil, mtproto.ErrChannelInvalid
 	}
-	if in.AccessHash != 0 && in.AccessHash != ch.AccessHash {
+	if !hashOK(in, ch.AccessHash) {
 		return nil, mtproto.ErrChannelInvalid
 	}
 	return ch, nil

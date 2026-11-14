@@ -30,6 +30,7 @@ import (
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	autosave_helper "github.com/teamgram/teamgram-server/app/bff/autosave"
+	accessgate "github.com/teamgram/teamgram-server/app/bff/bff/internal/accesshash"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/presence"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
@@ -82,6 +83,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
@@ -668,6 +670,13 @@ func (s *Server) Initialize() error {
 	// Ordinary RPCs refresh last_seen_at at most once a minute. account.updateStatus
 	// still owns the explicit online and offline write.
 	s.grpcSrv.AddUnaryInterceptors(presence.Unary(user_client.NewUserClient(rpcx.GetCachedRpcClient(c.BizServiceClient))))
+	// Access hashes are checked only when TELLOMI_ACCESS_HASH_ENFORCE is
+	// log or enforce. The default leaves every RPC on its previous path.
+	biz := rpcx.GetCachedRpcClient(c.BizServiceClient)
+	s.grpcSrv.AddUnaryInterceptors(accessgate.Unary(
+		user_client.NewUserClient(biz),
+		message_client.NewMessageClient(biz),
+	))
 
 	go func() {
 		s.grpcSrv.Start()
