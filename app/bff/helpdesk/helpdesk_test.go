@@ -62,6 +62,12 @@ func TestInviteSupportSuggestionsLog(t *testing.T) {
 	if SupportName("en", "") != "Tellomi Support" || SupportName("zh", "Ada") != "Ada" {
 		t.Fatal(SupportName("zh", "Ada"))
 	}
+	if InviteText("ja") == InviteText("en") || SupportName("ja", "") == SupportName("en", "") {
+		t.Fatal(InviteText("ja"))
+	}
+	if AppUpdateForLang("14.0.1", "", "zh-hans", &Release{Version: "14.0.2"}).GetText() != "发现新版本 Tellomi，建议更新。" {
+		t.Fatal("builtin zh")
+	}
 
 	s := NewMemory([]string{"VALIDATE_PASSWORD", "AUTOARCHIVE_POPULAR"})
 	ctx := context.Background()

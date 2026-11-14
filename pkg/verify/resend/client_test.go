@@ -2,12 +2,17 @@ package resend
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	rpcmd "github.com/teamgram/proto/mtproto/rpc/metadata"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestFormatFrom(t *testing.T) {
@@ -142,6 +147,43 @@ func TestSendCodeResendError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "654321") || strings.Contains(err.Error(), "re_test_key") {
 		t.Fatal(err)
+	}
+}
+
+func TestSendCodeUsesClientLanguage(t *testing.T) {
+	var got sendRequest
+	c := &Client{
+		APIKey:   "re_test_key",
+		From:     "noreply@tellomi.app",
+		FromName: "Tellomi",
+		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			raw, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"email_123"}`)),
+				Header:     make(http.Header),
+				Request:    r,
+			}, nil
+		})},
+	}
+	buf, err := proto.Marshal(&rpcmd.RpcMetadata{LangCode: "zh-hans", Langpack: "android"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
+	if err := c.SendCode(ctx, "user@example.com", "654321"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Subject != "Tellomi 验证码" || got.Text != "您的验证码为：654321，请勿泄露于他人！" {
+		t.Fatalf("%q %q", got.Subject, got.Text)
+	}
+	if strings.Contains(got.Text, "Your verification code") {
+		t.Fatal(got.Text)
 	}
 }
 

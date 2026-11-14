@@ -32,6 +32,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -173,7 +174,11 @@ func (c *QrCodeCore) AuthAcceptLoginToken(in *mtproto.TLAuthAcceptLoginToken) (*
 		if keyID == 0 {
 			keyID = qrCode.AuthKeyId
 		}
-		loginnotice.Push(c.svcCtx.Dao.MsgClient, user.Id(), keyID, loginnotice.Device(authorization.GetDeviceModel(), "", ""), time.Now())
+		lang := ""
+		if c.MD != nil {
+			lang = langpack.ClientLang(c.MD.GetLangCode(), c.MD.GetSystemLangCode(), c.MD.GetLangpack())
+		}
+		loginnotice.Push(c.svcCtx.Dao.MsgClient, user.Id(), keyID, lang, loginnotice.Device(authorization.GetDeviceModel(), "", ""), time.Now())
 	}
 
 	c.svcCtx.Dao.SyncClient.SyncUpdatesMe(

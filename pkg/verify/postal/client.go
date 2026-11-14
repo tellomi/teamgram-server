@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 )
 
 const sendPath = "/api/v1/send/message"
@@ -71,12 +73,17 @@ func (c *Client) SendCode(ctx context.Context, to, code string) error {
 		return fmt.Errorf("postal recipient is not an email address")
 	}
 
+	subject := "Tellomi 验证码"
+	plain := fmt.Sprintf("您的验证码为：%s，请勿泄露于他人！", code)
+	if sub, body, ok := usercopy.EmailCode(usercopy.LangFromIncoming(ctx), code); ok {
+		subject, plain = sub, body
+	}
 	body, err := json.Marshal(sendRequest{
 		To:        []string{to},
 		From:      formatFrom(c.FromName, from),
 		Sender:    from,
-		Subject:   "Tellomi 验证码",
-		PlainBody: fmt.Sprintf("您的验证码为：%s，请勿泄露于他人！", code),
+		Subject:   subject,
+		PlainBody: plain,
 	})
 	if err != nil {
 		return err
