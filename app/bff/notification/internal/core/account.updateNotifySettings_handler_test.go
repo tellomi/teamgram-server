@@ -94,15 +94,27 @@ type notifyUserFake struct {
 	userclient.UserClient
 	saved  *mtproto.PeerNotifySettings
 	stored *mtproto.PeerNotifySettings
+	setReq *user.TLUserSetNotifySettings
+	getReq *user.TLUserGetNotifySettings
+	all    *user.Vector_PeerPeerNotifySettings
 }
 
 func (f *notifyUserFake) UserSetNotifySettings(_ context.Context, in *user.TLUserSetNotifySettings) (*mtproto.Bool, error) {
+	f.setReq = in
 	f.saved = in.GetSettings()
 	return mtproto.BoolTrue, nil
 }
 
-func (f *notifyUserFake) UserGetNotifySettings(context.Context, *user.TLUserGetNotifySettings) (*mtproto.PeerNotifySettings, error) {
+func (f *notifyUserFake) UserGetNotifySettings(_ context.Context, in *user.TLUserGetNotifySettings) (*mtproto.PeerNotifySettings, error) {
+	f.getReq = in
 	return f.stored, nil
+}
+
+func (f *notifyUserFake) UserGetAllNotifySettings(context.Context, *user.TLUserGetAllNotifySettings) (*user.Vector_PeerPeerNotifySettings, error) {
+	if f.all == nil {
+		return &user.Vector_PeerPeerNotifySettings{}, nil
+	}
+	return f.all, nil
 }
 
 type notifySyncFake struct {

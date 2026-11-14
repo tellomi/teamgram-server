@@ -173,6 +173,8 @@ message PeerPeerNotifySettings {
   int32 peer_type = 3;
   int64 peer_id = 4;
   mtproto.PeerNotifySettings settings = 5;
+  // top_msg_id is the forum topic. Zero is the dialog or a global scope.
+  int32 top_msg_id = 6;
 }
 
 message TL_peerPeerNotifySettings {
@@ -326,6 +328,8 @@ message TL_user_getNotifySettings {
   int64 user_id = 3;
   int32 peer_type = 4;
   int64 peer_id = 5;
+  // top_msg_id is the forum topic. Zero reads the dialog or global scope.
+  int32 top_msg_id = 6;
 }
 
 //--------------------------------------------------------------------------------------------
@@ -342,6 +346,8 @@ message TL_user_setNotifySettings {
   int32 peer_type = 4;
   int64 peer_id = 5;
   mtproto.PeerNotifySettings settings = 6;
+  // top_msg_id is the forum topic. Zero writes the dialog or global scope.
+  int32 top_msg_id = 7;
 }
 
 //--------------------------------------------------------------------------------------------
