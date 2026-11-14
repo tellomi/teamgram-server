@@ -17,12 +17,23 @@ import (
 // UserSetNotifySettings
 // user.setNotifySettings user_id:int peer_type:int peer_id:int settings:PeerNotifySettings = Bool;
 func (c *UserCore) UserSetNotifySettings(in *user.TLUserSetNotifySettings) (*mtproto.Bool, error) {
-	err := c.svcCtx.Dao.SetUserPeerNotifySettings(
-		c.ctx,
-		in.GetUserId(),
-		in.GetPeerType(),
-		in.GetPeerId(),
-		in.GetSettings())
+	var err error
+	if in.GetTopMsgId() > 0 {
+		err = c.svcCtx.Dao.SetUserTopicNotifySettings(
+			c.ctx,
+			in.GetUserId(),
+			in.GetPeerType(),
+			in.GetPeerId(),
+			in.GetTopMsgId(),
+			in.GetSettings())
+	} else {
+		err = c.svcCtx.Dao.SetUserPeerNotifySettings(
+			c.ctx,
+			in.GetUserId(),
+			in.GetPeerType(),
+			in.GetPeerId(),
+			in.GetSettings())
+	}
 
 	if err != nil {
 		c.Logger.Errorf("user.setNotifySettings - error: %v", err)
