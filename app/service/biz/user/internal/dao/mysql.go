@@ -34,6 +34,7 @@ type Mysql struct {
 	*mysql_dao.UserContactsDAO
 	*mysql_dao.UserGlobalPrivacySettingsDAO
 	*mysql_dao.UserNotifySettingsDAO
+	*mysql_dao.UserNotifyTopicSettingsDAO
 	*mysql_dao.UserPeerBlocksDAO
 	*mysql_dao.UserPeerSettingsDAO
 	*mysql_dao.UserPresencesDAO
@@ -60,6 +61,7 @@ func newMysqlDao(db *sqlx.DB) *Mysql {
 		UserContactsDAO:              mysql_dao.NewUserContactsDAO(db),
 		UserGlobalPrivacySettingsDAO: mysql_dao.NewUserGlobalPrivacySettingsDAO(db),
 		UserNotifySettingsDAO:        mysql_dao.NewUserNotifySettingsDAO(db),
+		UserNotifyTopicSettingsDAO:   mysql_dao.NewUserNotifyTopicSettingsDAO(db),
 		UserPeerBlocksDAO:            mysql_dao.NewUserPeerBlocksDAO(db),
 		UserPeerSettingsDAO:          mysql_dao.NewUserPeerSettingsDAO(db),
 		UserPresencesDAO:             mysql_dao.NewUserPresencesDAO(db),
