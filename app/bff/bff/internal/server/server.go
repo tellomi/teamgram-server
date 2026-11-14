@@ -673,8 +673,10 @@ func (s *Server) Initialize() error {
 	// Access hashes are checked only when TELLOMI_ACCESS_HASH_ENFORCE is
 	// log or enforce. The default leaves every RPC on its previous path.
 	biz := rpcx.GetCachedRpcClient(c.BizServiceClient)
+	users := user_client.NewUserClient(biz)
+	accessgate.RegisterLookups(users)
 	s.grpcSrv.AddUnaryInterceptors(accessgate.Unary(
-		user_client.NewUserClient(biz),
+		users,
 		message_client.NewMessageClient(biz),
 	))
 

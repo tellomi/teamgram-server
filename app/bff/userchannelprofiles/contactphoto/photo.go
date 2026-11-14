@@ -8,10 +8,12 @@
 package contactphoto
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
 
 type key struct {
@@ -63,12 +65,14 @@ func Upload(self int64, in *mtproto.TLPhotosUploadContactProfilePhoto) (*mtproto
 		saved.items[key{self, user.PeerId, true}] = photo
 	}
 	saved.mu.Unlock()
+	users := []*mtproto.User{
+		mtproto.MakeTLUser(&mtproto.User{Id: self, Self: true}).To_User(),
+		mtproto.MakeTLUser(&mtproto.User{Id: user.PeerId}).To_User(),
+	}
+	accesshash.PaintUsers(context.Background(), users)
 	return mtproto.MakeTLPhotosPhoto(&mtproto.Photos_Photo{
 		Photo: photo,
-		Users: []*mtproto.User{
-			mtproto.MakeTLUser(&mtproto.User{Id: self, Self: true}).To_User(),
-			mtproto.MakeTLUser(&mtproto.User{Id: user.PeerId}).To_User(),
-		},
+		Users: users,
 	}).To_Photos_Photo(), nil
 }
 

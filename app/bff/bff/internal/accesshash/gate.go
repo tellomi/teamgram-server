@@ -93,20 +93,20 @@ func (b *liveBook) UserHashes(ctx context.Context, viewer int64, ids []int64) (m
 		if got != nil {
 			for _, id := range ids {
 				u, ok := got.GetImmutableUser(id)
-				if ok && u != nil && u.User != nil {
+				if ok && u != nil && u.User != nil && u.AccessHash() != 0 {
 					out[id] = append(out[id], u.AccessHash())
 				}
 			}
 		}
 	}
 	for _, id := range ids {
-		if h, ok := botadmin.IssuedAccessHash(id); ok {
+		if h, ok := botadmin.IssuedAccessHash(id); ok && h != 0 {
 			out[id] = append(out[id], h)
 		}
-		if h, ok := chatbox.Shared().CachedAccessHash(id); ok {
+		if h, ok := chatbox.Shared().CachedAccessHash(id); ok && h != 0 {
 			out[id] = append(out[id], h)
 		}
-		if h, ok := builtinHash(id); ok {
+		if h, ok := builtinHash(id); ok && h != 0 {
 			out[id] = append(out[id], h)
 		}
 	}
@@ -132,7 +132,7 @@ func (b *liveBook) ChannelHashes(ctx context.Context, ids []int64) (map[int64][]
 		if err != nil {
 			return nil, err
 		}
-		if ok {
+		if ok && h != 0 {
 			out[id] = []int64{h}
 		}
 	}
@@ -210,19 +210,80 @@ func (b *liveBook) userBox(ctx context.Context, viewer int64, msgID int32) (*mtp
 	return box, nil
 }
 
+// boxMatches is the same dialog check as reactions_list boxPeerMatches.
+// A private message row stores the dialog as the sorted pair of user ids.
+// The recipient's copy can have peer_id equal to the recipient, so peer_id
+// alone does not name the chat for an incoming message.
 func boxMatches(box *mtproto.MessageBox, viewer int64, peer *mtproto.InputPeer) bool {
-	if box == nil {
+	if box == nil || peer == nil {
 		return false
 	}
+	var wantType int32
+	var wantID int64
 	switch ah.InputPeerClass(peer) {
 	case ah.KindSelf:
-		return (box.GetPeerType() == mtproto.PEER_USER || box.GetPeerType() == mtproto.PEER_SELF) &&
-			(box.GetPeerId() == viewer || box.GetPeerId() == 0)
+		wantType = mtproto.PEER_USER
+		wantID = viewer
+		if box.GetPeerType() == mtproto.PEER_SELF && (box.GetPeerId() == viewer || box.GetPeerId() == 0) {
+			return true
+		}
 	case ah.KindPeerUser:
-		return box.GetPeerType() == mtproto.PEER_USER && box.GetPeerId() == peer.GetUserId()
+		wantType = mtproto.PEER_USER
+		wantID = peer.GetUserId()
 	case ah.KindChat:
-		return box.GetPeerType() == mtproto.PEER_CHAT && box.GetPeerId() == peer.GetChatId()
+		wantType = mtproto.PEER_CHAT
+		wantID = peer.GetChatId()
 	default:
 		return false
 	}
+	if wantType == mtproto.PEER_USER {
+		if a, b := box.GetDialogId1(), box.GetDialogId2(); a != 0 || b != 0 {
+			x, y := viewer, wantID
+			if x > y {
+				x, y = y, x
+			}
+			return a == x && b == y
+		}
+		if box.GetPeerType() == mtproto.PEER_USER && box.GetPeerId() == viewer && box.GetSenderUserId() == wantID {
+			return true
+		}
+	}
+	return box.GetPeerType() == wantType && box.GetPeerId() == wantID
+}
+
+// RegisterLookups installs the user and channel row readers used when the
+// flag is log or enforce. The lookup must not call back into chatbox: poll
+// and bot issuance call it while the chatbox lock is held.
+func RegisterLookups(users userAPI) {
+	ah.SetUserLookup(func(ctx context.Context, ids []int64) (map[int64]int64, error) {
+		if users == nil || len(ids) == 0 {
+			return nil, nil
+		}
+		got, err := users.UserGetMutableUsers(ctx, &userpb.TLUserGetMutableUsers{Id: ids})
+		if err != nil || got == nil {
+			return nil, err
+		}
+		out := map[int64]int64{}
+		for _, id := range ids {
+			u, ok := got.GetImmutableUser(id)
+			if ok && u != nil && u.User != nil && u.AccessHash() != 0 {
+				out[id] = u.AccessHash()
+			}
+		}
+		return out, nil
+	})
+	ah.SetChannelLookup(func(ctx context.Context, ids []int64) (map[int64]int64, error) {
+		out := map[int64]int64{}
+		svc := channel.Shared()
+		for _, id := range ids {
+			h, ok, err := svc.IssuedAccessHash(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			if ok && h != 0 {
+				out[id] = h
+			}
+		}
+		return out, nil
+	})
 }

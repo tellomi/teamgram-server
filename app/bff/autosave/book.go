@@ -6,9 +6,11 @@
 package autosave
 
 import (
+	"context"
 	"sync"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -102,6 +104,8 @@ func Get(self int64) (*mtproto.Account_AutoSaveSettings, error) {
 	if chats == nil {
 		chats = []*mtproto.Chat{}
 	}
+	accesshash.PaintUsers(context.Background(), users)
+	accesshash.PaintChannels(context.Background(), chats)
 	return mtproto.MakeTLAccountAutoSaveSettings(&mtproto.Account_AutoSaveSettings{
 		UsersSettings:      copySettings(a.users),
 		ChatsSettings:      copySettings(a.chats),

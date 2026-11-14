@@ -4,6 +4,7 @@
 package helpdesk
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -208,6 +210,7 @@ func Changelog(prev string, notes []Note, now int32) *mtproto.Updates {
 			Id:        777000,
 			FirstName: wrapperspb.String("Tellomi"),
 		}).To_User())
+		accesshash.PaintUsers(context.Background(), users)
 	}
 	return mtproto.MakeTLUpdates(&mtproto.Updates{
 		Updates: updates,

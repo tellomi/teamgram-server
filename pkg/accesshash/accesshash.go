@@ -198,6 +198,10 @@ func Accept(provided int64, issued []int64) bool {
 // the stored hash is not 0.
 func AllowProvided(provided, stored int64) bool {
 	if Active() == ModeEnforce {
+		// A stored 0 is not a secret. Reject it even when the client sends 0.
+		if stored == 0 {
+			return false
+		}
 		return Match(provided, stored)
 	}
 	if provided != 0 && stored != 0 && provided != stored {
@@ -213,6 +217,9 @@ func AllowProvided(provided, stored int64) bool {
 // exact match, including rejecting a provided 0 when the stored hash is not 0.
 func AllowChannel(provided, stored int64) bool {
 	if Active() == ModeEnforce {
+		if stored == 0 {
+			return false
+		}
 		return Match(provided, stored)
 	}
 	if provided != 0 && provided != stored {

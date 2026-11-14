@@ -18,6 +18,10 @@ A provided `0` used to skip the channel and secret-chat comparisons. Enforce mod
 | secret-chat user | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
 | from-message id, only while enforce is on | `proto/mtproto/peer_util.go` |
 
+`tools/accesshashbackfill` writes a non-zero hash onto `users` and `channels` rows that still store 0. Deploy does not run it. Without `--apply` it only prints the counts.
+
+While `TELLOMI_ACCESS_HASH_ENFORCE` is `log` or `enforce`, user and channel objects that used to omit `access_hash` are filled from the stored row, chatbox bots stop using the bot id as the hash, and a stored 0 is not accepted. Unset still returns the previous objects and still issues the bot id.
+
 ## Authorization hash, revocation and TTL
 
 `auth_users.hash` used to be replaced on every `BindAuthKeyUser`. A second `auth.signIn` on the same permanent key (retry, future-auth token, cloud-password step) made `account.resetAuthorization` return `HASH_INVALID` for the hash the other device had just listed. A live row now keeps its hash. A row that was logged out, reset, or expired takes a new non-zero hash, and the 24 hour gate still uses `date_created`.
