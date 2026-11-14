@@ -19,7 +19,9 @@ func TestContactProfilePhotoSaveSuggestAndClear(t *testing.T) {
 	contact := inputUser(bSelf.ID, bSelf.AccessHash)
 	peerForB := inputPeerUser(aliceSeen.ID, aliceSeen.AccessHash)
 
-	jpeg := testJPEG(t, 32, 32, 9)
+	// Profile photos are cropped to the a/b/c ladder. A 32px image is scaled
+	// up to 640 and the resizer rejects it with IMAGE_PROCESS_FAILED.
+	jpeg := testJPEG(t, 800, 800, 9)
 	fileID := randomID()
 	if _, err := a.Invoke(ctx, &mtproto.TLUploadSaveFilePart{
 		Constructor: mtproto.CRC32_upload_saveFilePart,
