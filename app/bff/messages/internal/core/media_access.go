@@ -4,6 +4,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/livephoto"
 )
 
 // authorizeReferencedMedia checks inputMediaPhoto and inputMediaDocument
@@ -19,6 +20,14 @@ func (c *MessagesCore) authorizeReferencedMedia(media *mtproto.InputMedia) error
 		_, err := catalog.ResolveInputPhoto(media.GetId_INPUTPHOTO(), func() (*mtproto.Photo, error) {
 			return c.fetchPhoto(media.GetId_INPUTPHOTO().GetId())
 		})
+		if err != nil {
+			return err
+		}
+		// A live photo also references its video document.
+		_, err = livephoto.Video(media, c.resolveInputDocument)
+		return err
+	case mtproto.Predicate_inputMediaUploadedPhoto:
+		_, err := livephoto.Video(media, c.resolveInputDocument)
 		return err
 	case mtproto.Predicate_inputMediaDocument:
 		_, err := catalog.ResolveInputDocument(media.GetId_INPUTDOCUMENT(), func() (*mtproto.Document, error) {
@@ -28,6 +37,14 @@ func (c *MessagesCore) authorizeReferencedMedia(media *mtproto.InputMedia) error
 	default:
 		return nil
 	}
+}
+
+// resolveInputDocument checks access_hash and file_reference like
+// inputMediaDocument and returns the stored document.
+func (c *MessagesCore) resolveInputDocument(in *mtproto.InputDocument) (*mtproto.Document, error) {
+	return catalog.ResolveInputDocument(in, func() (*mtproto.Document, error) {
+		return c.fetchDocument(in.GetId())
+	})
 }
 
 func (c *MessagesCore) fetchPhoto(id int64) (*mtproto.Photo, error) {

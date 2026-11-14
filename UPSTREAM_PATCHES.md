@@ -662,3 +662,32 @@ No new table. No new production switch.
 | peer settings bar | `messages.getPeerSettings_handler.go`, `users.getFullUser_handler.go` |
 | quote and todo item | `reply_peer.go`, `reply_quote.go`, sendMessage / sendMedia / sendMultiMedia |
 | theme and wallpaper post | `p1_rest.go`, `chat_decor.go` |
+
+## Live photos (layer 232) (ISSUE-S-PHOTO-LIVE-001)
+
+The official iOS and Android clients send a live photo as a photo plus a separately uploaded video document. A single send is `messages.sendMedia(inputMediaUploadedPhoto{live_photo, file, video})`. The iOS album path calls `messages.uploadMedia` with that media first, then sends `messages.sendMultiMedia` with `inputMediaPhoto{live_photo, id, video}`. The recipient reads `messageMediaPhoto.video`. iOS marks the image as live only when that field is present.
+
+**Root cause.** All three InputMedia → MessageMedia conversions copied only the photo, `spoiler`, and `ttl_seconds`, and dropped `live_photo` and `video`: messages `makeMediaByInputMedia`, files `makeMediaByInputMedia` for `messages.uploadMedia`, and dao `GetMessageMedia`. The send succeeded, and both sides got a still photo. The codec and the JSON message storage already handled both fields.
+
+**MEDIA_INVALID.** `pkg/livephoto.Video` resolves `video` through `catalog.ResolveInputDocument`, which is the same check `inputMediaDocument` uses. `access_hash` must match, `file_reference` must match the stored one, and the `MismatchAllowed` log-mode exception still applies. The send or upload returns `MEDIA_INVALID` when any of these holds:
+- the video id is 0;
+- the document is unknown;
+- the `access_hash` or `file_reference` does not match;
+- the document is neither `video/*` nor has `documentAttributeVideo`.
+
+Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty`, is a plain photo, as before.
+
+**`live_photo` and `video` together.** On `messageMediaPhoto#e216eb63` both fields use `flags.4`. The encoder sets bit 4 when either one is set, but writes the Document only when `video` is non-nil. A `live_photo` without `video` therefore sets the bit with no Document, and clients misparse the rest of the message. Every writer must set both or neither: `livephoto.Set` on the send and upload paths, and `StripTTLMedia` when it expires a ttl photo. The input constructors also share one bit for the pair: `flags.3` on `inputMediaUploadedPhoto` and `flags.2` on `inputMediaPhoto`.
+
+| File | Change |
+| --- | --- |
+| `pkg/livephoto/livephoto.go` (new) | `Video` resolves and checks the video and returns `MEDIA_INVALID` as above; `Set` writes `live_photo` and `video` together |
+| `app/bff/messages/internal/core/core_messages_helper.go` | `makeMediaByInputMedia` (sendMedia, sendMultiMedia, editMessage): the `inputMediaUploadedPhoto` and `inputMediaPhoto` branches call `livephoto.Video` and `livephoto.Set` |
+| `app/bff/messages/internal/core/media_access.go` | `authorizeReferencedMedia` checks the live video on `inputMediaPhoto` and `inputMediaUploadedPhoto` before random_id dedupe; new `resolveInputDocument` helper |
+| `app/bff/files/internal/core/messages.uploadMedia_handler.go`, `live_photo.go` | `makeMediaByInputMedia` for `messages.uploadMedia`: same two branches; also keeps `spoiler` now |
+| `app/bff/messages/internal/dao/media.go` | `GetMessageMedia`: same two branches, through `daoDocumentResolver` |
+| `proto/mtproto/ttl_media.go` | `StripTTLMedia` clears `live_photo` together with `video` |
+| `app/service/mediapurge/ids.go` | `fromMedia` records `messageMediaPhoto.video` as a held document. The `media_document_id` generated column still reads only `$.media.document.id`; `message_media_refs` covers the video |
+| tests | `pkg/livephoto`, messages core / dao, files core, mediapurge, `proto/mtproto/ttl_media_test.go`, and e2e `TestLivePhoto` (`live_a` / `live_b`) |
+
+Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
