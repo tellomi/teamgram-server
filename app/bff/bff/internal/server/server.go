@@ -91,6 +91,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/configload"
 	"github.com/teamgram/teamgram-server/pkg/crashreport"
 	"github.com/teamgram/teamgram-server/pkg/inflight"
+	"github.com/teamgram/teamgram-server/pkg/privacymember"
 	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -119,6 +120,10 @@ func (s *Server) Initialize() error {
 	})
 
 	logx.Infov(redact.Value(c))
+	// Chat-member privacy and blocked avatars on user lists run in this
+	// process. ChannelMySQL is the teamgram database. TEAMGRAM_MYSQL_DSN
+	// overrides it. A missing value logs once inside Configure.
+	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
 	channelBridge := channels_helper.Bridge{}
 
