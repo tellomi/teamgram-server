@@ -9,6 +9,7 @@
 3. 模块边界：https://github.com/tellomi/tellomi/blob/main/docs/MODULE_BOUNDARIES.md
 4. `docs/api-coverage.md` —— 官方四端调用与服务端状态；生成器 `go run ./tools/apicoverage`
 5. `docs/architecture-extension.md` —— 独立服务的接入缝，数据不进聊天库
+6. 本文件「谷歌表格台账规则（强制）」—— 问题、测试与交接只记唯一谷歌表格；修复必须由做修复的 AI 回写
 
 ## 永久开发规范（Telegram Native-First）
 
@@ -96,3 +97,65 @@ Telegram 的设计是：安装包保持精简，贴纸、主题、文案、配�
 - `master` 保护要求这些检查（名称见 `docs/testing.md`）：`API coverage / coverage`、`Client regression / e2e`、`Compose config / minio-profile`、`Go test / go-test`、`Server reliability / reliability`。
 - 改或新增 RPC：`e2e/client` 用例与覆盖文档进同一 PR。
 - 跨仓契约变更：契约 PR 先合，实现 PR 同批合齐。
+
+## 谷歌表格台账规则（强制）
+
+问题、测试和交接只记在下面这一份表格。做修复的 AI 必须自己回写对应行；只改代码或只开 PR 不算完成。
+
+### 唯一台账
+
+唯一台账是 Google 表格 `19aChHJdxQeSRMIoc5cQxtaM6lFsylSo7WTpVy3H-dog`：
+
+https://docs.google.com/spreadsheets/d/19aChHJdxQeSRMIoc5cQxtaM6lFsylSo7WTpVy3H-dog
+
+页签：
+
+- 「问题清单」：bug 台账
+- 「测试日志」：每条测试记录
+- 「AI交接」：交接记录
+
+### 新问题与修改已有行
+
+- 新 bug：先在「问题清单」查重。确认是新问题后，只用 append 追加。
+- 改已有行：必须先按 A 列问题 ID 定位，写前重新读取该行（多 AI 并发，避免盖掉别人刚写的内容）。
+- 绝不修改 L 列和 R 列。
+
+### 修复 PR 必须带问题 ID
+
+- 每个修复 PR 的标题或正文必须写明所修问题 ID（问题清单 A 列）。
+- 一个 PR 修多条时，逐条列出问题 ID。
+
+### 做修复的 AI 自己回写
+
+修复全过程必须由做修复的 AI 自己回写「问题清单」对应行。按表头名定位列，不要硬编码列字母。下面括号里的列字母只说明这些表头目前所在的列；表头位置变了，仍按表头名写。
+
+必须回写的表头：
+
+- 状态（目前在 T 列）
+- 负责代理（目前在 U 列）
+- PR 链接（目前在 V 列）
+- head SHA（目前在 W 列）
+- 审查结论（目前在 X 列）
+- 合并/部署（目前在 Y 列）
+- 时间（目前在 Z 列，填北京时间）
+- 修复说明（根因 + 改法）
+- 涉及文件/接口
+- 回归测试日志行
+- 回归结论
+- 备注
+
+状态只允许取这些值：待修复 / 修复中 / 待审查 / 待合并 / 已合并待部署 / 已部署待回归 / 已修复(回归通过) / 回归失败 / 不修复(负责人决定) / 重复。
+
+每次状态变化都要更新，包括开 PR、审查、合并、部署、回归。
+
+### 部署后回归
+
+部署后在「测试日志」追加一条回归记录，并把该记录的行号和结论回填到「问题清单」。
+
+### 补登
+
+发现历史修复未登记的，顺手补齐，并在「备注」注明“补登”。
+
+### 写入边界
+
+表格写入不得包含任何密钥、token、手机号以外的个人数据或生产聊天内容。
