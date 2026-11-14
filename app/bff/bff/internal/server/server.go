@@ -35,6 +35,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/presence"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
+	bizprofile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
@@ -128,6 +129,9 @@ func (s *Server) Initialize() error {
 	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
 	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
+		return err
+	}
+	if err := bizprofile.UseDSN(c.ChannelMySQL); err != nil {
 		return err
 	}
 	channelBridge := channels_helper.Bridge{}

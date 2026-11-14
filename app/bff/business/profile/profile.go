@@ -1,13 +1,15 @@
-// Package profile stores Telegram Business fields for one BFF process.
+// Package profile stores Telegram Business fields.
 //
 // Hours, location, greeting, away message, intro, and chat links are what
 // account.updateBusiness* and account.*BusinessChatLink write. users.getFullUser
 // reads the same book so a later profile fetch shows the saved fields.
-// A restart drops the book. The link field is brand.LinkBase()+"/m/<slug>".
-// account.resolveBusinessChatLink resolves the slug on this process.
+// When MySQL is configured, UseDSN keeps the book across restarts. The link
+// field is brand.LinkBase()+"/m/<slug>". account.resolveBusinessChatLink
+// resolves the slug.
 package profile
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
@@ -53,18 +55,28 @@ type linkRow struct {
 	views    int32
 }
 
-type row struct {
-	hours    *mtproto.BusinessWorkHours
-	location *mtproto.BusinessLocation
-	greeting *mtproto.BusinessGreetingMessage
-	away     *mtproto.BusinessAwayMessage
-	intro    *mtproto.BusinessIntro
-	links    []*linkRow
+type peerNote struct {
+	LastActivity int32
+	GreetingSent int32
+	AwaySent     int32
+	AwayWindow   string
 }
 
-// Book is the process-local business profile store.
+type row struct {
+	hours       *mtproto.BusinessWorkHours
+	location    *mtproto.BusinessLocation
+	greeting    *mtproto.BusinessGreetingMessage
+	away        *mtproto.BusinessAwayMessage
+	intro       *mtproto.BusinessIntro
+	links       []*linkRow
+	peers       map[int64]*peerNote
+	awayVersion int32
+}
+
+// Book is the business profile store. Without MySQL it stays in memory.
 type Book struct {
 	mu    sync.Mutex
+	db    docDB
 	users map[int64]*row
 	slugs map[string]int64
 	now   func() time.Time
@@ -97,6 +109,9 @@ func (b *Book) touch(user int64) *row {
 		r = &row{}
 		b.users[user] = r
 	}
+	if r.peers == nil {
+		r.peers = map[int64]*peerNote{}
+	}
 	return r
 }
 
@@ -105,6 +120,7 @@ func (b *Book) touch(user int64) *row {
 func (b *Book) Card(user int64) *Card {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	_ = b.reload(user)
 	r := b.users[user]
 	if r == nil || !r.any() {
 		return nil
@@ -131,10 +147,13 @@ func (b *Book) SetWorkHours(user int64, hours *mtproto.BusinessWorkHours) error 
 	if hours == nil {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if err := b.reload(user); err != nil {
+			return err
+		}
 		if r := b.users[user]; r != nil {
 			r.hours = nil
 		}
-		return nil
+		return b.save(user)
 	}
 	if err := validateHours(hours); err != nil {
 		return err
@@ -146,8 +165,11 @@ func (b *Book) SetWorkHours(user int64, hours *mtproto.BusinessWorkHours) error 
 	stored.OpenNow = openNow(stored.GetTimezoneId(), stored.GetWeeklyOpen(), b.now())
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(user); err != nil {
+		return err
+	}
 	b.touch(user).hours = stored
-	return nil
+	return b.save(user)
 }
 
 // SetLocation replaces the public address. Nil geo and nil address clear it.
@@ -155,10 +177,13 @@ func (b *Book) SetLocation(user int64, geo *mtproto.InputGeoPoint, address *wrap
 	if geo == nil && address == nil {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if err := b.reload(user); err != nil {
+			return err
+		}
 		if r := b.users[user]; r != nil {
 			r.location = nil
 		}
-		return nil
+		return b.save(user)
 	}
 	loc, err := buildLocation(geo, address)
 	if err != nil {
@@ -166,8 +191,11 @@ func (b *Book) SetLocation(user int64, geo *mtproto.InputGeoPoint, address *wrap
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(user); err != nil {
+		return err
+	}
 	b.touch(user).location = loc
-	return nil
+	return b.save(user)
 }
 
 // SetGreeting replaces the greeting. A nil message clears it.
@@ -176,10 +204,13 @@ func (b *Book) SetGreeting(self int64, in *mtproto.InputBusinessGreetingMessage)
 	if in == nil {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if err := b.reload(self); err != nil {
+			return err
+		}
 		if r := b.users[self]; r != nil {
 			r.greeting = nil
 		}
-		return nil
+		return b.save(self)
 	}
 	rec, err := recipients(self, in.GetRecipients())
 	if err != nil {
@@ -198,8 +229,11 @@ func (b *Book) SetGreeting(self int64, in *mtproto.InputBusinessGreetingMessage)
 	}).To_BusinessGreetingMessage()
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(self); err != nil {
+		return err
+	}
 	b.touch(self).greeting = msg
-	return nil
+	return b.save(self)
 }
 
 // SetAway replaces the away message. A nil message clears it.
@@ -207,10 +241,14 @@ func (b *Book) SetAway(self int64, in *mtproto.InputBusinessAwayMessage) error {
 	if in == nil {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if err := b.reload(self); err != nil {
+			return err
+		}
 		if r := b.users[self]; r != nil {
 			r.away = nil
+			r.awayVersion++
 		}
-		return nil
+		return b.save(self)
 	}
 	rec, err := recipients(self, in.GetRecipients())
 	if err != nil {
@@ -231,8 +269,13 @@ func (b *Book) SetAway(self int64, in *mtproto.InputBusinessAwayMessage) error {
 	}).To_BusinessAwayMessage()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.touch(self).away = msg
-	return nil
+	if err := b.reload(self); err != nil {
+		return err
+	}
+	row := b.touch(self)
+	row.away = msg
+	row.awayVersion++
+	return b.save(self)
 }
 
 // SetIntro replaces the intro. A nil intro clears it.
@@ -242,10 +285,13 @@ func (b *Book) SetIntro(user int64, in *mtproto.InputBusinessIntro) error {
 	if in == nil {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if err := b.reload(user); err != nil {
+			return err
+		}
 		if r := b.users[user]; r != nil {
 			r.intro = nil
 		}
-		return nil
+		return b.save(user)
 	}
 	if stickerSet(in.GetSticker()) {
 		return bad("STICKER_DOCUMENT_INVALID")
@@ -264,8 +310,11 @@ func (b *Book) SetIntro(user int64, in *mtproto.InputBusinessIntro) error {
 	}).To_BusinessIntro()
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(user); err != nil {
+		return err
+	}
 	b.touch(user).intro = intro
-	return nil
+	return b.save(user)
 }
 
 // CreateLink appends a chat link and returns the businessChatLink the client stores.
@@ -281,12 +330,18 @@ func (b *Book) CreateLink(user int64, in *mtproto.InputBusinessChatLink) (*mtpro
 	row.slug = slug
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(user); err != nil {
+		return nil, err
+	}
 	r := b.touch(user)
 	if len(r.links) >= maxLinks {
 		return nil, bad("CHATLINKS_TOO_MUCH")
 	}
 	r.links = append(r.links, row)
 	b.slugs[slug] = user
+	if err := b.save(user); err != nil {
+		return nil, err
+	}
 	return linkTL(row), nil
 }
 
@@ -298,6 +353,9 @@ func (b *Book) EditLink(user int64, slug string, in *mtproto.InputBusinessChatLi
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(user); err != nil {
+		return nil, err
+	}
 	r := b.users[user]
 	item := findLink(r, slug)
 	if item == nil || b.slugs[slug] != user {
@@ -307,6 +365,9 @@ func (b *Book) EditLink(user int64, slug string, in *mtproto.InputBusinessChatLi
 	item.entities = parsed.entities
 	item.title = parsed.title
 	item.hasTitle = parsed.hasTitle
+	if err := b.save(user); err != nil {
+		return nil, err
+	}
 	return linkTL(item), nil
 }
 
@@ -317,8 +378,11 @@ func (b *Book) DeleteLink(user int64, slug string) error {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := b.reload(user); err != nil {
+		return err
+	}
 	r := b.users[user]
-	if r == nil || b.slugs[slug] != user {
+	if r == nil || (b.slugs[slug] != user && !linkOwned(r, slug)) {
 		return bad("SLUG_INVALID")
 	}
 	next := r.links[:0]
@@ -335,7 +399,10 @@ func (b *Book) DeleteLink(user int64, slug string) error {
 	}
 	r.links = next
 	delete(b.slugs, slug)
-	return nil
+	if b.db != nil {
+		_ = b.db.Delete(context.Background(), slugKey(slug))
+	}
+	return b.save(user)
 }
 
 // Links is account.businessChatLinks for user. Chats and users stay empty:
@@ -343,6 +410,7 @@ func (b *Book) DeleteLink(user int64, slug string) error {
 func (b *Book) Links(user int64) *mtproto.Account_BusinessChatLinks {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	_ = b.reload(user)
 	r := b.users[user]
 	links := []*mtproto.BusinessChatLink{}
 	if r != nil {
@@ -366,13 +434,27 @@ func (b *Book) Resolve(slug string) (*mtproto.Account_ResolvedBusinessChatLinks,
 	defer b.mu.Unlock()
 	user, ok := b.slugs[slug]
 	if !ok {
-		return nil, bad("SLUG_INVALID")
+		owner, found, err := b.slugOwner(slug)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, bad("SLUG_INVALID")
+		}
+		user = owner
+	}
+	if err := b.reload(user); err != nil {
+		return nil, err
 	}
 	item := findLink(b.users[user], slug)
 	if item == nil {
 		return nil, bad("SLUG_INVALID")
 	}
 	item.views++
+	if err := b.save(user); err != nil {
+		return nil, err
+	}
+	b.slugs[slug] = user
 	return mtproto.MakeTLAccountResolvedBusinessChatLinks(&mtproto.Account_ResolvedBusinessChatLinks{
 		Peer:     mtproto.MakePeerUser(user),
 		Message:  item.message,
@@ -380,6 +462,10 @@ func (b *Book) Resolve(slug string) (*mtproto.Account_ResolvedBusinessChatLinks,
 		Chats:    []*mtproto.Chat{},
 		Users:    []*mtproto.User{},
 	}).To_Account_ResolvedBusinessChatLinks(), nil
+}
+
+func linkOwned(r *row, slug string) bool {
+	return findLink(r, slug) != nil
 }
 
 func findLink(r *row, slug string) *linkRow {
