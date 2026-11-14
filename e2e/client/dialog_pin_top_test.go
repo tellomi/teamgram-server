@@ -159,6 +159,22 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// sendMessage returns the id before the inbox consumer inserts the row.
+	// Deleting in that gap is a no-op and the dialog top stays on the new id.
+	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		hist, err := a.History(ctx, userPeer, 20)
+		if err != nil {
+			return false, err
+		}
+		for _, m := range hist {
+			if m.GetId() == p2 {
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	invokeOK(t, a, &mtproto.TLMessagesDeleteMessages{
 		Constructor: mtproto.CRC32_messages_deleteMessages,
 		Revoke:      true,
@@ -198,6 +214,20 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 	}
 	g2, err := a.SendText(ctx, gPeer, "g-newer", nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		hist, err := a.History(ctx, gPeer, 20)
+		if err != nil {
+			return false, err
+		}
+		for _, m := range hist {
+			if m.GetId() == g2 {
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	invokeOK(t, a, &mtproto.TLMessagesDeleteMessages{
