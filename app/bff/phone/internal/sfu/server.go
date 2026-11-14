@@ -242,7 +242,9 @@ func (s *Server) loop() {
 			s.onSTUN(pkt, addr)
 		case b0 >= 20 && b0 <= 63:
 			s.onDTLS(pkt, addr)
-		default:
+		case b0 >= 128 && b0 <= 191:
+			// RFC 7983: RTP/RTCP (version 2). Anything else (TURN
+			// channel data 64..79, garbage) is dropped.
 			s.onMedia(pkt, addr)
 		}
 	}
@@ -324,32 +326,45 @@ func (s *Server) onMedia(pkt []byte, addr *net.UDPAddr) {
 		return
 	}
 	ep.touch()
-	var packet rtp.Packet
-	if err := packet.Unmarshal(pkt); err != nil {
+	if isRTCP(pkt) {
+		// SRTCP is terminated here and not forwarded. RTP is relayed with the
+		// senders' own transport-wide sequence numbers, so relaying receivers'
+		// transport-cc/REMB feedback would mix several senders' sequence
+		// spaces and break their congestion control. Classifying it keeps it
+		// from being decrypted as RTP.
 		return
 	}
-	plain, err := ep.dec.DecryptRTP(nil, pkt, &packet.Header)
+	var hdr rtp.Header
+	if _, err := hdr.Unmarshal(pkt); err != nil {
+		return
+	}
+	// DecryptRTP returns the whole plaintext RTP packet (header + payload),
+	// so it is re-encrypted as is. Re-marshalling it as a payload would
+	// prepend a second copy of the RTP header.
+	plain, err := ep.dec.DecryptRTP(nil, pkt, &hdr)
 	if err != nil {
 		return
 	}
 	if ep.record.Load() {
 		recordedPackets.Add(1)
 	}
-	packet.Payload = plain
-	raw, err := packet.Marshal()
-	if err != nil {
-		return
-	}
 	for _, other := range others {
 		if other == nil || other == ep || !other.ready.Load() || other.enc == nil || other.addr == nil {
 			continue
 		}
-		out, err := other.enc.EncryptRTP(nil, raw, &packet.Header)
+		out, err := other.enc.EncryptRTP(nil, plain, &hdr)
 		if err != nil {
 			continue
 		}
 		_, _ = s.conn.WriteToUDP(out, other.addr)
 	}
+}
+
+// isRTCP reports whether a version-2 RTP/RTCP datagram is RTCP
+// (RFC 5761 section 4; like tgcalls go_sfu, packet types 200..223:
+// SR/RR/SDES/BYE/APP/RTPFB/PSFB/XR; 192..199 are obsolete).
+func isRTCP(pkt []byte) bool {
+	return len(pkt) >= 2 && pkt[1] >= 200 && pkt[1] <= 223
 }
 
 func epCall(ep *endpoint) int64 {
