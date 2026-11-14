@@ -24,8 +24,10 @@ func New(c Config) *service.Service {
 
 func NewForums() *service.ForumsService { return &service.ForumsService{} }
 func NewReactions(userConf, messageConf zrpc.RpcClientConf, syncConf *kafka.KafkaProducerConf) *service.ReactionsService {
+	users := user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf))
 	s := &service.ReactionsService{
-		Users:    user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
+		Users:    users,
+		Blocks:   users,
 		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(messageConf)),
 		Dialogs:  dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(userConf)),
 		Chats:    chat_client.NewChatClient(rpcx.GetCachedRpcClient(userConf)),

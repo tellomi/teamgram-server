@@ -63,6 +63,9 @@
     "notify_reset_peer": {"number": "9996610193", "code": "11111"},
     "topic_a": {"number": "9996610194", "code": "11111"},
     "dlgpin_a": {"number": "9996610201", "code": "11111"},
-    "dlgpin_b": {"number": "9996610202", "code": "11111"}
+    "dlgpin_b": {"number": "9996610202", "code": "11111"},
+    "reactblk_a": {"number": "9996610221", "code": "11111"},
+    "reactblk_b": {"number": "9996610222", "code": "11111"},
+    "pinlim_a": {"number": "9996610223", "code": "11111"}
   }
 }
