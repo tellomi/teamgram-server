@@ -651,7 +651,7 @@ No new table. No new production switch.
 
 ## Business bot bar, quote text, and chat theme service messages
 
-`messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`.
+`messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`. The overlay follows `businessBotRecipients`: a category matches only when the viewer really is a contact, a non-contact, an existing private chat, or a new private chat. `users` adds people unless `exclude_selected` is set, in which case those people are removed. `exclude_users` never sees the bar. A category whose lookup failed does not match.
 
 `messages.sendMessage`, `messages.sendMedia`, and `messages.sendMultiMedia` copied `inputReplyToMessage` and dropped `todo_item_id`. `quote_text` was stored without checking it against the original message. A quote that is not the UTF-16 slice at `quote_offset` is `QUOTE_TEXT_INVALID`.
 

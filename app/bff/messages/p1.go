@@ -14,6 +14,8 @@ import (
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
+	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -22,6 +24,7 @@ import (
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/zeromicro/go-zero/zrpc"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -256,11 +259,44 @@ func NewRingtones() *service.RingtoneService { return &service.RingtoneService{}
 func NewConnectedBots(c ...Config) *service.ConnectedBotsService {
 	if len(c) > 0 && rpcReady(c[0].UserClient) {
 		users := user_client.NewUserClient(rpcx.GetCachedRpcClient(c[0].UserClient))
+		var dialogs dialog_client.DialogClient
+		if rpcReady(c[0].DialogClient) {
+			dialogs = dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c[0].DialogClient))
+		}
 		accountassets.IsBusinessBot = func(id int64) bool {
 			return userIsBusinessBot(users, id)
 		}
+		accountassets.ViewerFactsOf = func(owner, viewer int64) accountassets.ViewerFacts {
+			return businessViewerFacts(users, dialogs, owner, viewer)
+		}
 	}
 	return &service.ConnectedBotsService{}
+}
+
+func businessViewerFacts(users user_client.UserClient, dialogs dialog_client.DialogClient, owner, viewer int64) accountassets.ViewerFacts {
+	var facts accountassets.ViewerFacts
+	if users != nil {
+		ok, err := users.UserCheckContact(context.Background(), &user.TLUserCheckContact{
+			UserId: owner, Id: viewer,
+		})
+		if err == nil {
+			facts.ContactOK = true
+			facts.Contact = mtproto.FromBool(ok)
+		}
+	}
+	if dialogs != nil {
+		dlg, err := dialogs.DialogGetDialogById(context.Background(), &dialog.TLDialogGetDialogById{
+			UserId: owner, PeerType: mtproto.PEER_USER, PeerId: viewer,
+		})
+		if err == nil && dlg != nil {
+			facts.ChatOK = true
+			facts.ExistingChat = true
+		} else if status.Convert(err).Message() == "PEER_ID_INVALID" {
+			facts.ChatOK = true
+			facts.ExistingChat = false
+		}
+	}
+	return facts
 }
 
 func userIsBusinessBot(users user_client.UserClient, id int64) bool {

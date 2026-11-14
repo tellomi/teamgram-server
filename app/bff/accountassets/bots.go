@@ -212,7 +212,7 @@ func recipientsOf(self int64, in *mtproto.InputBusinessBotRecipients) (*mtproto.
 		NewChats:        in.GetNewChats(),
 		Contacts:        in.GetContacts(),
 		NonContacts:     in.GetNonContacts(),
-		ExcludeSelected: in.GetExcludeSelected() || len(exclude) > 0,
+		ExcludeSelected: in.GetExcludeSelected(),
 		Users:           users,
 		ExcludeUsers:    exclude,
 	}).To_BusinessBotRecipients(), nil
@@ -256,12 +256,10 @@ func excludeUser(r *mtproto.BusinessBotRecipients, id int64) {
 	r.Users = kept
 	for _, u := range r.ExcludeUsers {
 		if u == id {
-			r.ExcludeSelected = true
 			return
 		}
 	}
 	r.ExcludeUsers = append(r.ExcludeUsers, id)
-	r.ExcludeSelected = true
 }
 
 func (b *botLink) view() *mtproto.ConnectedBot {
@@ -305,13 +303,34 @@ func manageURL(link *botLink) string {
 	return fmt.Sprintf("https://t.me/bot%d?start=biz_%s", link.id, link.conn)
 }
 
+// ViewerFacts is the viewer's relationship to the business account.
+// Contact means the viewer is in that account's contact list.
+// ExistingChat means a private dialog already exists between them.
+// ContactOK and ChatOK are false when that lookup failed. A selected
+// category that cannot be evaluated does not match, so the bot id is not shown.
+type ViewerFacts struct {
+	Contact      bool
+	ExistingChat bool
+	ContactOK    bool
+	ChatOK       bool
+}
+
+// ViewerFactsOf reports the relationship. Nil means the categories cannot
+// be evaluated. The bff installs this when the user and dialog services exist.
+var ViewerFactsOf func(owner, viewer int64) ViewerFacts
+
 // ApplyBusinessBar fills the business-bot fields the viewer sees on owner's
 // peerSettings. business_bot_id and business_bot_manage_url share flags.13,
 // so both are set together. The returned user is the bot, for the users vector.
 // https://core.telegram.org/constructor/peerSettings
+// https://core.telegram.org/constructor/businessBotRecipients
 func ApplyBusinessBar(owner, viewer int64, settings *mtproto.PeerSettings) *mtproto.User {
 	if settings == nil || owner == 0 || viewer == 0 || owner == viewer {
 		return nil
+	}
+	var facts ViewerFacts
+	if ViewerFactsOf != nil {
+		facts = ViewerFactsOf(owner, viewer)
 	}
 	s := shared()
 	s.mu.Lock()
@@ -326,7 +345,7 @@ func ApplyBusinessBar(owner, viewer int64, settings *mtproto.PeerSettings) *mtpr
 	}
 	for _, id := range u.botOrder {
 		link := u.bots[id]
-		if link == nil || !covers(link, viewer) {
+		if link == nil || !covers(link, viewer, facts) {
 			continue
 		}
 		if IsBusinessBot != nil && !IsBusinessBot(link.id) {
@@ -342,7 +361,12 @@ func ApplyBusinessBar(owner, viewer int64, settings *mtproto.PeerSettings) *mtpr
 	return nil
 }
 
-func covers(link *botLink, viewer int64) bool {
+// covers reports whether viewer is in the business bot's recipient set.
+// Categories are OR-ed and use the viewer's real relationship: contacts,
+// non-contacts, an existing private chat, or a new private chat.
+// users adds people when exclude_selected is unset, and removes them when
+// it is set. exclude_users never sees the bar.
+func covers(link *botLink, viewer int64, facts ViewerFacts) bool {
 	if link == nil || link.recipients == nil || viewer == 0 {
 		return false
 	}
@@ -359,13 +383,32 @@ func covers(link *botLink, viewer int64) bool {
 			break
 		}
 	}
-	if r.ExcludeSelected && listed {
-		return false
+	if r.ExcludeSelected {
+		if listed {
+			return false
+		}
+		return recipientCategory(r, facts)
 	}
-	if r.ExistingChats || r.NewChats || r.Contacts || r.NonContacts {
+	if listed {
 		return true
 	}
-	return listed && !r.ExcludeSelected
+	return recipientCategory(r, facts)
+}
+
+func recipientCategory(r *mtproto.BusinessBotRecipients, facts ViewerFacts) bool {
+	if r.GetContacts() && facts.ContactOK && facts.Contact {
+		return true
+	}
+	if r.GetNonContacts() && facts.ContactOK && !facts.Contact {
+		return true
+	}
+	if r.GetExistingChats() && facts.ChatOK && facts.ExistingChat {
+		return true
+	}
+	if r.GetNewChats() && facts.ChatOK && !facts.ExistingChat {
+		return true
+	}
+	return false
 }
 
 // BotBusinessConnection implements account.getBotBusinessConnection.

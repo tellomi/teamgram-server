@@ -361,7 +361,13 @@ func TestToggleConnectedBotRequiresABusinessBot(t *testing.T) {
 		t.Fatal(err)
 	}
 	IsBusinessBot = func(id int64) bool { return id == 7 }
-	t.Cleanup(func() { IsBusinessBot = nil })
+	ViewerFactsOf = func(int64, int64) ViewerFacts {
+		return ViewerFacts{Contact: true, ContactOK: true}
+	}
+	t.Cleanup(func() {
+		IsBusinessBot = nil
+		ViewerFactsOf = nil
+	})
 	bot := mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 42, AccessHash: 7}).To_InputUser()
 	recipients := mtproto.MakeTLInputBusinessBotRecipients(&mtproto.InputBusinessBotRecipients{Contacts: true}).To_InputBusinessBotRecipients()
 	if _, err := UpdateConnectedBot(1, &mtproto.TLAccountUpdateConnectedBot{
