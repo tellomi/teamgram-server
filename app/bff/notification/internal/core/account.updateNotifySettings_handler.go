@@ -61,7 +61,15 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		return nil, err
 	}
 
-	peer := mtproto.FromInputNotifyPeer(c.MD.UserId, in.GetPeer())
+	peer, topMsgId := mtproto.ParseInputNotifyPeer(c.MD.UserId, in.GetPeer())
+	if in.GetPeer().GetPredicateName() == mtproto.Predicate_inputNotifyForumTopic && topMsgId <= 0 {
+		c.Logger.Errorf("account.updateNotifySettings - topic id")
+		return nil, mtproto.ErrTopicIdInvalid
+	}
+	if topMsgId > 0 && peer.PeerType != mtproto.PEER_USER && peer.PeerType != mtproto.PEER_CHAT && peer.PeerType != mtproto.PEER_CHANNEL {
+		c.Logger.Errorf("account.updateNotifySettings - topic peer")
+		return nil, mtproto.ErrPeerIdInvalid
+	}
 	switch peer.PeerType {
 	case mtproto.PEER_USERS:
 	case mtproto.PEER_CHATS:
@@ -110,6 +118,7 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		UserId:   c.MD.UserId,
 		PeerType: peer.PeerType,
 		PeerId:   peer.PeerId,
+		TopMsgId: topMsgId,
 		Settings: settings,
 	})
 	if err != nil {
@@ -120,6 +129,7 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 		UserId:   c.MD.UserId,
 		PeerType: peer.PeerType,
 		PeerId:   peer.PeerId,
+		TopMsgId: topMsgId,
 	})
 	if err != nil {
 		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
@@ -133,7 +143,7 @@ func (c *NotificationCore) AccountUpdateNotifySettings(in *mtproto.TLAccountUpda
 	// change locally. updateNotifySettings has no pts, so the live push is
 	// what an online device uses; a later getNotifySettings reads the row.
 	syncNotMeUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateNotifySettings(&mtproto.Update{
-		Peer_NOTIFYPEER: peer.ToNotifyPeer(),
+		Peer_NOTIFYPEER: mtproto.NotifyPeerWithTopic(peer, topMsgId),
 		NotifySettings:  settings,
 	}).To_Update())
 

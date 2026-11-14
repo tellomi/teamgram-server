@@ -46,9 +46,8 @@ func (c *NotificationCore) AccountGetNotifyExceptions(in *mtproto.TLAccountGetNo
 	for _, setting := range settings.GetDatas() {
 		peer := mtproto.MakePeerUtil(setting.PeerType, setting.PeerId)
 		idHelper.PickByPeerUtil(peer.PeerType, peer.PeerId)
-		// TODO:
 		rUpdates.PushBackUpdate(mtproto.MakeTLUpdateNotifySettings(&mtproto.Update{
-			Peer_NOTIFYPEER: peer.ToNotifyPeer(),
+			Peer_NOTIFYPEER: mtproto.NotifyPeerWithTopic(peer, setting.GetTopMsgId()),
 			NotifySettings:  setting.Settings,
 		}).To_Update())
 	}
