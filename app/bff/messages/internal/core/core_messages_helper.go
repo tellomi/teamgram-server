@@ -14,6 +14,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
@@ -223,9 +224,8 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaPoll:
 		// inputMediaPoll#f94e5f1 flags:# poll:Poll correct_answers:flags.0?Vector<bytes> solution:flags.1?string solution_entities:flags.1?Vector<MessageEntity> = InputMedia;
-
-		// TODO(@benqi): Not impl inputMediaPoll
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+		// https://core.telegram.org/constructor/inputMediaPoll
+		messageMedia, err = chatbox.PollInputMedia(c.ctx, c.MD.UserId, media)
 	case mtproto.Predicate_inputMediaDice:
 		// inputMediaDice#e66fbf7b emoticon:string = InputMedia;
 

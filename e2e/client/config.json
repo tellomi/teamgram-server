@@ -66,6 +66,9 @@
     "dlgpin_b": {"number": "9996610202", "code": "11111"},
     "crblk_a": {"number": "9996610211", "code": "11111"},
     "crblk_b": {"number": "9996610212", "code": "11111"},
-    "crblk_ok": {"number": "9996610213", "code": "11111"}
+    "crblk_ok": {"number": "9996610213", "code": "11111"},
+    "reactblk_a": {"number": "9996610221", "code": "11111"},
+    "reactblk_b": {"number": "9996610222", "code": "11111"},
+    "pinlim_a": {"number": "9996610223", "code": "11111"}
   }
 }
