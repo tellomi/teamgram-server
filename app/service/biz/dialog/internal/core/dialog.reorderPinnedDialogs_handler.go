@@ -46,7 +46,7 @@ func (c *DialogCore) DialogReorderPinnedDialogs(in *dialog.TLDialogReorderPinned
 		c.Logger.Errorf("dialog.reorderPinnedDialogs - error: %v", listErr)
 		return nil, listErr
 	}
-	if err := reorderPinsRejected(force, current, idList, pinnedDialogLimit(folderId)); err != nil {
+	if err := reorderPinsRejected(force, current, idList, pinnedCapFor(c, userId, folderId)); err != nil {
 		return nil, err
 	}
 

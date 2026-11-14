@@ -71,6 +71,31 @@ func TestDeleteLatestMessageKeepsPreviousDialogTop(t *testing.T) {
 	}
 }
 
+func TestDialogForDoesNotRequireTheOtherChannel(t *testing.T) {
+	svc, ctx := newTest(t)
+	first, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "One", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Two", Megagroup: true}); err != nil {
+		t.Fatal(err)
+	}
+	ch := first.Chats[0]
+	if _, err = svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 1,
+		Message:  &mtproto.Message{Message: "only", Date: 10},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	row, ok, err := svc.DialogFor(ctx, 1, ch.Id)
+	if err != nil || !ok || row.ChannelID != ch.Id || row.TopMessage == 0 {
+		t.Fatalf("dialog %+v ok %v err %v", row, ok, err)
+	}
+	if _, ok, err = svc.DialogFor(ctx, 99, ch.Id); err != nil || ok {
+		t.Fatalf("stranger ok %v err %v", ok, err)
+	}
+}
+
 func TestDeleteLatestBroadcastPostKeepsPreviousDialogTop(t *testing.T) {
 	svc, ctx := newTest(t)
 	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Feed", Broadcast: true})

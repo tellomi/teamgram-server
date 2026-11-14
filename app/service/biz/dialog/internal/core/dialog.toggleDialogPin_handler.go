@@ -58,8 +58,8 @@ func (c *DialogCore) DialogToggleDialogPin(in *dialog.TLDialogToggleDialogPin) (
 			c.Logger.Errorf("dialog.toggleDialogPin - error: %v", listErr)
 			return nil, listErr
 		}
-		if len(pinnedIDs) >= pinnedDialogLimit(folderId) {
-			return nil, mtproto.ErrPinnedDialogsTooMuch
+		if err = pinRejected(false, len(pinnedIDs), pinnedCapFor(c, in.UserId, folderId)); err != nil {
+			return nil, err
 		}
 		pinned = time.Now().Unix() << 32
 	} else {

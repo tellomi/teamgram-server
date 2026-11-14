@@ -163,9 +163,25 @@ func (c *DialogsCore) applyChannelLive(list dialog.DialogExtList) dialog.DialogE
 	if c == nil || c.svcCtx == nil || c.svcCtx.Plugin == nil || len(list) == 0 {
 		return list
 	}
-	live, err := c.svcCtx.Plugin.ListChannelDialogs(c.ctx, c.MD.UserId)
-	if err != nil || len(live) == 0 {
-		return list
+	// Only the channels already on this page. Listing every joined channel
+	// here made opening one chat walk the whole membership.
+	seen := map[int64]bool{}
+	var live dialog.DialogExtList
+	for _, ext := range list {
+		d := ext.GetDialog()
+		if d == nil || d.GetPeer() == nil {
+			continue
+		}
+		id := d.GetPeer().GetChannelId()
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		row, err := c.svcCtx.Plugin.GetChannelDialogById(c.ctx, c.MD.UserId, id)
+		if err != nil || row == nil {
+			continue
+		}
+		live = append(live, row)
 	}
 	applyChannelLiveRows(list, live)
 	return list
