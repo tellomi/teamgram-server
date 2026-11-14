@@ -81,7 +81,7 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.updatePinnedMessage` | partial | User and basic group honor `silent`, `unpin`, and `pm_oneside`. A channel pin ignores `silent` and `pm_oneside`. |
 | `messages.unpinAllMessages` | partial | A channel pin is cleared (#163). `top_msg_id` and `saved_peer_id` are not applied. |
 | `messages.getPinnedDialogs` | implemented | |
-| `messages.sendMessage` with `schedule_date` | partial | A future date is stored and later sent. `schedule_repeat_period` is ignored. |
+| `messages.sendMessage` with `schedule_date` | partial | A future date is stored. `0x7FFFFFFE` is send-when-online. `schedule_repeat_period` is kept (1 day, 1 week, 2 weeks, 30 days, 365 days). Due delivery runs only when `TELLOMI_SCHEDULED_DISPATCH=1`. |
 | `messages.getScheduledHistory` | implemented | |
 | `messages.getScheduledMessages` | implemented | |
 | `messages.sendScheduledMessages` | partial | Sends now and drops the original `schedule_date` on the live message. |

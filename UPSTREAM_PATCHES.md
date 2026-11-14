@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Scheduled messages
+
+`messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
+
+Due rows live in the same `chatbox_doc` table (`sched:due`, rebuilt from `sched:*` if that index is missing), so a restart still finds them. The sender is `TELLOMI_SCHEDULED_DISPATCH=1` (default off). It sends a normal message (`from_scheduled`), pushes `updateDeleteScheduledMessages` to both sides of a private chat, and queues the next occurrence when a repeat period is set. Send-when-online uses `status.getUserOnlineSessions`.
+
+| Piece | File |
+| --- | --- |
+| store, edit, due claim | `app/service/biz/chatbox/schedule.go`, `schedule_due.go` |
+| repeat stamp, last-seen check | `app/bff/messages/internal/core/schedule_dispatch.go` |
+| edit falls through to the scheduled copy | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
+| dispatcher | `app/bff/messages/internal/server/grpc/service/schedule_loop.go` |
+
 ## Basic-group dialog before the send returns
 
 `messages.createChat` returns as soon as the inbox record is accepted by Kafka. The creator's `dialogs` row used to be written later, in the inbox consumer (`SendMessageToOutboxV1`). `messages.toggleDialogPin` looks that row up and returns `PEER_ID_INVALID` when it is missing, so pinning the new group immediately failed. The sender's dialog is now inserted before the inbox publish, for one message and for a list. The request sets `top_message` and `date2` only. An existing unread count, read cursor, and pin stay. A new row still starts at unread 0 through `InsertIgnore`. The later inbox apply still moves `top_message` forward and does not clear `pinned`.

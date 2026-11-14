@@ -470,6 +470,7 @@ func (s *Server) Initialize() error {
 			MessageClient: c.BizServiceClient,
 			MediaClient:   c.MediaClient,
 			SyncClient:    c.SyncClient,
+			StatusClient:  c.StatusClient,
 			ChannelMySQL:  c.ChannelMySQL,
 		}
 		mtproto.RegisterRPCMessagesServer(grpcServer, messages_helper.New(msgCfg, nil))

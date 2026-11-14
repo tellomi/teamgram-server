@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 
 	"google.golang.org/protobuf/proto"
@@ -44,12 +45,15 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - sanction")
 		return nil, err
 	}
+	if peer.PeerType == mtproto.PEER_SELF {
+		peer.PeerType = mtproto.PEER_USER
+	}
+	if ups, ok, err := c.editScheduledIfNeeded(peer, in, false, false, 0); ok || err != nil {
+		return ups, err
+	}
 
 	switch peer.PeerType {
 	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
-		if peer.PeerType == mtproto.PEER_SELF {
-			peer.PeerType = mtproto.PEER_USER
-		}
 		if peer.PeerType == mtproto.PEER_USER {
 			//if !md.IsBot {
 			//	hasBot = s.UserFacade.IsBot(ctx, peer.PeerId)
@@ -100,6 +104,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	}
 
 	if len(editMessages.GetDatas()) != 1 {
+		if ups, ok, err2 := c.editScheduledIfNeeded(peer, in, true, false, 0); ok || err2 != nil {
+			return ups, err2
+		}
 		err = mtproto.ErrMessageEmpty
 		c.Logger.Errorf("messages.editMessage - emptyMessage(%d)", in.Id)
 		return nil, err
@@ -108,6 +115,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	// TODO(@benqi): check
 	// editMessage := editMessages[0]
 	if editMessages.Datas[0].SenderUserId != c.MD.UserId {
+		if ups, ok, err2 := c.editScheduledIfNeeded(peer, in, true, true, editMessages.Datas[0].SenderUserId); ok || err2 != nil {
+			return ups, err2
+		}
 		err = mtproto.ErrMessageAuthorRequired
 		c.Logger.Errorf("messages.editMessage - emptyMessage(%d)", in.Id)
 		return nil, err
@@ -188,6 +198,69 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	c.schedulePendingWebpage(peer, outMessage.Media, outMessage.Message, outMessage.Entities, rUpdates, in.GetScheduleDate().GetValue() != 0)
 
 	return rUpdates, nil
+}
+
+// editScheduledIfNeeded edits the scheduled inbox when this id is a scheduled
+// message. force is set after the live box is missing or was written by
+// someone else, which is how a low scheduled id used to become
+// MESSAGE_AUTHOR_REQUIRED.
+func (c *MessagesCore) editScheduledIfNeeded(peer *mtproto.PeerUtil, in *mtproto.TLMessagesEditMessage, force, liveFound bool, liveAuthor int64) (*mtproto.Updates, bool, error) {
+	if peer == nil || in == nil {
+		return nil, false, nil
+	}
+	has, err := chatbox.Shared().HasScheduled(c.ctx, c.MD.UserId, peer, in.Id)
+	if err != nil || !has {
+		return nil, false, err
+	}
+	explicit := in.GetScheduleDate() != nil || in.GetScheduleRepeatPeriod() != nil
+	// Before the live lookup, only an explicit schedule field or a high
+	// scheduled id is enough. A low id might also be a live message this
+	// user wrote.
+	if !force && !explicit && in.Id < chatbox.SchedIDBase {
+		return nil, false, nil
+	}
+	if force && !chatbox.ShouldEditScheduled(true, explicit, in.Id, liveFound, liveAuthor, c.MD.UserId) {
+		return nil, false, nil
+	}
+	ups, err := c.applyScheduledEdit(peer, in)
+	return ups, true, err
+}
+
+func (c *MessagesCore) applyScheduledEdit(peer *mtproto.PeerUtil, in *mtproto.TLMessagesEditMessage) (*mtproto.Updates, error) {
+	edit := chatbox.SchedEdit{Now: int32(time.Now().Unix())}
+	if in.Message != nil {
+		text := in.Message.Value
+		edit.Text = &text
+		if in.Entities != nil {
+			edit.Entities = in.Entities
+		}
+	} else if in.Entities != nil {
+		edit.Entities = in.Entities
+	}
+	if in.ReplyMarkup != nil {
+		edit.Markup = in.ReplyMarkup
+	}
+	if in.Media != nil {
+		media, err := c.makeMediaByInputMedia(in.Media)
+		if err != nil {
+			c.Logger.Errorf("messages.editMessage - media error: %v", err)
+			return nil, err
+		}
+		edit.Media = media
+	}
+	if in.GetScheduleDate() != nil {
+		when := in.GetScheduleDate().GetValue()
+		edit.When = &when
+	}
+	if in.GetScheduleRepeatPeriod() != nil {
+		period := in.GetScheduleRepeatPeriod().GetValue()
+		edit.Repeat = &period
+	}
+	ups, err := chatbox.Shared().EditScheduled(c.ctx, c.MD.UserId, peer, in.Id, edit)
+	if err != nil {
+		c.Logger.Errorf("messages.editMessage - scheduled: %v", err)
+	}
+	return ups, err
 }
 
 // refreshInternalPreview attaches or clears a native internal link card when

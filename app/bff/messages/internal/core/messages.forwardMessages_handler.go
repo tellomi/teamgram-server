@@ -69,6 +69,10 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 		c.Logger.Errorf("messages.forwardMessages - sanction")
 		return nil, err
 	}
+	if err = chatbox.RepeatSingleOnly(len(in.Id), in.GetScheduleRepeatPeriod().GetValue()); err != nil {
+		c.Logger.Errorf("messages.forwardMessages - repeat on %d messages", len(in.Id))
+		return nil, err
+	}
 
 	switch toPeer.PeerType {
 	case mtproto.PEER_SELF:
@@ -321,6 +325,9 @@ func (c *MessagesCore) makeForwardMessages(
 		}
 		if request.GetDropMediaCaptions() {
 			dropMediaCaptions(m)
+		}
+		if err := stampScheduleRepeat(m, request.GetScheduleRepeatPeriod(), request.GetScheduleDate().GetValue()); err != nil {
+			return nil, err
 		}
 		if m.ReplyMarkup != nil {
 			m.ReplyMarkup = m.ReplyMarkup.ToForwardMessage()

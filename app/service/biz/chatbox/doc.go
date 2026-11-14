@@ -44,6 +44,23 @@ ON DUPLICATE KEY UPDATE data=VALUES(data)`, key, raw)
 	return err
 }
 
+func (s sqlDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT doc_key FROM chatbox_doc WHERE doc_key LIKE ?`, prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 const docSchema = `
 CREATE TABLE IF NOT EXISTS chatbox_doc (
   doc_key VARCHAR(191) NOT NULL PRIMARY KEY,
@@ -57,32 +74,34 @@ CREATE TABLE IF NOT EXISTS chatbox_doc (
 // translation flags, and saved-message reaction tags. User reports go to
 // biz/report. Delivery, listen, and read signals stay in this book.
 type Book struct {
-	mu        sync.Mutex
-	db        docDB
-	sched     map[string]*schedDoc
-	polls     map[int64]*pollDoc
-	pollIdx   map[string]int64
-	pollDlg   map[int64]int64
-	pollPeer  map[string][]int64
-	react     map[string]*reactDoc
-	def       map[int64]string
-	bots      map[int64]*botState
-	queries   map[int64]*inlineQuery
-	attach    map[int64]*attachDoc
-	prepared  map[string]*preparedDoc
-	webviews  map[int64]*webSession
-	callbacks map[string]*callbackAnswer
-	cbBind    map[int64]*callbackBind
-	sent      map[string][]byte
-	quick     map[int64]*quickDoc
-	plain     map[string]*plainDoc
-	transOff  map[string]bool
-	tags      map[int64]*tagDoc
-	paid      map[string][]*mtproto.MessageExtendedMedia
-	signals   []reportItem
-	ids       msgIDMap
-	protect   map[string]bool
-	now       func() time.Time
+	mu         sync.Mutex
+	db         docDB
+	sched      map[string]*schedDoc
+	polls      map[int64]*pollDoc
+	pollIdx    map[string]int64
+	pollDlg    map[int64]int64
+	pollPeer   map[string][]int64
+	react      map[string]*reactDoc
+	def        map[int64]string
+	bots       map[int64]*botState
+	queries    map[int64]*inlineQuery
+	attach     map[int64]*attachDoc
+	prepared   map[string]*preparedDoc
+	webviews   map[int64]*webSession
+	callbacks  map[string]*callbackAnswer
+	cbBind     map[int64]*callbackBind
+	sent       map[string][]byte
+	quick      map[int64]*quickDoc
+	plain      map[string]*plainDoc
+	transOff   map[string]bool
+	tags       map[int64]*tagDoc
+	paid       map[string][]*mtproto.MessageExtendedMedia
+	signals    []reportItem
+	ids        msgIDMap
+	due        []dueRef
+	dueIndexed bool
+	protect    map[string]bool
+	now        func() time.Time
 }
 
 func newBook(db docDB) *Book {
