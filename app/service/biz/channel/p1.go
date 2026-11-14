@@ -11,6 +11,46 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+// AppearanceLookup tells the channel service which emoji documents and
+// sticker sets exist. A nil func rejects every non-zero id, so a forged
+// id cannot be stored when the catalog has not been wired in.
+type AppearanceLookup struct {
+	EmojiDocument func(int64) bool
+	StickerSet    func(int64) *mtproto.StickerSet
+}
+
+var appearance AppearanceLookup
+
+// SetAppearanceLookup installs the catalog checks used by updateColor,
+// updateEmojiStatus, and setEmojiStickers.
+func SetAppearanceLookup(l AppearanceLookup) {
+	appearance = l
+}
+
+func emojiDocumentOK(id int64) bool {
+	if id == 0 {
+		return true
+	}
+	if id < 0 || appearance.EmojiDocument == nil {
+		return false
+	}
+	return appearance.EmojiDocument(id)
+}
+
+func knownStickerSet(set *mtproto.InputStickerSet) (*mtproto.StickerSet, bool) {
+	if set == nil || set.GetPredicateName() == mtproto.Predicate_inputStickerSetEmpty {
+		return nil, true
+	}
+	if set.GetId() == 0 || appearance.StickerSet == nil {
+		return nil, false
+	}
+	got := appearance.StickerSet(set.GetId())
+	if got == nil || got.GetId() == 0 {
+		return nil, false
+	}
+	return got, true
+}
+
 const (
 	nameColorCount      = 8 // help.getPeerColors
 	profileColorCount   = 6 // help.getPeerProfileColors
@@ -282,8 +322,8 @@ func (s *Service) ReorderUsernames(ctx context.Context, self, actorAuth int64, i
 	return mtproto.BoolTrue, nil
 }
 
-// DeactivateAllUsernames turns off every collectible username and leaves the
-// editable username untouched.
+// DeactivateAllUsernames turns off every username on the channel, including
+// the editable one, and clears the public username column so resolve fails.
 // channels.deactivateAllUsernames#a245dd3 channel:InputChannel = Bool;
 func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel) (*mtproto.Bool, error) {
 	ch, _, err := s.requireInfoAdmin(ctx, self, in)
@@ -293,9 +333,9 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 	f := s.features(ctx, ch.ID)
 	list := append([]UsernameRec(nil), listedUsernames(ch, f)...)
 	prev := activeUsernames(list)
-	changed := false
+	changed := ch.Username != ""
 	for i := range list {
-		if !list[i].Editable && list[i].Active {
+		if list[i].Active {
 			list[i].Active = false
 			changed = true
 		}
@@ -304,7 +344,7 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 		return mtproto.BoolTrue, nil
 	}
 	f.Usernames = list
-	ch.Username = primaryUsername(list)
+	ch.Username = ""
 	ch.Version++
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
@@ -501,8 +541,8 @@ func (s *Service) UpdateColor(ctx context.Context, self, actorAuth int64, in *mt
 	if hasColor && (colorID < 0 || int(colorID) >= limit) {
 		return nil, mtproto.ErrInputRequestInvalid
 	}
-	if hasEmoji && emoji < 0 {
-		return nil, mtproto.ErrInputRequestInvalid
+	if hasEmoji && !emojiDocumentOK(emoji) {
+		return nil, mtproto.ErrDocumentInvalid
 	}
 	f := s.features(ctx, ch.ID)
 	prev := currentPeerColor(f, in.GetForProfile())
@@ -644,6 +684,10 @@ func storedEmoji(status *mtproto.EmojiStatus) (StoredEmojiStatus, error) {
 		if status.GetCollectibleId() == 0 {
 			return StoredEmojiStatus{}, mtproto.ErrInputRequestInvalid
 		}
+		if (status.GetDocumentId() != 0 && !emojiDocumentOK(status.GetDocumentId())) ||
+			(status.GetPatternDocumentId() != 0 && !emojiDocumentOK(status.GetPatternDocumentId())) {
+			return StoredEmojiStatus{}, mtproto.ErrDocumentInvalid
+		}
 		return StoredEmojiStatus{
 			Collectible:       true,
 			CollectibleID:     status.GetCollectibleId(),
@@ -661,11 +705,26 @@ func storedEmoji(status *mtproto.EmojiStatus) (StoredEmojiStatus, error) {
 		if status.GetDocumentId() == 0 {
 			return StoredEmojiStatus{}, nil
 		}
-		if status.GetDocumentId() < 0 {
-			return StoredEmojiStatus{}, mtproto.ErrInputRequestInvalid
+		if !emojiDocumentOK(status.GetDocumentId()) {
+			return StoredEmojiStatus{}, mtproto.ErrDocumentInvalid
 		}
 		return StoredEmojiStatus{DocumentID: status.GetDocumentId(), Until: until}, nil
 	}
+}
+
+func storedStickerSet(id int64, emoji bool) *mtproto.StickerSet {
+	if id == 0 {
+		return nil
+	}
+	if appearance.StickerSet != nil {
+		if set := appearance.StickerSet(id); set != nil {
+			if emoji {
+				set.Emojis = true
+			}
+			return set
+		}
+	}
+	return mtproto.MakeTLStickerSet(&mtproto.StickerSet{Id: id, Emojis: emoji}).To_StickerSet()
 }
 
 func emojiSame(a, b StoredEmojiStatus) bool {

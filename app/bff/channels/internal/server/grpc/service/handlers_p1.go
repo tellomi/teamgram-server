@@ -31,9 +31,45 @@ func (FragmentService) ChannelsToggleUsername(ctx context.Context, in *mtproto.T
 	return channel.Shared().ToggleUsername(ctx, self, auth, in.GetChannel(), in.GetUsername(), mtproto.FromBool(in.GetActive()))
 }
 
-func (FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in *mtproto.TLChannelsDeactivateAllUsernames) (*mtproto.Bool, error) {
+func (s FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in *mtproto.TLChannelsDeactivateAllUsernames) (*mtproto.Bool, error) {
 	self, auth := actor(ctx)
-	return channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel())
+	var names []string
+	if chats, err := channel.Shared().GetChannels(ctx, self, []*mtproto.InputChannel{in.GetChannel()}); err == nil && chats != nil {
+		for _, chat := range chats.GetChats() {
+			if chat == nil {
+				continue
+			}
+			if chat.GetUsername().GetValue() != "" {
+				names = append(names, chat.GetUsername().GetValue())
+			}
+			for _, u := range chat.GetUsernames() {
+				if u.GetUsername() != "" {
+					names = append(names, u.GetUsername())
+				}
+			}
+		}
+	}
+	ok, err := channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel())
+	if err != nil {
+		return nil, err
+	}
+	if s.Users != nil {
+		seen := map[string]bool{}
+		for _, name := range names {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			_, _ = s.Users.UserDeleteUsername(ctx, &user.TLUserDeleteUsername{Username: name})
+		}
+		if in.GetChannel() != nil {
+			_, _ = s.Users.UserDeleteUsernameByPeer(ctx, &user.TLUserDeleteUsernameByPeer{
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerId:   in.GetChannel().GetChannelId(),
+			})
+		}
+	}
+	return ok, nil
 }
 
 // AccountReorderUsernames

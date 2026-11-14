@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -10,6 +11,16 @@ import (
 
 func TestUsernamesColorEmojiAndPaid(t *testing.T) {
 	svc, ctx := newTest(t)
+	SetAppearanceLookup(AppearanceLookup{
+		EmojiDocument: func(id int64) bool { return id == 42 || id == 99 },
+		StickerSet: func(id int64) *mtproto.StickerSet {
+			if id != 77 {
+				return nil
+			}
+			return mtproto.MakeTLStickerSet(&mtproto.StickerSet{Id: id, Emojis: true}).To_StickerSet()
+		},
+	})
+	t.Cleanup(func() { SetAppearanceLookup(AppearanceLookup{}) })
 	ch := megagroup(t, svc, ctx, "Room")
 	in := inCh(ch)
 
@@ -40,8 +51,11 @@ func TestUsernamesColorEmojiAndPaid(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := full.Chats[0].GetUsernames()
-	if len(names) != 1 || !names[0].GetActive() || names[0].GetUsername() != "roomname" {
-		t.Fatalf("usernames %+v", names)
+	if len(names) != 1 || names[0].GetActive() || names[0].GetUsername() != "roomname" || full.Chats[0].GetUsername().GetValue() != "" {
+		t.Fatalf("usernames %+v public %q", names, full.Chats[0].GetUsername().GetValue())
+	}
+	if _, err := svc.ResolveUsername(ctx, 1, "roomname"); err == nil {
+		t.Fatal("deactivated username still resolves")
 	}
 
 	if _, err := svc.UpdateColor(ctx, 1, 0, &mtproto.TLChannelsUpdateColor{
@@ -283,5 +297,41 @@ func TestLeftPrivateChannelsOffset(t *testing.T) {
 	own, err := svc.GetLeftChannels(ctx, 1, 0)
 	if err != nil || len(own.GetChats()) != 0 {
 		t.Fatalf("creator left %+v %v", own.GetChats(), err)
+	}
+}
+
+func TestForgedEmojiAndEmojiSetRejected(t *testing.T) {
+	SetAppearanceLookup(AppearanceLookup{})
+	t.Cleanup(func() { SetAppearanceLookup(AppearanceLookup{}) })
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Looks")
+	in := inCh(ch)
+	if _, err := svc.UpdateEmojiStatus(ctx, 1, 0, in, mtproto.MakeTLEmojiStatus(&mtproto.EmojiStatus{DocumentId: 7}).To_EmojiStatus()); err == nil || !strings.Contains(err.Error(), "DOCUMENT_INVALID") {
+		t.Fatalf("emoji: %v", err)
+	}
+	if _, err := svc.UpdateColor(ctx, 1, 0, &mtproto.TLChannelsUpdateColor{
+		Channel:           in,
+		BackgroundEmojiId: wrapperspb.Int64(8),
+	}); err == nil || !strings.Contains(err.Error(), "DOCUMENT_INVALID") {
+		t.Fatalf("color emoji: %v", err)
+	}
+	if _, err := svc.SetEmojiStickers(ctx, 1, in, &mtproto.InputStickerSet{PredicateName: mtproto.Predicate_inputStickerSetID, Id: 999}); err == nil || !strings.Contains(err.Error(), "STICKERSET_INVALID") {
+		t.Fatalf("set: %v", err)
+	}
+	SetAppearanceLookup(AppearanceLookup{
+		EmojiDocument: func(id int64) bool { return id == 5 },
+		StickerSet: func(id int64) *mtproto.StickerSet {
+			if id != 5 {
+				return nil
+			}
+			return mtproto.MakeTLStickerSet(&mtproto.StickerSet{Id: id, Emojis: true, Title: "Emoji"}).To_StickerSet()
+		},
+	})
+	if _, err := svc.SetEmojiStickers(ctx, 1, in, &mtproto.InputStickerSet{PredicateName: mtproto.Predicate_inputStickerSetID, Id: 5}); err != nil {
+		t.Fatal(err)
+	}
+	full, err := svc.GetFullChannel(ctx, 1, in)
+	if err != nil || full.FullChat.GetEmojiset().GetId() != 5 || !full.FullChat.GetEmojiset().GetEmojis() {
+		t.Fatalf("emojiset %+v %v", full.FullChat.GetEmojiset(), err)
 	}
 }

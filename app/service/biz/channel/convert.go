@@ -213,6 +213,12 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 			full.ReactionsLimit = &wrapperspb.Int32Value{Value: feat.ReactionLimit}
 		}
 		full.PaidReactionsAvailable = feat.PaidReactions
+		if set := storedStickerSet(feat.StickerSetID, false); set != nil {
+			full.Stickerset = set
+		}
+		if set := storedStickerSet(feat.EmojiSetID, true); set != nil {
+			full.Emojiset = set
+		}
 		if feat.Lat != 0 || feat.Long != 0 || ch.Address != "" {
 			full.Location = mtproto.MakeTLChannelLocation(&mtproto.ChannelLocation{
 				GeoPoint: mtproto.MakeTLGeoPoint(&mtproto.GeoPoint{Lat: feat.Lat, Long: feat.Long}).To_GeoPoint(),

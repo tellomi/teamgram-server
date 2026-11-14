@@ -183,16 +183,24 @@ func (s *Service) SetEmojiStickers(ctx context.Context, self int64, in *mtproto.
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsAdmin() {
+	if !p.IsCreator() && !p.adminRights().CanChangeInfo() {
 		return nil, mtproto.ErrChatAdminRequired
 	}
+	known, ok := knownStickerSet(set)
+	if !ok {
+		return nil, mtproto.ErrStickersetInvalid
+	}
 	f := s.features(ctx, ch.ID)
-	if set == nil || set.GetPredicateName() == mtproto.Predicate_inputStickerSetEmpty {
+	if set == nil || set.GetPredicateName() == mtproto.Predicate_inputStickerSetEmpty || set.GetId() == 0 {
 		f.EmojiSetID = 0
 	} else {
-		f.EmojiSetID = set.GetId()
+		f.EmojiSetID = known.GetId()
 	}
-	return mtproto.BoolTrue, s.saveFeatures(ctx, ch.ID, f)
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	s.channelSettingUpdates(ctx, self, 0, ch.ID)
+	return mtproto.BoolTrue, nil
 }
 
 func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.InputChannel, ids []int32) error {

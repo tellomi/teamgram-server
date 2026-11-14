@@ -725,3 +725,18 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Usernames, emoji documents, and emoji sticker sets (ISSUE-S-USERNAME-DEACT-001, CHAN-EMOJI-INVALID-001, CHAN-EMOJISET-001)
+
+`channels.deactivateAllUsernames` left the editable username active, and `channels.username` plus the user-service username index still resolved it. Every name is now inactive, the public column is cleared, and the fragment handler deletes those rows from the username index.
+
+`channels.updateColor` and `channels.updateEmojiStatus` stored any positive document id. A non-zero id must be a real custom-emoji document in the sticker catalog. Otherwise the RPC is `DOCUMENT_INVALID`. Clearing the emoji (id 0) is unchanged.
+
+`channels.setEmojiStickers` stored any id and `channelFull` never returned `emojiset`. An unknown set is `STICKERSET_INVALID`. A known set is saved and returned on `channels.getFullChannel`, and members get `updateChannel`.
+
+| Piece | File |
+| --- | --- |
+| deactivate, emoji checks | `app/service/biz/channel/p1.go` |
+| emoji set readback | `service_features.go`, `convert.go` |
+| username index | `handlers_p1.go` |
+| catalog wiring | `app/bff/channels/appearance_lookup.go` |
