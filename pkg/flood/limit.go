@@ -19,6 +19,7 @@ import (
 const (
 	ModeOff     = "off"
 	ModeLog     = "log"
+	ModeGradual = "gradual"
 	ModeEnforce = "enforce"
 
 	BucketGlobal         = "global"
@@ -44,9 +45,10 @@ type Rule struct {
 	Rate  float64
 }
 
-// Config is the process-wide limiter. Mode is off, log, or enforce.
-// Modes overrides Mode for one bucket so a high-cost write can enforce
-// while reads stay in log. Empty means that bucket uses Mode.
+// Config is the process-wide limiter. Mode is off, log, gradual, or enforce.
+// gradual keeps the process default in log and enforces high-cost write
+// buckets. Modes overrides Mode for one bucket so a method can be rolled
+// forward or back on its own. Empty means that bucket uses Mode.
 type Config struct {
 	Mode  string
 	Rules map[string]Rule
@@ -120,9 +122,13 @@ func defaultRules() map[string]Rule {
 	}
 }
 
-// ConfigFromEnv reads TELLOMI_FLOOD_MODE and TELLOMI_FLOOD_LIMITS.
-// MODE is enforce, log, or off. Empty is enforce.
-// LIMITS is name:burst:rate,name:burst:rate and overrides those buckets.
+// ConfigFromEnv reads TELLOMI_FLOOD_MODE, TELLOMI_FLOOD_LIMITS, and
+// TELLOMI_FLOOD_BUCKET_MODE. MODE is enforce, log, gradual, or off.
+// Empty is enforce. gradual logs low-cost buckets and enforces high-cost
+// writes. LIMITS is name:burst:rate and overrides those buckets.
+// BUCKET_MODE is name:off|log|enforce and overrides Mode for one bucket,
+// including under gradual, so a rollout can be tightened or rolled back
+// one method at a time.
 func ConfigFromEnv() Config {
 	cfg := DefaultConfig()
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("TELLOMI_FLOOD_MODE"))) {
@@ -130,6 +136,8 @@ func ConfigFromEnv() Config {
 		cfg.Mode = ModeOff
 	case ModeLog:
 		cfg.Mode = ModeLog
+	case ModeGradual:
+		cfg.Mode = ModeGradual
 	case "", ModeEnforce:
 		cfg.Mode = ModeEnforce
 	default:
@@ -249,10 +257,28 @@ func (l *Limiter) modeOf(bucket string) string {
 			return l.cfg.Modes[bucket]
 		}
 	}
-	if l.cfg.Mode == "" {
+	return resolveMode(l.cfg.Mode, bucket)
+}
+
+// resolveMode maps a process-wide mode onto one bucket. gradual enforces
+// high-cost writes and leaves the rest in log. An unknown mode still
+// enforces, matching ConfigFromEnv.
+func resolveMode(mode, bucket string) string {
+	switch mode {
+	case ModeOff:
+		return ModeOff
+	case ModeLog:
+		return ModeLog
+	case ModeGradual:
+		if highCost(bucket) {
+			return ModeEnforce
+		}
+		return ModeLog
+	case ModeEnforce, "":
+		return ModeEnforce
+	default:
 		return ModeEnforce
 	}
-	return l.cfg.Mode
 }
 
 // highCost is a write that spends money or fans out. A Redis outage still

@@ -521,6 +521,137 @@ func TestBucketModeEnv(t *testing.T) {
 	}
 }
 
+func TestGradualModeFromEnv(t *testing.T) {
+	t.Setenv("TELLOMI_FLOOD_MODE", "gradual")
+	t.Setenv("TELLOMI_FLOOD_BUCKET_MODE", "send:log, contacts_search:enforce, nope:enforce")
+	cfg := ConfigFromEnv()
+	if cfg.Mode != ModeGradual {
+		t.Fatalf("mode %s", cfg.Mode)
+	}
+	if cfg.Modes[BucketSend] != ModeLog {
+		t.Fatalf("send override %+v", cfg.Modes)
+	}
+	if cfg.Modes[BucketContactsSearch] != ModeEnforce {
+		t.Fatalf("search override %+v", cfg.Modes)
+	}
+	if _, ok := cfg.Modes["nope"]; ok {
+		t.Fatal("unknown bucket")
+	}
+	lim := New(NewMemory(), cfg)
+	if lim.modeOf(BucketSend) != ModeLog {
+		t.Fatalf("send mode %s", lim.modeOf(BucketSend))
+	}
+	if lim.modeOf(BucketContactsSearch) != ModeEnforce {
+		t.Fatalf("search mode %s", lim.modeOf(BucketContactsSearch))
+	}
+	if lim.modeOf(BucketGlobal) != ModeLog {
+		t.Fatalf("global mode %s", lim.modeOf(BucketGlobal))
+	}
+	if lim.modeOf(BucketUpload) != ModeEnforce {
+		t.Fatalf("upload mode %s", lim.modeOf(BucketUpload))
+	}
+}
+
+func TestGradualEnforcesHighCostLogsOthers(t *testing.T) {
+	lim := New(NewMemory(), Config{
+		Mode: ModeGradual,
+		Rules: map[string]Rule{
+			// Global is also charged on these methods; keep it large so the
+			// per-bucket mode is what the assertion sees.
+			BucketGlobal:         {Burst: 100, Rate: 0},
+			BucketSend:           {Burst: 1, Rate: 0},
+			BucketContactsSearch: {Burst: 1, Rate: 0},
+			BucketAccountStatus:  {Burst: 1, Rate: 0},
+			BucketSendCodePhone:  {Burst: 1, Rate: 0},
+			BucketSendCodeIP:     {Burst: 1, Rate: 0},
+		},
+	})
+	glob := New(NewMemory(), Config{
+		Mode:  ModeGradual,
+		Rules: map[string]Rule{BucketGlobal: {Burst: 1, Rate: 0}},
+	})
+	read := Request{Method: "updates_getState", UserID: 1}
+	if !glob.Allow(context.Background(), read).Allowed {
+		t.Fatal("first read")
+	}
+	d := glob.Allow(context.Background(), read)
+	if !d.Allowed || !d.Limited || d.Bucket != BucketGlobal {
+		t.Fatalf("global stayed log %+v", d)
+	}
+	search := Request{Method: "contacts_search", UserID: 1}
+	if !lim.Allow(context.Background(), search).Allowed {
+		t.Fatal("first search")
+	}
+	d = lim.Allow(context.Background(), search)
+	if !d.Allowed || !d.Limited || d.Bucket != BucketContactsSearch {
+		t.Fatalf("search stayed log %+v", d)
+	}
+	status := Request{Method: "account_updateStatus", UserID: 1}
+	if !lim.Allow(context.Background(), status).Allowed {
+		t.Fatal("first status")
+	}
+	d = lim.Allow(context.Background(), status)
+	if !d.Allowed || !d.Limited || d.Bucket != BucketAccountStatus {
+		t.Fatalf("status stayed log %+v", d)
+	}
+	send := Request{Method: "messages_sendMessage", UserID: 1}
+	if !lim.Allow(context.Background(), send).Allowed {
+		t.Fatal("first send")
+	}
+	d = lim.Allow(context.Background(), send)
+	if d.Allowed || !d.Limited || d.Bucket != BucketSend || d.WaitSec < 1 {
+		t.Fatalf("send enforce %+v", d)
+	}
+	code := Request{Method: "auth_sendCode", Phone: "8613800000000", IP: "203.0.113.9"}
+	if !lim.Allow(context.Background(), code).Allowed {
+		t.Fatal("first sendCode")
+	}
+	d = lim.Allow(context.Background(), code)
+	if d.Allowed || !d.Limited || (d.Bucket != BucketSendCodePhone && d.Bucket != BucketSendCodeIP) || d.WaitSec < 1 {
+		t.Fatalf("sendCode enforce %+v", d)
+	}
+}
+
+func TestGradualBucketModeOverride(t *testing.T) {
+	lim := New(NewMemory(), Config{
+		Mode: ModeGradual,
+		Modes: map[string]string{
+			BucketSend:   ModeLog,
+			BucketGlobal: ModeEnforce,
+		},
+		Rules: map[string]Rule{
+			BucketGlobal: {Burst: 100, Rate: 0},
+			BucketSend:   {Burst: 1, Rate: 0},
+		},
+	})
+	send := Request{Method: "messages_sendMessage", UserID: 2}
+	if !lim.Allow(context.Background(), send).Allowed {
+		t.Fatal("first send")
+	}
+	d := lim.Allow(context.Background(), send)
+	if !d.Allowed || !d.Limited || d.Bucket != BucketSend {
+		t.Fatalf("send override stayed log %+v", d)
+	}
+
+	lim2 := New(NewMemory(), Config{
+		Mode: ModeGradual,
+		Modes: map[string]string{
+			BucketGlobal: ModeEnforce,
+		},
+		Rules: map[string]Rule{
+			BucketGlobal: {Burst: 1, Rate: 0},
+		},
+	})
+	read := Request{Method: "updates_getState", UserID: 2}
+	if !lim2.Allow(context.Background(), read).Allowed {
+		t.Fatal("first read")
+	}
+	d = lim2.Allow(context.Background(), read)
+	if d.Allowed || !d.Limited || d.Bucket != BucketGlobal || d.WaitSec < 1 {
+		t.Fatalf("global override enforce %+v", d)
+	}
+}
+
 func TestStartupBurstFits(t *testing.T) {
 	lim := New(NewMemory(), DefaultConfig())
 	in := Request{Method: "updates_getState", UserID: 42}
