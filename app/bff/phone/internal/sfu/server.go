@@ -327,20 +327,11 @@ func (s *Server) onMedia(pkt []byte, addr *net.UDPAddr) {
 	}
 	ep.touch()
 	if isRTCP(pkt) {
-		plain, err := ep.dec.DecryptRTCP(nil, pkt, nil)
-		if err != nil {
-			return
-		}
-		for _, other := range others {
-			if other == nil || other == ep || !other.ready.Load() || other.enc == nil || other.addr == nil {
-				continue
-			}
-			out, err := other.enc.EncryptRTCP(nil, plain, nil)
-			if err != nil {
-				continue
-			}
-			_, _ = s.conn.WriteToUDP(out, other.addr)
-		}
+		// SRTCP is terminated here and not forwarded. RTP is relayed with the
+		// senders' own transport-wide sequence numbers, so relaying receivers'
+		// transport-cc/REMB feedback would mix several senders' sequence
+		// spaces and break their congestion control. Classifying it keeps it
+		// from being decrypted as RTP.
 		return
 	}
 	var hdr rtp.Header
@@ -370,10 +361,10 @@ func (s *Server) onMedia(pkt []byte, addr *net.UDPAddr) {
 }
 
 // isRTCP reports whether a version-2 RTP/RTCP datagram is RTCP
-// (RFC 5761 section 4: payload type byte 192..223 covers SR/RR/SDES/BYE/
-// APP/RTPFB/PSFB/XR).
+// (RFC 5761 section 4; like tgcalls go_sfu, packet types 200..223:
+// SR/RR/SDES/BYE/APP/RTPFB/PSFB/XR; 192..199 are obsolete).
 func isRTCP(pkt []byte) bool {
-	return len(pkt) >= 2 && pkt[1] >= 192 && pkt[1] <= 223
+	return len(pkt) >= 2 && pkt[1] >= 200 && pkt[1] <= 223
 }
 
 func epCall(ep *endpoint) int64 {

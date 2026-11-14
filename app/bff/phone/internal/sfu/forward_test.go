@@ -135,26 +135,56 @@ func TestForwardRTPByteExact(t *testing.T) {
 	}
 }
 
+// SRTCP is classified (not decrypted as RTP) and terminated at the SFU:
+// relaying receivers' transport-cc/REMB would mix senders' sequence spaces.
 func TestForwardRTCPNotTreatedAsRTP(t *testing.T) {
 	for name, prof := range forwardProfiles {
 		t.Run(name, func(t *testing.T) {
 			_, p := setupForward(t, prof)
 			rr := &rtcp.ReceiverReport{SSRC: 0x55, Reports: []rtcp.ReceptionReport{{SSRC: 0x1234abcd, LastSequenceNumber: 77}}}
-			raw, err := rr.Marshal()
-			if err != nil {
-				t.Fatal(err)
+			twcc := &rtcp.TransportLayerCC{SenderSSRC: 0x55, MediaSSRC: 0x1234abcd, BaseSequenceNumber: 1, PacketStatusCount: 1,
+				PacketChunks: []rtcp.PacketStatusChunk{&rtcp.RunLengthChunk{PacketStatusSymbol: rtcp.TypeTCCPacketReceivedSmallDelta, RunLength: 1}},
+				RecvDeltas:   []*rtcp.RecvDelta{{Type: rtcp.TypeTCCPacketReceivedSmallDelta, Delta: 250}}}
+			twcc.Header = rtcp.Header{Padding: twcc.Len()%4 != 0, Count: rtcp.FormatTCC, Type: rtcp.TypeTransportSpecificFeedback, Length: uint16((twcc.Len()+3)/4 - 1)}
+			pli := &rtcp.PictureLossIndication{SenderSSRC: 0x55, MediaSSRC: 0x1234abcd}
+			for _, pkts := range [][]rtcp.Packet{{rr}, {twcc}, {rr, twcc, pli}} {
+				raw, err := rtcp.Marshal(pkts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var back []rtcp.Packet
+				if back, err = rtcp.Unmarshal(raw); err != nil || len(back) != len(pkts) {
+					t.Fatalf("bad test RTCP %x: %v", raw, err)
+				}
+				if !isRTCP(raw) {
+					t.Fatalf("RTCP %x not classified as RTCP", raw[:2])
+				}
+				enc, err := p[0].enc.EncryptRTCP(nil, raw, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, _ = p[0].conn.Write(enc)
 			}
-			enc, err := p[0].enc.EncryptRTCP(nil, raw, nil)
+			// RTP sent after the SRTCP must be the first thing peer1 sees.
+			orig := &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: 111, SequenceNumber: 5, Timestamp: 960, SSRC: 0x1234abcd}, Payload: []byte("after-rtcp")}
+			raw, _ := orig.Marshal()
+			enc, err := p[0].enc.EncryptRTP(nil, raw, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			_, _ = p[0].conn.Write(enc)
-			got, err := p[1].dec.DecryptRTCP(nil, recv(t, p[1].conn), nil)
-			if err != nil {
-				t.Fatalf("decrypt forwarded SRTCP: %v", err)
+			pkt := recv(t, p[1].conn)
+			if isRTCP(pkt) {
+				t.Fatalf("SRTCP was forwarded: %x", pkt)
 			}
-			if !bytes.Equal(got, raw) {
-				t.Fatalf("forwarded RTCP differs\n got  %x\n want %x", got, raw)
+			got, err := p[1].dec.DecryptRTP(nil, pkt, nil)
+			if err != nil || !bytes.Equal(got, raw) {
+				t.Fatalf("expected the RTP packet, got %x (err %v)", got, err)
+			}
+			buf := make([]byte, 2048)
+			_ = p[1].conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+			if n, err := p[1].conn.Read(buf); err == nil {
+				t.Fatalf("unexpected extra forwarded datagram: %x", buf[:n])
 			}
 		})
 	}
@@ -173,7 +203,7 @@ func TestForwardDropsNonRTP(t *testing.T) {
 	if n, err := p[1].conn.Read(buf); err == nil {
 		t.Fatalf("non-RTP datagram was forwarded: %x", buf[:n])
 	}
-	if isRTCP([]byte{0x80, 111}) || !isRTCP([]byte{0x80, 201}) || !isRTCP([]byte{0x81, 205}) {
+	if isRTCP([]byte{0x80, 111}) || isRTCP([]byte{0x80, 192}) || isRTCP([]byte{0x80, 199}) || !isRTCP([]byte{0x80, 200}) || !isRTCP([]byte{0x81, 205}) || !isRTCP([]byte{0x80, 223}) || isRTCP([]byte{0x80, 224}) {
 		t.Fatal("isRTCP classification wrong")
 	}
 }
