@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -55,13 +56,21 @@ func TestNativeProtocolGaps(t *testing.T) {
 		t.Fatalf("init import: %v", err)
 	}
 
-	id, err := a.SendText(ctx, inputPeerUser(bSelf.ID, bSelf.AccessHash), "buy milk today", nil)
+	peer := inputPeerUser(bSelf.ID, bSelf.AccessHash)
+	id, err := a.SendText(ctx, peer, "buy milk today", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The quote check reads the stored message. Sending the reply before that
+	// row is visible is QUOTE_TEXT_INVALID for a quote that is actually valid.
+	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		return historyHasText(ctx, a, peer, "buy milk today")
+	}); err != nil {
+		t.Fatal("sent text was not readable before the quote")
+	}
 	_, err = a.Invoke(ctx, &mtproto.TLMessagesSendMessage{
 		Constructor: mtproto.CRC32_messages_sendMessage_fef48f62,
-		Peer:        inputPeerUser(bSelf.ID, bSelf.AccessHash),
+		Peer:        peer,
 		Message:     "nope",
 		RandomId:    randomID(),
 		ReplyTo: mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
@@ -74,7 +83,7 @@ func TestNativeProtocolGaps(t *testing.T) {
 	}
 	if _, err = a.Invoke(ctx, &mtproto.TLMessagesSendMessage{
 		Constructor: mtproto.CRC32_messages_sendMessage_fef48f62,
-		Peer:        inputPeerUser(bSelf.ID, bSelf.AccessHash),
+		Peer:        peer,
 		Message:     "yes",
 		RandomId:    randomID(),
 		ReplyTo: mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
@@ -100,6 +109,27 @@ func TestNativeProtocolGaps(t *testing.T) {
 	if !historyHasAction(t, b, inputPeerUser(aSelf.ID, aSelf.AccessHash), mtproto.Predicate_messageActionSetChatTheme) {
 		t.Fatal("peer history has no setChatTheme service message")
 	}
+}
+
+func historyHasText(ctx context.Context, c *Client, peer *mtproto.InputPeer, text string) (bool, error) {
+	res, err := c.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+		Constructor: mtproto.CRC32_messages_getHistory,
+		Peer:        peer,
+		Limit:       20,
+	})
+	if err != nil {
+		return false, err
+	}
+	msgs, ok := messagesOf(res)
+	if !ok {
+		return false, nil
+	}
+	for _, m := range msgs {
+		if m.GetMessage() == text {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func historyHasAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name string) bool {
