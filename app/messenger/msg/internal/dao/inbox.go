@@ -73,6 +73,16 @@ func (d *Dao) makeMessageInBox(fromId int64, peer *mtproto.PeerUtil, toUserId in
 	}
 }
 
+// crossChatReply is a quote of a message in another chat. The receiver
+// must not treat reply_to_msg_id as an id in the current dialog.
+func crossChatReply(header *mtproto.MessageReplyHeader) bool {
+	if header == nil || header.GetReplyToPeerId() == nil {
+		return false
+	}
+	p := header.GetReplyToPeerId()
+	return p.GetUserId() != 0 || p.GetChatId() != 0 || p.GetChannelId() != 0
+}
+
 func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, error) {
 	var (
 		inBoxMsgId = d.IDGenClient2.NextMessageBoxId(ctx, toUserId)
@@ -94,6 +104,12 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	message.Id = inBoxMsgId
 	switch message.GetReplyTo().GetPredicateName() {
 	case mtproto.Predicate_messageReplyHeader:
+		// reply_to_peer_id quotes a message in another chat. That id is not
+		// a box id in this dialog, so translating it drops the quote or
+		// points it at the wrong message.
+		if crossChatReply(message.GetReplyTo()) {
+			break
+		}
 		if replyId, _ := d.MessagesDAO.SelectPeerUserMessage(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
 			// message.ReplyToMsgId.Value = replyId.UserMessageBoxId
 			if message.ReplyTo != nil {

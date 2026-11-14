@@ -59,7 +59,7 @@ func (d *Dao) PeerBoxIncludingDeleted(ctx context.Context, peerUser, caller int6
 	}
 	query := "select user_message_box_id from " + d.MessagesDAO.CalcTableName(peerUser) +
 		" where user_id = ? and deleted = 0 and dialog_message_id = (select dialog_message_id from " +
-		d.MessagesDAO.CalcTableName(caller) + " where user_id = ? and user_message_box_id = ? limit 1) limit 1"
+		d.MessagesDAO.CalcTableName(caller) + " where user_id = ? and user_message_box_id <= ? and dialog_message_id <> 0 order by user_message_box_id desc limit 1) limit 1"
 	var row dataobject.MessagesDO
 	if err := d.DB.QueryRowPartial(ctx, &row, query, peerUser, caller, callerBox); err != nil {
 		if errors.Is(err, sqlx.ErrNotFound) {
@@ -68,6 +68,25 @@ func (d *Dao) PeerBoxIncludingDeleted(ctx context.Context, peerUser, caller int6
 		return 0, err
 	}
 	return row.UserMessageBoxId, nil
+}
+
+// CallerMessageDate is date2 of the newest caller row at or before callerBox,
+// including a row the caller already marked deleted. It bounds a revoke when
+// the peer's copy of that message cannot be found.
+func (d *Dao) CallerMessageDate(ctx context.Context, caller int64, callerBox int32) (int64, error) {
+	if d == nil || d.MessagesDAO == nil || d.DB == nil || caller == 0 || callerBox <= 0 {
+		return 0, nil
+	}
+	query := "select date2 from " + d.MessagesDAO.CalcTableName(caller) +
+		" where user_id = ? and user_message_box_id <= ? order by user_message_box_id desc limit 1"
+	var row dataobject.MessagesDO
+	if err := d.DB.QueryRowPartial(ctx, &row, query, caller, callerBox); err != nil {
+		if errors.Is(err, sqlx.ErrNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return row.Date2, nil
 }
 
 // LiveMessageBoxIDs returns the ids from ids that are still deleted = 0.

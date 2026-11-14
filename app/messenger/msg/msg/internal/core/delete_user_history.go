@@ -100,14 +100,34 @@ func (c *MsgCore) deleteUserHistory(in *msg.TLMsgDeleteHistory) (*mtproto.Messag
 			}
 		}
 		peerMax := deletehistory.RevokePeerCap(in.GetMaxId(), mapped, len(ids) > 0)
-		if _, err = c.svcCtx.Dao.InboxClient.InboxDeleteUserHistoryToInbox(c.ctx, &inbox.TLInboxDeleteUserHistoryToInbox{
+		req := &inbox.TLInboxDeleteUserHistoryToInbox{
 			FromId:     in.UserId,
 			PeerUserId: in.PeerId,
 			JustClear:  false,
 			MaxId:      peerMax,
-		}); err != nil {
-			c.Logger.Errorf("msg.deleteHistory - revoke history: %v", err)
-			return nil, err
+		}
+		if peerMax < 0 {
+			date, dateErr := c.svcCtx.Dao.CallerMessageDate(c.ctx, in.UserId, in.GetMaxId())
+			if dateErr != nil {
+				c.Logger.Errorf("msg.deleteHistory - caller date: %v", dateErr)
+				return nil, dateErr
+			}
+			bound := deletehistory.RevokePeerDateBound(date)
+			if bound <= 0 || bound > math.MaxInt32 {
+				// No peer id and no time. An unbounded max_id would delete
+				// messages the peer received after this one.
+				req = nil
+			} else {
+				req.MaxId = math.MaxInt32
+				req.MaxDateSet = true
+				req.MaxDate = int32(bound)
+			}
+		}
+		if req != nil {
+			if _, err = c.svcCtx.Dao.InboxClient.InboxDeleteUserHistoryToInbox(c.ctx, req); err != nil {
+				c.Logger.Errorf("msg.deleteHistory - revoke history: %v", err)
+				return nil, err
+			}
 		}
 	}
 	if len(ids) > 0 {
