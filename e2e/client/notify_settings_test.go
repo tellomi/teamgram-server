@@ -20,6 +20,14 @@ func TestNotifySettingsPersistAndSync(t *testing.T) {
 	a2, _ := loginNamed(t, cfg, ProfileAndroid, "notify_a", "NotifyA")
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	// A session only receives live updates after updates.getState,
+	// getDifference, or account.updateStatus. Until then it is not generic,
+	// it is not in the online-session list, and sync.updatesNotMe has
+	// nowhere to write updateNotifySettings. Official clients call getState
+	// after login; the other push cases in this package do the same.
+	if _, _, _, err := a2.State(ctx); err != nil {
+		t.Fatal(err)
+	}
 
 	def := getNotify(t, ctx, a, mtproto.MakeTLInputNotifyUsers(&mtproto.InputNotifyPeer{}).To_InputNotifyPeer())
 	if !mtproto.FromBool(def.GetShowPreviews()) || mtproto.FromBool(def.GetSilent()) || def.GetMuteUntil().GetValue() != 0 {
@@ -66,7 +74,10 @@ func TestNotifySettingsPersistAndSync(t *testing.T) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the other device did not receive updateNotifySettings")
+			if settings := pushedNotify(a2, before); settings != nil {
+				t.Fatalf("updateNotifySettings arrived with show_previews=%v silent=%v mute=%v", mtproto.FromBool(settings.GetShowPreviews()), mtproto.FromBool(settings.GetSilent()), settings.GetMuteUntil())
+			}
+			t.Fatalf("the other device did not receive updateNotifySettings (%d new pushes)", len(a2.Pushed())-before)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -120,6 +131,15 @@ func pushedNotify(c *Client, skip int) *mtproto.PeerNotifySettings {
 			ups = v.GetUpdates()
 		case *mtproto.TLUpdatesCombined:
 			ups = v.GetUpdates()
+		case *mtproto.TLUpdateShort:
+			if v.GetUpdate() != nil {
+				ups = []*mtproto.Update{v.GetUpdate()}
+			}
+		case *mtproto.Updates:
+			ups = v.GetUpdates()
+			if v.GetUpdate() != nil {
+				ups = append(ups, v.GetUpdate())
+			}
 		}
 		for _, upd := range ups {
 			if upd.GetPredicateName() == mtproto.Predicate_updateNotifySettings && upd.GetNotifySettings() != nil {
