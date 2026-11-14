@@ -27,6 +27,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
@@ -66,6 +67,10 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 
 	if err = c.blockSend(toPeer); err != nil {
 		c.Logger.Errorf("messages.forwardMessages - sanction")
+		return nil, err
+	}
+	if err = chatbox.RepeatSingleOnly(len(in.Id), in.GetScheduleRepeatPeriod().GetValue()); err != nil {
+		c.Logger.Errorf("messages.forwardMessages - repeat on %d messages", len(in.Id))
 		return nil, err
 	}
 

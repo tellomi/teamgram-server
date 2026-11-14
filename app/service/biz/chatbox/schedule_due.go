@@ -23,13 +23,36 @@ const ScheduleWhenOnline int32 = 0x7FFFFFFE
 const SchedIDBase int32 = 1_000_000_000
 
 // Repeat periods official clients send. Anything else is SCHEDULE_DATE_INVALID.
-// https://core.telegram.org/method/messages.sendMessage
+// https://core.telegram.org/api/scheduled-messages
+// 60 and 300 exist only on the Test DC and are not accepted here.
 var repeatPeriods = map[int32]struct{}{
 	86400:    {}, // 1 day
 	604800:   {}, // 1 week
 	1209600:  {}, // 2 weeks
 	2592000:  {}, // 30 days
+	7862400:  {}, // 91 days
+	15724800: {}, // 182 days
 	31536000: {}, // 365 days
+}
+
+// RepeatSingleOnly rejects schedule_repeat_period on an album or a forward
+// of more than one message. The official method page allows the period only
+// when a single message is sent or forwarded.
+func RepeatSingleOnly(count int, period int32) error {
+	if period != 0 && count != 1 {
+		return mtproto.ErrScheduleDateInvalid
+	}
+	return nil
+}
+
+// SendInsteadOfSchedule is the official short window: a schedule_date less
+// than 10 seconds ahead is sent immediately, as a normal message.
+// A repeating message stays in the queue so the following occurrence is kept.
+func SendInsteadOfSchedule(when, now int32, repeating bool) bool {
+	if repeating || when == 0 || when == ScheduleWhenOnline || when <= now {
+		return false
+	}
+	return when-now < 10
 }
 
 func ValidRepeatPeriod(period int32) bool {
@@ -345,10 +368,12 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 		key := schedKey(row.Owner, row.PeerType, row.PeerID)
 		doc, err := b.loadSched(ctx, key)
 		if err != nil {
+			b.restoreClaimedLocked(ctx, out)
 			return nil, err
 		}
 		var msg *mtproto.Message
 		rest := doc.Items[:0]
+		prev := append([]schedItem(nil), doc.Items...)
 		for _, item := range doc.Items {
 			if item.ID != row.ID || msg != nil {
 				rest = append(rest, item)
@@ -356,12 +381,16 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 			}
 			msg = &mtproto.Message{}
 			if err := proto.Unmarshal(item.Msg, msg); err != nil {
+				b.restoreClaimedLocked(ctx, out)
 				return nil, err
 			}
 		}
 		doc.Items = rest
 		b.sched[key] = doc
 		if err := b.save(ctx, key, doc); err != nil {
+			doc.Items = prev
+			b.sched[key] = doc
+			b.restoreClaimedLocked(ctx, out)
 			return nil, err
 		}
 		if msg == nil {
@@ -377,14 +406,39 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 		})
 	}
 	if err := b.saveDueLocked(ctx, kept); err != nil {
+		b.restoreClaimedLocked(ctx, out)
 		return nil, err
 	}
 	return out, nil
 }
 
+// restoreClaimedLocked puts claimed messages back. The book lock is held.
+func (b *Book) restoreClaimedLocked(ctx context.Context, items []DueItem) {
+	for _, item := range items {
+		if item.Message == nil || item.Peer == nil {
+			continue
+		}
+		key := schedKey(item.Owner, item.Peer.PeerType, item.Peer.PeerId)
+		doc, err := b.loadSched(ctx, key)
+		if err != nil {
+			continue
+		}
+		raw, err := proto.Marshal(item.Message)
+		if err != nil {
+			continue
+		}
+		doc.Items = append(doc.Items, schedItem{ID: item.Message.Id, When: item.Message.Date, Msg: raw})
+		if item.Message.Id > doc.Next {
+			doc.Next = item.Message.Id
+		}
+		b.sched[key] = doc
+		_ = b.save(ctx, key, doc)
+	}
+}
+
 // ScheduleNext queues the following occurrence of a repeating message.
-// The new date is the previous date plus the period, or now plus the
-// period when the previous date is already in the past.
+// The new date is the send time plus the period, which is how the API
+// describes the re-schedule ("current time plus schedule_repeat_period").
 func (b *Book) ScheduleNext(ctx context.Context, item DueItem, now int32) (*mtproto.Message, error) {
 	if item.Message == nil || item.Peer == nil || !ValidRepeatPeriod(item.Repeat) {
 		return nil, nil
@@ -393,10 +447,7 @@ func (b *Book) ScheduleNext(ctx context.Context, item DueItem, now int32) (*mtpr
 	if now > wall {
 		wall = now
 	}
-	nextWhen := item.When + item.Repeat
-	if item.When <= 0 || nextWhen <= wall {
-		nextWhen = wall + item.Repeat
-	}
+	nextWhen := wall + item.Repeat
 	cp := proto.Clone(item.Message).(*mtproto.Message)
 	cp.Id = 0
 	cp.FromScheduled = false
@@ -554,6 +605,11 @@ func DispatchDue(ctx context.Context, b *Book, now int32, online map[int64]bool,
 		if item.Repeat != 0 {
 			next, _ = b.ScheduleNext(ctx, item, now)
 		}
+		// The schedule queue belongs to the sender. The other participant
+		// receives the live message from Send. updateDeleteScheduledMessages
+		// uses the sender's peer and the sender's new message id, so it must
+		// not be copied onto the other user's session.
+		// https://core.telegram.org/api/scheduled-messages
 		ups := mtproto.MakeUpdatesByUpdates(DeleteScheduledUpdate(item.Peer, []int32{item.SchedID}, []int32{id}))
 		if next != nil {
 			ups.Updates = append(ups.Updates, mtproto.MakeTLUpdateNewScheduledMessage(&mtproto.Update{
@@ -561,9 +617,6 @@ func DispatchDue(ctx context.Context, b *Book, now int32, online map[int64]bool,
 			}).To_Update())
 		}
 		_ = sink.Push(ctx, item.Owner, ups)
-		if item.Peer.PeerType == mtproto.PEER_USER && item.Peer.PeerId != 0 && item.Peer.PeerId != item.Owner {
-			_ = sink.Push(ctx, item.Peer.PeerId, ups)
-		}
 		sent++
 	}
 	return sent, nil

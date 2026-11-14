@@ -187,28 +187,35 @@ func TestDispatchDueSurvivesRestartAndRepeats(t *testing.T) {
 	if !sink.sent[0].flag || sink.sent[0].text != "ping" || sink.sent[0].owner != 3 {
 		t.Fatalf("sent %+v", sink.sent[0])
 	}
-	if len(sink.push) != 2 {
-		t.Fatalf("pushes %d, want author and peer", len(sink.push))
+	if len(sink.push) != 1 || sink.push[0].user != 3 {
+		t.Fatalf("pushes %+v, want only the author", sink.push)
 	}
 	var sawDelete, sawNext bool
+	var nextDate int32
 	for _, p := range sink.push {
 		for _, u := range p.ups.Updates {
 			switch u.GetPredicateName() {
 			case mtproto.Predicate_updateDeleteScheduledMessages:
-				if len(u.GetMessages()) != 1 || len(u.GetSentMessages()) != 1 {
+				if u.GetPeer_PEER().GetUserId() != 9 || len(u.GetMessages()) != 1 || len(u.GetSentMessages()) != 1 {
 					t.Fatalf("delete %+v", u)
 				}
 				sawDelete = true
 			case mtproto.Predicate_updateNewScheduledMessage:
-				if u.GetMessage_MESSAGE().GetScheduleRepeatPeriod().GetValue() != 86400 {
-					t.Fatalf("next %+v", u.GetMessage_MESSAGE())
+				msg := u.GetMessage_MESSAGE()
+				if msg.GetScheduleRepeatPeriod().GetValue() != 86400 {
+					t.Fatalf("next %+v", msg)
 				}
+				nextDate = msg.GetDate()
 				sawNext = true
 			}
 		}
 	}
 	if !sawDelete || !sawNext {
 		t.Fatalf("delete %v next %v", sawDelete, sawNext)
+	}
+	// The next copy is send-time plus the period, not the original slot.
+	if nextDate != now+60+86400 {
+		t.Fatalf("next date %d", nextDate)
 	}
 	left, err := b2.ScheduledHistory(ctx, 3, peer, 0)
 	if err != nil || len(left.Messages) != 2 {
@@ -241,6 +248,30 @@ func TestDispatchDueRestoresOnSendFailure(t *testing.T) {
 	page, err := b.ScheduledHistory(ctx, 3, peer, 0)
 	if err != nil || len(page.Messages) != 1 || page.Messages[0].GetMessage() != "keep" {
 		t.Fatalf("not restored %+v %v", page, err)
+	}
+}
+
+func TestRepeatPeriodsAndShortSchedule(t *testing.T) {
+	for _, period := range []int32{86400, 604800, 1209600, 2592000, 7862400, 15724800, 31536000} {
+		if !ValidRepeatPeriod(period) {
+			t.Fatalf("period %d", period)
+		}
+	}
+	if ValidRepeatPeriod(60) || ValidRepeatPeriod(300) || ValidRepeatPeriod(10) {
+		t.Fatal("test-dc or unknown period accepted")
+	}
+	if err := RepeatSingleOnly(2, 86400); err != mtproto.ErrScheduleDateInvalid {
+		t.Fatalf("multi repeat: %v", err)
+	}
+	if err := RepeatSingleOnly(1, 86400); err != nil {
+		t.Fatal(err)
+	}
+	now := int32(1_700_000_000)
+	if !SendInsteadOfSchedule(now+9, now, false) {
+		t.Fatal("9s ahead should send now")
+	}
+	if SendInsteadOfSchedule(now+10, now, false) || SendInsteadOfSchedule(now+9, now, true) || SendInsteadOfSchedule(ScheduleWhenOnline, now, false) || SendInsteadOfSchedule(now-1, now, false) {
+		t.Fatal("short window misclassified")
 	}
 }
 

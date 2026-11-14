@@ -1,6 +1,8 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -16,10 +18,22 @@ import (
 // serves messages.getScheduledHistory until messages.sendScheduledMessages.
 func (c *MessagesCore) dispatchOutbox(peer *mtproto.PeerUtil, boxes []*msg.OutboxMessage) (*mtproto.Updates, error) {
 	var when int32
+	repeating := false
 	for _, box := range boxes {
 		if v := box.GetScheduleDate().GetValue(); v != 0 {
 			when = v
 		}
+		if box.GetMessage().GetScheduleRepeatPeriod().GetValue() != 0 {
+			repeating = true
+		}
+	}
+	// A date less than 10 seconds ahead is a normal send. The client does
+	// not get updateNewScheduledMessage for that window.
+	if chatbox.SendInsteadOfSchedule(when, int32(time.Now().Unix()), repeating) {
+		for _, box := range boxes {
+			box.ScheduleDate = nil
+		}
+		when = 0
 	}
 	if when != 0 {
 		if when == chatbox.ScheduleWhenOnline && !c.allowScheduleOnline(peer) {
