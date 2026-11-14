@@ -242,7 +242,9 @@ func (s *Server) loop() {
 			s.onSTUN(pkt, addr)
 		case b0 >= 20 && b0 <= 63:
 			s.onDTLS(pkt, addr)
-		default:
+		case b0 >= 128 && b0 <= 191:
+			// RFC 7983: RTP/RTCP (version 2). Anything else (TURN
+			// channel data 64..79, garbage) is dropped.
 			s.onMedia(pkt, addr)
 		}
 	}
@@ -324,32 +326,54 @@ func (s *Server) onMedia(pkt []byte, addr *net.UDPAddr) {
 		return
 	}
 	ep.touch()
-	var packet rtp.Packet
-	if err := packet.Unmarshal(pkt); err != nil {
+	if isRTCP(pkt) {
+		plain, err := ep.dec.DecryptRTCP(nil, pkt, nil)
+		if err != nil {
+			return
+		}
+		for _, other := range others {
+			if other == nil || other == ep || !other.ready.Load() || other.enc == nil || other.addr == nil {
+				continue
+			}
+			out, err := other.enc.EncryptRTCP(nil, plain, nil)
+			if err != nil {
+				continue
+			}
+			_, _ = s.conn.WriteToUDP(out, other.addr)
+		}
 		return
 	}
-	plain, err := ep.dec.DecryptRTP(nil, pkt, &packet.Header)
+	var hdr rtp.Header
+	if _, err := hdr.Unmarshal(pkt); err != nil {
+		return
+	}
+	// DecryptRTP returns the whole plaintext RTP packet (header + payload),
+	// so it is re-encrypted as is. Re-marshalling it as a payload would
+	// prepend a second copy of the RTP header.
+	plain, err := ep.dec.DecryptRTP(nil, pkt, &hdr)
 	if err != nil {
 		return
 	}
 	if ep.record.Load() {
 		recordedPackets.Add(1)
 	}
-	packet.Payload = plain
-	raw, err := packet.Marshal()
-	if err != nil {
-		return
-	}
 	for _, other := range others {
 		if other == nil || other == ep || !other.ready.Load() || other.enc == nil || other.addr == nil {
 			continue
 		}
-		out, err := other.enc.EncryptRTP(nil, raw, &packet.Header)
+		out, err := other.enc.EncryptRTP(nil, plain, &hdr)
 		if err != nil {
 			continue
 		}
 		_, _ = s.conn.WriteToUDP(out, other.addr)
 	}
+}
+
+// isRTCP reports whether a version-2 RTP/RTCP datagram is RTCP
+// (RFC 5761 section 4: payload type byte 192..223 covers SR/RR/SDES/BYE/
+// APP/RTPFB/PSFB/XR).
+func isRTCP(pkt []byte) bool {
+	return len(pkt) >= 2 && pkt[1] >= 192 && pkt[1] <= 223
 }
 
 func epCall(ep *endpoint) int64 {
