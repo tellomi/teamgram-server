@@ -205,7 +205,7 @@ The sticker, emoji, reaction, and ringtone methods clients call are backed by `a
 | --- | --- | --- |
 | `updates.getState` | implemented | Returns pts, qts, seq, and date. |
 | `updates.getDifference` | partial | Pts and seq are merged and users and chats are filled. With `TELLOMI_DIFFERENCE_STRICT` unset (the default, #171), `qts` is still omitted, `differenceTooLong` is not produced, encrypted messages stay empty, and the date is still stamped with the server time. Turning the variable on is the corrected path and is not the login default. |
-| `updates.getChannelDifference` | partial | Pts, too-long, and slice behavior are implemented. `force` and `ChannelMessagesFilter` are ignored. |
+| `updates.getChannelDifference` | partial | A backlog larger than `limit` is `updates.channelDifference` with `final` unset and pts at the end of that page. `channelDifferenceTooLong` is returned only when the pts log cannot continue from the client cursor. User `limit` is capped at 100; bots may request up to 100000. `force` and `ChannelMessagesFilter` are ignored. |
 
 ## help.\*
 

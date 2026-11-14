@@ -325,7 +325,7 @@ func TestReactionChipOnHistoryAndDifference(t *testing.T) {
 	if !found {
 		t.Fatalf("history missing chip %#v", hist.GetMessages())
 	}
-	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20)
+	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20, false)
 	if err != nil {
 		t.Fatal(err)
 	}
