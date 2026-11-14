@@ -985,14 +985,12 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 	}).To_Messages_Messages(), nil
 }
 
-func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputChannel, pts, limit int32) (*mtproto.Updates_ChannelDifference, error) {
+func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputChannel, pts, limit int32, bot bool) (*mtproto.Updates_ChannelDifference, error) {
 	ch, _, err := s.requireView(ctx, user, in)
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 200 {
-		limit = 100
-	}
+	limit = clampChannelDifferenceLimit(limit, bot)
 	timeout := &wrapperspb.Int32Value{Value: 30}
 	if pts < 0 {
 		return nil, mtproto.ErrChannelInvalid
@@ -1004,25 +1002,27 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 			Timeout: timeout,
 		}).To_Updates_ChannelDifference(), nil
 	}
-	events, err := s.store.ListPtsAfter(ctx, ch.ID, pts, 0)
+	// One extra row tells us whether this page ends the log.
+	events, err := s.store.ListPtsAfter(ctx, ch.ID, pts, int(limit)+1)
 	if err != nil {
 		return nil, err
 	}
-	if len(events) == 0 || events[0].Pts-events[0].PtsCount > pts {
-		return s.tooLong(ctx, user, ch, timeout), nil
+	page, more := continuousPage(events, pts, int(limit))
+	if len(page) == 0 {
+		reason := "pts_gap"
+		if len(events) == 0 {
+			reason = "empty_log"
+		}
+		return s.tooLong(ctx, user, ch, timeout, limit, pts, reason), nil
 	}
-	if len(events) > 500 && int(limit) < len(events) {
-		return s.tooLong(ctx, user, ch, timeout), nil
-	}
-	final := true
-	if len(events) > int(limit) {
-		events = events[:limit]
-		final = false
-	}
+	endPts := page[len(page)-1].Pts
+	// A hole after this page, or channel pts with no stored event, is not
+	// caught up. final stays unset so the client asks again and then
+	// receives tooLong only for the missing range.
+	final := !more && endPts >= ch.Pts
 	var newMessages []*mtproto.Message
 	var other []*mtproto.Update
-	endPts := pts
-	for _, e := range events {
+	for _, e := range page {
 		endPts = e.Pts
 		switch e.Kind {
 		case KindNew:
@@ -1087,12 +1087,13 @@ func senderOf(m *mtproto.Message) int64 {
 	return m.FromId.GetUserId()
 }
 
-func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout *wrapperspb.Int32Value) *mtproto.Updates_ChannelDifference {
+func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout *wrapperspb.Int32Value, limit, clientPts int32, reason string) *mtproto.Updates_ChannelDifference {
+	noteChannelDifferenceTooLong(ctx, ch.ID, user, clientPts, ch.Pts, reason)
 	st, _ := s.store.GetRead(ctx, ch.ID, user)
 	if st == nil {
 		st = &ReadState{}
 	}
-	page, _ := selectHistory(mustMessages(s, ctx, ch.ID), HistoryQuery{Limit: 10})
+	page := latestChannelMessages(mustMessages(s, ctx, ch.ID), limit)
 	msgs := make([]*mtproto.Message, 0, len(page))
 	for _, stored := range page {
 		body, err := unmarshalMessage(stored.Data)

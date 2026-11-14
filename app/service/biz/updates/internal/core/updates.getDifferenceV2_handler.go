@@ -10,6 +10,7 @@
 package core
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -20,6 +21,17 @@ import (
 
 	"github.com/zeromicro/go-zero/core/jsonx"
 )
+
+// differenceTooLongTotal counts updates.differenceTooLong replies.
+// The default server leaves TELLOMI_DIFFERENCE_STRICT unset, so this stays
+// at zero unless an operator turns that variable on.
+var differenceTooLongTotal atomic.Int64
+
+// DifferenceTooLongTotal is how many differenceTooLong replies this process
+// has built. The count does not include message text.
+func DifferenceTooLongTotal() int64 {
+	return differenceTooLongTotal.Load()
+}
 
 // UpdatesGetDifferenceV2
 // updates.getDifferenceV2 flags:# auth_key_id:long user_id:long pts:int pts_total_limit:flags.0?int date:long = Difference;
@@ -40,6 +52,9 @@ func (c *UpdatesCore) UpdatesGetDifferenceV2(in *updates.TLUpdatesGetDifferenceV
 			serverPts = lastPts
 		}
 		if diffstrict.TooLong(in.Pts, serverPts, limit, len(updateList)) {
+			n := differenceTooLongTotal.Add(1)
+			c.Logger.Infof("updates.getDifference tooLong user_id=%d client_pts=%d server_pts=%d fetched=%d limit=%d total=%d",
+				in.UserId, in.Pts, serverPts, len(updateList), limit, n)
 			return updates.MakeTLDifferenceTooLong(&updates.Difference{Pts: serverPts}).To_Difference(), nil
 		}
 	}
