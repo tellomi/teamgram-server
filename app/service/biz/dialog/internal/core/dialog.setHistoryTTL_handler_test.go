@@ -31,6 +31,28 @@ func (s *recordingTTLStore) UpdateCustomMapTx(tx *sqlx.Tx, cMap map[string]inter
 	return 1, nil
 }
 
+func (s *recordingTTLStore) InsertDialogTTLTx(tx *sqlx.Tx, userID int64, peerType int32, peerID int64, ttl int32) error {
+	s.updates = append(s.updates, ttlUpdate{tx: tx, userID: userID, peerType: peerType, peerID: peerID, ttl: ttl})
+	return nil
+}
+
+// missingTTLStore reports that no dialog row exists, so the timer is inserted.
+type missingTTLStore struct {
+	updates []ttlUpdate
+	inserts []ttlUpdate
+}
+
+func (s *missingTTLStore) UpdateCustomMapTx(tx *sqlx.Tx, cMap map[string]interface{}, userId int64, peerType int32, peerId int64) (int64, error) {
+	ttl, _ := cMap["ttl_period"].(int32)
+	s.updates = append(s.updates, ttlUpdate{tx: tx, userID: userId, peerType: peerType, peerID: peerId, ttl: ttl})
+	return 0, nil
+}
+
+func (s *missingTTLStore) InsertDialogTTLTx(tx *sqlx.Tx, userID int64, peerType int32, peerID int64, ttl int32) error {
+	s.inserts = append(s.inserts, ttlUpdate{tx: tx, userID: userID, peerType: peerType, peerID: peerID, ttl: ttl})
+	return nil
+}
+
 func TestApplyHistoryTTLWritesBothSidesInOneTransaction(t *testing.T) {
 	store := &recordingTTLStore{}
 	in := &dialog.TLDialogSetHistoryTTL{UserId: 10, PeerType: mtproto.PEER_USER, PeerId: 20, TtlPeriod: 86400}
@@ -84,6 +106,41 @@ func TestApplyHistoryTTLSkipsTheReverseRow(t *testing.T) {
 				t.Fatalf("updates %+v", store.updates)
 			}
 		})
+	}
+}
+
+func TestApplyHistoryTTLInsertsBothSidesWhenNoDialogExists(t *testing.T) {
+	store := &missingTTLStore{}
+	in := &dialog.TLDialogSetHistoryTTL{UserId: 10, PeerType: mtproto.PEER_USER, PeerId: 20, TtlPeriod: 86400}
+	var tx sqlx.Tx
+	if err := applyHistoryTTL(&tx, store, in); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.inserts) != 2 {
+		t.Fatalf("inserts %+v", store.inserts)
+	}
+	if store.inserts[0].userID != 10 || store.inserts[0].peerID != 20 || store.inserts[0].ttl != 86400 {
+		t.Fatalf("owner insert %+v", store.inserts[0])
+	}
+	if store.inserts[1].userID != 20 || store.inserts[1].peerType != mtproto.PEER_USER || store.inserts[1].peerID != 10 || store.inserts[1].ttl != 86400 {
+		t.Fatalf("peer insert %+v", store.inserts[1])
+	}
+}
+
+func TestBasicGroupHistoryTTLCreatesMissingMemberDialogs(t *testing.T) {
+	store := &missingTTLStore{}
+	var tx sqlx.Tx
+	if err := upsertChatMemberTTLs(&tx, store, []int64{10, 11, 11, 0}, 30, 86400); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.inserts) != 2 {
+		t.Fatalf("inserts %+v", store.inserts)
+	}
+	if store.inserts[0].userID != 10 || store.inserts[0].peerType != mtproto.PEER_CHAT || store.inserts[0].peerID != 30 || store.inserts[0].ttl != 86400 {
+		t.Fatalf("creator %+v", store.inserts[0])
+	}
+	if store.inserts[1].userID != 11 || store.inserts[1].peerType != mtproto.PEER_CHAT || store.inserts[1].peerID != 30 || store.inserts[1].ttl != 86400 {
+		t.Fatalf("member %+v", store.inserts[1])
 	}
 }
 

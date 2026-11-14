@@ -700,9 +700,12 @@ Clients, flags, environment variables, and the schema are unchanged. No migratio
 
 `ChatBannedRights` with a past `until_date` was still copied onto basic-group chats. `until_date` 0 and `0x7fffffff` stay forever. A passed timestamp is unrestricted. `400 COLOR_INVALID` is the official code for `account.updateColor`.
 
+`messages.setHistoryTTL` only updated `dialogs` rows that already existed, then returned success. A private chat or basic group with no dialog yet kept `ttl_period` 0 after the service message inserted that row. A missing row is now inserted with the timer, and the timer is written again after the service message so the new row is not left at 0. `getPeerDialogs` and `users.getFullUser` read that column.
+
 | Piece | File |
 | --- | --- |
 | fixed `ttl_period` | `proto/mtproto/schema.tl.sync_helper.go` |
 | edit entities | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
 | expired ban omitted | `proto/mtproto/chat_banned_rights.go`, `proto/mtproto/mutable_chat_helper.go`, `chat.editChatDefaultBannedRights_handler.go` |
 | `COLOR_INVALID` | `proto/mtproto/rpc_error_codes.go` |
+| timer before the first message | `dialog.setHistoryTTL_handler.go`, `messages.setHistoryTTL_handler.go`, `dialogs_dao.go` |

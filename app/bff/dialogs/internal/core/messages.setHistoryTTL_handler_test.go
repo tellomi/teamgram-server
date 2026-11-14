@@ -33,8 +33,11 @@ func TestMessagesSetHistoryTTLServiceMessage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(dlg.calls) != 1 || dlg.calls[0].UserId != 10 || dlg.calls[0].PeerType != mtproto.PEER_USER || dlg.calls[0].PeerId != 20 || dlg.calls[0].TtlPeriod != period {
+		if len(dlg.calls) != 2 || dlg.calls[0].UserId != 10 || dlg.calls[0].PeerType != mtproto.PEER_USER || dlg.calls[0].PeerId != 20 || dlg.calls[0].TtlPeriod != period {
 			t.Fatalf("dialog ttl %+v", dlg.calls)
+		}
+		if dlg.calls[1].UserId != dlg.calls[0].UserId || dlg.calls[1].PeerId != dlg.calls[0].PeerId || dlg.calls[1].TtlPeriod != period {
+			t.Fatalf("rewrite %+v", dlg.calls[1])
 		}
 		if msg.last == nil || msg.last.UserId != 10 || msg.last.AuthKeyId != 99 || msg.last.PeerType != mtproto.PEER_USER || msg.last.PeerId != 20 {
 			t.Fatalf("send %+v", msg.last)

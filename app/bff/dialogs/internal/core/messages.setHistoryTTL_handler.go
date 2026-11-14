@@ -108,6 +108,18 @@ func (c *DialogsCore) MessagesSetHistoryTTL(in *mtproto.TLMessagesSetHistoryTTL)
 		c.Logger.Errorf("messages.setHistoryTTL - error: %v", err)
 		return nil, err
 	}
+	// The service message inserts a dialog with the column default ttl_period
+	// of 0 when this was the first message. Write the timer again so that
+	// row, and the other side, match the value just stored.
+	if _, err = c.svcCtx.Dao.DialogClient.DialogSetHistoryTTL(c.ctx, &dialog.TLDialogSetHistoryTTL{
+		UserId:    c.MD.UserId,
+		PeerType:  peer.PeerType,
+		PeerId:    peer.PeerId,
+		TtlPeriod: period,
+	}); err != nil {
+		c.Logger.Errorf("messages.setHistoryTTL - rewrite: %v", err)
+		return nil, err
+	}
 
 	ttlUpdate := historyTTLUpdate(peer.ToPeer(), period)
 	if rUpdates == nil {

@@ -289,23 +289,9 @@ func TestHistoryTTLPeriodStaysFixed(t *testing.T) {
 	defer cancel()
 	peerForA := inputPeerUser(bSelf.ID, bSelf.AccessHash)
 	peerForB := inputPeerUser(aSelf.ID, aSelf.AccessHash)
-	// setHistoryTTL updates dialog rows that already exist. A first message
-	// creates them. The timer then applies only to messages sent later.
-	open := fmt.Sprintf("ttl-open-%d", time.Now().UnixNano())
-	if _, err := a.SendText(ctx, peerForA, open, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		msgs, err := b.History(ctx, peerForB, 20)
-		if err != nil {
-			return false, err
-		}
-		return idOfText(msgs, open) != 0, nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// A message dated in the same second as the timer action takes that
-	// period. Wait so the measured send is strictly after the timer.
+	// These two accounts have never messaged. The timer still has to land
+	// on both dialogs. A message dated in the same second as the timer
+	// action takes that period, so wait before setting it.
 	if err := waitUntilNextSecond(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -345,6 +331,42 @@ func TestHistoryTTLPeriodStaysFixed(t *testing.T) {
 		return ttlOfText(got, text) == 86400, nil
 	}); err != nil {
 		t.Fatalf("ttl_period did not stay 86400: %v", err)
+	}
+}
+
+// TestHistoryTTLNewGroupDialog sets the timer on a basic group before any
+// member text. The group dialog rows may not exist yet; getDialogs must
+// still report ttl_period 86400.
+func TestHistoryTTLNewGroupDialog(t *testing.T) {
+	cfg := requireE2E(t)
+	a, _ := loginNamed(t, cfg, ProfileIOS, "ttlfix_a", "TtlA")
+	_, bSelf := loginNamed(t, cfg, ProfileAndroid, "ttlfix_b", "TtlB")
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	chatID, err := a.CreateChat(ctx, fmt.Sprintf("ttl-room-%d", time.Now().UnixNano()), inputUser(bSelf.ID, bSelf.AccessHash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := inputPeerChat(chatID)
+	if err := waitUntilNextSecond(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := setHistoryTTL(ctx, a, group, 86400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		clean, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		_ = setHistoryTTL(clean, a, group, 0)
+	})
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		d, ok, err := dialogOf(a, ctx, "chat", chatID)
+		if err != nil || !ok {
+			return false, err
+		}
+		return d.GetTtlPeriod().GetValue() == 86400, nil
+	}); err != nil {
+		t.Fatalf("group dialog ttl_period: %v", err)
 	}
 }
 

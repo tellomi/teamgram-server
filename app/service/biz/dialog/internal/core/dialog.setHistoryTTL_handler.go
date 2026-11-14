@@ -30,6 +30,9 @@ import (
 // Tests pass a fake so both sides of a private chat can be asserted without MySQL.
 type historyTTLStore interface {
 	UpdateCustomMapTx(tx *sqlx.Tx, cMap map[string]interface{}, userId int64, peerType int32, peerId int64) (int64, error)
+	// InsertDialogTTLTx creates a dialog that did not exist yet and stores the
+	// timer on it. An existing row keeps its other columns and takes this timer.
+	InsertDialogTTLTx(tx *sqlx.Tx, userID int64, peerType int32, peerID int64, ttl int32) error
 }
 
 // DialogSetHistoryTTL
@@ -96,23 +99,76 @@ func writeHistoryTTL(ctx context.Context, conn *sqlx.DB, store historyTTLStore, 
 		}
 		if _, err := tx.Exec("update chats set ttl_period = ? where id = ?", in.TtlPeriod, in.PeerId); err != nil {
 			result.Err = err
+			return
+		}
+		// Members who have never opened the group have no dialogs row. The
+		// update above does not create one. Insert those rows so getPeerDialogs
+		// reads the same timer the chat row now stores.
+		ids, err := normalChatMemberIDs(tx, in.PeerId)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		if err := upsertChatMemberTTLs(tx, store, ids, in.PeerId, in.TtlPeriod); err != nil {
+			result.Err = err
 		}
 	})
 	return result.Err
 }
 
 func applyHistoryTTL(tx *sqlx.Tx, store historyTTLStore, in *dialog.TLDialogSetHistoryTTL) error {
-	ttl := map[string]interface{}{"ttl_period": in.TtlPeriod}
-	if _, err := store.UpdateCustomMapTx(tx, ttl, in.UserId, in.PeerType, in.PeerId); err != nil {
+	if err := writeOneHistoryTTL(tx, store, in.UserId, in.PeerType, in.PeerId, in.TtlPeriod); err != nil {
 		return err
 	}
 	// The other side of a private chat stores the same timer. A chat id is
 	// not a user id, so the reverse row is only written for users. Saved
 	// messages are one row.
 	if in.PeerType == mtproto.PEER_USER && in.PeerId != in.UserId {
-		if _, err := store.UpdateCustomMapTx(tx, ttl, in.PeerId, in.PeerType, in.UserId); err != nil {
+		return writeOneHistoryTTL(tx, store, in.PeerId, in.PeerType, in.UserId, in.TtlPeriod)
+	}
+	return nil
+}
+
+// writeOneHistoryTTL updates an existing dialog. A missing row is inserted
+// with this timer. Official clients allow messages.setHistoryTTL before the
+// first message, and getPeerDialogs / users.getFullUser read that column.
+func writeOneHistoryTTL(tx *sqlx.Tx, store historyTTLStore, userID int64, peerType int32, peerID int64, ttl int32) error {
+	n, err := store.UpdateCustomMapTx(tx, map[string]interface{}{"ttl_period": ttl}, userID, peerType, peerID)
+	if err != nil || n > 0 {
+		return err
+	}
+	return store.InsertDialogTTLTx(tx, userID, peerType, peerID, ttl)
+}
+
+// upsertChatMemberTTLs stores the group timer on every current member's
+// dialog, creating the row when that member has not opened the group.
+func upsertChatMemberTTLs(tx *sqlx.Tx, store historyTTLStore, memberIDs []int64, chatID int64, ttl int32) error {
+	seen := map[int64]bool{}
+	for _, id := range memberIDs {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		if err := writeOneHistoryTTL(tx, store, id, mtproto.PEER_CHAT, chatID, ttl); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func normalChatMemberIDs(tx *sqlx.Tx, chatID int64) ([]int64, error) {
+	if tx == nil || chatID == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		UserID int64 `db:"user_id"`
+	}
+	if err := tx.QueryRowsPartial(&rows, "select user_id from chat_participants where chat_id = ? and state = 0", chatID); err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.UserID)
+	}
+	return ids, nil
 }

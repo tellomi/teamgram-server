@@ -16,8 +16,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/internal/dal/dataobject"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -987,6 +989,20 @@ func (dao *DialogsDAO) UpdateCustomMap(ctx context.Context, cMap map[string]inte
 	}
 
 	return
+}
+
+// InsertDialogTTLTx creates a dialog that messages.setHistoryTTL needs before
+// any message exists. A duplicate row keeps every other column and takes ttl.
+func (dao *DialogsDAO) InsertDialogTTLTx(tx *sqlx.Tx, userID int64, peerType int32, peerID int64, ttl int32) error {
+	peerDialogID := mtproto.MakePeerDialogId(peerType, peerID)
+	_, err := tx.Exec(`insert into dialogs(user_id, peer_type, peer_id, peer_dialog_id, ttl_period, draft_message_data, date2)
+values (?, ?, ?, ?, ?, 'null', ?)
+on duplicate key update ttl_period = values(ttl_period)`,
+		userID, peerType, peerID, peerDialogID, ttl, time.Now().Unix())
+	if err != nil {
+		logx.WithContext(tx.Context()).Errorf("exec in InsertDialogTTLTx(_), error: %v", err)
+	}
+	return err
 }
 
 // UpdateCustomMapTx
