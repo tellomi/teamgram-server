@@ -326,6 +326,7 @@ type DueItem struct {
 	Repeat  int32
 	When    int32
 	Tries   int32
+	Random  int64
 }
 
 // ClaimDue removes scheduled messages that should be sent now.
@@ -403,6 +404,16 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 		if msg == nil {
 			continue
 		}
+		rnd := int64(0)
+		for _, stored := range prev {
+			if stored.ID == row.ID {
+				rnd = stored.Random
+				break
+			}
+		}
+		if rnd == 0 {
+			rnd = newScheduleRandom()
+		}
 		out = append(out, DueItem{
 			Owner:   row.Owner,
 			Peer:    peer,
@@ -411,6 +422,7 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 			Repeat:  msg.GetScheduleRepeatPeriod().GetValue(),
 			When:    row.When,
 			Tries:   row.Tries,
+			Random:  rnd,
 		})
 	}
 	if err := b.saveDueLocked(ctx, kept); err != nil {
@@ -435,7 +447,7 @@ func (b *Book) restoreClaimedLocked(ctx context.Context, items []DueItem) {
 		if err != nil {
 			continue
 		}
-		doc.Items = append(doc.Items, schedItem{ID: item.Message.Id, When: item.Message.Date, Msg: raw})
+		doc.Items = append(doc.Items, schedItem{ID: item.Message.Id, When: item.Message.Date, Random: item.Random, Msg: raw})
 		if item.Message.Id > doc.Next {
 			doc.Next = item.Message.Id
 		}
@@ -582,33 +594,19 @@ type DueSink interface {
 	Push(ctx context.Context, userID int64, ups *mtproto.Updates) error
 }
 
-// ScheduleRandom is the idempotency key for one scheduled send.
-func ScheduleRandom(owner int64, peer *mtproto.PeerUtil, schedID int32) int64 {
-	var peerID int64
-	var peerType int32
-	if peer != nil {
-		peerID = peer.PeerId
-		peerType = peer.PeerType
-	}
-	n := owner*131 + peerID*17 + int64(schedID) + int64(peerType)<<32
-	if n < 0 {
-		n = -n
-	}
-	if n == 0 {
-		n = 1
-	}
-	return n
-}
-
 // PermanentScheduleErr is a send failure that will not succeed on retry:
-// the sender was kicked, blocked, or has no posting rights.
+// the sender was kicked, blocked, or has no posting rights. Any block,
+// including USER_BLOCKED, stops the retries.
 func PermanentScheduleErr(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := status.Convert(err).Message()
+	if strings.Contains(msg, "BLOCKED") {
+		return true
+	}
 	switch msg {
-	case "USER_IS_BLOCKED", "YOU_BLOCKED_USER", "PEER_ID_INVALID", "INPUT_USER_DEACTIVATED",
+	case "PEER_ID_INVALID", "INPUT_USER_DEACTIVATED",
 		"USER_BANNED_IN_CHANNEL", "CHAT_WRITE_FORBIDDEN", "CHAT_ADMIN_REQUIRED",
 		"USER_NOT_PARTICIPANT", "CHANNEL_PRIVATE", "CHAT_RESTRICTED", "USER_ID_INVALID":
 		return true
@@ -640,6 +638,19 @@ func (b *Book) DeferScheduled(ctx context.Context, item DueItem, now int32) {
 	b.RestoreScheduled(ctx, item.Owner, item.Peer, []*mtproto.Message{item.Message})
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if item.Random != 0 {
+		key := schedKey(item.Owner, item.Peer.PeerType, item.Peer.PeerId)
+		doc, err := b.loadSched(ctx, key)
+		if err == nil {
+			for i := range doc.Items {
+				if doc.Items[i].ID == item.SchedID {
+					doc.Items[i].Random = item.Random
+				}
+			}
+			b.sched[key] = doc
+			_ = b.save(ctx, key, doc)
+		}
+	}
 	rows, err := b.loadDueLocked(ctx)
 	if err != nil {
 		return
@@ -677,7 +688,7 @@ func DispatchDue(ctx context.Context, b *Book, now int32, online map[int64]bool,
 		out.Id = 0
 		out.EditDate = nil
 		out.ScheduleRepeatPeriod = nil
-		id, err := sink.Send(ctx, item.Owner, item.Peer, out, ScheduleRandom(item.Owner, item.Peer, item.SchedID))
+		id, err := sink.Send(ctx, item.Owner, item.Peer, out, item.Random)
 		if err != nil || id == 0 {
 			if PermanentScheduleErr(err) {
 				_ = sink.Push(ctx, item.Owner, mtproto.MakeUpdatesByUpdates(DeleteScheduledUpdate(item.Peer, []int32{item.SchedID}, nil)))

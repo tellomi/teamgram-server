@@ -286,8 +286,8 @@ func TestPermanentScheduleFailureDropsAndTemporaryWaits(t *testing.T) {
 	if PermanentScheduleErr(mtproto.ErrInternalServerError) || PermanentScheduleErr(nil) {
 		t.Fatal("temporary class")
 	}
-	if a, b := ScheduleRandom(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 7), ScheduleRandom(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 7); a != b || a == 0 {
-		t.Fatalf("random %d %d", a, b)
+	if !PermanentScheduleErr(mtproto.ErrUserBlocked) {
+		t.Fatal("USER_BLOCKED should stop the retries")
 	}
 	now := int32(1_700_000_000)
 	ctx := context.Background()
@@ -334,6 +334,48 @@ type countingDocs struct {
 func (c *countingDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
 	c.lists++
 	return c.memDocs.ListPrefix(ctx, prefix)
+}
+
+func TestScheduledSendIDsDoNotUseTheCollidingFormula(t *testing.T) {
+	// owner*131 + peer*17 + schedID collided for these two messages.
+	old := func(owner, peer int64, id int32) int64 {
+		return owner*131 + peer*17 + int64(id)
+	}
+	if old(7, 1001, 1000000001) != old(7, 1000, 1000000018) {
+		t.Fatal("the old formula no longer collides on the reported pair")
+	}
+	b := newBook(nil)
+	now := int32(1_700_000_000)
+	b.now = func() time.Time { return time.Unix(int64(now), 0) }
+	ctx := context.Background()
+	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	if _, err := b.Schedule(ctx, 7, peer, now+10, []*mtproto.Message{{Message: "a"}, {Message: "b"}}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := b.ClaimDue(ctx, now+20, nil, 10)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("claim %+v %v", items, err)
+	}
+	seen := map[int64]bool{}
+	for _, item := range items {
+		if item.Random <= 0 {
+			t.Fatalf("random %d", item.Random)
+		}
+		if seen[item.Random] {
+			t.Fatalf("collision %d", item.Random)
+		}
+		seen[item.Random] = true
+		if item.Random == old(item.Owner, item.Peer.PeerId, item.SchedID) {
+			t.Fatal("still derived from owner, peer, and id")
+		}
+	}
+	for i := 0; i < 64; i++ {
+		n := newScheduleRandom()
+		if n <= 0 || seen[n] {
+			t.Fatalf("generated %d", n)
+		}
+		seen[n] = true
+	}
 }
 
 func TestDueIndexRebuildsOnce(t *testing.T) {
