@@ -4,7 +4,7 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 ## Forward, reply, and deleteHistory revoke
 
-`messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own.
+`messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own. `drop_media_captions` removes the caption and its entities from a photo or document and leaves the file. Plain text and a link-preview message keep their text.
 
 `reply_to.reply_to_peer_id` (a quote from another chat) used to drop the whole reply header, including `quote_text`. The header keeps the other peer, the message id, and the quote.
 
@@ -14,10 +14,27 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 | Piece | File |
 | --- | --- |
-| drop_author, protected forward | `messages.forwardMessages_handler.go` |
+| drop_author, drop_media_captions, protected forward | `messages.forwardMessages_handler.go`, `reply_peer.go` |
 | quote in another chat | `reply_peer.go`, sendMessage / sendMedia / sendMultiMedia |
 | revoke after a self-only clear | `delete_user_history.go`, `deletehistory/plan.go` |
 | private noforwards | `messages.toggleNoForwards_handler.go`, `chatbox/protect.go` |
+
+## Access hash on input users, peers, and channels
+
+`users.access_hash` and `channels.access_hash` are the values already returned on user and channel objects. Clients cache them. The check compares the value on `inputUser`, `inputPeerUser`, `inputChannel`, and `inputPeerChannel` with that stored value. It does not switch to a per-viewer hash, which would invalidate those caches.
+
+`TELLOMI_ACCESS_HASH_ENFORCE` defaults to off. `log` records a mismatch and still accepts the RPC. `enforce` returns `USER_ID_INVALID`, `PEER_ID_INVALID`, or `CHANNEL_INVALID`. `inputUserSelf` and `inputPeerSelf` are exempt. `inputUserFromMessage`, `inputPeerUserFromMessage`, `inputChannelFromMessage`, and `inputPeerChannelFromMessage` are accepted when the viewer can see that message and the message refers to the user or channel. The bff interceptor walks every client RPC, so users, contacts, messages, channels, photos, and inline bot requests are covered by the same check.
+
+A provided `0` used to skip the channel and secret-chat comparisons. Enforce mode stops that. Chatbox bots whose stored hash is `0` are still issued the bot id, and that issued value keeps matching. Reaction lists and poll voters are still returned with `access_hash` omitted. Log mode is how to see clients echo that `0` before enforcement is turned on.
+
+| Piece | File |
+| --- | --- |
+| mode, walk, message proof | `pkg/accesshash` |
+| bff interceptor | `app/bff/bff/internal/accesshash`, `app/bff/bff/internal/server/server.go` |
+| channel hash, including `0` | `app/service/biz/channel/service_ops.go`, `access_hash.go` |
+| secret-chat user | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
+| from-message id, only while enforce is on | `proto/mtproto/peer_util.go` |
+>>>>>>> origin/master
 
 ## Authorization hash, revocation and TTL
 

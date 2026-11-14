@@ -19,33 +19,12 @@
 package core
 
 import (
-	"time"
-
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // UserUpdateUsernameByUsername
 // user.updateUsernameByUsername peer_type:int peer_id:long username:string = Bool;
 func (c *UserCore) UserUpdateUsernameByUsername(in *user.TLUserUpdateUsernameByUsername) (*mtproto.Bool, error) {
-	_, _, err := c.svcCtx.Dao.UsernameDAO.Insert(c.ctx, &dataobject.UsernameDO{
-		Username: in.Username,
-		PeerType: in.PeerType,
-		PeerId:   in.PeerId,
-		Editable: true,
-		Active:   true,
-		Order2:   time.Now().Unix() << 32,
-	})
-	if err != nil {
-		if sqlx.IsDuplicate(err) {
-			return mtproto.BoolFalse, nil
-		} else {
-			c.Logger.Errorf("username.updateUsername - error: %v", err)
-			return nil, err
-		}
-	}
-
-	return mtproto.BoolTrue, nil
+	return c.claimUsername(in.PeerType, in.PeerId, in.Username)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"math"
 	"regexp"
 	"strings"
 	"sync"
@@ -378,12 +379,15 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	if p != nil && p.State == StateKicked {
 		return nil, mtproto.ErrUserBannedInChannel
 	}
-	if feat := s.features(ctx, ch.ID); feat.JoinRequest && (p == nil || !p.InChannel()) {
-		feat.JoinRequests = append(feat.JoinRequests, JoinReq{UserID: user, Date: int32(time.Now().Unix())})
-		if err := s.saveFeatures(ctx, ch.ID, feat); err != nil {
+	// A public channel or megagroup with join_request does not add the user.
+	// Official clients send channels.joinChannel after resolving the username
+	// and expect INVITE_REQUEST_SENT plus a pending request an admin can see.
+	// https://core.telegram.org/method/channels.joinChannel
+	if s.features(ctx, ch.ID).JoinRequest {
+		if err := s.recordJoinRequest(ctx, ch.ID, user); err != nil {
 			return nil, err
 		}
-		return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
+		return nil, mtproto.ErrInviteRequestSent
 	}
 	if !ch.Public() {
 		return nil, mtproto.ErrChannelPrivate
@@ -511,16 +515,20 @@ func (s *Service) EditBanned(ctx context.Context, actor, actorAuth int64, in *mt
 	kicked := false
 	prev := *target
 	if rights == nil || rights.NoBanRights() {
+		// A forever view_messages ban removed the user. Clearing it lifts
+		// the ban and does not put them back in the member list. A dated
+		// view ban is a restriction: the member stays, and unban keeps them.
+		removed := target.State == StateKicked || storedForeverKick(target.BannedRights)
 		target.Role = RoleMember
 		target.BannedRights = 0
-		if target.State == StateKicked {
+		if removed {
 			target.State = StateLeft
 		}
 	} else {
 		target.Role = RoleBanned
 		target.BannedRights = int64(rights.ToBannedRights())
 		target.InviterID = actor
-		if rights.IsKick() {
+		if isMemberKick(rights) {
 			target.State = StateKicked
 			kicked = true
 		}
@@ -798,6 +806,28 @@ func (s *Service) ExportMessageLink(ctx context.Context, self int64, in *mtproto
 		Link: link,
 		Html: `<a href="` + link + `">` + link + `</a>`,
 	}).To_ExportedMessageLink(), nil
+}
+
+// isMemberKick reports channels.editBanned rights that remove the user.
+// Clients send until_date 0 for a permanent kick. 0x7fffffff is the same
+// forever value. Any other until_date is a view restriction that keeps
+// the member in the group.
+func isMemberKick(rights *mtproto.ChatBannedRights) bool {
+	if rights == nil || !rights.GetViewMessages() {
+		return false
+	}
+	until := rights.GetUntilDate()
+	return until == 0 || until == math.MaxInt32
+}
+
+// storedForeverKick reports a saved ban that was a permanent kick.
+// until_date 0 is stored as 0x7fffffff. A different until_date is not a kick.
+func storedForeverKick(bits int64) bool {
+	if bits&int64(mtproto.BANNED_VIEW_MESSAGES) == 0 {
+		return false
+	}
+	until := int32(bits >> 32)
+	return until == 0 || until == math.MaxInt32
 }
 
 func missingInvitee(id int64) *mtproto.MissingInvitee {
