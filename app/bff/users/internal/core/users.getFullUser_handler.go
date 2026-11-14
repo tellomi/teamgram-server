@@ -227,14 +227,19 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 					PeerId:   peerId,
 				})
 				if dialogExt != nil {
-					userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+					if dialogExt.ThemeEmoticon != "" {
+						userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+						userFull.Theme = mtproto.MakeTLChatTheme(&mtproto.ChatTheme{
+							Emoticon: dialogExt.ThemeEmoticon,
+						}).To_ChatTheme()
+					}
 					userFull.TtlPeriod = mtproto.MakeFlagsInt32(dialogExt.TtlPeriod)
 					if dialogExt.GetDialog() != nil {
 						userFull.FolderId = dialogExt.GetDialog().GetFolderId()
 					}
 					if dialogExt.WallpaperId != 0 && c.svcCtx.Dao.WallpaperPlugin != nil {
 						userFull.Wallpaper = c.svcCtx.Dao.WallpaperPlugin.GetChatWallpaper(c.ctx, c.MD.UserId, dialogExt.WallpaperId)
-						userFull.WallpaperOverridden = true
+						userFull.WallpaperOverridden = dialogExt.WallpaperOverridden
 					}
 				}
 			}

@@ -120,6 +120,30 @@ func countEntities(entities []*MessageEntity, predicate string) int {
 	return n
 }
 
+func TestTextURLSchemeDropped(t *testing.T) {
+	text := "click"
+	ents := []*MessageEntity{
+		MakeTLMessageEntityTextUrl(&MessageEntity{Offset: 0, Length: 5, Url: "javascript:alert(1)"}).To_MessageEntity(),
+		MakeTLMessageEntityTextUrl(&MessageEntity{Offset: 0, Length: 5, Url: "https://example.com/zt"}).To_MessageEntity(),
+	}
+	got := SanitizeMessageEntities(text, ents)
+	if len(got) != 1 || got[0].GetUrl() != "https://example.com/zt" {
+		t.Fatalf("entities %#v", got)
+	}
+}
+
+func TestMessageContentUnchangedIgnoresEditDate(t *testing.T) {
+	before := &Message{Message: "same", Entities: nil}
+	after := &Message{Message: "same", EditDate: MakeFlagsInt32(10)}
+	if !MessageContentUnchanged(before, after) {
+		t.Fatal("edit date alone is a modification")
+	}
+	after.Message = "other"
+	if MessageContentUnchanged(before, after) {
+		t.Fatal("text change was ignored")
+	}
+}
+
 func describeEntities(text string, entities []*MessageEntity) []string {
 	out := make([]string, 0, len(entities))
 	for _, entity := range entities {

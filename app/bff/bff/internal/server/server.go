@@ -36,6 +36,7 @@ import (
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
 	communities_helper "github.com/teamgram/teamgram-server/app/bff/communities"
@@ -570,7 +571,7 @@ func (s *Server) Initialize() error {
 				},
 				stories_helper.Plugin{},
 				personalchannel.Plugin{},
-				nil))
+				chatdecor.Plugin{}))
 
 		// nsfw_helper
 		mtproto.RegisterRPCNsfwServer(

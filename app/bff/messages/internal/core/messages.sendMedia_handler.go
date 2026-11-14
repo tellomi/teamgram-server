@@ -79,7 +79,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		}
 	}
 
-	if len(in.Message) > 4000 {
+	if c.captionLimitExceeded(in.Message) {
 		err = mtproto.ErrMediaCaptionTooLong
 		c.Logger.Errorf("messages.sendMedia: %v", err)
 		return nil, err
@@ -107,7 +107,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		Date:                 int32(time.Now().Unix()),
 		Media:                nil,
 		Message:              in.Message,
-		ReplyMarkup:          in.ReplyMarkup,
+		ReplyMarkup:          c.botReplyMarkup(in.ReplyMarkup),
 		Entities:             in.Entities,
 		Views:                nil,
 		Forwards:             nil,

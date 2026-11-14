@@ -45,6 +45,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - sanction")
 		return nil, err
 	}
+	if !c.MD.IsBot {
+		in.ReplyMarkup = nil
+	}
 	if peer.PeerType == mtproto.PEER_SELF {
 		peer.PeerType = mtproto.PEER_USER
 	}
@@ -70,6 +73,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			ReplyMarkup: in.ReplyMarkup,
 		}).To_Message()
 		if in.Message != nil {
+			if textTooLong(in.Message.Value) {
+				return nil, mtproto.ErrMessageTooLong
+			}
 			draft.Message = in.Message.Value
 		}
 		if in.Media != nil {
@@ -126,9 +132,28 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	dstMessage = proto.Clone(editMessages.Datas[0]).(*mtproto.MessageBox)
 
 	outMessage := editMessages.Datas[0].Message
-	// edit_date
-	outMessage.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
+	beforeEdit := proto.Clone(outMessage).(*mtproto.Message)
 	outMessage.EditHide = false
+	if !c.MD.IsBot {
+		in.ReplyMarkup = nil
+	}
+	if in.GetMessage() != nil {
+		text := in.GetMessage().GetValue()
+		limit := maxMessageUTF16
+		mediaName := outMessage.GetMedia().GetPredicateName()
+		if mediaName != "" && mediaName != mtproto.Predicate_messageMediaEmpty && mediaName != mtproto.Predicate_messageMediaWebPage {
+			limit = maxCaptionUTF16
+			if c.senderPremium() {
+				limit = maxCaptionUTF16Premium
+			}
+		}
+		if mtproto.UTF16Len(text) > limit {
+			if limit == maxMessageUTF16 {
+				return nil, mtproto.ErrMessageTooLong
+			}
+			return nil, mtproto.ErrMediaCaptionTooLong
+		}
+	}
 
 	// entities
 	if in.Entities != nil {
@@ -175,6 +200,11 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	} else if in.NoWebpage {
 		refreshInternalPreview(c, true, in.Media != nil, outMessage)
 	}
+	if mtproto.MessageContentUnchanged(beforeEdit, outMessage) {
+		c.Logger.Errorf("messages.editMessage - MESSAGE_NOT_MODIFIED")
+		return nil, mtproto.ErrMessageNotModified
+	}
+	outMessage.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
 
 	rUpdates, err := c.svcCtx.Dao.MsgClient.MsgEditMessageV2(c.ctx, &msgpb.TLMsgEditMessageV2{
 		UserId:    c.MD.UserId,

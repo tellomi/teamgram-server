@@ -564,6 +564,9 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	if apply != nil {
 		apply(body)
 	}
+	if mtproto.MessageContentUnchanged(frozen, body) {
+		return nil, mtproto.ErrMessageNotModified
+	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
 	s.reviseOutgoing(ctx, ch, stored.SenderID, body, frozen)
@@ -704,6 +707,11 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 		return nil
 	}
 	if !edit && actor.IsAdmin() && actor.adminRights().CanDeleteMessages() {
+		return nil
+	}
+	// edit_messages / delete_messages cover other admins' posts. An admin who
+	// can publish can still edit and delete the posts they sent themselves.
+	if ch.Broadcast && msg.SenderID == actor.UserID && actor.IsAdmin() && actor.adminRights().CanPostMessages() {
 		return nil
 	}
 	if ch.Broadcast {
