@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 )
 
@@ -60,7 +61,24 @@ func (c *DialogsCore) MessagesMarkDialogUnread(in *mtproto.TLMessagesMarkDialogU
 		return nil, err
 	}
 
-	// TODO: updates ...
+	// The requesting session applies the Bool locally. Other sessions of the
+	// same user only learn about the mark through this update.
+	if c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.SyncClient != nil {
+		_, _ = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+			UserId:        c.MD.UserId,
+			PermAuthKeyId: c.MD.PermAuthKeyId,
+			Updates:       mtproto.MakeUpdatesByUpdates(unreadMarkUpdate(in.GetUnread(), peer)),
+		})
+	}
 
 	return rValue, nil
+}
+
+func unreadMarkUpdate(unread bool, peer *mtproto.PeerUtil) *mtproto.Update {
+	return mtproto.MakeTLUpdateDialogUnreadMark(&mtproto.Update{
+		Unread: unread,
+		Peer_DIALOGPEER: mtproto.MakeTLDialogPeer(&mtproto.DialogPeer{
+			Peer: peer.ToPeer(),
+		}).To_DialogPeer(),
+	}).To_Update()
 }

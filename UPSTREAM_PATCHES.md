@@ -716,6 +716,17 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## Dialog unread mark (ISSUE-S-UNREADMARK-001)
+
+`messages.markDialogUnread` wrote `dialogs.unread_mark` and returned `boolTrue`, then stopped. `getDialogs` serves `DialogExt` from the dialog cache, so the next fetch still had the previous flag and the mark could not be cleared. Other sessions were not sent `updateDialogUnreadMark` (`TODO: updates` in the handler).
+
+The write now goes through `ExecInvalidate` on that dialog's cache key, including the delayed second delete used by the other dialog updates. The handler pushes `updateDialogUnreadMark` with `SyncUpdatesNotMe`.
+
+| Piece | File |
+| --- | --- |
+| cache | `app/service/biz/dialog/internal/core/dialog.markDialogUnread_handler.go` |
+| push | `app/bff/dialogs/internal/core/messages.markDialogUnread_handler.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
