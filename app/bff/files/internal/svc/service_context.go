@@ -105,6 +105,7 @@ func installStoryMediaHooks(svcCtx *ServiceContext) {
 			contact, err := users.UserGetContact(ctx, &user.TLUserGetContact{UserId: owner, Id: viewer})
 			return err == nil && contact.GetCloseFriend()
 		},
+		StoryBlockedFrom: book.Shared().StoryBlocked,
 		IsBlocked: func(ctx context.Context, owner, viewer int64) bool {
 			if book.Shared().StoryBlocked(ctx, owner, viewer) {
 				return true

@@ -1720,6 +1720,10 @@ var (
 	// | 400 | STICKER_ID_INVALID | The provided sticker ID is invalid. |
 	ErrStickerIdInvalid = status.Error(ErrBadRequest, "STICKER_ID_INVALID")
 
+	// ErrColorInvalid
+	// | 400 | COLOR_INVALID | The specified color palette ID is invalid. |
+	ErrColorInvalid = status.Error(ErrBadRequest, "COLOR_INVALID")
+
 	// ErrChatAboutNotModified
 	// | 400 | CHAT_ABOUT_NOT_MODIFIED | About text has not changed. |
 	ErrChatAboutNotModified = status.Error(ErrBadRequest, "CHAT_ABOUT_NOT_MODIFIED")

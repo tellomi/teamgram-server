@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
@@ -26,13 +27,14 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		return forbiddenChat(ch)
 	}
 	feat := s.features(ctx, ch.ID)
+	now := int32(time.Now().Unix())
 	var admin *mtproto.ChatAdminRights
 	var banned *mtproto.ChatBannedRights
 	if p != nil && p.IsAdmin() {
 		admin = p.adminRights().ToChatAdminRights()
 	}
-	if p != nil && p.Role == RoleBanned && p.BannedRights != 0 {
-		banned = mtproto.BannedRights(p.BannedRights).ToChatBannedRights()
+	if p != nil && p.Role == RoleBanned {
+		banned = mtproto.IssuedBannedRights(p.BannedRights, now)
 	}
 	chat := mtproto.MakeTLChannel(&mtproto.Chat{
 		Creator:                     p.IsCreator(),
@@ -50,7 +52,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		Date:                        ch.Date,
 		AdminRights:                 admin,
 		BannedRights:                banned,
-		DefaultBannedRights:         mtproto.BannedRights(ch.DefaultBanned).ToChatBannedRights(),
+		DefaultBannedRights:         mtproto.IssuedBannedRights(ch.DefaultBanned, now),
 		ParticipantsCount_FLAGINT32: &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
 		HasGeo:                      ch.Address != "" || feat.Lat != 0 || feat.Long != 0,
 		Noforwards:                  feat.NoForwards,
@@ -260,6 +262,8 @@ func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
 // https://core.telegram.org/constructor/channelParticipantAdmin
 func participantFor(actor int64, viewer *Participant, promoted map[int64]int64, p *Participant) *mtproto.ChannelParticipant {
 	rank := optionalString(p.Rank)
+	now := int32(time.Now().Unix())
+	liveBan := mtproto.IssuedBannedRights(p.BannedRights, now)
 	switch {
 	case p.Role == RoleCreator:
 		return mtproto.MakeTLChannelParticipantCreator(&mtproto.ChannelParticipant{
@@ -287,12 +291,16 @@ func participantFor(actor int64, viewer *Participant, promoted map[int64]int64, 
 			CanEdit:             canEdit,
 			Self:                self,
 		}).To_ChannelParticipant()
-	case p.State == StateKicked || (p.Role == RoleBanned && p.BannedRights != 0):
+	case p.State == StateKicked || (p.Role == RoleBanned && liveBan != nil):
+		rights := liveBan
+		if p.State == StateKicked && rights == nil {
+			rights = mtproto.BannedRights(p.BannedRights).ToChatBannedRights()
+		}
 		return mtproto.MakeTLChannelParticipantBanned(&mtproto.ChannelParticipant{
 			Peer:         mtproto.MakePeerUser(p.UserID),
 			KickedBy:     p.InviterID,
 			Date:         p.Date,
-			BannedRights: mtproto.BannedRights(p.BannedRights).ToChatBannedRights(),
+			BannedRights: rights,
 			Left:         p.State != StateNormal,
 		}).To_ChannelParticipant()
 	case p.State == StateLeft:

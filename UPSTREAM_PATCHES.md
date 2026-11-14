@@ -677,3 +677,18 @@ Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty
 | tests | `pkg/livephoto`, messages core / dao, files core, mediapurge, `proto/mtproto/ttl_media_test.go`, and e2e `TestLivePhoto` (`live_a` / `live_b`) |
 
 Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
+
+## Layer 232 semantics (story block flag, expired bans, edit entities, ttl_period)
+
+`Message.FixData` rewrote `ttl_period` to `stored + date - now` on every history read and on `updates.getDifference`. Official clients delete at `date + ttl_period`, so the shrinking value made them delete early. The field now stays the period stored at send time. `TELLOMI_MESSAGE_EXPIRY` and `TELLOMI_MESSAGE_EXPIRY_SWEEP` stay unset.
+
+`messages.editMessage` for a private chat or basic group applied entities and then cleared them when the text was replaced. Bold sent with the new text was dropped. The text change still clears the old offsets, and the entities flag is applied after that.
+
+`ChatBannedRights` with a past `until_date` was still copied onto basic-group chats. `until_date` 0 and `0x7fffffff` stay forever. A passed timestamp is unrestricted. `400 COLOR_INVALID` is the official code for `account.updateColor`.
+
+| Piece | File |
+| --- | --- |
+| fixed `ttl_period` | `proto/mtproto/schema.tl.sync_helper.go` |
+| edit entities | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
+| expired ban omitted | `proto/mtproto/chat_banned_rights.go`, `proto/mtproto/mutable_chat_helper.go`, `chat.editChatDefaultBannedRights_handler.go` |
+| `COLOR_INVALID` | `proto/mtproto/rpc_error_codes.go` |

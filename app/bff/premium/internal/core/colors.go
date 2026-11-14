@@ -87,6 +87,17 @@ func peerColorsReply(hash int32, profile bool) *mtproto.Help_PeerColors {
 	return peerColors(profile)
 }
 
+// knownPeerColor reports whether id is one of the colors help.getPeerColors
+// or help.getPeerProfileColors returns. The two lists are separate.
+func knownPeerColor(profile bool, id int32) bool {
+	for _, opt := range peerColors(profile).GetColors() {
+		if opt.GetColorId() == id {
+			return true
+		}
+	}
+	return false
+}
+
 // selectedColor reads account.updateColor. A missing color flag clears the color.
 func selectedColor(in *mtproto.TLAccountUpdateColor) (colorID int32, emoji int64, hasColor bool) {
 	colorID = -1

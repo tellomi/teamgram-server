@@ -18,12 +18,6 @@
 
 package mtproto
 
-import (
-	"time"
-
-	"google.golang.org/protobuf/types/known/wrapperspb"
-)
-
 func (m *Document) GetFixedSize() int64 {
 	if m.Size2_INT64 != 0 {
 		return m.Size2_INT64
@@ -217,13 +211,10 @@ func (m *Message) FixData() *Message {
 		m.Reactions = m.Reactions.FixData()
 	}
 
-	if m.GetTtlPeriod() != nil {
-		ttlPeriod := m.GetTtlPeriod().GetValue() + m.GetDate() - int32(time.Now().Unix())
-		if ttlPeriod < 0 {
-			ttlPeriod = 0
-		}
-		m.TtlPeriod = &wrapperspb.Int32Value{Value: ttlPeriod}
-	}
+	// ttl_period stays the period stored at send time. Clients delete at
+	// date+ttl_period. Rewriting it to the remaining seconds makes them
+	// delete early. MESSAGE_EXPIRY stays off; this only changes the value
+	// on the wire.
 
 	if m.GetAction() != nil {
 		m.Action = m.Action.FixData()

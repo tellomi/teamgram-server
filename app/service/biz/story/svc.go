@@ -26,6 +26,10 @@ type Hooks struct {
 	// IsBlocked is true when either user has blocked the other, or the owner
 	// has put the viewer on the story blocklist (contacts.block my_stories_from).
 	IsBlocked func(ctx context.Context, owner, viewer int64) bool
+	// StoryBlockedFrom is only the story blocklist (contacts.setBlocked
+	// my_stories_from). storyView.blocked_my_stories_from reads this flag.
+	// It is not the main blocklist.
+	StoryBlockedFrom func(ctx context.Context, owner, viewer int64) bool
 	// InChats reports whether viewer belongs to any of the chats. Nil means
 	// chat-participant privacy rules cannot grant access.
 	InChats          func(ctx context.Context, viewer int64, chats []int64) bool
@@ -115,6 +119,9 @@ func (s *Service) MergeHooks(add Hooks) {
 	if s.hooks.IsBlocked == nil {
 		s.hooks.IsBlocked = add.IsBlocked
 	}
+	if s.hooks.StoryBlockedFrom == nil {
+		s.hooks.StoryBlockedFrom = add.StoryBlockedFrom
+	}
 	if s.hooks.InChats == nil {
 		s.hooks.InChats = add.InChats
 	}
@@ -142,6 +149,7 @@ type HooksSet struct {
 	IsContact        bool
 	IsCloseFriend    bool
 	IsBlocked        bool
+	StoryBlockedFrom bool
 	InChats          bool
 	SetUserMax       bool
 	SetStoriesHidden bool
@@ -163,6 +171,7 @@ func (s *Service) HooksSet() HooksSet {
 		IsContact:        h.IsContact != nil,
 		IsCloseFriend:    h.IsCloseFriend != nil,
 		IsBlocked:        h.IsBlocked != nil,
+		StoryBlockedFrom: h.StoryBlockedFrom != nil,
 		InChats:          h.InChats != nil,
 		SetUserMax:       h.SetUserMax != nil,
 		SetStoriesHidden: h.SetStoriesHidden != nil,
@@ -243,6 +252,16 @@ func (s *Service) isContact(ctx context.Context, owner, viewer int64) bool {
 	if local {
 		return true
 	}
+	return hook != nil && hook(ctx, owner, viewer)
+}
+
+func (s *Service) storyBlockedFrom(ctx context.Context, owner, viewer int64) bool {
+	if owner == 0 || viewer == 0 || owner == viewer {
+		return false
+	}
+	s.mu.Lock()
+	hook := s.hooks.StoryBlockedFrom
+	s.mu.Unlock()
 	return hook != nil && hook(ctx, owner, viewer)
 }
 

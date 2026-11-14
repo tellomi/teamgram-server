@@ -697,6 +697,15 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 	if actor == nil || !actor.InChannel() {
 		return mtproto.ErrChannelPrivate
 	}
+	// A supergroup message can be edited only by its author. edit_messages
+	// lets an admin delete other people's messages and edit channel posts.
+	// It does not let the owner or an admin rewrite a member's message.
+	if edit && (ch == nil || !ch.Broadcast) {
+		if msg != nil && msg.SenderID == actor.UserID {
+			return nil
+		}
+		return mtproto.ErrMessageAuthorRequired
+	}
 	if actor.IsCreator() {
 		return nil
 	}
@@ -706,10 +715,10 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 	if !edit && actor.IsAdmin() && actor.adminRights().CanDeleteMessages() {
 		return nil
 	}
-	if ch.Broadcast {
+	if ch != nil && ch.Broadcast {
 		return mtproto.ErrMessageAuthorRequired
 	}
-	if msg.SenderID == actor.UserID {
+	if msg != nil && msg.SenderID == actor.UserID {
 		return nil
 	}
 	return mtproto.ErrMessageAuthorRequired
