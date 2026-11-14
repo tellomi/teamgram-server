@@ -716,6 +716,18 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## Search counters (ISSUE-S-SEARCH-COUNTERS-001, ISSUE-S-SEARCHCOUNT-001)
+
+`messages.getSearchCounters` counted `message_filter_type = 0` for photo+video, and it returned 0 for photos, video, voice, and round video because those filters were not mapped. Stored photos are type 7 and videos are type 8. Voice notes and round videos both sit in type 2 (`MEDIA_AUDIO`); the document attribute tells them apart. Megagroup and channel posts are not in the caller's private box, so every channel counter was 0.
+
+The counter now sums the stored types. Voice and round video walk the shared audio bucket. Channel peers count the channel store with the same filter `messages.search` uses, including a voice note that is not a round video.
+
+| Piece | File |
+| --- | --- |
+| filter to stored type | `app/bff/messages/internal/core/search_counters.go` |
+| channel count | `app/service/biz/channel/search_count.go`, `search_filter.go` |
+| private and basic-group count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
