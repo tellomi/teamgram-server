@@ -289,8 +289,23 @@ func TestHistoryTTLPeriodStaysFixed(t *testing.T) {
 	defer cancel()
 	peerForA := inputPeerUser(bSelf.ID, bSelf.AccessHash)
 	peerForB := inputPeerUser(aSelf.ID, aSelf.AccessHash)
+	// setHistoryTTL updates dialog rows that already exist. A first message
+	// creates them. The timer then applies only to messages sent later.
+	open := fmt.Sprintf("ttl-open-%d", time.Now().UnixNano())
+	if _, err := a.SendText(ctx, peerForA, open, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		msgs, err := b.History(ctx, peerForB, 20)
+		if err != nil {
+			return false, err
+		}
+		return idOfText(msgs, open) != 0, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// A message dated in the same second as the timer action takes that
-	// period. Wait so this send is strictly after the timer.
+	// period. Wait so the measured send is strictly after the timer.
 	if err := waitUntilNextSecond(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +324,7 @@ func TestHistoryTTLPeriodStaysFixed(t *testing.T) {
 		}
 		return d.GetTtlPeriod().GetValue() == 86400, nil
 	}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("dialog ttl_period: %v", err)
 	}
 	text := fmt.Sprintf("ttl-fixed-%d", time.Now().UnixNano())
 	if _, err := a.SendText(ctx, peerForA, text, nil); err != nil {
