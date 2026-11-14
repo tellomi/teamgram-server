@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -15,7 +16,7 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 	}
 	ch := created.Chats[0]
 	topics, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 20, 0, 0, 0)
-	if err != nil || len(topics) == 0 || topics[0].GetTitle() != "General" || !topics[0].GetHidden() {
+	if err != nil || len(topics) == 0 || topics[0].GetTitle() != "General" || topics[0].GetId() != 1 || topics[0].GetHidden() {
 		t.Fatalf("general topic %#v %v", topics, err)
 	}
 	_, hello, err := svc.CreateTopic(ctx, 1, 0, ch.Id, "Hello", 0x6FB9F0, 0)
@@ -77,6 +78,27 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 	if !sawOutside || sawInside {
 		t.Fatalf("outside=%v inside=%v ids=%d/%d", sawOutside, sawInside, outsideID, insideID)
 	}
+	var sawRoot bool
+	for _, m := range hist.GetMessages() {
+		if m.GetId() == hello.ID {
+			sawRoot = true
+		}
+	}
+	if sawRoot {
+		t.Fatal("topic creation message still in history")
+	}
+	left, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 20, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, topic := range left {
+		if topic.GetId() == hello.ID {
+			t.Fatal("deleted topic still listed")
+		}
+	}
+	if _, _, err := svc.DeleteTopicHistory(ctx, 1, 0, ch.Id, 1); err != mtproto.ErrTopicIdInvalid {
+		t.Fatalf("general topic delete: %v", err)
+	}
 
 	replies, err := svc.Replies(ctx, 1, ch.Id, hello.ID, HistoryQuery{Limit: 20})
 	if err != nil {
@@ -137,5 +159,92 @@ func TestReorderPinnedTopicsAndUnpinAll(t *testing.T) {
 	}
 	if _, count, err = svc.UnpinAll(ctx, 1, 0, ch.Id); err != nil || count != 0 {
 		t.Fatalf("second unpin count=%d err=%v", count, err)
+	}
+}
+
+func TestClosedTopicRejectsNonAdmins(t *testing.T) {
+	svc, ctx := newTest(t)
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Forum", Megagroup: true, Forum: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := inCh(ch)
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, hello, err := svc.CreateTopic(ctx, 1, 0, ch.Id, "Hello", 0x6FB9F0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := true
+	if _, err := svc.EditTopic(ctx, 1, ch.Id, hello.ID, "", &closed, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	reply := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+		ReplyToMsgId: hello.ID,
+		ReplyToTopId: &wrapperspb.Int32Value{Value: hello.ID},
+		ForumTopic:   true,
+	}).To_MessageReplyHeader()
+	if _, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{
+		RandomID: 21,
+		Message:  &mtproto.Message{Message: "member", Date: 10, ReplyTo: reply},
+	}}); err != mtproto.ErrTopicClosed {
+		t.Fatalf("member post in closed topic: %v", err)
+	}
+	if _, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 22,
+		Message:  &mtproto.Message{Message: "admin", Date: 11, ReplyTo: reply},
+	}}); err != nil {
+		t.Fatalf("admin post in closed topic: %v", err)
+	}
+}
+
+func TestDeleteTopicEmitsChannelMessageDeletes(t *testing.T) {
+	svc, ctx := newTest(t)
+	var deleted []int32
+	svc.SetHooks(Hooks{Push: func(_ context.Context, _ int64, _ []int64, updates *mtproto.Updates) {
+		for _, u := range updates.GetUpdates() {
+			if u.GetPredicateName() == mtproto.Predicate_updateDeleteChannelMessages {
+				deleted = append(deleted, u.GetMessages()...)
+			}
+		}
+	}})
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Forum", Megagroup: true, Forum: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	_, hello, err := svc.CreateTopic(ctx, 1, 0, ch.Id, "Hello", 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+		ReplyToMsgId: hello.ID,
+		ReplyToTopId: &wrapperspb.Int32Value{Value: hello.ID},
+		ForumTopic:   true,
+	}).To_MessageReplyHeader()
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 31,
+		Message:  &mtproto.Message{Message: "inside", Date: 10, ReplyTo: reply},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	insideID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	if _, _, err := svc.DeleteTopicHistory(ctx, 1, 0, ch.Id, hello.ID); err != nil {
+		t.Fatal(err)
+	}
+	sawRoot, sawInside := false, false
+	for _, id := range deleted {
+		if id == hello.ID {
+			sawRoot = true
+		}
+		if id == insideID {
+			sawInside = true
+		}
+	}
+	if !sawRoot || !sawInside {
+		t.Fatalf("delete update ids=%v want %d and %d", deleted, hello.ID, insideID)
 	}
 }

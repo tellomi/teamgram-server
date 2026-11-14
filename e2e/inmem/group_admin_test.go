@@ -2,6 +2,7 @@ package inmem
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -87,8 +88,8 @@ func TestHideAllChannelJoinRequests(t *testing.T) {
 	if _, err := svc.ToggleJoinRequest(ctx, 1, 0, in, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Join(ctx, 4, 0, in); err != nil {
-		t.Fatal(err)
+	if _, err := svc.Join(ctx, 4, 0, in); err == nil || !strings.Contains(err.Error(), "INVITE_REQUEST_SENT") {
+		t.Fatalf("join request: %v", err)
 	}
 	parts, _ := svc.GetParticipants(ctx, 1, in, nil, 0, 50, 0)
 	if parts.Count != 1 {

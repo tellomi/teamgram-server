@@ -19,6 +19,8 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/accountrest"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -104,8 +106,10 @@ func (c *UsernamesCore) updateUsername(userId int64, from, username2 string) err
 		}
 	}
 
-	if from != "" {
-		// delete username
+	// The user service renames the editable row. Delete the previous string
+	// only when it is a different name, so a case-only change is not removed
+	// by a case-insensitive match on the new row.
+	if from != "" && !strings.EqualFold(from, username2) {
 		_, err := c.svcCtx.Dao.UserClient.UserDeleteUsername(c.ctx, &userpb.TLUserDeleteUsername{
 			Username: from,
 		})
