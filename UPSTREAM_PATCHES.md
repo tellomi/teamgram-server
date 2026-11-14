@@ -2,6 +2,20 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Group reactions and pinned messages
+
+Basic-group reactions were stored, and `messages.getHistory` copied them onto the bubbles, but other members never received `updateMessageReactions` and `messages.getMessages` did not attach them. A group shares one message id. Each member now gets an update whose `chosen_order` is their own. The dialog unread-reaction counter moves for that group the same way it already did for a private chat.
+
+`dialogs.pinned_msg_id` was written by `messages.updatePinnedMessage` and not returned. `dialog.getUserPinnedMessage` reads that column. `users.getFullUser` and `messages.getFullChat` copy a positive id onto `pinned_msg_id`. A channel pin is still `channelFull.pinned_msg_id` from the channel feature row; `channels.getFullChannel` also fills it from the dialog column when the feature row is empty, and a channel pin is written onto that column.
+
+| Piece | File |
+| --- | --- |
+| group update | `app/service/biz/chatbox/react_ids.go` |
+| fanout | `app/bff/channels/internal/server/grpc/service/handlers_features.go` |
+| getMessages | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+| pin read | `app/service/biz/dialog/internal/core/dialog.getUserPinnedMessage_handler.go` |
+| full chats | `users.getFullUser_handler.go`, `messages.getFullChat_handler.go`, `channels` `handlers.go` |
+
 ## Access hash on input users, peers, and channels
 
 `users.access_hash` and `channels.access_hash` are the values already returned on user and channel objects. Clients cache them. The check compares the value on `inputUser`, `inputPeerUser`, `inputChannel`, and `inputPeerChannel` with that stored value. It does not switch to a per-viewer hash, which would invalidate those caches.
@@ -17,6 +31,7 @@ A provided `0` used to skip the channel and secret-chat comparisons. Enforce mod
 | channel hash, including `0` | `app/service/biz/channel/service_ops.go`, `access_hash.go` |
 | secret-chat user | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
 | from-message id, only while enforce is on | `proto/mtproto/peer_util.go` |
+>>>>>>> origin/master
 
 ## Authorization hash, revocation and TTL
 

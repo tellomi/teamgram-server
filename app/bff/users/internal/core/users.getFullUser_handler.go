@@ -209,6 +209,13 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 			}
 		},
 		func() {
+			if pinned, err := c.svcCtx.Dao.DialogClient.DialogGetUserPinnedMessage(c.ctx, &dialog.TLDialogGetUserPinnedMessage{
+				UserId:   c.MD.UserId,
+				PeerType: mtproto.PEER_USER,
+				PeerId:   peerId,
+			}); err == nil && pinned.GetV() > 0 {
+				userFull.PinnedMsgId = &wrapperspb.Int32Value{Value: pinned.GetV()}
+			}
 			if peerId != c.MD.UserId {
 				// theme_emoticon
 				dialogExt, _ := c.svcCtx.Dao.DialogClient.DialogGetDialogById(c.ctx, &dialog.TLDialogGetDialogById{
