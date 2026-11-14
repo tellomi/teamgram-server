@@ -2567,6 +2567,10 @@ var (
 	// | 403 | USER_PRIVACY_RESTRICTED | The user's privacy settings do not allow you to do this. |
 	ErrUserPrivacyRestricted = status.Error(ErrForbidden, "USER_PRIVACY_RESTRICTED")
 
+	// ErrYourPrivacyRestricted
+	// | 403 | YOUR_PRIVACY_RESTRICTED | You cannot fetch the read date of this message because you have disallowed other users to do so for your messages; to fix, allow other users to see your exact last online date OR purchase a Telegram Premium subscription. |
+	ErrYourPrivacyRestricted = status.Error(ErrForbidden, "YOUR_PRIVACY_RESTRICTED")
+
 	// ErrForbiddenVoiceMessagesForbidden
 	// | 403 | VOICE_MESSAGES_FORBIDDEN | This user's privacy settings forbid you from sending voice messages. |
 	ErrForbiddenVoiceMessagesForbidden = status.Error(ErrForbidden, "VOICE_MESSAGES_FORBIDDEN")

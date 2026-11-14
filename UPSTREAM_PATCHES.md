@@ -2,6 +2,18 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Polls and quizzes
+
+`messages.sendMedia` with `inputMediaPoll` used `makeMediaByInputMedia`, which returned `messageMediaUnsupported`. The poll book in `chatbox` was never called, so `messages.sendVote` had nothing to record.
+
+`TELLOMI_POLLS=1` (default off) stores the poll, including quiz `correct_answers` and `solution`. `messages.sendVote`, `messages.getPollResults`, and `messages.getPollVotes` read that book. A vote pushes `updateMessagePoll` to the other private-chat user, to basic-group members, and to channel members. Private chats translate the message id through `dialog_message_id`. `messages.getHistory` and `messages.getMessages` overlay the viewer's results.
+
+| Piece | File |
+| --- | --- |
+| media, quiz results, private id | `app/service/biz/chatbox/poll.go` |
+| send path | `app/bff/messages/internal/core/core_messages_helper.go` |
+| fanout | `app/bff/messages/internal/server/grpc/service/chat_p1.go`, `app/service/biz/channel/chat_p1.go` |
+
 ## Forward, reply, and deleteHistory revoke
 
 `messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own. `drop_media_captions` removes the caption and its entities from a photo or document and leaves the file. Plain text and a link-preview message keep their text.
@@ -529,6 +541,17 @@ The stored JSON is decoded in `stored_draft.go` the same way `Dao.MakeDialog` al
 | Decode stored draft JSON | `app/service/biz/dialog/internal/core/stored_draft.go` |
 | `dialog.getAllDrafts` | `app/service/biz/dialog/internal/core/dialog.getAllDrafts_handler.go` |
 
+## Private reactions while blocked, and the pin cap on the client RPC (ISSUE-S-PIN-LIMIT-001)
+
+`messages.sendReaction` in a private chat stored the reaction and pushed `updateMessageReactions` when either person had blocked the other. The blocked person now gets 400 `USER_IS_BLOCKED`, which is the error core.telegram.org lists for this method. The person who blocked the author gets 400 `YOU_BLOCKED_USER`, the same error `messages.sendMessage` returns in that direction. The reaction is not stored and not pushed. A mutual block reports `USER_IS_BLOCKED`. A user-service error is not treated as a block. Groups, channels, and Saved Messages are unchanged.
+
+`messages.toggleDialogPin` and `messages.reorderPinnedDialogs` now reject a set past the cap before they write. The numbers are `premium.Limit` for `pinned_chats` and `folder_pins`, the same pair `help.getAppConfig` publishes as `dialogs_pinned_limit_default` / `_premium` and `dialogs_folder_pinned_limit_default` / `_premium`. Folder 1 is the archive. Unpinning, and pinning a dialog that is already pinned, do not take a slot. `force` replaces the set. Without `force`, pins the client left out stay, and that total is what is capped. Past the cap is 400 `PINNED_DIALOGS_TOO_MUCH`. The dialog service still checks the same cap when it writes.
+
+| Piece | File |
+| --- | --- |
+| Private reaction block | `app/bff/channels/internal/server/grpc/service/reaction_block.go`, `handlers_features.go` |
+| Pin cap on the client RPC | `app/bff/dialogs/internal/core/pin_limit.go`, `messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go` |
+
 ## Dialog top after delete, and channel pins (ISSUE-S-CHAN-TOPDEL-001, ISSUE-S-PIN-CHAN-DIALOGS-001)
 
 Deleting the newest megagroup or channel message left `top_message` on that id. `messages.getDialogs` could not load it and dropped the chat for every member. The channel id counter stays where it is. The dialog top is the newest message that is still live, for the sender and for every other member. The same rollback applies to a private chat and a basic group: the outbox and the inbox both point `dialogs.top_message` at the greatest id that this delete does not remove. Deleting every message in a private chat leaves top 0, and the chat list omits that row. A basic group or channel the user still belongs to stays in the list with top 0 and no message.
@@ -554,6 +577,16 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 | RPC hook | `photos.uploadContactProfilePhoto_handler.go` |
 | `personal_photo` | `users.getFullUser_handler.go` |
 | table | `teamgramd/deploy/sql/migrate-20261129-contact-profile-photo.sql` |
+
+## Hide read time (globalPrivacySettings.hide_read_marks)
+
+`messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless `users.premium` is an unexpired subscription. `TELLOMI_PREMIUM_EVERYONE` does not waive it. `users.getFullUser` sets `read_dates_private` from the same row.
+
+| Piece | File |
+| --- | --- |
+| read-date check | `app/bff/messages/internal/core/outbox_read_privacy.go`, `messages.getOutboxReadDate_handler.go` |
+| `read_dates_private` | `app/bff/users/internal/core/read_dates_private.go`, `users.getFullUser_handler.go` |
+| `YOUR_PRIVACY_RESTRICTED` | `proto/mtproto/rpc_error_codes.go` |
 
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 

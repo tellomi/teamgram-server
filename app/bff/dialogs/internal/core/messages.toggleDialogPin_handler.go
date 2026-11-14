@@ -48,6 +48,11 @@ func (c *DialogsCore) MessagesToggleDialogPin(in *mtproto.TLMessagesToggleDialog
 		return nil, err
 	}
 
+	if err := c.rejectPinPastLimit(peer, in.Pinned); err != nil {
+		c.Logger.Errorf("messages.toggleDialogPin - error: %v", err)
+		return nil, err
+	}
+
 	pinReq := &dialog.TLDialogToggleDialogPin{
 		UserId:   c.MD.UserId,
 		PeerType: peer.PeerType,

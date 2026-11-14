@@ -23,6 +23,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 
 	"github.com/zeromicro/go-zero/core/contextx"
@@ -161,6 +162,15 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	if err != nil {
 		c.Logger.Errorf("messages.sendMedia - error: %v", err)
 		return nil, err
+	}
+	if peer.IsChannel() && outMessage.GetMedia().GetPoll().GetPublicVoters() {
+		_, chat, cardErr := channel.Shared().Card(c.ctx, c.MD.UserId, peer.PeerId)
+		if cardErr != nil {
+			return nil, cardErr
+		}
+		if chat.GetBroadcast() {
+			return nil, mtproto.ErrBroadcastPublicVotersForbidden
+		}
 	}
 
 	//outMessage, _ = c.fixMessageEntities(c.MD.UserId, peer, true, outMessage, func() bool {

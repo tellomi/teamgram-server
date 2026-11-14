@@ -370,6 +370,8 @@ type ReactionsService struct {
 	mtproto.UnimplementedRPCReactionsServer
 	Users    reactionUserAPI
 	Messages reactionMessageAPI
+	// Blocks is the private-chat block check. Nil skips it.
+	Blocks reactionBlockAPI
 	// Push delivers updates to other users. Nil in tests and when sync is not configured.
 	Push reactionPusher
 	// Dialogs updates dialog.unread_reactions_count. Nil in tests.
@@ -427,6 +429,9 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 		if err := s.requireGroupReaction(ctx, self, peer, in.GetMsgId()); err != nil {
 			return nil, err
 		}
+	}
+	if err := privateReactionBlocked(ctx, s.Blocks, self, peer); err != nil {
+		return nil, err
 	}
 	before := authorReactionUnread(ctx, self, peer, in.GetMsgId())
 	groupBefore := s.groupReactionUnread(ctx, self, peer, in.GetMsgId())

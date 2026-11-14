@@ -134,6 +134,25 @@ func TestGetFullUserReturnsPersonalPhoto(t *testing.T) {
 	}
 }
 
+func TestGetFullUserSetsReadDatesPrivate(t *testing.T) {
+	users := &fullUserAPI{allow: map[int32]bool{mtproto.PROFILE_PHOTO: true}, hideReadMarks: true}
+	got, err := fullUserCore(users).UsersGetFullUser(fullUserRequest(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.GetFullUser().GetReadDatesPrivate() {
+		t.Fatal("read_dates_private was not set")
+	}
+	users.hideReadMarks = false
+	open, err := fullUserCore(users).UsersGetFullUser(fullUserRequest(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if open.GetFullUser().GetReadDatesPrivate() {
+		t.Fatal("read_dates_private set without hide_read_marks")
+	}
+}
+
 func fullUserRequest(id int64) *mtproto.TLUsersGetFullUser {
 	return &mtproto.TLUsersGetFullUser{
 		Id: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: id, AccessHash: 1}).To_InputUser(),
@@ -142,9 +161,10 @@ func fullUserRequest(id int64) *mtproto.TLUsersGetFullUser {
 
 type fullUserAPI struct {
 	userclient.UserClient
-	allow        map[int32]bool
-	ownerBlocked bool
-	fallback     *mtproto.Photo
+	allow         map[int32]bool
+	ownerBlocked  bool
+	fallback      *mtproto.Photo
+	hideReadMarks bool
 }
 
 func (u *fullUserAPI) UserGetMutableUsersV2(context.Context, *user.TLUserGetMutableUsersV2) (*mtproto.MutableUsers, error) {
@@ -176,6 +196,12 @@ func profilePeer() *mtproto.ImmutableUser {
 		},
 		LastSeenAt: time.Now().Unix(),
 	}
+}
+
+func (u *fullUserAPI) UserGetGlobalPrivacySettings(context.Context, *user.TLUserGetGlobalPrivacySettings) (*mtproto.GlobalPrivacySettings, error) {
+	return mtproto.MakeTLGlobalPrivacySettings(&mtproto.GlobalPrivacySettings{
+		HideReadMarks: u.hideReadMarks,
+	}).To_GlobalPrivacySettings(), nil
 }
 
 func (u *fullUserAPI) UserBlockedByUser(_ context.Context, in *user.TLUserBlockedByUser) (*mtproto.Bool, error) {
