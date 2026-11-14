@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -161,6 +163,155 @@ func TestChannelCommentsMirrorAndGuestReply(t *testing.T) {
 	}}); status.Convert(err).Message() != "CHANNEL_PRIVATE" {
 		t.Fatalf("plain guest send: %v", err)
 	}
+}
+
+func TestChannelCommentBansFanoutAndReplyChain(t *testing.T) {
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
+	svc, ctx := newTest(t)
+	broadcast, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelChat := broadcast.Chats[0]
+	channelIn := inCh(channelChat)
+	if _, err := svc.UpdateUsername(ctx, 1, 0, channelIn, "rightsnews"); err != nil {
+		t.Fatal(err)
+	}
+	group := megagroup(t, svc, ctx, "Talk rights")
+	groupIn := inCh(group)
+	if err := svc.SetDiscussionGroup(ctx, 1, channelIn, groupIn); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = svc.Invite(ctx, 1, 0, channelIn, []int64{2, 3}, nil)
+	_, _ = svc.Invite(ctx, 1, 0, groupIn, []int64{2}, nil)
+	photos := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{SendPhotos: true}).To_ChatBannedRights()
+	if _, err := svc.EditDefaultBanned(ctx, 1, 0, groupIn, photos); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := svc.Send(ctx, 1, channelChat.Id, 0, []Outgoing{{
+		RandomID: 1,
+		Message:  &mtproto.Message{PredicateName: mtproto.Predicate_message, Message: "post", Date: 10},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	postID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	disc, err := svc.DiscussionMessage(ctx, 1, channelChat.Id, postID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := forwardedPost(disc.GetMessages(), channelChat.Id, postID)
+	if root == nil {
+		t.Fatal("missing discussion root")
+	}
+	photo := &mtproto.Message{
+		PredicateName: mtproto.Predicate_message,
+		Message:       "pic",
+		Date:          11,
+		Media:         mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{}).To_MessageMedia(),
+		ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+			ReplyToMsgId:       root.GetId(),
+			ReplyToMsgId_INT32: root.GetId(),
+		}).To_MessageReplyHeader(),
+	}
+	if _, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{RandomID: 2, Message: photo}}); err == nil || !strings.Contains(err.Error(), "CHAT_SEND_PHOTOS_FORBIDDEN") {
+		t.Fatalf("photo reply in the group: %v", err)
+	}
+	photo.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+		ReplyToMsgId:       postID,
+		ReplyToMsgId_INT32: postID,
+	}).To_MessageReplyHeader()
+	if _, err := svc.Send(ctx, 2, channelChat.Id, 0, []Outgoing{{RandomID: 3, Message: photo}}); err == nil || !strings.Contains(err.Error(), "CHAT_SEND_PHOTOS_FORBIDDEN") {
+		t.Fatalf("photo reply addressed at the channel post: %v", err)
+	}
+
+	var pushes []pushedMessage
+	var incoming []int64
+	svc.SetHooks(Hooks{
+		Push: func(_ context.Context, userID int64, _ []int64, updates *mtproto.Updates) {
+			for _, up := range updates.GetUpdates() {
+				msg := up.GetMessage_MESSAGE()
+				if msg == nil {
+					continue
+				}
+				pushes = append(pushes, pushedMessage{user: userID, peer: msg.GetPeerId().GetChannelId(), text: msg.GetMessage()})
+			}
+		},
+		Incoming: func(_ context.Context, _, channelID, _ int64, _ bool) {
+			incoming = append(incoming, channelID)
+		},
+	})
+	text, err := svc.Send(ctx, 2, channelChat.Id, 0, []Outgoing{{
+		RandomID: 4,
+		Message: &mtproto.Message{
+			PredicateName: mtproto.Predicate_message,
+			Message:       "only in the group",
+			Date:          12,
+			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+				ReplyToMsgId:       postID,
+				ReplyToMsgId_INT32: postID,
+			}).To_MessageReplyHeader(),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := text.Updates[0].GetMessage_MESSAGE()
+	if first.GetReplyTo().GetReplyToMsgId() != root.GetId() || first.GetReplyTo().GetReplyToTopId().GetValue() != root.GetId() {
+		t.Fatalf("reply to the post %#v", first.GetReplyTo())
+	}
+	for _, row := range pushes {
+		if row.user == 3 && row.text == "only in the group" {
+			t.Fatalf("channel subscriber got the comment: %+v", pushes)
+		}
+	}
+	if !sawPush(pushes, 1, group.Id, "only in the group") {
+		t.Fatalf("discussion group did not get the comment: %+v", pushes)
+	}
+	for _, id := range incoming {
+		if id == channelChat.Id {
+			t.Fatal("comment ran the channel incoming hook")
+		}
+	}
+
+	reply, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
+		RandomID: 5,
+		Message: &mtproto.Message{
+			PredicateName: mtproto.Predicate_message,
+			Message:       "follows the comment",
+			Date:          13,
+			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+				ReplyToMsgId:       first.GetId(),
+				ReplyToMsgId_INT32: first.GetId(),
+			}).To_MessageReplyHeader(),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := reply.Updates[0].GetMessage_MESSAGE()
+	if second.GetReplyTo().GetReplyToMsgId() != first.GetId() || second.GetReplyTo().GetReplyToTopId().GetValue() != root.GetId() {
+		t.Fatalf("reply chain %#v", second.GetReplyTo())
+	}
+	stored, err := svc.GetMessages(ctx, 1, groupIn, []int32{second.GetId()})
+	if err != nil || stored.Messages[0].GetReplyTo().GetReplyToMsgId() != first.GetId() {
+		t.Fatalf("stored reply %#v %v", stored, err)
+	}
+}
+
+type pushedMessage struct {
+	user int64
+	peer int64
+	text string
+}
+
+func sawPush(rows []pushedMessage, user, peer int64, text string) bool {
+	for _, row := range rows {
+		if row.user == user && row.peer == peer && row.text == text {
+			return true
+		}
+	}
+	return false
 }
 
 func TestChannelCommentsDisabledByDefault(t *testing.T) {

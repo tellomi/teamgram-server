@@ -418,6 +418,10 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		return nil, mtproto.ErrMessageEmpty
 	}
 	var ups []*mtproto.Update
+	// emitUps is what the addressed peer's members receive. A comment that
+	// was stored in the discussion group is already pushed there by
+	// tryComment and must not also be delivered as a channel message.
+	var emitUps []*mtproto.Update
 	var extraChats []int64
 	for _, item := range batch {
 		if item.Message == nil {
@@ -432,6 +436,8 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 				ups = append(ups, upd)
 				if groupID != 0 && groupID != ch.ID {
 					extraChats = append(extraChats, groupID)
+				} else {
+					emitUps = append(emitUps, upd)
 				}
 				continue
 			}
@@ -453,7 +459,9 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		if err != nil {
 			return nil, err
 		}
-		ups = append(ups, newMessageUpdate(viewMessage(body, stored.SenderID, sender), pts, 1))
+		upd := newMessageUpdate(viewMessage(body, stored.SenderID, sender), pts, 1)
+		ups = append(ups, upd)
+		emitUps = append(emitUps, upd)
 	}
 	ch, _ = s.reload(ctx, channelID)
 	updates := s.updatesWith(ctx, sender, ch, ups...)
@@ -464,18 +472,20 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		}
 		updates.Chats = append(updates.Chats, s.discussionChat(ctx, sender, g))
 	}
-	s.emit(ctx, sender, actorAuth, channelID, func(viewer int64) *mtproto.Updates {
-		cloned := make([]*mtproto.Update, 0, len(ups))
-		for _, u := range ups {
-			cu := proto.Clone(u).(*mtproto.Update)
-			if cu.Message_MESSAGE != nil {
-				cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
+	if len(emitUps) > 0 {
+		s.emit(ctx, sender, actorAuth, channelID, func(viewer int64) *mtproto.Updates {
+			cloned := make([]*mtproto.Update, 0, len(emitUps))
+			for _, u := range emitUps {
+				cu := proto.Clone(u).(*mtproto.Update)
+				if cu.Message_MESSAGE != nil {
+					cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
+				}
+				cloned = append(cloned, cu)
 			}
-			cloned = append(cloned, cu)
-		}
-		return s.updatesWith(ctx, viewer, ch, cloned...)
-	})
-	s.notifyIncoming(ctx, channelID, sender, ch)
+			return s.updatesWith(ctx, viewer, ch, cloned...)
+		})
+		s.notifyIncoming(ctx, channelID, sender, ch)
+	}
 	return updates, nil
 }
 

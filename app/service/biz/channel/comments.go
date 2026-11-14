@@ -93,15 +93,26 @@ func (s *Service) tryComment(ctx context.Context, ch *Channel, sender, actorAuth
 	if err != nil {
 		return true, nil, groupID, err
 	}
+	// Bans belong to the discussion group on both address paths. A member
+	// who replies to the channel post is still bound by the group's default
+	// rights and their own banned_rights.
+	gp, err := s.store.GetParticipant(ctx, groupID, sender)
+	if err != nil {
+		return true, nil, groupID, err
+	}
+	if err = s.enforceContent(group, gp, []*mtproto.Message{item.Message}); err != nil {
+		return true, nil, groupID, err
+	}
 	comment := proto.Clone(item.Message).(*mtproto.Message)
 	if comment.PredicateName == "" {
 		comment.PredicateName = mtproto.Predicate_message
 	}
+	replyTo, topID := s.commentReplyIDs(ctx, ch, groupID, rootID, item.Message)
 	comment.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-		ReplyToMsgId:           rootID,
-		ReplyToMsgId_INT32:     rootID,
-		ReplyToMsgId_FLAGINT32: wrapperspb.Int32(rootID),
-		ReplyToTopId:           wrapperspb.Int32(rootID),
+		ReplyToMsgId:           replyTo,
+		ReplyToMsgId_INT32:     replyTo,
+		ReplyToMsgId_FLAGINT32: wrapperspb.Int32(replyTo),
+		ReplyToTopId:           wrapperspb.Int32(topID),
 	}).To_MessageReplyHeader()
 	s.prepareOutgoing(group, sender, comment)
 	id, pts, err := s.appendMessage(ctx, groupID, sender, item.RandomID, comment)
@@ -126,6 +137,28 @@ func (s *Service) tryComment(ctx context.Context, ch *Channel, sender, actorAuth
 		})
 	}
 	return true, upd, groupID, nil
+}
+
+// commentReplyIDs keeps reply_to_msg_id on the message being answered and
+// reply_to_top_id on the discussion root. A reply addressed at the channel
+// post itself lands on the forwarded root, because that id is in the
+// channel's id space, not the group's.
+func (s *Service) commentReplyIDs(ctx context.Context, ch *Channel, groupID int64, rootID int32, msg *mtproto.Message) (replyTo, top int32) {
+	top = rootID
+	if ch == nil || ch.ID != groupID {
+		return rootID, top
+	}
+	target := replyMsgID(msg)
+	if target == 0 {
+		target = replyTopID(msg)
+	}
+	if target == 0 || target == rootID {
+		return rootID, top
+	}
+	if s.features(ctx, groupID).CommentMsgRoot[target] == rootID {
+		return target, top
+	}
+	return rootID, top
 }
 
 func (s *Service) mayComment(ctx context.Context, groupID, sender int64) error {
