@@ -424,6 +424,7 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 		return up, nil
 	}
 	before := authorReactionUnread(ctx, self, peer, in.GetMsgId())
+	groupBefore := s.groupReactionUnread(ctx, self, peer, in.GetMsgId())
 	up, err := chatbox.Shared().React(ctx, self, peer, in.GetMsgId(), emos, docs, in.GetBig())
 	if err != nil {
 		return nil, err
@@ -432,8 +433,42 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 	after := authorReactionUnread(ctx, self, peer, in.GetMsgId())
 	s.pushPeerReaction(ctx, self, peer, in.GetMsgId())
 	s.pushOwnOtherSessions(ctx, self, up)
-	s.addUnreadReactions(ctx, reactionAuthor(ctx, self, peer, in.GetMsgId()), self, unreadDelta(before, after))
+	if peer != nil && peer.IsChat() {
+		s.noteGroupReactionUnread(ctx, peer, in.GetMsgId(), groupBefore)
+	} else {
+		s.addUnreadReactions(ctx, reactionAuthor(ctx, self, peer, in.GetMsgId()), mtproto.PEER_USER, self, unreadDelta(before, after))
+	}
 	return up, nil
+}
+
+// groupReactionUnread snapshots which other members already have an unread
+// reaction on this message. The snapshot has to be taken before React.
+func (s ReactionsService) groupReactionUnread(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) map[int64]bool {
+	out := map[int64]bool{}
+	if s.Chats == nil || peer == nil || !peer.IsChat() {
+		return out
+	}
+	list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+	if err != nil || list == nil {
+		return out
+	}
+	for _, id := range list.GetDatas() {
+		if id == 0 || id == self {
+			continue
+		}
+		out[id] = chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, msgID)
+	}
+	return out
+}
+
+func (s ReactionsService) noteGroupReactionUnread(ctx context.Context, peer *mtproto.PeerUtil, msgID int32, before map[int64]bool) {
+	if peer == nil {
+		return
+	}
+	for id, was := range before {
+		now := chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, msgID)
+		s.addUnreadReactions(ctx, id, peer.PeerType, peer.PeerId, unreadDelta(was, now))
+	}
 }
 
 func unreadDelta(before, after bool) int32 {
@@ -600,13 +635,13 @@ func (s ReactionsService) pushOwnOtherSessions(ctx context.Context, self int64, 
 	})
 }
 
-func (s ReactionsService) addUnreadReactions(ctx context.Context, userID, peerID int64, delta int32) {
+func (s ReactionsService) addUnreadReactions(ctx context.Context, userID int64, peerType int32, peerID int64, delta int32) {
 	if s.Dialogs == nil || userID == 0 || peerID == 0 || delta == 0 {
 		return
 	}
 	_, _ = s.Dialogs.DialogUpdateUnreadCount(ctx, &dialog.TLDialogUpdateUnreadCount{
 		UserId:               userID,
-		PeerType:             mtproto.PEER_USER,
+		PeerType:             peerType,
 		PeerId:               peerID,
 		UnreadReactionsCount: wrapperspb.Int32(delta),
 	})

@@ -145,6 +145,12 @@ func TestGroupReactionUpdateIsVisibleToOtherMembers(t *testing.T) {
 	if b.GroupReactionUpdateFor(ctx, 4, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 8) != nil {
 		t.Fatal("private chat used the group update")
 	}
+	if !b.MessageHasUnreadReaction(ctx, 9, chat, 8) {
+		t.Fatal("other member should see an unread reaction")
+	}
+	if b.MessageHasUnreadReaction(ctx, 4, chat, 8) {
+		t.Fatal("the reactor's own reaction is not unread")
+	}
 }
 
 func TestPeerReactionUpdateUsesPeersMessageID(t *testing.T) {
