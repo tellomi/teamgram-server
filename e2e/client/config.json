@@ -58,7 +58,9 @@
     "delhist_max_a": {"number": "9996610171", "code": "11111"},
     "delhist_max_b": {"number": "9996610172", "code": "11111"},
     "delhist_max_c": {"number": "9996610173", "code": "11111"},
+    "ttl7": {"number": "9996610191", "code": "11111"},
     "notify_reset": {"number": "9996610192", "code": "11111"},
-    "notify_reset_peer": {"number": "9996610193", "code": "11111"}
+    "notify_reset_peer": {"number": "9996610193", "code": "11111"},
+    "topic_a": {"number": "9996610194", "code": "11111"}
   }
 }
