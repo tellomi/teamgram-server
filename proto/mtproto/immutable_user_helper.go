@@ -19,6 +19,7 @@
 package mtproto
 
 import (
+	"context"
 	"time"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -254,29 +255,40 @@ func (m *ImmutableUser) GetReverseContactData(cId int64) *ContactData {
 }
 
 func (m *ImmutableUser) CheckPrivacy(keyType int, id int64) bool {
-	var (
-		rules *PrivacyKeyRules
-	)
+	return m.checkPrivacy(keyType, id, false, false)
+}
 
-	if m.Id() == id {
+// checkPrivacy applies keyType to viewer. premium and bot describe the
+// viewer. Contact and close-friend come from this user's own contact row.
+func (m *ImmutableUser) checkPrivacy(keyType int, viewer int64, premium, bot bool) bool {
+	if m == nil || m.Id() == viewer {
 		return true
 	}
-
+	var rules *PrivacyKeyRules
 	for _, v := range m.KeysPrivacyRules {
 		if v.Key == int32(keyType) {
 			rules = v
 			break
 		}
 	}
-
-	if rules == nil {
+	if rules == nil || len(rules.Rules) == 0 {
 		return true
 	}
-
-	isContact, _ := m.CheckContact(id)
-	allow := privacyIsAllow(rules.Rules, id, isContact)
-
-	return allow
+	isContact, _ := m.CheckContact(viewer)
+	closeFriend := false
+	if row := m.GetContactData(viewer); row != nil {
+		closeFriend = row.GetCloseFriend()
+	}
+	return EvaluatePrivacy(rules.Rules, PrivacySubject{
+		UserID:      viewer,
+		Contact:     isContact,
+		CloseFriend: closeFriend,
+		Premium:     premium,
+		Bot:         bot,
+		Member: func(chats []int64) (bool, bool) {
+			return LookupChatMember(context.Background(), viewer, chats)
+		},
+	})
 }
 
 func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
@@ -382,12 +394,12 @@ func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
 	}
 
 	// phone
-	if m.CheckPrivacy(PHONE_NUMBER, selfUser.Id()) {
+	if m.checkPrivacy(PHONE_NUMBER, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()) {
 		user.Phone = MakeFlagsString(m.Phone())
 	}
 
 	// photo
-	if m.CheckPrivacy(PROFILE_PHOTO, selfUser.Id()) {
+	if m.checkPrivacy(PROFILE_PHOTO, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()) {
 		user.Photo = m.ProfilePhoto()
 	}
 
@@ -395,8 +407,8 @@ func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
 	// seen from this user hides theirs from you, and that bucket sets by_me.
 	user.Status = StatusForViewer(
 		m.LastSeenAt,
-		m.CheckPrivacy(STATUS_TIMESTAMP, selfUser.Id()),
-		selfUser.CheckPrivacy(STATUS_TIMESTAMP, m.Id()),
+		m.checkPrivacy(STATUS_TIMESTAMP, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()),
+		selfUser.checkPrivacy(STATUS_TIMESTAMP, m.Id(), m.Premium(), m.IsBot()),
 		time.Now().Unix(),
 	)
 

@@ -27,7 +27,7 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
-func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimit int32) (*mtproto.Updates, error) {
+func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimit int32) (*mtproto.Updates, *mtproto.MissingInvitee, error) {
 	var (
 		err       error
 		addUser   = mtproto.FromInputUser(c.MD.UserId, userId)
@@ -39,7 +39,7 @@ func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimi
 	if !addUser.IsUser() || addUser.PeerId == 0 {
 		err = mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.addChatUser - error: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	if !c.MD.IsAdmin {
@@ -59,41 +59,17 @@ func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimi
 		if me == nil || added == nil {
 			err = mtproto.ErrPeerIdInvalid
 			c.Logger.Errorf("messages.addChatUser - error: %v", err)
-			return nil, err
+			return nil, nil, err
 		}
 
 		if added.IsBot() && added.BotNochats() {
 			err = mtproto.ErrBotGroupsBlocked
 			c.Logger.Errorf("messages.addChatUser - error: %v", err)
-			return nil, err
+			return nil, nil, err
 		}
 
-		rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-			UserId:  addUser.PeerId,
-			KeyType: mtproto.CHAT_INVITE,
-		})
-		if len(rules.Datas) > 0 {
-			// return true
-			allowAddChat := mtproto.CheckPrivacyIsAllow(
-				addUser.PeerId,
-				rules.Datas,
-				inviterId,
-				func(id, checkId int64) bool {
-					contact, _ := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{
-						UserId: id,
-						Id:     checkId,
-					})
-					return mtproto.FromBool(contact)
-				},
-				func(checkId int64, idList []int64) bool {
-					chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-					return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-				})
-			if !allowAddChat {
-				err = mtproto.ErrUserPrivacyRestricted
-				c.Logger.Errorf("not allow addChat: %v", err)
-				return nil, err
-			}
+		if missing := c.chatInviteRestricted(inviterId, addUser.PeerId); missing != nil {
+			return nil, missing, nil
 		}
 
 		isBot = added.IsBot()
@@ -110,7 +86,7 @@ func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimi
 	//request.ChatId, md.UserId, peer.PeerId)
 	if err != nil {
 		c.Logger.Errorf("addChatUser error: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	fromId := c.MD.UserId
@@ -138,8 +114,27 @@ func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimi
 
 	if err != nil {
 		c.Logger.Errorf("addChatUser error: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
-	return rUpdates, nil
+	return rUpdates, nil, nil
+}
+
+// chatInviteRestricted applies the invitee's chat-invite privacy.
+// A nil result means the invite is allowed. The new addChatUser result
+// carries the missing invitee; the legacy method turns it into
+// USER_PRIVACY_RESTRICTED.
+func (c *ChatsCore) chatInviteRestricted(inviter, invitee int64) *mtproto.MissingInvitee {
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || invitee == 0 || inviter == invitee {
+		return nil
+	}
+	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(c.ctx, &userpb.TLUserCheckPrivacy{
+		UserId:  invitee,
+		KeyType: mtproto.CHAT_INVITE,
+		PeerId:  inviter,
+	})
+	if err != nil || mtproto.FromBool(ok) {
+		return nil
+	}
+	return mtproto.MakeTLMissingInvitee(&mtproto.MissingInvitee{UserId: invitee}).To_MissingInvitee()
 }

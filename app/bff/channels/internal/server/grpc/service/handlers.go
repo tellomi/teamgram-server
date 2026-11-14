@@ -7,6 +7,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 )
 
@@ -99,6 +100,11 @@ func (s *Service) ChannelsInviteToChannel199F3A6C(ctx context.Context, in *mtpro
 	if err != nil {
 		return nil, err
 	}
+	// The legacy result has no missing_invitees. Privacy (and a kick)
+	// that blocks every requested user is USER_PRIVACY_RESTRICTED.
+	if invited != nil && len(invited.GetMissingInvitees()) > 0 && len(invited.GetMissingInvitees()) >= countInviteUsers(in.GetUsers()) {
+		return nil, mtproto.ErrUserPrivacyRestricted
+	}
 	return invited.GetUpdates(), nil
 }
 
@@ -117,7 +123,53 @@ func (s *Service) invite(ctx context.Context, ch *mtproto.InputChannel, users []
 			ids = append(ids, md.GetUserId())
 		}
 	}
-	return channel.Shared().Invite(ctx, md.GetUserId(), md.GetPermAuthKeyId(), ch, ids, bots)
+	allowed, missing := s.inviteesAllowed(ctx, md.GetUserId(), ids)
+	res, err := channel.Shared().Invite(ctx, md.GetUserId(), md.GetPermAuthKeyId(), ch, allowed, bots)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil && len(missing) > 0 {
+		res.MissingInvitees = append(res.MissingInvitees, missing...)
+	}
+	return res, nil
+}
+
+// inviteesAllowed drops users whose chat-invite privacy rejects the actor.
+// Those users are missing invitees and are not added.
+func (s *Service) inviteesAllowed(ctx context.Context, actor int64, ids []int64) ([]int64, []*mtproto.MissingInvitee) {
+	allowed := make([]int64, 0, len(ids))
+	var missing []*mtproto.MissingInvitee
+	for _, id := range ids {
+		if id == 0 || id == actor || s.svcCtx == nil || s.svcCtx.UserClient == nil {
+			if id != 0 {
+				allowed = append(allowed, id)
+			}
+			continue
+		}
+		ok, err := s.svcCtx.UserClient.UserCheckPrivacy(ctx, &user.TLUserCheckPrivacy{
+			UserId:  id,
+			KeyType: mtproto.CHAT_INVITE,
+			PeerId:  actor,
+		})
+		if err != nil || mtproto.FromBool(ok) {
+			allowed = append(allowed, id)
+			continue
+		}
+		missing = append(missing, mtproto.MakeTLMissingInvitee(&mtproto.MissingInvitee{
+			UserId: id,
+		}).To_MissingInvitee())
+	}
+	return allowed, missing
+}
+
+func countInviteUsers(users []*mtproto.InputUser) int {
+	n := 0
+	for _, u := range users {
+		if u != nil {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *Service) ChannelsJoinChannel24B524C5(ctx context.Context, in *mtproto.TLChannelsJoinChannel24B524C5) (*mtproto.Updates, error) {
