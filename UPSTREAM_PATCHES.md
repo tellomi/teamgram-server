@@ -15,6 +15,14 @@ Due rows live in the same `chatbox_doc` table (`sched:due`, rebuilt from `sched:
 | edit falls through to the scheduled copy | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
 | dispatcher | `app/bff/messages/internal/server/grpc/service/schedule_loop.go` |
 
+## Basic-group dialog before the send returns
+
+`messages.createChat` returns as soon as the inbox record is accepted by Kafka. The creator's `dialogs` row used to be written later, in the inbox consumer (`SendMessageToOutboxV1`). `messages.toggleDialogPin` looks that row up and returns `PEER_ID_INVALID` when it is missing, so pinning the new group immediately failed. The sender's dialog is now inserted before the inbox publish, for one message and for a list. The request sets `top_message` and `date2` only. An existing unread count, read cursor, and pin stay. A new row still starts at unread 0 through `InsertIgnore`. The later inbox apply still moves `top_message` forward and does not clear `pinned`.
+
+| Piece | File |
+| --- | --- |
+| dialog before return | `app/messenger/msg/internal/dao/sender_dialog.go`, `msg.sendMessageV2_handler.go` |
+
 ## Polls and quizzes
 
 `messages.sendMedia` with `inputMediaPoll` used `makeMediaByInputMedia`, which returned `messageMediaUnsupported`. The poll book in `chatbox` was never called, so `messages.sendVote` had nothing to record.
@@ -579,6 +587,16 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 | Pin on getDialogs, getPinnedDialogs, getPeerDialogs | `app/bff/dialogs/internal/core/channel_dialogs.go`, `messages.getDialogs_handler.go`, `messages.getPinnedDialogs_handler.go`, `messages.getPeerDialogs_handler.go` |
 | toggle, reorder, premium caps, other-session update | `app/bff/dialogs/internal/core/messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go`, `app/service/biz/dialog/internal/core/pin_policy.go`, `dialog.toggleDialogPin_handler.go`, `dialog.reorderPinnedDialogs_handler.go`, `dialog.editPeerFolders_handler.go` |
 | one channel dialog | `app/service/biz/channel/service_ops.go` `DialogFor`, `app/bff/channels/bridge.go` |
+
+## Hide read time (globalPrivacySettings.hide_read_marks)
+
+`messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless `users.premium` is an unexpired subscription. `TELLOMI_PREMIUM_EVERYONE` does not waive it. `users.getFullUser` sets `read_dates_private` from the same row.
+
+| Piece | File |
+| --- | --- |
+| read-date check | `app/bff/messages/internal/core/outbox_read_privacy.go`, `messages.getOutboxReadDate_handler.go` |
+| `read_dates_private` | `app/bff/users/internal/core/read_dates_private.go`, `users.getFullUser_handler.go` |
+| `YOUR_PRIVACY_RESTRICTED` | `proto/mtproto/rpc_error_codes.go` |
 
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 
