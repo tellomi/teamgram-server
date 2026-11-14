@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Privacy switches that were stored and then ignored
+
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
+
+| Piece | File |
+| --- | --- |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
+
 ## Scheduled messages
 
 `messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.

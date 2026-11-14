@@ -89,6 +89,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
+	"github.com/teamgram/teamgram-server/pkg/accountprefs"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
 	"github.com/teamgram/teamgram-server/pkg/crashreport"
@@ -127,6 +128,9 @@ func (s *Server) Initialize() error {
 	// overrides it. A missing value logs once inside Configure.
 	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
+	if err := accountprefs.UseDSN(c.ChannelMySQL); err != nil {
+		logx.Errorf("accountprefs mysql: %v", err)
+	}
 	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
 		return err
 	}
