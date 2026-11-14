@@ -725,3 +725,18 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Reaction cap, closed paid reactions, saved tag counts (ISSUE-S-REACTIONS-LIMIT-001, ISSUE-S-PAIDREACT-001, ISSUE-S-SAVED-TAGCOUNT-001)
+
+`reactions_limit` was compared only with the emojis in the current request. A second member could add a different emoji because that request contained one emoji. The check now counts distinct emojis already on the message from other people, plus this user's new set. The same emoji, and replacing your own emoji when you are the only reactor, still succeeds. The same count is used for basic groups.
+
+`messages.sendPaidReaction` does not debit stars. It used to return `CHANNEL_INVALID` for a private chat and `RANDOM_ID_EXPIRED` for a channel, and a timestamp-shaped random id stored `reactionPaid`. Every peer now gets `406 PAYMENT_UNSUPPORTED` and nothing is stored.
+
+Deleting a Saved Message left its reaction in the tag counts. `messages.deleteMessages` now drops those reaction rows and rebuilds the tag counts.
+
+| Piece | File |
+| --- | --- |
+| channel cap | `app/service/biz/channel/chat_p1.go` |
+| basic-group cap | `app/service/biz/chatbox/react.go` |
+| paid reaction | `app/bff/channels/internal/paidreaction/paid.go` |
+| saved tag counts | `chatbox.DropSavedReactions`, `msg.deleteMessages_handler.go` |

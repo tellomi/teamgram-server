@@ -171,7 +171,7 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 	if err != nil {
 		return nil, err
 	}
-	if err := doc.allow(emos, docs); err != nil {
+	if err := doc.allow(self, msgID, doc.Items, emos, docs); err != nil {
 		return nil, err
 	}
 	now := int32(b.now().Unix())
@@ -197,6 +197,43 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 		b.syncSavedTagsLocked(ctx, self, doc)
 	}
 	return mtproto.MakeUpdatesByUpdates(reactionUpdate(peer, msgID, b.viewLocked(ctx, self, peer, doc), self)), nil
+}
+
+// DropSavedReactions removes reactions on deleted Saved Messages and rebuilds
+// tag counts. A title with a zero count is still returned by getSavedReactionTags.
+func (b *Book) DropSavedReactions(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgIDs []int32) {
+	if !savedDialog(self, peer) || len(msgIDs) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, self, peer)
+	if err != nil || doc == nil {
+		return
+	}
+	drop := map[int32]struct{}{}
+	for _, id := range msgIDs {
+		if id != 0 {
+			drop[id] = struct{}{}
+		}
+	}
+	kept := make([]reactionItem, 0, len(doc.Items))
+	changed := false
+	for _, item := range doc.Items {
+		if _, ok := drop[item.MsgID]; ok {
+			changed = true
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if !changed {
+		return
+	}
+	doc.Items = kept
+	if err := b.storeReact(ctx, self, peer, doc); err != nil {
+		return
+	}
+	b.syncSavedTagsLocked(ctx, self, doc)
 }
 
 // UnreadReactions returns messages in this dialog that have reactions newer
@@ -481,7 +518,7 @@ func (b *Book) storeReact(ctx context.Context, self int64, peer *mtproto.PeerUti
 	return b.save(ctx, key, doc)
 }
 
-func (d *reactDoc) allow(emos []string, docs []int64) error {
+func (d *reactDoc) allow(self int64, msgID int32, items []reactionItem, emos []string, docs []int64) error {
 	if d.Mode == "none" && (len(emos) > 0 || len(docs) > 0) {
 		return mtproto.ErrReactionInvalid
 	}
@@ -512,8 +549,21 @@ func (d *reactDoc) allow(emos []string, docs []int64) error {
 	}
 	if d.Limit > 0 {
 		uniq := map[string]bool{}
+		for _, item := range items {
+			if item.MsgID != msgID || item.UserID == self {
+				continue
+			}
+			if item.Emoticon != "" {
+				uniq[item.Emoticon] = true
+			}
+			if item.DocumentID != 0 {
+				uniq["d"+strconv.FormatInt(item.DocumentID, 10)] = true
+			}
+		}
 		for _, e := range emos {
-			uniq[e] = true
+			if e != "" {
+				uniq[e] = true
+			}
 		}
 		for _, id := range docs {
 			uniq["d"+strconv.FormatInt(id, 10)] = true

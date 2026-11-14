@@ -14,6 +14,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 )
 
 // MsgDeleteMessages
@@ -98,6 +99,10 @@ func (c *MsgCore) deleteUserMessages(in *msg.TLMsgDeleteMessages) (*mtproto.Mess
 		PermAuthKeyId: in.AuthKeyId,
 		Updates:       mtproto.MakeUpdatesByUpdates(updateDeleteMessages),
 	})
+
+	if peer != nil && (peer.PeerType == mtproto.PEER_SELF || (peer.PeerType == mtproto.PEER_USER && peer.PeerId == in.UserId)) {
+		chatbox.Shared().DropSavedReactions(c.ctx, in.UserId, peer, in.Id)
+	}
 
 	if in.Revoke {
 		c.svcCtx.Dao.InboxClient.InboxDeleteMessagesToInbox(

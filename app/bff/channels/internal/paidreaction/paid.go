@@ -42,41 +42,11 @@ func Reset() {
 }
 
 // Send applies a paid reaction on a channel message.
+// Stars are not debited, so the method is closed. Callers used to see
+// CHANNEL_INVALID in a private chat and RANDOM_ID_EXPIRED in a channel,
+// or a stored reactionPaid that was never paid for.
 func Send(self int64, peer *mtproto.InputPeer, msgID, count int32, randomID int64, privacy *mtproto.PaidReactionPrivacy) (*mtproto.Updates, error) {
-	channelID, err := channelOf(peer)
-	if err != nil {
-		return nil, err
-	}
-	if msgID <= 0 {
-		return nil, mtproto.ErrMessageIdInvalid
-	}
-	if count <= 0 {
-		return nil, mtproto.ErrReactionsCountInvalid
-	}
-	if err := randomIDOK(randomID); err != nil {
-		return nil, err
-	}
-	anonymous, show, err := privacyOf(self, privacy)
-	if err != nil {
-		return nil, err
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	k := key{channel: channelID, msg: msgID, user: self}
-	row := book[k]
-	if row == nil {
-		row = &rec{seen: map[int64]struct{}{}, show: mtproto.MakePeerUser(self)}
-		book[k] = row
-	}
-	if _, ok := row.seen[randomID]; !ok {
-		row.count += count
-		row.seen[randomID] = struct{}{}
-	}
-	row.anonymous = anonymous
-	if show != nil {
-		row.show = show
-	}
-	return updates(channelID, msgID, row), nil
+	return nil, mtproto.ErrPaymentUnsupported
 }
 
 // Toggle changes the privacy of a paid reaction this user already sent.

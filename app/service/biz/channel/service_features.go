@@ -1612,7 +1612,7 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	f := s.features(ctx, ch.ID)
-	if err := allowReact(f, emoticons); err != nil {
+	if err := allowReact(f, msgID, self, emoticons); err != nil {
 		return nil, err
 	}
 	kept := f.Reactions[:0]

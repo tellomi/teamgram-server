@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-func allowReact(f *Features, emos []string) error {
+func allowReact(f *Features, msgID int32, self int64, emos []string) error {
 	if f == nil || len(emos) == 0 {
 		return nil
 	}
@@ -34,8 +34,22 @@ func allowReact(f *Features, emos []string) error {
 			}
 		}
 	}
-	if f.ReactionLimit > 0 && int32(len(uniqueStrings(emos))) > f.ReactionLimit {
-		return mtproto.ErrReactionsTooMany
+	if f.ReactionLimit > 0 {
+		// The limit is distinct emojis on the message, across members.
+		// This user's previous emojis are replaced by the new set.
+		seen := map[string]struct{}{}
+		for _, r := range f.Reactions {
+			if r.MsgID != msgID || r.UserID == self || r.Emoticon == "" {
+				continue
+			}
+			seen[r.Emoticon] = struct{}{}
+		}
+		for _, e := range uniqueStrings(emos) {
+			seen[e] = struct{}{}
+		}
+		if int32(len(seen)) > f.ReactionLimit {
+			return mtproto.ErrReactionsTooMany
+		}
 	}
 	return nil
 }

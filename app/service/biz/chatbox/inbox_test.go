@@ -233,6 +233,33 @@ func TestSavedTagsFromSelfReactions(t *testing.T) {
 	if err != nil || cleared.GetTags()[0].GetTitle() != nil {
 		t.Fatalf("cleared %+v %v", cleared, err)
 	}
+	if _, err := b.React(ctx, 5, self, 9, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	b.DropSavedReactions(ctx, 5, self, []int32{8})
+	left, err := b.SavedReactionTags(ctx, 5, nil, 0)
+	if err != nil || len(left.GetTags()) != 1 || left.GetTags()[0].GetCount() != 1 {
+		t.Fatalf("after delete %+v %v", left, err)
+	}
+}
+
+func TestReactionLimitAcrossMembers(t *testing.T) {
+	ResetShared()
+	b := Shared()
+	ctx := context.Background()
+	peer := mtproto.MakePeerUtil(mtproto.PEER_CHAT, 4)
+	if err := b.SetAvailableReactions(ctx, 3, peer, "all", false, nil, nil, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.React(ctx, 3, peer, 8, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.React(ctx, 4, peer, 8, []string{"❤️"}, nil, false); err != mtproto.ErrReactionsTooMany {
+		t.Fatalf("second emoji: %v", err)
+	}
+	if _, err := b.React(ctx, 4, peer, 8, []string{"👍"}, nil, false); err != nil {
+		t.Fatalf("same emoji: %v", err)
+	}
 }
 
 func TestReportTreeAndPaidMedia(t *testing.T) {
