@@ -822,13 +822,13 @@ func (dao *DialogsDAO) UpdateTopMessageTx(tx *sqlx.Tx, topMessage int32, userId 
 }
 
 // UpdatePinnedMsgId
-// update dialogs set pinned_msg_id = :pinned_msg_id where user_id = :user_id and peer_dialog_id = :peer_dialog_id
+// update dialogs set pinned_msg_id = :pinned_msg_id where user_id = :user_id and peer_dialog_id = :peer_dialog_id and deleted = 0
 func (dao *DialogsDAO) UpdatePinnedMsgId(ctx context.Context, pinnedMsgId int32, userId int64, peerDialogId int64) (rowsAffected int64, err error) {
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = "update dialogs set pinned_msg_id = ? where user_id = ? and peer_dialog_id = ?"
+	query = "update dialogs set pinned_msg_id = ? where user_id = ? and peer_dialog_id = ? and deleted = 0"
 
 	rResult, err = dao.db.Exec(ctx, query, pinnedMsgId, userId, peerDialogId)
 
@@ -846,13 +846,13 @@ func (dao *DialogsDAO) UpdatePinnedMsgId(ctx context.Context, pinnedMsgId int32,
 }
 
 // UpdatePinnedMsgIdTx
-// update dialogs set pinned_msg_id = :pinned_msg_id where user_id = :user_id and peer_dialog_id = :peer_dialog_id
+// update dialogs set pinned_msg_id = :pinned_msg_id where user_id = :user_id and peer_dialog_id = :peer_dialog_id and deleted = 0
 func (dao *DialogsDAO) UpdatePinnedMsgIdTx(tx *sqlx.Tx, pinnedMsgId int32, userId int64, peerDialogId int64) (rowsAffected int64, err error) {
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = "update dialogs set pinned_msg_id = ? where user_id = ? and peer_dialog_id = ?"
+	query = "update dialogs set pinned_msg_id = ? where user_id = ? and peer_dialog_id = ? and deleted = 0"
 
 	rResult, err = tx.Exec(query, pinnedMsgId, userId, peerDialogId)
 

@@ -8,12 +8,58 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	rpmetadata "github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
+
+func TestBasicGroupReactionRequiresMembershipAndTheMessage(t *testing.T) {
+	chatbox.ResetShared()
+	ctx := withReactionUser(7, false)
+	peer := mtproto.MakeTLInputPeerChat(&mtproto.InputPeer{ChatId: 15}).To_InputPeer()
+	outsider := ReactionsService{
+		Chats:    reactionMembers{ids: []int64{4, 9}},
+		Messages: reactionBox{id: 30, peer: 15, peerType: mtproto.PEER_CHAT},
+	}
+	if _, err := outsider.MessagesSendReaction(ctx, &mtproto.TLMessagesSendReaction{
+		Peer: peer, MsgId: 30,
+		Reaction_FLAGVECTORREACTION: []*mtproto.Reaction{
+			mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "👍"}).To_Reaction(),
+		},
+	}); err != mtproto.ErrUserNotParticipant {
+		t.Fatalf("outsider: %v", err)
+	}
+	member := ReactionsService{
+		Chats:    reactionMembers{ids: []int64{7, 9}},
+		Messages: reactionBox{id: 30, peer: 15, peerType: mtproto.PEER_CHAT},
+	}
+	if _, err := member.MessagesSendReaction(ctx, &mtproto.TLMessagesSendReaction{
+		Peer: peer, MsgId: 99,
+		Reaction_FLAGVECTORREACTION: []*mtproto.Reaction{
+			mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "👍"}).To_Reaction(),
+		},
+	}); err != mtproto.ErrMsgIdInvalid {
+		t.Fatalf("unseen message: %v", err)
+	}
+	up, err := member.MessagesSendReaction(ctx, &mtproto.TLMessagesSendReaction{
+		Peer: peer, MsgId: 30,
+		Reaction_FLAGVECTORREACTION: []*mtproto.Reaction{
+			mtproto.MakeTLReactionEmoji(&mtproto.Reaction{Emoticon: "👍"}).To_Reaction(),
+		},
+	})
+	if err != nil || up.Updates[0].GetMsgId_INT32() != 30 {
+		t.Fatalf("member reaction %#v %v", up, err)
+	}
+}
+
+type reactionMembers struct{ ids []int64 }
+
+func (m reactionMembers) ChatGetChatParticipantIdList(context.Context, *chatpb.TLChatGetChatParticipantIdList) (*chatpb.Vector_Long, error) {
+	return &chatpb.Vector_Long{Datas: m.ids}, nil
+}
 
 func TestUnreadReactionDelta(t *testing.T) {
 	if unreadDelta(false, true) != 1 || unreadDelta(true, false) != -1 || unreadDelta(true, true) != 0 || unreadDelta(false, false) != 0 {

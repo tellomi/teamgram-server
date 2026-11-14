@@ -71,6 +71,12 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		c.Logger.Errorf("messages.sendMedia - sanction")
 		return nil, err
 	}
+	if inputMediaIsVoice(in.GetMedia()) {
+		if err = c.voiceForbidden(peer); err != nil {
+			c.Logger.Errorf("messages.sendMedia - voice privacy")
+			return nil, err
+		}
+	}
 
 	if len(in.Message) > 4000 {
 		err = mtproto.ErrMediaCaptionTooLong

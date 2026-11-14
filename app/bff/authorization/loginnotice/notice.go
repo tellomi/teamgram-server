@@ -13,10 +13,8 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 )
-
-// shanghaiTime is the clock shown in the notice. China has no DST.
-var shanghaiTime = time.FixedZone("CST", 8*3600)
 
 var (
 	mu sync.Mutex
@@ -69,21 +67,15 @@ func Device(model, client, langpack string) string {
 
 // Text is the Simplified Chinese 777000 message. It carries the device and
 // Beijing minute. It does not carry a verification code, a token, or an auth key.
+// Callers that know the client language use TextLang. English is the last
+// fallback, after lang_code, lang_pack, and system_lang_code have been tried.
 func Text(device string, when time.Time) (string, []*mtproto.MessageEntity) {
-	device = strings.TrimSpace(device)
-	if device == "" {
-		device = "未知设备"
-	}
-	stamp := when.In(shanghaiTime).Format("2006-01-02 15:04")
-	return mtproto.MakeTextAndMessageEntities([]mtproto.MessageBuildEntry{
-		{
-			Param:      "新设备登录提醒",
-			EntityType: mtproto.Predicate_messageEntityBold,
-		},
-		{
-			Text: fmt.Sprintf("\n你的账号于 %s（北京时间）在 %s 上登录。\n如果这是你本人的操作，可以忽略这条消息。如果不是，请到设置 > 设备中结束该会话。", stamp, device),
-		},
-	})
+	return TextLang("zh-hans", device, when)
+}
+
+// TextLang is Text in the client's language. Empty lang is English.
+func TextLang(lang, device string, when time.Time) (string, []*mtproto.MessageEntity) {
+	return usercopy.LoginAlert(lang, device, when)
 }
 
 // Pusher is the msg service call that writes the 777000 outbox.
@@ -94,24 +86,25 @@ type Pusher interface {
 // Push schedules one notice. A nil pusher, a failed claim, or the service
 // user sends nothing. The body is built before the delay so a later clock
 // change cannot move the Beijing minute.
-func Push(p Pusher, userID, authKey int64, device string, when time.Time) {
+func Push(p Pusher, userID, authKey int64, lang, device string, when time.Time) {
 	if p == nil || !Claim(userID, authKey, when) {
 		return
 	}
 	time.AfterFunc(2*time.Second, func() {
-		Send(context.Background(), p, userID, device, when)
+		Send(context.Background(), p, userID, lang, device, when)
 	})
 }
 
 // Send writes the notice immediately. Push is the production caller.
-func Send(ctx context.Context, p Pusher, userID int64, device string, when time.Time) {
+// lang is the client's initConnection language. Empty is English.
+func Send(ctx context.Context, p Pusher, userID int64, lang, device string, when time.Time) {
 	if p == nil || userID == 0 || userID == 777000 {
 		return
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	text, entities := Text(device, when)
+	text, entities := TextLang(lang, device, when)
 	message := mtproto.MakeTLMessage(&mtproto.Message{
 		Out:      true,
 		Date:     int32(when.Unix()),

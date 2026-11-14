@@ -233,7 +233,7 @@ func (d *Dao) UpdateProfilePhoto(ctx context.Context, userId, photoId int64) int
 			if photoId == 0 {
 				mainPhotoId, _ = d.UsersDAO.SelectProfilePhoto(ctx, userId)
 				if mainPhotoId > 0 {
-					nextPhotoId, _ := d.UserProfilePhotosDAO.SelectNext(ctx, userId, []int64{mainPhotoId})
+					nextPhotoId, _ := d.NextAlbumPhoto(ctx, userId, []int64{mainPhotoId})
 					tR := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
 						_, result.Err = d.UserProfilePhotosDAO.DeleteTx(tx, userId, []int64{mainPhotoId})
 						if result.Err != nil {

@@ -20,7 +20,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -33,7 +32,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/pkg/code/conf"
 	"github.com/teamgram/teamgram-server/pkg/env2"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 
 	"github.com/zeromicro/go-zero/core/logx"
 )
@@ -58,31 +59,21 @@ func checkPhoneNumberInvalid(phone string) (string, string, error) {
 	return phonenumber.CheckPhoneNumberInvalid(phone)
 }
 
-// loginCodeNotice is the Simplified Chinese default sent by user 777000.
-// Bold spans match Telegram's login-code notice: the label, and "不要".
-// The digits carry messageEntitySpoiler, the same entity official Telegram
-// puts on the code, so the chat list and notification preview hide it until
-// the chat is opened. A non-empty SignInMessage config replaces this text;
-// pushSignInMessage still wraps the code in a spoiler.
-func loginCodeNotice(code, appName string) (string, []*mtproto.MessageEntity) {
-	return mtproto.MakeTextAndMessageEntities([]mtproto.MessageBuildEntry{
-		{
-			Param:      "登录验证码：",
-			EntityType: mtproto.Predicate_messageEntityBold,
-		},
-		{
-			Param:      code,
-			EntityType: mtproto.Predicate_messageEntitySpoiler,
-		},
-		{
-			Text:       "。请",
-			Param:      "不要",
-			EntityType: mtproto.Predicate_messageEntityBold,
-		},
-		{
-			Text: fmt.Sprintf("把此验证码告诉任何人，即使对方声称来自 %s！\n\n此验证码可用于登录你的 %s 账号。我们绝不会以其他理由向你索要它。\n\n如果你并未尝试在其他设备上登录，请忽略此消息。", appName, appName),
-		},
-	})
+// loginCodeNotice is the 777000 login-code message in the client's language.
+// Simplified Chinese keeps the previous wording. The label and the warning
+// word are bold. The digits carry messageEntitySpoiler, the same entity
+// official Telegram puts on the code, so the chat list and notification
+// preview hide it until the chat is opened. A non-empty SignInMessage config
+// replaces this text; pushSignInMessage still wraps the code in a spoiler.
+func loginCodeNotice(lang, code, appName string) (string, []*mtproto.MessageEntity) {
+	return usercopy.LoginCode(lang, code, appName)
+}
+
+func (c *AuthorizationCore) clientLang() string {
+	if c == nil || c.MD == nil {
+		return "en"
+	}
+	return langpack.ClientLang(c.MD.GetLangCode(), c.MD.GetSystemLangCode(), c.MD.GetLangpack())
 }
 
 // ensureLoginCodeSpoiler covers code with messageEntitySpoiler when a custom
@@ -165,15 +156,16 @@ func (c *AuthorizationCore) pushLoginSecurityNotice(userID int64) {
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MsgClient == nil || c.MD == nil {
 		return
 	}
-	loginnotice.Push(c.svcCtx.Dao.MsgClient, userID, c.MD.PermAuthKeyId, c.loginDevice(), time.Now())
+	loginnotice.Push(c.svcCtx.Dao.MsgClient, userID, c.MD.PermAuthKeyId, c.clientLang(), c.loginDevice(), time.Now())
 }
 
 func (c *AuthorizationCore) pushSignInMessage(ctx context.Context, signInUserId int64, code string) {
+	lang := c.clientLang()
 	time.AfterFunc(2*time.Second, func() {
 		// The signup RPC context is already finished. A cancelled ctx made
 		// the user lookup fail and the new account look deactivated.
 		ctx = context.Background()
-		text, entities := loginCodeNotice(code, env2.MyAppName)
+		text, entities := loginCodeNotice(lang, code, env2.MyAppName)
 		message := mtproto.MakeTLMessage(&mtproto.Message{
 			Out:      true,
 			Date:     int32(time.Now().Unix()),
