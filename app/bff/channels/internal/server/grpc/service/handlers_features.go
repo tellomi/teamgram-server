@@ -186,18 +186,8 @@ func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto
 	if err != nil {
 		return nil, err
 	}
-	want := map[int32]bool{}
-	for _, id := range in.GetTopics() {
-		want[id] = true
-	}
-	var kept []*mtproto.ForumTopic
-	for _, t := range res.Topics {
-		if want[t.GetId()] {
-			kept = append(kept, t)
-		}
-	}
-	res.Topics = kept
-	res.Count = int32(len(kept))
+	res.Topics = topicsByID(res.Topics, in.GetTopics())
+	res.Count = int32(len(res.Topics))
 	return res, nil
 }
 
@@ -207,17 +197,23 @@ func (ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto
 	if err != nil {
 		return nil, err
 	}
-	want := map[int32]bool{}
-	for _, id := range in.GetTopics() {
-		want[id] = true
-	}
-	var kept []*mtproto.ForumTopic
+	return topicsResult(ctx, in.GetChannel().GetChannelId(), topicsByID(topics, in.GetTopics()), chat), nil
+}
+
+func topicsByID(topics []*mtproto.ForumTopic, ids []int32) []*mtproto.ForumTopic {
+	byID := map[int32]*mtproto.ForumTopic{}
 	for _, t := range topics {
-		if want[t.GetId()] {
-			kept = append(kept, t)
-		}
+		byID[t.GetId()] = t
 	}
-	return topicsResult(ctx, in.GetChannel().GetChannelId(), kept, chat), nil
+	out := make([]*mtproto.ForumTopic, 0, len(ids))
+	for _, id := range ids {
+		if t, ok := byID[id]; ok {
+			out = append(out, t)
+			continue
+		}
+		out = append(out, mtproto.MakeTLForumTopicDeleted(&mtproto.ForumTopic{Id: id}).To_ForumTopic())
+	}
+	return out
 }
 
 func (ForumsService) MessagesCreateForumTopic(ctx context.Context, in *mtproto.TLMessagesCreateForumTopic) (*mtproto.Updates, error) {
