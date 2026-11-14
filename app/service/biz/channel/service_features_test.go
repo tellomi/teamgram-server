@@ -253,6 +253,10 @@ func TestTopicsReactionsPinsSearchSendAsPersonal(t *testing.T) {
 	if err := svc.SetPersonalChannel(ctx, 1, inCh(news.Chats[0])); err != nil {
 		t.Fatal(err)
 	}
+	card, top, err := svc.PersonalChannelCard(ctx, 1, news.Chats[0].Id)
+	if err != nil || card.GetId() != news.Chats[0].Id || card.GetPredicateName() != mtproto.Predicate_channel || top == 0 {
+		t.Fatalf("personal card %#v top %d %v", card, top, err)
+	}
 	hist, err := svc.PersonalHistory(ctx, 1, 1, 10, 0, 0)
 	if err != nil || hist.Count == 0 {
 		t.Fatalf("personal history %#v %v", hist, err)
@@ -350,6 +354,29 @@ func TestReactionChipOnHistoryAndDifference(t *testing.T) {
 		if m.GetId() == msgID && m.GetReactions() != nil {
 			t.Fatalf("chip remained %#v", m.GetReactions())
 		}
+	}
+}
+
+func TestPersonalChannelCardHidesPrivate(t *testing.T) {
+	svc, ctx := newTest(t)
+	news, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Mine", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := news.Chats[0].GetId()
+	if _, err = svc.Send(ctx, 1, id, 0, []Outgoing{{RandomID: 3, Message: &mtproto.Message{Message: "hello", Date: 4}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.SetPersonalChannel(ctx, 1, inCh(news.Chats[0])); err != nil {
+		t.Fatal(err)
+	}
+	card, top, err := svc.PersonalChannelCard(ctx, 1, id)
+	if err != nil || card.GetPredicateName() != mtproto.Predicate_channel || card.GetId() != id || top == 0 {
+		t.Fatalf("owner card %#v top %d %v", card, top, err)
+	}
+	other, otherTop, err := svc.PersonalChannelCard(ctx, 2, id)
+	if err != nil || other != nil || otherTop != 0 {
+		t.Fatalf("private card leaked %#v %d %v", other, otherTop, err)
 	}
 }
 

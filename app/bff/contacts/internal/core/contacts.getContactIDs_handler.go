@@ -19,15 +19,57 @@
 package core
 
 import (
+	"math"
+	"sort"
+
 	"github.com/teamgram/proto/mtproto"
 )
 
 // ContactsGetContactIDs
 // contacts.getContactIDs#7adc669d hash:long = Vector<int>;
+//
+// The hash is contacts.getContacts' hash (saved_count, then contact user ids
+// in ascending order, MediaDataController.calcHash). Hash 0 always returns
+// the ids. A non-zero hash that matches returns an empty vector, which the
+// client keeps as "not modified".
 func (c *ContactsCore) ContactsGetContactIDs(in *mtproto.TLContactsGetContactIDs) (*mtproto.Vector_Int, error) {
-	// @benqi: clients not use
-
-	return &mtproto.Vector_Int{
-		Datas: []int32{},
-	}, nil
+	contactList, err := c.contactRows()
+	if err != nil {
+		c.Logger.Errorf("contacts.getContactIDs - error: %v", err)
+		if in.GetHash() != 0 {
+			return nil, err
+		}
+		contactList = nil
+	}
+	seen := map[int64]bool{}
+	contacts := make([]*mtproto.Contact, 0, len(contactList))
+	for _, row := range contactList {
+		if row == nil || row.GetContactUserId() == 0 || seen[row.GetContactUserId()] {
+			continue
+		}
+		seen[row.GetContactUserId()] = true
+		contacts = append(contacts, mtproto.MakeTLContact(&mtproto.Contact{
+			UserId: row.GetContactUserId(),
+			Mutual: mtproto.ToBool(row.GetMutualContact()),
+		}).To_Contact())
+	}
+	saved, err := c.savedCount()
+	if err != nil {
+		c.Logger.Errorf("contacts.getContactIDs - saved_count: %v", err)
+		if in.GetHash() != 0 {
+			return nil, err
+		}
+	} else if in.GetHash() != 0 && in.GetHash() == contactsHash(saved, contacts) {
+		return &mtproto.Vector_Int{Datas: []int32{}}, nil
+	}
+	ids := make([]int32, 0, len(contacts))
+	for _, row := range contacts {
+		id := row.GetUserId()
+		if id <= 0 || id > math.MaxInt32 {
+			continue
+		}
+		ids = append(ids, int32(id))
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return &mtproto.Vector_Int{Datas: ids}, nil
 }

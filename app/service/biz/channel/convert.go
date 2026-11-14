@@ -87,6 +87,35 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 	return chat
 }
 
+// leftChannelView is the channel card for channels.getLeftChannels.
+// chatFor hides a private channel once the viewer is no longer a member,
+// which made every private megagroup the user left look like an empty list.
+// The left list still shows the title, with left set, including a private one.
+func (s *Service) leftChannelView(ctx context.Context, viewer int64, ch *Channel, p *Participant) *mtproto.Chat {
+	if ch == nil || ch.Deleted {
+		return mtproto.MakeTLChannelForbidden(&mtproto.Chat{}).To_Chat()
+	}
+	if p == nil && s != nil && s.store != nil {
+		p, _ = s.store.GetParticipant(ctx, ch.ID, viewer)
+	}
+	view := p
+	if p != nil && !p.InChannel() {
+		clone := *p
+		clone.State = StateNormal
+		clone.Role = RoleMember
+		clone.AdminRights = 0
+		clone.BannedRights = 0
+		view = &clone
+	}
+	chat := s.chatFor(ctx, viewer, ch, view)
+	if chat.GetPredicateName() == mtproto.Predicate_channel {
+		chat.Left = true
+		chat.Creator = false
+		chat.AdminRights = nil
+	}
+	return chat
+}
+
 func forbiddenChat(ch *Channel) *mtproto.Chat {
 	return mtproto.MakeTLChannelForbidden(&mtproto.Chat{
 		Broadcast:        ch.Broadcast,

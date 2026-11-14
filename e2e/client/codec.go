@@ -24,6 +24,7 @@ type tlVector struct {
 	Users   []*mtproto.User
 	Stories []*mtproto.RecentStory
 	Strings []*mtproto.LangPackString
+	Ints    []int32
 }
 
 func (v *tlVector) Encode(*mtproto.EncodeBuf, int32) error { return nil }
@@ -103,6 +104,17 @@ func decodeTL(raw []byte) (mtproto.TLObject, error) {
 			return nil, fmt.Errorf("vector size %d", n)
 		}
 		v := &tlVector{Count: n}
+		if n > 0 && len(raw)-8 == int(n)*4 {
+			ctor := int32(binary.LittleEndian.Uint32(raw[8:12]))
+			if mtproto.NewTLObjectByClassID(ctor) == nil {
+				v.Ints = make([]int32, n)
+				for i := int32(0); i < n; i++ {
+					off := 8 + int(i)*4
+					v.Ints[i] = int32(binary.LittleEndian.Uint32(raw[off : off+4]))
+				}
+				return v, nil
+			}
+		}
 		if n > 0 && len(raw) >= 12 {
 			ctor := int32(binary.LittleEndian.Uint32(raw[8:12]))
 			switch ctor {

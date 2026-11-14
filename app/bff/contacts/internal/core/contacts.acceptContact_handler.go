@@ -65,13 +65,9 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 		c.Logger.Errorf("contacts.acceptContact - error: %v", err)
 		return nil, mtproto.ErrContactIdInvalid
 	}
-	settings.AddContact = false
-	_, _ = c.svcCtx.Dao.UserAddPeerSettings(c.ctx, &userpb.TLUserAddPeerSettings{
-		UserId:   c.MD.UserId,
-		PeerType: mtproto.PEER_USER,
-		PeerId:   id.PeerId,
-		Settings: settings,
-	})
+	// user.addContact already deleted the stranger bar. Do not write the old
+	// report_spam and block_contact flags back.
+	cleared := mtproto.MakeTLPeerSettings(&mtproto.PeerSettings{}).To_PeerSettings()
 
 	user.Contact = true
 	user.MutualContact = mtproto.FromBool(mutual)
@@ -86,6 +82,6 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 	}
 	return mtproto.MakeUpdatesByUpdatesUsers(users, mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{
 		Peer_PEER: id.ToPeer(),
-		Settings:  settings,
+		Settings:  cleared,
 	}).To_Update()), nil
 }

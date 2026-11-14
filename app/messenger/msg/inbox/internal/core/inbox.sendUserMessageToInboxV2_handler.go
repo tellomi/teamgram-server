@@ -21,8 +21,8 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
-	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/archive"
@@ -199,17 +199,6 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 
 			}
 
-			if inBox.DialogMessageId == 1 &&
-				(in.FromId != 42777 && in.FromId != 424000) {
-				//isContact, _ := s.UserFacade.GetContactAndMutual(ctx, toId, fromId)
-				//if !isContact {
-				//	s.UserFacade.AddPeerSettings(ctx, toId, model.MakeUserPeerUtil(fromId), &mtproto.PeerSettings{
-				//		AddContact:   true,
-				//		BlockContact: true,
-				//	})
-				//}
-			}
-
 			updateNewMessage := mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
 				Message_MESSAGE: inBox.GetMessage(),
 				Pts_INT32:       inBox.Pts,
@@ -220,6 +209,12 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				in.Users,
 				in.Chats,
 				updateNewMessage)
+			if settings := c.openStrangerBar(in.UserId, in.FromId, in.PeerType, existed); settings != nil {
+				pushUpdates.PushBackUpdate(mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{
+					Peer_PEER: mtproto.MakePeerUser(in.FromId),
+					Settings:  settings,
+				}).To_Update())
+			}
 
 			if in.PeerType == mtproto.PEER_CHAT {
 				switch inBox.GetMessage().GetAction().GetPredicateName() {

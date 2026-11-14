@@ -69,6 +69,9 @@
     "crblk_ok": {"number": "9996610213", "code": "11111"},
     "reactblk_a": {"number": "9996610221", "code": "11111"},
     "reactblk_b": {"number": "9996610222", "code": "11111"},
-    "pinlim_a": {"number": "9996610223", "code": "11111"}
+    "pinlim_a": {"number": "9996610223", "code": "11111"},
+    "bar_a": {"number": "9996610231", "code": "11111"},
+    "bar_b": {"number": "9996610232", "code": "11111"},
+    "bar_c": {"number": "9996610233", "code": "11111"}
   }
 }
