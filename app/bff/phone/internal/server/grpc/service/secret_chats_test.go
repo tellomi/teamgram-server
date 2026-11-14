@@ -1,14 +1,74 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/dh"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
+	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"google.golang.org/grpc/status"
 )
+
+// hashUsers is a user service with one row. The embedded client is nil;
+// secretPeer only calls the two methods overridden here.
+type hashUsers struct {
+	userclient.UserClient
+	id, hash int64
+}
+
+func (h hashUsers) UserGetMutableUsers(ctx context.Context, in *user.TLUserGetMutableUsers) (*user.Vector_ImmutableUser, error) {
+	return &user.Vector_ImmutableUser{Datas: []*mtproto.ImmutableUser{
+		mtproto.MakeTLImmutableUser(&mtproto.ImmutableUser{
+			User: &mtproto.UserData{Id: h.id, AccessHash: h.hash},
+		}).To_ImmutableUser(),
+	}}, nil
+}
+
+func (h hashUsers) UserIsBlockedByUser(ctx context.Context, in *user.TLUserIsBlockedByUser) (*mtproto.Bool, error) {
+	return mtproto.BoolFalse, nil
+}
+
+func TestSecretPeerUsesStoredHash(t *testing.T) {
+	svc := NewWithEngine(nil)
+	svc.svc.Users = hashUsers{id: 2, hash: 55}
+	ctx := context.Background()
+	in := func(hash int64) *mtproto.InputUser {
+		return mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 2, AccessHash: hash}).To_InputUser()
+	}
+
+	defer accesshash.SetMode(accesshash.ModeOff)()
+	if id, err := svc.secretPeer(ctx, 1, in(0)); err != nil || id != 2 {
+		t.Fatalf("off zero skip: %d %v", id, err)
+	}
+	if _, err := svc.secretPeer(ctx, 1, in(1)); status.Convert(err).Message() != "USER_ID_INVALID" {
+		t.Fatalf("off mismatch: %v", err)
+	}
+	if id, err := svc.secretPeer(ctx, 1, in(55)); err != nil || id != 2 {
+		t.Fatalf("off match: %d %v", id, err)
+	}
+	// A stored 0 still skips a non-zero provided hash. That is the old secret-chat rule.
+	svc.svc.Users = hashUsers{id: 2, hash: 0}
+	if id, err := svc.secretPeer(ctx, 1, in(9)); err != nil || id != 2 {
+		t.Fatalf("off stored zero: %d %v", id, err)
+	}
+
+	defer accesshash.SetMode(accesshash.ModeEnforce)()
+	svc.svc.Users = hashUsers{id: 2, hash: 55}
+	if _, err := svc.secretPeer(ctx, 1, in(0)); status.Convert(err).Message() != "USER_ID_INVALID" {
+		t.Fatalf("enforce zero: %v", err)
+	}
+	if _, err := svc.secretPeer(ctx, 1, in(1)); status.Convert(err).Message() != "USER_ID_INVALID" {
+		t.Fatalf("enforce mismatch: %v", err)
+	}
+	if id, err := svc.secretPeer(ctx, 1, in(55)); err != nil || id != 2 {
+		t.Fatalf("enforce match: %d %v", id, err)
+	}
+}
 
 func TestSecretChatFlow(t *testing.T) {
 	secretchat.Reset()
