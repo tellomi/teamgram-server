@@ -21,6 +21,10 @@ func (c *UserCore) UserResetNotifySettings(in *user.TLUserResetNotifySettings) (
 		c.Logger.Errorf("user.resetNotifySettings - error: %v", err)
 		return nil, err
 	}
+	if err := c.svcCtx.Dao.ResetTopicNotifySettings(c.ctx, in.UserId); err != nil {
+		c.Logger.Errorf("user.resetNotifySettings - topics: %v", err)
+		return nil, err
+	}
 
 	return mtproto.BoolTrue, nil
 }

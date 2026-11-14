@@ -58,6 +58,9 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["users"]["email"] {
 		t.Fatal("users.email missing after migrations")
 	}
+	if !cols["user_notify_topic_settings"]["top_msg_id"] || !cols["user_notify_topic_settings"]["mute_until"] {
+		t.Fatal("user_notify_topic_settings missing after migrations")
+	}
 	for _, col := range []string{"media_document_id", "media_photo_id"} {
 		if !cols["messages"][col] {
 			t.Errorf("messages.%s missing after migrations", col)

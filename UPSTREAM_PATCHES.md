@@ -418,6 +418,10 @@ Columns are added by `teamgramd/deploy/sql/migrate-20261127-notify-sound.sql`. E
 | RPC and push | `app/bff/notification/internal/core/account.updateNotifySettings_handler.go` |
 | Delivery | `app/messenger/sync/internal/core/core.go` |
 
+## Forum topic notify settings
+
+`account.updateNotifySettings` with `inputNotifyForumTopic` used to return `PEER_ID_INVALID`. A topic is stored in `user_notify_topic_settings` (`teamgramd/deploy/sql/migrate-20261128-notify-topic.sql`), keyed by user, peer and `top_msg_id`. The dialog table and its unique key are unchanged, so a topic mute does not replace the chat. `account.getNotifySettings` for that topic reads the topic row. Unset fields stay unset and the client inherits them from the dialog. Other sessions receive `updateNotifySettings` with `notifyForumTopic`. `account.getNotifyExceptions` includes those rows. `account.resetNotifySettings` soft-deletes them and drops their `user_notify_settings_v2_*` keys. `top_msg_id` of 0 is `TOPIC_ID_INVALID`.
+
 ## messages.deleteHistory dates and pages
 
 `messages.deleteHistory` with `min_date` / `max_date` used to return `messages.affectedHistory` with `pts_count = 0` and `offset = 0` without deleting. Official clients then stop. `min_date` deletes messages strictly newer than the timestamp and `max_date` deletes messages strictly older than it. A negative bound is `MIN_DATE_INVALID` / `MAX_DATE_INVALID`. A chat or channel with either date is `CHAT_REVOKE_DATE_UNSUPPORTED`.
