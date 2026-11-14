@@ -228,12 +228,7 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 	case mtproto.Predicate_inputMediaPoll:
 		// inputMediaPoll#f94e5f1 flags:# poll:Poll correct_answers:flags.0?Vector<bytes> solution:flags.1?string solution_entities:flags.1?Vector<MessageEntity> = InputMedia;
 		// https://core.telegram.org/constructor/inputMediaPoll
-		solution := ""
-		if media.GetSolution() != nil {
-			solution = media.GetSolution().GetValue()
-		}
-		correct := media.GetCorrectAnswers_FLAGVECTORBYTES()
-		messageMedia, err = chatbox.Shared().CreatePoll(ctx, userId, media.GetPoll(), correct, solution, media.GetSolutionEntities())
+		messageMedia, err = chatbox.PollInputMedia(ctx, userId, media)
 
 	case mtproto.Predicate_inputMediaTodo:
 		// inputMediaTodo#9fc55fde todo:TodoList = InputMedia;
