@@ -65,6 +65,12 @@ func pollPeerKey(peerType int32, peerID int64) string {
 // CreatePoll validates an outgoing poll and remembers it under its id.
 // The message id is attached later with BindPoll.
 func (b *Book) CreatePoll(ctx context.Context, creator int64, poll *mtproto.Poll, correct [][]byte, solution string, solutionEnt []*mtproto.MessageEntity) (*mtproto.MessageMedia, error) {
+	if err := validateQuiz(poll, correct); err != nil {
+		return nil, err
+	}
+	if err := preparePollClose(poll, int32(b.now().Unix())); err != nil {
+		return nil, err
+	}
 	doc, err := normalizePoll(creator, poll, correct, solution, solutionEnt)
 	if err != nil {
 		return nil, err
@@ -195,6 +201,11 @@ func (b *Book) PollVotes(ctx context.Context, viewer int64, peerType int32, peer
 	poll := doc.poll()
 	if poll == nil {
 		return nil, mtproto.ErrMessageIdInvalid
+	}
+	// Anonymous polls, and every channel poll, do not hand out voter ids.
+	// https://core.telegram.org/method/messages.getPollVotes
+	if doc.PeerType == mtproto.PEER_CHANNEL || !poll.PublicVoters {
+		return nil, mtproto.ErrBroadcastForbidden
 	}
 	if len(option) > 0 && !doc.hasOption(option) {
 		return nil, mtproto.ErrOptionInvalid
@@ -734,6 +745,50 @@ func (b *Book) peerPolls(ctx context.Context, peerType int32, peerID int64) ([]i
 	return ids, nil
 }
 
+// validateQuiz applies the quiz rules from the poll constructor page.
+// A quiz is single-choice and has exactly one correct option.
+func validateQuiz(poll *mtproto.Poll, correct [][]byte) error {
+	if poll == nil || !poll.Quiz {
+		return nil
+	}
+	if poll.MultipleChoice {
+		return mtproto.ErrQuizMultipleInvalid
+	}
+	switch len(correct) {
+	case 0:
+		return mtproto.ErrQuizCorrectAnswersEmpty
+	case 1:
+		return nil
+	default:
+		return mtproto.ErrQuizCorrectAnswersTooMuch
+	}
+}
+
+// preparePollClose turns close_period into close_date. The window is 5 to
+// 600 seconds, and a poll cannot carry both fields.
+func preparePollClose(poll *mtproto.Poll, now int32) error {
+	if poll == nil {
+		return nil
+	}
+	period := poll.GetClosePeriod().GetValue()
+	date := poll.GetCloseDate().GetValue()
+	if period != 0 && date != 0 {
+		return mtproto.ErrMediaInvalid
+	}
+	if period != 0 {
+		if period < 5 || period > 600 {
+			return mtproto.ErrMediaInvalid
+		}
+		poll.CloseDate = wrapperspb.Int32(now + period)
+		poll.ClosePeriod = nil
+		return nil
+	}
+	if date != 0 && (date < now+5 || date > now+600) {
+		return mtproto.ErrMediaInvalid
+	}
+	return nil
+}
+
 func normalizePoll(creator int64, poll *mtproto.Poll, correct [][]byte, solution string, solutionEnt []*mtproto.MessageEntity) (*pollDoc, error) {
 	if poll == nil {
 		return nil, mtproto.ErrMediaInvalid
@@ -786,6 +841,9 @@ func normalizePoll(creator int64, poll *mtproto.Poll, correct [][]byte, solution
 	}
 	for _, op := range correct {
 		if !seen[string(op)] {
+			if poll.Quiz {
+				return nil, mtproto.ErrQuizCorrectAnswerInvalid
+			}
 			return nil, mtproto.ErrPollOptionInvalid
 		}
 	}

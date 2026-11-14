@@ -3,6 +3,7 @@ package chatbox
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -110,6 +111,68 @@ func TestPrivatePollUsesDialogMessageID(t *testing.T) {
 	}
 	if other.Updates[0].GetResults().GetTotalVoters().GetValue() != 1 {
 		t.Fatalf("author totals %+v", other.Updates[0].GetResults())
+	}
+}
+
+func TestQuizRulesCloseWindowAndAnonymousVoters(t *testing.T) {
+	b := newBook(nil)
+	now := int32(1_700_000_000)
+	b.now = func() time.Time { return time.Unix(int64(now), 0) }
+	ctx := context.Background()
+	answers := []*mtproto.PollAnswer{
+		mtproto.MakePollAnswerWithText("a", []byte("0")),
+		mtproto.MakePollAnswerWithText("b", []byte("1")),
+	}
+	if _, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Quiz: true, MultipleChoice: true, Question: "Q", Answers: answers}, [][]byte{[]byte("0")}, "", nil); err != mtproto.ErrQuizMultipleInvalid {
+		t.Fatalf("multiple quiz: %v", err)
+	}
+	if _, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Quiz: true, Question: "Q", Answers: answers}, nil, "", nil); err != mtproto.ErrQuizCorrectAnswersEmpty {
+		t.Fatalf("empty quiz: %v", err)
+	}
+	if _, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Quiz: true, Question: "Q", Answers: answers}, [][]byte{[]byte("0"), []byte("1")}, "", nil); err != mtproto.ErrQuizCorrectAnswersTooMuch {
+		t.Fatalf("two answers: %v", err)
+	}
+	if _, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Quiz: true, Question: "Q", Answers: answers}, [][]byte{[]byte("9")}, "", nil); err != mtproto.ErrQuizCorrectAnswerInvalid {
+		t.Fatalf("bad option: %v", err)
+	}
+	if _, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Question: "Q", Answers: answers, ClosePeriod: wrapperspb.Int32(4)}, nil, "", nil); err != mtproto.ErrMediaInvalid {
+		t.Fatalf("short close: %v", err)
+	}
+	media, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Question: "Q", Answers: answers, ClosePeriod: wrapperspb.Int32(30)}, nil, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if media.GetPoll().GetCloseDate().GetValue() != now+30 || media.GetPoll().GetClosePeriod() != nil {
+		t.Fatalf("close %+v", media.GetPoll())
+	}
+
+	anon, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Question: "Q", Answers: answers}, nil, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.BindPoll(ctx, mtproto.PEER_CHAT, 8, 5, anon.GetPoll().GetId())
+	if _, err := b.Vote(ctx, 4, mtproto.PEER_CHAT, 8, 5, 0, [][]byte{[]byte("0")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.PollVotes(ctx, 1, mtproto.PEER_CHAT, 8, 5, anon.GetPoll().GetId(), nil, "", 10); err != mtproto.ErrBroadcastForbidden {
+		t.Fatalf("anonymous voters: %v", err)
+	}
+
+	pub, err := b.CreatePoll(ctx, 1, &mtproto.Poll{PublicVoters: true, Question: "Q", Answers: answers}, nil, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.BindPoll(ctx, mtproto.PEER_CHAT, 8, 6, pub.GetPoll().GetId())
+	if _, err := b.Vote(ctx, 4, mtproto.PEER_CHAT, 8, 6, 0, [][]byte{[]byte("0")}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := b.PollVotes(ctx, 1, mtproto.PEER_CHAT, 8, 6, pub.GetPoll().GetId(), nil, "", 10)
+	if err != nil || list.GetCount() != 1 || len(list.GetUsers()) != 1 || list.GetUsers()[0].GetId() != 4 {
+		t.Fatalf("public voters %+v %v", list, err)
+	}
+	b.BindPoll(ctx, mtproto.PEER_CHANNEL, 9, 7, pub.GetPoll().GetId())
+	if _, err := b.PollVotes(ctx, 1, mtproto.PEER_CHANNEL, 9, 7, pub.GetPoll().GetId(), nil, "", 10); err != mtproto.ErrBroadcastForbidden {
+		t.Fatalf("channel voters: %v", err)
 	}
 }
 
