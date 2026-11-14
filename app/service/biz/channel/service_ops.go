@@ -1189,8 +1189,10 @@ func mustMessages(s *Service, ctx context.Context, channelID int64) []*StoredMes
 
 // LegacyMember is a basic-group participant being migrated.
 type LegacyMember struct {
-	UserID int64
-	IsBot  bool
+	UserID      int64
+	IsBot       bool
+	Admin       bool
+	AdminRights int32
 }
 
 // MigrateRequest converts a legacy chat into a supergroup.
@@ -1250,14 +1252,24 @@ func (s *Service) Migrate(ctx context.Context, in MigrateRequest) (*MigrateResul
 		if m.UserID == 0 || m.UserID == in.CreatorID {
 			continue
 		}
+		role := RoleMember
+		rights := int32(0)
+		if m.Admin {
+			role = RoleAdmin
+			rights = m.AdminRights
+			if rights == 0 {
+				rights = int32(mtproto.MakeChatAdminRightsHelper(mtproto.MakeDefaultChatAdminRights()))
+			}
+		}
 		_ = s.store.PutParticipant(ctx, &Participant{
-			ChannelID: ch.ID,
-			UserID:    m.UserID,
-			Role:      RoleMember,
-			State:     StateNormal,
-			InviterID: in.CreatorID,
-			IsBot:     m.IsBot,
-			Date:      now,
+			ChannelID:   ch.ID,
+			UserID:      m.UserID,
+			Role:        role,
+			State:       StateNormal,
+			AdminRights: rights,
+			InviterID:   in.CreatorID,
+			IsBot:       m.IsBot,
+			Date:        now,
 		})
 	}
 	if _, err := s.refreshCount(ctx, ch.ID); err != nil {

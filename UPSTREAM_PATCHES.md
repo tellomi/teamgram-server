@@ -725,3 +725,18 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Migrate, geo point, and a single General topic (ISSUE-S-MIGRATE-ADMIN-001, MIGRATE-PHOTO-001, GEO-CREATE-COORDS-001, TOPIC-GENERAL-DUP-001)
+
+`messages.migrateChat` copied members as ordinary participants and did not pass the basic group's `photo_id`. `channelFull.chat_photo` was always `photoEmpty`, so a stored photo id never came back. Admins now keep `chatMemberAdmin` as `channelParticipantAdmin` with their admin rights (or the basic-group default when the row has none). The photo id is stored on the supergroup and returned on both `chat.photo` and `channelFull.chat_photo`.
+
+`channels.createChannel` stored `address` and set `has_geo` from that string, and dropped `geo_point`. The latitude and longitude are saved on the channel feature row and returned by `channels.getFullChannel`.
+
+Forum General is id 1. Enabling the forum, or listing topics, folds any other topic titled General into that id. Hiding it, showing it, and toggling the forum off and on leaves one General.
+
+| Piece | File |
+| --- | --- |
+| migrate members and photo | `messages.migrateChat_handler.go`, `service_ops.go` `Migrate` |
+| full photo | `convert.go` |
+| create geo | `handlers.go` `ChannelsCreateChannel`, `service.go` `Create` |
+| one General | `service_features.go` `ensureGeneralTopic`, `ListTopics` |

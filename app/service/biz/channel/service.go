@@ -101,6 +101,9 @@ type CreateRequest struct {
 	Forum     bool
 	TtlPeriod int32
 	Address   string
+	Lat       float64
+	Long      float64
+	HasPoint  bool
 }
 
 func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Updates, error) {
@@ -157,6 +160,14 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 	}
 	if err := s.store.CreateChannel(ctx, ch, creator); err != nil {
 		return nil, err
+	}
+	if in.HasPoint {
+		f := s.features(ctx, ch.ID)
+		f.Lat = in.Lat
+		f.Long = in.Long
+		if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+			return nil, err
+		}
 	}
 	msg := serviceMessage(in.CreatorID, ch.ID, mtproto.MakeMessageActionChannelCreate(title))
 	if _, _, err := s.appendMessage(ctx, ch.ID, in.CreatorID, 0, msg); err != nil {

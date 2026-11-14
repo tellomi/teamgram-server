@@ -1195,6 +1195,9 @@ func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q strin
 	if err != nil {
 		return nil, nil, err
 	}
+	if ch.Forum {
+		s.ensureGeneralTopic(ctx, self, ch.ID)
+	}
 	f := s.features(ctx, ch.ID)
 	q = strings.ToLower(q)
 	if limit <= 0 {
@@ -1484,44 +1487,68 @@ func messageInTopic(f *Features, m *StoredMessage, topicID int32) bool {
 }
 
 // ensureGeneralTopic creates the General topic once when a forum is enabled.
-// Its id is always 1 and it is visible until an admin hides it.
+// Its id is always 1. A second topic titled General is folded into that id
+// so hiding, unhiding, and toggling the forum does not leave two Generals.
 func (s *Service) ensureGeneralTopic(ctx context.Context, self, channelID int64) {
 	f := s.features(ctx, channelID)
+	var kept []TopicRec
+	var general *TopicRec
+	changed := false
 	for _, t := range f.Topics {
-		if t.ID == generalTopicID {
-			return
-		}
-	}
-	for i := range f.Topics {
-		if !strings.EqualFold(f.Topics[i].Title, "General") {
+		if t.ID != generalTopicID && !strings.EqualFold(strings.TrimSpace(t.Title), "General") {
+			kept = append(kept, t)
 			continue
 		}
-		old := f.Topics[i].ID
-		f.Topics[i].ID = generalTopicID
-		f.Topics[i].Hidden = false
-		for msgID, topicID := range f.MsgTopic {
-			if topicID == old {
-				f.MsgTopic[msgID] = generalTopicID
+		if general == nil {
+			cp := t
+			if cp.ID != generalTopicID {
+				remapTopic(f, cp.ID, generalTopicID)
+				cp.ID = generalTopicID
+				changed = true
 			}
+			general = &cp
+			continue
 		}
-		_ = s.saveFeatures(ctx, channelID, f)
+		remapTopic(f, t.ID, general.ID)
+		changed = true
+	}
+	if general == nil {
+		ch, _ := s.store.GetChannel(ctx, channelID)
+		top := int32(0)
+		if ch != nil {
+			top = ch.TopMessage
+		}
+		kept = append(kept, TopicRec{
+			ID:         generalTopicID,
+			Title:      "General",
+			IconColor:  0x6FB9F0,
+			CreatorID:  self,
+			Date:       int32(time.Now().Unix()),
+			TopMessage: top,
+		})
+		changed = true
+	} else {
+		if len(kept)+1 != len(f.Topics) {
+			changed = true
+		}
+		kept = append(kept, *general)
+	}
+	if !changed {
 		return
 	}
-	ch, _ := s.store.GetChannel(ctx, channelID)
-	top := int32(0)
-	if ch != nil {
-		top = ch.TopMessage
-	}
-	f.Topics = append(f.Topics, TopicRec{
-		ID:         generalTopicID,
-		Title:      "General",
-		IconColor:  0x6FB9F0,
-		CreatorID:  self,
-		Date:       int32(time.Now().Unix()),
-		TopMessage: top,
-		Hidden:     false,
-	})
+	f.Topics = kept
 	_ = s.saveFeatures(ctx, channelID, f)
+}
+
+func remapTopic(f *Features, from, to int32) {
+	if f == nil || f.MsgTopic == nil || from == to {
+		return
+	}
+	for msgID, topicID := range f.MsgTopic {
+		if topicID == from {
+			f.MsgTopic[msgID] = to
+		}
+	}
 }
 
 // rejectClosedTopic blocks non-admins from posting in a closed forum topic.

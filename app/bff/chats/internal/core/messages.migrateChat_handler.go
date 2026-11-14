@@ -38,15 +38,30 @@ func (c *ChatsCore) MessagesMigrateChat(in *mtproto.TLMessagesMigrateChat) (*mtp
 		if participant == nil || !participant.IsChatMemberStateNormal() {
 			return nil
 		}
-		members = append(members, channel.LegacyMember{UserID: participant.UserId, IsBot: participant.IsBot})
+		admin := participant.IsChatMemberAdmin()
+		var bits int32
+		if admin && participant.GetAdminRights() != nil {
+			bits = int32(mtproto.MakeChatAdminRightsHelper(participant.GetAdminRights()))
+		}
+		members = append(members, channel.LegacyMember{
+			UserID:      participant.UserId,
+			IsBot:       participant.IsBot,
+			Admin:       admin,
+			AdminRights: bits,
+		})
 		return nil
 	})
+	photoID := int64(0)
+	if photo := chat.Photo(); photo != nil {
+		photoID = photo.GetId()
+	}
 	result, err := channel.Shared().Migrate(c.ctx, channel.MigrateRequest{
 		Actor:     c.MD.UserId,
 		ActorAuth: c.MD.PermAuthKeyId,
 		ChatID:    chat.Id(),
 		Title:     chat.Title(),
 		About:     chat.About(),
+		PhotoID:   photoID,
 		CreatorID: chat.Creator(),
 		Members:   members,
 	})

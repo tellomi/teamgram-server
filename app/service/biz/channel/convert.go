@@ -126,6 +126,19 @@ func forbiddenChat(ch *Channel) *mtproto.Chat {
 	}).To_Chat()
 }
 
+func channelPhoto(ch *Channel) *mtproto.Photo {
+	if ch == nil || ch.PhotoID == 0 {
+		return mtproto.MakeTLPhotoEmpty(nil).To_Photo()
+	}
+	return mtproto.MakeTLPhoto(&mtproto.Photo{
+		Id:            ch.PhotoID,
+		FileReference: []byte{},
+		Date:          ch.Date,
+		Sizes:         []*mtproto.PhotoSize{},
+		DcId:          1,
+	}).To_Photo()
+}
+
 func chatPhoto(photoID int64) *mtproto.ChatPhoto {
 	if photoID == 0 {
 		return mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto()
@@ -169,7 +182,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		ReadInboxMaxId:       st.ReadInboxMaxID,
 		ReadOutboxMaxId:      st.ReadOutboxMaxID,
 		UnreadCount:          st.UnreadCount,
-		ChatPhoto:            mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
+		ChatPhoto:            channelPhoto(ch),
 		NotifySettings:       defaultNotify(),
 		BotInfo:              []*mtproto.BotInfo{},
 		Pts:                  ch.Pts,

@@ -19,6 +19,13 @@ func (s *Service) md(ctx context.Context) *metadata.RpcMetadata {
 
 func (s *Service) ChannelsCreateChannel(ctx context.Context, in *mtproto.TLChannelsCreateChannel) (*mtproto.Updates, error) {
 	md := s.md(ctx)
+	var lat, long float64
+	hasPoint := false
+	if pt := in.GetGeoPoint(); pt != nil && pt.GetPredicateName() != mtproto.Predicate_inputGeoPointEmpty {
+		lat = pt.GetLat()
+		long = pt.GetLong()
+		hasPoint = true
+	}
 	up, err := channel.Shared().Create(ctx, channel.CreateRequest{
 		CreatorID: md.GetUserId(),
 		ActorAuth: md.GetPermAuthKeyId(),
@@ -29,6 +36,9 @@ func (s *Service) ChannelsCreateChannel(ctx context.Context, in *mtproto.TLChann
 		Forum:     in.GetForum(),
 		TtlPeriod: in.GetTtlPeriod().GetValue(),
 		Address:   in.GetAddress().GetValue(),
+		Lat:       lat,
+		Long:      long,
+		HasPoint:  hasPoint,
 	})
 	if err != nil {
 		return nil, err
