@@ -18,7 +18,7 @@ import (
 )
 
 func withUser(userID int64) context.Context {
-	md := &rpcmd.RpcMetadata{UserId: userID, PermAuthKeyId: userID + 10}
+	md := &rpcmd.RpcMetadata{UserId: userID, PermAuthKeyId: userID + 10, IsBot: true}
 	buf, _ := proto.Marshal(md)
 	return metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
@@ -158,9 +158,29 @@ func TestEphemeral(t *testing.T) {
 	}
 }
 
+func TestEphemeralUserIsRejected(t *testing.T) {
+	svc := newSvc()
+	md := &rpcmd.RpcMetadata{UserId: 9, PermAuthKeyId: 19}
+	buf, _ := proto.Marshal(md)
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
+	))
+	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 8, AccessHash: 1}).To_InputPeer()
+	receiver := mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 8, AccessHash: 1}).To_InputUser()
+	if _, err := svc.EphemeralSendMessage(ctx, &mtproto.TLEphemeralSendMessage{
+		Peer: peer, ReceiverId: receiver, Message: "hidden", RandomId: 4,
+	}); errText(err) != "USER_BOT_REQUIRED" {
+		t.Fatal(err)
+	}
+	list, err := svc.EphemeralGetWelcomeMessages(withUser(9), &mtproto.TLEphemeralGetWelcomeMessages{Peer: peer})
+	if err != nil || len(list.GetMessages()) != 0 {
+		t.Fatalf("stored %#v %v", list, err)
+	}
+}
+
 func TestEphemeralReportLang(t *testing.T) {
 	svc := newSvc()
-	md := &rpcmd.RpcMetadata{UserId: 9, PermAuthKeyId: 19, LangCode: "zh-hant"}
+	md := &rpcmd.RpcMetadata{UserId: 9, PermAuthKeyId: 19, LangCode: "zh-hant", IsBot: true}
 	buf, _ := proto.Marshal(md)
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"rpc_metadata", base64.StdEncoding.EncodeToString(buf),
