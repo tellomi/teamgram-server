@@ -259,6 +259,7 @@ func (s *Server) Initialize() error {
 				MediaClient:   c.MediaClient,
 				SyncClient:    c.SyncClient,
 				IdgenClient:   c.IdgenClient,
+				StatusClient:  c.StatusClient,
 			}))
 		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
 		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment(c.BizServiceClient))

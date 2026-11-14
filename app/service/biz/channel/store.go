@@ -56,6 +56,10 @@ type Store interface {
 
 	GetRead(ctx context.Context, channelID, userID int64) (*ReadState, error)
 	SaveRead(ctx context.Context, st *ReadState) error
+	// ApplyUnreadCuts runs one indexed update per cut. It does not read or
+	// write a row per member. list returns the rows that match the cuts
+	// after the updates; a large channel passes false and skips that read.
+	ApplyUnreadCuts(ctx context.Context, channelID int64, cuts []UnreadCut, list bool) ([]ReadState, error)
 	// SaveReadMark records when reader covered messages up to maxID.
 	// ownerUserID is the channel id; peerDialogID is its dialog id.
 	SaveReadMark(ctx context.Context, ownerUserID, peerDialogID, readerUserID int64, maxID int32, date int64) error

@@ -378,8 +378,11 @@ func (ep *endpoint) handshake() {
 		Certificates:       []tls.Certificate{ep.server.cert},
 		InsecureSkipVerify: true,
 		SRTPProtectionProfiles: []dtls.SRTPProtectionProfile{
+			dtls.SRTP_AEAD_AES_128_GCM,
+			dtls.SRTP_AEAD_AES_256_GCM,
 			dtls.SRTP_AES128_CM_HMAC_SHA1_80,
 		},
+		ExtendedMasterSecret: dtls.RequestExtendedMasterSecret,
 		VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
 			if ep.remoteFP == "" || len(raw) == 0 {
 				return nil
@@ -394,17 +397,38 @@ func (ep *endpoint) handshake() {
 	if err != nil {
 		return
 	}
+	// tgcalls group calls disable AES128_CM_HMAC_SHA1_80 and only accept
+	// the AEAD GCM suites, so the SRTP profile follows the negotiated one.
+	sel, ok := conn.SelectedSRTPProtectionProfile()
+	if !ok {
+		_ = conn.Close()
+		return
+	}
+	var prof srtp.ProtectionProfile
+	switch sel {
+	case dtls.SRTP_AES128_CM_HMAC_SHA1_80:
+		prof = srtp.ProtectionProfileAes128CmHmacSha1_80
+	case dtls.SRTP_AEAD_AES_128_GCM:
+		prof = srtp.ProtectionProfileAeadAes128Gcm
+	case dtls.SRTP_AEAD_AES_256_GCM:
+		prof = srtp.ProtectionProfileAeadAes256Gcm
+	default:
+		_ = conn.Close()
+		return
+	}
+	keyLen, _ := prof.KeyLen()
+	saltLen, _ := prof.SaltLen()
 	state := conn.ConnectionState()
-	km, err := state.ExportKeyingMaterial("EXTRACTOR-dtls_srtp", nil, 60)
-	if err != nil || len(km) < 60 {
+	km, err := state.ExportKeyingMaterial("EXTRACTOR-dtls_srtp", nil, 2*(keyLen+saltLen))
+	if err != nil || len(km) < 2*(keyLen+saltLen) {
 		_ = conn.Close()
 		return
 	}
 	// We are the DTLS client: client_write is local, server_write is remote.
-	localKey, remoteKey := km[0:16], km[16:32]
-	localSalt, remoteSalt := km[32:46], km[46:60]
-	enc, err1 := srtp.CreateContext(localKey, localSalt, srtp.ProtectionProfileAes128CmHmacSha1_80)
-	dec, err2 := srtp.CreateContext(remoteKey, remoteSalt, srtp.ProtectionProfileAes128CmHmacSha1_80)
+	localKey, remoteKey := km[0:keyLen], km[keyLen:2*keyLen]
+	localSalt, remoteSalt := km[2*keyLen:2*keyLen+saltLen], km[2*keyLen+saltLen:]
+	enc, err1 := srtp.CreateContext(localKey, localSalt, prof)
+	dec, err2 := srtp.CreateContext(remoteKey, remoteSalt, prof)
 	if err1 != nil || err2 != nil {
 		_ = conn.Close()
 		return

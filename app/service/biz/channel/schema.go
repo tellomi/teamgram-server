@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS channel_read_state (
   read_outbox_max_id INT NOT NULL DEFAULT 0,
   unread_count INT NOT NULL DEFAULT 0,
   PRIMARY KEY (channel_id, user_id),
-  KEY channel_read_state_user (user_id)
+  KEY channel_read_state_user (user_id),
+  KEY channel_read_inbox (channel_id, read_inbox_max_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS channel_id_counter (

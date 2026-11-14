@@ -58,6 +58,10 @@ type Hooks struct {
 	Push     func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates)
 	Dialog   func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64)
 	Incoming func(ctx context.Context, userID, channelID, sender int64, broadcast bool)
+	// Online reports which of ids have a live session. Nil means this
+	// process has no presence service. Delete then pushes the affected set
+	// only when that set is at most unreadSyncCap.
+	Online func(ctx context.Context, ids []int64) (map[int64]bool, error)
 }
 
 // Service is the channel and supergroup implementation.
