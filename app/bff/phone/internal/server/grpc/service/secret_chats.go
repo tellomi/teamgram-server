@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
 
 // MessagesRequestEncryption
@@ -199,7 +200,10 @@ func (s *Service) secretPeer(ctx context.Context, self int64, in *mtproto.InputU
 	if u.Deleted() {
 		return 0, mtproto.ErrInputUserDeactivated
 	}
-	if p.AccessHash != 0 && u.AccessHash() != 0 && p.AccessHash != u.AccessHash() {
+	// inputUserFromMessage has no hash. The bff gate already required the
+	// message to contain this user. A plain inputUser must match the hash
+	// stored on the user row once TELLOMI_ACCESS_HASH_ENFORCE=enforce.
+	if !accesshash.IsInputUserFromMessage(in) && !accesshash.AllowProvided(p.AccessHash, u.AccessHash()) {
 		return 0, mtproto.ErrUserIdInvalid
 	}
 	if err := s.blockedBy(ctx, self, p.PeerId); err != nil {

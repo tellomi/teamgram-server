@@ -1246,15 +1246,19 @@ func (s *Service) ReorderPinnedTopics(ctx context.Context, self, channelID int64
 	return s.saveFeatures(ctx, ch.ID, f)
 }
 
-// DeleteTopicHistory deletes messages that belong to one forum topic.
-// It does not clear the rest of the channel. The topic record stays so the
-// topic id (the creation message) remains addressable.
+// generalTopicID is the forum General topic. Official clients always use 1.
+const generalTopicID int32 = 1
+
+// DeleteTopicHistory deletes one forum topic and the messages that belong to
+// it, including the service message that created it. Other topics stay.
+// The General topic cannot be deleted. Delete emits updateDeleteChannelMessages
+// for the removed ids.
 func (s *Service) DeleteTopicHistory(ctx context.Context, self, actorAuth, channelID int64, topMsgID int32) (pts, ptsCount int32, err error) {
 	ch, p, err := s.requireMember(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return 0, 0, err
 	}
-	if !ch.Forum {
+	if !ch.Forum || topMsgID == generalTopicID {
 		return 0, 0, mtproto.ErrTopicIdInvalid
 	}
 	f := s.features(ctx, ch.ID)
@@ -1272,29 +1276,44 @@ func (s *Service) DeleteTopicHistory(ctx context.Context, self, actorAuth, chann
 	}
 	var ids []int32
 	for _, m := range msgs {
-		if m.Deleted || m.ID == topicID {
+		if m.Deleted {
 			continue
 		}
-		if messageInTopic(f, m, topicID) {
+		if m.ID == topicID || messageInTopic(f, m, topicID) {
 			ids = append(ids, m.ID)
 		}
 	}
-	if len(ids) == 0 {
-		return ch.Pts, 0, nil
-	}
-	pts, ptsCount, err = s.Delete(ctx, self, ch.ID, actorAuth, ids)
-	if err != nil {
-		return 0, 0, err
+	pts = ch.Pts
+	if len(ids) > 0 {
+		pts, ptsCount, err = s.Delete(ctx, self, ch.ID, actorAuth, ids)
+		if err != nil {
+			return 0, 0, err
+		}
 	}
 	f = s.features(ctx, ch.ID)
-	if i, ok := findTopic(f, topicID); ok {
-		f.Topics[i].TopMessage = topicID
-		for _, id := range ids {
-			delete(f.MsgTopic, id)
-		}
-		_ = s.saveFeatures(ctx, ch.ID, f)
+	dropTopic(f, topicID)
+	if err = s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return 0, 0, err
 	}
 	return pts, ptsCount, nil
+}
+
+func dropTopic(f *Features, topicID int32) {
+	if f == nil {
+		return
+	}
+	kept := make([]TopicRec, 0, len(f.Topics))
+	for _, t := range f.Topics {
+		if t.ID != topicID {
+			kept = append(kept, t)
+		}
+	}
+	f.Topics = kept
+	for id, tid := range f.MsgTopic {
+		if tid == topicID || id == topicID {
+			delete(f.MsgTopic, id)
+		}
+	}
 }
 
 func messageInTopic(f *Features, m *StoredMessage, topicID int32) bool {
@@ -1312,34 +1331,90 @@ func messageInTopic(f *Features, m *StoredMessage, topicID int32) bool {
 	return h.GetReplyToMsgId() == topicID
 }
 
-// ensureGeneralTopic creates the hidden General topic once when a forum is enabled.
+// ensureGeneralTopic creates the General topic once when a forum is enabled.
+// Its id is always 1 and it is visible until an admin hides it.
 func (s *Service) ensureGeneralTopic(ctx context.Context, self, channelID int64) {
 	f := s.features(ctx, channelID)
 	for _, t := range f.Topics {
-		if t.Hidden && strings.EqualFold(t.Title, "General") {
+		if t.ID == generalTopicID {
 			return
 		}
 	}
-	_, topic, err := s.CreateTopic(ctx, self, 0, channelID, "General", 0x6FB9F0, 0)
-	if err != nil || topic == nil {
+	for i := range f.Topics {
+		if !strings.EqualFold(f.Topics[i].Title, "General") {
+			continue
+		}
+		old := f.Topics[i].ID
+		f.Topics[i].ID = generalTopicID
+		f.Topics[i].Hidden = false
+		for msgID, topicID := range f.MsgTopic {
+			if topicID == old {
+				f.MsgTopic[msgID] = generalTopicID
+			}
+		}
+		_ = s.saveFeatures(ctx, channelID, f)
 		return
 	}
-	hidden := true
-	_, _ = s.EditTopic(ctx, self, channelID, topic.ID, "", nil, nil, &hidden)
+	ch, _ := s.store.GetChannel(ctx, channelID)
+	top := int32(0)
+	if ch != nil {
+		top = ch.TopMessage
+	}
+	f.Topics = append(f.Topics, TopicRec{
+		ID:         generalTopicID,
+		Title:      "General",
+		IconColor:  0x6FB9F0,
+		CreatorID:  self,
+		Date:       int32(time.Now().Unix()),
+		TopMessage: top,
+		Hidden:     false,
+	})
+	_ = s.saveFeatures(ctx, channelID, f)
+}
+
+// rejectClosedTopic blocks non-admins from posting in a closed forum topic.
+// A message with no topic reply is General.
+func (s *Service) rejectClosedTopic(ctx context.Context, ch *Channel, p *Participant, msgs []*mtproto.Message) error {
+	if ch == nil || !ch.Forum || p == nil || p.IsAdmin() {
+		return nil
+	}
+	f := s.features(ctx, ch.ID)
+	for _, msg := range msgs {
+		if msg == nil || msg.GetPredicateName() == mtproto.Predicate_messageService {
+			continue
+		}
+		id := topicIDOf(msg)
+		if id == 0 {
+			id = generalTopicID
+		}
+		idx, ok := findTopic(f, id)
+		if ok && f.Topics[idx].Closed {
+			return mtproto.ErrTopicClosed
+		}
+	}
+	return nil
+}
+
+func topicIDOf(msg *mtproto.Message) int32 {
+	if msg == nil || msg.GetReplyTo() == nil {
+		return 0
+	}
+	h := msg.GetReplyTo()
+	if top := h.GetReplyToTopId().GetValue(); top != 0 {
+		return top
+	}
+	return h.GetReplyToMsgId()
 }
 
 // bindTopic records which forum topic a new message belongs to and advances top_message.
+// A message with no topic reply belongs to General.
 func (s *Service) bindTopic(ctx context.Context, channelID int64, msgID int32, msg *mtproto.Message) {
-	if msg == nil || msg.GetReplyTo() == nil {
+	if msg == nil {
 		return
 	}
-	h := msg.GetReplyTo()
-	top := h.GetReplyToTopId().GetValue()
+	top := topicIDOf(msg)
 	if top == 0 {
-		top = h.GetReplyToMsgId()
-	}
-	if top == 0 {
-		return
+		top = generalTopicID
 	}
 	f := s.features(ctx, channelID)
 	idx, ok := findTopic(f, top)
@@ -1547,6 +1622,11 @@ func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids [
 }
 
 func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int32, q HistoryQuery) (*mtproto.Messages_Messages, error) {
+	if commentsOn() {
+		if out, ok, err := s.repliesFromComments(ctx, self, channelID, msgID, q); ok {
+			return out, err
+		}
+	}
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
@@ -1599,6 +1679,11 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 }
 
 func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, msgID int32) (*mtproto.Messages_DiscussionMessage, error) {
+	if commentsOn() {
+		if out, ok, err := s.discussionFromComments(ctx, self, channelID, msgID); ok {
+			return out, err
+		}
+	}
 	_, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
