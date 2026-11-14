@@ -27,6 +27,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
@@ -176,6 +177,9 @@ func (c *MessagesCore) makeForwardMessages(
 			return nil, mtproto.ErrMessageIdInvalid
 		}
 	default:
+		if fromPeer.IsUser() && fromPeer.PeerId != c.MD.UserId && chatbox.Shared().ContentProtected(c.ctx, c.MD.UserId, fromPeer.PeerId) {
+			return nil, mtproto.ErrChatForwardsRestricted
+		}
 		messageList, _ = c.svcCtx.Dao.MessageClient.MessageGetUserMessageList(c.ctx, &message.TLMessageGetUserMessageList{
 			UserId: c.MD.UserId,
 			IdList: idList,
@@ -309,6 +313,15 @@ func (c *MessagesCore) makeForwardMessages(
 		}
 		m.ReplyTo = nil
 		m.Reactions = nil
+		if m.GetNoforwards() {
+			return nil, mtproto.ErrChatForwardsRestricted
+		}
+		if request.GetDropAuthor() {
+			dropForwardAuthor(m)
+		}
+		if request.GetDropMediaCaptions() {
+			dropMediaCaptions(m)
+		}
 		if m.ReplyMarkup != nil {
 			m.ReplyMarkup = m.ReplyMarkup.ToForwardMessage()
 		}
