@@ -185,6 +185,12 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.RestrictedSponsored = feat.SponsoredRestricted
 		full.HiddenPrehistory = feat.HiddenPrehistory
 		full.ParticipantsHidden = feat.ParticipantsHidden
+		// Hidden members still let ordinary members see the admin list.
+		// can_view_participants is the flag the client uses to hide the
+		// member list itself.
+		if feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) {
+			full.CanViewParticipants = false
+		}
 		full.Antispam = feat.Antispam
 		full.ViewForumAsMessages = feat.ViewForumAsMessages[viewer]
 		full.MainTab = mtproto.ToProfileTabByType(feat.MainProfileTab)

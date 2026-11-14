@@ -19,6 +19,8 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/teamgram/proto/mtproto"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -103,9 +105,67 @@ func (c *ChatInvitesCore) MessagesGetChatInviteImporters(in *mtproto.TLMessagesG
 	idHelper.Visit(func(userIdList []int64) {
 		users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
 			Id: userIdList,
+			To: []int64{c.MD.UserId},
 		})
 		rValues.Users = users.GetUserListByIdList(c.MD.UserId, userIdList...)
 	}, nil, nil)
 
+	if q := strings.TrimSpace(in.GetQ().GetValue()); q != "" {
+		byID := map[int64]*mtproto.User{}
+		for _, u := range rValues.Users {
+			byID[u.GetId()] = u
+		}
+		filtered := make([]*mtproto.ChatInviteImporter, 0, len(rValues.Importers))
+		for _, row := range rValues.Importers {
+			if userMatches(byID[row.GetUserId()], q) {
+				filtered = append(filtered, row)
+			}
+		}
+		page := pageImporters(filtered, in.GetOffsetDate(), offsetPeer.PeerId, limit)
+		keep := map[int64]struct{}{}
+		for _, row := range page {
+			keep[row.GetUserId()] = struct{}{}
+			if row.GetApprovedBy() != nil {
+				keep[row.GetApprovedBy().GetValue()] = struct{}{}
+			}
+		}
+		users := make([]*mtproto.User, 0, len(page))
+		for _, u := range rValues.Users {
+			if _, ok := keep[u.GetId()]; ok {
+				users = append(users, u)
+			}
+		}
+		rValues.Count = int32(len(filtered))
+		rValues.Importers = page
+		rValues.Users = users
+	}
+
 	return rValues, nil
+}
+
+func pageImporters(rows []*mtproto.ChatInviteImporter, offsetDate int32, offsetUser int64, limit int32) []*mtproto.ChatInviteImporter {
+	start := 0
+	if offsetUser != 0 || offsetDate != 0 {
+		start = len(rows)
+		for i, row := range rows {
+			if row.GetUserId() == offsetUser && row.GetDate() == offsetDate {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := start + int(limit)
+	if end > len(rows) {
+		end = len(rows)
+	}
+	if rows == nil {
+		return []*mtproto.ChatInviteImporter{}
+	}
+	return append([]*mtproto.ChatInviteImporter{}, rows[start:end]...)
 }

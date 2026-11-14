@@ -725,3 +725,18 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Member list filters and invite-importer search (ISSUE-S-PART-CONTACTS-001, ISSUE-S-PART-BANNED-ACL-001, ISSUE-S-PART-FILTER-Q-001, ISSUE-S-HIDDENMEMBERS-ADMINS-001, ISSUE-S-JOINREQ-SEARCH-001, ISSUE-S-INVITE-IMPORTERS-USERS-001)
+
+`channels.getParticipants` treated contacts, mentions, and recent as the same member list, and compared `q` to the decimal user id. Banned and kicked lists had no admin check. `participants_hidden` also hid `channelParticipantsAdmins`, and `can_view_participants` stayed true.
+
+Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`). `channelParticipantsBanned` and `channelParticipantsKicked` require the creator or `ban_users`. Hidden members still return the admin list, and `can_view_participants` is false for everyone else.
+
+`messages.getChatInviteImporters` loaded importer users without the viewer, so `GetUserListByIdList` returned an empty vector and a name query matched nothing. The viewer is now included in the load (`To` and `Id`). A query is not combined with a link (`SEARCH_WITH_LINK_NOT_SUPPORTED`, unchanged). Basic groups return the full importer list when `q` is set, and the BFF filters that list by name.
+
+| Piece | File |
+| --- | --- |
+| filters, ACL, hidden admins | `app/service/biz/channel/service.go`, `convert.go` |
+| profile hook | `app/bff/channels/internal/svc/service_context.go` |
+| importer users and `q` | `app/bff/chatinvites/internal/core/channel_invite.go`, `messages.getChatInviteImporters_handler.go` |
+| basic-group full list for `q` | `app/service/biz/chat/internal/core/chat.getChatInviteImporters_handler.go` |
