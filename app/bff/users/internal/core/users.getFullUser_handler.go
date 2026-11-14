@@ -237,55 +237,13 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 			}
 		},
 		func() {
-			rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-				UserId:  peerId,
-				KeyType: mtproto.VOICE_MESSAGES,
-			})
-			if rules != nil && len(rules.Datas) > 0 {
-				allow := mtproto.CheckPrivacyIsAllow(
-					peerId,
-					rules.Datas,
-					c.MD.UserId,
-					func(id, checkId int64) bool {
-						contact, _ := user.CheckContact(checkId)
-						return contact
-					},
-					func(checkId int64, idList []int64) bool {
-						// TODO
-						chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-						_ = chatIdList
-						// return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-						return false
-					})
-				userFull.VoiceMessagesForbidden = !allow
+			if c.MD.UserId != peerId {
+				userFull.VoiceMessagesForbidden = !c.privacyAllows(peerId, mtproto.VOICE_MESSAGES)
 			}
 		},
 		func() {
-			if user.GetUser().GetSavedMusic() != nil {
-				rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-					UserId:  peerId,
-					KeyType: mtproto.SAVED_MUSIC,
-				})
-				if rules != nil && len(rules.Datas) > 0 {
-					allow := mtproto.CheckPrivacyIsAllow(
-						peerId,
-						rules.Datas,
-						c.MD.UserId,
-						func(id, checkId int64) bool {
-							contact, _ := user.CheckContact(checkId)
-							return contact
-						},
-						func(checkId int64, idList []int64) bool {
-							// TODO
-							chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-							_ = chatIdList
-							// return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-							return false
-						})
-					if allow {
-						userFull.SavedMusic = user.GetUser().GetSavedMusic()
-					}
-				}
+			if user.GetUser().GetSavedMusic() != nil && c.privacyAllows(peerId, mtproto.SAVED_MUSIC) {
+				userFull.SavedMusic = user.GetUser().GetSavedMusic()
 			}
 		})
 
@@ -326,34 +284,16 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 	}
 
 	if c.MD.UserId != peerId {
-		// userFull.Birthday = user.Birthday()
-		if user.Birthday() != nil {
-			//if user.GetUser().GetSavedMusic() != nil {
-			rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-				UserId:  peerId,
-				KeyType: mtproto.BIRTHDAY,
-			})
-			if rules != nil && len(rules.Datas) > 0 {
-				allow := mtproto.CheckPrivacyIsAllow(
-					peerId,
-					rules.Datas,
-					c.MD.UserId,
-					func(id, checkId int64) bool {
-						contact, _ := user.CheckContact(checkId)
-						return contact
-					},
-					func(checkId int64, idList []int64) bool {
-						// TODO
-						chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-						_ = chatIdList
-						// return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-						return false
-					})
-				if allow {
-					userFull.Birthday = user.Birthday()
-				}
-			}
-			//}
+		if user.Birthday() != nil && c.privacyAllows(peerId, mtproto.BIRTHDAY) {
+			userFull.Birthday = user.Birthday()
+		}
+		if !c.privacyAllows(peerId, mtproto.ABOUT) {
+			userFull.About = nil
+		}
+		if !c.privacyAllows(peerId, mtproto.PHONE_CALL) {
+			userFull.PhoneCallsAvailable = false
+			userFull.PhoneCallsPrivate = true
+			userFull.VideoCallsAvailable = false
 		}
 	} else {
 		userFull.Birthday = user.Birthday()
@@ -365,7 +305,9 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		userFull.VideoCallsAvailable = false
 	}
 
-	unsafeUser := user.ToUnsafeUser(me)
+	renderCtx := mtproto.PreparePrivacyRender(c.ctx, c.MD.UserId, []*mtproto.ImmutableUser{me, user})
+	unsafeUser := user.ToUnsafeUserCtx(renderCtx, me)
+	c.applyProfilePhoto(userFull, unsafeUser, peerId)
 	patchBotUsernameFromImmutable(unsafeUser, user)
 	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, []*mtproto.User{unsafeUser}, map[int64]int32{
 		user.Id(): mtproto.StoryColumn(user),
@@ -376,6 +318,89 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		Chats:    chats,
 		Users:    []*mtproto.User{unsafeUser},
 	}).To_Users_UserFull(), nil
+}
+
+// privacyAllows reports whether the caller may see owner’s key.
+// A transport error leaves the field visible; a stored disallow does not.
+// applyProfilePhoto hides the full profile photo when the viewer may not see it.
+// A public fallback photo is returned in its place. No fallback means empty.
+// Someone who blocked the viewer sees neither the photo nor an online status.
+func (c *UsersCore) applyProfilePhoto(userFull *mtproto.UserFull, viewed *mtproto.User, owner int64) {
+	if c == nil || c.MD == nil || userFull == nil || owner == 0 {
+		return
+	}
+	if c.MD.UserId == owner {
+		if fb := c.fallbackPhoto(owner); fb.GetId() != 0 {
+			userFull.FallbackPhoto = fb
+		}
+		return
+	}
+	if c.ownerBlockedViewer(owner) {
+		userFull.ProfilePhoto = nil
+		userFull.FallbackPhoto = nil
+		if viewed != nil {
+			viewed.Photo = nil
+			viewed.Status = mtproto.MakeTLUserStatusEmpty(nil).To_UserStatus()
+		}
+		return
+	}
+	if c.privacyAllows(owner, mtproto.PROFILE_PHOTO) {
+		return
+	}
+	fb := c.fallbackPhoto(owner)
+	if fb.GetId() == 0 {
+		userFull.ProfilePhoto = nil
+		userFull.FallbackPhoto = nil
+		if viewed != nil {
+			viewed.Photo = nil
+		}
+		return
+	}
+	userFull.ProfilePhoto = fb
+	userFull.FallbackPhoto = fb
+	if viewed != nil {
+		viewed.Photo = mtproto.MakeUserProfilePhotoByPhoto(fb)
+	}
+}
+
+func (c *UsersCore) ownerBlockedViewer(owner int64) bool {
+	if c == nil || c.MD == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return false
+	}
+	blocked, err := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
+		UserId:     owner,
+		PeerUserId: c.MD.UserId,
+	})
+	return err == nil && mtproto.FromBool(blocked)
+}
+
+func (c *UsersCore) fallbackPhoto(owner int64) *mtproto.Photo {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || owner == 0 {
+		return nil
+	}
+	photo, err := c.svcCtx.Dao.UserClient.UserGetFallbackPhoto(c.ctx, &userpb.TLUserGetProfilePhotos{UserId: owner})
+	if err != nil || photo == nil || photo.GetId() == 0 {
+		return nil
+	}
+	return photo
+}
+
+func (c *UsersCore) privacyAllows(owner int64, key int) bool {
+	if c == nil || c.MD == nil || c.MD.UserId == owner {
+		return true
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return true
+	}
+	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(c.ctx, &userpb.TLUserCheckPrivacy{
+		UserId:  owner,
+		KeyType: int32(key),
+		PeerId:  c.MD.UserId,
+	})
+	if err != nil {
+		return true
+	}
+	return mtproto.FromBool(ok)
 }
 
 func venueBotFull(peerID int64) *mtproto.Users_UserFull {

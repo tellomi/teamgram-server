@@ -17,10 +17,16 @@ import (
 // UserUpdateProfilePhoto
 // user.updateProfilePhoto user_id:long id:long = Int64;
 func (c *UserCore) UserUpdateProfilePhoto(in *user.TLUserUpdateProfilePhoto) (*mtproto.Int64, error) {
+	// A negative id is the public fallback photo. The internal request has no
+	// fallback flag, and the id itself is always positive.
+	photoID := in.GetId()
+	if photoID < 0 {
+		return &mtproto.Int64{V: c.svcCtx.Dao.UpdateFallbackPhoto(c.ctx, in.GetUserId(), -photoID)}, nil
+	}
 	rV := c.svcCtx.Dao.UpdateProfilePhoto(
 		c.ctx,
 		in.GetUserId(),
-		in.GetId())
+		photoID)
 
 	return &mtproto.Int64{
 		V: rV,

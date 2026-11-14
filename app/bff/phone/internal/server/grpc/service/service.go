@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -133,6 +134,11 @@ func (s *Service) allow(caller, callee int64) (bool, bool) {
 		return true, true
 	}
 	ctx := context.Background()
+	// A block in either direction is USER_PRIVACY_RESTRICTED, the same error
+	// phone.requestCall returns when the callee's call privacy says no.
+	if userclient.EitherBlocked(ctx, s.svc.Users, caller, callee) {
+		return false, false
+	}
 	ok, err := s.svc.Users.UserCheckPrivacy(ctx, &user.TLUserCheckPrivacy{
 		UserId: callee, KeyType: int32(mtproto.PHONE_CALL), PeerId: caller,
 	})
