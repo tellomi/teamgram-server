@@ -31,7 +31,11 @@ func (c *NotificationCore) AccountGetNotifySettings(in *mtproto.TLAccountGetNoti
 		settings *mtproto.PeerNotifySettings
 	)
 
-	peer := mtproto.FromInputNotifyPeer(c.MD.UserId, in.Peer)
+	peer, topMsgId := mtproto.ParseInputNotifyPeer(c.MD.UserId, in.Peer)
+	if in.GetPeer().GetPredicateName() == mtproto.Predicate_inputNotifyForumTopic && topMsgId <= 0 {
+		c.Logger.Errorf("account.getNotifySettings - topic id")
+		return nil, mtproto.ErrTopicIdInvalid
+	}
 	switch peer.PeerType {
 	case mtproto.PEER_USER:
 		// TODO(@benqi): check peerUser Exists
@@ -39,12 +43,15 @@ func (c *NotificationCore) AccountGetNotifySettings(in *mtproto.TLAccountGetNoti
 		// TODO(@benqi): check peerChat exists
 	case mtproto.PEER_CHANNEL:
 		// TODO(@benqi): check peerChannel exists
-	case mtproto.PEER_USERS:
-	case mtproto.PEER_CHATS:
-	case mtproto.PEER_BROADCASTS:
+	case mtproto.PEER_USERS, mtproto.PEER_CHATS, mtproto.PEER_BROADCASTS:
+		if topMsgId > 0 {
+			err = mtproto.ErrPeerIdInvalid
+			c.Logger.Errorf("account.getNotifySettings - error: %v", err)
+			return nil, err
+		}
 	default:
 		err = mtproto.ErrPeerIdInvalid
-		c.Logger.Errorf("account.updateNotifySettings - error: %v", err)
+		c.Logger.Errorf("account.getNotifySettings - error: %v", err)
 		return nil, err
 	}
 
@@ -52,6 +59,7 @@ func (c *NotificationCore) AccountGetNotifySettings(in *mtproto.TLAccountGetNoti
 		UserId:   c.MD.UserId,
 		PeerType: peer.PeerType,
 		PeerId:   peer.PeerId,
+		TopMsgId: topMsgId,
 	})
 	if err != nil {
 		c.Logger.Errorf("getNotifySettings error - %v", err)

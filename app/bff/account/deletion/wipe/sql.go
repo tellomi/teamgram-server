@@ -621,6 +621,7 @@ func (s *SQL) DeleteSettings(ctx context.Context, userID int64) error {
 		`DELETE FROM user_privacies WHERE user_id=?`,
 		`DELETE FROM user_global_privacy_settings WHERE user_id=?`,
 		`UPDATE user_notify_settings SET deleted=1 WHERE user_id=? AND deleted=0`,
+		`UPDATE user_notify_topic_settings SET deleted=1 WHERE user_id=? AND deleted=0`,
 		`DELETE FROM user_settings WHERE user_id=?`,
 		`DELETE FROM user_peer_settings WHERE user_id=?`,
 		`UPDATE user_peer_blocks SET deleted=1 WHERE user_id=? AND deleted=0`,
