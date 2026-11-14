@@ -23,98 +23,76 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // InboxUnpinAllMessages
 // inbox.unpinAllMessages user_id:long auth_key_id:long peer_type:int peer_id:long = Void;
 func (c *InboxCore) InboxUnpinAllMessages(in *inbox.TLInboxUnpinAllMessages) (*mtproto.Void, error) {
-	var (
-		peer     = mtproto.MakePeerUtil(in.PeerType, in.PeerId)
-		idList   = make([]int32, 0)
-		pts      int32
-		ptsCount int32
-	)
+	peer := mtproto.MakePeerUtil(in.PeerType, in.PeerId)
 
 	switch peer.PeerType {
 	case mtproto.PEER_USER:
-		dialogId := mtproto.MakeDialogId(peer.PeerId, peer.PeerType, in.UserId)
-		_, _ = c.svcCtx.Dao.MessagesDAO.SelectPinnedListWithCB(
-			c.ctx,
-			peer.PeerId,
-			dialogId.A,
-			dialogId.B,
-			func(sz, i int, v *dataobject.MessagesDO) {
-				idList = append(idList, v.UserMessageBoxId)
-			})
-		if len(idList) == 0 {
-			break
-		}
-
-		pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, peer.PeerId, len(idList))
-		ptsCount = int32(len(idList))
-		updatePinnedMessages := mtproto.MakeTLUpdatePinnedMessages(&mtproto.Update{
-			Pinned:    false,
-			Peer_PEER: mtproto.MakePeerUser(in.UserId),
-			Messages:  idList,
-			Pts_INT32: pts,
-			PtsCount:  ptsCount,
-		}).To_Update()
-		c.persistPtsUpdate(c.ctx, peer.PeerId, updatePinnedMessages)
-
-		_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(
-			c.ctx,
-			&sync.TLSyncPushUpdates{
-				UserId:  peer.PeerId,
-				Updates: mtproto.MakeUpdatesByUpdates(updatePinnedMessages),
-			})
+		dialogID := mtproto.MakeDialogId(peer.PeerId, peer.PeerType, in.UserId)
+		c.clearPinnedBox(peer.PeerId, dialogID.A, dialogID.B, mtproto.PEER_USER, in.UserId, mtproto.MakePeerUser(in.UserId))
 	case mtproto.PEER_CHAT:
-		// TODO: 性能优化
-		dialogId := mtproto.MakeDialogId(0, peer.PeerType, in.PeerId)
+		dialogID := mtproto.MakeDialogId(0, peer.PeerType, in.PeerId)
 		_, _ = c.svcCtx.Dao.ChatParticipantsDAO.SelectListWithCB(
 			c.ctx,
 			peer.PeerId,
 			func(sz, i int, v *dataobject.ChatParticipantsDO) {
-				if v.UserId == in.UserId {
+				if v.UserId == in.UserId || v.State != mtproto.ChatMemberStateNormal {
 					return
 				}
-				if v.State != mtproto.ChatMemberStateNormal {
-					return
-				}
-
-				_, _ = c.svcCtx.Dao.MessagesDAO.SelectPinnedListWithCB(
-					c.ctx,
-					v.UserId,
-					dialogId.A,
-					dialogId.B,
-					func(sz, i int, v *dataobject.MessagesDO) {
-						idList = append(idList, v.UserMessageBoxId)
-					})
-
-				if len(idList) == 0 {
-					return
-				}
-
-				pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, v.UserId, len(idList))
-				ptsCount = int32(len(idList))
-				updatePinnedMessages := mtproto.MakeTLUpdatePinnedMessages(&mtproto.Update{
-					Pinned:    false,
-					Peer_PEER: mtproto.MakePeerChat(peer.PeerId),
-					Messages:  idList,
-					Pts_INT32: pts,
-					PtsCount:  ptsCount,
-				}).To_Update()
-				c.persistPtsUpdate(c.ctx, v.UserId, updatePinnedMessages)
-
-				c.svcCtx.Dao.SyncClient.SyncPushUpdates(
-					c.ctx,
-					&sync.TLSyncPushUpdates{
-						UserId:  v.UserId,
-						Updates: mtproto.MakeUpdatesByUpdates(updatePinnedMessages),
-					})
+				c.clearPinnedBox(v.UserId, dialogID.A, dialogID.B, mtproto.PEER_CHAT, peer.PeerId, mtproto.MakePeerChat(peer.PeerId))
 			},
 		)
 	case mtproto.PEER_CHANNEL:
 	}
 
 	return mtproto.EmptyVoid, nil
+}
+
+// clearPinnedBox drops pinned on one user's copy and tells that session.
+// The update used to go out while the rows stayed pinned=1.
+func (c *InboxCore) clearPinnedBox(userID, dialogA, dialogB int64, peerType int32, peerID int64, updatePeer *mtproto.Peer) {
+	var ids []int32
+	_, _ = c.svcCtx.Dao.MessagesDAO.SelectPinnedListWithCB(
+		c.ctx,
+		userID,
+		dialogA,
+		dialogB,
+		func(sz, i int, v *dataobject.MessagesDO) {
+			ids = append(ids, v.UserMessageBoxId)
+		})
+	if len(ids) == 0 {
+		return
+	}
+	if _, err := c.svcCtx.Dao.MessagesDAO.UpdateUnPinnedByIdList(c.ctx, userID, ids); err != nil {
+		c.Logger.Errorf("inbox.unpinAllMessages - error: %v", err)
+	}
+	if c.svcCtx.Dao.DialogClient != nil {
+		_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(c.ctx, &dialog.TLDialogInsertOrUpdateDialog{
+			UserId:      userID,
+			PeerType:    peerType,
+			PeerId:      peerID,
+			PinnedMsgId: &wrapperspb.Int32Value{Value: 0},
+		})
+	}
+	pts := c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, userID, len(ids))
+	ptsCount := int32(len(ids))
+	updatePinnedMessages := mtproto.MakeTLUpdatePinnedMessages(&mtproto.Update{
+		Pinned:    false,
+		Peer_PEER: updatePeer,
+		Messages:  ids,
+		Pts_INT32: pts,
+		PtsCount:  ptsCount,
+	}).To_Update()
+	c.persistPtsUpdate(c.ctx, userID, updatePinnedMessages)
+	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+		UserId:  userID,
+		Updates: mtproto.MakeUpdatesByUpdates(updatePinnedMessages),
+	})
 }

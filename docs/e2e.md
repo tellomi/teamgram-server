@@ -20,6 +20,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestHelpGetTermsOfServiceUpdate` | The default config returns `help.termsOfServiceUpdateEmpty`, and a second call stays empty. If an update is returned, accepting its id does not make the next call empty. |
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |
 | `TestStartupRPCs` | One startup RPC returned 500, timed out, or did not decode. A 4xx is recorded and does not fail this test. Subtests are named `ios/<method>` and `android/<method>`. |
+| `TestUnpinAllClearsEveryCopy` | `messages.unpinAllMessages` leaves a private peer's history `pinned`, a megagroup unpin of one message clears the other pin or leaves the requested message pinned, or unpin-all leaves a megagroup pin that `messages.search` with the pinned filter still returns. |
 | `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads up to its own id for that message. |
 | `TestBasicGroupReadOutbox` | Same for a basic group. |
 | `TestSupergroupReadOutbox` | Same for a megagroup (`channels.readHistory`). |
