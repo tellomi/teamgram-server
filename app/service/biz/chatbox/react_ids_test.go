@@ -118,6 +118,35 @@ func hasEmoji(m *mtproto.Message, emo string) bool {
 	return false
 }
 
+func TestGroupReactionUpdateIsVisibleToOtherMembers(t *testing.T) {
+	b := newBook(nil)
+	ctx := context.Background()
+	chat := mtproto.MakePeerUtil(mtproto.PEER_CHAT, 15)
+	if _, err := b.React(ctx, 4, chat, 8, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	mine := b.GroupReactionUpdateFor(ctx, 4, chat, 8)
+	theirs := b.GroupReactionUpdateFor(ctx, 9, chat, 8)
+	if mine == nil || theirs == nil {
+		t.Fatal("group update missing")
+	}
+	if theirs.GetMsgId_INT32() != 8 || theirs.GetPeer_PEER().GetChatId() != 15 {
+		t.Fatalf("peer update %+v", theirs)
+	}
+	if len(theirs.GetReactions_MESSAGEREACTIONS().GetResults()) != 1 || theirs.GetReactions_MESSAGEREACTIONS().GetResults()[0].GetCount() != 1 {
+		t.Fatalf("count %+v", theirs.GetReactions_MESSAGEREACTIONS())
+	}
+	if theirs.GetReactions_MESSAGEREACTIONS().GetResults()[0].GetChosenOrder() != nil {
+		t.Fatal("other member was marked as having chosen the reaction")
+	}
+	if mine.GetReactions_MESSAGEREACTIONS().GetResults()[0].GetChosenOrder() == nil {
+		t.Fatal("reactor lost chosen_order")
+	}
+	if b.GroupReactionUpdateFor(ctx, 4, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 8) != nil {
+		t.Fatal("private chat used the group update")
+	}
+}
+
 func TestPeerReactionUpdateUsesPeersMessageID(t *testing.T) {
 	b := newBook(nil)
 	b.ids = fakeIDs{box: map[int64]map[int32]int64{

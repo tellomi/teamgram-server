@@ -10,6 +10,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -377,6 +378,10 @@ type ReactionsService struct {
 	Push reactionPusher
 	// Dialogs updates dialog.unread_reactions_count. Nil in tests.
 	Dialogs reactionDialogs
+	// Chats lists basic-group members for updateMessageReactions. Nil in tests.
+	Chats interface {
+		ChatGetChatParticipantIdList(ctx context.Context, in *chatpb.TLChatGetChatParticipantIdList) (*chatpb.Vector_Long, error)
+	}
 }
 
 // reactionPusher sends updates to one user's sessions.
@@ -547,6 +552,10 @@ func (s ReactionsService) pushPeerReaction(ctx context.Context, self int64, peer
 	if s.Push == nil {
 		return
 	}
+	if peer != nil && peer.IsChat() {
+		s.pushGroupReactions(ctx, self, peer, msgID)
+		return
+	}
 	to, up := chatbox.Shared().PeerReactionUpdate(ctx, self, peer, msgID)
 	if to == 0 || up == nil {
 		return
@@ -555,6 +564,29 @@ func (s ReactionsService) pushPeerReaction(ctx context.Context, self int64, peer
 		UserId:  to,
 		Updates: mtproto.MakeUpdatesByUpdates(up),
 	})
+}
+
+func (s ReactionsService) pushGroupReactions(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) {
+	if s.Chats == nil || peer == nil {
+		return
+	}
+	list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+	if err != nil || list == nil {
+		return
+	}
+	for _, id := range list.GetDatas() {
+		if id == 0 || id == self {
+			continue
+		}
+		up := chatbox.Shared().GroupReactionUpdateFor(ctx, id, peer, msgID)
+		if up == nil {
+			continue
+		}
+		_, _ = s.Push.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{
+			UserId:  id,
+			Updates: mtproto.MakeUpdatesByUpdates(up),
+		})
+	}
 }
 
 func (s ReactionsService) pushOwnOtherSessions(ctx context.Context, self int64, up *mtproto.Updates) {

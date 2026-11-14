@@ -145,6 +145,22 @@ func (b *Book) viewLocked(ctx context.Context, self int64, peer *mtproto.PeerUti
 	return &view
 }
 
+// GroupReactionUpdateFor builds updateMessageReactions for one basic-group
+// member. The group shares the message id. chosen_order is that member's
+// own reaction, not the reactor's.
+func (b *Book) GroupReactionUpdateFor(ctx context.Context, viewer int64, peer *mtproto.PeerUtil, msgID int32) *mtproto.Update {
+	if b == nil || peer == nil || peer.PeerType != mtproto.PEER_CHAT || msgID <= 0 {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, viewer, peer)
+	if err != nil || doc == nil {
+		return nil
+	}
+	return reactionUpdate(peer, msgID, doc, viewer)
+}
+
 // PeerReactionUpdate builds the updateMessageReactions the other side of a
 // private chat needs after self reacted to msgID (self's own id). It returns
 // the peer's user id and the update in the peer's own numbering, or 0 and nil

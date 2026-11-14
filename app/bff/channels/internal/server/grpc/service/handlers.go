@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func (s *Service) md(ctx context.Context) *metadata.RpcMetadata {
@@ -53,6 +54,16 @@ func (s *Service) ChannelsGetFullChannel(ctx context.Context, in *mtproto.TLChan
 		})
 		if err == nil && ext != nil && ext.GetDialog() != nil {
 			full.FullChat.FolderId = ext.GetDialog().GetFolderId()
+		}
+		if full.FullChat.GetPinnedMsgId().GetValue() == 0 {
+			pinned, err := s.svcCtx.DialogClient.DialogGetUserPinnedMessage(ctx, &dialog.TLDialogGetUserPinnedMessage{
+				UserId:   md.GetUserId(),
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerId:   full.GetFullChat().GetId(),
+			})
+			if err == nil && pinned.GetV() > 0 {
+				full.FullChat.PinnedMsgId = &wrapperspb.Int32Value{Value: pinned.GetV()}
+			}
 		}
 	}
 	return full, nil

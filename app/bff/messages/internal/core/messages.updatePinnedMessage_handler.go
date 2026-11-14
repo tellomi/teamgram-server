@@ -25,6 +25,8 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // MessagesUpdatePinnedMessage
@@ -36,7 +38,12 @@ func (c *MessagesCore) MessagesUpdatePinnedMessage(in *mtproto.TLMessagesUpdateP
 	)
 
 	if peer.IsChannel() {
-		return channel.Shared().PinMessage(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId, in.Id, in.Unpin)
+		ups, err := channel.Shared().PinMessage(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId, in.Id, in.Unpin)
+		if err != nil {
+			return nil, err
+		}
+		c.rememberPin(peer, in.Id, in.Unpin)
+		return ups, nil
 	}
 	if peer.IsChat() {
 		if err := c.basicPinAllowed(peer.PeerId); err != nil {
@@ -65,6 +72,25 @@ func (c *MessagesCore) MessagesUpdatePinnedMessage(in *mtproto.TLMessagesUpdateP
 	}
 
 	return rUpdates, nil
+}
+
+// rememberPin copies the channel pin onto dialogs.pinned_msg_id so
+// channels.getFullChannel can fill pinned_msg_id even when the channel
+// feature row does not have it yet.
+func (c *MessagesCore) rememberPin(peer *mtproto.PeerUtil, id int32, unpin bool) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.DialogClient == nil || peer == nil {
+		return
+	}
+	pinned := id
+	if unpin {
+		pinned = 0
+	}
+	_, _ = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(c.ctx, &dialog.TLDialogInsertOrUpdateDialog{
+		UserId:      c.MD.UserId,
+		PeerType:    peer.PeerType,
+		PeerId:      peer.PeerId,
+		PinnedMsgId: &wrapperspb.Int32Value{Value: pinned},
+	})
 }
 
 // basicPinAllowed lets a non-admin pin when default_banned_rights does not
