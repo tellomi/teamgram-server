@@ -716,6 +716,14 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## translateText nil peer (ISSUE-S-TRANSLATE-NIL-001)
+
+`messages.translateText` with no `text` and no `peer` called `FromInputPeer2` on a nil `InputPeer`. That reads `PredicateName` and the RPC returned 500. A missing peer is now `400 PEER_ID_INVALID` before the peer is read. An empty id list is still `MESSAGE_IDS_EMPTY`.
+
+| Piece | File |
+| --- | --- |
+| guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
