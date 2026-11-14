@@ -98,6 +98,7 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		StoriesPinnedAvailable:   false,
 		BlockedMyStoriesFrom:     false,
 		WallpaperOverridden:      false,
+		ReadDatesPrivate:         c.peerHidesReadMarks(peerId),
 		Id:                       peerId,
 		About:                    user.GetUser().GetAbout(),
 		Settings:                 nil,

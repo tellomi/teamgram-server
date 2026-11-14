@@ -544,6 +544,16 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 | toggle, reorder, premium caps, other-session update | `app/bff/dialogs/internal/core/messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go`, `app/service/biz/dialog/internal/core/pin_policy.go`, `dialog.toggleDialogPin_handler.go`, `dialog.reorderPinnedDialogs_handler.go`, `dialog.editPeerFolders_handler.go` |
 | one channel dialog | `app/service/biz/channel/service_ops.go` `DialogFor`, `app/bff/channels/bridge.go` |
 
+## Hide read time (globalPrivacySettings.hide_read_marks)
+
+`messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless they have Premium. `users.getFullUser` sets `read_dates_private` from the same row.
+
+| Piece | File |
+| --- | --- |
+| read-date check | `app/bff/messages/internal/core/outbox_read_privacy.go`, `messages.getOutboxReadDate_handler.go` |
+| `read_dates_private` | `app/bff/users/internal/core/read_dates_private.go`, `users.getFullUser_handler.go` |
+| `YOUR_PRIVACY_RESTRICTED` | `proto/mtproto/rpc_error_codes.go` |
+
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
