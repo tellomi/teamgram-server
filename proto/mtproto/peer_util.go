@@ -81,6 +81,17 @@ func (p *PeerUtil) CanDoSendMessage() bool {
 	}
 }
 
+// ResolveFromMessage reports whether input*FromMessage should yield the
+// referenced id. A nil function keeps the historical behavior: the id is
+// dropped. The bff access-hash gate sets this while
+// TELLOMI_ACCESS_HASH_ENFORCE=enforce, after it has checked that the
+// message really refers to that user or channel.
+var ResolveFromMessage func() bool
+
+func fromMessageResolves() bool {
+	return ResolveFromMessage != nil && ResolveFromMessage()
+}
+
 func FromInputUser(selfId int64, user *InputUser) (p *PeerUtil) {
 	p = &PeerUtil{}
 	switch user.PredicateName {
@@ -94,9 +105,12 @@ func FromInputUser(selfId int64, user *InputUser) (p *PeerUtil) {
 		p.PeerId = user.UserId
 		p.AccessHash = user.GetAccessHash()
 	case Predicate_inputUserFromMessage:
-		//p.PeerType = PEER_USER
-		//p.PeerId = user.UserId
-		//p.AccessHash = user.GetAccessHash()
+		// Min users carry no access_hash. The id is resolved only after the
+		// bff gate has checked the message (see ResolveFromMessage).
+		if fromMessageResolves() {
+			p.PeerType = PEER_USER
+			p.PeerId = user.UserId
+		}
 	default:
 		p.PeerType = PEER_EMPTY
 		// panic(fmt.Sprintf("FromInputUser(%v) error!", user))
@@ -122,6 +136,18 @@ func FromInputPeer(peer *InputPeer) (p *PeerUtil) {
 		p.PeerType = PEER_CHANNEL
 		p.PeerId = peer.ChannelId
 		p.AccessHash = peer.AccessHash
+	case Predicate_inputPeerUserFromMessage:
+		if !fromMessageResolves() {
+			panic(fmt.Sprintf("FromInputPeer(%v) error!", peer))
+		}
+		p.PeerType = PEER_USER
+		p.PeerId = peer.UserId
+	case Predicate_inputPeerChannelFromMessage:
+		if !fromMessageResolves() {
+			panic(fmt.Sprintf("FromInputPeer(%v) error!", peer))
+		}
+		p.PeerType = PEER_CHANNEL
+		p.PeerId = peer.ChannelId
 	default:
 		panic(fmt.Sprintf("FromInputPeer(%v) error!", peer))
 	}
@@ -149,6 +175,20 @@ func FromInputPeer2(selfId int64, peer *InputPeer) (p *PeerUtil) {
 		p.PeerType = PEER_CHANNEL
 		p.PeerId = peer.ChannelId
 		p.AccessHash = peer.AccessHash
+	case Predicate_inputPeerUserFromMessage:
+		if fromMessageResolves() {
+			p.PeerType = PEER_USER
+			p.PeerId = peer.UserId
+		} else {
+			p.PeerType = PEER_UNKNOWN
+		}
+	case Predicate_inputPeerChannelFromMessage:
+		if fromMessageResolves() {
+			p.PeerType = PEER_CHANNEL
+			p.PeerId = peer.ChannelId
+		} else {
+			p.PeerType = PEER_UNKNOWN
+		}
 	default:
 		p.PeerType = PEER_UNKNOWN
 	}
