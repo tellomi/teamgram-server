@@ -2,6 +2,14 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## contacts.editCloseFriends replace
+
+`GetCloseFriendList` treated every contact who was not a close friend as a hole and returned no list at all. `contacts.editCloseFriends` then only set the new ids to true and never cleared the previous ones. The list now keeps the close-friend rows and ignores the rest, so a shorter or empty id vector replaces the saved set.
+
+| Piece | File |
+| --- | --- |
+| skip non-close-friend slots | `app/service/biz/user/internal/dao/user_contact.go` |
+
 ## Scheduled messages
 
 `messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
