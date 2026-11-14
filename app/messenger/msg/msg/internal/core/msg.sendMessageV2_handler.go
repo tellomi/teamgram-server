@@ -235,7 +235,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 					UserId:     toUserId,
 					PeerUserId: fromUserId,
 				})
-				if !mtproto.FromBool(blocked) {
+				if privateInboxDelivered(mtproto.FromBool(blocked)) {
 					inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
 						UserId:        toUserId,
 						Out:           false,
@@ -547,7 +547,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 					UserId:     toUserId,
 					PeerUserId: fromUserId,
 				})
-				if !mtproto.FromBool(blocked) {
+				if privateInboxDelivered(mtproto.FromBool(blocked)) {
 					inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
 						UserId:        toUserId,
 						Out:           false,
@@ -888,7 +888,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 					PeerUserId: fromUserId,
 				})
 
-				if !mtproto.FromBool(blocked) {
+				if privateInboxDelivered(mtproto.FromBool(blocked)) {
 					c.Logger.WithDuration(timex.Since(since2)).Infof("end: c.svcCtx.Dao.UserClient.UserBlockedByUser")
 					_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
 						ctx,

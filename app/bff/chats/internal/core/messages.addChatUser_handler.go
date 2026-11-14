@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -127,6 +128,9 @@ func (c *ChatsCore) addChatUser(chatId int64, userId *mtproto.InputUser, fwdLimi
 func (c *ChatsCore) chatInviteRestricted(inviter, invitee int64) *mtproto.MissingInvitee {
 	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || invitee == 0 || inviter == invitee {
 		return nil
+	}
+	if userclient.EitherBlocked(c.ctx, c.svcCtx.Dao.UserClient, inviter, invitee) {
+		return mtproto.MakeTLMissingInvitee(&mtproto.MissingInvitee{UserId: invitee}).To_MissingInvitee()
 	}
 	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(c.ctx, &userpb.TLUserCheckPrivacy{
 		UserId:  invitee,

@@ -7,6 +7,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/app/service/media/media"
 )
@@ -144,6 +145,12 @@ func (s *Service) inviteesAllowed(ctx context.Context, actor int64, ids []int64)
 			if id != 0 {
 				allowed = append(allowed, id)
 			}
+			continue
+		}
+		if userclient.EitherBlocked(ctx, s.svcCtx.UserClient, actor, id) {
+			missing = append(missing, mtproto.MakeTLMissingInvitee(&mtproto.MissingInvitee{
+				UserId: id,
+			}).To_MissingInvitee())
 			continue
 		}
 		ok, err := s.svcCtx.UserClient.UserCheckPrivacy(ctx, &user.TLUserCheckPrivacy{

@@ -39,7 +39,7 @@ func (dao *UserProfilePhotosDAO) InsertOrUpdate(ctx context.Context, do *dataobj
 		query string
 		r     sql.Result
 	)
-	query = "insert into user_profile_photos(user_id, photo_id, date2, deleted) values (:user_id, :photo_id, :date2, 0) on duplicate key update date2 = values(date2), deleted = 0"
+	query = "insert into user_profile_photos(user_id, photo_id, date2, deleted, fallback) values (:user_id, :photo_id, :date2, 0, 0) on duplicate key update date2 = values(date2), deleted = 0, fallback = 0"
 
 	r, err = dao.db.NamedExec(ctx, query, do)
 	if err != nil {
@@ -67,7 +67,7 @@ func (dao *UserProfilePhotosDAO) InsertOrUpdateTx(tx *sqlx.Tx, do *dataobject.Us
 		query string
 		r     sql.Result
 	)
-	query = "insert into user_profile_photos(user_id, photo_id, date2, deleted) values (:user_id, :photo_id, :date2, 0) on duplicate key update date2 = values(date2), deleted = 0"
+	query = "insert into user_profile_photos(user_id, photo_id, date2, deleted, fallback) values (:user_id, :photo_id, :date2, 0, 0) on duplicate key update date2 = values(date2), deleted = 0, fallback = 0"
 
 	r, err = tx.NamedExec(query, do)
 	if err != nil {

@@ -255,12 +255,14 @@ func (m *ImmutableUser) GetReverseContactData(cId int64) *ContactData {
 }
 
 func (m *ImmutableUser) CheckPrivacy(keyType int, id int64) bool {
-	return m.checkPrivacy(keyType, id, false, false)
+	return m.checkPrivacy(context.Background(), keyType, id, false, false)
 }
 
 // checkPrivacy applies keyType to viewer. premium and bot describe the
 // viewer. Contact and close-friend come from this user's own contact row.
-func (m *ImmutableUser) checkPrivacy(keyType int, viewer int64, premium, bot bool) bool {
+// ctx carries the request membership cache. A chat-participant rule reads
+// that cache instead of querying once per user.
+func (m *ImmutableUser) checkPrivacy(ctx context.Context, keyType int, viewer int64, premium, bot bool) bool {
 	if m == nil || m.Id() == viewer {
 		return true
 	}
@@ -286,12 +288,22 @@ func (m *ImmutableUser) checkPrivacy(keyType int, viewer int64, premium, bot boo
 		Premium:     premium,
 		Bot:         bot,
 		Member: func(chats []int64) (bool, bool) {
-			return LookupChatMember(context.Background(), viewer, chats)
+			return LookupChatMember(ctx, viewer, chats)
 		},
 	})
 }
 
 func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
+	return m.ToUnsafeUserCtx(context.Background(), selfUser)
+}
+
+// ToUnsafeUserCtx is ToUnsafeUser using ctx for chat-participant membership
+// and for the block row loaded by PreparePrivacyRender.
+func (m *ImmutableUser) ToUnsafeUserCtx(ctx context.Context, selfUser *ImmutableUser) *User {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx = WithPrivacyCache(ctx)
 	if m.Deleted() {
 		return m.ToDeletedUser()
 	}
@@ -393,24 +405,31 @@ func (m *ImmutableUser) ToUnsafeUser(selfUser *ImmutableUser) *User {
 		}
 	}
 
+	blocked, blockKnown := OwnerBlockedViewer(ctx, m.Id())
+	blocked = blockKnown && blocked
+
 	// phone
-	if m.checkPrivacy(PHONE_NUMBER, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()) {
+	if m.checkPrivacy(ctx, PHONE_NUMBER, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()) {
 		user.Phone = MakeFlagsString(m.Phone())
 	}
 
-	// photo
-	if m.checkPrivacy(PROFILE_PHOTO, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()) {
-		user.Photo = m.ProfilePhoto()
+	// The blocked user does not see the blocker's avatar or online status.
+	if blocked {
+		user.Photo = nil
+		user.Status = userStatusEmpty
+	} else {
+		if m.checkPrivacy(ctx, PROFILE_PHOTO, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()) {
+			user.Photo = m.ProfilePhoto()
+		}
+		// Exact last seen requires both sides to share it. Hiding your own last
+		// seen from this user hides theirs from you, and that bucket sets by_me.
+		user.Status = StatusForViewer(
+			m.LastSeenAt,
+			m.checkPrivacy(ctx, STATUS_TIMESTAMP, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()),
+			selfUser.checkPrivacy(ctx, STATUS_TIMESTAMP, m.Id(), m.Premium(), m.IsBot()),
+			time.Now().Unix(),
+		)
 	}
-
-	// Exact last seen requires both sides to share it. Hiding your own last
-	// seen from this user hides theirs from you, and that bucket sets by_me.
-	user.Status = StatusForViewer(
-		m.LastSeenAt,
-		m.checkPrivacy(STATUS_TIMESTAMP, selfUser.Id(), selfUser.Premium(), selfUser.IsBot()),
-		selfUser.checkPrivacy(STATUS_TIMESTAMP, m.Id(), m.Premium(), m.IsBot()),
-		time.Now().Unix(),
-	)
 
 	return user
 }

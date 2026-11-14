@@ -7,9 +7,17 @@ import "context"
 // cannot be checked. Nil means membership is unknown.
 var PrivacyChatMember func(ctx context.Context, userID int64, chats []int64) (member bool, known bool)
 
-// LookupChatMember asks PrivacyChatMember. A nil hook is unknown membership.
+// LookupChatMember asks PrivacyChatMember. A request cache filled by
+// PreparePrivacyRender is answered without calling the hook. A nil hook is
+// unknown membership.
 func LookupChatMember(ctx context.Context, userID int64, chats []int64) (bool, bool) {
-	if PrivacyChatMember == nil || userID == 0 || len(chats) == 0 {
+	if userID == 0 || len(chats) == 0 {
+		return false, false
+	}
+	if member, ok := Membership(ctx, userID, chats); ok {
+		return member, true
+	}
+	if PrivacyChatMember == nil {
 		return false, false
 	}
 	if ctx == nil {

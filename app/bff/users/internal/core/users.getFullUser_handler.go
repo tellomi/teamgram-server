@@ -298,7 +298,9 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		userFull.VideoCallsAvailable = false
 	}
 
-	unsafeUser := user.ToUnsafeUser(me)
+	renderCtx := mtproto.PreparePrivacyRender(c.ctx, c.MD.UserId, []*mtproto.ImmutableUser{me, user})
+	unsafeUser := user.ToUnsafeUserCtx(renderCtx, me)
+	c.applyProfilePhoto(userFull, unsafeUser, peerId)
 	patchBotUsernameFromImmutable(unsafeUser, user)
 	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, []*mtproto.User{unsafeUser}, map[int64]int32{
 		user.Id(): mtproto.StoryColumn(user),
@@ -313,6 +315,69 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 // privacyAllows reports whether the caller may see owner’s key.
 // A transport error leaves the field visible; a stored disallow does not.
+// applyProfilePhoto hides the full profile photo when the viewer may not see it.
+// A public fallback photo is returned in its place. No fallback means empty.
+// Someone who blocked the viewer sees neither the photo nor an online status.
+func (c *UsersCore) applyProfilePhoto(userFull *mtproto.UserFull, viewed *mtproto.User, owner int64) {
+	if c == nil || c.MD == nil || userFull == nil || owner == 0 {
+		return
+	}
+	if c.MD.UserId == owner {
+		if fb := c.fallbackPhoto(owner); fb.GetId() != 0 {
+			userFull.FallbackPhoto = fb
+		}
+		return
+	}
+	if c.ownerBlockedViewer(owner) {
+		userFull.ProfilePhoto = nil
+		userFull.FallbackPhoto = nil
+		if viewed != nil {
+			viewed.Photo = nil
+			viewed.Status = mtproto.MakeTLUserStatusEmpty(nil).To_UserStatus()
+		}
+		return
+	}
+	if c.privacyAllows(owner, mtproto.PROFILE_PHOTO) {
+		return
+	}
+	fb := c.fallbackPhoto(owner)
+	if fb.GetId() == 0 {
+		userFull.ProfilePhoto = nil
+		userFull.FallbackPhoto = nil
+		if viewed != nil {
+			viewed.Photo = nil
+		}
+		return
+	}
+	userFull.ProfilePhoto = fb
+	userFull.FallbackPhoto = fb
+	if viewed != nil {
+		viewed.Photo = mtproto.MakeUserProfilePhotoByPhoto(fb)
+	}
+}
+
+func (c *UsersCore) ownerBlockedViewer(owner int64) bool {
+	if c == nil || c.MD == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return false
+	}
+	blocked, err := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
+		UserId:     owner,
+		PeerUserId: c.MD.UserId,
+	})
+	return err == nil && mtproto.FromBool(blocked)
+}
+
+func (c *UsersCore) fallbackPhoto(owner int64) *mtproto.Photo {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || owner == 0 {
+		return nil
+	}
+	photo, err := c.svcCtx.Dao.UserClient.UserGetFallbackPhoto(c.ctx, &userpb.TLUserGetProfilePhotos{UserId: owner})
+	if err != nil || photo == nil || photo.GetId() == 0 {
+		return nil
+	}
+	return photo
+}
+
 func (c *UsersCore) privacyAllows(owner int64, key int) bool {
 	if c == nil || c.MD == nil || c.MD.UserId == owner {
 		return true
