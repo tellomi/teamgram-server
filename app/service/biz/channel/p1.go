@@ -810,7 +810,7 @@ func (s *Service) GetLeftChannels(ctx context.Context, self int64, offset int32)
 	chats := make([]*mtproto.Chat, 0, len(page))
 	for _, ch := range page {
 		p, _ := s.store.GetParticipant(ctx, ch.ID, self)
-		chats = append(chats, s.chatFor(ctx, self, ch, p))
+		chats = append(chats, s.leftChannelView(ctx, self, ch, p))
 	}
 	if len(rest) > len(page) {
 		return mtproto.MakeTLMessagesChatsSlice(&mtproto.Messages_Chats{

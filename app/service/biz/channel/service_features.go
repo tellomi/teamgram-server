@@ -882,6 +882,23 @@ func (s *Service) PersonalHistory(ctx context.Context, self, userID int64, limit
 	return s.history(ctx, self, ch, HistoryQuery{Limit: limit, MaxID: maxID, MinID: minID})
 }
 
+// PersonalChannelCard is the channel on a profile, plus the id of its latest
+// message. A private channel the viewer cannot open is omitted.
+func (s *Service) PersonalChannelCard(ctx context.Context, viewer, channelID int64) (*mtproto.Chat, int32, error) {
+	if s == nil || channelID == 0 {
+		return nil, 0, nil
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil || ch == nil {
+		return nil, 0, err
+	}
+	chat := s.ChatFor(ctx, viewer, ch)
+	if chat == nil || chat.GetPredicateName() != mtproto.Predicate_channel {
+		return nil, 0, nil
+	}
+	return chat, ch.TopMessage, nil
+}
+
 func (s *Service) SetPersonalChannel(ctx context.Context, self int64, in *mtproto.InputChannel) error {
 	if in == nil || in.GetChannelId() == 0 {
 		return s.store.SetPersonalChannel(ctx, self, 0)

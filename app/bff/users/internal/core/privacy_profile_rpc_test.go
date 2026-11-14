@@ -125,6 +125,9 @@ func TestGetFullUserReturnsPersonalPhoto(t *testing.T) {
 	if got.GetFullUser().GetPersonalPhoto().GetId() != 44 {
 		t.Fatalf("personal photo %d", got.GetFullUser().GetPersonalPhoto().GetId())
 	}
+	if len(got.GetUsers()) != 1 || got.GetUsers()[0].GetPhoto().GetPhotoId() != 44 || !got.GetUsers()[0].GetPhoto().GetPersonal() {
+		t.Fatalf("user.photo %+v", got.GetUsers()[0].GetPhoto())
+	}
 	own, err := fullUserCore(&fullUserAPI{allow: map[int32]bool{mtproto.PROFILE_PHOTO: true}}).UsersGetFullUser(fullUserRequest(1))
 	if err != nil {
 		t.Fatal(err)
@@ -161,16 +164,62 @@ func fullUserRequest(id int64) *mtproto.TLUsersGetFullUser {
 
 type fullUserAPI struct {
 	userclient.UserClient
-	allow         map[int32]bool
-	ownerBlocked  bool
-	fallback      *mtproto.Photo
-	hideReadMarks bool
+	allow           map[int32]bool
+	ownerBlocked    bool
+	fallback        *mtproto.Photo
+	hideReadMarks   bool
+	personalChannel int64
+}
+
+type personalChannelCard struct {
+	chat *mtproto.Chat
+	top  int32
+}
+
+func (c personalChannelCard) GetPersonalChannel(context.Context, int64, int64) (*mtproto.Chat, int32) {
+	return c.chat, c.top
+}
+
+func TestGetFullUserPersonalChannel(t *testing.T) {
+	users := &fullUserAPI{
+		allow:           map[int32]bool{mtproto.PROFILE_PHOTO: true},
+		personalChannel: 55,
+	}
+	c := fullUserCore(users)
+	c.svcCtx.Dao.PersonalChannelPlugin = personalChannelCard{
+		chat: mtproto.MakeTLChannel(&mtproto.Chat{Id: 55, Title: "Mine", Broadcast: true}).To_Chat(),
+		top:  7,
+	}
+	got, err := c.UsersGetFullUser(fullUserRequest(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetFullUser().GetPersonalChannelId().GetValue() != 55 || got.GetFullUser().GetPersonalChannelMessage().GetValue() != 7 {
+		t.Fatalf("channel id %d message %d", got.GetFullUser().GetPersonalChannelId().GetValue(), got.GetFullUser().GetPersonalChannelMessage().GetValue())
+	}
+	if len(got.GetChats()) != 1 || got.GetChats()[0].GetId() != 55 {
+		t.Fatalf("chats %+v", got.GetChats())
+	}
+
+	hidden := fullUserCore(users)
+	hidden.svcCtx.Dao.PersonalChannelPlugin = personalChannelCard{}
+	got, err = hidden.UsersGetFullUser(fullUserRequest(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetFullUser().GetPersonalChannelId().GetValue() != 0 || got.GetFullUser().GetPersonalChannelMessage() != nil || len(got.GetChats()) != 0 {
+		t.Fatalf("private channel leaked id %d chats %d", got.GetFullUser().GetPersonalChannelId().GetValue(), len(got.GetChats()))
+	}
 }
 
 func (u *fullUserAPI) UserGetMutableUsersV2(context.Context, *user.TLUserGetMutableUsersV2) (*mtproto.MutableUsers, error) {
+	peer := profilePeer()
+	if u.personalChannel != 0 {
+		peer.User.PersonalChannelId = u.personalChannel
+	}
 	return &mtproto.MutableUsers{Users: []*mtproto.ImmutableUser{
 		{User: &mtproto.UserData{Id: 1}, LastSeenAt: time.Now().Unix()},
-		profilePeer(),
+		peer,
 	}}, nil
 }
 

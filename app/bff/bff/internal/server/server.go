@@ -77,6 +77,7 @@ import (
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/contactphoto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/personalchannel"
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
@@ -269,7 +270,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCTakeoutServer(grpcServer, channels_helper.NewTakeout())
 		mtproto.RegisterRPCTranslationServer(grpcServer, channels_helper.NewTranslation(c.BizServiceClient))
 		mtproto.RegisterRPCPaidMessageServer(grpcServer, channels_helper.NewPaidMessages())
-		mtproto.RegisterRPCReportsServer(grpcServer, channels_helper.NewReports())
+		mtproto.RegisterRPCReportsServer(grpcServer, channels_helper.NewReports(c.BizServiceClient))
 		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions(c.BizServiceClient, c.BizServiceClient, c.SyncClient))
 		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads(c.BizServiceClient, c.BizServiceClient, c.MsgClient, c.SyncClient))
 		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
@@ -567,7 +568,7 @@ func (s *Server) Initialize() error {
 					DialogClient:  c.BizServiceClient,
 				},
 				stories_helper.Plugin{},
-				nil,
+				personalchannel.Plugin{},
 				nil))
 
 		// nsfw_helper
