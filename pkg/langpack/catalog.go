@@ -269,16 +269,33 @@ func suffixTable(platform string) []suffix {
 	}
 }
 
-func (l *loaded) stringsCount(base *loaded) int32 {
-	n := len(l.byKey)
-	if base != nil && len(base.byKey) > n {
-		n = len(base.byKey)
+// stringsCount is the number of langPackString values getLangPack sends
+// for this language, or for the base pack when that pack is larger.
+// iOS and macOS append a plain key+"_0" next to a pluralized zero form, so
+// the count is the served list, not the number of catalog keys.
+func (l *loaded) stringsCount(platform string, base *loaded) int32 {
+	n := servedStringCount(platform, l)
+	if base != nil {
+		if b := servedStringCount(platform, base); b > n {
+			n = b
+		}
 	}
-	return int32(n)
+	return n
 }
 
-func (l *loaded) translatedCount() int32 {
-	return int32(len(l.byKey))
+func (l *loaded) translatedCount(platform string) int32 {
+	return servedStringCount(platform, l)
+}
+
+func servedStringCount(platform string, l *loaded) int32 {
+	if l == nil {
+		return 0
+	}
+	var n int32
+	for i := range l.meta.Strings {
+		n += int32(len(l.meta.Strings[i].mtproto(platform)))
+	}
+	return n
 }
 
 // HasPlatform reports whether any language is loaded for the platform.
@@ -437,8 +454,8 @@ func (c *Catalog) languageInfo(platform string, l *loaded) *mtproto.LangPackLang
 		NativeName:      l.meta.NativeName,
 		LangCode:        l.meta.Code,
 		PluralCode:      l.meta.PluralCode,
-		StringsCount:    l.stringsCount(base),
-		TranslatedCount: l.translatedCount(),
+		StringsCount:    l.stringsCount(platform, base),
+		TranslatedCount: l.translatedCount(platform),
 		TranslationsUrl: l.meta.TranslationsURL,
 	}
 	if l.meta.BaseLangCode != "" {

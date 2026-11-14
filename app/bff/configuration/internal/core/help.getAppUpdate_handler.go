@@ -44,13 +44,24 @@ func (c *ConfigurationCore) HelpGetAppUpdate(in *mtproto.TLHelpGetAppUpdate) (*m
 	return helpdesk.AppUpdateForSession(c.updateClient(), in.GetSource(), helpdesk.LoadRelease()), nil
 }
 
-// updateClient reads lang_pack from the current RPC session, then the auths
-// row. device_model, system_version, and app_version come from the same row.
-// Known stays false when none of that is available.
+// updateClient reads lang_pack, lang_code, and system_lang_code from the
+// current RPC session, then the auths row. device_model, system_version,
+// and app_version come from the same row. Known stays false when none of
+// that is available. The dialog language is lang_code, then lang_pack when
+// that value is a language tag, then system_lang_code. English is last.
 func (c *ConfigurationCore) updateClient() helpdesk.UpdateClient {
 	var client helpdesk.UpdateClient
+	if c.MD != nil {
+		client.LangCode = c.MD.GetLangCode()
+		client.SystemLangCode = c.MD.GetSystemLangCode()
+	}
 	lang, langOK := c.sessionLangPack()
 	client.LangPack = lang
+	if strings.TrimSpace(client.LangCode) == "" && strings.TrimSpace(client.SystemLangCode) == "" {
+		if code, ok := c.sessionLangCode(); ok {
+			client.LangCode = code
+		}
+	}
 	if strings.EqualFold(strings.TrimSpace(lang), "ios") {
 		client.Known = true
 		return client
@@ -83,6 +94,23 @@ func (c *ConfigurationCore) sessionLangPack() (string, bool) {
 		return "", false
 	}
 	return strings.TrimSpace(packed.GetV()), true
+}
+
+func (c *ConfigurationCore) sessionLangCode() (string, bool) {
+	if !c.canReadSession() {
+		return "", false
+	}
+	packed, err := c.svcCtx.AuthSession.AuthsessionGetLangCode(c.ctx, &authsession.TLAuthsessionGetLangCode{
+		AuthKeyId: c.MD.GetPermAuthKeyId(),
+	})
+	if err != nil || packed == nil {
+		return "", false
+	}
+	code := strings.TrimSpace(packed.GetV())
+	if code == "" {
+		return "", false
+	}
+	return code, true
 }
 
 func (c *ConfigurationCore) sessionAuthorization() (*mtproto.Authorization, bool) {

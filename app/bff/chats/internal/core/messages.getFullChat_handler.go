@@ -60,6 +60,14 @@ func (c *ChatsCore) MessagesGetFullChat(in *mtproto.TLMessagesGetFullChat) (*mtp
 	}
 
 	dlg := dialog2.Datas[0].GetDialog()
+	var pinnedID *wrapperspb.Int32Value
+	if pinned, err := c.svcCtx.Dao.DialogClient.DialogGetUserPinnedMessage(c.ctx, &dialog.TLDialogGetUserPinnedMessage{
+		UserId:   c.MD.UserId,
+		PeerType: mtproto.PEER_CHAT,
+		PeerId:   in.ChatId,
+	}); err == nil && pinned.GetV() > 0 {
+		pinnedID = &wrapperspb.Int32Value{Value: pinned.GetV()}
+	}
 	chatFull := mtproto.MakeTLChatFull(&mtproto.ChatFull{
 		CanSetUsername:                       true,
 		HasScheduled:                         false, // TODO
@@ -70,7 +78,7 @@ func (c *ChatsCore) MessagesGetFullChat(in *mtproto.TLMessagesGetFullChat) (*mtp
 		NotifySettings:                       nil,
 		ExportedInvite:                       nil, // TODO
 		BotInfo:                              nil, // TODO
-		PinnedMsgId:                          nil, // TODO
+		PinnedMsgId:                          pinnedID,
 		FolderId:                             dlg.FolderId,
 		Call:                                 chat.Call(),
 		TtlPeriod:                            mtproto.MakeFlagsInt32(chat.TTLPeriod()), // TODO

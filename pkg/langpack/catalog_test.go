@@ -341,8 +341,20 @@ func TestShippedPacks(t *testing.T) {
 			if err != nil || diff.GetVersion() < 1 {
 				t.Fatalf("%s %s diff %v %v", platform, lang.GetLangCode(), diff.GetVersion(), err)
 			}
-			if int32(len(diff.GetStrings())) < lang.GetTranslatedCount() {
-				t.Fatalf("%s %s pack %d < translated %d", platform, lang.GetLangCode(), len(diff.GetStrings()), lang.GetTranslatedCount())
+			if int32(len(diff.GetStrings())) != lang.GetTranslatedCount() {
+				t.Fatalf("%s %s pack %d translated %d", platform, lang.GetLangCode(), len(diff.GetStrings()), lang.GetTranslatedCount())
+			}
+			if lang.GetStringsCount() < lang.GetTranslatedCount() {
+				t.Fatalf("%s %s counts %d/%d", platform, lang.GetLangCode(), lang.GetTranslatedCount(), lang.GetStringsCount())
+			}
+			// iOS stores the plain key+"_0" string beside the pluralized zero
+			// form. strings_count has to match that served list for every
+			// language, and a missing English key must not be counted as if
+			// the English base filled it in.
+			if platform == "ios" {
+				if lang.GetStringsCount() != int32(len(diff.GetStrings())) {
+					t.Fatalf("ios %s strings_count %d served %d", lang.GetLangCode(), lang.GetStringsCount(), len(diff.GetStrings()))
+				}
 			}
 			caught, err := cat.Difference(platform, lang.GetLangCode(), diff.GetVersion())
 			if err != nil || len(caught.GetStrings()) != 0 || caught.GetVersion() != diff.GetVersion() {

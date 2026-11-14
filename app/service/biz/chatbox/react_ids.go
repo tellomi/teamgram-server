@@ -120,7 +120,7 @@ func sameMessage(item reactionItem, msgID int32, dlg int64) bool {
 // viewLocked returns doc with every item's MsgID in self's numbering. Items on
 // messages self no longer has are dropped. Caller holds b.mu.
 func (b *Book) viewLocked(ctx context.Context, self int64, peer *mtproto.PeerUtil, doc *reactDoc) *reactDoc {
-	if doc == nil || b.ids == nil || !privatePair(self, peer) {
+	if doc == nil || b.ids == nil || !perUserBox(self, peer) {
 		return doc
 	}
 	var want []int64
@@ -152,6 +152,59 @@ func (b *Book) viewLocked(ctx context.Context, self int64, peer *mtproto.PeerUti
 		view.Items = append(view.Items, item)
 	}
 	return &view
+}
+
+// GroupReactionUpdateFor builds updateMessageReactions for one basic-group
+// member. msgID is the reactor's own box id. The update uses the viewer's
+// box id, and chosen_order is that viewer's reaction, not the reactor's.
+func (b *Book) GroupReactionUpdateFor(ctx context.Context, reactor, viewer int64, peer *mtproto.PeerUtil, msgID int32) *mtproto.Update {
+	if b == nil || peer == nil || peer.PeerType != mtproto.PEER_CHAT || msgID <= 0 || viewer == 0 {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, viewer, peer)
+	if err != nil || doc == nil {
+		return nil
+	}
+	theirs := b.boxIDLocked(ctx, reactor, peer, msgID, viewer)
+	if theirs <= 0 {
+		return nil
+	}
+	return reactionUpdate(peer, theirs, b.viewLocked(ctx, viewer, peer, doc), viewer)
+}
+
+// BoxIDFor maps ownerMsgID in owner's box to viewer's box id. The same user
+// gets ownerMsgID back. A basic group or private chat with no row returns 0.
+func (b *Book) BoxIDFor(ctx context.Context, owner int64, peer *mtproto.PeerUtil, ownerMsgID int32, viewer int64) int32 {
+	if b == nil || ownerMsgID <= 0 || viewer == 0 {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.boxIDLocked(ctx, owner, peer, ownerMsgID, viewer)
+}
+
+// boxIDLocked maps one participant's box id to another's. Caller holds b.mu.
+func (b *Book) boxIDLocked(ctx context.Context, owner int64, peer *mtproto.PeerUtil, ownerMsgID int32, viewer int64) int32 {
+	if ownerMsgID <= 0 || viewer == 0 {
+		return 0
+	}
+	if viewer == owner || !perUserBox(owner, peer) {
+		return ownerMsgID
+	}
+	if b.ids == nil {
+		return 0
+	}
+	dlg := b.dialogIDLocked(ctx, owner, peer, ownerMsgID)
+	if dlg == 0 {
+		return 0
+	}
+	boxes, err := b.ids.BoxIDs(ctx, viewer, []int64{dlg})
+	if err != nil {
+		return 0
+	}
+	return boxes[dlg]
 }
 
 // PeerReactionUpdate builds the updateMessageReactions the other side of a

@@ -116,6 +116,26 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 			//}
 		})
 
+	type peerKey struct {
+		t  int32
+		id int64
+	}
+	grouped := map[peerKey][]*mtproto.Message{}
+	var order []peerKey
+	for _, m := range rValues.Messages {
+		p := mtproto.FromPeer(m.GetPeerId())
+		if p == nil || p.IsChannel() {
+			continue
+		}
+		key := peerKey{p.PeerType, p.PeerId}
+		if _, ok := grouped[key]; !ok {
+			order = append(order, key)
+		}
+		grouped[key] = append(grouped[key], m)
+	}
+	for _, key := range order {
+		chatbox.Shared().ApplyReactions(c.ctx, c.MD.UserId, mtproto.MakePeerUtil(key.t, key.id), grouped[key])
+	}
 	for _, m := range rValues.Messages {
 		if m.GetPeerId() == nil {
 			continue

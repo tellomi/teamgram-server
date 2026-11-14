@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 )
 
 // HelpGetInviteText
@@ -33,10 +34,7 @@ func (c *ConfigurationCore) HelpGetInviteText(in *mtproto.TLHelpGetInviteText) (
 	_ = in
 	lang := ""
 	if c.MD != nil {
-		lang = c.MD.GetLangCode()
-		if lang == "" {
-			lang = c.MD.GetSystemLangCode()
-		}
+		lang = langpack.ClientLang(c.MD.GetLangCode(), c.MD.GetSystemLangCode(), c.MD.GetLangpack())
 	}
 	return mtproto.MakeTLHelpInviteText(&mtproto.Help_InviteText{
 		Message: helpdesk.InviteText(lang),

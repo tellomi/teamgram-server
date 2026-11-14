@@ -71,12 +71,27 @@ func (b *Book) CreatePoll(ctx context.Context, creator int64, poll *mtproto.Poll
 	if err := preparePollClose(poll, int32(b.now().Unix())); err != nil {
 		return nil, err
 	}
-	doc, err := normalizePoll(creator, poll, correct, solution, solutionEnt)
-	if err != nil {
-		return nil, err
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	var doc *pollDoc
+	for i := 0; i < 5; i++ {
+		next, err := normalizePoll(creator, poll, correct, solution, solutionEnt)
+		if err != nil {
+			return nil, err
+		}
+		existing, err := b.getPoll(ctx, next.ID)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			continue
+		}
+		doc = next
+		break
+	}
+	if doc == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
 	if err := b.putPoll(ctx, doc); err != nil {
 		return nil, err
 	}
@@ -149,6 +164,16 @@ func (b *Book) EnsurePoll(ctx context.Context, creator int64, peerType int32, pe
 	doc, err := normalizePoll(creator, poll, nil, "", nil)
 	if err != nil {
 		return err
+	}
+	// The message already carries the id this server issued. Keep it, and do
+	// not replace a record that is already stored under that id.
+	if err := doc.useID(poll.GetId()); err != nil {
+		return err
+	}
+	if existing, err := b.getPoll(ctx, doc.ID); err != nil {
+		return err
+	} else if existing != nil {
+		return nil
 	}
 	doc.PeerType, doc.PeerID, doc.MsgID = peerType, peerID, msgID
 	if err := b.putPoll(ctx, doc); err != nil {
@@ -805,9 +830,9 @@ func normalizePoll(creator int64, poll *mtproto.Poll, correct [][]byte, solution
 		return nil, mtproto.ErrPollAnswersInvalid
 	}
 	cp := proto.Clone(poll).(*mtproto.Poll)
-	if cp.Id == 0 {
-		cp.Id = randInt63()
-	}
+	// The client must not choose the id. A chosen id could overwrite a poll
+	// that already exists.
+	cp.Id = randInt63()
 	cp.Question = q
 	cp.Question_STRING = q
 	if cp.Question_TEXTWITHENTITIES == nil {
@@ -868,6 +893,22 @@ func (d *pollDoc) poll() *mtproto.Poll {
 		return nil
 	}
 	return p
+}
+
+func (d *pollDoc) useID(id int64) error {
+	if id == 0 || d == nil {
+		return nil
+	}
+	p := d.poll()
+	if p == nil {
+		return mtproto.ErrMediaInvalid
+	}
+	p.Id = id
+	if err := d.setPoll(p); err != nil {
+		return err
+	}
+	d.ID = id
+	return nil
 }
 
 func (d *pollDoc) setPoll(p *mtproto.Poll) error {

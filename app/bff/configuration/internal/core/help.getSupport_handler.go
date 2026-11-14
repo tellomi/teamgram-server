@@ -25,6 +25,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 )
 
 // HelpGetSupport
@@ -59,7 +60,7 @@ func (c *ConfigurationCore) HelpGetSupportName(in *mtproto.TLHelpGetSupportName)
 	}
 	lang := ""
 	if c.MD != nil {
-		lang = c.MD.GetLangCode()
+		lang = langpack.ClientLang(c.MD.GetLangCode(), c.MD.GetSystemLangCode(), c.MD.GetLangpack())
 	}
 	return mtproto.MakeTLHelpSupportName(&mtproto.Help_SupportName{
 		Name: supportLabel(lang, user.GetFirstName().GetValue()),

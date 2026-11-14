@@ -114,7 +114,7 @@ func (s *Service) tryComment(ctx context.Context, ch *Channel, sender, actorAuth
 		ReplyToMsgId_FLAGINT32: wrapperspb.Int32(replyTo),
 		ReplyToTopId:           wrapperspb.Int32(topID),
 	}).To_MessageReplyHeader()
-	s.prepareOutgoing(group, sender, comment)
+	s.prepareOutgoing(ctx, group, sender, comment)
 	id, pts, err := s.appendMessage(ctx, groupID, sender, item.RandomID, comment)
 	if err != nil {
 		return true, nil, groupID, err
@@ -256,6 +256,7 @@ func (s *Service) attachDiscussion(ctx context.Context, ch *Channel, postID int3
 		FromId:         mtproto.MakePeerChannel(ch.ID),
 		Date:           body.GetDate(),
 		ChannelPost:    wrapperspb.Int32(postID),
+		PostAuthor:     body.GetPostAuthor(),
 		SavedFromPeer:  mtproto.MakePeerChannel(ch.ID),
 		SavedFromMsgId: wrapperspb.Int32(postID),
 	}).To_MessageFwdHeader()

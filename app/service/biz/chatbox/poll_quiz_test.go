@@ -213,6 +213,45 @@ func TestGroupPollUsesEachMembersMessageID(t *testing.T) {
 	}
 }
 
+func TestCreatePollDoesNotOverwriteAnExistingID(t *testing.T) {
+	b := newBook(nil)
+	ctx := context.Background()
+	answers := []*mtproto.PollAnswer{
+		mtproto.MakePollAnswerWithText("yes", []byte("0")),
+		mtproto.MakePollAnswerWithText("no", []byte("1")),
+	}
+	first, err := b.CreatePoll(ctx, 1, &mtproto.Poll{Id: 42, Question: "real", Answers: answers}, nil, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := first.GetPoll().GetId()
+	if id == 0 || id == 42 {
+		t.Fatalf("server id %d", id)
+	}
+	b.BindPoll(ctx, mtproto.PEER_CHAT, 8, 3, id)
+	if _, err := b.Vote(ctx, 4, mtproto.PEER_CHAT, 8, 3, id, [][]byte{[]byte("0")}); err != nil {
+		t.Fatal(err)
+	}
+	evil, err := b.CreatePoll(ctx, 2, &mtproto.Poll{Id: id, Question: "evil", Answers: answers}, nil, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evil.GetPoll().GetId() == id {
+		t.Fatal("client id overwrote the existing poll")
+	}
+	got, err := b.PollResultsUpdate(ctx, 1, mtproto.PEER_CHAT, 8, 3, id, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := got.Updates[0].GetPoll()
+	if stored.GetQuestion() != "real" || !stored.GetCreator() {
+		t.Fatalf("poll replaced %+v", stored)
+	}
+	if got.Updates[0].GetResults().GetTotalVoters().GetValue() != 1 {
+		t.Fatalf("votes reset %+v", got.Updates[0].GetResults())
+	}
+}
+
 func TestPollsDisabledLeavesMediaUnsupported(t *testing.T) {
 	t.Setenv("TELLOMI_POLLS", "")
 	if PollsEnabled() {

@@ -28,7 +28,7 @@ func (m *Vector_ImmutableUser) GetUnsafeUser(selfId, id int64) (*mtproto.User, e
 		return nil, mtproto.ErrUserIdInvalid
 	}
 
-	return paintImmutable(selfId, to, to.ToUnsafeUser(me)), nil
+	return paintImmutable(selfId, to, to.ToUnsafeUserCtx(mtproto.PreparePrivacyRender(context.Background(), selfId, []*mtproto.ImmutableUser{to, me}), me)), nil
 }
 
 func (m *Vector_ImmutableUser) GetUnsafeUserSelf(id int64) (*mtproto.User, error) {
@@ -87,12 +87,15 @@ func (m *Vector_ImmutableUser) GetUserListByIdList(selfId int64, id ...int64) []
 	}
 
 	column := make(map[int64]int32, len(id))
+	page := make([]*mtproto.ImmutableUser, 0, len(id))
 	for _, id2 := range id {
-		to := m.findImmutableUser(id2)
-		if to == nil {
-			continue
+		if to := m.findImmutableUser(id2); to != nil {
+			page = append(page, to)
 		}
-		users = append(users, to.ToUnsafeUser(me))
+	}
+	ctx := mtproto.PreparePrivacyRender(context.Background(), selfId, append(page, me))
+	for _, to := range page {
+		users = append(users, to.ToUnsafeUserCtx(ctx, me))
 		column[to.Id()] = mtproto.StoryColumn(to)
 	}
 	mtproto.PaintUserStoryRings(context.Background(), selfId, users, column)
