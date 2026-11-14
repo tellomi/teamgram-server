@@ -14,6 +14,7 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -191,4 +192,79 @@ func TestContactsResolveGifBot(t *testing.T) {
 	if bot == nil || !bot.GetBot() || bot.GetUsername().GetValue() != "gif" {
 		t.Fatalf("gif bot %#v", bot)
 	}
+	if bot.GetAccessHash().GetValue() == 0 {
+		t.Fatal("gif bot has no access hash")
+	}
+}
+
+func TestContactsResolveBuiltinBotsFoldCase(t *testing.T) {
+	c := usernameCore(t, tellomiResolver{})
+	cases := []struct {
+		query string
+		id    int64
+		user  string
+	}{
+		{"BotFather", mtproto.BotFatherId, "BotFather"},
+		{"botfather", mtproto.BotFatherId, "BotFather"},
+		{"@bing", mtproto.BotBingId, "bing"},
+		{"BING", mtproto.BotBingId, "bing"},
+		{"GIF", mtproto.BotGifId, "gif"},
+		{"gif", mtproto.BotGifId, "gif"},
+		{"Venue", mtproto.BotVenueId, "venue"},
+	}
+	for _, tc := range cases {
+		got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: tc.query})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.query, err)
+		}
+		if got.GetPeer().GetUserId() != tc.id {
+			t.Fatalf("%s peer %d", tc.query, got.GetPeer().GetUserId())
+		}
+		var bot *mtproto.User
+		for _, u := range got.GetUsers() {
+			if u.GetId() == tc.id {
+				bot = u
+			}
+		}
+		if bot == nil || !bot.GetBot() || bot.GetUsername().GetValue() != tc.user || bot.GetAccessHash().GetValue() == 0 {
+			t.Fatalf("%s bot %#v", tc.query, bot)
+		}
+	}
+}
+
+func TestContactsResolveMissingNameHasNoPeer(t *testing.T) {
+	c := usernameCore(t, tellomiResolver{})
+	got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: "nosuchname"})
+	if got != nil {
+		t.Fatalf("peer returned for a free name: %+v", got.GetPeer())
+	}
+	if status.Convert(err).Message() != "USERNAME_NOT_OCCUPIED" {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestContactsResolveGhostUserHasNoPeer(t *testing.T) {
+	c := usernameCore(t, ghostResolver{})
+	got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: "ghostname"})
+	if got != nil {
+		t.Fatalf("peer without a user: %+v users %d", got.GetPeer(), len(got.GetUsers()))
+	}
+	if status.Convert(err).Message() != "USERNAME_NOT_OCCUPIED" {
+		t.Fatalf("err %v", err)
+	}
+}
+
+type ghostResolver struct {
+	userclient.UserClient
+}
+
+func (ghostResolver) UserResolveUsername(_ context.Context, in *userpb.TLUserResolveUsername) (*mtproto.Peer, error) {
+	if strings.ToLower(in.GetUsername()) == "ghostname" {
+		return mtproto.MakePeerUser(4242), nil
+	}
+	return nil, mtproto.ErrUsernameNotOccupied
+}
+
+func (ghostResolver) UserGetMutableUsers(context.Context, *userpb.TLUserGetMutableUsers) (*userpb.Vector_ImmutableUser, error) {
+	return &userpb.Vector_ImmutableUser{}, nil
 }

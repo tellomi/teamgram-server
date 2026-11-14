@@ -61,13 +61,13 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		HasTo:   true,
 		To:      []int64{c.MD.UserId, peerId},
 	})
-	if mtproto.IsBotVenue(peerId) {
+	if bot := catalog.BuiltinBotUser(peerId); bot != nil {
 		var row *mtproto.ImmutableUser
 		if err == nil && mutableUsers != nil {
 			row, _ = mutableUsers.GetImmutableUser(peerId)
 		}
 		if row == nil {
-			return venueBotFull(peerId), nil
+			return builtinBotFull(bot), nil
 		}
 	}
 	if err != nil {
@@ -416,12 +416,18 @@ func (c *UsersCore) privacyAllows(owner int64, key int) bool {
 	return mtproto.FromBool(ok)
 }
 
-func venueBotFull(peerID int64) *mtproto.Users_UserFull {
-	bot := catalog.VenueBotUser()
+func builtinBotFull(bot *mtproto.User) *mtproto.Users_UserFull {
 	full := mtproto.MakeTLUserFull(&mtproto.UserFull{
-		Id:    peerID,
-		About: wrapperspb.String("搜索地点"),
+		Id:             bot.GetId(),
+		Settings:       mtproto.MakeTLPeerSettings(&mtproto.PeerSettings{}).To_PeerSettings(),
+		NotifySettings: mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{}).To_PeerNotifySettings(),
+		BotInfo: mtproto.MakeTLBotInfo(&mtproto.BotInfo{
+			UserId_FLAGINT64: wrapperspb.Int64(bot.GetId()),
+		}).To_BotInfo(),
 	}).To_UserFull()
+	if bot.GetId() == mtproto.BotVenueId {
+		full.About = wrapperspb.String("搜索地点")
+	}
 	return mtproto.MakeTLUsersUserFull(&mtproto.Users_UserFull{
 		FullUser: full,
 		Chats:    []*mtproto.Chat{},

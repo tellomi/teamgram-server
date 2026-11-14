@@ -31,12 +31,8 @@ func init() {
 	}
 }
 
-// These are the hashes catalog.VenueBotUser and catalog.GifBotUser put on
-// the user objects clients cache. They are not rows in users.
-var (
-	venueAccess = catalog.VenueBotUser().GetAccessHash().GetValue()
-	gifAccess   = catalog.GifBotUser().GetAccessHash().GetValue()
-)
+// Reserved bots are not rows in users. The hashes are the ones
+// catalog.BuiltinBotUser puts on the objects clients cache.
 
 type userAPI interface {
 	UserGetMutableUsers(ctx context.Context, in *userpb.TLUserGetMutableUsers) (*userpb.Vector_ImmutableUser, error)
@@ -114,14 +110,11 @@ func (b *liveBook) UserHashes(ctx context.Context, viewer int64, ids []int64) (m
 }
 
 func builtinHash(id int64) (int64, bool) {
-	switch id {
-	case mtproto.BotVenueId:
-		return venueAccess, true
-	case mtproto.BotGifId:
-		return gifAccess, true
-	default:
+	bot := catalog.BuiltinBotUser(id)
+	if bot == nil || bot.GetAccessHash() == nil || bot.GetAccessHash().GetValue() == 0 {
 		return 0, false
 	}
+	return bot.GetAccessHash().GetValue(), true
 }
 
 func (b *liveBook) ChannelHashes(ctx context.Context, ids []int64) (map[int64][]int64, error) {

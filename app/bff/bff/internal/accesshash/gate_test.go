@@ -65,7 +65,7 @@ func TestIssuedHashesStayValid(t *testing.T) {
 	}
 
 	book := &liveBook{users: fakeUsers{rows: map[int64]int64{4: 44}}}
-	got, err := book.UserHashes(context.Background(), 1, []int64{4, mtproto.BotVenueId, mtproto.BotGifId, botID})
+	got, err := book.UserHashes(context.Background(), 1, []int64{4, mtproto.BotVenueId, mtproto.BotGifId, mtproto.BotFatherId, botID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,10 @@ func TestIssuedHashesStayValid(t *testing.T) {
 	}
 	if !ah.Accept(catalog.GifBotUser().GetAccessHash().GetValue(), got[mtproto.BotGifId]) {
 		t.Fatal("gif bot")
+	}
+	father := catalog.BuiltinBotUser(mtproto.BotFatherId)
+	if !ah.Accept(father.GetAccessHash().GetValue(), got[mtproto.BotFatherId]) || ah.Accept(1, got[mtproto.BotFatherId]) {
+		t.Fatal("botfather")
 	}
 	if !ah.Accept(issued, got[botID]) || ah.Accept(0, got[botID]) {
 		t.Fatal("created bot")

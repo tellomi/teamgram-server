@@ -2,6 +2,7 @@ package story
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -236,5 +237,107 @@ func TestBeginLiveBindsCallAndPushesLiveRing(t *testing.T) {
 	maxes := svc.PeerMaxIDs(ctx, 1, []Owner{{Kind: KindUser, ID: 1}})
 	if maxes[0].GetMaxId().GetValue() == 0 || !maxes[0].GetLive() {
 		t.Fatalf("ring %+v", maxes[0])
+	}
+	assertLiveStream(t, storyFromUpdates(up), 70, 71, true)
+}
+
+func TestBeginLiveWritesVideoStreamForViewers(t *testing.T) {
+	svc, ctx, _ := newSvc(t)
+	var pushed []*mtproto.Updates
+	svc.SetHooks(Hooks{Push: func(_ context.Context, _ int64, _ []int64, up *mtproto.Updates) {
+		pushed = append(pushed, up)
+	}})
+	svc.SetLiveStarter(func(context.Context, int64, int64, bool, int32, []int64) (int64, int64, *mtproto.Updates, error) {
+		return 80, 81, nil, nil
+	})
+	owner := Owner{Kind: KindUser, ID: 1}
+	up, err := svc.BeginLive(ctx, SendRequest{
+		Actor: 1, Owner: owner, Rules: rules("all"), RandomID: 12,
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := storyID(t, up)
+	assertLiveStream(t, storyFromUpdates(up), 80, 81, false)
+	byID, err := svc.GetByID(ctx, 4, owner, 0, []int32{id})
+	if err != nil || len(byID.GetStories()) != 1 {
+		t.Fatalf("getStoriesByID %+v %v", byID, err)
+	}
+	assertLiveStream(t, byID.GetStories()[0], 80, 81, false)
+	peer, err := svc.GetPeerStories(ctx, 4, owner, 0)
+	if err != nil || len(peer.GetStories().GetStories()) != 1 {
+		t.Fatalf("getPeerStories %+v %v", peer, err)
+	}
+	assertLiveStream(t, peer.GetStories().GetStories()[0], 80, 81, false)
+	var saw bool
+	for _, one := range pushed {
+		item := storyFromUpdates(one)
+		if item.GetId() == id && item.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaVideoStream {
+			saw = true
+			assertLiveStream(t, item, 80, 81, false)
+		}
+		if item.GetId() == id && mediaEmpty(item.GetMedia()) {
+			t.Fatal("updateStory pushed empty media")
+		}
+	}
+	if !saw {
+		t.Fatal("updateStory did not carry messageMediaVideoStream")
+	}
+
+	if err = svc.EndLive(ctx, owner, id); err != nil {
+		t.Fatal(err)
+	}
+	peer, err = svc.GetPeerStories(ctx, 4, owner, 0)
+	if err != nil || len(peer.GetStories().GetStories()) != 0 {
+		t.Fatalf("stream kept after end %+v %v", peer, err)
+	}
+	rec, _ := svc.store.Get(ctx, owner, id)
+	if rec == nil || !rec.Deleted {
+		t.Fatalf("stub %+v", rec)
+	}
+}
+
+func storyFromUpdates(up *mtproto.Updates) *mtproto.StoryItem {
+	if up == nil {
+		return nil
+	}
+	for _, u := range up.Updates {
+		if item := u.GetStory(); item != nil && item.GetPredicateName() != mtproto.Predicate_storyItemDeleted {
+			return item
+		}
+	}
+	return nil
+}
+
+func assertLiveStream(t *testing.T, item *mtproto.StoryItem, callID, access int64, rtmp bool) {
+	t.Helper()
+	if item == nil || !item.GetLive() {
+		t.Fatalf("story live=%v item=%+v", item.GetLive(), item)
+	}
+	media := item.GetMedia()
+	if media.GetPredicateName() != mtproto.Predicate_messageMediaVideoStream {
+		t.Fatalf("media %s", media.GetPredicateName())
+	}
+	call := media.GetCall()
+	if call.GetId() != callID || call.GetAccessHash() != access || media.GetRtmpStream() != rtmp {
+		t.Fatalf("call id=%d access=%d rtmp=%v", call.GetId(), call.GetAccessHash(), media.GetRtmpStream())
+	}
+	if call.GetPredicateName() != mtproto.Predicate_inputGroupCall {
+		t.Fatalf("call %s", call.GetPredicateName())
+	}
+	buf := mtproto.NewEncodeBuf(128)
+	if err := media.Encode(buf, 232); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	if len(raw) < 4 || binary.LittleEndian.Uint32(raw[:4]) != 0xca5cab89 {
+		t.Fatalf("constructor %x", raw)
+	}
+	decoded := &mtproto.MessageMedia{}
+	if err := decoded.Decode(mtproto.NewDecodeBuf(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.GetCall().GetId() != callID || decoded.GetCall().GetAccessHash() != access || decoded.GetRtmpStream() != rtmp {
+		t.Fatalf("roundtrip %+v", decoded.GetCall())
 	}
 }

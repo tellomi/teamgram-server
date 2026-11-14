@@ -96,6 +96,21 @@ func CheckUsernameInvalid(username string) bool {
 	return true
 }
 
+// FoldUsername is the lookup key for a public username. Matching is
+// case-insensitive, and a leading @ is ignored. Reserved built-in bots
+// stay valid even when they are shorter than the public minimum (gif, vid,
+// pic). The bool is false when the name cannot be resolved.
+func FoldUsername(raw string) (string, bool) {
+	name := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(raw), "@"))
+	if name == "" {
+		return "", false
+	}
+	if GetBotIdByName(name) != 0 || CheckUsernameInvalid(name) {
+		return name, true
+	}
+	return name, false
+}
+
 func isASCIILetter(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }

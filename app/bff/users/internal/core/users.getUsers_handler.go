@@ -51,27 +51,29 @@ func (c *UsersCore) UsersGetUsers(in *mtproto.TLUsersGetUsers) (*mtproto.Vector_
 		users = mUsers.GetUserListByIdList(c.MD.UserId, idList...)
 	}
 	return &mtproto.Vector_User{
-		Datas: appendVenueBot(users, idList),
+		Datas: appendBuiltinBots(users, idList),
 	}, nil
 }
 
-// appendVenueBot adds the built-in @venue user when id 110 was requested and
-// the database has no row for it. A real user 110, if one existed, is kept.
-func appendVenueBot(users []*mtproto.User, ids []int64) []*mtproto.User {
-	want := false
-	for _, id := range ids {
-		if id == mtproto.BotVenueId {
-			want = true
-			break
-		}
-	}
-	if !want {
-		return users
-	}
+// appendBuiltinBots adds a reserved bot when that id was requested and the
+// database has no row for it. A real user with the same id is kept.
+func appendBuiltinBots(users []*mtproto.User, ids []int64) []*mtproto.User {
+	have := map[int64]bool{}
 	for _, u := range users {
-		if u.GetId() == mtproto.BotVenueId {
-			return users
+		if u.GetId() != 0 {
+			have[u.GetId()] = true
 		}
 	}
-	return append(users, catalog.VenueBotUser())
+	for _, id := range ids {
+		if have[id] {
+			continue
+		}
+		bot := catalog.BuiltinBotUser(id)
+		if bot == nil {
+			continue
+		}
+		users = append(users, bot)
+		have[id] = true
+	}
+	return users
 }

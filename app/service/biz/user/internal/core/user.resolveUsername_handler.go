@@ -26,23 +26,15 @@ import (
 // UserResolveUsername
 // user.resolveUsername username:string = Peer;
 func (c *UserCore) UserResolveUsername(in *user.TLUserResolveUsername) (*mtproto.Peer, error) {
-	var (
-		peer     *mtproto.Peer
-		err      error
-		username = in.Username
-	)
-
-	switch username {
-	case "gif":
-	case "pic":
-	case "bing":
-	case "venue":
-	default:
-		if !user.CheckUsernameInvalid(username) {
-			err = mtproto.ErrUsernameInvalid
-			return nil, err
-		}
+	username, ok := user.FoldUsername(in.GetUsername())
+	if !ok {
+		return nil, mtproto.ErrUsernameInvalid
 	}
+
+	var (
+		peer *mtproto.Peer
+		err  error
+	)
 
 	usernameDO, err := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, username)
 	if err != nil {

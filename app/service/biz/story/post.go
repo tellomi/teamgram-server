@@ -32,6 +32,10 @@ type SendRequest struct {
 	HasFwd      bool
 	Live        bool
 	Music       *mtproto.Document
+	// DeferFanout keeps the insert quiet. stories.startLive sets it so the
+	// first push is not an empty story. BeginLive fans out after the call
+	// is bound and the media is messageMediaVideoStream.
+	DeferFanout bool
 }
 
 // EditRequest is stories.editStory. Nil media and nil rules keep the previous value.
@@ -197,7 +201,7 @@ func (s *Service) Send(ctx context.Context, req SendRequest) (*mtproto.Updates, 
 		s.syncUserMax(ctx, req.Owner)
 	}
 	unlock()
-	s.fanout(ctx, req.Actor, req.AuthKey, rec)
+	s.fanoutSend(ctx, req, rec)
 	return s.storyUpdates(ctx, req.Actor, rec, true), nil
 }
 
@@ -272,7 +276,7 @@ func (s *Service) persistUserMySQL(ctx context.Context, ms *mysqlStore, req Send
 		if req.HasFwd && req.FwdOwner.ok() && req.FwdID != 0 {
 			_ = s.store.AddForwards(ctx, req.FwdOwner, req.FwdID)
 		}
-		s.fanout(ctx, req.Actor, req.AuthKey, rec)
+		s.fanoutSend(ctx, req, rec)
 		return s.storyUpdates(ctx, req.Actor, rec, true), nil
 	}
 	if err != nil {
@@ -292,8 +296,15 @@ func (s *Service) persistUserMySQL(ctx context.Context, ms *mysqlStore, req Send
 	if req.HasFwd && req.FwdOwner.ok() && req.FwdID != 0 {
 		_ = s.store.AddForwards(ctx, req.FwdOwner, req.FwdID)
 	}
-	s.fanout(ctx, req.Actor, req.AuthKey, rec)
+	s.fanoutSend(ctx, req, rec)
 	return s.storyUpdates(ctx, req.Actor, rec, true), nil
+}
+
+func (s *Service) fanoutSend(ctx context.Context, req SendRequest, rec *Record) {
+	if req.DeferFanout {
+		return
+	}
+	s.fanout(ctx, req.Actor, req.AuthKey, rec)
 }
 
 func (s *Service) deleteUserMySQL(ctx context.Context, ms *mysqlStore, actor, auth int64, owner Owner, ids []int32) ([]int32, error) {

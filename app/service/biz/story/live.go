@@ -67,10 +67,14 @@ func (s *Service) liveStarter() LiveStarter {
 }
 
 // BeginLive is stories.startLive. The story is live only while its call is
-// up. Empty media (the normal startLive body) is expired when the call ends,
-// so the chat-list ring goes away with the stream.
+// up. Send has to run before the call exists, so it stores empty media and
+// does not push. After the call is bound, the story's media becomes
+// messageMediaVideoStream (layer 232) and that item is what updateStory,
+// stories.getStoriesByID, and stories.getPeerStories return. Ending the
+// call still drops a stream with no recording.
 func (s *Service) BeginLive(ctx context.Context, req SendRequest, rtmp bool) (*mtproto.Updates, error) {
 	req.Live = true
+	req.DeferFanout = true
 	up, err := s.Send(ctx, req)
 	if err != nil {
 		return nil, err
@@ -85,6 +89,9 @@ func (s *Service) BeginLive(ctx context.Context, req SendRequest, rtmp bool) (*m
 	}
 	starter := s.liveStarter()
 	if starter == nil || rec == nil {
+		if rec != nil {
+			s.fanout(ctx, req.Actor, req.AuthKey, rec)
+		}
 		return up, nil
 	}
 	viewers := s.audience(ctx, req.Actor, rec)
@@ -94,17 +101,55 @@ func (s *Service) BeginLive(ctx context.Context, req SendRequest, rtmp bool) (*m
 		return nil, err
 	}
 	s.bindLive(callID, access, req.Owner, id)
+	if err = s.attachLiveCall(ctx, req.Owner, id, callID, access, rtmp); err != nil {
+		_ = s.EndLive(ctx, req.Owner, id)
+		return nil, err
+	}
+	rec, err = s.store.Get(ctx, req.Owner, id)
+	if err != nil || rec == nil {
+		return nil, err
+	}
 	// Send ran before the call existed, so that advertisement could not be
-	// live. Push again now that the call is bound.
+	// live. Push the stream now that the call is bound.
 	if req.Owner.Kind == KindUser {
 		s.syncUserMax(ctx, req.Owner)
 	} else {
 		s.syncChannelAdvert(ctx, req.Owner)
 	}
+	s.fanout(ctx, req.Actor, req.AuthKey, rec)
+	out := s.storyUpdates(ctx, req.Actor, rec, true)
 	if callUp != nil && len(callUp.Updates) > 0 {
-		up.Updates = append(up.Updates, callUp.Updates...)
+		out.Updates = append(out.Updates, callUp.Updates...)
 	}
-	return up, nil
+	return out, nil
+}
+
+// attachLiveCall writes messageMediaVideoStream onto a startLive story.
+// A photo or document already stored on the item is a recording and stays.
+func (s *Service) attachLiveCall(ctx context.Context, owner Owner, storyID int32, callID, access int64, rtmp bool) error {
+	if s == nil || callID == 0 || storyID == 0 || !owner.ok() {
+		return nil
+	}
+	rec, err := s.store.Get(ctx, owner, storyID)
+	if err != nil || rec == nil || rec.Item == nil || !liveStubMedia(rec.Item.Media) {
+		return err
+	}
+	rec.Item.Live = true
+	rec.Item.Media = liveStreamMedia(callID, access, rtmp)
+	rec.Item = mtproto.MakeTLStoryItem(rec.Item).To_StoryItem()
+	return s.store.Save(ctx, rec)
+}
+
+// liveStreamMedia is messageMediaVideoStream. call is inputGroupCall with
+// the group call id and access_hash. rtmp_stream is the startLive flag.
+func liveStreamMedia(callID, access int64, rtmp bool) *mtproto.MessageMedia {
+	return mtproto.MakeTLMessageMediaVideoStream(&mtproto.MessageMedia{
+		RtmpStream: rtmp,
+		Call: mtproto.MakeTLInputGroupCall(&mtproto.InputGroupCall{
+			Id:         callID,
+			AccessHash: access,
+		}).To_InputGroupCall(),
+	}).To_MessageMedia()
 }
 
 func storyIDOf(up *mtproto.Updates) int32 {
@@ -223,9 +268,11 @@ func (s *Service) EndLive(ctx context.Context, owner Owner, storyID int32) error
 		viewers = append(viewers, s.RingPushAudience(ctx, owner.ID)...)
 	}
 	rec.Item.Live = false
-	if mediaEmpty(rec.Item.Media) {
-		// An empty startLive body is not a story once the stream is gone.
+	if liveStubMedia(rec.Item.Media) {
+		// An empty startLive body, including the video-stream call that was
+		// written after bind, is not a story once the stream is gone.
 		// Deleting it drops stories_max_id and every active-story read.
+		// A photo or document is a recording and stays up.
 		rec.Item.ExpireDate = s.now()
 		rec.Deleted = true
 	}
@@ -248,6 +295,13 @@ func (s *Service) EndLive(ctx context.Context, owner Owner, storyID int32) error
 
 func mediaEmpty(m *mtproto.MessageMedia) bool {
 	return m == nil || m.PredicateName == "" || m.PredicateName == mtproto.Predicate_messageMediaEmpty
+}
+
+// liveStubMedia is a startLive body with nothing to keep after the call.
+// Empty media is what Send writes before the call exists.
+// messageMediaVideoStream is that same body once the call is bound.
+func liveStubMedia(m *mtproto.MessageMedia) bool {
+	return mediaEmpty(m) || m.GetPredicateName() == mtproto.Predicate_messageMediaVideoStream
 }
 
 // repairUnboundLives ends live stories whose call is gone. One page per

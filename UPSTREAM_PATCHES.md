@@ -702,3 +702,16 @@ Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty
 | tests | `pkg/livephoto`, messages core / dao, files core, mediapurge, `proto/mtproto/ttl_media_test.go`, and e2e `TestLivePhoto` (`live_a` / `live_b`) |
 
 Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
+
+## Live story media and reserved bots (ISSUE-S-LIVE-STORY-MEDIA-001, ISSUE-S-BOT-RESOLVE-EMPTY-001, ISSUE-S-BOT-FULLUSER-001)
+
+`stories.startLive` stored `messageMediaEmpty` and pushed that item before the group call existed. Layer 232 viewers need `messageMediaVideoStream` (`rtmp_stream` plus `inputGroupCall` id and access_hash) on `updateStory`, `stories.getStoriesByID`, and `stories.getPeerStories`, with `storyItem.live` set while the call is up. The call is still created by the phone engine and bound after `Send`. The story is written again at that point, and that is the item that is pushed. A stream with no photo or document is still deleted when the call ends. A recording stays.
+
+`contacts.resolveUsername` matched reserved bot names with exact case. `botfather` missed the map and the username table (a placeholder row) returned `USERNAME_NOT_OCCUPIED`. `GIF` is shorter than the public minimum, so it returned `USERNAME_INVALID`. `BotFather` and `bing` returned a peer whose `users` vector was empty. Resolution is now case-insensitive. A reserved bot with no real row is synthesized with a stable `access_hash`, the same way `@gif` and `@venue` already were. A name that does not exist is `USERNAME_NOT_OCCUPIED` and does not include a peer. `users.getFullUser` and `users.getUsers` open those bots, including `@gif` and `@venue`. `userFull.settings` and `userFull.notify_settings` are set so the profile encodes. A real row for the same id or username is kept.
+
+| Piece | File |
+| --- | --- |
+| stream media after bind | `app/service/biz/story/live.go` |
+| quiet insert until the call exists | `app/service/biz/story/post.go` |
+| case-insensitive lookup | `app/service/biz/user/user/vars.go`, `username.go`, `user.resolveUsername_handler.go` |
+| resolve and profile | `contacts.resolveUsername_handler.go`, `users.getFullUser_handler.go`, `users.getUsers_handler.go`, `catalog/builtin.go` |

@@ -593,8 +593,9 @@ func (s *Service) activeMax(ctx context.Context, owner Owner) (max int32, live b
 
 // advertises reports whether a story may draw a chat-list ring, and whether
 // that ring is live. recentStory.live is set only while this process still
-// has the group call. An empty stories.startLive body with no call is not a
-// story: opening it shows nothing.
+// has the group call. A stories.startLive body with no call is not a story:
+// empty media, or messageMediaVideoStream whose call is gone. Opening it
+// shows nothing. A photo or document stays up as an ordinary story.
 func (s *Service) advertises(rec *Record) (ok, live bool) {
 	if rec == nil || rec.Item == nil || rec.Deleted {
 		return false, false
@@ -603,7 +604,7 @@ func (s *Service) advertises(rec *Record) (ok, live bool) {
 	if onAir {
 		return true, true
 	}
-	if rec.Item.GetLive() && mediaEmpty(rec.Item.Media) {
+	if rec.Item.GetLive() && liveStubMedia(rec.Item.Media) {
 		return false, false
 	}
 	return true, false

@@ -38,90 +38,53 @@ func (c *UsernamesCore) ContactsResolveUsername(in *mtproto.TLContactsResolveUse
 	// 400	USERNAME_INVALID	The provided username is not valid
 	// 400	USERNAME_NOT_OCCUPIED	The provided username is not occupied
 	//
-	var (
-		peer *mtproto.PeerUtil
-	)
-
-	if normalizeUsername(in.GetUsername()) == mtproto.BotVenueName {
-		return c.resolveVenue(in)
+	name := normalizeUsername(in.GetUsername())
+	if name == "" {
+		return nil, mtproto.ErrUsernameInvalid
 	}
-
-	id := userpb.GetBotIdByName(in.GetUsername())
-	if id > 0 {
-		peer = mtproto.MakeUserPeerUtil(id)
-	} else {
-		rName, err := c.svcCtx.Dao.UserClient.UserResolveUsername(c.ctx, &userpb.TLUserResolveUsername{
-			Username: in.GetUsername(),
-		})
-		if err != nil {
-			if ch, chErr := channel.Shared().ResolveUsername(c.ctx, c.MD.UserId, in.GetUsername()); chErr == nil && ch != nil {
-				return mtproto.MakeTLContactsResolvedPeer(&mtproto.Contacts_ResolvedPeer{
-					Peer:  mtproto.MakePeerChannel(ch.GetId()),
-					Chats: []*mtproto.Chat{ch},
-					Users: []*mtproto.User{},
-				}).To_Contacts_ResolvedPeer(), nil
-			}
-			c.Logger.Errorf("contacts.resolveUsername - reply: {%v}", err)
-			return nil, err
-		}
-
-		peer = mtproto.FromPeer(rName)
+	if id := userpb.GetBotIdByName(name); id > 0 {
+		return c.resolveBuiltin(name, id)
 	}
-
-	resolvedPeer := mtproto.MakeTLContactsResolvedPeer(&mtproto.Contacts_ResolvedPeer{
-		Peer:  peer.ToPeer(),
-		Chats: []*mtproto.Chat{},
-		Users: []*mtproto.User{},
-	}).To_Contacts_ResolvedPeer()
-
-	switch peer.PeerType {
-	case mtproto.PEER_USER:
-		mUsers, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
-			Id: []int64{c.MD.UserId, peer.PeerId},
-		})
-		// .UserFacade.GetUserById(ctx, md.UserId, peer.PeerId)
-		if mUsers != nil {
-			resolvedPeer.Users = mUsers.GetUserListByIdList(c.MD.UserId, peer.PeerId)
-		}
-	case mtproto.PEER_CHAT:
-		chat, _ := c.svcCtx.Dao.ChatClient.ChatGetChatBySelfId(c.ctx, &chat.TLChatGetChatBySelfId{
-			SelfId: c.MD.UserId,
-			ChatId: peer.PeerId,
-		})
-		if chat != nil {
-			resolvedPeer.Chats = []*mtproto.Chat{chat.ToUnsafeChat(c.MD.UserId)}
-		}
-	case mtproto.PEER_CHANNEL:
-		if ch, err := channel.Shared().ResolveUsername(c.ctx, c.MD.UserId, in.GetUsername()); err == nil && ch != nil {
-			resolvedPeer.Chats = []*mtproto.Chat{ch}
-		} else if c.svcCtx.Plugin != nil {
-			resolvedPeer.Chats = c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, peer.PeerId)
-		}
-	}
-
-	ensureGifBot(in.GetUsername(), resolvedPeer)
-	return resolvedPeer, nil
+	return c.resolveOccupied(name)
 }
 
-// resolveVenue returns the built-in @venue bot only when the username table
-// has no row for it. A real user or channel keeps the name.
-func (c *UsernamesCore) resolveVenue(in *mtproto.TLContactsResolveUsername) (*mtproto.Contacts_ResolvedPeer, error) {
+// resolveBuiltin returns a reserved bot when the username table does not
+// hold the name. A real user or channel keeps it. The peer is returned only
+// together with a user object, the same way @gif and @venue already were.
+func (c *UsernamesCore) resolveBuiltin(name string, botID int64) (*mtproto.Contacts_ResolvedPeer, error) {
 	looked, err := c.svcCtx.Dao.UserClient.UserResolveUsername(c.ctx, &userpb.TLUserResolveUsername{
-		Username: mtproto.BotVenueName,
+		Username: name,
 	})
-	free, fatal := venueIsFree(err, looked)
+	free, fatal := usernameIsFree(err, looked)
 	if fatal != nil {
 		c.Logger.Errorf("contacts.resolveUsername - reply: {%v}", fatal)
 		return nil, fatal
 	}
 	if !free {
-		peer := mtproto.FromPeer(looked)
-		return c.finishResolved(in.GetUsername(), peer, false)
+		return c.finishResolved(name, mtproto.FromPeer(looked))
 	}
-	return c.finishResolved(in.GetUsername(), mtproto.MakeUserPeerUtil(mtproto.BotVenueId), true)
+	return c.finishResolved(name, mtproto.MakeUserPeerUtil(botID))
 }
 
-func (c *UsernamesCore) finishResolved(username string, peer *mtproto.PeerUtil, claimVenue bool) (*mtproto.Contacts_ResolvedPeer, error) {
+func (c *UsernamesCore) resolveOccupied(name string) (*mtproto.Contacts_ResolvedPeer, error) {
+	rName, err := c.svcCtx.Dao.UserClient.UserResolveUsername(c.ctx, &userpb.TLUserResolveUsername{
+		Username: name,
+	})
+	if err != nil {
+		if ch, chErr := channel.Shared().ResolveUsername(c.ctx, c.MD.UserId, name); chErr == nil && ch != nil {
+			return mtproto.MakeTLContactsResolvedPeer(&mtproto.Contacts_ResolvedPeer{
+				Peer:  mtproto.MakePeerChannel(ch.GetId()),
+				Chats: []*mtproto.Chat{ch},
+				Users: []*mtproto.User{},
+			}).To_Contacts_ResolvedPeer(), nil
+		}
+		c.Logger.Errorf("contacts.resolveUsername - reply: {%v}", err)
+		return nil, err
+	}
+	return c.finishResolved(name, mtproto.FromPeer(rName))
+}
+
+func (c *UsernamesCore) finishResolved(username string, peer *mtproto.PeerUtil) (*mtproto.Contacts_ResolvedPeer, error) {
 	resolvedPeer := mtproto.MakeTLContactsResolvedPeer(&mtproto.Contacts_ResolvedPeer{
 		Peer:  peer.ToPeer(),
 		Chats: []*mtproto.Chat{},
@@ -130,15 +93,17 @@ func (c *UsernamesCore) finishResolved(username string, peer *mtproto.PeerUtil, 
 
 	switch peer.PeerType {
 	case mtproto.PEER_USER:
-		if claimVenue && peer.PeerId == mtproto.BotVenueId {
-			resolvedPeer.Users = []*mtproto.User{catalog.VenueBotUser()}
-			return resolvedPeer, nil
-		}
 		mUsers, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
 			Id: []int64{c.MD.UserId, peer.PeerId},
 		})
 		if mUsers != nil {
 			resolvedPeer.Users = mUsers.GetUserListByIdList(c.MD.UserId, peer.PeerId)
+		}
+		if bot := catalog.BuiltinBotUser(peer.PeerId); bot != nil {
+			ensureBuiltinBot(resolvedPeer, bot)
+		}
+		if !userListed(resolvedPeer, peer.PeerId) {
+			return nil, mtproto.ErrUsernameNotOccupied
 		}
 	case mtproto.PEER_CHAT:
 		chat, _ := c.svcCtx.Dao.ChatClient.ChatGetChatBySelfId(c.ctx, &chat.TLChatGetChatBySelfId{
@@ -155,9 +120,6 @@ func (c *UsernamesCore) finishResolved(username string, peer *mtproto.PeerUtil, 
 			resolvedPeer.Chats = c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, peer.PeerId)
 		}
 	}
-	if claimVenue {
-		ensureBuiltinBot(resolvedPeer, catalog.VenueBotUser())
-	}
 	return resolvedPeer, nil
 }
 
@@ -165,10 +127,10 @@ func normalizeUsername(username string) string {
 	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(username)), "@")
 }
 
-// venueIsFree reports whether nobody holds username venue. A lookup failure
-// other than USERNAME_NOT_OCCUPIED is fatal: the bot must not take the name
-// when the table cannot be read.
-func venueIsFree(err error, peer *mtproto.Peer) (bool, error) {
+// usernameIsFree reports whether nobody holds the name. A lookup failure
+// other than USERNAME_NOT_OCCUPIED is fatal: a built-in bot must not take
+// the name when the table cannot be read.
+func usernameIsFree(err error, peer *mtproto.Peer) (bool, error) {
 	if usernameNotOccupied(err) {
 		return true, nil
 	}
@@ -197,7 +159,7 @@ func (c *UsernamesCore) rejectVenueClaim(username string, self int64) error {
 	if err == nil && peer != nil && self != 0 && peer.GetUserId() == self {
 		return nil
 	}
-	_, fatal := venueIsFree(err, peer)
+	_, fatal := usernameIsFree(err, peer)
 	if fatal != nil {
 		return fatal
 	}
@@ -214,23 +176,16 @@ func usernameNotOccupied(err error) bool {
 	return strings.Contains(err.Error(), "USERNAME_NOT_OCCUPIED")
 }
 
-// ensureGifBot puts the built-in @gif user on contacts.resolvedPeer.
-// iOS will not open the GIF panel when resolveUsername has no bot user.
-func ensureGifBot(username string, peer *mtproto.Contacts_ResolvedPeer) {
-	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(username)), "@")
-	if peer == nil || name != mtproto.BotGifName {
-		return
+func userListed(peer *mtproto.Contacts_ResolvedPeer, id int64) bool {
+	if peer == nil || id == 0 {
+		return false
 	}
-	bot := catalog.GifBotUser()
-	for i, u := range peer.Users {
-		if u.GetId() == bot.GetId() {
-			if !u.GetBot() {
-				peer.Users[i] = bot
-			}
-			return
+	for _, u := range peer.Users {
+		if u.GetId() == id && u.GetPredicateName() != mtproto.Predicate_userEmpty {
+			return true
 		}
 	}
-	peer.Users = append(peer.Users, bot)
+	return false
 }
 
 func ensureBuiltinBot(peer *mtproto.Contacts_ResolvedPeer, bot *mtproto.User) {

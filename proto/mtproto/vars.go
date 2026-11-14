@@ -20,6 +20,7 @@ package mtproto
 
 import (
 	"math"
+	"strings"
 )
 
 const (
@@ -177,8 +178,16 @@ func GetBotNameById(id int64) (n string) {
 }
 
 func GetBotIdByName(n string) (id int64) {
-	id, _ = botNameIdMap[n]
-	return
+	n = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(n), "@"))
+	if n == "" {
+		return 0
+	}
+	for name, botID := range botNameIdMap {
+		if strings.ToLower(name) == n {
+			return botID
+		}
+	}
+	return 0
 }
 
 func IsBotFather(id int64) bool {
