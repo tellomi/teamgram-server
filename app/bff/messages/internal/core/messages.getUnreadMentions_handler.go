@@ -74,7 +74,8 @@ func (c *MessagesCore) MessagesGetUnreadMentions(in *mtproto.TLMessagesGetUnread
 		}).To_Messages_Messages()
 	case mtproto.PEER_CHANNEL:
 		// https://core.telegram.org/method/messages.getUnreadMentions
-		res, err := channel.Shared().UnreadMentions(c.ctx, c.MD.UserId, peer.PeerId, in.OffsetId, in.AddOffset, limit, in.MaxId, minId)
+		topID := in.GetTopMsgId().GetValue()
+		res, err := channel.Shared().UnreadMentions(c.ctx, c.MD.UserId, peer.PeerId, in.OffsetId, in.AddOffset, limit, in.MaxId, minId, topID)
 		if err != nil {
 			c.Logger.Errorf("messages.getUnreadMentions - error: %v", err)
 			return nil, err

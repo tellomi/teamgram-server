@@ -38,6 +38,9 @@ type Features struct {
 	// ReactionRead is the unix time through which each member has called
 	// messages.readReactions. Older reaction dates are unread.
 	ReactionRead map[int64]int32
+	// MentionAck is the channel message ids each member has cleared with
+	// messages.readMentions. A topic clear only lists that topic's ids.
+	MentionAck map[int64][]int32
 	// ReactionMode is "", "all", "none", or "some".
 	ReactionMode       string
 	AllowCustom        bool

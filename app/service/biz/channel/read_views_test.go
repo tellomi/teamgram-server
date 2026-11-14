@@ -107,11 +107,11 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	}
 	replyID := reply.Updates[0].GetMessage_MESSAGE().GetId()
 
-	unread, err := svc.UnreadMentions(ctx, 1, ch.Id, 0, 0, 20, 0, 0)
+	unread, err := svc.UnreadMentions(ctx, 1, ch.Id, 0, 0, 20, 0, 0, 0)
 	if err != nil || unread.GetCount() != 1 || unread.Messages[0].GetId() != mentionID {
 		t.Fatalf("user 1 mentions %+v %v", unread, err)
 	}
-	replies, err := svc.UnreadMentions(ctx, 2, ch.Id, 0, 0, 20, 0, 0)
+	replies, err := svc.UnreadMentions(ctx, 2, ch.Id, 0, 0, 20, 0, 0, 0)
 	if err != nil || replies.GetCount() != 1 || replies.Messages[0].GetId() != replyID {
 		t.Fatalf("reply mention %+v %v", replies, err)
 	}
@@ -121,9 +121,61 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if err := svc.ReadHistory(ctx, 3, in, 0); err != nil {
 		t.Fatal(err)
 	}
-	unread, err = svc.UnreadMentions(ctx, 1, ch.Id, 0, 0, 20, 0, 0)
+	unread, err = svc.UnreadMentions(ctx, 1, ch.Id, 0, 0, 20, 0, 0, 0)
 	if err != nil || unread.GetCount() != 0 {
 		t.Fatalf("mentions stayed unread %+v %v", unread, err)
+	}
+
+	forum, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Forum", Megagroup: true, Forum: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fch := forum.Chats[0]
+	_, topicA, err := svc.CreateTopic(ctx, 1, 0, fch.Id, "A", 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, topicB, err := svc.CreateTopic(ctx, 1, 0, fch.Id, "B", 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Invite(ctx, 1, 0, inCh(fch), []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	sendMention := func(topicID int32, random int64) int32 {
+		t.Helper()
+		up, err := svc.Send(ctx, 2, fch.Id, 0, []Outgoing{{RandomID: random, Message: &mtproto.Message{
+			Message: "hey",
+			Date:    30,
+			Entities: []*mtproto.MessageEntity{
+				mtproto.MakeTLMessageEntityMentionName(&mtproto.MessageEntity{Offset: 0, Length: 3, UserId_INT64: 1}).To_MessageEntity(),
+			},
+			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+				ReplyToMsgId: topicID, ReplyToMsgId_INT32: topicID,
+				ReplyToTopId: &wrapperspb.Int32Value{Value: topicID}, ForumTopic: true,
+			}).To_MessageReplyHeader(),
+		}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return up.Updates[0].GetMessage_MESSAGE().GetId()
+	}
+	idA := sendMention(topicA.ID, 40)
+	idB := sendMention(topicB.ID, 41)
+	onlyA, err := svc.UnreadMentions(ctx, 1, fch.Id, 0, 0, 20, 0, 0, topicA.ID)
+	if err != nil || onlyA.GetCount() != 1 || onlyA.Messages[0].GetId() != idA {
+		t.Fatalf("topic A %+v %v", onlyA, err)
+	}
+	if err := svc.AckMentions(ctx, 1, fch.Id, []int32{idA}); err != nil {
+		t.Fatal(err)
+	}
+	onlyA, err = svc.UnreadMentions(ctx, 1, fch.Id, 0, 0, 20, 0, 0, topicA.ID)
+	if err != nil || onlyA.GetCount() != 0 {
+		t.Fatalf("topic A after ack %+v %v", onlyA, err)
+	}
+	onlyB, err := svc.UnreadMentions(ctx, 1, fch.Id, 0, 0, 20, 0, 0, topicB.ID)
+	if err != nil || onlyB.GetCount() != 1 || onlyB.Messages[0].GetId() != idB {
+		t.Fatalf("topic B %+v %v", onlyB, err)
 	}
 
 	readers, err := svc.ReadParticipants(ctx, 2, ch.Id, msgID)

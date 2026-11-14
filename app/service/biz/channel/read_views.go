@@ -168,7 +168,7 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 // it is a mention when it names the caller, replies to one of their
 // messages, or was stored with the mentioned flag. The caller's own
 // messages are not mentions of themselves.
-func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, offsetID, addOffset, limit, maxID, minID int32) (*mtproto.Messages_Messages, error) {
+func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, offsetID, addOffset, limit, maxID, minID, topID int32) (*mtproto.Messages_Messages, error) {
 	in := &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID}
 	ch, _, err := s.requireView(ctx, self, in)
 	if err != nil {
@@ -217,6 +217,12 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 		if !mentionsUser(body, self, senderOf) {
 			continue
 		}
+		if topID != 0 && !inTopic(body, stored.ID, topID) {
+			continue
+		}
+		if mentionAcked(f, self, stored.ID) {
+			continue
+		}
 		hit = append(hit, viewMessage(body, stored.SenderID, self))
 	}
 	total := int32(len(hit))
@@ -229,6 +235,53 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 		Chats:    []*mtproto.Chat{s.ChatFor(ctx, self, ch)},
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages(), nil
+}
+
+func inTopic(body *mtproto.Message, id, topID int32) bool {
+	if id == topID {
+		return true
+	}
+	if body == nil || body.GetReplyTo() == nil {
+		return false
+	}
+	if body.GetReplyTo().GetReplyToTopId().GetValue() == topID {
+		return true
+	}
+	return body.GetReplyTo().GetReplyToMsgId() == topID || body.GetReplyTo().GetReplyToMsgId_INT32() == topID
+}
+
+func mentionAcked(f *Features, self int64, id int32) bool {
+	if f == nil || f.MentionAck == nil {
+		return false
+	}
+	for _, acked := range f.MentionAck[self] {
+		if acked == id {
+			return true
+		}
+	}
+	return false
+}
+
+// AckMentions records messages.readMentions for one topic or the whole chat.
+func (s *Service) AckMentions(ctx context.Context, self, channelID int64, ids []int32) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	f := s.features(ctx, channelID)
+	if f.MentionAck == nil {
+		f.MentionAck = map[int64][]int32{}
+	}
+	have := map[int32]bool{}
+	for _, id := range f.MentionAck[self] {
+		have[id] = true
+	}
+	for _, id := range ids {
+		if id != 0 && !have[id] {
+			f.MentionAck[self] = append(f.MentionAck[self], id)
+			have[id] = true
+		}
+	}
+	return s.saveFeatures(ctx, channelID, f)
 }
 
 // MessageEditData is messages.getMessageEditData for a channel message.

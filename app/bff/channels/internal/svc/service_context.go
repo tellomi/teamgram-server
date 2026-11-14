@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -34,6 +35,28 @@ type ServiceContext struct {
 	UserClient   user_client.UserClient
 	MediaClient  media_client.MediaClient
 	DialogClient dialog_client.DialogClient
+}
+
+func init() {
+	channel.TopicEmojiOK = topicEmojiDocument
+}
+
+func topicEmojiDocument(id int64) bool {
+	docs := catalog.Must().Documents([]int64{id})
+	if docs == nil {
+		return false
+	}
+	for _, doc := range docs.GetDatas() {
+		if doc == nil || doc.GetId() != id || doc.GetPredicateName() == mtproto.Predicate_documentEmpty {
+			continue
+		}
+		for _, attr := range doc.GetAttributes() {
+			if attr.GetPredicateName() == mtproto.Predicate_documentAttributeCustomEmoji {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {

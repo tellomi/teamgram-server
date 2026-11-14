@@ -48,6 +48,31 @@ func (c *MessagesCore) MessagesReadMentions(in *mtproto.TLMessagesReadMentions) 
 		if chat := channel.Shared().VisibleChat(c.ctx, c.MD.UserId, peer.PeerId); chat != nil && chat.GetLeft() {
 			return nil, mtproto.ErrChannelPrivate
 		}
+		topID := int32(0)
+		if in.GetTopMsgId() != nil {
+			topID = in.GetTopMsgId().GetValue()
+			if topID < 0 {
+				return nil, mtproto.ErrMsgIdInvalid
+			}
+		}
+		res, err := channel.Shared().UnreadMentions(c.ctx, c.MD.UserId, peer.PeerId, 0, 0, 100, 0, 0, topID)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]int32, 0, len(res.GetMessages()))
+		for _, m := range res.GetMessages() {
+			if m.GetId() != 0 {
+				ids = append(ids, m.GetId())
+			}
+		}
+		if err := channel.Shared().AckMentions(c.ctx, c.MD.UserId, peer.PeerId, ids); err != nil {
+			return nil, err
+		}
+		return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
+			Pts:      res.GetPts(),
+			PtsCount: int32(len(ids)),
+			Offset:   0,
+		}).To_Messages_AffectedHistory(), nil
 	}
 	topID := int32(0)
 	if in.GetTopMsgId() != nil {

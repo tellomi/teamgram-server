@@ -13,6 +13,20 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+// TopicEmojiOK reports whether icon_emoji_id is a custom-emoji document.
+// Nil rejects every non-zero id. The channels BFF installs the catalog check.
+var TopicEmojiOK func(id int64) bool
+
+func requireTopicEmoji(id int64) error {
+	if id == 0 {
+		return nil
+	}
+	if TopicEmojiOK == nil || !TopicEmojiOK(id) {
+		return mtproto.ErrDocumentInvalid
+	}
+	return nil
+}
+
 func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	f, err := s.store.GetFeatures(ctx, channelID)
 	if err != nil || f == nil {
@@ -1159,6 +1173,9 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 	if title == "" {
 		return nil, nil, mtproto.ErrChatTitleEmpty
 	}
+	if err := requireTopicEmoji(iconEmoji); err != nil {
+		return nil, nil, err
+	}
 	f := s.features(ctx, ch.ID)
 	topic := TopicRec{
 		Title:     title,
@@ -1294,6 +1311,11 @@ func (s *Service) EditTopic(ctx context.Context, self, channelID int64, topicID 
 	}
 	if f.Topics[idx].CreatorID != self && !p.IsAdmin() {
 		return nil, mtproto.ErrChatAdminRequired
+	}
+	if iconEmoji != nil {
+		if err := requireTopicEmoji(*iconEmoji); err != nil {
+			return nil, err
+		}
 	}
 	if title != "" {
 		f.Topics[idx].Title = title

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -28,8 +29,11 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 	}
 	icon := int64(42)
 	hidden := false
-	edited, err := svc.EditTopic(ctx, 1, ch.Id, hello.ID, "Hello!", nil, &icon, &hidden)
-	if err != nil || edited.IconEmoji != 42 || edited.Title != "Hello!" {
+	if _, err := svc.EditTopic(ctx, 1, ch.Id, hello.ID, "Hello!", nil, &icon, &hidden); status.Convert(err).Message() != "DOCUMENT_INVALID" {
+		t.Fatalf("illegal emoji: %v", err)
+	}
+	edited, err := svc.EditTopic(ctx, 1, ch.Id, hello.ID, "Hello!", nil, nil, &hidden)
+	if err != nil || edited.Title != "Hello!" {
 		t.Fatalf("edit %#v %v", edited, err)
 	}
 
