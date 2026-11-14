@@ -83,6 +83,32 @@ func TestDeleteOthersUnreadDropsCountAndPushesInbox(t *testing.T) {
 	}
 }
 
+func TestDuplicateDeleteIDDecrementsOnce(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Dup")
+	in := inCh(ch)
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	id := channelText(t, svc, ctx, ch.Id, 2, 41, "once")
+	before := dialogRead(t, svc, ctx, 1, ch.Id).Unread
+	if before < 1 {
+		t.Fatalf("unread before %d", before)
+	}
+	if _, count, err := svc.Delete(ctx, 1, ch.Id, 0, []int32{id, id}); err != nil || count != 1 {
+		t.Fatalf("duplicate delete count %d %v", count, err)
+	}
+	if got := dialogRead(t, svc, ctx, 1, ch.Id).Unread; got != before-1 {
+		t.Fatalf("duplicate id unread %d, want %d", got, before-1)
+	}
+	if _, count, err := svc.Delete(ctx, 1, ch.Id, 0, []int32{id}); err != nil || count != 0 {
+		t.Fatalf("second delete count %d %v", count, err)
+	}
+	if got := dialogRead(t, svc, ctx, 1, ch.Id).Unread; got != before-1 {
+		t.Fatalf("already-deleted id changed unread to %d, want %d", got, before-1)
+	}
+}
+
 func channelText(t *testing.T, svc *Service, ctx context.Context, channelID, sender, random int64, text string) int32 {
 	t.Helper()
 	sent, err := svc.Send(ctx, sender, channelID, 0, []Outgoing{{
@@ -107,6 +133,9 @@ func TestDeleteUnreadPushesOnlyOnlineMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := channelText(t, svc, ctx, ch.Id, 2, 21, "live")
+	if _, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 22, Message: &mtproto.Message{Message: "still"}}}); err != nil {
+		t.Fatal(err)
+	}
 	before3 := dialogRead(t, svc, ctx, 3, ch.Id).Unread
 	var pushed []pushedUpdate
 	svc.SetHooks(Hooks{
@@ -177,10 +206,14 @@ func TestUnreadCutSQLMatchesTheInboxIndex(t *testing.T) {
 		"channel_id = ?",
 		"read_inbox_max_id < ?",
 		"user_id <> ?",
+		"unread_count > 0",
 	} {
 		if !strings.Contains(unreadCutUpdateSQL, piece) {
 			t.Fatalf("update SQL missing %s", piece)
 		}
+	}
+	if !strings.Contains(unreadCutSelectSQL, "unread_count > 0") || !strings.Contains(unreadCutSelectSQL, "read_inbox_max_id < ?") {
+		t.Fatal("select SQL does not use the update predicate")
 	}
 	if !strings.Contains(schemaSQL, "KEY channel_read_inbox (channel_id, read_inbox_max_id)") {
 		t.Fatal("new tables do not create channel_read_inbox")

@@ -656,7 +656,12 @@ func (s *Service) Delete(ctx context.Context, sender, channelID, actorAuth int64
 	}
 	var allowed []int32
 	var removed []removedMessage
+	seenID := make(map[int32]struct{}, len(ids))
 	for _, id := range ids {
+		if _, ok := seenID[id]; ok {
+			continue
+		}
+		seenID[id] = struct{}{}
 		stored, err := s.store.GetMessage(ctx, channelID, id)
 		if err != nil {
 			return 0, 0, err

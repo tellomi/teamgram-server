@@ -491,6 +491,9 @@ func (s *memoryStore) ApplyUnreadCuts(ctx context.Context, channelID int64, cuts
 	}
 	out := make([]ReadState, 0, len(changed))
 	for _, st := range changed {
+		if st.UnreadCount <= 0 {
+			continue
+		}
 		out = append(out, *st.clone())
 	}
 	return out, nil

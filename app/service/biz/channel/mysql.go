@@ -579,46 +579,57 @@ func (s *mysqlStore) GetRead(ctx context.Context, channelID, userID int64) (*Rea
 }
 
 func (s *mysqlStore) ApplyUnreadCuts(ctx context.Context, channelID int64, cuts []UnreadCut, list bool) ([]ReadState, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
 	for _, cut := range cuts {
 		if cut.Delta <= 0 || cut.Below <= 0 {
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, unreadCutUpdateSQL, cut.Delta, channelID, cut.Below, cut.Exclude); err != nil {
+		if _, err = tx.ExecContext(ctx, unreadCutUpdateSQL, cut.Delta, channelID, cut.Below, cut.Exclude); err != nil {
 			return nil, err
 		}
 	}
-	if !list {
-		return nil, nil
-	}
-	seen := map[int64]ReadState{}
-	for _, cut := range cuts {
-		if cut.Below <= 0 {
-			continue
-		}
-		rows, err := s.db.QueryContext(ctx, unreadCutSelectSQL, channelID, cut.Below, cut.Exclude)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var st ReadState
-			st.ChannelID = channelID
-			if err := rows.Scan(&st.UserID, &st.ReadInboxMaxID, &st.ReadOutboxMaxID, &st.UnreadCount); err != nil {
-				rows.Close()
+	var out []ReadState
+	if list {
+		seen := map[int64]ReadState{}
+		for _, cut := range cuts {
+			if cut.Below <= 0 {
+				continue
+			}
+			rows, err := tx.QueryContext(ctx, unreadCutSelectSQL, channelID, cut.Below, cut.Exclude)
+			if err != nil {
 				return nil, err
 			}
-			seen[st.UserID] = st
-		}
-		if err := rows.Err(); err != nil {
+			scanErr := scanUnreadCuts(rows, channelID, seen)
 			rows.Close()
-			return nil, err
+			if scanErr != nil {
+				return nil, scanErr
+			}
 		}
-		rows.Close()
+		out = make([]ReadState, 0, len(seen))
+		for _, st := range seen {
+			out = append(out, st)
+		}
 	}
-	out := make([]ReadState, 0, len(seen))
-	for _, st := range seen {
-		out = append(out, st)
+	if err = tx.Commit(); err != nil {
+		return nil, err
 	}
 	return out, nil
+}
+
+func scanUnreadCuts(rows *sql.Rows, channelID int64, seen map[int64]ReadState) error {
+	for rows.Next() {
+		var st ReadState
+		st.ChannelID = channelID
+		if err := rows.Scan(&st.UserID, &st.ReadInboxMaxID, &st.ReadOutboxMaxID, &st.UnreadCount); err != nil {
+			return err
+		}
+		seen[st.UserID] = st
+	}
+	return rows.Err()
 }
 
 func (s *mysqlStore) SaveRead(ctx context.Context, st *ReadState) error {

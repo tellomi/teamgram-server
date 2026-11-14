@@ -42,7 +42,7 @@ WHERE channel_id = ? AND read_inbox_max_id < ? AND user_id <> ? AND unread_count
 const unreadCutSelectSQL = `
 SELECT user_id, read_inbox_max_id, read_outbox_max_id, unread_count
 FROM channel_read_state
-WHERE channel_id = ? AND read_inbox_max_id < ? AND user_id <> ?`
+WHERE channel_id = ? AND read_inbox_max_id < ? AND user_id <> ? AND unread_count > 0`
 
 // Complexity, with D deleted messages, M members, and K members whose
 // read_inbox_max_id is still below a cut:
@@ -91,10 +91,15 @@ func (s *Service) applyUnreadAsync(channelID int64, cuts []UnreadCut, members in
 
 func unreadCuts(removed []removedMessage) []UnreadCut {
 	cuts := make([]UnreadCut, 0, len(removed))
+	seen := make(map[int32]struct{}, len(removed))
 	for _, m := range removed {
 		if m.ID <= 0 {
 			continue
 		}
+		if _, ok := seen[m.ID]; ok {
+			continue
+		}
+		seen[m.ID] = struct{}{}
 		cuts = append(cuts, UnreadCut{Below: m.ID, Exclude: m.Sender, Delta: 1})
 	}
 	return cuts
