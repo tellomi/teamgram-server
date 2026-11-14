@@ -2,6 +2,18 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Polls and quizzes
+
+`messages.sendMedia` with `inputMediaPoll` used `makeMediaByInputMedia`, which returned `messageMediaUnsupported`. The poll book in `chatbox` was never called, so `messages.sendVote` had nothing to record.
+
+`TELLOMI_POLLS=1` (default off) stores the poll, including quiz `correct_answers` and `solution`. `messages.sendVote`, `messages.getPollResults`, and `messages.getPollVotes` read that book. A vote pushes `updateMessagePoll` to the other private-chat user, to basic-group members, and to channel members. Private chats translate the message id through `dialog_message_id`. `messages.getHistory` and `messages.getMessages` overlay the viewer's results.
+
+| Piece | File |
+| --- | --- |
+| media, quiz results, private id | `app/service/biz/chatbox/poll.go` |
+| send path | `app/bff/messages/internal/core/core_messages_helper.go` |
+| fanout | `app/bff/messages/internal/server/grpc/service/chat_p1.go`, `app/service/biz/channel/chat_p1.go` |
+
 ## Forward, reply, and deleteHistory revoke
 
 `messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own. `drop_media_captions` removes the caption and its entities from a photo or document and leaves the file. Plain text and a link-preview message keep their text.

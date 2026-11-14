@@ -69,7 +69,7 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.getTopReactions` | implemented | |
 | `messages.getRecentReactions` | implemented | |
 | `messages.clearRecentReactions` | implemented | |
-| `messages.sendVote` | partial | Vote is stored. Closed polls and the public voter list are not the full TL rules. |
+| `messages.sendVote` | partial | Stored when `TELLOMI_POLLS=1`. Off by default: `inputMediaPoll` stays `messageMediaUnsupported` and vote RPCs return `MEDIA_INVALID`. On: quiz solution and correct option after a vote, `updateMessagePoll` to the other side. |
 | `messages.getPollResults` | partial | `poll_hash` is checked. Same voter-list limit as send. |
 | `messages.getPollVotes` | partial | `option` and `offset` are forwarded. |
 | `messages.search` | partial | User, basic-group, and channel filters, dates, and `top_msg_id` work (#170). `hash`, `saved_reaction`, and `saved_peer_id` are still empty. `inputMessagesFilterMyMentions` is not a channel filter. |
