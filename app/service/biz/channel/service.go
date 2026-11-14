@@ -378,12 +378,15 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	if p != nil && p.State == StateKicked {
 		return nil, mtproto.ErrUserBannedInChannel
 	}
-	if feat := s.features(ctx, ch.ID); feat.JoinRequest && (p == nil || !p.InChannel()) {
-		feat.JoinRequests = append(feat.JoinRequests, JoinReq{UserID: user, Date: int32(time.Now().Unix())})
-		if err := s.saveFeatures(ctx, ch.ID, feat); err != nil {
+	// A public channel or megagroup with join_request does not add the user.
+	// Official clients send channels.joinChannel after resolving the username
+	// and expect INVITE_REQUEST_SENT plus a pending request an admin can see.
+	// https://core.telegram.org/method/channels.joinChannel
+	if s.features(ctx, ch.ID).JoinRequest {
+		if err := s.recordJoinRequest(ctx, ch.ID, user); err != nil {
 			return nil, err
 		}
-		return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
+		return nil, mtproto.ErrInviteRequestSent
 	}
 	if !ch.Public() {
 		return nil, mtproto.ErrChannelPrivate
