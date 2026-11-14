@@ -70,12 +70,17 @@
     "reactblk_a": {"number": "9996610221", "code": "11111"},
     "reactblk_b": {"number": "9996610222", "code": "11111"},
     "pinlim_a": {"number": "9996610223", "code": "11111"},
+    "gap_a": {"number": "9996610301", "code": "11111"},
+    "gap_b": {"number": "9996610302", "code": "11111"},
+    "gap_c": {"number": "9996610303", "code": "11111"},
     "bar_a": {"number": "9996610231", "code": "11111"},
     "bar_b": {"number": "9996610232", "code": "11111"},
     "bar_c": {"number": "9996610233", "code": "11111"},
     "live_a": {"number": "9996610241", "code": "11111"},
     "live_b": {"number": "9996610242", "code": "11111"},
     "kick_a": {"number": "9996610311", "code": "11111"},
-    "kick_b": {"number": "9996610312", "code": "11111"}
+    "kick_b": {"number": "9996610312", "code": "11111"},
+    "comm_a": {"number": "9996610321", "code": "11111"},
+    "comm_b": {"number": "9996610322", "code": "11111"}
   }
 }

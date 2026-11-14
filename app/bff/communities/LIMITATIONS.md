@@ -2,9 +2,18 @@
 
 Layer 232 `communities.*` methods are routed on `RPCCommunities`.
 
-Communities live in this process. A restart drops them. Only the user who
-called `communities.create` is a member, so `communities.getJoinedCommunities`
-lists communities that user created. There is no invite RPC in this batch.
+Communities are stored in `communities`, `community_links`, and
+`community_members` (`teamgramd/deploy/sql/migrate-20261114-communities.sql`).
+The bff opens those tables with `mysqltls.Open` from `ChannelMySQL` or
+`TEAMGRAM_MYSQL_DSN`. With no DSN the book stays in memory. A configured DSN
+that cannot be opened does not fall back to memory: community RPCs return
+`INTERNAL_SERVER_ERROR` and the next call tries the database again.
+
+`communities.getJoinedCommunities` lists a community for its owner, for a
+user peer that was linked and is visible, for someone whose link request was
+approved, and for a member of a linked channel. There is no invite RPC in
+this batch. A basic-group link does not by itself add every group member;
+this process does not load that member list.
 
 `communities.create` and `communities.toggleCommunityCollapsedInDialogs`
 return `updates` with seq 0, the `community` chat, and `updateChannel`.

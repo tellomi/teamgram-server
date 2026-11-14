@@ -1,11 +1,15 @@
 package p1rest
 
-import "github.com/teamgram/proto/mtproto"
+import (
+	"time"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 // themeRec is the chat theme last set for one user and peer.
-// The RPC result is updates with seq 0 and no pts-bearing update: a service
-// message would need the user's pts, and a zero pts makes clients call
-// getDifference and stall sync.
+// The service message is messageActionSetChatTheme. A wired messenger
+// assigns pts; the local updates box is what tests and a process without
+// messenger.msg return to the caller.
 type themeRec struct {
 	kind     string // empty, emoji, gift
 	emoticon string
@@ -13,7 +17,7 @@ type themeRec struct {
 }
 
 func (s *store) setChatTheme(self int64, in *mtproto.TLMessagesSetChatTheme) (*mtproto.Updates, error) {
-	ref, _, err := peerOf(self, in.GetPeer())
+	ref, peer, err := peerOf(self, in.GetPeer())
 	if err != nil {
 		return nil, err
 	}
@@ -27,12 +31,50 @@ func (s *store) setChatTheme(self int64, in *mtproto.TLMessagesSetChatTheme) (*m
 	if sameTheme(s.themes[k], next) {
 		return nil, mtproto.ErrEmojiNotModified
 	}
-	if next.kind == "empty" {
-		delete(s.themes, k)
-	} else {
+	s.putTheme(k, next)
+	return serviceUpdates(self, peer, themeAction(next)), nil
+}
+
+// putTheme stores the theme for the caller and, in a private chat, for the
+// other user. Clients learn the theme from messageActionSetChatTheme.
+func (s *store) putTheme(self dialogKey, next themeRec) {
+	write := func(k dialogKey) {
+		if next.kind == "" || next.kind == "empty" {
+			delete(s.themes, k)
+			return
+		}
 		s.themes[k] = next
 	}
-	return mtproto.MakeEmptyUpdates(), nil
+	write(self)
+	if self.kind == "user" && self.id != 0 && self.id != self.user {
+		write(dialogKey{user: self.id, kind: "user", id: self.user})
+	}
+}
+
+func themeAction(next themeRec) *mtproto.MessageAction {
+	switch next.kind {
+	case "gift":
+		return mtproto.MakeMessageActionSetChatTheme(next.slug)
+	case "empty", "":
+		return mtproto.MakeMessageActionSetChatTheme("")
+	default:
+		return mtproto.MakeMessageActionSetChatTheme(next.emoticon)
+	}
+}
+
+func serviceUpdates(self int64, peer *mtproto.Peer, action *mtproto.MessageAction) *mtproto.Updates {
+	msg := mtproto.MakeTLMessageService(&mtproto.Message{
+		Out:    true,
+		FromId: mtproto.MakePeerUser(self),
+		PeerId: peer,
+		Date:   int32(time.Now().Unix()),
+		Action: action,
+	}).To_Message()
+	upd := mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
+		Message_MESSAGE: msg,
+		PtsCount:        1,
+	}).To_Update()
+	return mtproto.MakeUpdatesByUpdates(upd)
 }
 
 func themeOf(in *mtproto.TLMessagesSetChatTheme) (themeRec, error) {

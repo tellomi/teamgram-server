@@ -23,6 +23,11 @@ func New(sc *svc.ServiceContext) *Service {
 }
 
 func (s *Service) user(ctx context.Context) (int64, error) {
+	if s != nil && s.svcCtx != nil && s.svcCtx.Book != nil {
+		if err := s.svcCtx.Book.Ready(); err != nil {
+			return 0, err
+		}
+	}
 	md := metadata.RpcMetadataFromIncoming(ctx)
 	if md == nil || md.GetUserId() == 0 {
 		return 0, mtproto.ErrAuthKeyUnregistered

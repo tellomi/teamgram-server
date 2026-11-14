@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -41,9 +42,16 @@ func (c *DialogsCore) MessagesGetPeerSettings(in *mtproto.TLMessagesGetPeerSetti
 		return nil, err
 	}
 
+	users := []*mtproto.User{}
+	if peer.PeerType == mtproto.PEER_USER && peer.PeerId != 0 && peer.PeerId != c.MD.UserId {
+		if bot := accountassets.ApplyBusinessBar(peer.PeerId, c.MD.UserId, peerSettings); bot != nil {
+			users = append(users, bot)
+		}
+	}
+
 	return mtproto.MakeTLMessagesPeerSettings(&mtproto.Messages_PeerSettings{
 		Settings: peerSettings,
 		Chats:    []*mtproto.Chat{},
-		Users:    []*mtproto.User{},
+		Users:    users,
 	}).To_Messages_PeerSettings(), nil
 }

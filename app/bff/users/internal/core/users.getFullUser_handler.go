@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	profile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
@@ -315,10 +316,18 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		user.Id(): mtproto.StoryColumn(user),
 	})
 
+	users := []*mtproto.User{unsafeUser}
+	if userFull.Settings == nil {
+		userFull.Settings = mtproto.MakeTLPeerSettings(&mtproto.PeerSettings{}).To_PeerSettings()
+	}
+	if bot := accountassets.ApplyBusinessBar(peerId, c.MD.UserId, userFull.Settings); bot != nil {
+		users = append(users, bot)
+	}
+
 	return mtproto.MakeTLUsersUserFull(&mtproto.Users_UserFull{
 		FullUser: userFull,
 		Chats:    chats,
-		Users:    []*mtproto.User{unsafeUser},
+		Users:    users,
 	}).To_Users_UserFull(), nil
 }
 

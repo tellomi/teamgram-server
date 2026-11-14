@@ -7,6 +7,7 @@ package book
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/binary"
 	"strconv"
 	"strings"
@@ -47,12 +48,17 @@ type community struct {
 	members   map[int64]bool
 }
 
-// Book is the process-local community store.
+// Book is the community store. Without MySQL it lives in this process.
+// OpenMySQL loads and writes the same rows the migration creates.
 type Book struct {
-	mu   sync.Mutex
-	byID map[int64]*community
-	next int64
-	now  func() time.Time
+	mu            sync.Mutex
+	byID          map[int64]*community
+	next          int64
+	now           func() time.Time
+	db            *sql.DB
+	dsn           string
+	mysqlRequired bool
+	openErr       error
 }
 
 // New returns an empty book.
@@ -81,6 +87,9 @@ func ResetShared() {
 // Neither carries pts, and the box seq is 0, so the client's difference cursor
 // does not move.
 func (b *Book) Create(owner int64, title, about string, hidden bool, peer *mtproto.PeerUtil) (*mtproto.Updates, error) {
+	if err := b.Ready(); err != nil {
+		return nil, err
+	}
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil, mtproto.ErrChatTitleEmpty
@@ -119,17 +128,32 @@ func (b *Book) Create(owner int64, title, about string, hidden bool, peer *mtpro
 		requestedBy: owner,
 		date:        c.date,
 	}}
+	if p.PeerType == mtproto.PEER_USER && !hidden {
+		c.members[p.PeerId] = true
+	}
 	b.byID[c.id] = c
+	if err = b.save(c); err != nil {
+		return nil, err
+	}
 	return c.updates(owner), nil
 }
 
-// Joined is messages.chats of communities this user created.
-func (b *Book) Joined(user int64) *mtproto.Messages_Chats {
+// Joined is messages.chats of communities this user can see.
+// channelIDs are channels the user is in. A visible link to one of them
+// shows the community, the same way a member of a linked channel sees it.
+func (b *Book) Joined(user int64, channelIDs ...int64) *mtproto.Messages_Chats {
+	if err := b.Ready(); err != nil {
+		return mtproto.MakeTLMessagesChats(&mtproto.Messages_Chats{Chats: []*mtproto.Chat{}}).To_Messages_Chats()
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	in := idSet(channelIDs)
 	chats := []*mtproto.Chat{}
 	for _, c := range b.list() {
-		if c.members[user] && !c.banned[user] {
+		if c.banned[user] {
+			continue
+		}
+		if c.visibleTo(user, in) {
 			chats = append(chats, c.chat(user))
 		}
 	}
@@ -139,6 +163,9 @@ func (b *Book) Joined(user int64) *mtproto.Messages_Chats {
 // TogglePeerLink changes one linked peer. The owner applies visible, hidden,
 // or deleted immediately. Another user files a request the owner approves later.
 func (b *Book) TogglePeerLink(user int64, communityID, hash int64, peer *mtproto.PeerUtil, visible, hidden, deleted bool) error {
+	if err := b.Ready(); err != nil {
+		return err
+	}
 	p, err := requirePeer(peer)
 	if err != nil {
 		return err
@@ -157,34 +184,43 @@ func (b *Book) TogglePeerLink(user int64, communityID, hash int64, peer *mtproto
 			return mtproto.ErrChatAdminRequired
 		}
 		c.upsert(p, user, true, visible && !hidden)
-		return nil
+		return b.save(c)
 	}
 	if deleted {
 		c.remove(p)
-		return nil
+		return b.save(c)
 	}
 	c.upsert(p, user, false, visible && !hidden)
-	return nil
+	return b.save(c)
 }
 
 // SetCollapsed stores the dialogs flag and returns an updates box with the
 // community chat. updateChannel has no pts.
-func (b *Book) SetCollapsed(user int64, communityID, hash int64, collapsed bool) (*mtproto.Updates, error) {
+func (b *Book) SetCollapsed(user int64, communityID, hash int64, collapsed bool, channelIDs ...int64) (*mtproto.Updates, error) {
+	if err := b.Ready(); err != nil {
+		return nil, err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c, err := b.lookup(communityID, hash)
 	if err != nil {
 		return nil, err
 	}
-	if !c.members[user] || c.banned[user] {
+	if c.banned[user] || !c.visibleTo(user, idSet(channelIDs)) {
 		return nil, mtproto.ErrChannelPrivate
 	}
 	c.collapsed = collapsed
+	if err = b.save(c); err != nil {
+		return nil, err
+	}
 	return c.updates(user), nil
 }
 
 // Requests pages pending peer-link requests. The owner is the only reader.
 func (b *Book) Requests(user int64, communityID, hash int64, offset string, limit int32) (*mtproto.Communities_PeerLinkRequests, error) {
+	if err := b.Ready(); err != nil {
+		return nil, err
+	}
 	start, err := pageOffset(offset)
 	if err != nil {
 		return nil, err
@@ -236,6 +272,9 @@ func (b *Book) Requests(user int64, communityID, hash int64, offset string, limi
 
 // DecideRequest approves or rejects one pending link.
 func (b *Book) DecideRequest(user int64, communityID, hash int64, peer *mtproto.PeerUtil, reject bool) error {
+	if err := b.Ready(); err != nil {
+		return err
+	}
 	p, err := requirePeer(peer)
 	if err != nil {
 		return err
@@ -255,14 +294,21 @@ func (b *Book) DecideRequest(user int64, communityID, hash int64, peer *mtproto.
 	}
 	if reject {
 		c.remove(p)
-		return nil
+		return b.save(c)
 	}
 	link.pending = false
-	return nil
+	c.members[link.requestedBy] = true
+	if link.peerType == mtproto.PEER_USER && link.visible {
+		c.members[link.peerID] = true
+	}
+	return b.save(c)
 }
 
 // DecideAll approves or rejects every pending link.
 func (b *Book) DecideAll(user int64, communityID, hash int64, reject bool) error {
+	if err := b.Ready(); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c, err := b.lookup(communityID, hash)
@@ -280,16 +326,23 @@ func (b *Book) DecideAll(user int64, communityID, hash int64, reject bool) error
 			}
 		}
 		c.links = next
-		return nil
+		return b.save(c)
 	}
 	for _, link := range c.links {
 		link.pending = false
+		c.members[link.requestedBy] = true
+		if link.peerType == mtproto.PEER_USER && link.visible {
+			c.members[link.peerID] = true
+		}
 	}
-	return nil
+	return b.save(c)
 }
 
 // SetBanned bans or unbans a user. The owner cannot be banned.
 func (b *Book) SetBanned(user int64, communityID, hash int64, participant *mtproto.PeerUtil, unban bool) error {
+	if err := b.Ready(); err != nil {
+		return err
+	}
 	if participant == nil || (participant.PeerType != mtproto.PEER_USER && participant.PeerType != mtproto.PEER_SELF) || participant.PeerId == 0 {
 		return mtproto.ErrUserIdInvalid
 	}
@@ -307,16 +360,19 @@ func (b *Book) SetBanned(user int64, communityID, hash int64, participant *mtpro
 	}
 	if unban {
 		delete(c.banned, participant.PeerId)
-		return nil
+		return b.save(c)
 	}
 	c.banned[participant.PeerId] = true
 	delete(c.members, participant.PeerId)
-	return nil
+	return b.save(c)
 }
 
 // ParticipantChats lists linked chat and channel ids for one participant.
 // chats and users stay empty: this process does not load those peers.
 func (b *Book) ParticipantChats(viewer int64, communityID, hash int64, participant *mtproto.PeerUtil) (*mtproto.Communities_ParticipantJoinedChats, error) {
+	if err := b.Ready(); err != nil {
+		return nil, err
+	}
 	if participant == nil || (participant.PeerType != mtproto.PEER_USER && participant.PeerType != mtproto.PEER_SELF) || participant.PeerId == 0 {
 		return nil, mtproto.ErrUserIdInvalid
 	}
@@ -397,16 +453,49 @@ func (c *community) upsert(p *mtproto.PeerUtil, by int64, pending, visible bool)
 		link.visible = visible
 		link.requestedBy = by
 		link.date = int32(time.Now().Unix())
-		return
+	} else {
+		c.links = append(c.links, &peerLink{
+			peerType:    p.PeerType,
+			peerID:      p.PeerId,
+			visible:     visible,
+			pending:     pending,
+			requestedBy: by,
+			date:        int32(time.Now().Unix()),
+		})
 	}
-	c.links = append(c.links, &peerLink{
-		peerType:    p.PeerType,
-		peerID:      p.PeerId,
-		visible:     visible,
-		pending:     pending,
-		requestedBy: by,
-		date:        int32(time.Now().Unix()),
-	})
+	if p.PeerType == mtproto.PEER_USER && !pending && visible {
+		c.members[p.PeerId] = true
+	}
+}
+
+func (c *community) visibleTo(user int64, channels map[int64]struct{}) bool {
+	if c.members[user] {
+		return true
+	}
+	for _, link := range c.links {
+		if link.pending || !link.visible {
+			continue
+		}
+		if link.peerType == mtproto.PEER_USER && link.peerID == user {
+			return true
+		}
+		if link.peerType == mtproto.PEER_CHANNEL {
+			if _, ok := channels[link.peerID]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func idSet(ids []int64) map[int64]struct{} {
+	out := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id != 0 {
+			out[id] = struct{}{}
+		}
+	}
+	return out
 }
 
 func (c *community) remove(p *mtproto.PeerUtil) {
