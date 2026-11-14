@@ -23,7 +23,7 @@ func (s *Service) lookup(ctx context.Context, in *mtproto.InputChannel) (*Channe
 	if ch == nil || ch.Deleted {
 		return nil, mtproto.ErrChannelInvalid
 	}
-	if in.AccessHash != 0 && in.AccessHash != ch.AccessHash {
+	if !hashOK(in, ch.AccessHash) {
 		return nil, mtproto.ErrChannelInvalid
 	}
 	return ch, nil
@@ -381,14 +381,26 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 	if err != nil {
 		return nil, err
 	}
-	if err = s.canPost(ch, p); err != nil {
-		return nil, err
+	// A discussion comment is not a channel post. Non-members of the linked
+	// group may send one when they can view the channel. Ordinary sends keep
+	// the membership check.
+	commentBatch := s.commentBatch(ctx, ch, batch)
+	if !commentBatch {
+		if err = s.canPost(ch, p); err != nil {
+			return nil, err
+		}
 	}
 	msgs := make([]*mtproto.Message, 0, len(batch))
 	for _, item := range batch {
 		msgs = append(msgs, item.Message)
 	}
-	if err = s.enforceContent(ch, p, msgs); err != nil {
+	skipContent := commentBatch && (p == nil || !p.InChannel() || ch.Broadcast)
+	if !skipContent {
+		if err = s.enforceContent(ch, p, msgs); err != nil {
+			return nil, err
+		}
+	}
+	if err = s.rejectClosedTopic(ctx, ch, p, msgs); err != nil {
 		return nil, err
 	}
 	feat := s.features(ctx, channelID)
@@ -409,17 +421,39 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		return nil, mtproto.ErrMessageEmpty
 	}
 	var ups []*mtproto.Update
+	// emitUps is what the addressed peer's members receive. A comment that
+	// was stored in the discussion group is already pushed there by
+	// tryComment and must not also be delivered as a channel message.
+	var emitUps []*mtproto.Update
+	var extraChats []int64
 	for _, item := range batch {
 		if item.Message == nil {
 			return nil, mtproto.ErrMessageEmpty
 		}
+		if commentsOn() {
+			handled, upd, groupID, err := s.tryComment(ctx, ch, sender, actorAuth, item)
+			if err != nil {
+				return nil, err
+			}
+			if handled {
+				ups = append(ups, upd)
+				if groupID != 0 && groupID != ch.ID {
+					extraChats = append(extraChats, groupID)
+				} else {
+					emitUps = append(emitUps, upd)
+				}
+				continue
+			}
+		}
 		msg := proto.Clone(item.Message).(*mtproto.Message)
 		s.prepareOutgoing(ch, sender, msg)
+		s.prefillDiscussionReplies(ctx, ch, msg)
 		id, pts, err := s.appendMessage(ctx, channelID, sender, item.RandomID, msg)
 		if err != nil {
 			return nil, err
 		}
 		s.bindTopic(ctx, channelID, id, msg)
+		s.attachDiscussion(ctx, ch, id)
 		stored, err := s.store.GetMessage(ctx, channelID, id)
 		if err != nil || stored == nil {
 			return nil, mtproto.ErrInternalServerError
@@ -428,22 +462,33 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		if err != nil {
 			return nil, err
 		}
-		ups = append(ups, newMessageUpdate(viewMessage(body, stored.SenderID, sender), pts, 1))
+		upd := newMessageUpdate(viewMessage(body, stored.SenderID, sender), pts, 1)
+		ups = append(ups, upd)
+		emitUps = append(emitUps, upd)
 	}
 	ch, _ = s.reload(ctx, channelID)
 	updates := s.updatesWith(ctx, sender, ch, ups...)
-	s.emit(ctx, sender, actorAuth, channelID, func(viewer int64) *mtproto.Updates {
-		cloned := make([]*mtproto.Update, 0, len(ups))
-		for _, u := range ups {
-			cu := proto.Clone(u).(*mtproto.Update)
-			if cu.Message_MESSAGE != nil {
-				cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
-			}
-			cloned = append(cloned, cu)
+	for _, id := range extraChats {
+		g, err := s.reload(ctx, id)
+		if err != nil || g == nil {
+			continue
 		}
-		return s.updatesWith(ctx, viewer, ch, cloned...)
-	})
-	s.notifyIncoming(ctx, channelID, sender, ch)
+		updates.Chats = append(updates.Chats, s.discussionChat(ctx, sender, g))
+	}
+	if len(emitUps) > 0 {
+		s.emit(ctx, sender, actorAuth, channelID, func(viewer int64) *mtproto.Updates {
+			cloned := make([]*mtproto.Update, 0, len(emitUps))
+			for _, u := range emitUps {
+				cu := proto.Clone(u).(*mtproto.Update)
+				if cu.Message_MESSAGE != nil {
+					cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
+				}
+				cloned = append(cloned, cu)
+			}
+			return s.updatesWith(ctx, viewer, ch, cloned...)
+		})
+		s.notifyIncoming(ctx, channelID, sender, ch)
+	}
 	return updates, nil
 }
 

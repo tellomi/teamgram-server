@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -76,8 +77,8 @@ func TestJoinRequestCreatorDiscussionLocationStats(t *testing.T) {
 	if _, err := svc.ToggleJoinToSend(ctx, 1, 0, inCh(b), true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Join(ctx, 4, 0, inCh(b)); err != nil {
-		t.Fatal(err)
+	if _, err := svc.Join(ctx, 4, 0, inCh(b)); err == nil || !strings.Contains(err.Error(), "INVITE_REQUEST_SENT") {
+		t.Fatalf("join request: %v", err)
 	}
 	parts, _ := svc.GetParticipants(ctx, 1, inCh(b), nil, 0, 50, 0)
 	if parts.Count != 1 {

@@ -1,10 +1,14 @@
 package dao
 
 import (
+	"context"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
+	"github.com/zeromicro/go-zero/core/stores/redis"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -49,6 +53,79 @@ func TestPeerNotifySettingsFromDOKeepsLegacySoundAndNewColumns(t *testing.T) {
 	}
 	if stored.GetStoriesAndroidSound().GetPredicateName() != mtproto.Predicate_notificationSoundNone {
 		t.Fatalf("stories sound %+v", stored.GetStoriesAndroidSound())
+	}
+}
+
+func TestNotifySettingsCacheKeysCoverPeerGlobalAndStoryScopes(t *testing.T) {
+	userID := int64(42)
+	rows := []dataobject.UserNotifySettingsDO{
+		{PeerType: mtproto.PEER_USER, PeerId: 99},
+		{PeerType: mtproto.PEER_CHANNEL, PeerId: 7},
+		{PeerType: mtproto.PEER_USERS, PeerId: 0},
+	}
+	got := NotifySettingsCacheKeys(userID, rows)
+	want := []string{
+		genUserNotifySettingsCacheKey(userID, mtproto.PEER_USER, 99),
+		genUserNotifySettingsCacheKey(userID, mtproto.PEER_CHANNEL, 7),
+		genUserNotifySettingsCacheKey(userID, mtproto.PEER_USERS, 0),
+		genUserNotifySettingsCacheKey(userID, mtproto.PEER_CHATS, 0),
+		genUserNotifySettingsCacheKey(userID, mtproto.PEER_BROADCASTS, 0),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("keys %v", got)
+	}
+	have := map[string]struct{}{}
+	for _, key := range got {
+		have[key] = struct{}{}
+	}
+	for _, key := range want {
+		if _, ok := have[key]; !ok {
+			t.Fatalf("missing %s in %v", key, got)
+		}
+	}
+	// The users/chats/broadcasts keys are the story scopes: stories_muted
+	// and the story sounds live on those same cached objects.
+	if _, ok := have[genUserNotifySettingsCacheKey(userID, mtproto.PEER_USERS, 0)]; !ok {
+		t.Fatal("global users key, which carries story notify settings, was omitted")
+	}
+}
+
+func TestDropNotifySettingsCacheRemovesStaleMute(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rds, err := redis.NewRedis(redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Dao{CachedConn: sqlc.NewNodeConn(nil, rds)}
+	ctx := context.Background()
+	userID := int64(42)
+	rows := []dataobject.UserNotifySettingsDO{
+		{PeerType: mtproto.PEER_USER, PeerId: 99},
+		{PeerType: mtproto.PEER_USERS, PeerId: 0},
+	}
+	keys := NotifySettingsCacheKeys(userID, rows)
+	for _, key := range keys {
+		if err := d.CachedConn.SetCache(ctx, key, "mute-until-max"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := genUserNotifySettingsCacheKey(43, mtproto.PEER_USER, 99)
+	if err := d.CachedConn.SetCache(ctx, other, "keep"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.DropNotifySettingsCache(ctx, userID, rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		var stale string
+		if err := d.CachedConn.GetCache(ctx, key, &stale); err == nil {
+			t.Fatalf("key %s still holds %q", key, stale)
+		}
+	}
+	var kept string
+	if err := d.CachedConn.GetCache(ctx, other, &kept); err != nil || kept != "keep" {
+		t.Fatalf("other user cache %q %v", kept, err)
 	}
 }
 
