@@ -725,3 +725,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Channel reaction fan-out and unread badge (ISSUE-S-REACT-CHAN-PUSH-001, ISSUE-S-REACT-MEGA-UNREAD-001, ISSUE-S-REACT-UNREAD-COUNT-001)
+
+`messages.sendReaction` on a channel or megagroup wrote the chip and a pts row, then returned `updateMessageReactions` only to the caller. `React` now `emit`s that update to every current member, with each viewer's own chosen reaction. `channels.getDifference` still replays the same pts row.
+
+On a megagroup, the first reaction from someone other than the message author adds 1 to the author's `unread_reactions_count`. Clearing that person's reaction subtracts 1. `messages.readReactions` subtracts the number of messages that still had a newer foreign reaction. Deleting the message drops its reaction rows and subtracts 1 when that reaction was still unread. The badge hook is `Hooks.ReactionBadge`, wired to `dialog.updateUnreadCount`.
+
+| Piece | File |
+| --- | --- |
+| fan-out and new badge | `service_features.go` `React` |
+| read and delete | `chat_p1.go` `ReadReactions`, `service_ops.go` `Delete` |
+| dialog delta | `app/bff/channels/internal/svc/service_context.go` |

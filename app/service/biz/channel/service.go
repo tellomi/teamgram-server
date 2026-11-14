@@ -62,6 +62,10 @@ type Hooks struct {
 	// process has no presence service. Delete then pushes the affected set
 	// only when that set is at most unreadSyncCap.
 	Online func(ctx context.Context, ids []int64) (map[int64]bool, error)
+	// ReactionBadge adds delta to dialog.unread_reactions_count. Nil skips
+	// the chat-list badge. Delta may be negative when the message is read
+	// or deleted.
+	ReactionBadge func(ctx context.Context, userID, channelID int64, delta int32)
 }
 
 // Service is the channel and supergroup implementation.

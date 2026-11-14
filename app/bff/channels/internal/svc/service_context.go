@@ -103,6 +103,17 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 			})
 		},
 		Incoming: channelIncoming(users, dialogs, syncer, channelPts(c)),
+		ReactionBadge: func(ctx context.Context, userID, channelID int64, delta int32) {
+			if dialogs == nil || userID == 0 || channelID == 0 || delta == 0 {
+				return
+			}
+			_, _ = dialogs.DialogUpdateUnreadCount(ctx, &dialog.TLDialogUpdateUnreadCount{
+				UserId:               userID,
+				PeerType:             mtproto.PEER_CHANNEL,
+				PeerId:               channelID,
+				UnreadReactionsCount: wrapperspb.Int32(delta),
+			})
+		},
 	})
 	return dialogs
 }

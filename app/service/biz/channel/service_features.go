@@ -1615,11 +1615,14 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 	if err := allowReact(f, emoticons); err != nil {
 		return nil, err
 	}
+	hadMine := false
 	kept := f.Reactions[:0]
 	for _, r := range f.Reactions {
-		if !(r.MsgID == msgID && r.UserID == self) {
-			kept = append(kept, r)
+		if r.MsgID == msgID && r.UserID == self {
+			hadMine = true
+			continue
 		}
+		kept = append(kept, r)
 	}
 	f.Reactions = kept
 	now := int32(time.Now().Unix())
@@ -1647,7 +1650,34 @@ func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32,
 		MsgId_INT32:                msgID,
 		Reactions_MESSAGEREACTIONS: reactions,
 	}).To_Update()
+	s.emit(ctx, self, 0, ch.ID, func(viewer int64) *mtproto.Updates {
+		see, read := reactionView(ch, f, viewer)
+		chip := reactionSummary(f.Reactions, msgID, viewer, see, read)
+		one := mtproto.MakeTLUpdateMessageReactions(&mtproto.Update{
+			Peer_PEER:                  mtproto.MakePeerChannel(channelID),
+			MsgId_INT32:                msgID,
+			Reactions_MESSAGEREACTIONS: chip,
+		}).To_Update()
+		return s.updatesWith(ctx, viewer, ch, one)
+	})
+	if ch.Megagroup && stored.SenderID != 0 && stored.SenderID != self {
+		if !hadMine && len(emoticons) > 0 {
+			s.noteReactionBadge(ctx, stored.SenderID, ch.ID, 1)
+		}
+		if hadMine && len(emoticons) == 0 {
+			s.noteReactionBadge(ctx, stored.SenderID, ch.ID, -1)
+		}
+	}
 	return s.updatesWith(ctx, self, ch, upd), nil
+}
+
+func (s *Service) noteReactionBadge(ctx context.Context, userID, channelID int64, delta int32) {
+	if delta == 0 {
+		return
+	}
+	if fn := s.hooks().ReactionBadge; fn != nil {
+		fn(ctx, userID, channelID, delta)
+	}
 }
 
 func reactionView(ch *Channel, f *Features, self int64) (canSee bool, readAt int32) {
