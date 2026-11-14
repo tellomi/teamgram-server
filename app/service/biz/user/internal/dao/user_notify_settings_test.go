@@ -12,6 +12,23 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+func TestTopicNotifyCacheKeyDoesNotCollideWithTheDialog(t *testing.T) {
+	dialog := genUserNotifySettingsCacheKey(1, mtproto.PEER_CHANNEL, 9)
+	topic := TopicNotifySettingsCacheKey(1, mtproto.PEER_CHANNEL, 9, 3)
+	other := TopicNotifySettingsCacheKey(1, mtproto.PEER_CHANNEL, 9, 4)
+	if dialog == topic || topic == other {
+		t.Fatalf("dialog %s topic %s other %s", dialog, topic, other)
+	}
+	keys := TopicNotifyCacheKeys(1, []dataobject.UserNotifySettingsDO{
+		{PeerType: mtproto.PEER_CHANNEL, PeerId: 9, TopMsgId: 3},
+		{PeerType: mtproto.PEER_CHANNEL, PeerId: 9, TopMsgId: 0},
+		{PeerType: mtproto.PEER_CHANNEL, PeerId: 9, TopMsgId: 3},
+	})
+	if len(keys) != 1 || keys[0] != topic {
+		t.Fatalf("keys %v", keys)
+	}
+}
+
 func TestPeerNotifySettingsFromDOKeepsLegacySoundAndNewColumns(t *testing.T) {
 	legacy := PeerNotifySettingsFromDO(&dataobject.UserNotifySettingsDO{
 		ShowPreviews: -1,

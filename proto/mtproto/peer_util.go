@@ -303,8 +303,27 @@ func (p *PeerUtil) IsSelfUser(id int64) bool {
 }
 
 func FromInputNotifyPeer(selfId int64, peer *InputNotifyPeer) (p *PeerUtil) {
+	p, _ = ParseInputNotifyPeer(selfId, peer)
+	return
+}
+
+// ParseInputNotifyPeer reads an account.*NotifySettings peer.
+// topMsgId is the forum topic id from inputNotifyForumTopic. Zero is the
+// dialog itself or a users/chats/broadcasts scope.
+func ParseInputNotifyPeer(selfId int64, peer *InputNotifyPeer) (p *PeerUtil, topMsgId int32) {
 	p = &PeerUtil{}
+	if peer == nil {
+		p.PeerType = PEER_UNKNOWN
+		return
+	}
 	switch peer.PredicateName {
+	case Predicate_inputNotifyForumTopic:
+		topMsgId = peer.GetTopMsgId()
+		if peer.GetPeer() == nil {
+			p.PeerType = PEER_UNKNOWN
+			return
+		}
+		p = FromInputPeer2(selfId, peer.GetPeer())
 	case Predicate_inputNotifyPeer:
 		p = FromInputPeer2(selfId, peer.Peer)
 	case Predicate_inputNotifyUsers:
@@ -314,7 +333,6 @@ func FromInputNotifyPeer(selfId int64, peer *InputNotifyPeer) (p *PeerUtil) {
 	case Predicate_inputNotifyBroadcasts:
 		p.PeerType = PEER_BROADCASTS
 	default:
-		// log.Errorf("fromInputNotifyPeer: invalid peer - %v", peer)
 		p.PeerType = PEER_UNKNOWN
 	}
 	return
@@ -391,6 +409,21 @@ func (p *PeerUtil) ToNotifyPeer() (peer *NotifyPeer) {
 		panic(fmt.Sprintf("ToNotifyPeer(%v) error!", p))
 	}
 	return
+}
+
+// NotifyPeerWithTopic builds the NotifyPeer other sessions receive.
+// A positive topMsgId is notifyForumTopic. Zero is the dialog or a global scope.
+func NotifyPeerWithTopic(p *PeerUtil, topMsgId int32) *NotifyPeer {
+	if p == nil {
+		panic("NotifyPeerWithTopic(nil)")
+	}
+	if topMsgId <= 0 {
+		return p.ToNotifyPeer()
+	}
+	return MakeTLNotifyForumTopic(&NotifyPeer{
+		Peer:     p.ToPeer(),
+		TopMsgId: topMsgId,
+	}).To_NotifyPeer()
 }
 
 func ToPeerByTypeAndID(peerType int32, peerId int64) (peer *Peer) {
