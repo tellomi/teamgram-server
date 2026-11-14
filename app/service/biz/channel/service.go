@@ -252,8 +252,13 @@ func (s *Service) GetParticipants(ctx context.Context, self int64, in *mtproto.I
 	}
 	page := matched[offset:end]
 	parts := make([]*mtproto.ChannelParticipant, 0, len(page))
+	viewer := p
+	if viewer == nil {
+		viewer = &Participant{}
+	}
+	promoted := s.features(ctx, ch.ID).PromotedBy
 	for _, part := range page {
-		parts = append(parts, participantTL(self, part))
+		parts = append(parts, participantFor(self, viewer, promoted, part))
 	}
 	return mtproto.MakeTLChannelsChannelParticipants(&mtproto.Channels_ChannelParticipants{
 		Count:        int32(len(matched)),
@@ -281,9 +286,8 @@ func (s *Service) GetParticipant(ctx context.Context, self int64, in *mtproto.In
 	if p == nil {
 		return nil, mtproto.ErrUserNotParticipant
 	}
-	_ = actor
 	return mtproto.MakeTLChannelsChannelParticipant(&mtproto.Channels_ChannelParticipant{
-		Participant: participantTL(self, p),
+		Participant: participantFor(self, actor, s.features(ctx, ch.ID).PromotedBy, p),
 		Chats:       []*mtproto.Chat{s.ChatFor(ctx, self, ch)},
 		Users:       []*mtproto.User{},
 	}).To_Channels_ChannelParticipant(), nil
@@ -465,6 +469,13 @@ func (s *Service) EditAdmin(ctx context.Context, actor, actorAuth int64, in *mtp
 	if rights != nil {
 		want = int32(mtproto.MakeChatAdminRightsHelper(rights))
 	}
+	// An admin may edit only the admins they promoted, and may not hand out
+	// a right they do not hold. The creator is not limited by either rule.
+	// https://core.telegram.org/method/channels.editAdmin
+	feat := s.features(ctx, ch.ID)
+	if target.IsAdmin() && !actorP.IsCreator() && promoterOf(feat.PromotedBy, target) != actor {
+		return nil, mtproto.ErrRightForbidden
+	}
 	if !actorP.IsCreator() && want&^actorP.AdminRights != 0 {
 		return nil, mtproto.ErrRightForbidden
 	}
@@ -473,6 +484,7 @@ func (s *Service) EditAdmin(ctx context.Context, actor, actorAuth int64, in *mtp
 		target.Role = RoleMember
 		target.AdminRights = 0
 		target.Rank = ""
+		rememberPromoter(feat, target.UserID, 0)
 	} else {
 		target.Role = RoleAdmin
 		target.AdminRights = want
@@ -480,8 +492,12 @@ func (s *Service) EditAdmin(ctx context.Context, actor, actorAuth int64, in *mtp
 		if target.InviterID == 0 {
 			target.InviterID = actor
 		}
+		rememberPromoter(feat, target.UserID, actor)
 	}
 	if err := s.store.PutParticipant(ctx, target); err != nil {
+		return nil, err
+	}
+	if err := s.saveFeatures(ctx, ch.ID, feat); err != nil {
 		return nil, err
 	}
 	s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionParticipantToggleAdmin(&mtproto.ChannelAdminLogEventAction{

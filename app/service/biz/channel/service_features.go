@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -555,20 +556,17 @@ func (s *Service) EditLocation(ctx context.Context, self int64, in *mtproto.Inpu
 	return nil
 }
 
-func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, userID int64, password *mtproto.InputCheckPasswordSRP) (*mtproto.Updates, error) {
-	// Cloud password verifiers are not stored. An empty proof is the
-	// documented PASSWORD_MISSING (2FA required). A submitted SRP A is the
-	// same acceptance this method already used.
-	// https://core.telegram.org/method/messages.editChatCreator
-	if password == nil || len(password.GetA()) == 0 || password.GetPredicateName() == mtproto.Predicate_inputCheckPasswordEmpty {
-		return nil, mtproto.ErrPasswordMissing
-	}
+func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, userID int64, proof *mtproto.InputCheckPasswordSRP) (*mtproto.Updates, error) {
+	// https://core.telegram.org/method/channels.editCreator
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
 		return nil, err
 	}
 	if !p.IsCreator() {
 		return nil, mtproto.ErrChatAdminRequired
+	}
+	if userID == 0 || userID == self {
+		return nil, mtproto.ErrUserIdInvalid
 	}
 	target, err := s.store.GetParticipant(ctx, ch.ID, userID)
 	if err != nil {
@@ -577,6 +575,11 @@ func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mt
 	if target == nil || !target.InChannel() {
 		return nil, mtproto.ErrUserNotParticipant
 	}
+	if err = password.CheckSensitive(ctx, self, actorAuth, proof); err != nil {
+		return nil, err
+	}
+	prevSelf := p.clone()
+	prevTarget := target.clone()
 	p.Role = RoleAdmin
 	p.AdminRights = allAdminRights()
 	target.Role = RoleCreator
@@ -594,12 +597,105 @@ func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mt
 	}
 	f := s.features(ctx, ch.ID)
 	f.FutureCreatorID = 0
+	rememberPromoter(f, self, userID)
 	_ = s.saveFeatures(ctx, ch.ID, f)
 	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionParticipantToggleAdmin(&mtproto.ChannelAdminLogEventAction{
 		NewParticipant:  participantTL(self, target),
 		PrevParticipant: participantTL(self, p),
 	}).To_ChannelAdminLogEventAction())
-	return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
+	ups := s.creatorTransferUpdates(ctx, self, ch, prevSelf, p, prevTarget, target)
+	s.emit(ctx, self, actorAuth, ch.ID, func(viewer int64) *mtproto.Updates {
+		return s.creatorTransferUpdates(ctx, viewer, ch, prevSelf, p, prevTarget, target)
+	})
+	return ups, nil
+}
+
+// creatorTransferUpdates is what channels.editCreator returns and what the
+// other members are pushed. updateChannel refreshes the chat, and
+// updateChannelParticipant carries both membership rows. Each viewer's copy
+// sets self/inviter_id together so the constructor decodes.
+func (s *Service) creatorTransferUpdates(ctx context.Context, viewer int64, ch *Channel, prevOld, newOld, prevNew, newCreator *Participant) *mtproto.Updates {
+	viewerP, _ := s.store.GetParticipant(ctx, ch.ID, viewer)
+	if viewerP == nil {
+		viewerP = &Participant{}
+	}
+	promoted := s.features(ctx, ch.ID).PromotedBy
+	when := int32(time.Now().Unix())
+	oldUp := channelParticipantUpdate(ch.ID, prevOld.UserID, newOld.UserID, when,
+		participantFor(viewer, viewerP, promoted, prevOld),
+		participantFor(viewer, viewerP, promoted, newOld))
+	newUp := channelParticipantUpdate(ch.ID, prevOld.UserID, newCreator.UserID, when,
+		participantFor(viewer, viewerP, promoted, prevNew),
+		participantFor(viewer, viewerP, promoted, newCreator))
+	return s.updatesWith(ctx, viewer, ch, oldUp, newUp, channelUpdate(ch.ID))
+}
+
+func channelParticipantUpdate(channelID, actorID, userID int64, date int32, prev, next *mtproto.ChannelParticipant) *mtproto.Update {
+	return mtproto.MakeTLUpdateChannelParticipant(&mtproto.Update{
+		ChannelId:                              channelID,
+		Date_INT32:                             date,
+		ActorId:                                actorID,
+		UserId:                                 userID,
+		PrevParticipant_FLAGCHANNELPARTICIPANT: prev,
+		NewParticipant_FLAGCHANNELPARTICIPANT:  next,
+	}).To_Update()
+}
+
+// ToggleNoForwards is messages.toggleNoForwards for a channel or supergroup.
+// The creator, or an admin with change_info, may set the flag. Everyone else
+// gets CHAT_ADMIN_REQUIRED. A user peer is not a channel and stays
+// PEER_ID_INVALID in the RPC handler.
+// https://core.telegram.org/method/messages.toggleNoForwards
+func (s *Service) ToggleNoForwards(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, enabled bool) (*mtproto.Updates, error) {
+	ch, p, err := s.requireMember(ctx, self, in)
+	if err != nil {
+		return nil, err
+	}
+	if !canRestrictSaving(p) {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	f := s.features(ctx, ch.ID)
+	f.NoForwards = enabled
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	ups := s.pack(ctx, self, ch.ID, channelUpdate(ch.ID))
+	s.emit(ctx, self, actorAuth, ch.ID, func(viewer int64) *mtproto.Updates {
+		return s.pack(ctx, viewer, ch.ID, channelUpdate(ch.ID))
+	})
+	return ups, nil
+}
+
+func canRestrictSaving(p *Participant) bool {
+	if p == nil || !p.InChannel() {
+		return false
+	}
+	if p.IsCreator() {
+		return true
+	}
+	return p.IsAdmin() && p.adminRights().CanChangeInfo()
+}
+
+// MayReadBoosts reports whether userID may call premium.getBoostsList for
+// this channel. Only a creator or an admin may. A missing channel is not
+// an admin grant.
+// https://core.telegram.org/method/premium.getBoostsList
+func (s *Service) MayReadBoosts(ctx context.Context, userID, channelID int64) (bool, error) {
+	if s == nil || s.store == nil || userID == 0 || channelID == 0 {
+		return false, nil
+	}
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		return false, err
+	}
+	if ch == nil || ch.Deleted {
+		return false, nil
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return false, err
+	}
+	return p.IsAdmin(), nil
 }
 
 func (s *Service) FutureCreator(ctx context.Context, self int64, in *mtproto.InputChannel) (int64, error) {
