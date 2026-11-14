@@ -233,7 +233,18 @@ func (s *Service) GetParticipants(ctx context.Context, self int64, in *mtproto.I
 			q = filter.Q_FLAGSTRING.Value
 		}
 	}
-	matched := filterParticipants(all, name, strings.ToLower(q))
+	q = strings.ToLower(strings.TrimSpace(q))
+	names := map[int64]string{}
+	if name == mtproto.Predicate_channelParticipantsSearch && q != "" {
+		ids := make([]int64, 0, len(all))
+		for _, part := range all {
+			if part != nil {
+				ids = append(ids, part.UserID)
+			}
+		}
+		names = lookupMemberNames(ctx, self, ids)
+	}
+	matched := filterParticipants(all, name, q, names)
 	ids := make([]int64, len(matched))
 	for i, part := range matched {
 		ids[i] = part.UserID
@@ -865,10 +876,10 @@ func hashParticipants(ids []int64) int64 {
 	return h
 }
 
-func filterParticipants(all []*Participant, filter, q string) []*Participant {
+func filterParticipants(all []*Participant, filter, q string, names map[int64]string) []*Participant {
 	var out []*Participant
 	for _, p := range all {
-		if !matchParticipant(p, filter, q) {
+		if !matchParticipant(p, filter, q, names) {
 			continue
 		}
 		out = append(out, p)
@@ -876,7 +887,7 @@ func filterParticipants(all []*Participant, filter, q string) []*Participant {
 	return out
 }
 
-func matchParticipant(p *Participant, filter, q string) bool {
+func matchParticipant(p *Participant, filter, q string, names map[int64]string) bool {
 	switch filter {
 	case mtproto.Predicate_channelParticipantsAdmins:
 		return p.IsAdmin()
@@ -896,7 +907,8 @@ func matchParticipant(p *Participant, filter, q string) bool {
 		if q == "" {
 			return true
 		}
-		return strings.Contains(itoa64(p.UserID), q) || strings.Contains(strings.ToLower(p.Rank), q)
+		label := names[p.UserID]
+		return strings.Contains(label, q) || strings.Contains(itoa64(p.UserID), q) || strings.Contains(strings.ToLower(p.Rank), q)
 	case mtproto.Predicate_channelParticipantsContacts, mtproto.Predicate_channelParticipantsMentions, mtproto.Predicate_channelParticipantsRecent, "":
 		return p.State == StateNormal
 	default:
@@ -914,6 +926,25 @@ func randInt63() int64 {
 		return 1
 	}
 	return v
+}
+
+var memberNames func(context.Context, int64, []int64) map[int64]string
+
+// SetMemberNames supplies display names for channels.getParticipants search.
+// The channel store only has user ids. Nil leaves search on id and admin rank.
+func SetMemberNames(fn func(context.Context, int64, []int64) map[int64]string) {
+	memberNames = fn
+}
+
+func lookupMemberNames(ctx context.Context, viewer int64, ids []int64) map[int64]string {
+	if memberNames == nil || len(ids) == 0 {
+		return map[int64]string{}
+	}
+	got := memberNames(ctx, viewer, ids)
+	if got == nil {
+		return map[int64]string{}
+	}
+	return got
 }
 
 func itoa(v int32) string {

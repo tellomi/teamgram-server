@@ -725,3 +725,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Member search by name (ISSUE-S-MEMBER-SEARCH-001)
+
+`channels.getParticipants` with `channelParticipantsSearch` compared the query to the user id and the admin rank. Display names live on the user service. The channels BFF now supplies first name, last name, and username, and the filter matches those strings.
+
+| Piece | File |
+| --- | --- |
+| filter | `app/service/biz/channel/service.go` |
+| name lookup | `app/bff/channels/internal/svc/service_context.go` |

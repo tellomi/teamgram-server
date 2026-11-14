@@ -18,6 +18,7 @@ import (
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
@@ -59,6 +60,30 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	}
 }
 
+func memberNameIndex(users user_client.UserClient) func(context.Context, int64, []int64) map[int64]string {
+	return func(ctx context.Context, viewer int64, ids []int64) map[int64]string {
+		out := map[int64]string{}
+		if users == nil || len(ids) == 0 {
+			return out
+		}
+		to := []int64{}
+		if viewer != 0 {
+			to = []int64{viewer}
+		}
+		got, err := users.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{Id: ids, To: to})
+		if err != nil || got == nil {
+			return out
+		}
+		for _, u := range got.GetUserListByIdList(viewer, ids...) {
+			if u == nil {
+				continue
+			}
+			out[u.GetId()] = strings.ToLower(strings.TrimSpace(u.GetFirstName().GetValue() + " " + u.GetLastName().GetValue() + " " + u.GetUsername().GetValue()))
+		}
+		return out
+	}
+}
+
 func installChannelHooks(c config.Config, users user_client.UserClient) dialog_client.DialogClient {
 	var dialogs dialog_client.DialogClient
 	if len(c.DialogClient.Etcd.Hosts) > 0 || len(c.DialogClient.Endpoints) > 0 {
@@ -68,6 +93,7 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
 		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
+	channel.SetMemberNames(memberNameIndex(users))
 	channel.Shared().SetHooks(channel.Hooks{
 		Online: onlineMembers(c),
 		Push: func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates) {
