@@ -510,17 +510,21 @@ func (s *Service) EditBanned(ctx context.Context, actor, actorAuth int64, in *mt
 	}
 	kicked := false
 	prev := *target
+	now := int32(time.Now().Unix())
 	if rights == nil || rights.NoBanRights() {
+		// view_messages removed the user. Clearing the ban lifts it.
+		// It does not put them back in the member list.
+		removed := target.State == StateKicked || viewMessagesBanned(target.BannedRights)
 		target.Role = RoleMember
 		target.BannedRights = 0
-		if target.State == StateKicked {
+		if removed {
 			target.State = StateLeft
 		}
 	} else {
 		target.Role = RoleBanned
 		target.BannedRights = int64(rights.ToBannedRights())
 		target.InviterID = actor
-		if rights.IsKick() {
+		if isMemberKick(rights, now) {
 			target.State = StateKicked
 			kicked = true
 		}
@@ -798,6 +802,26 @@ func (s *Service) ExportMessageLink(ctx context.Context, self int64, in *mtproto
 		Link: link,
 		Html: `<a href="` + link + `">` + link + `</a>`,
 	}).To_ExportedMessageLink(), nil
+}
+
+// isMemberKick reports channels.editBanned rights that remove the user.
+// view_messages is the kick flag. until_date 0 and 0x7fffffff mean forever.
+// A later until_date removes them until that time. A date already past does not.
+func isMemberKick(rights *mtproto.ChatBannedRights, now int32) bool {
+	if rights == nil || !rights.GetViewMessages() {
+		return false
+	}
+	until := rights.GetUntilDate()
+	if until == 0 || rights.IsKick() {
+		return true
+	}
+	return until > now
+}
+
+// viewMessagesBanned reports a stored ban that includes view_messages.
+// Those rows are kicks, including ones written before kick removed the member.
+func viewMessagesBanned(bits int64) bool {
+	return bits&int64(mtproto.BANNED_VIEW_MESSAGES) != 0
 }
 
 func missingInvitee(id int64) *mtproto.MissingInvitee {
