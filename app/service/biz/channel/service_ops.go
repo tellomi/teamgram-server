@@ -507,7 +507,7 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 			for _, u := range emitUps {
 				cu := proto.Clone(u).(*mtproto.Update)
 				if cu.Message_MESSAGE != nil {
-					cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
+					cu.Message_MESSAGE = s.forViewer(ctx, channelID, cu.Message_MESSAGE, sender, viewer)
 				}
 				cloned = append(cloned, cu)
 			}
@@ -996,7 +996,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		if stored.EditDate != 0 && body.EditDate == nil {
 			body.EditDate = &wrapperspb.Int32Value{Value: stored.EditDate}
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+		msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
@@ -1032,7 +1032,7 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		if err != nil {
 			return nil, err
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+		msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
@@ -1157,7 +1157,7 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 	for _, stored := range page {
 		body, err := unmarshalMessage(stored.Data)
 		if err == nil {
-			msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+			msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 		}
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
@@ -1298,6 +1298,7 @@ type DialogRow struct {
 	Date                int32
 	Pts                 int32
 	ViewForumAsMessages bool
+	UnreadMentions      int32
 }
 
 func (s *Service) DialogsFor(ctx context.Context, userID int64) ([]DialogRow, error) {
@@ -1327,7 +1328,33 @@ func (s *Service) dialogRow(ctx context.Context, userID int64, ch *Channel) Dial
 		Date:                date,
 		Pts:                 ch.Pts,
 		ViewForumAsMessages: s.features(ctx, ch.ID).ViewForumAsMessages[userID],
+		UnreadMentions:      s.unreadMentionCount(ctx, userID, ch, st.ReadInboxMaxID),
 	}
+}
+
+func (s *Service) unreadMentionCount(ctx context.Context, userID int64, ch *Channel, readMax int32) int32 {
+	if s == nil || ch == nil {
+		return 0
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return 0
+	}
+	var n int32
+	for _, stored := range msgs {
+		if stored == nil || stored.Deleted || stored.ID <= readMax || stored.SenderID == userID {
+			continue
+		}
+		body, err := unmarshalMessage(stored.Data)
+		if err != nil || body == nil {
+			continue
+		}
+		body.Id = stored.ID
+		if s.mentionsViewer(ctx, ch.ID, body, userID) {
+			n++
+		}
+	}
+	return n
 }
 
 // DialogFor is one member's dialog for one channel. Opening a chat asks for

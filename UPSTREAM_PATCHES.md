@@ -725,3 +725,13 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Mentions and media unread (ISSUE-S-MENTION-MEGAGROUP-001, CHAN-MEDIA-UNREAD-001)
+
+A supergroup stores one message row. `mentioned` and `media_unread` are per viewer, so they are set when the message is shown. A mention entity or a reply to the viewer sets `mentioned`. Voice, round video, and ttl media set `media_unread` until `channels.readMessageContents`, which also pushes `updateChannelReadMessagesContents`. `dialogs.unread_mentions_count` counts those mentions above the viewer's read cursor.
+
+| Piece | File |
+| --- | --- |
+| viewer flags | `app/service/biz/channel/convert.go` |
+| history and push | `service_ops.go`, `read_views.go` |
+| read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |

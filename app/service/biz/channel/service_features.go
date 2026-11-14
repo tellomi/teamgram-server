@@ -210,7 +210,17 @@ func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.Inpu
 			f.ReadContents[self] = append(f.ReadContents[self], id)
 		}
 	}
-	return s.saveFeatures(ctx, ch.ID, f)
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return err
+	}
+	if h := s.hooks(); h.Push != nil && len(ids) > 0 {
+		up := mtproto.MakeTLUpdateChannelReadMessagesContents(&mtproto.Update{
+			ChannelId: ch.ID,
+			Messages:  ids,
+		}).To_Update()
+		h.Push(ctx, self, nil, s.pack(ctx, self, ch.ID, up))
+	}
+	return nil
 }
 
 // DeleteByDate removes channel messages whose date is inside [minDate, maxDate].
