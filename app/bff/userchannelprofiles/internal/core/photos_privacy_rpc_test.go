@@ -73,12 +73,16 @@ func photoIDs(photos []*mtproto.Photo) []int64 {
 
 type photoUser struct {
 	userclient.UserClient
-	allow    bool
-	album    []int64
-	fallback int64
+	allow              bool
+	ownerBlockedViewer bool
+	album              []int64
+	fallback           int64
+	albumLoads         int
+	blockCalls         int
 }
 
 func (u *photoUser) UserGetProfilePhotos(context.Context, *user.TLUserGetProfilePhotos) (*user.Vector_Long, error) {
+	u.albumLoads++
 	return &user.Vector_Long{Datas: append([]int64{}, u.album...)}, nil
 }
 
@@ -94,6 +98,44 @@ func (u *photoUser) UserCheckPrivacy(context.Context, *user.TLUserCheckPrivacy) 
 		return mtproto.BoolTrue, nil
 	}
 	return mtproto.BoolFalse, nil
+}
+
+func (u *photoUser) UserBlockedByUser(_ context.Context, in *user.TLUserBlockedByUser) (*mtproto.Bool, error) {
+	u.blockCalls++
+	if u.ownerBlockedViewer && in.GetUserId() == 2 && in.GetPeerUserId() == 1 {
+		return mtproto.BoolTrue, nil
+	}
+	return mtproto.BoolFalse, nil
+}
+
+func TestGetUserPhotosBlockedSideGetsEmptyAlbum(t *testing.T) {
+	users := &photoUser{allow: true, album: []int64{11, 12}, fallback: 77, ownerBlockedViewer: true}
+	media := &photoMedia{}
+	c := photoCore(users, media)
+	in := &mtproto.TLPhotosGetUserPhotos{
+		UserId: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 2, AccessHash: 1}).To_InputUser(),
+	}
+	got, err := c.PhotosGetUserPhotos(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.GetPhotos()) != 0 {
+		t.Fatalf("blocked viewer received %v", photoIDs(got.GetPhotos()))
+	}
+	if media.gets != 0 || users.albumLoads != 0 {
+		t.Fatalf("album was loaded: media %d photos %d", media.gets, users.albumLoads)
+	}
+
+	// The blocker still sees the other person's album. The block row is the
+	// other direction, so UserBlockedByUser(owner, viewer) is false.
+	users.ownerBlockedViewer = false
+	allowed, err := c.PhotosGetUserPhotos(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := photoIDs(allowed.GetPhotos()); len(ids) != 2 || ids[0] != 11 || ids[1] != 12 {
+		t.Fatalf("blocker album %v", ids)
+	}
 }
 
 type photoMedia struct {
