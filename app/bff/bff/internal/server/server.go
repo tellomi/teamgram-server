@@ -341,6 +341,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBusinessLocationServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCBusinessOpeningHoursServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCCommunitiesServer(grpcServer, communities_helper.New())
+		communities_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
 		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
 		mtproto.RegisterRPCDiscoverServer(grpcServer, discover_helper.New(c.BizServiceClient))
