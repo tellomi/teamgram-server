@@ -7,7 +7,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 )
 
-func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID int32) dialog.DialogExtList {
+func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID int32, excludePinned bool) dialog.DialogExtList {
 	if c.svcCtx.Plugin == nil {
 		return keepFolder(list, folderID)
 	}
@@ -16,6 +16,9 @@ func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID in
 		return keepFolder(list, folderID)
 	}
 	c.stampChannelFolders(extras)
+	if excludePinned {
+		extras = withoutPinnedDialogs(extras)
+	}
 	have := map[int64]bool{}
 	for _, ext := range extras {
 		if peer := ext.GetDialog().GetPeer(); peer != nil {
@@ -67,23 +70,121 @@ func (c *DialogsCore) stampChannelFolders(list dialog.DialogExtList) {
 	if err != nil || rows == nil {
 		return
 	}
-	folderOf := map[int64]int32{}
-	for _, row := range rows.GetDatas() {
+	applyChannelDialogRows(list, rows.GetDatas())
+}
+
+// applyChannelDialogRows copies the dialogs-table folder and pin onto channel
+// dialogs. The channel store does not keep either bit. A pinned channel was
+// replaced by an unpinned row, so getDialogs neither set pinned nor sorted it
+// first. Pin rank stays on Order; the chat-list sort reads that before date.
+func applyChannelDialogRows(list, rows dialog.DialogExtList) {
+	type saved struct {
+		folder int32
+		pinned bool
+		order  int64
+	}
+	state := map[int64]saved{}
+	for _, row := range rows {
 		peer := row.GetDialog().GetPeer()
-		if peer == nil || peer.GetChannelId() == 0 || row.GetDialog().GetTopMessage() == 0 {
+		if peer == nil || peer.GetChannelId() == 0 {
 			continue
 		}
-		folderOf[peer.GetChannelId()] = row.GetDialog().GetFolderId().GetValue()
+		state[peer.GetChannelId()] = saved{
+			folder: row.GetDialog().GetFolderId().GetValue(),
+			pinned: row.GetDialog().GetPinned(),
+			order:  row.GetOrder(),
+		}
 	}
 	for _, ext := range list {
 		peer := ext.GetDialog().GetPeer()
-		if peer == nil {
+		if peer == nil || ext.GetDialog() == nil {
 			continue
 		}
-		if folderID, ok := folderOf[peer.GetChannelId()]; ok {
-			ext.Dialog.FolderId = mtproto.MakeFlagsInt32(folderID)
+		row, ok := state[peer.GetChannelId()]
+		if !ok {
+			continue
+		}
+		ext.Dialog.FolderId = mtproto.MakeFlagsInt32(row.folder)
+		if row.pinned {
+			ext.Dialog.Pinned = true
+			ext.Order = row.order
 		}
 	}
+}
+
+func withoutPinnedDialogs(list dialog.DialogExtList) dialog.DialogExtList {
+	kept := list[:0]
+	for _, ext := range list {
+		if ext == nil || ext.GetDialog().GetPinned() {
+			continue
+		}
+		kept = append(kept, ext)
+	}
+	return kept
+}
+
+// applyChannelLiveRows copies the channel store onto dialogs-table rows.
+// The table top only moves forward, so after the newest post is deleted it
+// still names that id and getDialogs / getPinnedDialogs drop the chat. The
+// channel store has the live top. Pin rank and folder stay on the table row.
+func applyChannelLiveRows(stored, live dialog.DialogExtList) {
+	byID := map[int64]*dialog.DialogExt{}
+	for _, ext := range live {
+		peer := ext.GetDialog().GetPeer()
+		if peer == nil || peer.GetChannelId() == 0 {
+			continue
+		}
+		byID[peer.GetChannelId()] = ext
+	}
+	for _, ext := range stored {
+		d := ext.GetDialog()
+		if d == nil || d.GetPeer() == nil || d.GetPeer().GetChannelId() == 0 {
+			continue
+		}
+		src := byID[d.GetPeer().GetChannelId()]
+		if src == nil || src.GetDialog() == nil {
+			continue
+		}
+		s := src.GetDialog()
+		d.TopMessage = s.GetTopMessage()
+		d.ReadInboxMaxId = s.GetReadInboxMaxId()
+		d.ReadOutboxMaxId = s.GetReadOutboxMaxId()
+		d.UnreadCount = s.GetUnreadCount()
+		d.Pts = s.Pts
+		d.ViewForumAsMessages = s.GetViewForumAsMessages()
+		ext.Date = src.GetDate()
+		if !d.GetPinned() {
+			ext.Order = src.GetOrder()
+		}
+	}
+}
+
+func (c *DialogsCore) applyChannelLive(list dialog.DialogExtList) dialog.DialogExtList {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Plugin == nil || len(list) == 0 {
+		return list
+	}
+	// Only the channels already on this page. Listing every joined channel
+	// here made opening one chat walk the whole membership.
+	seen := map[int64]bool{}
+	var live dialog.DialogExtList
+	for _, ext := range list {
+		d := ext.GetDialog()
+		if d == nil || d.GetPeer() == nil {
+			continue
+		}
+		id := d.GetPeer().GetChannelId()
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		row, err := c.svcCtx.Plugin.GetChannelDialogById(c.ctx, c.MD.UserId, id)
+		if err != nil || row == nil {
+			continue
+		}
+		live = append(live, row)
+	}
+	applyChannelLiveRows(list, live)
+	return list
 }
 
 func keepFolder(list dialog.DialogExtList, folderID int32) dialog.DialogExtList {

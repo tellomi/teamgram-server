@@ -24,6 +24,8 @@ import (
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // MessagesToggleDialogPin
@@ -46,15 +48,23 @@ func (c *DialogsCore) MessagesToggleDialogPin(in *mtproto.TLMessagesToggleDialog
 		return nil, err
 	}
 
-	folderId, err := c.svcCtx.Dao.DialogClient.DialogToggleDialogPin(c.ctx, &dialog.TLDialogToggleDialogPin{
+	pinReq := &dialog.TLDialogToggleDialogPin{
 		UserId:   c.MD.UserId,
 		PeerType: peer.PeerType,
 		PeerId:   peer.PeerId,
 		Pinned:   mtproto.ToBool(in.Pinned),
-	})
+	}
+	folderId, err := c.svcCtx.Dao.DialogClient.DialogToggleDialogPin(c.ctx, pinReq)
+	if err == mtproto.ErrPeerIdInvalid && peer.IsChannel() {
+		if ensureErr := c.ensureChannelDialog(peer); ensureErr != nil {
+			c.Logger.Errorf("messages.toggleDialogPin - error: %v", ensureErr)
+			return nil, ensureErr
+		}
+		folderId, err = c.svcCtx.Dao.DialogClient.DialogToggleDialogPin(c.ctx, pinReq)
+	}
 	if err != nil {
 		c.Logger.Errorf("messages.toggleDialogPin - error: %v", err)
-		return mtproto.BoolFalse, nil
+		return nil, err
 	}
 
 	var (
@@ -85,7 +95,10 @@ func (c *DialogsCore) MessagesToggleDialogPin(in *mtproto.TLMessagesToggleDialog
 			syncUpdates.PushChat(chats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 		},
 		func(channelIdList []int64) {
-			// TODO
+			if c.svcCtx.Plugin == nil || len(channelIdList) == 0 {
+				return
+			}
+			syncUpdates.PushChat(c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, channelIdList...)...)
 		})
 	c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 		UserId:        c.MD.UserId,
@@ -94,4 +107,32 @@ func (c *DialogsCore) MessagesToggleDialogPin(in *mtproto.TLMessagesToggleDialog
 	})
 
 	return mtproto.BoolTrue, nil
+}
+
+// ensureChannelDialog writes the dialogs-table row pin reads. A channel the
+// user belongs to can be absent there until the first message fan-out, and
+// toggleDialogPin then returns PEER_ID_INVALID.
+func (c *DialogsCore) ensureChannelDialog(peer *mtproto.PeerUtil) error {
+	if c.svcCtx.Plugin == nil || peer == nil || !peer.IsChannel() {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ext, err := c.svcCtx.Plugin.GetChannelDialogById(c.ctx, c.MD.UserId, peer.PeerId)
+	if err != nil || ext == nil || ext.GetDialog() == nil {
+		return mtproto.ErrPeerIdInvalid
+	}
+	d := ext.GetDialog()
+	_, err = c.svcCtx.Dao.DialogClient.DialogInsertOrUpdateDialog(c.ctx, &dialog.TLDialogInsertOrUpdateDialog{
+		UserId:          c.MD.UserId,
+		PeerType:        peer.PeerType,
+		PeerId:          peer.PeerId,
+		TopMessage:      &wrapperspb.Int32Value{Value: d.GetTopMessage()},
+		ReadInboxMaxId:  &wrapperspb.Int32Value{Value: d.GetReadInboxMaxId()},
+		ReadOutboxMaxId: &wrapperspb.Int32Value{Value: d.GetReadOutboxMaxId()},
+		UnreadCount:     &wrapperspb.Int32Value{Value: d.GetUnreadCount()},
+		Date2:           &wrapperspb.Int64Value{Value: ext.GetDate()},
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }

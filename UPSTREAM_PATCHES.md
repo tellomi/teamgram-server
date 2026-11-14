@@ -529,6 +529,21 @@ The stored JSON is decoded in `stored_draft.go` the same way `Dao.MakeDialog` al
 | Decode stored draft JSON | `app/service/biz/dialog/internal/core/stored_draft.go` |
 | `dialog.getAllDrafts` | `app/service/biz/dialog/internal/core/dialog.getAllDrafts_handler.go` |
 
+## Dialog top after delete, and channel pins (ISSUE-S-CHAN-TOPDEL-001, ISSUE-S-PIN-CHAN-DIALOGS-001)
+
+Deleting the newest megagroup or channel message left `top_message` on that id. `messages.getDialogs` could not load it and dropped the chat for every member. The channel id counter stays where it is. The dialog top is the newest message that is still live, for the sender and for every other member. The same rollback applies to a private chat and a basic group: the outbox and the inbox both point `dialogs.top_message` at the greatest id that this delete does not remove. Deleting every message in a private chat leaves top 0, and the chat list omits that row. A basic group or channel the user still belongs to stays in the list with top 0 and no message.
+
+`messages.getDialogs` builds channel rows from the channel store, which had no pin bit, so a pinned channel or supergroup came back with `pinned` false. The dialogs table is where `messages.toggleDialogPin` and `messages.reorderPinnedDialogs` write the pin rank. That rank is copied onto the channel row, `exclude_pinned` leaves those rows out, and `messages.getPinnedDialogs` / `messages.getPeerDialogs` copy the live top of only the channels on that page back onto the table row. The first peer in a reorder is the top of the pin list. Without `force`, a pin the client left out stays, behind the peers it did send. With `force`, those pins are cleared in the same folder. The cap is `premium.Limit` for `pinned_chats` and `folder_pins`: 5 and 100 for a free account, 100 and 200 for a member, and the member caps when every account is treated as Premium. Past that cap is `PINNED_DIALOGS_TOO_MUCH`. Pinning an empty private chat is `PEER_HISTORY_EMPTY`. Other sessions receive `updateDialogPinned` or `updatePinnedDialogs` with the channel, chat, or user attached. Sync marks both updates for delivery, the same way it marks `updateNotifySettings`, so a background session is woken and an online session is not skipped.
+
+| Piece | File |
+| --- | --- |
+| Live channel top | `app/service/biz/channel/service_ops.go`, `memory.go`, `mysql.go` |
+| Private and basic-group top | `app/messenger/msg/internal/dao/dialog_top.go`, `outbox.go`, `inbox.go` |
+| Chat list keeps an empty group or channel | `app/service/biz/dialog/dialog/dialogs_data_helper.go` |
+| Pin on getDialogs, getPinnedDialogs, getPeerDialogs | `app/bff/dialogs/internal/core/channel_dialogs.go`, `messages.getDialogs_handler.go`, `messages.getPinnedDialogs_handler.go`, `messages.getPeerDialogs_handler.go` |
+| toggle, reorder, premium caps, other-session update | `app/bff/dialogs/internal/core/messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go`, `app/service/biz/dialog/internal/core/pin_policy.go`, `dialog.toggleDialogPin_handler.go`, `dialog.reorderPinnedDialogs_handler.go`, `dialog.editPeerFolders_handler.go` |
+| one channel dialog | `app/service/biz/channel/service_ops.go` `DialogFor`, `app/bff/channels/bridge.go` |
+
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.

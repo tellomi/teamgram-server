@@ -464,21 +464,23 @@ func (d *Dao) DeleteInboxMessages(ctx context.Context, deleteUserId int64, peer 
 
 		dlgDO, _ := d.DialogsDAO.SelectDialog(ctx, userId, msgDOList[0].PeerType, mtproto.GetPeerIdByDialogId(userId, dialogId))
 		if dlgDO != nil {
-			topMessage := dlgDO.TopMessage
 			for i := 0; i < len(msgDOList); i++ {
-				if msgDOList[i].UserMessageBoxId >= dlgDO.TopMessage {
-					dlgDO.TopMessage -= 1
-				}
 				if msgDOList[i].UserMessageBoxId > dlgDO.ReadInboxMaxId {
 					dlgDO.UnreadCount -= 1
 				}
 			}
-			if !(topMessage == dlgDO.TopMessage ||
-				dlgDO.TopMessage == msgDOList[len(msgDOList)-1].UserMessageBoxId) {
-
-				dlgDO.TopMessage, _ = d.MessagesDAO.SelectDialogLastMessageIdNotIdList(ctx, userId, dialogId.A, dialogId.B, msgIds)
+			// Decrementing the top by one lands on a hole, or on another
+			// message in this same delete, and getDialogs then drops the
+			// chat because that id has no message. The next live id is the
+			// greatest message that is not in this delete.
+			if deletedTouchesTop(dlgDO.TopMessage, msgIds) {
+				next, topErr := d.MessagesDAO.SelectDialogLastMessageIdNotIdList(ctx, userId, dialogId.A, dialogId.B, msgIds)
+				if topErr != nil {
+					logx.WithContext(ctx).Errorf("deleteInboxMessages top: %v", topErr)
+				} else {
+					dlgDO.TopMessage = next
+				}
 			}
-
 			if dlgDO.UnreadCount < 0 {
 				dlgDO.UnreadCount = 0
 			}
