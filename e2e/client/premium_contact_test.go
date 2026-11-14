@@ -113,9 +113,12 @@ func TestNoncontactPremiumRequired(t *testing.T) {
 		t.Fatalf("member before premium: %v", err)
 	}
 	mustSQL(t, fmt.Sprintf(`UPDATE users SET premium = 1, premium_expire_date = %d WHERE id = %d`, time.Now().Unix()+30*86400, memberSelf.ID))
+	// The same first name is a no-op and leaves the cached user row, which
+	// still has premium=0. A real rename drops that cache and the next read
+	// loads the subscription written above.
 	invokeOK(t, member, &mtproto.TLAccountUpdateProfile{
 		Constructor: mtproto.CRC32_account_updateProfile,
-		FirstName:   wrapperspb.String("GprivMember"),
+		FirstName:   wrapperspb.String("GprivPaid"),
 	})
 	full = fullUserOf(t, invokeOK(t, member, &mtproto.TLUsersGetFullUser{
 		Constructor: mtproto.CRC32_users_getFullUser,
