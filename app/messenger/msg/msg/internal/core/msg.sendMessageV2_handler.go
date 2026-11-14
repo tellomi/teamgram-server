@@ -384,6 +384,12 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 				c.Logger.Error(err2.Error())
 				return err
 			}
+			// The inbox consumer writes this dialog only after Kafka accepts
+			// the record. Pin and getDialogs run as soon as this RPC returns.
+			if err2 = c.svcCtx.Dao.WriteSenderChatDialog(ctx, fromUserId, peerChatId, box); err2 != nil {
+				c.Logger.Error(err2.Error())
+				return err2
+			}
 
 			var inboxReqs []*inbox.TLInboxSendUserMessageToInboxV2
 			chat.Walk(func(userId int64, participant *mtproto.ImmutableChatParticipant) error {
@@ -711,6 +717,10 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				}
 				boxList = append(boxList, box)
 				updateList = append(updateList, outgoingUpdate(box))
+			}
+			if err2 := c.svcCtx.Dao.WriteSenderChatDialogs(ctx, fromUserId, peerChatId, boxList); err2 != nil {
+				c.Logger.Error(err2.Error())
+				return err2
 			}
 
 			var (

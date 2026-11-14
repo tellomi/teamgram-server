@@ -2,6 +2,14 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Basic-group dialog before the send returns
+
+`messages.createChat` returns as soon as the inbox record is accepted by Kafka. The creator's `dialogs` row used to be written later, in the inbox consumer (`SendMessageToOutboxV1`). `messages.toggleDialogPin` looks that row up and returns `PEER_ID_INVALID` when it is missing, so pinning the new group immediately failed. The sender's dialog is now inserted before the inbox publish, for one message and for a list. The later inbox apply still upserts `top_message` forward and does not clear `pinned`.
+
+| Piece | File |
+| --- | --- |
+| dialog before return | `app/messenger/msg/internal/dao/sender_dialog.go`, `msg.sendMessageV2_handler.go` |
+
 ## Polls and quizzes
 
 `messages.sendMedia` with `inputMediaPoll` used `makeMediaByInputMedia`, which returned `messageMediaUnsupported`. The poll book in `chatbox` was never called, so `messages.sendVote` had nothing to record.
