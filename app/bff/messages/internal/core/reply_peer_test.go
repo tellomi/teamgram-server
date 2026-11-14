@@ -47,3 +47,55 @@ func TestDropAuthorClearsFwdFrom(t *testing.T) {
 		t.Fatal("text dropped")
 	}
 }
+
+func TestDropMediaCaptionsKeepsTheFileAndPlainText(t *testing.T) {
+	photo := &mtproto.Message{
+		Message: "look",
+		Entities: []*mtproto.MessageEntity{
+			mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{Offset: 0, Length: 4}).To_MessageEntity(),
+		},
+		Media: mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+			Photo_FLAGPHOTO: mtproto.MakeTLPhoto(&mtproto.Photo{Id: 7}).To_Photo(),
+		}).To_MessageMedia(),
+		FwdFrom: mtproto.MakeTLMessageFwdHeader(&mtproto.MessageFwdHeader{
+			FromId: mtproto.MakePeerUser(4),
+			Date:   10,
+		}).To_MessageFwdHeader(),
+	}
+	dropMediaCaptions(photo)
+	if photo.GetMessage() != "" || len(photo.GetEntities()) != 0 {
+		t.Fatalf("caption left %+v", photo.GetMessage())
+	}
+	if photo.GetMedia().GetPhoto_FLAGPHOTO().GetId() != 7 {
+		t.Fatal("photo removed")
+	}
+	if photo.GetFwdFrom().GetFromId().GetUserId() != 4 {
+		t.Fatal("drop_media_captions also hid the author")
+	}
+
+	doc := &mtproto.Message{
+		Message: "clip",
+		Media: mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{
+			Document: mtproto.MakeTLDocument(&mtproto.Document{Id: 9}).To_Document(),
+		}).To_MessageMedia(),
+	}
+	dropForwardAuthor(doc)
+	dropMediaCaptions(doc)
+	if doc.GetMessage() != "" || doc.GetFwdFrom() != nil || doc.GetMedia().GetDocument().GetId() != 9 {
+		t.Fatalf("document %+v", doc)
+	}
+
+	text := &mtproto.Message{Message: "hello"}
+	dropMediaCaptions(text)
+	if text.GetMessage() != "hello" {
+		t.Fatal("plain text stripped")
+	}
+	page := &mtproto.Message{
+		Message: "https://example.com",
+		Media:   mtproto.MakeTLMessageMediaWebPage(&mtproto.MessageMedia{}).To_MessageMedia(),
+	}
+	dropMediaCaptions(page)
+	if page.GetMessage() != "https://example.com" {
+		t.Fatal("link preview text stripped")
+	}
+}

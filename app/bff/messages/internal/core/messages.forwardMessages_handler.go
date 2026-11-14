@@ -328,6 +328,9 @@ func (c *MessagesCore) makeForwardMessages(
 		if request.GetDropAuthor() {
 			dropForwardAuthor(m)
 		}
+		if request.GetDropMediaCaptions() {
+			dropMediaCaptions(m)
+		}
 		if m.ReplyMarkup != nil {
 			m.ReplyMarkup = m.ReplyMarkup.ToForwardMessage()
 		}

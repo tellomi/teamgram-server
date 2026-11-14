@@ -34,6 +34,7 @@ func replyHeaderFromInput(self int64, in *mtproto.InputReplyTo) *mtproto.Message
 
 // dropForwardAuthor removes fwd_from. messages.forwardMessages drop_author
 // sends the content as the caller's own message.
+// https://core.telegram.org/method/messages.forwardMessages
 func dropForwardAuthor(m *mtproto.Message) {
 	if m == nil {
 		return
@@ -41,4 +42,19 @@ func dropForwardAuthor(m *mtproto.Message) {
 	m.FwdFrom = nil
 	m.SavedPeerId = nil
 	m.PostAuthor = nil
+}
+
+// dropMediaCaptions strips the caption from a photo or a document
+// (video, file, gif, audio). The media stays. A text message and a link
+// preview keep their text: that text is the message, not a media caption.
+// https://core.telegram.org/method/messages.forwardMessages
+func dropMediaCaptions(m *mtproto.Message) {
+	if m == nil || m.Media == nil {
+		return
+	}
+	switch m.Media.GetPredicateName() {
+	case mtproto.Predicate_messageMediaPhoto, mtproto.Predicate_messageMediaDocument:
+		m.Message = ""
+		m.Entities = nil
+	}
 }
