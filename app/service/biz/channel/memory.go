@@ -381,6 +381,24 @@ func (s *memoryStore) ReplaceMessageBody(ctx context.Context, channelID int64, i
 	return nil
 }
 
+func (s *memoryStore) LatestLiveMessage(ctx context.Context, channelID int64, atOrBelow int32) (*StoredMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if atOrBelow <= 0 {
+		return nil, nil
+	}
+	var best *StoredMessage
+	for _, m := range s.messages[channelID] {
+		if m == nil || m.Deleted || m.ID <= 0 || m.ID > atOrBelow {
+			continue
+		}
+		if best == nil || m.ID > best.ID {
+			best = m
+		}
+	}
+	return best.clone(), nil
+}
+
 func (s *memoryStore) GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

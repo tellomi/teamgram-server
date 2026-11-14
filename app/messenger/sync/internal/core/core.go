@@ -235,6 +235,27 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 		) {
 			needPush = true
 		},
+		mtproto.Predicate_updateDialogPinned: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// messages.toggleDialogPin must reach the account's other
+			// sessions, including a background Android socket. The chats
+			// vector is already on the updates object.
+			needPush = true
+		},
+		mtproto.Predicate_updatePinnedDialogs: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
 	})
 
 	return needPush, nil

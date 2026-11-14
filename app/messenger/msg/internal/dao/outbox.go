@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"time"
 
 	"github.com/teamgram/marmota/pkg/hack"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
@@ -355,7 +354,6 @@ func (d *Dao) SendChatMultiMessage(ctx context.Context, fromId, chatId int64, ou
 func (d *Dao) DeleteMessages(ctx context.Context, userId int64, msgIds []int32) (*mtproto.PeerUtil, []int64, error) {
 
 	var (
-		topMessageIndex      int32
 		dialogId             *mtproto.DialogID
 		deletedMsgDataIdList = make([]int64, 0, len(msgIds))
 	)
@@ -384,37 +382,24 @@ func (d *Dao) DeleteMessages(ctx context.Context, userId int64, msgIds []int32) 
 		return mtproto.MakePeerUtil(mtproto.PEER_EMPTY, 0), []int64{}, nil
 	}
 
-	// 会话里最后n条消息，检查是否需要修改会话信息
-	topMessageDOList, err := d.MessagesDAO.SelectDialogLastMessageList(ctx, userId, dialogId.A, dialogId.B, int32(len(msgIds)+1))
+	// One past the delete set, so the previous live message is in the window
+	// when any message remains. The id counter is not involved.
+	topMessageDOList, err := d.MessagesDAO.SelectDialogLastMessageList(ctx, userId, dialogId.A, dialogId.B, int32(len(msgDOList)+1))
 	if err != nil {
 		return nil, nil, err
-	} else if len(topMessageDOList) == 0 {
-		// return []int64{}, nil
-	} else {
-		topMessageIndex = math.MaxInt32
 	}
-
-	getLastTopMessage := func(topMessage2 int32) (int32, int64) {
-		for i := 0; i < len(topMessageDOList); i++ {
-			if topMessageDOList[i].UserMessageBoxId >= topMessage2 {
-				continue
-			}
-			return topMessageDOList[i].UserMessageBoxId, topMessageDOList[i].Date2
-		}
-		return 0, 0
+	deletedIDs := make([]int32, 0, len(msgDOList))
+	newest := make([]dialogTopCandidate, 0, len(topMessageDOList))
+	for i := range msgDOList {
+		deletedIDs = append(deletedIDs, msgDOList[i].UserMessageBoxId)
 	}
-
-	//_, err = d.DialogsDAO.SelectDialogsWithCB().SelectByPeer(ctx, userId, model.GetPeerIdByDialogId(userId, dialogId))
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	for i := 0; i < len(msgDOList); i++ {
-		topMessage, _ := getLastTopMessage(topMessageIndex)
-		if topMessage == msgDOList[i].UserMessageBoxId {
-			topMessageIndex = topMessage
-		}
+	for i := range topMessageDOList {
+		newest = append(newest, dialogTopCandidate{
+			ID:   topMessageDOList[i].UserMessageBoxId,
+			Date: topMessageDOList[i].Date2,
+		})
 	}
+	topMessage, topDate := remainingDialogTop(newest, deletedIDs)
 
 	peer := dialogId.ToPeerUtil(userId)
 
@@ -431,14 +416,13 @@ func (d *Dao) DeleteMessages(ctx context.Context, userId int64, msgIds []int32) 
 	// still see the live row and skip the purge queue.
 	releaseDeletedBoxes(ctx, userId, msgDOList)
 
-	topMessage, _ := getLastTopMessage(topMessageIndex)
 	d.ExecInvalidate(
 		ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
 			_, err2 := d.DialogsDAO.UpdateOutboxDialog(
 				ctx,
 				topMessage,
-				time.Now().Unix(),
+				topDate,
 				userId,
 				peer.PeerType,
 				peer.PeerId)
