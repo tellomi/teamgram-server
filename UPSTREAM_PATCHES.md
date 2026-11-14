@@ -541,6 +541,17 @@ The stored JSON is decoded in `stored_draft.go` the same way `Dao.MakeDialog` al
 | Decode stored draft JSON | `app/service/biz/dialog/internal/core/stored_draft.go` |
 | `dialog.getAllDrafts` | `app/service/biz/dialog/internal/core/dialog.getAllDrafts_handler.go` |
 
+## Private reactions while blocked, and the pin cap on the client RPC (ISSUE-S-PIN-LIMIT-001)
+
+`messages.sendReaction` in a private chat stored the reaction and pushed `updateMessageReactions` when either person had blocked the other. The blocked person now gets 400 `USER_IS_BLOCKED`, which is the error core.telegram.org lists for this method. The person who blocked the author gets 400 `YOU_BLOCKED_USER`, the same error `messages.sendMessage` returns in that direction. The reaction is not stored and not pushed. A mutual block reports `USER_IS_BLOCKED`. A user-service error is not treated as a block. Groups, channels, and Saved Messages are unchanged.
+
+`messages.toggleDialogPin` and `messages.reorderPinnedDialogs` now reject a set past the cap before they write. The numbers are `premium.Limit` for `pinned_chats` and `folder_pins`, the same pair `help.getAppConfig` publishes as `dialogs_pinned_limit_default` / `_premium` and `dialogs_folder_pinned_limit_default` / `_premium`. Folder 1 is the archive. Unpinning, and pinning a dialog that is already pinned, do not take a slot. `force` replaces the set. Without `force`, pins the client left out stay, and that total is what is capped. Past the cap is 400 `PINNED_DIALOGS_TOO_MUCH`. The dialog service still checks the same cap when it writes.
+
+| Piece | File |
+| --- | --- |
+| Private reaction block | `app/bff/channels/internal/server/grpc/service/reaction_block.go`, `handlers_features.go` |
+| Pin cap on the client RPC | `app/bff/dialogs/internal/core/pin_limit.go`, `messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go` |
+
 ## Dialog top after delete, and channel pins (ISSUE-S-CHAN-TOPDEL-001, ISSUE-S-PIN-CHAN-DIALOGS-001)
 
 Deleting the newest megagroup or channel message left `top_message` on that id. `messages.getDialogs` could not load it and dropped the chat for every member. The channel id counter stays where it is. The dialog top is the newest message that is still live, for the sender and for every other member. The same rollback applies to a private chat and a basic group: the outbox and the inbox both point `dialogs.top_message` at the greatest id that this delete does not remove. Deleting every message in a private chat leaves top 0, and the chat list omits that row. A basic group or channel the user still belongs to stays in the list with top 0 and no message.
