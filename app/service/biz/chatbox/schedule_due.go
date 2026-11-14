@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -90,6 +91,8 @@ type dueRef struct {
 	ID       int32 `json:"id"`
 	When     int32 `json:"w"`
 	Online   bool  `json:"on,omitempty"`
+	Retry    int32 `json:"r,omitempty"`
+	Tries    int32 `json:"n,omitempty"`
 }
 
 func dueIndexKey() string { return "sched:due" }
@@ -322,6 +325,7 @@ type DueItem struct {
 	Message *mtproto.Message
 	Repeat  int32
 	When    int32
+	Tries   int32
 }
 
 // ClaimDue removes scheduled messages that should be sent now.
@@ -338,17 +342,20 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 && !b.dueIndexed {
 		rows, err = b.rebuildDueLocked(ctx)
 		if err != nil {
 			return nil, err
 		}
+		b.dueIndexed = true
 	}
 	var picked []dueRef
 	kept := make([]dueRef, 0, len(rows))
 	for _, row := range rows {
 		ready := false
-		if row.Online || row.When == ScheduleWhenOnline {
+		if row.Retry > now {
+			ready = false
+		} else if row.Online || row.When == ScheduleWhenOnline {
 			ready = online[row.PeerID]
 		} else if row.When > 0 && row.When <= now {
 			ready = true
@@ -403,6 +410,7 @@ func (b *Book) ClaimDue(ctx context.Context, now int32, online map[int64]bool, l
 			Message: msg,
 			Repeat:  msg.GetScheduleRepeatPeriod().GetValue(),
 			When:    row.When,
+			Tries:   row.Tries,
 		})
 	}
 	if err := b.saveDueLocked(ctx, kept); err != nil {
@@ -568,8 +576,81 @@ func (b *Book) OnlinePeers(ctx context.Context) ([]int64, error) {
 // DueSink delivers one due scheduled message and pushes the resulting
 // updates. Send must assign a live message id. Push reaches one user's sessions.
 type DueSink interface {
-	Send(ctx context.Context, owner int64, peer *mtproto.PeerUtil, msg *mtproto.Message) (sentID int32, err error)
+	// randomID is stable for one scheduled message so a retried or duplicated
+	// send hits the messenger idempotency key instead of posting twice.
+	Send(ctx context.Context, owner int64, peer *mtproto.PeerUtil, msg *mtproto.Message, randomID int64) (sentID int32, err error)
 	Push(ctx context.Context, userID int64, ups *mtproto.Updates) error
+}
+
+// ScheduleRandom is the idempotency key for one scheduled send.
+func ScheduleRandom(owner int64, peer *mtproto.PeerUtil, schedID int32) int64 {
+	var peerID int64
+	var peerType int32
+	if peer != nil {
+		peerID = peer.PeerId
+		peerType = peer.PeerType
+	}
+	n := owner*131 + peerID*17 + int64(schedID) + int64(peerType)<<32
+	if n < 0 {
+		n = -n
+	}
+	if n == 0 {
+		n = 1
+	}
+	return n
+}
+
+// PermanentScheduleErr is a send failure that will not succeed on retry:
+// the sender was kicked, blocked, or has no posting rights.
+func PermanentScheduleErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := status.Convert(err).Message()
+	switch msg {
+	case "USER_IS_BLOCKED", "YOU_BLOCKED_USER", "PEER_ID_INVALID", "INPUT_USER_DEACTIVATED",
+		"USER_BANNED_IN_CHANNEL", "CHAT_WRITE_FORBIDDEN", "CHAT_ADMIN_REQUIRED",
+		"USER_NOT_PARTICIPANT", "CHANNEL_PRIVATE", "CHAT_RESTRICTED", "USER_ID_INVALID":
+		return true
+	}
+	return strings.HasPrefix(msg, "CHAT_SEND_") && strings.HasSuffix(msg, "_FORBIDDEN")
+}
+
+func scheduleBackoff(tries int32) int32 {
+	delay := int32(2)
+	for i := int32(1); i < tries; i++ {
+		if delay >= 900 {
+			return 900
+		}
+		delay *= 2
+	}
+	if delay > 900 {
+		return 900
+	}
+	return delay
+}
+
+// DeferScheduled puts a message back and waits before the next attempt.
+func (b *Book) DeferScheduled(ctx context.Context, item DueItem, now int32) {
+	if b == nil || item.Message == nil || item.Peer == nil {
+		return
+	}
+	tries := item.Tries + 1
+	until := now + scheduleBackoff(tries)
+	b.RestoreScheduled(ctx, item.Owner, item.Peer, []*mtproto.Message{item.Message})
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rows, err := b.loadDueLocked(ctx)
+	if err != nil {
+		return
+	}
+	for i := range rows {
+		if rows[i].Owner == item.Owner && rows[i].PeerType == item.Peer.PeerType && rows[i].PeerID == item.Peer.PeerId && rows[i].ID == item.SchedID {
+			rows[i].Retry = until
+			rows[i].Tries = tries
+		}
+	}
+	_ = b.saveDueLocked(ctx, rows)
 }
 
 // DispatchDue sends every due scheduled message.
@@ -596,9 +677,13 @@ func DispatchDue(ctx context.Context, b *Book, now int32, online map[int64]bool,
 		out.Id = 0
 		out.EditDate = nil
 		out.ScheduleRepeatPeriod = nil
-		id, err := sink.Send(ctx, item.Owner, item.Peer, out)
+		id, err := sink.Send(ctx, item.Owner, item.Peer, out, ScheduleRandom(item.Owner, item.Peer, item.SchedID))
 		if err != nil || id == 0 {
-			b.RestoreScheduled(ctx, item.Owner, item.Peer, []*mtproto.Message{item.Message})
+			if PermanentScheduleErr(err) {
+				_ = sink.Push(ctx, item.Owner, mtproto.MakeUpdatesByUpdates(DeleteScheduledUpdate(item.Peer, []int32{item.SchedID}, nil)))
+				continue
+			}
+			b.DeferScheduled(ctx, item, now)
 			continue
 		}
 		var next *mtproto.Message

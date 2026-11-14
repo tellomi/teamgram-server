@@ -10,8 +10,10 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	syncpb "github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 )
 
 // scheduleSync pushes updates to one user's sessions.
@@ -22,14 +24,64 @@ type scheduleSync interface {
 // OnlineFunc reports which of the given user ids currently have a session.
 type OnlineFunc func(ctx context.Context, ids []int64) map[int64]bool
 
-type scheduleSink struct {
-	msg  msg_client.MsgClient
-	sync scheduleSync
+// scheduleUsers is the block and contact lookup the live send path uses.
+type scheduleUsers interface {
+	UserBlockedByUser(ctx context.Context, in *userpb.TLUserBlockedByUser) (*mtproto.Bool, error)
+	UserCheckContact(ctx context.Context, in *userpb.TLUserCheckContact) (*mtproto.Bool, error)
 }
 
-func (s scheduleSink) Send(ctx context.Context, owner int64, peer *mtproto.PeerUtil, msg *mtproto.Message) (int32, error) {
+type scheduleSink struct {
+	msg   msg_client.MsgClient
+	sync  scheduleSync
+	users scheduleUsers
+}
+
+// allow runs the BFF send checks that MsgSendMessageV2 does not: account
+// sanctions, and a private-chat block in either direction. Group membership,
+// banned rights, and channel posting rights run inside MsgSendMessageV2.
+func (s scheduleSink) allow(ctx context.Context, owner int64, peer *mtproto.PeerUtil) error {
+	if peer == nil {
+		return mtproto.ErrPeerIdInvalid
+	}
+	stranger := peer.PeerType == mtproto.PEER_USER && peer.PeerId != 0 && peer.PeerId != owner
+	if stranger && s.users != nil && enforcement.ContactMatters(owner, time.Now()) {
+		contact, err := s.users.UserCheckContact(ctx, &userpb.TLUserCheckContact{UserId: owner, Id: peer.PeerId})
+		if err == nil && mtproto.FromBool(contact) {
+			stranger = false
+		}
+	}
+	if err := enforcement.Reject(owner, "send_message", stranger, time.Now()); err != nil {
+		return err
+	}
+	if !stranger || s.users == nil {
+		return nil
+	}
+	blocked, err := s.users.UserBlockedByUser(ctx, &userpb.TLUserBlockedByUser{UserId: peer.PeerId, PeerUserId: owner})
+	if err != nil {
+		return err
+	}
+	if mtproto.FromBool(blocked) {
+		return mtproto.ErrUserIsBlocked
+	}
+	mine, err := s.users.UserBlockedByUser(ctx, &userpb.TLUserBlockedByUser{UserId: owner, PeerUserId: peer.PeerId})
+	if err != nil {
+		return err
+	}
+	if mtproto.FromBool(mine) {
+		return mtproto.ErrYouBlockedUser
+	}
+	return nil
+}
+
+func (s scheduleSink) Send(ctx context.Context, owner int64, peer *mtproto.PeerUtil, msg *mtproto.Message, randomID int64) (int32, error) {
 	if s.msg == nil || peer == nil || msg == nil {
 		return 0, mtproto.ErrInternalServerError
+	}
+	if err := s.allow(ctx, owner, peer); err != nil {
+		return 0, err
+	}
+	if randomID == 0 {
+		randomID = chatboxRandom()
 	}
 	ups, err := s.msg.MsgSendMessageV2(ctx, &msgpb.TLMsgSendMessageV2{
 		UserId:   owner,
@@ -37,7 +89,7 @@ func (s scheduleSink) Send(ctx context.Context, owner int64, peer *mtproto.PeerU
 		PeerId:   peer.PeerId,
 		Message: []*msgpb.OutboxMessage{
 			msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
-				RandomId: chatboxRandom(),
+				RandomId: randomID,
 				Message:  msg,
 			}).To_OutboxMessage(),
 		},
@@ -77,12 +129,12 @@ var scheduleOnce sync.Once
 // TELLOMI_SCHEDULED_DISPATCH is enabled. The loop is process-wide.
 // Messages stay in the chatbox doc store until it runs, including across
 // restarts. online may be nil; send-when-online then waits.
-func StartScheduleDispatch(msg msg_client.MsgClient, syncer scheduleSync, online OnlineFunc) {
+func StartScheduleDispatch(msg msg_client.MsgClient, syncer scheduleSync, online OnlineFunc, users scheduleUsers) {
 	if !chatbox.DispatchEnabled() || msg == nil {
 		return
 	}
 	scheduleOnce.Do(func() {
-		sink := scheduleSink{msg: msg, sync: syncer}
+		sink := scheduleSink{msg: msg, sync: syncer, users: users}
 		go func() {
 			tick := time.NewTicker(2 * time.Second)
 			defer tick.Stop()

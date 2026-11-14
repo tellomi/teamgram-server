@@ -74,31 +74,32 @@ CREATE TABLE IF NOT EXISTS chatbox_doc (
 // translation flags, and saved-message reaction tags. User reports go to
 // biz/report. Delivery, listen, and read signals stay in this book.
 type Book struct {
-	mu        sync.Mutex
-	db        docDB
-	sched     map[string]*schedDoc
-	polls     map[int64]*pollDoc
-	pollIdx   map[string]int64
-	pollPeer  map[string][]int64
-	react     map[string]*reactDoc
-	def       map[int64]string
-	bots      map[int64]*botState
-	queries   map[int64]*inlineQuery
-	attach    map[int64]*attachDoc
-	prepared  map[string]*preparedDoc
-	webviews  map[int64]*webSession
-	callbacks map[string]*callbackAnswer
-	cbBind    map[int64]*callbackBind
-	sent      map[string][]byte
-	quick     map[int64]*quickDoc
-	plain     map[string]*plainDoc
-	transOff  map[string]bool
-	tags      map[int64]*tagDoc
-	paid      map[string][]*mtproto.MessageExtendedMedia
-	signals   []reportItem
-	ids       msgIDMap
-	due       []dueRef
-	now       func() time.Time
+	mu         sync.Mutex
+	db         docDB
+	sched      map[string]*schedDoc
+	polls      map[int64]*pollDoc
+	pollIdx    map[string]int64
+	pollPeer   map[string][]int64
+	react      map[string]*reactDoc
+	def        map[int64]string
+	bots       map[int64]*botState
+	queries    map[int64]*inlineQuery
+	attach     map[int64]*attachDoc
+	prepared   map[string]*preparedDoc
+	webviews   map[int64]*webSession
+	callbacks  map[string]*callbackAnswer
+	cbBind     map[int64]*callbackBind
+	sent       map[string][]byte
+	quick      map[int64]*quickDoc
+	plain      map[string]*plainDoc
+	transOff   map[string]bool
+	tags       map[int64]*tagDoc
+	paid       map[string][]*mtproto.MessageExtendedMedia
+	signals    []reportItem
+	ids        msgIDMap
+	due        []dueRef
+	dueIndexed bool
+	now        func() time.Time
 }
 
 func newBook(db docDB) *Book {

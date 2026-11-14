@@ -132,6 +132,7 @@ type recordSink struct {
 	sent []dueSent
 	push []duePush
 	fail bool
+	err  error
 }
 
 type dueSent struct {
@@ -146,8 +147,11 @@ type duePush struct {
 	ups  *mtproto.Updates
 }
 
-func (s *recordSink) Send(_ context.Context, owner int64, peer *mtproto.PeerUtil, msg *mtproto.Message) (int32, error) {
+func (s *recordSink) Send(_ context.Context, owner int64, peer *mtproto.PeerUtil, msg *mtproto.Message, _ int64) (int32, error) {
 	if s.fail {
+		if s.err != nil {
+			return 0, s.err
+		}
 		return 0, mtproto.ErrInternalServerError
 	}
 	s.sent = append(s.sent, dueSent{owner: owner, peer: peer.PeerId, text: msg.GetMessage(), flag: msg.GetFromScheduled()})
@@ -272,6 +276,78 @@ func TestRepeatPeriodsAndShortSchedule(t *testing.T) {
 	}
 	if SendInsteadOfSchedule(now+10, now, false) || SendInsteadOfSchedule(now+9, now, true) || SendInsteadOfSchedule(ScheduleWhenOnline, now, false) || SendInsteadOfSchedule(now-1, now, false) {
 		t.Fatal("short window misclassified")
+	}
+}
+
+func TestPermanentScheduleFailureDropsAndTemporaryWaits(t *testing.T) {
+	if !PermanentScheduleErr(mtproto.ErrUserIsBlocked) || !PermanentScheduleErr(mtproto.ErrChatWriteForbidden) {
+		t.Fatal("permanent class")
+	}
+	if PermanentScheduleErr(mtproto.ErrInternalServerError) || PermanentScheduleErr(nil) {
+		t.Fatal("temporary class")
+	}
+	if a, b := ScheduleRandom(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 7), ScheduleRandom(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 7); a != b || a == 0 {
+		t.Fatalf("random %d %d", a, b)
+	}
+	now := int32(1_700_000_000)
+	ctx := context.Background()
+	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	b := newBook(nil)
+	b.now = func() time.Time { return time.Unix(int64(now), 0) }
+	if _, err := b.Schedule(ctx, 3, peer, now+10, []*mtproto.Message{{Message: "nope"}}); err != nil {
+		t.Fatal(err)
+	}
+	perm := &recordSink{fail: true, err: mtproto.ErrUserIsBlocked}
+	if _, err := DispatchDue(ctx, b, now+20, nil, perm); err != nil {
+		t.Fatal(err)
+	}
+	page, err := b.ScheduledHistory(ctx, 3, peer, 0)
+	if err != nil || len(page.Messages) != 0 {
+		t.Fatalf("permanent left %+v", page)
+	}
+	if len(perm.push) != 1 || perm.push[0].user != 3 {
+		t.Fatalf("author notice %+v", perm.push)
+	}
+
+	b2 := newBook(nil)
+	b2.now = func() time.Time { return time.Unix(int64(now), 0) }
+	if _, err := b2.Schedule(ctx, 3, peer, now+10, []*mtproto.Message{{Message: "later"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DispatchDue(ctx, b2, now+20, nil, &recordSink{fail: true}); err != nil {
+		t.Fatal(err)
+	}
+	if items, err := b2.ClaimDue(ctx, now+21, nil, 10); err != nil || len(items) != 0 {
+		t.Fatalf("retried too soon %+v %v", items, err)
+	}
+	items, err := b2.ClaimDue(ctx, now+20+scheduleBackoff(1), nil, 10)
+	if err != nil || len(items) != 1 || items[0].Message.GetMessage() != "later" || items[0].Tries != 1 {
+		t.Fatalf("backoff %+v %v", items, err)
+	}
+}
+
+type countingDocs struct {
+	*memDocs
+	lists int
+}
+
+func (c *countingDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
+	c.lists++
+	return c.memDocs.ListPrefix(ctx, prefix)
+}
+
+func TestDueIndexRebuildsOnce(t *testing.T) {
+	db := &countingDocs{memDocs: newMemDocs()}
+	b := newBook(db)
+	ctx := context.Background()
+	if _, err := b.ClaimDue(ctx, 10, nil, 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.ClaimDue(ctx, 12, nil, 10); err != nil {
+		t.Fatal(err)
+	}
+	if db.lists != 1 {
+		t.Fatalf("prefix scans %d", db.lists)
 	}
 }
 
