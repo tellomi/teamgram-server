@@ -15,6 +15,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 // queryTimeout bounds one membership or block lookup. A member list must not
@@ -27,9 +28,60 @@ func init() {
 }
 
 var (
-	mu sync.RWMutex
-	db *sql.DB
+	mu            sync.RWMutex
+	db            *sql.DB
+	startupChosen bool
+	missingWarned bool
+	openDB        = mysqltls.Open
+	logMissing    = func(msg string) { logx.Error(msg) }
 )
+
+// Configure opens the MySQL pool used for chat-member privacy rules and for
+// hiding a blocker's avatar and status on user lists.
+// TEAMGRAM_MYSQL_DSN overrides configuredDSN when it is set. configuredDSN is
+// the BFF ChannelMySQL value. When both are empty, one warning is logged and
+// the DSN itself is not included.
+func Configure(configuredDSN string) {
+	dsn := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN"))
+	if dsn == "" {
+		dsn = strings.TrimSpace(configuredDSN)
+	}
+	mu.Lock()
+	startupChosen = true
+	mu.Unlock()
+	if dsn == "" {
+		warnMissing()
+		return
+	}
+	opened, err := openDB(dsn)
+	if err != nil {
+		warnOpen()
+		return
+	}
+	UseDB(opened)
+}
+
+func warnMissing() {
+	mu.Lock()
+	if missingWarned {
+		mu.Unlock()
+		return
+	}
+	missingWarned = true
+	mu.Unlock()
+	logMissing("privacy chat-member rules and blocked avatar rendering have no MySQL connection: set ChannelMySQL or TEAMGRAM_MYSQL_DSN")
+}
+
+func warnOpen() {
+	mu.Lock()
+	if missingWarned {
+		mu.Unlock()
+		return
+	}
+	missingWarned = true
+	mu.Unlock()
+	logMissing("privacy chat-member rules and blocked avatar rendering could not open MySQL")
+}
 
 // UseDB installs the process MySQL pool. The user service already has one.
 func UseDB(conn *sql.DB) {
@@ -106,11 +158,17 @@ func database() *sql.DB {
 	if conn != nil {
 		return conn
 	}
+	mu.RLock()
+	chosen := startupChosen
+	mu.RUnlock()
+	if chosen {
+		return nil
+	}
 	dsn := strings.TrimSpace(os.Getenv("TEAMGRAM_MYSQL_DSN"))
 	if dsn == "" {
 		return nil
 	}
-	opened, err := mysqltls.Open(dsn)
+	opened, err := openDB(dsn)
 	if err != nil {
 		return nil
 	}
