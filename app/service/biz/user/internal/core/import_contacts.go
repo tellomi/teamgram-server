@@ -136,6 +136,38 @@ func PlanContactImport(selfID int64, contacts []*mtproto.InputContact, registere
 	return plan
 }
 
+// FilterImportByAddedPhone drops new matches the target does not allow to
+// be found by phone number. An existing contact stays; the key only blocks
+// discovery. https://core.telegram.org/constructor/privacyKeyAddedByPhone
+func FilterImportByAddedPhone(plan ImportPlan, allowed func(userID int64) bool) ImportPlan {
+	if allowed == nil {
+		return plan
+	}
+	matches := make([]ImportMatch, 0, len(plan.Matches))
+	ids := make([]int64, 0, len(plan.UpdateUserIDs))
+	seen := make(map[int64]struct{}, len(plan.Matches))
+	for _, match := range plan.Matches {
+		if !match.AlreadyMine && !allowed(match.UserID) {
+			continue
+		}
+		matches = append(matches, match)
+		if _, ok := seen[match.UserID]; ok {
+			continue
+		}
+		seen[match.UserID] = struct{}{}
+		ids = append(ids, match.UserID)
+	}
+	if matches == nil {
+		matches = []ImportMatch{}
+	}
+	if ids == nil {
+		ids = []int64{}
+	}
+	plan.Matches = matches
+	plan.UpdateUserIDs = ids
+	return plan
+}
+
 func canonicalImportPhone(phone string) string {
 	if _, digits, err := phonenumber.CheckPhoneNumberInvalid(phone); err == nil && digits != "" {
 		return digits

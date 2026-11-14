@@ -32,7 +32,7 @@ func (c *UserCore) UserDeleteProfilePhotos(in *user.TLUserDeleteProfilePhotos) (
 		if b := container2.ContainsInt64(in.GetId(), mainPhotoId); b {
 			c.svcCtx.Dao.UserProfilePhotosDAO.Delete(c.ctx, meId, in.GetId())
 		} else {
-			nextMainId, _ := c.svcCtx.Dao.UserProfilePhotosDAO.SelectNext(c.ctx, meId, in.Id)
+			nextMainId, _ := c.svcCtx.Dao.NextAlbumPhoto(c.ctx, meId, in.Id)
 			sqlx.TxWrapper(c.ctx, c.svcCtx.Dao.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
 				c.svcCtx.Dao.UserProfilePhotosDAO.DeleteTx(tx, meId, in.Id)
 				c.svcCtx.Dao.UsersDAO.UpdateProfilePhotoTx(tx, nextMainId, meId)

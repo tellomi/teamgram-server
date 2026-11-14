@@ -53,6 +53,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		DefaultBannedRights:         mtproto.BannedRights(ch.DefaultBanned).ToChatBannedRights(),
 		ParticipantsCount_FLAGINT32: &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
 		HasGeo:                      ch.Address != "" || feat.Lat != 0 || feat.Long != 0,
+		Noforwards:                  feat.NoForwards,
 		SlowmodeEnabled:             feat.SlowmodeSeconds > 0,
 		JoinRequest:                 feat.JoinRequest,
 		Gigagroup:                   feat.Gigagroup,
@@ -220,6 +221,15 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 }
 
 func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
+	return participantFor(actor, nil, nil, p)
+}
+
+// participantFor builds one ChannelParticipant for viewer.
+// channelParticipantAdmin shares flags.1 between self and inviter_id.
+// When the row is the viewer, inviter_id has to be on the wire or the
+// client reads promoted_by as inviter_id and the next constructor is garbage.
+// https://core.telegram.org/constructor/channelParticipantAdmin
+func participantFor(actor int64, viewer *Participant, promoted map[int64]int64, p *Participant) *mtproto.ChannelParticipant {
 	rank := optionalString(p.Rank)
 	switch {
 	case p.Role == RoleCreator:
@@ -229,15 +239,24 @@ func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
 			Rank:        rank,
 		}).To_ChannelParticipant()
 	case p.Role == RoleAdmin && p.State == StateNormal:
+		self := actor != 0 && p.UserID == actor
+		var inviter *wrapperspb.Int64Value
+		if self {
+			inviter = &wrapperspb.Int64Value{Value: p.InviterID}
+		}
+		canEdit := true
+		if viewer != nil {
+			canEdit = viewerMayEditAdmin(viewer, promoted, p)
+		}
 		return mtproto.MakeTLChannelParticipantAdmin(&mtproto.ChannelParticipant{
-			UserId:          p.UserID,
-			InviterId_INT64: p.InviterID,
-			PromotedBy:      p.InviterID,
-			Date:            p.Date,
-			AdminRights:     mtproto.AdminRights(p.AdminRights).ToChatAdminRights(),
-			Rank:            rank,
-			CanEdit:         true,
-			Self:            p.UserID == actor,
+			UserId:              p.UserID,
+			InviterId_FLAGINT64: inviter,
+			PromotedBy:          promoterOf(promoted, p),
+			Date:                p.Date,
+			AdminRights:         adminRightsTL(p.AdminRights),
+			Rank:                rank,
+			CanEdit:             canEdit,
+			Self:                self,
 		}).To_ChannelParticipant()
 	case p.State == StateKicked || (p.Role == RoleBanned && p.BannedRights != 0):
 		return mtproto.MakeTLChannelParticipantBanned(&mtproto.ChannelParticipant{
@@ -263,6 +282,55 @@ func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
 			Date:   p.Date,
 		}).To_ChannelParticipant()
 	}
+}
+
+func adminRightsTL(bits int32) *mtproto.ChatAdminRights {
+	if rights := mtproto.AdminRights(bits).ToChatAdminRights(); rights != nil {
+		return rights
+	}
+	return mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{}).To_ChatAdminRights()
+}
+
+func promoterOf(promoted map[int64]int64, p *Participant) int64 {
+	if p == nil {
+		return 0
+	}
+	if promoted != nil {
+		if id := promoted[p.UserID]; id != 0 {
+			return id
+		}
+	}
+	return p.InviterID
+}
+
+func rememberPromoter(f *Features, userID, by int64) {
+	if f == nil {
+		return
+	}
+	if f.PromotedBy == nil {
+		f.PromotedBy = map[int64]int64{}
+	}
+	if by == 0 {
+		delete(f.PromotedBy, userID)
+		return
+	}
+	f.PromotedBy[userID] = by
+}
+
+// viewerMayEditAdmin is the channels.editAdmin rule the client shows as can_edit.
+// The creator can edit every other admin. An admin can edit only admins they
+// promoted, and only while they still have add_admins. Nobody edits themselves.
+func viewerMayEditAdmin(viewer *Participant, promoted map[int64]int64, target *Participant) bool {
+	if viewer == nil || target == nil || target.UserID == viewer.UserID {
+		return false
+	}
+	if viewer.IsCreator() {
+		return true
+	}
+	if !viewer.IsAdmin() || !viewer.adminRights().CanAddAdmins() {
+		return false
+	}
+	return promoterOf(promoted, target) == viewer.UserID
 }
 
 func viewMessage(m *mtproto.Message, senderID, viewer int64) *mtproto.Message {

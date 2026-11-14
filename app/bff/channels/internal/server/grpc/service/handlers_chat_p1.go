@@ -53,8 +53,8 @@ func (s ReactionsService) MessagesReadReactions(ctx context.Context, in *mtproto
 	if err := chatbox.Shared().ReadReactions(ctx, self, peer); err != nil {
 		return nil, err
 	}
-	if peer.IsUser() && len(unread) > 0 {
-		s.addUnreadReactions(ctx, self, peer.PeerId, -int32(len(unread)))
+	if (peer.IsUser() || peer.IsChat()) && len(unread) > 0 {
+		s.addUnreadReactions(ctx, self, peer.PeerType, peer.PeerId, -int32(len(unread)))
 	}
 	return chatbox.AffectedHistory(0, 0), nil
 }

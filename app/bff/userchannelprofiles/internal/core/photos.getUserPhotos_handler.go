@@ -36,6 +36,14 @@ func (c *UserChannelProfilesCore) PhotosGetUserPhotos(in *mtproto.TLPhotosGetUse
 		return nil, err
 	}
 
+	self := userId.PeerId == c.MD.UserId
+	fallback, _ := c.svcCtx.Dao.UserClient.UserGetFallbackPhoto(c.ctx, &userpb.TLUserGetProfilePhotos{
+		UserId: userId.PeerId,
+	})
+	if !self && !c.profilePhotoAllowed(userId.PeerId) {
+		return c.photosResult(fallbackOnly(fallback)), nil
+	}
+
 	cachePhotos, err := c.svcCtx.Dao.UserClient.UserGetProfilePhotos(c.ctx, &userpb.TLUserGetProfilePhotos{
 		UserId: userId.PeerId,
 	})
@@ -44,21 +52,67 @@ func (c *UserChannelProfilesCore) PhotosGetUserPhotos(in *mtproto.TLPhotosGetUse
 		return nil, err
 	}
 
-	photos := mtproto.MakeTLPhotosPhotos(&mtproto.Photos_Photos{
-		Photos: make([]*mtproto.Photo, 0, len(cachePhotos.GetDatas())),
-		Users:  []*mtproto.User{},
-	}).To_Photos_Photos()
-
-	for _, id := range cachePhotos.GetDatas() {
-		if photo, err := c.svcCtx.Dao.MediaClient.MediaGetPhoto(c.ctx,
-			&mediapb.TLMediaGetPhoto{
-				PhotoId: id,
-			}); err != nil {
+	ids := append([]int64{}, cachePhotos.GetDatas()...)
+	if self && fallback.GetId() != 0 && !containsInt64(ids, fallback.GetId()) {
+		ids = append(ids, fallback.GetId())
+	}
+	photos := make([]*mtproto.Photo, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		photo, err := c.svcCtx.Dao.MediaClient.MediaGetPhoto(c.ctx, &mediapb.TLMediaGetPhoto{PhotoId: id})
+		if err != nil {
 			c.Logger.Errorf("photos.getUserPhotos - error: %v", err)
-		} else if photo != nil {
-			photos.Photos = append(photos.Photos, photo)
+			continue
+		}
+		if photo != nil {
+			photos = append(photos, photo)
 		}
 	}
+	return c.photosResult(photos), nil
+}
 
-	return photos, nil
+func (c *UserChannelProfilesCore) profilePhotoAllowed(owner int64) bool {
+	if c == nil || c.MD == nil || c.MD.UserId == owner {
+		return true
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return true
+	}
+	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(c.ctx, &userpb.TLUserCheckPrivacy{
+		UserId:  owner,
+		KeyType: mtproto.PROFILE_PHOTO,
+		PeerId:  c.MD.UserId,
+	})
+	if err != nil {
+		return true
+	}
+	return mtproto.FromBool(ok)
+}
+
+func (c *UserChannelProfilesCore) photosResult(photos []*mtproto.Photo) *mtproto.Photos_Photos {
+	if photos == nil {
+		photos = []*mtproto.Photo{}
+	}
+	return mtproto.MakeTLPhotosPhotos(&mtproto.Photos_Photos{
+		Photos: photos,
+		Users:  []*mtproto.User{},
+	}).To_Photos_Photos()
+}
+
+func fallbackOnly(photo *mtproto.Photo) []*mtproto.Photo {
+	if photo == nil || photo.GetId() == 0 {
+		return []*mtproto.Photo{}
+	}
+	return []*mtproto.Photo{photo}
+}
+
+func containsInt64(ids []int64, id int64) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
 }

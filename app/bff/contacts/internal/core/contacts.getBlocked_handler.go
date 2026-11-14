@@ -29,63 +29,59 @@ func (c *ContactsCore) ContactsGetBlocked(in *mtproto.TLContactsGetBlocked) (*mt
 	if in.GetMyStoriesFrom() {
 		return c.storyBlockedPage(in)
 	}
-	var (
-		limit           = in.Limit
-		contactsBlocked *mtproto.Contacts_Blocked
-	)
-
-	if limit > 50 {
-		limit = 50
-	}
-
-	blockedList, _ := c.svcCtx.Dao.UserClient.UserGetBlockedList(c.ctx, &userpb.TLUserGetBlockedList{
+	offset, limit := blockedListWindow(in.GetOffset(), in.GetLimit())
+	page, err := c.svcCtx.Dao.UserClient.UserGetBlockedPage(c.ctx, &userpb.TLUserGetBlockedList{
 		UserId: c.MD.UserId,
-		Offset: in.Offset,
-		Limit:  in.Limit,
+		Offset: offset,
+		Limit:  limit,
 	})
-
-	if len(blockedList.GetDatas()) > 0 {
-		// TODO(@benqi): impl blockedSlice
-		// TODO(@benqi): layer119
-		contactsBlocked = mtproto.MakeTLContactsBlocked(&mtproto.Contacts_Blocked{
-			Blocked: make([]*mtproto.PeerBlocked, 0, len(blockedList.GetDatas())),
-			Chats:   nil,
-			Users:   nil,
-		}).To_Contacts_Blocked()
-
-		var (
-			idHelper = mtproto.NewIDListHelper(c.MD.UserId)
-		)
-
-		for _, blocked := range blockedList.GetDatas() {
-			peer := blocked.GetPeerId()
-			idHelper.PickByPeer(peer)
-			// idHelper.AppendUsers(blocked.GetPeerId().GetUserId())
-			contactsBlocked.Blocked = append(contactsBlocked.Blocked, mtproto.MakeTLPeerBlocked(&mtproto.PeerBlocked{
-				PeerId: blocked.GetPeerId(),
-				Date:   blocked.Date,
-			}).To_PeerBlocked())
-		}
-
-		idHelper.Visit(
-			func(userIdList []int64) {
-				users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
-					&userpb.TLUserGetMutableUsers{
-						Id: userIdList,
-					})
-				contactsBlocked.Users = users.GetUserListByIdList(c.MD.UserId, userIdList...)
-			},
-			func(chatIdList []int64) {
-			},
-			func(channelIdList []int64) {
-			})
-	} else {
-		contactsBlocked = mtproto.MakeTLContactsBlocked(&mtproto.Contacts_Blocked{
+	if err != nil {
+		c.Logger.Errorf("contacts.getBlocked - error: %v", err)
+		return nil, err
+	}
+	if page == nil {
+		page = mtproto.MakeTLContactsBlocked(&mtproto.Contacts_Blocked{
 			Blocked: []*mtproto.PeerBlocked{},
 			Chats:   []*mtproto.Chat{},
 			Users:   []*mtproto.User{},
 		}).To_Contacts_Blocked()
 	}
+	if page.Chats == nil {
+		page.Chats = []*mtproto.Chat{}
+	}
+	if page.Blocked == nil {
+		page.Blocked = []*mtproto.PeerBlocked{}
+	}
+	idHelper := mtproto.NewIDListHelper(c.MD.UserId)
+	for _, blocked := range page.Blocked {
+		idHelper.PickByPeer(blocked.GetPeerId())
+	}
+	idHelper.Visit(
+		func(userIdList []int64) {
+			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
+				Id: userIdList,
+			})
+			if users != nil {
+				page.Users = users.GetUserListByIdList(c.MD.UserId, userIdList...)
+			}
+		},
+		func(chatIdList []int64) {},
+		func(channelIdList []int64) {},
+	)
+	if page.Users == nil {
+		page.Users = []*mtproto.User{}
+	}
+	return page, nil
+}
 
-	return contactsBlocked, nil
+// blockedListWindow is the official offset/limit page. offset skips that many
+// blocked peers. limit is the page size, default and maximum 100.
+func blockedListWindow(offset, limit int32) (int32, int32) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	return offset, limit
 }
