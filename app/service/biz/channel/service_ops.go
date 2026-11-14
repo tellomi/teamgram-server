@@ -655,7 +655,13 @@ func (s *Service) Delete(ctx context.Context, sender, channelID, actorAuth int64
 		return 0, 0, err
 	}
 	var allowed []int32
+	var removed []removedMessage
+	seenID := make(map[int32]struct{}, len(ids))
 	for _, id := range ids {
+		if _, ok := seenID[id]; ok {
+			continue
+		}
+		seenID[id] = struct{}{}
 		stored, err := s.store.GetMessage(ctx, channelID, id)
 		if err != nil {
 			return 0, 0, err
@@ -672,12 +678,14 @@ func (s *Service) Delete(ctx context.Context, sender, channelID, actorAuth int64
 			return 0, 0, mtproto.ErrMessageDeleteForbidden
 		}
 		allowed = append(allowed, id)
+		removed = append(removed, removedMessage{ID: id, Sender: stored.SenderID})
 	}
 	pts, count, deleted, err := s.store.CommitDelete(ctx, channelID, allowed)
 	if err != nil {
 		return 0, 0, err
 	}
 	if count > 0 {
+		s.dropDeletedUnread(ctx, channelID, removedStill(removed, deleted), pts)
 		s.emit(ctx, sender, actorAuth, channelID, func(viewer int64) *mtproto.Updates {
 			return s.updatesWith(ctx, viewer, ch, deleteUpdate(channelID, deleted, pts, count))
 		})

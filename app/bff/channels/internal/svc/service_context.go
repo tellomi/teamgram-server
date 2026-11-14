@@ -20,6 +20,8 @@ import (
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
+	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
+	"github.com/teamgram/teamgram-server/app/service/status/status"
 	"github.com/teamgram/teamgram-server/pkg/archive"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
@@ -67,6 +69,7 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
 	channel.Shared().SetHooks(channel.Hooks{
+		Online: onlineMembers(c),
 		Push: func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates) {
 			if syncer == nil || updates == nil {
 				return
@@ -102,6 +105,39 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 		Incoming: channelIncoming(users, dialogs, syncer, channelPts(c)),
 	})
 	return dialogs
+}
+
+// onlineBatch is status.getUsersOnlineSessionsList's maximum.
+const onlineBatch = 500
+
+// onlineMembers asks the presence service which of the affected members
+// have a session. An empty status config leaves the hook nil.
+func onlineMembers(c config.Config) func(context.Context, []int64) (map[int64]bool, error) {
+	if len(c.StatusClient.Etcd.Hosts) == 0 && len(c.StatusClient.Endpoints) == 0 {
+		return nil
+	}
+	client := status_client.NewStatusClient(rpcx.GetCachedRpcClient(c.StatusClient))
+	return func(ctx context.Context, ids []int64) (map[int64]bool, error) {
+		out := map[int64]bool{}
+		for start := 0; start < len(ids); start += onlineBatch {
+			end := start + onlineBatch
+			if end > len(ids) {
+				end = len(ids)
+			}
+			res, err := client.StatusGetUsersOnlineSessionsList(ctx, &status.TLStatusGetUsersOnlineSessionsList{
+				Users: ids[start:end],
+			})
+			if err != nil {
+				return nil, err
+			}
+			for _, row := range res.GetDatas() {
+				if row != nil && len(row.GetUserSessions()) > 0 {
+					out[row.GetUserId()] = true
+				}
+			}
+		}
+		return out, nil
+	}
 }
 
 func channelPts(c config.Config) archive.SeqWriter {

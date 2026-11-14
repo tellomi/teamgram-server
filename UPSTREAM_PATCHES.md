@@ -575,6 +575,15 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 | toggle, reorder, premium caps, other-session update | `app/bff/dialogs/internal/core/messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go`, `app/service/biz/dialog/internal/core/pin_policy.go`, `dialog.toggleDialogPin_handler.go`, `dialog.reorderPinnedDialogs_handler.go`, `dialog.editPeerFolders_handler.go` |
 | one channel dialog | `app/service/biz/channel/service_ops.go` `DialogFor`, `app/bff/channels/bridge.go` |
 
+## Supergroup delete and unread_count
+
+`channels.deleteMessages` removed the message and pushed `updateDeleteChannelMessages`, and left every other member's `unread_count` where it was. A private revoke already subtracts an unread id. The same rule now applies to a channel or supergroup, without reading each member. Each deleted id is one `UPDATE` of `channel_read_state` for rows whose `read_inbox_max_id` is still below that id and whose user is not the author: `unread_count = GREATEST(unread_count - 1, 0)`. `KEY channel_read_inbox (channel_id, read_inbox_max_id)` makes that a range, not a walk of the group. With D deletes and K matching rows the cost is O(D) statements and O(log M + K) work in each. At most 1000 members, the changed rows are read back and `updateReadChannelInbox` goes only to those the presence service reports online. Above 1000 members the updates run off the request and no per-member push list is built. `messages.getDialogs` reads the stored count either way.
+
+| Piece | File |
+| --- | --- |
+| bucketed update, cap, online push | `app/service/biz/channel/delete_unread.go`, `service_ops.go` `Delete` |
+| index | `teamgramd/deploy/sql/migrate-20261129-channel-read-inbox.sql` |
+
 ## Hide read time (globalPrivacySettings.hide_read_marks)
 
 `messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless `users.premium` is an unexpired subscription. `TELLOMI_PREMIUM_EVERYONE` does not waive it. `users.getFullUser` sets `read_dates_private` from the same row.
