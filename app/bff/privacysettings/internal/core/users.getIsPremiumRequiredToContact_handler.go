@@ -37,8 +37,9 @@ func (c *PrivacySettingsCore) UsersGetIsPremiumRequiredToContact(in *mtproto.TLU
 	}
 	out := make([]*mtproto.Bool, 0, len(ids))
 	for _, id := range ids {
+		// A nil vector element is skipped, matching the previous handler.
+		// The result is shorter than the input in that case.
 		if id == nil {
-			out = append(out, mtproto.BoolFalse)
 			continue
 		}
 		blocked, err := c.premiumRequired(id)

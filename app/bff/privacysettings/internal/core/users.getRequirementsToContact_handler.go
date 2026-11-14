@@ -14,9 +14,11 @@ import (
 //
 // https://core.telegram.org/method/users.getRequirementsToContact
 // https://core.telegram.org/api/privacy
-// One RequirementToContact per input user, in the same order. requirementToContactPremium
-// is the fully checked result: the viewer is not a contact, has no existing private
-// chat, and does not have an unexpired Premium subscription.
+// One RequirementToContact per non-nil input user, in the same order. A nil
+// element is skipped, the same as users.getIsPremiumRequiredToContact.
+// requirementToContactPremium is the fully checked result: the viewer is not a
+// contact, has no existing private chat, and does not have an unexpired Premium
+// subscription.
 func (c *PrivacySettingsCore) UsersGetRequirementsToContact(in *mtproto.TLUsersGetRequirementsToContact) (*mtproto.Vector_RequirementToContact, error) {
 	if c.MD == nil || c.MD.GetUserId() == 0 {
 		return nil, mtproto.ErrAuthKeyUnregistered
@@ -27,6 +29,9 @@ func (c *PrivacySettingsCore) UsersGetRequirementsToContact(in *mtproto.TLUsersG
 	}
 	out := make([]*mtproto.RequirementToContact, 0, len(ids))
 	for _, id := range ids {
+		if id == nil {
+			continue
+		}
 		blocked, err := c.premiumRequired(id)
 		if err != nil {
 			return nil, err
@@ -37,7 +42,8 @@ func (c *PrivacySettingsCore) UsersGetRequirementsToContact(in *mtproto.TLUsersG
 }
 
 func (c *PrivacySettingsCore) premiumRequired(id *mtproto.InputUser) (bool, error) {
-	if c == nil || c.MD == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+	// FromInputUser reads id.PredicateName. A nil element must not reach it.
+	if id == nil || c == nil || c.MD == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
 		return false, nil
 	}
 	peer := mtproto.FromInputUser(c.MD.UserId, id)
