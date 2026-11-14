@@ -25,6 +25,7 @@ import (
 	profile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/contactphoto"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -101,7 +102,7 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 		Id:                       peerId,
 		About:                    user.GetUser().GetAbout(),
 		Settings:                 nil,
-		PersonalPhoto:            nil,
+		PersonalPhoto:            contactphoto.ForViewer(c.ctx, c.MD.UserId, peerId),
 		ProfilePhoto:             user.GetUser().GetProfilePhoto(),
 		FallbackPhoto:            nil,
 		NotifySettings:           nil,

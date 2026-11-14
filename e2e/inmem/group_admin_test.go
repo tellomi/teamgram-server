@@ -168,8 +168,12 @@ func TestContactProfilePhoto(t *testing.T) {
 	if _, err := contactphoto.Upload(3, &mtproto.TLPhotosUploadContactProfilePhoto{UserId: mtproto.MakeTLInputUserSelf(&mtproto.InputUser{}).To_InputUser(), Save: true}); status.Convert(err).Message() != "USER_ID_INVALID" {
 		t.Fatal(err)
 	}
-	if _, err := contactphoto.Upload(3, &mtproto.TLPhotosUploadContactProfilePhoto{UserId: user, Save: true}); status.Convert(err).Message() != "PHOTO_FILE_MISSING" {
-		t.Fatal(err)
+	cleared, err := contactphoto.Upload(3, &mtproto.TLPhotosUploadContactProfilePhoto{UserId: user, Save: true})
+	if err != nil || cleared.GetPhoto() == nil {
+		t.Fatalf("clear personal photo: %v", err)
+	}
+	if contactphoto.Saved(3, 8) != nil {
+		t.Fatal("clear left a personal photo")
 	}
 	if _, err := contactphoto.Upload(3, &mtproto.TLPhotosUploadContactProfilePhoto{
 		UserId: user,

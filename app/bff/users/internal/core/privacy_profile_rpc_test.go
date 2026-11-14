@@ -7,6 +7,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/contactphoto"
 	"github.com/teamgram/teamgram-server/app/bff/users/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/users/internal/svc"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
@@ -104,6 +105,32 @@ func fullUserCore(users *fullUserAPI) *UsersCore {
 		}},
 		Logger: logx.WithContext(ctx),
 		MD:     &metadata.RpcMetadata{UserId: 1},
+	}
+}
+
+func TestGetFullUserReturnsPersonalPhoto(t *testing.T) {
+	contactphoto.Reset()
+	t.Cleanup(contactphoto.Reset)
+	if _, err := contactphoto.Upload(1, &mtproto.TLPhotosUploadContactProfilePhoto{
+		UserId: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 2, AccessHash: 1}).To_InputUser(),
+		Save:   true,
+		File:   mtproto.MakeTLInputFile(&mtproto.InputFile{Id_INT64: 44, Parts: 1, Name: "a.jpg"}).To_InputFile(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := fullUserCore(&fullUserAPI{allow: map[int32]bool{mtproto.PROFILE_PHOTO: true}}).UsersGetFullUser(fullUserRequest(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetFullUser().GetPersonalPhoto().GetId() != 44 {
+		t.Fatalf("personal photo %d", got.GetFullUser().GetPersonalPhoto().GetId())
+	}
+	own, err := fullUserCore(&fullUserAPI{allow: map[int32]bool{mtproto.PROFILE_PHOTO: true}}).UsersGetFullUser(fullUserRequest(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if own.GetFullUser().GetPersonalPhoto().GetId() != 0 {
+		t.Fatal("self profile exposed a contact photo")
 	}
 }
 
