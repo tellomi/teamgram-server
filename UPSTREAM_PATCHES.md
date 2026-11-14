@@ -546,11 +546,12 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 
 ## Supergroup delete and unread_count
 
-`channels.deleteMessages` removed the message and pushed `updateDeleteChannelMessages`, and left every other member's `unread_count` where it was. A private revoke already subtracts an unread id. The same rule now applies to a channel or supergroup: a message another person had not read (`id` above `read_inbox_max_id`, and not their own) decreases that member's count. Those members get `updateReadChannelInbox` with `still_unread_count`. Deleting a message that was already read does not move the count.
+`channels.deleteMessages` removed the message and pushed `updateDeleteChannelMessages`, and left every other member's `unread_count` where it was. A private revoke already subtracts an unread id. The same rule now applies to a channel or supergroup, without reading each member. Each deleted id is one `UPDATE` of `channel_read_state` for rows whose `read_inbox_max_id` is still below that id and whose user is not the author: `unread_count = GREATEST(unread_count - 1, 0)`. `KEY channel_read_inbox (channel_id, read_inbox_max_id)` makes that a range, not a walk of the group. With D deletes and K matching rows the cost is O(D) statements and O(log M + K) work in each. At most 1000 members, the changed rows are read back and `updateReadChannelInbox` goes only to those the presence service reports online. Above 1000 members the updates run off the request and no per-member push list is built. `messages.getDialogs` reads the stored count either way.
 
 | Piece | File |
 | --- | --- |
-| unread rollback and inbox update | `app/service/biz/channel/delete_unread.go`, `service_ops.go` `Delete` |
+| bucketed update, cap, online push | `app/service/biz/channel/delete_unread.go`, `service_ops.go` `Delete` |
+| index | `teamgramd/deploy/sql/migrate-20261129-channel-read-inbox.sql` |
 
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 

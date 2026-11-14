@@ -466,6 +466,36 @@ func (s *memoryStore) GetRead(ctx context.Context, channelID, userID int64) (*Re
 	return st.clone(), nil
 }
 
+func (s *memoryStore) ApplyUnreadCuts(ctx context.Context, channelID int64, cuts []UnreadCut, list bool) ([]ReadState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := map[int64]*ReadState{}
+	for _, cut := range cuts {
+		if cut.Delta <= 0 || cut.Below <= 0 {
+			continue
+		}
+		for uid, st := range s.reads[channelID] {
+			if st == nil || uid == cut.Exclude || st.ReadInboxMaxID >= cut.Below || st.UnreadCount <= 0 {
+				continue
+			}
+			if st.UnreadCount > cut.Delta {
+				st.UnreadCount -= cut.Delta
+			} else {
+				st.UnreadCount = 0
+			}
+			changed[uid] = st
+		}
+	}
+	if !list {
+		return nil, nil
+	}
+	out := make([]ReadState, 0, len(changed))
+	for _, st := range changed {
+		out = append(out, *st.clone())
+	}
+	return out, nil
+}
+
 func (s *memoryStore) SaveRead(ctx context.Context, st *ReadState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

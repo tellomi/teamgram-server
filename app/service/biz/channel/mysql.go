@@ -39,6 +39,7 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 		`ALTER TABLE channel_messages ADD COLUMN message TEXT NULL`,
 		`ALTER TABLE channel_messages ADD COLUMN ttl_period INT NOT NULL DEFAULT 0`,
 		`ALTER TABLE channel_messages ADD KEY channel_messages_ttl (ttl_period, date2)`,
+		`ALTER TABLE channel_read_state ADD INDEX channel_read_inbox (channel_id, read_inbox_max_id)`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil && !alreadyColumn(err) {
 			return err
@@ -575,6 +576,49 @@ func (s *mysqlStore) GetRead(ctx context.Context, channelID, userID int64) (*Rea
 		return st, nil
 	}
 	return st, err
+}
+
+func (s *mysqlStore) ApplyUnreadCuts(ctx context.Context, channelID int64, cuts []UnreadCut, list bool) ([]ReadState, error) {
+	for _, cut := range cuts {
+		if cut.Delta <= 0 || cut.Below <= 0 {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, unreadCutUpdateSQL, cut.Delta, channelID, cut.Below, cut.Exclude); err != nil {
+			return nil, err
+		}
+	}
+	if !list {
+		return nil, nil
+	}
+	seen := map[int64]ReadState{}
+	for _, cut := range cuts {
+		if cut.Below <= 0 {
+			continue
+		}
+		rows, err := s.db.QueryContext(ctx, unreadCutSelectSQL, channelID, cut.Below, cut.Exclude)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var st ReadState
+			st.ChannelID = channelID
+			if err := rows.Scan(&st.UserID, &st.ReadInboxMaxID, &st.ReadOutboxMaxID, &st.UnreadCount); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			seen[st.UserID] = st
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	out := make([]ReadState, 0, len(seen))
+	for _, st := range seen {
+		out = append(out, st)
+	}
+	return out, nil
 }
 
 func (s *mysqlStore) SaveRead(ctx context.Context, st *ReadState) error {
