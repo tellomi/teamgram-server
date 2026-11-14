@@ -176,6 +176,35 @@ func TestGetContactsListErrorKeepsBookWhenHashSet(t *testing.T) {
 	}
 }
 
+func TestGetContactIDsUsesContactsHash(t *testing.T) {
+	c := relCore(4, nil)
+	prev := fetchContactRows
+	t.Cleanup(func() { fetchContactRows = prev })
+	fetchContactRows = func(*ContactsCore) ([]*mtproto.ContactData, error) {
+		return []*mtproto.ContactData{
+			{ContactUserId: 9},
+			{ContactUserId: 8},
+			{ContactUserId: 8},
+		}, nil
+	}
+	got, err := c.ContactsGetContactIDs(&mtproto.TLContactsGetContactIDs{})
+	if err != nil || len(got.GetDatas()) != 2 || got.GetDatas()[0] != 8 || got.GetDatas()[1] != 9 {
+		t.Fatalf("ids %#v %v", got.GetDatas(), err)
+	}
+	hash := contactsHash(0, []*mtproto.Contact{{UserId: 8}, {UserId: 9}})
+	if hash != 292057776145 {
+		t.Fatalf("hash %d", hash)
+	}
+	same, err := c.ContactsGetContactIDs(&mtproto.TLContactsGetContactIDs{Hash: hash})
+	if err != nil || len(same.GetDatas()) != 0 {
+		t.Fatalf("not modified %#v %v", same.GetDatas(), err)
+	}
+	again, err := c.ContactsGetContactIDs(&mtproto.TLContactsGetContactIDs{Hash: hash + 1})
+	if err != nil || len(again.GetDatas()) != 2 {
+		t.Fatalf("mismatch %#v %v", again.GetDatas(), err)
+	}
+}
+
 func TestGetContactsSavedCountErrorIsNotZero(t *testing.T) {
 	c := relCore(4, errSaved{})
 	prev := fetchContactRows

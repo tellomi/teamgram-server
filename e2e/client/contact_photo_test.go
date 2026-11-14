@@ -53,8 +53,14 @@ func TestContactProfilePhotoSaveSuggestAndClear(t *testing.T) {
 	if got := personalPhotoID(t, ctx, a, bSelf.ID, bSelf.AccessHash); got != photoID {
 		t.Fatalf("caller personal_photo %d, saved %d", got, photoID)
 	}
+	if id, personal := userPhotoFlags(t, ctx, a, bSelf.ID, bSelf.AccessHash); id != photoID || !personal {
+		t.Fatalf("caller user.photo id %d personal %v", id, personal)
+	}
 	if got := personalPhotoID(t, ctx, b, aliceSeen.ID, aliceSeen.AccessHash); got != 0 {
 		t.Fatalf("contact saw the caller's personal photo %d", got)
+	}
+	if _, personal := userPhotoFlags(t, ctx, b, aliceSeen.ID, aliceSeen.AccessHash); personal {
+		t.Fatal("contact user.photo was marked personal")
 	}
 
 	t.Cleanup(func() {
@@ -116,6 +122,32 @@ func TestContactProfilePhotoSaveSuggestAndClear(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("contact did not receive messageActionSuggestProfilePhoto %d: %v", want, err)
 	}
+}
+
+func userPhotoFlags(t *testing.T, ctx context.Context, c *Client, userID, accessHash int64) (int64, bool) {
+	t.Helper()
+	obj, err := c.Invoke(ctx, &mtproto.TLUsersGetUsers{
+		Constructor: mtproto.CRC32_users_getUsers,
+		Id:          []*mtproto.InputUser{inputUser(userID, accessHash)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := userByID(usersOf(obj), userID)
+	if user == nil {
+		full, err := c.Invoke(ctx, &mtproto.TLUsersGetFullUser{
+			Constructor: mtproto.CRC32_users_getFullUser,
+			Id:          inputUser(userID, accessHash),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		user = userByID(usersOf(full), userID)
+	}
+	if user == nil || user.GetPhoto() == nil {
+		return 0, false
+	}
+	return user.GetPhoto().GetPhotoId(), user.GetPhoto().GetPersonal()
 }
 
 func personalPhotoID(t *testing.T, ctx context.Context, c *Client, userID, accessHash int64) int64 {

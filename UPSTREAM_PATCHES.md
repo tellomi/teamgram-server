@@ -618,6 +618,33 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 | `read_dates_private` | `app/bff/users/internal/core/read_dates_private.go`, `users.getFullUser_handler.go` |
 | `YOUR_PRIVACY_RESTRICTED` | `proto/mtproto/rpc_error_codes.go` |
 
+## Stranger bar, contact ids, left channels, personal photo, personal channel, phone exception
+
+`messages.getPeerSettings` stayed empty because a private message never wrote `user_peer_settings`. The first message into a new private dialog, from someone who is not a contact and not a bot, now sets `report_spam`, `add_contact`, and `block_contact` for the recipient and pushes `updatePeerSettings`. `contacts.addContact` / `contacts.acceptContact` call the same delete as `messages.hidePeerSettingsBar`, which sets `hide`. `messages.getPeerSettings` returns an empty bar when that flag is set. `messages.reportSpam` and `account.reportPeer` on a user do the same. Service users 777000, 42777, and 424000 do not open the bar.
+
+`contacts.getContactIDs` returned an empty vector. It now returns the contact user ids. The hash is the same value `contacts.getContacts` uses (saved count, then user ids ascending, `MediaDataController.calcHash`). Hash 0 returns the list. A matching non-zero hash returns an empty vector.
+
+`channels.getLeftChannels` listed a private channel the user had left as `channelForbidden`, which clients drop, so the list looked empty. A left private channel or megagroup is returned as `channel` with `left` set. `offset` skips that many rows.
+
+`photos.uploadContactProfilePhoto` stored the contact-only photo on `userFull.personal_photo` only. Every `user` built for that viewer (`users.getUsers`, `messages.getDialogs`, `messages.getHistory`, `contacts.getContacts`, and the user attached to `users.getFullUser`) now carries that photo on `user.photo` with `personal` set. Another viewer still sees the public photo.
+
+`account.updatePersonalChannel` wrote `users.personal_channel_id`, and `users.getFullUser` only copied it when a plugin was installed. The BFF now passes the channel card. A viewer who can see the channel gets `personal_channel_id`, `personal_channel_message` (the latest message id), and the channel in `chats`. A private channel stays off a profile the viewer cannot open.
+
+`contacts.addContact` accepted `add_phone_privacy_exception` and did not change phone privacy. The flag adds that user to the phone-number allow list and removes them from the disallow list. The default phone rule is nobody, so this is what lets the other person see the number.
+
+No new table. No new production switch.
+
+| Piece | File |
+| --- | --- |
+| First-message bar | `app/messenger/msg/inbox/internal/core/peer_settings_bar.go`, `inbox.sendUserMessageToInboxV2_handler.go` |
+| Clear on add | `app/service/biz/user/internal/core/user.addContact_handler.go`, `contacts.acceptContact_handler.go` |
+| Clear on report | `app/bff/channels/internal/server/grpc/service/handlers_p1.go` |
+| Contact ids | `app/bff/contacts/internal/core/contacts.getContactIDs_handler.go` |
+| Left channels | `app/service/biz/channel/convert.go` `leftChannelView` |
+| Personal photo on user | `proto/mtproto/personal_photo_hook.go`, `immutable_user_helper.go`, `contactphoto/user_photo.go` |
+| Personal channel | `app/bff/userchannelprofiles/personalchannel`, `users.getFullUser_handler.go` |
+| Phone exception | `app/service/biz/user/internal/core/phone_privacy_exception.go` |
+
 ## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.

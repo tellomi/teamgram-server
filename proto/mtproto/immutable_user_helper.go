@@ -361,6 +361,7 @@ func (m *ImmutableUser) ToUnsafeUserCtx(ctx context.Context, selfUser *Immutable
 		ProfileColor:                 m.ProfileColor(),
 		BotActiveUsers:               m.BotActiveUsers(),
 	}).To_User()
+	defer ApplyPersonalPhoto(ctx, selfUser.Id(), user)
 
 	if len(m.Usernames()) > 1 {
 		user.Username = nil
@@ -614,6 +615,7 @@ func (m *ImmutableUser) ToUser(selfUserId int64) *User {
 		ProfileColor:                 m.ProfileColor(),
 		BotActiveUsers:               m.BotActiveUsers(),
 	}).To_User()
+	defer ApplyPersonalPhoto(context.Background(), selfUserId, user)
 
 	if len(m.Usernames()) > 1 {
 		user.Username = nil

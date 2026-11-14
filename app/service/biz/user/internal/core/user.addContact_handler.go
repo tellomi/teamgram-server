@@ -60,6 +60,39 @@ func (c *UserCore) UserAddContact(in *user.TLUserAddContact) (*mtproto.Bool, err
 		c.Logger.Errorf(" - error: %v", err)
 		return nil, err
 	}
+	// Adding the contact clears the stranger bar (report_spam / add_contact / block_contact).
+	if err = c.svcCtx.Dao.DeleteUserPeerSettings(c.ctx, in.GetUserId(), mtproto.PEER_USER, in.GetId()); err != nil {
+		c.Logger.Errorf("user.addContact - peer settings: %v", err)
+		return nil, err
+	}
+	// contacts.addContact add_phone_privacy_exception lets that user see our number.
+	if mtproto.FromBool(in.GetAddPhonePrivacyException()) {
+		if err = c.grantPhonePrivacyException(in.GetUserId(), in.GetId()); err != nil {
+			c.Logger.Errorf("user.addContact - phone privacy: %v", err)
+			return nil, err
+		}
+	}
 
 	return mtproto.ToBool(changeMutual), nil
+}
+
+func (c *UserCore) grantPhonePrivacyException(owner, peer int64) error {
+	if owner == 0 || peer == 0 || owner == peer {
+		return nil
+	}
+	rules, err := c.UserGetPrivacy(&user.TLUserGetPrivacy{
+		UserId:  owner,
+		KeyType: mtproto.PHONE_NUMBER,
+	})
+	if err != nil {
+		return err
+	}
+	var list []*mtproto.PrivacyRule
+	if rules != nil {
+		list = rules.GetDatas()
+	}
+	if !c.svcCtx.Dao.SetUserPrivacyRules(c.ctx, owner, mtproto.PHONE_NUMBER, mergePhonePrivacyException(list, peer)) {
+		return mtproto.ErrInternalServerError
+	}
+	return nil
 }

@@ -54,7 +54,11 @@ func NewTranslation(messageConf zrpc.RpcClientConf) *service.TranslationService 
 	}
 }
 func NewPaidMessages() *service.PaidMessageService { return &service.PaidMessageService{} }
-func NewReports() *service.ReportsService          { return &service.ReportsService{} }
+func NewReports(userConf zrpc.RpcClientConf) *service.ReportsService {
+	return &service.ReportsService{
+		Users: user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
+	}
+}
 
 // NewThreads serves discussion-thread RPCs and contacts.blockFromReplies.
 // userConf and messageConf are the biz service. msgConf is messenger.msg.

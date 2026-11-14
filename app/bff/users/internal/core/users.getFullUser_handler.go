@@ -276,9 +276,9 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 	if c.svcCtx.Dao.PersonalChannelPlugin != nil {
 		personalChannelId := user.GetUser().GetPersonalChannelId()
 		if personalChannelId != 0 {
-			userFull.PersonalChannelId = mtproto.MakeFlagsInt64(personalChannelId)
 			pChannel, topMessageId := c.svcCtx.Dao.PersonalChannelPlugin.GetPersonalChannel(c.ctx, personalChannelId, c.MD.UserId)
 			if pChannel != nil {
+				userFull.PersonalChannelId = mtproto.MakeFlagsInt64(personalChannelId)
 				userFull.PersonalChannelMessage = &wrapperspb.Int32Value{Value: topMessageId}
 				chats = append(chats, pChannel)
 			}
@@ -341,7 +341,9 @@ func (c *UsersCore) applyProfilePhoto(userFull *mtproto.UserFull, viewed *mtprot
 		userFull.ProfilePhoto = nil
 		userFull.FallbackPhoto = nil
 		if viewed != nil {
-			viewed.Photo = nil
+			if !viewed.GetPhoto().GetPersonal() {
+				viewed.Photo = nil
+			}
 			viewed.Status = mtproto.MakeTLUserStatusEmpty(nil).To_UserStatus()
 		}
 		return
@@ -353,14 +355,14 @@ func (c *UsersCore) applyProfilePhoto(userFull *mtproto.UserFull, viewed *mtprot
 	if fb.GetId() == 0 {
 		userFull.ProfilePhoto = nil
 		userFull.FallbackPhoto = nil
-		if viewed != nil {
+		if viewed != nil && !viewed.GetPhoto().GetPersonal() {
 			viewed.Photo = nil
 		}
 		return
 	}
 	userFull.ProfilePhoto = fb
 	userFull.FallbackPhoto = fb
-	if viewed != nil {
+	if viewed != nil && !viewed.GetPhoto().GetPersonal() {
 		viewed.Photo = mtproto.MakeUserProfilePhotoByPhoto(fb)
 	}
 }
