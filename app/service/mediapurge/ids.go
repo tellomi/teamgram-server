@@ -77,6 +77,10 @@ func fromMedia(media *mtproto.MessageMedia) []Media {
 	if d := media.GetDocument(); d != nil {
 		add(KindDocument, d.GetId())
 	}
+	// messageMediaPhoto.video: the video half of a live photo.
+	if d := media.GetVideo_FLAGDOCUMENT(); d != nil {
+		add(KindDocument, d.GetId())
+	}
 	if w := media.GetWebpage(); w != nil {
 		if p := w.GetPhoto(); p != nil {
 			add(KindPhoto, p.GetId())

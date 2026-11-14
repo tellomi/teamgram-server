@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/livephoto"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 	"google.golang.org/grpc/status"
 )
@@ -74,10 +75,15 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 			return
 		}
 
-		messageMedia = mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+		var video *mtproto.Document
+		if video, err = livephoto.Video(media, c.resolveInputDocument); err != nil {
+			return nil, err
+		}
+		messageMedia = livephoto.Set(mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+			Spoiler:         media.GetSpoiler(),
 			Photo_FLAGPHOTO: photo,
 			TtlSeconds:      media.TtlSeconds,
-		}).To_MessageMedia()
+		}).To_MessageMedia(), video)
 	case mtproto.Predicate_inputMediaPhoto:
 		// inputMediaPhoto#b3ba0635 flags:#
 		//	id:InputPhoto
@@ -96,10 +102,15 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 			return
 		}
 
-		messageMedia = mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+		var video *mtproto.Document
+		if video, err = livephoto.Video(media, c.resolveInputDocument); err != nil {
+			return nil, err
+		}
+		messageMedia = livephoto.Set(mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+			Spoiler:         mediaPhoto.GetSpoiler(),
 			Photo_FLAGPHOTO: photo,
 			TtlSeconds:      mediaPhoto.GetTtlSeconds(),
-		}).To_MessageMedia()
+		}).To_MessageMedia(), video)
 	case mtproto.Predicate_inputMediaGeoPoint:
 		// inputMediaGeoPoint#f9c44144 geo_point:InputGeoPoint = InputMedia;
 
