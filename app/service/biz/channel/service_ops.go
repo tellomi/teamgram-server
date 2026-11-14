@@ -339,7 +339,7 @@ func (s *Service) noteNewMessage(ctx context.Context, channelID, sender int64, m
 	}
 }
 
-func (s *Service) prepareOutgoing(ch *Channel, sender int64, msg *mtproto.Message) {
+func (s *Service) prepareOutgoing(ctx context.Context, ch *Channel, sender int64, msg *mtproto.Message) {
 	msg.PeerId = mtproto.MakePeerChannel(ch.ID)
 	msg.Out = false
 	if msg.PredicateName == mtproto.Predicate_messageService {
@@ -353,8 +353,12 @@ func (s *Service) prepareOutgoing(ch *Channel, sender int64, msg *mtproto.Messag
 		msg.Post = true
 		if ch.Signatures {
 			msg.FromId = mtproto.MakePeerUser(sender)
+			if name := posterName(ctx, sender); name != "" {
+				msg.PostAuthor = &wrapperspb.StringValue{Value: name}
+			}
 		} else {
 			msg.FromId = nil
+			msg.PostAuthor = nil
 		}
 		if msg.Views == nil {
 			msg.Views = &wrapperspb.Int32Value{Value: 1}
@@ -414,7 +418,7 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 			return nil, mtproto.ErrMessageEmpty
 		}
 		msg := proto.Clone(item.Message).(*mtproto.Message)
-		s.prepareOutgoing(ch, sender, msg)
+		s.prepareOutgoing(ctx, ch, sender, msg)
 		id, pts, err := s.appendMessage(ctx, channelID, sender, item.RandomID, msg)
 		if err != nil {
 			return nil, err
@@ -494,7 +498,7 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
-	s.prepareOutgoing(ch, stored.SenderID, body)
+	s.prepareOutgoing(ctx, ch, stored.SenderID, body)
 	if err = s.enforceContent(ch, p, []*mtproto.Message{body}); err != nil {
 		return nil, err
 	}
@@ -543,7 +547,7 @@ func (s *Service) RewriteBody(ctx context.Context, sender, channelID, actorAuth 
 	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
-	s.prepareOutgoing(ch, stored.SenderID, body)
+	s.prepareOutgoing(ctx, ch, stored.SenderID, body)
 	body.SanitizeEntities()
 	raw, err := proto.Marshal(body)
 	if err != nil {

@@ -1,11 +1,13 @@
 package channel
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestEditAboutAndAdminLog(t *testing.T) {
@@ -102,6 +104,62 @@ func TestToggleSignaturesFlagsAndLog(t *testing.T) {
 	}
 	if !sig || !prof {
 		t.Fatalf("admin log signatures=%v profiles=%v events=%d", sig, prof, len(log.GetEvents()))
+	}
+}
+
+func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
+	svc, ctx := newTest(t)
+	prev := LookupPosterName
+	LookupPosterName = func(_ context.Context, userID int64) string {
+		if userID == 1 {
+			return FormatPosterName("Ada", "Lovelace")
+		}
+		return ""
+	}
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, true, false); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 7,
+		Message:  &mtproto.Message{Message: "hello", Date: 10},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := sent.Updates[0].GetMessage_MESSAGE()
+	if msg.GetPostAuthor().GetValue() != "Ada Lovelace" {
+		t.Fatalf("post_author = %q", msg.GetPostAuthor().GetValue())
+	}
+	if msg.GetFromId().GetUserId() != 1 {
+		t.Fatalf("from_id = %#v", msg.GetFromId())
+	}
+
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, false, false); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 8,
+		Message:  &mtproto.Message{Message: "unsigned", Date: 11, PostAuthor: &wrapperspb.StringValue{Value: "spoof"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Updates[0].GetMessage_MESSAGE().GetPostAuthor() != nil {
+		t.Fatalf("unsigned post_author = %#v", plain.Updates[0].GetMessage_MESSAGE().GetPostAuthor())
+	}
+}
+
+func TestFormatPosterName(t *testing.T) {
+	if FormatPosterName("Ada", "Lovelace") != "Ada Lovelace" || FormatPosterName("Ada", "") != "Ada" || FormatPosterName("", "Lovelace") != "Lovelace" || FormatPosterName(" ", " ") != "" {
+		t.Fatalf("names %q %q %q %q", FormatPosterName("Ada", "Lovelace"), FormatPosterName("Ada", ""), FormatPosterName("", "Lovelace"), FormatPosterName(" ", " "))
 	}
 }
 
