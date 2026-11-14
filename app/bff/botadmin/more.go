@@ -16,6 +16,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/grpc/status"
@@ -535,6 +536,7 @@ func AccessSettings(ctx context.Context, self int64, bot *mtproto.InputUser) (*m
 	for _, uid := range cur.access {
 		users = append(users, mtproto.MakeTLUser(&mtproto.User{Id: uid}).To_User())
 	}
+	accesshash.PaintUsers(ctx, users)
 	return mtproto.MakeTLBotsAccessSettings(&mtproto.Bots_AccessSettings{
 		Restricted: cur.restricted, AddUsers: users,
 	}).To_Bots_AccessSettings(), nil

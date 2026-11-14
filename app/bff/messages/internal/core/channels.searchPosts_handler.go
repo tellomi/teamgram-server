@@ -5,6 +5,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/postsearch"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
 
 // ChannelsSearchPosts
@@ -72,12 +73,19 @@ func (c *MessagesCore) fillPostChats(res *mtproto.Messages_Messages) {
 		if have[id] {
 			continue
 		}
-		res.Chats = append(res.Chats, mtproto.MakeTLChannel(&mtproto.Chat{
+		miss := mtproto.MakeTLChannel(&mtproto.Chat{
 			Broadcast: true,
 			Id:        id,
 			Title:     "",
 			Photo:     mtproto.MakeTLChatPhotoEmpty(nil).To_ChatPhoto(),
-		}).To_Chat())
+		}).To_Chat()
+		if accesshash.Issuing() {
+			accesshash.PaintChannel(c.ctx, miss)
+			if miss.GetAccessHash_FLAGINT64().GetValue() == 0 {
+				continue
+			}
+		}
+		res.Chats = append(res.Chats, miss)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -214,6 +215,7 @@ func (b *Book) PollVotes(ctx context.Context, viewer int64, peerType int32, peer
 		if !seen[v.UserID] {
 			seen[v.UserID] = true
 			users = append(users, mtproto.MakeTLUser(&mtproto.User{Id: v.UserID}).To_User())
+			accesshash.PaintUser(ctx, users[len(users)-1])
 		}
 	}
 	_ = viewer

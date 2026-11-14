@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/location"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -199,7 +200,15 @@ func (p botProfile) accessHash() int64 {
 	if p.AccessHash != 0 {
 		return p.AccessHash
 	}
-	return p.ID
+	// Off keeps issuing the bot id, which is what existing clients cached.
+	// Log and enforce load the user row and never substitute the id or 0.
+	if !accesshash.Issuing() {
+		return p.ID
+	}
+	if h, ok := accesshash.UserHash(context.Background(), p.ID); ok {
+		return h
+	}
+	return 0
 }
 
 // CachedAccessHash is the access_hash this process has already put on a
@@ -210,6 +219,18 @@ func (p botProfile) accessHash() int64 {
 func (b *Book) CachedAccessHash(id int64) (int64, bool) {
 	if b == nil || id == 0 {
 		return 0, false
+	}
+	if accesshash.Issuing() {
+		if h, ok := accesshash.UserHash(context.Background(), id); ok {
+			return h, true
+		}
+		b.mu.Lock()
+		st := b.bots[id]
+		b.mu.Unlock()
+		if st == nil || st.Profile.AccessHash == 0 {
+			return 0, false
+		}
+		return st.Profile.AccessHash, true
 	}
 	b.mu.Lock()
 	st := b.bots[id]

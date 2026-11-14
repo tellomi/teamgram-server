@@ -10,6 +10,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
 
 // Seat is one basic-group member used to pick the next creator.
@@ -94,5 +95,7 @@ func FutureChannel(ctx context.Context, self int64, peer *mtproto.PeerUtil) (int
 
 // User is the user object messages.getFutureChatCreatorAfterLeave returns.
 func User(self, id int64) *mtproto.User {
-	return mtproto.MakeTLUser(&mtproto.User{Id: id, Self: id == self}).To_User()
+	u := mtproto.MakeTLUser(&mtproto.User{Id: id, Self: id == self}).To_User()
+	accesshash.PaintUser(context.Background(), u)
+	return u
 }

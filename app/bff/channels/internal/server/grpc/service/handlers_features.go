@@ -12,6 +12,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -134,10 +135,12 @@ func (s *Service) ChannelsGetFutureCreatorAfterLeave(ctx context.Context, in *mt
 	if len(users) > 0 {
 		return users[0], nil
 	}
-	return mtproto.MakeTLUser(&mtproto.User{
+	user := mtproto.MakeTLUser(&mtproto.User{
 		Id:      id,
 		Premium: premium.IsMember(false, 0, time.Now().Unix()),
-	}).To_User(), nil
+	}).To_User()
+	accesshash.PaintUser(ctx, user)
+	return user, nil
 }
 
 func actor(ctx context.Context) (int64, int64) {

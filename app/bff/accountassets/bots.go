@@ -1,10 +1,12 @@
 package accountassets
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -315,6 +317,7 @@ func businessUpdates(userID int64, link *botLink) *mtproto.Updates {
 		Qts:        1,
 	}).To_Update()
 	user := mtproto.MakeTLUser(&mtproto.User{Id: userID, Min: true}).To_User()
+	accesshash.PaintUser(context.Background(), user)
 	bot := botUser(link.id, link.access)
 	return mtproto.MakeUpdatesByUpdatesUsers([]*mtproto.User{user, bot}, upd)
 }

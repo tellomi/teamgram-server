@@ -10,6 +10,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
 
 // reactionUserAPI loads the users named by a reaction list.
@@ -222,7 +223,7 @@ func (s ReactionsService) attachUsers(ctx context.Context, self int64, ids []int
 			}
 		}
 	}
-	return stubReactionUsers(self, ids)
+	return stubReactionUsers(ctx, self, ids)
 }
 
 func (s ReactionsService) withReactionUsers(ctx context.Context, self int64, up *mtproto.Updates) *mtproto.Updates {
@@ -269,13 +270,22 @@ func uniqIDs(ids []int64) []int64 {
 	return out
 }
 
-func stubReactionUsers(self int64, ids []int64) []*mtproto.User {
+func stubReactionUsers(ctx context.Context, self int64, ids []int64) []*mtproto.User {
 	var out []*mtproto.User
 	for _, id := range ids {
 		out = append(out, mtproto.MakeTLUser(&mtproto.User{Id: id, Self: id == self}).To_User())
 	}
 	if out == nil {
 		out = []*mtproto.User{}
+	}
+	if !accesshash.Issuing() {
+		return out
+	}
+	accesshash.PaintUsers(ctx, out)
+	for i, u := range out {
+		if u.GetAccessHash().GetValue() == 0 {
+			out[i] = mtproto.MakeTLUserEmpty(&mtproto.User{Id: u.GetId()}).To_User()
+		}
 	}
 	return out
 }

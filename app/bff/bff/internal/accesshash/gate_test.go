@@ -83,6 +83,30 @@ func TestIssuedHashesStayValid(t *testing.T) {
 	}
 }
 
+func TestBoxMatchesDialogPair(t *testing.T) {
+	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 8, AccessHash: 1}).To_InputPeer()
+	box := mtproto.MakeTLMessageBox(&mtproto.MessageBox{
+		MessageId:    4,
+		PeerType:     mtproto.PEER_USER,
+		PeerId:       9,
+		SenderUserId: 8,
+		DialogId1:    8,
+		DialogId2:    9,
+		Message:      &mtproto.Message{PredicateName: mtproto.Predicate_message},
+	}).To_MessageBox()
+	if !boxMatches(box, 9, peer) {
+		t.Fatal("sorted dialog pair")
+	}
+	box.DialogId1, box.DialogId2 = 1, 2
+	if boxMatches(box, 9, peer) {
+		t.Fatal("different dialog")
+	}
+	box.DialogId1, box.DialogId2 = 0, 0
+	if !boxMatches(box, 9, peer) {
+		t.Fatal("recipient copy with no dialog ids")
+	}
+}
+
 func TestPrivateMessageProof(t *testing.T) {
 	defer ah.SetMode(ah.ModeEnforce)()
 	box := mtproto.MakeTLMessageBox(&mtproto.MessageBox{
