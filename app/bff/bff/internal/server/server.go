@@ -76,6 +76,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/contactphoto"
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
@@ -125,6 +126,9 @@ func (s *Server) Initialize() error {
 	// overrides it. A missing value logs once inside Configure.
 	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
+	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
+		return err
+	}
 	channelBridge := channels_helper.Bridge{}
 
 	s.grpcSrv = zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {

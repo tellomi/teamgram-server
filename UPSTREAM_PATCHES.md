@@ -588,6 +588,17 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 | toggle, reorder, premium caps, other-session update | `app/bff/dialogs/internal/core/messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go`, `app/service/biz/dialog/internal/core/pin_policy.go`, `dialog.toggleDialogPin_handler.go`, `dialog.reorderPinnedDialogs_handler.go`, `dialog.editPeerFolders_handler.go` |
 | one channel dialog | `app/service/biz/channel/service_ops.go` `DialogFor`, `app/bff/channels/bridge.go` |
 
+## Contact profile photo (photos.uploadContactProfilePhoto)
+
+`save` with a file stores a photo only the caller sees. `users.getFullUser` copies it onto `personal_photo`. `save` with no file, video, or emoji markup clears that photo (Telegram Desktop `PeerPhoto::clearPersonal`). `suggest` writes `messageActionSuggestProfilePhoto` into the private chat. The row lives in `user_contact_photos`. The migration only creates the table.
+
+| Piece | File |
+| --- | --- |
+| save, clear, suggest | `app/bff/userchannelprofiles/contactphoto` |
+| RPC hook | `photos.uploadContactProfilePhoto_handler.go` |
+| `personal_photo` | `users.getFullUser_handler.go` |
+| table | `teamgramd/deploy/sql/migrate-20261129-contact-profile-photo.sql` |
+
 ## Supergroup delete and unread_count
 
 `channels.deleteMessages` removed the message and pushed `updateDeleteChannelMessages`, and left every other member's `unread_count` where it was. A private revoke already subtracts an unread id. The same rule now applies to a channel or supergroup, without reading each member. Each deleted id is one `UPDATE` of `channel_read_state` for rows whose `read_inbox_max_id` is still below that id and whose user is not the author: `unread_count = GREATEST(unread_count - 1, 0)`. `KEY channel_read_inbox (channel_id, read_inbox_max_id)` makes that a range, not a walk of the group. With D deletes and K matching rows the cost is O(D) statements and O(log M + K) work in each. At most 1000 members, the changed rows are read back and `updateReadChannelInbox` goes only to those the presence service reports online. Above 1000 members the updates run off the request and no per-member push list is built. `messages.getDialogs` reads the stored count either way.
