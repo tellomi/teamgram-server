@@ -37,6 +37,12 @@ func (c *UserChannelProfilesCore) PhotosGetUserPhotos(in *mtproto.TLPhotosGetUse
 	}
 
 	self := userId.PeerId == c.MD.UserId
+	// The person who was blocked does not receive the blocker's album, even
+	// when profile-photo privacy would allow it. A public fallback is not a
+	// substitute for that block.
+	if !self && c.ownerBlockedViewer(userId.PeerId) {
+		return c.photosResult(nil), nil
+	}
 	fallback, _ := c.svcCtx.Dao.UserClient.UserGetFallbackPhoto(c.ctx, &userpb.TLUserGetProfilePhotos{
 		UserId: userId.PeerId,
 	})
@@ -71,6 +77,20 @@ func (c *UserChannelProfilesCore) PhotosGetUserPhotos(in *mtproto.TLPhotosGetUse
 		}
 	}
 	return c.photosResult(photos), nil
+}
+
+func (c *UserChannelProfilesCore) ownerBlockedViewer(owner int64) bool {
+	if c == nil || c.MD == nil || c.MD.UserId == owner || owner == 0 {
+		return false
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return false
+	}
+	blocked, err := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
+		UserId:     owner,
+		PeerUserId: c.MD.UserId,
+	})
+	return err == nil && mtproto.FromBool(blocked)
 }
 
 func (c *UserChannelProfilesCore) profilePhotoAllowed(owner int64) bool {
