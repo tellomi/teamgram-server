@@ -50,15 +50,17 @@ func TestReliabilityLiveStoryMedia(t *testing.T) {
 		},
 	})
 	storyID, callID, access := liveCallOf(t, res)
+	// storyItem#16a4b93c has no live flag. The stream is the media.
 	assertClientLiveStream(t, storyFromTL(res, storyID), callID, access, true)
+	assertRecentLiveIfPresent(t, res, hostID)
 
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		item, ok := viewerStory(ctx, viewer, peer, storyID)
 		if !ok {
 			return false, nil
 		}
-		if item.GetMedia().GetPredicateName() != mtproto.Predicate_messageMediaVideoStream || !item.GetLive() {
-			t.Fatalf("viewer story media %s live %v", item.GetMedia().GetPredicateName(), item.GetLive())
+		if item.GetMedia().GetPredicateName() != mtproto.Predicate_messageMediaVideoStream {
+			t.Fatalf("viewer story media %s", item.GetMedia().GetPredicateName())
 		}
 		assertClientLiveStream(t, item, callID, access, true)
 		byID := invokeOK(t, viewer, &mtproto.TLStoriesGetStoriesByID{
@@ -71,7 +73,9 @@ func TestReliabilityLiveStoryMedia(t *testing.T) {
 			return false, nil
 		}
 		assertClientLiveStream(t, got, callID, access, true)
-		return true, nil
+		// recentStory.live is the chat-list ring. Wait until that user object arrives.
+		seen, live := viewerRecentLive(ctx, viewer, hostID, peer)
+		return seen && live, nil
 	}); err != nil {
 		t.Fatalf("viewer never read the live stream: %v", err)
 	}
@@ -149,8 +153,8 @@ func viewerStory(ctx context.Context, viewer *Client, peer *mtproto.InputPeer, s
 
 func assertClientLiveStream(t *testing.T, item *mtproto.StoryItem, callID, access int64, rtmp bool) {
 	t.Helper()
-	if item == nil || !item.GetLive() {
-		t.Fatalf("live=%v item=%v", item.GetLive(), item)
+	if item == nil || item.GetPredicateName() == mtproto.Predicate_storyItemDeleted {
+		t.Fatalf("story item %v", item)
 	}
 	media := item.GetMedia()
 	if media.GetPredicateName() != mtproto.Predicate_messageMediaVideoStream {
@@ -160,4 +164,28 @@ func assertClientLiveStream(t *testing.T, item *mtproto.StoryItem, callID, acces
 	if call.GetPredicateName() != mtproto.Predicate_inputGroupCall || call.GetId() != callID || call.GetAccessHash() != access || media.GetRtmpStream() != rtmp {
 		t.Fatalf("call id=%d access=%d rtmp=%v name=%s", call.GetId(), call.GetAccessHash(), media.GetRtmpStream(), call.GetPredicateName())
 	}
+}
+
+func assertRecentLiveIfPresent(t *testing.T, obj mtproto.TLObject, host int64) {
+	t.Helper()
+	user := userByID(usersOf(obj), host)
+	recent := user.GetStoriesMaxId_FLAGRECENTSTORY()
+	if recent != nil && !recent.GetLive() {
+		t.Fatal("recentStory was sent without live")
+	}
+}
+
+func viewerRecentLive(ctx context.Context, viewer *Client, host int64, peer *mtproto.InputPeer) (seen, live bool) {
+	res, err := viewer.Invoke(ctx, &mtproto.TLUsersGetUsers{
+		Constructor: mtproto.CRC32_users_getUsers,
+		Id:          []*mtproto.InputUser{inputUser(peer.GetUserId(), peer.GetAccessHash())},
+	})
+	if err != nil {
+		return false, false
+	}
+	recent := userByID(usersOf(res), host).GetStoriesMaxId_FLAGRECENTSTORY()
+	if recent == nil {
+		return false, false
+	}
+	return true, recent.GetLive()
 }
