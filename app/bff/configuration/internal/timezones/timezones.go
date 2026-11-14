@@ -1,16 +1,14 @@
 package timezones
 
 import (
-	"bufio"
 	"hash/fnv"
-	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/tz"
 )
 
 // List is help.getTimezonesList. A matching hash returns
@@ -40,38 +38,10 @@ type zone struct {
 }
 
 func loadZones() []zone {
-	if zones := readZoneTab("/usr/share/zoneinfo/zone.tab"); len(zones) > 0 {
-		return zones
-	}
-	return fallbackZones()
-}
-
-func readZoneTab(path string) []zone {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	var out []zone
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		fields := strings.Split(line, "\t")
-		if len(fields) < 3 {
-			continue
-		}
-		id := fields[2]
-		name := id
-		if len(fields) >= 4 && strings.TrimSpace(fields[3]) != "" {
-			name = strings.TrimSpace(fields[3])
-		}
-		out = append(out, zone{id: id, name: name})
-	}
-	if err := sc.Err(); err != nil || len(out) == 0 {
-		return nil
+	src := tz.Zones()
+	out := make([]zone, len(src))
+	for i, z := range src {
+		out[i] = zone{id: z.ID, name: z.Name}
 	}
 	return out
 }
@@ -87,7 +57,7 @@ func build(zones []zone) *mtproto.Help_TimezonesList {
 		if z.id == "" || seen[z.id] {
 			continue
 		}
-		loc, err := time.LoadLocation(z.id)
+		loc, err := tz.Load(z.id)
 		if err != nil {
 			continue
 		}
@@ -124,44 +94,4 @@ func hash32(parts []string) int32 {
 		return 1
 	}
 	return v
-}
-
-func fallbackZones() []zone {
-	ids := []string{
-		"UTC",
-		"Etc/GMT",
-		"Etc/GMT+12",
-		"Pacific/Honolulu",
-		"America/Anchorage",
-		"America/Los_Angeles",
-		"America/Denver",
-		"America/Chicago",
-		"America/New_York",
-		"America/Sao_Paulo",
-		"Atlantic/Reykjavik",
-		"Europe/London",
-		"Europe/Lisbon",
-		"Europe/Paris",
-		"Europe/Berlin",
-		"Europe/Athens",
-		"Europe/Moscow",
-		"Africa/Cairo",
-		"Africa/Johannesburg",
-		"Asia/Dubai",
-		"Asia/Karachi",
-		"Asia/Kolkata",
-		"Asia/Dhaka",
-		"Asia/Bangkok",
-		"Asia/Shanghai",
-		"Asia/Tokyo",
-		"Asia/Seoul",
-		"Australia/Sydney",
-		"Pacific/Auckland",
-		"Pacific/Fiji",
-	}
-	out := make([]zone, len(ids))
-	for i, id := range ids {
-		out[i] = zone{id: id, name: strings.ReplaceAll(id, "_", " ")}
-	}
-	return out
 }

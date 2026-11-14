@@ -19,6 +19,8 @@
 package main
 
 import (
+	_ "time/tzdata" // IANA zones when the runtime image has no tzdata package
+
 	"github.com/teamgram/marmota/pkg/commands"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/server"
 )

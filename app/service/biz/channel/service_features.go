@@ -772,7 +772,11 @@ func (s *Service) GroupsForDiscussion(ctx context.Context, self int64) (*mtproto
 	return mtproto.MakeTLMessagesChats(&mtproto.Messages_Chats{Chats: chats}).To_Messages_Chats(), nil
 }
 
-func (s *Service) SetDiscussionGroup(ctx context.Context, self int64, broadcast, group *mtproto.InputChannel) error {
+// SetDiscussionGroup links a broadcast to a discussion supergroup.
+// An empty group clears the link. Unlink and rebind also clear the previous
+// group's linked_chat_id when it still points at this channel, then push
+// updateChannel so other sessions reload channelFull.
+func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64, broadcast, group *mtproto.InputChannel) error {
 	bCh, bp, err := s.requireMember(ctx, self, broadcast)
 	if err != nil {
 		return err
@@ -782,9 +786,8 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self int64, broadcast,
 	}
 	f := s.features(ctx, bCh.ID)
 	prev := f.LinkedChatID
-	if group == nil || group.GetPredicateName() == mtproto.Predicate_inputChannelEmpty || group.GetChannelId() == 0 {
-		f.LinkedChatID = 0
-	} else {
+	var newID int64
+	if group != nil && group.GetPredicateName() != mtproto.Predicate_inputChannelEmpty && group.GetChannelId() != 0 {
 		gCh, gp, err := s.requireMember(ctx, self, group)
 		if err != nil {
 			return err
@@ -792,21 +795,57 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self int64, broadcast,
 		if !gCh.Megagroup || !gp.IsAdmin() {
 			return mtproto.ErrChatAdminRequired
 		}
-		f.LinkedChatID = gCh.ID
-		gf := s.features(ctx, gCh.ID)
-		gf.LinkedChatID = bCh.ID
-		if err := s.saveFeatures(ctx, gCh.ID, gf); err != nil {
+		newID = gCh.ID
+	}
+	var cleared bool
+	if prev != 0 && prev != newID {
+		cleared, err = s.clearDiscussionBacklink(ctx, prev, bCh.ID)
+		if err != nil {
 			return err
 		}
 	}
+	if newID != 0 {
+		gf := s.features(ctx, newID)
+		gf.LinkedChatID = bCh.ID
+		if err := s.saveFeatures(ctx, newID, gf); err != nil {
+			return err
+		}
+	}
+	f.LinkedChatID = newID
 	if err := s.saveFeatures(ctx, bCh.ID, f); err != nil {
 		return err
 	}
 	s.logAdmin(ctx, bCh.ID, self, mtproto.MakeTLChannelAdminLogEventActionChangeLinkedChat(&mtproto.ChannelAdminLogEventAction{
 		PrevValue_INT64: prev,
-		NewValue_INT64:  f.LinkedChatID,
+		NewValue_INT64:  newID,
 	}).To_ChannelAdminLogEventAction())
+	if prev != newID {
+		s.fanoutUpdate(ctx, self, actorAuth, bCh.ID, channelUpdate(bCh.ID))
+	}
+	if newID != 0 && newID != prev {
+		s.fanoutUpdate(ctx, self, actorAuth, newID, channelUpdate(newID))
+	}
+	if cleared {
+		s.fanoutUpdate(ctx, self, actorAuth, prev, channelUpdate(prev))
+	}
 	return nil
+}
+
+// clearDiscussionBacklink drops the group's pointer when it still names this
+// channel. A group already linked to a different channel is left alone.
+func (s *Service) clearDiscussionBacklink(ctx context.Context, groupID, channelID int64) (bool, error) {
+	if groupID == 0 || channelID == 0 {
+		return false, nil
+	}
+	gf := s.features(ctx, groupID)
+	if gf.LinkedChatID != channelID {
+		return false, nil
+	}
+	gf.LinkedChatID = 0
+	if err := s.saveFeatures(ctx, groupID, gf); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Service) InactiveChannels(ctx context.Context, self int64) (*mtproto.Messages_InactiveChats, error) {
