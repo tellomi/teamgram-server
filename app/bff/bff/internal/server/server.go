@@ -322,6 +322,7 @@ func (s *Server) Initialize() error {
 		// RPCPayments also serves account.getTmpPassword; that method is
 		// delegated to the two-factor core.
 		paymentsSvc := payments_helper.New()
+		payments_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCPaymentsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarSubscriptionsServer(grpcServer, paymentsSvc)

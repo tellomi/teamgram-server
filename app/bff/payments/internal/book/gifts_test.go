@@ -1,6 +1,7 @@
 package book
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -126,6 +127,136 @@ func TestCollectionsRoundTrip(t *testing.T) {
 	page, err := b.SavedStarGifts(4, &mtproto.TLPaymentsGetSavedStarGifts{Peer: peer, CollectionId: CollectionID(second.GetCollectionId())})
 	if err != nil || page.GetCount() != 0 {
 		t.Fatal(page, err)
+	}
+}
+
+func TestCollectionMutationsRequireOwner(t *testing.T) {
+	b := New()
+	self := selfPeer()
+	other := userPeer(9)
+	chat := mtproto.MakeTLInputPeerChat(&mtproto.InputPeer{ChatId: 5}).To_InputPeer()
+	channel := channelPeer(3)
+	if _, err := b.CreateStarGiftCollection(4, other, "Stolen", nil); codeOf(err) != CodePeerInvalid {
+		t.Fatalf("other user create: %v", err)
+	}
+	if _, err := b.CreateStarGiftCollection(4, chat, "Group", nil); codeOf(err) != CodePeerInvalid {
+		t.Fatalf("chat create: %v", err)
+	}
+	if _, err := b.CreateStarGiftCollection(4, channel, "Channel", nil); codeOf(err) != "CHAT_ADMIN_REQUIRED" {
+		t.Fatalf("channel create: %v", err)
+	}
+	made, err := b.CreateStarGiftCollection(4, self, "Mine", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.UpdateStarGiftCollection(9, &mtproto.TLPaymentsUpdateStarGiftCollection{
+		Peer: userPeer(4), CollectionId: made.GetCollectionId(), Title: wrapperspb.String("Hijack"),
+	}); codeOf(err) != CodePeerInvalid {
+		t.Fatalf("rename: %v", err)
+	}
+	if err = b.ReorderStarGiftCollections(9, userPeer(4), []int32{made.GetCollectionId()}); codeOf(err) != CodePeerInvalid {
+		t.Fatalf("reorder: %v", err)
+	}
+	if err = b.DeleteStarGiftCollection(9, userPeer(4), made.GetCollectionId()); codeOf(err) != CodePeerInvalid {
+		t.Fatalf("delete: %v", err)
+	}
+	listed, err := b.GetStarGiftCollections(9, userPeer(4), 0)
+	if err != nil || len(listed.GetCollections()) != 1 || listed.GetCollections()[0].GetTitle() != "Mine" {
+		t.Fatalf("read %#v %v", listed, err)
+	}
+	b.SetGiftAdmin(func(self, channelID int64) error {
+		if self == 4 && channelID == 8 {
+			return nil
+		}
+		return mtproto.ErrChatAdminRequired
+	})
+	if _, err = b.CreateStarGiftCollection(4, channelPeer(8), "Posted", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.CreateStarGiftCollection(5, channelPeer(8), "Nope", nil); codeOf(err) != "CHAT_ADMIN_REQUIRED" {
+		t.Fatalf("other admin: %v", err)
+	}
+	page, err := b.GetStarGiftCollections(5, channelPeer(8), 0)
+	if err != nil || len(page.GetCollections()) != 1 {
+		t.Fatalf("channel list %#v %v", page, err)
+	}
+}
+
+type memCollections struct {
+	rows map[string][]giftCollection
+	next map[string]int32
+	fail bool
+}
+
+func (m *memCollections) Load(context.Context) (map[string][]giftCollection, map[string]int32, error) {
+	rows := map[string][]giftCollection{}
+	next := map[string]int32{}
+	for key, list := range m.rows {
+		rows[key] = append([]giftCollection(nil), list...)
+	}
+	for key, id := range m.next {
+		next[key] = id
+	}
+	return rows, next, nil
+}
+
+func (m *memCollections) Save(_ context.Context, key string, rows []giftCollection, next int32) error {
+	if m.fail {
+		return errMemSave
+	}
+	if m.rows == nil {
+		m.rows = map[string][]giftCollection{}
+		m.next = map[string]int32{}
+	}
+	m.rows[key] = append([]giftCollection(nil), rows...)
+	m.next[key] = next
+	return nil
+}
+
+var errMemSave = errString("save failed")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+func TestCollectionsSurviveRestart(t *testing.T) {
+	store := &memCollections{}
+	b := New()
+	if err := b.useCollectionStore(store); err != nil {
+		t.Fatal(err)
+	}
+	made, err := b.CreateStarGiftCollection(4, selfPeer(), "Pins", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.CreateStarGiftCollection(4, selfPeer(), "Other", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = b.DeleteStarGiftCollection(4, selfPeer(), made.GetCollectionId()); err != nil {
+		t.Fatal(err)
+	}
+	again := New()
+	if err = again.useCollectionStore(store); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := again.GetStarGiftCollections(4, selfPeer(), 0)
+	if err != nil || len(listed.GetCollections()) != 1 || listed.GetCollections()[0].GetTitle() != "Other" {
+		t.Fatalf("reloaded %#v %v", listed, err)
+	}
+	third, err := again.CreateStarGiftCollection(4, selfPeer(), "Third", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.GetCollectionId() == listed.GetCollections()[0].GetCollectionId() {
+		t.Fatal("collection id reused after restart")
+	}
+	store.fail = true
+	if _, err = again.CreateStarGiftCollection(4, selfPeer(), "Lost", nil); codeOf(err) != "INTERNAL_SERVER_ERROR" {
+		t.Fatalf("save: %v", err)
+	}
+	listed, err = again.GetStarGiftCollections(4, selfPeer(), 0)
+	if err != nil || len(listed.GetCollections()) != 2 {
+		t.Fatalf("rolled back %#v %v", listed, err)
 	}
 }
 
