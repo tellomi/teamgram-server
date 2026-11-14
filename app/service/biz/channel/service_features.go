@@ -1547,6 +1547,11 @@ func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids [
 }
 
 func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int32, q HistoryQuery) (*mtproto.Messages_Messages, error) {
+	if commentsOn() {
+		if out, ok, err := s.repliesFromComments(ctx, self, channelID, msgID, q); ok {
+			return out, err
+		}
+	}
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
@@ -1599,6 +1604,11 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 }
 
 func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, msgID int32) (*mtproto.Messages_DiscussionMessage, error) {
+	if commentsOn() {
+		if out, ok, err := s.discussionFromComments(ctx, self, channelID, msgID); ok {
+			return out, err
+		}
+	}
 	_, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
