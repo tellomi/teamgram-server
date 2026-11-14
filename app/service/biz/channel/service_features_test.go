@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/grpc/status"
 )
 
 func megagroup(t *testing.T, svc *Service, ctx context.Context, title string) *mtproto.Chat {
@@ -140,11 +141,11 @@ func TestEditCreatorFutureGigagroupPrehistory(t *testing.T) {
 	if err != nil || next != 2 {
 		t.Fatalf("future creator %d %v", next, err)
 	}
-	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, nil); err == nil {
-		t.Fatal("missing password")
+	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, nil); status.Convert(err).Message() != "PASSWORD_MISSING" {
+		t.Fatalf("missing password: %v", err)
 	}
-	pw := &mtproto.InputCheckPasswordSRP{A: []byte{1, 2, 3}}
-	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, pw); err != nil {
+	installOldPassword(t, 1, "secret")
+	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, cloudProof(t, 1, "secret")); err != nil {
 		t.Fatal(err)
 	}
 	got, err := svc.GetParticipant(ctx, 2, inCh(ch), mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 2}).To_InputPeer())
@@ -325,7 +326,7 @@ func TestReactionChipOnHistoryAndDifference(t *testing.T) {
 	if !found {
 		t.Fatalf("history missing chip %#v", hist.GetMessages())
 	}
-	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20)
+	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20, false)
 	if err != nil {
 		t.Fatal(err)
 	}

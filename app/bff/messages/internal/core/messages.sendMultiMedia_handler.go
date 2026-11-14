@@ -195,6 +195,12 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 			}).To_MessageReplies()
 		}
 
+		if inputMediaIsVoice(media.GetMedia()) {
+			if err = c.voiceForbidden(peer); err != nil {
+				c.Logger.Errorf("messages.sendMultiMedia - voice privacy")
+				return nil, err
+			}
+		}
 		outMessage.Media, err = c.makeMediaByInputMedia(media.GetMedia())
 		if err != nil {
 			c.Logger.Errorf("messages.sendMultiMedia: %v", err)

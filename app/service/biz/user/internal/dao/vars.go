@@ -68,9 +68,16 @@ func removeAllNil(contacts []*mtproto.ContactData) []*mtproto.ContactData {
 }
 
 func makeDefaultPrivacyRules(key int32) []*mtproto.PrivacyRule {
-	if key == mtproto.PHONE_NUMBER {
+	switch key {
+	case mtproto.PHONE_NUMBER:
+		// Who can see my phone number defaults to nobody.
 		return phoneNumberRules
-	} else {
+	case mtproto.BIRTHDAY:
+		// Who can see my birthday defaults to contacts.
+		return []*mtproto.PrivacyRule{
+			mtproto.MakeTLPrivacyValueAllowContacts(nil).To_PrivacyRule(),
+		}
+	default:
 		return defaultRules
 	}
 }

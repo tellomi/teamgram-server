@@ -22,12 +22,19 @@ type Features struct {
 	PinnedMsgID        int32
 	AvailableMinID     int32
 	FutureCreatorID    int64
-	Lat                float64
-	Long               float64
-	LogSeq             int64
-	AdminLog           []AdminEvent
-	Topics             []TopicRec
-	Reactions          []ReactRec
+	// NoForwards is messages.toggleNoForwards ("restrict saving content").
+	NoForwards bool
+	// PromotedBy is the user who last granted each admin's rights.
+	// channels.editAdmin lets an admin edit only the admins in this map
+	// whose value is themselves. The creator is not limited by it.
+	// A missing entry falls back to the inviter recorded on the participant.
+	PromotedBy map[int64]int64
+	Lat        float64
+	Long       float64
+	LogSeq     int64
+	AdminLog   []AdminEvent
+	Topics     []TopicRec
+	Reactions  []ReactRec
 	// ReactionRead is the unix time through which each member has called
 	// messages.readReactions. Older reaction dates are unread.
 	ReactionRead map[int64]int32

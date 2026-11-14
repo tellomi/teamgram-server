@@ -114,29 +114,20 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 }
 
 func (c *MessagesCore) checkForwardPrivacy(ctx context.Context, selfUserId, checkId int64) bool {
-	rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-		UserId:  selfUserId,
-		KeyType: mtproto.FORWARDS,
-	})
-
-	if len(rules.Datas) == 0 {
+	// selfUserId owns the forwards privacy key. checkId is the user who is
+	// forwarding. Hiding the link drops fwd_from.from_id.
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || selfUserId == 0 || selfUserId == checkId {
 		return true
 	}
-	return mtproto.CheckPrivacyIsAllow(
-		selfUserId,
-		rules.Datas,
-		checkId,
-		func(id, checkId int64) bool {
-			contact, _ := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{
-				UserId: id,
-				Id:     checkId,
-			})
-			return mtproto.FromBool(contact)
-		},
-		func(checkId int64, idList []int64) bool {
-			chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-			return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-		})
+	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(ctx, &userpb.TLUserCheckPrivacy{
+		UserId:  selfUserId,
+		KeyType: mtproto.FORWARDS,
+		PeerId:  checkId,
+	})
+	if err != nil {
+		return true
+	}
+	return mtproto.FromBool(ok)
 }
 
 func (c *MessagesCore) makeForwardMessages(

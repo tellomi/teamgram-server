@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 )
@@ -38,6 +39,12 @@ func (c *MessagesCore) MessagesToggleNoForwards(in *mtproto.TLMessagesToggleNoFo
 			return nil, err
 		}
 		return mtproto.MakeUpdatesByUpdates(), nil
+	}
+	if peer.IsChannel() {
+		return channel.Shared().ToggleNoForwards(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, mtproto.MakeTLInputChannel(&mtproto.InputChannel{
+			ChannelId:  peer.PeerId,
+			AccessHash: peer.AccessHash,
+		}).To_InputChannel(), mtproto.FromBool(in.Enabled))
 	}
 	if !peer.IsChat() {
 		err := mtproto.ErrPeerIdInvalid

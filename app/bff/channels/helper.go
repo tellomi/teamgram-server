@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/svc"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
+	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -27,6 +28,7 @@ func NewReactions(userConf, messageConf zrpc.RpcClientConf, syncConf *kafka.Kafk
 		Users:    user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
 		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(messageConf)),
 		Dialogs:  dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(userConf)),
+		Chats:    chat_client.NewChatClient(rpcx.GetCachedRpcClient(userConf)),
 	}
 	if syncConf != nil && len(syncConf.Brokers) > 0 {
 		s.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(syncConf))

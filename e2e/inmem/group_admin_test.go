@@ -1,16 +1,21 @@
 package inmem
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/chatinvites/joinhide"
 	"github.com/teamgram/teamgram-server/app/bff/chats/owner"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/contactphoto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	srp256 "github.com/teamgram/teamgram-server/pkg/srp"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func useChannel(t *testing.T) (*channel.Service, context.Context) {
@@ -39,6 +44,45 @@ func channelPeer(ch *mtproto.Chat) *mtproto.PeerUtil {
 	}
 }
 
+func oldCloudProof(t *testing.T, userID int64, plain string) *mtproto.InputCheckPasswordSRP {
+	t.Helper()
+	start := time.Unix(1_700_000_000, 0)
+	now := start
+	svc := password.New(password.Options{Now: func() time.Time { return now }})
+	prev := password.Swap(svc)
+	t.Cleanup(func() { password.Swap(prev) })
+	password.SeedPhone(userID)
+	pw, err := password.AccountPassword(context.Background(), userID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt1 := append(append([]byte{}, pw.GetNewAlgo().GetSalt1()...), bytes.Repeat([]byte{0x11}, 32)...)
+	_, err = password.Update(context.Background(), userID, 0, mtproto.MakeTLInputCheckPasswordEmpty(&mtproto.InputCheckPasswordSRP{}).To_InputCheckPasswordSRP(), &mtproto.Account_PasswordInputSettings{
+		NewAlgo: mtproto.MakeTLPasswordKdfAlgoModPow(&mtproto.PasswordKdfAlgo{
+			Salt1: salt1,
+			Salt2: append([]byte{}, pw.GetNewAlgo().GetSalt2()...),
+			G:     pw.GetNewAlgo().GetG(),
+			P:     append([]byte{}, pw.GetNewAlgo().GetP()...),
+		}).To_PasswordKdfAlgo(),
+		NewPasswordHash: srp256.Verifier([]byte(plain), salt1, pw.GetNewAlgo().GetSalt2()),
+		Hint:            wrapperspb.String("h"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = start.Add(48 * time.Hour)
+	current, err := password.AccountPassword(context.Background(), userID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := bytes.Repeat([]byte{0x3c}, 256)
+	A, M1, err := srp256.ClientProof([]byte(plain), current.GetCurrentAlgo().GetSalt1(), current.GetCurrentAlgo().GetSalt2(), a, current.GetSrp_B())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mtproto.MakeTLInputCheckPasswordSRP(&mtproto.InputCheckPasswordSRP{SrpId: current.GetSrpId().GetValue(), A: A, M1: M1}).To_InputCheckPasswordSRP()
+}
+
 func srp() *mtproto.InputCheckPasswordSRP {
 	return mtproto.MakeTLInputCheckPasswordSRP(&mtproto.InputCheckPasswordSRP{A: []byte{1, 2, 3}, M1: []byte{4}}).To_InputCheckPasswordSRP()
 }
@@ -64,11 +108,15 @@ func TestTransferChannelCreator(t *testing.T) {
 	if _, err := owner.EditChannel(ctx, 1, 0, peer, 2, nil); status.Convert(err).Message() != "PASSWORD_MISSING" {
 		t.Fatalf("empty password: %v", err)
 	}
-	ups, err := owner.EditChannel(ctx, 1, 0, peer, 2, srp())
+	ups, err := owner.EditChannel(ctx, 1, 0, peer, 2, oldCloudProof(t, 1, "secret"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ups.Encode(mtproto.NewEncodeBuf(4096), 232); err != nil {
+	buf := mtproto.NewEncodeBuf(8192)
+	if err := ups.Encode(buf, mtproto.Layer); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&mtproto.Updates{}).Decode(mtproto.NewDecodeBuf(buf.GetBuf())); err != nil {
 		t.Fatal(err)
 	}
 	got, err := svc.GetParticipant(ctx, 2, mtproto.MakeTLInputChannel(&mtproto.InputChannel{ChannelId: ch.Id, AccessHash: peer.AccessHash}).To_InputChannel(), mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 2}).To_InputPeer())

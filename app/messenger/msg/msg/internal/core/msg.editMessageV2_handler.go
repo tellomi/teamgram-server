@@ -186,7 +186,7 @@ func (c *MsgCore) editUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 			PeerUserId: fromUserId,
 		})
 
-		if !mtproto.FromBool(blocked) {
+		if privateInboxDelivered(mtproto.FromBool(blocked)) {
 			_, err2 = c.svcCtx.Dao.InboxClient.InboxEditMessageToInboxV2(
 				c.ctx,
 				&inbox.TLInboxEditMessageToInboxV2{
