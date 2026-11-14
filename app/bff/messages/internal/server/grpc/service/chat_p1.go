@@ -11,6 +11,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
@@ -372,7 +373,8 @@ func channelCard(ctx context.Context, self, channelID int64) (int32, []*mtproto.
 // https://core.telegram.org/api/scheduled-messages
 type ScheduledService struct {
 	mtproto.UnimplementedRPCScheduledMessagesServer
-	Msg msg_client.MsgClient
+	Msg  msg_client.MsgClient
+	Sync sync_client.SyncClient
 }
 
 func (s ScheduledService) MessagesGetScheduledHistory(ctx context.Context, in *mtproto.TLMessagesGetScheduledHistory) (*mtproto.Messages_Messages, error) {
@@ -445,9 +447,20 @@ func (s ScheduledService) MessagesSendScheduledMessages(ctx context.Context, in 
 }
 
 func (s ScheduledService) MessagesDeleteScheduledMessages(ctx context.Context, in *mtproto.TLMessagesDeleteScheduledMessages) (*mtproto.Updates, error) {
-	self, _ := selfID(ctx)
+	self, auth := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
-	return chatbox.Shared().DeleteScheduled(ctx, self, peer, in.GetId())
+	ups, err := chatbox.Shared().DeleteScheduled(ctx, self, peer, in.GetId())
+	if err != nil {
+		return nil, err
+	}
+	if s.Sync != nil && ups != nil && self != 0 {
+		_, _ = s.Sync.SyncUpdatesNotMe(ctx, &sync.TLSyncUpdatesNotMe{
+			UserId:        self,
+			PermAuthKeyId: auth,
+			Updates:       ups,
+		})
+	}
+	return ups, nil
 }
 
 func withChannelCard(ctx context.Context, self int64, peer *mtproto.PeerUtil, page *mtproto.Messages_Messages) *mtproto.Messages_Messages {

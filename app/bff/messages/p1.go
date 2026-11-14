@@ -184,7 +184,7 @@ func NewScheduled(c Config) *service.ScheduledService {
 		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
 	service.StartScheduleDispatch(msg, syncer, service.StatusOnline(statusClient(c.StatusClient)), scheduleUserClient(c.UserClient))
-	return &service.ScheduledService{Msg: msg}
+	return &service.ScheduledService{Msg: msg, Sync: syncer}
 }
 
 func scheduleUserClient(c zrpc.RpcClientConf) user_client.UserClient {

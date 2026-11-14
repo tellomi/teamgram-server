@@ -9,13 +9,17 @@ type unreadMarkRow struct {
 
 // SetUnreadMark stores messages.markDialogUnread on the dialog row.
 // A dialog that does not exist is left alone; the caller still returns success.
-func (d *Dao) SetUnreadMark(ctx context.Context, userID int64, peerType int32, peerID int64, unread bool) error {
+func (d *Dao) SetUnreadMark(ctx context.Context, userID int64, peerType int32, peerID int64, unread bool) (int64, error) {
 	mark := 0
 	if unread {
 		mark = 1
 	}
-	_, err := d.Mysql.Exec(ctx, "update dialogs set unread_mark = ? where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0", mark, userID, peerType, peerID)
-	return err
+	res, err := d.Mysql.Exec(ctx, "update dialogs set unread_mark = ? where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0", mark, userID, peerType, peerID)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return n, err
 }
 
 // ListUnreadMarks returns dialogs the user has marked unread.

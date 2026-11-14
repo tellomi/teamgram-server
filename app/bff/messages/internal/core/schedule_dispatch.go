@@ -5,6 +5,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -60,6 +61,7 @@ func (c *MessagesCore) dispatchOutbox(peer *mtproto.PeerUtil, boxes []*msg.Outbo
 				ups.Chats = []*mtproto.Chat{chat}
 			}
 		}
+		c.pushNotMe(ups)
 		return ups, nil
 	}
 	ups, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(c.ctx, &msg.TLMsgSendMessageV2{
@@ -74,6 +76,18 @@ func (c *MessagesCore) dispatchOutbox(peer *mtproto.PeerUtil, boxes []*msg.Outbo
 	}
 	chatbox.Shared().ObserveSent(c.ctx, peer, ups)
 	return ups, nil
+}
+
+// pushNotMe delivers the RPC updates to the owner's other sessions.
+func (c *MessagesCore) pushNotMe(ups *mtproto.Updates) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.SyncClient == nil || c.MD == nil || ups == nil {
+		return
+	}
+	_, _ = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+		UserId:        c.MD.UserId,
+		PermAuthKeyId: c.MD.PermAuthKeyId,
+		Updates:       ups,
+	})
 }
 
 // stampScheduleRepeat copies schedule_repeat_period onto the message that

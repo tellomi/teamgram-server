@@ -10,8 +10,10 @@
 package core
 
 import (
+	"context"
 	"time"
 
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 
@@ -49,6 +51,12 @@ func (c *DialogCore) DialogClearDraftMessage(in *dialog.TLDialogClearDraftMessag
 			in.PeerId)
 		if err != nil {
 			c.Logger.Errorf("dialog.clearDraftMessage - error: %v", err)
+			return nil, err
+		}
+		if _, _, err = c.svcCtx.Dao.ExecInvalidate(c.ctx, func(context.Context, *sqlx.DB) (int64, int64, error) {
+			return 0, 1, nil
+		}, draftCacheKeys(in.UserId, in.PeerType, in.PeerId)...); err != nil {
+			c.Logger.Errorf("dialog.clearDraftMessage - cache: %v", err)
 			return nil, err
 		}
 		return mtproto.BoolTrue, nil
