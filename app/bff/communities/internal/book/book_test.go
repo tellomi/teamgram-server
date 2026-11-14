@@ -50,3 +50,18 @@ func TestOpenMySQLWithoutDSNStaysInMemory(t *testing.T) {
 		t.Fatal("memory book dropped the community")
 	}
 }
+
+func TestConfiguredMySQLFailureDoesNotUseMemory(t *testing.T) {
+	b := New()
+	t.Setenv("TEAMGRAM_MYSQL_DSN", "")
+	err := b.OpenMySQL("user:pass@tcp(127.0.0.1:1)/communities?timeout=1s")
+	if err == nil {
+		t.Fatal("closed port was accepted")
+	}
+	if _, err = b.Create(1, "Lost", "", false, mtproto.MakePeerUtil(mtproto.PEER_USER, 2)); err == nil {
+		t.Fatal("create wrote the memory book after MySQL failed")
+	}
+	if len(b.byID) != 0 {
+		t.Fatal("failed open left a community in memory")
+	}
+}

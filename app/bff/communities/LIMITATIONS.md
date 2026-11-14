@@ -4,9 +4,10 @@ Layer 232 `communities.*` methods are routed on `RPCCommunities`.
 
 Communities are stored in `communities`, `community_links`, and
 `community_members` (`teamgramd/deploy/sql/migrate-20261114-communities.sql`).
-The bff opens those tables from `ChannelMySQL` or `TEAMGRAM_MYSQL_DSN`.
-With no DSN, or when MySQL is down, the book stays in memory and a restart
-drops it.
+The bff opens those tables with `mysqltls.Open` from `ChannelMySQL` or
+`TEAMGRAM_MYSQL_DSN`. With no DSN the book stays in memory. A configured DSN
+that cannot be opened does not fall back to memory: community RPCs return
+`INTERNAL_SERVER_ERROR` and the next call tries the database again.
 
 `communities.getJoinedCommunities` lists a community for its owner, for a
 user peer that was linked and is visible, for someone whose link request was

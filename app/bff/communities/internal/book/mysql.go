@@ -1,12 +1,16 @@
 package book
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"os"
 	"strings"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
+	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 )
 
 const communitySchema = `
@@ -43,6 +47,8 @@ CREATE TABLE IF NOT EXISTS community_members (
 
 // OpenMySQL loads communities from MySQL and writes later changes there.
 // An empty DSN leaves the book in memory. TEAMGRAM_MYSQL_DSN overrides dsn.
+// A non-empty DSN that cannot be opened marks the book unavailable: later
+// calls return an error and try again, instead of writing to memory.
 func (b *Book) OpenMySQL(dsn string) error {
 	if b == nil {
 		return errors.New("nil community book")
@@ -52,39 +58,89 @@ func (b *Book) OpenMySQL(dsn string) error {
 	}
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
+		b.mu.Lock()
+		b.mysqlRequired = false
+		b.openErr = nil
+		b.mu.Unlock()
 		return nil
 	}
-	db, err := sql.Open("mysql", dsn)
+	db, err := mysqltls.Open(dsn)
 	if err != nil {
+		b.markUnavailable(dsn, err)
 		return err
 	}
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(1)
-	if err = db.Ping(); err != nil {
-		_ = db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err = db.PingContext(ctx); err != nil {
+		_ = mysqlpool.Discard(db)
+		b.markUnavailable(dsn, err)
 		return err
 	}
-	if err = ensureCommunitySchema(db); err != nil {
-		_ = db.Close()
+	if err = ensureCommunitySchema(ctx, db); err != nil {
+		_ = mysqlpool.Discard(db)
+		b.markUnavailable(dsn, err)
 		return err
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if err = b.load(db); err != nil {
-		_ = db.Close()
+	err = b.load(db)
+	if err != nil {
+		b.mysqlRequired = true
+		b.dsn = dsn
+		b.openErr = err
+		b.db = nil
+		b.mu.Unlock()
+		_ = mysqlpool.Discard(db)
 		return err
 	}
+	prev := b.db
 	b.db = db
+	b.dsn = dsn
+	b.mysqlRequired = true
+	b.openErr = nil
+	b.mu.Unlock()
+	if prev != nil && prev != db {
+		_ = mysqlpool.Discard(prev)
+	}
 	return nil
 }
 
-func ensureCommunitySchema(db *sql.DB) error {
+func (b *Book) markUnavailable(dsn string, err error) {
+	b.mu.Lock()
+	b.mysqlRequired = true
+	b.dsn = dsn
+	b.openErr = err
+	b.db = nil
+	b.mu.Unlock()
+}
+
+// Ready is nil for an in-memory book and for a book whose MySQL connection
+// is open. A configured DSN that is down returns INTERNAL_SERVER_ERROR after
+// one more open attempt.
+func (b *Book) Ready() error {
+	if b == nil {
+		return mtproto.ErrInternalServerError
+	}
+	b.mu.Lock()
+	required := b.mysqlRequired
+	dsn := b.dsn
+	open := b.db != nil && b.openErr == nil
+	b.mu.Unlock()
+	if !required || open {
+		return nil
+	}
+	if err := b.OpenMySQL(dsn); err != nil {
+		return mtproto.ErrInternalServerError
+	}
+	return nil
+}
+
+func ensureCommunitySchema(ctx context.Context, db *sql.DB) error {
 	for _, stmt := range strings.Split(communitySchema, ";") {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
 		}
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}

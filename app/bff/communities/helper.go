@@ -13,9 +13,11 @@ func New() *service.Service {
 }
 
 // Start opens the community tables on the service MySQL DSN. An empty DSN
-// or a database that is down keeps the in-memory book.
+// keeps the in-memory book for local development. A configured DSN that
+// cannot be opened is remembered: community RPCs return an error and the
+// next call tries again. They do not write to an empty memory book.
 func Start(dsn string) {
 	if err := book.Shared().OpenMySQL(dsn); err != nil {
-		logx.Errorf("communities: mysql unavailable, staying in memory: %v", err)
+		logx.Errorf("communities: mysql open failed; RPCs return an error until it connects: %v", err)
 	}
 }
