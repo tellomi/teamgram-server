@@ -2,6 +2,22 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Access hash on input users, peers, and channels
+
+`users.access_hash` and `channels.access_hash` are the values already returned on user and channel objects. Clients cache them. The check compares the value on `inputUser`, `inputPeerUser`, `inputChannel`, and `inputPeerChannel` with that stored value. It does not switch to a per-viewer hash, which would invalidate those caches.
+
+`TELLOMI_ACCESS_HASH_ENFORCE` defaults to off. `log` records a mismatch and still accepts the RPC. `enforce` returns `USER_ID_INVALID`, `PEER_ID_INVALID`, or `CHANNEL_INVALID`. `inputUserSelf` and `inputPeerSelf` are exempt. `inputUserFromMessage`, `inputPeerUserFromMessage`, `inputChannelFromMessage`, and `inputPeerChannelFromMessage` are accepted when the viewer can see that message and the message refers to the user or channel. The bff interceptor walks every client RPC, so users, contacts, messages, channels, photos, and inline bot requests are covered by the same check.
+
+A provided `0` used to skip the channel and secret-chat comparisons. Enforce mode stops that. Chatbox bots whose stored hash is `0` are still issued the bot id, and that issued value keeps matching. Reaction lists and poll voters are still returned with `access_hash` omitted. Log mode is how to see clients echo that `0` before enforcement is turned on.
+
+| Piece | File |
+| --- | --- |
+| mode, walk, message proof | `pkg/accesshash` |
+| bff interceptor | `app/bff/bff/internal/accesshash`, `app/bff/bff/internal/server/server.go` |
+| channel hash, including `0` | `app/service/biz/channel/service_ops.go`, `access_hash.go` |
+| secret-chat user | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
+| from-message id, only while enforce is on | `proto/mtproto/peer_util.go` |
+
 ## Authorization hash, revocation and TTL
 
 `auth_users.hash` used to be replaced on every `BindAuthKeyUser`. A second `auth.signIn` on the same permanent key (retry, future-auth token, cloud-password step) made `account.resetAuthorization` return `HASH_INVALID` for the hash the other device had just listed. A live row now keeps its hash. A row that was logged out, reset, or expired takes a new non-zero hash, and the 24 hour gate still uses `date_created`.
