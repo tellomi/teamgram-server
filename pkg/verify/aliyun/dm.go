@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 )
 
 // DirectMailClient calls DirectMail SingleSendMail on dm.aliyuncs.com.
@@ -29,7 +31,11 @@ func (c *DirectMailClient) SendCode(ctx context.Context, to, code string) error 
 	if alias == "" {
 		alias = "Tellomi"
 	}
+	subject := "Tellomi 验证码"
 	text := fmt.Sprintf("您的验证码为：%s，请勿泄露于他人！", code)
+	if sub, body, ok := usercopy.EmailCode(usercopy.LangFromIncoming(ctx), code); ok {
+		subject, text = sub, body
+	}
 	return postRPC(ctx, c.HTTP, endpoint, c.AccessKeyID, c.AccessKeySecret, map[string]string{
 		"Action":         "SingleSendMail",
 		"Version":        "2015-11-23",
@@ -39,7 +45,7 @@ func (c *DirectMailClient) SendCode(ctx context.Context, to, code string) error 
 		"ReplyToAddress": "false",
 		"ToAddress":      to,
 		"FromAlias":      alias,
-		"Subject":        "Tellomi 验证码",
+		"Subject":        subject,
 		"TextBody":       text,
 	})
 }

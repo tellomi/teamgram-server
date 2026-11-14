@@ -127,6 +127,24 @@ func officialPrimary(code string) string {
 	return ""
 }
 
+// ClientLang is the language for text this server writes to a client.
+// initConnection.lang_code wins, then system_lang_code, then lang_pack when
+// that field is itself a language tag. lang_pack is usually a platform name
+// such as "android" or "ios", and those values are skipped. An unknown or
+// empty tag is English.
+func ClientLang(langCode, systemLangCode, langPack string) string {
+	for _, raw := range []string{langCode, systemLangCode, langPack} {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if code, ok := CanonicalLang(raw); ok && code != "" {
+			return code
+		}
+	}
+	return "en"
+}
+
 // NormalizePlatform maps client lang_pack names onto catalog directories.
 func NormalizePlatform(pack string) string {
 	switch strings.ToLower(strings.TrimSpace(pack)) {

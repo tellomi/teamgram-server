@@ -2,6 +2,30 @@ package langpack
 
 import "testing"
 
+func TestClientLangOrder(t *testing.T) {
+	if got := ClientLang("zh-hans", "en", "android"); got != "zh-hans" {
+		t.Fatal(got)
+	}
+	if got := ClientLang("en", "zh-Hans", "android"); got != "en" {
+		t.Fatal(got)
+	}
+	if got := ClientLang("", "zh-CN", "android"); got != "zh-hans" {
+		t.Fatal(got)
+	}
+	if got := ClientLang("", "", "zh-hant"); got != "zh-hant" {
+		t.Fatal(got)
+	}
+	if got := ClientLang("android", "ios", "tdesktop"); got != "en" {
+		t.Fatal(got)
+	}
+	if got := ClientLang("classic-zh-cn", "", ""); got != "zh-hans" {
+		t.Fatal(got)
+	}
+	if got := ClientLang("pt_BR", "", ""); got != "pt-br" {
+		t.Fatal(got)
+	}
+}
+
 func TestCanonicalAndSuggest(t *testing.T) {
 	t.Setenv(hiddenLangEnv, defaultHiddenLangs)
 	cases := []struct {
