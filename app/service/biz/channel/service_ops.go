@@ -391,6 +391,9 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 	if err = s.enforceContent(ch, p, msgs); err != nil {
 		return nil, err
 	}
+	if err = s.rejectClosedTopic(ctx, ch, p, msgs); err != nil {
+		return nil, err
+	}
 	feat := s.features(ctx, channelID)
 	if feat.SlowmodeSeconds > 0 && p != nil && !p.IsAdmin() {
 		if len(batch) > 1 {
