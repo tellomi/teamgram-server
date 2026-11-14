@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -444,10 +445,39 @@ func (c *FoldersCore) requireOwnChatlist(id int32) (*mtproto.DialogFilter, error
 	if err != nil {
 		return nil, err
 	}
-	if filter.GetPredicateName() != mtproto.Predicate_dialogFilterChatlist || joined {
+	if joined || filter.GetPredicateName() == mtproto.Predicate_dialogFilterDefault {
 		return nil, mtproto.ErrFilterNotSupported
 	}
-	return filter, nil
+	if filter.GetPredicateName() == mtproto.Predicate_dialogFilterChatlist {
+		return filter, nil
+	}
+	// Official export turns a normal dialogFilter into dialogFilterChatlist.
+	// contacts/groups/exclude flags do not belong on a shared folder. The
+	// concrete include and pinned peers stay.
+	// https://core.telegram.org/api/folders
+	promoted := promoteToChatlist(filter)
+	if err := c.saveOwnChatlist(promoted); err != nil {
+		return nil, err
+	}
+	return promoted, nil
+}
+
+// promoteToChatlist copies the folder fields a dialogFilterChatlist can store.
+func promoteToChatlist(filter *mtproto.DialogFilter) *mtproto.DialogFilter {
+	if filter == nil {
+		return nil
+	}
+	return mtproto.MakeTLDialogFilterChatlist(&mtproto.DialogFilter{
+		TitleNoanimate:         filter.GetTitleNoanimate(),
+		Id:                     filter.GetId(),
+		Title:                  filter.GetTitle(),
+		Title_TEXTWITHENTITIES: filter.GetTitle_TEXTWITHENTITIES(),
+		Title_STRING:           filter.GetTitle_STRING(),
+		Emoticon:               filter.GetEmoticon(),
+		Color:                  filter.GetColor(),
+		PinnedPeers:            filter.GetPinnedPeers(),
+		IncludePeers:           filter.GetIncludePeers(),
+	}).To_DialogFilter()
 }
 
 func (c *FoldersCore) requireJoinedChatlist(id int32) (*mtproto.DialogFilter, joinState, error) {
@@ -574,50 +604,155 @@ func dialogPeerID(ext *dialog.DialogExt) int64 {
 	}
 }
 
-// sharePeers checks export/edit peers: groups and channels that already sit in the folder.
+// sharePeers checks export/edit peers. Groups and channels the user can share
+// are added to the folder when they are not already in include_peers.
+// A basic group is converted to a supergroup, which is what exportChatlistInvite
+// does. A peer that is not in the folder is not CHANNEL_INVALID.
 // https://core.telegram.org/method/chatlists.exportChatlistInvite
+// https://core.telegram.org/method/chatlists.editExportedInvite
 func (c *FoldersCore) sharePeers(filter *mtproto.DialogFilter, peers []*mtproto.InputPeer) ([]peerRef, error) {
 	if len(peers) == 0 {
 		return nil, mtproto.ErrPeersListEmpty
 	}
-	allowed := folderPeerRefs(filter)
-	refs := make([]peerRef, 0, len(peers))
-	ids := make([]int64, 0, len(peers))
+	var refs []peerRef
+	replacements := map[string]peerRef{}
 	for _, peer := range peers {
 		ref, err := refFromInput(c.userID(), peer)
 		if err != nil {
 			return nil, err
 		}
-		if ref.Kind == "user" {
-			return nil, mtproto.ErrPeerIdInvalid
+		resolved, replaced, err := c.resolveShareRef(ref)
+		if err != nil {
+			return nil, err
 		}
-		if _, ok := allowed[ref.key()]; !ok {
-			if ref.Kind == "channel" {
-				return nil, mtproto.ErrChannelInvalid
-			}
-			return nil, mtproto.ErrChatIdInvalid
+		refs = append(refs, resolved)
+		if replaced.Kind != "" && replaced.key() != resolved.key() {
+			replacements[replaced.key()] = resolved
 		}
-		refs = append(refs, ref)
-		ids = append(ids, ref.dialogID())
 	}
 	refs = dedupeRefs(refs)
 	if len(refs) == 0 {
 		return nil, mtproto.ErrPeersListEmpty
 	}
-	present, err := c.dialogsPresent(ids)
-	if err != nil {
-		return nil, err
-	}
-	for _, ref := range refs {
-		if _, ok := present[ref.dialogID()]; ok {
-			continue
-		}
-		if ref.Kind == "channel" {
-			return nil, mtproto.ErrChannelPrivate
-		}
-		return nil, mtproto.ErrChatIdInvalid
-	}
+	applyPeerReplacements(filter, replacements, refs)
 	return refs, nil
+}
+
+func (c *FoldersCore) resolveShareRef(ref peerRef) (resolved, replaced peerRef, err error) {
+	switch ref.Kind {
+	case "channel":
+		if err = channel.Shared().Shareable(c.ctx, c.userID(), ref.ID); err != nil {
+			return peerRef{}, peerRef{}, err
+		}
+		if hash, ok, hashErr := channel.Shared().IssuedAccessHash(c.ctx, ref.ID); hashErr == nil && ok {
+			ref.Hash = hash
+		}
+		return ref, peerRef{}, nil
+	case "chat":
+		return c.resolveShareChat(ref)
+	default:
+		return peerRef{}, peerRef{}, mtproto.ErrPeerIdInvalid
+	}
+}
+
+// resolveShareChat turns a basic group into the supergroup exportChatlistInvite
+// shares. The creator is required, matching messages.migrateChat.
+func (c *FoldersCore) resolveShareChat(ref peerRef) (resolved, replaced peerRef, err error) {
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.ChatClient == nil {
+		return peerRef{}, peerRef{}, mtproto.ErrChatIdInvalid
+	}
+	row, err := c.svcCtx.Dao.ChatClient.ChatGetMutableChat(c.ctx, &chat.TLChatGetMutableChat{ChatId: ref.ID})
+	if err != nil || row == nil {
+		return peerRef{}, peerRef{}, mtproto.ErrChatIdInvalid
+	}
+	if migrated := row.MigratedTo(); migrated.GetChannelId() != 0 {
+		next := peerRef{Kind: "channel", ID: migrated.GetChannelId(), Hash: migrated.GetAccessHash()}
+		if err = channel.Shared().Shareable(c.ctx, c.userID(), next.ID); err != nil {
+			return peerRef{}, peerRef{}, err
+		}
+		return next, ref, nil
+	}
+	if row.Creator() != c.userID() {
+		return peerRef{}, peerRef{}, mtproto.ErrChatAdminRequired
+	}
+	var members []channel.LegacyMember
+	row.Walk(func(userID int64, participant *mtproto.ImmutableChatParticipant) error {
+		if participant == nil || !participant.IsChatMemberStateNormal() {
+			return nil
+		}
+		members = append(members, channel.LegacyMember{UserID: userID, IsBot: participant.GetIsBot()})
+		return nil
+	})
+	result, err := channel.Shared().Migrate(c.ctx, channel.MigrateRequest{
+		Actor:     c.userID(),
+		ActorAuth: c.permAuth(),
+		ChatID:    row.Id(),
+		Title:     row.Title(),
+		About:     row.About(),
+		CreatorID: row.Creator(),
+		Members:   members,
+	})
+	if err != nil {
+		return peerRef{}, peerRef{}, err
+	}
+	_, _ = c.svcCtx.Dao.ChatClient.ChatMigratedToChannel(c.ctx, &chat.TLChatMigratedToChannel{
+		Chat:       row,
+		Id:         result.ChannelID,
+		AccessHash: result.AccessHash,
+	})
+	return peerRef{Kind: "channel", ID: result.ChannelID, Hash: result.AccessHash}, ref, nil
+}
+
+func (c *FoldersCore) permAuth() int64 {
+	if c == nil || c.MD == nil {
+		return 0
+	}
+	return c.MD.GetPermAuthKeyId()
+}
+
+// applyPeerReplacements puts shared peers on the folder and swaps a migrated
+// basic group for its supergroup, including a pinned copy.
+func applyPeerReplacements(filter *mtproto.DialogFilter, replacements map[string]peerRef, extra []peerRef) {
+	if filter == nil {
+		return
+	}
+	swap := func(peers []*mtproto.InputPeer, addExtra bool) []*mtproto.InputPeer {
+		out := make([]*mtproto.InputPeer, 0, len(peers)+len(extra))
+		seen := map[string]struct{}{}
+		for _, peer := range peers {
+			ref, err := refFromInput(0, peer)
+			if err == nil {
+				if next, ok := replacements[ref.key()]; ok {
+					ref = next
+					peer = next.input()
+				}
+				if peer == nil {
+					continue
+				}
+				if _, ok := seen[ref.key()]; ok {
+					continue
+				}
+				seen[ref.key()] = struct{}{}
+			}
+			if peer != nil {
+				out = append(out, peer)
+			}
+		}
+		if addExtra {
+			for _, ref := range extra {
+				if _, ok := seen[ref.key()]; ok {
+					continue
+				}
+				if peer := ref.input(); peer != nil {
+					out = append(out, peer)
+					seen[ref.key()] = struct{}{}
+				}
+			}
+		}
+		return out
+	}
+	filter.IncludePeers = swap(filter.GetIncludePeers(), true)
+	filter.PinnedPeers = swap(filter.GetPinnedPeers(), false)
 }
 
 func (c *FoldersCore) saveOwnChatlist(filter *mtproto.DialogFilter) error {
@@ -660,13 +795,15 @@ func (c *FoldersCore) exportedInvite(filter *mtproto.DialogFilter, inv storedInv
 func (c *FoldersCore) peerSide(refs []peerRef) (users []*mtproto.User, chats []*mtproto.Chat) {
 	users = []*mtproto.User{}
 	chats = []*mtproto.Chat{}
-	var userIDs, chatIDs []int64
+	var userIDs, chatIDs, channelIDs []int64
 	for _, ref := range refs {
 		switch ref.Kind {
 		case "user":
 			userIDs = append(userIDs, ref.ID)
 		case "chat":
 			chatIDs = append(chatIDs, ref.ID)
+		case "channel":
+			channelIDs = append(channelIDs, ref.ID)
 		}
 	}
 	if len(userIDs) > 0 && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.UserClient != nil {
@@ -690,6 +827,11 @@ func (c *FoldersCore) peerSide(refs []peerRef) (users []*mtproto.User, chats []*
 			if list := got.GetChatListByIdList(c.userID(), chatIDs...); len(list) > 0 {
 				chats = list
 			}
+		}
+	}
+	for _, id := range channelIDs {
+		if card := channel.Shared().InviteCard(c.ctx, c.userID(), id); card != nil {
+			chats = append(chats, card)
 		}
 	}
 	return users, chats
@@ -783,4 +925,97 @@ func (c *FoldersCore) countJoined(rows []*dialog.DialogFilterExt) int {
 
 func (c *FoldersCore) channelCap() int {
 	return premium.Limit(premium.FeatureChannels, c.premiumMember())
+}
+
+// admit joins the user to every selected chat. Channels and supergroups go
+// through channels.inviteToChannel (the folder owner invites) and, when the
+// owner cannot invite a public channel, channels.joinChannel. Basic groups
+// go through chat.addChatUser, the same write messages.addChatUser uses.
+func (c *FoldersCore) admit(owner int64, refs []peerRef) ([]*mtproto.Updates, error) {
+	var parts []*mtproto.Updates
+	for _, ref := range refs {
+		switch ref.Kind {
+		case "channel":
+			up, err := c.admitChannel(owner, ref)
+			if err != nil {
+				return nil, err
+			}
+			if up != nil {
+				parts = append(parts, up)
+			}
+		case "chat":
+			if err := c.admitChat(owner, ref.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return parts, nil
+}
+
+func (c *FoldersCore) admitChannel(owner int64, ref peerRef) (*mtproto.Updates, error) {
+	hash := ref.Hash
+	if hash == 0 {
+		issued, ok, err := channel.Shared().IssuedAccessHash(c.ctx, ref.ID)
+		if err != nil || !ok {
+			return nil, mtproto.ErrChannelInvalid
+		}
+		hash = issued
+	}
+	in := mtproto.MakeTLInputChannel(&mtproto.InputChannel{
+		ChannelId:  ref.ID,
+		AccessHash: hash,
+	}).To_InputChannel()
+	invited, err := channel.Shared().Invite(c.ctx, owner, 0, in, []int64{c.userID()}, nil)
+	if err != nil {
+		if sameRPC(err, mtproto.ErrChatAdminRequired) || sameRPC(err, mtproto.ErrChannelPrivate) {
+			return channel.Shared().Join(c.ctx, c.userID(), c.permAuth(), in)
+		}
+		return nil, err
+	}
+	if invited != nil {
+		for _, miss := range invited.GetMissingInvitees() {
+			if miss.GetUserId() == c.userID() {
+				return nil, mtproto.ErrUserBannedInChannel
+			}
+		}
+		return invited.GetUpdates(), nil
+	}
+	return nil, nil
+}
+
+func (c *FoldersCore) admitChat(owner, id int64) error {
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.ChatClient == nil {
+		return mtproto.ErrChatIdInvalid
+	}
+	_, err := c.svcCtx.Dao.ChatClient.ChatAddChatUser(c.ctx, &chat.TLChatAddChatUser{
+		ChatId:    id,
+		InviterId: owner,
+		UserId:    c.userID(),
+	})
+	if err == nil || sameRPC(err, mtproto.ErrUserAlreadyParticipant) {
+		return nil
+	}
+	return err
+}
+
+func joinUpdates(filter *mtproto.Update, parts []*mtproto.Updates) *mtproto.Updates {
+	out := updatesOf(filter)
+	for _, part := range parts {
+		if part == nil {
+			continue
+		}
+		out.Updates = append(out.Updates, part.GetUpdates()...)
+		out.Chats = append(out.Chats, part.GetChats()...)
+		out.Users = append(out.Users, part.GetUsers()...)
+	}
+	if out.Updates == nil {
+		out.Updates = []*mtproto.Update{}
+	}
+	if out.Chats == nil {
+		out.Chats = []*mtproto.Chat{}
+	}
+	if out.Users == nil {
+		out.Users = []*mtproto.User{}
+	}
+	return out
 }

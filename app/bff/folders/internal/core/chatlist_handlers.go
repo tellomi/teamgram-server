@@ -219,10 +219,14 @@ func (c *FoldersCore) ChatlistsJoinChatlistInvite(in *mtproto.TLChatlistsJoinCha
 		return nil, err
 	}
 	if existing != nil {
+		parts, err := c.admit(owner, picked)
+		if err != nil {
+			return nil, err
+		}
 		if err := c.mergeJoinedPeers(existing, picked); err != nil {
 			return nil, err
 		}
-		return updatesOf(c.filterUpdate(existing.GetId(), existing)), nil
+		return joinUpdates(c.filterUpdate(existing.GetId(), existing), parts), nil
 	}
 	rows, err := c.rawFilters()
 	if err != nil {
@@ -230,6 +234,10 @@ func (c *FoldersCore) ChatlistsJoinChatlistInvite(in *mtproto.TLChatlistsJoinCha
 	}
 	if c.countJoined(rows) >= c.joinedCap() || countStoredFolders(rows) >= premium.Limit(premium.FeatureDialogFilters, c.premiumMember()) {
 		return nil, mtproto.ErrChatlistsTooMuch
+	}
+	parts, err := c.admit(owner, picked)
+	if err != nil {
+		return nil, err
 	}
 	title := inv.Title
 	if title == "" {
@@ -267,7 +275,7 @@ func (c *FoldersCore) ChatlistsJoinChatlistInvite(in *mtproto.TLChatlistsJoinCha
 		stored = ext.GetDialogFilter()
 	}
 	c.pushNotMe(c.filterUpdate(stored.GetId(), stored))
-	return updatesOf(c.filterUpdate(stored.GetId(), stored)), nil
+	return joinUpdates(c.filterUpdate(stored.GetId(), stored), parts), nil
 }
 
 // ChatlistsGetChatlistUpdates
@@ -338,10 +346,14 @@ func (c *FoldersCore) ChatlistsJoinChatlistUpdates(in *mtproto.TLChatlistsJoinCh
 	if len(add) > c.channelCap() {
 		return nil, mtproto.ErrChannelsTooMuch
 	}
+	parts, err := c.admit(st.Owner, add)
+	if err != nil {
+		return nil, err
+	}
 	if err := c.mergeJoinedPeers(joined, add); err != nil {
 		return nil, err
 	}
-	return updatesOf(c.filterUpdate(joined.GetId(), joined)), nil
+	return joinUpdates(c.filterUpdate(joined.GetId(), joined), parts), nil
 }
 
 // ChatlistsHideChatlistUpdates

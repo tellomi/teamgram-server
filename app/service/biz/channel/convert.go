@@ -14,6 +14,38 @@ func (s *Service) ChatFor(ctx context.Context, viewer int64, ch *Channel) *mtpro
 	return s.chatFor(ctx, viewer, ch, nil)
 }
 
+// InviteCard is the channel a chatlist invite shows to someone who may not
+// be a member yet. A private channel is still a channel, with left set and
+// the stored access_hash, so checkChatlistInvite can fill chats and the
+// client can pass that hash to joinChatlistInvite.
+// https://core.telegram.org/method/chatlists.checkChatlistInvite
+func (s *Service) InviteCard(ctx context.Context, viewer, id int64) *mtproto.Chat {
+	if s == nil || s.store == nil || id == 0 {
+		return nil
+	}
+	ch, err := s.reload(ctx, id)
+	if err != nil || ch == nil {
+		return nil
+	}
+	p, _ := s.store.GetParticipant(ctx, ch.ID, viewer)
+	if (p != nil && p.InChannel()) || ch.Public() {
+		return s.chatFor(ctx, viewer, ch, p)
+	}
+	card := s.chatFor(ctx, viewer, ch, &Participant{
+		ChannelID: ch.ID,
+		UserID:    viewer,
+		Role:      RoleMember,
+		State:     StateNormal,
+	})
+	if card != nil && card.GetPredicateName() == mtproto.Predicate_channel {
+		card.Left = true
+		card.Creator = false
+		card.AdminRights = nil
+		card.BannedRights = nil
+	}
+	return card
+}
+
 func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Participant) *mtproto.Chat {
 	if ch == nil || ch.Deleted {
 		return mtproto.MakeTLChannelForbidden(&mtproto.Chat{}).To_Chat()

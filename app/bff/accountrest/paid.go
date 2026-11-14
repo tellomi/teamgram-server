@@ -94,9 +94,10 @@ func ToggleNoPaidMessagesException(self int64, parent *mtproto.InputPeer, user *
 	return mtproto.BoolTrue, nil
 }
 
-// RequirementsToContact answers users.getRequirementsToContact.
-// This server does not charge for messages, so every requested user is
-// requirementToContactEmpty. The vector stays the same length as the input.
+// RequirementsToContact is the no-paid-message vector. The length matches the
+// input. users.getRequirementsToContact itself is answered by the privacy
+// handler, which returns requirementToContactPremium when
+// new_noncontact_peers_require_premium blocks the viewer.
 // https://core.telegram.org/method/users.getRequirementsToContact
 func RequirementsToContact(ids []*mtproto.InputUser) *mtproto.Vector_RequirementToContact {
 	out := make([]*mtproto.RequirementToContact, 0, len(ids))

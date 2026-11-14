@@ -20,6 +20,7 @@ package dao
 
 import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/users/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/users/internal/plugin"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
@@ -37,7 +38,7 @@ type Dao struct {
 }
 
 func New(c config.Config, plugin1 plugin.StoryPlugin, plugin2 plugin.PersonalChannelPlugin, plugin3 plugin.WallpaperPlugin) *Dao {
-	return &Dao{
+	d := &Dao{
 		UserClient:            user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		ChatClient:            chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
 		DialogClient:          dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c.DialogClient)),
@@ -45,4 +46,6 @@ func New(c config.Config, plugin1 plugin.StoryPlugin, plugin2 plugin.PersonalCha
 		PersonalChannelPlugin: plugin2,
 		WallpaperPlugin:       plugin3,
 	}
+	mtproto.SetContactRequirePremiumFunc(d.contactRequirePremium)
+	return d
 }

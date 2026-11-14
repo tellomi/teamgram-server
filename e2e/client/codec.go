@@ -25,6 +25,7 @@ type tlVector struct {
 	Stories []*mtproto.RecentStory
 	Strings []*mtproto.LangPackString
 	Ints    []int32
+	Names   []string
 }
 
 func (v *tlVector) Encode(*mtproto.EncodeBuf, int32) error { return nil }
@@ -169,7 +170,9 @@ func decodeTL(raw []byte) (mtproto.TLObject, error) {
 					case *mtproto.TLLangPackString:
 						v.Strings = append(v.Strings, item.To_LangPackString())
 					default:
-						return v, nil
+						if namer, ok := obj.(interface{ GetPredicateName() string }); ok {
+							v.Names = append(v.Names, namer.GetPredicateName())
+						}
 					}
 				}
 			}

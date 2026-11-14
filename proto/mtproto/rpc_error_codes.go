@@ -2577,6 +2577,11 @@ var (
 	// | 403 | USER_PRIVACY_RESTRICTED | The user's privacy settings do not allow you to do this. |
 	ErrUserPrivacyRestricted = status.Error(ErrForbidden, "USER_PRIVACY_RESTRICTED")
 
+	// ErrPrivacyPremiumRequired
+	// | 403 | PRIVACY_PREMIUM_REQUIRED | The user has restricted messages from non-contacts to Premium users only, and you are not a Premium user. |
+	// https://core.telegram.org/api/privacy
+	ErrPrivacyPremiumRequired = status.Error(ErrForbidden, "PRIVACY_PREMIUM_REQUIRED")
+
 	// ErrYourPrivacyRestricted
 	// | 403 | YOUR_PRIVACY_RESTRICTED | You cannot fetch the read date of this message because you have disallowed other users to do so for your messages; to fix, allow other users to see your exact last online date OR purchase a Telegram Premium subscription. |
 	ErrYourPrivacyRestricted = status.Error(ErrForbidden, "YOUR_PRIVACY_RESTRICTED")

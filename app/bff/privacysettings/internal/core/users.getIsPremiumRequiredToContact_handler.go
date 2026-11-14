@@ -20,21 +20,32 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/privacypremium"
 )
 
 // UsersGetIsPremiumRequiredToContact
 // users.getIsPremiumRequiredToContact#a622aa10 id:Vector<InputUser> = Vector<Bool>;
-// UsersGetIsPremiumRequiredToContact reports whether each user requires a
-// premium subscription before they can be contacted. Tellomi does not gate
-// contact on premium, so every id is boolFalse. An empty id list is an empty
-// vector. https://core.telegram.org/method/users.getIsPremiumRequiredToContact
+// The layer-232 replacement is users.getRequirementsToContact. This constructor
+// still answers older clients with the same fully checked bit: boolTrue when
+// requirementToContactPremium would be returned for that user.
+// https://core.telegram.org/method/users.getIsPremiumRequiredToContact
+// https://core.telegram.org/api/privacy
 func (c *PrivacySettingsCore) UsersGetIsPremiumRequiredToContact(in *mtproto.TLUsersGetIsPremiumRequiredToContact) (*mtproto.Vector_Bool, error) {
-	out := make([]*mtproto.Bool, 0, len(in.GetId()))
-	for _, id := range in.GetId() {
+	var ids []*mtproto.InputUser
+	if in != nil {
+		ids = in.GetId()
+	}
+	out := make([]*mtproto.Bool, 0, len(ids))
+	for _, id := range ids {
 		if id == nil {
+			out = append(out, mtproto.BoolFalse)
 			continue
 		}
-		out = append(out, mtproto.BoolFalse)
+		blocked, err := c.premiumRequired(id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, privacypremium.Bool(blocked))
 	}
 	return &mtproto.Vector_Bool{Datas: out}, nil
 }

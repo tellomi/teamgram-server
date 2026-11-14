@@ -702,3 +702,17 @@ Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty
 | tests | `pkg/livephoto`, messages core / dao, files core, mediapurge, `proto/mtproto/ttl_media_test.go`, and e2e `TestLivePhoto` (`live_a` / `live_b`) |
 
 Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
+
+## Non-contact Premium privacy and shared folders
+
+`account.setGlobalPrivacySettings` already stored `new_noncontact_peers_require_premium`. `users.getFullUser` left `contact_require_premium` unset, `user.contact_require_premium` was hard-coded false, `users.getRequirementsToContact` always returned `requirementToContactEmpty`, and `users.getIsPremiumRequiredToContact` always returned `boolFalse`. Private sends did not look at the flag.
+
+`user.contact_require_premium` is now that setting, for other users. `userFull.contact_require_premium`, `users.getRequirementsToContact`, and `users.getIsPremiumRequiredToContact` are the fully checked bit: the viewer is not in the recipient's contacts, has no existing private chat, and `users.premium` is not an unexpired subscription. A private send in that case returns `403 PRIVACY_PREMIUM_REQUIRED`. `TELLOMI_PREMIUM_EVERYONE` does not waive it, the same way it does not waive `YOUR_PRIVACY_RESTRICTED`.
+
+`chatlists.exportChatlistInvite` on a normal `dialogFilter` now stores `dialogFilterChatlist`. A basic group is migrated to a supergroup. `checkChatlistInvite` fills `chats` for channels and supergroups, including `access_hash` when the viewer has not joined. `joinChatlistInvite` adds the user through `channels.inviteToChannel` / `channels.joinChannel` / `chat.addChatUser`. `editExportedInvite` adds a peer that is not yet in `include_peers` instead of returning `CHANNEL_INVALID`.
+
+| Piece | File |
+| --- | --- |
+| read APIs and 403 | `pkg/privacypremium`, `users.getFullUser_handler.go`, `users.getRequirementsToContact_handler.go`, `users.getIsPremiumRequiredToContact_handler.go`, `send_guard.go`, `rpc_error_codes.go` |
+| user flag | `proto/mtproto/contact_premium_hook.go`, `immutable_user_helper.go`, `app/bff/users/internal/dao/contact_premium.go` |
+| folder share and join | `app/bff/folders/internal/core/chatlists.go`, `chatlist_handlers.go`, `app/service/biz/channel/convert.go`, `service_ops.go` |

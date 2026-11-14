@@ -31,6 +31,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/privacypremium"
 
 	"github.com/zeromicro/go-zero/core/mr"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -310,6 +311,20 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 	renderCtx := mtproto.PreparePrivacyRender(c.ctx, c.MD.UserId, []*mtproto.ImmutableUser{me, user})
 	unsafeUser := user.ToUnsafeUserCtx(renderCtx, me)
+	if c.MD.UserId != peerId && c.svcCtx.Dao != nil && c.svcCtx.Dao.UserClient != nil {
+		verdict, err := privacypremium.Evaluate(c.ctx, c.svcCtx.Dao.UserClient, c.svcCtx.Dao.DialogClient, c.MD.UserId, peerId)
+		if err != nil {
+			c.Logger.Errorf("users.getFullUser - contact premium: %v", err)
+		} else {
+			// user.contact_require_premium is the setting. userFull.contact_require_premium
+			// is the fully checked bit from users.getRequirementsToContact.
+			// https://core.telegram.org/api/privacy
+			userFull.ContactRequirePremium = verdict.Blocked
+			if unsafeUser != nil {
+				unsafeUser.ContactRequirePremium = verdict.Setting
+			}
+		}
+	}
 	c.applyProfilePhoto(userFull, unsafeUser, peerId)
 	patchBotUsernameFromImmutable(unsafeUser, user)
 	mtproto.PaintUserStoryRings(c.ctx, c.MD.UserId, []*mtproto.User{unsafeUser}, map[int64]int32{

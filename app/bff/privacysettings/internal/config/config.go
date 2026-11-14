@@ -23,10 +23,14 @@ import (
 	"github.com/zeromicro/go-zero/zrpc"
 )
 
+// DialogClient is the biz dialog service. users.getRequirementsToContact
+// uses it to see whether a private chat already exists.
+
 type Config struct {
 	zrpc.RpcServerConf
 	UserClient        zrpc.RpcClientConf
 	AuthsessionClient zrpc.RpcClientConf
 	ChatClient        zrpc.RpcClientConf
+	DialogClient      zrpc.RpcClientConf
 	SyncClient        *kafka.KafkaProducerConf
 }

@@ -24,6 +24,20 @@ func TestPremiumFollowsStoredSubscription(t *testing.T) {
 	}
 }
 
+func TestContactRequirePremiumFlag(t *testing.T) {
+	SetContactRequirePremiumFunc(func(id int64) bool { return id == 7 })
+	t.Cleanup(func() { SetContactRequirePremiumFunc(nil) })
+
+	peer := &ImmutableUser{User: &UserData{Id: 7, FirstName: "A", AccessHash: 1}}
+	me := &ImmutableUser{User: &UserData{Id: 8, FirstName: "B", AccessHash: 2}}
+	if !peer.ToUnsafeUser(me).GetContactRequirePremium() {
+		t.Fatal("other user")
+	}
+	if peer.ToSelfUser().GetContactRequirePremium() || peer.ToDeletedUser().GetContactRequirePremium() {
+		t.Fatal("self or deleted")
+	}
+}
+
 func TestPremiumPolicyCanGrantMembership(t *testing.T) {
 	SetMembershipFunc(func(stored bool, expireUnix, now int64) bool { return true })
 	t.Cleanup(func() { SetMembershipFunc(nil) })

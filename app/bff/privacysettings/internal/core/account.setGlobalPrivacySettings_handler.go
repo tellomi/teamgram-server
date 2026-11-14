@@ -36,6 +36,7 @@ func (c *PrivacySettingsCore) AccountSetGlobalPrivacySettings(in *mtproto.TLAcco
 		c.Logger.Errorf("account.setGlobalPrivacySettings - error: %v", err)
 		return nil, err
 	}
+	mtproto.InvalidateContactRequirePremium(c.MD.UserId)
 
 	return rSettings, nil
 }

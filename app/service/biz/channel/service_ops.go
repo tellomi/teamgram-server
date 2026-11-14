@@ -90,6 +90,31 @@ func (s *Service) viewBlocked(p *Participant) (bool, *mtproto.ChatBannedRights) 
 	return !br.CanViewMessages(int32(time.Now().Unix())), br
 }
 
+// Shareable is the chatlists.exportChatlistInvite / editExportedInvite check.
+// A missing channel is CHANNEL_INVALID. Not having joined is CHANNEL_PRIVATE.
+// A private channel requires invite rights. A public channel requires membership.
+// https://core.telegram.org/method/chatlists.exportChatlistInvite
+func (s *Service) Shareable(ctx context.Context, userID, channelID int64) error {
+	if s == nil || s.store == nil || channelID == 0 {
+		return mtproto.ErrChannelInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil || ch == nil {
+		return mtproto.ErrChannelInvalid
+	}
+	p, err := s.store.GetParticipant(ctx, ch.ID, userID)
+	if err != nil {
+		return err
+	}
+	if p == nil || !p.InChannel() {
+		return mtproto.ErrChannelPrivate
+	}
+	if ch.Public() || s.canInvite(ch, p) {
+		return nil
+	}
+	return mtproto.ErrChatAdminRequired
+}
+
 func (s *Service) canInvite(ch *Channel, p *Participant) bool {
 	if p == nil || !p.InChannel() {
 		return false

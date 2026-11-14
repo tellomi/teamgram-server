@@ -147,11 +147,11 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `contacts.addContact` / `acceptContact` | implemented | |
 | `account.getPrivacy` / `setPrivacy` | partial | User rules persist. A rule that names a channel is not resolved. |
 | `account.getGlobalPrivacySettings` / `setGlobalPrivacySettings` | implemented | |
-| `users.getRequirementsToContact` | implemented | Every peer is `requirementToContactEmpty`. Tellomi does not charge to message someone. |
+| `users.getRequirementsToContact` | implemented | `requirementToContactPremium` when `new_noncontact_peers_require_premium` blocks the viewer. Paid messages stay empty. |
 | `account.getAccountTTL` / `setAccountTTL` | implemented | |
 | `account.getContactSignUpNotification` / `setContactSignUpNotification` | partial | A storage error on get is reported as `boolFalse` instead of an RPC error. |
 
-`users.getIsPremiumRequiredToContact` is not in layer 232. The replacement is `users.getRequirementsToContact`. The old handler still returns `ENTERPRISE_IS_BLOCKED` if an older constructor is decoded.
+`users.getIsPremiumRequiredToContact` is not in layer 232. The replacement is `users.getRequirementsToContact`. The old handler returns the same fully checked bit: `boolTrue` when the viewer would get `requirementToContactPremium`.
 
 ## Account settings
 
@@ -250,7 +250,7 @@ These are the rows still short of the official API after the chat and channel fi
 | `contacts.deleteContacts` | partial | `inputUser` is deleted. `inputUserFromMessage` is skipped. |
 | `contacts.getBlocked` | partial | The handler caps `limit` at 50 in one place and then forwards the client's original limit. |
 | `account.getContactSignUpNotification` | partial | A storage error is returned as `boolFalse` instead of an RPC error. |
-| `users.getRequirementsToContact` | implemented | Every peer is `requirementToContactEmpty`. There is no paid-message requirement. |
+| `users.getRequirementsToContact` | implemented | `requirementToContactPremium` when `new_noncontact_peers_require_premium` blocks the viewer. There is no paid-message requirement. |
 
 ### Photos and profile
 

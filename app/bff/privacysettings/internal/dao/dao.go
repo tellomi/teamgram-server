@@ -24,6 +24,7 @@ import (
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
+	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 )
@@ -33,13 +34,18 @@ type Dao struct {
 	user_client.UserClient
 	sync_client.SyncClient
 	chat_client.ChatClient
+	dialog_client.DialogClient
 }
 
 func New(c config.Config) *Dao {
-	return &Dao{
+	d := &Dao{
 		UserClient:        user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
 		AuthsessionClient: authsession_client.NewAuthsessionClient(rpcx.GetCachedRpcClient(c.AuthsessionClient)),
 		ChatClient:        chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
 		SyncClient:        sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient)),
 	}
+	if c.DialogClient.Etcd.Key != "" || len(c.DialogClient.Endpoints) > 0 || len(c.DialogClient.Etcd.Hosts) > 0 {
+		d.DialogClient = dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c.DialogClient))
+	}
+	return d
 }

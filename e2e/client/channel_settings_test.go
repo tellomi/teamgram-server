@@ -9,7 +9,9 @@ import (
 )
 
 // TestPremiumNotRequiredToContact checks the profile-page call that used to
-// return ENTERPRISE_IS_BLOCKED. Tellomi does not require premium to contact a user.
+// return ENTERPRISE_IS_BLOCKED. Asking about yourself is one boolFalse.
+// A stranger who enabled new_noncontact_peers_require_premium is covered by
+// TestNoncontactPremiumRequired.
 func TestPremiumNotRequiredToContact(t *testing.T) {
 	a, _, aSelf, _ := sharedPair(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

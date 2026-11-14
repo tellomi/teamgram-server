@@ -255,6 +255,70 @@ func TestMissingAndHidePeers(t *testing.T) {
 	}
 }
 
+func TestPromoteDialogFilterToChatlist(t *testing.T) {
+	src := &mtproto.DialogFilter{
+		PredicateName: mtproto.Predicate_dialogFilter,
+		Contacts:      true,
+		Groups:        true,
+		Id:            4,
+		Title:         "Rooms",
+		IncludePeers: []*mtproto.InputPeer{
+			mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{ChannelId: 8, AccessHash: 3}).To_InputPeer(),
+		},
+		ExcludePeers: []*mtproto.InputPeer{
+			mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 1}).To_InputPeer(),
+		},
+	}
+	got := promoteToChatlist(src)
+	if got.GetPredicateName() != mtproto.Predicate_dialogFilterChatlist || got.GetId() != 4 || got.GetTitle() != "Rooms" {
+		t.Fatalf("promoted %+v", got)
+	}
+	if got.GetContacts() || got.GetGroups() || len(got.GetExcludePeers()) != 0 {
+		t.Fatal("rule flags survived")
+	}
+	if len(got.GetIncludePeers()) != 1 || got.GetIncludePeers()[0].GetChannelId() != 8 {
+		t.Fatal("include dropped")
+	}
+	if src.GetPredicateName() != mtproto.Predicate_dialogFilter {
+		t.Fatal("source mutated")
+	}
+}
+
+func TestEditInviteAddsPeerMissingFromInclude(t *testing.T) {
+	filter := &mtproto.DialogFilter{
+		PredicateName: mtproto.Predicate_dialogFilterChatlist,
+		Id:            4,
+		IncludePeers: []*mtproto.InputPeer{
+			mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{ChannelId: 8}).To_InputPeer(),
+		},
+		PinnedPeers: []*mtproto.InputPeer{
+			mtproto.MakeTLInputPeerChat(&mtproto.InputPeer{ChatId: 2}).To_InputPeer(),
+		},
+	}
+	extra := peerRef{Kind: "channel", ID: 9, Hash: 11}
+	applyPeerReplacements(filter, map[string]peerRef{
+		peerRef{Kind: "chat", ID: 2}.key(): {Kind: "channel", ID: 15, Hash: 4},
+	}, []peerRef{extra})
+	if len(filter.GetIncludePeers()) != 2 {
+		t.Fatalf("include %+v", filter.GetIncludePeers())
+	}
+	var saw8, saw9 bool
+	for _, peer := range filter.GetIncludePeers() {
+		if peer.GetChannelId() == 8 {
+			saw8 = true
+		}
+		if peer.GetChannelId() == 9 && peer.GetAccessHash() == 11 {
+			saw9 = true
+		}
+	}
+	if !saw8 || !saw9 {
+		t.Fatalf("include ids %+v", filter.GetIncludePeers())
+	}
+	if len(filter.GetPinnedPeers()) != 1 || filter.GetPinnedPeers()[0].GetChannelId() != 15 {
+		t.Fatalf("pinned %+v", filter.GetPinnedPeers())
+	}
+}
+
 func TestCountStoredFoldersSkipsAllChats(t *testing.T) {
 	rows := []*dialog.DialogFilterExt{
 		nil,

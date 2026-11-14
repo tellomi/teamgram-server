@@ -124,7 +124,7 @@ iOS「通过链接邀请加入群组」会先读 `channelFull.exported_invite` /
 
 ## 资料页
 
-`users.getIsPremiumRequiredToContact` 对每个 id 返回 `boolFalse`。Tellomi 不用 Premium 才能发消息这道门槛。
+`users.getIsPremiumRequiredToContact` 与 `users.getRequirementsToContact` 按 `globalPrivacySettings.new_noncontact_peers_require_premium` 判断。非联系人、没有已有私聊、且 `users.premium` 未生效时为 `boolTrue` / `requirementToContactPremium`。发私信返回 `403 PRIVACY_PREMIUM_REQUIRED`。`TELLOMI_PREMIUM_EVERYONE` 不豁免这道门槛。
 
 ## 还留着的
 

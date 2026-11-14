@@ -183,8 +183,15 @@ func NewScheduled(c Config) *service.ScheduledService {
 	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
 		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
-	service.StartScheduleDispatch(msg, syncer, service.StatusOnline(statusClient(c.StatusClient)), scheduleUserClient(c.UserClient))
+	service.StartScheduleDispatch(msg, syncer, service.StatusOnline(statusClient(c.StatusClient)), scheduleUserClient(c.UserClient), scheduleDialogClient(c.DialogClient))
 	return &service.ScheduledService{Msg: msg}
+}
+
+func scheduleDialogClient(c zrpc.RpcClientConf) dialog_client.DialogClient {
+	if len(c.Endpoints) == 0 && len(c.Etcd.Hosts) == 0 && c.Target == "" {
+		return nil
+	}
+	return dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c))
 }
 
 func scheduleUserClient(c zrpc.RpcClientConf) user_client.UserClient {

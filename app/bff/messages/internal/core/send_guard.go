@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
+	"github.com/teamgram/teamgram-server/pkg/privacypremium"
 )
 
 func (c *MessagesCore) blockSend(peer *mtproto.PeerUtil) error {
@@ -22,5 +23,14 @@ func (c *MessagesCore) blockSend(peer *mtproto.PeerUtil) error {
 			stranger = false
 		}
 	}
-	return enforcement.Reject(c.MD.UserId, "send_message", stranger, time.Now())
+	if err := enforcement.Reject(c.MD.UserId, "send_message", stranger, time.Now()); err != nil {
+		return err
+	}
+	if !peer.IsUser() || peer.IsSelfUser(c.MD.UserId) || c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return nil
+	}
+	// new_noncontact_peers_require_premium. An existing private chat, a
+	// contact of the recipient, or an unexpired Premium subscription can write.
+	// https://core.telegram.org/api/privacy
+	return privacypremium.RejectSend(c.ctx, c.svcCtx.Dao.UserClient, c.svcCtx.Dao.DialogClient, c.MD.UserId, peer.PeerId)
 }

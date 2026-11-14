@@ -65,6 +65,10 @@ type voiceUser struct {
 	allow bool
 }
 
+func (u *voiceUser) UserGetGlobalPrivacySettings(context.Context, *user.TLUserGetGlobalPrivacySettings) (*mtproto.GlobalPrivacySettings, error) {
+	return mtproto.MakeTLGlobalPrivacySettings(&mtproto.GlobalPrivacySettings{}).To_GlobalPrivacySettings(), nil
+}
+
 func (u *voiceUser) UserCheckPrivacy(context.Context, *user.TLUserCheckPrivacy) (*mtproto.Bool, error) {
 	if u.allow {
 		return mtproto.BoolTrue, nil

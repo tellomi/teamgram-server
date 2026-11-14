@@ -14,6 +14,7 @@ import (
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
+	"github.com/teamgram/teamgram-server/pkg/privacypremium"
 )
 
 // scheduleSync pushes updates to one user's sessions.
@@ -31,9 +32,10 @@ type scheduleUsers interface {
 }
 
 type scheduleSink struct {
-	msg   msg_client.MsgClient
-	sync  scheduleSync
-	users scheduleUsers
+	msg     msg_client.MsgClient
+	sync    scheduleSync
+	users   scheduleUsers
+	dialogs privacypremium.Dialogs
 }
 
 // allow runs the BFF send checks that MsgSendMessageV2 does not: account
@@ -52,6 +54,13 @@ func (s scheduleSink) allow(ctx context.Context, owner int64, peer *mtproto.Peer
 	}
 	if err := enforcement.Reject(owner, "send_message", stranger, time.Now()); err != nil {
 		return err
+	}
+	if peer.PeerType == mtproto.PEER_USER && peer.PeerId != 0 && peer.PeerId != owner {
+		if api, ok := s.users.(privacypremium.Settings); ok {
+			if err := privacypremium.RejectSend(ctx, api, s.dialogs, owner, peer.PeerId); err != nil {
+				return err
+			}
+		}
 	}
 	if !stranger || s.users == nil {
 		return nil
@@ -129,12 +138,12 @@ var scheduleOnce sync.Once
 // TELLOMI_SCHEDULED_DISPATCH is enabled. The loop is process-wide.
 // Messages stay in the chatbox doc store until it runs, including across
 // restarts. online may be nil; send-when-online then waits.
-func StartScheduleDispatch(msg msg_client.MsgClient, syncer scheduleSync, online OnlineFunc, users scheduleUsers) {
+func StartScheduleDispatch(msg msg_client.MsgClient, syncer scheduleSync, online OnlineFunc, users scheduleUsers, dialogs privacypremium.Dialogs) {
 	if !chatbox.DispatchEnabled() || msg == nil {
 		return
 	}
 	scheduleOnce.Do(func() {
-		sink := scheduleSink{msg: msg, sync: syncer, users: users}
+		sink := scheduleSink{msg: msg, sync: syncer, users: users, dialogs: dialogs}
 		go func() {
 			tick := time.NewTicker(2 * time.Second)
 			defer tick.Stop()
