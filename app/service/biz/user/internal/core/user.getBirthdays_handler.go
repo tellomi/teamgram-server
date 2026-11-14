@@ -26,12 +26,13 @@ import (
 // UserGetBirthdays
 // user.getBirthdays user_id:long = Vector<ContactBirthday>;
 func (c *UserCore) UserGetBirthdays(in *user.TLUserGetBirthdays) (*user.Vector_ContactBirthday, error) {
-	// TODO: not impl
-	// c.Logger.Errorf("user.getBirthdays - method not impl")
-
-	rV := &user.Vector_ContactBirthday{
-		Datas: make([]*mtproto.ContactBirthday, 0),
+	rows, err := c.svcCtx.Dao.ContactBirthdays(c.ctx, in.GetUserId())
+	if err != nil {
+		c.Logger.Errorf("user.getBirthdays - error: %v", err)
+		return nil, err
 	}
-
-	return rV, nil
+	if rows == nil {
+		rows = []*mtproto.ContactBirthday{}
+	}
+	return &user.Vector_ContactBirthday{Datas: rows}, nil
 }

@@ -725,3 +725,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Contact birthdays and boost link
+
+`contacts.getBirthdays` called `user.getBirthdays`, which returned an empty vector. Birthdays already live on `users.birthday` (`YYYY-MM-DD`, written by `account.updateBirthday`). The list is now the caller's non-deleted contacts whose birthday string parses to a month and a day.
+
+`premium.getBoostsStatus` left `boost_url` empty, so the client copy action had nothing to copy. The link is `https://t.me/boost?c=<peer id>`, the form official clients use when the peer has no public username.
+
+| Piece | File |
+| --- | --- |
+| contact query | `app/service/biz/user/internal/dao/contact_birthdays.go` |
+| RPC | `app/service/biz/user/internal/core/user.getBirthdays_handler.go` |
+| boost link | `app/bff/payments/internal/book/peer.go`, `boosts.go` |
