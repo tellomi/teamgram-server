@@ -388,8 +388,25 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	if stamp {
 		msg.FromId = mtproto.MakePeerUser(sender)
 		msg.PostAuthor = nil
+		if s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+		}
 	}
 	msg.Views = nil
+}
+
+// anonymousAdmin is an admin with admin_rights.anonymous in a supergroup.
+// Their messages are attributed to the group. The creator's full right set
+// does not imply this flag.
+func (s *Service) anonymousAdmin(ctx context.Context, ch *Channel, sender int64) bool {
+	if s == nil || ch == nil || ch.Broadcast || sender == 0 {
+		return false
+	}
+	p, err := s.store.GetParticipant(ctx, ch.ID, sender)
+	if err != nil || p == nil || !p.IsAdmin() || p.IsCreator() {
+		return false
+	}
+	return p.adminRights().CanAnonymous()
 }
 
 // Outgoing is one message a client is sending into a channel.
