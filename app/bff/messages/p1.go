@@ -25,7 +25,16 @@ import (
 )
 
 // NewPolls serves messages.sendVote and the other poll RPCs.
-func NewPolls() *service.PollsService { return &service.PollsService{} }
+func NewPolls(c Config) *service.PollsService {
+	svc := &service.PollsService{
+		Chats:    chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
+		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(c.MessageClient)),
+	}
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		svc.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
+	}
+	return svc
+}
 
 // NewWebPage serves messages.getWebPage and messages.getWebPagePreview.
 func NewWebPage(c Config) *service.WebPageService {

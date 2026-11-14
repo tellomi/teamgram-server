@@ -473,7 +473,7 @@ func (s *Server) Initialize() error {
 			ChannelMySQL:  c.ChannelMySQL,
 		}
 		mtproto.RegisterRPCMessagesServer(grpcServer, messages_helper.New(msgCfg, nil))
-		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls())
+		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls(msgCfg))
 		mtproto.RegisterRPCScheduledMessagesServer(grpcServer, messages_helper.NewScheduled(msgCfg))
 		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage(msgCfg))
 		// Inline bots, callback buttons, attach menu, mini apps, prepared messages.

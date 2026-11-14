@@ -136,5 +136,11 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 	for _, key := range order {
 		chatbox.Shared().ApplyReactions(c.ctx, c.MD.UserId, mtproto.MakePeerUtil(key.t, key.id), grouped[key])
 	}
+	for _, m := range rValues.Messages {
+		if m.GetPeerId() == nil {
+			continue
+		}
+		chatbox.Shared().ApplyPolls(c.ctx, c.MD.UserId, mtproto.FromPeer(m.GetPeerId()), []*mtproto.Message{m})
+	}
 	return rValues, nil
 }

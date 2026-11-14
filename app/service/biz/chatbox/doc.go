@@ -79,6 +79,7 @@ type Book struct {
 	sched      map[string]*schedDoc
 	polls      map[int64]*pollDoc
 	pollIdx    map[string]int64
+	pollDlg    map[int64]int64
 	pollPeer   map[string][]int64
 	react      map[string]*reactDoc
 	def        map[int64]string
@@ -109,6 +110,7 @@ func newBook(db docDB) *Book {
 		sched:     map[string]*schedDoc{},
 		polls:     map[int64]*pollDoc{},
 		pollIdx:   map[string]int64{},
+		pollDlg:   map[int64]int64{},
 		pollPeer:  map[string][]int64{},
 		react:     map[string]*reactDoc{},
 		def:       map[int64]string{},
