@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/engine"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/relay"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -774,6 +775,55 @@ func TestConferenceMessagesAndChain(t *testing.T) {
 		t.Fatalf("%+v %v", legacy.GetPhoneCall(), err)
 	}
 	roundTrip(t, legacy.GetPhoneCall(), 0x30535af5)
+}
+
+func TestRTMPKeyRequiresManageCall(t *testing.T) {
+	prev := channel.Shared()
+	ch := channel.New(channel.NewMemoryStore())
+	channel.Use(ch)
+	t.Cleanup(func() { channel.Use(prev) })
+
+	ctx := withUser(10, 100)
+	created, err := ch.Create(ctx, channel.CreateRequest{CreatorID: 10, Title: "Live", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat := created.Chats[0]
+	in := inputChannel(chat)
+	if _, err := ch.Invite(ctx, 10, 0, in, []int64{11, 12}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{ManageCall: true}).To_ChatAdminRights()
+	if _, err := ch.EditAdmin(ctx, 10, 0, in, 12, rights, ""); err != nil {
+		t.Fatal(err)
+	}
+	eng, _ := testEngine(t)
+	svc := NewWithEngine(eng)
+	peer := mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{
+		ChannelId: chat.Id, AccessHash: chat.GetAccessHash_FLAGINT64().GetValue(),
+	}).To_InputPeer()
+	owner, err := svc.PhoneGetGroupCallStreamRtmpUrl(ctx, &mtproto.TLPhoneGetGroupCallStreamRtmpUrl{Peer: peer, Revoke: mtproto.BoolFalse})
+	if err != nil || owner.GetUrl() == "" || owner.GetKey() == "" {
+		t.Fatalf("creator %+v %v", owner, err)
+	}
+	if _, err := svc.PhoneGetGroupCallStreamRtmpUrl(withUser(11, 110), &mtproto.TLPhoneGetGroupCallStreamRtmpUrl{Peer: peer, Revoke: mtproto.BoolTrue}); status.Convert(err).Message() != "CHAT_ADMIN_REQUIRED" {
+		t.Fatalf("member: %v", err)
+	}
+	if _, err := svc.PhoneGetGroupCallStreamRtmpUrl(withUser(13, 130), &mtproto.TLPhoneGetGroupCallStreamRtmpUrl{Peer: peer, Revoke: mtproto.BoolFalse}); status.Convert(err).Message() != "CHAT_ADMIN_REQUIRED" {
+		t.Fatalf("outsider: %v", err)
+	}
+	same, err := svc.PhoneGetGroupCallStreamRtmpUrl(ctx, &mtproto.TLPhoneGetGroupCallStreamRtmpUrl{Peer: peer, Revoke: mtproto.BoolFalse})
+	if err != nil || same.GetKey() != owner.GetKey() {
+		t.Fatalf("member reset the key: %s %s %v", owner.GetKey(), same.GetKey(), err)
+	}
+	reset, err := svc.PhoneGetGroupCallStreamRtmpUrl(withUser(12, 120), &mtproto.TLPhoneGetGroupCallStreamRtmpUrl{Peer: peer, Revoke: mtproto.BoolTrue})
+	if err != nil || reset.GetKey() == "" || reset.GetKey() == owner.GetKey() {
+		t.Fatalf("manage_call admin %+v %v", reset, err)
+	}
+	again, err := svc.PhoneGetGroupCallStreamRtmpUrl(ctx, &mtproto.TLPhoneGetGroupCallStreamRtmpUrl{Peer: peer, Revoke: mtproto.BoolFalse})
+	if err != nil || again.GetKey() != reset.GetKey() {
+		t.Fatalf("creator lost the reset key: %+v %v", again, err)
+	}
 }
 
 func inputChannel(ch *mtproto.Chat) *mtproto.InputChannel {

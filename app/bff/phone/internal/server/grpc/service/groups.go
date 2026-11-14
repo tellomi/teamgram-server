@@ -457,6 +457,16 @@ func (s *Service) PhoneGetGroupCallStreamRtmpUrl(ctx context.Context, in *mtprot
 		return nil, err
 	}
 	peer := mtproto.FromInputPeer2(md.GetUserId(), in.GetPeer())
+	// Only the creator, or an admin with manage_call, may read or reset the
+	// stream key. Everyone else is CHAT_ADMIN_REQUIRED.
+	// https://core.telegram.org/method/phone.getGroupCallStreamRtmpUrl
+	_, manage, err := s.perm(ctx, md.GetUserId(), peer)
+	if err != nil {
+		return nil, err
+	}
+	if !manage {
+		return nil, mtproto.ErrChatAdminRequired
+	}
 	url, key := s.eng.RTMP(peer.PeerType, peer.PeerId, mtproto.FromBool(in.GetRevoke()))
 	return mtproto.MakeTLPhoneGroupCallStreamRtmpUrl(&mtproto.Phone_GroupCallStreamRtmpUrl{Url: url, Key: key}).To_Phone_GroupCallStreamRtmpUrl(), nil
 }
