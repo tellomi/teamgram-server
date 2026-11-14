@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -32,10 +33,36 @@ func TestBasicGroupKickWritesDeleteUserServiceMessage(t *testing.T) {
 	if !updatesHaveDeleteUser(up, bSelf.ID) && !chatHistoryHasAction(t, a, chatID, mtproto.Predicate_messageActionChatDeleteUser) {
 		t.Fatalf("no delete-user service message in %T", up)
 	}
-	if !chatHistoryHasAction(t, b, chatID, mtproto.Predicate_messageActionChatDeleteUser) {
+	// The removed user's copy is written by the inbox consumer after this
+	// RPC returns. getHistory before that row lands looks like the message
+	// was never sent.
+	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		return chatHasAction(ctx, b, chatID, mtproto.Predicate_messageActionChatDeleteUser)
+	}); err != nil {
 		t.Fatal("removed user cannot see messageActionChatDeleteUser")
 	}
 	_ = aSelf
+}
+
+func chatHasAction(ctx context.Context, c *Client, chatID int64, name string) (bool, error) {
+	res, err := c.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+		Constructor: mtproto.CRC32_messages_getHistory,
+		Peer:        inputPeerChat(chatID),
+		Limit:       20,
+	})
+	if err != nil {
+		return false, err
+	}
+	msgs, ok := messagesOf(res)
+	if !ok {
+		return false, nil
+	}
+	for _, m := range msgs {
+		if m.GetAction().GetPredicateName() == name {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func chatHistoryHasAction(t *testing.T, c *Client, chatID int64, name string) bool {

@@ -14,7 +14,7 @@ func TestListNotModified(t *testing.T) {
 	if len(list.GetTimezones()) < 20 {
 		t.Fatalf("timezones %d", len(list.GetTimezones()))
 	}
-	var sawUTC, sawNewYork bool
+	var sawUTC, sawNewYork, sawShanghai bool
 	for _, zone := range list.GetTimezones() {
 		if zone.GetPredicateName() != mtproto.Predicate_timezone || zone.GetId() == "" || zone.GetName() == "" {
 			t.Fatalf("zone %#v", zone)
@@ -25,9 +25,12 @@ func TestListNotModified(t *testing.T) {
 		if zone.GetId() == "America/New_York" {
 			sawNewYork = true
 		}
+		if zone.GetId() == "Asia/Shanghai" {
+			sawShanghai = true
+		}
 	}
-	if !sawUTC || !sawNewYork {
-		t.Fatalf("utc=%v new york=%v", sawUTC, sawNewYork)
+	if !sawUTC || !sawNewYork || !sawShanghai {
+		t.Fatalf("utc=%v new york=%v shanghai=%v", sawUTC, sawNewYork, sawShanghai)
 	}
 	again := List(list.GetHash())
 	if again.GetPredicateName() != mtproto.Predicate_help_timezonesListNotModified {
