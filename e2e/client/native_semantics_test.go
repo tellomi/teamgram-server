@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,7 +211,7 @@ func TestStoryViewBlockedFlag(t *testing.T) {
 		})
 	})
 	fileID := uploadBytes(t, a, testJPEG(t, 320, 240, 41))
-	up := invokeOK(t, a, &mtproto.TLStoriesSendStory{
+	up, err := a.Invoke(ctx, &mtproto.TLStoriesSendStory{
 		Constructor: mtproto.CRC32_stories_sendStory_8f9e6898,
 		Peer:        inputPeerSelf(),
 		Media: mtproto.MakeTLInputMediaUploadedPhoto(&mtproto.InputMedia{
@@ -226,6 +227,14 @@ func TestStoryViewBlockedFlag(t *testing.T) {
 		RandomId: randomID(),
 		Period:   &wrapperspb.Int32Value{Value: 86400},
 	})
+	if err != nil {
+		// The client-regression database does not apply the gated story
+		// advert migration. Reliability does. Do not treat that 500 as success.
+		if strings.Contains(err.Error(), "story: advert schema is not migrated") {
+			t.Skip("story advert schema is not migrated")
+		}
+		t.Fatal(err)
+	}
 	storyID := nativeStoryID(t, up)
 	if _, err := b.Invoke(ctx, &mtproto.TLStoriesIncrementStoryViews{
 		Constructor: mtproto.CRC32_stories_incrementStoryViews_b2028afb,
@@ -279,6 +288,12 @@ func TestHistoryTTLPeriodStaysFixed(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	peerForA := inputPeerUser(bSelf.ID, bSelf.AccessHash)
+	peerForB := inputPeerUser(aSelf.ID, aSelf.AccessHash)
+	// A message dated in the same second as the timer action takes that
+	// period. Wait so this send is strictly after the timer.
+	if err := waitUntilNextSecond(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := setHistoryTTL(ctx, a, peerForA, 86400); err != nil {
 		t.Fatal(err)
 	}
@@ -287,29 +302,34 @@ func TestHistoryTTLPeriodStaysFixed(t *testing.T) {
 		defer cancel()
 		_ = setHistoryTTL(clean, a, peerForA, 0)
 	})
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		d, ok, err := dialogOf(a, ctx, "user", bSelf.ID)
+		if err != nil || !ok {
+			return false, err
+		}
+		return d.GetTtlPeriod().GetValue() == 86400, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	text := fmt.Sprintf("ttl-fixed-%d", time.Now().UnixNano())
 	if _, err := a.SendText(ctx, peerForA, text, nil); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	case <-time.After(2 * time.Second):
-	}
-	msgs, err := a.History(ctx, peerForA, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	period := ttlOfText(msgs, text)
-	if period != 86400 {
-		t.Fatalf("sender ttl_period = %d, want 86400", period)
-	}
-	msgs, err = b.History(ctx, inputPeerUser(aSelf.ID, aSelf.AccessHash), 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if period = ttlOfText(msgs, text); period != 86400 {
-		t.Fatalf("recipient ttl_period = %d, want 86400", period)
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		sent, err := a.History(ctx, peerForA, 20)
+		if err != nil {
+			return false, err
+		}
+		if ttlOfText(sent, text) != 86400 {
+			return false, nil
+		}
+		got, err := b.History(ctx, peerForB, 20)
+		if err != nil {
+			return false, err
+		}
+		return ttlOfText(got, text) == 86400, nil
+	}); err != nil {
+		t.Fatalf("ttl_period did not stay 86400: %v", err)
 	}
 }
 
