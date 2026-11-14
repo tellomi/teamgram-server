@@ -725,3 +725,16 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Admin log for join, leave, pin, edit, delete, invites, and forum (ISSUE-S-ADMINLOG-MISSING-001)
+
+`channels.getAdminLog` already returns whatever `Features.AdminLog` stores, and the filter knows these event types. The writers never called `logAdmin` for them, so the matching filters were empty.
+
+Join writes `participantJoin`. Leave writes `participantLeave`. Pin writes `updatePinned`. Edit writes `editMessage` with the previous and new message. Delete writes `deleteMessage`. Creating an invite writes `exportedInviteEdit`. Deleting an invite writes `exportedInviteDelete`. Turning the forum on or off writes `toggleForum`.
+
+| Piece | File |
+| --- | --- |
+| join and leave | `service.go` |
+| pin and forum | `service_features.go` |
+| edit and delete | `service_ops.go` |
+| invites | `invite.go` |

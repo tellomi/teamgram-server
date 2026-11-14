@@ -110,6 +110,7 @@ func (s *Service) insertInvite(ctx context.Context, inv *StoredInvite) (*mtproto
 		inv.Link = bizchat.GenChannelInviteHash()
 		err = s.store.InsertInvite(ctx, inv)
 		if err == nil {
+			s.logAdmin(ctx, inv.ChannelID, inv.AdminID, mtproto.MakeTLChannelAdminLogEventActionExportedInviteEdit(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
 			return s.exportTL(ctx, inv), nil
 		}
 		if !errors.Is(err, errInviteExists) {
@@ -242,7 +243,11 @@ func (s *Service) DeleteInvite(ctx context.Context, self int64, in *mtproto.Inpu
 	if inv.AdminID != self && !p.IsCreator() {
 		return mtproto.ErrChatAdminRequired
 	}
-	return s.store.DeleteInvite(ctx, ch.ID, inv.Link)
+	if err := s.store.DeleteInvite(ctx, ch.ID, inv.Link); err != nil {
+		return err
+	}
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionExportedInviteDelete(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
+	return nil
 }
 
 // DeleteRevokedInvites removes every revoked link of one admin.

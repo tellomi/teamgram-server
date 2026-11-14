@@ -1102,6 +1102,7 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	if _, _, err = s.appendMessage(ctx, channelID, self, 0, msg); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionUpdatePinned(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
 }
 
@@ -1599,6 +1600,9 @@ func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.Input
 	if enabled {
 		s.ensureGeneralTopic(ctx, self, ch.ID)
 	}
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionToggleForum(&mtproto.ChannelAdminLogEventAction{
+		NewValue_BOOL: mtproto.ToBool(enabled),
+	}).To_ChannelAdminLogEventAction())
 	return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
 }
 

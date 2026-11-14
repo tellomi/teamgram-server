@@ -423,6 +423,7 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	if _, _, err = s.appendMessage(ctx, ch.ID, user, 0, msg); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, user, mtproto.MakeTLChannelAdminLogEventActionParticipantJoin(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, user, actorAuth, ch.ID, KindNew)
 }
 
@@ -445,6 +446,7 @@ func (s *Service) Leave(ctx context.Context, user, actorAuth int64, in *mtproto.
 	if _, _, err = s.appendMessage(ctx, ch.ID, user, 0, msg); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, user, mtproto.MakeTLChannelAdminLogEventActionParticipantLeave(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, user, actorAuth, ch.ID, KindNew)
 }
 
