@@ -93,6 +93,37 @@ func TestUnbanOfStoredViewBanDoesNotReadd(t *testing.T) {
 	}
 }
 
+func TestDatedViewBanKeepsMember(t *testing.T) {
+	svc, ctx := newTest(t)
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Room", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// until_date one second short of forever is a view restriction, not a kick.
+	viewBan := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{
+		ViewMessages: true,
+		UntilDate:    2147483646,
+	}).To_ChatBannedRights()
+	if _, err := svc.EditBanned(ctx, 1, 0, in, 2, viewBan); err != nil {
+		t.Fatal(err)
+	}
+	if !userInParticipants(t, svc, ctx, in, nil, 2) {
+		t.Fatal("dated view ban removed the member")
+	}
+	open := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{}).To_ChatBannedRights()
+	if _, err := svc.EditBanned(ctx, 1, 0, in, 2, open); err != nil {
+		t.Fatal(err)
+	}
+	if !userInParticipants(t, svc, ctx, in, nil, 2) {
+		t.Fatal("lifting a dated view ban removed the member")
+	}
+}
+
 func TestSendRestrictionDoesNotRemoveMember(t *testing.T) {
 	svc, ctx := newTest(t)
 	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Room", Megagroup: true})

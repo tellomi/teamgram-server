@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"math"
 	"regexp"
 	"strings"
 	"sync"
@@ -510,11 +511,11 @@ func (s *Service) EditBanned(ctx context.Context, actor, actorAuth int64, in *mt
 	}
 	kicked := false
 	prev := *target
-	now := int32(time.Now().Unix())
 	if rights == nil || rights.NoBanRights() {
-		// view_messages removed the user. Clearing the ban lifts it.
-		// It does not put them back in the member list.
-		removed := target.State == StateKicked || viewMessagesBanned(target.BannedRights)
+		// A forever view_messages ban removed the user. Clearing it lifts
+		// the ban and does not put them back in the member list. A dated
+		// view ban is a restriction: the member stays, and unban keeps them.
+		removed := target.State == StateKicked || storedForeverKick(target.BannedRights)
 		target.Role = RoleMember
 		target.BannedRights = 0
 		if removed {
@@ -524,7 +525,7 @@ func (s *Service) EditBanned(ctx context.Context, actor, actorAuth int64, in *mt
 		target.Role = RoleBanned
 		target.BannedRights = int64(rights.ToBannedRights())
 		target.InviterID = actor
-		if isMemberKick(rights, now) {
+		if isMemberKick(rights) {
 			target.State = StateKicked
 			kicked = true
 		}
@@ -805,23 +806,25 @@ func (s *Service) ExportMessageLink(ctx context.Context, self int64, in *mtproto
 }
 
 // isMemberKick reports channels.editBanned rights that remove the user.
-// view_messages is the kick flag. until_date 0 and 0x7fffffff mean forever.
-// A later until_date removes them until that time. A date already past does not.
-func isMemberKick(rights *mtproto.ChatBannedRights, now int32) bool {
+// Clients send until_date 0 for a permanent kick. 0x7fffffff is the same
+// forever value. Any other until_date is a view restriction that keeps
+// the member in the group.
+func isMemberKick(rights *mtproto.ChatBannedRights) bool {
 	if rights == nil || !rights.GetViewMessages() {
 		return false
 	}
 	until := rights.GetUntilDate()
-	if until == 0 || rights.IsKick() {
-		return true
-	}
-	return until > now
+	return until == 0 || until == math.MaxInt32
 }
 
-// viewMessagesBanned reports a stored ban that includes view_messages.
-// Those rows are kicks, including ones written before kick removed the member.
-func viewMessagesBanned(bits int64) bool {
-	return bits&int64(mtproto.BANNED_VIEW_MESSAGES) != 0
+// storedForeverKick reports a saved ban that was a permanent kick.
+// until_date 0 is stored as 0x7fffffff. A different until_date is not a kick.
+func storedForeverKick(bits int64) bool {
+	if bits&int64(mtproto.BANNED_VIEW_MESSAGES) == 0 {
+		return false
+	}
+	until := int32(bits >> 32)
+	return until == 0 || until == math.MaxInt32
 }
 
 func missingInvitee(id int64) *mtproto.MissingInvitee {
