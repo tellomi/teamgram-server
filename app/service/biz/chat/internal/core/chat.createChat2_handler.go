@@ -42,9 +42,9 @@ func (c *ChatCore) ChatCreateChat2(in *chat.TLChatCreateChat2) (*mtproto.Mutable
 		c.Logger.Errorf("chat.createChat2 - error: %v", err)
 		return nil, err
 	} else if chatsDO != nil {
-		if date-chatsDO.Date < createChatFlood {
-			err = mtproto.NewErrFloodWaitX(int32(date - chatsDO.Date))
-			c.Logger.Errorf("createChat error: %v. lastCreate = ", err, chatsDO.Date)
+		if wait := createChatFloodWait(date, chatsDO.Date); wait > 0 {
+			err = mtproto.NewErrFloodWaitX(wait)
+			c.Logger.Errorf("createChat error: %v. lastCreate = %d", err, chatsDO.Date)
 			return nil, err
 		}
 	}
