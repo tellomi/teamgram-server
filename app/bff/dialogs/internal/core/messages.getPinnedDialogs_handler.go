@@ -104,6 +104,10 @@ func (c *DialogsCore) MessagesGetPinnedDialogs(in *mtproto.TLMessagesGetPinnedDi
 		return nil, err
 	}
 	dialogExtList = append(folder, pinned...)
+	// Pinned channel rows come from the dialogs table. Its top_message does
+	// not move backwards, so replace it with the live channel top before the
+	// message load. Pin rank stays on the table row.
+	dialogExtList = c.applyChannelLive(dialogExtList)
 
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())

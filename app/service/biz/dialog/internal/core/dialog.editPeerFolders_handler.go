@@ -134,7 +134,7 @@ func dialogCacheKeys(userID int64, peerDialogIDs []int64) []string {
 	return keys
 }
 
-func pinnedCap(c *DialogCore, userID int64) int {
+func accountMember(c *DialogCore, userID int64) bool {
 	now := time.Now().Unix()
 	member := premium.IsMember(false, 0, now)
 	if c != nil && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.DB != nil {
@@ -145,5 +145,19 @@ func pinnedCap(c *DialogCore, userID int64) int {
 			member = premium.IsMember(row.Premium != 0, row.PremiumExpireDate, now)
 		}
 	}
-	return premium.Limit(premium.FeaturePinnedChats, member)
+	return member
+}
+
+func pinnedCap(c *DialogCore, userID int64) int {
+	return pinnedCapFor(c, userID, 0)
+}
+
+// pinnedCapFor is the main-list cap in folder 0 and the archive cap in folder 1.
+// Both follow premium.Limit, including TELLOMI_PREMIUM_EVERYONE.
+func pinnedCapFor(c *DialogCore, userID int64, folderID int32) int {
+	feature := premium.FeaturePinnedChats
+	if folderID == 1 {
+		feature = premium.FeatureFolderPins
+	}
+	return premium.Limit(feature, accountMember(c, userID))
 }

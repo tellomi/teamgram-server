@@ -140,6 +140,7 @@ func (c *DialogsCore) MessagesGetPeerDialogs(in *mtproto.TLMessagesGetPeerDialog
 	}
 
 	dialogExtList = c.ensureChannelPeers(dialogExtList, peers)
+	dialogExtList = c.applyChannelLive(dialogExtList)
 	for _, dialogEx := range dialogExtList {
 		peer2 := mtproto.FromPeer(dialogEx.GetDialog().GetPeer())
 		dialogEx.Dialog.NotifySettings = userpb.FindPeerPeerNotifySettings(notifySettingsList, peer2)
