@@ -3,6 +3,10 @@ package channel
 import (
 	"context"
 	"strings"
+
+	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // LookupPosterName returns the sender's first and last name. The msg service
@@ -47,4 +51,18 @@ func (s *Service) signatureText(ctx context.Context, channelID, sender int64) st
 		}
 	}
 	return posterName(ctx, sender)
+}
+
+func copyPostAuthor(msg *mtproto.Message) *wrapperspb.StringValue {
+	if msg == nil || msg.GetPostAuthor() == nil {
+		return nil
+	}
+	return &wrapperspb.StringValue{Value: msg.GetPostAuthor().GetValue()}
+}
+
+func copyPeer(peer *mtproto.Peer) *mtproto.Peer {
+	if peer == nil {
+		return nil
+	}
+	return proto.Clone(peer).(*mtproto.Peer)
 }

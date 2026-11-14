@@ -340,28 +340,44 @@ func (s *Service) noteNewMessage(ctx context.Context, channelID, sender int64, m
 }
 
 func (s *Service) prepareOutgoing(ctx context.Context, ch *Channel, sender int64, msg *mtproto.Message) {
+	s.shapeOutgoing(ctx, ch, sender, msg, true)
+}
+
+// reviseOutgoing updates a stored channel message. post_author and from_id
+// stay as they were when the post was first sent. A value on msg from the
+// client is discarded. Renaming the author, changing an admin title, or
+// toggling signatures does not rewrite the snapshot.
+func (s *Service) reviseOutgoing(ctx context.Context, ch *Channel, sender int64, msg, stored *mtproto.Message) {
+	s.shapeOutgoing(ctx, ch, sender, msg, false)
+	msg.PostAuthor = copyPostAuthor(stored)
+	msg.FromId = copyPeer(stored.GetFromId())
+}
+
+func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, msg *mtproto.Message, stamp bool) {
 	msg.PeerId = mtproto.MakePeerChannel(ch.ID)
 	msg.Out = false
 	if msg.PredicateName == mtproto.Predicate_messageService {
 		msg.Post = false
-		if msg.FromId == nil {
+		if stamp && msg.FromId == nil {
 			msg.FromId = mtproto.MakePeerUser(sender)
 		}
 		return
 	}
 	if ch.Broadcast {
 		msg.Post = true
-		// post_author is the non-hyperlinked signature. The client value is
-		// never kept. A custom admin title replaces the name; otherwise the
-		// signature is the sender's name. An empty result stays unset.
-		msg.PostAuthor = nil
-		if ch.Signatures {
-			msg.FromId = mtproto.MakePeerUser(sender)
-			if sig := s.signatureText(ctx, ch.ID, sender); sig != "" {
-				msg.PostAuthor = &wrapperspb.StringValue{Value: sig}
+		// A new post stamps the non-hyperlinked signature. A custom admin
+		// title replaces the name; otherwise the signature is the sender's
+		// name. An empty result stays unset. The client value is never kept.
+		if stamp {
+			msg.PostAuthor = nil
+			if ch.Signatures {
+				msg.FromId = mtproto.MakePeerUser(sender)
+				if sig := s.signatureText(ctx, ch.ID, sender); sig != "" {
+					msg.PostAuthor = &wrapperspb.StringValue{Value: sig}
+				}
+			} else {
+				msg.FromId = nil
 			}
-		} else {
-			msg.FromId = nil
 		}
 		if msg.Views == nil {
 			msg.Views = &wrapperspb.Int32Value{Value: 1}
@@ -369,8 +385,10 @@ func (s *Service) prepareOutgoing(ctx context.Context, ch *Channel, sender int64
 		return
 	}
 	msg.Post = false
-	msg.FromId = mtproto.MakePeerUser(sender)
-	msg.PostAuthor = nil
+	if stamp {
+		msg.FromId = mtproto.MakePeerUser(sender)
+		msg.PostAuthor = nil
+	}
 	msg.Views = nil
 }
 
@@ -542,12 +560,13 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	if err != nil {
 		return nil, err
 	}
+	frozen := proto.Clone(body).(*mtproto.Message)
 	if apply != nil {
 		apply(body)
 	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
-	s.prepareOutgoing(ctx, ch, stored.SenderID, body)
+	s.reviseOutgoing(ctx, ch, stored.SenderID, body, frozen)
 	if err = s.enforceContent(ch, p, []*mtproto.Message{body}); err != nil {
 		return nil, err
 	}
@@ -594,9 +613,13 @@ func (s *Service) RewriteBody(ctx context.Context, sender, channelID, actorAuth 
 	if stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
+	original, err := unmarshalMessage(stored.Data)
+	if err != nil {
+		return nil, err
+	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
-	s.prepareOutgoing(ctx, ch, stored.SenderID, body)
+	s.reviseOutgoing(ctx, ch, stored.SenderID, body, original)
 	body.SanitizeEntities()
 	raw, err := proto.Marshal(body)
 	if err != nil {

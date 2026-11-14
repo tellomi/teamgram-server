@@ -289,6 +289,157 @@ func TestAdminRankReplacesNameAndEditKeepsOriginalAuthor(t *testing.T) {
 	}
 }
 
+func TestEditKeepsSignatureAfterAuthorRename(t *testing.T) {
+	svc, ctx := newTest(t)
+	name := "Ada Lovelace"
+	prev := LookupPosterName
+	LookupPosterName = func(context.Context, int64) string { return name }
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	ch, _ := signedChannel(t, svc, ctx)
+	msg := sendSigned(t, svc, ctx, ch.Id, "hello", 10)
+	if msg.GetPostAuthor().GetValue() != "Ada Lovelace" || msg.GetFromId().GetUserId() != 1 {
+		t.Fatalf("sent author %q from %d", msg.GetPostAuthor().GetValue(), msg.GetFromId().GetUserId())
+	}
+	name = "Renamed"
+	edited, err := svc.Edit(ctx, 1, ch.Id, 0, msg.GetId(), func(m *mtproto.Message) {
+		m.Message = "hello!"
+		m.PostAuthor = &wrapperspb.StringValue{Value: "spoof"}
+		m.FromId = mtproto.MakePeerUser(9)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := edited.Updates[0].GetMessage_MESSAGE()
+	if got.GetMessage() != "hello!" || got.GetPostAuthor().GetValue() != "Ada Lovelace" || got.GetFromId().GetUserId() != 1 {
+		t.Fatalf("after rename message %q author %q from %d", got.GetMessage(), got.GetPostAuthor().GetValue(), got.GetFromId().GetUserId())
+	}
+}
+
+func TestEditKeepsSignatureAfterSignaturesTurnedOff(t *testing.T) {
+	svc, ctx := newTest(t)
+	prev := LookupPosterName
+	LookupPosterName = func(context.Context, int64) string { return "Ada Lovelace" }
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	ch, in := signedChannel(t, svc, ctx)
+	msg := sendSigned(t, svc, ctx, ch.Id, "hello", 10)
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, false, false); err != nil {
+		t.Fatal(err)
+	}
+	edited, err := svc.Edit(ctx, 1, ch.Id, 0, msg.GetId(), func(m *mtproto.Message) {
+		m.Message = "hello!"
+		m.PostAuthor = nil
+		m.FromId = nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := edited.Updates[0].GetMessage_MESSAGE()
+	if got.GetPostAuthor().GetValue() != "Ada Lovelace" || got.GetFromId().GetUserId() != 1 {
+		t.Fatalf("signatures off then edit: author %q from %#v", got.GetPostAuthor().GetValue(), got.GetFromId())
+	}
+}
+
+func TestEditLeavesUnsignedPostUnsignedAfterSignaturesTurnedOn(t *testing.T) {
+	svc, ctx := newTest(t)
+	prev := LookupPosterName
+	LookupPosterName = func(context.Context, int64) string { return "Ada Lovelace" }
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 21,
+		Message:  &mtproto.Message{Message: "plain", Date: 10, PostAuthor: &wrapperspb.StringValue{Value: "spoof"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := sent.Updates[0].GetMessage_MESSAGE()
+	if msg.GetPostAuthor() != nil || msg.GetFromId() != nil {
+		t.Fatalf("unsigned send author %#v from %#v", msg.GetPostAuthor(), msg.GetFromId())
+	}
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, true, false); err != nil {
+		t.Fatal(err)
+	}
+	edited, err := svc.Edit(ctx, 1, ch.Id, 0, msg.GetId(), func(m *mtproto.Message) {
+		m.Message = "plain!"
+		m.PostAuthor = &wrapperspb.StringValue{Value: "Ada Lovelace"}
+		m.FromId = mtproto.MakePeerUser(1)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := edited.Updates[0].GetMessage_MESSAGE()
+	if got.GetMessage() != "plain!" || got.GetPostAuthor() != nil || got.GetFromId() != nil {
+		t.Fatalf("unsigned stayed author %#v from %#v", got.GetPostAuthor(), got.GetFromId())
+	}
+}
+
+func TestRewriteBodyKeepsSignature(t *testing.T) {
+	svc, ctx := newTest(t)
+	name := "Ada Lovelace"
+	prev := LookupPosterName
+	LookupPosterName = func(context.Context, int64) string { return name }
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	ch, in := signedChannel(t, svc, ctx)
+	msg := sendSigned(t, svc, ctx, ch.Id, "list", 10)
+	name = "Renamed"
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, false, false); err != nil {
+		t.Fatal(err)
+	}
+	body := &mtproto.Message{
+		Message:    "list!",
+		Date:       msg.GetDate(),
+		PostAuthor: &wrapperspb.StringValue{Value: "spoof"},
+		FromId:     mtproto.MakePeerUser(9),
+	}
+	rewritten, err := svc.RewriteBody(ctx, 1, ch.Id, 0, msg.GetId(), body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rewritten.Updates[0].GetMessage_MESSAGE()
+	if got.GetMessage() != "list!" || got.GetPostAuthor().GetValue() != "Ada Lovelace" || got.GetFromId().GetUserId() != 1 {
+		t.Fatalf("rewrite author %q from %d message %q", got.GetPostAuthor().GetValue(), got.GetFromId().GetUserId(), got.GetMessage())
+	}
+}
+
+func signedChannel(t *testing.T, svc *Service, ctx context.Context) (*mtproto.Chat, *mtproto.InputChannel) {
+	t.Helper()
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, true, false); err != nil {
+		t.Fatal(err)
+	}
+	return ch, in
+}
+
+func sendSigned(t *testing.T, svc *Service, ctx context.Context, channelID int64, text string, date int32) *mtproto.Message {
+	t.Helper()
+	sent, err := svc.Send(ctx, 1, channelID, 0, []Outgoing{{
+		RandomID: int64(date),
+		Message: &mtproto.Message{
+			Message:    text,
+			Date:       date,
+			PostAuthor: &wrapperspb.StringValue{Value: "spoof"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sent.Updates[0].GetMessage_MESSAGE()
+}
+
 func TestFormatPosterName(t *testing.T) {
 	if FormatPosterName("Ada", "Lovelace") != "Ada Lovelace" || FormatPosterName("Ada", "") != "Ada" || FormatPosterName("", "Lovelace") != "Lovelace" || FormatPosterName(" ", " ") != "" {
 		t.Fatalf("names %q %q %q %q", FormatPosterName("Ada", "Lovelace"), FormatPosterName("Ada", ""), FormatPosterName("", "Lovelace"), FormatPosterName(" ", " "))
