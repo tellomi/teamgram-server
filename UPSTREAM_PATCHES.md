@@ -15,6 +15,23 @@ Due rows live in the same `chatbox_doc` table (`sched:due`, rebuilt from `sched:
 | edit falls through to the scheduled copy | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
 | dispatcher | `app/bff/messages/internal/server/grpc/service/schedule_loop.go` |
 
+## Forward, reply, and deleteHistory revoke
+
+`messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own. `drop_media_captions` removes the caption and its entities from a photo or document and leaves the file. Plain text and a link-preview message keep their text.
+
+`reply_to.reply_to_peer_id` (a quote from another chat) used to drop the whole reply header, including `quote_text`. The header keeps the other peer, the message id, and the quote.
+
+`messages.deleteHistory(revoke=true)` only revoked messages still in the caller's box. After the caller had cleared the chat for themselves, the other side kept those messages. Revoke now deletes the other participant's copy of the dialog too, mapping through rows that are already `deleted=1`. If that row is gone and the caller has nothing left, the peer dialog is cleared.
+
+`messages.toggleNoForwards` on a private chat returned `PEER_ID_INVALID`. The pair flag is stored in `chatbox_doc`. Forwarding from that chat, or forwarding a message with `noforwards`, returns `CHAT_FORWARDS_RESTRICTED`.
+
+| Piece | File |
+| --- | --- |
+| drop_author, drop_media_captions, protected forward | `messages.forwardMessages_handler.go`, `reply_peer.go` |
+| quote in another chat | `reply_peer.go`, sendMessage / sendMedia / sendMultiMedia |
+| revoke after a self-only clear | `delete_user_history.go`, `deletehistory/plan.go` |
+| private noforwards | `messages.toggleNoForwards_handler.go`, `chatbox/protect.go` |
+
 ## Group reactions and pinned messages
 
 Basic-group reactions were stored, and `messages.getHistory` copied them onto the bubbles, but other members never received `updateMessageReactions` and `messages.getMessages` did not attach them. A group shares one message id. Each member now gets an update whose `chosen_order` is their own. The dialog unread-reaction counter moves for that group the same way it already did for a private chat.

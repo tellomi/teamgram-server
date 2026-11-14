@@ -99,6 +99,7 @@ type Book struct {
 	ids        msgIDMap
 	due        []dueRef
 	dueIndexed bool
+	protect    map[string]bool
 	now        func() time.Time
 }
 
@@ -123,6 +124,7 @@ func newBook(db docDB) *Book {
 		plain:     map[string]*plainDoc{},
 		transOff:  map[string]bool{},
 		tags:      map[int64]*tagDoc{},
+		protect:   map[string]bool{},
 		paid:      map[string][]*mtproto.MessageExtendedMedia{},
 		now:       time.Now,
 	}

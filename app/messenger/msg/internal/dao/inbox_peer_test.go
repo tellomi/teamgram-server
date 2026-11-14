@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestInboxMessagePeerPrivateChatIsTheSender(t *testing.T) {
@@ -29,6 +30,28 @@ func TestInboxMessagePeerGroupKeepsChatID(t *testing.T) {
 func TestInboxMessagePeerNil(t *testing.T) {
 	if inboxMessagePeer(717, nil) != nil {
 		t.Fatal("nil peer should stay nil")
+	}
+}
+
+func TestReceiverKeepsACrossChatReply(t *testing.T) {
+	header := &mtproto.MessageReplyHeader{
+		ReplyToMsgId:       15,
+		ReplyToMsgId_INT32: 15,
+		ReplyToPeerId:      mtproto.MakePeerUser(9),
+		Quote:              true,
+		QuoteText:          &wrapperspb.StringValue{Value: "hello"},
+	}
+	if !crossChatReply(header) {
+		t.Fatal("reply_to_peer_id should skip this-chat translation")
+	}
+	sameChat := &mtproto.MessageReplyHeader{ReplyToMsgId: 15, ReplyToMsgId_INT32: 15}
+	if crossChatReply(sameChat) {
+		t.Fatal("a reply in this chat still needs translation")
+	}
+	// A lookup of id 15 in the current chat would point at the wrong message.
+	// The receiver leaves the other peer and the quote alone.
+	if header.GetReplyToPeerId().GetUserId() != 9 || header.GetQuoteText().GetValue() != "hello" || header.GetReplyToMsgId() != 15 {
+		t.Fatalf("header rewritten %+v", header)
 	}
 }
 
