@@ -54,9 +54,12 @@ func ttlReply(result *mtproto.Bool, err error) (*mtproto.Bool, error) {
 
 // ValidAuthorizationTTLDays is the set official clients send. Anything else
 // is TTL_DAYS_INVALID and is not stored.
+// Android and iOS both offer 7 (one week) along with 30, 90, about six
+// months (180, 182 or 183) and 365. 548 and 730 stay accepted because
+// accounts already store those longer windows.
 func ValidAuthorizationTTLDays(days int32) bool {
 	switch days {
-	case 30, 90, 180, 182, 183, 365, 548, 730:
+	case 7, 30, 90, 180, 182, 183, 365, 548, 730:
 		return true
 	default:
 		return false
