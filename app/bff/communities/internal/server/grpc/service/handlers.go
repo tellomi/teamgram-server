@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 func (s *Service) CommunitiesCreate(ctx context.Context, in *mtproto.TLCommunitiesCreate) (*mtproto.Updates, error) {
@@ -27,7 +28,7 @@ func (s *Service) CommunitiesGetJoinedCommunities(ctx context.Context, _ *mtprot
 	if err != nil {
 		return nil, err
 	}
-	return s.svcCtx.Book.Joined(id), nil
+	return s.svcCtx.Book.Joined(id, s.channelIDs(ctx, id)...), nil
 }
 
 func (s *Service) CommunitiesTogglePeerLink(ctx context.Context, in *mtproto.TLCommunitiesTogglePeerLink) (*mtproto.Bool, error) {
@@ -58,7 +59,15 @@ func (s *Service) CommunitiesToggleCommunityCollapsedInDialogs(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	return s.svcCtx.Book.SetCollapsed(id, community, hash, in.GetCollapsed())
+	return s.svcCtx.Book.SetCollapsed(id, community, hash, in.GetCollapsed(), s.channelIDs(ctx, id)...)
+}
+
+func (s *Service) channelIDs(ctx context.Context, user int64) []int64 {
+	ids, err := channel.Shared().JoinedChannelIDs(ctx, user)
+	if err != nil {
+		return nil
+	}
+	return ids
 }
 
 func (s *Service) CommunitiesGetPeerLinkRequests(ctx context.Context, in *mtproto.TLCommunitiesGetPeerLinkRequests) (*mtproto.Communities_PeerLinkRequests, error) {
