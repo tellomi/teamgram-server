@@ -649,6 +649,17 @@ No new table. No new production switch.
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
 
+## Basic-group removal and phone-call revoke
+
+`messages.deleteChatUser` returned empty updates for iOS and Android, and posted `messageActionChatDeleteUser` only after the user was already left or kicked. The inbox walk skips those states, so the removed user never got the service message. The message is now written while they are still a normal member, including for official mobile clients. `revoke_history` still deletes their dialog.
+
+`messages.deletePhoneCallHistory` with `revoke` called `inbox.deleteMessagesToInbox` without `peer_type` and `peer_id`, and mixed every dialog's message ids into one list. The inbox delete only looks in `PEER_USER` or `PEER_CHAT`, so the other side kept the call log. Revoke now deletes each peer's copy separately.
+
+| Piece | File |
+| --- | --- |
+| service message before removal | `messages.deleteChatUser_handler.go` |
+| per-peer revoke | `msg.deletePhoneCallHistory_handler.go`, `outbox.go` `DeletePhoneCallHistory` |
+
 ## Business bot bar, quote text, and chat theme service messages
 
 `messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`. The overlay follows `businessBotRecipients`: a category matches only when the viewer really is a contact, a non-contact, an existing private chat, or a new private chat. `users` adds people unless `exclude_selected` is set, in which case those people are removed. `exclude_users` never sees the bar. A category whose lookup failed does not match.

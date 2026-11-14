@@ -12,6 +12,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 )
@@ -22,17 +23,17 @@ func (c *MsgCore) MsgDeletePhoneCallHistory(in *msg.TLMsgDeletePhoneCallHistory)
 	var (
 		pts, ptsCount int32
 		msgIdList     []int32
-		msgDataIdList []int64
 		err           error
 	)
 
-	if msgIdList, msgDataIdList, err = c.svcCtx.Dao.DeletePhoneCallHistory(c.ctx, in.UserId); err != nil {
+	var peers []dao.PhoneCallRevoke
+	if msgIdList, peers, err = c.svcCtx.Dao.DeletePhoneCallHistory(c.ctx, in.UserId); err != nil {
 		c.Logger.Errorf("DeleteMessages - %v", err)
 		return nil, err
 	}
 
-	pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.UserId, len(msgDataIdList))
-	ptsCount = int32(len(msgDataIdList))
+	pts = c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.UserId, len(msgIdList))
+	ptsCount = int32(len(msgIdList))
 
 	// Write user_pts_updates before RPC return to guarantee getDifference completeness
 	updateDelete := mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
@@ -51,12 +52,21 @@ func (c *MsgCore) MsgDeletePhoneCallHistory(in *msg.TLMsgDeletePhoneCallHistory)
 		})
 
 	if in.Revoke {
-		c.svcCtx.Dao.InboxClient.InboxDeleteMessagesToInbox(
-			c.ctx,
-			&inbox.TLInboxDeleteMessagesToInbox{
-				FromId: in.UserId,
-				Id:     msgDataIdList,
-			})
+		// One inbox delete per peer. An empty peer used to match neither
+		// PEER_USER nor PEER_CHAT, so the other side kept the call log.
+		for _, peer := range peers {
+			if peer.PeerID == 0 || len(peer.DataIDs) == 0 {
+				continue
+			}
+			c.svcCtx.Dao.InboxClient.InboxDeleteMessagesToInbox(
+				c.ctx,
+				&inbox.TLInboxDeleteMessagesToInbox{
+					FromId:   in.UserId,
+					PeerType: peer.PeerType,
+					PeerId:   peer.PeerID,
+					Id:       peer.DataIDs,
+				})
+		}
 	}
 
 	return mtproto.MakeTLMessagesAffectedFoundMessages(&mtproto.Messages_AffectedFoundMessages{
