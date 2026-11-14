@@ -101,13 +101,13 @@ func pollSend(peer *mtproto.InputPeer, randomID int64) *mtproto.TLMessagesSendMe
 		RandomId:    randomID,
 		Message:     "",
 		Media: mtproto.MakeTLInputMediaPoll(&mtproto.InputMedia{
-			Poll: &mtproto.Poll{
-				Question: "Pick",
+			Poll: mtproto.MakeTLPoll(&mtproto.Poll{
+				Question_TEXTWITHENTITIES: mtproto.MakeTLTextWithEntities(&mtproto.TextWithEntities{Text: "Pick"}).To_TextWithEntities(),
 				Answers: []*mtproto.PollAnswer{
 					mtproto.MakePollAnswerWithText("a", []byte("0")),
 					mtproto.MakePollAnswerWithText("b", []byte("1")),
 				},
-			},
+			}).To_Poll(),
 		}).To_InputMedia(),
 	}
 }
