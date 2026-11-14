@@ -17,14 +17,7 @@ func (c *DialogsCore) mergeChannelDialogs(list dialog.DialogExtList, folderID in
 	}
 	c.stampChannelFolders(extras)
 	if excludePinned {
-		kept := extras[:0]
-		for _, ext := range extras {
-			if ext.GetDialog().GetPinned() {
-				continue
-			}
-			kept = append(kept, ext)
-		}
-		extras = kept
+		extras = withoutPinnedDialogs(extras)
 	}
 	have := map[int64]bool{}
 	for _, ext := range extras {
@@ -117,6 +110,65 @@ func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 			ext.Order = row.order
 		}
 	}
+}
+
+func withoutPinnedDialogs(list dialog.DialogExtList) dialog.DialogExtList {
+	kept := list[:0]
+	for _, ext := range list {
+		if ext == nil || ext.GetDialog().GetPinned() {
+			continue
+		}
+		kept = append(kept, ext)
+	}
+	return kept
+}
+
+// applyChannelLiveRows copies the channel store onto dialogs-table rows.
+// The table top only moves forward, so after the newest post is deleted it
+// still names that id and getDialogs / getPinnedDialogs drop the chat. The
+// channel store has the live top. Pin rank and folder stay on the table row.
+func applyChannelLiveRows(stored, live dialog.DialogExtList) {
+	byID := map[int64]*dialog.DialogExt{}
+	for _, ext := range live {
+		peer := ext.GetDialog().GetPeer()
+		if peer == nil || peer.GetChannelId() == 0 {
+			continue
+		}
+		byID[peer.GetChannelId()] = ext
+	}
+	for _, ext := range stored {
+		d := ext.GetDialog()
+		if d == nil || d.GetPeer() == nil || d.GetPeer().GetChannelId() == 0 {
+			continue
+		}
+		src := byID[d.GetPeer().GetChannelId()]
+		if src == nil || src.GetDialog() == nil {
+			continue
+		}
+		s := src.GetDialog()
+		d.TopMessage = s.GetTopMessage()
+		d.ReadInboxMaxId = s.GetReadInboxMaxId()
+		d.ReadOutboxMaxId = s.GetReadOutboxMaxId()
+		d.UnreadCount = s.GetUnreadCount()
+		d.Pts = s.Pts
+		d.ViewForumAsMessages = s.GetViewForumAsMessages()
+		ext.Date = src.GetDate()
+		if !d.GetPinned() {
+			ext.Order = src.GetOrder()
+		}
+	}
+}
+
+func (c *DialogsCore) applyChannelLive(list dialog.DialogExtList) dialog.DialogExtList {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Plugin == nil || len(list) == 0 {
+		return list
+	}
+	live, err := c.svcCtx.Plugin.ListChannelDialogs(c.ctx, c.MD.UserId)
+	if err != nil || len(live) == 0 {
+		return list
+	}
+	applyChannelLiveRows(list, live)
+	return list
 }
 
 func keepFolder(list dialog.DialogExtList, folderID int32) dialog.DialogExtList {

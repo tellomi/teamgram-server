@@ -350,6 +350,13 @@ func (m DialogExtList) ApplyTopMessages(messages []*mtproto.Message) {
 			d.Date = int64(date)
 			continue
 		}
+		// No message was loaded. A dialog whose top id is 0 is an empty
+		// group or channel that stays in the list; its date is the one the
+		// channel or chat row already carried. A positive top whose message
+		// is missing drops the stale date so it cannot win the sort.
+		if dialogTopID(d) == 0 {
+			continue
+		}
 		d.Date = 0
 	}
 }
