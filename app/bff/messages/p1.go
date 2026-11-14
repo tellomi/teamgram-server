@@ -10,6 +10,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
+	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
@@ -17,11 +18,20 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // NewPolls serves messages.sendVote and the other poll RPCs.
-func NewPolls() *service.PollsService { return &service.PollsService{} }
+func NewPolls(c Config) *service.PollsService {
+	svc := &service.PollsService{
+		Chats: chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
+	}
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		svc.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
+	}
+	return svc
+}
 
 // NewWebPage serves messages.getWebPage and messages.getWebPagePreview.
 func NewWebPage(c Config) *service.WebPageService {

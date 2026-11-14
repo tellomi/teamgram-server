@@ -204,6 +204,29 @@ func channelHistoryTTLUpdate(channelID int64, period int32) *mtproto.Update {
 	}).To_Update()
 }
 
+// FanoutPoll pushes a per-viewer updateMessagePoll. The actor already has
+// the RPC result, so they are skipped.
+func (s *Service) FanoutPoll(ctx context.Context, actor, channelID int64, build func(viewer int64) *mtproto.Updates) {
+	h := s.hooks()
+	if h.Push == nil || build == nil || channelID == 0 {
+		return
+	}
+	parts, err := s.store.ListParticipants(ctx, channelID)
+	if err != nil {
+		return
+	}
+	for _, p := range parts {
+		if p.State != StateNormal || p.UserID == 0 || p.UserID == actor {
+			continue
+		}
+		ups := build(p.UserID)
+		if ups == nil {
+			continue
+		}
+		h.Push(ctx, p.UserID, nil, ups)
+	}
+}
+
 // fanoutUpdate pushes one non-pts update to current members. The actor's
 // requesting auth key is left out because that session already has the RPC result.
 func (s *Service) fanoutUpdate(ctx context.Context, actor, actorAuth, channelID int64, up *mtproto.Update) {

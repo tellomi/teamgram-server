@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/marmota/pkg/container2/linkedmap"
 	"github.com/teamgram/proto/mtproto"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -115,5 +116,11 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 			//}
 		})
 
+	for _, m := range rValues.Messages {
+		if m.GetPeerId() == nil {
+			continue
+		}
+		chatbox.Shared().ApplyPolls(c.ctx, c.MD.UserId, mtproto.FromPeer(m.GetPeerId()), []*mtproto.Message{m})
+	}
 	return rValues, nil
 }

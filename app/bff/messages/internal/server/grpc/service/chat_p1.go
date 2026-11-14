@@ -11,7 +11,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"google.golang.org/protobuf/proto"
 )
@@ -28,9 +30,20 @@ func selfID(ctx context.Context) (int64, int64) {
 // https://core.telegram.org/api/poll
 type PollsService struct {
 	mtproto.UnimplementedRPCPollsServer
+	// Push delivers updateMessagePoll to the other participants. Nil in tests.
+	Push interface {
+		SyncPushUpdates(ctx context.Context, in *sync.TLSyncPushUpdates) (*mtproto.Void, error)
+	}
+	// Chats lists basic-group members so each of them gets their own update.
+	Chats interface {
+		ChatGetChatParticipantIdList(ctx context.Context, in *chatpb.TLChatGetChatParticipantIdList) (*chatpb.Vector_Long, error)
+	}
 }
 
-func (PollsService) MessagesSendVote(ctx context.Context, in *mtproto.TLMessagesSendVote) (*mtproto.Updates, error) {
+func (s PollsService) MessagesSendVote(ctx context.Context, in *mtproto.TLMessagesSendVote) (*mtproto.Updates, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -45,10 +58,14 @@ func (PollsService) MessagesSendVote(ctx context.Context, in *mtproto.TLMessages
 		return nil, err
 	}
 	writePollBack(ctx, peer, in.GetMsgId(), pollID)
+	s.fanoutPoll(ctx, self, peer, in.GetMsgId(), pollID)
 	return ups, nil
 }
 
-func (PollsService) MessagesGetPollResults(ctx context.Context, in *mtproto.TLMessagesGetPollResults) (*mtproto.Updates, error) {
+func (s PollsService) MessagesGetPollResults(ctx context.Context, in *mtproto.TLMessagesGetPollResults) (*mtproto.Updates, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -62,6 +79,9 @@ func (PollsService) MessagesGetPollResults(ctx context.Context, in *mtproto.TLMe
 }
 
 func (PollsService) MessagesGetPollVotes(ctx context.Context, in *mtproto.TLMessagesGetPollVotes) (*mtproto.Messages_VotesList, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -78,7 +98,10 @@ func (PollsService) MessagesGetPollVotes(ctx context.Context, in *mtproto.TLMess
 	return chatbox.Shared().PollVotes(ctx, self, peer.PeerType, peer.PeerId, in.GetId(), pollID, in.GetOption(), offset, in.GetLimit())
 }
 
-func (PollsService) MessagesAddPollAnswer(ctx context.Context, in *mtproto.TLMessagesAddPollAnswer) (*mtproto.Updates, error) {
+func (s PollsService) MessagesAddPollAnswer(ctx context.Context, in *mtproto.TLMessagesAddPollAnswer) (*mtproto.Updates, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -93,10 +116,14 @@ func (PollsService) MessagesAddPollAnswer(ctx context.Context, in *mtproto.TLMes
 		return nil, err
 	}
 	writePollBack(ctx, peer, in.GetMsgId(), pollID)
+	s.fanoutPoll(ctx, self, peer, in.GetMsgId(), pollID)
 	return ups, nil
 }
 
-func (PollsService) MessagesDeletePollAnswer(ctx context.Context, in *mtproto.TLMessagesDeletePollAnswer) (*mtproto.Updates, error) {
+func (s PollsService) MessagesDeletePollAnswer(ctx context.Context, in *mtproto.TLMessagesDeletePollAnswer) (*mtproto.Updates, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -111,10 +138,14 @@ func (PollsService) MessagesDeletePollAnswer(ctx context.Context, in *mtproto.TL
 		return nil, err
 	}
 	writePollBack(ctx, peer, in.GetMsgId(), pollID)
+	s.fanoutPoll(ctx, self, peer, in.GetMsgId(), pollID)
 	return ups, nil
 }
 
 func (PollsService) MessagesGetUnreadPollVotes(ctx context.Context, in *mtproto.TLMessagesGetUnreadPollVotes) (*mtproto.Messages_Messages, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -141,6 +172,9 @@ func (PollsService) MessagesGetUnreadPollVotes(ctx context.Context, in *mtproto.
 }
 
 func (PollsService) MessagesReadPollVotes(ctx context.Context, in *mtproto.TLMessagesReadPollVotes) (*mtproto.Messages_AffectedHistory, error) {
+	if !chatbox.PollsEnabled() {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	self, _ := selfID(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
 	if peer == nil || !peer.IsUserOrChatOrChannel() {
@@ -154,6 +188,47 @@ func (PollsService) MessagesReadPollVotes(ctx context.Context, in *mtproto.TLMes
 		pts, _ = channelCard(ctx, self, peer.PeerId)
 	}
 	return chatbox.AffectedHistory(pts, 0), nil
+}
+
+// fanoutPoll pushes updateMessagePoll to the other participants.
+// Each user gets results in their own message id, with their own chosen bit.
+// The caller's RPC result already covers the requesting session.
+func (s PollsService) fanoutPoll(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32, pollID int64) {
+	if s.Push == nil || peer == nil {
+		return
+	}
+	if peer.IsChannel() {
+		channel.Shared().FanoutPoll(ctx, self, peer.PeerId, func(viewer int64) *mtproto.Updates {
+			ups, err := chatbox.Shared().PollUpdateFor(ctx, viewer, peer.PeerType, peer.PeerId, msgID, pollID)
+			if err != nil {
+				return nil
+			}
+			return ups
+		})
+		return
+	}
+	var ids []int64
+	switch {
+	case peer.IsUser() && peer.PeerId != 0 && peer.PeerId != self:
+		ids = []int64{peer.PeerId}
+	case peer.IsChat() && s.Chats != nil:
+		list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+		if err != nil || list == nil {
+			return
+		}
+		for _, id := range list.GetDatas() {
+			if id != self {
+				ids = append(ids, id)
+			}
+		}
+	}
+	for _, id := range ids {
+		ups, err := chatbox.Shared().PollUpdateFor(ctx, id, peer.PeerType, peer.PeerId, msgID, pollID)
+		if err != nil || ups == nil {
+			continue
+		}
+		_, _ = s.Push.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{UserId: id, Updates: ups})
+	}
 }
 
 func ensurePollID(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) (int64, error) {
