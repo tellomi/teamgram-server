@@ -57,12 +57,12 @@ type Features struct {
 	ProfileColorEmoji int64
 	Emoji             StoredEmojiStatus
 
-	SponsoredRestricted      bool
-	Antispam                 bool
-	Autotranslation          bool
+	SponsoredRestricted bool
+	Antispam            bool
+	Autotranslation     bool
 	// SignatureProfiles is channels.toggleSignatures profiles_enabled.
 	// Author names on posts stay on Channel.Signatures.
-	SignatureProfiles bool
+	SignatureProfiles        bool
 	BoostsUnrestrict         int32
 	PaidMessagesSet          bool
 	SendPaidMessagesStars    int64
@@ -81,6 +81,12 @@ type Features struct {
 	// Views is the per-post view counter. Seen is the user ids already
 	// counted, so messages.getMessagesViews increment is once per user.
 	Views map[int32]ViewRec
+	// CommentRoot maps a broadcast post id to the auto-forwarded message
+	// in the linked discussion group. CommentByRoot and CommentMsgRoot live
+	// on that group. They are written only when TELLOMI_CHANNEL_COMMENTS is on.
+	CommentRoot    map[int32]int32
+	CommentByRoot  map[int32]CommentLink
+	CommentMsgRoot map[int32]int32
 	// InboxReadAt is the unix time a member last advanced their inbox cursor.
 	// messages.getMessageReadParticipants uses it as the read date.
 	InboxReadAt map[int64]int32
@@ -90,6 +96,12 @@ type Features struct {
 type ViewRec struct {
 	Count int32
 	Seen  []int64
+}
+
+// CommentLink is the channel post a discussion-group root was forwarded from.
+type CommentLink struct {
+	ChannelID int64
+	MsgID     int32
 }
 
 // UsernameRec is one channel username.

@@ -129,7 +129,11 @@ func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
 	}
 	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
 		RandomID: 7,
-		Message:  &mtproto.Message{Message: "hello", Date: 10},
+		Message: &mtproto.Message{
+			Message:    "hello",
+			Date:       10,
+			PostAuthor: &wrapperspb.StringValue{Value: "spoof"},
+		},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +144,17 @@ func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
 	}
 	if msg.GetFromId().GetUserId() != 1 {
 		t.Fatalf("from_id = %#v", msg.GetFromId())
+	}
+
+	edited, err := svc.Edit(ctx, 1, ch.Id, 0, msg.GetId(), func(m *mtproto.Message) {
+		m.Message = "hello!"
+		m.PostAuthor = &wrapperspb.StringValue{Value: "edited-spoof"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := edited.Updates[0].GetMessage_MESSAGE().GetPostAuthor().GetValue(); got != "Ada Lovelace" {
+		t.Fatalf("edited post_author = %q", got)
 	}
 
 	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, false, false); err != nil {
@@ -154,6 +169,123 @@ func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
 	}
 	if plain.Updates[0].GetMessage_MESSAGE().GetPostAuthor() != nil {
 		t.Fatalf("unsigned post_author = %#v", plain.Updates[0].GetMessage_MESSAGE().GetPostAuthor())
+	}
+}
+
+func TestSignedPostIgnoresClientAuthorWhenNameIsEmpty(t *testing.T) {
+	svc, ctx := newTest(t)
+	prev := LookupPosterName
+	LookupPosterName = func(context.Context, int64) string { return "" }
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, true, false); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 7,
+		Message:  &mtproto.Message{Message: "hello", Date: 10, PostAuthor: &wrapperspb.StringValue{Value: "spoof"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := sent.Updates[0].GetMessage_MESSAGE()
+	if msg.GetPostAuthor() != nil {
+		t.Fatalf("empty name kept %q", msg.GetPostAuthor().GetValue())
+	}
+	if msg.GetFromId().GetUserId() != 1 {
+		t.Fatalf("from_id = %#v", msg.GetFromId())
+	}
+}
+
+func TestAdminRankReplacesNameAndEditKeepsOriginalAuthor(t *testing.T) {
+	svc, ctx := newTest(t)
+	prev := LookupPosterName
+	LookupPosterName = func(_ context.Context, userID int64) string {
+		switch userID {
+		case 1:
+			return FormatPosterName("Ada", "Lovelace")
+		case 2:
+			return FormatPosterName("Grace", "Hopper")
+		default:
+			return ""
+		}
+	}
+	t.Cleanup(func() { LookupPosterName = prev })
+
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{
+		PostMessages: true,
+		EditMessages: true,
+	}).To_ChatAdminRights()
+	if _, err := svc.EditAdmin(ctx, 1, 0, in, 2, rights, "Editor"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ToggleSignatures(ctx, 1, 0, in, true, false); err != nil {
+		t.Fatal(err)
+	}
+
+	sent, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{
+		RandomID: 9,
+		Message:  &mtproto.Message{Message: "desk", Date: 12, PostAuthor: &wrapperspb.StringValue{Value: "spoof"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := sent.Updates[0].GetMessage_MESSAGE()
+	if msg.GetPostAuthor().GetValue() != "Editor" {
+		t.Fatalf("rank signature = %q", msg.GetPostAuthor().GetValue())
+	}
+
+	byName, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
+		RandomID: 10,
+		Message: &mtproto.Message{
+			Message:    "named",
+			Date:       13,
+			PostAuthor: &wrapperspb.StringValue{Value: "spoof"},
+			FwdFrom: mtproto.MakeTLMessageFwdHeader(&mtproto.MessageFwdHeader{
+				PostAuthor: &wrapperspb.StringValue{Value: "Old Name"},
+				Date:       1,
+			}).To_MessageFwdHeader(),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fwd := byName.Updates[0].GetMessage_MESSAGE()
+	if fwd.GetPostAuthor().GetValue() != "Ada Lovelace" {
+		t.Fatalf("forwarder signature = %q", fwd.GetPostAuthor().GetValue())
+	}
+	if fwd.GetFwdFrom().GetPostAuthor().GetValue() != "Old Name" {
+		t.Fatalf("fwd_from.post_author = %q", fwd.GetFwdFrom().GetPostAuthor().GetValue())
+	}
+
+	edited, err := svc.Edit(ctx, 2, ch.Id, 0, fwd.GetId(), func(m *mtproto.Message) {
+		m.Message = "named!"
+		m.PostAuthor = &wrapperspb.StringValue{Value: "editor-spoof"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := edited.Updates[0].GetMessage_MESSAGE()
+	if got.GetPostAuthor().GetValue() != "Ada Lovelace" {
+		t.Fatalf("edit kept %q", got.GetPostAuthor().GetValue())
+	}
+	if got.GetFwdFrom().GetPostAuthor().GetValue() != "Old Name" {
+		t.Fatalf("edit fwd_from = %q", got.GetFwdFrom().GetPostAuthor().GetValue())
 	}
 }
 

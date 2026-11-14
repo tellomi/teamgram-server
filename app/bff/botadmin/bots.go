@@ -154,6 +154,21 @@ func Reset() {
 	mu.Unlock()
 }
 
+// IssuedAccessHash is the access_hash put on a bot created in this process.
+// Clients cache it from the user object these methods return.
+func IssuedAccessHash(id int64) (int64, bool) {
+	if id == 0 {
+		return 0, false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	b := w.bots[id]
+	if b == nil {
+		return 0, false
+	}
+	return b.hash, true
+}
+
 // UseUsers points username and bot lookups at the user service.
 func UseUsers(d Directory) {
 	mu.Lock()
