@@ -93,7 +93,10 @@ func (c *DialogsCore) MessagesReorderPinnedDialogs(in *mtproto.TLMessagesReorder
 						syncUpdates.PushChat(chats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 					},
 					func(channelIdList []int64) {
-						// TODO
+						if c.svcCtx.Plugin == nil || len(channelIdList) == 0 {
+							return
+						}
+						syncUpdates.PushChat(c.svcCtx.Plugin.GetChannelListByIdList(ctx, c.MD.UserId, channelIdList...)...)
 					})
 			}
 

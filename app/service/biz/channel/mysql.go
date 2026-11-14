@@ -467,6 +467,24 @@ func (s *mysqlStore) ReplaceMessageBody(ctx context.Context, channelID int64, id
 	return nil
 }
 
+func (s *mysqlStore) LatestLiveMessage(ctx context.Context, channelID int64, atOrBelow int32) (*StoredMessage, error) {
+	if atOrBelow <= 0 {
+		return nil, nil
+	}
+	var id, date, sender int64
+	err := s.db.QueryRowContext(ctx, `
+SELECT message_id, sender_user_id, date2 FROM channel_messages
+WHERE channel_id=? AND deleted=0 AND message_id<=?
+ORDER BY message_id DESC LIMIT 1`, channelID, atOrBelow).Scan(&id, &sender, &date)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &StoredMessage{ChannelID: channelID, ID: int32(id), SenderID: sender, Date: int32(date)}, nil
+}
+
 func (s *mysqlStore) GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error) {
 	row := s.db.QueryRowContext(ctx, messageSelect+` WHERE channel_id=? AND message_id=?`, channelID, id)
 	m, err := scanMessage(row)
