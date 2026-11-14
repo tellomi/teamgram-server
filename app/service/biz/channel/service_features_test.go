@@ -193,7 +193,7 @@ func TestTopicsReactionsPinsSearchSendAsPersonal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := posted(sent).Message_MESSAGE.Id
 	if _, err := svc.PinMessage(ctx, 1, 0, ch.Id, msgID, false); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestReactionChipOnHistoryAndDifference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := posted(sent).Message_MESSAGE.Id
 	react, err := svc.React(ctx, 1, ch.Id, msgID, []string{"👍"}, false)
 	if err != nil || len(react.Updates) == 0 {
 		t.Fatalf("react %#v %v", react, err)

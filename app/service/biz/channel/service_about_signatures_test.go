@@ -138,7 +138,7 @@ func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := sent.Updates[0].GetMessage_MESSAGE()
+	msg := posted(sent).GetMessage_MESSAGE()
 	if msg.GetPostAuthor().GetValue() != "Ada Lovelace" {
 		t.Fatalf("post_author = %q", msg.GetPostAuthor().GetValue())
 	}
@@ -153,7 +153,7 @@ func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := edited.Updates[0].GetMessage_MESSAGE().GetPostAuthor().GetValue(); got != "Ada Lovelace" {
+	if got := posted(edited).GetMessage_MESSAGE().GetPostAuthor().GetValue(); got != "Ada Lovelace" {
 		t.Fatalf("edited post_author = %q", got)
 	}
 
@@ -167,8 +167,8 @@ func TestSignedChannelPostSetsPostAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plain.Updates[0].GetMessage_MESSAGE().GetPostAuthor() != nil {
-		t.Fatalf("unsigned post_author = %#v", plain.Updates[0].GetMessage_MESSAGE().GetPostAuthor())
+	if posted(plain).GetMessage_MESSAGE().GetPostAuthor() != nil {
+		t.Fatalf("unsigned post_author = %#v", posted(plain).GetMessage_MESSAGE().GetPostAuthor())
 	}
 }
 
@@ -194,7 +194,7 @@ func TestSignedPostIgnoresClientAuthorWhenNameIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := sent.Updates[0].GetMessage_MESSAGE()
+	msg := posted(sent).GetMessage_MESSAGE()
 	if msg.GetPostAuthor() != nil {
 		t.Fatalf("empty name kept %q", msg.GetPostAuthor().GetValue())
 	}
@@ -245,7 +245,7 @@ func TestAdminRankReplacesNameAndEditKeepsOriginalAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := sent.Updates[0].GetMessage_MESSAGE()
+	msg := posted(sent).GetMessage_MESSAGE()
 	if msg.GetPostAuthor().GetValue() != "Editor" {
 		t.Fatalf("rank signature = %q", msg.GetPostAuthor().GetValue())
 	}
@@ -265,7 +265,7 @@ func TestAdminRankReplacesNameAndEditKeepsOriginalAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fwd := byName.Updates[0].GetMessage_MESSAGE()
+	fwd := posted(byName).GetMessage_MESSAGE()
 	if fwd.GetPostAuthor().GetValue() != "Ada Lovelace" {
 		t.Fatalf("forwarder signature = %q", fwd.GetPostAuthor().GetValue())
 	}
@@ -280,7 +280,7 @@ func TestAdminRankReplacesNameAndEditKeepsOriginalAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := edited.Updates[0].GetMessage_MESSAGE()
+	got := posted(edited).GetMessage_MESSAGE()
 	if got.GetPostAuthor().GetValue() != "Ada Lovelace" {
 		t.Fatalf("edit kept %q", got.GetPostAuthor().GetValue())
 	}
@@ -310,7 +310,7 @@ func TestEditKeepsSignatureAfterAuthorRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := edited.Updates[0].GetMessage_MESSAGE()
+	got := posted(edited).GetMessage_MESSAGE()
 	if got.GetMessage() != "hello!" || got.GetPostAuthor().GetValue() != "Ada Lovelace" || got.GetFromId().GetUserId() != 1 {
 		t.Fatalf("after rename message %q author %q from %d", got.GetMessage(), got.GetPostAuthor().GetValue(), got.GetFromId().GetUserId())
 	}
@@ -335,7 +335,7 @@ func TestEditKeepsSignatureAfterSignaturesTurnedOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := edited.Updates[0].GetMessage_MESSAGE()
+	got := posted(edited).GetMessage_MESSAGE()
 	if got.GetPostAuthor().GetValue() != "Ada Lovelace" || got.GetFromId().GetUserId() != 1 {
 		t.Fatalf("signatures off then edit: author %q from %#v", got.GetPostAuthor().GetValue(), got.GetFromId())
 	}
@@ -360,7 +360,7 @@ func TestEditLeavesUnsignedPostUnsignedAfterSignaturesTurnedOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := sent.Updates[0].GetMessage_MESSAGE()
+	msg := posted(sent).GetMessage_MESSAGE()
 	if msg.GetPostAuthor() != nil || msg.GetFromId() != nil {
 		t.Fatalf("unsigned send author %#v from %#v", msg.GetPostAuthor(), msg.GetFromId())
 	}
@@ -375,7 +375,7 @@ func TestEditLeavesUnsignedPostUnsignedAfterSignaturesTurnedOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := edited.Updates[0].GetMessage_MESSAGE()
+	got := posted(edited).GetMessage_MESSAGE()
 	if got.GetMessage() != "plain!" || got.GetPostAuthor() != nil || got.GetFromId() != nil {
 		t.Fatalf("unsigned stayed author %#v from %#v", got.GetPostAuthor(), got.GetFromId())
 	}
@@ -404,7 +404,7 @@ func TestRewriteBodyKeepsSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := rewritten.Updates[0].GetMessage_MESSAGE()
+	got := posted(rewritten).GetMessage_MESSAGE()
 	if got.GetMessage() != "list!" || got.GetPostAuthor().GetValue() != "Ada Lovelace" || got.GetFromId().GetUserId() != 1 {
 		t.Fatalf("rewrite author %q from %d message %q", got.GetPostAuthor().GetValue(), got.GetFromId().GetUserId(), got.GetMessage())
 	}
@@ -437,7 +437,7 @@ func sendSigned(t *testing.T, svc *Service, ctx context.Context, channelID int64
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sent.Updates[0].GetMessage_MESSAGE()
+	return posted(sent).GetMessage_MESSAGE()
 }
 
 func TestFormatPosterName(t *testing.T) {

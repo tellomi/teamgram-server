@@ -76,7 +76,7 @@ func TestVisibleMessageHidesPrivatePosts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := posted(sent).Message_MESSAGE.Id
 	if _, ok, err := svc.VisibleMessage(ctx, 1, ch.Id, msgID); err != nil || !ok {
 		t.Fatalf("creator ok=%v err=%v", ok, err)
 	}

@@ -21,6 +21,23 @@ func input(chID, hash int64) *mtproto.InputChannel {
 	}).To_InputChannel()
 }
 
+// posted is the updateNewChannelMessage inside a send result. The sender's
+// RPC result also carries updateMessageID ahead of that update.
+func posted(ups *mtproto.Updates) *mtproto.Update {
+	if ups == nil {
+		return &mtproto.Update{}
+	}
+	for _, u := range ups.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+			return u
+		}
+	}
+	if len(ups.GetUpdates()) > 0 {
+		return ups.GetUpdates()[0]
+	}
+	return &mtproto.Update{}
+}
+
 func TestCreateBroadcastAndSupergroup(t *testing.T) {
 	svc, ctx := newTest(t)
 	up, err := svc.Create(ctx, CreateRequest{CreatorID: 10, Title: "News", Broadcast: true, About: "hello"})
@@ -170,12 +187,12 @@ func TestMessagesPtsReadAndDifference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sent.Updates[0].Message_MESSAGE.Id != again.Updates[0].Message_MESSAGE.Id {
+	if posted(sent).Message_MESSAGE.Id != posted(again).Message_MESSAGE.Id {
 		t.Fatal("random id was not idempotent")
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
-	if sent.Updates[0].Message_MESSAGE.Post == false || sent.Updates[0].Message_MESSAGE.FromId != nil {
-		t.Fatalf("broadcast post flags = %#v", sent.Updates[0].Message_MESSAGE)
+	msgID := posted(sent).Message_MESSAGE.Id
+	if posted(sent).Message_MESSAGE.Post == false || posted(sent).Message_MESSAGE.FromId != nil {
+		t.Fatalf("broadcast post flags = %#v", posted(sent).Message_MESSAGE)
 	}
 
 	edited, err := svc.Edit(ctx, 1, ch.Id, 0, msgID, func(m *mtproto.Message) {

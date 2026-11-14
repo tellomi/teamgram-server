@@ -22,7 +22,7 @@ func TestBroadcastViewsCountOncePerUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := posted(sent).GetMessage_MESSAGE().GetId()
 
 	first, err := svc.MessageViews(ctx, 2, ch.Id, []int32{msgID, 999}, true)
 	if err != nil || len(first) != 2 || first[0].GetViews().GetValue() != 2 || first[1].GetViews() != nil {
@@ -61,7 +61,7 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := posted(sent).GetMessage_MESSAGE().GetId()
 
 	caption, err := svc.MessageEditData(ctx, 2, ch.Id, msgID)
 	if err != nil || !caption {
@@ -77,7 +77,7 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plainID := plain.Updates[0].GetMessage_MESSAGE().GetId()
+	plainID := posted(plain).GetMessage_MESSAGE().GetId()
 	caption, err = svc.MessageEditData(ctx, 2, ch.Id, plainID)
 	if err != nil || caption {
 		t.Fatalf("text caption %v %v", caption, err)
@@ -96,7 +96,7 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mentionID := mentioned.Updates[0].GetMessage_MESSAGE().GetId()
+	mentionID := posted(mentioned).GetMessage_MESSAGE().GetId()
 	reply, err := svc.Send(ctx, 3, ch.Id, 0, []Outgoing{{RandomID: 11, Message: &mtproto.Message{
 		Message: "re",
 		Date:    23,
@@ -105,7 +105,7 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replyID := reply.Updates[0].GetMessage_MESSAGE().GetId()
+	replyID := posted(reply).GetMessage_MESSAGE().GetId()
 
 	unread, err := svc.UnreadMentions(ctx, 1, ch.Id, 0, 0, 20, 0, 0)
 	if err != nil || unread.GetCount() != 1 || unread.Messages[0].GetId() != mentionID {
@@ -160,7 +160,7 @@ func TestForwardedPostViewsFollowTheOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postID := post.Updates[0].GetMessage_MESSAGE().GetId()
+	postID := posted(post).GetMessage_MESSAGE().GetId()
 
 	room := megagroup(t, svc, ctx, "Talk")
 	in := inCh(room)
@@ -180,7 +180,7 @@ func TestForwardedPostViewsFollowTheOriginal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	localID := posted(sent).GetMessage_MESSAGE().GetId()
 	got, err := svc.MessageViews(ctx, 4, room.Id, []int32{localID}, true)
 	if err != nil || got[0].GetViews().GetValue() != 2 {
 		t.Fatalf("forward views %+v %v", got, err)

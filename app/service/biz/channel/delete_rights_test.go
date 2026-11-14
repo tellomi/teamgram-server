@@ -25,7 +25,7 @@ func TestDeleteMessagesRights(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creatorMsg := sent.Updates[0].Message_MESSAGE.Id
+	creatorMsg := posted(sent).Message_MESSAGE.Id
 	if _, _, err := svc.Delete(ctx, 2, ch.Id, 0, []int32{creatorMsg}); status.Convert(err).Message() != "MESSAGE_DELETE_FORBIDDEN" {
 		t.Fatalf("member delete: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestDeleteMessagesRights(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownID := own.Updates[0].Message_MESSAGE.Id
+	ownID := posted(own).Message_MESSAGE.Id
 	if _, count, err := svc.Delete(ctx, 2, ch.Id, 0, []int32{ownID}); err != nil || count != 1 {
 		t.Fatalf("own delete count=%d err=%v", count, err)
 	}
@@ -68,7 +68,7 @@ func TestDeleteMessagesRights(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.Delete(ctx, 2, news.Chats[0].Id, 0, []int32{post.Updates[0].Message_MESSAGE.Id}); status.Convert(err).Message() != "MESSAGE_DELETE_FORBIDDEN" {
+	if _, _, err := svc.Delete(ctx, 2, news.Chats[0].Id, 0, []int32{posted(post).Message_MESSAGE.Id}); status.Convert(err).Message() != "MESSAGE_DELETE_FORBIDDEN" {
 		t.Fatalf("subscriber delete: %v", err)
 	}
 	if _, _, err := svc.Delete(ctx, 2, ch.Id, 0, []int32{404}); err != nil {

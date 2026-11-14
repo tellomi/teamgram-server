@@ -101,6 +101,13 @@ func (s *Service) GetAdminLog(ctx context.Context, self int64, in *mtproto.Input
 		if q != "" && !strings.Contains(strings.ToLower(action.String()), q) {
 			continue
 		}
+		// channelAdminLogEventActionChangePhoto requires both photos.
+		// A nil photo panics in the TL encoder, so getAdminLog never returns
+		// and the recent-actions screen stays open forever.
+		if action.GetPredicateName() == mtproto.Predicate_channelAdminLogEventActionChangePhoto {
+			action.PrevPhoto = durablePhoto(action.GetPrevPhoto())
+			action.NewPhoto = durablePhoto(action.GetNewPhoto())
+		}
 		events = append(events, mtproto.MakeTLChannelAdminLogEvent(&mtproto.ChannelAdminLogEvent{
 			Id:     ev.ID,
 			Date:   ev.Date,
@@ -2038,16 +2045,20 @@ func (s *Service) ApplyPhoto(ctx context.Context, self, actorAuth int64, in *mtp
 	if !s.canChangeInfo(ch, p) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
+	prevPhoto := photoEmpty(ch.PhotoID)
 	var action *mtproto.MessageAction
+	var newPhoto *mtproto.Photo
 	if photoID == 0 {
 		ch.PhotoID = 0
+		newPhoto = photoEmpty(0)
 		action = mtproto.MakeMessageActionChatDeletePhoto()
 	} else {
 		ch.PhotoID = photoID
 		if photo == nil {
-			photo = mtproto.MakeTLPhotoEmpty(&mtproto.Photo{Id: photoID}).To_Photo()
+			photo = photoEmpty(photoID)
 		}
-		action = mtproto.MakeMessageActionChatEditPhoto(photo)
+		newPhoto = durablePhoto(photo)
+		action = mtproto.MakeMessageActionChatEditPhoto(newPhoto)
 	}
 	ch.Version++
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
@@ -2058,7 +2069,42 @@ func (s *Service) ApplyPhoto(ctx context.Context, self, actorAuth int64, in *mtp
 		return nil, err
 	}
 	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionChangePhoto(&mtproto.ChannelAdminLogEventAction{
-		NewPhoto: photo,
+		PrevPhoto: prevPhoto,
+		NewPhoto:  newPhoto,
 	}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, self, actorAuth, ch.ID, KindNew)
+}
+
+// photoEmpty is a photo the TL encoder can write. photo is not optional on
+// channelAdminLogEventActionChangePhoto.
+func photoEmpty(id int64) *mtproto.Photo {
+	return mtproto.MakeTLPhotoEmpty(&mtproto.Photo{Id: id}).To_Photo()
+}
+
+// durablePhoto keeps a photo the layer-232 encoder can write. A nil photo,
+// a photo with no constructor, or a size with no constructor used to panic
+// inside channels.getAdminLog and the RPC never returned.
+func durablePhoto(p *mtproto.Photo) *mtproto.Photo {
+	if p == nil {
+		return photoEmpty(0)
+	}
+	id := p.GetId()
+	switch p.GetPredicateName() {
+	case mtproto.Predicate_photoEmpty:
+		return p
+	case mtproto.Predicate_photo:
+		for _, sz := range p.GetSizes() {
+			if sz == nil || sz.GetPredicateName() == "" {
+				return photoEmpty(id)
+			}
+		}
+		for _, sz := range p.GetVideoSizes() {
+			if sz == nil || sz.GetPredicateName() == "" {
+				return photoEmpty(id)
+			}
+		}
+		return p
+	default:
+		return photoEmpty(id)
+	}
 }

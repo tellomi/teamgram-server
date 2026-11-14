@@ -55,7 +55,7 @@ func TestMegagroupSendRightsPinAndTopics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := posted(sent).GetMessage_MESSAGE().GetId()
 	if _, err = svc.PinMessage(ctx, 2, 0, ch.Id, msgID, false); err != nil {
 		t.Fatalf("member pin when allowed: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestHiddenPrehistoryOnReadPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	oldID := posted(sent).GetMessage_MESSAGE().GetId()
 	reply, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{RandomID: 2, Message: &mtproto.Message{
 		Message: "old reply", Date: oldDate,
 		ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{ReplyToMsgId: oldID}).To_MessageReplyHeader(),
@@ -134,7 +134,7 @@ func TestHiddenPrehistoryOnReadPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replyID := reply.Updates[0].GetMessage_MESSAGE().GetId()
+	replyID := posted(reply).GetMessage_MESSAGE().GetId()
 	_, _ = svc.Invite(ctx, 1, 0, in, []int64{2}, nil)
 	if _, err = svc.TogglePreHistory(ctx, 1, 0, in, true); err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestHiddenPrehistoryOnReadPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	freshID := fresh.Updates[0].GetMessage_MESSAGE().GetId()
+	freshID := posted(fresh).GetMessage_MESSAGE().GetId()
 
 	found, err := svc.SearchInChannel(ctx, 2, ch.Id, ChannelSearch{Q: "secret", Limit: 20})
 	if err != nil {

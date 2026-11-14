@@ -31,8 +31,8 @@ func TestDeleteLatestMessageKeepsPreviousDialogTop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	olderID := first.Updates[0].GetMessage_MESSAGE().GetId()
-	newerID := second.Updates[0].GetMessage_MESSAGE().GetId()
+	olderID := posted(first).GetMessage_MESSAGE().GetId()
+	newerID := posted(second).GetMessage_MESSAGE().GetId()
 	if _, _, err := svc.Delete(ctx, 1, ch.Id, 0, []int32{newerID}); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestDeleteLatestMessageKeepsPreviousDialogTop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if third.Updates[0].GetMessage_MESSAGE().GetId() == newerID {
+	if posted(third).GetMessage_MESSAGE().GetId() == newerID {
 		t.Fatal("deleted channel message id was reused")
 	}
 	for _, userID := range []int64{1, 2} {
@@ -65,7 +65,7 @@ func TestDeleteLatestMessageKeepsPreviousDialogTop(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(rows) != 1 || rows[0].TopMessage != third.Updates[0].GetMessage_MESSAGE().GetId() {
+		if len(rows) != 1 || rows[0].TopMessage != posted(third).GetMessage_MESSAGE().GetId() {
 			t.Fatalf("user %d dialogs %+v", userID, rows)
 		}
 	}
@@ -121,8 +121,8 @@ func TestDeleteLatestBroadcastPostKeepsPreviousDialogTop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	olderID := first.Updates[0].GetMessage_MESSAGE().GetId()
-	newerID := second.Updates[0].GetMessage_MESSAGE().GetId()
+	olderID := posted(first).GetMessage_MESSAGE().GetId()
+	newerID := posted(second).GetMessage_MESSAGE().GetId()
 	if _, _, err := svc.Delete(ctx, 1, ch.Id, 0, []int32{newerID}); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestDeleteMiddleMessageKeepsNewestDialogTop(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ids = append(ids, sent.Updates[0].GetMessage_MESSAGE().GetId())
+		ids = append(ids, posted(sent).GetMessage_MESSAGE().GetId())
 	}
 	if _, _, err := svc.Delete(ctx, 1, ch.Id, 0, []int32{ids[1]}); err != nil {
 		t.Fatal(err)

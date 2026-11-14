@@ -28,7 +28,7 @@ func TestMonoforumAuthorAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := posted(sent).GetMessage_MESSAGE().GetId()
 	sender, err := svc.MonoforumAuthor(ctx, 10, in, msgID)
 	if err != nil || sender != 10 {
 		t.Fatalf("author %d %v", sender, err)

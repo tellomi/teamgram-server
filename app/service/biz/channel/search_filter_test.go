@@ -44,7 +44,7 @@ func TestChannelSearchFilterDateAndTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootID := root.Updates[0].GetMessage_MESSAGE().GetId()
+	rootID := posted(root).GetMessage_MESSAGE().GetId()
 	reply := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
 		ReplyToMsgId: rootID,
 	}).To_MessageReplyHeader()

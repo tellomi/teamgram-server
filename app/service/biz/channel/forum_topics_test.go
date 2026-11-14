@@ -45,7 +45,7 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	insideID := inside.Updates[0].GetMessage_MESSAGE().GetId()
+	insideID := posted(inside).GetMessage_MESSAGE().GetId()
 	outside, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{
 		RandomID: 12,
 		Message:  &mtproto.Message{Message: "outside", Date: 11},
@@ -53,7 +53,7 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outsideID := outside.Updates[0].GetMessage_MESSAGE().GetId()
+	outsideID := posted(outside).GetMessage_MESSAGE().GetId()
 
 	if _, _, err := svc.DeleteTopicHistory(ctx, 1, 0, ch.Id, 999999); err != mtproto.ErrTopicIdInvalid {
 		t.Fatalf("unknown topic: %v", err)
@@ -145,7 +145,7 @@ func TestReorderPinnedTopicsAndUnpinAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := posted(sent).GetMessage_MESSAGE().GetId()
 	if _, err := svc.PinMessage(ctx, 1, 0, ch.Id, msgID, false); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestDeleteTopicEmitsChannelMessageDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	insideID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	insideID := posted(sent).GetMessage_MESSAGE().GetId()
 	if _, _, err := svc.DeleteTopicHistory(ctx, 1, 0, ch.Id, hello.ID); err != nil {
 		t.Fatal(err)
 	}

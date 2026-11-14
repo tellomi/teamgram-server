@@ -17,7 +17,7 @@ func TestMegagroupReactionListAndBroadcastForbidden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := posted(sent).Message_MESSAGE.Id
 	if _, err := svc.React(ctx, 1, ch.Id, msgID, []string{"👍"}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestMegagroupReactionListAndBroadcastForbidden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postID := post.Updates[0].Message_MESSAGE.Id
+	postID := posted(post).Message_MESSAGE.Id
 	if _, err := svc.React(ctx, 1, news.Chats[0].Id, postID, []string{"👍"}, false); err != nil {
 		t.Fatal(err)
 	}

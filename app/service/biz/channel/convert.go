@@ -390,6 +390,21 @@ func newMessageUpdate(msg *mtproto.Message, pts, count int32) *mtproto.Update {
 	}).To_Update()
 }
 
+// senderMessageID is updateMessageID for the device that sent the message.
+// Private chats and basic groups already return it from MakeReplyUpdates.
+// Android matches the pending bubble by random_id before it applies
+// updateNewChannelMessage, so this update has to come first and only on the
+// sender's RPC result. A zero random_id is a service message, not a client send.
+func senderMessageID(msg *mtproto.Message, randomID int64) *mtproto.Update {
+	if msg == nil || msg.GetId() == 0 || randomID == 0 {
+		return nil
+	}
+	return mtproto.MakeTLUpdateMessageID(&mtproto.Update{
+		Id_INT32: msg.GetId(),
+		RandomId: randomID,
+	}).To_Update()
+}
+
 func editMessageUpdate(msg *mtproto.Message, pts, count int32) *mtproto.Update {
 	return mtproto.MakeTLUpdateEditChannelMessage(&mtproto.Update{
 		Message_MESSAGE: msg,

@@ -17,7 +17,7 @@ func TestUnreadReactionsTTLAndPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := posted(sent).GetMessage_MESSAGE().GetId()
 	if _, err := svc.React(ctx, 2, ch.Id, msgID, []string{"👍"}, false); err != nil {
 		t.Fatal(err)
 	}

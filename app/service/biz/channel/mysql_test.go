@@ -39,7 +39,7 @@ func TestMySQLRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hist.Pts < sent.Updates[0].GetPts_INT32() || hist.Count < 2 {
+	if hist.Pts < posted(sent).GetPts_INT32() || hist.Count < 2 {
 		t.Fatalf("reopened history pts=%d count=%d", hist.Pts, hist.Count)
 	}
 	diff, err := reopened.Difference(ctx, 9001, in, 0, 50, false)

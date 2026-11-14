@@ -35,10 +35,10 @@ func TestChannelCommentsMirrorAndGuestReply(t *testing.T) {
 			Date:          10,
 		},
 	}})
-	if err != nil || len(sent.Updates) == 0 || sent.Updates[0].GetMessage_MESSAGE() == nil {
+	if err != nil || len(sent.Updates) == 0 || posted(sent).GetMessage_MESSAGE() == nil {
 		t.Fatalf("post %#v %v", sent, err)
 	}
-	post := sent.Updates[0].GetMessage_MESSAGE()
+	post := posted(sent).GetMessage_MESSAGE()
 	if err := post.Encode(mtproto.NewEncodeBuf(4096), 232); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestChannelCommentBansFanoutAndReplyChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	postID := posted(sent).GetMessage_MESSAGE().GetId()
 	disc, err := svc.DiscussionMessage(ctx, 1, channelChat.Id, postID)
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestChannelCommentBansFanoutAndReplyChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := text.Updates[0].GetMessage_MESSAGE()
+	first := posted(text).GetMessage_MESSAGE()
 	if first.GetReplyTo().GetReplyToMsgId() != root.GetId() || first.GetReplyTo().GetReplyToTopId().GetValue() != root.GetId() {
 		t.Fatalf("reply to the post %#v", first.GetReplyTo())
 	}
@@ -289,7 +289,7 @@ func TestChannelCommentBansFanoutAndReplyChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := reply.Updates[0].GetMessage_MESSAGE()
+	second := posted(reply).GetMessage_MESSAGE()
 	if second.GetReplyTo().GetReplyToMsgId() != first.GetId() || second.GetReplyTo().GetReplyToTopId().GetValue() != root.GetId() {
 		t.Fatalf("reply chain %#v", second.GetReplyTo())
 	}
@@ -337,7 +337,7 @@ func TestChannelCommentsDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	post := sent.Updates[0].GetMessage_MESSAGE()
+	post := posted(sent).GetMessage_MESSAGE()
 	if post.GetReplies() != nil {
 		t.Fatalf("flag off still set replies %#v", post.GetReplies())
 	}

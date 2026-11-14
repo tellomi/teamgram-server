@@ -462,10 +462,13 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 				return nil, err
 			}
 			if handled {
+				if idUp := senderMessageID(upd.GetMessage_MESSAGE(), item.RandomID); idUp != nil {
+					ups = append(ups, idUp)
+				}
 				ups = append(ups, upd)
 				if groupID != 0 && groupID != ch.ID {
 					extraChats = append(extraChats, groupID)
-				} else {
+				} else if upd != nil {
 					emitUps = append(emitUps, upd)
 				}
 				continue
@@ -489,6 +492,9 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 			return nil, err
 		}
 		upd := newMessageUpdate(viewMessage(body, stored.SenderID, sender), pts, 1)
+		if idUp := senderMessageID(upd.GetMessage_MESSAGE(), item.RandomID); idUp != nil {
+			ups = append(ups, idUp)
+		}
 		ups = append(ups, upd)
 		emitUps = append(emitUps, upd)
 	}
