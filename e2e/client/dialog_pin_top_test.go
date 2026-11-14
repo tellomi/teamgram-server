@@ -62,6 +62,12 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 		}
 	}
 
+	// Creating the channel and deleting its latest message takes longer than
+	// the online record. Sync only pushes to sessions still in that list, so
+	// the other login has to touch the server immediately before the pin.
+	if _, _, _, err = other.State(ctx); err != nil {
+		t.Fatal(err)
+	}
 	invokeOK(t, a, &mtproto.TLMessagesToggleDialogPin{
 		Constructor: mtproto.CRC32_messages_toggleDialogPin,
 		Pinned:      true,
