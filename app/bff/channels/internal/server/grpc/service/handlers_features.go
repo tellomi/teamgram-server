@@ -37,6 +37,39 @@ func (s *Service) ChannelsGetAdminLog(ctx context.Context, in *mtproto.TLChannel
 	return channel.Shared().GetAdminLog(ctx, s.md(ctx).GetUserId(), in.GetChannel(), in.GetQ(), in.GetEventsFilter(), admins, in.GetMaxId(), in.GetMinId(), in.GetLimit())
 }
 
+func init() {
+	channel.ResolveGroupStickerSet = lookupGroupStickerSet
+}
+
+func lookupGroupStickerSet(in *mtproto.InputStickerSet) (channel.StickerSetRec, int64, error) {
+	if in == nil || in.GetPredicateName() == mtproto.Predicate_inputStickerSetEmpty || in.GetConstructor() == mtproto.CRC32_inputStickerSetEmpty {
+		return channel.StickerSetRec{}, 0, nil
+	}
+	pack, err := catalog.Must().ResolvePack(in)
+	if err != nil {
+		return channel.StickerSetRec{}, 0, err
+	}
+	summary := pack.Summary()
+	if summary == nil || summary.GetId() == 0 {
+		return channel.StickerSetRec{}, 0, mtproto.ErrStickersetInvalid
+	}
+	return channel.StickerSetRec{
+		ID:         summary.GetId(),
+		AccessHash: summary.GetAccessHash(),
+		Title:      summary.GetTitle(),
+		ShortName:  summary.GetShortName(),
+		Count:      summary.GetCount(),
+		Hash:       summary.GetHash(),
+		Official:   summary.GetOfficial(),
+		Masks:      summary.GetMasks(),
+		Animated:   summary.GetAnimated(),
+		Videos:     summary.GetVideos(),
+		Emojis:     summary.GetEmojis(),
+		TextColor:  summary.GetTextColor(),
+		ThumbID:    summary.GetThumbDocumentId().GetValue(),
+	}, pack.Owner, nil
+}
+
 func (s *Service) ChannelsSetStickers(ctx context.Context, in *mtproto.TLChannelsSetStickers) (*mtproto.Bool, error) {
 	return channel.Shared().SetStickers(ctx, s.md(ctx).GetUserId(), in.GetChannel(), in.GetStickerset())
 }

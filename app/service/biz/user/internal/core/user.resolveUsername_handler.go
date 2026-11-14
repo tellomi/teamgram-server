@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -27,7 +28,6 @@ import (
 // user.resolveUsername username:string = Peer;
 func (c *UserCore) UserResolveUsername(in *user.TLUserResolveUsername) (*mtproto.Peer, error) {
 	var (
-		peer     *mtproto.Peer
 		err      error
 		username = in.Username
 	)
@@ -54,16 +54,26 @@ func (c *UserCore) UserResolveUsername(in *user.TLUserResolveUsername) (*mtproto
 		return nil, err
 	}
 
-	switch usernameDO.PeerType {
-	case mtproto.PEER_USER:
-		peer = mtproto.MakePeerUser(usernameDO.PeerId)
-	case mtproto.PEER_CHANNEL:
-		peer = mtproto.MakePeerChannel(usernameDO.PeerId)
-	default:
-		err = mtproto.ErrUsernameNotOccupied
+	peer, err := peerFromUsernameRow(usernameDO)
+	if err != nil {
 		c.Logger.Errorf("username.resolveUsername - error: %v", err)
 		return nil, err
 	}
-
 	return peer, nil
+}
+
+// peerFromUsernameRow is contacts.resolveUsername's table lookup.
+// A deactivated or deleted name stays owned, but it does not open.
+func peerFromUsernameRow(do *dataobject.UsernameDO) (*mtproto.Peer, error) {
+	if do == nil || do.Deleted || !do.Active {
+		return nil, mtproto.ErrUsernameNotOccupied
+	}
+	switch do.PeerType {
+	case mtproto.PEER_USER:
+		return mtproto.MakePeerUser(do.PeerId), nil
+	case mtproto.PEER_CHANNEL:
+		return mtproto.MakePeerChannel(do.PeerId), nil
+	default:
+		return nil, mtproto.ErrUsernameNotOccupied
+	}
 }

@@ -44,6 +44,24 @@ func TestCalendarDaysAndPartial(t *testing.T) {
 	if err != nil || kind.Type != mtproto.MEDIA_PHOTOVIDEO || kind.Pinned {
 		t.Fatalf("%#v %v", kind, err)
 	}
+	for _, filter := range []*mtproto.MessagesFilter{
+		mtproto.MakeTLInputMessagesFilterPhotos(nil).To_MessagesFilter(),
+		mtproto.MakeTLInputMessagesFilterVideo(nil).To_MessagesFilter(),
+		mtproto.MakeTLInputMessagesFilterDocument(nil).To_MessagesFilter(),
+		mtproto.MakeTLInputMessagesFilterMusic(nil).To_MessagesFilter(),
+		mtproto.MakeTLInputMessagesFilterVoice(nil).To_MessagesFilter(),
+		mtproto.MakeTLInputMessagesFilterGif(nil).To_MessagesFilter(),
+		mtproto.MakeTLInputMessagesFilterUrl(nil).To_MessagesFilter(),
+		{Constructor: mtproto.CRC32_inputMessagesFilterPhotos},
+	} {
+		if _, err := MediaFor(filter); err != nil {
+			t.Fatalf("%s: %v", filter.GetPredicateName(), err)
+		}
+	}
+	voice, err := MediaFor(mtproto.MakeTLInputMessagesFilterVoice(nil).To_MessagesFilter())
+	if err != nil || voice.Narrow != NarrowVoice || voice.Type != mtproto.MEDIA_AUDIO {
+		t.Fatalf("voice %#v %v", voice, err)
+	}
 }
 
 func TestPositionsAndLiveAndSent(t *testing.T) {

@@ -128,8 +128,17 @@ const (
 )
 
 func FromMessagesFilter(filter *MessagesFilter) MessagesFilterType {
+	if filter == nil {
+		return FilterEmpty
+	}
+	name := filter.PredicateName
+	if name == "" {
+		if n, ok := clazzIdNameRegisters2[int32(filter.Constructor)]; ok {
+			name = n
+		}
+	}
 	r := FilterEmpty
-	switch filter.PredicateName {
+	switch name {
 	case Predicate_inputMessagesFilterEmpty:
 		r = FilterEmpty
 	case Predicate_inputMessagesFilterPhotos:

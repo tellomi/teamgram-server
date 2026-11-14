@@ -18,10 +18,13 @@ type Features struct {
 	Gigagroup          bool
 	LinkedChatID       int64
 	StickerSetID       int64
-	EmojiSetID         int64
-	PinnedMsgID        int32
-	AvailableMinID     int32
-	FutureCreatorID    int64
+	// StickerSet is the supergroup sticker set from channels.setStickers.
+	// StickerSetID is the same id, kept so older rows still read back.
+	StickerSet      StickerSetRec
+	EmojiSetID      int64
+	PinnedMsgID     int32
+	AvailableMinID  int32
+	FutureCreatorID int64
 	// NoForwards is messages.toggleNoForwards ("restrict saving content").
 	NoForwards bool
 	// PromotedBy is the user who last granted each admin's rights.
@@ -116,6 +119,24 @@ type UsernameRec struct {
 	Username string
 	Active   bool
 	Editable bool
+}
+
+// StickerSetRec is the channelFull.stickerset summary. The documents stay
+// in the sticker catalog; this is what getFullChannel returns.
+type StickerSetRec struct {
+	ID         int64
+	AccessHash int64
+	Title      string
+	ShortName  string
+	Count      int32
+	Hash       int32
+	Official   bool
+	Masks      bool
+	Animated   bool
+	Videos     bool
+	Emojis     bool
+	TextColor  bool
+	ThumbID    int64
 }
 
 // StoredEmojiStatus is channel emoji status. A zero value means unset.

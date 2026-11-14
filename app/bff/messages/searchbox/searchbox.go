@@ -60,16 +60,25 @@ type Position struct {
 	Offset int32
 }
 
+// Narrow says which MEDIA_AUDIO messages to keep. Voice notes and round
+// videos share one stored type.
+const (
+	NarrowVoice = 1
+	NarrowRound = 2
+)
+
 // MediaKind says which message-service query can satisfy a filter.
 type MediaKind struct {
 	Type   int32
 	Pinned bool
+	Narrow int32
 }
 
 // MediaFor reports the stored message_filter_type for a filter.
-// inputMessagesFilterEmpty and inputMessagesFilterMyMentions are rejected.
-// Filters this server does not index (geo, contacts, voice-only, round video)
-// are rejected the same way.
+// https://core.telegram.org/method/messages.getSearchResultsCalendar rejects
+// only inputMessagesFilterEmpty and inputMessagesFilterMyMentions. Photo,
+// video, document, music, voice, gif, url, and the other media filters are
+// accepted. A filter that arrives with only its constructor still matches.
 func MediaFor(filter *mtproto.MessagesFilter) (MediaKind, error) {
 	switch mtproto.FromMessagesFilter(filter) {
 	case mtproto.FilterPhotos:
@@ -86,17 +95,48 @@ func MediaFor(filter *mtproto.MessagesFilter) (MediaKind, error) {
 		return MediaKind{Type: mtproto.MEDIA_GIF}, nil
 	case mtproto.FilterMusic:
 		return MediaKind{Type: mtproto.MEDIA_MUSIC}, nil
+	case mtproto.FilterVoice:
+		return MediaKind{Type: mtproto.MEDIA_AUDIO, Narrow: NarrowVoice}, nil
+	case mtproto.FilterRoundVideo:
+		return MediaKind{Type: mtproto.MEDIA_AUDIO, Narrow: NarrowRound}, nil
+	case mtproto.FilterRoundVoice:
+		return MediaKind{Type: mtproto.MEDIA_AUDIO}, nil
 	case mtproto.FilterChatPhotos:
 		return MediaKind{Type: mtproto.MEDIA_CHAT_PHOTO}, nil
 	case mtproto.FilterPhoneCalls:
 		return MediaKind{Type: mtproto.MEDIA_PHONE_CALL}, nil
-	case mtproto.FilterRoundVoice:
-		return MediaKind{Type: mtproto.MEDIA_AUDIO}, nil
 	case mtproto.FilterPinned:
 		return MediaKind{Pinned: true}, nil
+	case mtproto.FilterPoll:
+		return MediaKind{Type: mtproto.MEDIA_POLL}, nil
+	case mtproto.FilterGeo:
+		return MediaKind{Type: mtproto.MEDIA_GEO}, nil
+	case mtproto.FilterContacts:
+		return MediaKind{Type: mtproto.MEDIA_CONTACT}, nil
 	default:
 		return MediaKind{}, mtproto.ErrFilterNotSupported
 	}
+}
+
+// KeepKind drops stored audio rows that are not the requested kind.
+// Voice notes and round videos are both MEDIA_AUDIO.
+func KeepKind(rows []Row, kind MediaKind) []Row {
+	var want func(*mtproto.Message) bool
+	switch kind.Narrow {
+	case NarrowVoice:
+		want = mtproto.IsVoiceMessage
+	case NarrowRound:
+		want = mtproto.IsRoundVideoMessage
+	default:
+		return rows
+	}
+	out := make([]Row, 0, len(rows))
+	for _, row := range rows {
+		if want(row.Message) {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // Calendar groups rows into UTC days, newest day first.

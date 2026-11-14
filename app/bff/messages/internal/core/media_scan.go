@@ -47,18 +47,80 @@ func (c *MessagesCore) peerOrInvalid(in *mtproto.InputPeer) (*mtproto.PeerUtil, 
 	return peer, nil
 }
 
-func (c *MessagesCore) scanMedia(peer *mtproto.PeerUtil, kind searchbox.MediaKind, saved *mtproto.PeerUtil) ([]searchbox.Row, bool, error) {
+func (c *MessagesCore) scanMedia(peer *mtproto.PeerUtil, filter *mtproto.MessagesFilter, kind searchbox.MediaKind, saved *mtproto.PeerUtil) ([]searchbox.Row, bool, error) {
 	if testMediaRows != nil {
 		rows, truncated, err := testMediaRows(peer.PeerType, peer.PeerId, kind)
 		if err != nil {
 			return nil, false, err
 		}
-		return filterSaved(rows, saved), truncated, nil
+		return searchbox.KeepKind(filterSaved(rows, saved), kind), truncated, nil
 	}
-	if kind.Pinned {
-		return c.scanPinned(peer, saved)
+	var (
+		rows      []searchbox.Row
+		truncated bool
+		err       error
+	)
+	switch {
+	case peer.IsChannel():
+		// Channel posts live in the channel store, not each member's inbox.
+		rows, truncated, err = c.scanChannelMedia(peer, filter)
+	case kind.Pinned:
+		rows, truncated, err = c.scanPinned(peer, saved)
+	default:
+		rows, truncated, err = c.scanByType(peer, kind.Type, saved)
 	}
-	return c.scanByType(peer, kind.Type, saved)
+	if err != nil {
+		return nil, false, err
+	}
+	if peer.IsChannel() {
+		rows = filterSaved(rows, saved)
+	}
+	return searchbox.KeepKind(rows, kind), truncated, nil
+}
+
+func (c *MessagesCore) scanChannelMedia(peer *mtproto.PeerUtil, filter *mtproto.MessagesFilter) ([]searchbox.Row, bool, error) {
+	offset := int32(0)
+	var rows []searchbox.Row
+	for len(rows) < mediaCap {
+		got, err := channel.Shared().SearchInChannel(c.ctx, c.MD.UserId, peer.PeerId, channel.ChannelSearch{
+			OffsetID: offset,
+			Limit:    100,
+			Filter:   filter,
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		list := got.GetMessages()
+		if len(list) == 0 {
+			return rows, false, nil
+		}
+		var minID int32
+		for _, msg := range list {
+			if msg == nil || msg.GetId() == 0 {
+				continue
+			}
+			if minID == 0 || msg.GetId() < minID {
+				minID = msg.GetId()
+			}
+			row := searchbox.Row{
+				ID:      msg.GetId(),
+				Date:    msg.GetDate(),
+				Sender:  msg.GetFromId().GetUserId(),
+				Text:    msg.GetMessage(),
+				Message: msg,
+			}
+			if msg.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaGeoLive {
+				row.Live = true
+				row.Period = msg.GetMedia().GetPeriod()
+			}
+			rows = append(rows, row)
+		}
+		if len(list) < 100 || len(rows) >= mediaCap || minID == 0 || minID == offset {
+			return rows, len(rows) >= mediaCap, nil
+		}
+		offset = minID
+	}
+	return rows, true, nil
 }
 
 func (c *MessagesCore) scanByType(peer *mtproto.PeerUtil, media int32, saved *mtproto.PeerUtil) ([]searchbox.Row, bool, error) {
@@ -216,7 +278,7 @@ func (c *MessagesCore) scanSent(kind searchbox.MediaKind) ([]searchbox.Row, erro
 		}
 	}
 	sortRows(rows)
-	return rows, nil
+	return searchbox.KeepKind(rows, kind), nil
 }
 
 func sortRows(rows []searchbox.Row) {

@@ -44,7 +44,7 @@ func (c *MessagesCore) MessagesGetSearchResultsCalendar(in *mtproto.TLMessagesGe
 		c.Logger.Errorf("messages.getSearchResultsCalendar - error: %v", err)
 		return nil, err
 	}
-	rows, truncated, err := c.scanMedia(peer, kind, c.savedPeer(in.GetSavedPeerId()))
+	rows, truncated, err := c.scanMedia(peer, in.GetFilter(), kind, c.savedPeer(in.GetSavedPeerId()))
 	if err != nil {
 		c.Logger.Errorf("messages.getSearchResultsCalendar - error: %v", err)
 		return nil, err

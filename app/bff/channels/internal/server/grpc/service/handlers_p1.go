@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
@@ -12,6 +13,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/report"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"google.golang.org/grpc/status"
 )
 
 // FragmentService serves channel username order and activation, and the
@@ -26,9 +28,45 @@ func (FragmentService) ChannelsReorderUsernames(ctx context.Context, in *mtproto
 	return channel.Shared().ReorderUsernames(ctx, self, auth, in.GetChannel(), in.GetOrder())
 }
 
-func (FragmentService) ChannelsToggleUsername(ctx context.Context, in *mtproto.TLChannelsToggleUsername) (*mtproto.Bool, error) {
+func (s FragmentService) ChannelsToggleUsername(ctx context.Context, in *mtproto.TLChannelsToggleUsername) (*mtproto.Bool, error) {
 	self, auth := actor(ctx)
-	return channel.Shared().ToggleUsername(ctx, self, auth, in.GetChannel(), in.GetUsername(), mtproto.FromBool(in.GetActive()))
+	username := ""
+	var active *mtproto.Bool
+	var channelID int64
+	if in != nil {
+		username = in.GetUsername()
+		active = in.GetActive()
+		if in.GetChannel() != nil {
+			channelID = in.GetChannel().GetChannelId()
+		}
+	}
+	ok, err := channel.Shared().ToggleUsername(ctx, self, auth, in.GetChannel(), username, mtproto.FromBool(active))
+	// account.toggleUsername writes the username table as well as the
+	// in-memory list. contacts.resolveUsername reads that table first, so a
+	// channel deactivate that only flips channel features stays resolvable.
+	// USERNAME_NOT_MODIFIED still syncs the table: the channel row can
+	// already match while the table is stale.
+	if (err == nil || usernameNotModified(err)) && s.Users != nil && channelID != 0 && username != "" {
+		if _, syncErr := s.Users.UserToggleUsername(ctx, &user.TLUserToggleUsername{
+			PeerType: mtproto.PEER_CHANNEL,
+			PeerId:   channelID,
+			Username: username,
+			Active:   active,
+		}); syncErr != nil && err == nil {
+			err = syncErr
+		}
+	}
+	return ok, err
+}
+
+func usernameNotModified(err error) bool {
+	if err == nil {
+		return false
+	}
+	if st, ok := status.FromError(err); ok && st.Message() == "USERNAME_NOT_MODIFIED" {
+		return true
+	}
+	return strings.Contains(err.Error(), "USERNAME_NOT_MODIFIED")
 }
 
 func (FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in *mtproto.TLChannelsDeactivateAllUsernames) (*mtproto.Bool, error) {

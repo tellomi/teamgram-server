@@ -380,6 +380,56 @@ func TestPersonalChannelCardHidesPrivate(t *testing.T) {
 	}
 }
 
+func TestMegagroupStickerSetReadBack(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Pack")
+	in := inCh(ch)
+	broadcast, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Feed", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetStickers(ctx, 1, inCh(broadcast.Chats[0]), &mtproto.InputStickerSet{
+		PredicateName: mtproto.Predicate_inputStickerSetID, Id: 9,
+	}); status.Convert(err).Message() != "CHAT_ID_INVALID" {
+		t.Fatalf("broadcast stickers: %v", err)
+	}
+	if _, err := svc.SetStickers(ctx, 1, in, &mtproto.InputStickerSet{
+		PredicateName: mtproto.Predicate_inputStickerSetID, Id: 77, AccessHash: 88,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ownerFull, err := svc.GetFullChannel(ctx, 1, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := ownerFull.FullChat.GetStickerset()
+	if !ownerFull.FullChat.GetCanSetStickers() || set.GetId() != 77 || set.GetAccessHash() != 88 {
+		t.Fatalf("owner full can=%v set=%+v", ownerFull.FullChat.GetCanSetStickers(), set)
+	}
+	memberFull, err := svc.GetFullChannel(ctx, 2, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if memberFull.FullChat.GetCanSetStickers() || memberFull.FullChat.GetStickerset().GetId() != 77 {
+		t.Fatalf("member full can=%v set=%+v", memberFull.FullChat.GetCanSetStickers(), memberFull.FullChat.GetStickerset())
+	}
+	if _, err := svc.SetStickers(ctx, 2, in, &mtproto.InputStickerSet{
+		PredicateName: mtproto.Predicate_inputStickerSetID, Id: 1,
+	}); status.Convert(err).Message() != "CHAT_ADMIN_REQUIRED" {
+		t.Fatalf("member set stickers: %v", err)
+	}
+	if _, err := svc.SetStickers(ctx, 1, in, mtproto.MakeTLInputStickerSetEmpty(&mtproto.InputStickerSet{}).To_InputStickerSet()); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := svc.GetFullChannel(ctx, 2, in)
+	if err != nil || cleared.FullChat.GetStickerset() != nil {
+		t.Fatalf("cleared %+v %v", cleared.GetFullChat().GetStickerset(), err)
+	}
+}
+
 func mustChannel(t *testing.T, svc *Service, ctx context.Context, id int64) *Channel {
 	t.Helper()
 	ch, err := svc.reload(ctx, id)

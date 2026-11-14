@@ -160,13 +160,33 @@ func (s *mysqlStore) LookupUsername(ctx context.Context, username string) (int64
 	if username == "" {
 		return 0, false, false, nil
 	}
-	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM channels WHERE username=? AND deleted=0`, username).Scan(&id)
-	if err == nil {
-		return id, true, true, nil
-	}
-	if err != sql.ErrNoRows {
+	var columnID int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM channels WHERE username=? AND deleted=0`, username).Scan(&columnID)
+	if err != nil && err != sql.ErrNoRows {
 		return 0, false, false, err
+	}
+	columnInactive := false
+	if err == nil {
+		// The primary column is active unless this channel's feature list
+		// marks that exact name inactive.
+		f, ferr := s.GetFeatures(ctx, columnID)
+		if ferr != nil {
+			return 0, false, false, ferr
+		}
+		if f != nil {
+			for _, u := range f.Usernames {
+				if !equalFold(u.Username, username) {
+					continue
+				}
+				if u.Active {
+					return columnID, true, true, nil
+				}
+				columnInactive = true
+			}
+		}
+		if !columnInactive {
+			return columnID, true, true, nil
+		}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT channel_id, data FROM channel_feature`)
 	if err != nil {
@@ -199,8 +219,14 @@ func (s *mysqlStore) LookupUsername(ctx context.Context, username string) (int64
 	if err := rows.Err(); err != nil {
 		return 0, false, false, err
 	}
-	if inactive {
+	if inactive || columnInactive {
+		if inactiveID == 0 {
+			inactiveID = columnID
+		}
 		return inactiveID, false, true, nil
+	}
+	if columnID != 0 {
+		return columnID, true, true, nil
 	}
 	return 0, false, false, nil
 }

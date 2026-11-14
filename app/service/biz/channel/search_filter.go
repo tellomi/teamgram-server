@@ -28,7 +28,11 @@ func channelFilterMatches(msg *mtproto.Message, filter *mtproto.MessagesFilter, 
 		return mtproto.GetMediaType(msg) == mtproto.MEDIA_GIF
 	case mtproto.FilterMusic:
 		return mtproto.GetMediaType(msg) == mtproto.MEDIA_MUSIC
-	case mtproto.FilterVoice, mtproto.FilterRoundVoice, mtproto.FilterRoundVideo:
+	case mtproto.FilterVoice:
+		return mtproto.IsVoiceMessage(msg)
+	case mtproto.FilterRoundVideo:
+		return mtproto.IsRoundVideoMessage(msg)
+	case mtproto.FilterRoundVoice:
 		return mtproto.GetMediaType(msg) == mtproto.MEDIA_AUDIO
 	case mtproto.FilterChatPhotos:
 		return mtproto.GetMediaType(msg) == mtproto.MEDIA_CHAT_PHOTO

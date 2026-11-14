@@ -702,3 +702,21 @@ Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty
 | tests | `pkg/livephoto`, messages core / dao, files core, mediapurge, `proto/mtproto/ttl_media_test.go`, and e2e `TestLivePhoto` (`live_a` / `live_b`) |
 
 Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
+
+## Channel username, group stickers, search calendar (layer 232)
+
+`channels.toggleUsername` already flipped the channel feature list, but `contacts.resolveUsername` reads the `username` table first and ignored `active`. Deactivate returned OK while the name still resolved, and a later activate could report `USERNAME_NOT_MODIFIED` when the bool's predicate name was missing and only `boolTrue`'s constructor remained. The table row is updated the same way as `account.toggleUsername`. An inactive or deleted row is `USERNAME_NOT_OCCUPIED`. The channel username lookup trusts a feature row marked inactive over the primary column. `FromBool` accepts a constructor-only `boolTrue`.
+
+`channels.setStickers` stored an id and never filled `channelFull.stickerset`. It now keeps the set summary, rejects a broadcast with `CHAT_ID_INVALID`, and sets `can_set_stickers` for a supergroup creator or an admin who can change info. A member still sees the set. An anonymous admin's own pack returns `STICKERSET_OWNER_ANONYMOUS`.
+
+`messages.getSearchResultsCalendar` and `getSearchResultsPositions` rejected every filter whose predicate name was empty, and they rejected voice, round video, polls, geo, and contacts even when the name was set. Officially only `inputMessagesFilterEmpty` and `inputMessagesFilterMyMentions` are `FILTER_NOT_SUPPORTED`. Channel posts are read from the channel store. Voice notes and round videos still share `MEDIA_AUDIO` and are split after the query.
+
+| Piece | File |
+| --- | --- |
+| toggle syncs the username table | `app/bff/channels/internal/server/grpc/service/handlers_p1.go` |
+| inactive names do not resolve | `app/service/biz/user/internal/core/user.resolveUsername_handler.go` |
+| inactive feature beats the primary column | `app/service/biz/channel/memory.go`, `mysql.go` |
+| group sticker set on `channelFull` | `app/service/biz/channel/service_features.go`, `convert.go` |
+| catalog lookup | `app/bff/stickers/catalog`, `handlers_features.go` |
+| media filters and channel scan | `app/bff/messages/searchbox`, `media_scan.go` |
+| constructor-only bool and filter | `proto/mtproto/mtproto_util.go`, `message_filter_util.go` |

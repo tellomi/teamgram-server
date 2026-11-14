@@ -294,6 +294,16 @@ func sliceFeat[T any](all []T, offset, limit int32) []T {
 	return all[int(offset):end]
 }
 
+// ResolvePack finds one set by id or short name. Unknown sets are STICKERSET_INVALID.
+func (s *Service) ResolvePack(in *mtproto.InputStickerSet) (*Pack, error) {
+	if s == nil {
+		return nil, mtproto.ErrStickersetInvalid
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lookup(in)
+}
+
 func (s *Service) GetSet(userID int64, in *mtproto.InputStickerSet, hash int32) (*mtproto.Messages_StickerSet, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

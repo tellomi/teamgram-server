@@ -11,6 +11,14 @@ import (
 
 const stickerDate int32 = 1700000000
 
+// Summary is the stickerSet object a chat attaches with channels.setStickers.
+func (p *Pack) Summary() *mtproto.StickerSet {
+	if p == nil {
+		return nil
+	}
+	return p.tl(false, false)
+}
+
 func (p *Pack) tl(installed, archived bool) *mtproto.StickerSet {
 	items := p.visibleItems()
 	thumbID := p.ThumbID

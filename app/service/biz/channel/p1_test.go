@@ -5,6 +5,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/report"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -23,11 +24,25 @@ func TestUsernamesColorEmojiAndPaid(t *testing.T) {
 	if err != nil || got.Chats[0].GetUsername().GetValue() != "" {
 		t.Fatalf("username still public: %+v %v", got.GetChats(), err)
 	}
+	names := got.Chats[0].GetUsernames()
+	if len(names) != 1 || names[0].GetActive() || names[0].GetUsername() != "roomname" {
+		t.Fatalf("deactivated names %+v", names)
+	}
+	if _, err := svc.ResolveUsername(ctx, 2, "roomname"); status.Convert(err).Message() != "USERNAME_NOT_OCCUPIED" {
+		t.Fatalf("inactive resolve: %v", err)
+	}
 	if _, err := svc.ToggleUsername(ctx, 1, 0, in, "missing", true); err == nil {
 		t.Fatal("unknown username activated")
 	}
 	if _, err := svc.ToggleUsername(ctx, 1, 0, in, "roomname", true); err != nil {
 		t.Fatal(err)
+	}
+	resolved, err := svc.ResolveUsername(ctx, 2, "roomname")
+	if err != nil || resolved.GetUsername().GetValue() != "roomname" {
+		t.Fatalf("reactivated %+v %v", resolved, err)
+	}
+	if _, err := svc.ToggleUsername(ctx, 1, 0, in, "roomname", true); status.Convert(err).Message() != "USERNAME_NOT_MODIFIED" {
+		t.Fatalf("second activate: %v", err)
 	}
 	if _, err := svc.ReorderUsernames(ctx, 1, 0, in, []string{"roomname"}); err == nil {
 		t.Fatal("identical order accepted")
@@ -39,7 +54,7 @@ func TestUsernamesColorEmojiAndPaid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := full.Chats[0].GetUsernames()
+	names = full.Chats[0].GetUsernames()
 	if len(names) != 1 || !names[0].GetActive() || names[0].GetUsername() != "roomname" {
 		t.Fatalf("usernames %+v", names)
 	}

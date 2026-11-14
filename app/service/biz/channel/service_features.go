@@ -154,20 +154,60 @@ func adminLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtprot
 	}
 }
 
+// ResolveGroupStickerSet looks up channels.setStickers' input. The sticker
+// catalog installs it. Nil stores the id and short name from the input.
+// The int64 is the user who created the pack, or 0 for an official pack.
+var ResolveGroupStickerSet func(in *mtproto.InputStickerSet) (StickerSetRec, int64, error)
+
+func stickerInputEmpty(set *mtproto.InputStickerSet) bool {
+	if set == nil {
+		return true
+	}
+	return set.GetPredicateName() == mtproto.Predicate_inputStickerSetEmpty || set.GetConstructor() == mtproto.CRC32_inputStickerSetEmpty
+}
+
 func (s *Service) SetStickers(ctx context.Context, self int64, in *mtproto.InputChannel, set *mtproto.InputStickerSet) (*mtproto.Bool, error) {
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() && !p.adminRights().CanChangeInfo() {
+	// channels.setStickers associates a pack with a supergroup.
+	if !ch.Megagroup {
+		return nil, mtproto.ErrChatIdInvalid
+	}
+	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanChangeInfo()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
-	f := s.features(ctx, ch.ID)
-	if set == nil || set.GetPredicateName() == mtproto.Predicate_inputStickerSetEmpty {
-		f.StickerSetID = 0
-	} else {
-		f.StickerSetID = set.GetId()
+	rec := StickerSetRec{}
+	if !stickerInputEmpty(set) {
+		if ResolveGroupStickerSet != nil {
+			got, owner, err := ResolveGroupStickerSet(set)
+			if err != nil {
+				return nil, err
+			}
+			if got.ID == 0 && got.ShortName == "" {
+				return nil, mtproto.ErrStickersetInvalid
+			}
+			if owner != 0 {
+				op, _ := s.store.GetParticipant(ctx, ch.ID, owner)
+				if op.IsAdmin() && op.adminRights().ToChatAdminRights().GetAnonymous() {
+					return nil, mtproto.ErrStickersetOwnerAnonymous
+				}
+			}
+			rec = got
+		} else {
+			rec = StickerSetRec{ID: set.GetId(), AccessHash: set.GetAccessHash(), ShortName: set.GetShortName()}
+			if rec.ID == 0 && rec.ShortName == "" {
+				return nil, mtproto.ErrStickersetInvalid
+			}
+		}
 	}
+	f := s.features(ctx, ch.ID)
+	if f.StickerSetID == rec.ID && f.StickerSet.AccessHash == rec.AccessHash && f.StickerSet.ShortName == rec.ShortName && f.StickerSet.Title == rec.Title {
+		return mtproto.BoolTrue, nil
+	}
+	f.StickerSetID = rec.ID
+	f.StickerSet = rec
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}

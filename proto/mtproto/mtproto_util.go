@@ -38,7 +38,18 @@ func ToBool(b bool) *Bool {
 }
 
 func FromBool(b *Bool) bool {
-	return Predicate_boolTrue == b.GetPredicateName()
+	if b == nil {
+		return false
+	}
+	switch b.GetPredicateName() {
+	case Predicate_boolTrue:
+		return true
+	case Predicate_boolFalse:
+		return false
+	}
+	// A decoded bool keeps its constructor even when the predicate name was
+	// not copied onto the nested object. boolTrue is the only true value.
+	return b.GetConstructor() == CRC32_boolTrue
 }
 
 func MakeFlagsInt32(v int32) *wrapperspb.Int32Value {

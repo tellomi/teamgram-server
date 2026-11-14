@@ -126,18 +126,18 @@ func (s *memoryStore) lookupUsernameLocked(username string) (int64, bool, bool) 
 	}
 	var inactiveID int64
 	var inactive bool
+	var columnID int64
 	for _, ch := range s.channels {
 		if ch.Deleted {
 			continue
 		}
-		if ch.Username != "" && equalFold(ch.Username, username) {
-			return ch.ID, true, true
-		}
+		listed := false
 		if f := s.features[ch.ID]; f != nil {
 			for _, u := range f.Usernames {
 				if !equalFold(u.Username, username) {
 					continue
 				}
+				listed = true
 				if u.Active {
 					return ch.ID, true, true
 				}
@@ -145,9 +145,17 @@ func (s *memoryStore) lookupUsernameLocked(username string) (int64, bool, bool) 
 				inactive = true
 			}
 		}
+		// The primary column is only a fallback. A name listed as inactive
+		// stays unresolvable even when that column was not cleared.
+		if !listed && ch.Username != "" && equalFold(ch.Username, username) {
+			columnID = ch.ID
+		}
 	}
 	if inactive {
 		return inactiveID, false, true
+	}
+	if columnID != 0 {
+		return columnID, true, true
 	}
 	return 0, false, false
 }

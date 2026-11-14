@@ -159,7 +159,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 	full := mtproto.MakeTLChannelFull(&mtproto.ChatFull{
 		CanViewParticipants:  member || ch.Public(),
 		CanSetUsername:       p.IsCreator(),
-		CanSetStickers:       p.IsCreator(),
+		CanSetStickers:       ch.Megagroup && (p.IsCreator() || (p.IsAdmin() && p.adminRights().CanChangeInfo())),
 		CanViewStats:         p.IsCreator(),
 		CanDeleteChannel:     p.IsCreator(),
 		TranslationsDisabled: chatbox.Shared().TranslationsDisabled(viewer, mtproto.MakePeerUtil(mtproto.PEER_CHANNEL, ch.ID)),
@@ -208,6 +208,9 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		}
 		if reactions := chatReactionsOf(feat); reactions != nil {
 			full.AvailableReactions_FLAGCHATREACTIONS = reactions
+		}
+		if set := stickerSetMessage(feat); set != nil {
+			full.Stickerset = set
 		}
 		if feat.ReactionLimit > 0 {
 			full.ReactionsLimit = &wrapperspb.Int32Value{Value: feat.ReactionLimit}
@@ -405,6 +408,37 @@ func deleteUpdate(channelID int64, ids []int32, pts, count int32) *mtproto.Updat
 		Pts_INT32: pts,
 		PtsCount:  count,
 	}).To_Update()
+}
+
+func stickerSetMessage(f *Features) *mtproto.StickerSet {
+	if f == nil {
+		return nil
+	}
+	rec := f.StickerSet
+	if rec.ID == 0 && f.StickerSetID != 0 {
+		rec.ID = f.StickerSetID
+	}
+	if rec.ID == 0 && rec.ShortName == "" {
+		return nil
+	}
+	set := &mtproto.StickerSet{
+		Official:   rec.Official,
+		Masks:      rec.Masks,
+		Animated:   rec.Animated,
+		Videos:     rec.Videos,
+		Emojis:     rec.Emojis,
+		TextColor:  rec.TextColor,
+		Id:         rec.ID,
+		AccessHash: rec.AccessHash,
+		Title:      rec.Title,
+		ShortName:  rec.ShortName,
+		Count:      rec.Count,
+		Hash:       rec.Hash,
+	}
+	if rec.ThumbID != 0 {
+		set.ThumbDocumentId = wrapperspb.Int64(rec.ThumbID)
+	}
+	return mtproto.MakeTLStickerSet(set).To_StickerSet()
 }
 
 func channelUpdate(channelID int64) *mtproto.Update {
