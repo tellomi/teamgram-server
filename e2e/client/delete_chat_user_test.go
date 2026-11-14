@@ -17,7 +17,7 @@ func TestBasicGroupKickWritesDeleteUserServiceMessage(t *testing.T) {
 	ctx, cancel := contextTimeout(2 * time.Minute)
 	defer cancel()
 
-	chatID, err := a.CreateChat(ctx, "kick-service", inputUser(bSelf.ID, bSelf.AccessHash))
+	chatID, err := a.CreateChat(ctx, "picnic table", inputUser(bSelf.ID, bSelf.AccessHash))
 	if err != nil {
 		t.Fatal(err)
 	}
