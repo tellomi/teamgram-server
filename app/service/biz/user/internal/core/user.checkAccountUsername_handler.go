@@ -35,6 +35,9 @@ func (c *UserCore) UserCheckAccountUsername(in *user.TLUserCheckAccountUsername)
 		c.Logger.Errorf("user.checkAccountUsername - error: %v", err)
 		return nil, err
 	}
+	if reservedBotTaken(in.Username, mtproto.PEER_USER, in.UserId, usernameDO) {
+		return usernameExistedNotMe(), nil
+	}
 	if usernameDO != nil {
 		if usernameDO.PeerType == mtproto.PEER_USER && usernameDO.PeerId == in.UserId {
 			checked = usernameExistedIsMe()

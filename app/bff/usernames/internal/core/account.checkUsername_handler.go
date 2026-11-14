@@ -46,8 +46,8 @@ func (c *UsernamesCore) AccountCheckUsername(in *mtproto.TLAccountCheckUsername)
 	if err := usernamepolicy.RejectUser(c.ctx, c.MD.UserId, in.GetUsername()); err != nil {
 		return nil, err
 	}
-	if err := c.rejectVenueClaim(in.GetUsername(), c.MD.UserId); err != nil {
-		c.Logger.Errorf("account.checkUsername#2714d86c - venue: %v", err)
+	if err := c.rejectReservedBotClaim(in.GetUsername(), mtproto.PEER_USER, c.MD.UserId); err != nil {
+		c.Logger.Errorf("account.checkUsername#2714d86c - reserved bot: %v", err)
 		return nil, usernameRPCError(err)
 	}
 

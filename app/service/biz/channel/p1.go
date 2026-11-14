@@ -175,6 +175,9 @@ func (s *Service) ToggleUsername(ctx context.Context, self, actorAuth int64, in 
 	if username == "" || !validChannelUsername(username) {
 		return nil, mtproto.ErrUsernameInvalid
 	}
+	if err := s.rejectReservedBot(ctx, ch, username); err != nil {
+		return nil, err
+	}
 	f := s.features(ctx, ch.ID)
 	list := append([]UsernameRec(nil), listedUsernames(ch, f)...)
 	idx := -1

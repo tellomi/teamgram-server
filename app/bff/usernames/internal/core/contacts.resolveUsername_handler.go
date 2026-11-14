@@ -48,19 +48,25 @@ func (c *UsernamesCore) ContactsResolveUsername(in *mtproto.TLContactsResolveUse
 	return c.resolveOccupied(name)
 }
 
-// resolveBuiltin returns a reserved bot when the username table does not
-// hold the name. A real user or channel keeps it. The peer is returned only
-// together with a user object, the same way @gif and @venue already were.
+// resolveBuiltin returns the reserved bot. A real row is used only when that
+// row is the bot's own user id. A placeholder (peer_type 0, which resolve
+// reports as USERNAME_NOT_OCCUPIED) or any other user or channel still
+// resolves to the official bot, so @bing cannot be given away.
+//
+// @venue is the one historical exception: a peer that already holds it keeps
+// the name. New claims of venue, and of every other reserved bot, are rejected.
 func (c *UsernamesCore) resolveBuiltin(name string, botID int64) (*mtproto.Contacts_ResolvedPeer, error) {
 	looked, err := c.svcCtx.Dao.UserClient.UserResolveUsername(c.ctx, &userpb.TLUserResolveUsername{
 		Username: name,
 	})
-	free, fatal := usernameIsFree(err, looked)
-	if fatal != nil {
-		c.Logger.Errorf("contacts.resolveUsername - reply: {%v}", fatal)
-		return nil, fatal
+	if err != nil && !usernameNotOccupied(err) {
+		c.Logger.Errorf("contacts.resolveUsername - reply: {%v}", err)
+		return nil, err
 	}
-	if !free {
+	if err == nil && looked.GetUserId() == botID && botID != 0 {
+		return c.finishResolved(name, mtproto.FromPeer(looked))
+	}
+	if name == mtproto.BotVenueName && err == nil && (looked.GetUserId() != 0 || looked.GetChannelId() != 0) {
 		return c.finishResolved(name, mtproto.FromPeer(looked))
 	}
 	return c.finishResolved(name, mtproto.MakeUserPeerUtil(botID))
@@ -143,20 +149,21 @@ func usernameIsFree(err error, peer *mtproto.Peer) (bool, error) {
 	return false, nil
 }
 
-// rejectVenueClaim blocks a new claim of username venue. The user who
-// already holds it can keep it. A free name is reserved for the bot.
-// A lookup outage is returned so the caller does not guess.
-func (c *UsernamesCore) rejectVenueClaim(username string, self int64) error {
-	if normalizeUsername(username) != mtproto.BotVenueName {
+// rejectReservedBotClaim blocks a new claim of any reserved bot username.
+// Matching is case-insensitive. The peer that already holds the name can
+// keep it. A free name, a placeholder, and a name held by someone else are
+// USERNAME_OCCUPIED. A lookup failure is returned and is not treated as free.
+func (c *UsernamesCore) rejectReservedBotClaim(username string, holderType int32, holderID int64) error {
+	if userpb.GetBotIdByName(username) == 0 {
 		return nil
 	}
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
-		return nil
+		return mtproto.ErrUsernameOccupied
 	}
 	peer, err := c.svcCtx.Dao.UserClient.UserResolveUsername(c.ctx, &userpb.TLUserResolveUsername{
-		Username: mtproto.BotVenueName,
+		Username: normalizeUsername(username),
 	})
-	if err == nil && peer != nil && self != 0 && peer.GetUserId() == self {
+	if err == nil && holderID != 0 && peerHolds(peer, holderType, holderID) {
 		return nil
 	}
 	_, fatal := usernameIsFree(err, peer)
@@ -164,6 +171,20 @@ func (c *UsernamesCore) rejectVenueClaim(username string, self int64) error {
 		return fatal
 	}
 	return mtproto.ErrUsernameOccupied
+}
+
+func peerHolds(peer *mtproto.Peer, holderType int32, holderID int64) bool {
+	if peer == nil || holderID == 0 {
+		return false
+	}
+	switch holderType {
+	case mtproto.PEER_USER:
+		return peer.GetUserId() == holderID
+	case mtproto.PEER_CHANNEL:
+		return peer.GetChannelId() == holderID
+	default:
+		return false
+	}
 }
 
 func usernameNotOccupied(err error) bool {

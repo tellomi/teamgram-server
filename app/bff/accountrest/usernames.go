@@ -102,6 +102,9 @@ func ToggleUsername(userID int64, username string, active bool) (*mtproto.Bool, 
 		}
 	}
 	if idx < 0 {
+		if user.GetBotIdByName(username) != 0 {
+			return nil, mtproto.ErrUsernameOccupied
+		}
 		return nil, mtproto.ErrUsernameInvalid
 	}
 	if list[idx].active == active {

@@ -11,13 +11,22 @@ import (
 // ChannelsUpdateUsername
 // channels.updateUsername#3514b3de channel:InputChannel username:string = Bool;
 func (c *UsernamesCore) ChannelsUpdateUsername(in *mtproto.TLChannelsUpdateUsername) (*mtproto.Bool, error) {
+	channelID := int64(0)
+	if in.GetChannel() != nil {
+		channelID = in.GetChannel().GetChannelId()
+	}
+	if in.GetUsername() != "" {
+		if err := c.rejectReservedBotClaim(in.GetUsername(), mtproto.PEER_CHANNEL, channelID); err != nil {
+			c.Logger.Errorf("channels.updateUsername - reserved bot: %v", err)
+			return nil, usernameRPCError(err)
+		}
+	}
 	prev := channelUsername(c, in.GetChannel())
 	ok, err := channel.Shared().UpdateUsername(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in.GetChannel(), in.GetUsername())
 	if err != nil {
 		c.Logger.Errorf("channels.updateUsername - error: %v", err)
 		return nil, usernameRPCError(err)
 	}
-	channelID := in.GetChannel().GetChannelId()
 	next := in.GetUsername()
 	if next == "" {
 		_, _ = c.svcCtx.Dao.UserClient.UserDeleteUsernameByPeer(c.ctx, &user.TLUserDeleteUsernameByPeer{

@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // usernameClaimPlan is how account.updateUsername and channels.updateUsername
@@ -16,6 +17,15 @@ type usernameClaimPlan struct {
 	RewriteSpelling bool
 	RenameEditable  bool
 	InsertIfMissing bool
+}
+
+// reservedBotTaken reports a built-in bot name that this peer does not already hold.
+// A missing row and a placeholder row are taken. The holder is not.
+func reservedBotTaken(username string, peerType int32, peerID int64, row *dataobject.UsernameDO) bool {
+	if user.GetBotIdByName(username) == 0 {
+		return false
+	}
+	return row == nil || peerID == 0 || row.PeerType != peerType || row.PeerId != peerID
 }
 
 func planUsernameClaim(found, ours bool, stored, next string) usernameClaimPlan {
@@ -40,7 +50,13 @@ func (c *UserCore) claimUsername(peerType int32, peerID int64, username string) 
 	ours := false
 	if existing != nil {
 		stored = existing.Username
-		ours = existing.PeerType == peerType && existing.PeerId == peerID
+		ours = existing.PeerType == peerType && existing.PeerId == peerID && peerID != 0
+	}
+	// A reserved bot name cannot be inserted for a new peer. The peer that
+	// already holds the row can keep it, including a case-only rewrite.
+	// A missing row and a placeholder (peer_type 0) are not "ours".
+	if user.GetBotIdByName(username) != 0 && !ours {
+		return mtproto.BoolFalse, nil
 	}
 	plan := planUsernameClaim(existing != nil, ours, stored, username)
 	if plan.Occupied {

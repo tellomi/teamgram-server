@@ -108,6 +108,39 @@ func TestContactsResolveVenueFree(t *testing.T) {
 	}
 }
 
+func TestContactsResolveReservedBotBeatsSquatter(t *testing.T) {
+	c := usernameCore(t, scriptedResolver{users: map[string]int64{"bing": 555, "botfather": 556}})
+	for _, tc := range []struct {
+		query string
+		id    int64
+	}{
+		{"bing", mtproto.BotBingId},
+		{"BotFather", mtproto.BotFatherId},
+	} {
+		got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: tc.query})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.query, err)
+		}
+		if got.GetPeer().GetUserId() != tc.id {
+			t.Fatalf("%s peer %d", tc.query, got.GetPeer().GetUserId())
+		}
+		var bot *mtproto.User
+		for _, u := range got.GetUsers() {
+			if u.GetId() == tc.id {
+				bot = u
+			}
+		}
+		if bot == nil || !bot.GetBot() || bot.GetAccessHash().GetValue() == 0 {
+			t.Fatalf("%s bot %#v", tc.query, bot)
+		}
+		for _, u := range got.GetUsers() {
+			if u.GetId() == 555 || u.GetId() == 556 {
+				t.Fatalf("%s kept the squatter", tc.query)
+			}
+		}
+	}
+}
+
 func TestContactsResolveVenueTaken(t *testing.T) {
 	c := usernameCore(t, scriptedResolver{users: map[string]int64{"venue": 555}})
 	got, err := c.ContactsResolveUsername(&mtproto.TLContactsResolveUsername{Username: "venue"})

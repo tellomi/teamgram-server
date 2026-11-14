@@ -41,6 +41,30 @@ func TestChannelUsernamePolicy(t *testing.T) {
 	}
 }
 
+func TestChannelCannotClaimReservedBot(t *testing.T) {
+	svc, ctx := newTest(t)
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: 7, Title: "Claim room", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := input(ch.Id, ch.GetAccessHash_FLAGINT64().GetValue())
+	for _, name := range []string{"bing", "BotFather", "wiki", "imdb", "bold", "music", "sticker"} {
+		if _, err := svc.CheckUsername(ctx, 7, in, name); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+			t.Fatalf("check %s: %v", name, err)
+		}
+		if _, err := svc.UpdateUsername(ctx, 7, 0, in, name); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+			t.Fatalf("update %s: %v", name, err)
+		}
+		if _, err := svc.ToggleUsername(ctx, 7, 0, in, name, true); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
+			t.Fatalf("toggle %s: %v", name, err)
+		}
+	}
+	if _, err := svc.UpdateUsername(ctx, 7, 0, in, "roomname"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestChannelTitlePolicy(t *testing.T) {
 	t.Setenv(usernamepolicy.EnvEnabled, "1")
 	svc, ctx := newTest(t)

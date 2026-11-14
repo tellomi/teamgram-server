@@ -84,7 +84,7 @@ func (c *UsernamesCore) updateUsername(userId int64, from, username2 string) err
 		if err := usernamepolicy.RejectUser(c.ctx, userId, username2); err != nil {
 			return err
 		}
-		if err := c.rejectVenueClaim(username2, userId); err != nil {
+		if err := c.rejectReservedBotClaim(username2, mtproto.PEER_USER, userId); err != nil {
 			return err
 		}
 

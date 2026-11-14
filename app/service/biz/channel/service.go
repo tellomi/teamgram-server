@@ -24,6 +24,24 @@ func validChannelUsername(username string) bool {
 	return usernamePattern.MatchString(username) && !strings.HasSuffix(username, "_")
 }
 
+// rejectReservedBot blocks a channel from taking a built-in bot username.
+// The channel that already has that name, in any spelling, can keep it.
+func (s *Service) rejectReservedBot(ctx context.Context, ch *Channel, username string) error {
+	if mtproto.GetBotIdByName(username) == 0 || ch == nil {
+		return nil
+	}
+	if equalFold(ch.Username, username) {
+		return nil
+	}
+	f := s.features(ctx, ch.ID)
+	for _, u := range listedUsernames(ch, f) {
+		if equalFold(u.Username, username) {
+			return nil
+		}
+	}
+	return mtproto.ErrUsernameOccupied
+}
+
 func allAdminRights() int32 {
 	return int32(mtproto.MakeChatAdminRightsHelper(&mtproto.ChatAdminRights{
 		ChangeInfo:     true,
@@ -686,6 +704,9 @@ func (s *Service) CheckUsername(ctx context.Context, self int64, in *mtproto.Inp
 	if err := usernamepolicy.RejectChannel(ctx, ch.ID, username); err != nil {
 		return nil, err
 	}
+	if err := s.rejectReservedBot(ctx, ch, username); err != nil {
+		return nil, err
+	}
 	other, err := s.store.FindByUsername(ctx, username)
 	if err != nil {
 		return nil, err
@@ -713,6 +734,9 @@ func (s *Service) UpdateUsername(ctx context.Context, self, actorAuth int64, in 
 	}
 	if username != "" {
 		if err := usernamepolicy.RejectChannel(ctx, ch.ID, username); err != nil {
+			return nil, err
+		}
+		if err := s.rejectReservedBot(ctx, ch, username); err != nil {
 			return nil, err
 		}
 	}

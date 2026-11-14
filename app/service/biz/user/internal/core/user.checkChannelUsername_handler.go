@@ -35,6 +35,9 @@ func (c *UserCore) UserCheckChannelUsername(in *user.TLUserCheckChannelUsername)
 		c.Logger.Errorf("user.checkChannelUsername - error: %v", err)
 		return nil, err
 	}
+	if reservedBotTaken(in.Username, mtproto.PEER_CHANNEL, in.ChannelId, usernameDO) {
+		return usernameExistedNotMe(), nil
+	}
 	if usernameDO != nil {
 		if usernameDO.PeerType == mtproto.PEER_CHANNEL && usernameDO.PeerId == in.ChannelId {
 			checked = usernameExistedIsMe()

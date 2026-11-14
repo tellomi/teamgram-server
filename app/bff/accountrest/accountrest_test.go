@@ -227,6 +227,9 @@ func TestUsernames(t *testing.T) {
 	if _, err := ToggleUsername(4, "bob", false); codeOf(err) != "USERNAME_INVALID" {
 		t.Fatal(err)
 	}
+	if _, err := ToggleUsername(4, "bing", true); codeOf(err) != "USERNAME_OCCUPIED" {
+		t.Fatal(err)
+	}
 	if _, err := ToggleUsername(4, "alice", true); codeOf(err) != "USERNAME_NOT_MODIFIED" {
 		t.Fatal(err)
 	}

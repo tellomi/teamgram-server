@@ -9,6 +9,14 @@ import (
 // ChannelsCheckUsername
 // channels.checkUsername#10e6bd2c channel:InputChannel username:string = Bool;
 func (c *UsernamesCore) ChannelsCheckUsername(in *mtproto.TLChannelsCheckUsername) (*mtproto.Bool, error) {
+	channelID := int64(0)
+	if in.GetChannel() != nil {
+		channelID = in.GetChannel().GetChannelId()
+	}
+	if err := c.rejectReservedBotClaim(in.GetUsername(), mtproto.PEER_CHANNEL, channelID); err != nil {
+		c.Logger.Errorf("channels.checkUsername - reserved bot: %v", err)
+		return nil, usernameRPCError(err)
+	}
 	ok, err := channel.Shared().CheckUsername(c.ctx, c.MD.UserId, in.GetChannel(), in.GetUsername())
 	if err != nil {
 		c.Logger.Errorf("channels.checkUsername - error: %v", err)

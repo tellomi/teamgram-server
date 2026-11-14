@@ -26,6 +26,16 @@ import (
 // UserToggleUsername
 // user.toggleUsername peer_type:int peer_id:long username:string active:Bool = Bool;
 func (c *UserCore) UserToggleUsername(in *user.TLUserToggleUsername) (*mtproto.Bool, error) {
+	if mtproto.FromBool(in.GetActive()) && user.GetBotIdByName(in.GetUsername()) != 0 {
+		row, err := c.svcCtx.Dao.UsernameDAO.SelectByUsername(c.ctx, in.GetUsername())
+		if err != nil {
+			c.Logger.Errorf("user.toggleUsername - error: %v", err)
+			return nil, err
+		}
+		if reservedBotTaken(in.GetUsername(), in.GetPeerType(), in.GetPeerId(), row) {
+			return nil, mtproto.ErrUsernameOccupied
+		}
+	}
 	_, _ = c.svcCtx.Dao.UsernameDAO.Update(
 		c.ctx,
 		map[string]interface{}{
