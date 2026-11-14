@@ -546,7 +546,7 @@ Deleting the newest megagroup or channel message left `top_message` on that id. 
 
 ## Hide read time (globalPrivacySettings.hide_read_marks)
 
-`messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless they have Premium. `users.getFullUser` sets `read_dates_private` from the same row.
+`messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless `users.premium` is an unexpired subscription. `TELLOMI_PREMIUM_EVERYONE` does not waive it. `users.getFullUser` sets `read_dates_private` from the same row.
 
 | Piece | File |
 | --- | --- |

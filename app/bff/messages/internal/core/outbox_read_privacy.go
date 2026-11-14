@@ -1,8 +1,11 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 )
 
 // outboxReadPrivacy applies globalPrivacySettings.hide_read_marks.
@@ -12,8 +15,10 @@ import (
 //
 // The peer's hide_read_marks sets userFull.read_dates_private. A caller who
 // cannot see that read date gets USER_PRIVACY_RESTRICTED. The caller who
-// turned the setting on also cannot fetch anyone else's read date, unless
-// they have Premium: that case is YOUR_PRIVACY_RESTRICTED.
+// turned the setting on also cannot fetch anyone else's read date. That
+// case is YOUR_PRIVACY_RESTRICTED, unless users.premium is an unexpired
+// subscription. TELLOMI_PREMIUM_EVERYONE makes every account look Premium
+// for feature limits and does not waive this.
 func (c *MessagesCore) outboxReadPrivacy(peerID int64) error {
 	if c == nil || c.MD == nil || peerID == 0 || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
 		return nil
@@ -22,7 +27,7 @@ func (c *MessagesCore) outboxReadPrivacy(peerID int64) error {
 	if err != nil {
 		return err
 	}
-	if selfHides && !c.callerPremium() {
+	if selfHides && !c.callerPaidPremium() {
 		return mtproto.ErrYourPrivacyRestricted
 	}
 	peerHides, err := c.hideReadMarks(peerID)
@@ -43,7 +48,14 @@ func (c *MessagesCore) hideReadMarks(userID int64) (bool, error) {
 	return settings.GetHideReadMarks(), nil
 }
 
-func (c *MessagesCore) callerPremium() bool {
+func (c *MessagesCore) callerPaidPremium() bool {
 	me, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{Id: c.MD.UserId})
-	return err == nil && me.Premium()
+	if err != nil || me == nil || me.User == nil || me.Deleted() {
+		return false
+	}
+	var expire int64
+	if me.User.GetPremiumExpireDate() != nil {
+		expire = me.User.GetPremiumExpireDate().GetValue()
+	}
+	return premium.ActiveSubscription(me.User.GetPremium(), expire, time.Now().Unix())
 }

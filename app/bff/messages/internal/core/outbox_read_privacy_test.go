@@ -12,6 +12,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/premium"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/grpc/status"
 )
@@ -52,6 +53,15 @@ func TestOutboxReadDateHonorsHideReadMarks(t *testing.T) {
 	users.peer = true
 	if _, err = c.MessagesGetOutboxReadDate(readDateRequest(2, 9)); status.Convert(err).Message() != "USER_PRIVACY_RESTRICTED" {
 		t.Fatalf("premium vs peer hide: %v", err)
+	}
+
+	t.Cleanup(func() { premium.Reload() })
+	t.Setenv(premium.EnvEveryone, "true")
+	premium.Reload()
+	users.premium = false
+	users.peer = false
+	if _, err = c.MessagesGetOutboxReadDate(readDateRequest(2, 9)); status.Convert(err).Message() != "YOUR_PRIVACY_RESTRICTED" {
+		t.Fatalf("everyone-premium switch: %v", err)
 	}
 }
 
