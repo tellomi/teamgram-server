@@ -56,6 +56,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		Noforwards:                  feat.NoForwards,
 		SlowmodeEnabled:             feat.SlowmodeSeconds > 0,
 		JoinRequest:                 feat.JoinRequest,
+		JoinToSend:                  feat.JoinToSend,
 		Gigagroup:                   feat.Gigagroup,
 		Autotranslation:             feat.Autotranslation,
 		BroadcastMessagesAllowed:    feat.BroadcastMessagesAllowed,
