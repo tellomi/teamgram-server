@@ -152,33 +152,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		replyTo := in.GetReplyTo()
 		switch in.ReplyTo.PredicateName {
 		case mtproto.Predicate_inputReplyToMessage:
-			outMessage.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-				ReplyToScheduled:       false,
-				ForumTopic:             false,
-				Quote:                  false,
-				ReplyToMsgId:           replyTo.GetReplyToMsgId(),
-				ReplyToMsgId_INT32:     replyTo.GetReplyToMsgId(),
-				ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(replyTo.GetReplyToMsgId()),
-				ReplyToPeerId:          nil,
-				ReplyFrom:              nil,
-				ReplyMedia:             nil,
-				ReplyToTopId:           nil,
-				QuoteText:              nil,
-				QuoteEntities:          nil,
-				QuoteOffset:            nil,
-			}).To_MessageReplyHeader()
-			if replyTo.GetQuoteText() != nil {
-				outMessage.ReplyTo.Quote = true
-				outMessage.ReplyTo.QuoteText = replyTo.GetQuoteText()
-				outMessage.ReplyTo.QuoteEntities = replyTo.GetQuoteEntities()
-				outMessage.ReplyTo.QuoteOffset = replyTo.GetQuoteOffset()
-			}
-
-			// disable replyToPeerId
-			// TODO enable replyToPeerId
-			if replyTo.ReplyToPeerId != nil {
-				outMessage.ReplyTo = nil
-			}
+			outMessage.ReplyTo = replyHeaderFromInput(c.MD.UserId, replyTo)
 
 		case mtproto.Predicate_inputReplyToStory:
 			// TODO:

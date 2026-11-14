@@ -177,19 +177,7 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 		} else if in.GetReplyTo() != nil {
 			switch in.ReplyTo.PredicateName {
 			case mtproto.Predicate_inputReplyToMessage:
-				outMessage.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-					ReplyToMsgId:           in.GetReplyTo().GetReplyToMsgId(),
-					ReplyToMsgId_INT32:     in.GetReplyTo().GetReplyToMsgId(),
-					ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(in.GetReplyTo().GetReplyToMsgId()),
-					ReplyToPeerId:          nil,
-					ReplyToTopId:           nil,
-				}).To_MessageReplyHeader()
-				if in.GetReplyTo().GetQuoteText() != nil {
-					outMessage.ReplyTo.Quote = true
-					outMessage.ReplyTo.QuoteText = in.GetReplyTo().GetQuoteText()
-					outMessage.ReplyTo.QuoteEntities = in.GetReplyTo().GetQuoteEntities()
-					outMessage.ReplyTo.QuoteOffset = in.GetReplyTo().GetQuoteOffset()
-				}
+				outMessage.ReplyTo = replyHeaderFromInput(c.MD.UserId, in.GetReplyTo())
 			case mtproto.Predicate_inputReplyToStory:
 				// TODO:
 			}

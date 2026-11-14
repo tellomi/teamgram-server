@@ -240,6 +240,27 @@ func PeerRevokeQuery(maxID int32, justClear bool, dates Query) Query {
 	}
 }
 
+// RevokePeerCap is the other participant's max_id for deleteHistory(revoke).
+//
+// callerMax is the request, in the caller's box. mapped is that message's
+// box id on the other side, including a row the caller already deleted for
+// themselves. callerHasLive is false when this call found no live message
+// on the caller. In that case a missing map must still clear the peer
+// dialog: the caller already removed their copy, and revoke means both sides.
+// 0 and MaxInt32 stay uncapped.
+func RevokePeerCap(callerMax, mapped int32, callerHasLive bool) int32 {
+	if callerMax <= 0 || callerMax >= math.MaxInt32 {
+		return callerMax
+	}
+	if mapped > 0 {
+		return mapped
+	}
+	if !callerHasLive {
+		return 0
+	}
+	return callerMax
+}
+
 // PeerRevokeMaxID maps a deleteHistory max_id into the other participant's
 // message box. callerMax is the request value, in the caller's box. peerBox
 // is the other participant's box id of the newest caller message with

@@ -113,6 +113,21 @@ func TestOffsetAfterFailureDoesNotReportDone(t *testing.T) {
 	}
 }
 
+func TestRevokePeerCapClearsPeerAfterCallerAlreadyDeleted(t *testing.T) {
+	if got := RevokePeerCap(19, 44, false); got != 44 {
+		t.Fatalf("deleted caller row still maps, got %d", got)
+	}
+	if got := RevokePeerCap(19, 0, false); got != 0 {
+		t.Fatalf("no caller row and no live messages must clear the peer, got %d", got)
+	}
+	if got := RevokePeerCap(19, 0, true); got != 19 {
+		t.Fatalf("live messages keep the caller cap when the map misses, got %d", got)
+	}
+	if got := RevokePeerCap(0, 0, false); got != 0 {
+		t.Fatalf("uncapped stays uncapped, got %d", got)
+	}
+}
+
 func TestPeerRevokeMaxIDUsesTheOtherBox(t *testing.T) {
 	// A's last box id is 19. The same message is box 44 on B.
 	if got := PeerRevokeMaxID(19, 44); got != 44 {

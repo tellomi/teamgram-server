@@ -2,6 +2,23 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Forward, reply, and deleteHistory revoke
+
+`messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own.
+
+`reply_to.reply_to_peer_id` (a quote from another chat) used to drop the whole reply header, including `quote_text`. The header keeps the other peer, the message id, and the quote.
+
+`messages.deleteHistory(revoke=true)` only revoked messages still in the caller's box. After the caller had cleared the chat for themselves, the other side kept those messages. Revoke now deletes the other participant's copy of the dialog too, mapping through rows that are already `deleted=1`. If that row is gone and the caller has nothing left, the peer dialog is cleared.
+
+`messages.toggleNoForwards` on a private chat returned `PEER_ID_INVALID`. The pair flag is stored in `chatbox_doc`. Forwarding from that chat, or forwarding a message with `noforwards`, returns `CHAT_FORWARDS_RESTRICTED`.
+
+| Piece | File |
+| --- | --- |
+| drop_author, protected forward | `messages.forwardMessages_handler.go` |
+| quote in another chat | `reply_peer.go`, sendMessage / sendMedia / sendMultiMedia |
+| revoke after a self-only clear | `delete_user_history.go`, `deletehistory/plan.go` |
+| private noforwards | `messages.toggleNoForwards_handler.go`, `chatbox/protect.go` |
+
 ## Authorization hash, revocation and TTL
 
 `auth_users.hash` used to be replaced on every `BindAuthKeyUser`. A second `auth.signIn` on the same permanent key (retry, future-auth token, cloud-password step) made `account.resetAuthorization` return `HASH_INVALID` for the hash the other device had just listed. A live row now keeps its hash. A row that was logged out, reset, or expired takes a new non-zero hash, and the 24 hour gate still uses `date_created`.
