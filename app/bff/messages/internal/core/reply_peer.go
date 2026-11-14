@@ -5,7 +5,7 @@ import "github.com/teamgram/proto/mtproto"
 // replyHeaderFromInput copies inputReplyToMessage onto messageReplyHeader.
 // reply_to_peer_id is a quote of a message in another chat. Dropping the
 // whole header used to discard the quote as well.
-func replyHeaderFromInput(self int64, in *mtproto.InputReplyTo) *mtproto.MessageReplyHeader {
+func replyHeaderFromInput(self int64, dest *mtproto.PeerUtil, in *mtproto.InputReplyTo) *mtproto.MessageReplyHeader {
 	if in == nil || in.GetPredicateName() != mtproto.Predicate_inputReplyToMessage {
 		return nil
 	}
@@ -25,11 +25,28 @@ func replyHeaderFromInput(self int64, in *mtproto.InputReplyTo) *mtproto.Message
 	}
 	if in.GetReplyToPeerId() != nil {
 		other := mtproto.FromInputPeer2(self, in.GetReplyToPeerId())
-		if other != nil && (other.IsUser() || other.IsChat() || other.IsChannel()) {
+		// The same dialog is an ordinary reply. reply_to_peer_id is only for
+		// a quote that lives in a different chat.
+		if other != nil && !sameDialog(self, dest, other) && (other.IsUser() || other.IsChat() || other.IsChannel()) {
 			header.ReplyToPeerId = other.ToPeer()
 		}
 	}
 	return header
+}
+
+func sameDialog(self int64, dest, other *mtproto.PeerUtil) bool {
+	if dest == nil || other == nil {
+		return false
+	}
+	dType, dID := dest.PeerType, dest.PeerId
+	oType, oID := other.PeerType, other.PeerId
+	if dType == mtproto.PEER_SELF {
+		dType, dID = mtproto.PEER_USER, self
+	}
+	if oType == mtproto.PEER_SELF {
+		oType, oID = mtproto.PEER_USER, self
+	}
+	return dType == oType && dID != 0 && dID == oID
 }
 
 // dropForwardAuthor removes fwd_from. messages.forwardMessages drop_author

@@ -14,7 +14,7 @@ func TestReplyToAnotherChatKeepsTheQuote(t *testing.T) {
 		QuoteText:     wrapperspb.String("hello"),
 		QuoteOffset:   wrapperspb.Int32(2),
 	}).To_InputReplyTo()
-	h := replyHeaderFromInput(3, in)
+	h := replyHeaderFromInput(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 4), in)
 	if h == nil {
 		t.Fatal("header dropped")
 	}
@@ -26,6 +26,13 @@ func TestReplyToAnotherChatKeepsTheQuote(t *testing.T) {
 	}
 	if h.GetQuoteOffset().GetValue() != 2 {
 		t.Fatalf("offset %+v", h.GetQuoteOffset())
+	}
+	same := replyHeaderFromInput(3, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), in)
+	if same.GetReplyToPeerId() != nil {
+		t.Fatal("reply_to_peer_id names this dialog and should be cleared")
+	}
+	if same.GetQuoteText().GetValue() != "hello" || same.GetReplyToMsgId() != 15 {
+		t.Fatalf("same-dialog quote %+v", same)
 	}
 }
 
