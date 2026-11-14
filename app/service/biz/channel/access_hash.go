@@ -66,5 +66,5 @@ func hashOK(in *mtproto.InputChannel, stored int64) bool {
 	if accesshash.IsInputChannelFromMessage(in) {
 		return true
 	}
-	return accesshash.AllowProvided(in.GetAccessHash(), stored)
+	return accesshash.AllowChannel(in.GetAccessHash(), stored)
 }

@@ -192,7 +192,7 @@ func Accept(provided int64, issued []int64) bool {
 	return got == 1
 }
 
-// AllowProvided is the channel and secret-chat comparison.
+// AllowProvided is the secret-chat comparison.
 // Off and log keep the historical rule: a zero on either side skips the
 // comparison. Enforce requires an exact match, including rejecting 0 when
 // the stored hash is not 0.
@@ -201,6 +201,21 @@ func AllowProvided(provided, stored int64) bool {
 		return Match(provided, stored)
 	}
 	if provided != 0 && stored != 0 && provided != stored {
+		return false
+	}
+	return true
+}
+
+// AllowChannel is the channel lookup comparison.
+// Off and log keep the historical channel rule: a provided hash of 0 skips
+// the comparison, and any other provided hash must equal the stored row.
+// A stored 0 still rejects a non-zero provided hash. Enforce requires an
+// exact match, including rejecting a provided 0 when the stored hash is not 0.
+func AllowChannel(provided, stored int64) bool {
+	if Active() == ModeEnforce {
+		return Match(provided, stored)
+	}
+	if provided != 0 && provided != stored {
 		return false
 	}
 	return true

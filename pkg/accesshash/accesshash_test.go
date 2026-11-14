@@ -49,12 +49,24 @@ func TestAcceptIssuedHashOnly(t *testing.T) {
 
 func TestAllowProvidedKeepsZeroSkipUntilEnforce(t *testing.T) {
 	defer SetMode(ModeOff)()
+	// Secret chats skip when either side is 0. Channels do not: a non-zero
+	// provided hash must equal the row, even when that row is 0.
 	if !AllowProvided(0, 99) || !AllowProvided(99, 0) || AllowProvided(1, 2) {
-		t.Fatal("off")
+		t.Fatal("secret off")
+	}
+	if !AllowChannel(0, 99) || AllowChannel(99, 0) || AllowChannel(1, 2) || !AllowChannel(99, 99) {
+		t.Fatal("channel off")
+	}
+	defer SetMode(ModeLog)()
+	if !AllowProvided(99, 0) || AllowChannel(5, 0) {
+		t.Fatal("log")
 	}
 	defer SetMode(ModeEnforce)()
-	if AllowProvided(0, 99) || !AllowProvided(99, 99) || AllowProvided(1, 99) {
-		t.Fatal("enforce")
+	if AllowProvided(0, 99) || AllowProvided(99, 0) || !AllowProvided(99, 99) || AllowProvided(1, 99) {
+		t.Fatal("secret enforce")
+	}
+	if AllowChannel(0, 99) || AllowChannel(99, 0) || !AllowChannel(99, 99) || AllowChannel(1, 99) {
+		t.Fatal("channel enforce")
 	}
 }
 
@@ -258,6 +270,26 @@ func TestConstructorsAndBareIDs(t *testing.T) {
 	inline.Bot = userIn(2, 0)
 	if code(Check(context.Background(), 1, "messages.getInlineBotResults", inline, book, nil)) != "USER_ID_INVALID" {
 		t.Fatal("inline bot")
+	}
+}
+
+func TestMismatchLogOmitsHashes(t *testing.T) {
+	defer SetMode(ModeLog)()
+	const (
+		provided int64 = 8675309
+		stored   int64 = 42424242
+	)
+	book := &memBook{users: map[int64][]int64{2: {stored}}}
+	var line string
+	req := &mtproto.TLUsersGetFullUser{Id: userIn(2, provided)}
+	if err := Check(context.Background(), 4, "users.getFullUser", req, book, func(s string) { line = s }); err != nil {
+		t.Fatal(err)
+	}
+	if line == "" {
+		t.Fatal("expected a mismatch log")
+	}
+	if strings.Contains(line, "8675309") || strings.Contains(line, "42424242") {
+		t.Fatalf("log contains a hash: %s", line)
 	}
 }
 
