@@ -114,7 +114,7 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 		OffsetPeer:    inputPeerEmpty(),
 		Limit:         100,
 	})
-	if _, ok := findDialog(dialogsOf(hidden), "channel", chID); ok {
+	if _, ok := findDialogInList(dialogsOf(hidden), "channel", chID); ok {
 		t.Fatal("exclude_pinned still returned the pinned channel")
 	}
 
@@ -230,10 +230,10 @@ func dialogByPeer(t *testing.T, ctx context.Context, c *Client, kind string, id 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return findDialog(page.Dialogs, kind, id)
+	return findDialogInList(page.Dialogs, kind, id)
 }
 
-func findDialog(dialogs []*mtproto.Dialog, kind string, id int64) (*mtproto.Dialog, bool) {
+func findDialogInList(dialogs []*mtproto.Dialog, kind string, id int64) (*mtproto.Dialog, bool) {
 	want := kind + "/" + fmt.Sprint(id)
 	for _, d := range dialogs {
 		if d != nil && d.GetPeer() != nil && peerKindID(d.GetPeer()) == want {
