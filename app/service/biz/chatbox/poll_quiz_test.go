@@ -176,6 +176,43 @@ func TestQuizRulesCloseWindowAndAnonymousVoters(t *testing.T) {
 	}
 }
 
+func TestGroupPollUsesEachMembersMessageID(t *testing.T) {
+	b := newBook(nil)
+	b.ids = fakeIDs{box: map[int64]map[int32]int64{
+		1: {11: 900},
+		2: {44: 900},
+	}}
+	ctx := context.Background()
+	media, err := b.CreatePoll(ctx, 1, &mtproto.Poll{
+		Question: "Go",
+		Answers: []*mtproto.PollAnswer{
+			mtproto.MakePollAnswerWithText("yes", []byte("0")),
+			mtproto.MakePollAnswerWithText("no", []byte("1")),
+		},
+	}, nil, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.BindPoll(ctx, mtproto.PEER_CHAT, 8, 11, media.GetPoll().GetId())
+	ups, err := b.Vote(ctx, 2, mtproto.PEER_CHAT, 8, 44, 0, [][]byte{[]byte("0")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ups.Updates[0].GetMsgId_INT32() != 44 {
+		t.Fatalf("voter update id %d", ups.Updates[0].GetMsgId_INT32())
+	}
+	other, err := b.PollUpdateFor(ctx, 1, mtproto.PEER_CHAT, 8, 11, media.GetPoll().GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.Updates[0].GetMsgId_INT32() != 11 {
+		t.Fatalf("author update id %d", other.Updates[0].GetMsgId_INT32())
+	}
+	if other.Updates[0].GetPeer_PEER().GetChatId() != 8 {
+		t.Fatalf("author peer %+v", other.Updates[0].GetPeer_PEER())
+	}
+}
+
 func TestPollsDisabledLeavesMediaUnsupported(t *testing.T) {
 	t.Setenv("TELLOMI_POLLS", "")
 	if PollsEnabled() {

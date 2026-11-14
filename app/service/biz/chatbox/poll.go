@@ -112,7 +112,7 @@ func (b *Book) BindPoll(ctx context.Context, peerType int32, peerID int64, msgID
 	doc.PeerID = peerID
 	doc.MsgID = msgID
 	peer := &mtproto.PeerUtil{PeerType: peerType, PeerId: peerID}
-	if privatePair(doc.Creator, peer) {
+	if perUserBox(doc.Creator, peer) {
 		doc.Dialog = b.dialogIDLocked(ctx, doc.Creator, peer, msgID)
 	}
 	_ = b.putPoll(ctx, doc)
@@ -597,7 +597,7 @@ func (b *Book) pollIDByDialogLocked(ctx context.Context, voter int64, peerType i
 		return 0
 	}
 	peer := &mtproto.PeerUtil{PeerType: peerType, PeerId: peerID}
-	if !privatePair(voter, peer) {
+	if !perUserBox(voter, peer) {
 		return 0
 	}
 	dlg := b.dialogIDLocked(ctx, voter, peer, msgID)
@@ -624,7 +624,8 @@ func (b *Book) viewerMsgID(ctx context.Context, viewer int64, doc *pollDoc) int3
 	}
 	boxes, err := b.ids.BoxIDs(ctx, viewer, []int64{doc.Dialog})
 	if err != nil || boxes[doc.Dialog] == 0 {
-		return doc.MsgID
+		// Another member's client must not be given the sender's id.
+		return 0
 	}
 	return boxes[doc.Dialog]
 }

@@ -81,16 +81,25 @@ func placeholders(n int) string {
 }
 
 // privatePair is a one-to-one chat with another user, where the two sides
-// number the same message differently. Saved Messages, basic groups and
-// channels share one id space.
+// number the same message differently. Saved Messages is not one of those.
 func privatePair(self int64, peer *mtproto.PeerUtil) bool {
 	return peer != nil && peer.PeerType == mtproto.PEER_USER && peer.PeerId != 0 && peer.PeerId != self
+}
+
+// perUserBox is a chat where each participant has their own
+// user_message_box_id for one dialog_message_id. Private chats and basic
+// groups both allocate ids that way. Saved Messages and channels do not.
+func perUserBox(self int64, peer *mtproto.PeerUtil) bool {
+	if peer != nil && peer.PeerType == mtproto.PEER_CHAT && peer.PeerId != 0 {
+		return true
+	}
+	return privatePair(self, peer)
 }
 
 // dialogIDLocked is the shared dialog_message_id for self's msgID, or 0 when
 // the chat has one id space or the row cannot be read. Caller holds b.mu.
 func (b *Book) dialogIDLocked(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) int64 {
-	if b.ids == nil || !privatePair(self, peer) {
+	if b.ids == nil || !perUserBox(self, peer) {
 		return 0
 	}
 	m, err := b.ids.DialogIDs(ctx, self, []int32{msgID})
