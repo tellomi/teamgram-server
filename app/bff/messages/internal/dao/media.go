@@ -16,6 +16,7 @@ import (
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
+	"github.com/teamgram/teamgram-server/pkg/livephoto"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -53,6 +54,16 @@ inputMediaDice#e66fbf7b emoticon:string = InputMedia;
 //	return mtproto.MakeTLMessageMediaEmpty(nil).To_MessageMedia(), nil
 //}
 
+// daoDocumentResolver resolves a live photo video with the same access
+// check as inputMediaDocument.
+func daoDocumentResolver(ctx context.Context, d MediaHelper) livephoto.Resolver {
+	return func(in *mtproto.InputDocument) (*mtproto.Document, error) {
+		return catalog.ResolveInputDocument(in, func() (*mtproto.Document, error) {
+			return d.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: in.GetId()})
+		})
+	}
+}
+
 func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, media *mtproto.InputMedia) (messageMedia *mtproto.MessageMedia, err error) {
 	switch media.PredicateName {
 	case mtproto.Predicate_inputMediaEmpty:
@@ -79,10 +90,15 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 			return
 		}
 
-		messageMedia = mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+		var video *mtproto.Document
+		if video, err = livephoto.Video(media, daoDocumentResolver(ctx, d)); err != nil {
+			return nil, err
+		}
+		messageMedia = livephoto.Set(mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+			Spoiler:         media.GetSpoiler(),
 			Photo_FLAGPHOTO: photo,
 			TtlSeconds:      media.TtlSeconds,
-		}).To_MessageMedia()
+		}).To_MessageMedia(), video)
 	case mtproto.Predicate_inputMediaPhoto:
 		// inputMediaPhoto#b3ba0635 flags:#
 		//	id:InputPhoto
@@ -101,10 +117,15 @@ func GetMessageMedia(ctx context.Context, d MediaHelper, userId, ownerId int64, 
 			return
 		}
 
-		messageMedia = mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+		var video *mtproto.Document
+		if video, err = livephoto.Video(media, daoDocumentResolver(ctx, d)); err != nil {
+			return nil, err
+		}
+		messageMedia = livephoto.Set(mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+			Spoiler:         mediaPhoto.GetSpoiler(),
 			Photo_FLAGPHOTO: photo,
 			TtlSeconds:      mediaPhoto.GetTtlSeconds(),
-		}).To_MessageMedia()
+		}).To_MessageMedia(), video)
 	case mtproto.Predicate_inputMediaGeoPoint:
 		// inputMediaGeoPoint#f9c44144 geo_point:InputGeoPoint = InputMedia;
 
