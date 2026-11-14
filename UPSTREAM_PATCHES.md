@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Scheduled messages
+
+`messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
+
+Due rows live in the same `chatbox_doc` table (`sched:due`, rebuilt from `sched:*` if that index is missing), so a restart still finds them. The sender is `TELLOMI_SCHEDULED_DISPATCH=1` (default off). It sends a normal message (`from_scheduled`), pushes `updateDeleteScheduledMessages` to both sides of a private chat, and queues the next occurrence when a repeat period is set. Send-when-online uses `status.getUserOnlineSessions`.
+
+| Piece | File |
+| --- | --- |
+| store, edit, due claim | `app/service/biz/chatbox/schedule.go`, `schedule_due.go` |
+| repeat stamp, last-seen check | `app/bff/messages/internal/core/schedule_dispatch.go` |
+| edit falls through to the scheduled copy | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
+| dispatcher | `app/bff/messages/internal/server/grpc/service/schedule_loop.go` |
+
 ## Authorization hash, revocation and TTL
 
 `auth_users.hash` used to be replaced on every `BindAuthKeyUser`. A second `auth.signIn` on the same permanent key (retry, future-auth token, cloud-password step) made `account.resetAuthorization` return `HASH_INVALID` for the hash the other device had just listed. A live row now keeps its hash. A row that was logged out, reset, or expired takes a new non-zero hash, and the 24 hour gate still uses `date_created`.

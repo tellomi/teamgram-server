@@ -43,11 +43,20 @@ func (b *Book) Schedule(ctx context.Context, owner int64, peer *mtproto.PeerUtil
 		return nil, mtproto.ErrMessageEmpty
 	}
 	now := int32(b.now().Unix())
-	if when <= now {
-		return nil, mtproto.ErrScheduleDateInvalid
-	}
-	if time.Unix(int64(when), 0).After(b.now().Add(maxScheduleAhead)) {
-		return nil, mtproto.ErrScheduleDateTooLate
+	online := when == ScheduleWhenOnline
+	if online {
+		// Only a private chat with another user. Groups, channels, and
+		// Saved Messages have nobody to come online.
+		if peer.PeerType != mtproto.PEER_USER || peer.PeerId == 0 || peer.PeerId == owner {
+			return nil, mtproto.ErrScheduleStatusPrivate
+		}
+	} else {
+		if when <= now {
+			return nil, mtproto.ErrScheduleDateInvalid
+		}
+		if time.Unix(int64(when), 0).After(b.now().Add(maxScheduleAhead)) {
+			return nil, mtproto.ErrScheduleDateTooLate
+		}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -67,6 +76,12 @@ func (b *Book) Schedule(ctx context.Context, owner int64, peer *mtproto.PeerUtil
 	for _, msg := range msgs {
 		if msg == nil || (msg.Message == "" && msg.Media == nil) {
 			return nil, mtproto.ErrMessageEmpty
+		}
+		if err := checkRepeat(msg, online); err != nil {
+			return nil, err
+		}
+		if doc.Next < SchedIDBase {
+			doc.Next = SchedIDBase
 		}
 		doc.Next++
 		cp := proto.Clone(msg).(*mtproto.Message)
@@ -88,6 +103,16 @@ func (b *Book) Schedule(ctx context.Context, owner int64, peer *mtproto.PeerUtil
 	}
 	b.sched[key] = doc
 	if err := b.save(ctx, key, doc); err != nil {
+		return nil, err
+	}
+	refs := make([]dueRef, 0, len(noted))
+	for _, cp := range noted {
+		refs = append(refs, dueRef{
+			Owner: owner, PeerType: peer.PeerType, PeerID: peer.PeerId,
+			ID: cp.Id, When: cp.Date, Online: cp.Date == ScheduleWhenOnline,
+		})
+	}
+	if err := b.addDueLocked(ctx, refs); err != nil {
 		return nil, err
 	}
 	noteScheduled(ctx, owner, peer, noted, true)
@@ -183,6 +208,9 @@ func (b *Book) TakeScheduled(ctx context.Context, owner int64, peer *mtproto.Pee
 	if err := b.save(ctx, key, doc); err != nil {
 		return nil, err
 	}
+	if err := b.dropDueLocked(ctx, owner, peer, ids); err != nil {
+		return nil, err
+	}
 	noteScheduled(ctx, owner, peer, taken, false)
 	return taken, nil
 }
@@ -214,6 +242,17 @@ func (b *Book) RestoreScheduled(ctx context.Context, owner int64, peer *mtproto.
 	}
 	b.sched[key] = doc
 	_ = b.save(ctx, key, doc)
+	refs := make([]dueRef, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
+		refs = append(refs, dueRef{
+			Owner: owner, PeerType: peer.PeerType, PeerID: peer.PeerId,
+			ID: msg.Id, When: msg.Date, Online: msg.Date == ScheduleWhenOnline,
+		})
+	}
+	_ = b.addDueLocked(ctx, refs)
 	noteScheduled(ctx, owner, peer, msgs, true)
 }
 

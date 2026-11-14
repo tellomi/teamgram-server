@@ -10,6 +10,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
+	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
@@ -17,6 +18,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
+	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/zeromicro/go-zero/zrpc"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -161,9 +165,20 @@ func BindUsers(c user_client.UserClient) {
 // NewScheduled serves the scheduled-message inbox. Sending a scheduled
 // message goes through messenger.msg, same as messages.sendMessage.
 func NewScheduled(c Config) *service.ScheduledService {
-	return &service.ScheduledService{
-		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
+	msg := msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient))
+	var syncer sync_client.SyncClient
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
+	service.StartScheduleDispatch(msg, syncer, service.StatusOnline(statusClient(c.StatusClient)))
+	return &service.ScheduledService{Msg: msg}
+}
+
+func statusClient(c zrpc.RpcClientConf) status_client.StatusClient {
+	if len(c.Endpoints) == 0 && len(c.Etcd.Hosts) == 0 && c.Target == "" {
+		return nil
+	}
+	return status_client.NewStatusClient(rpcx.GetCachedRpcClient(c))
 }
 
 // NewBotChat serves inline queries, callback buttons, the attach menu,

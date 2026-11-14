@@ -183,6 +183,9 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	if in.GetQuickReplyShortcut() != nil {
 		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
 	}
+	if err = stampScheduleRepeat(outMessage, in.GetScheduleRepeatPeriod(), in.GetScheduleDate().GetValue()); err != nil {
+		return nil, err
+	}
 
 	rUpdate, err := c.dispatchOutbox(peer, []*msgpb.OutboxMessage{
 		msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{

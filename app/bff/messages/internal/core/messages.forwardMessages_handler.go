@@ -318,6 +318,9 @@ func (c *MessagesCore) makeForwardMessages(
 		}
 		m.ReplyTo = nil
 		m.Reactions = nil
+		if err := stampScheduleRepeat(m, request.GetScheduleRepeatPeriod(), request.GetScheduleDate().GetValue()); err != nil {
+			return nil, err
+		}
 		if m.ReplyMarkup != nil {
 			m.ReplyMarkup = m.ReplyMarkup.ToForwardMessage()
 		}

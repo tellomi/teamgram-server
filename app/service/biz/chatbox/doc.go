@@ -44,6 +44,23 @@ ON DUPLICATE KEY UPDATE data=VALUES(data)`, key, raw)
 	return err
 }
 
+func (s sqlDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT doc_key FROM chatbox_doc WHERE doc_key LIKE ?`, prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 const docSchema = `
 CREATE TABLE IF NOT EXISTS chatbox_doc (
   doc_key VARCHAR(191) NOT NULL PRIMARY KEY,
@@ -80,6 +97,7 @@ type Book struct {
 	paid      map[string][]*mtproto.MessageExtendedMedia
 	signals   []reportItem
 	ids       msgIDMap
+	due       []dueRef
 	now       func() time.Time
 }
 
