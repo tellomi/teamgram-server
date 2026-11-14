@@ -68,15 +68,20 @@ func TestSendOnceFromServiceUser(t *testing.T) {
 	// Claim already recorded this key. Send itself does not claim again;
 	// Push is what claims. Call Send directly to inspect one body.
 	Reset()
-	Send(context.Background(), fake, 9, "zh-hans", "Pixel 9", when)
+	Send(context.Background(), fake, 9, "ja-JP", "Pixel 9", when)
 	if fake.n != 1 {
 		t.Fatalf("sends = %d", fake.n)
 	}
 	if fake.user != 777000 || fake.peer != 9 {
 		t.Fatalf("from %d to %d", fake.user, fake.peer)
 	}
-	if !strings.Contains(fake.text, "Pixel 9") || strings.Contains(fake.text, "验证码") {
-		t.Fatalf("body")
+	if !strings.Contains(fake.text, "Pixel 9") || !strings.Contains(fake.text, "新しいログイン") || strings.Contains(fake.text, "验证码") || strings.Contains(fake.text, "New login alert") {
+		t.Fatalf("body %q", fake.text)
+	}
+	hant := &fakePush{}
+	Send(context.Background(), hant, 9, "zh-Hant-HK", "Pixel 9", when)
+	if !strings.Contains(hant.text, "新裝置登入提醒") || strings.Contains(hant.text, "新设备登录提醒") {
+		t.Fatalf("traditional %q", hant.text)
 	}
 	Send(context.Background(), nil, 9, "zh-hans", "Pixel 9", when)
 	Send(context.Background(), fake, 777000, "zh-hans", "Pixel 9", when)

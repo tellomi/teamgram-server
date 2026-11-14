@@ -1,13 +1,15 @@
 package core
 
-import "github.com/teamgram/proto/mtproto"
-
-const premiumStatusText = "Tellomi includes Telegram Premium for every account. There is nothing to buy."
+import (
+	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
+)
 
 // PremiumPromo is help.getPremiumPromo with purchase options removed.
-func PremiumPromo() *mtproto.Help_PremiumPromo {
+// lang is the client language. Empty is English.
+func PremiumPromo(lang string) *mtproto.Help_PremiumPromo {
 	return mtproto.MakeTLHelpPremiumPromo(&mtproto.Help_PremiumPromo{
-		StatusText:     premiumStatusText,
+		StatusText:     usercopy.Premium(lang),
 		StatusEntities: []*mtproto.MessageEntity{},
 		VideoSections:  []string{},
 		Videos:         []*mtproto.Document{},

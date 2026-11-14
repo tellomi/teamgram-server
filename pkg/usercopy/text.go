@@ -29,6 +29,11 @@ func AppUpdate(lang string) string {
 	return pick(appUpdate, lang)
 }
 
+// Premium is the help.getPremiumPromo status line.
+func Premium(lang string) string {
+	return pick(premiumStatus, lang)
+}
+
 // Invite is the help.getInviteText sentence, including the link.
 func Invite(lang, link string) string {
 	return pick(invite, lang) + link
@@ -95,6 +100,41 @@ var appUpdate = map[string]string{
 	"vi":      "Đã có phiên bản Tellomi mới.",
 	"zh-hans": "发现新版本 Tellomi，建议更新。",
 	"zh-hant": "發現新版本 Tellomi，建議更新。",
+}
+
+var premiumStatus = map[string]string{
+	"en":      "Tellomi includes Telegram Premium for every account. There is nothing to buy.",
+	"ar":      "يتضمن Tellomi ميزة Telegram Premium لكل حساب. لا يوجد ما يمكن شراؤه.",
+	"be":      "У Tellomi кожны ўліковы запіс мае Telegram Premium. Купляць нічога не трэба.",
+	"ca":      "Tellomi inclou Telegram Premium per a cada compte. No hi ha res per comprar.",
+	"cs":      "Tellomi obsahuje Telegram Premium pro každý účet. Není co kupovat.",
+	"de":      "Tellomi enthält Telegram Premium für jedes Konto. Es gibt nichts zu kaufen.",
+	"el":      "Το Tellomi περιλαμβάνει Telegram Premium για κάθε λογαριασμό. Δεν υπάρχει κάτι για αγορά.",
+	"es":      "Tellomi incluye Telegram Premium en cada cuenta. No hay nada que comprar.",
+	"fa":      "Tellomi برای هر حساب Telegram Premium را دارد. چیزی برای خرید نیست.",
+	"fi":      "Tellomi sisältää Telegram Premiumin jokaiselle tilille. Ostettavaa ei ole.",
+	"fr":      "Tellomi inclut Telegram Premium pour chaque compte. Il n'y a rien à acheter.",
+	"he":      "Tellomi כולל Telegram Premium לכל חשבון. אין מה לקנות.",
+	"hi":      "Tellomi में हर खाते के साथ Telegram Premium शामिल है। खरीदने के लिए कुछ नहीं है।",
+	"id":      "Tellomi menyertakan Telegram Premium untuk setiap akun. Tidak ada yang perlu dibeli.",
+	"it":      "Tellomi include Telegram Premium per ogni account. Non c'è nulla da acquistare.",
+	"ja":      "Tellomi では、すべてのアカウントに Telegram Premium が含まれます。購入する必要はありません。",
+	"ko":      "Tellomi는 모든 계정에 Telegram Premium이 포함되어 있습니다. 구매할 항목이 없습니다.",
+	"ms":      "Tellomi menyertakan Telegram Premium untuk setiap akaun. Tiada apa untuk dibeli.",
+	"nb":      "Tellomi inkluderer Telegram Premium for hver konto. Det er ingenting å kjøpe.",
+	"nl":      "Tellomi bevat Telegram Premium voor elk account. Er is niets te koop.",
+	"pl":      "Tellomi zawiera Telegram Premium dla każdego konta. Nie ma nic do kupienia.",
+	"pt-br":   "O Tellomi inclui o Telegram Premium em cada conta. Não há nada para comprar.",
+	"ro":      "Tellomi include Telegram Premium pentru fiecare cont. Nu este nimic de cumpărat.",
+	"ru":      "В Tellomi у каждой учётной записи есть Telegram Premium. Покупать ничего не нужно.",
+	"sv":      "Tellomi innehåller Telegram Premium för varje konto. Det finns inget att köpa.",
+	"th":      "Tellomi รวม Telegram Premium ไว้ให้ทุกบัญชี ไม่มีอะไรต้องซื้อ",
+	"tr":      "Tellomi her hesapta Telegram Premium bulundurur. Satın alınacak bir şey yok.",
+	"uk":      "У Tellomi кожен обліковий запис має Telegram Premium. Нічого купувати не потрібно.",
+	"uz":      "Tellomi har bir hisobda Telegram Premium ni beradi. Sotib oladigan narsa yo‘q.",
+	"vi":      "Tellomi đã gồm Telegram Premium cho mọi tài khoản. Không có gì để mua.",
+	"zh-hans": "Tellomi 已为每个账号包含 Telegram Premium，无需购买。",
+	"zh-hant": "Tellomi 已為每個帳號包含 Telegram Premium，無需購買。",
 }
 
 var invite = map[string]string{

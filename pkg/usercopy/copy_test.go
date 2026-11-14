@@ -89,6 +89,32 @@ func TestEveryLanguageHasServerCopy(t *testing.T) {
 		}
 		assertLoginCode(t, code)
 		assertLoginAlert(t, code, stamp, when)
+		premium := Premium(code)
+		if premium == "" || strings.Contains(premium, "%") {
+			t.Fatalf("premium %s %q", code, premium)
+		}
+		if code != "en" && premium == Premium("en") {
+			t.Fatalf("premium %s fell back to English", code)
+		}
+	}
+	assertAlertPart(t, "ja-JP", when, "新しいログイン")
+	assertAlertPart(t, "zh-Hant-HK", when, "新裝置登入提醒")
+	assertAlertPart(t, "zh-rTW", when, "新裝置登入提醒")
+	assertAlertPart(t, "zh-Hans-CN", when, "新设备登录提醒")
+	unknown, _ := LoginAlert("no-such-lang", "Pixel 8", when)
+	if !strings.Contains(unknown, "New login alert") {
+		t.Fatal(unknown)
+	}
+}
+
+func assertAlertPart(t *testing.T, lang string, when time.Time, part string) {
+	t.Helper()
+	text, _ := LoginAlert(lang, "Pixel 8", when)
+	if !strings.Contains(text, part) {
+		t.Fatalf("%s alert %q missing %q", lang, text, part)
+	}
+	if strings.Contains(text, "New login alert") {
+		t.Fatalf("%s fell back to English: %q", lang, text)
 	}
 }
 

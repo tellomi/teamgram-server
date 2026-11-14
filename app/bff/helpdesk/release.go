@@ -66,6 +66,7 @@ func AppUpdateForSession(client UpdateClient, source string, published *Release)
 }
 
 func (c UpdateClient) language() string {
+	// lang_code, then lang_pack, then system_lang_code. English is last.
 	return langpack.ClientLang(c.LangCode, c.SystemLangCode, c.LangPack)
 }
 

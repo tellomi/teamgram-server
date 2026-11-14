@@ -47,8 +47,8 @@ func (c *ConfigurationCore) HelpGetAppUpdate(in *mtproto.TLHelpGetAppUpdate) (*m
 // updateClient reads lang_pack, lang_code, and system_lang_code from the
 // current RPC session, then the auths row. device_model, system_version,
 // and app_version come from the same row. Known stays false when none of
-// that is available. The dialog language is lang_code, then
-// system_lang_code, then lang_pack when that value is a language tag.
+// that is available. The dialog language is lang_code, then lang_pack when
+// that value is a language tag, then system_lang_code. English is last.
 func (c *ConfigurationCore) updateClient() helpdesk.UpdateClient {
 	var client helpdesk.UpdateClient
 	if c.MD != nil {

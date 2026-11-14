@@ -67,7 +67,8 @@ func Device(model, client, langpack string) string {
 
 // Text is the Simplified Chinese 777000 message. It carries the device and
 // Beijing minute. It does not carry a verification code, a token, or an auth key.
-// TextLang follows the client's language and falls back to English.
+// Callers that know the client language use TextLang. English is the last
+// fallback, after lang_code, lang_pack, and system_lang_code have been tried.
 func Text(device string, when time.Time) (string, []*mtproto.MessageEntity) {
 	return TextLang("zh-hans", device, when)
 }
