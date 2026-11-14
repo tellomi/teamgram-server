@@ -191,3 +191,7 @@ type stubDialog struct{ dialogclient.DialogClient }
 func (stubDialog) DialogGetDialogById(context.Context, *dialog.TLDialogGetDialogById) (*dialog.DialogExt, error) {
 	return nil, nil
 }
+
+func (stubDialog) DialogGetUserPinnedMessage(context.Context, *dialog.TLDialogGetUserPinnedMessage) (*mtproto.Int32, error) {
+	return &mtproto.Int32{}, nil
+}
