@@ -12,7 +12,9 @@ import (
 // SenderChatDialog is the creator's dialog row for a basic-group send.
 // messages.createChat returns before the inbox consumer runs, and
 // messages.toggleDialogPin reads this row. It has to exist first.
-// The sender's own message is not unread.
+// Only top_message and date2 are set. insertOrUpdateDialog writes
+// unread_count as an absolute value, so leaving it unset keeps an
+// existing unread count. A new row still starts at 0 via InsertIgnore.
 func SenderChatDialog(fromID, chatID int64, box *mtproto.MessageBox) *dialog.TLDialogInsertOrUpdateDialog {
 	var (
 		top  int32
@@ -25,12 +27,11 @@ func SenderChatDialog(fromID, chatID int64, box *mtproto.MessageBox) *dialog.TLD
 		}
 	}
 	return &dialog.TLDialogInsertOrUpdateDialog{
-		UserId:      fromID,
-		PeerType:    mtproto.PEER_CHAT,
-		PeerId:      chatID,
-		TopMessage:  &wrapperspb.Int32Value{Value: top},
-		UnreadCount: &wrapperspb.Int32Value{Value: 0},
-		Date2:       &wrapperspb.Int64Value{Value: date},
+		UserId:     fromID,
+		PeerType:   mtproto.PEER_CHAT,
+		PeerId:     chatID,
+		TopMessage: &wrapperspb.Int32Value{Value: top},
+		Date2:      &wrapperspb.Int64Value{Value: date},
 	}
 }
 

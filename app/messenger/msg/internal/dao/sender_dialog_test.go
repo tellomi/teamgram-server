@@ -18,8 +18,8 @@ func TestSenderChatDialogIsTheBasicGroupBeforeInbox(t *testing.T) {
 	if in.GetTopMessage().GetValue() != 7 || in.GetDate2().GetValue() != 1700000000 {
 		t.Fatalf("top %+v date %+v", in.GetTopMessage(), in.GetDate2())
 	}
-	if in.GetUnreadCount().GetValue() != 0 {
-		t.Fatalf("unread %+v", in.GetUnreadCount())
+	if in.UnreadCount != nil || in.ReadInboxMaxId != nil || in.ReadOutboxMaxId != nil || in.PinnedMsgId != nil {
+		t.Fatalf("must not rewrite unread, read cursors, or the pinned message: %+v", in)
 	}
 	newest := NewestOutbox([]*mtproto.MessageBox{
 		{MessageId: 3},

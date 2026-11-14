@@ -4,7 +4,7 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 ## Basic-group dialog before the send returns
 
-`messages.createChat` returns as soon as the inbox record is accepted by Kafka. The creator's `dialogs` row used to be written later, in the inbox consumer (`SendMessageToOutboxV1`). `messages.toggleDialogPin` looks that row up and returns `PEER_ID_INVALID` when it is missing, so pinning the new group immediately failed. The sender's dialog is now inserted before the inbox publish, for one message and for a list. The later inbox apply still upserts `top_message` forward and does not clear `pinned`.
+`messages.createChat` returns as soon as the inbox record is accepted by Kafka. The creator's `dialogs` row used to be written later, in the inbox consumer (`SendMessageToOutboxV1`). `messages.toggleDialogPin` looks that row up and returns `PEER_ID_INVALID` when it is missing, so pinning the new group immediately failed. The sender's dialog is now inserted before the inbox publish, for one message and for a list. The request sets `top_message` and `date2` only. An existing unread count, read cursor, and pin stay. A new row still starts at unread 0 through `InsertIgnore`. The later inbox apply still moves `top_message` forward and does not clear `pinned`.
 
 | Piece | File |
 | --- | --- |
