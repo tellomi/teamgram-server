@@ -22,3 +22,16 @@ func TestContactNoteMatch(t *testing.T) {
 		t.Fatal("blank query matched")
 	}
 }
+
+func TestCallerSavedBucketsMyResults(t *testing.T) {
+	book := map[int64]struct{}{42: {}}
+	if !callerSaved(book, 42) {
+		t.Fatal("one-way contact must be my_results")
+	}
+	if callerSaved(book, 7) {
+		t.Fatal("stranger must stay in results")
+	}
+	if callerSaved(nil, 42) || callerSaved(book, 0) {
+		t.Fatal("empty book or zero id")
+	}
+}

@@ -74,6 +74,9 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 	// the account name. The caller is never a hit.
 
 	// Check query string and limit
+	// contactIDs is the caller's address book. my_results is membership in
+	// that book, not CheckContact on the other user (that is their book).
+	contactIDs := map[int64]struct{}{}
 	if len(q) >= 3 && limit > 0 {
 		if book, err := c.svcCtx.Dao.UserClient.UserGetContactList(c.ctx, &userpb.TLUserGetContactList{
 			UserId: c.MD.UserId,
@@ -81,13 +84,15 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 			c.Logger.Errorf("contacts.search notes - error: %v", err)
 		} else {
 			for _, row := range book.GetDatas() {
-				if row.GetContactUserId() == 0 || row.GetContactUserId() == c.MD.UserId {
+				id := row.GetContactUserId()
+				if id == 0 || id == c.MD.UserId {
 					continue
 				}
+				contactIDs[id] = struct{}{}
 				if !contactNoteMatch(q, row.GetFirstName().GetValue(), row.GetLastName().GetValue()) {
 					continue
 				}
-				idHelper.PickByPeerUtil(mtproto.PEER_USER, row.GetContactUserId())
+				idHelper.PickByPeerUtil(mtproto.PEER_USER, id)
 			}
 		}
 
@@ -155,7 +160,7 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 				peer := mtproto.MakeTLPeerUser(&mtproto.Peer{
 					UserId: it.Id(),
 				})
-				if ok, _ := it.CheckContact(c.MD.UserId); ok {
+				if callerSaved(contactIDs, it.Id()) {
 					found.MyResults = append(found.MyResults, peer.To_Peer())
 				} else {
 					found.Results = append(found.Results, peer.To_Peer())

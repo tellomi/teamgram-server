@@ -4,7 +4,7 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 ## contacts.search self, full name, and notes
 
-`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`.
+`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`. That bucket is the caller's address book (`user.getContactList`). `CheckContact` on the other user asks whether they saved the caller, so a one-way import used to stay in `results`.
 
 | Piece | File |
 | --- | --- |
