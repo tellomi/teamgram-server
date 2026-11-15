@@ -725,3 +725,11 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Quick reply edit (ISSUE-S-QR-EDIT-001, 行 89)
+
+`messages.editMessage` with `quick_reply_shortcut_id` looked up the id in Saved Messages. Shortcut message ids start at 1, so the call hit a forwarded saved message and returned `MESSAGE_AUTHOR_REQUIRED`. The shortcut id now edits the message stored in the quick-reply book and pushes `updateQuickReplyMessage`.
+
+| Piece | File |
+| --- | --- |
+| edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |

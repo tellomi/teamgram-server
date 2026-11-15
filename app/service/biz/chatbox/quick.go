@@ -192,6 +192,58 @@ func (b *Book) ReorderQuickReplies(ctx context.Context, user int64, order []int3
 	return mtproto.BoolTrue, nil
 }
 
+// EditQuickReplyMessage rewrites one message inside a shortcut.
+// messages.editMessage with quick_reply_shortcut_id addresses this inbox,
+// not the saved-messages box. The shortcut ids start at 1 and otherwise
+// collide with a forwarded saved message, which returned
+// MESSAGE_AUTHOR_REQUIRED.
+func (b *Book) EditQuickReplyMessage(ctx context.Context, user int64, shortcutID, msgID int32, text *string, entities []*mtproto.MessageEntity) (*mtproto.Updates, error) {
+	if shortcutID == 0 || msgID == 0 {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadQuick(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	sc := shortcutByID(doc, shortcutID)
+	if sc == nil {
+		return nil, mtproto.ErrShortcutInvalid
+	}
+	for i := range sc.Messages {
+		if sc.Messages[i].ID != msgID {
+			continue
+		}
+		msg := &mtproto.Message{}
+		if err := proto.Unmarshal(sc.Messages[i].Raw, msg); err != nil {
+			return nil, err
+		}
+		if text != nil {
+			if *text == "" && msg.GetMedia() == nil {
+				return nil, mtproto.ErrMessageEmpty
+			}
+			msg.Message = *text
+			msg.Entities = entities
+		} else if entities != nil {
+			msg.Entities = entities
+		}
+		msg.EditDate = wrapperspb.Int32(int32(b.now().Unix()))
+		raw, err := proto.Marshal(msg)
+		if err != nil {
+			return nil, err
+		}
+		sc.Messages[i].Raw = raw
+		if err := b.storeQuick(ctx, user, doc); err != nil {
+			return nil, err
+		}
+		return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
+			Message_MESSAGE: msg,
+		}).To_Update()), nil
+	}
+	return nil, mtproto.ErrMessageIdInvalid
+}
+
 // DeleteQuickReplyMessages drops messages from a shortcut.
 // https://core.telegram.org/method/messages.deleteQuickReplyMessages
 func (b *Book) DeleteQuickReplyMessages(ctx context.Context, user int64, shortcutID int32, ids []int32) (*mtproto.Updates, error) {

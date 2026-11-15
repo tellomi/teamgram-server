@@ -45,6 +45,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - sanction")
 		return nil, err
 	}
+	if in.GetQuickReplyShortcutId().GetValue() != 0 {
+		return c.editQuickReplyMessage(in)
+	}
 	if peer.PeerType == mtproto.PEER_SELF {
 		peer.PeerType = mtproto.PEER_USER
 	}
@@ -198,6 +201,20 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	c.schedulePendingWebpage(peer, outMessage.Media, outMessage.Message, outMessage.Entities, rUpdates, in.GetScheduleDate().GetValue() != 0)
 
 	return rUpdates, nil
+}
+
+func (c *MessagesCore) editQuickReplyMessage(in *mtproto.TLMessagesEditMessage) (*mtproto.Updates, error) {
+	var text *string
+	if in.Message != nil {
+		value := in.Message.Value
+		text = &value
+	}
+	ups, err := chatbox.Shared().EditQuickReplyMessage(c.ctx, c.MD.UserId, in.GetQuickReplyShortcutId().GetValue(), in.Id, text, in.Entities)
+	if err != nil {
+		c.Logger.Errorf("messages.editMessage - quick reply: %v", err)
+		return nil, err
+	}
+	return ups, nil
 }
 
 // editScheduledIfNeeded edits the scheduled inbox when this id is a scheduled

@@ -13,6 +13,59 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+func TestEditQuickReplyMessageRewritesTheShortcut(t *testing.T) {
+	ResetShared()
+	b := Shared()
+	ctx := context.Background()
+	self := mtproto.MakePeerUtil(mtproto.PEER_SELF, 7)
+	shortcut := mtproto.MakeTLInputQuickReplyShortcut(&mtproto.InputQuickReplyShortcut{
+		Shortcut: "w7qr2",
+	}).To_InputQuickReplyShortcut()
+	ups, err := b.CaptureQuickReply(ctx, 7, self, shortcut, []*mtproto.Message{
+		{Message: "first"},
+		{Message: "second"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgID int32
+	for _, u := range ups.Updates {
+		if u.GetMessage_MESSAGE().GetMessage() == "first" {
+			msgID = u.GetMessage_MESSAGE().GetId()
+		}
+	}
+	if msgID == 0 {
+		t.Fatal("missing first message")
+	}
+	page, err := b.QuickReplies(ctx, 7, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid := page.GetQuickReplies()[0].GetShortcutId()
+	text := "rewritten"
+	edited, err := b.EditQuickReplyMessage(ctx, 7, sid, msgID, &text, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.Updates[0].GetMessage_MESSAGE().GetMessage() != "rewritten" {
+		t.Fatalf("edit update %#v", edited.Updates[0])
+	}
+	msgs, err := b.QuickReplyMessages(ctx, 7, sid, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int32]string{}
+	for _, m := range msgs.GetMessages() {
+		got[m.GetId()] = m.GetMessage()
+	}
+	if got[msgID] != "rewritten" || len(got) != 2 {
+		t.Fatalf("stored %#v", got)
+	}
+	if _, err := b.EditQuickReplyMessage(ctx, 7, sid, 99, &text, nil); err != mtproto.ErrMessageIdInvalid {
+		t.Fatalf("missing id: %v", err)
+	}
+}
+
 func TestQuickReplyCaptureListAndSend(t *testing.T) {
 	ResetShared()
 	b := Shared()
