@@ -18,6 +18,7 @@ import (
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
@@ -113,8 +114,38 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 				PeerId:   channelID,
 			})
 		},
+		UserCards: participantCards(users),
 	})
 	return dialogs
+}
+
+// participantCards is the name and contact lookup for channels.getParticipants.
+func participantCards(users user_client.UserClient) func(ctx context.Context, viewer int64, ids []int64) map[int64]channel.UserCard {
+	if users == nil {
+		return nil
+	}
+	return func(ctx context.Context, viewer int64, ids []int64) map[int64]channel.UserCard {
+		out := map[int64]channel.UserCard{}
+		got, err := users.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{
+			Id: ids,
+			To: []int64{viewer},
+		})
+		if err != nil || got == nil {
+			return out
+		}
+		for _, u := range got.GetUserListByIdList(viewer, ids...) {
+			if u == nil || u.GetId() == 0 {
+				continue
+			}
+			out[u.GetId()] = channel.UserCard{
+				First:    u.GetFirstName().GetValue(),
+				Last:     u.GetLastName().GetValue(),
+				Username: u.GetUsername().GetValue(),
+				Contact:  u.GetId() != viewer && !u.GetSelf() && (u.GetContact() || u.GetMutualContact()),
+			}
+		}
+		return out
+	}
 }
 
 // onlineBatch is status.getUsersOnlineSessionsList's maximum.

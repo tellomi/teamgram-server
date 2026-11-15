@@ -67,6 +67,19 @@ type Hooks struct {
 	// process has no presence service. Delete then pushes the affected set
 	// only when that set is at most unreadSyncCap.
 	Online func(ctx context.Context, ids []int64) (map[int64]bool, error)
+	// UserCards loads display names and the viewer's contact bit.
+	// channels.getParticipants has no names of its own. Nil means a name
+	// or contacts filter cannot see profiles.
+	UserCards func(ctx context.Context, viewer int64, ids []int64) map[int64]UserCard
+}
+
+// UserCard is the profile slice channels.getParticipants uses for q and
+// channelParticipantsContacts.
+type UserCard struct {
+	First    string
+	Last     string
+	Username string
+	Contact  bool
 }
 
 // Service is the channel and supergroup implementation.
@@ -211,12 +224,27 @@ func (s *Service) GetParticipants(ctx context.Context, self int64, in *mtproto.I
 			return nil, mtproto.ErrChannelPrivate
 		}
 	}
+	q := ""
+	name := mtproto.Predicate_channelParticipantsRecent
+	if filter != nil {
+		name = filter.PredicateName
+		q = filter.Q_STRING
+		if filter.Q_FLAGSTRING != nil {
+			q = filter.Q_FLAGSTRING.Value
+		}
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
 	// A broadcast subscriber list is admin-only. Megagroups still list
 	// members unless participants_hidden is on.
 	if ch.Broadcast && (p == nil || !p.IsAdmin()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
-	if feat := s.features(ctx, ch.ID); feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) {
+	// Kicked and banned lists are an admin view. A normal member, and a
+	// non-member of a public channel, must not read them.
+	if restrictedParticipantFilter(name) && (p == nil || (!p.IsCreator() && !p.adminRights().CanBanUsers())) {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	if feat := s.features(ctx, ch.ID); feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) && name != mtproto.Predicate_channelParticipantsAdmins {
 		return mtproto.MakeTLChannelsChannelParticipants(&mtproto.Channels_ChannelParticipants{
 			Count:        ch.ParticipantsCount,
 			Participants: []*mtproto.ChannelParticipant{},
@@ -228,16 +256,7 @@ func (s *Service) GetParticipants(ctx context.Context, self int64, in *mtproto.I
 	if err != nil {
 		return nil, err
 	}
-	q := ""
-	name := mtproto.Predicate_channelParticipantsRecent
-	if filter != nil {
-		name = filter.PredicateName
-		q = filter.Q_STRING
-		if filter.Q_FLAGSTRING != nil {
-			q = filter.Q_FLAGSTRING.Value
-		}
-	}
-	matched := filterParticipants(all, name, strings.ToLower(q))
+	matched := s.applyProfileFilter(ctx, self, name, q, filterParticipants(all, name))
 	ids := make([]int64, len(matched))
 	for i, part := range matched {
 		ids[i] = part.UserID
@@ -903,10 +922,10 @@ func hashParticipants(ids []int64) int64 {
 	return h
 }
 
-func filterParticipants(all []*Participant, filter, q string) []*Participant {
+func filterParticipants(all []*Participant, filter string) []*Participant {
 	var out []*Participant
 	for _, p := range all {
-		if !matchParticipant(p, filter, q) {
+		if !matchParticipant(p, filter) {
 			continue
 		}
 		out = append(out, p)
@@ -914,32 +933,80 @@ func filterParticipants(all []*Participant, filter, q string) []*Participant {
 	return out
 }
 
-func matchParticipant(p *Participant, filter, q string) bool {
+func matchParticipant(p *Participant, filter string) bool {
 	switch filter {
 	case mtproto.Predicate_channelParticipantsAdmins:
 		return p.IsAdmin()
 	case mtproto.Predicate_channelParticipantsKicked:
-		return p.State == StateKicked && (q == "" || strings.Contains(itoa64(p.UserID), q))
+		return p.State == StateKicked
 	case mtproto.Predicate_channelParticipantsBanned:
-		if !(p.Role == RoleBanned || p.State == StateKicked) {
-			return false
-		}
-		return q == "" || strings.Contains(itoa64(p.UserID), q) || strings.Contains(strings.ToLower(p.Rank), q)
+		return p.Role == RoleBanned || p.State == StateKicked
 	case mtproto.Predicate_channelParticipantsBots:
 		return p.IsBot && p.State == StateNormal
-	case mtproto.Predicate_channelParticipantsSearch:
-		if p.State != StateNormal {
-			return false
-		}
-		if q == "" {
-			return true
-		}
-		return strings.Contains(itoa64(p.UserID), q) || strings.Contains(strings.ToLower(p.Rank), q)
-	case mtproto.Predicate_channelParticipantsContacts, mtproto.Predicate_channelParticipantsMentions, mtproto.Predicate_channelParticipantsRecent, "":
-		return p.State == StateNormal
 	default:
 		return p.State == StateNormal
 	}
+}
+
+func restrictedParticipantFilter(filter string) bool {
+	return filter == mtproto.Predicate_channelParticipantsBanned || filter == mtproto.Predicate_channelParticipantsKicked
+}
+
+// profileQuery is true when q or the contacts bit needs user profiles.
+// Recent and admins have no q in the schema.
+func profileQuery(filter, q string) bool {
+	if filter == mtproto.Predicate_channelParticipantsContacts {
+		return true
+	}
+	if q == "" {
+		return false
+	}
+	switch filter {
+	case mtproto.Predicate_channelParticipantsKicked,
+		mtproto.Predicate_channelParticipantsBanned,
+		mtproto.Predicate_channelParticipantsSearch,
+		mtproto.Predicate_channelParticipantsMentions:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) applyProfileFilter(ctx context.Context, viewer int64, filter, q string, matched []*Participant) []*Participant {
+	if !profileQuery(filter, q) {
+		return matched
+	}
+	cards := map[int64]UserCard{}
+	if fn := s.hooks().UserCards; fn != nil && len(matched) > 0 {
+		ids := make([]int64, len(matched))
+		for i, p := range matched {
+			ids[i] = p.UserID
+		}
+		if got := fn(ctx, viewer, ids); got != nil {
+			cards = got
+		}
+	}
+	out := make([]*Participant, 0, len(matched))
+	for _, p := range matched {
+		card := cards[p.UserID]
+		if filter == mtproto.Predicate_channelParticipantsContacts {
+			// The viewer is not in their own address book. ToSelfUser
+			// still reports contact and mutual_contact.
+			if p.UserID == viewer || !card.Contact {
+				continue
+			}
+		}
+		if q != "" && !participantNameMatch(card, p.Rank, q) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func participantNameMatch(card UserCard, rank, q string) bool {
+	blob := strings.ToLower(card.First + " " + card.Last + " " + card.Username + " " + rank)
+	return strings.Contains(blob, q)
 }
 
 func randInt63() int64 {
