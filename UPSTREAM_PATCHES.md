@@ -725,3 +725,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## History clear on another session (行 134, ISSUE-S-DELHIST-SYNC-001)
+
+`messages.deleteHistory` with `just_clear` keeps the newest message and rewrites it to `messageActionHistoryClear`. The other session of the same account only drops bubbles named by `updateDeleteMessages`. That update used to omit the rewritten id, so the open chat kept the last bubble until `messages.getHistory`.
+
+The anchor id is now its own `updateDeleteMessages` with `pts_count` 1, before the read and the edit. `getDifference` folds the two adjacent deletes and still names the anchor. The edit is unchanged, so a reload still shows `messageActionHistoryClear`. The message stays in the box.
+
+| Piece | File |
+| --- | --- |
+| id | `app/messenger/msg/deletehistory/plan.go` |
+| pts updates | `app/messenger/msg/msg/internal/core/delete_user_history.go` |

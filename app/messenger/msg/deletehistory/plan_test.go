@@ -236,6 +236,21 @@ func TestPeerWindowDoesNotDeleteOutsideMaxIDOrDates(t *testing.T) {
 	}
 }
 
+func TestAnchorDeleteIDNamesTheHistoryClearMessage(t *testing.T) {
+	if got := AnchorDeleteID([]int32{104, 103, 98}, 105); got != 105 {
+		t.Fatalf("anchor %d", got)
+	}
+	if got := AnchorDeleteID([]int32{105, 104}, 105); got != 0 {
+		t.Fatalf("already deleted %d", got)
+	}
+	if got := AnchorDeleteID(nil, 0); got != 0 {
+		t.Fatalf("no anchor %d", got)
+	}
+	if got := AnchorDeleteID(nil, 98); got != 98 {
+		t.Fatalf("only message %d", got)
+	}
+}
+
 func TestSplitDeletedAnnouncesWhenConfirmFails(t *testing.T) {
 	deleted, failed := SplitDeleted([]int32{3, 2, 1}, map[int32]struct{}{2: {}}, nil)
 	if len(deleted) != 2 || deleted[0] != 3 || deleted[1] != 1 || len(failed) != 1 || failed[0] != 2 {
