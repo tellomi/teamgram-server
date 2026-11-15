@@ -960,3 +960,15 @@ Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`
 | profile hook | `app/bff/channels/internal/svc/service_context.go` |
 | importer users and `q` | `app/bff/chatinvites/internal/core/channel_invite.go`, `messages.getChatInviteImporters_handler.go` |
 | basic-group full list for `q` | `app/service/biz/chat/internal/core/chat.getChatInviteImporters_handler.go` |
+
+## Encrypted file download (ISSUE-S-SECRET-ENCFILE-001)
+
+`messages.uploadEncryptedFile` / `messages.sendEncryptedFile` already return an `EncryptedFile` and write `encryptedfiles/<id>.dat`. `upload.getFile(inputEncryptedFileLocation)` still answered `FILE_ID_INVALID`: `authorizeEncrypted` reads `encrypted_files.access_hash`, and `dfs.uploadEncryptedFileV2` never inserted that row.
+
+The upload now inserts `encrypted_file_id`, `access_hash`, `dc_id`, `file_size`, `key_fingerprint`, `md5_checksum`, `file_path`, and `expired_at=0` before it returns. `expired_at=0` is the retention rule for media that is still stored. A second insert of the same id keeps the first row. `upload.getFile` is unchanged: the stored hash is the capability, a wrong hash and an unknown id are both `FILE_ID_INVALID`.
+
+| Piece | File |
+| --- | --- |
+| insert | `app/service/dfs/internal/dao/encrypted_files.go`, `dao.go` |
+| upload | `app/service/dfs/internal/core/dfs.uploadEncryptedFileV2_handler.go` |
+| unique id | `teamgramd/deploy/sql/migrate-20261115-encrypted-file-lookup.sql` |
