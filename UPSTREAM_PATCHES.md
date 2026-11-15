@@ -905,6 +905,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## inputMessageReplyTo (row 205)
+
+`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message named by `reply_to_msg_id` (or `reply_to_top_id` when the first is unset). A reply with no header is omitted instead of being returned as itself.
+
+| Piece | File |
+| --- | --- |
+| private and basic group | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+| channel | `app/bff/channels/internal/server/grpc/service/handlers.go` |
+
 ## Background emojis, restricted statuses, ringtones, passkey rpId
 
 Rows 290, 272, and 343.
