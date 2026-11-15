@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
 func TestAnonymousAdminFromID(t *testing.T) {
@@ -54,6 +55,72 @@ func TestAnonymousAdminFromID(t *testing.T) {
 	vis := messageByText(plain.Updates, "visible")
 	if vis == nil || vis.GetFromId().GetUserId() != 3 {
 		t.Fatalf("member from %+v", vis.GetFromId())
+	}
+
+	found, err := svc.SearchPosts(ctx, 3, PostQuery{Needle: "hidden", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hit := messageByText(messagesAsUpdates(found.GetMessages()), "hidden")
+	if hit == nil || hit.GetFromId().GetChannelId() != ch.Id || hit.GetFromId().GetUserId() != 0 {
+		t.Fatalf("searchPosts from %+v", hit.GetFromId())
+	}
+	for _, user := range found.GetUsers() {
+		if user.GetId() == 2 {
+			t.Fatal("searchPosts users include the anonymous admin")
+		}
+	}
+	boxes, err := svc.SearchJoined(ctx, 3, "hidden", 10, searchorder.Key{}, false)
+	if err != nil || len(boxes) == 0 {
+		t.Fatalf("searchGlobal boxes %v %v", boxes, err)
+	}
+	shown := boxes[0].ToMessage(3)
+	if shown.GetFromId().GetChannelId() != ch.Id || shown.GetFromId().GetUserId() != 0 {
+		t.Fatalf("searchGlobal from %+v", shown.GetFromId())
+	}
+	byAuthor, err := svc.SearchInChannel(ctx, 3, ch.Id, ChannelSearch{FromUser: 2, Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageByText(messagesAsUpdates(byAuthor.GetMessages()), "hidden") != nil {
+		t.Fatal("messages.search from the admin listed the anonymous post")
+	}
+	open, err := svc.SearchInChannel(ctx, 3, ch.Id, ChannelSearch{Q: "hidden", Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := messageByText(messagesAsUpdates(open.GetMessages()), "hidden")
+	if listed == nil || listed.GetFromId().GetChannelId() != ch.Id {
+		t.Fatalf("channel search from %+v", listed.GetFromId())
+	}
+
+	pinRights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{
+		DeleteMessages: true,
+		PinMessages:    true,
+		Anonymous:      true,
+	}).To_ChatAdminRights()
+	if _, err = svc.EditAdmin(ctx, 1, 0, in, 2, pinRights, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.PinMessage(ctx, 2, 0, ch.Id, own.GetId(), false); err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.History(ctx, 3, in, HistoryQuery{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var serviceKept bool
+	for _, m := range after.GetMessages() {
+		if m.GetAction().GetPredicateName() != mtproto.Predicate_messageActionPinMessage {
+			continue
+		}
+		serviceKept = true
+		if m.GetFromId().GetChannelId() != ch.Id || m.GetFromId().GetUserId() != 0 {
+			t.Fatalf("service from %+v", m.GetFromId())
+		}
+	}
+	if !serviceKept {
+		t.Fatal("pin service message missing")
 	}
 }
 

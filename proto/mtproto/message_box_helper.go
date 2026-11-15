@@ -192,8 +192,10 @@ func (m *MessageBox) ToMessage(toUserId int64) *Message {
 		}
 
 		if message.Views == nil {
-			// megagroup
-			message.FromId = MakePeerUser(m.SenderUserId)
+			// megagroup. An anonymous admin is already stored as the channel.
+			if message.GetFromId().GetChannelId() == 0 {
+				message.FromId = MakePeerUser(m.SenderUserId)
+			}
 		} else {
 			if message.Forwards == nil {
 				message.Forwards = &wrapperspb.Int32Value{Value: 0}

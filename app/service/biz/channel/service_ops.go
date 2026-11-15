@@ -94,15 +94,46 @@ func (s *Service) canInvite(ch *Channel, p *Participant) bool {
 	if p == nil || !p.InChannel() {
 		return false
 	}
-	if p.IsCreator() || p.adminRights().CanInviteUsers() {
+	if p.IsCreator() || (p.IsAdmin() && p.adminRights().CanInviteUsers()) {
 		return true
 	}
-	if ch.Broadcast {
+	if ch != nil && ch.Broadcast {
 		return false
 	}
+	now := int32(time.Now().Unix())
+	if p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil && !br.CanInviteUsers(now) {
+			return false
+		}
+	}
 	return s.defaultAllows(ch, func(br *mtproto.ChatBannedRights) bool {
-		return br.CanInviteUsers(int32(time.Now().Unix()))
+		return br.CanInviteUsers(now)
 	})
+}
+
+// ForbidPoll reports CHAT_SEND_POLL_FORBIDDEN when this member's
+// banned_rights or the chat default ban includes send_polls. Admins and
+// the creator are not restricted. The check uses a poll message so it
+// still applies when TELLOMI_POLLS is off and the stored media would be
+// messageMediaUnsupported.
+func (s *Service) ForbidPoll(ctx context.Context, userID, channelID int64) error {
+	if s == nil || channelID == 0 || userID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Media: mtproto.MakeTLMessageMediaPoll(&mtproto.MessageMedia{
+			Poll: mtproto.MakeTLPoll(&mtproto.Poll{Id: 1}).To_Poll(),
+		}).To_MessageMedia(),
+	}).To_Message()
+	return s.enforceContent(ch, p, []*mtproto.Message{msg})
 }
 
 func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
@@ -286,8 +317,14 @@ func (s *Service) appendMessage(ctx context.Context, channelID, sender, randomID
 	if msg.Date == 0 {
 		msg.Date = int32(time.Now().Unix())
 	}
-	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil && ch.TtlPeriod > 0 {
-		msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil {
+		if msg.GetPredicateName() == mtproto.Predicate_messageService && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(channelID)
+			msg.PostAuthor = nil
+		}
+		if ch.TtlPeriod > 0 {
+			msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+		}
 	}
 	msg.SanitizeEntities()
 	var stored *mtproto.Message
@@ -358,7 +395,10 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	msg.Out = false
 	if msg.PredicateName == mtproto.Predicate_messageService {
 		msg.Post = false
-		if stamp && msg.FromId == nil {
+		if stamp && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+			msg.PostAuthor = nil
+		} else if stamp && msg.FromId == nil {
 			msg.FromId = mtproto.MakePeerUser(sender)
 		}
 		return

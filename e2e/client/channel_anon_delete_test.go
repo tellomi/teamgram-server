@@ -53,6 +53,31 @@ func TestAnonymousAdminSender(t *testing.T) {
 	if memberMsg.GetOut() || memberMsg.GetFromId().GetChannelId() != groupID || memberMsg.GetFromId().GetUserId() != 0 {
 		t.Fatalf("member from %+v out=%v", memberMsg.GetFromId(), memberMsg.GetOut())
 	}
+	posts := messagesOfResult(t, invokeOK(t, member, &mtproto.TLChannelsSearchPosts{
+		Constructor: mtproto.CRC32_channels_searchPosts_f2c4f24d,
+		Query:       &wrapperspb.StringValue{Value: "anon-body"},
+		OffsetPeer:  inputPeerEmpty(),
+		Limit:       20,
+	}))
+	searched := anonMessageText(posts.GetMessages(), "anon-body")
+	if searched == nil || searched.GetFromId().GetChannelId() != groupID || searched.GetFromId().GetUserId() != 0 {
+		t.Fatalf("searchPosts from %+v", searched.GetFromId())
+	}
+	for _, user := range posts.GetUsers() {
+		if user.GetId() == adminID {
+			t.Fatal("searchPosts users include the anonymous admin")
+		}
+	}
+	filtered := messagesOfResult(t, invokeOK(t, member, &mtproto.TLMessagesSearch{
+		Constructor: mtproto.CRC32_messages_search_a0fda762,
+		Peer:        inputPeerChannel(memberCh.GetChannelId(), memberCh.GetAccessHash()),
+		Q:           "anon-body",
+		FromId:      inputPeerUser(adminID, adminHash),
+		Limit:       20,
+	}))
+	if anonMessageText(filtered.GetMessages(), "anon-body") != nil {
+		t.Fatal("messages.search from the admin listed the anonymous post")
+	}
 }
 
 // TestDeleteChannelPushesMembers is ISSUE-S-CHANDEL-PUSH-001 (row 156).
@@ -91,6 +116,15 @@ func TestDeleteChannelPushesMembers(t *testing.T) {
 		t.Fatalf("member missed updateChannel: %v", err)
 	}
 	_ = groupHash
+}
+
+func anonMessageText(msgs []*mtproto.Message, text string) *mtproto.Message {
+	for _, m := range msgs {
+		if m != nil && m.GetMessage() == text {
+			return m
+		}
+	}
+	return nil
 }
 
 func anonImport(t *testing.T, ctx context.Context, c *Client, number, name string) (int64, int64) {
