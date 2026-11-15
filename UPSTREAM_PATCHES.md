@@ -725,3 +725,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Per-member send_polls and invite_users (ISSUE-S-BAN-POLLS-001, BAN-INVITE-MEMBER-001)
+
+`channels.editBanned` stored `send_polls` and `invite_users`. A poll send still went through when `TELLOMI_POLLS` is off, because `inputMediaPoll` became `messageMediaUnsupported` before `ChatSendForbidden` classified it as a poll. `channels.inviteToChannel` checked the default ban and an admin's `invite_users` grant, and skipped that member's own `banned_rights`.
+
+`messages.sendMedia` now asks the channel layer about `send_polls` while the input is still a poll. `canInvite` applies the member ban the same way `canChangeInfo` already does. The creator and an admin who holds `invite_users` are unchanged. `TELLOMI_POLLS` stays off by default.
+
+| Piece | File |
+| --- | --- |
+| poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
+| invite gate | `app/service/biz/channel/service_ops.go` |
