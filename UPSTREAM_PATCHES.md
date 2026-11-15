@@ -2,6 +2,16 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
+
+`messages.search` with `inputMessagesFilterPhoneCalls` listed every stored call. The `missed` flag was not read, so the Missed tab showed answered and outgoing calls too.
+
+A missed query now keeps an incoming call whose discard reason is missed, busy, or absent. Outgoing calls and a connected hangup stay on the All tab. The query reads a wider page because the call table has no missed column, then trims back to `limit`.
+
+| Piece | File |
+| --- | --- |
+| filter | `app/bff/messages/internal/core/messages.search_handler.go` |
+
 ## Auth code cancel, cross-DC bytes, and login-token errors
 
 `auth.cancelCode` returned `boolTrue` without deleting the phone-code row, so the same test code still signed in. It now deletes the matching code. `auth.exportAuthorization` used to put the DC number in `bytes`, and `auth.importAuthorization` accepted any bytes and returned an empty user. The bytes are now a one-shot secret, and import binds that user or returns `AUTH_BYTES_INVALID`. `auth.importLoginToken` returned `AUTH_TOKEN_ALREADY_ACCEPTED` for a token this server does not know; an unknown token is `AUTH_TOKEN_INVALID`. `account.sendChangePhoneCode` treated a 99966 test number as an international SMS number and returned `PHONE_NUMBER_INVALID`. Those numbers now take the same fixed-code path as `auth.sendCode`.
