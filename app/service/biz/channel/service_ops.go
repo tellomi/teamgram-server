@@ -94,15 +94,46 @@ func (s *Service) canInvite(ch *Channel, p *Participant) bool {
 	if p == nil || !p.InChannel() {
 		return false
 	}
-	if p.IsCreator() || p.adminRights().CanInviteUsers() {
+	if p.IsCreator() || (p.IsAdmin() && p.adminRights().CanInviteUsers()) {
 		return true
 	}
-	if ch.Broadcast {
+	if ch != nil && ch.Broadcast {
 		return false
 	}
+	now := int32(time.Now().Unix())
+	if p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil && !br.CanInviteUsers(now) {
+			return false
+		}
+	}
 	return s.defaultAllows(ch, func(br *mtproto.ChatBannedRights) bool {
-		return br.CanInviteUsers(int32(time.Now().Unix()))
+		return br.CanInviteUsers(now)
 	})
+}
+
+// ForbidPoll reports CHAT_SEND_POLL_FORBIDDEN when this member's
+// banned_rights or the chat default ban includes send_polls. Admins and
+// the creator are not restricted. The check uses a poll message so it
+// still applies when TELLOMI_POLLS is off and the stored media would be
+// messageMediaUnsupported.
+func (s *Service) ForbidPoll(ctx context.Context, userID, channelID int64) error {
+	if s == nil || channelID == 0 || userID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Media: mtproto.MakeTLMessageMediaPoll(&mtproto.MessageMedia{
+			Poll: mtproto.MakeTLPoll(&mtproto.Poll{Id: 1}).To_Poll(),
+		}).To_MessageMedia(),
+	}).To_Message()
+	return s.enforceContent(ch, p, []*mtproto.Message{msg})
 }
 
 func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
@@ -133,8 +164,10 @@ func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
 }
 
 // canLinkDiscussion is the channels.setDiscussionGroup gate.
-// The creator qualifies. An admin needs both change_info and
-// manage_linked_peers, on the broadcast and on the megagroup.
+// layer 232 chatAdminRights.manage_linked_peers is the bit that links a
+// channel to its discussion group. The creator qualifies. An admin needs
+// that bit on the broadcast and on the megagroup. change_info is not part
+// of this gate.
 func canLinkDiscussion(p *Participant) bool {
 	if p == nil || !p.InChannel() {
 		return false
@@ -145,8 +178,7 @@ func canLinkDiscussion(p *Participant) bool {
 	if !p.IsAdmin() {
 		return false
 	}
-	rights := p.adminRights()
-	return rights.CanChangeInfo() && rights.CanManageLinkedPeers()
+	return p.adminRights().CanManageLinkedPeers()
 }
 
 // canUpdatePaidMessages allows the creator, an admin with change_info,

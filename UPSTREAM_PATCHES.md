@@ -2,6 +2,17 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Auth code cancel, cross-DC bytes, and login-token errors
+
+`auth.cancelCode` returned `boolTrue` without deleting the phone-code row, so the same test code still signed in. It now deletes the matching code. `auth.exportAuthorization` used to put the DC number in `bytes`, and `auth.importAuthorization` accepted any bytes and returned an empty user. The bytes are now a one-shot secret, and import binds that user or returns `AUTH_BYTES_INVALID`. `auth.importLoginToken` returned `AUTH_TOKEN_ALREADY_ACCEPTED` for a token this server does not know; an unknown token is `AUTH_TOKEN_INVALID`. `account.sendChangePhoneCode` treated a 99966 test number as an international SMS number and returned `PHONE_NUMBER_INVALID`. Those numbers now take the same fixed-code path as `auth.sendCode`.
+
+| Piece | File |
+| --- | --- |
+| cancel the stored code | `app/bff/authorization/internal/core/auth.cancelCode_handler.go` |
+| one-shot export bytes | `app/bff/authorization/internal/dao/export_auth.go`, `auth.exportAuthorization_handler.go`, `auth.importAuthorization_handler.go` |
+| invalid QR import token | `app/bff/qrcode/internal/core/auth.importLoginToken_handler.go` |
+| test number on change-phone | `app/bff/account/internal/core/account.sendChangePhoneCode_handler.go` |
+
 ## Scheduled messages
 
 `messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
@@ -716,6 +727,14 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## translateText nil peer (ISSUE-S-TRANSLATE-NIL-001)
+
+`messages.translateText` with no `text` and no `peer` called `FromInputPeer2` on a nil `InputPeer`. That reads `PredicateName` and the RPC returned 500. A missing peer is now `400 PEER_ID_INVALID` before the peer is read. An empty id list is still `MESSAGE_IDS_EMPTY`.
+
+| Piece | File |
+| --- | --- |
+| guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
@@ -726,13 +745,24 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## Per-member send_polls and invite_users (ISSUE-S-BAN-POLLS-001, BAN-INVITE-MEMBER-001)
+
+`channels.editBanned` stored `send_polls` and `invite_users`. A poll send still went through when `TELLOMI_POLLS` is off, because `inputMediaPoll` became `messageMediaUnsupported` before `ChatSendForbidden` classified it as a poll. `channels.inviteToChannel` checked the default ban and an admin's `invite_users` grant, and skipped that member's own `banned_rights`.
+
+`messages.sendMedia` now asks the channel layer about `send_polls` while the input is still a poll. `canInvite` applies the member ban the same way `canChangeInfo` already does. The creator and an admin who holds `invite_users` are unchanged. `TELLOMI_POLLS` stays off by default.
+
+| Piece | File |
+| --- | --- |
+| poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
+| invite gate | `app/service/biz/channel/service_ops.go` |
+
 ## Channel admin rights (ISSUE-S-UNAME-ADMIN-001, DISCUSSION-ADMIN-001, ADMIN-HIDE-MEMBERS-001, ADMIN-DIRECT-001, CHAN-SUBLIST-001)
 
 `channels.updateUsername` treated `change_info` as enough to publish a username. `channelFull.can_set_username` was already creator-only, and that is the gate clients show. The RPC now matches it.
 
-`channels.setDiscussionGroup` allowed only the broadcast creator. An admin with `change_info` and `manage_linked_peers` on both sides was `CHAT_ADMIN_REQUIRED`, and `manage_linked_peers` (flag 19) was dropped when admin rights were stored. The bit is kept, and both the channel and the supergroup require the creator or those two rights.
+`channels.setDiscussionGroup` allowed only the broadcast creator, and `manage_linked_peers` (flag 19) was dropped when admin rights were stored. The bit is kept. The creator, or an admin who holds `manage_linked_peers`, may link or unlink on both the channel and the supergroup. `change_info` is not required.
 
-`channels.toggleParticipantsHidden` was creator-only. `change_info` is enough, same as `messages.toggleNoForwards`.
+`channels.toggleParticipantsHidden` was creator-only. Hiding the member list uses `ban_users`, the same right the official client sends. The creator also qualifies.
 
 `channels.updatePaidMessagesPrice` used the `change_info` gate. On a broadcast, `manage_direct_messages` can turn direct messages on. A megagroup still needs `change_info`.
 

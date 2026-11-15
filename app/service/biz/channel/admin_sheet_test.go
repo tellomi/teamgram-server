@@ -7,11 +7,12 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-func rights(change, linked, direct bool) *mtproto.ChatAdminRights {
+func rights(change, linked, direct, ban bool) *mtproto.ChatAdminRights {
 	return mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{
 		ChangeInfo:           change,
 		ManageLinkedPeers:    linked,
 		ManageDirectMessages: direct,
+		BanUsers:             ban,
 	}).To_ChatAdminRights()
 }
 
@@ -22,7 +23,7 @@ func TestAdminUsernameDiscussionHiddenDirectAndSubscriberList(t *testing.T) {
 	if _, err := svc.Invite(ctx, 1, 0, gin, []int64{2, 3}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.EditAdmin(ctx, 1, 0, gin, 2, rights(true, true, false), "mod"); err != nil {
+	if _, err := svc.EditAdmin(ctx, 1, 0, gin, 2, rights(true, true, false, false), "mod"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,16 +54,16 @@ func TestAdminUsernameDiscussionHiddenDirectAndSubscriberList(t *testing.T) {
 	if _, err := svc.Invite(ctx, 1, 0, tin, []int64{2}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(true, false, false), ""); err != nil {
+	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(true, false, false, false), ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.EditAdmin(ctx, 1, 0, tin, 2, rights(true, true, false), ""); err != nil {
+	if _, err := svc.EditAdmin(ctx, 1, 0, tin, 2, rights(false, true, false, false), ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.SetDiscussionGroup(ctx, 2, 0, bin, tin); err == nil || !strings.Contains(err.Error(), "CHAT_ADMIN_REQUIRED") {
 		t.Fatalf("discussion without linked peers: %v", err)
 	}
-	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(true, true, false), ""); err != nil {
+	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(false, true, false, false), ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.SetDiscussionGroup(ctx, 2, 0, bin, tin); err != nil {
@@ -79,6 +80,12 @@ func TestAdminUsernameDiscussionHiddenDirectAndSubscriberList(t *testing.T) {
 	if _, err := svc.ToggleParticipantsHidden(ctx, 3, 0, gin, true); err == nil || !strings.Contains(err.Error(), "CHAT_ADMIN_REQUIRED") {
 		t.Fatalf("member hide: %v", err)
 	}
+	if _, err := svc.ToggleParticipantsHidden(ctx, 2, 0, gin, true); err == nil || !strings.Contains(err.Error(), "CHAT_ADMIN_REQUIRED") {
+		t.Fatalf("change_info hide: %v", err)
+	}
+	if _, err := svc.EditAdmin(ctx, 1, 0, gin, 2, rights(false, false, false, true), "mod"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := svc.ToggleParticipantsHidden(ctx, 2, 0, gin, true); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +98,7 @@ func TestAdminUsernameDiscussionHiddenDirectAndSubscriberList(t *testing.T) {
 		t.Fatal("participants_hidden not stored")
 	}
 
-	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(false, false, true), ""); err != nil {
+	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(false, false, true, false), ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.UpdatePaidMessagesPrice(ctx, 2, 0, bin, 0, true); err != nil {
@@ -101,7 +108,7 @@ func TestAdminUsernameDiscussionHiddenDirectAndSubscriberList(t *testing.T) {
 	if err != nil || !full.Chats[0].GetBroadcastMessagesAllowed() {
 		t.Fatalf("direct messages %#v %v", full, err)
 	}
-	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(false, false, false), ""); err != nil {
+	if _, err := svc.EditAdmin(ctx, 1, 0, bin, 2, rights(false, false, false, false), ""); err != nil {
 		t.Fatal(err)
 	}
 	// Empty rights demotes the admin. A plain member still cannot toggle.

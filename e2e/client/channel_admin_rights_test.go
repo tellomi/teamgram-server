@@ -38,8 +38,7 @@ func TestChannelAdminRightsSheet(t *testing.T) {
 	memberGroup := waitChannel(t, ctx, member, groupID)
 
 	editChannelAdmin(t, ctx, owner, group, adminID, adminHash, &mtproto.ChatAdminRights{
-		ChangeInfo:        true,
-		ManageLinkedPeers: true,
+		ChangeInfo: true,
 	})
 	name := fmt.Sprintf("sroom%d", time.Now().Unix()%100000000)
 	if _, err = admin.Invoke(ctx, &mtproto.TLChannelsUpdateUsername{
@@ -71,6 +70,16 @@ func TestChannelAdminRightsSheet(t *testing.T) {
 		Constructor: mtproto.CRC32_channels_toggleParticipantsHidden,
 		Channel:     adminGroup,
 		Enabled:     mtproto.ToBool(true),
+	}); err == nil || !strings.Contains(err.Error(), "CHAT_ADMIN_REQUIRED") {
+		t.Fatalf("change_info hide: %v", err)
+	}
+	editChannelAdmin(t, ctx, owner, group, adminID, adminHash, &mtproto.ChatAdminRights{
+		BanUsers: true,
+	})
+	if _, err = admin.Invoke(ctx, &mtproto.TLChannelsToggleParticipantsHidden{
+		Constructor: mtproto.CRC32_channels_toggleParticipantsHidden,
+		Channel:     adminGroup,
+		Enabled:     mtproto.ToBool(true),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +105,6 @@ func TestChannelAdminRightsSheet(t *testing.T) {
 	adminTalk := waitChannel(t, ctx, admin, talkID)
 	editChannelAdmin(t, ctx, owner, news, adminID, adminHash, &mtproto.ChatAdminRights{ChangeInfo: true})
 	editChannelAdmin(t, ctx, owner, talk, adminID, adminHash, &mtproto.ChatAdminRights{
-		ChangeInfo:        true,
 		ManageLinkedPeers: true,
 	})
 	if _, err = admin.Invoke(ctx, &mtproto.TLChannelsSetDiscussionGroup{
@@ -107,7 +115,6 @@ func TestChannelAdminRightsSheet(t *testing.T) {
 		t.Fatalf("discussion without manage_linked_peers: %v", err)
 	}
 	editChannelAdmin(t, ctx, owner, news, adminID, adminHash, &mtproto.ChatAdminRights{
-		ChangeInfo:        true,
 		ManageLinkedPeers: true,
 	})
 	setDiscussion(t, ctx, admin, adminNews, adminTalk)

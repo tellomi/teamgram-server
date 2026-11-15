@@ -14,3 +14,4 @@ See `docs/testing.md`.
 
 - [ ] `go test ./...` passes.
 - [ ] Client regression passes when server behavior a Telegram client can see has changed.
+- [ ] 已在谷歌表格「问题清单」回写对应问题 ID 的状态/PR/修复说明

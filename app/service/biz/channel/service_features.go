@@ -342,9 +342,9 @@ func (s *Service) ToggleParticipantsHidden(ctx context.Context, self, actorAuth 
 	if err != nil {
 		return nil, err
 	}
-	// channels.toggleParticipantsHidden needs change_info, same as
-	// messages.toggleNoForwards. The creator always qualifies.
-	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanChangeInfo()) {
+	// Official clients hide the member list with ban_users. The creator
+	// always qualifies. change_info is the profile gate, not this one.
+	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanBanUsers()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
