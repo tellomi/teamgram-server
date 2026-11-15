@@ -728,7 +728,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## Draft, unread mark, and scheduled-message cross-session (ISSUE-S-DRAFT-DIALOG-001, ISSUE-S-UNREADMARK-XSYNC-001, ISSUE-S-SCHED-XSYNC-PUSH-001)
 
-`messages.saveDraft` wrote the dialog row and pushed `updateDraftMessage`, but did not drop the cached `DialogExt`. `getDialogs` kept serving the copy from before the draft until a new message invalidated that key. Saving and clearing a draft now invalidates the dialog cache and the all-drafts list. A draft for a peer with no dialog row inserts the row.
+`messages.saveDraft` wrote the dialog row and pushed `updateDraftMessage`, but did not drop the cached `DialogExt`. `getDialogs` kept serving the copy from before the draft until a new message invalidated that key. Saving and clearing a draft now invalidates the dialog cache and the all-drafts list. A draft for a peer with no dialog row inserts the row. The BFF returns the dialog service error instead of `boolTrue` when that write fails. `UpdateOutboxDialog` used to set `draft_message_data` to JSON null when a message landed, so a send still in flight erased a draft saved after it. That update now only moves `top_message` and leaves the draft columns alone.
 
 `messages.markDialogUnread` wrote `unread_mark` and returned. It did not drop the dialog cache and did not push `updateDialogUnreadMark`. The cache is invalidated, a missing dialog is inserted when the mark is set, and the owner's other sessions get the update.
 
@@ -736,6 +736,6 @@ Creating a scheduled message returned `updateNewScheduledMessage` only to the ca
 
 | Piece | File |
 | --- | --- |
-| draft cache | `dialog.saveDraftMessage_handler.go`, `dialog.clearDraftMessage_handler.go` |
+| draft cache | `dialog.saveDraftMessage_handler.go`, `dialog.clearDraftMessage_handler.go`, `messages.saveDraft_handler.go`, `dialogs_dao.go` `UpdateOutboxDialog` |
 | unread mark | `unread_mark.go`, `dialog.markDialogUnread_handler.go`, `messages.markDialogUnread_handler.go` |
 | scheduled push | `schedule_dispatch.go`, `chat_p1.go` `MessagesDeleteScheduledMessages`, `p1.go` `NewScheduled` |

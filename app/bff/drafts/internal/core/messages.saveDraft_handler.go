@@ -70,11 +70,14 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 			Date_FLAGINT32: mtproto.MakeFlagsInt32(date),
 		}).To_DraftMessage()
 
-		c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(c.ctx, &dialog.TLDialogClearDraftMessage{
+		if _, err := c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(c.ctx, &dialog.TLDialogClearDraftMessage{
 			UserId:   c.MD.UserId,
 			PeerType: peer.PeerType,
 			PeerId:   peer.PeerId,
-		})
+		}); err != nil {
+			c.Logger.Errorf("messages.saveDraft - clear: %v", err)
+			return nil, err
+		}
 	} else {
 		draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{
 			NoWebpage:     in.GetNoWebpage(),
@@ -90,12 +93,15 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 			RichMessage:   rich,
 		}).To_DraftMessage()
 
-		c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
+		if _, err := c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
 			UserId:   c.MD.UserId,
 			PeerType: peer.PeerType,
 			PeerId:   peer.PeerId,
 			Message:  draft,
-		})
+		}); err != nil {
+			c.Logger.Errorf("messages.saveDraft - store: %v", err)
+			return nil, err
+		}
 	}
 
 	syncUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateDraftMessage(&mtproto.Update{

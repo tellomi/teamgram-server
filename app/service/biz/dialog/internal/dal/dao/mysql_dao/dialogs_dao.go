@@ -201,14 +201,19 @@ func (dao *DialogsDAO) InsertOrUpdateDialogTx(tx *sqlx.Tx, do *dataobject.Dialog
 	return
 }
 
+// updateOutboxDialog moves the chat list to the message just sent.
+// The draft columns stay. A send that is still landing must not erase a
+// draft saved after the client already called messages.saveDraft.
+const updateOutboxDialog = "update dialogs set unread_count = 0, deleted = 0, top_message = ?, date2 = ?, unread_mark = 0 where user_id = ? and peer_type = ? and peer_id = ?"
+
 // UpdateOutboxDialog
-// update dialogs set unread_count = 0, deleted = 0, top_message = :top_message, date2 = :date2, unread_mark = 0, draft_message_data = 'null' where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
+// update dialogs set unread_count = 0, deleted = 0, top_message = :top_message, date2 = :date2, unread_mark = 0 where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
 func (dao *DialogsDAO) UpdateOutboxDialog(ctx context.Context, topMessage int32, date2 int64, userId int64, peerType int32, peerId int64) (rowsAffected int64, err error) {
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = "update dialogs set unread_count = 0, deleted = 0, top_message = ?, date2 = ?, unread_mark = 0, draft_message_data = 'null' where user_id = ? and peer_type = ? and peer_id = ?"
+	query = updateOutboxDialog
 
 	rResult, err = dao.db.Exec(ctx, query, topMessage, date2, userId, peerType, peerId)
 
@@ -226,13 +231,13 @@ func (dao *DialogsDAO) UpdateOutboxDialog(ctx context.Context, topMessage int32,
 }
 
 // UpdateOutboxDialogTx
-// update dialogs set unread_count = 0, deleted = 0, top_message = :top_message, date2 = :date2, unread_mark = 0, draft_message_data = 'null' where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
+// update dialogs set unread_count = 0, deleted = 0, top_message = :top_message, date2 = :date2, unread_mark = 0 where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
 func (dao *DialogsDAO) UpdateOutboxDialogTx(tx *sqlx.Tx, topMessage int32, date2 int64, userId int64, peerType int32, peerId int64) (rowsAffected int64, err error) {
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = "update dialogs set unread_count = 0, deleted = 0, top_message = ?, date2 = ?, unread_mark = 0, draft_message_data = 'null' where user_id = ? and peer_type = ? and peer_id = ?"
+	query = updateOutboxDialog
 
 	rResult, err = tx.Exec(query, topMessage, date2, userId, peerType, peerId)
 
