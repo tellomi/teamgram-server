@@ -56,7 +56,17 @@ func TestHideReadMarksBlocksOutboxReadDate(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := outboxReadDate(ctx, a, peerForA, aliceID); err != nil {
+	// Read receipts can land after ReadHistory returns.
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		_, err := outboxReadDate(ctx, a, peerForA, aliceID)
+		if err == nil {
+			return true, nil
+		}
+		if rpc, ok := asRPCError(err); ok && rpc.Message == "MESSAGE_NOT_READ_YET" {
+			return false, nil
+		}
+		return false, err
+	}); err != nil {
 		t.Fatalf("read date before the privacy setting: %v", err)
 	}
 

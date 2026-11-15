@@ -210,7 +210,17 @@ func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.Inpu
 			f.ReadContents[self] = append(f.ReadContents[self], id)
 		}
 	}
-	return s.saveFeatures(ctx, ch.ID, f)
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return err
+	}
+	if h := s.hooks(); h.Push != nil && len(ids) > 0 {
+		up := mtproto.MakeTLUpdateChannelReadMessagesContents(&mtproto.Update{
+			ChannelId: ch.ID,
+			Messages:  ids,
+		}).To_Update()
+		h.Push(ctx, self, nil, s.pack(ctx, self, ch.ID, up))
+	}
+	return nil
 }
 
 // DeleteByDate removes channel messages whose date is inside [minDate, maxDate].
@@ -676,6 +686,32 @@ func canRestrictSaving(p *Participant) bool {
 		return true
 	}
 	return p.IsAdmin() && p.adminRights().CanChangeInfo()
+}
+
+// MayManageGiftCollection reports whether userID may create or edit star gift
+// collections on this channel. Telegram requires the can_post_messages admin
+// right. The creator has every admin right. A missing channel is
+// PEER_ID_INVALID. A member without that right is CHAT_ADMIN_REQUIRED.
+// https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1create_gift_collection.html
+func (s *Service) MayManageGiftCollection(ctx context.Context, userID, channelID int64) error {
+	if s == nil || s.store == nil || userID == 0 || channelID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if ch == nil || ch.Deleted {
+		return mtproto.ErrPeerIdInvalid
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	if p != nil && p.InChannel() && (p.IsCreator() || (p.IsAdmin() && p.adminRights().CanPostMessages())) {
+		return nil
+	}
+	return mtproto.ErrChatAdminRequired
 }
 
 // MayReadBoosts reports whether userID may call premium.getBoostsList for

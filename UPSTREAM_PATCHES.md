@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Privacy switches that were stored and then ignored
+
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
+
+| Piece | File |
+| --- | --- |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
+
 ## Profile name, avatar delete, and 320px photos
 
 `account.updateProfile` stored an empty or all-space first name, and a name longer than the 64-character column was dropped while the RPC still returned the old user. Empty and over-long names now return `FIRSTNAME_INVALID` / `LASTNAME_INVALID`. `photos.deletePhotos` of the current avatar deleted the album row and left `users.photo_id` pointing at it. Deleting the current avatar now points `photo_id` at the next non-fallback photo, or 0. A 320×320 profile JPEG was upscaled to the c size and then rejected because the encode was larger than the upload (`IMAGE_PROCESS_FAILED`). An upscale is allowed to be larger. `account.saveMusic unsave` compared the document id with the user id, so the row was never deleted.
@@ -738,6 +751,18 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## Search counters (ISSUE-S-SEARCH-COUNTERS-001, ISSUE-S-SEARCHCOUNT-001)
+
+`messages.getSearchCounters` counted `message_filter_type = 0` for photo+video, and it returned 0 for photos, video, voice, and round video because those filters were not mapped. Stored photos are type 7 and videos are type 8. Voice notes and round videos both sit in type 2 (`MEDIA_AUDIO`); the document attribute tells them apart. Megagroup and channel posts are not in the caller's private box, so every channel counter was 0.
+
+The counter now sums the stored types. Voice and round video walk the shared audio bucket. Channel peers count the channel store with the same filter `messages.search` uses, including a voice note that is not a round video.
+
+| Piece | File |
+| --- | --- |
+| filter to stored type | `app/bff/messages/internal/core/search_counters.go` |
+| channel count | `app/service/biz/channel/search_count.go`, `search_filter.go` |
+| private and basic-group count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go` |
+
 ## translateText nil peer (ISSUE-S-TRANSLATE-NIL-001)
 
 `messages.translateText` with no `text` and no `peer` called `FromInputPeer2` on a nil `InputPeer`. That reads `PredicateName` and the RPC returned 500. A missing peer is now `400 PEER_ID_INVALID` before the peer is read. An empty id list is still `MESSAGE_IDS_EMPTY`.
@@ -745,6 +770,14 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | Piece | File |
 | --- | --- |
 | guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
+
+## Basic-group self leave (ISSUE-S-BASIC-LEAVE-001)
+
+`messages.deleteChatUser` of self posts `messageActionChatDeleteUser` before it removes the member, so the leaver still receives the service message. When that send returned `CHAT_WRITE_FORBIDDEN` (the member's default rights ban sending), the handler returned the error and never removed the row. A self-leave now still calls `chat.deleteChatUser` after that specific error and returns the participant update. Kicking someone else is unchanged.
+
+| Piece | File |
+| --- | --- |
+| leave | `app/bff/chats/internal/core/messages.deleteChatUser_handler.go` |
 
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
@@ -814,3 +847,13 @@ A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to t
 | direct messages | `app/service/biz/channel/p1.go`, `service_ops.go` |
 | `can_view_participants` | `app/service/biz/channel/convert.go` |
 | `manage_linked_peers` bit | `proto/mtproto/chat_admin_rights.go` |
+
+## Mentions and media unread (ISSUE-S-MENTION-MEGAGROUP-001, CHAN-MEDIA-UNREAD-001)
+
+A supergroup stores one message row. `mentioned` and `media_unread` are per viewer, so they are set when the message is shown. A mention entity or a reply to the viewer sets `mentioned`. Voice, round video, and ttl media set `media_unread` until `channels.readMessageContents`, which also pushes `updateChannelReadMessagesContents`. `dialogs.unread_mentions_count` counts those mentions above the viewer's read cursor.
+
+| Piece | File |
+| --- | --- |
+| viewer flags | `app/service/biz/channel/convert.go` |
+| history and push | `service_ops.go`, `read_views.go` |
+| read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
