@@ -217,7 +217,7 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 		if !mentionsUser(body, self, senderOf) {
 			continue
 		}
-		hit = append(hit, viewMessage(body, stored.SenderID, self))
+		hit = append(hit, s.forViewer(ctx, channelID, body, stored.SenderID, self))
 	}
 	total := int32(len(hit))
 	hit = pageDesc(hit, offsetID, addOffset, limit)

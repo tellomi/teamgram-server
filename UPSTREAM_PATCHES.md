@@ -827,3 +827,13 @@ A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to t
 | box from_id | `proto/mtproto/message_box_helper.go` |
 | delete fanout | `app/service/biz/channel/service.go` |
 | dialog hook | `app/bff/channels/internal/svc/service_context.go` |
+
+## Mentions and media unread (ISSUE-S-MENTION-MEGAGROUP-001, CHAN-MEDIA-UNREAD-001)
+
+A supergroup stores one message row. `mentioned` and `media_unread` are per viewer, so they are set when the message is shown. A mention entity or a reply to the viewer sets `mentioned`. Voice, round video, and ttl media set `media_unread` until `channels.readMessageContents`, which also pushes `updateChannelReadMessagesContents`. `dialogs.unread_mentions_count` counts those mentions above the viewer's read cursor.
+
+| Piece | File |
+| --- | --- |
+| viewer flags | `app/service/biz/channel/convert.go` |
+| history and push | `service_ops.go`, `read_views.go` |
+| read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
