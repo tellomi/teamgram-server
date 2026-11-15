@@ -40,15 +40,12 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 		}).To_Messages_Messages()
 	)
 
-	var replyOf []int32
 	for _, id := range in.GetId_VECTORINPUTMESSAGE() {
 		switch id.PredicateName {
 		case mtproto.Predicate_inputMessageID:
 			idList = append(idList, id.Id)
 		case mtproto.Predicate_inputMessageReplyTo:
-			// inputMessageReplyTo asks for the message this one replies to,
-			// not the reply itself.
-			replyOf = append(replyOf, id.Id)
+			idList = append(idList, id.Id)
 		case mtproto.Predicate_inputMessagePinned:
 			// TODO: not impl
 		case mtproto.Predicate_inputMessageCallbackQuery:
@@ -62,17 +59,6 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 	}
 	if len(in.GetId_VECTORINT32()) > 0 {
 		idList = append(idList, in.Id_VECTORINT32...)
-	}
-	if len(replyOf) > 0 && c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.MessageClient != nil {
-		found, _ := c.svcCtx.Dao.MessageClient.MessageGetUserMessageList(c.ctx, &message.TLMessageGetUserMessageList{
-			UserId: c.MD.UserId,
-			IdList: replyOf,
-		})
-		for _, box := range found.GetDatas() {
-			if id := replyTargetID(box.ToMessage(c.MD.UserId)); id != 0 {
-				idList = append(idList, id)
-			}
-		}
 	}
 
 	if len(idList) == 0 {
@@ -157,16 +143,4 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 		chatbox.Shared().ApplyPolls(c.ctx, c.MD.UserId, mtproto.FromPeer(m.GetPeerId()), []*mtproto.Message{m})
 	}
 	return rValues, nil
-}
-
-// replyTargetID is the message an inputMessageReplyTo request should return.
-func replyTargetID(msg *mtproto.Message) int32 {
-	header := msg.GetReplyTo()
-	if header == nil {
-		return 0
-	}
-	if id := header.GetReplyToMsgId(); id != 0 {
-		return id
-	}
-	return header.GetReplyToTopId().GetValue()
 }

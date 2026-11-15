@@ -303,20 +303,8 @@ func (s *Service) ChannelsGetMessages(ctx context.Context, in *mtproto.TLChannel
 			continue
 		}
 		switch m.PredicateName {
-		case mtproto.Predicate_inputMessageID:
+		case mtproto.Predicate_inputMessageID, mtproto.Predicate_inputMessageReplyTo:
 			ids = append(ids, m.GetId())
-		case mtproto.Predicate_inputMessageReplyTo:
-			// Return the message this one replies to. A reply with no header
-			// contributes nothing, rather than the reply itself.
-			loaded, err := channel.Shared().LoadMessage(ctx, in.GetChannel().GetChannelId(), m.GetId())
-			if err != nil {
-				return nil, err
-			}
-			if id := loaded.GetReplyTo().GetReplyToMsgId(); id != 0 {
-				ids = append(ids, id)
-			} else if id = loaded.GetReplyTo().GetReplyToTopId().GetValue(); id != 0 {
-				ids = append(ids, id)
-			}
 		}
 	}
 	ids = append(ids, in.GetId_VECTORINT32()...)
