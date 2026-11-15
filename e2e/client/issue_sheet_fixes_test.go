@@ -216,6 +216,10 @@ func TestEditReturnsNotModified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The send RPC can return before the sender's box row is visible to edit.
+	if got := historyByText(t, ctx, a, peer, "original"); got.GetId() != id {
+		t.Fatalf("sent id %d stored %d", id, got.GetId())
+	}
 	if _, err = a.Invoke(ctx, &mtproto.TLMessagesEditMessage{
 		Constructor: mtproto.CRC32_messages_editMessage_48f71778,
 		Peer:        peer,
