@@ -2,17 +2,15 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
-## Voice search counters after send (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
+## Voice search counters (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
 
-`messages.getSearchCounters` counted a photo from `message_filter_type` as soon as the row was committed. A voice note and a round video were both stored as `MEDIA_AUDIO`. The voice count then paged those rows and parsed `message_data`. The sender's row is inserted by the inbox consumer after `sendMedia` has returned, so the same call could report photo=1 and voice=0.
+`messages.getSearchCounters` counted a photo with `SELECT count(id)` on `message_filter_type`. A voice note and a round video share `MEDIA_AUDIO`. The voice count paged those rows and parsed `message_data`, so one call could report photo=1 and voice=0 even when both rows were already stored.
 
-A new voice note is stored as `MEDIA_VOICE_FILE` and a new round video as `MEDIA_ROUND_FILE`, and those columns are counted the same way as a photo. The sender's row is inserted before the send RPC returns. The consumer's later insert is the same box id and random id, so it is a replay and does not move `dialog.top_message`. A historical `MEDIA_AUDIO` row is still classified from the document attribute and is not counted again. Media search of the old bucket also reads the two new types.
+Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.search` that reads only that column still lists them. The voice and round counts are now `SELECT count(id)` on that same column, plus the JSON mark the document attribute stores (`"voice":true` or `"round_message":true`). A row stored as `MEDIA_VOICE_FILE` or `MEDIA_ROUND_FILE` is still added by its column and is not matched by the audio predicate. The send path is unchanged. A row that the inbox consumer has not inserted yet is absent from every count, including photos.
 
 | Piece | File |
 | --- | --- |
-| filter type on write | `proto/mtproto/message_filter_util.go` |
-| sender row before return | `app/messenger/msg/internal/dao/outbox.go`, `outbox_search_visible.go` |
-| count and search | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `message.searchByMediaType_handler.go`, `search_counter_voice.go` |
+| count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `search_counter_voice.go` |
 
 ## Channel profile photo on getFullChannel (ISSUE-S-CHAN-FULLPHOTO-001)
 

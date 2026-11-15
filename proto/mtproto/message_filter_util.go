@@ -75,15 +75,8 @@ func GetMediaType(message *Message) int32 {
 		case Predicate_messageMediaContact:
 			return MEDIA_CONTACT
 		case Predicate_messageMediaDocument:
-			// Voice notes and round videos used to share MEDIA_AUDIO.
-			// The counter then had to read message_data to tell them
-			// apart, which lagged behind the filter-type count photos
-			// use. New rows store the two kinds apart. A historical
-			// MEDIA_AUDIO row is still counted by its document attribute.
-			if IsRoundVideoMessage(message) {
-				return MEDIA_ROUND_FILE
-			} else if IsVoiceMessage(message) {
-				return MEDIA_VOICE_FILE
+			if IsVoiceMessage(message) || IsRoundVideoMessage(message) {
+				return MEDIA_AUDIO
 			} else if IsVideoMessage(message) {
 				return MEDIA_VIDEOS_ONLY
 			} else if IsStickerMessage(message) || IsAnimatedStickerMessage(message) {

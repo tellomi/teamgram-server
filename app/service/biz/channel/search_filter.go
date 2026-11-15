@@ -29,8 +29,8 @@ func channelFilterMatches(msg *mtproto.Message, filter *mtproto.MessagesFilter, 
 	case mtproto.FilterMusic:
 		return mtproto.GetMediaType(msg) == mtproto.MEDIA_MUSIC
 	case mtproto.FilterVoice:
-		// Channel posts are matched from the message body. A voice note
-		// carries documentAttributeAudio.voice; a round video does not.
+		// Voice notes and round videos are both stored as MEDIA_AUDIO.
+		// The document attribute is what separates them.
 		return mtproto.IsVoiceMessage(msg)
 	case mtproto.FilterRoundVideo:
 		return mtproto.IsRoundVideoMessage(msg)

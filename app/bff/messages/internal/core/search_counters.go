@@ -7,9 +7,9 @@ import "github.com/teamgram/proto/mtproto"
 //
 // Photos are stored as MEDIA_PHOTOS_ONLY and videos as MEDIA_VIDEOS_ONLY.
 // MEDIA_PHOTOVIDEO is only the legacy combined bucket, so a photo+video
-// counter has to sum all three. A new voice note is MEDIA_VOICE_FILE and a
-// new round video is MEDIA_ROUND_FILE, counted on that column like a photo.
-// MEDIA_AUDIO remains the legacy bucket and the round-voice total.
+// counter has to sum all three. Voice notes and round videos share
+// MEDIA_AUDIO; the message service splits that bucket by document attribute
+// when the requested type is MEDIA_VOICE_FILE or MEDIA_ROUND_FILE.
 func searchCounterMedia(filter *mtproto.MessagesFilter) (int32, bool) {
 	switch mtproto.FromMessagesFilter(filter) {
 	case mtproto.FilterPhotos:

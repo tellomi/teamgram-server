@@ -853,16 +853,6 @@ func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtp
 		HasReaction:       false,
 	}).To_MessageBox()
 
-	// The sender's search counters read this row. Persist it before the
-	// RPC returns. out=false is an inbox copy with its own box id; the
-	// consumer inserts that one, and writing it here would add a row the
-	// sender never had.
-	if out {
-		if err = d.insertSenderSearchRow(ctx, peer, outMsgBox); err != nil {
-			return nil, err
-		}
-	}
-
 	// Write sender's user_pts_updates before RPC return to guarantee
 	// getDifference completeness for the sender.
 	if out && pts > 0 {
@@ -951,12 +941,6 @@ func (d *Dao) sendMessageToOutboxV3(ctx context.Context, fromId int64, peer *mtp
 		TtlPeriod:         historyPeriod(message),
 		HasReaction:       false,
 	}).To_MessageBox()
-
-	if out {
-		if err = d.insertSenderSearchRow(ctx, peer, outMsgBox); err != nil {
-			return nil, err
-		}
-	}
 
 	return outMsgBox, nil
 }

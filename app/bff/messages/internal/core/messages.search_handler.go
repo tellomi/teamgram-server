@@ -189,9 +189,8 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			return rValues, nil
 		}
 	case mtproto.FilterVoice, mtproto.FilterRoundVideo:
-		// New rows are MEDIA_VOICE_FILE or MEDIA_ROUND_FILE. Older rows are
-		// still MEDIA_AUDIO. The message service reads both; keep only the
-		// kind asked for.
+		// Voice notes and round videos share MEDIA_AUDIO in storage; keep
+		// only the kind asked for.
 		boxList, err = c.searchMedia(peer, mtproto.MEDIA_AUDIO, offsetId, limit)
 		if err != nil {
 			c.Logger.Errorf("messages.search - error: %v", err)

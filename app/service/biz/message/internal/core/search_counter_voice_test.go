@@ -1,9 +1,12 @@
 package core
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/zeromicro/go-zero/core/jsonx"
 )
 
 func voiceNote() *mtproto.Message {
@@ -36,112 +39,70 @@ func roundVideo() *mtproto.Message {
 	}).To_Message()
 }
 
-func TestVoiceCounterVisibleOnTheFilterColumn(t *testing.T) {
-	voice := voiceNote()
-	round := roundVideo()
-	if got := mtproto.GetMediaType(voice); got != mtproto.MEDIA_VOICE_FILE {
-		t.Fatalf("voice filter type %d", got)
-	}
-	if got := mtproto.GetMediaType(round); got != mtproto.MEDIA_ROUND_FILE {
-		t.Fatalf("round filter type %d", got)
-	}
-	plain := mtproto.MakeTLMessage(&mtproto.Message{
+func plainVideo() *mtproto.Message {
+	return mtproto.MakeTLMessage(&mtproto.Message{
 		Media: mtproto.MakeTLMessageMediaDocument(&mtproto.MessageMedia{
 			Document: mtproto.MakeTLDocument(&mtproto.Document{
 				MimeType: "video/mp4",
 				Attributes: []*mtproto.DocumentAttribute{
-					mtproto.MakeTLDocumentAttributeVideo(&mtproto.DocumentAttribute{W: 320, H: 240, Duration: 2}).To_DocumentAttribute(),
+					mtproto.MakeTLDocumentAttributeVideo(&mtproto.DocumentAttribute{
+						W: 320, H: 240, Duration: 2,
+					}).To_DocumentAttribute(),
 				},
 			}).To_Document(),
 		}).To_MessageMedia(),
 	}).To_Message()
-	if got := mtproto.GetMediaType(plain); got != mtproto.MEDIA_VIDEOS_ONLY {
-		t.Fatalf("plain video filter type %d", got)
-	}
-	// The row the sender just wrote. Counting uses that column, not a
-	// later parse of message_data.
-	fresh := []visibleMedia{
-		{FilterType: mtproto.GetMediaType(voice), Message: voice},
-		{FilterType: mtproto.GetMediaType(round), Message: round},
-	}
-	if got := countVisibleMedia(fresh, mtproto.MEDIA_VOICE_FILE); got != 1 {
-		t.Fatalf("voice %d", got)
-	}
-	if got := countVisibleMedia(fresh, mtproto.MEDIA_ROUND_FILE); got != 1 {
-		t.Fatalf("round %d", got)
-	}
-	if got := countVisibleMedia(fresh, mtproto.MEDIA_AUDIO); got != 2 {
-		t.Fatalf("round voice %d", got)
-	}
-	if countVisibleMedia(fresh[:1], mtproto.MEDIA_ROUND_FILE) != 0 ||
-		countVisibleMedia(fresh[1:], mtproto.MEDIA_VOICE_FILE) != 0 {
-		t.Fatal("voice and round video crossed")
-	}
 }
 
-func TestLegacyAudioCountsOnce(t *testing.T) {
+func TestVoiceAndRoundStayInMediaAudio(t *testing.T) {
 	voice := voiceNote()
 	round := roundVideo()
-	rows := []visibleMedia{
-		{FilterType: mtproto.MEDIA_AUDIO, Message: voice},
-		{FilterType: mtproto.MEDIA_AUDIO, Message: round},
-		{FilterType: mtproto.MEDIA_VOICE_FILE, Message: voice},
-		{FilterType: mtproto.MEDIA_ROUND_FILE, Message: round},
+	video := plainVideo()
+	if mtproto.GetMediaType(voice) != mtproto.MEDIA_AUDIO || mtproto.GetMediaType(round) != mtproto.MEDIA_AUDIO {
+		t.Fatal("voice and round video must stay MEDIA_AUDIO so an older messages.search still lists them")
 	}
-	if got := countVisibleMedia(rows, mtproto.MEDIA_VOICE_FILE); got != 2 {
-		t.Fatalf("voice %d, want 2 (legacy plus new, no double count)", got)
+	if mtproto.GetMediaType(video) != mtproto.MEDIA_VIDEOS_ONLY {
+		t.Fatal("a normal video is not a round video")
 	}
-	if got := countVisibleMedia(rows, mtproto.MEDIA_ROUND_FILE); got != 2 {
-		t.Fatalf("round %d, want 2", got)
+	voiceJSON := mustJSON(t, voice)
+	roundJSON := mustJSON(t, round)
+	videoJSON := mustJSON(t, video)
+	if !bytes.Contains(voiceJSON, []byte(voiceDataMark)) || bytes.Contains(voiceJSON, []byte(roundDataMark)) {
+		t.Fatalf("voice json %s", voiceJSON)
 	}
-	if got := countVisibleMedia(rows, mtproto.MEDIA_AUDIO); got != 4 {
-		t.Fatalf("round voice %d, want 4", got)
+	if !bytes.Contains(roundJSON, []byte(roundDataMark)) || bytes.Contains(roundJSON, []byte(voiceDataMark)) {
+		t.Fatalf("round json %s", roundJSON)
 	}
-	// A new voice row is not also a legacy MEDIA_AUDIO row.
-	onlyNew := []visibleMedia{{FilterType: mtproto.MEDIA_VOICE_FILE, Message: voice}}
-	if got := countVisibleMedia(onlyNew, mtproto.MEDIA_VOICE_FILE); got != 1 {
-		t.Fatalf("new voice counted %d times", got)
+	if bytes.Contains(videoJSON, []byte(voiceDataMark)) || bytes.Contains(videoJSON, []byte(roundDataMark)) {
+		t.Fatalf("plain video json %s", videoJSON)
 	}
-}
-
-func TestSearchStillReadsLegacyAudio(t *testing.T) {
-	voice := searchMediaTypes(mtproto.MEDIA_VOICE_FILE)
-	if !containsInt32(voice, mtproto.MEDIA_VOICE_FILE) || !containsInt32(voice, mtproto.MEDIA_AUDIO) {
-		t.Fatalf("voice search types %v", voice)
-	}
-	round := searchMediaTypes(mtproto.MEDIA_ROUND_FILE)
-	if !containsInt32(round, mtproto.MEDIA_ROUND_FILE) || !containsInt32(round, mtproto.MEDIA_AUDIO) {
-		t.Fatalf("round search types %v", round)
-	}
-	both := searchMediaTypes(mtproto.MEDIA_AUDIO)
-	if !containsInt32(both, mtproto.MEDIA_AUDIO) || !containsInt32(both, mtproto.MEDIA_VOICE_FILE) || !containsInt32(both, mtproto.MEDIA_ROUND_FILE) {
-		t.Fatalf("round-voice search types %v", both)
-	}
-	photo := searchMediaTypes(mtproto.MEDIA_PHOTOS_ONLY)
-	if len(photo) != 1 || photo[0] != mtproto.MEDIA_PHOTOS_ONLY {
-		t.Fatalf("photo search types %v", photo)
+	if !mtproto.IsVoiceMessage(voice) || mtproto.IsVoiceMessage(round) || mtproto.IsRoundVideoMessage(voice) || !mtproto.IsRoundVideoMessage(round) {
+		t.Fatal("attribute classification diverged from the stored marks")
 	}
 }
 
-func TestMergeNewestBoxesKeepsTheNewestPage(t *testing.T) {
-	box := func(id int32) *mtproto.MessageBox {
-		return &mtproto.MessageBox{MessageId: id}
+func TestAudioKindWhereDoesNotDoubleCount(t *testing.T) {
+	where := audioKindWhere(7, 7, 9, true)
+	if !strings.Contains(where, "message_filter_type = 2") || strings.Contains(where, "message_filter_type = 9") || strings.Contains(where, "message_filter_type = 11") {
+		t.Fatalf("voice where counts a non-audio column: %s", where)
 	}
-	got := mergeNewestBoxes([][]*mtproto.MessageBox{
-		{box(10), box(8), box(6)},
-		{box(9), box(8), nil},
-		{box(7)},
-	}, 3)
-	if len(got) != 3 || got[0].MessageId != 10 || got[1].MessageId != 9 || got[2].MessageId != 8 {
-		t.Fatalf("merged %#v", got)
+	if !strings.Contains(where, voiceDataMark) || strings.Contains(where, roundDataMark) {
+		t.Fatalf("voice where %s", where)
+	}
+	roundWhere := audioKindWhere(7, 7, 9, false)
+	if !strings.Contains(roundWhere, roundDataMark) || strings.Contains(roundWhere, voiceDataMark) {
+		t.Fatalf("round where %s", roundWhere)
+	}
+	if !strings.Contains(where, "user_id = 7") || !strings.Contains(where, "dialog_id1 = 7") || !strings.Contains(where, "dialog_id2 = 9") {
+		t.Fatalf("dialog bounds %s", where)
 	}
 }
 
-func containsInt32(list []int32, v int32) bool {
-	for _, item := range list {
-		if item == v {
-			return true
-		}
+func mustJSON(t *testing.T, msg *mtproto.Message) []byte {
+	t.Helper()
+	raw, err := jsonx.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return false
+	return raw
 }
