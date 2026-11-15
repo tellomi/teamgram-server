@@ -110,8 +110,12 @@ func (s *Service) insertInvite(ctx context.Context, inv *StoredInvite) (*mtproto
 		inv.Link = bizchat.GenChannelInviteHash()
 		err = s.store.InsertInvite(ctx, inv)
 		if err == nil {
-			s.logAdmin(ctx, inv.ChannelID, inv.AdminID, mtproto.MakeTLChannelAdminLogEventActionExportedInviteEdit(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
-			return s.exportTL(ctx, inv), nil
+			created := s.exportTL(ctx, inv)
+			s.logAdmin(ctx, inv.ChannelID, inv.AdminID, mtproto.MakeTLChannelAdminLogEventActionExportedInviteEdit(&mtproto.ChannelAdminLogEventAction{
+				PrevInvite: created,
+				NewInvite:  created,
+			}).To_ChannelAdminLogEventAction())
+			return created, nil
 		}
 		if !errors.Is(err, errInviteExists) {
 			return nil, err
@@ -138,12 +142,17 @@ func (s *Service) EditInvite(ctx context.Context, self int64, in *mtproto.InputC
 		return nil, mtproto.ErrInviteHashExpired
 	}
 	now := time.Now().Unix()
+	prevInvite := s.exportTL(ctx, inv)
 	if req.Revoked {
 		inv.Revoked = true
 		if err := s.store.UpdateInvite(ctx, inv); err != nil {
 			return nil, err
 		}
-		out := []*mtproto.ExportedChatInvite{s.exportTL(ctx, inv)}
+		revoked := s.exportTL(ctx, inv)
+		s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionExportedInviteRevoke(&mtproto.ChannelAdminLogEventAction{
+			Invite: revoked,
+		}).To_ChannelAdminLogEventAction())
+		out := []*mtproto.ExportedChatInvite{revoked}
 		if inv.Permanent {
 			fresh, err := s.insertInvite(ctx, &StoredInvite{
 				ChannelID: ch.ID,
@@ -186,7 +195,12 @@ func (s *Service) EditInvite(ctx context.Context, self int64, in *mtproto.InputC
 	if err := s.store.UpdateInvite(ctx, inv); err != nil {
 		return nil, err
 	}
-	return []*mtproto.ExportedChatInvite{s.exportTL(ctx, inv)}, nil
+	edited := s.exportTL(ctx, inv)
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionExportedInviteEdit(&mtproto.ChannelAdminLogEventAction{
+		PrevInvite: prevInvite,
+		NewInvite:  edited,
+	}).To_ChannelAdminLogEventAction())
+	return []*mtproto.ExportedChatInvite{edited}, nil
 }
 
 // ExportedInvites lists one admin's links. The caller must be that admin
@@ -243,10 +257,13 @@ func (s *Service) DeleteInvite(ctx context.Context, self int64, in *mtproto.Inpu
 	if inv.AdminID != self && !p.IsCreator() {
 		return mtproto.ErrChatAdminRequired
 	}
+	deleted := s.exportTL(ctx, inv)
 	if err := s.store.DeleteInvite(ctx, ch.ID, inv.Link); err != nil {
 		return err
 	}
-	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionExportedInviteDelete(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionExportedInviteDelete(&mtproto.ChannelAdminLogEventAction{
+		Invite: deleted,
+	}).To_ChannelAdminLogEventAction())
 	return nil
 }
 
@@ -476,6 +493,9 @@ func (s *Service) ImportInvite(ctx context.Context, self, actorAuth int64, hash 
 	if _, _, err = s.appendMessage(ctx, ch.ID, self, 0, msg); err != nil {
 		return nil, err
 	}
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionParticipantJoinByInvite(&mtproto.ChannelAdminLogEventAction{
+		Invite: s.exportTL(ctx, inv),
+	}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, self, actorAuth, ch.ID, KindNew)
 }
 

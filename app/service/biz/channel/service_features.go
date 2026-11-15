@@ -46,6 +46,16 @@ func (s *Service) saveFeatures(ctx context.Context, channelID int64, f *Features
 	return s.store.SaveFeatures(ctx, channelID, f)
 }
 
+func adminLogMessage(body *mtproto.Message, id int32) *mtproto.Message {
+	if body == nil || body.GetPredicateName() == "" {
+		return mtproto.MakeTLMessage(&mtproto.Message{Id: id, Message: ""}).To_Message()
+	}
+	if body.Id == 0 {
+		body.Id = id
+	}
+	return body
+}
+
 func (s *Service) logAdmin(ctx context.Context, channelID, userID int64, action *mtproto.ChannelAdminLogEventAction) {
 	f := s.features(ctx, channelID)
 	raw, err := proto.Marshal(action)
@@ -133,6 +143,8 @@ func adminLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtprot
 		return filter.Leave
 	case mtproto.Predicate_channelAdminLogEventActionParticipantInvite:
 		return filter.Invite
+	case mtproto.Predicate_channelAdminLogEventActionExportedInviteDelete, mtproto.Predicate_channelAdminLogEventActionExportedInviteEdit, mtproto.Predicate_channelAdminLogEventActionExportedInviteRevoke:
+		return filter.Invites
 	case mtproto.Predicate_channelAdminLogEventActionParticipantToggleBan:
 		return filter.Ban || filter.Kick || filter.Unban || filter.Unkick
 	case mtproto.Predicate_channelAdminLogEventActionParticipantToggleAdmin:
@@ -147,7 +159,7 @@ func adminLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtprot
 		return filter.Edit
 	case mtproto.Predicate_channelAdminLogEventActionDeleteMessage:
 		return filter.Delete
-	case mtproto.Predicate_channelAdminLogEventActionCreateTopic, mtproto.Predicate_channelAdminLogEventActionEditTopic, mtproto.Predicate_channelAdminLogEventActionDeleteTopic:
+	case mtproto.Predicate_channelAdminLogEventActionToggleForum, mtproto.Predicate_channelAdminLogEventActionCreateTopic, mtproto.Predicate_channelAdminLogEventActionEditTopic, mtproto.Predicate_channelAdminLogEventActionDeleteTopic:
 		return filter.Forums
 	default:
 		return filter.Settings || filter.Info
@@ -1078,6 +1090,7 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 		return nil, err
 	}
 	f := s.features(ctx, ch.ID)
+	var body *mtproto.Message
 	if unpin {
 		f.PinnedMsgID = 0
 	} else {
@@ -1086,7 +1099,7 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 			return nil, mtproto.ErrMessageIdInvalid
 		}
 		f.PinnedMsgID = msgID
-		body, _ := unmarshalMessage(stored.Data)
+		body, _ = unmarshalMessage(stored.Data)
 		if body != nil {
 			body.Pinned = true
 			raw, _ := proto.Marshal(body)
@@ -1102,7 +1115,19 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	if _, _, err = s.appendMessage(ctx, channelID, self, 0, msg); err != nil {
 		return nil, err
 	}
-	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionUpdatePinned(&mtproto.ChannelAdminLogEventAction{}).To_ChannelAdminLogEventAction())
+	pinnedLog := adminLogMessage(nil, msgID)
+	if unpin {
+		if stored, err := s.store.GetMessage(ctx, channelID, msgID); err == nil && stored != nil {
+			if b, _ := unmarshalMessage(stored.Data); b != nil {
+				pinnedLog = adminLogMessage(b, msgID)
+			}
+		}
+	} else {
+		pinnedLog = adminLogMessage(body, msgID)
+	}
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionUpdatePinned(&mtproto.ChannelAdminLogEventAction{
+		Message: pinnedLog,
+	}).To_ChannelAdminLogEventAction())
 	return s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
 }
 
@@ -1139,6 +1164,13 @@ func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64
 			_, _ = s.store.CommitEdit(ctx, channelID, pinned, int32(time.Now().Unix()), raw)
 		}
 	}
+	var unpinned *mtproto.Message
+	if stored, err := s.store.GetMessage(ctx, channelID, pinned); err == nil && stored != nil {
+		unpinned, _ = unmarshalMessage(stored.Data)
+	}
+	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionUpdatePinned(&mtproto.ChannelAdminLogEventAction{
+		Message: adminLogMessage(unpinned, pinned),
+	}).To_ChannelAdminLogEventAction())
 	_ = actorAuth
 	return ch.Pts, 1, nil
 }

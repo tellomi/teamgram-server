@@ -730,7 +730,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 `channels.getAdminLog` already returns whatever `Features.AdminLog` stores, and the filter knows these event types. The writers never called `logAdmin` for them, so the matching filters were empty.
 
-Join writes `participantJoin`. Leave writes `participantLeave`. Pin writes `updatePinned`. Edit writes `editMessage` with the previous and new message. Delete writes `deleteMessage`. Creating an invite writes `exportedInviteEdit`. Deleting an invite writes `exportedInviteDelete`. Turning the forum on or off writes `toggleForum`.
+Join writes `participantJoin`. Leave writes `participantLeave`. Pin and unpin-all write `updatePinned` with the message. Edit writes `editMessage` with the previous and new message. Delete writes `deleteMessage` with the message body. Creating or editing an invite writes `exportedInviteEdit` with both invite objects. Revoking writes `exportedInviteRevoke`. Deleting an invite writes `exportedInviteDelete` with the invite. Joining through a link writes `participantJoinByInvite`. Turning the forum on or off writes `toggleForum`, and that event is included by `filter.forums`. Invite-link events are included by `filter.invites`.
 
 | Piece | File |
 | --- | --- |

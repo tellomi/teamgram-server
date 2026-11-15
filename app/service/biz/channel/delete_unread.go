@@ -13,6 +13,7 @@ import (
 type removedMessage struct {
 	ID     int32
 	Sender int64
+	Body   *mtproto.Message
 }
 
 // unreadSyncCap is the member count kept on the request goroutine.

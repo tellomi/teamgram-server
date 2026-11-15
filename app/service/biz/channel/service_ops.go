@@ -682,16 +682,25 @@ func (s *Service) Delete(ctx context.Context, sender, channelID, actorAuth int64
 			return 0, 0, mtproto.ErrMessageDeleteForbidden
 		}
 		allowed = append(allowed, id)
-		removed = append(removed, removedMessage{ID: id, Sender: stored.SenderID})
+		body, _ := unmarshalMessage(stored.Data)
+		removed = append(removed, removedMessage{ID: id, Sender: stored.SenderID, Body: adminLogMessage(body, id)})
 	}
 	pts, count, deleted, err := s.store.CommitDelete(ctx, channelID, allowed)
 	if err != nil {
 		return 0, 0, err
 	}
 	if count > 0 {
+		bodies := map[int32]*mtproto.Message{}
+		for _, m := range removed {
+			bodies[m.ID] = m.Body
+		}
 		for _, id := range deleted {
+			msg := bodies[id]
+			if msg == nil {
+				msg = adminLogMessage(nil, id)
+			}
 			s.logAdmin(ctx, channelID, sender, mtproto.MakeTLChannelAdminLogEventActionDeleteMessage(&mtproto.ChannelAdminLogEventAction{
-				Message: &mtproto.Message{Id: id},
+				Message: msg,
 			}).To_ChannelAdminLogEventAction())
 		}
 		s.dropDeletedUnread(ctx, channelID, removedStill(removed, deleted), pts)
