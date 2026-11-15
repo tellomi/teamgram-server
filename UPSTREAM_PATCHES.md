@@ -553,6 +553,15 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
 
+## contacts.search self, full name, and notes
+
+`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`. That bucket is the caller's address book (`user.getContactList`). `CheckContact` on the other user asks whether they saved the caller, so a one-way import used to stay in `results`.
+
+| Piece | File |
+| --- | --- |
+| omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
+| full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
+
 ## Invite usage_limit of 0
 
 Android sets `usage_limit` and sends 0 for no limit. `messages.exportChatInvite` and `messages.editExportedChatInvite` store 0 and omit the field on `chatInviteExported`. Below 0 or above 99999 is `USAGE_LIMIT_INVALID`. A stored 0 does not use up the link. Helpers: `pkg/invite.NormalizeUsage`, `pkg/invite.UsageExhausted`. Channels: `app/service/biz/channel/invite.go`. Basic groups: `chat.exportChatInvite_handler.go`, `chat.editExportedChatInvite_handler.go`, `chat.checkChatInvite_handler.go`, `chat.importChatInvite_handler.go`, `chat.importChatInvite2_handler.go`.
