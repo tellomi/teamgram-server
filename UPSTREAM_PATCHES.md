@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Privacy switches that were stored and then ignored
+
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
+
+| Piece | File |
+| --- | --- |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
+
 ## Profile name, avatar delete, and 320px photos
 
 `account.updateProfile` stored an empty or all-space first name, and a name longer than the 64-character column was dropped while the RPC still returned the old user. Empty and over-long names now return `FIRSTNAME_INVALID` / `LASTNAME_INVALID`. `photos.deletePhotos` of the current avatar deleted the album row and left `users.photo_id` pointing at it. Deleting the current avatar now points `photo_id` at the next non-fallback photo, or 0. A 320×320 profile JPEG was upscaled to the c size and then rejected because the encode was larger than the upload (`IMAGE_PROCESS_FAILED`). An upscale is allowed to be larger. `account.saveMusic unsave` compared the document id with the user id, so the row was never deleted.
