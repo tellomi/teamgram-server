@@ -19,25 +19,52 @@
 package core
 
 import (
+	"encoding/binary"
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/qrcode/internal/model"
 )
-
-/**
-# auth.importLoginToken
-
-Login using a redirected login token, generated in case of DC mismatch during QR code login.
-
-For more info, see login via QR code.
-
-**/
 
 // AuthImportLoginToken
 // auth.importLoginToken#95ac5ce4 token:bytes = auth.LoginToken;
+//
+// https://core.telegram.org/method/auth.importLoginToken
+// This server has one DC, so a token is not a cross-DC migrate payload.
+// A blob that is not a live QR token is 400 AUTH_TOKEN_INVALID.
+// A token this server already accepted is 400 AUTH_TOKEN_ALREADY_ACCEPTED.
+// A token past its expiry is 400 AUTH_TOKEN_EXPIRED.
 func (c *QrCodeCore) AuthImportLoginToken(in *mtproto.TLAuthImportLoginToken) (*mtproto.Auth_LoginToken, error) {
-	// TODO: not impl
-	// teamgram does not implement multi-datacenter support, so this method is not implemented.
-
-	c.Logger.Errorf("auth.importLoginToken - method not impl")
-
-	return nil, mtproto.ErrAuthTokenAlreadyAccepted
+	token := []byte(nil)
+	if in != nil {
+		token = in.GetToken()
+	}
+	// acceptLoginToken uses 8 bytes of auth key id plus a 16-byte check.
+	if len(token) != 24 {
+		c.Logger.Errorf("auth.importLoginToken - invalid token length %d", len(token))
+		return nil, mtproto.ErrAuthTokenInvalid
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return nil, mtproto.ErrAuthTokenInvalid
+	}
+	keyID := int64(binary.BigEndian.Uint64(token))
+	qrCode, err := c.svcCtx.Dao.GetCacheQRLoginCode(c.ctx, keyID)
+	if err != nil || qrCode == nil || !qrCode.CheckByToken(token) {
+		c.Logger.Errorf("auth.importLoginToken - unknown token")
+		return nil, mtproto.ErrAuthTokenInvalid
+	}
+	if model.QRExpired(qrCode.ExpireAt, time.Now().Unix()) {
+		c.Logger.Errorf("auth.importLoginToken - expired")
+		return nil, mtproto.ErrAuthTokenExpired
+	}
+	switch qrCode.State {
+	case model.QRCodeStateAccepted, model.QRCodeStateSuccess:
+		c.Logger.Errorf("auth.importLoginToken - already accepted")
+		return nil, mtproto.ErrAuthTokenAlreadyAccepted
+	default:
+		// A same-DC QR token is finished by auth.exportLoginToken, not by
+		// importing it as a migrate payload.
+		c.Logger.Errorf("auth.importLoginToken - not a migrate token")
+		return nil, mtproto.ErrAuthTokenInvalid
+	}
 }
