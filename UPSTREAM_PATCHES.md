@@ -2,13 +2,18 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
-## contacts.editCloseFriends replace
+## Privacy switches that were stored and then ignored
 
-`GetCloseFriendList` treated every contact who was not a close friend as a hole and returned no list at all. `contacts.editCloseFriends` then only set the new ids to true and never cleared the previous ones. The list now keeps the close-friend rows and ignores the rest, so a shorter or empty id vector replaces the saved set.
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
 
 | Piece | File |
 | --- | --- |
-| skip non-close-friend slots | `app/service/biz/user/internal/dao/user_contact.go` |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
 
 ## Profile name, avatar delete, and 320px photos
 
@@ -526,6 +531,14 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 
 `account.updateStatus` stores a 300 second online window (`user_presences.expires`). `users.getUsers`, `contacts.getStatuses`, and `messages.getOnlines` read that same window. A missing `user_presences` row is `PRESENCE_NOT_FOUND` and is not treated as a previous offline; an existing row is not rewritten. `user.createNewTestUser` writes the same initial row as a normal signup. Online updates go to people this user added and to people who added this user, after `privacyKeyStatusTimestamp` in both directions and a batched block check. Crossing online and offline always reloads the audience and pushes. While the user stays online, a later absolute expires is pushed from the cached recipient list (user id plus exact or coarse tier) and does not read contacts, privacy, or blocks. The list is capped and expires. A failed push does not store the new expires, so the next heartbeat retries. A `privacyKeyStatusTimestamp` change reads both contact id lists first. Either read failing returns without writing the new rules. After the rules are stored, those contacts' cached audiences are dropped. `Forget` bumps a generation that is not deleted with the list and returns a store error so the client can retry the clear. `Save` writes only when that generation is still current and the new expires is later, in one atomic step, so a heartbeat that read the list before `Forget` cannot put it back. Sliding that expires does not extend the list deadline. Only a full reload sets a new 600 second deadline, so a clear that never landed still expires and the next heartbeat reloads. If privacy or the block check cannot be loaded, nothing is pushed and `contacts.getStatuses` returns no exact timestamps. `contacts.addContact` and `contacts.importContacts` push the current allowed status both ways. Chat-participant privacy rules are not treated as a match when membership is unknown.
 
+## contacts.editCloseFriends replace
+
+`GetCloseFriendList` treated every contact who was not a close friend as a hole and returned no list at all. `contacts.editCloseFriends` then only set the new ids to true and never cleared the previous ones. The list now keeps the close-friend rows and ignores the rest, so a shorter or empty id vector replaces the saved set.
+
+| Piece | File |
+| --- | --- |
+| skip non-close-friend slots | `app/service/biz/user/internal/dao/user_contact.go` |
+
 ## contacts.getContacts hash and messages.searchGlobal
 
 `contacts.getContacts` used the pre-64-bit mix `(acc * 20261 + id) % 0x80000000`. Current Android `ContactsController.getContactsHash` mixes `contactsSavedCount` and then each contact user id with `MediaDataController.calcHash` (unsigned shifts of the accumulator, then add the id). The hashes never matched, so the server never returned `contacts.contactsNotModified`. Opening a contact picker then rewrote the phone book and, when a contact had no user in the same reply, called `loadContacts(false, 0)`, which cannot accept NotModified. The hash is the client algorithm. A contact with no user object is left out of the reply. A failed `saved_count` read is an error, not 0. `contacts.getStatuses` still only returns statuses. The server does not emit `updateContactsReset`. `updatePeerSettings` does not reload the contact book.
@@ -786,3 +799,19 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
 | invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Anonymous admins and channel deletion (ISSUE-S-ANON-ADMIN-001, CHANDEL-PUSH-001)
+
+A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to their user on every message. `shapeOutgoing` now stamps `from_id` as the supergroup, including service messages such as a pin. `appendMessage` applies the same stamp when a service message is stored without going through `shapeOutgoing`. The stored sender id is unchanged, so `out` is still true for the author and moderation still knows who sent it. Broadcast posts are unchanged. The creator's implicit full right set does not turn this on.
+
+`channels.searchPosts` used to replace a non-user `from_id` with `SenderID` and list that user. An anonymous post keeps the channel `from_id` and the real user is left out of `users`. `messages.search` with `from_id` set to that user does not return the post. A megagroup `MessageBox` whose stored `from_id` is already the channel is not rewritten to the sender.
+
+`channels.deleteChannel` marked the row deleted and returned `updateChannel` only to the caller. Members now get the same update with `channelForbidden`, excluding the requesting auth key. Each participant's dialog row is deleted through the new `DropDialog` hook, which calls `dialog.deleteDialog`.
+
+| Piece | File |
+| --- | --- |
+| anonymous from_id | `app/service/biz/channel/service_ops.go` |
+| search | `app/service/biz/channel/post_search.go`, `service_features.go` `SearchInChannel` |
+| box from_id | `proto/mtproto/message_box_helper.go` |
+| delete fanout | `app/service/biz/channel/service.go` |
+| dialog hook | `app/bff/channels/internal/svc/service_context.go` |
