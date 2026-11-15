@@ -213,9 +213,13 @@ func NewBotChat(c Config) *service.BotChatService {
 // NewQuickReply serves quick-reply shortcuts. Sending a shortcut goes
 // through messenger.msg, same as messages.sendMessage.
 func NewQuickReply(c Config) *service.QuickReplyService {
-	return &service.QuickReplyService{
+	svc := &service.QuickReplyService{
 		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		svc.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
+	}
+	return svc
 }
 
 // NewSavedTags serves saved-message reaction tags.
