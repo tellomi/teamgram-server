@@ -17,5 +17,9 @@ type UserGlobalPrivacySettingsDO struct {
 	KeepArchivedUnmuted              bool  `db:"keep_archived_unmuted" json:"keep_archived_unmuted"`
 	KeepArchivedFolders              bool  `db:"keep_archived_folders" json:"keep_archived_folders"`
 	HideReadMarks                    bool  `db:"hide_read_marks" json:"hide_read_marks"`
-	NewNoncontactPeersRequirePremium bool  `db:"new_noncontact_peers_require_premium" json:"new_noncontact_peers_require_premium"`
+	NewNoncontactPeersRequirePremium bool   `db:"new_noncontact_peers_require_premium" json:"new_noncontact_peers_require_premium"`
+	DisplayGiftsButton               bool   `db:"display_gifts_button" json:"display_gifts_button"`
+	DisallowedGifts                  string `db:"disallowed_gifts" json:"disallowed_gifts"`
+	SponsoredEnabled                 bool   `db:"sponsored_enabled" json:"sponsored_enabled"`
+	NoncontactPeersPaidStars         int64  `db:"noncontact_peers_paid_stars" json:"noncontact_peers_paid_stars"`
 }

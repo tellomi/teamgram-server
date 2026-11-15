@@ -371,6 +371,50 @@ func viewMessage(m *mtproto.Message, senderID, viewer int64) *mtproto.Message {
 	return out
 }
 
+// forViewer is viewMessage plus the per-viewer flags a shared channel row
+// cannot store: media_unread for voice, round video, and ttl media, and
+// mentioned for a mention or a reply to this viewer.
+func (s *Service) forViewer(ctx context.Context, channelID int64, m *mtproto.Message, sender, viewer int64) *mtproto.Message {
+	out := viewMessage(m, sender, viewer)
+	if out == nil || s == nil || sender == 0 || sender == viewer {
+		return out
+	}
+	if mtproto.CheckHasMediaUnread(out) && !s.contentsRead(ctx, channelID, viewer, out.GetId()) {
+		out.MediaUnread = true
+	}
+	if s.mentionsViewer(ctx, channelID, out, viewer) {
+		out.Mentioned = true
+	}
+	return out
+}
+
+func (s *Service) contentsRead(ctx context.Context, channelID, viewer int64, id int32) bool {
+	if s == nil || id == 0 {
+		return false
+	}
+	for _, seen := range s.features(ctx, channelID).ReadContents[viewer] {
+		if seen == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) mentionsViewer(ctx context.Context, channelID int64, msg *mtproto.Message, viewer int64) bool {
+	if mentionsUser(msg, viewer, nil) {
+		return true
+	}
+	replyID := msg.GetReplyTo().GetReplyToMsgId()
+	if replyID == 0 {
+		replyID = msg.GetReplyTo().GetReplyToMsgId_INT32()
+	}
+	if replyID == 0 || s == nil || s.store == nil {
+		return false
+	}
+	parent, err := s.store.GetMessage(ctx, channelID, replyID)
+	return err == nil && parent != nil && !parent.Deleted && parent.SenderID == viewer
+}
+
 func unmarshalMessage(data []byte) (*mtproto.Message, error) {
 	msg := &mtproto.Message{}
 	if err := proto.Unmarshal(data, msg); err != nil {

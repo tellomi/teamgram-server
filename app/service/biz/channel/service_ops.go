@@ -94,15 +94,46 @@ func (s *Service) canInvite(ch *Channel, p *Participant) bool {
 	if p == nil || !p.InChannel() {
 		return false
 	}
-	if p.IsCreator() || p.adminRights().CanInviteUsers() {
+	if p.IsCreator() || (p.IsAdmin() && p.adminRights().CanInviteUsers()) {
 		return true
 	}
-	if ch.Broadcast {
+	if ch != nil && ch.Broadcast {
 		return false
 	}
+	now := int32(time.Now().Unix())
+	if p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil && !br.CanInviteUsers(now) {
+			return false
+		}
+	}
 	return s.defaultAllows(ch, func(br *mtproto.ChatBannedRights) bool {
-		return br.CanInviteUsers(int32(time.Now().Unix()))
+		return br.CanInviteUsers(now)
 	})
+}
+
+// ForbidPoll reports CHAT_SEND_POLL_FORBIDDEN when this member's
+// banned_rights or the chat default ban includes send_polls. Admins and
+// the creator are not restricted. The check uses a poll message so it
+// still applies when TELLOMI_POLLS is off and the stored media would be
+// messageMediaUnsupported.
+func (s *Service) ForbidPoll(ctx context.Context, userID, channelID int64) error {
+	if s == nil || channelID == 0 || userID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Media: mtproto.MakeTLMessageMediaPoll(&mtproto.MessageMedia{
+			Poll: mtproto.MakeTLPoll(&mtproto.Poll{Id: 1}).To_Poll(),
+		}).To_MessageMedia(),
+	}).To_Message()
+	return s.enforceContent(ch, p, []*mtproto.Message{msg})
 }
 
 func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
@@ -286,8 +317,14 @@ func (s *Service) appendMessage(ctx context.Context, channelID, sender, randomID
 	if msg.Date == 0 {
 		msg.Date = int32(time.Now().Unix())
 	}
-	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil && ch.TtlPeriod > 0 {
-		msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil {
+		if msg.GetPredicateName() == mtproto.Predicate_messageService && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(channelID)
+			msg.PostAuthor = nil
+		}
+		if ch.TtlPeriod > 0 {
+			msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+		}
 	}
 	msg.SanitizeEntities()
 	var stored *mtproto.Message
@@ -358,7 +395,10 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	msg.Out = false
 	if msg.PredicateName == mtproto.Predicate_messageService {
 		msg.Post = false
-		if stamp && msg.FromId == nil {
+		if stamp && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+			msg.PostAuthor = nil
+		} else if stamp && msg.FromId == nil {
 			msg.FromId = mtproto.MakePeerUser(sender)
 		}
 		return
@@ -388,8 +428,25 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	if stamp {
 		msg.FromId = mtproto.MakePeerUser(sender)
 		msg.PostAuthor = nil
+		if s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+		}
 	}
 	msg.Views = nil
+}
+
+// anonymousAdmin is an admin with admin_rights.anonymous in a supergroup.
+// Their messages are attributed to the group. The creator's full right set
+// does not imply this flag.
+func (s *Service) anonymousAdmin(ctx context.Context, ch *Channel, sender int64) bool {
+	if s == nil || ch == nil || ch.Broadcast || sender == 0 {
+		return false
+	}
+	p, err := s.store.GetParticipant(ctx, ch.ID, sender)
+	if err != nil || p == nil || !p.IsAdmin() || p.IsCreator() {
+		return false
+	}
+	return p.adminRights().CanAnonymous()
 }
 
 // Outgoing is one message a client is sending into a channel.
@@ -513,7 +570,7 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 			for _, u := range emitUps {
 				cu := proto.Clone(u).(*mtproto.Update)
 				if cu.Message_MESSAGE != nil {
-					cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
+					cu.Message_MESSAGE = s.forViewer(ctx, channelID, cu.Message_MESSAGE, sender, viewer)
 				}
 				cloned = append(cloned, cu)
 			}
@@ -1002,7 +1059,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		if stored.EditDate != 0 && body.EditDate == nil {
 			body.EditDate = &wrapperspb.Int32Value{Value: stored.EditDate}
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+		msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
@@ -1038,7 +1095,7 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		if err != nil {
 			return nil, err
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+		msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
@@ -1163,7 +1220,7 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 	for _, stored := range page {
 		body, err := unmarshalMessage(stored.Data)
 		if err == nil {
-			msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+			msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 		}
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
@@ -1304,6 +1361,7 @@ type DialogRow struct {
 	Date                int32
 	Pts                 int32
 	ViewForumAsMessages bool
+	UnreadMentions      int32
 }
 
 func (s *Service) DialogsFor(ctx context.Context, userID int64) ([]DialogRow, error) {
@@ -1333,7 +1391,33 @@ func (s *Service) dialogRow(ctx context.Context, userID int64, ch *Channel) Dial
 		Date:                date,
 		Pts:                 ch.Pts,
 		ViewForumAsMessages: s.features(ctx, ch.ID).ViewForumAsMessages[userID],
+		UnreadMentions:      s.unreadMentionCount(ctx, userID, ch, st.ReadInboxMaxID),
 	}
+}
+
+func (s *Service) unreadMentionCount(ctx context.Context, userID int64, ch *Channel, readMax int32) int32 {
+	if s == nil || ch == nil {
+		return 0
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return 0
+	}
+	var n int32
+	for _, stored := range msgs {
+		if stored == nil || stored.Deleted || stored.ID <= readMax || stored.SenderID == userID {
+			continue
+		}
+		body, err := unmarshalMessage(stored.Data)
+		if err != nil || body == nil {
+			continue
+		}
+		body.Id = stored.ID
+		if s.mentionsViewer(ctx, ch.ID, body, userID) {
+			n++
+		}
+	}
+	return n
 }
 
 // DialogFor is one member's dialog for one channel. Opening a chat asks for

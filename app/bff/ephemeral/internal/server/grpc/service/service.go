@@ -6,6 +6,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/ephemeral/internal/svc"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // Service implements RPCEphemeral.
@@ -27,7 +28,27 @@ func (s *Service) user(ctx context.Context) (int64, error) {
 	if md == nil || md.GetUserId() == 0 {
 		return 0, mtproto.ErrAuthKeyUnregistered
 	}
+	// ephemeral.* is a bot API. A user session must not store a message the
+	// receiver never sees. https://core.telegram.org/bots/api
+	if !callerIsBot(ctx, md) {
+		return 0, mtproto.ErrUserBotRequired
+	}
 	return md.GetUserId(), nil
+}
+
+func callerIsBot(ctx context.Context, md *metadata.RpcMetadata) bool {
+	if md.GetIsBot() {
+		return true
+	}
+	if userpb.GetBotNameById(md.GetUserId()) != "" {
+		return true
+	}
+	fn := svc.BotCheck()
+	if fn == nil {
+		return false
+	}
+	ok, err := fn(ctx, md.GetUserId())
+	return err == nil && ok
 }
 
 func peerOf(self int64, in *mtproto.InputPeer) (*mtproto.PeerUtil, error) {
