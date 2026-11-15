@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Quick reply multi-session sync (ISSUE-S-QUICKREPLY-SYNC-001)
+
+Creating, appending, renaming, reordering, and deleting a quick reply only returned the result to the calling RPC. Another session of the same account saw the change only after `messages.getQuickReplies`.
+
+Those changes now go out through `sync.updatesNotMe`, which skips the current auth key, the same path as `account.updateNotifySettings`. A new or appended shortcut message pushes `updateNewQuickReply` and `updateQuickReplyMessage`. A rename or a reorder pushes `updateQuickReplies`. Deleting messages pushes the same updates box the caller receives (`updateDeleteQuickReplyMessages` and the refreshed `updateNewQuickReply`). Deleting a shortcut pushes `updateDeleteQuickReply`. The five constructors have no pts; sync marks them for delivery so a background session is woken too. A push error does not fail the RPC, because the shortcut is already stored.
+
+| Piece | File |
+| --- | --- |
+| capture on send | `app/bff/messages/internal/core/messages.sendMessage_handler.go`, `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `quick_reply_sync.go` |
+| rename, reorder, delete | `app/bff/messages/internal/server/grpc/service/inbox.go` |
+| sync client | `app/bff/messages/p1.go` |
+| deliver the constructors | `app/messenger/sync/internal/core/core.go` |
+
 ## Forum topic drafts (ISSUE-S-TOPIC-DRAFT-001)
 
 `messages.saveDraft` stored one draft per (user, peer) on `dialogs.draft_message_data` and ignored `reply_to.top_msg_id`. A forum topic draft replaced the megagroup draft, `updateDraftMessage` had no `top_msg_id`, and `forumTopic.draft` stayed empty.
