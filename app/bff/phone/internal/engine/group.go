@@ -1078,8 +1078,10 @@ func (e *Engine) Invite(user, id, access int64, users []int64) (*mtproto.Updates
 		e.mu.Unlock()
 		return nil, err
 	}
+	// messageActionInviteToGroupCall is a service message in the chat that
+	// owns the call. PeerID 0 used to skip that write.
 	ev := &GroupEnd{
-		From: user, PeerType: mtproto.PEER_USER, PeerID: 0, RandomID: newID(),
+		From: user, PeerType: g.peerType, PeerID: g.peerID, RandomID: newID(),
 		Action: mtproto.MakeMessageActionInviteToGroupCall(inputCall(g.id, g.access), users...),
 	}
 	var notes []Note

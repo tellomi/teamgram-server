@@ -530,11 +530,21 @@ func (d *Dao) editOutboxMessage(ctx context.Context, fromId int64, peerType int3
 	}, nil
 }
 
-func (d *Dao) DeletePhoneCallHistory(ctx context.Context, userId int64) ([]int32, []int64, error) {
+// PhoneCallRevoke is one peer's copy of the caller's phone-call service messages.
+// messages.deletePhoneCallHistory revoke deletes these dialog_message_id values
+// from that peer's box.
+type PhoneCallRevoke struct {
+	PeerType int32
+	PeerID   int64
+	DataIDs  []int64
+}
+
+func (d *Dao) DeletePhoneCallHistory(ctx context.Context, userId int64) ([]int32, []PhoneCallRevoke, error) {
 	var (
-		dialogIdMap          = make(map[mtproto.DialogID][]int32)
-		deletedIdList        = make([]int32, 0)
-		deletedMsgDataIdList = make([]int64, 0)
+		dialogIdMap   = make(map[mtproto.DialogID][]int32)
+		deletedIdList = make([]int32, 0)
+		peers         []PhoneCallRevoke
+		peerAt        = map[string]int{}
 	)
 
 	_, err := d.MessagesDAO.SelectPhoneCallListWithCB(
@@ -551,7 +561,15 @@ func (d *Dao) DeletePhoneCallHistory(ctx context.Context, userId int64) ([]int32
 				dialogIdMap[did] = append(v2, v.UserMessageBoxId)
 			}
 			deletedIdList = append(deletedIdList, v.UserMessageBoxId)
-			deletedMsgDataIdList = append(deletedMsgDataIdList, v.DialogMessageId)
+			pt, pid := callLogPeer(userId, v)
+			key := fmt.Sprintf("%d:%d", pt, pid)
+			idx, ok := peerAt[key]
+			if !ok {
+				peerAt[key] = len(peers)
+				peers = append(peers, PhoneCallRevoke{PeerType: pt, PeerID: pid, DataIDs: []int64{v.DialogMessageId}})
+				return
+			}
+			peers[idx].DataIDs = append(peers[idx].DataIDs, v.DialogMessageId)
 		},
 	)
 	if err != nil {
@@ -559,7 +577,7 @@ func (d *Dao) DeletePhoneCallHistory(ctx context.Context, userId int64) ([]int32
 	}
 
 	if len(dialogIdMap) == 0 {
-		return []int32{}, []int64{}, nil
+		return []int32{}, []PhoneCallRevoke{}, nil
 	}
 
 	logx.WithContext(ctx).Infof("phone: %v", dialogIdMap)
@@ -587,7 +605,24 @@ func (d *Dao) DeletePhoneCallHistory(ctx context.Context, userId int64) ([]int32
 			dialog.GetDialogCacheKeyByPeer(userId, mtproto.PEER_USER, mtproto.GetPeerIdByDialogId(userId, dialogId)))
 	}
 
-	return deletedIdList, deletedMsgDataIdList, nil
+	return deletedIdList, peers, nil
+}
+
+func callLogPeer(userID int64, v *dataobject.MessagesDO) (int32, int64) {
+	if v == nil {
+		return mtproto.PEER_USER, 0
+	}
+	if v.PeerId != 0 {
+		if v.PeerType != 0 {
+			return v.PeerType, v.PeerId
+		}
+		return mtproto.PEER_USER, v.PeerId
+	}
+	p := mtproto.GetPeerByDialogId(userID, mtproto.DialogID{A: v.DialogId1, B: v.DialogId2})
+	if v.DialogId1 < 0 {
+		return mtproto.PEER_CHAT, p.GetChatId()
+	}
+	return mtproto.PEER_USER, p.GetUserId()
 }
 
 func (d *Dao) SendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, outMsgBox *mtproto.MessageBox) error {

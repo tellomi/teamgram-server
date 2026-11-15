@@ -649,6 +649,17 @@ No new table. No new production switch.
 
 `ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
 
+## Basic-group removal and phone-call revoke
+
+`messages.deleteChatUser` returned empty updates for iOS and Android, and posted `messageActionChatDeleteUser` only after the user was already left or kicked. The inbox walk skips those states, so the removed user never got the service message. The message is now written while they are still a normal member, including for official mobile clients. `revoke_history` still deletes their dialog.
+
+`messages.deletePhoneCallHistory` with `revoke` called `inbox.deleteMessagesToInbox` without `peer_type` and `peer_id`, and mixed every dialog's message ids into one list. The inbox delete only looks in `PEER_USER` or `PEER_CHAT`, so the other side kept the call log. Revoke now deletes each peer's copy separately.
+
+| Piece | File |
+| --- | --- |
+| service message before removal | `messages.deleteChatUser_handler.go` |
+| per-peer revoke | `msg.deletePhoneCallHistory_handler.go`, `outbox.go` `DeletePhoneCallHistory` |
+
 ## Business bot bar, quote text, and chat theme service messages
 
 `messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`. The overlay follows `businessBotRecipients`: a category matches only when the viewer really is a contact, a non-contact, an existing private chat, or a new private chat. `users` adds people unless `exclude_selected` is set, in which case those people are removed. `exclude_users` never sees the bar. A category whose lookup failed does not match.
@@ -709,3 +720,26 @@ Clients, flags, environment variables, and the schema are unchanged. No migratio
 | expired ban omitted | `proto/mtproto/chat_banned_rights.go`, `proto/mtproto/mutable_chat_helper.go`, `chat.editChatDefaultBannedRights_handler.go` |
 | `COLOR_INVALID` | `proto/mtproto/rpc_error_codes.go` |
 | timer before the first message | `dialog.setHistoryTTL_handler.go`, `messages.setHistoryTTL_handler.go`, `dialogs_dao.go` |
+
+## Embedded IANA timezone database (ISSUE-S-BIZ-TZ-001)
+
+The runtime image does not install tzdata. `time.LoadLocation` then only resolves `UTC`, so `help.getTimezonesList` returned that one zone and `account.updateBusinessWorkHours` rejected `Asia/Shanghai` with `TIMEZONE_INVALID`.
+
+`app/bff/bff/cmd/bff/main.go` imports `time/tzdata`, which is the standard-library embed of the IANA database. `pkg/tz` imports it as well so the picker and `validateHours` / `openNow` call the same `Load`. Zone names come from the system `zone.tab` when that file is installed (the tree `LoadLocation` reads first). Otherwise they come from the file index of the embedded database, not a hand-written list.
+
+| Piece | File |
+| --- | --- |
+| binary import | `app/bff/bff/cmd/bff/main.go` |
+| shared IANA source | `pkg/tz` |
+| picker | `app/bff/configuration/internal/timezones/timezones.go` |
+| hours check | `app/bff/business/profile/profile.go` |
+
+## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
+
+`channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
+
+Unlink and rebind now clear that back-pointer when it still names this channel. A group that has already been linked to a different channel is left as it is. The broadcast, the new group, and a group whose pointer was cleared each get `updateChannel`, which is what clients use to reload `channelFull`. The requesting auth key is omitted, same as the other channel fanout. The admin log `changeLinkedChat` entry is unchanged.
+
+| Piece | File |
+| --- | --- |
+| link, unlink, fanout | `app/service/biz/channel/service_features.go` |

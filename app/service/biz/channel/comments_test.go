@@ -23,7 +23,7 @@ func TestChannelCommentsMirrorAndGuestReply(t *testing.T) {
 	}
 	group := megagroup(t, svc, ctx, "Talk")
 	groupIn := inCh(group)
-	if err := svc.SetDiscussionGroup(ctx, 1, channelIn, groupIn); err != nil {
+	if err := svc.SetDiscussionGroup(ctx, 1, 0, channelIn, groupIn); err != nil {
 		t.Fatal(err)
 	}
 
@@ -179,7 +179,7 @@ func TestChannelCommentBansFanoutAndReplyChain(t *testing.T) {
 	}
 	group := megagroup(t, svc, ctx, "Talk rights")
 	groupIn := inCh(group)
-	if err := svc.SetDiscussionGroup(ctx, 1, channelIn, groupIn); err != nil {
+	if err := svc.SetDiscussionGroup(ctx, 1, 0, channelIn, groupIn); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = svc.Invite(ctx, 1, 0, channelIn, []int64{2, 3}, nil)
@@ -327,7 +327,7 @@ func TestChannelCommentsDisabledByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	group := megagroup(t, svc, ctx, "Talk off")
-	if err := svc.SetDiscussionGroup(ctx, 1, channelIn, inCh(group)); err != nil {
+	if err := svc.SetDiscussionGroup(ctx, 1, 0, channelIn, inCh(group)); err != nil {
 		t.Fatal(err)
 	}
 	sent, err := svc.Send(ctx, 1, channelChat.Id, 0, []Outgoing{{
