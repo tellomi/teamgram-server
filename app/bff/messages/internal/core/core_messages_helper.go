@@ -261,8 +261,7 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		}
 	case mtproto.Predicate_inputMediaStory:
 		// inputMediaStory#89fdd778 peer:InputPeer id:int = InputMedia;
-
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+		messageMedia, err = c.storyShareMedia(media)
 	case mtproto.Predicate_inputMediaWebPage:
 		// inputMediaWebPage#c21b8849 flags:# force_large_media:flags.0?true force_small_media:flags.1?true optional:flags.2?true url:string = InputMedia;
 		// https://core.telegram.org/api/link-preview

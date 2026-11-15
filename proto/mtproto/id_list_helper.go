@@ -166,6 +166,8 @@ func (m *IDListHelper) PickByMessageMedia(media *MessageMedia) {
 	case Predicate_messageMediaContact:
 		// messageMediaContact#cbf24940 phone_number:string first_name:string last_name:string vcard:string user_id:int = MessageMedia;
 		m.AppendUsers(media.UserId)
+	case Predicate_messageMediaStory:
+		m.PickByPeer(media.GetPeer())
 	}
 }
 

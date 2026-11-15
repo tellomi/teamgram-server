@@ -725,3 +725,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Story shared into a chat (ISSUE-S-STORY-SHARE-001, 行 119)
+
+`inputMediaStory` was stored as `messageMediaUnsupported`. It is now `messageMediaStory` with the peer, the story id, and the story item the sender is allowed to see. A story that is missing or hidden returns `STORY_ID_INVALID`. The story peer is included when the send result collects users and chats.
+
+| Piece | File |
+| --- | --- |
+| media | `app/bff/messages/internal/core/story_share.go`, `core_messages_helper.go` |
+| peer in updates | `proto/mtproto/id_list_helper.go` |
