@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
+	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -54,12 +55,15 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 		c.Logger.Errorf("contacts.acceptContact - error: %v", err)
 		return nil, mtproto.ErrContactIdInvalid
 	}
+	// acceptContact shares the caller's phone with the accepted user, the same
+	// exception contacts.addContact sets with add_phone_privacy_exception.
 	mutual, err := c.svcCtx.Dao.UserAddContact(c.ctx, &userpb.TLUserAddContact{
-		UserId:    c.MD.UserId,
-		Id:        id.PeerId,
-		FirstName: flagString(user.GetFirstName()),
-		LastName:  flagString(user.GetLastName()),
-		Phone:     flagString(user.GetPhone()),
+		UserId:                   c.MD.UserId,
+		AddPhonePrivacyException: mtproto.ToBool(true),
+		Id:                       id.PeerId,
+		FirstName:                flagString(user.GetFirstName()),
+		LastName:                 flagString(user.GetLastName()),
+		Phone:                    flagString(user.GetPhone()),
 	})
 	if err != nil {
 		c.Logger.Errorf("contacts.acceptContact - error: %v", err)
@@ -75,6 +79,7 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 		c.Logger.Errorf("contacts.acceptContact forget audience: %v", err)
 		return nil, err
 	}
+	c.pushAcceptedPhone(id.PeerId)
 	me, meErr := c.loadUser(c.MD.UserId, c.MD.UserId)
 	users := []*mtproto.User{user}
 	if meErr == nil && me != nil {
@@ -84,4 +89,46 @@ func (c *ContactsCore) ContactsAcceptContact(in *mtproto.TLContactsAcceptContact
 		Peer_PEER: id.ToPeer(),
 		Settings:  cleared,
 	}).To_Update()), nil
+}
+
+// pushAcceptedPhone tells the accepted user that this phone is now visible,
+// and the caller's other sessions that the phone-number rule changed.
+func (c *ContactsCore) pushAcceptedPhone(peerID int64) {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.SyncClient == nil || c.MD == nil || peerID == 0 {
+		return
+	}
+	users, err := c.svcCtx.Dao.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
+		Id: []int64{c.MD.UserId, peerID},
+		To: []int64{peerID},
+	})
+	if err != nil || users == nil {
+		c.Logger.Errorf("contacts.acceptContact - push users: %v", err)
+		return
+	}
+	_, _ = c.svcCtx.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+		UserId: peerID,
+		Updates: mtproto.MakeUpdatesByUpdatesUsers(
+			users.GetUserListByIdList(peerID, c.MD.UserId),
+			mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{
+				Peer_PEER: mtproto.MakePeerUser(c.MD.UserId),
+				Settings:  mtproto.MakeTLPeerSettings(&mtproto.PeerSettings{}).To_PeerSettings(),
+			}).To_Update(),
+		),
+	})
+	rules, err := c.svcCtx.Dao.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
+		UserId:  c.MD.UserId,
+		KeyType: mtproto.PHONE_NUMBER,
+	})
+	if err != nil || rules == nil {
+		c.Logger.Errorf("contacts.acceptContact - privacy rules: %v", err)
+		return
+	}
+	_, _ = c.svcCtx.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+		UserId:        c.MD.UserId,
+		PermAuthKeyId: c.MD.PermAuthKeyId,
+		Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdatePrivacy(&mtproto.Update{
+			Key:   mtproto.ToPrivacyKey(mtproto.PHONE_NUMBER),
+			Rules: rules.GetDatas(),
+		}).To_Update()),
+	})
 }

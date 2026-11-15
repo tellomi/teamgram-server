@@ -645,6 +645,23 @@ func (s *Service) notifyIncoming(ctx context.Context, channelID, sender int64, c
 	}
 }
 
+// MessageBody returns the stored channel post Edit loads. It does not check
+// the inputChannel access hash. A missing or deleted post is MESSAGE_ID_INVALID.
+// A failed read is not "this post has no media".
+func (s *Service) MessageBody(ctx context.Context, channelID int64, messageID int32) (*mtproto.Message, error) {
+	if s == nil || channelID == 0 || messageID == 0 {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	stored, err := s.store.GetMessage(ctx, channelID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if stored == nil || stored.Deleted {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	return unmarshalMessage(stored.Data)
+}
+
 func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, messageID int32, apply func(*mtproto.Message)) (*mtproto.Updates, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {
@@ -671,6 +688,9 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	frozen := proto.Clone(body).(*mtproto.Message)
 	if apply != nil {
 		apply(body)
+	}
+	if mtproto.MessageContentUnchanged(frozen, body) {
+		return nil, mtproto.ErrMessageNotModified
 	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
@@ -812,6 +832,11 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 		return nil
 	}
 	if !edit && actor.IsAdmin() && actor.adminRights().CanDeleteMessages() {
+		return nil
+	}
+	// edit_messages / delete_messages cover other admins' posts. An admin who
+	// can publish can still edit and delete the posts they sent themselves.
+	if ch.Broadcast && msg.SenderID == actor.UserID && actor.IsAdmin() && actor.adminRights().CanPostMessages() {
 		return nil
 	}
 	if ch.Broadcast {

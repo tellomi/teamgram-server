@@ -238,14 +238,22 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 					PeerId:   peerId,
 				})
 				if dialogExt != nil {
-					userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+					if dialogExt.ThemeEmoticon != "" {
+						userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+						userFull.Theme = mtproto.MakeTLChatTheme(&mtproto.ChatTheme{
+							Emoticon: dialogExt.ThemeEmoticon,
+						}).To_ChatTheme()
+					}
 					userFull.TtlPeriod = mtproto.MakeFlagsInt32(dialogExt.TtlPeriod)
 					if dialogExt.GetDialog() != nil {
 						userFull.FolderId = dialogExt.GetDialog().GetFolderId()
 					}
 					if dialogExt.WallpaperId != 0 && c.svcCtx.Dao.WallpaperPlugin != nil {
 						userFull.Wallpaper = c.svcCtx.Dao.WallpaperPlugin.GetChatWallpaper(c.ctx, c.MD.UserId, dialogExt.WallpaperId)
-						userFull.WallpaperOverridden = true
+						// The dialog column is per user. True means the other
+						// user set this wallpaper with for_both. A wallpaper
+						// the caller chose is false, even when a wallpaper exists.
+						userFull.WallpaperOverridden = dialogExt.WallpaperOverridden
 					}
 				}
 			}
