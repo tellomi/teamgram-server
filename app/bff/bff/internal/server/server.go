@@ -286,6 +286,7 @@ func (s *Server) Initialize() error {
 				StoryMySQL:    storyMySQL,
 				UserClient:    c.BizServiceClient,
 				MediaClient:   c.MediaClient,
+				MsgClient:     c.MsgClient,
 				SyncClient:    c.SyncClient,
 			}))
 

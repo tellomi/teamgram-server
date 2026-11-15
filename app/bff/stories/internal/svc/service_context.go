@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
 	"github.com/teamgram/teamgram-server/app/bff/stories/internal/config"
+	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
@@ -23,6 +24,7 @@ type ServiceContext struct {
 	Config      config.Config
 	UserClient  user_client.UserClient
 	MediaClient media_client.MediaClient
+	Msg         msg_client.MsgClient
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
@@ -38,7 +40,11 @@ func NewServiceContext(c config.Config) *ServiceContext {
 		mediaClient = media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient))
 	}
 	installHooks(users, c)
-	return &ServiceContext{Config: c, UserClient: users, MediaClient: mediaClient}
+	var messages msg_client.MsgClient
+	if len(c.MsgClient.Etcd.Hosts) > 0 || len(c.MsgClient.Endpoints) > 0 {
+		messages = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient))
+	}
+	return &ServiceContext{Config: c, UserClient: users, MediaClient: mediaClient, Msg: messages}
 }
 
 func installHooks(users user_client.UserClient, c config.Config) {

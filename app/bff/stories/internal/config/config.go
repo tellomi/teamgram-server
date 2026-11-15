@@ -10,5 +10,6 @@ type Config struct {
 	StoryMySQL  string `json:",optional"`
 	UserClient  zrpc.RpcClientConf
 	MediaClient zrpc.RpcClientConf
+	MsgClient   zrpc.RpcClientConf `json:",optional"`
 	SyncClient  *kafka.KafkaProducerConf
 }

@@ -69,6 +69,7 @@ func (s *Service) StoriesSendStory(ctx context.Context, in *mtproto.TLStoriesSen
 	if err != nil {
 		return nil, err
 	}
+	s.notifyStoryMentions(ctx, md.GetUserId(), md.GetPermAuthKeyId(), owner.Peer(), storyIDOf(up), caption, in.GetEntities())
 	return s.withUsers(ctx, md.GetUserId(), up), nil
 }
 

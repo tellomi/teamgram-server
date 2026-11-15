@@ -725,3 +725,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Story mention messages (row 249)
+
+A story caption can name a user with `inputMessageEntityMentionName` or `@username`, and the story itself stored those entities. The mentioned user never received a private message, so `messages.getHistory` stayed empty.
+
+After `stories.sendStory` succeeds, the stories BFF sends one private message per mentioned user. The media is `messageMediaStory` with `via_mention`. The author is skipped. `@username` is resolved with `user.getListByUsernameList`. A repeat of the same story id uses a stable random id so the private send does not duplicate.
+
+| Piece | File |
+| --- | --- |
+| mention send | `app/bff/stories/internal/server/grpc/service/mention.go` |
+| sendStory hook | `app/bff/stories/internal/server/grpc/service/handlers.go` |
+| msg client | `app/bff/stories/internal/config/config.go`, `app/bff/stories/internal/svc/service_context.go`, `app/bff/bff/internal/server/server.go` |
