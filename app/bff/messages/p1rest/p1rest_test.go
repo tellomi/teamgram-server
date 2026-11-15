@@ -61,6 +61,28 @@ func TestWallpaper(t *testing.T) {
 	if action == nil || !action.GetForBoth() || action.GetWallpaper() == nil {
 		t.Fatalf("wallpaper action %#v", action)
 	}
+	if overridden, ok := peerWallpaperFlag(up); !ok || overridden {
+		t.Fatalf("initiator updatePeerWallpaper overridden=%v ok=%v", overridden, ok)
+	}
+	selfOnly, err := SetChatWallPaper(1, &mtproto.TLMessagesSetChatWallPaper{
+		Peer:      peer,
+		Wallpaper: mtproto.MakeTLInputWallPaperSlug(&mtproto.InputWallPaper{Slug: "solo"}).To_InputWallPaper(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden, ok := peerWallpaperFlag(selfOnly); !ok || overridden {
+		t.Fatalf("one-sided initiator overridden=%v ok=%v", overridden, ok)
+	}
+}
+
+func peerWallpaperFlag(up *mtproto.Updates) (bool, bool) {
+	for _, u := range up.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updatePeerWallpaper {
+			return u.GetWallpaperOverridden(), true
+		}
+	}
+	return false, false
 }
 
 func serviceActionName(up *mtproto.Updates) string {
