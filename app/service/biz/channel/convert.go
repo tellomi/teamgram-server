@@ -198,7 +198,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		ReadInboxMaxId:       st.ReadInboxMaxID,
 		ReadOutboxMaxId:      st.ReadOutboxMaxID,
 		UnreadCount:          st.UnreadCount,
-		ChatPhoto:            mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
+		ChatPhoto:            s.currentChatPhoto(ctx, ch.PhotoID),
 		NotifySettings:       defaultNotify(),
 		BotInfo:              []*mtproto.BotInfo{},
 		Pts:                  ch.Pts,

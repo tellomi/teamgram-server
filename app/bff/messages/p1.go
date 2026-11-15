@@ -55,6 +55,12 @@ func NewWebPage(c Config) *service.WebPageService {
 func BindPreview(users user_client.UserClient, media media_client.MediaClient, chats chat_client.ChatClient) {
 	BindUsers(users)
 	if media != nil {
+		accountassets.LoadRingtoneDoc = func(ctx context.Context, self int64, in *mtproto.InputDocument) (*mtproto.Document, error) {
+			if in == nil || in.GetId() == 0 {
+				return nil, mtproto.ErrRingtoneInvalid
+			}
+			return media.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: in.GetId()})
+		}
 		webpage.BindPhotoLoader(func(ctx context.Context, photoID int64) *mtproto.Photo {
 			photo, err := media.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoID})
 			if err != nil || photo == nil || photo.GetId() == 0 || photo.GetPredicateName() == mtproto.Predicate_photoEmpty {
