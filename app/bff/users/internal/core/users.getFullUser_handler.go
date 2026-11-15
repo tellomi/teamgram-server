@@ -250,6 +250,9 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 					}
 					if dialogExt.WallpaperId != 0 && c.svcCtx.Dao.WallpaperPlugin != nil {
 						userFull.Wallpaper = c.svcCtx.Dao.WallpaperPlugin.GetChatWallpaper(c.ctx, c.MD.UserId, dialogExt.WallpaperId)
+						// The dialog column is per user. True means the other
+						// user set this wallpaper with for_both. A wallpaper
+						// the caller chose is false, even when a wallpaper exists.
 						userFull.WallpaperOverridden = dialogExt.WallpaperOverridden
 					}
 				}

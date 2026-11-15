@@ -632,6 +632,23 @@ func (s *Service) notifyIncoming(ctx context.Context, channelID, sender int64, c
 	}
 }
 
+// MessageBody returns the stored channel post Edit loads. It does not check
+// the inputChannel access hash. A missing or deleted post is MESSAGE_ID_INVALID.
+// A failed read is not "this post has no media".
+func (s *Service) MessageBody(ctx context.Context, channelID int64, messageID int32) (*mtproto.Message, error) {
+	if s == nil || channelID == 0 || messageID == 0 {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	stored, err := s.store.GetMessage(ctx, channelID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if stored == nil || stored.Deleted {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	return unmarshalMessage(stored.Data)
+}
+
 func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, messageID int32, apply func(*mtproto.Message)) (*mtproto.Updates, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {

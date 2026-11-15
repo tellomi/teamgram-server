@@ -877,14 +877,27 @@ A supergroup stores one message row. `mentioned` and `media_unread` are per view
 
 ## Media caption length (ISSUE-S-MSG-LENGTH-001)
 
-`messages.sendMedia` used to reject a caption only when `len(message) > 4000` bytes. Official clients count UTF-16 code units. A non-subscriber caption longer than 1024 is 400 `MEDIA_CAPTION_TOO_LONG`. An unexpired `users.premium` row may send 2048. A text message longer than 4096 is 400 `MESSAGE_TOO_LONG`.
+`messages.sendMedia` used to reject a caption only when `len(message) > 4000` bytes. The cap is now UTF-16 code units and `premium.Limit(FeatureCaption)` for the sender. That is the same pair `help.getAppConfig` publishes as `caption_length_limit_default` and `caption_length_limit_premium`. With `TELLOMI_PREMIUM_EVERYONE` (the default) both keys and the enforced cap are `premium.CaptionLength` (4096). With the switch off, a non-member gets `premium.CaptionLengthFree` (1024) and a member gets `premium.CaptionLength`. One past that cap is 400 `MEDIA_CAPTION_TOO_LONG`. A text message longer than 4096 is 400 `MESSAGE_TOO_LONG`.
 
-`user.Premium()` is true for every account while `TELLOMI_PREMIUM_EVERYONE` is on, which is the default. That switch still raises the badge and the caption numbers in `help.getAppConfig`. The send and edit checks use the stored subscription, the same split as `messages.getOutboxReadDate`. Otherwise a 1025-character caption is accepted.
+`messages.sendMultiMedia` checks each item. `messages.editMessage` uses the caption cap when the result is a photo, file, or other media. A scheduled edit reads the stored scheduled message, so a caption change that omits a new `InputMedia` still uses the caption cap. A channel edit reads the same row `Edit` loads (`MessageBody`). If that row or the scheduled row cannot be read, the text uses the caption cap instead of the 4096 message cap. `inputMediaEmpty` clears media, so the text is a message. A link-preview card is not a caption.
 
-`messages.sendMultiMedia` checks each item. `messages.editMessage` uses the caption cap when the result is a photo, file, or other media, including a channel post whose request omits a new `InputMedia` but the stored post already has one. `inputMediaEmpty` clears media, so the text is a message. A link-preview card is not a caption.
+A private edit that resends the same entities used to clear them before `MESSAGE_NOT_MODIFIED`, so the no-op was stored with the entities stripped. Entities the request sends are kept for the comparison, matching the channel edit. They are cleared only when the new text omits the field.
 
 | Piece | File |
 | --- | --- |
-| UTF-16 caps, paid subscription | `app/bff/messages/internal/core/message_limits.go` |
+| UTF-16 cap from `premium.Limit` | `app/bff/messages/internal/core/message_limits.go` |
 | send | `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `messages.sendMessage_handler.go` |
-| edit | `messages.editMessage_handler.go` |
+| edit, scheduled row, entity compare | `messages.editMessage_handler.go` |
+| channel post body | `app/service/biz/channel/service_ops.go` `MessageBody` |
+
+## Chat wallpaper overridden (ISSUE-S-CHATTHEME-001)
+
+`userFull.wallpaper_overridden` is true only when the other user installed the wallpaper with `for_both`. The user who called `messages.setChatWallPaper` sees false, including a one-sided wallpaper and a revert. `updatePeerWallpaper` in that RPC result uses the same rule.
+
+The inbox copy of the service message stores the flag for the peer. A one-sided wallpaper is not written onto the peer's dialog. `users.getFullUser` returns the dialog column. It does not turn the flag on just because a wallpaper id is present.
+
+| Piece | File |
+| --- | --- |
+| caller update | `app/bff/messages/p1rest/wallpaper.go` |
+| per-user dialog column | `app/messenger/msg/internal/dao/chat_decor.go` |
+| getFullUser | `app/bff/users/internal/core/users.getFullUser_handler.go` |

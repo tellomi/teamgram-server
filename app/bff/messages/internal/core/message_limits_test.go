@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/svc"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -24,51 +25,62 @@ func TestTextAndCaptionLimits(t *testing.T) {
 	if !textTooLong(repeat("🙂", 2049)) {
 		t.Fatal("emoji message length")
 	}
-	if captionTooLong(repeat("a", 1024), false) || !captionTooLong(repeat("a", 1025), false) {
-		t.Fatal("caption")
-	}
-	if captionTooLong(repeat("a", 2048), true) || !captionTooLong(repeat("a", 2049), true) {
-		t.Fatal("premium caption")
-	}
-	if captionTooLong(repeat("🙂", 512), false) || !captionTooLong(repeat("🙂", 513), false) {
-		t.Fatal("emoji caption")
-	}
 }
 
-func TestCaptionIgnoresEveryonePremiumSwitch(t *testing.T) {
+func TestCaptionFollowsAdvertisedPolicy(t *testing.T) {
 	t.Cleanup(func() { premium.Reload() })
 	t.Setenv(premium.EnvEveryone, "true")
 	premium.Reload()
 
-	plain := &mtproto.ImmutableUser{User: &mtproto.UserData{Id: 7}}
-	if !plain.Premium() {
-		t.Fatal("TELLOMI_PREMIUM_EVERYONE should mark the account premium")
+	def, prem := premium.Advertised(premium.FeatureCaption)
+	if def != premium.CaptionLength || prem != premium.CaptionLength {
+		t.Fatalf("everyone advertised default %d premium %d", def, prem)
 	}
+	everyone := captionCore(false, 0)
+	assertCaptionCap(t, everyone, def)
 
+	t.Setenv(premium.EnvEveryone, "false")
+	premium.Reload()
+	def, prem = premium.Advertised(premium.FeatureCaption)
+	if def != premium.CaptionLengthFree || prem != premium.CaptionLength {
+		t.Fatalf("member advertised default %d premium %d", def, prem)
+	}
 	free := captionCore(false, 0)
-	if free.senderPremium() {
-		t.Fatal("stored premium=0 counted as a caption subscription")
+	if free.senderMember() {
+		t.Fatal("stored premium=0 is a member while everyone is off")
 	}
-	if free.captionLimitExceeded(repeat("c", 1024)) || !free.captionLimitExceeded(repeat("c", 1025)) {
-		t.Fatal("non-subscriber caption")
+	assertCaptionCap(t, free, def)
+	paid := captionCore(true, 0)
+	if !paid.senderMember() {
+		t.Fatal("unexpired subscription is not a member while everyone is off")
 	}
-	if free.captionLimitExceeded(repeat("🙂", 512)) || !free.captionLimitExceeded(repeat("🙂", 513)) {
-		t.Fatal("non-subscriber emoji caption")
+	assertCaptionCap(t, paid, prem)
+	expired := captionCore(true, time.Now().Unix()-10)
+	if expired.senderMember() || expired.captionLimit() != def {
+		t.Fatalf("expired cap %d member %v", expired.captionLimit(), expired.senderMember())
 	}
-	if status.Convert(free.rejectOverlong(repeat("c", 1025), true)).Message() != "MEDIA_CAPTION_TOO_LONG" {
+	if status.Convert(free.rejectOverlong(repeat("c", def+1), true)).Message() != "MEDIA_CAPTION_TOO_LONG" {
 		t.Fatal("caption error")
 	}
-	if status.Convert(free.rejectOverlong(repeat("a", 4097), false)).Message() != "MESSAGE_TOO_LONG" {
+	if status.Convert(free.rejectOverlong(repeat("a", maxMessageUTF16+1), false)).Message() != "MESSAGE_TOO_LONG" {
 		t.Fatal("message error")
 	}
+}
 
-	paid := captionCore(true, 0)
-	if !paid.senderPremium() || paid.captionLimitExceeded(repeat("c", 2048)) || !paid.captionLimitExceeded(repeat("c", 2049)) {
-		t.Fatal("paid caption")
+func assertCaptionCap(t *testing.T, c *MessagesCore, cap int) {
+	t.Helper()
+	if cap < 2 || c.captionLimit() != cap {
+		t.Fatalf("cap %d sender %d", cap, c.captionLimit())
 	}
-	expired := captionCore(true, time.Now().Unix()-10)
-	if expired.senderPremium() || !expired.captionLimitExceeded(repeat("c", 1025)) {
-		t.Fatal("expired caption")
+	if c.captionLimitExceeded(repeat("c", cap)) || !c.captionLimitExceeded(repeat("c", cap+1)) {
+		t.Fatal("ascii caption")
+	}
+	// 🙂 is two UTF-16 units. cap/2 of them fill the advertised cap.
+	if cap%2 != 0 {
+		t.Fatalf("caption cap %d is odd", cap)
+	}
+	if c.captionLimitExceeded(repeat("🙂", cap/2)) || !c.captionLimitExceeded(repeat("🙂", cap/2+1)) {
+		t.Fatal("emoji caption")
 	}
 }
 
@@ -83,6 +95,70 @@ func TestEditCaptionFollowsMedia(t *testing.T) {
 	}
 	if !editIsCaption(photo, nil) || !editIsCaption(nil, uploaded) || !editIsCaption(page, uploaded) {
 		t.Fatal("caption edits")
+	}
+	if !storedEditIsCaption(nil, nil, false) {
+		t.Fatal("an unresolved stored message must use the caption cap")
+	}
+	if storedEditIsCaption(photo, empty, false) {
+		t.Fatal("clearing media is a message even when the lookup missed")
+	}
+	if !storedEditIsCaption(photo, nil, true) || storedEditIsCaption(nil, nil, true) {
+		t.Fatal("resolved stored media")
+	}
+}
+
+func TestScheduledEditUsesStoredMedia(t *testing.T) {
+	chatbox.ResetShared()
+	t.Cleanup(chatbox.ResetShared)
+	ctx := context.Background()
+	peer := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	photo := mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{}).To_MessageMedia()
+	when := int32(time.Now().Add(time.Hour).Unix())
+	ups, err := chatbox.Shared().Schedule(ctx, 7, peer, when, []*mtproto.Message{{
+		Message: "cap",
+		Media:   photo,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ups.Updates[0].GetMessage_MESSAGE().GetId()
+	c := &MessagesCore{ctx: ctx, MD: &metadata.RpcMetadata{UserId: 7}}
+	media, ok := c.scheduledStoredMedia(peer, id)
+	if !ok || !storedEditIsCaption(media, nil, ok) {
+		t.Fatalf("stored scheduled media ok=%v %#v", ok, media)
+	}
+	_, ok = c.scheduledStoredMedia(peer, id+1)
+	if ok || !storedEditIsCaption(nil, nil, ok) {
+		t.Fatal("missing scheduled row must use the caption cap")
+	}
+}
+
+func TestNoopEditKeepsResentEntities(t *testing.T) {
+	ent := mtproto.MakeTLMessageEntityBold(&mtproto.MessageEntity{Offset: 0, Length: 4}).To_MessageEntity()
+	before := mtproto.MakeTLMessage(&mtproto.Message{
+		Message:  "text",
+		Entities: []*mtproto.MessageEntity{ent},
+	}).To_Message()
+	same := &mtproto.TLMessagesEditMessage{
+		Message:  wrapperspb.String("text"),
+		Entities: []*mtproto.MessageEntity{ent},
+	}
+	out := stagePrivateEdit(before, same, nil)
+	if !mtproto.MessageContentUnchanged(before, out) {
+		t.Fatalf("resent entities were stripped: %#v", out.GetEntities())
+	}
+	omitted := &mtproto.TLMessagesEditMessage{Message: wrapperspb.String("text")}
+	out = stagePrivateEdit(before, omitted, nil)
+	if len(out.GetEntities()) != 0 || mtproto.MessageContentUnchanged(before, out) {
+		t.Fatal("omitted entities should clear, matching a channel edit")
+	}
+	changed := &mtproto.TLMessagesEditMessage{
+		Message:  wrapperspb.String("text2"),
+		Entities: []*mtproto.MessageEntity{ent},
+	}
+	out = stagePrivateEdit(before, changed, nil)
+	if out.GetMessage() != "text2" || len(out.GetEntities()) != 1 {
+		t.Fatalf("changed text dropped resent entities: %#v", out)
 	}
 }
 

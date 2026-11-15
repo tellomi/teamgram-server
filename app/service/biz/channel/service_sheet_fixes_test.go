@@ -53,6 +53,28 @@ func TestOwnPostEditWithoutEditRight(t *testing.T) {
 	}
 }
 
+func TestMessageBodyReturnsStoredMedia(t *testing.T) {
+	svc, ctx := newTest(t)
+	up, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Media", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := up.Chats[0]
+	photo := mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{}).To_MessageMedia()
+	sent, err := svc.Send(ctx, 1, ch.Id, 0, []Outgoing{{RandomID: 3, Message: &mtproto.Message{Message: "cap", Media: photo, Date: 10}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	body, err := svc.MessageBody(ctx, ch.Id, msgID)
+	if err != nil || body.GetMedia().GetPredicateName() != photo.GetPredicateName() {
+		t.Fatalf("body %v %v", body.GetMedia().GetPredicateName(), err)
+	}
+	if _, err = svc.MessageBody(ctx, ch.Id, msgID+99); err != mtproto.ErrMessageIdInvalid {
+		t.Fatalf("missing post: %v", err)
+	}
+}
+
 func TestTitleCountsRunes(t *testing.T) {
 	svc, ctx := newTest(t)
 	emoji := "zt" + strings.Repeat("🙂", 80)

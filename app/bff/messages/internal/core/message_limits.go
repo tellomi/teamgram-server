@@ -1,38 +1,28 @@
 package core
 
 import (
-	"time"
-
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/premium"
+
+	"google.golang.org/protobuf/proto"
 )
 
 const (
-	maxMessageUTF16        = 4096
-	maxCaptionUTF16        = 1024
-	maxCaptionUTF16Premium = 2048
+	maxMessageUTF16 = 4096
 )
 
 func textTooLong(text string) bool {
 	return mtproto.UTF16Len(text) > maxMessageUTF16
 }
 
-func captionTooLong(text string, premium bool) bool {
-	limit := maxCaptionUTF16
-	if premium {
-		limit = maxCaptionUTF16Premium
-	}
-	return mtproto.UTF16Len(text) > limit
-}
-
-// senderPremium reports a paid users.premium subscription.
-// user.Premium() is true for every account while TELLOMI_PREMIUM_EVERYONE
-// is on. That switch raises feature badges and the limits help.getAppConfig
-// advertises. Caption length stays on the official rule: 1024 UTF-16 units,
-// or 2048 with an unexpired subscription. A lookup failure uses 1024.
-func (c *MessagesCore) senderPremium() (paid bool) {
+// senderMember is the effective membership help.getAppConfig uses.
+// user.Premium() follows TELLOMI_PREMIUM_EVERYONE and an unexpired
+// subscription. A lookup failure is a non-member; premium.Limit still
+// raises the cap while the everyone switch is on, matching Advertised.
+func (c *MessagesCore) senderMember() (member bool) {
 	if c == nil || c.MD == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || c.MD.UserId == 0 {
 		return false
 	}
@@ -45,14 +35,18 @@ func (c *MessagesCore) senderPremium() (paid bool) {
 		return false
 	}
 	user, ok := users.GetImmutableUser(c.MD.UserId)
-	if !ok || user == nil || user.User == nil || user.Deleted() {
-		return false
-	}
-	var expire int64
-	if user.User.GetPremiumExpireDate() != nil {
-		expire = user.User.GetPremiumExpireDate().GetValue()
-	}
-	return premium.ActiveSubscription(user.User.GetPremium(), expire, time.Now().Unix())
+	return ok && user != nil && user.Premium()
+}
+
+// captionLimit is premium.Limit(FeatureCaption) for this sender. That is the
+// same number help.getAppConfig publishes as caption_length_limit_default
+// or caption_length_limit_premium.
+func (c *MessagesCore) captionLimit() int {
+	return premium.Limit(premium.FeatureCaption, c.senderMember())
+}
+
+func (c *MessagesCore) captionLimitExceeded(text string) bool {
+	return mtproto.UTF16Len(text) > c.captionLimit()
 }
 
 // editIsCaption reports whether this edit's text is a media caption.
@@ -79,6 +73,17 @@ func editIsCaption(existing *mtproto.MessageMedia, incoming *mtproto.InputMedia)
 	}
 }
 
+// storedEditIsCaption uses the stored media when the request does not send
+// a new InputMedia. A lookup that does not resolve the row uses the caption
+// cap. Treating that miss as a plain message would allow a caption past the
+// advertised limit.
+func storedEditIsCaption(media *mtproto.MessageMedia, incoming *mtproto.InputMedia, resolved bool) bool {
+	if incoming != nil || resolved {
+		return editIsCaption(media, incoming)
+	}
+	return true
+}
+
 func (c *MessagesCore) rejectOverlong(text string, caption bool) error {
 	if caption {
 		if c.captionLimitExceeded(text) {
@@ -92,30 +97,64 @@ func (c *MessagesCore) rejectOverlong(text string, caption bool) error {
 	return nil
 }
 
-// channelStoredMedia reads the post being edited when the request does not
-// send a new InputMedia. A miss leaves the text on the message cap.
-func (c *MessagesCore) channelStoredMedia(peer *mtproto.PeerUtil, id int32) *mtproto.MessageMedia {
-	if c == nil || c.MD == nil || peer == nil || peer.PeerType != mtproto.PEER_CHANNEL || id == 0 {
-		return nil
+// channelStoredMedia reads the post Edit will load. ok is false when that
+// row cannot be read. The caller must not treat that as "no media".
+func (c *MessagesCore) channelStoredMedia(peer *mtproto.PeerUtil, id int32) (media *mtproto.MessageMedia, ok bool) {
+	if c == nil || peer == nil || peer.PeerType != mtproto.PEER_CHANNEL || id == 0 {
+		return nil, false
 	}
 	defer func() { _ = recover() }()
-	res, err := channel.Shared().GetMessages(c.ctx, c.MD.UserId, mtproto.MakeTLInputChannel(&mtproto.InputChannel{
-		ChannelId:  peer.PeerId,
-		AccessHash: peer.AccessHash,
-	}).To_InputChannel(), []int32{id})
-	if err != nil || res == nil {
-		return nil
+	body, err := channel.Shared().MessageBody(c.ctx, peer.PeerId, id)
+	if err != nil || body == nil {
+		return nil, false
 	}
-	for _, m := range res.GetMessages() {
-		if m != nil && m.GetId() == id && m.GetPredicateName() != mtproto.Predicate_messageEmpty {
-			return m.GetMedia()
-		}
-	}
-	return nil
+	return body.GetMedia(), true
 }
 
-func (c *MessagesCore) captionLimitExceeded(text string) bool {
-	return captionTooLong(text, c.senderPremium())
+// scheduledStoredMedia reads the scheduled row this edit will rewrite.
+// ok is false when that row cannot be read.
+func (c *MessagesCore) scheduledStoredMedia(peer *mtproto.PeerUtil, id int32) (media *mtproto.MessageMedia, ok bool) {
+	if c == nil || c.MD == nil || peer == nil || id == 0 {
+		return nil, false
+	}
+	defer func() { _ = recover() }()
+	page, err := chatbox.Shared().ScheduledByID(c.ctx, c.MD.UserId, peer, []int32{id})
+	if err != nil || page == nil {
+		return nil, false
+	}
+	for _, m := range page.GetMessages() {
+		if m != nil && m.GetId() == id && m.GetPredicateName() != mtproto.Predicate_messageEmpty {
+			return m.GetMedia(), true
+		}
+	}
+	return nil, false
+}
+
+// stagePrivateEdit applies text, entities, markup, and replacement media the
+// way a channel edit does. Entities the request resends stay on the message
+// so MESSAGE_NOT_MODIFIED can see them. Entities are cleared only when the
+// request sets new text and omits the field.
+func stagePrivateEdit(before *mtproto.Message, in *mtproto.TLMessagesEditMessage, media *mtproto.MessageMedia) *mtproto.Message {
+	out := proto.Clone(before).(*mtproto.Message)
+	if in == nil {
+		return out
+	}
+	if in.GetMessage() != nil {
+		out.Message = in.GetMessage().GetValue()
+		if in.Entities == nil {
+			out.Entities = nil
+		}
+	}
+	if in.Entities != nil {
+		out.Entities = in.Entities
+	}
+	if in.ReplyMarkup != nil {
+		out.ReplyMarkup = in.ReplyMarkup
+	}
+	if media != nil {
+		out.Media = media
+	}
+	return out
 }
 
 // botReplyMarkup keeps reply_markup only when the sender is a bot.

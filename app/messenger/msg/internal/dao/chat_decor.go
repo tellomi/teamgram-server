@@ -35,16 +35,25 @@ func (d *Dao) stampChatDecor(ctx context.Context, userID int64, peerType int32, 
 			logx.WithContext(ctx).Errorf("stamp chat theme: %v", err)
 		}
 	case mtproto.Predicate_messageActionSetChatWallPaper:
+		// Out is set on the sender's copy and cleared on the inbox copy.
+		// FromId stays the user who called setChatWallPaper.
+		ownerIsSender := message.GetOut() || message.GetFromId().GetUserId() == userID
+		// A one-sided wallpaper is only the caller's. for_both is what the
+		// other user actually receives.
+		if !ownerIsSender && !action.GetForBoth() {
+			return
+		}
 		id := int64(0)
 		if paper := action.GetWallpaper(); paper != nil {
 			id = paper.GetId()
 		}
 		if _, err := d.DialogClient.DialogSetChatWallpaper(ctx, &dialog.TLDialogSetChatWallpaper{
-			UserId:              userID,
-			PeerType:            peerType,
-			PeerId:              peerID,
-			WallpaperId:         id,
-			WallpaperOverridden: !action.GetForBoth() || action.GetSame(),
+			UserId:      userID,
+			PeerType:    peerType,
+			PeerId:      peerID,
+			WallpaperId: id,
+			// True only when the other user installed this wallpaper for both.
+			WallpaperOverridden: action.GetForBoth() && !ownerIsSender,
 		}); err != nil {
 			logx.WithContext(ctx).Errorf("stamp chat wallpaper: %v", err)
 		}

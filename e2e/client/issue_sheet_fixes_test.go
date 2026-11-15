@@ -116,6 +116,12 @@ func TestChatThemeWallpaperOnFullUser(t *testing.T) {
 		if full.GetWallpaper().GetId() == 0 || full.GetWallpaper().GetSettings().GetBackgroundColor().GetValue() != 0x336699 {
 			t.Fatalf("wallpaper %#v", full.GetWallpaper())
 		}
+		// A set the wallpaper for both. A sees wallpaper_overridden false.
+		// B sees true: the other user installed it.
+		wantOverridden := side.c != a
+		if full.GetWallpaperOverridden() != wantOverridden {
+			t.Fatalf("user %d wallpaper_overridden %v", side.id, full.GetWallpaperOverridden())
+		}
 	}
 }
 
@@ -311,13 +317,20 @@ func TestMessageAndCaptionLength(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MESSAGE_TOO_LONG") {
 		t.Fatalf("4097: %v", err)
 	}
-	fileID := uploadBytes(t, a, tinyJPEG(t))
-	if _, err = sendCaption(ctx, a, peer, fileID, strings.Repeat("c", 1024)); err != nil {
-		t.Fatalf("caption 1024: %v", err)
+	app := appConfigMap(t, invokeOK(t, a, &mtproto.TLHelpGetAppConfig61E3F854{
+		Constructor: mtproto.CRC32_help_getAppConfig61E3F854,
+	}))
+	captionCap := advertisedPinLimit(t, app, "caption_length_limit", selfPremium(t, a, aSelf.ID))
+	if captionCap < 2 {
+		t.Fatalf("advertised caption cap %d", captionCap)
 	}
-	_, err = sendCaption(ctx, a, peer, fileID, strings.Repeat("c", 1025))
+	fileID := uploadBytes(t, a, tinyJPEG(t))
+	if _, err = sendCaption(ctx, a, peer, fileID, strings.Repeat("c", captionCap)); err != nil {
+		t.Fatalf("caption %d: %v", captionCap, err)
+	}
+	_, err = sendCaption(ctx, a, peer, fileID, strings.Repeat("c", captionCap+1))
 	if err == nil || !strings.Contains(err.Error(), "MEDIA_CAPTION_TOO_LONG") {
-		t.Fatalf("caption 1025: %v", err)
+		t.Fatalf("caption %d: %v", captionCap+1, err)
 	}
 }
 
