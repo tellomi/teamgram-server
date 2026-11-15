@@ -19,14 +19,15 @@
 package svc
 
 import (
+	"context"
 	"os"
 	"strings"
 
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/config"
-	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/promo"
 	"github.com/teamgram/teamgram-server/app/bff/configuration/internal/userinfo"
+	"github.com/teamgram/teamgram-server/app/bff/helpdesk"
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/zeromicro/go-zero/zrpc"
@@ -39,6 +40,10 @@ type ServiceContext struct {
 	Suggestions *helpdesk.Suggestions
 	UserClient  user_client.UserClient
 	AuthSession authsession_client.AuthsessionClient
+	// Support reports whether a user may call help.getUserInfo and
+	// help.editUserInfo. Nil uses the user service: the configured support
+	// account, or a user with users.support set. Tests set this directly.
+	Support func(ctx context.Context, userID int64) (bool, error)
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
