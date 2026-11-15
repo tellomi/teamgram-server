@@ -386,7 +386,11 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	}
 	msg.Post = false
 	if stamp {
-		msg.FromId = mtproto.MakePeerUser(sender)
+		// messages.sendMessage send_as may already name a channel. A megagroup
+		// keeps that peer. A missing or user from_id is the sender.
+		if msg.GetFromId().GetPredicateName() != mtproto.Predicate_peerChannel {
+			msg.FromId = mtproto.MakePeerUser(sender)
+		}
 		msg.PostAuthor = nil
 	}
 	msg.Views = nil

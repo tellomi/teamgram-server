@@ -23,6 +23,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 )
@@ -81,7 +82,28 @@ func (c *DialogsCore) MessagesSetTyping(in *mtproto.TLMessagesSetTyping) (*mtpro
 			return nil
 		})
 	case mtproto.PEER_CHANNEL:
-		// Tips: disable updates
+		ids, err := channel.Shared().MemberIDs(c.ctx, peer.PeerId)
+		if err != nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.SyncClient == nil {
+			break
+		}
+		updates := mtproto.MakeTLUpdateShort(&mtproto.Updates{
+			Update: mtproto.MakeTLUpdateChannelUserTyping(&mtproto.Update{
+				ChannelId:          peer.PeerId,
+				TopMsgId_FLAGINT32: in.GetTopMsgId(),
+				FromId:             mtproto.MakePeerUser(c.MD.UserId),
+				Action:             in.Action,
+			}).To_Update(),
+			Date: date,
+		}).To_Updates()
+		for _, userID := range ids {
+			if userID == c.MD.UserId {
+				continue
+			}
+			c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{
+				UserId:  userID,
+				Updates: updates,
+			})
+		}
 	}
 
 	return mtproto.BoolTrue, nil

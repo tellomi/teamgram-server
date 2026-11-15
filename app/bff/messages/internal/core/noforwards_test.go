@@ -77,4 +77,20 @@ func TestToggleNoForwardsRejectsForward(t *testing.T) {
 	if err != nil || len(boxes) != 1 {
 		t.Fatalf("forward after clear: %v %#v", err, boxes)
 	}
+	marked, err := svc.Send(ctx, 1, ch.Id, 0, []channel.Outgoing{{
+		RandomID: 5,
+		Message:  &mtproto.Message{Message: "once", Noforwards: true, Date: 4},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	markedID := marked.Updates[0].Message_MESSAGE.Id
+	if !marked.Updates[0].Message_MESSAGE.GetNoforwards() {
+		t.Fatal("stored channel message lost noforwards")
+	}
+	if _, err := owner.makeForwardMessages(from, to, false, &mtproto.TLMessagesForwardMessages{
+		Id: []int32{markedID}, RandomId: []int64{11},
+	}); status.Convert(err).Message() != "CHAT_FORWARDS_RESTRICTED" {
+		t.Fatalf("noforwards message: %v", err)
+	}
 }

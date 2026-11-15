@@ -76,5 +76,17 @@ func dropMediaCaptions(m *mtproto.Message) {
 	case mtproto.Predicate_messageMediaPhoto, mtproto.Predicate_messageMediaDocument:
 		m.Message = ""
 		m.Entities = nil
+		return
+	case mtproto.Predicate_messageMediaWebPage, mtproto.Predicate_messageMediaEmpty:
+		return
+	}
+	// A stored photo or document can come back without PredicateName.
+	// The file fields are enough. A link preview is not a caption.
+	if m.Media.GetWebpage() != nil {
+		return
+	}
+	if m.Media.GetPhoto_FLAGPHOTO() != nil || m.Media.GetDocument() != nil {
+		m.Message = ""
+		m.Entities = nil
 	}
 }

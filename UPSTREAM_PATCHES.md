@@ -725,3 +725,21 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Channel edit previews, send-as, captions, and typing (rows 214, 215, 250, 251, 252)
+
+Editing a channel or supergroup message skipped the private-chat preview path, so adding a URL did not attach `messageMediaWebPage`. The channel branch of `messages.editMessage` now calls `webpage.AttachOnSend` for a text edit that did not set `no_webpage`, and the existing `schedulePendingWebpage` finishes a pending card.
+
+`messages.sendMessage` ignored `send_as`. The outgoing `from_id` is now that channel when `channels.getSendAs` lists it. A megagroup `shapeOutgoing` keeps an existing `peerChannel` instead of replacing it with the sender. Any other `send_as` is `SEND_AS_PEER_INVALID`.
+
+`messages.forwardMessages` `drop_media_captions` only matched a photo or document that still had its predicate name. A stored file whose predicate was empty kept the caption. The strip now also keys off the photo or document field, and still leaves a link preview and plain text alone.
+
+`messages.toggleNoForwards` for a channel was already routed. A message sent with `noforwards` is now covered by the same forward rejection. `messages.setTyping` for a channel or a forum topic pushes `updateChannelUserTyping` to the other members and keeps `top_msg_id`.
+
+| Piece | File |
+| --- | --- |
+| channel edit preview | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
+| send_as | `app/bff/messages/internal/core/messages.sendMessage_handler.go` |
+| megagroup from_id | `app/service/biz/channel/service_ops.go` |
+| drop captions | `app/bff/messages/internal/core/reply_peer.go` |
+| channel typing | `app/bff/dialogs/internal/core/messages.setTyping_handler.go` |

@@ -116,4 +116,14 @@ func TestDropMediaCaptionsKeepsTheFileAndPlainText(t *testing.T) {
 	if page.GetMessage() != "https://example.com" {
 		t.Fatal("link preview text stripped")
 	}
+	bare := &mtproto.Message{
+		Message: "caption",
+		Media: &mtproto.MessageMedia{
+			Photo_FLAGPHOTO: mtproto.MakeTLPhoto(&mtproto.Photo{Id: 11}).To_Photo(),
+		},
+	}
+	dropMediaCaptions(bare)
+	if bare.GetMessage() != "" || bare.GetMedia().GetPhoto_FLAGPHOTO().GetId() != 11 {
+		t.Fatalf("predicate-less photo kept caption %q", bare.GetMessage())
+	}
 }

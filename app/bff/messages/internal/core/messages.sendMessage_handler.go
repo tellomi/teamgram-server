@@ -126,6 +126,12 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		Factcheck:            nil,
 	}).To_Message()
 
+	fromID, err := c.sendAsPeer(peer, in.GetSendAs())
+	if err != nil {
+		return nil, err
+	}
+	outMessage.FromId = fromID
+
 	// Fix SavedPeerId
 	if peer.IsSelfUser(c.MD.UserId) {
 		outMessage.SavedPeerId = peer.ToPeer()
@@ -240,4 +246,26 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 	}
 
 	return rUpdate, nil
+}
+
+// sendAsPeer is messages.sendMessage send_as. The current user is the
+// default. A channel listed by channels.getSendAs stays PeerChannel so a
+// megagroup shows the channel as the author. Anything else is
+// SEND_AS_PEER_INVALID.
+func (c *MessagesCore) sendAsPeer(peer *mtproto.PeerUtil, sendAs *mtproto.InputPeer) (*mtproto.Peer, error) {
+	self := mtproto.MakePeerUser(c.MD.UserId)
+	if sendAs == nil {
+		return self, nil
+	}
+	as := mtproto.FromInputPeer2(c.MD.UserId, sendAs)
+	if as == nil || as.PeerType == mtproto.PEER_EMPTY || as.PeerType == mtproto.PEER_UNKNOWN {
+		return nil, mtproto.ErrSendAsPeerInvalid
+	}
+	if as.IsSelfUser(c.MD.UserId) || (as.IsUser() && as.PeerId == c.MD.UserId) {
+		return self, nil
+	}
+	if peer != nil && peer.IsChannel() && as.IsChannel() && c.canSendAsChannel(as.PeerId) {
+		return mtproto.MakePeerChannel(as.PeerId), nil
+	}
+	return nil, mtproto.ErrSendAsPeerInvalid
 }

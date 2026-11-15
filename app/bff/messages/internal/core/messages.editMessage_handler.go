@@ -79,6 +79,14 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 				return nil, err
 			}
 		}
+		// A text edit in a channel does not go through the private
+		// refreshInternalPreview path. Attach the same pending card so
+		// schedulePendingWebpage can finish it for the author and members.
+		if in.GetMessage() != nil && shouldAutoAttachWebpage(in.NoWebpage, draft.Media) {
+			if media, _ := webpage.AttachOnSend(c.ctx, draft.Message, draft.Entities); media != nil {
+				draft.Media = media
+			}
+		}
 		rUpdates, err := c.svcCtx.Dao.MsgClient.MsgEditMessageV2(c.ctx, &msgpb.TLMsgEditMessageV2{
 			UserId:    c.MD.UserId,
 			AuthKeyId: c.MD.PermAuthKeyId,
