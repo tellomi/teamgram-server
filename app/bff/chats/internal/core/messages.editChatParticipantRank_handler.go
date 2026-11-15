@@ -33,12 +33,6 @@ func (c *ChatsCore) MessagesEditChatParticipantRank(in *mtproto.TLMessagesEditCh
 		participant = mtproto.FromInputPeer2(c.MD.UserId, in.Participant)
 	)
 
-	if !peer.IsChat() {
-		err := mtproto.ErrPeerIdInvalid
-		c.Logger.Errorf("messages.editChatParticipantRank - invalid peer, err: %v", err)
-		return nil, err
-	}
-
 	if !participant.IsUser() {
 		err := mtproto.ErrUserIdInvalid
 		c.Logger.Errorf("messages.editChatParticipantRank - invalid participant, err: %v", err)
@@ -46,6 +40,11 @@ func (c *ChatsCore) MessagesEditChatParticipantRank(in *mtproto.TLMessagesEditCh
 	}
 	if peer.IsChannel() {
 		return channel.Shared().EditParticipantRank(c.ctx, c.MD.UserId, peer.PeerId, participant.PeerId, in.Rank)
+	}
+	if !peer.IsChat() {
+		err := mtproto.ErrPeerIdInvalid
+		c.Logger.Errorf("messages.editChatParticipantRank - invalid peer, err: %v", err)
+		return nil, err
 	}
 
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatEditChatParticipantRank(c.ctx, &chatpb.TLChatEditChatParticipantRank{
