@@ -703,6 +703,29 @@ Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty
 
 Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
 
+## Embedded IANA timezone database (ISSUE-S-BIZ-TZ-001)
+
+The runtime image does not install tzdata. `time.LoadLocation` then only resolves `UTC`, so `help.getTimezonesList` returned that one zone and `account.updateBusinessWorkHours` rejected `Asia/Shanghai` with `TIMEZONE_INVALID`.
+
+`app/bff/bff/cmd/bff/main.go` imports `time/tzdata`, which is the standard-library embed of the IANA database. `pkg/tz` imports it as well so the picker and `validateHours` / `openNow` call the same `Load`. Zone names come from the system `zone.tab` when that file is installed (the tree `LoadLocation` reads first). Otherwise they come from the file index of the embedded database, not a hand-written list.
+
+| Piece | File |
+| --- | --- |
+| binary import | `app/bff/bff/cmd/bff/main.go` |
+| shared IANA source | `pkg/tz` |
+| picker | `app/bff/configuration/internal/timezones/timezones.go` |
+| hours check | `app/bff/business/profile/profile.go` |
+
+## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
+
+`channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
+
+Unlink and rebind now clear that back-pointer when it still names this channel. A group that has already been linked to a different channel is left as it is. The broadcast, the new group, and a group whose pointer was cleared each get `updateChannel`, which is what clients use to reload `channelFull`. The requesting auth key is omitted, same as the other channel fanout. The admin log `changeLinkedChat` entry is unchanged.
+
+| Piece | File |
+| --- | --- |
+| link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
 ## Channel username, group stickers, search calendar (layer 232)
 
 `channels.toggleUsername` already flipped the channel feature list, but `contacts.resolveUsername` reads the `username` table first and ignored `active`. Deactivate returned OK while the name still resolved, and a later activate could report `USERNAME_NOT_MODIFIED` when the bool's predicate name was missing and only `boolTrue`'s constructor remained. The table row is updated the same way as `account.toggleUsername`. An inactive or deleted row is `USERNAME_NOT_OCCUPIED`. The channel username lookup trusts a feature row marked inactive over the primary column. `FromBool` accepts a constructor-only `boolTrue`.

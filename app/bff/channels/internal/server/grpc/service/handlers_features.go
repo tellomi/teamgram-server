@@ -112,7 +112,8 @@ func (s *Service) ChannelsGetGroupsForDiscussion(ctx context.Context, in *mtprot
 }
 
 func (s *Service) ChannelsSetDiscussionGroup(ctx context.Context, in *mtproto.TLChannelsSetDiscussionGroup) (*mtproto.Bool, error) {
-	if err := channel.Shared().SetDiscussionGroup(ctx, s.md(ctx).GetUserId(), in.GetBroadcast(), in.GetGroup()); err != nil {
+	md := s.md(ctx)
+	if err := channel.Shared().SetDiscussionGroup(ctx, md.GetUserId(), md.GetPermAuthKeyId(), in.GetBroadcast(), in.GetGroup()); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil

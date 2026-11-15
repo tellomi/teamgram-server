@@ -100,7 +100,7 @@ func TestJoinRequestCreatorDiscussionLocationStats(t *testing.T) {
 		t.Fatalf("location %#v %v", full, err)
 	}
 	group := megagroup(t, svc, ctx, "Talk")
-	if err := svc.SetDiscussionGroup(ctx, 1, inCh(b), inCh(group)); err != nil {
+	if err := svc.SetDiscussionGroup(ctx, 1, 0, inCh(b), inCh(group)); err != nil {
 		t.Fatal(err)
 	}
 	full, _ = svc.GetFullChannel(ctx, 1, inCh(b))
