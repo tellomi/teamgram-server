@@ -132,6 +132,14 @@ func withoutPinnedDialogs(list dialog.DialogExtList) dialog.DialogExtList {
 // The table top only moves forward, so after the newest post is deleted it
 // still names that id and getDialogs / getPinnedDialogs drop the chat. The
 // channel store has the live top. Pin rank and folder stay on the table row.
+//
+// UnreadMentionsCount is computed on the live row (channels/bridge.go
+// dialogExt). The dialogs table does not store channel mentions, so leaving
+// the table value made getPeerDialogs report 0 while getDialogs, which
+// returns the live row, reported the real count. UnreadCount is already
+// copied. UnreadReactionsCount is not filled on the live row: channel
+// reactions stay on the dialogs table, and copying the zero would clear a
+// badge that table still holds.
 func applyChannelLiveRows(stored, live dialog.DialogExtList) {
 	byID := map[int64]*dialog.DialogExt{}
 	for _, ext := range live {
@@ -155,6 +163,7 @@ func applyChannelLiveRows(stored, live dialog.DialogExtList) {
 		d.ReadInboxMaxId = s.GetReadInboxMaxId()
 		d.ReadOutboxMaxId = s.GetReadOutboxMaxId()
 		d.UnreadCount = s.GetUnreadCount()
+		d.UnreadMentionsCount = s.GetUnreadMentionsCount()
 		d.Pts = s.Pts
 		d.ViewForumAsMessages = s.GetViewForumAsMessages()
 		ext.Date = src.GetDate()

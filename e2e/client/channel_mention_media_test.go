@@ -49,6 +49,69 @@ func TestMegagroupMentionFlag(t *testing.T) {
 	if !msg.GetMentioned() {
 		t.Fatal("mentioned is false")
 	}
+	// ISSUE-S-PEERDIALOGS-MENTIONS-001: opening one chat calls
+	// getPeerDialogs. That count has to match getDialogs, or the @ badge
+	// disappears. messages.readMentions then clears both.
+	var listN, peerN int32
+	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		var listOK, peerOK bool
+		var waitErr error
+		listN, listOK, peerN, peerOK, waitErr = channelMentionCounts(ctx, owner, groupID, ownerCh.GetAccessHash())
+		if waitErr != nil || !listOK || !peerOK {
+			return false, waitErr
+		}
+		return listN > 0 && listN == peerN, nil
+	}); err != nil {
+		t.Fatalf("mentions getDialogs=%d getPeerDialogs=%d: %v", listN, peerN, err)
+	}
+	if _, err = owner.Invoke(ctx, &mtproto.TLMessagesReadMentions{
+		Constructor: mtproto.CRC32_messages_readMentions_36e5bf4d,
+		Peer:        inputPeerChannel(ownerCh.GetChannelId(), ownerCh.GetAccessHash()),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		var listOK, peerOK bool
+		var waitErr error
+		listN, listOK, peerN, peerOK, waitErr = channelMentionCounts(ctx, owner, groupID, ownerCh.GetAccessHash())
+		if waitErr != nil || !listOK || !peerOK {
+			return false, waitErr
+		}
+		return listN == 0 && peerN == 0, nil
+	}); err != nil {
+		t.Fatalf("after readMentions getDialogs=%d getPeerDialogs=%d: %v", listN, peerN, err)
+	}
+}
+
+func channelMentionCounts(ctx context.Context, c *Client, channelID, accessHash int64) (listN int32, listOK bool, peerN int32, peerOK bool, err error) {
+	dialogs, err := c.Dialogs(ctx)
+	if err != nil {
+		return 0, false, 0, false, err
+	}
+	for _, d := range dialogs {
+		if d.GetPeer().GetChannelId() == channelID {
+			listN, listOK = d.GetUnreadMentionsCount(), true
+			break
+		}
+	}
+	obj, err := c.Invoke(ctx, &mtproto.TLMessagesGetPeerDialogs{
+		Constructor: mtproto.CRC32_messages_getPeerDialogs,
+		Peers: []*mtproto.InputDialogPeer{
+			mtproto.MakeTLInputDialogPeer(&mtproto.InputDialogPeer{
+				Peer: inputPeerChannel(channelID, accessHash),
+			}).To_InputDialogPeer(),
+		},
+	})
+	if err != nil {
+		return listN, listOK, 0, false, err
+	}
+	for _, d := range dialogsOf(obj) {
+		if d.GetPeer().GetChannelId() == channelID {
+			peerN, peerOK = d.GetUnreadMentionsCount(), true
+			break
+		}
+	}
+	return listN, listOK, peerN, peerOK, nil
 }
 
 func waitChannelAccess(t *testing.T, ctx context.Context, c *Client, channelID int64) *mtproto.InputChannel {

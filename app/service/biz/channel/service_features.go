@@ -33,6 +33,12 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	if f.ReactionRead == nil {
 		f.ReactionRead = map[int64]int32{}
 	}
+	if f.MentionReadMax == nil {
+		f.MentionReadMax = map[int64]int32{}
+	}
+	if f.MentionRead == nil {
+		f.MentionRead = map[int64][]int32{}
+	}
 	if f.Views == nil {
 		f.Views = map[int32]ViewRec{}
 	}

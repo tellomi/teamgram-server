@@ -2,6 +2,20 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Supergroup mention badge on getPeerDialogs (ISSUE-S-PEERDIALOGS-MENTIONS-001)
+
+`messages.getDialogs` returns the channel store's dialog, which already carries `unread_mentions_count`. `messages.getPeerDialogs` and `messages.getPinnedDialogs` start from the dialogs table and copy the live top, read cursors, unread count, pts, and forum flag in `applyChannelLiveRows`. That copy skipped `unread_mentions_count`, so opening one supergroup reported 0 and the client cleared the @ badge.
+
+The live row does not carry `unread_reactions_count`. Channel reactions are not written onto that row, so the overlay leaves the dialogs-table reaction count alone.
+
+`messages.readMentions` on a channel used to zero only `dialogs.unread_mentions_count`. The lists above read the channel store, which still counted every mention above the inbox cursor, so the badge came back. A channel read now records a mention cursor and does not move the inbox cursor: `unread_count` stays, and a later mention still counts. `top_msg_id` acknowledges that forum topic only.
+
+| Piece | File |
+| --- | --- |
+| copy the live mention count | `app/bff/dialogs/internal/core/channel_dialogs.go` |
+| mention cursor | `app/service/biz/channel/read_views.go`, `service_ops.go`, `features.go` |
+| channel readMentions | `app/bff/messages/internal/core/messages.readMentions_handler.go` |
+
 ## Quick reply multi-session sync (ISSUE-S-QUICKREPLY-SYNC-001)
 
 Creating, appending, renaming, reordering, and deleting a quick reply only returned the result to the calling RPC. Another session of the same account saw the change only after `messages.getQuickReplies`.
