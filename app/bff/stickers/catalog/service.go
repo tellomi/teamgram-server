@@ -312,6 +312,25 @@ func (s *Service) GetSet(userID int64, in *mtproto.InputStickerSet, hash int32) 
 	return p.full(on, archived), nil
 }
 
+// StatusDocumentIDs lists the custom-emoji documents in a built-in status pack.
+// channel selects EmojiChannelDefaultStatuses; otherwise EmojiDefaultStatuses.
+func (s *Service) StatusDocumentIDs(channel bool) []int64 {
+	if s == nil {
+		return nil
+	}
+	short := ShortDefaultStatuses
+	if channel {
+		short = ShortChannelStatuses
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.byShort[strings.ToLower(short)]
+	if p == nil {
+		return nil
+	}
+	return append([]int64(nil), p.docIDs()...)
+}
+
 func (s *Service) lookup(in *mtproto.InputStickerSet) (*Pack, error) {
 	if in == nil {
 		return nil, mtproto.ErrStickersetInvalid

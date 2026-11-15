@@ -725,3 +725,20 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Default emoji statuses, built-in bots, and empty callbacks (rows 213, 239, 230)
+
+`account.getDefaultEmojiStatuses`, `account.getRecentEmojiStatuses`, and `account.getChannelDefaultEmojiStatuses` returned an empty list whose hash was `premium.EmojiStatusListHash`. A client that cached that hash then received `emojiStatusesNotModified` forever.
+
+The lists now come from the built-in packs `EmojiDefaultStatuses` and `EmojiChannelDefaultStatuses`. The hash is derived from the first document id and the length, so the old empty-list hash no longer matches.
+
+`messages.startBot` returned `BOT_INVALID` for the gif and venue bots because they are not rows in the bots table. `messages.sendMessage` then returned `INPUT_USER_DEACTIVATED` for the same ids. Start now accepts ids 101 and 110, and the private send path writes the sender's outbox without delivering an inbox to a user that does not exist.
+
+`messages.getBotCallbackAnswer` returned an empty success when no answer was stored, including a message that has no callback button. A missing stored answer is now `DATA_INVALID`. A stored empty answer is unchanged.
+
+| Piece | File |
+| --- | --- |
+| status document ids | `app/bff/stickers/catalog/service.go` |
+| status lists | `app/bff/premium/internal/core/account_features.go` |
+| startBot | `app/service/biz/chatbox/bots.go` |
+| private send | `app/messenger/msg/msg/internal/core/msg.sendMessageV2_handler.go` |

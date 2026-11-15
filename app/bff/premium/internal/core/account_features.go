@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -63,30 +64,44 @@ func (c *PremiumCore) pushEmojiStatus(documentID int64, until int32) {
 }
 
 func (c *PremiumCore) AccountGetDefaultEmojiStatuses(in *mtproto.TLAccountGetDefaultEmojiStatuses) (*mtproto.Account_EmojiStatuses, error) {
-	return emojiStatusList(in.GetHash()), nil
+	return emojiStatusList(in.GetHash(), false), nil
 }
 
 func (c *PremiumCore) AccountGetRecentEmojiStatuses(in *mtproto.TLAccountGetRecentEmojiStatuses) (*mtproto.Account_EmojiStatuses, error) {
-	return emojiStatusList(in.GetHash()), nil
+	return emojiStatusList(in.GetHash(), false), nil
 }
 
 func (c *PremiumCore) AccountGetChannelDefaultEmojiStatuses(in *mtproto.TLAccountGetChannelDefaultEmojiStatuses) (*mtproto.Account_EmojiStatuses, error) {
-	return emojiStatusList(in.GetHash()), nil
+	return emojiStatusList(in.GetHash(), true), nil
 }
 
 func (c *PremiumCore) AccountClearRecentEmojiStatuses(in *mtproto.TLAccountClearRecentEmojiStatuses) (*mtproto.Bool, error) {
 	return mtproto.BoolTrue, nil
 }
 
-func emojiStatusList(hash int64) *mtproto.Account_EmojiStatuses {
-	if hash == premium.EmojiStatusListHash {
+func emojiStatusList(hash int64, channel bool) *mtproto.Account_EmojiStatuses {
+	var statuses []*mtproto.EmojiStatus
+	for _, id := range catalog.Must().StatusDocumentIDs(channel) {
+		if id == 0 {
+			continue
+		}
+		statuses = append(statuses, mtproto.MakeTLEmojiStatus(&mtproto.EmojiStatus{
+			DocumentId: id,
+		}).To_EmojiStatus())
+	}
+	if statuses == nil {
+		statuses = []*mtproto.EmojiStatus{}
+	}
+	sum := premium.EmojiStatusListHash
+	if len(statuses) > 0 {
+		sum = int64(statuses[0].GetDocumentId()) ^ int64(len(statuses))
+	}
+	if hash != 0 && hash == sum {
 		return mtproto.MakeTLAccountEmojiStatusesNotModified(&mtproto.Account_EmojiStatuses{}).To_Account_EmojiStatuses()
 	}
-	// Document ids come from the sticker import. An empty catalog still lets
-	// account.updateEmojiStatus accept a document the client already has.
 	return mtproto.MakeTLAccountEmojiStatuses(&mtproto.Account_EmojiStatuses{
-		Hash:     premium.EmojiStatusListHash,
-		Statuses: []*mtproto.EmojiStatus{},
+		Hash:     sum,
+		Statuses: statuses,
 	}).To_Account_EmojiStatuses()
 }
 

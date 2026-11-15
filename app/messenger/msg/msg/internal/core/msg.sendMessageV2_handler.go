@@ -126,6 +126,8 @@ func (c *MsgCore) MsgSendMessageV2(in *msg.TLMsgSendMessageV2) (*mtproto.Updates
 }
 
 func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId int64, outBox *msg.OutboxMessage) (*mtproto.Updates, error) {
+	// gif (101) and venue (110) are built-in bots with no users-table row.
+	builtinBot := mtproto.IsBotGif(toUserId) || mtproto.IsBotVenue(toUserId)
 	var (
 		idHelper = mtproto.NewIDListHelper(fromUserId, toUserId)
 		since2   = timex.Now()
@@ -162,7 +164,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 	// }
 
 	peerUser, _ := users.GetImmutableUser(toUserId)
-	if peerUser == nil || peerUser.Deleted() {
+	if (peerUser == nil || peerUser.Deleted()) && !builtinBot {
 		err = mtproto.ErrInputUserDeactivated
 		c.Logger.Errorf("msg.sendUserOutgoingMessage - error: %v", err)
 		return nil, err
@@ -230,7 +232,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 				BoxList:       []*mtproto.MessageBox{box},
 				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
 			}}
-			if fromUserId != toUserId {
+			if fromUserId != toUserId && !builtinBot {
 				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
 					UserId:     toUserId,
 					PeerUserId: fromUserId,

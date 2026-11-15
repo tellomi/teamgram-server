@@ -1090,7 +1090,8 @@ func (b *Book) StartBot(ctx context.Context, self int64, bot *mtproto.InputUser,
 	b.mu.Lock()
 	st := b.botLocked(ctx, botID)
 	b.mu.Unlock()
-	if st == nil {
+	builtin := builtinBotUser(botID)
+	if st == nil && builtin == nil {
 		return nil, mtproto.ErrBotInvalid
 	}
 	text := "/start"
@@ -1101,10 +1102,25 @@ func (b *Book) StartBot(ctx context.Context, self int64, bot *mtproto.InputUser,
 		random = b.freshID()
 	}
 	msg := b.textMessage(self, p, text, false)
+	users := []*mtproto.User{builtin}
+	if st != nil {
+		users = []*mtproto.User{st.Profile.user(false)}
+	}
 	return &SendReq{
 		Peer: p, RandomID: random, Message: msg,
-		Fallback: localUpdates(msg, []*mtproto.User{st.Profile.user(false)}),
+		Fallback: localUpdates(msg, users),
 	}, nil
+}
+
+func builtinBotUser(id int64) *mtproto.User {
+	switch id {
+	case mtproto.BotGifId:
+		return catalog.GifBotUser()
+	case mtproto.BotVenueId:
+		return catalog.VenueBotUser()
+	default:
+		return nil
+	}
 }
 
 // CallbackAnswer implements messages.getBotCallbackAnswer.
@@ -1132,7 +1148,10 @@ func (b *Book) CallbackAnswer(ctx context.Context, self int64, peer *mtproto.Inp
 	defer b.mu.Unlock()
 	ans := b.callbacks[callbackKey(p.PeerType, p.PeerId, msgID, data)]
 	if ans == nil {
-		ans = &callbackAnswer{}
+		// No stored answer means this message has no callback button the
+		// bot has registered. Official clients get DATA_INVALID rather than
+		// an empty success.
+		return nil, mtproto.ErrDataInvalid
 	}
 	return mtproto.MakeTLMessagesBotCallbackAnswer(&mtproto.Messages_BotCallbackAnswer{
 		Alert:     ans.Alert,

@@ -84,6 +84,20 @@ func TestInlineQuerySendAndExpiry(t *testing.T) {
 	}
 }
 
+func TestBuiltinGifAndVenueStart(t *testing.T) {
+	b := newBook(nil)
+	ctx := context.Background()
+	for _, id := range []int64{mtproto.BotGifId, mtproto.BotVenueId} {
+		start, err := b.StartBot(ctx, 3, userIn(id), peerIn(id), 0, "")
+		if err != nil || start.Message.GetMessage() != "/start" || start.Peer.PeerId != id {
+			t.Fatalf("start %d %+v %v", id, start, err)
+		}
+	}
+	if _, err := b.StartBot(ctx, 3, userIn(404), peerIn(404), 0, ""); err != mtproto.ErrBotInvalid {
+		t.Fatalf("unknown bot: %v", err)
+	}
+}
+
 func TestStartCallbackAttachAndWeb(t *testing.T) {
 	b := newBook(nil)
 	b.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
@@ -104,14 +118,13 @@ func TestStartCallbackAttachAndWeb(t *testing.T) {
 	if _, err := b.CallbackAnswer(ctx, 3, peerIn(9), 8, make([]byte, 65), false); err != mtproto.ErrButtonDataInvalid {
 		t.Fatalf("data: %v", err)
 	}
-	ans, err := b.CallbackAnswer(ctx, 3, peerIn(9), 8, []byte("go"), false)
-	if err != nil || ans.GetMessage() != nil || ans.Alert {
-		t.Fatalf("empty callback %+v %v", ans, err)
+	if _, err := b.CallbackAnswer(ctx, 3, peerIn(9), 8, []byte("go"), false); err != mtproto.ErrDataInvalid {
+		t.Fatalf("missing button: %v", err)
 	}
 	if err := b.SetCallbackAnswer(ctx, 3, peerIn(9), 8, []byte("go"), true, "Done", "", 5); err != nil {
 		t.Fatal(err)
 	}
-	ans, err = b.CallbackAnswer(ctx, 3, peerIn(9), 8, []byte("go"), false)
+	ans, err := b.CallbackAnswer(ctx, 3, peerIn(9), 8, []byte("go"), false)
 	if err != nil || !ans.Alert || ans.GetMessage().GetValue() != "Done" || ans.CacheTime != 5 {
 		t.Fatalf("stored callback %+v %v", ans, err)
 	}
