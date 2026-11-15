@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/pagelimit"
@@ -316,7 +317,9 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			    "limit": 21
 			}
 		*/
-		if fromId == nil && in.Q == "" {
+		// Saved-message tag chips send q="" plus saved_reaction. That is a
+		// real query. An empty text search with no sender and no tag is not.
+		if fromId == nil && in.Q == "" && len(in.GetSavedReaction()) == 0 {
 			err = mtproto.ErrSearchQueryEmpty
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return nil, err
@@ -349,6 +352,12 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		if err != nil {
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return rValues, nil
+		}
+		if len(in.GetSavedReaction()) > 0 && boxList != nil && savedSelf(peer, c.MD.UserId) {
+			boxList.BoxList = chatbox.Shared().KeepSavedReaction(c.ctx, c.MD.UserId, boxList.GetBoxList(), in.GetSavedReaction())
+			if boxList.BoxList == nil {
+				boxList.BoxList = []*mtproto.MessageBox{}
+			}
 		}
 
 		if boxList.Count > 0 {
@@ -417,6 +426,16 @@ func (c *MessagesCore) searchMedia(peer *mtproto.PeerUtil, mediaType, offsetId, 
 		Offset:    offsetId,
 		Limit:     limit,
 	})
+}
+
+func savedSelf(peer *mtproto.PeerUtil, self int64) bool {
+	if peer == nil {
+		return false
+	}
+	if peer.PeerType == mtproto.PEER_SELF {
+		return true
+	}
+	return peer.PeerType == mtproto.PEER_USER && (peer.PeerId == 0 || peer.PeerId == self)
 }
 
 // keepBoxes drops boxes whose message does not satisfy ok.

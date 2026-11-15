@@ -358,6 +358,50 @@ func (b *Book) loadReact(ctx context.Context, self int64, peer *mtproto.PeerUtil
 	return doc, nil
 }
 
+// KeepSavedReaction keeps saved-message boxes that carry one of want.
+// messages.search(peer=self, q="", saved_reaction=[👍]) is the tag chip.
+func (b *Book) KeepSavedReaction(ctx context.Context, self int64, boxes []*mtproto.MessageBox, want []*mtproto.Reaction) []*mtproto.MessageBox {
+	if len(boxes) == 0 || len(want) == 0 {
+		return boxes
+	}
+	emos := map[string]bool{}
+	for _, r := range want {
+		if r != nil && r.GetEmoticon() != "" {
+			emos[r.GetEmoticon()] = true
+		}
+	}
+	if len(emos) == 0 || b == nil {
+		return []*mtproto.MessageBox{}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	peer := mtproto.MakePeerUtil(mtproto.PEER_SELF, self)
+	doc, err := b.loadReact(ctx, self, peer)
+	if err != nil || doc == nil {
+		return []*mtproto.MessageBox{}
+	}
+	var out []*mtproto.MessageBox
+	for _, box := range boxes {
+		if box == nil || box.GetMessage() == nil {
+			continue
+		}
+		id := box.GetMessage().GetId()
+		if id == 0 {
+			id = box.GetMessageId()
+		}
+		for _, item := range doc.Items {
+			if item.MsgID == id && emos[item.Emoticon] {
+				out = append(out, box)
+				break
+			}
+		}
+	}
+	if out == nil {
+		out = []*mtproto.MessageBox{}
+	}
+	return out
+}
+
 // ApplyReactions copies stored reactions onto messages.getHistory rows.
 // The reaction RPC returns updateMessageReactions; a later history fetch
 // has to carry the same MessageReactions or the bubble disappears.

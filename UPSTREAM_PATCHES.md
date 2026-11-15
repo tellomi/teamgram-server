@@ -1006,3 +1006,14 @@ New group calls were created with `join_muted` true, so every non-admin joined m
 | --- | --- |
 | join_to_send | `convert.go`, `comments.go` `mayComment` |
 | call default and local mute | `app/bff/phone/internal/engine/group.go`, `groups.go` `PhoneCreateGroupCall`, `service_ops.go` `CallStartsMuted` |
+
+## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
+
+`messages.deleteSavedHistory(max_id=0)` asked to delete every saved message from that peer. The query treated `max_id <= 0` as an empty set, so the call returned `pts_count=0` and left the messages. `max_id <= 0` is now the whole dialog, still capped at 100 rows per call.
+
+`messages.search` in Saved Messages with an empty `q` and `saved_reaction` returned `SEARCH_QUERY_EMPTY`. A tag chip is that request. Empty text is allowed when a reaction is set, and the result is limited to messages that carry one of those emoji.
+
+| Piece | File |
+| --- | --- |
+| delete | `saved_history_query.go` |
+| tag search | `messages.search_handler.go`, `chatbox/react.go`, `message.search_handler.go` |
