@@ -81,7 +81,7 @@ func TestCreateChannelKeepsGeoPoint(t *testing.T) {
 	}
 }
 
-func TestToggleForumCollapsesDuplicateGeneral(t *testing.T) {
+func TestToggleForumKeepsSystemGeneralAndUserNamedGeneral(t *testing.T) {
 	svc, ctx := newTest(t)
 	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Topics", Megagroup: true, Forum: true})
 	if err != nil {
@@ -97,8 +97,12 @@ func TestToggleForumCollapsesDuplicateGeneral(t *testing.T) {
 	if _, err = svc.EditTopic(ctx, 1, ch.Id, 1, "", nil, nil, &hidden); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = svc.CreateTopic(ctx, 1, 0, ch.Id, "General", 0x6FB9F0, 0); err != nil {
+	_, user, err := svc.CreateTopic(ctx, 1, 0, ch.Id, "General", 0x6FB9F0, 0)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if user == nil || user.ID == generalTopicID || user.System {
+		t.Fatalf("user topic %#v", user)
 	}
 	if _, err = svc.ToggleForum(ctx, 1, in, false); err != nil {
 		t.Fatal(err)
@@ -110,13 +114,19 @@ func TestToggleForumCollapsesDuplicateGeneral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
+	var system, named int
 	for _, topic := range topics {
-		if topic.GetTitle() == "General" {
-			n++
+		if topic.GetId() == generalTopicID {
+			system++
+			if topic.GetHidden() {
+				t.Fatal("system general hidden state was replaced")
+			}
+		}
+		if topic.GetId() == user.ID && topic.GetTitle() == "General" {
+			named++
 		}
 	}
-	if n != 1 {
-		t.Fatalf("general topics %d %#v", n, topics)
+	if system != 1 || named != 1 {
+		t.Fatalf("system %d user %d %#v", system, named, topics)
 	}
 }

@@ -99,17 +99,27 @@ func TestForumGeneralStaysSingle(t *testing.T) {
 	toggleForum(t, ctx, owner, channel, true)
 	editGeneralHidden(t, ctx, owner, peer, true)
 	editGeneralHidden(t, ctx, owner, peer, false)
+	userID := createForumTopic(t, ctx, owner, channel, "General")
+	if userID == 1 {
+		t.Fatal("user topic took the system general id")
+	}
 	toggleForum(t, ctx, owner, channel, false)
 	toggleForum(t, ctx, owner, channel, true)
 	topics := forumTopicList(t, ctx, owner, peer)
-	n := 0
+	var system, named int
 	for _, topic := range topics {
-		if topic.GetTitle() == "General" {
-			n++
+		if topic.GetId() == 1 {
+			system++
+			if topic.GetHidden() {
+				t.Fatal("system general was re-hidden")
+			}
+		}
+		if topic.GetId() == userID && topic.GetTitle() == "General" {
+			named++
 		}
 	}
-	if n != 1 {
-		t.Fatalf("general topics %d", n)
+	if system != 1 || named != 1 {
+		t.Fatalf("system %d user %d", system, named)
 	}
 }
 
@@ -209,6 +219,24 @@ func toggleForum(t *testing.T, ctx context.Context, c *Client, channel *mtproto.
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func createForumTopic(t *testing.T, ctx context.Context, c *Client, channel *mtproto.InputChannel, title string) int32 {
+	t.Helper()
+	obj, err := c.Invoke(ctx, &mtproto.TLChannelsCreateForumTopic{
+		Constructor: mtproto.CRC32_channels_createForumTopic,
+		Channel:     channel,
+		Title:       title,
+		RandomId:    time.Now().UnixNano(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := messageID(obj)
+	if id == 0 {
+		t.Fatal("created topic id missing")
+	}
+	return id
 }
 
 func editGeneralHidden(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer, hidden bool) {

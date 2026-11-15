@@ -170,6 +170,9 @@ type TopicRec struct {
 	Closed     bool
 	Pinned     bool
 	Hidden     bool
+	// System marks the forum General topic created by the server.
+	// A member can create another topic titled General; that one stays false.
+	System bool
 	// PinOrder is the position from messages.reorderPinnedForumTopics.
 	// Lower comes first among pinned topics.
 	PinOrder int32
