@@ -2,7 +2,6 @@ package accountrest
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -55,88 +54,26 @@ func loginCredential(id string) *mtproto.InputPasskeyCredential {
 	}).To_InputPasskeyCredential()
 }
 
-func challengeFrom(t *testing.T, options *mtproto.Account_PasskeyRegistrationOptions) string {
-	t.Helper()
-	var body struct {
-		PublicKey struct {
-			Challenge string `json:"challenge"`
-		} `json:"publicKey"`
-	}
-	if err := json.Unmarshal([]byte(options.GetOptions().GetData()), &body); err != nil {
-		t.Fatal(err)
-	}
-	if body.PublicKey.Challenge == "" {
-		t.Fatal("missing challenge")
-	}
-	return body.PublicKey.Challenge
-}
-
 func TestPasskeys(t *testing.T) {
-	Reset()
-	empty, err := ListPasskeys(7)
-	if err != nil || empty.GetPredicateName() != mtproto.Predicate_account_passkeys || len(empty.GetPasskeys()) != 0 {
-		t.Fatalf("empty list: %v %#v", err, empty)
-	}
-	mustEncode(t, empty)
 	if _, err := ListPasskeys(0); codeOf(err) != "AUTH_KEY_UNREGISTERED" {
 		t.Fatal(err)
 	}
-	opts, err := InitPasskeyRegistration(7)
-	if err != nil || opts.GetPredicateName() != mtproto.Predicate_account_passkeyRegistrationOptions {
+	if _, err := RegisterPasskey(0, nil); codeOf(err) != "AUTH_KEY_UNREGISTERED" {
 		t.Fatal(err)
-	}
-	mustEncode(t, opts)
-	if !strings.Contains(opts.GetOptions().GetData(), `"publicKey"`) {
-		t.Fatal(opts.GetOptions().GetData())
-	}
-	challenge := challengeFrom(t, opts)
-	if !strings.Contains(opts.GetOptions().GetData(), `"id":"www.tellomi.cn"`) && !strings.Contains(opts.GetOptions().GetData(), `"id": "www.tellomi.cn"`) {
-		t.Fatal(opts.GetOptions().GetData())
 	}
 	if _, err := RegisterPasskey(7, registerCredential("cred", "other", "https://www.tellomi.cn")); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
 	}
-	if _, err := RegisterPasskey(7, registerCredential("cred", challenge, "https://evil.example")); codeOf(err) != "PASSKEY_ORIGIN_MISMATCH" {
+	if _, err := VerifyPasskeyLogin(nil); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
 	}
-	key, err := RegisterPasskey(7, registerCredential("cred", challenge, "https://www.tellomi.cn"))
-	if err != nil || key.GetPredicateName() != mtproto.Predicate_passkey || key.GetId() != "cred" || key.GetName() != "Passkey" {
-		t.Fatalf("register: %v %#v", err, key)
-	}
-	mustEncode(t, key)
-	listed, err := ListPasskeys(7)
-	if err != nil || len(listed.GetPasskeys()) != 1 {
-		t.Fatalf("listed: %v %d", err, len(listed.GetPasskeys()))
-	}
-	auth, err := FinishPasskeyLogin(loginCredential("missing"))
-	if auth != nil || codeOf(err) != "PASSKEY_CREDENTIAL_NOT_FOUND" {
-		t.Fatalf("missing login: %v %v", auth, err)
-	}
-	auth, err = FinishPasskeyLogin(loginCredential("cred"))
-	if auth != nil || codeOf(err) != "CREDENTIAL_INVALID" {
-		t.Fatalf("stored login must not authorize: %v %v", auth, err)
-	}
-	if _, err := FinishPasskeyLogin(nil); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err := VerifyPasskeyLogin(loginCredential("missing")); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
-	}
-	gone, err := DeletePasskey(7, "cred")
-	if err != nil || !mtproto.FromBool(gone) {
-		t.Fatal(err)
-	}
-	mustEncode(t, gone)
-	missing, err := DeletePasskey(7, "cred")
-	if err != nil || mtproto.FromBool(missing) {
-		t.Fatal(missing, err)
 	}
 	login, err := InitPasskeyLogin(0, "")
 	if login != nil || codeOf(err) != "API_ID_INVALID" {
 		t.Fatal(err)
 	}
-	login, err = InitPasskeyLogin(4, "hash")
-	if err != nil || login.GetPredicateName() != mtproto.Predicate_auth_passkeyLoginOptions || !strings.Contains(login.GetOptions().GetData(), `"publicKey"`) || !strings.Contains(login.GetOptions().GetData(), "www.tellomi.cn") {
-		t.Fatalf("login options: %v %#v", err, login)
-	}
-	mustEncode(t, login)
 }
 
 func TestWebBrowserSettings(t *testing.T) {

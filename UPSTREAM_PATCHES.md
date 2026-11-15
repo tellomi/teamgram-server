@@ -859,7 +859,7 @@ Rows 290, 272, and 343.
 
 `account.uploadRingtone` rejected `audio/wav`. Those types are accepted and converted to `audio/mpeg` on save, same as ogg. A document uploaded as a message was unknown to the ringtone store, so `account.saveRingtone` returned `RINGTONE_INVALID`. When the local tone record is missing, the media service document is adopted if the id, access hash, and mime match.
 
-Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_PASSKEY_RPID` when set, otherwise `www.tellomi.cn`. `auth.finishPasskeyLogin` still does not authorize. No production env file and no port was changed.
+Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_PASSKEY_RPID` when set, otherwise `www.tellomi.cn`. Persistence and `auth.finishPasskeyLogin` are in the passkey login section below. No production env file and no port was changed.
 
 | Piece | File |
 | --- | --- |
@@ -1055,3 +1055,19 @@ The upload now inserts `encrypted_file_id`, `access_hash`, `dc_id`, `file_size`,
 | insert | `app/service/dfs/internal/dao/encrypted_files.go`, `dao.go` |
 | upload | `app/service/dfs/internal/core/dfs.uploadEncryptedFileV2_handler.go` |
 | unique id | `teamgramd/deploy/sql/migrate-20261115-encrypted-file-lookup.sql` |
+
+## Passkey login (ISSUE-S-PASSKEY-RPID-001)
+
+`account.registerPasskey` kept the credential in process memory and did not store a public key. `auth.finishPasskeyLogin` then returned `CREDENTIAL_INVALID` for every saved id, so a client passkey UI could not log in, and a restart dropped the credential.
+
+Registration now verifies the WebAuthn attestation with `github.com/go-webauthn/webauthn` and inserts `user_passkeys` (`credential_id`, public key, sign count, user handle `dc:userId`). `auth.finishPasskeyLogin` checks the stored challenge, rpId/origin, signature, and sign count. A higher count is saved. A repeated count is `CREDENTIAL_INVALID`. An unknown id is `PASSKEY_CREDENTIAL_NOT_FOUND`. A foreign origin is `PASSKEY_ORIGIN_MISMATCH`. Success binds the permanent auth key, sends the sign-in service notification, cancels a pending deletion, pushes the 777000 login notice, and returns `auth.authorization`. A cloud password returns `SESSION_PASSWORD_NEEDED` after the bind, and `auth.checkPassword` finishes that login. The user handle DC is `TELLOMI_DC_ID`, or 1.
+
+| Piece | File |
+| --- | --- |
+| store and WebAuthn | `app/bff/passkey/persist` |
+| login bind and notice | `app/bff/passkey/login` |
+| facade | `app/bff/accountrest/passkey.go` |
+| RPC | `app/bff/passkey/internal/core/auth.finishPasskeyLogin_handler.go` |
+| session state | `app/interface/session/internal/sess/session_invoke.go` |
+| wiring | `app/bff/bff/internal/server/server.go` |
+| table | `teamgramd/deploy/sql/migrate-20261115-passkeys.sql` |

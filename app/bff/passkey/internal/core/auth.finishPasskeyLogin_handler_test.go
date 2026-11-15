@@ -42,10 +42,12 @@ func TestFinishPasskeyLoginNotFound(t *testing.T) {
 		Credential: credential(),
 	})
 	if auth != nil {
-		t.Fatal("passkey login must not return auth.authorization")
+		t.Fatal("unverified passkey login returned authorization")
 	}
 	code, msg := rpcCode(err)
-	if code != 400 || msg != "PASSKEY_CREDENTIAL_NOT_FOUND" {
+	// The fixture is not a WebAuthn assertion, so it is rejected before lookup.
+	// A stored miss is PASSKEY_CREDENTIAL_NOT_FOUND; that case is in persist.
+	if code != 400 || msg != "CREDENTIAL_INVALID" {
 		t.Fatalf("code %d msg %s", code, msg)
 	}
 }
