@@ -13,14 +13,14 @@ import (
 // supergroup and one broadcast channel, then reads account.getNotifyExceptions
 // for each category. inputNotifyUsers is only the user. inputNotifyChats is
 // only the supergroup. inputNotifyBroadcasts is only the broadcast channel.
-// Phones 9996610801 and 9996610802, code 11111.
+// Phones 9996610821 and 9996610822, code 11111.
 func TestNotifyExceptionsFollowThePeerScope(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := contextTimeout(2 * time.Minute)
 	defer cancel()
-	owner, _ := dialPhone(t, ctx, cfg, "9996610801", "ExcOwn")
-	_, _ = dialPhone(t, ctx, cfg, "9996610802", "ExcPeer")
-	peerID, peerHash, err := owner.ImportPhone(ctx, "9996610802", "ExcPeer")
+	owner, _ := dialPhone(t, ctx, cfg, "9996610821", "ExcOwn")
+	_, _ = dialPhone(t, ctx, cfg, "9996610822", "ExcPeer")
+	peerID, peerHash, err := owner.ImportPhone(ctx, "9996610822", "ExcPeer")
 	if err != nil {
 		t.Fatal(err)
 	}
