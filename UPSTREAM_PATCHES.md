@@ -2,6 +2,14 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Slow mode next send date (ISSUE-S-SLOWMODE-NEXTDATE-001)
+
+`channels.getFullChannel` returned `slowmode_seconds` and left `slowmode_next_send_date` empty. `Send` already stores each member's last send in `Features.LastSend` and returns `SLOWMODE_WAIT` from that map. `channelFull` now fills `slowmode_next_send_date` from the same map: last send plus `slowmode_seconds`, only for a member who is not an admin and not the creator, and only while that time is still in the future. Admins, the creator, a closed slow mode, and an elapsed window omit the field.
+
+| Piece | File |
+| --- | --- |
+| field | `app/service/biz/channel/convert.go` |
+
 ## Quick reply multi-session sync (ISSUE-S-QUICKREPLY-SYNC-001)
 
 Creating, appending, renaming, reordering, and deleting a quick reply only returned the result to the calling RPC. Another session of the same account saw the change only after `messages.getQuickReplies`.

@@ -59,6 +59,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestAccountEnforcementBanAndLift` | The isolated phone or email account did not follow the sanction chain: 777000 notice delivery, a temporary freeze that still logs in and rejects `messages.sendMessage`, a permanent sign-in without a session, disposition notice and appeal, fake-model lift of only that case, or the human revoke audit. Skipped unless `TELLOMI_ENFORCEMENT_E2E=1`. |
 | `TestAccountEnforcementReportConfirm` | A user report did not reach @erel from @tellomi, 「是」 did not ban with a 777000 notice and a disposition appeal, 「否」 banned someone, or a non-admin 「是」 banned someone. Skipped unless `TELLOMI_ENFORCEMENT_E2E=1`. The model is fakebailian. |
 | `TestBasicGroupCreatorRequiresPassword` | `messages.editChatCreator` on a basic group accepts an empty proof or a non-empty fake SRP proof when the creator has no cloud password, or that proof changes the creator. With a cloud password, a fake proof still changes the creator. Accounts `basic_creator_a` / `basic_creator_b` (`9996610584` / `9996610585`). |
+| `TestSlowmodeNextSendDate` | After a member sends in a 30-second slow mode, `channels.getFullChannel` omits `slowmode_next_send_date` or the value is outside `(now, now+30]`, an admin or the creator receives that field, or turning slow mode off leaves the field set. Phones `9996610801`–`9996610803`. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).
