@@ -16,6 +16,9 @@ type GroupCallAttach struct {
 // LookupGroupCall is set by the phone service. Nil means no voice chat.
 var LookupGroupCall func(ctx context.Context, channelID int64) GroupCallAttach
 
+// LookupJoinAs is the saved phone.saveDefaultGroupCallJoinAs peer for this viewer.
+var LookupJoinAs func(ctx context.Context, viewer, channelID int64) *mtproto.Peer
+
 // CallAccess reports whether userID is in the channel and may manage its call.
 func (s *Service) CallAccess(ctx context.Context, userID, channelID, accessHash int64) (member, manage bool, err error) {
 	member, manage, _, _, err = s.callAccess(ctx, userID, channelID, accessHash)

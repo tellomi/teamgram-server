@@ -439,6 +439,11 @@ func (s *Service) UpdatePaidMessagesPrice(ctx context.Context, self, actorAuth i
 	f.PaidMessagesSet = true
 	f.SendPaidMessagesStars = stars
 	f.BroadcastMessagesAllowed = broadcastAllowed
+	if ch.Broadcast {
+		// Direct messages use this channel as the monoforum entry. Turning
+		// the switch off removes that entry again.
+		f.Monoforum = broadcastAllowed
+	}
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}

@@ -880,6 +880,9 @@ func (s *Service) InactiveChannels(ctx context.Context, self int64) (*mtproto.Me
 	}).To_Messages_InactiveChats(), nil
 }
 
+// gigagroupMinParticipants is the official floor for channels.convertToGigagroup.
+const gigagroupMinParticipants int32 = 199000
+
 func (s *Service) ConvertToGigagroup(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel) (*mtproto.Updates, error) {
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
@@ -887,6 +890,11 @@ func (s *Service) ConvertToGigagroup(ctx context.Context, self, actorAuth int64,
 	}
 	if !ch.Megagroup || !p.IsCreator() {
 		return nil, mtproto.ErrChatAdminRequired
+	}
+	// Official clients refuse this below about 200000 members. A small
+	// private supergroup must not become a broadcast group it cannot leave.
+	if ch.ParticipantsCount < gigagroupMinParticipants {
+		return nil, mtproto.ErrParticipantsTooFew
 	}
 	f := s.features(ctx, ch.ID)
 	if f.Gigagroup {

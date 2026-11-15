@@ -725,3 +725,22 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Channel sheet: threads, direct messages, location, gigagroup, join-as
+
+Rows 287, 295, 270, 292, and 279.
+
+A megagroup reply did not fill `messageReplies` on the root, and `messages.readDiscussion` called `ReadHistory` with the reply id, so every viewer shared one channel inbox cursor. `noteThreadReply` now increments the root's `replies` / `max_id`. `ReadThread` stores `user:root -> read_max_id` in the channel features JSON. History and `getMessages` copy that viewer's cursor onto `read_max_id` and leave other members at unset.
+
+`channels.updatePaidMessagesPrice` with `broadcast_messages_allowed` on a broadcast sets `features.monoforum` and the chat object returns `monoforum` plus `linked_monoforum_id` equal to the same channel. A joined member may then post. Turning the flag off removes the entry and restores `CHAT_WRITE_FORBIDDEN`. Non-members still get `CHANNEL_PRIVATE`.
+
+`channels.getFullChannel` sets `can_set_location` for the creator when a location or address is already stored. `channels.convertToGigagroup` returns `PARTICIPANTS_TOO_FEW` below 199000 members. `phone.saveDefaultGroupCallJoinAs` was already stored in memory; `ChannelFull.groupcall_default_join_as` now reads it through `channel.LookupJoinAs`.
+
+| Piece | File |
+| --- | --- |
+| reply count, read cursor, direct send | `app/service/biz/channel/service_ops.go` |
+| monoforum flag | `app/service/biz/channel/p1.go` |
+| chat and full fields | `app/service/biz/channel/convert.go` |
+| gigagroup floor | `app/service/biz/channel/service_features.go` |
+| join-as hook | `app/bff/phone/internal/server/grpc/service/service.go` |
+| readDiscussion | `app/bff/channels/internal/server/grpc/service/handlers_features.go` |

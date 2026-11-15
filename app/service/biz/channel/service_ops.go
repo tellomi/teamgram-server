@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -179,7 +180,10 @@ func (s *Service) canPost(ch *Channel, p *Participant) error {
 		return nil
 	}
 	if ch.Broadcast {
-		if p.IsAdmin() && p.adminRights().CanPostMessages() {
+		if p.IsAdmin() && (p.IsCreator() || p.adminRights().CanPostMessages()) {
+			return nil
+		}
+		if s.directMessagesOpen(ch) {
 			return nil
 		}
 		return mtproto.ErrChatWriteForbidden
@@ -197,6 +201,102 @@ func (s *Service) canPost(ch *Channel, p *Participant) error {
 		return mtproto.ErrChatWriteForbidden
 	}
 	return nil
+}
+
+func (s *Service) directMessagesOpen(ch *Channel) bool {
+	if s == nil || ch == nil || !ch.Broadcast {
+		return false
+	}
+	return s.features(context.Background(), ch.ID).BroadcastMessagesAllowed
+}
+
+func threadReadKey(user int64, root int32) string {
+	return strconv.FormatInt(user, 10) + ":" + strconv.FormatInt(int64(root), 10)
+}
+
+// noteThreadReply stamps messageReplies on a megagroup thread root.
+func (s *Service) noteThreadReply(ctx context.Context, ch *Channel, reply *mtproto.Message, replyID int32) {
+	if s == nil || ch == nil || !ch.Megagroup || reply == nil || replyID == 0 {
+		return
+	}
+	header := reply.GetReplyTo()
+	if header == nil {
+		return
+	}
+	root := header.GetReplyToMsgId()
+	if root == 0 {
+		root = header.GetFixedReplyToMsgId()
+	}
+	if root == 0 || root == replyID {
+		return
+	}
+	stored, err := s.store.GetMessage(ctx, ch.ID, root)
+	if err != nil || stored == nil || stored.Deleted {
+		return
+	}
+	body, err := unmarshalMessage(stored.Data)
+	if err != nil || body == nil {
+		return
+	}
+	count := int32(1)
+	maxID := replyID
+	if prev := body.GetReplies(); prev != nil {
+		count = prev.GetReplies() + 1
+		if prev.GetMaxId().GetValue() > maxID {
+			maxID = prev.GetMaxId().GetValue()
+		}
+	}
+	body.Replies = mtproto.MakeTLMessageReplies(&mtproto.MessageReplies{
+		Replies:    count,
+		RepliesPts: ch.Pts,
+		MaxId:      &wrapperspb.Int32Value{Value: maxID},
+	}).To_MessageReplies()
+	raw, err := proto.Marshal(body)
+	if err != nil {
+		return
+	}
+	_, _ = s.store.CommitEdit(ctx, ch.ID, root, int32(time.Now().Unix()), raw)
+}
+
+// ReadThread stores one viewer's read_max_id for a thread root.
+func (s *Service) ReadThread(ctx context.Context, self, channelID int64, root, readMax int32) error {
+	if s == nil || channelID == 0 || self == 0 || root <= 0 || readMax < 0 {
+		return mtproto.ErrMsgIdInvalid
+	}
+	if _, _, err := s.requireView(ctx, self, &mtproto.InputChannel{
+		PredicateName: mtproto.Predicate_inputChannel,
+		ChannelId:     channelID,
+	}); err != nil {
+		return err
+	}
+	f := s.features(ctx, channelID)
+	if f.ThreadRead == nil {
+		f.ThreadRead = map[string]int32{}
+	}
+	key := threadReadKey(self, root)
+	if readMax <= f.ThreadRead[key] {
+		return nil
+	}
+	f.ThreadRead[key] = readMax
+	return s.saveFeatures(ctx, channelID, f)
+}
+
+func (s *Service) applyThreadRead(ctx context.Context, channelID, viewer int64, msgs []*mtproto.Message) {
+	if s == nil || len(msgs) == 0 || viewer == 0 {
+		return
+	}
+	f := s.features(ctx, channelID)
+	if len(f.ThreadRead) == 0 {
+		return
+	}
+	for _, msg := range msgs {
+		if msg == nil || msg.GetReplies() == nil {
+			continue
+		}
+		if read := f.ThreadRead[threadReadKey(viewer, msg.GetId())]; read > 0 {
+			msg.Replies.ReadMaxId = &wrapperspb.Int32Value{Value: read}
+		}
+	}
 }
 
 // enforceContent applies default_banned_rights and the member's own
@@ -480,6 +580,7 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		}
 		s.bindTopic(ctx, channelID, id, msg)
 		s.attachDiscussion(ctx, ch, id)
+		s.noteThreadReply(ctx, ch, msg, id)
 		stored, err := s.store.GetMessage(ctx, channelID, id)
 		if err != nil || stored == nil {
 			return nil, mtproto.ErrInternalServerError
@@ -999,6 +1100,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
+	s.applyThreadRead(ctx, ch.ID, user, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
 		Pts:      ch.Pts,
 		Count:    total,
@@ -1035,6 +1137,7 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
+	s.applyThreadRead(ctx, ch.ID, user, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
 		Pts:      ch.Pts,
 		Count:    int32(len(msgs)),

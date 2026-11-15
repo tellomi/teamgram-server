@@ -57,6 +57,9 @@ func New(sc *svc.ServiceContext) *Service {
 			return err == nil && manage
 		},
 	})
+	channel.LookupJoinAs = func(ctx context.Context, viewer, channelID int64) *mtproto.Peer {
+		return s.eng.JoinAs(viewer, mtproto.PEER_CHANNEL, channelID)
+	}
 	channel.LookupGroupCall = func(ctx context.Context, channelID int64) channel.GroupCallAttach {
 		id, access, active, notEmpty, ok := phonecall.Lookup(mtproto.PEER_CHANNEL, channelID)
 		if !ok || !active {

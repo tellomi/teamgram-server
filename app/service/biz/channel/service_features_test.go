@@ -152,6 +152,13 @@ func TestEditCreatorFutureGigagroupPrehistory(t *testing.T) {
 	if err != nil || got.Participant.GetPredicateName() != mtproto.Predicate_channelParticipantCreator {
 		t.Fatalf("creator transfer %#v %v", got, err)
 	}
+	if _, err := svc.ConvertToGigagroup(ctx, 2, 0, inCh(ch)); status.Convert(err).Message() != "PARTICIPANTS_TOO_FEW" {
+		t.Fatalf("small gigagroup: %v", err)
+	}
+	mem := svc.store.(*memoryStore)
+	mem.mu.Lock()
+	mem.channels[ch.Id].ParticipantsCount = gigagroupMinParticipants
+	mem.mu.Unlock()
 	if _, err := svc.ConvertToGigagroup(ctx, 2, 0, inCh(ch)); err != nil {
 		t.Fatal(err)
 	}

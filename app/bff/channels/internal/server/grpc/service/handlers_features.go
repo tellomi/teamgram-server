@@ -592,10 +592,7 @@ func (ThreadsService) MessagesGetDiscussionMessage(ctx context.Context, in *mtpr
 func (ThreadsService) MessagesReadDiscussion(ctx context.Context, in *mtproto.TLMessagesReadDiscussion) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
-	if err := channel.Shared().ReadHistory(ctx, self, &mtproto.InputChannel{
-		PredicateName: mtproto.Predicate_inputChannel,
-		ChannelId:     peer.PeerId,
-	}, in.GetReadMaxId()); err != nil {
+	if err := channel.Shared().ReadThread(ctx, self, peer.PeerId, in.GetMsgId(), in.GetReadMaxId()); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil

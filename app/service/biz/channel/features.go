@@ -81,7 +81,9 @@ type Features struct {
 	// messages.readSavedHistory apply only when this is set.
 	Monoforum bool
 	// SavedRead is messages.readSavedHistory: "user:topicType:topicId" -> max id.
-	SavedRead              map[string]int32
+	SavedRead map[string]int32
+	// ThreadRead is messages.readDiscussion: "user:root" -> read_max_id.
+	ThreadRead             map[string]int32
 	SpamReports            []SpamReport
 	AntispamFalsePositives []FalsePositive
 

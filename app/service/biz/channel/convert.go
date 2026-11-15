@@ -59,6 +59,8 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		Gigagroup:                   feat.Gigagroup,
 		Autotranslation:             feat.Autotranslation,
 		BroadcastMessagesAllowed:    feat.BroadcastMessagesAllowed,
+		Monoforum:                   feat.BroadcastMessagesAllowed,
+		LinkedMonoforumId:           linkedMonoforum(feat.BroadcastMessagesAllowed, ch.ID),
 		Usernames:                   usernameVector(listedUsernames(ch, feat)),
 		Color_FLAGPEERCOLOR:         peerColorValue(feat.ColorSet, feat.ColorID, feat.ColorEmoji),
 		ProfileColor:                peerColorValue(feat.ProfileColorSet, feat.ProfileColorID, feat.ProfileColorEmoji),
@@ -218,6 +220,14 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 				GeoPoint: mtproto.MakeTLGeoPoint(&mtproto.GeoPoint{Lat: feat.Lat, Long: feat.Long}).To_GeoPoint(),
 				Address:  ch.Address,
 			}).To_ChannelLocation()
+			if p.IsCreator() {
+				full.CanSetLocation = true
+			}
+		}
+		if LookupJoinAs != nil {
+			if as := LookupJoinAs(ctx, viewer, ch.ID); as != nil {
+				full.GroupcallDefaultJoinAs = as
+			}
 		}
 	}
 	if admins, kicked, banned, err := s.participantCounts(ctx, ch.ID); err == nil {
@@ -396,6 +406,13 @@ func editMessageUpdate(msg *mtproto.Message, pts, count int32) *mtproto.Update {
 		Pts_INT32:       pts,
 		PtsCount:        count,
 	}).To_Update()
+}
+
+func linkedMonoforum(on bool, id int64) *wrapperspb.Int64Value {
+	if !on || id == 0 {
+		return nil
+	}
+	return &wrapperspb.Int64Value{Value: id}
 }
 
 func deleteUpdate(channelID int64, ids []int32, pts, count int32) *mtproto.Update {
