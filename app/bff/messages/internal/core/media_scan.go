@@ -170,6 +170,72 @@ func (c *MessagesCore) scanSent(kind searchbox.MediaKind) ([]searchbox.Row, erro
 		rows, _, err := testMediaRows(0, 0, kind)
 		return rows, err
 	}
+	if kind.Pinned {
+		return c.scanSentPinned()
+	}
+	return c.scanGlobalSent(kind)
+}
+
+// scanGlobalSent reads every dialog of the current user once.
+// Photos and videos stored under the combined photo/video type are kept
+// only when they are the kind asked for. The same box id is not repeated,
+// which is what happened when Saved Messages was scanned as peerSelf and
+// again as the self dialog.
+func (c *MessagesCore) scanGlobalSent(kind searchbox.MediaKind) ([]searchbox.Row, error) {
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MessageClient == nil {
+		return nil, nil
+	}
+	media := kind.Type
+	photos := kind.Type == mtproto.MEDIA_PHOTOS_ONLY
+	videos := kind.Type == mtproto.MEDIA_VIDEOS_ONLY
+	if photos || videos {
+		media = mtproto.MEDIA_PHOTOVIDEO
+	}
+	offset := int32(math.MaxInt32)
+	seen := map[int32]bool{}
+	var rows []searchbox.Row
+	for len(rows) < mediaCap {
+		got, err := c.svcCtx.Dao.MessageSearchByMediaType(c.ctx, &messagepb.TLMessageSearchByMediaType{
+			UserId:    c.MD.UserId,
+			PeerType:  messagepb.SearchGlobalPeerType,
+			MediaType: media,
+			Offset:    offset,
+			Limit:     mediaPage,
+		})
+		if err != nil {
+			return nil, err
+		}
+		list := got.GetBoxList()
+		if len(list) == 0 {
+			break
+		}
+		for _, box := range list {
+			row := rowFromBox(box)
+			if row.ID > 0 && row.ID < offset {
+				offset = row.ID
+			}
+			if row.Sender != c.MD.UserId || row.ID == 0 || seen[row.ID] {
+				continue
+			}
+			gotType := mtproto.GetMediaType(row.Message)
+			if photos && gotType != mtproto.MEDIA_PHOTOS_ONLY {
+				continue
+			}
+			if videos && gotType != mtproto.MEDIA_VIDEOS_ONLY {
+				continue
+			}
+			seen[row.ID] = true
+			rows = append(rows, row)
+		}
+		if len(list) < int(mediaPage) {
+			break
+		}
+	}
+	sortRows(rows)
+	return rows, nil
+}
+
+func (c *MessagesCore) scanSentPinned() ([]searchbox.Row, error) {
 	peers := []*mtproto.PeerUtil{{PeerType: mtproto.PEER_SELF, PeerId: c.MD.UserId, SelfId: c.MD.UserId}}
 	if c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.DialogClient != nil {
 		got, err := c.svcCtx.Dao.DialogGetDialogs(c.ctx, &dialog.TLDialogGetDialogs{
@@ -188,31 +254,27 @@ func (c *MessagesCore) scanSent(kind searchbox.MediaKind) ([]searchbox.Row, erro
 				default:
 					continue
 				}
-				peer := mtproto.FromPeer(raw)
-				peers = append(peers, peer)
+				peers = append(peers, mtproto.FromPeer(raw))
 				if len(peers) >= 30 {
 					break
 				}
 			}
 		}
 	}
+	seen := map[int32]bool{}
 	var rows []searchbox.Row
 	for _, peer := range peers {
-		var part []searchbox.Row
-		var err error
-		if kind.Pinned {
-			part, _, err = c.scanPinned(peer, nil)
-		} else {
-			part, _, err = c.scanByType(peer, kind.Type, nil)
-		}
+		part, _, err := c.scanPinned(peer, nil)
 		if err != nil {
 			c.Logger.Errorf("messages.searchSentMedia - peer %d: %v", peer.PeerId, err)
 			continue
 		}
 		for _, row := range part {
-			if row.Sender == c.MD.UserId {
-				rows = append(rows, row)
+			if row.Sender != c.MD.UserId || row.ID == 0 || seen[row.ID] {
+				continue
 			}
+			seen[row.ID] = true
+			rows = append(rows, row)
 		}
 	}
 	sortRows(rows)
@@ -235,15 +297,17 @@ func rowFromBox(box *mtproto.MessageBox) searchbox.Row {
 	}
 	msg := box.GetMessage()
 	row := searchbox.Row{
-		ID:      box.GetMessageId(),
-		Sender:  box.GetSenderUserId(),
-		Message: msg,
+		ID:        box.GetMessageId(),
+		Sender:    box.GetSenderUserId(),
+		Mentioned: box.GetMentioned(),
+		Message:   msg,
 	}
 	if msg == nil {
 		return row
 	}
 	row.Date = msg.GetDate()
 	row.Text = msg.GetMessage()
+	row.Mentioned = row.Mentioned || msg.GetMentioned()
 	if msg.GetMedia().GetPredicateName() == mtproto.Predicate_messageMediaGeoLive {
 		row.Live = true
 		row.Period = msg.GetMedia().GetPeriod()

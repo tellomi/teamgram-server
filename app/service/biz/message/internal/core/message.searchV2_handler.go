@@ -53,7 +53,8 @@ import (
 // MessageSearchV2
 // message.searchV2 user_id:long peer_type:int peer_id:long q:string from_id:long min_date:int max_date:int offset_id:int add_offset:int limit:int max_id:int min_id:int hash:long = Vector<MessageBox>;
 func (c *MessageCore) MessageSearchV2(in *message.TLMessageSearchV2) (*mtproto.MessageBoxList, error) {
-	if in.FromId == 0 {
+	// Channels are searched in the channel service. This table has no channel posts.
+	if in.PeerType == mtproto.PEER_CHANNEL {
 		return c.MessageSearch(&message.TLMessageSearch{
 			UserId:   in.UserId,
 			PeerType: in.PeerType,
@@ -64,38 +65,108 @@ func (c *MessageCore) MessageSearchV2(in *message.TLMessageSearchV2) (*mtproto.M
 		})
 	}
 
-	var (
-		offset = in.OffsetId
-		//q       = in.Q
-		boxList []*mtproto.MessageBox
-		//limit   = in.Limit
-	)
-
+	offset := in.OffsetId
 	if offset == 0 {
 		offset = math.MaxInt32
 	}
-
 	dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
-	c.svcCtx.Dao.MessagesDAO.SelectBackwardBySendUserIdOffsetIdLimitWithCB(
+
+	if in.FromId != 0 {
+		var boxList []*mtproto.MessageBox
+		_, _ = c.svcCtx.Dao.MessagesDAO.SearchDialogFromWithCB(
+			c.ctx,
+			in.UserId,
+			dialogId.A,
+			dialogId.B,
+			in.FromId,
+			offset,
+			in.MinDate,
+			in.MaxDate,
+			in.Limit,
+			func(sz, i int, v *dataobject.MessagesDO) {
+				boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
+			})
+		if boxList == nil {
+			boxList = []*mtproto.MessageBox{}
+		}
+		return mtproto.MakeTLMessageBoxListSlice(&mtproto.MessageBoxList{
+			BoxList: boxList,
+			Count:   int32(c.calcSize(in.UserId, in.FromId, dialogId)),
+		}).To_MessageBoxList(), nil
+	}
+
+	// Hashtags still come from the hashtag index. Dates are applied to that
+	// list; a plain text query is filtered in SQL so the page stays inside
+	// the window.
+	if in.Q != "" && in.Q[0] == '#' {
+		list, err := c.MessageSearch(&message.TLMessageSearch{
+			UserId:   in.UserId,
+			PeerType: in.PeerType,
+			PeerId:   in.PeerId,
+			Q:        in.Q,
+			Offset:   offset,
+			Limit:    in.Limit,
+		})
+		return boxesInDate(list, in.MinDate, in.MaxDate), err
+	}
+	if in.Q == "" {
+		return mtproto.MakeTLMessageBoxList(&mtproto.MessageBoxList{
+			BoxList: []*mtproto.MessageBox{},
+		}).To_MessageBoxList(), nil
+	}
+
+	var boxList []*mtproto.MessageBox
+	_, err := c.svcCtx.Dao.MessagesDAO.SearchDialogTextWithCB(
 		c.ctx,
 		in.UserId,
 		dialogId.A,
 		dialogId.B,
-		in.FromId,
 		offset,
+		in.Q,
+		in.MinDate,
+		in.MaxDate,
 		in.Limit,
 		func(sz, i int, v *dataobject.MessagesDO) {
 			boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
 		})
-
+	if err != nil {
+		c.Logger.Errorf("message.searchV2 - error: %v", err)
+	}
 	if boxList == nil {
 		boxList = []*mtproto.MessageBox{}
 	}
-
-	return mtproto.MakeTLMessageBoxListSlice(&mtproto.MessageBoxList{
+	return mtproto.MakeTLMessageBoxList(&mtproto.MessageBoxList{
 		BoxList: boxList,
-		Count:   int32(c.calcSize(in.UserId, in.FromId, dialogId)),
 	}).To_MessageBoxList(), nil
+}
+
+// boxesInDate drops boxes outside messages.search min_date/max_date.
+func boxesInDate(list *mtproto.MessageBoxList, minDate, maxDate int32) *mtproto.MessageBoxList {
+	if list == nil || (minDate <= 0 && maxDate <= 0) {
+		return list
+	}
+	kept := make([]*mtproto.MessageBox, 0, len(list.GetBoxList()))
+	for _, box := range list.GetBoxList() {
+		if box == nil || box.GetMessage() == nil {
+			continue
+		}
+		if !dateInWindow(box.GetMessage().GetDate(), minDate, maxDate) {
+			continue
+		}
+		kept = append(kept, box)
+	}
+	list.BoxList = kept
+	return list
+}
+
+func dateInWindow(date, minDate, maxDate int32) bool {
+	if minDate > 0 && date < minDate {
+		return false
+	}
+	if maxDate > 0 && date > maxDate {
+		return false
+	}
+	return true
 }
 
 func (c *MessageCore) calcSize(id, fromId int64, did mtproto.DialogID) int {

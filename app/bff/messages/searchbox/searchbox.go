@@ -25,14 +25,15 @@ const (
 
 // Row is one stored message, newest-first when callers build a list.
 type Row struct {
-	ID      int32
-	Date    int32
-	Sender  int64
-	Text    string
-	Live    bool
-	Period  int32
-	TopID   int32
-	Message *mtproto.Message
+	ID        int32
+	Date      int32
+	Sender    int64
+	Text      string
+	Live      bool
+	Period    int32
+	TopID     int32
+	Mentioned bool
+	Message   *mtproto.Message
 }
 
 // Calendar is messages.searchResultsCalendar without the user/chat lists.
@@ -221,15 +222,24 @@ func PickLive(rows []Row, now, limit int32) []Row {
 }
 
 // SentMedia keeps rows whose text contains q and returns at most limit.
+// The same message id is returned once. Scanning Saved Messages as both
+// peerSelf and the self dialog used to emit that id twice.
 func SentMedia(rows []Row, q string, limit int32) []Row {
 	if limit <= 0 || limit > maxSentMedia {
 		limit = maxSentMedia
 	}
 	q = strings.ToLower(strings.TrimSpace(q))
+	seen := map[int32]bool{}
 	var out []Row
 	for _, row := range rows {
+		if row.ID != 0 && seen[row.ID] {
+			continue
+		}
 		if q != "" && !strings.Contains(strings.ToLower(row.Text), q) {
 			continue
+		}
+		if row.ID != 0 {
+			seen[row.ID] = true
 		}
 		out = append(out, row)
 		if int32(len(out)) >= limit {

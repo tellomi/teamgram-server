@@ -37,6 +37,11 @@ func (d *Dao) MakeMessageBox(ctx context.Context, selfUserId int64, do *dataobje
 	// Message
 	_ = jsonx.UnmarshalFromString(do.MessageData, &box.Message)
 	box.Message = box.Message.FixData()
+	// A photo or file caption is also stored in the plaintext column. If the
+	// JSON body lost it, search still has to see the caption.
+	if box.Message != nil && box.Message.GetMessage() == "" && do.Message != "" {
+		box.Message.Message = do.Message
+	}
 	// Rows stamped by the expiry backfill have the column set and an older
 	// JSON body without the flag. Clients read message.ttl_period.
 	if box.Message != nil && box.Message.GetTtlPeriod().GetValue() == 0 && do.TtlPeriod > 0 {

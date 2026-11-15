@@ -725,3 +725,18 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Search dates, mentions, and saved filters (rows 285, 286, 297, 298, 299)
+
+`messages.search` on a private chat or basic group dropped `min_date` / `max_date` because `message.searchV2` called `message.search`, which has no date arguments. `inputMessagesFilterMyMentions` returned an empty list. `saved_peer_id` returned an empty list. A non-empty `q` ignored `saved_reaction`. `messages.searchSentMedia` listed the same Saved Messages photo twice and a photo caption that lived only in the plaintext column did not match `q`.
+
+Dates are now part of the dialog text query and the from-id query. Both ends are inclusive, and zero means that side is open, same as channel search. My-mentions reads the recipient `mentioned` flag. Saved Messages filters `saved_peer_id` even when `q` is empty, and `saved_reaction` keeps only messages that carry one of those reactions. Sent media is scanned once per box. A photo or video stored under the combined type is kept only when it is that kind. An empty JSON caption falls back to the plaintext column.
+
+| Piece | File |
+| --- | --- |
+| date SQL | `app/service/biz/message/internal/dal/dao/mysql_dao/messages_search_bounds.go` |
+| searchV2 | `app/service/biz/message/internal/core/message.searchV2_handler.go` |
+| caption column | `app/service/biz/message/internal/dao/message.go` |
+| mentions, saved peer, reaction | `app/bff/messages/internal/core/search_sheet.go`, `messages.search_handler.go` |
+| sent media once | `app/bff/messages/internal/core/media_scan.go`, `app/bff/messages/searchbox/searchbox.go` |
+| reaction lookup | `app/service/biz/chatbox/react.go` |

@@ -103,8 +103,11 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages()
 
-	if in.SavedPeerId != nil {
-		// TODO: not impl
+	if in.GetSavedPeerId() != nil {
+		saved := c.savedPeer(in.GetSavedPeerId())
+		if saved != nil && peer.IsSelfUser(c.MD.UserId) {
+			return c.searchSaved(peer, in, saved, offsetId, limit)
+		}
 		return rValues, nil
 	}
 
@@ -268,8 +271,7 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			return rValues, nil
 		}
 	case mtproto.FilterMyMentions:
-		c.Logger.Errorf("messages.search - invalid filter: %s", in)
-		return rValues, nil
+		return c.searchMyMentions(peer, in.Q, offsetId, limit)
 	case mtproto.FilterPinned:
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchByPinned(c.ctx, &message.TLMessageSearchByPinned{
 			UserId:   c.MD.UserId,
@@ -341,6 +343,13 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		err = mtproto.ErrInputFilterInvalid
 		c.Logger.Errorf("messages.search - error: %v", err)
 		return nil, err
+	}
+
+	if len(in.GetSavedReaction()) > 0 {
+		boxList = c.keepReactionBoxes(peer, boxList, in.GetSavedReaction())
+	}
+	if boxList == nil {
+		return rValues, nil
 	}
 
 	boxList.Visit(c.MD.UserId,

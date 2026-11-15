@@ -66,6 +66,10 @@ func TestPositionsAndLiveAndSent(t *testing.T) {
 	if len(sent) != 1 || sent[0].ID != 5 {
 		t.Fatalf("%#v", sent)
 	}
+	dup := SentMedia([]Row{msg(11, 3, "saved"), msg(11, 3, "saved"), msg(12, 2, "chat")}, "", 10)
+	if len(dup) != 2 || dup[0].ID != 11 || dup[1].ID != 12 {
+		t.Fatalf("dedup %#v", dup)
+	}
 	ids := MentionIDs([]Row{{ID: 4, TopID: 9}, {ID: 3, TopID: 2}, {ID: 9}}, 9)
 	if len(ids) != 2 || ids[0] != 4 || ids[1] != 9 {
 		t.Fatalf("%v", ids)

@@ -418,6 +418,43 @@ func (b *Book) DifferenceReactions(ctx context.Context, userID int64, since int3
 	return out
 }
 
+// HasReaction reports whether msgID carries any of want.
+// An empty want list matches every message. msgID is the viewer's own id.
+func (b *Book) HasReaction(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32, want []*mtproto.Reaction) bool {
+	if len(want) == 0 {
+		return true
+	}
+	if b == nil || self == 0 || peer == nil || msgID <= 0 {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, self, peer)
+	if err != nil || doc == nil {
+		return false
+	}
+	doc = b.viewLocked(ctx, self, peer, doc)
+	dlg := b.dialogIDLocked(ctx, self, peer, msgID)
+	for _, item := range doc.Items {
+		if !sameMessage(item, msgID, dlg) {
+			continue
+		}
+		for _, w := range want {
+			emo, docID, err := ParseReaction(w)
+			if err != nil {
+				continue
+			}
+			if docID != 0 && item.DocumentID == docID {
+				return true
+			}
+			if emo != "" && item.Emoticon == emo {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // MessageHasUnreadReaction reports whether userID has an unread reaction
 // from someone else on msgID. msgID is that user's own message id.
 func (b *Book) MessageHasUnreadReaction(ctx context.Context, userID int64, peer *mtproto.PeerUtil, msgID int32) bool {
