@@ -2,14 +2,18 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
-## contacts.search self, full name, and notes
+## Privacy switches that were stored and then ignored
 
-`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`. That bucket is the caller's address book (`user.getContactList`). `CheckContact` on the other user asks whether they saved the caller, so a one-way import used to stay in `results`.
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
 
 | Piece | File |
 | --- | --- |
-| omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
-| full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
 
 ## Profile name, avatar delete, and 320px photos
 
@@ -541,6 +545,15 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
 
+## contacts.search self, full name, and notes
+
+`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`. That bucket is the caller's address book (`user.getContactList`). `CheckContact` on the other user asks whether they saved the caller, so a one-way import used to stay in `results`.
+
+| Piece | File |
+| --- | --- |
+| omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
+| full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
+
 ## Invite usage_limit of 0
 
 Android sets `usage_limit` and sends 0 for no limit. `messages.exportChatInvite` and `messages.editExportedChatInvite` store 0 and omit the field on `chatInviteExported`. Below 0 or above 99999 is `USAGE_LIMIT_INVALID`. A stored 0 does not use up the link. Helpers: `pkg/invite.NormalizeUsage`, `pkg/invite.UsageExhausted`. Channels: `app/service/biz/channel/invite.go`. Basic groups: `chat.exportChatInvite_handler.go`, `chat.editExportedChatInvite_handler.go`, `chat.checkChatInvite_handler.go`, `chat.importChatInvite_handler.go`, `chat.importChatInvite2_handler.go`.
@@ -787,3 +800,19 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
 | invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Anonymous admins and channel deletion (ISSUE-S-ANON-ADMIN-001, CHANDEL-PUSH-001)
+
+A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to their user on every message. `shapeOutgoing` now stamps `from_id` as the supergroup, including service messages such as a pin. `appendMessage` applies the same stamp when a service message is stored without going through `shapeOutgoing`. The stored sender id is unchanged, so `out` is still true for the author and moderation still knows who sent it. Broadcast posts are unchanged. The creator's implicit full right set does not turn this on.
+
+`channels.searchPosts` used to replace a non-user `from_id` with `SenderID` and list that user. An anonymous post keeps the channel `from_id` and the real user is left out of `users`. `messages.search` with `from_id` set to that user does not return the post. A megagroup `MessageBox` whose stored `from_id` is already the channel is not rewritten to the sender.
+
+`channels.deleteChannel` marked the row deleted and returned `updateChannel` only to the caller. Members now get the same update with `channelForbidden`, excluding the requesting auth key. Each participant's dialog row is deleted through the new `DropDialog` hook, which calls `dialog.deleteDialog`.
+
+| Piece | File |
+| --- | --- |
+| anonymous from_id | `app/service/biz/channel/service_ops.go` |
+| search | `app/service/biz/channel/post_search.go`, `service_features.go` `SearchInChannel` |
+| box from_id | `proto/mtproto/message_box_helper.go` |
+| delete fanout | `app/service/biz/channel/service.go` |
+| dialog hook | `app/bff/channels/internal/svc/service_context.go` |

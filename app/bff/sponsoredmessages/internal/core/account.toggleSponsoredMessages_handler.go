@@ -20,11 +20,22 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/accountprefs"
 )
 
 // AccountToggleSponsoredMessages
 // account.toggleSponsoredMessages#b9d9a38d enabled:Bool = Bool;
 func (c *SponsoredMessagesCore) AccountToggleSponsoredMessages(in *mtproto.TLAccountToggleSponsoredMessages) (*mtproto.Bool, error) {
-	_ = in
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	if in == nil {
+		return nil, mtproto.ErrInputConstructorInvalid
+	}
+	enabled := mtproto.FromBool(in.GetEnabled())
+	if err := accountprefs.SetSponsored(c.ctx, c.MD.UserId, enabled); err != nil {
+		c.Logger.Errorf("account.toggleSponsoredMessages - store: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
 	return mtproto.BoolTrue, nil
 }
