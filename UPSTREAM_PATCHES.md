@@ -874,3 +874,14 @@ A supergroup stores one message row. `mentioned` and `media_unread` are per view
 | viewer flags | `app/service/biz/channel/convert.go` |
 | history and push | `service_ops.go`, `read_views.go` |
 | read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
+
+## History clear on another session (行 134, ISSUE-S-DELHIST-SYNC-001)
+
+`messages.deleteHistory` with `just_clear` keeps the newest message and rewrites it to `messageActionHistoryClear`. The other session of the same account only drops bubbles named by `updateDeleteMessages`. That update used to omit the rewritten id, so the open chat kept the last bubble until `messages.getHistory`.
+
+The anchor id is now its own `updateDeleteMessages` with `pts_count` 1, before the read and the edit. `getDifference` folds the two adjacent deletes and still names the anchor. The edit is unchanged, so a reload still shows `messageActionHistoryClear`. The message stays in the box.
+
+| Piece | File |
+| --- | --- |
+| id | `app/messenger/msg/deletehistory/plan.go` |
+| pts updates | `app/messenger/msg/msg/internal/core/delete_user_history.go` |
