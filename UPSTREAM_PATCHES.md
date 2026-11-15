@@ -2,6 +2,14 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Profile photo ownership
+
+`photos.updateProfilePhoto` wrote any photo id into the caller's album. A missing id became an avatar that could not load, and another user's photo id showed that person's picture. The photo now has to exist, already be in the caller's album (or be their public fallback photo), and the `access_hash` has to match. Otherwise the RPC returns `PHOTO_ID_INVALID` and the album is unchanged. `inputPhotoEmpty` still removes the current avatar. `photos.uploadProfilePhoto` still inserts a photo the caller just uploaded.
+
+| Piece | File |
+| --- | --- |
+| album and access hash | `app/bff/userchannelprofiles/internal/core/photos.updateProfilePhoto_handler.go` |
+
 ## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
 
 `messages.search` with `inputMessagesFilterPhoneCalls` listed every stored call. The `missed` flag was not read, so the Missed tab showed answered and outgoing calls too.
