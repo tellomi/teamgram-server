@@ -44,6 +44,11 @@ func (c *NotificationCore) AccountGetNotifyExceptions(in *mtproto.TLAccountGetNo
 	)
 
 	for _, setting := range settings.GetDatas() {
+		// compare_sound keeps exceptions whose ringtone differs from the
+		// default. A mute-only row is not a sound exception.
+		if in.GetCompareSound() && !notifySoundCustom(setting.GetSettings()) {
+			continue
+		}
 		peer := mtproto.MakePeerUtil(setting.PeerType, setting.PeerId)
 		idHelper.PickByPeerUtil(peer.PeerType, peer.PeerId)
 		rUpdates.PushBackUpdate(mtproto.MakeTLUpdateNotifySettings(&mtproto.Update{
@@ -77,4 +82,20 @@ func (c *NotificationCore) AccountGetNotifyExceptions(in *mtproto.TLAccountGetNo
 		})
 
 	return rUpdates, nil
+}
+
+func notifySoundCustom(s *mtproto.PeerNotifySettings) bool {
+	if s == nil {
+		return false
+	}
+	return customNotifySound(s.GetIosSound()) || customNotifySound(s.GetAndroidSound()) || customNotifySound(s.GetOtherSound()) ||
+		customNotifySound(s.GetStoriesIosSound()) || customNotifySound(s.GetStoriesAndroidSound()) || customNotifySound(s.GetStoriesOtherSound())
+}
+
+func customNotifySound(s *mtproto.NotificationSound) bool {
+	if s == nil {
+		return false
+	}
+	name := s.GetPredicateName()
+	return name != "" && name != mtproto.Predicate_notificationSoundDefault
 }

@@ -894,6 +894,26 @@ A supergroup stores one message row. `mentioned` and `media_unread` are per view
 | history and push | `service_ops.go`, `read_views.go` |
 | read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
 
+## Live location fields, album cap, external media, hidden forward name, sound exceptions (ISSUE-S-GEO-HEADING-001, ISSUE-S-ALBUM-MAX-001, ISSUE-S-MEDIA-EXTERNAL-001, ISSUE-S-PRIV-FWD-NAME-001, ISSUE-S-NOTIFY-COMPARE-SOUND-001)
+
+`inputMediaGeoLive` kept only lat/long and period. `heading`, `accuracy_radius`, and `proximity_notification_radius` are now copied in `MakeGeoPointByInput` and the three InputMedia converters (messages send, messages dao, `messages.uploadMedia`).
+
+`messages.sendMultiMedia` rejects more than 10 items with `MEDIA_INVALID` before any message is stored.
+
+`inputMediaPhotoExternal` and `inputMediaDocumentExternal` are not fetched. They used to be stored as `messageMediaUnsupported`. They now return `MEDIA_INVALID`.
+
+When forwards privacy hides the user link, `fwd_from.from_name` was the account username, so a user with no username showed a blank label. It is now the first and last name.
+
+`account.getNotifyExceptions` ignored `compare_sound`. With the flag set, a row is returned only when its sound (or stories sound) is not the default. A mute-only exception is left out.
+
+| Piece | File |
+| --- | --- |
+| geo fields | `proto/mtproto/geo_point.go`, messages `core_messages_helper.go`, `dao/media.go`, files `messages.uploadMedia_handler.go` |
+| album cap | `messages.sendMultiMedia_handler.go` |
+| external URL | the same three converters |
+| forward name | `messages.forwardMessages_handler.go` |
+| compare_sound | `account.getNotifyExceptions_handler.go` |
+
 ## History clear on another session (行 134, ISSUE-S-DELHIST-SYNC-001)
 
 `messages.deleteHistory` with `just_clear` keeps the newest message and rewrites it to `messageActionHistoryClear`. The other session of the same account only drops bubbles named by `updateDeleteMessages`. That update used to omit the rewritten id, so the open chat kept the last bubble until `messages.getHistory`.

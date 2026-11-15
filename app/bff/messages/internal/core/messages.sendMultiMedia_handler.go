@@ -33,6 +33,11 @@ import (
 // MessagesSendMultiMedia
 // messages.sendMultiMedia#f803138f flags:# silent:flags.5?true background:flags.6?true clear_draft:flags.7?true noforwards:flags.14?true peer:InputPeer reply_to_msg_id:flags.0?int multi_media:Vector<InputSingleMedia> schedule_date:flags.10?int send_as:flags.13?InputPeer = Updates;
 func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mtproto.Updates, error) {
+	// Official albums are at most 10 items. A longer list is MEDIA_INVALID
+	// and is not stored.
+	if len(in.GetMultiMedia()) > 10 {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	ids := make([]int64, 0, len(in.GetMultiMedia()))
 	for _, item := range in.GetMultiMedia() {
 		if err := c.authorizeReferencedMedia(item.GetMedia()); err != nil {
