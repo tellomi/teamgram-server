@@ -109,8 +109,9 @@ func TestChatThemeWallpaperOnFullUser(t *testing.T) {
 			continue
 		}
 		full := loadFullUser(t, ctx, side.c, side.id, side.hash)
-		if full.GetTheme().GetEmoticon() != "🎄" || full.GetThemeEmoticon().GetValue() != "🎄" {
-			t.Fatalf("theme %#v emoticon %#v", full.GetTheme(), full.GetThemeEmoticon())
+		// Layer 232 userFull carries theme:ChatTheme. theme_emoticon is not on that constructor.
+		if full.GetTheme().GetEmoticon() != "🎄" {
+			t.Fatalf("theme %#v", full.GetTheme())
 		}
 		if full.GetWallpaper().GetId() == 0 || full.GetWallpaper().GetSettings().GetBackgroundColor().GetValue() != 0x336699 {
 			t.Fatalf("wallpaper %#v", full.GetWallpaper())
@@ -251,11 +252,11 @@ func TestUserReplyMarkupIgnored(t *testing.T) {
 			}).To_KeyboardInlineButtonRow(),
 		},
 	}).To_ReplyMarkup()
-	id, err := sendWithMarkup(ctx, a, inputPeerUser(bID, bHash), "button text", markup)
-	if err != nil {
+	if _, err = sendWithMarkup(ctx, a, inputPeerUser(bID, bHash), "button text", markup); err != nil {
 		t.Fatal(err)
 	}
-	msg := historyMessage(t, ctx, b, inputPeerUser(mustSelf(t, ctx, a).ID, aHash), id)
+	// Private chats keep a box id per user. The sender's id is not the recipient's id.
+	msg := historyByText(t, ctx, b, inputPeerUser(mustSelf(t, ctx, a).ID, aHash), "button text")
 	if msg.GetReplyMarkup() != nil {
 		t.Fatalf("markup leaked %#v", msg.GetReplyMarkup())
 	}
@@ -273,13 +274,12 @@ func TestTextURLSchemeDropped(t *testing.T) {
 	}
 	aHash := waitUserHash(t, ctx, b, aSelf.ID)
 	text := "click"
-	id, err := a.SendText(ctx, inputPeerUser(bID, bHash), text, []*mtproto.MessageEntity{
+	if _, err = a.SendText(ctx, inputPeerUser(bID, bHash), text, []*mtproto.MessageEntity{
 		mtproto.MakeTLMessageEntityTextUrl(&mtproto.MessageEntity{Offset: 0, Length: 5, Url: "javascript:alert(1)"}).To_MessageEntity(),
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
-	msg := historyMessage(t, ctx, b, inputPeerUser(aSelf.ID, aHash), id)
+	msg := historyByText(t, ctx, b, inputPeerUser(aSelf.ID, aHash), text)
 	for _, ent := range msg.GetEntities() {
 		if ent.GetPredicateName() == mtproto.Predicate_messageEntityTextUrl {
 			t.Fatalf("javascript url kept %#v", ent)
@@ -299,11 +299,11 @@ func TestMessageAndCaptionLength(t *testing.T) {
 	}
 	aHash := waitUserHash(t, ctx, b, aSelf.ID)
 	peer := inputPeerUser(bID, bHash)
-	id, err := a.SendText(ctx, peer, strings.Repeat("a", 4096), nil)
-	if err != nil {
+	long := strings.Repeat("a", 4096)
+	if _, err = a.SendText(ctx, peer, long, nil); err != nil {
 		t.Fatal(err)
 	}
-	msg := historyMessage(t, ctx, b, inputPeerUser(aSelf.ID, aHash), id)
+	msg := historyByText(t, ctx, b, inputPeerUser(aSelf.ID, aHash), long)
 	if len(msg.GetMessage()) != 4096 {
 		t.Fatalf("4096 stored as %d", len(msg.GetMessage()))
 	}
@@ -427,6 +427,27 @@ func loadFullUser(t *testing.T, ctx context.Context, c *Client, id, hash int64) 
 		t.Fatal(err)
 	}
 	return fullUserOf(t, obj)
+}
+
+func historyByText(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer, text string) *mtproto.Message {
+	t.Helper()
+	var found *mtproto.Message
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		page, err := c.History(ctx, peer, 40)
+		if err != nil {
+			return false, err
+		}
+		for _, m := range page {
+			if m.GetMessage() == text {
+				found = m
+				return true, nil
+			}
+		}
+		return false, nil
+	}); err != nil {
+		t.Fatalf("history missing %q: %v", text, err)
+	}
+	return found
 }
 
 func historyMessage(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer, id int32) *mtproto.Message {
