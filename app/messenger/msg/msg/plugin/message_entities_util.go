@@ -101,17 +101,14 @@ func normalizeClientEntities(entities []*mtproto.MessageEntity, fromID int64) []
 			out = append(out, entity)
 			continue
 		}
-		inputUser := entity.GetUserId_INPUTUSER()
-		if inputUser.GetPredicateName() == mtproto.Predicate_inputUserSelf && inputUser != nil {
-			inputUser.UserId = fromID
-		}
-		if inputUser.GetUserId() == 0 {
+		uid := mtproto.ToUserIdByInput(fromID, entity.GetUserId_INPUTUSER())
+		if uid == 0 {
 			continue
 		}
 		out = append(out, mtproto.MakeTLMessageEntityMentionName(&mtproto.MessageEntity{
 			Offset:       entity.Offset,
 			Length:       entity.Length,
-			UserId_INT64: inputUser.GetUserId(),
+			UserId_INT64: uid,
 		}).To_MessageEntity())
 	}
 	return out

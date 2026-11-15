@@ -735,6 +735,14 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | --- | --- |
 | guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
 
+## Mention name without a username (ISSUE-S-MENTIONNAME-001)
+
+`inputMessageEntityMentionName` was kept only when `InputUser.user_id` was already non-zero. `inputUserSelf` and `inputUserFromMessage` that arrived with a constructor and no predicate name were dropped, so a mention of a user without a public username was stored as plain text. The id now comes from `ToUserIdByInput`, which knows those constructors. `inputUserEmpty` is still dropped.
+
+| Piece | File |
+| --- | --- |
+| entities | `app/messenger/msg/msg/plugin/message_entities_util.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.

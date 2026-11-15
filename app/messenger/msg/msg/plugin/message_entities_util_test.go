@@ -173,6 +173,43 @@ func TestMentionLengthAndSort(t *testing.T) {
 	}
 }
 
+func TestMentionNameKeepsUsersWithoutAUsername(t *testing.T) {
+	text := "hi Ada"
+	fromMessage := &mtproto.InputUser{
+		Constructor: mtproto.CRC32_inputUserFromMessage,
+		UserId:      42,
+	}
+	self := mtproto.MakeTLInputUserSelf(&mtproto.InputUser{}).To_InputUser()
+	empty := mtproto.MakeTLInputUserEmpty(&mtproto.InputUser{}).To_InputUser()
+	entities := []*mtproto.MessageEntity{
+		mtproto.MakeTLInputMessageEntityMentionName(&mtproto.MessageEntity{
+			Offset:           3,
+			Length:           3,
+			UserId_INPUTUSER: fromMessage,
+		}).To_MessageEntity(),
+		mtproto.MakeTLInputMessageEntityMentionName(&mtproto.MessageEntity{
+			Offset:           0,
+			Length:           2,
+			UserId_INPUTUSER: self,
+		}).To_MessageEntity(),
+		mtproto.MakeTLInputMessageEntityMentionName(&mtproto.MessageEntity{
+			Offset:           0,
+			Length:           2,
+			UserId_INPUTUSER: empty,
+		}).To_MessageEntity(),
+	}
+	out := remake(text, entities, nil)
+	var got []int64
+	for _, entity := range out.GetEntities() {
+		if entity.GetPredicateName() == mtproto.Predicate_messageEntityMentionName {
+			got = append(got, entity.GetUserId_INT64())
+		}
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 42 {
+		t.Fatalf("mention users %v", got)
+	}
+}
+
 func remake(text string, entities []*mtproto.MessageEntity, hasBot func() bool) *mtproto.Message {
 	msg := mtproto.MakeTLMessage(&mtproto.Message{
 		Message:  text,
