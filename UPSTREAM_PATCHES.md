@@ -2,6 +2,14 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Slow mode next send date (ISSUE-S-SLOWMODE-NEXTDATE-001)
+
+`channels.getFullChannel` returned `slowmode_seconds` and left `slowmode_next_send_date` empty. `Send` already stores each member's last send in `Features.LastSend` and returns `SLOWMODE_WAIT` from that map. `channelFull` now fills `slowmode_next_send_date` from the same map: last send plus `slowmode_seconds`, only for a member who is not an admin and not the creator, and only while that time is still in the future. Admins, the creator, a closed slow mode, and an elapsed window omit the field.
+
+| Piece | File |
+| --- | --- |
+| field | `app/service/biz/channel/convert.go` |
+
 ## Channel profile photo on getFullChannel (ISSUE-S-CHAN-FULLPHOTO-001)
 
 `channels.editPhoto` stored the photo id on the channel and put the full photo on the service message and on `chat.photo`. `channels.getFullChannel` still wrote `channelFull.chat_photo` as `photoEmpty`, so the profile screen could not open the large photo. The field now loads that photo id through `media.getPhoto` (the same call a basic group already uses when it fills `chatFull.chat_photo`). Several ids are deduped and loaded together. A missing photo, or a cleared avatar, stays `photoEmpty`. `messages.getFullChat` already returned the stored photo and is unchanged.
