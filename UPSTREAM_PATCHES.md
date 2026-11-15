@@ -725,3 +725,11 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Megagroup send_reactions ban (ISSUE-S-BAN-REACT-001, 行 112)
+
+`messages.sendReaction` on a channel or megagroup ignored `send_reactions` in both `default_banned_rights` and a member's `banned_rights`. A banned member could still add an emoji. The check uses the same until-date rule as other send bans (`until_date` 0 does not expire). The creator and admins are not restricted. Removing a reaction (an empty emoji list) is still allowed. The error is `403 CHAT_SEND_REACTIONS_FORBIDDEN`.
+
+| Piece | File |
+| --- | --- |
+| ban check | `proto/mtproto/chat_send_right.go`, `app/service/biz/channel/service_features.go` `React` |
