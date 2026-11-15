@@ -960,3 +960,14 @@ Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`
 | profile hook | `app/bff/channels/internal/svc/service_context.go` |
 | importer users and `q` | `app/bff/chatinvites/internal/core/channel_invite.go`, `messages.getChatInviteImporters_handler.go` |
 | basic-group full list for `q` | `app/service/biz/chat/internal/core/chat.getChatInviteImporters_handler.go` |
+
+## Basic group auto-delete timer (rows 200, 201)
+
+`messages.setHistoryTTL` on a basic group wrote only the caller's `dialogs.ttl_period`. `messages.getFullChat` reads `chats.ttl_period`, so the field stayed empty, and any member could set the timer.
+
+The RPC now calls `chat.setHistoryTTL` first. That writes `chats.ttl_period` and allows only the creator and admins (`CanChangeInfo`). A normal member gets `CHAT_ADMIN_REQUIRED` and no service message. The dialog row and `messageActionSetMessagesTTL` are unchanged after the chat row is accepted.
+
+| Piece | File |
+| --- | --- |
+| permission and chat column | `app/service/biz/chat/internal/core/chat.setHistoryTTL_handler.go` |
+| RPC order | `app/bff/dialogs/internal/core/messages.setHistoryTTL_handler.go` |
