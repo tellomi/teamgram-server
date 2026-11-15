@@ -778,3 +778,19 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
 | invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Anonymous admins and channel deletion (ISSUE-S-ANON-ADMIN-001, CHANDEL-PUSH-001)
+
+A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to their user on every message. `shapeOutgoing` now stamps `from_id` as the supergroup, including service messages such as a pin. `appendMessage` applies the same stamp when a service message is stored without going through `shapeOutgoing`. The stored sender id is unchanged, so `out` is still true for the author and moderation still knows who sent it. Broadcast posts are unchanged. The creator's implicit full right set does not turn this on.
+
+`channels.searchPosts` used to replace a non-user `from_id` with `SenderID` and list that user. An anonymous post keeps the channel `from_id` and the real user is left out of `users`. `messages.search` with `from_id` set to that user does not return the post. A megagroup `MessageBox` whose stored `from_id` is already the channel is not rewritten to the sender.
+
+`channels.deleteChannel` marked the row deleted and returned `updateChannel` only to the caller. Members now get the same update with `channelForbidden`, excluding the requesting auth key. Each participant's dialog row is deleted through the new `DropDialog` hook, which calls `dialog.deleteDialog`.
+
+| Piece | File |
+| --- | --- |
+| anonymous from_id | `app/service/biz/channel/service_ops.go` |
+| search | `app/service/biz/channel/post_search.go`, `service_features.go` `SearchInChannel` |
+| box from_id | `proto/mtproto/message_box_helper.go` |
+| delete fanout | `app/service/biz/channel/service.go` |
+| dialog hook | `app/bff/channels/internal/svc/service_context.go` |
