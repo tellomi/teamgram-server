@@ -2,6 +2,15 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Channel profile photo on getFullChannel (ISSUE-S-CHAN-FULLPHOTO-001)
+
+`channels.editPhoto` stored the photo id on the channel and put the full photo on the service message and on `chat.photo`. `channels.getFullChannel` still wrote `channelFull.chat_photo` as `photoEmpty`, so the profile screen could not open the large photo. The field now loads that photo id through `media.getPhoto` (the same call a basic group already uses when it fills `chatFull.chat_photo`). Several ids are deduped and loaded together. A missing photo, or a cleared avatar, stays `photoEmpty`. `messages.getFullChat` already returned the stored photo and is unchanged.
+
+| Piece | File |
+| --- | --- |
+| load the current avatar | `app/service/biz/channel/convert.go`, `app/service/biz/channel/chat_photo.go` |
+| media client | `app/bff/channels/internal/svc/service_context.go` |
+
 ## Supergroup mention badge on getPeerDialogs (ISSUE-S-PEERDIALOGS-MENTIONS-001)
 
 `messages.getDialogs` returns the channel store's dialog, which already carries `unread_mentions_count`. `messages.getPeerDialogs` and `messages.getPinnedDialogs` start from the dialogs table and copy the live top, read cursors, unread count, pts, and forum flag in `applyChannelLiveRows`. That copy skipped `unread_mentions_count`, so opening one supergroup reported 0 and the client cleared the @ badge.

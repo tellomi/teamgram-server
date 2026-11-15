@@ -88,6 +88,7 @@ type Service struct {
 
 	mu          sync.Mutex
 	push        Hooks
+	photos      ChatPhotoGetter
 	loaded      bool
 	ttlBackfill bool
 }
