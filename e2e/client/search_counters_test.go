@@ -79,13 +79,19 @@ func searchCounterMap(t *testing.T, c *Client, peer *mtproto.InputPeer, filters 
 		Peer:        peer,
 		Filters:     filters,
 	})
-	vec, ok := res.(*mtproto.Vector_Messages_SearchCounter)
-	if !ok {
-		t.Fatalf("messages.getSearchCounters returned %T", res)
-	}
 	out := map[mtproto.MessagesFilterType]int32{}
-	for _, row := range vec.GetDatas() {
-		out[mtproto.FromMessagesFilter(row.GetFilter())] = row.GetCount()
+	switch vec := res.(type) {
+	case *mtproto.Vector_Messages_SearchCounter:
+		for _, row := range vec.GetDatas() {
+			out[mtproto.FromMessagesFilter(row.GetFilter())] = row.GetCount()
+		}
+	case *tlVector:
+		// layer 232 returns a bare Vector<messages.SearchCounter>.
+		for _, row := range vec.Counters {
+			out[mtproto.FromMessagesFilter(row.GetFilter())] = row.GetCount()
+		}
+	default:
+		t.Fatalf("messages.getSearchCounters returned %T", res)
 	}
 	return out
 }
