@@ -78,6 +78,12 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 			return nil, err
 		}
 	}
+	if peer.PeerType == mtproto.PEER_CHANNEL && in.GetMedia().GetPredicateName() == mtproto.Predicate_inputMediaPoll {
+		if err = channel.Shared().ForbidPoll(c.ctx, c.MD.UserId, peer.PeerId); err != nil {
+			c.Logger.Errorf("messages.sendMedia - send_polls: %v", err)
+			return nil, err
+		}
+	}
 
 	if len(in.Message) > 4000 {
 		err = mtproto.ErrMediaCaptionTooLong
