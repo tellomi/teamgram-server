@@ -32,8 +32,27 @@ func TestParticipantNameContactBanAndHiddenAdmins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := participantIDs(got); !sameIDs(ids, []int64{2, 4}) {
-		t.Fatalf("contacts %v", ids)
+	if ids := participantIDs(got); !sameIDs(ids, []int64{2, 4}) || containsID(ids, 1) {
+		t.Fatalf("contacts %v, viewer 1 must be absent", ids)
+	}
+
+	// q searches inside the contact set and still drops the viewer,
+	// even when the viewer's own name matches.
+	contactsQ := mtproto.MakeTLChannelParticipantsContacts(&mtproto.ChannelParticipantsFilter{Q_STRING: "a"}).To_ChannelParticipantsFilter()
+	got, err = svc.GetParticipants(ctx, 1, in, contactsQ, 0, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := participantIDs(got); !sameIDs(ids, []int64{2, 4}) || containsID(ids, 1) {
+		t.Fatalf("contacts q %v", ids)
+	}
+	selfOnly := mtproto.MakeTLChannelParticipantsContacts(&mtproto.ChannelParticipantsFilter{Q_STRING: "owner"}).To_ChannelParticipantsFilter()
+	got, err = svc.GetParticipants(ctx, 1, in, selfOnly, 0, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := participantIDs(got); len(ids) != 0 || got.Count != 0 {
+		t.Fatalf("contacts q matching only the viewer: %v count %d", ids, got.Count)
 	}
 
 	search := mtproto.MakeTLChannelParticipantsSearch(&mtproto.ChannelParticipantsFilter{Q_STRING: "ADA"}).To_ChannelParticipantsFilter()

@@ -12,15 +12,16 @@ import (
 // TestParticipantFiltersAndInviteSearch covers the member-list and join-request
 // fixes: contacts and q filters, the banned-list admin check, hidden members
 // still showing admins, and getChatInviteImporters name search with users.
-// Phones 9996610471–9996610473.
+// Phones 9996610471–9996610474.
 func TestParticipantFiltersAndInviteSearch(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	owner, _ := dialPhone(t, ctx, cfg, "9996610471", "OwnerG")
+	owner, ownerSelf := dialPhone(t, ctx, cfg, "9996610471", "OwnerG")
 	ada, adaSelf := dialPhone(t, ctx, cfg, "9996610472", "AdaSearch")
 	bob, bobSelf := dialPhone(t, ctx, cfg, "9996610473", "BobOther")
+	setProfileName(t, ctx, owner, "OwnerG", "")
 	setProfileName(t, ctx, ada, "AdaSearch", "")
 	setProfileName(t, ctx, bob, "BobOther", "")
 
@@ -44,9 +45,23 @@ func TestParticipantFiltersAndInviteSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	selfID := ownerSelf.ID
 	contacts := participantsOf(t, ctx, owner, channel, mtproto.MakeTLChannelParticipantsContacts(&mtproto.ChannelParticipantsFilter{}).To_ChannelParticipantsFilter())
-	if ids := participantUserIDs(contacts); !sameIDSet(ids, []int64{adaID, bobID}) {
-		t.Fatalf("contacts ids=%v want %d and %d", ids, adaID, bobID)
+	if ids := participantUserIDs(contacts); !sameIDSet(ids, []int64{adaID, bobID}) || hasParticipant(contacts, selfID) {
+		t.Fatalf("contacts ids=%v want %d and %d, not the viewer %d", ids, adaID, bobID, selfID)
+	}
+	// q stays inside the contact set. The viewer's own name is not a hit.
+	contactsQ := participantsOf(t, ctx, owner, channel, mtproto.MakeTLChannelParticipantsContacts(&mtproto.ChannelParticipantsFilter{
+		Q_STRING: "AdaSearch",
+	}).To_ChannelParticipantsFilter())
+	if ids := participantUserIDs(contactsQ); !sameIDSet(ids, []int64{adaID}) || hasParticipant(contactsQ, selfID) {
+		t.Fatalf("contacts q ids=%v want %d, not the viewer %d", ids, adaID, selfID)
+	}
+	selfName := participantsOf(t, ctx, owner, channel, mtproto.MakeTLChannelParticipantsContacts(&mtproto.ChannelParticipantsFilter{
+		Q_STRING: "OwnerG",
+	}).To_ChannelParticipantsFilter())
+	if ids := participantUserIDs(selfName); len(ids) != 0 || hasParticipant(selfName, selfID) {
+		t.Fatalf("contacts q matching the viewer returned %v", ids)
 	}
 	search := participantsOf(t, ctx, owner, channel, mtproto.MakeTLChannelParticipantsSearch(&mtproto.ChannelParticipantsFilter{
 		Q_STRING: "AdaSearch",
