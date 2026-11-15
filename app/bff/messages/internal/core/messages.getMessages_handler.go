@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/marmota/pkg/container2/linkedmap"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -105,15 +106,7 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 			rValues.Chats = append(rValues.Chats, mChats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 		},
 		func(channelIdList []int64) {
-			//mChannels, _ := c.svcCtx.Dao.ChannelClient.ChannelGetChannelListByIdList(
-			//	c.ctx,
-			//	&channelpb.TLChannelGetChannelListByIdList{
-			//		SelfUserId: c.MD.UserId,
-			//		Id:         channelIdList,
-			//	})
-			//if len(mChannels.GetDatas()) > 0 {
-			//	rValues.Chats = append(rValues.Chats, mChannels.GetDatas()...)
-			//}
+			rValues.Chats = append(rValues.Chats, channel.Shared().ForwardCards(c.ctx, c.MD.UserId, channelIdList...)...)
 		})
 
 	type peerKey struct {

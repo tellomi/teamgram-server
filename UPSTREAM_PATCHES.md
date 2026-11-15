@@ -725,3 +725,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Forwarded channel card (行 157, ISSUE-S-FWD-CHAN-ENTITY-001)
+
+A channel post forwarded into a private chat already set `fwd_from.from_id` to `peerChannel`. The send result, the inbox push, `messages.getHistory`, `messages.getMessages`, and `updates.getDifference` loaded no channel into `chats`. `messages.getDialogs` loaded a private channel the viewer does not belong to as `channelForbidden`, which clients do not use for the "forwarded from" name.
+
+Those reads now include a channel card. A member, and a non-member of a public channel, still get the normal card. A non-member of a private channel gets a min channel with the title and access hash.
+
+| Piece | File |
+| --- | --- |
+| card | `app/service/biz/channel/forward_card.go` |
+| send and push | `msg.sendMessageV2_handler.go`, `inbox.sendUserMessageToInboxV2_handler.go` |
+| history, messages, difference, dialogs | `messages.getHistory_handler.go`, `messages.getMessages_handler.go`, `updates.getDifference_handler.go`, `messages.getDialogs_handler.go`, `messages.getPeerDialogs_handler.go` |

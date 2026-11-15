@@ -163,10 +163,7 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 			chats = append(chats, mChats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 		},
 		func(channelIdList []int64) {
-			//// TODO: handler other...
-			//if channel != nil {
-			//	chats = append(chats, channel.ToUnsafeChat(c.MD.UserId))
-			//}
+			chats = append(chats, channel.Shared().ForwardCards(c.ctx, c.MD.UserId, channelIdList...)...)
 		})
 	users = c.ensureHistoryPeer(peer, users)
 

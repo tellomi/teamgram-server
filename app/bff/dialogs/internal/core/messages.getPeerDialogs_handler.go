@@ -22,6 +22,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -195,5 +196,6 @@ func (c *DialogsCore) MessagesGetPeerDialogs(in *mtproto.TLMessagesGetPeerDialog
 			return c.channelChats(ctx, selfUserId, id...)
 		})
 
+	messageDialogs.Chats = channel.Shared().AttachForwardCards(c.ctx, c.MD.UserId, messageDialogs.Messages, messageDialogs.Chats)
 	return messageDialogs.ToMessagesPeerDialogs(state), nil
 }

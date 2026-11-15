@@ -26,6 +26,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
@@ -147,6 +148,7 @@ func (c *UpdatesCore) UpdatesGetDifference(in *mtproto.TLUpdatesGetDifference) (
 			rDifference.Chats = chats.GetChatListByIdList(c.MD.UserId, chatIdList...)
 		},
 		func(channelIdList []int64) {
+			rDifference.Chats = append(rDifference.Chats, channel.Shared().ForwardCards(c.ctx, c.MD.UserId, channelIdList...)...)
 		})
 
 	return rDifference, nil

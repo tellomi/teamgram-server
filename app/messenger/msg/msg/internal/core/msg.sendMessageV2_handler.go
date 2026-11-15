@@ -208,7 +208,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
 				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
 				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+				func(idList []int64) []*mtproto.Chat { return forwardChats(ctx, fromUserId, idList) },
 			); ok {
 				*v.(**mtproto.Updates) = ups
 				return nil
@@ -229,6 +229,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 				PeerId:        toUserId,
 				BoxList:       []*mtproto.MessageBox{box},
 				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
+				Chats:         forwardChats(ctx, fromUserId, idHelper.ChannelIdList),
 			}}
 			if fromUserId != toUserId {
 				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
@@ -245,6 +246,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 						PeerId:        toUserId,
 						BoxList:       []*mtproto.MessageBox{box},
 						Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
+						Chats:         forwardChats(ctx, toUserId, idHelper.ChannelIdList),
 					})
 				}
 			}
@@ -265,8 +267,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 					return []*mtproto.Chat{}
 				},
 				func(idList []int64) []*mtproto.Chat {
-					// TODO
-					return []*mtproto.Chat{}
+					return forwardChats(c.ctx, fromUserId, idList)
 				},
 				outgoingUpdate(box))
 
@@ -522,7 +523,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 			if ups, ok := c.replayedOutbox(ctx, fromUserId, outboxRandomIDs(outBoxList),
 				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
 				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+				func(idList []int64) []*mtproto.Chat { return forwardChats(ctx, fromUserId, idList) },
 			); ok {
 				*v.(**mtproto.Updates) = ups
 				return nil
@@ -547,6 +548,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 				PeerId:        toUserId,
 				BoxList:       boxList,
 				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
+				Chats:         forwardChats(ctx, fromUserId, idHelper.ChannelIdList),
 			}}
 			if fromUserId != toUserId {
 				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
@@ -563,6 +565,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 						PeerId:        toUserId,
 						BoxList:       boxList,
 						Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
+						Chats:         forwardChats(ctx, toUserId, idHelper.ChannelIdList),
 					})
 				}
 			}
@@ -583,8 +586,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 					return []*mtproto.Chat{}
 				},
 				func(idList []int64) []*mtproto.Chat {
-					// TODO
-					return []*mtproto.Chat{}
+					return forwardChats(c.ctx, fromUserId, idList)
 				},
 				updateList...)
 
@@ -857,7 +859,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
 				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
 				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+				func(idList []int64) []*mtproto.Chat { return forwardChats(ctx, fromUserId, idList) },
 			); ok {
 				*v.(**mtproto.Updates) = ups
 				return nil
@@ -880,7 +882,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 					PeerId:         toUserId,
 					BoxList:        []*mtproto.MessageBox{box},
 					Users:          users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
-					Chats:          nil,
+					Chats:          forwardChats(ctx, fromUserId, idHelper.ChannelIdList),
 					Layer:          mtproto.MakeFlagsInt32(c.MD.Layer),
 					ServerId:       mtproto.MakeFlagsString(c.MD.ServerId),
 					SessionId:      mtproto.MakeFlagsInt64(c.MD.SessionId),
@@ -911,7 +913,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 							PeerId:        toUserId,
 							BoxList:       []*mtproto.MessageBox{box},
 							Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
-							Chats:         nil,
+							Chats:         forwardChats(ctx, toUserId, idHelper.ChannelIdList),
 						})
 					if err2 != nil {
 						return err2
@@ -932,8 +934,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 					return []*mtproto.Chat{}
 				},
 				func(idList []int64) []*mtproto.Chat {
-					// TODO
-					return []*mtproto.Chat{}
+					return forwardChats(c.ctx, fromUserId, idList)
 				},
 				outgoingUpdate(box))
 

@@ -23,6 +23,7 @@ import (
 	"sort"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -157,5 +158,6 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 	// slice carrying dialogCount.
 	fullList := dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, dialogCount, limit)
 
+	messageDialogs.Chats = channel.Shared().AttachForwardCards(c.ctx, c.MD.UserId, messageDialogs.Messages, messageDialogs.Chats)
 	return messageDialogs.ForDialogs(page.TLDialogs()).ToMessagesDialogs(dialogCount, fullList), nil
 }

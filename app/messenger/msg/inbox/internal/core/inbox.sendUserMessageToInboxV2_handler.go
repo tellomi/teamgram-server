@@ -135,8 +135,7 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 							return []*mtproto.Chat{}
 						},
 						func(idList []int64) []*mtproto.Chat {
-							// TODO
-							return []*mtproto.Chat{}
+							return chatsMatching(in.GetChats(), idList)
 						},
 						mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
 							Pts_INT32:       box.Pts,
