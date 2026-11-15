@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/chattitle"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
@@ -121,22 +122,16 @@ type CreateRequest struct {
 }
 
 func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Updates, error) {
-	title := strings.TrimSpace(in.Title)
+	title := chattitle.Clip(in.Title)
 	if title == "" {
 		return nil, mtproto.ErrChatTitleEmpty
-	}
-	if len(title) > 255 {
-		title = title[:255]
 	}
 	if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, 0, title); err != nil {
 		return nil, mtproto.ErrFirstnameInvalid
 	}
-	about := in.About
+	about := chattitle.ClipAbout(in.About)
 	if err := usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, 0, about); err != nil {
 		return nil, mtproto.ErrFirstnameInvalid
-	}
-	if len(about) > 255 {
-		about = about[:255]
 	}
 	if in.TtlPeriod < 0 || in.TtlPeriod > 366*86400 {
 		return nil, mtproto.ErrTtlPeriodInvalid
@@ -609,12 +604,9 @@ func (s *Service) EditTitle(ctx context.Context, actor, actorAuth int64, in *mtp
 	if !s.canChangeInfo(ch, p) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
-	title = strings.TrimSpace(title)
+	title = chattitle.Clip(title)
 	if title == "" {
 		return nil, mtproto.ErrChatTitleEmpty
-	}
-	if len(title) > 255 {
-		title = title[:255]
 	}
 	if title != ch.Title {
 		if err = usernamepolicy.RejectDisplay(ctx, mtproto.PEER_CHANNEL, ch.ID, title); err != nil {

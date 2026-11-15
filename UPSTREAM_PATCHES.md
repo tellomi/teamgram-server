@@ -902,6 +902,26 @@ A supergroup stores one message row. `mentioned` and `media_unread` are per view
 | history and push | `service_ops.go`, `read_views.go` |
 | read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
 
+## Live location fields, album cap, external media, hidden forward name, sound exceptions (ISSUE-S-GEO-HEADING-001, ISSUE-S-ALBUM-MAX-001, ISSUE-S-MEDIA-EXTERNAL-001, ISSUE-S-PRIV-FWD-NAME-001, ISSUE-S-NOTIFY-COMPARE-SOUND-001)
+
+`inputMediaGeoLive` kept only lat/long and period. `heading`, `accuracy_radius`, and `proximity_notification_radius` are now copied in `MakeGeoPointByInput` and the three InputMedia converters (messages send, messages dao, `messages.uploadMedia`).
+
+`messages.sendMultiMedia` rejects more than 10 items with `MEDIA_INVALID` before any message is stored.
+
+`inputMediaPhotoExternal` and `inputMediaDocumentExternal` are not fetched. They used to be stored as `messageMediaUnsupported`. They now return `MEDIA_INVALID`.
+
+When forwards privacy hides the user link, `fwd_from.from_name` was the account username, so a user with no username showed a blank label. It is now the first and last name.
+
+`account.getNotifyExceptions` ignored `compare_sound`. With the flag set, a row is returned only when its sound (or stories sound) is not the default. A mute-only exception is left out.
+
+| Piece | File |
+| --- | --- |
+| geo fields | `proto/mtproto/geo_point.go`, messages `core_messages_helper.go`, `dao/media.go`, files `messages.uploadMedia_handler.go` |
+| album cap | `messages.sendMultiMedia_handler.go` |
+| external URL | the same three converters |
+| forward name | `messages.forwardMessages_handler.go` |
+| compare_sound | `account.getNotifyExceptions_handler.go` |
+
 ## History clear on another session (行 134, ISSUE-S-DELHIST-SYNC-001)
 
 `messages.deleteHistory` with `just_clear` keeps the newest message and rewrites it to `messageActionHistoryClear`. The other session of the same account only drops bubbles named by `updateDeleteMessages`. That update used to omit the rewritten id, so the open chat kept the last bubble until `messages.getHistory`.
@@ -948,3 +968,44 @@ Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`
 | profile hook | `app/bff/channels/internal/svc/service_context.go` |
 | importer users and `q` | `app/bff/chatinvites/internal/core/channel_invite.go`, `messages.getChatInviteImporters_handler.go` |
 | basic-group full list for `q` | `app/service/biz/chat/internal/core/chat.getChatInviteImporters_handler.go` |
+
+## Media caption length (ISSUE-S-MSG-LENGTH-001)
+
+`messages.sendMedia` used to reject a caption only when `len(message) > 4000` bytes. The cap is now UTF-16 code units and `premium.Limit(FeatureCaption)` for the sender. That is the same pair `help.getAppConfig` publishes as `caption_length_limit_default` and `caption_length_limit_premium`. With `TELLOMI_PREMIUM_EVERYONE` (the default) both keys and the enforced cap are `premium.CaptionLength` (4096). With the switch off, a non-member gets `premium.CaptionLengthFree` (1024) and a member gets `premium.CaptionLength`. One past that cap is 400 `MEDIA_CAPTION_TOO_LONG`. A text message longer than 4096 is 400 `MESSAGE_TOO_LONG`.
+
+`messages.sendMultiMedia` checks each item. `messages.editMessage` uses the caption cap when the result is a photo, file, or other media. A scheduled edit reads the stored scheduled message, so a caption change that omits a new `InputMedia` still uses the caption cap. A channel edit reads the same row `Edit` loads (`MessageBody`). If that row or the scheduled row cannot be read, the text uses the caption cap instead of the 4096 message cap. `inputMediaEmpty` clears media, so the text is a message. A link-preview card is not a caption.
+
+A private edit that resends the same entities used to clear them before `MESSAGE_NOT_MODIFIED`, so the no-op was stored with the entities stripped. Entities the request sends are kept for the comparison, matching the channel edit. They are cleared only when the new text omits the field.
+
+| Piece | File |
+| --- | --- |
+| UTF-16 cap from `premium.Limit` | `app/bff/messages/internal/core/message_limits.go` |
+| send | `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `messages.sendMessage_handler.go` |
+| edit, scheduled row, entity compare | `messages.editMessage_handler.go` |
+| channel post body | `app/service/biz/channel/service_ops.go` `MessageBody` |
+
+## Chat wallpaper overridden (ISSUE-S-CHATTHEME-001)
+
+`userFull.wallpaper_overridden` is true only when the other user installed the wallpaper with `for_both`. The user who called `messages.setChatWallPaper` sees false, including a one-sided wallpaper and a revert. `updatePeerWallpaper` in that RPC result uses the same rule.
+
+The inbox copy of the service message stores the flag for the peer. A one-sided wallpaper is not written onto the peer's dialog. `users.getFullUser` returns the dialog column. It does not turn the flag on just because a wallpaper id is present.
+
+| Piece | File |
+| --- | --- |
+| caller update | `app/bff/messages/p1rest/wallpaper.go` |
+| per-user dialog column | `app/messenger/msg/internal/dao/chat_decor.go` |
+| getFullUser | `app/bff/users/internal/core/users.getFullUser_handler.go` |
+
+## Bot reply markup (ISSUE-S-USER-REPLYMARKUP-001)
+
+`messages.sendMessage`, `messages.sendMedia`, and `messages.editMessage` kept `reply_markup` only when `RpcMetadata.IsBot` was set. The session never sets that flag, and the HTTP gateway sets it false, so a real bot's keyboard was dropped.
+
+The sender is a bot when the metadata says so, when the id is a known bot, or when `user.isBot` says the user row has a bot record. A lookup failure, and any ordinary user, still drops the markup.
+
+`messages.setChatWallPaper` returns the messenger updates for the service message and also the caller's `updatePeerWallpaper`. That update says `wallpaper_overridden` is false.
+
+| Piece | File |
+| --- | --- |
+| bot check | `app/bff/messages/internal/core/message_limits.go` |
+| edit | `messages.editMessage_handler.go` |
+| wallpaper update | `app/bff/messages/internal/server/grpc/service/chat_decor.go` |
