@@ -21,28 +21,41 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+
+	"google.golang.org/grpc/status"
 )
 
 // AuthCancelCode
 // auth.cancelCode#1f040578 phone_number:string phone_code_hash:string = Bool;
 func (c *AuthorizationCore) AuthCancelCode(in *mtproto.TLAuthCancelCode) (*mtproto.Bool, error) {
-	//// 1. check phone code
-	//if request.PhoneCodeHash == "" {
-	//	err := mtproto.NewRpcError2(mtproto.TLRpcErrorCodes_PHONE_CODE_EMPTY)
-	//	return nil, err
-	//}
-	//
-	// 2. check number
 	// 客户端发送的手机号格式为: "+86 111 1111 1111"，归一化
-	_, err := phonenumber.CheckAndGetPhoneNumber(in.GetPhoneNumber())
+	phone, err := phonenumber.CheckAndGetPhoneNumber(in.GetPhoneNumber())
 	if err != nil {
 		c.Logger.Errorf("check phone_number error - %v", err)
-		err = mtproto.ErrPhoneNumberInvalid
-		return nil, err
+		return nil, mtproto.ErrPhoneNumberInvalid
+	}
+	if in.GetPhoneCodeHash() == "" {
+		return nil, mtproto.ErrPhoneCodeHashEmpty
+	}
+	if c.MD == nil || c.MD.PermAuthKeyId == 0 || c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return nil, mtproto.ErrAuthKeyUnregistered
 	}
 
-	// code := logic.NewAuthSignLogic(s.AuthFacade)
-	// canceled := mtproto.ToBool(code.DoAuthCancelCode(md.AuthId, phoneNumber, request.PhoneCodeHash))
-
+	// A wrong hash must not delete a different pending code.
+	if _, err = c.svcCtx.Dao.GetPhoneCode(c.ctx, c.MD.PermAuthKeyId, phone, in.GetPhoneCodeHash()); err != nil {
+		if status.Convert(err).Message() == "PHONE_CODE_INVALID" {
+			c.Logger.Errorf("auth.cancelCode - hash: %v", err)
+			return nil, err
+		}
+		// Already gone. The login screen can leave.
+		return mtproto.BoolTrue, nil
+	}
+	if c.svcCtx.AuthLogic == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
+	if err = c.svcCtx.AuthLogic.DoAuthCancelCode(c.ctx, c.MD.PermAuthKeyId, phone, in.GetPhoneCodeHash()); err != nil {
+		c.Logger.Errorf("auth.cancelCode - error: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }
