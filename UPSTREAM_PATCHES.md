@@ -725,3 +725,17 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Message search words, dates, and private from_id (行 133, 行 83, 行 152)
+
+`messages.search` and `messages.searchGlobal` matched the whole query as one substring, so a different word order missed. Each word is now its own LIKE, AND-ed. Channel search uses the same rule in memory.
+
+`messages.search` in a private chat rejected every `from_id` with `PEER_ID_INVALID`. The sender filter is allowed when `from_id` is one of the two people in the chat.
+
+`min_date` / `max_date` on a private chat or basic group were dropped before the query. They are applied on `messages.search` for those peers. A zero bound stays unbounded.
+
+| Piece | File |
+| --- | --- |
+| words and dates | `messages_search_text.go`, `message.search_handler.go`, `message.searchV2_handler.go` |
+| channel words | `channel/service_features.go` |
+| private from_id | `messages.search_handler.go` |

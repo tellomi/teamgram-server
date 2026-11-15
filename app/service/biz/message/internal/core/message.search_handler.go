@@ -55,17 +55,14 @@ func (c *MessageCore) MessageSearch(in *message.TLMessageSearch) (*mtproto.Messa
 			}
 		} else {
 			dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
-			c.svcCtx.Dao.MessagesDAO.SearchWithCB(
-				c.ctx,
-				in.UserId,
-				dialogId.A,
-				dialogId.B,
-				in.Offset,
-				"%"+q+"%",
-				limit,
-				func(sz, i int, v *dataobject.MessagesDO) {
-					boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
-				})
+			rows, searchErr := c.svcCtx.Dao.MessagesDAO.SearchDialogText(
+				c.ctx, in.UserId, dialogId.A, dialogId.B, offset, q, 0, 0, limit)
+			if searchErr != nil {
+				return nil, searchErr
+			}
+			for i := range rows {
+				boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, &rows[i]))
+			}
 		}
 	case mtproto.PEER_CHANNEL:
 		c.Logger.Errorf("message.search blocked, License key from https://teamgram.net required to unlock enterprise features.")

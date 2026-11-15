@@ -54,6 +54,9 @@ import (
 // message.searchV2 user_id:long peer_type:int peer_id:long q:string from_id:long min_date:int max_date:int offset_id:int add_offset:int limit:int max_id:int min_id:int hash:long = Vector<MessageBox>;
 func (c *MessageCore) MessageSearchV2(in *message.TLMessageSearchV2) (*mtproto.MessageBoxList, error) {
 	if in.FromId == 0 {
+		if in.MinDate != 0 || in.MaxDate != 0 {
+			return c.searchDialogDated(in)
+		}
 		return c.MessageSearch(&message.TLMessageSearch{
 			UserId:   in.UserId,
 			PeerType: in.PeerType,
@@ -96,6 +99,36 @@ func (c *MessageCore) MessageSearchV2(in *message.TLMessageSearchV2) (*mtproto.M
 		BoxList: boxList,
 		Count:   int32(c.calcSize(in.UserId, in.FromId, dialogId)),
 	}).To_MessageBoxList(), nil
+}
+
+func (c *MessageCore) searchDialogDated(in *message.TLMessageSearchV2) (*mtproto.MessageBoxList, error) {
+	offset := in.OffsetId
+	if offset == 0 {
+		offset = math.MaxInt32
+	}
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	var boxList []*mtproto.MessageBox
+	switch in.PeerType {
+	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
+		dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
+		rows, err := c.svcCtx.Dao.MessagesDAO.SearchDialogText(
+			c.ctx, in.UserId, dialogId.A, dialogId.B, offset, in.Q, in.MinDate, in.MaxDate, limit)
+		if err != nil {
+			return nil, err
+		}
+		for i := range rows {
+			boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, &rows[i]))
+		}
+	default:
+		return nil, mtproto.ErrPeerIdInvalid
+	}
+	if boxList == nil {
+		boxList = []*mtproto.MessageBox{}
+	}
+	return mtproto.MakeTLMessageBoxList(&mtproto.MessageBoxList{BoxList: boxList}).To_MessageBoxList(), nil
 }
 
 func (c *MessageCore) calcSize(id, fromId int64, did mtproto.DialogID) int {

@@ -981,7 +981,6 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		return nil, err
 	}
 	q.Limit = pageLimit(q.Limit)
-	text := strings.ToLower(q.Q)
 	all, err := s.store.ListMessages(ctx, ch.ID)
 	if err != nil {
 		return nil, err
@@ -1022,7 +1021,7 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		if err != nil {
 			continue
 		}
-		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
+		if strings.TrimSpace(q.Q) != "" && !messageHasTokens(body.GetMessage(), q.Q) {
 			continue
 		}
 		if !channelFilterMatches(body, q.Filter, feat.PinnedMsgID == stored.ID) {
@@ -1043,6 +1042,16 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		Chats:    []*mtproto.Chat{s.ChatFor(ctx, self, ch)},
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages(), nil
+}
+
+func messageHasTokens(text, q string) bool {
+	folded := strings.ToLower(text)
+	for _, tok := range strings.Fields(strings.ToLower(q)) {
+		if !strings.Contains(folded, tok) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) SendAs(ctx context.Context, self int64) ([]*mtproto.Chat, []int64, error) {
