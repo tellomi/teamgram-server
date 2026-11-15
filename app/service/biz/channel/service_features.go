@@ -1190,10 +1190,10 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 	return up, &topic, err
 }
 
-func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q string, limit, offsetDate, offsetID, offsetTopic int32) ([]*mtproto.ForumTopic, *mtproto.Chat, error) {
+func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q string, limit, offsetDate, offsetID, offsetTopic int32) ([]*mtproto.ForumTopic, *mtproto.Chat, int32, error) {
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	f := s.features(ctx, ch.ID)
 	q = strings.ToLower(q)
@@ -1202,6 +1202,13 @@ func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q strin
 	}
 	rows := append([]TopicRec(nil), f.Topics...)
 	sortTopics(rows)
+	var total int32
+	for _, t := range rows {
+		if q != "" && !strings.Contains(strings.ToLower(t.Title), q) {
+			continue
+		}
+		total++
+	}
 	start := 0
 	if offsetTopic != 0 {
 		for i, t := range rows {
@@ -1225,17 +1232,18 @@ func (s *Service) ListTopics(ctx context.Context, self, channelID int64, q strin
 	if start > len(rows) {
 		start = len(rows)
 	}
+	stored, _ := s.store.ListMessages(ctx, ch.ID)
 	var topics []*mtproto.ForumTopic
 	for _, t := range rows[start:] {
 		if q != "" && !strings.Contains(strings.ToLower(t.Title), q) {
 			continue
 		}
-		topics = append(topics, s.topicTL(self, ch.ID, t))
+		topics = append(topics, s.topicTL(self, ch.ID, t, f, stored))
 		if int32(len(topics)) >= limit {
 			break
 		}
 	}
-	return topics, s.ChatFor(ctx, self, ch), nil
+	return topics, s.ChatFor(ctx, self, ch), total, nil
 }
 
 func sortTopics(rows []TopicRec) {
@@ -1261,20 +1269,24 @@ func topicLess(a, b TopicRec) bool {
 	return a.ID > b.ID
 }
 
-func (s *Service) topicTL(self, channelID int64, t TopicRec) *mtproto.ForumTopic {
+func (s *Service) topicTL(self, channelID int64, t TopicRec, f *Features, stored []*StoredMessage) *mtproto.ForumTopic {
+	read, unread, outbox := topicCursor(self, t.ID, f, stored)
 	ft := mtproto.MakeTLForumTopic(&mtproto.ForumTopic{
-		My:             t.CreatorID == self,
-		Closed:         t.Closed,
-		Pinned:         t.Pinned,
-		Hidden:         t.Hidden,
-		Id:             t.ID,
-		Date:           t.Date,
-		Peer:           mtproto.MakePeerChannel(channelID),
-		Title:          t.Title,
-		IconColor:      t.IconColor,
-		TopMessage:     t.TopMessage,
-		FromId:         mtproto.MakePeerUser(t.CreatorID),
-		NotifySettings: defaultNotify(),
+		My:              t.CreatorID == self,
+		Closed:          t.Closed,
+		Pinned:          t.Pinned,
+		Hidden:          t.Hidden,
+		Id:              t.ID,
+		Date:            t.Date,
+		Peer:            mtproto.MakePeerChannel(channelID),
+		Title:           t.Title,
+		IconColor:       t.IconColor,
+		TopMessage:      t.TopMessage,
+		ReadInboxMaxId:  read,
+		ReadOutboxMaxId: outbox,
+		UnreadCount:     unread,
+		FromId:          mtproto.MakePeerUser(t.CreatorID),
+		NotifySettings:  defaultNotify(),
 	}).To_ForumTopic()
 	if t.IconEmoji != 0 {
 		ft.IconEmojiId = &wrapperspb.Int64Value{Value: t.IconEmoji}

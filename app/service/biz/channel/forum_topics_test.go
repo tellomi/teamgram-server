@@ -15,7 +15,7 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := created.Chats[0]
-	topics, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 20, 0, 0, 0)
+	topics, _, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 20, 0, 0, 0)
 	if err != nil || len(topics) == 0 || topics[0].GetTitle() != "General" || topics[0].GetId() != 1 || topics[0].GetHidden() {
 		t.Fatalf("general topic %#v %v", topics, err)
 	}
@@ -87,7 +87,7 @@ func TestForumTopicDeleteDoesNotWipeTheChannel(t *testing.T) {
 	if sawRoot {
 		t.Fatal("topic creation message still in history")
 	}
-	left, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 20, 0, 0, 0)
+	left, _, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 20, 0, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,14 +129,14 @@ func TestReorderPinnedTopicsAndUnpinAll(t *testing.T) {
 	if err := svc.ReorderPinnedTopics(ctx, 1, ch.Id, []int32{b.ID, a.ID}, true); err != nil {
 		t.Fatal(err)
 	}
-	listed, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 10, 0, 0, 0)
+	listed, _, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 10, 0, 0, 0)
 	if err != nil || len(listed) < 2 {
 		t.Fatalf("list %#v %v", listed, err)
 	}
 	if listed[0].GetId() != b.ID || !listed[0].GetPinned() || listed[1].GetId() != a.ID {
 		t.Fatalf("pin order %#v %#v", listed[0], listed[1])
 	}
-	page, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 10, 0, 0, b.ID)
+	page, _, _, err := svc.ListTopics(ctx, 1, ch.Id, "", 10, 0, 0, b.ID)
 	if err != nil || len(page) == 0 || page[0].GetId() == b.ID {
 		t.Fatalf("offset page %#v %v", page, err)
 	}

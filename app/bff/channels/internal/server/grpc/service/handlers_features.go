@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -175,11 +176,11 @@ func (ForumsService) MessagesGetForumTopics(ctx context.Context, in *mtproto.TLM
 func (ForumsService) ChannelsGetForumTopics(ctx context.Context, in *mtproto.TLChannelsGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	id := in.GetChannel().GetChannelId()
-	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
+	topics, chat, total, err := channel.Shared().ListTopics(ctx, self, id, in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, id, topics, chat), nil
+	return topicsResult(ctx, id, topics, chat, total), nil
 }
 
 func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto.TLMessagesGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
@@ -194,11 +195,12 @@ func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto
 
 func (ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto.TLChannelsGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
-	topics, chat, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), "", 100, 0, 0, 0)
+	topics, chat, _, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, in.GetChannel().GetChannelId(), topicsByID(topics, in.GetTopics()), chat), nil
+	picked := topicsByID(topics, in.GetTopics())
+	return topicsResult(ctx, in.GetChannel().GetChannelId(), picked, chat, int32(len(picked))), nil
 }
 
 func topicsByID(topics []*mtproto.ForumTopic, ids []int32) []*mtproto.ForumTopic {
@@ -293,14 +295,14 @@ func (ForumsService) ChannelsReorderPinnedForumTopics(ctx context.Context, in *m
 func listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit, offsetDate, offsetID, offsetTopic int32) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	id := channelID(peer, self)
-	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, q, limit, offsetDate, offsetID, offsetTopic)
+	topics, chat, total, err := channel.Shared().ListTopics(ctx, self, id, q, limit, offsetDate, offsetID, offsetTopic)
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, id, topics, chat), nil
+	return topicsResult(ctx, id, topics, chat, total), nil
 }
 
-func topicsResult(ctx context.Context, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
+func topicsResult(ctx context.Context, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat, count int32) *mtproto.Messages_ForumTopics {
 	if topics == nil {
 		topics = []*mtproto.ForumTopic{}
 	}
@@ -323,7 +325,7 @@ func topicsResult(ctx context.Context, channelID int64, topics []*mtproto.ForumT
 		msgs = []*mtproto.Message{}
 	}
 	return mtproto.MakeTLMessagesForumTopics(&mtproto.Messages_ForumTopics{
-		Count:    int32(len(topics)),
+		Count:    count,
 		Topics:   topics,
 		Messages: msgs,
 		Chats:    chats,
@@ -592,6 +594,12 @@ func (ThreadsService) MessagesGetDiscussionMessage(ctx context.Context, in *mtpr
 func (ThreadsService) MessagesReadDiscussion(ctx context.Context, in *mtproto.TLMessagesReadDiscussion) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
 	peer := mtproto.FromInputPeer2(self, in.GetPeer())
+	// Forum topics keep their own read cursor. A comment thread uses the
+	// same RPC with a message id that is not a topic; that stays on the
+	// channel inbox cursor below.
+	if err := channel.Shared().ReadTopic(ctx, self, peer.PeerId, in.GetMsgId(), in.GetReadMaxId()); err != nil && status.Convert(err).Message() != "TOPIC_ID_INVALID" {
+		return nil, err
+	}
 	if err := channel.Shared().ReadHistory(ctx, self, &mtproto.InputChannel{
 		PredicateName: mtproto.Predicate_inputChannel,
 		ChannelId:     peer.PeerId,

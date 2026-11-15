@@ -179,7 +179,7 @@ func TestTopicsReactionsPinsSearchSendAsPersonal(t *testing.T) {
 	if err != nil || topic.ID == 0 {
 		t.Fatalf("topic %#v %v", topic, err)
 	}
-	topics, _, err := svc.ListTopics(ctx, 1, ch.Id, "hel", 10, 0, 0, 0)
+	topics, _, _, err := svc.ListTopics(ctx, 1, ch.Id, "hel", 10, 0, 0, 0)
 	if err != nil || len(topics) != 1 || topics[0].Title != "Hello" {
 		t.Fatalf("topics %#v %v", topics, err)
 	}

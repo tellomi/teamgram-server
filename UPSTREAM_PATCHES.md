@@ -725,3 +725,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Forum topic count and unread (rows 257, 258)
+
+`messages.getForumTopics` set `count` to the length of the page. A client that stops when `count` equals the number of topics it has loaded never asks for the next page. `count` is now the number of topics that match the query, including ones outside this page.
+
+`forumTopic.unread_count` and `read_inbox_max_id` were left at 0. Listing a topic counts messages from other people in that topic after the viewer's cursor. `messages.readDiscussion` stores that cursor per user and topic (`TopicRead` in the existing channel features JSON). A comment thread whose `msg_id` is not a topic still uses the channel inbox cursor.
+
+| Piece | File |
+| --- | --- |
+| count, cursor, unread | `app/service/biz/channel/service_features.go`, `topic_read.go` |
+| RPC | `app/bff/channels/internal/server/grpc/service/handlers_features.go` |
