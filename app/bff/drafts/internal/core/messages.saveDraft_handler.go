@@ -66,26 +66,32 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		date                = int32(time.Now().Unix())
 	)
 
+	if err := c.allowDraftWrite(peer); err != nil {
+		c.Logger.Errorf("messages.saveDraft - write: %v", err)
+		return nil, err
+	}
+
 	rich := richFromInput(in.GetRichMessage())
 	if draftHasContent(in) || rich != nil {
 		isDraftMessageEmpty = false
 	}
 
 	top := saveDraftTopicID(in)
+	var storeErr error
 	if isDraftMessageEmpty {
 		draft = mtproto.MakeTLDraftMessageEmpty(&mtproto.DraftMessage{
 			Date_FLAGINT32: mtproto.MakeFlagsInt32(date),
 		}).To_DraftMessage()
 		if top > 0 {
 			dialog.EnsureTopicReply(draft, top)
-			c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
+			_, storeErr = c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
 				UserId:   c.MD.UserId,
 				PeerType: peer.PeerType,
 				PeerId:   peer.PeerId,
 				Message:  draft,
 			})
 		} else {
-			c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(c.ctx, &dialog.TLDialogClearDraftMessage{
+			_, storeErr = c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(c.ctx, &dialog.TLDialogClearDraftMessage{
 				UserId:   c.MD.UserId,
 				PeerType: peer.PeerType,
 				PeerId:   peer.PeerId,
@@ -107,12 +113,16 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		}).To_DraftMessage()
 		dialog.EnsureTopicReply(draft, top)
 
-		c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
+		_, storeErr = c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
 			UserId:   c.MD.UserId,
 			PeerType: peer.PeerType,
 			PeerId:   peer.PeerId,
 			Message:  draft,
 		})
+	}
+	if storeErr != nil {
+		c.Logger.Errorf("messages.saveDraft - store: %v", storeErr)
+		return nil, storeErr
 	}
 
 	syncUpdates := mtproto.MakeUpdatesByUpdates(dialog.DraftUpdate(peer.ToPeer(), draft))
@@ -158,6 +168,30 @@ func (c *DraftsCore) channelChats(ids ...int64) []*mtproto.Chat {
 		return c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, ids...)
 	}
 	return channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...)
+}
+
+// allowDraftWrite reuses the sendMessage membership checks.
+// A basic group uses BasicGroupSendForbidden. A channel uses canPost via
+// channel.WriteAllowed. Users and Saved Messages are unchanged.
+func (c *DraftsCore) allowDraftWrite(peer *mtproto.PeerUtil) error {
+	if peer == nil || !peer.IsUserOrChatOrChannel() {
+		return mtproto.ErrPeerIdInvalid
+	}
+	switch peer.PeerType {
+	case mtproto.PEER_CHAT:
+		chat, err := c.svcCtx.Dao.ChatClient.ChatGetMutableChat(c.ctx, &chatpb.TLChatGetMutableChat{
+			ChatId: peer.PeerId,
+		})
+		if err != nil {
+			return err
+		}
+		msg := mtproto.MakeTLMessage(&mtproto.Message{Message: "a"}).To_Message()
+		return mtproto.BasicGroupSendForbidden(chat, c.MD.UserId, int32(time.Now().Unix()), []*mtproto.Message{msg})
+	case mtproto.PEER_CHANNEL:
+		return channel.Shared().WriteAllowed(c.ctx, peer.PeerId, c.MD.UserId)
+	default:
+		return nil
+	}
 }
 
 // saveDraftTopicID is the forum topic this saveDraft addresses.

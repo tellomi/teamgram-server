@@ -6,7 +6,7 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 `messages.saveDraft` stored one draft per (user, peer) on `dialogs.draft_message_data` and ignored `reply_to.top_msg_id`. A forum topic draft replaced the megagroup draft, `updateDraftMessage` had no `top_msg_id`, and `forumTopic.draft` stayed empty.
 
-Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg_id`. `top_msg_id` 0 is still the dialog row. The migration only creates the new table. Existing `dialogs.draft_message_data` rows are not updated or deleted, and are read as the dialog draft. `messages.getAllDrafts` returns one update per draft, with `top_msg_id` on topic drafts. `messages.clearAllDrafts` clears both. `messages.getForumTopics` and `messages.getForumTopicsByID` fill `forumTopic.draft` from that user's topic rows. `messages.sendMessage` (and sendMedia / sendMultiMedia) with `clear_draft` and a topic id clears only that topic.
+Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg_id`. `top_msg_id` 0 is still the dialog row. The migration only creates the new table. Existing `dialogs.draft_message_data` rows are not updated or deleted, and are read as the dialog draft. `messages.getAllDrafts` returns one update per draft, with `top_msg_id` on topic drafts. `messages.clearAllDrafts` clears both. `messages.getForumTopics` and `messages.getForumTopicsByID` fill `forumTopic.draft` from that user's topic rows. `messages.sendMessage` (and sendMedia / sendMultiMedia) with `clear_draft` and a topic id clears only that topic. `messages.saveDraft` uses the same send check as `messages.sendMessage`: a non-member, a mute, or a missing send right is `CHAT_WRITE_FORBIDDEN`; a broadcast that only an admin may post in is `CHAT_ADMIN_REQUIRED`. A dialog-store error is returned and is not pushed.
 
 | Piece | File |
 | --- | --- |
@@ -16,6 +16,9 @@ Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg
 | clear_draft | `app/bff/messages/internal/core/core_messages_helper.go` |
 | forumTopic.draft | `app/bff/channels/internal/server/grpc/service/forum_topic_draft.go` |
 | dialog.draft on the chat list | `app/bff/dialogs/internal/core/channel_dialogs.go` |
+| BFF wiring | `app/bff/bff/internal/server/server.go`, `app/bff/channels/helper.go`, `app/bff/channels/internal/server/grpc/service/handlers_features.go` |
+| clear_draft callers | `app/bff/messages/internal/core/messages.sendMessage_handler.go`, `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/bff/messages/internal/core/messages.sendMultiMedia_handler.go` |
+| dialog draft clear and DAO | `app/service/biz/dialog/internal/core/dialog.clearDraftMessage_handler.go`, `app/service/biz/dialog/internal/dao/mysql.go` |
 
 ## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
 

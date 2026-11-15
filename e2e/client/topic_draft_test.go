@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +114,64 @@ func TestForumTopicDrafts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("clear_draft in topic B: %v; drafts=%#v", err, channelDrafts(t, android, peer))
 	}
+}
+
+// TestForumTopicDraftNonMember rejects a topic draft from someone who is
+// not in the forum. Phone 9996610663, code 11111. dialog_topic_drafts gets
+// no row for that user and channel.
+func TestForumTopicDraftNonMember(t *testing.T) {
+	cfg := requireE2E(t)
+	ctx, cancel := contextTimeout(2 * time.Minute)
+	defer cancel()
+
+	owner := dialDraftSession(t, ctx, cfg, ProfileAndroid, "9996610662", "DraftOwn")
+	stranger, strangerSelf := dialDraftUser(t, ctx, cfg, ProfileIOS, "9996610663", "DraftOut")
+	created := invokeOK(t, owner, &mtproto.TLChannelsCreateChannel{
+		Constructor: mtproto.CRC32_channels_createChannel_91006707,
+		Megagroup:   true,
+		Forum:       true,
+		Title:       "DraftClosed",
+		About:       "",
+	})
+	var chID, chHash int64
+	for _, chat := range chatsOf(created) {
+		if chat.GetId() != 0 {
+			chID, chHash = chat.GetId(), chatAccessHash(chat)
+		}
+	}
+	if chID == 0 {
+		t.Fatalf("create channel %T", created)
+	}
+	_, err := stranger.Invoke(ctx, &mtproto.TLMessagesSaveDraft{
+		Constructor: mtproto.CRC32_messages_saveDraft_ad0fa15c,
+		Peer:        inputPeerChannel(chID, chHash),
+		Message:     "should not stick",
+		ReplyTo:     topicReply(1),
+	})
+	rpc, ok := asRPCError(err)
+	if err == nil || !ok || !strings.Contains(rpc.Message, "CHAT_WRITE_FORBIDDEN") {
+		t.Fatalf("non-member saveDraft: %v", err)
+	}
+	got := strings.TrimSpace(mustSQL(t, fmt.Sprintf(
+		"SELECT COUNT(*) FROM dialog_topic_drafts WHERE user_id=%d AND peer_id=%d",
+		strangerSelf.ID, chID)))
+	if got != "0" {
+		t.Fatalf("dialog_topic_drafts rows for non-member: %q", got)
+	}
+}
+
+func dialDraftUser(t *testing.T, ctx context.Context, cfg Config, profile Profile, number, name string) (*Client, Self) {
+	t.Helper()
+	c, err := Dial(ctx, cfg, profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	self, err := c.Login(ctx, Phone{Number: number, Code: "11111"}, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, self
 }
 
 func dialDraftSession(t *testing.T, ctx context.Context, cfg Config, profile Profile, number, name string) *Client {
