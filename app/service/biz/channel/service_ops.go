@@ -1527,9 +1527,13 @@ func (s *Service) unreadMentionCount(ctx context.Context, userID int64, ch *Chan
 	if err != nil {
 		return 0
 	}
+	f := s.features(ctx, ch.ID)
 	var n int32
 	for _, stored := range msgs {
 		if stored == nil || stored.Deleted || stored.ID <= readMax || stored.SenderID == userID {
+			continue
+		}
+		if mentionAcked(f, userID, stored.ID) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
