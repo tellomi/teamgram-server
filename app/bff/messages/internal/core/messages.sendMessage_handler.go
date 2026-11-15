@@ -48,6 +48,10 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		err := mtproto.ErrPeerIdInvalid
 		return nil, err
 	}
+	if in.GetSuggestedPost() != nil {
+		c.Logger.Errorf("messages.sendMessage - suggested post is not open")
+		return nil, mtproto.ErrSuggestedPostPeerInvalid
+	}
 
 	if peer.IsUser() && peer.IsSelfUser(c.MD.UserId) {
 		peer.PeerType = mtproto.PEER_USER

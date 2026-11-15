@@ -1808,6 +1808,10 @@ var (
 	// | 400 | PARTICIPANTS_TOO_FEW | Not enough participants. |
 	ErrParticipantsTooFew = status.Error(ErrBadRequest, "PARTICIPANTS_TOO_FEW")
 
+	// ErrSuggestedPostPeerInvalid
+	// | 400 | SUGGESTED_POST_PEER_INVALID | This peer does not accept suggested posts. |
+	ErrSuggestedPostPeerInvalid = status.Error(ErrBadRequest, "SUGGESTED_POST_PEER_INVALID")
+
 	// ErrStickerThumbPngNopng
 	// | 400 | STICKER_THUMB_PNG_NOPNG | Incorrect stickerset thumb file provided, PNG / WEBP expected. |
 	ErrStickerThumbPngNopng = status.Error(ErrBadRequest, "STICKER_THUMB_PNG_NOPNG")

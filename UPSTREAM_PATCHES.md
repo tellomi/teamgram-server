@@ -725,3 +725,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Video cover, timestamp, photo stickers, paid media, suggested posts (rows 263, 265, 266, 274, 276)
+
+`inputMediaUploadedPhoto` dropped `stickers`, so `photo.has_stickers` stayed false. `video_cover` and `video_timestamp` were not copied onto `messageMediaDocument`. `inputMediaPaidMedia` was stored as `messageMediaUnsupported`. `suggested_post` was ignored and the text became a normal message.
+
+Stickers are passed through `media.uploadPhotoFile` and stored on the photo row. A resolvable cover photo and `video_timestamp` are written on the document media; a missing cover is `MEDIA_INVALID`. Paid media returns `MEDIA_INVALID`. A suggested post returns `SUGGESTED_POST_PEER_INVALID` because that feature is not open.
+
+| Piece | File |
+| --- | --- |
+| cover, timestamp, stickers, paid media | `app/bff/messages/internal/core/core_messages_helper.go` |
+| sticker flag on the photo row | `app/service/media/internal/core/media.uploadPhotoFile_handler.go` |
+| suggested post | `messages.sendMessage_handler.go`, `messages.sendMedia_handler.go` |

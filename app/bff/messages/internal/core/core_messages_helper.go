@@ -65,7 +65,7 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		photo, err = c.svcCtx.Dao.MediaClient.MediaUploadPhotoFile(c.ctx, &mediapb.TLMediaUploadPhotoFile{
 			OwnerId:    c.MD.PermAuthKeyId,
 			File:       media.File,
-			Stickers:   nil,
+			Stickers:   media.GetStickers(),
 			TtlSeconds: nil,
 		})
 		if err != nil {
@@ -77,6 +77,7 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		if err2 != nil {
 			return nil, err2
 		}
+		markPhotoStickers(photo, media.GetStickers())
 		messageMedia = livephoto.Set(mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
 			Spoiler:         media.Spoiler,
 			Photo_FLAGPHOTO: photo,
@@ -104,6 +105,7 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		if err3 != nil {
 			return nil, err3
 		}
+		markPhotoStickers(photo, media.GetStickers())
 		messageMedia = livephoto.Set(mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
 			Spoiler:         mediaPhoto.GetSpoiler(),
 			Photo_FLAGPHOTO: photo,
@@ -163,6 +165,9 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 			}
 			return
 		}
+		if err = applyDocumentExtras(c, documentMedia, media); err != nil {
+			return nil, err
+		}
 		messageMedia = documentMedia
 	case mtproto.Predicate_inputMediaDocument:
 		// inputMediaDocument#33473058 flags:#
@@ -187,6 +192,9 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 			// Caption:    media.To_InputMediaDocument().GetCaption(),
 			TtlSeconds: media.To_InputMediaDocument().GetTtlSeconds(),
 		}).To_MessageMedia()
+		if err = applyDocumentExtras(c, messageMedia, media); err != nil {
+			return nil, err
+		}
 	case mtproto.Predicate_inputMediaVenue:
 		// inputMediaVenue#c13d1c11
 		//	geo_point:InputGeoPoint
@@ -272,9 +280,8 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 		// paper-plane "unsupported message" bubble.
 		messageMedia, err = webpage.Media(c.ctx, media, c.uploadedPhoto)
 	case mtproto.Predicate_inputMediaPaidMedia:
-		// inputMediaPaidMedia#c4103386 flags:# stars_amount:long extended_media:Vector<InputMedia> payload:flags.0?string = InputMedia;
-
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+		// Paid media is not open. Accepting it used to store messageMediaUnsupported.
+		err = mtproto.ErrMediaInvalid
 	case mtproto.Predicate_inputMediaTodo:
 		// inputMediaTodo#9fc55fde todo:TodoList = InputMedia;
 		// Stored and returned as messageMediaToDo#8a53b014 (layer 232).
@@ -284,6 +291,32 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 	}
 
 	return
+}
+
+// markPhotoStickers records that the photo was sent with attached stickers.
+func markPhotoStickers(photo *mtproto.Photo, stickers []*mtproto.InputDocument) {
+	if photo != nil && len(stickers) > 0 {
+		photo.HasStickers = true
+	}
+}
+
+// applyDocumentExtras copies video_cover and video_timestamp onto the document.
+// A cover that cannot be loaded is MEDIA_INVALID instead of a silent drop.
+func applyDocumentExtras(c *MessagesCore, messageMedia *mtproto.MessageMedia, media *mtproto.InputMedia) error {
+	if messageMedia == nil || media == nil {
+		return nil
+	}
+	if cover := media.GetVideoCover(); cover != nil && cover.GetId() != 0 {
+		photo := c.uploadedPhoto(c.ctx, cover)
+		if photo == nil {
+			return mtproto.ErrMediaInvalid
+		}
+		messageMedia.VideoCover = photo
+	}
+	if ts := media.GetVideoTimestamp(); ts != nil {
+		messageMedia.VideoTimestamp = ts
+	}
+	return nil
 }
 
 // uploadedPhoto is a photo the sender already stored with messages.uploadMedia.

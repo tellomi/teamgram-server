@@ -47,6 +47,10 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		linkChatId int64
 		err        error
 	)
+	if in.GetSuggestedPost() != nil {
+		c.Logger.Errorf("messages.sendMedia - suggested post is not open")
+		return nil, mtproto.ErrSuggestedPostPeerInvalid
+	}
 
 	peer = mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
 	switch peer.PeerType {

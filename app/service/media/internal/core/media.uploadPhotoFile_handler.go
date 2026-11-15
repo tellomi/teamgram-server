@@ -41,6 +41,9 @@ func (c *MediaCore) MediaUploadPhotoFile(in *media.TLMediaUploadPhotoFile) (*mtp
 		c.Logger.Errorf("media.uploadPhotoFile - error: %v", err)
 		return nil, err
 	}
+	if len(in.GetStickers()) > 0 {
+		photo.HasStickers = true
+	}
 
 	c.svcCtx.Dao.SavePhotoV2(c.ctx,
 		photo.GetId(),
