@@ -377,6 +377,64 @@ func TestChannelDifferenceLimitBoundaries(t *testing.T) {
 	}
 }
 
+func TestChannelDifferenceSkipsDeletedAndDoesNotRepeatNew(t *testing.T) {
+	svc, ctx := newTest(t)
+	in, id := newDiffGroup(t, svc, ctx)
+	pts := mustChannel(t, svc, ctx, id).Pts
+	sendN(t, svc, ctx, 1, id, 5)
+	all, err := svc.store.ListMessages(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int32
+	for _, m := range all {
+		if m != nil && !m.Deleted && m.ID > 1 {
+			ids = append(ids, m.ID)
+		}
+	}
+	if len(ids) < 5 {
+		t.Fatalf("messages %v", ids)
+	}
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if ids[j] < ids[i] {
+				ids[i], ids[j] = ids[j], ids[i]
+			}
+		}
+	}
+	first, third := ids[0], ids[2]
+	if _, err := svc.Edit(ctx, 1, id, 0, first, func(m *mtproto.Message) { m.Message = "edited" }); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Delete(ctx, 1, id, 0, []int32{third}); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := svc.Difference(ctx, 1, in, pts, 100, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diff.NewMessages) != 4 {
+		t.Fatalf("new messages %d", len(diff.NewMessages))
+	}
+	var sawEdited, sawDeleted bool
+	for _, m := range diff.NewMessages {
+		if m.GetId() == first {
+			sawEdited = m.GetMessage() == "edited"
+		}
+		if m.GetId() == third {
+			sawDeleted = true
+		}
+	}
+	if !sawEdited || sawDeleted {
+		t.Fatalf("edited=%v deleted still listed=%v", sawEdited, sawDeleted)
+	}
+	for _, u := range diff.OtherUpdates {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+			t.Fatal("other_updates repeated a new message")
+		}
+	}
+}
+
 func newDiffGroup(t *testing.T, svc *Service, ctx context.Context) (*mtproto.InputChannel, int64) {
 	t.Helper()
 	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Diff", Megagroup: true})
@@ -461,19 +519,19 @@ func drainChannelDifference(t *testing.T, svc *Service, ctx context.Context, use
 		}
 		cursor := pts
 		for _, u := range diff.GetOtherUpdates() {
+			if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+				t.Fatal("other_updates repeated a new message")
+			}
 			count := u.GetPtsCount()
 			if count <= 0 {
 				continue
-			}
-			if u.GetPts_INT32()-count > cursor {
-				t.Fatalf("hole cursor=%d pts=%d count=%d", cursor, u.GetPts_INT32(), count)
 			}
 			if u.GetPts_INT32() <= cursor {
 				t.Fatalf("pts did not move cursor=%d update=%d", cursor, u.GetPts_INT32())
 			}
 			cursor = u.GetPts_INT32()
 		}
-		if cursor != diff.Pts {
+		if cursor > diff.Pts {
 			t.Fatalf("page pts %d last update %d", diff.Pts, cursor)
 		}
 		if diff.Pts <= pts {

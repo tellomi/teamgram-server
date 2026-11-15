@@ -725,3 +725,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Channel difference and slowmode seconds (行 80, 行 114)
+
+`updates.getChannelDifference` put every new message in both `new_messages` and `other_updates`, and `new_messages` kept a deleted message and the text from before an edit. A message created in the page is now returned once, in `new_messages`, at its latest text. A delete in the same page removes it from `new_messages`. Edits and deletes of older messages stay in `other_updates`.
+
+`channels.toggleSlowMode` rejected 5, 7, 15, 20, and 120 with `SLOWMODE_MULTI_MSGS_DISABLED`, which means a member forwarded several messages while slowmode is on. An unsupported duration is `SECONDS_INVALID`. The accepted durations stay 0, 10, 30, 60, 300, 900, and 3600. Five seconds is not one of them.
+
+| Piece | File |
+| --- | --- |
+| difference | `app/service/biz/channel/service_ops.go` |
+| seconds | `app/service/biz/channel/service_features.go` |

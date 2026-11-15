@@ -365,7 +365,7 @@ func (s *Service) ToggleSlowMode(ctx context.Context, self, actorAuth int64, in 
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	if !validSlowmode(seconds) {
-		return nil, mtproto.ErrSlowmodeMultiMsgsDisabled
+		return nil, mtproto.ErrSecondsInvalid
 	}
 	f := s.features(ctx, ch.ID)
 	prev := f.SlowmodeSeconds

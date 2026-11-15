@@ -39,8 +39,8 @@ func TestAdminLogStickersSlowModeAndHistory(t *testing.T) {
 	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 10); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 7); err == nil {
-		t.Fatal("invalid slowmode accepted")
+	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 7); status.Convert(err).Message() != "SECONDS_INVALID" {
+		t.Fatalf("invalid slowmode: %v", err)
 	}
 	_, _ = svc.Invite(ctx, 1, 0, in, []int64{2}, nil)
 	if _, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 1, Message: &mtproto.Message{Message: "a", Date: 1}}}); err != nil {
