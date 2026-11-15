@@ -9,17 +9,24 @@ import (
 
 // PeerFacts is what the sender of an incoming private message looks like
 // to the business account that may answer automatically.
+//
+// PriorMessage is the unix time of the newest private message already in
+// the dialog before the one that just arrived. HistoryKnown is false when
+// that lookup failed. A missing ledger row is not a new chat.
 type PeerFacts struct {
-	Contact  bool
-	Online   bool
-	LastSeen int32
-	Now      time.Time
+	Contact      bool
+	Online       bool
+	LastSeen     int32
+	Now          time.Time
+	PriorMessage int32
+	HistoryKnown bool
 }
 
 // ConsumeAutoReply decides which quick-reply shortcuts to send and records
-// that they were sent. Greeting goes out when the chat was idle for
-// no_activity_days (a new chat always qualifies). Away goes out once per
-// away window. The caller delivers the shortcuts.
+// that they were sent. Greeting goes out only when dialog history says the
+// chat is new (no_activity_days == 0) or the previous message is at least
+// no_activity_days old. Away goes out once per away window. The caller
+// delivers the shortcuts.
 func (b *Book) ConsumeAutoReply(owner, peer int64, facts PeerFacts) []int32 {
 	if b == nil || owner == 0 || peer == 0 || owner == peer {
 		return nil
@@ -45,9 +52,9 @@ func (b *Book) ConsumeAutoReply(owner, peer int64, facts PeerFacts) []int32 {
 	if facts.Now.IsZero() {
 		now = int32(b.now().Unix())
 	}
-	newChat := note.LastActivity == 0
+	newChat := facts.HistoryKnown && facts.PriorMessage == 0
 	var out []int32
-	if g := r.greeting; g != nil && matchRecipients(g.GetRecipients(), peer, facts.Contact, newChat) && greetingDue(g, note.LastActivity, now) {
+	if g := r.greeting; g != nil && matchRecipients(g.GetRecipients(), peer, facts.Contact, newChat) && greetingDue(g, facts, now) && note.GreetingSent <= facts.PriorMessage {
 		if g.GetShortcutId() > 0 {
 			out = append(out, g.GetShortcutId())
 			note.GreetingSent = now
@@ -71,18 +78,19 @@ func (b *Book) ConsumeAutoReply(owner, peer int64, facts PeerFacts) []int32 {
 	return out
 }
 
-func greetingDue(g *mtproto.BusinessGreetingMessage, last, now int32) bool {
-	if g == nil {
+func greetingDue(g *mtproto.BusinessGreetingMessage, facts PeerFacts, now int32) bool {
+	if g == nil || !facts.HistoryKnown {
 		return false
 	}
-	if last == 0 {
+	// no_activity_days == 0 is only for a dialog with no earlier message.
+	if facts.PriorMessage == 0 {
 		return true
 	}
 	days := g.GetNoActivityDays()
 	if days <= 0 {
 		return false
 	}
-	return int64(now)-int64(last) >= int64(days)*86400
+	return int64(now)-int64(facts.PriorMessage) >= int64(days)*86400
 }
 
 func awayWindow(a *mtproto.BusinessAwayMessage, hours *mtproto.BusinessWorkHours, version int32, facts PeerFacts) (bool, string) {

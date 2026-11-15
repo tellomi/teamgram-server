@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/business/profile"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	messagepb "github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -30,6 +31,7 @@ func (c *MessagesCore) maybeBusinessAutoReply(peer *mtproto.PeerUtil) {
 	}
 	now := time.Now()
 	facts := profile.PeerFacts{Now: now}
+	facts.PriorMessage, facts.HistoryKnown = c.priorPrivateMessage(owner, customer, int32(now.Unix()))
 	if c.svcCtx.Dao.UserClient != nil {
 		if ok, err := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{UserId: owner, Id: customer}); err == nil {
 			facts.Contact = mtproto.FromBool(ok)
@@ -45,6 +47,57 @@ func (c *MessagesCore) maybeBusinessAutoReply(peer *mtproto.PeerUtil) {
 			c.Logger.Errorf("business auto reply owner=%d peer=%d shortcut=%d: %v", owner, customer, shortcutID, err)
 		}
 	}
+}
+
+// priorPrivateMessage is the newest message already stored for this private
+// dialog before the one that just arrived. History is newest-first. Two
+// boxes mean the older date is the previous message. One box is the message
+// just sent when its date is current, and an older dialog when it is not.
+// The business inbox is checked first; the sender's outbox is the fallback
+// when that copy is not visible yet.
+func (c *MessagesCore) priorPrivateMessage(owner, customer int64, now int32) (prior int32, known bool) {
+	if prior, known = c.dialogPrior(owner, customer, now); known {
+		return prior, true
+	}
+	return c.dialogPrior(customer, owner, now)
+}
+
+func (c *MessagesCore) dialogPrior(userID, peerID int64, now int32) (int32, bool) {
+	if c.svcCtx.Dao.MessageClient == nil {
+		return 0, false
+	}
+	got, err := c.svcCtx.Dao.MessageClient.MessageGetHistoryMessages(c.ctx, &messagepb.TLMessageGetHistoryMessages{
+		UserId:   userID,
+		PeerType: mtproto.PEER_USER,
+		PeerId:   peerID,
+		Limit:    2,
+	})
+	if err != nil || got == nil {
+		return 0, false
+	}
+	var dates []int32
+	for _, box := range got.GetDatas() {
+		if box == nil || box.GetMessage() == nil || box.GetMessage().GetDate() == 0 {
+			continue
+		}
+		dates = append(dates, box.GetMessage().GetDate())
+	}
+	if len(dates) == 0 {
+		return 0, false
+	}
+	if len(dates) == 1 {
+		// A lone message from this second is the one just delivered.
+		// An older lone message is a dialog the new copy has not reached.
+		if now > 0 && now-dates[0] > 120 {
+			return dates[0], true
+		}
+		return 0, true
+	}
+	older := dates[0]
+	if dates[1] < older {
+		older = dates[1]
+	}
+	return older, true
 }
 
 func (c *MessagesCore) sendBusinessShortcut(owner, customer int64, shortcutID int32) error {

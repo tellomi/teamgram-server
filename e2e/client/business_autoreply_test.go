@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,18 +12,20 @@ import (
 )
 
 // TestBusinessProfileAndAutoReply covers ISSUE-S-BIZ-AUTOREPLY-001 (row 85)
-// and ISSUE-S-BIZ-PERSIST-001 (row 86). Greeting and away shortcuts are sent
-// when someone messages the business account, and the saved profile is what
-// users.getFullUser returns.
+// and ISSUE-S-BIZ-PERSIST-001 (row 86). A dialog with no earlier message gets
+// the greeting. users.getFullUser returns the saved profile.
 func TestBusinessProfileAndAutoReply(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	biz, _ := dialPhone(t, ctx, cfg, "9996610433", "BizShop")
-	customer, _ := dialPhone(t, ctx, cfg, "9996610434", "BizGuest")
+	biz, _ := dialPhone(t, ctx, cfg, "9996610435", "BizShop2")
+	customer, _ := dialPhone(t, ctx, cfg, "9996610436", "BizGuest2")
 
-	greetID := saveShortcut(t, ctx, biz, "greet", "welcome-from-shop")
-	awayID := saveShortcut(t, ctx, biz, "away", "away-from-shop")
+	stamp := time.Now().UnixNano()
+	greetText := fmt.Sprintf("welcome-from-shop-%d", stamp)
+	awayText := fmt.Sprintf("away-from-shop-%d", stamp)
+	greetID := saveShortcut(t, ctx, biz, "greet", greetText)
+	awayID := saveShortcut(t, ctx, biz, "away", awayText)
 	recipients := mtproto.MakeTLInputBusinessRecipients(&mtproto.InputBusinessRecipients{
 		NonContacts: true,
 	}).To_InputBusinessRecipients()
@@ -30,7 +33,7 @@ func TestBusinessProfileAndAutoReply(t *testing.T) {
 		Constructor: mtproto.CRC32_account_updateBusinessGreetingMessage,
 		Message: mtproto.MakeTLInputBusinessGreetingMessage(&mtproto.InputBusinessGreetingMessage{
 			ShortcutId:     greetID,
-			NoActivityDays: 7,
+			NoActivityDays: 0,
 			Recipients:     recipients,
 		}).To_InputBusinessGreetingMessage(),
 	}); err != nil {
@@ -73,28 +76,101 @@ func TestBusinessProfileAndAutoReply(t *testing.T) {
 		t.Fatalf("saved shortcuts greet=%d away=%d", full.GetBusinessGreetingMessage().GetShortcutId(), full.GetBusinessAwayMessage().GetShortcutId())
 	}
 
-	bizID, bizHash, err := customer.ImportPhone(ctx, "9996610433", "BizShop")
+	bizID, bizHash, err := customer.ImportPhone(ctx, "9996610435", "BizShop2")
 	if err != nil {
 		t.Fatal(err)
 	}
 	peer := inputPeerUser(bizID, bizHash)
-	if _, err = customer.SendText(ctx, peer, "hello shop", nil); err != nil {
-		t.Fatal(err)
-	}
-	msgs := waitHistory(t, ctx, customer, peer, "welcome-from-shop", "away-from-shop")
-	if countText(msgs, "welcome-from-shop") != 1 || countText(msgs, "away-from-shop") != 1 {
-		t.Fatalf("auto replies %#v", texts(msgs))
-	}
-	if _, err = customer.SendText(ctx, peer, "hello again", nil); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(300 * time.Millisecond)
-	again, err := customer.History(ctx, peer, 20)
+	before, err := customer.History(ctx, peer, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if countText(again, "welcome-from-shop") != 1 || countText(again, "away-from-shop") != 1 {
-		t.Fatalf("resent %#v", texts(again))
+	freshDialog := !hasPlainText(before)
+	if _, err = customer.SendText(ctx, peer, fmt.Sprintf("hello-shop-%d", stamp), nil); err != nil {
+		t.Fatal(err)
+	}
+	if freshDialog {
+		msgs := waitHistory(t, ctx, customer, peer, greetText, awayText)
+		if countText(msgs, greetText) != 1 || countText(msgs, awayText) != 1 {
+			t.Fatalf("auto replies %#v", texts(msgs))
+		}
+		if _, err = customer.SendText(ctx, peer, fmt.Sprintf("hello-again-%d", stamp), nil); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(500 * time.Millisecond)
+		again, err := customer.History(ctx, peer, 30)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if countText(again, greetText) != 1 || countText(again, awayText) != 1 {
+			t.Fatalf("resent %#v", texts(again))
+		}
+		return
+	}
+	time.Sleep(500 * time.Millisecond)
+	after, err := customer.History(ctx, peer, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countText(after, greetText) != 0 {
+		t.Fatalf("greeting sent into an existing dialog %#v", texts(after))
+	}
+}
+
+// TestBusinessGreetingSkipsExistingDialog is the row 85 regression: a chat
+// that already has a message does not get a no_activity_days=0 greeting the
+// first time this server records the business setting.
+func TestBusinessGreetingSkipsExistingDialog(t *testing.T) {
+	cfg := requireE2E(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	biz, _ := dialPhone(t, ctx, cfg, "9996610437", "BizShop3")
+	customer, _ := dialPhone(t, ctx, cfg, "9996610438", "BizGuest3")
+	bizID, bizHash, err := customer.ImportPhone(ctx, "9996610437", "BizShop3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := inputPeerUser(bizID, bizHash)
+	stamp := time.Now().UnixNano()
+	if _, err = customer.SendText(ctx, peer, fmt.Sprintf("already-talking-%d", stamp), nil); err != nil {
+		t.Fatal(err)
+	}
+	greetText := fmt.Sprintf("should-not-greet-%d", stamp)
+	awayText := fmt.Sprintf("still-away-%d", stamp)
+	greetID := saveShortcut(t, ctx, biz, "greet2", greetText)
+	awayID := saveShortcut(t, ctx, biz, "away2", awayText)
+	recipients := mtproto.MakeTLInputBusinessRecipients(&mtproto.InputBusinessRecipients{
+		NonContacts: true,
+	}).To_InputBusinessRecipients()
+	if _, err = biz.Invoke(ctx, &mtproto.TLAccountUpdateBusinessGreetingMessage{
+		Constructor: mtproto.CRC32_account_updateBusinessGreetingMessage,
+		Message: mtproto.MakeTLInputBusinessGreetingMessage(&mtproto.InputBusinessGreetingMessage{
+			ShortcutId:     greetID,
+			NoActivityDays: 0,
+			Recipients:     recipients,
+		}).To_InputBusinessGreetingMessage(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = biz.Invoke(ctx, &mtproto.TLAccountUpdateBusinessAwayMessage{
+		Constructor: mtproto.CRC32_account_updateBusinessAwayMessage,
+		Message: mtproto.MakeTLInputBusinessAwayMessage(&mtproto.InputBusinessAwayMessage{
+			ShortcutId: awayID,
+			Schedule:   mtproto.MakeTLBusinessAwayMessageScheduleAlways(nil).To_BusinessAwayMessageSchedule(),
+			Recipients: recipients,
+		}).To_InputBusinessAwayMessage(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = customer.SendText(ctx, peer, fmt.Sprintf("talking-again-%d", stamp), nil); err != nil {
+		t.Fatal(err)
+	}
+	msgs := waitHistory(t, ctx, customer, peer, awayText)
+	if countText(msgs, greetText) != 0 {
+		t.Fatalf("greeting on existing dialog %#v", texts(msgs))
+	}
+	if countText(msgs, awayText) != 1 {
+		t.Fatalf("away %#v", texts(msgs))
 	}
 }
 
@@ -145,6 +221,15 @@ func waitHistory(t *testing.T, ctx context.Context, c *Client, peer *mtproto.Inp
 	}
 	t.Fatalf("history missing %q, saw %v", strings.Join(want, ","), texts(last))
 	return nil
+}
+
+func hasPlainText(msgs []*mtproto.Message) bool {
+	for _, m := range msgs {
+		if m != nil && m.GetMessage() != "" && m.GetAction() == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func countText(msgs []*mtproto.Message, text string) int {
