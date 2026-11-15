@@ -54,7 +54,7 @@ func (s *Service) messageViews(ctx context.Context, self, channelID int64, ids [
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, countedViews(n))
+			out = append(out, countedViews(n, body.GetForwards().GetValue()))
 			continue
 		}
 		if depth == 0 {
@@ -327,8 +327,41 @@ func emptyMessageViews() *mtproto.MessageViews {
 	return mtproto.MakeTLMessageViews(&mtproto.MessageViews{}).To_MessageViews()
 }
 
-func countedViews(n int32) *mtproto.MessageViews {
-	return mtproto.MakeTLMessageViews(&mtproto.MessageViews{
-		Views: wrapperspb.Int32(n),
-	}).To_MessageViews()
+func countedViews(views, forwards int32) *mtproto.MessageViews {
+	row := &mtproto.MessageViews{Views: wrapperspb.Int32(views)}
+	if forwards > 0 {
+		row.Forwards = wrapperspb.Int32(forwards)
+	}
+	return mtproto.MakeTLMessageViews(row).To_MessageViews()
+}
+
+// AddForwards counts successful messages.forwardMessages of these channel
+// posts. Each id in the request adds one, including a forward into a
+// private chat. Views stay on their own counter.
+func (s *Service) AddForwards(ctx context.Context, channelID int64, ids []int32) error {
+	if s == nil || s.store == nil || channelID == 0 {
+		return nil
+	}
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		stored, err := s.store.GetMessage(ctx, channelID, id)
+		if err != nil {
+			return err
+		}
+		if stored == nil || stored.Deleted {
+			continue
+		}
+		body, err := unmarshalMessage(stored.Data)
+		if err != nil || body == nil {
+			continue
+		}
+		n := body.GetForwards().GetValue() + 1
+		body.Forwards = wrapperspb.Int32(n)
+		if err := s.SaveMessageBody(ctx, channelID, id, body); err != nil {
+			return err
+		}
+	}
+	return nil
 }

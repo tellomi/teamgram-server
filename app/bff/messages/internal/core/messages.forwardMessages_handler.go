@@ -110,6 +110,11 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 		c.Logger.Errorf("messages.forwardMessages - error: %v", err)
 		return nil, err
 	}
+	if fromPeer.PeerType == mtproto.PEER_CHANNEL {
+		if err = channel.Shared().AddForwards(c.ctx, fromPeer.PeerId, in.Id); err != nil {
+			c.Logger.Errorf("messages.forwardMessages - forwards: %v", err)
+		}
+	}
 	if in.GetScheduleDate().GetValue() == 0 {
 		noteCrashReports(c.ctx, c.MD.UserId, toPeer, nil, rUpdates)
 	}

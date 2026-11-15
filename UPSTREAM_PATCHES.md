@@ -725,3 +725,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Channel post forward counter (row 206)
+
+`messages.forwardMessages` from a channel did not change the post. `AddForwards` adds one to `message.forwards` for each id in a successful forward. `messages.getMessagesViews` copies that count onto `messageViews.forwards` when it is greater than zero. View counts are unchanged.
+
+| Piece | File |
+| --- | --- |
+| counter | `app/service/biz/channel/read_views.go` |
+| call site | `messages.forwardMessages_handler.go` |
