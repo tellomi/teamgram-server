@@ -35,24 +35,33 @@ func TestMentionNameWithoutUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgs, err := a.History(ctx, peer, 100)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range msgs {
-		if m.GetMessage() != text && m.GetId() != id {
-			continue
+	// The outbox row is written by the inbox consumer after sendMessage returns.
+	waitCtx, cancelWait := contextTimeout(8 * time.Second)
+	defer cancelWait()
+	var saw bool
+	err = waitUntil(waitCtx, 200*time.Millisecond, func() (bool, error) {
+		msgs, err := a.History(waitCtx, peer, 100)
+		if err != nil {
+			return false, err
 		}
-		for _, entity := range m.GetEntities() {
-			if entity.GetPredicateName() == mtproto.Predicate_messageEntityMentionName && entity.GetUserId_INT64() == bID {
-				return
+		for _, m := range msgs {
+			if m.GetMessage() != text && m.GetId() != id {
+				continue
 			}
+			saw = true
+			for _, entity := range m.GetEntities() {
+				if entity.GetPredicateName() == mtproto.Predicate_messageEntityMentionName && entity.GetUserId_INT64() == bID {
+					return true, nil
+				}
+			}
+			return false, nil
 		}
-		t.Fatalf("message %d entities %#v", m.GetId(), m.GetEntities())
+		return false, nil
+	})
+	if err != nil {
+		if saw {
+			t.Fatalf("message %d %q was stored without messageEntityMentionName: %v", id, text, err)
+		}
+		t.Fatalf("message %d %q missing from history: %v", id, text, err)
 	}
-	ids := make([]int32, 0, len(msgs))
-	for _, m := range msgs {
-		ids = append(ids, m.GetId())
-	}
-	t.Fatalf("message %d %q missing from history ids %v", id, text, ids)
 }
