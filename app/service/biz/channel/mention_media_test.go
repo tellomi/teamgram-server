@@ -35,7 +35,7 @@ func TestMegagroupMentionFlagAndVoiceUnread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	id := posted(sent).GetMessage_MESSAGE().GetId()
 	hist, err := svc.History(ctx, 1, in, HistoryQuery{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
