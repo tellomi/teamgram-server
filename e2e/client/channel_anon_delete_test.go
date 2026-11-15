@@ -73,6 +73,7 @@ func TestAnonymousAdminSender(t *testing.T) {
 		Peer:        inputPeerChannel(memberCh.GetChannelId(), memberCh.GetAccessHash()),
 		Q:           "anon-body",
 		FromId:      inputPeerUser(adminID, adminHash),
+		Filter:      mtproto.MakeTLInputMessagesFilterEmpty(nil).To_MessagesFilter(),
 		Limit:       20,
 	}))
 	if anonMessageText(filtered.GetMessages(), "anon-body") != nil {
