@@ -87,6 +87,9 @@
     "gpriv_member": {"number": "9996610353", "code": "11111"},
     "gpriv_reply": {"number": "9996610356", "code": "11111"},
     "chatlist_owner": {"number": "9996610354", "code": "11111"},
-    "chatlist_joiner": {"number": "9996610355", "code": "11111"}
+    "chatlist_joiner": {"number": "9996610355", "code": "11111"},
+    "disc_a": {"number": "9996610341", "code": "11111"},
+    "disc_b": {"number": "9996610342", "code": "11111"},
+    "biz_tz": {"number": "9996610343", "code": "11111"}
   }
 }

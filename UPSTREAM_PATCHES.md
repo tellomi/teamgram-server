@@ -716,3 +716,26 @@ Clients, flags, environment variables, and the schema are unchanged. No migratio
 | read APIs and 403 | `pkg/privacypremium`, `users.getFullUser_handler.go`, `users.getRequirementsToContact_handler.go`, `users.getIsPremiumRequiredToContact_handler.go`, `send_guard.go`, `rpc_error_codes.go` |
 | user flag | `proto/mtproto/contact_premium_hook.go`, `immutable_user_helper.go`, `app/bff/users/internal/dao/contact_premium.go` |
 | folder share and join | `app/bff/folders/internal/core/chatlists.go`, `chatlist_handlers.go`, `app/service/biz/channel/convert.go`, `service_ops.go` |
+
+## Embedded IANA timezone database (ISSUE-S-BIZ-TZ-001)
+
+The runtime image does not install tzdata. `time.LoadLocation` then only resolves `UTC`, so `help.getTimezonesList` returned that one zone and `account.updateBusinessWorkHours` rejected `Asia/Shanghai` with `TIMEZONE_INVALID`.
+
+`app/bff/bff/cmd/bff/main.go` imports `time/tzdata`, which is the standard-library embed of the IANA database. `pkg/tz` imports it as well so the picker and `validateHours` / `openNow` call the same `Load`. Zone names come from the system `zone.tab` when that file is installed (the tree `LoadLocation` reads first). Otherwise they come from the file index of the embedded database, not a hand-written list.
+
+| Piece | File |
+| --- | --- |
+| binary import | `app/bff/bff/cmd/bff/main.go` |
+| shared IANA source | `pkg/tz` |
+| picker | `app/bff/configuration/internal/timezones/timezones.go` |
+| hours check | `app/bff/business/profile/profile.go` |
+
+## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
+
+`channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
+
+Unlink and rebind now clear that back-pointer when it still names this channel. A group that has already been linked to a different channel is left as it is. The broadcast, the new group, and a group whose pointer was cleared each get `updateChannel`, which is what clients use to reload `channelFull`. The requesting auth key is omitted, same as the other channel fanout. The admin log `changeLinkedChat` entry is unchanged.
+
+| Piece | File |
+| --- | --- |
+| link, unlink, fanout | `app/service/biz/channel/service_features.go` |

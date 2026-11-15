@@ -84,6 +84,16 @@ func TestBusinessProfileAndLinks(t *testing.T) {
 	if _, err := svc.AccountUpdateBusinessWorkHours(ctx, &mtproto.TLAccountUpdateBusinessWorkHours{BusinessWorkHours: hours}); err != nil {
 		t.Fatal(err)
 	}
+	shanghai := mtproto.MakeTLBusinessWorkHours(&mtproto.BusinessWorkHours{
+		TimezoneId: "Asia/Shanghai",
+		WeeklyOpen: hours.WeeklyOpen,
+	}).To_BusinessWorkHours()
+	if _, err := svc.AccountUpdateBusinessWorkHours(ctx, &mtproto.TLAccountUpdateBusinessWorkHours{BusinessWorkHours: shanghai}); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.svcCtx.Book.Card(880011).WorkHours.GetTimezoneId(); got != "Asia/Shanghai" {
+		t.Fatalf("stored timezone %q", got)
+	}
 	if _, err := svc.AccountUpdateBusinessWorkHours(ctx, &mtproto.TLAccountUpdateBusinessWorkHours{
 		BusinessWorkHours: mtproto.MakeTLBusinessWorkHours(&mtproto.BusinessWorkHours{TimezoneId: "Not/AZone", WeeklyOpen: hours.WeeklyOpen}).To_BusinessWorkHours(),
 	}); errText(err) != "TIMEZONE_INVALID" {
@@ -156,7 +166,7 @@ func TestBusinessProfileAndLinks(t *testing.T) {
 	}
 
 	card := svc.svcCtx.Book.Card(880011)
-	if card == nil || card.WorkHours.GetTimezoneId() != "UTC" || card.Location.GetAddress() != "1 Main" || card.Intro.GetTitle() != "Shop" {
+	if card == nil || card.WorkHours.GetTimezoneId() != "Asia/Shanghai" || card.Location.GetAddress() != "1 Main" || card.Intro.GetTitle() != "Shop" {
 		t.Fatalf("card %#v", card)
 	}
 	if card.Greeting.GetShortcutId() != sid || !card.Away.GetOfflineOnly() {
