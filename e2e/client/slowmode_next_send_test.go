@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,8 +13,9 @@ import (
 
 // TestSlowmodeNextSendDate is ISSUE-S-SLOWMODE-NEXTDATE-001.
 // A member who just sent in a 30-second slow mode sees
-// channelFull.slowmode_next_send_date in (now, now+30]. An admin and the
-// creator do not. Turning slow mode off clears the field.
+// channelFull.slowmode_next_send_date within 2s of now+30. After
+// SLOWMODE_WAIT_X, the same field is within 2s of now+X. An admin and the
+// creator do not receive it. Turning slow mode off clears the field.
 // Phones 9996610811–9996610813, code 11111, layer 232.
 // 9996610801–9996610802 belong to the channel profile-photo test.
 func TestSlowmodeNextSendDate(t *testing.T) {
@@ -76,10 +78,10 @@ func TestSlowmodeNextSendDate(t *testing.T) {
 		t.Fatal("member next send date missing")
 	}
 	next := int64(got.GetValue())
-	// Two extra seconds cover the unix-second boundary between this
-	// clock and the server clock. The value is still last-send + 30.
-	if next <= now || next > now+int64(seconds)+2 {
-		t.Fatalf("member next %d window (%d, %d]", next, now, now+int64(seconds))
+	// last-send + 30. Two seconds cover the client/server clock and the
+	// unix-second boundary.
+	if next < now+int64(seconds)-2 || next > now+int64(seconds)+2 {
+		t.Fatalf("member next %d, want %d±2", next, now+int64(seconds))
 	}
 	if full.GetSlowmodeSeconds().GetValue() != seconds {
 		t.Fatalf("slowmode_seconds %d", full.GetSlowmodeSeconds().GetValue())
@@ -87,11 +89,22 @@ func TestSlowmodeNextSendDate(t *testing.T) {
 
 	_, err = member.SendText(ctx, peer, "slow-again", nil)
 	rpc, ok := asRPCError(err)
-	if !ok || rpc.Code != 420 || !strings.HasPrefix(rpc.Message, "SLOWMODE_WAIT_") {
+	const waitPrefix = "SLOWMODE_WAIT_"
+	if !ok || rpc.Code != 420 || !strings.HasPrefix(rpc.Message, waitPrefix) {
 		t.Fatalf("second send: %v", err)
 	}
-	if again := channelFull(t, ctx, member, memberGroup).GetSlowmodeNextSendDate().GetValue(); int64(again) != next {
-		t.Fatalf("rejected send moved the window %d -> %d", next, again)
+	waitFor, convErr := strconv.Atoi(strings.TrimPrefix(rpc.Message, waitPrefix))
+	if convErr != nil || waitFor <= 0 {
+		t.Fatalf("SLOWMODE_WAIT seconds: %q", rpc.Message)
+	}
+	now = time.Now().Unix()
+	again := channelFull(t, ctx, member, memberGroup).GetSlowmodeNextSendDate()
+	if again == nil {
+		t.Fatal("member next send date missing after SLOWMODE_WAIT")
+	}
+	want := now + int64(waitFor)
+	if got := int64(again.GetValue()); got < want-2 || got > want+2 {
+		t.Fatalf("next %d not within now+X±2 (now=%d X=%d)", got, now, waitFor)
 	}
 
 	adminPeer := inputPeerChannel(groupID, adminGroup.GetAccessHash())
