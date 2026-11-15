@@ -1047,3 +1047,13 @@ Archiving a new non-contact set folder 1 and mute-forever, and unarchiving clear
 | Piece | File |
 | --- | --- |
 | flag on archive and unarchive | `pkg/archive/apply.go`, `pkg/archive/clients.go` |
+
+## Saved GIFs keep the defaults (行 146, ISSUE-S-GIF-DEFAULT-001)
+
+`messages.getSavedGifs` returned the built-in list only while the user had saved nothing. The first `messages.saveGif` replaced that list, so the panel dropped to one GIF. Unsving it brought the defaults back.
+
+Saved rows are now listed first, and any built-in GIF the user has not saved is appended. The hash covers both. An empty saved list is still the built-in list.
+
+| Piece | File |
+| --- | --- |
+| list | `app/bff/stickers/catalog/manage.go` |
