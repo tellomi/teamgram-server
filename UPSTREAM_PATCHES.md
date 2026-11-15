@@ -1090,3 +1090,15 @@ The upload now inserts `encrypted_file_id`, `access_hash`, `dc_id`, `file_size`,
 | insert | `app/service/dfs/internal/dao/encrypted_files.go`, `dao.go` |
 | upload | `app/service/dfs/internal/core/dfs.uploadEncryptedFileV2_handler.go` |
 | unique id | `teamgramd/deploy/sql/migrate-20261115-encrypted-file-lookup.sql` |
+
+## Saved GIF, recent sticker, and faved sticker sync (ISSUE-S-STICKER-SYNC-PUSH-001)
+
+`messages.saveGif`, `messages.saveRecentSticker`, `messages.clearRecentStickers`, and `messages.faveSticker` wrote the list and returned `boolTrue` without telling the account's other sessions. `messages.getSavedGifs` on the other session already saw the new GIF. It never received `updateSavedGifs`, so the panel stayed stale until a manual refetch.
+
+A successful write that changes the stored id order now uses the same `pushNotMe` path as `messages.reorderStickerSets`. `saveGif` sends `updateSavedGifs`. `saveRecentSticker` and `clearRecentStickers` send `updateRecentStickers`. `faveSticker` sends `updateFavedStickers`. The sync call carries the caller's perm auth key, so that session is not pushed. A rejected id does not push. Saving or faving the row that is already first, unsaving a row that is not stored, and clearing an empty recent list do not push: those calls rewrite a date or delete nothing, and the id order is unchanged.
+
+| Piece | File |
+| --- | --- |
+| push after the write | `app/bff/stickers/internal/server/grpc/service/handlers.go`, `handlers_p2.go` |
+| changed or not | `app/bff/stickers/catalog/manage.go` `SaveGif`, `service.go` `SaveRecent`, `ClearRecent`, `Fave` |
+| update constructors | `app/bff/stickers/catalog/push.go` |

@@ -274,14 +274,18 @@ func (s *Service) SavedGifs(userID, hash int64) *mtproto.Messages_SavedGifs {
 	}).To_Messages_SavedGifs()
 }
 
-func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool) error {
+// SaveGif reports whether the stored order of saved GIF ids changed.
+// A date-only rewrite of the GIF that is already first is not a change.
+// The bool is false when the write fails, including a GIF the catalog rejects.
+func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	row, err := s.resolveGif(doc)
 	if err != nil {
-		return err
+		return false, err
 	}
 	st := s.state(userID)
+	before := gifDocumentIDs(st.gifs)
 	next := make([]gifRow, 0, len(st.gifs))
 	for _, cur := range st.gifs {
 		if cur.DocumentID == row.DocumentID {
@@ -292,11 +296,11 @@ func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool)
 	if unsave {
 		if mp, ok := s.mysql(); ok {
 			if err = mp.deleteGif(userID, row.DocumentID); err != nil {
-				return err
+				return false, err
 			}
 		}
 		st.gifs = next
-		return nil
+		return !sameInt64s(before, gifDocumentIDs(st.gifs)), nil
 	}
 	row.Date = s.now()
 	next = append([]gifRow{row}, next...)
@@ -306,18 +310,26 @@ func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool)
 		if mp, ok := s.mysql(); ok {
 			for _, old := range dropped {
 				if err = mp.deleteGif(userID, old.DocumentID); err != nil {
-					return err
+					return false, err
 				}
 			}
 		}
 	}
 	if mp, ok := s.mysql(); ok {
 		if err = mp.saveGif(userID, next[0]); err != nil {
-			return err
+			return false, err
 		}
 	}
 	st.gifs = next
-	return nil
+	return !sameInt64s(before, gifDocumentIDs(st.gifs)), nil
+}
+
+func gifDocumentIDs(rows []gifRow) []int64 {
+	ids := make([]int64, len(rows))
+	for i, row := range rows {
+		ids[i] = row.DocumentID
+	}
+	return ids
 }
 
 func (s *Service) CheckShortName(name string) error {
