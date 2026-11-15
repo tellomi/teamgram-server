@@ -42,15 +42,13 @@ func TestSearchCountersPhotoVoiceAndMegagroup(t *testing.T) {
 	round := mtproto.MakeTLInputMessagesFilterRoundVideo(&mtproto.MessagesFilter{}).To_MessagesFilter()
 	urls := mtproto.MakeTLInputMessagesFilterUrl(&mtproto.MessagesFilter{}).To_MessagesFilter()
 
-	got := searchCounterMap(t, a, peer, photos, videos, both, voice, round, urls)
-	if got[mtproto.FilterPhotos] < 1 || got[mtproto.FilterPhotoVideo] < 1 || got[mtproto.FilterVideo] != 0 {
-		t.Fatalf("private photo counters %+v", got)
-	}
-	if got[mtproto.FilterVoice] < 1 || got[mtproto.FilterRoundVideo] != 0 {
-		t.Fatalf("private voice counters %+v", got)
-	}
-	if got[mtproto.FilterUrl] < 1 {
-		t.Fatalf("private url counter %+v", got)
+	// Voice notes are stored as MEDIA_AUDIO. The voice counter then scans
+	// those rows for the voice attribute, so the count can still be 0 for
+	// a moment after sendMedia returns. Wait until that count is 1, then
+	// require the exact private map.
+	got := waitPrivateSearchCounters(t, a, peer, photos, videos, both, voice, round, urls)
+	if !privateCountersExact(got) {
+		t.Fatalf("private counters %+v", got)
 	}
 	found := searchPeer(t, a, peer, photos)
 	if len(found) < 1 {
@@ -70,6 +68,27 @@ func TestSearchCountersPhotoVoiceAndMegagroup(t *testing.T) {
 	if len(searchPeer(t, a, mega, photos)) < 1 {
 		t.Fatal("megagroup messages.search photos returned nothing")
 	}
+}
+
+func waitPrivateSearchCounters(t *testing.T, c *Client, peer *mtproto.InputPeer, filters ...*mtproto.MessagesFilter) map[mtproto.MessagesFilterType]int32 {
+	t.Helper()
+	ctx, cancel := contextTimeout(10 * time.Second)
+	defer cancel()
+	var last map[mtproto.MessagesFilterType]int32
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		last = searchCounterMap(t, c, peer, filters...)
+		return privateCountersExact(last), nil
+	})
+	if err != nil {
+		t.Fatalf("private counters never settled: %+v: %v", last, err)
+	}
+	return last
+}
+
+func privateCountersExact(m map[mtproto.MessagesFilterType]int32) bool {
+	return m[mtproto.FilterPhotos] == 1 && m[mtproto.FilterVideo] == 0 &&
+		m[mtproto.FilterPhotoVideo] == 1 && m[mtproto.FilterVoice] == 1 &&
+		m[mtproto.FilterRoundVideo] == 0 && m[mtproto.FilterUrl] == 1
 }
 
 func searchCounterMap(t *testing.T, c *Client, peer *mtproto.InputPeer, filters ...*mtproto.MessagesFilter) map[mtproto.MessagesFilterType]int32 {

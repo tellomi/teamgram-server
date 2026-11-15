@@ -9,8 +9,9 @@ import (
 )
 
 // sensitiveFresh is the official 24 hour gate for privileged SRP calls
-// such as channels.editCreator.
+// such as channels.editCreator and messages.editChatCreator.
 // https://core.telegram.org/method/channels.editCreator
+// https://core.telegram.org/method/messages.editChatCreator
 const sensitiveFresh int64 = 24 * 60 * 60
 
 // SessionCreated reports auth_users.date_created for a permanent auth key.
