@@ -2,6 +2,41 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Privacy switches that were stored and then ignored
+
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
+
+| Piece | File |
+| --- | --- |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
+
+## Profile name, avatar delete, and 320px photos
+
+`account.updateProfile` stored an empty or all-space first name, and a name longer than the 64-character column was dropped while the RPC still returned the old user. Empty and over-long names now return `FIRSTNAME_INVALID` / `LASTNAME_INVALID`. `photos.deletePhotos` of the current avatar deleted the album row and left `users.photo_id` pointing at it. Deleting the current avatar now points `photo_id` at the next non-fallback photo, or 0. A 320×320 profile JPEG was upscaled to the c size and then rejected because the encode was larger than the upload (`IMAGE_PROCESS_FAILED`). An upscale is allowed to be larger. `account.saveMusic unsave` compared the document id with the user id, so the row was never deleted.
+
+| Piece | File |
+| --- | --- |
+| name limits | `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go`, `profile_name.go` |
+| delete current avatar | `app/service/biz/user/internal/dao/user.go`, `user.deleteProfilePhotos_handler.go` |
+| 320 JPEG ladder | `app/service/dfs/internal/imaging/govips.go` |
+| unsave music | `app/service/biz/user/internal/core/user.saveMusic_handler.go` |
+
+## Auth code cancel, cross-DC bytes, and login-token errors
+
+`auth.cancelCode` returned `boolTrue` without deleting the phone-code row, so the same test code still signed in. It now deletes the matching code. `auth.exportAuthorization` used to put the DC number in `bytes`, and `auth.importAuthorization` accepted any bytes and returned an empty user. The bytes are now a one-shot secret, and import binds that user or returns `AUTH_BYTES_INVALID`. `auth.importLoginToken` returned `AUTH_TOKEN_ALREADY_ACCEPTED` for a token this server does not know; an unknown token is `AUTH_TOKEN_INVALID`. `account.sendChangePhoneCode` treated a 99966 test number as an international SMS number and returned `PHONE_NUMBER_INVALID`. Those numbers now take the same fixed-code path as `auth.sendCode`.
+
+| Piece | File |
+| --- | --- |
+| cancel the stored code | `app/bff/authorization/internal/core/auth.cancelCode_handler.go` |
+| one-shot export bytes | `app/bff/authorization/internal/dao/export_auth.go`, `auth.exportAuthorization_handler.go`, `auth.importAuthorization_handler.go` |
+| invalid QR import token | `app/bff/qrcode/internal/core/auth.importLoginToken_handler.go` |
+| test number on change-phone | `app/bff/account/internal/core/account.sendChangePhoneCode_handler.go` |
+
 ## Scheduled messages
 
 `messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
@@ -496,6 +531,14 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 
 `account.updateStatus` stores a 300 second online window (`user_presences.expires`). `users.getUsers`, `contacts.getStatuses`, and `messages.getOnlines` read that same window. A missing `user_presences` row is `PRESENCE_NOT_FOUND` and is not treated as a previous offline; an existing row is not rewritten. `user.createNewTestUser` writes the same initial row as a normal signup. Online updates go to people this user added and to people who added this user, after `privacyKeyStatusTimestamp` in both directions and a batched block check. Crossing online and offline always reloads the audience and pushes. While the user stays online, a later absolute expires is pushed from the cached recipient list (user id plus exact or coarse tier) and does not read contacts, privacy, or blocks. The list is capped and expires. A failed push does not store the new expires, so the next heartbeat retries. A `privacyKeyStatusTimestamp` change reads both contact id lists first. Either read failing returns without writing the new rules. After the rules are stored, those contacts' cached audiences are dropped. `Forget` bumps a generation that is not deleted with the list and returns a store error so the client can retry the clear. `Save` writes only when that generation is still current and the new expires is later, in one atomic step, so a heartbeat that read the list before `Forget` cannot put it back. Sliding that expires does not extend the list deadline. Only a full reload sets a new 600 second deadline, so a clear that never landed still expires and the next heartbeat reloads. If privacy or the block check cannot be loaded, nothing is pushed and `contacts.getStatuses` returns no exact timestamps. `contacts.addContact` and `contacts.importContacts` push the current allowed status both ways. Chat-participant privacy rules are not treated as a match when membership is unknown.
 
+## contacts.editCloseFriends replace
+
+`GetCloseFriendList` treated every contact who was not a close friend as a hole and returned no list at all. `contacts.editCloseFriends` then only set the new ids to true and never cleared the previous ones. The list now keeps the close-friend rows and ignores the rest, so a shorter or empty id vector replaces the saved set.
+
+| Piece | File |
+| --- | --- |
+| skip non-close-friend slots | `app/service/biz/user/internal/dao/user_contact.go` |
+
 ## contacts.getContacts hash and messages.searchGlobal
 
 `contacts.getContacts` used the pre-64-bit mix `(acc * 20261 + id) % 0x80000000`. Current Android `ContactsController.getContactsHash` mixes `contactsSavedCount` and then each contact user id with `MediaDataController.calcHash` (unsigned shifts of the accumulator, then add the id). The hashes never matched, so the server never returned `contacts.contactsNotModified`. Opening a contact picker then rewrote the phone book and, when a contact had no user in the same reply, called `loadContacts(false, 0)`, which cannot accept NotModified. The hash is the client algorithm. A contact with no user object is left out of the reply. A failed `saved_count` read is an error, not 0. `contacts.getStatuses` still only returns statuses. The server does not emit `updateContactsReset`. `updatePeerSettings` does not reload the contact book.
@@ -509,6 +552,15 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | User-message text query | `app/service/biz/message/internal/dal/dao/mysql_dao/messages_search_text.go`, `app/service/biz/message/internal/core/message.searchGlobal_handler.go` |
 | Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
 | Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
+
+## contacts.search self, full name, and notes
+
+`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`. That bucket is the caller's address book (`user.getContactList`). `CheckContact` on the other user asks whether they saved the caller, so a one-way import used to stay in `results`.
+
+| Piece | File |
+| --- | --- |
+| omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
+| full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
 
 ## Invite usage_limit of 0
 
@@ -716,6 +768,34 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## Search counters (ISSUE-S-SEARCH-COUNTERS-001, ISSUE-S-SEARCHCOUNT-001)
+
+`messages.getSearchCounters` counted `message_filter_type = 0` for photo+video, and it returned 0 for photos, video, voice, and round video because those filters were not mapped. Stored photos are type 7 and videos are type 8. Voice notes and round videos both sit in type 2 (`MEDIA_AUDIO`); the document attribute tells them apart. Megagroup and channel posts are not in the caller's private box, so every channel counter was 0.
+
+The counter now sums the stored types. Voice and round video walk the shared audio bucket. Channel peers count the channel store with the same filter `messages.search` uses, including a voice note that is not a round video.
+
+| Piece | File |
+| --- | --- |
+| filter to stored type | `app/bff/messages/internal/core/search_counters.go` |
+| channel count | `app/service/biz/channel/search_count.go`, `search_filter.go` |
+| private and basic-group count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go` |
+
+## translateText nil peer (ISSUE-S-TRANSLATE-NIL-001)
+
+`messages.translateText` with no `text` and no `peer` called `FromInputPeer2` on a nil `InputPeer`. That reads `PredicateName` and the RPC returned 500. A missing peer is now `400 PEER_ID_INVALID` before the peer is read. An empty id list is still `MESSAGE_IDS_EMPTY`.
+
+| Piece | File |
+| --- | --- |
+| guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
+
+## Basic-group self leave (ISSUE-S-BASIC-LEAVE-001)
+
+`messages.deleteChatUser` of self posts `messageActionChatDeleteUser` before it removes the member, so the leaver still receives the service message. When that send returned `CHAT_WRITE_FORBIDDEN` (the member's default rights ban sending), the handler returned the error and never removed the row. A self-leave now still calls `chat.deleteChatUser` after that specific error and returns the participant update. Kicking someone else is unchanged.
+
+| Piece | File |
+| --- | --- |
+| leave | `app/bff/chats/internal/core/messages.deleteChatUser_handler.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
@@ -726,11 +806,80 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## Contact birthdays and boost link
+
+`contacts.getBirthdays` called `user.getBirthdays`, which returned an empty vector. Birthdays already live on `users.birthday` (`YYYY-MM-DD`, written by `account.updateBirthday`). The list is now the caller's non-deleted contacts whose birthday string parses to a month and a day.
+
+`premium.getBoostsStatus` left `boost_url` empty, so the client copy action had nothing to copy. The link is `https://t.me/boost?c=<peer id>`, the form official clients use when the peer has no public username.
+
+| Piece | File |
+| --- | --- |
+| contact query | `app/service/biz/user/internal/dao/contact_birthdays.go` |
+| RPC | `app/service/biz/user/internal/core/user.getBirthdays_handler.go` |
+| boost link | `app/bff/payments/internal/book/peer.go`, `boosts.go` |
+
+## Per-member send_polls and invite_users (ISSUE-S-BAN-POLLS-001, BAN-INVITE-MEMBER-001)
+
+`channels.editBanned` stored `send_polls` and `invite_users`. A poll send still went through when `TELLOMI_POLLS` is off, because `inputMediaPoll` became `messageMediaUnsupported` before `ChatSendForbidden` classified it as a poll. `channels.inviteToChannel` checked the default ban and an admin's `invite_users` grant, and skipped that member's own `banned_rights`.
+
+`messages.sendMedia` now asks the channel layer about `send_polls` while the input is still a poll. `canInvite` applies the member ban the same way `canChangeInfo` already does. The creator and an admin who holds `invite_users` are unchanged. `TELLOMI_POLLS` stays off by default.
+
+| Piece | File |
+| --- | --- |
+| poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
+| invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Anonymous admins and channel deletion (ISSUE-S-ANON-ADMIN-001, CHANDEL-PUSH-001)
+
+A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to their user on every message. `shapeOutgoing` now stamps `from_id` as the supergroup, including service messages such as a pin. `appendMessage` applies the same stamp when a service message is stored without going through `shapeOutgoing`. The stored sender id is unchanged, so `out` is still true for the author and moderation still knows who sent it. Broadcast posts are unchanged. The creator's implicit full right set does not turn this on.
+
+`channels.searchPosts` used to replace a non-user `from_id` with `SenderID` and list that user. An anonymous post keeps the channel `from_id` and the real user is left out of `users`. `messages.search` with `from_id` set to that user does not return the post. A megagroup `MessageBox` whose stored `from_id` is already the channel is not rewritten to the sender.
+
+`channels.deleteChannel` marked the row deleted and returned `updateChannel` only to the caller. Members now get the same update with `channelForbidden`, excluding the requesting auth key. Each participant's dialog row is deleted through the new `DropDialog` hook, which calls `dialog.deleteDialog`.
+
+| Piece | File |
+| --- | --- |
+| anonymous from_id | `app/service/biz/channel/service_ops.go` |
+| search | `app/service/biz/channel/post_search.go`, `service_features.go` `SearchInChannel` |
+| box from_id | `proto/mtproto/message_box_helper.go` |
+| delete fanout | `app/service/biz/channel/service.go` |
+| dialog hook | `app/bff/channels/internal/svc/service_context.go` |
+
+## Channel admin rights (ISSUE-S-UNAME-ADMIN-001, DISCUSSION-ADMIN-001, ADMIN-HIDE-MEMBERS-001, ADMIN-DIRECT-001, CHAN-SUBLIST-001)
+
+`channels.updateUsername` treated `change_info` as enough to publish a username. `channelFull.can_set_username` was already creator-only, and that is the gate clients show. The RPC now matches it.
+
+`channels.setDiscussionGroup` allowed only the broadcast creator, and `manage_linked_peers` (flag 19) was dropped when admin rights were stored. The bit is kept. The creator, or an admin who holds `manage_linked_peers`, may link or unlink on both the channel and the supergroup. `change_info` is not required.
+
+`channels.toggleParticipantsHidden` was creator-only. Hiding the member list uses `ban_users`, the same right the official client sends. The creator also qualifies.
+
+`channels.updatePaidMessagesPrice` used the `change_info` gate. On a broadcast, `manage_direct_messages` can turn direct messages on. A megagroup still needs `change_info`.
+
+`channels.getParticipants` returned the full subscriber list to any broadcast member. Broadcast lists are admin-only (`CHAT_ADMIN_REQUIRED`). `channelFull.can_view_participants` follows that. Megagroups still list members unless `participants_hidden` is set.
+
+| Piece | File |
+| --- | --- |
+| username, subscriber list | `app/service/biz/channel/service.go` |
+| discussion link, hide members | `app/service/biz/channel/service_features.go` |
+| direct messages | `app/service/biz/channel/p1.go`, `service_ops.go` |
+| `can_view_participants` | `app/service/biz/channel/convert.go` |
+| `manage_linked_peers` bit | `proto/mtproto/chat_admin_rights.go` |
+
+## Mentions and media unread (ISSUE-S-MENTION-MEGAGROUP-001, CHAN-MEDIA-UNREAD-001)
+
+A supergroup stores one message row. `mentioned` and `media_unread` are per viewer, so they are set when the message is shown. A mention entity or a reply to the viewer sets `mentioned`. Voice, round video, and ttl media set `media_unread` until `channels.readMessageContents`, which also pushes `updateChannelReadMessagesContents`. `dialogs.unread_mentions_count` counts those mentions above the viewer's read cursor.
+
+| Piece | File |
+| --- | --- |
+| viewer flags | `app/service/biz/channel/convert.go` |
+| history and push | `service_ops.go`, `read_views.go` |
+| read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
+
 ## Member list filters and invite-importer search (ISSUE-S-PART-CONTACTS-001, ISSUE-S-PART-BANNED-ACL-001, ISSUE-S-PART-FILTER-Q-001, ISSUE-S-HIDDENMEMBERS-ADMINS-001, ISSUE-S-JOINREQ-SEARCH-001, ISSUE-S-INVITE-IMPORTERS-USERS-001)
 
 `channels.getParticipants` treated contacts, mentions, and recent as the same member list, and compared `q` to the decimal user id. Banned and kicked lists had no admin check. `participants_hidden` also hid `channelParticipantsAdmins`, and `can_view_participants` stayed true.
 
-Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`). `channelParticipantsBanned` and `channelParticipantsKicked` require the creator or `ban_users`. Hidden members still return the admin list, and `can_view_participants` is false for everyone else.
+Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`). `channelParticipantsContacts` is that address book. The viewer is left out even when `ToSelfUser` marks them `contact` and `mutual_contact`. A `q` on that filter matches first name, last name, and username inside the contact set. `channelParticipantsBanned` and `channelParticipantsKicked` require the creator or `ban_users`. Hidden members still return the admin list, and `can_view_participants` is false for everyone else. A broadcast subscriber list stays admin-only.
 
 `messages.getChatInviteImporters` loaded importer users without the viewer, so `GetUserListByIdList` returned an empty vector and a name query matched nothing. The viewer is now included in the load (`To` and `Id`). A query is not combined with a link (`SEARCH_WITH_LINK_NOT_SUPPORTED`, unchanged). Basic groups return the full importer list when `q` is set, and the BFF filters that list by name.
 

@@ -195,9 +195,11 @@ func TestUsernamesPreviewsAndMiniApp(t *testing.T) {
 	if _, err := InvokeWebViewCustomMethod(ctx, 3, in, "", &mtproto.DataJSON{Data: `{}`}); codeOf(err) != "METHOD_INVALID" {
 		t.Fatal(codeOf(err))
 	}
-	raw, err := InvokeWebViewCustomMethod(ctx, 3, in, "ping", mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: `{"n":1}`}).To_DataJSON())
-	if err != nil || raw.GetData() != `{"ok":true}` {
-		t.Fatalf("custom %v %v", raw, err)
+	if _, err := InvokeWebViewCustomMethod(ctx, 3, in, "ping", mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: `{"n":1}`}).To_DataJSON()); codeOf(err) != "METHOD_INVALID" {
+		t.Fatalf("custom %v", err)
+	}
+	if _, err := InvokeWebViewCustomMethod(ctx, 3, in, "ping", mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: `not-json`}).To_DataJSON()); codeOf(err) != "DATA_JSON_INVALID" {
+		t.Fatalf("json %v", err)
 	}
 
 	req, err := RequestWebViewButton(ctx, bot.GetId(), asUser(3, 1), mtproto.MakeTLKeyboardButton(&mtproto.KeyboardButton{Text: "Open"}).To_KeyboardButton())

@@ -103,7 +103,17 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 				Date2:           &wrapperspb.Int64Value{Value: date},
 			})
 		},
-		Incoming:  channelIncoming(users, dialogs, syncer, channelPts(c)),
+		Incoming: channelIncoming(users, dialogs, syncer, channelPts(c)),
+		DropDialog: func(ctx context.Context, userID, channelID int64) {
+			if dialogs == nil || userID == 0 || channelID == 0 {
+				return
+			}
+			_, _ = dialogs.DialogDeleteDialog(ctx, &dialog.TLDialogDeleteDialog{
+				UserId:   userID,
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerId:   channelID,
+			})
+		},
 		UserCards: participantCards(users),
 	})
 	return dialogs
