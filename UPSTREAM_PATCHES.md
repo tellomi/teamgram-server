@@ -2,6 +2,16 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
+
+`messages.search` with `inputMessagesFilterPhoneCalls` listed every stored call. The `missed` flag was not read, so the Missed tab showed answered and outgoing calls too.
+
+A missed query now keeps an incoming call whose discard reason is missed, busy, or absent. Outgoing calls and a connected hangup stay on the All tab. The query reads a wider page because the call table has no missed column, then trims back to `limit`.
+
+| Piece | File |
+| --- | --- |
+| filter | `app/bff/messages/internal/core/messages.search_handler.go` |
+
 ## Basic-group creator transfer
 
 `messages.editChatCreator` on a basic group only rejected an empty SRP proof. Any non-empty `A` transferred the creator. `channels.editCreator` already calls `password.CheckSensitive`. The basic-group path now uses that same gate: no cloud password is `PASSWORD_MISSING`, a wrong proof is `PASSWORD_HASH_INVALID`, and a password or session younger than 24 hours is `PASSWORD_TOO_FRESH_*` / `SESSION_TOO_FRESH_*`.
