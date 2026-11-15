@@ -771,6 +771,14 @@ The counter now sums the stored types. Voice and round video walk the shared aud
 | --- | --- |
 | guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
 
+## Basic-group self leave (ISSUE-S-BASIC-LEAVE-001)
+
+`messages.deleteChatUser` of self posts `messageActionChatDeleteUser` before it removes the member, so the leaver still receives the service message. When that send returned `CHAT_WRITE_FORBIDDEN` (the member's default rights ban sending), the handler returned the error and never removed the row. A self-leave now still calls `chat.deleteChatUser` after that specific error and returns the participant update. Kicking someone else is unchanged.
+
+| Piece | File |
+| --- | --- |
+| leave | `app/bff/chats/internal/core/messages.deleteChatUser_handler.go` |
+
 ## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
 
 `channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
