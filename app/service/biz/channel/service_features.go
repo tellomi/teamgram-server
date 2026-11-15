@@ -1011,9 +1011,6 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		if q.MaxDate > 0 && stored.Date > q.MaxDate {
 			continue
 		}
-		if q.FromUser != 0 && stored.SenderID != q.FromUser {
-			continue
-		}
 		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
 			continue
 		}
@@ -1023,6 +1020,16 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		body, err := unmarshalMessage(stored.Data)
 		if err != nil {
 			continue
+		}
+		if q.FromUser != 0 {
+			// Anonymous posts are addressed as the supergroup. A from_id
+			// filter is a user, so those posts must not match the author.
+			if body.GetFromId().GetChannelId() != 0 && !ch.Broadcast {
+				continue
+			}
+			if stored.SenderID != q.FromUser {
+				continue
+			}
 		}
 		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
 			continue

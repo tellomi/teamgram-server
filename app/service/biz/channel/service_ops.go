@@ -355,8 +355,14 @@ func (s *Service) appendMessage(ctx context.Context, channelID, sender, randomID
 	if msg.Date == 0 {
 		msg.Date = int32(time.Now().Unix())
 	}
-	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil && ch.TtlPeriod > 0 {
-		msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil {
+		if msg.GetPredicateName() == mtproto.Predicate_messageService && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(channelID)
+			msg.PostAuthor = nil
+		}
+		if ch.TtlPeriod > 0 {
+			msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+		}
 	}
 	msg.SanitizeEntities()
 	var stored *mtproto.Message
@@ -427,7 +433,10 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	msg.Out = false
 	if msg.PredicateName == mtproto.Predicate_messageService {
 		msg.Post = false
-		if stamp && msg.FromId == nil {
+		if stamp && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+			msg.PostAuthor = nil
+		} else if stamp && msg.FromId == nil {
 			msg.FromId = mtproto.MakePeerUser(sender)
 		}
 		return
@@ -457,8 +466,25 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	if stamp {
 		msg.FromId = mtproto.MakePeerUser(sender)
 		msg.PostAuthor = nil
+		if s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+		}
 	}
 	msg.Views = nil
+}
+
+// anonymousAdmin is an admin with admin_rights.anonymous in a supergroup.
+// Their messages are attributed to the group. The creator's full right set
+// does not imply this flag.
+func (s *Service) anonymousAdmin(ctx context.Context, ch *Channel, sender int64) bool {
+	if s == nil || ch == nil || ch.Broadcast || sender == 0 {
+		return false
+	}
+	p, err := s.store.GetParticipant(ctx, ch.ID, sender)
+	if err != nil || p == nil || !p.IsAdmin() || p.IsCreator() {
+		return false
+	}
+	return p.adminRights().CanAnonymous()
 }
 
 // Outgoing is one message a client is sending into a channel.

@@ -2,6 +2,17 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Profile name, avatar delete, and 320px photos
+
+`account.updateProfile` stored an empty or all-space first name, and a name longer than the 64-character column was dropped while the RPC still returned the old user. Empty and over-long names now return `FIRSTNAME_INVALID` / `LASTNAME_INVALID`. `photos.deletePhotos` of the current avatar deleted the album row and left `users.photo_id` pointing at it. Deleting the current avatar now points `photo_id` at the next non-fallback photo, or 0. A 320×320 profile JPEG was upscaled to the c size and then rejected because the encode was larger than the upload (`IMAGE_PROCESS_FAILED`). An upscale is allowed to be larger. `account.saveMusic unsave` compared the document id with the user id, so the row was never deleted.
+
+| Piece | File |
+| --- | --- |
+| name limits | `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go`, `profile_name.go` |
+| delete current avatar | `app/service/biz/user/internal/dao/user.go`, `user.deleteProfilePhotos_handler.go` |
+| 320 JPEG ladder | `app/service/dfs/internal/imaging/govips.go` |
+| unsave music | `app/service/biz/user/internal/core/user.saveMusic_handler.go` |
+
 ## Auth code cancel, cross-DC bytes, and login-token errors
 
 `auth.cancelCode` returned `boolTrue` without deleting the phone-code row, so the same test code still signed in. It now deletes the matching code. `auth.exportAuthorization` used to put the DC number in `bytes`, and `auth.importAuthorization` accepted any bytes and returned an empty user. The bytes are now a one-shot secret, and import binds that user or returns `AUTH_BYTES_INVALID`. `auth.importLoginToken` returned `AUTH_TOKEN_ALREADY_ACCEPTED` for a token this server does not know; an unknown token is `AUTH_TOKEN_INVALID`. `account.sendChangePhoneCode` treated a 99966 test number as an international SMS number and returned `PHONE_NUMBER_INVALID`. Those numbers now take the same fixed-code path as `auth.sendCode`.
@@ -745,6 +756,18 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## Contact birthdays and boost link
+
+`contacts.getBirthdays` called `user.getBirthdays`, which returned an empty vector. Birthdays already live on `users.birthday` (`YYYY-MM-DD`, written by `account.updateBirthday`). The list is now the caller's non-deleted contacts whose birthday string parses to a month and a day.
+
+`premium.getBoostsStatus` left `boost_url` empty, so the client copy action had nothing to copy. The link is `https://t.me/boost?c=<peer id>`, the form official clients use when the peer has no public username.
+
+| Piece | File |
+| --- | --- |
+| contact query | `app/service/biz/user/internal/dao/contact_birthdays.go` |
+| RPC | `app/service/biz/user/internal/core/user.getBirthdays_handler.go` |
+| boost link | `app/bff/payments/internal/book/peer.go`, `boosts.go` |
+
 ## Per-member send_polls and invite_users (ISSUE-S-BAN-POLLS-001, BAN-INVITE-MEMBER-001)
 
 `channels.editBanned` stored `send_polls` and `invite_users`. A poll send still went through when `TELLOMI_POLLS` is off, because `inputMediaPoll` became `messageMediaUnsupported` before `ChatSendForbidden` classified it as a poll. `channels.inviteToChannel` checked the default ban and an admin's `invite_users` grant, and skipped that member's own `banned_rights`.
@@ -755,6 +778,22 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
 | invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Anonymous admins and channel deletion (ISSUE-S-ANON-ADMIN-001, CHANDEL-PUSH-001)
+
+A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to their user on every message. `shapeOutgoing` now stamps `from_id` as the supergroup, including service messages such as a pin. `appendMessage` applies the same stamp when a service message is stored without going through `shapeOutgoing`. The stored sender id is unchanged, so `out` is still true for the author and moderation still knows who sent it. Broadcast posts are unchanged. The creator's implicit full right set does not turn this on.
+
+`channels.searchPosts` used to replace a non-user `from_id` with `SenderID` and list that user. An anonymous post keeps the channel `from_id` and the real user is left out of `users`. `messages.search` with `from_id` set to that user does not return the post. A megagroup `MessageBox` whose stored `from_id` is already the channel is not rewritten to the sender.
+
+`channels.deleteChannel` marked the row deleted and returned `updateChannel` only to the caller. Members now get the same update with `channelForbidden`, excluding the requesting auth key. Each participant's dialog row is deleted through the new `DropDialog` hook, which calls `dialog.deleteDialog`.
+
+| Piece | File |
+| --- | --- |
+| anonymous from_id | `app/service/biz/channel/service_ops.go` |
+| search | `app/service/biz/channel/post_search.go`, `service_features.go` `SearchInChannel` |
+| box from_id | `proto/mtproto/message_box_helper.go` |
+| delete fanout | `app/service/biz/channel/service.go` |
+| dialog hook | `app/bff/channels/internal/svc/service_context.go` |
 
 ## Channel admin rights (ISSUE-S-UNAME-ADMIN-001, DISCUSSION-ADMIN-001, ADMIN-HIDE-MEMBERS-001, ADMIN-DIRECT-001, CHAN-SUBLIST-001)
 

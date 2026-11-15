@@ -60,6 +60,8 @@ type Hooks struct {
 	Push     func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates)
 	Dialog   func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64)
 	Incoming func(ctx context.Context, userID, channelID, sender int64, broadcast bool)
+	// DropDialog removes one member's dialog after the channel is deleted.
+	DropDialog func(ctx context.Context, userID, channelID int64)
 	// Online reports which of ids have a live session. Nil means this
 	// process has no presence service. Delete then pushes the affected set
 	// only when that set is at most unreadSyncCap.
@@ -807,10 +809,45 @@ func (s *Service) DeleteChannel(ctx context.Context, actor, actorAuth int64, in 
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
 		return nil, err
 	}
+	s.notifyDeleted(ctx, actor, actorAuth, ch)
 	return mtproto.MakeUpdatesByUpdatesChats(
 		[]*mtproto.Chat{forbiddenChat(ch)},
 		channelUpdate(ch.ID),
 	), nil
+}
+
+// notifyDeleted tells every participant the channel is gone. Open clients
+// receive updateChannel plus channelForbidden. Their dialog row is removed
+// so a later getDialogs does not bring the chat back. The requesting auth
+// key is skipped because that session already has the RPC result.
+func (s *Service) notifyDeleted(ctx context.Context, actor, actorAuth int64, ch *Channel) {
+	if ch == nil {
+		return
+	}
+	h := s.hooks()
+	parts, err := s.store.ListParticipants(ctx, ch.ID)
+	if err != nil {
+		return
+	}
+	for _, p := range parts {
+		if p == nil {
+			continue
+		}
+		if h.DropDialog != nil {
+			h.DropDialog(ctx, p.UserID, ch.ID)
+		}
+		if h.Push == nil || p.State != StateNormal {
+			continue
+		}
+		var excl []int64
+		if p.UserID == actor && actorAuth != 0 {
+			excl = []int64{actorAuth}
+		}
+		h.Push(ctx, p.UserID, excl, mtproto.MakeUpdatesByUpdatesChats(
+			[]*mtproto.Chat{forbiddenChat(ch)},
+			channelUpdate(ch.ID),
+		))
+	}
 }
 
 func (s *Service) ExportMessageLink(ctx context.Context, self int64, in *mtproto.InputChannel, msgID int32) (*mtproto.ExportedMessageLink, error) {
