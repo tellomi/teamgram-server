@@ -168,6 +168,9 @@ func (m AdminRights) CanManageCall() bool {
 	return int32(m)&ADMIN_MANAGE_CALL != 0
 }
 
+// CanOther reports the reserved admin bit. It is stored and shown to the
+// other admin. It does not grant change_info, ban_users, slow mode,
+// prehistory, default member rights, anti-spam, or history TTL.
 func (m AdminRights) CanOther() bool {
 	return int32(m)&ADMIN_OTHER != 0
 }

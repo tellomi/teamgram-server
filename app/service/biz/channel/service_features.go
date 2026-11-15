@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -121,6 +122,45 @@ func (s *Service) GetAdminLog(ctx context.Context, self int64, in *mtproto.Input
 	}).To_Channels_AdminLogResults(), nil
 }
 
+func banLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtproto.ChannelAdminLogEventAction) bool {
+	prevKick := participantIsKick(action.GetPrevParticipant())
+	nextKick := participantIsKick(action.GetNewParticipant())
+	prevBan := participantIsRestriction(action.GetPrevParticipant())
+	nextBan := participantIsRestriction(action.GetNewParticipant())
+	switch {
+	case !prevKick && nextKick:
+		return filter.Kick
+	case prevKick && !nextKick:
+		return filter.Unkick
+	case nextBan && !prevBan:
+		return filter.Ban
+	case prevBan && !nextBan:
+		return filter.Unban
+	default:
+		return filter.Ban || filter.Kick || filter.Unban || filter.Unkick
+	}
+}
+
+func participantIsKick(p *mtproto.ChannelParticipant) bool {
+	if p.GetPredicateName() != mtproto.Predicate_channelParticipantBanned {
+		return false
+	}
+	rights := p.GetBannedRights()
+	if !rights.GetViewMessages() {
+		return false
+	}
+	until := rights.GetUntilDate()
+	return until == 0 || until == math.MaxInt32
+}
+
+func participantIsRestriction(p *mtproto.ChannelParticipant) bool {
+	if p.GetPredicateName() != mtproto.Predicate_channelParticipantBanned || participantIsKick(p) {
+		return false
+	}
+	rights := p.GetBannedRights()
+	return rights != nil && !rights.NoBanRights()
+}
+
 func adminLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtproto.ChannelAdminLogEventAction) bool {
 	if filter == nil {
 		return true
@@ -134,12 +174,12 @@ func adminLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtprot
 	case mtproto.Predicate_channelAdminLogEventActionParticipantInvite:
 		return filter.Invite
 	case mtproto.Predicate_channelAdminLogEventActionParticipantToggleBan:
-		return filter.Ban || filter.Kick || filter.Unban || filter.Unkick
+		return banLogVisible(filter, action)
 	case mtproto.Predicate_channelAdminLogEventActionParticipantToggleAdmin:
 		return filter.Promote || filter.Demote
 	case mtproto.Predicate_channelAdminLogEventActionChangeTitle, mtproto.Predicate_channelAdminLogEventActionChangeAbout, mtproto.Predicate_channelAdminLogEventActionChangeUsername, mtproto.Predicate_channelAdminLogEventActionChangePhoto:
 		return filter.Info
-	case mtproto.Predicate_channelAdminLogEventActionToggleSlowMode, mtproto.Predicate_channelAdminLogEventActionTogglePreHistoryHidden, mtproto.Predicate_channelAdminLogEventActionChangeLocation:
+	case mtproto.Predicate_channelAdminLogEventActionToggleSlowMode, mtproto.Predicate_channelAdminLogEventActionTogglePreHistoryHidden, mtproto.Predicate_channelAdminLogEventActionChangeLocation, mtproto.Predicate_channelAdminLogEventActionDefaultBannedRights:
 		return filter.Settings
 	case mtproto.Predicate_channelAdminLogEventActionUpdatePinned:
 		return filter.Pinned
@@ -327,6 +367,9 @@ func (s *Service) TogglePreHistory(ctx context.Context, self, actorAuth int64, i
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
+	if enabled && f.LinkedChatID != 0 {
+		return nil, mtproto.ErrChatLinkExists
+	}
 	f.HiddenPrehistory = enabled
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
@@ -449,6 +492,11 @@ func (s *Service) ApproveJoin(ctx context.Context, self, actorAuth int64, in *mt
 	if approve {
 		_, err = s.Invite(ctx, self, actorAuth, in, []int64{userID}, nil)
 		return err
+	}
+	if h := s.hooks(); h.Push != nil {
+		h.Push(ctx, userID, nil, mtproto.MakeUpdatesByUpdates(
+			mtproto.MakeTLUpdateChannel(&mtproto.Update{ChannelId: ch.ID}).To_Update(),
+		))
 	}
 	return nil
 }
@@ -807,8 +855,15 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64,
 	if newID != 0 {
 		gf := s.features(ctx, newID)
 		gf.LinkedChatID = bCh.ID
+		wasHidden := gf.HiddenPrehistory
+		gf.HiddenPrehistory = false
 		if err := s.saveFeatures(ctx, newID, gf); err != nil {
 			return err
+		}
+		if wasHidden {
+			s.logAdmin(ctx, newID, self, mtproto.MakeTLChannelAdminLogEventActionTogglePreHistoryHidden(&mtproto.ChannelAdminLogEventAction{
+				NewValue_BOOL: mtproto.BoolFalse,
+			}).To_ChannelAdminLogEventAction())
 		}
 	}
 	f.LinkedChatID = newID

@@ -725,3 +725,22 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Admin log, discussion history, join decline, dice, and a second migrate (rows 163, 190, 197, 199, 204, 207, 245)
+
+`channels.inviteToChannel` now writes `channelAdminLogEventActionParticipantInvite`. Ban, unban, kick, and unkick filters read the previous and new participant instead of returning every toggle-ban row. `channelAdminLogEventActionDefaultBannedRights` is a settings event. Layer 232 has no admin-log constructor for hiding the member list, so that toggle is still not a typed log row.
+
+Linking a supergroup as a discussion group clears `hidden_prehistory`. Turning the hide-history switch back on while the group is linked returns `CHAT_LINK_EXISTS`.
+
+Declining a join request pushes `updateChannel` to the applicant. Approving still invites them.
+
+A second `messages.migrateChat` on a chat that already has `migrated_to` returns `CHAT_ID_INVALID`.
+
+Football `⚽` uses the same 1–5 range as basketball. The reserved admin bit `other` is documented as stored and visible, and it still does not grant the probed settings.
+
+| Piece | File |
+| --- | --- |
+| invite log, filters, discussion, decline | `app/service/biz/channel/service.go`, `service_features.go` |
+| second migrate | `app/bff/chats/internal/core/messages.migrateChat_handler.go` |
+| dice range | `proto/mtproto/dice_face.go`, messages and files media builders |
+| reserved other bit | `proto/mtproto/chat_admin_rights.go` |

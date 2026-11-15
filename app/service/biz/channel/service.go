@@ -341,6 +341,9 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 			return nil, err
 		}
 		added = append(added, id)
+		s.logAdmin(ctx, ch.ID, actor, mtproto.MakeTLChannelAdminLogEventActionParticipantInvite(&mtproto.ChannelAdminLogEventAction{
+			Participant_CHANNELPARTICIPANT: participantTL(actor, np),
+		}).To_ChannelAdminLogEventAction())
 		// Joining sees history up to now. Keep any outbox cursor already
 		// earned; do not pretend the current top was read by someone else.
 		st, _ := s.store.GetRead(ctx, ch.ID, id)

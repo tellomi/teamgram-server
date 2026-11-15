@@ -23,14 +23,7 @@ func (c *ChatsCore) MessagesMigrateChat(in *mtproto.TLMessagesMigrateChat) (*mtp
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	if migrated := chat.MigratedTo(); migrated != nil && migrated.GetChannelId() != 0 {
-		chats, err := channel.Shared().GetChannels(c.ctx, c.MD.UserId, []*mtproto.InputChannel{migrated})
-		if err != nil {
-			return nil, err
-		}
-		return mtproto.MakeUpdatesByUpdatesChats(
-			chats.Chats,
-			mtproto.MakeTLUpdateChannel(&mtproto.Update{ChannelId: migrated.GetChannelId()}).To_Update(),
-		), nil
+		return nil, mtproto.ErrChatIdInvalid
 	}
 
 	var members []channel.LegacyMember

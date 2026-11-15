@@ -19,8 +19,6 @@
 package core
 
 import (
-	"math/rand"
-
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/location"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
@@ -243,27 +241,10 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 	case mtproto.Predicate_inputMediaDice:
 		// inputMediaDice#e66fbf7b emoticon:string = InputMedia;
 
-		if media.Emoticon == "🎲" {
-			messageMedia = mtproto.MakeTLMessageMediaDice(&mtproto.MessageMedia{
-				Value:    rand.Int31()%6 + 1,
-				Emoticon: media.Emoticon,
-			}).To_MessageMedia()
-		} else if media.Emoticon == "🎯" {
-			messageMedia = mtproto.MakeTLMessageMediaDice(&mtproto.MessageMedia{
-				Value:    rand.Int31()%6 + 1,
-				Emoticon: media.Emoticon,
-			}).To_MessageMedia()
-		} else if media.Emoticon == "🏀" {
-			messageMedia = mtproto.MakeTLMessageMediaDice(&mtproto.MessageMedia{
-				Value:    rand.Int31()%5 + 1,
-				Emoticon: media.Emoticon,
-			}).To_MessageMedia()
-		} else {
-			messageMedia = mtproto.MakeTLMessageMediaDice(&mtproto.MessageMedia{
-				Value:    rand.Int31()%6 + 1,
-				Emoticon: media.Emoticon,
-			}).To_MessageMedia()
-		}
+		messageMedia = mtproto.MakeTLMessageMediaDice(&mtproto.MessageMedia{
+			Value:    mtproto.DiceFace(media.Emoticon),
+			Emoticon: media.Emoticon,
+		}).To_MessageMedia()
 
 	default:
 		err = mtproto.ErrMediaInvalid
