@@ -104,17 +104,24 @@ func TestNativeProtocolGaps(t *testing.T) {
 
 func historyHasAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name string) bool {
 	t.Helper()
-	ctx, cancel := contextTimeout(20 * time.Second)
+	// The sender's copy is written by the inbox consumer after sendMessage
+	// returns. One getHistory can run before that row exists.
+	ctx, cancel := contextTimeout(8 * time.Second)
 	defer cancel()
-	page := historyPage(t, c, ctx, &mtproto.TLMessagesGetHistory{
-		Constructor: mtproto.CRC32_messages_getHistory,
-		Peer:        peer,
-		Limit:       20,
-	})
-	for _, m := range page {
-		if m.GetAction().GetPredicateName() == name {
-			return true
+	var found bool
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		page := historyPage(t, c, ctx, &mtproto.TLMessagesGetHistory{
+			Constructor: mtproto.CRC32_messages_getHistory,
+			Peer:        peer,
+			Limit:       20,
+		})
+		for _, m := range page {
+			if m.GetAction().GetPredicateName() == name {
+				found = true
+				return true, nil
+			}
 		}
-	}
-	return false
+		return false, nil
+	})
+	return err == nil && found
 }
