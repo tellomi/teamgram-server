@@ -56,6 +56,7 @@ func TestHideReadMarksBlocksOutboxReadDate(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Read receipts can land after ReadHistory returns.
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
 		_, err := outboxReadDate(ctx, a, peerForA, aliceID)
 		if err == nil {
