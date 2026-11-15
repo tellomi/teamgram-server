@@ -878,6 +878,22 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## Background emojis, restricted statuses, ringtones, passkey rpId
+
+Rows 290, 272, and 343.
+
+`account.getDefaultBackgroundEmojis` returned an empty list with hash 1. `account.getChannelRestrictedStatusEmojis` returned the empty accountassets list. Both now use the built-in Noto catalog: background matches the profile-photo list, restricted statuses match the group-photo list.
+
+`account.uploadRingtone` rejected `audio/wav`. Those types are accepted and converted to `audio/mpeg` on save, same as ogg. A document uploaded as a message was unknown to the ringtone store, so `account.saveRingtone` returned `RINGTONE_INVALID`. When the local tone record is missing, the media service document is adopted if the id, access hash, and mime match.
+
+Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_PASSKEY_RPID` when set, otherwise `www.tellomi.cn`. Persistence and `auth.finishPasskeyLogin` are in the passkey login section below. No production env file and no port was changed.
+
+| Piece | File |
+| --- | --- |
+| emoji lists | `app/bff/stickers/catalog/groups.go`, `app/bff/premium/internal/core/account_features.go`, `app/bff/premium/internal/server/grpc/service/features.go` |
+| wav and adopted documents | `app/bff/accountassets/doc.go`, `app/bff/accountassets/ringtone.go`, `app/bff/messages/p1.go`, `app/bff/messages/internal/server/grpc/service/account_assets.go` |
+| rpId | `app/bff/accountrest/passkey.go` |
+
 ## Contact birthdays and boost link
 
 `contacts.getBirthdays` called `user.getBirthdays`, which returned an empty vector. Birthdays already live on `users.birthday` (`YYYY-MM-DD`, written by `account.updateBirthday`). The list is now the caller's non-deleted contacts whose birthday string parses to a month and a day.
@@ -1129,3 +1145,22 @@ A successful write that changes the stored id order now uses the same `pushNotMe
 | push after the write | `app/bff/stickers/internal/server/grpc/service/handlers.go`, `handlers_p2.go` |
 | changed or not | `app/bff/stickers/catalog/manage.go` `SaveGif`, `service.go` `SaveRecent`, `ClearRecent`, `Fave` |
 | update constructors | `app/bff/stickers/catalog/push.go` |
+
+## Passkey login (ISSUE-S-PASSKEY-RPID-001)
+
+`account.registerPasskey` kept the credential in process memory and did not store a public key. `auth.finishPasskeyLogin` then returned `CREDENTIAL_INVALID` for every saved id, so a client passkey UI could not log in, and a restart dropped the credential.
+
+Registration now verifies the WebAuthn attestation with `github.com/go-webauthn/webauthn` and inserts `user_passkeys` (`credential_id`, public key, sign count, user handle `dc:userId`). `auth.finishPasskeyLogin` checks the stored challenge, rpId/origin, signature, and sign count. A higher count is saved. A repeated count is `CREDENTIAL_INVALID`. An unknown id is `PASSKEY_CREDENTIAL_NOT_FOUND`. A foreign origin is `PASSKEY_ORIGIN_MISMATCH`. Success binds the permanent auth key, sends the sign-in service notification, cancels a pending deletion, pushes the 777000 login notice, and returns `auth.authorization`. A cloud password returns `SESSION_PASSWORD_NEEDED` after the bind, and `auth.checkPassword` finishes that login. The user handle DC is `TELLOMI_DC_ID`, or 1.
+
+The ceremony row stores the permanent auth key that called init. Register and finish reject any other key and do not consume that challenge. Android origins are limited to `TELLOMI_PASSKEY_ANDROID_HASHES`; a client hash is not added to the relying-party origin list. `userVerification` is `required`, so an assertion without the UV flag is `CREDENTIAL_INVALID`. `account.initPasskeyRegistration`, `account.registerPasskey`, `account.getPasskeys`, and `account.deletePasskey` are not in the logged-out allow list, so they run only in `AuthStateNormal`. An existing `raw_id` is rejected instead of replacing the public key. The login sanction uses kind `phone` or `email`, the same keys as `auth.signIn`.
+
+| Piece | File |
+| --- | --- |
+| store and WebAuthn | `app/bff/passkey/persist` |
+| login bind and notice | `app/bff/passkey/login` |
+| facade | `app/bff/accountrest/passkey.go` |
+| RPC | `app/bff/passkey/internal/core/auth.finishPasskeyLogin_handler.go` |
+| session state | `app/interface/session/internal/sess/session_invoke.go` |
+| logged-in gate | `app/interface/session/internal/sess/check_api_request_type.go` |
+| wiring | `app/bff/bff/internal/server/server.go` |
+| table | `teamgramd/deploy/sql/migrate-20261115-passkeys.sql` |

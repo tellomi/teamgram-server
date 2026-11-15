@@ -60,6 +60,7 @@ import (
 	notification_helper "github.com/teamgram/teamgram-server/app/bff/notification"
 	nsfw_helper "github.com/teamgram/teamgram-server/app/bff/nsfw"
 	passkeyhelper "github.com/teamgram/teamgram-server/app/bff/passkey"
+	passkeylogin "github.com/teamgram/teamgram-server/app/bff/passkey/login"
 	passport_helper "github.com/teamgram/teamgram-server/app/bff/passport"
 	payments_helper "github.com/teamgram/teamgram-server/app/bff/payments"
 	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
@@ -130,6 +131,15 @@ func (s *Server) Initialize() error {
 	// overrides it. A missing value logs once inside Configure.
 	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
+	if err := passkeylogin.Configure(passkeylogin.Clients{
+		DSN:     c.ChannelMySQL,
+		User:    c.BizServiceClient,
+		Session: c.AuthSessionClient,
+		Msg:     c.MsgClient,
+		Sync:    c.SyncClient,
+	}); err != nil {
+		return err
+	}
 	if err := accountprefs.UseDSN(c.ChannelMySQL); err != nil {
 		logx.Errorf("accountprefs mysql: %v", err)
 	}
