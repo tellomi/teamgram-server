@@ -195,7 +195,12 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	//	return hasBot
 	//})
 	if in.GetQuickReplyShortcut() != nil {
-		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+		ups, err := chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+		if err != nil {
+			return nil, err
+		}
+		c.pushQuickReplyNotMe(ups)
+		return ups, nil
 	}
 	if err = stampScheduleRepeat(outMessage, in.GetScheduleRepeatPeriod(), in.GetScheduleDate().GetValue()); err != nil {
 		return nil, err

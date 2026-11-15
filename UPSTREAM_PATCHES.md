@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Quick reply multi-session sync (ISSUE-S-QUICKREPLY-SYNC-001)
+
+Creating, appending, renaming, reordering, and deleting a quick reply only returned the result to the calling RPC. Another session of the same account saw the change only after `messages.getQuickReplies`.
+
+Those changes now go out through `sync.updatesNotMe`, which skips the current auth key, the same path as `account.updateNotifySettings`. A new or appended shortcut message pushes `updateNewQuickReply` and `updateQuickReplyMessage`. A rename or a reorder pushes `updateQuickReplies`. Deleting messages pushes the same updates box the caller receives (`updateDeleteQuickReplyMessages` and the refreshed `updateNewQuickReply`). Deleting a shortcut pushes `updateDeleteQuickReply`. The five constructors have no pts; sync marks them for delivery so a background session is woken too. A push error does not fail the RPC, because the shortcut is already stored.
+
+| Piece | File |
+| --- | --- |
+| capture on send | `app/bff/messages/internal/core/messages.sendMessage_handler.go`, `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `quick_reply_sync.go` |
+| rename, reorder, delete | `app/bff/messages/internal/server/grpc/service/inbox.go` |
+| sync client | `app/bff/messages/p1.go` |
+| deliver the constructors | `app/messenger/sync/internal/core/core.go` |
+
 ## Forum topic drafts (ISSUE-S-TOPIC-DRAFT-001)
 
 `messages.saveDraft` stored one draft per (user, peer) on `dialogs.draft_message_data` and ignored `reply_to.top_msg_id`. A forum topic draft replaced the megagroup draft, `updateDraftMessage` had no `top_msg_id`, and `forumTopic.draft` stayed empty.
@@ -1002,6 +1015,57 @@ Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`
 | profile hook | `app/bff/channels/internal/svc/service_context.go` |
 | importer users and `q` | `app/bff/chatinvites/internal/core/channel_invite.go`, `messages.getChatInviteImporters_handler.go` |
 | basic-group full list for `q` | `app/service/biz/chat/internal/core/chat.getChatInviteImporters_handler.go` |
+
+## Basic group auto-delete timer (rows 200, 201)
+
+`messages.setHistoryTTL` on a basic group wrote only the caller's `dialogs.ttl_period`. `messages.getFullChat` reads `chats.ttl_period`, so the field stayed empty, and any member could set the timer.
+
+The RPC now calls `chat.setHistoryTTL` first. That writes `chats.ttl_period` and allows only the creator and admins (`CanChangeInfo`). A normal member gets `CHAT_ADMIN_REQUIRED` and no service message. The dialog row and `messageActionSetMessagesTTL` are unchanged after the chat row is accepted.
+
+| Piece | File |
+| --- | --- |
+| permission and chat column | `app/service/biz/chat/internal/core/chat.setHistoryTTL_handler.go` |
+| RPC order | `app/bff/dialogs/internal/core/messages.setHistoryTTL_handler.go` |
+
+## Megagroup send_reactions ban (ISSUE-S-BAN-REACT-001, 行 112)
+
+`messages.sendReaction` on a channel or megagroup ignored `send_reactions` in both `default_banned_rights` and a member's `banned_rights`. A banned member could still add an emoji. The check uses the same until-date rule as other send bans (`until_date` 0 does not expire). The creator and admins are not restricted. Removing a reaction (an empty emoji list) is still allowed. The error is `403 CHAT_SEND_REACTIONS_FORBIDDEN`.
+
+| Piece | File |
+| --- | --- |
+| ban check | `proto/mtproto/chat_send_right.go`, `app/service/biz/channel/service_features.go` `React` |
+
+## Who may speak (ISSUE-S-JOINTOSEND-001, ISSUE-S-GCALL-SELFUNMUTE-001, ISSUE-S-GROUPCALL-ADMIN-UNMUTE-001, ISSUE-S-GROUPCALL-LOCAL-MUTE-001)
+
+`channels.toggleJoinToSend` stored the bit and returned updates, but `channel.join_to_send` was never copied onto the chat object, and a guest could still comment. The flag is now set on `channel`, including the discussion chat shown to a non-member. A non-member comment while the flag is on returns `403 CHAT_GUEST_SEND_FORBIDDEN`.
+
+New group calls were created with `join_muted` true, so every non-admin joined muted and could not unmute. Basic groups and megagroups now start with `join_muted` off. Broadcast channels and `rtmp_stream` stay `join_muted`. A listener invite still joins muted without `can_self_unmute`. An admin turning `muted` off for someone else sets `can_self_unmute` and clears the raised hand, and leaves their microphone muted until they unmute. A member setting volume or `muted` on someone else is stored only for that listener (`muted_by_you`, volume), not as a server mute and not `volume_by_admin`.
+
+| Piece | File |
+| --- | --- |
+| join_to_send | `convert.go`, `comments.go` `mayComment` |
+| call default and local mute | `app/bff/phone/internal/engine/group.go`, `groups.go` `PhoneCreateGroupCall`, `service_ops.go` `CallStartsMuted` |
+
+## Saved Messages drafts (ISSUE-S-DRAFT-GETALL-MULTI-001)
+
+`messages.saveDraft` of `inputPeerSelf` kept `peer_type = PEER_SELF`. The Saved Messages dialog row is `PEER_USER` with `peer_id` equal to the owner, so the UPDATE matched nothing and `messages.getAllDrafts` (`draft_type > 0`) never saw that draft. A draft for a peer that has no dialog row had the same hole.
+
+Save now rewrites self to `PEER_USER` + self, in the BFF (so the pushed `updateDraftMessage` uses the same peer) and again in `dialog.saveDraftMessage`. When the UPDATE changes zero rows, a dialog is inserted with `InsertIgnore` and the draft is written onto it, which sets `draft_type = 2`.
+
+| Piece | File |
+| --- | --- |
+| peer rewrite | `app/bff/drafts/internal/core/draft_peer.go`, `messages.saveDraft_handler.go` |
+| insert when missing | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go` |
+
+## Saved GIFs keep the defaults (行 146, ISSUE-S-GIF-DEFAULT-001)
+
+`messages.getSavedGifs` returned the built-in list only while the user had saved nothing. The first `messages.saveGif` replaced that list, so the panel dropped to one GIF. Unsving it brought the defaults back.
+
+Saved rows are now listed first, and any built-in GIF the user has not saved is appended. The hash covers both. An empty saved list is still the built-in list.
+
+| Piece | File |
+| --- | --- |
+| list | `app/bff/stickers/catalog/manage.go` |
 
 ## Media caption length (ISSUE-S-MSG-LENGTH-001)
 

@@ -237,7 +237,12 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 	}
 
 	if in.GetQuickReplyShortcut() != nil {
-		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+		ups, err := chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+		if err != nil {
+			return nil, err
+		}
+		c.pushQuickReplyNotMe(ups)
+		return ups, nil
 	}
 
 	rUpdate, err := c.dispatchOutbox(peer, outboxMultiMedia)

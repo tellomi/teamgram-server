@@ -214,8 +214,9 @@ func TestManageStickersAndGifs(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved := gs.SavedGifs(user, 0)
-	if len(saved.GetGifs()) != 1 || saved.GetGifs()[0].GetId() != gif.DocumentID {
-		t.Fatalf("gifs %#v", saved.GetGifs())
+	bundled := len(BundledGifs(0).GetGifs())
+	if len(saved.GetGifs()) != bundled+1 || saved.GetGifs()[0].GetId() != gif.DocumentID {
+		t.Fatalf("gifs %d, want saved plus %d defaults", len(saved.GetGifs()), bundled)
 	}
 	if again := gs.SavedGifs(user, saved.GetHash()); again.GetPredicateName() != mtproto.Predicate_messages_savedGifsNotModified {
 		t.Fatalf("gif hash %s", again.GetPredicateName())
