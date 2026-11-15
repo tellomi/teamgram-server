@@ -1,15 +1,10 @@
 package accountassets
 
 import (
-	"context"
 	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 )
-
-// LoadRingtoneDoc reads a document that was uploaded as a message.
-// Nil means only account.uploadRingtone documents can be saved.
-var LoadRingtoneDoc func(ctx context.Context, self int64, in *mtproto.InputDocument) (*mtproto.Document, error)
 
 // GetSavedRingtones implements account.getSavedRingtones.
 // https://core.telegram.org/method/account.getSavedRingtones
@@ -95,31 +90,16 @@ func (s *store) uploadTone(self int64, in *mtproto.TLAccountUploadRingtone) (*mt
 // returned as account.savedRingtoneConverted with an audio/mpeg document.
 // https://core.telegram.org/method/account.saveRingtone
 func SaveRingtone(self int64, in *mtproto.TLAccountSaveRingtone) (*mtproto.Account_SavedRingtone, error) {
-	return SaveRingtoneContext(context.Background(), self, in)
+	return shared().saveTone(self, in)
 }
 
-// SaveRingtoneContext is account.saveRingtone with the request context so a
-// message document can be loaded from the media service.
-func SaveRingtoneContext(ctx context.Context, self int64, in *mtproto.TLAccountSaveRingtone) (*mtproto.Account_SavedRingtone, error) {
-	return shared().saveTone(ctx, self, in)
-}
-
-func (s *store) saveTone(ctx context.Context, self int64, in *mtproto.TLAccountSaveRingtone) (*mtproto.Account_SavedRingtone, error) {
+func (s *store) saveTone(self int64, in *mtproto.TLAccountSaveRingtone) (*mtproto.Account_SavedRingtone, error) {
 	if in == nil {
 		return nil, mtproto.ErrRingtoneInvalid
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rec, err := s.docFor(self, in.GetId(), "tone")
-	if err != nil && LoadRingtoneDoc != nil && in.GetId() != nil {
-		s.mu.Unlock()
-		loaded, loadErr := LoadRingtoneDoc(ctx, self, in.GetId())
-		s.mu.Lock()
-		if loadErr != nil || loaded == nil || loaded.GetId() != in.GetId().GetId() || loaded.GetAccessHash() != in.GetId().GetAccessHash() {
-			return nil, mtproto.ErrRingtoneInvalid
-		}
-		rec, err = s.adoptTone(self, loaded)
-	}
 	if err != nil {
 		return nil, mtproto.ErrRingtoneInvalid
 	}
@@ -147,30 +127,6 @@ func (s *store) saveTone(ctx context.Context, self int64, in *mtproto.TLAccountS
 	}
 	u.savedTones[target.doc.GetId()] = struct{}{}
 	return mtproto.MakeTLAccountSavedRingtone(&mtproto.Account_SavedRingtone{}).To_Account_SavedRingtone(), nil
-}
-
-func (s *store) adoptTone(self int64, doc *mtproto.Document) (*docRec, error) {
-	mime := strings.ToLower(strings.TrimSpace(doc.GetMimeType()))
-	if !ringtoneMIME[mime] {
-		return nil, mtproto.ErrRingtoneMimeInvalid
-	}
-	if rec := s.docs[doc.GetId()]; rec != nil {
-		if rec.owner != self || rec.kind != "tone" || rec.doc.GetAccessHash() != doc.GetAccessHash() {
-			return nil, mtproto.ErrRingtoneInvalid
-		}
-		return rec, nil
-	}
-	name := "ringtone"
-	for _, attr := range doc.GetAttributes() {
-		if attr.GetFileName() != "" {
-			name = attr.GetFileName()
-			break
-		}
-	}
-	copied := cloneDoc(doc)
-	rec := &docRec{doc: copied, owner: self, kind: "tone", mime: mime, name: name, mp3: mp3MIME(mime)}
-	s.docs[doc.GetId()] = rec
-	return rec, nil
 }
 
 func extOf(name string) string {

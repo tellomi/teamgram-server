@@ -8,7 +8,6 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/accountassets"
 	"github.com/teamgram/teamgram-server/app/bff/botadmin"
 	"github.com/teamgram/teamgram-server/app/bff/premium/internal/core"
-	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 )
 
 func (s *Service) AccountUpdateEmojiStatus(ctx context.Context, request *mtproto.TLAccountUpdateEmojiStatus) (*mtproto.Bool, error) {
@@ -48,7 +47,7 @@ func (s *Service) AccountGetDefaultBackgroundEmojis(ctx context.Context, request
 }
 
 func (s *Service) AccountGetChannelRestrictedStatusEmojis(_ context.Context, request *mtproto.TLAccountGetChannelRestrictedStatusEmojis) (*mtproto.EmojiList, error) {
-	return catalog.Must().RestrictedStatusEmojis(request.GetHash()), nil
+	return accountassets.EmojiList(request.GetHash()), nil
 }
 
 func (s *Service) AccountGetCollectibleEmojiStatuses(_ context.Context, request *mtproto.TLAccountGetCollectibleEmojiStatuses) (*mtproto.Account_EmojiStatuses, error) {

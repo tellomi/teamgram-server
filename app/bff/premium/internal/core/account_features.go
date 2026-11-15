@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -148,7 +147,17 @@ func (c *PremiumCore) HelpGetPeerProfileColors(in *mtproto.TLHelpGetPeerProfileC
 }
 
 func (c *PremiumCore) AccountGetDefaultBackgroundEmojis(in *mtproto.TLAccountGetDefaultBackgroundEmojis) (*mtproto.EmojiList, error) {
-	return catalog.Must().BackgroundEmojis(in.GetHash()), nil
+	return emptyEmojiList(in.GetHash()), nil
+}
+
+func emptyEmojiList(hash int64) *mtproto.EmojiList {
+	if hash == premium.EmojiStatusListHash {
+		return mtproto.MakeTLEmojiListNotModified(&mtproto.EmojiList{}).To_EmojiList()
+	}
+	return mtproto.MakeTLEmojiList(&mtproto.EmojiList{
+		Hash:       premium.EmojiStatusListHash,
+		DocumentId: []int64{},
+	}).To_EmojiList()
 }
 
 // MessagesTranscribeAudio recognizes a voice note or video note.

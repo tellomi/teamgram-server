@@ -98,7 +98,7 @@ func (RingtoneService) AccountGetSavedRingtones(ctx context.Context, in *mtproto
 
 func (RingtoneService) AccountSaveRingtone(ctx context.Context, in *mtproto.TLAccountSaveRingtone) (*mtproto.Account_SavedRingtone, error) {
 	self, _ := selfID(ctx)
-	return accountassets.SaveRingtoneContext(ctx, self, in)
+	return accountassets.SaveRingtone(self, in)
 }
 
 func (RingtoneService) AccountUploadRingtone(ctx context.Context, in *mtproto.TLAccountUploadRingtone) (*mtproto.Document, error) {

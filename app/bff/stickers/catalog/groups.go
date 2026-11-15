@@ -97,18 +97,6 @@ func (s *Service) PhotoEmojis(group bool, hash int64) *mtproto.EmojiList {
 	}).To_EmojiList()
 }
 
-// BackgroundEmojis implements account.getDefaultBackgroundEmojis from the
-// same Noto documents as the profile-photo list.
-func (s *Service) BackgroundEmojis(hash int64) *mtproto.EmojiList {
-	return s.PhotoEmojis(false, hash)
-}
-
-// RestrictedStatusEmojis implements account.getChannelRestrictedStatusEmojis
-// from the same Noto documents as the group-photo list.
-func (s *Service) RestrictedStatusEmojis(hash int64) *mtproto.EmojiList {
-	return s.PhotoEmojis(true, hash)
-}
-
 func (s *Service) emojiGroupsLocked(kind string) []*mtproto.EmojiGroup {
 	cats := emojiCategories
 	if kind == GroupProfile {

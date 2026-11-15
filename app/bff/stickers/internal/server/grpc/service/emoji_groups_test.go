@@ -64,14 +64,6 @@ func TestDefaultPhotoEmojis(t *testing.T) {
 	if err != nil || len(group.GetDocumentId()) < 8 || group.GetHash() == profile.GetHash() {
 		t.Fatalf("group: %v len %d hash %d", err, len(group.GetDocumentId()), group.GetHash())
 	}
-	bg := catalog.Must().BackgroundEmojis(0)
-	restricted := catalog.Must().RestrictedStatusEmojis(0)
-	if bg.GetPredicateName() != mtproto.Predicate_emojiList || len(bg.GetDocumentId()) < 8 {
-		t.Fatalf("background %s len %d", bg.GetPredicateName(), len(bg.GetDocumentId()))
-	}
-	if len(restricted.GetDocumentId()) < 8 || restricted.GetHash() == bg.GetHash() {
-		t.Fatalf("restricted len %d hash %d", len(restricted.GetDocumentId()), restricted.GetHash())
-	}
 	docs := catalog.Must().Documents(profile.GetDocumentId())
 	for i, doc := range docs.GetDatas() {
 		if doc.GetPredicateName() != mtproto.Predicate_document {

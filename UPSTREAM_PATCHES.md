@@ -980,22 +980,6 @@ The RPC now calls `chat.setHistoryTTL` first. That writes `chats.ttl_period` and
 | --- | --- |
 | ban check | `proto/mtproto/chat_send_right.go`, `app/service/biz/channel/service_features.go` `React` |
 
-## Background emojis, restricted statuses, ringtones, passkey rpId
-
-Rows 290, 272, and 343.
-
-`account.getDefaultBackgroundEmojis` returned an empty list with hash 1. `account.getChannelRestrictedStatusEmojis` returned the empty accountassets list. Both now use the built-in Noto catalog: background matches the profile-photo list, restricted statuses match the group-photo list.
-
-`account.uploadRingtone` rejected `audio/wav`. Those types are accepted and converted to `audio/mpeg` on save, same as ogg. A document uploaded as a message was unknown to the ringtone store, so `account.saveRingtone` returned `RINGTONE_INVALID`. When the local tone record is missing, the media service document is adopted if the id, access hash, and mime match.
-
-Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_PASSKEY_RPID` when set, otherwise `www.tellomi.cn`. `auth.finishPasskeyLogin` still does not authorize. No production env file and no port was changed.
-
-| Piece | File |
-| --- | --- |
-| emoji lists | `app/bff/stickers/catalog/groups.go`, premium background and restricted handlers |
-| wav and adopted documents | `app/bff/accountassets/doc.go`, `ringtone.go`, `app/bff/messages/p1.go` |
-| rpId | `app/bff/accountrest/passkey.go` |
-
 ## Who may speak (ISSUE-S-JOINTOSEND-001, ISSUE-S-GCALL-SELFUNMUTE-001, ISSUE-S-GROUPCALL-ADMIN-UNMUTE-001, ISSUE-S-GROUPCALL-LOCAL-MUTE-001)
 
 `channels.toggleJoinToSend` stored the bit and returned updates, but `channel.join_to_send` was never copied onto the chat object, and a guest could still comment. The flag is now set on `channel`, including the discussion chat shown to a non-member. A non-member comment while the flag is on returns `403 CHAT_GUEST_SEND_FORBIDDEN`.
