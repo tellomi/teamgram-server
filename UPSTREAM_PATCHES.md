@@ -725,3 +725,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Saved Messages drafts (ISSUE-S-DRAFT-GETALL-MULTI-001)
+
+`messages.saveDraft` of `inputPeerSelf` kept `peer_type = PEER_SELF`. The Saved Messages dialog row is `PEER_USER` with `peer_id` equal to the owner, so the UPDATE matched nothing and `messages.getAllDrafts` (`draft_type > 0`) never saw that draft. A draft for a peer that has no dialog row had the same hole.
+
+Save now rewrites self to `PEER_USER` + self, in the BFF (so the pushed `updateDraftMessage` uses the same peer) and again in `dialog.saveDraftMessage`. When the UPDATE changes zero rows, a dialog is inserted with `InsertIgnore` and the draft is written onto it, which sets `draft_type = 2`.
+
+| Piece | File |
+| --- | --- |
+| peer rewrite | `app/bff/drafts/internal/core/draft_peer.go`, `messages.saveDraft_handler.go` |
+| insert when missing | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go` |
