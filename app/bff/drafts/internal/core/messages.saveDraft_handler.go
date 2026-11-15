@@ -54,7 +54,7 @@ func draftHasContent(in *mtproto.TLMessagesSaveDraft) bool {
 // messages.saveDraft#bc39e14b flags:# no_webpage:flags.1?true reply_to_msg_id:flags.0?int peer:InputPeer message:string entities:flags.3?Vector<MessageEntity> = Bool;
 func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtproto.Bool, error) {
 	var (
-		peer                = mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
+		peer                = draftStorePeer(c.MD.UserId, mtproto.FromInputPeer2(c.MD.UserId, in.Peer))
 		draft               *mtproto.DraftMessage
 		isDraftMessageEmpty = true
 		date                = int32(time.Now().Unix())
