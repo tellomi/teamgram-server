@@ -1038,16 +1038,6 @@ Save now rewrites self to `PEER_USER` + self, in the BFF (so the pushed `updateD
 | private and basic group | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
 | channel | `app/bff/channels/internal/server/grpc/service/handlers.go` |
 
-## Auto-archive sets peerSettings.autoarchived (ISSUE-S-AUTOARCHIVED-FLAG-001)
-
-Archiving a new non-contact set folder 1 and mute-forever, and unarchiving cleared the folder. `peerSettings.autoarchived` stayed false, including the hardcoded false when no settings row existed. `messages.getPeerSettings` already copies the column when a row is present.
-
-`archive.Apply` now writes the flag: true when the dialog is auto-archived, false when it is moved back to the main list. The write reads the current settings first, so the stranger bar (`report_spam`, `add_contact`, `block_contact`) is kept.
-
-| Piece | File |
-| --- | --- |
-| flag on archive and unarchive | `pkg/archive/apply.go`, `pkg/archive/clients.go` |
-
 ## Saved GIFs keep the defaults (行 146, ISSUE-S-GIF-DEFAULT-001)
 
 `messages.getSavedGifs` returned the built-in list only while the user had saved nothing. The first `messages.saveGif` replaced that list, so the panel dropped to one GIF. Unsving it brought the defaults back.

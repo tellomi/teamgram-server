@@ -107,37 +107,6 @@ func (c Clients) Muted(ctx context.Context, userID int64, peerType, categoryType
 	return MutedAt(peer, category, c.now().Unix()), nil
 }
 
-func (c Clients) SetAutoarchived(ctx context.Context, userID int64, peerType int32, peerID int64, on bool) error {
-	if c.User == nil {
-		return nil
-	}
-	cur, err := c.User.UserGetPeerSettings(ctx, &user.TLUserGetPeerSettings{
-		UserId:   userID,
-		PeerType: peerType,
-		PeerId:   peerID,
-	})
-	if err != nil {
-		return err
-	}
-	next := &mtproto.PeerSettings{Autoarchived: on}
-	if cur != nil {
-		next.ReportSpam = cur.GetReportSpam()
-		next.AddContact = cur.GetAddContact()
-		next.BlockContact = cur.GetBlockContact()
-		next.ShareContact = cur.GetShareContact()
-		next.NeedContactsException = cur.GetNeedContactsException()
-		next.ReportGeo = cur.GetReportGeo()
-		next.GeoDistance = cur.GetGeoDistance()
-	}
-	_, err = c.User.UserAddPeerSettings(ctx, &user.TLUserAddPeerSettings{
-		UserId:   userID,
-		PeerType: peerType,
-		PeerId:   peerID,
-		Settings: next,
-	})
-	return err
-}
-
 func (c Clients) MuteForever(ctx context.Context, userID int64, peerType int32, peerID int64) error {
 	if c.User == nil {
 		return nil
