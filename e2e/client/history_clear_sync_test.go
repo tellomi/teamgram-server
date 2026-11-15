@@ -40,6 +40,11 @@ func TestHistoryClearReachesOtherSession(t *testing.T) {
 	if lastID == 0 {
 		t.Fatal("no message id")
 	}
+	// sendMessage can return the id before getHistory sees the row. The
+	// clear anchor is the newest stored message, so message 3 has to be
+	// visible to both sessions of this account before deleteHistory.
+	waitHistoryID(t, a, peer, lastID)
+	waitHistoryID(t, a2, peer, lastID)
 
 	pts, qts, date, err := a2.State(ctx)
 	if err != nil {
@@ -77,6 +82,30 @@ func TestHistoryClearReachesOtherSession(t *testing.T) {
 			t.Fatal(ctx.Err())
 		case <-time.After(400 * time.Millisecond):
 		}
+	}
+}
+
+func waitHistoryID(t *testing.T, c *Client, peer *mtproto.InputPeer, id int32) {
+	t.Helper()
+	ctx, cancel := contextTimeout(10 * time.Second)
+	defer cancel()
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		hist, err := c.History(ctx, peer, 20)
+		if err != nil {
+			if ctx.Err() != nil {
+				return false, nil
+			}
+			return false, err
+		}
+		for _, m := range hist {
+			if m != nil && m.GetId() == id {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("history never showed message %d: %v", id, err)
 	}
 }
 
