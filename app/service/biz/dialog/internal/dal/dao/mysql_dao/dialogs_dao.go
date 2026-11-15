@@ -1612,14 +1612,18 @@ func (dao *DialogsDAO) SelectDialogsByPeerTypeWithCB(ctx context.Context, userId
 	return
 }
 
+// updateUnreadCount adds the three counters. The reaction badge is a count
+// of messages, and a read on a broadcast channel must not drive it below zero.
+const updateUnreadCount = "update dialogs set unread_count = unread_count + (?), unread_mentions_count = unread_mentions_count + (?), unread_reactions_count = GREATEST(0, unread_reactions_count + (?)) where user_id = ? and peer_type = ? and peer_id = ?"
+
 // UpdateUnreadCount
-// update dialogs set unread_count = unread_count + (:unreadCount), unread_mentions_count = unread_mentions_count + (:unreadMentionsCount), unread_reactions_count = unread_reactions_count + (:unreadReactionsCount) where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
+// update dialogs set unread_count = unread_count + (:unreadCount), unread_mentions_count = unread_mentions_count + (:unreadMentionsCount), unread_reactions_count = GREATEST(0, unread_reactions_count + (:unreadReactionsCount)) where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
 func (dao *DialogsDAO) UpdateUnreadCount(ctx context.Context, unreadCount int32, unreadMentionsCount int32, unreadReactionsCount int32, userId int64, peerType int32, peerId int64) (rowsAffected int64, err error) {
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = "update dialogs set unread_count = unread_count + (?), unread_mentions_count = unread_mentions_count + (?), unread_reactions_count = unread_reactions_count + (?) where user_id = ? and peer_type = ? and peer_id = ?"
+	query = updateUnreadCount
 
 	rResult, err = dao.db.Exec(ctx, query, unreadCount, unreadMentionsCount, unreadReactionsCount, userId, peerType, peerId)
 
@@ -1637,13 +1641,13 @@ func (dao *DialogsDAO) UpdateUnreadCount(ctx context.Context, unreadCount int32,
 }
 
 // UpdateUnreadCountTx
-// update dialogs set unread_count = unread_count + (:unreadCount), unread_mentions_count = unread_mentions_count + (:unreadMentionsCount), unread_reactions_count = unread_reactions_count + (:unreadReactionsCount) where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
+// update dialogs set unread_count = unread_count + (:unreadCount), unread_mentions_count = unread_mentions_count + (:unreadMentionsCount), unread_reactions_count = GREATEST(0, unread_reactions_count + (:unreadReactionsCount)) where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id
 func (dao *DialogsDAO) UpdateUnreadCountTx(tx *sqlx.Tx, unreadCount int32, unreadMentionsCount int32, unreadReactionsCount int32, userId int64, peerType int32, peerId int64) (rowsAffected int64, err error) {
 	var (
 		query   string
 		rResult sql.Result
 	)
-	query = "update dialogs set unread_count = unread_count + (?), unread_mentions_count = unread_mentions_count + (?), unread_reactions_count = unread_reactions_count + (?) where user_id = ? and peer_type = ? and peer_id = ?"
+	query = updateUnreadCount
 
 	rResult, err = tx.Exec(query, unreadCount, unreadMentionsCount, unreadReactionsCount, userId, peerType, peerId)
 

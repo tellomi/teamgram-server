@@ -366,7 +366,7 @@ func (s *Service) ReadReactions(ctx context.Context, self, channelID int64, topM
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}
-	if unread > 0 {
+	if ch.Megagroup && unread > 0 {
 		s.noteReactionBadge(ctx, self, ch.ID, -unread)
 	}
 	return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
@@ -374,6 +374,15 @@ func (s *Service) ReadReactions(ctx context.Context, self, channelID int64, topM
 		PtsCount: 0,
 		Offset:   0,
 	}).To_Messages_AffectedHistory(), nil
+}
+
+func messageUnreadFor(all []ReactRec, msgID int32, author int64, readAt int32) bool {
+	for _, r := range all {
+		if r.MsgID == msgID && r.UserID != author && r.Emoticon != "" && r.Date > readAt {
+			return true
+		}
+	}
+	return false
 }
 
 func unreadReactionMessages(f *Features, self int64, readAt int32) int32 {
@@ -397,6 +406,10 @@ func (s *Service) dropDeletedReactionBadges(ctx context.Context, channelID int64
 		return
 	}
 	f := s.features(ctx, channelID)
+	mega := false
+	if ch, err := s.reload(ctx, channelID); err == nil && ch != nil {
+		mega = ch.Megagroup
+	}
 	drop := map[int32]int64{}
 	for _, m := range removed {
 		drop[m.ID] = m.Sender
@@ -415,7 +428,7 @@ func (s *Service) dropDeletedReactionBadges(ctx context.Context, channelID int64
 		if f.ReactionRead != nil {
 			readAt = f.ReactionRead[author]
 		}
-		if r.UserID != author && r.Emoticon != "" && r.Date > readAt && !hit[r.MsgID] {
+		if mega && r.UserID != author && r.Emoticon != "" && r.Date > readAt && !hit[r.MsgID] {
 			hit[r.MsgID] = true
 			s.noteReactionBadge(ctx, author, channelID, -1)
 		}

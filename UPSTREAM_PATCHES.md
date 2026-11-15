@@ -730,7 +730,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 `messages.sendReaction` on a channel or megagroup wrote the chip and a pts row, then returned `updateMessageReactions` only to the caller. `React` now `emit`s that update to every current member, with each viewer's own chosen reaction. `channels.getDifference` still replays the same pts row.
 
-On a megagroup, the first reaction from someone other than the message author adds 1 to the author's `unread_reactions_count`. Clearing that person's reaction subtracts 1. `messages.readReactions` subtracts the number of messages that still had a newer foreign reaction. Deleting the message drops its reaction rows and subtracts 1 when that reaction was still unread. The badge hook is `Hooks.ReactionBadge`, wired to `dialog.updateUnreadCount`.
+On a megagroup, `unread_reactions_count` is the number of messages that still have a foreign reaction newer than the author's read cursor. A second person reacting to the same message does not add another 1. Clearing a reaction subtracts 1 only when that message stops being unread, including when the author has already read it. `messages.readReactions` subtracts that count only for megagroups. Deleting a message drops its reaction rows and subtracts 1 only when the message was still unread in a megagroup. The stored counter uses `GREATEST(0, …)` so a broadcast read cannot push it below zero. The badge hook is `Hooks.ReactionBadge`, wired to `dialog.updateUnreadCount`.
 
 | Piece | File |
 | --- | --- |
