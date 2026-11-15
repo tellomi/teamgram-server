@@ -894,3 +894,13 @@ The anchor id is now its own `updateDeleteMessages` with `pts_count` 1, before t
 | --- | --- |
 | id | `app/messenger/msg/deletehistory/plan.go` |
 | pts updates | `app/messenger/msg/msg/internal/core/delete_user_history.go` |
+
+## Private chat noforwards flags (行 137, ISSUE-S-NOFWD-001)
+
+`messages.toggleNoForwards` on a private chat already stores one shared bit and `messages.forwardMessages` already rejects that chat and a message with `noforwards`. `users.getFullUser` never copied the bit onto `noforwards_my_enabled` / `noforwards_peer_enabled`, so both clients kept showing the switch as off.
+
+The pair is one switch: either person can clear it. While it is on, both flags are set on each user's `userFull`. A self user is unchanged.
+
+| Piece | File |
+| --- | --- |
+| userFull | `app/bff/users/internal/core/users.getFullUser_handler.go` |
