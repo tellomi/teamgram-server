@@ -117,10 +117,11 @@ func (s *Service) MessagesSendEncrypted(ctx context.Context, in *mtproto.TLMessa
 // messages.sendEncryptedFile#5559481d flags:# silent:flags.0?true peer:InputEncryptedChat random_id:long data:bytes file:InputEncryptedFile = messages.SentEncryptedMessage;
 // https://core.telegram.org/method/messages.sendEncryptedFile
 func (s *Service) MessagesSendEncryptedFile(ctx context.Context, in *mtproto.TLMessagesSendEncryptedFile) (*mtproto.Messages_SentEncryptedMessage, error) {
-	if _, err := s.md(ctx); err != nil {
+	md, err := s.md(ctx)
+	if err != nil {
 		return nil, err
 	}
-	file, err := encryptedFile(in.GetPeer(), in.GetFile())
+	file, err := encryptedFile(ctx, md.GetPermAuthKeyId(), in.GetPeer(), in.GetFile())
 	if err != nil {
 		return nil, err
 	}
@@ -253,12 +254,30 @@ func now() int32 { return int32(time.Now().Unix()) }
 // first. inputEncryptedFile refers to that stored object so the peer receives
 // size, dc_id, and key_fingerprint. An id this process has not stored is echoed
 // the way it was before uploads were kept.
-func encryptedFile(peer *mtproto.InputEncryptedChat, in *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
+func encryptedFile(ctx context.Context, creator int64, peer *mtproto.InputEncryptedChat, in *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
 	if in == nil || in.GetPredicateName() == "" || in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileEmpty || in.GetId() == 0 {
 		return nil, mtproto.ErrFileEmtpy
 	}
 	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileUploaded && !md5Hex(in.GetMd5Checksum()) {
 		return nil, mtproto.ErrCheckSumInvalid
+	}
+	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileUploaded || in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileBigUploaded {
+		if secretchat.Materialize != nil {
+			out, err := secretchat.Materialize(ctx, creator, peer.GetChatId(), in)
+			if err != nil {
+				return nil, err
+			}
+			if out != nil && out.GetId() != 0 {
+				if out.GetKeyFingerprint() == 0 {
+					out.KeyFingerprint = in.GetKeyFingerprint()
+				}
+				if out.GetDcId() == 0 {
+					out.DcId = 1
+				}
+				secretchat.Default().RememberEncrypted(peer.GetChatId(), out)
+				return out, nil
+			}
+		}
 	}
 	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFile {
 		if kept, chatID, ok := secretchat.Default().LookupEncrypted(in.GetId()); ok {

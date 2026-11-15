@@ -725,3 +725,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Encrypted file size on send (ISSUE-S-SECRET-ENCFILE-001)
+
+`messages.sendEncryptedFile` of `inputEncryptedFileUploaded` echoed the id with size 0 and did not register the file for `upload.getFile`. `messages.uploadEncryptedFile` already stores the parts through `dfs.uploadEncryptedFileV2` and remembers the size.
+
+Send of an uploaded or big-uploaded file now calls the same DFS upload. The files service installs `secretchat.Materialize` when it starts. The returned `EncryptedFile` keeps `key_fingerprint` and is remembered for that secret chat, so a later `inputEncryptedFile` returns the size. A bad md5 is still `MD5_CHECKSUM_INVALID`. When the hook is not installed, the old echo remains.
+
+| Piece | File |
+| --- | --- |
+| send path | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
+| hook | `app/bff/phone/secretchat/materialize.go`, `app/bff/files/helper.go` |
