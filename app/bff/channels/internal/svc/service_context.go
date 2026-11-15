@@ -131,7 +131,7 @@ func participantCards(users user_client.UserClient) func(ctx context.Context, vi
 				First:    u.GetFirstName().GetValue(),
 				Last:     u.GetLastName().GetValue(),
 				Username: u.GetUsername().GetValue(),
-				Contact:  u.GetContact() || u.GetMutualContact(),
+				Contact:  u.GetId() != viewer && !u.GetSelf() && (u.GetContact() || u.GetMutualContact()),
 			}
 		}
 		return out

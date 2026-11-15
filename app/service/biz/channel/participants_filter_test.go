@@ -18,6 +18,9 @@ func TestParticipantNameContactBanAndHiddenAdmins(t *testing.T) {
 	}
 	svc.SetHooks(Hooks{UserCards: func(_ context.Context, _ int64, _ []int64) map[int64]UserCard {
 		return map[int64]UserCard{
+			// ToSelfUser marks the viewer as a contact. The contacts
+			// filter must still leave them out.
+			1: {First: "Owner", Contact: true},
 			2: {First: "Ada", Username: "ada", Contact: true},
 			3: {First: "Bob", Contact: false},
 			4: {First: "Cara", Last: "Lee", Contact: true},

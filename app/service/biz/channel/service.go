@@ -951,8 +951,12 @@ func (s *Service) applyProfileFilter(ctx context.Context, viewer int64, filter, 
 	out := make([]*Participant, 0, len(matched))
 	for _, p := range matched {
 		card := cards[p.UserID]
-		if filter == mtproto.Predicate_channelParticipantsContacts && !card.Contact {
-			continue
+		if filter == mtproto.Predicate_channelParticipantsContacts {
+			// The viewer is not in their own address book. ToSelfUser
+			// still reports contact and mutual_contact.
+			if p.UserID == viewer || !card.Contact {
+				continue
+			}
 		}
 		if q != "" && !participantNameMatch(card, p.Rank, q) {
 			continue
