@@ -25,6 +25,7 @@ type part struct {
 	volume             int32
 	hasVolume          bool
 	volumeByAdmin      bool
+	hear               map[int64]hearPref
 	raiseHand          int64
 	videoStopped       bool
 	videoPaused        bool
@@ -32,6 +33,14 @@ type part struct {
 	video              []sfu.Group
 	presentation       []sfu.Group
 	selfUnmuteByInvite bool
+}
+
+// hearPref is one listener's private volume and mute-for-me. It does not
+// change the participant's server mute.
+type hearPref struct {
+	volume int32
+	hasVol bool
+	muted  bool
 }
 
 type group struct {
@@ -173,6 +182,9 @@ type CreateGroup struct {
 	Title        string
 	Schedule     int32
 	RTMP         bool
+	// JoinMuted is the channel default. Broadcast channels start muted.
+	// Megagroups and basic groups do not. RTMP always starts muted.
+	JoinMuted bool
 }
 
 func (e *Engine) CreateGroup(in CreateGroup) (*mtproto.Updates, error) {
@@ -199,7 +211,7 @@ func (e *Engine) CreateGroup(in CreateGroup) (*mtproto.Updates, error) {
 	g := &group{
 		id: newID(), access: newID(), peerType: in.PeerType, peerID: in.PeerID,
 		creator: in.UserID, creatorAuth: in.Auth, title: in.Title, date: now,
-		joinMuted: true, messagesEnabled: true, rtmp: in.RTMP, schedule: in.Schedule,
+		joinMuted: in.RTMP || in.JoinMuted, messagesEnabled: true, rtmp: in.RTMP, schedule: in.Schedule,
 		version: 1, invite: randHex(8), speakerInvite: randHex(8),
 		byKey: map[string]*part{}, subs: map[int64]bool{},
 		chains: map[int32][][]byte{}, msgByID: map[int32]*gmsg{}, msgByRandom: map[string]int32{},
@@ -379,6 +391,13 @@ func (e *Engine) partTL(p *part, viewer int64, just bool) *mtproto.GroupCallPart
 	if p.hasVolume {
 		tl.Volume = wrapperspb.Int32(p.volume)
 	}
+	if h, ok := p.hear[viewer]; ok {
+		if h.hasVol {
+			tl.Volume = wrapperspb.Int32(h.volume)
+			tl.VolumeByAdmin = false
+		}
+		tl.MutedByYou = h.muted
+	}
 	if p.raiseHand != 0 {
 		tl.RaiseHandRating = wrapperspb.Int64(p.raiseHand)
 	}
@@ -462,8 +481,10 @@ func (e *Engine) JoinGroup(in JoinGroup) (*mtproto.Updates, error) {
 			}
 		}
 	}
-	can := in.Manage || speaker || in.UserID == g.creator || !g.joinMuted
-	muted := in.Muted || (g.joinMuted && !can)
+	// A listener invite stays muted without can_self_unmute. Everyone else
+	// can speak unless the room has join_muted.
+	can := in.Manage || speaker || in.UserID == g.creator || (!g.joinMuted && !listener)
+	muted := in.Muted || ((g.joinMuted || listener) && !can)
 	p := g.byKey[partKey(in.PeerType, in.PeerID)]
 	if p == nil {
 		p = &part{userID: in.UserID, peerType: in.PeerType, peerID: in.PeerID}
@@ -930,25 +951,44 @@ func (e *Engine) EditParticipant(in EditPart) (*mtproto.Updates, error) {
 		return nil, mtproto.ErrGroupcallJoinMissing
 	}
 	self := p.userID == in.UserID
-	if !self && !in.Manage && in.UserID != g.creator {
+	local := !self && !in.Manage && in.UserID != g.creator && in.Raise == nil && in.VideoStopped == nil && in.VideoPaused == nil && in.PresentationPaused == nil && (in.Volume != nil || in.Muted != nil)
+	if !self && !in.Manage && in.UserID != g.creator && !local {
 		e.mu.Unlock()
 		return nil, mtproto.ErrChatAdminRequired
 	}
-	if in.Muted != nil {
-		if !self && *in.Muted == false && !in.Manage && in.UserID != g.creator {
-			e.mu.Unlock()
-			return nil, mtproto.ErrChatAdminRequired
+	if local {
+		if p.hear == nil {
+			p.hear = map[int64]hearPref{}
 		}
+		h := p.hear[in.UserID]
+		if in.Volume != nil {
+			h.volume = *in.Volume
+			h.hasVol = true
+		}
+		if in.Muted != nil {
+			h.muted = *in.Muted
+		}
+		p.hear[in.UserID] = h
+	} else if in.Muted != nil {
 		if self && !*in.Muted && !p.canUnmute {
 			e.mu.Unlock()
 			return nil, mtproto.ErrChatAdminRequired
 		}
-		p.muted = *in.Muted
-		if !self {
-			p.canUnmute = !*in.Muted
+		if !self && !*in.Muted {
+			// Allow to speak. The member unmutes themselves. The raised hand goes down.
+			p.canUnmute = true
+			p.raiseHand = 0
+		} else {
+			p.muted = *in.Muted
+			if !self {
+				p.canUnmute = !*in.Muted
+				if *in.Muted {
+					p.raiseHand = 0
+				}
+			}
 		}
 	}
-	if in.Volume != nil {
+	if in.Volume != nil && !local {
 		p.volume = *in.Volume
 		p.hasVolume = true
 		p.volumeByAdmin = !self

@@ -995,3 +995,14 @@ Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_
 | emoji lists | `app/bff/stickers/catalog/groups.go`, premium background and restricted handlers |
 | wav and adopted documents | `app/bff/accountassets/doc.go`, `ringtone.go`, `app/bff/messages/p1.go` |
 | rpId | `app/bff/accountrest/passkey.go` |
+
+## Who may speak (ISSUE-S-JOINTOSEND-001, ISSUE-S-GCALL-SELFUNMUTE-001, ISSUE-S-GROUPCALL-ADMIN-UNMUTE-001, ISSUE-S-GROUPCALL-LOCAL-MUTE-001)
+
+`channels.toggleJoinToSend` stored the bit and returned updates, but `channel.join_to_send` was never copied onto the chat object, and a guest could still comment. The flag is now set on `channel`, including the discussion chat shown to a non-member. A non-member comment while the flag is on returns `403 CHAT_GUEST_SEND_FORBIDDEN`.
+
+New group calls were created with `join_muted` true, so every non-admin joined muted and could not unmute. Basic groups and megagroups now start with `join_muted` off. Broadcast channels and `rtmp_stream` stay `join_muted`. A listener invite still joins muted without `can_self_unmute`. An admin turning `muted` off for someone else sets `can_self_unmute` and clears the raised hand, and leaves their microphone muted until they unmute. A member setting volume or `muted` on someone else is stored only for that listener (`muted_by_you`, volume), not as a server mute and not `volume_by_admin`.
+
+| Piece | File |
+| --- | --- |
+| join_to_send | `convert.go`, `comments.go` `mayComment` |
+| call default and local mute | `app/bff/phone/internal/engine/group.go`, `groups.go` `PhoneCreateGroupCall`, `service_ops.go` `CallStartsMuted` |
