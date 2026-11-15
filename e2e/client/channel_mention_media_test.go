@@ -12,7 +12,7 @@ import (
 // Voice and ttl media_unread (row 296) is covered by
 // TestMegagroupMentionFlagAndVoiceUnread, which sends the stored media
 // through channel.Send and channels.readMessageContents.
-// Phones 9996610451–452, code 11111.
+// Phones 9996610451–452, code 11111, layer 232.
 func TestMegagroupMentionFlag(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
