@@ -728,7 +728,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## Forum topic mentions and emoji ids (ISSUE-S-MENTION-TOPIC-FILTER-001, ISSUE-S-TOPIC-EMOJI-INVALID-001)
 
-`messages.getUnreadMentions` for a channel never read `top_msg_id`, so a forum topic could not filter its mention list. `UnreadMentions` now keeps a message only when its id or `reply_to_top_id` / `reply_to_msg_id` is that topic. `messages.readMentions` on a channel uses the same list and records those ids in `Features.MentionAck`, so clearing one topic does not clear the others.
+`messages.getUnreadMentions` for a channel never read `top_msg_id`, so a forum topic could not filter its mention list. `UnreadMentions` now keeps a message when its id is the topic, or when `reply_to_top_id` is that topic. If `reply_to_top_id` is set and names a different topic, `reply_to_msg_id` is not used. `messages.readMentions` uses that list only when `top_msg_id` is set, acks one page, and returns `offset` for whatever remains. A channel call without `top_msg_id` still uses the dialog mention list, pages, and clears the mention counter when the list is done.
 
 `channels.createForumTopic` / `editForumTopic` stored any `icon_emoji_id`. A non-zero id is `DOCUMENT_INVALID` unless `TopicEmojiOK` says it is a custom-emoji document. The channels process installs that check against the sticker catalog. Zero still means no custom emoji.
 

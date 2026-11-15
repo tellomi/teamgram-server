@@ -67,6 +67,12 @@ func TestCalendarPositionsAndSentMedia(t *testing.T) {
 	}
 }
 
+func TestMentionRemainderKeepsAnotherPage(t *testing.T) {
+	if mentionRemainder(101, 100) != 1 || mentionRemainder(2, 2) != 0 || mentionRemainder(0, 0) != 0 {
+		t.Fatal("offset")
+	}
+}
+
 func TestLiveMentionsAckAndSendAs(t *testing.T) {
 	c := searchCore(4)
 	testMediaRows = func(peerType int32, peerID int64, kind searchbox.MediaKind) ([]searchbox.Row, bool, error) {

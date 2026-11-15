@@ -7,6 +7,29 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+func TestInTopicPrefersReplyToTopId(t *testing.T) {
+	body := mtproto.MakeTLMessage(&mtproto.Message{
+		ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+			ReplyToMsgId: 8, ReplyToMsgId_INT32: 8,
+			ReplyToTopId: &wrapperspb.Int32Value{Value: 3},
+		}).To_MessageReplyHeader(),
+	}).To_Message()
+	if inTopic(body, 9, 8) {
+		t.Fatal("reply_to_msg_id matched a topic the top id does not")
+	}
+	if !inTopic(body, 9, 3) {
+		t.Fatal("reply_to_top_id")
+	}
+	root := mtproto.MakeTLMessage(&mtproto.Message{
+		ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+			ReplyToMsgId: 3, ReplyToMsgId_INT32: 3,
+		}).To_MessageReplyHeader(),
+	}).To_Message()
+	if !inTopic(root, 9, 3) {
+		t.Fatal("reply without a top id")
+	}
+}
+
 func TestBroadcastViewsCountOncePerUser(t *testing.T) {
 	svc, ctx := newTest(t)
 	up, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})

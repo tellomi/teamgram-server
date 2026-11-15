@@ -244,8 +244,8 @@ func inTopic(body *mtproto.Message, id, topID int32) bool {
 	if body == nil || body.GetReplyTo() == nil {
 		return false
 	}
-	if body.GetReplyTo().GetReplyToTopId().GetValue() == topID {
-		return true
+	if top := body.GetReplyTo().GetReplyToTopId(); top != nil && top.GetValue() != 0 {
+		return top.GetValue() == topID
 	}
 	return body.GetReplyTo().GetReplyToMsgId() == topID || body.GetReplyTo().GetReplyToMsgId_INT32() == topID
 }

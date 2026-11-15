@@ -48,13 +48,18 @@ func (c *MessagesCore) MessagesReadMentions(in *mtproto.TLMessagesReadMentions) 
 		if chat := channel.Shared().VisibleChat(c.ctx, c.MD.UserId, peer.PeerId); chat != nil && chat.GetLeft() {
 			return nil, mtproto.ErrChannelPrivate
 		}
-		topID := int32(0)
-		if in.GetTopMsgId() != nil {
-			topID = in.GetTopMsgId().GetValue()
-			if topID < 0 {
-				return nil, mtproto.ErrMsgIdInvalid
-			}
+	}
+	topID := int32(0)
+	if in.GetTopMsgId() != nil {
+		topID = in.GetTopMsgId().GetValue()
+		if topID < 0 {
+			return nil, mtproto.ErrMsgIdInvalid
 		}
+	}
+	// A forum topic is read from the channel history. The dialog-wide path
+	// stays for every other call, including a channel with no top_msg_id:
+	// that path pages and clears the mention counter.
+	if peer.IsChannel() && topID != 0 {
 		res, err := channel.Shared().UnreadMentions(c.ctx, c.MD.UserId, peer.PeerId, 0, 0, 100, 0, 0, topID)
 		if err != nil {
 			return nil, err
@@ -68,28 +73,19 @@ func (c *MessagesCore) MessagesReadMentions(in *mtproto.TLMessagesReadMentions) 
 		if err := channel.Shared().AckMentions(c.ctx, c.MD.UserId, peer.PeerId, ids); err != nil {
 			return nil, err
 		}
+		remaining := mentionRemainder(res.GetCount(), int32(len(ids)))
 		return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
 			Pts:      res.GetPts(),
 			PtsCount: int32(len(ids)),
-			Offset:   0,
+			Offset:   remaining,
 		}).To_Messages_AffectedHistory(), nil
-	}
-	topID := int32(0)
-	if in.GetTopMsgId() != nil {
-		topID = in.GetTopMsgId().GetValue()
-		if topID < 0 {
-			return nil, mtproto.ErrMsgIdInvalid
-		}
 	}
 	rows, total := c.unreadMentions(peer)
 	ids := searchbox.MentionIDs(rows, topID)
 	if len(ids) > 100 {
 		ids = ids[:100]
 	}
-	remaining := total - int32(len(ids))
-	if remaining < 0 {
-		remaining = 0
-	}
+	remaining := mentionRemainder(total, int32(len(ids)))
 	pts, ptsCount := c.markMentionsRead(peer, rows, ids)
 	if remaining == 0 {
 		c.clearMentionCounter(peer)
@@ -99,6 +95,13 @@ func (c *MessagesCore) MessagesReadMentions(in *mtproto.TLMessagesReadMentions) 
 		PtsCount: ptsCount,
 		Offset:   remaining,
 	}).To_Messages_AffectedHistory(), nil
+}
+
+func mentionRemainder(total, page int32) int32 {
+	if page >= total {
+		return 0
+	}
+	return total - page
 }
 
 func (c *MessagesCore) unreadMentions(peer *mtproto.PeerUtil) ([]searchbox.Row, int32) {
