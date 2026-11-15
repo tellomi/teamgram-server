@@ -32,8 +32,7 @@ func TestChannelToggleUsername(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	pts, qts, date, err := other.State(ctx)
-	if err != nil {
+	if _, _, _, err := other.State(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.Invoke(ctx, &mtproto.TLChannelsToggleUsername{
@@ -45,16 +44,11 @@ func TestChannelToggleUsername(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var sawUpdate bool
-	err = waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
-		diff, err := other.Difference(ctx, pts, qts, date)
-		if err != nil {
-			return false, err
-		}
-		sawUpdate = differenceHasUpdateChannel(diff, id)
-		return sawUpdate, nil
-	})
-	if err != nil || !sawUpdate {
+	// updateChannel has no pts. This server delivers it on the live socket
+	// (sync.pushUpdatesIfNot). updates.getDifference does not replay it.
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		return pushedUpdateChannel(other.Pushed(), id), nil
+	}); err != nil {
 		t.Fatalf("updateChannel for %d: %v", id, err)
 	}
 
@@ -278,6 +272,20 @@ func chatsIn(obj mtproto.TLObject) []*mtproto.Chat {
 	default:
 		return nil
 	}
+}
+
+func pushedUpdateChannel(objs []mtproto.TLObject, channelID int64) bool {
+	for _, obj := range objs {
+		if differenceHasUpdateChannel(obj, channelID) {
+			return true
+		}
+		for _, up := range updatesOf(obj) {
+			if up != nil && up.GetPredicateName() == mtproto.Predicate_updateChannel && up.GetChannelId() == channelID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func differenceHasUpdateChannel(obj mtproto.TLObject, channelID int64) bool {
