@@ -725,3 +725,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Reply after the original was deleted (row 256)
+
+The inbox copy of a private reply looks up `reply_to_msg_id` with `SelectPeerUserMessage`, which requires `deleted = 0` on both rows. After `messages.deleteMessages(revoke=true)` that lookup misses, and the recipient's copy drops `reply_to`. The lookup for this header now includes deleted rows, so the other side still gets the mapped id and can show a reply to a deleted message. Other callers of `SelectPeerUserMessage` still ignore deleted rows.
+
+| Piece | File |
+| --- | --- |
+| lookup | `messages_dao.go` `SelectPeerUserMessageIncludingDeleted` |
+| inbox | `app/messenger/msg/internal/dao/inbox.go` |

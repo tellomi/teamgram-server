@@ -110,7 +110,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		if crossChatReply(message.GetReplyTo()) {
 			break
 		}
-		if replyId, _ := d.MessagesDAO.SelectPeerUserMessage(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
+		if replyId, _ := d.MessagesDAO.SelectPeerUserMessageIncludingDeleted(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
 			// message.ReplyToMsgId.Value = replyId.UserMessageBoxId
 			if message.ReplyTo != nil {
 				message.ReplyTo.ReplyToMsgId = replyId.UserMessageBoxId
