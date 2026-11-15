@@ -874,3 +874,17 @@ A supergroup stores one message row. `mentioned` and `media_unread` are per view
 | viewer flags | `app/service/biz/channel/convert.go` |
 | history and push | `service_ops.go`, `read_views.go` |
 | read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
+
+## Media caption length (ISSUE-S-MSG-LENGTH-001)
+
+`messages.sendMedia` used to reject a caption only when `len(message) > 4000` bytes. Official clients count UTF-16 code units. A non-subscriber caption longer than 1024 is 400 `MEDIA_CAPTION_TOO_LONG`. An unexpired `users.premium` row may send 2048. A text message longer than 4096 is 400 `MESSAGE_TOO_LONG`.
+
+`user.Premium()` is true for every account while `TELLOMI_PREMIUM_EVERYONE` is on, which is the default. That switch still raises the badge and the caption numbers in `help.getAppConfig`. The send and edit checks use the stored subscription, the same split as `messages.getOutboxReadDate`. Otherwise a 1025-character caption is accepted.
+
+`messages.sendMultiMedia` checks each item. `messages.editMessage` uses the caption cap when the result is a photo, file, or other media, including a channel post whose request omits a new `InputMedia` but the stored post already has one. `inputMediaEmpty` clears media, so the text is a message. A link-preview card is not a caption.
+
+| Piece | File |
+| --- | --- |
+| UTF-16 caps, paid subscription | `app/bff/messages/internal/core/message_limits.go` |
+| send | `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `messages.sendMessage_handler.go` |
+| edit | `messages.editMessage_handler.go` |

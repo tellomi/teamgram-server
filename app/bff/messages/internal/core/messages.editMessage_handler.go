@@ -73,8 +73,13 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			ReplyMarkup: in.ReplyMarkup,
 		}).To_Message()
 		if in.Message != nil {
-			if textTooLong(in.Message.Value) {
-				return nil, mtproto.ErrMessageTooLong
+			var stored *mtproto.MessageMedia
+			if in.Media == nil {
+				stored = c.channelStoredMedia(peer, in.Id)
+			}
+			if err = c.rejectOverlong(in.Message.Value, editIsCaption(stored, in.Media)); err != nil {
+				c.Logger.Errorf("messages.editMessage - length: %v", err)
+				return nil, err
 			}
 			draft.Message = in.Message.Value
 		}
@@ -138,20 +143,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		in.ReplyMarkup = nil
 	}
 	if in.GetMessage() != nil {
-		text := in.GetMessage().GetValue()
-		limit := maxMessageUTF16
-		mediaName := outMessage.GetMedia().GetPredicateName()
-		if mediaName != "" && mediaName != mtproto.Predicate_messageMediaEmpty && mediaName != mtproto.Predicate_messageMediaWebPage {
-			limit = maxCaptionUTF16
-			if c.senderPremium() {
-				limit = maxCaptionUTF16Premium
-			}
-		}
-		if mtproto.UTF16Len(text) > limit {
-			if limit == maxMessageUTF16 {
-				return nil, mtproto.ErrMessageTooLong
-			}
-			return nil, mtproto.ErrMediaCaptionTooLong
+		if err = c.rejectOverlong(in.GetMessage().GetValue(), editIsCaption(outMessage.GetMedia(), in.Media)); err != nil {
+			c.Logger.Errorf("messages.editMessage - length: %v", err)
+			return nil, err
 		}
 	}
 
@@ -260,6 +254,10 @@ func (c *MessagesCore) applyScheduledEdit(peer *mtproto.PeerUtil, in *mtproto.TL
 	edit := chatbox.SchedEdit{Now: int32(time.Now().Unix())}
 	if in.Message != nil {
 		text := in.Message.Value
+		if err := c.rejectOverlong(text, editIsCaption(nil, in.Media)); err != nil {
+			c.Logger.Errorf("messages.editMessage - scheduled length: %v", err)
+			return nil, err
+		}
 		edit.Text = &text
 		if in.Entities != nil {
 			edit.Entities = in.Entities

@@ -450,25 +450,35 @@ func historyByText(t *testing.T, ctx context.Context, c *Client, peer *mtproto.I
 	return found
 }
 
-func historyMessage(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer, id int32) *mtproto.Message {
+func historyHasAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name string) bool {
 	t.Helper()
-	var found *mtproto.Message
-	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		page, err := c.History(ctx, peer, 30)
-		if err != nil {
-			return false, err
+	ctx, cancel := contextTimeout(8 * time.Second)
+	defer cancel()
+	ok := false
+	// The wallpaper service message is written by the inbox consumer after
+	// setChatWallPaper returns. One getHistory error is not the failure.
+	_ = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		res, err := c.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+			Constructor: mtproto.CRC32_messages_getHistory,
+			Peer:        peer,
+			Limit:       20,
+		})
+		if err != nil || ctx.Err() != nil {
+			return false, nil
 		}
-		for _, m := range page {
-			if m.GetId() == id {
-				found = m
+		msgs, good := messagesOf(res)
+		if !good {
+			return false, nil
+		}
+		for _, m := range msgs {
+			if m.GetAction().GetPredicateName() == name {
+				ok = true
 				return true, nil
 			}
 		}
 		return false, nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return found
+	})
+	return ok
 }
 
 func sendWithMarkup(ctx context.Context, c *Client, peer *mtproto.InputPeer, text string, markup *mtproto.ReplyMarkup) (int32, error) {
