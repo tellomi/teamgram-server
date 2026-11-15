@@ -21,6 +21,7 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |
 | `TestStartupRPCs` | One startup RPC returned 500, timed out, or did not decode. A 4xx is recorded and does not fail this test. Subtests are named `ios/<method>` and `android/<method>`. |
 | `TestMarkDialogUnreadClearsAndReachesTheOtherSession` | `messages.markDialogUnread` leaves `unread_mark` set on the next `messages.getDialogs`, or the other session of the same account is not pushed `updateDialogUnreadMark` when the mark is set and when it is cleared. |
+| `TestTranslateTextWithoutInputIs400` | `messages.translateText` with `to_lang` and neither `text` nor `peer`/`id` returns anything other than 400 `PEER_ID_INVALID`. |
 | `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads up to its own id for that message. |
 | `TestBasicGroupReadOutbox` | Same for a basic group. |
 | `TestSupergroupReadOutbox` | Same for a megagroup (`channels.readHistory`). |

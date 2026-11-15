@@ -19,19 +19,37 @@
 package core
 
 import (
-	"strconv"
-
-	"github.com/teamgram/marmota/pkg/hack"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/dao"
 )
 
 // AuthExportAuthorization
 // auth.exportAuthorization#e5bfffcd dc_id:int = auth.ExportedAuthorization;
+//
+// https://core.telegram.org/method/auth.exportAuthorization
+// bytes is a one-shot secret, not the DC number. importAuthorization rejects
+// anything that was not issued here.
 func (c *AuthorizationCore) AuthExportAuthorization(in *mtproto.TLAuthExportAuthorization) (*mtproto.Auth_ExportedAuthorization, error) {
-	rExported := mtproto.MakeTLAuthExportedAuthorization(&mtproto.Auth_ExportedAuthorization{
+	if c.MD == nil || c.MD.UserId == 0 {
+		return nil, mtproto.ErrAuthKeyUnregistered
+	}
+	if in == nil || in.GetDcId() == 0 {
+		return nil, mtproto.ErrDcIdInvalid
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
+	raw, err := dao.NewExportBytes()
+	if err != nil {
+		c.Logger.Errorf("auth.exportAuthorization - bytes: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+	if err = c.svcCtx.Dao.PutExportedAuth(c.ctx, raw, c.MD.UserId); err != nil {
+		c.Logger.Errorf("auth.exportAuthorization - store: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+	return mtproto.MakeTLAuthExportedAuthorization(&mtproto.Auth_ExportedAuthorization{
 		Id:    c.MD.UserId,
-		Bytes: hack.Bytes(strconv.Itoa(int(in.DcId))),
-	}).To_Auth_ExportedAuthorization()
-
-	return rExported, nil
+		Bytes: raw,
+	}).To_Auth_ExportedAuthorization(), nil
 }
