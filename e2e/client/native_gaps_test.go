@@ -105,9 +105,11 @@ func TestNativeProtocolGaps(t *testing.T) {
 
 func waitHistoryAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name, fail string) {
 	t.Helper()
-	// The sender's copy is written by the inbox consumer after sendMessage
-	// returns. One getHistory can run before that row exists. A single RPC
-	// error during the wait is not the failure; the action still has to appear.
+	// setChatTheme returns after Kafka accepts the inbox records. getHistory
+	// reads the messages rows, and the inbox consumer writes those after the
+	// RPC returns. One read can miss a row that is about to land, and one RPC
+	// error during the wait is not the failure. The action still has to show
+	// up for both peers.
 	ctx, cancel := contextTimeout(10 * time.Second)
 	defer cancel()
 	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {

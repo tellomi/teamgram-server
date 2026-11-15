@@ -737,6 +737,7 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 	if err != nil {
 		// return i
 	}
+	d.stampChatDecor(ctx, fromId, peer.PeerType, peer.PeerId, message)
 
 	return tR.Err
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/accountassets"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
@@ -240,8 +241,11 @@ func NewThemes(c ...Config) *service.ThemesService {
 // NewWallpapers serves messages.setChatWallPaper and the account wallpaper RPCs.
 func NewWallpapers(c ...Config) *service.WallpapersService {
 	s := &service.WallpapersService{}
-	if len(c) > 0 && rpcReady(c[0].MsgClient) {
-		s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+	if len(c) > 0 {
+		chatdecor.UseDSN(c[0].ChannelMySQL)
+		if rpcReady(c[0].MsgClient) {
+			s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+		}
 	}
 	return s
 }
