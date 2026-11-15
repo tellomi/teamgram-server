@@ -2,6 +2,14 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Profile photo ownership
+
+`photos.updateProfilePhoto` wrote any photo id into the caller's album. A missing id became an avatar that could not load, and another user's photo id showed that person's picture. The photo now has to exist, already be in the caller's album (or be their public fallback photo), and the `access_hash` has to match. Otherwise the RPC returns `PHOTO_ID_INVALID` and the album is unchanged. `inputPhotoEmpty` still removes the current avatar. `photos.uploadProfilePhoto` still inserts a photo the caller just uploaded.
+
+| Piece | File |
+| --- | --- |
+| album and access hash | `app/bff/userchannelprofiles/internal/core/photos.updateProfilePhoto_handler.go` |
+
 ## Privacy switches that were stored and then ignored
 
 `messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
