@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,12 @@ import (
 // https://core.telegram.org/method/auth.initPasskeyLogin
 // https://core.telegram.org/method/auth.finishPasskeyLogin
 
-const passkeyRPID = "localhost"
+func passkeyRPID() string {
+	if v := strings.TrimSpace(os.Getenv("TELLOMI_PASSKEY_RPID")); v != "" {
+		return v
+	}
+	return "www.tellomi.cn"
+}
 
 type passkeyRec struct {
 	id     string
@@ -89,7 +95,7 @@ func InitPasskeyRegistration(userID int64) (*mtproto.Account_PasskeyRegistration
 	userHandle := base64.RawURLEncoding.EncodeToString(userIDBytes(userID))
 	body := map[string]any{
 		"publicKey": map[string]any{
-			"rp": map[string]string{"name": "Tellomi", "id": passkeyRPID},
+			"rp": map[string]string{"name": "Tellomi", "id": passkeyRPID()},
 			"user": map[string]string{
 				"id":          userHandle,
 				"name":        "user",
@@ -214,7 +220,7 @@ func InitPasskeyLogin(apiID int32, apiHash string) (*mtproto.Auth_PasskeyLoginOp
 		"publicKey": map[string]any{
 			"challenge":        challenge,
 			"timeout":          60000,
-			"rpId":             passkeyRPID,
+			"rpId":             passkeyRPID(),
 			"userVerification": "preferred",
 		},
 	}
@@ -281,5 +287,6 @@ func originOK(origin string) bool {
 		return false
 	}
 	host := strings.ToLower(u.Hostname())
-	return host == passkeyRPID || strings.HasSuffix(host, "."+passkeyRPID)
+	rp := passkeyRPID()
+	return host == rp || strings.HasSuffix(host, "."+rp)
 }
