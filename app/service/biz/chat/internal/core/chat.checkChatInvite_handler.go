@@ -64,9 +64,12 @@ func (c *ChatCore) ChatCheckChatInvite(in *chat.TLChatCheckChatInvite) (*chat.Ch
 		return nil, err
 	} else {
 		if mChat.Deactivated() && mChat.GetChat().GetMigratedTo() != nil {
-			err = mtproto.ErrMigratedToChannel
-			c.Logger.Errorf("chat.checkChatInvite - error: %v", err)
-			return nil, err
+			// ErrMigratedToChannel is not sent to the client, so the RPC
+			// never answers. Hand the upgraded chat back and let the BFF
+			// preview the supergroup.
+			return chat.MakeTLChatInviteAlready(&chat.ChatInviteExt{
+				Chat: mChat,
+			}).To_ChatInviteExt(), nil
 		}
 	}
 

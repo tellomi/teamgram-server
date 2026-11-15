@@ -70,6 +70,9 @@ func (c *ChatInvitesCore) MessagesImportChatInvite6C50051C(in *mtproto.TLMessage
 	}
 
 	mChat := chatInviteImported.GetChat()
+	if migrated := mChat.GetChat().GetMigratedTo(); migrated.GetChannelId() != 0 {
+		return c.joinMigrated(migrated)
+	}
 
 	if chatInviteImported.GetRequesters() != nil {
 		//c.Logger.Errorf("error: %v, chat: %s", err, mChat)

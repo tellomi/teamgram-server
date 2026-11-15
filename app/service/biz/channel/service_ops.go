@@ -1203,6 +1203,9 @@ type MigrateRequest struct {
 	PhotoID   int64
 	CreatorID int64
 	Members   []LegacyMember
+	// Banned is the basic group's default_banned_rights. Nil keeps the
+	// supergroup default.
+	Banned *mtproto.ChatBannedRights
 }
 
 // MigrateResult is the new supergroup plus the updates returned to the actor.
@@ -1233,7 +1236,7 @@ func (s *Service) Migrate(ctx context.Context, in MigrateRequest) (*MigrateResul
 		Megagroup:          true,
 		Date:               now,
 		MigratedFromChatID: in.ChatID,
-		DefaultBanned:      defaultChannelBanned(),
+		DefaultBanned:      migratedBanned(in.Banned),
 		ParticipantsCount:  1,
 		Version:            1,
 	}
@@ -1286,6 +1289,79 @@ func (s *Service) Migrate(ctx context.Context, in MigrateRequest) (*MigrateResul
 		AccessHash: ch.AccessHash,
 		Already:    false,
 	}, nil
+}
+
+func migratedBanned(rights *mtproto.ChatBannedRights) int64 {
+	if rights == nil {
+		return defaultChannelBanned()
+	}
+	return int64(rights.ToBannedRights())
+}
+
+// LegacyInvitePreview is messages.checkChatInvite for a basic-group link
+// whose chat was upgraded. The caller still holds the old hash.
+func (s *Service) LegacyInvitePreview(ctx context.Context, self int64, in *mtproto.InputChannel) (*mtproto.ChatInvite, error) {
+	ch, err := s.lookup(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	me, err := s.store.GetParticipant(ctx, ch.ID, self)
+	if err != nil {
+		return nil, err
+	}
+	if me != nil && me.InChannel() {
+		return mtproto.MakeTLChatInviteAlready(&mtproto.ChatInvite{
+			Chat: s.ChatFor(ctx, self, ch),
+		}).To_ChatInvite(), nil
+	}
+	return mtproto.MakeTLChatInvite(&mtproto.ChatInvite{
+		Channel:           true,
+		Megagroup:         ch.Megagroup,
+		Broadcast:         ch.Broadcast,
+		Title:             ch.Title,
+		About:             mtproto.MakeFlagsString(ch.About),
+		Photo:             mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
+		ParticipantsCount: ch.ParticipantsCount,
+	}).To_ChatInvite(), nil
+}
+
+// JoinFromLegacyInvite adds the caller through an upgraded basic-group link.
+// The link is proof they may enter the private supergroup.
+func (s *Service) JoinFromLegacyInvite(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel) (*mtproto.Updates, error) {
+	ch, err := s.lookup(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	me, err := s.store.GetParticipant(ctx, ch.ID, self)
+	if err != nil {
+		return nil, err
+	}
+	if me != nil && me.InChannel() {
+		return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
+	}
+	if me != nil && me.State == StateKicked {
+		return nil, mtproto.ErrUserBannedInChannel
+	}
+	now := int32(time.Now().Unix())
+	if err := s.store.PutParticipant(ctx, &Participant{
+		ChannelID: ch.ID,
+		UserID:    self,
+		Role:      RoleMember,
+		State:     StateNormal,
+		InviterID: ch.CreatorID,
+		Date:      now,
+	}); err != nil {
+		return nil, err
+	}
+	if _, err = s.refreshCount(ctx, ch.ID); err != nil {
+		return nil, err
+	}
+	_ = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: self, ReadInboxMaxID: ch.TopMessage})
+	msg := serviceMessage(self, ch.ID, mtproto.MakeMessageActionChatJoinByLink(ch.CreatorID))
+	if _, _, err = s.appendMessage(ctx, ch.ID, self, 0, msg); err != nil {
+		return nil, err
+	}
+	return s.actorUpdates(ctx, self, actorAuth, ch.ID, KindNew)
 }
 
 // DialogRow is one channel dialog for messages.getDialogs.

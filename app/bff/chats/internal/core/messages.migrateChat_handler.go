@@ -49,17 +49,15 @@ func (c *ChatsCore) MessagesMigrateChat(in *mtproto.TLMessagesMigrateChat) (*mtp
 		About:     chat.About(),
 		CreatorID: chat.Creator(),
 		Members:   members,
+		Banned:    chat.DefaultBannedRights(),
 	})
 	if err != nil {
 		c.Logger.Errorf("messages.migrateChat - error: %v", err)
 		return nil, err
 	}
-	_, _ = c.svcCtx.Dao.ChatClient.Client().ChatMigratedToChannel(c.ctx, &chatpb.TLChatMigratedToChannel{
-		Chat:       chat,
-		Id:         result.ChannelID,
-		AccessHash: result.AccessHash,
-	})
-
+	// The leave/migrate service message has to land while members are still
+	// normal. Marking the chat migrated first makes the send return
+	// CHAT_WRITE_FORBIDDEN and the history never shows ChatMigrateTo.
 	chatUpdates, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(c.ctx, &msgpb.TLMsgSendMessageV2{
 		UserId:    c.MD.UserId,
 		AuthKeyId: c.MD.PermAuthKeyId,
@@ -81,9 +79,22 @@ func (c *ChatsCore) MessagesMigrateChat(in *mtproto.TLMessagesMigrateChat) (*mtp
 	})
 	if err != nil {
 		c.Logger.Errorf("messages.migrateChat - legacy service message: %v", err)
-		return result.Updates, nil
 	}
-	return mergeUpdates(result.Updates, chatUpdates), nil
+	_, _ = c.svcCtx.Dao.ChatClient.Client().ChatMigratedToChannel(c.ctx, &chatpb.TLChatMigratedToChannel{
+		Chat:       chat,
+		Id:         result.ChannelID,
+		AccessHash: result.AccessHash,
+	})
+	if chat.GetChat() != nil {
+		chat.Chat.Deactivated = true
+		chat.Chat.MigratedTo = mtproto.MakeTLInputChannel(&mtproto.InputChannel{
+			ChannelId:  result.ChannelID,
+			AccessHash: result.AccessHash,
+		}).To_InputChannel()
+	}
+	merged := mergeUpdates(result.Updates, chatUpdates)
+	merged.Chats = append(merged.Chats, chat.ToUnsafeChat(c.MD.UserId))
+	return merged, nil
 }
 
 func mergeUpdates(parts ...*mtproto.Updates) *mtproto.Updates {

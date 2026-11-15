@@ -72,6 +72,9 @@ func (c *ChatInvitesCore) MessagesCheckChatInvite(in *mtproto.TLMessagesCheckCha
 		return nil, err
 	}
 
+	if migrated := chatInviteExt.GetChat().GetChat().GetMigratedTo(); migrated.GetChannelId() != 0 {
+		return c.previewMigrated(migrated)
+	}
 	rValue := chatInviteExt.ToChatInvite(c.MD.UserId, func(idList []int64) []*mtproto.User {
 		return getUserListF(idList)
 	})

@@ -72,6 +72,15 @@ func (c *ChatInvitesCore) MessagesImportChatInviteDE91436E(in *mtproto.TLMessage
 	}
 
 	mChat := chatInviteImported.GetChat()
+	if migrated := mChat.GetChat().GetMigratedTo(); migrated.GetChannelId() != 0 {
+		updates, err := c.joinMigrated(migrated)
+		if err != nil {
+			return nil, err
+		}
+		return mtproto.MakeTLMessagesChatInviteJoinResultOk(&mtproto.Messages_ChatInviteJoinResult{
+			Updates: updates,
+		}).To_Messages_ChatInviteJoinResult(), nil
+	}
 
 	if chatInviteImported.GetRequesters() != nil {
 		//c.Logger.Errorf("error: %v, chat: %s", err, mChat)

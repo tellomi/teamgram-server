@@ -276,6 +276,14 @@ func (c *ChatInvitesCore) channelAdmins(peer *mtproto.PeerUtil) (*mtproto.Messag
 	}).To_Messages_ChatAdminsWithInvites(), nil
 }
 
+func (c *ChatInvitesCore) previewMigrated(in *mtproto.InputChannel) (*mtproto.ChatInvite, error) {
+	return channel.Shared().LegacyInvitePreview(c.ctx, c.MD.UserId, in)
+}
+
+func (c *ChatInvitesCore) joinMigrated(in *mtproto.InputChannel) (*mtproto.Updates, error) {
+	return channel.Shared().JoinFromLegacyInvite(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in)
+}
+
 func (c *ChatInvitesCore) checkChannelInvite(hash string) (*mtproto.ChatInvite, error) {
 	inv, ids, err := channel.Shared().CheckInvite(c.ctx, c.MD.UserId, hash)
 	if err != nil {

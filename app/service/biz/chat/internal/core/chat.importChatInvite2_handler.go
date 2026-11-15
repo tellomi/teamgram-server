@@ -67,18 +67,19 @@ func (c *ChatCore) ChatImportChatInvite2(in *chat.TLChatImportChatInvite2) (*cha
 		}
 	}
 
+	if mChat, err2 := c.svcCtx.Dao.GetMutableChat(c.ctx, chatInviteDO.ChatId); err2 == nil && mChat.Deactivated() && mChat.GetChat().GetMigratedTo() != nil {
+		return chat.MakeTLChatInviteImported(&chat.ChatInviteImported{
+			Chat: mChat,
+		}).To_ChatInviteImported(), nil
+	}
+
 	if chatInviteDO.RequestNeeded {
 		mChat, err2 := c.svcCtx.Dao.GetMutableChat(c.ctx, chatInviteDO.ChatId, chatInviteDO.AdminId, in.SelfId)
 		if err2 != nil {
 			err2 = mtproto.ErrPeerIdInvalid
 			c.Logger.Errorf("chat.importChatInvite - error: %v", err2)
 			return nil, err2
-		} else if mChat.Deactivated() && mChat.GetChat().GetMigratedTo() != nil {
-			err2 = mtproto.ErrMigratedToChannel
-			c.Logger.Errorf("chat.importChatInvite - error: %v", err2)
-			return nil, err2
 		}
-
 		if mChat.ParticipantsCount() >= 200 {
 			err2 = mtproto.ErrUsersTooMuch
 			c.Logger.Errorf("chat.importChatInvite - error: %v", err2)

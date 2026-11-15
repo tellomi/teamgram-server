@@ -725,3 +725,16 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Upgrade a basic group (rows 189, 217, 218)
+
+`messages.migrateChat` marked the basic group migrated before writing `messageActionChatMigrateTo`. Members were no longer normal, so the send was `CHAT_WRITE_FORBIDDEN` and the history never showed the notice. The service message is written first. The reply then includes the old chat with `deactivated` and `migrated_to`.
+
+The new supergroup used a fresh default ban and dropped the basic group's `send_media` / `send_photos` limits. `Migrate` now copies `default_banned_rights`.
+
+`messages.checkChatInvite` on the old link returned `MIGRATED_TO_CHANNEL`, which is not delivered to the client, so the RPC never answered. The check now previews the supergroup, and `messages.importChatInvite` joins it.
+
+| Piece | File |
+| --- | --- |
+| order, flags, copied bans | `messages.migrateChat_handler.go`, `channel/service_ops.go` |
+| old invite | `chat.checkChatInvite`, `chat.importChatInvite2`, `chatinvites` |
