@@ -32,8 +32,8 @@ func (h *addrHandler) OnOpen(c gnetlib.Conn) ([]byte, gnetlib.Action) {
 }
 
 func TestAcceptedLocalAddrMatchesPPV1Config(t *testing.T) {
-	plain := freePort(t)
-	ppv1 := freePort(t)
+	ports := freePorts(t, 2)
+	plain, ppv1 := ports[0], ports[1]
 	cfg := config.GnetwayConfig{
 		Server: []config.GnetwayServer{
 			{Proto: "tcp", Addresses: []string{"0.0.0.0:" + plain, "0.0.0.0:5222"}},
@@ -100,18 +100,56 @@ func TestAcceptedLocalAddrMatchesPPV1Config(t *testing.T) {
 	}
 }
 
-func freePort(t *testing.T) string {
+// freePorts reserves n TCP ports that differ from each other. Each listener
+// stays open until every port is taken. Closing one before the next Listen
+// lets the kernel hand the same ephemeral port out again, so a plain
+// listener and a PPV1 listener can be configured with one address.
+func freePorts(t *testing.T, n int) []string {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	if n < 1 {
+		t.Fatalf("freePorts n=%d", n)
 	}
-	defer ln.Close()
-	_, port, err := net.SplitHostPort(ln.Addr().String())
-	if err != nil {
-		t.Fatal(err)
+	lns := make([]net.Listener, 0, n)
+	defer func() {
+		for _, ln := range lns {
+			_ = ln.Close()
+		}
+	}()
+	ports := make([]string, 0, n)
+	seen := make(map[string]struct{}, n)
+	tries := 0
+	for len(ports) < n {
+		tries++
+		if tries > n+32 {
+			t.Fatalf("could not reserve %d distinct ports, got %v", n, ports)
+		}
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, port, err := net.SplitHostPort(ln.Addr().String())
+		if err != nil {
+			_ = ln.Close()
+			t.Fatal(err)
+		}
+		if _, ok := seen[port]; ok {
+			_ = ln.Close()
+			continue
+		}
+		seen[port] = struct{}{}
+		lns = append(lns, ln)
+		ports = append(ports, port)
 	}
-	return port
+	return ports
+}
+
+func TestFreePortsAreDistinct(t *testing.T) {
+	for i := 0; i < 32; i++ {
+		ports := freePorts(t, 3)
+		if ports[0] == ports[1] || ports[0] == ports[2] || ports[1] == ports[2] {
+			t.Fatalf("iteration %d reserved %v", i, ports)
+		}
+	}
 }
 
 func waitListen(t *testing.T, errCh <-chan error, port string) {
