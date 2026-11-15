@@ -269,7 +269,7 @@ func (ForumsService) ChannelsDeleteTopicHistory(ctx context.Context, in *mtproto
 func (ForumsService) ChannelsToggleForum(ctx context.Context, in *mtproto.TLChannelsToggleForum) (*mtproto.Updates, error) {
 	self, auth := actor(ctx)
 	_ = auth
-	return channel.Shared().ToggleForum(ctx, self, in.GetChannel(), mtproto.FromBool(in.GetEnabled()))
+	return channel.Shared().ToggleForum(ctx, self, in.GetChannel(), mtproto.FromBool(in.GetEnabled()), mtproto.FromBool(in.GetTabs()))
 }
 
 func (ForumsService) MessagesReorderPinnedForumTopics(ctx context.Context, in *mtproto.TLMessagesReorderPinnedForumTopics) (*mtproto.Updates, error) {

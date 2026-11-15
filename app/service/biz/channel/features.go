@@ -77,6 +77,8 @@ type Features struct {
 	MainProfileTab           int32
 	// ViewForumAsMessages is per viewer: user id -> enabled.
 	ViewForumAsMessages map[int64]bool
+	// ForumTabs is channels.toggleForum tabs. It is the chat.forum_tabs flag.
+	ForumTabs bool
 	// Monoforum is a direct-messages channel. channels.getMessageAuthor and
 	// messages.readSavedHistory apply only when this is set.
 	Monoforum bool

@@ -40,6 +40,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		Broadcast:                   ch.Broadcast,
 		Megagroup:                   ch.Megagroup,
 		Forum:                       ch.Forum,
+		ForumTabs:                   ch.Forum && feat.ForumTabs,
 		Signatures:                  ch.Signatures,
 		SignatureProfiles:           feat.SignatureProfiles,
 		Id:                          ch.ID,

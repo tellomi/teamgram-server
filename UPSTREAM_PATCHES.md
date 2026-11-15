@@ -755,3 +755,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
 | invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Forum tabs (ISSUE-S-FORUM-VIEW-001)
+
+`channels.toggleForum` stored `forum` and dropped the `tabs` flag, so `chat.forum_tabs` stayed false. The flag is now stored on the channel feature row and returned on `channel`. Turning the forum off clears it. `channels.toggleViewForumAsMessages` was already stored per user and copied onto `messages.getPeerDialogs`.
+
+| Piece | File |
+| --- | --- |
+| tabs | `service_features.go` `ToggleForum`, `features.go`, `convert.go` |
+| RPC | `handlers_features.go` `ChannelsToggleForum` |

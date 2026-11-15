@@ -1583,7 +1583,7 @@ func (s *Service) bindTopic(ctx context.Context, channelID int64, msgID int32, m
 	_ = s.saveFeatures(ctx, channelID, f)
 }
 
-func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.InputChannel, enabled bool) (*mtproto.Updates, error) {
+func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.InputChannel, enabled, tabs bool) (*mtproto.Updates, error) {
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
 		return nil, err
@@ -1594,6 +1594,11 @@ func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.Input
 	ch.Forum = enabled
 	ch.Version++
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
+		return nil, err
+	}
+	f := s.features(ctx, ch.ID)
+	f.ForumTabs = enabled && tabs
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
 	}
 	if enabled {
