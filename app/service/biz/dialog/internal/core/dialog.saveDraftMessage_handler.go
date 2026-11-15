@@ -25,18 +25,19 @@ import (
 // DialogSaveDraftMessage
 // dialog.saveDraftMessage user_id:long peer_type:int peer_id:long message:DraftMessage = Bool;
 func (c *DialogCore) DialogSaveDraftMessage(in *dialog.TLDialogSaveDraftMessage) (*mtproto.Bool, error) {
+	if top := dialog.DraftTopicID(in.GetMessage()); top > 0 {
+		return c.saveTopicDraft(in, top)
+	}
 	if in.Message != nil {
 		in.Message.SanitizeEntities()
 	}
 	draft, _ := jsonx.Marshal(in.Message)
 	in.PeerType, in.PeerId = savedDraftPeer(in.UserId, in.PeerType, in.PeerId)
 
-	rows, err := c.svcCtx.Dao.DialogsDAO.SaveDraft(c.ctx,
-		2,
-		hack.String(draft),
-		in.UserId,
-		in.PeerType,
-		in.PeerId)
+	// top_msg_id > 0 already returned through saveTopicDraft. A dialog
+	// draft (top_msg_id 0) still invalidates the dialog cache, and a miss
+	// inserts the dialog row before the draft is written again.
+	_, rows, err := c.saveDialogDraft(in, draft)
 	if err != nil {
 		c.Logger.Errorf("dialog.saveDraftMessage - error: %v", err)
 		return nil, err
@@ -46,18 +47,30 @@ func (c *DialogCore) DialogSaveDraftMessage(in *dialog.TLDialogSaveDraftMessage)
 			c.Logger.Errorf("dialog.saveDraftMessage - insert: %v", err)
 			return nil, err
 		}
-		if _, err = c.svcCtx.Dao.DialogsDAO.SaveDraft(c.ctx,
-			2,
-			hack.String(draft),
-			in.UserId,
-			in.PeerType,
-			in.PeerId); err != nil {
+		if _, _, err = c.saveDialogDraft(in, draft); err != nil {
 			c.Logger.Errorf("dialog.saveDraftMessage - error: %v", err)
 			return nil, err
 		}
 	}
 
 	return mtproto.BoolTrue, nil
+}
+
+// saveDialogDraft writes a dialog-level draft (top_msg_id 0) and drops the
+// cached dialog. The second result is the number of rows SaveDraft updated.
+func (c *DialogCore) saveDialogDraft(in *dialog.TLDialogSaveDraftMessage, draft []byte) (int64, int64, error) {
+	return c.svcCtx.Dao.ExecInvalidate(
+		c.ctx,
+		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+			n, err := c.svcCtx.Dao.DialogsDAO.SaveDraft(ctx,
+				2,
+				hack.String(draft),
+				in.UserId,
+				in.PeerType,
+				in.PeerId)
+			return 0, n, err
+		},
+		dialog.GetDialogCacheKeyByPeer(in.UserId, in.PeerType, in.PeerId))
 }
 
 // insertDraftDialog creates the dialog row SaveDraft updates. InsertIgnore

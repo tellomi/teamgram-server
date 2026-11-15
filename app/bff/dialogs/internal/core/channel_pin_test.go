@@ -67,6 +67,17 @@ func TestPinnedChannelOrderFollowsPinRank(t *testing.T) {
 	}
 }
 
+func TestChannelDialogKeepsChatDraft(t *testing.T) {
+	channelRow := channelDialog(50, 1, false, 0)
+	channelRow.Dialog.Draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{Message: "topic"}).To_DraftMessage()
+	stored := channelDialog(50, 1, false, 0)
+	stored.Dialog.Draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{Message: "group draft"}).To_DraftMessage()
+	applyChannelDialogRows(dialog.DialogExtList{channelRow}, dialog.DialogExtList{stored})
+	if channelRow.GetDialog().GetDraft().GetMessage() != "group draft" {
+		t.Fatalf("draft %+v", channelRow.GetDialog().GetDraft())
+	}
+}
+
 func TestChannelLiveTopReplacesStalePinRow(t *testing.T) {
 	stored := channelDialog(50, 9, true, 9<<32)
 	stored.Dialog.TopMessage = 9

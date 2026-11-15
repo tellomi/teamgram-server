@@ -2,6 +2,24 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Forum topic drafts (ISSUE-S-TOPIC-DRAFT-001)
+
+`messages.saveDraft` stored one draft per (user, peer) on `dialogs.draft_message_data` and ignored `reply_to.top_msg_id`. A forum topic draft replaced the megagroup draft, `updateDraftMessage` had no `top_msg_id`, and `forumTopic.draft` stayed empty.
+
+Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg_id`. `top_msg_id` 0 is still the dialog row. The migration only creates the new table. Existing `dialogs.draft_message_data` rows are not updated or deleted, and are read as the dialog draft. `messages.getAllDrafts` returns one update per draft, with `top_msg_id` on topic drafts. `messages.clearAllDrafts` clears both. `messages.getForumTopics` and `messages.getForumTopicsByID` fill `forumTopic.draft` from that user's topic rows. `messages.sendMessage` (and sendMedia / sendMultiMedia) with `clear_draft` and a topic id clears only that topic. `messages.saveDraft` uses the same send check as `messages.sendMessage`: a non-member, a mute, or a missing send right is `CHAT_WRITE_FORBIDDEN`; a broadcast that only an admin may post in is `CHAT_ADMIN_REQUIRED`. A dialog-store error is returned and is not pushed.
+
+| Piece | File |
+| --- | --- |
+| Topic table | `teamgramd/deploy/sql/migrate-20261130-dialog-topic-draft.sql` |
+| Store and list | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go`, `dialog.getAllDrafts_handler.go`, `dialog.clearAllDrafts_handler.go`, `topic_draft.go` |
+| Client RPC | `app/bff/drafts/internal/core/messages.saveDraft_handler.go`, `messages.getAllDrafts_handler.go`, `messages.clearAllDrafts_handler.go` |
+| clear_draft | `app/bff/messages/internal/core/core_messages_helper.go` |
+| forumTopic.draft | `app/bff/channels/internal/server/grpc/service/forum_topic_draft.go` |
+| dialog.draft on the chat list | `app/bff/dialogs/internal/core/channel_dialogs.go` |
+| BFF wiring | `app/bff/bff/internal/server/server.go`, `app/bff/channels/helper.go`, `app/bff/channels/internal/server/grpc/service/handlers_features.go` |
+| clear_draft callers | `app/bff/messages/internal/core/messages.sendMessage_handler.go`, `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/bff/messages/internal/core/messages.sendMultiMedia_handler.go` |
+| dialog draft clear and DAO | `app/service/biz/dialog/internal/core/dialog.clearDraftMessage_handler.go`, `app/service/biz/dialog/internal/dao/mysql.go` |
+
 ## Profile photo ownership
 
 `photos.updateProfilePhoto` wrote any photo id into the caller's album. A missing id became an avatar that could not load, and another user's photo id showed that person's picture. The photo now has to exist, already be in the caller's album (or be their public fallback photo), and the `access_hash` has to match. Otherwise the RPC returns `PHOTO_ID_INVALID` and the album is unchanged. `inputPhotoEmpty` still removes the current avatar. `photos.uploadProfilePhoto` still inserts a photo the caller just uploaded.

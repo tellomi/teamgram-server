@@ -73,15 +73,18 @@ func (c *DialogsCore) stampChannelFolders(list dialog.DialogExtList) {
 	applyChannelDialogRows(list, rows.GetDatas())
 }
 
-// applyChannelDialogRows copies the dialogs-table folder and pin onto channel
-// dialogs. The channel store does not keep either bit. A pinned channel was
+// applyChannelDialogRows copies the dialogs-table folder, pin, and draft onto
+// channel dialogs. The channel store does not keep those. A pinned channel was
 // replaced by an unpinned row, so getDialogs neither set pinned nor sorted it
 // first. Pin rank stays on Order; the chat-list sort reads that before date.
+// dialog.draft is the chat draft (top_msg_id 0). A topic draft is not on this
+// row, so replacing the channel dialog must not drop the chat draft either.
 func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 	type saved struct {
 		folder int32
 		pinned bool
 		order  int64
+		draft  *mtproto.DraftMessage
 	}
 	state := map[int64]saved{}
 	for _, row := range rows {
@@ -93,6 +96,7 @@ func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 			folder: row.GetDialog().GetFolderId().GetValue(),
 			pinned: row.GetDialog().GetPinned(),
 			order:  row.GetOrder(),
+			draft:  row.GetDialog().GetDraft(),
 		}
 	}
 	for _, ext := range list {
@@ -105,6 +109,7 @@ func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 			continue
 		}
 		ext.Dialog.FolderId = mtproto.MakeFlagsInt32(row.folder)
+		ext.Dialog.Draft = row.draft
 		if row.pinned {
 			ext.Dialog.Pinned = true
 			ext.Order = row.order

@@ -35,5 +35,12 @@ func (c *DialogCore) DialogGetAllDrafts(in *dialog.TLDialogGetAllDrafts) (*dialo
 		return nil, err
 	}
 
+	topics, err := c.loadTopicDrafts(in.UserId)
+	if err != nil {
+		c.Logger.Errorf("dialog.getAllDrafts - topics: %v", err)
+		return nil, err
+	}
+	rValues.Datas = append(rValues.Datas, topics...)
+
 	return rValues, nil
 }
