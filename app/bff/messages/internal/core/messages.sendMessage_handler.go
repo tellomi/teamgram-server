@@ -57,18 +57,20 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		c.Logger.Errorf("messages.sendMessage - sanction")
 		return nil, err
 	}
+	if err := c.paidMessageRequired(peer, in.GetAllowPaidStars().GetValue()); err != nil {
+		c.Logger.Errorf("messages.sendMessage - paid")
+		return nil, err
+	}
 
 	if in.Message == "" {
 		err := mtproto.ErrMessageEmpty
 		c.Logger.Errorf("message empty: %v", err)
 		return nil, err
 	}
-	// TODO(@benqi): calc utf16len(message)
-	//else if len(request.Message) > 4000 {
-	//	err = mtproto.ErrMessageTooLong
-	//	c.Logger.Errorf("messages.sendMessage: %v", err)
-	//	return
-	//}
+	if textTooLong(in.Message) {
+		c.Logger.Errorf("messages.sendMessage - MESSAGE_TOO_LONG")
+		return nil, mtproto.ErrMessageTooLong
+	}
 
 	// messages.sendMessage#983f9745 flags:#
 	//no_webpage:flags.1?true
@@ -110,7 +112,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		Date:                 int32(time.Now().Unix()),
 		Message:              in.Message,
 		Media:                nil,
-		ReplyMarkup:          in.ReplyMarkup,
+		ReplyMarkup:          c.botReplyMarkup(in.ReplyMarkup),
 		Entities:             in.Entities,
 		Views:                nil,
 		Forwards:             nil,
@@ -235,7 +237,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {
-			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer)
+			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, outgoingTopicID(in.GetReplyTo(), in.GetTopMsgId()))
 		})
 	}
 

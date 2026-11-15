@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	"github.com/teamgram/teamgram-server/app/bff/messages/aicompose"
 	"github.com/teamgram/teamgram-server/app/bff/messages/p1rest"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
@@ -32,12 +33,28 @@ type WallpapersService struct {
 	Msg msg_client.MsgClient
 }
 
+func wallpaperOf(up *mtproto.Updates) *mtproto.WallPaper {
+	if up == nil {
+		return nil
+	}
+	for _, u := range up.GetUpdates() {
+		if u.GetWallpaper() != nil {
+			return u.GetWallpaper()
+		}
+		if paper := u.GetMessage_MESSAGE().GetAction().GetWallpaper(); paper != nil {
+			return paper
+		}
+	}
+	return nil
+}
+
 func (s WallpapersService) MessagesSetChatWallPaper(ctx context.Context, in *mtproto.TLMessagesSetChatWallPaper) (*mtproto.Updates, error) {
 	self, auth := selfID(ctx)
 	local, err := p1rest.SetChatWallPaper(self, in)
 	if err != nil {
 		return nil, err
 	}
+	chatdecor.Remember(wallpaperOf(local))
 	return deliverService(ctx, s.Msg, self, auth, in.GetPeer(), local)
 }
 

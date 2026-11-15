@@ -43,10 +43,7 @@ func (c *DraftsCore) MessagesClearAllDrafts(in *mtproto.TLMessagesClearAllDrafts
 
 	// sync
 	for _, v := range rValues.Datas {
-		syncUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateDraftMessage(&mtproto.Update{
-			Peer_PEER: v.Peer,
-			Draft:     v.Draft,
-		}).To_Update())
+		syncUpdates := mtproto.MakeUpdatesByUpdates(dialog.DraftUpdate(v.Peer, v.Draft))
 
 		peer := mtproto.FromPeer(v.Peer)
 		switch peer.PeerType {

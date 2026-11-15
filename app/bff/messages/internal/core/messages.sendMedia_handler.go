@@ -78,8 +78,14 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 			return nil, err
 		}
 	}
+	if peer.PeerType == mtproto.PEER_CHANNEL && in.GetMedia().GetPredicateName() == mtproto.Predicate_inputMediaPoll {
+		if err = channel.Shared().ForbidPoll(c.ctx, c.MD.UserId, peer.PeerId); err != nil {
+			c.Logger.Errorf("messages.sendMedia - send_polls: %v", err)
+			return nil, err
+		}
+	}
 
-	if len(in.Message) > 4000 {
+	if c.captionLimitExceeded(in.Message) {
 		err = mtproto.ErrMediaCaptionTooLong
 		c.Logger.Errorf("messages.sendMedia: %v", err)
 		return nil, err
@@ -107,7 +113,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		Date:                 int32(time.Now().Unix()),
 		Media:                nil,
 		Message:              in.Message,
-		ReplyMarkup:          in.ReplyMarkup,
+		ReplyMarkup:          c.botReplyMarkup(in.ReplyMarkup),
 		Entities:             in.Entities,
 		Views:                nil,
 		Forwards:             nil,
@@ -219,7 +225,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {
-			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer)
+			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, outgoingTopicID(in.GetReplyTo(), in.GetTopMsgId()))
 		})
 	}
 
