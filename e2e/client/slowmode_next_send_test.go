@@ -14,19 +14,20 @@ import (
 // A member who just sent in a 30-second slow mode sees
 // channelFull.slowmode_next_send_date in (now, now+30]. An admin and the
 // creator do not. Turning slow mode off clears the field.
-// Phones 9996610801–9996610803, code 11111, layer 232.
+// Phones 9996610811–9996610813, code 11111, layer 232.
+// 9996610801–9996610802 belong to the channel profile-photo test.
 func TestSlowmodeNextSendDate(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := contextTimeout(3 * time.Minute)
 	defer cancel()
-	owner, _ := dialPhone(t, ctx, cfg, "9996610801", "SlowOwn")
-	admin, _ := dialPhone(t, ctx, cfg, "9996610802", "SlowAdm")
-	member, _ := dialPhone(t, ctx, cfg, "9996610803", "SlowMem")
-	adminID, adminHash, err := owner.ImportPhone(ctx, "9996610802", "SlowAdm")
+	owner, _ := dialPhone(t, ctx, cfg, "9996610811", "SlowOwn")
+	admin, _ := dialPhone(t, ctx, cfg, "9996610812", "SlowAdm")
+	member, _ := dialPhone(t, ctx, cfg, "9996610813", "SlowMem")
+	adminID, adminHash, err := owner.ImportPhone(ctx, "9996610812", "SlowAdm")
 	if err != nil {
 		t.Fatal(err)
 	}
-	memberID, memberHash, err := owner.ImportPhone(ctx, "9996610803", "SlowMem")
+	memberID, memberHash, err := owner.ImportPhone(ctx, "9996610813", "SlowMem")
 	if err != nil {
 		t.Fatal(err)
 	}
