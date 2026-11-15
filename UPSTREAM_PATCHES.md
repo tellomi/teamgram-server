@@ -720,7 +720,7 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 
 Channel `UnpinAll` tracked a single `PinnedMsgID` and returned after clearing that one row, so a second pinned megagroup or topic message stayed `pinned`. `PinMessage` with `unpin` cleared the feature id and left `message.pinned` set, so pinned search still matched. The private peer's inbox built `updatePinnedMessages` and never ran `UpdateUnPinnedByIdList`, and a basic-group fan-out reused one id list across members.
 
-Unpin now clears `pinned` on the requested message and, for unpin-all, on every stored message that is still pinned. The inbox writes `pinned=0` and `dialogs.pinned_msg_id=0` before the push. Each basic-group member gets only that member's ids.
+Unpin now clears `pinned` on the requested message and, for unpin-all, on every stored message that is still pinned. `top_msg_id` limits that clear to one forum topic. `CommitEdit` advances channel pts, and the returned `AffectedHistory.pts` is that new value. The inbox writes `pinned=0` and `dialogs.pinned_msg_id=0` before the push. Each basic-group member gets only that member's ids.
 
 | Piece | File |
 | --- | --- |

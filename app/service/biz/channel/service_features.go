@@ -1108,9 +1108,11 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	return s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
 }
 
-// UnpinAll clears the channel's pinned message. A channel with nothing
-// pinned returns the current pts and a zero count.
-func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64) (int32, int32, error) {
+// UnpinAll clears pinned messages. topMsgID limits the clear to one forum
+// topic (messages.unpinAllMessages top_msg_id). Zero clears the whole channel.
+// The returned pts is the channel pts after the edits, not the pts from
+// before CommitEdit.
+func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64, topMsgID int32) (int32, int32, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {
 		return 0, 0, err
@@ -1130,14 +1132,19 @@ func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64
 	if err != nil {
 		return 0, 0, err
 	}
+	pts := ch.Pts
 	var cleared int32
+	clearFeature := false
 	for _, stored := range all {
 		if stored == nil || stored.Deleted {
 			continue
 		}
-		body, err := unmarshalMessage(stored.Data)
+		if topMsgID != 0 && !storedInTopic(f, stored, topMsgID) {
+			continue
+		}
+		body, uerr := unmarshalMessage(stored.Data)
 		tracked := f.PinnedMsgID == stored.ID
-		if err != nil || body == nil || (!body.GetPinned() && !tracked) {
+		if uerr != nil || body == nil || (!body.GetPinned() && !tracked) {
 			continue
 		}
 		if body.GetPinned() {
@@ -1146,22 +1153,29 @@ func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64
 			if mErr != nil {
 				return 0, 0, mErr
 			}
-			if _, err = s.store.CommitEdit(ctx, channelID, stored.ID, int32(time.Now().Unix()), raw); err != nil {
+			newPts, err := s.store.CommitEdit(ctx, channelID, stored.ID, int32(time.Now().Unix()), raw)
+			if err != nil {
 				return 0, 0, err
 			}
+			pts = newPts
+		}
+		if tracked {
+			clearFeature = true
 		}
 		cleared++
 	}
-	if cleared == 0 && f.PinnedMsgID == 0 {
+	if cleared == 0 {
 		_ = actorAuth
 		return ch.Pts, 0, nil
 	}
-	f.PinnedMsgID = 0
-	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
-		return 0, 0, err
+	if clearFeature {
+		f.PinnedMsgID = 0
+		if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+			return 0, 0, err
+		}
 	}
 	_ = actorAuth
-	return ch.Pts, cleared, nil
+	return pts, cleared, nil
 }
 
 func (s *Service) setMessagePinned(ctx context.Context, channelID int64, msgID int32, pinned bool) error {

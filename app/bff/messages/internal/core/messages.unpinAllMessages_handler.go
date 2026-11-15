@@ -35,7 +35,7 @@ func (c *MessagesCore) MessagesUnpinAllMessages(in *mtproto.TLMessagesUnpinAllMe
 	case mtproto.PEER_USER:
 	case mtproto.PEER_CHAT:
 	case mtproto.PEER_CHANNEL:
-		pts, count, err := channel.Shared().UnpinAll(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId)
+		pts, count, err := channel.Shared().UnpinAll(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId, in.GetTopMsgId().GetValue())
 		if err != nil {
 			c.Logger.Errorf("messages.unpinAllMessages - error: %v", err)
 			return nil, err
