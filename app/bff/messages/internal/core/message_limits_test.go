@@ -162,6 +162,59 @@ func TestNoopEditKeepsResentEntities(t *testing.T) {
 	}
 }
 
+func TestBotKeyboardKeptWhenUserRecordIsBot(t *testing.T) {
+	markup := mtproto.MakeTLReplyKeyboardMarkup(&mtproto.ReplyMarkup{
+		Rows_VECTORKEYBOARDBUTTONROW: []*mtproto.KeyboardButtonRow{
+			mtproto.MakeTLKeyboardButtonRow(&mtproto.KeyboardButtonRow{
+				Buttons: []*mtproto.KeyboardButton{
+					mtproto.MakeTLKeyboardButton(&mtproto.KeyboardButton{Text: "go"}).To_KeyboardButton(),
+				},
+			}).To_KeyboardButtonRow(),
+		},
+	}).To_ReplyMarkup()
+	bot := &MessagesCore{
+		ctx: context.Background(),
+		svcCtx: &svc.ServiceContext{Dao: &dao.Dao{
+			UserClient: botFlagUsers{bot: true},
+		}},
+		MD: &metadata.RpcMetadata{UserId: 7},
+	}
+	if bot.MD.IsBot {
+		t.Fatal("session metadata must not be the bot flag")
+	}
+	if got := bot.botReplyMarkup(markup); got == nil || got.GetPredicateName() != mtproto.Predicate_replyKeyboardMarkup {
+		t.Fatal("bot keyboard dropped")
+	}
+	person := &MessagesCore{
+		ctx: context.Background(),
+		svcCtx: &svc.ServiceContext{Dao: &dao.Dao{
+			UserClient: botFlagUsers{bot: false},
+		}},
+		MD: &metadata.RpcMetadata{UserId: 8},
+	}
+	if person.botReplyMarkup(markup) != nil {
+		t.Fatal("user keyboard kept")
+	}
+	edit := &mtproto.TLMessagesEditMessage{ReplyMarkup: markup}
+	edit.ReplyMarkup = bot.botReplyMarkup(edit.ReplyMarkup)
+	if edit.ReplyMarkup == nil {
+		t.Fatal("bot edit dropped the keyboard")
+	}
+	edit.ReplyMarkup = person.botReplyMarkup(markup)
+	if edit.ReplyMarkup != nil {
+		t.Fatal("user edit kept the keyboard")
+	}
+}
+
+type botFlagUsers struct {
+	userclient.UserClient
+	bot bool
+}
+
+func (u botFlagUsers) UserIsBot(context.Context, *userpb.TLUserIsBot) (*mtproto.Bool, error) {
+	return mtproto.ToBool(u.bot), nil
+}
+
 func captionCore(paid bool, expire int64) *MessagesCore {
 	return &MessagesCore{
 		ctx: context.Background(),

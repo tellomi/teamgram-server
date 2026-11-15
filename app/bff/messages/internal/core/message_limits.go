@@ -159,9 +159,26 @@ func stagePrivateEdit(before *mtproto.Message, in *mtproto.TLMessagesEditMessage
 
 // botReplyMarkup keeps reply_markup only when the sender is a bot.
 // A user-sent keyboard is ignored, matching Telegram.
+// Session metadata leaves IsBot unset, so the user row is the check:
+// a known bot id, then user.isBot. A lookup failure drops the markup.
 func (c *MessagesCore) botReplyMarkup(markup *mtproto.ReplyMarkup) *mtproto.ReplyMarkup {
-	if c == nil || c.MD == nil || !c.MD.IsBot {
+	if markup == nil || !c.senderIsBot() {
 		return nil
 	}
 	return markup
+}
+
+func (c *MessagesCore) senderIsBot() bool {
+	if c == nil || c.MD == nil || c.MD.UserId == 0 {
+		return false
+	}
+	if c.MD.IsBot || userpb.GetBotNameById(c.MD.UserId) != "" {
+		return true
+	}
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return false
+	}
+	defer func() { _ = recover() }()
+	ok, err := c.svcCtx.Dao.UserClient.UserIsBot(c.ctx, &userpb.TLUserIsBot{Id: c.MD.UserId})
+	return err == nil && mtproto.FromBool(ok)
 }

@@ -967,3 +967,17 @@ The inbox copy of the service message stores the flag for the peer. A one-sided 
 | caller update | `app/bff/messages/p1rest/wallpaper.go` |
 | per-user dialog column | `app/messenger/msg/internal/dao/chat_decor.go` |
 | getFullUser | `app/bff/users/internal/core/users.getFullUser_handler.go` |
+
+## Bot reply markup (ISSUE-S-USER-REPLYMARKUP-001)
+
+`messages.sendMessage`, `messages.sendMedia`, and `messages.editMessage` kept `reply_markup` only when `RpcMetadata.IsBot` was set. The session never sets that flag, and the HTTP gateway sets it false, so a real bot's keyboard was dropped.
+
+The sender is a bot when the metadata says so, when the id is a known bot, or when `user.isBot` says the user row has a bot record. A lookup failure, and any ordinary user, still drops the markup.
+
+`messages.setChatWallPaper` returns the messenger updates for the service message and also the caller's `updatePeerWallpaper`. That update says `wallpaper_overridden` is false.
+
+| Piece | File |
+| --- | --- |
+| bot check | `app/bff/messages/internal/core/message_limits.go` |
+| edit | `messages.editMessage_handler.go` |
+| wallpaper update | `app/bff/messages/internal/server/grpc/service/chat_decor.go` |

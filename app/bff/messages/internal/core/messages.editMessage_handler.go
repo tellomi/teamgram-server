@@ -45,9 +45,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - sanction")
 		return nil, err
 	}
-	if !c.MD.IsBot {
-		in.ReplyMarkup = nil
-	}
+	in.ReplyMarkup = c.botReplyMarkup(in.ReplyMarkup)
 	if peer.PeerType == mtproto.PEER_SELF {
 		peer.PeerType = mtproto.PEER_USER
 	}
@@ -139,9 +137,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	outMessage := editMessages.Datas[0].Message
 	beforeEdit := proto.Clone(outMessage).(*mtproto.Message)
 	outMessage.EditHide = false
-	if !c.MD.IsBot {
-		in.ReplyMarkup = nil
-	}
+	in.ReplyMarkup = c.botReplyMarkup(in.ReplyMarkup)
 	var replacement *mtproto.MessageMedia
 	if in.Media != nil {
 		newMedia, err2 := c.makeMediaByInputMedia(in.Media)
