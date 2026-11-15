@@ -725,3 +725,13 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Private chat noforwards flags (行 137, ISSUE-S-NOFWD-001)
+
+`messages.toggleNoForwards` on a private chat already stores one shared bit and `messages.forwardMessages` already rejects that chat and a message with `noforwards`. `users.getFullUser` never copied the bit onto `noforwards_my_enabled` / `noforwards_peer_enabled`, so both clients kept showing the switch as off.
+
+The pair is one switch: either person can clear it. While it is on, both flags are set on each user's `userFull`. A self user is unchanged.
+
+| Piece | File |
+| --- | --- |
+| userFull | `app/bff/users/internal/core/users.getFullUser_handler.go` |
