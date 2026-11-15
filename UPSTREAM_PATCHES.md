@@ -15,6 +15,7 @@ Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg
 | Client RPC | `app/bff/drafts/internal/core/messages.saveDraft_handler.go`, `messages.getAllDrafts_handler.go`, `messages.clearAllDrafts_handler.go` |
 | clear_draft | `app/bff/messages/internal/core/core_messages_helper.go` |
 | forumTopic.draft | `app/bff/channels/internal/server/grpc/service/forum_topic_draft.go` |
+| dialog.draft on the chat list | `app/bff/dialogs/internal/core/channel_dialogs.go` |
 
 ## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
 
