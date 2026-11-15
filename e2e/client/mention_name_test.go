@@ -35,12 +35,12 @@ func TestMentionNameWithoutUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgs, err := a.History(ctx, peer, 10)
+	msgs, err := a.History(ctx, peer, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range msgs {
-		if m.GetId() != id {
+		if m.GetMessage() != text && m.GetId() != id {
 			continue
 		}
 		for _, entity := range m.GetEntities() {
@@ -48,7 +48,11 @@ func TestMentionNameWithoutUsername(t *testing.T) {
 				return
 			}
 		}
-		t.Fatalf("stored entities %#v", m.GetEntities())
+		t.Fatalf("message %d entities %#v", m.GetId(), m.GetEntities())
 	}
-	t.Fatalf("message %d missing from history", id)
+	ids := make([]int32, 0, len(msgs))
+	for _, m := range msgs {
+		ids = append(ids, m.GetId())
+	}
+	t.Fatalf("message %d %q missing from history ids %v", id, text, ids)
 }
