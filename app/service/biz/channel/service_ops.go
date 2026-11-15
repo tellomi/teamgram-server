@@ -697,6 +697,15 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 	if actor == nil || !actor.InChannel() {
 		return mtproto.ErrChannelPrivate
 	}
+	// edit_messages is a broadcast-channel right. In a megagroup the author
+	// is the only one who may edit, including the creator and an admin who
+	// holds edit_messages. Delete stays on the checks below.
+	if edit && (ch == nil || !ch.Broadcast) {
+		if msg != nil && msg.SenderID == actor.UserID {
+			return nil
+		}
+		return mtproto.ErrMessageAuthorRequired
+	}
 	if actor.IsCreator() {
 		return nil
 	}

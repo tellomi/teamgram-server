@@ -725,3 +725,11 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Megagroup edit is author-only (ISSUE-S-MG-EDIT-OTHERS-001, 行 155)
+
+`channel.canModify` treated the creator, and an admin with `edit_messages`, as allowed to rewrite any message. That matches a broadcast channel. In a megagroup `edit_messages` does not grant editing someone else's message. `messages.editMessage` and `messages.getMessageEditData` now return `403 MESSAGE_AUTHOR_REQUIRED` unless the caller is the stored sender. Deleting another member's message is unchanged: the creator and an admin with `delete_messages` can still do that.
+
+| Piece | File |
+| --- | --- |
+| author check | `app/service/biz/channel/service_ops.go` |

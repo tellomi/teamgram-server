@@ -70,8 +70,8 @@ func TestSupergroupReadParticipantsMentionsAndEditData(t *testing.T) {
 	if _, err := svc.MessageEditData(ctx, 3, ch.Id, msgID); err != mtproto.ErrMessageAuthorRequired {
 		t.Fatalf("other member: %v", err)
 	}
-	if caption, err := svc.MessageEditData(ctx, 1, ch.Id, msgID); err != nil || !caption {
-		t.Fatalf("creator edit data %v %v", caption, err)
+	if _, err := svc.MessageEditData(ctx, 1, ch.Id, msgID); err != mtproto.ErrMessageAuthorRequired {
+		t.Fatalf("creator editing another member: %v", err)
 	}
 	plain, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 9, Message: &mtproto.Message{Message: "text", Date: 21}}})
 	if err != nil {
