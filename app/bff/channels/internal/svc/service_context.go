@@ -21,6 +21,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
+	"github.com/teamgram/teamgram-server/app/service/media/media"
 	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
 	"github.com/teamgram/teamgram-server/app/service/status/status"
 	"github.com/teamgram/teamgram-server/pkg/archive"
@@ -52,12 +53,24 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if len(c.MediaClient.Etcd.Hosts) > 0 {
 		mediaClient = media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient))
 	}
+	installChatPhotoGetter(mediaClient)
 	return &ServiceContext{
 		Config:       c,
 		UserClient:   users,
 		MediaClient:  mediaClient,
 		DialogClient: installChannelHooks(c, users),
 	}
+}
+
+// installChatPhotoGetter fills channelFull.chat_photo from media.getPhoto.
+// The getter is read once per distinct photo id, in parallel.
+func installChatPhotoGetter(client media_client.MediaClient) {
+	if client == nil {
+		return
+	}
+	channel.Shared().SetChatPhotoGetter(func(ctx context.Context, photoID int64) (*mtproto.Photo, error) {
+		return client.MediaGetPhoto(ctx, &media.TLMediaGetPhoto{PhotoId: photoID})
+	})
 }
 
 func installChannelHooks(c config.Config, users user_client.UserClient) dialog_client.DialogClient {
