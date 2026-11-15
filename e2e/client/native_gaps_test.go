@@ -94,6 +94,8 @@ func TestNativeProtocolGaps(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The service message is written through messenger.msg. getHistory can
+	// run before that row is visible, so poll instead of reading once.
 	if !historyHasAction(t, a, inputPeerUser(bSelf.ID, bSelf.AccessHash), mtproto.Predicate_messageActionSetChatTheme) {
 		t.Fatal("caller history has no setChatTheme service message")
 	}
@@ -104,17 +106,22 @@ func TestNativeProtocolGaps(t *testing.T) {
 
 func historyHasAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name string) bool {
 	t.Helper()
-	ctx, cancel := contextTimeout(20 * time.Second)
+	ctx, cancel := contextTimeout(12 * time.Second)
 	defer cancel()
-	page := historyPage(t, c, ctx, &mtproto.TLMessagesGetHistory{
-		Constructor: mtproto.CRC32_messages_getHistory,
-		Peer:        peer,
-		Limit:       20,
-	})
-	for _, m := range page {
-		if m.GetAction().GetPredicateName() == name {
-			return true
+	var found bool
+	err := waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
+		page := historyPage(t, c, ctx, &mtproto.TLMessagesGetHistory{
+			Constructor: mtproto.CRC32_messages_getHistory,
+			Peer:        peer,
+			Limit:       40,
+		})
+		for _, m := range page {
+			if m.GetAction().GetPredicateName() == name {
+				found = true
+				return true, nil
+			}
 		}
-	}
-	return false
+		return false, nil
+	})
+	return err == nil && found
 }
