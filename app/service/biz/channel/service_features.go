@@ -1648,13 +1648,19 @@ func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.Input
 }
 
 func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32, emoticons []string, big bool) (*mtproto.Updates, error) {
-	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
+	ch, actor, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
 	}
 	stored, err := s.store.GetMessage(ctx, channelID, msgID)
 	if err != nil || stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
+	}
+	if len(emoticons) > 0 {
+		admin := actor != nil && actor.InChannel() && (actor.IsCreator() || actor.IsAdmin())
+		if err := mtproto.ReactionForbidden(int32(time.Now().Unix()), admin, memberBans(ch, actor)); err != nil {
+			return nil, err
+		}
 	}
 	f := s.features(ctx, ch.ID)
 	if err := allowReact(f, emoticons); err != nil {
