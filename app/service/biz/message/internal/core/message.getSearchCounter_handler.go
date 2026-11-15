@@ -27,18 +27,21 @@ func (c *MessageCore) MessageGetSearchCounter(in *message.TLMessageGetSearchCoun
 		// MEDIA_VIDEOS_ONLY. The combined type is a legacy bucket.
 		n = c.countMediaTypes(in.UserId, dialogID.A, dialogID.B,
 			mtproto.MEDIA_PHOTOVIDEO, mtproto.MEDIA_PHOTOS_ONLY, mtproto.MEDIA_VIDEOS_ONLY)
-	case mtproto.MEDIA_VOICE_FILE:
-		n = c.countMediaTypes(in.UserId, dialogID.A, dialogID.B, mtproto.MEDIA_VOICE_FILE)
-		n += c.countAudioKind(in.UserId, dialogID.A, dialogID.B, true)
-	case mtproto.MEDIA_ROUND_FILE:
-		n = c.countMediaTypes(in.UserId, dialogID.A, dialogID.B, mtproto.MEDIA_ROUND_FILE)
-		n += c.countAudioKind(in.UserId, dialogID.A, dialogID.B, false)
-	case mtproto.MEDIA_AUDIO:
-		n = c.countMediaTypes(in.UserId, dialogID.A, dialogID.B,
-			mtproto.MEDIA_AUDIO, mtproto.MEDIA_VOICE_FILE, mtproto.MEDIA_ROUND_FILE)
 	case mtproto.MEDIA_PINNED:
 		n = c.countPinned(in.UserId, dialogID.A, dialogID.B)
 	default:
+		if indexed, legacyVoice, legacyRound, ok := counterPlan(in.MediaType); ok {
+			// Same column photos use. The legacy scan only reads
+			// MEDIA_AUDIO, so a new voice or round row is not counted twice.
+			n = c.countMediaTypes(in.UserId, dialogID.A, dialogID.B, indexed...)
+			if legacyVoice {
+				n += c.countAudioKind(in.UserId, dialogID.A, dialogID.B, true)
+			}
+			if legacyRound {
+				n += c.countAudioKind(in.UserId, dialogID.A, dialogID.B, false)
+			}
+			break
+		}
 		n = c.countMediaTypes(in.UserId, dialogID.A, dialogID.B, in.MediaType)
 	}
 	return &mtproto.Int32{V: n}, nil

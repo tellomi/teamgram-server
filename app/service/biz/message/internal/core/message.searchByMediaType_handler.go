@@ -10,6 +10,8 @@
 package core
 
 import (
+	"sort"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -77,17 +79,41 @@ func (c *MessageCore) searchByMediaType(
 		dialogId = mtproto.MakeDialogId(userId, peerType, peerId)
 	)
 
-	_, _ = c.svcCtx.Dao.MessagesDAO.SelectByMediaTypeWithCB(
-		c.ctx,
-		userId,
-		dialogId.A,
-		dialogId.B,
-		mediaType,
-		offset,
-		limit,
-		func(sz, i int, v *dataobject.MessagesDO) {
-			boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, userId, v))
-		})
+	types := searchMediaTypes(mediaType)
+	if len(types) == 1 {
+		_, _ = c.svcCtx.Dao.MessagesDAO.SelectByMediaTypeWithCB(
+			c.ctx,
+			userId,
+			dialogId.A,
+			dialogId.B,
+			types[0],
+			offset,
+			limit,
+			func(sz, i int, v *dataobject.MessagesDO) {
+				boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, userId, v))
+			})
+	} else {
+		// One query per stored kind, then the newest `limit` across them.
+		// A voice note written as MEDIA_VOICE_FILE still shows up in a
+		// search that asks for the old MEDIA_AUDIO bucket, and the reverse.
+		var parts [][]*mtproto.MessageBox
+		for _, kind := range types {
+			var part []*mtproto.MessageBox
+			_, _ = c.svcCtx.Dao.MessagesDAO.SelectByMediaTypeWithCB(
+				c.ctx,
+				userId,
+				dialogId.A,
+				dialogId.B,
+				kind,
+				offset,
+				limit,
+				func(sz, i int, v *dataobject.MessagesDO) {
+					part = append(part, c.svcCtx.Dao.MakeMessageBox(c.ctx, userId, v))
+				})
+			parts = append(parts, part)
+		}
+		boxList = mergeNewestBoxes(parts, limit)
+	}
 
 	if boxList == nil {
 		boxList = []*mtproto.MessageBox{}
@@ -96,8 +122,36 @@ func (c *MessageCore) searchByMediaType(
 	return
 }
 
+// mergeNewestBoxes keeps the newest distinct boxes, at most limit.
+// Each part is already limited to `limit` rows of one filter type, so the
+// global newest `limit` are all present.
+func mergeNewestBoxes(parts [][]*mtproto.MessageBox, limit int32) []*mtproto.MessageBox {
+	seen := map[int32]struct{}{}
+	var merged []*mtproto.MessageBox
+	for _, part := range parts {
+		for _, box := range part {
+			if box == nil {
+				continue
+			}
+			id := box.GetMessageId()
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			merged = append(merged, box)
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].GetMessageId() > merged[j].GetMessageId()
+	})
+	if limit > 0 && int32(len(merged)) > limit {
+		merged = merged[:limit]
+	}
+	return merged
+}
+
 func (c *MessageCore) searchGlobalMedia(userId int64, mediaType, offset, limit int32) (boxList []*mtproto.MessageBox) {
-	types := []int32{mediaType}
+	types := searchMediaTypes(mediaType)
 	matchURL := false
 	switch mediaType {
 	case mtproto.MEDIA_PHOTOVIDEO:

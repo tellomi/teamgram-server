@@ -2,6 +2,18 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Voice search counters after send (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
+
+`messages.getSearchCounters` counted a photo from `message_filter_type` as soon as the row was committed. A voice note and a round video were both stored as `MEDIA_AUDIO`. The voice count then paged those rows and parsed `message_data`. The sender's row is inserted by the inbox consumer after `sendMedia` has returned, so the same call could report photo=1 and voice=0.
+
+A new voice note is stored as `MEDIA_VOICE_FILE` and a new round video as `MEDIA_ROUND_FILE`, and those columns are counted the same way as a photo. The sender's row is inserted before the send RPC returns. The consumer's later insert is the same box id and random id, so it is a replay and does not move `dialog.top_message`. A historical `MEDIA_AUDIO` row is still classified from the document attribute and is not counted again. Media search of the old bucket also reads the two new types.
+
+| Piece | File |
+| --- | --- |
+| filter type on write | `proto/mtproto/message_filter_util.go` |
+| sender row before return | `app/messenger/msg/internal/dao/outbox.go`, `outbox_search_visible.go` |
+| count and search | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `message.searchByMediaType_handler.go`, `search_counter_voice.go` |
+
 ## Channel profile photo on getFullChannel (ISSUE-S-CHAN-FULLPHOTO-001)
 
 `channels.editPhoto` stored the photo id on the channel and put the full photo on the service message and on `chat.photo`. `channels.getFullChannel` still wrote `channelFull.chat_photo` as `photoEmpty`, so the profile screen could not open the large photo. The field now loads that photo id through `media.getPhoto` (the same call a basic group already uses when it fills `chatFull.chat_photo`). Several ids are deduped and loaded together. A missing photo, or a cleared avatar, stays `photoEmpty`. `messages.getFullChat` already returned the stored photo and is unchanged.

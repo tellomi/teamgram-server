@@ -79,7 +79,8 @@ func globalFilterUseful(filter *mtproto.MessagesFilter) bool {
 }
 
 // globalMediaKind is the stored message_filter_type for a global media scan.
-// Voice and round video notes share MEDIA_AUDIO; the caller splits them.
+// MEDIA_AUDIO also reads MEDIA_VOICE_FILE and MEDIA_ROUND_FILE. The caller
+// still drops the kind the filter does not want.
 func globalMediaKind(filter *mtproto.MessagesFilter) (int32, bool) {
 	switch mtproto.FromMessagesFilter(filter) {
 	case mtproto.FilterPhotos:
