@@ -845,6 +845,26 @@ A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to t
 | delete fanout | `app/service/biz/channel/service.go` |
 | dialog hook | `app/bff/channels/internal/svc/service_context.go` |
 
+## Channel admin rights (ISSUE-S-UNAME-ADMIN-001, DISCUSSION-ADMIN-001, ADMIN-HIDE-MEMBERS-001, ADMIN-DIRECT-001, CHAN-SUBLIST-001)
+
+`channels.updateUsername` treated `change_info` as enough to publish a username. `channelFull.can_set_username` was already creator-only, and that is the gate clients show. The RPC now matches it.
+
+`channels.setDiscussionGroup` allowed only the broadcast creator, and `manage_linked_peers` (flag 19) was dropped when admin rights were stored. The bit is kept. The creator, or an admin who holds `manage_linked_peers`, may link or unlink on both the channel and the supergroup. `change_info` is not required.
+
+`channels.toggleParticipantsHidden` was creator-only. Hiding the member list uses `ban_users`, the same right the official client sends. The creator also qualifies.
+
+`channels.updatePaidMessagesPrice` used the `change_info` gate. On a broadcast, `manage_direct_messages` can turn direct messages on. A megagroup still needs `change_info`.
+
+`channels.getParticipants` returned the full subscriber list to any broadcast member. Broadcast lists are admin-only (`CHAT_ADMIN_REQUIRED`). `channelFull.can_view_participants` follows that. Megagroups still list members unless `participants_hidden` is set.
+
+| Piece | File |
+| --- | --- |
+| username, subscriber list | `app/service/biz/channel/service.go` |
+| discussion link, hide members | `app/service/biz/channel/service_features.go` |
+| direct messages | `app/service/biz/channel/p1.go`, `service_ops.go` |
+| `can_view_participants` | `app/service/biz/channel/convert.go` |
+| `manage_linked_peers` bit | `proto/mtproto/chat_admin_rights.go` |
+
 ## Mentions and media unread (ISSUE-S-MENTION-MEGAGROUP-001, CHAN-MEDIA-UNREAD-001)
 
 A supergroup stores one message row. `mentioned` and `media_unread` are per viewer, so they are set when the message is shown. A mention entity or a reply to the viewer sets `mentioned`. Voice, round video, and ttl media set `media_unread` until `channels.readMessageContents`, which also pushes `updateChannelReadMessagesContents`. `dialogs.unread_mentions_count` counts those mentions above the viewer's read cursor.

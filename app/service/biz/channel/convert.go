@@ -156,8 +156,14 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		st = &ReadState{}
 	}
 	member := p != nil && p.InChannel()
+	// Broadcast subscriber lists are admin-only. A public megagroup still
+	// shows the list to anyone who can see the chat, until participants_hidden.
+	canViewParticipants := member || ch.Public()
+	if ch.Broadcast {
+		canViewParticipants = p != nil && p.IsAdmin()
+	}
 	full := mtproto.MakeTLChannelFull(&mtproto.ChatFull{
-		CanViewParticipants:  member || ch.Public(),
+		CanViewParticipants:  canViewParticipants,
 		CanSetUsername:       p.IsCreator(),
 		CanSetStickers:       p.IsCreator(),
 		CanViewStats:         p.IsCreator(),
