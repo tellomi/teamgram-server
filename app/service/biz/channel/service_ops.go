@@ -268,6 +268,60 @@ func (s *Service) canPost(ch *Channel, p *Participant) error {
 	return nil
 }
 
+// WriteAllowed is the channel send check messages.sendMessage uses (canPost).
+// saveDraft keeps that decision. A missing member is CHAT_WRITE_FORBIDDEN.
+// A broadcast the member cannot post in is CHAT_ADMIN_REQUIRED. A mute or a
+// send_messages ban stays CHAT_WRITE_FORBIDDEN.
+func (s *Service) WriteAllowed(ctx context.Context, channelID, userID int64) error {
+	if s == nil || channelID == 0 || userID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	err = s.canPost(ch, p)
+	return mapDraftWriteError(ch != nil && ch.Broadcast, channelSendMessagesBanned(s, ch, p), err)
+}
+
+func mapDraftWriteError(broadcast, sendBanned bool, err error) error {
+	if err == nil {
+		return nil
+	}
+	if err == mtproto.ErrChannelPrivate {
+		return mtproto.ErrChatWriteForbidden
+	}
+	if broadcast && err == mtproto.ErrChatWriteForbidden && !sendBanned {
+		return mtproto.ErrChatAdminRequired
+	}
+	return err
+}
+
+// channelSendMessagesBanned reports the same send_messages ban canPost applies
+// before the broadcast admin check.
+func channelSendMessagesBanned(s *Service, ch *Channel, p *Participant) bool {
+	if s == nil || p == nil || !p.InChannel() || p.IsCreator() || p.IsAdmin() {
+		return false
+	}
+	now := int32(time.Now().Unix())
+	if _, br := s.viewBlocked(p); br != nil && !br.CanSendMessages(now) {
+		return true
+	}
+	if p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil && !br.CanSendMessages(now) {
+			return true
+		}
+	}
+	if ch == nil {
+		return false
+	}
+	return !s.defaultAllows(ch, func(br *mtproto.ChatBannedRights) bool { return br.CanSendMessages(now) })
+}
+
 // enforceContent applies default_banned_rights and the member's own
 // banned_rights to each message. Admins and the creator are not restricted.
 // The error is the plain CHAT_WRITE_FORBIDDEN or CHAT_SEND_*_FORBIDDEN code.
