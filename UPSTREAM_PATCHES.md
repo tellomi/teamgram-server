@@ -1164,3 +1164,14 @@ The ceremony row stores the permanent auth key that called init. Register and fi
 | logged-in gate | `app/interface/session/internal/sess/check_api_request_type.go` |
 | wiring | `app/bff/bff/internal/server/server.go` |
 | table | `teamgramd/deploy/sql/migrate-20261115-passkeys.sql` |
+
+## Notify exception peer scope (ISSUE-S-NOTIFY-EXC-SCOPE-001)
+
+`account.getNotifyExceptions` returned every stored exception and did not read `peer`. With `inputNotifyUsers` a muted supergroup was included. With `inputNotifyChats` a muted private chat was included.
+
+An unset peer still returns every row. `inputNotifyUsers` keeps users. `inputNotifyChats` keeps basic groups and channels whose record has `broadcast` false, including topic rows of those channels. `inputNotifyBroadcasts` keeps channels whose record has `broadcast` true. `inputNotifyPeer` keeps that one dialog, including its topic rows. `inputNotifyForumTopic` keeps that one topic row. `compare_sound` is unchanged: a row is kept only when its sound or stories sound is not the default. A missing channel is left out of both channel categories. `PeerType` CHANNEL is not used as the broadcast test.
+
+| Piece | File |
+| --- | --- |
+| peer filter | `app/bff/notification/internal/core/account.getNotifyExceptions_handler.go` |
+| broadcast flag | `app/service/biz/channel/service_ops.go` `IsBroadcast` |
