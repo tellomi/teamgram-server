@@ -141,7 +141,7 @@ func TestChannelPostMustBeVisible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := sentChannelMessageID(sent)
 	book := &liveBook{}
 	peer := mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{ChannelId: ch.GetId(), AccessHash: hash}).To_InputPeer()
 	req := &mtproto.TLUsersGetFullUser{Id: mtproto.MakeTLInputUserFromMessage(&mtproto.InputUser{
@@ -168,4 +168,15 @@ func TestChannelPostMustBeVisible(t *testing.T) {
 	if status.Convert(ah.Check(ctx, 9, "users.getFullUser", req, book, nil)).Message() != "USER_ID_INVALID" {
 		t.Fatal("public post does not contain user 2")
 	}
+}
+
+// sentChannelMessageID is the id inside updateNewChannelMessage. The sender
+// reply also carries updateMessageID in front of that update.
+func sentChannelMessageID(ups *mtproto.Updates) int32 {
+	for _, u := range ups.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+			return u.GetMessage_MESSAGE().GetId()
+		}
+	}
+	return 0
 }

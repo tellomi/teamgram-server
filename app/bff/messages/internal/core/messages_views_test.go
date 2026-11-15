@@ -43,7 +43,7 @@ func TestGetMessagesViewsChannelAndForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	postID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	postID := sentChannelMessageID(sent)
 
 	channelCore := &MessagesCore{
 		ctx:    ctx,

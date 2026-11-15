@@ -117,7 +117,7 @@ func TestReactionHandlersPrivateChannelAndBot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := sentChannelMessageID(sent)
 	if _, err := channel.Shared().React(ctx, 7, ch.Id, msgID, []string{"🔥"}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -140,12 +140,13 @@ func TestReactionHandlersPrivateChannelAndBot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := channel.Shared().React(ctx, 7, news.Chats[0].Id, post.Updates[0].Message_MESSAGE.Id, []string{"👍"}, false); err != nil {
+	postID := sentChannelMessageID(post)
+	if _, err := channel.Shared().React(ctx, 7, news.Chats[0].Id, postID, []string{"👍"}, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.MessagesGetMessageReactionsList(ctx, &mtproto.TLMessagesGetMessageReactionsList{
 		Peer:  mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{ChannelId: news.Chats[0].Id}).To_InputPeer(),
-		Id:    post.Updates[0].Message_MESSAGE.Id,
+		Id:    postID,
 		Limit: 10,
 	}); err != mtproto.ErrBroadcastForbidden {
 		t.Fatalf("broadcast: %v", err)
@@ -218,4 +219,13 @@ func TestBoxPeerMatchesIncomingPrivate(t *testing.T) {
 	if !boxPeerMatches(outgoing, peer, me) {
 		t.Fatal("outgoing private message did not match")
 	}
+}
+
+func sentChannelMessageID(ups *mtproto.Updates) int32 {
+	for _, u := range ups.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+			return u.GetMessage_MESSAGE().GetId()
+		}
+	}
+	return 0
 }

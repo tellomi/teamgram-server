@@ -34,7 +34,7 @@ func TestToggleNoForwardsRejectsForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].Message_MESSAGE.Id
+	msgID := sentChannelMessageID(sent)
 	peer := mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{
 		ChannelId:  ch.Id,
 		AccessHash: ch.GetAccessHash_FLAGINT64().GetValue(),
@@ -77,4 +77,15 @@ func TestToggleNoForwardsRejectsForward(t *testing.T) {
 	if err != nil || len(boxes) != 1 {
 		t.Fatalf("forward after clear: %v %#v", err, boxes)
 	}
+}
+
+// sentChannelMessageID is the id inside updateNewChannelMessage. The sender
+// reply also carries updateMessageID in front of that update.
+func sentChannelMessageID(ups *mtproto.Updates) int32 {
+	for _, u := range ups.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+			return u.GetMessage_MESSAGE().GetId()
+		}
+	}
+	return 0
 }

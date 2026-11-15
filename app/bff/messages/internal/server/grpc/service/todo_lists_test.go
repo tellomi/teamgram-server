@@ -263,7 +263,7 @@ func TestTodoChannelHistoryKeepsMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := sentChannelMessageID(sent)
 	peer := mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{ChannelId: ch.Id}).To_InputPeer()
 	svc := TodoListsService{}
 	ups, err := svc.MessagesToggleTodoCompleted(withUser(2), &mtproto.TLMessagesToggleTodoCompleted{
@@ -332,4 +332,13 @@ func TestTodoChannelHistoryKeepsMedia(t *testing.T) {
 	}); status.Convert(err).Message() != "MESSAGE_AUTHOR_REQUIRED" {
 		t.Fatalf("append %v", err)
 	}
+}
+
+func sentChannelMessageID(ups *mtproto.Updates) int32 {
+	for _, u := range ups.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+			return u.GetMessage_MESSAGE().GetId()
+		}
+	}
+	return 0
 }
