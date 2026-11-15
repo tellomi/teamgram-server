@@ -2,6 +2,15 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Basic-group creator transfer
+
+`messages.editChatCreator` on a basic group only rejected an empty SRP proof. Any non-empty `A` transferred the creator. `channels.editCreator` already calls `password.CheckSensitive`. The basic-group path now uses that same gate: no cloud password is `PASSWORD_MISSING`, a wrong proof is `PASSWORD_HASH_INVALID`, and a password or session younger than 24 hours is `PASSWORD_TOO_FRESH_*` / `SESSION_TOO_FRESH_*`.
+
+| Piece | File |
+| --- | --- |
+| gate | `app/bff/chats/internal/core/messages.editChatCreator_handler.go` |
+| in-process client hook | `app/service/biz/chat/client/chat_edit_creator.go` |
+
 ## Scheduled messages
 
 `messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
