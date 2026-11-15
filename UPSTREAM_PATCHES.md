@@ -1028,3 +1028,12 @@ Save now rewrites self to `PEER_USER` + self, in the BFF (so the pushed `updateD
 | --- | --- |
 | peer rewrite | `app/bff/drafts/internal/core/draft_peer.go`, `messages.saveDraft_handler.go` |
 | insert when missing | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go` |
+
+## inputMessageReplyTo (row 205)
+
+`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message named by `reply_to_msg_id` (or `reply_to_top_id` when the first is unset). A reply with no header is omitted instead of being returned as itself.
+
+| Piece | File |
+| --- | --- |
+| private and basic group | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+| channel | `app/bff/channels/internal/server/grpc/service/handlers.go` |
