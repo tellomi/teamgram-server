@@ -88,7 +88,9 @@ import (
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
+	"github.com/teamgram/teamgram-server/pkg/accountprefs"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
 	"github.com/teamgram/teamgram-server/pkg/crashreport"
@@ -127,6 +129,9 @@ func (s *Server) Initialize() error {
 	// overrides it. A missing value logs once inside Configure.
 	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
+	if err := accountprefs.UseDSN(c.ChannelMySQL); err != nil {
+		logx.Errorf("accountprefs mysql: %v", err)
+	}
 	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
 		return err
 	}
@@ -322,6 +327,7 @@ func (s *Server) Initialize() error {
 		// RPCPayments also serves account.getTmpPassword; that method is
 		// delegated to the two-factor core.
 		paymentsSvc := payments_helper.New()
+		payments_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCPaymentsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarSubscriptionsServer(grpcServer, paymentsSvc)
@@ -343,6 +349,14 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCCommunitiesServer(grpcServer, communities_helper.New())
 		communities_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
+		ephemeralUsers := user_client.NewUserClient(rpcx.GetCachedRpcClient(c.BizServiceClient))
+		ephemeral_helper.Start(func(ctx context.Context, id int64) (bool, error) {
+			ok, err := ephemeralUsers.UserIsBot(ctx, &userpb.TLUserIsBot{Id: id})
+			if err != nil {
+				return false, err
+			}
+			return mtproto.FromBool(ok), nil
+		})
 		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
 		mtproto.RegisterRPCDiscoverServer(grpcServer, discover_helper.New(c.BizServiceClient))
 		discoverrel.Start(c.ChannelMySQL)

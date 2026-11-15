@@ -66,6 +66,7 @@ func dialogExt(row channel.DialogRow) *dialog.DialogExt {
 			NotifySettings:      mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{ShowPreviews: mtproto.BoolTrue, Silent: mtproto.BoolFalse}).To_PeerNotifySettings(),
 			Pts:                 &wrapperspb.Int32Value{Value: row.Pts},
 			ViewForumAsMessages: row.ViewForumAsMessages,
+			UnreadMentionsCount: row.UnreadMentions,
 		}).To_Dialog(),
 	}).To_DialogExt()
 }

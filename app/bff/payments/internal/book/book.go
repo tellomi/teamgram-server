@@ -1,8 +1,9 @@
 // Package book is the in-process Stars, gift, and Premium boost book.
 //
 // Balances stay at zero. Nothing here charges a card, talks to a store, or
-// mints Stars. Boost slots and gift-collection titles are remembered for the
-// life of the process. There is no gift inventory.
+// mints Stars. Boost slots live for the life of the process. Star gift
+// collection titles are written to MySQL when OpenCollections is given a DSN,
+// and reloaded on the next start. There is no gift inventory.
 package book
 
 import (
@@ -73,12 +74,14 @@ const (
 // Book stores boost slots, gift-collection titles, and saved checkout info.
 // Stars reads do not write it. Nothing here charges a card.
 type Book struct {
-	mu      sync.Mutex
-	users   map[int64]*account
-	gifts   *giftState
-	payers  map[int64]*payerState
-	now     func() int32
-	premium func() bool
+	mu        sync.Mutex
+	users     map[int64]*account
+	gifts     *giftState
+	payers    map[int64]*payerState
+	now       func() int32
+	premium   func() bool
+	giftAdmin func(self, channelID int64) error
+	cols      collectionStore
 }
 
 type account struct {
