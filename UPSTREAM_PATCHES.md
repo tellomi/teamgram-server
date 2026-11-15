@@ -2,6 +2,25 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
+
+`messages.search` with `inputMessagesFilterPhoneCalls` listed every stored call. The `missed` flag was not read, so the Missed tab showed answered and outgoing calls too.
+
+A missed query now keeps an incoming call whose discard reason is missed, busy, or absent. Outgoing calls and a connected hangup stay on the All tab. The query reads a wider page because the call table has no missed column, then trims back to `limit`.
+
+| Piece | File |
+| --- | --- |
+| filter | `app/bff/messages/internal/core/messages.search_handler.go` |
+
+## Basic-group creator transfer
+
+`messages.editChatCreator` on a basic group only rejected an empty SRP proof. Any non-empty `A` transferred the creator. `channels.editCreator` already calls `password.CheckSensitive`. The basic-group path now uses that same gate: no cloud password is `PASSWORD_MISSING`, a wrong proof is `PASSWORD_HASH_INVALID`, and a password or session younger than 24 hours is `PASSWORD_TOO_FRESH_*` / `SESSION_TOO_FRESH_*`.
+
+| Piece | File |
+| --- | --- |
+| gate | `app/bff/chats/internal/core/messages.editChatCreator_handler.go` |
+| in-process client hook | `app/service/biz/chat/client/chat_edit_creator.go` |
+
 ## Privacy switches that were stored and then ignored
 
 `messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
@@ -874,6 +893,38 @@ A supergroup stores one message row. `mentioned` and `media_unread` are per view
 | viewer flags | `app/service/biz/channel/convert.go` |
 | history and push | `service_ops.go`, `read_views.go` |
 | read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
+
+## History clear on another session (行 134, ISSUE-S-DELHIST-SYNC-001)
+
+`messages.deleteHistory` with `just_clear` keeps the newest message and rewrites it to `messageActionHistoryClear`. The other session of the same account only drops bubbles named by `updateDeleteMessages`. That update used to omit the rewritten id, so the open chat kept the last bubble until `messages.getHistory`.
+
+The anchor id is now its own `updateDeleteMessages` with `pts_count` 1, before the read and the edit. `getDifference` folds the two adjacent deletes and still names the anchor. The edit is unchanged, so a reload still shows `messageActionHistoryClear`. The message stays in the box.
+
+| Piece | File |
+| --- | --- |
+| id | `app/messenger/msg/deletehistory/plan.go` |
+| pts updates | `app/messenger/msg/msg/internal/core/delete_user_history.go` |
+
+## Private chat noforwards flags (行 137, ISSUE-S-NOFWD-001)
+
+`messages.toggleNoForwards` on a private chat already stores one shared bit and `messages.forwardMessages` already rejects that chat and a message with `noforwards`. `users.getFullUser` never copied the bit onto `noforwards_my_enabled` / `noforwards_peer_enabled`, so both clients kept showing the switch as off.
+
+The pair is one switch: either person can clear it. While it is on, both flags are set on each user's `userFull`. A self user is unchanged.
+
+| Piece | File |
+| --- | --- |
+| userFull | `app/bff/users/internal/core/users.getFullUser_handler.go` |
+
+## Encrypted file size on send (ISSUE-S-SECRET-ENCFILE-001)
+
+`messages.sendEncryptedFile` of `inputEncryptedFileUploaded` echoed the id with size 0 and did not register the file for `upload.getFile`. `messages.uploadEncryptedFile` already stores the parts through `dfs.uploadEncryptedFileV2` and remembers the size.
+
+Send of an uploaded or big-uploaded file now calls the same DFS upload. The files service installs `secretchat.Materialize` when it starts. The returned `EncryptedFile` keeps `key_fingerprint` and is remembered for that secret chat, so a later `inputEncryptedFile` returns the size. A bad md5 is still `MD5_CHECKSUM_INVALID`. When the hook is not installed, the old echo remains.
+
+| Piece | File |
+| --- | --- |
+| send path | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
+| hook | `app/bff/phone/secretchat/materialize.go`, `app/bff/files/helper.go` |
 
 ## Member list filters and invite-importer search (ISSUE-S-PART-CONTACTS-001, ISSUE-S-PART-BANNED-ACL-001, ISSUE-S-PART-FILTER-Q-001, ISSUE-S-HIDDENMEMBERS-ADMINS-001, ISSUE-S-JOINREQ-SEARCH-001, ISSUE-S-INVITE-IMPORTERS-USERS-001)
 
