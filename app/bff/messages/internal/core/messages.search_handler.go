@@ -242,17 +242,35 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			return rValues, nil
 		}
 	case mtproto.FilterPhoneCalls:
+		// The call log asks for every call, then the Missed tab sets
+		// inputMessagesFilterPhoneCalls.missed. Storage has no missed
+		// column, so a missed query reads a wider page and drops the
+		// calls the tab does not show.
+		fetch := limit
+		missedOnly := in.GetFilter().GetMissed()
+		if missedOnly && fetch > 0 {
+			fetch *= 8
+			if fetch > 200 {
+				fetch = 200
+			}
+		}
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchByMediaType(c.ctx, &message.TLMessageSearchByMediaType{
 			UserId:    c.MD.UserId,
 			PeerType:  peer.PeerType,
 			PeerId:    peer.PeerId,
 			MediaType: mtproto.MEDIA_PHONE_CALL,
 			Offset:    offsetId,
-			Limit:     limit,
+			Limit:     fetch,
 		})
 		if err != nil {
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return rValues, nil
+		}
+		if missedOnly {
+			boxList = keepBoxes(boxList, incomingUnansweredCall)
+			if boxList != nil && limit > 0 && int32(len(boxList.BoxList)) > limit {
+				boxList.BoxList = boxList.BoxList[:limit]
+			}
 		}
 	case mtproto.FilterRoundVoice:
 		boxList, err = c.svcCtx.Dao.MessageClient.MessageSearchByMediaType(c.ctx, &message.TLMessageSearchByMediaType{
@@ -366,6 +384,28 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		})
 
 	return rValues, nil
+}
+
+// incomingUnansweredCall is a call the Missed tab shows: an incoming
+// call that was not connected. Outgoing calls stay on the All tab.
+// Missed, busy, and a missing reason are unanswered. A hangup or
+// disconnect with a duration was picked up.
+func incomingUnansweredCall(m *mtproto.Message) bool {
+	if m == nil || m.GetOut() {
+		return false
+	}
+	action := m.GetAction()
+	if action.GetPredicateName() != mtproto.Predicate_messageActionPhoneCall {
+		return false
+	}
+	switch action.GetReason().GetPredicateName() {
+	case mtproto.Predicate_phoneCallDiscardReasonMissed,
+		mtproto.Predicate_phoneCallDiscardReasonBusy,
+		"":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *MessagesCore) searchMedia(peer *mtproto.PeerUtil, mediaType, offsetId, limit int32) (*mtproto.MessageBoxList, error) {
