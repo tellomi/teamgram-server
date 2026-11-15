@@ -58,19 +58,19 @@ func TestPasskeys(t *testing.T) {
 	if _, err := ListPasskeys(0); codeOf(err) != "AUTH_KEY_UNREGISTERED" {
 		t.Fatal(err)
 	}
-	if _, err := RegisterPasskey(0, nil); codeOf(err) != "AUTH_KEY_UNREGISTERED" {
+	if _, err := RegisterPasskey(0, 1, nil); codeOf(err) != "AUTH_KEY_UNREGISTERED" {
 		t.Fatal(err)
 	}
-	if _, err := RegisterPasskey(7, registerCredential("cred", "other", "https://www.tellomi.cn")); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err := RegisterPasskey(7, 1, registerCredential("cred", "other", "https://www.tellomi.cn")); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
 	}
-	if _, err := VerifyPasskeyLogin(nil); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err := VerifyPasskeyLogin(1, nil); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
 	}
-	if _, err := VerifyPasskeyLogin(loginCredential("missing")); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err := VerifyPasskeyLogin(1, loginCredential("missing")); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
 	}
-	login, err := InitPasskeyLogin(0, "")
+	login, err := InitPasskeyLogin(0, "", 1)
 	if login != nil || codeOf(err) != "API_ID_INVALID" {
 		t.Fatal(err)
 	}

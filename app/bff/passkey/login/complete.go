@@ -7,6 +7,7 @@ package login
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/geoip"
 	"github.com/teamgram/teamgram-server/pkg/langpack"
+	"github.com/teamgram/teamgram-server/pkg/verify"
 )
 
 // Users loads the account that owns the passkey.
@@ -102,7 +104,8 @@ func Authorize(ctx context.Context, md *metadata.RpcMetadata, userID int64) (*mt
 		}
 		return nil, mtproto.ErrSessionPasswordNeeded
 	}
-	stage := enforcement.LoginStage(user.Id(), user.Phone(), "passkey", true, time.Now())
+	identifier, kind := loginIdentifier(user)
+	stage := enforcement.LoginStage(user.Id(), identifier, kind, true, time.Now())
 	if !stage.BindOrdinary {
 		if err = enforcement.RPC(stage.Code); err != nil {
 			return nil, err
@@ -134,6 +137,21 @@ func Authorize(ctx context.Context, md *metadata.RpcMetadata, userID int64) (*mt
 	return mtproto.MakeTLAuthAuthorization(&mtproto.Auth_Authorization{
 		User: user.ToSelfUser(),
 	}).To_Auth_Authorization(), nil
+}
+
+// loginIdentifier matches auth.signIn: an email stored in the phone field
+// is kind "email", otherwise kind "phone". IDENTIFIER_RESTRICTED is keyed
+// that way.
+func loginIdentifier(user *mtproto.ImmutableUser) (identifier, kind string) {
+	if user == nil {
+		return "", "phone"
+	}
+	identifier = strings.TrimSpace(user.Phone())
+	kind = "phone"
+	if verify.IsEmail(identifier) {
+		kind = "email"
+	}
+	return identifier, kind
 }
 
 func loginDevice(ctx context.Context, d Deps, md *metadata.RpcMetadata) string {

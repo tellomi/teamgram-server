@@ -30,12 +30,14 @@ func TestPasskeyStoredAndVerified(t *testing.T) {
 
 	const userID int64 = 42
 	const origin = "https://www.tellomi.cn"
-	opts, err := accountrest.InitPasskeyRegistration(userID)
+	const regKey int64 = 11
+	const loginKey int64 = 22
+	opts, err := accountrest.InitPasskeyRegistration(userID, regKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := opts.GetOptions().GetData()
-	if !strings.Contains(raw, `"publicKey"`) || !strings.Contains(raw, `"id":"www.tellomi.cn"`) {
+	if !strings.Contains(raw, `"publicKey"`) || !strings.Contains(raw, `"id":"www.tellomi.cn"`) || !strings.Contains(raw, `"userVerification":"required"`) {
 		t.Fatal(raw)
 	}
 	challenge, userB64 := challengeOf(t, raw)
@@ -44,13 +46,17 @@ func TestPasskeyStoredAndVerified(t *testing.T) {
 		t.Fatalf("user handle %q err %v", handle, err)
 	}
 	key := newSoftKey(t, "www.tellomi.cn", handle)
-	if _, err = accountrest.RegisterPasskey(userID, key.register(t, "not-the-challenge", origin)); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err = accountrest.RegisterPasskey(userID, regKey, key.register(t, "not-the-challenge", origin)); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatal(err)
 	}
-	if _, err = accountrest.RegisterPasskey(userID, key.register(t, challenge, "https://evil.example")); codeOf(err) != "PASSKEY_ORIGIN_MISMATCH" {
+	if _, err = accountrest.RegisterPasskey(userID, regKey, key.register(t, challenge, "https://evil.example")); codeOf(err) != "PASSKEY_ORIGIN_MISMATCH" {
 		t.Fatal(err)
 	}
-	saved, err := accountrest.RegisterPasskey(userID, key.register(t, challenge, origin))
+	good := key.register(t, challenge, origin)
+	if _, err = accountrest.RegisterPasskey(userID, regKey+1, good); codeOf(err) != "CREDENTIAL_INVALID" {
+		t.Fatalf("other auth key %v", err)
+	}
+	saved, err := accountrest.RegisterPasskey(userID, regKey, good)
 	if err != nil || saved.GetId() != key.idString() || saved.GetName() != "Passkey" {
 		t.Fatalf("register %v %#v", err, saved)
 	}
@@ -62,12 +68,16 @@ func TestPasskeyStoredAndVerified(t *testing.T) {
 	// A second pool is a new process: it has no in-memory credential.
 	again := mustOpen(t, dsn)
 	persist.Set(persist.OpenDB(again))
-	login, err := accountrest.InitPasskeyLogin(4, "hash")
-	if err != nil || !strings.Contains(login.GetOptions().GetData(), "www.tellomi.cn") {
+	login, err := accountrest.InitPasskeyLogin(4, "hash", loginKey)
+	if err != nil || !strings.Contains(login.GetOptions().GetData(), "www.tellomi.cn") || !strings.Contains(login.GetOptions().GetData(), `"userVerification":"required"`) {
 		t.Fatal(err, login)
 	}
 	loginChallenge, _ := challengeOf(t, login.GetOptions().GetData())
-	got, err := accountrest.VerifyPasskeyLogin(key.login(t, loginChallenge, origin))
+	assertion := key.login(t, loginChallenge, origin)
+	if _, err = accountrest.VerifyPasskeyLogin(loginKey+1, assertion); codeOf(err) != "CREDENTIAL_INVALID" {
+		t.Fatalf("other login key %v", err)
+	}
+	got, err := accountrest.VerifyPasskeyLogin(loginKey, assertion)
 	if err != nil || got != userID {
 		t.Fatalf("login user %d err %v", got, err)
 	}
@@ -76,26 +86,35 @@ func TestPasskeyStoredAndVerified(t *testing.T) {
 		t.Fatalf("last used %v %#v", err, listed)
 	}
 
-	login, err = accountrest.InitPasskeyLogin(4, "hash")
+	login, err = accountrest.InitPasskeyLogin(4, "hash", loginKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	loginChallenge, _ = challengeOf(t, login.GetOptions().GetData())
 	replay := key.loginAt(t, loginChallenge, origin, 1)
-	if _, err = accountrest.VerifyPasskeyLogin(replay); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err = accountrest.VerifyPasskeyLogin(loginKey, replay); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatalf("replay %v", err)
 	}
-	login, err = accountrest.InitPasskeyLogin(4, "hash")
+	login, err = accountrest.InitPasskeyLogin(4, "hash", loginKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginChallenge, _ = challengeOf(t, login.GetOptions().GetData())
+	noUV := key.loginFlags(t, loginChallenge, origin, 0x01)
+	if _, err = accountrest.VerifyPasskeyLogin(loginKey, noUV); codeOf(err) != "CREDENTIAL_INVALID" {
+		t.Fatalf("missing UV %v", err)
+	}
+	login, err = accountrest.InitPasskeyLogin(4, "hash", loginKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	loginChallenge, _ = challengeOf(t, login.GetOptions().GetData())
 	bad := key.login(t, loginChallenge, origin)
 	bad.GetResponse().Signature[0] ^= 0xff
-	if _, err = accountrest.VerifyPasskeyLogin(bad); codeOf(err) != "CREDENTIAL_INVALID" {
+	if _, err = accountrest.VerifyPasskeyLogin(loginKey, bad); codeOf(err) != "CREDENTIAL_INVALID" {
 		t.Fatalf("bad signature %v", err)
 	}
-	login, err = accountrest.InitPasskeyLogin(4, "hash")
+	login, err = accountrest.InitPasskeyLogin(4, "hash", loginKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,18 +122,26 @@ func TestPasskeyStoredAndVerified(t *testing.T) {
 	unknown := key.login(t, loginChallenge, origin)
 	unknown.Id = base64.RawURLEncoding.EncodeToString([]byte("not-this-passkey!!"))
 	unknown.RawId = unknown.Id
-	if _, err = accountrest.VerifyPasskeyLogin(unknown); codeOf(err) != "PASSKEY_CREDENTIAL_NOT_FOUND" {
+	if _, err = accountrest.VerifyPasskeyLogin(loginKey, unknown); codeOf(err) != "PASSKEY_CREDENTIAL_NOT_FOUND" {
 		t.Fatalf("unknown %v", err)
+	}
+	againReg, err := accountrest.InitPasskeyRegistration(userID, regKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	againChallenge, _ := challengeOf(t, againReg.GetOptions().GetData())
+	if _, err = accountrest.RegisterPasskey(userID, regKey, key.register(t, againChallenge, origin)); codeOf(err) != "CREDENTIAL_INVALID" {
+		t.Fatalf("duplicate raw id %v", err)
 	}
 
 	third := mustOpen(t, dsn)
 	persist.Set(persist.OpenDB(third))
-	login, err = accountrest.InitPasskeyLogin(4, "hash")
+	login, err = accountrest.InitPasskeyLogin(4, "hash", loginKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	loginChallenge, _ = challengeOf(t, login.GetOptions().GetData())
-	got, err = accountrest.VerifyPasskeyLogin(key.login(t, loginChallenge, origin))
+	got, err = accountrest.VerifyPasskeyLogin(loginKey, key.login(t, loginChallenge, origin))
 	if err != nil || got != userID {
 		t.Fatalf("third process user %d err %v", got, err)
 	}
@@ -122,7 +149,7 @@ func TestPasskeyStoredAndVerified(t *testing.T) {
 	if err != nil || !mtproto.FromBool(gone) {
 		t.Fatal(err, gone)
 	}
-	if _, err = accountrest.VerifyPasskeyLogin(unknown); codeOf(err) != "PASSKEY_CREDENTIAL_NOT_FOUND" {
+	if _, err = accountrest.VerifyPasskeyLogin(loginKey, unknown); codeOf(err) != "PASSKEY_CREDENTIAL_NOT_FOUND" {
 		t.Fatal(err)
 	}
 }

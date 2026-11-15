@@ -23,7 +23,7 @@ func (c *PasskeyCore) AuthFinishPasskeyLogin(in *mtproto.TLAuthFinishPasskeyLogi
 	if dc := in.GetFromDcId(); dc != nil && dc.GetValue() != 0 && dc.GetValue() != persist.DC() {
 		return nil, mtproto.ErrDcIdInvalid
 	}
-	userID, err := accountrest.VerifyPasskeyLogin(in.GetCredential())
+	userID, err := accountrest.VerifyPasskeyLogin(c.permAuthKey(), in.GetCredential())
 	if err != nil {
 		return nil, err
 	}

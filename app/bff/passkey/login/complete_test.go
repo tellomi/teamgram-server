@@ -13,6 +13,7 @@ import (
 	syncpb "github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	authsession "github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"google.golang.org/grpc/status"
 )
 
@@ -87,6 +88,28 @@ func TestAuthorizeBindsAndNotifies(t *testing.T) {
 	}
 	if msg.n != 1 {
 		t.Fatalf("login notice %d", msg.n)
+	}
+}
+
+func TestAuthorizeIdentifierRestricted(t *testing.T) {
+	loginnotice.Reset()
+	svc := enforcement.New(enforcement.Config{CreateEnabled: true, GrantSecret: []byte("test-grant")})
+	if err := svc.RestrictIdentifier(enforcement.Actor{ID: "review", Role: enforcement.RoleAgent}, "phone", "9996610776"); err != nil {
+		t.Fatal(err)
+	}
+	prev := enforcement.Current()
+	enforcement.SetCurrent(svc)
+	t.Cleanup(func() { enforcement.SetCurrent(prev) })
+	sessions := &fakeSessions{}
+	SetDeps(Deps{Users: fakeUsers{user: testUser(42)}, Sessions: sessions})
+	t.Cleanup(func() { SetDeps(Deps{}) })
+
+	authz, err := Authorize(context.Background(), &metadata.RpcMetadata{PermAuthKeyId: 90}, 42)
+	if authz != nil || status.Convert(err).Message() != "IDENTIFIER_RESTRICTED" {
+		t.Fatalf("auth %v err %v", authz, err)
+	}
+	if sessions.bound != 0 {
+		t.Fatalf("restricted login bound %d", sessions.bound)
 	}
 }
 

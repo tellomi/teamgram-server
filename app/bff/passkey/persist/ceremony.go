@@ -82,9 +82,13 @@ func decodeSession(raw string) (*sessionBlob, error) {
 }
 
 // InitRegistration returns the PublicKeyCredentialCreationOptions JSON.
-func InitRegistration(userID int64) (string, error) {
+// authKey is the permanent key that must later call Register.
+func InitRegistration(userID, authKey int64) (string, error) {
 	if userID == 0 {
 		return "", mtproto.ErrAuthKeyUnregistered
+	}
+	if authKey == 0 {
+		return "", mtproto.ErrAuthKeyPermEmpty
 	}
 	s, err := mustStore()
 	if err != nil {
@@ -114,7 +118,7 @@ func InitRegistration(userID int64) (string, error) {
 	if err != nil {
 		return "", mapErr(err)
 	}
-	if err = s.saveChallenge(userID, "register", blob); err != nil {
+	if err = s.saveChallenge(userID, authKey, "register", blob); err != nil {
 		return "", mapErr(err)
 	}
 	raw, err := json.Marshal(creation)
@@ -125,9 +129,13 @@ func InitRegistration(userID int64) (string, error) {
 }
 
 // Register checks the attestation and stores the credential id, public key, and sign count.
-func Register(userID int64, cred *mtproto.InputPasskeyCredential) (Saved, error) {
+// authKey must be the permanent key that called InitRegistration.
+func Register(userID, authKey int64, cred *mtproto.InputPasskeyCredential) (Saved, error) {
 	if userID == 0 {
 		return Saved{}, mtproto.ErrAuthKeyUnregistered
+	}
+	if authKey == 0 {
+		return Saved{}, mtproto.ErrAuthKeyPermEmpty
 	}
 	parsed, client, err := registrationBody(cred)
 	if err != nil {
@@ -140,7 +148,7 @@ func Register(userID int64, cred *mtproto.InputPasskeyCredential) (Saved, error)
 	if err != nil {
 		return Saved{}, mapErr(err)
 	}
-	blob, err := s.takeChallenge(client.Challenge, "register", userID, true)
+	blob, err := s.takeChallenge(client.Challenge, "register", userID, authKey, true)
 	if err != nil {
 		return Saved{}, mapErr(err)
 	}
@@ -223,7 +231,11 @@ func Delete(userID int64, id string) (bool, error) {
 }
 
 // InitLogin returns the PublicKeyCredentialRequestOptions JSON.
-func InitLogin() (string, error) {
+// authKey is the permanent key that must later call VerifyLogin.
+func InitLogin(authKey int64) (string, error) {
+	if authKey == 0 {
+		return "", mtproto.ErrAuthKeyPermEmpty
+	}
 	s, err := mustStore()
 	if err != nil {
 		return "", mapErr(err)
@@ -240,7 +252,7 @@ func InitLogin() (string, error) {
 	if err != nil {
 		return "", mapErr(err)
 	}
-	if err = s.saveChallenge(0, "login", blob); err != nil {
+	if err = s.saveChallenge(0, authKey, "login", blob); err != nil {
 		return "", mapErr(err)
 	}
 	raw, err := json.Marshal(assertion)
@@ -251,11 +263,15 @@ func InitLogin() (string, error) {
 }
 
 // VerifyLogin checks the assertion and returns the user id.
+// authKey must be the permanent key that called InitLogin.
 // The sign count is stored only when it moved forward.
-func VerifyLogin(cred *mtproto.InputPasskeyCredential) (int64, error) {
+func VerifyLogin(authKey int64, cred *mtproto.InputPasskeyCredential) (int64, error) {
 	parsed, client, err := loginBody(cred)
 	if err != nil {
 		return 0, mapErr(err)
+	}
+	if authKey == 0 {
+		return 0, mtproto.ErrAuthKeyPermEmpty
 	}
 	if !originAllowed(client.Origin) {
 		return 0, mtproto.ErrPasskeyOriginMismatch
@@ -271,7 +287,7 @@ func VerifyLogin(cred *mtproto.InputPasskeyCredential) (int64, error) {
 	if !bytes.Equal(row.RawID, parsed.RawID) {
 		return 0, mtproto.ErrCredentialInvalid
 	}
-	blob, err := s.takeChallenge(client.Challenge, "login", 0, false)
+	blob, err := s.takeChallenge(client.Challenge, "login", 0, authKey, false)
 	if err != nil {
 		return 0, mapErr(err)
 	}

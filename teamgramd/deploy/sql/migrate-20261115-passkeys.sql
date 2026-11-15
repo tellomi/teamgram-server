@@ -25,9 +25,11 @@ CREATE TABLE IF NOT EXISTS `user_passkeys` (
 CREATE TABLE IF NOT EXISTS `user_passkey_challenges` (
   `challenge` varchar(256) COLLATE utf8mb4_unicode_ci NOT NULL,
   `user_id` bigint NOT NULL DEFAULT 0,
+  `auth_key_id` bigint NOT NULL,
   `kind` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,
   `session_json` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `expires_at` int NOT NULL,
   PRIMARY KEY (`challenge`),
-  KEY `user_passkey_challenges_user` (`user_id`, `kind`)
+  KEY `user_passkey_challenges_user` (`user_id`, `kind`),
+  KEY `user_passkey_challenges_auth` (`auth_key_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

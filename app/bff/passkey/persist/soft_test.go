@@ -48,8 +48,13 @@ func (k *softKey) register(t *testing.T, challenge, origin string) *mtproto.Inpu
 
 func (k *softKey) login(t *testing.T, challenge, origin string) *mtproto.InputPasskeyCredential {
 	t.Helper()
+	return k.loginFlags(t, challenge, origin, 0x05)
+}
+
+func (k *softKey) loginFlags(t *testing.T, challenge, origin string, flags byte) *mtproto.InputPasskeyCredential {
+	t.Helper()
 	k.counter++
-	auth := k.authData(0x05, k.counter)
+	auth := k.authData(flags, k.counter)
 	return k.credential(t, "webauthn.get", challenge, origin, auth, k.sign(t, auth, k.clientData(t, "webauthn.get", challenge, origin)))
 }
 

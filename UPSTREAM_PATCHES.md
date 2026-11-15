@@ -863,8 +863,8 @@ Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_
 
 | Piece | File |
 | --- | --- |
-| emoji lists | `app/bff/stickers/catalog/groups.go`, premium background and restricted handlers |
-| wav and adopted documents | `app/bff/accountassets/doc.go`, `ringtone.go`, `app/bff/messages/p1.go` |
+| emoji lists | `app/bff/stickers/catalog/groups.go`, `app/bff/premium/internal/core/account_features.go`, `app/bff/premium/internal/server/grpc/service/features.go` |
+| wav and adopted documents | `app/bff/accountassets/doc.go`, `app/bff/accountassets/ringtone.go`, `app/bff/messages/p1.go`, `app/bff/messages/internal/server/grpc/service/account_assets.go` |
 | rpId | `app/bff/accountrest/passkey.go` |
 
 ## Contact birthdays and boost link
@@ -1062,6 +1062,8 @@ The upload now inserts `encrypted_file_id`, `access_hash`, `dc_id`, `file_size`,
 
 Registration now verifies the WebAuthn attestation with `github.com/go-webauthn/webauthn` and inserts `user_passkeys` (`credential_id`, public key, sign count, user handle `dc:userId`). `auth.finishPasskeyLogin` checks the stored challenge, rpId/origin, signature, and sign count. A higher count is saved. A repeated count is `CREDENTIAL_INVALID`. An unknown id is `PASSKEY_CREDENTIAL_NOT_FOUND`. A foreign origin is `PASSKEY_ORIGIN_MISMATCH`. Success binds the permanent auth key, sends the sign-in service notification, cancels a pending deletion, pushes the 777000 login notice, and returns `auth.authorization`. A cloud password returns `SESSION_PASSWORD_NEEDED` after the bind, and `auth.checkPassword` finishes that login. The user handle DC is `TELLOMI_DC_ID`, or 1.
 
+The ceremony row stores the permanent auth key that called init. Register and finish reject any other key and do not consume that challenge. Android origins are limited to `TELLOMI_PASSKEY_ANDROID_HASHES`; a client hash is not added to the relying-party origin list. `userVerification` is `required`, so an assertion without the UV flag is `CREDENTIAL_INVALID`. `account.initPasskeyRegistration`, `account.registerPasskey`, `account.getPasskeys`, and `account.deletePasskey` are not in the logged-out allow list, so they run only in `AuthStateNormal`. An existing `raw_id` is rejected instead of replacing the public key. The login sanction uses kind `phone` or `email`, the same keys as `auth.signIn`.
+
 | Piece | File |
 | --- | --- |
 | store and WebAuthn | `app/bff/passkey/persist` |
@@ -1069,5 +1071,6 @@ Registration now verifies the WebAuthn attestation with `github.com/go-webauthn/
 | facade | `app/bff/accountrest/passkey.go` |
 | RPC | `app/bff/passkey/internal/core/auth.finishPasskeyLogin_handler.go` |
 | session state | `app/interface/session/internal/sess/session_invoke.go` |
+| logged-in gate | `app/interface/session/internal/sess/check_api_request_type.go` |
 | wiring | `app/bff/bff/internal/server/server.go` |
 | table | `teamgramd/deploy/sql/migrate-20261115-passkeys.sql` |

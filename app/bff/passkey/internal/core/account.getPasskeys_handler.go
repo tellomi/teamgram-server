@@ -18,3 +18,10 @@ func (c *PasskeyCore) userID() int64 {
 	}
 	return c.MD.GetUserId()
 }
+
+func (c *PasskeyCore) permAuthKey() int64 {
+	if c == nil || c.MD == nil {
+		return 0
+	}
+	return c.MD.GetPermAuthKeyId()
+}

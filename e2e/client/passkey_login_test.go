@@ -39,9 +39,16 @@ func TestPasskeyLogin(t *testing.T) {
 	}
 	key := newE2ESoftKey(t, opts.rpID, handle)
 	origin := "https://" + opts.rpID
+	other, _ := dialPhone(t, ctx, cfg, "9996610776", "Passkey")
+	regCred := key.register(t, opts.challenge, origin)
+	_, err = other.Invoke(ctx, &mtproto.TLAccountRegisterPasskey{
+		Constructor: mtproto.CRC32_account_registerPasskey,
+		Credential:  regCred,
+	})
+	assertRPC(t, err, 400, "CREDENTIAL_INVALID")
 	saved, err := owner.Invoke(ctx, &mtproto.TLAccountRegisterPasskey{
 		Constructor: mtproto.CRC32_account_registerPasskey,
-		Credential:  key.register(t, opts.challenge, origin),
+		Credential:  regCred,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +62,18 @@ func TestPasskeyLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fresh.Close()
-	logged := passkeySignIn(t, ctx, cfg, fresh, key, origin)
+	thief, err := Dial(ctx, cfg, ProfileIOS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer thief.Close()
+	first := passkeyAssertion(t, ctx, cfg, fresh, key, origin)
+	_, err = thief.Invoke(ctx, &mtproto.TLAuthFinishPasskeyLogin{
+		Constructor: mtproto.CRC32_auth_finishPasskeyLogin,
+		Credential:  first,
+	})
+	assertRPC(t, err, 400, "CREDENTIAL_INVALID")
+	logged := finishPasskey(t, ctx, fresh, first)
 	if logged.ID != self.ID {
 		t.Fatalf("passkey user %d, phone user %d", logged.ID, self.ID)
 	}
@@ -69,7 +87,7 @@ func TestPasskeyLogin(t *testing.T) {
 		t.Fatalf("getPasskeys %#v", listed)
 	}
 
-	bad := passkeyAssertion(t, ctx, cfg, key, origin)
+	bad := passkeyAssertion(t, ctx, cfg, fresh, key, origin)
 	bad.GetResponse().Signature[0] ^= 0xff
 	_, err = fresh.Invoke(ctx, &mtproto.TLAuthFinishPasskeyLogin{
 		Constructor: mtproto.CRC32_auth_finishPasskeyLogin,
@@ -77,7 +95,7 @@ func TestPasskeyLogin(t *testing.T) {
 	})
 	assertRPC(t, err, 400, "CREDENTIAL_INVALID")
 
-	unknown := passkeyAssertion(t, ctx, cfg, key, origin)
+	unknown := passkeyAssertion(t, ctx, cfg, fresh, key, origin)
 	unknown.Id = base64.RawURLEncoding.EncodeToString([]byte("not-this-passkey!!"))
 	unknown.RawId = unknown.Id
 	_, err = fresh.Invoke(ctx, &mtproto.TLAuthFinishPasskeyLogin{
@@ -113,7 +131,11 @@ func TestPasskeyLogin(t *testing.T) {
 
 func passkeySignIn(t *testing.T, ctx context.Context, cfg Config, c *Client, key *e2eSoftKey, origin string) Self {
 	t.Helper()
-	cred := passkeyAssertion(t, ctx, cfg, key, origin)
+	return finishPasskey(t, ctx, c, passkeyAssertion(t, ctx, cfg, c, key, origin))
+}
+
+func finishPasskey(t *testing.T, ctx context.Context, c *Client, cred *mtproto.InputPasskeyCredential) Self {
+	t.Helper()
 	obj, err := c.Invoke(ctx, &mtproto.TLAuthFinishPasskeyLogin{
 		Constructor: mtproto.CRC32_auth_finishPasskeyLogin,
 		Credential:  cred,
@@ -132,14 +154,9 @@ func passkeySignIn(t *testing.T, ctx context.Context, cfg Config, c *Client, key
 	return self
 }
 
-func passkeyAssertion(t *testing.T, ctx context.Context, cfg Config, key *e2eSoftKey, origin string) *mtproto.InputPasskeyCredential {
+func passkeyAssertion(t *testing.T, ctx context.Context, cfg Config, c *Client, key *e2eSoftKey, origin string) *mtproto.InputPasskeyCredential {
 	t.Helper()
-	anon, err := Dial(ctx, cfg, ProfileIOS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer anon.Close()
-	obj, err := anon.Invoke(ctx, &mtproto.TLAuthInitPasskeyLogin{
+	obj, err := c.Invoke(ctx, &mtproto.TLAuthInitPasskeyLogin{
 		Constructor: mtproto.CRC32_auth_initPasskeyLogin,
 		ApiId:       cfg.APIID,
 		ApiHash:     cfg.APIHash,

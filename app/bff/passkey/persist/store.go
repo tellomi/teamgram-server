@@ -113,40 +113,43 @@ type credentialRow struct {
 	LastUsed        int32
 }
 
-func (s *Service) saveChallenge(userID int64, kind string, session *sessionBlob) error {
+func (s *Service) saveChallenge(userID, authKey int64, kind string, session *sessionBlob) error {
 	ctx, cancel := s.ctx()
 	defer cancel()
 	now := int32(time.Now().Unix())
 	_, _ = s.db.ExecContext(ctx, "DELETE FROM user_passkey_challenges WHERE expires_at < ?", now)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO user_passkey_challenges (challenge, user_id, kind, session_json, expires_at)
-VALUES (?, ?, ?, ?, ?)`, session.Data.Challenge, userID, kind, session.raw, session.expires)
+INSERT INTO user_passkey_challenges (challenge, user_id, auth_key_id, kind, session_json, expires_at)
+VALUES (?, ?, ?, ?, ?, ?)`, session.Data.Challenge, userID, authKey, kind, session.raw, session.expires)
 	return err
 }
 
-func (s *Service) takeChallenge(challenge, kind string, userID int64, matchUser bool) (*sessionBlob, error) {
+func (s *Service) takeChallenge(challenge, kind string, userID, authKey int64, matchUser bool) (*sessionBlob, error) {
 	ctx, cancel := s.ctx()
 	defer cancel()
 	now := int32(time.Now().Unix())
 	var (
 		raw   string
 		owner int64
+		keyID int64
 		got   string
 		exp   int32
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT user_id, kind, session_json, expires_at
-FROM user_passkey_challenges WHERE challenge = ?`, challenge).Scan(&owner, &got, &raw, &exp)
-	if errors.Is(err, sql.ErrNoRows) || exp < now || got != kind || (matchUser && owner != userID) {
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, err
-		}
-		return nil, errInvalid
-	}
-	if err != nil {
+SELECT user_id, auth_key_id, kind, session_json, expires_at
+FROM user_passkey_challenges WHERE challenge = ?`, challenge).Scan(&owner, &keyID, &got, &raw, &exp)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	res, err := s.db.ExecContext(ctx, "DELETE FROM user_passkey_challenges WHERE challenge = ?", challenge)
+	if errors.Is(err, sql.ErrNoRows) || exp < now || got != kind || (matchUser && owner != userID) {
+		return nil, errInvalid
+	}
+	// A different permanent key must not consume the ceremony. The key that
+	// called init can still finish.
+	if authKey == 0 || keyID != authKey {
+		return nil, errInvalid
+	}
+	res, err := s.db.ExecContext(ctx, "DELETE FROM user_passkey_challenges WHERE challenge = ? AND auth_key_id = ?", challenge, authKey)
 	if err != nil {
 		return nil, err
 	}
@@ -230,10 +233,10 @@ func (s *Service) insert(row credentialRow) error {
 	defer cancel()
 	var owner int64
 	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM user_passkeys WHERE raw_id = ?`, row.RawID).Scan(&owner)
-	if err == nil && owner != row.UserID {
+	if err == nil {
 		return errInvalid
 	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	bit := func(v bool) int {
@@ -241,17 +244,6 @@ func (s *Service) insert(row credentialRow) error {
 			return 1
 		}
 		return 0
-	}
-	if err == nil {
-		_, err = s.db.ExecContext(ctx, `
-UPDATE user_passkeys
-SET credential_id=?, public_key=?, sign_count=?, aaguid=?, attestation_type=?, user_handle=?,
-    user_present=?, user_verified=?, backup_eligible=?, backup_state=?, name=?, created_at=?
-WHERE raw_id=? AND user_id=?`,
-			row.ID, row.PublicKey, row.SignCount, row.AAGUID, row.AttestationType, row.UserHandle,
-			bit(row.UserPresent), bit(row.UserVerified), bit(row.BackupEligible), bit(row.BackupState),
-			row.Name, row.CreatedAt, row.RawID, row.UserID)
-		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO user_passkeys

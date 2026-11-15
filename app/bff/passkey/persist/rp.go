@@ -38,12 +38,37 @@ func userHandle(userID int64) string {
 	return strconv.FormatInt(int64(DC()), 10) + ":" + strconv.FormatInt(userID, 10)
 }
 
+const androidOriginPrefix = "android:apk-key-hash:"
+
+// androidHashes is TELLOMI_PASSKEY_ANDROID_HASHES, a comma-separated list of
+// apk certificate hashes. An empty list allows no Android origin.
+func androidHashes() map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, part := range strings.Split(os.Getenv("TELLOMI_PASSKEY_ANDROID_HASHES"), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out[part] = struct{}{}
+		if strings.HasPrefix(part, androidOriginPrefix) {
+			out[strings.TrimPrefix(part, androidOriginPrefix)] = struct{}{}
+		}
+	}
+	return out
+}
+
 // originAllowed is the WebAuthn origin check for this relying party.
-// https hosts must be the rpId or a subdomain. Android app origins are allowed.
+// https hosts must be the rpId or a subdomain. An Android origin is allowed
+// only when its certificate hash is configured.
 func originAllowed(origin string) bool {
 	origin = strings.TrimSpace(origin)
-	if strings.HasPrefix(origin, "android:apk-key-hash:") && len(origin) > len("android:apk-key-hash:") {
-		return true
+	if strings.HasPrefix(origin, androidOriginPrefix) {
+		hash := strings.TrimPrefix(origin, androidOriginPrefix)
+		if hash == "" || strings.ContainsAny(hash, " ,") {
+			return false
+		}
+		_, ok := androidHashes()[hash]
+		return ok
 	}
 	u, err := url.Parse(origin)
 	if err != nil || u.Hostname() == "" {
@@ -68,19 +93,23 @@ func fullyQualified(origin string) (string, bool) {
 	return fq, true
 }
 
-func newWebAuthn(extraOrigin string) (*webauthn.WebAuthn, error) {
+func newWebAuthn(origin string) (*webauthn.WebAuthn, error) {
 	rp := RPID()
 	origins := []string{"https://" + rp}
-	if fq, ok := fullyQualified(extraOrigin); ok {
-		found := false
-		for _, have := range origins {
-			if strings.EqualFold(have, fq) {
-				found = true
-				break
+	// Only an origin that already passed originAllowed is added. A client
+	// cannot satisfy the check by naming its own android hash.
+	if origin != "" && originAllowed(origin) {
+		if fq, ok := fullyQualified(origin); ok {
+			found := false
+			for _, have := range origins {
+				if strings.EqualFold(have, fq) {
+					found = true
+					break
+				}
 			}
-		}
-		if !found {
-			origins = append(origins, fq)
+			if !found {
+				origins = append(origins, fq)
+			}
 		}
 	}
 	return webauthn.New(&webauthn.Config{
@@ -91,7 +120,7 @@ func newWebAuthn(extraOrigin string) (*webauthn.WebAuthn, error) {
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			ResidentKey:        protocol.ResidentKeyRequirementRequired,
 			RequireResidentKey: protocol.ResidentKeyRequired(),
-			UserVerification:   protocol.VerificationPreferred,
+			UserVerification:   protocol.VerificationRequired,
 		},
 		Timeouts: webauthn.TimeoutsConfig{
 			Login:        webauthn.TimeoutConfig{Enforce: true, Timeout: time.Minute},

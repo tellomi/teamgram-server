@@ -33,8 +33,8 @@ func ListPasskeys(userID int64) (*mtproto.Account_Passkeys, error) {
 }
 
 // InitPasskeyRegistration returns PublicKeyCredentialCreationOptions for this account.
-func InitPasskeyRegistration(userID int64) (*mtproto.Account_PasskeyRegistrationOptions, error) {
-	raw, err := persist.InitRegistration(userID)
+func InitPasskeyRegistration(userID, authKey int64) (*mtproto.Account_PasskeyRegistrationOptions, error) {
+	raw, err := persist.InitRegistration(userID, authKey)
 	if err != nil {
 		return nil, err
 	}
@@ -44,8 +44,8 @@ func InitPasskeyRegistration(userID int64) (*mtproto.Account_PasskeyRegistration
 }
 
 // RegisterPasskey stores a verified registration.
-func RegisterPasskey(userID int64, cred *mtproto.InputPasskeyCredential) (*mtproto.Passkey, error) {
-	row, err := persist.Register(userID, cred)
+func RegisterPasskey(userID, authKey int64, cred *mtproto.InputPasskeyCredential) (*mtproto.Passkey, error) {
+	row, err := persist.Register(userID, authKey, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -66,11 +66,11 @@ func DeletePasskey(userID int64, id string) (*mtproto.Bool, error) {
 
 // InitPasskeyLogin returns PublicKeyCredentialRequestOptions.
 // api_id <= 0 or an empty api_hash is 400 API_ID_INVALID.
-func InitPasskeyLogin(apiID int32, apiHash string) (*mtproto.Auth_PasskeyLoginOptions, error) {
+func InitPasskeyLogin(apiID int32, apiHash string, authKey int64) (*mtproto.Auth_PasskeyLoginOptions, error) {
 	if apiID <= 0 || strings.TrimSpace(apiHash) == "" {
 		return nil, mtproto.ErrApiIdInvalid
 	}
-	raw, err := persist.InitLogin()
+	raw, err := persist.InitLogin(authKey)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +81,8 @@ func InitPasskeyLogin(apiID int32, apiHash string) (*mtproto.Auth_PasskeyLoginOp
 
 // VerifyPasskeyLogin checks the assertion and returns the account id.
 // The handler binds the auth key and returns auth.authorization.
-func VerifyPasskeyLogin(cred *mtproto.InputPasskeyCredential) (int64, error) {
-	return persist.VerifyLogin(cred)
+func VerifyPasskeyLogin(authKey int64, cred *mtproto.InputPasskeyCredential) (int64, error) {
+	return persist.VerifyLogin(authKey, cred)
 }
 
 func passkeyTL(row persist.Saved) *mtproto.Passkey {
