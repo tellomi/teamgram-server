@@ -116,3 +116,69 @@ func TestAllowToSpeakAndLocalMute(t *testing.T) {
 		}
 	}
 }
+
+func TestBroadcastAndRTMPCallsStartMuted(t *testing.T) {
+	ch := channel.New(channel.NewMemoryStore())
+	prev := channel.Shared()
+	channel.Use(ch)
+	t.Cleanup(func() { channel.Use(prev) })
+	ctx := withUser(10, 1)
+	broadcast, err := ch.Create(ctx, channel.CreateRequest{CreatorID: 10, Title: "News"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ch.Invite(ctx, 10, 0, inputChannel(broadcast.Chats[0]), []int64{11}, nil); err != nil {
+		t.Fatal(err)
+	}
+	live, err := ch.Create(ctx, channel.CreateRequest{CreatorID: 10, Title: "Live", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ch.Invite(ctx, 10, 0, inputChannel(live.Chats[0]), []int64{11}, nil); err != nil {
+		t.Fatal(err)
+	}
+	eng := engine.New(engine.Options{
+		Config: config.Config{PublicIP: "203.0.113.10", SFUPort: 3480}.Normalized(),
+		Now:    func() time.Time { return time.Unix(1_700_000_000, 0) },
+	})
+	svc := NewWithEngine(eng)
+	params := `{"ssrc":333,"ufrag":"mu","pwd":"mp","fingerprints":[{"hash":"sha-256","fingerprint":"AA:BB","setup":"passive"}]}`
+	for _, tc := range []struct {
+		name string
+		chat *mtproto.Chat
+		rtmp bool
+	}{
+		{name: "broadcast", chat: broadcast.Chats[0]},
+		{name: "rtmp", chat: live.Chats[0], rtmp: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{
+				ChannelId: tc.chat.Id, AccessHash: tc.chat.GetAccessHash_FLAGINT64().GetValue(),
+			}).To_InputPeer()
+			up, err := svc.PhoneCreateGroupCall(withUser(10, 100), &mtproto.TLPhoneCreateGroupCall{
+				Peer: peer, RandomId: int32(tc.chat.Id), RtmpStream: tc.rtmp,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gcall := up.Updates[0].GetCall_GROUPCALL()
+			if !gcall.GetJoinMuted() {
+				t.Fatalf("%s call is not join_muted", tc.name)
+			}
+			inCall := mtproto.MakeTLInputGroupCall(&mtproto.InputGroupCall{
+				Id: gcall.GetId(), AccessHash: gcall.GetAccessHash(),
+			}).To_InputGroupCall()
+			joined, err := svc.PhoneJoinGroupCall(withUser(11, 110), &mtproto.TLPhoneJoinGroupCall{
+				Call: inCall, JoinAs: mtproto.MakeTLInputPeerSelf(nil).To_InputPeer(),
+				Params: mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: params}).To_DataJSON(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			self := joinedSelf(t, joined)
+			if !self.GetMuted() || self.GetCanSelfUnmute() {
+				t.Fatalf("%s subscriber %+v", tc.name, self)
+			}
+		})
+	}
+}

@@ -730,9 +730,9 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 `channels.toggleJoinToSend` stored the bit and returned updates, but `channel.join_to_send` was never copied onto the chat object, and a guest could still comment. The flag is now set on `channel`, including the discussion chat shown to a non-member. A non-member comment while the flag is on returns `403 CHAT_GUEST_SEND_FORBIDDEN`.
 
-New group calls were created with `join_muted` true, so every non-admin joined muted and could not unmute. The default is now off. A listener invite still joins muted without `can_self_unmute`. An admin turning `muted` off for someone else sets `can_self_unmute` and clears the raised hand, and leaves their microphone muted until they unmute. A member setting volume or `muted` on someone else is stored only for that listener (`muted_by_you`, volume), not as a server mute and not `volume_by_admin`.
+New group calls were created with `join_muted` true, so every non-admin joined muted and could not unmute. Basic groups and megagroups now start with `join_muted` off. Broadcast channels and `rtmp_stream` stay `join_muted`. A listener invite still joins muted without `can_self_unmute`. An admin turning `muted` off for someone else sets `can_self_unmute` and clears the raised hand, and leaves their microphone muted until they unmute. A member setting volume or `muted` on someone else is stored only for that listener (`muted_by_you`, volume), not as a server mute and not `volume_by_admin`.
 
 | Piece | File |
 | --- | --- |
 | join_to_send | `convert.go`, `comments.go` `mayComment` |
-| call default and local mute | `app/bff/phone/internal/engine/group.go` |
+| call default and local mute | `app/bff/phone/internal/engine/group.go`, `groups.go` `PhoneCreateGroupCall`, `service_ops.go` `CallStartsMuted` |

@@ -182,6 +182,9 @@ type CreateGroup struct {
 	Title        string
 	Schedule     int32
 	RTMP         bool
+	// JoinMuted is the channel default. Broadcast channels start muted.
+	// Megagroups and basic groups do not. RTMP always starts muted.
+	JoinMuted bool
 }
 
 func (e *Engine) CreateGroup(in CreateGroup) (*mtproto.Updates, error) {
@@ -208,7 +211,7 @@ func (e *Engine) CreateGroup(in CreateGroup) (*mtproto.Updates, error) {
 	g := &group{
 		id: newID(), access: newID(), peerType: in.PeerType, peerID: in.PeerID,
 		creator: in.UserID, creatorAuth: in.Auth, title: in.Title, date: now,
-		joinMuted: false, messagesEnabled: true, rtmp: in.RTMP, schedule: in.Schedule,
+		joinMuted: in.RTMP || in.JoinMuted, messagesEnabled: true, rtmp: in.RTMP, schedule: in.Schedule,
 		version: 1, invite: randHex(8), speakerInvite: randHex(8),
 		byKey: map[string]*part{}, subs: map[int64]bool{},
 		chains: map[int32][][]byte{}, msgByID: map[int32]*gmsg{}, msgByRandom: map[string]int32{},

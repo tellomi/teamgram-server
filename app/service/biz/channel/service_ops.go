@@ -29,6 +29,19 @@ func (s *Service) lookup(ctx context.Context, in *mtproto.InputChannel) (*Channe
 	return ch, nil
 }
 
+// CallStartsMuted is the default for a new voice chat. Broadcast channels
+// and anything we cannot load start muted. Megagroups do not.
+func (s *Service) CallStartsMuted(ctx context.Context, id int64) bool {
+	if s == nil {
+		return true
+	}
+	ch, err := s.reload(ctx, id)
+	if err != nil || ch == nil {
+		return true
+	}
+	return !ch.Megagroup
+}
+
 func (s *Service) reload(ctx context.Context, id int64) (*Channel, error) {
 	ch, err := s.store.GetChannel(ctx, id)
 	if err != nil {
