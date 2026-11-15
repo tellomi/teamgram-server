@@ -31,6 +31,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accountprefs"
 
 	"github.com/zeromicro/go-zero/core/mr"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -144,6 +145,16 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 	// Premium is included. Gift prices would open a purchase flow, so they stay empty.
 	userFull.PremiumGifts = nil
+	userFull.SponsoredEnabled = accountprefs.Sponsored(c.ctx, peerId)
+	if settings, err := c.svcCtx.Dao.UserClient.UserGetGlobalPrivacySettings(c.ctx, &userpb.TLUserGetGlobalPrivacySettings{UserId: peerId}); err == nil && settings != nil {
+		userFull.DisplayGiftsButton = settings.GetDisplayGiftsButton()
+		userFull.DisallowedGifts = settings.GetDisallowedGifts()
+		if settings.GetNoncontactPeersPaidStars().GetValue() > 0 && c.MD.UserId != peerId {
+			if ok, _ := user.CheckContact(c.MD.UserId); !ok {
+				userFull.SendPaidMessagesStars = settings.GetNoncontactPeersPaidStars()
+			}
+		}
+	}
 	// Business hours, location, greeting, away message, and intro are public
 	// profile fields. The business RPCs write the same process-local book.
 	// Default admin rights a bot asks for when it is added to a group or channel.

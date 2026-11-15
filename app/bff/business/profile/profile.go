@@ -15,6 +15,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/tz"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -447,7 +448,7 @@ func validateHours(hours *mtproto.BusinessWorkHours) error {
 	if id == "" || len(id) > 64 {
 		return bad("TIMEZONE_INVALID")
 	}
-	if _, err := time.LoadLocation(id); err != nil {
+	if _, err := tz.Load(id); err != nil {
 		return bad("TIMEZONE_INVALID")
 	}
 	periods := hours.GetWeeklyOpen()
@@ -494,8 +495,8 @@ func copyPeriods(in []*mtproto.BusinessWeeklyOpen) []*mtproto.BusinessWeeklyOpen
 	return out
 }
 
-func openNow(tz string, periods []*mtproto.BusinessWeeklyOpen, now time.Time) bool {
-	loc, err := time.LoadLocation(tz)
+func openNow(zoneID string, periods []*mtproto.BusinessWeeklyOpen, now time.Time) bool {
+	loc, err := tz.Load(zoneID)
 	if err != nil {
 		return false
 	}

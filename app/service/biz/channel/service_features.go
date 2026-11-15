@@ -210,7 +210,17 @@ func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.Inpu
 			f.ReadContents[self] = append(f.ReadContents[self], id)
 		}
 	}
-	return s.saveFeatures(ctx, ch.ID, f)
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return err
+	}
+	if h := s.hooks(); h.Push != nil && len(ids) > 0 {
+		up := mtproto.MakeTLUpdateChannelReadMessagesContents(&mtproto.Update{
+			ChannelId: ch.ID,
+			Messages:  ids,
+		}).To_Update()
+		h.Push(ctx, self, nil, s.pack(ctx, self, ch.ID, up))
+	}
+	return nil
 }
 
 // DeleteByDate removes channel messages whose date is inside [minDate, maxDate].
@@ -342,7 +352,9 @@ func (s *Service) ToggleParticipantsHidden(ctx context.Context, self, actorAuth 
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() {
+	// Official clients hide the member list with ban_users. The creator
+	// always qualifies. change_info is the profile gate, not this one.
+	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanBanUsers()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
@@ -676,6 +688,32 @@ func canRestrictSaving(p *Participant) bool {
 	return p.IsAdmin() && p.adminRights().CanChangeInfo()
 }
 
+// MayManageGiftCollection reports whether userID may create or edit star gift
+// collections on this channel. Telegram requires the can_post_messages admin
+// right. The creator has every admin right. A missing channel is
+// PEER_ID_INVALID. A member without that right is CHAT_ADMIN_REQUIRED.
+// https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1create_gift_collection.html
+func (s *Service) MayManageGiftCollection(ctx context.Context, userID, channelID int64) error {
+	if s == nil || s.store == nil || userID == 0 || channelID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if ch == nil || ch.Deleted {
+		return mtproto.ErrPeerIdInvalid
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	if p != nil && p.InChannel() && (p.IsCreator() || (p.IsAdmin() && p.adminRights().CanPostMessages())) {
+		return nil
+	}
+	return mtproto.ErrChatAdminRequired
+}
+
 // MayReadBoosts reports whether userID may call premium.getBoostsList for
 // this channel. Only a creator or an admin may. A missing channel is not
 // an admin grant.
@@ -772,41 +810,80 @@ func (s *Service) GroupsForDiscussion(ctx context.Context, self int64) (*mtproto
 	return mtproto.MakeTLMessagesChats(&mtproto.Messages_Chats{Chats: chats}).To_Messages_Chats(), nil
 }
 
-func (s *Service) SetDiscussionGroup(ctx context.Context, self int64, broadcast, group *mtproto.InputChannel) error {
+// SetDiscussionGroup links a broadcast to a discussion supergroup.
+// An empty group clears the link. Unlink and rebind also clear the previous
+// group's linked_chat_id when it still points at this channel, then push
+// updateChannel so other sessions reload channelFull.
+func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64, broadcast, group *mtproto.InputChannel) error {
 	bCh, bp, err := s.requireMember(ctx, self, broadcast)
 	if err != nil {
 		return err
 	}
-	if !bp.IsCreator() {
+	if !canLinkDiscussion(bp) {
 		return mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, bCh.ID)
 	prev := f.LinkedChatID
-	if group == nil || group.GetPredicateName() == mtproto.Predicate_inputChannelEmpty || group.GetChannelId() == 0 {
-		f.LinkedChatID = 0
-	} else {
+	var newID int64
+	if group != nil && group.GetPredicateName() != mtproto.Predicate_inputChannelEmpty && group.GetChannelId() != 0 {
 		gCh, gp, err := s.requireMember(ctx, self, group)
 		if err != nil {
 			return err
 		}
-		if !gCh.Megagroup || !gp.IsAdmin() {
+		if !gCh.Megagroup || !canLinkDiscussion(gp) {
 			return mtproto.ErrChatAdminRequired
 		}
-		f.LinkedChatID = gCh.ID
-		gf := s.features(ctx, gCh.ID)
-		gf.LinkedChatID = bCh.ID
-		if err := s.saveFeatures(ctx, gCh.ID, gf); err != nil {
+		newID = gCh.ID
+	}
+	var cleared bool
+	if prev != 0 && prev != newID {
+		cleared, err = s.clearDiscussionBacklink(ctx, prev, bCh.ID)
+		if err != nil {
 			return err
 		}
 	}
+	if newID != 0 {
+		gf := s.features(ctx, newID)
+		gf.LinkedChatID = bCh.ID
+		if err := s.saveFeatures(ctx, newID, gf); err != nil {
+			return err
+		}
+	}
+	f.LinkedChatID = newID
 	if err := s.saveFeatures(ctx, bCh.ID, f); err != nil {
 		return err
 	}
 	s.logAdmin(ctx, bCh.ID, self, mtproto.MakeTLChannelAdminLogEventActionChangeLinkedChat(&mtproto.ChannelAdminLogEventAction{
 		PrevValue_INT64: prev,
-		NewValue_INT64:  f.LinkedChatID,
+		NewValue_INT64:  newID,
 	}).To_ChannelAdminLogEventAction())
+	if prev != newID {
+		s.fanoutUpdate(ctx, self, actorAuth, bCh.ID, channelUpdate(bCh.ID))
+	}
+	if newID != 0 && newID != prev {
+		s.fanoutUpdate(ctx, self, actorAuth, newID, channelUpdate(newID))
+	}
+	if cleared {
+		s.fanoutUpdate(ctx, self, actorAuth, prev, channelUpdate(prev))
+	}
 	return nil
+}
+
+// clearDiscussionBacklink drops the group's pointer when it still names this
+// channel. A group already linked to a different channel is left alone.
+func (s *Service) clearDiscussionBacklink(ctx context.Context, groupID, channelID int64) (bool, error) {
+	if groupID == 0 || channelID == 0 {
+		return false, nil
+	}
+	gf := s.features(ctx, groupID)
+	if gf.LinkedChatID != channelID {
+		return false, nil
+	}
+	gf.LinkedChatID = 0
+	if err := s.saveFeatures(ctx, groupID, gf); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Service) InactiveChannels(ctx context.Context, self int64) (*mtproto.Messages_InactiveChats, error) {
@@ -970,9 +1047,6 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		if q.MaxDate > 0 && stored.Date > q.MaxDate {
 			continue
 		}
-		if q.FromUser != 0 && stored.SenderID != q.FromUser {
-			continue
-		}
 		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
 			continue
 		}
@@ -982,6 +1056,16 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		body, err := unmarshalMessage(stored.Data)
 		if err != nil {
 			continue
+		}
+		if q.FromUser != 0 {
+			// Anonymous posts are addressed as the supergroup. A from_id
+			// filter is a user, so those posts must not match the author.
+			if body.GetFromId().GetChannelId() != 0 && !ch.Broadcast {
+				continue
+			}
+			if stored.SenderID != q.FromUser {
+				continue
+			}
 		}
 		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
 			continue

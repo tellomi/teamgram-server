@@ -10,6 +10,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/phonehistory"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
@@ -28,6 +29,9 @@ func (s *Service) MessagesRequestEncryption(ctx context.Context, in *mtproto.TLM
 	peer, err := s.secretPeer(ctx, md.GetUserId(), in.GetUserId())
 	if err != nil {
 		return nil, err
+	}
+	if _, allowSecret := phonecall.DeviceAllows(ctx, peer); !allowSecret {
+		return nil, mtproto.ErrUserPrivacyRestricted
 	}
 	chat, events, err := secretchat.Default().Request(md.GetUserId(), peer, in.GetRandomId(), in.GetGA(), now())
 	if err != nil {

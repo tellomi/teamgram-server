@@ -57,6 +57,10 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		c.Logger.Errorf("messages.sendMessage - sanction")
 		return nil, err
 	}
+	if err := c.paidMessageRequired(peer, in.GetAllowPaidStars().GetValue()); err != nil {
+		c.Logger.Errorf("messages.sendMessage - paid")
+		return nil, err
+	}
 
 	if in.Message == "" {
 		err := mtproto.ErrMessageEmpty

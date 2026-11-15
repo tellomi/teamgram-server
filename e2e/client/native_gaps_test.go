@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -94,33 +95,47 @@ func TestNativeProtocolGaps(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !historyHasAction(t, a, inputPeerUser(bSelf.ID, bSelf.AccessHash), mtproto.Predicate_messageActionSetChatTheme) {
-		t.Fatal("caller history has no setChatTheme service message")
-	}
-	if !historyHasAction(t, b, inputPeerUser(aSelf.ID, aSelf.AccessHash), mtproto.Predicate_messageActionSetChatTheme) {
-		t.Fatal("peer history has no setChatTheme service message")
-	}
+	// setChatTheme returns after Kafka accepts both inbox records. getHistory
+	// reads the messages rows, and the inbox consumer writes those after the
+	// RPC returns. One read can miss a row that is about to land. The action
+	// still has to show up for both peers.
+	waitHistoryAction(t, a, inputPeerUser(bSelf.ID, bSelf.AccessHash), mtproto.Predicate_messageActionSetChatTheme, "caller history has no setChatTheme service message")
+	waitHistoryAction(t, b, inputPeerUser(aSelf.ID, aSelf.AccessHash), mtproto.Predicate_messageActionSetChatTheme, "peer history has no setChatTheme service message")
 }
 
-func historyHasAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name string) bool {
+func waitHistoryAction(t *testing.T, c *Client, peer *mtproto.InputPeer, name, fail string) {
 	t.Helper()
-	ctx, cancel := contextTimeout(8 * time.Second)
+	// setChatTheme returns after Kafka accepts the inbox records. getHistory
+	// reads the messages rows, and the inbox consumer writes those after the
+	// RPC returns. One read can miss a row that is about to land, and one RPC
+	// error during the wait is not the failure. The action still has to show
+	// up for both peers.
+	ctx, cancel := contextTimeout(10 * time.Second)
 	defer cancel()
-	ok := false
-	// The service message is written by the inbox consumer after the RPC returns.
-	_ = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
-		page := historyPage(t, c, ctx, &mtproto.TLMessagesGetHistory{
+	err := waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
+		res, err := c.Invoke(ctx, &mtproto.TLMessagesGetHistory{
 			Constructor: mtproto.CRC32_messages_getHistory,
 			Peer:        peer,
 			Limit:       20,
 		})
-		for _, m := range page {
+		if err != nil {
+			if ctx.Err() != nil {
+				return false, nil
+			}
+			return false, err
+		}
+		msgs, ok := messagesOf(res)
+		if !ok {
+			return false, fmt.Errorf("getHistory %T", res)
+		}
+		for _, m := range msgs {
 			if m.GetAction().GetPredicateName() == name {
-				ok = true
 				return true, nil
 			}
 		}
 		return false, nil
 	})
-	return ok
+	if err != nil {
+		t.Fatalf("%s: %v", fail, err)
+	}
 }
