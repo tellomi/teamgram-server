@@ -304,11 +304,13 @@ func participantFor(actor int64, viewer *Participant, promoted map[int64]int64, 
 			UserId:          p.UserID,
 			InviterId_INT64: p.InviterID,
 			Date:            p.Date,
+			Rank:            rank,
 		}).To_ChannelParticipant()
 	default:
 		return mtproto.MakeTLChannelParticipant(&mtproto.ChannelParticipant{
 			UserId: p.UserID,
 			Date:   p.Date,
+			Rank:   rank,
 		}).To_ChannelParticipant()
 	}
 }

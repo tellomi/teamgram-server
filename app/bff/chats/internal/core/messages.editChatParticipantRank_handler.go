@@ -20,6 +20,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -42,6 +43,9 @@ func (c *ChatsCore) MessagesEditChatParticipantRank(in *mtproto.TLMessagesEditCh
 		err := mtproto.ErrUserIdInvalid
 		c.Logger.Errorf("messages.editChatParticipantRank - invalid participant, err: %v", err)
 		return nil, err
+	}
+	if peer.IsChannel() {
+		return channel.Shared().EditParticipantRank(c.ctx, c.MD.UserId, peer.PeerId, participant.PeerId, in.Rank)
 	}
 
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatEditChatParticipantRank(c.ctx, &chatpb.TLChatEditChatParticipantRank{

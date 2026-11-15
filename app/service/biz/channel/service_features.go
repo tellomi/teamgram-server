@@ -149,6 +149,8 @@ func adminLogVisible(filter *mtproto.ChannelAdminLogEventsFilter, action *mtprot
 		return filter.Delete
 	case mtproto.Predicate_channelAdminLogEventActionCreateTopic, mtproto.Predicate_channelAdminLogEventActionEditTopic, mtproto.Predicate_channelAdminLogEventActionDeleteTopic:
 		return filter.Forums
+	case mtproto.Predicate_channelAdminLogEventActionParticipantEditRank:
+		return filter.EditRank
 	default:
 		return filter.Settings || filter.Info
 	}

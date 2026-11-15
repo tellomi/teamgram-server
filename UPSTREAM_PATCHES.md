@@ -725,3 +725,13 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## Megagroup member rank (row 191)
+
+`messages.editChatParticipantRank` accepted only a basic group, so a supergroup always returned `PEER_ID_INVALID`. A member may now set their own rank. `edit_rank` on the default or personal ban returns `CHAT_ADMIN_REQUIRED`. Changing another member needs `manage_ranks` (the creator has it). The rank is the existing `channel_participants.rank_name` column and is returned on `channelParticipant`, `channelParticipantSelf`, and admins. The admin log event is `participantEditRank`, visible under the `edit_rank` filter. New channels no longer copy the template bit that banned `edit_rank` for every member.
+
+| Piece | File |
+| --- | --- |
+| rank edit | `app/service/biz/channel/rank.go` |
+| RPC branch | `app/bff/chats/internal/core/messages.editChatParticipantRank_handler.go` |
+| participant object | `app/service/biz/channel/convert.go` |

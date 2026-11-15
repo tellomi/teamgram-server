@@ -48,6 +48,9 @@ func defaultChannelBanned() int64 {
 	rights := mtproto.MakeDefaultBannedRights()
 	rights.ChangeInfo = true
 	rights.PinMessages = true
+	// Members may set their own rank until an admin bans edit_rank.
+	// MakeDefaultBannedRights turns that bit on as a template.
+	rights.EditRank = false
 	return int64(rights.ToBannedRights())
 }
 
