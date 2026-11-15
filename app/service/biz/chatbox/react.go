@@ -171,11 +171,11 @@ func (b *Book) React(ctx context.Context, self int64, peer *mtproto.PeerUtil, ms
 	if err != nil {
 		return nil, err
 	}
-	if err := doc.allow(self, msgID, doc.Items, emos, docs); err != nil {
-		return nil, err
-	}
 	now := int32(b.now().Unix())
 	dlg := b.dialogIDLocked(ctx, self, peer, msgID)
+	if err := doc.allow(self, msgID, dlg, doc.Items, emos, docs); err != nil {
+		return nil, err
+	}
 	kept := doc.Items[:0]
 	for _, item := range doc.Items {
 		if item.UserID == self && sameMessage(item, msgID, dlg) {
@@ -518,7 +518,7 @@ func (b *Book) storeReact(ctx context.Context, self int64, peer *mtproto.PeerUti
 	return b.save(ctx, key, doc)
 }
 
-func (d *reactDoc) allow(self int64, msgID int32, items []reactionItem, emos []string, docs []int64) error {
+func (d *reactDoc) allow(self int64, msgID int32, dlg int64, items []reactionItem, emos []string, docs []int64) error {
 	if d.Mode == "none" && (len(emos) > 0 || len(docs) > 0) {
 		return mtproto.ErrReactionInvalid
 	}
@@ -550,7 +550,7 @@ func (d *reactDoc) allow(self int64, msgID int32, items []reactionItem, emos []s
 	if d.Limit > 0 {
 		uniq := map[string]bool{}
 		for _, item := range items {
-			if item.MsgID != msgID || item.UserID == self {
+			if item.UserID == self || !sameMessage(item, msgID, dlg) {
 				continue
 			}
 			if item.Emoticon != "" {

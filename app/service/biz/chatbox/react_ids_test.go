@@ -33,6 +33,25 @@ func (f fakeIDs) BoxIDs(_ context.Context, user int64, dlgs []int64) (map[int64]
 	return out, nil
 }
 
+func TestReactionLimitCountsTheOtherSidesBoxID(t *testing.T) {
+	b := newBook(nil)
+	b.ids = fakeIDs{box: map[int64]map[int32]int64{
+		4: {250: 7001},
+		9: {2734: 7001},
+	}}
+	ctx := context.Background()
+	peer4 := mtproto.MakePeerUtil(mtproto.PEER_USER, 9)
+	if err := b.SetAvailableReactions(ctx, 4, peer4, "all", false, nil, nil, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.React(ctx, 4, peer4, 250, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.React(ctx, 9, mtproto.MakePeerUtil(mtproto.PEER_USER, 4), 2734, []string{"❤️"}, nil, false); err != mtproto.ErrReactionsTooMany {
+		t.Fatalf("distinct emoji on the same dialog message: %v", err)
+	}
+}
+
 func TestPrivateReactionUsesEachSidesMessageID(t *testing.T) {
 	b := newBook(nil)
 	b.ids = fakeIDs{box: map[int64]map[int32]int64{
