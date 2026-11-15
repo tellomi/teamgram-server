@@ -38,7 +38,13 @@ func draftHasContent(in *mtproto.TLMessagesSaveDraft) bool {
 	if in.GetNoWebpage() || in.GetInvertMedia() {
 		return true
 	}
-	if in.GetReplyToMsgId() != nil || in.GetReplyTo() != nil {
+	// A forum topic is named by reply_to.top_msg_id. That address is not
+	// draft content: an empty composer in a topic clears only that topic.
+	top := saveDraftTopicID(in)
+	if id := in.GetReplyToMsgId(); id != nil && id.GetValue() != 0 && id.GetValue() != top {
+		return true
+	}
+	if dialog.ReplyCarriesDraftBody(in.GetReplyTo()) {
 		return true
 	}
 	if in.GetMessage() != "" || len(in.GetEntities()) > 0 {
@@ -65,16 +71,26 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		isDraftMessageEmpty = false
 	}
 
+	top := saveDraftTopicID(in)
 	if isDraftMessageEmpty {
 		draft = mtproto.MakeTLDraftMessageEmpty(&mtproto.DraftMessage{
 			Date_FLAGINT32: mtproto.MakeFlagsInt32(date),
 		}).To_DraftMessage()
-
-		c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(c.ctx, &dialog.TLDialogClearDraftMessage{
-			UserId:   c.MD.UserId,
-			PeerType: peer.PeerType,
-			PeerId:   peer.PeerId,
-		})
+		if top > 0 {
+			dialog.EnsureTopicReply(draft, top)
+			c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
+				UserId:   c.MD.UserId,
+				PeerType: peer.PeerType,
+				PeerId:   peer.PeerId,
+				Message:  draft,
+			})
+		} else {
+			c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(c.ctx, &dialog.TLDialogClearDraftMessage{
+				UserId:   c.MD.UserId,
+				PeerType: peer.PeerType,
+				PeerId:   peer.PeerId,
+			})
+		}
 	} else {
 		draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{
 			NoWebpage:     in.GetNoWebpage(),
@@ -89,6 +105,7 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 			SuggestedPost: in.GetSuggestedPost(),
 			RichMessage:   rich,
 		}).To_DraftMessage()
+		dialog.EnsureTopicReply(draft, top)
 
 		c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(c.ctx, &dialog.TLDialogSaveDraftMessage{
 			UserId:   c.MD.UserId,
@@ -98,10 +115,7 @@ func (c *DraftsCore) MessagesSaveDraft(in *mtproto.TLMessagesSaveDraft) (*mtprot
 		})
 	}
 
-	syncUpdates := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateDraftMessage(&mtproto.Update{
-		Peer_PEER: peer.ToPeer(),
-		Draft:     draft,
-	}).To_Update())
+	syncUpdates := mtproto.MakeUpdatesByUpdates(dialog.DraftUpdate(peer.ToPeer(), draft))
 
 	switch peer.PeerType {
 	case mtproto.PEER_SELF:
@@ -144,4 +158,17 @@ func (c *DraftsCore) channelChats(ids ...int64) []*mtproto.Chat {
 		return c.svcCtx.Plugin.GetChannelListByIdList(c.ctx, c.MD.UserId, ids...)
 	}
 	return channel.Shared().ChatsFor(c.ctx, c.MD.UserId, ids...)
+}
+
+// saveDraftTopicID is the forum topic this saveDraft addresses.
+// Layer 232 puts it on reply_to.top_msg_id. Some clients also set the
+// request's own top_msg_id flag. Zero is the dialog draft.
+func saveDraftTopicID(in *mtproto.TLMessagesSaveDraft) int32 {
+	if in == nil {
+		return 0
+	}
+	if top := in.GetTopMsgId(); top != nil && top.GetValue() > 0 {
+		return top.GetValue()
+	}
+	return dialog.InputTopicID(in.GetReplyTo())
 }

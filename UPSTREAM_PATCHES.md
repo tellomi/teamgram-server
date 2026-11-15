@@ -2,6 +2,20 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Forum topic drafts (ISSUE-S-TOPIC-DRAFT-001)
+
+`messages.saveDraft` stored one draft per (user, peer) on `dialogs.draft_message_data` and ignored `reply_to.top_msg_id`. A forum topic draft replaced the megagroup draft, `updateDraftMessage` had no `top_msg_id`, and `forumTopic.draft` stayed empty.
+
+Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg_id`. `top_msg_id` 0 is still the dialog row. The migration only creates the new table. Existing `dialogs.draft_message_data` rows are not updated or deleted, and are read as the dialog draft. `messages.getAllDrafts` returns one update per draft, with `top_msg_id` on topic drafts. `messages.clearAllDrafts` clears both. `messages.getForumTopics` and `messages.getForumTopicsByID` fill `forumTopic.draft` from that user's topic rows. `messages.sendMessage` (and sendMedia / sendMultiMedia) with `clear_draft` and a topic id clears only that topic.
+
+| Piece | File |
+| --- | --- |
+| Topic table | `teamgramd/deploy/sql/migrate-20261130-dialog-topic-draft.sql` |
+| Store and list | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go`, `dialog.getAllDrafts_handler.go`, `dialog.clearAllDrafts_handler.go`, `topic_draft.go` |
+| Client RPC | `app/bff/drafts/internal/core/messages.saveDraft_handler.go`, `messages.getAllDrafts_handler.go`, `messages.clearAllDrafts_handler.go` |
+| clear_draft | `app/bff/messages/internal/core/core_messages_helper.go` |
+| forumTopic.draft | `app/bff/channels/internal/server/grpc/service/forum_topic_draft.go` |
+
 ## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
 
 `messages.search` with `inputMessagesFilterPhoneCalls` listed every stored call. The `missed` flag was not read, so the Missed tab showed answered and outgoing calls too.

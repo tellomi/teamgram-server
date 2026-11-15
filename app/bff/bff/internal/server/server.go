@@ -267,7 +267,7 @@ func (s *Server) Initialize() error {
 				IdgenClient:   c.IdgenClient,
 				StatusClient:  c.StatusClient,
 			}))
-		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
+		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums(c.BizServiceClient))
 		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment(c.BizServiceClient))
 		mtproto.RegisterRPCAntiSpamServer(grpcServer, channels_helper.NewAntiSpam())
 		mtproto.RegisterRPCBoostsServer(grpcServer, channels_helper.NewBoosts())
