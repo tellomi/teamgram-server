@@ -2,6 +2,15 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Basic-group creator transfer
+
+`messages.editChatCreator` on a basic group only rejected an empty SRP proof. Any non-empty `A` transferred the creator. `channels.editCreator` already calls `password.CheckSensitive`. The basic-group path now uses that same gate: no cloud password is `PASSWORD_MISSING`, a wrong proof is `PASSWORD_HASH_INVALID`, and a password or session younger than 24 hours is `PASSWORD_TOO_FRESH_*` / `SESSION_TOO_FRESH_*`.
+
+| Piece | File |
+| --- | --- |
+| gate | `app/bff/chats/internal/core/messages.editChatCreator_handler.go` |
+| in-process client hook | `app/service/biz/chat/client/chat_edit_creator.go` |
+
 ## Privacy switches that were stored and then ignored
 
 `messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
