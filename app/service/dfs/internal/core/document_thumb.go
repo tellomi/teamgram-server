@@ -5,6 +5,7 @@ import (
 	"image"
 
 	"github.com/teamgram/marmota/pkg/bytes2"
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/imaging"
 )
 
@@ -40,4 +41,35 @@ func documentFileThumbs(data []byte) (stripped []byte, medium image.Image, decEr
 		return nil, nil, nil, err
 	}
 	return stripped, medium, nil, nil
+}
+
+// clientThumbPhoto turns the JPEG a client attached to inputMediaUploadedDocument
+// into the stripped and medium sizes stored on the document. A non-image
+// returns the decode error so the upload does not pretend the thumb was kept.
+func clientThumbPhoto(data []byte) ([]*mtproto.PhotoSize, []byte, error) {
+	stripped, medium, decErr, buildErr := documentFileThumbs(data)
+	if decErr != nil {
+		return nil, nil, decErr
+	}
+	if buildErr != nil {
+		return nil, nil, buildErr
+	}
+	buf := bytes2.NewBuffer(make([]byte, 0, len(data)))
+	if err := imaging.EncodeJpeg(buf, medium); err != nil {
+		return nil, nil, err
+	}
+	jpeg := buf.Bytes()
+	sizes := []*mtproto.PhotoSize{
+		mtproto.MakeTLPhotoStrippedSize(&mtproto.PhotoSize{
+			Type:  mtproto.PhotoSZStrippedType,
+			Bytes: stripped,
+		}).To_PhotoSize(),
+		mtproto.MakeTLPhotoSize(&mtproto.PhotoSize{
+			Type:  mtproto.PhotoSZMediumType,
+			W:     int32(medium.Bounds().Dx()),
+			H:     int32(medium.Bounds().Dy()),
+			Size2: int32(len(jpeg)),
+		}).To_PhotoSize(),
+	}
+	return sizes, jpeg, nil
 }

@@ -140,6 +140,22 @@ func TestThumbFromDocumentBytes(t *testing.T) {
 	}
 }
 
+func TestClientThumbPhotoKeepsACustomPreview(t *testing.T) {
+	sizes, jpeg, err := clientThumbPhoto(tinyJPEG(t))
+	if err != nil || len(jpeg) == 0 || len(sizes) != 2 {
+		t.Fatalf("sizes %d jpeg %d err %v", len(sizes), len(jpeg), err)
+	}
+	if sizes[0].GetType() != mtproto.PhotoSZStrippedType || len(sizes[0].GetBytes()) == 0 {
+		t.Fatalf("stripped %#v", sizes[0])
+	}
+	if sizes[1].GetType() != mtproto.PhotoSZMediumType || sizes[1].GetW() == 0 || sizes[1].GetH() == 0 || sizes[1].GetSize2() != int32(len(jpeg)) {
+		t.Fatalf("medium %#v", sizes[1])
+	}
+	if _, _, err = clientThumbPhoto([]byte("%PDF-1.1")); err == nil {
+		t.Fatal("a PDF was accepted as a thumbnail")
+	}
+}
+
 func tinyJPEG(t *testing.T) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 8, 4))

@@ -2,6 +2,17 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Custom document thumbnail (ISSUE-S-DOC-THUMB-001)
+
+`inputMediaUploadedDocument.thumb` was ignored unless the file itself was an image. A PDF or other file was stored with `thumbs` empty, so the client preview disappeared after send.
+
+The attached JPEG is now decoded into the same stripped and medium sizes an image file already gets, and those bytes are written before the document is returned. An image file that already has thumbs generated from its own bytes is left as it is. A thumb that is not an image is `IMAGE_PROCESS_FAILED`.
+
+| Piece | File |
+| --- | --- |
+| sizes | `app/service/dfs/internal/core/document_thumb.go` |
+| store | `app/service/dfs/internal/core/dfs.uploadDocumentFileV2_handler.go` |
+
 ## Auth code cancel, cross-DC bytes, and login-token errors
 
 `auth.cancelCode` returned `boolTrue` without deleting the phone-code row, so the same test code still signed in. It now deletes the matching code. `auth.exportAuthorization` used to put the DC number in `bytes`, and `auth.importAuthorization` accepted any bytes and returned an empty user. The bytes are now a one-shot secret, and import binds that user or returns `AUTH_BYTES_INVALID`. `auth.importLoginToken` returned `AUTH_TOKEN_ALREADY_ACCEPTED` for a token this server does not know; an unknown token is `AUTH_TOKEN_INVALID`. `account.sendChangePhoneCode` treated a 99966 test number as an international SMS number and returned `PHONE_NUMBER_INVALID`. Those numbers now take the same fixed-code path as `auth.sendCode`.

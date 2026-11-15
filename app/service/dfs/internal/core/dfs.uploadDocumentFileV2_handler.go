@@ -11,6 +11,7 @@ package core
 
 import (
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"math/rand"
@@ -187,6 +188,11 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 		}
 		c.ctx, finishUpload = mediaotel.BeginUpload(c.ctx, mediablob.ClassDocuments, claim.Reused, claim.Size)
 	}
+	if err = c.attachUploadedThumb(document, in.GetCreator(), in.GetMedia().GetThumb()); err != nil {
+		c.Logger.Errorf("dfs.uploadDocumentFile - thumb: %v", err)
+		c.abandonClaim(c.ctx, mediablob.KindDocument, documentId)
+		return nil, err
+	}
 	applyDocumentSize(document, claim.Size)
 	if claim.Reused && c.objectMissing(c.ctx, mediablob.ClassDocuments, claim.Path) {
 		claim.Reused = false
@@ -238,6 +244,43 @@ func (c *DfsCore) DfsUploadDocumentFileV2(in *dfs.TLDfsUploadDocumentFileV2) (*m
 	}
 	releaseUploadHold(subject, file.GetId_INT64())
 	return document, nil
+}
+
+// attachUploadedThumb stores the thumbnail the client sent with a file.
+// Image documents already have thumbs built from the file itself. A PDF
+// or other non-image has none unless this input file is kept.
+func (c *DfsCore) attachUploadedThumb(document *mtproto.Document, creator int64, thumb *mtproto.InputFile) error {
+	if document == nil || thumb == nil || len(document.GetThumbs()) > 0 {
+		return nil
+	}
+	if err := model.CheckFileParts(thumb.Parts); err != nil {
+		return err
+	}
+	r, err := c.svcCtx.Dao.OpenFile(c.ctx, creator, thumb.Id_INT64, thumb.Parts)
+	if err != nil {
+		return partMissOr(err, mtproto.ErrMediaInvalid)
+	}
+	data, err := r.ReadAll(c.ctx)
+	if err != nil {
+		return partMissOr(err, mtproto.ErrMediaInvalid)
+	}
+	if len(thumb.Md5Checksum) > 0 {
+		digest := fmt.Sprintf("%x", md5.Sum(data))
+		if digest != thumb.Md5Checksum {
+			return mtproto.ErrCheckSumInvalid
+		}
+	}
+	sizes, jpeg, err := clientThumbPhoto(data)
+	if err != nil {
+		return mtproto.ErrImageProcessFailed
+	}
+	path := fmt.Sprintf("%s/%d.dat", mtproto.PhotoSZMediumType, document.GetId())
+	if _, err = c.svcCtx.Dao.PutPhotoFile(c.ctx, path, jpeg); err != nil {
+		return err
+	}
+	c.rememberPhotoPath(c.ctx, document.GetId(), mtproto.PhotoSZMediumType, path)
+	document.Thumbs = sizes
+	return nil
 }
 
 func releaseUploadHold(user, fileID int64) {
