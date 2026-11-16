@@ -196,7 +196,12 @@ func (b *Book) ReorderQuickReplies(ctx context.Context, user int64, order []int3
 // messages.editMessage with quick_reply_shortcut_id addresses this inbox,
 // not the saved-messages box. The shortcut ids start at 1 and otherwise
 // collide with a forwarded saved message, which returned
-// MESSAGE_AUTHOR_REQUIRED.
+// MESSAGE_AUTHOR_REQUIRED. The shortcut owner is the editor. A from_id left
+// on a captured message is not an authorship check.
+//
+// An identical resubmit returns MESSAGE_NOT_MODIFIED and does not bump
+// edit_date. A failed save puts the previous bytes back, so a retry still
+// has something to write.
 func (b *Book) EditQuickReplyMessage(ctx context.Context, user int64, shortcutID, msgID int32, text *string, entities []*mtproto.MessageEntity) (*mtproto.Updates, error) {
 	if shortcutID == 0 || msgID == 0 {
 		return nil, mtproto.ErrMessageIdInvalid
@@ -215,33 +220,48 @@ func (b *Book) EditQuickReplyMessage(ctx context.Context, user int64, shortcutID
 		if sc.Messages[i].ID != msgID {
 			continue
 		}
-		msg := &mtproto.Message{}
-		if err := proto.Unmarshal(sc.Messages[i].Raw, msg); err != nil {
+		prev := append([]byte(nil), sc.Messages[i].Raw...)
+		cur := &mtproto.Message{}
+		if err := proto.Unmarshal(prev, cur); err != nil {
 			return nil, err
 		}
+		next := proto.Clone(cur).(*mtproto.Message)
 		if text != nil {
-			if *text == "" && msg.GetMedia() == nil {
+			if *text == "" && !quickMediaHoldsCaption(next.GetMedia()) {
 				return nil, mtproto.ErrMessageEmpty
 			}
-			msg.Message = *text
-			msg.Entities = entities
+			next.Message = *text
+			next.Entities = entities
 		} else if entities != nil {
-			msg.Entities = entities
+			next.Entities = entities
 		}
-		msg.EditDate = wrapperspb.Int32(int32(b.now().Unix()))
-		raw, err := proto.Marshal(msg)
+		if mtproto.MessageContentUnchanged(cur, next) {
+			return nil, mtproto.ErrMessageNotModified
+		}
+		next.EditDate = wrapperspb.Int32(int32(b.now().Unix()))
+		raw, err := proto.Marshal(next)
 		if err != nil {
 			return nil, err
 		}
 		sc.Messages[i].Raw = raw
 		if err := b.storeQuick(ctx, user, doc); err != nil {
+			sc.Messages[i].Raw = prev
 			return nil, err
 		}
 		return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
-			Message_MESSAGE: msg,
+			Message_MESSAGE: next,
 		}).To_Update()), nil
 	}
 	return nil, mtproto.ErrMessageIdInvalid
+}
+
+// quickMediaHoldsCaption reports media that can remain when the text is cleared.
+// messageMediaEmpty is the same as no media for MESSAGE_EMPTY.
+func quickMediaHoldsCaption(media *mtproto.MessageMedia) bool {
+	if media == nil {
+		return false
+	}
+	return media.GetPredicateName() != mtproto.Predicate_messageMediaEmpty
 }
 
 // DeleteQuickReplyMessages drops messages from a shortcut.

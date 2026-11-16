@@ -919,7 +919,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## Quick reply edit (ISSUE-S-QR-EDIT-001, 行 89)
 
-`messages.editMessage` with `quick_reply_shortcut_id` looked up the id in Saved Messages. Shortcut message ids start at 1, so the call hit a forwarded saved message and returned `MESSAGE_AUTHOR_REQUIRED`. The shortcut id now edits the message stored in the quick-reply book and pushes `updateQuickReplyMessage`. Empty text with no media returns `MESSAGE_EMPTY`. An unknown shortcut id returns `SHORTCUT_INVALID`. An unknown message id returns `MESSAGE_ID_INVALID`.
+`messages.editMessage` with `quick_reply_shortcut_id` looked up the id in Saved Messages. Shortcut message ids start at 1, so the call hit a forwarded saved message and returned `MESSAGE_AUTHOR_REQUIRED`. The shortcut id now edits the message stored in the quick-reply book and returns `updateQuickReplyMessage` to the caller and to the account's other sessions. The saved-message author is not consulted. A `from_id` stored on the shortcut message does not make it someone else's. Another account's shortcut id returns `SHORTCUT_INVALID`. Empty text with no real media returns `MESSAGE_EMPTY`. An unknown shortcut id returns `SHORTCUT_INVALID`. An unknown message id returns `MESSAGE_ID_INVALID`. The same text and entities again return `MESSAGE_NOT_MODIFIED` and do not change `edit_date`. A failed save restores the previous bytes, so the retry still writes.
 
 | Piece | File |
 | --- | --- |

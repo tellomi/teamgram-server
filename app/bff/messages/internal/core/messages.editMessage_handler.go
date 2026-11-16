@@ -218,6 +218,9 @@ func (c *MessagesCore) editQuickReplyMessage(in *mtproto.TLMessagesEditMessage) 
 		c.Logger.Errorf("messages.editMessage - quick reply: %v", err)
 		return nil, err
 	}
+	// The calling session already has this result. Other sessions of the
+	// same account follow the send path and receive updateQuickReplyMessage.
+	c.pushQuickReplyNotMe(ups)
 	return ups, nil
 }
 

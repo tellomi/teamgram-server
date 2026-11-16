@@ -155,6 +155,24 @@ func ResetShared() {
 	regMu.Unlock()
 }
 
+// SwapShared installs next as the process book and returns a restore.
+// A nil next installs an empty in-memory book. The swap does not write the
+// previous book, including one UseDSN attached to MySQL.
+func SwapShared(next *Book) (restore func()) {
+	if next == nil {
+		next = newBook(nil)
+	}
+	regMu.Lock()
+	prev := shared
+	shared = next
+	regMu.Unlock()
+	return func() {
+		regMu.Lock()
+		shared = prev
+		regMu.Unlock()
+	}
+}
+
 // UseDSN opens MySQL when dsn or TEAMGRAM_MYSQL_DSN is set.
 func UseDSN(dsn string) error {
 	if env := os.Getenv("TEAMGRAM_MYSQL_DSN"); env != "" {
