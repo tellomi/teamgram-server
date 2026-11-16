@@ -318,15 +318,15 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			    "limit": 21
 			}
 		*/
-		// An empty query is a real search only for a Saved Messages tag chip.
-		// Every other empty q, including a normal dialog that also sends
-		// saved_reaction, is SEARCH_QUERY_EMPTY.
-		if in.Q == "" && !(savedSelf(peer, c.MD.UserId) && len(in.GetSavedReaction()) > 0) {
+		// An empty q is still the original sender search when from_id is set.
+		// Without from_id, empty text is allowed only for a Saved Messages
+		// tag chip. Every other empty q is SEARCH_QUERY_EMPTY.
+		if in.Q == "" && fromId == nil && !(savedSelf(peer, c.MD.UserId) && len(in.GetSavedReaction()) > 0) {
 			err = mtproto.ErrSearchQueryEmpty
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return nil, err
 		}
-		if len(in.GetSavedReaction()) > 0 {
+		if fromId == nil && len(in.GetSavedReaction()) > 0 {
 			return c.searchByReaction(peer, in, offsetId, limit)
 		}
 
