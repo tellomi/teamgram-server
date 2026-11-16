@@ -688,6 +688,8 @@ Invite links with a future `start_date` are `INVITE_HASH_EXPIRED` for basic grou
 
 `messages.searchGlobal` also drops channel messages from before the member joined when prehistory is hidden (`dropPrehistoryBoxes` in `search_global.go`, called from `messages.searchGlobal_handler.go` after the joined-channel merge).
 
+`updates.getChannelDifference` and `channelDifferenceTooLong` used to return those same hidden bodies. They now use `prehistoryBlocks` (`app/service/biz/channel/service_ops.go`). `messages.getMessageReadParticipants` no longer lists a member whose join date is still behind a hidden message (`app/service/biz/channel/read_views.go`). Joining still sets the inbox cursor to the current top, so the new member does not inherit the old unread count. Admins and the creator stay exempt, which is the existing cutoff.
+
 ## Group info, delete, archive, and profile name
 
 `messages.editChatTitle`, `messages.editChatPhoto`, and `messages.editChatAbout` used `CanChangeInfo`, which is true for every admin and false for every other member. A basic group now follows `default_banned_rights.change_info`. The creator may always edit. An admin may when `admin_rights.change_info` is set. An admin without that right is treated as a member. A set `change_info` flag is a ban. Megagroups use the same rule and also the member's own `banned_rights`. A broadcast channel stays admin-only. The denial is `CHAT_ADMIN_REQUIRED`.
