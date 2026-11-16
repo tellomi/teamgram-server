@@ -919,7 +919,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## Reply after the original was deleted (row 256)
 
-The inbox copy of a private reply looks up `reply_to_msg_id` with `SelectPeerUserMessage`, which requires `deleted = 0` on both rows. After `messages.deleteMessages(revoke=true)` that lookup misses, and the recipient's copy drops `reply_to`. The lookup for this header now includes deleted rows, so the other side still gets the mapped id and can show a reply to a deleted message. Other callers of `SelectPeerUserMessage` still ignore deleted rows.
+The inbox copy of a private reply looks up `reply_to_msg_id` with `SelectPeerUserMessage`, which requires `deleted = 0` on both rows. After `messages.deleteMessages(revoke=true)` that lookup misses, and the recipient's copy drops `reply_to`. A private chat (`PEER_USER`) now includes deleted rows, so the other side still gets the mapped id and can show a reply to a deleted message. A basic group still uses `SelectPeerUserMessage`: a reply to a deleted group message drops `reply_to` and does not mark the recipient mentioned because of that miss. Other callers of `SelectPeerUserMessage` still ignore deleted rows. Channel replies are unchanged.
 
 | Piece | File |
 | --- | --- |
