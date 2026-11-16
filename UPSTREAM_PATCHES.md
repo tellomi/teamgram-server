@@ -2,6 +2,28 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Business profile and automatic replies (ISSUE-S-BIZ-PERSIST-001, ISSUE-S-BIZ-AUTOREPLY-001)
+
+Business hours, location, intro, greeting, away message, and chat links used to live only in the BFF process. `bizprofile.UseDSN` in the BFF startup writes them to `business_profile` when MySQL is configured. `users.getFullUser` still reads the same book.
+
+After a private `messages.sendMessage` (and the media and forward paths that share `dispatchOutbox`) succeeds, `schedule_dispatch.go` calls `scheduleBusinessAutoReply`. That hook does not wait on MySQL or on the shortcut copy; the customer's RPC already has its updates. The copy runs with a timeout. The ledger row is saved before any shortcut id is returned. A failed save does not send. A failed shortcut send is logged and not retried. Greeting dedup stores the prior message time the decision used, not the clock time of the reply. A failed customer-outbox read is not treated as a new chat. A failed contact lookup is not a non-contact, and a failed last-seen lookup is not offline.
+
+| Piece | File |
+| --- | --- |
+| startup DSN | `app/bff/bff/internal/server/server.go` |
+| stored profile | `app/bff/business/profile/profile.go`, `persist.go`, `teamgramd/deploy/sql/migrate-20261130-business-profile.sql` |
+| send hook | `app/bff/messages/internal/core/schedule_dispatch.go`, `business_reply.go` |
+
+## Voice search counters (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
+
+`messages.getSearchCounters` counted a photo with `SELECT count(id)` on `message_filter_type`. A voice note and a round video share `MEDIA_AUDIO`. The voice count paged those rows and parsed `message_data`, so one call could report photo=1 and voice=0 even when both rows were already stored.
+
+Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.search` that reads only that column still lists them. The voice and round counts are now `SELECT count(id)` on that same column. `message_data` is a JSON column, so the text form has a space after the colon (`"voice": true`, `"round_message": true`). A row stored as `MEDIA_VOICE_FILE` or `MEDIA_ROUND_FILE` is still added by its column and is not matched by the audio predicate. The send path is unchanged. A row that the inbox consumer has not inserted yet is absent from every count, including photos.
+
+| Piece | File |
+| --- | --- |
+| count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `search_counter_voice.go` |
+
 ## Slow mode next send date (ISSUE-S-SLOWMODE-NEXTDATE-001)
 
 `channels.getFullChannel` returned `slowmode_seconds` and left `slowmode_next_send_date` empty. `Send` already stores each member's last send in `Features.LastSend` and returns `SLOWMODE_WAIT` from that map. `channelFull` now fills `slowmode_next_send_date` from the same map: last send plus `slowmode_seconds`, only for a member who is not an admin and not the creator, and only while that time is still in the future. Admins, the creator, a closed slow mode, and an elapsed window omit the field.
@@ -902,6 +924,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | Piece | File |
 | --- | --- |
 | edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
+
+## Common supergroups (row 261)
+
+`messages.getCommonChats` intersected basic-group membership and left a `TODO` where supergroups should be added. `channel.CommonMegagroups` intersects current megagroup membership. Broadcast channels stay out. A user who is not in the groups still gets an empty list.
+
+| Piece | File |
+| --- | --- |
+| intersection | `app/service/biz/channel/common_chats.go` |
+| RPC | `app/bff/chats/internal/core/messages.getCommonChats_handler.go` |
 
 ## Background emojis, restricted statuses, ringtones, passkey rpId
 
