@@ -1,6 +1,7 @@
 package channel
 
 import "context"
+
 // JoinTop is the channel message id that already existed when this member
 // joined. It is recorded on the three join paths. A missing entry is a
 // member from before this field existed: those rows keep the older
@@ -40,28 +41,28 @@ func messageBeforeJoin(p *Participant, stored *StoredMessage, top int32) bool {
 	return stored.Date < p.Date
 }
 
-
+// prehistoryBlocks hides messages posted before this member joined when the
 // channel has hidden prehistory. Admins and the creator may still read
 // those messages. loadErr means the member row could not be read: that
 // fails closed only while prehistory is hidden, so a lookup error does not
 // return the body. A nil viewer with no error is someone who is not a
 // member; that case is unchanged.
 func prehistoryBlocks(f *Features, viewer *Participant, stored *StoredMessage, loadErr error) bool {
-func prehistoryBlocks(f *Features, viewer *Participant, stored *StoredMessage) bool {
 	if f == nil || !f.HiddenPrehistory || stored == nil {
 		return false
+	}
 	if loadErr != nil {
 		return true
 	}
-	}
 	if viewer == nil || viewer.IsAdmin() {
 		return false
+	}
 	return messageBeforeJoin(viewer, stored, joinTop(f, viewer.UserID))
-	return stored.Date < viewer.Date
 }
 
 // PrehistoryGate is one viewer's join cutoff for messages.searchGlobal.
 // Hidden is false when the channel does not hide prehistory.
+type PrehistoryGate struct {
 	Hidden  bool
 	Admin   bool
 	Joined  int32
@@ -69,7 +70,6 @@ func prehistoryBlocks(f *Features, viewer *Participant, stored *StoredMessage) b
 	// Unknown is a failed member-row read. Blocks then hides every message
 	// while prehistory is on.
 	Unknown bool
-	Joined int32
 }
 
 // PrehistoryGate loads the viewer's cutoff. A missing channel does not hide
@@ -82,34 +82,34 @@ func (s *Service) PrehistoryGate(ctx context.Context, user, channelID int64) Pre
 	if !f.HiddenPrehistory {
 		return PrehistoryGate{}
 	}
+	viewer, err := s.store.GetParticipant(ctx, channelID, user)
 	if err != nil {
 		return PrehistoryGate{Hidden: true, Unknown: true}
 	}
 	if viewer == nil {
-	if err != nil || viewer == nil {
 		return PrehistoryGate{Hidden: true}
+	}
 	return PrehistoryGate{Hidden: true, Admin: viewer.IsAdmin(), Joined: viewer.Date, JoinTop: joinTop(f, user)}
-	return PrehistoryGate{Hidden: true, Admin: viewer.IsAdmin(), Joined: viewer.Date}
 }
 
+// Blocks reports whether this message date is before the viewer joined.
 // It has no message id, so a recorded join top cannot separate two messages
 // in the same second. Callers that have an id use BlocksMessage.
-// Blocks reports whether this message date is before the viewer joined.
+func (g PrehistoryGate) Blocks(date int32) bool {
 	return g.BlocksMessage(date, 0)
 }
 
 // BlocksMessage applies the same cutoff as getHistory. id 0 keeps the
 // date-only rule. A failed member read hides the message.
 func (g PrehistoryGate) BlocksMessage(date, id int32) bool {
-func (g PrehistoryGate) Blocks(date int32) bool {
 	if !g.Hidden || g.Admin {
 		return false
+	}
 	if g.Unknown {
 		return true
 	}
 	if g.JoinTop > 0 && id > 0 {
 		return id <= g.JoinTop
-	}
 	}
 	return date < g.Joined
 }
