@@ -917,6 +917,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## Quick reply edit (ISSUE-S-QR-EDIT-001, 行 89)
+
+`messages.editMessage` with `quick_reply_shortcut_id` looked up the id in Saved Messages. Shortcut message ids start at 1, so the call hit a forwarded saved message and returned `MESSAGE_AUTHOR_REQUIRED`. The shortcut id now edits the message stored in the quick-reply book and pushes `updateQuickReplyMessage`. Empty text with no media returns `MESSAGE_EMPTY`. An unknown shortcut id returns `SHORTCUT_INVALID`. An unknown message id returns `MESSAGE_ID_INVALID`.
+
+| Piece | File |
+| --- | --- |
+| edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
+
 ## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
 
 `messages.deleteSavedHistory(max_id=0)` asked to delete every saved message from that peer. The query treated `max_id <= 0` as an empty set, so the call returned `pts_count=0` and left the messages. `max_id <= 0` is now the whole dialog, still capped at 100 rows per call.
