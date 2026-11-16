@@ -690,6 +690,8 @@ Invite links with a future `start_date` are `INVITE_HASH_EXPIRED` for basic grou
 
 `updates.getChannelDifference` and `channelDifferenceTooLong` used to return those same hidden bodies. They now use `prehistoryBlocks` (`app/service/biz/channel/service_ops.go`). `messages.getMessageReadParticipants` no longer lists a member whose join date is still behind a hidden message (`app/service/biz/channel/read_views.go`). Joining still sets the inbox cursor to the current top, so the new member does not inherit the old unread count. Admins and the creator stay exempt, which is the existing cutoff.
 
+A follow-up records the message id that already existed at join (`Features.JoinTop`). A message from the same unix second is hidden when its id is not past that top; the join service message is past it. A failed member-row read hides bodies while prehistory is hidden. An admin may read the old body, but the join cursor is not a read receipt: the read list includes that admin only after `readHistory` writes a read mark. Pts, `top_message`, `read_inbox_max_id`, `pinned_msg_id`, and `messages.getHistory`'s unfiltered `count` still expose ids and counts, not the hidden body.
+
 ## Group info, delete, archive, and profile name
 
 `messages.editChatTitle`, `messages.editChatPhoto`, and `messages.editChatAbout` used `CanChangeInfo`, which is true for every admin and false for every other member. A basic group now follows `default_banned_rights.change_info`. The creator may always edit. An admin may when `admin_rights.change_info` is set. An admin without that right is treated as a member. A set `change_info` flag is a ban. Megagroups use the same rule and also the member's own `banned_rights`. A broadcast channel stays admin-only. The denial is `CHAT_ADMIN_REQUIRED`.

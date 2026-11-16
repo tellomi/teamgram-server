@@ -273,12 +273,12 @@ func (c *MessagesCore) dropHiddenPrehistory(list *mtproto.MessageBoxList) *mtpro
 		return list
 	}
 	gates := map[int64]channel.PrehistoryGate{}
-	return dropPrehistoryBoxes(list, func(channelID int64, date int32) bool {
+	return dropPrehistoryBoxes(list, func(channelID int64, date, msgID int32) bool {
 		g, ok := gates[channelID]
 		if !ok {
 			g = channel.Shared().PrehistoryGate(c.ctx, c.MD.UserId, channelID)
 			gates[channelID] = g
 		}
-		return g.Blocks(date)
+		return g.BlocksMessage(date, msgID)
 	})
 }

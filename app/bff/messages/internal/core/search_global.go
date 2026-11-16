@@ -238,7 +238,7 @@ func globalRank(box *mtproto.MessageBox) (date, peerType int32, peerID int64, ms
 // by the caller if it caches. Admins are the caller's concern: blocked
 // returns false for them. searchGlobal keeps this call next to the joined
 // channel merge.
-func dropPrehistoryBoxes(list *mtproto.MessageBoxList, blocked func(channelID int64, date int32) bool) *mtproto.MessageBoxList {
+func dropPrehistoryBoxes(list *mtproto.MessageBoxList, blocked func(channelID int64, date, msgID int32) bool) *mtproto.MessageBoxList {
 	if list == nil || blocked == nil {
 		return list
 	}
@@ -249,10 +249,12 @@ func dropPrehistoryBoxes(list *mtproto.MessageBoxList, blocked func(channelID in
 		}
 		if box.GetPeerType() == mtproto.PEER_CHANNEL {
 			date := int32(0)
+			msgID := int32(0)
 			if box.GetMessage() != nil {
 				date = box.GetMessage().GetDate()
+				msgID = box.GetMessage().GetId()
 			}
-			if blocked(box.GetPeerId(), date) {
+			if blocked(box.GetPeerId(), date, msgID) {
 				continue
 			}
 		}
