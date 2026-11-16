@@ -224,8 +224,45 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 			Deleted:           false,
 		}
 
-		_, _, result.Err = d.MessagesDAO.InsertOrReturnIdTx(tx, inBoxDO)
+		var inserted int64
+		_, inserted, result.Err = d.MessagesDAO.InsertOrReturnIdTx(tx, inBoxDO)
 		if result.Err != nil {
+			return
+		}
+		if inserted == 0 {
+			return
+		}
+		pts, err := d.chooseInboxPts(ctx, tx, toUserId)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		inBox.Pts = pts
+		inBox.PtsCount = 1
+		mentions := int32(0)
+		if inBox.Mentioned {
+			mentions = 1
+		}
+		if err = recordInboxApplyTx(tx, inboxApplyRow{
+			UserID:        toUserId,
+			BoxID:         inBoxMsgId,
+			PeerType:      msgPeer.PeerType,
+			PeerID:        msgPeer.PeerId,
+			UnreadDelta:   phoneCallInboxUnread(message),
+			MentionsDelta: mentions,
+			Pts:           pts,
+			PtsCount:      1,
+			Date2:         date,
+		}); err != nil {
+			result.Err = err
+			return
+		}
+		if _, err = d.AddToPtsQueueTx(tx, toUserId, pts, 1, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
+			Message_MESSAGE: message,
+			Pts_INT32:       pts,
+			PtsCount:        1,
+		}).To_Update()); err != nil {
+			result.Err = err
 			return
 		}
 
@@ -302,31 +339,16 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		return nil, nil, InboxApply{}, tR.Err
 	}
 
-	var answeredRead *AnsweredCallRead
-	_, _, _ = d.ExecInvalidate(
-		ctx,
-		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdateForward(ctx, dialogDO)
-			logx.WithContext(ctx).Infof("lastInsertId:%d, rowsAffected: %d, result: %v, do: %v", lastInsertId, rowsAffected, err, dialogDO)
-			if err != nil || dialogDO.PeerType != mtproto.PEER_USER || dialogDO.UnreadCount != 0 {
-				return 0, 0, err
-			}
-			// The insert added no unread. Move the read cursor onto this
-			// service message only when that does not mark an earlier
-			// incoming message read. The caller's dialog is the outbox path.
-			answeredRead, err = d.advanceAnsweredCallRead(ctx, dialogDO.UserId, dialogDO.PeerId, inBoxMsgId)
-			return 0, 0, err
-		},
-		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
+	answeredRead, err := d.FinishInboxDelivery(ctx, toUserId, inBoxMsgId)
+	if err != nil {
+		return nil, nil, InboxApply{}, err
+	}
 	d.ensureDialogTTL(ctx, toUserId, msgPeer)
 	if dialogDO != nil {
 		d.stampChatDecor(ctx, dialogDO.UserId, dialogDO.PeerType, dialogDO.PeerId, message)
 	}
 
-	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
-	inBox.PtsCount = 1
-
-	return inBox, answeredRead, InboxApply{PersistPts: true, Push: true}, nil
+	return inBox, answeredRead, InboxApply{PersistPts: false, Push: true}, nil
 }
 
 func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, InboxApply, error) {

@@ -709,6 +709,17 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		}
 
 		if writePts {
+			if outMsgBox.Pts <= 0 {
+				pts, err := d.chooseInboxPts(ctx, tx, fromId)
+				if err != nil {
+					result.Err = err
+					return
+				}
+				outMsgBox.Pts = pts
+				if outMsgBox.PtsCount <= 0 {
+					outMsgBox.PtsCount = 1
+				}
+			}
 			_, err = d.AddToPtsQueueTx(tx, fromId, outMsgBox.Pts, outMsgBox.PtsCount, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
 				Message_MESSAGE: outMsgBox.Message,
 				Pts_INT32:       outMsgBox.Pts,
@@ -730,6 +741,11 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 	// of a row that delete already marked deleted must not: GREATEST would
 	// put that id back on top of the older message the delete selected.
 	replay := inserted == 0
+	if replay && writePts {
+		if err := d.attachStoredPts(ctx, fromId, outMsgBox); err != nil {
+			return err
+		}
+	}
 	live, err := d.LiveMessageBoxIDs(ctx, outMsgBox.UserId, []int32{outBoxMsgId})
 	if err != nil {
 		return err

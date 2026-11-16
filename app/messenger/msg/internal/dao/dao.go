@@ -40,6 +40,9 @@ type Dao struct {
 	// used by stampHistoryTTL. Tests inject a column of 86400 while a
 	// stale DialogExt cache still holds 0. Production leaves this nil.
 	historyTTLQuery func(ctx context.Context, query string, args ...interface{}) int32
+	// ptsCurrent and ptsNext override the id generator in DAO tests.
+	ptsCurrent func(ctx context.Context, userID int64) int32
+	ptsNext    func(ctx context.Context, userID int64) int32
 }
 
 func (d *Dao) DoIdempotent(ctx context.Context, senderUserId int64, deDuplicateKey string, v any, cb func(ctx context.Context, v any) error) (bool, error) {
