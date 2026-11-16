@@ -10,11 +10,30 @@ import (
 )
 
 func TestCnUsernameSupplement(t *testing.T) {
-	curated, gap := CnUsernameSupplementStats()
-	if curated != 188 || gap != 2 {
-		t.Fatalf("supplement curated=%d gap=%d, want 188 and 2", curated, gap)
+	if CnUsernameSupplementStats() < 188 {
+		t.Fatalf("supplement shrunk below the published 188: %d", CnUsernameSupplementStats())
 	}
 	e := runtimeEngine()
+	published := map[string]struct{}{}
+	for _, rule := range currentEngine().rules {
+		if !strings.Contains(rule.Source, "regions/cn/politics.toml") || !containsStr(rule.Fields, FieldUsername) {
+			continue
+		}
+		sk := letterSkeleton(rule.Normalized)
+		if len([]rune(sk)) < cnUsernameSupplementMinRunes {
+			continue
+		}
+		published[sk] = struct{}{}
+	}
+	if len(published) != 188 {
+		t.Fatalf("published long latin %d", len(published))
+	}
+	for _, term := range e.cnSupplementTerms() {
+		delete(published, term.sk)
+	}
+	if len(published) != 0 {
+		t.Fatalf("published skeletons missing from the supplement: %d", len(published))
+	}
 	cn := []string{"global", "cn"}
 	global := []string{"global"}
 	denied := []string{
@@ -31,10 +50,7 @@ func TestCnUsernameSupplement(t *testing.T) {
 	for _, name := range denied {
 		for _, field := range []string{FieldUsername, FieldSlug, FieldBotUsername, FieldDisplayName} {
 			v := e.Check(name, field, cn)
-			if v.IsAllowed() {
-				t.Fatalf("%s %s was allowed", field, name)
-			}
-			if v.Outcome != OutcomeRegionalRestricted || !strings.HasPrefix(v.RuleID, "supplement/cn-username:") {
+			if v.IsAllowed() || v.Outcome != OutcomeRegionalRestricted {
 				t.Fatalf("%s %s verdict %+v", field, name, v)
 			}
 		}
@@ -52,9 +68,24 @@ func TestCnUsernameSupplement(t *testing.T) {
 			t.Fatalf("false positive %s", name)
 		}
 	}
-	for _, name := range []string{"Ada", "摄影师小王", "周末爬山群", "共产党", "习近平"} {
+	for _, name := range []string{"Ada", "摄影师小王", "周末爬山群", "政府", "西藏", "胡总", "贪污", "双开", "刘瑞龙"} {
 		if !e.Check(name, FieldDisplayName, cn).IsAllowed() {
 			t.Fatalf("false positive display %s", name)
+		}
+	}
+	for _, name := range []string{"习近平", "习近1平", "反对习近平", "共产党", "共产1党"} {
+		v := e.Check(name, FieldDisplayName, cn)
+		if v.IsAllowed() {
+			t.Fatalf("han %s was allowed", name)
+		}
+	}
+	if e.Check("习近1平", FieldDisplayName, cn).Matched != "CONTAINS_DIGIT" {
+		t.Fatalf("digit han %+v", e.Check("习近1平", FieldDisplayName, cn))
+	}
+	for _, name := range []string{"gongchandang88", "xijinping88", "88gongchandang"} {
+		v := e.Check(name, FieldUsername, cn)
+		if v.IsAllowed() || !strings.HasPrefix(v.RuleID, "supplement/cn-username:") {
+			t.Fatalf("digit boundary %s %+v", name, v)
 		}
 	}
 	if e.Check("共产党专制", FieldDisplayName, cn).IsAllowed() {

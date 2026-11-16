@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -87,6 +88,9 @@ type Engine struct {
 	bySkeleton map[string][]int
 	byAffix    map[string][]int
 	contains   []int
+
+	supOnce sync.Once
+	supList []cnSupTerm
 }
 
 // Version is the lexicon version from the envelope.
@@ -279,7 +283,10 @@ func (e *Engine) Check(input string, field string, regions []string) Verdict {
 	if idx, ok := e.matchContains(normalized, field, regions); ok {
 		consider(idx, MatchContains)
 	}
-	if sup, ok := cnUsernameSupplement(normalized, field, regions); ok {
+	if idx, ok := e.matchHanDigitBypass(normalized, field, regions); ok {
+		consider(idx, "CONTAINS_DIGIT")
+	}
+	if sup, ok := e.cnUsernameSupplement(normalized, field, regions); ok {
 		if best < 0 || utf8.RuneCountInString(sup.Term) > utf8.RuneCountInString(e.rules[best].Normalized) {
 			return sup
 		}
@@ -330,6 +337,52 @@ func (e *Engine) matchAffix(normalized, field string, regions []string) (int, st
 		}
 	}
 	return 0, "", false
+}
+
+// matchHanDigitBypass strips digits and then applies CONTAINS for Han
+// rules. 习近1平 is the same term as 习近平. Latin rules are not included:
+// a latin term buried between other letters stays allowed.
+func (e *Engine) matchHanDigitBypass(normalized, field string, regions []string) (int, bool) {
+	if !containsStr(regions, "cn") || !cnUsernameField(field) {
+		return 0, false
+	}
+	folded := stripDigits(normalized)
+	if folded == "" || folded == normalized {
+		return 0, false
+	}
+	bestIdx := -1
+	bestLen := 0
+	for _, idx := range e.contains {
+		r := e.rules[idx]
+		if !r.applies(field, regions) || !containsStr(r.Matches, MatchContains) {
+			continue
+		}
+		if hanRunes(r.Normalized) < 2 {
+			continue
+		}
+		if !strings.Contains(folded, r.Normalized) {
+			continue
+		}
+		n := utf8.RuneCountInString(r.Normalized)
+		if n > bestLen {
+			bestIdx = idx
+			bestLen = n
+		}
+	}
+	if bestIdx < 0 {
+		return 0, false
+	}
+	return bestIdx, true
+}
+
+func hanRunes(s string) int {
+	n := 0
+	for _, r := range s {
+		if isCJK(r) {
+			n++
+		}
+	}
+	return n
 }
 
 func (e *Engine) matchContains(normalized, field string, regions []string) (int, bool) {

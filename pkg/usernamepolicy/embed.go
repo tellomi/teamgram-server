@@ -36,6 +36,10 @@ var (
 	currentOnce sync.Once
 	currentEng  *Engine
 	currentErr  error
+
+	runtimeOnce sync.Once
+	runtimeEng  *Engine
+	runtimeErr  error
 )
 
 func officialEngine() *Engine {
@@ -59,7 +63,27 @@ func currentEngine() *Engine {
 }
 
 // runtimeEngine is what RejectUser and RejectDisplay consult.
-// policy-2026110602 already covers D-56, so the older overlay is not merged in.
-func runtimeEngine() *Engine { return currentEngine() }
+// policy-2026110602 stays the tellomi dist. The MIT category lines that
+// the dist left unpublished are appended here. The older D-56 overlay is
+// not merged in.
+func runtimeEngine() *Engine {
+	runtimeOnce.Do(func() {
+		extra, err := runtimeRules()
+		if err != nil {
+			runtimeErr = err
+			return
+		}
+		base := currentEngine()
+		rules := make([]rule, 0, len(base.rules)+len(extra))
+		rules = append(rules, base.rules...)
+		rules = append(rules, extra...)
+		allow := append([]allowEntry(nil), base.allow...)
+		runtimeEng = index(base.version, rules, allow)
+	})
+	if runtimeErr != nil {
+		panic(runtimeErr)
+	}
+	return runtimeEng
+}
 
 func embeddedEngine() *Engine { return runtimeEngine() }

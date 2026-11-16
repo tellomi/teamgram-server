@@ -18,12 +18,14 @@
 // the 2026110602 one. policy/overlay-d56.json still feeds appendix C
 // placeholder SQL. It is not merged into the runtime lexicon. The
 // cn username supplement in cn_username_supplement.go is applied beside
-// that JSON. It takes the latin cn username terms already in that file
-// whose skeletons are at least 8, and two exceptions that the admission
-// rules do not publish (gongchandang, xijinping). The exceptions are not
-// a new lexicon. pkg/usernamepolicy/lexiconsrc records the pinned
-// konsheng MIT and fwwdn Apache-2.0 inputs and checks that the 391 cn
-// politics rules are exactly the admitted lines. Chat
+// that JSON. It folds latin cn username terms whose skeletons are at
+// least 8, from that file and from the runtime MIT-file rules, and
+// matches a digit-stripped skeleton at either end. A term buried in the
+// middle still passes. pkg/usernamepolicy/lexiconsrc vendors the pinned
+// konsheng MIT and fwwdn Apache-2.0 category files. The 391 regions/cn
+// rules already in the JSON stay the D-25 admit set. MIT lines that also
+// occur in the excluded Tencent file are loaded at runtime unless a drop
+// list keeps them out. The Tencent file itself is not loaded. Chat
 // message bodies are not passed to this package.
 // Existing rows are not rewritten.
 //

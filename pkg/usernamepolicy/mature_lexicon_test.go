@@ -63,12 +63,12 @@ func TestMatureLexiconMatchesPublishedPolicy(t *testing.T) {
 			t.Fatalf("deferred or dropped %s is a published rule", term)
 		}
 	}
-	for _, term := range cnUsernameGapTerms {
+	for _, term := range []string{"gongchandang", "xijinping", "共产党", "习近平"} {
 		if _, ok := admit[term]; ok {
-			t.Fatalf("gap term %s is an admitted source line", term)
+			t.Fatalf("D-25 admit contains %s", term)
 		}
 		if _, ok := pinyin[term]; ok {
-			t.Fatalf("gap term %s is an admitted pinyin", term)
+			t.Fatalf("D-25 pinyin contains %s", term)
 		}
 	}
 }
@@ -106,7 +106,7 @@ func TestMatureLexiconBehavior(t *testing.T) {
 	}
 	// Latin lines that overlap the excluded Tencent file. A global reserved
 	// name may still refuse them. The cn politics rules must not.
-	for _, term := range []string{"youtube", "wikipedia", "boycott", "taiwan", "hujintao", "gfw"} {
+	for _, term := range []string{"youtube", "wikipedia", "boycott", "taiwan", "gfw"} {
 		for _, field := range []string{FieldUsername, FieldDisplayName} {
 			v := e.Check(term, field, cn)
 			if strings.Contains(v.Source, "regions/cn") || strings.HasPrefix(v.RuleID, "supplement/cn-username:") {
@@ -116,11 +116,25 @@ func TestMatureLexiconBehavior(t *testing.T) {
 	}
 	for _, term := range []string{
 		"刘瑞龙", "周建南", "李干成", "薄熙", "贺子珍", "黄敬", "黄镇",
-		"贪污", "双开", "共产党", "习近平",
+		"贪污", "双开", "政府", "西藏", "解放军", "胡总",
 	} {
 		if !e.Check(term, FieldDisplayName, cn).IsAllowed() {
 			t.Fatalf("deferred display %s was blocked", term)
 		}
+	}
+	for _, term := range []string{"共产党", "习近平", "胡锦涛", "温家宝"} {
+		if e.Check(term, FieldDisplayName, cn).IsAllowed() {
+			t.Fatalf("runtime han %s was allowed", term)
+		}
+		if e.Check(term, FieldDisplayName, global).Outcome != OutcomeAllowed {
+			t.Fatalf("runtime han %s applied outside cn", term)
+		}
+	}
+	if e.Check("hujintao", FieldUsername, cn).IsAllowed() {
+		t.Fatal("hujintao was allowed")
+	}
+	if !e.Check("hujintao", FieldUsername, global).IsAllowed() {
+		t.Fatal("hujintao changed outside cn")
 	}
 	// Skeletons shorter than 8 stay on the published exact rule. The digit
 	// bypass is not extended to them.
@@ -146,10 +160,7 @@ func TestCnUsernameSupplementEdges(t *testing.T) {
 	e := runtimeEngine()
 	cn := []string{"global", "cn"}
 	curated := 0
-	for _, term := range cnSupplementTerms() {
-		if term.gap {
-			continue
-		}
+	for _, term := range e.cnSupplementTerms() {
 		curated++
 		upper := strings.ToUpper(term.term)
 		if e.Check(upper, FieldUsername, cn).IsAllowed() {
@@ -168,8 +179,8 @@ func TestCnUsernameSupplementEdges(t *testing.T) {
 			t.Fatalf("curated skeleton shorter than the floor: %s", term.sk)
 		}
 	}
-	if curated != 188 {
-		t.Fatalf("curated %d", curated)
+	if curated < 188 {
+		t.Fatalf("curated %d shrank below the published 188", curated)
 	}
 }
 

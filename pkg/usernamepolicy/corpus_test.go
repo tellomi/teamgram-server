@@ -8,7 +8,7 @@ import (
 )
 
 func TestCurrentCorpus(t *testing.T) {
-	e := runtimeEngine()
+	e := currentEngine()
 	if e.Version() != 2026110602 {
 		t.Fatalf("version %d", e.Version())
 	}
@@ -23,6 +23,21 @@ func TestCurrentCorpus(t *testing.T) {
 	}
 	if allowFail > 0 || denyFail > 0 {
 		t.Fatalf("corpus failures: allow %d, deny %d", allowFail, denyFail)
+	}
+}
+
+// The runtime engine adds MIT-file lines on top of the published dist.
+// Those lines must not make a must-allow row fail, and must not let a
+// must-deny row through.
+func TestRuntimeCorpusStaysClosed(t *testing.T) {
+	e := runtimeEngine()
+	if e.RuleCount() <= 1024 {
+		t.Fatal("runtime lexicon did not add rules")
+	}
+	_, allowFail := checkCorpus(t, e, "corpus/must-allow.txt", true)
+	_, denyFail := checkCorpus(t, e, "corpus/must-deny.txt", false)
+	if allowFail > 0 || denyFail > 0 {
+		t.Fatalf("runtime corpus failures: allow %d, deny %d", allowFail, denyFail)
 	}
 }
 

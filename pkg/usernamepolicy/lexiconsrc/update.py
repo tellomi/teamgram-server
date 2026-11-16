@@ -319,12 +319,129 @@ def verify_upstream_blobs(meta: dict) -> None:
                 raise UpdateError(f"{item['vendored']} is not the pinned bytes")
 
 
+def load_runtime_defer(rel: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in read_vendored(rel).decode("utf-8").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        word, reason = raw.split("\t", 1)
+        if word == "word" and reason == "reason":
+            continue
+        key = dedup_key(word)
+        if key in out:
+            raise UpdateError(f"duplicate runtime-defer {word}")
+        out[key] = reason
+    if not out:
+        raise UpdateError("runtime-defer is empty")
+    return out
+
+
+def promoted_terms(meta: dict) -> list[str]:
+    forms, _ = category_rows(meta)
+    drops = load_drops(meta["editorial"]["drops"])
+    extra = load_runtime_defer("editorial/runtime-defer.tsv")
+    overlap = overlap_from_file(ROOT / meta["generated"]["overlap_keys"])
+    drop_keys = {dedup_key(word) for word in drops}
+    chosen: list[str] = []
+    seen_extra: set[str] = set()
+    for key, words in forms.items():
+        if key not in overlap:
+            continue
+        word = choose_display(words)
+        if word in drops or key in drop_keys:
+            continue
+        if key in extra:
+            seen_extra.add(key)
+            continue
+        chosen.append(word)
+    missing = set(extra) - seen_extra
+    if missing:
+        raise UpdateError("runtime-defer is not a Tencent-overlap category line: " + ",".join(sorted(missing)))
+    chosen.sort()
+    return chosen
+
+
+def runtime_pinyin_rows(terms: list[str], blocked: set[str]) -> list[tuple[str, str]]:
+    # Readings shorter than 8 are exact-only in the old build and were
+    # reviewed one by one. New unreviewed short readings stay out.
+    # A reading that is already one of the promoted source lines uses that
+    # line's own rule.
+    term_set = set(terms)
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    allow = must_allow_usernames()
+    english = english_words()
+    for word in terms:
+        py = to_pinyin(word)
+        if not py or py == word.casefold() or py in term_set or py in blocked or py in seen:
+            continue
+        if not USERNAME_SAFE.fullmatch(py) or len(py) < 8:
+            continue
+        if py in allow or py in english:
+            continue
+        seen.add(py)
+        rows.append((word, py))
+    return rows
+
+
+def must_allow_usernames() -> set[str]:
+    # Only cn rows. A global must-allow line stays allowed because runtime
+    # rules are cn-only. username global xijinping is that case.
+    path = ROOT.parent / "corpus" / "must-allow.txt"
+    out: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        field, regions, text = raw.split(" ", 2)
+        if "cn" not in regions.split(","):
+            continue
+        if field in {"username", "display_name"}:
+            out.add(text.casefold())
+    return out
+
+
+def english_words() -> set[str]:
+    path = Path("/usr/share/dict/words")
+    if not path.is_file():
+        return set()
+    return {line.strip().casefold() for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip()}
+
+
+def check_runtime(meta: dict) -> None:
+    terms = promoted_terms(meta)
+    blocked = load_block(meta["editorial"]["pinyin_block"])
+    rows = runtime_pinyin_rows(terms, blocked)
+    path = ROOT / "generated" / "runtime-pinyin.tsv"
+    want = "".join(f"{word}\t{py}\n" for word, py in rows)
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if current != want:
+        raise UpdateError("runtime-pinyin.tsv does not match pypinyin 0.55.0; rerun --emit-runtime")
+    print(f"runtime terms {len(terms)} pinyin {len(rows)}")
+
+
+def emit_runtime(meta: dict) -> None:
+    terms = promoted_terms(meta)
+    blocked = load_block(meta["editorial"]["pinyin_block"])
+    rows = runtime_pinyin_rows(terms, blocked)
+    path = ROOT / "generated" / "runtime-pinyin.tsv"
+    path.write_text("".join(f"{word}\t{py}\n" for word, py in rows), encoding="utf-8")
+    print(f"wrote {path} terms {len(terms)} pinyin {len(rows)}")
+
+
 def main(argv: list[str]) -> int:
     meta = load_source()
     if PYPINYIN_VERSION != meta["pinyin"]["version"]:
         raise UpdateError("script pin and SOURCE.toml pinyin version differ")
     fetch = "--fetch" in argv
     check = "--check" in argv
+    if "--emit-runtime" in argv:
+        emit_runtime(meta)
+        return 0
+    if "--check-runtime" in argv:
+        check_runtime(meta)
+        return 0
     if fetch:
         verify_upstream_blobs(meta)
         tencent_keys, fetched = fetch_tencent(meta)

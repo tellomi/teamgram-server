@@ -1,6 +1,6 @@
-// Package lexiconsrc checks the pinned cn politics word lists against the
-// rules already published in policy-2026110602. It does not decide a
-// username at runtime and it does not add words.
+// Package lexiconsrc checks the pinned cn politics word lists.
+// Classify repeats the D-25 admission rules. PromotedTerms is the subset
+// the username engine loads on top of policy-2026110602.
 //
 // The vendored files, licenses, and the refresh command are described in
 // SOURCE.toml. Vocabulary/零时-Tencent.txt is not stored here. generated/
@@ -433,4 +433,184 @@ func cjkCount(term string) int {
 		}
 	}
 	return n
+}
+
+// RuntimeTerm is one MIT-file line the username engine loads in addition
+// to policy-2026110602. Files are vendored konsheng paths. fwwdn is not a
+// second license: its 政治类.txt is the same text as 政治类型.txt.
+type RuntimeTerm struct {
+	Term  string
+	Files []string
+}
+
+// PromotedTerms is the defer-tencent slice of the vendored konsheng category
+// files after the recorded drop list and editorial/runtime-defer.tsv.
+// D-25 still reports those lines as defer-tencent. The Tencent file is not
+// read and not vendored. source=both names that are not in the Tencent
+// overlap stay deferred. Porn, violence, and ads files are not inputs.
+func PromotedTerms() ([]RuntimeTerm, error) {
+	if err := CheckBlobs(); err != nil {
+		return nil, err
+	}
+	forms := map[string]map[string]struct{}{}
+	sources := map[string]map[string]struct{}{}
+	files := map[string]map[string]struct{}{}
+	addFile := func(path, upstream string, stripComma bool) error {
+		text, err := readText(path)
+		if err != nil {
+			return err
+		}
+		for _, word := range parseLines(text, stripComma) {
+			key := dedupKey(word)
+			if forms[key] == nil {
+				forms[key] = map[string]struct{}{}
+				sources[key] = map[string]struct{}{}
+				files[key] = map[string]struct{}{}
+			}
+			forms[key][word] = struct{}{}
+			sources[key][upstream] = struct{}{}
+			if upstream == "konsheng" {
+				files[key][path] = struct{}{}
+			}
+		}
+		return nil
+	}
+	for _, path := range []string{"konsheng/政治类型.txt", "konsheng/反动词库.txt", "konsheng/贪腐词库.txt"} {
+		if err := addFile(path, "konsheng", false); err != nil {
+			return nil, err
+		}
+	}
+	if err := addFile("fwwdn/政治类.txt", "fwwdn", true); err != nil {
+		return nil, err
+	}
+	drops, err := loadDrops()
+	if err != nil {
+		return nil, err
+	}
+	overlap, err := loadOverlap()
+	if err != nil {
+		return nil, err
+	}
+	extra, err := loadRuntimeDefer()
+	if err != nil {
+		return nil, err
+	}
+	dropKeys := map[string]struct{}{}
+	for word := range drops {
+		dropKeys[dedupKey(word)] = struct{}{}
+	}
+	var out []RuntimeTerm
+	seenExtra := map[string]struct{}{}
+	for key, words := range forms {
+		if !overlap[key] {
+			continue
+		}
+		word := chooseDisplay(words)
+		if _, dropped := drops[word]; dropped {
+			continue
+		}
+		if _, dropped := dropKeys[key]; dropped {
+			continue
+		}
+		if _, skip := extra[key]; skip {
+			seenExtra[key] = struct{}{}
+			continue
+		}
+		if len(files[key]) == 0 {
+			return nil, fmt.Errorf("lexiconsrc: promoted %s has no konsheng file", word)
+		}
+		list := make([]string, 0, len(files[key]))
+		for path := range files[key] {
+			list = append(list, path)
+		}
+		sort.Strings(list)
+		out = append(out, RuntimeTerm{Term: word, Files: list})
+	}
+	if len(seenExtra) != len(extra) {
+		for key := range extra {
+			if _, ok := seenExtra[key]; !ok {
+				return nil, fmt.Errorf("lexiconsrc: runtime-defer %s is not a Tencent-overlap category line", key)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Term < out[j].Term })
+	return out, nil
+}
+
+// RuntimePinyin reads generated/runtime-pinyin.tsv. term is the source line,
+// pinyin is the pypinyin 0.55.0 reading that becomes its own latin rule.
+func RuntimePinyin() (map[string]string, error) {
+	text, err := readText("generated/runtime-pinyin.tsv")
+	if err != nil {
+		return nil, err
+	}
+	blocked, err := loadBlock()
+	if err != nil {
+		return nil, err
+	}
+	promoted, err := PromotedTerms()
+	if err != nil {
+		return nil, err
+	}
+	allowed := map[string]RuntimeTerm{}
+	for _, term := range promoted {
+		allowed[term.Term] = term
+	}
+	out := map[string]string{}
+	seenPy := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		raw := strings.TrimSpace(line)
+		if raw == "" || strings.HasPrefix(raw, "#") {
+			continue
+		}
+		word, py, ok := strings.Cut(raw, "\t")
+		if !ok || word == "" || py == "" {
+			return nil, fmt.Errorf("lexiconsrc: bad runtime pinyin row %q", raw)
+		}
+		if _, ok := allowed[word]; !ok {
+			return nil, fmt.Errorf("lexiconsrc: runtime pinyin %s is not a promoted term", word)
+		}
+		if py == dedupKey(word) || !usernameSafe(py) || utf8.RuneCountInString(py) < 8 || blocked[py] {
+			return nil, fmt.Errorf("lexiconsrc: runtime pinyin %s -> %s rejected", word, py)
+		}
+		if prev, ok := seenPy[py]; ok {
+			return nil, fmt.Errorf("lexiconsrc: pinyin %s from both %s and %s", py, prev, word)
+		}
+		seenPy[py] = word
+		if _, dup := out[word]; dup {
+			return nil, fmt.Errorf("lexiconsrc: duplicate runtime pinyin row %s", word)
+		}
+		out[word] = py
+	}
+	return out, nil
+}
+
+func loadRuntimeDefer() (map[string]string, error) {
+	text, err := readText("editorial/runtime-defer.tsv")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		raw := strings.TrimSpace(line)
+		if raw == "" || strings.HasPrefix(raw, "#") {
+			continue
+		}
+		word, reason, ok := strings.Cut(raw, "\t")
+		if !ok || word == "" || reason == "" {
+			return nil, fmt.Errorf("lexiconsrc: bad runtime-defer line %q", raw)
+		}
+		if word == "word" && reason == "reason" {
+			continue
+		}
+		key := dedupKey(word)
+		if _, dup := out[key]; dup {
+			return nil, fmt.Errorf("lexiconsrc: duplicate runtime-defer %s", word)
+		}
+		out[key] = reason
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("lexiconsrc: runtime-defer is empty")
+	}
+	return out, nil
 }

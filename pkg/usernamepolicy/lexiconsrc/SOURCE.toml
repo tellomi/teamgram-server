@@ -1,14 +1,16 @@
-# Pinned inputs for the cn politics coverage check.
+# Pinned inputs for the cn politics word lists.
 # pkg/usernamepolicy/lexiconsrc/update.py reads this file.
-# Runtime username checks do not read it. They load policy/policy-2026110602.json.
+# Runtime loads policy/policy-2026110602.json plus the promoted lines from
+# the vendored konsheng files. It does not read this toml and it does not
+# read Vocabulary/零时-Tencent.txt.
 #
 # Refresh:
 #   python3 -m pip install 'pypinyin==0.55.0'
 #   python3 pkg/usernamepolicy/lexiconsrc/update.py --fetch
 # --fetch re-downloads every pinned blob, refuses a mismatch, and rewrites
-# generated/. It does not add rules. A new admit has to land in tellomi/tellomi
-# first, then in a new policy-*.json. go test ./pkg/usernamepolicy/ fails until
-# that JSON and these generated files describe the same set.
+# the D-25 generated files. It does not edit policy-2026110602.json.
+# --emit-runtime rewrites generated/runtime-pinyin.tsv from the promoted
+# MIT lines. --check-runtime fails when that file drifts.
 #
 # Offline check (no download; still needs pypinyin==0.55.0):
 #   python3 pkg/usernamepolicy/lexiconsrc/update.py --check

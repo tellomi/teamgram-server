@@ -20,7 +20,7 @@ Bot 不插入 `users` / `bots`。`bots.createBot` 把 Bot 放在进程内存里�
 
 `qq`、`jd`、`x`、`xai` 短于公开用户名下限 4，不写入。`account.checkUsername` 在查表之前就返回 `USERNAME_INVALID`。`qq`、`jd`、`x` 在词库里只保留公开链接（slug）；策略开关关掉时，这条也不生效。
 
-`wechat_01` 这种下划线前后缀，以及通用保留词，不写进行。精确占用靠这张表；词缀、通用词和 `regions/cn` 政治词仍要 `TELLOMI_USERNAME_POLICY=1`。运行时词库是 tellomi/tellomi 的 `policy/dist/policy-2026110602.json`（1024 条规则，含附录 C / D-56 和 cn 政治词），嵌在 `pkg/usernamepolicy/policy/policy-2026110602.json`，字节相同。`policy-2026092301` 只留作旧语料对照，不再参与检查。`overlay-d56.json` 仍用来生成附录 C 的空占位名单，不叠到运行时词库上。
+`wechat_01` 这种下划线前后缀，以及通用保留词，不写进行。精确占用靠这张表；词缀、通用词和 `regions/cn` 政治词仍要 `TELLOMI_USERNAME_POLICY=1`。运行时先加载 tellomi/tellomi 的 `policy/dist/policy-2026110602.json`（1024 条规则，含附录 C / D-56 和 cn 政治词），嵌在 `pkg/usernamepolicy/policy/policy-2026110602.json`，字节相同。cn 检查再附上 `pkg/usernamepolicy/lexiconsrc` 里已评估的 konsheng MIT 分类原文；来源不清的 Tencent 全文、色情、暴恐、广告和误伤剔除不在其中。`policy-2026092301` 只留作旧语料对照，不再参与检查。`overlay-d56.json` 仍用来生成附录 C 的空占位名单，不叠到运行时词库上。
 
 仓库里的 compose 默认是空，代码里空值等于关闭。这只说明缺省行为，不说明生产机器上这个变量现在是开还是关。本文件不读取生产环境，也不把开关改成 1。聊天消息正文不进入这个检查。已有用户名不改写（D-26）。
 

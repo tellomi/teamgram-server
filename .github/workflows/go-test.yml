@@ -34,6 +34,9 @@ jobs:
       - name: Install libvips
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gcc pkg-config libvips-dev
 
+      - name: Pin runtime pinyin
+        run: python3 -m pip install --disable-pip-version-check -q 'pypinyin==0.55.0'
+
       - name: Test
         env:
           CGO_ENABLED: "1"
