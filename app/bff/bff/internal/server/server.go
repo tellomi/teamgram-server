@@ -35,6 +35,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/presence"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
+	bizprofile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
 	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
@@ -144,6 +145,9 @@ func (s *Server) Initialize() error {
 		logx.Errorf("accountprefs mysql: %v", err)
 	}
 	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
+		return err
+	}
+	if err := bizprofile.UseDSN(c.ChannelMySQL); err != nil {
 		return err
 	}
 	channelBridge := channels_helper.Bridge{}
