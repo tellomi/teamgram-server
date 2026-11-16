@@ -657,8 +657,9 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		savedPeerUtil = &mtproto.PeerUtil{PeerType: mtproto.PEER_EMPTY, PeerId: 0}
 	}
 
+	var inserted bool
 	tR := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-		_, _, err := d.MessagesDAO.InsertOrReturnIdTx(
+		_, rows, err := d.MessagesDAO.InsertOrReturnIdTx(
 			tx,
 			&dataobject.MessagesDO{
 				UserId:            outMsgBox.UserId,
@@ -685,6 +686,13 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 			result.Err = err
 			return
 		}
+		// A replay of the same random id already stored this body. Do not
+		// move the dialog top again: a delete may already have pointed it
+		// at an older message.
+		if rows == 0 {
+			return
+		}
+		inserted = true
 
 		for _, entity := range message.GetEntities() {
 			if entity.GetPredicateName() == mtproto.Predicate_messageEntityHashtag {
@@ -713,12 +721,14 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		}
 	})
 
+	if tR.Err != nil || !inserted {
+		return tR.Err
+	}
+
 	// Saved Messages may already exist as the other self peer type. Move that
 	// row forward before the dialog service drops its cache of this peer.
-	if tR.Err == nil {
-		d.advanceSavedMessagesDialog(ctx, fromId, peer, outBoxMsgId, int64(message.GetDate()))
-		d.ensureDialogTTL(ctx, fromId, peer)
-	}
+	d.advanceSavedMessagesDialog(ctx, fromId, peer, outBoxMsgId, int64(message.GetDate()))
+	d.ensureDialogTTL(ctx, fromId, peer)
 
 	_, err := d.DialogClient.DialogInsertOrUpdateDialog(
 		ctx,
