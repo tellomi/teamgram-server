@@ -69,7 +69,14 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 			IdList: replyOf,
 		})
 		for _, box := range found.GetDatas() {
-			if id := replyTargetID(box.ToMessage(c.MD.UserId)); id != 0 {
+			if box == nil {
+				continue
+			}
+			msg := box.GetMessage()
+			if msg == nil {
+				continue
+			}
+			if id := replyTargetID(msg); id != 0 {
 				idList = append(idList, id)
 			}
 		}
@@ -161,11 +168,22 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 
 // replyTargetID is the message an inputMessageReplyTo request should return.
 func replyTargetID(msg *mtproto.Message) int32 {
+	if msg == nil {
+		return 0
+	}
 	header := msg.GetReplyTo()
 	if header == nil {
 		return 0
 	}
+	// GetFixedReplyToMsgId reads the flag form, then the plain id.
+	// A stored header can have only one of those fields filled.
 	if id := header.GetFixedReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := header.GetReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := header.GetReplyToMsgId_INT32(); id != 0 {
 		return id
 	}
 	return header.GetReplyToTopId().GetValue()
