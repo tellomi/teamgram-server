@@ -56,7 +56,7 @@ func (c *MessageCore) MessageSearch(in *message.TLMessageSearch) (*mtproto.Messa
 		} else {
 			dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
 			rows, searchErr := c.svcCtx.Dao.MessagesDAO.SearchDialogText(
-				c.ctx, in.UserId, dialogId.A, dialogId.B, offset, q, 0, 0, limit)
+				c.ctx, in.UserId, dialogId.A, dialogId.B, offset, q, 0, 0, 0, limit)
 			if searchErr != nil {
 				return nil, searchErr
 			}

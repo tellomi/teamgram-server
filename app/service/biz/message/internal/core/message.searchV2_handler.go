@@ -19,11 +19,9 @@
 package core
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 )
 
@@ -67,41 +65,24 @@ func (c *MessageCore) MessageSearchV2(in *message.TLMessageSearchV2) (*mtproto.M
 		})
 	}
 
-	var (
-		offset = in.OffsetId
-		//q       = in.Q
-		boxList []*mtproto.MessageBox
-		//limit   = in.Limit
-	)
-
-	if offset == 0 {
-		offset = math.MaxInt32
-	}
-
-	dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
-	c.svcCtx.Dao.MessagesDAO.SelectBackwardBySendUserIdOffsetIdLimitWithCB(
-		c.ctx,
-		in.UserId,
-		dialogId.A,
-		dialogId.B,
-		in.FromId,
-		offset,
-		in.Limit,
-		func(sz, i int, v *dataobject.MessagesDO) {
-			boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, v))
-		})
-
-	if boxList == nil {
-		boxList = []*mtproto.MessageBox{}
-	}
-
-	return mtproto.MakeTLMessageBoxListSlice(&mtproto.MessageBoxList{
-		BoxList: boxList,
-		Count:   int32(c.calcSize(in.UserId, in.FromId, dialogId)),
-	}).To_MessageBoxList(), nil
+	// from_id used to ignore q and the date bounds and count every message
+	// from that sender. The page and the total now use one filter.
+	return c.searchDialogFiltered(in, in.FromId, true)
 }
 
 func (c *MessageCore) searchDialogDated(in *message.TLMessageSearchV2) (*mtproto.MessageBoxList, error) {
+	return c.searchDialogFiltered(in, 0, false)
+}
+
+// searchDialogFiltered reads one private chat or basic group. withCount is
+// the from_id path: the total uses the same sender, words, dates, dialog,
+// and deleted filter as the page. Offset only turns the page.
+func (c *MessageCore) searchDialogFiltered(in *message.TLMessageSearchV2, sender int64, withCount bool) (*mtproto.MessageBoxList, error) {
+	switch in.PeerType {
+	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
+	default:
+		return nil, mtproto.ErrPeerIdInvalid
+	}
 	offset := in.OffsetId
 	if offset == 0 {
 		offset = math.MaxInt32
@@ -110,36 +91,25 @@ func (c *MessageCore) searchDialogDated(in *message.TLMessageSearchV2) (*mtproto
 	if limit <= 0 {
 		limit = 20
 	}
-	var boxList []*mtproto.MessageBox
-	switch in.PeerType {
-	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
-		dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
-		rows, err := c.svcCtx.Dao.MessagesDAO.SearchDialogText(
-			c.ctx, in.UserId, dialogId.A, dialogId.B, offset, in.Q, in.MinDate, in.MaxDate, limit)
-		if err != nil {
-			return nil, err
-		}
-		for i := range rows {
-			boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, &rows[i]))
-		}
-	default:
-		return nil, mtproto.ErrPeerIdInvalid
+	dialogId := mtproto.MakeDialogId(in.UserId, in.PeerType, in.PeerId)
+	rows, err := c.svcCtx.Dao.MessagesDAO.SearchDialogText(
+		c.ctx, in.UserId, dialogId.A, dialogId.B, offset, in.Q, sender, in.MinDate, in.MaxDate, limit)
+	if err != nil {
+		return nil, err
 	}
-	if boxList == nil {
-		boxList = []*mtproto.MessageBox{}
+	boxList := make([]*mtproto.MessageBox, 0, len(rows))
+	for i := range rows {
+		boxList = append(boxList, c.svcCtx.Dao.MakeMessageBox(c.ctx, in.UserId, &rows[i]))
 	}
-	return mtproto.MakeTLMessageBoxList(&mtproto.MessageBoxList{BoxList: boxList}).To_MessageBoxList(), nil
-}
-
-func (c *MessageCore) calcSize(id, fromId int64, did mtproto.DialogID) int {
-	where := fmt.Sprintf("user_id = %d AND (dialog_id1 = %d AND dialog_id2 = %d) AND sender_user_id = %d AND deleted = 0",
-		id,
-		did.A,
-		did.B,
-		fromId)
-
-	return c.svcCtx.Dao.CommonDAO.CalcSizeByWhere(
-		c.ctx,
-		c.svcCtx.Dao.MessagesDAO.CalcTableName(id),
-		where)
+	out := &mtproto.MessageBoxList{BoxList: boxList}
+	if !withCount {
+		return mtproto.MakeTLMessageBoxList(out).To_MessageBoxList(), nil
+	}
+	count, err := c.svcCtx.Dao.MessagesDAO.CountDialogText(
+		c.ctx, in.UserId, dialogId.A, dialogId.B, in.Q, sender, in.MinDate, in.MaxDate)
+	if err != nil {
+		return nil, err
+	}
+	out.Count = count
+	return mtproto.MakeTLMessageBoxListSlice(out).To_MessageBoxList(), nil
 }

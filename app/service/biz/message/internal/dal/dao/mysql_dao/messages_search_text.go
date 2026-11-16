@@ -168,37 +168,72 @@ func (dao *MessagesDAO) SearchGlobalTextWithCB(ctx context.Context, userId int64
 	return
 }
 
+// dialogTextFilter is the shared messages.search predicate for one dialog.
+// sender 0 does not filter the sender. minDate and maxDate of 0 are
+// unbounded. An empty plaintext column still matches message_data, the same
+// fallback SearchGlobalText uses. Each word is its own escaped LIKE.
+func dialogTextFilter(q string, sender int64, minDate, maxDate int32) (string, []any) {
+	patterns := likeTokens(q)
+	clause := "deleted = 0 and " + textTokenWhere(len(patterns))
+	args := make([]any, 0, len(patterns)*2+3)
+	for _, pattern := range patterns {
+		args = append(args, pattern, pattern)
+	}
+	if sender != 0 {
+		clause += " and sender_user_id = ?"
+		args = append(args, sender)
+	}
+	if minDate > 0 {
+		clause += " and date2 >= ?"
+		args = append(args, int64(minDate))
+	}
+	if maxDate > 0 {
+		clause += " and date2 <= ?"
+		args = append(args, int64(maxDate))
+	}
+	return clause, args
+}
+
 // SearchDialogText is messages.search inside one dialog. Each word in q must
 // appear. minDate/maxDate of 0 are unbounded. offset is an exclusive upper
-// message id.
-func (dao *MessagesDAO) SearchDialogText(ctx context.Context, userId, dialogID1, dialogID2 int64, offset int32, q string, minDate, maxDate, limit int32) (rList []dataobject.MessagesDO, err error) {
+// message id. sender 0 keeps every sender in that mailbox.
+func (dao *MessagesDAO) SearchDialogText(ctx context.Context, userId, dialogID1, dialogID2 int64, offset int32, q string, sender int64, minDate, maxDate, limit int32) (rList []dataobject.MessagesDO, err error) {
 	if limit <= 0 {
 		limit = 1
 	}
 	if offset == 0 {
 		offset = 1<<31 - 1
 	}
-	patterns := likeTokens(q)
+	filter, filterArgs := dialogTextFilter(q, sender, minDate, maxDate)
 	query := "select " + savedHistoryColumns + " from " + dao.CalcTableName(userId) +
-		" where user_id = ? and dialog_id1 = ? and dialog_id2 = ? and user_message_box_id < ? and deleted = 0 and message != '' and " +
-		textTokenWhere(len(patterns))
-	args := []any{userId, dialogID1, dialogID2, offset}
-	for _, pattern := range patterns {
-		args = append(args, pattern, pattern)
-	}
-	if minDate > 0 {
-		query += " and date2 >= ?"
-		args = append(args, int64(minDate))
-	}
-	if maxDate > 0 {
-		query += " and date2 <= ?"
-		args = append(args, int64(maxDate))
-	}
-	query += " order by user_message_box_id desc limit ?"
+		" where user_id = ? and dialog_id1 = ? and dialog_id2 = ? and user_message_box_id < ? and " +
+		filter + " order by user_message_box_id desc limit ?"
+	args := make([]any, 0, 4+len(filterArgs)+1)
+	args = append(args, userId, dialogID1, dialogID2, offset)
+	args = append(args, filterArgs...)
 	args = append(args, limit)
 	if err = dao.db.QueryRowsPartial(ctx, &rList, query, args...); err != nil {
 		logx.WithContext(ctx).Errorf("queryx in SearchDialogText(_), error: %v", err)
 		return nil, err
 	}
 	return rList, nil
+}
+
+// CountDialogText counts the same rows SearchDialogText would page. Offset
+// and limit are not part of the total.
+func (dao *MessagesDAO) CountDialogText(ctx context.Context, userId, dialogID1, dialogID2 int64, q string, sender int64, minDate, maxDate int32) (int32, error) {
+	filter, filterArgs := dialogTextFilter(q, sender, minDate, maxDate)
+	query := "select count(*) as n from " + dao.CalcTableName(userId) +
+		" where user_id = ? and dialog_id1 = ? and dialog_id2 = ? and " + filter
+	args := make([]any, 0, 3+len(filterArgs))
+	args = append(args, userId, dialogID1, dialogID2)
+	args = append(args, filterArgs...)
+	var row struct {
+		N int32 `db:"n"`
+	}
+	if err := dao.db.QueryRowPartial(ctx, &row, query, args...); err != nil {
+		logx.WithContext(ctx).Errorf("queryx in CountDialogText(_), error: %v", err)
+		return 0, err
+	}
+	return row.N, nil
 }

@@ -61,9 +61,15 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		var fromUser int64
 		if in.GetFromId() != nil {
 			from := mtproto.FromInputPeer2(c.MD.UserId, in.GetFromId())
-			if from.IsUser() {
-				fromUser = from.PeerId
+			// A channel or chat from_id used to be dropped, so the search
+			// returned the unfiltered history. Reject it instead of widening
+			// the result. Searching posts sent as a channel is not this path.
+			if !from.IsUser() {
+				err = mtproto.ErrFromPeerInvalid
+				c.Logger.Errorf("messages.search - error: %v", err)
+				return nil, err
 			}
+			fromUser = from.PeerId
 		}
 		return channel.Shared().SearchInChannel(c.ctx, c.MD.UserId, peer.PeerId, channel.ChannelSearch{
 			Q:        in.Q,

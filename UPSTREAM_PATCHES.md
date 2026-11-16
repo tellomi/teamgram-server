@@ -925,6 +925,8 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 `min_date` / `max_date` on a private chat or basic group were dropped before the query. They are applied on `messages.search` for those peers. A zero bound stays unbounded.
 
+A `from_id` search used to skip `q` and the date bounds, and its count was every non-deleted message from that sender. The page and the count now share the sender, the words, the dates, the dialog, and `deleted = 0`. Offset only turns the page. An empty `message` column can still match `message_data`, as global search already does. `add_offset`, `min_id`, `max_id`, and `hash` on a private chat or basic group are still not applied. A channel `from_id` that is not a user returns `FROM_PEER_INVALID` instead of dropping the filter.
+
 | Piece | File |
 | --- | --- |
 | words and dates | `messages_search_text.go`, `message.search_handler.go`, `message.searchV2_handler.go` |
