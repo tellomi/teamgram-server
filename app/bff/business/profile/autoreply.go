@@ -13,13 +13,17 @@ import (
 // PriorMessage is the unix time of the newest private message already in
 // the dialog before the one that just arrived. HistoryKnown is false when
 // that lookup failed. A missing ledger row is not a new chat.
+// ContactKnown and PresenceKnown stay false when those lookups fail. An
+// unknown contact is not a non-contact, and unknown presence is not offline.
 type PeerFacts struct {
-	Contact      bool
-	Online       bool
-	LastSeen     int32
-	Now          time.Time
-	PriorMessage int32
-	HistoryKnown bool
+	Contact       bool
+	ContactKnown  bool
+	Online        bool
+	PresenceKnown bool
+	LastSeen      int32
+	Now           time.Time
+	PriorMessage  int32
+	HistoryKnown  bool
 }
 
 // ConsumeAutoReply decides which quick-reply shortcuts to send and records
@@ -31,50 +35,53 @@ func (b *Book) ConsumeAutoReply(owner, peer int64, facts PeerFacts) []int32 {
 	if b == nil || owner == 0 || peer == 0 || owner == peer {
 		return nil
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if err := b.reload(owner); err != nil {
-		return nil
-	}
-	r := b.users[owner]
-	if r == nil || (r.greeting == nil && r.away == nil) {
-		return nil
-	}
-	if r.peers == nil {
-		r.peers = map[int64]*peerNote{}
-	}
-	note := r.peers[peer]
-	if note == nil {
-		note = &peerNote{}
-		r.peers[peer] = note
-	}
-	now := int32(facts.Now.Unix())
-	if facts.Now.IsZero() {
-		now = int32(b.now().Unix())
-	}
-	newChat := facts.HistoryKnown && facts.PriorMessage == 0
 	var out []int32
-	if g := r.greeting; g != nil && matchRecipients(g.GetRecipients(), peer, facts.Contact, newChat) && greetingDue(g, facts, now) && note.GreetingSent <= facts.PriorMessage {
-		if g.GetShortcutId() > 0 {
-			out = append(out, g.GetShortcutId())
-			note.GreetingSent = now
+	// Save the ledger before returning shortcut ids. A failed write returns
+	// nothing, so the caller does not send a reply the book will not remember.
+	err := b.update(owner, func(*[]string) error {
+		r := b.users[owner]
+		if r == nil || (r.greeting == nil && r.away == nil) {
+			return nil
 		}
-	}
-	if a := r.away; a != nil && matchRecipients(a.GetRecipients(), peer, facts.Contact, newChat) {
-		if active, window := awayWindow(a, r.hours, r.awayVersion, facts); active && a.GetShortcutId() > 0 {
-			resend := note.AwayWindow != window || note.AwaySent == 0
-			if !resend && a.GetOfflineOnly() && facts.LastSeen > note.AwaySent {
-				resend = true
-			}
-			if resend {
-				out = append(out, a.GetShortcutId())
-				note.AwaySent = now
-				note.AwayWindow = window
+		if r.peers == nil {
+			r.peers = map[int64]*peerNote{}
+		}
+		note := r.peers[peer]
+		if note == nil {
+			note = &peerNote{}
+			r.peers[peer] = note
+		}
+		now := int32(facts.Now.Unix())
+		if facts.Now.IsZero() {
+			now = int32(b.now().Unix())
+		}
+		newChat := facts.HistoryKnown && facts.PriorMessage == 0
+		if g := r.greeting; g != nil && matchRecipients(g.GetRecipients(), peer, facts.Contact, facts.ContactKnown, newChat) && greetingDue(g, facts, now) && (note.GreetingSent == 0 || facts.PriorMessage > note.GreetedPrior) {
+			if g.GetShortcutId() > 0 {
+				out = append(out, g.GetShortcutId())
+				note.GreetingSent = now
+				note.GreetedPrior = facts.PriorMessage
 			}
 		}
+		if a := r.away; a != nil && matchRecipients(a.GetRecipients(), peer, facts.Contact, facts.ContactKnown, newChat) {
+			if active, window := awayWindow(a, r.hours, r.awayVersion, facts); active && a.GetShortcutId() > 0 {
+				resend := note.AwayWindow != window || note.AwaySent == 0
+				if !resend && a.GetOfflineOnly() && facts.PresenceKnown && facts.LastSeen > note.AwaySent {
+					resend = true
+				}
+				if resend {
+					out = append(out, a.GetShortcutId())
+					note.AwaySent = now
+					note.AwayWindow = window
+				}
+			}
+		}
+		note.LastActivity = now
+		return nil
+	})
+	if err != nil {
+		return nil
 	}
-	note.LastActivity = now
-	_ = b.save(owner)
 	return out
 }
 
@@ -97,7 +104,8 @@ func awayWindow(a *mtproto.BusinessAwayMessage, hours *mtproto.BusinessWorkHours
 	if a == nil {
 		return false, ""
 	}
-	if a.GetOfflineOnly() && facts.Online {
+	// Unknown presence is not offline. offline_only stays quiet until last seen is known.
+	if a.GetOfflineOnly() && (!facts.PresenceKnown || facts.Online) {
 		return false, ""
 	}
 	now := facts.Now
@@ -139,7 +147,7 @@ func closedSince(hours *mtproto.BusinessWorkHours, now time.Time) int32 {
 	return int32(now.Unix())
 }
 
-func matchRecipients(rec *mtproto.BusinessRecipients, peer int64, contact, newChat bool) bool {
+func matchRecipients(rec *mtproto.BusinessRecipients, peer int64, contact, contactKnown, newChat bool) bool {
 	if rec == nil {
 		return false
 	}
@@ -156,10 +164,10 @@ func matchRecipients(rec *mtproto.BusinessRecipients, peer int64, contact, newCh
 	if !rec.GetExcludeSelected() && selected {
 		return true
 	}
-	if rec.GetContacts() && contact {
+	if rec.GetContacts() && contactKnown && contact {
 		return true
 	}
-	if rec.GetNonContacts() && !contact {
+	if rec.GetNonContacts() && contactKnown && !contact {
 		return true
 	}
 	if rec.GetExistingChats() && !newChat {

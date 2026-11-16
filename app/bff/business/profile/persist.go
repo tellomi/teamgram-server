@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -105,6 +106,7 @@ type storedLink struct {
 type storedPeer struct {
 	LastActivity int32  `json:"last_activity,omitempty"`
 	GreetingSent int32  `json:"greeting_sent,omitempty"`
+	GreetedPrior int32  `json:"greeted_prior,omitempty"`
 	AwaySent     int32  `json:"away_sent,omitempty"`
 	AwayWindow   string `json:"away_window,omitempty"`
 }
@@ -120,16 +122,52 @@ type storedUser struct {
 	AwayVersion int32                `json:"away_version,omitempty"`
 }
 
-func (b *Book) reload(user int64) error {
-	if b == nil || b.db == nil {
+// dbOpTimeout bounds one MySQL call. Profile reads and writes must not wait
+// on a stuck server with context.Background.
+const dbOpTimeout = 3 * time.Second
+
+func dbContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), dbOpTimeout)
+}
+
+func (b *Book) userGate(user int64) *sync.Mutex {
+	if v, ok := b.gates.Load(user); ok {
+		return v.(*sync.Mutex)
+	}
+	m := &sync.Mutex{}
+	actual, _ := b.gates.LoadOrStore(user, m)
+	return actual.(*sync.Mutex)
+}
+
+func (b *Book) store() docDB {
+	if b == nil {
 		return nil
 	}
-	raw, ok, err := b.db.Load(context.Background(), userKey(user))
-	if err != nil {
-		return err
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.db
+}
+
+// fetchUser reads one profile outside mu. enabled is false when MySQL is off,
+// and the in-memory row must be left alone.
+func (b *Book) fetchUser(user int64) (raw []byte, found, enabled bool, err error) {
+	db := b.store()
+	if db == nil {
+		return nil, false, false, nil
+	}
+	ctx, cancel := dbContext()
+	defer cancel()
+	raw, found, err = db.Load(ctx, userKey(user))
+	return raw, found, true, err
+}
+
+// applyFetched installs a row loaded by fetchUser. Caller holds mu.
+func (b *Book) applyFetched(user int64, raw []byte, found, enabled bool) error {
+	if !enabled {
+		return nil
 	}
 	b.forgetSlugs(user)
-	if !ok || len(raw) == 0 {
+	if !found || len(raw) == 0 {
 		delete(b.users, user)
 		return nil
 	}
@@ -144,35 +182,115 @@ func (b *Book) reload(user int64) error {
 	return nil
 }
 
-func (b *Book) save(user int64) error {
-	if b == nil || b.db == nil {
-		return nil
-	}
-	ctx := context.Background()
+type userSnap struct {
+	user      int64
+	key       string
+	deleteDoc bool
+	raw       []byte
+	slugs     []string
+	dropSlugs []string
+}
+
+// snapshot copies the in-memory row for a write that happens after mu is released.
+func (b *Book) snapshot(user int64, drop []string) (*userSnap, error) {
+	snap := &userSnap{user: user, key: userKey(user), dropSlugs: append([]string(nil), drop...)}
 	r := b.users[user]
 	if r == nil || r.blank() {
-		return b.db.Delete(ctx, userKey(user))
+		snap.deleteDoc = true
+		return snap, nil
 	}
 	raw, err := encodeUser(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err = b.db.Save(ctx, userKey(user), raw); err != nil {
-		return err
-	}
+	snap.raw = raw
 	for _, item := range r.links {
-		if err = b.db.Save(ctx, slugKey(item.slug), []byte(strconv.FormatInt(user, 10))); err != nil {
+		snap.slugs = append(snap.slugs, item.slug)
+	}
+	return snap, nil
+}
+
+func (b *Book) writeSnap(snap *userSnap) error {
+	if snap == nil {
+		return nil
+	}
+	db := b.store()
+	if db == nil {
+		return nil
+	}
+	for _, slug := range snap.dropSlugs {
+		ctx, cancel := dbContext()
+		err := db.Delete(ctx, slugKey(slug))
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	ctx, cancel := dbContext()
+	var err error
+	if snap.deleteDoc {
+		err = db.Delete(ctx, snap.key)
+	} else {
+		err = db.Save(ctx, snap.key, snap.raw)
+	}
+	cancel()
+	if err != nil {
+		return err
+	}
+	for _, slug := range snap.slugs {
+		ctx, cancel = dbContext()
+		err = db.Save(ctx, slugKey(slug), []byte(strconv.FormatInt(snap.user, 10)))
+		cancel()
+		if err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (b *Book) slugOwner(slug string) (int64, bool, error) {
-	if b == nil || b.db == nil || slug == "" {
+// update reloads one user, runs fn while mu is held, then writes MySQL after
+// releasing mu. The per-user gate keeps two replies from both deciding to send.
+// fn may append slugs that the following write deletes.
+func (b *Book) update(user int64, fn func(drop *[]string) error) error {
+	if b == nil {
+		return nil
+	}
+	g := b.userGate(user)
+	g.Lock()
+	defer g.Unlock()
+	raw, found, enabled, err := b.fetchUser(user)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	if err = b.applyFetched(user, raw, found, enabled); err != nil {
+		b.mu.Unlock()
+		return err
+	}
+	var drop []string
+	err = fn(&drop)
+	var snap *userSnap
+	if err == nil {
+		snap, err = b.snapshot(user, drop)
+	}
+	b.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return b.writeSnap(snap)
+}
+
+func (b *Book) readSlug(slug string) (int64, bool, error) {
+	if slug == "" {
 		return 0, false, nil
 	}
-	raw, ok, err := b.db.Load(context.Background(), slugKey(slug))
+	db := b.store()
+	if db == nil {
+		return 0, false, nil
+	}
+	ctx, cancel := dbContext()
+	defer cancel()
+	raw, ok, err := db.Load(ctx, slugKey(slug))
 	if err != nil || !ok || len(raw) == 0 {
 		return 0, false, err
 	}
@@ -180,7 +298,6 @@ func (b *Book) slugOwner(slug string) (int64, bool, error) {
 	if err != nil || id == 0 {
 		return 0, false, nil
 	}
-	b.slugs[slug] = id
 	return id, true, nil
 }
 
@@ -253,6 +370,7 @@ func encodeUser(r *row) ([]byte, error) {
 			doc.Peers[id] = storedPeer{
 				LastActivity: note.LastActivity,
 				GreetingSent: note.GreetingSent,
+				GreetedPrior: note.GreetedPrior,
 				AwaySent:     note.AwaySent,
 				AwayWindow:   note.AwayWindow,
 			}
@@ -305,6 +423,7 @@ func decodeUser(raw []byte) (*row, error) {
 		r.peers[id] = &peerNote{
 			LastActivity: cp.LastActivity,
 			GreetingSent: cp.GreetingSent,
+			GreetedPrior: cp.GreetedPrior,
 			AwaySent:     cp.AwaySent,
 			AwayWindow:   cp.AwayWindow,
 		}

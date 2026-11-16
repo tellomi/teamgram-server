@@ -2,9 +2,11 @@ package profile
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -116,5 +118,90 @@ func TestProfileSurvivesRestart(t *testing.T) {
 	fourth.db = db
 	if got := fourth.Card(7); got == nil || got.WorkHours != nil || got.Intro.GetTitle() != "Shop" {
 		t.Fatalf("cleared hours %#v", got)
+	}
+}
+
+type errSave struct{ *memDB }
+
+func (errSave) Save(context.Context, string, []byte) error {
+	return errors.New("disk")
+}
+
+func TestConsumeAutoReplySkipsSendWhenSaveFails(t *testing.T) {
+	db := newMemDB()
+	b := New()
+	b.db = db
+	if err := b.SetGreeting(1, mtproto.MakeTLInputBusinessGreetingMessage(&mtproto.InputBusinessGreetingMessage{
+		ShortcutId: 2, Recipients: nonContactRecipients(),
+	}).To_InputBusinessGreetingMessage()); err != nil {
+		t.Fatal(err)
+	}
+	b.db = errSave{db}
+	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	facts := PeerFacts{Now: now, HistoryKnown: true, ContactKnown: true}
+	if got := b.ConsumeAutoReply(1, 2, facts); len(got) != 0 {
+		t.Fatalf("send without a saved ledger %v", got)
+	}
+	next := New()
+	next.db = db
+	if got := next.ConsumeAutoReply(1, 2, facts); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("retry after the failed save %v", got)
+	}
+}
+
+type gateDB struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (g *gateDB) Load(ctx context.Context, _ string) ([]byte, bool, error) {
+	g.once.Do(func() { close(g.started) })
+	select {
+	case <-g.release:
+		return nil, false, nil
+	case <-ctx.Done():
+		return nil, false, ctx.Err()
+	}
+}
+
+func (g *gateDB) Save(context.Context, string, []byte) error { return nil }
+func (g *gateDB) Delete(context.Context, string) error       { return nil }
+
+func TestProfileLoadDoesNotHoldBookLock(t *testing.T) {
+	b := New()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	b.db = &gateDB{started: started, release: release}
+	go b.Card(1)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("load did not start")
+	}
+	if !b.mu.TryLock() {
+		t.Fatal("Book.mu held during SQL")
+	}
+	b.mu.Unlock()
+	close(release)
+}
+
+type waitDB struct{}
+
+func (waitDB) Load(ctx context.Context, _ string) ([]byte, bool, error) {
+	<-ctx.Done()
+	return nil, false, ctx.Err()
+}
+
+func (waitDB) Save(context.Context, string, []byte) error { return nil }
+func (waitDB) Delete(context.Context, string) error       { return nil }
+
+func TestProfileLoadTimesOut(t *testing.T) {
+	b := New()
+	b.db = waitDB{}
+	start := time.Now()
+	_ = b.Card(1)
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("load waited %s", elapsed)
 	}
 }

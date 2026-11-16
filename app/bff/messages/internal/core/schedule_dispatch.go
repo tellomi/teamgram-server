@@ -73,7 +73,7 @@ func (c *MessagesCore) dispatchOutbox(peer *mtproto.PeerUtil, boxes []*msg.Outbo
 		return nil, err
 	}
 	chatbox.Shared().ObserveSent(c.ctx, peer, ups)
-	c.maybeBusinessAutoReply(peer, ups)
+	c.scheduleBusinessAutoReply(peer, ups)
 	return ups, nil
 }
 

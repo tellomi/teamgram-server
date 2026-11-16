@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"time"
@@ -11,12 +12,44 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	messagepb "github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/zeromicro/go-zero/core/logx"
 )
+
+// businessReplyTimeout covers history, contact, presence, the profile write,
+// and the shortcut copy. The customer's send does not wait for any of it.
+const businessReplyTimeout = 15 * time.Second
+
+// scheduleBusinessAutoReply starts the greeting and away copy after the
+// private message is already stored. The RPC returns without waiting on
+// MySQL, history, or the shortcut send. A failed copy is logged once.
+func (c *MessagesCore) scheduleBusinessAutoReply(peer *mtproto.PeerUtil, sent *mtproto.Updates) {
+	if c == nil || c.MD == nil || peer == nil || !peer.IsUser() || peer.PeerId == 0 || peer.PeerId == c.MD.UserId {
+		return
+	}
+	marks := sentMarks(sent)
+	ctx, cancel := context.WithTimeout(context.Background(), businessReplyTimeout)
+	worker := &MessagesCore{
+		ctx:    ctx,
+		svcCtx: c.svcCtx,
+		Logger: logx.WithContext(ctx),
+		MD:     c.MD,
+	}
+	go func() {
+		defer cancel()
+		defer func() {
+			if rec := recover(); rec != nil {
+				worker.Errorf("business auto reply panic: %v", rec)
+			}
+		}()
+		worker.maybeBusinessAutoReply(peer, marks)
+	}()
+}
 
 // maybeBusinessAutoReply sends the business account's greeting and away
 // shortcuts after a private message lands. The customer's own send stays
-// successful when the shortcut cannot be copied.
-func (c *MessagesCore) maybeBusinessAutoReply(peer *mtproto.PeerUtil, sent *mtproto.Updates) {
+// successful when the shortcut cannot be copied. Shortcut send errors are
+// not retried: the ledger was saved before the ids were returned.
+func (c *MessagesCore) maybeBusinessAutoReply(peer *mtproto.PeerUtil, sent sentMark) {
 	if c == nil || c.MD == nil || peer == nil || !peer.IsUser() || peer.PeerId == 0 || peer.PeerId == c.MD.UserId {
 		return
 	}
@@ -31,12 +64,14 @@ func (c *MessagesCore) maybeBusinessAutoReply(peer *mtproto.PeerUtil, sent *mtpr
 	}
 	now := time.Now()
 	facts := profile.PeerFacts{Now: now}
-	facts.PriorMessage, facts.HistoryKnown = c.priorPrivateMessage(owner, customer, int32(now.Unix()), sentMarks(sent))
+	facts.PriorMessage, facts.HistoryKnown = c.priorPrivateMessage(owner, customer, int32(now.Unix()), sent)
 	if c.svcCtx.Dao.UserClient != nil {
 		if ok, err := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{UserId: owner, Id: customer}); err == nil {
+			facts.ContactKnown = true
 			facts.Contact = mtproto.FromBool(ok)
 		}
 		if seen, err := c.svcCtx.Dao.UserClient.UserGetLastSeen(c.ctx, &userpb.TLUserGetLastSeen{Id: owner}); err == nil && seen != nil {
+			facts.PresenceKnown = true
 			facts.LastSeen = int32(seen.GetLastSeenAt())
 			facts.Online = seen.GetExpires() > int32(now.Unix())
 		}
@@ -128,12 +163,13 @@ func (c *MessagesCore) priorByAge(userID, peerID int64, now int32) (int32, bool)
 	if older > 0 {
 		return older, true
 	}
-	// One dated message. It is the copy just delivered when it is current.
-	// An older lone message is a dialog the new copy has not reached.
+	// The customer outbox read already failed. One dated row on the business
+	// inbox is an earlier message only when it is older than the copy that
+	// just landed. A single current row is not proof of a new chat.
 	if now > 0 && now-newest > 120 {
 		return newest, true
 	}
-	return 0, true
+	return 0, false
 }
 
 func (c *MessagesCore) recentBoxes(userID, peerID int64) ([]*mtproto.MessageBox, bool) {
