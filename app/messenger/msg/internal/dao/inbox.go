@@ -120,7 +120,14 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		if crossChatReply(message.GetReplyTo()) {
 			break
 		}
-		if replyId, _ := d.MessagesDAO.SelectPeerUserMessage(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
+		// A private reply still maps after both copies were revoked.
+		// A basic-group reply keeps the old rule: a deleted original drops
+		// reply_to, and that miss does not mark the recipient mentioned.
+		lookup := d.MessagesDAO.SelectPeerUserMessage
+		if peer.PeerType == mtproto.PEER_USER {
+			lookup = d.MessagesDAO.SelectPeerUserMessageIncludingDeleted
+		}
+		if replyId, _ := lookup(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
 			// message.ReplyToMsgId.Value = replyId.UserMessageBoxId
 			if message.ReplyTo != nil {
 				message.ReplyTo.ReplyToMsgId = replyId.UserMessageBoxId

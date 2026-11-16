@@ -69,6 +69,9 @@ func TestSameStoredMessageAllowsExactReplay(t *testing.T) {
 }
 
 func TestSameStoredMessageKeepsClearedBody(t *testing.T) {
+	// deleteMessages clears the text before the inbox consumer retries the
+	// outbox insert. The same random id must stay a replay, so the retry
+	// does not treat the cleared row as a different message.
 	existing := &dataobject.MessagesDO{
 		UserId:           1001,
 		UserMessageBoxId: 1,

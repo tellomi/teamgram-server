@@ -1009,6 +1009,21 @@ Archiving a new non-contact set folder 1 and mute-forever, and unarchiving clear
 | intersection | `app/service/biz/channel/common_chats.go` |
 | RPC | `app/bff/chats/internal/core/messages.getCommonChats_handler.go` |
 
+## Reply after the original was deleted (row 256)
+
+The inbox copy of a private reply looks up `reply_to_msg_id` with `SelectPeerUserMessage`, which requires `deleted = 0` on both rows. After `messages.deleteMessages(revoke=true)` that lookup misses, and the recipient's copy drops `reply_to`. A private chat (`PEER_USER`) now includes deleted rows, so the other side still gets the mapped id and can show a reply to a deleted message. A basic group still uses `SelectPeerUserMessage`: a reply to a deleted group message drops `reply_to` and does not mark the recipient mentioned because of that miss. Other callers of `SelectPeerUserMessage` still ignore deleted rows. Channel replies are unchanged.
+
+`messages.sendMessage` for a private chat used to return before the sender's row was inserted. The inbox consumer wrote that row later, on the sender's own Kafka key. A `deleteMessages` in that gap found no row, returned success, and did not revoke. The row was then inserted and both histories kept the text. The sender row is now written before the send returns. The consumer's later insert matches the same `random_id` and does not put the text back.
+
+That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
+
+| Piece | File |
+| --- | --- |
+| lookup | `messages_dao.go` `SelectPeerUserMessageIncludingDeleted` |
+| inbox | `app/messenger/msg/internal/dao/inbox.go` |
+| outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
+| saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
+
 ## Background emojis, restricted statuses, ringtones, passkey rpId
 
 Rows 290, 272, and 343.

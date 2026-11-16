@@ -85,4 +85,6 @@ jobs:
           CGO_ENABLED: "1"
           TEAMGRAM_REQUIRE_INBOX_MYSQL: "1"
           TEAMGRAM_MYSQL_DSN: "root:integration-fixture@tcp(127.0.0.1:3306)/mysql?charset=utf8mb4&parseTime=true&multiStatements=true"
-        run: go test -race -count=1 -timeout 4m -v ./app/messenger/msg/internal/dao/ -run '^(TestInbox|TestMasterRedelivery|TestSavedForward|TestGroupUnread)'
+        run: |
+          go test -race -count=1 -timeout 4m -v ./app/messenger/msg/internal/dao/ -run '^(TestInbox|TestMasterRedelivery|TestSavedForward|TestGroupUnread)'
+          go test -race -count=1 -timeout 3m -v ./app/service/biz/message/internal/dal/dao/mysql_dao/ -run '^TestPrivateReplyLookupIncludesDeleted$'
