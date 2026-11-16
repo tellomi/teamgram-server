@@ -233,6 +233,10 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		if inserted == 0 {
 			return
 		}
+		if err := rememberInboxRandom(tx, toUserId, fromId, clientRandomId, inBoxMsgId); err != nil {
+			result.Err = err
+			return
+		}
 		mentions := int32(0)
 		if inBox.Mentioned {
 			mentions = 1

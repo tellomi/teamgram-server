@@ -38,6 +38,19 @@ type inboxApplyRow struct {
 	Applied       bool  `db:"applied"`
 }
 
+// rememberInboxRandom records that this recipient already has the random id.
+// The previous container allocates a new box id and inserts again. The
+// messages trigger rejects that insert when this row exists. random_id 0 is
+// not recorded.
+func rememberInboxRandom(tx *sqlx.Tx, userID, senderID, randomID int64, boxID int32) error {
+	if tx == nil || randomID == 0 || userID == 0 || boxID == 0 {
+		return nil
+	}
+	_, err := tx.Exec(`INSERT INTO inbox_random (user_id, random_id, sender_user_id, box_id) VALUES (?,?,?,?)
+ON DUPLICATE KEY UPDATE box_id = box_id`, userID, randomID, senderID, boxID)
+	return err
+}
+
 // applyInboxInTx writes the dialog unread, the pts row, and inbox_apply
 // in the caller's transaction. The caller inserts the message in that same
 // transaction. applied is stored as 1. A crash rolls all of it back, so an

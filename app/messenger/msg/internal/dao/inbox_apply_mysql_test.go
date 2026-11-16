@@ -55,14 +55,6 @@ func TestInboxUnreadCommitsWithTheMessage(t *testing.T) {
 	if unread, top := dialogState(t, d, applyUser, mtproto.PEER_USER, applyPeer); unread != 1 || top != box {
 		t.Fatalf("replay unread=%d top=%d", unread, top)
 	}
-
-	// The previous container finds the committed random id and adds zero.
-	if err := oldForward(t, d, applyUser, mtproto.PEER_USER, applyPeer, box, 0); err != nil {
-		t.Fatal(err)
-	}
-	if unread, _ := dialogState(t, d, applyUser, mtproto.PEER_USER, applyPeer); unread != 1 {
-		t.Fatalf("old replay unread=%d", unread)
-	}
 }
 
 func TestInboxRollbackLeavesUnreadForTheOldProcess(t *testing.T) {
@@ -91,12 +83,59 @@ func TestInboxRollbackLeavesUnreadForTheOldProcess(t *testing.T) {
 	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM inbox_apply WHERE user_id=?`, applyUser); n != 0 {
 		t.Fatalf("rolled-back apply rows=%d", n)
 	}
-	// The older process inserts the message itself and adds unread once.
-	if err = oldForward(t, d, applyUser, mtproto.PEER_USER, applyPeer, box, 1); err != nil {
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM inbox_random WHERE user_id=?`, applyUser); n != 0 {
+		t.Fatalf("rolled-back random rows=%d", n)
+	}
+	// No inbox_random row, so the master insert still stores the message and adds unread.
+	if err = sendInboxLikeMaster(ctx, d, applyPeer, applyUser, box, applyRandom, "fresh"); err != nil {
 		t.Fatal(err)
 	}
-	if unread, _ := dialogState(t, d, applyUser, mtproto.PEER_USER, applyPeer); unread != 1 {
-		t.Fatalf("old insert unread=%d", unread)
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM messages WHERE user_id=? AND user_message_box_id=?`, applyUser, box); n != 1 {
+		t.Fatalf("master first insert rows=%d", n)
+	}
+	if unread, top := dialogState(t, d, applyUser, mtproto.PEER_USER, applyPeer); unread != 1 || top != box {
+		t.Fatalf("master first unread=%d top=%d", unread, top)
+	}
+}
+
+// TestMasterRedeliveryDoesNotSecondInsert runs the master sendMessageToInbox
+// persistence: a new box id, InsertOrReturnIdTx, then InsertOrUpdateForward
+// outside the transaction. origin/master does not look up random_id.
+func TestMasterRedeliveryDoesNotSecondInsert(t *testing.T) {
+	d := openInboxApplyDB(t)
+	ctx := context.Background()
+	const stored int32 = 17
+	const redelivery int32 = 99
+	if err := d.DB.Transact(ctx, func(tx *sqlx.Tx) error {
+		if _, _, err := d.MessagesDAO.InsertOrReturnIdTx(tx, inboxMessageDO(applyUser, applyPeer, stored, applyRandom, "hello")); err != nil {
+			return err
+		}
+		if err := rememberInboxRandom(tx, applyUser, applyPeer, applyRandom, stored); err != nil {
+			return err
+		}
+		_, _, err := d.applyInboxInTx(ctx, tx, inboxApplyRow{
+			UserID: applyUser, BoxID: stored, PeerType: mtproto.PEER_USER, PeerID: applyPeer,
+			UnreadDelta: 1, Date2: 17,
+		}, textMessage(stored, "hello"))
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := sendInboxLikeMaster(ctx, d, applyPeer, applyUser, redelivery, applyRandom, "hello")
+	if err == nil {
+		t.Fatal("master redelivery inserted again")
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM messages WHERE user_id=?`, applyUser); n != 1 {
+		t.Fatalf("message rows=%d", n)
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM messages WHERE user_id=? AND user_message_box_id=?`, applyUser, redelivery); n != 0 {
+		t.Fatal("redelivery box was stored")
+	}
+	if unread, top := dialogState(t, d, applyUser, mtproto.PEER_USER, applyPeer); unread != 1 || top != stored {
+		t.Fatalf("after master redelivery unread=%d top=%d", unread, top)
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM user_pts_updates WHERE user_id=?`, applyUser); n != 1 {
+		t.Fatalf("pts rows=%d, master handler persists only after a nil error", n)
 	}
 }
 
@@ -258,8 +297,8 @@ func TestPtsFaultDoesNotStealAnotherRPC(t *testing.T) {
 	if stored.Pts != retryPts || stored.Count != 1 || (retryPts-stored.Count) != retryPts-1 {
 		t.Fatalf("stored %+v", stored)
 	}
-	// The read update is applicable from the pts before it. The burned number
-	// is not reused, so a client still sitting under that hole cannot jump it.
+	// SelectByGtPts returns later rows, so the read update is still reachable
+	// from the pts before it. The burned number is not written and is not reused.
 	if gaps, err := d.CheckPtsContinuity(ctx, user, readPts-1); err != nil || len(gaps) != 0 {
 		t.Fatalf("read update not applicable: %v %v", gaps, err)
 	}
@@ -362,6 +401,17 @@ func openInboxApplyDB(t *testing.T) *Dao {
 			random_id BIGINT NOT NULL DEFAULT 0,
 			message_data JSON NULL,
 			message VARCHAR(6000) NOT NULL DEFAULT '',
+			mentioned TINYINT NOT NULL DEFAULT 0,
+			media_unread TINYINT NOT NULL DEFAULT 0,
+			pinned TINYINT NOT NULL DEFAULT 0,
+			dialog_id1 BIGINT NOT NULL DEFAULT 0,
+			dialog_id2 BIGINT NOT NULL DEFAULT 0,
+			dialog_message_id BIGINT NOT NULL DEFAULT 0,
+			message_filter_type INT NOT NULL DEFAULT 0,
+			saved_peer_type INT NOT NULL DEFAULT 0,
+			saved_peer_id BIGINT NOT NULL DEFAULT 0,
+			date2 BIGINT NOT NULL DEFAULT 0,
+			ttl_period INT NOT NULL DEFAULT 0,
 			deleted TINYINT NOT NULL DEFAULT 0,
 			UNIQUE KEY box_id (user_id, user_message_box_id)
 		)`,
@@ -372,6 +422,7 @@ func openInboxApplyDB(t *testing.T) *Dao {
 			peer_id BIGINT NOT NULL,
 			peer_dialog_id BIGINT NOT NULL,
 			top_message INT NOT NULL DEFAULT 0,
+			pinned_msg_id INT NOT NULL DEFAULT 0,
 			unread_count INT NOT NULL DEFAULT 0,
 			unread_mentions_count INT NOT NULL DEFAULT 0,
 			read_inbox_max_id INT NOT NULL DEFAULT 0,
@@ -401,11 +452,31 @@ func openInboxApplyDB(t *testing.T) *Dao {
 			applied TINYINT NOT NULL DEFAULT 0,
 			PRIMARY KEY (user_id, box_id)
 		)`,
+		`CREATE TABLE inbox_random (
+			user_id BIGINT NOT NULL,
+			random_id BIGINT NOT NULL,
+			sender_user_id BIGINT NOT NULL,
+			box_id INT NOT NULL,
+			PRIMARY KEY (user_id, random_id, sender_user_id)
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err = db.Exec(context.Background(), stmt); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err = db.Exec(context.Background(), `CREATE TRIGGER messages_inbox_random_guard
+BEFORE INSERT ON messages
+FOR EACH ROW
+BEGIN
+  IF NEW.random_id <> 0 AND EXISTS (
+    SELECT 1 FROM inbox_random
+    WHERE user_id = NEW.user_id AND random_id = NEW.random_id AND sender_user_id = NEW.sender_user_id
+  ) THEN
+    SIGNAL SQLSTATE '23000' SET MYSQL_ERRNO = 1062, MESSAGE_TEXT = 'Duplicate inbox random_id';
+  END IF;
+END`); err != nil {
+		t.Fatal(err)
 	}
 	d := &Dao{Mysql: NewMysqlDao(db, 0)}
 	var n atomic.Int32
@@ -488,13 +559,50 @@ func dataobjectMessage(user, peer int64, box int32, text string) *dataobject.Mes
 	}
 }
 
-func oldForward(t *testing.T, d *Dao, user int64, peerType int32, peer int64, top, unread int32) error {
-	t.Helper()
-	_, err := d.DB.Exec(context.Background(), `INSERT INTO dialogs (user_id, peer_type, peer_id, peer_dialog_id, top_message, unread_count, unread_mentions_count, draft_message_data, date2)
-VALUES (?,?,?,?,?,?,0,'null',?)
-ON DUPLICATE KEY UPDATE top_message = GREATEST(top_message, VALUES(top_message)), unread_count = unread_count + VALUES(unread_count), date2 = GREATEST(date2, VALUES(date2))`,
-		user, peerType, peer, mtproto.MakePeerDialogId(peerType, peer), top, unread, int64(top))
+// sendInboxLikeMaster is the persistence in origin/master sendMessageToInbox
+// at 0fe2b9e56. It allocates the given box id, inserts through
+// InsertOrReturnIdTx, and only then adds unread with InsertOrUpdateForward.
+// It does not look up random_id. Pts is allocated only after that returns nil,
+// which is when the master handler calls persistPtsUpdate.
+func sendInboxLikeMaster(ctx context.Context, d *Dao, fromID, toID int64, boxID int32, randomID int64, text string) error {
+	err := d.DB.Transact(ctx, func(tx *sqlx.Tx) error {
+		_, _, err := d.MessagesDAO.InsertOrReturnIdTx(tx, inboxMessageDO(toID, fromID, boxID, randomID, text))
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	_, _, err = d.DialogsDAO.InsertOrUpdateForward(ctx, &dataobject.DialogsDO{
+		UserId:           toID,
+		PeerType:         mtproto.PEER_USER,
+		PeerId:           fromID,
+		PeerDialogId:     mtproto.MakePeerDialogId(mtproto.PEER_USER, fromID),
+		TopMessage:       boxID,
+		UnreadCount:      1,
+		DraftMessageData: "null",
+		Date2:            int64(boxID),
+	})
+	if err != nil {
+		return err
+	}
+	pts := d.nextUserPts(ctx, toID)
+	_, err = d.DB.Exec(ctx, `INSERT INTO user_pts_updates (user_id, pts, pts_count, update_type, update_data, date2) VALUES (?,?,?,?,?,?)`,
+		toID, pts, 1, mtproto.PTS_UPDATE_NEW_MESSAGE, fmt.Sprintf(`{"predicate_name":"updateNewMessage","pts_INT32":%d,"pts_count":1}`, pts), int64(boxID))
 	return err
+}
+
+func inboxMessageDO(userID, senderID int64, boxID int32, randomID int64, text string) *dataobject.MessagesDO {
+	return &dataobject.MessagesDO{
+		UserId:           userID,
+		UserMessageBoxId: boxID,
+		SenderUserId:     senderID,
+		PeerType:         mtproto.PEER_USER,
+		PeerId:           senderID,
+		RandomId:         randomID,
+		Message:          text,
+		MessageData:      fmt.Sprintf(`{"predicate_name":"message","id":%d,"message":%q}`, boxID, text),
+		Date2:            int64(boxID),
+	}
 }
 
 func textMessage(box int32, text string) *mtproto.Message {
