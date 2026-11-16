@@ -2,7 +2,9 @@ package chatbox
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -425,6 +427,45 @@ func TestEditQuickReplyHashFollowsEditDate(t *testing.T) {
 	}
 }
 
+func TestQuickReplySameSecondHashStays(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	ctx := context.Background()
+	owner := qrKey(45)
+	b := newBook(newMemDocs())
+	b.now = fixedNow
+	sid, first, _ := captureOwned(t, b, owner, qrKey(46))
+	firstText := "one"
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, first, &firstText, nil); err != nil {
+		t.Fatal(err)
+	}
+	page, err := b.QuickReplyMessages(ctx, owner, sid, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := hashQuickMessages(page.GetMessages())
+	secondText := "two"
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, first, &secondText, nil); err != nil {
+		t.Fatal(err)
+	}
+	stored := storedText(t, b, owner, sid, first)
+	if stored.GetMessage() != "two" || stored.GetEditDate().GetValue() != int32(fixedNow().Unix()) {
+		t.Fatalf("stored %+v", stored)
+	}
+	again, err := b.QuickReplyMessages(ctx, owner, sid, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hashQuickMessages(again.GetMessages()) != hash {
+		t.Fatal("same-second edit changed the client hash")
+	}
+	cached, err := b.QuickReplyMessages(ctx, owner, sid, nil, hash)
+	if err != nil || cached.GetPredicateName() != mtproto.Predicate_messages_messagesNotModified {
+		t.Fatalf("same-second hash %+v %v", cached, err)
+	}
+}
+
 func TestEditQuickReplyReplacesMediaAndClearsCaption(t *testing.T) {
 	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
 		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
@@ -501,8 +542,14 @@ func TestChatboxDocSaveDropsAStaleSnapshot(t *testing.T) {
 	}
 }
 
+type quickStore interface {
+	Load(ctx context.Context, key string) ([]byte, bool, error)
+	Save(ctx context.Context, key string, raw []byte) error
+	SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error)
+}
+
 type freezeDocs struct {
-	inner  *memDocs
+	inner  quickStore
 	mu     sync.Mutex
 	armed  bool
 	loads  int
@@ -583,4 +630,288 @@ func mustMessages(t *testing.T, b *Book, owner int64, sid int32) []*mtproto.Mess
 		t.Fatal(err)
 	}
 	return page.GetMessages()
+}
+
+func (f *freezeDocs) arm(t *testing.T, owner int64) {
+	t.Helper()
+	raw, ok, err := f.inner.Load(context.Background(), quickKey(owner))
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.freeze = append([]byte(nil), raw...)
+	f.armed = true
+	f.loads = 0
+	f.mu.Unlock()
+}
+
+func (f *freezeDocs) disarm() {
+	f.mu.Lock()
+	f.armed = false
+	f.mu.Unlock()
+}
+
+func openClash(t *testing.T, inner quickStore, owner, from int64) (gate *freezeDocs, a *Book, sid, first, second int32) {
+	t.Helper()
+	gate = &freezeDocs{inner: inner}
+	a = newBook(gate)
+	a.now = fixedNow
+	sid, first, second = captureOwned(t, a, owner, from)
+	gate.arm(t, owner)
+	return gate, a, sid, first, second
+}
+
+func runClash(t *testing.T, a, b *Book, left, right func() error) {
+	t.Helper()
+	errs := make(chan error, 2)
+	go func() { errs <- left() }()
+	go func() { errs <- right() }()
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestQuickReplyMixedWriters(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	t.Run("memory", func(t *testing.T) {
+		mixWriters(t, newMemDocs(), 81)
+		writerFailureAndOtherUser(t)
+	})
+	t.Run("mysql", func(t *testing.T) {
+		db := openLoopbackMySQL(t)
+		t.Cleanup(func() { _ = db.Close() })
+		mixWriters(t, sqlDocs{db: db}, 181)
+	})
+}
+
+func mixWriters(t *testing.T, inner quickStore, slot int) {
+	t.Helper()
+	ctx := context.Background()
+	owner := qrKey(slot)
+	from := qrKey(slot + 1)
+	self := mtproto.MakePeerUtil(mtproto.PEER_SELF, owner)
+	shortcut := mtproto.MakeTLInputQuickReplyShortcut(&mtproto.InputQuickReplyShortcut{Shortcut: "owned"}).To_InputQuickReplyShortcut()
+
+	gate, a, sid, first, second := openClash(t, inner, owner, from)
+	b := newBook(gate)
+	b.now = fixedNow
+	text := "kept-by-edit"
+	runClash(t, a, b,
+		func() error {
+			_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil)
+			return err
+		},
+		func() error {
+			_, err := b.CaptureQuickReply(ctx, owner, self, shortcut, []*mtproto.Message{{Message: "third"}})
+			return err
+		},
+	)
+	view := newBook(inner)
+	got := map[int32]string{}
+	for _, m := range mustMessages(t, view, owner, sid) {
+		got[m.GetId()] = m.GetMessage()
+	}
+	if got[first] != "kept-by-edit" || got[second] != "second" || len(got) != 3 {
+		t.Fatalf("edit vs capture %#v", got)
+	}
+	var sawThird bool
+	for _, msg := range got {
+		if msg == "third" {
+			sawThird = true
+		}
+	}
+	if !sawThird {
+		t.Fatalf("capture lost %#v", got)
+	}
+
+	owner = qrKey(slot + 2)
+	gate, a, sid, first, second = openClash(t, inner, owner, from)
+	b = newBook(gate)
+	b.now = fixedNow
+	runClash(t, a, b,
+		func() error {
+			_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil)
+			return err
+		},
+		func() error {
+			_, err := b.DeleteQuickReplyMessages(ctx, owner, sid, []int32{second})
+			return err
+		},
+	)
+	view = newBook(inner)
+	left := mustMessages(t, view, owner, sid)
+	if len(left) != 1 || left[0].GetId() != first || left[0].GetMessage() != "kept-by-edit" {
+		t.Fatalf("edit vs delete %#v", left)
+	}
+
+	owner = qrKey(slot + 3)
+	gate, a, sid, first, _ = openClash(t, inner, owner, from)
+	b = newBook(gate)
+	b.now = fixedNow
+	runClash(t, a, b,
+		func() error {
+			_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil)
+			return err
+		},
+		func() error {
+			_, err := b.EditQuickReplyShortcut(ctx, owner, sid, "renamed")
+			return err
+		},
+	)
+	view = newBook(inner)
+	page, err := view.QuickReplies(ctx, owner, 0)
+	if err != nil || len(page.GetQuickReplies()) != 1 || page.GetQuickReplies()[0].GetShortcut() != "renamed" {
+		t.Fatalf("rename %+v %v", page, err)
+	}
+	if storedText(t, view, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("rename restored the old message")
+	}
+
+	owner = qrKey(slot + 4)
+	gate, a, sid, first, _ = openClash(t, inner, owner, from)
+	gate.disarm()
+	if _, err := a.CaptureQuickReply(ctx, owner, self, mtproto.MakeTLInputQuickReplyShortcut(&mtproto.InputQuickReplyShortcut{Shortcut: "later"}).To_InputQuickReplyShortcut(), []*mtproto.Message{{Message: "other"}}); err != nil {
+		t.Fatal(err)
+	}
+	page, err = a.QuickReplies(ctx, owner, 0)
+	if err != nil || len(page.GetQuickReplies()) != 2 {
+		t.Fatalf("two shortcuts %+v %v", page, err)
+	}
+	otherID := page.GetQuickReplies()[1].GetShortcutId()
+	gate.arm(t, owner)
+	b = newBook(gate)
+	b.now = fixedNow
+	order := []int32{otherID, sid}
+	runClash(t, a, b,
+		func() error {
+			_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil)
+			return err
+		},
+		func() error {
+			_, err := b.ReorderQuickReplies(ctx, owner, order)
+			return err
+		},
+	)
+	view = newBook(inner)
+	page, err = view.QuickReplies(ctx, owner, 0)
+	if err != nil || len(page.GetQuickReplies()) != 2 || page.GetQuickReplies()[0].GetShortcutId() != otherID || page.GetQuickReplies()[1].GetShortcutId() != sid {
+		t.Fatalf("reorder %+v %v", page, err)
+	}
+	if storedText(t, view, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("reorder restored the old message")
+	}
+}
+
+func writerFailureAndOtherUser(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	owner := qrKey(91)
+	from := qrKey(92)
+	docs := &flakyDocs{inner: newMemDocs()}
+	b := newBook(docs)
+	b.now = fixedNow
+	sid, first, _ := captureOwned(t, b, owner, from)
+	text := "kept-by-edit"
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil); err != nil {
+		t.Fatal(err)
+	}
+	docs.fail = true
+	self := mtproto.MakePeerUtil(mtproto.PEER_SELF, owner)
+	shortcut := mtproto.MakeTLInputQuickReplyShortcut(&mtproto.InputQuickReplyShortcut{Shortcut: "owned"}).To_InputQuickReplyShortcut()
+	if _, err := b.CaptureQuickReply(ctx, owner, self, shortcut, []*mtproto.Message{{Message: "third"}}); err == nil || err.Error() != "injected quick-reply save failure" {
+		t.Fatalf("capture failure: %v", err)
+	}
+	if storedText(t, b, owner, sid, first).GetMessage() != "kept-by-edit" || len(mustMessages(t, b, owner, sid)) != 2 {
+		t.Fatal("failed capture changed the edited shortcut")
+	}
+	docs.fail = false
+	if _, err := b.CaptureQuickReply(ctx, owner, self, shortcut, []*mtproto.Message{{Message: "third"}}); err != nil {
+		t.Fatal(err)
+	}
+	if storedText(t, b, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("retried capture restored the old message")
+	}
+
+	other := qrKey(93)
+	if _, err := b.DeleteQuickReplyMessages(ctx, other, sid, []int32{first}); err != mtproto.ErrShortcutInvalid {
+		t.Fatalf("other delete: %v", err)
+	}
+	if _, err := b.EditQuickReplyShortcut(ctx, other, sid, "stolen"); err != mtproto.ErrShortcutInvalid {
+		t.Fatalf("other rename: %v", err)
+	}
+	if _, err := b.ReorderQuickReplies(ctx, other, []int32{sid}); err != mtproto.ErrShortcutInvalid {
+		t.Fatalf("other reorder: %v", err)
+	}
+	if _, err := b.DeleteQuickReplyShortcut(ctx, other, sid); err != mtproto.ErrShortcutInvalid {
+		t.Fatalf("other drop: %v", err)
+	}
+	if _, err := b.CaptureQuickReply(ctx, other, mtproto.MakePeerUtil(mtproto.PEER_SELF, other), mtproto.MakeTLInputQuickReplyShortcut(&mtproto.InputQuickReplyShortcut{Shortcut: "mine"}).To_InputQuickReplyShortcut(), []*mtproto.Message{{Message: "theirs"}}); err != nil {
+		t.Fatal(err)
+	}
+	if storedText(t, b, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("other account wrote the owner shortcut")
+	}
+	page, err := b.QuickReplies(ctx, owner, 0)
+	if err != nil || len(page.GetQuickReplies()) != 1 || page.GetQuickReplies()[0].GetShortcut() != "owned" {
+		t.Fatalf("owner shortcut %+v %v", page, err)
+	}
+}
+
+func openLoopbackMySQL(t *testing.T) *sql.DB {
+	t.Helper()
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	// Loopback fixture only. This is not a configured or production account.
+	candidates := []string{
+		"qrtest:qrtest-local@tcp(127.0.0.1:3306)/",
+		"root:@tcp(127.0.0.1:3306)/",
+		"root:root@tcp(127.0.0.1:3306)/",
+	}
+	var last error
+	var admin *sql.DB
+	var base string
+	for _, dsn := range candidates {
+		db, err := sql.Open("mysql", dsn)
+		if err != nil {
+			last = err
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		err = db.PingContext(ctx)
+		cancel()
+		if err != nil {
+			_ = db.Close()
+			last = err
+			continue
+		}
+		admin = db
+		base = dsn
+		break
+	}
+	if admin == nil {
+		t.Skipf("loopback mysql unavailable: %v", last)
+	}
+	schema := fmt.Sprintf("qr_mix_%d", os.Getpid())
+	if _, err := admin.Exec("CREATE DATABASE `" + schema + "`"); err != nil {
+		_ = admin.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec("DROP DATABASE IF EXISTS `" + schema + "`")
+		_ = admin.Close()
+	})
+	scoped, err := sql.Open("mysql", base+schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scoped.Exec(docSchema); err != nil {
+		_ = scoped.Close()
+		t.Fatal(err)
+	}
+	return scoped
 }

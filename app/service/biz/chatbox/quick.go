@@ -123,21 +123,18 @@ func (b *Book) EditQuickReplyShortcut(ctx context.Context, user int64, shortcutI
 	if !ok {
 		return nil, mtproto.ErrShortcutInvalid
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	doc, err := b.loadQuick(ctx, user)
+	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
+		idx := indexShortcut(doc, shortcutID)
+		if idx < 0 {
+			return mtproto.ErrShortcutInvalid
+		}
+		if other := findShortcut(doc, norm); other >= 0 && other != idx {
+			return mtproto.ErrShortcutInvalid
+		}
+		doc.Shortcuts[idx].Name = norm
+		return nil
+	})
 	if err != nil {
-		return nil, err
-	}
-	idx := indexShortcut(doc, shortcutID)
-	if idx < 0 {
-		return nil, mtproto.ErrShortcutInvalid
-	}
-	if other := findShortcut(doc, norm); other >= 0 && other != idx {
-		return nil, mtproto.ErrShortcutInvalid
-	}
-	doc.Shortcuts[idx].Name = norm
-	if err := b.storeQuick(ctx, user, doc); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil
@@ -145,18 +142,15 @@ func (b *Book) EditQuickReplyShortcut(ctx context.Context, user int64, shortcutI
 
 // DeleteQuickReplyShortcut removes a shortcut and its messages.
 func (b *Book) DeleteQuickReplyShortcut(ctx context.Context, user int64, shortcutID int32) (*mtproto.Bool, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	doc, err := b.loadQuick(ctx, user)
+	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
+		idx := indexShortcut(doc, shortcutID)
+		if idx < 0 {
+			return mtproto.ErrShortcutInvalid
+		}
+		doc.Shortcuts = append(doc.Shortcuts[:idx], doc.Shortcuts[idx+1:]...)
+		return nil
+	})
 	if err != nil {
-		return nil, err
-	}
-	idx := indexShortcut(doc, shortcutID)
-	if idx < 0 {
-		return nil, mtproto.ErrShortcutInvalid
-	}
-	doc.Shortcuts = append(doc.Shortcuts[:idx], doc.Shortcuts[idx+1:]...)
-	if err := b.storeQuick(ctx, user, doc); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil
@@ -164,31 +158,28 @@ func (b *Book) DeleteQuickReplyShortcut(ctx context.Context, user int64, shortcu
 
 // ReorderQuickReplies applies order as a permutation of every shortcut id.
 func (b *Book) ReorderQuickReplies(ctx context.Context, user int64, order []int32) (*mtproto.Bool, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	doc, err := b.loadQuick(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-	if len(order) != len(doc.Shortcuts) {
-		return nil, mtproto.ErrShortcutInvalid
-	}
-	byID := map[int32]quickShortcut{}
-	for _, sc := range doc.Shortcuts {
-		byID[sc.ID] = sc
-	}
-	next := make([]quickShortcut, 0, len(order))
-	seen := map[int32]bool{}
-	for _, id := range order {
-		sc, ok := byID[id]
-		if !ok || seen[id] {
-			return nil, mtproto.ErrShortcutInvalid
+	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
+		if len(order) != len(doc.Shortcuts) {
+			return mtproto.ErrShortcutInvalid
 		}
-		seen[id] = true
-		next = append(next, sc)
-	}
-	doc.Shortcuts = next
-	if err := b.storeQuick(ctx, user, doc); err != nil {
+		byID := map[int32]quickShortcut{}
+		for _, sc := range doc.Shortcuts {
+			byID[sc.ID] = sc
+		}
+		next := make([]quickShortcut, 0, len(order))
+		seen := map[int32]bool{}
+		for _, id := range order {
+			sc, ok := byID[id]
+			if !ok || seen[id] {
+				return mtproto.ErrShortcutInvalid
+			}
+			seen[id] = true
+			next = append(next, sc)
+		}
+		doc.Shortcuts = next
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil
@@ -223,34 +214,39 @@ func (b *Book) EditQuickReplyMessage(ctx context.Context, user int64, shortcutID
 // can push that update so a missed sync still reaches other sessions.
 // A failed save leaves the previous document in place.
 //
-// chatbox_doc Save replaces the whole document and has no version. Two
-// processes that each loaded the same snapshot can drop one edit. This
-// path stores only when the loaded bytes are still current, and reapplies
-// on the document that won the race. It does not change Save for other
-// documents.
+// Every quick: writer reloads and reapplies when the stored bytes changed.
+// Capture, delete, rename, and reorder share this path with the edit, so a
+// stale snapshot cannot put an older message body back. Save on other
+// document keys is unchanged.
 func (b *Book) EditQuickReply(ctx context.Context, user int64, shortcutID, msgID int32, edit QuickReplyEdit) (*mtproto.Updates, error) {
 	if shortcutID == 0 || msgID == 0 {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
-	for try := 0; try < 8; try++ {
-		ups, retry, err := b.editQuickReplyOnce(ctx, user, shortcutID, msgID, edit)
-		if !retry {
-			return ups, err
+	var ups *mtproto.Updates
+	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
+		next, err := stageQuickEdit(doc, shortcutID, msgID, edit, int32(b.now().Unix()))
+		if err != nil {
+			if err == mtproto.ErrMessageNotModified && next != nil {
+				ups = mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
+					Message_MESSAGE: next,
+				}).To_Update())
+			}
+			return err
 		}
-	}
-	return nil, mtproto.ErrInternalServerError
+		ups = mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
+			Message_MESSAGE: next,
+		}).To_Update())
+		return nil
+	})
+	return ups, err
 }
 
-func (b *Book) editQuickReplyOnce(ctx context.Context, user int64, shortcutID, msgID int32, edit QuickReplyEdit) (*mtproto.Updates, bool, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	doc, prevRaw, err := b.readQuick(ctx, user)
-	if err != nil {
-		return nil, false, err
-	}
+// stageQuickEdit mutates doc when the edit changes the message.
+// MESSAGE_NOT_MODIFIED returns the stored message and leaves doc unchanged.
+func stageQuickEdit(doc *quickDoc, shortcutID, msgID int32, edit QuickReplyEdit, now int32) (*mtproto.Message, error) {
 	sc := shortcutByID(doc, shortcutID)
 	if sc == nil {
-		return nil, false, mtproto.ErrShortcutInvalid
+		return nil, mtproto.ErrShortcutInvalid
 	}
 	for i := range sc.Messages {
 		if sc.Messages[i].ID != msgID {
@@ -258,7 +254,7 @@ func (b *Book) editQuickReplyOnce(ctx context.Context, user int64, shortcutID, m
 		}
 		cur := &mtproto.Message{}
 		if err := proto.Unmarshal(sc.Messages[i].Raw, cur); err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		next := proto.Clone(cur).(*mtproto.Message)
 		if edit.Text != nil {
@@ -277,32 +273,20 @@ func (b *Book) editQuickReplyOnce(ctx context.Context, user int64, shortcutID, m
 			next.Media = mtproto.KeepTodoCompletions(next.GetMedia(), edit.Media)
 		}
 		if edit.Text != nil && *edit.Text == "" && !quickMediaHoldsCaption(next.GetMedia()) {
-			return nil, false, mtproto.ErrMessageEmpty
+			return nil, mtproto.ErrMessageEmpty
 		}
-		ups := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
-			Message_MESSAGE: next,
-		}).To_Update())
 		if mtproto.MessageContentUnchanged(cur, next) {
-			ups.Updates[0].Message_MESSAGE = cur
-			return ups, false, mtproto.ErrMessageNotModified
+			return cur, mtproto.ErrMessageNotModified
 		}
-		next.EditDate = wrapperspb.Int32(int32(b.now().Unix()))
+		next.EditDate = wrapperspb.Int32(now)
 		raw, err := proto.Marshal(next)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		sc.Messages[i].Raw = raw
-		applied, err := b.commitQuick(ctx, user, prevRaw, doc)
-		if err != nil {
-			return nil, false, err
-		}
-		if !applied {
-			return nil, true, nil
-		}
-		ups.Updates[0].Message_MESSAGE = next
-		return ups, false, nil
+		return next, nil
 	}
-	return nil, false, mtproto.ErrMessageIdInvalid
+	return nil, mtproto.ErrMessageIdInvalid
 }
 
 // quickCAS is a compare-and-swap on one document. SaveIf reports false when
@@ -369,6 +353,11 @@ func (b *Book) commitQuick(ctx context.Context, user int64, prev []byte, doc *qu
 // (core.telegram.org/api/offsets, MediaDataController.calcHash). The send
 // date does not change on edit, so a hash of id and date stayed
 // NotModified after the text changed.
+//
+// Two edits in the same unix second keep the same edit_date, so this hash
+// stays valid and a client that missed the push can still be told
+// NotModified. That is the client hash. edit_date is not moved forward to
+// avoid it, and the hash is not given extra fields.
 func hashQuickMessages(msgs []*mtproto.Message) int64 {
 	var acc int64
 	for _, m := range msgs {
@@ -396,41 +385,37 @@ func (b *Book) DeleteQuickReplyMessages(ctx context.Context, user int64, shortcu
 	if len(ids) == 0 {
 		return nil, mtproto.ErrMessageIdsEmpty
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	doc, err := b.loadQuick(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-	sc := shortcutByID(doc, shortcutID)
-	if sc == nil {
-		return nil, mtproto.ErrShortcutInvalid
-	}
-	drop := map[int32]bool{}
-	for _, id := range ids {
-		if id <= 0 || !quickHas(sc, id) {
-			return nil, mtproto.ErrMessageIdInvalid
+	var ups *mtproto.Updates
+	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
+		sc := shortcutByID(doc, shortcutID)
+		if sc == nil {
+			return mtproto.ErrShortcutInvalid
 		}
-		drop[id] = true
-	}
-	kept := sc.Messages[:0]
-	for _, m := range sc.Messages {
-		if !drop[m.ID] {
-			kept = append(kept, m)
+		drop := map[int32]bool{}
+		for _, id := range ids {
+			if id <= 0 || !quickHas(sc, id) {
+				return mtproto.ErrMessageIdInvalid
+			}
+			drop[id] = true
 		}
-	}
-	sc.Messages = kept
-	if err := b.storeQuick(ctx, user, doc); err != nil {
-		return nil, err
-	}
-	card := shortcutCard(sc)
-	return mtproto.MakeUpdatesByUpdates(
-		mtproto.MakeTLUpdateNewQuickReply(&mtproto.Update{QuickReply: card}).To_Update(),
-		mtproto.MakeTLUpdateDeleteQuickReplyMessages(&mtproto.Update{
-			ShortcutId: shortcutID,
-			Messages:   append([]int32(nil), ids...),
-		}).To_Update(),
-	), nil
+		kept := make([]quickMsg, 0, len(sc.Messages))
+		for _, m := range sc.Messages {
+			if !drop[m.ID] {
+				kept = append(kept, m)
+			}
+		}
+		sc.Messages = kept
+		card := shortcutCard(sc)
+		ups = mtproto.MakeUpdatesByUpdates(
+			mtproto.MakeTLUpdateNewQuickReply(&mtproto.Update{QuickReply: card}).To_Update(),
+			mtproto.MakeTLUpdateDeleteQuickReplyMessages(&mtproto.Update{
+				ShortcutId: shortcutID,
+				Messages:   append([]int32(nil), ids...),
+			}).To_Update(),
+		)
+		return nil
+	})
+	return ups, err
 }
 
 // PrepareQuickReplySend copies shortcut messages for messages.sendQuickReplyMessages.
@@ -494,65 +479,88 @@ func (b *Book) CaptureQuickReply(ctx context.Context, user int64, peer *mtproto.
 	if len(msgs) == 0 {
 		return nil, mtproto.ErrMessageEmpty
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	doc, err := b.loadQuick(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-	idx, err := resolveShortcut(doc, shortcut)
-	if err != nil {
-		return nil, err
-	}
-	var sc *quickShortcut
-	if idx < 0 {
-		if len(doc.Shortcuts) >= maxQuickReplies {
-			return nil, mtproto.ErrQuickRepliesTooMuch
-		}
-		norm, ok := normalizeShortcut(shortcut.GetShortcut())
-		if !ok {
-			return nil, mtproto.ErrShortcutInvalid
-		}
-		doc.NextID++
-		doc.Shortcuts = append(doc.Shortcuts, quickShortcut{ID: doc.NextID, Name: norm})
-		idx = len(doc.Shortcuts) - 1
-	}
-	sc = &doc.Shortcuts[idx]
-	if len(sc.Messages)+len(msgs) > maxQuickReplyMessages {
-		return nil, mtproto.ErrQuickRepliesTooMuch
-	}
-	var updates []*mtproto.Update
-	now := int32(b.now().Unix())
-	for _, src := range msgs {
-		if src == nil {
-			return nil, mtproto.ErrMessageEmpty
-		}
-		if src.GetMessage() == "" && src.GetMedia() == nil {
-			return nil, mtproto.ErrMessageEmpty
-		}
-		doc.NextMsg++
-		msg := proto.Clone(src).(*mtproto.Message)
-		msg.Id = doc.NextMsg
-		msg.Date = now
-		msg.Out = true
-		msg.QuickReplyShortcutId = wrapperspb.Int32(sc.ID)
-		raw, err := proto.Marshal(msg)
+	var ups *mtproto.Updates
+	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
+		idx, err := resolveShortcut(doc, shortcut)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		sc.Messages = append(sc.Messages, quickMsg{ID: msg.Id, Raw: raw})
-		updates = append(updates, mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
-			Message_MESSAGE: msg,
-		}).To_Update())
+		if idx < 0 {
+			if len(doc.Shortcuts) >= maxQuickReplies {
+				return mtproto.ErrQuickRepliesTooMuch
+			}
+			norm, ok := normalizeShortcut(shortcut.GetShortcut())
+			if !ok {
+				return mtproto.ErrShortcutInvalid
+			}
+			doc.NextID++
+			doc.Shortcuts = append(doc.Shortcuts, quickShortcut{ID: doc.NextID, Name: norm})
+			idx = len(doc.Shortcuts) - 1
+		}
+		sc := &doc.Shortcuts[idx]
+		if len(sc.Messages)+len(msgs) > maxQuickReplyMessages {
+			return mtproto.ErrQuickRepliesTooMuch
+		}
+		var updates []*mtproto.Update
+		now := int32(b.now().Unix())
+		for _, src := range msgs {
+			if src == nil {
+				return mtproto.ErrMessageEmpty
+			}
+			if src.GetMessage() == "" && src.GetMedia() == nil {
+				return mtproto.ErrMessageEmpty
+			}
+			doc.NextMsg++
+			msg := proto.Clone(src).(*mtproto.Message)
+			msg.Id = doc.NextMsg
+			msg.Date = now
+			msg.Out = true
+			msg.QuickReplyShortcutId = wrapperspb.Int32(sc.ID)
+			raw, err := proto.Marshal(msg)
+			if err != nil {
+				return err
+			}
+			sc.Messages = append(sc.Messages, quickMsg{ID: msg.Id, Raw: raw})
+			updates = append(updates, mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
+				Message_MESSAGE: msg,
+			}).To_Update())
+		}
+		card := shortcutCard(sc)
+		updates = append([]*mtproto.Update{
+			mtproto.MakeTLUpdateNewQuickReply(&mtproto.Update{QuickReply: card}).To_Update(),
+		}, updates...)
+		ups = mtproto.MakeUpdatesByUpdates(updates...)
+		return nil
+	})
+	return ups, err
+}
+
+// updateQuick applies mutate to the quick: document and stores it only when
+// the loaded bytes are still current. A lost compare reloads and runs mutate
+// again. A mutate error is returned as-is and is not retried. This is the
+// only production write path for a quick: key.
+func (b *Book) updateQuick(ctx context.Context, user int64, mutate func(*quickDoc) error) error {
+	for try := 0; try < 8; try++ {
+		b.mu.Lock()
+		doc, prev, err := b.readQuick(ctx, user)
+		if err != nil {
+			b.mu.Unlock()
+			return err
+		}
+		if err = mutate(doc); err != nil {
+			b.mu.Unlock()
+			return err
+		}
+		applied, err := b.commitQuick(ctx, user, prev, doc)
+		b.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		if applied {
+			return nil
+		}
 	}
-	if err := b.storeQuick(ctx, user, doc); err != nil {
-		return nil, err
-	}
-	card := shortcutCard(sc)
-	updates = append([]*mtproto.Update{
-		mtproto.MakeTLUpdateNewQuickReply(&mtproto.Update{QuickReply: card}).To_Update(),
-	}, updates...)
-	return mtproto.MakeUpdatesByUpdates(updates...), nil
+	return mtproto.ErrInternalServerError
 }
 
 func (b *Book) loadQuick(ctx context.Context, user int64) (*quickDoc, error) {
@@ -565,11 +573,6 @@ func (b *Book) loadQuick(ctx context.Context, user int64) (*quickDoc, error) {
 	}
 	b.quick[user] = doc
 	return doc, nil
-}
-
-func (b *Book) storeQuick(ctx context.Context, user int64, doc *quickDoc) error {
-	b.quick[user] = doc
-	return b.save(ctx, quickKey(user), doc)
 }
 
 func resolveShortcut(doc *quickDoc, in *mtproto.InputQuickReplyShortcut) (int, error) {

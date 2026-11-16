@@ -47,8 +47,7 @@ ON DUPLICATE KEY UPDATE data=VALUES(data)`, key, raw)
 
 // SaveIf replaces key only when the stored bytes are still prev.
 // An empty prev inserts. A lost compare returns false and leaves the row.
-// Quick-reply edits use this so two processes cannot overwrite each other's
-// document with a stale snapshot. Other writers still use Save.
+// Every quick: writer uses this. Save remains for other document keys.
 func (s sqlDocs) SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error) {
 	if len(prev) == 0 {
 		_, err := s.db.ExecContext(ctx, `INSERT INTO chatbox_doc (doc_key, data) VALUES (?,?)`, key, next)
