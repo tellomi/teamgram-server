@@ -10,12 +10,12 @@ import (
 
 // TestEditQuickReplyMessage is ISSUE-S-QR-EDIT-001 (表格行 89).
 // messages.editMessage with quick_reply_shortcut_id rewrites the shortcut
-// message. Phone 9996610644, code 11111, layer 232.
+// message. Phone 9996610433, code 11111, layer 232.
 func TestEditQuickReplyMessage(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := contextTimeout(2 * time.Minute)
 	defer cancel()
-	a, _ := dialPhone(t, ctx, cfg, "9996610644", "QuickA")
+	a, _ := dialPhone(t, ctx, cfg, "9996610433", "QuickA")
 	sent, err := a.Invoke(ctx, &mtproto.TLMessagesSendMessage{
 		Constructor: mtproto.CRC32_messages_sendMessage_fef48f62,
 		Peer:        inputPeerSelf(),
