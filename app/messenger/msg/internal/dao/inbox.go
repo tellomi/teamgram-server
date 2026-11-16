@@ -83,7 +83,16 @@ func crossChatReply(header *mtproto.MessageReplyHeader) bool {
 	return p.GetUserId() != 0 || p.GetChatId() != 0 || p.GetChannelId() != 0
 }
 
-func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, error) {
+func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, InboxApply, error) {
+	if clientRandomId != 0 {
+		row, err := d.messageByRandom(ctx, toUserId, fromId, clientRandomId)
+		if err != nil {
+			return nil, nil, InboxApply{}, err
+		}
+		if row != nil {
+			return d.replayExistingInbox(ctx, row)
+		}
+	}
 	var (
 		inBoxMsgId = d.IDGenClient2.NextMessageBoxId(ctx, toUserId)
 		dialogId   = mtproto.MakeDialogId(fromId, peer.PeerType, peer.PeerId)
@@ -290,7 +299,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	// TODO(@benqi): process duplicate
 
 	if tR.Err != nil {
-		return nil, nil, tR.Err
+		return nil, nil, InboxApply{}, tR.Err
 	}
 
 	var answeredRead *AnsweredCallRead
@@ -317,28 +326,24 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
 	inBox.PtsCount = 1
 
-	return inBox, answeredRead, nil
+	return inBox, answeredRead, InboxApply{PersistPts: true, Push: true}, nil
 }
 
-func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, error) {
+func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, InboxApply, error) {
 	peer := &mtproto.PeerUtil{
 		PeerType: mtproto.PEER_USER,
 		PeerId:   toId,
 	}
-	box, read, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
-	if err != nil {
-		return nil, nil, err
-	}
-	return box, read, nil
+	return d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
 }
 
-func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
+func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, InboxApply, error) {
 	peer := &mtproto.PeerUtil{
 		PeerType: mtproto.PEER_CHAT,
 		PeerId:   chatId,
 	}
-	box, _, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
-	return box, err
+	box, _, apply, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
+	return box, apply, err
 }
 
 func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int64, inBoxList []*inbox.InboxMessageData) ([]*mtproto.MessageBox, error) {
@@ -351,7 +356,7 @@ func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int6
 			PeerType: mtproto.PEER_USER,
 			PeerId:   toId,
 		}
-		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
+		inBox, _, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
 		boxList = append(boxList, inBox)
 	}
 
@@ -367,7 +372,7 @@ func (d *Dao) SendChatMultiMessageToInbox(ctx context.Context, fromId, chatId, t
 			PeerType: mtproto.PEER_CHAT,
 			PeerId:   chatId,
 		}
-		inBox, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
+		inBox, _, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
 		boxList = append(boxList, inBox)
 	}
 

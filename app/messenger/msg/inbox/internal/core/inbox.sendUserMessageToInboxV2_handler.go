@@ -160,9 +160,10 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 
 			peerType, peerID := inboxDialogPeer(in)
 			existed, folderID := c.inboxFolder(in.UserId, peerType, peerID)
+			var apply dao.InboxApply
 			switch in.PeerType {
 			case mtproto.PEER_USER:
-				inBox, answered, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
+				inBox, answered, apply, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
 					in.FromId,
 					in.PeerId,
 					inbox2.GetDialogMessageId(),
@@ -173,7 +174,7 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 					return nil, err
 				}
 			case mtproto.PEER_CHAT:
-				inBox, err = c.svcCtx.Dao.SendChatMessageToInbox(c.ctx,
+				inBox, apply, err = c.svcCtx.Dao.SendChatMessageToInbox(c.ctx,
 					in.FromId,
 					in.PeerId,
 					in.UserId,
@@ -188,6 +189,9 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				c.Logger.Errorf("inbox.sendUserMessageToInboxV2 - error: invalid peerType")
 				return mtproto.EmptyVoid, nil
 
+			}
+			if !apply.Push || inBox == nil {
+				continue
 			}
 
 			updateNewMessage := mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
@@ -249,7 +253,9 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				}
 			}
 
-			c.persistPtsUpdate(c.ctx, inBox.UserId, updateNewMessage)
+			if apply.PersistPts {
+				c.persistPtsUpdate(c.ctx, inBox.UserId, updateNewMessage)
+			}
 			if answered != nil {
 				// The message pts was allocated inside SendUserMessageToInbox
 				// and stored just above. This read takes the next pts and is

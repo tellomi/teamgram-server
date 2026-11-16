@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -63,4 +64,51 @@ func TestIdempotentFollowerReusesLeaderResult(t *testing.T) {
 		t.Fatalf("follower waited %s; a 1s poll would still be waiting", elapsed)
 	}
 	<-leaderDone
+}
+
+func TestFanoutFailureIsNotCachedAndRetryPublishesOnce(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rds, err := redis.NewRedis(redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inserted := 0
+	published := 0
+	committed := false
+	key := "idempotent#910442001@910442003"
+	type result struct {
+		OK bool `json:"ok"`
+	}
+	run := func() error {
+		var got *result
+		_, err := doIdempotent(context.Background(), rds, key, &got, 5, 30, func(_ context.Context, v any) error {
+			if !committed {
+				inserted++
+				committed = true
+				return errors.New("inbox fanout failed")
+			}
+			published++
+			*v.(**result) = &result{OK: true}
+			return nil
+		})
+		return err
+	}
+	if err := run(); err == nil {
+		t.Fatal("a publish failure after the row commit must not be cached as success")
+	}
+	if inserted != 1 || published != 0 {
+		t.Fatalf("after the failed publish inserted=%d published=%d", inserted, published)
+	}
+	if err := run(); err != nil {
+		t.Fatal(err)
+	}
+	if inserted != 1 || published != 1 {
+		t.Fatalf("retry inserted=%d published=%d, want the same row delivered once", inserted, published)
+	}
+	if err := run(); err != nil {
+		t.Fatal(err)
+	}
+	if inserted != 1 || published != 1 {
+		t.Fatalf("cached retry inserted=%d published=%d", inserted, published)
+	}
 }

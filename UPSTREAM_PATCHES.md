@@ -929,9 +929,12 @@ The sender's outbox row used to be inserted by the inbox consumer after `message
 
 That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
 
+The sender row is committed before `publishInboxFanout`. If that publish fails, or the process exits before it, the idempotency cache is not stored. The next send of the same `random_id` used to find the live row and return success without publishing, so the other party never received it. The retry now publishes the inbox again and does not insert another sender row. The publish carries the pts already stored for that box, not the user's current pts. A recipient apply of the same `random_id` does not add unread and does not allocate a second pts when that pts row exists. A deleted row is not published and its cleared body is not written back. `SyncUpdatesNotMe` still pushes `updateNewMessage` for the sender's other sessions. The server does not drop an older pts there. A client applies it only when `localPts + pts_count == pts`, so a device that already moved past that pts ignores the push, and `updates.getDifference` still has the one stored pts row.
+
 | Piece | File |
 | --- | --- |
 | outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
+| fanout retry | `msg.sendMessageV2_handler.go`, `random_replay.go`, `inbox.go` |
 | saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
 
 ## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
