@@ -709,6 +709,17 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		}
 
 		if writePts {
+			if outMsgBox.Pts <= 0 {
+				pts := d.nextUserPts(ctx, fromId)
+				if pts <= 0 {
+					result.Err = fmt.Errorf("pts allocation failed for user %d", fromId)
+					return
+				}
+				outMsgBox.Pts = pts
+				if outMsgBox.PtsCount <= 0 {
+					outMsgBox.PtsCount = 1
+				}
+			}
 			_, err = d.AddToPtsQueueTx(tx, fromId, outMsgBox.Pts, outMsgBox.PtsCount, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
 				Message_MESSAGE: outMsgBox.Message,
 				Pts_INT32:       outMsgBox.Pts,
@@ -730,6 +741,11 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 	// of a row that delete already marked deleted must not: GREATEST would
 	// put that id back on top of the older message the delete selected.
 	replay := inserted == 0
+	if replay && writePts {
+		if err := d.attachStoredPts(ctx, fromId, outMsgBox); err != nil {
+			return err
+		}
+	}
 	live, err := d.LiveMessageBoxIDs(ctx, outMsgBox.UserId, []int32{outBoxMsgId})
 	if err != nil {
 		return err
@@ -905,10 +921,10 @@ func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtp
 	}
 
 	// The inbox consumer used to be the first writer of this row. A
-	// deleteMessages that arrived after sendMessage returned, but before
-	// that consumer inserted, matched no row and skipped revoke. The row
-	// then appeared and stayed. Persist it before returning. The consumer
-	// insert sees the same random_id and does not write the body back.
+	// forward or delete that arrived after sendMessage returned, but
+	// before that consumer inserted, found no row. Persist it before
+	// returning. The consumer insert sees the same random_id and does
+	// not write the body back.
 	if out && outBoxMsgId != 0 && message != nil {
 		if err = d.SendMessageToOutboxV1NoPts(ctx, fromId, peer, outMsgBox); err != nil {
 			return nil, err
