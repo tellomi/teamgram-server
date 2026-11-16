@@ -7,15 +7,6 @@ import (
 	"github.com/zeromicro/go-zero/core/jsonx"
 )
 
-func TestFirstUnwrittenPtsFillsTheHole(t *testing.T) {
-	if pts, ok := firstUnwrittenPts(4, 5); !ok || pts != 5 {
-		t.Fatalf("tail hole pts=%d ok=%v", pts, ok)
-	}
-	if _, ok := firstUnwrittenPts(5, 5); ok {
-		t.Fatal("a caught-up counter was treated as a hole")
-	}
-}
-
 func TestChooseReplayPtsKeepsStored(t *testing.T) {
 	pts, count := chooseReplayPts(4, 1, true, 9)
 	if pts != 4 || count != 1 {
@@ -58,23 +49,19 @@ func TestUpdateCarriesBoxIgnoresPrefix(t *testing.T) {
 }
 
 func TestPlanInboxReplay(t *testing.T) {
-	first := planInboxReplay(false, false, false, false)
+	first := planInboxReplay(false, false, false)
 	if !first.Insert || !first.AddUnread || !first.PersistPts || !first.Push || !first.MoveTop {
 		t.Fatalf("first insert %#v", first)
 	}
-	pending := planInboxReplay(true, false, true, true)
-	if pending.Insert || !pending.AddUnread || pending.PersistPts || !pending.Push || !pending.MoveTop {
-		t.Fatalf("pending unread %#v", pending)
-	}
-	live := planInboxReplay(true, false, true, false)
+	live := planInboxReplay(true, false, true)
 	if live.Insert || live.AddUnread || live.PersistPts || !live.Push || !live.MoveTop {
 		t.Fatalf("applied replay %#v", live)
 	}
-	recoverPts := planInboxReplay(true, false, false, true)
-	if !recoverPts.PersistPts || !recoverPts.AddUnread || recoverPts.Insert {
+	recoverPts := planInboxReplay(true, false, false)
+	if !recoverPts.PersistPts || recoverPts.AddUnread || recoverPts.Insert {
 		t.Fatalf("pts recovery %#v", recoverPts)
 	}
-	deleted := planInboxReplay(true, true, true, true)
+	deleted := planInboxReplay(true, true, true)
 	if deleted.Insert || deleted.Push || deleted.MoveTop || deleted.AddUnread || deleted.PersistPts {
 		t.Fatalf("deleted replay %#v", deleted)
 	}

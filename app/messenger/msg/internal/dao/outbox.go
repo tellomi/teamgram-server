@@ -710,9 +710,9 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 
 		if writePts {
 			if outMsgBox.Pts <= 0 {
-				pts, err := d.chooseInboxPts(ctx, tx, fromId)
-				if err != nil {
-					result.Err = err
+				pts := d.nextUserPts(ctx, fromId)
+				if pts <= 0 {
+					result.Err = fmt.Errorf("pts allocation failed for user %d", fromId)
 					return
 				}
 				outMsgBox.Pts = pts

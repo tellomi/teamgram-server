@@ -99,7 +99,8 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		date       = time.Now().Unix()
 		message    = proto.Clone(message2).(*mtproto.Message)
 
-		dialogDO *dataobject.DialogsDO
+		dialogDO     *dataobject.DialogsDO
+		answeredRead *AnsweredCallRead
 	)
 
 	if peer.PeerType == mtproto.PEER_USER {
@@ -232,39 +233,26 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		if inserted == 0 {
 			return
 		}
-		pts, err := d.chooseInboxPts(ctx, tx, toUserId)
-		if err != nil {
-			result.Err = err
-			return
-		}
-		inBox.Pts = pts
-		inBox.PtsCount = 1
 		mentions := int32(0)
 		if inBox.Mentioned {
 			mentions = 1
 		}
-		if err = recordInboxApplyTx(tx, inboxApplyRow{
+		pts, answered, err := d.applyInboxInTx(ctx, tx, inboxApplyRow{
 			UserID:        toUserId,
 			BoxID:         inBoxMsgId,
 			PeerType:      msgPeer.PeerType,
 			PeerID:        msgPeer.PeerId,
 			UnreadDelta:   phoneCallInboxUnread(message),
 			MentionsDelta: mentions,
-			Pts:           pts,
-			PtsCount:      1,
 			Date2:         date,
-		}); err != nil {
+		}, message)
+		if err != nil {
 			result.Err = err
 			return
 		}
-		if _, err = d.AddToPtsQueueTx(tx, toUserId, pts, 1, mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
-			Message_MESSAGE: message,
-			Pts_INT32:       pts,
-			PtsCount:        1,
-		}).To_Update()); err != nil {
-			result.Err = err
-			return
-		}
+		inBox.Pts = pts
+		inBox.PtsCount = 1
+		answeredRead = answered
 
 		switch peer.PeerType {
 		case mtproto.PEER_USER:
@@ -339,10 +327,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		return nil, nil, InboxApply{}, tR.Err
 	}
 
-	answeredRead, err := d.FinishInboxDelivery(ctx, toUserId, inBoxMsgId)
-	if err != nil {
-		return nil, nil, InboxApply{}, err
-	}
+	d.invalidateDialogKeys(ctx, dialogCacheKey(toUserId, msgPeer.PeerType, msgPeer.PeerId))
 	d.ensureDialogTTL(ctx, toUserId, msgPeer)
 	if dialogDO != nil {
 		d.stampChatDecor(ctx, dialogDO.UserId, dialogDO.PeerType, dialogDO.PeerId, message)

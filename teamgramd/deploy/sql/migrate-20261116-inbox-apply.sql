@@ -1,13 +1,19 @@
--- Inbox delivery marker. The message row and this row commit together.
--- applied stays 0 until the dialog unread increment commits in the same
--- transaction as the 0 -> 1 change. A crash between those two steps leaves
--- applied = 0, and the retry adds the unread once. Existing history has no
--- row here, so a replay of an older message does not add unread.
+-- Inbox delivery marker. The message row, the dialog unread increment, and
+-- this row commit together. applied is 1 in that insert. A later replay
+-- sees the row and does not add unread again.
 --
--- Apply
---   Containers run teamgramd/deploy/migrate.sh before the processes start.
---   The script sources 0_migrate_helpers.sql, then each migrate-*.sql once.
+-- An older process does not read this table. Rolling the container back
+-- leaves the table in place. The older process still finds the message by
+-- random_id and does not add unread a second time. A transaction that
+-- rolls back leaves no message and no row, so the older process inserts
+-- the message and adds unread once.
+--
+-- Apply this file before starting a process that inserts inbox_apply.
+-- A missing table makes that insert fail. It does not report success.
+-- The file only creates a table. It does not change existing rows.
 -- Safe to run more than once.
+--
+-- Containers run teamgramd/deploy/migrate.sh before the processes start.
 
 CREATE TABLE IF NOT EXISTS `inbox_apply` (
   `user_id` bigint(20) NOT NULL,
@@ -21,9 +27,4 @@ CREATE TABLE IF NOT EXISTS `inbox_apply` (
   `date2` bigint(20) NOT NULL,
   `applied` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`user_id`, `box_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `inbox_pts_lock` (
-  `user_id` bigint(20) NOT NULL,
-  PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

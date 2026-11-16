@@ -27,18 +27,19 @@ type InboxReplayPlan struct {
 	PersistPts bool
 }
 
-func planInboxReplay(found, deleted, ptsKnown, unreadPending bool) InboxReplayPlan {
+func planInboxReplay(found, deleted, ptsKnown bool) InboxReplayPlan {
 	if !found {
 		return InboxReplayPlan{Insert: true, Push: true, MoveTop: true, AddUnread: true, PersistPts: true}
 	}
 	if deleted {
 		return InboxReplayPlan{}
 	}
+	// Unread is committed with the message. A replay must not add it again.
 	return InboxReplayPlan{
 		Insert:     false,
 		Push:       true,
 		MoveTop:    true,
-		AddUnread:  unreadPending,
+		AddUnread:  false,
 		PersistPts: !ptsKnown,
 	}
 }
@@ -46,10 +47,6 @@ func planInboxReplay(found, deleted, ptsKnown, unreadPending bool) InboxReplayPl
 func (d *Dao) replayExistingInbox(ctx context.Context, row *dataobject.MessagesDO) (*mtproto.MessageBox, *AnsweredCallRead, InboxApply, error) {
 	if row == nil {
 		return nil, nil, InboxApply{}, nil
-	}
-	answered, err := d.FinishInboxDelivery(ctx, row.UserId, row.UserMessageBoxId)
-	if err != nil {
-		return nil, nil, InboxApply{}, err
 	}
 	if row.Deleted {
 		return nil, nil, InboxApply{}, nil
@@ -62,5 +59,5 @@ func (d *Dao) replayExistingInbox(ctx context.Context, row *dataobject.MessagesD
 	if known {
 		box.Pts, box.PtsCount = pts, count
 	}
-	return box, answered, InboxApply{PersistPts: !known, Push: true}, nil
+	return box, nil, InboxApply{PersistPts: !known, Push: true}, nil
 }
