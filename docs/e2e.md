@@ -20,6 +20,9 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestHelpGetTermsOfServiceUpdate` | The default config returns `help.termsOfServiceUpdateEmpty`, and a second call stays empty. If an update is returned, accepting its id does not make the next call empty. |
 | `TestUpdatesGetStateAndDifference` | `updates.getState` / `updates.getDifference` did not return a difference object. |
 | `TestStartupRPCs` | One startup RPC returned 500, timed out, or did not decode. A 4xx is recorded and does not fail this test. Subtests are named `ios/<method>` and `android/<method>`. |
+| `TestSearchCountersPhotoVoiceAndMegagroup` | `messages.getSearchCounters` reports 0 photos, photo+video, or voice in a private chat that has them, counts a round video as a voice note, or a megagroup photo counter stays 0. `messages.search` with the photo filter misses that photo. |
+| `TestTranslateTextWithoutInputIs400` | `messages.translateText` with `to_lang` and neither `text` nor `peer`/`id` returns anything other than 400 `PEER_ID_INVALID`. |
+| `TestBasicGroupMemberCanLeaveWhenSendIsBanned` | A basic-group member banned from sending gets `CHAT_WRITE_FORBIDDEN` from `messages.deleteChatUser` of self, or `messages.getFullChat` afterwards is not `chatParticipantsForbidden`. |
 | `TestPrivateChatReadOutbox` | A's private message shows a read outbox before B calls `messages.readHistory`, or `read_outbox_max_id` never advances after B reads up to its own id for that message. |
 | `TestBasicGroupReadOutbox` | Same for a basic group. |
 | `TestSupergroupReadOutbox` | Same for a megagroup (`channels.readHistory`). |
@@ -55,6 +58,8 @@ this repo's schema. gotd's generated API layer is not used for those calls.
 | `TestMediaFileHashesAndBlobGC` | `upload.getFileHashes` does not return the 128 KiB SHA-256 parts of the file, `offset` does not skip earlier parts, a negative offset is not `OFFSET_INVALID`, deleting one message releases the blob, retention deletes the object while another `media_blob_refs` row remains, or the last reference leaves a `media_blobs` row or a `media_blob_gc` row. |
 | `TestAccountEnforcementBanAndLift` | The isolated phone or email account did not follow the sanction chain: 777000 notice delivery, a temporary freeze that still logs in and rejects `messages.sendMessage`, a permanent sign-in without a session, disposition notice and appeal, fake-model lift of only that case, or the human revoke audit. Skipped unless `TELLOMI_ENFORCEMENT_E2E=1`. |
 | `TestAccountEnforcementReportConfirm` | A user report did not reach @erel from @tellomi, 「是」 did not ban with a 777000 notice and a disposition appeal, 「否」 banned someone, or a non-admin 「是」 banned someone. Skipped unless `TELLOMI_ENFORCEMENT_E2E=1`. The model is fakebailian. |
+| `TestBasicGroupCreatorRequiresPassword` | `messages.editChatCreator` on a basic group accepts an empty proof or a non-empty fake SRP proof when the creator has no cloud password, or that proof changes the creator. With a cloud password, a fake proof still changes the creator. Accounts `basic_creator_a` / `basic_creator_b` (`9996610584` / `9996610585`). |
+| `TestSlowmodeNextSendDate` | After a member sends in a 30-second slow mode, `channels.getFullChannel` omits `slowmode_next_send_date` or the value is outside `(now, now+30]`, an admin or the creator receives that field, or turning slow mode off leaves the field set. Phones `9996610811`–`9996610813`. |
 
 Add a `Test...` function in `e2e/client` when a client bug shows up again. Keep the
 name specific (`TestPrivateChatReadOutbox`, not `TestMessages`).

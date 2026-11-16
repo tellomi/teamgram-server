@@ -204,7 +204,7 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 		if stored == nil || stored.Deleted || stored.SenderID == self {
 			continue
 		}
-		if stored.ID <= st.ReadInboxMaxID || stored.ID <= floor {
+		if stored.ID <= st.ReadInboxMaxID || stored.ID <= floor || mentionAcked(f, self, stored.ID) {
 			continue
 		}
 		if maxID > 0 && stored.ID >= maxID {
@@ -217,7 +217,7 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 		if !mentionsUser(body, self, senderOf) {
 			continue
 		}
-		hit = append(hit, viewMessage(body, stored.SenderID, self))
+		hit = append(hit, s.forViewer(ctx, channelID, body, stored.SenderID, self))
 	}
 	total := int32(len(hit))
 	hit = pageDesc(hit, offsetID, addOffset, limit)
@@ -229,6 +229,109 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 		Chats:    []*mtproto.Chat{s.ChatFor(ctx, self, ch)},
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages(), nil
+}
+
+// ReadMentions is messages.readMentions for a channel or supergroup.
+//
+// https://core.telegram.org/method/messages.readMentions
+//
+// The inbox cursor stays put, so unread_count does not change. The @ badge
+// is a separate cursor. A dialog-wide call acknowledges every current
+// message id. A topic call (top_msg_id) acknowledges only that topic, so
+// other topics keep their badge. A later mention still counts. offset is 0
+// because this call finishes the page; the client stores that as
+// unread_mentions_count.
+func (s *Service) ReadMentions(ctx context.Context, self, channelID int64, topMsgID int32) (*mtproto.Messages_AffectedHistory, error) {
+	in := &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID}
+	ch, _, err := s.requireView(ctx, self, in)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.ackMentions(ctx, self, ch, topMsgID); err != nil {
+		return nil, err
+	}
+	return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
+		Pts:      ch.Pts,
+		PtsCount: 0,
+		Offset:   0,
+	}).To_Messages_AffectedHistory(), nil
+}
+
+func (s *Service) ackMentions(ctx context.Context, self int64, ch *Channel, topMsgID int32) error {
+	f := s.features(ctx, ch.ID)
+	if topMsgID == 0 {
+		top, _ := s.liveTop(ctx, ch)
+		if top > f.MentionReadMax[self] {
+			f.MentionReadMax[self] = top
+		}
+		return s.saveFeatures(ctx, ch.ID, f)
+	}
+	ids, err := s.unreadTopicMentionIDs(ctx, self, ch, f, topMsgID)
+	if err != nil {
+		return err
+	}
+	seen := map[int32]bool{}
+	for _, id := range f.MentionRead[self] {
+		seen[id] = true
+	}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		f.MentionRead[self] = append(f.MentionRead[self], id)
+		seen[id] = true
+	}
+	return s.saveFeatures(ctx, ch.ID, f)
+}
+
+func (s *Service) unreadTopicMentionIDs(ctx context.Context, self int64, ch *Channel, f *Features, topMsgID int32) ([]int32, error) {
+	st, err := s.store.GetRead(ctx, ch.ID, self)
+	if err != nil {
+		return nil, err
+	}
+	readMax := int32(0)
+	if st != nil {
+		readMax = st.ReadInboxMaxID
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int32
+	for _, stored := range msgs {
+		if stored == nil || stored.Deleted || stored.SenderID == self || stored.ID <= readMax {
+			continue
+		}
+		if mentionAcked(f, self, stored.ID) || !sameTopic(f, stored.ID, topMsgID) {
+			continue
+		}
+		body, err := unmarshalMessage(stored.Data)
+		if err != nil || body == nil {
+			continue
+		}
+		body.Id = stored.ID
+		if s.mentionsViewer(ctx, ch.ID, body, self) {
+			ids = append(ids, stored.ID)
+		}
+	}
+	return ids, nil
+}
+
+// mentionAcked reports a mention the member has already cleared with
+// messages.readMentions. The inbox cursor is a separate check.
+func mentionAcked(f *Features, userID int64, msgID int32) bool {
+	if f == nil || msgID <= 0 {
+		return false
+	}
+	if f.MentionReadMax[userID] >= msgID {
+		return true
+	}
+	for _, id := range f.MentionRead[userID] {
+		if id == msgID {
+			return true
+		}
+	}
+	return false
 }
 
 // MessageEditData is messages.getMessageEditData for a channel message.

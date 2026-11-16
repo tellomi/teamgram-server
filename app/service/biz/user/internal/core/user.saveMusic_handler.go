@@ -40,7 +40,9 @@ func (c *UserCore) UserSaveMusic(in *user.TLUserSaveMusic) (*mtproto.Bool, error
 			c.ctx,
 			in.GetUserId(),
 			func(sz int, i int, v *dataobject.UserSavedMusicDO) {
-				if v.SavedMusicId == in.GetUserId() {
+				// Match the document id. Comparing it to the user id never
+				// hit, so unsave left the row in place.
+				if v.SavedMusicId == in.GetId() {
 					_, _ = c.svcCtx.Dao.UserSavedMusicDAO.Delete(c.ctx, in.GetUserId(), in.GetId())
 					unsaveIdx = i
 				}

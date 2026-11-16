@@ -202,7 +202,9 @@ func TestArchiveIncomingRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFolder(t, ctx, c, "user", aSelf.ID, 1)
-	if notifyMute(t, ctx, c, aSelf.ID) != archiveMuteForever {
+	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
+		return notifyMute(t, ctx, c, aSelf.ID) == archiveMuteForever, nil
+	}); err != nil {
 		t.Fatal("new non-contact was not muted")
 	}
 }
