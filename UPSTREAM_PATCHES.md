@@ -928,6 +928,16 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | delete | `saved_history_query.go` |
 | tag search | `messages.search_handler.go`, `chatbox/react.go`, `message.search_handler.go` |
 
+## Auto-archive sets peerSettings.autoarchived (ISSUE-S-AUTOARCHIVED-FLAG-001)
+
+Archiving a new non-contact set folder 1 and mute-forever, and unarchiving cleared the folder. `peerSettings.autoarchived` stayed false, including the hardcoded false when no settings row existed. `messages.getPeerSettings` already copies the column when a row is present.
+
+`archive.Apply` now writes the flag: true when the dialog is auto-archived, false when it is moved back to the main list. The write reads the current settings first, so the stranger bar (`report_spam`, `add_contact`, `block_contact`) is kept.
+
+| Piece | File |
+| --- | --- |
+| flag on archive and unarchive | `pkg/archive/apply.go`, `pkg/archive/clients.go` |
+
 ## Common supergroups (row 261)
 
 `messages.getCommonChats` intersected basic-group membership and left a `TODO` where supergroups should be added. `channel.CommonMegagroups` intersects current megagroup membership. Broadcast channels stay out. A user who is not in the groups still gets an empty list.
