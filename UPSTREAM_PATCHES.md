@@ -882,6 +882,17 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## Unpin all and topic unpin (ISSUE-S-UNPINALL-MULTI-001, ISSUE-S-UNPINALL-PRIV-001, ISSUE-S-TOPIC-UNPIN-001)
+
+Channel `UnpinAll` tracked a single `PinnedMsgID` and returned after clearing that one row, so a second pinned megagroup or topic message stayed `pinned`. `PinMessage` with `unpin` cleared the feature id and left `message.pinned` set, so pinned search still matched. The private peer's inbox built `updatePinnedMessages` and never ran `UpdateUnPinnedByIdList`, and a basic-group fan-out reused one id list across members.
+
+Unpin now clears `pinned` on the requested message and, for unpin-all, on every stored message that is still pinned. `top_msg_id` limits that clear to one forum topic. `CommitEdit` advances channel pts, and the returned `AffectedHistory.pts` is that new value. The inbox writes `pinned=0` and `dialogs.pinned_msg_id=0` before the push. Each basic-group member gets only that member's ids.
+
+| Piece | File |
+| --- | --- |
+| channel pin | `app/service/biz/channel/service_features.go` |
+| peer copy | `app/messenger/msg/inbox/internal/core/inbox.unpinAllMessages_handler.go` |
+
 ## Search counters (ISSUE-S-SEARCH-COUNTERS-001, ISSUE-S-SEARCHCOUNT-001)
 
 `messages.getSearchCounters` counted `message_filter_type = 0` for photo+video, and it returned 0 for photos, video, voice, and round video because those filters were not mapped. Stored photos are type 7 and videos are type 8. Voice notes and round videos both sit in type 2 (`MEDIA_AUDIO`); the document attribute tells them apart. Megagroup and channel posts are not in the caller's private box, so every channel counter was 0.
