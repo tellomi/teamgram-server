@@ -122,14 +122,17 @@ func TestGlobalSearchFree(t *testing.T) {
 	if rpc, ok := asRPCError(err); !ok || rpc.Message != "SEARCH_QUERY_EMPTY" {
 		t.Fatalf("empty text search %v", err)
 	}
-	urls := messagesOfResult(t, invokeOK(t, c, &mtproto.TLMessagesSearchGlobal{
-		Constructor: mtproto.CRC32_messages_searchGlobal_6126a43c,
-		Q:           "",
-		Filter:      mtproto.MakeTLInputMessagesFilterUrl(nil).To_MessagesFilter(),
-		OffsetPeer:  inputPeerEmpty(),
-		Limit:       20,
-	}))
-	if !messageHas(urls, "看这里 https://example.com/中文") {
+	var urls *mtproto.Messages_Messages
+	if err = waitUntil(ctx, 400*time.Millisecond, func() (bool, error) {
+		urls = messagesOfResult(t, invokeOK(t, c, &mtproto.TLMessagesSearchGlobal{
+			Constructor: mtproto.CRC32_messages_searchGlobal_6126a43c,
+			Q:           "",
+			Filter:      mtproto.MakeTLInputMessagesFilterUrl(nil).To_MessagesFilter(),
+			OffsetPeer:  inputPeerEmpty(),
+			Limit:       20,
+		}))
+		return messageHas(urls, "看这里 https://example.com/中文"), nil
+	}); err != nil || !messageHas(urls, "看这里 https://example.com/中文") {
 		t.Fatalf("empty url filter %+v", messageTexts(urls))
 	}
 	zh := messagesOfResult(t, invokeOK(t, c, &mtproto.TLMessagesSearchGlobal{

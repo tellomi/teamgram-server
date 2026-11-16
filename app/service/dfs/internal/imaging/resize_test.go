@@ -95,6 +95,26 @@ func TestProfileLadderStaysSquare(t *testing.T) {
 	assertLadder(t, small, wantWide, staticPNG, clientABCTypes)
 }
 
+func TestProfile320JPEG(t *testing.T) {
+	raw := solid(t, 320, 320, staticJPEG)
+	got := resizeAll(t, raw, ".jpg", true)
+	if len(got) == 0 {
+		t.Fatal("320x320 profile photo produced no sizes")
+	}
+	var sawB bool
+	for _, sz := range got {
+		if len(sz.b) == 0 {
+			t.Fatalf("empty %s", sz.szType)
+		}
+		if sz.szType == "b" && sz.w == 320 && sz.h == 320 {
+			sawB = true
+		}
+	}
+	if !sawB {
+		t.Fatalf("missing 320 b size: %+v", got)
+	}
+}
+
 func TestGovipsDecodeFailureWritesNothing(t *testing.T) {
 	calls := 0
 	err := ReSizeImage([]byte("not a jpeg"), ".jpg", false, func(string, int, int32, int32, []byte) error {

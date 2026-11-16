@@ -68,6 +68,48 @@ func UseDSN(dsn string) error {
 	return nil
 }
 
+// DeviceAllows reports whether userID still has a session that accepts
+// calls and secret chats. call_requests_disabled and
+// encrypted_requests_disabled are per device. A call or a secret chat is
+// refused only when every live session has that switch on. No rows, or no
+// database, means allow.
+func DeviceAllows(ctx context.Context, userID int64) (call bool, secret bool) {
+	call, secret = true, true
+	if userID == 0 {
+		return
+	}
+	mu.Lock()
+	conn := db
+	mu.Unlock()
+	if conn == nil {
+		return
+	}
+	rows, err := conn.QueryContext(ctx, `select call_requests_disabled, encrypted_requests_disabled from auth_users where user_id = ? and deleted = 0`, userID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	saw := false
+	callOpen, secretOpen := false, false
+	for rows.Next() {
+		var callOff, secretOff bool
+		if err = rows.Scan(&callOff, &secretOff); err != nil {
+			return true, true
+		}
+		saw = true
+		if !callOff {
+			callOpen = true
+		}
+		if !secretOff {
+			secretOpen = true
+		}
+	}
+	if !saw {
+		return true, true
+	}
+	return callOpen, secretOpen
+}
+
 func key(peerType int32, peerID int64) [2]int64 {
 	return [2]int64{int64(peerType), peerID}
 }

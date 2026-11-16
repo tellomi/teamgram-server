@@ -44,11 +44,33 @@ func (c *DialogCore) DialogClearAllDrafts(in *dialog.TLDialogClearAllDrafts) (*d
 		return nil, err
 	}
 
+	topics, err := c.loadTopicDrafts(in.UserId)
+	if err != nil {
+		c.Logger.Errorf("dialog.clearAllDrafts - topics: %v", err)
+		return nil, err
+	}
+	for _, item := range topics {
+		top := dialog.DraftTopicID(item.GetDraft())
+		if top <= 0 {
+			continue
+		}
+		rValues.Datas = append(rValues.Datas, dialog.MakeTLUpdateDraftMessage(&dialog.PeerWithDraftMessage{
+			Peer:  item.GetPeer(),
+			Draft: emptyTopicDraft(top),
+		}).To_PeerWithDraftMessage())
+	}
+
 	if len(rValues.Datas) > 0 {
 		_, err = c.svcCtx.Dao.DialogsDAO.ClearAllDrafts(c.ctx, in.UserId)
 		if err != nil {
 			c.Logger.Errorf("dialog.clearAllDrafts - error: %v", err)
 			return nil, err
+		}
+		if c.topicDraftsReady() {
+			if err = c.svcCtx.Dao.TopicDraftsDAO.ClearByUser(c.ctx, in.UserId); err != nil {
+				c.Logger.Errorf("dialog.clearAllDrafts - topics: %v", err)
+				return nil, err
+			}
 		}
 	}
 

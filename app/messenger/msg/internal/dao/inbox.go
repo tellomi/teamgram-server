@@ -310,6 +310,9 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		},
 		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
 	d.ensureDialogTTL(ctx, toUserId, msgPeer)
+	if dialogDO != nil {
+		d.stampChatDecor(ctx, dialogDO.UserId, dialogDO.PeerType, dialogDO.PeerId, message)
+	}
 
 	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
 	inBox.PtsCount = 1

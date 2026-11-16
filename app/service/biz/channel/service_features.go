@@ -33,6 +33,12 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	if f.ReactionRead == nil {
 		f.ReactionRead = map[int64]int32{}
 	}
+	if f.MentionReadMax == nil {
+		f.MentionReadMax = map[int64]int32{}
+	}
+	if f.MentionRead == nil {
+		f.MentionRead = map[int64][]int32{}
+	}
 	if f.Views == nil {
 		f.Views = map[int32]ViewRec{}
 	}
@@ -210,7 +216,17 @@ func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.Inpu
 			f.ReadContents[self] = append(f.ReadContents[self], id)
 		}
 	}
-	return s.saveFeatures(ctx, ch.ID, f)
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return err
+	}
+	if h := s.hooks(); h.Push != nil && len(ids) > 0 {
+		up := mtproto.MakeTLUpdateChannelReadMessagesContents(&mtproto.Update{
+			ChannelId: ch.ID,
+			Messages:  ids,
+		}).To_Update()
+		h.Push(ctx, self, nil, s.pack(ctx, self, ch.ID, up))
+	}
+	return nil
 }
 
 // DeleteByDate removes channel messages whose date is inside [minDate, maxDate].
@@ -342,7 +358,9 @@ func (s *Service) ToggleParticipantsHidden(ctx context.Context, self, actorAuth 
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() {
+	// Official clients hide the member list with ban_users. The creator
+	// always qualifies. change_info is the profile gate, not this one.
+	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanBanUsers()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
@@ -676,6 +694,32 @@ func canRestrictSaving(p *Participant) bool {
 	return p.IsAdmin() && p.adminRights().CanChangeInfo()
 }
 
+// MayManageGiftCollection reports whether userID may create or edit star gift
+// collections on this channel. Telegram requires the can_post_messages admin
+// right. The creator has every admin right. A missing channel is
+// PEER_ID_INVALID. A member without that right is CHAT_ADMIN_REQUIRED.
+// https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1create_gift_collection.html
+func (s *Service) MayManageGiftCollection(ctx context.Context, userID, channelID int64) error {
+	if s == nil || s.store == nil || userID == 0 || channelID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if ch == nil || ch.Deleted {
+		return mtproto.ErrPeerIdInvalid
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	if p != nil && p.InChannel() && (p.IsCreator() || (p.IsAdmin() && p.adminRights().CanPostMessages())) {
+		return nil
+	}
+	return mtproto.ErrChatAdminRequired
+}
+
 // MayReadBoosts reports whether userID may call premium.getBoostsList for
 // this channel. Only a creator or an admin may. A missing channel is not
 // an admin grant.
@@ -781,7 +825,7 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64,
 	if err != nil {
 		return err
 	}
-	if !bp.IsCreator() {
+	if !canLinkDiscussion(bp) {
 		return mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, bCh.ID)
@@ -792,7 +836,7 @@ func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64,
 		if err != nil {
 			return err
 		}
-		if !gCh.Megagroup || !gp.IsAdmin() {
+		if !gCh.Megagroup || !canLinkDiscussion(gp) {
 			return mtproto.ErrChatAdminRequired
 		}
 		newID = gCh.ID
@@ -1009,9 +1053,6 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		if q.MaxDate > 0 && stored.Date > q.MaxDate {
 			continue
 		}
-		if q.FromUser != 0 && stored.SenderID != q.FromUser {
-			continue
-		}
 		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
 			continue
 		}
@@ -1021,6 +1062,16 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		body, err := unmarshalMessage(stored.Data)
 		if err != nil {
 			continue
+		}
+		if q.FromUser != 0 {
+			// Anonymous posts are addressed as the supergroup. A from_id
+			// filter is a user, so those posts must not match the author.
+			if body.GetFromId().GetChannelId() != 0 && !ch.Broadcast {
+				continue
+			}
+			if stored.SenderID != q.FromUser {
+				continue
+			}
 		}
 		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
 			continue
@@ -1660,13 +1711,19 @@ func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.Input
 }
 
 func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32, emoticons []string, big bool) (*mtproto.Updates, error) {
-	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
+	ch, actor, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
 	}
 	stored, err := s.store.GetMessage(ctx, channelID, msgID)
 	if err != nil || stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
+	}
+	if len(emoticons) > 0 {
+		admin := actor != nil && actor.InChannel() && (actor.IsCreator() || actor.IsAdmin())
+		if err := mtproto.ReactionForbidden(int32(time.Now().Unix()), admin, memberBans(ch, actor)); err != nil {
+			return nil, err
+		}
 	}
 	f := s.features(ctx, ch.ID)
 	if err := allowReact(f, emoticons); err != nil {

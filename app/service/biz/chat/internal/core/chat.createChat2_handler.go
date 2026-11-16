@@ -17,6 +17,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/pkg/chattitle"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
@@ -29,8 +30,12 @@ func (c *ChatCore) ChatCreateChat2(in *chat.TLChatCreateChat2) (*mtproto.Mutable
 		date       = time.Now().Unix()
 		creatorId  = in.CreatorId
 		userIdList = in.UserIdList
-		title      = in.Title
+		title      = chattitle.Clip(in.Title)
 	)
+	if title == "" {
+		c.Logger.Errorf("chat.createChat2 - empty title")
+		return nil, mtproto.ErrChatTitleEmpty
+	}
 
 	if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, 0, title); err != nil {
 		c.Logger.Errorf("chat.createChat2 - error: %v", err)

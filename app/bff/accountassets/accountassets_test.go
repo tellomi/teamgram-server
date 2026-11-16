@@ -1,6 +1,7 @@
 package accountassets
 
 import (
+	"context"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -236,7 +237,11 @@ func TestRingtones(t *testing.T) {
 		t.Fatal("not modified")
 	}
 	file := mtproto.MakeTLInputFile(&mtproto.InputFile{Id_INT64: 9, Parts: 1, Name: "ping.ogg"}).To_InputFile()
-	if _, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.ogg", MimeType: "audio/wav"}); status.Convert(err).Message() != "RINGTONE_MIME_INVALID" {
+	wav, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.wav", MimeType: "audio/wav"})
+	if err != nil || wav.GetMimeType() != "audio/wav" {
+		t.Fatalf("wav: %v %#v", err, wav)
+	}
+	if _, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.txt", MimeType: "text/plain"}); status.Convert(err).Message() != "RINGTONE_MIME_INVALID" {
 		t.Fatal(err)
 	}
 	ogg, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.ogg", MimeType: "audio/ogg"})
@@ -269,6 +274,32 @@ func TestRingtones(t *testing.T) {
 		Unsave: mtproto.BoolFalse,
 	}); status.Convert(err).Message() != "RINGTONE_INVALID" {
 		t.Fatal(err)
+	}
+	prev := LoadRingtoneDoc
+	LoadRingtoneDoc = func(context.Context, int64, *mtproto.InputDocument) (*mtproto.Document, error) {
+		return mtproto.MakeTLDocument(&mtproto.Document{
+			Id: 440, AccessHash: 12, MimeType: "audio/mpeg",
+			Attributes: []*mtproto.DocumentAttribute{
+				mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{FileName: "chat.mp3"}).To_DocumentAttribute(),
+			},
+		}).To_Document(), nil
+	}
+	t.Cleanup(func() { LoadRingtoneDoc = prev })
+	adopted, err := SaveRingtoneContext(context.Background(), 1, &mtproto.TLAccountSaveRingtone{
+		Id:     mtproto.MakeTLInputDocument(&mtproto.InputDocument{Id: 440, AccessHash: 12}).To_InputDocument(),
+		Unsave: mtproto.BoolFalse,
+	})
+	if err != nil || adopted.GetPredicateName() != mtproto.Predicate_account_savedRingtone {
+		t.Fatalf("adopt: %v %#v", err, adopted)
+	}
+	found := false
+	for _, doc := range GetSavedRingtones(1, 0).GetRingtones() {
+		if doc.GetId() == 440 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("message document was not saved")
 	}
 }
 

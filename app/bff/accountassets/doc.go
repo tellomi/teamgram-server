@@ -44,6 +44,9 @@ var ringtoneMIME = map[string]bool{
 	"audio/ogg":        true,
 	"audio/opus":       true,
 	"audio/x-opus+ogg": true,
+	"audio/wav":        true,
+	"audio/x-wav":      true,
+	"audio/wave":       true,
 }
 
 func mp3MIME(mime string) bool {

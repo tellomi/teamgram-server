@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/marmota/pkg/utils"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 )
 
@@ -76,7 +77,16 @@ func (c *ChatsCore) MessagesGetCommonChats(in *mtproto.TLMessagesGetCommonChats)
 		chats = []*mtproto.Chat{}
 	}
 
-	// TODO: channel
+	if megas, mErr := channel.Shared().CommonMegagroups(c.ctx, c.MD.UserId, userId); mErr != nil {
+		c.Logger.Errorf("messages.getCommonChats - channels: %v", mErr)
+	} else {
+		for _, ch := range megas {
+			if ch != nil && ch.GetId() > in.MaxId {
+				chats = append(chats, ch)
+				count++
+			}
+		}
+	}
 
 	if count > 0 {
 		messagesChats = mtproto.MakeTLMessagesChats(&mtproto.Messages_Chats{

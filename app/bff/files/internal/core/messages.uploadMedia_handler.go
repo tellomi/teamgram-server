@@ -208,14 +208,8 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 			VenueId:   venue.GetVenueId(),
 			VenueType: venue.GetVenueType(),
 		}).To_MessageMedia()
-	case mtproto.Predicate_inputMediaPhotoExternal:
-		// inputMediaPhotoExternal#e5bbfe1a flags:# url:string ttl_seconds:flags.0?int = InputMedia;
-
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
-	case mtproto.Predicate_inputMediaDocumentExternal:
-		// TODO(@benqi): MessageMedia???
-		// inputMediaDocumentExternal#fb52dc99 flags:# url:string ttl_seconds:flags.0?int = InputMedia;
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+	case mtproto.Predicate_inputMediaPhotoExternal, mtproto.Predicate_inputMediaDocumentExternal:
+		return nil, mtproto.ErrMediaInvalid
 	case mtproto.Predicate_inputMediaGame:
 		// inputMediaGame#d33f43f3 id:InputGame = InputMedia;
 
@@ -229,9 +223,12 @@ func (c *FilesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (messageMed
 	case mtproto.Predicate_inputMediaGeoLive:
 		// inputMediaGeoLive#971fa843 flags:# stopped:flags.0?true geo_point:InputGeoPoint heading:flags.2?int period:flags.1?int proximity_notification_radius:flags.3?int = InputMedia;
 
+		live := media.To_InputMediaGeoLive()
 		messageMedia = mtproto.MakeTLMessageMediaGeoLive(&mtproto.MessageMedia{
-			Geo:    stampedGeo(media.To_InputMediaGeoLive().GetGeoPoint()),
-			Period: media.To_InputMediaGeoLive().GetPeriod().GetValue(),
+			Geo:                         stampedGeo(live.GetGeoPoint()),
+			Heading:                     live.GetHeading(),
+			Period:                      live.GetPeriod().GetValue(),
+			ProximityNotificationRadius: live.GetProximityNotificationRadius(),
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaPoll:
 		// inputMediaPoll#f94e5f1 flags:# poll:Poll correct_answers:flags.0?Vector<bytes> solution:flags.1?string solution_entities:flags.1?Vector<MessageEntity> = InputMedia;

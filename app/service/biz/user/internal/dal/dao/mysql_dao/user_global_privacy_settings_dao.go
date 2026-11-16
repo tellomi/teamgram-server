@@ -32,13 +32,13 @@ func NewUserGlobalPrivacySettingsDAO(db *sqlx.DB) *UserGlobalPrivacySettingsDAO 
 }
 
 // InsertOrUpdate
-// insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium)
+// insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium, display_gifts_button, disallowed_gifts, sponsored_enabled, noncontact_peers_paid_stars) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium, :display_gifts_button, :disallowed_gifts, :sponsored_enabled, :noncontact_peers_paid_stars) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium), display_gifts_button = values(display_gifts_button), disallowed_gifts = values(disallowed_gifts), sponsored_enabled = values(sponsored_enabled), noncontact_peers_paid_stars = values(noncontact_peers_paid_stars)
 func (dao *UserGlobalPrivacySettingsDAO) InsertOrUpdate(ctx context.Context, do *dataobject.UserGlobalPrivacySettingsDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium)"
+	query = "insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium, display_gifts_button, disallowed_gifts, sponsored_enabled, noncontact_peers_paid_stars) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium, :display_gifts_button, :disallowed_gifts, :sponsored_enabled, :noncontact_peers_paid_stars) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium), display_gifts_button = values(display_gifts_button), disallowed_gifts = values(disallowed_gifts), sponsored_enabled = values(sponsored_enabled), noncontact_peers_paid_stars = values(noncontact_peers_paid_stars)"
 
 	r, err = dao.db.NamedExec(ctx, query, do)
 	if err != nil {
@@ -60,13 +60,13 @@ func (dao *UserGlobalPrivacySettingsDAO) InsertOrUpdate(ctx context.Context, do 
 }
 
 // InsertOrUpdateTx
-// insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium)
+// insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium, display_gifts_button, disallowed_gifts, sponsored_enabled, noncontact_peers_paid_stars) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium, :display_gifts_button, :disallowed_gifts, :sponsored_enabled, :noncontact_peers_paid_stars) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium), display_gifts_button = values(display_gifts_button), disallowed_gifts = values(disallowed_gifts), sponsored_enabled = values(sponsored_enabled), noncontact_peers_paid_stars = values(noncontact_peers_paid_stars)
 func (dao *UserGlobalPrivacySettingsDAO) InsertOrUpdateTx(tx *sqlx.Tx, do *dataobject.UserGlobalPrivacySettingsDO) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		query string
 		r     sql.Result
 	)
-	query = "insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium)"
+	query = "insert into user_global_privacy_settings(user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium, display_gifts_button, disallowed_gifts, sponsored_enabled, noncontact_peers_paid_stars) values (:user_id, :archive_and_mute_new_noncontact_peers, :keep_archived_unmuted, :keep_archived_folders, :hide_read_marks, :new_noncontact_peers_require_premium, :display_gifts_button, :disallowed_gifts, :sponsored_enabled, :noncontact_peers_paid_stars) on duplicate key update archive_and_mute_new_noncontact_peers = values(archive_and_mute_new_noncontact_peers), keep_archived_unmuted = values(keep_archived_unmuted), keep_archived_folders = values(keep_archived_folders), hide_read_marks = values(hide_read_marks), new_noncontact_peers_require_premium = values(new_noncontact_peers_require_premium), display_gifts_button = values(display_gifts_button), disallowed_gifts = values(disallowed_gifts), sponsored_enabled = values(sponsored_enabled), noncontact_peers_paid_stars = values(noncontact_peers_paid_stars)"
 
 	r, err = tx.NamedExec(query, do)
 	if err != nil {
@@ -88,13 +88,13 @@ func (dao *UserGlobalPrivacySettingsDAO) InsertOrUpdateTx(tx *sqlx.Tx, do *datao
 }
 
 // Select
-// select id, user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium from user_global_privacy_settings where user_id = :user_id
+// select id, user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium, display_gifts_button, disallowed_gifts, sponsored_enabled, noncontact_peers_paid_stars from user_global_privacy_settings where user_id = :user_id
 func (dao *UserGlobalPrivacySettingsDAO) Select(ctx context.Context, userId int64) (rValue *dataobject.UserGlobalPrivacySettingsDO, err error) {
 	var (
 		query string
 		do    = &dataobject.UserGlobalPrivacySettingsDO{}
 	)
-	query = "select id, user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium from user_global_privacy_settings where user_id = ?"
+	query = "select id, user_id, archive_and_mute_new_noncontact_peers, keep_archived_unmuted, keep_archived_folders, hide_read_marks, new_noncontact_peers_require_premium, display_gifts_button, disallowed_gifts, sponsored_enabled, noncontact_peers_paid_stars from user_global_privacy_settings where user_id = ?"
 
 	err = dao.db.QueryRowPartial(ctx, do, query, userId)
 
