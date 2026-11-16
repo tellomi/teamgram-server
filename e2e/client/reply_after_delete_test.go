@@ -12,7 +12,10 @@ import (
 // other person.
 func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 	cfg := requireE2E(t)
-	ctx, cancel := contextTimeout(2 * time.Minute)
+	// Each phase has its own deadline. This test runs immediately after the
+	// gateway restart, and one shared 2-minute budget expired on the
+	// post-delete history check before that check could finish.
+	ctx, cancel := contextTimeout(90 * time.Second)
 	defer cancel()
 	alice, aliceSelf := dialPhone(t, ctx, cfg, "9996610715", "DelAlice")
 	bob, bobSelf := dialPhone(t, ctx, cfg, "9996610716", "DelBob")
@@ -22,9 +25,11 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	deliverCtx, deliverCancel := contextTimeout(90 * time.Second)
+	defer deliverCancel()
 	var bobID int32
-	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
-		msgs, err := bob.History(ctx, peerForB, 20)
+	if err = waitUntil(deliverCtx, 200*time.Millisecond, func() (bool, error) {
+		msgs, err := bob.History(deliverCtx, peerForB, 20)
 		if err != nil {
 			return false, err
 		}
@@ -33,27 +38,39 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = alice.Invoke(ctx, &mtproto.TLMessagesDeleteMessages{
+	deleteCtx, deleteCancel := contextTimeout(20 * time.Second)
+	defer deleteCancel()
+	if _, err = alice.Invoke(deleteCtx, &mtproto.TLMessagesDeleteMessages{
 		Constructor: mtproto.CRC32_messages_deleteMessages,
 		Revoke:      true,
 		Id:          []int32{aliceID},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
-		leftA, err := alice.History(ctx, peerForA, 20)
+	// Revoke reaches Bob through the inbox consumer. That wait must not share
+	// the dial/send deadline: a slow deliver after the gateway restart can
+	// consume the whole budget after delete has already returned.
+	clearCtx, clearCancel := contextTimeout(45 * time.Second)
+	defer clearCancel()
+	aliceLeft, bobLeft := int32(-1), int32(-1)
+	if err = waitUntil(clearCtx, 200*time.Millisecond, func() (bool, error) {
+		leftA, err := alice.History(clearCtx, peerForA, 20)
 		if err != nil {
 			return false, err
 		}
-		leftB, err := bob.History(ctx, peerForB, 20)
+		leftB, err := bob.History(clearCtx, peerForB, 20)
 		if err != nil {
 			return false, err
 		}
-		return idOfText(leftA, "gone-256") == 0 && idOfText(leftB, "gone-256") == 0, nil
+		aliceLeft = idOfText(leftA, "gone-256")
+		bobLeft = idOfText(leftB, "gone-256")
+		return aliceLeft == 0 && bobLeft == 0, nil
 	}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("deleted private message still in history alice=%d bob=%d: %v", aliceLeft, bobLeft, err)
 	}
-	if _, err = bob.Invoke(ctx, &mtproto.TLMessagesSendMessage{
+	replyCtx, replyCancel := contextTimeout(45 * time.Second)
+	defer replyCancel()
+	if _, err = bob.Invoke(replyCtx, &mtproto.TLMessagesSendMessage{
 		Constructor: mtproto.CRC32_messages_sendMessage_fef48f62,
 		Peer:        peerForB,
 		Message:     "after-256",
@@ -65,8 +82,8 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	var seen int32
-	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
-		msgs, err := alice.History(ctx, peerForA, 20)
+	if err = waitUntil(replyCtx, 200*time.Millisecond, func() (bool, error) {
+		msgs, err := alice.History(replyCtx, peerForA, 20)
 		if err != nil {
 			return false, err
 		}
@@ -86,7 +103,7 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 		}
 		return false, nil
 	}); err != nil {
-		t.Fatalf("alice did not receive reply_to (last=%d want=%d)", seen, aliceID)
+		t.Fatalf("alice did not receive reply_to (last=%d want=%d): %v", seen, aliceID, err)
 	}
 }
 
