@@ -50,8 +50,19 @@ func commonIDs(t *testing.T, c *Client, user *mtproto.InputUser) map[int64]bool 
 		UserId:      user,
 		Limit:       100,
 	})
+	var chats []*mtproto.Chat
+	switch v := obj.(type) {
+	case *mtproto.TLMessagesChats:
+		chats = v.GetChats()
+	case *mtproto.TLMessagesChatsSlice:
+		chats = v.GetChats()
+	case *mtproto.Messages_Chats:
+		chats = v.GetChats()
+	default:
+		t.Fatalf("messages.getCommonChats returned %T", obj)
+	}
 	ids := map[int64]bool{}
-	for _, chat := range chatsOf(obj) {
+	for _, chat := range chats {
 		if chat != nil {
 			ids[chat.GetId()] = true
 		}
