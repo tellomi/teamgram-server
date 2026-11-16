@@ -379,10 +379,16 @@ func (c *session) onSessionMessageData(ctx context.Context, gatewayId, clientIp 
 				// 第一次收到
 				c.processMsg(ctx, gatewayId, clientIp, inMsg, m2.Object)
 			} else {
-				// Duplicate message: for large RPC replies, prefer sending MsgDetailedInfo
-				// instead of resending the full answer.
-				if o := c.outQueue.Lookup(inMsg.msgId); o != nil && o.msg != nil && o.msg.Bytes > detailedInfoThreshold {
-					c.notifyMsgDetailedInfo(ctx, gatewayId, inMsg, o)
+				// The client repeated a msg_id whose answer it did not keep.
+				// A large answer is replaced by msg_detailed_info. A small one,
+				// such as the Bool from upload.saveBigFilePart, is sent again
+				// from the cache. The handler does not run a second time.
+				if o := c.outQueue.Lookup(inMsg.msgId); o != nil && o.msg != nil {
+					if o.msg.Bytes > detailedInfoThreshold {
+						c.notifyMsgDetailedInfo(ctx, gatewayId, inMsg, o)
+					} else {
+						o.sent = 0
+					}
 				}
 				continue
 			}
