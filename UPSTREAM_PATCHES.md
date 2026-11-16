@@ -2,6 +2,18 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Business profile and automatic replies (ISSUE-S-BIZ-PERSIST-001, ISSUE-S-BIZ-AUTOREPLY-001)
+
+Business hours, location, intro, greeting, away message, and chat links used to live only in the BFF process. `bizprofile.UseDSN` in the BFF startup writes them to `business_profile` when MySQL is configured. `users.getFullUser` still reads the same book.
+
+After a private `messages.sendMessage` (and the media and forward paths that share `dispatchOutbox`) succeeds, `schedule_dispatch.go` calls `scheduleBusinessAutoReply`. That hook does not wait on MySQL or on the shortcut copy; the customer's RPC already has its updates. The copy runs with a timeout. The ledger row is saved before any shortcut id is returned. A failed save does not send. A failed shortcut send is logged and not retried. Greeting dedup stores the prior message time the decision used, not the clock time of the reply. A failed customer-outbox read is not treated as a new chat. A failed contact lookup is not a non-contact, and a failed last-seen lookup is not offline.
+
+| Piece | File |
+| --- | --- |
+| startup DSN | `app/bff/bff/internal/server/server.go` |
+| stored profile | `app/bff/business/profile/profile.go`, `persist.go`, `teamgramd/deploy/sql/migrate-20261130-business-profile.sql` |
+| send hook | `app/bff/messages/internal/core/schedule_dispatch.go`, `business_reply.go` |
+
 ## Voice search counters (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
 
 `messages.getSearchCounters` counted a photo with `SELECT count(id)` on `message_filter_type`. A voice note and a round video share `MEDIA_AUDIO`. The voice count paged those rows and parsed `message_data`, so one call could report photo=1 and voice=0 even when both rows were already stored.
@@ -914,6 +926,15 @@ Archiving a new non-contact set folder 1 and mute-forever, and unarchiving clear
 | Piece | File |
 | --- | --- |
 | flag on archive and unarchive | `pkg/archive/apply.go`, `pkg/archive/clients.go` |
+
+## Common supergroups (row 261)
+
+`messages.getCommonChats` intersected basic-group membership and left a `TODO` where supergroups should be added. `channel.CommonMegagroups` intersects current megagroup membership. Broadcast channels stay out. A user who is not in the groups still gets an empty list.
+
+| Piece | File |
+| --- | --- |
+| intersection | `app/service/biz/channel/common_chats.go` |
+| RPC | `app/bff/chats/internal/core/messages.getCommonChats_handler.go` |
 
 ## Background emojis, restricted statuses, ringtones, passkey rpId
 
