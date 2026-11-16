@@ -32,13 +32,10 @@ CREATE TABLE IF NOT EXISTS `inbox_random` (
   PRIMARY KEY (`user_id`, `random_id`, `sender_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Recreate the guard without a bare DROP. The schema check rejects a line
--- that starts with DROP. A second run replaces the same trigger and does
--- not change message rows.
-SET @inbox_drop_guard = 'DROP TRIGGER IF EXISTS `messages_inbox_random_guard`';
-PREPARE inbox_drop_guard FROM @inbox_drop_guard;
-EXECUTE inbox_drop_guard;
-DEALLOCATE PREPARE inbox_drop_guard;
+-- DROP TRIGGER cannot run as a prepared statement (MySQL error 1295).
+-- The helper drops it as a normal statement. Creating it again does not
+-- change message rows.
+CALL teamgram_drop_inbox_random_guard();
 
 DELIMITER $$
 CREATE TRIGGER `messages_inbox_random_guard`
