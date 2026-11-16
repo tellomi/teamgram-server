@@ -121,9 +121,13 @@ func (d *Dao) FindNewMessagePts(ctx context.Context, userID int64, boxID int32) 
 	if d == nil || d.DB == nil || userID == 0 || boxID == 0 {
 		return 0, 0, false, nil
 	}
-	query := `select pts, pts_count, update_data from user_pts_updates where user_id = ? and update_type = ? and update_data like ? order by pts asc limit 20`
+	// update_data is a JSON column. MySQL rewrites a compact document to
+	// "id": 17, so a needle without the space does not see the stored row
+	// and a replay would insert a second pts.
+	compact, spaced := ptsBoxNeedles(boxID)
+	query := `select pts, pts_count, update_data from user_pts_updates where user_id = ? and update_type = ? and (update_data like ? or update_data like ?) order by pts asc limit 20`
 	var rows []dataobject.UserPtsUpdatesDO
-	err = d.DB.QueryRowsPartial(ctx, &rows, query, userID, mtproto.PTS_UPDATE_NEW_MESSAGE, "%"+ptsBoxNeedle(boxID)+"%")
+	err = d.DB.QueryRowsPartial(ctx, &rows, query, userID, mtproto.PTS_UPDATE_NEW_MESSAGE, "%"+compact+"%", "%"+spaced+"%")
 	if err != nil {
 		return 0, 0, false, err
 	}
@@ -140,8 +144,9 @@ func (d *Dao) FindNewMessagePts(ctx context.Context, userID int64, boxID int32) 
 	return 0, 0, false, nil
 }
 
-func ptsBoxNeedle(boxID int32) string {
-	return `"id":` + strconv.FormatInt(int64(boxID), 10)
+func ptsBoxNeedles(boxID int32) (compact, spaced string) {
+	id := strconv.FormatInt(int64(boxID), 10)
+	return `"id":` + id, `"id": ` + id
 }
 
 // updateCarriesBox reports whether this stored updateNewMessage is for boxID.

@@ -371,9 +371,15 @@ func openInboxApplyDB(t *testing.T) *Dao {
 	}
 	admin, err := sqlx.Open(&sqlx.Config{DSN: dsn})
 	if err != nil {
+		if os.Getenv("TEAMGRAM_REQUIRE_INBOX_MYSQL") == "1" {
+			t.Fatalf("required loopback mysql is not available: %v", err)
+		}
 		t.Skipf("mysql not available: %v", err)
 	}
 	if _, err = admin.Exec(context.Background(), "SELECT 1"); err != nil {
+		if os.Getenv("TEAMGRAM_REQUIRE_INBOX_MYSQL") == "1" {
+			t.Fatalf("required loopback mysql is not available: %v", err)
+		}
 		t.Skipf("mysql not available: %v", err)
 	}
 	const schema = "teamgram_inbox_apply_910442"
