@@ -1,0 +1,164 @@
+# Pinned inputs for the cn politics coverage check.
+# pkg/usernamepolicy/lexiconsrc/update.py reads this file.
+# Runtime username checks do not read it. They load policy/policy-2026110602.json.
+#
+# Refresh:
+#   python3 -m pip install 'pypinyin==0.55.0'
+#   python3 pkg/usernamepolicy/lexiconsrc/update.py --fetch
+# --fetch re-downloads every pinned blob, refuses a mismatch, and rewrites
+# generated/. It does not add rules. A new admit has to land in tellomi/tellomi
+# first, then in a new policy-*.json. go test ./pkg/usernamepolicy/ fails until
+# that JSON and these generated files describe the same set.
+#
+# Offline check (no download; still needs pypinyin==0.55.0):
+#   python3 pkg/usernamepolicy/lexiconsrc/update.py --check
+#
+# Words that are not in the three konsheng category files below are not
+# invented here. Vocabulary/零时-Tencent.txt is an overlap exclusion only.
+# Its bytes are not stored in this repository.
+
+[konsheng]
+name = "konsheng/Sensitive-lexicon"
+url = "https://github.com/konsheng/Sensitive-lexicon"
+license = "MIT"
+commit = "d967c30b053fa40b06c5a0dddf0be493f2dfae46"
+upstream_date = "2026-08-17"
+license_path = "licenses/konsheng-LICENSE.txt"
+license_blob = "497bd06ea1c33bbe0fcf3abcc6d7d70dd3493207"
+
+[[konsheng.file]]
+path = "Vocabulary/政治类型.txt"
+vendored = "konsheng/政治类型.txt"
+blob = "04f9c44077ecc86f217778a2399afd7f81d56d1f"
+
+[[konsheng.file]]
+path = "Vocabulary/反动词库.txt"
+vendored = "konsheng/反动词库.txt"
+blob = "2e5e59a62b1e797a44e171e88623d71f7794a68a"
+
+[[konsheng.file]]
+path = "Vocabulary/贪腐词库.txt"
+vendored = "konsheng/贪腐词库.txt"
+blob = "c21cfdf3a74ecb761cb67a22477f4158fa97757d"
+
+[[konsheng.excluded]]
+path = "Vocabulary/零时-Tencent.txt"
+blob = "2d929be88bdaad438a60b049fa989250c855993a"
+bytes = 716330
+reason = "来源不清的大文件。不入库。与它整行重合的候选只记在 generated/tencent-overlap-keys.txt，不发布。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/色情类型.txt"
+reason = "色情。不发明到用户名规则。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/色情词库.txt"
+reason = "色情。不发明到用户名规则。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/暴恐词库.txt"
+reason = "暴恐。不发明到用户名规则。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/涉枪涉爆.txt"
+reason = "暴恐。不发明到用户名规则。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/广告类型.txt"
+reason = "广告。不发明到用户名规则。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/网易前端过滤敏感词库.txt"
+reason = "第三方产品词库，根 MIT 不能再授权。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/非法网址.txt"
+reason = "URL 黑名单，不引入。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/GFW补充词库.txt"
+reason = "不是按类小文件，不发明映射。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/补充词库.txt"
+reason = "文件名没有明确分类，不发明映射。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/其他词库.txt"
+reason = "文件名没有明确分类，不发明映射。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/民生词库.txt"
+reason = "没有对应分类，不发明映射。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/COVID-19词库.txt"
+reason = "没有对应分类，不发明映射。"
+
+[[konsheng.excluded]]
+path = "Vocabulary/新思想启蒙.txt"
+reason = "文件名不是政治 / 反动 / 贪腐，不发明映射。"
+
+[fwwdn]
+name = "fwwdn/sensitive-stop-words"
+url = "https://github.com/fwwdn/sensitive-stop-words"
+license = "Apache-2.0"
+commit = "a7d06bb1c321e669943b6841570d9da6dad8ce2b"
+upstream_date = "2026-03-10"
+license_path = "licenses/fwwdn-LICENSE.txt"
+license_blob = "58ff8cbaa04aff6100f650ea8aff9f50d80933ca"
+
+[[fwwdn.file]]
+path = "政治类.txt"
+vendored = "fwwdn/政治类.txt"
+blob = "1a41ef011fce6f7e181742af86f9ba26a40a9a2a"
+strip_trailing_comma = true
+note = "去掉行尾逗号后与 konsheng Vocabulary/政治类型.txt 逐行相同。source=both 不是第二条发布授权。"
+
+[[fwwdn.excluded]]
+path = "色情类.txt"
+reason = "色情。不引入。"
+
+[[fwwdn.excluded]]
+path = "广告.txt"
+reason = "广告。不引入。"
+
+[[fwwdn.excluded]]
+path = "涉枪涉爆违法信息关键词.txt"
+reason = "暴恐。不引入。"
+
+[[fwwdn.excluded]]
+path = "网址.txt"
+reason = "URL 黑名单，不引入。"
+
+[[fwwdn.excluded]]
+path = "stopword.dic"
+reason = "合并词典，不引入。"
+
+[editorial]
+drops = "editorial/politics-drops.tsv"
+pinyin_block = "editorial/pinyin-homophone-block.txt"
+copied_from = "tellomi/tellomi policy/candidates (D-25, 2026-11-06)"
+note = "误伤剔除和同音锁。不是上游词表，不能用来新增词。"
+
+[pinyin]
+package = "pypinyin"
+version = "0.55.0"
+style = "Style.NORMAL, concatenated, no tone"
+
+[generated]
+overlap_keys = "generated/tencent-overlap-keys.txt"
+pinyin_tsv = "generated/admit-pinyin.tsv"
+coverage = "generated/coverage.json"
+
+[admission]
+admit = 200
+pinyin_rules = 191
+defer_tencent = 804
+defer_both = 7
+drop = 15
+drop_list_rows = 62
+overlap_keys = 804
+tencent_parsed_lines = 53308
+tencent_unique_keys = 41555
+policy_rules = 391

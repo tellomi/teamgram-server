@@ -19,9 +19,11 @@
 // placeholder SQL. It is not merged into the runtime lexicon. The
 // cn username supplement in cn_username_supplement.go is applied beside
 // that JSON. It takes the latin cn username terms already in that file
-// and the two bare terms the file omits (gongchandang, xijinping). It is
-// not written into the generated file, so the next tellomi dist import
-// does not drop it. Chat
+// whose skeletons are at least 8, and two exceptions that the admission
+// rules do not publish (gongchandang, xijinping). The exceptions are not
+// a new lexicon. pkg/usernamepolicy/lexiconsrc records the pinned
+// konsheng MIT and fwwdn Apache-2.0 inputs and checks that the 391 cn
+// politics rules are exactly the admitted lines. Chat
 // message bodies are not passed to this package.
 // Existing rows are not rewritten.
 //

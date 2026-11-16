@@ -7,12 +7,17 @@ import (
 	"unicode/utf8"
 )
 
-// cnUsernameGapTerms are bare cn username terms that the curated
-// politics.toml behind policy-2026110602 does not contain. The other
-// terms come from that already-reviewed latin username set. This is not
-// a second copy of konsheng/Sensitive-lexicon or fwwdn/sensitive-stop-words.
-// Those lists were vendored in tellomi/tellomi, mapped, and published as
-// policy-2026110602. Re-importing them here would bypass that review.
+// cnUsernameGapTerms are not produced by the admission rules in
+// pkg/usernamepolicy/lexiconsrc. gongchandang is an exact line of the
+// MIT-licensed konsheng Vocabulary/贪腐词库.txt and also an exact line of
+// the excluded Vocabulary/零时-Tencent.txt, so D-25 defers it. xijinping
+// is not a line of the three vendored category files; it occurs in that
+// excluded Tencent file. Both stay as exceptions from the earlier commit,
+// on the same cn fields as the other supplement terms. Bare Han nicknames
+// 共产党 and 习近平 stay allowed.
+// Do not append another term here. A new admit has to come through the
+// pinned lists and a new policy JSON. The other supplement terms are the
+// latin cn username rules already in policy-2026110602.
 //
 // Upstream match modes still miss a lookalike glued to digits: PREFIX and
 // SUFFIX stop at a letter or digit, and CONFUSABLE compares the whole

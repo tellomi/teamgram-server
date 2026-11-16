@@ -1,0 +1,37 @@
+# 自动拼音会写成常用词。这些读音不得进入生效词库（用户名或显示名）。
+# 汉字原文若仍被 admit，只保留原文规则，不另加这条拼音。
+# 2026-11-06 用 scripts/policy/policy_build.py 的 denied_by，对当时的 policy-2026110601 复核。
+# 这份清单从 tellomi/tellomi policy/candidates/pinyin-homophone-block.txt 抄来，不是上游词表。
+jihui
+xueshu
+caiwu
+jianghu
+luoma
+lizhi
+wangyi
+# 江毒的拼音，同音地名「江都」。疆独也是这个读音，但疆独与 Tencent 词表整行重合，原文不发布。
+jiangdu
+# 已发布拼音和日常词同音。汉字专名仍可在 regions/cn；这里只去掉拼音规则。
+# chenzhong：陈忠 / 沉重、晨钟
+# liangxiang：梁湘 / 亮相、两项、粮饷、两响、两厢、良乡
+# zhangshu：张曙 / 樟树
+# jiangxiren：江系人 / 江西人
+# danping：单平 / 单凭、胆瓶
+# liuzhanggui：刘长贵 / 刘掌柜
+# shentu：沈图 / 申屠
+chenzhong
+liangxiang
+zhangshu
+jiangxiren
+danping
+liuzhanggui
+shentu
+# 已知卡点。对应原文是 defer-tencent，当前不会产出这些拼音；写在这里，再生时也不发布。
+# bajiao 是罢教 / 八角 / 芭蕉。花椒的拼音是 huajiao，不是 bajiao。
+bajiao
+lipeng
+minzhu
+youxing
+# 贪污、双开整词在 politics-drops.tsv。拼音再锁一次，避免别的 admit 行带出同一读音。
+tanwu
+shuangkai

@@ -1,0 +1,17 @@
+{
+  "pypinyin": "0.55.0",
+  "konsheng_commit": "d967c30b053fa40b06c5a0dddf0be493f2dfae46",
+  "fwwdn_commit": "a7d06bb1c321e669943b6841570d9da6dad8ce2b",
+  "tencent_blob": "2d929be88bdaad438a60b049fa989250c855993a",
+  "tencent_file_vendored": false,
+  "admit": 200,
+  "pinyin_rules": 191,
+  "defer_tencent": 804,
+  "defer_both": 7,
+  "drop": 15,
+  "drop_list_rows": 62,
+  "overlap_keys": 804,
+  "tencent_parsed_lines": 53308,
+  "tencent_unique_keys": 41555,
+  "policy_rules": 391
+}
