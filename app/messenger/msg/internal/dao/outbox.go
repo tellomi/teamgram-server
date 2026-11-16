@@ -865,6 +865,17 @@ func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtp
 		}
 	}
 
+	// The inbox consumer used to be the first writer of this row. A
+	// deleteMessages that arrived after sendMessage returned, but before
+	// that consumer inserted, matched no row and skipped revoke. The row
+	// then appeared and stayed. Persist it before returning. The consumer
+	// insert sees the same random_id and does not write the body back.
+	if out && outBoxMsgId != 0 && message != nil {
+		if err = d.SendMessageToOutboxV1NoPts(ctx, fromId, peer, outMsgBox); err != nil {
+			return nil, err
+		}
+	}
+
 	return outMsgBox, nil
 }
 

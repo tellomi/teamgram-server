@@ -940,10 +940,13 @@ Archiving a new non-contact set folder 1 and mute-forever, and unarchiving clear
 
 The inbox copy of a private reply looks up `reply_to_msg_id` with `SelectPeerUserMessage`, which requires `deleted = 0` on both rows. After `messages.deleteMessages(revoke=true)` that lookup misses, and the recipient's copy drops `reply_to`. A private chat (`PEER_USER`) now includes deleted rows, so the other side still gets the mapped id and can show a reply to a deleted message. A basic group still uses `SelectPeerUserMessage`: a reply to a deleted group message drops `reply_to` and does not mark the recipient mentioned because of that miss. Other callers of `SelectPeerUserMessage` still ignore deleted rows. Channel replies are unchanged.
 
+`messages.sendMessage` for a private chat used to return before the sender's row was inserted. The inbox consumer wrote that row later, on the sender's own Kafka key. A `deleteMessages` in that gap found no row, returned success, and did not revoke. The row was then inserted and both histories kept the text. The sender row is now written before the send returns. The consumer's later insert matches the same `random_id` and does not put the text back.
+
 | Piece | File |
 | --- | --- |
 | lookup | `messages_dao.go` `SelectPeerUserMessageIncludingDeleted` |
 | inbox | `app/messenger/msg/internal/dao/inbox.go` |
+| outbox before return | `app/messenger/msg/internal/dao/outbox.go` |
 
 ## Background emojis, restricted statuses, ringtones, passkey rpId
 
