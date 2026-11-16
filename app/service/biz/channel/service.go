@@ -373,6 +373,7 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 		}
 		st.ReadInboxMaxID = ch.TopMessage
 		_ = s.store.SaveRead(ctx, st)
+		s.noteJoinBoundary(ctx, ch.ID, id, ch.TopMessage)
 	}
 	if len(added) > 0 {
 		if _, err = s.refreshCount(ctx, ch.ID); err != nil {
@@ -443,6 +444,7 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 		return nil, err
 	}
 	_ = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: user, ReadInboxMaxID: ch.TopMessage})
+	s.noteJoinBoundary(ctx, ch.ID, user, ch.TopMessage)
 	msg := serviceMessage(user, ch.ID, mtproto.MakeMessageActionChatAddUser(user))
 	if _, _, err = s.appendMessage(ctx, ch.ID, user, 0, msg); err != nil {
 		return nil, err

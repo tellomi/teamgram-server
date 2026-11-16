@@ -22,13 +22,13 @@ func (s *Service) CountByFilter(ctx context.Context, self, channelID int64, filt
 		return 0, err
 	}
 	feat := s.features(ctx, ch.ID)
-	viewer, _ := s.store.GetParticipant(ctx, ch.ID, self)
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, self)
 	var n int32
 	for _, stored := range all {
 		if stored == nil || stored.Deleted {
 			continue
 		}
-		if prehistoryBlocks(feat, viewer, stored) {
+		if prehistoryBlocks(feat, viewer, stored, viewerErr) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
