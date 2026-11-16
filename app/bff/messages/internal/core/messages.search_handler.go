@@ -61,9 +61,15 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		var fromUser int64
 		if in.GetFromId() != nil {
 			from := mtproto.FromInputPeer2(c.MD.UserId, in.GetFromId())
-			if from.IsUser() {
-				fromUser = from.PeerId
+			// A channel or chat from_id used to be dropped, so the search
+			// returned the unfiltered history. Reject it instead of widening
+			// the result. Searching posts sent as a channel is not this path.
+			if !from.IsUser() {
+				err = mtproto.ErrFromPeerInvalid
+				c.Logger.Errorf("messages.search - error: %v", err)
+				return nil, err
 			}
+			fromUser = from.PeerId
 		}
 		return channel.Shared().SearchInChannel(c.ctx, c.MD.UserId, peer.PeerId, channel.ChannelSearch{
 			Q:        in.Q,
@@ -80,23 +86,29 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 	}
 
 	if in.GetFromId() != nil {
-		// 1. peer must chat and channel
-		if !peer.IsChatOrChannel() {
-			err = mtproto.ErrPeerIdInvalid
-			c.Logger.Errorf("messages.search - error: %v", err)
-			return nil, err
-		}
-
 		fromId = mtproto.FromInputPeer2(c.MD.UserId, in.FromId)
-		// 2. fromId must user
 		if !fromId.IsUser() {
 			err = mtproto.ErrFromPeerInvalid
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return nil, err
 		}
-
-		// TODO: check user was deleted?
-		// 400	INPUT_USER_DEACTIVATED	The specified user was deleted.
+		switch {
+		case peer.IsChatOrChannel():
+		case peer.PeerType == mtproto.PEER_SELF || peer.PeerType == mtproto.PEER_USER:
+			other := peer.PeerId
+			if peer.PeerType == mtproto.PEER_SELF || other == 0 {
+				other = c.MD.UserId
+			}
+			if fromId.PeerId != c.MD.UserId && fromId.PeerId != other {
+				err = mtproto.ErrPeerIdInvalid
+				c.Logger.Errorf("messages.search - error: %v", err)
+				return nil, err
+			}
+		default:
+			err = mtproto.ErrPeerIdInvalid
+			c.Logger.Errorf("messages.search - error: %v", err)
+			return nil, err
+		}
 	}
 
 	rValues = mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{

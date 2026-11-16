@@ -138,10 +138,20 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 
 	idHelper.Visit(
 		func(userIdList []int64) {
+			// GetUserListByIdList renders nothing unless the viewer is in
+			// the loaded set. The visit still skips the viewer, so loading
+			// self does not put self into my_results or results. To is the
+			// same viewer list the user service uses for contact rows and
+			// privacy.
+			loadIDs, loadTo := searchUserLoadIDs(c.MD.UserId, userIdList)
 			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
 				&userpb.TLUserGetMutableUsers{
-					Id: userIdList,
+					Id: loadIDs,
+					To: loadTo,
 				})
+			if users == nil {
+				return
+			}
 
 			var kept []int64
 			users.Visit(func(it *mtproto.ImmutableUser) {
@@ -197,4 +207,22 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 		})
 
 	return found, nil
+}
+
+// searchUserLoadIDs is the user.getMutableUsers request for a contacts.search
+// hit list. An empty hit list stays empty, so a query that matched nobody
+// does not load the caller. The caller is prepended only when some other
+// user has to be rendered.
+func searchUserLoadIDs(viewer int64, hits []int64) (ids, to []int64) {
+	ids = append([]int64(nil), hits...)
+	if viewer == 0 || len(hits) == 0 {
+		return ids, nil
+	}
+	to = []int64{viewer}
+	for _, id := range ids {
+		if id == viewer {
+			return ids, to
+		}
+	}
+	return append([]int64{viewer}, ids...), to
 }
