@@ -61,6 +61,9 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["user_notify_topic_settings"]["top_msg_id"] || !cols["user_notify_topic_settings"]["mute_until"] {
 		t.Fatal("user_notify_topic_settings missing after migrations")
 	}
+	if !cols["business_profile"]["doc_key"] || !cols["business_profile"]["data"] {
+		t.Fatal("business_profile missing after migrations")
+	}
 	for _, col := range []string{"user_id", "peer_type", "peer_id", "top_msg_id", "draft_type", "draft_message_data"} {
 		if !cols["dialog_topic_drafts"][col] {
 			t.Errorf("dialog_topic_drafts.%s missing after migrations", col)
