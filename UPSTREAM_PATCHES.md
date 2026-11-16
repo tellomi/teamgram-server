@@ -672,6 +672,9 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | --- | --- |
 | omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
 | full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
+| render hits for the viewer | `app/bff/contacts/internal/core/contacts.search_handler.go` (`searchUserLoadIDs`) |
+
+A hit list that did not already contain the caller was loaded without the caller. `GetUserListByIdList` then returned an empty `users` vector, while `my_results` and `results` still named the peers. Official clients drop a peer that has no user object, so a non-contact username such as `@zhaoyang` disappeared until that person was a local contact. The load now includes the caller (`Id` and `To`), the same requirement as `messages.getChatInviteImporters`. The caller is still skipped when the hits are split, and is not added to the id list when the query matched no user.
 
 ## Invite usage_limit of 0
 
@@ -879,6 +882,17 @@ The runtime image does not install tzdata. `time.LoadLocation` then only resolve
 | picker | `app/bff/configuration/internal/timezones/timezones.go` |
 | hours check | `app/bff/business/profile/profile.go` |
 
+## Unpin all and topic unpin (ISSUE-S-UNPINALL-MULTI-001, ISSUE-S-UNPINALL-PRIV-001, ISSUE-S-TOPIC-UNPIN-001)
+
+Channel `UnpinAll` tracked a single `PinnedMsgID` and returned after clearing that one row, so a second pinned megagroup or topic message stayed `pinned`. `PinMessage` with `unpin` cleared the feature id and left `message.pinned` set, so pinned search still matched. The private peer's inbox built `updatePinnedMessages` and never ran `UpdateUnPinnedByIdList`, and a basic-group fan-out reused one id list across members.
+
+Unpin now clears `pinned` on the requested message and, for unpin-all, on every stored message that is still pinned. `top_msg_id` limits that clear to one forum topic. `CommitEdit` advances channel pts, and the returned `AffectedHistory.pts` is that new value. The inbox writes `pinned=0` and `dialogs.pinned_msg_id=0` before the push. Each basic-group member gets only that member's ids.
+
+| Piece | File |
+| --- | --- |
+| channel pin | `app/service/biz/channel/service_features.go` |
+| peer copy | `app/messenger/msg/inbox/internal/core/inbox.unpinAllMessages_handler.go` |
+
 ## Search counters (ISSUE-S-SEARCH-COUNTERS-001, ISSUE-S-SEARCHCOUNT-001)
 
 `messages.getSearchCounters` counted `message_filter_type = 0` for photo+video, and it returned 0 for photos, video, voice, and round video because those filters were not mapped. Stored photos are type 7 and videos are type 8. Voice notes and round videos both sit in type 2 (`MEDIA_AUDIO`); the document attribute tells them apart. Megagroup and channel posts are not in the caller's private box, so every channel counter was 0.
@@ -929,7 +943,7 @@ The sender's outbox row used to be inserted by the inbox consumer after `message
 
 That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
 
-The sender row is committed before `publishInboxFanout`. If that publish fails, or the process exits before it, the idempotency cache is not stored. The next send of the same `random_id` used to find the live row and return success without publishing, so the other party never received it. The retry now publishes the inbox again and does not insert another sender row. The publish carries the pts already stored for that box, not the user's current pts. A recipient apply of the same `random_id` does not add unread and does not allocate a second pts when that pts row exists. A deleted row is not published and its cleared body is not written back. `SyncUpdatesNotMe` still pushes `updateNewMessage` for the sender's other sessions. The server does not drop an older pts there. A client applies it only when `localPts + pts_count == pts`, so a device that already moved past that pts ignores the push, and `updates.getDifference` still has the one stored pts row.
+The sender row is committed before `publishInboxFanout`. If that publish fails, or the process exits before it, the idempotency cache is not stored. The next send of the same `random_id` used to find the live row and return success without publishing, so the other party never received it. The retry now publishes the inbox again and does not insert another sender row. The publish carries the pts already stored for that box, not the user's current pts. A recipient apply of the same `random_id` does not add unread and does not allocate a second pts when that pts row exists. `user_pts_updates.update_data` is a JSON column, so MySQL stores `"id": 17` with a space. The lookup has to match that form as well as the compact bytes the process wrote, or a replay treats the pts as missing and writes a second row. A deleted row is not published and its cleared body is not written back. `SyncUpdatesNotMe` still pushes `updateNewMessage` for the sender's other sessions. The server does not drop an older pts there. A client applies it only when `localPts + pts_count == pts`, so a device that already moved past that pts ignores the push, and `updates.getDifference` still has the one stored pts row.
 
 The recipient dialog unread is incremented in the same transaction as the message row and `inbox_apply` (`applied` is stored as 1). The same transaction writes `inbox_random` when `random_id` is not 0. The previous container's `sendMessageToInbox` does not look up `random_id`. It calls `NextMessageBoxId`, inserts, and then adds unread outside the transaction. `messages_inbox_random_guard` rejects that second insert with duplicate key 1062 before the unread update. `updates.getDifference` reads `SelectByGtPts`. A later stored pts is returned even when one number in between was never written. An empty result leaves the caller's state unchanged until a later row arrives. One missing number does not by itself remove a stored message. Official clients were not run. The pts counter is not moved backwards and a missing number is not reused. `migrate-20261116-inbox-apply.sql` adds `inbox_apply`, `inbox_random`, and the trigger. It does not change existing rows and must be applied before a process that inserts these tables.
 
@@ -938,6 +952,22 @@ The recipient dialog unread is incremented in the same transaction as the messag
 | outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
 | fanout retry | `msg.sendMessageV2_handler.go`, `random_replay.go`, `inbox.go` |
 | saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
+
+## Message search words, dates, and private from_id (行 133, 行 83, 行 152)
+
+`messages.search` and `messages.searchGlobal` matched the whole query as one substring, so a different word order missed. Each word is now its own LIKE, AND-ed. Channel search uses the same rule in memory.
+
+`messages.search` in a private chat rejected every `from_id` with `PEER_ID_INVALID`. The sender filter is allowed when `from_id` is one of the two people in the chat.
+
+`min_date` / `max_date` on a private chat or basic group were dropped before the query. They are applied on `messages.search` for those peers. A zero bound stays unbounded.
+
+A `from_id` search used to skip `q` and the date bounds, and its count was every non-deleted message from that sender. The page and the count now share the sender, the words, the dates, the dialog, and `deleted = 0`. Offset only turns the page. An empty `message` column can still match `message_data`, as global search already does. `add_offset`, `min_id`, `max_id`, and `hash` on a private chat or basic group are still not applied. A channel `from_id` that is not a user returns `FROM_PEER_INVALID` instead of dropping the filter.
+
+| Piece | File |
+| --- | --- |
+| words and dates | `messages_search_text.go`, `message.search_handler.go`, `message.searchV2_handler.go` |
+| channel words | `channel/service_features.go` |
+| private from_id | `messages.search_handler.go` |
 
 ## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
 

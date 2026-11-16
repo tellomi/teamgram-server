@@ -1025,7 +1025,6 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		return nil, err
 	}
 	q.Limit = pageLimit(q.Limit)
-	text := strings.ToLower(q.Q)
 	all, err := s.store.ListMessages(ctx, ch.ID)
 	if err != nil {
 		return nil, err
@@ -1073,7 +1072,7 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 				continue
 			}
 		}
-		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
+		if strings.TrimSpace(q.Q) != "" && !messageHasTokens(body.GetMessage(), q.Q) {
 			continue
 		}
 		if !channelFilterMatches(body, q.Filter, feat.PinnedMsgID == stored.ID) {
@@ -1094,6 +1093,16 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		Chats:    []*mtproto.Chat{s.ChatFor(ctx, self, ch)},
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages(), nil
+}
+
+func messageHasTokens(text, q string) bool {
+	folded := strings.ToLower(text)
+	for _, tok := range strings.Fields(strings.ToLower(q)) {
+		if !strings.Contains(folded, tok) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) SendAs(ctx context.Context, self int64) ([]*mtproto.Chat, []int64, error) {
@@ -1130,19 +1139,22 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	}
 	f := s.features(ctx, ch.ID)
 	if unpin {
-		f.PinnedMsgID = 0
+		// Clearing only PinnedMsgID left body.pinned set, so pinned search
+		// and getHistory still showed the message as pinned.
+		if err := s.setMessagePinned(ctx, channelID, msgID, false); err != nil {
+			return nil, err
+		}
+		if f.PinnedMsgID == msgID {
+			f.PinnedMsgID = 0
+		}
 	} else {
 		stored, err := s.store.GetMessage(ctx, channelID, msgID)
 		if err != nil || stored == nil || stored.Deleted {
 			return nil, mtproto.ErrMessageIdInvalid
 		}
 		f.PinnedMsgID = msgID
-		body, _ := unmarshalMessage(stored.Data)
-		if body != nil {
-			body.Pinned = true
-			raw, _ := proto.Marshal(body)
-			stored.Data = raw
-			_, _ = s.store.CommitEdit(ctx, channelID, msgID, int32(time.Now().Unix()), raw)
+		if err := s.setMessagePinned(ctx, channelID, msgID, true); err != nil {
+			return nil, err
 		}
 	}
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
@@ -1156,9 +1168,11 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	return s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
 }
 
-// UnpinAll clears the channel's pinned message. A channel with nothing
-// pinned returns the current pts and a zero count.
-func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64) (int32, int32, error) {
+// UnpinAll clears pinned messages. topMsgID limits the clear to one forum
+// topic (messages.unpinAllMessages top_msg_id). Zero clears the whole channel.
+// The returned pts is the channel pts after the edits, not the pts from
+// before CommitEdit.
+func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64, topMsgID int32) (int32, int32, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {
 		return 0, 0, err
@@ -1174,23 +1188,75 @@ func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64
 		return 0, 0, err
 	}
 	f := s.features(ctx, ch.ID)
-	if f.PinnedMsgID == 0 {
-		return ch.Pts, 0, nil
-	}
-	pinned := f.PinnedMsgID
-	f.PinnedMsgID = 0
-	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+	all, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
 		return 0, 0, err
 	}
-	if stored, err := s.store.GetMessage(ctx, channelID, pinned); err == nil && stored != nil && !stored.Deleted {
-		if body, _ := unmarshalMessage(stored.Data); body != nil {
+	pts := ch.Pts
+	var cleared int32
+	clearFeature := false
+	for _, stored := range all {
+		if stored == nil || stored.Deleted {
+			continue
+		}
+		if topMsgID != 0 && !storedInTopic(f, stored, topMsgID) {
+			continue
+		}
+		body, uerr := unmarshalMessage(stored.Data)
+		tracked := f.PinnedMsgID == stored.ID
+		if uerr != nil || body == nil || (!body.GetPinned() && !tracked) {
+			continue
+		}
+		if body.GetPinned() {
 			body.Pinned = false
-			raw, _ := proto.Marshal(body)
-			_, _ = s.store.CommitEdit(ctx, channelID, pinned, int32(time.Now().Unix()), raw)
+			raw, mErr := proto.Marshal(body)
+			if mErr != nil {
+				return 0, 0, mErr
+			}
+			newPts, err := s.store.CommitEdit(ctx, channelID, stored.ID, int32(time.Now().Unix()), raw)
+			if err != nil {
+				return 0, 0, err
+			}
+			pts = newPts
+		}
+		if tracked {
+			clearFeature = true
+		}
+		cleared++
+	}
+	if cleared == 0 {
+		_ = actorAuth
+		return ch.Pts, 0, nil
+	}
+	if clearFeature {
+		f.PinnedMsgID = 0
+		if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+			return 0, 0, err
 		}
 	}
 	_ = actorAuth
-	return ch.Pts, 1, nil
+	return pts, cleared, nil
+}
+
+func (s *Service) setMessagePinned(ctx context.Context, channelID int64, msgID int32, pinned bool) error {
+	stored, err := s.store.GetMessage(ctx, channelID, msgID)
+	if err != nil || stored == nil || stored.Deleted {
+		if pinned {
+			return mtproto.ErrMessageIdInvalid
+		}
+		return nil
+	}
+	body, err := unmarshalMessage(stored.Data)
+	if err != nil || body == nil || body.GetPinned() == pinned {
+		return nil
+	}
+	body.Pinned = pinned
+	raw, err := proto.Marshal(body)
+	if err != nil {
+		return err
+	}
+	_, err = s.store.CommitEdit(ctx, channelID, msgID, int32(time.Now().Unix()), raw)
+	return err
 }
 
 func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID int64, title string, iconColor int32, iconEmoji int64) (*mtproto.Updates, *TopicRec, error) {
