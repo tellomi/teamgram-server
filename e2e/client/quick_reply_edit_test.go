@@ -39,7 +39,9 @@ func TestEditQuickReplyMessage(t *testing.T) {
 		t.Fatalf("capture %T id=%d shortcut=%d", sent, msgID, shortcutID)
 	}
 	edited, err := a.Invoke(ctx, &mtproto.TLMessagesEditMessage{
-		Constructor:          mtproto.CRC32_messages_editMessage_48f71778,
+		// Layer 232. The older 48f71778 constructor does not carry
+		// quick_reply_shortcut_id, so the edit falls through to Saved Messages.
+		Constructor:          mtproto.CRC32_messages_editMessage_b106e66c,
 		Peer:                 inputPeerSelf(),
 		Id:                   msgID,
 		Message:              &wrapperspb.StringValue{Value: "qr-rewritten"},
