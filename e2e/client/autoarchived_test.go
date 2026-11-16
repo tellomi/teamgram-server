@@ -13,9 +13,12 @@ import (
 // archived and peerSettings.autoarchived is set, while the stranger bar
 // flags stay.
 //
-// The recipient must not import the sender first. contacts.importContacts
-// saves a contact, and the inbox then treats the message as coming from a
-// contact, so neither the stranger bar nor auto-archive runs.
+// The flags stayed false because the recipient imported the sender before
+// the inbox ran. contacts.importContacts stores a contact, so the message
+// is not from a new non-contact: openStrangerBar returns without writing
+// report_spam, and archive.Apply does not archive. The phone number was
+// not the cause. The recipient now reads the sender from the archive
+// folder and does not save them as a contact. Both flags are still required.
 func TestAutoarchivedFlag(t *testing.T) {
 	cfg := requireE2E(t)
 	ctx, cancel := contextTimeout(2 * time.Minute)
