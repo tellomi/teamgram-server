@@ -865,6 +865,17 @@ func (d *Dao) sendMessageToOutboxV2(ctx context.Context, fromId int64, peer *mtp
 		}
 	}
 
+	// The messages row used to be inserted only by the inbox consumer, after
+	// Kafka accepted the record and sendMessage had already returned the id.
+	// getMessages of that id then saw no row. Persist the sender copy, including
+	// reply_to, before the RPC returns. The consumer's later insert is a replay
+	// of the same random id and does not replace this body.
+	if out && message != nil && outBoxMsgId != 0 {
+		if err = d.SendMessageToOutboxV1NoPts(ctx, fromId, peer, outMsgBox); err != nil {
+			return nil, err
+		}
+	}
+
 	return outMsgBox, nil
 }
 

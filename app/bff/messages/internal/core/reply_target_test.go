@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/svc"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	messageclient "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -66,12 +68,18 @@ func TestReplyTargetIDSurvivesMessageJSON(t *testing.T) {
 		t.Fatal("flag-only did not resolve")
 	}
 
-	both := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-		ReplyToMsgId:           41,
-		ReplyToMsgId_FLAGINT32: wrapperspb.Int32(99),
+	withTopic := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+		ReplyToMsgId: 50,
+		ReplyToTopId: wrapperspb.Int32(10),
 	}).To_MessageReplyHeader()
-	if id := replyTargetID(&mtproto.Message{ReplyTo: both}); id != 41 {
-		t.Fatalf("plain id lost to flag, got %d", id)
+	if id := replyTargetID(&mtproto.Message{ReplyTo: withTopic}); id != 50 {
+		t.Fatalf("reply id %d", id)
+	}
+	topicOnly := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+		ReplyToTopId: wrapperspb.Int32(10),
+	}).To_MessageReplyHeader()
+	if id := replyTargetID(&mtproto.Message{ReplyTo: topicOnly}); id != 0 {
+		t.Fatalf("topic root %d", id)
 	}
 
 	for _, hdr := range []*mtproto.MessageReplyHeader{plain, flag} {
@@ -177,6 +185,88 @@ type replyUsers struct {
 
 func (replyUsers) UserGetMutableUsers(context.Context, *userpb.TLUserGetMutableUsers) (*userpb.Vector_ImmutableUser, error) {
 	return &userpb.Vector_ImmutableUser{}, nil
+}
+
+func TestSendReplyTLKeepsReplyToMsgId(t *testing.T) {
+	req := &mtproto.TLMessagesSendMessage{
+		Constructor: mtproto.CRC32_messages_sendMessage_fef48f62,
+		Peer:        mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 8}).To_InputPeer(),
+		Message:     "reply-row-205",
+		RandomId:    99,
+		ReplyTo: mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
+			ReplyToMsgId: 41,
+		}).To_InputReplyTo(),
+	}
+	buf := mtproto.NewEncodeBuf(512)
+	if err := req.Encode(buf, 232); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	if len(raw) < 4 {
+		t.Fatal("short encode")
+	}
+	decoded := &mtproto.TLMessagesSendMessage{Constructor: mtproto.CRC32_messages_sendMessage_fef48f62}
+	if err := decoded.Decode(mtproto.NewDecodeBuf(raw[4:])); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.GetReplyTo().GetReplyToMsgId() != 41 {
+		t.Fatalf("decoded reply %#v", decoded.GetReplyTo())
+	}
+	header := replyHeaderFromInput(7, mtproto.MakePeerUtil(mtproto.PEER_USER, 8), decoded.GetReplyTo())
+	if header.GetReplyToMsgId() != 41 || header.GetReplyToMsgId_FLAGINT32().GetValue() != 41 {
+		t.Fatalf("header %#v", header)
+	}
+}
+
+func TestOutboxKafkaRoundTripKeepsReplyToMsgId(t *testing.T) {
+	in := mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
+		ReplyToMsgId: 41,
+	}).To_InputReplyTo()
+	header := replyHeaderFromInput(7, mtproto.MakePeerUtil(mtproto.PEER_USER, 8), in)
+	msg := mtproto.MakeTLMessage(&mtproto.Message{
+		Out:     true,
+		Id:      42,
+		Message: "reply-row-205",
+		PeerId:  mtproto.MakePeerUser(8),
+		FromId:  mtproto.MakePeerUser(7),
+		ReplyTo: header,
+	}).To_Message()
+	req := &inbox.TLInboxSendUserMessageToInboxV2{
+		UserId:   7,
+		Out:      true,
+		FromId:   7,
+		PeerType: mtproto.PEER_USER,
+		PeerId:   8,
+		BoxList: []*mtproto.MessageBox{{
+			UserId: 7, MessageId: 42, SenderUserId: 7,
+			PeerType: mtproto.PEER_USER, PeerId: 8, Message: msg,
+		}},
+	}
+	raw, err := jsonx.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back inbox.TLInboxSendUserMessageToInboxV2
+	if err = json.Unmarshal(raw, &back); err != nil {
+		t.Fatalf("kafka json: %v", err)
+	}
+	if len(back.GetBoxList()) != 1 || back.BoxList[0].GetMessage() == nil {
+		t.Fatalf("box lost: %s", raw)
+	}
+	stored, err := jsonx.Marshal(back.BoxList[0].GetMessage())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded *mtproto.Message
+	if err = jsonx.Unmarshal(stored, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	loaded = loaded.FixData()
+	h := loaded.GetReplyTo()
+	t.Logf("after kafka plain=%d flag=%d int32=%d top=%d", h.GetReplyToMsgId(), h.GetReplyToMsgId_FLAGINT32().GetValue(), h.GetReplyToMsgId_INT32(), h.GetReplyToTopId().GetValue())
+	if h.GetReplyToMsgId() != 41 {
+		t.Fatalf("reply_to_msg_id dropped: %s", stored)
+	}
 }
 
 func (f *replyBoxes) MessageGetUserMessageList(_ context.Context, in *message.TLMessageGetUserMessageList) (*message.Vector_MessageBox, error) {

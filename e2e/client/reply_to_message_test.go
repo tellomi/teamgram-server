@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // TestGetMessagesReplyToReturnsOriginal is row 205.
@@ -39,7 +38,6 @@ func TestGetMessagesReplyToReturnsOriginal(t *testing.T) {
 		RandomId:    randomID(),
 		ReplyTo: mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
 			ReplyToMsgId: originOnB,
-			TopMsgId:     wrapperspb.Int32(originOnB),
 		}).To_InputReplyTo(),
 	})
 	if err != nil {
@@ -60,17 +58,6 @@ func TestGetMessagesReplyToReturnsOriginal(t *testing.T) {
 	}
 	msgs, ok := messagesOf(obj)
 	if !ok || len(msgs) != 1 || msgs[0].GetId() != originOnB || msgs[0].GetMessage() != "origin-row-205" {
-		byID, byErr := bob.Invoke(ctx, &mtproto.TLMessagesGetMessages{
-			Constructor: mtproto.CRC32_messages_getMessages_63c66506,
-			Id_VECTORINPUTMESSAGE: []*mtproto.InputMessage{
-				mtproto.MakeTLInputMessageID(&mtproto.InputMessage{Id: replyID}).To_InputMessage(),
-			},
-		})
-		stored, _ := messagesOf(byID)
-		var header *mtproto.MessageReplyHeader
-		if len(stored) == 1 {
-			header = stored[0].GetReplyTo()
-		}
-		t.Fatalf("getMessages reply-to: ok=%v origin=%d reply=%d msgs=%#v stored=%d header=%+v byErr=%v", ok, originOnB, replyID, msgs, len(stored), header, byErr)
+		t.Fatalf("getMessages reply-to: ok=%v %#v", ok, msgs)
 	}
 }

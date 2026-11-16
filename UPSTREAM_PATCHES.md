@@ -919,11 +919,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## inputMessageReplyTo (row 205)
 
-`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message it replies to. A stored `messageReplyHeader` may contain only `reply_to_msg_id` or only `reply_to_msg_id_FLAGINT32`. `ReplyTargetMsgID` uses `reply_to_msg_id` when that field is set, then `reply_to_top_id`, then the int32 column, then `GetFixedReplyToMsgId`. A header that only has `reply_to_msg_id_FLAGINT32` still resolves. A stray flag does not replace the plain id. Private messages are stored as JSON and channel messages as protobuf; both shapes survive that store and resolve on both paths. A reply with no header is omitted instead of being returned as itself. `channels.getMessages` runs the same `requireView` as a request by id, including the access hash, before it loads the body. A caller who cannot see the channel gets that error for a missing id and for a stored id, and the post is not returned.
+`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message it replies to. A stored `messageReplyHeader` may contain only `reply_to_msg_id` or only `reply_to_msg_id_FLAGINT32`. `ReplyTargetMsgID` reads only the three stored forms of `reply_to_msg_id` (`GetFixedReplyToMsgId`, then the plain field, the int32 column, and the flag). It does not use `reply_to_top_id`, which is the topic root. `sendMessageToOutboxV2` used to return the new id before the inbox consumer inserted the sender's `messages` row, so `messages.getMessages` of that id could see no row. The sender row, including `reply_to_msg_id`, is inserted before the RPC returns. The consumer's later insert is a replay of the same random id and does not replace the body. Private messages are stored as JSON and channel messages as protobuf; both shapes survive that store and resolve on both paths. A reply with no header is omitted instead of being returned as itself. `channels.getMessages` runs the same `requireView` as a request by id, including the access hash, before it loads the body. A caller who cannot see the channel gets that error for a missing id and for a stored id, and the post is not returned.
 
 | Piece | File |
 | --- | --- |
 | private and basic group | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+| sender row | `app/messenger/msg/internal/dao/outbox.go` |
 | id resolution | `proto/mtproto/message_action.go` |
 | channel | `app/service/biz/channel/chat_p1.go`, `app/bff/channels/internal/server/grpc/service/handlers.go` |
 

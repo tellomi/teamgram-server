@@ -60,25 +60,21 @@ func (m *MessageReplyHeader) GetFixedReplyToMsgId() int32 {
 }
 
 // ReplyTargetMsgID is the message id inputMessageReplyTo should load.
-// Private history JSON keeps reply_to_msg_id for a normal reply. A header
-// can also carry only reply_to_msg_id_FLAGINT32. The plain id wins when it
-// is set. Otherwise the flag form, the int32 column, and reply_to_top_id
-// are tried. GetFixedReplyToMsgId reads the flag first, so it is not the
-// first choice: a stray flag must not hide the plain id.
+// Only the three stored forms of reply_to_msg_id count: the plain field,
+// reply_to_msg_id_INT32, and reply_to_msg_id_FLAGINT32. reply_to_top_id is
+// the topic root. Returning it would hand back the topic instead of the
+// message that was replied to.
 func (m *MessageReplyHeader) ReplyTargetMsgID() int32 {
 	if m == nil {
 		return 0
 	}
+	if id := m.GetFixedReplyToMsgId(); id != 0 {
+		return id
+	}
 	if id := m.GetReplyToMsgId(); id != 0 {
 		return id
 	}
-	if id := m.GetReplyToTopId().GetValue(); id != 0 {
-		return id
-	}
 	if id := m.GetReplyToMsgId_INT32(); id != 0 {
-		return id
-	}
-	if id := m.GetFixedReplyToMsgId(); id != 0 {
 		return id
 	}
 	return m.GetReplyToMsgId_FLAGINT32().GetValue()
