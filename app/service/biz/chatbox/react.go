@@ -2,6 +2,7 @@ package chatbox
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -356,6 +357,48 @@ func (b *Book) loadReact(ctx context.Context, self int64, peer *mtproto.PeerUtil
 	}
 	b.react[key] = doc
 	return doc, nil
+}
+
+// ReactionMessageIDs lists this user's message ids in the dialog that carry
+// one of want, newest first. The ids come from the stored reaction document,
+// not from a page of messages.search.
+func (b *Book) ReactionMessageIDs(ctx context.Context, self int64, peer *mtproto.PeerUtil, want []*mtproto.Reaction) []int32 {
+	emos := map[string]bool{}
+	docs := map[int64]bool{}
+	for _, r := range want {
+		if r == nil {
+			continue
+		}
+		if emo := r.GetEmoticon(); emo != "" {
+			emos[emo] = true
+		}
+		if id := r.GetDocumentId(); id != 0 {
+			docs[id] = true
+		}
+	}
+	if b == nil || peer == nil || self == 0 || (len(emos) == 0 && len(docs) == 0) {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, self, peer)
+	if err != nil || doc == nil {
+		return nil
+	}
+	seen := map[int32]bool{}
+	var ids []int32
+	for _, item := range doc.Items {
+		if item.UserID != self || item.MsgID == 0 || seen[item.MsgID] {
+			continue
+		}
+		if !emos[item.Emoticon] && !(item.DocumentID != 0 && docs[item.DocumentID]) {
+			continue
+		}
+		seen[item.MsgID] = true
+		ids = append(ids, item.MsgID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] > ids[j] })
+	return ids
 }
 
 // KeepSavedReaction keeps saved-message boxes that carry one of want.

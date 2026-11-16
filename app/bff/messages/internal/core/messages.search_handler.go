@@ -20,6 +20,7 @@ package core
 
 import (
 	"math"
+	"strings"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -317,12 +318,16 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 			    "limit": 21
 			}
 		*/
-		// Saved-message tag chips send q="" plus saved_reaction. That is a
-		// real query. An empty text search with no sender and no tag is not.
-		if fromId == nil && in.Q == "" && len(in.GetSavedReaction()) == 0 {
+		// An empty query is a real search only for a Saved Messages tag chip.
+		// Every other empty q, including a normal dialog that also sends
+		// saved_reaction, is SEARCH_QUERY_EMPTY.
+		if in.Q == "" && !(savedSelf(peer, c.MD.UserId) && len(in.GetSavedReaction()) > 0) {
 			err = mtproto.ErrSearchQueryEmpty
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return nil, err
+		}
+		if len(in.GetSavedReaction()) > 0 {
+			return c.searchByReaction(peer, in, offsetId, limit)
 		}
 
 		var (
@@ -352,12 +357,6 @@ func (c *MessagesCore) MessagesSearch(in *mtproto.TLMessagesSearch) (*mtproto.Me
 		if err != nil {
 			c.Logger.Errorf("messages.search - error: %v", err)
 			return rValues, nil
-		}
-		if len(in.GetSavedReaction()) > 0 && boxList != nil && savedSelf(peer, c.MD.UserId) {
-			boxList.BoxList = chatbox.Shared().KeepSavedReaction(c.ctx, c.MD.UserId, boxList.GetBoxList(), in.GetSavedReaction())
-			if boxList.BoxList == nil {
-				boxList.BoxList = []*mtproto.MessageBox{}
-			}
 		}
 
 		if boxList.Count > 0 {
@@ -426,6 +425,140 @@ func (c *MessagesCore) searchMedia(peer *mtproto.PeerUtil, mediaType, offsetId, 
 		Offset:    offsetId,
 		Limit:     limit,
 	})
+}
+
+// searchByReaction pages the caller's reaction document. The message ids
+// that carry one of saved_reaction are the whole result. offset and limit
+// cut that list. count is the number of tagged messages, and a short page
+// is messages.messagesSlice.
+func (c *MessagesCore) searchByReaction(peer *mtproto.PeerUtil, in *mtproto.TLMessagesSearch, offsetID, limit int32) (*mtproto.Messages_Messages, error) {
+	rValues := mtproto.MakeTLMessagesMessages(&mtproto.Messages_Messages{
+		Messages: []*mtproto.Message{},
+		Chats:    []*mtproto.Chat{},
+		Users:    []*mtproto.User{},
+	}).To_Messages_Messages()
+	ids := chatbox.Shared().ReactionMessageIDs(c.ctx, c.MD.UserId, peer, in.GetSavedReaction())
+	ids = narrowReactionIDs(ids, offsetID, in.GetMinId(), in.GetMaxId())
+	if in.Q != "" {
+		loaded := c.boxesByID(ids)
+		var kept []int32
+		q := strings.ToLower(in.Q)
+		for _, id := range ids {
+			box := loaded[id]
+			if box == nil || box.GetMessage() == nil {
+				continue
+			}
+			if strings.Contains(strings.ToLower(box.GetMessage().GetMessage()), q) {
+				kept = append(kept, id)
+			}
+		}
+		ids = kept
+	}
+	total := int32(len(ids))
+	page := pageReactionIDs(ids, in.GetAddOffset(), limit)
+	loaded := c.boxesByID(page)
+	for _, id := range page {
+		box := loaded[id]
+		if box == nil || box.GetMessage() == nil {
+			continue
+		}
+		rValues.Messages = append(rValues.Messages, box.GetMessage())
+	}
+	if rValues.Messages == nil {
+		rValues.Messages = []*mtproto.Message{}
+	}
+	if int32(len(rValues.Messages)) < total {
+		rValues.Count = total
+		rValues.PredicateName = mtproto.Predicate_messages_messagesSlice
+	}
+	c.attachSearchUsers(rValues)
+	return rValues, nil
+}
+
+func narrowReactionIDs(ids []int32, offsetID, minID, maxID int32) []int32 {
+	if offsetID == 0 || offsetID == math.MaxInt32 {
+		offsetID = 0
+	}
+	var out []int32
+	for _, id := range ids {
+		if offsetID != 0 && id >= offsetID {
+			continue
+		}
+		if minID > 0 && id <= minID {
+			continue
+		}
+		if maxID > 0 && id >= maxID {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+func pageReactionIDs(ids []int32, addOffset, limit int32) []int32 {
+	if limit < 0 {
+		limit = 0
+	}
+	start := int(addOffset)
+	if start < 0 {
+		start = 0
+	}
+	if start > len(ids) {
+		return nil
+	}
+	end := start + int(limit)
+	if end > len(ids) {
+		end = len(ids)
+	}
+	return ids[start:end]
+}
+
+func (c *MessagesCore) boxesByID(ids []int32) map[int32]*mtproto.MessageBox {
+	out := map[int32]*mtproto.MessageBox{}
+	if len(ids) == 0 || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.MessageClient == nil {
+		return out
+	}
+	found, err := c.svcCtx.Dao.MessageClient.MessageGetUserMessageList(c.ctx, &message.TLMessageGetUserMessageList{
+		UserId: c.MD.UserId,
+		IdList: ids,
+	})
+	if err != nil || found == nil {
+		return out
+	}
+	for _, box := range found.GetDatas() {
+		if box == nil {
+			continue
+		}
+		id := box.GetMessageId()
+		if box.GetMessage() != nil && box.GetMessage().GetId() != 0 {
+			id = box.GetMessage().GetId()
+		}
+		out[id] = box
+	}
+	return out
+}
+
+func (c *MessagesCore) attachSearchUsers(rValues *mtproto.Messages_Messages) {
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil {
+		return
+	}
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, m := range rValues.GetMessages() {
+		id := m.GetFromId().GetUserId()
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	mUsers, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{Id: ids})
+	if mUsers != nil {
+		rValues.Users = append(rValues.Users, mUsers.GetUserListByIdList(c.MD.UserId, ids...)...)
+	}
 }
 
 func savedSelf(peer *mtproto.PeerUtil, self int64) bool {
