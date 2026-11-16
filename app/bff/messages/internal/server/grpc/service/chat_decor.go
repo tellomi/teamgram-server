@@ -46,6 +46,15 @@ func deliverService(ctx context.Context, c msg_client.MsgClient, self, auth int6
 	if err != nil {
 		return nil, err
 	}
+	// messages.setChatWallPaper's result includes updatePeerWallpaper for the
+	// caller. The messenger result is the service message only.
+	if sent != nil {
+		for _, u := range local.GetUpdates() {
+			if u.GetPredicateName() == mtproto.Predicate_updatePeerWallpaper {
+				sent.Updates = append(sent.Updates, u)
+			}
+		}
+	}
 	return sent, nil
 }
 

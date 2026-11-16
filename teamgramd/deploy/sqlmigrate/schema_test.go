@@ -64,6 +64,25 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["business_profile"]["doc_key"] || !cols["business_profile"]["data"] {
 		t.Fatal("business_profile missing after migrations")
 	}
+	for _, col := range []string{"user_id", "peer_type", "peer_id", "top_msg_id", "draft_type", "draft_message_data"} {
+		if !cols["dialog_topic_drafts"][col] {
+			t.Errorf("dialog_topic_drafts.%s missing after migrations", col)
+		}
+	}
+	topicDraftMig := mustRead(t, filepath.Join(dir, "migrate-20261130-dialog-topic-draft.sql"))
+	if !strings.Contains(topicDraftMig, "CREATE TABLE IF NOT EXISTS `dialog_topic_drafts`") || !strings.Contains(topicDraftMig, "user_peer_topic") {
+		t.Fatal("topic draft migration does not create dialog_topic_drafts")
+	}
+	for _, line := range strings.Split(topicDraftMig, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(s, "--") {
+			continue
+		}
+		upper := strings.ToUpper(s)
+		if strings.Contains(upper, "DIALOGS") || strings.HasPrefix(upper, "UPDATE ") || strings.HasPrefix(upper, "DELETE ") {
+			t.Fatalf("topic draft migration rewrites existing drafts: %s", s)
+		}
+	}
 	for _, col := range []string{"media_document_id", "media_photo_id"} {
 		if !cols["messages"][col] {
 			t.Errorf("messages.%s missing after migrations", col)

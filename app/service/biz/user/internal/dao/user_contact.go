@@ -114,6 +114,7 @@ func contactDataFromDO(contact *dataobject.UserContactsDO) *mtproto.ContactData 
 		MutualContact: contact.Mutual,
 		Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
 		CloseFriend:   contact.CloseFriend,
+		StoriesHidden: contact.StoriesHidden,
 	}).To_ContactData()
 }
 
@@ -310,26 +311,25 @@ func (d *Dao) getCloseFriendListByIdList(ctx context.Context, id int64, idList [
 					return nil
 				})
 			if err == nil && do.CloseFriend {
-				closeFriendList[idx.idx] = mtproto.MakeTLContactData(&mtproto.ContactData{
-					UserId:        id,
-					ContactUserId: do.ContactUserId,
-					FirstName:     mtproto.MakeFlagsString(do.ContactFirstName),
-					LastName:      mtproto.MakeFlagsString(do.ContactLastName),
-					MutualContact: do.Mutual,
-					Phone:         mtproto.MakeFlagsString(do.ContactPhone),
-					CloseFriend:   do.CloseFriend,
-				}).To_ContactData()
+				closeFriendList[idx.idx] = contactDataFromDO(do)
 			}
 		})
 
-	for _, v := range closeFriendList {
-		if v == nil {
-			// has hole, internal error
-			return nil
+	// A contact who is not a close friend leaves a nil slot. That is not a
+	// hole in the address book. Returning nil here made the saved list look
+	// empty, so contacts.editCloseFriends could add people and never clear
+	// the ones left out of the new list.
+	return compactCloseFriends(closeFriendList)
+}
+
+func compactCloseFriends(rows []*mtproto.ContactData) []*mtproto.ContactData {
+	out := make([]*mtproto.ContactData, 0, len(rows))
+	for _, row := range rows {
+		if row != nil {
+			out = append(out, row)
 		}
 	}
-
-	return closeFriendList
+	return out
 }
 
 func (d *Dao) getContactListByIdList(ctx context.Context, id int64, idList []int64) []*mtproto.ContactData {
@@ -377,15 +377,7 @@ func (d *Dao) getContactListByKeyList(ctx context.Context, cKeys ...string) []*m
 					continue
 				}
 				noCaches[key] = contact
-				contactList = append(contactList, mtproto.MakeTLContactData(&mtproto.ContactData{
-					UserId:        contact.OwnerUserId,
-					ContactUserId: contact.ContactUserId,
-					FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
-					LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
-					MutualContact: contact.Mutual,
-					Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
-					CloseFriend:   contact.CloseFriend,
-				}).To_ContactData())
+				contactList = append(contactList, contactDataFromDO(contact))
 			}
 			return noCaches, nil
 		},
@@ -399,15 +391,7 @@ func (d *Dao) getContactListByKeyList(ctx context.Context, cKeys ...string) []*m
 				return nil, err
 			}
 
-			contactList = append(contactList, mtproto.MakeTLContactData(&mtproto.ContactData{
-				UserId:        contact.OwnerUserId,
-				ContactUserId: contact.ContactUserId,
-				FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
-				LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
-				MutualContact: contact.Mutual,
-				Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
-				CloseFriend:   contact.CloseFriend,
-			}).To_ContactData())
+			contactList = append(contactList, contactDataFromDO(contact))
 
 			return contact, nil
 		},

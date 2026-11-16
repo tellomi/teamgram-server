@@ -237,7 +237,14 @@ func (c *MsgCore) peerRevokeMaxID(in *msg.TLMsgDeleteHistory, anchorID int32) in
 }
 
 func (c *MsgCore) historyDeleteUpdates(in *msg.TLMsgDeleteHistory, peer *mtproto.PeerUtil, deleted []int32, anchor *mtproto.Message, clearAnchor, markRead bool) (int32, []*mtproto.Update) {
+	anchorID := int32(0)
+	if clearAnchor && anchor != nil {
+		anchorID = deletehistory.AnchorDeleteID(deleted, anchor.GetId())
+	}
 	n := len(deleted)
+	if anchorID != 0 {
+		n++
+	}
 	if markRead {
 		n++
 	}
@@ -248,7 +255,9 @@ func (c *MsgCore) historyDeleteUpdates(in *msg.TLMsgDeleteHistory, peer *mtproto
 		return c.svcCtx.Dao.IDGenClient2.CurrentPtsId(c.ctx, in.UserId), nil
 	}
 	// NextNPtsId returns the pts after these n events. They occupy
-	// (end-n, end] in the order delete, read, edit.
+	// (end-n, end] in the order delete, anchor delete, read, edit.
+	// The anchor delete is its own pts so len(messages) equals pts_count.
+	// getDifference folds adjacent deletes and still names the anchor.
 	end := c.svcCtx.Dao.IDGenClient2.NextNPtsId(c.ctx, in.UserId, n)
 	cursor := end - int32(n)
 	var updates []*mtproto.Update
@@ -259,9 +268,17 @@ func (c *MsgCore) historyDeleteUpdates(in *msg.TLMsgDeleteHistory, peer *mtproto
 	if len(deleted) > 0 {
 		cursor += int32(len(deleted))
 		push(mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
-			Messages:  deleted,
+			Messages:  append([]int32(nil), deleted...),
 			Pts_INT32: cursor,
 			PtsCount:  int32(len(deleted)),
+		}).To_Update())
+	}
+	if anchorID != 0 {
+		cursor++
+		push(mtproto.MakeTLUpdateDeleteMessages(&mtproto.Update{
+			Messages:  []int32{anchorID},
+			Pts_INT32: cursor,
+			PtsCount:  1,
 		}).To_Update())
 	}
 	if markRead {

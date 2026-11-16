@@ -151,3 +151,36 @@ func TestGetNotifyExceptionsEmitsForumTopics(t *testing.T) {
 		t.Fatalf("dialog %v topic %v updates %+v", dialog, topic, up.GetUpdates())
 	}
 }
+
+func TestGetNotifyExceptionsCompareSoundDropsMuteOnly(t *testing.T) {
+	users := &notifyUserFake{all: &user.Vector_PeerPeerNotifySettings{
+		Datas: []*user.PeerPeerNotifySettings{
+			user.MakeTLPeerPeerNotifySettings(&user.PeerPeerNotifySettings{
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerId:   3,
+				Settings: mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{
+					MuteUntil: wrapperspb.Int32(2147483647),
+				}).To_PeerNotifySettings(),
+			}).To_PeerPeerNotifySettings(),
+			user.MakeTLPeerPeerNotifySettings(&user.PeerPeerNotifySettings{
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerId:   5,
+				Settings: mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{
+					AndroidSound: mtproto.MakeTLNotificationSoundRingtone(&mtproto.NotificationSound{Id: 9}).To_NotificationSound(),
+				}).To_PeerNotifySettings(),
+			}).To_PeerPeerNotifySettings(),
+		},
+	}}
+	c := notifyCore(users, &notifySyncFake{}, "android")
+	up, err := c.AccountGetNotifyExceptions(&mtproto.TLAccountGetNotifyExceptions{CompareSound: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(up.GetUpdates()) != 1 {
+		t.Fatalf("updates %+v", up.GetUpdates())
+	}
+	peer := up.GetUpdates()[0].GetPeer_NOTIFYPEER().GetPeer()
+	if peer.GetChannelId() != 5 {
+		t.Fatalf("kept peer %d", peer.GetChannelId())
+	}
+}

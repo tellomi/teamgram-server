@@ -29,4 +29,26 @@ func TestDraftHasContent(t *testing.T) {
 	if !draftHasContent(&mtproto.TLMessagesSaveDraft{NoWebpage: true}) {
 		t.Fatal("no_webpage")
 	}
+	address := mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
+		ReplyToMsgId: 15,
+		TopMsgId:     wrapperspb.Int32(15),
+	}).To_InputReplyTo()
+	if draftHasContent(&mtproto.TLMessagesSaveDraft{ReplyTo: address}) {
+		t.Fatal("topic address alone should clear that topic")
+	}
+	if !draftHasContent(&mtproto.TLMessagesSaveDraft{ReplyTo: address, Message: "inside"}) {
+		t.Fatal("topic text")
+	}
+	if !draftHasContent(&mtproto.TLMessagesSaveDraft{ReplyTo: mtproto.MakeTLInputReplyToMessage(&mtproto.InputReplyTo{
+		ReplyToMsgId: 40,
+		TopMsgId:     wrapperspb.Int32(15),
+	}).To_InputReplyTo()}) {
+		t.Fatal("reply inside a topic")
+	}
+	if saveDraftTopicID(&mtproto.TLMessagesSaveDraft{TopMsgId: wrapperspb.Int32(8)}) != 8 {
+		t.Fatal("request top_msg_id")
+	}
+	if saveDraftTopicID(&mtproto.TLMessagesSaveDraft{ReplyTo: address}) != 15 {
+		t.Fatal("reply top_msg_id")
+	}
 }
