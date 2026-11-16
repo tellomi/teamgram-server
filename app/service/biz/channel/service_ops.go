@@ -1609,6 +1609,23 @@ func (s *Service) ResolveUsername(ctx context.Context, viewer int64, username st
 	return s.ChatFor(ctx, viewer, ch), nil
 }
 
+// IsBroadcast reports the channel record's broadcast flag.
+// A supergroup and a broadcast channel share PeerType CHANNEL.
+// ok is false when the id is missing or deleted. A store error is returned.
+func (s *Service) IsBroadcast(ctx context.Context, id int64) (broadcast bool, ok bool, err error) {
+	if s == nil || s.store == nil {
+		return false, false, nil
+	}
+	ch, err := s.store.GetChannel(ctx, id)
+	if err != nil {
+		return false, false, err
+	}
+	if ch == nil || ch.Deleted {
+		return false, false, nil
+	}
+	return ch.Broadcast, true, nil
+}
+
 func (s *Service) ChatsFor(ctx context.Context, viewer int64, ids ...int64) []*mtproto.Chat {
 	out := make([]*mtproto.Chat, 0, len(ids))
 	for _, id := range ids {

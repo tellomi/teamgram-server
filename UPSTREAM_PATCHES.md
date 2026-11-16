@@ -12,6 +12,14 @@ Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.sea
 | --- | --- |
 | count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `search_counter_voice.go` |
 
+## Slow mode next send date (ISSUE-S-SLOWMODE-NEXTDATE-001)
+
+`channels.getFullChannel` returned `slowmode_seconds` and left `slowmode_next_send_date` empty. `Send` already stores each member's last send in `Features.LastSend` and returns `SLOWMODE_WAIT` from that map. `channelFull` now fills `slowmode_next_send_date` from the same map: last send plus `slowmode_seconds`, only for a member who is not an admin and not the creator, and only while that time is still in the future. Admins, the creator, a closed slow mode, and an elapsed window omit the field.
+
+| Piece | File |
+| --- | --- |
+| field | `app/service/biz/channel/convert.go` |
+
 ## Channel profile photo on getFullChannel (ISSUE-S-CHAN-FULLPHOTO-001)
 
 `channels.editPhoto` stored the photo id on the channel and put the full photo on the service message and on `chat.photo`. `channels.getFullChannel` still wrote `channelFull.chat_photo` as `photoEmpty`, so the profile screen could not open the large photo. The field now loads that photo id through `media.getPhoto` (the same call a basic group already uses when it fills `chatFull.chat_photo`). Several ids are deduped and loaded together. A missing photo, or a cleared avatar, stays `photoEmpty`. `messages.getFullChat` already returned the stored photo and is unchanged.
@@ -1183,3 +1191,14 @@ The ceremony row stores the permanent auth key that called init. Register and fi
 | logged-in gate | `app/interface/session/internal/sess/check_api_request_type.go` |
 | wiring | `app/bff/bff/internal/server/server.go` |
 | table | `teamgramd/deploy/sql/migrate-20261115-passkeys.sql` |
+
+## Notify exception peer scope (ISSUE-S-NOTIFY-EXC-SCOPE-001)
+
+`account.getNotifyExceptions` returned every stored exception and did not read `peer`. With `inputNotifyUsers` a muted supergroup was included. With `inputNotifyChats` a muted private chat was included.
+
+An unset peer still returns every row. `inputNotifyUsers` keeps users. `inputNotifyChats` keeps basic groups and channels whose record has `broadcast` false, including topic rows of those channels. `inputNotifyBroadcasts` keeps channels whose record has `broadcast` true. `inputNotifyPeer` keeps that one dialog, including its topic rows. `inputNotifyForumTopic` keeps that one topic row. `compare_sound` is unchanged: a row is kept only when its sound or stories sound is not the default. A missing channel is left out of both channel categories. `PeerType` CHANNEL is not used as the broadcast test.
+
+| Piece | File |
+| --- | --- |
+| peer filter | `app/bff/notification/internal/core/account.getNotifyExceptions_handler.go` |
+| broadcast flag | `app/service/biz/channel/service_ops.go` `IsBroadcast` |
