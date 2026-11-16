@@ -2,6 +2,16 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Voice search counters (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
+
+`messages.getSearchCounters` counted a photo with `SELECT count(id)` on `message_filter_type`. A voice note and a round video share `MEDIA_AUDIO`. The voice count paged those rows and parsed `message_data`, so one call could report photo=1 and voice=0 even when both rows were already stored.
+
+Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.search` that reads only that column still lists them. The voice and round counts are now `SELECT count(id)` on that same column. `message_data` is a JSON column, so the text form has a space after the colon (`"voice": true`, `"round_message": true`). A row stored as `MEDIA_VOICE_FILE` or `MEDIA_ROUND_FILE` is still added by its column and is not matched by the audio predicate. The send path is unchanged. A row that the inbox consumer has not inserted yet is absent from every count, including photos.
+
+| Piece | File |
+| --- | --- |
+| count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `search_counter_voice.go` |
+
 ## Slow mode next send date (ISSUE-S-SLOWMODE-NEXTDATE-001)
 
 `channels.getFullChannel` returned `slowmode_seconds` and left `slowmode_next_send_date` empty. `Send` already stores each member's last send in `Features.LastSend` and returns `SLOWMODE_WAIT` from that map. `channelFull` now fills `slowmode_next_send_date` from the same map: last send plus `slowmode_seconds`, only for a member who is not an admin and not the creator, and only while that time is still in the future. Admins, the creator, a closed slow mode, and an elapsed window omit the field.
