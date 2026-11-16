@@ -29,6 +29,7 @@ type Mysql struct {
 	*mysql_dao.DialogsDAO
 	*mysql_dao.SavedDialogsDAO
 	*mysql_dao.DraftsDAO
+	*mysql_dao.TopicDraftsDAO
 	*sqlx.CommonDAO
 }
 
@@ -39,6 +40,7 @@ func newMysqlDao(db *sqlx.DB) *Mysql {
 		DialogsDAO:       mysql_dao.NewDialogsDAO(db),
 		SavedDialogsDAO:  mysql_dao.NewSavedDialogsDAO(db),
 		DraftsDAO:        mysql_dao.NewDraftsDAO(db),
+		TopicDraftsDAO:   mysql_dao.NewTopicDraftsDAO(db),
 		CommonDAO:        sqlx.NewCommonDAO(db),
 	}
 }

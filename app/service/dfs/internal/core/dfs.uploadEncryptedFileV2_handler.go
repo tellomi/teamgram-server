@@ -22,6 +22,7 @@ import (
 	"github.com/teamgram/marmota/pkg/threading2"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/dfs/dfs"
+	"github.com/teamgram/teamgram-server/app/service/dfs/internal/dao"
 	"github.com/teamgram/teamgram-server/app/service/dfs/internal/model"
 )
 
@@ -66,28 +67,54 @@ func (c *DfsCore) DfsUploadEncryptedFileV2(in *dfs.TLDfsUploadEncryptedFileV2) (
 		}
 	}
 
-	encryptedFileId := c.svcCtx.Dao.IDGenClient2.NextId(c.ctx)
+	encryptedFileId := c.nextID()
+	if encryptedFileId == 0 {
+		c.Logger.Errorf("dfs.uploadEncryptedFile - idgen returned 0")
+		return nil, mtproto.ErrInternalServerError
+	}
 	accessHash := int64(mtproto.CRC32_storage_filePartial)<<32 | int64(rand.Uint32())
-	c.svcCtx.Dao.SetCacheFileInfo(c.ctx, encryptedFileId, fileInfo)
+	size := fileInfo.GetFileSize()
 	path := fmt.Sprintf("%d.dat", encryptedFileId)
+	md5sum := ""
+	if file.GetPredicateName() == mtproto.Predicate_inputEncryptedFileUploaded {
+		md5sum = strings.ToLower(file.GetMd5Checksum())
+	}
+	// upload.getFile checks encrypted_files before it reads the object.
+	// The row has to exist when this RPC returns. A repeat of the same id
+	// keeps the first access_hash.
+	saved, err := c.svcCtx.Dao.SaveEncryptedFile(c.ctx, dao.EncryptedFileRow{
+		ID:             encryptedFileId,
+		AccessHash:     accessHash,
+		DCID:           1,
+		Size:           size,
+		KeyFingerprint: file.GetKeyFingerprint(),
+		MD5:            md5sum,
+		Path:           path,
+	})
+	if err != nil {
+		c.Logger.Errorf("dfs.uploadEncryptedFile - encrypted_files: %v", err)
+		return nil, mtproto.ErrInternalServerError
+	}
+	c.svcCtx.Dao.SetCacheFileInfo(c.ctx, saved.ID, fileInfo)
 	// The RPC context is canceled when this method returns. The object write
 	// has to outlive that, or upload.getFile loses the bytes after the part
 	// cache expires.
-	threading2.GoSafeContext(context.WithoutCancel(c.ctx), func(ctx context.Context) {
-		_, err2 := c.svcCtx.Dao.PutEncryptedFile(ctx, path, c.svcCtx.Dao.NewSSDBReader(fileInfo))
-		if err2 != nil {
-			c.Logger.Errorf("dfs.uploadEncryptedFile - error: %v", err2)
-		}
-	})
+	if c.svcCtx.Dao.MinioUtil != nil {
+		threading2.GoSafeContext(context.WithoutCancel(c.ctx), func(ctx context.Context) {
+			_, err2 := c.svcCtx.Dao.PutEncryptedFile(ctx, path, c.svcCtx.Dao.NewSSDBReader(fileInfo))
+			if err2 != nil {
+				c.Logger.Errorf("dfs.uploadEncryptedFile - error: %v", err2)
+			}
+		})
+	}
 
-	size := fileInfo.GetFileSize()
 	return mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{
-		Id:             encryptedFileId,
-		AccessHash:     accessHash,
-		Size2_INT32:    int32(size),
-		Size2_INT64:    size,
-		DcId:           1,
-		KeyFingerprint: file.GetKeyFingerprint(),
+		Id:             saved.ID,
+		AccessHash:     saved.AccessHash,
+		Size2_INT32:    int32(saved.Size),
+		Size2_INT64:    saved.Size,
+		DcId:           saved.DCID,
+		KeyFingerprint: saved.KeyFingerprint,
 	}).To_EncryptedFile(), nil
 }
 

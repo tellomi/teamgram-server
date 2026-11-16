@@ -179,6 +179,9 @@ func (s *Service) mayComment(ctx context.Context, groupID, sender int64) error {
 	if p != nil && p.InChannel() {
 		return s.canPost(group, p)
 	}
+	if s.features(ctx, groupID).JoinToSend {
+		return mtproto.ErrChatGuestSendForbidden
+	}
 	link := s.features(ctx, groupID).LinkedChatID
 	if link == 0 {
 		return mtproto.ErrChannelPrivate
@@ -556,6 +559,7 @@ func (s *Service) discussionChat(ctx context.Context, viewer int64, ch *Channel)
 		Date:                        ch.Date,
 		ParticipantsCount_FLAGINT32: wrapperspb.Int32(ch.ParticipantsCount),
 		JoinRequest:                 feat.JoinRequest,
+		JoinToSend:                  feat.JoinToSend,
 	}).To_Chat()
 }
 

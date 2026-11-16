@@ -19,6 +19,8 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -27,24 +29,31 @@ import (
 // DialogSetChatTheme
 // dialog.setChatTheme user_id:long peer_type:int peer_id:long theme_emoticon:string = Bool;
 func (c *DialogCore) DialogSetChatTheme(in *dialog.TLDialogSetChatTheme) (*mtproto.Bool, error) {
-	sqlx.TxWrapper(c.ctx, c.svcCtx.Dao.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-		_, _ = c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-			tx,
-			map[string]interface{}{
+	keys := []string{dialog.GetDialogCacheKeyByPeer(in.UserId, in.PeerType, in.PeerId)}
+	if in.PeerType == mtproto.PEER_USER && in.PeerId != 0 && in.PeerId != in.UserId {
+		keys = append(keys, dialog.GetDialogCacheKeyByPeer(in.PeerId, mtproto.PEER_USER, in.UserId))
+	}
+	_, _, err := c.svcCtx.Dao.ExecInvalidate(
+		c.ctx,
+		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+			if _, err := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(ctx, map[string]interface{}{
 				"theme_emoticon": in.ThemeEmoticon,
-			},
-			in.UserId,
-			in.PeerType,
-			in.PeerId)
-		_, _ = c.svcCtx.Dao.DialogsDAO.UpdateCustomMapTx(
-			tx,
-			map[string]interface{}{
-				"theme_emoticon": in.ThemeEmoticon,
-			},
-			in.PeerId,
-			in.PeerType,
-			in.UserId)
-	})
-
+			}, in.UserId, in.PeerType, in.PeerId); err != nil {
+				return 0, 0, err
+			}
+			if in.PeerType == mtproto.PEER_USER && in.PeerId != 0 && in.PeerId != in.UserId {
+				if _, err := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(ctx, map[string]interface{}{
+					"theme_emoticon": in.ThemeEmoticon,
+				}, in.PeerId, mtproto.PEER_USER, in.UserId); err != nil {
+					return 0, 0, err
+				}
+			}
+			return 0, 1, nil
+		},
+		keys...)
+	if err != nil {
+		c.Logger.Errorf("dialog.setChatTheme - error: %v", err)
+		return nil, err
+	}
 	return mtproto.BoolTrue, nil
 }

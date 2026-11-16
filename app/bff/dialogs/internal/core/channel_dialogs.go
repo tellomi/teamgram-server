@@ -73,15 +73,18 @@ func (c *DialogsCore) stampChannelFolders(list dialog.DialogExtList) {
 	applyChannelDialogRows(list, rows.GetDatas())
 }
 
-// applyChannelDialogRows copies the dialogs-table folder and pin onto channel
-// dialogs. The channel store does not keep either bit. A pinned channel was
+// applyChannelDialogRows copies the dialogs-table folder, pin, and draft onto
+// channel dialogs. The channel store does not keep those. A pinned channel was
 // replaced by an unpinned row, so getDialogs neither set pinned nor sorted it
 // first. Pin rank stays on Order; the chat-list sort reads that before date.
+// dialog.draft is the chat draft (top_msg_id 0). A topic draft is not on this
+// row, so replacing the channel dialog must not drop the chat draft either.
 func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 	type saved struct {
 		folder int32
 		pinned bool
 		order  int64
+		draft  *mtproto.DraftMessage
 	}
 	state := map[int64]saved{}
 	for _, row := range rows {
@@ -93,6 +96,7 @@ func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 			folder: row.GetDialog().GetFolderId().GetValue(),
 			pinned: row.GetDialog().GetPinned(),
 			order:  row.GetOrder(),
+			draft:  row.GetDialog().GetDraft(),
 		}
 	}
 	for _, ext := range list {
@@ -105,6 +109,7 @@ func applyChannelDialogRows(list, rows dialog.DialogExtList) {
 			continue
 		}
 		ext.Dialog.FolderId = mtproto.MakeFlagsInt32(row.folder)
+		ext.Dialog.Draft = row.draft
 		if row.pinned {
 			ext.Dialog.Pinned = true
 			ext.Order = row.order
@@ -127,6 +132,14 @@ func withoutPinnedDialogs(list dialog.DialogExtList) dialog.DialogExtList {
 // The table top only moves forward, so after the newest post is deleted it
 // still names that id and getDialogs / getPinnedDialogs drop the chat. The
 // channel store has the live top. Pin rank and folder stay on the table row.
+//
+// UnreadMentionsCount is computed on the live row (channels/bridge.go
+// dialogExt). The dialogs table does not store channel mentions, so leaving
+// the table value made getPeerDialogs report 0 while getDialogs, which
+// returns the live row, reported the real count. UnreadCount is already
+// copied. UnreadReactionsCount is not filled on the live row: channel
+// reactions stay on the dialogs table, and copying the zero would clear a
+// badge that table still holds.
 func applyChannelLiveRows(stored, live dialog.DialogExtList) {
 	byID := map[int64]*dialog.DialogExt{}
 	for _, ext := range live {
@@ -150,6 +163,7 @@ func applyChannelLiveRows(stored, live dialog.DialogExtList) {
 		d.ReadInboxMaxId = s.GetReadInboxMaxId()
 		d.ReadOutboxMaxId = s.GetReadOutboxMaxId()
 		d.UnreadCount = s.GetUnreadCount()
+		d.UnreadMentionsCount = s.GetUnreadMentionsCount()
 		d.Pts = s.Pts
 		d.ViewForumAsMessages = s.GetViewForumAsMessages()
 		ext.Date = src.GetDate()

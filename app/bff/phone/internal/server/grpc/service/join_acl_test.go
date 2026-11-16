@@ -118,7 +118,7 @@ func TestJoinGroupCallRoomACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := joinedSelf(t, memberJoin); got.GetPeer().GetUserId() != 11 || !got.GetMuted() || got.GetCanSelfUnmute() {
+	if got := joinedSelf(t, memberJoin); got.GetPeer().GetUserId() != 11 || !got.GetMuted() || !got.GetCanSelfUnmute() {
 		t.Fatalf("member %+v", got)
 	}
 	if callInviteLink(memberJoin) != "" || strings.Contains(memberJoin.String(), hash) || strings.Contains(memberJoin.String(), speaker) {

@@ -48,8 +48,10 @@ func (c *UserCore) UserResolveUsername(in *user.TLUserResolveUsername) (*mtproto
 	if err != nil {
 		c.Logger.Errorf("username.resolveUsername - error: %v", err)
 		return nil, mtproto.ErrInternalServerError
-	} else if usernameDO == nil {
-		c.Logger.Errorf("username.resolveUsername - error: %v", err)
+	} else if usernameDO == nil || usernameDO.Deleted || !usernameDO.Active {
+		// account.toggleUsername(active=false) keeps the row so the owner can
+		// turn it back on. Other people must not resolve it.
+		c.Logger.Errorf("username.resolveUsername - inactive or missing")
 		err = mtproto.ErrUsernameNotOccupied
 		return nil, err
 	}

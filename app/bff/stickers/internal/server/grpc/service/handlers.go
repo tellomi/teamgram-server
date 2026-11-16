@@ -67,15 +67,23 @@ func (s *Service) MessagesGetRecentStickers(ctx context.Context, in *mtproto.TLM
 }
 
 func (s *Service) MessagesSaveRecentSticker(ctx context.Context, in *mtproto.TLMessagesSaveRecentSticker) (*mtproto.Bool, error) {
-	if err := cat().SaveRecent(userID(ctx), in.GetId().GetId(), in.GetAttached(), mtproto.FromBool(in.GetUnsave())); err != nil {
+	changed, err := cat().SaveRecent(userID(ctx), in.GetId().GetId(), in.GetAttached(), mtproto.FromBool(in.GetUnsave()))
+	if err != nil {
 		return nil, err
+	}
+	if changed {
+		s.pushNotMe(ctx, catalog.RecentStickersChanged())
 	}
 	return mtproto.BoolTrue, nil
 }
 
 func (s *Service) MessagesClearRecentStickers(ctx context.Context, in *mtproto.TLMessagesClearRecentStickers) (*mtproto.Bool, error) {
-	if err := cat().ClearRecent(userID(ctx), in.GetAttached()); err != nil {
+	changed, err := cat().ClearRecent(userID(ctx), in.GetAttached())
+	if err != nil {
 		return nil, err
+	}
+	if changed {
+		s.pushNotMe(ctx, catalog.RecentStickersChanged())
 	}
 	return mtproto.BoolTrue, nil
 }
@@ -85,8 +93,12 @@ func (s *Service) MessagesGetFavedStickers(ctx context.Context, in *mtproto.TLMe
 }
 
 func (s *Service) MessagesFaveSticker(ctx context.Context, in *mtproto.TLMessagesFaveSticker) (*mtproto.Bool, error) {
-	if err := cat().Fave(userID(ctx), in.GetId().GetId(), mtproto.FromBool(in.GetUnfave())); err != nil {
+	changed, err := cat().Fave(userID(ctx), in.GetId().GetId(), mtproto.FromBool(in.GetUnfave()))
+	if err != nil {
 		return nil, err
+	}
+	if changed {
+		s.pushNotMe(ctx, catalog.FavedStickersChanged())
 	}
 	return mtproto.BoolTrue, nil
 }

@@ -164,6 +164,20 @@ func (c *AccountCore) AccountSendChangePhoneCode(in *mtproto.TLAccountSendChange
 				return nil
 			}
 
+			// 99966XYYYY never reaches the SMS gateway. auth.sendCode already
+			// answers these numbers with the fixed code. The country allow
+			// list (+86 only, unless international SMS is on) must not turn
+			// that same number into PHONE_NUMBER_INVALID here.
+			if code, ok := phonenumber.TestPhoneCode(phoneNumber); ok {
+				codeData2.SentCodeType = model.SentCodeTypeSms
+				codeData2.PhoneCode = code
+				codeData2.PhoneCodeExtraData = code
+				codeData2.NextCodeType = model.CodeTypeSms
+				codeData2.State = model.CodeStateSent
+				c.Logger.Infof("account.sendChangePhoneCode - test phone")
+				return nil
+			}
+
 			c.Logger.Infof("send code by sms")
 			if err := guardChangePhone(c, phoneNumber); err != nil {
 				return err

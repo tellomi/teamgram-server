@@ -5,6 +5,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/chats/owner"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
@@ -34,8 +35,9 @@ func (c *ChatsCore) MessagesEditChatCreator(in *mtproto.TLMessagesEditChatCreato
 	if user.PeerType != mtproto.PEER_USER || user.PeerId == 0 || user.PeerId == c.MD.UserId {
 		return nil, mtproto.ErrUserIdInvalid
 	}
-	if owner.PasswordMissing(in.GetPassword()) {
-		return nil, mtproto.ErrPasswordMissing
+	// Same gate as channels.editCreator. A non-empty fake A used to be enough.
+	if err := password.CheckSensitive(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in.GetPassword()); err != nil {
+		return nil, err
 	}
 	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.ChatClient == nil {
 		return nil, mtproto.ErrPeerIdInvalid
