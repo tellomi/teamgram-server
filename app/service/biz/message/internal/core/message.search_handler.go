@@ -36,7 +36,7 @@ func (c *MessageCore) MessageSearch(in *message.TLMessageSearch) (*mtproto.Messa
 
 	switch in.PeerType {
 	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
-		if q[0] == '#' {
+		if q != "" && q[0] == '#' {
 			idList, _ := c.svcCtx.Dao.HashTagsDAO.SelectPeerHashTagList(
 				c.ctx,
 				in.UserId,

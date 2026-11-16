@@ -117,6 +117,10 @@ func (f *notifyUserFake) UserGetAllNotifySettings(context.Context, *user.TLUserG
 	return f.all, nil
 }
 
+func (f *notifyUserFake) UserGetMutableUsers(context.Context, *user.TLUserGetMutableUsers) (*user.Vector_ImmutableUser, error) {
+	return &user.Vector_ImmutableUser{}, nil
+}
+
 type notifySyncFake struct {
 	syncclient.SyncClient
 	got []*sync.TLSyncUpdatesNotMe

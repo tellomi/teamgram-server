@@ -5,6 +5,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/engine"
+	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
 )
 
 func (s *Service) PhoneGetCallConfig(ctx context.Context, _ *mtproto.TLPhoneGetCallConfig) (*mtproto.DataJSON, error) {
@@ -22,6 +23,9 @@ func (s *Service) PhoneRequestCall(ctx context.Context, in *mtproto.TLPhoneReque
 	peer := mtproto.FromInputUser(md.GetUserId(), in.GetUserId())
 	if peer.PeerType != mtproto.PEER_USER || peer.PeerId == 0 || peer.PeerId == md.GetUserId() {
 		return nil, mtproto.ErrCallPeerInvalid
+	}
+	if allowCall, _ := phonecall.DeviceAllows(ctx, peer.PeerId); !allowCall {
+		return nil, mtproto.ErrUserPrivacyRestricted
 	}
 	return s.eng.RequestCall(engine.Request{
 		Admin: md.GetUserId(), AdminAuth: md.GetPermAuthKeyId(), Participant: peer.PeerId,

@@ -33,8 +33,10 @@ func (c *ChatCore) ChatSetHistoryTTL(in *chat.TLChatSetHistoryTTL) (*mtproto.Mut
 		c.Logger.Errorf("chat.setHistoryTTL - error: %v", err)
 		return nil, err
 	}
-	if mChat.Creator() != in.SelfId {
-		err = mtproto.ErrChatAdminRequired
+	// A basic group stores the timer on the chat row. getFullChat reads
+	// that column. Only the creator and admins may change it; a normal
+	// member used to succeed because the RPC wrote only their own dialog.
+	if err = historyTTLAllowed(mChat, in.SelfId); err != nil {
 		c.Logger.Errorf("chat.setHistoryTTL - error: %v", err)
 		return nil, err
 	}
@@ -51,6 +53,26 @@ func (c *ChatCore) ChatSetHistoryTTL(in *chat.TLChatSetHistoryTTL) (*mtproto.Mut
 		c.Logger.Errorf("chat.setHistoryTTL - error: %v", err)
 		return nil, err
 	}
+	if mChat.GetChat() != nil {
+		mChat.Chat.TtlPeriod = in.TtlPeriod
+	}
 
 	return mChat, nil
+}
+
+// historyTTLAllowed is the basic-group check for messages.setHistoryTTL.
+// The creator and any admin may set the timer. A normal member is
+// CHAT_ADMIN_REQUIRED. Someone who is not in the group is PEER_ID_INVALID.
+func historyTTLAllowed(chat *mtproto.MutableChat, selfID int64) error {
+	if chat == nil || selfID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	me, ok := chat.GetImmutableChatParticipant(selfID)
+	if !ok || me == nil || !me.IsChatMemberStateNormal() {
+		return mtproto.ErrPeerIdInvalid
+	}
+	if !me.CanChangeInfo() {
+		return mtproto.ErrChatAdminRequired
+	}
+	return nil
 }
