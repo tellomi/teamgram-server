@@ -494,6 +494,7 @@ func (s *Service) ImportInvite(ctx context.Context, self, actorAuth int64, hash 
 		return nil, err
 	}
 	_ = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: self, ReadInboxMaxID: ch.TopMessage})
+	s.noteJoinBoundary(ctx, ch.ID, self, ch.TopMessage)
 	if err := s.store.UpsertImporter(ctx, &StoredImporter{
 		ChannelID: ch.ID,
 		Link:      inv.Link,

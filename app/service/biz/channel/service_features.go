@@ -1031,7 +1031,7 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].ID > all[j].ID })
 	feat := s.features(ctx, ch.ID)
-	viewer, _ := s.store.GetParticipant(ctx, ch.ID, self)
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, self)
 	var msgs []*mtproto.Message
 	for _, stored := range all {
 		if stored == nil || stored.Deleted {
@@ -1055,7 +1055,7 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
 			continue
 		}
-		if prehistoryBlocks(feat, viewer, stored) {
+		if prehistoryBlocks(feat, viewer, stored, viewerErr) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
@@ -1921,7 +1921,7 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 		chats = append(chats, s.ChatFor(ctx, self, peerCh))
 		all, _ := s.store.ListMessages(ctx, id)
 		peerFeat := s.features(ctx, id)
-		peerViewer, _ := s.store.GetParticipant(ctx, id, self)
+		peerViewer, peerErr := s.store.GetParticipant(ctx, id, self)
 		topicID := msgID
 		if i, ok := findTopic(f, msgID); ok {
 			topicID = f.Topics[i].ID
@@ -1936,7 +1936,7 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 			if q.MaxID > 0 && stored.ID >= q.MaxID {
 				continue
 			}
-			if prehistoryBlocks(peerFeat, peerViewer, stored) {
+			if prehistoryBlocks(peerFeat, peerViewer, stored, peerErr) {
 				continue
 			}
 			body, err := unmarshalMessage(stored.Data)
@@ -1967,8 +1967,8 @@ func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, 
 	if err != nil || stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
-	viewer, _ := s.store.GetParticipant(ctx, channelID, self)
-	if prehistoryBlocks(s.features(ctx, channelID), viewer, stored) {
+	viewer, viewerErr := s.store.GetParticipant(ctx, channelID, self)
+	if prehistoryBlocks(s.features(ctx, channelID), viewer, stored, viewerErr) {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	body, err := unmarshalMessage(stored.Data)

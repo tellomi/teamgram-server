@@ -105,6 +105,10 @@ type Features struct {
 	// InboxReadAt is the unix time a member last advanced their inbox cursor.
 	// messages.getMessageReadParticipants uses it as the read date.
 	InboxReadAt map[int64]int32
+	// JoinTop is the highest channel message id that already existed when
+	// the member joined. messages.getMessageReadParticipants does not treat
+	// an admin's ability to read older messages as a read receipt.
+	JoinTop map[int64]int32
 }
 
 // ViewRec is one channel post's view counter.

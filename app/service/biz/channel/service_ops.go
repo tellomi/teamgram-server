@@ -1161,7 +1161,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 	all = withoutExpired(ch, all, int32(time.Now().Unix()))
 	page, total := selectHistory(all, q)
 	feat := s.features(ctx, ch.ID)
-	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	minID := feat.AvailableMinID
 	if feat.UserMinID != nil && feat.UserMinID[user] > minID {
 		minID = feat.UserMinID[user]
@@ -1171,7 +1171,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		if stored.ID <= minID {
 			continue
 		}
-		if prehistoryBlocks(feat, viewer, stored) {
+		if prehistoryBlocks(feat, viewer, stored, viewerErr) {
 			continue
 		}
 		filtered = append(filtered, stored)
@@ -1204,14 +1204,14 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		return nil, err
 	}
 	feat := s.features(ctx, ch.ID)
-	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	msgs := make([]*mtproto.Message, 0, len(ids))
 	for _, id := range ids {
 		stored, err := s.store.GetMessage(ctx, ch.ID, id)
 		if err != nil {
 			return nil, err
 		}
-		if stored == nil || stored.Deleted || msgexpiry.Enabled() && msgexpiry.Expired(stored.Date, ch.TtlPeriod, int32(time.Now().Unix())) || prehistoryBlocks(feat, viewer, stored) {
+		if stored == nil || stored.Deleted || msgexpiry.Enabled() && msgexpiry.Expired(stored.Date, ch.TtlPeriod, int32(time.Now().Unix())) || prehistoryBlocks(feat, viewer, stored, viewerErr) {
 			msgs = append(msgs, mtproto.MakeTLMessageEmpty(&mtproto.Message{
 				Id:     id,
 				PeerId: mtproto.MakePeerChannel(ch.ID),
@@ -1270,7 +1270,7 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 	// receives tooLong only for the missing range.
 	final := !more && endPts >= ch.Pts
 	feat := s.features(ctx, ch.ID)
-	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	var newMessages []*mtproto.Message
 	var other []*mtproto.Update
 	for _, e := range page {
@@ -1281,7 +1281,7 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 			if err != nil {
 				continue
 			}
-			if prehistoryBlocks(feat, viewer, &StoredMessage{Date: body.GetDate()}) {
+			if prehistoryBlocks(feat, viewer, &StoredMessage{ID: e.MessageID, Date: body.GetDate()}, viewerErr) {
 				continue
 			}
 			if msgexpiry.Enabled() && msgexpiry.Expired(body.GetDate(), ch.TtlPeriod, int32(time.Now().Unix())) {
@@ -1300,7 +1300,7 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 			if err != nil {
 				continue
 			}
-			if prehistoryBlocks(feat, viewer, &StoredMessage{Date: body.GetDate()}) {
+			if prehistoryBlocks(feat, viewer, &StoredMessage{ID: e.MessageID, Date: body.GetDate()}, viewerErr) {
 				continue
 			}
 			other = append(other, editMessageUpdate(viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user), e.Pts, e.PtsCount))
@@ -1308,7 +1308,7 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 			other = append(other, deleteUpdate(ch.ID, e.MessageIDs, e.Pts, e.PtsCount))
 		case KindReact:
 			stored, err := s.store.GetMessage(ctx, ch.ID, e.MessageID)
-			if err != nil || prehistoryBlocks(feat, viewer, stored) {
+			if err != nil || prehistoryBlocks(feat, viewer, stored, viewerErr) {
 				continue
 			}
 			other = append(other, s.channelReactionUpdate(ctx, user, ch, e.MessageID))
@@ -1356,10 +1356,10 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 	}
 	page := latestChannelMessages(mustMessages(s, ctx, ch.ID), limit)
 	feat := s.features(ctx, ch.ID)
-	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	msgs := make([]*mtproto.Message, 0, len(page))
 	for _, stored := range page {
-		if prehistoryBlocks(feat, viewer, stored) {
+		if prehistoryBlocks(feat, viewer, stored, viewerErr) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
