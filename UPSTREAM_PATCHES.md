@@ -925,6 +925,17 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
 
+## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
+
+`messages.deleteSavedHistory(max_id=0)` asked to delete every saved message from that peer. The query treated `max_id <= 0` as an empty set, so the call returned `pts_count=0` and left the messages. `max_id <= 0` is now the whole dialog, still capped at 100 rows per call.
+
+`messages.search` in Saved Messages with an empty `q` and `saved_reaction` returned `SEARCH_QUERY_EMPTY`. A tag chip is that request. Empty text with no `from_id` is allowed only when the peer is Saved Messages and a reaction is set. The matching ids come from the caller's reaction document, then offset and limit page that list. `count` is the number of tagged messages. A short page is `messages.messagesSlice`. An empty `q` with `from_id` on a basic group still runs the original sender search. `SEARCH_QUERY_EMPTY` is only when there is no `from_id` and the request is not Saved Messages plus `saved_reaction`. A dialog that sends `saved_reaction` without `from_id` returns only messages that carry one of those tags.
+
+| Piece | File |
+| --- | --- |
+| delete | `saved_history_query.go` |
+| tag search | `messages.search_handler.go`, `chatbox/react.go`, `message.search_handler.go` |
+
 ## Auto-archive sets peerSettings.autoarchived (ISSUE-S-AUTOARCHIVED-FLAG-001)
 
 Archiving a new non-contact set folder 1 and mute-forever, and unarchiving cleared the folder. `peerSettings.autoarchived` stayed false, including the hardcoded false when no settings row existed. `messages.getPeerSettings` already copies the column when a row is present.
