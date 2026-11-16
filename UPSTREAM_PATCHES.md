@@ -917,6 +917,15 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | link, unlink, fanout | `app/service/biz/channel/service_features.go` |
 
+## Common supergroups (row 261)
+
+`messages.getCommonChats` intersected basic-group membership and left a `TODO` where supergroups should be added. `channel.CommonMegagroups` intersects current megagroup membership. Broadcast channels stay out. A user who is not in the groups still gets an empty list.
+
+| Piece | File |
+| --- | --- |
+| intersection | `app/service/biz/channel/common_chats.go` |
+| RPC | `app/bff/chats/internal/core/messages.getCommonChats_handler.go` |
+
 ## Background emojis, restricted statuses, ringtones, passkey rpId
 
 Rows 290, 272, and 343.
