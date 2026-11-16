@@ -147,6 +147,13 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 		if st == nil || st.ReadInboxMaxID < msgID {
 			continue
 		}
+		// Joining sets the inbox cursor to the current top so the new
+		// member is not handed the whole backlog as unread. That cursor
+		// is not evidence they saw a message hidden prehistory still
+		// withholds. The same date cutoff as getHistory applies.
+		if prehistoryBlocks(f, p, stored) {
+			continue
+		}
 		date := f.InboxReadAt[p.UserID]
 		if date == 0 {
 			date = stored.Date

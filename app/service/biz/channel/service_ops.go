@@ -1266,6 +1266,8 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 	// caught up. final stays unset so the client asks again and then
 	// receives tooLong only for the missing range.
 	final := !more && endPts >= ch.Pts
+	feat := s.features(ctx, ch.ID)
+	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
 	var newMessages []*mtproto.Message
 	var other []*mtproto.Update
 	for _, e := range page {
@@ -1274,6 +1276,9 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 		case KindNew:
 			body, err := unmarshalMessage(e.Payload)
 			if err != nil {
+				continue
+			}
+			if prehistoryBlocks(feat, viewer, &StoredMessage{Date: body.GetDate()}) {
 				continue
 			}
 			if msgexpiry.Enabled() && msgexpiry.Expired(body.GetDate(), ch.TtlPeriod, int32(time.Now().Unix())) {
@@ -1292,10 +1297,17 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 			if err != nil {
 				continue
 			}
+			if prehistoryBlocks(feat, viewer, &StoredMessage{Date: body.GetDate()}) {
+				continue
+			}
 			other = append(other, editMessageUpdate(viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user), e.Pts, e.PtsCount))
 		case KindDelete:
 			other = append(other, deleteUpdate(ch.ID, e.MessageIDs, e.Pts, e.PtsCount))
 		case KindReact:
+			stored, err := s.store.GetMessage(ctx, ch.ID, e.MessageID)
+			if err != nil || prehistoryBlocks(feat, viewer, stored) {
+				continue
+			}
 			other = append(other, s.channelReactionUpdate(ctx, user, ch, e.MessageID))
 		}
 	}
@@ -1340,8 +1352,13 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 		st = &ReadState{}
 	}
 	page := latestChannelMessages(mustMessages(s, ctx, ch.ID), limit)
+	feat := s.features(ctx, ch.ID)
+	viewer, _ := s.store.GetParticipant(ctx, ch.ID, user)
 	msgs := make([]*mtproto.Message, 0, len(page))
 	for _, stored := range page {
+		if prehistoryBlocks(feat, viewer, stored) {
+			continue
+		}
 		body, err := unmarshalMessage(stored.Data)
 		if err == nil {
 			msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
