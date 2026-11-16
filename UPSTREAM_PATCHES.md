@@ -919,12 +919,13 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## inputMessageReplyTo (row 205)
 
-`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message named by `reply_to_msg_id` (or `reply_to_top_id` when the first is unset), using `GetFixedReplyToMsgId`. A reply with no header is omitted instead of being returned as itself. `channels.getMessages` runs the same `requireView` as a request by id, including the access hash, before it loads the body. A caller who cannot see the channel gets that error for a missing id and for a stored id, and the post is not returned.
+`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message it replies to. A stored `messageReplyHeader` may contain only `reply_to_msg_id` or only `reply_to_msg_id_FLAGINT32`. `ReplyTargetMsgID` reads `GetFixedReplyToMsgId` first and, when that is 0, each of those fields, then `reply_to_top_id`. Private messages are stored as JSON and channel messages as protobuf; both shapes survive that store and resolve on both paths. A reply with no header is omitted instead of being returned as itself. `channels.getMessages` runs the same `requireView` as a request by id, including the access hash, before it loads the body. A caller who cannot see the channel gets that error for a missing id and for a stored id, and the post is not returned.
 
 | Piece | File |
 | --- | --- |
 | private and basic group | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
-| channel | `app/bff/channels/internal/server/grpc/service/handlers.go` |
+| id resolution | `proto/mtproto/message_action.go` |
+| channel | `app/service/biz/channel/chat_p1.go`, `app/bff/channels/internal/server/grpc/service/handlers.go` |
 
 ## Auto-archive sets peerSettings.autoarchived (ISSUE-S-AUTOARCHIVED-FLAG-001)
 

@@ -171,20 +171,5 @@ func replyTargetID(msg *mtproto.Message) int32 {
 	if msg == nil {
 		return 0
 	}
-	header := msg.GetReplyTo()
-	if header == nil {
-		return 0
-	}
-	// GetFixedReplyToMsgId reads the flag form, then the plain id.
-	// A stored header can have only one of those fields filled.
-	if id := header.GetFixedReplyToMsgId(); id != 0 {
-		return id
-	}
-	if id := header.GetReplyToMsgId(); id != 0 {
-		return id
-	}
-	if id := header.GetReplyToMsgId_INT32(); id != 0 {
-		return id
-	}
-	return header.GetReplyToTopId().GetValue()
+	return msg.GetReplyTo().ReplyTargetMsgID()
 }

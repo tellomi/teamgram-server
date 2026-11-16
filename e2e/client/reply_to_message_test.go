@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -50,37 +49,17 @@ func TestGetMessagesReplyToReturnsOriginal(t *testing.T) {
 	if replyID == 0 {
 		t.Fatal("reply has no id")
 	}
-	var msgs []*mtproto.Message
-	waitCtx, waitCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer waitCancel()
-	if err = waitUntil(waitCtx, 200*time.Millisecond, func() (bool, error) {
-		obj, err := bob.Invoke(ctx, &mtproto.TLMessagesGetMessages{
-			Constructor: mtproto.CRC32_messages_getMessages_63c66506,
-			Id_VECTORINPUTMESSAGE: []*mtproto.InputMessage{
-				mtproto.MakeTLInputMessageReplyTo(&mtproto.InputMessage{Id: replyID}).To_InputMessage(),
-			},
-		})
-		if err != nil {
-			return false, err
-		}
-		got, ok := messagesOf(obj)
-		if !ok {
-			return false, nil
-		}
-		msgs = got
-		return len(msgs) == 1 && msgs[0].GetId() == originOnB && msgs[0].GetMessage() == "origin-row-205", nil
-	}); err != nil {
-		byID, _ := bob.Invoke(ctx, &mtproto.TLMessagesGetMessages{
-			Constructor: mtproto.CRC32_messages_getMessages_63c66506,
-			Id_VECTORINPUTMESSAGE: []*mtproto.InputMessage{
-				mtproto.MakeTLInputMessageID(&mtproto.InputMessage{Id: replyID}).To_InputMessage(),
-			},
-		})
-		replyMsgs, _ := messagesOf(byID)
-		var header *mtproto.MessageReplyHeader
-		if len(replyMsgs) == 1 {
-			header = replyMsgs[0].GetReplyTo()
-		}
-		t.Fatalf("getMessages reply-to: origin=%d reply=%d msgs=%#v header=%+v err=%v", originOnB, replyID, msgs, header, err)
+	obj, err := bob.Invoke(ctx, &mtproto.TLMessagesGetMessages{
+		Constructor: mtproto.CRC32_messages_getMessages_63c66506,
+		Id_VECTORINPUTMESSAGE: []*mtproto.InputMessage{
+			mtproto.MakeTLInputMessageReplyTo(&mtproto.InputMessage{Id: replyID}).To_InputMessage(),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, ok := messagesOf(obj)
+	if !ok || len(msgs) != 1 || msgs[0].GetId() != originOnB || msgs[0].GetMessage() != "origin-row-205" {
+		t.Fatalf("getMessages reply-to: ok=%v %#v", ok, msgs)
 	}
 }

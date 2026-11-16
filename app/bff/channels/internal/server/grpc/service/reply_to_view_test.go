@@ -47,12 +47,31 @@ func TestGetMessagesReplyToOutsiderGetsTheSameError(t *testing.T) {
 		t.Fatal(err)
 	}
 	replyID := reply.Updates[0].GetMessage_MESSAGE().GetId()
-	if originID == 0 || replyID == 0 || originID == replyID {
-		t.Fatalf("ids origin=%d reply=%d", originID, replyID)
+	plain, err := svc.Send(ctx, 1, ch.GetId(), 0, []channel.Outgoing{{
+		RandomID: 3,
+		Message: &mtproto.Message{
+			Message: "plain",
+			Date:    12,
+			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+				ReplyToMsgId: originID,
+			}).To_MessageReplyHeader(),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plainID := plain.Updates[0].GetMessage_MESSAGE().GetId()
+	if originID == 0 || replyID == 0 || plainID == 0 || originID == replyID || originID == plainID {
+		t.Fatalf("ids origin=%d flag=%d plain=%d", originID, replyID, plainID)
 	}
 	member, err := svc.ReplyToTarget(ctx, 1, in, replyID)
 	if err != nil || member != originID {
-		t.Fatalf("member target %d %v", member, err)
+		t.Fatalf("flag target %d %v", member, err)
+	}
+	member, err = svc.ReplyToTarget(ctx, 1, in, plainID)
+	if err != nil || member != originID {
+		stored, _ := svc.LoadMessage(ctx, ch.GetId(), plainID)
+		t.Fatalf("plain target %d %v header=%+v", member, err, stored.GetReplyTo())
 	}
 
 	outsider := outsiderCtx(t, 99)

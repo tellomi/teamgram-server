@@ -59,6 +59,30 @@ func (m *MessageReplyHeader) GetFixedReplyToMsgId() int32 {
 	return 0
 }
 
+// ReplyTargetMsgID is the message id inputMessageReplyTo should load.
+// A stored header may fill only reply_to_msg_id or only
+// reply_to_msg_id_FLAGINT32. GetFixedReplyToMsgId reads the flag form
+// first, then the plain id. A zero result checks each field again, then
+// reply_to_top_id.
+func (m *MessageReplyHeader) ReplyTargetMsgID() int32 {
+	if m == nil {
+		return 0
+	}
+	if id := m.GetFixedReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId_INT32(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId_FLAGINT32().GetValue(); id != 0 {
+		return id
+	}
+	return m.GetReplyToTopId().GetValue()
+}
+
 func (m *MessageReplyHeader) FixData() *MessageReplyHeader {
 	if m.GetPredicateName() == Predicate_messageReplyHeader {
 		replyToMsgId := m.GetFixedReplyToMsgId()

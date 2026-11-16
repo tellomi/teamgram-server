@@ -272,10 +272,7 @@ func (s *Service) ReplyToTarget(ctx context.Context, user int64, in *mtproto.Inp
 	if err != nil {
 		return 0, err
 	}
-	if id := loaded.GetReplyTo().GetFixedReplyToMsgId(); id != 0 {
-		return id, nil
-	}
-	return loaded.GetReplyTo().GetReplyToTopId().GetValue(), nil
+	return loaded.GetReplyTo().ReplyTargetMsgID(), nil
 }
 
 // LoadMessage returns the stored body of one channel message.
