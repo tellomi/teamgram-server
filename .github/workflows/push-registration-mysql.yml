@@ -34,4 +34,6 @@ jobs:
         run: go test -race ./pkg/push -run '^TestRegistration' -count=1 -v -timeout=5m
 
       - name: messages.search from_id on the loopback MySQL
-        run: go test -race -count=1 -timeout 3m ./app/service/biz/message/internal/core/ -run '^TestMessageSearchFromIDFilters$'
+        env:
+          TEAMGRAM_REQUIRE_SEARCH_MYSQL: "1"
+        run: go test -race -count=1 -v -timeout 3m ./app/service/biz/message/internal/core/ -run '^TestMessageSearchFromIDFilters$'

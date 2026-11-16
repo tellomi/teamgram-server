@@ -160,8 +160,10 @@ func searchDSN(base, schema string) string {
 
 // openSearchMySQL uses a loopback server only. go test ./... has no MySQL,
 // and a refused port is a skip, the same as the other loopback schema tests.
-// Once a server answers, a failed query or a wrong search result still fails.
-// TEAMGRAM_MYSQL_DSN is never read.
+// TEAMGRAM_REQUIRE_SEARCH_MYSQL=1 is only for the job that must execute the
+// assertions: a refused port is a failure there, so a green job cannot hide
+// a skipped search. Once a server answers, a failed query or a wrong search
+// result still fails. TEAMGRAM_MYSQL_DSN is never read.
 func openSearchMySQL(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	candidates := []string{
@@ -189,6 +191,9 @@ func openSearchMySQL(t *testing.T) (*sql.DB, string) {
 		break
 	}
 	if admin == nil {
+		if os.Getenv("TEAMGRAM_REQUIRE_SEARCH_MYSQL") == "1" {
+			t.Fatalf("required loopback mysql is not available: %v", last)
+		}
 		t.Skipf("loopback mysql not available: %v", last)
 	}
 	schema := fmt.Sprintf("search_from_%d", os.Getpid())
