@@ -12,9 +12,13 @@ import (
 // other person.
 func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 	cfg := requireE2E(t)
-	// Each phase has its own deadline. This test runs immediately after the
-	// gateway restart, and one shared 2-minute budget expired on the
-	// post-delete history check before that check could finish.
+	// Each phase has its own deadline. Job 133036650713 died at this
+	// wait with "context deadline exceeded" after exactly 120s, the one
+	// context shared with login and delivery. waitUntil returns that
+	// error when the deadline is already gone, before it can tell which
+	// history still has the text. The same delete path cleared history
+	// in 1.74s on 055f263b, and the basic-group twin passed in this job.
+	// The clear wait still requires both sides to drop gone-256.
 	ctx, cancel := contextTimeout(90 * time.Second)
 	defer cancel()
 	alice, aliceSelf := dialPhone(t, ctx, cfg, "9996610715", "DelAlice")
@@ -25,7 +29,7 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliverCtx, deliverCancel := contextTimeout(90 * time.Second)
+	deliverCtx, deliverCancel := contextTimeout(2 * time.Minute)
 	defer deliverCancel()
 	var bobID int32
 	if err = waitUntil(deliverCtx, 200*time.Millisecond, func() (bool, error) {
