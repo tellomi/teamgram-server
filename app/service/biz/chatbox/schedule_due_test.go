@@ -97,8 +97,9 @@ func TestEditScheduledReschedule(t *testing.T) {
 }
 
 type memDocs struct {
-	mu sync.Mutex
-	m  map[string][]byte
+	mu          sync.Mutex
+	m           map[string][]byte
+	lastChanged int64
 }
 
 func newMemDocs() *memDocs { return &memDocs{m: map[string][]byte{}} }
@@ -119,6 +120,8 @@ func (m *memDocs) Save(_ context.Context, key string, raw []byte) error {
 
 // SaveIf writes next only when the stored bytes are still prev.
 // A stale snapshot returns false and does not replace the row.
+// When prev is already next, changed rows are 0, matching MySQL's default
+// client count, and the call still succeeds.
 func (m *memDocs) SaveIf(_ context.Context, key string, prev, next []byte) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -127,11 +130,21 @@ func (m *memDocs) SaveIf(_ context.Context, key string, prev, next []byte) (bool
 		if _, ok := m.m[key]; ok {
 			return false, nil
 		}
-	} else if !bytes.Equal(cur, prev) {
+		m.m[key] = append([]byte(nil), next...)
+		m.lastChanged = 1
+		return true, nil
+	}
+	if !bytes.Equal(cur, prev) {
+		m.lastChanged = 0
 		return false, nil
 	}
+	if bytes.Equal(cur, next) {
+		m.lastChanged = 0
+		return quickCASApplied(0, cur, next), nil
+	}
 	m.m[key] = append([]byte(nil), next...)
-	return true, nil
+	m.lastChanged = 1
+	return quickCASApplied(1, next, next), nil
 }
 
 func (m *memDocs) ListPrefix(_ context.Context, prefix string) ([]string, error) {

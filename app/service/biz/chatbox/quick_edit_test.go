@@ -861,6 +861,207 @@ func writerFailureAndOtherUser(t *testing.T) {
 	}
 }
 
+func TestQuickReplyNoopRenameReorderAndConflictLimit(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	t.Run("memory", func(t *testing.T) {
+		assertMemSaveIfReportsZeroChangedRows(t)
+		noopAndConflict(t, newMemDocs(), 201)
+	})
+	t.Run("mysql", func(t *testing.T) {
+		db := openLoopbackMySQL(t)
+		t.Cleanup(func() { _ = db.Close() })
+		store := sqlDocs{db: db}
+		noopAndConflict(t, store, 221)
+		assertMySQLUnchangedUpdateAffectsZeroRows(t, db, store)
+	})
+}
+
+func noopAndConflict(t *testing.T, inner quickStore, slot int) {
+	t.Helper()
+	ctx := context.Background()
+	owner := qrKey(slot)
+	from := qrKey(slot + 1)
+	b := newBook(inner)
+	b.now = fixedNow
+	sid, first, _ := captureOwned(t, b, owner, from)
+	if _, err := b.EditQuickReplyShortcut(ctx, owner, sid, "owned"); err != nil {
+		t.Fatalf("same name: %v", err)
+	}
+	if _, err := b.ReorderQuickReplies(ctx, owner, []int32{sid}); err != nil {
+		t.Fatalf("same order: %v", err)
+	}
+	if storedText(t, b, owner, sid, first).GetMessage() != "first" {
+		t.Fatal("no-op rewrote the message")
+	}
+
+	gate := &freezeDocs{inner: inner}
+	a := newBook(gate)
+	a.now = fixedNow
+	owner = qrKey(slot + 2)
+	sid, first, _ = captureOwned(t, a, owner, from)
+	gate.arm(t, owner)
+	other := newBook(gate)
+	other.now = fixedNow
+	text := "kept-by-edit"
+	runClash(t, a, other,
+		func() error {
+			_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil)
+			return err
+		},
+		func() error {
+			_, err := other.ReorderQuickReplies(ctx, owner, []int32{sid})
+			return err
+		},
+	)
+	view := newBook(inner)
+	if storedText(t, view, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("no-op reorder covered the edit")
+	}
+
+	gate = &freezeDocs{inner: inner}
+	a = newBook(gate)
+	a.now = fixedNow
+	owner = qrKey(slot + 3)
+	sid, first, _ = captureOwned(t, a, owner, from)
+	gate.arm(t, owner)
+	other = newBook(gate)
+	other.now = fixedNow
+	runClash(t, a, other,
+		func() error {
+			_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil)
+			return err
+		},
+		func() error {
+			_, err := other.EditQuickReplyShortcut(ctx, owner, sid, "renamed")
+			return err
+		},
+	)
+	view = newBook(inner)
+	page, err := view.QuickReplies(ctx, owner, 0)
+	if err != nil || page.GetQuickReplies()[0].GetShortcut() != "renamed" {
+		t.Fatalf("rename did not land %+v %v", page, err)
+	}
+	if storedText(t, view, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("rename covered the edit")
+	}
+
+	docs := &flakyDocs{inner: newMemDocs()}
+	failBook := newBook(docs)
+	failBook.now = fixedNow
+	owner = qrKey(slot + 4)
+	sid, first, _ = captureOwned(t, failBook, owner, from)
+	if _, err := failBook.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil); err != nil {
+		t.Fatal(err)
+	}
+	docs.fail = true
+	if _, err := failBook.EditQuickReplyShortcut(ctx, owner, sid, "afterfail"); err == nil || err.Error() != "injected quick-reply save failure" {
+		t.Fatalf("save error: %v", err)
+	}
+	if storedText(t, failBook, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatal("failed rename changed the message")
+	}
+	page, err = failBook.QuickReplies(ctx, owner, 0)
+	if err != nil || page.GetQuickReplies()[0].GetShortcut() != "owned" {
+		t.Fatalf("failed rename changed the name %+v %v", page, err)
+	}
+	docs.fail = false
+	if _, err := failBook.EditQuickReplyShortcut(ctx, owner, sid, "afterfail"); err != nil {
+		t.Fatal(err)
+	}
+	page, err = failBook.QuickReplies(ctx, owner, 0)
+	if err != nil || page.GetQuickReplies()[0].GetShortcut() != "afterfail" || storedText(t, failBook, owner, sid, first).GetMessage() != "kept-by-edit" {
+		t.Fatalf("retry %+v %v", page, err)
+	}
+
+	limit := &alwaysConflict{inner: newMemDocs()}
+	limitBook := newBook(limit)
+	limitBook.now = fixedNow
+	owner = qrKey(slot + 5)
+	sid, first, _ = captureOwned(t, limitBook, owner, from)
+	limit.block = true
+	if _, err := limitBook.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil); err != mtproto.ErrInternalServerError {
+		t.Fatalf("conflict limit: %v", err)
+	}
+	if limit.calls != 8 {
+		t.Fatalf("conflict attempts %d", limit.calls)
+	}
+	if storedText(t, limitBook, owner, sid, first).GetMessage() != "first" {
+		t.Fatal("exhausted conflicts stored the edit")
+	}
+}
+
+type alwaysConflict struct {
+	inner *memDocs
+	block bool
+	calls int
+}
+
+func (a *alwaysConflict) Load(ctx context.Context, key string) ([]byte, bool, error) {
+	return a.inner.Load(ctx, key)
+}
+
+func (a *alwaysConflict) Save(ctx context.Context, key string, raw []byte) error {
+	return a.inner.Save(ctx, key, raw)
+}
+
+func (a *alwaysConflict) SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error) {
+	if !a.block {
+		return a.inner.SaveIf(ctx, key, prev, next)
+	}
+	a.calls++
+	return false, nil
+}
+
+func assertMemSaveIfReportsZeroChangedRows(t *testing.T) {
+	t.Helper()
+	docs := newMemDocs()
+	raw := []byte(`{"next_id":1}`)
+	if err := docs.Save(context.Background(), "quick:1", raw); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := docs.SaveIf(context.Background(), "quick:1", raw, raw)
+	if err != nil || !applied || docs.lastChanged != 0 {
+		t.Fatalf("unchanged SaveIf applied=%v changed=%d err=%v", applied, docs.lastChanged, err)
+	}
+}
+
+func assertMySQLUnchangedUpdateAffectsZeroRows(t *testing.T, db *sql.DB, store sqlDocs) {
+	t.Helper()
+	ctx := context.Background()
+	owner := qrKey(241)
+	b := newBook(store)
+	b.now = fixedNow
+	sid, _, _ := captureOwned(t, b, owner, qrKey(242))
+	key := quickKey(owner)
+	prev, ok, err := store.Load(ctx, key)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	res, err := db.ExecContext(ctx, `UPDATE chatbox_doc SET data=? WHERE doc_key=? AND data=?`, prev, key, prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("identical UPDATE changed %d rows; MySQL client is not using changed-rows", n)
+	}
+	applied, err := store.SaveIf(ctx, key, prev, prev)
+	if err != nil || !applied {
+		t.Fatalf("identical SaveIf applied=%v err=%v", applied, err)
+	}
+	if _, err := b.EditQuickReplyShortcut(ctx, owner, sid, "owned"); err != nil {
+		t.Fatalf("mysql same name: %v", err)
+	}
+	if _, err := b.ReorderQuickReplies(ctx, owner, []int32{sid}); err != nil {
+		t.Fatalf("mysql same order: %v", err)
+	}
+}
+
 func openLoopbackMySQL(t *testing.T) *sql.DB {
 	t.Helper()
 	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {

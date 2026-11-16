@@ -64,7 +64,22 @@ func (s sqlDocs) SaveIf(ctx context.Context, key string, prev, next []byte) (boo
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n == 1, err
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	// MySQL's default count is changed rows. An UPDATE that matches and
+	// writes the same bytes returns 0. That is not a lost compare.
+	cur, ok, err := s.Load(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	return quickCASApplied(0, cur, next), nil
 }
 
 func (s sqlDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {

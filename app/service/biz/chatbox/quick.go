@@ -1,8 +1,10 @@
 package chatbox
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -131,6 +133,9 @@ func (b *Book) EditQuickReplyShortcut(ctx context.Context, user int64, shortcutI
 		if other := findShortcut(doc, norm); other >= 0 && other != idx {
 			return mtproto.ErrShortcutInvalid
 		}
+		if doc.Shortcuts[idx].Name == norm {
+			return errQuickUnchanged
+		}
 		doc.Shortcuts[idx].Name = norm
 		return nil
 	})
@@ -161,6 +166,16 @@ func (b *Book) ReorderQuickReplies(ctx context.Context, user int64, order []int3
 	err := b.updateQuick(ctx, user, func(doc *quickDoc) error {
 		if len(order) != len(doc.Shortcuts) {
 			return mtproto.ErrShortcutInvalid
+		}
+		same := true
+		for i, id := range order {
+			if doc.Shortcuts[i].ID != id {
+				same = false
+				break
+			}
+		}
+		if same {
+			return errQuickUnchanged
 		}
 		byID := map[int32]quickShortcut{}
 		for _, sc := range doc.Shortcuts {
@@ -331,6 +346,10 @@ func (b *Book) commitQuick(ctx context.Context, user int64, prev []byte, doc *qu
 	next, err := json.Marshal(doc)
 	if err != nil {
 		return false, err
+	}
+	if bytes.Equal(next, prev) {
+		b.quick[user] = doc
+		return true, nil
 	}
 	if cas, ok := b.db.(quickCAS); ok {
 		applied, err := cas.SaveIf(ctx, quickKey(user), prev, next)
@@ -535,10 +554,29 @@ func (b *Book) CaptureQuickReply(ctx context.Context, user int64, peer *mtproto.
 	return ups, err
 }
 
+// errQuickUnchanged means mutate left the document byte-for-byte as loaded.
+// It is success: rename to the current name and reorder to the current order
+// return the same boolTrue the handler already pushes. It is not a compare
+// conflict and it does not write.
+var errQuickUnchanged = errors.New("quick document unchanged")
+
+// quickCASApplied distinguishes MySQL's default changed-row count from a
+// lost compare. changed > 0 means the UPDATE replaced the bytes. changed == 0
+// is success only when the stored row is already next: the statement matched
+// and changed nothing. A different stored row is a real conflict.
+// CLIENT_FOUND_ROWS is not enabled; that flag would change every other query.
+func quickCASApplied(changed int64, stored, next []byte) bool {
+	if changed > 0 {
+		return true
+	}
+	return bytes.Equal(stored, next)
+}
+
 // updateQuick applies mutate to the quick: document and stores it only when
 // the loaded bytes are still current. A lost compare reloads and runs mutate
-// again. A mutate error is returned as-is and is not retried. This is the
-// only production write path for a quick: key.
+// again, at most 8 times. A save error is returned immediately. An unchanged
+// document is success and is not written. This is the only production write
+// path for a quick: key.
 func (b *Book) updateQuick(ctx context.Context, user int64, mutate func(*quickDoc) error) error {
 	for try := 0; try < 8; try++ {
 		b.mu.Lock()
@@ -549,6 +587,9 @@ func (b *Book) updateQuick(ctx context.Context, user int64, mutate func(*quickDo
 		}
 		if err = mutate(doc); err != nil {
 			b.mu.Unlock()
+			if err == errQuickUnchanged {
+				return nil
+			}
 			return err
 		}
 		applied, err := b.commitQuick(ctx, user, prev, doc)
