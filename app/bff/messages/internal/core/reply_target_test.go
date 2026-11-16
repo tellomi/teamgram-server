@@ -66,6 +66,14 @@ func TestReplyTargetIDSurvivesMessageJSON(t *testing.T) {
 		t.Fatal("flag-only did not resolve")
 	}
 
+	both := mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+		ReplyToMsgId:           41,
+		ReplyToMsgId_FLAGINT32: wrapperspb.Int32(99),
+	}).To_MessageReplyHeader()
+	if id := replyTargetID(&mtproto.Message{ReplyTo: both}); id != 41 {
+		t.Fatalf("plain id lost to flag, got %d", id)
+	}
+
 	for _, hdr := range []*mtproto.MessageReplyHeader{plain, flag} {
 		raw, err := proto.Marshal(&mtproto.Message{Message: "reply", ReplyTo: hdr})
 		if err != nil {

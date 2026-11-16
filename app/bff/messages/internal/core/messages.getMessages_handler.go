@@ -69,14 +69,10 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 			IdList: replyOf,
 		})
 		for _, box := range found.GetDatas() {
-			if box == nil {
+			if box == nil || box.GetMessage() == nil {
 				continue
 			}
-			msg := box.GetMessage()
-			if msg == nil {
-				continue
-			}
-			if id := replyTargetID(msg); id != 0 {
+			if id := replyTargetID(box.ToMessage(c.MD.UserId)); id != 0 {
 				idList = append(idList, id)
 			}
 		}
