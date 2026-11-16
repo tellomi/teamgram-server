@@ -410,7 +410,7 @@ The only upstream file is `app/bff/configuration/internal/core/help.getConfig_ha
 
 `TELLOMI_USERNAME_POLICY=1` runs `pkg/usernamepolicy` before the username table. Unset or any other value leaves these handlers as they were. A username hit returns `USERNAME_OCCUPIED`. A display-name hit returns `FIRSTNAME_INVALID`, or `LASTNAME_INVALID` when the field is the last name. The handler logs `rule_id`. The response does not carry the rule. The lexicon and the flag live in Tellomi files (`pkg/usernamepolicy`, `docker-compose.yaml`).
 
-`policy-2026110602.json` stays the untouched tellomi dist. Bare `gongchandang` and `xijinping` are not rules there. `cn_username_supplement.go` denies those two cn terms, including case, NFKC, underscore, leftover digits, and ASCII lookalikes, on username, slug, bot username, and display name. Global-only checks still allow them. The upstream `politics.toml` match modes do not cover a lookalike glued to digits, so the supplement is not pasted into the generated JSON.
+`policy-2026110602.json` stays the untouched tellomi dist. `cn_username_supplement.go` reads the 188 latin `regions/cn/politics.toml` username terms already in that file, plus the two bare terms it omits (`gongchandang`, `xijinping`). For cn username, slug, bot username, and display name, it folds the confusable skeleton, drops digits, and matches the whole remaining string or either end. Global-only checks still allow `xijinping`. The upstream match modes do not cover a lookalike glued to digits, so this is not pasted into the generated JSON.
 
 | Call | File | Hook |
 | --- | --- | --- |

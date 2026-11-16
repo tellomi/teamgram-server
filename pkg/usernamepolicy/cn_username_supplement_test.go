@@ -10,6 +10,10 @@ import (
 )
 
 func TestCnUsernameSupplement(t *testing.T) {
+	curated, gap := CnUsernameSupplementStats()
+	if curated != 188 || gap != 2 {
+		t.Fatalf("supplement curated=%d gap=%d, want 188 and 2", curated, gap)
+	}
 	e := runtimeEngine()
 	cn := []string{"global", "cn"}
 	global := []string{"global"}
@@ -22,6 +26,7 @@ func TestCnUsernameSupplement(t *testing.T) {
 		"ｘｉｊｉｎｐｉｎｇ",
 		"xijinping_01", "01_xijinping", "xijinping88",
 		"x1j1np1ng", "x1jinping88",
+		"chengkejie88",
 	}
 	for _, name := range denied {
 		for _, field := range []string{FieldUsername, FieldSlug, FieldBotUsername, FieldDisplayName} {
@@ -39,8 +44,8 @@ func TestCnUsernameSupplement(t *testing.T) {
 	}
 	allowed := []string{
 		"alice", "boblee", "badminton", "pingpong", "gongcheng", "beijing",
-		"chengkejie88", "jihui", "xueshu", "caiwu", "jianghu", "luoma", "lizhi", "wangyi",
-		"weekend", "photowang",
+		"jihui", "xueshu", "caiwu", "jianghu", "luoma", "lizhi", "wangyi",
+		"weekend", "photowang", "TTLAlice", "TTLBob",
 	}
 	for _, name := range allowed {
 		if !e.Check(name, FieldUsername, cn).IsAllowed() {
@@ -81,7 +86,7 @@ func TestCnUsernameSupplement(t *testing.T) {
 			t.Fatalf("display %s: %v", name, RejectDisplay(ctx, mtproto.PEER_USER, userID, name))
 		}
 	}
-	for _, name := range []string{"alice", "pingpong", "chengkejie88", "jihui"} {
+	for _, name := range []string{"alice", "pingpong", "jihui", "TTLAlice", "TTLBob"} {
 		if err := RejectUser(ctx, userID, name); err != nil {
 			t.Fatalf("allowed user %s: %v", name, err)
 		}

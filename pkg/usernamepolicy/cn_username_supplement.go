@@ -2,74 +2,105 @@ package usernamepolicy
 
 import (
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
 
-// cnUsernameSupplementTerms are the bare cn username terms missing from
-// tellomi/tellomi policy/lexicons/regions/cn/politics.toml at the commit
-// that produced policy-2026110602 (politics.toml header cites
-// konsheng/Sensitive-lexicon@d967c30 and fwwdn/sensitive-stop-words@a7d06bb).
-// Those lists were already curated into the toml. This file does not import
-// them again. The two terms below are the ones the product requirement adds,
-// in the same region and fields as the other latin politics rules.
+// cnUsernameGapTerms are bare cn username terms that the curated
+// politics.toml behind policy-2026110602 does not contain. The other
+// terms come from that already-reviewed latin username set. This is not
+// a second copy of konsheng/Sensitive-lexicon or fwwdn/sensitive-stop-words.
+// Those lists were vendored in tellomi/tellomi, mapped, and published as
+// policy-2026110602. Re-importing them here would bypass that review.
 //
-// Upstream match modes do not express this shape. PREFIX/SUFFIX stop at a
-// letter or digit, and CONFUSABLE compares the whole skeleton, so
-// g0ngchandang88 is neither. Skeleton-contains after the ASCII fold and
-// after dropping remaining digits covers case, NFKC, underscore, digit, and
-// lookalike bypasses for these long terms only. Terms shorter than 8
-// skeletons are ignored. policy-2026110602.json is left byte-for-byte.
+// Upstream match modes still miss a lookalike glued to digits: PREFIX and
+// SUFFIX stop at a letter or digit, and CONFUSABLE compares the whole
+// skeleton. For cn username fields only, this supplement folds the
+// skeleton, drops remaining digits, and then accepts an exact, prefix, or
+// suffix hit. A term buried in the middle (notgongchandangx) is not a hit.
+// Skeletons shorter than 8 are ignored, the same floor the upstream build
+// uses before it will attach PREFIX/SUFFIX to a latin term.
 //
-// When politics.toml grows a rebuild, add the same [[rule]] blocks there.
-// Keep this supplement until that rebuild has a match mode that covers the
-// digit-plus-lookalike form. Global-only checks stay allowed: must-allow
-// still says "username global xijinping". Entry points pass global and cn,
-// so cn is what rejects them.
+// Global-only checks are unchanged. must-allow still has
+// "username global xijinping". Entry points pass global and cn.
 const cnUsernameSupplementSource = "teamgram-server/pkg/usernamepolicy/cn_username_supplement.go"
 
 const cnUsernameSupplementMinRunes = 8
 
-var cnUsernameSupplementTerms = []string{
+var cnUsernameGapTerms = []string{
 	"gongchandang",
 	"xijinping",
 }
+
+type cnSupTerm struct {
+	term string
+	sk   string
+	gap  bool
+}
+
+var (
+	cnSupOnce sync.Once
+	cnSupList []cnSupTerm
+)
 
 func cnUsernameSupplement(normalized, field string, regions []string) (Verdict, bool) {
 	if !containsStr(regions, "cn") || !cnUsernameField(field) {
 		return Verdict{}, false
 	}
-	// UTS #39 can map ASCII 0 to uppercase O before asciiFold, which only
-	// folds the digit itself. Lowercase again so the skeletons compare.
-	folded := strings.ToLower(stripDigits(Skeleton(normalized)))
+	folded := letterSkeleton(normalized)
 	if folded == "" {
 		return Verdict{}, false
 	}
-	var best string
-	var bestSk string
-	for _, term := range cnUsernameSupplementTerms {
-		sk := strings.ToLower(stripDigits(Skeleton(Normalize(term))))
-		if utf8.RuneCountInString(sk) < cnUsernameSupplementMinRunes {
+	var best cnSupTerm
+	for _, term := range cnSupplementTerms() {
+		if folded != term.sk && !strings.HasPrefix(folded, term.sk) && !strings.HasSuffix(folded, term.sk) {
 			continue
 		}
-		if !strings.Contains(folded, sk) {
-			continue
-		}
-		if best == "" || utf8.RuneCountInString(sk) > utf8.RuneCountInString(bestSk) {
+		if best.term == "" || utf8.RuneCountInString(term.sk) > utf8.RuneCountInString(best.sk) {
 			best = term
-			bestSk = sk
 		}
 	}
-	if best == "" {
+	if best.term == "" {
 		return Verdict{}, false
 	}
 	return Verdict{
 		Outcome: OutcomeRegionalRestricted,
-		RuleID:  "supplement/cn-username:" + best,
-		Term:    best,
-		Matched: "SKELETON_CONTAINS",
+		RuleID:  "supplement/cn-username:" + best.term,
+		Term:    best.term,
+		Matched: "SKELETON_BOUNDARY",
 		Source:  cnUsernameSupplementSource,
 	}, true
+}
+
+func cnSupplementTerms() []cnSupTerm {
+	cnSupOnce.Do(func() {
+		seen := map[string]struct{}{}
+		add := func(term string, gap bool) {
+			sk := letterSkeleton(Normalize(term))
+			if utf8.RuneCountInString(sk) < cnUsernameSupplementMinRunes {
+				return
+			}
+			if _, ok := seen[sk]; ok {
+				return
+			}
+			seen[sk] = struct{}{}
+			cnSupList = append(cnSupList, cnSupTerm{term: term, sk: sk, gap: gap})
+		}
+		for _, rule := range currentEngine().rules {
+			if !strings.Contains(rule.Source, "regions/cn/politics.toml") {
+				continue
+			}
+			if !containsStr(rule.Regions, "cn") || !containsStr(rule.Fields, FieldUsername) {
+				continue
+			}
+			add(rule.Normalized, false)
+		}
+		for _, term := range cnUsernameGapTerms {
+			add(term, true)
+		}
+	})
+	return cnSupList
 }
 
 func cnUsernameField(field string) bool {
@@ -81,6 +112,12 @@ func cnUsernameField(field string) bool {
 	}
 }
 
+// letterSkeleton is the confusable skeleton, lowercased again because UTS #39
+// can map ASCII 0 to uppercase O before asciiFold, then with digits removed.
+func letterSkeleton(normalized string) string {
+	return stripDigits(strings.ToLower(Skeleton(normalized)))
+}
+
 func stripDigits(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsDigit(r) {
@@ -88,4 +125,17 @@ func stripDigits(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// CnUsernameSupplementStats is the curated-term count and how many of those
+// terms were absent from policy-2026110602.
+func CnUsernameSupplementStats() (curated, gap int) {
+	for _, term := range cnSupplementTerms() {
+		if term.gap {
+			gap++
+			continue
+		}
+		curated++
+	}
+	return curated, gap
 }

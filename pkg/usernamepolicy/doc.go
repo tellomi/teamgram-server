@@ -18,8 +18,10 @@
 // the 2026110602 one. policy/overlay-d56.json still feeds appendix C
 // placeholder SQL. It is not merged into the runtime lexicon. The
 // cn username supplement in cn_username_supplement.go is applied beside
-// that JSON. It is not written into the generated file, so the next
-// tellomi dist import does not drop it. Chat
+// that JSON. It takes the latin cn username terms already in that file
+// and the two bare terms the file omits (gongchandang, xijinping). It is
+// not written into the generated file, so the next tellomi dist import
+// does not drop it. Chat
 // message bodies are not passed to this package.
 // Existing rows are not rewritten.
 //

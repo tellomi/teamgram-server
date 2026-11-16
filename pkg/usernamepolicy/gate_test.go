@@ -189,9 +189,10 @@ func TestGateOnCnLexicon(t *testing.T) {
 	if err := RejectUser(ctx, 7, "chengkejie_01"); status.Convert(err).Message() != "USERNAME_OCCUPIED" {
 		t.Fatalf("chengkejie_01: %v", err)
 	}
-	// Published pinyin rules use an underscore boundary. They do not strip digits.
-	if err := RejectUser(ctx, 7, "chengkejie88"); err != nil {
-		t.Fatalf("chengkejie88: %v", err)
+	// Digits are not a PREFIX/SUFFIX boundary. The cn supplement still rejects
+	// this form for politics username terms whose skeleton is at least 8.
+	if status.Convert(RejectUser(ctx, 7, "chengkejie88")).Message() != "USERNAME_OCCUPIED" {
+		t.Fatalf("chengkejie88: %v", RejectUser(ctx, 7, "chengkejie88"))
 	}
 	if err := RejectUser(ctx, 7, "tanwu"); err != nil {
 		t.Fatalf("tanwu: %v", err)
