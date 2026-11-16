@@ -279,6 +279,11 @@ func (e *Engine) Check(input string, field string, regions []string) Verdict {
 	if idx, ok := e.matchContains(normalized, field, regions); ok {
 		consider(idx, MatchContains)
 	}
+	if sup, ok := cnUsernameSupplement(normalized, field, regions); ok {
+		if best < 0 || utf8.RuneCountInString(sup.Term) > utf8.RuneCountInString(e.rules[best].Normalized) {
+			return sup
+		}
+	}
 	if best < 0 {
 		return Verdict{Outcome: OutcomeAllowed}
 	}
