@@ -130,4 +130,14 @@ BEGIN
   CLOSE cur;
 END$$
 
+-- DROP TRIGGER is not allowed in a prepared statement (MySQL error 1295).
+-- migrate-20261116-inbox-apply.sql calls this, then creates the trigger
+-- as a normal statement. A second run replaces the trigger and does not
+-- change message rows.
+DROP PROCEDURE IF EXISTS teamgram_drop_inbox_random_guard$$
+CREATE PROCEDURE teamgram_drop_inbox_random_guard()
+BEGIN
+  DROP TRIGGER IF EXISTS messages_inbox_random_guard;
+END$$
+
 DELIMITER ;

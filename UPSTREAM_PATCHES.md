@@ -939,6 +939,20 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
 
+The sender's outbox row used to be inserted by the inbox consumer after `messages.sendMessage` returned. `messages.forwardMessages` in that gap loaded no rows, sent an empty list, and the msg service returned `INPUT_REQUEST_INVALID`. The row is now written before the send returns. The consumer's later insert matches `random_id` and does not restore a cleared body.
+
+That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
+
+The sender row is committed before `publishInboxFanout`. If that publish fails, or the process exits before it, the idempotency cache is not stored. The next send of the same `random_id` used to find the live row and return success without publishing, so the other party never received it. The retry now publishes the inbox again and does not insert another sender row. The publish carries the pts already stored for that box, not the user's current pts. A recipient apply of the same `random_id` does not add unread and does not allocate a second pts when that pts row exists. `user_pts_updates.update_data` is a JSON column, so MySQL stores `"id": 17` with a space. The lookup has to match that form as well as the compact bytes the process wrote, or a replay treats the pts as missing and writes a second row. A deleted row is not published and its cleared body is not written back. `SyncUpdatesNotMe` still pushes `updateNewMessage` for the sender's other sessions. The server does not drop an older pts there. A client applies it only when `localPts + pts_count == pts`, so a device that already moved past that pts ignores the push, and `updates.getDifference` still has the one stored pts row.
+
+The recipient dialog unread is incremented in the same transaction as the message row and `inbox_apply` (`applied` is stored as 1). The same transaction writes `inbox_random` when `random_id` is not 0. The previous container's `sendMessageToInbox` does not look up `random_id`. It calls `NextMessageBoxId`, inserts, and then adds unread outside the transaction. `messages_inbox_random_guard` rejects that second insert with duplicate key 1062 before the unread update. `updates.getDifference` reads `SelectByGtPts`. A later stored pts is returned even when one number in between was never written. An empty result leaves the caller's state unchanged until a later row arrives. One missing number does not by itself remove a stored message. Official clients were not run. The pts counter is not moved backwards and a missing number is not reused. `migrate-20261116-inbox-apply.sql` adds `inbox_apply`, `inbox_random`, and the trigger. It does not change existing rows and must be applied before a process that inserts these tables.
+
+| Piece | File |
+| --- | --- |
+| outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
+| fanout retry | `msg.sendMessageV2_handler.go`, `random_replay.go`, `inbox.go` |
+| saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
+
 ## Message search words, dates, and private from_id (行 133, 行 83, 行 152)
 
 `messages.search` and `messages.searchGlobal` matched the whole query as one substring, so a different word order missed. Each word is now its own LIKE, AND-ed. Channel search uses the same rule in memory.

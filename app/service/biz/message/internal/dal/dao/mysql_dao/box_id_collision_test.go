@@ -68,6 +68,26 @@ func TestSameStoredMessageAllowsExactReplay(t *testing.T) {
 	}
 }
 
+func TestSameStoredMessageKeepsClearedBody(t *testing.T) {
+	existing := &dataobject.MessagesDO{
+		UserId:           1001,
+		UserMessageBoxId: 1,
+		SenderUserId:     1001,
+		RandomId:         9,
+		Message:          "",
+	}
+	incoming := &dataobject.MessagesDO{
+		UserId:           1001,
+		UserMessageBoxId: 1,
+		SenderUserId:     1001,
+		RandomId:         9,
+		Message:          "gone-256",
+	}
+	if !sameStoredMessage(existing, incoming) {
+		t.Fatal("a deleted outbox with the same random id is still that send")
+	}
+}
+
 func TestCollisionErrorIsDistinct(t *testing.T) {
 	err := errors.Join(ErrMessageBoxCollision, errors.New("user_id=1001 box_id=1"))
 	if !errors.Is(err, ErrMessageBoxCollision) {
