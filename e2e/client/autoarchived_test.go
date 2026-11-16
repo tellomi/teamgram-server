@@ -13,9 +13,9 @@ func TestAutoarchivedFlag(t *testing.T) {
 	ctx, cancel := contextTimeout(2 * time.Minute)
 	defer cancel()
 	a, aSelf := dialPhone(t, ctx, cfg, "9996610775", "ArchA")
-	b, _ := dialPhone(t, ctx, cfg, "9996610776", "ArchB")
+	b, _ := dialPhone(t, ctx, cfg, "9996610861", "ArchB")
 	setPrivacy(t, ctx, b, true, false, false)
-	bID, bHash, err := a.ImportPhone(ctx, "9996610776", "ArchB")
+	bID, bHash, err := a.ImportPhone(ctx, "9996610861", "ArchB")
 	if err != nil {
 		t.Fatal(err)
 	}
