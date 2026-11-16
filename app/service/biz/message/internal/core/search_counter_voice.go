@@ -6,12 +6,13 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
-// Marks written by encoding/json into message_data. omitempty drops a
-// false bool, so a voice note contains "voice":true and a round video
-// contains "round_message":true. A music file's audio attribute does not.
+// message_data is a JSON column. MySQL stores it in binary form and the
+// text used by LIKE has a space after the colon ("voice": true). The bytes
+// written by encoding/json have no space ("voice":true). omitempty drops a
+// false bool, so a music file does not contain the voice mark.
 const (
-	voiceDataMark = `"voice":true`
-	roundDataMark = `"round_message":true`
+	voiceDataMark = `"voice": true`
+	roundDataMark = `"round\\_message": true`
 )
 
 // audioKindWhere is the WHERE of SELECT count(id), the same statement

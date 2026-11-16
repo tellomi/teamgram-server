@@ -6,7 +6,7 @@ Tellomi changes on top of teamgram. Keep these small and listed here.
 
 `messages.getSearchCounters` counted a photo with `SELECT count(id)` on `message_filter_type`. A voice note and a round video share `MEDIA_AUDIO`. The voice count paged those rows and parsed `message_data`, so one call could report photo=1 and voice=0 even when both rows were already stored.
 
-Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.search` that reads only that column still lists them. The voice and round counts are now `SELECT count(id)` on that same column, plus the JSON mark the document attribute stores (`"voice":true` or `"round_message":true`). A row stored as `MEDIA_VOICE_FILE` or `MEDIA_ROUND_FILE` is still added by its column and is not matched by the audio predicate. The send path is unchanged. A row that the inbox consumer has not inserted yet is absent from every count, including photos.
+Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.search` that reads only that column still lists them. The voice and round counts are now `SELECT count(id)` on that same column. `message_data` is a JSON column, so the text form has a space after the colon (`"voice": true`, `"round_message": true`). A row stored as `MEDIA_VOICE_FILE` or `MEDIA_ROUND_FILE` is still added by its column and is not matched by the audio predicate. The send path is unchanged. A row that the inbox consumer has not inserted yet is absent from every count, including photos.
 
 | Piece | File |
 | --- | --- |

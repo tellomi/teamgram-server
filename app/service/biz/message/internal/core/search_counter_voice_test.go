@@ -64,16 +64,16 @@ func TestVoiceAndRoundStayInMediaAudio(t *testing.T) {
 	if mtproto.GetMediaType(video) != mtproto.MEDIA_VIDEOS_ONLY {
 		t.Fatal("a normal video is not a round video")
 	}
-	voiceJSON := mustJSON(t, voice)
-	roundJSON := mustJSON(t, round)
-	videoJSON := mustJSON(t, video)
-	if !bytes.Contains(voiceJSON, []byte(voiceDataMark)) || bytes.Contains(voiceJSON, []byte(roundDataMark)) {
+	voiceJSON := mysqlJSONText(mustJSON(t, voice))
+	roundJSON := mysqlJSONText(mustJSON(t, round))
+	videoJSON := mysqlJSONText(mustJSON(t, video))
+	if !bytes.Contains(voiceJSON, []byte(`"voice": true`)) || bytes.Contains(voiceJSON, []byte(`"round_message": true`)) {
 		t.Fatalf("voice json %s", voiceJSON)
 	}
-	if !bytes.Contains(roundJSON, []byte(roundDataMark)) || bytes.Contains(roundJSON, []byte(voiceDataMark)) {
+	if !bytes.Contains(roundJSON, []byte(`"round_message": true`)) || bytes.Contains(roundJSON, []byte(`"voice": true`)) {
 		t.Fatalf("round json %s", roundJSON)
 	}
-	if bytes.Contains(videoJSON, []byte(voiceDataMark)) || bytes.Contains(videoJSON, []byte(roundDataMark)) {
+	if bytes.Contains(videoJSON, []byte(`"voice": true`)) || bytes.Contains(videoJSON, []byte(`"round_message": true`)) {
 		t.Fatalf("plain video json %s", videoJSON)
 	}
 	if !mtproto.IsVoiceMessage(voice) || mtproto.IsVoiceMessage(round) || mtproto.IsRoundVideoMessage(voice) || !mtproto.IsRoundVideoMessage(round) {
@@ -96,6 +96,11 @@ func TestAudioKindWhereDoesNotDoubleCount(t *testing.T) {
 	if !strings.Contains(where, "user_id = 7") || !strings.Contains(where, "dialog_id1 = 7") || !strings.Contains(where, "dialog_id2 = 9") {
 		t.Fatalf("dialog bounds %s", where)
 	}
+}
+
+// mysqlJSONText is the spacing MySQL uses when a JSON column is read as text.
+func mysqlJSONText(raw []byte) []byte {
+	return bytes.ReplaceAll(raw, []byte(`":`), []byte(`": `))
 }
 
 func mustJSON(t *testing.T, msg *mtproto.Message) []byte {
