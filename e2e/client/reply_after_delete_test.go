@@ -64,6 +64,7 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	var seen int32
 	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
 		msgs, err := alice.History(ctx, peerForA, 20)
 		if err != nil {
@@ -73,13 +74,18 @@ func TestReplyAfterDeleteKeepsHeader(t *testing.T) {
 			if m.GetMessage() != "after-256" {
 				continue
 			}
-			if m.GetReplyTo().GetReplyToMsgId() == 0 {
+			// Layer 232 puts the id in reply_to_msg_id (flags.4). Decode fills
+			// ReplyToMsgId_FLAGINT32, not the legacy ReplyToMsgId field.
+			header := m.GetReplyTo()
+			if header == nil {
+				seen = 0
 				return false, nil
 			}
-			return true, nil
+			seen = header.GetFixedReplyToMsgId()
+			return seen == aliceID, nil
 		}
 		return false, nil
 	}); err != nil {
-		t.Fatal("alice did not receive reply_to")
+		t.Fatalf("alice did not receive reply_to (last=%d want=%d)", seen, aliceID)
 	}
 }
