@@ -939,6 +939,22 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
 
+## Message search words, dates, and private from_id (行 133, 行 83, 行 152)
+
+`messages.search` and `messages.searchGlobal` matched the whole query as one substring, so a different word order missed. Each word is now its own LIKE, AND-ed. Channel search uses the same rule in memory.
+
+`messages.search` in a private chat rejected every `from_id` with `PEER_ID_INVALID`. The sender filter is allowed when `from_id` is one of the two people in the chat.
+
+`min_date` / `max_date` on a private chat or basic group were dropped before the query. They are applied on `messages.search` for those peers. A zero bound stays unbounded.
+
+A `from_id` search used to skip `q` and the date bounds, and its count was every non-deleted message from that sender. The page and the count now share the sender, the words, the dates, the dialog, and `deleted = 0`. Offset only turns the page. An empty `message` column can still match `message_data`, as global search already does. `add_offset`, `min_id`, `max_id`, and `hash` on a private chat or basic group are still not applied. A channel `from_id` that is not a user returns `FROM_PEER_INVALID` instead of dropping the filter.
+
+| Piece | File |
+| --- | --- |
+| words and dates | `messages_search_text.go`, `message.search_handler.go`, `message.searchV2_handler.go` |
+| channel words | `channel/service_features.go` |
+| private from_id | `messages.search_handler.go` |
+
 ## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
 
 `messages.deleteSavedHistory(max_id=0)` asked to delete every saved message from that peer. The query treated `max_id <= 0` as an empty set, so the call returned `pts_count=0` and left the messages. `max_id <= 0` is now the whole dialog, still capped at 100 rows per call.
