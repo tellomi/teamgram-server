@@ -925,6 +925,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | --- | --- |
 | edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
 
+The sender's outbox row used to be inserted by the inbox consumer after `messages.sendMessage` returned. `messages.forwardMessages` in that gap loaded no rows, sent an empty list, and the msg service returned `INPUT_REQUEST_INVALID`. The row is now written before the send returns. The consumer's later insert matches `random_id` and does not restore a cleared body.
+
+| Piece | File |
+| --- | --- |
+| outbox before return | `app/messenger/msg/internal/dao/outbox.go` |
+
 ## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
 
 `messages.deleteSavedHistory(max_id=0)` asked to delete every saved message from that peer. The query treated `max_id <= 0` as an empty set, so the call returned `pts_count=0` and left the messages. `max_id <= 0` is now the whole dialog, still capped at 100 rows per call.
