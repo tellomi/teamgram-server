@@ -12,6 +12,8 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // UserGetGlobalPrivacySettings
@@ -52,5 +54,15 @@ func (c *UserCore) UserGetGlobalPrivacySettings(in *user.TLUserGetGlobalPrivacyS
 		KeepArchivedFolders:                          do.KeepArchivedFolders,
 		HideReadMarks:                                do.HideReadMarks,
 		NewNoncontactPeersRequirePremium:             do.NewNoncontactPeersRequirePremium,
+		DisplayGiftsButton:                           do.DisplayGiftsButton,
+		DisallowedGifts:                              decodeGifts(do.DisallowedGifts),
+		NoncontactPeersPaidStars:                     paidStarsValue(do.NoncontactPeersPaidStars),
 	}).To_GlobalPrivacySettings(), nil
+}
+
+func paidStarsValue(v int64) *wrapperspb.Int64Value {
+	if v <= 0 {
+		return nil
+	}
+	return wrapperspb.Int64(v)
 }

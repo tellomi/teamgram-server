@@ -96,11 +96,7 @@ func checkRpcWithoutLogin(tl mtproto.TLObject) bool {
 		*mtproto.TLAuthBindTempAuthKey,
 		*mtproto.TLAuthCheckPassword,
 		*mtproto.TLAuthInitPasskeyLogin,
-		*mtproto.TLAuthFinishPasskeyLogin,
-		*mtproto.TLAccountRegisterPasskey,
-		*mtproto.TLAccountInitPasskeyRegistration,
-		*mtproto.TLAccountGetPasskeys,
-		*mtproto.TLAccountDeletePasskey:
+		*mtproto.TLAuthFinishPasskeyLogin:
 
 		return true
 	// help

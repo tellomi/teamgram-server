@@ -49,9 +49,11 @@ func (s *store) setWallpaper(self int64, in *mtproto.TLMessagesSetChatWallPaper)
 	if state.forBoth && ref.kind == "user" && ref.id != 0 && ref.id != self {
 		s.walls[dialogKey{user: ref.id, kind: "user", id: self}] = state
 	}
-	overridden := !in.GetForBoth() || in.GetRevert()
+	// The caller chose or reverted this wallpaper, so it is not an override
+	// installed by the other user. wallpaper_overridden is true only on the
+	// peer who received a for_both wallpaper.
 	upd := mtproto.MakeTLUpdatePeerWallpaper(&mtproto.Update{
-		WallpaperOverridden: overridden,
+		WallpaperOverridden: false,
 		Peer_PEER:           peer,
 		Wallpaper:           next,
 	}).To_Update()

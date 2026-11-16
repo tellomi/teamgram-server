@@ -417,9 +417,9 @@ func (dao *UsersDAO) SearchByQueryString(ctx context.Context, q string, q2 strin
 	var (
 		query string
 	)
-	query = fmt.Sprintf("select id from users where (username like ? or first_name like ? or last_name like ?) and id not in (%s) and deleted = 0 limit ?", sqlx.InInt64List(idList))
+	query = fmt.Sprintf("select id from users where (username like ? or first_name like ? or last_name like ? or concat(first_name, ' ', last_name) like ? or concat(first_name, last_name) like ?) and id not in (%s) and deleted = 0 limit ?", sqlx.InInt64List(idList))
 
-	err = dao.db.QueryRowsPartial(ctx, &rList, query, q, q2, q2, limit)
+	err = dao.db.QueryRowsPartial(ctx, &rList, query, q, q2, q2, q2, q2, limit)
 
 	if err != nil {
 		logx.WithContext(ctx).Errorf("select in SearchByQueryString(_), error: %v", err)
@@ -440,9 +440,9 @@ func (dao *UsersDAO) SearchByQueryStringWithCB(ctx context.Context, q string, q2
 	var (
 		query string
 	)
-	query = fmt.Sprintf("select id from users where (username like ? or first_name like ? or last_name like ?) and id not in (%s) and deleted = 0 limit ?", sqlx.InInt64List(idList))
+	query = fmt.Sprintf("select id from users where (username like ? or first_name like ? or last_name like ? or concat(first_name, ' ', last_name) like ? or concat(first_name, last_name) like ?) and id not in (%s) and deleted = 0 limit ?", sqlx.InInt64List(idList))
 
-	err = dao.db.QueryRowsPartial(ctx, &rList, query, q, q2, q2, limit)
+	err = dao.db.QueryRowsPartial(ctx, &rList, query, q, q2, q2, q2, q2, limit)
 
 	if err != nil {
 		logx.WithContext(ctx).Errorf("select in SearchByQueryString(_), error: %v", err)

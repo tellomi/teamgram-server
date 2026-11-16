@@ -45,6 +45,7 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - sanction")
 		return nil, err
 	}
+	in.ReplyMarkup = c.botReplyMarkup(in.ReplyMarkup)
 	if peer.PeerType == mtproto.PEER_SELF {
 		peer.PeerType = mtproto.PEER_USER
 	}
@@ -70,6 +71,14 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			ReplyMarkup: in.ReplyMarkup,
 		}).To_Message()
 		if in.Message != nil {
+			stored, resolved := (*mtproto.MessageMedia)(nil), true
+			if in.Media == nil {
+				stored, resolved = c.channelStoredMedia(peer, in.Id)
+			}
+			if err = c.rejectOverlong(in.Message.Value, storedEditIsCaption(stored, in.Media, resolved)); err != nil {
+				c.Logger.Errorf("messages.editMessage - length: %v", err)
+				return nil, err
+			}
 			draft.Message = in.Message.Value
 		}
 		if in.Media != nil {
@@ -126,20 +135,10 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	dstMessage = proto.Clone(editMessages.Datas[0]).(*mtproto.MessageBox)
 
 	outMessage := editMessages.Datas[0].Message
-	// edit_date
-	outMessage.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
+	beforeEdit := proto.Clone(outMessage).(*mtproto.Message)
 	outMessage.EditHide = false
-
-	// entities
-	if in.Entities != nil {
-		outMessage.Entities = in.Entities
-	}
-
-	// reply_markup
-	if in.ReplyMarkup != nil {
-		outMessage.ReplyMarkup = in.ReplyMarkup
-	}
-
+	in.ReplyMarkup = c.botReplyMarkup(in.ReplyMarkup)
+	var replacement *mtproto.MessageMedia
 	if in.Media != nil {
 		newMedia, err2 := c.makeMediaByInputMedia(in.Media)
 		if err2 != nil {
@@ -147,34 +146,39 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 			return nil, err2
 		}
 		// Re-sending inputMediaTodo must keep checkmarks for item ids that remain.
-		outMessage.Media = mtproto.KeepTodoCompletions(outMessage.GetMedia(), newMedia)
+		replacement = mtproto.KeepTodoCompletions(outMessage.GetMedia(), newMedia)
 	}
-	// message
-	if in.Message != nil {
+	if in.GetMessage() != nil {
+		nextMedia := outMessage.GetMedia()
+		if replacement != nil {
+			nextMedia = replacement
+		}
+		if err = c.rejectOverlong(in.GetMessage().GetValue(), storedEditIsCaption(nextMedia, in.Media, true)); err != nil {
+			c.Logger.Errorf("messages.editMessage - length: %v", err)
+			return nil, err
+		}
 		if in.Message.Value == "" &&
-			(outMessage.Media == nil ||
-				outMessage.Media.PredicateName == mtproto.Predicate_messageMediaEmpty) {
+			(nextMedia == nil || nextMedia.GetPredicateName() == mtproto.Predicate_messageMediaEmpty) {
 			err = mtproto.ErrMessageEmpty
 			c.Logger.Errorf("message empty: %v", err)
 			return nil, err
 		}
-		outMessage.Message = in.Message.Value
-		outMessage.Entities = nil
+	}
+	// Entities the request resends stay on the message. They are cleared only
+	// when the new text omits the field, matching a channel edit. The
+	// comparison then sees a no-op that resends entities as MESSAGE_NOT_MODIFIED.
+	outMessage = stagePrivateEdit(beforeEdit, in, replacement)
+	outMessage.EditHide = false
+	if in.Message != nil {
 		refreshInternalPreview(c, in.NoWebpage, in.Media != nil, outMessage)
-		//outMessage, _ = c.fixMessageEntities(c.MD.UserId, peer, in.NoWebpage, outMessage, func() bool {
-		//	hasBot := c.MD.IsBot
-		//	if !hasBot {
-		//		//isBot, _ := c.svcCtx.Dao.UserClient.UserIsBot(c.ctx, &userpb.TLUserIsBot{
-		//		//	Id: peer.PeerId,
-		//		//})
-		//		//hasBot = mtproto.FromBool(isBot)
-		//	}
-		//
-		//	return hasBot
-		//})
 	} else if in.NoWebpage {
 		refreshInternalPreview(c, true, in.Media != nil, outMessage)
 	}
+	if mtproto.MessageContentUnchanged(beforeEdit, outMessage) {
+		c.Logger.Errorf("messages.editMessage - MESSAGE_NOT_MODIFIED")
+		return nil, mtproto.ErrMessageNotModified
+	}
+	outMessage.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
 
 	rUpdates, err := c.svcCtx.Dao.MsgClient.MsgEditMessageV2(c.ctx, &msgpb.TLMsgEditMessageV2{
 		UserId:    c.MD.UserId,
@@ -230,6 +234,14 @@ func (c *MessagesCore) applyScheduledEdit(peer *mtproto.PeerUtil, in *mtproto.TL
 	edit := chatbox.SchedEdit{Now: int32(time.Now().Unix())}
 	if in.Message != nil {
 		text := in.Message.Value
+		stored, resolved := (*mtproto.MessageMedia)(nil), in.Media != nil
+		if in.Media == nil {
+			stored, resolved = c.scheduledStoredMedia(peer, in.Id)
+		}
+		if err := c.rejectOverlong(text, storedEditIsCaption(stored, in.Media, resolved)); err != nil {
+			c.Logger.Errorf("messages.editMessage - scheduled length: %v", err)
+			return nil, err
+		}
 		edit.Text = &text
 		if in.Entities != nil {
 			edit.Entities = in.Entities

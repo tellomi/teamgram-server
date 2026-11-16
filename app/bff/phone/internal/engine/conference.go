@@ -234,6 +234,10 @@ func (e *Engine) DeleteConferenceParticipants(user, id, access int64, onlyLeft, 
 		e.mu.Unlock()
 		return nil, err
 	}
+	if !g.conference {
+		e.mu.Unlock()
+		return nil, mtproto.ErrGroupcallInvalid
+	}
 	if g.live(user) == nil && user != g.creator {
 		e.mu.Unlock()
 		return nil, mtproto.ErrGroupcallForbidden
@@ -286,6 +290,10 @@ func (e *Engine) BroadcastBlock(user, id, access int64, block []byte) (*mtproto.
 	if err != nil {
 		e.mu.Unlock()
 		return nil, err
+	}
+	if !g.conference {
+		e.mu.Unlock()
+		return nil, mtproto.ErrGroupcallInvalid
 	}
 	if g.live(user) == nil && user != g.creator {
 		e.mu.Unlock()

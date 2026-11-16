@@ -31,8 +31,9 @@ func MakeGeoPointByInput(geoPoint *InputGeoPoint) (geo *GeoPoint) {
 	case Predicate_inputGeoPoint:
 		// TODO(@benqi): check access_hash
 		geo = MakeTLGeoPoint(&GeoPoint{
-			Long: geoPoint.Long,
-			Lat:  geoPoint.Lat,
+			Long:           geoPoint.Long,
+			Lat:            geoPoint.Lat,
+			AccuracyRadius: geoPoint.GetAccuracyRadius(),
 		}).To_GeoPoint()
 	default:
 		// log.Errorf("invalid predicateName - %v", geoPoint)

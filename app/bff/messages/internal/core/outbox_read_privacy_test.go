@@ -65,6 +65,23 @@ func TestOutboxReadDateHonorsHideReadMarks(t *testing.T) {
 	}
 }
 
+func TestOutboxReadDateHonorsLastSeen(t *testing.T) {
+	users := &readPrivacyUsers{hideStatus: map[int64]bool{2: true}}
+	msgs := &readPrivacyMessages{date: 1_700_000_000}
+	c := readDateCore(users, msgs)
+	if _, err := c.MessagesGetOutboxReadDate(readDateRequest(2, 9)); status.Convert(err).Message() != "USER_PRIVACY_RESTRICTED" {
+		t.Fatalf("peer last seen: %v", err)
+	}
+	users.hideStatus = map[int64]bool{1: true}
+	if _, err := c.MessagesGetOutboxReadDate(readDateRequest(2, 9)); status.Convert(err).Message() != "YOUR_PRIVACY_RESTRICTED" {
+		t.Fatalf("caller last seen: %v", err)
+	}
+	users.premium = true
+	if _, err := c.MessagesGetOutboxReadDate(readDateRequest(2, 9)); err != nil {
+		t.Fatalf("premium caller with hidden last seen: %v", err)
+	}
+}
+
 func readDateCore(users *readPrivacyUsers, msgs *readPrivacyMessages) *MessagesCore {
 	return &MessagesCore{
 		ctx: context.Background(),
@@ -87,6 +104,7 @@ func readDateRequest(peer int64, msgID int32) *mtproto.TLMessagesGetOutboxReadDa
 type readPrivacyUsers struct {
 	userclient.UserClient
 	self, peer, premium bool
+	hideStatus          map[int64]bool
 }
 
 func (u *readPrivacyUsers) UserGetGlobalPrivacySettings(_ context.Context, in *user.TLUserGetGlobalPrivacySettings) (*mtproto.GlobalPrivacySettings, error) {
@@ -99,6 +117,16 @@ func (u *readPrivacyUsers) UserGetGlobalPrivacySettings(_ context.Context, in *u
 
 func (u *readPrivacyUsers) UserGetImmutableUser(context.Context, *user.TLUserGetImmutableUser) (*mtproto.ImmutableUser, error) {
 	return &mtproto.ImmutableUser{User: &mtproto.UserData{Id: 1, Premium: u.premium}}, nil
+}
+
+func (u *readPrivacyUsers) UserCheckPrivacy(_ context.Context, in *user.TLUserCheckPrivacy) (*mtproto.Bool, error) {
+	if in.GetKeyType() != mtproto.STATUS_TIMESTAMP {
+		return mtproto.BoolTrue, nil
+	}
+	if u.hideStatus != nil && u.hideStatus[in.GetUserId()] {
+		return mtproto.BoolFalse, nil
+	}
+	return mtproto.BoolTrue, nil
 }
 
 type readPrivacyMessages struct {

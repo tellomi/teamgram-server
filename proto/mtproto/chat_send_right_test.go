@@ -106,6 +106,20 @@ func TestChatSendForbiddenCodesAndUntil(t *testing.T) {
 	}
 }
 
+func TestReactionForbiddenUntil(t *testing.T) {
+	now := int32(1_700_000_000)
+	rights := []*ChatBannedRights{banRights(0, func(r *ChatBannedRights) { r.SendReactions = true })}
+	if err := ReactionForbidden(now, false, rights); err != ErrChatSendReactionsForbidden {
+		t.Fatalf("forever: %v", err)
+	}
+	if err := ReactionForbidden(now, true, rights); err != nil {
+		t.Fatalf("admin: %v", err)
+	}
+	if err := ReactionForbidden(now, false, []*ChatBannedRights{banRights(now-10, func(r *ChatBannedRights) { r.SendReactions = true })}); err != nil {
+		t.Fatalf("expired: %v", err)
+	}
+}
+
 func TestBasicGroupAndPinTopics(t *testing.T) {
 	now := int32(1_700_000_000)
 	rights := banRights(0, func(r *ChatBannedRights) {

@@ -67,6 +67,39 @@ func TestPinnedChannelOrderFollowsPinRank(t *testing.T) {
 	}
 }
 
+func TestChannelDialogKeepsChatDraft(t *testing.T) {
+	channelRow := channelDialog(50, 1, false, 0)
+	channelRow.Dialog.Draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{Message: "topic"}).To_DraftMessage()
+	stored := channelDialog(50, 1, false, 0)
+	stored.Dialog.Draft = mtproto.MakeTLDraftMessage(&mtproto.DraftMessage{Message: "group draft"}).To_DraftMessage()
+	applyChannelDialogRows(dialog.DialogExtList{channelRow}, dialog.DialogExtList{stored})
+	if channelRow.GetDialog().GetDraft().GetMessage() != "group draft" {
+		t.Fatalf("draft %+v", channelRow.GetDialog().GetDraft())
+	}
+}
+
+func TestChannelLiveRowsCopyMentionCount(t *testing.T) {
+	stored := channelDialog(50, 9, false, 0)
+	stored.Dialog.UnreadMentionsCount = 0
+	stored.Dialog.UnreadReactionsCount = 3
+	stored.Dialog.UnreadCount = 1
+	live := channelDialog(50, 10, false, 0)
+	live.Dialog.UnreadMentionsCount = 2
+	live.Dialog.UnreadCount = 4
+	other := channelDialog(7, 3, false, 0)
+	other.Dialog.UnreadMentionsCount = 5
+	applyChannelLiveRows(dialog.DialogExtList{stored, other}, dialog.DialogExtList{live})
+	if stored.GetDialog().GetUnreadMentionsCount() != 2 || stored.GetDialog().GetUnreadCount() != 4 {
+		t.Fatalf("mentions %d unread %d", stored.GetDialog().GetUnreadMentionsCount(), stored.GetDialog().GetUnreadCount())
+	}
+	if stored.GetDialog().GetUnreadReactionsCount() != 3 {
+		t.Fatalf("reactions %d", stored.GetDialog().GetUnreadReactionsCount())
+	}
+	if other.GetDialog().GetUnreadMentionsCount() != 5 {
+		t.Fatalf("other mentions %d", other.GetDialog().GetUnreadMentionsCount())
+	}
+}
+
 func TestChannelLiveTopReplacesStalePinRow(t *testing.T) {
 	stored := channelDialog(50, 9, true, 9<<32)
 	stored.Dialog.TopMessage = 9

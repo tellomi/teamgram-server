@@ -634,13 +634,17 @@ func (s *Service) recentLocked(userID, hash int64, attached bool) *mtproto.Messa
 	}).To_Messages_RecentStickers()
 }
 
-func (s *Service) SaveRecent(userID, documentID int64, attached, unsave bool) error {
+// SaveRecent reports whether the recent list changed for this user.
+// Order is document id plus the attached flag. A new date on the sticker
+// that is already first is not a change. The bool is false when the write fails.
+func (s *Service) SaveRecent(userID, documentID int64, attached, unsave bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.docs[documentID] == nil {
-		return mtproto.ErrStickerIdInvalid
+		return false, mtproto.ErrStickerIdInvalid
 	}
 	st := s.state(userID)
+	before := append([]recentRow(nil), st.recent...)
 	next := st.recent[:0]
 	for _, row := range st.recent {
 		if row.DocumentID == documentID && row.Attached == attached {
@@ -657,23 +661,25 @@ func (s *Service) SaveRecent(userID, documentID int64, attached, unsave bool) er
 	}
 	if s.persist != nil {
 		if err := s.persist.saveRecent(userID, row, unsave); err != nil {
-			return err
+			return false, err
 		}
 	}
 	st.recent = next
-	return nil
+	return !sameRecent(before, st.recent), nil
 }
 
-func (s *Service) ClearRecent(userID int64, attached bool) error {
+// ClearRecent reports whether any sticker of this attached flag was removed.
+func (s *Service) ClearRecent(userID int64, attached bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := s.state(userID)
+	before := append([]recentRow(nil), st.recent...)
 	var keep []recentRow
 	for _, row := range st.recent {
 		if row.Attached == attached {
 			if s.persist != nil {
 				if err := s.persist.saveRecent(userID, row, true); err != nil {
-					return err
+					return false, err
 				}
 			}
 			continue
@@ -681,7 +687,31 @@ func (s *Service) ClearRecent(userID int64, attached bool) error {
 		keep = append(keep, row)
 	}
 	st.recent = keep
-	return nil
+	return !sameRecent(before, st.recent), nil
+}
+
+func sameRecent(a, b []recentRow) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].DocumentID != b[i].DocumentID || a[i].Attached != b[i].Attached {
+			return false
+		}
+	}
+	return true
+}
+
+func sameInt64s(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) Faved(userID, hash int64) *mtproto.Messages_FavedStickers {
@@ -717,13 +747,16 @@ func (s *Service) Faved(userID, hash int64) *mtproto.Messages_FavedStickers {
 	}).To_Messages_FavedStickers()
 }
 
-func (s *Service) Fave(userID, documentID int64, unfave bool) error {
+// Fave reports whether the faved document order changed.
+// Faving the sticker that is already first only rewrites its date and is not a change.
+func (s *Service) Fave(userID, documentID int64, unfave bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.docs[documentID] == nil {
-		return mtproto.ErrStickerIdInvalid
+		return false, mtproto.ErrStickerIdInvalid
 	}
 	st := s.state(userID)
+	before := favedIDs(st.faved)
 	var next []favedRow
 	for _, row := range st.faved {
 		if row.DocumentID != documentID {
@@ -739,11 +772,19 @@ func (s *Service) Fave(userID, documentID int64, unfave bool) error {
 	}
 	if s.persist != nil {
 		if err := s.persist.saveFaved(userID, documentID, date, unfave); err != nil {
-			return err
+			return false, err
 		}
 	}
 	st.faved = next
-	return nil
+	return !sameInt64s(before, favedIDs(st.faved)), nil
+}
+
+func favedIDs(rows []favedRow) []int64 {
+	ids := make([]int64, len(rows))
+	for i, row := range rows {
+		ids[i] = row.DocumentID
+	}
+	return ids
 }
 
 func (s *Service) Documents(ids []int64) *mtproto.Vector_Document {

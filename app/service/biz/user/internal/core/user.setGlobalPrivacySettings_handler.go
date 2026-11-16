@@ -28,6 +28,13 @@ func (c *UserCore) UserSetGlobalPrivacySettings(in *user.TLUserSetGlobalPrivacyS
 		archiveAndMuteNewNoncontactPeers = in.GetSettings().GetArchiveAndMuteNewNoncontactPeers_FLAGBOOLEAN()
 	}
 
+	// A later settings write must not clear the sponsored switch. That
+	// column is updated by account.toggleSponsoredMessages.
+	sponsored := false
+	if prev, _ := c.svcCtx.Dao.UserGlobalPrivacySettingsDAO.Select(c.ctx, in.UserId); prev != nil {
+		sponsored = prev.SponsoredEnabled
+	}
+
 	if _, _, err := c.svcCtx.Dao.UserGlobalPrivacySettingsDAO.InsertOrUpdate(c.ctx, &dataobject.UserGlobalPrivacySettingsDO{
 		UserId:                           in.UserId,
 		ArchiveAndMuteNewNoncontactPeers: archiveAndMuteNewNoncontactPeers,
@@ -35,6 +42,10 @@ func (c *UserCore) UserSetGlobalPrivacySettings(in *user.TLUserSetGlobalPrivacyS
 		KeepArchivedFolders:              in.GetSettings().GetKeepArchivedFolders(),
 		HideReadMarks:                    in.GetSettings().GetHideReadMarks(),
 		NewNoncontactPeersRequirePremium: in.GetSettings().GetNewNoncontactPeersRequirePremium(),
+		DisplayGiftsButton:               in.GetSettings().GetDisplayGiftsButton(),
+		DisallowedGifts:                  encodeGifts(in.GetSettings().GetDisallowedGifts()),
+		SponsoredEnabled:                 sponsored,
+		NoncontactPeersPaidStars:         paidStars(in.GetSettings()),
 	}); err != nil {
 		c.Logger.Errorf("user.setGlobalPrivacySettings - error: %v", err)
 		return nil, err
