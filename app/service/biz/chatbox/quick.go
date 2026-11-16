@@ -2,11 +2,13 @@ package chatbox
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/hashx"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -100,7 +102,7 @@ func (b *Book) QuickReplyMessages(ctx context.Context, user int64, shortcutID in
 	if err != nil {
 		return nil, err
 	}
-	sum := hashMessages(msgs)
+	sum := hashQuickMessages(msgs)
 	if hash != 0 && hash == sum {
 		return mtproto.MakeTLMessagesMessagesNotModified(&mtproto.Messages_Messages{
 			Count: int32(len(msgs)),
@@ -192,67 +194,191 @@ func (b *Book) ReorderQuickReplies(ctx context.Context, user int64, order []int3
 	return mtproto.BoolTrue, nil
 }
 
-// EditQuickReplyMessage rewrites one message inside a shortcut.
+// QuickReplyEdit is one messages.editMessage applied to a shortcut.
+// Nil text, entities, markup, and media leave those fields as they are.
+// A non-nil media replaces the media, including messageMediaEmpty.
+// Markup is applied only when the caller already decided it is allowed.
+type QuickReplyEdit struct {
+	Text     *string
+	Entities []*mtproto.MessageEntity
+	Markup   *mtproto.ReplyMarkup
+	Media    *mtproto.MessageMedia
+}
+
+// EditQuickReplyMessage rewrites text and entities. Media and reply markup
+// go through EditQuickReply.
+func (b *Book) EditQuickReplyMessage(ctx context.Context, user int64, shortcutID, msgID int32, text *string, entities []*mtproto.MessageEntity) (*mtproto.Updates, error) {
+	return b.EditQuickReply(ctx, user, shortcutID, msgID, QuickReplyEdit{Text: text, Entities: entities})
+}
+
+// EditQuickReply rewrites one message inside a shortcut.
 // messages.editMessage with quick_reply_shortcut_id addresses this inbox,
 // not the saved-messages box. The shortcut ids start at 1 and otherwise
 // collide with a forwarded saved message, which returned
 // MESSAGE_AUTHOR_REQUIRED. The shortcut owner is the editor. A from_id left
 // on a captured message is not an authorship check.
 //
-// An identical resubmit returns MESSAGE_NOT_MODIFIED and does not bump
-// edit_date. A failed save puts the previous bytes back, so a retry still
-// has something to write.
-func (b *Book) EditQuickReplyMessage(ctx context.Context, user int64, shortcutID, msgID int32, text *string, entities []*mtproto.MessageEntity) (*mtproto.Updates, error) {
+// An identical resubmit returns MESSAGE_NOT_MODIFIED and the current
+// update, and does not bump edit_date or write another message. The caller
+// can push that update so a missed sync still reaches other sessions.
+// A failed save leaves the previous document in place.
+//
+// chatbox_doc Save replaces the whole document and has no version. Two
+// processes that each loaded the same snapshot can drop one edit. This
+// path stores only when the loaded bytes are still current, and reapplies
+// on the document that won the race. It does not change Save for other
+// documents.
+func (b *Book) EditQuickReply(ctx context.Context, user int64, shortcutID, msgID int32, edit QuickReplyEdit) (*mtproto.Updates, error) {
 	if shortcutID == 0 || msgID == 0 {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
+	for try := 0; try < 8; try++ {
+		ups, retry, err := b.editQuickReplyOnce(ctx, user, shortcutID, msgID, edit)
+		if !retry {
+			return ups, err
+		}
+	}
+	return nil, mtproto.ErrInternalServerError
+}
+
+func (b *Book) editQuickReplyOnce(ctx context.Context, user int64, shortcutID, msgID int32, edit QuickReplyEdit) (*mtproto.Updates, bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.loadQuick(ctx, user)
+	doc, prevRaw, err := b.readQuick(ctx, user)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	sc := shortcutByID(doc, shortcutID)
 	if sc == nil {
-		return nil, mtproto.ErrShortcutInvalid
+		return nil, false, mtproto.ErrShortcutInvalid
 	}
 	for i := range sc.Messages {
 		if sc.Messages[i].ID != msgID {
 			continue
 		}
-		prev := append([]byte(nil), sc.Messages[i].Raw...)
 		cur := &mtproto.Message{}
-		if err := proto.Unmarshal(prev, cur); err != nil {
-			return nil, err
+		if err := proto.Unmarshal(sc.Messages[i].Raw, cur); err != nil {
+			return nil, false, err
 		}
 		next := proto.Clone(cur).(*mtproto.Message)
-		if text != nil {
-			if *text == "" && !quickMediaHoldsCaption(next.GetMedia()) {
-				return nil, mtproto.ErrMessageEmpty
+		if edit.Text != nil {
+			next.Message = *edit.Text
+			if edit.Entities == nil {
+				next.Entities = nil
 			}
-			next.Message = *text
-			next.Entities = entities
-		} else if entities != nil {
-			next.Entities = entities
 		}
+		if edit.Entities != nil {
+			next.Entities = edit.Entities
+		}
+		if edit.Markup != nil {
+			next.ReplyMarkup = edit.Markup
+		}
+		if edit.Media != nil {
+			next.Media = mtproto.KeepTodoCompletions(next.GetMedia(), edit.Media)
+		}
+		if edit.Text != nil && *edit.Text == "" && !quickMediaHoldsCaption(next.GetMedia()) {
+			return nil, false, mtproto.ErrMessageEmpty
+		}
+		ups := mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
+			Message_MESSAGE: next,
+		}).To_Update())
 		if mtproto.MessageContentUnchanged(cur, next) {
-			return nil, mtproto.ErrMessageNotModified
+			ups.Updates[0].Message_MESSAGE = cur
+			return ups, false, mtproto.ErrMessageNotModified
 		}
 		next.EditDate = wrapperspb.Int32(int32(b.now().Unix()))
 		raw, err := proto.Marshal(next)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		sc.Messages[i].Raw = raw
-		if err := b.storeQuick(ctx, user, doc); err != nil {
-			sc.Messages[i].Raw = prev
-			return nil, err
+		applied, err := b.commitQuick(ctx, user, prevRaw, doc)
+		if err != nil {
+			return nil, false, err
 		}
-		return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateQuickReplyMessage(&mtproto.Update{
-			Message_MESSAGE: next,
-		}).To_Update()), nil
+		if !applied {
+			return nil, true, nil
+		}
+		ups.Updates[0].Message_MESSAGE = next
+		return ups, false, nil
 	}
-	return nil, mtproto.ErrMessageIdInvalid
+	return nil, false, mtproto.ErrMessageIdInvalid
+}
+
+// quickCAS is a compare-and-swap on one document. SaveIf reports false when
+// prev is no longer the stored bytes.
+type quickCAS interface {
+	SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error)
+}
+
+func (b *Book) readQuick(ctx context.Context, user int64) (*quickDoc, []byte, error) {
+	if b.db == nil {
+		doc := &quickDoc{}
+		if src := b.quick[user]; src != nil {
+			raw, err := json.Marshal(src)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := json.Unmarshal(raw, doc); err != nil {
+				return nil, nil, err
+			}
+		}
+		return doc, nil, nil
+	}
+	raw, ok, err := b.db.Load(ctx, quickKey(user))
+	if err != nil {
+		return nil, nil, err
+	}
+	doc := &quickDoc{}
+	if !ok || len(raw) == 0 {
+		return doc, nil, nil
+	}
+	if err := json.Unmarshal(raw, doc); err != nil {
+		return nil, nil, err
+	}
+	return doc, append([]byte(nil), raw...), nil
+}
+
+func (b *Book) commitQuick(ctx context.Context, user int64, prev []byte, doc *quickDoc) (bool, error) {
+	if b.db == nil {
+		b.quick[user] = doc
+		return true, nil
+	}
+	next, err := json.Marshal(doc)
+	if err != nil {
+		return false, err
+	}
+	if cas, ok := b.db.(quickCAS); ok {
+		applied, err := cas.SaveIf(ctx, quickKey(user), prev, next)
+		if err != nil || !applied {
+			return false, err
+		}
+		b.quick[user] = doc
+		return true, nil
+	}
+	if err := b.save(ctx, quickKey(user), doc); err != nil {
+		return false, err
+	}
+	b.quick[user] = doc
+	return true, nil
+}
+
+// hashQuickMessages is the messages.getQuickReplyMessages hash.
+// TDLib QuickReplyManager::get_quick_reply_messages_hash mixes each message
+// id and its edit_date with the pagination vector hash
+// (core.telegram.org/api/offsets, MediaDataController.calcHash). The send
+// date does not change on edit, so a hash of id and date stayed
+// NotModified after the text changed.
+func hashQuickMessages(msgs []*mtproto.Message) int64 {
+	var acc int64
+	for _, m := range msgs {
+		if m == nil {
+			continue
+		}
+		acc = hashx.CombineInt64Hash2(acc, int64(m.GetId()))
+		acc = hashx.CombineInt64Hash2(acc, int64(m.GetEditDate().GetValue()))
+	}
+	return acc
 }
 
 // quickMediaHoldsCaption reports media that can remain when the text is cleared.
@@ -597,6 +723,9 @@ func hashQuick(replies []*mtproto.QuickReply, tops []*mtproto.Message) int64 {
 	}
 	for _, m := range tops {
 		h = h*20261 + int64(m.GetId())
+		// edit_date changes when the top message is edited. id alone stayed
+		// NotModified and the client kept the previous preview.
+		h = h*20261 + int64(m.GetEditDate().GetValue())
 	}
 	if h < 0 {
 		h = -h

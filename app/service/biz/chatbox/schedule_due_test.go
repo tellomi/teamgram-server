@@ -1,6 +1,7 @@
 package chatbox
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"testing"
@@ -114,6 +115,23 @@ func (m *memDocs) Save(_ context.Context, key string, raw []byte) error {
 	defer m.mu.Unlock()
 	m.m[key] = append([]byte(nil), raw...)
 	return nil
+}
+
+// SaveIf writes next only when the stored bytes are still prev.
+// A stale snapshot returns false and does not replace the row.
+func (m *memDocs) SaveIf(_ context.Context, key string, prev, next []byte) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur := m.m[key]
+	if len(prev) == 0 {
+		if _, ok := m.m[key]; ok {
+			return false, nil
+		}
+	} else if !bytes.Equal(cur, prev) {
+		return false, nil
+	}
+	m.m[key] = append([]byte(nil), next...)
+	return true, nil
 }
 
 func (m *memDocs) ListPrefix(_ context.Context, prefix string) ([]string, error) {

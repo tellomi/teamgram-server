@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -347,4 +348,239 @@ func TestEditQuickReplyConcurrentSubmit(t *testing.T) {
 	if !seen || storedText(t, b, owner, sid, second).GetMessage() != "second" {
 		t.Fatalf("last write %q", final)
 	}
+}
+
+func TestEditQuickReplyHashFollowsEditDate(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	ctx := context.Background()
+	owner := qrKey(41)
+	b := newBook(newMemDocs())
+	b.now = fixedNow
+	sid, first, second := captureOwned(t, b, owner, qrKey(42))
+	page, err := b.QuickReplyMessages(ctx, owner, sid, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := hashQuickMessages(page.GetMessages())
+	cached, err := b.QuickReplyMessages(ctx, owner, sid, nil, old)
+	if err != nil || cached.GetPredicateName() != mtproto.Predicate_messages_messagesNotModified {
+		t.Fatalf("fresh hash %+v %v", cached, err)
+	}
+	text := "rewritten"
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := b.QuickReplyMessages(ctx, owner, sid, nil, old)
+	if err != nil || stale.GetPredicateName() == mtproto.Predicate_messages_messagesNotModified {
+		t.Fatal("edit left the previous message hash valid")
+	}
+	var saw bool
+	for _, m := range stale.GetMessages() {
+		if m.GetId() == first && m.GetMessage() == "rewritten" && m.GetEditDate().GetValue() != 0 {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("stale fetch %+v", stale.GetMessages())
+	}
+	fresh := hashQuickMessages(stale.GetMessages())
+	if fresh == old {
+		t.Fatal("edit did not change the hash")
+	}
+	hit, err := b.QuickReplyMessages(ctx, owner, sid, nil, fresh)
+	if err != nil || hit.GetPredicateName() != mtproto.Predicate_messages_messagesNotModified {
+		t.Fatalf("new hash %+v %v", hit, err)
+	}
+	date := storedText(t, b, owner, sid, first).GetEditDate().GetValue()
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil); err != mtproto.ErrMessageNotModified {
+		t.Fatal(err)
+	}
+	if storedText(t, b, owner, sid, first).GetEditDate().GetValue() != date {
+		t.Fatal("duplicate changed edit_date")
+	}
+	if still, err := b.QuickReplyMessages(ctx, owner, sid, nil, fresh); err != nil || still.GetPredicateName() != mtproto.Predicate_messages_messagesNotModified {
+		t.Fatalf("duplicate hash %+v %v", still, err)
+	}
+
+	list, err := b.QuickReplies(ctx, owner, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listHash := hashQuick(list.GetQuickReplies(), list.GetMessages())
+	if again, err := b.QuickReplies(ctx, owner, listHash); err != nil || again.GetPredicateName() != mtproto.Predicate_messages_quickRepliesNotModified {
+		t.Fatalf("list hash %+v %v", again, err)
+	}
+	top := "top-edited"
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, second, &top, nil); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := b.QuickReplies(ctx, owner, listHash)
+	if err != nil || changed.GetPredicateName() != mtproto.Predicate_messages_quickReplies {
+		t.Fatalf("top edit %+v %v", changed, err)
+	}
+	if changed.GetMessages()[0].GetMessage() != "top-edited" {
+		t.Fatalf("top preview %+v", changed.GetMessages())
+	}
+}
+
+func TestEditQuickReplyReplacesMediaAndClearsCaption(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	ctx := context.Background()
+	owner := qrKey(51)
+	b := newBook(newMemDocs())
+	b.now = fixedNow
+	sid, first, second := captureOwned(t, b, owner, qrKey(52))
+	markup := mtproto.MakeTLReplyKeyboardMarkup(&mtproto.ReplyMarkup{
+		Rows_VECTORKEYBOARDBUTTONROW: []*mtproto.KeyboardButtonRow{
+			mtproto.MakeTLKeyboardButtonRow(&mtproto.KeyboardButtonRow{
+				Buttons: []*mtproto.KeyboardButton{
+					mtproto.MakeTLKeyboardButton(&mtproto.KeyboardButton{Text: "go"}).To_KeyboardButton(),
+				},
+			}).To_KeyboardButtonRow(),
+		},
+	}).To_ReplyMarkup()
+	text := "moved"
+	media := mtproto.MakeTLMessageMediaGeo(&mtproto.MessageMedia{
+		Geo: mtproto.MakeTLGeoPoint(&mtproto.GeoPoint{Lat: 9, Long: 8}).To_GeoPoint(),
+	}).To_MessageMedia()
+	edited, err := b.EditQuickReply(ctx, owner, sid, first, QuickReplyEdit{Text: &text, Markup: markup, Media: media})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := edited.GetUpdates()[0].GetMessage_MESSAGE()
+	if msg.GetMessage() != "moved" || msg.GetMedia().GetGeo().GetLong() != 8 || msg.GetReplyMarkup().GetRows_VECTORKEYBOARDBUTTONROW()[0].GetButtons()[0].GetText() != "go" {
+		t.Fatalf("replace %+v", msg)
+	}
+	blank := ""
+	if _, err := b.EditQuickReply(ctx, owner, sid, first, QuickReplyEdit{Text: &blank}); err != nil {
+		t.Fatal(err)
+	}
+	cleared := storedText(t, b, owner, sid, first)
+	if cleared.GetMessage() != "" || cleared.GetMedia().GetGeo().GetLong() != 8 || cleared.GetReplyMarkup() == nil {
+		t.Fatalf("caption clear %+v", cleared)
+	}
+	empty := mtproto.MakeTLMessageMediaEmpty(nil).To_MessageMedia()
+	if _, err := b.EditQuickReply(ctx, owner, sid, first, QuickReplyEdit{Text: &blank, Media: empty}); err != mtproto.ErrMessageEmpty {
+		t.Fatalf("empty media: %v", err)
+	}
+	if kept := storedText(t, b, owner, sid, first); kept.GetMedia().GetGeo().GetLong() != 8 || storedText(t, b, owner, sid, second).GetMessage() != "second" {
+		t.Fatalf("empty media wrote %+v", kept)
+	}
+}
+
+func TestChatboxDocSaveDropsAStaleSnapshot(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	ctx := context.Background()
+	owner := qrKey(61)
+	docs := newMemDocs()
+	b := newBook(docs)
+	b.now = fixedNow
+	sid, first, _ := captureOwned(t, b, owner, qrKey(62))
+	prev, ok, err := docs.Load(ctx, quickKey(owner))
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	stale := append([]byte(nil), prev...)
+	text := "kept-by-edit"
+	if _, err := b.EditQuickReplyMessage(ctx, owner, sid, first, &text, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Save has no version. Putting the pre-edit bytes back drops the edit.
+	// This is the store limitation. The edit path below does not use this call.
+	if err := docs.Save(ctx, quickKey(owner), stale); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedText(t, newBook(docs), owner, sid, first).GetMessage(); got != "first" {
+		t.Fatalf("stale Save kept %q; the unconditional write no longer drops a snapshot", got)
+	}
+}
+
+type freezeDocs struct {
+	inner  *memDocs
+	mu     sync.Mutex
+	armed  bool
+	loads  int
+	freeze []byte
+}
+
+func (f *freezeDocs) Load(ctx context.Context, key string) ([]byte, bool, error) {
+	f.mu.Lock()
+	f.loads++
+	n := f.loads
+	snap := append([]byte(nil), f.freeze...)
+	armed := f.armed
+	f.mu.Unlock()
+	if armed && n <= 2 {
+		return snap, true, nil
+	}
+	return f.inner.Load(ctx, key)
+}
+
+func (f *freezeDocs) Save(ctx context.Context, key string, raw []byte) error {
+	return f.inner.Save(ctx, key, raw)
+}
+
+func (f *freezeDocs) SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error) {
+	return f.inner.SaveIf(ctx, key, prev, next)
+}
+
+func TestEditQuickReplyCrossBookKeepsBothEdits(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Fatal("TEAMGRAM_MYSQL_DSN is set; refusing to touch a configured database")
+	}
+	ctx := context.Background()
+	owner := qrKey(71)
+	store := &freezeDocs{inner: newMemDocs()}
+	a := newBook(store)
+	a.now = fixedNow
+	sid, first, second := captureOwned(t, a, owner, qrKey(72))
+	snap, ok, err := store.inner.Load(ctx, quickKey(owner))
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	store.freeze = append([]byte(nil), snap...)
+	store.armed = true
+	store.loads = 0
+	store.mu.Unlock()
+	b := newBook(store)
+	b.now = fixedNow
+	leftText := "left-edit"
+	rightText := "right-edit"
+	errs := make(chan error, 2)
+	go func() {
+		_, err := a.EditQuickReplyMessage(ctx, owner, sid, first, &leftText, nil)
+		errs <- err
+	}()
+	go func() {
+		_, err := b.EditQuickReplyMessage(ctx, owner, sid, second, &rightText, nil)
+		errs <- err
+	}()
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[int32]string{}
+	for _, m := range mustMessages(t, newBook(store.inner), owner, sid) {
+		got[m.GetId()] = m.GetMessage()
+	}
+	if got[first] != leftText || got[second] != rightText {
+		t.Fatalf("cross-book edits %#v", got)
+	}
+}
+
+func mustMessages(t *testing.T, b *Book, owner int64, sid int32) []*mtproto.Message {
+	t.Helper()
+	page, err := b.QuickReplyMessages(context.Background(), owner, sid, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page.GetMessages()
 }

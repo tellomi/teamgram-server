@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
 	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 )
@@ -42,6 +43,29 @@ func (s sqlDocs) Save(ctx context.Context, key string, raw []byte) error {
 INSERT INTO chatbox_doc (doc_key, data) VALUES (?,?)
 ON DUPLICATE KEY UPDATE data=VALUES(data)`, key, raw)
 	return err
+}
+
+// SaveIf replaces key only when the stored bytes are still prev.
+// An empty prev inserts. A lost compare returns false and leaves the row.
+// Quick-reply edits use this so two processes cannot overwrite each other's
+// document with a stale snapshot. Other writers still use Save.
+func (s sqlDocs) SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error) {
+	if len(prev) == 0 {
+		_, err := s.db.ExecContext(ctx, `INSERT INTO chatbox_doc (doc_key, data) VALUES (?,?)`, key, next)
+		if err == nil {
+			return true, nil
+		}
+		if dup, ok := err.(*mysqldriver.MySQLError); ok && dup.Number == 1062 {
+			return false, nil
+		}
+		return false, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE chatbox_doc SET data=? WHERE doc_key=? AND data=?`, next, key, prev)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 func (s sqlDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
