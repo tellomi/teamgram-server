@@ -919,7 +919,7 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 ## inputMessageReplyTo (row 205)
 
-`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message named by `reply_to_msg_id` (or `reply_to_top_id` when the first is unset). A reply with no header is omitted instead of being returned as itself.
+`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message named by `reply_to_msg_id` (or `reply_to_top_id` when the first is unset), using `GetFixedReplyToMsgId`. A reply with no header is omitted instead of being returned as itself. `channels.getMessages` runs the same `requireView` as a request by id, including the access hash, before it loads the body. A caller who cannot see the channel gets that error for a missing id and for a stored id, and the post is not returned.
 
 | Piece | File |
 | --- | --- |

@@ -165,7 +165,7 @@ func replyTargetID(msg *mtproto.Message) int32 {
 	if header == nil {
 		return 0
 	}
-	if id := header.GetReplyToMsgId(); id != 0 {
+	if id := header.GetFixedReplyToMsgId(); id != 0 {
 		return id
 	}
 	return header.GetReplyToTopId().GetValue()

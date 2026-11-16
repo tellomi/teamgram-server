@@ -12,6 +12,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func TestGetMessagesReplyToReturnsTheOriginal(t *testing.T) {
@@ -48,6 +49,26 @@ func TestGetMessagesReplyToReturnsTheOriginal(t *testing.T) {
 	}
 	if len(got.GetMessages()) != 1 || got.GetMessages()[0].GetId() != 206 || got.GetMessages()[0].GetMessage() != "origin" {
 		t.Fatalf("messages %#v", got.GetMessages())
+	}
+	flagged := mtproto.MakeTLMessage(&mtproto.Message{
+		Out:     true,
+		Id:      208,
+		Message: "flagged",
+		PeerId:  mtproto.MakePeerUser(8),
+		FromId:  mtproto.MakePeerUser(7),
+		ReplyTo: &mtproto.MessageReplyHeader{
+			PredicateName:          mtproto.Predicate_messageReplyHeader,
+			ReplyToMsgId_FLAGINT32: &wrapperspb.Int32Value{Value: 206},
+		},
+	}).To_Message()
+	boxes.byID[208] = &mtproto.MessageBox{UserId: 7, MessageId: 208, SenderUserId: 7, PeerType: mtproto.PEER_USER, PeerId: 8, Message: flagged}
+	got, err = c.MessagesGetMessages(&mtproto.TLMessagesGetMessages{
+		Id_VECTORINPUTMESSAGE: []*mtproto.InputMessage{
+			mtproto.MakeTLInputMessageReplyTo(&mtproto.InputMessage{Id: 208}).To_InputMessage(),
+		},
+	})
+	if err != nil || len(got.GetMessages()) != 1 || got.GetMessages()[0].GetId() != 206 {
+		t.Fatalf("flag form %#v %v", got.GetMessages(), err)
 	}
 }
 

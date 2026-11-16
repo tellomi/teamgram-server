@@ -307,15 +307,15 @@ func (s *Service) ChannelsGetMessages(ctx context.Context, in *mtproto.TLChannel
 			ids = append(ids, m.GetId())
 		case mtproto.Predicate_inputMessageReplyTo:
 			// Return the message this one replies to. A reply with no header
-			// contributes nothing, rather than the reply itself.
-			loaded, err := channel.Shared().LoadMessage(ctx, in.GetChannel().GetChannelId(), m.GetId())
+			// contributes nothing, rather than the reply itself. View rights
+			// are checked before the body is loaded, so a missing id and a
+			// stored id fail the same way for someone who cannot see the channel.
+			target, err := channel.Shared().ReplyToTarget(ctx, md.GetUserId(), in.GetChannel(), m.GetId())
 			if err != nil {
 				return nil, err
 			}
-			if id := loaded.GetReplyTo().GetReplyToMsgId(); id != 0 {
-				ids = append(ids, id)
-			} else if id = loaded.GetReplyTo().GetReplyToTopId().GetValue(); id != 0 {
-				ids = append(ids, id)
+			if target != 0 {
+				ids = append(ids, target)
 			}
 		}
 	}

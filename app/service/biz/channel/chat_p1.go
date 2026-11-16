@@ -260,6 +260,24 @@ func (s *Service) Card(ctx context.Context, viewer, channelID int64) (int32, *mt
 	return ch.Pts, s.ChatFor(ctx, viewer, ch), nil
 }
 
+// ReplyToTarget is the message id inputMessageReplyTo should return.
+// requireView, including the access hash, runs before the body is loaded.
+// A caller who cannot see the channel gets that error for a missing id and
+// for an id that is stored. The stored post is not returned.
+func (s *Service) ReplyToTarget(ctx context.Context, user int64, in *mtproto.InputChannel, replyID int32) (int32, error) {
+	if _, _, err := s.requireView(ctx, user, in); err != nil {
+		return 0, err
+	}
+	loaded, err := s.LoadMessage(ctx, in.GetChannelId(), replyID)
+	if err != nil {
+		return 0, err
+	}
+	if id := loaded.GetReplyTo().GetFixedReplyToMsgId(); id != 0 {
+		return id, nil
+	}
+	return loaded.GetReplyTo().GetReplyToTopId().GetValue(), nil
+}
+
 // LoadMessage returns the stored body of one channel message.
 func (s *Service) LoadMessage(ctx context.Context, channelID int64, id int32) (*mtproto.Message, error) {
 	_, msg, err := s.LoadMessageAuthor(ctx, channelID, id)
