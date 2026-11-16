@@ -657,8 +657,10 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		savedPeerUtil = &mtproto.PeerUtil{PeerType: mtproto.PEER_EMPTY, PeerId: 0}
 	}
 
+	var inserted int64
 	tR := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-		_, _, err := d.MessagesDAO.InsertOrReturnIdTx(
+		var err error
+		_, inserted, err = d.MessagesDAO.InsertOrReturnIdTx(
 			tx,
 			&dataobject.MessagesDO{
 				UserId:            outMsgBox.UserId,
@@ -683,6 +685,12 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 			})
 		if err != nil {
 			result.Err = err
+			return
+		}
+		// The message row and these side effects commit together. A replay
+		// already has them. Writing the pts row again would duplicate
+		// user_pts_updates for the same pts.
+		if inserted == 0 {
 			return
 		}
 
@@ -713,33 +721,64 @@ func (d *Dao) sendMessageToOutboxV1(ctx context.Context, fromId int64, peer *mtp
 		}
 	})
 
-	// Saved Messages may already exist as the other self peer type. Move that
-	// row forward before the dialog service drops its cache of this peer.
-	if tR.Err == nil {
-		d.advanceSavedMessagesDialog(ctx, fromId, peer, outBoxMsgId, int64(message.GetDate()))
-		d.ensureDialogTTL(ctx, fromId, peer)
+	if tR.Err != nil {
+		return tR.Err
 	}
 
-	_, err := d.DialogClient.DialogInsertOrUpdateDialog(
-		ctx,
-		&dialog.TLDialogInsertOrUpdateDialog{
-			UserId:          fromId,
-			PeerType:        peer.PeerType,
-			PeerId:          peer.PeerId,
-			TopMessage:      &wrapperspb.Int32Value{Value: outBoxMsgId},
-			ReadOutboxMaxId: nil,
-			ReadInboxMaxId:  nil,
-			UnreadCount:     &wrapperspb.Int32Value{Value: 0},
-			UnreadMark:      false,
-			PinnedMsgId:     nil,
-			Date2:           &wrapperspb.Int64Value{Value: int64(message.GetDate())},
-		})
+	// The dialog RPC is outside the insert transaction. A replay of a row
+	// that is still in history has to be able to finish that write. A replay
+	// of a row that delete already marked deleted must not: GREATEST would
+	// put that id back on top of the older message the delete selected.
+	replay := inserted == 0
+	live, err := d.LiveMessageBoxIDs(ctx, outMsgBox.UserId, []int32{outBoxMsgId})
 	if err != nil {
-		// return i
+		return err
 	}
+	_, stillLive := live[outBoxMsgId]
+	writeTop, resetUnread := outboxDialogWrite(replay, !stillLive)
+	if writeTop {
+		d.advanceSavedMessagesDialog(ctx, fromId, peer, outBoxMsgId, int64(message.GetDate()))
+		req := &dialog.TLDialogInsertOrUpdateDialog{
+			UserId:     fromId,
+			PeerType:   peer.PeerType,
+			PeerId:     peer.PeerId,
+			TopMessage: &wrapperspb.Int32Value{Value: outBoxMsgId},
+			Date2:      &wrapperspb.Int64Value{Value: int64(message.GetDate())},
+		}
+		// unread_count is stored as an absolute value. Only the first insert
+		// sets it. A replay must not clear unread that arrived later.
+		if resetUnread {
+			req.UnreadCount = &wrapperspb.Int32Value{Value: 0}
+		}
+		if _, err = d.DialogClient.DialogInsertOrUpdateDialog(ctx, req); err != nil {
+			// The dialog service error was already ignored. The next apply of
+			// a still-live row tries the forward update again.
+		}
+	}
+	d.ensureDialogTTL(ctx, fromId, peer)
 	d.stampChatDecor(ctx, fromId, peer.PeerType, peer.PeerId, message)
 
-	return tR.Err
+	return nil
+}
+
+// outboxDialogWrite chooses the dialog write after the outbox insert.
+//
+// The first insert of a live row writes top_message and unread_count 0.
+// A later insert of the same random id is a replay. top_message and date2
+// only move forward in the dialog update, so an older live id cannot rewind
+// the dialog. The replay still issues that update when the row is live,
+// because a crash after the insert commits and before the dialog RPC would
+// otherwise leave the top behind a message that is still in history.
+// A deleted row is not a dialog top. Deleting the newest message has already
+// moved top_message down, and a forward-only update would move it back up.
+func outboxDialogWrite(replay, deleted bool) (writeTop, resetUnread bool) {
+	if deleted {
+		return false, false
+	}
+	if replay {
+		return true, false
+	}
+	return true, true
 }
 
 // advanceSavedMessagesDialog sets top_message on the self dialog when a

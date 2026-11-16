@@ -927,9 +927,12 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 
 The sender's outbox row used to be inserted by the inbox consumer after `messages.sendMessage` returned. `messages.forwardMessages` in that gap loaded no rows, sent an empty list, and the msg service returned `INPUT_REQUEST_INVALID`. The row is now written before the send returns. The consumer's later insert matches `random_id` and does not restore a cleared body.
 
+That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
+
 | Piece | File |
 | --- | --- |
-| outbox before return | `app/messenger/msg/internal/dao/outbox.go` |
+| outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
+| saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
 
 ## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
 

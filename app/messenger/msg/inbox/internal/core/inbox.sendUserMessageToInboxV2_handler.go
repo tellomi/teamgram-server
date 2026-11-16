@@ -21,7 +21,6 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
-	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -83,17 +82,9 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				peer2 := inBox.GetMessage().GetSavedPeerId()
 				if peer2 == nil {
 					c.Logger.Errorf("inbox.sendUserMessageToInboxV2 - error: sendToSelfUser")
-				} else {
-					peer := mtproto.FromPeer(peer2)
-					_, _, _ = c.svcCtx.Dao.SavedDialogsDAO.InsertOrUpdate(
-						c.ctx,
-						&dataobject.SavedDialogsDO{
-							UserId:     in.FromId,
-							PeerType:   peer.PeerType,
-							PeerId:     peer.PeerId,
-							Pinned:     0,
-							TopMessage: inBox.GetMessageId(),
-						})
+				} else if err := c.touchLiveSavedDialog(in.FromId, inBox.GetMessageId(), peer2); err != nil {
+					c.Logger.Errorf("inbox.sendUserMessageToInboxV2 - error: %v", err)
+					return nil, err
 				}
 			}
 
@@ -313,4 +304,22 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 	}
 
 	return mtproto.EmptyVoid, nil
+}
+
+// touchLiveSavedDialog moves one Saved Messages peer forward. A replay whose
+// message row is already deleted does not run, so it cannot put that id back
+// or clear saved_dialogs.deleted. A live row uses a forward-only update.
+func (c *InboxCore) touchLiveSavedDialog(userID int64, boxID int32, savedPeer *mtproto.Peer) error {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || savedPeer == nil || boxID <= 0 {
+		return nil
+	}
+	live, err := c.svcCtx.Dao.LiveMessageBoxIDs(c.ctx, userID, []int32{boxID})
+	if err != nil {
+		return err
+	}
+	if _, ok := live[boxID]; !ok {
+		return nil
+	}
+	peer := mtproto.FromPeer(savedPeer)
+	return c.svcCtx.Dao.TouchSavedPeerDialog(c.ctx, userID, peer.PeerType, peer.PeerId, boxID)
 }
