@@ -45,6 +45,9 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 		c.Logger.Errorf("messages.editMessage - sanction")
 		return nil, err
 	}
+	if in.GetQuickReplyShortcutId().GetValue() != 0 {
+		return c.editQuickReplyMessage(in)
+	}
 	in.ReplyMarkup = c.botReplyMarkup(in.ReplyMarkup)
 	if peer.PeerType == mtproto.PEER_SELF {
 		peer.PeerType = mtproto.PEER_USER
@@ -202,6 +205,57 @@ func (c *MessagesCore) MessagesEditMessage(in *mtproto.TLMessagesEditMessage) (*
 	c.schedulePendingWebpage(peer, outMessage.Media, outMessage.Message, outMessage.Entities, rUpdates, in.GetScheduleDate().GetValue() != 0)
 
 	return rUpdates, nil
+}
+
+func (c *MessagesCore) editQuickReplyMessage(in *mtproto.TLMessagesEditMessage) (*mtproto.Updates, error) {
+	var media *mtproto.MessageMedia
+	if in.Media != nil {
+		got, err := c.makeMediaByInputMedia(in.Media)
+		if err != nil {
+			c.Logger.Errorf("messages.editMessage - quick reply media: %v", err)
+			return nil, err
+		}
+		media = got
+	}
+	// botReplyMarkup drops a user keyboard and keeps a bot keyboard, the
+	// same rule as a saved-message edit. A nil result means the field was
+	// not allowed, so the shortcut markup is left unchanged.
+	markup := c.botReplyMarkup(in.ReplyMarkup)
+	if in.Message != nil {
+		caption := false
+		if media != nil {
+			caption = storedEditIsCaption(media, in.Media, true)
+		}
+		if err := c.rejectOverlong(in.Message.Value, caption); err != nil {
+			c.Logger.Errorf("messages.editMessage - quick reply length: %v", err)
+			return nil, err
+		}
+	}
+	var text *string
+	if in.Message != nil {
+		value := in.Message.Value
+		text = &value
+	}
+	ups, err := chatbox.Shared().EditQuickReply(c.ctx, c.MD.UserId, in.GetQuickReplyShortcutId().GetValue(), in.Id, chatbox.QuickReplyEdit{
+		Text:     text,
+		Entities: in.Entities,
+		Markup:   markup,
+		Media:    media,
+	})
+	if err != nil {
+		// The identical resubmit still carries the stored message. Push it
+		// so a retry after a failed sync reaches other sessions. edit_date
+		// was not bumped and the document was not written again.
+		if err == mtproto.ErrMessageNotModified {
+			c.pushQuickReplyNotMe(ups)
+		}
+		c.Logger.Errorf("messages.editMessage - quick reply: %v", err)
+		return nil, err
+	}
+	// The calling session already has this result. Other sessions of the
+	// same account follow the send path and receive updateQuickReplyMessage.
+	c.pushQuickReplyNotMe(ups)
+	return ups, nil
 }
 
 // editScheduledIfNeeded edits the scheduled inbox when this id is a scheduled
