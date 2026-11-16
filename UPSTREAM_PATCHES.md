@@ -672,6 +672,9 @@ The date flags are not fields of the internal `msg.deleteHistory` request. The B
 | --- | --- |
 | omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
 | full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
+| render hits for the viewer | `app/bff/contacts/internal/core/contacts.search_handler.go` (`searchUserLoadIDs`) |
+
+A hit list that did not already contain the caller was loaded without the caller. `GetUserListByIdList` then returned an empty `users` vector, while `my_results` and `results` still named the peers. Official clients drop a peer that has no user object, so a non-contact username such as `@zhaoyang` disappeared until that person was a local contact. The load now includes the caller (`Id` and `To`), the same requirement as `messages.getChatInviteImporters`. The caller is still skipped when the hits are split, and is not added to the id list when the query matched no user.
 
 ## Invite usage_limit of 0
 
