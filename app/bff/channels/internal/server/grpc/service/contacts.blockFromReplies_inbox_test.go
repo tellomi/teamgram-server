@@ -12,6 +12,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/zeromicro/go-zero/core/jsonx"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -163,7 +164,7 @@ func TestBlockFromRepliesInboxScope(t *testing.T) {
 			t.Fatalf("deletes %#v", h.deletes)
 		}
 		got := h.deletes[0]
-		if got.user != callerID || got.auth != callerKey || got.peerType != mtproto.PEER_USER || got.peer != repliesUserID || got.revoke {
+		if got.user != callerID || got.auth != callerKey || got.peerType != mtproto.PEER_EMPTY || got.peer != 0 || got.revoke {
 			t.Fatalf("delete call %#v", got)
 		}
 		if !sameIDs(got.ids, []int32{200}) {
@@ -176,7 +177,7 @@ func TestBlockFromRepliesInboxScope(t *testing.T) {
 		if _, err := h.svc().ContactsBlockFromReplies(ctx, blockReq(false, true, false, 200)); err != nil {
 			t.Fatal(err)
 		}
-		if len(h.deletes) != 1 || h.deletes[0].revoke || h.deletes[0].peer != repliesUserID || h.deletes[0].user != callerID {
+		if len(h.deletes) != 1 || h.deletes[0].revoke || h.deletes[0].peerType != mtproto.PEER_EMPTY || h.deletes[0].peer != 0 || h.deletes[0].user != callerID {
 			t.Fatalf("delete %#v", h.deletes)
 		}
 		want := make([]int32, 0, 103)
@@ -205,7 +206,7 @@ func TestBlockFromRepliesInboxScope(t *testing.T) {
 			t.Fatalf("other block %#v", h.blocks)
 		}
 		assertBlockedUpdate(t, up, foreignID)
-		if len(h.deletes) != 1 || h.deletes[0].user != otherID || h.deletes[0].peer != repliesUserID || h.deletes[0].revoke {
+		if len(h.deletes) != 1 || h.deletes[0].user != otherID || h.deletes[0].peerType != mtproto.PEER_EMPTY || h.deletes[0].peer != 0 || h.deletes[0].revoke {
 			t.Fatalf("other delete %#v", h.deletes)
 		}
 		if !sameIDs(h.deletes[0].ids, []int32{200, 60}) {
@@ -220,11 +221,12 @@ func TestBlockFromRepliesInboxScope(t *testing.T) {
 }
 
 type repliesHarness struct {
-	t       *testing.T
-	inbox   *repliesInbox
-	blocks  []blockCall
-	deletes []deleteCall
-	book    *statusbook.Book
+	t          *testing.T
+	inbox      *repliesInbox
+	blocks     []blockCall
+	deletes    []deleteCall
+	book       *statusbook.Book
+	failDelete error
 }
 
 type blockCall struct {
@@ -279,6 +281,12 @@ func (h *repliesHarness) UserBlockPeer(_ context.Context, in *user.TLUserBlockPe
 }
 
 func (h *repliesHarness) MsgDeleteMessages(_ context.Context, in *msg.TLMsgDeleteMessages) (*mtproto.Messages_AffectedMessages, error) {
+	if h.failDelete != nil {
+		return nil, h.failDelete
+	}
+	if in.GetPeerType() != mtproto.PEER_EMPTY || in.GetPeerId() != 0 || in.GetRevoke() {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
 	h.deletes = append(h.deletes, deleteCall{
 		user: in.GetUserId(), auth: in.GetAuthKeyId(), peerType: in.GetPeerType(),
 		peer: in.GetPeerId(), revoke: in.GetRevoke(), ids: append([]int32(nil), in.GetId()...),
@@ -413,6 +421,40 @@ func assertBlockedUpdate(t *testing.T, up *mtproto.Updates, author int64) {
 		if u.GetId() != callerID && u.GetId() != otherID && u.GetId() != author && u.GetId() != savedID && u.GetId() != foreignID {
 			t.Fatalf("unexpected user %d", u.GetId())
 		}
+	}
+}
+
+func TestRepliesForwardJSONNamesTheAuthor(t *testing.T) {
+	const raw = `{"predicate_name":"message","fwd_from":{"from_id":{"predicate_name":"peerUser","user_id":15}}}`
+	var msg mtproto.Message
+	if err := jsonx.UnmarshalFromString(raw, &msg); err != nil {
+		t.Fatal(err)
+	}
+	box := &mtproto.MessageBox{
+		SenderUserId: repliesUserID,
+		PeerType:     mtproto.PEER_USER,
+		PeerId:       repliesUserID,
+		Message:      &msg,
+	}
+	if !isRepliesBox(box) || replySender(box) != 15 {
+		t.Fatalf("sender %d", replySender(box))
+	}
+}
+
+func TestBlockFromRepliesReturnsDeleteFailure(t *testing.T) {
+	h := newRepliesHarness(t)
+	h.inbox.put(repliesBox(callerID, 40, authorID, 0))
+	h.failDelete = mtproto.ErrPeerIdInvalid
+	ctx := userCtx(t, callerID, callerKey)
+	_, err := h.svc().ContactsBlockFromReplies(ctx, blockReq(true, false, false, 40))
+	if status.Convert(err).Code() != 400 || status.Convert(err).Message() != "PEER_ID_INVALID" {
+		t.Fatalf("delete error %v", err)
+	}
+	if len(h.blocks) != 1 || h.blocks[0].peer != authorID {
+		t.Fatalf("block %#v", h.blocks)
+	}
+	if len(h.deletes) != 0 {
+		t.Fatalf("failed delete recorded %#v", h.deletes)
 	}
 }
 

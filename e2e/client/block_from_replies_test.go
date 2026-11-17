@@ -2,6 +2,9 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,6 +233,177 @@ func discussionIDs(t *testing.T, ctx context.Context, c *Client, channelID, acce
 		t.Fatalf("getDiscussionMessage %T", obj)
 	}
 	return messageIDs(msgs)
+}
+
+// TestBlockFromRepliesDeletesCallerReplies seeds real rows in the caller's
+// dialog with @replies and calls contacts.blockFromReplies. delete_message
+// removes that box id. delete_history also removes the other live row from
+// the same author. report_spam does not delete. A channel post, a private
+// message, and another user's box id stay MSG_ID_INVALID.
+// Phones 9996610913–9996610915, code 11111.
+func TestBlockFromRepliesDeletesCallerReplies(t *testing.T) {
+	cfg := requireE2E(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	owner, ownerSelf := dialPhone(t, ctx, cfg, "9996610913", "BfrC")
+	author, authorSelf := dialPhone(t, ctx, cfg, "9996610914", "BfrD")
+	_, otherSelf := dialPhone(t, ctx, cfg, "9996610915", "BfrE")
+	if ownerSelf.ID == 0 || authorSelf.ID == 0 || otherSelf.ID == 0 || ownerSelf.ID == authorSelf.ID || authorSelf.ID == otherSelf.ID {
+		t.Fatalf("users %d %d %d", ownerSelf.ID, authorSelf.ID, otherSelf.ID)
+	}
+	channelID, channelHash := createBroadcast(t, ctx, owner, "bfr-del-news")
+	t.Cleanup(func() {
+		cctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		deleteOwnedChannel(owner, cctx, channelID, channelHash)
+		cleanupRepliesRows(ownerSelf.ID)
+	})
+	postID, err := owner.SendText(ctx, inputPeerChannel(channelID, channelHash), "bfr-del-post", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorID, authorHash, err := owner.ImportPhone(ctx, "9996610914", "BfrD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorID != authorSelf.ID {
+		t.Fatalf("author %d login %d", authorID, authorSelf.ID)
+	}
+	privateID, err := owner.SendText(ctx, inputPeerUser(authorID, authorHash), "bfr-del-dm", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		one   int32 = 880040
+		two   int32 = 880030
+		extra int32 = 880050
+		kept  int32 = 880020
+	)
+	seedRepliesRow(t, ownerSelf.ID, one, authorSelf.ID)
+	seedRepliesRow(t, ownerSelf.ID, two, authorSelf.ID)
+	seedRepliesRow(t, ownerSelf.ID, extra, authorSelf.ID)
+	seedRepliesRow(t, ownerSelf.ID, kept, otherSelf.ID)
+
+	for _, id := range []int32{postID, privateID, 0, -1, one} {
+		if id == one {
+			_, err = author.Invoke(ctx, blockFromReplies(true, true, true, id))
+		} else {
+			_, err = owner.Invoke(ctx, blockFromReplies(true, true, true, id))
+		}
+		expectMsgIDInvalid(t, err)
+	}
+	if deletedFlag(t, ownerSelf.ID, one) != 0 || deletedFlag(t, ownerSelf.ID, two) != 0 || deletedFlag(t, ownerSelf.ID, extra) != 0 || deletedFlag(t, ownerSelf.ID, kept) != 0 {
+		t.Fatal("rejected ids changed a replies row")
+	}
+	posts, err := owner.History(ctx, inputPeerChannel(channelID, channelHash), 20)
+	if err != nil || !hasMessageID(posts, postID) {
+		t.Fatal(err)
+	}
+	dm, err := owner.History(ctx, inputPeerUser(authorID, authorHash), 20)
+	if err != nil || !hasMessageID(dm, privateID) {
+		t.Fatal(err)
+	}
+
+	if _, err = owner.Invoke(ctx, blockFromReplies(true, false, false, one)); err != nil {
+		t.Fatal(err)
+	}
+	if deletedFlag(t, ownerSelf.ID, one) != 1 || deletedFlag(t, ownerSelf.ID, two) != 0 || deletedFlag(t, ownerSelf.ID, extra) != 0 || deletedFlag(t, ownerSelf.ID, kept) != 0 {
+		t.Fatal("delete_message removed more than the one id")
+	}
+	_, err = owner.Invoke(ctx, blockFromReplies(false, false, false, one))
+	expectMsgIDInvalid(t, err)
+	if _, err = owner.Invoke(ctx, blockFromReplies(false, false, true, kept)); err != nil {
+		t.Fatal(err)
+	}
+	if deletedFlag(t, ownerSelf.ID, kept) != 0 || deletedFlag(t, ownerSelf.ID, two) != 0 {
+		t.Fatal("report_spam deleted a row")
+	}
+	blocked := blockedUserIDs(t, ctx, owner)
+	if !containsID(blocked, authorSelf.ID) || !containsID(blocked, otherSelf.ID) {
+		t.Fatalf("blocked %v", blocked)
+	}
+	if _, err = owner.Invoke(ctx, blockFromReplies(false, true, false, two)); err != nil {
+		t.Fatal(err)
+	}
+	if deletedFlag(t, ownerSelf.ID, two) != 1 || deletedFlag(t, ownerSelf.ID, extra) != 1 || deletedFlag(t, ownerSelf.ID, kept) != 0 {
+		t.Fatal("delete_history did not stay on the same author")
+	}
+	_, err = owner.Invoke(ctx, blockFromReplies(false, false, false, two))
+	expectMsgIDInvalid(t, err)
+	if deletedFlag(t, ownerSelf.ID, kept) != 0 {
+		t.Fatal("other sender row was deleted")
+	}
+	dm, err = owner.History(ctx, inputPeerUser(authorID, authorHash), 20)
+	if err != nil || !hasMessageID(dm, privateID) {
+		t.Fatal(err)
+	}
+}
+
+func seedRepliesRow(t *testing.T, owner int64, box int32, author int64) {
+	t.Helper()
+	did := mtproto.MakeDialogId(owner, mtproto.PEER_USER, repliesServiceUser)
+	payload := fmt.Sprintf(`{"predicate_name":"message","fwd_from":{"from_id":{"predicate_name":"peerUser","user_id":%d}}}`, author)
+	id := int64(900000000000) + int64(box)
+	q := fmt.Sprintf(`INSERT INTO messages (id, user_id, user_message_box_id, dialog_id1, dialog_id2, dialog_message_id, sender_user_id, peer_type, peer_id, random_id, message_data, message, date2, deleted) VALUES (%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, '%s', '', %d, 0)`,
+		id, owner, box, did.A, did.B, box, repliesServiceUser, mtproto.PEER_USER, repliesServiceUser, id, payload, box)
+	mustSQL(t, q)
+}
+
+func deletedFlag(t *testing.T, owner int64, box int32) int {
+	t.Helper()
+	out := strings.TrimSpace(mustSQL(t, fmt.Sprintf(`SELECT deleted FROM messages WHERE user_id=%d AND user_message_box_id=%d`, owner, box)))
+	n, err := strconv.Atoi(out)
+	if err != nil {
+		t.Fatalf("deleted flag %q", out)
+	}
+	return n
+}
+
+func cleanupRepliesRows(owner int64) {
+	_, _ = runSQL(fmt.Sprintf(`DELETE FROM messages WHERE user_id=%d AND user_message_box_id IN (880040, 880030, 880050, 880020)`, owner))
+}
+
+func blockedUserIDs(t *testing.T, ctx context.Context, c *Client) []int64 {
+	t.Helper()
+	obj, err := c.Invoke(ctx, &mtproto.TLContactsGetBlocked{
+		Constructor: mtproto.CRC32_contacts_getBlocked_9a868f80,
+		Offset:      0,
+		Limit:       100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []*mtproto.PeerBlocked
+	switch v := obj.(type) {
+	case *mtproto.TLContactsBlocked:
+		if v.GetData2() != nil {
+			rows = v.GetData2().GetBlocked()
+		}
+	case *mtproto.TLContactsBlockedSlice:
+		if v.GetData2() != nil {
+			rows = v.GetData2().GetBlocked()
+		}
+	case *mtproto.Contacts_Blocked:
+		rows = v.GetBlocked()
+	default:
+		t.Fatalf("getBlocked %T", obj)
+	}
+	var ids []int64
+	for _, row := range rows {
+		if row.GetPeerId().GetUserId() != 0 {
+			ids = append(ids, row.GetPeerId().GetUserId())
+		}
+	}
+	return ids
+}
+
+func containsID(ids []int64, want int64) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
 }
 
 func blockFromReplies(deleteMessage, deleteHistory, reportSpam bool, id int32) *mtproto.TLContactsBlockFromReplies {

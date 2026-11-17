@@ -78,14 +78,21 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 			ids = append(ids, s.repliesFromSender(ctx, self, sender)...)
 		}
 		ids = uniqueIDs(ids)
-		_, _ = s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
+		// messages.deleteMessages addresses the caller's own box ids with
+		// PEER_EMPTY. MsgDeleteMessages returns PEER_ID_INVALID for every
+		// other peer, including PEER_USER + @replies. The ids above are
+		// already only this user's rows in that dialog. revoke stays false
+		// so the other participant's copy is not removed.
+		if _, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
 			UserId:    self,
 			AuthKeyId: authKey,
-			PeerType:  mtproto.PEER_USER,
-			PeerId:    repliesUserID,
+			PeerType:  mtproto.PEER_EMPTY,
+			PeerId:    0,
 			Revoke:    false,
 			Id:        ids,
-		})
+		}); err != nil {
+			return nil, err
+		}
 	}
 	up := s.blockedUpdates(ctx, self, sender)
 	if s.Sync != nil {
