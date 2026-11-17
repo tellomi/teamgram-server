@@ -38,22 +38,23 @@ type repliesSync interface {
 // ContactsBlockFromReplies
 // contacts.blockFromReplies#29a8962c flags:# delete_message:flags.0?true delete_history:flags.1?true report_spam:flags.2?true msg_id:int = Updates;
 //
-// Stops notifications about discussion replies from the sender of a
-// message in @replies. https://core.telegram.org/method/contacts.blockFromReplies
-// 400 MSG_ID_INVALID — msg_id is not a message in that chat.
+// Stops notifications about discussion replies from one user.
+// https://core.telegram.org/method/contacts.blockFromReplies
+// Official clients pass the id of a message in the @replies chat.
+// A supergroup reply id or a discussion-group comment id is accepted too:
+// this server does not write the @replies inbox, and that lookup does not
+// require TELLOMI_CHANNEL_COMMENTS.
+// 400 MSG_ID_INVALID — msg_id is not a message in @replies and not one
+// visible reply or discussion comment, or two different authors share it.
 func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtproto.TLContactsBlockFromReplies) (*mtproto.Updates, error) {
 	self, authKey := actor(ctx)
-	if self == 0 || in.GetMsgId() <= 0 || s.Messages == nil {
+	if self == 0 || in.GetMsgId() <= 0 {
 		return nil, mtproto.ErrMsgIdInvalid
 	}
-	box, err := s.Messages.MessageGetUserMessage(ctx, &message.TLMessageGetUserMessage{
-		UserId: self,
-		Id:     in.GetMsgId(),
-	})
-	if err != nil || box == nil || !isRepliesBox(box) {
-		return nil, mtproto.ErrMsgIdInvalid
+	sender, fromReplies, err := s.replyBlockSender(ctx, self, in.GetMsgId())
+	if err != nil {
+		return nil, err
 	}
-	sender := replySender(box)
 	if sender == 0 || sender == self || sender == repliesUserID {
 		return nil, mtproto.ErrMsgIdInvalid
 	}
@@ -72,7 +73,9 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 	if in.GetReportSpam() {
 		logx.WithContext(ctx).Infof("contacts.blockFromReplies report_spam user %d msg %d", sender, in.GetMsgId())
 	}
-	if (in.GetDeleteMessage() || in.GetDeleteHistory()) && s.Outbox != nil {
+	// delete_message and delete_history remove rows in the @replies chat.
+	// A channel reply id has no such row; the comment itself stays.
+	if fromReplies && (in.GetDeleteMessage() || in.GetDeleteHistory()) && s.Outbox != nil {
 		ids := []int32{in.GetMsgId()}
 		if in.GetDeleteHistory() {
 			ids = append(ids, s.repliesFromSender(ctx, self, sender)...)

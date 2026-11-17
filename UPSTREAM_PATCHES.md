@@ -2,6 +2,19 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Block from a supergroup reply or a discussion comment (ISSUE-S-BLOCK-FROM-REPLIES-001)
+
+`contacts.blockFromReplies` only looked up `msg_id` in the caller's private messages and required the peer to be the @replies user. Official clients do pass that inbox id. This server does not write the @replies inbox, and the production calls pass the supergroup reply id or the discussion-group comment id. Those rows live in `channel_messages`. A miss, and a private message that happens to use the same low id, both came back as `MSG_ID_INVALID`.
+
+The same RPC now resolves a reply the caller can see, or a user message in a linked discussion group. A reply to the caller's own message and a discussion comment outrank a reply to someone else. Two different authors at that rank stay `MSG_ID_INVALID`. `delete_message` and `delete_history` still delete only @replies rows. `TELLOMI_CHANNEL_COMMENTS` is not read and is not turned on: with the flag off, a comment is already an ordinary message in the linked group.
+
+No upstream teamgram file was edited. The new lookup is a separate file. The existing Tellomi handler calls it.
+
+| Piece | File |
+| --- | --- |
+| resolve the author | `app/service/biz/channel/block_from_replies.go` |
+| handler | `app/bff/channels/internal/server/grpc/service/contacts.blockFromReplies_handler.go`, `contacts.blockFromReplies_channel.go` |
+
 ## Business profile and automatic replies (ISSUE-S-BIZ-PERSIST-001, ISSUE-S-BIZ-AUTOREPLY-001)
 
 Business hours, location, intro, greeting, away message, and chat links used to live only in the BFF process. `bizprofile.UseDSN` in the BFF startup writes them to `business_profile` when MySQL is configured. `users.getFullUser` still reads the same book.

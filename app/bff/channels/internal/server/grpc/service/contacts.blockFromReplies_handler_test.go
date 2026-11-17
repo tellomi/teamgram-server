@@ -9,6 +9,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"google.golang.org/grpc/metadata"
@@ -25,6 +26,9 @@ func repliesCtx() context.Context {
 }
 
 func TestBlockFromReplies(t *testing.T) {
+	prevCh := channel.Shared()
+	channel.Use(channel.New(channel.NewMemoryStore()))
+	t.Cleanup(func() { channel.Use(prevCh) })
 	ctx := repliesCtx()
 	box := &mtproto.MessageBox{
 		UserId:       3,
