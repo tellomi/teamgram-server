@@ -54,9 +54,11 @@ func defaultChannelBanned() int64 {
 	return int64(rights.ToBannedRights())
 }
 
-// Hooks fan out channel updates and dialog rows. All three are optional.
+// Hooks fan out channel updates and dialog rows. Each func is optional.
 // Incoming runs for every member except the sender after a new channel message.
 // broadcast is true for channels and false for supergroups.
+// RepliesInbox writes one @replies private message. Nil leaves the comment
+// stored and does not invent an inbox row.
 type Hooks struct {
 	Push     func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates)
 	Dialog   func(ctx context.Context, userID, channelID int64, top, readInbox, readOutbox, unread int32, date int64)
@@ -71,6 +73,10 @@ type Hooks struct {
 	// channels.getParticipants has no names of its own. Nil means a name
 	// or contacts filter cannot see profiles.
 	UserCards func(ctx context.Context, viewer int64, ids []int64) map[int64]UserCard
+	// RepliesInbox is called after a discussion comment is stored, and only
+	// for the author of the message that was replied to. The callback must
+	// treat RandomID as an idempotency key.
+	RepliesInbox func(ctx context.Context, n RepliesNotice) error
 }
 
 // UserCard is the profile slice channels.getParticipants uses for q and

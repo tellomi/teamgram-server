@@ -122,3 +122,116 @@ jobs:
         run: |
           docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml ps
           docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml logs --tail=300 teamgram || true
+
+  # Separate runner and compose project. TELLOMI_CHANNEL_COMMENTS=1 is set
+  # only by e2e/docker-compose.comments.yaml. The e2e job above does not
+  # load that file. A skip in this test is a failed job.
+  replies-comments:
+    name: replies-comments
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: teamgram-comments
+      TELLOMI_DC_OPTIONS: 1:127.0.0.1:10443,1:127.0.0.1:5222
+      TELLOMI_E2E_DC_OPTIONS: 1:127.0.0.1:10443,1:127.0.0.1:5222
+      TELLOMI_PUBLIC_DC_HOST: ""
+      TELLOMI_ENFORCEMENT_E2E: "1"
+      TELLOMI_ENFORCEMENT_SERVICE_KEY: RUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUU=
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache ip2region xdb
+        uses: ./.github/actions/ip2region-xdb
+        with:
+          dest: deploy/ip2region/cache
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - name: Start MySQL and migrate the isolated enforcement database
+        env:
+          TELLOMI_ENFORCEMENT_MYSQL: root:root@tcp(127.0.0.1:3306)/tellomi_enforcement_e2e?parseTime=true&charset=utf8mb4
+        run: |
+          docker compose \
+            -f docker-compose-env.yaml \
+            -f docker-compose.yaml \
+            -f e2e/docker-compose.ci.yaml \
+            -f e2e/docker-compose.comments.yaml \
+            up -d mysql
+          for i in $(seq 1 60); do
+            if docker compose \
+              -f docker-compose-env.yaml \
+              -f docker-compose.yaml \
+              -f e2e/docker-compose.ci.yaml \
+              -f e2e/docker-compose.comments.yaml \
+              exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot >/dev/null 2>&1; then
+              go run ./e2e/enforcementmigrate
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "mysql did not accept connections"
+          exit 1
+
+      - name: Start the comments stack
+        run: |
+          echo "RUN replies-comments stack TELLOMI_CHANNEL_COMMENTS=1 project ${COMPOSE_PROJECT_NAME}"
+          docker compose \
+            -f docker-compose-env.yaml \
+            -f docker-compose.yaml \
+            -f e2e/docker-compose.ci.yaml \
+            -f e2e/docker-compose.comments.yaml \
+            up -d --build
+          echo "waiting for MTProto on 10443"
+          for i in $(seq 1 120); do
+            if docker compose \
+              -f docker-compose-env.yaml \
+              -f docker-compose.yaml \
+              -f e2e/docker-compose.ci.yaml \
+              -f e2e/docker-compose.comments.yaml \
+              exec -T teamgram bash -c 'echo >/dev/tcp/127.0.0.1/10443' >/dev/null 2>&1; then
+              echo "gnetway is accepting connections"
+              docker compose \
+                -f docker-compose-env.yaml \
+                -f docker-compose.yaml \
+                -f e2e/docker-compose.ci.yaml \
+                -f e2e/docker-compose.comments.yaml \
+                exec -T teamgram bash -c 'test "$TELLOMI_CHANNEL_COMMENTS" = 1'
+              echo "PASS replies-comments stack has TELLOMI_CHANNEL_COMMENTS=1"
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml -f e2e/docker-compose.comments.yaml logs --tail=200 teamgram || true
+          echo "teamgram did not open 10443"
+          exit 1
+
+      - name: Comment thread replies notice
+        env:
+          TELLOMI_E2E: "1"
+          TELLOMI_E2E_COMMENTS: "1"
+          TELLOMI_E2E_ADDR: 127.0.0.1:10443
+          TELLOMI_E2E_RESTART: "1"
+          TELLOMI_E2E_LOCAL_RESET: "1"
+          TELLOMI_E2E_ROOT: ${{ github.workspace }}
+          TELLOMI_E2E_COMPOSE_FILES: docker-compose-env.yaml,docker-compose.yaml,e2e/docker-compose.ci.yaml,e2e/docker-compose.comments.yaml
+        run: |
+          set -o pipefail
+          cd e2e/client
+          echo "RUN TestRepliesInboxCommentThreadNotifiesMember"
+          go test -tags replies_comments_e2e -count=1 -timeout 15m -v -run '^TestRepliesInboxCommentThreadNotifiesMember$' . | tee /tmp/replies-comments-e2e.log
+          if grep -q -- '--- SKIP:' /tmp/replies-comments-e2e.log; then
+            echo "skip is not a pass"
+            exit 1
+          fi
+          grep -q -- '--- PASS: TestRepliesInboxCommentThreadNotifiesMember' /tmp/replies-comments-e2e.log
+          echo "PASS TestRepliesInboxCommentThreadNotifiesMember"
+
+      - name: Stack logs
+        if: failure()
+        run: |
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml -f e2e/docker-compose.comments.yaml ps
+          docker compose -f docker-compose-env.yaml -f docker-compose.yaml -f e2e/docker-compose.ci.yaml -f e2e/docker-compose.comments.yaml logs --tail=300 teamgram || true

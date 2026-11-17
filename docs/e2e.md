@@ -168,6 +168,16 @@ RustFS, which implements that S3 API. The AWS CLI creates the buckets
 `minio-mc` used to create. The Chengdu compose file is not changed.
 Monitoring, coturn, and MediaMTX are not started in CI.
 
+The job `replies-comments` is a second stack. Its compose project is
+`teamgram-comments`, and it adds `e2e/docker-compose.comments.yaml`, which
+sets `TELLOMI_CHANNEL_COMMENTS=1` on that stack only. The default `e2e` job
+does not load that file. The positive test is
+`TestRepliesInboxCommentThreadNotifiesMember`, built with
+`-tags replies_comments_e2e`. The step fails unless the log contains
+`--- PASS:` for that test, and a `--- SKIP:` line fails the job. The default
+job still runs `TestRepliesInboxStaysClosedWithoutACommentThread` with the
+flag off.
+
 ### Required status check
 
 The workflow does not change branch protection by itself. In the repository

@@ -122,6 +122,9 @@ func (s *Service) tryComment(ctx context.Context, ch *Channel, sender, actorAuth
 	if err = s.noteComment(ctx, groupID, rootID, id, pts, sender); err != nil {
 		return true, nil, groupID, err
 	}
+	if err = s.writeRepliesNotice(ctx, groupID, id); err != nil {
+		return true, nil, groupID, err
+	}
 	stored, err := s.store.GetMessage(ctx, groupID, id)
 	if err != nil || stored == nil {
 		return true, nil, groupID, mtproto.ErrInternalServerError

@@ -640,6 +640,9 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 		if err != nil {
 			return nil, err
 		}
+		if err = s.writeRepliesNotice(ctx, channelID, id); err != nil {
+			return nil, err
+		}
 		s.bindTopic(ctx, channelID, id, msg)
 		s.attachDiscussion(ctx, ch, id)
 		stored, err := s.store.GetMessage(ctx, channelID, id)

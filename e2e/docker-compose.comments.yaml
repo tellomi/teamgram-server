@@ -1,0 +1,8 @@
+# Loaded only by the replies-comments job in .github/workflows/e2e.yml.
+# The default Client regression job does not use this file, so its stack
+# keeps TELLOMI_CHANNEL_COMMENTS unset. Compose merges this environment
+# map into the teamgram service. It does not replace the CI overlay.
+services:
+  teamgram:
+    environment:
+      TELLOMI_CHANNEL_COMMENTS: "1"
