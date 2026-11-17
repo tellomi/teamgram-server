@@ -110,8 +110,11 @@ func TestRepliesInboxNoticeFromDiscussion(t *testing.T) {
 	if notice.GetFwdFrom().GetSavedFromPeer().GetChannelId() != groupID || notice.GetFwdFrom().GetSavedFromMsgId().GetValue() != replyID {
 		t.Fatalf("source %#v reply %d", notice.GetFwdFrom(), replyID)
 	}
-	if notice.GetReplyTo().GetReplyToPeerId().GetChannelId() != groupID || notice.GetReplyTo().GetReplyToMsgId() != parentID {
-		t.Fatalf("reply_to %#v parent %d", notice.GetReplyTo(), parentID)
+	// The TL decoder fills reply_to_msg_id_FLAGINT32. The plain int field stays 0.
+	replyToID := notice.GetReplyTo().GetFixedReplyToMsgId()
+	replyPeer := notice.GetReplyTo().GetReplyToPeerId().GetChannelId()
+	if replyPeer != groupID || replyToID != parentID {
+		t.Fatalf("reply_to peer %d msg %d parent %d group %d", replyPeer, replyToID, parentID, groupID)
 	}
 	if notice.GetId() != replyID {
 		if _, err = author.Invoke(ctx, &mtproto.TLContactsBlockFromReplies{
