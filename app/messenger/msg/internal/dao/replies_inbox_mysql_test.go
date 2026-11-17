@@ -2,10 +2,16 @@ package dao
 
 import (
 	"context"
+	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
+	syncpb "github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	idgenpb "github.com/teamgram/teamgram-server/app/service/idgen/idgen"
@@ -14,8 +20,13 @@ import (
 )
 
 func TestDeliverRepliesNoticeWritesInboxOnce(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Setenv("TEAMGRAM_REQUIRE_INBOX_MYSQL", "1")
+	}
 	d := openInboxApplyDB(t)
 	d.IDGenClient2 = idgen_client.NewIDGenClient2Direct(&replySeq{})
+	pushed := &replyPush{}
+	d.SyncClient = pushed
 	ctx := context.Background()
 	const (
 		author    int64 = 910442051
@@ -89,8 +100,33 @@ func TestDeliverRepliesNoticeWritesInboxOnce(t *testing.T) {
 	if err := jsonx.Unmarshal([]byte(row.Data), &stored); err != nil {
 		t.Fatal(err)
 	}
-	if !stored.GetSilent() {
-		t.Fatal("hidden preview was not silent")
+	if stored.GetSilent() {
+		t.Fatal("preview off marked the protocol message silent")
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM user_pts_updates WHERE user_id=?`, author); n != 1 {
+		t.Fatalf("pts rows %d", n)
+	}
+	var raw struct {
+		Data string `db:"update_data"`
+	}
+	if err := d.DB.QueryRow(ctx, &raw, `SELECT update_data FROM user_pts_updates WHERE user_id=?`, author); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.Data, "reply-note") || !strings.Contains(raw.Data, "updateNewMessage") {
+		t.Fatal("pts update is not the replies message")
+	}
+	pushed.mu.Lock()
+	defer pushed.mu.Unlock()
+	if len(pushed.users) == 0 || pushed.users[0] != author {
+		t.Fatalf("push %#v", pushed.users)
+	}
+	for _, user := range pushed.users {
+		if user != author {
+			t.Fatalf("pushed to %d", user)
+		}
+	}
+	if len(pushed.texts) == 0 || pushed.texts[0] != "reply-note" || pushed.silent[0] {
+		t.Fatalf("push text %#v silent %#v", pushed.texts, pushed.silent)
 	}
 	if stored.GetFwdFrom().GetFromId().GetUserId() != commenter {
 		t.Fatalf("fwd %#v", stored.GetFwdFrom())
@@ -112,6 +148,115 @@ func TestDeliverRepliesNoticeWritesInboxOnce(t *testing.T) {
 	if err := queryMessage(t, d, author, row.Box, &got); err != nil || got != "reply-note" {
 		t.Fatalf("author account %q %v", got, err)
 	}
+}
+
+func TestDeliverRepliesNoticeConcurrentOneRow(t *testing.T) {
+	if os.Getenv("TEAMGRAM_MYSQL_DSN") != "" {
+		t.Setenv("TEAMGRAM_REQUIRE_INBOX_MYSQL", "1")
+	}
+	d := openInboxApplyDB(t)
+	ctx := context.Background()
+	const (
+		user   int64 = 910442061
+		sender int64 = 910442062
+		random int64 = 910442063
+		first  int32 = 11
+		second int32 = 12
+	)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	tx1 := make(chan error, 1)
+	go func() {
+		tx1 <- d.DB.Transact(ctx, func(tx *sqlx.Tx) error {
+			if _, _, err := d.MessagesDAO.InsertOrReturnIdTx(tx, inboxMessageDO(user, sender, first, random, "one")); err != nil {
+				return err
+			}
+			if err := rememberInboxRandom(tx, user, sender, random, first); err != nil {
+				return err
+			}
+			if _, _, err := d.applyInboxInTx(ctx, tx, inboxApplyRow{
+				UserID: user, BoxID: first, PeerType: mtproto.PEER_USER, PeerID: sender,
+				UnreadDelta: 1, Date2: 11,
+			}, textMessage(first, "one")); err != nil {
+				return err
+			}
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+	tx2 := make(chan error, 1)
+	go func() {
+		tx2 <- d.DB.Transact(ctx, func(tx *sqlx.Tx) error {
+			if _, _, err := d.MessagesDAO.InsertOrReturnIdTx(tx, inboxMessageDO(user, sender, second, random, "two")); err != nil {
+				return err
+			}
+			return rememberInboxRandom(tx, user, sender, random, second)
+		})
+	}()
+	select {
+	case err := <-tx2:
+		t.Fatalf("second transaction finished before the first committed: %v", err)
+	case <-time.After(400 * time.Millisecond):
+	}
+	close(release)
+	if err := <-tx1; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-tx2; err == nil {
+		t.Fatal("second box committed")
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM messages WHERE user_id=?`, user); n != 1 {
+		t.Fatalf("messages %d", n)
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM inbox_random WHERE user_id=?`, user); n != 1 {
+		t.Fatalf("random rows %d", n)
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM user_pts_updates WHERE user_id=?`, user); n != 1 {
+		t.Fatalf("pts rows %d", n)
+	}
+	var got string
+	if err := queryMessage(t, d, user, first, &got); err != nil || got != "one" {
+		t.Fatalf("kept %q %v", got, err)
+	}
+}
+
+type replyPush struct {
+	mu     sync.Mutex
+	users  []int64
+	texts  []string
+	silent []bool
+}
+
+func (p *replyPush) SyncUpdatesMe(context.Context, *syncpb.TLSyncUpdatesMe) (*mtproto.Void, error) {
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
+}
+func (p *replyPush) SyncUpdatesNotMe(context.Context, *syncpb.TLSyncUpdatesNotMe) (*mtproto.Void, error) {
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
+}
+func (p *replyPush) SyncPushUpdates(_ context.Context, in *syncpb.TLSyncPushUpdates) (*mtproto.Void, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.users = append(p.users, in.GetUserId())
+	for _, upd := range in.GetUpdates().GetUpdates() {
+		msg := upd.GetMessage_MESSAGE()
+		p.texts = append(p.texts, msg.GetMessage())
+		p.silent = append(p.silent, msg.GetSilent())
+	}
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
+}
+func (p *replyPush) SyncPushUpdatesIfNot(context.Context, *syncpb.TLSyncPushUpdatesIfNot) (*mtproto.Void, error) {
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
+}
+func (p *replyPush) SyncPushBotUpdates(context.Context, *syncpb.TLSyncPushBotUpdates) (*mtproto.Void, error) {
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
+}
+func (p *replyPush) SyncPushRpcResult(context.Context, *syncpb.TLSyncPushRpcResult) (*mtproto.Void, error) {
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
+}
+func (p *replyPush) SyncBroadcastUpdates(context.Context, *syncpb.TLSyncBroadcastUpdates) (*mtproto.Void, error) {
+	return mtproto.MakeTLVoid(nil).To_Void(), nil
 }
 
 type replySeq struct{ n atomic.Int64 }

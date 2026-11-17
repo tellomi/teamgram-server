@@ -1343,3 +1343,4 @@ There is no new table and no backfill scan. A channel created before this change
 | --- | --- |
 | hook field | `app/messenger/msg/msg/internal/svc/service_context.go` |
 | inbox write | `app/messenger/msg/internal/dao/replies_inbox.go` calls the existing `SendUserMessageToInbox` |
+| duplicate random id | `app/messenger/msg/internal/dao/inbox_apply.go` `rememberInboxRandom` returns the duplicate-key error when the stored box id is different. The `inbox_random` table and `messages_inbox_random_guard` trigger are unchanged. |

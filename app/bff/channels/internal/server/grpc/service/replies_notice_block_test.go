@@ -18,18 +18,20 @@ import (
 // account is not the @replies row, and the discussion message id is not
 // accepted unless it is that inbox id.
 func TestRepliesNoticeFeedsBlockFromReplies(t *testing.T) {
-	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
 	if channel.RepliesUserID != repliesUserID {
 		t.Fatalf("replies user %d", channel.RepliesUserID)
 	}
 	svc := channel.New(channel.NewMemoryStore())
 	boxes := map[int64]map[int32]*mtproto.MessageBox{}
 	var blocked int64
+	var writes int
 	svc.SetHooks(channel.Hooks{RepliesInbox: func(_ context.Context, n channel.RepliesNotice) error {
 		pol := channel.RepliesDeliveryOf(blocked == n.Commenter && n.Recipient == 3, 100)
 		if !pol.Write {
 			return nil
 		}
+		writes++
 		msg := proto.Clone(n.Message).(*mtproto.Message)
 		msg.Id = 50
 		msg.FromId = nil
@@ -71,24 +73,45 @@ func TestRepliesNoticeFeedsBlockFromReplies(t *testing.T) {
 	if _, err = svc.Invite(ctx, 1, 0, in, []int64{3, 4, 8}, nil); err != nil {
 		t.Fatal(err)
 	}
-	parent, err := svc.Send(ctx, 3, group.Id, 0, []channel.Outgoing{{
+	post, err := svc.Send(ctx, 1, news.Chats[0].Id, 0, []channel.Outgoing{{
 		RandomID: 1,
-		Message:  &mtproto.Message{Message: "parent", Date: 5},
+		Message:  &mtproto.Message{Message: "post", Date: 5},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var postID int32
+	for _, u := range post.GetUpdates() {
+		if id := u.GetMessage_MESSAGE().GetId(); id > postID {
+			postID = id
+		}
+	}
+	comment, err := svc.Send(ctx, 3, news.Chats[0].Id, 0, []channel.Outgoing{{
+		RandomID: 2,
+		Message: &mtproto.Message{
+			Message: "parent",
+			Date:    6,
+			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
+				ReplyToMsgId:           postID,
+				ReplyToMsgId_INT32:     postID,
+				ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(postID),
+			}).To_MessageReplyHeader(),
+		},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var parentID int32
-	for _, u := range parent.GetUpdates() {
+	for _, u := range comment.GetUpdates() {
 		if id := u.GetMessage_MESSAGE().GetId(); id > parentID {
 			parentID = id
 		}
 	}
 	reply, err := svc.Send(ctx, 8, group.Id, 0, []channel.Outgoing{{
-		RandomID: 2,
+		RandomID: 3,
 		Message: &mtproto.Message{
 			Message: "from-eight",
-			Date:    6,
+			Date:    7,
 			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
 				ReplyToMsgId:           parentID,
 				ReplyToMsgId_INT32:     parentID,
@@ -141,20 +164,20 @@ func TestRepliesNoticeFeedsBlockFromReplies(t *testing.T) {
 	if up == nil || len(up.GetUpdates()) != 1 || up.GetUpdates()[0].GetPeerId().GetUserId() != 8 {
 		t.Fatalf("updates %#v", up)
 	}
-	before := len(boxes[3])
+	before := writes
 	if _, err = svc.Send(ctx, 8, group.Id, 0, []channel.Outgoing{{
-		RandomID: 3,
+		RandomID: 4,
 		Message: &mtproto.Message{
 			Message: "after-block",
-			Date:    7,
+			Date:    8,
 			ReplyTo: mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
 				ReplyToMsgId:           parentID,
 				ReplyToMsgId_INT32:     parentID,
 				ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(parentID),
 			}).To_MessageReplyHeader(),
 		},
-	}}); err != nil || len(boxes[3]) != before {
-		t.Fatalf("after block boxes %d %v", len(boxes[3]), err)
+	}}); err != nil || writes != before {
+		t.Fatalf("after block writes %d %v", writes, err)
 	}
 }
 

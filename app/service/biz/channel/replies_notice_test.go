@@ -20,8 +20,8 @@ func TestRepliesDeliveryPrivacy(t *testing.T) {
 	hidden := RepliesDeliveryOf(false, 100, mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{
 		ShowPreviews: mtproto.ToBool(false),
 	}).To_PeerNotifySettings())
-	if !hidden.Write || hidden.Push || !hidden.Silent {
-		t.Fatalf("hidden preview %#v", hidden)
+	if !hidden.Write || !hidden.Push || hidden.Silent {
+		t.Fatalf("preview off still delivers %#v", hidden)
 	}
 	muted := RepliesDeliveryOf(false, 100, mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{
 		MuteUntil: wrapperspb.Int32(200),
@@ -38,7 +38,7 @@ func TestRepliesDeliveryPrivacy(t *testing.T) {
 	}
 }
 
-func TestDiscussionReplyWritesOneRepliesNotice(t *testing.T) {
+func TestDiscussionReplyWithoutThreadIndexDoesNotNotify(t *testing.T) {
 	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
 	svc, ctx := newTest(t)
 	group := linkedTalk(t, svc, ctx)
@@ -62,53 +62,8 @@ func TestDiscussionReplyWritesOneRepliesNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replyID := sentMessageID(reply)
-	if len(box.notes) != 1 {
-		t.Fatalf("notices %d", len(box.notes))
-	}
-	n := box.notes[0]
-	if n.Recipient != 2 || n.Commenter != 3 || n.GroupID != group.Id || n.CommentID != replyID || n.ParentID != parentID {
-		t.Fatalf("notice %+v reply %d parent %d", n, replyID, parentID)
-	}
-	if n.Message.GetId() != 0 {
-		t.Fatalf("inbox id was the channel id %d", n.Message.GetId())
-	}
-	if n.Message.GetFwdFrom().GetFromId().GetUserId() != 3 {
-		t.Fatalf("fwd from %#v", n.Message.GetFwdFrom())
-	}
-	if n.Message.GetFwdFrom().GetSavedFromPeer().GetChannelId() != group.Id || n.Message.GetFwdFrom().GetSavedFromMsgId().GetValue() != replyID {
-		t.Fatalf("source %#v", n.Message.GetFwdFrom())
-	}
-	if n.Message.GetReplyTo().GetReplyToPeerId().GetChannelId() != group.Id || n.Message.GetReplyTo().GetReplyToMsgId() != parentID {
-		t.Fatalf("reply_to %#v", n.Message.GetReplyTo())
-	}
-	if n.Message.GetMessage() != "reply-note" {
-		t.Fatalf("text %q", n.Message.GetMessage())
-	}
-	stored, err := svc.store.GetMessage(ctx, group.Id, replyID)
-	if err != nil || stored == nil {
-		t.Fatal(err)
-	}
-	body, err := unmarshalMessage(stored.Data)
-	if err != nil || body.GetPeerId().GetChannelId() != group.Id {
-		t.Fatalf("discussion row peer %#v %v", body.GetPeerId(), err)
-	}
-	again, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
-		RandomID: 12,
-		Message:  replyMessage("reply-note", 21, parentID),
-	}})
-	if err != nil || sentMessageID(again) != replyID {
-		t.Fatalf("retry id %d %v", sentMessageID(again), err)
-	}
-	if len(box.notes) != 1 || box.calls < 2 {
-		t.Fatalf("notes %d calls %d", len(box.notes), box.calls)
-	}
-	plain, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
-		RandomID: 13,
-		Message:  &mtproto.Message{Message: "not-a-reply", Date: 22},
-	}})
-	if err != nil || sentMessageID(plain) == 0 || len(box.notes) != 1 {
-		t.Fatalf("plain id %d notices %d %v", sentMessageID(plain), len(box.notes), err)
+	if sentMessageID(reply) == 0 || len(box.notes) != 0 || box.calls != 0 {
+		t.Fatalf("id %d notices %d calls %d", sentMessageID(reply), len(box.notes), box.calls)
 	}
 }
 
@@ -157,28 +112,17 @@ func TestRepliesNoticeSkipsUnlinkedAndSelf(t *testing.T) {
 }
 
 func TestRepliesNoticeHidesFromUnreadAndRestricted(t *testing.T) {
-	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
 	svc, ctx := newTest(t)
-	group := linkedTalk(t, svc, ctx)
+	group, commentID := threadComment(t, svc, ctx)
 	box := newNoticeBox()
 	svc.SetHooks(Hooks{RepliesInbox: box.keep})
-	if _, err := svc.Invite(ctx, 1, 0, inCh(group), []int64{2, 3}, nil); err != nil {
-		t.Fatal(err)
-	}
 	in := inCh(group)
-	parent, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
-		RandomID: 21,
-		Message:  &mtproto.Message{Message: "old", Date: 10},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	parentID := sentMessageID(parent)
 	p, err := svc.store.GetParticipant(ctx, group.Id, 2)
 	if err != nil || p == nil {
 		t.Fatal(err)
 	}
-	p.Date = 100
+	p.Date = 1000
 	if err = svc.store.PutParticipant(ctx, p); err != nil {
 		t.Fatal(err)
 	}
@@ -187,12 +131,9 @@ func TestRepliesNoticeHidesFromUnreadAndRestricted(t *testing.T) {
 	}
 	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 22,
-		Message:  replyMessage("after-join", 11, parentID),
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	if len(box.notes) != 0 {
-		t.Fatal("prehistory leaked")
+		Message:  replyMessage("after-join", 30, commentID),
+	}}); err != nil || len(box.notes) != 0 {
+		t.Fatalf("prehistory notices %d %v", len(box.notes), err)
 	}
 	rights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{BanUsers: true}).To_ChatAdminRights()
 	if _, err = svc.EditAdmin(ctx, 1, 0, in, 2, rights, "mod"); err != nil {
@@ -200,7 +141,7 @@ func TestRepliesNoticeHidesFromUnreadAndRestricted(t *testing.T) {
 	}
 	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 23,
-		Message:  replyMessage("admin-sees", 12, parentID),
+		Message:  replyMessage("admin-sees", 31, commentID),
 	}}); err != nil || len(box.notes) != 1 || box.notes[0].Recipient != 2 {
 		t.Fatalf("admin notices %d %v", len(box.notes), err)
 	}
@@ -214,7 +155,7 @@ func TestRepliesNoticeHidesFromUnreadAndRestricted(t *testing.T) {
 	}
 	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 24,
-		Message:  replyMessage("banned-view", 13, parentID),
+		Message:  replyMessage("banned-view", 32, commentID),
 	}}); err != nil || len(box.notes) != 0 {
 		t.Fatalf("view ban notices %d %v", len(box.notes), err)
 	}
@@ -232,52 +173,49 @@ func TestRepliesNoticeHidesFromUnreadAndRestricted(t *testing.T) {
 	}
 	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 25,
-		Message:  replyMessage("restricted-body", 14, parentID),
+		Message:  replyMessage("restricted-body", 33, commentID),
 	}}); err != nil || len(box.notes) != 0 {
 		t.Fatalf("restricted notices %d %v", len(box.notes), err)
 	}
 }
 
-func TestRepliesNoticeLeftMemberDependsOnChannelVisibility(t *testing.T) {
-	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
+func TestRepliesNoticeLeftMemberDoesNotReceiveViaPublicChannel(t *testing.T) {
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
 	svc, ctx := newTest(t)
-	group, news := linkedPair(t, svc, ctx)
+	group, news, commentID := threadCommentOn(t, svc, ctx)
 	box := newNoticeBox()
 	svc.SetHooks(Hooks{RepliesInbox: box.keep})
-	if _, err := svc.Invite(ctx, 1, 0, inCh(group), []int64{2, 3}, nil); err != nil {
-		t.Fatal(err)
-	}
-	parent, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
+	if _, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 31,
-		Message:  &mtproto.Message{Message: "private-parent", Date: 30},
-	}})
-	if err != nil {
+		Message:  replyMessage("while-member", 40, commentID),
+	}}); err != nil || len(box.notes) != 1 || box.notes[0].Message.GetMessage() != "while-member" {
+		t.Fatalf("member notices %+v %v", box.notes, err)
+	}
+	if _, err := svc.Leave(ctx, 2, 0, inCh(group)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = svc.Leave(ctx, 2, 0, inCh(group)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+	box.notes = nil
+	if _, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 32,
-		Message:  replyMessage("private-reply", 31, sentMessageID(parent)),
+		Message:  replyMessage("after-leave", 41, commentID),
 	}}); err != nil || len(box.notes) != 0 {
-		t.Fatalf("private left notices %d %v", len(box.notes), err)
+		t.Fatalf("left notices %d %v", len(box.notes), err)
 	}
-	if _, err = svc.UpdateUsername(ctx, 1, 0, inCh(news), "newsroom"); err != nil {
+	if _, err := svc.UpdateUsername(ctx, 1, 0, inCh(news), "newsroom"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+	if _, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 33,
-		Message:  replyMessage("public-reply", 32, sentMessageID(parent)),
-	}}); err != nil || len(box.notes) != 1 || box.notes[0].Recipient != 2 || box.notes[0].Commenter != 3 {
-		t.Fatalf("public left %+v %v", box.notes, err)
+		Message:  replyMessage("public-channel", 42, commentID),
+	}}); err != nil || len(box.notes) != 0 {
+		t.Fatalf("public channel bypass %d %v", len(box.notes), err)
 	}
 }
 
 func TestRepliesNoticeBlockedPreviewAndRetry(t *testing.T) {
-	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
 	svc, ctx := newTest(t)
-	group := linkedTalk(t, svc, ctx)
+	group, commentID := threadComment(t, svc, ctx)
 	var calls int
 	var stored []RepliesNotice
 	var pushed []int64
@@ -308,19 +246,9 @@ func TestRepliesNoticeBlockedPreviewAndRetry(t *testing.T) {
 		stored = append(stored, n)
 		return nil
 	}})
-	if _, err := svc.Invite(ctx, 1, 0, inCh(group), []int64{2, 3}, nil); err != nil {
-		t.Fatal(err)
-	}
-	parent, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
-		RandomID: 41,
-		Message:  &mtproto.Message{Message: "p", Date: 40},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+	if _, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 42,
-		Message:  replyMessage("first", 41, sentMessageID(parent)),
+		Message:  replyMessage("first", 41, commentID),
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -328,9 +256,9 @@ func TestRepliesNoticeBlockedPreviewAndRetry(t *testing.T) {
 		t.Fatalf("calls %d stored %d pushed %d", calls, len(stored), len(pushed))
 	}
 	blocked[2] = true
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+	if _, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 43,
-		Message:  replyMessage("after-block", 42, sentMessageID(parent)),
+		Message:  replyMessage("after-block", 42, commentID),
 	}}); err != nil || len(stored) != 1 {
 		t.Fatalf("after block stored %d %v", len(stored), err)
 	}
@@ -339,14 +267,18 @@ func TestRepliesNoticeBlockedPreviewAndRetry(t *testing.T) {
 		ShowPreviews: mtproto.ToBool(false),
 	}).To_PeerNotifySettings()}
 	pushed = nil
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+	if _, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 44,
-		Message:  replyMessage("quiet", 43, sentMessageID(parent)),
-	}}); err != nil || len(stored) != 2 || !stored[1].Message.GetSilent() || len(pushed) != 0 {
-		t.Fatalf("preview stored %d silent %v pushed %d %v", len(stored), stored[len(stored)-1].Message.GetSilent(), len(pushed), err)
+		Message:  replyMessage("quiet", 43, commentID),
+	}}); err != nil || len(stored) != 2 || stored[1].Message.GetSilent() || len(pushed) != 1 || pushed[0] != 2 {
+		silent := false
+		if len(stored) > 1 && stored[1].Message != nil {
+			silent = stored[1].Message.GetSilent()
+		}
+		t.Fatalf("preview stored %d silent %v pushed %#v %v", len(stored), silent, pushed, err)
 	}
 	if stored[1].Message.GetMessage() != "quiet" || stored[1].Commenter != 3 {
-		t.Fatal("hidden preview dropped the replies chat row")
+		t.Fatal("preview off dropped the replies chat row")
 	}
 }
 
@@ -457,27 +389,17 @@ func TestRepliesNoticeCommentThreadAndGeneralChat(t *testing.T) {
 }
 
 func TestRepliesNoticeHookFailureDoesNotDropTheComment(t *testing.T) {
-	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
 	svc, ctx := newTest(t)
-	group := linkedTalk(t, svc, ctx)
+	group, commentID := threadComment(t, svc, ctx)
 	var calls int
 	svc.SetHooks(Hooks{RepliesInbox: func(context.Context, RepliesNotice) error {
 		calls++
 		return errors.New("inbox down")
 	}})
-	if _, err := svc.Invite(ctx, 1, 0, inCh(group), []int64{2, 3}, nil); err != nil {
-		t.Fatal(err)
-	}
-	parent, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
-		RandomID: 71,
-		Message:  &mtproto.Message{Message: "p", Date: 70},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+	_, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 72,
-		Message:  replyMessage("kept", 71, sentMessageID(parent)),
+		Message:  replyMessage("kept", 71, commentID),
 	}})
 	if err == nil || calls != 3 {
 		t.Fatalf("err %v calls %d", err, calls)
@@ -499,6 +421,18 @@ func TestRepliesNoticeHookFailureDoesNotDropTheComment(t *testing.T) {
 	if !found {
 		t.Fatal("failed notice deleted the comment")
 	}
+	box := newNoticeBox()
+	svc.SetHooks(Hooks{RepliesInbox: box.keep})
+	again, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+		RandomID: 72,
+		Message:  replyMessage("kept", 71, commentID),
+	}})
+	if err != nil || sentMessageID(again) == 0 || len(box.notes) != 1 {
+		t.Fatalf("retry notices %d id %d %v", len(box.notes), sentMessageID(again), err)
+	}
+	if box.notes[0].Message.GetMessage() != "kept" || box.notes[0].Recipient != 2 {
+		t.Fatalf("retry notice %+v", box.notes[0])
+	}
 }
 
 type noticeBox struct {
@@ -517,6 +451,39 @@ func (b *noticeBox) keep(_ context.Context, n RepliesNotice) error {
 	}
 	b.notes = append(b.notes, n)
 	return nil
+}
+
+func threadComment(t *testing.T, svc *Service, ctx context.Context) (*mtproto.Chat, int32) {
+	t.Helper()
+	group, _, id := threadCommentOn(t, svc, ctx)
+	return group, id
+}
+
+func threadCommentOn(t *testing.T, svc *Service, ctx context.Context) (group, news *mtproto.Chat, commentID int32) {
+	t.Helper()
+	group, news = linkedPair(t, svc, ctx)
+	if _, err := svc.Invite(ctx, 1, 0, inCh(group), []int64{2, 3}, nil); err != nil {
+		t.Fatal(err)
+	}
+	post, err := svc.Send(ctx, 1, news.Id, 0, []Outgoing{{
+		RandomID: 9001,
+		Message:  &mtproto.Message{Message: "post", Date: 10},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comment, err := svc.Send(ctx, 2, news.Id, 0, []Outgoing{{
+		RandomID: 9002,
+		Message:  replyMessage("top-comment", 11, sentMessageID(post)),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commentID = sentMessageID(comment)
+	if commentID == 0 {
+		t.Fatal("comment id")
+	}
+	return group, news, commentID
 }
 
 func linkedTalk(t *testing.T, svc *Service, ctx context.Context) *mtproto.Chat {

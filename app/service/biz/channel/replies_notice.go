@@ -32,24 +32,22 @@ type RepliesNotice struct {
 	Message   *mtproto.Message
 }
 
-// RepliesDelivery is what the inbox writer does with one notice.
-// Write false means the recipient must not receive the text or the author.
-// Push false still allows the row to be stored for the Replies chat, and
-// does not send a live notification that carries the text or the author.
+// RepliesDelivery separates four decisions.
+// Write is the inbox row. Push is the live updateNewMessage to that user.
+// Silent is the message flag for mute or the silent notify setting.
+// show_previews is not one of those: the client hides the banner text, and
+// the authorized session still receives the protocol update.
 type RepliesDelivery struct {
 	Write  bool
 	Push   bool
 	Silent bool
 }
 
-// RepliesDeliveryOf applies block and notification privacy.
-// A blocked commenter produces no row and no push.
-// show_previews set to false stores a silent row and does not push, so a
-// notification does not carry the comment text or the commenter.
-// silent or a mute that is still in the future marks the row silent and
-// still pushes it to that user only: the Replies chat updates, and the
-// message itself asks clients not to raise a banner.
-// now is unix time. A nil settings list is the default (deliver, not silent).
+// RepliesDeliveryOf applies block and notification settings.
+// A blocked commenter gets no row and no push.
+// show_previews false still writes and still pushes. It does not set Silent.
+// silent, or a mute_until still in the future, sets Silent and still pushes.
+// now is unix time. A nil settings list delivers and is not silent.
 func RepliesDeliveryOf(blocked bool, now int32, settings ...*mtproto.PeerNotifySettings) RepliesDelivery {
 	if blocked {
 		return RepliesDelivery{}
@@ -58,10 +56,6 @@ func RepliesDeliveryOf(blocked bool, now int32, settings ...*mtproto.PeerNotifyS
 	for _, st := range settings {
 		if st == nil {
 			continue
-		}
-		if st.ShowPreviews != nil && !mtproto.FromBool(st.ShowPreviews) {
-			out.Silent = true
-			out.Push = false
 		}
 		if mtproto.FromBool(st.Silent) {
 			out.Silent = true
@@ -233,15 +227,14 @@ func (s *Service) prepareRepliesNotice(ctx context.Context, groupID int64, comme
 	}, true, nil
 }
 
-// inCommentSection is true for a reply that belongs to a channel post's
-// comment thread. While no thread index exists (TELLOMI_CHANNEL_COMMENTS
-// is off, so channel posts are not forwarded), a reply in the linked
-// discussion group is the comment this server can see. Once the index
-// exists, a reply in the group's general chat is not a comment.
+// inCommentSection is true only when the stored thread index says this
+// reply belongs to a channel post's comment thread. An empty index is not
+// evidence. TELLOMI_CHANNEL_COMMENTS stays off by default, and a reply in
+// the linked group is then an ordinary supergroup reply: no notice.
 func (s *Service) inCommentSection(ctx context.Context, groupID int64, stored *StoredMessage, body *mtproto.Message) bool {
 	f := s.features(ctx, groupID)
 	if len(f.CommentByRoot) == 0 && len(f.CommentMsgRoot) == 0 {
-		return true
+		return false
 	}
 	if stored != nil && f.CommentMsgRoot[stored.ID] != 0 {
 		return true
@@ -263,16 +256,17 @@ func (s *Service) inCommentSection(ctx context.Context, groupID int64, stored *S
 	return false
 }
 
-// repliesReadable is the read check for the parent author. A kicked member,
-// a view ban, hidden history from before they joined, and a non-member who
-// cannot view the linked channel get nothing. A non-member who can still
-// view the channel is the case @replies exists for.
+// repliesReadable is whether this user can read the discussion message now.
+// Membership in the discussion group is required. Seeing the linked channel,
+// including a public one, does not grant the comment body or the reply author.
+// Left, kicked, view-banned, and hidden prehistory from before they joined
+// are all closed.
 func (s *Service) repliesReadable(ctx context.Context, group *Channel, recipient int64, parent, comment *StoredMessage) (bool, error) {
 	p, err := s.store.GetParticipant(ctx, group.ID, recipient)
 	if err != nil {
 		return false, err
 	}
-	if p != nil && p.State == StateKicked {
+	if p == nil || p.State != StateNormal {
 		return false, nil
 	}
 	if blocked, _ := s.viewBlocked(p); blocked {
@@ -282,20 +276,7 @@ func (s *Service) repliesReadable(ctx context.Context, group *Channel, recipient
 	if prehistoryBlocks(f, p, parent) || prehistoryBlocks(f, p, comment) {
 		return false, nil
 	}
-	if p != nil && p.InChannel() {
-		return true, nil
-	}
-	link := f.LinkedChatID
-	if link == 0 {
-		return false, nil
-	}
-	if err = s.canViewChannel(ctx, link, recipient); err != nil {
-		if err == mtproto.ErrChannelPrivate || err == mtproto.ErrUserBannedInChannel {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+	return p.InChannel(), nil
 }
 
 // noticeAuthor is the user the message is attributed to. A channel or chat

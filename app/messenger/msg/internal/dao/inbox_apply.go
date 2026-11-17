@@ -2,8 +2,10 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
@@ -40,15 +42,38 @@ type inboxApplyRow struct {
 
 // rememberInboxRandom records that this recipient already has the random id.
 // The previous container allocates a new box id and inserts again. The
-// messages trigger rejects that insert when this row exists. random_id 0 is
-// not recorded.
+// messages trigger rejects that insert when this row is already committed.
+// Two transactions can both pass that trigger before either commits. A
+// duplicate key then belongs to the other box. ON DUPLICATE KEY UPDATE would
+// let the second message commit. Returning the error rolls that transaction
+// back, so the second message and its pts row are not stored. The same box
+// id is the idempotent case. random_id 0 is not recorded. The table and the
+// trigger are unchanged.
 func rememberInboxRandom(tx *sqlx.Tx, userID, senderID, randomID int64, boxID int32) error {
 	if tx == nil || randomID == 0 || userID == 0 || boxID == 0 {
 		return nil
 	}
-	_, err := tx.Exec(`INSERT INTO inbox_random (user_id, random_id, sender_user_id, box_id) VALUES (?,?,?,?)
-ON DUPLICATE KEY UPDATE box_id = box_id`, userID, randomID, senderID, boxID)
-	return err
+	_, err := tx.Exec(`INSERT INTO inbox_random (user_id, random_id, sender_user_id, box_id) VALUES (?,?,?,?)`,
+		userID, randomID, senderID, boxID)
+	if err == nil || !mysqlDup(err) {
+		return err
+	}
+	var row struct {
+		Box int32 `db:"box_id"`
+	}
+	if qerr := tx.QueryRow(&row, `SELECT box_id FROM inbox_random WHERE user_id = ? AND random_id = ? AND sender_user_id = ?`,
+		userID, randomID, senderID); qerr != nil {
+		return err
+	}
+	if row.Box == boxID {
+		return nil
+	}
+	return fmt.Errorf("inbox random %d already stored as box %d", randomID, row.Box)
+}
+
+func mysqlDup(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1062
 }
 
 // applyInboxInTx writes the dialog unread, the pts row, and inbox_apply
