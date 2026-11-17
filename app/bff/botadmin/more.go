@@ -1151,7 +1151,11 @@ func InvokeWebViewCustomMethod(ctx context.Context, self int64, bot *mtproto.Inp
 	if raw == "" || !json.Valid([]byte(raw)) || (raw[0] != '{' && raw[0] != '[') {
 		return nil, mtproto.ErrDataJsonInvalid
 	}
-	return mtproto.MakeTLDataJSON(&mtproto.DataJSON{Data: `{"ok":true}`}).To_DataJSON(), nil
+	// The client is waiting for the bot's custom_method_invoked answer.
+	// This process does not deliver the event to a bot webhook, so an
+	// unregistered method is METHOD_INVALID instead of a fabricated {"ok":true}.
+	// https://core.telegram.org/method/bots.invokeWebViewCustomMethod
+	return nil, mtproto.ErrMethodInvalid
 }
 
 // CheckDownloadFileParams reports whether a mini app may download url as fileName.

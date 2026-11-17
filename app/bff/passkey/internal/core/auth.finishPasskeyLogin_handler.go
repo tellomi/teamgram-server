@@ -3,6 +3,8 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/accountrest"
+	passkeylogin "github.com/teamgram/teamgram-server/app/bff/passkey/login"
+	"github.com/teamgram/teamgram-server/app/bff/passkey/persist"
 )
 
 // AuthFinishPasskeyLogin
@@ -10,12 +12,20 @@ import (
 // https://core.telegram.org/method/auth.finishPasskeyLogin
 // https://core.telegram.org/api/passkeys
 //
-// This server does not verify WebAuthn signatures, so the method never returns
-// auth.authorization. A missing credential is 400 CREDENTIAL_INVALID. An unknown
-// id is 400 PASSKEY_CREDENTIAL_NOT_FOUND. A stored id is 400 CREDENTIAL_INVALID.
+// A verified assertion binds this auth key and returns auth.authorization.
+// A cloud password returns 401 SESSION_PASSWORD_NEEDED after the bind.
+// A malformed assertion is 400 CREDENTIAL_INVALID. An unknown id is
+// 400 PASSKEY_CREDENTIAL_NOT_FOUND. A bad origin is 400 PASSKEY_ORIGIN_MISMATCH.
 func (c *PasskeyCore) AuthFinishPasskeyLogin(in *mtproto.TLAuthFinishPasskeyLogin) (*mtproto.Auth_Authorization, error) {
 	if in == nil {
 		return nil, mtproto.ErrCredentialInvalid
 	}
-	return accountrest.FinishPasskeyLogin(in.GetCredential())
+	if dc := in.GetFromDcId(); dc != nil && dc.GetValue() != 0 && dc.GetValue() != persist.DC() {
+		return nil, mtproto.ErrDcIdInvalid
+	}
+	userID, err := accountrest.VerifyPasskeyLogin(c.permAuthKey(), in.GetCredential())
+	if err != nil {
+		return nil, err
+	}
+	return passkeylogin.Authorize(c.ctx, c.MD, userID)
 }

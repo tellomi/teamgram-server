@@ -25,6 +25,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"google.golang.org/grpc/status"
 )
 
 // MessagesDeleteChatUser
@@ -63,6 +64,7 @@ func (c *ChatsCore) MessagesDeleteChatUser(in *mtproto.TLMessagesDeleteChatUser)
 	if c.MD.IsAdmin {
 		fromId = pre.Creator()
 	}
+	selfLeave := deleteUser.PeerId == c.MD.UserId
 	replyUpdates, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(
 		c.ctx,
 		&msgpb.TLMsgSendMessageV2{
@@ -80,9 +82,14 @@ func (c *ChatsCore) MessagesDeleteChatUser(in *mtproto.TLMessagesDeleteChatUser)
 				}).To_OutboxMessage(),
 			},
 		})
-	if err != nil {
+	if err != nil && !(selfLeave && status.Convert(err).Message() == "CHAT_WRITE_FORBIDDEN") {
 		c.Logger.Errorf("messages.deleteChatUser - error: %v", err)
 		return nil, err
+	}
+	if err != nil {
+		// A member banned from sending can still leave. The service message
+		// is refused, and the membership row is what the client needs.
+		replyUpdates = mtproto.MakeUpdatesByUpdates()
 	}
 
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatDeleteChatUser(c.ctx, &chatpb.TLChatDeleteChatUser{

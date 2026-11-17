@@ -38,6 +38,14 @@ type Features struct {
 	// ReactionRead is the unix time through which each member has called
 	// messages.readReactions. Older reaction dates are unread.
 	ReactionRead map[int64]int32
+	// MentionReadMax is the highest message id each member has acknowledged
+	// with messages.readMentions when top_msg_id is 0. A mention at or below
+	// it is not unread. The inbox cursor is separate, so unread_count stays.
+	MentionReadMax map[int64]int32
+	// MentionRead is message ids acknowledged by a topic-scoped
+	// messages.readMentions (top_msg_id set). The dialog-wide cursor stays
+	// put, so other topics keep their badge.
+	MentionRead map[int64][]int32
 	// ReactionMode is "", "all", "none", or "some".
 	ReactionMode       string
 	AllowCustom        bool

@@ -248,6 +248,30 @@ func TestSecretChatFlow(t *testing.T) {
 		t.Fatalf("stored hash: %v", err)
 	}
 
+	prevMaterialize := secretchat.Materialize
+	secretchat.Materialize = func(_ context.Context, creator int64, chatID int32, file *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
+		if chatID != waiting.GetId() || file.GetId() != 81 || file.GetParts() != 1 {
+			t.Fatalf("materialize creator=%d chat=%d file=%+v", creator, chatID, file)
+		}
+		return mtproto.MakeTLEncryptedFile(&mtproto.EncryptedFile{
+			Id: file.GetId(), AccessHash: file.GetAccessHash(), Size2_INT64: 4096, DcId: 1,
+		}).To_EncryptedFile(), nil
+	}
+	t.Cleanup(func() { secretchat.Materialize = prevMaterialize })
+	uploaded, err := svc.MessagesSendEncryptedFile(peerUser, &mtproto.TLMessagesSendEncryptedFile{
+		Peer: encPeer, RandomId: 1012, Data: []byte("cipher-file"),
+		File: mtproto.MakeTLInputEncryptedFileUploaded(&mtproto.InputEncryptedFile{
+			Id: 81, Parts: 1, Md5Checksum: "0123456789abcdef0123456789abcdef", KeyFingerprint: 5,
+		}).To_InputEncryptedFile(),
+	})
+	if err != nil || uploaded.GetFile().GetSize2_INT64() != 4096 || uploaded.GetFile().GetKeyFingerprint() != 5 {
+		t.Fatalf("uploaded size %+v %v", uploaded.GetFile(), err)
+	}
+	kept, keptChat, remembered := secretchat.Default().LookupEncrypted(81)
+	if !remembered || keptChat != waiting.GetId() || kept.GetSize2_INT64() != 4096 {
+		t.Fatalf("remembered %+v chat %d ok %v", kept, keptChat, remembered)
+	}
+
 	svcMsg, err := svc.MessagesSendEncryptedService(admin, &mtproto.TLMessagesSendEncryptedService{
 		Peer: encPeer, RandomId: 1005, Data: []byte("cipher-service"),
 	})
