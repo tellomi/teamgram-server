@@ -1321,3 +1321,16 @@ An unset peer still returns every row. `inputNotifyUsers` keeps users. `inputNot
 | --- | --- |
 | peer filter | `app/bff/notification/internal/core/account.getNotifyExceptions_handler.go` |
 | broadcast flag | `app/service/biz/channel/service_ops.go` `IsBroadcast` |
+
+## Primary invite on a new supergroup or channel (ISSUE-S-MEGA-INVITE-EMPTY-001)
+
+A basic group inserts its permanent invite in the same transaction as `chat.createChat2`. `channels.createChannel` stored the channel and the creator and did not insert one. `channelFull.exported_invite` and `messages.getExportedChatInvites` then had nothing to return, so the add-members invite sheet stayed empty. `messages.exportChatInvite` itself was already able to create the link.
+
+`Create` now inserts the creator's permanent primary with the same hash and `channel_invites` row as export. Each admin with `invite_users` has their own primary. `channels.getFullChannel` and that admin's own active `messages.getExportedChatInvites` create one only when that admin has no unrevoked permanent row. A revoked list does not write. A member, and an admin without `invite_users`, does not see the link and does not create one. An existing primary is returned as stored. `legacy_revoke_permanent` and revoking the primary still replace that admin's active permanents with one new primary, and additional links are left in place. The check and the insert share one lock so overlapping reads and revokes cannot insert two primaries. The lock is a named MySQL lock on the connection that runs the transaction. It is not `FOR UPDATE` on `channels`, which message sends already use.
+
+There is no new table and no backfill scan. A channel created before this change gets its primary the next time an admin who may invite reads their own link. Removing this binary leaves those rows in place; they stay valid. There is no DDL to roll back.
+
+| Piece | File |
+| --- | --- |
+| create, read, revoke | `app/service/biz/channel/service.go`, `invite.go`, `invite_primary.go` |
+| lock | `invite_mysql.go`, `invite_store.go` |

@@ -74,6 +74,9 @@ type Store interface {
 	UpdateInvite(ctx context.Context, inv *StoredInvite) error
 	GetInviteByLink(ctx context.Context, link string) (*StoredInvite, error)
 	ListInvites(ctx context.Context, channelID int64) ([]*StoredInvite, error)
+	// WithInviteLock runs fn while no other primary-link mutation for this
+	// channel can commit. The locker is the only view fn may write.
+	WithInviteLock(ctx context.Context, channelID int64, fn func(context.Context, inviteLocker) error) error
 	DeleteInvite(ctx context.Context, channelID int64, link string) error
 	DeleteRevokedInvites(ctx context.Context, channelID, adminID int64) error
 	UpsertImporter(ctx context.Context, row *StoredImporter) error

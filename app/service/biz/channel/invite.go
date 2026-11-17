@@ -74,24 +74,34 @@ func (s *Service) ExportInvite(ctx context.Context, self int64, in *mtproto.Inpu
 	}
 	usage := exp.StoredUsage()
 	if req.LegacyRevokePermanent {
-		rows, err := s.store.ListInvites(ctx, ch.ID)
+		// Revoke and the replacement commit together. A concurrent repair
+		// waits, then sees the new primary instead of inserting another.
+		var fresh *StoredInvite
+		err := s.store.WithInviteLock(ctx, ch.ID, func(ctx context.Context, tx inviteLocker) error {
+			rows, err := tx.ListInvites(ctx, ch.ID)
+			if err != nil {
+				return err
+			}
+			for _, row := range rows {
+				if row.AdminID == self && row.Permanent && !row.Revoked {
+					row.Revoked = true
+					if err := tx.UpdateInvite(ctx, row); err != nil {
+						return err
+					}
+				}
+			}
+			fresh, err = s.insertStored(ctx, tx, &StoredInvite{
+				ChannelID: ch.ID,
+				AdminID:   self,
+				Permanent: true,
+				Date:      now,
+			})
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
-		for _, row := range rows {
-			if row.AdminID == self && row.Permanent && !row.Revoked {
-				row.Revoked = true
-				if err := s.store.UpdateInvite(ctx, row); err != nil {
-					return nil, err
-				}
-			}
-		}
-		return s.insertInvite(ctx, &StoredInvite{
-			ChannelID: ch.ID,
-			AdminID:   self,
-			Permanent: true,
-			Date:      now,
-		})
+		return s.exportTL(ctx, fresh), nil
 	}
 	return s.insertInvite(ctx, &StoredInvite{
 		ChannelID:     ch.ID,
@@ -138,24 +148,42 @@ func (s *Service) EditInvite(ctx context.Context, self int64, in *mtproto.InputC
 	}
 	now := time.Now().Unix()
 	if req.Revoked {
-		inv.Revoked = true
-		if err := s.store.UpdateInvite(ctx, inv); err != nil {
-			return nil, err
-		}
-		out := []*mtproto.ExportedChatInvite{s.exportTL(ctx, inv)}
 		if inv.Permanent {
-			fresh, err := s.insertInvite(ctx, &StoredInvite{
-				ChannelID: ch.ID,
-				AdminID:   inv.AdminID,
-				Permanent: true,
-				Date:      now,
+			var revokedRow, fresh *StoredInvite
+			err := s.store.WithInviteLock(ctx, ch.ID, func(ctx context.Context, tx inviteLocker) error {
+				cur, err := tx.GetInviteByLink(ctx, inv.Link)
+				if err != nil {
+					return err
+				}
+				if cur == nil || cur.ChannelID != ch.ID {
+					return mtproto.ErrInviteHashInvalid
+				}
+				if cur.Revoked {
+					return mtproto.ErrInviteHashExpired
+				}
+				cur.Revoked = true
+				if err := tx.UpdateInvite(ctx, cur); err != nil {
+					return err
+				}
+				revokedRow = cur
+				fresh, err = s.insertStored(ctx, tx, &StoredInvite{
+					ChannelID: ch.ID,
+					AdminID:   cur.AdminID,
+					Permanent: true,
+					Date:      now,
+				})
+				return err
 			})
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, fresh)
+			return []*mtproto.ExportedChatInvite{s.exportTL(ctx, revokedRow), s.exportTL(ctx, fresh)}, nil
 		}
-		return out, nil
+		inv.Revoked = true
+		if err := s.store.UpdateInvite(ctx, inv); err != nil {
+			return nil, err
+		}
+		return []*mtproto.ExportedChatInvite{s.exportTL(ctx, inv)}, nil
 	}
 	if inv.Permanent && (req.Expire != nil || req.Usage != nil || req.RequestNeeded != nil || req.Title != nil) {
 		return nil, mtproto.ErrChatInvitePermanent
@@ -201,6 +229,13 @@ func (s *Service) ExportedInvites(ctx context.Context, self int64, in *mtproto.I
 	}
 	if adminID != self && !p.IsCreator() {
 		return nil, mtproto.ErrChatAdminRequired
+	}
+	// The invite sheet lists the caller's own active links. An older
+	// supergroup or channel may have none; repair that admin only.
+	if !revoked && adminID == self {
+		if _, err := s.ensureOwnPrimary(ctx, ch.ID, self); err != nil {
+			return nil, err
+		}
 	}
 	rows, err := s.store.ListInvites(ctx, ch.ID)
 	if err != nil {
@@ -506,21 +541,14 @@ func (s *Service) HideJoinRequest(ctx context.Context, self, actorAuth int64, in
 }
 
 // PrimaryExported is channelFull.exported_invite for an admin who can invite.
+// A missing primary is created once. A write error leaves the field empty
+// so opening the chat still succeeds.
 func (s *Service) PrimaryExported(ctx context.Context, channelID, adminID int64) *mtproto.ExportedChatInvite {
-	rows, err := s.store.ListInvites(ctx, channelID)
-	if err != nil {
+	inv, err := s.ensureOwnPrimary(ctx, channelID, adminID)
+	if err != nil || inv == nil {
 		return nil
 	}
-	var best *StoredInvite
-	for _, row := range rows {
-		if row.AdminID == adminID && row.Permanent && !row.Revoked && (best == nil || row.Date >= best.Date) {
-			best = row
-		}
-	}
-	if best == nil {
-		return nil
-	}
-	return s.exportTL(ctx, best)
+	return s.exportTL(ctx, inv)
 }
 
 func (s *Service) requireInviteAdmin(ctx context.Context, self int64, in *mtproto.InputChannel) (*Channel, *Participant, error) {
