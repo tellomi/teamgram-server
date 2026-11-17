@@ -105,6 +105,10 @@ type Features struct {
 	// InboxReadAt is the unix time a member last advanced their inbox cursor.
 	// messages.getMessageReadParticipants uses it as the read date.
 	InboxReadAt map[int64]int32
+	// AdminReadMax is the highest message id an admin covered with
+	// channels.readHistory while they already had admin rights. A mark
+	// written before promotion does not make a pre-join message look read.
+	AdminReadMax map[int64]int32
 	// JoinTop is the highest channel message id that already existed when
 	// the member joined. messages.getMessageReadParticipants does not treat
 	// an admin's ability to read older messages as a read receipt.

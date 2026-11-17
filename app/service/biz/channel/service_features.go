@@ -45,6 +45,9 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	if f.InboxReadAt == nil {
 		f.InboxReadAt = map[int64]int32{}
 	}
+	if f.AdminReadMax == nil {
+		f.AdminReadMax = map[int64]int32{}
+	}
 	return f
 }
 
