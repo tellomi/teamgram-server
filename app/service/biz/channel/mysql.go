@@ -804,15 +804,18 @@ func splitInt32(s string) []int32 {
 func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
 	var data []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=?`, channelID).Scan(&data)
-	if err == sql.ErrNoRows || len(data) == 0 {
+	if err == sql.ErrNoRows {
 		return &Features{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	if len(data) == 0 {
+		return &Features{}, nil
+	}
 	f := &Features{}
 	if err := json.Unmarshal(data, f); err != nil {
-		return &Features{}, nil
+		return nil, err
 	}
 	return f, nil
 }

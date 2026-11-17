@@ -330,7 +330,11 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 	if err != nil {
 		return nil, err
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.loadFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	before := f.clone()
 	list := append([]UsernameRec(nil), listedUsernames(ch, f)...)
 	prev := activeUsernames(list)
 	changed := ch.Username != ""
@@ -350,6 +354,9 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 		return nil, err
 	}
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
+		if rbErr := s.saveFeatures(ctx, ch.ID, before); rbErr != nil {
+			return nil, rbErr
+		}
 		return nil, err
 	}
 	s.logUsernames(ctx, ch.ID, self, prev, activeUsernames(list))

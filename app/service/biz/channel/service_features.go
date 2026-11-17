@@ -48,6 +48,21 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	return f
 }
 
+// loadFeatures is the read used by channels.deactivateAllUsernames.
+// A missing row is an empty value. A store error is returned so that call
+// does not write the empty value over color, emoji, or paid-star fields it
+// failed to read. features keeps its display fallback and is not changed.
+func (s *Service) loadFeatures(ctx context.Context, channelID int64) (*Features, error) {
+	f, err := s.store.GetFeatures(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	if f == nil {
+		return &Features{}, nil
+	}
+	return f, nil
+}
+
 func (s *Service) saveFeatures(ctx context.Context, channelID int64, f *Features) error {
 	return s.store.SaveFeatures(ctx, channelID, f)
 }

@@ -31,10 +31,66 @@ func (FragmentService) ChannelsToggleUsername(ctx context.Context, in *mtproto.T
 	return channel.Shared().ToggleUsername(ctx, self, auth, in.GetChannel(), in.GetUsername(), mtproto.FromBool(in.GetActive()))
 }
 
+// channelUsernameIndex is the username table used by contacts.resolveUsername.
+// UserDeleteUsername reports a SQL failure as BoolFalse with a nil error, so
+// a nil error alone is not success.
+type channelUsernameIndex interface {
+	UserDeleteUsername(ctx context.Context, in *user.TLUserDeleteUsername) (*mtproto.Bool, error)
+	UserDeleteUsernameByPeer(ctx context.Context, in *user.TLUserDeleteUsernameByPeer) (*mtproto.Bool, error)
+}
+
+func usernameIndexResult(ok *mtproto.Bool, err error) error {
+	if err != nil {
+		return err
+	}
+	if ok == nil || !mtproto.FromBool(ok) {
+		return mtproto.ErrInternalServerError
+	}
+	return nil
+}
+
+// deleteChannelUsernameIndex removes resolve rows before the channel row is
+// cleared. Delete2 only removes editable=1, so each listed name is removed
+// too. A failure leaves the channel row unchanged.
+func deleteChannelUsernameIndex(ctx context.Context, users channelUsernameIndex, channelID int64, names []string) error {
+	if users == nil {
+		return mtproto.ErrInternalServerError
+	}
+	if channelID != 0 {
+		ok, err := users.UserDeleteUsernameByPeer(ctx, &user.TLUserDeleteUsernameByPeer{
+			PeerType: mtproto.PEER_CHANNEL,
+			PeerId:   channelID,
+		})
+		if err = usernameIndexResult(ok, err); err != nil {
+			return err
+		}
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		ok, err := users.UserDeleteUsername(ctx, &user.TLUserDeleteUsername{Username: name})
+		if err = usernameIndexResult(ok, err); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in *mtproto.TLChannelsDeactivateAllUsernames) (*mtproto.Bool, error) {
 	self, auth := actor(ctx)
+	var channelID int64
+	if in.GetChannel() != nil {
+		channelID = in.GetChannel().GetChannelId()
+	}
+	chats, err := channel.Shared().GetChannels(ctx, self, []*mtproto.InputChannel{in.GetChannel()})
+	if err != nil {
+		return nil, err
+	}
 	var names []string
-	if chats, err := channel.Shared().GetChannels(ctx, self, []*mtproto.InputChannel{in.GetChannel()}); err == nil && chats != nil {
+	if chats != nil {
 		for _, chat := range chats.GetChats() {
 			if chat == nil {
 				continue
@@ -49,27 +105,10 @@ func (s FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in 
 			}
 		}
 	}
-	ok, err := channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel())
-	if err != nil {
+	if err = deleteChannelUsernameIndex(ctx, s.Users, channelID, names); err != nil {
 		return nil, err
 	}
-	if s.Users != nil {
-		seen := map[string]bool{}
-		for _, name := range names {
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-			_, _ = s.Users.UserDeleteUsername(ctx, &user.TLUserDeleteUsername{Username: name})
-		}
-		if in.GetChannel() != nil {
-			_, _ = s.Users.UserDeleteUsernameByPeer(ctx, &user.TLUserDeleteUsernameByPeer{
-				PeerType: mtproto.PEER_CHANNEL,
-				PeerId:   in.GetChannel().GetChannelId(),
-			})
-		}
-	}
-	return ok, nil
+	return channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel())
 }
 
 // AccountReorderUsernames
