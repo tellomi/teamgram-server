@@ -1335,6 +1335,14 @@ There is no new table and no backfill scan. A channel created before this change
 | create, read, revoke | `app/service/biz/channel/service.go`, `invite.go`, `invite_primary.go` |
 | lock | `invite_mysql.go`, `invite_store.go` |
 
+## blockFromReplies history past the newest 500 (ISSUE-S-BLOCK-FROM-REPLIES-001)
+
+`contacts.blockFromReplies` with `delete_history` used to read the caller's `@replies` dialog five times, 100 ids a time, and stop. A notification from that author older than the newest 500 rows stayed. The walk now continues while a full page comes back and the oldest id still moves down. Each page is deleted before the next read. One delete call stays at most 100 ids. The peer is still `PEER_EMPTY`, `revoke` is still false, and only this user's rows whose forwarded author matches are included. A history read error is returned after the pages already deleted; the same call again deletes whatever remains.
+
+| Piece | File |
+| --- | --- |
+| page walk | `app/bff/channels/internal/server/grpc/service/contacts.blockFromReplies_handler.go` |
+
 ## @replies inbox after a discussion comment (ISSUE-S-BLOCK-FROM-REPLIES-001)
 
 `contacts.blockFromReplies` already reads `msg_id` from the caller's private chat with user `1271266957`. Nothing wrote that row after a discussion comment, so a real comment could not produce the id the official client sends. The decision of who may receive the row lives in `app/service/biz/channel/replies_notice.go`. The msg process, which already calls `channel.Send`, now passes one hook through to `sendMessageToInbox`.

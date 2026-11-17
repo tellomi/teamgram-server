@@ -73,24 +73,7 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 		logx.WithContext(ctx).Infof("contacts.blockFromReplies report_spam user %d msg %d", sender, in.GetMsgId())
 	}
 	if (in.GetDeleteMessage() || in.GetDeleteHistory()) && s.Outbox != nil {
-		ids := []int32{in.GetMsgId()}
-		if in.GetDeleteHistory() {
-			ids = append(ids, s.repliesFromSender(ctx, self, sender)...)
-		}
-		ids = uniqueIDs(ids)
-		// messages.deleteMessages addresses the caller's own box ids with
-		// PEER_EMPTY. MsgDeleteMessages returns PEER_ID_INVALID for every
-		// other peer, including PEER_USER + @replies. The ids above are
-		// already only this user's rows in that dialog. revoke stays false
-		// so the other participant's copy is not removed.
-		if _, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
-			UserId:    self,
-			AuthKeyId: authKey,
-			PeerType:  mtproto.PEER_EMPTY,
-			PeerId:    0,
-			Revoke:    false,
-			Id:        ids,
-		}); err != nil {
+		if err := s.deleteReplies(ctx, self, authKey, sender, in.GetMsgId(), in.GetDeleteHistory()); err != nil {
 			return nil, err
 		}
 	}
@@ -105,21 +88,39 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 	return up, nil
 }
 
-func (s ThreadsService) repliesFromSender(ctx context.Context, self, sender int64) []int32 {
-	var ids []int32
+const repliesHistoryPage = 100
+
+// deleteReplies removes the addressed @replies row, and when history is set,
+// every other row in that same private dialog whose forwarded author is
+// sender. Pages follow message.getHistoryMessages: ids strictly below the
+// previous page's oldest id, 100 at a time. Each page is deleted before the
+// next is read, so the id list stays one page. A stuck offset stops the walk.
+// Peer is PEER_EMPTY and revoke is false: these ids are already the caller's
+// own box ids, and the other person's copy is left in place.
+func (s ThreadsService) deleteReplies(ctx context.Context, self, authKey, sender int64, msgID int32, history bool) error {
+	if err := s.deleteRepliesIDs(ctx, self, authKey, []int32{msgID}); err != nil {
+		return err
+	}
+	if !history || s.Messages == nil {
+		return nil
+	}
 	var offset int32
-	for page := 0; page < 5; page++ {
+	for {
 		hist, err := s.Messages.MessageGetHistoryMessages(ctx, &message.TLMessageGetHistoryMessages{
 			UserId:   self,
 			PeerType: mtproto.PEER_USER,
 			PeerId:   repliesUserID,
 			OffsetId: offset,
-			Limit:    100,
+			Limit:    repliesHistoryPage,
 		})
-		if err != nil || hist == nil || len(hist.GetDatas()) == 0 {
-			break
+		if err != nil {
+			return err
+		}
+		if hist == nil || len(hist.GetDatas()) == 0 {
+			return nil
 		}
 		var oldest int32
+		var ids []int32
 		for _, box := range hist.GetDatas() {
 			if box == nil {
 				continue
@@ -127,16 +128,40 @@ func (s ThreadsService) repliesFromSender(ctx context.Context, self, sender int6
 			if replySender(box) == sender {
 				ids = append(ids, box.GetMessageId())
 			}
-			if oldest == 0 || (box.GetMessageId() != 0 && box.GetMessageId() < oldest) {
-				oldest = box.GetMessageId()
+			if id := box.GetMessageId(); id != 0 && (oldest == 0 || id < oldest) {
+				oldest = id
 			}
 		}
-		if len(hist.GetDatas()) < 100 || oldest == 0 || oldest == offset {
-			break
+		if err := s.deleteRepliesIDs(ctx, self, authKey, ids); err != nil {
+			return err
+		}
+		if len(hist.GetDatas()) < repliesHistoryPage || oldest == 0 || oldest == offset {
+			return nil
 		}
 		offset = oldest
 	}
-	return ids
+}
+
+func (s ThreadsService) deleteRepliesIDs(ctx context.Context, self, authKey int64, ids []int32) error {
+	ids = uniqueIDs(ids)
+	for len(ids) > 0 {
+		n := repliesHistoryPage
+		if n > len(ids) {
+			n = len(ids)
+		}
+		if _, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
+			UserId:    self,
+			AuthKeyId: authKey,
+			PeerType:  mtproto.PEER_EMPTY,
+			PeerId:    0,
+			Revoke:    false,
+			Id:        ids[:n],
+		}); err != nil {
+			return err
+		}
+		ids = ids[n:]
+	}
+	return nil
 }
 
 func (s ThreadsService) blockedUpdates(ctx context.Context, self, sender int64) *mtproto.Updates {
