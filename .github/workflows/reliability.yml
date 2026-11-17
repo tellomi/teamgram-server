@@ -58,4 +58,11 @@ jobs:
         env:
           TELLOMI_RELIABILITY_SKIP_BUILD: "1"
           TELLOMI_E2E_ROOT: ${{ github.workspace }}
-        run: ../../teamgramd/bin/reliability.test -test.count=1 -test.timeout 10m -test.v -test.run 'TestHiddenPrehistoryProtocolStack|TestReliability'
+        run: ../../teamgramd/bin/reliability.test -test.count=1 -test.timeout 8m -test.v -test.run 'TestReliability'
+
+      - name: Hidden prehistory protocol
+        working-directory: e2e/client
+        env:
+          TELLOMI_RELIABILITY_SKIP_BUILD: "1"
+          TELLOMI_E2E_ROOT: ${{ github.workspace }}
+        run: ../../teamgramd/bin/reliability.test -test.count=1 -test.timeout 4m -test.v -test.run 'TestHiddenPrehistoryProtocolStack$'
