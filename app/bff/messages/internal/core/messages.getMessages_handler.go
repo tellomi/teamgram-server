@@ -140,8 +140,13 @@ func (c *MessagesCore) MessagesGetMessages(in *mtproto.TLMessagesGetMessages) (*
 	grouped := map[peerKey][]*mtproto.Message{}
 	var order []peerKey
 	for _, m := range rValues.Messages {
+		// messageEmpty has no peer. FromPeer panics on nil, which turned a
+		// missing or deleted id into a 500 instead of the empty placeholder.
+		if m == nil || m.GetPeerId() == nil {
+			continue
+		}
 		p := mtproto.FromPeer(m.GetPeerId())
-		if p == nil || p.IsChannel() {
+		if p.IsChannel() {
 			continue
 		}
 		key := peerKey{p.PeerType, p.PeerId}
