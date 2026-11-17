@@ -31,6 +31,7 @@ import (
 	rpcmetadata "github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
+	"github.com/teamgram/teamgram-server/pkg/stagelog"
 
 	"github.com/zeromicro/go-zero/core/contextx"
 	"github.com/zeromicro/go-zero/core/logx"
@@ -453,7 +454,7 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 	switch c.sessList.cb.state {
 	case mtproto.AuthStateNormal:
 		if c.sessList.cb.bindingRevoked(ctx) {
-			c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(mtproto.ErrAuthKeyUnregistered))
+			c.replyUnauthorized(ctx, gatewayId, msgId.msgId)
 			msgId.state = RECEIVED | RESPONSE_GENERATED
 			return false
 		}
@@ -463,6 +464,11 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 			return false
 		}
 	case mtproto.AuthStateNeedPassword:
+		if c.sessList.cb.bindingRevoked(ctx) {
+			c.replyUnauthorized(ctx, gatewayId, msgId.msgId)
+			msgId.state = RECEIVED | RESPONSE_GENERATED
+			return false
+		}
 		if !checkRpcWithoutLogin(query) {
 			c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(mtproto.ErrSessionPasswordNeeded))
 			msgId.state = RECEIVED | RESPONSE_GENERATED
@@ -470,7 +476,11 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 		}
 	default:
 		if !checkRpcWithoutLogin(query) {
-			c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(rpcErrorForAuthState(c.sessList.cb.state)))
+			if authStateRevoked(c.sessList.cb.state) {
+				c.replyUnauthorized(ctx, gatewayId, msgId.msgId)
+			} else {
+				c.sendRpcResultToQueue(ctx, gatewayId, msgId.msgId, mtproto.NewRpcError(rpcErrorForAuthState(c.sessList.cb.state)))
+			}
 			msgId.state = RECEIVED | RESPONSE_GENERATED
 			return false
 		}
@@ -484,16 +494,20 @@ func (c *session) onRpcRequest(ctx context.Context, gatewayId, clientIp string, 
 
 	msgId.state = RECEIVED | RPC_PROCESSING
 
+	gw, enq, loop := stagelog.Marks(ctx)
 	c.sessList.cb.tmpRpcApiMessageList = append(
 		c.sessList.cb.tmpRpcApiMessageList,
 		&rpcApiMessage{
-			ctx:       contextx.ValueOnlyFrom(ctx),
-			sessList:  c.sessList,
-			sessionId: c.sessionId,
-			clientIp:  clientIp,
-			reqMsgId:  msgId.msgId,
-			reqMsg:    query,
-			takeout:   takeout,
+			ctx:        contextx.ValueOnlyFrom(ctx),
+			sessList:   c.sessList,
+			sessionId:  c.sessionId,
+			clientIp:   clientIp,
+			reqMsgId:   msgId.msgId,
+			reqMsg:     query,
+			takeout:    takeout,
+			gatewayAt:  gw,
+			enqueuedAt: enq,
+			loopAt:     loop,
 		})
 
 	return true
@@ -634,6 +648,8 @@ func (c *session) onRpcResult(ctx context.Context, rpcResult *rpcApiMessage) {
 			if authAuthorization != nil && authAuthorization.GetPredicateName() == mtproto.Predicate_auth_authorization && authAuthorization.GetUser() != nil {
 				c.sessList.cb.changeAuthState(ctx, mtproto.AuthStateNormal, authAuthorization.GetUser().GetId())
 			}
+		} else if rpcErr != nil {
+			c.acceptPasswordNeeded(ctx, rpcErr)
 		}
 	case *mtproto.TLAuthImportAuthorization:
 		if rpcErr == nil && c.sessList.cb.state == mtproto.AuthStateNeedPassword && rpcResult.rpcResult != nil && rpcResult.rpcResult.Result != nil {

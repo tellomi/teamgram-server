@@ -25,6 +25,21 @@ func TestGeoIPPathPrefersEnv(t *testing.T) {
 	}
 }
 
+func TestKeptAuthorizationHashSurvivesALiveRebind(t *testing.T) {
+	if keptAuthorizationHash(11, false, 99) != 11 {
+		t.Fatal("live hash replaced")
+	}
+	if keptAuthorizationHash(11, true, 99) != 99 {
+		t.Fatal("revoked row kept the old hash")
+	}
+	if keptAuthorizationHash(0, false, 99) != 99 {
+		t.Fatal("zero hash stayed zero")
+	}
+	if got := keptAuthorizationHash(0, true, 0); got == 0 {
+		t.Fatal("new login stored hash 0")
+	}
+}
+
 func TestBindDateCreatedRestartsOnlyAClearedRow(t *testing.T) {
 	now := int64(1_700_000_000)
 	if bindDateCreated(now-48*3600, now) != now-48*3600 {

@@ -85,11 +85,7 @@ func (c *AuthorizationCore) codes() *codelogin.Service {
 		},
 		SendSMS: func(ctx context.Context, phone, code string) (string, error) {
 			_ = ctx
-			tx := &model.PhoneCodeTransaction{PhoneCode: code, PhoneCodeHash: "p0"}
-			if err := c.sendSMS(phone, tx); err != nil {
-				return "", err
-			}
-			return tx.PhoneCode, nil
+			return c.deliverLoginSMS(phone, code)
 		},
 	})
 }

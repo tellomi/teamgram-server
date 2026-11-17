@@ -10,7 +10,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/phonehistory"
 	"github.com/teamgram/teamgram-server/app/bff/phone/secretchat"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
+	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accesshash"
 )
 
 // MessagesRequestEncryption
@@ -27,6 +29,9 @@ func (s *Service) MessagesRequestEncryption(ctx context.Context, in *mtproto.TLM
 	peer, err := s.secretPeer(ctx, md.GetUserId(), in.GetUserId())
 	if err != nil {
 		return nil, err
+	}
+	if _, allowSecret := phonecall.DeviceAllows(ctx, peer); !allowSecret {
+		return nil, mtproto.ErrUserPrivacyRestricted
 	}
 	chat, events, err := secretchat.Default().Request(md.GetUserId(), peer, in.GetRandomId(), in.GetGA(), now())
 	if err != nil {
@@ -116,10 +121,11 @@ func (s *Service) MessagesSendEncrypted(ctx context.Context, in *mtproto.TLMessa
 // messages.sendEncryptedFile#5559481d flags:# silent:flags.0?true peer:InputEncryptedChat random_id:long data:bytes file:InputEncryptedFile = messages.SentEncryptedMessage;
 // https://core.telegram.org/method/messages.sendEncryptedFile
 func (s *Service) MessagesSendEncryptedFile(ctx context.Context, in *mtproto.TLMessagesSendEncryptedFile) (*mtproto.Messages_SentEncryptedMessage, error) {
-	if _, err := s.md(ctx); err != nil {
+	md, err := s.md(ctx)
+	if err != nil {
 		return nil, err
 	}
-	file, err := encryptedFile(in.GetPeer(), in.GetFile())
+	file, err := encryptedFile(ctx, md.GetPermAuthKeyId(), in.GetPeer(), in.GetFile())
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +205,10 @@ func (s *Service) secretPeer(ctx context.Context, self int64, in *mtproto.InputU
 	if u.Deleted() {
 		return 0, mtproto.ErrInputUserDeactivated
 	}
-	if p.AccessHash != 0 && u.AccessHash() != 0 && p.AccessHash != u.AccessHash() {
+	// inputUserFromMessage has no hash. The bff gate already required the
+	// message to contain this user. A plain inputUser must match the hash
+	// stored on the user row once TELLOMI_ACCESS_HASH_ENFORCE=enforce.
+	if !accesshash.IsInputUserFromMessage(in) && !accesshash.AllowProvided(p.AccessHash, u.AccessHash()) {
 		return 0, mtproto.ErrUserIdInvalid
 	}
 	if err := s.blockedBy(ctx, self, p.PeerId); err != nil {
@@ -249,12 +258,30 @@ func now() int32 { return int32(time.Now().Unix()) }
 // first. inputEncryptedFile refers to that stored object so the peer receives
 // size, dc_id, and key_fingerprint. An id this process has not stored is echoed
 // the way it was before uploads were kept.
-func encryptedFile(peer *mtproto.InputEncryptedChat, in *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
+func encryptedFile(ctx context.Context, creator int64, peer *mtproto.InputEncryptedChat, in *mtproto.InputEncryptedFile) (*mtproto.EncryptedFile, error) {
 	if in == nil || in.GetPredicateName() == "" || in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileEmpty || in.GetId() == 0 {
 		return nil, mtproto.ErrFileEmtpy
 	}
 	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileUploaded && !md5Hex(in.GetMd5Checksum()) {
 		return nil, mtproto.ErrCheckSumInvalid
+	}
+	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileUploaded || in.GetPredicateName() == mtproto.Predicate_inputEncryptedFileBigUploaded {
+		if secretchat.Materialize != nil {
+			out, err := secretchat.Materialize(ctx, creator, peer.GetChatId(), in)
+			if err != nil {
+				return nil, err
+			}
+			if out != nil && out.GetId() != 0 {
+				if out.GetKeyFingerprint() == 0 {
+					out.KeyFingerprint = in.GetKeyFingerprint()
+				}
+				if out.GetDcId() == 0 {
+					out.DcId = 1
+				}
+				secretchat.Default().RememberEncrypted(peer.GetChatId(), out)
+				return out, nil
+			}
+		}
 	}
 	if in.GetPredicateName() == mtproto.Predicate_inputEncryptedFile {
 		if kept, chatID, ok := secretchat.Default().LookupEncrypted(in.GetId()); ok {

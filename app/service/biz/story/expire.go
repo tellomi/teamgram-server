@@ -63,6 +63,7 @@ func (s *Service) ReleaseExpired(ctx context.Context) {
 		return
 	}
 	now := s.now()
+	s.indexStoryMediaPage(ctx)
 	s.repairMySQLAdverts(ctx)
 	s.reconcilePersisted(ctx)
 	s.repairUnboundLives(ctx)
@@ -339,6 +340,16 @@ func (s *Service) pushAdvert(ctx context.Context, userID int64, max int32) error
 // repairMySQLAdverts drops caches recorded in story_advert_dirty, then one
 // page of live-story mismatches and one page of non-zero advertisements.
 // Each page is at most advertPage rows. A short page restarts that cursor.
+func (s *Service) indexStoryMediaPage(ctx context.Context) {
+	ms, ok := s.store.(*mysqlStore)
+	if !ok || ms == nil {
+		return
+	}
+	if err := ms.indexMissing(ctx, 32); err != nil && !errors.Is(err, errAdvertSchema) {
+		logx.WithContext(ctx).Errorf("story: index media: %v", err)
+	}
+}
+
 func (s *Service) repairMySQLAdverts(ctx context.Context) {
 	s.repairMySQLAdvertsLimit(ctx, advertPage)
 }

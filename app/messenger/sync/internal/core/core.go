@@ -194,7 +194,107 @@ func (c *SyncCore) processUpdates(syncType SyncType, userId int64, isBot bool, u
 			// carries the same update from the reaction store, not from pts.
 			needPush = true
 		},
+		mtproto.Predicate_updateUserName: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// account.updateProfile must reach the account's other sessions
+			// and the contacts who were pushed this update. needPush also
+			// wakes a background session that is not in the online list.
+			needPush = true
+		},
+		mtproto.Predicate_updateUser: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateNotifySettings: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// account.updateNotifySettings must reach the user's other
+			// sessions. needPush also wakes a background Android session.
+			needPush = true
+		},
 		mtproto.Predicate_updatePeerSettings: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateDialogPinned: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// messages.toggleDialogPin must reach the account's other
+			// sessions, including a background Android socket. The chats
+			// vector is already on the updates object.
+			needPush = true
+		},
+		mtproto.Predicate_updatePinnedDialogs: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateNewQuickReply: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			// Quick-reply constructors have no pts. needPush wakes a
+			// background session; online sessions are written either way.
+			needPush = true
+		},
+		mtproto.Predicate_updateQuickReplyMessage: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateQuickReplies: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateDeleteQuickReply: func(
+			userId int64,
+			update *mtproto.Update,
+			users []*mtproto.User,
+			chats []*mtproto.Chat,
+			date int32,
+		) {
+			needPush = true
+		},
+		mtproto.Predicate_updateDeleteQuickReplyMessages: func(
 			userId int64,
 			update *mtproto.Update,
 			users []*mtproto.User,

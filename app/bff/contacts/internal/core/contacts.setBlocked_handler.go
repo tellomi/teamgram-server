@@ -21,6 +21,7 @@ package core
 import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/contacts/book"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
@@ -127,6 +128,17 @@ func (c *ContactsCore) replaceMainBlocks(peers []*mtproto.PeerUtil) (*mtproto.Bo
 			PeerId:   id,
 		})
 		c.pushBlocked(peer, true, false)
+	}
+	changed := []int64{c.MD.UserId}
+	for id := range have {
+		changed = append(changed, id)
+	}
+	for id := range want {
+		changed = append(changed, id)
+	}
+	if err := statusbook.Shared().Forget(c.ctx, changed...); err != nil {
+		c.Logger.Errorf("contacts.setBlocked forget audience: %v", err)
+		return nil, err
 	}
 	return mtproto.BoolTrue, nil
 }

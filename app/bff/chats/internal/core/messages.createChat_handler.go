@@ -26,15 +26,17 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/chattitle"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, ttlPeriod *wrapperspb.Int32Value) (*mtproto.Messages_InvitedUsers, error) {
+func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, ttlPeriod *wrapperspb.Int32Value, updatesOnly bool) (*mtproto.Messages_InvitedUsers, error) {
 	var chatUserIdList []int64
 
 	// check chat title
+	chatTitle = chattitle.Clip(chatTitle)
 	if chatTitle == "" {
 		err := mtproto.ErrChatTitleEmpty
 		c.Logger.Errorf("messages.createChat - error: %v", err)
@@ -53,6 +55,21 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 		err := mtproto.ErrUsersTooMuch
 		c.Logger.Errorf("messages.createChat - error: %v", err)
 		return nil, err
+	}
+
+	// Tellomi Android (MessagesController.createChat) sets flags.0 and sends
+	// ttl_period even when the picker is Off. Official Telegram writes no
+	// messageActionSetMessagesTTL for 0, and Android renders period 0 plus
+	// auto_setting_from as "self-destruct timer set for all chats, delete
+	// after 0 seconds".
+	period, err := normalizeCreateTTL(ttlPeriod)
+	if err != nil {
+		c.Logger.Errorf("messages.createChat - error: %v", err)
+		return nil, err
+	}
+	var storedTTL *wrapperspb.Int32Value
+	if period > 0 {
+		storedTTL = wrapperspb.Int32(period)
 	}
 
 	seen := map[int64]struct{}{c.MD.UserId: {}}
@@ -136,13 +153,17 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 	for _, miss := range missingInvitees {
 		c.Logger.Errorf("chatInvite privacy, not adding %d", miss.GetUserId())
 	}
+	userAddList, missingInvitees = c.omitRestrictedCreateMembers(userAddList, missingInvitees)
+	if err := legacyCreatePrivacyError(updatesOnly, userAddList, botAddList, missingInvitees); err != nil {
+		return nil, err
+	}
 
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatCreateChat2(c.ctx, &chatpb.TLChatCreateChat2{
 		CreatorId:  c.MD.UserId,
 		UserIdList: userAddList,
 		Title:      chatTitle,
 		Bots:       botAddList,
-		TtlPeriod:  ttlPeriod,
+		TtlPeriod:  storedTTL,
 	})
 	if err != nil {
 		c.Logger.Errorf("createChat duplicate: %v", err)
@@ -175,12 +196,16 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 					Users:            append(userAddList, botAddList...),
 				}).To_MessageAction(),
 				Reactions: nil,
-				TtlPeriod: ttlPeriod,
+				TtlPeriod: storedTTL,
 			}).To_Message(),
 			ScheduleDate: nil,
 		}).To_OutboxMessage(),
 	}
-	if ttlPeriod != nil {
+	var accountDefault int32
+	if period > 0 {
+		accountDefault = c.accountDefaultTTL()
+	}
+	if action := createTTLAction(period, accountDefault, c.MD.UserId); action != nil {
 		outMessages = append(outMessages, msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
 			NoWebpage:  true,
 			Background: false,
@@ -199,12 +224,9 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 				SavedPeerId:          nil,
 				ReplyTo:              nil,
 				Date:                 int32(time.Now().Unix()),
-				Action: mtproto.MakeTLMessageActionSetMessagesTTL(&mtproto.MessageAction{
-					Period:          ttlPeriod.Value,
-					AutoSettingFrom: mtproto.MakeFlagsInt64(c.MD.UserId),
-				}).To_MessageAction(),
-				Reactions: nil,
-				TtlPeriod: nil,
+				Action:               action,
+				Reactions:            nil,
+				TtlPeriod:            nil,
 			}).To_Message(),
 			ScheduleDate: nil,
 		}).To_OutboxMessage())

@@ -81,6 +81,17 @@ func (p *PeerUtil) CanDoSendMessage() bool {
 	}
 }
 
+// ResolveFromMessage reports whether input*FromMessage should yield the
+// referenced id. A nil function keeps the historical behavior: the id is
+// dropped. The bff access-hash gate sets this while
+// TELLOMI_ACCESS_HASH_ENFORCE=enforce, after it has checked that the
+// message really refers to that user or channel.
+var ResolveFromMessage func() bool
+
+func fromMessageResolves() bool {
+	return ResolveFromMessage != nil && ResolveFromMessage()
+}
+
 func FromInputUser(selfId int64, user *InputUser) (p *PeerUtil) {
 	p = &PeerUtil{}
 	switch user.PredicateName {
@@ -94,9 +105,12 @@ func FromInputUser(selfId int64, user *InputUser) (p *PeerUtil) {
 		p.PeerId = user.UserId
 		p.AccessHash = user.GetAccessHash()
 	case Predicate_inputUserFromMessage:
-		//p.PeerType = PEER_USER
-		//p.PeerId = user.UserId
-		//p.AccessHash = user.GetAccessHash()
+		// Min users carry no access_hash. The id is resolved only after the
+		// bff gate has checked the message (see ResolveFromMessage).
+		if fromMessageResolves() {
+			p.PeerType = PEER_USER
+			p.PeerId = user.UserId
+		}
 	default:
 		p.PeerType = PEER_EMPTY
 		// panic(fmt.Sprintf("FromInputUser(%v) error!", user))
@@ -122,6 +136,18 @@ func FromInputPeer(peer *InputPeer) (p *PeerUtil) {
 		p.PeerType = PEER_CHANNEL
 		p.PeerId = peer.ChannelId
 		p.AccessHash = peer.AccessHash
+	case Predicate_inputPeerUserFromMessage:
+		if !fromMessageResolves() {
+			panic(fmt.Sprintf("FromInputPeer(%v) error!", peer))
+		}
+		p.PeerType = PEER_USER
+		p.PeerId = peer.UserId
+	case Predicate_inputPeerChannelFromMessage:
+		if !fromMessageResolves() {
+			panic(fmt.Sprintf("FromInputPeer(%v) error!", peer))
+		}
+		p.PeerType = PEER_CHANNEL
+		p.PeerId = peer.ChannelId
 	default:
 		panic(fmt.Sprintf("FromInputPeer(%v) error!", peer))
 	}
@@ -149,6 +175,20 @@ func FromInputPeer2(selfId int64, peer *InputPeer) (p *PeerUtil) {
 		p.PeerType = PEER_CHANNEL
 		p.PeerId = peer.ChannelId
 		p.AccessHash = peer.AccessHash
+	case Predicate_inputPeerUserFromMessage:
+		if fromMessageResolves() {
+			p.PeerType = PEER_USER
+			p.PeerId = peer.UserId
+		} else {
+			p.PeerType = PEER_UNKNOWN
+		}
+	case Predicate_inputPeerChannelFromMessage:
+		if fromMessageResolves() {
+			p.PeerType = PEER_CHANNEL
+			p.PeerId = peer.ChannelId
+		} else {
+			p.PeerType = PEER_UNKNOWN
+		}
 	default:
 		p.PeerType = PEER_UNKNOWN
 	}
@@ -303,8 +343,27 @@ func (p *PeerUtil) IsSelfUser(id int64) bool {
 }
 
 func FromInputNotifyPeer(selfId int64, peer *InputNotifyPeer) (p *PeerUtil) {
+	p, _ = ParseInputNotifyPeer(selfId, peer)
+	return
+}
+
+// ParseInputNotifyPeer reads an account.*NotifySettings peer.
+// topMsgId is the forum topic id from inputNotifyForumTopic. Zero is the
+// dialog itself or a users/chats/broadcasts scope.
+func ParseInputNotifyPeer(selfId int64, peer *InputNotifyPeer) (p *PeerUtil, topMsgId int32) {
 	p = &PeerUtil{}
+	if peer == nil {
+		p.PeerType = PEER_UNKNOWN
+		return
+	}
 	switch peer.PredicateName {
+	case Predicate_inputNotifyForumTopic:
+		topMsgId = peer.GetTopMsgId()
+		if peer.GetPeer() == nil {
+			p.PeerType = PEER_UNKNOWN
+			return
+		}
+		p = FromInputPeer2(selfId, peer.GetPeer())
 	case Predicate_inputNotifyPeer:
 		p = FromInputPeer2(selfId, peer.Peer)
 	case Predicate_inputNotifyUsers:
@@ -314,7 +373,6 @@ func FromInputNotifyPeer(selfId int64, peer *InputNotifyPeer) (p *PeerUtil) {
 	case Predicate_inputNotifyBroadcasts:
 		p.PeerType = PEER_BROADCASTS
 	default:
-		// log.Errorf("fromInputNotifyPeer: invalid peer - %v", peer)
 		p.PeerType = PEER_UNKNOWN
 	}
 	return
@@ -391,6 +449,21 @@ func (p *PeerUtil) ToNotifyPeer() (peer *NotifyPeer) {
 		panic(fmt.Sprintf("ToNotifyPeer(%v) error!", p))
 	}
 	return
+}
+
+// NotifyPeerWithTopic builds the NotifyPeer other sessions receive.
+// A positive topMsgId is notifyForumTopic. Zero is the dialog or a global scope.
+func NotifyPeerWithTopic(p *PeerUtil, topMsgId int32) *NotifyPeer {
+	if p == nil {
+		panic("NotifyPeerWithTopic(nil)")
+	}
+	if topMsgId <= 0 {
+		return p.ToNotifyPeer()
+	}
+	return MakeTLNotifyForumTopic(&NotifyPeer{
+		Peer:     p.ToPeer(),
+		TopMsgId: topMsgId,
+	}).To_NotifyPeer()
 }
 
 func ToPeerByTypeAndID(peerType int32, peerId int64) (peer *Peer) {

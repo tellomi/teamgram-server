@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
 	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 )
@@ -44,6 +45,60 @@ ON DUPLICATE KEY UPDATE data=VALUES(data)`, key, raw)
 	return err
 }
 
+// SaveIf replaces key only when the stored bytes are still prev.
+// An empty prev inserts. A lost compare returns false and leaves the row.
+// Every quick: writer uses this. Save remains for other document keys.
+func (s sqlDocs) SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error) {
+	if len(prev) == 0 {
+		_, err := s.db.ExecContext(ctx, `INSERT INTO chatbox_doc (doc_key, data) VALUES (?,?)`, key, next)
+		if err == nil {
+			return true, nil
+		}
+		if dup, ok := err.(*mysqldriver.MySQLError); ok && dup.Number == 1062 {
+			return false, nil
+		}
+		return false, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE chatbox_doc SET data=? WHERE doc_key=? AND data=?`, next, key, prev)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	// MySQL's default count is changed rows. An UPDATE that matches and
+	// writes the same bytes returns 0. That is not a lost compare.
+	cur, ok, err := s.Load(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	return quickCASApplied(0, cur, next), nil
+}
+
+func (s sqlDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT doc_key FROM chatbox_doc WHERE doc_key LIKE ?`, prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 const docSchema = `
 CREATE TABLE IF NOT EXISTS chatbox_doc (
   doc_key VARCHAR(191) NOT NULL PRIMARY KEY,
@@ -57,30 +112,34 @@ CREATE TABLE IF NOT EXISTS chatbox_doc (
 // translation flags, and saved-message reaction tags. User reports go to
 // biz/report. Delivery, listen, and read signals stay in this book.
 type Book struct {
-	mu        sync.Mutex
-	db        docDB
-	sched     map[string]*schedDoc
-	polls     map[int64]*pollDoc
-	pollIdx   map[string]int64
-	pollPeer  map[string][]int64
-	react     map[string]*reactDoc
-	def       map[int64]string
-	bots      map[int64]*botState
-	queries   map[int64]*inlineQuery
-	attach    map[int64]*attachDoc
-	prepared  map[string]*preparedDoc
-	webviews  map[int64]*webSession
-	callbacks map[string]*callbackAnswer
-	cbBind    map[int64]*callbackBind
-	sent      map[string][]byte
-	quick     map[int64]*quickDoc
-	plain     map[string]*plainDoc
-	transOff  map[string]bool
-	tags      map[int64]*tagDoc
-	paid      map[string][]*mtproto.MessageExtendedMedia
-	signals   []reportItem
-	ids       msgIDMap
-	now       func() time.Time
+	mu         sync.Mutex
+	db         docDB
+	sched      map[string]*schedDoc
+	polls      map[int64]*pollDoc
+	pollIdx    map[string]int64
+	pollDlg    map[int64]int64
+	pollPeer   map[string][]int64
+	react      map[string]*reactDoc
+	def        map[int64]string
+	bots       map[int64]*botState
+	queries    map[int64]*inlineQuery
+	attach     map[int64]*attachDoc
+	prepared   map[string]*preparedDoc
+	webviews   map[int64]*webSession
+	callbacks  map[string]*callbackAnswer
+	cbBind     map[int64]*callbackBind
+	sent       map[string][]byte
+	quick      map[int64]*quickDoc
+	plain      map[string]*plainDoc
+	transOff   map[string]bool
+	tags       map[int64]*tagDoc
+	paid       map[string][]*mtproto.MessageExtendedMedia
+	signals    []reportItem
+	ids        msgIDMap
+	due        []dueRef
+	dueIndexed bool
+	protect    map[string]bool
+	now        func() time.Time
 }
 
 func newBook(db docDB) *Book {
@@ -89,6 +148,7 @@ func newBook(db docDB) *Book {
 		sched:     map[string]*schedDoc{},
 		polls:     map[int64]*pollDoc{},
 		pollIdx:   map[string]int64{},
+		pollDlg:   map[int64]int64{},
 		pollPeer:  map[string][]int64{},
 		react:     map[string]*reactDoc{},
 		def:       map[int64]string{},
@@ -104,6 +164,7 @@ func newBook(db docDB) *Book {
 		plain:     map[string]*plainDoc{},
 		transOff:  map[string]bool{},
 		tags:      map[int64]*tagDoc{},
+		protect:   map[string]bool{},
 		paid:      map[string][]*mtproto.MessageExtendedMedia{},
 		now:       time.Now,
 	}
@@ -130,6 +191,24 @@ func ResetShared() {
 	regMu.Lock()
 	shared = newBook(nil)
 	regMu.Unlock()
+}
+
+// SwapShared installs next as the process book and returns a restore.
+// A nil next installs an empty in-memory book. The swap does not write the
+// previous book, including one UseDSN attached to MySQL.
+func SwapShared(next *Book) (restore func()) {
+	if next == nil {
+		next = newBook(nil)
+	}
+	regMu.Lock()
+	prev := shared
+	shared = next
+	regMu.Unlock()
+	return func() {
+		regMu.Lock()
+		shared = prev
+		regMu.Unlock()
+	}
 }
 
 // UseDSN opens MySQL when dsn or TEAMGRAM_MYSQL_DSN is set.

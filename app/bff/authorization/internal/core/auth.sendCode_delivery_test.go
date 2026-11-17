@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/svc"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/model"
@@ -48,6 +49,163 @@ func newDeliveryCore(provider string, sender *scriptedSender) *AuthorizationCore
 			}},
 		},
 		Logger: logx.WithContext(ctx),
+	}
+}
+
+func TestOfficialPhoneCodeKind(t *testing.T) {
+	if got := officialPhoneCodeKind("", false); got != model.SentCodeTypeNone {
+		t.Fatalf("default %d", got)
+	}
+	if got := officialPhoneCodeKind("user@tellomi.app", false); got != model.SentCodeTypeEmailCode {
+		t.Fatalf("email %d", got)
+	}
+	if got := officialPhoneCodeKind("", true); got != model.SentCodeTypeSetUpEmailRequired {
+		t.Fatalf("setup %d", got)
+	}
+	if got := officialPhoneCodeKind("user@tellomi.app", true); got != model.SentCodeTypeEmailCode {
+		t.Fatalf("email wins over setup %d", got)
+	}
+}
+
+func TestFinishSendCodeLoginEmailSkipsTestSMS(t *testing.T) {
+	phonenumber.SetTestPhoneRanges(nil)
+	t.Cleanup(func() { phonenumber.SetTestPhoneRanges(nil) })
+
+	sender := &scriptedSender{}
+	mail := &recordMail{}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.EmailSender = mail
+	c.svcCtx.Verify.Email.Provider = verify.ProviderLog
+	c.svcCtx.Verify.Email.CodeLength = 6
+	c.svcCtx.LoginEmail = func(_ context.Context, userID int64) (string, error) {
+		if userID == 42 {
+			return "user@tellomi.app", nil
+		}
+		return "", nil
+	}
+	codeData := &model.PhoneCodeTransaction{
+		State:         model.CodeStateSend,
+		PhoneCode:     "00000",
+		PhoneCodeHash: "hash",
+	}
+	user := &mtproto.ImmutableUser{User: &mtproto.UserData{Id: 42}}
+	if err := c.finishSendCode("9996612345", true, user, codeData); err != nil {
+		t.Fatal(err)
+	}
+	if sender.called {
+		t.Fatal("a phone with a login email called the SMS provider")
+	}
+	if mail.n != 1 || mail.to != "user@tellomi.app" {
+		t.Fatalf("mail %#v", mail)
+	}
+	if codeData.SentCodeType != model.SentCodeTypeEmailCode || codeData.PhoneCode == "11111" || codeData.EmailPattern != "u***@tellomi.app" {
+		t.Fatalf("%+v", codeData)
+	}
+	sent := codeData.ToAuthSentCode()
+	if sent.GetType().GetPredicateName() != mtproto.Predicate_auth_sentCodeTypeEmailCode || sent.GetType().GetLength() != 6 {
+		t.Fatalf("%+v", sent.GetType())
+	}
+}
+
+func TestFinishSendCodeSetupRequiredSkipsSMS(t *testing.T) {
+	phonenumber.SetTestPhoneRanges(nil)
+	t.Cleanup(func() { phonenumber.SetTestPhoneRanges(nil) })
+
+	sender := &scriptedSender{block: true}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.Verify.Email.Provider = verify.ProviderLog
+	c.svcCtx.Verify.Email.SetupRequired = true
+	codeData := &model.PhoneCodeTransaction{
+		State:         model.CodeStateSend,
+		PhoneCode:     "123456",
+		PhoneCodeHash: "hash",
+	}
+	if err := c.finishSendCode("9996610182", false, nil, codeData); err != nil {
+		t.Fatal(err)
+	}
+	if sender.called {
+		t.Fatal("setup-required send called the SMS provider")
+	}
+	if codeData.SentCodeType != model.SentCodeTypeSetUpEmailRequired || codeData.PhoneCode != "" || codeData.State != model.CodeStateSent {
+		t.Fatalf("%+v", codeData)
+	}
+	sent := codeData.ToAuthSentCode()
+	if sent.GetType().GetPredicateName() != mtproto.Predicate_auth_sentCodeTypeSetUpEmailRequired || sent.GetPhoneCodeHash() != "hash" || sent.GetTimeout() != nil {
+		t.Fatalf("%+v", sent)
+	}
+}
+
+func TestFinishSendCodeSetupFlagOffKeepsTestSMS(t *testing.T) {
+	phonenumber.SetTestPhoneRanges(nil)
+	t.Cleanup(func() { phonenumber.SetTestPhoneRanges(nil) })
+
+	sender := &scriptedSender{block: true}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.Verify.Email.Provider = verify.ProviderLog
+	c.svcCtx.Verify.Email.SetupRequired = false
+	codeData := &model.PhoneCodeTransaction{
+		State:         model.CodeStateSend,
+		PhoneCode:     "00000",
+		PhoneCodeHash: "hash",
+	}
+	if err := c.finishSendCode("9996610182", false, nil, codeData); err != nil {
+		t.Fatal(err)
+	}
+	if sender.called {
+		t.Fatal("99966 number called the SMS provider")
+	}
+	if codeData.PhoneCode != "11111" || codeData.SentCodeType != model.SentCodeTypeSms {
+		t.Fatalf("%+v", codeData)
+	}
+}
+
+func TestFinishSendCodeDisabledMailerIgnoresSetupFlag(t *testing.T) {
+	phonenumber.SetTestPhoneRanges(nil)
+	t.Cleanup(func() { phonenumber.SetTestPhoneRanges(nil) })
+
+	sender := &scriptedSender{}
+	c := newDeliveryCore(verify.ProviderFixed, sender)
+	c.svcCtx.Verify.Email.Provider = ""
+	c.svcCtx.Verify.Email.SetupRequired = true
+	codeData := &model.PhoneCodeTransaction{
+		State:         model.CodeStateSend,
+		PhoneCode:     "12345",
+		PhoneCodeHash: "hash",
+	}
+	if err := c.finishSendCode("8613800138000", false, nil, codeData); err != nil {
+		t.Fatal(err)
+	}
+	if !sender.called || codeData.SentCodeType != model.SentCodeTypeSms {
+		t.Fatalf("called %v %+v", sender.called, codeData)
+	}
+}
+
+func TestFinishSendCodeLoginEmailLookupErrorDoesNotSendSMS(t *testing.T) {
+	sender := &scriptedSender{}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	c.svcCtx.Verify.SMS.Countries = []string{"86"}
+	c.svcCtx.LoginEmail = func(context.Context, int64) (string, error) {
+		return "", mtproto.ErrInternalServerError
+	}
+	user := &mtproto.ImmutableUser{User: &mtproto.UserData{Id: 7}}
+	codeData := &model.PhoneCodeTransaction{State: model.CodeStateSend, PhoneCode: "123456", PhoneCodeHash: "hash"}
+	err := c.finishSendCode("8613800138000", true, user, codeData)
+	if sender.called {
+		t.Fatal("lookup error still sent SMS")
+	}
+	if rpcErrorCode(err) != "INTERNAL_SERVER_ERROR" {
+		t.Fatalf("error %v", err)
+	}
+}
+
+func TestDeliverLoginSMSKeepsTestPhoneCode(t *testing.T) {
+	phonenumber.SetTestPhoneRanges(nil)
+	t.Cleanup(func() { phonenumber.SetTestPhoneRanges(nil) })
+	sender := &scriptedSender{block: true}
+	c := newDeliveryCore(verify.ProviderAliyun, sender)
+	got, err := c.deliverLoginSMS("9996610182", "654321")
+	if err != nil || got != "11111" || sender.called {
+		t.Fatalf("got %q called %v err %v", got, sender.called, err)
 	}
 }
 
@@ -216,6 +374,19 @@ func clearQuotaCooldown(kv *countKV, kind, target string) {
 		return
 	}
 	delete(kv.m, "tellomi:code:cd:"+kind+":"+target)
+}
+
+type recordMail struct {
+	n    int
+	to   string
+	code string
+}
+
+func (m *recordMail) SendCode(_ context.Context, to, code string) error {
+	m.n++
+	m.to = to
+	m.code = code
+	return nil
 }
 
 type countingMail struct{ n int }

@@ -24,6 +24,8 @@ import (
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	dfs_client "github.com/teamgram/teamgram-server/app/service/dfs/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
+
+	"github.com/zeromicro/go-zero/zrpc"
 )
 
 type Dao struct {
@@ -33,9 +35,22 @@ type Dao struct {
 }
 
 func New(c config.Config) *Dao {
-	return &Dao{
-		DfsClient:   dfs_client.NewDfsClient(rpcx.GetCachedRpcClient(c.DfsClient)),
-		MediaClient: media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient)),
-		UserClient:  user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient)),
+	d := &Dao{}
+	// An empty client conf is the combined-BFF unit test and a process that
+	// has not been given endpoints. GetCachedRpcClient panics in that case,
+	// and a dial is not required to install story media hooks.
+	if rpcConfigured(c.DfsClient) {
+		d.DfsClient = dfs_client.NewDfsClient(rpcx.GetCachedRpcClient(c.DfsClient))
 	}
+	if rpcConfigured(c.MediaClient) {
+		d.MediaClient = media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient))
+	}
+	if rpcConfigured(c.UserClient) {
+		d.UserClient = user_client.NewUserClient(rpcx.GetCachedRpcClient(c.UserClient))
+	}
+	return d
+}
+
+func rpcConfigured(c zrpc.RpcClientConf) bool {
+	return c.Etcd.Key != "" || len(c.Endpoints) > 0
 }

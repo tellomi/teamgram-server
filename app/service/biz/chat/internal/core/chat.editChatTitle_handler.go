@@ -16,6 +16,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/pkg/chattitle"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 )
 
@@ -30,7 +31,8 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 		chatId, editUserId = in.ChatId, in.EditUserId
 	)
 
-	if in.Title == "" {
+	title := chattitle.Clip(in.Title)
+	if title == "" {
 		err = mtproto.ErrChatTitleEmpty
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, err
@@ -41,12 +43,12 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, err
 	}
-	if chat2.Chat.Title == in.Title {
+	if chat2.Chat.Title == title {
 		err = mtproto.ErrChatNotModified
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, err
 	}
-	if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, chatId, in.Title); err != nil {
+	if err = usernamepolicy.RejectDisplay(c.ctx, mtproto.PEER_CHAT, chatId, title); err != nil {
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, mtproto.ErrFirstnameInvalid
 	}
@@ -58,9 +60,10 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 		return nil, err
 	}
 
-	// TODO(@benqi): check
+	// Creator, or an admin with change_info, or a member who is not banned
+	// by default_banned_rights.change_info.
 	// 400	CHAT_ADMIN_REQUIRED	You must be an admin in this chat to do this
-	if !me.CanChangeInfo() {
+	if !mtproto.ChatParticipantMayChangeInfo(me, chat2.DefaultBannedRights(), int32(now)) {
 		err = mtproto.ErrChatAdminRequired
 		c.Logger.Errorf("chat.editChatTitle - error: %v", err)
 		return nil, err
@@ -69,7 +72,7 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 	_, _, err = c.svcCtx.Dao.CachedConn.Exec(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			rowAffected, err2 := c.svcCtx.Dao.ChatsDAO.UpdateTitle(c.ctx, in.Title, chatId)
+			rowAffected, err2 := c.svcCtx.Dao.ChatsDAO.UpdateTitle(c.ctx, title, chatId)
 			return 0, rowAffected, err2
 		},
 		c.svcCtx.Dao.GetChatCacheKey(chatId))
@@ -78,7 +81,7 @@ func (c *ChatCore) ChatEditChatTitle(in *chat.TLChatEditChatTitle) (*mtproto.Mut
 		return nil, err
 	}
 
-	chat2.Chat.Title = in.Title
+	chat2.Chat.Title = title
 	chat2.Chat.Version += 1
 	chat2.Chat.Date = now
 	return chat2, nil

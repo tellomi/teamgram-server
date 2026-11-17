@@ -1,12 +1,14 @@
 package channel
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/invite"
 )
 
 func TestInviteLinkFamily(t *testing.T) {
@@ -177,6 +179,83 @@ func TestInviteLinkFamily(t *testing.T) {
 	if _, err := svc.ExportInvite(ctx, 1, inCh(news.Chats[0]), ExportRequest{LegacyRevokePermanent: true}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestUsageLimitZeroIsUnlimited(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Open")
+	in := inCh(ch)
+
+	open, err := svc.ExportInvite(ctx, 1, in, ExportRequest{Usage: 0, UsageSet: true, Title: "不限", TitleSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if open.GetUsageLimit() != nil || open.GetPermanent() {
+		t.Fatalf("android no-limit export %+v", open)
+	}
+	if bit := exportedUsageBit(t, open); bit != 0 {
+		t.Fatalf("chatInviteExported usage_limit flag %#x", bit)
+	}
+	hash := strings.TrimPrefix(open.GetLink(), brand.LinkBase()+"/+")
+	if _, err := svc.ImportInvite(ctx, 2, 0, hash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ImportInvite(ctx, 3, 0, hash); err != nil {
+		t.Fatalf("second join on unlimited link: %v", err)
+	}
+	reloaded, err := svc.ExportedInvite(ctx, 1, in, open.GetLink())
+	if err != nil || reloaded.GetUsageLimit() != nil {
+		t.Fatalf("reloaded %+v %v", reloaded, err)
+	}
+
+	capped, err := svc.ExportInvite(ctx, 1, in, ExportRequest{Usage: invite.UsageMax, UsageSet: true})
+	if err != nil || capped.GetUsageLimit().GetValue() != invite.UsageMax {
+		t.Fatalf("max %+v %v", capped, err)
+	}
+	if _, err := svc.ExportInvite(ctx, 1, in, ExportRequest{Usage: -1, UsageSet: true}); err == nil || !strings.Contains(err.Error(), "USAGE_LIMIT_INVALID") {
+		t.Fatalf("negative export: %v", err)
+	}
+	if _, err := svc.ExportInvite(ctx, 1, in, ExportRequest{Usage: invite.UsageMax + 1, UsageSet: true}); err == nil || !strings.Contains(err.Error(), "USAGE_LIMIT_INVALID") {
+		t.Fatalf("over-max export: %v", err)
+	}
+
+	edited, err := svc.EditInvite(ctx, 1, in, EditRequest{Link: capped.GetLink(), Usage: int32ptr(0)})
+	if err != nil || len(edited) != 1 || edited[0].GetUsageLimit() != nil {
+		t.Fatalf("edit to unlimited %+v %v", edited, err)
+	}
+	if bit := exportedUsageBit(t, edited[0]); bit != 0 {
+		t.Fatalf("edited usage_limit flag %#x", bit)
+	}
+	capHash := strings.TrimPrefix(capped.GetLink(), brand.LinkBase()+"/+")
+	if _, err := svc.ImportInvite(ctx, 4, 0, capHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ImportInvite(ctx, 5, 0, capHash); err != nil {
+		t.Fatalf("join after clearing the limit: %v", err)
+	}
+	if _, err := svc.EditInvite(ctx, 1, in, EditRequest{Link: capped.GetLink(), Usage: int32ptr(-1)}); err == nil || !strings.Contains(err.Error(), "USAGE_LIMIT_INVALID") {
+		t.Fatalf("negative edit: %v", err)
+	}
+	if _, err := svc.EditInvite(ctx, 1, in, EditRequest{Link: capped.GetLink(), Usage: int32ptr(invite.UsageMax + 1)}); err == nil || !strings.Contains(err.Error(), "USAGE_LIMIT_INVALID") {
+		t.Fatalf("over-max edit: %v", err)
+	}
+	still, err := svc.ExportedInvite(ctx, 1, in, capped.GetLink())
+	if err != nil || still.GetUsageLimit() != nil {
+		t.Fatalf("rejected edit must leave the link unlimited %+v %v", still, err)
+	}
+}
+
+func exportedUsageBit(t *testing.T, inv *mtproto.ExportedChatInvite) uint32 {
+	t.Helper()
+	buf := mtproto.NewEncodeBuf(256)
+	if err := inv.Encode(buf, 232); err != nil {
+		t.Fatal(err)
+	}
+	raw := buf.GetBuf()
+	if len(raw) < 8 {
+		t.Fatalf("short encoding %d", len(raw))
+	}
+	return binary.LittleEndian.Uint32(raw[4:8]) & (1 << 2)
 }
 
 func int32ptr(v int32) *int32 { return &v }

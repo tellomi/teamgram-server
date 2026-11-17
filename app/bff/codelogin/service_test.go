@@ -213,6 +213,64 @@ func TestVerifyEmailExpired(t *testing.T) {
 	}
 }
 
+func TestPhoneAccountCanBindFirstLoginEmail(t *testing.T) {
+	svc, _, emails, _, _ := harness(t)
+	ctx := context.Background()
+	withIdentity(t, svc, func(int64) string { return "" }, func(string) int64 { return 0 })
+	sent, err := svc.SendVerifyEmailCode(ctx, 4, 9, &mtproto.TLAccountSendVerifyEmailCode{
+		Purpose: changePurpose(),
+		Email:   "Phone@Tellomi.app",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent.GetEmailPattern() != "p***@tellomi.app" || len(*emails) != 1 {
+		t.Fatalf("%#v %#v", sent, *emails)
+	}
+	verified, err := svc.VerifyEmail(ctx, 4, 9, &mtproto.TLAccountVerifyEmail32DA4CF{
+		Purpose:      changePurpose(),
+		Verification: codeVer((*emails)[0].code),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.GetPredicateName() != mtproto.Predicate_account_emailVerified || verified.GetEmail() != "phone@tellomi.app" {
+		t.Fatalf("%#v", verified)
+	}
+	got, err := svc.VerifiedLoginEmail(ctx, 9)
+	if err != nil || got != "phone@tellomi.app" {
+		t.Fatalf("%q %v", got, err)
+	}
+}
+
+func TestSetupEmailWaitsForSignUp(t *testing.T) {
+	svc, phones, emails, _, _ := harness(t)
+	ctx := context.Background()
+	svc.opt.LookupUser = func(context.Context, string) (int64, error) { return 0, nil }
+	putPhone(phones, 3, "8613800138000", "h", "111111", 0)
+	if _, err := svc.SendVerifyEmailCode(ctx, 3, 0, &mtproto.TLAccountSendVerifyEmailCode{
+		Purpose: setupPurpose("8613800138000", "h"),
+		Email:   "new@tellomi.app",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	verified, err := svc.VerifyEmail(ctx, 3, 0, &mtproto.TLAccountVerifyEmail32DA4CF{
+		Purpose:      setupPurpose("8613800138000", "h"),
+		Verification: codeVer((*emails)[0].code),
+	})
+	if err != nil || verified.GetPredicateName() != mtproto.Predicate_account_emailVerifiedLogin {
+		t.Fatalf("%v %#v", err, verified)
+	}
+	got, err := svc.TakeVerifiedSetupEmail(ctx, "8613800138000")
+	if err != nil || got != "new@tellomi.app" {
+		t.Fatalf("%q %v", got, err)
+	}
+	again, err := svc.TakeVerifiedSetupEmail(ctx, "8613800138000")
+	if err != nil || again != "" {
+		t.Fatalf("second take %q %v", again, err)
+	}
+}
+
 func TestVerifyEmailLoginChange(t *testing.T) {
 	svc, _, emails, _, _ := harness(t)
 	ctx := context.Background()

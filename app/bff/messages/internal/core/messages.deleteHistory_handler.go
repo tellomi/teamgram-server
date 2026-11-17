@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/messenger/msg/deletehistory"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
@@ -32,6 +33,30 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 		peer = mtproto.FromInputPeer2(c.MD.UserId, in.Peer)
 	)
 
+	dates := deletehistory.Query{}
+	if in.GetMinDate() != nil {
+		dates.MinSet = true
+		dates.MinDate = in.GetMinDate().GetValue()
+	}
+	if in.GetMaxDate() != nil {
+		dates.MaxSet = true
+		dates.MaxDate = in.GetMaxDate().GetValue()
+	}
+	if dates.HasDates() {
+		// core.telegram.org: min_date and max_date are not available for
+		// non-user peers. A success with offset 0 used to delete nothing,
+		// and the client then stopped asking.
+		if !peer.IsUser() {
+			c.Logger.Errorf("messages.deleteHistory - error: %v", mtproto.ErrChatRevokeDateUnsupported)
+			return nil, mtproto.ErrChatRevokeDateUnsupported
+		}
+		if err := deletehistory.Validate(dates); err != nil {
+			c.Logger.Errorf("messages.deleteHistory - error: %v", err)
+			return nil, err
+		}
+		c.ctx = deletehistory.WithRange(c.ctx, dates)
+	}
+
 	if peer.IsChannel() {
 		return c.deleteChannelHistory(peer, in)
 	}
@@ -40,16 +65,6 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 		err := mtproto.ErrPeerIdInvalid
 		c.Logger.Errorf("messages.deleteHistory - error: %v", err)
 		return nil, err
-	}
-
-	if in.GetMinDate() != nil || in.GetMaxDate() != nil {
-		// TODO: not impl
-		pts := c.svcCtx.Dao.IDGenClient2.CurrentPtsId(c.ctx, c.MD.UserId)
-		return mtproto.MakeTLMessagesAffectedHistory(&mtproto.Messages_AffectedHistory{
-			Pts:      pts,
-			PtsCount: 0,
-			Offset:   0,
-		}).To_Messages_AffectedHistory(), nil
 	}
 
 	affectedHistory, err := c.svcCtx.Dao.MsgClient.MsgDeleteHistory(c.ctx, &msgpb.TLMsgDeleteHistory{
@@ -67,7 +82,10 @@ func (c *MessagesCore) MessagesDeleteHistory(in *mtproto.TLMessagesDeleteHistory
 		return nil, err
 	}
 
-	if !in.GetJustClear() {
+	// The dialog row goes away only when this call finished the history.
+	// A positive offset means the client will call again; deleting the
+	// dialog now would drop it while messages are still stored.
+	if !in.GetJustClear() && !dates.HasDates() && affectedHistory.GetOffset() == 0 {
 		if peer.IsUser() {
 			c.svcCtx.Dao.DialogDeleteDialog(c.ctx, &dialog.TLDialogDeleteDialog{
 				UserId:   c.MD.UserId,
@@ -98,12 +116,11 @@ func (c *MessagesCore) deleteChannelHistory(peer *mtproto.PeerUtil, in *mtproto.
 		err        error
 	)
 	if in.GetMinDate() != nil || in.GetMaxDate() != nil {
-		pts, count, err = channel.Shared().DeleteByDate(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMinDate().GetValue(), in.GetMaxDate().GetValue())
-	} else {
-		pts, count, err = channel.Shared().DeleteHistory(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMaxId(), in.GetRevoke())
-		if err == mtproto.ErrChatAdminRequired && in.GetRevoke() {
-			pts, count, err = channel.Shared().DeleteHistory(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMaxId(), false)
-		}
+		return nil, mtproto.ErrChatRevokeDateUnsupported
+	}
+	pts, count, err = channel.Shared().DeleteHistory(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMaxId(), in.GetRevoke())
+	if err == mtproto.ErrChatAdminRequired && in.GetRevoke() {
+		pts, count, err = channel.Shared().DeleteHistory(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, input, in.GetMaxId(), false)
 	}
 	if err != nil {
 		c.Logger.Errorf("messages.deleteHistory - error: %v", err)

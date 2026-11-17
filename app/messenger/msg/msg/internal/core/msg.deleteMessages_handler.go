@@ -63,6 +63,13 @@ func (c *MsgCore) deleteUserMessages(in *msg.TLMsgDeleteMessages) (*mtproto.Mess
 		msgDataIdList []int64
 	)
 
+	if in.Revoke {
+		if err := c.rejectForeignGroupRevoke(in.UserId, in.Id); err != nil {
+			c.Logger.Errorf("DeleteMessages - %v", err)
+			return nil, err
+		}
+	}
+
 	peer, msgDataIdList, err := c.svcCtx.Dao.DeleteMessages(c.ctx, in.UserId, in.Id)
 	if err != nil {
 		c.Logger.Errorf("DeleteMessages - %v", err)

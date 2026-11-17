@@ -49,4 +49,14 @@ type Store interface {
 	ListDeletions(ctx context.Context, viewer int64, since int32, limit int) ([]Deletion, error)
 	// DeletionMarks is one watermark per owner this viewer was told about.
 	DeletionMarks(ctx context.Context, viewer int64) ([]DeletionMark, error)
+
+	// StoriesByMedia lists stories whose photo or document id is mediaID.
+	// An empty list means the file is not story media.
+	StoriesByMedia(ctx context.Context, mediaID int64) ([]MediaRef, error)
+}
+
+// MediaRef is one story that stores a photo or document.
+type MediaRef struct {
+	Owner   Owner
+	StoryID int32
 }

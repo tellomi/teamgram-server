@@ -88,13 +88,13 @@ func (dao *UserNotifySettingsDAO) InsertOrUpdateTx(tx *sqlx.Tx, do *dataobject.U
 }
 
 // SelectAll
-// select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = :user_id and deleted = 0
+// select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound from user_notify_settings where user_id = :user_id and deleted = 0
 func (dao *UserNotifySettingsDAO) SelectAll(ctx context.Context, userId int64) (rList []dataobject.UserNotifySettingsDO, err error) {
 	var (
 		query  string
 		values []dataobject.UserNotifySettingsDO
 	)
-	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = ? and deleted = 0"
+	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound from user_notify_settings where user_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowsPartial(ctx, &values, query, userId)
 
@@ -109,13 +109,13 @@ func (dao *UserNotifySettingsDAO) SelectAll(ctx context.Context, userId int64) (
 }
 
 // SelectAllWithCB
-// select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = :user_id and deleted = 0
+// select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound from user_notify_settings where user_id = :user_id and deleted = 0
 func (dao *UserNotifySettingsDAO) SelectAllWithCB(ctx context.Context, userId int64, cb func(sz, i int, v *dataobject.UserNotifySettingsDO)) (rList []dataobject.UserNotifySettingsDO, err error) {
 	var (
 		query  string
 		values []dataobject.UserNotifySettingsDO
 	)
-	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = ? and deleted = 0"
+	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound from user_notify_settings where user_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowsPartial(ctx, &values, query, userId)
 
@@ -137,13 +137,13 @@ func (dao *UserNotifySettingsDAO) SelectAllWithCB(ctx context.Context, userId in
 }
 
 // Select
-// select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id and deleted = 0
+// select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound from user_notify_settings where user_id = :user_id and peer_type = :peer_type and peer_id = :peer_id and deleted = 0
 func (dao *UserNotifySettingsDAO) Select(ctx context.Context, userId int64, peerType int32, peerId int64) (rValue *dataobject.UserNotifySettingsDO, err error) {
 	var (
 		query string
 		do    = &dataobject.UserNotifySettingsDO{}
 	)
-	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound from user_notify_settings where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0"
+	query = "select id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound from user_notify_settings where user_id = ? and peer_type = ? and peer_id = ? and deleted = 0"
 
 	err = dao.db.QueryRowPartial(ctx, do, query, userId, peerType, peerId)
 

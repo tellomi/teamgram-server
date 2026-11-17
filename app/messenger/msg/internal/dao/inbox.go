@@ -37,6 +37,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// cloneForInbox copies a message before the inbox row is written.
+// sendMessageToInbox also clones, but callers used to set Out=false on the
+// sender's own message first. That pointer is the messages.sendMessage
+// result. Android files an out=false message whose from_id is the sender
+// into Saved Messages (getDialogId), so the open 1:1 chat keeps the clock
+// until getHistory reloads the stored out=true copy.
+func cloneForInbox(message *mtproto.Message) *mtproto.Message {
+	if message == nil {
+		return nil
+	}
+	cloned, _ := proto.Clone(message).(*mtproto.Message)
+	if cloned == nil {
+		return nil
+	}
+	cloned.Out = false
+	return cloned
+}
+
 // from outBox --> make inBox
 func (d *Dao) makeMessageInBox(fromId int64, peer *mtproto.PeerUtil, toUserId int64, clientRandomId int64, dialogMessageId int64, message *mtproto.Message) *mtproto.MessageBox {
 	mentioned := mtproto.CheckHasMention(message.Entities, toUserId)
@@ -55,14 +73,34 @@ func (d *Dao) makeMessageInBox(fromId int64, peer *mtproto.PeerUtil, toUserId in
 	}
 }
 
-func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, error) {
+// crossChatReply is a quote of a message in another chat. The receiver
+// must not treat reply_to_msg_id as an id in the current dialog.
+func crossChatReply(header *mtproto.MessageReplyHeader) bool {
+	if header == nil || header.GetReplyToPeerId() == nil {
+		return false
+	}
+	p := header.GetReplyToPeerId()
+	return p.GetUserId() != 0 || p.GetChatId() != 0 || p.GetChannelId() != 0
+}
+
+func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtproto.PeerUtil, toUserId int64, dialogMessageId, clientRandomId int64, message2 *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, InboxApply, error) {
+	if clientRandomId != 0 {
+		row, err := d.messageByRandom(ctx, toUserId, fromId, clientRandomId)
+		if err != nil {
+			return nil, nil, InboxApply{}, err
+		}
+		if row != nil {
+			return d.replayExistingInbox(ctx, row)
+		}
+	}
 	var (
 		inBoxMsgId = d.IDGenClient2.NextMessageBoxId(ctx, toUserId)
 		dialogId   = mtproto.MakeDialogId(fromId, peer.PeerType, peer.PeerId)
 		date       = time.Now().Unix()
 		message    = proto.Clone(message2).(*mtproto.Message)
 
-		dialogDO *dataobject.DialogsDO
+		dialogDO     *dataobject.DialogsDO
+		answeredRead *AnsweredCallRead
 	)
 
 	if peer.PeerType == mtproto.PEER_USER {
@@ -76,7 +114,20 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	message.Id = inBoxMsgId
 	switch message.GetReplyTo().GetPredicateName() {
 	case mtproto.Predicate_messageReplyHeader:
-		if replyId, _ := d.MessagesDAO.SelectPeerUserMessage(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
+		// reply_to_peer_id quotes a message in another chat. That id is not
+		// a box id in this dialog, so translating it drops the quote or
+		// points it at the wrong message.
+		if crossChatReply(message.GetReplyTo()) {
+			break
+		}
+		// A private reply still maps after both copies were revoked.
+		// A basic-group reply keeps the old rule: a deleted original drops
+		// reply_to, and that miss does not mark the recipient mentioned.
+		lookup := d.MessagesDAO.SelectPeerUserMessage
+		if peer.PeerType == mtproto.PEER_USER {
+			lookup = d.MessagesDAO.SelectPeerUserMessageIncludingDeleted
+		}
+		if replyId, _ := lookup(ctx, toUserId, fromId, message.GetReplyTo().GetFixedReplyToMsgId()); replyId != nil {
 			// message.ReplyToMsgId.Value = replyId.UserMessageBoxId
 			if message.ReplyTo != nil {
 				message.ReplyTo.ReplyToMsgId = replyId.UserMessageBoxId
@@ -181,10 +232,38 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 			Deleted:           false,
 		}
 
-		_, _, result.Err = d.MessagesDAO.InsertOrReturnIdTx(tx, inBoxDO)
+		var inserted int64
+		_, inserted, result.Err = d.MessagesDAO.InsertOrReturnIdTx(tx, inBoxDO)
 		if result.Err != nil {
 			return
 		}
+		if inserted == 0 {
+			return
+		}
+		if err := rememberInboxRandom(tx, toUserId, fromId, clientRandomId, inBoxMsgId); err != nil {
+			result.Err = err
+			return
+		}
+		mentions := int32(0)
+		if inBox.Mentioned {
+			mentions = 1
+		}
+		pts, answered, err := d.applyInboxInTx(ctx, tx, inboxApplyRow{
+			UserID:        toUserId,
+			BoxID:         inBoxMsgId,
+			PeerType:      msgPeer.PeerType,
+			PeerID:        msgPeer.PeerId,
+			UnreadDelta:   phoneCallInboxUnread(message),
+			MentionsDelta: mentions,
+			Date2:         date,
+		}, message)
+		if err != nil {
+			result.Err = err
+			return
+		}
+		inBox.Pts = pts
+		inBox.PtsCount = 1
+		answeredRead = answered
 
 		switch peer.PeerType {
 		case mtproto.PEER_USER:
@@ -199,7 +278,7 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 				PeerId:           fromId,
 				PeerDialogId:     mtproto.MakePeerDialogId(mtproto.PEER_USER, fromId),
 				TopMessage:       inBoxMsgId,
-				UnreadCount:      1,
+				UnreadCount:      phoneCallInboxUnread(message),
 				DraftMessageData: "null",
 				Date2:            date,
 			}
@@ -256,41 +335,33 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 	// TODO(@benqi): process duplicate
 
 	if tR.Err != nil {
-		return nil, tR.Err
+		return nil, nil, InboxApply{}, tR.Err
 	}
 
-	_, _, _ = d.ExecInvalidate(
-		ctx,
-		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			lastInsertId, rowsAffected, err := d.DialogsDAO.InsertOrUpdate(ctx, dialogDO)
-			logx.WithContext(ctx).Infof("lastInsertId:%d, rowsAffected: %d, result: %v, do: %v", lastInsertId, rowsAffected, err, dialogDO)
-			return 0, 0, err
-		},
-		dialog.GetDialogCacheKey(dialogDO.UserId, dialogDO.PeerDialogId))
+	d.invalidateDialogKeys(ctx, dialogCacheKey(toUserId, msgPeer.PeerType, msgPeer.PeerId))
 	d.ensureDialogTTL(ctx, toUserId, msgPeer)
+	if dialogDO != nil {
+		d.stampChatDecor(ctx, dialogDO.UserId, dialogDO.PeerType, dialogDO.PeerId, message)
+	}
 
-	inBox.Pts = d.IDGenClient2.NextPtsId(ctx, toUserId)
-	inBox.PtsCount = 1
-
-	return inBox, nil
+	return inBox, answeredRead, InboxApply{PersistPts: false, Push: true}, nil
 }
 
-func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
+func (d *Dao) SendUserMessageToInbox(ctx context.Context, fromId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, *AnsweredCallRead, InboxApply, error) {
 	peer := &mtproto.PeerUtil{
 		PeerType: mtproto.PEER_USER,
 		PeerId:   toId,
 	}
-	message.Out = false
-	return d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	return d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
 }
 
-func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, error) {
+func (d *Dao) SendChatMessageToInbox(ctx context.Context, fromId, chatId, toId int64, dialogMessageId, clientRandomId int64, message *mtproto.Message) (*mtproto.MessageBox, InboxApply, error) {
 	peer := &mtproto.PeerUtil{
 		PeerType: mtproto.PEER_CHAT,
 		PeerId:   chatId,
 	}
-	message.Out = false
-	return d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, message)
+	box, _, apply, err := d.sendMessageToInbox(ctx, fromId, peer, toId, dialogMessageId, clientRandomId, cloneForInbox(message))
+	return box, apply, err
 }
 
 func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int64, inBoxList []*inbox.InboxMessageData) ([]*mtproto.MessageBox, error) {
@@ -303,8 +374,7 @@ func (d *Dao) SendUserMultiMessageToInbox(ctx context.Context, fromId, toId int6
 			PeerType: mtproto.PEER_USER,
 			PeerId:   toId,
 		}
-		box.Message.Out = false
-		inBox, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
+		inBox, _, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
 		boxList = append(boxList, inBox)
 	}
 
@@ -320,8 +390,7 @@ func (d *Dao) SendChatMultiMessageToInbox(ctx context.Context, fromId, chatId, t
 			PeerType: mtproto.PEER_CHAT,
 			PeerId:   chatId,
 		}
-		box.Message.Out = false
-		inBox, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, box.Message)
+		inBox, _, _, _ := d.sendMessageToInbox(ctx, fromId, peer, toId, box.DialogMessageId, box.RandomId, cloneForInbox(box.Message))
 		boxList = append(boxList, inBox)
 	}
 
@@ -421,21 +490,23 @@ func (d *Dao) DeleteInboxMessages(ctx context.Context, deleteUserId int64, peer 
 
 		dlgDO, _ := d.DialogsDAO.SelectDialog(ctx, userId, msgDOList[0].PeerType, mtproto.GetPeerIdByDialogId(userId, dialogId))
 		if dlgDO != nil {
-			topMessage := dlgDO.TopMessage
 			for i := 0; i < len(msgDOList); i++ {
-				if msgDOList[i].UserMessageBoxId >= dlgDO.TopMessage {
-					dlgDO.TopMessage -= 1
-				}
 				if msgDOList[i].UserMessageBoxId > dlgDO.ReadInboxMaxId {
 					dlgDO.UnreadCount -= 1
 				}
 			}
-			if !(topMessage == dlgDO.TopMessage ||
-				dlgDO.TopMessage == msgDOList[len(msgDOList)-1].UserMessageBoxId) {
-
-				dlgDO.TopMessage, _ = d.MessagesDAO.SelectDialogLastMessageIdNotIdList(ctx, userId, dialogId.A, dialogId.B, msgIds)
+			// Decrementing the top by one lands on a hole, or on another
+			// message in this same delete, and getDialogs then drops the
+			// chat because that id has no message. The next live id is the
+			// greatest message that is not in this delete.
+			if deletedTouchesTop(dlgDO.TopMessage, msgIds) {
+				next, topErr := d.MessagesDAO.SelectDialogLastMessageIdNotIdList(ctx, userId, dialogId.A, dialogId.B, msgIds)
+				if topErr != nil {
+					logx.WithContext(ctx).Errorf("deleteInboxMessages top: %v", topErr)
+				} else {
+					dlgDO.TopMessage = next
+				}
 			}
-
 			if dlgDO.UnreadCount < 0 {
 				dlgDO.UnreadCount = 0
 			}

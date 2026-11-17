@@ -35,6 +35,11 @@ func (s TranslationService) MessagesTranslateText(ctx context.Context, in *mtpro
 			parts = append(parts, textPart{text: t.GetText(), entities: t.GetEntities()})
 		}
 	} else {
+		// A request with neither text nor peer used to dereference a nil
+		// InputPeer inside FromInputPeer2 and the RPC came back as 500.
+		if in.GetPeer() == nil {
+			return nil, mtproto.ErrPeerIdInvalid
+		}
 		self, _ := actor(ctx)
 		peer := mtproto.FromInputPeer2(self, in.GetPeer())
 		if peer == nil || !peer.IsUserOrChatOrChannel() {

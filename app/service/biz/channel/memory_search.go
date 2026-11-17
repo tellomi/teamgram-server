@@ -3,6 +3,9 @@ package channel
 import (
 	"context"
 	"sort"
+
+	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
 func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) ([]*StoredMessage, error) {
@@ -14,15 +17,32 @@ func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) 
 	var hits []*StoredMessage
 	for id, ch := range s.channels {
 		p := s.parts[id][self]
-		if !postSearchVisible(ch, p) {
+		visible := postSearchVisible(ch, p)
+		if q.JoinedOnly {
+			visible = joinedOnlyVisible(ch, p)
+		}
+		if !visible {
 			continue
 		}
 		for _, stored := range s.messages[id] {
 			if stored == nil || stored.Deleted {
 				continue
 			}
-			if !olderPost(stored.Date, stored.ChannelID, stored.ID, q) {
-				continue
+			if q.GlobalOrder {
+				if q.CursorOn {
+					row := searchorder.Key{Date: stored.Date, PeerType: mtproto.PEER_CHANNEL, PeerID: stored.ChannelID, MsgID: stored.ID}
+					cur := searchorder.Key{Date: q.CursorDate, PeerType: q.CursorPeerType, PeerID: q.CursorPeer, MsgID: q.CursorMsg}
+					if !row.OlderThan(cur) {
+						continue
+					}
+				}
+			} else {
+				if q.MaxDate > 0 && stored.Date > q.MaxDate {
+					continue
+				}
+				if !olderPost(stored.Date, stored.ChannelID, stored.ID, q) {
+					continue
+				}
 			}
 			if !containsFold(messagePlain(stored.Data), q.Needle) {
 				continue
@@ -31,6 +51,11 @@ func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) 
 		}
 	}
 	sort.Slice(hits, func(i, j int) bool {
+		if q.GlobalOrder {
+			a := searchorder.Key{Date: hits[i].Date, PeerType: mtproto.PEER_CHANNEL, PeerID: hits[i].ChannelID, MsgID: hits[i].ID}
+			b := searchorder.Key{Date: hits[j].Date, PeerType: mtproto.PEER_CHANNEL, PeerID: hits[j].ChannelID, MsgID: hits[j].ID}
+			return searchorder.Newer(a, b)
+		}
 		if hits[i].Date != hits[j].Date {
 			return hits[i].Date > hits[j].Date
 		}
@@ -43,6 +68,37 @@ func (s *memoryStore) SearchPosts(ctx context.Context, self int64, q PostQuery) 
 		hits = hits[:q.Limit]
 	}
 	return hits, nil
+}
+
+func (s *memoryStore) CountJoinedText(ctx context.Context, self int64, needle string, restrict, broadcasts, megagroups bool) (int32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int32
+	for id, ch := range s.channels {
+		if !joinedOnlyVisible(ch, s.parts[id][self]) {
+			continue
+		}
+		if restrict {
+			if ch.Broadcast && !ch.Megagroup && !broadcasts {
+				continue
+			}
+			if ch.Megagroup && !megagroups {
+				continue
+			}
+			if !ch.Broadcast && !ch.Megagroup {
+				continue
+			}
+		}
+		for _, stored := range s.messages[id] {
+			if stored == nil || stored.Deleted {
+				continue
+			}
+			if containsFold(messagePlain(stored.Data), needle) {
+				n++
+			}
+		}
+	}
+	return n, nil
 }
 
 func (s *memoryStore) SearchPublic(ctx context.Context, self int64, q string, limit int32) ([]*Channel, error) {

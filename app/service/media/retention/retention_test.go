@@ -411,3 +411,31 @@ func TestCheckerCaches(t *testing.T) {
 		t.Fatal("nil checker")
 	}
 }
+
+func TestCheckerDoesNotCacheLive(t *testing.T) {
+	st := &countingStore{fakeStore: fakeStore{expired: map[int64]int64{}}}
+	ck := NewChecker(st, time.Hour)
+	ctx := context.Background()
+	if ck.Expired(ctx, KindDocument, 9) || ck.Expired(ctx, KindDocument, 9) {
+		t.Fatal("live file looked expired")
+	}
+	if st.n != 2 {
+		t.Fatalf("live lookups %d, want 2", st.n)
+	}
+	st.expired[9] = 50
+	if !ck.Expired(ctx, KindDocument, 9) {
+		t.Fatal("expired_at write was hidden")
+	}
+	n := st.n
+	if !ck.Expired(ctx, KindDocument, 9) {
+		t.Fatal("expired answer dropped")
+	}
+	if st.n != n {
+		t.Fatalf("expired answer was not cached (%d -> %d)", n, st.n)
+	}
+	st.expired[9] = 0
+	Forget(KindDocument, 9)
+	if ck.Expired(ctx, KindDocument, 9) {
+		t.Fatal("Forget left a stale expired answer")
+	}
+}

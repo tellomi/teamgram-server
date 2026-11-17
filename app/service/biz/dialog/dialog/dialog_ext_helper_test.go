@@ -57,14 +57,90 @@ func TestPeerDialogsOmitEmptyRows(t *testing.T) {
 		},
 	}
 	out := helper.ToMessagesPeerDialogs(nil)
-	if len(out.GetDialogs()) != 1 || out.GetDialogs()[0].GetTopMessage() != 80 {
+	if len(out.GetDialogs()) != 2 {
+		t.Fatalf("dialogs %+v", out.GetDialogs())
+	}
+	var sawLive, sawEmpty bool
+	for _, d := range out.GetDialogs() {
+		switch d.GetTopMessage() {
+		case 80:
+			sawLive = d.GetPeer().GetUserId() == 9
+		case 0:
+			sawEmpty = d.GetPeer().GetUserId() == 4
+		}
+	}
+	if !sawLive || !sawEmpty {
 		t.Fatalf("dialogs %+v", out.GetDialogs())
 	}
 	if len(out.GetMessages()) != 1 || out.GetMessages()[0].GetId() != 80 {
 		t.Fatalf("messages %+v", out.GetMessages())
 	}
-	if len(out.GetUsers()) != 1 || out.GetUsers()[0].GetId() != 9 {
+	ids := map[int64]bool{}
+	for _, u := range out.GetUsers() {
+		ids[u.GetId()] = true
+	}
+	if !ids[9] || !ids[4] || ids[5] {
 		t.Fatalf("users %+v", out.GetUsers())
+	}
+	list := helper.ToMessagesDialogs(3, true)
+	if len(list.GetDialogs()) != 1 || list.GetDialogs()[0].GetTopMessage() != 80 {
+		t.Fatalf("chat list should still omit the empty dialog: %+v", list.GetDialogs())
+	}
+}
+
+func TestChatListKeepsEmptyGroupAndChannel(t *testing.T) {
+	helper := &DialogsDataHelper{
+		Dialogs: []*mtproto.Dialog{
+			mtproto.MakeTLDialog(&mtproto.Dialog{
+				Peer:       mtproto.MakePeer(mtproto.PEER_CHAT, 3),
+				TopMessage: 0,
+			}).To_Dialog(),
+			mtproto.MakeTLDialog(&mtproto.Dialog{
+				Peer:       mtproto.MakePeer(mtproto.PEER_CHANNEL, 8),
+				TopMessage: 0,
+				Pinned:     true,
+			}).To_Dialog(),
+			mtproto.MakeTLDialog(&mtproto.Dialog{
+				Peer:       mtproto.MakePeer(mtproto.PEER_USER, 4),
+				TopMessage: 0,
+			}).To_Dialog(),
+		},
+		Users: []*mtproto.User{mtproto.MakeTLUser(&mtproto.User{Id: 4}).To_User()},
+		Chats: []*mtproto.Chat{
+			mtproto.MakeTLChat(&mtproto.Chat{Id: 3}).To_Chat(),
+			mtproto.MakeTLChannel(&mtproto.Chat{Id: 8}).To_Chat(),
+		},
+	}
+	out := helper.ToMessagesDialogs(3, true)
+	got := map[int64]int32{}
+	for _, d := range out.GetDialogs() {
+		p := mtproto.FromPeer(d.GetPeer())
+		got[p.PeerId] = d.GetTopMessage()
+		if p.PeerType == mtproto.PEER_CHANNEL && !d.GetPinned() {
+			t.Fatal("empty channel lost its pin")
+		}
+	}
+	if len(got) != 2 || got[3] != 0 || got[8] != 0 {
+		t.Fatalf("dialogs %+v", out.GetDialogs())
+	}
+	if len(out.GetMessages()) != 0 {
+		t.Fatalf("messages %+v", out.GetMessages())
+	}
+	chats := map[int64]bool{}
+	for _, ch := range out.GetChats() {
+		chats[ch.GetId()] = true
+	}
+	if !chats[3] || !chats[8] {
+		t.Fatalf("chats %+v", out.GetChats())
+	}
+}
+
+func TestEmptyChannelKeepsDialogDate(t *testing.T) {
+	row := testDialog(mtproto.PEER_CHANNEL, 8, 40, 0, false, 0)
+	list := DialogExtList{row}
+	list.ApplyTopMessages(nil)
+	if row.GetDate() != 40 {
+		t.Fatalf("date %d", row.GetDate())
 	}
 }
 

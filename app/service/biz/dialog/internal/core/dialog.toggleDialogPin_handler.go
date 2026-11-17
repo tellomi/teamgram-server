@@ -33,8 +33,34 @@ func (c *DialogCore) DialogToggleDialogPin(in *dialog.TLDialogToggleDialogPin) (
 	}
 
 	folderId := dlgExt.GetDialog().GetFolderId().GetValue()
-
-	if mtproto.FromBool(in.Pinned) {
+	already := dlgExt.GetDialog().GetPinned()
+	pinning := mtproto.FromBool(in.Pinned)
+	if pinning == already {
+		return &mtproto.Int32{V: folderId}, nil
+	}
+	if pinning {
+		// Official: you can't pin an empty chat with a user. A group or
+		// channel with no messages can still be pinned; membership is the
+		// dialog.
+		if in.PeerType == mtproto.PEER_USER && dlgExt.GetDialog().GetTopMessage() == 0 {
+			return nil, mtproto.ErrPeerHistoryEmpty
+		}
+		var (
+			pinnedIDs []int64
+			listErr   error
+		)
+		if folderId == 0 {
+			pinnedIDs, listErr = c.svcCtx.Dao.GetNoCachePinnedDialogIdList(c.ctx, in.UserId)
+		} else {
+			pinnedIDs, listErr = c.svcCtx.Dao.GetNoCacheFolderPinnedDialogIdList(c.ctx, in.UserId)
+		}
+		if listErr != nil {
+			c.Logger.Errorf("dialog.toggleDialogPin - error: %v", listErr)
+			return nil, listErr
+		}
+		if err = pinRejected(false, len(pinnedIDs), pinnedCapFor(c, in.UserId, folderId)); err != nil {
+			return nil, err
+		}
 		pinned = time.Now().Unix() << 32
 	} else {
 		pinned = 0

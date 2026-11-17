@@ -118,6 +118,63 @@ func hasEmoji(m *mtproto.Message, emo string) bool {
 	return false
 }
 
+func TestGroupReactionUpdateIsVisibleToOtherMembers(t *testing.T) {
+	b := newBook(nil)
+	// Member 4's box id is 30. Member 9's box id for the same message is 80.
+	b.ids = fakeIDs{box: map[int64]map[int32]int64{
+		4: {30: 7001},
+		9: {80: 7001},
+	}}
+	ctx := context.Background()
+	chat := mtproto.MakePeerUtil(mtproto.PEER_CHAT, 15)
+	if _, err := b.React(ctx, 4, chat, 30, []string{"👍"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	mine := b.GroupReactionUpdateFor(ctx, 4, 4, chat, 30)
+	theirs := b.GroupReactionUpdateFor(ctx, 4, 9, chat, 30)
+	if mine == nil || theirs == nil {
+		t.Fatal("group update missing")
+	}
+	if mine.GetMsgId_INT32() != 30 {
+		t.Fatalf("reactor update on %d", mine.GetMsgId_INT32())
+	}
+	if theirs.GetMsgId_INT32() != 80 || theirs.GetPeer_PEER().GetChatId() != 15 {
+		t.Fatalf("peer update %+v", theirs)
+	}
+	if len(theirs.GetReactions_MESSAGEREACTIONS().GetResults()) != 1 || theirs.GetReactions_MESSAGEREACTIONS().GetResults()[0].GetCount() != 1 {
+		t.Fatalf("count %+v", theirs.GetReactions_MESSAGEREACTIONS())
+	}
+	if theirs.GetReactions_MESSAGEREACTIONS().GetResults()[0].GetChosenOrder() != nil {
+		t.Fatal("other member was marked as having chosen the reaction")
+	}
+	if mine.GetReactions_MESSAGEREACTIONS().GetResults()[0].GetChosenOrder() == nil {
+		t.Fatal("reactor lost chosen_order")
+	}
+	history := []*mtproto.Message{
+		mtproto.MakeTLMessage(&mtproto.Message{Id: 80}).To_Message(),
+		mtproto.MakeTLMessage(&mtproto.Message{Id: 81}).To_Message(),
+	}
+	b.ApplyReactions(ctx, 9, chat, history)
+	if !hasEmoji(history[0], "👍") || history[1].GetReactions() != nil {
+		t.Fatalf("getMessages backfill %v / %v", history[0].GetReactions(), history[1].GetReactions())
+	}
+	if b.GroupReactionUpdateFor(ctx, 4, 4, mtproto.MakePeerUtil(mtproto.PEER_USER, 9), 30) != nil {
+		t.Fatal("private chat used the group update")
+	}
+	if !b.MessageHasUnreadReaction(ctx, 9, chat, 80) {
+		t.Fatal("other member should see an unread reaction on their own id")
+	}
+	if b.MessageHasUnreadReaction(ctx, 9, chat, 30) {
+		t.Fatal("the reactor's id was treated as the other member's id")
+	}
+	if b.MessageHasUnreadReaction(ctx, 4, chat, 30) {
+		t.Fatal("the reactor's own reaction is not unread")
+	}
+	if b.BoxIDFor(ctx, 4, chat, 30, 9) != 80 || b.BoxIDFor(ctx, 4, chat, 30, 4) != 30 {
+		t.Fatal("box id was not translated")
+	}
+}
+
 func TestPeerReactionUpdateUsesPeersMessageID(t *testing.T) {
 	b := newBook(nil)
 	b.ids = fakeIDs{box: map[int64]map[int32]int64{

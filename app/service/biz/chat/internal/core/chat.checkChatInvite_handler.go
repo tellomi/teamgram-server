@@ -10,9 +10,11 @@
 package core
 
 import (
+	"time"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
-	"time"
+	"github.com/teamgram/teamgram-server/pkg/invite"
 )
 
 // ChatCheckChatInvite
@@ -35,6 +37,12 @@ func (c *ChatCore) ChatCheckChatInvite(in *chat.TLChatCheckChatInvite) (*chat.Ch
 		return nil, err
 	}
 
+	if invite.NotStarted(chatInviteDO.StartDate, time.Now().Unix()) {
+		c.Logger.Errorf("chat.checkChatInvite - error: invite hash %s not started", in.Hash)
+		err = mtproto.ErrInviteHashExpired
+		return nil, err
+	}
+
 	if chatInviteDO.ExpireDate != 0 && time.Now().Unix() > chatInviteDO.ExpireDate {
 		c.Logger.Errorf("chat.checkChatInvite - error: invite hash %s expired", in.Hash)
 		err = mtproto.ErrInviteHashExpired
@@ -43,7 +51,7 @@ func (c *ChatCore) ChatCheckChatInvite(in *chat.TLChatCheckChatInvite) (*chat.Ch
 
 	if chatInviteDO.UsageLimit > 0 {
 		sz := c.svcCtx.Dao.GetLinkInviteSize(c.ctx, chatInviteDO.Link)
-		if sz >= chatInviteDO.UsageLimit {
+		if invite.UsageExhausted(chatInviteDO.UsageLimit, int(sz)) {
 			err = mtproto.ErrInviteHashExpired
 			c.Logger.Errorf("chat.checkChatInvite - error: %v", err)
 			return nil, err

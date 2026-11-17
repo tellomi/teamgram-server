@@ -53,6 +53,9 @@ type BindUser struct {
 	DateCreated          int64 `json:"date_created"`
 	DateActivated        int64 `json:"date_activated"`
 	AndroidPushSessionId int64 `json:"android_push_sessionId"`
+	// ActivityTrusted is set once a ping or RPC has stored date_active.
+	// A bind-time date_active is not trusted and is not inactivity.
+	ActivityTrusted bool `json:"activity_trusted,omitempty"`
 }
 
 type CacheAuthData struct {
@@ -246,17 +249,31 @@ func (d *Dao) GetAuthKeyUserId(ctx context.Context, authKeyId int64) int64 {
 	return cData.UserId()
 }
 
+// newAuthorizationHash is the device hash account.getAuthorizations returns.
+// Zero is reserved for the current session and for "every other session".
+func newAuthorizationHash() int64 {
+	for {
+		hash := rand.Int63()
+		if hash != 0 {
+			return hash
+		}
+	}
+}
+
 func (d *Dao) BindAuthKeyUser(ctx context.Context, authKeyId int64, userId int64) (int64, error) {
 	now := time.Now().Unix()
 	authUsersDO := &dataobject.AuthUsersDO{
 		AuthKeyId:   authKeyId,
 		UserId:      userId,
-		Hash:        rand.Int63(),
+		Hash:        newAuthorizationHash(),
 		DateCreated: now,
 		DateActive:  now,
 	}
 
-	var rowsAffected int64
+	var (
+		rowsAffected int64
+		storedHash   int64
+	)
 	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
 		if err := lockAuthIdentity(tx, authKeyId); err != nil {
 			result.Err = err
@@ -274,16 +291,37 @@ func (d *Dao) BindAuthKeyUser(ctx context.Context, authKeyId int64, userId int64
 			result.Err = ErrAuthKeyUserConflict
 			return
 		}
+		var existing struct {
+			Hash    int64 `db:"hash"`
+			Deleted int32 `db:"deleted"`
+		}
+		err = tx.QueryRowPartial(&existing, "select hash, deleted from auth_users where auth_key_id = ? and user_id = ? limit 1", authKeyId, userId)
+		if err != nil && !errors.Is(err, sqlx.ErrNotFound) {
+			result.Err = err
+			return
+		}
+		if err == nil {
+			authUsersDO.Hash = keptAuthorizationHash(existing.Hash, existing.Deleted != 0, authUsersDO.Hash)
+		}
 		_, rows, err := d.AuthUsersDAO.InsertOrUpdatesTx(tx, authUsersDO)
 		if err != nil {
 			result.Err = err
 			return
 		}
 		rowsAffected = rows
+		var stored struct {
+			Hash int64 `db:"hash"`
+		}
+		if err = tx.QueryRowPartial(&stored, "select hash from auth_users where auth_key_id = ? and user_id = ? limit 1", authKeyId, userId); err != nil {
+			result.Err = err
+			return
+		}
+		storedHash = stored.Hash
 	})
 	if result.Err != nil {
 		return 0, result.Err
 	}
+	authUsersDO.Hash = storedHash
 	// The SQL is committed. Move the cache generation before anything else
 	// so an in-flight reader of the previous snapshot cannot republish it.
 	// A fence failure still leaves the row bound; the next read deletes the
@@ -323,7 +361,11 @@ func (d *Dao) UnbindAuthUser(ctx context.Context, authKeyId int64, userId int64)
 		if result.Err != nil {
 			return false
 		}
-		return d.bumpAuthBindGens(ctx, ids) == nil
+		if d.bumpAuthBindGens(ctx, ids) != nil {
+			return false
+		}
+		d.deleteDeviceTokens(ctx, userId, ids)
+		return true
 	}
 
 	result := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
@@ -337,7 +379,11 @@ func (d *Dao) UnbindAuthUser(ctx context.Context, authKeyId int64, userId int64)
 	if result.Err != nil {
 		return false
 	}
-	return d.bumpAuthBindGen(ctx, authKeyId) == nil
+	if d.bumpAuthBindGen(ctx, authKeyId) != nil {
+		return false
+	}
+	d.deleteDeviceTokens(ctx, userId, []int64{authKeyId})
+	return true
 }
 
 func (d *Dao) SetClientSessionInfo(ctx context.Context, session *authsession.ClientSession) error {
@@ -493,6 +539,7 @@ func (d *Dao) GetCacheAuthData(ctx context.Context, authKeyId int64) (*CacheAuth
 							DateCreated:          do.DateCreated,
 							DateActivated:        do.DateActive,
 							AndroidPushSessionId: do.AndroidPushSessionId,
+							ActivityTrusted:      do.ActivityTrusted,
 						}
 					} else if d.authUserDeleted(ctx, authKeyId) {
 						cacheAuthData.Revoked = true

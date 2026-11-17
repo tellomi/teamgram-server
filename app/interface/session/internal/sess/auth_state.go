@@ -2,6 +2,7 @@ package sess
 
 import (
 	"context"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 )
@@ -27,7 +28,7 @@ func authorizationResetTargets(wrapperAuthKeyID, updateAuthKeyID int64) bool {
 }
 
 // pingRevoked reports that this session must not answer ping.
-// bindingRevoked only reloads a Normal session. After
+// bindingRevoked reloads Normal and NeedPassword. After
 // updateAccountResetAuthorization the wrapper is already Deleted, and
 // that early return used to let onPing send pong anyway.
 func (c *session) pingRevoked(ctx context.Context) bool {
@@ -49,6 +50,19 @@ func authStateRevoked(state int) bool {
 	default:
 		return false
 	}
+}
+
+// replyUnauthorized answers ping and the next RPC with 401
+// AUTH_KEY_UNREGISTERED. Official clients leave the chat list for the login
+// page on that error. Dropping the packet left the socket open and the app
+// still looked signed in. closeDate is pulled forward so the session loop
+// stops treating the socket as a live updates channel.
+func (c *session) replyUnauthorized(ctx context.Context, gatewayId string, msgID int64) {
+	if c == nil {
+		return
+	}
+	c.sendRpcResultToQueue(ctx, gatewayId, msgID, mtproto.NewRpcError(mtproto.ErrAuthKeyUnregistered))
+	c.closeDate = time.Now().Unix()
 }
 
 func rpcErrorForAuthState(state int) error {

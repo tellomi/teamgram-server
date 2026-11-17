@@ -90,11 +90,12 @@ func (c *ChatCore) ChatEditExportedChatInvite(in *chat.TLChatEditExportedChatInv
 			chatInviteDO.ExpireDate = exp
 		}
 		if in.GetUsageLimit() != nil {
-			if in.GetUsageLimit().GetValue() < 0 {
-				return nil, mtproto.ErrUsageLimitInvalid
+			stored, err := invite.NormalizeUsage(true, in.GetUsageLimit().GetValue())
+			if err != nil {
+				return nil, err
 			}
-			cMap["usage_limit"] = in.GetUsageLimit().GetValue()
-			chatInviteDO.UsageLimit = in.GetUsageLimit().GetValue()
+			cMap["usage_limit"] = stored
+			chatInviteDO.UsageLimit = stored
 		}
 		if in.GetRequestNeeded() != nil {
 			cMap["request_needed"] = mtproto.FromBool(in.GetRequestNeeded())

@@ -36,6 +36,9 @@ type Config struct {
 	MessageClient zrpc.RpcClientConf
 	MediaClient   zrpc.RpcClientConf
 	SyncClient    *kafka.KafkaProducerConf
+	// StatusClient is optional. The scheduled-message dispatcher uses it
+	// for schedule_date=0x7FFFFFFE (send when online).
+	StatusClient zrpc.RpcClientConf `json:",optional"`
 
 	// ChannelMySQL is the teamgram database DSN already used by the other
 	// BFF DAOs. The all-in-one bff process passes its ChannelMySQL so

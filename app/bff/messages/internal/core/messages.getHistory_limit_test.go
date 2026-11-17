@@ -69,3 +69,51 @@ type historyUsers struct {
 func (historyUsers) UserGetMutableUsers(context.Context, *userpb.TLUserGetMutableUsers) (*userpb.Vector_ImmutableUser, error) {
 	return &userpb.Vector_ImmutableUser{}, nil
 }
+
+func TestGetHistoryEmptyDialogIsMessagesNotAnError(t *testing.T) {
+	asked := &askedHistoryUsers{}
+	c := &MessagesCore{
+		ctx: context.Background(),
+		svcCtx: &svc.ServiceContext{Dao: &dao.Dao{
+			MessageClient: &historyMsg{},
+			UserClient:    asked,
+		}},
+		Logger: logx.WithContext(context.Background()),
+		MD:     &metadata.RpcMetadata{UserId: 7},
+	}
+	res, err := c.MessagesGetHistory(&mtproto.TLMessagesGetHistory{
+		Peer:  mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 9}).To_InputPeer(),
+		Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GetPredicateName() != mtproto.Predicate_messages_messages {
+		t.Fatalf("constructor %s", res.GetPredicateName())
+	}
+	if len(res.GetMessages()) != 0 {
+		t.Fatalf("messages %+v", res.GetMessages())
+	}
+	if !asked.saw(9) {
+		t.Fatalf("peer user was not loaded: %v", asked.ids)
+	}
+}
+
+type askedHistoryUsers struct {
+	user_client.UserClient
+	ids []int64
+}
+
+func (a *askedHistoryUsers) UserGetMutableUsers(_ context.Context, in *userpb.TLUserGetMutableUsers) (*userpb.Vector_ImmutableUser, error) {
+	a.ids = append(a.ids, in.GetId()...)
+	return &userpb.Vector_ImmutableUser{}, nil
+}
+
+func (a *askedHistoryUsers) saw(id int64) bool {
+	for _, v := range a.ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}

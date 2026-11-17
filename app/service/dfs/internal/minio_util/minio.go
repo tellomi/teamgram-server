@@ -183,7 +183,10 @@ func NewMinioClient(c *MinioConfig) (*MinioUtil, error) {
 		Secure:       cfg.UseSSL,
 		Region:       region,
 		BucketLookup: lookup,
-		Transport:    guardTransport{base: transport},
+		// guard rejects bucket admin calls. fastFirstByte retries a GET/HEAD
+		// whose first byte is late, and stops well under five seconds.
+		// Puts keep the transport header timeout and are not wrapped.
+		Transport: fastFirstByte{base: guardTransport{base: transport}},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("object storage client: %w", err)
@@ -278,6 +281,42 @@ func contentTypeFor(path string) string {
 
 func (m *MinioUtil) hotEnabled(class string) bool {
 	return m != nil && m.hot != nil && hotChatClass(class)
+}
+
+// StoresHot reports whether new objects of class are written to the local
+// hot tier instead of waiting on object storage.
+func (m *MinioUtil) StoresHot(class string) bool {
+	return m.hotEnabled(class)
+}
+
+// EnsureLocal writes body at the key Get*File reads. A hot-tier object that
+// is already on disk is left in place, so a reused photo does not upload
+// those bytes to R2 again. With the hot tier off this is the normal put.
+func (m *MinioUtil) EnsureLocal(ctx context.Context, class, path string, body []byte) error {
+	if m == nil {
+		return fmt.Errorf("object storage client is nil")
+	}
+	if path == "" {
+		return fmt.Errorf("object key is empty")
+	}
+	if m.hotEnabled(class) && m.hot.has(class, path) {
+		return nil
+	}
+	_, err := m.putBytes(ctx, class, path, body)
+	return err
+}
+
+// ReadHot returns one range from the local hot tier. ok is false when that
+// key is not a local file; the caller then tries another key or R2.
+func (m *MinioUtil) ReadHot(class, path string, offset int64, limit int32) ([]byte, bool) {
+	if !m.hotEnabled(class) || path == "" || !m.hot.has(class, path) {
+		return nil, false
+	}
+	b, err := m.hot.readRange(class, path, offset, limit)
+	if err != nil {
+		return nil, false
+	}
+	return b, true
 }
 
 func (m *MinioUtil) putRemote(ctx context.Context, class, path string, r io.Reader, size int64, contentType string) (minio.UploadInfo, error) {

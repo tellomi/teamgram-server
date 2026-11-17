@@ -434,6 +434,12 @@ func (c *DfsCore) readDocumentThumb(offset int64, limit int32, paths []string, p
 	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || primary == nil {
 		return nil, fmt.Errorf("object storage client is nil")
 	}
+	if b, ok := c.readHotPaths(minio_util.ClassPhotos, paths, offset, limit); ok {
+		return b, nil
+	}
+	if b, ok := c.readHotPaths(minio_util.ClassVideos, paths, offset, limit); ok {
+		return b, nil
+	}
 	reads := make([]func() ([]byte, error), 0, len(paths)+1)
 	for _, path := range paths {
 		path := path

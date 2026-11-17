@@ -11,6 +11,7 @@ package core
 
 import (
 	"errors"
+	"time"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/proto/mtproto"
@@ -43,12 +44,19 @@ func (c *AuthsessionCore) AuthsessionGetAuthStateData(in *authsession.TLAuthsess
 		}
 	}
 
+	if cData != nil {
+		c.svcCtx.Dao.ApplyAuthorizationLifetime(c.ctx, permID, cData, time.Now().Unix())
+	}
 	state := cData.ToAuthState()
 	userID := cData.UserId()
 	// A cloud-password login binds the key before auth.checkPassword. A
 	// reconnect must not treat that auth_users row as a finished login.
-	pending, pendingOK := c.svcCtx.Dao.PasswordLoginUser(c.ctx, permID)
-	state, userID = passwordPendingState(state, userID, pending, pendingOK)
+	// A revoked or TTL-expired key must not be pulled back onto that step
+	// by a leftover user_password_login row.
+	if state != mtproto.AuthStateLogout && state != mtproto.AuthStateDeleted {
+		pending, pendingOK := c.svcCtx.Dao.PasswordLoginUser(c.ctx, permID)
+		state, userID = passwordPendingState(state, userID, pending, pendingOK)
+	}
 
 	return authsession.MakeTLAuthKeyStateData(&authsession.AuthKeyStateData{
 		AuthKeyId:            inKeyId,

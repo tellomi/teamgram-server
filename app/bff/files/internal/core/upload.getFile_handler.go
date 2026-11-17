@@ -172,7 +172,7 @@ func (c *FilesCore) UploadGetFile(in *mtproto.TLUploadGetFile) (*mtproto.Upload_
 	}
 
 	if location.GetPredicateName() == mtproto.Predicate_inputPhotoFileLocation {
-		if body, mime, ok := chatbox.WebPhoto(location.GetId()); ok {
+		if body, mime, ok := chatbox.WebPhotoForDownload(location.GetId(), location.GetAccessHash()); ok {
 			return uploadFileChunk(sliceFile(body, offset, limit), mime), nil
 		}
 	}

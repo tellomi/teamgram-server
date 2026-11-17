@@ -21,6 +21,7 @@ package svc
 import (
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/internal/config"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/internal/dao"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 )
 
 type ServiceContext struct {
@@ -29,6 +30,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
+	statusbook.Install(statusbook.New(c.KV))
 	return &ServiceContext{
 		Config: c,
 		Dao:    dao.New(c),

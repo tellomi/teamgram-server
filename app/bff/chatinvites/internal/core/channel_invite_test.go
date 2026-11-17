@@ -157,3 +157,69 @@ func TestNewInviteLink(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAndroidUnlimitedUsageLimit(t *testing.T) {
+	svcCh := channel.New(channel.NewMemoryStore())
+	prev := channel.Shared()
+	channel.Use(svcCh)
+	t.Cleanup(func() { channel.Use(prev) })
+
+	ctx := context.Background()
+	up, err := svcCh.Create(ctx, channel.CreateRequest{CreatorID: 7, Title: "群", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat := up.Chats[0]
+	peer := mtproto.MakeTLInputPeerChannel(&mtproto.InputPeer{
+		ChannelId:  chat.GetId(),
+		AccessHash: chat.GetAccessHash_FLAGINT64().GetValue(),
+	}).To_InputPeer()
+	c := &ChatInvitesCore{
+		ctx:    ctx,
+		svcCtx: &svc.ServiceContext{Dao: &dao.Dao{}},
+		Logger: logx.WithContext(ctx),
+		MD:     &metadata.RpcMetadata{UserId: 7},
+	}
+
+	// LinkEditActivity sets flags bit 1 and sends usage_limit=0 for no limit.
+	created, err := c.MessagesExportChatInvite(&mtproto.TLMessagesExportChatInvite{
+		Peer:       peer,
+		UsageLimit: &wrapperspb.Int32Value{Value: 0},
+		Title:      &wrapperspb.StringValue{Value: "不限"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.GetUsageLimit() != nil || created.GetTitle().GetValue() != "不限" {
+		t.Fatalf("export %+v", created)
+	}
+
+	limited, err := c.MessagesExportChatInvite(&mtproto.TLMessagesExportChatInvite{
+		Peer:       peer,
+		UsageLimit: &wrapperspb.Int32Value{Value: 2},
+	})
+	if err != nil || limited.GetUsageLimit().GetValue() != 2 {
+		t.Fatalf("limited %+v %v", limited, err)
+	}
+	edited, err := c.MessagesEditExportedChatInvite(&mtproto.TLMessagesEditExportedChatInvite{
+		Peer:       peer,
+		Link:       limited.GetLink(),
+		UsageLimit: &wrapperspb.Int32Value{Value: 0},
+	})
+	if err != nil || edited.GetInvite().GetUsageLimit() != nil {
+		t.Fatalf("edit to unlimited %+v %v", edited, err)
+	}
+	if _, err := c.MessagesExportChatInvite(&mtproto.TLMessagesExportChatInvite{
+		Peer:       peer,
+		UsageLimit: &wrapperspb.Int32Value{Value: -1},
+	}); err == nil || !strings.Contains(err.Error(), "USAGE_LIMIT_INVALID") {
+		t.Fatalf("negative: %v", err)
+	}
+	if _, err := c.MessagesEditExportedChatInvite(&mtproto.TLMessagesEditExportedChatInvite{
+		Peer:       peer,
+		Link:       created.GetLink(),
+		UsageLimit: &wrapperspb.Int32Value{Value: 100000},
+	}); err == nil || !strings.Contains(err.Error(), "USAGE_LIMIT_INVALID") {
+		t.Fatalf("over max: %v", err)
+	}
+}

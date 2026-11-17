@@ -36,6 +36,7 @@ const (
 	ADMIN_DELETE_STORIES         int32 = 1 << 16
 	ADMIN_MANAGE_DIRECT_MESSAGES int32 = 1 << 17
 	ADMIN_MANAGE_RANKS           int32 = 1 << 18
+	ADMIN_MANAGE_LINKED_PEERS    int32 = 1 << 19
 )
 
 type AdminRights int32
@@ -94,6 +95,9 @@ func MakeChatAdminRightsHelper(adminRights *ChatAdminRights) AdminRights {
 	if adminRights.GetManageRanks() {
 		rights |= ADMIN_MANAGE_RANKS
 	}
+	if adminRights.GetManageLinkedPeers() {
+		rights |= ADMIN_MANAGE_LINKED_PEERS
+	}
 
 	return AdminRights(rights)
 }
@@ -120,6 +124,7 @@ func (m AdminRights) ToChatAdminRights() *ChatAdminRights {
 			DeleteStories:        int32(m)&ADMIN_DELETE_STORIES != 0,
 			ManageDirectMessages: int32(m)&ADMIN_MANAGE_DIRECT_MESSAGES != 0,
 			ManageRanks:          int32(m)&ADMIN_MANAGE_RANKS != 0,
+			ManageLinkedPeers:    int32(m)&ADMIN_MANAGE_LINKED_PEERS != 0,
 		}).To_ChatAdminRights()
 	}
 }
@@ -196,6 +201,10 @@ func (m AdminRights) CanManageRanks() bool {
 	return int32(m)&ADMIN_MANAGE_RANKS != 0
 }
 
+func (m AdminRights) CanManageLinkedPeers() bool {
+	return int32(m)&ADMIN_MANAGE_LINKED_PEERS != 0
+}
+
 // DisallowMegagroup
 // ////////////////////////////////////////////////////////////////////////////////////////
 func (m AdminRights) DisallowMegagroup() bool {
@@ -225,6 +234,7 @@ func MakeDefaultChatAdminRights() *ChatAdminRights {
 		DeleteStories:        false,
 		ManageDirectMessages: false,
 		ManageRanks:          false,
+		ManageLinkedPeers:    false,
 	}).To_ChatAdminRights()
 }
 
@@ -298,6 +308,10 @@ func (m *ChatAdminRights) CanManageDirectMessages() bool {
 
 func (m *ChatAdminRights) CanManageRanks() bool {
 	return m.GetManageRanks()
+}
+
+func (m *ChatAdminRights) CanManageLinkedPeers() bool {
+	return m.GetManageLinkedPeers()
 }
 
 // DisallowMegagroup

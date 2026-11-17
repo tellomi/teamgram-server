@@ -7,6 +7,34 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+func TestUseKeepsLiveStarter(t *testing.T) {
+	t.Cleanup(func() {
+		cur := Shared()
+		cur.SetLiveStarter(nil)
+		cur.SetCallAlive(nil)
+		Use(New(NewMemoryStore()))
+	})
+	first := New(NewMemoryStore())
+	Use(first)
+	first.SetLiveStarter(func(context.Context, int64, int64, bool, int32, []int64) (int64, int64, *mtproto.Updates, error) {
+		return 9, 8, nil, nil
+	})
+	first.SetCallAlive(func(int64) bool { return true })
+	next := New(NewMemoryStore())
+	Use(next)
+	starter := next.liveStarter()
+	if starter == nil {
+		t.Fatal("replacing the story service dropped stories.startLive")
+	}
+	id, access, _, err := starter(context.Background(), 1, 0, false, 1, nil)
+	if err != nil || id != 9 || access != 8 {
+		t.Fatalf("starter %d %d %v", id, access, err)
+	}
+	if next.lives.alive == nil || !next.lives.alive(1) {
+		t.Fatal("call-alive callback dropped")
+	}
+}
+
 func TestEmptyLiveStubIsNotARingUntilTheCallExists(t *testing.T) {
 	svc, ctx, _ := newSvc(t)
 	enableRings(t)

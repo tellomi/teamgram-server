@@ -95,6 +95,27 @@ func TestParsePublishedManifest(t *testing.T) {
 	if err != nil || quoted.CannotSkip {
 		t.Fatalf("%v %#v", err, quoted)
 	}
+
+	notes, err := parseManifest([]byte(`{"versionName":"14.0.7","url":"https://example.com/a.apk","changelog":"Shared","notes":{"zh-CN":"简体","zh-hans":"以这条为准","en":"English","nope":"skip","fr":""}}`))
+	if err != nil || notes.Text != "Shared" || notes.Notes["zh-hans"] != "以这条为准" || notes.Notes["en"] != "English" || notes.Notes["nope"] != "" {
+		t.Fatalf("%v %#v", err, notes)
+	}
+	if AppUpdateForLang("14.0.6", "", "zh-hans", notes).GetText() != "以这条为准" {
+		t.Fatal(AppUpdateForLang("14.0.6", "", "zh-hans", notes).GetText())
+	}
+	if AppUpdateForLang("14.0.6", "", "ja", notes).GetText() != "English" {
+		t.Fatal("notes.en")
+	}
+	onlyZH, err := parseManifest([]byte(`{"versionName":"14.0.7","changelog":"Shared","notes":{"zh-hans":"只要简体"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if AppUpdateForLang("14.0.6", "", "ja", onlyZH).GetText() != "Shared" {
+		t.Fatal(AppUpdateForLang("14.0.6", "", "ja", onlyZH).GetText())
+	}
+	if AppUpdateForLang("14.0.6", "", "de", &Release{Version: "14.0.7"}).GetText() != "Eine neue Version von Tellomi ist verfügbar." {
+		t.Fatal("builtin")
+	}
 }
 
 func TestManifestSource(t *testing.T) {

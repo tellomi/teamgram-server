@@ -64,7 +64,30 @@ type Service struct {
 var (
 	mu      sync.RWMutex
 	current = New(Options{})
+	// attachedLoginEmail is the verified Redis login email for a phone
+	// account. users.email still wins when it is set. Nil leaves the
+	// pattern empty for a phone account.
+	attachedLoginEmail func(ctx context.Context, userID int64) (string, error)
 )
+
+// SetAttachedLoginEmail installs the reader account.getPassword uses when
+// users.email is empty. The authorization process sets it to the same Redis
+// key auth.sendCode mails. Tests pass nil to clear it.
+func SetAttachedLoginEmail(fn func(ctx context.Context, userID int64) (string, error)) {
+	mu.Lock()
+	attachedLoginEmail = fn
+	mu.Unlock()
+}
+
+func readAttachedLoginEmail(ctx context.Context, userID int64) (string, error) {
+	mu.RLock()
+	fn := attachedLoginEmail
+	mu.RUnlock()
+	if fn == nil || userID == 0 {
+		return "", nil
+	}
+	return fn(ctx, userID)
+}
 
 // New builds a service. A nil store uses memory, or MySQL when DSN is set.
 func New(opt Options) *Service {
@@ -237,7 +260,8 @@ func (s *Service) accountPassword(ctx context.Context, userID, authKey int64) (*
 	if rec.PendingReset > 0 {
 		pw.PendingResetDate = &wrapperspb.Int32Value{Value: int32(rec.PendingReset)}
 	}
-	// users.email is the login identity. Clients treat an empty
+	// users.email is the login identity of an email-only account. A phone
+	// account keeps its login email in Redis. Clients treat an empty
 	// login_email_pattern as "ask the user to bind an email".
 	// The recovery address stays on email_unconfirmed_pattern / has_recovery.
 	if email, emailErr := s.identityEmail(ctx, userID); emailErr != nil {
@@ -246,6 +270,10 @@ func (s *Service) accountPassword(ctx context.Context, userID, authKey int64) (*
 		return nil, mtproto.ErrInternalServerError
 	} else if email != "" {
 		pw.LoginEmailPattern = &wrapperspb.StringValue{Value: verify.MaskEmail(email)}
+	} else if attached, aerr := readAttachedLoginEmail(ctx, userID); aerr != nil {
+		return nil, mtproto.ErrInternalServerError
+	} else if attached != "" {
+		pw.LoginEmailPattern = &wrapperspb.StringValue{Value: verify.MaskEmail(attached)}
 	}
 	if !rec.HasPassword {
 		return pw, nil

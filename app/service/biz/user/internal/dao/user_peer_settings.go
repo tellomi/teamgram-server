@@ -76,7 +76,7 @@ func (d *Dao) GetUserPeerSettings(ctx context.Context, id int64, peerType int32,
 				peerSettings = v.(*mtproto.PeerSettings)
 			)
 
-			if settingsDO != nil {
+			if settingsDO != nil && !settingsDO.Hide {
 				peerSettings.ReportSpam = settingsDO.ReportSpam
 				peerSettings.AddContact = settingsDO.AddContact
 				peerSettings.BlockContact = settingsDO.BlockContact

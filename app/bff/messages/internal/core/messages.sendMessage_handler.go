@@ -57,18 +57,20 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		c.Logger.Errorf("messages.sendMessage - sanction")
 		return nil, err
 	}
+	if err := c.paidMessageRequired(peer, in.GetAllowPaidStars().GetValue()); err != nil {
+		c.Logger.Errorf("messages.sendMessage - paid")
+		return nil, err
+	}
 
 	if in.Message == "" {
 		err := mtproto.ErrMessageEmpty
 		c.Logger.Errorf("message empty: %v", err)
 		return nil, err
 	}
-	// TODO(@benqi): calc utf16len(message)
-	//else if len(request.Message) > 4000 {
-	//	err = mtproto.ErrMessageTooLong
-	//	c.Logger.Errorf("messages.sendMessage: %v", err)
-	//	return
-	//}
+	if textTooLong(in.Message) {
+		c.Logger.Errorf("messages.sendMessage - MESSAGE_TOO_LONG")
+		return nil, mtproto.ErrMessageTooLong
+	}
 
 	// messages.sendMessage#983f9745 flags:#
 	//no_webpage:flags.1?true
@@ -110,7 +112,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		Date:                 int32(time.Now().Unix()),
 		Message:              in.Message,
 		Media:                nil,
-		ReplyMarkup:          in.ReplyMarkup,
+		ReplyMarkup:          c.botReplyMarkup(in.ReplyMarkup),
 		Entities:             in.Entities,
 		Views:                nil,
 		Forwards:             nil,
@@ -152,33 +154,11 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 		replyTo := in.GetReplyTo()
 		switch in.ReplyTo.PredicateName {
 		case mtproto.Predicate_inputReplyToMessage:
-			outMessage.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-				ReplyToScheduled:       false,
-				ForumTopic:             false,
-				Quote:                  false,
-				ReplyToMsgId:           replyTo.GetReplyToMsgId(),
-				ReplyToMsgId_INT32:     replyTo.GetReplyToMsgId(),
-				ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(replyTo.GetReplyToMsgId()),
-				ReplyToPeerId:          nil,
-				ReplyFrom:              nil,
-				ReplyMedia:             nil,
-				ReplyToTopId:           nil,
-				QuoteText:              nil,
-				QuoteEntities:          nil,
-				QuoteOffset:            nil,
-			}).To_MessageReplyHeader()
-			if replyTo.GetQuoteText() != nil {
-				outMessage.ReplyTo.Quote = true
-				outMessage.ReplyTo.QuoteText = replyTo.GetQuoteText()
-				outMessage.ReplyTo.QuoteEntities = replyTo.GetQuoteEntities()
-				outMessage.ReplyTo.QuoteOffset = replyTo.GetQuoteOffset()
+			header, err := c.replyHeaderChecked(peer, replyTo)
+			if err != nil {
+				return nil, err
 			}
-
-			// disable replyToPeerId
-			// TODO enable replyToPeerId
-			if replyTo.ReplyToPeerId != nil {
-				outMessage.ReplyTo = nil
-			}
+			outMessage.ReplyTo = header
 
 		case mtproto.Predicate_inputReplyToStory:
 			// TODO:
@@ -226,7 +206,15 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 	}
 
 	if in.GetQuickReplyShortcut() != nil {
-		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+		ups, err := chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+		if err != nil {
+			return nil, err
+		}
+		c.pushQuickReplyNotMe(ups)
+		return ups, nil
+	}
+	if err := stampScheduleRepeat(outMessage, in.GetScheduleRepeatPeriod(), in.GetScheduleDate().GetValue()); err != nil {
+		return nil, err
 	}
 
 	rUpdate, err := c.dispatchOutbox(peer, []*msgpb.OutboxMessage{
@@ -254,7 +242,7 @@ func (c *MessagesCore) sendText(in *mtproto.TLMessagesSendMessage) (*mtproto.Upd
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {
-			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer)
+			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, outgoingTopicID(in.GetReplyTo(), in.GetTopMsgId()))
 		})
 	}
 

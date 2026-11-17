@@ -30,10 +30,14 @@ import (
 	authorization_helper "github.com/teamgram/teamgram-server/app/bff/authorization"
 	autodownload_helper "github.com/teamgram/teamgram-server/app/bff/autodownload"
 	autosave_helper "github.com/teamgram/teamgram-server/app/bff/autosave"
+	accessgate "github.com/teamgram/teamgram-server/app/bff/bff/internal/accesshash"
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/config"
+	"github.com/teamgram/teamgram-server/app/bff/bff/internal/presence"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
+	bizprofile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
 	communities_helper "github.com/teamgram/teamgram-server/app/bff/communities"
@@ -57,6 +61,7 @@ import (
 	notification_helper "github.com/teamgram/teamgram-server/app/bff/notification"
 	nsfw_helper "github.com/teamgram/teamgram-server/app/bff/nsfw"
 	passkeyhelper "github.com/teamgram/teamgram-server/app/bff/passkey"
+	passkeylogin "github.com/teamgram/teamgram-server/app/bff/passkey/login"
 	passport_helper "github.com/teamgram/teamgram-server/app/bff/passport"
 	payments_helper "github.com/teamgram/teamgram-server/app/bff/payments"
 	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
@@ -74,6 +79,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	updates_helper "github.com/teamgram/teamgram-server/app/bff/updates"
 	userchannelprofileshelper "github.com/teamgram/teamgram-server/app/bff/userchannelprofiles"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/contactphoto"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/personalchannel"
 	usernames_helper "github.com/teamgram/teamgram-server/app/bff/usernames"
 	users_helper "github.com/teamgram/teamgram-server/app/bff/users"
 	wallet_helper "github.com/teamgram/teamgram-server/app/bff/wallet"
@@ -81,12 +88,17 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	authsession_client "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/story"
+	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
+	"github.com/teamgram/teamgram-server/pkg/accountprefs"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 	"github.com/teamgram/teamgram-server/pkg/configload"
 	"github.com/teamgram/teamgram-server/pkg/crashreport"
 	"github.com/teamgram/teamgram-server/pkg/inflight"
+	"github.com/teamgram/teamgram-server/pkg/privacymember"
 	"github.com/teamgram/teamgram-server/pkg/redact"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -115,7 +127,29 @@ func (s *Server) Initialize() error {
 	})
 
 	logx.Infov(redact.Value(c))
+	// Chat-member privacy and blocked avatars on user lists run in this
+	// process. ChannelMySQL is the teamgram database. TEAMGRAM_MYSQL_DSN
+	// overrides it. A missing value logs once inside Configure.
+	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
+	if err := passkeylogin.Configure(passkeylogin.Clients{
+		DSN:     c.ChannelMySQL,
+		User:    c.BizServiceClient,
+		Session: c.AuthSessionClient,
+		Msg:     c.MsgClient,
+		Sync:    c.SyncClient,
+	}); err != nil {
+		return err
+	}
+	if err := accountprefs.UseDSN(c.ChannelMySQL); err != nil {
+		logx.Errorf("accountprefs mysql: %v", err)
+	}
+	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
+		return err
+	}
+	if err := bizprofile.UseDSN(c.ChannelMySQL); err != nil {
+		return err
+	}
 	channelBridge := channels_helper.Bridge{}
 
 	s.grpcSrv = zrpc.MustNewServer(c.RpcServerConf, func(grpcServer *grpc.Server) {
@@ -246,8 +280,9 @@ func (s *Server) Initialize() error {
 				MediaClient:   c.MediaClient,
 				SyncClient:    c.SyncClient,
 				IdgenClient:   c.IdgenClient,
+				StatusClient:  c.StatusClient,
 			}))
-		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
+		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums(c.BizServiceClient))
 		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment(c.BizServiceClient))
 		mtproto.RegisterRPCAntiSpamServer(grpcServer, channels_helper.NewAntiSpam())
 		mtproto.RegisterRPCBoostsServer(grpcServer, channels_helper.NewBoosts())
@@ -255,7 +290,7 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCTakeoutServer(grpcServer, channels_helper.NewTakeout())
 		mtproto.RegisterRPCTranslationServer(grpcServer, channels_helper.NewTranslation(c.BizServiceClient))
 		mtproto.RegisterRPCPaidMessageServer(grpcServer, channels_helper.NewPaidMessages())
-		mtproto.RegisterRPCReportsServer(grpcServer, channels_helper.NewReports())
+		mtproto.RegisterRPCReportsServer(grpcServer, channels_helper.NewReports(c.BizServiceClient))
 		mtproto.RegisterRPCReactionsServer(grpcServer, channels_helper.NewReactions(c.BizServiceClient, c.BizServiceClient, c.SyncClient))
 		mtproto.RegisterRPCMessageThreadsServer(grpcServer, channels_helper.NewThreads(c.BizServiceClient, c.BizServiceClient, c.MsgClient, c.SyncClient))
 		mtproto.RegisterRPCStatisticsServer(grpcServer, channels_helper.NewStats())
@@ -307,6 +342,7 @@ func (s *Server) Initialize() error {
 		// RPCPayments also serves account.getTmpPassword; that method is
 		// delegated to the two-factor core.
 		paymentsSvc := payments_helper.New()
+		payments_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCPaymentsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarsServer(grpcServer, paymentsSvc)
 		mtproto.RegisterRPCStarSubscriptionsServer(grpcServer, paymentsSvc)
@@ -326,7 +362,16 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCBusinessLocationServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCBusinessOpeningHoursServer(grpcServer, businessSvc)
 		mtproto.RegisterRPCCommunitiesServer(grpcServer, communities_helper.New())
+		communities_helper.Start(c.ChannelMySQL)
 		mtproto.RegisterRPCEphemeralServer(grpcServer, ephemeral_helper.New())
+		ephemeralUsers := user_client.NewUserClient(rpcx.GetCachedRpcClient(c.BizServiceClient))
+		ephemeral_helper.Start(func(ctx context.Context, id int64) (bool, error) {
+			ok, err := ephemeralUsers.UserIsBot(ctx, &userpb.TLUserIsBot{Id: id})
+			if err != nil {
+				return false, err
+			}
+			return mtproto.FromBool(ok), nil
+		})
 		mtproto.RegisterRPCFeedServer(grpcServer, feed_helper.New())
 		mtproto.RegisterRPCDiscoverServer(grpcServer, discover_helper.New(c.BizServiceClient))
 		discoverrel.Start(c.ChannelMySQL)
@@ -460,10 +505,11 @@ func (s *Server) Initialize() error {
 			MessageClient: c.BizServiceClient,
 			MediaClient:   c.MediaClient,
 			SyncClient:    c.SyncClient,
+			StatusClient:  c.StatusClient,
 			ChannelMySQL:  c.ChannelMySQL,
 		}
 		mtproto.RegisterRPCMessagesServer(grpcServer, messages_helper.New(msgCfg, nil))
-		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls())
+		mtproto.RegisterRPCPollsServer(grpcServer, messages_helper.NewPolls(msgCfg))
 		mtproto.RegisterRPCScheduledMessagesServer(grpcServer, messages_helper.NewScheduled(msgCfg))
 		mtproto.RegisterRPCWebPageServer(grpcServer, messages_helper.NewWebPage(msgCfg))
 		// Inline bots, callback buttons, attach menu, mini apps, prepared messages.
@@ -514,10 +560,10 @@ func (s *Server) Initialize() error {
 		mtproto.RegisterRPCGatewayVerificationMessagesServer(grpcServer, messages_helper.NewDelivery())
 		// Chat themes, wallpapers, share themes, history import, todos,
 		// fact-checks, AI compose, emoji games, stats URL, suggested posts.
-		mtproto.RegisterRPCThemesServer(grpcServer, messages_helper.NewThemes())
-		mtproto.RegisterRPCWallpapersServer(grpcServer, messages_helper.NewWallpapers())
+		mtproto.RegisterRPCThemesServer(grpcServer, messages_helper.NewThemes(msgCfg))
+		mtproto.RegisterRPCWallpapersServer(grpcServer, messages_helper.NewWallpapers(msgCfg))
 		mtproto.RegisterRPCRingtoneServer(grpcServer, messages_helper.NewRingtones())
-		mtproto.RegisterRPCBusinessConnectedBotsServer(grpcServer, messages_helper.NewConnectedBots())
+		mtproto.RegisterRPCBusinessConnectedBotsServer(grpcServer, messages_helper.NewConnectedBots(msgCfg))
 		mtproto.RegisterRPCShareThemesServer(grpcServer, messages_helper.NewShareThemes())
 		mtproto.RegisterRPCImportedChatsServer(grpcServer, messages_helper.NewImportedChats())
 		mtproto.RegisterRPCTodoListsServer(grpcServer, messages_helper.NewTodoLists(msgCfg))
@@ -552,8 +598,8 @@ func (s *Server) Initialize() error {
 					DialogClient:  c.BizServiceClient,
 				},
 				stories_helper.Plugin{},
-				nil,
-				nil))
+				personalchannel.Plugin{},
+				chatdecor.Plugin{}))
 
 		// nsfw_helper
 		mtproto.RegisterRPCNsfwServer(
@@ -639,6 +685,7 @@ func (s *Server) Initialize() error {
 				UserClient:    c.BizServiceClient,
 				MsgClient:     c.MsgClient,
 				SyncClient:    c.SyncClient,
+				KV:            c.KV,
 			}))
 
 		mtproto.RegisterRPCPasskeyServer(
@@ -662,6 +709,16 @@ func (s *Server) Initialize() error {
 	// observed production MySQL session peak and stops a backlog from
 	// forming in this process. TELLOMI_BFF_MAX_INFLIGHT overrides it.
 	s.grpcSrv.AddUnaryInterceptors(inflight.UnaryServer(inflight.FromEnv("TELLOMI_BFF_MAX_INFLIGHT", 256)))
+	// Ordinary RPCs refresh last_seen_at at most once a minute. account.updateStatus
+	// still owns the explicit online and offline write.
+	s.grpcSrv.AddUnaryInterceptors(presence.Unary(user_client.NewUserClient(rpcx.GetCachedRpcClient(c.BizServiceClient))))
+	// Access hashes are checked only when TELLOMI_ACCESS_HASH_ENFORCE is
+	// log or enforce. The default leaves every RPC on its previous path.
+	biz := rpcx.GetCachedRpcClient(c.BizServiceClient)
+	s.grpcSrv.AddUnaryInterceptors(accessgate.Unary(
+		user_client.NewUserClient(biz),
+		message_client.NewMessageClient(biz),
+	))
 
 	go func() {
 		s.grpcSrv.Start()

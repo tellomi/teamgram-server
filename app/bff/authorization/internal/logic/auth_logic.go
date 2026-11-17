@@ -210,7 +210,7 @@ func (m *AuthLogic) DoAuthSignIn(ctx context.Context,
 	}
 
 	maxAttempts := m.MaxAttempts
-	if verify.IsEmail(phoneNumber) && m.EmailMaxAttempts > 0 {
+	if (verify.IsEmail(phoneNumber) || codeData.SentCodeType == model.SentCodeTypeEmailCode) && m.EmailMaxAttempts > 0 {
 		maxAttempts = m.EmailMaxAttempts
 	}
 	if maxAttempts <= 0 {

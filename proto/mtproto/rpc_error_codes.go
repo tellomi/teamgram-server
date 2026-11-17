@@ -2346,6 +2346,16 @@ var (
 	// | 400 | BOT_NOT_CONNECTED_YET | No business bot is connected to the currently logged in user. |
 	// https://core.telegram.org/method/account.disablePeerConnectedBot
 	ErrBotNotConnectedYet = status.Error(ErrBadRequest, "BOT_NOT_CONNECTED_YET")
+
+	// ErrQuoteTextInvalid
+	// | 400 | QUOTE_TEXT_INVALID | The specified quote text is not a substring of the original message. |
+	// https://core.telegram.org/method/messages.sendMessage
+	ErrQuoteTextInvalid = status.Error(ErrBadRequest, "QUOTE_TEXT_INVALID")
+
+	// ErrImportNotAvailable
+	// | 400 | IMPORT_NOT_AVAILABLE | Chat history import is not available.
+	// https://core.telegram.org/method/messages.initHistoryImport
+	ErrImportNotAvailable = status.Error(ErrBadRequest, "IMPORT_NOT_AVAILABLE")
 )
 
 // 401 UNAUTHORIZED
@@ -2446,6 +2456,10 @@ var (
 	// | 403 | CHAT_SEND_POLL_FORBIDDEN | You can't send polls in this chat. |
 	ErrChatSendPollForbidden = status.Error(ErrForbidden, "CHAT_SEND_POLL_FORBIDDEN")
 
+	// ErrChatSendReactionsForbidden
+	// | 403 | CHAT_SEND_REACTIONS_FORBIDDEN | You can't send reactions in this chat. |
+	ErrChatSendReactionsForbidden = status.Error(ErrForbidden, "CHAT_SEND_REACTIONS_FORBIDDEN")
+
 	// ErrChatSendVideosForbidden
 	// | 403 | CHAT_SEND_VIDEOS_FORBIDDEN | You can't send videos in this chat. |
 	ErrChatSendVideosForbidden = status.Error(ErrForbidden, "CHAT_SEND_VIDEOS_FORBIDDEN")
@@ -2543,6 +2557,14 @@ var (
 	// | 403 | CHAT_SEND_MEDIA_FORBIDDEN | You can't send media in this chat. |
 	ErrChatSendMediaForbidden = status.Error(ErrForbidden, "CHAT_SEND_MEDIA_FORBIDDEN")
 
+	// ErrChatSendRoundvideosForbidden
+	// | 403 | CHAT_SEND_ROUNDVIDEOS_FORBIDDEN | You can't send round videos to this chat. |
+	ErrChatSendRoundvideosForbidden = status.Error(ErrForbidden, "CHAT_SEND_ROUNDVIDEOS_FORBIDDEN")
+
+	// ErrChatSendWebpageForbidden
+	// | 403 | CHAT_SEND_WEBPAGE_FORBIDDEN | You can't embed links in this chat. |
+	ErrChatSendWebpageForbidden = status.Error(ErrForbidden, "CHAT_SEND_WEBPAGE_FORBIDDEN")
+
 	// ErrGroupcallAlreadyStarted
 	// | 403 | GROUPCALL_ALREADY_STARTED | The groupcall has already started, you can join directly using [phone.joinGroupCall](https://core.telegram.org/method/phone.joinGroupCall). |
 	ErrGroupcallAlreadyStarted = status.Error(ErrForbidden, "GROUPCALL_ALREADY_STARTED")
@@ -2558,6 +2580,10 @@ var (
 	// ErrUserPrivacyRestricted
 	// | 403 | USER_PRIVACY_RESTRICTED | The user's privacy settings do not allow you to do this. |
 	ErrUserPrivacyRestricted = status.Error(ErrForbidden, "USER_PRIVACY_RESTRICTED")
+
+	// ErrYourPrivacyRestricted
+	// | 403 | YOUR_PRIVACY_RESTRICTED | You cannot fetch the read date of this message because you have disallowed other users to do so for your messages; to fix, allow other users to see your exact last online date OR purchase a Telegram Premium subscription. |
+	ErrYourPrivacyRestricted = status.Error(ErrForbidden, "YOUR_PRIVACY_RESTRICTED")
 
 	// ErrForbiddenVoiceMessagesForbidden
 	// | 403 | VOICE_MESSAGES_FORBIDDEN | This user's privacy settings forbid you from sending voice messages. |

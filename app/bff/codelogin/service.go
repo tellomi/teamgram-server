@@ -220,6 +220,12 @@ func loginEmailKey(userID int64) string {
 	return "tellomi:p0:loginemail:" + itoa(userID)
 }
 
+// setupEmailKey keeps a login address that was verified before the phone
+// account existed. auth.signUp takes it once and writes the Redis login email.
+func setupEmailKey(phone string) string {
+	return "tellomi:p0:setupemail:" + phone
+}
+
 func pendingEmailKey(authKey int64, phone string) string {
 	return "tellomi:p0:pendingemail:" + itoa(authKey) + ":" + phone
 }
@@ -328,6 +334,48 @@ func (s *Service) guardSetupEmail(ctx context.Context, userID int64, canon, emai
 		return err
 	}
 	return s.permitLoginEmail(ctx, id, email)
+}
+
+// VerifiedLoginEmail is the address auth.sendCode may mail for this user.
+// A safe Redis copy wins. Otherwise users.email is used when it is set.
+// An empty string means the account has no login email. A divergent Redis
+// copy is not returned.
+func (s *Service) VerifiedLoginEmail(ctx context.Context, userID int64) (string, error) {
+	email, err := s.safeAttachedLoginEmail(ctx, userID)
+	if err != nil || email != "" {
+		return email, err
+	}
+	mine, err := s.identityEmail(ctx, userID)
+	if err != nil {
+		return "", refuseIdentity(err)
+	}
+	return mine, nil
+}
+
+// TakeVerifiedSetupEmail returns the address verified during login setup for
+// a phone that had no user yet, and deletes it. A second call is empty.
+func (s *Service) TakeVerifiedSetupEmail(ctx context.Context, phone string) (string, error) {
+	if s == nil || verify.IsEmail(phone) {
+		return "", nil
+	}
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return "", nil
+	}
+	key := setupEmailKey(phone)
+	email, err := s.kv.GetCtx(ctx, key)
+	if err != nil || strings.TrimSpace(email) == "" {
+		return "", err
+	}
+	_, _ = s.kv.DelCtx(ctx, key)
+	return email, nil
+}
+
+func (s *Service) rememberSetupEmail(ctx context.Context, phone, email string) error {
+	if s == nil || verify.IsEmail(phone) || email == "" {
+		return nil
+	}
+	return s.kv.SetexCtx(ctx, setupEmailKey(phone), email, 24*3600)
 }
 
 // LoginEmail returns the Redis login-email copy, or "" when none is set.
@@ -548,7 +596,11 @@ func (s *Service) SendVerifyEmailCode(ctx context.Context, authKey, userID int64
 		}
 		// An email-only account already has users.email. Confirming that
 		// same address does not need a previous Redis row.
-		if have == "" && mine == "" {
+		// A confirmed phone account (identity hook installed, users.email
+		// empty) may bind the first login email from Settings. Official
+		// LoginChange otherwise requires an address that LoginSetup stored.
+		// Without an identity hook the first bind stays EMAIL_NOT_SETUP.
+		if have == "" && mine == "" && s.opt.IdentityEmail == nil {
 			return nil, mtproto.ErrEmailNotSetup
 		}
 	}
@@ -667,6 +719,8 @@ func (s *Service) VerifyEmail(ctx context.Context, authKey, userID int64, in *mt
 		if err = s.SaveLoginEmail(ctx, uid, rec.Email); err != nil {
 			return nil, err
 		}
+	} else if err = s.rememberSetupEmail(ctx, phone, rec.Email); err != nil {
+		return nil, err
 	}
 	_, _ = s.kv.DelCtx(ctx, key)
 	_, _ = s.kv.DelCtx(ctx, pendingEmailKey(authKey, phone))

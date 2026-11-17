@@ -59,6 +59,27 @@ func (m *MessageReplyHeader) GetFixedReplyToMsgId() int32 {
 	return 0
 }
 
+// ReplyTargetMsgID is the message id inputMessageReplyTo should load.
+// Only the three stored forms of reply_to_msg_id count: the plain field,
+// reply_to_msg_id_INT32, and reply_to_msg_id_FLAGINT32. reply_to_top_id is
+// the topic root. Returning it would hand back the topic instead of the
+// message that was replied to.
+func (m *MessageReplyHeader) ReplyTargetMsgID() int32 {
+	if m == nil {
+		return 0
+	}
+	if id := m.GetFixedReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId_INT32(); id != 0 {
+		return id
+	}
+	return m.GetReplyToMsgId_FLAGINT32().GetValue()
+}
+
 func (m *MessageReplyHeader) FixData() *MessageReplyHeader {
 	if m.GetPredicateName() == Predicate_messageReplyHeader {
 		replyToMsgId := m.GetFixedReplyToMsgId()
@@ -210,6 +231,21 @@ func MakeMessageActionPaymentSent(currency string, totalAmount int64) *MessageAc
 		Currency_FLAGSTRING: MakeFlagsString(currency),
 		TotalAmount:         totalAmount,
 	}).To_MessageAction()
+}
+
+// AnsweredPhoneCall reports a 1:1 call the callee already took.
+// Missed and busy stay unread. A hangup before the call connects has no
+// duration and stays unread. A connected hangup or disconnect carries a
+// duration. Voice and video use the same rule.
+func AnsweredPhoneCall(action *MessageAction) bool {
+	if action == nil || action.GetPredicateName() != Predicate_messageActionPhoneCall {
+		return false
+	}
+	switch action.GetReason().GetPredicateName() {
+	case Predicate_phoneCallDiscardReasonMissed, Predicate_phoneCallDiscardReasonBusy, "":
+		return false
+	}
+	return action.GetDuration().GetValue() > 0
 }
 
 // MakeMessageActionPhoneCall

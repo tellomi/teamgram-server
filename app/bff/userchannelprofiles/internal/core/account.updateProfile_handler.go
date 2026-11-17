@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"github.com/teamgram/teamgram-server/pkg/enforcement"
 	"github.com/teamgram/teamgram-server/pkg/premium"
@@ -87,29 +86,46 @@ func (c *UserChannelProfilesCore) AccountUpdateProfile(in *mtproto.TLAccountUpda
 		}
 	}
 
-	if in.GetFirstName().GetValue() != me.FirstName() ||
-		in.GetLastName().GetValue() != me.LastName() {
-		if _, err = c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
-			UserId:    c.MD.UserId,
-			FirstName: in.GetFirstName().GetValue(),
-			LastName:  in.GetLastName().GetValue(),
-		}); err != nil {
-			c.Logger.Errorf("account.updateProfile - error: %v", err)
-		} else {
-			me.SetFirstName(in.GetFirstName().GetValue())
-			me.SetLastName(in.GetLastName().GetValue())
+	// An omitted flag keeps the stored name. Sending only first_name used to
+	// write last_name as empty. An empty or over-long first name is
+	// FIRSTNAME_INVALID. A last name may be cleared. 64 runes is the column
+	// and the official limit; a longer name used to be dropped and the old
+	// name returned as success.
+	first, last := me.FirstName(), me.LastName()
+	if in.GetFirstName() != nil {
+		var nerr error
+		first, nerr = checkedProfileName(in.GetFirstName().GetValue(), true)
+		if nerr != nil {
+			c.Logger.Errorf("account.updateProfile - first name: %v", nerr)
+			return nil, nerr
 		}
-
-		c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
-			UserId:        c.MD.UserId,
-			PermAuthKeyId: c.MD.PermAuthKeyId,
-			Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateUserName(&mtproto.Update{
-				UserId:    c.MD.UserId,
-				FirstName: in.GetFirstName().GetValue(),
-				LastName:  in.GetLastName().GetValue(),
-				Username:  me.Username(),
-			}).To_Update()),
+	}
+	if in.GetLastName() != nil {
+		var nerr error
+		last, nerr = checkedProfileName(in.GetLastName().GetValue(), false)
+		if nerr != nil {
+			c.Logger.Errorf("account.updateProfile - last name: %v", nerr)
+			return nil, nerr
+		}
+	}
+	if first != me.FirstName() || last != me.LastName() {
+		ok, err := c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
+			UserId:    c.MD.UserId,
+			FirstName: first,
+			LastName:  last,
 		})
+		if err != nil || !mtproto.FromBool(ok) {
+			c.Logger.Errorf("account.updateProfile - error: %v", err)
+			return nil, mtproto.ErrInternalServerError
+		}
+		me.SetFirstName(first)
+		me.SetLastName(last)
+		if fresh, ferr := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
+			Id: c.MD.UserId,
+		}); ferr == nil && fresh != nil {
+			me = fresh
+		}
+		c.pushProfileName(me)
 	}
 
 	return me.ToSelfUser(), nil

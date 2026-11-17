@@ -38,8 +38,11 @@ func TestAuthBindMySQL(t *testing.T) {
 		if err != nil || hash2 == 0 {
 			t.Fatalf("second bind hash=%d err=%v", hash2, err)
 		}
+		if hash2 != hash {
+			t.Fatalf("rebind hash %d, want the stored hash %d", hash2, hash)
+		}
 		rows := h.binds(t, key)
-		if len(rows) != 1 || rows[0].userID != userID || rows[0].deleted != 0 || rows[0].created != 100 {
+		if len(rows) != 1 || rows[0].userID != userID || rows[0].deleted != 0 || rows[0].created != 100 || rows[0].hash != hash {
 			t.Fatalf("same-user rebind changed the row: %+v", rows)
 		}
 	})
@@ -107,19 +110,246 @@ func TestAuthBindMySQL(t *testing.T) {
 	t.Run("revoked same user is revived in place", func(t *testing.T) {
 		key := h.insertPerm(t)
 		const userID = int64(101)
-		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+		first, err := h.dao.BindAuthKeyUser(ctx, key, userID)
+		if err != nil {
 			t.Fatal(err)
 		}
 		h.setCreated(t, key, userID, 100)
 		if !h.dao.UnbindAuthUser(ctx, key, userID) {
 			t.Fatal("unbind")
 		}
+		second, err := h.dao.BindAuthKeyUser(ctx, key, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if second == 0 || second == first {
+			t.Fatalf("revived hash %d, want a new hash other than %d", second, first)
+		}
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 || rows[0].userID != userID || rows[0].created != 100 || rows[0].hash != second {
+			t.Fatalf("revive: %+v", rows)
+		}
+	})
+
+	t.Run("temp key login becomes one permanent authorization", func(t *testing.T) {
+		perm := h.insertPerm(t)
+		temp := h.nextKey()
+		h.insertKey(t, temp, 1, perm)
+		const userID = int64(141)
+		if _, err := h.dao.BindAuthKeyUser(ctx, temp, userID); err != nil {
+			t.Fatal(err)
+		}
+		h.insertDevice(t, temp, userID, "temp-token")
+		if err := h.dao.AdoptTempAuthorization(ctx, temp, perm); err != nil {
+			t.Fatal(err)
+		}
+		var live int
+		for _, row := range append(h.binds(t, temp), h.binds(t, perm)...) {
+			if row.deleted == 0 {
+				live++
+				if row.userID != userID || row.authKey != perm {
+					t.Fatalf("live row %+v", row)
+				}
+			}
+		}
+		if live != 1 {
+			t.Fatalf("live rows %d", live)
+		}
+		if n := h.deviceCount(t, userID, temp); n != 0 {
+			t.Fatalf("temp push tokens left: %d", n)
+		}
+	})
+
+	t.Run("old bind that is pinging is not expired", func(t *testing.T) {
+		const userID = int64(151)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
 		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
 			t.Fatal(err)
 		}
+		boundAt := time.Now().Unix() - 40*24*60*60
+		h.setActive(t, key, userID, boundAt)
+		h.insertDevice(t, key, userID, "live-token")
+		cData, err := h.dao.GetCacheAuthData(ctx, key)
+		if err != nil || cData == nil || cData.BindUser == nil || cData.BindUser.ActivityTrusted {
+			t.Fatalf("cache before ping: trusted %v err %v", cData != nil && cData.BindUser != nil && cData.BindUser.ActivityTrusted, err)
+		}
+		now := time.Now().Unix()
+		h.dao.ApplyAuthorizationLifetime(ctx, key, cData, now)
 		rows := h.binds(t, key)
-		if len(rows) != 1 || rows[0].deleted != 0 || rows[0].userID != userID || rows[0].created != 100 {
-			t.Fatalf("revive: %+v", rows)
+		if len(rows) != 1 || rows[0].deleted != 0 {
+			t.Fatalf("pinging session was deleted: %+v", rows)
+		}
+		if rows[0].active < now-5 || h.trusted(t, key, userID) != 1 {
+			t.Fatalf("activity was not recorded: active %d trusted %d", rows[0].active, h.trusted(t, key, userID))
+		}
+		if n := h.deviceCount(t, userID, key); n != 1 {
+			t.Fatalf("push token removed from a live session: %d", n)
+		}
+		h.dao.ExpireStaleAuthorizations(ctx, userID, 0, now)
+		rows = h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 {
+			t.Fatalf("device list expired a session that just pinged: %+v", rows)
+		}
+	})
+
+	t.Run("legacy bind time is not inactivity", func(t *testing.T) {
+		const userID = int64(152)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		h.setActive(t, key, userID, time.Now().Unix()-40*24*60*60)
+		h.insertDevice(t, key, userID, "legacy-token")
+		h.dao.ExpireStaleAuthorizations(ctx, userID, 0, time.Now().Unix())
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 {
+			t.Fatalf("untrusted bind was expired: %+v", rows)
+		}
+		if n := h.deviceCount(t, userID, key); n != 1 {
+			t.Fatalf("legacy push token removed: %d", n)
+		}
+	})
+
+	t.Run("trusted idle session expires on its own ping", func(t *testing.T) {
+		const userID = int64(154)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		idle := time.Now().Unix() - 40*24*60*60
+		h.setActive(t, key, userID, idle)
+		h.setTrusted(t, key, userID)
+		h.insertDevice(t, key, userID, "idle-token")
+		if err := h.dao.bumpAuthBindGen(ctx, key); err != nil {
+			t.Fatal(err)
+		}
+		cData, err := h.dao.GetCacheAuthData(ctx, key)
+		if err != nil || cData == nil || cData.BindUser == nil || !cData.BindUser.ActivityTrusted {
+			t.Fatalf("cache before ping: %+v err %v", cData, err)
+		}
+		h.dao.ApplyAuthorizationLifetime(ctx, key, cData, time.Now().Unix())
+		if cData.BindUser != nil || !cData.Revoked {
+			t.Fatal("idle trusted ping was renewed")
+		}
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 1 {
+			t.Fatalf("row after ping: %+v", rows)
+		}
+		if n := h.deviceCount(t, userID, key); n != 0 {
+			t.Fatalf("push token left on an expired session: %d", n)
+		}
+	})
+
+	t.Run("ttl read error does not expire", func(t *testing.T) {
+		const userID = int64(155)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		h.setActive(t, key, userID, time.Now().Unix()-40*24*60*60)
+		h.setTrusted(t, key, userID)
+		h.insertDevice(t, key, userID, "ttl-err-token")
+		cData, err := h.dao.GetCacheAuthData(ctx, key)
+		if err != nil || cData == nil || cData.BindUser == nil {
+			t.Fatal(err)
+		}
+		if _, err := h.db.Exec(`RENAME TABLE users TO users_held`); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _, _ = h.db.Exec(`RENAME TABLE users_held TO users`) }()
+		h.dao.ApplyAuthorizationLifetime(ctx, key, cData, time.Now().Unix())
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 || cData.Revoked {
+			t.Fatalf("ttl read error deleted the session: %+v revoked %v", rows, cData.Revoked)
+		}
+		if n := h.deviceCount(t, userID, key); n != 1 {
+			t.Fatalf("token removed when ttl could not be read: %d", n)
+		}
+	})
+
+	t.Run("refreshed key is not deleted by a stale expiry", func(t *testing.T) {
+		const userID = int64(156)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		key := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, key, userID); err != nil {
+			t.Fatal(err)
+		}
+		idle := time.Now().Unix() - 40*24*60*60
+		h.setActive(t, key, userID, time.Now().Unix()-60)
+		h.setTrusted(t, key, userID)
+		h.insertDevice(t, key, userID, "fresh-token")
+		if h.dao.expireAuthorization(ctx, userID, key, idle) {
+			t.Fatal("stale cutoff deleted a refreshed key")
+		}
+		rows := h.binds(t, key)
+		if len(rows) != 1 || rows[0].deleted != 0 {
+			t.Fatalf("row: %+v", rows)
+		}
+		if n := h.deviceCount(t, userID, key); n != 1 {
+			t.Fatalf("token removed: %d", n)
+		}
+	})
+
+	t.Run("tracked idle authorization expires and drops its push token", func(t *testing.T) {
+		const userID = int64(153)
+		if _, err := h.db.Exec(`INSERT INTO users (id, authorization_ttl_days) VALUES (?, 30)`, userID); err != nil {
+			t.Fatal(err)
+		}
+		staleKey := h.insertPerm(t)
+		freshKey := h.insertPerm(t)
+		if _, err := h.dao.BindAuthKeyUser(ctx, staleKey, userID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.dao.BindAuthKeyUser(ctx, freshKey, userID); err != nil {
+			t.Fatal(err)
+		}
+		h.setActive(t, staleKey, userID, time.Now().Unix()-31*24*60*60)
+		h.setActive(t, freshKey, userID, time.Now().Unix()-60)
+		h.setTrusted(t, staleKey, userID)
+		h.setTrusted(t, freshKey, userID)
+		h.insertDevice(t, staleKey, userID, "stale-token")
+		h.insertDevice(t, freshKey, userID, "fresh-token")
+		if _, err := h.dao.GetCacheAuthData(ctx, staleKey); err != nil {
+			t.Fatal(err)
+		}
+		h.dao.ExpireStaleAuthorizations(ctx, userID, freshKey, time.Now().Unix())
+		stale := h.binds(t, staleKey)
+		if len(stale) != 1 || stale[0].deleted != 1 || stale[0].created != 0 {
+			t.Fatalf("stale row %+v", stale)
+		}
+		fresh := h.binds(t, freshKey)
+		if len(fresh) != 1 || fresh[0].deleted != 0 {
+			t.Fatalf("fresh row %+v", fresh)
+		}
+		got, err := h.dao.GetCacheAuthData(ctx, staleKey)
+		if err != nil || got == nil || !got.Revoked || got.UserId() != 0 {
+			seen := int64(0)
+			revoked := false
+			if got != nil {
+				seen = got.UserId()
+				revoked = got.Revoked
+			}
+			t.Fatalf("cache after expiry user %d revoked %v err %v", seen, revoked, err)
+		}
+		if n := h.deviceCount(t, userID, staleKey); n != 0 {
+			t.Fatalf("stale push tokens left: %d", n)
+		}
+		if n := h.deviceCount(t, userID, freshKey); n != 1 {
+			t.Fatalf("fresh push tokens %d", n)
 		}
 	})
 
@@ -441,6 +671,7 @@ type storedBind struct {
 	created int64
 	active  int64
 	deleted int
+	authKey int64
 }
 
 func sameBinds(a, b []storedBind) bool {
@@ -499,9 +730,58 @@ func (h *authBindHarness) setCreated(t *testing.T, authKeyID, userID, created in
 	}
 }
 
+func (h *authBindHarness) setTrusted(t *testing.T, authKeyID, userID int64) {
+	t.Helper()
+	res, err := h.db.Exec(`UPDATE auth_users SET activity_trusted = 1 WHERE auth_key_id = ? AND user_id = ?`, authKeyID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil || n != 1 {
+		t.Fatalf("set trusted rows %d err %v", n, err)
+	}
+}
+
+func (h *authBindHarness) trusted(t *testing.T, authKeyID, userID int64) int {
+	t.Helper()
+	var n int
+	if err := h.db.QueryRow(`SELECT activity_trusted FROM auth_users WHERE auth_key_id = ? AND user_id = ?`, authKeyID, userID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func (h *authBindHarness) setActive(t *testing.T, authKeyID, userID, active int64) {
+	t.Helper()
+	res, err := h.db.Exec(`UPDATE auth_users SET date_active = ? WHERE auth_key_id = ? AND user_id = ?`, active, authKeyID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil || n != 1 {
+		t.Fatalf("set active rows %d err %v", n, err)
+	}
+}
+
+func (h *authBindHarness) insertDevice(t *testing.T, authKeyID, userID int64, token string) {
+	t.Helper()
+	if _, err := h.db.Exec(`INSERT INTO devices (auth_key_id, user_id, token_type, token) VALUES (?, ?, 1, ?)`, authKeyID, userID, token); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (h *authBindHarness) deviceCount(t *testing.T, userID, authKeyID int64) int {
+	t.Helper()
+	var n int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM devices WHERE user_id = ? AND auth_key_id = ?`, userID, authKeyID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func (h *authBindHarness) binds(t *testing.T, authKeyID int64) []storedBind {
 	t.Helper()
-	rows, err := h.db.Query(`SELECT user_id, hash, date_created, date_active, deleted FROM auth_users WHERE auth_key_id = ? ORDER BY user_id`, authKeyID)
+	rows, err := h.db.Query(`SELECT user_id, hash, date_created, date_active, deleted, auth_key_id FROM auth_users WHERE auth_key_id = ? ORDER BY user_id`, authKeyID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +789,7 @@ func (h *authBindHarness) binds(t *testing.T, authKeyID int64) []storedBind {
 	var out []storedBind
 	for rows.Next() {
 		var row storedBind
-		if err := rows.Scan(&row.userID, &row.hash, &row.created, &row.active, &row.deleted); err != nil {
+		if err := rows.Scan(&row.userID, &row.hash, &row.created, &row.active, &row.deleted, &row.authKey); err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, row)
@@ -619,6 +899,7 @@ CREATE TABLE auth_users (
   hash BIGINT NOT NULL DEFAULT 0,
   date_created BIGINT NOT NULL DEFAULT 0,
   date_active BIGINT NOT NULL DEFAULT 0,
+  activity_trusted TINYINT(1) NOT NULL DEFAULT 0,
   android_push_session_id BIGINT NOT NULL DEFAULT 0,
   encrypted_requests_disabled TINYINT(1) NOT NULL DEFAULT 0,
   call_requests_disabled TINYINT(1) NOT NULL DEFAULT 0,
@@ -646,6 +927,23 @@ CREATE TABLE auths (
   deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY auth_key_id (auth_key_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE users (
+  id BIGINT NOT NULL,
+  authorization_ttl_days INT NOT NULL DEFAULT 180,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB;
+
+CREATE TABLE devices (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  auth_key_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  token_type INT NOT NULL DEFAULT 0,
+  token VARCHAR(255) NOT NULL DEFAULT '',
+  state INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY user_key (user_id, auth_key_id)
 ) ENGINE=InnoDB
 `
 

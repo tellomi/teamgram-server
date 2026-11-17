@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
@@ -153,6 +154,12 @@ func cloneRelease(rel *Release) *Release {
 		return nil
 	}
 	out := *rel
+	if len(rel.Notes) > 0 {
+		out.Notes = make(map[string]string, len(rel.Notes))
+		for k, v := range rel.Notes {
+			out.Notes[k] = v
+		}
+	}
 	return &out
 }
 
@@ -233,14 +240,16 @@ func readLimited(r io.Reader) ([]byte, error) {
 // androidManifest is the published /dl/android/latest.json object.
 // versionName is what help.getAppUpdate compares. url is the button link,
 // and fallbackUrl is used when url is empty. changelog, when it is a string,
-// is the dialog text. mandatory forces can_not_skip only when it is the JSON
-// boolean true. Other keys (versionCode, sha256, sha256sum, size, files)
-// are accepted and ignored.
+// is the dialog text. notes, when it is an object of lang_code to string,
+// is the localized dialog text and wins over changelog. mandatory forces
+// can_not_skip only when it is the JSON boolean true. Other keys
+// (versionCode, sha256, sha256sum, size, files) are accepted and ignored.
 type androidManifest struct {
 	VersionName string          `json:"versionName"`
 	URL         string          `json:"url"`
 	FallbackURL string          `json:"fallbackUrl"`
 	Changelog   json.RawMessage `json:"changelog"`
+	Notes       json.RawMessage `json:"notes"`
 	Mandatory   json.RawMessage `json:"mandatory"`
 }
 
@@ -260,6 +269,7 @@ func parseManifest(body []byte) (*Release, error) {
 	return &Release{
 		Version:    version,
 		Text:       manifestChangelog(doc.Changelog),
+		Notes:      manifestNotes(doc.Notes),
 		URL:        link,
 		CannotSkip: manifestMandatory(doc.Mandatory),
 	}, nil
@@ -277,6 +287,64 @@ func manifestMandatory(raw json.RawMessage) bool {
 		return false
 	}
 	return mandatory
+}
+
+// manifestNotes reads {"zh-hans":"...","en":"..."}. A string changelog is
+// left alone. Keys that are not a language we serve are ignored. An alias
+// such as zh-CN is stored as zh-hans and does not replace an explicit
+// zh-hans value.
+func manifestNotes(raw json.RawMessage) map[string]string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) || raw[0] != '{' {
+		return nil
+	}
+	var rawMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rawMap); err != nil {
+		return nil
+	}
+	canonical := map[string]string{}
+	aliases := map[string]string{}
+	for key, value := range rawMap {
+		text := jsonString(value)
+		if text == "" {
+			continue
+		}
+		norm := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(key, "_", "-")))
+		code, ok := langpack.CanonicalLang(norm)
+		if !ok || code == "" {
+			continue
+		}
+		if norm == code {
+			canonical[code] = text
+			continue
+		}
+		if _, exists := aliases[code]; !exists {
+			aliases[code] = text
+		}
+	}
+	if len(canonical) == 0 && len(aliases) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(canonical)+len(aliases))
+	for code, text := range aliases {
+		out[code] = text
+	}
+	for code, text := range canonical {
+		out[code] = text
+	}
+	return out
+}
+
+func jsonString(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '"' {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func manifestChangelog(raw json.RawMessage) string {

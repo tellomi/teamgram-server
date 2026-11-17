@@ -13,4 +13,5 @@ type Config struct {
 	MediaClient  zrpc.RpcClientConf
 	SyncClient   *kafka.KafkaProducerConf
 	IdgenClient  zrpc.RpcClientConf `json:",optional"`
+	StatusClient zrpc.RpcClientConf `json:",optional"`
 }

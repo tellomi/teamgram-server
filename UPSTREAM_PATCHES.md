@@ -2,6 +2,251 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Business profile and automatic replies (ISSUE-S-BIZ-PERSIST-001, ISSUE-S-BIZ-AUTOREPLY-001)
+
+Business hours, location, intro, greeting, away message, and chat links used to live only in the BFF process. `bizprofile.UseDSN` in the BFF startup writes them to `business_profile` when MySQL is configured. `users.getFullUser` still reads the same book.
+
+After a private `messages.sendMessage` (and the media and forward paths that share `dispatchOutbox`) succeeds, `schedule_dispatch.go` calls `scheduleBusinessAutoReply`. That hook does not wait on MySQL or on the shortcut copy; the customer's RPC already has its updates. The copy runs with a timeout. The ledger row is saved before any shortcut id is returned. A failed save does not send. A failed shortcut send is logged and not retried. Greeting dedup stores the prior message time the decision used, not the clock time of the reply. A failed customer-outbox read is not treated as a new chat. A failed contact lookup is not a non-contact, and a failed last-seen lookup is not offline.
+
+| Piece | File |
+| --- | --- |
+| startup DSN | `app/bff/bff/internal/server/server.go` |
+| stored profile | `app/bff/business/profile/profile.go`, `persist.go`, `teamgramd/deploy/sql/migrate-20261130-business-profile.sql` |
+| send hook | `app/bff/messages/internal/core/schedule_dispatch.go`, `business_reply.go` |
+
+## Voice search counters (ISSUE-S-SEARCHCOUNT-VOICE-LAG-001)
+
+`messages.getSearchCounters` counted a photo with `SELECT count(id)` on `message_filter_type`. A voice note and a round video share `MEDIA_AUDIO`. The voice count paged those rows and parsed `message_data`, so one call could report photo=1 and voice=0 even when both rows were already stored.
+
+Voice and round video are still written as `MEDIA_AUDIO`. An older `messages.search` that reads only that column still lists them. The voice and round counts are now `SELECT count(id)` on that same column. `message_data` is a JSON column, so the text form has a space after the colon (`"voice": true`, `"round_message": true`). A row stored as `MEDIA_VOICE_FILE` or `MEDIA_ROUND_FILE` is still added by its column and is not matched by the audio predicate. The send path is unchanged. A row that the inbox consumer has not inserted yet is absent from every count, including photos.
+
+| Piece | File |
+| --- | --- |
+| count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go`, `search_counter_voice.go` |
+
+## Slow mode next send date (ISSUE-S-SLOWMODE-NEXTDATE-001)
+
+`channels.getFullChannel` returned `slowmode_seconds` and left `slowmode_next_send_date` empty. `Send` already stores each member's last send in `Features.LastSend` and returns `SLOWMODE_WAIT` from that map. `channelFull` now fills `slowmode_next_send_date` from the same map: last send plus `slowmode_seconds`, only for a member who is not an admin and not the creator, and only while that time is still in the future. Admins, the creator, a closed slow mode, and an elapsed window omit the field.
+
+| Piece | File |
+| --- | --- |
+| field | `app/service/biz/channel/convert.go` |
+
+## Channel profile photo on getFullChannel (ISSUE-S-CHAN-FULLPHOTO-001)
+
+`channels.editPhoto` stored the photo id on the channel and put the full photo on the service message and on `chat.photo`. `channels.getFullChannel` still wrote `channelFull.chat_photo` as `photoEmpty`, so the profile screen could not open the large photo. The field now loads that photo id through `media.getPhoto` (the same call a basic group already uses when it fills `chatFull.chat_photo`). Several ids are deduped and loaded together. A missing photo, or a cleared avatar, stays `photoEmpty`. `messages.getFullChat` already returned the stored photo and is unchanged.
+
+| Piece | File |
+| --- | --- |
+| load the current avatar | `app/service/biz/channel/convert.go`, `app/service/biz/channel/chat_photo.go` |
+| media client | `app/bff/channels/internal/svc/service_context.go` |
+
+## Supergroup mention badge on getPeerDialogs (ISSUE-S-PEERDIALOGS-MENTIONS-001)
+
+`messages.getDialogs` returns the channel store's dialog, which already carries `unread_mentions_count`. `messages.getPeerDialogs` and `messages.getPinnedDialogs` start from the dialogs table and copy the live top, read cursors, unread count, pts, and forum flag in `applyChannelLiveRows`. That copy skipped `unread_mentions_count`, so opening one supergroup reported 0 and the client cleared the @ badge.
+
+The live row does not carry `unread_reactions_count`. Channel reactions are not written onto that row, so the overlay leaves the dialogs-table reaction count alone.
+
+`messages.readMentions` on a channel used to zero only `dialogs.unread_mentions_count`. The lists above read the channel store, which still counted every mention above the inbox cursor, so the badge came back. A channel read now records a mention cursor and does not move the inbox cursor: `unread_count` stays, and a later mention still counts. `top_msg_id` acknowledges that forum topic only.
+
+| Piece | File |
+| --- | --- |
+| copy the live mention count | `app/bff/dialogs/internal/core/channel_dialogs.go` |
+| mention cursor | `app/service/biz/channel/read_views.go`, `service_ops.go`, `features.go` |
+| channel readMentions | `app/bff/messages/internal/core/messages.readMentions_handler.go` |
+
+## Quick reply multi-session sync (ISSUE-S-QUICKREPLY-SYNC-001)
+
+Creating, appending, renaming, reordering, and deleting a quick reply only returned the result to the calling RPC. Another session of the same account saw the change only after `messages.getQuickReplies`.
+
+Those changes now go out through `sync.updatesNotMe`, which skips the current auth key, the same path as `account.updateNotifySettings`. A new or appended shortcut message pushes `updateNewQuickReply` and `updateQuickReplyMessage`. A rename or a reorder pushes `updateQuickReplies`. Deleting messages pushes the same updates box the caller receives (`updateDeleteQuickReplyMessages` and the refreshed `updateNewQuickReply`). Deleting a shortcut pushes `updateDeleteQuickReply`. The five constructors have no pts; sync marks them for delivery so a background session is woken too. A push error does not fail the RPC, because the shortcut is already stored.
+
+| Piece | File |
+| --- | --- |
+| capture on send | `app/bff/messages/internal/core/messages.sendMessage_handler.go`, `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `quick_reply_sync.go` |
+| rename, reorder, delete | `app/bff/messages/internal/server/grpc/service/inbox.go` |
+| sync client | `app/bff/messages/p1.go` |
+| deliver the constructors | `app/messenger/sync/internal/core/core.go` |
+
+## Forum topic drafts (ISSUE-S-TOPIC-DRAFT-001)
+
+`messages.saveDraft` stored one draft per (user, peer) on `dialogs.draft_message_data` and ignored `reply_to.top_msg_id`. A forum topic draft replaced the megagroup draft, `updateDraftMessage` had no `top_msg_id`, and `forumTopic.draft` stayed empty.
+
+Topic drafts now live in `dialog_topic_drafts`, keyed by user, peer and `top_msg_id`. `top_msg_id` 0 is still the dialog row. The migration only creates the new table. Existing `dialogs.draft_message_data` rows are not updated or deleted, and are read as the dialog draft. `messages.getAllDrafts` returns one update per draft, with `top_msg_id` on topic drafts. `messages.clearAllDrafts` clears both. `messages.getForumTopics` and `messages.getForumTopicsByID` fill `forumTopic.draft` from that user's topic rows. `messages.sendMessage` (and sendMedia / sendMultiMedia) with `clear_draft` and a topic id clears only that topic. `messages.saveDraft` uses the same send check as `messages.sendMessage`: a non-member, a mute, or a missing send right is `CHAT_WRITE_FORBIDDEN`; a broadcast that only an admin may post in is `CHAT_ADMIN_REQUIRED`. A dialog-store error is returned and is not pushed.
+
+| Piece | File |
+| --- | --- |
+| Topic table | `teamgramd/deploy/sql/migrate-20261130-dialog-topic-draft.sql` |
+| Store and list | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go`, `dialog.getAllDrafts_handler.go`, `dialog.clearAllDrafts_handler.go`, `topic_draft.go` |
+| Client RPC | `app/bff/drafts/internal/core/messages.saveDraft_handler.go`, `messages.getAllDrafts_handler.go`, `messages.clearAllDrafts_handler.go` |
+| clear_draft | `app/bff/messages/internal/core/core_messages_helper.go` |
+| forumTopic.draft | `app/bff/channels/internal/server/grpc/service/forum_topic_draft.go` |
+| dialog.draft on the chat list | `app/bff/dialogs/internal/core/channel_dialogs.go` |
+| BFF wiring | `app/bff/bff/internal/server/server.go`, `app/bff/channels/helper.go`, `app/bff/channels/internal/server/grpc/service/handlers_features.go` |
+| clear_draft callers | `app/bff/messages/internal/core/messages.sendMessage_handler.go`, `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/bff/messages/internal/core/messages.sendMultiMedia_handler.go` |
+| dialog draft clear and DAO | `app/service/biz/dialog/internal/core/dialog.clearDraftMessage_handler.go`, `app/service/biz/dialog/internal/dao/mysql.go` |
+
+## Profile photo ownership
+
+`photos.updateProfilePhoto` wrote any photo id into the caller's album. A missing id became an avatar that could not load, and another user's photo id showed that person's picture. The photo now has to exist, already be in the caller's album (or be their public fallback photo), and the `access_hash` has to match. Otherwise the RPC returns `PHOTO_ID_INVALID` and the album is unchanged. `inputPhotoEmpty` still removes the current avatar. `photos.uploadProfilePhoto` still inserts a photo the caller just uploaded.
+
+| Piece | File |
+| --- | --- |
+| album and access hash | `app/bff/userchannelprofiles/internal/core/photos.updateProfilePhoto_handler.go` |
+
+## Missed call filter (ISSUE-S-CALL-MISSEDFILTER-001)
+
+`messages.search` with `inputMessagesFilterPhoneCalls` listed every stored call. The `missed` flag was not read, so the Missed tab showed answered and outgoing calls too.
+
+A missed query now keeps an incoming call whose discard reason is missed, busy, or absent. Outgoing calls and a connected hangup stay on the All tab. The query reads a wider page because the call table has no missed column, then trims back to `limit`.
+
+| Piece | File |
+| --- | --- |
+| filter | `app/bff/messages/internal/core/messages.search_handler.go` |
+
+## Basic-group creator transfer
+
+`messages.editChatCreator` on a basic group only rejected an empty SRP proof. Any non-empty `A` transferred the creator. `channels.editCreator` already calls `password.CheckSensitive`. The basic-group path now uses that same gate: no cloud password is `PASSWORD_MISSING`, a wrong proof is `PASSWORD_HASH_INVALID`, and a password or session younger than 24 hours is `PASSWORD_TOO_FRESH_*` / `SESSION_TOO_FRESH_*`.
+
+| Piece | File |
+| --- | --- |
+| gate | `app/bff/chats/internal/core/messages.editChatCreator_handler.go` |
+| in-process client hook | `app/service/biz/chat/client/chat_edit_creator.go` |
+
+## Privacy switches that were stored and then ignored
+
+`messages.getOutboxReadDate` honored `hide_read_marks` and ignored the last-seen privacy key, so a user who hid last seen still leaked an exact read time. `contacts.resolveUsername` returned a username after `account.toggleUsername(active=false)`. Gift button, disallowed gift types, and non-contact paid-message stars were dropped by `account.setGlobalPrivacySettings`. `account.toggleSponsoredMessages` did not write `userFull.sponsored_enabled`. `call_requests_disabled` and `encrypted_requests_disabled` were saved on the device row and never consulted by `phone.requestCall` or `messages.requestEncryption`.
+
+| Piece | File |
+| --- | --- |
+| last seen and read time | `app/bff/messages/internal/core/outbox_read_privacy.go` |
+| inactive username | `app/service/biz/user/internal/core/user.resolveUsername_handler.go`, `user.toggleUsername_handler.go` |
+| gifts and paid stars | `user.setGlobalPrivacySettings_handler.go`, `migrate-20261114-privacy-gifts.sql` |
+| sponsored switch | `pkg/accountprefs/sponsored.go` |
+| paid private message | `app/bff/messages/internal/core/paid_message.go` |
+| device call and secret-chat switches | `app/service/biz/phonecall/bind.go` |
+
+## Profile name, avatar delete, and 320px photos
+
+`account.updateProfile` stored an empty or all-space first name, and a name longer than the 64-character column was dropped while the RPC still returned the old user. Empty and over-long names now return `FIRSTNAME_INVALID` / `LASTNAME_INVALID`. `photos.deletePhotos` of the current avatar deleted the album row and left `users.photo_id` pointing at it. Deleting the current avatar now points `photo_id` at the next non-fallback photo, or 0. A 320×320 profile JPEG was upscaled to the c size and then rejected because the encode was larger than the upload (`IMAGE_PROCESS_FAILED`). An upscale is allowed to be larger. `account.saveMusic unsave` compared the document id with the user id, so the row was never deleted.
+
+| Piece | File |
+| --- | --- |
+| name limits | `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go`, `profile_name.go` |
+| delete current avatar | `app/service/biz/user/internal/dao/user.go`, `user.deleteProfilePhotos_handler.go` |
+| 320 JPEG ladder | `app/service/dfs/internal/imaging/govips.go` |
+| unsave music | `app/service/biz/user/internal/core/user.saveMusic_handler.go` |
+
+## Auth code cancel, cross-DC bytes, and login-token errors
+
+`auth.cancelCode` returned `boolTrue` without deleting the phone-code row, so the same test code still signed in. It now deletes the matching code. `auth.exportAuthorization` used to put the DC number in `bytes`, and `auth.importAuthorization` accepted any bytes and returned an empty user. The bytes are now a one-shot secret, and import binds that user or returns `AUTH_BYTES_INVALID`. `auth.importLoginToken` returned `AUTH_TOKEN_ALREADY_ACCEPTED` for a token this server does not know; an unknown token is `AUTH_TOKEN_INVALID`. `account.sendChangePhoneCode` treated a 99966 test number as an international SMS number and returned `PHONE_NUMBER_INVALID`. Those numbers now take the same fixed-code path as `auth.sendCode`.
+
+| Piece | File |
+| --- | --- |
+| cancel the stored code | `app/bff/authorization/internal/core/auth.cancelCode_handler.go` |
+| one-shot export bytes | `app/bff/authorization/internal/dao/export_auth.go`, `auth.exportAuthorization_handler.go`, `auth.importAuthorization_handler.go` |
+| invalid QR import token | `app/bff/qrcode/internal/core/auth.importLoginToken_handler.go` |
+| test number on change-phone | `app/bff/account/internal/core/account.sendChangePhoneCode_handler.go` |
+
+## Scheduled messages
+
+`messages.sendMessage` / `sendMedia` / `forwardMessages` with `schedule_date` already stored the message in `chatbox`. Nothing sent it when the time arrived. `messages.editMessage` looked the id up in the live box and returned `MESSAGE_AUTHOR_REQUIRED`. `schedule_date=0x7FFFFFFE` was treated as a unix time past the one-year cap. `schedule_repeat_period` was dropped.
+
+Due rows live in the same `chatbox_doc` table (`sched:due`, rebuilt from `sched:*` if that index is missing), so a restart still finds them. The sender is `TELLOMI_SCHEDULED_DISPATCH=1` (default off). It sends a normal message (`from_scheduled`), pushes `updateDeleteScheduledMessages` to both sides of a private chat, and queues the next occurrence when a repeat period is set. Send-when-online uses `status.getUserOnlineSessions`.
+
+| Piece | File |
+| --- | --- |
+| store, edit, due claim | `app/service/biz/chatbox/schedule.go`, `schedule_due.go` |
+| repeat stamp, last-seen check | `app/bff/messages/internal/core/schedule_dispatch.go` |
+| edit falls through to the scheduled copy | `app/bff/messages/internal/core/messages.editMessage_handler.go` |
+| dispatcher | `app/bff/messages/internal/server/grpc/service/schedule_loop.go` |
+
+## Basic-group dialog before the send returns
+
+`messages.createChat` returns as soon as the inbox record is accepted by Kafka. The creator's `dialogs` row used to be written later, in the inbox consumer (`SendMessageToOutboxV1`). `messages.toggleDialogPin` looks that row up and returns `PEER_ID_INVALID` when it is missing, so pinning the new group immediately failed. The sender's dialog is now inserted before the inbox publish, for one message and for a list. The request sets `top_message` and `date2` only. An existing unread count, read cursor, and pin stay. A new row still starts at unread 0 through `InsertIgnore`. The later inbox apply still moves `top_message` forward and does not clear `pinned`.
+
+| Piece | File |
+| --- | --- |
+| dialog before return | `app/messenger/msg/internal/dao/sender_dialog.go`, `msg.sendMessageV2_handler.go` |
+
+## Polls and quizzes
+
+`messages.sendMedia` with `inputMediaPoll` used `makeMediaByInputMedia`, which returned `messageMediaUnsupported`. The poll book in `chatbox` was never called, so `messages.sendVote` had nothing to record.
+
+`TELLOMI_POLLS=1` (default off) stores the poll, including quiz `correct_answers` and `solution`. `messages.sendVote`, `messages.getPollResults`, and `messages.getPollVotes` read that book. A vote pushes `updateMessagePoll` to the other private-chat user, to basic-group members, and to channel members. Private chats translate the message id through `dialog_message_id`. `messages.getHistory` and `messages.getMessages` overlay the viewer's results.
+
+| Piece | File |
+| --- | --- |
+| media, quiz results, private id | `app/service/biz/chatbox/poll.go` |
+| send path | `app/bff/messages/internal/core/core_messages_helper.go` |
+| fanout | `app/bff/messages/internal/server/grpc/service/chat_p1.go`, `app/service/biz/channel/chat_p1.go` |
+
+## Forward, reply, and deleteHistory revoke
+
+`messages.forwardMessages` with `drop_author` still filled `fwd_from`. The header is now cleared, so the message is the caller's own. `drop_media_captions` removes the caption and its entities from a photo or document and leaves the file. Plain text and a link-preview message keep their text.
+
+`reply_to.reply_to_peer_id` (a quote from another chat) used to drop the whole reply header, including `quote_text`. The header keeps the other peer, the message id, and the quote.
+
+`messages.deleteHistory(revoke=true)` only revoked messages still in the caller's box. After the caller had cleared the chat for themselves, the other side kept those messages. Revoke now deletes the other participant's copy of the dialog too, mapping through rows that are already `deleted=1`. If that row is gone and the caller has nothing left, the peer dialog is cleared.
+
+`messages.toggleNoForwards` on a private chat returned `PEER_ID_INVALID`. The pair flag is stored in `chatbox_doc`. Forwarding from that chat, or forwarding a message with `noforwards`, returns `CHAT_FORWARDS_RESTRICTED`.
+
+| Piece | File |
+| --- | --- |
+| drop_author, drop_media_captions, protected forward | `messages.forwardMessages_handler.go`, `reply_peer.go` |
+| quote in another chat | `reply_peer.go`, sendMessage / sendMedia / sendMultiMedia |
+| revoke after a self-only clear | `delete_user_history.go`, `deletehistory/plan.go` |
+| private noforwards | `messages.toggleNoForwards_handler.go`, `chatbox/protect.go` |
+
+## Group reactions and pinned messages
+
+Basic-group reactions were stored, and `messages.getHistory` copied them onto the bubbles, but other members never received `updateMessageReactions` and `messages.getMessages` did not attach them. A group shares one message id. Each member now gets an update whose `chosen_order` is their own. The dialog unread-reaction counter moves for that group the same way it already did for a private chat.
+
+`dialogs.pinned_msg_id` was written by `messages.updatePinnedMessage` and not returned. `dialog.getUserPinnedMessage` reads that column. `users.getFullUser` and `messages.getFullChat` copy a positive id onto `pinned_msg_id`. A channel pin is still `channelFull.pinned_msg_id` from the channel feature row; `channels.getFullChannel` also fills it from the dialog column when the feature row is empty, and a channel pin is written onto that column.
+
+| Piece | File |
+| --- | --- |
+| group update | `app/service/biz/chatbox/react_ids.go` |
+| fanout | `app/bff/channels/internal/server/grpc/service/handlers_features.go` |
+| getMessages | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+| pin read | `app/service/biz/dialog/internal/core/dialog.getUserPinnedMessage_handler.go` |
+| full chats | `users.getFullUser_handler.go`, `messages.getFullChat_handler.go`, `channels` `handlers.go` |
+
+## Access hash on input users, peers, and channels
+
+`users.access_hash` and `channels.access_hash` are the values already returned on user and channel objects. Clients cache them. The check compares the value on `inputUser`, `inputPeerUser`, `inputChannel`, and `inputPeerChannel` with that stored value. It does not switch to a per-viewer hash, which would invalidate those caches.
+
+`TELLOMI_ACCESS_HASH_ENFORCE` defaults to off. `log` records a mismatch and still accepts the RPC. `enforce` returns `USER_ID_INVALID`, `PEER_ID_INVALID`, or `CHANNEL_INVALID`. `inputUserSelf` and `inputPeerSelf` are exempt. `inputUserFromMessage`, `inputPeerUserFromMessage`, `inputChannelFromMessage`, and `inputPeerChannelFromMessage` are accepted when the viewer can see that message and the message refers to the user or channel. The bff interceptor walks every client RPC, so users, contacts, messages, channels, photos, and inline bot requests are covered by the same check.
+
+A provided `0` used to skip the channel and secret-chat comparisons. Enforce mode stops that. Chatbox bots whose stored hash is `0` are still issued the bot id, and that issued value keeps matching. Reaction lists and poll voters are still returned with `access_hash` omitted. Log mode is how to see clients echo that `0` before enforcement is turned on.
+
+| Piece | File |
+| --- | --- |
+| mode, walk, message proof | `pkg/accesshash` |
+| bff interceptor | `app/bff/bff/internal/accesshash`, `app/bff/bff/internal/server/server.go` |
+| channel hash, including `0` | `app/service/biz/channel/service_ops.go`, `access_hash.go` |
+| secret-chat user | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
+| from-message id, only while enforce is on | `proto/mtproto/peer_util.go` |
+
+## Authorization hash, revocation and TTL
+
+`auth_users.hash` used to be replaced on every `BindAuthKeyUser`. A second `auth.signIn` on the same permanent key (retry, future-auth token, cloud-password step) made `account.resetAuthorization` return `HASH_INVALID` for the hash the other device had just listed. A live row now keeps its hash. A row that was logged out, reset, or expired takes a new non-zero hash, and the 24 hour gate still uses `date_created`.
+
+`auth.bindTempAuthKey` used to copy the user onto the permanent key and leave the temporary key's `auth_users` row in place, so one login was two authorizations. The temporary row is soft-deleted after the permanent row exists.
+
+A revoked session answered the next protected RPC with `401 AUTH_KEY_UNREGISTERED` and dropped `ping` / `ping_delay_disconnect` with no error, so the long connection stayed up and the client did not return to the login page. Both now receive that 401. `account.setAuthorizationTTL` accepts the windows official clients send, including 7 days (one week). The RPC only writes `users.authorization_ttl_days` and does not delete sessions. The unset default stays 180. It used to store that column and never read it. `auth_users.date_active` was only the bind time, so treating it as last activity on deploy would delete sessions that are still in use. A ping or RPC stores `date_active` (at most once an hour) and sets `activity_trusted`. A trusted session whose stored `date_active` is already past the TTL is logged out on that request, including the only device on the account. The stamp is refreshed only when it is still inside the window. Rows that have never recorded a ping stay, and their first request starts the clock. A failed read of `authorization_ttl_days` does not delete anyone. The expiry update also requires `date_active` to still be the idle value, so a concurrent refresh is left alone. `tools/expireauthorizations` uses the same rule. Its backup tables are created before the transaction, and `--rollback` restores the authorization row and the device token. It is not run from deploy.
+
+| Piece | File |
+| --- | --- |
+| stable hash, temp-key adopt, TTL, push unbind | `app/service/authsession/internal/dao/auths.go`, `authorization.go`, `authorization_ttl.go` |
+| hash SQL | `app/service/authsession/internal/dal/dao/mysql_dao/auth_users_dao.go` |
+| auth state and bind | `app/service/authsession/internal/core/authsession.getAuthStateData_handler.go`, `authsession.bindTempAuthKey_handler.go` |
+| 401 on ping and the next RPC | `app/interface/session/internal/sess/auth_state.go`, `session_service_messages.go`, `session_invoke.go` |
+| inactivity rule | `pkg/authzttl` |
+| trusted activity column | `teamgramd/deploy/sql/migrate-20261112-authorization-activity.sql` |
+| operator script | `tools/expireauthorizations` |
+| password-step recheck | `app/interface/session/internal/sess/main_auth_wrapper.go` |
+
 ## Verification quotas (A05 / A06)
 
 Phone and email codes share `pkg/verify.Limiter`. The counter is one Redis `INCR` per target per Asia/Shanghai calendar day. The default cap is 10 (`TELLOMI_SMS_DAILY_LIMIT`, `TELLOMI_EMAIL_DAILY_LIMIT`). The 11th call returns `PHONE_NUMBER_FLOOD` before the SMS or email sender runs. A number outside `TELLOMI_SMS_COUNTRY_ALLOW` (default `86`) returns `PHONE_NUMBER_INVALID` before that sender. `TELLOMI_SMS_ALLOW_INTERNATIONAL=true` accepts other countries again. Resend, change-phone, confirm-phone, login email, and cloud-password email use this gate. The contract for clients is `docs/api/verification-limits.md`.
@@ -75,7 +320,7 @@ Email-only accounts keep the login identity in `users.email` (`users.phone` NULL
 
 `account.sendVerifyEmailCode` / `account.verifyEmail` with `emailVerifyPurposeLoginChange` or `emailVerifyPurposeLoginSetup` return `EMAIL_NOT_ALLOWED` when the address is not that `users.email`, or when it is already another account's `users.email`. The Redis key `tellomi:p0:loginemail:{userId}` is not updated in those cases. Confirming the same identity address is allowed. `auth.recoverPassword` may still store a different cloud-password recovery address in `user_passwords.email`; a refusal to copy that address onto the Redis login key does not abort recovery. No schema migration.
 
-A Redis copy that already differs from `users.email` is left in place. It is not scanned and not rewritten. Before any later `auth.sendCode` stores the identity address again, readers that send mail do not use that copy: `auth.requestPasswordRecovery` on an email-only account with no cloud password returns `PASSWORD_RECOVERY_NA`, and `auth.resetLoginEmail` for a phone account skips a copy that is another account's `users.email`. The 180-second `tellomi:p0:pendingemail` fallback is skipped the same way. Email `auth.resetLoginEmail` sends to the address in the request. `help.getPromoData` drops `SETUP_LOGIN_EMAIL` and `SETUP_LOGIN_EMAIL_NOSKIP`. `login_email_pattern` is only the mask.
+A Redis copy that already differs from `users.email` is left in place. It is not scanned and not rewritten. Before any later `auth.sendCode` stores the identity address again, readers that send mail do not use that copy: `auth.requestPasswordRecovery` on an email-only account with no cloud password returns `PASSWORD_RECOVERY_NA`, and `auth.resetLoginEmail` for a phone account skips a copy that is another account's `users.email`. The 180-second `tellomi:p0:pendingemail` fallback is skipped the same way. Email `auth.resetLoginEmail` sends to the address in the request. `help.getPromoData` drops `SETUP_LOGIN_EMAIL` and `SETUP_LOGIN_EMAIL_NOSKIP`. `login_email_pattern` is a mask of `users.email`, or of the safe Redis login email when `users.email` is empty. It is never the full address.
 
 An empty DSN, a failed `sql.Open`, a failed ping, a missing `users` row, or a non-address in `users.email` is not a confirmed phone account. `account.getPassword` then returns `INTERNAL_SERVER_ERROR` instead of a password object with an empty `login_email_pattern`. Recovery without a cloud password does not mail Redis. A confirmed phone row (NULL email) still may. Cloud-password recovery keeps using `user_passwords.email`.
 
@@ -89,6 +334,22 @@ An empty DSN, a failed `sql.Open`, a failed ping, a missing `users` row, or a no
 `auth.requestFirebaseSms` returns `boolFalse` for a well-formed request. Official Android treats that as "use `auth.resendCode` / `next_type`" (`PLAYINTEGRITY_REQUESTFIREBASESMS_FALSE`). Firebase is not used in mainland China. `PHONE_CODE_EMPTY` and `PHONE_NUMBER_INVALID` are still returned when the request itself is invalid.
 
 `account.sendConfirmPhoneCode` returns `HASH_INVALID` unless a confirmation hash was issued. `account.deleteAccount` still deletes immediately, so production does not mint that hash. When a hash exists, the SMS uses the same Aliyun login template, the 10 second cap, and `SMS_CODE_CREATE_FAILED`.
+
+## Official phone login email
+
+`auth.sendCode` for a real phone returns `auth.sentCodeTypeEmailCode` when that user has a verified login email (Redis `tellomi:p0:loginemail:{userId}`, or `users.email` when the Redis copy is empty). The code is sent with the existing email sender. `auth.signIn` accepts `email_verification` (`emailVerificationCode`) for that phone. Apple and Google tokens are `EMAIL_INVALID`. `TELLOMI_EMAIL_SETUP_REQUIRED` defaults to false. When it is true and the email sender is enabled, a phone with no login email returns `auth.sentCodeTypeSetUpEmailRequired` and no SMS. `account.verifyEmail` with `emailVerifyPurposeLoginSetup` then issues the SMS code inside `account.emailVerifiedLogin`. A disabled mailer ignores the flag and keeps SMS, so the flag cannot lock phone login. A phone that already has a login email does not fall back to SMS when mail is disabled (`EMAIL_NOT_SETUP`).
+
+`emailVerifyPurposeLoginChange` on a confirmed phone account (`users.email` NULL) may store the first login email. Email-only accounts still cannot replace `users.email` (`EMAIL_NOT_ALLOWED`). With no identity hook, a first `LoginChange` is still `EMAIL_NOT_SETUP`. `account.getPassword.login_email_pattern` shows the safe Redis address when `users.email` is empty.
+
+An address verified before the user exists is kept at `tellomi:p0:setupemail:{phone}` for 24 hours. `auth.signUp` copies it to the Redis login email. Legacy email-as-phone login is unchanged: `phone_number` containing `@` still signs in, and those rows stay `users.email` with `users.phone` NULL. No SQL migration.
+
+| Piece | File |
+| --- | --- |
+| phone sendCode / resend / sign-up attach | `app/bff/authorization/internal/core/auth.sendCode_handler.go`, `auth.resendCode_handler.go`, `auth.signUp_handler.go`, `phone_login_email.go` |
+| `auth.signIn` email verification | `app/bff/authorization/internal/core/auth.signIn_handler.go`, `email_code.go` |
+| setup stash, first Settings bind, verified address | `app/bff/codelogin/service.go` |
+| `login_email_pattern` | `app/bff/twofa/password/service.go` |
+| flag wiring | `app/bff/authorization/internal/svc/service_context.go`, `pkg/verify/config.go` |
 
 ## Trace export endpoint
 
@@ -336,6 +597,727 @@ Design only. [docs/design/chat-standby.md](docs/design/chat-standby.md) describe
 
 `0_migrate_helpers.sql` gained `teamgram_fail_if_set`. A name that already belongs to someone else stops the script (`D-26`). `SIGNAL` cannot run from a prepared statement (MySQL 1295), so the migrations `CALL` the procedure. How to apply this on a database that is already running, including the backup, is [docs/official-usernames.md](docs/official-usernames.md).
 
+## Notify settings sound and other sessions
+
+`inputPeerNotifySettings` now carries `sound:NotificationSound`, `stories_muted`, `stories_hide_sender` and `stories_sound`. The old helper only copied `show_previews`, `silent`, `mute_until` and the legacy sound string, so a current client saved a ringtone that the next `account.getNotifySettings` did not return. The sound is stored on the platform slot from `initConnection.lang_pack` (`android` / `ios` / `other`) and returned in `peerNotifySettings` as `android_sound`, `ios_sound` or `other_sound` (and the matching stories slots). A field the client did not set is left unchanged. `account.updateNotifySettings` reads the stored row and pushes `updateNotifySettings` to the user's other sessions. `updateNotifySettings` is marked for session delivery. The default `silent` flag is false, matching the constructor comment that notifications are not silent until a client sets the flag.
+
+Columns are added by `teamgramd/deploy/sql/migrate-20261127-notify-sound.sql`. Existing `show_previews`, `silent`, `mute_until` and `sound` values stay. A row that only has the legacy `sound` string is still returned as a notification sound on every platform.
+
+| Piece | File |
+| --- | --- |
+| Sound types and default | `proto/mtproto/peer_notify_settings_helper.go` |
+| Row mapping | `app/service/biz/user/internal/dao/user_notify_settings.go` |
+| RPC and push | `app/bff/notification/internal/core/account.updateNotifySettings_handler.go` |
+| Delivery | `app/messenger/sync/internal/core/core.go` |
+
+## Forum topic notify settings
+
+`account.updateNotifySettings` with `inputNotifyForumTopic` used to return `PEER_ID_INVALID`. A topic is stored in `user_notify_topic_settings` (`teamgramd/deploy/sql/migrate-20261128-notify-topic.sql`), keyed by user, peer and `top_msg_id`. The dialog table and its unique key are unchanged, so a topic mute does not replace the chat. `account.getNotifySettings` for that topic reads the topic row. Unset fields stay unset and the client inherits them from the dialog. Other sessions receive `updateNotifySettings` with `notifyForumTopic`. `account.getNotifyExceptions` includes those rows. `account.resetNotifySettings` soft-deletes them and drops their `user_notify_settings_v2_*` keys. `top_msg_id` of 0 is `TOPIC_ID_INVALID`.
+
+## messages.deleteHistory dates and pages
+
+`messages.deleteHistory` with `min_date` / `max_date` used to return `messages.affectedHistory` with `pts_count = 0` and `offset = 0` without deleting. Official clients then stop. `min_date` deletes messages strictly newer than the timestamp and `max_date` deletes messages strictly older than it. A negative bound is `MIN_DATE_INVALID` / `MAX_DATE_INVALID`. A chat or channel with either date is `CHAT_REVOKE_DATE_UNSUPPORTED`.
+
+A private chat or basic group is deleted in pages of 100. `offset` is the oldest id in the page when more messages match, and the client passes it back as `max_id` (`id <= max_id`). `offset` stays positive when a row in the page is still present, so a partial delete is not reported as finished. `pts` is allocated only for messages that the follow-up read shows are gone, and `updateDeleteMessages` lists only those ids. `just_clear` without a date window keeps the newest message and turns it into `messageActionHistoryClear` on the last page. The dialog row is removed only when the call finished a full clear (`offset = 0`, no dates, not `just_clear`).
+
+The date flags are not fields of the internal `msg.deleteHistory` request. The BFF stores them on the context and the msg client copies them into gRPC metadata.
+
+| Piece | File |
+| --- | --- |
+| Page planner | `app/messenger/msg/deletehistory/plan.go` |
+| Bounded read | `app/messenger/msg/internal/dao/history_delete.go` |
+| User and basic-group delete | `app/messenger/msg/msg/internal/core/delete_user_history.go` |
+| BFF | `app/bff/messages/internal/core/messages.deleteHistory_handler.go` |
+| Peer pages | `app/messenger/msg/inbox/internal/core/inbox.deleteUserHistoryToInbox_handler.go`, `inbox.deleteChatHistoryToInbox_handler.go` |
+
 ## Account enforcement
 
 `pkg/enforcement` records platform sanctions on a user id. `Migrate` creates tables in the database named by `TELLOMI_ENFORCEMENT_MYSQL`; that name cannot be `teamgram`, and `OpenMySQL` does not run DDL. `TELLOMI_ENFORCEMENT_STORE=mysql` is the production switch that opens `TELLOMI_ENFORCEMENT_MYSQL`. `memory` and an empty value do not install the gate. Tables are created only by `/app/bin/enforcement-migrate`, not at startup. A substantiated user report is confirmed by a username in `TELLOMI_ENFORCEMENT_ADMINS` before a permanent sanction is approved. That same allowlist lifts one active sanction in the 777001 chat: the command is `解封案件` plus a sanction or review id, or `解封用户` plus a numeric user id, and the lift happens only after a later reply that is exactly `是`. The command does not listen on a port. The initiator still cannot lift a sanction they created, and `Revoke` still refuses the approver. Content decisions are `POST /internal/v1/enforcement/content/review` on `TELLOMI_ENFORCEMENT_ADDR` (docker network, not a published port). `TELLOMI_ENFORCEMENT_CREATE=1` is required before a new case can be written. Existing cases stay in force when creation is turned off. Rolling back the binary does not drop sanction, audit, or outbox rows. Notices are private messages from user 777000, written to an outbox in the same transaction as the case and delivered afterwards at least once. Appeals use `Judge`. When `TELLOMI_AI=1` and `TELLOMI_AI_API_KEY` are set, that judge is `pkg/tellomiai.Client`. The 7696-term list is not an input. Login, signup, future-auth bind, password recovery, QR accept, send/edit/forward, profile edit, phone change, discover credential, audience token, and the session invoke path call the same gate. A permanent login stashes a one-time disposition grant on the verified phone-code hash; `DispositionHandler` then reads 777000 notices and files that user's appeal. Credential recheck verifies the discover JWT and ignores a caller-supplied user id. Detail is [docs/account-enforcement.md](docs/account-enforcement.md) and [docs/api/enforcement-contract.md](docs/api/enforcement-contract.md).
+
+## Answered call unread
+
+`messageActionPhoneCall` for a connected 1:1 call (hangup or disconnect with duration, voice and video) is written on the callee's inbox with unread delta 0. `read_inbox_max_id` moves onto that service message only when no earlier incoming message is still above the cursor. Otherwise the cursor and the existing unread count stay. Missed, busy, and a hangup with no duration still add one unread. The caller's outbox dialog is not updated. `updateReadHistoryInbox` is appended after `updateNewMessage` and takes the next pts. Files: `proto/mtproto/message_action.go`, `app/messenger/msg/internal/dao/inbox.go`, `app/messenger/msg/internal/dao/phone_call_read.go`, `app/messenger/msg/inbox/internal/core/inbox.sendUserMessageToInboxV2_handler.go`.
+
+## Last seen and online fanout
+
+`account.updateStatus` stores a 300 second online window (`user_presences.expires`). `users.getUsers`, `contacts.getStatuses`, and `messages.getOnlines` read that same window. A missing `user_presences` row is `PRESENCE_NOT_FOUND` and is not treated as a previous offline; an existing row is not rewritten. `user.createNewTestUser` writes the same initial row as a normal signup. Online updates go to people this user added and to people who added this user, after `privacyKeyStatusTimestamp` in both directions and a batched block check. Crossing online and offline always reloads the audience and pushes. While the user stays online, a later absolute expires is pushed from the cached recipient list (user id plus exact or coarse tier) and does not read contacts, privacy, or blocks. The list is capped and expires. A failed push does not store the new expires, so the next heartbeat retries. A `privacyKeyStatusTimestamp` change reads both contact id lists first. Either read failing returns without writing the new rules. After the rules are stored, those contacts' cached audiences are dropped. `Forget` bumps a generation that is not deleted with the list and returns a store error so the client can retry the clear. `Save` writes only when that generation is still current and the new expires is later, in one atomic step, so a heartbeat that read the list before `Forget` cannot put it back. Sliding that expires does not extend the list deadline. Only a full reload sets a new 600 second deadline, so a clear that never landed still expires and the next heartbeat reloads. If privacy or the block check cannot be loaded, nothing is pushed and `contacts.getStatuses` returns no exact timestamps. `contacts.addContact` and `contacts.importContacts` push the current allowed status both ways. Chat-participant privacy rules are not treated as a match when membership is unknown.
+
+## contacts.editCloseFriends replace
+
+`GetCloseFriendList` treated every contact who was not a close friend as a hole and returned no list at all. `contacts.editCloseFriends` then only set the new ids to true and never cleared the previous ones. The list now keeps the close-friend rows and ignores the rest, so a shorter or empty id vector replaces the saved set.
+
+| Piece | File |
+| --- | --- |
+| skip non-close-friend slots | `app/service/biz/user/internal/dao/user_contact.go` |
+
+## contacts.getContacts hash and messages.searchGlobal
+
+`contacts.getContacts` used the pre-64-bit mix `(acc * 20261 + id) % 0x80000000`. Current Android `ContactsController.getContactsHash` mixes `contactsSavedCount` and then each contact user id with `MediaDataController.calcHash` (unsigned shifts of the accumulator, then add the id). The hashes never matched, so the server never returned `contacts.contactsNotModified`. Opening a contact picker then rewrote the phone book and, when a contact had no user in the same reply, called `loadContacts(false, 0)`, which cannot accept NotModified. The hash is the client algorithm. A contact with no user object is left out of the reply. A failed `saved_count` read is an error, not 0. `contacts.getStatuses` still only returns statuses. The server does not emit `updateContactsReset`. `updatePeerSettings` does not reload the contact book.
+
+`messages.searchGlobal` only scanned the per-user `messages` table. Channel and supergroup posts live in `channel_messages`, so a channel post such as `chn019` was empty. User-message text now compares with `utf8mb4_unicode_ci`, so `Hello` matches `hello`. A user row whose plaintext column is empty still matches `message_data`. Channel posts match the `channel_messages.message` column written at send, with the same case-insensitive comparison. There is no minimum token length and no outbox-only filter. Joined channels are included; a public channel the user has not joined stays on `channels.searchPosts`. Android always sends `folder_id`, and channel dialogs are not rows in `dialogs`, so folder 0 now includes joined channels that are not archived. Later pages pass the date, peer, and message id into each source. The comparison is the same order the results are merged in: date descending, peer type ascending, peer id ascending, message id descending. A channel id is compared only with a channel id. A full page is `messages.messagesSlice` with `next_rate` set to the last message date. `count` is the full text match (user rows plus joined channel posts), the same number on every page, so a client that stops when the loaded list reaches `count` does not stop after two pages. `inexact` is set when a folder or media filter is not part of that count, or when the count could not be read and the ceiling is the largest int32. A short page stays `messages.messages`. A short page stays `messages.messages` so clients stop. A contact-list read error is returned when the client sent a non-zero hash, so a failed read does not replace the book with an empty success. Rows whose TTL has expired but which the sweep has not deleted yet still match search.
+
+| Piece | File |
+| --- | --- |
+| Hash, visible contacts | `app/bff/contacts/internal/core/contacts_hash.go` |
+| getContacts reply | `app/bff/contacts/internal/core/contacts.getContacts_handler.go` |
+| User-message text query | `app/service/biz/message/internal/dal/dao/mysql_dao/messages_search_text.go`, `app/service/biz/message/internal/core/message.searchGlobal_handler.go` |
+| Joined channel posts | `app/service/biz/channel/post_search.go`, `mysql_search.go`, `memory_search.go` |
+| Merge, folder, order | `app/bff/messages/internal/core/messages.searchGlobal_handler.go`, `search_global.go`, `search_page.go` |
+
+## contacts.search self, full name, and notes
+
+`contacts.search` seeded the result id list with the caller, so every query returned them. Name search matched `first_name` or `last_name` alone, so "名 姓" missed a person stored in those two columns. Contact ids were excluded from the query, and the address-book note was never compared, so `my_results` stayed empty. The caller is now omitted, the SQL also matches `concat(first_name, ' ', last_name)`, and a note match is placed in `my_results`. That bucket is the caller's address book (`user.getContactList`). `CheckContact` on the other user asks whether they saved the caller, so a one-way import used to stay in `results`.
+
+| Piece | File |
+| --- | --- |
+| omit self, split notes | `app/bff/contacts/internal/core/contacts.search_handler.go`, `contact_note.go` |
+| full-name SQL | `app/service/biz/user/internal/core/user.search_handler.go`, `app/service/biz/user/internal/dal/dao/mysql_dao/users_dao.go` |
+| render hits for the viewer | `app/bff/contacts/internal/core/contacts.search_handler.go` (`searchUserLoadIDs`) |
+
+A hit list that did not already contain the caller was loaded without the caller. `GetUserListByIdList` then returned an empty `users` vector, while `my_results` and `results` still named the peers. Official clients drop a peer that has no user object, so a non-contact username such as `@zhaoyang` disappeared until that person was a local contact. The load now includes the caller (`Id` and `To`), the same requirement as `messages.getChatInviteImporters`. The caller is still skipped when the hits are split, and is not added to the id list when the query matched no user.
+
+## Invite usage_limit of 0
+
+Android sets `usage_limit` and sends 0 for no limit. `messages.exportChatInvite` and `messages.editExportedChatInvite` store 0 and omit the field on `chatInviteExported`. Below 0 or above 99999 is `USAGE_LIMIT_INVALID`. A stored 0 does not use up the link. Helpers: `pkg/invite.NormalizeUsage`, `pkg/invite.UsageExhausted`. Channels: `app/service/biz/channel/invite.go`. Basic groups: `chat.exportChatInvite_handler.go`, `chat.editExportedChatInvite_handler.go`, `chat.checkChatInvite_handler.go`, `chat.importChatInvite_handler.go`, `chat.importChatInvite2_handler.go`.
+
+## Group send rights and invite start_date
+
+Basic-group `default_banned_rights` are checked on the chat send and edit paths in `msg.sendMessageV2` / `msg.editMessageV2` (`app/messenger/msg/msg/internal/core/msg.sendMessageV2_handler.go`, `msg.editMessageV2_handler.go`). The classifier lives in `proto/mtproto/chat_send_right.go` and is shared with megagroups. Service messages (pin notices) are not treated as member content. `messages.updatePinnedMessage` for a basic group refuses a non-admin when `pin_messages` is banned (`app/bff/messages/internal/core/messages.updatePinnedMessage_handler.go`). A temporary ban is the plain `CHAT_SEND_*_FORBIDDEN` code. `until_date` stays on `banned_rights`.
+
+Invite links with a future `start_date` are `INVITE_HASH_EXPIRED` for basic groups (`chat.checkChatInvite`, `chat.importChatInvite`, `chat.importChatInvite2`) and for channels (`app/service/biz/channel/invite.go`). The predicate is `pkg/invite.NotStarted`.
+
+`messages.searchGlobal` also drops channel messages from before the member joined when prehistory is hidden (`dropPrehistoryBoxes` in `search_global.go`, called from `messages.searchGlobal_handler.go` after the joined-channel merge).
+
+## Group info, delete, archive, and profile name
+
+`messages.editChatTitle`, `messages.editChatPhoto`, and `messages.editChatAbout` used `CanChangeInfo`, which is true for every admin and false for every other member. A basic group now follows `default_banned_rights.change_info`. The creator may always edit. An admin may when `admin_rights.change_info` is set. An admin without that right is treated as a member. A set `change_info` flag is a ban. Megagroups use the same rule and also the member's own `banned_rights`. A broadcast channel stays admin-only. The denial is `CHAT_ADMIN_REQUIRED`.
+
+`messages.deleteMessages` with `revoke` deleted any basic-group message for every member. A member may still revoke their own messages. Deleting someone else's message for everyone requires `admin_rights.delete_messages`; the creator always may. Otherwise the RPC is `MESSAGE_DELETE_FORBIDDEN` and nothing is deleted. `channels.deleteMessages` returns that same error for a live message the caller cannot remove, instead of skipping it and reporting success.
+
+`folders.editPeerFolders` treated a dialog with `top_message` 0 as missing, because `dialog.getDialogsByIdList` invents that row. Archive of a user who had just been pinned then returned `PEER_ID_INVALID`. Archive now uses the same dialog row pin uses, for users, basic groups, and channels. `updateFolderPeers` is pushed to the account's other sessions. The caller applies the RPC result and is not pushed again.
+
+`account.updateProfile` dropped the user cache inside `CachedConn.Exec`, then an overlapping `users.getUsers` could write the old name back. The key is dropped again after the commit. An omitted first-name or last-name flag no longer clears the other name. The live update is `updateUserName` alone, with an empty `users` vector, to the account's other sessions and to contacts in both directions. A partial user is not attached. Android `putUsers` would otherwise replace the cached user and drop `access_hash`, photo, phone, and the contact flag.
+
+| Piece | File |
+| --- | --- |
+| Basic-group info right | `proto/mtproto/chat_info_right.go`, `app/service/biz/chat/internal/core/chat.editChatTitle_handler.go`, `chat.editChatAbout_handler.go`, `chat.editChatPhoto_handler.go` |
+| Megagroup and channel info right | `app/service/biz/channel/service_ops.go` `canChangeInfo` |
+| Basic-group delete | `app/messenger/msg/msg/internal/core/msg.deleteMessages_handler.go`, `delete_rights.go` |
+| Channel delete | `app/service/biz/channel/service_ops.go` `Delete` |
+| Archive | `app/bff/folders/internal/core/folders.editPeerFolders_handler.go` |
+| Profile name cache and push | `app/service/biz/user/internal/dao/user.go`, `app/bff/userchannelprofiles/internal/core/account.updateProfile_handler.go`, `profile_sync.go`, `app/messenger/sync/internal/core/core.go` |
+
+## updates.getDifference pts
+
+`updates.getDifference` rebuilt the window in `merge_updates_helper.merge` by writing the window's last pts onto `updateDeleteMessages`, `updateEditMessage`, `updateReadHistoryInbox`, `updateReadHistoryOutbox`, `updateReadMessagesContents`, `updateWebPage`, `updateFolderPeers`, and `updatePinnedMessages`, and setting `pts_count` to 0. Official clients apply a pts update only when `localPts + pts_count == pts`. After `messages.deleteHistory`, the calling session had already moved to `AffectedHistory.pts`, so the difference update was skipped, and a session that was still behind treated it as a gap. A cleared chat could keep its last message.
+
+The stored pts and pts_count stay on the update. Adjacent updates of the same kind are folded only when the later pts continues the earlier one (`earlier.pts + later.pts_count == later.pts`). The folded update keeps the later pts and the sum of the counts. A different update between two deletes is left between them. `messages.deleteHistory` persistence, date windows, and paging are unchanged. Live `SyncUpdatesNotMe` / `SyncPushUpdates` are unchanged.
+
+| Piece | File |
+| --- | --- |
+| Difference merge | `app/service/biz/updates/internal/core/merge_updates_helper.go` |
+
+## messages.getAllDrafts (ISSUE-S-DRAFT-ALL-001)
+
+`dialog.getAllDrafts` loaded every `dialogs` row with `draft_type > 0` and then left the draft pointer nil, so `messages.getAllDrafts` always returned an empty `updates`. `messages.saveDraft` still wrote `dialogs.draft_message_data` and the BFF still pushed `updateDraftMessage` from the request, which is why another session saw the draft immediately and a later `messages.getAllDrafts` (including after login or reinstall) did not.
+
+The stored JSON is decoded in `stored_draft.go` the same way `Dao.MakeDialog` already decodes a single dialog. A blank or `null` column is skipped. One corrupt row is logged and does not drop the rest. `draftMessage` and `draftMessageEmpty` are both returned, because a cleared draft is stored as `draft_type = 1` and the same query is what `dialog.clearAllDrafts` uses.
+
+| Piece | File |
+| --- | --- |
+| Decode stored draft JSON | `app/service/biz/dialog/internal/core/stored_draft.go` |
+| `dialog.getAllDrafts` | `app/service/biz/dialog/internal/core/dialog.getAllDrafts_handler.go` |
+
+## Private reactions while blocked, and the pin cap on the client RPC (ISSUE-S-PIN-LIMIT-001)
+
+`messages.sendReaction` in a private chat stored the reaction and pushed `updateMessageReactions` when either person had blocked the other. The blocked person now gets 400 `USER_IS_BLOCKED`, which is the error core.telegram.org lists for this method. The person who blocked the author gets 400 `YOU_BLOCKED_USER`, the same error `messages.sendMessage` returns in that direction. The reaction is not stored and not pushed. A mutual block reports `USER_IS_BLOCKED`. A user-service error is not treated as a block. Groups, channels, and Saved Messages are unchanged.
+
+`messages.toggleDialogPin` and `messages.reorderPinnedDialogs` now reject a set past the cap before they write. The numbers are `premium.Limit` for `pinned_chats` and `folder_pins`, the same pair `help.getAppConfig` publishes as `dialogs_pinned_limit_default` / `_premium` and `dialogs_folder_pinned_limit_default` / `_premium`. Folder 1 is the archive. Unpinning, and pinning a dialog that is already pinned, do not take a slot. `force` replaces the set. Without `force`, pins the client left out stay, and that total is what is capped. Past the cap is 400 `PINNED_DIALOGS_TOO_MUCH`. The dialog service still checks the same cap when it writes.
+
+| Piece | File |
+| --- | --- |
+| Private reaction block | `app/bff/channels/internal/server/grpc/service/reaction_block.go`, `handlers_features.go` |
+| Pin cap on the client RPC | `app/bff/dialogs/internal/core/pin_limit.go`, `messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go` |
+
+## Dialog top after delete, and channel pins (ISSUE-S-CHAN-TOPDEL-001, ISSUE-S-PIN-CHAN-DIALOGS-001)
+
+Deleting the newest megagroup or channel message left `top_message` on that id. `messages.getDialogs` could not load it and dropped the chat for every member. The channel id counter stays where it is. The dialog top is the newest message that is still live, for the sender and for every other member. The same rollback applies to a private chat and a basic group: the outbox and the inbox both point `dialogs.top_message` at the greatest id that this delete does not remove. Deleting every message in a private chat leaves top 0, and the chat list omits that row. A basic group or channel the user still belongs to stays in the list with top 0 and no message.
+
+`messages.getDialogs` builds channel rows from the channel store, which had no pin bit, so a pinned channel or supergroup came back with `pinned` false. The dialogs table is where `messages.toggleDialogPin` and `messages.reorderPinnedDialogs` write the pin rank. That rank is copied onto the channel row, `exclude_pinned` leaves those rows out, and `messages.getPinnedDialogs` / `messages.getPeerDialogs` copy the live top of only the channels on that page back onto the table row. The first peer in a reorder is the top of the pin list. Without `force`, a pin the client left out stays, behind the peers it did send. With `force`, those pins are cleared in the same folder. The cap is `premium.Limit` for `pinned_chats` and `folder_pins`: 5 and 100 for a free account, 100 and 200 for a member, and the member caps when every account is treated as Premium. Past that cap is `PINNED_DIALOGS_TOO_MUCH`. Pinning an empty private chat is `PEER_HISTORY_EMPTY`. Other sessions receive `updateDialogPinned` or `updatePinnedDialogs` with the channel, chat, or user attached. Sync marks both updates for delivery, the same way it marks `updateNotifySettings`, so a background session is woken and an online session is not skipped.
+
+| Piece | File |
+| --- | --- |
+| Live channel top | `app/service/biz/channel/service_ops.go`, `memory.go`, `mysql.go` |
+| Private and basic-group top | `app/messenger/msg/internal/dao/dialog_top.go`, `outbox.go`, `inbox.go` |
+| Chat list keeps an empty group or channel | `app/service/biz/dialog/dialog/dialogs_data_helper.go` |
+| Pin on getDialogs, getPinnedDialogs, getPeerDialogs | `app/bff/dialogs/internal/core/channel_dialogs.go`, `messages.getDialogs_handler.go`, `messages.getPinnedDialogs_handler.go`, `messages.getPeerDialogs_handler.go` |
+| toggle, reorder, premium caps, other-session update | `app/bff/dialogs/internal/core/messages.toggleDialogPin_handler.go`, `messages.reorderPinnedDialogs_handler.go`, `app/service/biz/dialog/internal/core/pin_policy.go`, `dialog.toggleDialogPin_handler.go`, `dialog.reorderPinnedDialogs_handler.go`, `dialog.editPeerFolders_handler.go` |
+| one channel dialog | `app/service/biz/channel/service_ops.go` `DialogFor`, `app/bff/channels/bridge.go` |
+
+## Contact profile photo (photos.uploadContactProfilePhoto)
+
+`save` with a file stores a photo only the caller sees. `users.getFullUser` copies it onto `personal_photo`. `save` with no file, video, or emoji markup clears that photo (Telegram Desktop `PeerPhoto::clearPersonal`). `suggest` writes `messageActionSuggestProfilePhoto` into the private chat. The row lives in `user_contact_photos`. The migration only creates the table.
+
+| Piece | File |
+| --- | --- |
+| save, clear, suggest | `app/bff/userchannelprofiles/contactphoto` |
+| RPC hook | `photos.uploadContactProfilePhoto_handler.go` |
+| `personal_photo` | `users.getFullUser_handler.go` |
+| table | `teamgramd/deploy/sql/migrate-20261129-contact-profile-photo.sql` |
+
+## Supergroup delete and unread_count
+
+`channels.deleteMessages` removed the message and pushed `updateDeleteChannelMessages`, and left every other member's `unread_count` where it was. A private revoke already subtracts an unread id. The same rule now applies to a channel or supergroup, without reading each member. Each deleted id is one `UPDATE` of `channel_read_state` for rows whose `read_inbox_max_id` is still below that id and whose user is not the author: `unread_count = GREATEST(unread_count - 1, 0)`. `KEY channel_read_inbox (channel_id, read_inbox_max_id)` makes that a range, not a walk of the group. With D deletes and K matching rows the cost is O(D) statements and O(log M + K) work in each. At most 1000 members, the changed rows are read back and `updateReadChannelInbox` goes only to those the presence service reports online. Above 1000 members the updates run off the request and no per-member push list is built. `messages.getDialogs` reads the stored count either way.
+
+| Piece | File |
+| --- | --- |
+| bucketed update, cap, online push | `app/service/biz/channel/delete_unread.go`, `service_ops.go` `Delete` |
+| index | `teamgramd/deploy/sql/migrate-20261129-channel-read-inbox.sql` |
+
+## Hide read time (globalPrivacySettings.hide_read_marks)
+
+`messages.getOutboxReadDate` returned the read timestamp after the reader had set `hide_read_marks`. That flag is `userFull.read_dates_private`. The reader’s peer now gets `USER_PRIVACY_RESTRICTED`. The person who turned the setting on also cannot look up anyone else’s read date; that error is `YOUR_PRIVACY_RESTRICTED`, unless `users.premium` is an unexpired subscription. `TELLOMI_PREMIUM_EVERYONE` does not waive it. `users.getFullUser` sets `read_dates_private` from the same row.
+
+| Piece | File |
+| --- | --- |
+| read-date check | `app/bff/messages/internal/core/outbox_read_privacy.go`, `messages.getOutboxReadDate_handler.go` |
+| `read_dates_private` | `app/bff/users/internal/core/read_dates_private.go`, `users.getFullUser_handler.go` |
+| `YOUR_PRIVACY_RESTRICTED` | `proto/mtproto/rpc_error_codes.go` |
+
+## Stranger bar, contact ids, left channels, personal photo, personal channel, phone exception
+
+`messages.getPeerSettings` stayed empty because a private message never wrote `user_peer_settings`. The first message into a new private dialog, from someone who is not a contact and not a bot, now sets `report_spam`, `add_contact`, and `block_contact` for the recipient and pushes `updatePeerSettings`. `contacts.addContact` / `contacts.acceptContact` call the same delete as `messages.hidePeerSettingsBar`, which sets `hide`. `messages.getPeerSettings` returns an empty bar when that flag is set. `messages.reportSpam` and `account.reportPeer` on a user do the same. Service users 777000, 42777, and 424000 do not open the bar.
+
+`contacts.getContactIDs` returned an empty vector. It now returns the contact user ids. The hash is the same value `contacts.getContacts` uses (saved count, then user ids ascending, `MediaDataController.calcHash`). Hash 0 returns the list. A matching non-zero hash returns an empty vector.
+
+`channels.getLeftChannels` listed a private channel the user had left as `channelForbidden`, which clients drop, so the list looked empty. A left private channel or megagroup is returned as `channel` with `left` set. `offset` skips that many rows.
+
+`photos.uploadContactProfilePhoto` stored the contact-only photo on `userFull.personal_photo` only. Every `user` built for that viewer (`users.getUsers`, `messages.getDialogs`, `messages.getHistory`, `contacts.getContacts`, and the user attached to `users.getFullUser`) now carries that photo on `user.photo` with `personal` set. Another viewer still sees the public photo.
+
+`account.updatePersonalChannel` wrote `users.personal_channel_id`, and `users.getFullUser` only copied it when a plugin was installed. The BFF now passes the channel card. A viewer who can see the channel gets `personal_channel_id`, `personal_channel_message` (the latest message id), and the channel in `chats`. A private channel stays off a profile the viewer cannot open.
+
+`contacts.addContact` accepted `add_phone_privacy_exception` and did not change phone privacy. The flag adds that user to the phone-number allow list and removes them from the disallow list. The default phone rule is nobody, so this is what lets the other person see the number.
+
+No new table. No new production switch.
+
+| Piece | File |
+| --- | --- |
+| First-message bar | `app/messenger/msg/inbox/internal/core/peer_settings_bar.go`, `inbox.sendUserMessageToInboxV2_handler.go` |
+| Clear on add | `app/service/biz/user/internal/core/user.addContact_handler.go`, `contacts.acceptContact_handler.go` |
+| Clear on report | `app/bff/channels/internal/server/grpc/service/handlers_p1.go` |
+| Contact ids | `app/bff/contacts/internal/core/contacts.getContactIDs_handler.go` |
+| Left channels | `app/service/biz/channel/convert.go` `leftChannelView` |
+| Personal photo on user | `proto/mtproto/personal_photo_hook.go`, `immutable_user_helper.go`, `contactphoto/user_photo.go` |
+| Personal channel | `app/bff/userchannelprofiles/personalchannel`, `users.getFullUser_handler.go` |
+| Phone exception | `app/service/biz/user/internal/core/phone_privacy_exception.go` |
+
+## Story privacy allow-list user ids (ISSUE-S-STORY-PRIV-001)
+
+`ToUserIdByInput` in `proto/mtproto/user_helper.go` resolved only `inputUser` and `inputUserSelf`. `stories.sendStory` / `stories.editStory` turn `inputPrivacyValueAllowUsers` and `inputPrivacyValueDisallowUsers` into stored user ids through that helper. Android sends `inputUserFromMessage` when the chosen user has no `access_hash` (a min user opened from a message). The id was dropped, so an "only these users" story was stored as an allow-list with nobody on it. Listed users then received `storyItemDeleted`. A user object that has `user_id` (and optionally the constructor) but an empty predicate name was dropped the same way. `inputUserFromMessage.user_id` and that id-only form are now kept. Story visibility itself is unchanged.
+
+## Basic-group removal and phone-call revoke
+
+`messages.deleteChatUser` returned empty updates for iOS and Android, and posted `messageActionChatDeleteUser` only after the user was already left or kicked. The inbox walk skips those states, so the removed user never got the service message. The message is now written while they are still a normal member, including for official mobile clients. `revoke_history` still deletes their dialog.
+
+`messages.deletePhoneCallHistory` with `revoke` called `inbox.deleteMessagesToInbox` without `peer_type` and `peer_id`, and mixed every dialog's message ids into one list. The inbox delete only looks in `PEER_USER` or `PEER_CHAT`, so the other side kept the call log. Revoke now deletes each peer's copy separately.
+
+| Piece | File |
+| --- | --- |
+| service message before removal | `messages.deleteChatUser_handler.go` |
+| per-peer revoke | `msg.deletePhoneCallHistory_handler.go`, `outbox.go` `DeletePhoneCallHistory` |
+
+## Business bot bar, quote text, and chat theme service messages
+
+`messages.getPeerSettings` and `users.getFullUser` copy `peerSettings` from `user_peer_settings` and never filled `business_bot_id` / `business_bot_manage_url`. Those two fields share flags.13. The connected-bot book now overlays them for the other user, together with `business_bot_paused` and `business_bot_can_reply`. The overlay follows `businessBotRecipients`: a category matches only when the viewer really is a contact, a non-contact, an existing private chat, or a new private chat. `users` adds people unless `exclude_selected` is set, in which case those people are removed. `exclude_users` never sees the bar. A category whose lookup failed does not match.
+
+`messages.sendMessage`, `messages.sendMedia`, and `messages.sendMultiMedia` copied `inputReplyToMessage` and dropped `todo_item_id`. `quote_text` was stored without checking it against the original message. A quote that is not the UTF-16 slice at `quote_offset` is `QUOTE_TEXT_INVALID`.
+
+`messages.setChatTheme` and `messages.setChatWallPaper` used to return empty updates. The handlers now post `messageActionSetChatTheme` and `messageActionSetChatWallPaper` through `messenger.msg`, so both sides of the dialog receive the service message.
+
+| Piece | File |
+| --- | --- |
+| peer settings bar | `messages.getPeerSettings_handler.go`, `users.getFullUser_handler.go` |
+| quote and todo item | `reply_peer.go`, `reply_quote.go`, sendMessage / sendMedia / sendMultiMedia |
+| theme and wallpaper post | `p1_rest.go`, `chat_decor.go` |
+
+## Live photos (layer 232) (ISSUE-S-PHOTO-LIVE-001)
+
+The official iOS and Android clients send a live photo as a photo plus a separately uploaded video document. A single send is `messages.sendMedia(inputMediaUploadedPhoto{live_photo, file, video})`. The iOS album path calls `messages.uploadMedia` with that media first, then sends `messages.sendMultiMedia` with `inputMediaPhoto{live_photo, id, video}`. The recipient reads `messageMediaPhoto.video`. iOS marks the image as live only when that field is present.
+
+**Root cause.** All three InputMedia → MessageMedia conversions copied only the photo, `spoiler`, and `ttl_seconds`, and dropped `live_photo` and `video`: messages `makeMediaByInputMedia`, files `makeMediaByInputMedia` for `messages.uploadMedia`, and dao `GetMessageMedia`. The send succeeded, and both sides got a still photo. The codec and the JSON message storage already handled both fields.
+
+**MEDIA_INVALID.** `pkg/livephoto.Video` resolves `video` through `catalog.ResolveInputDocument`, which is the same check `inputMediaDocument` uses. `access_hash` must match, `file_reference` must match the stored one, and the `MismatchAllowed` log-mode exception still applies. The send or upload returns `MEDIA_INVALID` when any of these holds:
+- the video id is 0;
+- the document is unknown;
+- the `access_hash` or `file_reference` does not match;
+- the document is neither `video/*` nor has `documentAttributeVideo`.
+
+Nothing is silently dropped to a still photo. No `video`, or `inputDocumentEmpty`, is a plain photo, as before.
+
+**`live_photo` and `video` together.** On `messageMediaPhoto#e216eb63` both fields use `flags.4`. The encoder sets bit 4 when either one is set, but writes the Document only when `video` is non-nil. A `live_photo` without `video` therefore sets the bit with no Document, and clients misparse the rest of the message. Every writer must set both or neither: `livephoto.Set` on the send and upload paths, and `StripTTLMedia` when it expires a ttl photo. The input constructors also share one bit for the pair: `flags.3` on `inputMediaUploadedPhoto` and `flags.2` on `inputMediaPhoto`.
+
+| File | Change |
+| --- | --- |
+| `pkg/livephoto/livephoto.go` (new) | `Video` resolves and checks the video and returns `MEDIA_INVALID` as above; `Set` writes `live_photo` and `video` together |
+| `app/bff/messages/internal/core/core_messages_helper.go` | `makeMediaByInputMedia` (sendMedia, sendMultiMedia, editMessage): the `inputMediaUploadedPhoto` and `inputMediaPhoto` branches call `livephoto.Video` and `livephoto.Set` |
+| `app/bff/messages/internal/core/media_access.go` | `authorizeReferencedMedia` checks the live video on `inputMediaPhoto` and `inputMediaUploadedPhoto` before random_id dedupe; new `resolveInputDocument` helper |
+| `app/bff/files/internal/core/messages.uploadMedia_handler.go`, `live_photo.go` | `makeMediaByInputMedia` for `messages.uploadMedia`: same two branches; also keeps `spoiler` now |
+| `app/bff/messages/internal/dao/media.go` | `GetMessageMedia`: same two branches, through `daoDocumentResolver` |
+| `proto/mtproto/ttl_media.go` | `StripTTLMedia` clears `live_photo` together with `video` |
+| `app/service/mediapurge/ids.go` | `fromMedia` records `messageMediaPhoto.video` as a held document. The `media_document_id` generated column still reads only `$.media.document.id`; `message_media_refs` covers the video |
+| tests | `pkg/livephoto`, messages core / dao, files core, mediapurge, `proto/mtproto/ttl_media_test.go`, and e2e `TestLivePhoto` (`live_a` / `live_b`) |
+
+Clients, flags, environment variables, and the schema are unchanged. No migration is needed, because no stored message ever kept a live video. Stories (`app/bff/stories/.../media.go`) still drop the live video; that is tracked separately.
+
+## Embedded IANA timezone database (ISSUE-S-BIZ-TZ-001)
+
+The runtime image does not install tzdata. `time.LoadLocation` then only resolves `UTC`, so `help.getTimezonesList` returned that one zone and `account.updateBusinessWorkHours` rejected `Asia/Shanghai` with `TIMEZONE_INVALID`.
+
+`app/bff/bff/cmd/bff/main.go` imports `time/tzdata`, which is the standard-library embed of the IANA database. `pkg/tz` imports it as well so the picker and `validateHours` / `openNow` call the same `Load`. Zone names come from the system `zone.tab` when that file is installed (the tree `LoadLocation` reads first). Otherwise they come from the file index of the embedded database, not a hand-written list.
+
+| Piece | File |
+| --- | --- |
+| binary import | `app/bff/bff/cmd/bff/main.go` |
+| shared IANA source | `pkg/tz` |
+| picker | `app/bff/configuration/internal/timezones/timezones.go` |
+| hours check | `app/bff/business/profile/profile.go` |
+
+## Unpin all and topic unpin (ISSUE-S-UNPINALL-MULTI-001, ISSUE-S-UNPINALL-PRIV-001, ISSUE-S-TOPIC-UNPIN-001)
+
+Channel `UnpinAll` tracked a single `PinnedMsgID` and returned after clearing that one row, so a second pinned megagroup or topic message stayed `pinned`. `PinMessage` with `unpin` cleared the feature id and left `message.pinned` set, so pinned search still matched. The private peer's inbox built `updatePinnedMessages` and never ran `UpdateUnPinnedByIdList`, and a basic-group fan-out reused one id list across members.
+
+Unpin now clears `pinned` on the requested message and, for unpin-all, on every stored message that is still pinned. `top_msg_id` limits that clear to one forum topic. `CommitEdit` advances channel pts, and the returned `AffectedHistory.pts` is that new value. The inbox writes `pinned=0` and `dialogs.pinned_msg_id=0` before the push. Each basic-group member gets only that member's ids.
+
+| Piece | File |
+| --- | --- |
+| channel pin | `app/service/biz/channel/service_features.go` |
+| peer copy | `app/messenger/msg/inbox/internal/core/inbox.unpinAllMessages_handler.go` |
+
+## Search counters (ISSUE-S-SEARCH-COUNTERS-001, ISSUE-S-SEARCHCOUNT-001)
+
+`messages.getSearchCounters` counted `message_filter_type = 0` for photo+video, and it returned 0 for photos, video, voice, and round video because those filters were not mapped. Stored photos are type 7 and videos are type 8. Voice notes and round videos both sit in type 2 (`MEDIA_AUDIO`); the document attribute tells them apart. Megagroup and channel posts are not in the caller's private box, so every channel counter was 0.
+
+The counter now sums the stored types. Voice and round video walk the shared audio bucket. Channel peers count the channel store with the same filter `messages.search` uses, including a voice note that is not a round video.
+
+| Piece | File |
+| --- | --- |
+| filter to stored type | `app/bff/messages/internal/core/search_counters.go` |
+| channel count | `app/service/biz/channel/search_count.go`, `search_filter.go` |
+| private and basic-group count | `app/service/biz/message/internal/core/message.getSearchCounter_handler.go` |
+
+## translateText nil peer (ISSUE-S-TRANSLATE-NIL-001)
+
+`messages.translateText` with no `text` and no `peer` called `FromInputPeer2` on a nil `InputPeer`. That reads `PredicateName` and the RPC returned 500. A missing peer is now `400 PEER_ID_INVALID` before the peer is read. An empty id list is still `MESSAGE_IDS_EMPTY`.
+
+| Piece | File |
+| --- | --- |
+| guard | `app/bff/channels/internal/server/grpc/service/handlers_translate.go` |
+
+## Basic-group self leave (ISSUE-S-BASIC-LEAVE-001)
+
+`messages.deleteChatUser` of self posts `messageActionChatDeleteUser` before it removes the member, so the leaver still receives the service message. When that send returned `CHAT_WRITE_FORBIDDEN` (the member's default rights ban sending), the handler returned the error and never removed the row. A self-leave now still calls `chat.deleteChatUser` after that specific error and returns the participant update. Kicking someone else is unchanged.
+
+| Piece | File |
+| --- | --- |
+| leave | `app/bff/chats/internal/core/messages.deleteChatUser_handler.go` |
+
+## Discussion group unlink (ISSUE-S-CHANNEL-UNLINK-001)
+
+`channels.setDiscussionGroup` wrote `linked_chat_id` on the new supergroup and, when the group argument was empty, cleared it only on the broadcast. The previous group's `linked_chat_id` kept pointing at the channel after an unlink or a rebind.
+
+Unlink and rebind now clear that back-pointer when it still names this channel. A group that has already been linked to a different channel is left as it is. The broadcast, the new group, and a group whose pointer was cleared each get `updateChannel`, which is what clients use to reload `channelFull`. The requesting auth key is omitted, same as the other channel fanout. The admin log `changeLinkedChat` entry is unchanged.
+
+| Piece | File |
+| --- | --- |
+| link, unlink, fanout | `app/service/biz/channel/service_features.go` |
+
+## inputMessageReplyTo (row 205)
+
+`messages.getMessages` and `channels.getMessages` treated `inputMessageReplyTo` as the id of the reply. The request now loads that message and returns the message it replies to. A stored `messageReplyHeader` may contain only `reply_to_msg_id` or only `reply_to_msg_id_FLAGINT32`. `ReplyTargetMsgID` reads only the three stored forms of `reply_to_msg_id` (`GetFixedReplyToMsgId`, then the plain field, the int32 column, and the flag). It does not use `reply_to_top_id`, which is the topic root. The sender row, including `reply_to`, is the one already written before the RPC returns. A reply with no header is omitted instead of being returned as itself. `channels.getMessages` runs the same `requireView` as a request by id, including the access hash, before it loads the body. A caller who cannot see the channel gets that error for a missing id and for a stored id, and the post is not returned.
+
+| Piece | File |
+| --- | --- |
+| private and basic group | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+| id resolution | `proto/mtproto/message_action.go` |
+| channel | `app/service/biz/channel/chat_p1.go`, `app/bff/channels/internal/server/grpc/service/handlers.go` |
+
+## Quick reply edit (ISSUE-S-QR-EDIT-001, 行 89)
+
+`messages.editMessage` with `quick_reply_shortcut_id` looked up the id in Saved Messages. Shortcut message ids start at 1, so the call hit a forwarded saved message and returned `MESSAGE_AUTHOR_REQUIRED`. The shortcut id now edits the message stored in the quick-reply book and returns `updateQuickReplyMessage` to the caller and to the account's other sessions. The saved-message author is not consulted. A `from_id` stored on the shortcut message does not make it someone else's. Another account's shortcut id returns `SHORTCUT_INVALID`. Empty text with no real media returns `MESSAGE_EMPTY`. An unknown shortcut id returns `SHORTCUT_INVALID`. An unknown message id returns `MESSAGE_ID_INVALID`. The same text and entities again return `MESSAGE_NOT_MODIFIED` and do not change `edit_date` or insert another message. That result still pushes the stored message, so a retry after a missed sync reaches other sessions. Media in the request is converted with the existing `makeMediaByInputMedia` and replaces the shortcut media, or the conversion error is returned and nothing is written. Reply markup uses `botReplyMarkup`: a bot keyboard is stored, a user keyboard is not applied. `messages.getQuickReplyMessages` hashes each message id and `edit_date` with the pagination vector hash, so an edit no longer matches the previous hash. `chatbox_doc` Save still replaces a whole document with no version. Every `quick:` writer (edit, capture, delete, rename, reorder) compares the loaded bytes and reapplies on the row that won, so a stale snapshot from one of those calls cannot restore an older message body. Other document keys still use Save. Two edits in the same unix second keep the same `edit_date`, so the client hash stays valid; that is the protocol hash, and `edit_date` is not moved forward to dodge it. A missed push can therefore leave another session stale until a later edit in a new second.
+
+| Piece | File |
+| --- | --- |
+| edit | `app/service/biz/chatbox/quick.go`, `messages.editMessage_handler.go` |
+
+The sender's outbox row used to be inserted by the inbox consumer after `messages.sendMessage` returned. `messages.forwardMessages` in that gap loaded no rows, sent an empty list, and the msg service returned `INPUT_REQUEST_INVALID`. The row is now written before the send returns. The consumer's later insert matches `random_id` and does not restore a cleared body.
+
+That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
+
+The sender row is committed before `publishInboxFanout`. If that publish fails, or the process exits before it, the idempotency cache is not stored. The next send of the same `random_id` used to find the live row and return success without publishing, so the other party never received it. The retry now publishes the inbox again and does not insert another sender row. The publish carries the pts already stored for that box, not the user's current pts. A recipient apply of the same `random_id` does not add unread and does not allocate a second pts when that pts row exists. `user_pts_updates.update_data` is a JSON column, so MySQL stores `"id": 17` with a space. The lookup has to match that form as well as the compact bytes the process wrote, or a replay treats the pts as missing and writes a second row. A deleted row is not published and its cleared body is not written back. `SyncUpdatesNotMe` still pushes `updateNewMessage` for the sender's other sessions. The server does not drop an older pts there. A client applies it only when `localPts + pts_count == pts`, so a device that already moved past that pts ignores the push, and `updates.getDifference` still has the one stored pts row.
+
+The recipient dialog unread is incremented in the same transaction as the message row and `inbox_apply` (`applied` is stored as 1). The same transaction writes `inbox_random` when `random_id` is not 0. The previous container's `sendMessageToInbox` does not look up `random_id`. It calls `NextMessageBoxId`, inserts, and then adds unread outside the transaction. `messages_inbox_random_guard` rejects that second insert with duplicate key 1062 before the unread update. `updates.getDifference` reads `SelectByGtPts`. A later stored pts is returned even when one number in between was never written. An empty result leaves the caller's state unchanged until a later row arrives. One missing number does not by itself remove a stored message. Official clients were not run. The pts counter is not moved backwards and a missing number is not reused. `migrate-20261116-inbox-apply.sql` adds `inbox_apply`, `inbox_random`, and the trigger. It does not change existing rows and must be applied before a process that inserts these tables.
+
+| Piece | File |
+| --- | --- |
+| outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
+| fanout retry | `msg.sendMessageV2_handler.go`, `random_replay.go`, `inbox.go` |
+| saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
+
+## Message search words, dates, and private from_id (行 133, 行 83, 行 152)
+
+`messages.search` and `messages.searchGlobal` matched the whole query as one substring, so a different word order missed. Each word is now its own LIKE, AND-ed. Channel search uses the same rule in memory.
+
+`messages.search` in a private chat rejected every `from_id` with `PEER_ID_INVALID`. The sender filter is allowed when `from_id` is one of the two people in the chat.
+
+`min_date` / `max_date` on a private chat or basic group were dropped before the query. They are applied on `messages.search` for those peers. A zero bound stays unbounded.
+
+A `from_id` search used to skip `q` and the date bounds, and its count was every non-deleted message from that sender. The page and the count now share the sender, the words, the dates, the dialog, and `deleted = 0`. Offset only turns the page. An empty `message` column can still match `message_data`, as global search already does. `add_offset`, `min_id`, `max_id`, and `hash` on a private chat or basic group are still not applied. A channel `from_id` that is not a user returns `FROM_PEER_INVALID` instead of dropping the filter.
+
+| Piece | File |
+| --- | --- |
+| words and dates | `messages_search_text.go`, `message.search_handler.go`, `message.searchV2_handler.go` |
+| channel words | `channel/service_features.go` |
+| private from_id | `messages.search_handler.go` |
+
+## Saved history delete and tag search (ISSUE-S-SAVED-DELETE-001 行 140, ISSUE-S-SAVED-TAGSEARCH-001 行 141)
+
+`messages.deleteSavedHistory(max_id=0)` asked to delete every saved message from that peer. The query treated `max_id <= 0` as an empty set, so the call returned `pts_count=0` and left the messages. `max_id <= 0` is now the whole dialog, still capped at 100 rows per call.
+
+`messages.search` in Saved Messages with an empty `q` and `saved_reaction` returned `SEARCH_QUERY_EMPTY`. A tag chip is that request. Empty text with no `from_id` is allowed only when the peer is Saved Messages and a reaction is set. The matching ids come from the caller's reaction document, then offset and limit page that list. `count` is the number of tagged messages. A short page is `messages.messagesSlice`. An empty `q` with `from_id` on a basic group still runs the original sender search. `SEARCH_QUERY_EMPTY` is only when there is no `from_id` and the request is not Saved Messages plus `saved_reaction`. A dialog that sends `saved_reaction` without `from_id` returns only messages that carry one of those tags.
+
+| Piece | File |
+| --- | --- |
+| delete | `saved_history_query.go` |
+| tag search | `messages.search_handler.go`, `chatbox/react.go`, `message.search_handler.go` |
+
+## Auto-archive sets peerSettings.autoarchived (ISSUE-S-AUTOARCHIVED-FLAG-001)
+
+Archiving a new non-contact set folder 1 and mute-forever, and unarchiving cleared the folder. `peerSettings.autoarchived` stayed false, including the hardcoded false when no settings row existed. `messages.getPeerSettings` already copies the column when a row is present.
+
+`archive.Apply` now writes the flag: true when the dialog is auto-archived, false when it is moved back to the main list. The write reads the current settings first, so the stranger bar (`report_spam`, `add_contact`, `block_contact`) is kept.
+
+| Piece | File |
+| --- | --- |
+| flag on archive and unarchive | `pkg/archive/apply.go`, `pkg/archive/clients.go` |
+
+## Common supergroups (row 261)
+
+`messages.getCommonChats` intersected basic-group membership and left a `TODO` where supergroups should be added. `channel.CommonMegagroups` intersects current megagroup membership. Broadcast channels stay out. A user who is not in the groups still gets an empty list.
+
+| Piece | File |
+| --- | --- |
+| intersection | `app/service/biz/channel/common_chats.go` |
+| RPC | `app/bff/chats/internal/core/messages.getCommonChats_handler.go` |
+
+## Reply after the original was deleted (row 256)
+
+The inbox copy of a private reply looks up `reply_to_msg_id` with `SelectPeerUserMessage`, which requires `deleted = 0` on both rows. After `messages.deleteMessages(revoke=true)` that lookup misses, and the recipient's copy drops `reply_to`. A private chat (`PEER_USER`) now includes deleted rows, so the other side still gets the mapped id and can show a reply to a deleted message. A basic group still uses `SelectPeerUserMessage`: a reply to a deleted group message drops `reply_to` and does not mark the recipient mentioned because of that miss. Other callers of `SelectPeerUserMessage` still ignore deleted rows. Channel replies are unchanged.
+
+`messages.sendMessage` for a private chat used to return before the sender's row was inserted. The inbox consumer wrote that row later, on the sender's own Kafka key. A `deleteMessages` in that gap found no row, returned success, and did not revoke. The row was then inserted and both histories kept the text. The sender row is now written before the send returns. The consumer's later insert matches the same `random_id` and does not put the text back.
+
+That second insert is a replay. `dialogs.top_message` and `date2` only move forward, and only when the stored row is still live. A delete that already pointed the dialog at an older message stays there, because a deleted id is not written back. The replay does not assign `unread_count`. The first insert still writes the dialog. If that RPC is missed after the row commits, the next apply of the live row moves the top forward. Pts and hashtag rows commit with the insert, so a replay does not write them again. A Saved Messages peer dialog uses the same rule: a deleted box is skipped, and a live box cannot rewind `saved_dialogs.top_message`.
+
+| Piece | File |
+| --- | --- |
+| lookup | `messages_dao.go` `SelectPeerUserMessageIncludingDeleted` |
+| inbox | `app/messenger/msg/internal/dao/inbox.go` |
+| outbox before return, replay top | `app/messenger/msg/internal/dao/outbox.go`, `saved_dialog_top.go` |
+| saved peer dialog | `inbox.sendUserMessageToInboxV2_handler.go` |
+
+## Background emojis, restricted statuses, ringtones, passkey rpId
+
+Rows 290, 272, and 343.
+
+`account.getDefaultBackgroundEmojis` returned an empty list with hash 1. `account.getChannelRestrictedStatusEmojis` returned the empty accountassets list. Both now use the built-in Noto catalog: background matches the profile-photo list, restricted statuses match the group-photo list.
+
+`account.uploadRingtone` rejected `audio/wav`. Those types are accepted and converted to `audio/mpeg` on save, same as ogg. A document uploaded as a message was unknown to the ringtone store, so `account.saveRingtone` returned `RINGTONE_INVALID`. When the local tone record is missing, the media service document is adopted if the id, access hash, and mime match.
+
+Passkey registration and login JSON used `rpId` `localhost`. The id is `TELLOMI_PASSKEY_RPID` when set, otherwise `www.tellomi.cn`. Persistence and `auth.finishPasskeyLogin` are in the passkey login section below. No production env file and no port was changed.
+
+| Piece | File |
+| --- | --- |
+| emoji lists | `app/bff/stickers/catalog/groups.go`, `app/bff/premium/internal/core/account_features.go`, `app/bff/premium/internal/server/grpc/service/features.go` |
+| wav and adopted documents | `app/bff/accountassets/doc.go`, `app/bff/accountassets/ringtone.go`, `app/bff/messages/p1.go`, `app/bff/messages/internal/server/grpc/service/account_assets.go` |
+| rpId | `app/bff/accountrest/passkey.go` |
+
+## Contact birthdays and boost link
+
+`contacts.getBirthdays` called `user.getBirthdays`, which returned an empty vector. Birthdays already live on `users.birthday` (`YYYY-MM-DD`, written by `account.updateBirthday`). The list is now the caller's non-deleted contacts whose birthday string parses to a month and a day.
+
+`premium.getBoostsStatus` left `boost_url` empty, so the client copy action had nothing to copy. The link is `https://t.me/boost?c=<peer id>`, the form official clients use when the peer has no public username.
+
+| Piece | File |
+| --- | --- |
+| contact query | `app/service/biz/user/internal/dao/contact_birthdays.go` |
+| RPC | `app/service/biz/user/internal/core/user.getBirthdays_handler.go` |
+| boost link | `app/bff/payments/internal/book/peer.go`, `boosts.go` |
+
+## Per-member send_polls and invite_users (ISSUE-S-BAN-POLLS-001, BAN-INVITE-MEMBER-001)
+
+`channels.editBanned` stored `send_polls` and `invite_users`. A poll send still went through when `TELLOMI_POLLS` is off, because `inputMediaPoll` became `messageMediaUnsupported` before `ChatSendForbidden` classified it as a poll. `channels.inviteToChannel` checked the default ban and an admin's `invite_users` grant, and skipped that member's own `banned_rights`.
+
+`messages.sendMedia` now asks the channel layer about `send_polls` while the input is still a poll. `canInvite` applies the member ban the same way `canChangeInfo` already does. The creator and an admin who holds `invite_users` are unchanged. `TELLOMI_POLLS` stays off by default.
+
+| Piece | File |
+| --- | --- |
+| poll gate | `app/bff/messages/internal/core/messages.sendMedia_handler.go`, `app/service/biz/channel/service_ops.go` |
+| invite gate | `app/service/biz/channel/service_ops.go` |
+
+## Anonymous admins and channel deletion (ISSUE-S-ANON-ADMIN-001, CHANDEL-PUSH-001)
+
+A supergroup admin with `admin_rights.anonymous` used to have `from_id` set to their user on every message. `shapeOutgoing` now stamps `from_id` as the supergroup, including service messages such as a pin. `appendMessage` applies the same stamp when a service message is stored without going through `shapeOutgoing`. The stored sender id is unchanged, so `out` is still true for the author and moderation still knows who sent it. Broadcast posts are unchanged. The creator's implicit full right set does not turn this on.
+
+`channels.searchPosts` used to replace a non-user `from_id` with `SenderID` and list that user. An anonymous post keeps the channel `from_id` and the real user is left out of `users`. `messages.search` with `from_id` set to that user does not return the post. A megagroup `MessageBox` whose stored `from_id` is already the channel is not rewritten to the sender.
+
+`channels.deleteChannel` marked the row deleted and returned `updateChannel` only to the caller. Members now get the same update with `channelForbidden`, excluding the requesting auth key. Each participant's dialog row is deleted through the new `DropDialog` hook, which calls `dialog.deleteDialog`.
+
+| Piece | File |
+| --- | --- |
+| anonymous from_id | `app/service/biz/channel/service_ops.go` |
+| search | `app/service/biz/channel/post_search.go`, `service_features.go` `SearchInChannel` |
+| box from_id | `proto/mtproto/message_box_helper.go` |
+| delete fanout | `app/service/biz/channel/service.go` |
+| dialog hook | `app/bff/channels/internal/svc/service_context.go` |
+
+## Channel admin rights (ISSUE-S-UNAME-ADMIN-001, DISCUSSION-ADMIN-001, ADMIN-HIDE-MEMBERS-001, ADMIN-DIRECT-001, CHAN-SUBLIST-001)
+
+`channels.updateUsername` treated `change_info` as enough to publish a username. `channelFull.can_set_username` was already creator-only, and that is the gate clients show. The RPC now matches it.
+
+`channels.setDiscussionGroup` allowed only the broadcast creator, and `manage_linked_peers` (flag 19) was dropped when admin rights were stored. The bit is kept. The creator, or an admin who holds `manage_linked_peers`, may link or unlink on both the channel and the supergroup. `change_info` is not required.
+
+`channels.toggleParticipantsHidden` was creator-only. Hiding the member list uses `ban_users`, the same right the official client sends. The creator also qualifies.
+
+`channels.updatePaidMessagesPrice` used the `change_info` gate. On a broadcast, `manage_direct_messages` can turn direct messages on. A megagroup still needs `change_info`.
+
+`channels.getParticipants` returned the full subscriber list to any broadcast member. Broadcast lists are admin-only (`CHAT_ADMIN_REQUIRED`). `channelFull.can_view_participants` follows that. Megagroups still list members unless `participants_hidden` is set.
+
+| Piece | File |
+| --- | --- |
+| username, subscriber list | `app/service/biz/channel/service.go` |
+| discussion link, hide members | `app/service/biz/channel/service_features.go` |
+| direct messages | `app/service/biz/channel/p1.go`, `service_ops.go` |
+| `can_view_participants` | `app/service/biz/channel/convert.go` |
+| `manage_linked_peers` bit | `proto/mtproto/chat_admin_rights.go` |
+
+## Mentions and media unread (ISSUE-S-MENTION-MEGAGROUP-001, CHAN-MEDIA-UNREAD-001)
+
+A supergroup stores one message row. `mentioned` and `media_unread` are per viewer, so they are set when the message is shown. A mention entity or a reply to the viewer sets `mentioned`. Voice, round video, and ttl media set `media_unread` until `channels.readMessageContents`, which also pushes `updateChannelReadMessagesContents`. `dialogs.unread_mentions_count` counts those mentions above the viewer's read cursor.
+
+| Piece | File |
+| --- | --- |
+| viewer flags | `app/service/biz/channel/convert.go` |
+| history and push | `service_ops.go`, `read_views.go` |
+| read contents push, dialog count | `service_features.go`, `service_ops.go`, `app/bff/channels/bridge.go` |
+
+## Live location fields, album cap, external media, hidden forward name, sound exceptions (ISSUE-S-GEO-HEADING-001, ISSUE-S-ALBUM-MAX-001, ISSUE-S-MEDIA-EXTERNAL-001, ISSUE-S-PRIV-FWD-NAME-001, ISSUE-S-NOTIFY-COMPARE-SOUND-001)
+
+`inputMediaGeoLive` kept only lat/long and period. `heading`, `accuracy_radius`, and `proximity_notification_radius` are now copied in `MakeGeoPointByInput` and the three InputMedia converters (messages send, messages dao, `messages.uploadMedia`).
+
+`messages.sendMultiMedia` rejects more than 10 items with `MEDIA_INVALID` before any message is stored.
+
+`inputMediaPhotoExternal` and `inputMediaDocumentExternal` are not fetched. They used to be stored as `messageMediaUnsupported`. They now return `MEDIA_INVALID`.
+
+When forwards privacy hides the user link, `fwd_from.from_name` was the account username, so a user with no username showed a blank label. It is now the first and last name.
+
+`account.getNotifyExceptions` ignored `compare_sound`. With the flag set, a row is returned only when its sound (or stories sound) is not the default. A mute-only exception is left out.
+
+| Piece | File |
+| --- | --- |
+| geo fields | `proto/mtproto/geo_point.go`, messages `core_messages_helper.go`, `dao/media.go`, files `messages.uploadMedia_handler.go` |
+| album cap | `messages.sendMultiMedia_handler.go` |
+| external URL | the same three converters |
+| forward name | `messages.forwardMessages_handler.go` |
+| compare_sound | `account.getNotifyExceptions_handler.go` |
+
+## History clear on another session (行 134, ISSUE-S-DELHIST-SYNC-001)
+
+`messages.deleteHistory` with `just_clear` keeps the newest message and rewrites it to `messageActionHistoryClear`. The other session of the same account only drops bubbles named by `updateDeleteMessages`. That update used to omit the rewritten id, so the open chat kept the last bubble until `messages.getHistory`.
+
+The anchor id is now its own `updateDeleteMessages` with `pts_count` 1, before the read and the edit. `getDifference` folds the two adjacent deletes and still names the anchor. The edit is unchanged, so a reload still shows `messageActionHistoryClear`. The message stays in the box.
+
+| Piece | File |
+| --- | --- |
+| id | `app/messenger/msg/deletehistory/plan.go` |
+| pts updates | `app/messenger/msg/msg/internal/core/delete_user_history.go` |
+
+## Private chat noforwards flags (行 137, ISSUE-S-NOFWD-001)
+
+`messages.toggleNoForwards` on a private chat already stores one shared bit and `messages.forwardMessages` already rejects that chat and a message with `noforwards`. `users.getFullUser` never copied the bit onto `noforwards_my_enabled` / `noforwards_peer_enabled`, so both clients kept showing the switch as off.
+
+The pair is one switch: either person can clear it. While it is on, both flags are set on each user's `userFull`. A self user is unchanged.
+
+| Piece | File |
+| --- | --- |
+| userFull | `app/bff/users/internal/core/users.getFullUser_handler.go` |
+
+## Encrypted file size on send (ISSUE-S-SECRET-ENCFILE-001)
+
+`messages.sendEncryptedFile` of `inputEncryptedFileUploaded` echoed the id with size 0 and did not register the file for `upload.getFile`. `messages.uploadEncryptedFile` already stores the parts through `dfs.uploadEncryptedFileV2` and remembers the size.
+
+Send of an uploaded or big-uploaded file now calls the same DFS upload. The files service installs `secretchat.Materialize` when it starts. The returned `EncryptedFile` keeps `key_fingerprint` and is remembered for that secret chat, so a later `inputEncryptedFile` returns the size. A bad md5 is still `MD5_CHECKSUM_INVALID`. When the hook is not installed, the old echo remains.
+
+| Piece | File |
+| --- | --- |
+| send path | `app/bff/phone/internal/server/grpc/service/secret_chats.go` |
+| hook | `app/bff/phone/secretchat/materialize.go`, `app/bff/files/helper.go` |
+
+## Member list filters and invite-importer search (ISSUE-S-PART-CONTACTS-001, ISSUE-S-PART-BANNED-ACL-001, ISSUE-S-PART-FILTER-Q-001, ISSUE-S-HIDDENMEMBERS-ADMINS-001, ISSUE-S-JOINREQ-SEARCH-001, ISSUE-S-INVITE-IMPORTERS-USERS-001)
+
+`channels.getParticipants` treated contacts, mentions, and recent as the same member list, and compared `q` to the decimal user id. Banned and kicked lists had no admin check. `participants_hidden` also hid `channelParticipantsAdmins`, and `can_view_participants` stayed true.
+
+Name and contact matching now uses the viewer's user profiles (`Hooks.UserCards`). `channelParticipantsContacts` is that address book. The viewer is left out even when `ToSelfUser` marks them `contact` and `mutual_contact`. A `q` on that filter matches first name, last name, and username inside the contact set. `channelParticipantsBanned` and `channelParticipantsKicked` require the creator or `ban_users`. Hidden members still return the admin list, and `can_view_participants` is false for everyone else. A broadcast subscriber list stays admin-only.
+
+`messages.getChatInviteImporters` loaded importer users without the viewer, so `GetUserListByIdList` returned an empty vector and a name query matched nothing. The viewer is now included in the load (`To` and `Id`). A query is not combined with a link (`SEARCH_WITH_LINK_NOT_SUPPORTED`, unchanged). Basic groups return the full importer list when `q` is set, and the BFF filters that list by name.
+
+| Piece | File |
+| --- | --- |
+| filters, ACL, hidden admins | `app/service/biz/channel/service.go`, `convert.go` |
+| profile hook | `app/bff/channels/internal/svc/service_context.go` |
+| importer users and `q` | `app/bff/chatinvites/internal/core/channel_invite.go`, `messages.getChatInviteImporters_handler.go` |
+| basic-group full list for `q` | `app/service/biz/chat/internal/core/chat.getChatInviteImporters_handler.go` |
+
+## Basic group auto-delete timer (rows 200, 201)
+
+`messages.setHistoryTTL` on a basic group wrote only the caller's `dialogs.ttl_period`. `messages.getFullChat` reads `chats.ttl_period`, so the field stayed empty, and any member could set the timer.
+
+The RPC now calls `chat.setHistoryTTL` first. That writes `chats.ttl_period` and allows only the creator and admins (`CanChangeInfo`). A normal member gets `CHAT_ADMIN_REQUIRED` and no service message. The dialog row and `messageActionSetMessagesTTL` are unchanged after the chat row is accepted.
+
+| Piece | File |
+| --- | --- |
+| permission and chat column | `app/service/biz/chat/internal/core/chat.setHistoryTTL_handler.go` |
+| RPC order | `app/bff/dialogs/internal/core/messages.setHistoryTTL_handler.go` |
+
+## Megagroup send_reactions ban (ISSUE-S-BAN-REACT-001, 行 112)
+
+`messages.sendReaction` on a channel or megagroup ignored `send_reactions` in both `default_banned_rights` and a member's `banned_rights`. A banned member could still add an emoji. The check uses the same until-date rule as other send bans (`until_date` 0 does not expire). The creator and admins are not restricted. Removing a reaction (an empty emoji list) is still allowed. The error is `403 CHAT_SEND_REACTIONS_FORBIDDEN`.
+
+| Piece | File |
+| --- | --- |
+| ban check | `proto/mtproto/chat_send_right.go`, `app/service/biz/channel/service_features.go` `React` |
+
+## Who may speak (ISSUE-S-JOINTOSEND-001, ISSUE-S-GCALL-SELFUNMUTE-001, ISSUE-S-GROUPCALL-ADMIN-UNMUTE-001, ISSUE-S-GROUPCALL-LOCAL-MUTE-001)
+
+`channels.toggleJoinToSend` stored the bit and returned updates, but `channel.join_to_send` was never copied onto the chat object, and a guest could still comment. The flag is now set on `channel`, including the discussion chat shown to a non-member. A non-member comment while the flag is on returns `403 CHAT_GUEST_SEND_FORBIDDEN`.
+
+New group calls were created with `join_muted` true, so every non-admin joined muted and could not unmute. Basic groups and megagroups now start with `join_muted` off. Broadcast channels and `rtmp_stream` stay `join_muted`. A listener invite still joins muted without `can_self_unmute`. An admin turning `muted` off for someone else sets `can_self_unmute` and clears the raised hand, and leaves their microphone muted until they unmute. A member setting volume or `muted` on someone else is stored only for that listener (`muted_by_you`, volume), not as a server mute and not `volume_by_admin`.
+
+| Piece | File |
+| --- | --- |
+| join_to_send | `convert.go`, `comments.go` `mayComment` |
+| call default and local mute | `app/bff/phone/internal/engine/group.go`, `groups.go` `PhoneCreateGroupCall`, `service_ops.go` `CallStartsMuted` |
+
+## Saved Messages drafts (ISSUE-S-DRAFT-GETALL-MULTI-001)
+
+`messages.saveDraft` of `inputPeerSelf` kept `peer_type = PEER_SELF`. The Saved Messages dialog row is `PEER_USER` with `peer_id` equal to the owner, so the UPDATE matched nothing and `messages.getAllDrafts` (`draft_type > 0`) never saw that draft. A draft for a peer that has no dialog row had the same hole.
+
+Save now rewrites self to `PEER_USER` + self, in the BFF (so the pushed `updateDraftMessage` uses the same peer) and again in `dialog.saveDraftMessage`. When the UPDATE changes zero rows, a dialog is inserted with `InsertIgnore` and the draft is written onto it, which sets `draft_type = 2`.
+
+| Piece | File |
+| --- | --- |
+| peer rewrite | `app/bff/drafts/internal/core/draft_peer.go`, `messages.saveDraft_handler.go` |
+| insert when missing | `app/service/biz/dialog/internal/core/dialog.saveDraftMessage_handler.go` |
+
+## Saved GIFs keep the defaults (行 146, ISSUE-S-GIF-DEFAULT-001)
+
+`messages.getSavedGifs` returned the built-in list only while the user had saved nothing. The first `messages.saveGif` replaced that list, so the panel dropped to one GIF. Unsving it brought the defaults back.
+
+Saved rows are now listed first, and any built-in GIF the user has not saved is appended. The hash covers both. An empty saved list is still the built-in list.
+
+| Piece | File |
+| --- | --- |
+| list | `app/bff/stickers/catalog/manage.go` |
+
+## Media caption length (ISSUE-S-MSG-LENGTH-001)
+
+`messages.sendMedia` used to reject a caption only when `len(message) > 4000` bytes. The cap is now UTF-16 code units and `premium.Limit(FeatureCaption)` for the sender. That is the same pair `help.getAppConfig` publishes as `caption_length_limit_default` and `caption_length_limit_premium`. With `TELLOMI_PREMIUM_EVERYONE` (the default) both keys and the enforced cap are `premium.CaptionLength` (4096). With the switch off, a non-member gets `premium.CaptionLengthFree` (1024) and a member gets `premium.CaptionLength`. One past that cap is 400 `MEDIA_CAPTION_TOO_LONG`. A text message longer than 4096 is 400 `MESSAGE_TOO_LONG`.
+
+`messages.sendMultiMedia` checks each item. `messages.editMessage` uses the caption cap when the result is a photo, file, or other media. A scheduled edit reads the stored scheduled message, so a caption change that omits a new `InputMedia` still uses the caption cap. A channel edit reads the same row `Edit` loads (`MessageBody`). If that row or the scheduled row cannot be read, the text uses the caption cap instead of the 4096 message cap. `inputMediaEmpty` clears media, so the text is a message. A link-preview card is not a caption.
+
+A private edit that resends the same entities used to clear them before `MESSAGE_NOT_MODIFIED`, so the no-op was stored with the entities stripped. Entities the request sends are kept for the comparison, matching the channel edit. They are cleared only when the new text omits the field.
+
+| Piece | File |
+| --- | --- |
+| UTF-16 cap from `premium.Limit` | `app/bff/messages/internal/core/message_limits.go` |
+| send | `messages.sendMedia_handler.go`, `messages.sendMultiMedia_handler.go`, `messages.sendMessage_handler.go` |
+| edit, scheduled row, entity compare | `messages.editMessage_handler.go` |
+| channel post body | `app/service/biz/channel/service_ops.go` `MessageBody` |
+
+## Chat wallpaper overridden (ISSUE-S-CHATTHEME-001)
+
+`userFull.wallpaper_overridden` is true only when the other user installed the wallpaper with `for_both`. The user who called `messages.setChatWallPaper` sees false, including a one-sided wallpaper and a revert. `updatePeerWallpaper` in that RPC result uses the same rule.
+
+The inbox copy of the service message stores the flag for the peer. A one-sided wallpaper is not written onto the peer's dialog. `users.getFullUser` returns the dialog column. It does not turn the flag on just because a wallpaper id is present.
+
+| Piece | File |
+| --- | --- |
+| caller update | `app/bff/messages/p1rest/wallpaper.go` |
+| per-user dialog column | `app/messenger/msg/internal/dao/chat_decor.go` |
+| getFullUser | `app/bff/users/internal/core/users.getFullUser_handler.go` |
+
+## Bot reply markup (ISSUE-S-USER-REPLYMARKUP-001)
+
+`messages.sendMessage`, `messages.sendMedia`, and `messages.editMessage` kept `reply_markup` only when `RpcMetadata.IsBot` was set. The session never sets that flag, and the HTTP gateway sets it false, so a real bot's keyboard was dropped.
+
+The sender is a bot when the metadata says so, when the id is a known bot, or when `user.isBot` says the user row has a bot record. A lookup failure, and any ordinary user, still drops the markup.
+
+`messages.setChatWallPaper` returns the messenger updates for the service message and also the caller's `updatePeerWallpaper`. That update says `wallpaper_overridden` is false.
+
+| Piece | File |
+| --- | --- |
+| bot check | `app/bff/messages/internal/core/message_limits.go` |
+| edit | `messages.editMessage_handler.go` |
+| wallpaper update | `app/bff/messages/internal/server/grpc/service/chat_decor.go` |
+
+## Encrypted file download (ISSUE-S-SECRET-ENCFILE-001)
+
+`messages.uploadEncryptedFile` / `messages.sendEncryptedFile` already return an `EncryptedFile` and write `encryptedfiles/<id>.dat`. `upload.getFile(inputEncryptedFileLocation)` still answered `FILE_ID_INVALID`: `authorizeEncrypted` reads `encrypted_files.access_hash`, and `dfs.uploadEncryptedFileV2` never inserted that row.
+
+The upload now inserts `encrypted_file_id`, `access_hash`, `dc_id`, `file_size`, `key_fingerprint`, `md5_checksum`, `file_path`, and `expired_at=0` before it returns. `expired_at=0` is the retention rule for media that is still stored. A second insert of the same id keeps the first row. `upload.getFile` is unchanged: the stored hash is the capability, a wrong hash and an unknown id are both `FILE_ID_INVALID`.
+
+| Piece | File |
+| --- | --- |
+| insert | `app/service/dfs/internal/dao/encrypted_files.go`, `dao.go` |
+| upload | `app/service/dfs/internal/core/dfs.uploadEncryptedFileV2_handler.go` |
+| unique id | `teamgramd/deploy/sql/migrate-20261115-encrypted-file-lookup.sql` |
+
+## Saved GIF, recent sticker, and faved sticker sync (ISSUE-S-STICKER-SYNC-PUSH-001)
+
+`messages.saveGif`, `messages.saveRecentSticker`, `messages.clearRecentStickers`, and `messages.faveSticker` wrote the list and returned `boolTrue` without telling the account's other sessions. `messages.getSavedGifs` on the other session already saw the new GIF. It never received `updateSavedGifs`, so the panel stayed stale until a manual refetch.
+
+A successful write that changes the stored id order now uses the same `pushNotMe` path as `messages.reorderStickerSets`. `saveGif` sends `updateSavedGifs`. `saveRecentSticker` and `clearRecentStickers` send `updateRecentStickers`. `faveSticker` sends `updateFavedStickers`. The sync call carries the caller's perm auth key, so that session is not pushed. A rejected id does not push. Saving or faving the row that is already first, unsaving a row that is not stored, and clearing an empty recent list do not push: those calls rewrite a date or delete nothing, and the id order is unchanged.
+
+| Piece | File |
+| --- | --- |
+| push after the write | `app/bff/stickers/internal/server/grpc/service/handlers.go`, `handlers_p2.go` |
+| changed or not | `app/bff/stickers/catalog/manage.go` `SaveGif`, `service.go` `SaveRecent`, `ClearRecent`, `Fave` |
+| update constructors | `app/bff/stickers/catalog/push.go` |
+
+## Passkey login (ISSUE-S-PASSKEY-RPID-001)
+
+`account.registerPasskey` kept the credential in process memory and did not store a public key. `auth.finishPasskeyLogin` then returned `CREDENTIAL_INVALID` for every saved id, so a client passkey UI could not log in, and a restart dropped the credential.
+
+Registration now verifies the WebAuthn attestation with `github.com/go-webauthn/webauthn` and inserts `user_passkeys` (`credential_id`, public key, sign count, user handle `dc:userId`). `auth.finishPasskeyLogin` checks the stored challenge, rpId/origin, signature, and sign count. A higher count is saved. A repeated count is `CREDENTIAL_INVALID`. An unknown id is `PASSKEY_CREDENTIAL_NOT_FOUND`. A foreign origin is `PASSKEY_ORIGIN_MISMATCH`. Success binds the permanent auth key, sends the sign-in service notification, cancels a pending deletion, pushes the 777000 login notice, and returns `auth.authorization`. A cloud password returns `SESSION_PASSWORD_NEEDED` after the bind, and `auth.checkPassword` finishes that login. The user handle DC is `TELLOMI_DC_ID`, or 1.
+
+The ceremony row stores the permanent auth key that called init. Register and finish reject any other key and do not consume that challenge. Android origins are limited to `TELLOMI_PASSKEY_ANDROID_HASHES`; a client hash is not added to the relying-party origin list. `userVerification` is `required`, so an assertion without the UV flag is `CREDENTIAL_INVALID`. `account.initPasskeyRegistration`, `account.registerPasskey`, `account.getPasskeys`, and `account.deletePasskey` are not in the logged-out allow list, so they run only in `AuthStateNormal`. An existing `raw_id` is rejected instead of replacing the public key. The login sanction uses kind `phone` or `email`, the same keys as `auth.signIn`.
+
+| Piece | File |
+| --- | --- |
+| store and WebAuthn | `app/bff/passkey/persist` |
+| login bind and notice | `app/bff/passkey/login` |
+| facade | `app/bff/accountrest/passkey.go` |
+| RPC | `app/bff/passkey/internal/core/auth.finishPasskeyLogin_handler.go` |
+| session state | `app/interface/session/internal/sess/session_invoke.go` |
+| logged-in gate | `app/interface/session/internal/sess/check_api_request_type.go` |
+| wiring | `app/bff/bff/internal/server/server.go` |
+| table | `teamgramd/deploy/sql/migrate-20261115-passkeys.sql` |
+
+## Notify exception peer scope (ISSUE-S-NOTIFY-EXC-SCOPE-001)
+
+`account.getNotifyExceptions` returned every stored exception and did not read `peer`. With `inputNotifyUsers` a muted supergroup was included. With `inputNotifyChats` a muted private chat was included.
+
+An unset peer still returns every row. `inputNotifyUsers` keeps users. `inputNotifyChats` keeps basic groups and channels whose record has `broadcast` false, including topic rows of those channels. `inputNotifyBroadcasts` keeps channels whose record has `broadcast` true. `inputNotifyPeer` keeps that one dialog, including its topic rows. `inputNotifyForumTopic` keeps that one topic row. `compare_sound` is unchanged: a row is kept only when its sound or stories sound is not the default. A missing channel is left out of both channel categories. `PeerType` CHANNEL is not used as the broadcast test.
+
+| Piece | File |
+| --- | --- |
+| peer filter | `app/bff/notification/internal/core/account.getNotifyExceptions_handler.go` |
+| broadcast flag | `app/service/biz/channel/service_ops.go` `IsBroadcast` |

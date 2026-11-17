@@ -1,0 +1,27 @@
+---
+description: 永久开发规范（Telegram Native-First）：先读原版、优先复用、能不改原版就不改
+alwaysApply: true
+---
+
+正文以本仓根目录 `AGENTS.md`「永久开发规范」为准（仓库内权威版本）。下面的检查清单必须在开工前回答，并写入 PR 描述。本文件与 `AGENTS.md` 该节保持一致，不要在这里写另一套规则。
+
+## 开工前检查清单（必须写入 PR 描述）
+
+1. 原版有没有类似功能？在哪个模块和文件？准备复用什么？
+2. 为什么原版不够用？（若够用，如何复用，是否没有新写平行实现？）
+3. 服务端能不能解决？若能，为什么还要改客户端？
+4. 本次改了哪些 Telegram 原版文件？未改则写「未改原版」。
+5. 新文件或缓存是否接入了原有存储与自动清理？有没有把大资源打进安装包？
+6. 测试是什么？确认不是桩代码，也不是假 200。
+
+
+## 本仓（teamgram-server）对应要求
+
+本仓是 MTProto 服务端，原则同样生效，侧重点如下：
+
+- 优先兼容 Telegram 原生协议和官方客户端的实际行为，而不是为了迁就自创的客户端逻辑去改协议语义。
+- **客户端出现异常时，先查服务端**（API 是否按官方 TL 实现、路由和 handler 是否完整、数据、权限、媒体、限流），再考虑改客户端。Telegram 客户端已经非常成熟，大多数问题出在服务端实现或数据。
+- 补 API 必须对照官方 TL / API 文档。「已实现」= 路由 + handler，禁止桩代码和假成功响应。改 RPC 必须重跑 `go run ./tools/apicoverage`，并把 `docs/api-coverage.md` 与 `docs/api-coverage.csv` 放进同一 PR。
+- 不要往聊天库（`users`、`messages`、dialog）加独立产品的表；swipe / moments 用自己的库，见 `docs/architecture-extension.md`。
+- 原版/上游改动登记：`UPSTREAM_PATCHES.md`。
+- 合入必须独立复审 PASS + CI 绿；作者不自合。生产 Redis 禁止 `FLUSHALL`。

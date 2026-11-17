@@ -20,14 +20,16 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
-	"github.com/teamgram/marmota/pkg/threading2"
+	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/internal/dal/dataobject"
+	"github.com/zeromicro/go-zero/core/logx"
 )
 
 const (
@@ -73,10 +75,33 @@ func (d *Dao) GetLastSeenAt(ctx context.Context, id int64) (*dataobject.UserPres
 			return nil
 		})
 	if err != nil {
+		if errors.Is(err, sqlc.ErrNotFound) && id > 0 {
+			// A user created before presence rows were written, or a test
+			// account that never called account.updateStatus, has no row.
+			// Insert the missing row only. An existing heartbeat is not updated.
+			d.insertPresenceIfAbsent(ctx, id)
+		}
 		return nil, err
 	}
 
 	return do, nil
+}
+
+func presenceCursor(row *dataobject.UserPresencesDO) int64 {
+	if row == nil {
+		return 0
+	}
+	return mtproto.PresenceCursor(row.LastSeenAt, row.Expires)
+}
+
+func (d *Dao) insertPresenceIfAbsent(ctx context.Context, userId int64) {
+	if d == nil || d.DB == nil || userId <= 0 {
+		return
+	}
+	_, err := d.DB.Exec(ctx, "insert ignore into user_presences(user_id, last_seen_at, expires) values (?, 0, 0)", userId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("insertPresenceIfAbsent - user_id=%d error: %v", userId, err)
+	}
 }
 
 func (d *Dao) PutLastSeenAt(ctx context.Context, userId int64, lastSeenAt int64, expires int32) {
@@ -87,7 +112,7 @@ func (d *Dao) PutLastSeenAt(ctx context.Context, userId int64, lastSeenAt int64,
 	}
 
 	d.CachedConn.SetCache(ctx, genUserPresencesKey(userId), do)
-	threading2.WrapperGoFunc(ctx, nil, func(ctx context.Context) {
-		d.UserPresencesDAO.InsertOrUpdate(ctx, do)
-	})
+	if _, _, err := d.UserPresencesDAO.InsertOrUpdate(ctx, do); err != nil {
+		logx.WithContext(ctx).Errorf("PutLastSeenAt - user_id=%d error: %v", userId, err)
+	}
 }

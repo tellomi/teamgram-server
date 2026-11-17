@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
+	"github.com/teamgram/teamgram-server/pkg/invite"
 )
 
 // ChatImportChatInvite
@@ -30,6 +31,12 @@ func (c *ChatCore) ChatImportChatInvite(in *chat.TLChatImportChatInvite) (*mtpro
 		return nil, err
 	}
 
+	if invite.NotStarted(chatInviteDO.StartDate, time.Now().Unix()) {
+		err = mtproto.ErrInviteHashExpired
+		c.Logger.Errorf("chat.importChatInvite - error: %v", err)
+		return nil, err
+	}
+
 	if chatInviteDO.ExpireDate != 0 && time.Now().Unix() > chatInviteDO.ExpireDate {
 		err = mtproto.ErrInviteHashExpired
 		c.Logger.Errorf("chat.importChatInvite - error: %v", err)
@@ -40,7 +47,7 @@ func (c *ChatCore) ChatImportChatInvite(in *chat.TLChatImportChatInvite) (*mtpro
 			"link": chatInviteDO.Link,
 		})
 
-		if sz >= int(chatInviteDO.UsageLimit) {
+		if invite.UsageExhausted(chatInviteDO.UsageLimit, sz) {
 			err = mtproto.ErrInviteHashExpired
 			c.Logger.Errorf("chat.importChatInvite - error: %v", err)
 			return nil, err

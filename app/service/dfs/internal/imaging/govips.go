@@ -141,6 +141,10 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 	}
 
 	srcW, srcH := img.Width(), img.Height()
+	// prepareABC covers a small profile photo up to the c size (640). Those
+	// pixels are new, so the JPEG is allowed to be larger than the upload.
+	// A 320×320 avatar used to die as IMAGE_PROCESS_FAILED on that check.
+	upscaled := srcW > fileW || srcH > fileH
 	widthLimited := srcW >= srcH
 	longEdge := srcH
 	if widthLimited {
@@ -182,7 +186,7 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 			if err == nil && format == staticJPEG {
 				encoded, err = finishJPEG(encoded)
 			}
-			if err == nil && format == staticJPEG && len(encoded) > len(rb) && len(rb) > 0 && !oriented {
+			if err == nil && format == staticJPEG && !upscaled && len(encoded) > len(rb) && len(rb) > 0 && !oriented {
 				encoded, err = shrinkJPEG(resized, len(rb))
 			}
 		}
@@ -196,7 +200,7 @@ func buildStaticSizes(rb []byte, format staticFormat, isABC bool) ([]derivedSize
 		// JPEG derivatives must not exceed the upload, except when EXIF
 		// orientation forced a re-encode of pixels that were stored sideways.
 		// PNG and WebP thumbs of a tiny source can be larger than that source.
-		if !reuse && !oriented && format == staticJPEG && len(rb) > 0 && len(encoded) > len(rb) {
+		if !reuse && !oriented && !upscaled && format == staticJPEG && len(rb) > 0 && len(encoded) > len(rb) {
 			return nil, fmt.Errorf("govips: %s derivative is %d bytes, larger than the %d byte original", sz.Type, len(encoded), len(rb))
 		}
 		out = append(out, derivedSize{

@@ -64,20 +64,13 @@ func (c *AuthorizationCore) AuthSignIn(in *mtproto.TLAuthSignIn) (*mtproto.Auth_
 	)
 
 	isEmail := verify.IsEmail(in.PhoneNumber)
-	if isEmail {
-		phoneCode, err = emailLoginCode(in)
-		if err != nil {
-			c.Logger.Errorf("auth.signIn - email code: %v", err)
-			return nil, err
-		}
-	} else {
-		phoneCode = in.GetPhoneCode_STRING()
-		if phoneCode == "" {
-			phoneCode = in.GetPhoneCode_FLAGSTRING().GetValue()
-		}
+	phoneCode, err = signInCode(in)
+	if err != nil {
+		c.Logger.Errorf("auth.signIn - code: %v", err)
+		return nil, err
 	}
 
-	if phoneCode == "" || phoneCodeHash == "" {
+	if phoneCodeHash == "" {
 		err = mtproto.ErrPhoneCodeEmpty
 		c.Logger.Errorf("auth.sendCode - error: %v", err)
 		return nil, err

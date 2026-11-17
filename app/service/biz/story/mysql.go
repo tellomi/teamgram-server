@@ -92,7 +92,97 @@ ON DUPLICATE KEY UPDATE sender_user_id=VALUES(sender_user_id), random_id=VALUES(
   forwards=VALUES(forwards), body=VALUES(body)`,
 		rec.Owner.Kind, rec.Owner.ID, rec.Item.Id, rec.Sender, rec.RandomID, rec.Item.Date, rec.Item.ExpireDate,
 		boolInt(rec.Item.Pinned), boolInt(rec.Deleted), rec.Forwards, body)
-	return err
+	if err != nil {
+		return err
+	}
+	return indexStoryMedia(ctx, ex, rec)
+}
+
+func indexStoryMedia(ctx context.Context, ex sqlExec, rec *Record) error {
+	if rec == nil || rec.Item == nil {
+		return nil
+	}
+	if _, err := ex.ExecContext(ctx, `DELETE FROM story_media WHERE owner_kind=? AND owner_id=? AND story_id=?`,
+		rec.Owner.Kind, rec.Owner.ID, rec.Item.Id); err != nil {
+		return err
+	}
+	ids := storyMediaIDs(rec.Item.GetMedia())
+	if len(ids) == 0 {
+		ids = []int64{0}
+	}
+	for _, id := range ids {
+		if _, err := ex.ExecContext(ctx, `INSERT INTO story_media (media_id, owner_kind, owner_id, story_id) VALUES (?,?,?,?)`,
+			id, rec.Owner.Kind, rec.Owner.ID, rec.Item.Id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// indexMissing records media ids for stories saved before story_media existed.
+// A story with no photo or document is marked with media_id 0 so the next
+// page does not select it again. media_id 0 is not a downloadable file.
+func (s *mysqlStore) indexMissing(ctx context.Context, limit int) error {
+	if s == nil || s.db == nil || limit <= 0 {
+		return nil
+	}
+	ok, err := s.hasTable(ctx, "story_media")
+	if err != nil || !ok {
+		return err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT s.owner_kind, s.owner_id, s.story_id, s.sender_user_id, s.random_id, s.date2, s.expire_date, s.pinned, s.deleted, s.forwards, s.body
+FROM stories s
+LEFT JOIN story_media m ON m.owner_kind=s.owner_kind AND m.owner_id=s.owner_id AND m.story_id=s.story_id
+WHERE m.story_id IS NULL
+LIMIT ?`, limit)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var recs []*Record
+	for rows.Next() {
+		rec, err := scanRecord(rows)
+		if err != nil {
+			return err
+		}
+		recs = append(recs, rec)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for _, rec := range recs {
+		if err = indexStoryMedia(ctx, s.db, rec); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *mysqlStore) StoriesByMedia(ctx context.Context, mediaID int64) ([]MediaRef, error) {
+	if mediaID == 0 || s == nil || s.db == nil {
+		return nil, nil
+	}
+	ok, err := s.hasTable(ctx, "story_media")
+	if err != nil || !ok {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT owner_kind, owner_id, story_id FROM story_media WHERE media_id=?`, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MediaRef
+	for rows.Next() {
+		var ref MediaRef
+		var kind int8
+		if err = rows.Scan(&kind, &ref.Owner.ID, &ref.StoryID); err != nil {
+			return nil, err
+		}
+		ref.Owner.Kind = Kind(kind)
+		out = append(out, ref)
+	}
+	return out, rows.Err()
 }
 
 // errNoAdvertUser means the story change was committed and there is no users

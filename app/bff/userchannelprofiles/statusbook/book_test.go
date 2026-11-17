@@ -1,0 +1,210 @@
+package statusbook
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/teamgram/marmota/pkg/stores/kv"
+	"github.com/zeromicro/go-zero/core/stores/cache"
+	"github.com/zeromicro/go-zero/core/stores/redis"
+)
+
+func TestSaveForgetAndOlderWrite(t *testing.T) {
+	b := New(nil)
+	ctx := context.Background()
+	got, err := b.Load(ctx, 7)
+	if err != nil || got.Pushed != 0 || got.HaveList {
+		t.Fatalf("missing = %+v %v", got, err)
+	}
+	rec := Record{Pushed: 1_700_000_300, HaveList: true, Viewers: []Viewer{{ID: 2, Exact: true}}, Gen: got.Gen, SetTTL: true}
+	if err = b.Save(ctx, 7, rec); err != nil {
+		t.Fatal(err)
+	}
+	got, err = b.Load(ctx, 7)
+	if err != nil || got.Pushed != rec.Pushed || len(got.Viewers) != 1 {
+		t.Fatalf("saved = %+v %v", got, err)
+	}
+	older := got
+	older.Pushed = rec.Pushed - 50
+	older.Viewers = []Viewer{{ID: 9}}
+	if err = b.Save(ctx, 7, older); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = b.Load(ctx, 7)
+	if got.Pushed != rec.Pushed || got.Viewers[0].ID != 2 {
+		t.Fatalf("older write replaced the mark: %+v", got)
+	}
+	b.Forget(ctx, 7)
+	got, err = b.Load(ctx, 7)
+	if err != nil || got.Pushed != 0 || got.HaveList || got.Gen == 0 {
+		t.Fatalf("forgotten = %+v %v", got, err)
+	}
+}
+
+func TestOversizedAudienceIsNotStored(t *testing.T) {
+	b := New(nil)
+	ctx := context.Background()
+	viewers := make([]Viewer, MaxViewers+1)
+	for i := range viewers {
+		viewers[i] = Viewer{ID: int64(i + 1), Exact: true}
+	}
+	if err := b.Save(ctx, 4, Record{Pushed: 100, HaveList: true, Viewers: viewers, SetTTL: true}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := b.Load(ctx, 4)
+	if err != nil || got.HaveList || len(got.Viewers) != 0 || got.Pushed != 100 {
+		t.Fatalf("oversized list was kept: %+v %v", got, err)
+	}
+}
+
+func TestInFlightSaveDoesNotRestoreForgottenList(t *testing.T) {
+	assertInFlightSaveDropped(t, New(nil))
+	mr := miniredis.RunT(t)
+	store := kv.NewStore(cache.ClusterConf{{
+		RedisConf: redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType},
+		Weight:    100,
+	}})
+	assertInFlightSaveDropped(t, &Book{be: redisBE{kv: store}})
+}
+
+func assertInFlightSaveDropped(t *testing.T, b *Book) {
+	t.Helper()
+	ctx := context.Background()
+	const userID int64 = 8
+	if err := b.Save(ctx, userID, Record{
+		Pushed: 300, HaveList: true, Gen: 0, SetTTL: true,
+		Viewers: []Viewer{{ID: 1, Exact: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := b.Load(ctx, userID)
+	if err != nil || !loaded.HaveList || loaded.Viewers[0].ID != 1 {
+		t.Fatalf("seed %+v %v", loaded, err)
+	}
+	b.Forget(ctx, userID)
+	stale := loaded
+	stale.Pushed = 900
+	if err = b.Save(ctx, userID, stale); err != nil {
+		t.Fatal(err)
+	}
+	got, err := b.Load(ctx, userID)
+	if err != nil || got.HaveList || got.Pushed != 0 || len(got.Viewers) != 0 {
+		t.Fatalf("in-flight save wrote the old list back: %+v %v", got, err)
+	}
+	if got.Gen == loaded.Gen {
+		t.Fatalf("forget did not bump the generation: %+v", got)
+	}
+	if err = b.Save(ctx, userID, Record{
+		Pushed: 900, HaveList: true, Gen: got.Gen, SetTTL: true,
+		Viewers: []Viewer{{ID: 2}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = b.Load(ctx, userID)
+	if err != nil || !got.HaveList || got.Pushed != 900 || got.Viewers[0].ID != 2 {
+		t.Fatalf("fresh generation was not stored: %+v %v", got, err)
+	}
+}
+
+type errBackend struct{ err error }
+
+func (e errBackend) load(context.Context, int64, time.Time) (Record, error) {
+	return Record{}, e.err
+}
+func (e errBackend) save(context.Context, int64, Record, time.Time) error { return e.err }
+func (e errBackend) forget(context.Context, []int64) error                { return e.err }
+
+func TestKVErrorsDoNotLookLikeAFreshSkip(t *testing.T) {
+	readErr := errors.New("redis down")
+	b := &Book{be: errBackend{err: readErr}}
+	_, err := b.Load(context.Background(), 3)
+	if !errors.Is(err, readErr) {
+		t.Fatalf("load err %v", err)
+	}
+	if rec := OpenRecord(Record{Pushed: 10, HaveList: true, Gen: 4}, err); rec.Pushed != 0 || rec.HaveList || rec.Gen != 0 {
+		t.Fatalf("read error was treated as a cached audience: %+v", rec)
+	}
+}
+
+func TestStatusPrivacyForgetIDsIncludesBothContactDirections(t *testing.T) {
+	const (
+		self = int64(1)
+		bob  = int64(2)
+	)
+	cases := []struct {
+		name    string
+		forward []int64
+		reverse []int64
+	}{
+		{name: "nobody", reverse: []int64{bob}},
+		{name: "contacts", forward: []int64{bob}},
+		{name: "chat exception", reverse: []int64{bob}},
+	}
+	for _, tc := range cases {
+		ids := StatusPrivacyForgetIDs(self, nil, tc.forward, tc.reverse)
+		if !containsID(ids, self) || !containsID(ids, bob) {
+			t.Fatalf("%s forget ids %v", tc.name, ids)
+		}
+	}
+}
+
+func containsID(ids []int64, want int64) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
+}
+
+type flakyEval struct {
+	scriptKV
+	failKey string
+	left    int
+}
+
+func (f *flakyEval) EvalCtx(ctx context.Context, script, key string, args ...any) (any, error) {
+	if key == f.failKey && f.left > 0 {
+		f.left--
+		return nil, errors.New("eval")
+	}
+	return f.scriptKV.EvalCtx(ctx, script, key, args...)
+}
+
+func TestEvalFailureIsReturnedAndRetryClears(t *testing.T) {
+	mr := miniredis.RunT(t)
+	store := kv.NewStore(cache.ClusterConf{{
+		RedisConf: redis.RedisConf{Host: mr.Addr(), Type: redis.NodeType},
+		Weight:    100,
+	}})
+	const bob int64 = 9
+	at := time.Unix(1_700_000_000, 0)
+	raw := redisBE{kv: store}
+	b := &Book{be: redisBE{kv: &flakyEval{scriptKV: store, failKey: dataKey(bob), left: 1}}}
+	b.SetNow(func() time.Time { return at })
+	ctx := context.Background()
+	if err := raw.save(ctx, bob, Record{
+		Pushed: 300, HaveList: true, Gen: 0, SetTTL: true,
+		Viewers: []Viewer{{ID: 1, Exact: true}},
+	}, at); err != nil {
+		t.Fatal(err)
+	}
+	err := b.Forget(ctx, bob)
+	if err == nil || err.Error() != "eval" {
+		t.Fatalf("forget err %v", err)
+	}
+	kept, loadErr := b.Load(ctx, bob)
+	if loadErr != nil || !kept.HaveList || !kept.Viewers[0].Exact {
+		t.Fatalf("failed eval cleared the list: %+v %v", kept, loadErr)
+	}
+	if err = b.Forget(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	cleared, loadErr := b.Load(ctx, bob)
+	if loadErr != nil || cleared.HaveList || cleared.Pushed != 0 || len(cleared.Viewers) != 0 {
+		t.Fatalf("retry did not clear %d: %+v %v", bob, cleared, loadErr)
+	}
+}

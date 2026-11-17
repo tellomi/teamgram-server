@@ -31,7 +31,7 @@
 
 每次安卓 Release 都要发布 `https://www.tellomi.cn/dl/android/latest.json`。成都从 R2 桶 `tellomi-updates` 同步这份文件。`help.getAppUpdate` 读取它，并用 `versionName` 和客户端版本比较。弹出应用内更新靠的是这个文件，不要靠改生产 `.env` 里的 `TELLOMI_APP_UPDATE_VERSION`。生产环境把该变量留空。非空会盖住清单，下次 APK 发布后就会过期。
 
-清单字段为 `versionName`、`versionCode`、`url`、`fallbackUrl`、`sha256` 或 `sha256sum`、`size`。已发布文件在顶层使用 `sha256sum`，在每条 `files[]` 上使用 `sha256`。可选的 `changelog`（字符串）是对话框正文。更新提示默认可跳过。只有 `TELLOMI_APP_UPDATE_CANNOT_SKIP=1`，或清单里的 `"mandatory": true`（JSON 布尔值，其他类型忽略），才会设置 `can_not_skip`。iOS 仍然收到 `help.noAppUpdate`。
+清单字段为 `versionName`、`versionCode`、`url`、`fallbackUrl`、`sha256` 或 `sha256sum`、`size`。已发布文件在顶层使用 `sha256sum`，在每条 `files[]` 上使用 `sha256`。可选的 `changelog`（字符串）是对话框正文。可选的 `notes` 是语言代码到正文的对象，例如 `{"zh-hans":"...","en":"..."}`。客户端语言取 initConnection 的 `lang_code`，其次当 `lang_pack` 本身是语言代码时用它，再其次 `system_lang_code`。简体、繁体及其变体先匹配成功，三种都对不上才用英语。先用匹配的 `notes`，没有时用 `notes.en`（如果有这个键）。没有任何匹配的 note 时，字符串 `changelog` 仍是对话框正文，因此现有 `latest.json` 保持兼容。两者都空时，服务器使用该语言的内置句子；未知语言用英语。非空的 `TELLOMI_APP_UPDATE_TEXT` 会替换所有语言的对话框正文。更新提示默认可跳过。只有 `TELLOMI_APP_UPDATE_CANNOT_SKIP=1`，或清单里的 `"mandatory": true`（JSON 布尔值，其他类型忽略），才会设置 `can_not_skip`。iOS 仍然收到 `help.noAppUpdate`。
 
 `TELLOMI_APP_UPDATE_MANIFEST` 指定文件路径或 `http(s)` URL。未设置或为空时，服务器使用第一个存在的普通文件：
 

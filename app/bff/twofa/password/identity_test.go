@@ -2,6 +2,7 @@ package password
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -61,6 +62,46 @@ func TestLoginEmailPatternFromIdentity(t *testing.T) {
 	}
 	if phone.GetLoginEmailPattern() != nil {
 		t.Fatalf("phone account pattern %q", phone.GetLoginEmailPattern().GetValue())
+	}
+}
+
+func TestLoginEmailPatternShowsAttachedPhoneEmail(t *testing.T) {
+	svc := New(Options{})
+	prev := Swap(svc)
+	t.Cleanup(func() {
+		Swap(prev)
+		SetAttachedLoginEmail(nil)
+	})
+	SeedPhone(8)
+	SetAttachedLoginEmail(func(_ context.Context, userID int64) (string, error) {
+		if userID == 8 {
+			return "phone@tellomi.app", nil
+		}
+		return "other@tellomi.app", nil
+	})
+	phone, err := AccountPassword(context.Background(), 8, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phone.GetLoginEmailPattern().GetValue() != "p***@tellomi.app" {
+		t.Fatalf("pattern %q", phone.GetLoginEmailPattern().GetValue())
+	}
+
+	SeedIdentity(7, "user@tellomi.app")
+	emailAccount, err := AccountPassword(context.Background(), 7, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emailAccount.GetLoginEmailPattern().GetValue() != "u***@tellomi.app" {
+		t.Fatalf("identity must win: %q", emailAccount.GetLoginEmailPattern().GetValue())
+	}
+
+	SetAttachedLoginEmail(func(context.Context, int64) (string, error) {
+		return "", errors.New("redis down")
+	})
+	failed, err := AccountPassword(context.Background(), 8, 1)
+	if failed != nil || statusText(err) != "INTERNAL_SERVER_ERROR" {
+		t.Fatalf("%#v %v", failed, err)
 	}
 }
 

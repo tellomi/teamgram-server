@@ -12,14 +12,19 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/pkg/brand"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 	"github.com/zeromicro/go-zero/core/logx"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // Release is one published app build.
+// Notes is lang_code to dialog text from latest.json "notes".
+// Text is the string changelog, or TELLOMI_APP_UPDATE_TEXT.
 type Release struct {
 	Version    string
 	Text       string
+	Notes      map[string]string
 	URL        string
 	Source     string // empty matches every installer source
 	CannotSkip bool
@@ -33,12 +38,15 @@ type Note struct {
 
 // UpdateClient is the signed-in client's initConnection record.
 // Known is false when lang_pack and the authorization row could not be loaded.
+// LangCode and SystemLangCode choose the update sentence.
 type UpdateClient struct {
-	Known         bool
-	LangPack      string
-	DeviceModel   string
-	SystemVersion string
-	AppVersion    string
+	Known          bool
+	LangPack       string
+	LangCode       string
+	SystemLangCode string
+	DeviceModel    string
+	SystemVersion  string
+	AppVersion     string
 }
 
 // AppUpdateForSession answers help.getAppUpdate for one client.
@@ -54,7 +62,12 @@ func AppUpdateForSession(client UpdateClient, source string, published *Release)
 	if v := VersionInSource(source); v != "" {
 		version = v
 	}
-	return AppUpdate(version, source, published)
+	return AppUpdateForLang(version, source, client.language(), published)
+}
+
+func (c UpdateClient) language() string {
+	// lang_code, then lang_pack, then system_lang_code. English is last.
+	return langpack.ClientLang(c.LangCode, c.SystemLangCode, c.LangPack)
 }
 
 // iosClient reports a Telegram iOS session.
@@ -78,12 +91,19 @@ func iosClient(langPack, deviceModel, systemVersion string) bool {
 }
 
 // AppUpdate compares the client's version with the published release.
+// The dialog text is English. AppUpdateForLang picks the client's language.
 // help.noAppUpdate is the documented result when nothing newer is published
 // or the client is already on that version.
 // A published version with no dot is a build number (for example 1800979),
 // not a marketing version, and is treated as no update.
 // https://core.telegram.org/method/help.getAppUpdate
 func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_AppUpdate {
+	return AppUpdateForLang(clientVersion, source, "", published)
+}
+
+// AppUpdateForLang is AppUpdate with the client's initConnection language.
+// lang is lang_code, or already resolved by ClientLang. Empty is English.
+func AppUpdateForLang(clientVersion, source, lang string, published *Release) *mtproto.Help_AppUpdate {
 	if published == nil || strings.TrimSpace(published.Version) == "" {
 		return noUpdate()
 	}
@@ -97,10 +117,7 @@ func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_A
 	if !newer(published.Version, clientVersion) {
 		return noUpdate()
 	}
-	text := strings.TrimSpace(published.Text)
-	if text == "" {
-		text = "A new version of Tellomi is available."
-	}
+	text := dialogText(lang, published)
 	data := &mtproto.Help_AppUpdate{
 		Id:         versionID(published.Version),
 		Version:    published.Version,
@@ -114,12 +131,45 @@ func AppUpdate(clientVersion, source string, published *Release) *mtproto.Help_A
 	return mtproto.MakeTLHelpAppUpdate(data).To_Help_AppUpdate()
 }
 
+// dialogText prefers a manifest note for the client language, then notes.en,
+// then the string changelog (or TELLOMI_APP_UPDATE_TEXT). When none of those
+// is set, the built-in sentence for that language is used. English is the
+// fallback language.
+func dialogText(lang string, published *Release) string {
+	if published != nil {
+		if t := noteForLang(published.Notes, lang); t != "" {
+			return t
+		}
+		if t := strings.TrimSpace(published.Text); t != "" {
+			return t
+		}
+	}
+	return usercopy.AppUpdate(lang)
+}
+
+func noteForLang(notes map[string]string, lang string) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	code := langpack.ClientLang(lang, "", "")
+	if t := strings.TrimSpace(notes[code]); t != "" {
+		return t
+	}
+	if code != "en" {
+		if t := strings.TrimSpace(notes["en"]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
 // LoadRelease reads the published Android update.
 // A non-empty TELLOMI_APP_UPDATE_VERSION replaces the release manifest and
 // is logged once. Leave it empty in production so latest.json drives the
 // prompt. When it is empty, the manifest supplies versionName, the download
-// URL, and changelog. TEXT, URL, and SOURCE, when non-empty, replace those
-// manifest fields. The prompt is skippable unless CANNOT_SKIP is 1 or the
+// URL, changelog, and notes. TEXT, URL, and SOURCE, when non-empty, replace
+// those manifest fields. TEXT also drops notes, so that one string is the
+// dialog in every language. The prompt is skippable unless CANNOT_SKIP is 1 or the
 // manifest sets mandatory to true. An env-only release is mandatory only
 // when CANNOT_SKIP is 1.
 // A manifest that cannot be read, or an empty version, offers no update.
@@ -160,6 +210,7 @@ func applyManifestOverrides(rel *Release) *Release {
 	out := cloneRelease(rel)
 	if text := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_TEXT")); text != "" {
 		out.Text = text
+		out.Notes = nil
 	}
 	if url := strings.TrimSpace(os.Getenv("TELLOMI_APP_UPDATE_URL")); url != "" {
 		out.URL = url
@@ -240,49 +291,18 @@ func LoadNotes() []Note {
 // https://core.telegram.org/method/help.getInviteText
 func InviteText(lang string) string {
 	link := strings.TrimRight(brand.LinkBase(), "/")
-	switch normalizeLang(lang) {
-	case "zh-hant":
-		return "我在用 Tellomi 聊天，來加入我：" + link
-	case "zh-hans":
-		return "我在用 Tellomi 聊天，来加入我：" + link
-	default:
-		return "I'm on Tellomi. Join me: " + link
-	}
+	return usercopy.Invite(lang, link)
 }
 
 // SupportName is the localized label for the support account.
 // A loaded profile name wins. Otherwise the brand name is used.
 // https://core.telegram.org/method/help.getSupportName
 func SupportName(lang, profileName string) string {
-	if name := strings.TrimSpace(profileName); name != "" {
-		return name
-	}
-	switch normalizeLang(lang) {
-	case "zh-hans":
-		return "Tellomi 支持"
-	case "zh-hant":
-		return "Tellomi 支援"
-	default:
-		return "Tellomi Support"
-	}
+	return usercopy.Support(lang, profileName)
 }
 
 func noUpdate() *mtproto.Help_AppUpdate {
 	return mtproto.MakeTLHelpNoAppUpdate(&mtproto.Help_AppUpdate{}).To_Help_AppUpdate()
-}
-
-func normalizeLang(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	switch {
-	case strings.HasPrefix(lang, "zh-hant"), strings.HasPrefix(lang, "zh-tw"), strings.HasPrefix(lang, "zh-hk"), strings.HasPrefix(lang, "zh-mo"):
-		return "zh-hant"
-	case strings.HasPrefix(lang, "zh"):
-		return "zh-hans"
-	case strings.HasPrefix(lang, "en"):
-		return "en"
-	default:
-		return lang
-	}
 }
 
 // newer reports whether next is a strictly newer dotted marketing version than prev.

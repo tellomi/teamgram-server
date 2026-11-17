@@ -381,6 +381,24 @@ func (s *memoryStore) ReplaceMessageBody(ctx context.Context, channelID int64, i
 	return nil
 }
 
+func (s *memoryStore) LatestLiveMessage(ctx context.Context, channelID int64, atOrBelow int32) (*StoredMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if atOrBelow <= 0 {
+		return nil, nil
+	}
+	var best *StoredMessage
+	for _, m := range s.messages[channelID] {
+		if m == nil || m.Deleted || m.ID <= 0 || m.ID > atOrBelow {
+			continue
+		}
+		if best == nil || m.ID > best.ID {
+			best = m
+		}
+	}
+	return best.clone(), nil
+}
+
 func (s *memoryStore) GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -446,6 +464,39 @@ func (s *memoryStore) GetRead(ctx context.Context, channelID, userID int64) (*Re
 		return &ReadState{ChannelID: channelID, UserID: userID}, nil
 	}
 	return st.clone(), nil
+}
+
+func (s *memoryStore) ApplyUnreadCuts(ctx context.Context, channelID int64, cuts []UnreadCut, list bool) ([]ReadState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := map[int64]*ReadState{}
+	for _, cut := range cuts {
+		if cut.Delta <= 0 || cut.Below <= 0 {
+			continue
+		}
+		for uid, st := range s.reads[channelID] {
+			if st == nil || uid == cut.Exclude || st.ReadInboxMaxID >= cut.Below || st.UnreadCount <= 0 {
+				continue
+			}
+			if st.UnreadCount > cut.Delta {
+				st.UnreadCount -= cut.Delta
+			} else {
+				st.UnreadCount = 0
+			}
+			changed[uid] = st
+		}
+	}
+	if !list {
+		return nil, nil
+	}
+	out := make([]ReadState, 0, len(changed))
+	for _, st := range changed {
+		if st.UnreadCount <= 0 {
+			continue
+		}
+		out = append(out, *st.clone())
+	}
+	return out, nil
 }
 
 func (s *memoryStore) SaveRead(ctx context.Context, st *ReadState) error {

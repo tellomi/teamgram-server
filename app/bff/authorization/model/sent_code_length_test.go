@@ -46,6 +46,24 @@ func TestToAuthSentCodeEmailPattern(t *testing.T) {
 	}
 }
 
+func TestToAuthSentCodeSetupEmailHasHashAndNoTimeout(t *testing.T) {
+	tx := &PhoneCodeTransaction{
+		PhoneCodeHash: "hashhashhashhash",
+		SentCodeType:  SentCodeTypeSetUpEmailRequired,
+		NextCodeType:  CodeTypeNone,
+	}
+	sent := tx.ToAuthSentCode()
+	if sent.GetType().GetPredicateName() != "auth_sentCodeTypeSetUpEmailRequired" {
+		t.Fatalf("type %s", sent.GetType().GetPredicateName())
+	}
+	if sent.GetPhoneCodeHash() != "hashhashhashhash" || sent.GetTimeout() != nil || sent.GetNextType() != nil {
+		t.Fatalf("%+v", sent)
+	}
+	if sent.GetType().GetAppleSigninAllowed() || sent.GetType().GetGoogleSigninAllowed() {
+		t.Fatal("apple and google sign-in stay off")
+	}
+}
+
 func TestResendKeepsSmsLength(t *testing.T) {
 	tx := &PhoneCodeTransaction{
 		PhoneCode:     "012345",

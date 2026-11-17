@@ -61,6 +61,9 @@ func officialCode(s string) (string, bool) {
 		return "he", true
 	case "no", "nb":
 		return "nb", true
+	case "in":
+		// Android used to send in for Indonesian.
+		return "id", true
 	}
 	for _, lang := range OfficialLanguages {
 		if lang.Code == s {

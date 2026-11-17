@@ -68,7 +68,7 @@ func (m *PhoneCodeTransaction) ToAuthSentCode() *mtproto.Auth_SentCode {
 		NextType:      makeAuthCodeType(m.NextCodeType),
 		Timeout:       &wrapperspb.Int32Value{Value: 60}, // TODO(@benqi): 默认60s
 	}).To_Auth_SentCode()
-	if m.SentCodeType == SentCodeTypeApp {
+	if m.SentCodeType == SentCodeTypeApp || m.SentCodeType == SentCodeTypeSetUpEmailRequired {
 		authSentCode.Timeout = nil
 	}
 	return authSentCode

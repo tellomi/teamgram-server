@@ -33,6 +33,11 @@ import (
 // MessagesSendMultiMedia
 // messages.sendMultiMedia#f803138f flags:# silent:flags.5?true background:flags.6?true clear_draft:flags.7?true noforwards:flags.14?true peer:InputPeer reply_to_msg_id:flags.0?int multi_media:Vector<InputSingleMedia> schedule_date:flags.10?int send_as:flags.13?InputPeer = Updates;
 func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mtproto.Updates, error) {
+	// Official albums are at most 10 items. A longer list is MEDIA_INVALID
+	// and is not stored.
+	if len(in.GetMultiMedia()) > 10 {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	ids := make([]int64, 0, len(in.GetMultiMedia()))
 	for _, item := range in.GetMultiMedia() {
 		if err := c.authorizeReferencedMedia(item.GetMedia()); err != nil {
@@ -116,7 +121,7 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 			message	string	A caption for the media
 			entities	flags.0?Vector<MessageEntity>	Message entities for styled text
 		*/
-		if len(media.Message) > 4000 {
+		if c.captionLimitExceeded(media.Message) {
 			err := mtproto.ErrMediaCaptionTooLong
 			c.Logger.Errorf("messages.sendMultiMedia: %v", err)
 			return nil, err
@@ -177,19 +182,11 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 		} else if in.GetReplyTo() != nil {
 			switch in.ReplyTo.PredicateName {
 			case mtproto.Predicate_inputReplyToMessage:
-				outMessage.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-					ReplyToMsgId:           in.GetReplyTo().GetReplyToMsgId(),
-					ReplyToMsgId_INT32:     in.GetReplyTo().GetReplyToMsgId(),
-					ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(in.GetReplyTo().GetReplyToMsgId()),
-					ReplyToPeerId:          nil,
-					ReplyToTopId:           nil,
-				}).To_MessageReplyHeader()
-				if in.GetReplyTo().GetQuoteText() != nil {
-					outMessage.ReplyTo.Quote = true
-					outMessage.ReplyTo.QuoteText = in.GetReplyTo().GetQuoteText()
-					outMessage.ReplyTo.QuoteEntities = in.GetReplyTo().GetQuoteEntities()
-					outMessage.ReplyTo.QuoteOffset = in.GetReplyTo().GetQuoteOffset()
+				header, qErr := c.replyHeaderChecked(peer, in.GetReplyTo())
+				if qErr != nil {
+					return nil, qErr
 				}
+				outMessage.ReplyTo = header
 			case mtproto.Predicate_inputReplyToStory:
 				// TODO:
 			}
@@ -207,6 +204,12 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 			}).To_MessageReplies()
 		}
 
+		if inputMediaIsVoice(media.GetMedia()) {
+			if err = c.voiceForbidden(peer); err != nil {
+				c.Logger.Errorf("messages.sendMultiMedia - voice privacy")
+				return nil, err
+			}
+		}
 		outMessage.Media, err = c.makeMediaByInputMedia(media.GetMedia())
 		if err != nil {
 			c.Logger.Errorf("messages.sendMultiMedia: %v", err)
@@ -234,7 +237,12 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 	}
 
 	if in.GetQuickReplyShortcut() != nil {
-		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+		ups, err := chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+		if err != nil {
+			return nil, err
+		}
+		c.pushQuickReplyNotMe(ups)
+		return ups, nil
 	}
 
 	rUpdate, err := c.dispatchOutbox(peer, outboxMultiMedia)
@@ -265,7 +273,7 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {
-			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer)
+			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, outgoingTopicID(in.GetReplyTo(), in.GetTopMsgId()))
 		})
 	}
 

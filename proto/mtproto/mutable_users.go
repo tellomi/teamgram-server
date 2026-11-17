@@ -36,7 +36,7 @@ func (m *MutableUsers) GetUnsafeUser(selfId, id int64) (*User, error) {
 		return nil, ErrUserIdInvalid
 	}
 
-	return paintImmutable(selfId, to, to.ToUnsafeUser(me)), nil
+	return paintImmutable(selfId, to, to.ToUnsafeUserCtx(PreparePrivacyRender(context.Background(), selfId, []*ImmutableUser{to, me}), me)), nil
 }
 
 func (m *MutableUsers) GetUnsafeUserSelf(id int64) (*User, error) {
@@ -95,12 +95,15 @@ func (m *MutableUsers) GetUserListByIdList(selfId int64, id ...int64) []*User {
 	}
 
 	column := make(map[int64]int32, len(id))
+	page := make([]*ImmutableUser, 0, len(id))
 	for _, id2 := range id {
-		to := m.findImmutableUser(id2)
-		if to == nil {
-			continue
+		if to := m.findImmutableUser(id2); to != nil {
+			page = append(page, to)
 		}
-		users = append(users, to.ToUnsafeUser(me))
+	}
+	ctx := PreparePrivacyRender(context.Background(), selfId, append(page, me))
+	for _, to := range page {
+		users = append(users, to.ToUnsafeUserCtx(ctx, me))
 		column[to.Id()] = StoryColumn(to)
 	}
 	PaintUserStoryRings(context.Background(), selfId, users, column)

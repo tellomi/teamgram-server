@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/pkg/brand"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -31,6 +32,12 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	}
 	if f.ReactionRead == nil {
 		f.ReactionRead = map[int64]int32{}
+	}
+	if f.MentionReadMax == nil {
+		f.MentionReadMax = map[int64]int32{}
+	}
+	if f.MentionRead == nil {
+		f.MentionRead = map[int64][]int32{}
 	}
 	if f.Views == nil {
 		f.Views = map[int32]ViewRec{}
@@ -209,7 +216,17 @@ func (s *Service) ReadContents(ctx context.Context, self int64, in *mtproto.Inpu
 			f.ReadContents[self] = append(f.ReadContents[self], id)
 		}
 	}
-	return s.saveFeatures(ctx, ch.ID, f)
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return err
+	}
+	if h := s.hooks(); h.Push != nil && len(ids) > 0 {
+		up := mtproto.MakeTLUpdateChannelReadMessagesContents(&mtproto.Update{
+			ChannelId: ch.ID,
+			Messages:  ids,
+		}).To_Update()
+		h.Push(ctx, self, nil, s.pack(ctx, self, ch.ID, up))
+	}
+	return nil
 }
 
 // DeleteByDate removes channel messages whose date is inside [minDate, maxDate].
@@ -341,7 +358,9 @@ func (s *Service) ToggleParticipantsHidden(ctx context.Context, self, actorAuth 
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() {
+	// Official clients hide the member list with ban_users. The creator
+	// always qualifies. change_info is the profile gate, not this one.
+	if !p.IsCreator() && !(p.IsAdmin() && p.adminRights().CanBanUsers()) {
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, ch.ID)
@@ -555,20 +574,17 @@ func (s *Service) EditLocation(ctx context.Context, self int64, in *mtproto.Inpu
 	return nil
 }
 
-func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, userID int64, password *mtproto.InputCheckPasswordSRP) (*mtproto.Updates, error) {
-	// Cloud password verifiers are not stored. An empty proof is the
-	// documented PASSWORD_MISSING (2FA required). A submitted SRP A is the
-	// same acceptance this method already used.
-	// https://core.telegram.org/method/messages.editChatCreator
-	if password == nil || len(password.GetA()) == 0 || password.GetPredicateName() == mtproto.Predicate_inputCheckPasswordEmpty {
-		return nil, mtproto.ErrPasswordMissing
-	}
+func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, userID int64, proof *mtproto.InputCheckPasswordSRP) (*mtproto.Updates, error) {
+	// https://core.telegram.org/method/channels.editCreator
 	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
 		return nil, err
 	}
 	if !p.IsCreator() {
 		return nil, mtproto.ErrChatAdminRequired
+	}
+	if userID == 0 || userID == self {
+		return nil, mtproto.ErrUserIdInvalid
 	}
 	target, err := s.store.GetParticipant(ctx, ch.ID, userID)
 	if err != nil {
@@ -577,6 +593,11 @@ func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mt
 	if target == nil || !target.InChannel() {
 		return nil, mtproto.ErrUserNotParticipant
 	}
+	if err = password.CheckSensitive(ctx, self, actorAuth, proof); err != nil {
+		return nil, err
+	}
+	prevSelf := p.clone()
+	prevTarget := target.clone()
 	p.Role = RoleAdmin
 	p.AdminRights = allAdminRights()
 	target.Role = RoleCreator
@@ -594,12 +615,131 @@ func (s *Service) EditCreator(ctx context.Context, self, actorAuth int64, in *mt
 	}
 	f := s.features(ctx, ch.ID)
 	f.FutureCreatorID = 0
+	rememberPromoter(f, self, userID)
 	_ = s.saveFeatures(ctx, ch.ID, f)
 	s.logAdmin(ctx, ch.ID, self, mtproto.MakeTLChannelAdminLogEventActionParticipantToggleAdmin(&mtproto.ChannelAdminLogEventAction{
 		NewParticipant:  participantTL(self, target),
 		PrevParticipant: participantTL(self, p),
 	}).To_ChannelAdminLogEventAction())
-	return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
+	ups := s.creatorTransferUpdates(ctx, self, ch, prevSelf, p, prevTarget, target)
+	s.emit(ctx, self, actorAuth, ch.ID, func(viewer int64) *mtproto.Updates {
+		return s.creatorTransferUpdates(ctx, viewer, ch, prevSelf, p, prevTarget, target)
+	})
+	return ups, nil
+}
+
+// creatorTransferUpdates is what channels.editCreator returns and what the
+// other members are pushed. updateChannel refreshes the chat, and
+// updateChannelParticipant carries both membership rows. Each viewer's copy
+// sets self/inviter_id together so the constructor decodes.
+func (s *Service) creatorTransferUpdates(ctx context.Context, viewer int64, ch *Channel, prevOld, newOld, prevNew, newCreator *Participant) *mtproto.Updates {
+	viewerP, _ := s.store.GetParticipant(ctx, ch.ID, viewer)
+	if viewerP == nil {
+		viewerP = &Participant{}
+	}
+	promoted := s.features(ctx, ch.ID).PromotedBy
+	when := int32(time.Now().Unix())
+	oldUp := channelParticipantUpdate(ch.ID, prevOld.UserID, newOld.UserID, when,
+		participantFor(viewer, viewerP, promoted, prevOld),
+		participantFor(viewer, viewerP, promoted, newOld))
+	newUp := channelParticipantUpdate(ch.ID, prevOld.UserID, newCreator.UserID, when,
+		participantFor(viewer, viewerP, promoted, prevNew),
+		participantFor(viewer, viewerP, promoted, newCreator))
+	return s.updatesWith(ctx, viewer, ch, oldUp, newUp, channelUpdate(ch.ID))
+}
+
+func channelParticipantUpdate(channelID, actorID, userID int64, date int32, prev, next *mtproto.ChannelParticipant) *mtproto.Update {
+	return mtproto.MakeTLUpdateChannelParticipant(&mtproto.Update{
+		ChannelId:                              channelID,
+		Date_INT32:                             date,
+		ActorId:                                actorID,
+		UserId:                                 userID,
+		PrevParticipant_FLAGCHANNELPARTICIPANT: prev,
+		NewParticipant_FLAGCHANNELPARTICIPANT:  next,
+	}).To_Update()
+}
+
+// ToggleNoForwards is messages.toggleNoForwards for a channel or supergroup.
+// The creator, or an admin with change_info, may set the flag. Everyone else
+// gets CHAT_ADMIN_REQUIRED. A user peer is not a channel and stays
+// PEER_ID_INVALID in the RPC handler.
+// https://core.telegram.org/method/messages.toggleNoForwards
+func (s *Service) ToggleNoForwards(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, enabled bool) (*mtproto.Updates, error) {
+	ch, p, err := s.requireMember(ctx, self, in)
+	if err != nil {
+		return nil, err
+	}
+	if !canRestrictSaving(p) {
+		return nil, mtproto.ErrChatAdminRequired
+	}
+	f := s.features(ctx, ch.ID)
+	f.NoForwards = enabled
+	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return nil, err
+	}
+	ups := s.pack(ctx, self, ch.ID, channelUpdate(ch.ID))
+	s.emit(ctx, self, actorAuth, ch.ID, func(viewer int64) *mtproto.Updates {
+		return s.pack(ctx, viewer, ch.ID, channelUpdate(ch.ID))
+	})
+	return ups, nil
+}
+
+func canRestrictSaving(p *Participant) bool {
+	if p == nil || !p.InChannel() {
+		return false
+	}
+	if p.IsCreator() {
+		return true
+	}
+	return p.IsAdmin() && p.adminRights().CanChangeInfo()
+}
+
+// MayManageGiftCollection reports whether userID may create or edit star gift
+// collections on this channel. Telegram requires the can_post_messages admin
+// right. The creator has every admin right. A missing channel is
+// PEER_ID_INVALID. A member without that right is CHAT_ADMIN_REQUIRED.
+// https://core.telegram.org/tdlib/docs/classtd_1_1td__api_1_1create_gift_collection.html
+func (s *Service) MayManageGiftCollection(ctx context.Context, userID, channelID int64) error {
+	if s == nil || s.store == nil || userID == 0 || channelID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	if ch == nil || ch.Deleted {
+		return mtproto.ErrPeerIdInvalid
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	if p != nil && p.InChannel() && (p.IsCreator() || (p.IsAdmin() && p.adminRights().CanPostMessages())) {
+		return nil
+	}
+	return mtproto.ErrChatAdminRequired
+}
+
+// MayReadBoosts reports whether userID may call premium.getBoostsList for
+// this channel. Only a creator or an admin may. A missing channel is not
+// an admin grant.
+// https://core.telegram.org/method/premium.getBoostsList
+func (s *Service) MayReadBoosts(ctx context.Context, userID, channelID int64) (bool, error) {
+	if s == nil || s.store == nil || userID == 0 || channelID == 0 {
+		return false, nil
+	}
+	ch, err := s.store.GetChannel(ctx, channelID)
+	if err != nil {
+		return false, err
+	}
+	if ch == nil || ch.Deleted {
+		return false, nil
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return false, err
+	}
+	return p.IsAdmin(), nil
 }
 
 func (s *Service) FutureCreator(ctx context.Context, self int64, in *mtproto.InputChannel) (int64, error) {
@@ -676,41 +816,80 @@ func (s *Service) GroupsForDiscussion(ctx context.Context, self int64) (*mtproto
 	return mtproto.MakeTLMessagesChats(&mtproto.Messages_Chats{Chats: chats}).To_Messages_Chats(), nil
 }
 
-func (s *Service) SetDiscussionGroup(ctx context.Context, self int64, broadcast, group *mtproto.InputChannel) error {
+// SetDiscussionGroup links a broadcast to a discussion supergroup.
+// An empty group clears the link. Unlink and rebind also clear the previous
+// group's linked_chat_id when it still points at this channel, then push
+// updateChannel so other sessions reload channelFull.
+func (s *Service) SetDiscussionGroup(ctx context.Context, self, actorAuth int64, broadcast, group *mtproto.InputChannel) error {
 	bCh, bp, err := s.requireMember(ctx, self, broadcast)
 	if err != nil {
 		return err
 	}
-	if !bp.IsCreator() {
+	if !canLinkDiscussion(bp) {
 		return mtproto.ErrChatAdminRequired
 	}
 	f := s.features(ctx, bCh.ID)
 	prev := f.LinkedChatID
-	if group == nil || group.GetPredicateName() == mtproto.Predicate_inputChannelEmpty || group.GetChannelId() == 0 {
-		f.LinkedChatID = 0
-	} else {
+	var newID int64
+	if group != nil && group.GetPredicateName() != mtproto.Predicate_inputChannelEmpty && group.GetChannelId() != 0 {
 		gCh, gp, err := s.requireMember(ctx, self, group)
 		if err != nil {
 			return err
 		}
-		if !gCh.Megagroup || !gp.IsAdmin() {
+		if !gCh.Megagroup || !canLinkDiscussion(gp) {
 			return mtproto.ErrChatAdminRequired
 		}
-		f.LinkedChatID = gCh.ID
-		gf := s.features(ctx, gCh.ID)
-		gf.LinkedChatID = bCh.ID
-		if err := s.saveFeatures(ctx, gCh.ID, gf); err != nil {
+		newID = gCh.ID
+	}
+	var cleared bool
+	if prev != 0 && prev != newID {
+		cleared, err = s.clearDiscussionBacklink(ctx, prev, bCh.ID)
+		if err != nil {
 			return err
 		}
 	}
+	if newID != 0 {
+		gf := s.features(ctx, newID)
+		gf.LinkedChatID = bCh.ID
+		if err := s.saveFeatures(ctx, newID, gf); err != nil {
+			return err
+		}
+	}
+	f.LinkedChatID = newID
 	if err := s.saveFeatures(ctx, bCh.ID, f); err != nil {
 		return err
 	}
 	s.logAdmin(ctx, bCh.ID, self, mtproto.MakeTLChannelAdminLogEventActionChangeLinkedChat(&mtproto.ChannelAdminLogEventAction{
 		PrevValue_INT64: prev,
-		NewValue_INT64:  f.LinkedChatID,
+		NewValue_INT64:  newID,
 	}).To_ChannelAdminLogEventAction())
+	if prev != newID {
+		s.fanoutUpdate(ctx, self, actorAuth, bCh.ID, channelUpdate(bCh.ID))
+	}
+	if newID != 0 && newID != prev {
+		s.fanoutUpdate(ctx, self, actorAuth, newID, channelUpdate(newID))
+	}
+	if cleared {
+		s.fanoutUpdate(ctx, self, actorAuth, prev, channelUpdate(prev))
+	}
 	return nil
+}
+
+// clearDiscussionBacklink drops the group's pointer when it still names this
+// channel. A group already linked to a different channel is left alone.
+func (s *Service) clearDiscussionBacklink(ctx context.Context, groupID, channelID int64) (bool, error) {
+	if groupID == 0 || channelID == 0 {
+		return false, nil
+	}
+	gf := s.features(ctx, groupID)
+	if gf.LinkedChatID != channelID {
+		return false, nil
+	}
+	gf.LinkedChatID = 0
+	if err := s.saveFeatures(ctx, groupID, gf); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Service) InactiveChannels(ctx context.Context, self int64) (*mtproto.Messages_InactiveChats, error) {
@@ -786,6 +965,23 @@ func (s *Service) PersonalHistory(ctx context.Context, self, userID int64, limit
 	return s.history(ctx, self, ch, HistoryQuery{Limit: limit, MaxID: maxID, MinID: minID})
 }
 
+// PersonalChannelCard is the channel on a profile, plus the id of its latest
+// message. A private channel the viewer cannot open is omitted.
+func (s *Service) PersonalChannelCard(ctx context.Context, viewer, channelID int64) (*mtproto.Chat, int32, error) {
+	if s == nil || channelID == 0 {
+		return nil, 0, nil
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil || ch == nil {
+		return nil, 0, err
+	}
+	chat := s.ChatFor(ctx, viewer, ch)
+	if chat == nil || chat.GetPredicateName() != mtproto.Predicate_channel {
+		return nil, 0, nil
+	}
+	return chat, ch.TopMessage, nil
+}
+
 func (s *Service) SetPersonalChannel(ctx context.Context, self int64, in *mtproto.InputChannel) error {
 	if in == nil || in.GetChannelId() == 0 {
 		return s.store.SetPersonalChannel(ctx, self, 0)
@@ -829,13 +1025,13 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		return nil, err
 	}
 	q.Limit = pageLimit(q.Limit)
-	text := strings.ToLower(q.Q)
 	all, err := s.store.ListMessages(ctx, ch.ID)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].ID > all[j].ID })
 	feat := s.features(ctx, ch.ID)
+	viewer, _ := s.store.GetParticipant(ctx, ch.ID, self)
 	var msgs []*mtproto.Message
 	for _, stored := range all {
 		if stored == nil || stored.Deleted {
@@ -856,17 +1052,27 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		if q.MaxDate > 0 && stored.Date > q.MaxDate {
 			continue
 		}
-		if q.FromUser != 0 && stored.SenderID != q.FromUser {
+		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
 			continue
 		}
-		if q.TopMsgID != 0 && !storedInTopic(feat, stored, q.TopMsgID) {
+		if prehistoryBlocks(feat, viewer, stored) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)
 		if err != nil {
 			continue
 		}
-		if text != "" && !strings.Contains(strings.ToLower(body.GetMessage()), text) {
+		if q.FromUser != 0 {
+			// Anonymous posts are addressed as the supergroup. A from_id
+			// filter is a user, so those posts must not match the author.
+			if body.GetFromId().GetChannelId() != 0 && !ch.Broadcast {
+				continue
+			}
+			if stored.SenderID != q.FromUser {
+				continue
+			}
+		}
+		if strings.TrimSpace(q.Q) != "" && !messageHasTokens(body.GetMessage(), q.Q) {
 			continue
 		}
 		if !channelFilterMatches(body, q.Filter, feat.PinnedMsgID == stored.ID) {
@@ -887,6 +1093,16 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		Chats:    []*mtproto.Chat{s.ChatFor(ctx, self, ch)},
 		Users:    []*mtproto.User{},
 	}).To_Messages_Messages(), nil
+}
+
+func messageHasTokens(text, q string) bool {
+	folded := strings.ToLower(text)
+	for _, tok := range strings.Fields(strings.ToLower(q)) {
+		if !strings.Contains(folded, tok) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) SendAs(ctx context.Context, self int64) ([]*mtproto.Chat, []int64, error) {
@@ -915,24 +1131,30 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	if err != nil {
 		return nil, err
 	}
-	if !p.IsCreator() && !p.adminRights().CanPinMessages() {
-		return nil, mtproto.ErrChatAdminRequired
+	if p == nil || !p.InChannel() {
+		return nil, mtproto.ErrChannelPrivate
+	}
+	if err = mtproto.MemberPinForbidden(int32(time.Now().Unix()), p.IsCreator() || p.adminRights().CanPinMessages(), memberBans(ch, p)); err != nil {
+		return nil, err
 	}
 	f := s.features(ctx, ch.ID)
 	if unpin {
-		f.PinnedMsgID = 0
+		// Clearing only PinnedMsgID left body.pinned set, so pinned search
+		// and getHistory still showed the message as pinned.
+		if err := s.setMessagePinned(ctx, channelID, msgID, false); err != nil {
+			return nil, err
+		}
+		if f.PinnedMsgID == msgID {
+			f.PinnedMsgID = 0
+		}
 	} else {
 		stored, err := s.store.GetMessage(ctx, channelID, msgID)
 		if err != nil || stored == nil || stored.Deleted {
 			return nil, mtproto.ErrMessageIdInvalid
 		}
 		f.PinnedMsgID = msgID
-		body, _ := unmarshalMessage(stored.Data)
-		if body != nil {
-			body.Pinned = true
-			raw, _ := proto.Marshal(body)
-			stored.Data = raw
-			_, _ = s.store.CommitEdit(ctx, channelID, msgID, int32(time.Now().Unix()), raw)
+		if err := s.setMessagePinned(ctx, channelID, msgID, true); err != nil {
+			return nil, err
 		}
 	}
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
@@ -946,9 +1168,11 @@ func (s *Service) PinMessage(ctx context.Context, self, actorAuth, channelID int
 	return s.actorUpdates(ctx, self, actorAuth, channelID, KindNew)
 }
 
-// UnpinAll clears the channel's pinned message. A channel with nothing
-// pinned returns the current pts and a zero count.
-func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64) (int32, int32, error) {
+// UnpinAll clears pinned messages. topMsgID limits the clear to one forum
+// topic (messages.unpinAllMessages top_msg_id). Zero clears the whole channel.
+// The returned pts is the channel pts after the edits, not the pts from
+// before CommitEdit.
+func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64, topMsgID int32) (int32, int32, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {
 		return 0, 0, err
@@ -957,27 +1181,82 @@ func (s *Service) UnpinAll(ctx context.Context, self, actorAuth, channelID int64
 	if err != nil {
 		return 0, 0, err
 	}
-	if !p.IsCreator() && !p.adminRights().CanPinMessages() {
-		return 0, 0, mtproto.ErrChatAdminRequired
+	if p == nil || !p.InChannel() {
+		return 0, 0, mtproto.ErrChannelPrivate
 	}
-	f := s.features(ctx, ch.ID)
-	if f.PinnedMsgID == 0 {
-		return ch.Pts, 0, nil
-	}
-	pinned := f.PinnedMsgID
-	f.PinnedMsgID = 0
-	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+	if err = mtproto.MemberPinForbidden(int32(time.Now().Unix()), p.IsCreator() || p.adminRights().CanPinMessages(), memberBans(ch, p)); err != nil {
 		return 0, 0, err
 	}
-	if stored, err := s.store.GetMessage(ctx, channelID, pinned); err == nil && stored != nil && !stored.Deleted {
-		if body, _ := unmarshalMessage(stored.Data); body != nil {
+	f := s.features(ctx, ch.ID)
+	all, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+	pts := ch.Pts
+	var cleared int32
+	clearFeature := false
+	for _, stored := range all {
+		if stored == nil || stored.Deleted {
+			continue
+		}
+		if topMsgID != 0 && !storedInTopic(f, stored, topMsgID) {
+			continue
+		}
+		body, uerr := unmarshalMessage(stored.Data)
+		tracked := f.PinnedMsgID == stored.ID
+		if uerr != nil || body == nil || (!body.GetPinned() && !tracked) {
+			continue
+		}
+		if body.GetPinned() {
 			body.Pinned = false
-			raw, _ := proto.Marshal(body)
-			_, _ = s.store.CommitEdit(ctx, channelID, pinned, int32(time.Now().Unix()), raw)
+			raw, mErr := proto.Marshal(body)
+			if mErr != nil {
+				return 0, 0, mErr
+			}
+			newPts, err := s.store.CommitEdit(ctx, channelID, stored.ID, int32(time.Now().Unix()), raw)
+			if err != nil {
+				return 0, 0, err
+			}
+			pts = newPts
+		}
+		if tracked {
+			clearFeature = true
+		}
+		cleared++
+	}
+	if cleared == 0 {
+		_ = actorAuth
+		return ch.Pts, 0, nil
+	}
+	if clearFeature {
+		f.PinnedMsgID = 0
+		if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
+			return 0, 0, err
 		}
 	}
 	_ = actorAuth
-	return ch.Pts, 1, nil
+	return pts, cleared, nil
+}
+
+func (s *Service) setMessagePinned(ctx context.Context, channelID int64, msgID int32, pinned bool) error {
+	stored, err := s.store.GetMessage(ctx, channelID, msgID)
+	if err != nil || stored == nil || stored.Deleted {
+		if pinned {
+			return mtproto.ErrMessageIdInvalid
+		}
+		return nil
+	}
+	body, err := unmarshalMessage(stored.Data)
+	if err != nil || body == nil || body.GetPinned() == pinned {
+		return nil
+	}
+	body.Pinned = pinned
+	raw, err := proto.Marshal(body)
+	if err != nil {
+		return err
+	}
+	_, err = s.store.CommitEdit(ctx, channelID, msgID, int32(time.Now().Unix()), raw)
+	return err
 }
 
 func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID int64, title string, iconColor int32, iconEmoji int64) (*mtproto.Updates, *TopicRec, error) {
@@ -990,6 +1269,9 @@ func (s *Service) CreateTopic(ctx context.Context, self, actorAuth, channelID in
 	}
 	if !p.InChannel() {
 		return nil, nil, mtproto.ErrChannelPrivate
+	}
+	if err = mtproto.MemberTopicsForbidden(int32(time.Now().Unix()), p.IsCreator() || p.adminRights().CanManageTopics(), memberBans(ch, p)); err != nil {
+		return nil, nil, err
 	}
 	if title == "" {
 		return nil, nil, mtproto.ErrChatTitleEmpty
@@ -1233,15 +1515,19 @@ func (s *Service) ReorderPinnedTopics(ctx context.Context, self, channelID int64
 	return s.saveFeatures(ctx, ch.ID, f)
 }
 
-// DeleteTopicHistory deletes messages that belong to one forum topic.
-// It does not clear the rest of the channel. The topic record stays so the
-// topic id (the creation message) remains addressable.
+// generalTopicID is the forum General topic. Official clients always use 1.
+const generalTopicID int32 = 1
+
+// DeleteTopicHistory deletes one forum topic and the messages that belong to
+// it, including the service message that created it. Other topics stay.
+// The General topic cannot be deleted. Delete emits updateDeleteChannelMessages
+// for the removed ids.
 func (s *Service) DeleteTopicHistory(ctx context.Context, self, actorAuth, channelID int64, topMsgID int32) (pts, ptsCount int32, err error) {
 	ch, p, err := s.requireMember(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return 0, 0, err
 	}
-	if !ch.Forum {
+	if !ch.Forum || topMsgID == generalTopicID {
 		return 0, 0, mtproto.ErrTopicIdInvalid
 	}
 	f := s.features(ctx, ch.ID)
@@ -1259,29 +1545,44 @@ func (s *Service) DeleteTopicHistory(ctx context.Context, self, actorAuth, chann
 	}
 	var ids []int32
 	for _, m := range msgs {
-		if m.Deleted || m.ID == topicID {
+		if m.Deleted {
 			continue
 		}
-		if messageInTopic(f, m, topicID) {
+		if m.ID == topicID || messageInTopic(f, m, topicID) {
 			ids = append(ids, m.ID)
 		}
 	}
-	if len(ids) == 0 {
-		return ch.Pts, 0, nil
-	}
-	pts, ptsCount, err = s.Delete(ctx, self, ch.ID, actorAuth, ids)
-	if err != nil {
-		return 0, 0, err
+	pts = ch.Pts
+	if len(ids) > 0 {
+		pts, ptsCount, err = s.Delete(ctx, self, ch.ID, actorAuth, ids)
+		if err != nil {
+			return 0, 0, err
+		}
 	}
 	f = s.features(ctx, ch.ID)
-	if i, ok := findTopic(f, topicID); ok {
-		f.Topics[i].TopMessage = topicID
-		for _, id := range ids {
-			delete(f.MsgTopic, id)
-		}
-		_ = s.saveFeatures(ctx, ch.ID, f)
+	dropTopic(f, topicID)
+	if err = s.saveFeatures(ctx, ch.ID, f); err != nil {
+		return 0, 0, err
 	}
 	return pts, ptsCount, nil
+}
+
+func dropTopic(f *Features, topicID int32) {
+	if f == nil {
+		return
+	}
+	kept := make([]TopicRec, 0, len(f.Topics))
+	for _, t := range f.Topics {
+		if t.ID != topicID {
+			kept = append(kept, t)
+		}
+	}
+	f.Topics = kept
+	for id, tid := range f.MsgTopic {
+		if tid == topicID || id == topicID {
+			delete(f.MsgTopic, id)
+		}
+	}
 }
 
 func messageInTopic(f *Features, m *StoredMessage, topicID int32) bool {
@@ -1299,34 +1600,90 @@ func messageInTopic(f *Features, m *StoredMessage, topicID int32) bool {
 	return h.GetReplyToMsgId() == topicID
 }
 
-// ensureGeneralTopic creates the hidden General topic once when a forum is enabled.
+// ensureGeneralTopic creates the General topic once when a forum is enabled.
+// Its id is always 1 and it is visible until an admin hides it.
 func (s *Service) ensureGeneralTopic(ctx context.Context, self, channelID int64) {
 	f := s.features(ctx, channelID)
 	for _, t := range f.Topics {
-		if t.Hidden && strings.EqualFold(t.Title, "General") {
+		if t.ID == generalTopicID {
 			return
 		}
 	}
-	_, topic, err := s.CreateTopic(ctx, self, 0, channelID, "General", 0x6FB9F0, 0)
-	if err != nil || topic == nil {
+	for i := range f.Topics {
+		if !strings.EqualFold(f.Topics[i].Title, "General") {
+			continue
+		}
+		old := f.Topics[i].ID
+		f.Topics[i].ID = generalTopicID
+		f.Topics[i].Hidden = false
+		for msgID, topicID := range f.MsgTopic {
+			if topicID == old {
+				f.MsgTopic[msgID] = generalTopicID
+			}
+		}
+		_ = s.saveFeatures(ctx, channelID, f)
 		return
 	}
-	hidden := true
-	_, _ = s.EditTopic(ctx, self, channelID, topic.ID, "", nil, nil, &hidden)
+	ch, _ := s.store.GetChannel(ctx, channelID)
+	top := int32(0)
+	if ch != nil {
+		top = ch.TopMessage
+	}
+	f.Topics = append(f.Topics, TopicRec{
+		ID:         generalTopicID,
+		Title:      "General",
+		IconColor:  0x6FB9F0,
+		CreatorID:  self,
+		Date:       int32(time.Now().Unix()),
+		TopMessage: top,
+		Hidden:     false,
+	})
+	_ = s.saveFeatures(ctx, channelID, f)
+}
+
+// rejectClosedTopic blocks non-admins from posting in a closed forum topic.
+// A message with no topic reply is General.
+func (s *Service) rejectClosedTopic(ctx context.Context, ch *Channel, p *Participant, msgs []*mtproto.Message) error {
+	if ch == nil || !ch.Forum || p == nil || p.IsAdmin() {
+		return nil
+	}
+	f := s.features(ctx, ch.ID)
+	for _, msg := range msgs {
+		if msg == nil || msg.GetPredicateName() == mtproto.Predicate_messageService {
+			continue
+		}
+		id := topicIDOf(msg)
+		if id == 0 {
+			id = generalTopicID
+		}
+		idx, ok := findTopic(f, id)
+		if ok && f.Topics[idx].Closed {
+			return mtproto.ErrTopicClosed
+		}
+	}
+	return nil
+}
+
+func topicIDOf(msg *mtproto.Message) int32 {
+	if msg == nil || msg.GetReplyTo() == nil {
+		return 0
+	}
+	h := msg.GetReplyTo()
+	if top := h.GetReplyToTopId().GetValue(); top != 0 {
+		return top
+	}
+	return h.GetReplyToMsgId()
 }
 
 // bindTopic records which forum topic a new message belongs to and advances top_message.
+// A message with no topic reply belongs to General.
 func (s *Service) bindTopic(ctx context.Context, channelID int64, msgID int32, msg *mtproto.Message) {
-	if msg == nil || msg.GetReplyTo() == nil {
+	if msg == nil {
 		return
 	}
-	h := msg.GetReplyTo()
-	top := h.GetReplyToTopId().GetValue()
+	top := topicIDOf(msg)
 	if top == 0 {
-		top = h.GetReplyToMsgId()
-	}
-	if top == 0 {
-		return
+		top = generalTopicID
 	}
 	f := s.features(ctx, channelID)
 	idx, ok := findTopic(f, top)
@@ -1363,13 +1720,19 @@ func (s *Service) ToggleForum(ctx context.Context, self int64, in *mtproto.Input
 }
 
 func (s *Service) React(ctx context.Context, self, channelID int64, msgID int32, emoticons []string, big bool) (*mtproto.Updates, error) {
-	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
+	ch, actor, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
 	}
 	stored, err := s.store.GetMessage(ctx, channelID, msgID)
 	if err != nil || stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
+	}
+	if len(emoticons) > 0 {
+		admin := actor != nil && actor.InChannel() && (actor.IsCreator() || actor.IsAdmin())
+		if err := mtproto.ReactionForbidden(int32(time.Now().Unix()), admin, memberBans(ch, actor)); err != nil {
+			return nil, err
+		}
 	}
 	f := s.features(ctx, ch.ID)
 	if err := allowReact(f, emoticons); err != nil {
@@ -1534,6 +1897,11 @@ func (s *Service) ReactionsFor(ctx context.Context, self, channelID int64, ids [
 }
 
 func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int32, q HistoryQuery) (*mtproto.Messages_Messages, error) {
+	if commentsOn() {
+		if out, ok, err := s.repliesFromComments(ctx, self, channelID, msgID, q); ok {
+			return out, err
+		}
+	}
 	ch, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
@@ -1552,6 +1920,8 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 		}
 		chats = append(chats, s.ChatFor(ctx, self, peerCh))
 		all, _ := s.store.ListMessages(ctx, id)
+		peerFeat := s.features(ctx, id)
+		peerViewer, _ := s.store.GetParticipant(ctx, id, self)
 		topicID := msgID
 		if i, ok := findTopic(f, msgID); ok {
 			topicID = f.Topics[i].ID
@@ -1564,6 +1934,9 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 				continue
 			}
 			if q.MaxID > 0 && stored.ID >= q.MaxID {
+				continue
+			}
+			if prehistoryBlocks(peerFeat, peerViewer, stored) {
 				continue
 			}
 			body, err := unmarshalMessage(stored.Data)
@@ -1581,12 +1954,21 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 }
 
 func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, msgID int32) (*mtproto.Messages_DiscussionMessage, error) {
+	if commentsOn() {
+		if out, ok, err := s.discussionFromComments(ctx, self, channelID, msgID); ok {
+			return out, err
+		}
+	}
 	_, _, err := s.requireView(ctx, self, &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID})
 	if err != nil {
 		return nil, err
 	}
 	stored, err := s.store.GetMessage(ctx, channelID, msgID)
 	if err != nil || stored == nil || stored.Deleted {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	viewer, _ := s.store.GetParticipant(ctx, channelID, self)
+	if prehistoryBlocks(s.features(ctx, channelID), viewer, stored) {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	body, err := unmarshalMessage(stored.Data)

@@ -27,6 +27,8 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/dao"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/internal/logic"
 	"github.com/teamgram/teamgram-server/app/bff/authorization/plugin"
+	"github.com/teamgram/teamgram-server/app/bff/codelogin"
+	"github.com/teamgram/teamgram-server/app/bff/twofa/password"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	authsessionclient "github.com/teamgram/teamgram-server/app/service/authsession/client"
 	"github.com/teamgram/teamgram-server/pkg/code"
@@ -48,6 +50,9 @@ type ServiceContext struct {
 	EmailLimiter *verify.Limiter
 	EmailSender  verify.CodeSender
 	Devices      push.Store
+	// LoginEmail is the verified login address for a user id, or "" when
+	// the account has none. Nil asks the P0 code service.
+	LoginEmail func(ctx context.Context, userID int64) (string, error)
 }
 
 func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin plugin.AuthorizationPlugin) *ServiceContext {
@@ -89,6 +94,13 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 			}()
 		}
 	}
+	loginEmail := func(ctx context.Context, userID int64) (string, error) {
+		return codelogin.New(d.Cache(), codelogin.Options{
+			IdentityEmail: password.IdentityEmail,
+			IdentityOwner: password.IdentityOwner,
+		}).VerifiedLoginEmail(ctx, userID)
+	}
+	password.SetAttachedLoginEmail(loginEmail)
 	return &ServiceContext{
 		Config:       c,
 		Dao:          d,
@@ -99,6 +111,7 @@ func NewServiceContext(c config.Config, code2 code.VerifyCodeInterface, plugin p
 		EmailLimiter: emailLim,
 		EmailSender:  verify.NewEmailSender(cfg.Email),
 		Devices:      devices,
+		LoginEmail:   loginEmail,
 	}
 }
 

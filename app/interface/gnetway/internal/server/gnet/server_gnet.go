@@ -32,6 +32,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/server/gnet/pp"
 	"github.com/teamgram/teamgram-server/app/interface/gnetway/internal/server/gnet/ws"
 	"github.com/teamgram/teamgram-server/app/interface/session/session"
+	"github.com/teamgram/teamgram-server/pkg/stagelog"
 
 	"github.com/gobwas/ws/wsutil"
 	"github.com/panjf2000/gnet/v2"
@@ -506,6 +507,7 @@ func (s *Server) onEncryptedMessage(c gnet.Conn, ctx *connContext, authKey *auth
 
 			ctx2, span := otel.Tracer("gnetway").Start(context.Background(), "SessionSendDataToSession")
 			defer span.End()
+			ctx2 = stagelog.AppendGateway(ctx2)
 			// The in-memory key is cached at handshake with PermAuthKeyId 0.
 			// bindTempAuthKey writes the perm id afterwards; reload it so a
 			// user authorized on the perm key stays authorized on this temp key.
@@ -527,6 +529,7 @@ func (s *Server) onEncryptedMessage(c gnet.Conn, ctx *connContext, authKey *auth
 				logx.Errorf("conn authKeyId=%d has no perm key yet; not opening a session", authKey.AuthKeyId())
 				return nil
 			}
+			sendAt := time.Now()
 			err := s.svcCtx.Dao.SessionDispatcher.SendData(ctx2, permAuthKeyId, &session.TLSessionSendDataToSession{
 				Data: &session.SessionClientData{
 					ServerId:      s.svcCtx.GatewayId,
@@ -543,6 +546,7 @@ func (s *Server) onEncryptedMessage(c gnet.Conn, ctx *connContext, authKey *auth
 			if err != nil {
 				logx.Errorf("session.sendDataToSession - error: %v", err)
 			}
+			stagelog.Infof("gnetway auth_key=%d send_ms=%d err=%t", permAuthKeyId, time.Since(sendAt).Milliseconds(), err != nil)
 			return err
 		},
 		func(c gnet.Conn, msgId int64, err error) {

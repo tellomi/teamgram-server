@@ -20,6 +20,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -47,6 +48,36 @@ func (c *CachedPeerBlocked) IsEmpty() bool {
 
 func genContactsBlockPeerCacheKey(id, blockedId int64) string {
 	return fmt.Sprintf("%s_%d_%d", contactsBlockPeerPrefix, id, blockedId)
+}
+
+// BlockedEitherWay returns ids from the candidate list that this user
+// blocked or that have blocked this user. Both directions are one query.
+func (d *Dao) BlockedEitherWay(ctx context.Context, self int64, ids []int64) ([]int64, error) {
+	if d == nil || self == 0 || len(ids) == 0 {
+		return []int64{}, nil
+	}
+	mine, err := d.UserPeerBlocksDAO.SelectListByIdList(ctx, self, ids)
+	if err != nil {
+		return nil, err
+	}
+	var theirs []int64
+	query := fmt.Sprintf("select user_id from user_peer_blocks where peer_type = ? and peer_id = ? and deleted = 0 and user_id in (%s)", sqlx.InInt64List(ids))
+	if err = d.QueryRowsPartial(ctx, &theirs, query, mtproto.PEER_USER, self); err != nil && !errors.Is(err, sqlx.ErrNotFound) {
+		return nil, err
+	}
+	seen := make(map[int64]struct{}, len(mine)+len(theirs))
+	out := make([]int64, 0, len(mine)+len(theirs))
+	for _, id := range append(mine, theirs...) {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 func (d *Dao) CheckBlocked(ctx context.Context, id, blockedId int64) bool {

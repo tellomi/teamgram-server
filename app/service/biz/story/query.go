@@ -71,7 +71,7 @@ func (s *Service) GetByID(ctx context.Context, viewer int64, owner Owner, access
 		if err != nil {
 			return nil, err
 		}
-		if rec == nil || rec.Deleted || !s.privacyAllows(ctx, rec, viewer) {
+		if !s.exposed(ctx, viewer, rec) {
 			items = append(items, s.deletedItem(id))
 			continue
 		}
@@ -635,7 +635,7 @@ func (s *Service) GetViews(ctx context.Context, viewer int64, owner Owner, acces
 		if err != nil {
 			return nil, err
 		}
-		if rec == nil || rec.Deleted || !s.privacyAllows(ctx, rec, viewer) {
+		if !s.exposed(ctx, viewer, rec) {
 			views = append(views, mtproto.MakeTLStoryViews(&mtproto.StoryViews{}).To_StoryViews())
 			continue
 		}
@@ -845,7 +845,7 @@ func (s *Service) Search(ctx context.Context, viewer int64, hashtag, offset stri
 		if err := s.canViewPeer(ctx, viewer, rec.Owner, 0); err != nil {
 			continue
 		}
-		if !s.privacyAllows(ctx, rec, viewer) {
+		if !s.exposed(ctx, viewer, rec) {
 			continue
 		}
 		found = append(found, rec)

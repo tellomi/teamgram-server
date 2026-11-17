@@ -70,7 +70,7 @@ func (c *DialogsCore) MessagesGetDialogs(in *mtproto.TLMessagesGetDialogs) (*mtp
 			}
 		})
 
-	dialogExtList = c.mergeChannelDialogs(dialogExtList, folderId)
+	dialogExtList = c.mergeChannelDialogs(dialogExtList, folderId, in.ExcludePinned)
 	if len(dialogExtList) == 0 {
 		return (&dialog.DialogsDataHelper{}).ToMessagesDialogs(0, dialog.FullDialogList(in.OffsetDate, in.OffsetId, offsetPeer, 0, limit)), nil
 	}

@@ -36,6 +36,11 @@ services:
       TELLOMI_EMAIL_IP_DAILY_LIMIT: ${TELLOMI_EMAIL_IP_DAILY_LIMIT:-0}
       TELLOMI_EMAIL_GLOBAL_DAILY_LIMIT: ${TELLOMI_EMAIL_GLOBAL_DAILY_LIMIT:-0}
       TELLOMI_EMAIL_PROVIDER: ${TELLOMI_EMAIL_PROVIDER:-log}
+      # OFF: a phone with no login email still gets SMS or an in-app code.
+      # ON (and the email sender enabled): that phone gets
+      # auth.sentCodeTypeSetUpEmailRequired. A phone that already has a
+      # login email gets auth.sentCodeTypeEmailCode either way.
+      TELLOMI_EMAIL_SETUP_REQUIRED: ${TELLOMI_EMAIL_SETUP_REQUIRED:-false}
       TELLOMI_EMAIL_FROM: ${TELLOMI_EMAIL_FROM:-noreply@tellomi.app}
       TELLOMI_EMAIL_FROM_NAME: ${TELLOMI_EMAIL_FROM_NAME:-Tellomi}
       TELLOMI_RESEND_API_KEY: ${TELLOMI_RESEND_API_KEY:-}

@@ -18,6 +18,20 @@ type DialogsDataHelper struct {
 }
 
 func (m *DialogsDataHelper) fix() {
+	m.fixRows(false)
+}
+
+// fixPeerDialogs is messages.getPeerDialogs. A requested peer with no dialog
+// row still has a dialog, top_message 0 and no messages. Android opens a new
+// 1:1 with load type LOAD_FROM_UNREAD and, when that reply's dialogs vector
+// is empty, never calls messages.getHistory. The chat stays on the centre
+// spinner. The chat list (fix) still drops top_message 0 so an empty row is
+// not a chat-list entry.
+func (m *DialogsDataHelper) fixPeerDialogs() {
+	m.fixRows(true)
+}
+
+func (m *DialogsDataHelper) fixRows(keepEmpty bool) {
 	var (
 		dialogs  = make([]*mtproto.Dialog, 0, len(m.Dialogs))
 		messages = make([]*mtproto.Message, 0, len(m.Messages))
@@ -26,11 +40,25 @@ func (m *DialogsDataHelper) fix() {
 	)
 
 	for _, dlg := range m.Dialogs {
+		if dlg == nil {
+			continue
+		}
 		var (
 			topMessage *mtproto.Message
 		)
 
 		if dlg.TopMessage == 0 {
+			// getPeerDialogs keeps an empty row so Android can open a new
+			// 1:1. The chat list does not: a private chat with no messages
+			// is gone until the next message. A basic group or channel the
+			// user still belongs to stays, with no message. That is what
+			// official getDialogs returns after the last post is deleted.
+			if keepEmpty {
+				dialogs = append(dialogs, dlg)
+				appendDialogPeer(dlg, m.Users, m.Chats, &users, &chats)
+			} else if membershipDialog(dlg) && appendDialogPeer(dlg, m.Users, m.Chats, &users, &chats) {
+				dialogs = append(dialogs, dlg)
+			}
 			continue
 		}
 
@@ -101,6 +129,42 @@ func (m *DialogsDataHelper) fix() {
 	m.Chats = chats
 }
 
+func membershipDialog(dlg *mtproto.Dialog) bool {
+	if dlg == nil {
+		return false
+	}
+	switch mtproto.FromPeer(dlg.Peer).PeerType {
+	case mtproto.PEER_CHAT, mtproto.PEER_CHANNEL:
+		return true
+	default:
+		return false
+	}
+}
+
+func appendDialogPeer(dlg *mtproto.Dialog, allUsers []*mtproto.User, allChats []*mtproto.Chat, users *[]*mtproto.User, chats *[]*mtproto.Chat) bool {
+	if dlg == nil || dlg.Peer == nil {
+		return false
+	}
+	p := mtproto.FromPeer(dlg.Peer)
+	switch p.PeerType {
+	case mtproto.PEER_USER, mtproto.PEER_SELF:
+		for _, v := range allUsers {
+			if v != nil && v.Id == p.PeerId {
+				*users = append(*users, v)
+				return true
+			}
+		}
+	case mtproto.PEER_CHAT, mtproto.PEER_CHANNEL:
+		for _, v := range allChats {
+			if v != nil && v.Id == p.PeerId {
+				*chats = append(*chats, v)
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ToMessagesDialogs builds the messages.getDialogs reply.
 // count is the number of dialogs that can be returned, measured after fix().
 // fullList is true only for the first page with no offset when that count
@@ -159,11 +223,10 @@ func (m *DialogsDataHelper) ForDialogs(dialogs []*mtproto.Dialog) *DialogsDataHe
 }
 
 func (m *DialogsDataHelper) ToMessagesPeerDialogs(state *mtproto.Updates_State) *mtproto.Messages_PeerDialogs {
-	// Same filter as getDialogs. A dialog with top_message 0, or whose top
-	// message is not in this response, is not a chat-list row. iOS merges
-	// messages.peerDialogs into the chat list when a chat is opened; that
-	// empty row reloads the list and the scroll position jumps to the top.
-	m.fix()
+	// A positive top_message still needs its message, same as the chat list.
+	// top_message 0 is the official empty dialog for a peer that has no row
+	// yet. Dropping it makes Android's first open skip getHistory.
+	m.fixPeerDialogs()
 	return mtproto.MakeTLMessagesPeerDialogs(&mtproto.Messages_PeerDialogs{
 		Dialogs:  m.Dialogs,
 		Messages: m.Messages,

@@ -12,7 +12,6 @@ package dao
 import (
 	"context"
 	"fmt"
-	"github.com/teamgram/marmota/pkg/idempotent"
 	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	inbox_client "github.com/teamgram/teamgram-server/app/messenger/msg/inbox/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
@@ -41,6 +40,8 @@ type Dao struct {
 	// used by stampHistoryTTL. Tests inject a column of 86400 while a
 	// stale DialogExt cache still holds 0. Production leaves this nil.
 	historyTTLQuery func(ctx context.Context, query string, args ...interface{}) int32
+	// ptsNext overrides the id generator in DAO tests. Production leaves it nil.
+	ptsNext func(ctx context.Context, userID int64) int32
 }
 
 func (d *Dao) DoIdempotent(ctx context.Context, senderUserId int64, deDuplicateKey string, v any, cb func(ctx context.Context, v any) error) (bool, error) {
@@ -49,7 +50,12 @@ func (d *Dao) DoIdempotent(ctx context.Context, senderUserId int64, deDuplicateK
 	// for that insert and short enough that a crashed holder does not stall
 	// the retry. The cached RPC result lasts 90s; after that
 	// FindOutboxByRandomID still returns the committed row.
-	return idempotent.DoIdempotent(
+	// The waiter polls every 25ms. A 1s poll held the session RPC loop open
+	// after the leader had already finished.
+	if d == nil || d.Redis == nil {
+		return false, fmt.Errorf("idempotent redis is nil")
+	}
+	return doIdempotent(
 		ctx,
 		d.Redis,
 		fmt.Sprintf("idempotent#%d@%s", senderUserId, deDuplicateKey),

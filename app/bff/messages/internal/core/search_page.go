@@ -4,7 +4,9 @@ import (
 	"strconv"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"github.com/teamgram/teamgram-server/pkg/searchorder"
 )
 
 // globalCursor is messages.searchGlobal's (offset_rate, offset_peer, offset_id).
@@ -17,20 +19,16 @@ type globalCursor struct {
 	MsgID    int32
 }
 
+func (c globalCursor) key() searchorder.Key {
+	return searchorder.Key{Date: c.Rate, PeerType: c.PeerType, PeerID: c.PeerID, MsgID: c.MsgID}
+}
+
 func olderThanCursor(date int32, peerType int32, peerID int64, msgID int32, cur globalCursor) bool {
 	if !cur.Active {
 		return true
 	}
-	if date != cur.Rate {
-		return date < cur.Rate
-	}
-	if peerType != cur.PeerType {
-		return peerType > cur.PeerType
-	}
-	if peerID != cur.PeerID {
-		return peerID > cur.PeerID
-	}
-	return msgID < cur.MsgID
+	row := searchorder.Key{Date: date, PeerType: peerType, PeerID: peerID, MsgID: msgID}
+	return row.OlderThan(cur.key())
 }
 
 func peerKey(peerType int32, peerID int64) string {
@@ -67,6 +65,72 @@ func filterGlobalPage(list *mtproto.MessageBoxList, cur globalCursor, folder map
 	}
 	list.BoxList = kept
 	return list
+}
+
+// attachChannelFolders adds joined channels to the folder the client asked
+// for. Channel dialogs are not rows in the user dialog table, so a folder_id
+// (Android always sends one) used to drop every channel post. Folder 0 is
+// the main list. A channel that is archived (folder 1) stays out of it.
+func (c *MessagesCore) attachChannelFolders(folder map[string]bool, folderID int32) map[string]bool {
+	if c == nil || c.MD == nil {
+		return folder
+	}
+	if folder == nil {
+		folder = map[string]bool{}
+	}
+	rows, err := channel.Shared().DialogsFor(c.ctx, c.MD.UserId)
+	if err != nil {
+		c.Logger.Errorf("messages.searchGlobal channel folders: %v", err)
+		return folder
+	}
+	archived := map[int64]bool{}
+	if c.svcCtx != nil && c.svcCtx.Dao != nil && c.svcCtx.Dao.DialogClient != nil {
+		got, err := c.svcCtx.Dao.DialogGetDialogs(c.ctx, &dialog.TLDialogGetDialogs{
+			UserId:        c.MD.UserId,
+			ExcludePinned: mtproto.BoolFalse,
+			FolderId:      1,
+		})
+		if err != nil {
+			c.Logger.Errorf("messages.searchGlobal archive: %v", err)
+		} else {
+			for _, row := range got.GetDatas() {
+				if row.GetDialog().GetPeer() == nil {
+					continue
+				}
+				peer := mtproto.FromPeer(row.GetDialog().GetPeer())
+				if peer != nil && peer.PeerType == mtproto.PEER_CHANNEL && peer.PeerId != 0 {
+					archived[peer.PeerId] = true
+				}
+			}
+		}
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ChannelID)
+	}
+	addJoinedChannels(folder, folderID, ids, archived)
+	return folder
+}
+
+// addJoinedChannels puts joined channel ids into folder for this folder_id.
+// archived lists channel ids that live in folder 1.
+func addJoinedChannels(folder map[string]bool, folderID int32, joined []int64, archived map[int64]bool) {
+	if folder == nil {
+		return
+	}
+	for _, id := range joined {
+		if id == 0 {
+			continue
+		}
+		inArchive := archived[id]
+		if folderID == 0 && inArchive {
+			continue
+		}
+		if folderID != 0 && !inArchive {
+			continue
+		}
+		folder[peerKey(mtproto.PEER_CHANNEL, id)] = true
+	}
 }
 
 func (c *MessagesCore) globalFolder(folderID int32) (map[string]bool, bool) {

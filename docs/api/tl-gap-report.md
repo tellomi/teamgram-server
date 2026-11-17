@@ -69,7 +69,7 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.getTopReactions` | implemented | |
 | `messages.getRecentReactions` | implemented | |
 | `messages.clearRecentReactions` | implemented | |
-| `messages.sendVote` | partial | Vote is stored. Closed polls and the public voter list are not the full TL rules. |
+| `messages.sendVote` | partial | Stored when `TELLOMI_POLLS=1`. Off by default: `inputMediaPoll` stays `messageMediaUnsupported` and vote RPCs return `MEDIA_INVALID`. On: quiz solution and correct option after a vote, `updateMessagePoll` to the other side. |
 | `messages.getPollResults` | partial | `poll_hash` is checked. Same voter-list limit as send. |
 | `messages.getPollVotes` | partial | `option` and `offset` are forwarded. |
 | `messages.search` | partial | User, basic-group, and channel filters, dates, and `top_msg_id` work (#170). `hash`, `saved_reaction`, and `saved_peer_id` are still empty. `inputMessagesFilterMyMentions` is not a channel filter. |
@@ -81,7 +81,7 @@ Clients call these from the chat screen. Rows marked fixed are the behavior afte
 | `messages.updatePinnedMessage` | partial | User and basic group honor `silent`, `unpin`, and `pm_oneside`. A channel pin ignores `silent` and `pm_oneside`. |
 | `messages.unpinAllMessages` | partial | A channel pin is cleared (#163). `top_msg_id` and `saved_peer_id` are not applied. |
 | `messages.getPinnedDialogs` | implemented | |
-| `messages.sendMessage` with `schedule_date` | partial | A future date is stored and later sent. `schedule_repeat_period` is ignored. |
+| `messages.sendMessage` with `schedule_date` | partial | A future date is stored. `0x7FFFFFFE` is send-when-online. `schedule_repeat_period` is kept (1 day, 1 week, 2 weeks, 30 days, 365 days). Due delivery runs only when `TELLOMI_SCHEDULED_DISPATCH=1`. |
 | `messages.getScheduledHistory` | implemented | |
 | `messages.getScheduledMessages` | implemented | |
 | `messages.sendScheduledMessages` | partial | Sends now and drops the original `schedule_date` on the live message. |
@@ -205,7 +205,7 @@ The sticker, emoji, reaction, and ringtone methods clients call are backed by `a
 | --- | --- | --- |
 | `updates.getState` | implemented | Returns pts, qts, seq, and date. |
 | `updates.getDifference` | partial | Pts and seq are merged and users and chats are filled. With `TELLOMI_DIFFERENCE_STRICT` unset (the default, #171), `qts` is still omitted, `differenceTooLong` is not produced, encrypted messages stay empty, and the date is still stamped with the server time. Turning the variable on is the corrected path and is not the login default. |
-| `updates.getChannelDifference` | partial | Pts, too-long, and slice behavior are implemented. `force` and `ChannelMessagesFilter` are ignored. |
+| `updates.getChannelDifference` | partial | A backlog larger than `limit` is `updates.channelDifference` with `final` unset and pts at the end of that page. `channelDifferenceTooLong` is returned only when the pts log cannot continue from the client cursor. User `limit` is capped at 100; bots may request up to 100000. `force` and `ChannelMessagesFilter` are ignored. |
 
 ## help.\*
 

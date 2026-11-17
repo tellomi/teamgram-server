@@ -50,7 +50,7 @@ func (c *DialogCore) DialogInsertOrUpdateDialog(in *dialog.TLDialogInsertOrUpdat
 	_, rowsAffected, err := c.svcCtx.Dao.ExecInvalidate(
 		c.ctx,
 		func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
-			r, err := c.svcCtx.Dao.DialogsDAO.UpdateCustomMap(
+			r, err := c.svcCtx.Dao.DialogsDAO.UpdateForwardOnly(
 				c.ctx,
 				cMap,
 				in.UserId,

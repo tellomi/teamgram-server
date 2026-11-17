@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/channels/internal/svc"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
 	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
+	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
@@ -21,12 +22,19 @@ func New(c Config) *service.Service {
 	return service.New(svc.NewServiceContext(c))
 }
 
-func NewForums() *service.ForumsService { return &service.ForumsService{} }
+func NewForums(userConf zrpc.RpcClientConf) *service.ForumsService {
+	return &service.ForumsService{
+		Dialogs: dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(userConf)),
+	}
+}
 func NewReactions(userConf, messageConf zrpc.RpcClientConf, syncConf *kafka.KafkaProducerConf) *service.ReactionsService {
+	users := user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf))
 	s := &service.ReactionsService{
-		Users:    user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
+		Users:    users,
+		Blocks:   users,
 		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(messageConf)),
 		Dialogs:  dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(userConf)),
+		Chats:    chat_client.NewChatClient(rpcx.GetCachedRpcClient(userConf)),
 	}
 	if syncConf != nil && len(syncConf.Brokers) > 0 {
 		s.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(syncConf))
@@ -50,7 +58,11 @@ func NewTranslation(messageConf zrpc.RpcClientConf) *service.TranslationService 
 	}
 }
 func NewPaidMessages() *service.PaidMessageService { return &service.PaidMessageService{} }
-func NewReports() *service.ReportsService          { return &service.ReportsService{} }
+func NewReports(userConf zrpc.RpcClientConf) *service.ReportsService {
+	return &service.ReportsService{
+		Users: user_client.NewUserClient(rpcx.GetCachedRpcClient(userConf)),
+	}
+}
 
 // NewThreads serves discussion-thread RPCs and contacts.blockFromReplies.
 // userConf and messageConf are the biz service. msgConf is messenger.msg.

@@ -202,6 +202,24 @@ func (p botProfile) accessHash() int64 {
 	return p.ID
 }
 
+// CachedAccessHash is the access_hash this process has already put on a
+// bot user object. A profile stored with access_hash 0 is issued as the
+// bot id, which is what clients cached. Bots that have not been loaded
+// into this process are omitted. Their users.access_hash is checked
+// through the user service instead.
+func (b *Book) CachedAccessHash(id int64) (int64, bool) {
+	if b == nil || id == 0 {
+		return 0, false
+	}
+	b.mu.Lock()
+	st := b.bots[id]
+	b.mu.Unlock()
+	if st == nil {
+		return 0, false
+	}
+	return st.Profile.accessHash(), true
+}
+
 func (p botProfile) user(enabled bool) *mtproto.User {
 	return mtproto.MakeTLUser(&mtproto.User{
 		Id:                   p.ID,

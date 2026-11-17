@@ -6,6 +6,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	rpcmd "github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
@@ -40,6 +41,24 @@ func TestBlockFromReplies(t *testing.T) {
 	var blocked int64
 	var deleted []int32
 	var synced bool
+	book := statusbook.New(nil)
+	prev := statusbook.Shared()
+	statusbook.Install(book)
+	t.Cleanup(func() { statusbook.Install(prev) })
+	if err := book.Save(ctx, 3, statusbook.Record{
+		Pushed:   1_700_000_300,
+		HaveList: true,
+		Viewers:  []statusbook.Viewer{{ID: 15, Exact: true}, {ID: 99, Exact: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Save(ctx, 15, statusbook.Record{
+		Pushed:   1_700_000_300,
+		HaveList: true,
+		Viewers:  []statusbook.Viewer{{ID: 3, Exact: true}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	s := ThreadsService{
 		Messages: repliesMsgFake{box: box, history: []*mtproto.MessageBox{
 			box,
@@ -78,6 +97,12 @@ func TestBlockFromReplies(t *testing.T) {
 	}
 	if blocked != 15 {
 		t.Fatalf("blocked %d", blocked)
+	}
+	for _, id := range []int64{3, 15} {
+		rec, err := book.Load(ctx, id)
+		if err != nil || rec.HaveList || rec.Pushed != 0 {
+			t.Fatalf("blockFromReplies left audience %d %+v %v", id, rec, err)
+		}
 	}
 	if len(deleted) != 2 || !synced {
 		t.Fatalf("deleted %#v synced %v", deleted, synced)

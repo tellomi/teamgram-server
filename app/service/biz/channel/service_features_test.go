@@ -2,9 +2,11 @@ package channel
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"google.golang.org/grpc/status"
 )
 
 func megagroup(t *testing.T, svc *Service, ctx context.Context, title string) *mtproto.Chat {
@@ -76,8 +78,8 @@ func TestJoinRequestCreatorDiscussionLocationStats(t *testing.T) {
 	if _, err := svc.ToggleJoinToSend(ctx, 1, 0, inCh(b), true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Join(ctx, 4, 0, inCh(b)); err != nil {
-		t.Fatal(err)
+	if _, err := svc.Join(ctx, 4, 0, inCh(b)); err == nil || !strings.Contains(err.Error(), "INVITE_REQUEST_SENT") {
+		t.Fatalf("join request: %v", err)
 	}
 	parts, _ := svc.GetParticipants(ctx, 1, inCh(b), nil, 0, 50, 0)
 	if parts.Count != 1 {
@@ -98,7 +100,7 @@ func TestJoinRequestCreatorDiscussionLocationStats(t *testing.T) {
 		t.Fatalf("location %#v %v", full, err)
 	}
 	group := megagroup(t, svc, ctx, "Talk")
-	if err := svc.SetDiscussionGroup(ctx, 1, inCh(b), inCh(group)); err != nil {
+	if err := svc.SetDiscussionGroup(ctx, 1, 0, inCh(b), inCh(group)); err != nil {
 		t.Fatal(err)
 	}
 	full, _ = svc.GetFullChannel(ctx, 1, inCh(b))
@@ -120,9 +122,17 @@ func TestJoinRequestCreatorDiscussionLocationStats(t *testing.T) {
 	if _, err := svc.ToggleParticipantsHidden(ctx, 1, 0, inCh(b), true); err != nil {
 		t.Fatal(err)
 	}
-	hidden, err := svc.GetParticipants(ctx, 4, inCh(b), nil, 0, 50, 0)
-	if err != nil || len(hidden.Participants) != 0 {
-		t.Fatalf("hidden participants %#v %v", hidden, err)
+	// A broadcast subscriber cannot list subscribers, hidden or not.
+	if _, err := svc.GetParticipants(ctx, 4, inCh(b), nil, 0, 50, 0); err == nil || !strings.Contains(err.Error(), "CHAT_ADMIN_REQUIRED") {
+		t.Fatalf("subscriber list: %v", err)
+	}
+	full, _ = svc.GetFullChannel(ctx, 1, inCh(b))
+	if !full.FullChat.GetParticipantsHidden() {
+		t.Fatal("participants_hidden not stored")
+	}
+	sub, err := svc.GetFullChannel(ctx, 4, inCh(b))
+	if err != nil || sub.FullChat.GetCanViewParticipants() {
+		t.Fatalf("subscriber can_view %#v %v", sub, err)
 	}
 	inactive, err := svc.InactiveChannels(ctx, 1)
 	if err != nil {
@@ -139,11 +149,11 @@ func TestEditCreatorFutureGigagroupPrehistory(t *testing.T) {
 	if err != nil || next != 2 {
 		t.Fatalf("future creator %d %v", next, err)
 	}
-	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, nil); err == nil {
-		t.Fatal("missing password")
+	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, nil); status.Convert(err).Message() != "PASSWORD_MISSING" {
+		t.Fatalf("missing password: %v", err)
 	}
-	pw := &mtproto.InputCheckPasswordSRP{A: []byte{1, 2, 3}}
-	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, pw); err != nil {
+	installOldPassword(t, 1, "secret")
+	if _, err := svc.EditCreator(ctx, 1, 0, inCh(ch), 2, cloudProof(t, 1, "secret")); err != nil {
 		t.Fatal(err)
 	}
 	got, err := svc.GetParticipant(ctx, 2, inCh(ch), mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 2}).To_InputPeer())
@@ -251,6 +261,10 @@ func TestTopicsReactionsPinsSearchSendAsPersonal(t *testing.T) {
 	if err := svc.SetPersonalChannel(ctx, 1, inCh(news.Chats[0])); err != nil {
 		t.Fatal(err)
 	}
+	card, top, err := svc.PersonalChannelCard(ctx, 1, news.Chats[0].Id)
+	if err != nil || card.GetId() != news.Chats[0].Id || card.GetPredicateName() != mtproto.Predicate_channel || top == 0 {
+		t.Fatalf("personal card %#v top %d %v", card, top, err)
+	}
 	hist, err := svc.PersonalHistory(ctx, 1, 1, 10, 0, 0)
 	if err != nil || hist.Count == 0 {
 		t.Fatalf("personal history %#v %v", hist, err)
@@ -324,7 +338,7 @@ func TestReactionChipOnHistoryAndDifference(t *testing.T) {
 	if !found {
 		t.Fatalf("history missing chip %#v", hist.GetMessages())
 	}
-	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20)
+	diff, err := svc.Difference(ctx, 1, inCh(ch), 0, 20, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,6 +362,29 @@ func TestReactionChipOnHistoryAndDifference(t *testing.T) {
 		if m.GetId() == msgID && m.GetReactions() != nil {
 			t.Fatalf("chip remained %#v", m.GetReactions())
 		}
+	}
+}
+
+func TestPersonalChannelCardHidesPrivate(t *testing.T) {
+	svc, ctx := newTest(t)
+	news, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Mine", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := news.Chats[0].GetId()
+	if _, err = svc.Send(ctx, 1, id, 0, []Outgoing{{RandomID: 3, Message: &mtproto.Message{Message: "hello", Date: 4}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.SetPersonalChannel(ctx, 1, inCh(news.Chats[0])); err != nil {
+		t.Fatal(err)
+	}
+	card, top, err := svc.PersonalChannelCard(ctx, 1, id)
+	if err != nil || card.GetPredicateName() != mtproto.Predicate_channel || card.GetId() != id || top == 0 {
+		t.Fatalf("owner card %#v top %d %v", card, top, err)
+	}
+	other, otherTop, err := svc.PersonalChannelCard(ctx, 2, id)
+	if err != nil || other != nil || otherTop != 0 {
+		t.Fatalf("private card leaked %#v %d %v", other, otherTop, err)
 	}
 }
 

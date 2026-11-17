@@ -10,17 +10,21 @@
 package core
 
 import (
-	"github.com/teamgram/proto/mtproto"
+	"errors"
+
+	"github.com/teamgram/marmota/pkg/stores/sqlc"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
 // UserGetLastSeen
 // user.getLastSeen id:long = LastSeenData;
 func (c *UserCore) UserGetLastSeen(in *user.TLUserGetLastSeen) (*user.LastSeenData, error) {
-	do, _ := c.svcCtx.Dao.GetLastSeenAt(c.ctx, in.Id)
-	if do == nil {
-		err := mtproto.ErrUserIdInvalid
-		c.Logger.Errorf("user.getLastSeen - error: %d", err)
+	do, err := c.svcCtx.Dao.GetLastSeenAt(c.ctx, in.Id)
+	if err != nil || do == nil {
+		if mapped := presenceReadError(err); errors.Is(mapped, user.ErrPresenceNotFound) {
+			return nil, mapped
+		}
+		c.Logger.Errorf("user.getLastSeen - error: %v", err)
 		return nil, err
 	}
 
@@ -29,4 +33,14 @@ func (c *UserCore) UserGetLastSeen(in *user.TLUserGetLastSeen) (*user.LastSeenDa
 		LastSeenAt: do.LastSeenAt,
 		Expires:    do.Expires,
 	}).To_LastSeenData(), nil
+}
+
+// presenceReadError maps a missing row to ErrPresenceNotFound. Any other
+// read error is returned unchanged so the caller does not treat a database
+// failure as "this user was offline".
+func presenceReadError(err error) error {
+	if err == nil || errors.Is(err, sqlc.ErrNotFound) {
+		return user.ErrPresenceNotFound
+	}
+	return err
 }

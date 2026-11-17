@@ -26,24 +26,54 @@ func normalizeEmailLogin(raw string) (string, error) {
 	return email, nil
 }
 
-// emailLoginCode accepts the code from phone_code or from emailVerificationCode.
-// Apple and Google tokens are rejected. Password login is not part of this flow.
+// emailLoginCode accepts emailVerificationCode, or phone_code when the
+// client did not send email_verification. Apple and Google tokens are
+// EMAIL_INVALID. An empty emailVerificationCode is CODE_INVALID.
 func emailLoginCode(in *mtproto.TLAuthSignIn) (string, error) {
 	if in == nil {
 		return "", mtproto.ErrPhoneCodeEmpty
+	}
+	if ev := in.GetEmailVerification(); ev != nil {
+		name := ev.GetPredicateName()
+		ctor := ev.GetConstructor()
+		switch {
+		case name == mtproto.Predicate_emailVerificationCode || ctor == mtproto.CRC32_emailVerificationCode:
+			if ev.GetCode() == "" {
+				return "", mtproto.ErrCodeInvalid
+			}
+			return ev.GetCode(), nil
+		case name == mtproto.Predicate_emailVerificationGoogle || ctor == mtproto.CRC32_emailVerificationGoogle:
+			return "", mtproto.ErrEmailInvalid
+		case name == mtproto.Predicate_emailVerificationApple || ctor == mtproto.CRC32_emailVerificationApple:
+			return "", mtproto.ErrEmailInvalid
+		default:
+			if name != "" || ctor != 0 {
+				return "", mtproto.ErrEmailInvalid
+			}
+		}
 	}
 	code := in.GetPhoneCode_STRING()
 	if code == "" && in.GetPhoneCode_FLAGSTRING() != nil {
 		code = in.GetPhoneCode_FLAGSTRING().GetValue()
 	}
-	if code == "" && in.GetEmailVerification() != nil {
-		ev := in.GetEmailVerification()
-		switch ev.GetPredicateName() {
-		case mtproto.Predicate_emailVerificationCode:
-			code = ev.GetCode()
-		default:
-			return "", mtproto.ErrEmailInvalid
-		}
+	if code == "" {
+		return "", mtproto.ErrPhoneCodeEmpty
+	}
+	return code, nil
+}
+
+// signInCode reads the login code for a phone or for an email-as-phone
+// account. A real phone number with flags.1 set uses email_verification.
+func signInCode(in *mtproto.TLAuthSignIn) (string, error) {
+	if in == nil {
+		return "", mtproto.ErrPhoneCodeEmpty
+	}
+	if verify.IsEmail(in.GetPhoneNumber()) || in.GetEmailVerification() != nil {
+		return emailLoginCode(in)
+	}
+	code := in.GetPhoneCode_STRING()
+	if code == "" && in.GetPhoneCode_FLAGSTRING() != nil {
+		code = in.GetPhoneCode_FLAGSTRING().GetValue()
 	}
 	if code == "" {
 		return "", mtproto.ErrPhoneCodeEmpty

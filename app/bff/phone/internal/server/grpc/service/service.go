@@ -15,6 +15,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/phonecall"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -49,6 +50,12 @@ func New(sc *svc.ServiceContext) *Service {
 		Users:   s.loadUsers,
 		Chats:   s.loadChats,
 		Members: s.members,
+		// Same admin bit phone.exportGroupCallInvite checks. Must not call
+		// the engine: groupTL runs this while the engine lock is held.
+		MayManage: func(viewer int64, peerType int32, peerID int64) bool {
+			_, manage, err := s.perm(context.Background(), viewer, &mtproto.PeerUtil{PeerType: peerType, PeerId: peerID})
+			return err == nil && manage
+		},
 	})
 	channel.LookupGroupCall = func(ctx context.Context, channelID int64) channel.GroupCallAttach {
 		id, access, active, notEmpty, ok := phonecall.Lookup(mtproto.PEER_CHANNEL, channelID)
@@ -127,6 +134,11 @@ func (s *Service) allow(caller, callee int64) (bool, bool) {
 		return true, true
 	}
 	ctx := context.Background()
+	// A block in either direction is USER_PRIVACY_RESTRICTED, the same error
+	// phone.requestCall returns when the callee's call privacy says no.
+	if userclient.EitherBlocked(ctx, s.svc.Users, caller, callee) {
+		return false, false
+	}
 	ok, err := s.svc.Users.UserCheckPrivacy(ctx, &user.TLUserCheckPrivacy{
 		UserId: callee, KeyType: int32(mtproto.PHONE_CALL), PeerId: caller,
 	})
@@ -244,6 +256,87 @@ func peerOf(peerType int32, id int64) *mtproto.Peer {
 		return mtproto.MakePeerChannel(id)
 	default:
 		return mtproto.MakePeerUser(id)
+	}
+}
+
+// callRoomAccess reports whether user may enter a voice chat in peer.
+// public is true for a channel that has a username. blocked is a kick or a
+// live view_messages ban; the handler must refuse those before it ORs
+// public into membership. A basic chat with no chat client stays open, the
+// same fallback perm uses.
+func (s *Service) callRoomAccess(ctx context.Context, user int64, peerType int32, peerID int64) (member, public, blocked bool, err error) {
+	switch peerType {
+	case mtproto.PEER_CHANNEL:
+		member, _, public, blocked, err = channel.Shared().CallJoin(ctx, user, peerID)
+		return member, public, blocked, err
+	case mtproto.PEER_CHAT:
+		if s == nil || s.svc == nil || s.svc.Chat == nil {
+			return true, false, false, nil
+		}
+		mc, err := s.svc.Chat.ChatGetMutableChat(ctx, &chat.TLChatGetMutableChat{ChatId: peerID})
+		if err != nil || mc == nil {
+			return false, false, false, mtproto.ErrPeerIdInvalid
+		}
+		p, ok := mc.GetImmutableChatParticipant(user)
+		if !ok || !p.IsChatMemberStateNormal() {
+			return false, false, false, nil
+		}
+		return true, false, false, nil
+	default:
+		return false, false, false, mtproto.ErrPeerIdInvalid
+	}
+}
+
+// hidePrivateRoom is the phone.getGroupCall view of a private chat for
+// someone who must not learn it. Members and public username chats stay
+// visible. A kicked or view-banned user does not. Anyone else needs the
+// invite slug; id and access hash are not enough. Someone who may export
+// the invite still sees the room.
+func (s *Service) hidePrivateRoom(ctx context.Context, user, id, access int64, in *mtproto.InputGroupCall) bool {
+	if s == nil || s.eng == nil {
+		return false
+	}
+	pt, pid, err := s.eng.GroupPeer(id, access)
+	if err != nil || (pt != mtproto.PEER_CHANNEL && pt != mtproto.PEER_CHAT) {
+		return false
+	}
+	member, public, blocked, err := s.callRoomAccess(ctx, user, pt, pid)
+	if err != nil || blocked {
+		return true
+	}
+	if member || public {
+		return false
+	}
+	if s.eng.MayExport(user, id, access) {
+		return false
+	}
+	return !callInputIsSlug(in)
+}
+
+// joinAsAllowed reports whether user may appear in a call as join.
+// Manage is the join-as peer's call-admin bit, which is what a self join
+// used to leave false and a channel join used to copy.
+func (s *Service) joinAsAllowed(ctx context.Context, user int64, join *mtproto.PeerUtil) (bool, error) {
+	if join == nil {
+		return false, mtproto.ErrJoinAsPeerInvalid
+	}
+	switch join.PeerType {
+	case mtproto.PEER_USER:
+		if join.PeerId == user {
+			return false, nil
+		}
+		return false, mtproto.ErrJoinAsPeerInvalid
+	case mtproto.PEER_CHANNEL, mtproto.PEER_CHAT:
+		member, manage, err := s.perm(ctx, user, join)
+		if err != nil {
+			return false, err
+		}
+		if !member {
+			return false, mtproto.ErrJoinAsPeerInvalid
+		}
+		return manage, nil
+	default:
+		return false, mtproto.ErrJoinAsPeerInvalid
 	}
 }
 

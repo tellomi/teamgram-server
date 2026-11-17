@@ -24,10 +24,29 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
+// notifySettingsCacheTargetSQL lists every notify row for a user, including
+// rows reset already marked deleted. The cache key is derived from the
+// peer, and a soft-deleted row is exactly the one whose Redis value is stale.
+const notifySettingsCacheTargetSQL = "select peer_type, peer_id from user_notify_settings where user_id = ?"
+
+// SelectCacheTargets returns peer_type and peer_id for every notify row of
+// this user. deleted = 1 stays in the result so a second reset can still
+// name the Redis keys left behind by the first one.
+func (dao *UserNotifySettingsDAO) SelectCacheTargets(ctx context.Context, userId int64) (rList []dataobject.UserNotifySettingsDO, err error) {
+	var values []dataobject.UserNotifySettingsDO
+	err = dao.db.QueryRowsPartial(ctx, &values, notifySettingsCacheTargetSQL, userId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("queryx in SelectCacheTargets(_), error: %v", err)
+		return
+	}
+	rList = values
+	return
+}
+
 // InsertOrUpdateExt
 // insert into user_notify_settings(user_id, peer_type, peer_id, show_previews, silent, mute_until, sound) values (:user_id, :peer_type, :peer_id, :show_previews, :silent, :mute_until, :sound) on duplicate key update show_previews = values(show_previews), silent = values(silent), mute_until = values(mute_until), sound = values(sound), deleted = 0
 // TODO(@benqi): sqlmap
-func (dao *UserNotifySettingsDAO) InsertOrUpdateExt(ctx context.Context, userId int64, peerType int32, peerId int64, cMap map[string]interface{}) (lastInsertId, rowsAffected int64, err error) {
+func (dao *UserNotifySettingsDAO) InsertOrUpdateExt(ctx context.Context, userId int64, peerType int32, peerId int64, cMap map[string]interface{}, insertOnly map[string]interface{}) (lastInsertId, rowsAffected int64, err error) {
 	var (
 		s1 []string
 		s2 []string
@@ -40,6 +59,14 @@ func (dao *UserNotifySettingsDAO) InsertOrUpdateExt(ctx context.Context, userId 
 		s2 = append(s2, ":"+k)
 		s3 = append(s3, fmt.Sprintf("%s = :%s", k, k))
 	}
+	for k, v := range insertOnly {
+		if _, exists := cMap[k]; exists {
+			continue
+		}
+		s1 = append(s1, k)
+		s2 = append(s2, ":"+k)
+		cMap[k] = v
+	}
 
 	cMap["user_id"] = userId
 	cMap["peer_type"] = peerType
@@ -50,9 +77,13 @@ func (dao *UserNotifySettingsDAO) InsertOrUpdateExt(ctx context.Context, userId 
 			(user_id, peer_type, peer_id, %s) 
 		values 
 			(:user_id, :peer_type, :peer_id, %s)
-		on duplicate key update %s, deleted = 0`
+		on duplicate key update %s`
 
-	ss := fmt.Sprintf(query, strings.Join(s1, ","), strings.Join(s2, ","), strings.Join(s3, ", "))
+	update := "deleted = 0"
+	if len(s3) > 0 {
+		update = strings.Join(s3, ", ") + ", deleted = 0"
+	}
+	ss := fmt.Sprintf(query, strings.Join(s1, ","), strings.Join(s2, ","), update)
 	// logx.WithContext(ctx).Debugf("sql - %s", ss)
 	r, err = dao.db.NamedExec(ctx, ss, cMap)
 	if err != nil {
@@ -150,7 +181,7 @@ func (dao *UserNotifySettingsDAO) SelectListWithCB(ctx context.Context, userId i
 
 	query := `
 	select 
-		id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound 
+		id, user_id, peer_type, peer_id, show_previews, silent, mute_until, sound, stories_muted, stories_hide_sender, ios_sound, android_sound, other_sound, stories_ios_sound, stories_android_sound, stories_other_sound 
 	from 
 		user_notify_settings 
 	where 

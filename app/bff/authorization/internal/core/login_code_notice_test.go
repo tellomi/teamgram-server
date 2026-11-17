@@ -9,7 +9,7 @@ import (
 )
 
 func TestLoginCodeNoticeChinese(t *testing.T) {
-	text, ents := loginCodeNotice("123456", "Tellomi")
+	text, ents := loginCodeNotice("zh-hans", "123456", "Tellomi")
 	if strings.Contains(text, "Login code") || strings.Contains(text, "Telegram") {
 		t.Fatalf("english or Telegram leftover: %s", text)
 	}

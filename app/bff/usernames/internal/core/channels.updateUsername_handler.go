@@ -1,6 +1,8 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
@@ -9,13 +11,15 @@ import (
 // ChannelsUpdateUsername
 // channels.updateUsername#3514b3de channel:InputChannel username:string = Bool;
 func (c *UsernamesCore) ChannelsUpdateUsername(in *mtproto.TLChannelsUpdateUsername) (*mtproto.Bool, error) {
+	prev := channelUsername(c, in.GetChannel())
 	ok, err := channel.Shared().UpdateUsername(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, in.GetChannel(), in.GetUsername())
 	if err != nil {
 		c.Logger.Errorf("channels.updateUsername - error: %v", err)
 		return nil, usernameRPCError(err)
 	}
 	channelID := in.GetChannel().GetChannelId()
-	if in.GetUsername() == "" {
+	next := in.GetUsername()
+	if next == "" {
 		_, _ = c.svcCtx.Dao.UserClient.UserDeleteUsernameByPeer(c.ctx, &user.TLUserDeleteUsernameByPeer{
 			PeerType: mtproto.PEER_CHANNEL,
 			PeerId:   channelID,
@@ -24,11 +28,29 @@ func (c *UsernamesCore) ChannelsUpdateUsername(in *mtproto.TLChannelsUpdateUsern
 		_, err = c.svcCtx.Dao.UserClient.UserUpdateUsernameByPeer(c.ctx, &user.TLUserUpdateUsernameByPeer{
 			PeerType: mtproto.PEER_CHANNEL,
 			PeerId:   channelID,
-			Username: in.GetUsername(),
+			Username: next,
 		})
 		if err != nil {
 			c.Logger.Errorf("channels.updateUsername - user service: %v", err)
 		}
 	}
+	// Drop a previous public name the editable-row rename did not cover.
+	// A case-only change must not delete the row just written.
+	if prev != "" && !strings.EqualFold(prev, next) {
+		_, _ = c.svcCtx.Dao.UserClient.UserDeleteUsername(c.ctx, &user.TLUserDeleteUsername{
+			Username: prev,
+		})
+	}
 	return ok, nil
+}
+
+func channelUsername(c *UsernamesCore, in *mtproto.InputChannel) string {
+	if c == nil || in == nil {
+		return ""
+	}
+	chats, err := channel.Shared().GetChannels(c.ctx, c.MD.GetUserId(), []*mtproto.InputChannel{in})
+	if err != nil || chats == nil || len(chats.GetChats()) == 0 {
+		return ""
+	}
+	return chats.GetChats()[0].GetUsername().GetValue()
 }

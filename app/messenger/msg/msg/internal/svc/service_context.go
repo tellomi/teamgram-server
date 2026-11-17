@@ -118,6 +118,17 @@ func installStoryPaint(c config.Config, users user_client.UserClient) {
 			contact, err := users.UserGetContact(ctx, &user.TLUserGetContact{UserId: owner, Id: viewer})
 			return err == nil && contact.GetCloseFriend()
 		},
+		IsBlocked: func(ctx context.Context, owner, viewer int64) bool {
+			if users == nil {
+				return false
+			}
+			a, err := users.UserIsBlockedByUser(ctx, &user.TLUserIsBlockedByUser{UserId: owner, PeerUserId: viewer})
+			if err == nil && mtproto.FromBool(a) {
+				return true
+			}
+			b, err := users.UserIsBlockedByUser(ctx, &user.TLUserIsBlockedByUser{UserId: viewer, PeerUserId: owner})
+			return err == nil && mtproto.FromBool(b)
+		},
 	})
 	story.EnableUserRingPaint()
 }
@@ -129,6 +140,7 @@ func installChannelHooks(c config.Config, d *dao.Dao) {
 	if err := chatbox.UseDSN(c.Mysql.DSN); err != nil {
 		logx.Errorf("chatbox mysql: %v", err)
 	}
+	channelpb.LookupPosterName = posterName(d.UserClient)
 	channelpb.Shared().SetHooks(channelpb.Hooks{
 		Push: func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates) {
 			if d.SyncClient == nil || updates == nil {
@@ -180,4 +192,21 @@ func installChannelHooks(c config.Config, d *dao.Dao) {
 			})
 		},
 	})
+}
+
+func posterName(users user_client.UserClient) func(context.Context, int64) string {
+	return func(ctx context.Context, userID int64) string {
+		if users == nil || userID == 0 {
+			return ""
+		}
+		list, err := users.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{Id: []int64{userID}})
+		if err != nil || list == nil {
+			return ""
+		}
+		u, ok := list.GetImmutableUser(userID)
+		if !ok || u == nil {
+			return ""
+		}
+		return channelpb.FormatPosterName(u.FirstName(), u.LastName())
+	}
 }

@@ -56,6 +56,11 @@ func (c *DialogsCore) MessagesReorderPinnedDialogs(in *mtproto.TLMessagesReorder
 		}
 	}
 
+	if err := c.rejectReorderPastLimit(in.FolderId, in.Force, peerDialogIdList); err != nil {
+		c.Logger.Errorf("messages.reorderPinnedDialogs - error: %v", err)
+		return nil, err
+	}
+
 	_, err := c.svcCtx.Dao.DialogClient.DialogReorderPinnedDialogs(c.ctx, &dialog.TLDialogReorderPinnedDialogs{
 		UserId:   c.MD.UserId,
 		Force:    mtproto.ToBool(in.Force),
@@ -93,7 +98,10 @@ func (c *DialogsCore) MessagesReorderPinnedDialogs(in *mtproto.TLMessagesReorder
 						syncUpdates.PushChat(chats.GetChatListByIdList(c.MD.UserId, chatIdList...)...)
 					},
 					func(channelIdList []int64) {
-						// TODO
+						if c.svcCtx.Plugin == nil || len(channelIdList) == 0 {
+							return
+						}
+						syncUpdates.PushChat(c.svcCtx.Plugin.GetChannelListByIdList(ctx, c.MD.UserId, channelIdList...)...)
 					})
 			}
 

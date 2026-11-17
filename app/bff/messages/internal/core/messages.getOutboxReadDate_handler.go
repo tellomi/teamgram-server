@@ -45,9 +45,9 @@ func (c *MessagesCore) MessagesGetOutboxReadDate(in *mtproto.TLMessagesGetOutbox
 		c.Logger.Errorf("messages.getOutboxReadDate - only user peer is supported")
 		return nil, mtproto.ErrPeerIdInvalid
 	}
-
-	// TODO: 1. Check USER_PRIVACY_RESTRICTED
-	//		 2. Check YOUR_PRIVACY_RESTRICTED
+	if err := c.outboxReadPrivacy(peer.PeerId); err != nil {
+		return nil, err
+	}
 
 	err := mr.Finish(
 		func() error {

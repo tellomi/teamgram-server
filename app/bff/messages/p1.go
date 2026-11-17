@@ -7,21 +7,39 @@ import (
 	"github.com/teamgram/marmota/pkg/net/rpcx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
+	"github.com/teamgram/teamgram-server/app/bff/accountassets"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
+	sync_client "github.com/teamgram/teamgram-server/app/messenger/sync/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	chat_client "github.com/teamgram/teamgram-server/app/service/biz/chat/client"
+	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	message_client "github.com/teamgram/teamgram-server/app/service/biz/message/client"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
+	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
+	"github.com/teamgram/teamgram-server/pkg/bootstrap"
+	"github.com/zeromicro/go-zero/zrpc"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // NewPolls serves messages.sendVote and the other poll RPCs.
-func NewPolls() *service.PollsService { return &service.PollsService{} }
+func NewPolls(c Config) *service.PollsService {
+	svc := &service.PollsService{
+		Chats:    chat_client.NewChatClient(rpcx.GetCachedRpcClient(c.ChatClient)),
+		Messages: message_client.NewMessageClient(rpcx.GetCachedRpcClient(c.MessageClient)),
+	}
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		svc.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
+	}
+	return svc
+}
 
 // NewWebPage serves messages.getWebPage and messages.getWebPagePreview.
 func NewWebPage(c Config) *service.WebPageService {
@@ -37,6 +55,12 @@ func NewWebPage(c Config) *service.WebPageService {
 func BindPreview(users user_client.UserClient, media media_client.MediaClient, chats chat_client.ChatClient) {
 	BindUsers(users)
 	if media != nil {
+		accountassets.LoadRingtoneDoc = func(ctx context.Context, self int64, in *mtproto.InputDocument) (*mtproto.Document, error) {
+			if in == nil || in.GetId() == 0 {
+				return nil, mtproto.ErrRingtoneInvalid
+			}
+			return media.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: in.GetId()})
+		}
 		webpage.BindPhotoLoader(func(ctx context.Context, photoID int64) *mtproto.Photo {
 			photo, err := media.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoID})
 			if err != nil || photo == nil || photo.GetId() == 0 || photo.GetPredicateName() == mtproto.Predicate_photoEmpty {
@@ -161,9 +185,27 @@ func BindUsers(c user_client.UserClient) {
 // NewScheduled serves the scheduled-message inbox. Sending a scheduled
 // message goes through messenger.msg, same as messages.sendMessage.
 func NewScheduled(c Config) *service.ScheduledService {
-	return &service.ScheduledService{
-		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
+	msg := msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient))
+	var syncer sync_client.SyncClient
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
+	service.StartScheduleDispatch(msg, syncer, service.StatusOnline(statusClient(c.StatusClient)), scheduleUserClient(c.UserClient))
+	return &service.ScheduledService{Msg: msg}
+}
+
+func scheduleUserClient(c zrpc.RpcClientConf) user_client.UserClient {
+	if len(c.Endpoints) == 0 && len(c.Etcd.Hosts) == 0 && c.Target == "" {
+		return nil
+	}
+	return user_client.NewUserClient(rpcx.GetCachedRpcClient(c))
+}
+
+func statusClient(c zrpc.RpcClientConf) status_client.StatusClient {
+	if len(c.Endpoints) == 0 && len(c.Etcd.Hosts) == 0 && c.Target == "" {
+		return nil
+	}
+	return status_client.NewStatusClient(rpcx.GetCachedRpcClient(c))
 }
 
 // NewBotChat serves inline queries, callback buttons, the attach menu,
@@ -177,9 +219,13 @@ func NewBotChat(c Config) *service.BotChatService {
 // NewQuickReply serves quick-reply shortcuts. Sending a shortcut goes
 // through messenger.msg, same as messages.sendMessage.
 func NewQuickReply(c Config) *service.QuickReplyService {
-	return &service.QuickReplyService{
+	svc := &service.QuickReplyService{
 		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		svc.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
+	}
+	return svc
 }
 
 // NewSavedTags serves saved-message reaction tags.
@@ -192,16 +238,97 @@ func NewPaidMedia() *service.PaidMediaService { return &service.PaidMediaService
 func NewDelivery() *service.DeliveryService { return &service.DeliveryService{} }
 
 // NewThemes serves messages.setChatTheme and the account theme RPCs.
-func NewThemes() *service.ThemesService { return &service.ThemesService{} }
+// A config with a messenger client posts messageActionSetChatTheme into the
+// dialog. NewThemes() with no config keeps the local updates box.
+func NewThemes(c ...Config) *service.ThemesService {
+	s := &service.ThemesService{}
+	if len(c) > 0 && rpcReady(c[0].MsgClient) {
+		s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+	}
+	return s
+}
 
 // NewWallpapers serves messages.setChatWallPaper and the account wallpaper RPCs.
-func NewWallpapers() *service.WallpapersService { return &service.WallpapersService{} }
+func NewWallpapers(c ...Config) *service.WallpapersService {
+	s := &service.WallpapersService{}
+	if len(c) > 0 {
+		chatdecor.UseDSN(c[0].ChannelMySQL)
+		if rpcReady(c[0].MsgClient) {
+			s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+		}
+	}
+	return s
+}
+
+func rpcReady(c zrpc.RpcClientConf) bool {
+	return len(c.Endpoints) > 0 || len(c.Etcd.Hosts) > 0 || c.Target != ""
+}
 
 // NewRingtones serves account.getSavedRingtones, account.saveRingtone, and account.uploadRingtone.
 func NewRingtones() *service.RingtoneService { return &service.RingtoneService{} }
 
 // NewConnectedBots serves the connected business-bot RPCs.
-func NewConnectedBots() *service.ConnectedBotsService { return &service.ConnectedBotsService{} }
+// When the user service is configured, only a user with bot_business set
+// can be connected. Without that client, a positive user id is accepted.
+func NewConnectedBots(c ...Config) *service.ConnectedBotsService {
+	if len(c) > 0 && rpcReady(c[0].UserClient) {
+		users := user_client.NewUserClient(rpcx.GetCachedRpcClient(c[0].UserClient))
+		var dialogs dialog_client.DialogClient
+		if rpcReady(c[0].DialogClient) {
+			dialogs = dialog_client.NewDialogClient(rpcx.GetCachedRpcClient(c[0].DialogClient))
+		}
+		accountassets.IsBusinessBot = func(id int64) bool {
+			return userIsBusinessBot(users, id)
+		}
+		accountassets.ViewerFactsOf = func(owner, viewer int64) accountassets.ViewerFacts {
+			return businessViewerFacts(users, dialogs, owner, viewer)
+		}
+	}
+	return &service.ConnectedBotsService{}
+}
+
+func businessViewerFacts(users user_client.UserClient, dialogs dialog_client.DialogClient, owner, viewer int64) accountassets.ViewerFacts {
+	var facts accountassets.ViewerFacts
+	if users != nil {
+		ok, err := users.UserCheckContact(context.Background(), &user.TLUserCheckContact{
+			UserId: owner, Id: viewer,
+		})
+		if err == nil {
+			facts.ContactOK = true
+			facts.Contact = mtproto.FromBool(ok)
+		}
+	}
+	if dialogs != nil {
+		dlg, err := dialogs.DialogGetDialogById(context.Background(), &dialog.TLDialogGetDialogById{
+			UserId: owner, PeerType: mtproto.PEER_USER, PeerId: viewer,
+		})
+		if err == nil && dlg != nil {
+			facts.ChatOK = true
+			facts.ExistingChat = true
+		} else if status.Convert(err).Message() == "PEER_ID_INVALID" {
+			facts.ChatOK = true
+			facts.ExistingChat = false
+		}
+	}
+	return facts
+}
+
+func userIsBusinessBot(users user_client.UserClient, id int64) bool {
+	if users == nil || id == 0 {
+		return false
+	}
+	got, err := users.UserGetMutableUsers(context.Background(), &user.TLUserGetMutableUsers{
+		Id: []int64{id},
+	})
+	if err != nil || got == nil {
+		return false
+	}
+	u, ok := got.GetImmutableUser(id)
+	if !ok || u == nil || u.User == nil || u.User.Bot == nil {
+		return false
+	}
+	return u.User.Bot.GetBotBusiness()
+}
 
 // NewShareThemes serves messages.setShareTheme and messages.getShareThemeBackdrops.
 func NewShareThemes() *service.ShareThemesService { return &service.ShareThemesService{} }

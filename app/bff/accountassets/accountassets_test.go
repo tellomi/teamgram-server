@@ -1,6 +1,7 @@
 package accountassets
 
 import (
+	"context"
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
@@ -236,7 +237,11 @@ func TestRingtones(t *testing.T) {
 		t.Fatal("not modified")
 	}
 	file := mtproto.MakeTLInputFile(&mtproto.InputFile{Id_INT64: 9, Parts: 1, Name: "ping.ogg"}).To_InputFile()
-	if _, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.ogg", MimeType: "audio/wav"}); status.Convert(err).Message() != "RINGTONE_MIME_INVALID" {
+	wav, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.wav", MimeType: "audio/wav"})
+	if err != nil || wav.GetMimeType() != "audio/wav" {
+		t.Fatalf("wav: %v %#v", err, wav)
+	}
+	if _, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.txt", MimeType: "text/plain"}); status.Convert(err).Message() != "RINGTONE_MIME_INVALID" {
 		t.Fatal(err)
 	}
 	ogg, err := UploadRingtone(1, &mtproto.TLAccountUploadRingtone{File: file, FileName: "ping.ogg", MimeType: "audio/ogg"})
@@ -269,6 +274,32 @@ func TestRingtones(t *testing.T) {
 		Unsave: mtproto.BoolFalse,
 	}); status.Convert(err).Message() != "RINGTONE_INVALID" {
 		t.Fatal(err)
+	}
+	prev := LoadRingtoneDoc
+	LoadRingtoneDoc = func(context.Context, int64, *mtproto.InputDocument) (*mtproto.Document, error) {
+		return mtproto.MakeTLDocument(&mtproto.Document{
+			Id: 440, AccessHash: 12, MimeType: "audio/mpeg",
+			Attributes: []*mtproto.DocumentAttribute{
+				mtproto.MakeTLDocumentAttributeFilename(&mtproto.DocumentAttribute{FileName: "chat.mp3"}).To_DocumentAttribute(),
+			},
+		}).To_Document(), nil
+	}
+	t.Cleanup(func() { LoadRingtoneDoc = prev })
+	adopted, err := SaveRingtoneContext(context.Background(), 1, &mtproto.TLAccountSaveRingtone{
+		Id:     mtproto.MakeTLInputDocument(&mtproto.InputDocument{Id: 440, AccessHash: 12}).To_InputDocument(),
+		Unsave: mtproto.BoolFalse,
+	})
+	if err != nil || adopted.GetPredicateName() != mtproto.Predicate_account_savedRingtone {
+		t.Fatalf("adopt: %v %#v", err, adopted)
+	}
+	found := false
+	for _, doc := range GetSavedRingtones(1, 0).GetRingtones() {
+		if doc.GetId() == 440 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("message document was not saved")
 	}
 }
 
@@ -312,6 +343,21 @@ func TestConnectedBots(t *testing.T) {
 	}
 	mustEncode(t, conn.GetUpdates()[0])
 	mustEncode(t, listed)
+	user := listed.GetUsers()[0]
+	if !user.GetBot() || user.GetBotInfoVersion() == nil {
+		t.Fatalf("bot user missing bot_info_version: %#v", user)
+	}
+	raw := mtproto.NewEncodeBuf(512)
+	if err := user.Encode(raw, 232); err != nil {
+		t.Fatal(err)
+	}
+	decoded := &mtproto.User{}
+	if err := decoded.Decode(mtproto.NewDecodeBuf(raw.GetBuf())); err != nil {
+		t.Fatal(err)
+	}
+	if !decoded.GetBot() || decoded.GetBotInfoVersion() == nil {
+		t.Fatalf("decoded bot %#v", decoded)
+	}
 	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 9}).To_InputPeer()
 	if _, err := ToggleConnectedBotPaused(1, nil, true); status.Convert(err).Message() != "PEER_ID_INVALID" {
 		t.Fatal(err)
@@ -333,6 +379,52 @@ func TestConnectedBots(t *testing.T) {
 	}
 	if len(GetConnectedBots(1).GetConnectedBots()) != 0 {
 		t.Fatal("bot still connected")
+	}
+}
+
+func TestToggleConnectedBotRequiresABusinessBot(t *testing.T) {
+	Reset()
+	peer := mtproto.MakeTLInputPeerUser(&mtproto.InputPeer{UserId: 9}).To_InputPeer()
+	if _, err := ToggleConnectedBotPaused(1, peer, true); status.Convert(err).Message() != "BOT_NOT_CONNECTED_YET" {
+		t.Fatal(err)
+	}
+	if _, err := ToggleConnectedBotPaused(1, mtproto.MakeTLInputPeerChat(&mtproto.InputPeer{ChatId: 3}).To_InputPeer(), true); status.Convert(err).Message() != "PEER_ID_INVALID" {
+		t.Fatal(err)
+	}
+	IsBusinessBot = func(id int64) bool { return id == 7 }
+	ViewerFactsOf = func(int64, int64) ViewerFacts {
+		return ViewerFacts{Contact: true, ContactOK: true}
+	}
+	t.Cleanup(func() {
+		IsBusinessBot = nil
+		ViewerFactsOf = nil
+	})
+	bot := mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 42, AccessHash: 7}).To_InputUser()
+	recipients := mtproto.MakeTLInputBusinessBotRecipients(&mtproto.InputBusinessBotRecipients{Contacts: true}).To_InputBusinessBotRecipients()
+	if _, err := UpdateConnectedBot(1, &mtproto.TLAccountUpdateConnectedBot{
+		Bot: bot, Recipients_INPUTBUSINESSBOTRECIPIENTS: recipients,
+	}); status.Convert(err).Message() != "BOT_BUSINESS_MISSING" {
+		t.Fatal(err)
+	}
+	real := mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 7, AccessHash: 1}).To_InputUser()
+	if _, err := UpdateConnectedBot(1, &mtproto.TLAccountUpdateConnectedBot{
+		Bot: real, Recipients_INPUTBUSINESSBOTRECIPIENTS: recipients,
+		Rights: mtproto.MakeTLBusinessBotRights(&mtproto.BusinessBotRights{Reply: true}).To_BusinessBotRights(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	settings := mtproto.MakeTLPeerSettings(&mtproto.PeerSettings{}).To_PeerSettings()
+	bar := ApplyBusinessBar(1, 9, settings)
+	if bar == nil || bar.GetBotInfoVersion() == nil || settings.GetBusinessBotId().GetValue() != 7 || settings.GetBusinessBotManageUrl().GetValue() == "" || !settings.GetBusinessBotCanReply() {
+		t.Fatalf("bar %#v settings %#v", bar, settings)
+	}
+	mustEncode(t, settings)
+	if _, err := ToggleConnectedBotPaused(1, peer, true); err != nil {
+		t.Fatal(err)
+	}
+	paused := mtproto.MakeTLPeerSettings(&mtproto.PeerSettings{}).To_PeerSettings()
+	if ApplyBusinessBar(1, 9, paused) == nil || !paused.GetBusinessBotPaused() || paused.GetBusinessBotCanReply() {
+		t.Fatalf("paused %#v", paused)
 	}
 }
 

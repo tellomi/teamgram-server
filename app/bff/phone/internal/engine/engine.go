@@ -70,20 +70,21 @@ type Bind struct {
 
 // Engine holds live calls. Push, history, and privacy hooks are optional.
 type Engine struct {
-	cfg     config.Config
-	relay   *relay.Reflector
-	media   *sfu.Server
-	push    func(Note)
-	onCall  func(CallEnd)
-	onGroup func(GroupEnd)
-	onBind  func(Bind)
-	onLive  func(LiveEnd)
-	allow   func(caller, callee int64) (call bool, p2p bool)
-	users   func(viewer int64, ids []int64) []*mtproto.User
-	chats   func(viewer int64, peerType int32, peerID int64) []*mtproto.Chat
-	members func(peerType int32, peerID int64) []int64
-	now     func() time.Time
-	after   func(time.Duration, func()) func()
+	cfg       config.Config
+	relay     *relay.Reflector
+	media     *sfu.Server
+	push      func(Note)
+	onCall    func(CallEnd)
+	onGroup   func(GroupEnd)
+	onBind    func(Bind)
+	onLive    func(LiveEnd)
+	allow     func(caller, callee int64) (call bool, p2p bool)
+	users     func(viewer int64, ids []int64) []*mtproto.User
+	chats     func(viewer int64, peerType int32, peerID int64) []*mtproto.Chat
+	members   func(peerType int32, peerID int64) []int64
+	mayManage func(viewer int64, peerType int32, peerID int64) bool
+	now       func() time.Time
+	after     func(time.Duration, func()) func()
 
 	mu       sync.Mutex
 	calls    map[int64]*call
@@ -135,8 +136,12 @@ type Options struct {
 	Users   func(viewer int64, ids []int64) []*mtproto.User
 	Chats   func(viewer int64, peerType int32, peerID int64) []*mtproto.Chat
 	Members func(peerType int32, peerID int64) []int64
-	Now     func() time.Time
-	After   func(time.Duration, func()) func()
+	// MayManage reports whether viewer may export the chat's call invite.
+	// groupTL calls it while e.mu is held, so it must not call back into
+	// the engine. Nil means only the call creator may see invite_link.
+	MayManage func(viewer int64, peerType int32, peerID int64) bool
+	Now       func() time.Time
+	After     func(time.Duration, func()) func()
 }
 
 func New(o Options) *Engine {
@@ -144,7 +149,7 @@ func New(o Options) *Engine {
 	e := &Engine{
 		cfg: cfg, relay: o.Relay, media: o.Media,
 		push: o.Push, onCall: o.OnCall, onGroup: o.OnGroup, onBind: o.OnBind, onLive: o.OnLive,
-		allow: o.Allow, users: o.Users, chats: o.Chats, members: o.Members,
+		allow: o.Allow, users: o.Users, chats: o.Chats, members: o.Members, mayManage: o.MayManage,
 		now: o.Now, after: o.After,
 		calls: map[int64]*call{}, byUser: map[int64]int64{}, byRandom: map[string]int64{},
 		groups: map[int64]*group{}, byPeer: map[string]int64{}, rtmpKeys: map[string]string{},
