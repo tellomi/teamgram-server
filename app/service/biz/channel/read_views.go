@@ -181,7 +181,7 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 // messages are not mentions of themselves.
 func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, offsetID, addOffset, limit, maxID, minID int32) (*mtproto.Messages_Messages, error) {
 	in := &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID}
-	ch, _, err := s.requireView(ctx, self, in)
+	ch, viewer, err := s.requireView(ctx, self, in)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,14 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 	if st == nil {
 		st = &ReadState{}
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	var viewerErr error
+	if viewer == nil {
+		viewer, viewerErr = s.store.GetParticipant(ctx, ch.ID, self)
+	}
 	floor := f.UserMinID[self]
 	if f.AvailableMinID > floor {
 		floor = f.AvailableMinID
@@ -219,6 +226,9 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 			continue
 		}
 		if maxID > 0 && stored.ID >= maxID {
+			continue
+		}
+		if prehistoryBlocks(f, viewer, stored, viewerErr) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)

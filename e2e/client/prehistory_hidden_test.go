@@ -54,7 +54,12 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 	ownerPeer := inputPeerChannel(groupID, groupHash)
 	secret := fmt.Sprintf("old-secret-proto-%d", time.Now().UnixNano())
-	oldID, err := owner.SendText(ctx, ownerPeer, secret, nil)
+	mention := mtproto.MakeTLMessageEntityMentionName(&mtproto.MessageEntity{
+		Offset:       0,
+		Length:       int32(len(secret)),
+		UserId_INT64: newbieID,
+	}).To_MessageEntity()
+	oldID, err := owner.SendText(ctx, ownerPeer, secret, []*mtproto.MessageEntity{mention})
 	if err != nil || oldID == 0 {
 		t.Fatalf("send secret id=%d err=%v", oldID, err)
 	}
@@ -196,45 +201,159 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 			t.Fatalf("channelDifferenceTooLong returned the pre-join body: %v", protoTexts(long.GetMessages()))
 		}
 		dlg := long.GetDialog()
-		t.Logf("tooLong dialog pts=%d top=%d read_inbox=%d (ids, not the body)", dlg.GetPts().GetValue(), dlg.GetTopMessage(), dlg.GetReadInboxMaxId())
+		if dlg.GetTopMessage() == oldID {
+			t.Fatalf("channelDifferenceTooLong dialog top is the hidden message %d", oldID)
+		}
+		t.Logf("tooLong dialog pts=%d top=%d read_inbox=%d (pts is the channel cursor, not a body)", dlg.GetPts().GetValue(), dlg.GetTopMessage(), dlg.GetReadInboxMaxId())
 	})
 
-	t.Run("member_read_error", func(t *testing.T) {
-		if prehistoryFault == nil {
-			t.Skip("member-row fault proxy is not attached; compose e2e does not prove this path")
+	t.Run("count_and_pin", func(t *testing.T) {
+		_, ownerCount := historyResultCtx(t, owner, ownerPeer)
+		hist, count := historyResultCtx(t, newbie, newbiePeer)
+		if textIn(hist, secret) {
+			t.Fatalf("getHistory page still has the pre-join body: %v", protoTexts(hist))
 		}
-		prehistoryFault.Arm(newbieID, 1)
-		hist, err := newbie.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+		if count != int32(len(hist)) {
+			t.Fatalf("getHistory count %d is not the visible page %d", count, len(hist))
+		}
+		if count >= ownerCount {
+			t.Fatalf("new member count %d is not below the owner's %d", count, ownerCount)
+		}
+		res, err := newbie.Invoke(ctx, &mtproto.TLMessagesGetHistory{
 			Constructor: mtproto.CRC32_messages_getHistory,
+			Peer:        newbiePeer,
+			OffsetId:    freshID,
+			Limit:       50,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if textIn(messagesOrEmpty(res), secret) {
+			t.Fatal("getHistory offset page returned the pre-join body")
+		}
+		full := channelFull(t, ctx, newbie, newbieCh)
+		if id := full.GetPinnedMsgId().GetValue(); id == oldID {
+			t.Fatalf("channelFull still names the hidden pin %d", id)
+		}
+		ownerFull := channelFull(t, ctx, owner, group)
+		if ownerFull.GetPinnedMsgId().GetValue() != oldID {
+			t.Fatalf("owner lost the pin, got %d", ownerFull.GetPinnedMsgId().GetValue())
+		}
+	})
+
+	t.Run("mentions", func(t *testing.T) {
+		ownerMsgs := channelMessages(t, owner, ctx, group, oldID)
+		if len(ownerMsgs) == 0 || len(ownerMsgs[0].GetEntities()) == 0 {
+			t.Fatal("mention entity was not stored on the pre-join message")
+		}
+		if _, err := db.Exec(`UPDATE channel_read_state SET read_inbox_max_id=0 WHERE channel_id=? AND user_id=?`, groupID, newbieID); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			_, _ = db.Exec(`UPDATE channel_read_state SET read_inbox_max_id=? WHERE channel_id=? AND user_id=?`, freshID, groupID, newbieID)
+		}()
+		res, err := newbie.Invoke(ctx, &mtproto.TLMessagesGetUnreadMentions{
+			Constructor: mtproto.CRC32_messages_getUnreadMentions_f107e790,
 			Peer:        newbiePeer,
 			Limit:       50,
 		})
-		prehistoryFault.Disarm()
-		if textIn(messagesOrEmpty(hist), secret) {
-			t.Fatalf("getHistory returned the body after a failed member read: %v\n%s", err, prehistoryFault.LogText())
-		}
-		if prehistoryFault.Fails() < 1 {
-			t.Fatalf("proxy did not fail a participant read during getHistory\n%s", prehistoryFault.LogText())
-		}
 		if err != nil {
-			t.Logf("getHistory failed closed with %v", err)
+			t.Fatal(err)
 		}
-		before := prehistoryFault.Fails()
-		prehistoryFault.Arm(newbieID, 1)
-		got, err := newbie.Invoke(ctx, &mtproto.TLChannelsGetMessages{
-			Constructor:           mtproto.CRC32_channels_getMessages_ad8c9a23,
-			Channel:               newbieCh,
-			Id_VECTORINPUTMESSAGE: inputMessageIDs(oldID),
-		})
-		prehistoryFault.Disarm()
-		if textIn(messagesOrEmpty(got), secret) {
-			t.Fatalf("channels.getMessages returned the body after a failed member read: %v\n%s", err, prehistoryFault.LogText())
+		if textIn(messagesOrEmpty(res), secret) {
+			t.Fatalf("getUnreadMentions returned the pre-join body: %v", protoTexts(messagesOrEmpty(res)))
 		}
-		if prehistoryFault.Fails() == before {
-			t.Fatalf("proxy did not fail a participant read during getMessages\n%s", prehistoryFault.LogText())
-		}
-		t.Logf("member read errors injected=%d last=%v", prehistoryFault.Fails(), err)
 	})
+
+	if prehistoryFault != nil {
+		t.Run("member_read_error", func(t *testing.T) {
+			prehistoryFault.Arm(newbieID, 1)
+			hist, err := newbie.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+				Constructor: mtproto.CRC32_messages_getHistory,
+				Peer:        newbiePeer,
+				Limit:       50,
+			})
+			prehistoryFault.Disarm()
+			if textIn(messagesOrEmpty(hist), secret) {
+				t.Fatalf("getHistory returned the body after a failed member read: %v\n%s", err, prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() < 1 {
+				t.Fatalf("proxy did not fail a participant read during getHistory\n%s", prehistoryFault.LogText())
+			}
+			if err != nil {
+				t.Logf("getHistory failed closed with %v", err)
+			}
+			before := prehistoryFault.Fails()
+			prehistoryFault.Arm(newbieID, 1)
+			got, err := newbie.Invoke(ctx, &mtproto.TLChannelsGetMessages{
+				Constructor:           mtproto.CRC32_channels_getMessages_ad8c9a23,
+				Channel:               newbieCh,
+				Id_VECTORINPUTMESSAGE: inputMessageIDs(oldID),
+			})
+			prehistoryFault.Disarm()
+			if textIn(messagesOrEmpty(got), secret) {
+				t.Fatalf("channels.getMessages returned the body after a failed member read: %v\n%s", err, prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() == before {
+				t.Fatalf("proxy did not fail a participant read during getMessages\n%s", prehistoryFault.LogText())
+			}
+			t.Logf("member read errors injected=%d last=%v", prehistoryFault.Fails(), err)
+			before = prehistoryFault.Fails()
+			prehistoryFault.Arm(newbieID, 1)
+			diff, err := channelDifference(ctx, newbie, newbieCh, 0, 100)
+			prehistoryFault.Disarm()
+			if textIn(differenceMessages(diff), secret) {
+				t.Fatalf("getChannelDifference returned the body after a failed member read: %v\n%s", err, prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() == before {
+				t.Fatalf("proxy did not fail a participant read during getChannelDifference\n%s", prehistoryFault.LogText())
+			}
+			before = prehistoryFault.Fails()
+			prehistoryFault.Arm(newbieID, 1)
+			found := searchMessages(t, newbie, ctx, newbiePeer, secret, mtproto.MakeTLInputMessagesFilterEmpty(nil).To_MessagesFilter())
+			prehistoryFault.Disarm()
+			if textIn(found, secret) {
+				t.Fatalf("messages.search returned the body after a failed member read\n%s", prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() == before {
+				t.Fatalf("proxy did not fail a participant read during messages.search\n%s", prehistoryFault.LogText())
+			}
+		})
+
+		t.Run("join_save_failure", func(t *testing.T) {
+			late, _ := dialPhone(t, ctx, cfg, "9996610914", "PreLate")
+			lateID, lateHash, err := owner.ImportPhone(ctx, "9996610914", "PreLate")
+			if err != nil {
+				t.Fatal(err)
+			}
+			prehistoryFault.ArmFeatureWrite()
+			err = owner.InviteToChannel(ctx, group, inputUser(lateID, lateHash))
+			prehistoryFault.Disarm()
+			if err == nil {
+				t.Fatal("invite succeeded while the join top could not be saved")
+			}
+			var state int
+			qerr := db.QueryRow(`SELECT state FROM channel_participants WHERE channel_id=? AND user_id=?`, groupID, lateID).Scan(&state)
+			if qerr == sql.ErrNoRows || (qerr == nil && state != 0) {
+				t.Logf("failed join left no active membership (%v state=%d)", qerr, state)
+				return
+			}
+			if qerr != nil {
+				t.Fatal(qerr)
+			}
+			res, herr := late.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+				Constructor: mtproto.CRC32_messages_getHistory,
+				Peer:        inputPeerChannel(groupID, groupHash),
+				Limit:       50,
+			})
+			if textIn(messagesOrEmpty(res), secret) {
+				t.Fatalf("failed join still returned the pre-join body: %v", protoTexts(messagesOrEmpty(res)))
+			}
+			if herr != nil {
+				t.Logf("history after failed join: %v", herr)
+			}
+		})
+	}
 
 	t.Run("promote_read_list", func(t *testing.T) {
 		editChannelAdmin(t, ctx, owner, group, newbieID, newbieHash, &mtproto.ChatAdminRights{ChangeInfo: true})
@@ -244,7 +363,9 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 		}
 		ids, n := readParticipantIDs(t, owner, ctx, ownerPeer, oldID)
 		if containsID(ids, newbieID) {
-			t.Fatalf("promotion listed the admin before readHistory: count=%d ids=%v", n, ids)
+			var raw []byte
+			_ = db.QueryRow(`SELECT data FROM channel_feature WHERE channel_id=?`, groupID).Scan(&raw)
+			t.Fatalf("promotion listed the admin before readHistory: count=%d ids=%v feature=%s", n, ids, raw)
 		}
 		if err = newbie.ReadChannelHistory(ctx, newbieCh, freshID); err != nil {
 			t.Fatal(err)

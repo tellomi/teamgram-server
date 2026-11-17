@@ -75,8 +75,8 @@ func TestPrehistoryBoundary(t *testing.T) {
 	if prehistHas(hist.Messages, "same-second-secret") || !prehistHas(hist.Messages, "same-second-open") {
 		t.Fatalf("getHistory texts %v", prehistTexts(hist.Messages))
 	}
-	if hist.Count <= int32(len(prehistTexts(hist.Messages))) {
-		t.Fatalf("history count %d is not the unfiltered residual", hist.Count)
+	if hist.Count != int32(len(hist.Messages)) {
+		t.Fatalf("history count %d is not the visible page %d", hist.Count, len(hist.Messages))
 	}
 	got, err := svc.GetMessages(ctx, boundNew, in, []int32{oldID, freshID})
 	if err != nil {
@@ -165,6 +165,55 @@ func TestPrehistoryBoundary(t *testing.T) {
 	}
 	if prehistoryBlocks(&Features{HiddenPrehistory: true}, nil, &StoredMessage{ID: 1, Date: same}, nil) {
 		t.Fatal("a nil member with no error should stay unchanged")
+	}
+}
+
+type failFeatures struct{ Store }
+
+func (f *failFeatures) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
+	return nil, errors.New("features read failed")
+}
+
+type failFeatureSave struct{ Store }
+
+func (f *failFeatureSave) SaveFeatures(ctx context.Context, channelID int64, feat *Features) error {
+	return errors.New("features save failed")
+}
+
+func TestReadHistoryDoesNotWipeHiddenPrehistory(t *testing.T) {
+	svc, ctx := newTest(t)
+	created, err := svc.Create(ctx, CreateRequest{CreatorID: boundOwner, Title: "Keep", Megagroup: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := created.Chats[0]
+	in := inCh(ch)
+	if _, err = svc.TogglePreHistory(ctx, boundOwner, 0, in, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.Send(ctx, boundOwner, ch.Id, 0, []Outgoing{{RandomID: 910177099, Message: &mtproto.Message{Message: "keep-secret", Date: 1_700_000_100}}}); err != nil {
+		t.Fatal(err)
+	}
+	base := svc.store
+	svc.store = &failFeatures{Store: base}
+	err = svc.ReadHistory(ctx, boundOwner, in, 1)
+	svc.store = base
+	if err == nil {
+		t.Fatal("readHistory saved after a failed feature read")
+	}
+	got, err := svc.mutableFeatures(ctx, ch.Id)
+	if err != nil || !got.HiddenPrehistory {
+		t.Fatalf("hidden flag after failed read: %+v %v", got, err)
+	}
+	svc.store = &failFeatureSave{Store: base}
+	err = svc.noteJoinBoundary(ctx, ch.Id, boundNew, 1)
+	svc.store = base
+	if err == nil {
+		t.Fatal("join top save failure was ignored")
+	}
+	got, err = svc.mutableFeatures(ctx, ch.Id)
+	if err != nil || !got.HiddenPrehistory {
+		t.Fatalf("hidden flag after failed join-top save: %+v %v", got, err)
 	}
 }
 

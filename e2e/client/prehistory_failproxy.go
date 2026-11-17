@@ -41,11 +41,13 @@ type participantFaultProxy struct {
 	ln       net.Listener
 	done     chan struct{}
 
-	mu        sync.Mutex
-	armedUser int64
-	allow     int
-	fails     int
-	lines     []string
+	mu            sync.Mutex
+	armedUser     int64
+	allow         int
+	failFeatRead  bool
+	failFeatWrite bool
+	fails         int
+	lines         []string
 }
 
 func startParticipantFaultProxy(upstream string) (*participantFaultProxy, error) {
@@ -89,6 +91,22 @@ func (p *participantFaultProxy) Disarm() {
 	p.mu.Lock()
 	p.armedUser = 0
 	p.allow = 0
+	p.failFeatRead = false
+	p.failFeatWrite = false
+	p.mu.Unlock()
+}
+
+// ArmFeatureRead fails the next SELECT of channel_feature.
+func (p *participantFaultProxy) ArmFeatureRead() {
+	p.mu.Lock()
+	p.failFeatRead = true
+	p.mu.Unlock()
+}
+
+// ArmFeatureWrite fails the next INSERT/UPDATE of channel_feature.
+func (p *participantFaultProxy) ArmFeatureWrite() {
+	p.mu.Lock()
+	p.failFeatWrite = true
 	p.mu.Unlock()
 }
 
@@ -163,6 +181,21 @@ func (p *participantFaultProxy) serve(client net.Conn) {
 			if err = writeMySQLPacket(server, seq, payload); err != nil {
 				return
 			}
+		case cmdQuery:
+			sqlText := string(payload[1:])
+			if p.failQuery(sqlText) {
+				if err = writeMySQLPacket(client, seq+1, mysqlErrorPacket(1105, "channel_feature read failed")); err != nil {
+					return
+				}
+				continue
+			}
+			if err = writeMySQLPacket(server, seq, payload); err != nil {
+				return
+			}
+			if err = forwardResult(server, client); err != nil {
+				p.note("query result: %v", err)
+				return
+			}
 		case cmdStmtPrepare:
 			sqlText := string(payload[1:])
 			if err = writeMySQLPacket(server, seq, payload); err != nil {
@@ -173,18 +206,24 @@ func (p *participantFaultProxy) serve(client net.Conn) {
 				p.note("prepare: %v", perr)
 				return
 			}
-			meta := stmtMeta{params: params, participant: isParticipantSQL(sqlText)}
-			st[id] = meta
-			if meta.participant {
-				p.note("prepare participant stmt=%d params=%d cols=%d", id, params, cols)
+			meta := stmtMeta{
+				params:       params,
+				participant:  isParticipantSQL(sqlText),
+				featureRead:  isFeatureReadSQL(sqlText),
+				featureWrite: isFeatureWriteSQL(sqlText),
 			}
+			st[id] = meta
+			if meta.featureRead || meta.featureWrite {
+				p.note("prepare feature stmt=%d read=%v write=%v", id, meta.featureRead, meta.featureWrite)
+			}
+			_ = cols
 		case cmdStmtExecute:
 			if len(payload) < 5 {
 				return
 			}
 			id := binary.LittleEndian.Uint32(payload[1:5])
 			meta := st[id]
-			if meta.participant && p.failThis(payload, meta) {
+			if p.failStatement(payload, meta) {
 				if err = writeMySQLPacket(client, seq+1, mysqlErrorPacket(1105, "participant read failed")); err != nil {
 					return
 				}
@@ -210,8 +249,68 @@ func (p *participantFaultProxy) serve(client net.Conn) {
 }
 
 type stmtMeta struct {
-	params      int
-	participant bool
+	params       int
+	participant  bool
+	featureRead  bool
+	featureWrite bool
+}
+
+func truncateSQL(q string) string {
+	q = strings.Join(strings.Fields(q), " ")
+	if len(q) > 160 {
+		return q[:160]
+	}
+	return q
+}
+
+func isFeatureReadSQL(q string) bool {
+	s := strings.ToLower(q)
+	return strings.Contains(s, "from channel_feature") && strings.Contains(s, "select")
+}
+
+func isFeatureWriteSQL(q string) bool {
+	s := strings.ToLower(q)
+	return strings.Contains(s, "channel_feature") && (strings.Contains(s, "insert") || strings.Contains(s, "update"))
+}
+
+func (p *participantFaultProxy) failQuery(sqlText string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failFeatRead && isFeatureReadSQL(sqlText) {
+		p.fails++
+		p.lines = append(p.lines, "fail channel_feature query")
+		return true
+	}
+	if p.failFeatWrite && isFeatureWriteSQL(sqlText) {
+		p.failFeatWrite = false
+		p.fails++
+		p.lines = append(p.lines, "fail channel_feature query write")
+		return true
+	}
+	return false
+}
+
+func (p *participantFaultProxy) failStatement(payload []byte, meta stmtMeta) bool {
+	if meta.featureRead || meta.featureWrite {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if meta.featureRead && p.failFeatRead {
+			p.fails++
+			p.lines = append(p.lines, "fail channel_feature read")
+			return true
+		}
+		if meta.featureWrite && p.failFeatWrite {
+			p.failFeatWrite = false
+			p.fails++
+			p.lines = append(p.lines, "fail channel_feature write")
+			return true
+		}
+		return false
+	}
+	if !meta.participant {
+		return false
+	}
+	return p.failThis(payload, meta)
 }
 
 func (p *participantFaultProxy) failThis(payload []byte, meta stmtMeta) bool {

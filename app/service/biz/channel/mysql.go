@@ -812,7 +812,7 @@ func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Feature
 	}
 	f := &Features{}
 	if err := json.Unmarshal(data, f); err != nil {
-		return &Features{}, nil
+		return nil, err
 	}
 	return f, nil
 }
