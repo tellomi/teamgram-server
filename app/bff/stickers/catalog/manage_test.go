@@ -210,17 +210,18 @@ func TestManageStickersAndGifs(t *testing.T) {
 	gif.FileName = "loop.gif"
 	webp := stickerItem(9002, "x", false)
 	gs := newService([]*Pack{newPack("Gifs", "Gifs", KindSticker, false, false, false, false, "", "", "", []*Item{gif, webp})})
-	if err = gs.SaveGif(user, inputItem(gif), false); err != nil {
+	if _, err = gs.SaveGif(user, inputItem(gif), false); err != nil {
 		t.Fatal(err)
 	}
 	saved := gs.SavedGifs(user, 0)
-	if len(saved.GetGifs()) != 1 || saved.GetGifs()[0].GetId() != gif.DocumentID {
-		t.Fatalf("gifs %#v", saved.GetGifs())
+	bundled := len(BundledGifs(0).GetGifs())
+	if len(saved.GetGifs()) != bundled+1 || saved.GetGifs()[0].GetId() != gif.DocumentID {
+		t.Fatalf("gifs %d, want saved plus %d defaults", len(saved.GetGifs()), bundled)
 	}
 	if again := gs.SavedGifs(user, saved.GetHash()); again.GetPredicateName() != mtproto.Predicate_messages_savedGifsNotModified {
 		t.Fatalf("gif hash %s", again.GetPredicateName())
 	}
-	if err = gs.SaveGif(user, inputItem(gif), true); err != nil {
+	if _, err = gs.SaveGif(user, inputItem(gif), true); err != nil {
 		t.Fatal(err)
 	}
 	cleared := gs.SavedGifs(user, 0)
@@ -232,10 +233,10 @@ func TestManageStickersAndGifs(t *testing.T) {
 			t.Fatal("unsaved gif is still listed")
 		}
 	}
-	if err = gs.SaveGif(user, inputItem(webp), false); err != mtproto.ErrGifContentTypeInvalid {
+	if _, err = gs.SaveGif(user, inputItem(webp), false); err != mtproto.ErrGifContentTypeInvalid {
 		t.Fatalf("webp gif: %v", err)
 	}
-	if err = gs.SaveGif(user, mtproto.MakeTLInputDocument(&mtproto.InputDocument{}).To_InputDocument(), false); err != mtproto.ErrGifIdInvalid {
+	if _, err = gs.SaveGif(user, mtproto.MakeTLInputDocument(&mtproto.InputDocument{}).To_InputDocument(), false); err != mtproto.ErrGifIdInvalid {
 		t.Fatalf("missing gif: %v", err)
 	}
 }

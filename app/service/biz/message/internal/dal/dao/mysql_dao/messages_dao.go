@@ -624,6 +624,27 @@ func (dao *MessagesDAO) SelectPeerUserMessage(ctx context.Context, peerId int64,
 	return
 }
 
+// SelectPeerUserMessageIncludingDeleted maps a box id to the other user's
+// box id even after both copies were revoked. SelectPeerUserMessage requires
+// deleted = 0, so a reply to a deleted message lost its header on the way in.
+func (dao *MessagesDAO) SelectPeerUserMessageIncludingDeleted(ctx context.Context, peerId int64, userId int64, userMessageBoxId int32) (rValue *dataobject.MessagesDO, err error) {
+	var (
+		query = "select user_message_box_id, sender_user_id from " + dao.CalcTableName(peerId) + " where user_id = ? and dialog_message_id = (select dialog_message_id from " + dao.CalcTableName(userId) + " where user_id = ? and user_message_box_id = ? and dialog_message_id <> 0 limit 1) limit 1"
+		do    = &dataobject.MessagesDO{}
+	)
+	err = dao.db.QueryRowPartial(ctx, do, query, peerId, userId, userMessageBoxId)
+	if err != nil {
+		if !errors.Is(err, sqlx.ErrNotFound) {
+			logx.WithContext(ctx).Errorf("queryx in SelectPeerUserMessageIncludingDeleted(_), error: %v", err)
+			return
+		}
+		err = nil
+		return
+	}
+	rValue = do
+	return
+}
+
 // SelectDialogLastMessageId
 // select user_message_box_id from messages where user_id = :user_id and dialog_id1 = :dialog_id1 and dialog_id2 = :dialog_id2 and deleted = 0 order by user_message_box_id desc limit 1
 func (dao *MessagesDAO) SelectDialogLastMessageId(ctx context.Context, userId int64, dialogId1 int64, dialogId2 int64) (rValue int32, err error) {

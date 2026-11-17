@@ -2460,6 +2460,10 @@ var (
 	// | 403 | CHAT_SEND_POLL_FORBIDDEN | You can't send polls in this chat. |
 	ErrChatSendPollForbidden = status.Error(ErrForbidden, "CHAT_SEND_POLL_FORBIDDEN")
 
+	// ErrChatSendReactionsForbidden
+	// | 403 | CHAT_SEND_REACTIONS_FORBIDDEN | You can't send reactions in this chat. |
+	ErrChatSendReactionsForbidden = status.Error(ErrForbidden, "CHAT_SEND_REACTIONS_FORBIDDEN")
+
 	// ErrChatSendVideosForbidden
 	// | 403 | CHAT_SEND_VIDEOS_FORBIDDEN | You can't send videos in this chat. |
 	ErrChatSendVideosForbidden = status.Error(ErrForbidden, "CHAT_SEND_VIDEOS_FORBIDDEN")

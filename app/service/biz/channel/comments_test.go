@@ -62,6 +62,10 @@ func TestChannelCommentsMirrorAndGuestReply(t *testing.T) {
 		t.Fatalf("forward from %#v", root.GetFromId())
 	}
 
+	view := svc.ChatFor(ctx, 1, mustChannel(t, svc, ctx, group.Id))
+	if view.GetJoinToSend() {
+		t.Fatal("join_to_send defaulted on")
+	}
 	guest := int64(9)
 	comment, err := svc.Send(ctx, guest, group.Id, 0, []Outgoing{{
 		RandomID: 2,
@@ -346,6 +350,59 @@ func TestChannelCommentsDisabledByDefault(t *testing.T) {
 		Message:  &mtproto.Message{PredicateName: mtproto.Predicate_message, Message: "nope", Date: 11},
 	}}); status.Convert(err).Message() != "CHANNEL_PRIVATE" {
 		t.Fatalf("flag off guest send: %v", err)
+	}
+}
+
+func TestJoinToSendBlocksGuestComments(t *testing.T) {
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
+	svc, ctx := newTest(t)
+	broadcast, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "News", Broadcast: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelChat := broadcast.Chats[0]
+	channelIn := inCh(channelChat)
+	if _, err := svc.UpdateUsername(ctx, 1, 0, channelIn, "newssend"); err != nil {
+		t.Fatal(err)
+	}
+	group := megagroup(t, svc, ctx, "Talk2")
+	if err := svc.SetDiscussionGroup(ctx, 1, 0, channelIn, inCh(group)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ToggleJoinToSend(ctx, 1, 0, inCh(group), true); err != nil {
+		t.Fatal(err)
+	}
+	shown := svc.ChatFor(ctx, 1, mustChannel(t, svc, ctx, group.Id))
+	if !shown.GetJoinToSend() {
+		t.Fatal("channel.join_to_send was not set")
+	}
+	sent, err := svc.Send(ctx, 1, channelChat.Id, 0, []Outgoing{{
+		RandomID: 1,
+		Message:  &mtproto.Message{PredicateName: mtproto.Predicate_message, Message: "post", Date: 10},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := sent.Updates[0].GetMessage_MESSAGE()
+	disc, err := svc.DiscussionMessage(ctx, 9, channelChat.Id, post.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := forwardedPost(disc.GetMessages(), channelChat.Id, post.GetId())
+	if root == nil {
+		t.Fatal("no discussion root")
+	}
+	_, err = svc.Send(ctx, 9, group.Id, 0, []Outgoing{{
+		RandomID: 2,
+		Message: &mtproto.Message{
+			PredicateName: mtproto.Predicate_message,
+			Message:       "guest",
+			Date:          11,
+			ReplyTo:       mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{ReplyToMsgId: root.GetId(), ReplyToMsgId_INT32: root.GetId()}).To_MessageReplyHeader(),
+		},
+	}})
+	if status.Convert(err).Message() != "CHAT_GUEST_SEND_FORBIDDEN" {
+		t.Fatalf("guest comment: %v", err)
 	}
 }
 

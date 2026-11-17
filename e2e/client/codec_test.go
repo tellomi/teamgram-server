@@ -113,3 +113,30 @@ func TestDeadlockIsRetried(t *testing.T) {
 		t.Fatal("non-500 deadlock was retried")
 	}
 }
+
+func TestDecodeSearchCounterVector(t *testing.T) {
+	row := mtproto.MakeTLMessagesSearchCounter(&mtproto.Messages_SearchCounter{
+		Filter: mtproto.MakeTLInputMessagesFilterPhotos(&mtproto.MessagesFilter{}).To_MessagesFilter(),
+		Count:  3,
+	}).To_Messages_SearchCounter()
+	body := mtproto.NewEncodeBuf(128)
+	if err := row.Encode(body, layer); err != nil {
+		t.Fatal(err)
+	}
+	raw := body.GetBuf()
+	out := make([]byte, 8+len(raw))
+	binary.LittleEndian.PutUint32(out[0:4], crcVector)
+	binary.LittleEndian.PutUint32(out[4:8], 1)
+	copy(out[8:], raw)
+	obj, err := decodeTL(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vec, ok := obj.(*tlVector)
+	if !ok || len(vec.Counters) != 1 || vec.Counters[0].GetCount() != 3 {
+		t.Fatalf("decoded %#v", obj)
+	}
+	if mtproto.FromMessagesFilter(vec.Counters[0].GetFilter()) != mtproto.FilterPhotos {
+		t.Fatalf("filter %v", vec.Counters[0].GetFilter())
+	}
+}

@@ -226,9 +226,8 @@ func startProxyGateway(t *testing.T, proto, cidr string, require bool) *proxyGat
 		t.Fatal(err)
 	}
 	pipe := clientpipe.Open(rds)
-	plain := freePort(t)
-	proxy := freePort(t)
-	ppv1Port := freePort(t)
+	ports := freePorts(t, 3)
+	plain, proxy, ppv1Port := ports[0], ports[1], ports[2]
 	var requirePtr *bool
 	if !require {
 		f := false

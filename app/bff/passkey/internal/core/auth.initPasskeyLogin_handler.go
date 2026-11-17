@@ -15,5 +15,5 @@ func (c *PasskeyCore) AuthInitPasskeyLogin(in *mtproto.TLAuthInitPasskeyLogin) (
 	if in == nil {
 		return nil, mtproto.ErrApiIdInvalid
 	}
-	return accountrest.InitPasskeyLogin(in.GetApiId(), in.GetApiHash())
+	return accountrest.InitPasskeyLogin(in.GetApiId(), in.GetApiHash(), c.permAuthKey())
 }

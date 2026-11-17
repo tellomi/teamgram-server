@@ -9,6 +9,7 @@ package core
 import (
 	"context"
 	"math/rand"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
@@ -20,29 +21,53 @@ import (
 	mediapb "github.com/teamgram/teamgram-server/app/service/media/media"
 	"github.com/teamgram/teamgram-server/pkg/livephoto"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
+
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+// outgoingTopicID is the forum topic a send clears when clear_draft is set.
+// The official flag is reply_to.top_msg_id. Zero clears the dialog draft only.
+func outgoingTopicID(reply *mtproto.InputReplyTo, top *wrapperspb.Int32Value) int32 {
+	if top != nil && top.GetValue() > 0 {
+		return top.GetValue()
+	}
+	return dialog.InputTopicID(reply)
+}
+
 // draft
-func (c *MessagesCore) doClearDraft(ctx context.Context, userId int64, authKeyId int64, peer *mtproto.PeerUtil) {
-	rV, _ := c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(ctx, &dialog.TLDialogClearDraftMessage{
-		UserId:   c.MD.UserId,
-		PeerType: peer.PeerType,
-		PeerId:   peer.PeerId,
-	})
+func (c *MessagesCore) doClearDraft(ctx context.Context, userId int64, authKeyId int64, peer *mtproto.PeerUtil, top int32) {
+	var (
+		rV    *mtproto.Bool
+		draft *mtproto.DraftMessage
+	)
+	if top > 0 {
+		draft = mtproto.MakeTLDraftMessageEmpty(&mtproto.DraftMessage{
+			Date_FLAGINT32: mtproto.MakeFlagsInt32(int32(time.Now().Unix())),
+		}).To_DraftMessage()
+		dialog.EnsureTopicReply(draft, top)
+		rV, _ = c.svcCtx.Dao.DialogClient.DialogSaveDraftMessage(ctx, &dialog.TLDialogSaveDraftMessage{
+			UserId:   userId,
+			PeerType: peer.PeerType,
+			PeerId:   peer.PeerId,
+			Message:  draft,
+		})
+	} else {
+		rV, _ = c.svcCtx.Dao.DialogClient.DialogClearDraftMessage(ctx, &dialog.TLDialogClearDraftMessage{
+			UserId:   userId,
+			PeerType: peer.PeerType,
+			PeerId:   peer.PeerId,
+		})
+		draft = mtproto.MakeTLDraftMessageEmpty(nil).To_DraftMessage()
+	}
 
 	// ClearDraft
 	if mtproto.FromBool(rV) {
-		updateDraftMessage := mtproto.MakeTLUpdateDraftMessage(&mtproto.Update{
-			Peer_PEER: peer.ToPeer(),
-			Draft:     mtproto.MakeTLDraftMessageEmpty(nil).To_DraftMessage(),
-		}).To_Update()
-
 		c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(
 			ctx,
 			&sync.TLSyncUpdatesNotMe{
 				UserId:        userId,
 				PermAuthKeyId: authKeyId,
-				Updates:       mtproto.MakeUpdatesByUpdates(updateDraftMessage),
+				Updates:       mtproto.MakeUpdatesByUpdates(dialog.DraftUpdate(peer.ToPeer(), draft)),
 			})
 	}
 }
@@ -214,14 +239,10 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 			VenueId:   venue.GetVenueId(),
 			VenueType: venue.GetVenueType(),
 		}).To_MessageMedia()
-	case mtproto.Predicate_inputMediaPhotoExternal:
-		// inputMediaPhotoExternal#e5bbfe1a flags:# url:string ttl_seconds:flags.0?int = InputMedia;
-
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
-	case mtproto.Predicate_inputMediaDocumentExternal:
-		// TODO(@benqi): MessageMedia???
-		// inputMediaDocumentExternal#fb52dc99 flags:# url:string ttl_seconds:flags.0?int = InputMedia;
-		messageMedia = mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia()
+	case mtproto.Predicate_inputMediaPhotoExternal, mtproto.Predicate_inputMediaDocumentExternal:
+		// Remote URLs are not fetched. Accepting them used to store
+		// messageMediaUnsupported on both sides.
+		return nil, mtproto.ErrMediaInvalid
 	case mtproto.Predicate_inputMediaGame:
 		// inputMediaGame#d33f43f3 id:InputGame = InputMedia;
 
@@ -235,9 +256,12 @@ func (c *MessagesCore) makeMediaByInputMedia(media *mtproto.InputMedia) (message
 	case mtproto.Predicate_inputMediaGeoLive:
 		// inputMediaGeoLive#971fa843 flags:# stopped:flags.0?true geo_point:InputGeoPoint heading:flags.2?int period:flags.1?int proximity_notification_radius:flags.3?int = InputMedia;
 
+		live := media.To_InputMediaGeoLive()
 		messageMedia = mtproto.MakeTLMessageMediaGeoLive(&mtproto.MessageMedia{
-			Geo:    mtproto.MakeGeoPointByInput(media.To_InputMediaGeoLive().GetGeoPoint()),
-			Period: media.To_InputMediaGeoLive().GetPeriod().GetValue(),
+			Geo:                         mtproto.MakeGeoPointByInput(live.GetGeoPoint()),
+			Heading:                     live.GetHeading(),
+			Period:                      live.GetPeriod().GetValue(),
+			ProximityNotificationRadius: live.GetProximityNotificationRadius(),
 		}).To_MessageMedia()
 	case mtproto.Predicate_inputMediaPoll:
 		// inputMediaPoll#f94e5f1 flags:# poll:Poll correct_answers:flags.0?Vector<bytes> solution:flags.1?string solution_entities:flags.1?Vector<MessageEntity> = InputMedia;

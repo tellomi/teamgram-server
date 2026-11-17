@@ -7,7 +7,9 @@
 package mtproto
 
 import (
+	"net/url"
 	"sort"
+	"strings"
 )
 
 // UTF16Len returns the length of s in UTF-16 code units, which is the unit
@@ -25,6 +27,31 @@ func utf16Units(r rune) int {
 		return 2
 	}
 	return 1
+}
+
+// textURLAllowed drops messageEntityTextUrl values whose scheme is not one
+// Telegram keeps (http, https, tg, ton). javascript: and other schemes are
+// removed instead of being forwarded to the recipient.
+func textURLAllowed(e *MessageEntity) bool {
+	if e == nil || entityTypeName(e) != Predicate_messageEntityTextUrl {
+		return true
+	}
+	return allowedTextURL(e.GetUrl())
+}
+
+func allowedTextURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return parsed.Host != ""
+	case "tg", "ton":
+		return parsed.Host != "" || parsed.Opaque != "" || parsed.Path != ""
+	default:
+		return false
+	}
 }
 
 // entityInRange reports whether e covers a non-empty span inside a text of
@@ -104,7 +131,7 @@ func SanitizeMessageEntities(text string, entities []*MessageEntity) []*MessageE
 	kept := make([]*MessageEntity, 0, len(entities))
 	seen := make(map[entityIdentity]struct{}, len(entities))
 	for _, entity := range entities {
-		if !entityInRange(entity, n) {
+		if !entityInRange(entity, n) || !textURLAllowed(entity) {
 			continue
 		}
 		key := entityKey(entity)

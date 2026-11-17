@@ -9,6 +9,22 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+func TestTextTokensAreIndependent(t *testing.T) {
+	if !TextHasEveryToken("Quick brown Fox", "fox quick") {
+		t.Fatal("order should not matter")
+	}
+	if TextHasEveryToken("Quick brown Fox", "fox weather") {
+		t.Fatal("missing word matched")
+	}
+	got := likeTokens("fox quick")
+	if len(got) != 2 || got[0] != "%fox%" || got[1] != "%quick%" {
+		t.Fatalf("tokens %#v", got)
+	}
+	if !strings.Contains(textTokenWhere(2), " AND ") {
+		t.Fatal(textTokenWhere(2))
+	}
+}
+
 func TestLikeSubstringEscapesAndGlobalSQLIsCaseInsensitive(t *testing.T) {
 	if got := likeSubstring(`Hello`); got != `%Hello%` {
 		t.Fatalf("plain %s", got)
@@ -16,7 +32,7 @@ func TestLikeSubstringEscapesAndGlobalSQLIsCaseInsensitive(t *testing.T) {
 	if got := likeSubstring(`100%_a\b`); got != `%100\%\_a\\b%` {
 		t.Fatalf("escaped %s", got)
 	}
-	sql := searchGlobalTextSelect + searchGlobalTextCursor + searchGlobalTextOrder
+	sql := searchGlobalTextSelect + textTokenWhere(2) + searchGlobalTextCursor + searchGlobalTextOrder
 	if !strings.Contains(sql, "utf8mb4_unicode_ci") {
 		t.Fatal("search must ignore case")
 	}
