@@ -149,6 +149,9 @@ func (f repliesUserFake) UserBlockPeer(_ context.Context, in *user.TLUserBlockPe
 type repliesOutFake struct{ deleted *[]int32 }
 
 func (f repliesOutFake) MsgDeleteMessages(_ context.Context, in *msg.TLMsgDeleteMessages) (*mtproto.Messages_AffectedMessages, error) {
+	if in.GetPeerType() != mtproto.PEER_EMPTY || in.GetPeerId() != 0 || in.GetRevoke() {
+		return nil, mtproto.ErrPeerIdInvalid
+	}
 	*f.deleted = append([]int32{}, in.GetId()...)
 	return &mtproto.Messages_AffectedMessages{}, nil
 }
