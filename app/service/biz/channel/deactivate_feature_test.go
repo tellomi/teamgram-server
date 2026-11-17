@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -14,9 +15,11 @@ import (
 
 type featureGate struct {
 	Store
-	getErr      error
-	saveFeatErr error
-	saveChErr   error
+	getErr       error
+	saveFeatErr  error
+	saveChErr    error
+	saveN        int
+	failSaveFrom int
 }
 
 func (g *featureGate) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
@@ -27,6 +30,10 @@ func (g *featureGate) GetFeatures(ctx context.Context, channelID int64) (*Featur
 }
 
 func (g *featureGate) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
+	g.saveN++
+	if g.failSaveFrom > 0 && g.saveN >= g.failSaveFrom {
+		return errors.New("feature restore down")
+	}
 	if g.saveFeatErr != nil {
 		return g.saveFeatErr
 	}
@@ -63,7 +70,7 @@ func TestDeactivateKeepsColorWhenFeatureReadFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate.getErr = errors.New("feature read down")
-	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in); err == nil {
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, nil); err == nil {
 		t.Fatal("read failure returned success")
 	}
 	gate.getErr = nil
@@ -101,7 +108,7 @@ func TestDeactivateKeepsFeatureRowWhenSaveFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate.saveFeatErr = errors.New("feature save down")
-	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in); err == nil {
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, nil); err == nil {
 		t.Fatal("save failure returned success")
 	}
 	gate.saveFeatErr = nil
@@ -135,7 +142,7 @@ func TestDeactivateRestoresFeaturesWhenChannelSaveFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	gate.saveChErr = errors.New("channel save down")
-	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in); err == nil {
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, nil); err == nil {
 		t.Fatal("channel save failure returned success")
 	}
 	gate.saveChErr = nil
@@ -151,6 +158,142 @@ func TestDeactivateRestoresFeaturesWhenChannelSaveFails(t *testing.T) {
 	got, err := svc.GetChannels(ctx, 1, []*mtproto.InputChannel{in})
 	if err != nil || got.Chats[0].GetUsername().GetValue() != "roomname" {
 		t.Fatalf("channel username %+v %v", got.GetChats(), err)
+	}
+}
+
+type recordedIndex struct {
+	hits int
+	gone map[string]bool
+	err  error
+}
+
+func (r *recordedIndex) drop(_ context.Context, _ int64, names []string) error {
+	r.hits++
+	if r.err != nil {
+		return r.err
+	}
+	if r.gone == nil {
+		r.gone = map[string]bool{}
+	}
+	for _, name := range names {
+		r.gone[name] = true
+	}
+	return nil
+}
+
+func (r *recordedIndex) contactsResolve(name string) bool {
+	return r.gone == nil || !r.gone[name]
+}
+
+func TestDeactivateDoesNotTouchIndexBeforeAuth(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Room")
+	in := inCh(ch)
+	if _, err := svc.UpdateUsername(ctx, 1, 0, in, "roomname"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Invite(ctx, 1, 0, in, []int64{2, 3, 5}, nil); err != nil {
+		t.Fatal(err)
+	}
+	banOnly := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{BanUsers: true}).To_ChatAdminRights()
+	if _, err := svc.EditAdmin(ctx, 1, 0, in, 3, banOnly, ""); err != nil {
+		t.Fatal(err)
+	}
+	info := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{ChangeInfo: true}).To_ChatAdminRights()
+	if _, err := svc.EditAdmin(ctx, 1, 0, in, 5, info, ""); err != nil {
+		t.Fatal(err)
+	}
+	idx := &recordedIndex{}
+	for _, userID := range []int64{2, 9, 3} {
+		if _, err := svc.DeactivateAllUsernames(ctx, userID, 0, in, idx.drop); err == nil {
+			t.Fatalf("user %d deactivated", userID)
+		}
+	}
+	if idx.hits != 0 {
+		t.Fatalf("index writes before auth: %d", idx.hits)
+	}
+	if _, err := svc.ResolveUsername(ctx, 1, "roomname"); err != nil || !idx.contactsResolve("roomname") {
+		t.Fatal("name stopped resolving before an authorized deactivate")
+	}
+	if _, err := svc.DeactivateAllUsernames(ctx, 5, 0, in, idx.drop); err != nil {
+		t.Fatal(err)
+	}
+	if idx.hits != 1 || idx.contactsResolve("roomname") {
+		t.Fatalf("change_info index hits=%d still=%v", idx.hits, idx.contactsResolve("roomname"))
+	}
+	if _, err := svc.ResolveUsername(ctx, 1, "roomname"); err == nil {
+		t.Fatal("change_info deactivate left the channel username resolvable")
+	}
+
+	other := megagroup(t, svc, ctx, "Other")
+	otherIn := inCh(other)
+	if _, err := svc.UpdateUsername(ctx, 1, 0, otherIn, "othername"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, otherIn, idx.drop); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveUsername(ctx, 1, "othername"); err == nil || idx.contactsResolve("othername") {
+		t.Fatal("creator deactivate left a resolvable name")
+	}
+}
+
+func TestDeactivateIndexDeletedChannelColumnRemainsOnFeatureSaveError(t *testing.T) {
+	mem := NewMemoryStore()
+	gate := &featureGate{Store: mem}
+	svc := New(gate)
+	ctx := context.Background()
+	ch := megagroup(t, svc, ctx, "Room")
+	in := inCh(ch)
+	if _, err := svc.UpdateUsername(ctx, 1, 0, in, "roomname"); err != nil {
+		t.Fatal(err)
+	}
+	idx := &recordedIndex{}
+	gate.saveFeatErr = errors.New("feature save down")
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, idx.drop); err == nil {
+		t.Fatal("feature save failure returned success")
+	}
+	if idx.contactsResolve("roomname") {
+		t.Fatal("contacts index still resolves")
+	}
+	if _, err := svc.ResolveUsername(ctx, 1, "roomname"); err != nil {
+		t.Fatalf("channel column resolve failed while the RPC failed: %v", err)
+	}
+	gate.saveFeatErr = nil
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, idx.drop); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveUsername(ctx, 1, "roomname"); err == nil || idx.contactsResolve("roomname") {
+		t.Fatal("retry left a resolvable name")
+	}
+}
+
+func TestDeactivateFeatureRestoreFailureStaysAnError(t *testing.T) {
+	mem := NewMemoryStore()
+	gate := &featureGate{Store: mem}
+	svc := New(gate)
+	ctx := context.Background()
+	ch := megagroup(t, svc, ctx, "Room")
+	in := inCh(ch)
+	if _, err := svc.UpdateUsername(ctx, 1, 0, in, "roomname"); err != nil {
+		t.Fatal(err)
+	}
+	gate.failSaveFrom = gate.saveN + 2
+	gate.saveChErr = errors.New("channel save down")
+	_, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, nil)
+	if err == nil || !strings.Contains(err.Error(), "channel save") || !strings.Contains(err.Error(), "feature restore") {
+		t.Fatalf("double failure: %v", err)
+	}
+	if _, err = svc.ResolveUsername(ctx, 1, "roomname"); err != nil {
+		t.Fatalf("channel column lost while both saves failed: %v", err)
+	}
+	gate.saveChErr = nil
+	gate.failSaveFrom = 0
+	if _, err = svc.DeactivateAllUsernames(ctx, 1, 0, in, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.ResolveUsername(ctx, 1, "roomname"); err == nil {
+		t.Fatal("retry left the channel username resolvable")
 	}
 }
 

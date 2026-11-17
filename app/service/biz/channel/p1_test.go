@@ -43,7 +43,7 @@ func TestUsernamesColorEmojiAndPaid(t *testing.T) {
 	if _, err := svc.ReorderUsernames(ctx, 1, 0, in, []string{"roomname"}); err == nil {
 		t.Fatal("identical order accepted")
 	}
-	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in); err != nil {
+	if _, err := svc.DeactivateAllUsernames(ctx, 1, 0, in, nil); err != nil {
 		t.Fatal(err)
 	}
 	full, err := svc.GetFullChannel(ctx, 1, in)

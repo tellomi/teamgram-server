@@ -81,34 +81,9 @@ func deleteChannelUsernameIndex(ctx context.Context, users channelUsernameIndex,
 
 func (s FragmentService) ChannelsDeactivateAllUsernames(ctx context.Context, in *mtproto.TLChannelsDeactivateAllUsernames) (*mtproto.Bool, error) {
 	self, auth := actor(ctx)
-	var channelID int64
-	if in.GetChannel() != nil {
-		channelID = in.GetChannel().GetChannelId()
-	}
-	chats, err := channel.Shared().GetChannels(ctx, self, []*mtproto.InputChannel{in.GetChannel()})
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	if chats != nil {
-		for _, chat := range chats.GetChats() {
-			if chat == nil {
-				continue
-			}
-			if chat.GetUsername().GetValue() != "" {
-				names = append(names, chat.GetUsername().GetValue())
-			}
-			for _, u := range chat.GetUsernames() {
-				if u.GetUsername() != "" {
-					names = append(names, u.GetUsername())
-				}
-			}
-		}
-	}
-	if err = deleteChannelUsernameIndex(ctx, s.Users, channelID, names); err != nil {
-		return nil, err
-	}
-	return channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel())
+	return channel.Shared().DeactivateAllUsernames(ctx, self, auth, in.GetChannel(), func(ctx context.Context, channelID int64, names []string) error {
+		return deleteChannelUsernameIndex(ctx, s.Users, channelID, names)
+	})
 }
 
 // AccountReorderUsernames

@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -325,7 +326,11 @@ func (s *Service) ReorderUsernames(ctx context.Context, self, actorAuth int64, i
 // DeactivateAllUsernames turns off every username on the channel, including
 // the editable one, and clears the public username column so resolve fails.
 // channels.deactivateAllUsernames#a245dd3 channel:InputChannel = Bool;
-func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel) (*mtproto.Bool, error) {
+//
+// requireInfoAdmin runs once. dropIndex, feature writes, and the channel
+// row write run only after that check. dropIndex is nil in unit tests that
+// do not have a username index. There is no second admin check.
+func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, dropIndex func(context.Context, int64, []string) error) (*mtproto.Bool, error) {
 	ch, _, err := s.requireInfoAdmin(ctx, self, in)
 	if err != nil {
 		return nil, err
@@ -338,7 +343,14 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 	list := append([]UsernameRec(nil), listedUsernames(ch, f)...)
 	prev := activeUsernames(list)
 	changed := ch.Username != ""
+	names := make([]string, 0, len(list)+1)
+	if ch.Username != "" {
+		names = append(names, ch.Username)
+	}
 	for i := range list {
+		if list[i].Username != "" {
+			names = append(names, list[i].Username)
+		}
 		if list[i].Active {
 			list[i].Active = false
 			changed = true
@@ -346,6 +358,11 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 	}
 	if !changed {
 		return mtproto.BoolTrue, nil
+	}
+	if dropIndex != nil {
+		if err = dropIndex(ctx, ch.ID, names); err != nil {
+			return nil, err
+		}
 	}
 	f.Usernames = list
 	ch.Username = ""
@@ -355,7 +372,7 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 	}
 	if err := s.store.SaveChannel(ctx, ch); err != nil {
 		if rbErr := s.saveFeatures(ctx, ch.ID, before); rbErr != nil {
-			return nil, rbErr
+			return nil, fmt.Errorf("channel save: %v; feature restore: %v", err, rbErr)
 		}
 		return nil, err
 	}
