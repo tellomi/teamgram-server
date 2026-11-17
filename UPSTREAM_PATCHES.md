@@ -941,6 +941,14 @@ Unlink and rebind now clear that back-pointer when it still names this channel. 
 | id resolution | `proto/mtproto/message_action.go` |
 | channel | `app/service/biz/channel/chat_p1.go`, `app/bff/channels/internal/server/grpc/service/handlers.go` |
 
+## getMessages missing id (ISSUE-S-GETMSG-ABSENT-EMPTY-001, 行 371)
+
+`messages.getMessages` already builds `messageEmpty` for an id that is not in the caller's live rows. `FromPeer` then reads that empty peer and panics, so the RPC does not return the object. A missing id and a row with `deleted = 1` both take that path. The panic is skipped when the peer is absent. `inputMessageReplyTo` (行 205) still resolves the reply target; this does not change that lookup. `channels.getMessages` already returned `messageEmpty` and the same `CHANNEL_PRIVATE` error for an outsider whether or not the id is stored.
+
+| Piece | File |
+| --- | --- |
+| nil peer | `app/bff/messages/internal/core/messages.getMessages_handler.go` |
+
 ## Quick reply edit (ISSUE-S-QR-EDIT-001, 行 89)
 
 `messages.editMessage` with `quick_reply_shortcut_id` looked up the id in Saved Messages. Shortcut message ids start at 1, so the call hit a forwarded saved message and returned `MESSAGE_AUTHOR_REQUIRED`. The shortcut id now edits the message stored in the quick-reply book and returns `updateQuickReplyMessage` to the caller and to the account's other sessions. The saved-message author is not consulted. A `from_id` stored on the shortcut message does not make it someone else's. Another account's shortcut id returns `SHORTCUT_INVALID`. Empty text with no real media returns `MESSAGE_EMPTY`. An unknown shortcut id returns `SHORTCUT_INVALID`. An unknown message id returns `MESSAGE_ID_INVALID`. The same text and entities again return `MESSAGE_NOT_MODIFIED` and do not change `edit_date` or insert another message. That result still pushes the stored message, so a retry after a missed sync reaches other sessions. Media in the request is converted with the existing `makeMediaByInputMedia` and replaces the shortcut media, or the conversion error is returned and nothing is written. Reply markup uses `botReplyMarkup`: a bot keyboard is stored, a user keyboard is not applied. `messages.getQuickReplyMessages` hashes each message id and `edit_date` with the pagination vector hash, so an edit no longer matches the previous hash. `chatbox_doc` Save still replaces a whole document with no version. Every `quick:` writer (edit, capture, delete, rename, reorder) compares the loaded bytes and reapplies on the row that won, so a stale snapshot from one of those calls cannot restore an older message body. Other document keys still use Save. Two edits in the same unix second keep the same `edit_date`, so the client hash stays valid; that is the protocol hash, and `edit_date` is not moved forward to dodge it. A missed push can therefore leave another session stale until a later edit in a new second.
