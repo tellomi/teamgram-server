@@ -154,7 +154,7 @@ func sendMention(t *testing.T, svc *Service, ctx context.Context, channelID, ran
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sent.Updates[0].GetMessage_MESSAGE().GetId()
+	return sentChannelMessage(t, sent).GetId()
 }
 
 func dialogMention(t *testing.T, svc *Service, ctx context.Context, userID, channelID int64) DialogRow {

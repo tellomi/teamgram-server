@@ -32,7 +32,7 @@ func TestGetMessagesReplyToOutsiderGetsTheSameError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originID := origin.Updates[0].GetMessage_MESSAGE().GetId()
+	originID := sentChannelPostID(t, origin)
 	reply, err := svc.Send(ctx, 1, ch.GetId(), 0, []channel.Outgoing{{
 		RandomID: 2,
 		Message: &mtproto.Message{
@@ -46,7 +46,7 @@ func TestGetMessagesReplyToOutsiderGetsTheSameError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replyID := reply.Updates[0].GetMessage_MESSAGE().GetId()
+	replyID := sentChannelPostID(t, reply)
 	plain, err := svc.Send(ctx, 1, ch.GetId(), 0, []channel.Outgoing{{
 		RandomID: 3,
 		Message: &mtproto.Message{
@@ -60,7 +60,7 @@ func TestGetMessagesReplyToOutsiderGetsTheSameError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plainID := plain.Updates[0].GetMessage_MESSAGE().GetId()
+	plainID := sentChannelPostID(t, plain)
 	if originID == 0 || replyID == 0 || plainID == 0 || originID == replyID || originID == plainID {
 		t.Fatalf("ids origin=%d flag=%d plain=%d", originID, replyID, plainID)
 	}
@@ -93,6 +93,17 @@ func replyToRequest(in *mtproto.InputChannel, id int32) *mtproto.TLChannelsGetMe
 			mtproto.MakeTLInputMessageReplyTo(&mtproto.InputMessage{Id: id}).To_InputMessage(),
 		},
 	}
+}
+
+func sentChannelPostID(t *testing.T, up *mtproto.Updates) int32 {
+	t.Helper()
+	for _, u := range up.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage && u.GetMessage_MESSAGE().GetId() != 0 {
+			return u.GetMessage_MESSAGE().GetId()
+		}
+	}
+	t.Fatal("send result has no updateNewChannelMessage")
+	return 0
 }
 
 func outsiderCtx(t *testing.T, user int64) context.Context {

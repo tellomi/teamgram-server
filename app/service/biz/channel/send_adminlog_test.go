@@ -7,6 +7,22 @@ import (
 	"github.com/teamgram/proto/mtproto"
 )
 
+// sentChannelMessage is the new channel post. The sender RPC now puts
+// updateMessageID first, so Updates[0] is not the message.
+func sentChannelMessage(t *testing.T, up *mtproto.Updates) *mtproto.Message {
+	t.Helper()
+	if up == nil {
+		t.Fatal("nil updates")
+	}
+	for _, u := range up.GetUpdates() {
+		if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage && u.GetMessage_MESSAGE().GetId() != 0 {
+			return u.GetMessage_MESSAGE()
+		}
+	}
+	t.Fatal("send result has no updateNewChannelMessage")
+	return nil
+}
+
 func TestSendReplyCarriesMessageID(t *testing.T) {
 	svc, ctx := newTest(t)
 	var pushed []*mtproto.Updates

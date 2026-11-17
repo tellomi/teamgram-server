@@ -22,7 +22,7 @@ func TestUnpinAllClearsEveryPinnedMessage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return sent.Updates[0].GetMessage_MESSAGE().GetId()
+		return sentChannelMessage(t, sent).GetId()
 	}
 	first := send("one", 1)
 	second := send("two", 2)

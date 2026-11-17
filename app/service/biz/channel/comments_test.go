@@ -383,7 +383,7 @@ func TestJoinToSendBlocksGuestComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	post := sent.Updates[0].GetMessage_MESSAGE()
+	post := sentChannelMessage(t, sent)
 	disc, err := svc.DiscussionMessage(ctx, 9, channelChat.Id, post.GetId())
 	if err != nil {
 		t.Fatal(err)

@@ -24,7 +24,7 @@ func TestSendReactionsBanBlocksMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := sentChannelMessage(t, sent).GetId()
 
 	noReact := mtproto.MakeTLChatBannedRights(&mtproto.ChatBannedRights{SendReactions: true}).To_ChatBannedRights()
 	if _, err := svc.EditDefaultBanned(ctx, 1, 0, in, noReact); err != nil {

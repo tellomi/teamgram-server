@@ -27,7 +27,7 @@ func TestOwnPostEditWithoutEditRight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := sentChannelMessage(t, sent).GetId()
 	if _, err = svc.Edit(ctx, 2, ch.Id, 0, msgID, func(m *mtproto.Message) {
 		m.Message = "mine-edited"
 	}); err != nil {
@@ -42,7 +42,7 @@ func TestOwnPostEditWithoutEditRight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownerID := owner.Updates[0].GetMessage_MESSAGE().GetId()
+	ownerID := sentChannelMessage(t, owner).GetId()
 	if _, err = svc.Edit(ctx, 2, ch.Id, 0, ownerID, func(m *mtproto.Message) {
 		m.Message = "nope"
 	}); err != mtproto.ErrMessageAuthorRequired {
@@ -65,7 +65,7 @@ func TestMessageBodyReturnsStoredMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgID := sent.Updates[0].GetMessage_MESSAGE().GetId()
+	msgID := sentChannelMessage(t, sent).GetId()
 	body, err := svc.MessageBody(ctx, ch.Id, msgID)
 	if err != nil || body.GetMedia().GetPredicateName() != photo.GetPredicateName() {
 		t.Fatalf("body %v %v", body.GetMedia().GetPredicateName(), err)

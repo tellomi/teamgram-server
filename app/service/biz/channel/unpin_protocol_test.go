@@ -283,7 +283,7 @@ func mustSend(t *testing.T, svc *Service, ctx context.Context, channelID, random
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sent.Updates[0].GetMessage_MESSAGE().GetId()
+	return sentChannelMessage(t, sent).GetId()
 }
 
 func mustPin(t *testing.T, svc *Service, ctx context.Context, channelID int64, id int32, unpin bool) {
