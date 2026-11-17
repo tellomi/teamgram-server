@@ -171,6 +171,12 @@ func (s *Service) Create(ctx context.Context, in CreateRequest) (*mtproto.Update
 	if err := s.store.CreateChannel(ctx, ch, creator); err != nil {
 		return nil, err
 	}
+	// Official clients already have a primary invite after create. A basic
+	// group writes it in the same transaction as the chat. This is that row
+	// for a supergroup or a broadcast channel, owned by the creator.
+	if _, err := s.ensureOwnPrimary(ctx, ch.ID, in.CreatorID); err != nil {
+		return nil, err
+	}
 	msg := serviceMessage(in.CreatorID, ch.ID, mtproto.MakeMessageActionChannelCreate(title))
 	if _, _, err := s.appendMessage(ctx, ch.ID, in.CreatorID, 0, msg); err != nil {
 		return nil, err

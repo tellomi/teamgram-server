@@ -276,7 +276,9 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.StoriesPinnedAvailable = att.Pinned
 	}
 	// The invite sheet reads this before it calls messages.exportChatInvite.
-	// Without it the iOS sheet stays on the progress bar.
+	// Without a primary the sheet stays on the progress bar. Official clients
+	// already have one after the chat is created. PrimaryExported returns this
+	// admin's link, and creates it when an older chat has none.
 	if p != nil && p.InChannel() && (p.IsCreator() || p.adminRights().CanInviteUsers()) {
 		if inv := s.PrimaryExported(ctx, ch.ID, viewer); inv != nil {
 			full.ExportedInvite = inv

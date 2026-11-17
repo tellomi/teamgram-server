@@ -23,6 +23,8 @@ type memoryStore struct {
 	importers    map[string]map[int64]*StoredImporter
 	nextInvite   int64
 	nextImporter int64
+	inviteMu     sync.Mutex
+	inviteLocks  map[int64]*sync.Mutex
 }
 
 type memReadMark struct {

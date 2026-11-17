@@ -4,10 +4,23 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"sync"
 )
 
 // errInviteExists is a duplicate link. Export retries with a new hash.
 var errInviteExists = errors.New("invite link exists")
+
+// errInviteLock is a timed-out primary-link lock.
+var errInviteLock = errors.New("channel invite lock timeout")
+
+// inviteLocker is the invite table inside WithInviteLock. Callers must not
+// use the outer store for those rows until the lock returns.
+type inviteLocker interface {
+	ListInvites(ctx context.Context, channelID int64) ([]*StoredInvite, error)
+	InsertInvite(ctx context.Context, inv *StoredInvite) error
+	UpdateInvite(ctx context.Context, inv *StoredInvite) error
+	GetInviteByLink(ctx context.Context, link string) (*StoredInvite, error)
+}
 
 // StoredInvite is one exported chat invite for a channel or supergroup.
 // Link is the hash, not the tell.cc URL.
@@ -189,6 +202,30 @@ func (s *memoryStore) ListImporters(ctx context.Context, channelID int64) ([]*St
 		return out[i].Date > out[j].Date
 	})
 	return out, nil
+}
+
+func (s *memoryStore) channelInviteMu(id int64) *sync.Mutex {
+	s.inviteMu.Lock()
+	defer s.inviteMu.Unlock()
+	if s.inviteLocks == nil {
+		s.inviteLocks = map[int64]*sync.Mutex{}
+	}
+	mu := s.inviteLocks[id]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		s.inviteLocks[id] = mu
+	}
+	return mu
+}
+
+// WithInviteLock serializes primary-link changes for one channel. The map
+// mutex is not held while the channel mutex is held, and the channel mutex
+// is not held while the store mutex is taken, so the two locks cannot cycle.
+func (s *memoryStore) WithInviteLock(ctx context.Context, channelID int64, fn func(context.Context, inviteLocker) error) error {
+	mu := s.channelInviteMu(channelID)
+	mu.Lock()
+	defer mu.Unlock()
+	return fn(ctx, s)
 }
 
 func (s *memoryStore) DeleteImporter(ctx context.Context, link string, userID int64) error {
