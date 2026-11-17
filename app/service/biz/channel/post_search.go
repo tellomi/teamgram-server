@@ -42,6 +42,9 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, q PostQuery) (*mt
 		if stored == nil {
 			continue
 		}
+		if s.hidesStored(ctx, self, stored) {
+			continue
+		}
 		body, err := unmarshalMessage(stored.Data)
 		if err != nil || body == nil {
 			continue
@@ -137,7 +140,7 @@ func (s *Service) SearchJoined(ctx context.Context, self int64, needle string, l
 	}
 	out := make([]*mtproto.MessageBox, 0, len(rows))
 	for _, stored := range rows {
-		if stored == nil || stored.Deleted {
+		if stored == nil || stored.Deleted || s.hidesStored(ctx, self, stored) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)

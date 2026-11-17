@@ -935,7 +935,10 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 	if err = s.store.SaveRead(ctx, st); err != nil {
 		return err
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return err
+	}
 	featChanged := false
 	if st.ReadInboxMaxID > prevInbox {
 		f.InboxReadAt[user] = int32(time.Now().Unix())
@@ -1170,24 +1173,26 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		return nil, err
 	}
 	all = withoutExpired(ch, all, int32(time.Now().Unix()))
-	page, total := selectHistory(all, q)
-	feat := s.features(ctx, ch.ID)
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	minID := feat.AvailableMinID
 	if feat.UserMinID != nil && feat.UserMinID[user] > minID {
 		minID = feat.UserMinID[user]
 	}
-	filtered := page[:0]
-	for _, stored := range page {
-		if stored.ID <= minID {
+	visible := all[:0]
+	for _, stored := range all {
+		if stored == nil || stored.Deleted || stored.ID <= minID {
 			continue
 		}
 		if prehistoryBlocks(feat, viewer, stored, viewerErr) {
 			continue
 		}
-		filtered = append(filtered, stored)
+		visible = append(visible, stored)
 	}
-	page = filtered
+	page, total := selectHistory(visible, q)
 	msgs := make([]*mtproto.Message, 0, len(page))
 	for _, stored := range page {
 		body, err := unmarshalMessage(stored.Data)
@@ -1214,7 +1219,10 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 	if err != nil {
 		return nil, err
 	}
-	feat := s.features(ctx, ch.ID)
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	msgs := make([]*mtproto.Message, 0, len(ids))
 	for _, id := range ids {
@@ -1280,7 +1288,10 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 	// caught up. final stays unset so the client asks again and then
 	// receives tooLong only for the missing range.
 	final := !more && endPts >= ch.Pts
-	feat := s.features(ctx, ch.ID)
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
 	var newMessages []*mtproto.Message
 	var other []*mtproto.Update
@@ -1365,9 +1376,14 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 	if st == nil {
 		st = &ReadState{}
 	}
-	page := latestChannelMessages(mustMessages(s, ctx, ch.ID), limit)
-	feat := s.features(ctx, ch.ID)
+	all := mustMessages(s, ctx, ch.ID)
+	page := latestChannelMessages(all, limit)
+	feat, featErr := s.mutableFeatures(ctx, ch.ID)
 	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, user)
+	if featErr != nil {
+		viewerErr = featErr
+		feat = &Features{HiddenPrehistory: true}
+	}
 	msgs := make([]*mtproto.Message, 0, len(page))
 	for _, stored := range page {
 		if prehistoryBlocks(feat, viewer, stored, viewerErr) {
@@ -1380,6 +1396,17 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	top, _ := s.liveTop(ctx, ch)
+	if topStored, topErr := s.store.GetMessage(ctx, ch.ID, top); topErr != nil || prehistoryBlocks(feat, viewer, topStored, viewerErr) {
+		top = 0
+		for _, stored := range all {
+			if stored == nil || stored.Deleted || prehistoryBlocks(feat, viewer, stored, viewerErr) {
+				continue
+			}
+			if stored.ID > top {
+				top = stored.ID
+			}
+		}
+	}
 	dlg := mtproto.MakeTLDialog(&mtproto.Dialog{
 		Peer:                mtproto.MakePeerChannel(ch.ID),
 		TopMessage:          top,
@@ -1558,13 +1585,17 @@ func (s *Service) unreadMentionCount(ctx context.Context, userID int64, ch *Chan
 	if err != nil {
 		return 0
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return 0
+	}
+	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, userID)
 	var n int32
 	for _, stored := range msgs {
 		if stored == nil || stored.Deleted || stored.ID <= readMax || stored.SenderID == userID {
 			continue
 		}
-		if mentionAcked(f, userID, stored.ID) {
+		if mentionAcked(f, userID, stored.ID) || prehistoryBlocks(f, viewer, stored, viewerErr) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)

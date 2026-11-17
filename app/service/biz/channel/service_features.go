@@ -14,10 +14,34 @@ import (
 )
 
 func (s *Service) features(ctx context.Context, channelID int64) *Features {
-	f, err := s.store.GetFeatures(ctx, channelID)
+	f, err := s.mutableFeatures(ctx, channelID)
 	if err != nil || f == nil {
-		return &Features{}
+		f = &Features{}
+		normalizeFeatures(f)
 	}
+	return f
+}
+
+// mutableFeatures is the load used before a write and before a body is
+// returned. A database error is returned to the caller. Saving the empty
+// object features() uses for a failed read would wipe HiddenPrehistory and
+// JoinTop.
+func (s *Service) mutableFeatures(ctx context.Context, channelID int64) (*Features, error) {
+	if s == nil || s.store == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
+	f, err := s.store.GetFeatures(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	if f == nil {
+		f = &Features{}
+	}
+	normalizeFeatures(f)
+	return f, nil
+}
+
+func normalizeFeatures(f *Features) {
 	if f.LastSend == nil {
 		f.LastSend = map[int64]int32{}
 	}
@@ -48,7 +72,6 @@ func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	if f.AdminReadMax == nil {
 		f.AdminReadMax = map[int64]int32{}
 	}
-	return f
 }
 
 func (s *Service) saveFeatures(ctx context.Context, channelID int64, f *Features) error {
@@ -1033,7 +1056,10 @@ func (s *Service) SearchInChannel(ctx context.Context, self, channelID int64, q 
 		return nil, err
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].ID > all[j].ID })
-	feat := s.features(ctx, ch.ID)
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, self)
 	var msgs []*mtproto.Message
 	for _, stored := range all {

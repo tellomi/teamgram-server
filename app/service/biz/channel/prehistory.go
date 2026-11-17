@@ -14,16 +14,65 @@ func joinTop(f *Features, userID int64) int32 {
 	return f.JoinTop[userID]
 }
 
-func (s *Service) noteJoinBoundary(ctx context.Context, channelID, userID int64, top int32) {
+func (s *Service) noteJoinBoundary(ctx context.Context, channelID, userID int64, top int32) error {
 	if s == nil || channelID == 0 || userID == 0 || top <= 0 {
-		return
+		return nil
 	}
-	f := s.features(ctx, channelID)
+	f, err := s.mutableFeatures(ctx, channelID)
+	if err != nil {
+		return err
+	}
 	if f.JoinTop == nil {
 		f.JoinTop = map[int64]int32{}
 	}
 	f.JoinTop[userID] = top
-	_ = s.saveFeatures(ctx, channelID, f)
+	return s.saveFeatures(ctx, channelID, f)
+}
+
+// undoJoin drops a membership whose inbox cursor or join top could not be
+// saved. Leaving that row in place would fall back to the date-only cutoff
+// and show a same-second message.
+func (s *Service) undoJoin(ctx context.Context, channelID, userID int64) {
+	if s == nil || s.store == nil || channelID == 0 || userID == 0 {
+		return
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil || p == nil {
+		return
+	}
+	p.State = StateLeft
+	_ = s.store.PutParticipant(ctx, p)
+}
+
+// pinnedHidden reports a pin the viewer must not be told about. The id
+// stays in storage for members who can see that message.
+func (s *Service) pinnedHidden(ctx context.Context, viewer int64, p *Participant, feat *Features, channelID int64) bool {
+	if feat == nil || feat.PinnedMsgID <= 0 || s == nil || s.store == nil {
+		return false
+	}
+	stored, err := s.store.GetMessage(ctx, channelID, feat.PinnedMsgID)
+	if err != nil || stored == nil {
+		return true
+	}
+	if p == nil && feat.HiddenPrehistory {
+		return true
+	}
+	return prehistoryBlocks(feat, p, stored, nil)
+}
+
+// hidesStored is the body gate for search and other readers that walk
+// messages from more than one channel. A features or member-row error hides
+// the row.
+func (s *Service) hidesStored(ctx context.Context, viewer int64, stored *StoredMessage) bool {
+	if s == nil || stored == nil {
+		return true
+	}
+	f, err := s.mutableFeatures(ctx, stored.ChannelID)
+	if err != nil {
+		return true
+	}
+	p, perr := s.store.GetParticipant(ctx, stored.ChannelID, viewer)
+	return prehistoryBlocks(f, p, stored, perr)
 }
 
 // messageBeforeJoin reports a message that existed at join. A recorded

@@ -231,7 +231,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		if next := slowmodeNextSendDate(feat, p, viewer, int32(time.Now().Unix())); next != nil {
 			full.SlowmodeNextSendDate = next
 		}
-		if feat.PinnedMsgID > 0 {
+		if feat.PinnedMsgID > 0 && !s.pinnedHidden(ctx, viewer, p, feat, ch.ID) {
 			full.PinnedMsgId = &wrapperspb.Int32Value{Value: feat.PinnedMsgID}
 		}
 		if feat.LinkedChatID != 0 {
