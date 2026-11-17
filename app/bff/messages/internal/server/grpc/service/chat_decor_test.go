@@ -37,6 +37,19 @@ func TestSetChatThemePostsTheServiceMessage(t *testing.T) {
 	if err != nil || paper == nil || !posted.action.GetForBoth() || posted.action.GetPredicateName() != mtproto.Predicate_messageActionSetChatWallPaper {
 		t.Fatalf("wallpaper %v action %#v", err, posted.action)
 	}
+	found := false
+	for _, u := range paper.GetUpdates() {
+		if u.GetPredicateName() != mtproto.Predicate_updatePeerWallpaper {
+			continue
+		}
+		found = true
+		if u.GetWallpaperOverridden() {
+			t.Fatal("setter updatePeerWallpaper is overridden")
+		}
+	}
+	if !found {
+		t.Fatal("setter updatePeerWallpaper missing from the result")
+	}
 }
 
 type decorMsg struct {

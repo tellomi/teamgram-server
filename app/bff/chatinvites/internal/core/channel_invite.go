@@ -34,7 +34,17 @@ func (c *ChatInvitesCore) fetchUsers(ids []int64) []*mtproto.User {
 	if len(uniq) == 0 {
 		return []*mtproto.User{}
 	}
-	users, err := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{Id: uniq})
+	// The viewer has to be in the loaded set. GetUserListByIdList returns
+	// nothing when it cannot find self, which made a name search on join
+	// requests empty and left users empty for paging.
+	reqIDs := uniq
+	if _, ok := seen[c.MD.UserId]; !ok {
+		reqIDs = append([]int64{c.MD.UserId}, uniq...)
+	}
+	users, err := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx, &userpb.TLUserGetMutableUsers{
+		Id: reqIDs,
+		To: []int64{c.MD.UserId},
+	})
 	if err != nil || users == nil {
 		return []*mtproto.User{}
 	}

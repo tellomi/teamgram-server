@@ -29,6 +29,19 @@ func (s *Service) lookup(ctx context.Context, in *mtproto.InputChannel) (*Channe
 	return ch, nil
 }
 
+// CallStartsMuted is the default for a new voice chat. Broadcast channels
+// and anything we cannot load start muted. Megagroups do not.
+func (s *Service) CallStartsMuted(ctx context.Context, id int64) bool {
+	if s == nil {
+		return true
+	}
+	ch, err := s.reload(ctx, id)
+	if err != nil || ch == nil {
+		return true
+	}
+	return !ch.Megagroup
+}
+
 func (s *Service) reload(ctx context.Context, id int64) (*Channel, error) {
 	ch, err := s.store.GetChannel(ctx, id)
 	if err != nil {
@@ -163,6 +176,44 @@ func (s *Service) canChangeInfo(ch *Channel, p *Participant) bool {
 	})
 }
 
+// canLinkDiscussion is the channels.setDiscussionGroup gate.
+// layer 232 chatAdminRights.manage_linked_peers is the bit that links a
+// channel to its discussion group. The creator qualifies. An admin needs
+// that bit on the broadcast and on the megagroup. change_info is not part
+// of this gate.
+func canLinkDiscussion(p *Participant) bool {
+	if p == nil || !p.InChannel() {
+		return false
+	}
+	if p.IsCreator() {
+		return true
+	}
+	if !p.IsAdmin() {
+		return false
+	}
+	return p.adminRights().CanManageLinkedPeers()
+}
+
+// canUpdatePaidMessages allows the creator, an admin with change_info,
+// and — on a broadcast — an admin with manage_direct_messages. That last
+// right is what the channel direct-message switch uses.
+func canUpdatePaidMessages(ch *Channel, p *Participant) bool {
+	if p == nil || !p.InChannel() {
+		return false
+	}
+	if p.IsCreator() {
+		return true
+	}
+	if !p.IsAdmin() {
+		return false
+	}
+	rights := p.adminRights()
+	if rights.CanChangeInfo() {
+		return true
+	}
+	return ch != nil && ch.Broadcast && rights.CanManageDirectMessages()
+}
+
 func (s *Service) defaultAllows(ch *Channel, allow func(*mtproto.ChatBannedRights) bool) bool {
 	if ch.DefaultBanned == 0 {
 		return true
@@ -228,6 +279,60 @@ func (s *Service) canPost(ch *Channel, p *Participant) error {
 		return mtproto.ErrChatWriteForbidden
 	}
 	return nil
+}
+
+// WriteAllowed is the channel send check messages.sendMessage uses (canPost).
+// saveDraft keeps that decision. A missing member is CHAT_WRITE_FORBIDDEN.
+// A broadcast the member cannot post in is CHAT_ADMIN_REQUIRED. A mute or a
+// send_messages ban stays CHAT_WRITE_FORBIDDEN.
+func (s *Service) WriteAllowed(ctx context.Context, channelID, userID int64) error {
+	if s == nil || channelID == 0 || userID == 0 {
+		return mtproto.ErrPeerIdInvalid
+	}
+	ch, err := s.reload(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	p, err := s.store.GetParticipant(ctx, channelID, userID)
+	if err != nil {
+		return err
+	}
+	err = s.canPost(ch, p)
+	return mapDraftWriteError(ch != nil && ch.Broadcast, channelSendMessagesBanned(s, ch, p), err)
+}
+
+func mapDraftWriteError(broadcast, sendBanned bool, err error) error {
+	if err == nil {
+		return nil
+	}
+	if err == mtproto.ErrChannelPrivate {
+		return mtproto.ErrChatWriteForbidden
+	}
+	if broadcast && err == mtproto.ErrChatWriteForbidden && !sendBanned {
+		return mtproto.ErrChatAdminRequired
+	}
+	return err
+}
+
+// channelSendMessagesBanned reports the same send_messages ban canPost applies
+// before the broadcast admin check.
+func channelSendMessagesBanned(s *Service, ch *Channel, p *Participant) bool {
+	if s == nil || p == nil || !p.InChannel() || p.IsCreator() || p.IsAdmin() {
+		return false
+	}
+	now := int32(time.Now().Unix())
+	if _, br := s.viewBlocked(p); br != nil && !br.CanSendMessages(now) {
+		return true
+	}
+	if p.BannedRights != 0 {
+		if br := mtproto.BannedRights(p.BannedRights).ToChatBannedRights(); br != nil && !br.CanSendMessages(now) {
+			return true
+		}
+	}
+	if ch == nil {
+		return false
+	}
+	return !s.defaultAllows(ch, func(br *mtproto.ChatBannedRights) bool { return br.CanSendMessages(now) })
 }
 
 // enforceContent applies default_banned_rights and the member's own
@@ -317,8 +422,14 @@ func (s *Service) appendMessage(ctx context.Context, channelID, sender, randomID
 	if msg.Date == 0 {
 		msg.Date = int32(time.Now().Unix())
 	}
-	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil && ch.TtlPeriod > 0 {
-		msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+	if ch, err := s.store.GetChannel(ctx, channelID); err == nil && ch != nil {
+		if msg.GetPredicateName() == mtproto.Predicate_messageService && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(channelID)
+			msg.PostAuthor = nil
+		}
+		if ch.TtlPeriod > 0 {
+			msg.TtlPeriod = &wrapperspb.Int32Value{Value: ch.TtlPeriod}
+		}
 	}
 	msg.SanitizeEntities()
 	var stored *mtproto.Message
@@ -389,7 +500,10 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	msg.Out = false
 	if msg.PredicateName == mtproto.Predicate_messageService {
 		msg.Post = false
-		if stamp && msg.FromId == nil {
+		if stamp && s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+			msg.PostAuthor = nil
+		} else if stamp && msg.FromId == nil {
 			msg.FromId = mtproto.MakePeerUser(sender)
 		}
 		return
@@ -419,8 +533,25 @@ func (s *Service) shapeOutgoing(ctx context.Context, ch *Channel, sender int64, 
 	if stamp {
 		msg.FromId = mtproto.MakePeerUser(sender)
 		msg.PostAuthor = nil
+		if s.anonymousAdmin(ctx, ch, sender) {
+			msg.FromId = mtproto.MakePeerChannel(ch.ID)
+		}
 	}
 	msg.Views = nil
+}
+
+// anonymousAdmin is an admin with admin_rights.anonymous in a supergroup.
+// Their messages are attributed to the group. The creator's full right set
+// does not imply this flag.
+func (s *Service) anonymousAdmin(ctx context.Context, ch *Channel, sender int64) bool {
+	if s == nil || ch == nil || ch.Broadcast || sender == 0 {
+		return false
+	}
+	p, err := s.store.GetParticipant(ctx, ch.ID, sender)
+	if err != nil || p == nil || !p.IsAdmin() || p.IsCreator() {
+		return false
+	}
+	return p.adminRights().CanAnonymous()
 }
 
 // Outgoing is one message a client is sending into a channel.
@@ -538,7 +669,7 @@ func (s *Service) Send(ctx context.Context, sender, channelID, actorAuth int64, 
 			for _, u := range emitUps {
 				cu := proto.Clone(u).(*mtproto.Update)
 				if cu.Message_MESSAGE != nil {
-					cu.Message_MESSAGE = viewMessage(cu.Message_MESSAGE, sender, viewer)
+					cu.Message_MESSAGE = s.forViewer(ctx, channelID, cu.Message_MESSAGE, sender, viewer)
 				}
 				cloned = append(cloned, cu)
 			}
@@ -568,6 +699,23 @@ func (s *Service) notifyIncoming(ctx context.Context, channelID, sender int64, c
 	}
 }
 
+// MessageBody returns the stored channel post Edit loads. It does not check
+// the inputChannel access hash. A missing or deleted post is MESSAGE_ID_INVALID.
+// A failed read is not "this post has no media".
+func (s *Service) MessageBody(ctx context.Context, channelID int64, messageID int32) (*mtproto.Message, error) {
+	if s == nil || channelID == 0 || messageID == 0 {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	stored, err := s.store.GetMessage(ctx, channelID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if stored == nil || stored.Deleted {
+		return nil, mtproto.ErrMessageIdInvalid
+	}
+	return unmarshalMessage(stored.Data)
+}
+
 func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, messageID int32, apply func(*mtproto.Message)) (*mtproto.Updates, error) {
 	ch, err := s.reload(ctx, channelID)
 	if err != nil {
@@ -594,6 +742,9 @@ func (s *Service) Edit(ctx context.Context, sender, channelID, actorAuth int64, 
 	frozen := proto.Clone(body).(*mtproto.Message)
 	if apply != nil {
 		apply(body)
+	}
+	if mtproto.MessageContentUnchanged(frozen, body) {
+		return nil, mtproto.ErrMessageNotModified
 	}
 	body.Id = messageID
 	body.EditDate = &wrapperspb.Int32Value{Value: int32(time.Now().Unix())}
@@ -735,6 +886,11 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 		return nil
 	}
 	if !edit && actor.IsAdmin() && actor.adminRights().CanDeleteMessages() {
+		return nil
+	}
+	// edit_messages / delete_messages cover other admins' posts. An admin who
+	// can publish can still edit and delete the posts they sent themselves.
+	if ch.Broadcast && msg.SenderID == actor.UserID && actor.IsAdmin() && actor.adminRights().CanPostMessages() {
 		return nil
 	}
 	if ch.Broadcast {
@@ -1027,7 +1183,7 @@ func (s *Service) history(ctx context.Context, user int64, ch *Channel, q Histor
 		if stored.EditDate != 0 && body.EditDate == nil {
 			body.EditDate = &wrapperspb.Int32Value{Value: stored.EditDate}
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+		msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
@@ -1063,7 +1219,7 @@ func (s *Service) GetMessages(ctx context.Context, user int64, in *mtproto.Input
 		if err != nil {
 			return nil, err
 		}
-		msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+		msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
 	return mtproto.MakeTLMessagesChannelMessages(&mtproto.Messages_Messages{
@@ -1188,7 +1344,7 @@ func (s *Service) tooLong(ctx context.Context, user int64, ch *Channel, timeout 
 	for _, stored := range page {
 		body, err := unmarshalMessage(stored.Data)
 		if err == nil {
-			msgs = append(msgs, viewMessage(body, stored.SenderID, user))
+			msgs = append(msgs, s.forViewer(ctx, ch.ID, body, stored.SenderID, user))
 		}
 	}
 	s.attachReactions(ctx, user, ch.ID, msgs)
@@ -1329,6 +1485,7 @@ type DialogRow struct {
 	Date                int32
 	Pts                 int32
 	ViewForumAsMessages bool
+	UnreadMentions      int32
 }
 
 func (s *Service) DialogsFor(ctx context.Context, userID int64) ([]DialogRow, error) {
@@ -1358,7 +1515,37 @@ func (s *Service) dialogRow(ctx context.Context, userID int64, ch *Channel) Dial
 		Date:                date,
 		Pts:                 ch.Pts,
 		ViewForumAsMessages: s.features(ctx, ch.ID).ViewForumAsMessages[userID],
+		UnreadMentions:      s.unreadMentionCount(ctx, userID, ch, st.ReadInboxMaxID),
 	}
+}
+
+func (s *Service) unreadMentionCount(ctx context.Context, userID int64, ch *Channel, readMax int32) int32 {
+	if s == nil || ch == nil {
+		return 0
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return 0
+	}
+	f := s.features(ctx, ch.ID)
+	var n int32
+	for _, stored := range msgs {
+		if stored == nil || stored.Deleted || stored.ID <= readMax || stored.SenderID == userID {
+			continue
+		}
+		if mentionAcked(f, userID, stored.ID) {
+			continue
+		}
+		body, err := unmarshalMessage(stored.Data)
+		if err != nil || body == nil {
+			continue
+		}
+		body.Id = stored.ID
+		if s.mentionsViewer(ctx, ch.ID, body, userID) {
+			n++
+		}
+	}
+	return n
 }
 
 // DialogFor is one member's dialog for one channel. Opening a chat asks for
@@ -1420,6 +1607,23 @@ func (s *Service) ResolveUsername(ctx context.Context, viewer int64, username st
 		return nil, mtproto.ErrUsernameNotOccupied
 	}
 	return s.ChatFor(ctx, viewer, ch), nil
+}
+
+// IsBroadcast reports the channel record's broadcast flag.
+// A supergroup and a broadcast channel share PeerType CHANNEL.
+// ok is false when the id is missing or deleted. A store error is returned.
+func (s *Service) IsBroadcast(ctx context.Context, id int64) (broadcast bool, ok bool, err error) {
+	if s == nil || s.store == nil {
+		return false, false, nil
+	}
+	ch, err := s.store.GetChannel(ctx, id)
+	if err != nil {
+		return false, false, err
+	}
+	if ch == nil || ch.Deleted {
+		return false, false, nil
+	}
+	return ch.Broadcast, true, nil
 }
 
 func (s *Service) ChatsFor(ctx context.Context, viewer int64, ids ...int64) []*mtproto.Chat {

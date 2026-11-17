@@ -95,7 +95,7 @@ func (b *Book) BoostsStatus(self int64, peer *mtproto.InputPeer) (*mtproto.Premi
 		Level:              level,
 		CurrentLevelBoosts: current,
 		Boosts:             n,
-		BoostUrl:           "",
+		BoostUrl:           boostURL(ref),
 	}
 	if hasNext {
 		st.NextLevelBoosts = wrapperspb.Int32(next)

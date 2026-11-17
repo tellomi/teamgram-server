@@ -8,6 +8,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/accountassets"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	"github.com/teamgram/teamgram-server/app/bff/messages/internal/server/grpc/service"
 	"github.com/teamgram/teamgram-server/app/bff/messages/webpage"
 	msg_client "github.com/teamgram/teamgram-server/app/messenger/msg/msg/client"
@@ -54,6 +55,12 @@ func NewWebPage(c Config) *service.WebPageService {
 func BindPreview(users user_client.UserClient, media media_client.MediaClient, chats chat_client.ChatClient) {
 	BindUsers(users)
 	if media != nil {
+		accountassets.LoadRingtoneDoc = func(ctx context.Context, self int64, in *mtproto.InputDocument) (*mtproto.Document, error) {
+			if in == nil || in.GetId() == 0 {
+				return nil, mtproto.ErrRingtoneInvalid
+			}
+			return media.MediaGetDocument(ctx, &mediapb.TLMediaGetDocument{Id: in.GetId()})
+		}
 		webpage.BindPhotoLoader(func(ctx context.Context, photoID int64) *mtproto.Photo {
 			photo, err := media.MediaGetPhoto(ctx, &mediapb.TLMediaGetPhoto{PhotoId: photoID})
 			if err != nil || photo == nil || photo.GetId() == 0 || photo.GetPredicateName() == mtproto.Predicate_photoEmpty {
@@ -212,9 +219,13 @@ func NewBotChat(c Config) *service.BotChatService {
 // NewQuickReply serves quick-reply shortcuts. Sending a shortcut goes
 // through messenger.msg, same as messages.sendMessage.
 func NewQuickReply(c Config) *service.QuickReplyService {
-	return &service.QuickReplyService{
+	svc := &service.QuickReplyService{
 		Msg: msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c.MsgClient)),
 	}
+	if c.SyncClient != nil && len(c.SyncClient.Brokers) > 0 {
+		svc.Push = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
+	}
+	return svc
 }
 
 // NewSavedTags serves saved-message reaction tags.
@@ -240,8 +251,11 @@ func NewThemes(c ...Config) *service.ThemesService {
 // NewWallpapers serves messages.setChatWallPaper and the account wallpaper RPCs.
 func NewWallpapers(c ...Config) *service.WallpapersService {
 	s := &service.WallpapersService{}
-	if len(c) > 0 && rpcReady(c[0].MsgClient) {
-		s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+	if len(c) > 0 {
+		chatdecor.UseDSN(c[0].ChannelMySQL)
+		if rpcReady(c[0].MsgClient) {
+			s.Msg = msg_client.NewMsgClient(rpcx.GetCachedRpcClient(c[0].MsgClient))
+		}
 	}
 	return s
 }

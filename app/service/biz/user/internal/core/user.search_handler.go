@@ -52,15 +52,21 @@ func (c *UserCore) UserSearch(in *user.TLUserSearch) (*user.UsersFound, error) {
 		in.Limit = 50
 	}
 
-	// 构造模糊查询字符串
+	// Username is a prefix. A display name matches either column, "名 姓",
+	// or the same words with the space removed. ExcludedContacts is applied;
+	// an empty list still needs a dummy id so the SQL stays valid.
 	q := in.Q + "%"
 	q2 := "%" + in.Q + "%"
+	excluded := in.ExcludedContacts
+	if len(excluded) == 0 {
+		excluded = []int64{0}
+	}
 
 	rList, _ := c.svcCtx.Dao.UsersDAO.SearchByQueryString(
 		c.ctx,
 		q,
 		q2,
-		[]int64{0},
+		excluded,
 		in.Limit)
 
 	if isData {

@@ -12,6 +12,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	dialogclient "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
@@ -166,24 +167,25 @@ func channelID(peer *mtproto.InputPeer, self int64) int64 {
 // ForumsService implements forum topic RPCs for channels that have the forum flag.
 type ForumsService struct {
 	mtproto.UnimplementedRPCForumsServer
+	Dialogs dialogclient.DialogClient
 }
 
-func (ForumsService) MessagesGetForumTopics(ctx context.Context, in *mtproto.TLMessagesGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
-	return listTopics(ctx, in.GetPeer(), in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
+func (s ForumsService) MessagesGetForumTopics(ctx context.Context, in *mtproto.TLMessagesGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
+	return s.listTopics(ctx, in.GetPeer(), in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 }
 
-func (ForumsService) ChannelsGetForumTopics(ctx context.Context, in *mtproto.TLChannelsGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
+func (s ForumsService) ChannelsGetForumTopics(ctx context.Context, in *mtproto.TLChannelsGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	id := in.GetChannel().GetChannelId()
 	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, id, topics, chat), nil
+	return topicsResult(ctx, s.Dialogs, id, topics, chat), nil
 }
 
-func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto.TLMessagesGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
-	res, err := listTopics(ctx, in.GetPeer(), "", 100, 0, 0, 0)
+func (s ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto.TLMessagesGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
+	res, err := s.listTopics(ctx, in.GetPeer(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -192,13 +194,13 @@ func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto
 	return res, nil
 }
 
-func (ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto.TLChannelsGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
+func (s ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto.TLChannelsGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	topics, chat, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, in.GetChannel().GetChannelId(), topicsByID(topics, in.GetTopics()), chat), nil
+	return topicsResult(ctx, s.Dialogs, in.GetChannel().GetChannelId(), topicsByID(topics, in.GetTopics()), chat), nil
 }
 
 func topicsByID(topics []*mtproto.ForumTopic, ids []int32) []*mtproto.ForumTopic {
@@ -290,17 +292,18 @@ func (ForumsService) ChannelsReorderPinnedForumTopics(ctx context.Context, in *m
 	return mtproto.MakeUpdatesByUpdates(channelUpdate(id)), nil
 }
 
-func listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit, offsetDate, offsetID, offsetTopic int32) (*mtproto.Messages_ForumTopics, error) {
+func (s ForumsService) listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit, offsetDate, offsetID, offsetTopic int32) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	id := channelID(peer, self)
 	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, q, limit, offsetDate, offsetID, offsetTopic)
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, id, topics, chat), nil
+	return topicsResult(ctx, s.Dialogs, id, topics, chat), nil
 }
 
-func topicsResult(ctx context.Context, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
+func topicsResult(ctx context.Context, dialogs dialogclient.DialogClient, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
+	fillTopicDrafts(ctx, dialogs, channelID, topics)
 	if topics == nil {
 		topics = []*mtproto.ForumTopic{}
 	}

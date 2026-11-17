@@ -120,6 +120,9 @@ func TestMessagesSetHistoryTTLSavedAndGroup(t *testing.T) {
 	if msg.last.PeerType != mtproto.PEER_CHAT || msg.last.PeerId != 30 || msg.last.GetMessage()[0].GetMessage().GetAction().GetPeriod() != 0 {
 		t.Fatalf("chat send %+v", msg.last)
 	}
+	if len(ch.ttl) != 1 || ch.ttl[0].GetSelfId() != 10 || ch.ttl[0].GetChatId() != 30 || ch.ttl[0].GetTtlPeriod() != 0 {
+		t.Fatalf("chat ttl %+v", ch.ttl)
+	}
 	if len(syn.push) != 1 || syn.push[0].UserId != 11 {
 		t.Fatalf("chat push %#v", syn.push)
 	}
@@ -224,11 +227,37 @@ func (s *ttlSync) SyncPushUpdates(_ context.Context, in *sync.TLSyncPushUpdates)
 	return nil, nil
 }
 
+func TestMessagesSetHistoryTTLGroupRejectsMember(t *testing.T) {
+	msg := &ttlMsg{}
+	dlg := &ttlDialog{}
+	ch := &ttlChat{deny: mtproto.ErrChatAdminRequired}
+	c := newTTLCore(dlg, msg, &ttlSync{}, ch)
+	if _, err := c.MessagesSetHistoryTTL(&mtproto.TLMessagesSetHistoryTTL{
+		Peer:   mtproto.MakeTLInputPeerChat(&mtproto.InputPeer{ChatId: 30}).To_InputPeer(),
+		Period: 86400,
+	}); err != mtproto.ErrChatAdminRequired {
+		t.Fatalf("member: %v", err)
+	}
+	if len(dlg.calls) != 0 || msg.last != nil {
+		t.Fatal("rejected member still wrote a dialog or service message")
+	}
+}
+
 type ttlChat struct {
 	chat_client.ChatClient
 	chat *mtproto.MutableChat
+	ttl  []*chatpb.TLChatSetHistoryTTL
+	deny error
 }
 
 func (c *ttlChat) ChatGetMutableChat(_ context.Context, _ *chatpb.TLChatGetMutableChat) (*mtproto.MutableChat, error) {
+	return c.chat, nil
+}
+
+func (c *ttlChat) ChatSetHistoryTTL(_ context.Context, in *chatpb.TLChatSetHistoryTTL) (*mtproto.MutableChat, error) {
+	if c.deny != nil {
+		return nil, c.deny
+	}
+	c.ttl = append(c.ttl, in)
 	return c.chat, nil
 }

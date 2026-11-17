@@ -16,6 +16,16 @@ func (p peerRef) key() string {
 	return p.kind + ":" + itoa(p.id)
 }
 
+// boostURL is the link premium.getBoostsStatus puts in boost_url.
+// Official clients copy this string. A channel or user without a public
+// username uses the c= form. https://core.telegram.org/api/boost
+func boostURL(p peerRef) string {
+	if p.id == 0 {
+		return ""
+	}
+	return "https://t.me/boost?c=" + itoa(p.id)
+}
+
 func itoa(n int64) string {
 	if n == 0 {
 		return "0"

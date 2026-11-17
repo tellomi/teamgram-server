@@ -112,20 +112,20 @@ func TestCatalogAPIs(t *testing.T) {
 		t.Fatalf("twemoji getStickerSet: %v", err)
 	}
 	id := tw.GetDocuments()[0].GetId()
-	if err = s.SaveRecent(user, id, false, false); err != nil {
+	if _, err = s.SaveRecent(user, id, false, false); err != nil {
 		t.Fatal(err)
 	}
 	recent := s.Recent(user, 0, false)
 	if len(recent.GetStickers()) != 1 || recent.GetStickers()[0].GetId() != id {
 		t.Fatalf("recent %#v", recent.GetStickers())
 	}
-	if err = s.Fave(user, id, false); err != nil {
+	if _, err = s.Fave(user, id, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Faved(user, 0).GetStickers()) != 1 {
 		t.Fatal("fave did not stick")
 	}
-	if err = s.Fave(user, id, true); err != nil {
+	if _, err = s.Fave(user, id, true); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Faved(user, 0).GetStickers()) != 0 {

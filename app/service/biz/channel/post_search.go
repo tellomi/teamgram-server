@@ -73,11 +73,16 @@ func (s *Service) SearchPosts(ctx context.Context, self int64, q PostQuery) (*mt
 		if sender == 0 {
 			sender = self
 		}
-		if body.GetFromId().GetUserId() == 0 && !chIsBroadcast(ch) {
+		// A supergroup message whose from_id is the channel was sent by an
+		// anonymous admin. Putting SenderID back would publish that user.
+		anon := body.GetFromId().GetChannelId() != 0 && !chIsBroadcast(ch)
+		if !anon && body.GetFromId().GetUserId() == 0 && !chIsBroadcast(ch) {
 			body.FromId = mtproto.MakePeerUser(sender)
 		}
 		msgs = append(msgs, viewMessage(body, sender, self))
-		senders = append(senders, sender)
+		if !anon {
+			senders = append(senders, sender)
+		}
 		if channelID != 0 && !seen[channelID] {
 			seen[channelID] = true
 			chats = append(chats, postSearchChat(s, ctx, self, ch, channelID))

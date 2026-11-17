@@ -30,6 +30,7 @@ type FolderReader interface {
 	Settings(ctx context.Context, userID int64) (Settings, error)
 	Muted(ctx context.Context, userID int64, peerType, categoryType int32, peerID int64) (bool, error)
 	MuteForever(ctx context.Context, userID int64, peerType int32, peerID int64) error
+	SetAutoarchived(ctx context.Context, userID int64, peerType int32, peerID int64, on bool) error
 	IsContact(ctx context.Context, owner, peer int64) (bool, error)
 	CustomFilters(ctx context.Context, userID int64) ([]*mtproto.DialogFilter, error)
 }
@@ -90,6 +91,9 @@ func Apply(ctx context.Context, reader FolderReader, pts PtsWriter, in Incoming)
 		logx.WithContext(ctx).Errorf("archive.unarchive user=%d peer=%d err=%v", in.Owner, in.PeerID, err)
 		return nil
 	}
+	if err := reader.SetAutoarchived(ctx, in.Owner, in.PeerType, in.PeerID, false); err != nil {
+		logx.WithContext(ctx).Errorf("archive.autoarchived user=%d peer=%d err=%v", in.Owner, in.PeerID, err)
+	}
 	upd := folderUpdate(ctx, pts, in.Owner, in.PeerType, in.PeerID, 0)
 	if upd == nil {
 		return nil
@@ -104,6 +108,9 @@ func archiveNew(ctx context.Context, reader FolderReader, pts PtsWriter, in Inco
 	}
 	if err := reader.MuteForever(ctx, in.Owner, in.PeerType, in.PeerID); err != nil {
 		logx.WithContext(ctx).Errorf("archive.mute-new user=%d peer=%d err=%v", in.Owner, in.PeerID, err)
+	}
+	if err := reader.SetAutoarchived(ctx, in.Owner, in.PeerType, in.PeerID, true); err != nil {
+		logx.WithContext(ctx).Errorf("archive.autoarchived user=%d peer=%d err=%v", in.Owner, in.PeerID, err)
 	}
 	var out []*mtproto.Update
 	if upd := folderUpdate(ctx, pts, in.Owner, in.PeerType, in.PeerID, 1); upd != nil {
