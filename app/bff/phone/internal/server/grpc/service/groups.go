@@ -6,6 +6,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/bff/phone/internal/engine"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 )
 
 func (s *Service) callIDs(in *mtproto.InputGroupCall) (int64, int64, error) {
@@ -36,10 +37,14 @@ func (s *Service) PhoneCreateGroupCall(ctx context.Context, in *mtproto.TLPhoneC
 	if in.GetScheduleDate() != nil {
 		schedule = in.GetScheduleDate().GetValue()
 	}
+	joinMuted := in.GetRtmpStream()
+	if peer.PeerType == mtproto.PEER_CHANNEL && channel.Shared().CallStartsMuted(ctx, peer.PeerId) {
+		joinMuted = true
+	}
 	return s.eng.CreateGroup(engine.CreateGroup{
 		UserID: md.GetUserId(), Auth: md.GetPermAuthKeyId(),
 		PeerType: peer.PeerType, PeerID: peer.PeerId, RandomID: in.GetRandomId(),
-		Title: title, Schedule: schedule, RTMP: in.GetRtmpStream(),
+		Title: title, Schedule: schedule, RTMP: in.GetRtmpStream(), JoinMuted: joinMuted,
 	})
 }
 

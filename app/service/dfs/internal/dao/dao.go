@@ -26,8 +26,9 @@ import (
 type Dao struct {
 	*minio_util.MinioUtil
 	idgen_client.IDGenClient2
-	ssdb  kv.ExtStore
-	Blobs *mediablob.Store
+	ssdb      kv.ExtStore
+	Blobs     *mediablob.Store
+	Encrypted *EncryptedFiles
 }
 
 func New(c config.Config) *Dao {
@@ -35,11 +36,16 @@ func New(c config.Config) *Dao {
 	if err != nil {
 		logx.Errorf("dfs: content-addressed blobs disabled: %v", err)
 	}
+	enc, err := OpenEncryptedFiles(c.Mysql.DSN)
+	if err != nil {
+		logx.Errorf("dfs: encrypted_files index disabled: %v", err)
+	}
 	return &Dao{
 		MinioUtil:    minio_util.MustNewMinioClient(&c.Minio),
 		IDGenClient2: idgen_client.NewIDGenClient2(zrpc.MustNewClient(c.IdGen)),
 		ssdb:         kv.NewStore(c.SSDB),
 		Blobs:        blobs,
+		Encrypted:    enc,
 	}
 }
 

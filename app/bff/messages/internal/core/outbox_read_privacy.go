@@ -37,7 +37,32 @@ func (c *MessagesCore) outboxReadPrivacy(peerID int64) error {
 	if peerHides {
 		return mtproto.ErrUserPrivacyRestricted
 	}
+	// Hiding "last seen" also hides the exact read time. The caller's own
+	// status privacy is YOUR_PRIVACY_RESTRICTED unless they have a paid
+	// Premium subscription. The peer's status privacy is USER_PRIVACY_RESTRICTED.
+	// https://core.telegram.org/method/messages.getOutboxReadDate
+	if !c.statusVisible(c.MD.UserId, peerID) && !c.callerPaidPremium() {
+		return mtproto.ErrYourPrivacyRestricted
+	}
+	if !c.statusVisible(peerID, c.MD.UserId) {
+		return mtproto.ErrUserPrivacyRestricted
+	}
 	return nil
+}
+
+func (c *MessagesCore) statusVisible(owner, viewer int64) bool {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || owner == 0 || viewer == 0 {
+		return true
+	}
+	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(c.ctx, &userpb.TLUserCheckPrivacy{
+		UserId:  owner,
+		KeyType: mtproto.STATUS_TIMESTAMP,
+		PeerId:  viewer,
+	})
+	if err != nil {
+		return true
+	}
+	return mtproto.FromBool(ok)
 }
 
 func (c *MessagesCore) hideReadMarks(userID int64) (bool, error) {

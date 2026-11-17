@@ -62,6 +62,7 @@ func UseDSN(dsn string) error {
 	}
 	prev := Shared()
 	svc.SetHooks(prev.hooks())
+	svc.SetChatPhotoGetter(prev.chatPhotoGetter())
 	Use(svc)
 	regMu.Lock()
 	mysqlOn = true
