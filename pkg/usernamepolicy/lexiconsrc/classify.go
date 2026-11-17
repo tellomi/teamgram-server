@@ -629,8 +629,26 @@ func loadRuntimeDefer() (map[string]string, error) {
 	return out, nil
 }
 
+// FragmentExact reports three-character terms whose CONTAINS match hits a
+// longer ordinary name. 四事件 hits 五四事件, 上海帮 hits 上海帮忙, and
+// 上中央 hits 上中央电视台. Names such as 辛灏年 are not this shape.
+// Two-character terms are already exact. Terms of four or more characters
+// stay on CONTAINS.
+func FragmentExact(term string) bool {
+	if utf8.RuneCountInString(term) != 3 {
+		return false
+	}
+	return strings.HasSuffix(term, "事件") ||
+		strings.HasSuffix(term, "中央") ||
+		strings.HasSuffix(term, "帮") ||
+		strings.HasSuffix(term, "门") ||
+		strings.HasSuffix(term, "社") ||
+		strings.HasSuffix(term, "论")
+}
+
 // RuntimeExact lists promoted terms that stay loaded but must not use
 // CONTAINS. Two-character terms are already exact and are rejected here.
+// FragmentExact terms are separate: they are not repeated in this file.
 func RuntimeExact() (map[string]string, error) {
 	rows, err := loadWordReasons("editorial/runtime-exact.tsv", "runtime-exact")
 	if err != nil {
@@ -664,15 +682,27 @@ func RuntimeExact() (map[string]string, error) {
 	return out, nil
 }
 
-// SupplementTerms is the reviewed allowlist of exact lines from
-// Vocabulary/GFW补充词库.txt. That file is not vendored. Porn, weapons,
-// ads, bare place names, and ordinary two-character words are not on the
-// allowlist. update.py --fetch checks each line against the pinned blob.
+// SupplementTerms reads generated/gfw-selected.tsv. update.py --fetch
+// rebuilds that file from the pinned GFW blob: a line is kept only when it
+// contains a stem, avoids the skip markers, and is not already covered by
+// a loaded CONTAINS rule. The GFW file itself is not vendored.
 func SupplementTerms() ([]RuntimeTerm, error) {
 	if err := CheckBlobs(); err != nil {
 		return nil, err
 	}
-	rows, err := loadWordReasons("editorial/gfw-allow.tsv", "gfw-allow")
+	text, err := readText("generated/gfw-selected.tsv")
+	if err != nil {
+		return nil, err
+	}
+	words := parseLines(text, false)
+	if len(words) == 0 {
+		return nil, fmt.Errorf("lexiconsrc: gfw-selected is empty")
+	}
+	stems, err := loadWordList("editorial/gfw-stems.txt")
+	if err != nil {
+		return nil, err
+	}
+	markers, err := loadWordList("editorial/gfw-skip-markers.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -680,38 +710,81 @@ func SupplementTerms() ([]RuntimeTerm, error) {
 	if err != nil {
 		return nil, err
 	}
-	promoted, err := PromotedTerms()
-	if err != nil {
-		return nil, err
-	}
-	have := map[string]struct{}{}
-	for _, term := range promoted {
-		have[dedupKey(term.Term)] = struct{}{}
-	}
 	deferred, err := loadRuntimeDefer()
 	if err != nil {
 		return nil, err
 	}
+	banned := map[string]struct{}{
+		"天安门": {}, "新疆": {}, "平反": {}, "静坐": {}, "法轮": {},
+		"五四事件": {}, "黄色图片": {}, "仿真枪": {}, "大屠杀": {},
+	}
 	var out []RuntimeTerm
-	for _, row := range rows {
-		word := row[0]
+	seen := map[string]struct{}{}
+	for _, word := range words {
 		key := dedupKey(word)
-		if _, ok := keys[key]; ok {
-			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s is already a category-file line", word)
+		if _, dup := seen[key]; dup {
+			return nil, fmt.Errorf("lexiconsrc: duplicate gfw selected %s", word)
 		}
-		if _, ok := have[key]; ok {
-			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s duplicates a promoted term", word)
+		seen[key] = struct{}{}
+		if _, ok := banned[word]; ok {
+			return nil, fmt.Errorf("lexiconsrc: gfw selected must not include %s", word)
+		}
+		if utf8.RuneCountInString(word) < 3 || cjkCount(word) < 2 {
+			return nil, fmt.Errorf("lexiconsrc: gfw selected %s fails the length gate", word)
+		}
+		if !containsAny(word, stems) {
+			return nil, fmt.Errorf("lexiconsrc: gfw selected %s has no stem", word)
+		}
+		if marker := firstContained(word, markers); marker != "" {
+			return nil, fmt.Errorf("lexiconsrc: gfw selected %s contains marker %s", word, marker)
+		}
+		if _, ok := keys[key]; ok {
+			return nil, fmt.Errorf("lexiconsrc: gfw selected %s is already a category-file line", word)
 		}
 		if _, ok := deferred[key]; ok {
-			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s is runtime-deferred", word)
+			return nil, fmt.Errorf("lexiconsrc: gfw selected %s is runtime-deferred", word)
 		}
-		if utf8.RuneCountInString(word) < 3 {
-			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s is shorter than 3", word)
-		}
-		out = append(out, RuntimeTerm{Term: word, Files: []string{"editorial/gfw-allow.tsv"}})
+		out = append(out, RuntimeTerm{Term: word, Files: []string{"generated/gfw-selected.tsv"}})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Term < out[j].Term })
 	return out, nil
+}
+
+func loadWordList(path string) ([]string, error) {
+	text, err := readText(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		raw := strings.TrimSpace(line)
+		if raw == "" || strings.HasPrefix(raw, "#") {
+			continue
+		}
+		out = append(out, raw)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("lexiconsrc: %s is empty", path)
+	}
+	return out, nil
+}
+
+func containsAny(word string, parts []string) bool {
+	for _, part := range parts {
+		if part != "" && strings.Contains(word, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstContained(word string, parts []string) string {
+	for _, part := range parts {
+		if part != "" && strings.Contains(word, part) {
+			return part
+		}
+	}
+	return ""
 }
 
 func categoryKeys() (map[string]struct{}, error) {

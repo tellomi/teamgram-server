@@ -13,7 +13,7 @@ const runtimeLexiconSource = "lexiconsrc/konsheng"
 // runtimeRules are the MIT category lines that policy-2026110602 left
 // unpublished because they also occur as whole lines of the excluded
 // Tencent file, plus the reviewed GFW allowlist. The bytes loaded here
-// are the vendored konsheng files and editorial/gfw-allow.tsv. The Tencent
+// are the vendored konsheng files and generated/gfw-selected.tsv. The Tencent
 // file and the rest of the GFW file are not inputs. Editorial drops stay out.
 func runtimeRules() ([]rule, error) {
 	terms, err := lexiconsrc.PromotedTerms()
@@ -63,7 +63,7 @@ func runtimeRules() ([]rule, error) {
 	}
 	for _, term := range terms {
 		spec := lexiconsrc.SpecFor(term.Term, false)
-		if _, ok := exact[term.Term]; ok {
+		if _, ok := exact[term.Term]; ok || lexiconsrc.FragmentExact(term.Term) {
 			spec.Matches = []string{MatchNormalizedExact}
 		}
 		source := runtimeLexiconSource + " " + strings.Join(term.Files, ",")

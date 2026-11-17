@@ -2,8 +2,8 @@
 """Regenerate the cn-politics coverage files. Does not write username rules.
 
 --fetch downloads the pinned blobs, checks them, and rewrites generated/.
-It also downloads Vocabulary/GFW补充词库.txt, checks its blob, and checks
-that every editorial/gfw-allow.tsv line is an exact line of that file.
+It also downloads Vocabulary/GFW补充词库.txt, checks its blob, and rebuilds
+generated/gfw-selected.tsv from the stem and skip-marker rules.
 The GFW file is not written into the tree.
 --check recomputes pinyin from the vendored files and the overlap keys.
 --check-runtime recomputes runtime pinyin, including the GFW allowlist.
@@ -363,36 +363,56 @@ def load_word_reasons(rel: str, label: str) -> list[tuple[str, str]]:
     return rows
 
 
-# Exact GFW lines that must not be copied onto the allowlist. Bare places,
-# ordinary two-character words, and samples of the porn, weapon, and ad
-# lines that sit in the same file.
-GFW_ALLOW_BANNED = (
+GFW_SELECTED_BANNED = (
     "天安门",
-    "静坐",
-    "平反",
     "新疆",
+    "平反",
+    "静坐",
     "法轮",
-    "抵制",
-    "塔利班",
-    "木仓",
-    "火乍",
-    "核蛋",
-    "仿真枪",
+    "五四事件",
     "黄色图片",
-    "24小时上门",
+    "仿真枪",
+    "大屠杀",
 )
 
 
-def gfw_allow_words(meta: dict) -> list[str]:
-    rows = load_word_reasons(meta["editorial"]["gfw_allow"], "gfw-allow")
-    banned = set(GFW_ALLOW_BANNED)
-    words = []
-    for word, _reason in rows:
-        if word in banned:
-            raise UpdateError(f"gfw-allow must not include {word}")
-        if len(word) < 3:
-            raise UpdateError(f"gfw-allow {word} is shorter than 3")
+def load_word_list(rel: str) -> list[str]:
+    out: list[str] = []
+    for line in read_vendored(rel).decode("utf-8").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        out.append(raw)
+    if not out:
+        raise UpdateError(f"{rel} is empty")
+    return out
+
+
+def cjk_count(word: str) -> int:
+    return sum(1 for ch in word if "\u3400" <= ch <= "\u9fff")
+
+
+def fragment_exact(term: str) -> bool:
+    # Keep this in step with lexiconsrc.FragmentExact.
+    return len(term) == 3 and term.endswith(("事件", "中央", "帮", "门", "社", "论"))
+
+
+def gfw_selected_words(meta: dict) -> list[str]:
+    rel = meta["editorial"]["gfw_selected"]
+    words: list[str] = []
+    seen: set[str] = set()
+    for line in read_vendored(rel).decode("utf-8").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        word = raw.split("\t", 1)[0]
+        key = dedup_key(word)
+        if key in seen:
+            raise UpdateError(f"duplicate gfw selected {word}")
+        seen.add(key)
         words.append(word)
+    if not words:
+        raise UpdateError("gfw-selected is empty")
     return words
 
 
@@ -425,18 +445,79 @@ def promoted_terms(meta: dict) -> list[str]:
     return chosen
 
 
-def runtime_terms(meta: dict) -> list[str]:
-    base = promoted_terms(meta)
-    extra = gfw_allow_words(meta)
+def contains_bases(meta: dict) -> set[str]:
+    bases: set[str] = set()
+    policy = json.loads((ROOT.parent / "policy" / "policy-2026110602.json").read_text(encoding="utf-8"))
+    for rule in policy["payload"]["rules"]:
+        if "cn" in rule["regions"] and "CONTAINS" in rule["matches"]:
+            bases.add(rule["normalized"])
+    exact = set(runtime_exact_words(meta))
+    for word in promoted_terms(meta):
+        if word in exact or fragment_exact(word):
+            continue
+        if len(word) > 2 and cjk_count(word) >= 2:
+            bases.add(dedup_key(word))
+    return bases
+
+
+def select_gfw_lines(lines: list[str], meta: dict) -> list[str]:
+    stems = load_word_list(meta["editorial"]["gfw_stems"])
+    markers = load_word_list(meta["editorial"]["gfw_skip"])
     forms, _ = category_rows(meta)
     deferred = load_runtime_defer(meta["editorial"]["runtime_defer"])
-    base_keys = {dedup_key(word) for word in base}
-    for word in extra:
+    banned = set(GFW_SELECTED_BANNED)
+    bases = contains_bases(meta)
+    phone = re.compile(r"\d{7,}")
+    urlre = re.compile(r"(https?://|www\.|\.com\b|\.net\b|\.cn\b)", re.I)
+    chosen: list[str] = []
+    seen: set[str] = set()
+    for word in lines:
+        if any(ch.isspace() for ch in word):
+            continue
+        if len(word) < 3 or cjk_count(word) < 2:
+            continue
+        if phone.search(word) or urlre.search(word):
+            continue
+        if word in banned or any(marker in word for marker in markers):
+            continue
         key = dedup_key(word)
-        if key in forms or key in base_keys:
-            raise UpdateError(f"gfw-allow {word} collides with a category line")
-        if key in deferred:
-            raise UpdateError(f"gfw-allow {word} is runtime-deferred")
+        if key in forms or key in deferred or key in seen:
+            continue
+        if not any(stem in word for stem in stems):
+            continue
+        if any(base and base in key and base != key for base in bases):
+            continue
+        seen.add(key)
+        chosen.append(word)
+    chosen.sort()
+    return chosen
+
+
+def validate_gfw_selected(meta: dict, words: list[str]) -> None:
+    stems = load_word_list(meta["editorial"]["gfw_stems"])
+    markers = load_word_list(meta["editorial"]["gfw_skip"])
+    forms, _ = category_rows(meta)
+    deferred = load_runtime_defer(meta["editorial"]["runtime_defer"])
+    banned = set(GFW_SELECTED_BANNED)
+    for word in words:
+        if word in banned:
+            raise UpdateError(f"gfw selected must not include {word}")
+        if len(word) < 3 or cjk_count(word) < 2:
+            raise UpdateError(f"gfw selected {word} fails the length gate")
+        if not any(stem in word for stem in stems):
+            raise UpdateError(f"gfw selected {word} has no stem")
+        for marker in markers:
+            if marker in word:
+                raise UpdateError(f"gfw selected {word} contains marker {marker}")
+        key = dedup_key(word)
+        if key in forms or key in deferred:
+            raise UpdateError(f"gfw selected {word} collides with a category line")
+
+
+def runtime_terms(meta: dict) -> list[str]:
+    base = promoted_terms(meta)
+    extra = gfw_selected_words(meta)
+    validate_gfw_selected(meta, extra)
     combined = base + extra
     combined.sort()
     return combined
@@ -526,7 +607,7 @@ def emit_runtime(meta: dict) -> None:
     print(f"wrote {path} terms {len(terms)} promoted {len(promoted)} pinyin {len(rows)}")
 
 
-def verify_gfw_allow(meta: dict) -> None:
+def verify_gfw_selected(meta: dict) -> None:
     item = None
     for excluded in meta["konsheng"]["excluded"]:
         if excluded["path"] == "Vocabulary/GFW补充词库.txt":
@@ -540,11 +621,14 @@ def verify_gfw_allow(meta: dict) -> None:
         raise UpdateError(f"GFW blob {got} != {item['blob']}")
     if len(data) != int(item["bytes"]):
         raise UpdateError(f"GFW bytes {len(data)} != {item['bytes']}")
-    lines = set(parse_lines(data.decode("utf-8-sig"), strip_trailing_comma=False))
-    missing = [word for word in gfw_allow_words(meta) if word not in lines]
-    if missing:
-        raise UpdateError("gfw-allow is not an exact GFW line: " + ",".join(missing))
-    print(f"gfw allow {len(gfw_allow_words(meta))} lines match blob {got}")
+    lines = parse_lines(data.decode("utf-8-sig"), strip_trailing_comma=False)
+    selected = select_gfw_lines(lines, meta)
+    path = ROOT / meta["editorial"]["gfw_selected"]
+    current = gfw_selected_words(meta) if path.is_file() else []
+    if current != selected:
+        path.write_text("".join(f"{word}\n" for word in selected), encoding="utf-8")
+        raise UpdateError(f"gfw-selected.tsv rebuilt with {len(selected)} lines; review the diff and rerun --fetch")
+    print(f"gfw selected {len(selected)} lines match blob {got}")
 
 
 def main(argv: list[str]) -> int:
@@ -561,7 +645,7 @@ def main(argv: list[str]) -> int:
         return 0
     if fetch:
         verify_upstream_blobs(meta)
-        verify_gfw_allow(meta)
+        verify_gfw_selected(meta)
         tencent_keys, fetched = fetch_tencent(meta)
         forms = forms_keys(meta)
         info = overlap_against(forms, tencent_keys, fetched["parsed_lines"], fetched["unique_keys"])

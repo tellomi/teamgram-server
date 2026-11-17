@@ -10,9 +10,11 @@
 # --fetch re-downloads every pinned blob, refuses a mismatch, and rewrites
 # the D-25 generated files. It does not edit policy-2026110602.json.
 # --emit-runtime rewrites generated/runtime-pinyin.tsv from the promoted
-# MIT lines plus editorial/gfw-allow.tsv. --check-runtime fails when that
-# file drifts. --fetch also checks the GFW blob and that every allowlist
-# line is an exact line of that blob. The GFW file is not vendored.
+# MIT lines plus generated/gfw-selected.tsv. --check-runtime fails when
+# that file drifts, and fails when a selected line breaks the stem, marker,
+# length, or redundancy rules. --fetch re-downloads the GFW blob, rebuilds
+# gfw-selected.tsv, and fails if the committed file differs. The GFW file
+# is not vendored.
 #
 # Offline check (no download; still needs pypinyin==0.55.0):
 #   python3 pkg/usernamepolicy/lexiconsrc/update.py --check
@@ -83,7 +85,7 @@ reason = "URL 黑名单，不引入。"
 path = "Vocabulary/GFW补充词库.txt"
 blob = "901d77198aaaadc729e665c10a38321fec8e6592"
 bytes = 90429
-reason = "混合大文件，含色情、武器、广告和残片。不入库，不整份准入。editorial/gfw-allow.tsv 只点名其中的原文行。--fetch 核对 blob，并核对允许行是原文。"
+reason = "混合大文件，含色情、武器、广告和残片。不入库，不整份准入。generated/gfw-selected.tsv 只收同时通过词干、排除标记和长度的原文行。--fetch 核对 blob 并重算该文件。"
 
 [[konsheng.excluded]]
 path = "Vocabulary/补充词库.txt"
@@ -146,9 +148,11 @@ drops = "editorial/politics-drops.tsv"
 pinyin_block = "editorial/pinyin-homophone-block.txt"
 runtime_defer = "editorial/runtime-defer.tsv"
 runtime_exact = "editorial/runtime-exact.tsv"
-gfw_allow = "editorial/gfw-allow.tsv"
+gfw_stems = "editorial/gfw-stems.txt"
+gfw_skip = "editorial/gfw-skip-markers.txt"
+gfw_selected = "generated/gfw-selected.tsv"
 copied_from = "tellomi/tellomi policy/candidates (D-25, 2026-11-06)"
-note = "误伤剔除和同音锁不是上游词表，不能用来新增词。gfw-allow 只能点名已固定 blob 里的原文行。"
+note = "误伤剔除和同音锁不是上游词表，不能用来新增词。GFW 选行由词干和排除标记生成，不是手写词表。"
 
 [pinyin]
 package = "pypinyin"
