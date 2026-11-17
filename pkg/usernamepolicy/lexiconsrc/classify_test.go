@@ -69,6 +69,8 @@ func TestBlobsAndCoverage(t *testing.T) {
 		"Apache-2.0",
 		"pypinyin",
 		"0.55.0",
+		"901d77198aaaadc729e665c10a38321fec8e6592",
+		"editorial/gfw-allow.tsv",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("SOURCE.toml missing %s", needle)

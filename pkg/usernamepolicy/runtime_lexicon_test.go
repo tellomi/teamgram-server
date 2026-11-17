@@ -17,8 +17,14 @@ func TestRuntimePromotionStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(terms) != 687 || len(pinyin) != 432 {
-		t.Fatalf("promoted %d pinyin %d", len(terms), len(pinyin))
+	supplement, err := lexiconsrc.SupplementTerms()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 687 overlap lines minus 22 editorial deferrals, plus 36 GFW allowlist
+	// lines. Pinyin was 432; 25 of the allowlist lines add a reading.
+	if len(terms) != 665 || len(supplement) != 36 || len(pinyin) != 457 {
+		t.Fatalf("promoted %d allow %d pinyin %d", len(terms), len(supplement), len(pinyin))
 	}
 	byTerm := map[string]lexiconsrc.RuntimeTerm{}
 	for _, term := range terms {
@@ -55,7 +61,7 @@ func TestRuntimePromotionStatus(t *testing.T) {
 	}
 
 	e := runtimeEngine()
-	if e.RuleCount() != 1024+687+432 {
+	if e.RuleCount() != 1024+665+36+457 {
 		t.Fatalf("runtime rules %d", e.RuleCount())
 	}
 	cn := []string{"global", "cn"}
@@ -99,6 +105,132 @@ func TestRuntimePromotionStatus(t *testing.T) {
 	v := e.Check("共产党专制", FieldDisplayName, cn)
 	if v.IsAllowed() || !strings.Contains(v.RuleID, "regions/cn/politics.toml") {
 		t.Fatalf("longer published phrase %+v", v)
+	}
+}
+
+func TestRuntimeEditorialDecisions(t *testing.T) {
+	exact, err := lexiconsrc.RuntimeExact()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exact) != 1 || exact["八九年"] == "" {
+		t.Fatalf("exact-only %+v", exact)
+	}
+	terms, err := lexiconsrc.PromotedTerms()
+	if err != nil {
+		t.Fatal(err)
+	}
+	supplement, err := lexiconsrc.SupplementTerms()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byTerm := map[string]lexiconsrc.RuntimeTerm{}
+	for _, term := range terms {
+		byTerm[term.Term] = term
+	}
+	for _, term := range supplement {
+		if _, ok := byTerm[term.Term]; ok {
+			t.Fatalf("allowlist duplicates %s", term.Term)
+		}
+		if len(term.Files) != 1 || term.Files[0] != "editorial/gfw-allow.tsv" {
+			t.Fatalf("%s files %+v", term.Term, term.Files)
+		}
+		byTerm[term.Term] = term
+	}
+	for _, word := range []string{
+		"塔利班", "木仓", "火乍", "核蛋", "弓单", "石肖",
+		"抵制", "静坐", "平反", "罢课", "霸工",
+		"天安门", "新疆", "法轮", "仿真枪", "黄色图片",
+	} {
+		if _, ok := byTerm[word]; ok {
+			t.Fatalf("%s was loaded", word)
+		}
+	}
+	for _, word := range []string{"低制", "底制", "平近习", "静zuo", "罢ke", "八九年", "四事件"} {
+		if _, ok := byTerm[word]; !ok {
+			t.Fatalf("kept %s", word)
+		}
+	}
+	for _, word := range []string{
+		"零八宪章", "八九学运", "天安门事件", "天安门广场大屠杀",
+		"胡耀邦", "赵紫阳", "法轮大法", "平反六四", "新疆独立", "六四天安门", "达赖喇嘛",
+	} {
+		if _, ok := byTerm[word]; !ok {
+			t.Fatalf("allow %s missing", word)
+		}
+	}
+
+	e := runtimeEngine()
+	cn := []string{"global", "cn"}
+	global := []string{"global"}
+	for _, name := range []string{
+		"塔利班", "反对塔利班", "木仓", "火乍", "核蛋", "弓单", "石肖",
+		"抵制", "静坐", "平反", "罢课", "霸餐",
+		"一九八九年", "八九年出生", "八九1年",
+		"天安门", "天安门广场", "新疆", "习近苹",
+	} {
+		if !e.Check(name, FieldDisplayName, cn).IsAllowed() {
+			t.Fatalf("false positive %s", name)
+		}
+	}
+	for _, name := range []string{
+		"八九年", "低制", "底制", "平近习", "静zuo", "罢ke",
+		"零八宪章", "八九学运", "八九学生", "天安门事件", "天安门广场大屠杀",
+		"胡耀邦", "赵紫阳", "法轮大法", "转法轮", "平反六四", "64平反",
+		"新疆独立", "六四", "六四天安门", "达赖喇嘛", "08宪章", "6.4学潮",
+	} {
+		if e.Check(name, FieldDisplayName, cn).IsAllowed() {
+			t.Fatalf("display %s was allowed", name)
+		}
+		if !e.Check(name, FieldDisplayName, global).IsAllowed() {
+			t.Fatalf("display %s applied outside cn", name)
+		}
+	}
+	// 四事件 stays a contains rule. It is the vendored line that also
+	// matches 六四事件. 五四事件 is the known collateral; this patch does
+	// not add that fragment.
+	for _, name := range []string{"六四事件", "五四事件"} {
+		if e.Check(name, FieldDisplayName, cn).IsAllowed() {
+			t.Fatalf("%s was allowed", name)
+		}
+	}
+	v := e.Check("抵制共产党", FieldDisplayName, cn)
+	if v.IsAllowed() || !strings.Contains(v.RuleID, "regions/cn/politics.toml") {
+		t.Fatalf("longer phrase %+v", v)
+	}
+	var year, charter rule
+	for _, item := range e.rules {
+		switch item.Term {
+		case "八九年":
+			year = item
+		case "零八宪章":
+			charter = item
+		}
+	}
+	if year.Term == "" || strings.Join(year.Matches, ",") != MatchNormalizedExact {
+		t.Fatalf("八九年 matches %+v", year)
+	}
+	if !containsStr(charter.Matches, MatchContains) || !strings.Contains(charter.Source, "editorial/gfw-allow.tsv") {
+		t.Fatalf("零八宪章 %+v", charter)
+	}
+	for _, name := range []string{"bajiunian", "lingbaxianzhang", "huyaobang", "falundafa", "pingfan64", "dalailama"} {
+		if e.Check(name, FieldUsername, cn).IsAllowed() {
+			t.Fatalf("username %s was allowed", name)
+		}
+		if !e.Check(name, FieldUsername, global).IsAllowed() {
+			t.Fatalf("global %s changed", name)
+		}
+	}
+	for _, name := range []string{"notlingbaxianzhangx", "jingzuo", "xjp1"} {
+		if !e.Check(name, FieldUsername, cn).IsAllowed() {
+			t.Fatalf("bypass %s was blocked", name)
+		}
+	}
+	if e.Check("天安1门事件", FieldDisplayName, cn).IsAllowed() {
+		t.Fatal("digit form of 天安门事件 was allowed")
+	}
+	if e.Check("胡耀1邦", FieldDisplayName, cn).IsAllowed() {
+		t.Fatal("digit form of 胡耀邦 was allowed")
 	}
 }
 

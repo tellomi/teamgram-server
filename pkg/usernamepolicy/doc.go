@@ -25,7 +25,9 @@
 // konsheng MIT and fwwdn Apache-2.0 category files. The 391 regions/cn
 // rules already in the JSON stay the D-25 admit set. MIT lines that also
 // occur in the excluded Tencent file are loaded at runtime unless a drop
-// list keeps them out. The Tencent file itself is not loaded. Chat
+// list keeps them out. editorial/gfw-allow.tsv adds exact lines from the
+// unvendored GFW supplement; the rest of that file is not loaded. The
+// Tencent file itself is not loaded. Chat
 // message bodies are not passed to this package.
 // Existing rows are not rewritten.
 //

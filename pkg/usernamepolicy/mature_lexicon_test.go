@@ -117,12 +117,13 @@ func TestMatureLexiconBehavior(t *testing.T) {
 	for _, term := range []string{
 		"刘瑞龙", "周建南", "李干成", "薄熙", "贺子珍", "黄敬", "黄镇",
 		"贪污", "双开", "政府", "西藏", "解放军", "胡总",
+		"塔利班", "木仓", "火乍", "核蛋", "抵制", "静坐", "平反", "一九八九年",
 	} {
 		if !e.Check(term, FieldDisplayName, cn).IsAllowed() {
 			t.Fatalf("deferred display %s was blocked", term)
 		}
 	}
-	for _, term := range []string{"共产党", "习近平", "胡锦涛", "温家宝"} {
+	for _, term := range []string{"共产党", "习近平", "胡锦涛", "温家宝", "零八宪章", "胡耀邦", "八九年"} {
 		if e.Check(term, FieldDisplayName, cn).IsAllowed() {
 			t.Fatalf("runtime han %s was allowed", term)
 		}

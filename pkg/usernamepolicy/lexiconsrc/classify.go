@@ -1,6 +1,8 @@
 // Package lexiconsrc checks the pinned cn politics word lists.
-// Classify repeats the D-25 admission rules. PromotedTerms is the subset
-// the username engine loads on top of policy-2026110602.
+// Classify repeats the D-25 admission rules. PromotedTerms is the overlap
+// slice the username engine loads on top of policy-2026110602.
+// SupplementTerms is a reviewed allowlist of exact lines from the
+// unvendored GFW supplement file. The file itself is not stored here.
 //
 // The vendored files, licenses, and the refresh command are described in
 // SOURCE.toml. Vocabulary/零时-Tencent.txt is not stored here. generated/
@@ -448,6 +450,8 @@ type RuntimeTerm struct {
 // D-25 still reports those lines as defer-tencent. The Tencent file is not
 // read and not vendored. source=both names that are not in the Tencent
 // overlap stay deferred. Porn, violence, and ads files are not inputs.
+// editorial/runtime-exact.tsv does not remove a term; it only suppresses
+// CONTAINS for that term. SupplementTerms is separate.
 func PromotedTerms() ([]RuntimeTerm, error) {
 	if err := CheckBlobs(); err != nil {
 		return nil, err
@@ -552,8 +556,18 @@ func RuntimePinyin() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	supplement, err := SupplementTerms()
+	if err != nil {
+		return nil, err
+	}
 	allowed := map[string]RuntimeTerm{}
 	for _, term := range promoted {
+		allowed[term.Term] = term
+	}
+	for _, term := range supplement {
+		if _, ok := allowed[term.Term]; ok {
+			return nil, fmt.Errorf("lexiconsrc: supplement %s duplicates a promoted term", term.Term)
+		}
 		allowed[term.Term] = term
 	}
 	out := map[string]string{}
@@ -568,7 +582,7 @@ func RuntimePinyin() (map[string]string, error) {
 			return nil, fmt.Errorf("lexiconsrc: bad runtime pinyin row %q", raw)
 		}
 		if _, ok := allowed[word]; !ok {
-			return nil, fmt.Errorf("lexiconsrc: runtime pinyin %s is not a promoted term", word)
+			return nil, fmt.Errorf("lexiconsrc: runtime pinyin %s is not a runtime term", word)
 		}
 		if py == dedupKey(word) || !usernameSafe(py) || utf8.RuneCountInString(py) < 8 || blocked[py] {
 			return nil, fmt.Errorf("lexiconsrc: runtime pinyin %s -> %s rejected", word, py)
@@ -613,4 +627,135 @@ func loadRuntimeDefer() (map[string]string, error) {
 		return nil, fmt.Errorf("lexiconsrc: runtime-defer is empty")
 	}
 	return out, nil
+}
+
+// RuntimeExact lists promoted terms that stay loaded but must not use
+// CONTAINS. Two-character terms are already exact and are rejected here.
+func RuntimeExact() (map[string]string, error) {
+	rows, err := loadWordReasons("editorial/runtime-exact.tsv", "runtime-exact")
+	if err != nil {
+		return nil, err
+	}
+	promoted, err := PromotedTerms()
+	if err != nil {
+		return nil, err
+	}
+	allowed := map[string]struct{}{}
+	for _, term := range promoted {
+		allowed[term.Term] = struct{}{}
+	}
+	out := map[string]string{}
+	for _, row := range rows {
+		word, reason := row[0], row[1]
+		if _, ok := allowed[word]; !ok {
+			return nil, fmt.Errorf("lexiconsrc: runtime-exact %s is not a promoted term", word)
+		}
+		contains := false
+		for _, match := range SpecFor(word, false).Matches {
+			if match == "CONTAINS" {
+				contains = true
+			}
+		}
+		if !contains {
+			return nil, fmt.Errorf("lexiconsrc: runtime-exact %s is already exact", word)
+		}
+		out[word] = reason
+	}
+	return out, nil
+}
+
+// SupplementTerms is the reviewed allowlist of exact lines from
+// Vocabulary/GFW补充词库.txt. That file is not vendored. Porn, weapons,
+// ads, bare place names, and ordinary two-character words are not on the
+// allowlist. update.py --fetch checks each line against the pinned blob.
+func SupplementTerms() ([]RuntimeTerm, error) {
+	if err := CheckBlobs(); err != nil {
+		return nil, err
+	}
+	rows, err := loadWordReasons("editorial/gfw-allow.tsv", "gfw-allow")
+	if err != nil {
+		return nil, err
+	}
+	keys, err := categoryKeys()
+	if err != nil {
+		return nil, err
+	}
+	promoted, err := PromotedTerms()
+	if err != nil {
+		return nil, err
+	}
+	have := map[string]struct{}{}
+	for _, term := range promoted {
+		have[dedupKey(term.Term)] = struct{}{}
+	}
+	deferred, err := loadRuntimeDefer()
+	if err != nil {
+		return nil, err
+	}
+	var out []RuntimeTerm
+	for _, row := range rows {
+		word := row[0]
+		key := dedupKey(word)
+		if _, ok := keys[key]; ok {
+			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s is already a category-file line", word)
+		}
+		if _, ok := have[key]; ok {
+			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s duplicates a promoted term", word)
+		}
+		if _, ok := deferred[key]; ok {
+			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s is runtime-deferred", word)
+		}
+		if utf8.RuneCountInString(word) < 3 {
+			return nil, fmt.Errorf("lexiconsrc: gfw-allow %s is shorter than 3", word)
+		}
+		out = append(out, RuntimeTerm{Term: word, Files: []string{"editorial/gfw-allow.tsv"}})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Term < out[j].Term })
+	return out, nil
+}
+
+func categoryKeys() (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	for _, path := range []string{"konsheng/政治类型.txt", "konsheng/反动词库.txt", "konsheng/贪腐词库.txt"} {
+		text, err := readText(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, word := range parseLines(text, false) {
+			out[dedupKey(word)] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
+func loadWordReasons(path, label string) ([][2]string, error) {
+	text, err := readText(path)
+	if err != nil {
+		return nil, err
+	}
+	var rows [][2]string
+	seen := map[string]struct{}{}
+	for _, line := range strings.Split(text, "\n") {
+		raw := strings.TrimSpace(line)
+		if raw == "" || strings.HasPrefix(raw, "#") {
+			continue
+		}
+		word, reason, ok := strings.Cut(raw, "\t")
+		if !ok || word == "" || reason == "" {
+			return nil, fmt.Errorf("lexiconsrc: bad %s line %q", label, raw)
+		}
+		if word == "word" && reason == "reason" {
+			continue
+		}
+		key := dedupKey(word)
+		if _, dup := seen[key]; dup {
+			return nil, fmt.Errorf("lexiconsrc: duplicate %s %s", label, word)
+		}
+		seen[key] = struct{}{}
+		rows = append(rows, [2]string{word, reason})
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("lexiconsrc: %s is empty", label)
+	}
+	return rows, nil
 }

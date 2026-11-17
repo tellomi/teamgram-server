@@ -2,7 +2,11 @@
 """Regenerate the cn-politics coverage files. Does not write username rules.
 
 --fetch downloads the pinned blobs, checks them, and rewrites generated/.
+It also downloads Vocabulary/GFW补充词库.txt, checks its blob, and checks
+that every editorial/gfw-allow.tsv line is an exact line of that file.
+The GFW file is not written into the tree.
 --check recomputes pinyin from the vendored files and the overlap keys.
+--check-runtime recomputes runtime pinyin, including the GFW allowlist.
 A blob mismatch or a pypinyin version other than 0.55.0 is a failure.
 """
 
@@ -337,10 +341,69 @@ def load_runtime_defer(rel: str) -> dict[str, str]:
     return out
 
 
+def load_word_reasons(rel: str, label: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for line in read_vendored(rel).decode("utf-8").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        word, reason = raw.split("\t", 1)
+        if word == "word" and reason == "reason":
+            continue
+        if not word or not reason:
+            raise UpdateError(f"bad {label} line {raw!r}")
+        key = dedup_key(word)
+        if key in seen:
+            raise UpdateError(f"duplicate {label} {word}")
+        seen.add(key)
+        rows.append((word, reason))
+    if not rows:
+        raise UpdateError(f"{label} is empty")
+    return rows
+
+
+# Exact GFW lines that must not be copied onto the allowlist. Bare places,
+# ordinary two-character words, and samples of the porn, weapon, and ad
+# lines that sit in the same file.
+GFW_ALLOW_BANNED = (
+    "天安门",
+    "静坐",
+    "平反",
+    "新疆",
+    "法轮",
+    "抵制",
+    "塔利班",
+    "木仓",
+    "火乍",
+    "核蛋",
+    "仿真枪",
+    "黄色图片",
+    "24小时上门",
+)
+
+
+def gfw_allow_words(meta: dict) -> list[str]:
+    rows = load_word_reasons(meta["editorial"]["gfw_allow"], "gfw-allow")
+    banned = set(GFW_ALLOW_BANNED)
+    words = []
+    for word, _reason in rows:
+        if word in banned:
+            raise UpdateError(f"gfw-allow must not include {word}")
+        if len(word) < 3:
+            raise UpdateError(f"gfw-allow {word} is shorter than 3")
+        words.append(word)
+    return words
+
+
+def runtime_exact_words(meta: dict) -> list[str]:
+    return [word for word, _reason in load_word_reasons(meta["editorial"]["runtime_exact"], "runtime-exact")]
+
+
 def promoted_terms(meta: dict) -> list[str]:
     forms, _ = category_rows(meta)
     drops = load_drops(meta["editorial"]["drops"])
-    extra = load_runtime_defer("editorial/runtime-defer.tsv")
+    extra = load_runtime_defer(meta["editorial"]["runtime_defer"])
     overlap = overlap_from_file(ROOT / meta["generated"]["overlap_keys"])
     drop_keys = {dedup_key(word) for word in drops}
     chosen: list[str] = []
@@ -360,6 +423,23 @@ def promoted_terms(meta: dict) -> list[str]:
         raise UpdateError("runtime-defer is not a Tencent-overlap category line: " + ",".join(sorted(missing)))
     chosen.sort()
     return chosen
+
+
+def runtime_terms(meta: dict) -> list[str]:
+    base = promoted_terms(meta)
+    extra = gfw_allow_words(meta)
+    forms, _ = category_rows(meta)
+    deferred = load_runtime_defer(meta["editorial"]["runtime_defer"])
+    base_keys = {dedup_key(word) for word in base}
+    for word in extra:
+        key = dedup_key(word)
+        if key in forms or key in base_keys:
+            raise UpdateError(f"gfw-allow {word} collides with a category line")
+        if key in deferred:
+            raise UpdateError(f"gfw-allow {word} is runtime-deferred")
+    combined = base + extra
+    combined.sort()
+    return combined
 
 
 def runtime_pinyin_rows(terms: list[str], blocked: set[str]) -> list[tuple[str, str]]:
@@ -409,8 +489,21 @@ def english_words() -> set[str]:
     return {line.strip().casefold() for line in path.read_text(encoding="utf-8", errors="ignore").splitlines() if line.strip()}
 
 
+def check_exact_promoted(meta: dict, promoted: list[str]) -> list[str]:
+    exact = runtime_exact_words(meta)
+    allowed = set(promoted)
+    for word in exact:
+        if word not in allowed:
+            raise UpdateError(f"runtime-exact {word} is not a promoted term")
+        if len(word) < 3:
+            raise UpdateError(f"runtime-exact {word} is shorter than 3")
+    return exact
+
+
 def check_runtime(meta: dict) -> None:
-    terms = promoted_terms(meta)
+    promoted = promoted_terms(meta)
+    exact = check_exact_promoted(meta, promoted)
+    terms = runtime_terms(meta)
     blocked = load_block(meta["editorial"]["pinyin_block"])
     rows = runtime_pinyin_rows(terms, blocked)
     path = ROOT / "generated" / "runtime-pinyin.tsv"
@@ -418,16 +511,40 @@ def check_runtime(meta: dict) -> None:
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
     if current != want:
         raise UpdateError("runtime-pinyin.tsv does not match pypinyin 0.55.0; rerun --emit-runtime")
-    print(f"runtime terms {len(terms)} pinyin {len(rows)}")
+    allow_n = len(terms) - len(promoted)
+    print(f"runtime terms {len(terms)} promoted {len(promoted)} allow {allow_n} pinyin {len(rows)} exact {len(exact)}")
 
 
 def emit_runtime(meta: dict) -> None:
-    terms = promoted_terms(meta)
+    promoted = promoted_terms(meta)
+    check_exact_promoted(meta, promoted)
+    terms = runtime_terms(meta)
     blocked = load_block(meta["editorial"]["pinyin_block"])
     rows = runtime_pinyin_rows(terms, blocked)
     path = ROOT / "generated" / "runtime-pinyin.tsv"
     path.write_text("".join(f"{word}\t{py}\n" for word, py in rows), encoding="utf-8")
-    print(f"wrote {path} terms {len(terms)} pinyin {len(rows)}")
+    print(f"wrote {path} terms {len(terms)} promoted {len(promoted)} pinyin {len(rows)}")
+
+
+def verify_gfw_allow(meta: dict) -> None:
+    item = None
+    for excluded in meta["konsheng"]["excluded"]:
+        if excluded["path"] == "Vocabulary/GFW补充词库.txt":
+            item = excluded
+            break
+    if item is None or "blob" not in item:
+        raise UpdateError("GFW supplement blob pin is missing from SOURCE.toml")
+    data = download(raw_url(meta["konsheng"]["name"], meta["konsheng"]["commit"], item["path"]))
+    got = git_blob_sha1(data)
+    if got != item["blob"]:
+        raise UpdateError(f"GFW blob {got} != {item['blob']}")
+    if len(data) != int(item["bytes"]):
+        raise UpdateError(f"GFW bytes {len(data)} != {item['bytes']}")
+    lines = set(parse_lines(data.decode("utf-8-sig"), strip_trailing_comma=False))
+    missing = [word for word in gfw_allow_words(meta) if word not in lines]
+    if missing:
+        raise UpdateError("gfw-allow is not an exact GFW line: " + ",".join(missing))
+    print(f"gfw allow {len(gfw_allow_words(meta))} lines match blob {got}")
 
 
 def main(argv: list[str]) -> int:
@@ -444,6 +561,7 @@ def main(argv: list[str]) -> int:
         return 0
     if fetch:
         verify_upstream_blobs(meta)
+        verify_gfw_allow(meta)
         tencent_keys, fetched = fetch_tencent(meta)
         forms = forms_keys(meta)
         info = overlap_against(forms, tencent_keys, fetched["parsed_lines"], fetched["unique_keys"])
