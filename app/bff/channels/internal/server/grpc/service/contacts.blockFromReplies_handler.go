@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/channels/repliesdelete"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -73,7 +74,7 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 		logx.WithContext(ctx).Infof("contacts.blockFromReplies report_spam user %d msg %d", sender, in.GetMsgId())
 	}
 	if (in.GetDeleteMessage() || in.GetDeleteHistory()) && s.Outbox != nil {
-		if err := s.deleteReplies(ctx, self, authKey, sender, in.GetMsgId(), in.GetDeleteHistory()); err != nil {
+		if err := s.deleteReplies(ctx, self, authKey, in.GetMsgId(), in.GetDeleteHistory()); err != nil {
 			return nil, err
 		}
 	}
@@ -88,80 +89,45 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 	return up, nil
 }
 
-const repliesHistoryPage = 100
-
-// deleteReplies removes the addressed @replies row, and when history is set,
-// every other row in that same private dialog whose forwarded author is
-// sender. Pages follow message.getHistoryMessages: ids strictly below the
-// previous page's oldest id, 100 at a time. Each page is deleted before the
-// next is read, so the id list stays one page. A stuck offset stops the walk.
-// Peer is PEER_EMPTY and revoke is false: these ids are already the caller's
-// own box ids, and the other person's copy is left in place.
-func (s ThreadsService) deleteReplies(ctx context.Context, self, authKey, sender int64, msgID int32, history bool) error {
-	if err := s.deleteRepliesIDs(ctx, self, authKey, []int32{msgID}); err != nil {
-		return err
-	}
-	if !history || s.Messages == nil {
-		return nil
-	}
-	var offset int32
-	for {
-		hist, err := s.Messages.MessageGetHistoryMessages(ctx, &message.TLMessageGetHistoryMessages{
-			UserId:   self,
-			PeerType: mtproto.PEER_USER,
-			PeerId:   repliesUserID,
-			OffsetId: offset,
-			Limit:    repliesHistoryPage,
-		})
-		if err != nil {
-			return err
-		}
-		if hist == nil || len(hist.GetDatas()) == 0 {
+func (s ThreadsService) deleteReplies(ctx context.Context, self, authKey int64, msgID int32, history bool) error {
+	del := func(ctx context.Context, ids []int32) error {
+		if len(ids) == 0 || s.Outbox == nil {
 			return nil
 		}
-		var oldest int32
-		var ids []int32
-		for _, box := range hist.GetDatas() {
-			if box == nil {
-				continue
-			}
-			if replySender(box) == sender {
-				ids = append(ids, box.GetMessageId())
-			}
-			if id := box.GetMessageId(); id != 0 && (oldest == 0 || id < oldest) {
-				oldest = id
-			}
-		}
-		if err := s.deleteRepliesIDs(ctx, self, authKey, ids); err != nil {
-			return err
-		}
-		if len(hist.GetDatas()) < repliesHistoryPage || oldest == 0 || oldest == offset {
-			return nil
-		}
-		offset = oldest
-	}
-}
-
-func (s ThreadsService) deleteRepliesIDs(ctx context.Context, self, authKey int64, ids []int32) error {
-	ids = uniqueIDs(ids)
-	for len(ids) > 0 {
-		n := repliesHistoryPage
-		if n > len(ids) {
-			n = len(ids)
-		}
-		if _, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
+		_, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
 			UserId:    self,
 			AuthKeyId: authKey,
 			PeerType:  mtproto.PEER_EMPTY,
 			PeerId:    0,
 			Revoke:    false,
-			Id:        ids[:n],
-		}); err != nil {
-			return err
-		}
-		ids = ids[n:]
+			Id:        ids,
+		})
+		return err
 	}
-	return nil
+	if !history || s.Messages == nil {
+		return del(ctx, []int32{msgID})
+	}
+	// DeleteHistory reads msg_id again and leaves that row in place until
+	// the walk finishes. SelectByMessageId only returns deleted = 0, so
+	// deleting it first would make a retry MSG_ID_INVALID.
+	return repliesdelete.DeleteHistory(ctx,
+		func(ctx context.Context, userID int64, id int32) (*mtproto.MessageBox, error) {
+			return s.Messages.MessageGetUserMessage(ctx, &message.TLMessageGetUserMessage{UserId: userID, Id: id})
+		},
+		func(ctx context.Context, offset int32) ([]*mtproto.MessageBox, error) {
+			hist, err := s.Messages.MessageGetHistoryMessages(ctx, &message.TLMessageGetHistoryMessages{
+				UserId:     self,
+				PeerType:   mtproto.PEER_USER,
+				PeerId:     repliesUserID,
+				OffsetId:   offset,
+				OffsetDate: repliesdelete.RawOffsetDate,
+				Limit:      repliesdelete.Page,
+			})
+			if err != nil || hist == nil {
+				return nil, err
+			}
+			return hist.GetDatas(), nil
+		}, del, self, msgID)
 }
 
 func (s ThreadsService) blockedUpdates(ctx context.Context, self, sender int64) *mtproto.Updates {
@@ -190,30 +156,7 @@ func isRepliesBox(box *mtproto.MessageBox) bool {
 }
 
 func replySender(box *mtproto.MessageBox) int64 {
-	if box == nil || box.GetMessage() == nil || box.GetMessage().GetFwdFrom() == nil {
-		if box != nil && box.GetSenderUserId() != 0 && box.GetSenderUserId() != repliesUserID {
-			return box.GetSenderUserId()
-		}
-		return 0
-	}
-	fwd := box.GetMessage().GetFwdFrom()
-	if id := userPeerID(fwd.GetFromId()); id != 0 {
-		return id
-	}
-	if id := userPeerID(fwd.GetSavedFromId()); id != 0 {
-		return id
-	}
-	if box.GetSenderUserId() != 0 && box.GetSenderUserId() != repliesUserID {
-		return box.GetSenderUserId()
-	}
-	return 0
-}
-
-func userPeerID(p *mtproto.Peer) int64 {
-	if p == nil || p.GetPredicateName() != mtproto.Predicate_peerUser {
-		return 0
-	}
-	return p.GetUserId()
+	return repliesdelete.AuthorOf(box)
 }
 
 func uniqueIDs(ids []int32) []int32 {

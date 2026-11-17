@@ -31,6 +31,9 @@ type Mysql struct {
 	*sqlx.CommonDAO
 }
 
+// NewMysql opens the messages tables on db with no sharding. Tests use it.
+func NewMysql(db *sqlx.DB) *Mysql { return newMysqlDao(db, 0) }
+
 func newMysqlDao(db *sqlx.DB, shardingSize int) *Mysql {
 	return &Mysql{
 		DB:                   db,

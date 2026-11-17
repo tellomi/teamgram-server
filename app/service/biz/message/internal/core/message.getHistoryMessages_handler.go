@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/channels/repliesdelete"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
 )
@@ -315,7 +316,15 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 				offsetId = math.MaxInt32
 			}
 			// c.svcCtx.Dao.MessageClient.MessageGet
-			boxList = c.svcCtx.Dao.GetOffsetIdBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, addOffset+limit, hash)
+			var err error
+			boxList, err = c.svcCtx.Dao.GetOffsetIdBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, addOffset+limit, hash)
+			if err != nil {
+				if offsetDate == repliesdelete.RawOffsetDate {
+					return nil, err
+				}
+				c.Logger.Errorf("message.getHistoryMessages - error: %v", err)
+				boxList = nil
+			}
 			boxList = trimNewestFirst(boxList, addOffset, limit)
 		case loadTypeFirstAroundDate:
 			boxList1 := c.svcCtx.GetOffsetIdForwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, -addOffset, hash)
@@ -324,7 +333,11 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 			}
 			boxList = append(boxList, boxList1...)
 			// 降序
-			boxList2 := c.svcCtx.Dao.GetOffsetIdBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, limit+addOffset, hash)
+			boxList2, err := c.svcCtx.Dao.GetOffsetIdBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, limit+addOffset, hash)
+			if err != nil {
+				c.Logger.Errorf("message.getHistoryMessages - error: %v", err)
+				boxList2 = nil
+			}
 			// log.Infof("%v", messages2)
 			boxList = append(boxList, boxList2...)
 		case loadTypeForward:
@@ -336,7 +349,10 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 			//	boxList = c.svcCtx.Dao.GetOffsetDateForwardHistoryMessages(c.ctx, selfUserId, peer, offsetDate, minId, maxId, limit, hash)
 		}
 	}
-	return &message.Vector_MessageBox{
-		Datas: msgexpiry.FilterBoxes(boxList, int32(time.Now().Unix())),
-	}, nil
+	// RawOffsetDate is the blockFromReplies scan. Expiry hiding must not turn
+	// a full stored page into a short page, or the walk stops early.
+	if offsetDate != repliesdelete.RawOffsetDate {
+		boxList = msgexpiry.FilterBoxes(boxList, int32(time.Now().Unix()))
+	}
+	return &message.Vector_MessageBox{Datas: boxList}, nil
 }

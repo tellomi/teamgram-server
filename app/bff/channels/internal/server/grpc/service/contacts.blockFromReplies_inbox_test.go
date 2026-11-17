@@ -252,6 +252,7 @@ func newRepliesHarness(t *testing.T) *repliesHarness {
 func (h *repliesHarness) reset() {
 	h.blocks = nil
 	h.deletes = nil
+	h.inbox.dead = nil
 }
 
 func (h *repliesHarness) svc() ThreadsService {
@@ -287,6 +288,15 @@ func (h *repliesHarness) MsgDeleteMessages(_ context.Context, in *msg.TLMsgDelet
 		user: in.GetUserId(), auth: in.GetAuthKeyId(), peerType: in.GetPeerType(),
 		peer: in.GetPeerId(), revoke: in.GetRevoke(), ids: append([]int32(nil), in.GetId()...),
 	})
+	if h.inbox.dead == nil {
+		h.inbox.dead = map[int64]map[int32]bool{}
+	}
+	if h.inbox.dead[in.GetUserId()] == nil {
+		h.inbox.dead[in.GetUserId()] = map[int32]bool{}
+	}
+	for _, id := range in.GetId() {
+		h.inbox.dead[in.GetUserId()][id] = true
+	}
 	return &mtproto.Messages_AffectedMessages{}, nil
 }
 
@@ -303,6 +313,7 @@ func (h *repliesHarness) SyncUpdatesNotMe(_ context.Context, in *sync.TLSyncUpda
 
 type repliesInbox struct {
 	rows map[int64]map[int32]*mtproto.MessageBox
+	dead map[int64]map[int32]bool
 }
 
 func newRepliesInbox() *repliesInbox {
@@ -317,6 +328,9 @@ func (n *repliesInbox) put(box *mtproto.MessageBox) {
 }
 
 func (n *repliesInbox) MessageGetUserMessage(_ context.Context, in *message.TLMessageGetUserMessage) (*mtproto.MessageBox, error) {
+	if n.dead[in.GetUserId()][in.GetId()] {
+		return nil, mtproto.ErrMsgIdInvalid
+	}
 	row := n.rows[in.GetUserId()][in.GetId()]
 	if row == nil {
 		return nil, mtproto.ErrMsgIdInvalid
@@ -328,6 +342,9 @@ func (n *repliesInbox) MessageGetHistoryMessages(_ context.Context, in *message.
 	var page []*mtproto.MessageBox
 	for _, box := range n.rows[in.GetUserId()] {
 		if box.GetPeerType() != in.GetPeerType() || box.GetPeerId() != in.GetPeerId() {
+			continue
+		}
+		if n.dead[in.GetUserId()][box.GetMessageId()] {
 			continue
 		}
 		if in.GetOffsetId() != 0 && box.GetMessageId() >= in.GetOffsetId() {
@@ -480,12 +497,10 @@ func TestBlockFromRepliesDeleteHistoryWalksPast500(t *testing.T) {
 	}
 
 	h.deletes = nil
-	if _, err := h.svc().ContactsBlockFromReplies(ctx, blockReq(false, true, false, 900)); err != nil {
-		t.Fatal(err)
-	}
-	again := unionDeleteIDs(t, h.deletes, callerID, callerKey)
-	if !sameIDs(again, []int32{900, 500, 200, 1}) {
-		t.Fatalf("second call %v", again)
+	_, err := h.svc().ContactsBlockFromReplies(ctx, blockReq(false, true, false, 900))
+	assertMsgIDInvalid(t, err)
+	if len(h.deletes) != 0 {
+		t.Fatalf("retry after success deleted %#v", h.deletes)
 	}
 }
 
