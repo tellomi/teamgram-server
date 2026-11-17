@@ -124,8 +124,11 @@ func defaultRules() map[string]Rule {
 
 // ConfigFromEnv reads TELLOMI_FLOOD_MODE, TELLOMI_FLOOD_LIMITS, and
 // TELLOMI_FLOOD_BUCKET_MODE. MODE is enforce, log, gradual, or off.
-// Empty is enforce. gradual logs low-cost buckets and enforces high-cost
-// writes. LIMITS is name:burst:rate and overrides those buckets.
+// Blank and unknown values are log, so a typo does not start enforcing.
+// An explicit enforce still enforces. Compose sets TELLOMI_FLOOD_MODE to
+// enforce when the host variable is unset, which is that explicit value.
+// gradual logs low-cost buckets and enforces high-cost writes.
+// LIMITS is name:burst:rate and overrides those buckets.
 // BUCKET_MODE is name:off|log|enforce and overrides Mode for one bucket,
 // including under gradual, so a rollout can be tightened or rolled back
 // one method at a time.
@@ -138,10 +141,10 @@ func ConfigFromEnv() Config {
 		cfg.Mode = ModeLog
 	case ModeGradual:
 		cfg.Mode = ModeGradual
-	case "", ModeEnforce:
+	case ModeEnforce:
 		cfg.Mode = ModeEnforce
 	default:
-		cfg.Mode = ModeEnforce
+		cfg.Mode = ModeLog
 	}
 	for _, part := range strings.Split(os.Getenv("TELLOMI_FLOOD_LIMITS"), ",") {
 		name, rule, ok := parseRule(part)
@@ -261,8 +264,10 @@ func (l *Limiter) modeOf(bucket string) string {
 }
 
 // resolveMode maps a process-wide mode onto one bucket. gradual enforces
-// high-cost writes and leaves the rest in log. An unknown mode still
-// enforces, matching ConfigFromEnv.
+// high-cost writes and leaves the rest in log. Blank and unknown modes
+// are log, matching ConfigFromEnv. New still fills an empty Config.Mode
+// with enforce before this runs, so a caller who omits Mode keeps the
+// historical in-process default.
 func resolveMode(mode, bucket string) string {
 	switch mode {
 	case ModeOff:
@@ -274,10 +279,10 @@ func resolveMode(mode, bucket string) string {
 			return ModeEnforce
 		}
 		return ModeLog
-	case ModeEnforce, "":
+	case ModeEnforce:
 		return ModeEnforce
 	default:
-		return ModeEnforce
+		return ModeLog
 	}
 }
 

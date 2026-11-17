@@ -521,6 +521,65 @@ func TestBucketModeEnv(t *testing.T) {
 	}
 }
 
+func TestFloodModeEnvBoundaries(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "", want: ModeLog},
+		{in: " ", want: ModeLog},
+		{in: "\t", want: ModeLog},
+		{in: "   \n", want: ModeLog},
+		{in: "unknown", want: ModeLog},
+		{in: "gradua", want: ModeLog},
+		{in: "LOG", want: ModeLog},
+		{in: " log ", want: ModeLog},
+		{in: "OFF", want: ModeOff},
+		{in: " off ", want: ModeOff},
+		{in: "ENFORCE", want: ModeEnforce},
+		{in: " Enforce ", want: ModeEnforce},
+		{in: " enforce ", want: ModeEnforce},
+		{in: "GRADUAL", want: ModeGradual},
+		{in: " gradual ", want: ModeGradual},
+		{in: "GrAdUaL", want: ModeGradual},
+	}
+	for _, tc := range cases {
+		t.Run(strconv.Quote(tc.in), func(t *testing.T) {
+			t.Setenv("TELLOMI_FLOOD_MODE", tc.in)
+			t.Setenv("TELLOMI_FLOOD_LIMITS", "")
+			t.Setenv("TELLOMI_FLOOD_BUCKET_MODE", "")
+			cfg := ConfigFromEnv()
+			if cfg.Mode != tc.want {
+				t.Fatalf("TELLOMI_FLOOD_MODE %q -> %q, want %q", tc.in, cfg.Mode, tc.want)
+			}
+		})
+	}
+}
+
+func TestUnknownModeLogsInsteadOfEnforcing(t *testing.T) {
+	if resolveMode("", BucketSend) != ModeLog || resolveMode("nope", BucketSend) != ModeLog || resolveMode("gradua", BucketUpload) != ModeLog {
+		t.Fatal("blank or unknown resolveMode enforced")
+	}
+	if resolveMode(ModeEnforce, BucketSend) != ModeEnforce || resolveMode(ModeGradual, BucketSend) != ModeEnforce || resolveMode(ModeGradual, BucketGlobal) != ModeLog {
+		t.Fatal("explicit enforce or gradual mapping changed")
+	}
+	lim := New(NewMemory(), Config{
+		Mode: "nope",
+		Rules: map[string]Rule{
+			BucketGlobal: {Burst: 100, Rate: 0},
+			BucketSend:   {Burst: 1, Rate: 0},
+		},
+	})
+	send := Request{Method: "messages_sendMessage", UserID: 3}
+	if !lim.Allow(context.Background(), send).Allowed {
+		t.Fatal("first send")
+	}
+	d := lim.Allow(context.Background(), send)
+	if !d.Allowed || !d.Limited || d.Bucket != BucketSend {
+		t.Fatalf("unknown mode enforced %+v", d)
+	}
+}
+
 func TestGradualModeFromEnv(t *testing.T) {
 	t.Setenv("TELLOMI_FLOOD_MODE", "gradual")
 	t.Setenv("TELLOMI_FLOOD_BUCKET_MODE", "send:log, contacts_search:enforce, nope:enforce")
