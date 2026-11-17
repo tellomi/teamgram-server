@@ -69,17 +69,17 @@ func TestBlocklistDropsTaiwanFlagFromListings(t *testing.T) {
 		t.Fatalf("custom emoji documents %#v", docs.Datas)
 	}
 
-	if err = s.SaveRecent(user, flagItem.DocumentID, false, false); err != nil {
+	if _, err = s.SaveRecent(user, flagItem.DocumentID, false, false); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.SaveRecent(user, grinItem.DocumentID, false, false); err != nil {
+	if _, err = s.SaveRecent(user, grinItem.DocumentID, false, false); err != nil {
 		t.Fatal(err)
 	}
 	recent := s.Recent(user, 0, false)
 	if len(recent.GetStickers()) != 1 || docAlt(recent.GetStickers()[0]) != grin {
 		t.Fatalf("recent %#v", alts(recent.GetStickers()))
 	}
-	if err = s.Fave(user, flagItem.DocumentID, false); err != nil {
+	if _, err = s.Fave(user, flagItem.DocumentID, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Faved(user, 0).GetStickers()) != 0 {

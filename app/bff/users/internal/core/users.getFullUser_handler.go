@@ -31,6 +31,7 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/accountprefs"
 
 	"github.com/zeromicro/go-zero/core/mr"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -144,6 +145,16 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 
 	// Premium is included. Gift prices would open a purchase flow, so they stay empty.
 	userFull.PremiumGifts = nil
+	userFull.SponsoredEnabled = accountprefs.Sponsored(c.ctx, peerId)
+	if settings, err := c.svcCtx.Dao.UserClient.UserGetGlobalPrivacySettings(c.ctx, &userpb.TLUserGetGlobalPrivacySettings{UserId: peerId}); err == nil && settings != nil {
+		userFull.DisplayGiftsButton = settings.GetDisplayGiftsButton()
+		userFull.DisallowedGifts = settings.GetDisallowedGifts()
+		if settings.GetNoncontactPeersPaidStars().GetValue() > 0 && c.MD.UserId != peerId {
+			if ok, _ := user.CheckContact(c.MD.UserId); !ok {
+				userFull.SendPaidMessagesStars = settings.GetNoncontactPeersPaidStars()
+			}
+		}
+	}
 	// Business hours, location, greeting, away message, and intro are public
 	// profile fields. The business RPCs write the same process-local book.
 	// Default admin rights a bot asks for when it is added to a group or channel.
@@ -227,14 +238,22 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 					PeerId:   peerId,
 				})
 				if dialogExt != nil {
-					userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+					if dialogExt.ThemeEmoticon != "" {
+						userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+						userFull.Theme = mtproto.MakeTLChatTheme(&mtproto.ChatTheme{
+							Emoticon: dialogExt.ThemeEmoticon,
+						}).To_ChatTheme()
+					}
 					userFull.TtlPeriod = mtproto.MakeFlagsInt32(dialogExt.TtlPeriod)
 					if dialogExt.GetDialog() != nil {
 						userFull.FolderId = dialogExt.GetDialog().GetFolderId()
 					}
 					if dialogExt.WallpaperId != 0 && c.svcCtx.Dao.WallpaperPlugin != nil {
 						userFull.Wallpaper = c.svcCtx.Dao.WallpaperPlugin.GetChatWallpaper(c.ctx, c.MD.UserId, dialogExt.WallpaperId)
-						userFull.WallpaperOverridden = true
+						// The dialog column is per user. True means the other
+						// user set this wallpaper with for_both. A wallpaper
+						// the caller chose is false, even when a wallpaper exists.
+						userFull.WallpaperOverridden = dialogExt.WallpaperOverridden
 					}
 				}
 			}
@@ -323,6 +342,7 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 	if bot := accountassets.ApplyBusinessBar(peerId, c.MD.UserId, userFull.Settings); bot != nil {
 		users = append(users, bot)
 	}
+	c.applyPrivateNoForwards(userFull, peerId)
 
 	return mtproto.MakeTLUsersUserFull(&mtproto.Users_UserFull{
 		FullUser: userFull,
@@ -396,6 +416,20 @@ func (c *UsersCore) fallbackPhoto(owner int64) *mtproto.Photo {
 		return nil
 	}
 	return photo
+}
+
+// applyPrivateNoForwards copies the private-chat forward switch onto userFull.
+// messages.toggleNoForwards stores one bit for the pair. Either person can
+// turn it off. Both flags are set so each client shows the switch as on.
+func (c *UsersCore) applyPrivateNoForwards(full *mtproto.UserFull, peerID int64) {
+	if full == nil || c == nil || c.MD == nil || c.MD.UserId == 0 || peerID == 0 || c.MD.UserId == peerID {
+		return
+	}
+	if !chatbox.Shared().ContentProtected(c.ctx, c.MD.UserId, peerID) {
+		return
+	}
+	full.NoforwardsMyEnabled = true
+	full.NoforwardsPeerEnabled = true
 }
 
 func (c *UsersCore) privacyAllows(owner int64, key int) bool {

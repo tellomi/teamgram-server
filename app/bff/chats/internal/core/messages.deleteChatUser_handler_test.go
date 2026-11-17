@@ -55,6 +55,33 @@ func TestDeleteChatUserPostsServiceMessageBeforeRemoval(t *testing.T) {
 	}
 }
 
+func TestSelfLeaveSucceedsWhenSendingIsForbidden(t *testing.T) {
+	order := []string{}
+	chats := &deleteUserChat{chat: basicChat(90, 1, 2), order: &order}
+	c := &ChatsCore{
+		ctx: context.Background(),
+		svcCtx: &svc.ServiceContext{Dao: &dao.Dao{
+			ChatClient: chatclient.NewDirectChatClient(chats),
+			MsgClient:  &forbiddenLeaveMsg{order: &order},
+		}},
+		Logger: logx.WithContext(context.Background()),
+		MD:     &metadata.RpcMetadata{UserId: 2, Client: "android"},
+	}
+	up, err := c.MessagesDeleteChatUser(&mtproto.TLMessagesDeleteChatUser{
+		ChatId: 90,
+		UserId: mtproto.MakeTLInputUser(&mtproto.InputUser{UserId: 2}).To_InputUser(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 2 || order[0] != "send" || order[1] != "delete" {
+		t.Fatalf("order %v", order)
+	}
+	if up == nil {
+		t.Fatal("leave returned empty updates")
+	}
+}
+
 func TestChatDeleteAllowed(t *testing.T) {
 	chat := basicChat(1, 10, 11)
 	if err := chatDeleteAllowed(chat, 10, 11); err != nil {
@@ -100,6 +127,16 @@ type deleteUserMsg struct {
 	msgclient.MsgClient
 	action *mtproto.MessageAction
 	order  *[]string
+}
+
+type forbiddenLeaveMsg struct {
+	msgclient.MsgClient
+	order *[]string
+}
+
+func (m *forbiddenLeaveMsg) MsgSendMessageV2(context.Context, *msgpb.TLMsgSendMessageV2) (*mtproto.Updates, error) {
+	*m.order = append(*m.order, "send")
+	return nil, mtproto.ErrChatWriteForbidden
 }
 
 func (m *deleteUserMsg) MsgSendMessageV2(_ context.Context, in *msgpb.TLMsgSendMessageV2) (*mtproto.Updates, error) {

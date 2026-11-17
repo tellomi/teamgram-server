@@ -26,7 +26,15 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return New(db), nil
+}
+
+// New wraps an existing pool. The caller owns db.
+func New(db *sql.DB) *Store {
+	if db == nil {
+		return nil
+	}
+	return &Store{db: db}
 }
 
 // EncryptedAccess is the access_hash stored for an encrypted file.

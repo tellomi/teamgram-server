@@ -26,6 +26,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/chattitle"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -35,6 +36,7 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 	var chatUserIdList []int64
 
 	// check chat title
+	chatTitle = chattitle.Clip(chatTitle)
 	if chatTitle == "" {
 		err := mtproto.ErrChatTitleEmpty
 		c.Logger.Errorf("messages.createChat - error: %v", err)

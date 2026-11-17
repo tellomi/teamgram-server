@@ -12,5 +12,5 @@ func (c *PasskeyCore) AccountRegisterPasskey(in *mtproto.TLAccountRegisterPasske
 	if in == nil {
 		return nil, mtproto.ErrCredentialInvalid
 	}
-	return accountrest.RegisterPasskey(c.userID(), in.GetCredential())
+	return accountrest.RegisterPasskey(c.userID(), c.permAuthKey(), in.GetCredential())
 }

@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
 	"github.com/teamgram/teamgram-server/pkg/mysqlpool"
 	"github.com/teamgram/teamgram-server/pkg/mysqltls"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/mediapurge"
 )
@@ -42,6 +43,43 @@ func (s sqlDocs) Save(ctx context.Context, key string, raw []byte) error {
 INSERT INTO chatbox_doc (doc_key, data) VALUES (?,?)
 ON DUPLICATE KEY UPDATE data=VALUES(data)`, key, raw)
 	return err
+}
+
+// SaveIf replaces key only when the stored bytes are still prev.
+// An empty prev inserts. A lost compare returns false and leaves the row.
+// Every quick: writer uses this. Save remains for other document keys.
+func (s sqlDocs) SaveIf(ctx context.Context, key string, prev, next []byte) (bool, error) {
+	if len(prev) == 0 {
+		_, err := s.db.ExecContext(ctx, `INSERT INTO chatbox_doc (doc_key, data) VALUES (?,?)`, key, next)
+		if err == nil {
+			return true, nil
+		}
+		if dup, ok := err.(*mysqldriver.MySQLError); ok && dup.Number == 1062 {
+			return false, nil
+		}
+		return false, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE chatbox_doc SET data=? WHERE doc_key=? AND data=?`, next, key, prev)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return true, nil
+	}
+	// MySQL's default count is changed rows. An UPDATE that matches and
+	// writes the same bytes returns 0. That is not a lost compare.
+	cur, ok, err := s.Load(ctx, key)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	return quickCASApplied(0, cur, next), nil
 }
 
 func (s sqlDocs) ListPrefix(ctx context.Context, prefix string) ([]string, error) {
@@ -153,6 +191,24 @@ func ResetShared() {
 	regMu.Lock()
 	shared = newBook(nil)
 	regMu.Unlock()
+}
+
+// SwapShared installs next as the process book and returns a restore.
+// A nil next installs an empty in-memory book. The swap does not write the
+// previous book, including one UseDSN attached to MySQL.
+func SwapShared(next *Book) (restore func()) {
+	if next == nil {
+		next = newBook(nil)
+	}
+	regMu.Lock()
+	prev := shared
+	shared = next
+	regMu.Unlock()
+	return func() {
+		regMu.Lock()
+		shared = prev
+		regMu.Unlock()
+	}
 }
 
 // UseDSN opens MySQL when dsn or TEAMGRAM_MYSQL_DSN is set.
