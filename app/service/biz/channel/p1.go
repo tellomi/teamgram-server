@@ -465,9 +465,12 @@ func (s *Service) ToggleAutotranslation(ctx context.Context, self, actorAuth int
 // UpdatePaidMessagesPrice sets the stars price for sending into the channel.
 // channels.updatePaidMessagesPrice#4b12327b flags:# broadcast_messages_allowed:flags.0?true channel:InputChannel send_paid_messages_stars:long = Updates;
 func (s *Service) UpdatePaidMessagesPrice(ctx context.Context, self, actorAuth int64, in *mtproto.InputChannel, stars int64, broadcastAllowed bool) (*mtproto.Updates, error) {
-	ch, _, err := s.requireInfoAdmin(ctx, self, in)
+	ch, p, err := s.requireMember(ctx, self, in)
 	if err != nil {
 		return nil, err
+	}
+	if !canUpdatePaidMessages(ch, p) {
+		return nil, mtproto.ErrChatAdminRequired
 	}
 	if stars < 0 {
 		return nil, mtproto.ErrInputRequestInvalid

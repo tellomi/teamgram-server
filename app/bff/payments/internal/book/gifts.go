@@ -408,6 +408,9 @@ func (b *Book) CreateStarGiftCollection(self int64, peer *mtproto.InputPeer, tit
 	if err != nil {
 		return nil, err
 	}
+	if err = b.mayManageCollection(self, ref); err != nil {
+		return nil, err
+	}
 	title, err = cleanTitle(title)
 	if err != nil {
 		return nil, err
@@ -421,12 +424,16 @@ func (b *Book) CreateStarGiftCollection(self int64, peer *mtproto.InputPeer, tit
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := ref.key()
+	prev, prevNext := snapshotCols(b.gifts, key)
 	if len(b.gifts.cols[key]) >= maxCollections {
 		return nil, fail(CodeCollectionsTooMuch)
 	}
 	b.gifts.nextID[key]++
 	row := giftCollection{id: b.gifts.nextID[key], title: title}
 	b.gifts.cols[key] = append(b.gifts.cols[key], row)
+	if err = b.saveCollectionsLocked(key, prev, prevNext); err != nil {
+		return nil, err
+	}
 	return presentCollection(row), nil
 }
 
@@ -439,6 +446,9 @@ func (b *Book) UpdateStarGiftCollection(self int64, in *mtproto.TLPaymentsUpdate
 	}
 	ref, _, err := parsePeer(self, in.GetPeer())
 	if err != nil {
+		return nil, err
+	}
+	if err = b.mayManageCollection(self, ref); err != nil {
 		return nil, err
 	}
 	if len(in.GetDeleteStargift()) > 0 || len(in.GetAddStargift()) > 0 || len(in.GetOrder()) > 0 {
@@ -464,12 +474,16 @@ func (b *Book) UpdateStarGiftCollection(self int64, in *mtproto.TLPaymentsUpdate
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := ref.key()
+	prev, prevNext := snapshotCols(b.gifts, key)
 	idx, ok := b.findCollection(key, in.GetCollectionId())
 	if !ok {
 		return nil, fail(CodeCollectionInvalid)
 	}
 	if rename {
 		b.gifts.cols[key][idx].title = title
+	}
+	if err = b.saveCollectionsLocked(key, prev, prevNext); err != nil {
+		return nil, err
 	}
 	return presentCollection(b.gifts.cols[key][idx]), nil
 }
@@ -482,9 +496,13 @@ func (b *Book) ReorderStarGiftCollections(self int64, peer *mtproto.InputPeer, o
 	if err != nil {
 		return err
 	}
+	if err = b.mayManageCollection(self, ref); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := ref.key()
+	prev, prevNext := snapshotCols(b.gifts, key)
 	rows := b.gifts.cols[key]
 	if len(order) != len(rows) {
 		return fail(CodeCollectionInvalid)
@@ -504,7 +522,7 @@ func (b *Book) ReorderStarGiftCollections(self int64, peer *mtproto.InputPeer, o
 		next = append(next, row)
 	}
 	b.gifts.cols[key] = next
-	return nil
+	return b.saveCollectionsLocked(key, prev, prevNext)
 }
 
 func (b *Book) DeleteStarGiftCollection(self int64, peer *mtproto.InputPeer, id int32) error {
@@ -515,16 +533,20 @@ func (b *Book) DeleteStarGiftCollection(self int64, peer *mtproto.InputPeer, id 
 	if err != nil {
 		return err
 	}
+	if err = b.mayManageCollection(self, ref); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := ref.key()
+	prev, prevNext := snapshotCols(b.gifts, key)
 	idx, ok := b.findCollection(key, id)
 	if !ok {
 		return fail(CodeCollectionInvalid)
 	}
 	rows := b.gifts.cols[key]
 	b.gifts.cols[key] = append(rows[:idx], rows[idx+1:]...)
-	return nil
+	return b.saveCollectionsLocked(key, prev, prevNext)
 }
 
 func (b *Book) DeleteStarGift(self int64, gift *mtproto.InputSavedStarGift) error {

@@ -197,6 +197,21 @@ func StickerSetsChanged(masks, emojis bool) *mtproto.Updates {
 	return mtproto.MakeUpdatesByUpdates(up.To_Update())
 }
 
+// SavedGifsChanged is updateSavedGifs. The other session refetches messages.getSavedGifs.
+func SavedGifsChanged() *mtproto.Updates {
+	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateSavedGifs(nil).To_Update())
+}
+
+// RecentStickersChanged is updateRecentStickers. The other session refetches messages.getRecentStickers.
+func RecentStickersChanged() *mtproto.Updates {
+	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateRecentStickers(nil).To_Update())
+}
+
+// FavedStickersChanged is updateFavedStickers. The other session refetches messages.getFavedStickers.
+func FavedStickersChanged() *mtproto.Updates {
+	return mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateFavedStickers(nil).To_Update())
+}
+
 // StickerOrderUpdate is updateStickerSetsOrder.
 func StickerOrderUpdate(masks, emojis bool, order []int64) *mtproto.Updates {
 	if len(order) == 0 {

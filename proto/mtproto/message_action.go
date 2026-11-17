@@ -59,6 +59,27 @@ func (m *MessageReplyHeader) GetFixedReplyToMsgId() int32 {
 	return 0
 }
 
+// ReplyTargetMsgID is the message id inputMessageReplyTo should load.
+// Only the three stored forms of reply_to_msg_id count: the plain field,
+// reply_to_msg_id_INT32, and reply_to_msg_id_FLAGINT32. reply_to_top_id is
+// the topic root. Returning it would hand back the topic instead of the
+// message that was replied to.
+func (m *MessageReplyHeader) ReplyTargetMsgID() int32 {
+	if m == nil {
+		return 0
+	}
+	if id := m.GetFixedReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId(); id != 0 {
+		return id
+	}
+	if id := m.GetReplyToMsgId_INT32(); id != 0 {
+		return id
+	}
+	return m.GetReplyToMsgId_FLAGINT32().GetValue()
+}
+
 func (m *MessageReplyHeader) FixData() *MessageReplyHeader {
 	if m.GetPredicateName() == Predicate_messageReplyHeader {
 		replyToMsgId := m.GetFixedReplyToMsgId()

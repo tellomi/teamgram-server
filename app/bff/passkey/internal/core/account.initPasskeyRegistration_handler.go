@@ -9,5 +9,5 @@ import (
 // account.initPasskeyRegistration#429547e8 = account.PasskeyRegistrationOptions;
 // https://core.telegram.org/method/account.initPasskeyRegistration
 func (c *PasskeyCore) AccountInitPasskeyRegistration(in *mtproto.TLAccountInitPasskeyRegistration) (*mtproto.Account_PasskeyRegistrationOptions, error) {
-	return accountrest.InitPasskeyRegistration(c.userID())
+	return accountrest.InitPasskeyRegistration(c.userID(), c.permAuthKey())
 }

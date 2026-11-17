@@ -10,8 +10,6 @@
 package core
 
 import (
-	"github.com/teamgram/marmota/pkg/container2"
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -19,32 +17,10 @@ import (
 // UserDeleteProfilePhotos
 // user.deleteProfilePhotos user_id:long id:Vector<long> = Int64;
 func (c *UserCore) UserDeleteProfilePhotos(in *user.TLUserDeleteProfilePhotos) (*mtproto.Int64, error) {
-	var (
-		meId = in.GetUserId()
-	)
-
-	mainPhotoId, err := c.svcCtx.Dao.UsersDAO.SelectProfilePhoto(c.ctx, meId)
+	main, err := c.svcCtx.Dao.DeleteUserProfilePhotos(c.ctx, in.GetUserId(), in.GetId())
 	if err != nil {
 		c.Logger.Errorf("user.deleteProfilePhotos - error: %v", err)
+		return nil, err
 	}
-
-	if mainPhotoId > 0 {
-		if b := container2.ContainsInt64(in.GetId(), mainPhotoId); b {
-			c.svcCtx.Dao.UserProfilePhotosDAO.Delete(c.ctx, meId, in.GetId())
-		} else {
-			nextMainId, _ := c.svcCtx.Dao.NextAlbumPhoto(c.ctx, meId, in.Id)
-			sqlx.TxWrapper(c.ctx, c.svcCtx.Dao.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
-				c.svcCtx.Dao.UserProfilePhotosDAO.DeleteTx(tx, meId, in.Id)
-				c.svcCtx.Dao.UsersDAO.UpdateProfilePhotoTx(tx, nextMainId, meId)
-				//
-				mainPhotoId = nextMainId
-			})
-		}
-	} else {
-		c.Logger.Errorf("user.deleteProfilePhotos - error: mainPhotoId invalid")
-	}
-
-	return &mtproto.Int64{
-		V: mainPhotoId,
-	}, nil
+	return &mtproto.Int64{V: main}, nil
 }
