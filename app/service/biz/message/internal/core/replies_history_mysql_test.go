@@ -1,5 +1,12 @@
 package core
 
+// These tests call repliesdelete.DeleteHistory and MessageGetHistoryMessages.
+// Their delete callback is UPDATE messages SET deleted=1 for the caller's
+// box ids. They do not call MsgDeleteMessages or ContactsBlockFromReplies.
+// The BFF request shape is TestBlockFromRepliesDeleteHistoryWalksPast500.
+// MsgDeleteMessages setting deleted=1 is TestBlockFromRepliesDeletePersistsCallerRows.
+// None of these is a socket-to-database e2e.
+
 import (
 	"context"
 	"database/sql"
@@ -278,8 +285,11 @@ func newRepliesSchema(t *testing.T) (*sql.DB, string) {
 func openRepliesMySQL(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	dsn := os.Getenv("TEAMGRAM_MYSQL_DSN")
-	required := dsn != ""
+	required := dsn != "" || os.Getenv("TEAMGRAM_REQUIRE_INBOX_MYSQL") == "1"
 	if dsn == "" {
+		if required {
+			t.Fatal("TEAMGRAM_MYSQL_DSN is required")
+		}
 		dsn = "root:@tcp(127.0.0.1:3306)/mysql?charset=utf8mb4&parseTime=true&multiStatements=true"
 	}
 	admin, err := sql.Open("mysql", dsn)

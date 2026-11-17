@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
-	"github.com/teamgram/teamgram-server/app/bff/channels/repliesdelete"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	"github.com/teamgram/teamgram-server/pkg/msgexpiry"
+	"github.com/teamgram/teamgram-server/pkg/repliesraw"
 )
 
 // From android client
@@ -319,7 +319,7 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 			var err error
 			boxList, err = c.svcCtx.Dao.GetOffsetIdBackwardHistoryMessages(c.ctx, selfUserId, peer, offsetId, minId, maxId, addOffset+limit, hash)
 			if err != nil {
-				if offsetDate == repliesdelete.RawOffsetDate {
+				if offsetDate == repliesraw.OffsetDate {
 					return nil, err
 				}
 				c.Logger.Errorf("message.getHistoryMessages - error: %v", err)
@@ -351,7 +351,7 @@ func (c *MessageCore) MessageGetHistoryMessages(in *message.TLMessageGetHistoryM
 	}
 	// RawOffsetDate is the blockFromReplies scan. Expiry hiding must not turn
 	// a full stored page into a short page, or the walk stops early.
-	if offsetDate != repliesdelete.RawOffsetDate {
+	if offsetDate != repliesraw.OffsetDate {
 		boxList = msgexpiry.FilterBoxes(boxList, int32(time.Now().Unix()))
 	}
 	return &message.Vector_MessageBox{Datas: boxList}, nil

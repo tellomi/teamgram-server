@@ -4,9 +4,9 @@ package repliesdelete
 
 import (
 	"context"
-	"math"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/repliesraw"
 )
 
 const (
@@ -16,7 +16,7 @@ const (
 	// RawOffsetDate asks message.getHistoryMessages for the stored page,
 	// including rows the expiry filter would hide, and for database and
 	// context errors. Client history reads stay at offset_date >= 0.
-	RawOffsetDate int32 = math.MinInt32
+	RawOffsetDate = repliesraw.OffsetDate
 	// repliesUserID is the @replies service user.
 	repliesUserID int64 = 1271266957
 )

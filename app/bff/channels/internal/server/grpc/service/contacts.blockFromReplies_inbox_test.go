@@ -471,6 +471,11 @@ func TestBlockFromRepliesReturnsDeleteFailure(t *testing.T) {
 	}
 }
 
+// TestBlockFromRepliesDeleteHistoryWalksPast500 calls ContactsBlockFromReplies.
+// Each recorded delete is the MsgDeleteMessages request that handler builds:
+// this user's id, PEER_EMPTY, revoke false, and only that user's box ids.
+// Those ids becoming deleted=1 is TestBlockFromRepliesDeletePersistsCallerRows.
+// This is not a socket-to-MySQL e2e.
 func TestBlockFromRepliesDeleteHistoryWalksPast500(t *testing.T) {
 	h := newRepliesHarness(t)
 	ctx := userCtx(t, callerID, callerKey)
