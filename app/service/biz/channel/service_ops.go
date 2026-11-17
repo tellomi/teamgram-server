@@ -906,7 +906,7 @@ func (s *Service) canModify(ch *Channel, actor *Participant, msg *StoredMessage,
 }
 
 func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.InputChannel, maxID int32) error {
-	ch, _, err := s.requireMember(ctx, user, in)
+	ch, reader, err := s.requireMember(ctx, user, in)
 	if err != nil {
 		return err
 	}
@@ -935,9 +935,20 @@ func (s *Service) ReadHistory(ctx context.Context, user int64, in *mtproto.Input
 	if err = s.store.SaveRead(ctx, st); err != nil {
 		return err
 	}
+	f := s.features(ctx, ch.ID)
+	featChanged := false
 	if st.ReadInboxMaxID > prevInbox {
-		f := s.features(ctx, ch.ID)
 		f.InboxReadAt[user] = int32(time.Now().Unix())
+		featChanged = true
+	}
+	// A read while this member is an admin is the only mark that counts
+	// for messages from before they joined. Promotion does not replay a
+	// readHistory they made when that body was still hidden.
+	if reader.IsAdmin() && maxID > f.AdminReadMax[user] {
+		f.AdminReadMax[user] = maxID
+		featChanged = true
+	}
+	if featChanged {
 		if err = s.saveFeatures(ctx, ch.ID, f); err != nil {
 			return err
 		}

@@ -135,12 +135,6 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 		return nil, err
 	}
 	f := s.features(ctx, ch.ID)
-	explicitRead := map[int64]bool{}
-	if marks, markErr := s.ListReadMarks(ctx, ch.ID, msgID); markErr == nil {
-		for _, m := range marks {
-			explicitRead[m.UserID] = true
-		}
-	}
 	var out []Reader
 	for _, p := range parts {
 		if p == nil || !p.InChannel() || p.UserID == 0 || p.UserID == self || p.UserID == stored.SenderID {
@@ -157,8 +151,11 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 		// member is not handed the whole backlog as unread. That cursor
 		// is not a read. An admin may open the hidden message later;
 		// being allowed to read it is not the same as having read it.
-		// A read mark is written only by readHistory, not by join.
-		if messageBeforeJoin(p, stored, joinTop(f, p.UserID)) && (!p.IsAdmin() || !explicitRead[p.UserID]) {
+		// Only channels.readHistory issued while they are already an
+		// admin covers a pre-join message. A mark from before promotion
+		// stays off this list.
+		adminCovered := f.AdminReadMax[p.UserID] >= msgID
+		if messageBeforeJoin(p, stored, joinTop(f, p.UserID)) && (!p.IsAdmin() || !adminCovered) {
 			continue
 		}
 		date := f.InboxReadAt[p.UserID]

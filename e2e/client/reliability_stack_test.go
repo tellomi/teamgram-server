@@ -93,6 +93,10 @@ var (
 	stackOnce   sync.Once
 	sharedStack *reliabilityStack
 	stackErr    error
+	// beforeReliabilityProcesses runs after configs are written and before
+	// the teamgram processes start. A protocol test uses it to put one
+	// service's DSN behind a local proxy. It is nil for the reliability job.
+	beforeReliabilityProcesses func(*reliabilityStack) error
 )
 
 func TestMain(m *testing.M) {
@@ -153,6 +157,12 @@ func startReliabilityStack() (*reliabilityStack, error) {
 	if err = s.startDatastores(ctx); err != nil {
 		s.shutdown()
 		return nil, err
+	}
+	if beforeReliabilityProcesses != nil {
+		if err = beforeReliabilityProcesses(s); err != nil {
+			s.shutdown()
+			return nil, err
+		}
 	}
 	if err = s.startProcesses(); err != nil {
 		s.shutdown()

@@ -114,9 +114,19 @@ func TestPrehistoryBoundary(t *testing.T) {
 		t.Fatalf("pinned id residual = %d", svc.features(ctx, ch.Id).PinnedMsgID)
 	}
 
+	if err = svc.ReadHistory(ctx, boundNew, in, freshID); err != nil {
+		t.Fatal(err)
+	}
 	rights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{ChangeInfo: true}).To_ChatAdminRights()
 	if _, err = svc.EditAdmin(ctx, boundOwner, 0, in, boundNew, rights, ""); err != nil {
 		t.Fatal(err)
+	}
+	early, err := svc.ReadParticipants(ctx, boundOwner, ch.Id, oldID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readerHas(early, boundNew) {
+		t.Fatalf("a read from before promotion listed the admin: %+v", early)
 	}
 	asAdmin, err := svc.GetMessages(ctx, boundNew, in, []int32{oldID})
 	if err != nil || asAdmin.Messages[0].GetMessage() != "same-second-secret" {

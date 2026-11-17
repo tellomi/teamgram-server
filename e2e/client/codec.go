@@ -18,13 +18,14 @@ const crcVector = 0x1cb5c415
 // Langs is set when the elements are langPackLanguage, so the language
 // picker test can see which codes were offered.
 type tlVector struct {
-	Count   int32
-	Langs   []*mtproto.TLLangPackLanguage
-	Hashes  []*mtproto.FileHash
-	Users   []*mtproto.User
+	Count    int32
+	Langs    []*mtproto.TLLangPackLanguage
+	Hashes   []*mtproto.FileHash
+	Users    []*mtproto.User
 	Stories  []*mtproto.RecentStory
 	Strings  []*mtproto.LangPackString
 	Counters []*mtproto.Messages_SearchCounter
+	Readers  []*mtproto.ReadParticipantDate
 	Ints     []int32
 }
 
@@ -173,6 +174,10 @@ func decodeTL(raw []byte) (mtproto.TLObject, error) {
 						v.Counters = append(v.Counters, item.To_Messages_SearchCounter())
 					case *mtproto.Messages_SearchCounter:
 						v.Counters = append(v.Counters, item)
+					case *mtproto.TLReadParticipantDate:
+						v.Readers = append(v.Readers, item.To_ReadParticipantDate())
+					case *mtproto.ReadParticipantDate:
+						v.Readers = append(v.Readers, item)
 					default:
 						return v, nil
 					}
