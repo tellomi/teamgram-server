@@ -16,20 +16,36 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
-func (d *Dao) dialogHistory(ctx context.Context, userId, dialogId1, dialogId2 int64, q mysql_dao.DialogHistory) []*mtproto.MessageBox {
+func (d *Dao) dialogHistory(ctx context.Context, userId, dialogId1, dialogId2 int64, q mysql_dao.DialogHistory) ([]*mtproto.MessageBox, error) {
 	rows, err := d.MessagesDAO.SelectDialogHistory(ctx, userId, dialogId1, dialogId2, q)
-	if err != nil || len(rows) == 0 {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
 	}
 	out := make([]*mtproto.MessageBox, 0, len(rows))
 	for i := range rows {
 		out = append(out, d.MakeMessageBox(ctx, userId, &rows[i]))
 	}
-	return out
+	return out, nil
+}
+
+// swallowDialogHistory keeps the previous date and forward reads: a database
+// error is logged and the page is empty. The backward id read used by
+// contacts.blockFromReplies does not use this.
+func (d *Dao) swallowDialogHistory(ctx context.Context, userId, dialogId1, dialogId2 int64, q mysql_dao.DialogHistory) []*mtproto.MessageBox {
+	rows, err := d.dialogHistory(ctx, userId, dialogId1, dialogId2, q)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("dialogHistory: %v", err)
+		return nil
+	}
+	return rows
 }
 
 // GetOffsetIdBackwardHistoryMessages offset
-func (d *Dao) GetOffsetIdBackwardHistoryMessages(ctx context.Context, userId int64, peer *mtproto.PeerUtil, offsetId, minId, maxId, limit int32, hash int64) (messages []*mtproto.MessageBox) {
+func (d *Dao) GetOffsetIdBackwardHistoryMessages(ctx context.Context, userId int64, peer *mtproto.PeerUtil, offsetId, minId, maxId, limit int32, hash int64) ([]*mtproto.MessageBox, error) {
+	var messages []*mtproto.MessageBox
 	switch peer.PeerType {
 	case mtproto.PEER_SELF, mtproto.PEER_USER, mtproto.PEER_CHAT:
 		did := mtproto.MakeDialogId(userId, peer.PeerType, peer.PeerId)
@@ -37,19 +53,21 @@ func (d *Dao) GetOffsetIdBackwardHistoryMessages(ctx context.Context, userId int
 		if maxId > 0 && maxId < before {
 			before = maxId
 		}
-		messages = d.dialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
+		var err error
+		messages, err = d.dialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
 			BeforeID:    before,
 			BeforeIDSet: true,
 			AfterID:     minId,
 			Desc:        true,
 			Limit:       limit,
 		})
+		if err != nil {
+			return nil, err
+		}
 	case mtproto.PEER_CHANNEL:
 		logx.Errorf("blocked, License key from https://teamgram.net required to unlock enterprise features.")
 	}
-
-	messages = mtproto.ToSafeMessageBoxList(messages)
-	return
+	return mtproto.ToSafeMessageBoxList(messages), nil
 }
 
 func (d *Dao) GetOffsetIdForwardHistoryMessages(ctx context.Context, userId int64, peer *mtproto.PeerUtil, offsetId, minId, maxId, limit int32, hash int64) (messages []*mtproto.MessageBox) {
@@ -63,7 +81,7 @@ func (d *Dao) GetOffsetIdForwardHistoryMessages(ctx context.Context, userId int6
 		if minId > 0 && minId+1 > after {
 			after = minId + 1
 		}
-		messages = d.dialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
+		messages = d.swallowDialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
 			BeforeID:       maxId,
 			BeforeIDSet:    maxId > 0,
 			AfterInclSet:   true,
@@ -87,7 +105,7 @@ func (d *Dao) GetOffsetDateBackwardHistoryMessages(ctx context.Context, userId i
 		)
 
 		before := maxId
-		messages = d.dialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
+		messages = d.swallowDialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
 			BeforeID:    before,
 			BeforeIDSet: before > 0,
 			AfterID:     minId,
@@ -111,7 +129,7 @@ func (d *Dao) GetOffsetDateForwardHistoryMessages(ctx context.Context, userId in
 		)
 
 		after := minId
-		messages = d.dialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
+		messages = d.swallowDialogHistory(ctx, userId, did.A, did.B, mysql_dao.DialogHistory{
 			BeforeID:    maxId,
 			BeforeIDSet: maxId > 0,
 			AfterID:     after,

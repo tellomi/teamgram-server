@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/bff/channels/repliesdelete"
 	"github.com/teamgram/teamgram-server/app/bff/userchannelprofiles/statusbook"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
@@ -73,24 +74,7 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 		logx.WithContext(ctx).Infof("contacts.blockFromReplies report_spam user %d msg %d", sender, in.GetMsgId())
 	}
 	if (in.GetDeleteMessage() || in.GetDeleteHistory()) && s.Outbox != nil {
-		ids := []int32{in.GetMsgId()}
-		if in.GetDeleteHistory() {
-			ids = append(ids, s.repliesFromSender(ctx, self, sender)...)
-		}
-		ids = uniqueIDs(ids)
-		// messages.deleteMessages addresses the caller's own box ids with
-		// PEER_EMPTY. MsgDeleteMessages returns PEER_ID_INVALID for every
-		// other peer, including PEER_USER + @replies. The ids above are
-		// already only this user's rows in that dialog. revoke stays false
-		// so the other participant's copy is not removed.
-		if _, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
-			UserId:    self,
-			AuthKeyId: authKey,
-			PeerType:  mtproto.PEER_EMPTY,
-			PeerId:    0,
-			Revoke:    false,
-			Id:        ids,
-		}); err != nil {
+		if err := s.deleteReplies(ctx, self, authKey, in.GetMsgId(), in.GetDeleteHistory()); err != nil {
 			return nil, err
 		}
 	}
@@ -105,38 +89,45 @@ func (s ThreadsService) ContactsBlockFromReplies(ctx context.Context, in *mtprot
 	return up, nil
 }
 
-func (s ThreadsService) repliesFromSender(ctx context.Context, self, sender int64) []int32 {
-	var ids []int32
-	var offset int32
-	for page := 0; page < 5; page++ {
-		hist, err := s.Messages.MessageGetHistoryMessages(ctx, &message.TLMessageGetHistoryMessages{
-			UserId:   self,
-			PeerType: mtproto.PEER_USER,
-			PeerId:   repliesUserID,
-			OffsetId: offset,
-			Limit:    100,
+func (s ThreadsService) deleteReplies(ctx context.Context, self, authKey int64, msgID int32, history bool) error {
+	del := func(ctx context.Context, ids []int32) error {
+		if len(ids) == 0 || s.Outbox == nil {
+			return nil
+		}
+		_, err := s.Outbox.MsgDeleteMessages(ctx, &msg.TLMsgDeleteMessages{
+			UserId:    self,
+			AuthKeyId: authKey,
+			PeerType:  mtproto.PEER_EMPTY,
+			PeerId:    0,
+			Revoke:    false,
+			Id:        ids,
 		})
-		if err != nil || hist == nil || len(hist.GetDatas()) == 0 {
-			break
-		}
-		var oldest int32
-		for _, box := range hist.GetDatas() {
-			if box == nil {
-				continue
-			}
-			if replySender(box) == sender {
-				ids = append(ids, box.GetMessageId())
-			}
-			if oldest == 0 || (box.GetMessageId() != 0 && box.GetMessageId() < oldest) {
-				oldest = box.GetMessageId()
-			}
-		}
-		if len(hist.GetDatas()) < 100 || oldest == 0 || oldest == offset {
-			break
-		}
-		offset = oldest
+		return err
 	}
-	return ids
+	if !history || s.Messages == nil {
+		return del(ctx, []int32{msgID})
+	}
+	// DeleteHistory reads msg_id again and leaves that row in place until
+	// the walk finishes. SelectByMessageId only returns deleted = 0, so
+	// deleting it first would make a retry MSG_ID_INVALID.
+	return repliesdelete.DeleteHistory(ctx,
+		func(ctx context.Context, userID int64, id int32) (*mtproto.MessageBox, error) {
+			return s.Messages.MessageGetUserMessage(ctx, &message.TLMessageGetUserMessage{UserId: userID, Id: id})
+		},
+		func(ctx context.Context, offset int32) ([]*mtproto.MessageBox, error) {
+			hist, err := s.Messages.MessageGetHistoryMessages(ctx, &message.TLMessageGetHistoryMessages{
+				UserId:     self,
+				PeerType:   mtproto.PEER_USER,
+				PeerId:     repliesUserID,
+				OffsetId:   offset,
+				OffsetDate: repliesdelete.RawOffsetDate,
+				Limit:      repliesdelete.Page,
+			})
+			if err != nil || hist == nil {
+				return nil, err
+			}
+			return hist.GetDatas(), nil
+		}, del, self, msgID)
 }
 
 func (s ThreadsService) blockedUpdates(ctx context.Context, self, sender int64) *mtproto.Updates {
@@ -165,30 +156,7 @@ func isRepliesBox(box *mtproto.MessageBox) bool {
 }
 
 func replySender(box *mtproto.MessageBox) int64 {
-	if box == nil || box.GetMessage() == nil || box.GetMessage().GetFwdFrom() == nil {
-		if box != nil && box.GetSenderUserId() != 0 && box.GetSenderUserId() != repliesUserID {
-			return box.GetSenderUserId()
-		}
-		return 0
-	}
-	fwd := box.GetMessage().GetFwdFrom()
-	if id := userPeerID(fwd.GetFromId()); id != 0 {
-		return id
-	}
-	if id := userPeerID(fwd.GetSavedFromId()); id != 0 {
-		return id
-	}
-	if box.GetSenderUserId() != 0 && box.GetSenderUserId() != repliesUserID {
-		return box.GetSenderUserId()
-	}
-	return 0
-}
-
-func userPeerID(p *mtproto.Peer) int64 {
-	if p == nil || p.GetPredicateName() != mtproto.Predicate_peerUser {
-		return 0
-	}
-	return p.GetUserId()
+	return repliesdelete.AuthorOf(box)
 }
 
 func uniqueIDs(ids []int32) []int32 {

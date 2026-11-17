@@ -29,6 +29,15 @@ import (
 	"github.com/zeromicro/go-zero/core/mr"
 )
 
+// clientOffsetDate drops a negative offset. The internal history read uses
+// a negative offset_date only for the blockFromReplies scan.
+func clientOffsetDate(v int32) int32 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // MessagesGetHistory
 // messages.getHistory#4423e6c5 peer:InputPeer offset_id:int offset_date:int add_offset:int limit:int max_id:int min_id:int hash:long = messages.Messages;
 func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mtproto.Messages_Messages, error) {
@@ -107,7 +116,7 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 				PeerType:   peer.PeerType,
 				PeerId:     peer.PeerId,
 				OffsetId:   in.OffsetId,
-				OffsetDate: in.OffsetDate,
+				OffsetDate: clientOffsetDate(in.OffsetDate),
 				AddOffset:  in.AddOffset,
 				Limit:      limit,
 				MaxId:      in.MaxId,

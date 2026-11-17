@@ -89,3 +89,12 @@ jobs:
           go test -race -count=1 -timeout 4m -v ./app/messenger/msg/internal/dao/ -run '^(TestInbox|TestMasterRedelivery|TestSavedForward|TestGroupUnread|TestDeliverRepliesNotice)'
           go test -race -count=1 -timeout 4m -v ./app/messenger/msg/msg/internal/core/ -run '^(TestMsgDeleteMessagesRejectsRepliesPeer|TestBlockFromRepliesDeletePersistsCallerRows)$'
           go test -race -count=1 -timeout 3m -v ./app/service/biz/message/internal/dal/dao/mysql_dao/ -run '^TestPrivateReplyLookupIncludesDeleted$'
+          set -o pipefail
+          go test -race -count=1 -timeout 4m -v ./app/service/biz/message/internal/core/ -run '^TestRepliesHistory' | tee /tmp/replies-history.log
+          for name in TestRepliesHistoryReadErrorIsNotAnEmptyPage TestRepliesHistoryWalkMySQL TestRepliesHistoryDeleteFailureRetries TestRepliesHistoryExpiryPageDoesNotEndTheWalk; do
+            grep -q -- "--- PASS: ${name}" /tmp/replies-history.log || { echo "missing PASS ${name}"; exit 1; }
+          done
+          if grep -q -- '--- SKIP:' /tmp/replies-history.log; then
+            echo "replies history tests skipped"
+            exit 1
+          fi

@@ -152,7 +152,7 @@ func (f repliesOutFake) MsgDeleteMessages(_ context.Context, in *msg.TLMsgDelete
 	if in.GetPeerType() != mtproto.PEER_EMPTY || in.GetPeerId() != 0 || in.GetRevoke() {
 		return nil, mtproto.ErrPeerIdInvalid
 	}
-	*f.deleted = append([]int32{}, in.GetId()...)
+	*f.deleted = append(*f.deleted, in.GetId()...)
 	return &mtproto.Messages_AffectedMessages{}, nil
 }
 
