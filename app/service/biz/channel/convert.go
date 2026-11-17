@@ -462,6 +462,18 @@ func unmarshalMessage(data []byte) (*mtproto.Message, error) {
 	if err := proto.Unmarshal(data, msg); err != nil {
 		return nil, err
 	}
+	// The row is protobuf, not a TL value. A post written without
+	// predicate_name has Constructor 0. Encode then treats it as an unknown
+	// predicate and replaces it with messageEmpty, so the text never reaches
+	// the client. The stored bytes stay unchanged. A service row is recognized
+	// from its action; everything else is a normal message.
+	if msg.PredicateName == "" {
+		if msg.GetAction() != nil {
+			msg.PredicateName = mtproto.Predicate_messageService
+		} else {
+			msg.PredicateName = mtproto.Predicate_message
+		}
+	}
 	// Old rows may already contain a zero-length hashtag or a duplicated
 	// URL. Drop them before the message is returned to a client.
 	msg.SanitizeEntities()
