@@ -12,12 +12,18 @@ import (
 // TestBlockFromRepliesSupergroupAndDiscussion is ISSUE-S-BLOCK-FROM-REPLIES-001.
 // The caller passes the supergroup reply id, then a discussion-group comment
 // id, with every flag false. CHANNEL_COMMENTS is not set by this test.
+// Phones 9996610871 / 9996610872, code 11111, layer 232.
 func TestBlockFromRepliesSupergroupAndDiscussion(t *testing.T) {
 	cfg := requireE2E(t)
-	a, _ := loginNamed(t, cfg, ProfileIOS, "bfr_a", "BfrA")
-	b, bSelf := loginNamed(t, cfg, ProfileAndroid, "bfr_b", "BfrB")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	a, _ := dialPhone(t, ctx, cfg, "9996610871", "BfrA")
+	b, _ := dialPhone(t, ctx, cfg, "9996610872", "BfrB")
+	bID, bHash, err := a.ImportPhone(ctx, "9996610872", "BfrB")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bSelf := Self{ID: bID, AccessHash: bHash}
 
 	megaID, megaHash, err := a.CreateMegagroup(ctx, "bfr-mega")
 	if err != nil {
