@@ -14,9 +14,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// The shipped gate is peerSettings.add_contact, which the first private
-// message from a non-contact sets together with report_spam and block_contact.
-// A call with that bar closed is 400 CONTACT_ADD_MISSING in either order.
+// The shipped gate is peerSettings.add_contact. The inbox sets it, with
+// report_spam and block_contact, only on the recipient of a new private
+// dialog. These cases stub that stored row. They do not decide when the row
+// is written: a live pair is e2e/client/accept_contact_bar_test.go. A closed
+// bar is 400 CONTACT_ADD_MISSING in either order.
 
 func TestAcceptContactRejectsAClosedBar(t *testing.T) {
 	c := acceptCore(11, &acceptUsers{})

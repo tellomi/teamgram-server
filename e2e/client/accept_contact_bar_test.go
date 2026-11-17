@@ -12,12 +12,16 @@ import (
 // ISSUE-S-ACCEPT-CONTACT-MISSING-001.
 //
 // contacts.acceptContact returns 400 CONTACT_ADD_MISSING unless the caller's
-// peerSettings.add_contact bar is open. That bar is the first private message
-// from someone who is not already a contact, and it arrives with report_spam
-// and block_contact. Importing both numbers, or calling acceptContact before
-// that message, does not open it. Phones 9996610870–9996610875, code 11111.
-// 9996610820/0821 are the coverage pair that hit the missing bar; 0821 is
-// already the notify-exceptions account, so this case uses a free range.
+// peerSettings.add_contact bar is open. The inbox writes that bar, with
+// report_spam and block_contact, only for the recipient of the first private
+// message from someone who is not already a contact. The sender's own dialog
+// is created by that outgoing message, so a reply sees existed=true and does
+// not open a bar for the sender. Importing both numbers, or calling
+// acceptContact before that message, does not open it either.
+// Phones 9996610870–9996610875, code 11111. 9996610820/0821 are the coverage
+// pair that hit the missing bar; 0821 is already the notify-exceptions
+// account, so this case uses a free range.
+// share_contact is a separate bar and is not what these cases open.
 
 func TestAcceptContactMissingBarBothOrders(t *testing.T) {
 	cfg := requireE2E(t)
@@ -87,95 +91,88 @@ func TestAcceptContactMissingBarBothOrders(t *testing.T) {
 
 func TestAcceptContactStrangerBarBothOrders(t *testing.T) {
 	cfg := requireE2E(t)
-	ctx, cancel := contextTimeout(4 * time.Minute)
+	ctx, cancel := contextTimeout(3 * time.Minute)
 	defer cancel()
-	// First pair: A accepts B, then B accepts A.
-	acceptStrangerPair(t, ctx, cfg, "9996610872", "OrdA", "9996610873", "OrdB", true)
-	// Second pair: the other order. The first accept must not be required.
-	acceptStrangerPair(t, ctx, cfg, "9996610874", "RevA", "9996610875", "RevB", false)
+	// Fresh pair: 0872 sends the only message, 0873 is the recipient who can accept.
+	acceptOneWay(t, ctx, cfg, "9996610872", "SndA", "9996610873", "RcvB")
+	// Fresh pair, opposite initiator. A reply in the first pair must not be required.
+	acceptOneWay(t, ctx, cfg, "9996610875", "SndD", "9996610874", "RcvC")
 }
 
-func acceptStrangerPair(t *testing.T, ctx context.Context, cfg Config, phoneA, nameA, phoneB, nameB string, aFirst bool) {
+// acceptOneWay is one first private message. Only the recipient gets
+// report_spam, add_contact, and block_contact. The sender's acceptContact
+// stays 400 CONTACT_ADD_MISSING.
+func acceptOneWay(t *testing.T, ctx context.Context, cfg Config, senderPhone, senderName, recipientPhone, recipientName string) {
 	t.Helper()
-	a, aSelf := dialPhone(t, ctx, cfg, phoneA, nameA)
-	b, bSelf := dialPhone(t, ctx, cfg, phoneB, nameB)
-	if err := setAddedByPhoneEveryone(ctx, a); err != nil {
+	sender, senderSelf := dialPhone(t, ctx, cfg, senderPhone, senderName)
+	recipient, recipientSelf := dialPhone(t, ctx, cfg, recipientPhone, recipientName)
+	if err := setAddedByPhoneEveryone(ctx, sender); err != nil {
 		t.Fatal(err)
 	}
-	if err := setAddedByPhoneEveryone(ctx, b); err != nil {
+	if err := setAddedByPhoneEveryone(ctx, recipient); err != nil {
 		t.Fatal(err)
 	}
-	if err := setPhoneNobody(ctx, a); err != nil {
+	if err := setPhoneNobody(ctx, sender); err != nil {
 		t.Fatal(err)
 	}
-	if err := setPhoneNobody(ctx, b); err != nil {
+	if err := setPhoneNobody(ctx, recipient); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		_ = setPhoneEveryone(ctx, a)
-		_ = setPhoneEveryone(ctx, b)
+		_ = setPhoneEveryone(ctx, sender)
+		_ = setPhoneEveryone(ctx, recipient)
 	}()
-	// resolvePhone does not import the contact, so the first message is from
-	// a non-contact and opens the bar on each side.
-	bID, bHash := resolvePhone(t, ctx, a, phoneB)
-	aID, aHash := resolvePhone(t, ctx, b, phoneA)
-	if aID != aSelf.ID || bID != bSelf.ID {
-		t.Fatalf("resolved %d %d", aID, bID)
+	recipientID, recipientHash := resolvePhone(t, ctx, sender, recipientPhone)
+	senderID, senderHash := resolvePhone(t, ctx, recipient, senderPhone)
+	if senderID != senderSelf.ID || recipientID != recipientSelf.ID {
+		t.Fatalf("resolved sender %d recipient %d", senderID, recipientID)
 	}
-	if _, err := a.SendText(ctx, inputPeerUser(bID, bHash), "hello from a", nil); err != nil {
+	if _, err := sender.SendText(ctx, inputPeerUser(recipientID, recipientHash), "hello once", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.SendText(ctx, inputPeerUser(aID, aHash), "hello from b", nil); err != nil {
+	bar := waitStrangerBar(t, ctx, recipient, senderID, senderHash)
+	if bar.GetShareContact() {
+		t.Fatalf("share_contact on the stranger bar %#v", bar)
+	}
+	if err := barStaysClosed(ctx, sender, recipientID, recipientHash); err != nil {
 		t.Fatal(err)
 	}
-	barA := waitStrangerBar(t, ctx, a, bID, bHash)
-	barB := waitStrangerBar(t, ctx, b, aID, aHash)
-	if barA.GetShareContact() || barB.GetShareContact() {
-		t.Fatalf("share_contact on stranger bars %#v %#v", barA, barB)
+	requireAcceptError(t, ctx, sender, recipientID, recipientHash, 400, "CONTACT_ADD_MISSING")
+	if got := userPhone(t, ctx, sender, recipientID, recipientHash); got != "" {
+		t.Fatalf("recipient phone visible before accept: %q", got)
+	}
+	if got := userPhone(t, ctx, recipient, senderID, senderHash); got != "" {
+		t.Fatalf("sender phone visible before accept: %q", got)
 	}
 
-	first, second := a, b
-	firstPeer, firstHash := bID, bHash
-	secondPeer, secondHash := aID, aHash
-	firstPhoneSeenBy := b
-	firstPhoneID, firstPhoneHash := aID, aHash
-	secondPhoneSeenBy := a
-	secondPhoneID, secondPhoneHash := bID, bHash
-	if !aFirst {
-		first, second = b, a
-		firstPeer, firstHash = aID, aHash
-		secondPeer, secondHash = bID, bHash
-		firstPhoneSeenBy = a
-		firstPhoneID, firstPhoneHash = bID, bHash
-		secondPhoneSeenBy = b
-		secondPhoneID, secondPhoneHash = aID, aHash
-	}
-	out := acceptContact(t, ctx, first, firstPeer, firstHash)
-	if !acceptedUser(out, firstPeer) || !clearedBar(out, firstPeer) {
-		t.Fatalf("first accept %#v", out)
+	out := acceptContact(t, ctx, recipient, senderID, senderHash)
+	if !acceptedUser(out, senderID) || !clearedBar(out, senderID) {
+		t.Fatalf("accept %#v", out)
 	}
 	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return userPhone(t, ctx, firstPhoneSeenBy, firstPhoneID, firstPhoneHash) != "", nil
+		return userPhone(t, ctx, sender, recipientID, recipientHash) != "", nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	requireAcceptError(t, ctx, first, firstPeer, firstHash, 400, "CONTACT_ADD_MISSING")
-	if got := userPhone(t, ctx, firstPhoneSeenBy, firstPhoneID, firstPhoneHash); got == "" {
+	if got := userPhone(t, ctx, recipient, senderID, senderHash); got != "" {
+		t.Fatalf("accept shared the sender phone: %q", got)
+	}
+	flags := peerFlagsNow(t, ctx, recipient, senderID, senderHash)
+	if flags.GetAddContact() || flags.GetReportSpam() || flags.GetBlockContact() || flags.GetShareContact() {
+		t.Fatalf("bar left open %#v", flags)
+	}
+	for i := 0; i < 2; i++ {
+		requireAcceptError(t, ctx, recipient, senderID, senderHash, 400, "CONTACT_ADD_MISSING")
+	}
+	if got := userPhone(t, ctx, sender, recipientID, recipientHash); got == "" {
 		t.Fatal("repeat cleared the shared phone")
 	}
-
-	out = acceptContact(t, ctx, second, secondPeer, secondHash)
-	if !acceptedUser(out, secondPeer) || !clearedBar(out, secondPeer) {
-		t.Fatalf("second accept %#v", out)
+	if user := userByID(usersOf(mustGetUsers(t, ctx, recipient, senderID, senderHash)), senderID); user == nil || !user.GetContact() {
+		t.Fatal("repeat dropped the contact")
 	}
-	if err := waitUntil(ctx, 300*time.Millisecond, func() (bool, error) {
-		return userPhone(t, ctx, secondPhoneSeenBy, secondPhoneID, secondPhoneHash) != "", nil
-	}); err != nil {
+	requireAcceptError(t, ctx, sender, recipientID, recipientHash, 400, "CONTACT_ADD_MISSING")
+	if err := barStaysClosed(ctx, sender, recipientID, recipientHash); err != nil {
 		t.Fatal(err)
-	}
-	requireAcceptError(t, ctx, second, secondPeer, secondHash, 400, "CONTACT_ADD_MISSING")
-	if flags := peerFlagsNow(t, ctx, a, bID, bHash); flags.GetAddContact() || flags.GetReportSpam() || flags.GetBlockContact() {
-		t.Fatalf("bar left open %#v", flags)
 	}
 }
 
@@ -297,6 +294,18 @@ func peerFlagsNow(t *testing.T, ctx context.Context, c *Client, id, hash int64) 
 		return &mtproto.PeerSettings{}
 	}
 	return settings
+}
+
+func mustGetUsers(t *testing.T, ctx context.Context, c *Client, id, hash int64) mtproto.TLObject {
+	t.Helper()
+	obj, err := c.Invoke(ctx, &mtproto.TLUsersGetUsers{
+		Constructor: mtproto.CRC32_users_getUsers,
+		Id:          []*mtproto.InputUser{inputUser(id, hash)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return obj
 }
 
 func acceptedUser(obj mtproto.TLObject, id int64) bool {
