@@ -98,3 +98,9 @@ jobs:
             echo "inbox mysql tests skipped"
             exit 1
           fi
+          go test -race -count=1 -timeout 4m -v ./app/service/biz/channel/ -run '^TestChannelGetMessagesLayer232MySQL$' | tee /tmp/chan-getmsg.log
+          grep -q -- '--- PASS: TestChannelGetMessagesLayer232MySQL' /tmp/chan-getmsg.log || { echo "missing PASS TestChannelGetMessagesLayer232MySQL"; exit 1; }
+          if grep -q -- '--- SKIP:' /tmp/chan-getmsg.log; then
+            echo "channel getMessages layer232 test skipped"
+            exit 1
+          fi

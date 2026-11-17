@@ -48,9 +48,18 @@ func TestChannelsGetMessagesAbsentDeletedAndOutsider(t *testing.T) {
 		t.Fatalf("live %#v", page.GetMessages()[0])
 	}
 	assertChannelEmpty(t, roundTripMessage(t, page.GetMessages()[1]), neverID, ch.GetId())
-	if encoded := roundTripChannelMessages(t, page); len(encoded.GetMessages()) != 2 {
+	encoded := roundTripChannelMessages(t, page)
+	if len(encoded.GetMessages()) != 2 {
 		t.Fatalf("encoded page %#v", encoded.GetMessages())
 	}
+	if encoded.GetMessages()[0].GetPredicateName() != mtproto.Predicate_message ||
+		encoded.GetMessages()[0].Constructor != mtproto.CRC32_message_7600b9d3 ||
+		encoded.GetMessages()[0].GetId() != liveID ||
+		encoded.GetMessages()[0].GetMessage() != "channel-secret" ||
+		encoded.GetMessages()[0].GetPeerId().GetChannelId() != ch.GetId() {
+		t.Fatalf("encoded live %#v", encoded.GetMessages()[0])
+	}
+	assertChannelEmpty(t, encoded.GetMessages()[1], neverID, ch.GetId())
 
 	if _, _, err = svcCh.Delete(ctx, 1, ch.GetId(), 0, []int32{liveID}); err != nil {
 		t.Fatal(err)
