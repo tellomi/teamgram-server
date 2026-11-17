@@ -2,6 +2,8 @@ package channel
 
 import (
 	"context"
+	"math"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
@@ -53,8 +55,10 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		DefaultBannedRights:         mtproto.BannedRights(ch.DefaultBanned).ToChatBannedRights(),
 		ParticipantsCount_FLAGINT32: &wrapperspb.Int32Value{Value: ch.ParticipantsCount},
 		HasGeo:                      ch.Address != "" || feat.Lat != 0 || feat.Long != 0,
+		Noforwards:                  feat.NoForwards,
 		SlowmodeEnabled:             feat.SlowmodeSeconds > 0,
 		JoinRequest:                 feat.JoinRequest,
+		JoinToSend:                  feat.JoinToSend,
 		Gigagroup:                   feat.Gigagroup,
 		Autotranslation:             feat.Autotranslation,
 		BroadcastMessagesAllowed:    feat.BroadcastMessagesAllowed,
@@ -82,6 +86,35 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 			chat.StoriesUnavailable = true
 		}
 		chat.StoriesHidden = att.Hidden
+	}
+	return chat
+}
+
+// leftChannelView is the channel card for channels.getLeftChannels.
+// chatFor hides a private channel once the viewer is no longer a member,
+// which made every private megagroup the user left look like an empty list.
+// The left list still shows the title, with left set, including a private one.
+func (s *Service) leftChannelView(ctx context.Context, viewer int64, ch *Channel, p *Participant) *mtproto.Chat {
+	if ch == nil || ch.Deleted {
+		return mtproto.MakeTLChannelForbidden(&mtproto.Chat{}).To_Chat()
+	}
+	if p == nil && s != nil && s.store != nil {
+		p, _ = s.store.GetParticipant(ctx, ch.ID, viewer)
+	}
+	view := p
+	if p != nil && !p.InChannel() {
+		clone := *p
+		clone.State = StateNormal
+		clone.Role = RoleMember
+		clone.AdminRights = 0
+		clone.BannedRights = 0
+		view = &clone
+	}
+	chat := s.chatFor(ctx, viewer, ch, view)
+	if chat.GetPredicateName() == mtproto.Predicate_channel {
+		chat.Left = true
+		chat.Creator = false
+		chat.AdminRights = nil
 	}
 	return chat
 }
@@ -120,14 +153,40 @@ func defaultNotify() *mtproto.PeerNotifySettings {
 	}).To_PeerNotifySettings()
 }
 
+// slowmodeNextSendDate is channelFull.slowmode_next_send_date.
+// It is the member's last send plus slowmode_seconds. The field is set
+// only for a member who is not an admin and not the creator, and only
+// while that instant is still in the future. A closed slow mode, an
+// elapsed window, an admin, and the creator leave it unset.
+func slowmodeNextSendDate(feat *Features, viewer *Participant, userID int64, now int32) *wrapperspb.Int32Value {
+	if feat == nil || feat.SlowmodeSeconds <= 0 || viewer == nil || !viewer.InChannel() || viewer.IsAdmin() {
+		return nil
+	}
+	last := feat.LastSend[userID]
+	if last <= 0 {
+		return nil
+	}
+	next := int64(last) + int64(feat.SlowmodeSeconds)
+	if next <= int64(now) || next > math.MaxInt32 {
+		return nil
+	}
+	return &wrapperspb.Int32Value{Value: int32(next)}
+}
+
 func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Participant) *mtproto.ChatFull {
 	st, _ := s.store.GetRead(ctx, ch.ID, viewer)
 	if st == nil {
 		st = &ReadState{}
 	}
 	member := p != nil && p.InChannel()
+	// Broadcast subscriber lists are admin-only. A public megagroup still
+	// shows the list to anyone who can see the chat, until participants_hidden.
+	canViewParticipants := member || ch.Public()
+	if ch.Broadcast {
+		canViewParticipants = p != nil && p.IsAdmin()
+	}
 	full := mtproto.MakeTLChannelFull(&mtproto.ChatFull{
-		CanViewParticipants:  member || ch.Public(),
+		CanViewParticipants:  canViewParticipants,
 		CanSetUsername:       p.IsCreator(),
 		CanSetStickers:       p.IsCreator(),
 		CanViewStats:         p.IsCreator(),
@@ -139,7 +198,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		ReadInboxMaxId:       st.ReadInboxMaxID,
 		ReadOutboxMaxId:      st.ReadOutboxMaxID,
 		UnreadCount:          st.UnreadCount,
-		ChatPhoto:            mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
+		ChatPhoto:            s.currentChatPhoto(ctx, ch.PhotoID),
 		NotifySettings:       defaultNotify(),
 		BotInfo:              []*mtproto.BotInfo{},
 		Pts:                  ch.Pts,
@@ -155,11 +214,22 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.RestrictedSponsored = feat.SponsoredRestricted
 		full.HiddenPrehistory = feat.HiddenPrehistory
 		full.ParticipantsHidden = feat.ParticipantsHidden
+		// Hidden members still let ordinary members see the admin list.
+		// can_view_participants is the flag the client uses to hide the
+		// member list itself.
+		if feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) {
+			full.CanViewParticipants = false
+		}
 		full.Antispam = feat.Antispam
 		full.ViewForumAsMessages = feat.ViewForumAsMessages[viewer]
 		full.MainTab = mtproto.ToProfileTabByType(feat.MainProfileTab)
 		if feat.SlowmodeSeconds > 0 {
 			full.SlowmodeSeconds = &wrapperspb.Int32Value{Value: feat.SlowmodeSeconds}
+		}
+		// Same LastSend map Send reads before it returns SLOWMODE_WAIT.
+		// Official clients start the composer countdown from this field.
+		if next := slowmodeNextSendDate(feat, p, viewer, int32(time.Now().Unix())); next != nil {
+			full.SlowmodeNextSendDate = next
 		}
 		if feat.PinnedMsgID > 0 {
 			full.PinnedMsgId = &wrapperspb.Int32Value{Value: feat.PinnedMsgID}
@@ -220,6 +290,15 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 }
 
 func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
+	return participantFor(actor, nil, nil, p)
+}
+
+// participantFor builds one ChannelParticipant for viewer.
+// channelParticipantAdmin shares flags.1 between self and inviter_id.
+// When the row is the viewer, inviter_id has to be on the wire or the
+// client reads promoted_by as inviter_id and the next constructor is garbage.
+// https://core.telegram.org/constructor/channelParticipantAdmin
+func participantFor(actor int64, viewer *Participant, promoted map[int64]int64, p *Participant) *mtproto.ChannelParticipant {
 	rank := optionalString(p.Rank)
 	switch {
 	case p.Role == RoleCreator:
@@ -229,15 +308,24 @@ func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
 			Rank:        rank,
 		}).To_ChannelParticipant()
 	case p.Role == RoleAdmin && p.State == StateNormal:
+		self := actor != 0 && p.UserID == actor
+		var inviter *wrapperspb.Int64Value
+		if self {
+			inviter = &wrapperspb.Int64Value{Value: p.InviterID}
+		}
+		canEdit := true
+		if viewer != nil {
+			canEdit = viewerMayEditAdmin(viewer, promoted, p)
+		}
 		return mtproto.MakeTLChannelParticipantAdmin(&mtproto.ChannelParticipant{
-			UserId:          p.UserID,
-			InviterId_INT64: p.InviterID,
-			PromotedBy:      p.InviterID,
-			Date:            p.Date,
-			AdminRights:     mtproto.AdminRights(p.AdminRights).ToChatAdminRights(),
-			Rank:            rank,
-			CanEdit:         true,
-			Self:            p.UserID == actor,
+			UserId:              p.UserID,
+			InviterId_FLAGINT64: inviter,
+			PromotedBy:          promoterOf(promoted, p),
+			Date:                p.Date,
+			AdminRights:         adminRightsTL(p.AdminRights),
+			Rank:                rank,
+			CanEdit:             canEdit,
+			Self:                self,
 		}).To_ChannelParticipant()
 	case p.State == StateKicked || (p.Role == RoleBanned && p.BannedRights != 0):
 		return mtproto.MakeTLChannelParticipantBanned(&mtproto.ChannelParticipant{
@@ -265,6 +353,55 @@ func participantTL(actor int64, p *Participant) *mtproto.ChannelParticipant {
 	}
 }
 
+func adminRightsTL(bits int32) *mtproto.ChatAdminRights {
+	if rights := mtproto.AdminRights(bits).ToChatAdminRights(); rights != nil {
+		return rights
+	}
+	return mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{}).To_ChatAdminRights()
+}
+
+func promoterOf(promoted map[int64]int64, p *Participant) int64 {
+	if p == nil {
+		return 0
+	}
+	if promoted != nil {
+		if id := promoted[p.UserID]; id != 0 {
+			return id
+		}
+	}
+	return p.InviterID
+}
+
+func rememberPromoter(f *Features, userID, by int64) {
+	if f == nil {
+		return
+	}
+	if f.PromotedBy == nil {
+		f.PromotedBy = map[int64]int64{}
+	}
+	if by == 0 {
+		delete(f.PromotedBy, userID)
+		return
+	}
+	f.PromotedBy[userID] = by
+}
+
+// viewerMayEditAdmin is the channels.editAdmin rule the client shows as can_edit.
+// The creator can edit every other admin. An admin can edit only admins they
+// promoted, and only while they still have add_admins. Nobody edits themselves.
+func viewerMayEditAdmin(viewer *Participant, promoted map[int64]int64, target *Participant) bool {
+	if viewer == nil || target == nil || target.UserID == viewer.UserID {
+		return false
+	}
+	if viewer.IsCreator() {
+		return true
+	}
+	if !viewer.IsAdmin() || !viewer.adminRights().CanAddAdmins() {
+		return false
+	}
+	return promoterOf(promoted, target) == viewer.UserID
+}
+
 func viewMessage(m *mtproto.Message, senderID, viewer int64) *mtproto.Message {
 	if m == nil {
 		return nil
@@ -272,6 +409,50 @@ func viewMessage(m *mtproto.Message, senderID, viewer int64) *mtproto.Message {
 	out := proto.Clone(m).(*mtproto.Message)
 	out.Out = senderID == viewer
 	return out
+}
+
+// forViewer is viewMessage plus the per-viewer flags a shared channel row
+// cannot store: media_unread for voice, round video, and ttl media, and
+// mentioned for a mention or a reply to this viewer.
+func (s *Service) forViewer(ctx context.Context, channelID int64, m *mtproto.Message, sender, viewer int64) *mtproto.Message {
+	out := viewMessage(m, sender, viewer)
+	if out == nil || s == nil || sender == 0 || sender == viewer {
+		return out
+	}
+	if mtproto.CheckHasMediaUnread(out) && !s.contentsRead(ctx, channelID, viewer, out.GetId()) {
+		out.MediaUnread = true
+	}
+	if s.mentionsViewer(ctx, channelID, out, viewer) {
+		out.Mentioned = true
+	}
+	return out
+}
+
+func (s *Service) contentsRead(ctx context.Context, channelID, viewer int64, id int32) bool {
+	if s == nil || id == 0 {
+		return false
+	}
+	for _, seen := range s.features(ctx, channelID).ReadContents[viewer] {
+		if seen == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) mentionsViewer(ctx context.Context, channelID int64, msg *mtproto.Message, viewer int64) bool {
+	if mentionsUser(msg, viewer, nil) {
+		return true
+	}
+	replyID := msg.GetReplyTo().GetReplyToMsgId()
+	if replyID == 0 {
+		replyID = msg.GetReplyTo().GetReplyToMsgId_INT32()
+	}
+	if replyID == 0 || s == nil || s.store == nil {
+		return false
+	}
+	parent, err := s.store.GetMessage(ctx, channelID, replyID)
+	return err == nil && parent != nil && !parent.Deleted && parent.SenderID == viewer
 }
 
 func unmarshalMessage(data []byte) (*mtproto.Message, error) {

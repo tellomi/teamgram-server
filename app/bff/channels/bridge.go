@@ -31,16 +31,14 @@ func (Bridge) GetChannelMessage(ctx context.Context, selfId, channelId int64, id
 }
 
 func (Bridge) GetChannelDialogById(ctx context.Context, selfId, id int64) (*dialog.DialogExt, error) {
-	rows, err := channel.Shared().DialogsFor(ctx, selfId)
+	row, ok, err := channel.Shared().DialogFor(ctx, selfId, id)
 	if err != nil {
 		return nil, err
 	}
-	for _, row := range rows {
-		if row.ChannelID == id {
-			return dialogExt(row), nil
-		}
+	if !ok {
+		return nil, mtproto.ErrChannelPrivate
 	}
-	return nil, mtproto.ErrChannelPrivate
+	return dialogExt(row), nil
 }
 
 func (Bridge) ListChannelDialogs(ctx context.Context, selfId int64) (dialog.DialogExtList, error) {
@@ -68,6 +66,7 @@ func dialogExt(row channel.DialogRow) *dialog.DialogExt {
 			NotifySettings:      mtproto.MakeTLPeerNotifySettings(&mtproto.PeerNotifySettings{ShowPreviews: mtproto.BoolTrue, Silent: mtproto.BoolFalse}).To_PeerNotifySettings(),
 			Pts:                 &wrapperspb.Int32Value{Value: row.Pts},
 			ViewForumAsMessages: row.ViewForumAsMessages,
+			UnreadMentionsCount: row.UnreadMentions,
 		}).To_Dialog(),
 	}).To_DialogExt()
 }

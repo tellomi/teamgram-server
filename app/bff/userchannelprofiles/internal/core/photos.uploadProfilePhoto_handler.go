@@ -41,9 +41,13 @@ func (c *UserChannelProfilesCore) PhotosUploadProfilePhoto(in *mtproto.TLPhotosU
 	}
 
 	// TODO: ALBUM_PHOTOS_TOO_MANY
+	photoID := photo.GetId()
+	if in.GetFallback() && photoID > 0 {
+		photoID = -photoID
+	}
 	_, err = c.svcCtx.Dao.UserClient.UserUpdateProfilePhoto(c.ctx, &userpb.TLUserUpdateProfilePhoto{
 		UserId: c.MD.UserId,
-		Id:     photo.GetId(),
+		Id:     photoID,
 	})
 	if err != nil {
 		c.Logger.Errorf("photos.uploadProfilePhoto - error: %v", err)

@@ -85,7 +85,7 @@ func waitSecurityNotice(t *testing.T, ctx context.Context, c *Client, device str
 		if err == nil {
 			for _, m := range msgs {
 				text := m.GetMessage()
-				if !strings.Contains(text, "新设备登录提醒") || !strings.Contains(text, device) {
+				if !strings.Contains(text, "New login alert") || !strings.Contains(text, device) {
 					continue
 				}
 				// History keeps older notices for this synthetic number.
@@ -164,7 +164,7 @@ func countSecurityNotices(t *testing.T, ctx context.Context, c *Client) int {
 	}
 	n := 0
 	for _, m := range msgs {
-		if m != nil && strings.Contains(m.GetMessage(), "新设备登录提醒") {
+		if m != nil && strings.Contains(m.GetMessage(), "New login alert") {
 			n++
 		}
 	}
@@ -173,7 +173,7 @@ func countSecurityNotices(t *testing.T, ctx context.Context, c *Client) int {
 
 func assertSecurityNotice(t *testing.T, text, device string, from, to time.Time) {
 	t.Helper()
-	if !strings.Contains(text, "新设备登录提醒") || !strings.Contains(text, "北京时间") {
+	if !strings.Contains(text, "New login alert") || !strings.Contains(text, "Beijing time") {
 		t.Fatal("notice is missing the title or Beijing label")
 	}
 	if !strings.Contains(text, device) {

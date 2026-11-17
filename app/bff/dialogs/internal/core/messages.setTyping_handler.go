@@ -24,6 +24,7 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	userclient "github.com/teamgram/teamgram-server/app/service/biz/user/client"
 )
 
 // MessagesSetTyping
@@ -37,6 +38,11 @@ func (c *DialogsCore) MessagesSetTyping(in *mtproto.TLMessagesSetTyping) (*mtpro
 	// TODO(@benqi): push chat/channel时机
 	switch peer.PeerType {
 	case mtproto.PEER_USER:
+		// A block in either direction drops the typing update. The RPC still
+		// succeeds: the sender's client does not learn that it was swallowed.
+		if c.svcCtx != nil && c.svcCtx.Dao != nil && userclient.EitherBlocked(c.ctx, c.svcCtx.Dao.UserClient, c.MD.UserId, peer.PeerId) {
+			return mtproto.BoolTrue, nil
+		}
 		updates := mtproto.MakeTLUpdateShort(&mtproto.Updates{
 			Update: mtproto.MakeTLUpdateUserTyping(&mtproto.Update{
 				UserId: c.MD.UserId,

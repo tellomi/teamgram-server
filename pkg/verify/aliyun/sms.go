@@ -25,6 +25,10 @@ type smsTemplateParam struct {
 	Code string `json:"code"`
 }
 
+// SendCode delivers code through the Aliyun-approved template. The body is
+// fixed by that template (您的验证码为：${code}，请勿泄露于他人！). Dysmsapi does
+// not take a per-request language, so this SMS stays Simplified Chinese
+// until a second template is registered.
 func (c *SMSClient) SendCode(ctx context.Context, phone, code string) error {
 	if c.AccessKeyID == "" || c.AccessKeySecret == "" {
 		return fmt.Errorf("aliyun access key is not configured")

@@ -48,9 +48,16 @@ func (m *DialogsDataHelper) fixRows(keepEmpty bool) {
 		)
 
 		if dlg.TopMessage == 0 {
+			// getPeerDialogs keeps an empty row so Android can open a new
+			// 1:1. The chat list does not: a private chat with no messages
+			// is gone until the next message. A basic group or channel the
+			// user still belongs to stays, with no message. That is what
+			// official getDialogs returns after the last post is deleted.
 			if keepEmpty {
 				dialogs = append(dialogs, dlg)
 				appendDialogPeer(dlg, m.Users, m.Chats, &users, &chats)
+			} else if membershipDialog(dlg) && appendDialogPeer(dlg, m.Users, m.Chats, &users, &chats) {
+				dialogs = append(dialogs, dlg)
 			}
 			continue
 		}
@@ -122,9 +129,21 @@ func (m *DialogsDataHelper) fixRows(keepEmpty bool) {
 	m.Chats = chats
 }
 
-func appendDialogPeer(dlg *mtproto.Dialog, allUsers []*mtproto.User, allChats []*mtproto.Chat, users *[]*mtproto.User, chats *[]*mtproto.Chat) {
+func membershipDialog(dlg *mtproto.Dialog) bool {
+	if dlg == nil {
+		return false
+	}
+	switch mtproto.FromPeer(dlg.Peer).PeerType {
+	case mtproto.PEER_CHAT, mtproto.PEER_CHANNEL:
+		return true
+	default:
+		return false
+	}
+}
+
+func appendDialogPeer(dlg *mtproto.Dialog, allUsers []*mtproto.User, allChats []*mtproto.Chat, users *[]*mtproto.User, chats *[]*mtproto.Chat) bool {
 	if dlg == nil || dlg.Peer == nil {
-		return
+		return false
 	}
 	p := mtproto.FromPeer(dlg.Peer)
 	switch p.PeerType {
@@ -132,17 +151,18 @@ func appendDialogPeer(dlg *mtproto.Dialog, allUsers []*mtproto.User, allChats []
 		for _, v := range allUsers {
 			if v != nil && v.Id == p.PeerId {
 				*users = append(*users, v)
-				return
+				return true
 			}
 		}
 	case mtproto.PEER_CHAT, mtproto.PEER_CHANNEL:
 		for _, v := range allChats {
 			if v != nil && v.Id == p.PeerId {
 				*chats = append(*chats, v)
-				return
+				return true
 			}
 		}
 	}
+	return false
 }
 
 // ToMessagesDialogs builds the messages.getDialogs reply.

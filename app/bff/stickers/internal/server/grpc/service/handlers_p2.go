@@ -40,8 +40,12 @@ func (s *Service) MessagesGetSavedGifs(ctx context.Context, in *mtproto.TLMessag
 }
 
 func (s *Service) MessagesSaveGif(ctx context.Context, in *mtproto.TLMessagesSaveGif) (*mtproto.Bool, error) {
-	if err := cat().SaveGif(userID(ctx), in.GetId(), mtproto.FromBool(in.GetUnsave())); err != nil {
+	changed, err := cat().SaveGif(userID(ctx), in.GetId(), mtproto.FromBool(in.GetUnsave()))
+	if err != nil {
 		return nil, err
+	}
+	if changed {
+		s.pushNotMe(ctx, catalog.SavedGifsChanged())
 	}
 	return mtproto.BoolTrue, nil
 }

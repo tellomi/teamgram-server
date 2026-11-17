@@ -20,6 +20,7 @@ package core
 
 import (
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 )
 
@@ -35,6 +36,24 @@ func (c *MessagesCore) MessagesGetSearchCounters(in *mtproto.TLMessagesGetSearch
 
 	if in.SavedPeerId != nil {
 		// TODO: not impl
+		return counters, nil
+	}
+
+	// Channel and megagroup posts live in the channel store, not in the
+	// caller's private message box. Counting the box always returned 0.
+	if peer.IsChannel() {
+		for _, filter := range in.GetFilters() {
+			n, err := channel.Shared().CountByFilter(c.ctx, c.MD.UserId, peer.PeerId, filter)
+			if err != nil {
+				c.Logger.Errorf("messages.getSearchCounters - error: %v", err)
+				return nil, err
+			}
+			counters.Datas = append(counters.Datas, mtproto.MakeTLMessagesSearchCounter(&mtproto.Messages_SearchCounter{
+				Inexact: false,
+				Filter:  filter,
+				Count:   n,
+			}).To_Messages_SearchCounter())
+		}
 		return counters, nil
 	}
 
@@ -78,39 +97,8 @@ func (c *MessagesCore) MessagesGetSearchCounters(in *mtproto.TLMessagesGetSearch
 
 		/*
 		 */
-		var (
-			fType = mtproto.FromMessagesFilter(filter)
-			mType int32
-		)
-
-		switch fType {
-		case mtproto.FilterPhotoVideo:
-			mType = mtproto.MEDIA_PHOTOVIDEO
-		case mtproto.FilterDocument:
-			mType = mtproto.MEDIA_FILE
-		case mtproto.FilterUrl:
-			mType = mtproto.MEDIA_URL
-		case mtproto.FilterGif:
-			mType = mtproto.MEDIA_GIF
-		case mtproto.FilterMusic:
-			mType = mtproto.MEDIA_MUSIC
-		case mtproto.FilterRoundVoice:
-			mType = mtproto.MEDIA_AUDIO
-		case mtproto.FilterChatPhotos:
-			mType = mtproto.MEDIA_CHAT_PHOTO
-		default:
-			/*
-				[
-				    {
-				        "predicate_name": "inputMessagesFilterPhotos",
-				        "constructor": "CRC32_inputMessagesFilterPhotos"
-				    },
-				    {
-				        "predicate_name": "inputMessagesFilterVideo",
-				        "constructor": "CRC32_inputMessagesFilterVideo"
-				    }
-				]
-			*/
+		mType, ok := searchCounterMedia(filter)
+		if !ok {
 			counter := mtproto.MakeTLMessagesSearchCounter(&mtproto.Messages_SearchCounter{
 				Inexact: false,
 				Filter:  filter,
@@ -120,7 +108,7 @@ func (c *MessagesCore) MessagesGetSearchCounters(in *mtproto.TLMessagesGetSearch
 			continue
 		}
 
-		sz, _ := c.svcCtx.Dao.MessageClient.MessageGetSearchCounter(
+		sz, err := c.svcCtx.Dao.MessageClient.MessageGetSearchCounter(
 			c.ctx,
 			&message.TLMessageGetSearchCounter{
 				UserId:    c.MD.UserId,
@@ -128,11 +116,19 @@ func (c *MessagesCore) MessagesGetSearchCounters(in *mtproto.TLMessagesGetSearch
 				PeerId:    peer.PeerId,
 				MediaType: mType,
 			})
+		if err != nil {
+			c.Logger.Errorf("messages.getSearchCounters - error: %v", err)
+			return nil, err
+		}
 
+		var count int32
+		if sz != nil {
+			count = sz.GetV()
+		}
 		counter := mtproto.MakeTLMessagesSearchCounter(&mtproto.Messages_SearchCounter{
 			Inexact: false,
 			Filter:  filter,
-			Count:   sz.GetV(),
+			Count:   count,
 		}).To_Messages_SearchCounter()
 		counters.Datas = append(counters.Datas, counter)
 		c.Logger.Infof("messages.getSearchCounters - result: %s", counter)

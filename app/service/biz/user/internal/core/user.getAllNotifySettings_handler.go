@@ -43,5 +43,20 @@ func (c *UserCore) UserGetAllNotifySettings(in *user.TLUserGetAllNotifySettings)
 		return nil, err
 	}
 
+	topics, err := c.svcCtx.Dao.ListTopicNotifySettings(c.ctx, in.UserId)
+	if err != nil {
+		c.Logger.Errorf("user.getAllNotifySettings - topics: %v", err)
+		return nil, err
+	}
+	for i := range topics {
+		v := &topics[i]
+		settings.Datas = append(settings.Datas, user.MakeTLPeerPeerNotifySettings(&user.PeerPeerNotifySettings{
+			PeerType: v.PeerType,
+			PeerId:   v.PeerId,
+			TopMsgId: v.TopMsgId,
+			Settings: makePeerNotifySettingsByDO(v),
+		}).To_PeerPeerNotifySettings())
+	}
+
 	return settings, nil
 }

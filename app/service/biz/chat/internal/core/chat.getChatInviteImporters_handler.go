@@ -10,6 +10,8 @@
 package core
 
 import (
+	"strings"
+
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chat/internal/dal/dataobject"
@@ -108,7 +110,8 @@ func (c *ChatCore) ChatGetChatInviteImporters(in *chat.TLChatGetChatInviteImport
 		limit = 50
 	}
 
-	// TODO: q
+	// A name query is applied by the BFF after profiles load. Returning the
+	// full list here keeps a match that would otherwise sit past this page.
 
 	// TODO: see (case1, case2, case3)
 	var (
@@ -154,6 +157,12 @@ func (c *ChatCore) ChatGetChatInviteImporters(in *chat.TLChatGetChatInviteImport
 		if rInvites == nil {
 			rInvites = []*mtproto.ChatInviteImporter{}
 		}
+	}
+
+	if strings.TrimSpace(in.GetQ().GetValue()) != "" {
+		return &chat.Vector_ChatInviteImporter{
+			Datas: rInvites,
+		}, nil
 	}
 
 	var (

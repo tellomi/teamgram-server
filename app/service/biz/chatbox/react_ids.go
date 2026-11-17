@@ -81,16 +81,25 @@ func placeholders(n int) string {
 }
 
 // privatePair is a one-to-one chat with another user, where the two sides
-// number the same message differently. Saved Messages, basic groups and
-// channels share one id space.
+// number the same message differently. Saved Messages is not one of those.
 func privatePair(self int64, peer *mtproto.PeerUtil) bool {
 	return peer != nil && peer.PeerType == mtproto.PEER_USER && peer.PeerId != 0 && peer.PeerId != self
+}
+
+// perUserBox is a chat where each participant has their own
+// user_message_box_id for one dialog_message_id. Private chats and basic
+// groups both allocate ids that way. Saved Messages and channels do not.
+func perUserBox(self int64, peer *mtproto.PeerUtil) bool {
+	if peer != nil && peer.PeerType == mtproto.PEER_CHAT && peer.PeerId != 0 {
+		return true
+	}
+	return privatePair(self, peer)
 }
 
 // dialogIDLocked is the shared dialog_message_id for self's msgID, or 0 when
 // the chat has one id space or the row cannot be read. Caller holds b.mu.
 func (b *Book) dialogIDLocked(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) int64 {
-	if b.ids == nil || !privatePair(self, peer) {
+	if b.ids == nil || !perUserBox(self, peer) {
 		return 0
 	}
 	m, err := b.ids.DialogIDs(ctx, self, []int32{msgID})
@@ -111,7 +120,7 @@ func sameMessage(item reactionItem, msgID int32, dlg int64) bool {
 // viewLocked returns doc with every item's MsgID in self's numbering. Items on
 // messages self no longer has are dropped. Caller holds b.mu.
 func (b *Book) viewLocked(ctx context.Context, self int64, peer *mtproto.PeerUtil, doc *reactDoc) *reactDoc {
-	if doc == nil || b.ids == nil || !privatePair(self, peer) {
+	if doc == nil || b.ids == nil || !perUserBox(self, peer) {
 		return doc
 	}
 	var want []int64
@@ -143,6 +152,59 @@ func (b *Book) viewLocked(ctx context.Context, self int64, peer *mtproto.PeerUti
 		view.Items = append(view.Items, item)
 	}
 	return &view
+}
+
+// GroupReactionUpdateFor builds updateMessageReactions for one basic-group
+// member. msgID is the reactor's own box id. The update uses the viewer's
+// box id, and chosen_order is that viewer's reaction, not the reactor's.
+func (b *Book) GroupReactionUpdateFor(ctx context.Context, reactor, viewer int64, peer *mtproto.PeerUtil, msgID int32) *mtproto.Update {
+	if b == nil || peer == nil || peer.PeerType != mtproto.PEER_CHAT || msgID <= 0 || viewer == 0 {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.loadReact(ctx, viewer, peer)
+	if err != nil || doc == nil {
+		return nil
+	}
+	theirs := b.boxIDLocked(ctx, reactor, peer, msgID, viewer)
+	if theirs <= 0 {
+		return nil
+	}
+	return reactionUpdate(peer, theirs, b.viewLocked(ctx, viewer, peer, doc), viewer)
+}
+
+// BoxIDFor maps ownerMsgID in owner's box to viewer's box id. The same user
+// gets ownerMsgID back. A basic group or private chat with no row returns 0.
+func (b *Book) BoxIDFor(ctx context.Context, owner int64, peer *mtproto.PeerUtil, ownerMsgID int32, viewer int64) int32 {
+	if b == nil || ownerMsgID <= 0 || viewer == 0 {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.boxIDLocked(ctx, owner, peer, ownerMsgID, viewer)
+}
+
+// boxIDLocked maps one participant's box id to another's. Caller holds b.mu.
+func (b *Book) boxIDLocked(ctx context.Context, owner int64, peer *mtproto.PeerUtil, ownerMsgID int32, viewer int64) int32 {
+	if ownerMsgID <= 0 || viewer == 0 {
+		return 0
+	}
+	if viewer == owner || !perUserBox(owner, peer) {
+		return ownerMsgID
+	}
+	if b.ids == nil {
+		return 0
+	}
+	dlg := b.dialogIDLocked(ctx, owner, peer, ownerMsgID)
+	if dlg == 0 {
+		return 0
+	}
+	boxes, err := b.ids.BoxIDs(ctx, viewer, []int64{dlg})
+	if err != nil {
+		return 0
+	}
+	return boxes[dlg]
 }
 
 // PeerReactionUpdate builds the updateMessageReactions the other side of a

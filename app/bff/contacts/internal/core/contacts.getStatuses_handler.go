@@ -19,6 +19,8 @@
 package core
 
 import (
+	"context"
+
 	"github.com/teamgram/proto/mtproto"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
@@ -67,18 +69,22 @@ func contactStatusesFromUsers(loaded bool, got *mtproto.MutableUsers, self int64
 		return []*mtproto.ContactStatus{}
 	}
 	setForwardContacts(me, idList)
-	out := make([]*mtproto.ContactStatus, 0, len(idList))
+	page := make([]*mtproto.ImmutableUser, 0, len(idList))
 	for _, id := range idList {
 		peer, ok := got.GetImmutableUser(id)
-		if !ok || peer == nil {
-			continue
+		if ok && peer != nil {
+			page = append(page, peer)
 		}
-		viewed := peer.ToUnsafeUser(me)
+	}
+	ctx := mtproto.PreparePrivacyRender(context.Background(), self, append(page, me))
+	out := make([]*mtproto.ContactStatus, 0, len(idList))
+	for _, peer := range page {
+		viewed := peer.ToUnsafeUserCtx(ctx, me)
 		if viewed == nil || viewed.Status == nil {
 			continue
 		}
 		out = append(out, mtproto.MakeTLContactStatus(&mtproto.ContactStatus{
-			UserId: id,
+			UserId: peer.Id(),
 			Status: viewed.Status,
 		}).To_ContactStatus())
 	}

@@ -47,13 +47,20 @@ func (c *UserCore) UserImportContacts(in *user.TLUserImportContacts) (*user.User
 		})
 	}
 
-	plan := PlanContactImport(
+	plan := FilterImportByAddedPhone(PlanContactImport(
 		in.UserId,
 		in.Contacts,
 		registered,
 		myUserData.ContactIdList,
 		myUserData.ReverseContactIdList,
-	)
+	), func(userID int64) bool {
+		ok, _ := c.UserCheckPrivacy(&user.TLUserCheckPrivacy{
+			UserId:  userID,
+			KeyType: mtproto.ADDED_BY_PHONE,
+			PeerId:  in.UserId,
+		})
+		return mtproto.FromBool(ok)
+	})
 
 	importedContacts := make([]*mtproto.ImportedContact, 0, len(plan.Matches))
 	idList := make([]int64, 0, len(plan.UpdateUserIDs))

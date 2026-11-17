@@ -113,6 +113,27 @@ func TestOffsetAfterFailureDoesNotReportDone(t *testing.T) {
 	}
 }
 
+func TestRevokePeerCapClearsPeerAfterCallerAlreadyDeleted(t *testing.T) {
+	if got := RevokePeerCap(19, 44, false); got != 44 {
+		t.Fatalf("deleted caller row still maps, got %d", got)
+	}
+	if got := RevokePeerCap(19, 0, false); got != -1 {
+		t.Fatalf("a missing peer row must not clear without a bound, got %d", got)
+	}
+	if got := RevokePeerCap(19, 0, true); got != -1 {
+		t.Fatalf("a missing map must not reuse the caller's box id, got %d", got)
+	}
+	if got := RevokePeerDateBound(1_700_000_000); got != 1_700_000_001 {
+		t.Fatalf("date bound %d", got)
+	}
+	if got := RevokePeerDateBound(0); got != 0 {
+		t.Fatalf("no date must not delete, got %d", got)
+	}
+	if got := RevokePeerCap(0, 0, false); got != 0 {
+		t.Fatalf("uncapped stays uncapped, got %d", got)
+	}
+}
+
 func TestPeerRevokeMaxIDUsesTheOtherBox(t *testing.T) {
 	// A's last box id is 19. The same message is box 44 on B.
 	if got := PeerRevokeMaxID(19, 44); got != 44 {
@@ -212,6 +233,21 @@ func TestPeerWindowDoesNotDeleteOutsideMaxIDOrDates(t *testing.T) {
 	sel := PageSelect(q, inside[0].ID, Batch+1)
 	if !sel.BeforeIDSet || sel.BeforeID != 40 || sel.AfterDate != 101 || sel.BeforeDate != 200 {
 		t.Fatalf("peer select %+v", sel)
+	}
+}
+
+func TestAnchorDeleteIDNamesTheHistoryClearMessage(t *testing.T) {
+	if got := AnchorDeleteID([]int32{104, 103, 98}, 105); got != 105 {
+		t.Fatalf("anchor %d", got)
+	}
+	if got := AnchorDeleteID([]int32{105, 104}, 105); got != 0 {
+		t.Fatalf("already deleted %d", got)
+	}
+	if got := AnchorDeleteID(nil, 0); got != 0 {
+		t.Fatalf("no anchor %d", got)
+	}
+	if got := AnchorDeleteID(nil, 98); got != 98 {
+		t.Fatalf("only message %d", got)
 	}
 }
 

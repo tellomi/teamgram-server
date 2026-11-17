@@ -231,6 +231,7 @@ func (PaidMessageService) AccountToggleNoPaidMessagesException(ctx context.Conte
 // session previously answered with an empty proxy result.
 type ReportsService struct {
 	mtproto.UnimplementedRPCReportsServer
+	Users userclient.UserClient
 }
 
 func (ReportsService) ChannelsReportSpam(ctx context.Context, in *mtproto.TLChannelsReportSpam) (*mtproto.Bool, error) {
@@ -239,10 +240,14 @@ func (ReportsService) ChannelsReportSpam(ctx context.Context, in *mtproto.TLChan
 	return channel.Shared().ReportSpam(ctx, self, in.GetChannel(), in.GetParticipant(), in.GetId())
 }
 
-func (ReportsService) AccountReportPeer(ctx context.Context, in *mtproto.TLAccountReportPeer) (*mtproto.Bool, error) {
+func (s ReportsService) AccountReportPeer(ctx context.Context, in *mtproto.TLAccountReportPeer) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
 	ctx = report.WithLang(ctx, langCode(ctx))
-	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourcePeer, reasonName(in.GetReason()), in.GetMessage(), 0)
+	ok, err := channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourcePeer, reasonName(in.GetReason()), in.GetMessage(), 0)
+	if err == nil {
+		s.clearUserBar(ctx, self, in.GetPeer())
+	}
+	return ok, err
 }
 
 func (ReportsService) AccountReportProfilePhoto(ctx context.Context, in *mtproto.TLAccountReportProfilePhoto) (*mtproto.Bool, error) {
@@ -255,10 +260,31 @@ func (ReportsService) AccountReportProfilePhoto(ctx context.Context, in *mtproto
 	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourceProfilePhoto, reasonName(in.GetReason()), in.GetMessage(), photoID)
 }
 
-func (ReportsService) MessagesReportSpam(ctx context.Context, in *mtproto.TLMessagesReportSpam) (*mtproto.Bool, error) {
+func (s ReportsService) MessagesReportSpam(ctx context.Context, in *mtproto.TLMessagesReportSpam) (*mtproto.Bool, error) {
 	self, _ := actor(ctx)
 	ctx = report.WithLang(ctx, langCode(ctx))
-	return channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourceSpam, "spam", "", 0)
+	ok, err := channel.Shared().RecordPeerReport(ctx, self, in.GetPeer(), report.SourceSpam, "spam", "", 0)
+	if err == nil {
+		s.clearUserBar(ctx, self, in.GetPeer())
+	}
+	return ok, err
+}
+
+// clearUserBar removes the stranger add-contact bar after a report.
+// Reporting a chat or a channel does not touch a user peer-settings row.
+func (s ReportsService) clearUserBar(ctx context.Context, self int64, peer *mtproto.InputPeer) {
+	if s.Users == nil || self == 0 || peer == nil {
+		return
+	}
+	id := mtproto.FromInputPeer2(self, peer)
+	if id.PeerType != mtproto.PEER_USER || id.PeerId == 0 || id.PeerId == self {
+		return
+	}
+	_, _ = s.Users.UserDeletePeerSettings(ctx, &user.TLUserDeletePeerSettings{
+		UserId:   self,
+		PeerType: mtproto.PEER_USER,
+		PeerId:   id.PeerId,
+	})
 }
 
 func reasonName(reason *mtproto.ReportReason) string {

@@ -18,8 +18,12 @@ import (
 	dialog_client "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	user_client "github.com/teamgram/teamgram-server/app/service/biz/user/client"
+	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 	idgen_client "github.com/teamgram/teamgram-server/app/service/idgen/client"
 	media_client "github.com/teamgram/teamgram-server/app/service/media/client"
+	"github.com/teamgram/teamgram-server/app/service/media/media"
+	status_client "github.com/teamgram/teamgram-server/app/service/status/client"
+	"github.com/teamgram/teamgram-server/app/service/status/status"
 	"github.com/teamgram/teamgram-server/pkg/archive"
 	"github.com/teamgram/teamgram-server/pkg/bootstrap"
 
@@ -49,12 +53,24 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	if len(c.MediaClient.Etcd.Hosts) > 0 {
 		mediaClient = media_client.NewMediaClient(rpcx.GetCachedRpcClient(c.MediaClient))
 	}
+	installChatPhotoGetter(mediaClient)
 	return &ServiceContext{
 		Config:       c,
 		UserClient:   users,
 		MediaClient:  mediaClient,
 		DialogClient: installChannelHooks(c, users),
 	}
+}
+
+// installChatPhotoGetter fills channelFull.chat_photo from media.getPhoto.
+// The getter is read once per distinct photo id, in parallel.
+func installChatPhotoGetter(client media_client.MediaClient) {
+	if client == nil {
+		return
+	}
+	channel.Shared().SetChatPhotoGetter(func(ctx context.Context, photoID int64) (*mtproto.Photo, error) {
+		return client.MediaGetPhoto(ctx, &media.TLMediaGetPhoto{PhotoId: photoID})
+	})
 }
 
 func installChannelHooks(c config.Config, users user_client.UserClient) dialog_client.DialogClient {
@@ -67,6 +83,7 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 		syncer = sync_client.NewSyncMqClient(bootstrap.MustKafkaProducer(c.SyncClient))
 	}
 	channel.Shared().SetHooks(channel.Hooks{
+		Online: onlineMembers(c),
 		Push: func(ctx context.Context, userID int64, excludeAuthKeys []int64, updates *mtproto.Updates) {
 			if syncer == nil || updates == nil {
 				return
@@ -100,8 +117,81 @@ func installChannelHooks(c config.Config, users user_client.UserClient) dialog_c
 			})
 		},
 		Incoming: channelIncoming(users, dialogs, syncer, channelPts(c)),
+		DropDialog: func(ctx context.Context, userID, channelID int64) {
+			if dialogs == nil || userID == 0 || channelID == 0 {
+				return
+			}
+			_, _ = dialogs.DialogDeleteDialog(ctx, &dialog.TLDialogDeleteDialog{
+				UserId:   userID,
+				PeerType: mtproto.PEER_CHANNEL,
+				PeerId:   channelID,
+			})
+		},
+		UserCards: participantCards(users),
 	})
 	return dialogs
+}
+
+// participantCards is the name and contact lookup for channels.getParticipants.
+func participantCards(users user_client.UserClient) func(ctx context.Context, viewer int64, ids []int64) map[int64]channel.UserCard {
+	if users == nil {
+		return nil
+	}
+	return func(ctx context.Context, viewer int64, ids []int64) map[int64]channel.UserCard {
+		out := map[int64]channel.UserCard{}
+		got, err := users.UserGetMutableUsers(ctx, &user.TLUserGetMutableUsers{
+			Id: ids,
+			To: []int64{viewer},
+		})
+		if err != nil || got == nil {
+			return out
+		}
+		for _, u := range got.GetUserListByIdList(viewer, ids...) {
+			if u == nil || u.GetId() == 0 {
+				continue
+			}
+			out[u.GetId()] = channel.UserCard{
+				First:    u.GetFirstName().GetValue(),
+				Last:     u.GetLastName().GetValue(),
+				Username: u.GetUsername().GetValue(),
+				Contact:  u.GetId() != viewer && !u.GetSelf() && (u.GetContact() || u.GetMutualContact()),
+			}
+		}
+		return out
+	}
+}
+
+// onlineBatch is status.getUsersOnlineSessionsList's maximum.
+const onlineBatch = 500
+
+// onlineMembers asks the presence service which of the affected members
+// have a session. An empty status config leaves the hook nil.
+func onlineMembers(c config.Config) func(context.Context, []int64) (map[int64]bool, error) {
+	if len(c.StatusClient.Etcd.Hosts) == 0 && len(c.StatusClient.Endpoints) == 0 {
+		return nil
+	}
+	client := status_client.NewStatusClient(rpcx.GetCachedRpcClient(c.StatusClient))
+	return func(ctx context.Context, ids []int64) (map[int64]bool, error) {
+		out := map[int64]bool{}
+		for start := 0; start < len(ids); start += onlineBatch {
+			end := start + onlineBatch
+			if end > len(ids) {
+				end = len(ids)
+			}
+			res, err := client.StatusGetUsersOnlineSessionsList(ctx, &status.TLStatusGetUsersOnlineSessionsList{
+				Users: ids[start:end],
+			})
+			if err != nil {
+				return nil, err
+			}
+			for _, row := range res.GetDatas() {
+				if row != nil && len(row.GetUserSessions()) > 0 {
+					out[row.GetUserId()] = true
+				}
+			}
+		}
+		return out, nil
+	}
 }
 
 func channelPts(c config.Config) archive.SeqWriter {

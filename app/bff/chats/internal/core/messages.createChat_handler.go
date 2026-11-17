@@ -26,15 +26,17 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/chattitle"
 	"github.com/teamgram/teamgram-server/pkg/usernamepolicy"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, ttlPeriod *wrapperspb.Int32Value) (*mtproto.Messages_InvitedUsers, error) {
+func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, ttlPeriod *wrapperspb.Int32Value, updatesOnly bool) (*mtproto.Messages_InvitedUsers, error) {
 	var chatUserIdList []int64
 
 	// check chat title
+	chatTitle = chattitle.Clip(chatTitle)
 	if chatTitle == "" {
 		err := mtproto.ErrChatTitleEmpty
 		c.Logger.Errorf("messages.createChat - error: %v", err)
@@ -150,6 +152,10 @@ func (c *ChatsCore) createChat(iUsers []*mtproto.InputUser, chatTitle string, tt
 	)
 	for _, miss := range missingInvitees {
 		c.Logger.Errorf("chatInvite privacy, not adding %d", miss.GetUserId())
+	}
+	userAddList, missingInvitees = c.omitRestrictedCreateMembers(userAddList, missingInvitees)
+	if err := legacyCreatePrivacyError(updatesOnly, userAddList, botAddList, missingInvitees); err != nil {
+		return nil, err
 	}
 
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatCreateChat2(c.ctx, &chatpb.TLChatCreateChat2{

@@ -2,9 +2,11 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
+	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/deletehistory"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
@@ -46,6 +48,45 @@ func (d *Dao) ListDialogDeletePage(ctx context.Context, userID int64, peer *mtpr
 		return nil, err
 	}
 	return rows, nil
+}
+
+// PeerBoxIncludingDeleted is the other user's box id of callerBox.
+// The caller's row may already be deleted = 1. SelectPeerUserMessage
+// requires deleted = 0 on that row, so a later revoke could not see it.
+func (d *Dao) PeerBoxIncludingDeleted(ctx context.Context, peerUser, caller int64, callerBox int32) (int32, error) {
+	if d == nil || d.MessagesDAO == nil || d.DB == nil || peerUser == 0 || caller == 0 || callerBox <= 0 {
+		return 0, nil
+	}
+	query := "select user_message_box_id from " + d.MessagesDAO.CalcTableName(peerUser) +
+		" where user_id = ? and deleted = 0 and dialog_message_id = (select dialog_message_id from " +
+		d.MessagesDAO.CalcTableName(caller) + " where user_id = ? and user_message_box_id <= ? and dialog_message_id <> 0 order by user_message_box_id desc limit 1) limit 1"
+	var row dataobject.MessagesDO
+	if err := d.DB.QueryRowPartial(ctx, &row, query, peerUser, caller, callerBox); err != nil {
+		if errors.Is(err, sqlx.ErrNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return row.UserMessageBoxId, nil
+}
+
+// CallerMessageDate is date2 of the newest caller row at or before callerBox,
+// including a row the caller already marked deleted. It bounds a revoke when
+// the peer's copy of that message cannot be found.
+func (d *Dao) CallerMessageDate(ctx context.Context, caller int64, callerBox int32) (int64, error) {
+	if d == nil || d.MessagesDAO == nil || d.DB == nil || caller == 0 || callerBox <= 0 {
+		return 0, nil
+	}
+	query := "select date2 from " + d.MessagesDAO.CalcTableName(caller) +
+		" where user_id = ? and user_message_box_id <= ? order by user_message_box_id desc limit 1"
+	var row dataobject.MessagesDO
+	if err := d.DB.QueryRowPartial(ctx, &row, query, caller, callerBox); err != nil {
+		if errors.Is(err, sqlx.ErrNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return row.Date2, nil
 }
 
 // LiveMessageBoxIDs returns the ids from ids that are still deleted = 0.

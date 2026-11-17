@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 )
 
 const (
@@ -70,11 +72,12 @@ func (c *Client) SendCode(ctx context.Context, to, code string) error {
 		return fmt.Errorf("resend recipient is not an email address")
 	}
 
+	subject, text := emailCopy(ctx, code)
 	body, err := json.Marshal(sendRequest{
 		From:    formatFrom(c.FromName, from),
 		To:      []string{to},
-		Subject: otpSubject,
-		Text:    messageText(code),
+		Subject: subject,
+		Text:    text,
 	})
 	if err != nil {
 		return err
@@ -137,6 +140,15 @@ func (c *Client) httpClient() *http.Client {
 
 func messageText(code string) string {
 	return fmt.Sprintf("您的验证码为：%s，请勿泄露于他人！\nYour verification code is %s. Do not share it.", code, code)
+}
+
+// emailCopy keeps the bilingual body when the request has no client language.
+// A known initConnection language gets that language only.
+func emailCopy(ctx context.Context, code string) (subject, text string) {
+	if sub, body, ok := usercopy.EmailCode(usercopy.LangFromIncoming(ctx), code); ok {
+		return sub, body
+	}
+	return otpSubject, messageText(code)
 }
 
 func formatFrom(name, addr string) string {

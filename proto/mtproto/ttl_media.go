@@ -102,7 +102,10 @@ func StripTTLMedia(m *Message) []RemovedMedia {
 	switch media.GetPredicateName() {
 	case Predicate_messageMediaPhoto:
 		media.Photo_FLAGPHOTO = MakeTLPhotoEmpty(&Photo{}).To_Photo()
+		// live_photo and video share flags.4: clearing one without the
+		// other sets the bit with no Document and breaks client parsing.
 		media.Video_FLAGDOCUMENT = nil
+		media.LivePhoto = false
 	case Predicate_messageMediaDocument:
 		media.Document = MakeTLDocumentEmpty(&Document{}).To_Document()
 		media.AltDocuments = nil

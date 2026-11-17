@@ -13,7 +13,7 @@ const Day int64 = 24 * 60 * 60
 // TouchGap is how often a live session refreshes auth_users.date_active.
 // Ping and RPC both count as activity. Writing the row on every ping would
 // keep MySQL busy; an hour is still far shorter than the shortest official
-// window (30 days).
+// window (7 days).
 const TouchGap int64 = 60 * 60
 
 // Days returns the window to enforce. Zero and negative values are the default.

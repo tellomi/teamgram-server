@@ -24,6 +24,25 @@ import (
 	"github.com/zeromicro/go-zero/core/logx"
 )
 
+// notifySettingsCacheTargetSQL lists every notify row for a user, including
+// rows reset already marked deleted. The cache key is derived from the
+// peer, and a soft-deleted row is exactly the one whose Redis value is stale.
+const notifySettingsCacheTargetSQL = "select peer_type, peer_id from user_notify_settings where user_id = ?"
+
+// SelectCacheTargets returns peer_type and peer_id for every notify row of
+// this user. deleted = 1 stays in the result so a second reset can still
+// name the Redis keys left behind by the first one.
+func (dao *UserNotifySettingsDAO) SelectCacheTargets(ctx context.Context, userId int64) (rList []dataobject.UserNotifySettingsDO, err error) {
+	var values []dataobject.UserNotifySettingsDO
+	err = dao.db.QueryRowsPartial(ctx, &values, notifySettingsCacheTargetSQL, userId)
+	if err != nil {
+		logx.WithContext(ctx).Errorf("queryx in SelectCacheTargets(_), error: %v", err)
+		return
+	}
+	rList = values
+	return
+}
+
 // InsertOrUpdateExt
 // insert into user_notify_settings(user_id, peer_type, peer_id, show_previews, silent, mute_until, sound) values (:user_id, :peer_type, :peer_id, :show_previews, :silent, :mute_until, :sound) on duplicate key update show_previews = values(show_previews), silent = values(silent), mute_until = values(mute_until), sound = values(sound), deleted = 0
 // TODO(@benqi): sqlmap

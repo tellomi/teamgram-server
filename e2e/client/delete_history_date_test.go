@@ -32,6 +32,10 @@ func TestDeleteHistoryByDate(t *testing.T) {
 	if _, err := a.SendText(ctx, peer, gone, nil); err != nil {
 		t.Fatal(err)
 	}
+	// getHistory can lag the send. Wait until both texts are visible so a
+	// slow box is not reported as a future window deleting them.
+	waitHistoryHas(t, ctx, a, peer, kept, true)
+	waitHistoryHas(t, ctx, a, peer, gone, true)
 
 	miss := deleteHistoryUntil(t, ctx, a, &mtproto.TLMessagesDeleteHistory{
 		Constructor: mtproto.CRC32_messages_deleteHistory,
@@ -57,9 +61,8 @@ func TestDeleteHistoryByDate(t *testing.T) {
 	if hit.GetOffset() != 0 {
 		t.Fatalf("finished date delete offset %d", hit.GetOffset())
 	}
-	if historyHas(t, ctx, a, peer, kept) || historyHas(t, ctx, a, peer, gone) {
-		t.Fatal("date window reported success but the messages are still in history")
-	}
+	waitHistoryHas(t, ctx, a, peer, kept, false)
+	waitHistoryHas(t, ctx, a, peer, gone, false)
 
 	chatID, err := a.CreateChat(ctx, fmt.Sprintf("hist-%d", time.Now().Unix()), inputUser(peer.GetUserId(), peer.GetAccessHash()))
 	if err != nil {
@@ -104,6 +107,21 @@ func affectedHistoryOf(t *testing.T, obj mtproto.TLObject) *mtproto.Messages_Aff
 	default:
 		t.Fatalf("affectedHistory %T", obj)
 		return nil
+	}
+}
+
+func waitHistoryHas(t *testing.T, ctx context.Context, c *Client, peer *mtproto.InputPeer, text string, want bool) {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	err := waitUntil(waitCtx, 200*time.Millisecond, func() (bool, error) {
+		return historyHas(t, waitCtx, c, peer, text) == want, nil
+	})
+	if err != nil {
+		if want {
+			t.Fatalf("history never showed %q: %v", text, err)
+		}
+		t.Fatalf("history still has %q: %v", text, err)
 	}
 }
 

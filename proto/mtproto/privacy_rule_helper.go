@@ -258,81 +258,16 @@ func CheckPrivacyIsAllow(selfId int64,
 	checkId int64,
 	cbContact func(id, checkId int64) bool,
 	cbChat func(checkId int64, idList []int64) bool) bool {
-	ruleType := RULE_TYPE_INVALID
-
-	for _, r := range rules {
-		switch r.PredicateName {
-		case Predicate_privacyValueAllowAll:
-			ruleType = ALLOW_ALL
-		case Predicate_privacyValueAllowContacts:
-			ruleType = ALLOW_CONTACTS
-		case Predicate_privacyValueDisallowAll:
-			ruleType = DISALLOW_ALL
-		}
-	}
-
-	switch ruleType {
-	case ALLOW_ALL:
-		for _, r := range rules {
-			switch r.PredicateName {
-			case Predicate_privacyValueDisallowUsers:
-				for _, id := range r.Users {
-					if id == checkId {
-						return false
-					}
-				}
-			case Predicate_privacyValueDisallowChatParticipants:
-				if len(r.Chats) > 0 && cbChat(checkId, r.Chats) {
-					return false
-				}
+	return EvaluatePrivacy(rules, PrivacySubject{
+		UserID:  checkId,
+		Contact: cbContact != nil && cbContact(selfId, checkId),
+		Member: func(chats []int64) (bool, bool) {
+			if cbChat == nil {
+				return false, false
 			}
-		}
-		return true
-	case ALLOW_CONTACTS:
-		for _, r := range rules {
-			switch r.PredicateName {
-			case Predicate_privacyValueAllowUsers:
-				for _, id := range r.Users {
-					if id == checkId {
-						return true
-					}
-				}
-			case Predicate_privacyValueAllowChatParticipants:
-				if len(r.Chats) > 0 && cbChat(checkId, r.Chats) {
-					return true
-				}
-			case Predicate_privacyValueDisallowUsers:
-				for _, id := range r.Users {
-					if id == checkId {
-						return false
-					}
-				}
-			case Predicate_privacyValueDisallowChatParticipants:
-				if len(r.Chats) > 0 && cbChat(checkId, r.Chats) {
-					return false
-				}
-			}
-		}
-		return cbContact(selfId, checkId)
-	case DISALLOW_ALL:
-		for _, r := range rules {
-			switch r.PredicateName {
-			case Predicate_privacyValueAllowUsers:
-				for _, id := range r.Users {
-					if id == checkId {
-						return true
-					}
-				}
-			case Predicate_privacyValueAllowChatParticipants:
-				if len(r.Chats) > 0 && cbChat(checkId, r.Chats) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-
-	return false
+			return cbChat(checkId, chats), true
+		},
+	})
 }
 
 /*
@@ -346,71 +281,11 @@ privacyValueAllowChatParticipants#18be796b chats:Vector<int> = PrivacyRule;
 privacyValueDisallowChatParticipants#acae0690 chats:Vector<int> = PrivacyRule;
 */
 func privacyIsAllow(rules []*PrivacyRule, userId int64, isContact bool) bool {
-	ruleType := RULE_TYPE_INVALID
-
-	for _, r := range rules {
-		switch r.PredicateName {
-		case Predicate_privacyValueAllowAll:
-			ruleType = ALLOW_ALL
-		case Predicate_privacyValueAllowContacts:
-			ruleType = ALLOW_CONTACTS
-		case Predicate_privacyValueDisallowAll:
-			ruleType = DISALLOW_ALL
-		}
-	}
-
-	switch ruleType {
-	case ALLOW_ALL:
-		for _, r := range rules {
-			switch r.PredicateName {
-			case Predicate_privacyValueDisallowUsers:
-				for _, id := range r.Users {
-					if id == userId {
-						return false
-					}
-				}
-			case Predicate_privacyValueDisallowChatParticipants:
-				// Membership is not available here. Do not treat the rule as allow.
-			}
-		}
-		return true
-	case ALLOW_CONTACTS:
-		for _, r := range rules {
-			switch r.PredicateName {
-			case Predicate_privacyValueAllowUsers:
-				for _, id := range r.Users {
-					if id == userId {
-						return true
-					}
-				}
-			case Predicate_privacyValueAllowChatParticipants:
-				// Membership is not available here. Do not allow everyone.
-			case Predicate_privacyValueDisallowUsers:
-				for _, id := range r.Users {
-					if id == userId {
-						return false
-					}
-				}
-			case Predicate_privacyValueDisallowChatParticipants:
-				// Membership is not available here. Do not allow a non-contact.
-			}
-		}
-		return isContact
-	case DISALLOW_ALL:
-		for _, r := range rules {
-			switch r.PredicateName {
-			case Predicate_privacyValueAllowUsers:
-				for _, id := range r.Users {
-					if id == userId {
-						return true
-					}
-				}
-			case Predicate_privacyValueAllowChatParticipants:
-				// Membership is not available here. Do not allow everyone.
-			}
-		}
-		return false
-	}
-
-	return false
+	return EvaluatePrivacy(rules, PrivacySubject{
+		UserID:  userId,
+		Contact: isContact,
+		Member: func([]int64) (bool, bool) {
+			return false, false
+		},
+	})
 }

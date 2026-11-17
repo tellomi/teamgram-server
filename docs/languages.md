@@ -42,11 +42,11 @@ Served for ios, android, tdesktop, and macos:
 
 `langpack.getLanguages` omits codes in `TELLOMI_LANGPACK_HIDDEN`. When that variable is unset the list is `hi,th,el`. Those three stay hidden until the machine translations are reviewed. Set the variable to empty to list every pack. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` still serve a hidden code, and that pack now has the same keys as English.
 
-`help.getConfig` `suggested_lang_code` follows `initConnection.system_lang_code`. An empty, unknown, or hidden device language uses `lang_code` when that names a pack we offer, otherwise `en`. A hidden code is never suggested. `lang_pack_version` stays on the app language (`lang_code`).
+`help.getConfig` `suggested_lang_code` follows `initConnection.system_lang_code`. An empty, unknown, or hidden device language uses `lang_code` when that names a pack we offer, otherwise `en`. A hidden code is never suggested. `lang_pack_version` stays on the app language (`lang_code`). Text this server writes itself (`help.getAppUpdate`, 777000 notices, `help.getPremiumPromo`) uses `lang_code`, then `lang_pack` when that value is a language, then `system_lang_code`, and English only after those three miss.
 
 One entry per language. `classic-zh-cn` (Chinese (Simplified, Classic), the old community 简体中文 pack) and `taiwan` (Chinese (Traditional, Taiwan), 正體中文) are not listed. On iOS those packs were about 5.4k and 3.7k strings beside the official ~12.4k packs, and both used the same language as `zh-hans` / `zh-hant`. `langpack.getLanguage`, `langpack.getLangPack`, `langpack.getStrings`, and `langpack.getDifference` for those codes serve `zh-hans` or `zh-hant` instead of returning an error. The `lang_code` in the response is the official code.
 
-BCP-47 `zh-TW`, `zh-HK`, and `zh-Hant` still resolve to `zh-hant`. `zh`, `zh-CN`, and `zh-Hans` resolve to `zh-hans`.
+BCP-47 `zh-TW`, `zh-HK`, `zh-MO`, `zh-Hant`, `zh-rTW`, `zh-cht`, `cmn-Hant`, and `yue` / `yue-HK` resolve to `zh-hant`. `zh`, `zh-CN`, `zh-Hans`, `zh-rCN`, `zh-chs`, and `cmn-Hans` resolve to `zh-hans`. A regional tag such as `ja-JP` or `de-DE` resolves to the pack (`ja`, `de`) before English. `zh-Latn` does not.
 
 Untranslated strings that are an exact copy of the official English text are omitted. The client loads `base_lang_code` for the missing keys. Every shipped pack except English has `base_lang_code=en`. English has no base. The removed packs used to set their base to `zh-hans` or `zh-hant`; the packs that remain still fall back only to English.
 

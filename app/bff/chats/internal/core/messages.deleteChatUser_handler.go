@@ -25,6 +25,7 @@ import (
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
+	"google.golang.org/grpc/status"
 )
 
 // MessagesDeleteChatUser
@@ -43,6 +44,54 @@ func (c *ChatsCore) MessagesDeleteChatUser(in *mtproto.TLMessagesDeleteChatUser)
 		operatorId = 0
 	}
 
+	// Post messageActionChatDeleteUser while the user is still a normal
+	// member. The inbox walk skips anyone who is already left or kicked, so
+	// sending after ChatDeleteChatUser never reaches the removed user.
+	// iOS and Android are the official clients; they need this message too.
+	pre, err := c.svcCtx.Dao.ChatClient.Client().ChatGetMutableChat(c.ctx, &chatpb.TLChatGetMutableChat{
+		ChatId: in.ChatId,
+	})
+	if err != nil {
+		c.Logger.Errorf("messages.deleteChatUser - error: %v", err)
+		return nil, err
+	}
+	if err = chatDeleteAllowed(pre, operatorId, deleteUser.PeerId); err != nil {
+		c.Logger.Errorf("messages.deleteChatUser - error: %v", err)
+		return nil, err
+	}
+
+	fromId := c.MD.UserId
+	if c.MD.IsAdmin {
+		fromId = pre.Creator()
+	}
+	selfLeave := deleteUser.PeerId == c.MD.UserId
+	replyUpdates, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(
+		c.ctx,
+		&msgpb.TLMsgSendMessageV2{
+			UserId:    fromId,
+			AuthKeyId: c.MD.PermAuthKeyId,
+			PeerType:  mtproto.PEER_CHAT,
+			PeerId:    in.ChatId,
+			Message: []*msgpb.OutboxMessage{
+				msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
+					NoWebpage:    true,
+					Background:   false,
+					RandomId:     rand.Int63(),
+					Message:      pre.MakeMessageService(fromId, mtproto.MakeMessageActionChatDeleteUser(deleteUser.PeerId)),
+					ScheduleDate: nil,
+				}).To_OutboxMessage(),
+			},
+		})
+	if err != nil && !(selfLeave && status.Convert(err).Message() == "CHAT_WRITE_FORBIDDEN") {
+		c.Logger.Errorf("messages.deleteChatUser - error: %v", err)
+		return nil, err
+	}
+	if err != nil {
+		// A member banned from sending can still leave. The service message
+		// is refused, and the membership row is what the client needs.
+		replyUpdates = mtproto.MakeUpdatesByUpdates()
+	}
+
 	chat, err := c.svcCtx.Dao.ChatClient.Client().ChatDeleteChatUser(c.ctx, &chatpb.TLChatDeleteChatUser{
 		ChatId:       in.ChatId,
 		OperatorId:   operatorId,
@@ -52,52 +101,55 @@ func (c *ChatsCore) MessagesDeleteChatUser(in *mtproto.TLMessagesDeleteChatUser)
 		c.Logger.Errorf("messages.deleteChatUser - error: %v", err)
 		return nil, err
 	}
-	c.svcCtx.Dao.DialogClient.DialogDeleteDialog(c.ctx, &dialog.TLDialogDeleteDialog{
-		UserId:   deleteUser.PeerId,
-		PeerType: mtproto.PEER_CHAT,
-		PeerId:   in.ChatId,
-	})
-
-	if c.MD.Client == "ios" || c.MD.Client == "android" {
-		chat.Walk(func(userId int64, participant *mtproto.ImmutableChatParticipant) error {
-			return nil
+	// revoke_history drops the removed user's dialog. Without it they keep
+	// the chat and the service message that says they left or were removed.
+	if in.GetRevokeHistory() {
+		c.svcCtx.Dao.DialogClient.DialogDeleteDialog(c.ctx, &dialog.TLDialogDeleteDialog{
+			UserId:   deleteUser.PeerId,
+			PeerType: mtproto.PEER_CHAT,
+			PeerId:   in.ChatId,
 		})
-		return mtproto.MakeEmptyUpdates(), nil
-	} else {
-		fromId := c.MD.UserId
-		if c.MD.IsAdmin {
-			fromId = chat.Creator()
-		}
-
-		replyUpdates, err := c.svcCtx.Dao.MsgClient.MsgSendMessageV2(
-			c.ctx,
-			&msgpb.TLMsgSendMessageV2{
-				UserId:    fromId,
-				AuthKeyId: c.MD.PermAuthKeyId,
-				PeerType:  mtproto.PEER_CHAT,
-				PeerId:    in.ChatId,
-				Message: []*msgpb.OutboxMessage{
-					msgpb.MakeTLOutboxMessage(&msgpb.OutboxMessage{
-						NoWebpage:    true,
-						Background:   false,
-						RandomId:     rand.Int63(),
-						Message:      chat.MakeMessageService(fromId, mtproto.MakeMessageActionChatDeleteUser(deleteUser.PeerId)),
-						ScheduleDate: nil,
-					}).To_OutboxMessage(),
-				},
-			})
-		if err != nil {
-			c.Logger.Errorf("messages.deleteChatUser - error: %v", err)
-			return nil, err
-		}
-
-		updateChatParticipants := mtproto.MakeTLUpdateChatParticipants(&mtproto.Update{
-			Participants_CHATPARTICIPANTS: chat.ToChatParticipants(0),
-		}).To_Update()
-		if deleteUser.PeerType == mtproto.PEER_USER {
-			replyUpdates.Updates = append(replyUpdates.Updates, updateChatParticipants)
-		}
-
-		return replyUpdates, nil
 	}
+
+	updateChatParticipants := mtproto.MakeTLUpdateChatParticipants(&mtproto.Update{
+		Participants_CHATPARTICIPANTS: chat.ToChatParticipants(0),
+	}).To_Update()
+	if deleteUser.PeerType == mtproto.PEER_USER {
+		replyUpdates.Updates = append(replyUpdates.Updates, updateChatParticipants)
+	}
+
+	return replyUpdates, nil
+}
+
+// chatDeleteAllowed mirrors chat.deleteChatUser's membership checks so the
+// service message is not written when the kick would be refused.
+func chatDeleteAllowed(chat *mtproto.MutableChat, operatorID, deleteUserID int64) error {
+	if chat == nil || chat.GetChat() == nil {
+		return mtproto.ErrPeerIdInvalid
+	}
+	op := operatorID
+	if op == 0 {
+		op = chat.Creator()
+	}
+	me, ok := chat.GetImmutableChatParticipant(op)
+	if !ok || me == nil || !me.IsChatMemberStateNormal() {
+		if operatorID == 0 {
+			return mtproto.ErrInputUserDeactivated
+		}
+		return mtproto.ErrPeerIdInvalid
+	}
+	if op == deleteUserID {
+		return nil
+	}
+	if !me.CanAdminBanUsers() {
+		return mtproto.ErrChatAdminRequired
+	}
+	target, ok := chat.GetImmutableChatParticipant(deleteUserID)
+	if !ok || target == nil {
+		return mtproto.ErrUserNotParticipant
+	}
+	if !target.IsChatMemberStateNormal() {
+		return mtproto.ErrPeerIdInvalid
+	}
+	return nil
 }

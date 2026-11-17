@@ -178,6 +178,61 @@ func clearAppUpdateEnv(t *testing.T) {
 	t.Setenv("TELLOMI_APP_UPDATE_CANNOT_SKIP", "")
 }
 
+func TestHelpGetAppUpdateLocalizesText(t *testing.T) {
+	android := &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9, LangCode: "zh-hans"}
+	auth := authUpdateStub{auth: authorization("14.0.4", "Pixel 8", "14")}
+
+	clearAppUpdateEnv(t)
+	path := filepath.Join(t.TempDir(), "latest.json")
+	if err := os.WriteFile(path, []byte(`{"versionName":"14.0.6","url":"https://www.tellomi.cn/dl/android/Tellomi.apk"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TELLOMI_APP_UPDATE_MANIFEST", path)
+	got := callAppUpdate(t, android, auth, "")
+	if got.GetText() != "发现新版本 Tellomi，建议更新。" {
+		t.Fatalf("text %q", got.GetText())
+	}
+
+	zhCN := callAppUpdate(t, &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9, LangCode: "zh-CN"}, auth, "")
+	if zhCN.GetText() != "发现新版本 Tellomi，建议更新。" {
+		t.Fatalf("zh-CN %q", zhCN.GetText())
+	}
+	system := callAppUpdate(t, &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9, SystemLangCode: "zh-Hant-HK"}, auth, "")
+	if system.GetText() != "發現新版本 Tellomi，建議更新。" {
+		t.Fatalf("system %q", system.GetText())
+	}
+	chosenEN := callAppUpdate(t, &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9, LangCode: "en", SystemLangCode: "zh-Hans"}, auth, "")
+	if chosenEN.GetText() != "A new version of Tellomi is available." {
+		t.Fatalf("app language wins %q", chosenEN.GetText())
+	}
+	fromSession := callAppUpdate(t, &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9}, authUpdateStub{
+		auth:     authorization("14.0.4", "Pixel 8", "14"),
+		langCode: "ja",
+	}, "")
+	if fromSession.GetText() != "Tellomi の新しいバージョンがあります。" {
+		t.Fatalf("session lang %q", fromSession.GetText())
+	}
+
+	notes := filepath.Join(t.TempDir(), "notes.json")
+	body := []byte(`{"versionName":"14.0.6","url":"https://www.tellomi.cn/dl/android/Tellomi.apk","changelog":"Shared","notes":{"zh-Hans":"简体说明","en":"English note","zz":1}}`)
+	if err := os.WriteFile(notes, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TELLOMI_APP_UPDATE_MANIFEST", notes)
+	if got := callAppUpdate(t, android, auth, ""); got.GetText() != "简体说明" {
+		t.Fatalf("note %q", got.GetText())
+	}
+	ja := callAppUpdate(t, &metadata.RpcMetadata{Langpack: "android", PermAuthKeyId: 9, LangCode: "ja"}, auth, "")
+	if ja.GetText() != "English note" {
+		t.Fatalf("notes.en %q", ja.GetText())
+	}
+
+	t.Setenv("TELLOMI_APP_UPDATE_TEXT", "Operator note")
+	if got := callAppUpdate(t, android, auth, ""); got.GetText() != "Operator note" {
+		t.Fatalf("env text %q", got.GetText())
+	}
+}
+
 func setAppUpdateEnv(t *testing.T, version string) {
 	t.Helper()
 	t.Setenv("TELLOMI_APP_UPDATE_VERSION", version)
@@ -213,8 +268,9 @@ func authorization(appVersion, device, system string) *mtproto.Authorization {
 
 type authUpdateStub struct {
 	authsessionclient.AuthsessionClient
-	auth *mtproto.Authorization
-	lang string
+	auth     *mtproto.Authorization
+	lang     string
+	langCode string
 }
 
 func (s authUpdateStub) AuthsessionGetAuthorization(context.Context, *authsession.TLAuthsessionGetAuthorization) (*mtproto.Authorization, error) {
@@ -223,4 +279,8 @@ func (s authUpdateStub) AuthsessionGetAuthorization(context.Context, *authsessio
 
 func (s authUpdateStub) AuthsessionGetLangPack(context.Context, *authsession.TLAuthsessionGetLangPack) (*mtproto.String, error) {
 	return mtproto.MakeTLString(&mtproto.String{V: s.lang}).To_String(), nil
+}
+
+func (s authUpdateStub) AuthsessionGetLangCode(context.Context, *authsession.TLAuthsessionGetLangCode) (*mtproto.String, error) {
+	return mtproto.MakeTLString(&mtproto.String{V: s.langCode}).To_String(), nil
 }

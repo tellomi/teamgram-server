@@ -29,7 +29,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/authsession/authsession"
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 	"github.com/teamgram/teamgram-server/pkg/push"
+	"github.com/teamgram/teamgram-server/pkg/usercopy"
 )
 
 // AccountDeleteAccount
@@ -172,7 +174,7 @@ func (c *AccountCore) notifyDeletionScheduled() {
 		Popup:          false,
 		InboxDate:      mtproto.MakeFlagsInt32(int32(time.Now().Unix())),
 		Type:           "ACCOUNT_DELETE_PENDING",
-		Message_STRING: "你的 Tellomi 账号将在 7 天后删除。在此之前重新登录即可取消。",
+		Message_STRING: usercopy.AccountDeletionPending(langpack.ClientLang(c.MD.GetLangCode(), c.MD.GetSystemLangCode(), c.MD.GetLangpack())),
 		Media:          mtproto.MakeTLMessageMediaEmpty(nil).To_MessageMedia(),
 	}).To_Update()
 	_, _ = c.svcCtx.Dao.SyncClient.SyncPushUpdates(c.ctx, &sync.TLSyncPushUpdates{

@@ -21,12 +21,14 @@ package core
 import (
 	"context"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
+	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 	"github.com/teamgram/teamgram-server/app/service/biz/message/message"
 	userpb "github.com/teamgram/teamgram-server/app/service/biz/user/user"
 
@@ -66,6 +68,10 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 
 	if err = c.blockSend(toPeer); err != nil {
 		c.Logger.Errorf("messages.forwardMessages - sanction")
+		return nil, err
+	}
+	if err = chatbox.RepeatSingleOnly(len(in.Id), in.GetScheduleRepeatPeriod().GetValue()); err != nil {
+		c.Logger.Errorf("messages.forwardMessages - repeat on %d messages", len(in.Id))
 		return nil, err
 	}
 
@@ -113,29 +119,33 @@ func (c *MessagesCore) MessagesForwardMessages(in *mtproto.TLMessagesForwardMess
 }
 
 func (c *MessagesCore) checkForwardPrivacy(ctx context.Context, selfUserId, checkId int64) bool {
-	rules, _ := c.svcCtx.Dao.UserClient.UserGetPrivacy(c.ctx, &userpb.TLUserGetPrivacy{
-		UserId:  selfUserId,
-		KeyType: mtproto.FORWARDS,
-	})
-
-	if len(rules.Datas) == 0 {
+	// selfUserId owns the forwards privacy key. checkId is the user who is
+	// forwarding. Hiding the link drops fwd_from.from_id.
+	if c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || selfUserId == 0 || selfUserId == checkId {
 		return true
 	}
-	return mtproto.CheckPrivacyIsAllow(
-		selfUserId,
-		rules.Datas,
-		checkId,
-		func(id, checkId int64) bool {
-			contact, _ := c.svcCtx.Dao.UserClient.UserCheckContact(c.ctx, &userpb.TLUserCheckContact{
-				UserId: id,
-				Id:     checkId,
-			})
-			return mtproto.FromBool(contact)
-		},
-		func(checkId int64, idList []int64) bool {
-			chatIdList, _ := mtproto.SplitChatAndChannelIdList(idList)
-			return c.svcCtx.Dao.ChatClient.CheckParticipantIsExist(c.ctx, checkId, chatIdList)
-		})
+	ok, err := c.svcCtx.Dao.UserClient.UserCheckPrivacy(ctx, &userpb.TLUserCheckPrivacy{
+		UserId:  selfUserId,
+		KeyType: mtproto.FORWARDS,
+		PeerId:  checkId,
+	})
+	if err != nil {
+		return true
+	}
+	return mtproto.FromBool(ok)
+}
+
+// forwardDisplayName is the "forwarded from" label when forwards privacy
+// hides the user link. It is the first and last name, never the username.
+func (c *MessagesCore) forwardDisplayName(userID int64) string {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || c.svcCtx.Dao.UserClient == nil || userID == 0 {
+		return ""
+	}
+	im, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{Id: userID})
+	if err != nil || im == nil || im.GetUser() == nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimSpace(im.FirstName()) + " " + strings.TrimSpace(im.LastName()))
 }
 
 func (c *MessagesCore) makeForwardMessages(
@@ -185,6 +195,9 @@ func (c *MessagesCore) makeForwardMessages(
 			return nil, mtproto.ErrMessageIdInvalid
 		}
 	default:
+		if fromPeer.IsUser() && fromPeer.PeerId != c.MD.UserId && chatbox.Shared().ContentProtected(c.ctx, c.MD.UserId, fromPeer.PeerId) {
+			return nil, mtproto.ErrChatForwardsRestricted
+		}
 		messageList, _ = c.svcCtx.Dao.MessageClient.MessageGetUserMessageList(c.ctx, &message.TLMessageGetUserMessageList{
 			UserId: c.MD.UserId,
 			IdList: idList,
@@ -264,10 +277,9 @@ func (c *MessagesCore) makeForwardMessages(
 					if c.checkForwardPrivacy(c.ctx, fromId, c.MD.UserId) {
 						fwdFrom.FromId = mtproto.MakePeerUser(fromId)
 					} else {
-						uname, _ := c.svcCtx.Dao.UserClient.UserGetAccountUsername(c.ctx, &userpb.TLUserGetAccountUsername{
-							UserId: fromId,
-						})
-						fwdFrom.FromName = &wrapperspb.StringValue{Value: uname.GetUsername()}
+						// Forwards privacy hides the user link. Official clients
+						// show from_name as the display name, not the username.
+						fwdFrom.FromName = &wrapperspb.StringValue{Value: c.forwardDisplayName(fromId)}
 					}
 					m.Post = false
 					m.PostAuthor = nil
@@ -318,6 +330,18 @@ func (c *MessagesCore) makeForwardMessages(
 		}
 		m.ReplyTo = nil
 		m.Reactions = nil
+		if m.GetNoforwards() {
+			return nil, mtproto.ErrChatForwardsRestricted
+		}
+		if request.GetDropAuthor() {
+			dropForwardAuthor(m)
+		}
+		if request.GetDropMediaCaptions() {
+			dropMediaCaptions(m)
+		}
+		if err := stampScheduleRepeat(m, request.GetScheduleRepeatPeriod(), request.GetScheduleDate().GetValue()); err != nil {
+			return nil, err
+		}
 		if m.ReplyMarkup != nil {
 			m.ReplyMarkup = m.ReplyMarkup.ToForwardMessage()
 		}

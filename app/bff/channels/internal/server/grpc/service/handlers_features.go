@@ -10,7 +10,9 @@ import (
 	"github.com/teamgram/proto/mtproto/rpc/metadata"
 	"github.com/teamgram/teamgram-server/app/bff/stickers/catalog"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
+	chatpb "github.com/teamgram/teamgram-server/app/service/biz/chat/chat"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
+	dialogclient "github.com/teamgram/teamgram-server/app/service/biz/dialog/client"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/premium"
 
@@ -78,7 +80,8 @@ func (s *Service) ChannelsGetGroupsForDiscussion(ctx context.Context, in *mtprot
 }
 
 func (s *Service) ChannelsSetDiscussionGroup(ctx context.Context, in *mtproto.TLChannelsSetDiscussionGroup) (*mtproto.Bool, error) {
-	if err := channel.Shared().SetDiscussionGroup(ctx, s.md(ctx).GetUserId(), in.GetBroadcast(), in.GetGroup()); err != nil {
+	md := s.md(ctx)
+	if err := channel.Shared().SetDiscussionGroup(ctx, md.GetUserId(), md.GetPermAuthKeyId(), in.GetBroadcast(), in.GetGroup()); err != nil {
 		return nil, err
 	}
 	return mtproto.BoolTrue, nil
@@ -164,59 +167,56 @@ func channelID(peer *mtproto.InputPeer, self int64) int64 {
 // ForumsService implements forum topic RPCs for channels that have the forum flag.
 type ForumsService struct {
 	mtproto.UnimplementedRPCForumsServer
+	Dialogs dialogclient.DialogClient
 }
 
-func (ForumsService) MessagesGetForumTopics(ctx context.Context, in *mtproto.TLMessagesGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
-	return listTopics(ctx, in.GetPeer(), in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
+func (s ForumsService) MessagesGetForumTopics(ctx context.Context, in *mtproto.TLMessagesGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
+	return s.listTopics(ctx, in.GetPeer(), in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 }
 
-func (ForumsService) ChannelsGetForumTopics(ctx context.Context, in *mtproto.TLChannelsGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
+func (s ForumsService) ChannelsGetForumTopics(ctx context.Context, in *mtproto.TLChannelsGetForumTopics) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	id := in.GetChannel().GetChannelId()
 	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, in.GetQ().GetValue(), in.GetLimit(), in.GetOffsetDate(), in.GetOffsetId(), in.GetOffsetTopic())
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, id, topics, chat), nil
+	return topicsResult(ctx, s.Dialogs, id, topics, chat), nil
 }
 
-func (ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto.TLMessagesGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
-	res, err := listTopics(ctx, in.GetPeer(), "", 100, 0, 0, 0)
+func (s ForumsService) MessagesGetForumTopicsByID(ctx context.Context, in *mtproto.TLMessagesGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
+	res, err := s.listTopics(ctx, in.GetPeer(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	want := map[int32]bool{}
-	for _, id := range in.GetTopics() {
-		want[id] = true
-	}
-	var kept []*mtproto.ForumTopic
-	for _, t := range res.Topics {
-		if want[t.GetId()] {
-			kept = append(kept, t)
-		}
-	}
-	res.Topics = kept
-	res.Count = int32(len(kept))
+	res.Topics = topicsByID(res.Topics, in.GetTopics())
+	res.Count = int32(len(res.Topics))
 	return res, nil
 }
 
-func (ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto.TLChannelsGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
+func (s ForumsService) ChannelsGetForumTopicsByID(ctx context.Context, in *mtproto.TLChannelsGetForumTopicsByID) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	topics, chat, err := channel.Shared().ListTopics(ctx, self, in.GetChannel().GetChannelId(), "", 100, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	want := map[int32]bool{}
-	for _, id := range in.GetTopics() {
-		want[id] = true
-	}
-	var kept []*mtproto.ForumTopic
+	return topicsResult(ctx, s.Dialogs, in.GetChannel().GetChannelId(), topicsByID(topics, in.GetTopics()), chat), nil
+}
+
+func topicsByID(topics []*mtproto.ForumTopic, ids []int32) []*mtproto.ForumTopic {
+	byID := map[int32]*mtproto.ForumTopic{}
 	for _, t := range topics {
-		if want[t.GetId()] {
-			kept = append(kept, t)
-		}
+		byID[t.GetId()] = t
 	}
-	return topicsResult(ctx, in.GetChannel().GetChannelId(), kept, chat), nil
+	out := make([]*mtproto.ForumTopic, 0, len(ids))
+	for _, id := range ids {
+		if t, ok := byID[id]; ok {
+			out = append(out, t)
+			continue
+		}
+		out = append(out, mtproto.MakeTLForumTopicDeleted(&mtproto.ForumTopic{Id: id}).To_ForumTopic())
+	}
+	return out
 }
 
 func (ForumsService) MessagesCreateForumTopic(ctx context.Context, in *mtproto.TLMessagesCreateForumTopic) (*mtproto.Updates, error) {
@@ -292,17 +292,18 @@ func (ForumsService) ChannelsReorderPinnedForumTopics(ctx context.Context, in *m
 	return mtproto.MakeUpdatesByUpdates(channelUpdate(id)), nil
 }
 
-func listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit, offsetDate, offsetID, offsetTopic int32) (*mtproto.Messages_ForumTopics, error) {
+func (s ForumsService) listTopics(ctx context.Context, peer *mtproto.InputPeer, q string, limit, offsetDate, offsetID, offsetTopic int32) (*mtproto.Messages_ForumTopics, error) {
 	self, _ := actor(ctx)
 	id := channelID(peer, self)
 	topics, chat, err := channel.Shared().ListTopics(ctx, self, id, q, limit, offsetDate, offsetID, offsetTopic)
 	if err != nil {
 		return nil, err
 	}
-	return topicsResult(ctx, id, topics, chat), nil
+	return topicsResult(ctx, s.Dialogs, id, topics, chat), nil
 }
 
-func topicsResult(ctx context.Context, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
+func topicsResult(ctx context.Context, dialogs dialogclient.DialogClient, channelID int64, topics []*mtproto.ForumTopic, chat *mtproto.Chat) *mtproto.Messages_ForumTopics {
+	fillTopicDrafts(ctx, dialogs, channelID, topics)
 	if topics == nil {
 		topics = []*mtproto.ForumTopic{}
 	}
@@ -373,10 +374,16 @@ type ReactionsService struct {
 	mtproto.UnimplementedRPCReactionsServer
 	Users    reactionUserAPI
 	Messages reactionMessageAPI
+	// Blocks is the private-chat block check. Nil skips it.
+	Blocks reactionBlockAPI
 	// Push delivers updates to other users. Nil in tests and when sync is not configured.
 	Push reactionPusher
 	// Dialogs updates dialog.unread_reactions_count. Nil in tests.
 	Dialogs reactionDialogs
+	// Chats lists basic-group members for updateMessageReactions. Nil in tests.
+	Chats interface {
+		ChatGetChatParticipantIdList(ctx context.Context, in *chatpb.TLChatGetChatParticipantIdList) (*chatpb.Vector_Long, error)
+	}
 }
 
 // reactionPusher sends updates to one user's sessions.
@@ -422,7 +429,16 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 		catalog.Must().NoteReaction(self, emos)
 		return up, nil
 	}
+	if peer != nil && peer.IsChat() {
+		if err := s.requireGroupReaction(ctx, self, peer, in.GetMsgId()); err != nil {
+			return nil, err
+		}
+	}
+	if err := privateReactionBlocked(ctx, s.Blocks, self, peer); err != nil {
+		return nil, err
+	}
 	before := authorReactionUnread(ctx, self, peer, in.GetMsgId())
+	groupBefore := s.groupReactionUnread(ctx, self, peer, in.GetMsgId())
 	up, err := chatbox.Shared().React(ctx, self, peer, in.GetMsgId(), emos, docs, in.GetBig())
 	if err != nil {
 		return nil, err
@@ -431,8 +447,70 @@ func (s ReactionsService) MessagesSendReaction(ctx context.Context, in *mtproto.
 	after := authorReactionUnread(ctx, self, peer, in.GetMsgId())
 	s.pushPeerReaction(ctx, self, peer, in.GetMsgId())
 	s.pushOwnOtherSessions(ctx, self, up)
-	s.addUnreadReactions(ctx, reactionAuthor(ctx, self, peer, in.GetMsgId()), self, unreadDelta(before, after))
+	if peer != nil && peer.IsChat() {
+		s.noteGroupReactionUnread(ctx, self, peer, in.GetMsgId(), groupBefore)
+	} else {
+		s.addUnreadReactions(ctx, reactionAuthor(ctx, self, peer, in.GetMsgId()), mtproto.PEER_USER, self, unreadDelta(before, after))
+	}
 	return up, nil
+}
+
+// groupReactionUnread snapshots which other members already have an unread
+// reaction on this message. The snapshot has to be taken before React.
+func (s ReactionsService) groupReactionUnread(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) map[int64]bool {
+	out := map[int64]bool{}
+	if s.Chats == nil || peer == nil || !peer.IsChat() {
+		return out
+	}
+	list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+	if err != nil || list == nil {
+		return out
+	}
+	for _, id := range list.GetDatas() {
+		if id == 0 || id == self {
+			continue
+		}
+		out[id] = chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, chatbox.Shared().BoxIDFor(ctx, self, peer, msgID, id))
+	}
+	return out
+}
+
+func (s ReactionsService) noteGroupReactionUnread(ctx context.Context, reactor int64, peer *mtproto.PeerUtil, msgID int32, before map[int64]bool) {
+	if peer == nil {
+		return
+	}
+	for id, was := range before {
+		box := chatbox.Shared().BoxIDFor(ctx, reactor, peer, msgID, id)
+		now := chatbox.Shared().MessageHasUnreadReaction(ctx, id, peer, box)
+		s.addUnreadReactions(ctx, id, peer.PeerType, peer.PeerId, unreadDelta(was, now))
+	}
+}
+
+// requireGroupReaction refuses a basic-group reaction from someone who is
+// not a current member, or who does not have that message in their own box.
+func (s ReactionsService) requireGroupReaction(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) error {
+	if peer == nil || !peer.IsChat() {
+		return nil
+	}
+	if s.Chats != nil {
+		list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+		if err != nil {
+			return err
+		}
+		member := false
+		if list != nil {
+			for _, id := range list.GetDatas() {
+				if id == self {
+					member = true
+					break
+				}
+			}
+		}
+		if !member {
+			return mtproto.ErrUserNotParticipant
+		}
+	}
+	return s.requirePrivateMessage(ctx, self, peer, msgID)
 }
 
 func unreadDelta(before, after bool) int32 {
@@ -547,6 +625,10 @@ func (s ReactionsService) pushPeerReaction(ctx context.Context, self int64, peer
 	if s.Push == nil {
 		return
 	}
+	if peer != nil && peer.IsChat() {
+		s.pushGroupReactions(ctx, self, peer, msgID)
+		return
+	}
 	to, up := chatbox.Shared().PeerReactionUpdate(ctx, self, peer, msgID)
 	if to == 0 || up == nil {
 		return
@@ -555,6 +637,29 @@ func (s ReactionsService) pushPeerReaction(ctx context.Context, self int64, peer
 		UserId:  to,
 		Updates: mtproto.MakeUpdatesByUpdates(up),
 	})
+}
+
+func (s ReactionsService) pushGroupReactions(ctx context.Context, self int64, peer *mtproto.PeerUtil, msgID int32) {
+	if s.Chats == nil || peer == nil {
+		return
+	}
+	list, err := s.Chats.ChatGetChatParticipantIdList(ctx, &chatpb.TLChatGetChatParticipantIdList{ChatId: peer.PeerId})
+	if err != nil || list == nil {
+		return
+	}
+	for _, id := range list.GetDatas() {
+		if id == 0 || id == self {
+			continue
+		}
+		up := chatbox.Shared().GroupReactionUpdateFor(ctx, self, id, peer, msgID)
+		if up == nil {
+			continue
+		}
+		_, _ = s.Push.SyncPushUpdates(ctx, &sync.TLSyncPushUpdates{
+			UserId:  id,
+			Updates: mtproto.MakeUpdatesByUpdates(up),
+		})
+	}
 }
 
 func (s ReactionsService) pushOwnOtherSessions(ctx context.Context, self int64, up *mtproto.Updates) {
@@ -572,13 +677,13 @@ func (s ReactionsService) pushOwnOtherSessions(ctx context.Context, self int64, 
 	})
 }
 
-func (s ReactionsService) addUnreadReactions(ctx context.Context, userID, peerID int64, delta int32) {
+func (s ReactionsService) addUnreadReactions(ctx context.Context, userID int64, peerType int32, peerID int64, delta int32) {
 	if s.Dialogs == nil || userID == 0 || peerID == 0 || delta == 0 {
 		return
 	}
 	_, _ = s.Dialogs.DialogUpdateUnreadCount(ctx, &dialog.TLDialogUpdateUnreadCount{
 		UserId:               userID,
-		PeerType:             mtproto.PEER_USER,
+		PeerType:             peerType,
 		PeerId:               peerID,
 		UnreadReactionsCount: wrapperspb.Int32(delta),
 	})

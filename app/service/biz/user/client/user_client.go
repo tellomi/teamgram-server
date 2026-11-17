@@ -54,6 +54,8 @@ type UserClient interface {
 	UserIsBlockedByUser(ctx context.Context, in *user.TLUserIsBlockedByUser) (*mtproto.Bool, error)
 	UserCheckBlockUserList(ctx context.Context, in *user.TLUserCheckBlockUserList) (*user.Vector_Long, error)
 	UserGetBlockedList(ctx context.Context, in *user.TLUserGetBlockedList) (*user.Vector_PeerBlocked, error)
+	UserGetBlockedPage(ctx context.Context, in *user.TLUserGetBlockedList) (*mtproto.Contacts_Blocked, error)
+	UserGetFallbackPhoto(ctx context.Context, in *user.TLUserGetProfilePhotos) (*mtproto.Photo, error)
 	UserGetContactSignUpNotification(ctx context.Context, in *user.TLUserGetContactSignUpNotification) (*mtproto.Bool, error)
 	UserSetContactSignUpNotification(ctx context.Context, in *user.TLUserSetContactSignUpNotification) (*mtproto.Bool, error)
 	UserGetContentSettings(ctx context.Context, in *user.TLUserGetContentSettings) (*mtproto.Account_ContentSettings, error)

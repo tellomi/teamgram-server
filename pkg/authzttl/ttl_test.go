@@ -3,11 +3,24 @@ package authzttl
 import "testing"
 
 func TestDaysUsesDefaultWhenUnset(t *testing.T) {
+	if DefaultDays != 180 {
+		t.Fatalf("default window %d", DefaultDays)
+	}
 	if Days(0) != DefaultDays || Days(-1) != DefaultDays {
 		t.Fatal("unset ttl")
 	}
-	if Days(30) != 30 || Days(180) != 180 {
+	if Days(7) != 7 || Days(30) != 30 || Days(180) != 180 {
 		t.Fatal("stored ttl")
+	}
+}
+
+func TestSevenDayWindowDoesNotExpireALiveSession(t *testing.T) {
+	const now = int64(1_700_000_000)
+	if Expired(now, now, 7) || Expired(now-6*Day, now, 7) {
+		t.Fatal("activity inside 7 days must stay logged in")
+	}
+	if !Expired(now-7*Day, now, 7) {
+		t.Fatal("exactly 7 days idle")
 	}
 }
 

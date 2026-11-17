@@ -226,11 +226,11 @@ func TestMessagesPtsReadAndDifference(t *testing.T) {
 		t.Fatalf("delete pts=%d count=%d", pts, count)
 	}
 
-	diff, err := svc.Difference(ctx, 2, in, 0, 100)
+	diff, err := svc.Difference(ctx, 2, in, 0, 100, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	author, err := svc.Difference(ctx, 1, in, 0, 100)
+	author, err := svc.Difference(ctx, 1, in, 0, 100, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestMessagesPtsReadAndDifference(t *testing.T) {
 	if len(diff.NewMessages) < 2 {
 		t.Fatalf("new messages = %d", len(diff.NewMessages))
 	}
-	empty, err := svc.Difference(ctx, 2, in, pts, 100)
+	empty, err := svc.Difference(ctx, 2, in, pts, 100, false)
 	if err != nil {
 		t.Fatal(err)
 	}

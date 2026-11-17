@@ -178,3 +178,18 @@ func TestPlanContactImportPrefersLiveUser(t *testing.T) {
 		t.Fatalf("matches = %#v", plan.Matches)
 	}
 }
+
+func TestFilterImportByAddedPhone(t *testing.T) {
+	plan := ImportPlan{Matches: []ImportMatch{
+		{UserID: 20, ClientID: 1},
+		{UserID: 30, ClientID: 2, AlreadyMine: true},
+		{UserID: 40, ClientID: 3},
+	}, UpdateUserIDs: []int64{20, 30, 40}}
+	got := FilterImportByAddedPhone(plan, func(userID int64) bool { return userID != 20 })
+	if len(got.Matches) != 2 || got.Matches[0].UserID != 30 || got.Matches[1].UserID != 40 {
+		t.Fatalf("matches = %#v", got.Matches)
+	}
+	if len(got.UpdateUserIDs) != 2 || got.UpdateUserIDs[0] != 30 || got.UpdateUserIDs[1] != 40 {
+		t.Fatalf("ids = %v", got.UpdateUserIDs)
+	}
+}

@@ -29,6 +29,22 @@ func TestFromMessagePhotoAndDocument(t *testing.T) {
 	}
 }
 
+func TestFromMessageLivePhotoVideo(t *testing.T) {
+	msg := &mtproto.Message{Media: mtproto.MakeTLMessageMediaPhoto(&mtproto.MessageMedia{
+		LivePhoto:          true,
+		Photo_FLAGPHOTO:    mtproto.MakeTLPhoto(&mtproto.Photo{Id: 42}).To_Photo(),
+		Video_FLAGDOCUMENT: mtproto.MakeTLDocument(&mtproto.Document{Id: 7}).To_Document(),
+	}).To_MessageMedia()}
+	got := FromMessage(msg)
+	if len(got) != 2 || got[0] != (Media{Kind: KindPhoto, ID: 42}) || got[1] != (Media{Kind: KindDocument, ID: 7}) {
+		t.Fatalf("live photo media %+v", got)
+	}
+	raw := `{"media":{"predicate_name":"messageMediaPhoto","live_photo":true,"photo_FLAGPHOTO":{"predicate_name":"photo","id":42},"video_FLAGDOCUMENT":{"predicate_name":"document","id":7}}}`
+	if got := FromJSON(raw); len(got) != 2 || got[1] != (Media{Kind: KindDocument, ID: 7}) {
+		t.Fatalf("live photo json media %+v", got)
+	}
+}
+
 func TestFromJSONRoundTrip(t *testing.T) {
 	raw := `{"message":"do not keep","media":{"predicate_name":"messageMediaPhoto","photo_FLAGPHOTO":{"predicate_name":"photo","id":99}}}`
 	got := FromJSON(raw)

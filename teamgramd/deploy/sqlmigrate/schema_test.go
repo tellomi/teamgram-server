@@ -58,6 +58,31 @@ func TestMigrationsMatchCodeSchema(t *testing.T) {
 	if !cols["users"]["email"] {
 		t.Fatal("users.email missing after migrations")
 	}
+	if !cols["user_notify_topic_settings"]["top_msg_id"] || !cols["user_notify_topic_settings"]["mute_until"] {
+		t.Fatal("user_notify_topic_settings missing after migrations")
+	}
+	if !cols["business_profile"]["doc_key"] || !cols["business_profile"]["data"] {
+		t.Fatal("business_profile missing after migrations")
+	}
+	for _, col := range []string{"user_id", "peer_type", "peer_id", "top_msg_id", "draft_type", "draft_message_data"} {
+		if !cols["dialog_topic_drafts"][col] {
+			t.Errorf("dialog_topic_drafts.%s missing after migrations", col)
+		}
+	}
+	topicDraftMig := mustRead(t, filepath.Join(dir, "migrate-20261130-dialog-topic-draft.sql"))
+	if !strings.Contains(topicDraftMig, "CREATE TABLE IF NOT EXISTS `dialog_topic_drafts`") || !strings.Contains(topicDraftMig, "user_peer_topic") {
+		t.Fatal("topic draft migration does not create dialog_topic_drafts")
+	}
+	for _, line := range strings.Split(topicDraftMig, "\n") {
+		s := strings.TrimSpace(line)
+		if strings.HasPrefix(s, "--") {
+			continue
+		}
+		upper := strings.ToUpper(s)
+		if strings.Contains(upper, "DIALOGS") || strings.HasPrefix(upper, "UPDATE ") || strings.HasPrefix(upper, "DELETE ") {
+			t.Fatalf("topic draft migration rewrites existing drafts: %s", s)
+		}
+	}
 	for _, col := range []string{"media_document_id", "media_photo_id"} {
 		if !cols["messages"][col] {
 			t.Errorf("messages.%s missing after migrations", col)
@@ -137,7 +162,7 @@ func TestMigrateFilesAreIdempotent(t *testing.T) {
 		t.Fatal("z_init.sql insert is not idempotent")
 	}
 	helpers := mustRead(t, filepath.Join(dir, "0_migrate_helpers.sql"))
-	for _, name := range []string{"teamgram_add_column", "teamgram_drop_column", "teamgram_add_index", "teamgram_drop_index", "teamgram_change_column", "teamgram_fail_if_set"} {
+	for _, name := range []string{"teamgram_add_column", "teamgram_drop_column", "teamgram_add_index", "teamgram_drop_index", "teamgram_change_column", "teamgram_fail_if_set", "teamgram_drop_inbox_random_guard"} {
 		if !strings.Contains(helpers, "PROCEDURE "+name) {
 			t.Errorf("helper %s missing", name)
 		}

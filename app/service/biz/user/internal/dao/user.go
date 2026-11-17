@@ -233,7 +233,7 @@ func (d *Dao) UpdateProfilePhoto(ctx context.Context, userId, photoId int64) int
 			if photoId == 0 {
 				mainPhotoId, _ = d.UsersDAO.SelectProfilePhoto(ctx, userId)
 				if mainPhotoId > 0 {
-					nextPhotoId, _ := d.UserProfilePhotosDAO.SelectNext(ctx, userId, []int64{mainPhotoId})
+					nextPhotoId, _ := d.NextAlbumPhoto(ctx, userId, []int64{mainPhotoId})
 					tR := sqlx.TxWrapper(ctx, d.DB, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
 						_, result.Err = d.UserProfilePhotosDAO.DeleteTx(tx, userId, []int64{mainPhotoId})
 						if result.Err != nil {
@@ -271,6 +271,47 @@ func (d *Dao) UpdateProfilePhoto(ctx context.Context, userId, photoId int64) int
 	}
 
 	return mainPhotoId
+}
+
+// DeleteUserProfilePhotos removes album rows. When the current avatar is in
+// ids, users.photo_id moves to the next non-fallback photo, or 0 when the
+// album has nothing left. The user cache is dropped with the write.
+func (d *Dao) DeleteUserProfilePhotos(ctx context.Context, userID int64, ids []int64) (int64, error) {
+	if d == nil || userID == 0 || len(ids) == 0 {
+		return 0, nil
+	}
+	main, err := d.UsersDAO.SelectProfilePhoto(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	next := main
+	removing := main > 0 && container2.ContainsInt64(ids, main)
+	if removing {
+		next, err = d.NextAlbumPhoto(ctx, userID, ids)
+		if err != nil {
+			return 0, err
+		}
+	}
+	_, _, err = d.CachedConn.Exec(ctx, func(ctx context.Context, conn *sqlx.DB) (int64, int64, error) {
+		tR := sqlx.TxWrapper(ctx, conn, func(tx *sqlx.Tx, result *sqlx.StoreResult) {
+			_, result.Err = d.UserProfilePhotosDAO.DeleteTx(tx, userID, ids)
+			if result.Err != nil || !removing {
+				return
+			}
+			_, result.Err = d.UsersDAO.UpdateProfilePhotoTx(tx, next, userID)
+		})
+		if tR.Err != nil {
+			return 0, 0, tR.Err
+		}
+		return 0, 1, nil
+	}, genCacheUserDataCacheKey(userID))
+	if err != nil {
+		return 0, err
+	}
+	if removing {
+		return next, nil
+	}
+	return main, nil
 }
 
 func (d *Dao) GetImmutableUser(ctx context.Context, id int64, privacy bool, contacts ...int64) (*mtproto.ImmutableUser, error) {
@@ -661,15 +702,7 @@ func (d *Dao) GetCacheImmutableUserListV2(ctx context.Context, idList2 []int64, 
 					}
 					noCaches[key] = contact
 					if cUser, ok := mUsers[contact.OwnerUserId]; ok {
-						cUser.Contacts = append(cUser.Contacts, mtproto.MakeTLContactData(&mtproto.ContactData{
-							UserId:        contact.OwnerUserId,
-							ContactUserId: contact.ContactUserId,
-							FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
-							LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
-							MutualContact: contact.Mutual,
-							Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
-							CloseFriend:   contact.CloseFriend,
-						}).To_ContactData())
+						cUser.Contacts = append(cUser.Contacts, contactDataFromDO(contact))
 					}
 				}
 			}
@@ -704,15 +737,7 @@ func (d *Dao) GetCacheImmutableUserListV2(ctx context.Context, idList2 []int64, 
 				}
 
 				if cUser, ok := mUsers[contact.OwnerUserId]; ok {
-					cUser.Contacts = append(cUser.Contacts, mtproto.MakeTLContactData(&mtproto.ContactData{
-						UserId:        contact.OwnerUserId,
-						ContactUserId: contact.ContactUserId,
-						FirstName:     mtproto.MakeFlagsString(contact.ContactFirstName),
-						LastName:      mtproto.MakeFlagsString(contact.ContactLastName),
-						MutualContact: contact.Mutual,
-						Phone:         mtproto.MakeFlagsString(contact.ContactPhone),
-						CloseFriend:   contact.CloseFriend,
-					}).To_ContactData())
+					cUser.Contacts = append(cUser.Contacts, contactDataFromDO(contact))
 				}
 
 				return contact, nil

@@ -241,11 +241,25 @@ func (s *Service) SavedGifs(userID, hash int64) *mtproto.Messages_SavedGifs {
 	if len(rows) == 0 {
 		return BundledGifs(hash)
 	}
+	// A saved GIF is listed first. The built-in panel stays behind it.
+	// Saving the first one used to replace the whole default list.
+	have := map[int64]struct{}{}
 	var docs []*mtproto.Document
 	var ids []int64
 	for _, row := range rows {
-		docs = append(docs, row.document())
+		docs = append(docs, savedGifDocument(row))
 		ids = append(ids, row.DocumentID)
+		have[row.DocumentID] = struct{}{}
+	}
+	for _, doc := range bundledGifDocuments("") {
+		if doc == nil {
+			continue
+		}
+		if _, ok := have[doc.GetId()]; ok {
+			continue
+		}
+		docs = append(docs, doc)
+		ids = append(ids, doc.GetId())
 	}
 	sum := telegramDocumentHash(ids)
 	if hash != 0 && hash == sum {
@@ -260,14 +274,18 @@ func (s *Service) SavedGifs(userID, hash int64) *mtproto.Messages_SavedGifs {
 	}).To_Messages_SavedGifs()
 }
 
-func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool) error {
+// SaveGif reports whether the stored order of saved GIF ids changed.
+// A date-only rewrite of the GIF that is already first is not a change.
+// The bool is false when the write fails, including a GIF the catalog rejects.
+func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	row, err := s.resolveGif(doc)
 	if err != nil {
-		return err
+		return false, err
 	}
 	st := s.state(userID)
+	before := gifDocumentIDs(st.gifs)
 	next := make([]gifRow, 0, len(st.gifs))
 	for _, cur := range st.gifs {
 		if cur.DocumentID == row.DocumentID {
@@ -278,11 +296,11 @@ func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool)
 	if unsave {
 		if mp, ok := s.mysql(); ok {
 			if err = mp.deleteGif(userID, row.DocumentID); err != nil {
-				return err
+				return false, err
 			}
 		}
 		st.gifs = next
-		return nil
+		return !sameInt64s(before, gifDocumentIDs(st.gifs)), nil
 	}
 	row.Date = s.now()
 	next = append([]gifRow{row}, next...)
@@ -292,18 +310,26 @@ func (s *Service) SaveGif(userID int64, doc *mtproto.InputDocument, unsave bool)
 		if mp, ok := s.mysql(); ok {
 			for _, old := range dropped {
 				if err = mp.deleteGif(userID, old.DocumentID); err != nil {
-					return err
+					return false, err
 				}
 			}
 		}
 	}
 	if mp, ok := s.mysql(); ok {
 		if err = mp.saveGif(userID, next[0]); err != nil {
-			return err
+			return false, err
 		}
 	}
 	st.gifs = next
-	return nil
+	return !sameInt64s(before, gifDocumentIDs(st.gifs)), nil
+}
+
+func gifDocumentIDs(rows []gifRow) []int64 {
+	ids := make([]int64, len(rows))
+	for i, row := range rows {
+		ids[i] = row.DocumentID
+	}
+	return ids
 }
 
 func (s *Service) CheckShortName(name string) error {
@@ -900,6 +926,9 @@ func (s *Service) resolveGif(doc *mtproto.InputDocument) (gifRow, error) {
 	if doc == nil || doc.GetPredicateName() == mtproto.Predicate_inputDocumentEmpty || doc.GetId() == 0 {
 		return gifRow{}, mtproto.ErrGifIdInvalid
 	}
+	if row, ok := gifRowByID(doc.GetId(), doc.GetAccessHash()); ok {
+		return row, nil
+	}
 	if link := s.docs[doc.GetId()]; link != nil && link.item != nil {
 		if doc.GetAccessHash() != 0 && doc.GetAccessHash() != link.item.AccessHash {
 			return gifRow{}, mtproto.ErrGifIdInvalid
@@ -946,6 +975,50 @@ func gifFromItem(item *Item) gifRow {
 		FileName:   name,
 		Video:      item.Video || strings.HasPrefix(item.MIME, "video/"),
 	}
+}
+
+func gifRowByID(id, access int64) (gifRow, bool) {
+	clip, ok := gifClipByID(id)
+	if !ok {
+		clip, ok = importedGifByID(id)
+	}
+	if !ok {
+		return gifRow{}, false
+	}
+	want := clip.access
+	if want == 0 {
+		want = gifAccess(clip.code)
+	}
+	if clip.id == 0 {
+		clip.id = gifID(clip.code)
+	}
+	if access != 0 && access != want && access != gifAccess(clip.code) {
+		return gifRow{}, false
+	}
+	name := clip.fileName
+	if name == "" {
+		name = clip.code + ".mp4"
+	}
+	return gifRow{
+		DocumentID: clip.id,
+		AccessHash: want,
+		MIME:       "video/mp4",
+		Size:       int32(clip.size),
+		Width:      clip.w,
+		Height:     clip.h,
+		FileName:   name,
+		Video:      true,
+	}, true
+}
+
+func savedGifDocument(row gifRow) *mtproto.Document {
+	if clip, ok := gifClipByID(row.DocumentID); ok {
+		return gifDocument(clip)
+	}
+	if clip, ok := importedGifByID(row.DocumentID); ok {
+		return gifDocument(clip)
+	}
+	return row.document()
 }
 
 func (row gifRow) document() *mtproto.Document {

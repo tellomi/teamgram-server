@@ -240,6 +240,35 @@ func PeerRevokeQuery(maxID int32, justClear bool, dates Query) Query {
 	}
 }
 
+// RevokePeerCap is the other participant's max_id for deleteHistory(revoke).
+//
+// callerMax is the request, in the caller's box. mapped is that message's
+// box id on the other side, including a row the caller already deleted for
+// themselves. 0 and MaxInt32 stay uncapped because the caller asked for that.
+// A real max_id with no mapped peer row returns -1. That is not an unlimited
+// clear: the caller must bound the delete by the message time instead.
+// callerHasLive is unused; live rows are revoked by dialog_message_id.
+func RevokePeerCap(callerMax, mapped int32, callerHasLive bool) int32 {
+	_ = callerHasLive
+	if callerMax <= 0 || callerMax >= math.MaxInt32 {
+		return callerMax
+	}
+	if mapped > 0 {
+		return mapped
+	}
+	return -1
+}
+
+// RevokePeerDateBound is the exclusive date2 cap when the peer box id is
+// unknown. Messages with date2 < bound are the ones at or before the
+// caller's message. 0 means there is no date, so the revoke must not run.
+func RevokePeerDateBound(callerDate int64) int64 {
+	if callerDate <= 0 {
+		return 0
+	}
+	return callerDate + 1
+}
+
 // PeerRevokeMaxID maps a deleteHistory max_id into the other participant's
 // message box. callerMax is the request value, in the caller's box. peerBox
 // is the other participant's box id of the newest caller message with
@@ -276,6 +305,23 @@ func SplitDeleted(ids []int32, live map[int32]struct{}, confirmErr error) (delet
 		deleted = append(deleted, id)
 	}
 	return deleted, failed
+}
+
+// AnchorDeleteID is the just_clear message that stays in the box as
+// messageActionHistoryClear. Other sessions of the same account remove a
+// bubble only when updateDeleteMessages names its id. The clear used to
+// omit this id, so the open chat kept the last bubble until getHistory.
+// 0 means the id is already in the deleted list, or there is no anchor.
+func AnchorDeleteID(deleted []int32, anchorID int32) int32 {
+	if anchorID == 0 {
+		return 0
+	}
+	for _, id := range deleted {
+		if id == anchorID {
+			return 0
+		}
+	}
+	return anchorID
 }
 
 // IsHistoryClear reports the service message just_clear leaves behind.

@@ -79,8 +79,7 @@ func (s *store) checkPeer(self int64, peer *mtproto.InputPeer) (*mtproto.Message
 }
 
 func (s *store) initImport(self int64, in *mtproto.TLMessagesInitHistoryImport) (*mtproto.Messages_HistoryImport, error) {
-	ref, _, err := peerOf(self, in.GetPeer())
-	if err != nil {
+	if _, _, err := peerOf(self, in.GetPeer()); err != nil {
 		return nil, err
 	}
 	file := in.GetFile()
@@ -95,12 +94,11 @@ func (s *store) initImport(self int64, in *mtproto.TLMessagesInitHistoryImport) 
 	if in.GetMediaCount() < 0 {
 		return nil, mtproto.ErrImportFileInvalid
 	}
-	s.mu.Lock()
-	s.importSeq++
-	id := s.importSeq
-	s.imports[id] = &importJob{user: self, peer: ref, mediaCount: in.GetMediaCount()}
-	s.mu.Unlock()
-	return mtproto.MakeTLMessagesHistoryImport(&mtproto.Messages_HistoryImport{Id: id}).To_Messages_HistoryImport(), nil
+	// Parsing the export and writing each message is a separate importer.
+	// A successful id with no messages is a fake result. Tell the client
+	// the feature is not available instead.
+	// https://core.telegram.org/api/import
+	return nil, mtproto.ErrImportNotAvailable
 }
 
 func (s *store) uploadImported(self int64, in *mtproto.TLMessagesUploadImportedMedia) (*mtproto.MessageMedia, error) {
@@ -111,17 +109,8 @@ func (s *store) uploadImported(self int64, in *mtproto.TLMessagesUploadImportedM
 	if in.GetFileName() == "" || in.GetMedia() == nil || in.GetMedia().GetPredicateName() == "" || in.GetMedia().GetPredicateName() == mtproto.Predicate_inputMediaEmpty {
 		return nil, mtproto.ErrMediaInvalid
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	job := s.imports[in.GetImportId()]
-	if job == nil || job.user != self {
-		return nil, mtproto.ErrImportIdInvalid
-	}
-	if job.peer != ref {
-		return nil, mtproto.ErrPeerIdInvalid
-	}
-	job.uploaded++
-	return mtproto.MakeTLMessageMediaEmpty(&mtproto.MessageMedia{}).To_MessageMedia(), nil
+	_ = ref
+	return nil, mtproto.ErrImportNotAvailable
 }
 
 func (s *store) startImport(self int64, in *mtproto.TLMessagesStartHistoryImport) (*mtproto.Bool, error) {
@@ -129,15 +118,9 @@ func (s *store) startImport(self int64, in *mtproto.TLMessagesStartHistoryImport
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	job := s.imports[in.GetImportId()]
-	if job == nil || job.user != self {
+	_ = ref
+	if in.GetImportId() == 0 {
 		return nil, mtproto.ErrImportIdInvalid
 	}
-	if job.peer != ref {
-		return nil, mtproto.ErrPeerIdInvalid
-	}
-	job.started = true
-	return mtproto.BoolTrue, nil
+	return nil, mtproto.ErrImportNotAvailable
 }

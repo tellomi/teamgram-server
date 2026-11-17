@@ -22,15 +22,30 @@ type Features struct {
 	PinnedMsgID        int32
 	AvailableMinID     int32
 	FutureCreatorID    int64
-	Lat                float64
-	Long               float64
-	LogSeq             int64
-	AdminLog           []AdminEvent
-	Topics             []TopicRec
-	Reactions          []ReactRec
+	// NoForwards is messages.toggleNoForwards ("restrict saving content").
+	NoForwards bool
+	// PromotedBy is the user who last granted each admin's rights.
+	// channels.editAdmin lets an admin edit only the admins in this map
+	// whose value is themselves. The creator is not limited by it.
+	// A missing entry falls back to the inviter recorded on the participant.
+	PromotedBy map[int64]int64
+	Lat        float64
+	Long       float64
+	LogSeq     int64
+	AdminLog   []AdminEvent
+	Topics     []TopicRec
+	Reactions  []ReactRec
 	// ReactionRead is the unix time through which each member has called
 	// messages.readReactions. Older reaction dates are unread.
 	ReactionRead map[int64]int32
+	// MentionReadMax is the highest message id each member has acknowledged
+	// with messages.readMentions when top_msg_id is 0. A mention at or below
+	// it is not unread. The inbox cursor is separate, so unread_count stays.
+	MentionReadMax map[int64]int32
+	// MentionRead is message ids acknowledged by a topic-scoped
+	// messages.readMentions (top_msg_id set). The dialog-wide cursor stays
+	// put, so other topics keep their badge.
+	MentionRead map[int64][]int32
 	// ReactionMode is "", "all", "none", or "some".
 	ReactionMode       string
 	AllowCustom        bool
@@ -57,12 +72,12 @@ type Features struct {
 	ProfileColorEmoji int64
 	Emoji             StoredEmojiStatus
 
-	SponsoredRestricted      bool
-	Antispam                 bool
-	Autotranslation          bool
+	SponsoredRestricted bool
+	Antispam            bool
+	Autotranslation     bool
 	// SignatureProfiles is channels.toggleSignatures profiles_enabled.
 	// Author names on posts stay on Channel.Signatures.
-	SignatureProfiles bool
+	SignatureProfiles        bool
 	BoostsUnrestrict         int32
 	PaidMessagesSet          bool
 	SendPaidMessagesStars    int64
@@ -81,6 +96,12 @@ type Features struct {
 	// Views is the per-post view counter. Seen is the user ids already
 	// counted, so messages.getMessagesViews increment is once per user.
 	Views map[int32]ViewRec
+	// CommentRoot maps a broadcast post id to the auto-forwarded message
+	// in the linked discussion group. CommentByRoot and CommentMsgRoot live
+	// on that group. They are written only when TELLOMI_CHANNEL_COMMENTS is on.
+	CommentRoot    map[int32]int32
+	CommentByRoot  map[int32]CommentLink
+	CommentMsgRoot map[int32]int32
 	// InboxReadAt is the unix time a member last advanced their inbox cursor.
 	// messages.getMessageReadParticipants uses it as the read date.
 	InboxReadAt map[int64]int32
@@ -90,6 +111,12 @@ type Features struct {
 type ViewRec struct {
 	Count int32
 	Seen  []int64
+}
+
+// CommentLink is the channel post a discussion-group root was forwarded from.
+type CommentLink struct {
+	ChannelID int64
+	MsgID     int32
 }
 
 // UsernameRec is one channel username.

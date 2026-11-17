@@ -22,7 +22,6 @@ import (
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/inbox/inbox"
 	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dao"
-	"github.com/teamgram/teamgram-server/app/messenger/msg/internal/dal/dataobject"
 	"github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/dialog/dialog"
 	"github.com/teamgram/teamgram-server/pkg/archive"
@@ -50,11 +49,11 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 
 		for _, inBox := range in.GetBoxList() {
 			if isUseV3 {
-				// V3: pts allocated here in inbox consumer
-				inBox.Pts = c.svcCtx.Dao.IDGenClient2.NextPtsId(c.ctx, in.FromId)
+				// Pts is chosen inside the outbox transaction. Allocating it
+				// here burned a number whenever this consumer ran again.
 				inBox.PtsCount = 1
 
-				// V3: write outbox + user_pts_updates together (pts allocated above)
+				// V3: write outbox + user_pts_updates together.
 				err := c.svcCtx.Dao.SendMessageToOutboxV1(
 					c.ctx,
 					in.FromId,
@@ -83,17 +82,9 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				peer2 := inBox.GetMessage().GetSavedPeerId()
 				if peer2 == nil {
 					c.Logger.Errorf("inbox.sendUserMessageToInboxV2 - error: sendToSelfUser")
-				} else {
-					peer := mtproto.FromPeer(peer2)
-					_, _, _ = c.svcCtx.Dao.SavedDialogsDAO.InsertOrUpdate(
-						c.ctx,
-						&dataobject.SavedDialogsDO{
-							UserId:     in.FromId,
-							PeerType:   peer.PeerType,
-							PeerId:     peer.PeerId,
-							Pinned:     0,
-							TopMessage: inBox.GetMessageId(),
-						})
+				} else if err := c.touchLiveSavedDialog(in.FromId, inBox.GetMessageId(), peer2); err != nil {
+					c.Logger.Errorf("inbox.sendUserMessageToInboxV2 - error: %v", err)
+					return nil, err
 				}
 			}
 
@@ -169,9 +160,10 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 
 			peerType, peerID := inboxDialogPeer(in)
 			existed, folderID := c.inboxFolder(in.UserId, peerType, peerID)
+			var apply dao.InboxApply
 			switch in.PeerType {
 			case mtproto.PEER_USER:
-				inBox, answered, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
+				inBox, answered, apply, err = c.svcCtx.Dao.SendUserMessageToInbox(c.ctx,
 					in.FromId,
 					in.PeerId,
 					inbox2.GetDialogMessageId(),
@@ -182,7 +174,7 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 					return nil, err
 				}
 			case mtproto.PEER_CHAT:
-				inBox, err = c.svcCtx.Dao.SendChatMessageToInbox(c.ctx,
+				inBox, apply, err = c.svcCtx.Dao.SendChatMessageToInbox(c.ctx,
 					in.FromId,
 					in.PeerId,
 					in.UserId,
@@ -198,16 +190,8 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				return mtproto.EmptyVoid, nil
 
 			}
-
-			if inBox.DialogMessageId == 1 &&
-				(in.FromId != 42777 && in.FromId != 424000) {
-				//isContact, _ := s.UserFacade.GetContactAndMutual(ctx, toId, fromId)
-				//if !isContact {
-				//	s.UserFacade.AddPeerSettings(ctx, toId, model.MakeUserPeerUtil(fromId), &mtproto.PeerSettings{
-				//		AddContact:   true,
-				//		BlockContact: true,
-				//	})
-				//}
+			if !apply.Push || inBox == nil {
+				continue
 			}
 
 			updateNewMessage := mtproto.MakeTLUpdateNewMessage(&mtproto.Update{
@@ -220,6 +204,12 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				in.Users,
 				in.Chats,
 				updateNewMessage)
+			if settings := c.openStrangerBar(in.UserId, in.FromId, in.PeerType, existed); settings != nil {
+				pushUpdates.PushBackUpdate(mtproto.MakeTLUpdatePeerSettings(&mtproto.Update{
+					Peer_PEER: mtproto.MakePeerUser(in.FromId),
+					Settings:  settings,
+				}).To_Update())
+			}
 
 			if in.PeerType == mtproto.PEER_CHAT {
 				switch inBox.GetMessage().GetAction().GetPredicateName() {
@@ -263,7 +253,9 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 				}
 			}
 
-			c.persistPtsUpdate(c.ctx, inBox.UserId, updateNewMessage)
+			if apply.PersistPts {
+				c.persistPtsUpdate(c.ctx, inBox.UserId, updateNewMessage)
+			}
 			if answered != nil {
 				// The message pts was allocated inside SendUserMessageToInbox
 				// and stored just above. This read takes the next pts and is
@@ -318,4 +310,22 @@ func (c *InboxCore) InboxSendUserMessageToInboxV2(in *inbox.TLInboxSendUserMessa
 	}
 
 	return mtproto.EmptyVoid, nil
+}
+
+// touchLiveSavedDialog moves one Saved Messages peer forward. A replay whose
+// message row is already deleted does not run, so it cannot put that id back
+// or clear saved_dialogs.deleted. A live row uses a forward-only update.
+func (c *InboxCore) touchLiveSavedDialog(userID int64, boxID int32, savedPeer *mtproto.Peer) error {
+	if c == nil || c.svcCtx == nil || c.svcCtx.Dao == nil || savedPeer == nil || boxID <= 0 {
+		return nil
+	}
+	live, err := c.svcCtx.Dao.LiveMessageBoxIDs(c.ctx, userID, []int32{boxID})
+	if err != nil {
+		return err
+	}
+	if _, ok := live[boxID]; !ok {
+		return nil
+	}
+	peer := mtproto.FromPeer(savedPeer)
+	return c.svcCtx.Dao.TouchSavedPeerDialog(c.ctx, userID, peer.PeerType, peer.PeerId, boxID)
 }

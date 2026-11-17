@@ -3,12 +3,13 @@
     <operation name="InsertOrUpdate">
         <sql>
             INSERT INTO user_profile_photos
-                (user_id, photo_id, date2, deleted)
+                (user_id, photo_id, date2, deleted, fallback)
             VALUES
-                (:user_id, :photo_id, :date2, 0)
+                (:user_id, :photo_id, :date2, 0, 0)
             ON DUPLICATE KEY UPDATE
                 date2 = VALUES(date2),
-                deleted = 0
+                deleted = 0,
+                fallback = 0
         </sql>
     </operation>
 

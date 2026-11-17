@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 	"github.com/teamgram/teamgram-server/pkg/phonenumber"
 )
 
@@ -67,6 +68,53 @@ func TestCountriesListLocalizesChinese(t *testing.T) {
 	}
 	if List("zh_CN", hans.GetHash()).GetPredicateName() != mtproto.Predicate_help_countriesListNotModified {
 		t.Fatal("zh_CN should use the zh-hans list")
+	}
+}
+
+func TestCountriesListJapanese(t *testing.T) {
+	en := List("en", 0)
+	ja := List("ja", 0)
+	jp := findCountry(ja, "JP")
+	de := findCountry(ja, "DE")
+	us := findCountry(ja, "US")
+	if jp == nil || de == nil || us == nil {
+		t.Fatal("JP/DE/US missing")
+	}
+	if jp.GetDefaultName() != "Japan" || de.GetDefaultName() != "Germany" || us.GetDefaultName() != "United States" {
+		t.Fatalf("english defaults %q %q %q", jp.GetDefaultName(), de.GetDefaultName(), us.GetDefaultName())
+	}
+	if jp.GetName().GetValue() != "日本" {
+		t.Fatalf("ja JP %q", jp.GetName().GetValue())
+	}
+	if de.GetName().GetValue() == "Germany" || us.GetName().GetValue() == "United States" {
+		t.Fatalf("ja fell back to English: DE %q US %q", de.GetName().GetValue(), us.GetName().GetValue())
+	}
+	if ja.GetHash() == en.GetHash() {
+		t.Fatal("japanese list shares the english hash")
+	}
+	if List("ja-JP", ja.GetHash()).GetPredicateName() != mtproto.Predicate_help_countriesListNotModified {
+		t.Fatal("ja-JP should use the ja list")
+	}
+	for _, lang := range langpack.OfficialLanguages {
+		list := List(lang.Code, 0)
+		localDE := findCountry(list, "DE")
+		localJP := findCountry(list, "JP")
+		localUS := findCountry(list, "US")
+		if localDE == nil || localJP == nil || localUS == nil {
+			t.Fatalf("%s missing a country", lang.Code)
+		}
+		if localDE.GetName().GetValue() == "" || localJP.GetName().GetValue() == "" || localUS.GetName().GetValue() == "" {
+			t.Fatalf("%s empty name", lang.Code)
+		}
+		if lang.Code == "en" {
+			continue
+		}
+		enDE := findCountry(en, "DE").GetName().GetValue()
+		enJP := findCountry(en, "JP").GetName().GetValue()
+		enUS := findCountry(en, "US").GetName().GetValue()
+		if localDE.GetName().GetValue() == enDE && localJP.GetName().GetValue() == enJP && localUS.GetName().GetValue() == enUS {
+			t.Fatalf("%s country names fell back to English", lang.Code)
+		}
 	}
 }
 

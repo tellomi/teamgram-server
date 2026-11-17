@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -633,6 +634,47 @@ func (s *Service) exportTL(ctx context.Context, inv *StoredInvite) *mtproto.Expo
 		Requested:     mtproto.MakeFlagsInt32(requested),
 		Title:         mtproto.MakeFlagsString(inv.Title),
 	}).To_ExportedChatInvite()
+}
+
+// publicJoinLink is the importer key for channels.joinChannel when the
+// channel itself asks for approval. It is not a 20-character invite hash,
+// so messages.importChatInvite cannot redeem it. getChatInviteImporters
+// with an empty link still returns the row.
+func publicJoinLink(channelID int64) string {
+	return "jreq" + strconv.FormatInt(channelID, 10)
+}
+
+// recordJoinRequest stores a pending join from channels.joinChannel.
+// The user is not added. Admins see the row in getChatInviteImporters
+// (requested=true), can approve it with hideChatJoinRequest, and receive
+// updatePendingJoinRequests.
+func (s *Service) recordJoinRequest(ctx context.Context, channelID, user int64) error {
+	link := publicJoinLink(channelID)
+	if err := s.addJoinRequest(ctx, channelID, user, link); err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	rows, err := s.store.ListImporters(ctx, channelID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.UserID == user && row.Requested && row.Link == link {
+			now = row.Date
+			break
+		}
+	}
+	if err := s.store.UpsertImporter(ctx, &StoredImporter{
+		ChannelID: channelID,
+		Link:      link,
+		UserID:    user,
+		Requested: true,
+		Date:      now,
+	}); err != nil {
+		return err
+	}
+	s.pushPending(ctx, user, channelID)
+	return nil
 }
 
 func (s *Service) addJoinRequest(ctx context.Context, channelID, user int64, hash string) error {

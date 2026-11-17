@@ -10,6 +10,7 @@ import (
 
 	"github.com/nyaruka/phonenumbers"
 	"github.com/teamgram/proto/mtproto"
+	"github.com/teamgram/teamgram-server/pkg/langpack"
 	"golang.org/x/text/language"
 	"golang.org/x/text/language/display"
 )
@@ -221,8 +222,11 @@ func callingPattern(iso string) string {
 }
 
 func buildCountriesList(lang string, base []countryBase) *mtproto.Help_CountriesList {
-	tag := nameTag(lang)
-	namer := display.Regions(tag)
+	tag, tagOK := nameTag(lang)
+	var namer display.Namer
+	if tagOK {
+		namer = display.Regions(tag)
+	}
 	english := display.Regions(language.English)
 
 	countries := make([]*mtproto.Help_Country, 0, len(base))
@@ -234,8 +238,12 @@ func buildCountriesList(lang string, base []countryBase) *mtproto.Help_Countries
 			if name := english.Name(region); name != "" {
 				defaultName = name
 			}
-			if name := namer.Name(region); name != "" {
-				localName = name
+			if tagOK {
+				if name := namer.Name(region); name != "" {
+					localName = name
+				} else {
+					localName = defaultName
+				}
 			} else {
 				localName = defaultName
 			}
@@ -340,26 +348,40 @@ func countriesHash(lang string, countries []*mtproto.Help_Country) int32 {
 }
 
 func normalizeLang(code string) string {
-	c := strings.ToLower(strings.TrimSpace(code))
-	c = strings.ReplaceAll(c, "_", "-")
-	switch {
-	case c == "zh" || c == "zh-cn" || c == "zh-sg" || strings.HasPrefix(c, "zh-hans"):
-		return "zh-hans"
-	case c == "zh-tw" || c == "zh-hk" || c == "zh-mo" || strings.HasPrefix(c, "zh-hant"):
-		return "zh-hant"
-	default:
-		return "en"
+	if c, ok := langpack.CanonicalLang(code); ok && c != "" {
+		if _, ok := nameTag(c); ok {
+			return c
+		}
 	}
+	return "en"
 }
 
-func nameTag(lang string) language.Tag {
-	switch normalizeLang(lang) {
+// nameTag is the CLDR tag whose region names help.getCountriesList returns.
+// Every pack langpack.getLanguages can list has its own tag. An unknown
+// code is not given the English tag here; the caller keeps the English
+// default name only when this reports false.
+func nameTag(lang string) (language.Tag, bool) {
+	switch lang {
 	case "zh-hans":
-		return language.SimplifiedChinese
+		return language.SimplifiedChinese, true
 	case "zh-hant":
-		return language.TraditionalChinese
+		return language.TraditionalChinese, true
+	case "en":
+		return language.English, true
+	case "pt-br":
+		return language.MustParse("pt-BR"), true
+	case "nb":
+		return language.Norwegian, true
+	case "he":
+		return language.Hebrew, true
+	case "":
+		return language.Und, false
 	default:
-		return language.English
+		tag, err := language.Parse(lang)
+		if err != nil || tag.IsRoot() {
+			return language.Und, false
+		}
+		return tag, true
 	}
 }
 

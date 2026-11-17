@@ -6,13 +6,26 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
+
+// PollsEnabled is TELLOMI_POLLS. Poll send, vote, and result fanout stay off
+// unless this is 1 or true.
+func PollsEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("TELLOMI_POLLS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
 
 const maxPollAnswers = 10
 
@@ -34,6 +47,9 @@ type pollDoc struct {
 	SolutionEnt []byte    `json:"solution_ent,omitempty"`
 	Votes       []voteRec `json:"votes,omitempty"`
 	Unread      []int64   `json:"unread,omitempty"`
+	// Dialog is the private-chat dialog_message_id. The two users number
+	// that message differently; votes from either side resolve through it.
+	Dialog int64 `json:"dialog,omitempty"`
 }
 
 func pollKey(id int64) string { return "poll:" + strconv.FormatInt(id, 10) }
@@ -49,12 +65,33 @@ func pollPeerKey(peerType int32, peerID int64) string {
 // CreatePoll validates an outgoing poll and remembers it under its id.
 // The message id is attached later with BindPoll.
 func (b *Book) CreatePoll(ctx context.Context, creator int64, poll *mtproto.Poll, correct [][]byte, solution string, solutionEnt []*mtproto.MessageEntity) (*mtproto.MessageMedia, error) {
-	doc, err := normalizePoll(creator, poll, correct, solution, solutionEnt)
-	if err != nil {
+	if err := validateQuiz(poll, correct); err != nil {
+		return nil, err
+	}
+	if err := preparePollClose(poll, int32(b.now().Unix())); err != nil {
 		return nil, err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	var doc *pollDoc
+	for i := 0; i < 5; i++ {
+		next, err := normalizePoll(creator, poll, correct, solution, solutionEnt)
+		if err != nil {
+			return nil, err
+		}
+		existing, err := b.getPoll(ctx, next.ID)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			continue
+		}
+		doc = next
+		break
+	}
+	if doc == nil {
+		return nil, mtproto.ErrInternalServerError
+	}
 	if err := b.putPoll(ctx, doc); err != nil {
 		return nil, err
 	}
@@ -89,10 +126,18 @@ func (b *Book) BindPoll(ctx context.Context, peerType int32, peerID int64, msgID
 	doc.PeerType = peerType
 	doc.PeerID = peerID
 	doc.MsgID = msgID
+	peer := &mtproto.PeerUtil{PeerType: peerType, PeerId: peerID}
+	if perUserBox(doc.Creator, peer) {
+		doc.Dialog = b.dialogIDLocked(ctx, doc.Creator, peer, msgID)
+	}
 	_ = b.putPoll(ctx, doc)
 	idx := pollIndexKey(peerType, peerID, msgID)
 	b.pollIdx[idx] = pollID
 	_ = b.save(ctx, idx, pollID)
+	if doc.Dialog != 0 {
+		b.pollDlg[doc.Dialog] = pollID
+		_ = b.save(ctx, pollDialogKey(doc.Dialog), pollID)
+	}
 	b.addPeerPoll(ctx, peerType, peerID, pollID)
 }
 
@@ -120,6 +165,16 @@ func (b *Book) EnsurePoll(ctx context.Context, creator int64, peerType int32, pe
 	if err != nil {
 		return err
 	}
+	// The message already carries the id this server issued. Keep it, and do
+	// not replace a record that is already stored under that id.
+	if err := doc.useID(poll.GetId()); err != nil {
+		return err
+	}
+	if existing, err := b.getPoll(ctx, doc.ID); err != nil {
+		return err
+	} else if existing != nil {
+		return nil
+	}
 	doc.PeerType, doc.PeerID, doc.MsgID = peerType, peerID, msgID
 	if err := b.putPoll(ctx, doc); err != nil {
 		return err
@@ -133,7 +188,7 @@ func (b *Book) EnsurePoll(ctx context.Context, creator int64, peerType int32, pe
 func (b *Book) Vote(ctx context.Context, voter int64, peerType int32, peerID int64, msgID int32, pollID int64, options [][]byte) (*mtproto.Updates, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, pollID)
+	doc, err := b.pollDocLocked(ctx, voter, peerType, peerID, msgID, pollID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,34 +198,39 @@ func (b *Book) Vote(ctx context.Context, voter int64, peerType int32, peerID int
 	if err := b.putPoll(ctx, doc); err != nil {
 		return nil, err
 	}
-	return b.pollUpdate(doc, voter), nil
+	return b.pollUpdate(ctx, doc, voter), nil
 }
 
 // PollResultsUpdate returns updateMessagePoll, or an empty updates when hash matches.
 func (b *Book) PollResultsUpdate(ctx context.Context, viewer int64, peerType int32, peerID int64, msgID int32, pollID, hash int64) (*mtproto.Updates, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, pollID)
+	doc, err := b.pollDocLocked(ctx, viewer, peerType, peerID, msgID, pollID)
 	if err != nil {
 		return nil, err
 	}
 	if hash != 0 && hash == doc.hash() {
 		return mtproto.MakeEmptyUpdates(), nil
 	}
-	return b.pollUpdate(doc, viewer), nil
+	return b.pollUpdate(ctx, doc, viewer), nil
 }
 
 // PollVotes lists who chose an option. option nil lists every voter.
 func (b *Book) PollVotes(ctx context.Context, viewer int64, peerType int32, peerID int64, msgID int32, pollID int64, option []byte, offset string, limit int32) (*mtproto.Messages_VotesList, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, pollID)
+	doc, err := b.pollDocLocked(ctx, viewer, peerType, peerID, msgID, pollID)
 	if err != nil {
 		return nil, err
 	}
 	poll := doc.poll()
 	if poll == nil {
 		return nil, mtproto.ErrMessageIdInvalid
+	}
+	// Anonymous polls, and every channel poll, do not hand out voter ids.
+	// https://core.telegram.org/method/messages.getPollVotes
+	if doc.PeerType == mtproto.PEER_CHANNEL || !poll.PublicVoters {
+		return nil, mtproto.ErrBroadcastForbidden
 	}
 	if len(option) > 0 && !doc.hasOption(option) {
 		return nil, mtproto.ErrOptionInvalid
@@ -250,7 +310,7 @@ func (b *Book) AddPollAnswer(ctx context.Context, voter int64, peerType int32, p
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, pollID)
+	doc, err := b.pollDocLocked(ctx, voter, peerType, peerID, msgID, pollID)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +344,7 @@ func (b *Book) AddPollAnswer(ctx context.Context, voter int64, peerType int32, p
 	if err := b.putPoll(ctx, doc); err != nil {
 		return nil, err
 	}
-	return b.pollUpdate(doc, voter), nil
+	return b.pollUpdate(ctx, doc, voter), nil
 }
 
 // DeletePollAnswer removes an option from an open poll.
@@ -294,7 +354,7 @@ func (b *Book) DeletePollAnswer(ctx context.Context, voter int64, peerType int32
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, pollID)
+	doc, err := b.pollDocLocked(ctx, voter, peerType, peerID, msgID, pollID)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +405,7 @@ func (b *Book) DeletePollAnswer(ctx context.Context, voter int64, peerType int32
 	if err := b.putPoll(ctx, doc); err != nil {
 		return nil, err
 	}
-	return b.pollUpdate(doc, voter), nil
+	return b.pollUpdate(ctx, doc, voter), nil
 }
 
 // UnreadPollMessages returns messages whose poll has votes the viewer has not read.
@@ -400,7 +460,7 @@ func (b *Book) ReadPollVotes(ctx context.Context, viewer int64, peerType int32, 
 func (b *Book) PollByMessage(ctx context.Context, peerType int32, peerID int64, msgID int32) (*mtproto.Poll, *mtproto.PollResults, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, 0)
+	doc, err := b.pollDocLocked(ctx, 0, peerType, peerID, msgID, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -466,7 +526,7 @@ func (b *Book) applyVote(doc *pollDoc, voter int64, options [][]byte) error {
 	return nil
 }
 
-func (b *Book) pollUpdate(doc *pollDoc, viewer int64) *mtproto.Updates {
+func (b *Book) pollUpdate(ctx context.Context, doc *pollDoc, viewer int64) *mtproto.Updates {
 	poll := doc.poll()
 	if poll != nil {
 		poll.Creator = viewer == doc.Creator
@@ -474,12 +534,125 @@ func (b *Book) pollUpdate(doc *pollDoc, viewer int64) *mtproto.Updates {
 	}
 	up := mtproto.MakeTLUpdateMessagePoll(&mtproto.Update{
 		PollId:      doc.ID,
-		Peer_PEER:   mtproto.MakePeer(doc.PeerType, doc.PeerID),
-		MsgId_INT32: doc.MsgID,
+		Peer_PEER:   pollPeer(doc, viewer),
+		MsgId_INT32: b.viewerMsgID(ctx, viewer, doc),
 		Poll:        poll,
 		Results:     doc.results(viewer),
 	}).To_Update()
 	return mtproto.MakeUpdatesByUpdates(up)
+}
+
+// PollUpdateFor builds updateMessagePoll in this viewer's own message id.
+func (b *Book) PollUpdateFor(ctx context.Context, viewer int64, peerType int32, peerID int64, msgID int32, pollID int64) (*mtproto.Updates, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	doc, err := b.pollDocLocked(ctx, viewer, peerType, peerID, msgID, pollID)
+	if err != nil {
+		return nil, err
+	}
+	return b.pollUpdate(ctx, doc, viewer), nil
+}
+
+// ApplyPolls copies the viewer's poll results onto history rows.
+// The send stores a public (no chosen bit) card. A later getMessages has to
+// show that user's vote, the totals, and a quiz solution only after they answer.
+func (b *Book) ApplyPolls(ctx context.Context, viewer int64, peer *mtproto.PeerUtil, msgs []*mtproto.Message) {
+	if !PollsEnabled() || b == nil || peer == nil || len(msgs) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, m := range msgs {
+		if m == nil || m.GetMedia().GetPoll() == nil {
+			continue
+		}
+		doc, err := b.pollDocLocked(ctx, viewer, peer.PeerType, peer.PeerId, m.GetId(), m.GetMedia().GetPoll().GetId())
+		if err != nil || doc == nil {
+			continue
+		}
+		m.Media = b.mediaLocked(doc, viewer, true)
+	}
+}
+
+// PollInputMedia turns inputMediaPoll into messageMediaPoll when TELLOMI_POLLS
+// is on. Otherwise the client receives messageMediaUnsupported, which is what
+// layer 232 saw before the flag existed.
+func PollInputMedia(ctx context.Context, userID int64, media *mtproto.InputMedia) (*mtproto.MessageMedia, error) {
+	if media == nil || media.GetPredicateName() != mtproto.Predicate_inputMediaPoll {
+		return nil, mtproto.ErrMediaInvalid
+	}
+	if !PollsEnabled() {
+		return mtproto.MakeTLMessageMediaUnsupported(nil).To_MessageMedia(), nil
+	}
+	solution := ""
+	if media.GetSolution() != nil {
+		solution = media.GetSolution().GetValue()
+	}
+	return Shared().CreatePoll(ctx, userID, media.GetPoll(), media.GetCorrectAnswers_FLAGVECTORBYTES(), solution, media.GetSolutionEntities())
+}
+
+func pollPeer(doc *pollDoc, viewer int64) *mtproto.Peer {
+	if doc == nil {
+		return nil
+	}
+	if doc.PeerType == mtproto.PEER_USER && viewer != 0 && viewer == doc.PeerID && viewer != doc.Creator {
+		return mtproto.MakePeerUser(doc.Creator)
+	}
+	return mtproto.MakePeer(doc.PeerType, doc.PeerID)
+}
+
+func pollDialogKey(dlg int64) string {
+	return "polldlg:" + strconv.FormatInt(dlg, 10)
+}
+
+func (b *Book) pollDocLocked(ctx context.Context, voter int64, peerType int32, peerID int64, msgID int32, pollID int64) (*pollDoc, error) {
+	doc, err := b.pollForMessage(ctx, peerType, peerID, msgID, pollID)
+	if err == nil || pollID != 0 {
+		return doc, err
+	}
+	id := b.pollIDByDialogLocked(ctx, voter, peerType, peerID, msgID)
+	if id == 0 {
+		return nil, err
+	}
+	return b.pollForMessage(ctx, peerType, peerID, msgID, id)
+}
+
+func (b *Book) pollIDByDialogLocked(ctx context.Context, voter int64, peerType int32, peerID int64, msgID int32) int64 {
+	if b.ids == nil || msgID == 0 {
+		return 0
+	}
+	peer := &mtproto.PeerUtil{PeerType: peerType, PeerId: peerID}
+	if !perUserBox(voter, peer) {
+		return 0
+	}
+	dlg := b.dialogIDLocked(ctx, voter, peer, msgID)
+	if dlg == 0 {
+		return 0
+	}
+	if b.db == nil {
+		return b.pollDlg[dlg]
+	}
+	var stored int64
+	if err := b.load(ctx, pollDialogKey(dlg), &stored); err == nil && stored != 0 {
+		b.pollDlg[dlg] = stored
+		return stored
+	}
+	return b.pollDlg[dlg]
+}
+
+func (b *Book) viewerMsgID(ctx context.Context, viewer int64, doc *pollDoc) int32 {
+	if doc == nil {
+		return 0
+	}
+	if doc.Dialog == 0 || viewer == 0 || b.ids == nil {
+		return doc.MsgID
+	}
+	boxes, err := b.ids.BoxIDs(ctx, viewer, []int64{doc.Dialog})
+	if err != nil || boxes[doc.Dialog] == 0 {
+		// Another member's client must not be given the sender's id.
+		return 0
+	}
+	return boxes[doc.Dialog]
 }
 
 func (b *Book) mediaLocked(doc *pollDoc, viewer int64, chosen bool) *mtproto.MessageMedia {
@@ -598,6 +771,50 @@ func (b *Book) peerPolls(ctx context.Context, peerType int32, peerID int64) ([]i
 	return ids, nil
 }
 
+// validateQuiz applies the quiz rules from the poll constructor page.
+// A quiz is single-choice and has exactly one correct option.
+func validateQuiz(poll *mtproto.Poll, correct [][]byte) error {
+	if poll == nil || !poll.Quiz {
+		return nil
+	}
+	if poll.MultipleChoice {
+		return mtproto.ErrQuizMultipleInvalid
+	}
+	switch len(correct) {
+	case 0:
+		return mtproto.ErrQuizCorrectAnswersEmpty
+	case 1:
+		return nil
+	default:
+		return mtproto.ErrQuizCorrectAnswersTooMuch
+	}
+}
+
+// preparePollClose turns close_period into close_date. The window is 5 to
+// 600 seconds, and a poll cannot carry both fields.
+func preparePollClose(poll *mtproto.Poll, now int32) error {
+	if poll == nil {
+		return nil
+	}
+	period := poll.GetClosePeriod().GetValue()
+	date := poll.GetCloseDate().GetValue()
+	if period != 0 && date != 0 {
+		return mtproto.ErrMediaInvalid
+	}
+	if period != 0 {
+		if period < 5 || period > 600 {
+			return mtproto.ErrMediaInvalid
+		}
+		poll.CloseDate = wrapperspb.Int32(now + period)
+		poll.ClosePeriod = nil
+		return nil
+	}
+	if date != 0 && (date < now+5 || date > now+600) {
+		return mtproto.ErrMediaInvalid
+	}
+	return nil
+}
+
 func normalizePoll(creator int64, poll *mtproto.Poll, correct [][]byte, solution string, solutionEnt []*mtproto.MessageEntity) (*pollDoc, error) {
 	if poll == nil {
 		return nil, mtproto.ErrMediaInvalid
@@ -613,9 +830,9 @@ func normalizePoll(creator int64, poll *mtproto.Poll, correct [][]byte, solution
 		return nil, mtproto.ErrPollAnswersInvalid
 	}
 	cp := proto.Clone(poll).(*mtproto.Poll)
-	if cp.Id == 0 {
-		cp.Id = randInt63()
-	}
+	// The client must not choose the id. A chosen id could overwrite a poll
+	// that already exists.
+	cp.Id = randInt63()
 	cp.Question = q
 	cp.Question_STRING = q
 	if cp.Question_TEXTWITHENTITIES == nil {
@@ -650,6 +867,9 @@ func normalizePoll(creator int64, poll *mtproto.Poll, correct [][]byte, solution
 	}
 	for _, op := range correct {
 		if !seen[string(op)] {
+			if poll.Quiz {
+				return nil, mtproto.ErrQuizCorrectAnswerInvalid
+			}
 			return nil, mtproto.ErrPollOptionInvalid
 		}
 	}
@@ -673,6 +893,22 @@ func (d *pollDoc) poll() *mtproto.Poll {
 		return nil
 	}
 	return p
+}
+
+func (d *pollDoc) useID(id int64) error {
+	if id == 0 || d == nil {
+		return nil
+	}
+	p := d.poll()
+	if p == nil {
+		return mtproto.ErrMediaInvalid
+	}
+	p.Id = id
+	if err := d.setPoll(p); err != nil {
+		return err
+	}
+	d.ID = id
+	return nil
 }
 
 func (d *pollDoc) setPoll(p *mtproto.Poll) error {
@@ -793,7 +1029,7 @@ func (d *pollDoc) results(viewer int64) *mtproto.PollResults {
 		RecentVoters_FLAGVECTORPEER: recent,
 		HasUnreadVotes:              viewer != 0 && d.unread(viewer),
 	}).To_PollResults()
-	if showCorrect && d.Solution != "" && len(chosen) > 0 {
+	if showCorrect && d.Solution != "" && (len(chosen) > 0 || viewer == d.Creator) {
 		res.Solution = &wrapperspb.StringValue{Value: d.Solution}
 		if len(d.SolutionEnt) > 0 {
 			shell := &mtproto.PollResults{}

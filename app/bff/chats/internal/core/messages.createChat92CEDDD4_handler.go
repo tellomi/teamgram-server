@@ -25,7 +25,7 @@ import (
 // MessagesCreateChat92CEDDD4
 // messages.createChat#92ceddd4 flags:# users:Vector<InputUser> title:string ttl_period:flags.0?int = messages.InvitedUsers;
 func (c *ChatsCore) MessagesCreateChat92CEDDD4(in *mtproto.TLMessagesCreateChat92CEDDD4) (*mtproto.Messages_InvitedUsers, error) {
-	invitedUsers, err := c.createChat(in.Users, in.Title, in.GetTtlPeriod())
+	invitedUsers, err := c.createChat(in.Users, in.Title, in.GetTtlPeriod(), false)
 	if err != nil {
 		return nil, err
 	}

@@ -205,6 +205,7 @@ func (c *MessagesCore) MessagesGetHistory(in *mtproto.TLMessagesGetHistory) (*mt
 	//}
 
 	chatbox.Shared().ApplyReactions(c.ctx, c.MD.UserId, peer, messages)
+	chatbox.Shared().ApplyPolls(c.ctx, c.MD.UserId, peer, messages)
 	mtproto.SanitizeOutgoingObject(rValues)
 	return rValues, nil
 }

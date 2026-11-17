@@ -62,6 +62,7 @@ func TestTTLDue(t *testing.T) {
 
 func TestStripTTLMedia(t *testing.T) {
 	msg := &Message{MediaUnread: true, Media: MakeTLMessageMediaPhoto(&MessageMedia{
+		LivePhoto:          true,
 		Photo_FLAGPHOTO:    MakeTLPhoto(&Photo{Id: 42}).To_Photo(),
 		TtlSeconds:         i32(ViewOnceTTL),
 		Video_FLAGDOCUMENT: MakeTLDocument(&Document{Id: 7}).To_Document(),
@@ -78,6 +79,11 @@ func TestStripTTLMedia(t *testing.T) {
 	}
 	if msg.GetMedia().GetVideo_FLAGDOCUMENT() != nil {
 		t.Fatal("live video was kept")
+	}
+	if msg.GetMedia().GetLivePhoto() {
+		// live_photo and video share flags.4: the flag alone would encode
+		// the bit with no Document.
+		t.Fatal("expired live photo kept live_photo without its video")
 	}
 	if msg.GetMediaUnread() {
 		t.Fatal("stripped message stays media_unread")

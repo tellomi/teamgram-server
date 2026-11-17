@@ -42,6 +42,11 @@ type Store interface {
 	CommitEdit(ctx context.Context, channelID int64, messageID int32, editDate int32, data []byte) (pts int32, err error)
 	CommitDelete(ctx context.Context, channelID int64, ids []int32) (pts, ptsCount int32, deleted []int32, err error)
 	GetMessage(ctx context.Context, channelID int64, id int32) (*StoredMessage, error)
+	// LatestLiveMessage is the newest message at or below atOrBelow that is
+	// not deleted. The channel's top_message counter is not reused: deleting
+	// the latest post leaves that counter in place and the dialog shows this
+	// id instead. A nil result means nothing at or below atOrBelow is live.
+	LatestLiveMessage(ctx context.Context, channelID int64, atOrBelow int32) (*StoredMessage, error)
 	// ReplaceMessageBody rewrites a message without a pts edit event.
 	// Poll results use it so the message is not marked edited.
 	ReplaceMessageBody(ctx context.Context, channelID int64, id int32, data []byte) error
@@ -51,6 +56,10 @@ type Store interface {
 
 	GetRead(ctx context.Context, channelID, userID int64) (*ReadState, error)
 	SaveRead(ctx context.Context, st *ReadState) error
+	// ApplyUnreadCuts runs one indexed update per cut. It does not read or
+	// write a row per member. list returns the rows that match the cuts
+	// after the updates; a large channel passes false and skips that read.
+	ApplyUnreadCuts(ctx context.Context, channelID int64, cuts []UnreadCut, list bool) ([]ReadState, error)
 	// SaveReadMark records when reader covered messages up to maxID.
 	// ownerUserID is the channel id; peerDialogID is its dialog id.
 	SaveReadMark(ctx context.Context, ownerUserID, peerDialogID, readerUserID int64, maxID int32, date int64) error

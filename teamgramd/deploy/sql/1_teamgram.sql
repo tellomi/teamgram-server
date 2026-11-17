@@ -746,6 +746,7 @@ CREATE TABLE `user_profile_photos` (
   `photo_id` bigint(20) NOT NULL,
   `date2` bigint(20) NOT NULL COMMENT '排序',
   `deleted` tinyint(1) NOT NULL DEFAULT '0',
+  `fallback` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

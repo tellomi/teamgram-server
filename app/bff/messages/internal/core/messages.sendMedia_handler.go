@@ -23,6 +23,7 @@ import (
 
 	"github.com/teamgram/proto/mtproto"
 	msgpb "github.com/teamgram/teamgram-server/app/messenger/msg/msg/msg"
+	"github.com/teamgram/teamgram-server/app/service/biz/channel"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
 
 	"github.com/zeromicro/go-zero/core/contextx"
@@ -71,8 +72,20 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		c.Logger.Errorf("messages.sendMedia - sanction")
 		return nil, err
 	}
+	if inputMediaIsVoice(in.GetMedia()) {
+		if err = c.voiceForbidden(peer); err != nil {
+			c.Logger.Errorf("messages.sendMedia - voice privacy")
+			return nil, err
+		}
+	}
+	if peer.PeerType == mtproto.PEER_CHANNEL && in.GetMedia().GetPredicateName() == mtproto.Predicate_inputMediaPoll {
+		if err = channel.Shared().ForbidPoll(c.ctx, c.MD.UserId, peer.PeerId); err != nil {
+			c.Logger.Errorf("messages.sendMedia - send_polls: %v", err)
+			return nil, err
+		}
+	}
 
-	if len(in.Message) > 4000 {
+	if c.captionLimitExceeded(in.Message) {
 		err = mtproto.ErrMediaCaptionTooLong
 		c.Logger.Errorf("messages.sendMedia: %v", err)
 		return nil, err
@@ -100,7 +113,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		Date:                 int32(time.Now().Unix()),
 		Media:                nil,
 		Message:              in.Message,
-		ReplyMarkup:          in.ReplyMarkup,
+		ReplyMarkup:          c.botReplyMarkup(in.ReplyMarkup),
 		Entities:             in.Entities,
 		Views:                nil,
 		Forwards:             nil,
@@ -133,19 +146,11 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	} else if in.GetReplyTo() != nil {
 		switch in.ReplyTo.PredicateName {
 		case mtproto.Predicate_inputReplyToMessage:
-			outMessage.ReplyTo = mtproto.MakeTLMessageReplyHeader(&mtproto.MessageReplyHeader{
-				ReplyToMsgId:           in.GetReplyTo().GetReplyToMsgId(),
-				ReplyToMsgId_INT32:     in.GetReplyTo().GetReplyToMsgId(),
-				ReplyToMsgId_FLAGINT32: mtproto.MakeFlagsInt32(in.GetReplyTo().GetReplyToMsgId()),
-				ReplyToPeerId:          nil,
-				ReplyToTopId:           nil,
-			}).To_MessageReplyHeader()
-			if in.GetReplyTo().GetQuoteText() != nil {
-				outMessage.ReplyTo.Quote = true
-				outMessage.ReplyTo.QuoteText = in.GetReplyTo().GetQuoteText()
-				outMessage.ReplyTo.QuoteEntities = in.GetReplyTo().GetQuoteEntities()
-				outMessage.ReplyTo.QuoteOffset = in.GetReplyTo().GetQuoteOffset()
+			header, qErr := c.replyHeaderChecked(peer, in.GetReplyTo())
+			if qErr != nil {
+				return nil, qErr
 			}
+			outMessage.ReplyTo = header
 		case mtproto.Predicate_inputReplyToStory:
 			// TODO:
 		}
@@ -168,6 +173,15 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 		c.Logger.Errorf("messages.sendMedia - error: %v", err)
 		return nil, err
 	}
+	if peer.IsChannel() && outMessage.GetMedia().GetPoll().GetPublicVoters() {
+		_, chat, cardErr := channel.Shared().Card(c.ctx, c.MD.UserId, peer.PeerId)
+		if cardErr != nil {
+			return nil, cardErr
+		}
+		if chat.GetBroadcast() {
+			return nil, mtproto.ErrBroadcastPublicVotersForbidden
+		}
+	}
 
 	//outMessage, _ = c.fixMessageEntities(c.MD.UserId, peer, true, outMessage, func() bool {
 	//	hasBot := c.MD.IsBot
@@ -181,7 +195,15 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	//	return hasBot
 	//})
 	if in.GetQuickReplyShortcut() != nil {
-		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+		ups, err := chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), []*mtproto.Message{outMessage})
+		if err != nil {
+			return nil, err
+		}
+		c.pushQuickReplyNotMe(ups)
+		return ups, nil
+	}
+	if err = stampScheduleRepeat(outMessage, in.GetScheduleRepeatPeriod(), in.GetScheduleDate().GetValue()); err != nil {
+		return nil, err
 	}
 
 	rUpdate, err := c.dispatchOutbox(peer, []*msgpb.OutboxMessage{
@@ -208,7 +230,7 @@ func (c *MessagesCore) sendMedia(in *mtproto.TLMessagesSendMedia) (*mtproto.Upda
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {
-			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer)
+			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, outgoingTopicID(in.GetReplyTo(), in.GetTopMsgId()))
 		})
 	}
 

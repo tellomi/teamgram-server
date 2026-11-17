@@ -8,15 +8,16 @@ import (
 )
 
 type fakeReader struct {
-	folder   int32
-	missing  bool
-	set      int32
-	setN     int
-	muted    bool
-	contact  bool
-	filters  []*mtproto.DialogFilter
-	muteN    int
-	settings Settings
+	folder       int32
+	missing      bool
+	set          int32
+	setN         int
+	muted        bool
+	contact      bool
+	filters      []*mtproto.DialogFilter
+	muteN        int
+	autoarchived bool
+	settings     Settings
 }
 
 func (f *fakeReader) Folder(context.Context, int64, int32, int64) (int32, bool, error) {
@@ -38,6 +39,10 @@ func (f *fakeReader) Muted(context.Context, int64, int32, int32, int64) (bool, e
 func (f *fakeReader) MuteForever(context.Context, int64, int32, int64) error {
 	f.muteN++
 	f.muted = true
+	return nil
+}
+func (f *fakeReader) SetAutoarchived(_ context.Context, _ int64, _ int32, _ int64, on bool) error {
+	f.autoarchived = on
 	return nil
 }
 func (f *fakeReader) IsContact(context.Context, int64, int64) (bool, error) {
@@ -78,7 +83,7 @@ func TestApplyUnarchivesUnmutedIncoming(t *testing.T) {
 	if len(got) != 1 || got[0].GetPts_INT32() != 1 || got[0].GetPtsCount() != 1 {
 		t.Fatalf("update %#v", got)
 	}
-	if reader.set != 0 || reader.setN != 1 {
+	if reader.set != 0 || reader.setN != 1 || reader.autoarchived {
 		t.Fatalf("folder writes %+v", reader)
 	}
 	if got[0].GetFolderPeers()[0].GetFolderId() != 0 {
@@ -102,7 +107,7 @@ func TestApplyArchivesNewNoncontact(t *testing.T) {
 	got := Apply(context.Background(), reader, &memPts{}, Incoming{
 		Owner: 1, PeerType: mtproto.PEER_USER, PeerID: 2, Sender: 2, Created: true, Class: ClassUser,
 	})
-	if reader.set != 1 || reader.muteN != 1 {
+	if reader.set != 1 || reader.muteN != 1 || !reader.autoarchived {
 		t.Fatalf("stored %+v", reader)
 	}
 	if len(got) != 2 || got[0].GetFolderPeers()[0].GetFolderId() != 1 {

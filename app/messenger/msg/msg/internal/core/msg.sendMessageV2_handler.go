@@ -205,12 +205,23 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 		&rUpdates,
 		func(ctx context.Context, v any) error {
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: begin '_, err = c.svcCtx.Dao.DoIdempotent('")
-			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
-				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-			); ok {
-				*v.(**mtproto.Updates) = ups
+			done, replayUpdates, err2 := c.resumeCommitted(ctx, fromUserId, []int64{outBox.RandomId},
+				func(boxes []*mtproto.MessageBox) error {
+					return publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, c.privateUserInbox(ctx, fromUserId, fromAuthKeyId, toUserId, boxes, users, idHelper))
+				},
+				func(boxes []*mtproto.MessageBox) *mtproto.Updates {
+					return updatesForBoxes(boxes,
+						func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+					)
+				},
+			)
+			if err2 != nil {
+				return err2
+			}
+			if done {
+				*v.(**mtproto.Updates) = replayUpdates
 				return nil
 			}
 			box, err2 := c.svcCtx.Dao.SendUserMessageV2(ctx, fromUserId, toUserId, outBox, true)
@@ -220,35 +231,7 @@ func (c *MsgCore) sendUserOutgoingMessageV2(fromUserId, fromAuthKeyId, toUserId 
 			}
 
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: c.svcCtx.Dao.SendUserMessageV2")
-			inboxReqs := []*inbox.TLInboxSendUserMessageToInboxV2{{
-				UserId:        fromUserId,
-				Out:           true,
-				FromId:        fromUserId,
-				FromAuthKeyId: fromAuthKeyId,
-				PeerType:      mtproto.PEER_USER,
-				PeerId:        toUserId,
-				BoxList:       []*mtproto.MessageBox{box},
-				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
-			}}
-			if fromUserId != toUserId {
-				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
-					UserId:     toUserId,
-					PeerUserId: fromUserId,
-				})
-				if !mtproto.FromBool(blocked) {
-					inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
-						UserId:        toUserId,
-						Out:           false,
-						FromId:        fromUserId,
-						FromAuthKeyId: fromAuthKeyId,
-						PeerType:      mtproto.PEER_USER,
-						PeerId:        toUserId,
-						BoxList:       []*mtproto.MessageBox{box},
-						Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
-					})
-				}
-			}
-			if err2 = publishInboxFanout(c.ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
+			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, c.privateUserInbox(ctx, fromUserId, fromAuthKeyId, toUserId, []*mtproto.MessageBox{box}, users, idHelper)); err2 != nil {
 				return err2
 			}
 
@@ -371,12 +354,23 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 		strconv.FormatInt(outBox.RandomId, 10),
 		&rUpdates,
 		func(ctx context.Context, v any) error {
-			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
-				func(idList []int64) []*mtproto.User { return sUserList.GetUserListByIdList(fromUserId, idList...) },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{chat.ToUnsafeChat(fromUserId)} },
-				func([]int64) []*mtproto.Chat { return nil },
-			); ok {
-				*v.(**mtproto.Updates) = ups
+			done, replayUpdates, err2 := c.resumeCommitted(ctx, fromUserId, []int64{outBox.RandomId},
+				func(boxes []*mtproto.MessageBox) error {
+					return publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, chatInboxReqs(fromUserId, fromAuthKeyId, peerChatId, chat, sUserList, boxes, true))
+				},
+				func(boxes []*mtproto.MessageBox) *mtproto.Updates {
+					return updatesForBoxes(boxes,
+						func(idList []int64) []*mtproto.User { return sUserList.GetUserListByIdList(fromUserId, idList...) },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{chat.ToUnsafeChat(fromUserId)} },
+						func([]int64) []*mtproto.Chat { return nil },
+					)
+				},
+			)
+			if err2 != nil {
+				return err2
+			}
+			if done {
+				*v.(**mtproto.Updates) = replayUpdates
 				return nil
 			}
 			box, err2 := c.svcCtx.Dao.SendChatMessageV2(ctx, fromUserId, peerChatId, outBox)
@@ -384,31 +378,14 @@ func (c *MsgCore) sendChatOutgoingMessageV2(fromUserId, fromAuthKeyId, peerChatI
 				c.Logger.Error(err2.Error())
 				return err
 			}
+			// The inbox consumer writes this dialog only after Kafka accepts
+			// the record. Pin and getDialogs run as soon as this RPC returns.
+			if err2 = c.svcCtx.Dao.WriteSenderChatDialog(ctx, fromUserId, peerChatId, box); err2 != nil {
+				c.Logger.Error(err2.Error())
+				return err2
+			}
 
-			var inboxReqs []*inbox.TLInboxSendUserMessageToInboxV2
-			chat.Walk(func(userId int64, participant *mtproto.ImmutableChatParticipant) error {
-				if !participant.IsChatMemberStateNormal() && !participant.IsChatMemberStateMigrated() {
-					return nil
-				}
-				toUsers := make([]*mtproto.User, 0, sUserList.Length())
-				sUserList.Visit(func(it *mtproto.ImmutableUser) {
-					toUsers = append(toUsers, it.ToUser(participant.UserId))
-				})
-				paintStoryUsers(participant.UserId, sUserList, toUsers)
-				inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
-					UserId:        participant.UserId,
-					Out:           participant.UserId == fromUserId,
-					FromId:        fromUserId,
-					FromAuthKeyId: fromAuthKeyId,
-					PeerType:      mtproto.PEER_CHAT,
-					PeerId:        peerChatId,
-					BoxList:       []*mtproto.MessageBox{box},
-					Users:         toUsers,
-					Chats:         []*mtproto.Chat{chat.ToUnsafeChat(participant.UserId)},
-				})
-				return nil
-			})
-			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
+			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, chatInboxReqs(fromUserId, fromAuthKeyId, peerChatId, chat, sUserList, []*mtproto.MessageBox{box}, true)); err2 != nil {
 				c.Logger.Error(err2.Error())
 				return err2
 			}
@@ -513,16 +490,36 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 				boxList    []*mtproto.MessageBox
 				updateList []*mtproto.Update
 			)
-			if ups, ok := c.replayedOutbox(ctx, fromUserId, outboxRandomIDs(outBoxList),
-				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-			); ok {
-				*v.(**mtproto.Updates) = ups
+			done, replayUpdates, err2 := c.resumeCommitted(ctx, fromUserId, outboxRandomIDs(outBoxList),
+				func(boxes []*mtproto.MessageBox) error {
+					return publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, c.privateUserInbox(ctx, fromUserId, fromAuthKeyId, toUserId, boxes, users, idHelper))
+				},
+				func(boxes []*mtproto.MessageBox) *mtproto.Updates {
+					return updatesForBoxes(boxes,
+						func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+					)
+				},
+			)
+			if err2 != nil {
+				return err2
+			}
+			if done {
+				*v.(**mtproto.Updates) = replayUpdates
 				return nil
 			}
 
 			for _, outBox := range outBoxList {
+				if stored, skip, err2 := c.alreadyStored(ctx, fromUserId, outBox.RandomId); err2 != nil {
+					return err2
+				} else if skip {
+					if stored != nil {
+						boxList = append(boxList, stored)
+						updateList = append(updateList, outgoingUpdate(stored))
+					}
+					continue
+				}
 				box, err2 := c.svcCtx.Dao.SendUserMessageV2(ctx, fromUserId, toUserId, outBox, true)
 				if err2 != nil {
 					c.Logger.Errorf("msg.sendUserOutgoingMessageV2 - error: %v", err2)
@@ -532,35 +529,7 @@ func (c *MsgCore) sendUserOutgoingMessageList(fromUserId, fromAuthKeyId, toUserI
 				updateList = append(updateList, outgoingUpdate(box))
 			}
 
-			inboxReqs := []*inbox.TLInboxSendUserMessageToInboxV2{{
-				UserId:        fromUserId,
-				Out:           true,
-				FromId:        fromUserId,
-				FromAuthKeyId: fromAuthKeyId,
-				PeerType:      mtproto.PEER_USER,
-				PeerId:        toUserId,
-				BoxList:       boxList,
-				Users:         users.GetUserListByIdList(fromUserId, idHelper.UserIdList...),
-			}}
-			if fromUserId != toUserId {
-				blocked, _ := c.svcCtx.Dao.UserClient.UserBlockedByUser(c.ctx, &userpb.TLUserBlockedByUser{
-					UserId:     toUserId,
-					PeerUserId: fromUserId,
-				})
-				if !mtproto.FromBool(blocked) {
-					inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
-						UserId:        toUserId,
-						Out:           false,
-						FromId:        fromUserId,
-						FromAuthKeyId: fromAuthKeyId,
-						PeerType:      mtproto.PEER_USER,
-						PeerId:        toUserId,
-						BoxList:       boxList,
-						Users:         users.GetUserListByIdList(toUserId, idHelper.UserIdList...),
-					})
-				}
-			}
-			if err2 := publishInboxFanout(c.ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
+			if err2 := publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, c.privateUserInbox(ctx, fromUserId, fromAuthKeyId, toUserId, boxList, users, idHelper)); err2 != nil {
 				return err2
 			}
 
@@ -694,16 +663,36 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				boxList    []*mtproto.MessageBox
 				updateList []*mtproto.Update
 			)
-			if ups, ok := c.replayedOutbox(ctx, fromUserId, outboxRandomIDs(outBoxList),
-				func(idList []int64) []*mtproto.User { return sUserList.GetUserListByIdList(fromUserId, idList...) },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{chat.ToUnsafeChat(fromUserId)} },
-				func([]int64) []*mtproto.Chat { return nil },
-			); ok {
-				*v.(**mtproto.Updates) = ups
+			done, replayUpdates, err2 := c.resumeCommitted(ctx, fromUserId, outboxRandomIDs(outBoxList),
+				func(boxes []*mtproto.MessageBox) error {
+					return publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, chatInboxReqs(fromUserId, fromAuthKeyId, peerChatId, chat, sUserList, boxes, false))
+				},
+				func(boxes []*mtproto.MessageBox) *mtproto.Updates {
+					return updatesForBoxes(boxes,
+						func(idList []int64) []*mtproto.User { return sUserList.GetUserListByIdList(fromUserId, idList...) },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{chat.ToUnsafeChat(fromUserId)} },
+						func([]int64) []*mtproto.Chat { return nil },
+					)
+				},
+			)
+			if err2 != nil {
+				return err2
+			}
+			if done {
+				*v.(**mtproto.Updates) = replayUpdates
 				return nil
 			}
 
 			for _, outBox := range outBoxList {
+				if stored, skip, err2 := c.alreadyStored(ctx, fromUserId, outBox.RandomId); err2 != nil {
+					return err2
+				} else if skip {
+					if stored != nil {
+						boxList = append(boxList, stored)
+						updateList = append(updateList, outgoingUpdate(stored))
+					}
+					continue
+				}
 				box, err2 := c.svcCtx.Dao.SendChatMessageV2(ctx, fromUserId, peerChatId, outBox)
 				if err2 != nil {
 					c.Logger.Error(err2.Error())
@@ -712,35 +701,12 @@ func (c *MsgCore) sendChatOutgoingMessageList(fromUserId, fromAuthKeyId, peerCha
 				boxList = append(boxList, box)
 				updateList = append(updateList, outgoingUpdate(box))
 			}
+			if err2 := c.svcCtx.Dao.WriteSenderChatDialogs(ctx, fromUserId, peerChatId, boxList); err2 != nil {
+				c.Logger.Error(err2.Error())
+				return err2
+			}
 
-			var (
-				err2 error
-			)
-
-			var inboxReqs []*inbox.TLInboxSendUserMessageToInboxV2
-			chat.Walk(func(userId int64, participant *mtproto.ImmutableChatParticipant) error {
-				if !participant.IsChatMemberStateNormal() {
-					return nil
-				}
-				toUsers := make([]*mtproto.User, 0, sUserList.Length())
-				sUserList.Visit(func(it *mtproto.ImmutableUser) {
-					toUsers = append(toUsers, it.ToUser(participant.UserId))
-				})
-				paintStoryUsers(participant.UserId, sUserList, toUsers)
-				inboxReqs = append(inboxReqs, &inbox.TLInboxSendUserMessageToInboxV2{
-					UserId:        participant.UserId,
-					Out:           participant.UserId == fromUserId,
-					FromId:        fromUserId,
-					FromAuthKeyId: fromAuthKeyId,
-					PeerType:      mtproto.PEER_CHAT,
-					PeerId:        peerChatId,
-					BoxList:       boxList,
-					Users:         toUsers,
-					Chats:         []*mtproto.Chat{chat.ToUnsafeChat(participant.UserId)},
-				})
-				return nil
-			})
-			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, inboxReqs); err2 != nil {
+			if err2 = publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, chatInboxReqs(fromUserId, fromAuthKeyId, peerChatId, chat, sUserList, boxList, false)); err2 != nil {
 				c.Logger.Error(err2.Error())
 				return err2
 			}
@@ -844,12 +810,31 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 		&rUpdates,
 		func(ctx context.Context, v any) error {
 			c.Logger.WithDuration(timex.Since(since2)).Infof("end: begin '_, err = c.svcCtx.Dao.DoIdempotent('")
-			if ups, ok := c.replayedOutbox(ctx, fromUserId, []int64{outBox.RandomId},
-				func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-				func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
-			); ok {
-				*v.(**mtproto.Updates) = ups
+			done, replayUpdates, err2 := c.resumeCommitted(ctx, fromUserId, []int64{outBox.RandomId},
+				func(boxes []*mtproto.MessageBox) error {
+					reqs := c.privateUserInbox(ctx, fromUserId, fromAuthKeyId, toUserId, boxes, users, idHelper)
+					if len(reqs) > 0 && c.MD != nil {
+						reqs[0].Layer = mtproto.MakeFlagsInt32(c.MD.Layer)
+						reqs[0].ServerId = mtproto.MakeFlagsString(c.MD.ServerId)
+						reqs[0].SessionId = mtproto.MakeFlagsInt64(c.MD.SessionId)
+						reqs[0].ClientReqMsgId = mtproto.MakeFlagsInt64(c.MD.ClientMsgId)
+						reqs[0].AuthKeyId = mtproto.MakeFlagsInt64(c.MD.PermAuthKeyId)
+					}
+					return publishInboxFanout(ctx, c.svcCtx.Dao.InboxClient, reqs)
+				},
+				func(boxes []*mtproto.MessageBox) *mtproto.Updates {
+					return updatesForBoxes(boxes,
+						func(idList []int64) []*mtproto.User { return users.GetUserListByIdList(fromUserId, idList...) },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+						func([]int64) []*mtproto.Chat { return []*mtproto.Chat{} },
+					)
+				},
+			)
+			if err2 != nil {
+				return err2
+			}
+			if done {
+				*v.(**mtproto.Updates) = replayUpdates
 				return nil
 			}
 			box, err2 := c.svcCtx.Dao.SendUserMessageV3(ctx, fromUserId, toUserId, outBox, true)
@@ -888,7 +873,7 @@ func (c *MsgCore) sendUserOutgoingMessageV3(ctx context.Context, fromUserId, fro
 					PeerUserId: fromUserId,
 				})
 
-				if !mtproto.FromBool(blocked) {
+				if privateInboxDelivered(mtproto.FromBool(blocked)) {
 					c.Logger.WithDuration(timex.Since(since2)).Infof("end: c.svcCtx.Dao.UserClient.UserBlockedByUser")
 					_, err2 = c.svcCtx.Dao.InboxClient.InboxSendUserMessageToInboxV2(
 						ctx,

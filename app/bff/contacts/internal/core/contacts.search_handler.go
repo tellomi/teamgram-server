@@ -57,7 +57,9 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 	}
 
 	var (
-		idHelper = mtproto.NewIDListHelper(c.MD.UserId)
+		// The caller is not a search hit. Seeding the id list with UserId
+		// put them in every result, including a query that matches nobody.
+		idHelper = mtproto.NewIDListHelper()
 	)
 
 	found := mtproto.MakeTLContactsFound(&mtproto.Contacts_Found{
@@ -67,20 +69,39 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 		Chats:     []*mtproto.Chat{},
 	}).To_Contacts_Found()
 
-	// TODO(@benqi):
-	// This method will exclude the current user's contacts from the search results. It is assumed that searches among the user's contacts can be handled locally by the client.
-	//
+	// Contacts are not excluded. A hit that is in the caller's address book
+	// goes to my_results, including a match on the contact note rather than
+	// the account name. The caller is never a hit.
 
 	// Check query string and limit
+	// contactIDs is the caller's address book. my_results is membership in
+	// that book, not CheckContact on the other user (that is their book).
+	contactIDs := map[int64]struct{}{}
 	if len(q) >= 3 && limit > 0 {
-		contacts, _ := c.svcCtx.Dao.UserClient.UserGetContactIdList(c.ctx, &userpb.TLUserGetContactIdList{
+		if book, err := c.svcCtx.Dao.UserClient.UserGetContactList(c.ctx, &userpb.TLUserGetContactList{
 			UserId: c.MD.UserId,
-		})
+		}); err != nil {
+			c.Logger.Errorf("contacts.search notes - error: %v", err)
+		} else {
+			for _, row := range book.GetDatas() {
+				id := row.GetContactUserId()
+				if id == 0 || id == c.MD.UserId {
+					continue
+				}
+				contactIDs[id] = struct{}{}
+				if !contactNoteMatch(q, row.GetFirstName().GetValue(), row.GetLastName().GetValue()) {
+					continue
+				}
+				idHelper.PickByPeerUtil(mtproto.PEER_USER, id)
+			}
+		}
 
 		// c.Logger.Debugf("q: %s", q)
+		// Contacts stay in the search. They are split into my_results below.
+		// Only the caller is excluded.
 		rVList, err := c.svcCtx.Dao.UserClient.UserSearchUsername(c.ctx, &userpb.TLUserSearchUsername{
 			Q:                q,
-			ExcludedContacts: append(contacts.GetDatas(), c.MD.UserId),
+			ExcludedContacts: []int64{c.MD.UserId},
 			Limit:            limit,
 		})
 		if err != nil {
@@ -94,8 +115,8 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 		}
 
 		rVList2, err := c.svcCtx.Dao.UserClient.UserSearch(c.ctx, &userpb.TLUserSearch{
-			Q:                in.Q,
-			ExcludedContacts: append(contacts.GetDatas(), c.MD.UserId),
+			Q:                q,
+			ExcludedContacts: []int64{c.MD.UserId},
 			Offset:           0,
 			Limit:            limit,
 		})
@@ -117,14 +138,24 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 
 	idHelper.Visit(
 		func(userIdList []int64) {
+			// GetUserListByIdList renders nothing unless the viewer is in
+			// the loaded set. The visit still skips the viewer, so loading
+			// self does not put self into my_results or results. To is the
+			// same viewer list the user service uses for contact rows and
+			// privacy.
+			loadIDs, loadTo := searchUserLoadIDs(c.MD.UserId, userIdList)
 			users, _ := c.svcCtx.Dao.UserClient.UserGetMutableUsers(c.ctx,
 				&userpb.TLUserGetMutableUsers{
-					Id: userIdList,
+					Id: loadIDs,
+					To: loadTo,
 				})
+			if users == nil {
+				return
+			}
 
 			var kept []int64
 			users.Visit(func(it *mtproto.ImmutableUser) {
-				if it.Deleted() {
+				if it.Deleted() || it.Id() == c.MD.UserId {
 					return
 				}
 				kind := contactUser
@@ -139,7 +170,7 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 				peer := mtproto.MakeTLPeerUser(&mtproto.Peer{
 					UserId: it.Id(),
 				})
-				if ok, _ := it.CheckContact(c.MD.UserId); ok {
+				if callerSaved(contactIDs, it.Id()) {
 					found.MyResults = append(found.MyResults, peer.To_Peer())
 				} else {
 					found.Results = append(found.Results, peer.To_Peer())
@@ -176,4 +207,22 @@ func (c *ContactsCore) ContactsSearch(in *mtproto.TLContactsSearch) (*mtproto.Co
 		})
 
 	return found, nil
+}
+
+// searchUserLoadIDs is the user.getMutableUsers request for a contacts.search
+// hit list. An empty hit list stays empty, so a query that matched nobody
+// does not load the caller. The caller is prepended only when some other
+// user has to be rendered.
+func searchUserLoadIDs(viewer int64, hits []int64) (ids, to []int64) {
+	ids = append([]int64(nil), hits...)
+	if viewer == 0 || len(hits) == 0 {
+		return ids, nil
+	}
+	to = []int64{viewer}
+	for _, id := range ids {
+		if id == viewer {
+			return ids, to
+		}
+	}
+	return append([]int64{viewer}, ids...), to
 }

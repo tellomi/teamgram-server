@@ -21,6 +21,7 @@ package dao
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
@@ -36,6 +37,54 @@ const (
 
 func genUserNotifySettingsCacheKey(id int64, peerType int32, peerId int64) string {
 	return fmt.Sprintf("%s_%d_%d_%d", userNotifySettingsKeyPrefix, id, peerType, peerId)
+}
+
+// NotifySettingsCacheKeys is every Redis key reset must drop for this user.
+// rows come from the table without a deleted filter, so a row that was
+// already soft-deleted is still named. The three global scopes are always
+// included. Story mute, hide-sender and story sounds are columns on these
+// same objects, so dropping the key drops the cached story state too.
+func NotifySettingsCacheKeys(userID int64, rows []dataobject.UserNotifySettingsDO) []string {
+	seen := make(map[string]struct{}, len(rows)+3)
+	add := func(peerType int32, peerID int64) {
+		seen[genUserNotifySettingsCacheKey(userID, peerType, peerID)] = struct{}{}
+	}
+	for _, row := range rows {
+		add(row.PeerType, row.PeerId)
+	}
+	add(mtproto.PEER_USERS, 0)
+	add(mtproto.PEER_CHATS, 0)
+	add(mtproto.PEER_BROADCASTS, 0)
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// DropNotifySettingsCache deletes the notify-settings keys for userID.
+func (d *Dao) DropNotifySettingsCache(ctx context.Context, userID int64, rows []dataobject.UserNotifySettingsDO) error {
+	keys := NotifySettingsCacheKeys(userID, rows)
+	if len(keys) == 0 {
+		return nil
+	}
+	return d.CachedConn.DelCache(ctx, keys...)
+}
+
+// ResetNotifySettings soft-deletes every notify row and drops the cache
+// keys those rows (and the global scopes) were stored under. The select
+// runs first and includes already-deleted rows, so a retry can still name
+// a key the previous attempt left behind.
+func (d *Dao) ResetNotifySettings(ctx context.Context, userID int64) error {
+	rows, err := d.UserNotifySettingsDAO.SelectCacheTargets(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if _, err = d.UserNotifySettingsDAO.DeleteAll(ctx, userID); err != nil {
+		return err
+	}
+	return d.DropNotifySettingsCache(ctx, userID, rows)
 }
 
 func (d *Dao) GetUserNotifySettings(ctx context.Context, id int64, peerType int32, peerId int64) (*mtproto.PeerNotifySettings, error) {

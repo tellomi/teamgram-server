@@ -178,6 +178,9 @@ func TestRecommendationsLeftChannelsAndSpam(t *testing.T) {
 	if err != nil || len(left.Chats) != 1 || left.Chats[0].GetId() != home.GetId() {
 		t.Fatalf("left %+v %v", left.GetChats(), err)
 	}
+	if left.Chats[0].GetPredicateName() != mtproto.Predicate_channel || !left.Chats[0].GetLeft() {
+		t.Fatalf("private left channel was not a channel with left set: %+v", left.Chats[0])
+	}
 	if _, err := svc.GetLeftChannels(ctx, 2, -1); err == nil {
 		t.Fatal("negative offset accepted")
 	}
@@ -243,5 +246,42 @@ func TestRecommendationsLeftChannelsAndSpam(t *testing.T) {
 	}
 	if _, err := svc.RecordPeerReport(ctx, 1, nil, report.SourcePeer, "", "", 0); err == nil {
 		t.Fatal("empty peer accepted")
+	}
+}
+
+func TestLeftPrivateChannelsOffset(t *testing.T) {
+	svc, ctx := newTest(t)
+	var leftIDs []int64
+	for _, title := range []string{"Left A", "Left B"} {
+		home := megagroup(t, svc, ctx, title)
+		in := inCh(home)
+		if _, err := svc.Invite(ctx, 1, 0, in, []int64{2}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Leave(ctx, 2, 0, in); err != nil {
+			t.Fatal(err)
+		}
+		leftIDs = append(leftIDs, home.GetId())
+	}
+	page, err := svc.GetLeftChannels(ctx, 2, 0)
+	if err != nil || len(page.Chats) != 2 {
+		t.Fatalf("page %+v %v", page.GetChats(), err)
+	}
+	for i, chat := range page.Chats {
+		if chat.GetPredicateName() != mtproto.Predicate_channel || !chat.GetLeft() || chat.GetId() != leftIDs[i] {
+			t.Fatalf("chat %d %+v", i, chat)
+		}
+	}
+	next, err := svc.GetLeftChannels(ctx, 2, 1)
+	if err != nil || len(next.Chats) != 1 || next.Chats[0].GetId() != leftIDs[1] || !next.Chats[0].GetLeft() {
+		t.Fatalf("offset %+v %v", next.GetChats(), err)
+	}
+	empty, err := svc.GetLeftChannels(ctx, 2, 2)
+	if err != nil || len(empty.GetChats()) != 0 {
+		t.Fatalf("past end %+v %v", empty.GetChats(), err)
+	}
+	own, err := svc.GetLeftChannels(ctx, 1, 0)
+	if err != nil || len(own.GetChats()) != 0 {
+		t.Fatalf("creator left %+v %v", own.GetChats(), err)
 	}
 }

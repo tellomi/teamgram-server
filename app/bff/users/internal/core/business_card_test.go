@@ -27,10 +27,19 @@ func TestBusinessCardHidesGreetingAndAwayFromOtherViewers(t *testing.T) {
 		}).To_BusinessAwayMessage(),
 	}
 
-	other := &mtproto.UserFull{}
+	other := &mtproto.UserFull{
+		BusinessGreetingMessage: card.Greeting,
+		BusinessAwayMessage:     card.Away,
+	}
 	applyBusinessCard(other, 3, 7, card)
 	if other.GetBusinessGreetingMessage() != nil || other.GetBusinessAwayMessage() != nil {
 		t.Fatalf("greeting=%v away=%v", other.GetBusinessGreetingMessage(), other.GetBusinessAwayMessage())
+	}
+	if users := other.GetBusinessGreetingMessage().GetRecipients().GetUsers(); len(users) != 0 {
+		t.Fatalf("other viewer still has greeting recipients %+v", users)
+	}
+	if users := other.GetBusinessAwayMessage().GetRecipients().GetUsers(); len(users) != 0 {
+		t.Fatalf("other viewer still has away recipients %+v", users)
 	}
 	if other.GetBusinessWorkHours().GetTimezoneId() != "Asia/Shanghai" || other.GetBusinessLocation().GetAddress() != "shop" || other.GetBusinessIntro().GetTitle() != "hi" {
 		t.Fatalf("public fields %+v", other)

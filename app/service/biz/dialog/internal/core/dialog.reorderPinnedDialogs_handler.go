@@ -33,6 +33,23 @@ func (c *DialogCore) DialogReorderPinnedDialogs(in *dialog.TLDialogReorderPinned
 		keyList = append(keyList, dialog.GetDialogCacheKey(in.GetUserId(), id))
 	}
 
+	var (
+		current []int64
+		listErr error
+	)
+	if folderId == 0 {
+		current, listErr = c.svcCtx.Dao.GetNoCachePinnedDialogIdList(c.ctx, userId)
+	} else {
+		current, listErr = c.svcCtx.Dao.GetNoCacheFolderPinnedDialogIdList(c.ctx, userId)
+	}
+	if listErr != nil {
+		c.Logger.Errorf("dialog.reorderPinnedDialogs - error: %v", listErr)
+		return nil, listErr
+	}
+	if err := reorderPinsRejected(force, current, idList, pinnedCapFor(c, userId, folderId)); err != nil {
+		return nil, err
+	}
+
 	if folderId == 0 {
 		c.svcCtx.Dao.ExecInvalidate(
 			c.ctx,
@@ -81,17 +98,14 @@ func (c *DialogCore) DialogReorderPinnedDialogs(in *dialog.TLDialogReorderPinned
 					c.svcCtx.Dao.DB,
 					func(tx *sqlx.Tx, result *sqlx.StoreResult) {
 						if force {
-							if len(idList) > 0 {
-								_, result.Err = c.svcCtx.Dao.DialogsDAO.UpdateUnPinnedNotIdListTx(
-									tx,
-									userId,
-									idList)
-							} else {
-								_, result.Err = c.svcCtx.Dao.DialogsDAO.UpdateUnPinnedNotIdListTx(
-									tx,
-									userId,
-									[]int64{0}) // hack
+							unpin := idList
+							if len(unpin) == 0 {
+								unpin = []int64{0} // hack: not in (0) clears the folder
 							}
+							_, result.Err = c.svcCtx.Dao.DialogsDAO.UpdateFolderUnPinnedNotIdListTx(
+								tx,
+								userId,
+								unpin)
 							if result.Err != nil {
 								return
 							}
@@ -103,6 +117,9 @@ func (c *DialogCore) DialogReorderPinnedDialogs(in *dialog.TLDialogReorderPinned
 								orderPinned<<32,
 								in.UserId,
 								[]int64{id})
+							if result.Err != nil {
+								return
+							}
 							orderPinned -= 1
 						}
 					})

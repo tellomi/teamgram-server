@@ -44,14 +44,26 @@ func (s *store) setWallpaper(self int64, in *mtproto.TLMessagesSetChatWallPaper)
 	if cur.paper != nil {
 		prev = cur.paper
 	}
-	s.walls[k] = wallState{paper: next, prev: prev, forBoth: in.GetForBoth() && !in.GetRevert()}
-	overridden := !in.GetForBoth() || in.GetRevert()
+	state := wallState{paper: next, prev: prev, forBoth: in.GetForBoth() && !in.GetRevert()}
+	s.walls[k] = state
+	if state.forBoth && ref.kind == "user" && ref.id != 0 && ref.id != self {
+		s.walls[dialogKey{user: ref.id, kind: "user", id: self}] = state
+	}
+	// The caller chose or reverted this wallpaper, so it is not an override
+	// installed by the other user. wallpaper_overridden is true only on the
+	// peer who received a for_both wallpaper.
 	upd := mtproto.MakeTLUpdatePeerWallpaper(&mtproto.Update{
-		WallpaperOverridden: overridden,
+		WallpaperOverridden: false,
 		Peer_PEER:           peer,
 		Wallpaper:           next,
 	}).To_Update()
-	return mtproto.MakeUpdatesByUpdates(upd), nil
+	box := serviceUpdates(self, peer, mtproto.MakeTLMessageActionSetChatWallPaper(&mtproto.MessageAction{
+		Same:      in.GetRevert(),
+		ForBoth:   state.forBoth,
+		Wallpaper: next,
+	}).To_MessageAction())
+	box.Updates = append(box.Updates, upd)
+	return box, nil
 }
 
 type wallState struct {
