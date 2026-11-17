@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+// ReactionForbidden is the 403 for messages.sendReaction when send_reactions
+// is banned. admin skips member bans. until_date 0 means the ban does not
+// expire. Clearing a reaction (no emoji) is not checked here.
+func ReactionForbidden(now int32, admin bool, rights []*ChatBannedRights) error {
+	if admin {
+		return nil
+	}
+	if on, _ := banActive(rights, now, func(r *ChatBannedRights) bool { return r.GetSendReactions() }); on {
+		return ErrChatSendReactionsForbidden
+	}
+	return nil
+}
+
 // ChatSendForbidden is the 403 a member receives for one outgoing message.
 // admin skips member bans. rights are the default ban and any per-user ban;
 // a flag applies while now is still before its until_date. The error text is

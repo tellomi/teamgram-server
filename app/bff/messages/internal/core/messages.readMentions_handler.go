@@ -56,6 +56,18 @@ func (c *MessagesCore) MessagesReadMentions(in *mtproto.TLMessagesReadMentions) 
 			return nil, mtproto.ErrMsgIdInvalid
 		}
 	}
+	if peer.IsChannel() {
+		// Channel mentions live on the channel store, not the private
+		// message box. Clearing only dialogs.unread_mentions_count left
+		// getDialogs and getPeerDialogs on the live count.
+		affected, err := channel.Shared().ReadMentions(c.ctx, c.MD.UserId, peer.PeerId, topID)
+		if err != nil {
+			c.Logger.Errorf("messages.readMentions - error: %v", err)
+			return nil, err
+		}
+		c.clearMentionCounter(peer)
+		return affected, nil
+	}
 	rows, total := c.unreadMentions(peer)
 	ids := searchbox.MentionIDs(rows, topID)
 	if len(ids) > 100 {

@@ -33,6 +33,11 @@ import (
 // MessagesSendMultiMedia
 // messages.sendMultiMedia#f803138f flags:# silent:flags.5?true background:flags.6?true clear_draft:flags.7?true noforwards:flags.14?true peer:InputPeer reply_to_msg_id:flags.0?int multi_media:Vector<InputSingleMedia> schedule_date:flags.10?int send_as:flags.13?InputPeer = Updates;
 func (c *MessagesCore) MessagesSendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mtproto.Updates, error) {
+	// Official albums are at most 10 items. A longer list is MEDIA_INVALID
+	// and is not stored.
+	if len(in.GetMultiMedia()) > 10 {
+		return nil, mtproto.ErrMediaInvalid
+	}
 	ids := make([]int64, 0, len(in.GetMultiMedia()))
 	for _, item := range in.GetMultiMedia() {
 		if err := c.authorizeReferencedMedia(item.GetMedia()); err != nil {
@@ -116,7 +121,7 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 			message	string	A caption for the media
 			entities	flags.0?Vector<MessageEntity>	Message entities for styled text
 		*/
-		if len(media.Message) > 4000 {
+		if c.captionLimitExceeded(media.Message) {
 			err := mtproto.ErrMediaCaptionTooLong
 			c.Logger.Errorf("messages.sendMultiMedia: %v", err)
 			return nil, err
@@ -232,7 +237,12 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 	}
 
 	if in.GetQuickReplyShortcut() != nil {
-		return chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+		ups, err := chatbox.Shared().CaptureQuickReply(c.ctx, c.MD.UserId, peer, in.GetQuickReplyShortcut(), quickMsgs)
+		if err != nil {
+			return nil, err
+		}
+		c.pushQuickReplyNotMe(ups)
+		return ups, nil
 	}
 
 	rUpdate, err := c.dispatchOutbox(peer, outboxMultiMedia)
@@ -263,7 +273,7 @@ func (c *MessagesCore) sendMultiMedia(in *mtproto.TLMessagesSendMultiMedia) (*mt
 	if in.ClearDraft {
 		ctx := contextx.ValueOnlyFrom(c.ctx)
 		threading.GoSafe(func() {
-			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer)
+			c.doClearDraft(ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer, outgoingTopicID(in.GetReplyTo(), in.GetTopMsgId()))
 		})
 	}
 

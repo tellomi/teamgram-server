@@ -159,8 +159,9 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// sendMessage returns the id before the inbox consumer inserts the row.
-	// Deleting in that gap is a no-op and the dialog top stays on the new id.
+	// The sender row is stored before sendMessage returns. After this delete,
+	// the inbox consumer replays the same random id. The dialog top has to
+	// stay on the previous message once that replay has landed.
 	if err = waitUntil(ctx, 200*time.Millisecond, func() (bool, error) {
 		hist, err := a.History(ctx, userPeer, 20)
 		if err != nil {
@@ -180,10 +181,7 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 		Revoke:      true,
 		Id:          []int32{p2},
 	})
-	pm, ok := dialogByPeer(t, ctx, a, "user", bSelf.ID)
-	if !ok || pm.GetTopMessage() != p1 {
-		t.Fatalf("private top present=%v top=%d, want %d", ok, pm.GetTopMessage(), p1)
-	}
+	requireDialogTop(t, ctx, a, "user", bSelf.ID, p1, true, 6*time.Second)
 	pmHist, err := a.History(ctx, userPeer, 50)
 	if err != nil {
 		t.Fatal(err)
@@ -199,9 +197,7 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 		Revoke:      true,
 		Id:          pmIDs,
 	})
-	if _, ok = dialogByPeer(t, ctx, a, "user", bSelf.ID); ok {
-		t.Fatal("private chat with no messages stayed in getDialogs")
-	}
+	requireDialogTop(t, ctx, a, "user", bSelf.ID, 0, false, 6*time.Second)
 
 	chatID, err := a.CreateChat(ctx, fmt.Sprintf("pin-group-%d", time.Now().UnixNano()), inputUser(bSelf.ID, bSelf.AccessHash))
 	if err != nil {
@@ -235,10 +231,7 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 		Revoke:      true,
 		Id:          []int32{g2},
 	})
-	group, ok := dialogByPeer(t, ctx, a, "chat", chatID)
-	if !ok || group.GetTopMessage() != g1 {
-		t.Fatalf("group top present=%v top=%d, want %d", ok, group.GetTopMessage(), g1)
-	}
+	requireDialogTop(t, ctx, a, "chat", chatID, g1, true, 6*time.Second)
 	gh, err := a.History(ctx, gPeer, 50)
 	if err != nil {
 		t.Fatal(err)
@@ -254,9 +247,38 @@ func TestDialogSurvivesDeletingTheLatestMessage(t *testing.T) {
 		Revoke:      true,
 		Id:          gIDs,
 	})
-	left, ok := dialogByPeer(t, ctx, a, "chat", chatID)
-	if !ok || left.GetTopMessage() != 0 {
-		t.Fatalf("empty group present=%v top=%d", ok, left.GetTopMessage())
+	requireDialogTop(t, ctx, a, "chat", chatID, 0, true, 6*time.Second)
+}
+
+// requireDialogTop reads the dialog until hold elapses. present false means
+// the chat must stay off the list. A late replay that puts a deleted id back
+// fails the next read instead of passing on the first one.
+func requireDialogTop(t *testing.T, ctx context.Context, c *Client, kind string, id int64, want int32, present bool, hold time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(hold)
+	for {
+		row, ok := dialogByPeer(t, ctx, c, kind, id)
+		got := int32(0)
+		if row != nil {
+			got = row.GetTopMessage()
+		}
+		if present {
+			if !ok || got != want {
+				t.Fatalf("%s/%d top present=%v top=%d, want %d", kind, id, ok, got, want)
+			}
+		} else if ok {
+			t.Fatalf("%s/%d still listed with top %d", kind, id, got)
+		}
+		if !time.Now().Before(deadline) {
+			return
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			t.Fatal(ctx.Err())
+		case <-timer.C:
+		}
 	}
 }
 

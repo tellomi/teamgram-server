@@ -2,6 +2,7 @@ package mysql_dao
 
 import (
 	"context"
+	"math"
 
 	"github.com/teamgram/teamgram-server/app/service/biz/message/internal/dal/dataobject"
 
@@ -45,18 +46,26 @@ func (dao *MessagesDAO) SelectSavedHistory(ctx context.Context, userId int64, pe
 	return rList, nil
 }
 
-// SelectSavedForDelete lists messages.deleteSavedHistory candidates, newest first.
-// maxID <= 0 matches nothing. minDate/maxDate of 0 are unbounded.
-func (dao *MessagesDAO) SelectSavedForDelete(ctx context.Context, userId int64, peerType int32, peerId int64, maxID, minDate, maxDate, limit int32) (rList []dataobject.MessagesDO, err error) {
+// savedDeleteUpperBound is the inclusive message id cap.
+// max_id 0 means every saved message from that peer, which is what
+// messages.deleteSavedHistory(max_id=0) asks for.
+func savedDeleteUpperBound(maxID int32) int32 {
 	if maxID <= 0 {
-		return nil, nil
+		return math.MaxInt32
 	}
+	return maxID
+}
+
+// SelectSavedForDelete lists messages.deleteSavedHistory candidates, newest first.
+// maxID <= 0 deletes the whole saved dialog. minDate/maxDate of 0 are unbounded.
+func (dao *MessagesDAO) SelectSavedForDelete(ctx context.Context, userId int64, peerType int32, peerId int64, maxID, minDate, maxDate, limit int32) (rList []dataobject.MessagesDO, err error) {
 	if limit <= 0 {
 		limit = 1
 	}
+	upper := savedDeleteUpperBound(maxID)
 	query := "select " + savedHistoryColumns + " from " + dao.CalcTableName(userId) +
 		" where user_id = ? and saved_peer_type = ? and saved_peer_id = ? and deleted = 0 and user_message_box_id <= ?"
-	args := []interface{}{userId, peerType, peerId, maxID}
+	args := []interface{}{userId, peerType, peerId, upper}
 	if minDate > 0 {
 		query += " and date2 >= ?"
 		args = append(args, int64(minDate))

@@ -2,6 +2,8 @@ package channel
 
 import (
 	"context"
+	"math"
+	"time"
 
 	"github.com/teamgram/proto/mtproto"
 	"github.com/teamgram/teamgram-server/app/service/biz/chatbox"
@@ -56,6 +58,7 @@ func (s *Service) chatFor(ctx context.Context, viewer int64, ch *Channel, p *Par
 		Noforwards:                  feat.NoForwards,
 		SlowmodeEnabled:             feat.SlowmodeSeconds > 0,
 		JoinRequest:                 feat.JoinRequest,
+		JoinToSend:                  feat.JoinToSend,
 		Gigagroup:                   feat.Gigagroup,
 		Autotranslation:             feat.Autotranslation,
 		BroadcastMessagesAllowed:    feat.BroadcastMessagesAllowed,
@@ -150,14 +153,40 @@ func defaultNotify() *mtproto.PeerNotifySettings {
 	}).To_PeerNotifySettings()
 }
 
+// slowmodeNextSendDate is channelFull.slowmode_next_send_date.
+// It is the member's last send plus slowmode_seconds. The field is set
+// only for a member who is not an admin and not the creator, and only
+// while that instant is still in the future. A closed slow mode, an
+// elapsed window, an admin, and the creator leave it unset.
+func slowmodeNextSendDate(feat *Features, viewer *Participant, userID int64, now int32) *wrapperspb.Int32Value {
+	if feat == nil || feat.SlowmodeSeconds <= 0 || viewer == nil || !viewer.InChannel() || viewer.IsAdmin() {
+		return nil
+	}
+	last := feat.LastSend[userID]
+	if last <= 0 {
+		return nil
+	}
+	next := int64(last) + int64(feat.SlowmodeSeconds)
+	if next <= int64(now) || next > math.MaxInt32 {
+		return nil
+	}
+	return &wrapperspb.Int32Value{Value: int32(next)}
+}
+
 func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Participant) *mtproto.ChatFull {
 	st, _ := s.store.GetRead(ctx, ch.ID, viewer)
 	if st == nil {
 		st = &ReadState{}
 	}
 	member := p != nil && p.InChannel()
+	// Broadcast subscriber lists are admin-only. A public megagroup still
+	// shows the list to anyone who can see the chat, until participants_hidden.
+	canViewParticipants := member || ch.Public()
+	if ch.Broadcast {
+		canViewParticipants = p != nil && p.IsAdmin()
+	}
 	full := mtproto.MakeTLChannelFull(&mtproto.ChatFull{
-		CanViewParticipants:  member || ch.Public(),
+		CanViewParticipants:  canViewParticipants,
 		CanSetUsername:       p.IsCreator(),
 		CanSetStickers:       p.IsCreator(),
 		CanViewStats:         p.IsCreator(),
@@ -169,7 +198,7 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		ReadInboxMaxId:       st.ReadInboxMaxID,
 		ReadOutboxMaxId:      st.ReadOutboxMaxID,
 		UnreadCount:          st.UnreadCount,
-		ChatPhoto:            mtproto.MakeTLPhotoEmpty(nil).To_Photo(),
+		ChatPhoto:            s.currentChatPhoto(ctx, ch.PhotoID),
 		NotifySettings:       defaultNotify(),
 		BotInfo:              []*mtproto.BotInfo{},
 		Pts:                  ch.Pts,
@@ -185,11 +214,22 @@ func (s *Service) fullChat(ctx context.Context, viewer int64, ch *Channel, p *Pa
 		full.RestrictedSponsored = feat.SponsoredRestricted
 		full.HiddenPrehistory = feat.HiddenPrehistory
 		full.ParticipantsHidden = feat.ParticipantsHidden
+		// Hidden members still let ordinary members see the admin list.
+		// can_view_participants is the flag the client uses to hide the
+		// member list itself.
+		if feat.ParticipantsHidden && (p == nil || !p.IsAdmin()) {
+			full.CanViewParticipants = false
+		}
 		full.Antispam = feat.Antispam
 		full.ViewForumAsMessages = feat.ViewForumAsMessages[viewer]
 		full.MainTab = mtproto.ToProfileTabByType(feat.MainProfileTab)
 		if feat.SlowmodeSeconds > 0 {
 			full.SlowmodeSeconds = &wrapperspb.Int32Value{Value: feat.SlowmodeSeconds}
+		}
+		// Same LastSend map Send reads before it returns SLOWMODE_WAIT.
+		// Official clients start the composer countdown from this field.
+		if next := slowmodeNextSendDate(feat, p, viewer, int32(time.Now().Unix())); next != nil {
+			full.SlowmodeNextSendDate = next
 		}
 		if feat.PinnedMsgID > 0 {
 			full.PinnedMsgId = &wrapperspb.Int32Value{Value: feat.PinnedMsgID}

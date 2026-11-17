@@ -35,7 +35,9 @@ import (
 	"github.com/teamgram/teamgram-server/app/bff/bff/internal/presence"
 	bots_helper "github.com/teamgram/teamgram-server/app/bff/bots"
 	business_helper "github.com/teamgram/teamgram-server/app/bff/business"
+	bizprofile "github.com/teamgram/teamgram-server/app/bff/business/profile"
 	channels_helper "github.com/teamgram/teamgram-server/app/bff/channels"
+	"github.com/teamgram/teamgram-server/app/bff/chatdecor"
 	chatinvites_helper "github.com/teamgram/teamgram-server/app/bff/chatinvites"
 	chats_helper "github.com/teamgram/teamgram-server/app/bff/chats"
 	communities_helper "github.com/teamgram/teamgram-server/app/bff/communities"
@@ -59,6 +61,7 @@ import (
 	notification_helper "github.com/teamgram/teamgram-server/app/bff/notification"
 	nsfw_helper "github.com/teamgram/teamgram-server/app/bff/nsfw"
 	passkeyhelper "github.com/teamgram/teamgram-server/app/bff/passkey"
+	passkeylogin "github.com/teamgram/teamgram-server/app/bff/passkey/login"
 	passport_helper "github.com/teamgram/teamgram-server/app/bff/passport"
 	payments_helper "github.com/teamgram/teamgram-server/app/bff/payments"
 	phone_helper "github.com/teamgram/teamgram-server/app/bff/phone"
@@ -129,10 +132,22 @@ func (s *Server) Initialize() error {
 	// overrides it. A missing value logs once inside Configure.
 	privacymember.Configure(c.ChannelMySQL)
 	password.ConfigureFromEnv(c.ChannelMySQL)
+	if err := passkeylogin.Configure(passkeylogin.Clients{
+		DSN:     c.ChannelMySQL,
+		User:    c.BizServiceClient,
+		Session: c.AuthSessionClient,
+		Msg:     c.MsgClient,
+		Sync:    c.SyncClient,
+	}); err != nil {
+		return err
+	}
 	if err := accountprefs.UseDSN(c.ChannelMySQL); err != nil {
 		logx.Errorf("accountprefs mysql: %v", err)
 	}
 	if err := contactphoto.UseDSN(c.ChannelMySQL); err != nil {
+		return err
+	}
+	if err := bizprofile.UseDSN(c.ChannelMySQL); err != nil {
 		return err
 	}
 	channelBridge := channels_helper.Bridge{}
@@ -267,7 +282,7 @@ func (s *Server) Initialize() error {
 				IdgenClient:   c.IdgenClient,
 				StatusClient:  c.StatusClient,
 			}))
-		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums())
+		mtproto.RegisterRPCForumsServer(grpcServer, channels_helper.NewForums(c.BizServiceClient))
 		mtproto.RegisterRPCFragmentServer(grpcServer, channels_helper.NewFragment(c.BizServiceClient))
 		mtproto.RegisterRPCAntiSpamServer(grpcServer, channels_helper.NewAntiSpam())
 		mtproto.RegisterRPCBoostsServer(grpcServer, channels_helper.NewBoosts())
@@ -584,7 +599,7 @@ func (s *Server) Initialize() error {
 				},
 				stories_helper.Plugin{},
 				personalchannel.Plugin{},
-				nil))
+				chatdecor.Plugin{}))
 
 		// nsfw_helper
 		mtproto.RegisterRPCNsfwServer(

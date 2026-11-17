@@ -26,14 +26,26 @@ import (
 )
 
 // PhotosUpdateProfilePhoto
-// photos.updateProfilePhoto#72d4742c id:InputPhoto = photos.Photo;
+// photos.updateProfilePhoto#9e82039 flags:# fallback:flags.0?true bot:flags.1?InputUser id:InputPhoto = photos.Photo;
 func (c *UserChannelProfilesCore) PhotosUpdateProfilePhoto(in *mtproto.TLPhotosUpdateProfilePhoto) (*mtproto.Photos_Photo, error) {
 	var (
 		photo *mtproto.Photo
 	)
 
 	// TODO: ALBUM_PHOTOS_TOO_MANY
+	// inputPhotoEmpty clears the current avatar. Any other id has to be a
+	// photo already in this user's album, and the access_hash has to match
+	// the stored photo. A miss is PHOTO_ID_INVALID and does not write.
 	photoID := in.GetId().GetId()
+	if in.GetId().GetPredicateName() == mtproto.Predicate_inputPhotoEmpty {
+		photoID = 0
+	}
+	if photoID != 0 {
+		if err := c.requireOwnProfilePhoto(photoID, in.GetId().GetAccessHash()); err != nil {
+			c.Logger.Errorf("photos.updateProfilePhoto - error: %v", err)
+			return nil, err
+		}
+	}
 	if in.GetFallback() && photoID > 0 {
 		photoID = -photoID
 	}
@@ -85,4 +97,52 @@ func (c *UserChannelProfilesCore) PhotosUpdateProfilePhoto(in *mtproto.TLPhotosU
 		Photo: photo,
 		Users: []*mtproto.User{me.ToSelfUser()},
 	}).To_Photos_Photo(), nil
+}
+
+// requireOwnProfilePhoto accepts photoID only when that photo exists, the
+// access hash matches, and the id is already in the caller's album or is
+// their public fallback photo. photos.uploadProfilePhoto inserts a new
+// upload itself and does not come through here.
+func (c *UserChannelProfilesCore) requireOwnProfilePhoto(photoID, accessHash int64) error {
+	if photoID <= 0 {
+		return mtproto.ErrPhotoIdInvalid
+	}
+	photo, err := c.svcCtx.Dao.MediaClient.MediaGetPhoto(c.ctx, &mediapb.TLMediaGetPhoto{
+		PhotoId: photoID,
+	})
+	if err != nil {
+		return err
+	}
+	if !profilePhotoAccessMatches(photo, photoID, accessHash) {
+		return mtproto.ErrPhotoIdInvalid
+	}
+	album, err := c.svcCtx.Dao.UserClient.UserGetProfilePhotos(c.ctx, &userpb.TLUserGetProfilePhotos{
+		UserId: c.MD.UserId,
+	})
+	if err != nil {
+		return err
+	}
+	if containsInt64(album.GetDatas(), photoID) {
+		return nil
+	}
+	fallback, err := c.svcCtx.Dao.UserClient.UserGetFallbackPhoto(c.ctx, &userpb.TLUserGetProfilePhotos{
+		UserId: c.MD.UserId,
+	})
+	if err != nil {
+		return err
+	}
+	if fallback.GetId() == photoID && fallback.GetPredicateName() != mtproto.Predicate_photoEmpty {
+		return nil
+	}
+	return mtproto.ErrPhotoIdInvalid
+}
+
+func profilePhotoAccessMatches(photo *mtproto.Photo, photoID, accessHash int64) bool {
+	if photo == nil || photo.GetId() != photoID {
+		return false
+	}
+	if photo.GetPredicateName() != mtproto.Predicate_photo {
+		return false
+	}
+	return photo.GetAccessHash() == accessHash
 }

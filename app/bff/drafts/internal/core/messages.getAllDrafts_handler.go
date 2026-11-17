@@ -44,10 +44,7 @@ func (c *DraftsCore) MessagesGetAllDrafts(in *mtproto.TLMessagesGetAllDrafts) (*
 	)
 
 	for _, v := range drafts.Datas {
-		rUpdates.PushBackUpdate(mtproto.MakeTLUpdateDraftMessage(&mtproto.Update{
-			Peer_PEER: v.Peer,
-			Draft:     v.Draft,
-		}).To_Update())
+		rUpdates.PushBackUpdate(dialog.DraftUpdate(v.Peer, v.Draft))
 
 		idHelper.PickByPeer(v.Peer)
 	}

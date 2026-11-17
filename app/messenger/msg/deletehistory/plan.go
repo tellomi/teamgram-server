@@ -307,6 +307,23 @@ func SplitDeleted(ids []int32, live map[int32]struct{}, confirmErr error) (delet
 	return deleted, failed
 }
 
+// AnchorDeleteID is the just_clear message that stays in the box as
+// messageActionHistoryClear. Other sessions of the same account remove a
+// bubble only when updateDeleteMessages names its id. The clear used to
+// omit this id, so the open chat kept the last bubble until getHistory.
+// 0 means the id is already in the deleted list, or there is no anchor.
+func AnchorDeleteID(deleted []int32, anchorID int32) int32 {
+	if anchorID == 0 {
+		return 0
+	}
+	for _, id := range deleted {
+		if id == anchorID {
+			return 0
+		}
+	}
+	return anchorID
+}
+
 // IsHistoryClear reports the service message just_clear leaves behind.
 func IsHistoryClear(m *mtproto.Message) bool {
 	return m.GetPredicateName() == mtproto.Predicate_messageService &&

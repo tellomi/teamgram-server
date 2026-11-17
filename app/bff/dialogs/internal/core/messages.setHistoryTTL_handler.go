@@ -59,6 +59,19 @@ func (c *DialogsCore) MessagesSetHistoryTTL(in *mtproto.TLMessagesSetHistoryTTL)
 	if peer.IsChannel() {
 		return channel.Shared().SetHistoryTTL(c.ctx, c.MD.UserId, c.MD.PermAuthKeyId, peer.PeerId, period)
 	}
+	// Basic groups keep the timer on the chat, which messages.getFullChat
+	// returns. Reject a non-admin before any dialog row or service message
+	// is written.
+	if peer.IsChat() {
+		if _, err := c.svcCtx.Dao.ChatClient.ChatSetHistoryTTL(c.ctx, &chatpb.TLChatSetHistoryTTL{
+			SelfId:    c.MD.UserId,
+			ChatId:    peer.PeerId,
+			TtlPeriod: period,
+		}); err != nil {
+			c.Logger.Errorf("messages.setHistoryTTL - chat: %v", err)
+			return nil, err
+		}
+	}
 	if _, err := c.svcCtx.Dao.DialogClient.DialogSetHistoryTTL(c.ctx, &dialog.TLDialogSetHistoryTTL{
 		UserId:    c.MD.UserId,
 		PeerType:  peer.PeerType,

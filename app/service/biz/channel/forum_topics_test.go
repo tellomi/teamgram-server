@@ -149,7 +149,7 @@ func TestReorderPinnedTopicsAndUnpinAll(t *testing.T) {
 	if _, err := svc.PinMessage(ctx, 1, 0, ch.Id, msgID, false); err != nil {
 		t.Fatal(err)
 	}
-	pts, count, err := svc.UnpinAll(ctx, 1, 0, ch.Id)
+	pts, count, err := svc.UnpinAll(ctx, 1, 0, ch.Id, 0)
 	if err != nil || count != 1 || pts == 0 {
 		t.Fatalf("unpin pts=%d count=%d err=%v", pts, count, err)
 	}
@@ -157,7 +157,7 @@ func TestReorderPinnedTopicsAndUnpinAll(t *testing.T) {
 	if err != nil || full.FullChat.GetPinnedMsgId().GetValue() != 0 {
 		t.Fatalf("still pinned %#v %v", full.GetFullChat().GetPinnedMsgId(), err)
 	}
-	if _, count, err = svc.UnpinAll(ctx, 1, 0, ch.Id); err != nil || count != 0 {
+	if _, count, err = svc.UnpinAll(ctx, 1, 0, ch.Id, 0); err != nil || count != 0 {
 		t.Fatalf("second unpin count=%d err=%v", count, err)
 	}
 }

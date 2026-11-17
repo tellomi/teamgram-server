@@ -84,6 +84,8 @@
     "comm_b": {"number": "9996610322", "code": "11111"},
     "disc_a": {"number": "9996610341", "code": "11111"},
     "disc_b": {"number": "9996610342", "code": "11111"},
-    "biz_tz": {"number": "9996610343", "code": "11111"}
+    "biz_tz": {"number": "9996610343", "code": "11111"},
+    "basic_creator_a": {"number": "9996610584", "code": "11111"},
+    "basic_creator_b": {"number": "9996610585", "code": "11111"}
   }
 }

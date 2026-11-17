@@ -238,14 +238,22 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 					PeerId:   peerId,
 				})
 				if dialogExt != nil {
-					userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+					if dialogExt.ThemeEmoticon != "" {
+						userFull.ThemeEmoticon = mtproto.MakeFlagsString(dialogExt.ThemeEmoticon)
+						userFull.Theme = mtproto.MakeTLChatTheme(&mtproto.ChatTheme{
+							Emoticon: dialogExt.ThemeEmoticon,
+						}).To_ChatTheme()
+					}
 					userFull.TtlPeriod = mtproto.MakeFlagsInt32(dialogExt.TtlPeriod)
 					if dialogExt.GetDialog() != nil {
 						userFull.FolderId = dialogExt.GetDialog().GetFolderId()
 					}
 					if dialogExt.WallpaperId != 0 && c.svcCtx.Dao.WallpaperPlugin != nil {
 						userFull.Wallpaper = c.svcCtx.Dao.WallpaperPlugin.GetChatWallpaper(c.ctx, c.MD.UserId, dialogExt.WallpaperId)
-						userFull.WallpaperOverridden = true
+						// The dialog column is per user. True means the other
+						// user set this wallpaper with for_both. A wallpaper
+						// the caller chose is false, even when a wallpaper exists.
+						userFull.WallpaperOverridden = dialogExt.WallpaperOverridden
 					}
 				}
 			}
@@ -334,6 +342,7 @@ func (c *UsersCore) UsersGetFullUser(in *mtproto.TLUsersGetFullUser) (*mtproto.U
 	if bot := accountassets.ApplyBusinessBar(peerId, c.MD.UserId, userFull.Settings); bot != nil {
 		users = append(users, bot)
 	}
+	c.applyPrivateNoForwards(userFull, peerId)
 
 	return mtproto.MakeTLUsersUserFull(&mtproto.Users_UserFull{
 		FullUser: userFull,
@@ -407,6 +416,20 @@ func (c *UsersCore) fallbackPhoto(owner int64) *mtproto.Photo {
 		return nil
 	}
 	return photo
+}
+
+// applyPrivateNoForwards copies the private-chat forward switch onto userFull.
+// messages.toggleNoForwards stores one bit for the pair. Either person can
+// turn it off. Both flags are set so each client shows the switch as on.
+func (c *UsersCore) applyPrivateNoForwards(full *mtproto.UserFull, peerID int64) {
+	if full == nil || c == nil || c.MD == nil || c.MD.UserId == 0 || peerID == 0 || c.MD.UserId == peerID {
+		return
+	}
+	if !chatbox.Shared().ContentProtected(c.ctx, c.MD.UserId, peerID) {
+		return
+	}
+	full.NoforwardsMyEnabled = true
+	full.NoforwardsPeerEnabled = true
 }
 
 func (c *UsersCore) privacyAllows(owner int64, key int) bool {

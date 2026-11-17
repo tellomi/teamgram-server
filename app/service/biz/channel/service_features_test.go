@@ -122,9 +122,17 @@ func TestJoinRequestCreatorDiscussionLocationStats(t *testing.T) {
 	if _, err := svc.ToggleParticipantsHidden(ctx, 1, 0, inCh(b), true); err != nil {
 		t.Fatal(err)
 	}
-	hidden, err := svc.GetParticipants(ctx, 4, inCh(b), nil, 0, 50, 0)
-	if err != nil || len(hidden.Participants) != 0 {
-		t.Fatalf("hidden participants %#v %v", hidden, err)
+	// A broadcast subscriber cannot list subscribers, hidden or not.
+	if _, err := svc.GetParticipants(ctx, 4, inCh(b), nil, 0, 50, 0); err == nil || !strings.Contains(err.Error(), "CHAT_ADMIN_REQUIRED") {
+		t.Fatalf("subscriber list: %v", err)
+	}
+	full, _ = svc.GetFullChannel(ctx, 1, inCh(b))
+	if !full.FullChat.GetParticipantsHidden() {
+		t.Fatal("participants_hidden not stored")
+	}
+	sub, err := svc.GetFullChannel(ctx, 4, inCh(b))
+	if err != nil || sub.FullChat.GetCanViewParticipants() {
+		t.Fatalf("subscriber can_view %#v %v", sub, err)
 	}
 	inactive, err := svc.InactiveChannels(ctx, 1)
 	if err != nil {

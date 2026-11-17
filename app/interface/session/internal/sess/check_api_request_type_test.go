@@ -23,3 +23,24 @@ func TestLangpackRPCsDoNotRequireLogin(t *testing.T) {
 		t.Fatal("messages.getDialogs must stay behind login")
 	}
 }
+
+func TestAccountPasskeyRPCsRequireLogin(t *testing.T) {
+	for _, call := range []mtproto.TLObject{
+		&mtproto.TLAccountInitPasskeyRegistration{},
+		&mtproto.TLAccountRegisterPasskey{},
+		&mtproto.TLAccountGetPasskeys{},
+		&mtproto.TLAccountDeletePasskey{},
+	} {
+		if checkRpcWithoutLogin(call) {
+			t.Fatalf("%T must require AuthStateNormal", call)
+		}
+	}
+	for _, call := range []mtproto.TLObject{
+		&mtproto.TLAuthInitPasskeyLogin{},
+		&mtproto.TLAuthFinishPasskeyLogin{},
+	} {
+		if !checkRpcWithoutLogin(call) {
+			t.Fatalf("%T is the passkey login ceremony", call)
+		}
+	}
+}
