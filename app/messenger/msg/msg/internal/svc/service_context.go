@@ -171,6 +171,7 @@ func installChannelHooks(c config.Config, d *dao.Dao) {
 				Date2:           &wrapperspb.Int64Value{Value: date},
 			})
 		},
+		RepliesInbox: deliverRepliesNotice(d),
 		Incoming: func(ctx context.Context, userID, channelID, sender int64, broadcast bool) {
 			class := archive.ClassGroup
 			if broadcast {

@@ -1334,3 +1334,12 @@ There is no new table and no backfill scan. A channel created before this change
 | --- | --- |
 | create, read, revoke | `app/service/biz/channel/service.go`, `invite.go`, `invite_primary.go` |
 | lock | `invite_mysql.go`, `invite_store.go` |
+
+## @replies inbox after a discussion comment (ISSUE-S-BLOCK-FROM-REPLIES-001)
+
+`contacts.blockFromReplies` already reads `msg_id` from the caller's private chat with user `1271266957`. Nothing wrote that row after a discussion comment, so a real comment could not produce the id the official client sends. The decision of who may receive the row lives in `app/service/biz/channel/replies_notice.go`. The msg process, which already calls `channel.Send`, now passes one hook through to `sendMessageToInbox`. That hook is the only edit in an upstream file.
+
+| Piece | File |
+| --- | --- |
+| hook field | `app/messenger/msg/msg/internal/svc/service_context.go` |
+| inbox write | `app/messenger/msg/internal/dao/replies_inbox.go` calls the existing `SendUserMessageToInbox` |
