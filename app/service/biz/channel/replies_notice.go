@@ -69,9 +69,12 @@ func RepliesDeliveryOf(blocked bool, now int32, settings ...*mtproto.PeerNotifyS
 
 // writeRepliesNotice runs after a channel message is stored. It does not
 // turn TELLOMI_CHANNEL_COMMENTS on. A missing hook, or a message that is
-// not a reply to another user in a linked discussion group, is success.
-// A store or hook error is retried three times. The comment row is already
-// committed; RandomID makes the inbox write idempotent.
+// not a reply inside an indexed comment thread, is success.
+// A store or hook error is retried three times inside this call. The comment
+// row is already committed. If all three tries fail, the error is returned
+// to the sender. Nothing retries later in the background. The client has to
+// send the same random_id again; that does not insert a second comment, and
+// the notice random id stays the same so the inbox row is not duplicated.
 func (s *Service) writeRepliesNotice(ctx context.Context, groupID int64, commentID int32) error {
 	if s == nil || s.hooks().RepliesInbox == nil {
 		return nil

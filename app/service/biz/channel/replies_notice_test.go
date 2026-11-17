@@ -282,53 +282,55 @@ func TestRepliesNoticeBlockedPreviewAndRetry(t *testing.T) {
 	}
 }
 
-func TestRepliesNoticeAnonymousAndRestrictedText(t *testing.T) {
-	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "")
+func TestRepliesNoticeAnonymousDoesNotLeakStoredSender(t *testing.T) {
+	t.Setenv("TELLOMI_CHANNEL_COMMENTS", "1")
 	svc, ctx := newTest(t)
-	group := linkedTalk(t, svc, ctx)
+	group, commentID := threadComment(t, svc, ctx)
+	if len(svc.features(ctx, group.Id).CommentByRoot) == 0 {
+		t.Fatal("comment index was not written")
+	}
 	box := newNoticeBox()
 	svc.SetHooks(Hooks{RepliesInbox: box.keep})
-	if _, err := svc.Invite(ctx, 1, 0, inCh(group), []int64{2, 3}, nil); err != nil {
-		t.Fatal(err)
-	}
-	visible, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
-		RandomID: 51,
-		Message:  &mtproto.Message{Message: "visible", Date: 50},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
-		RandomID: 52,
-		Message: &mtproto.Message{
-			Message: "hidden-body",
-			Date:    51,
-			ReplyTo: replyHeader(sentMessageID(visible)),
-			RestrictionReason: []*mtproto.RestrictionReason{{
-				Platform: "all",
-				Reason:   "porn",
-				Text:     "hidden",
-			}},
-		},
-	}}); err != nil || len(box.notes) != 0 {
-		t.Fatalf("restricted text notices %d %v", len(box.notes), err)
-	}
-	rights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{Anonymous: true}).To_ChatAdminRights()
-	if _, err = svc.EditAdmin(ctx, 1, 0, inCh(group), 2, rights, "mod"); err != nil {
-		t.Fatal(err)
-	}
-	anon, err := svc.Send(ctx, 2, group.Id, 0, []Outgoing{{
+	visible, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 53,
-		Message:  &mtproto.Message{Message: "anon", Date: 52},
+		Message:  replyMessage("named-reply", 52, commentID),
+	}})
+	if err != nil || sentMessageID(visible) == 0 || len(box.notes) != 1 || box.calls != 1 || box.notes[0].Commenter != 3 || box.notes[0].Recipient != 2 {
+		t.Fatalf("indexed reply did not reach noticeAuthor: id %d notes %+v calls %d %v", sentMessageID(visible), box.notes, box.calls, err)
+	}
+	rights := mtproto.MakeTLChatAdminRights(&mtproto.ChatAdminRights{
+		DeleteMessages: true,
+		Anonymous:      true,
+	}).To_ChatAdminRights()
+	if _, err = svc.EditAdmin(ctx, 1, 0, inCh(group), 3, rights, "mod"); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
+		RandomID: 54,
+		Message:  replyMessage("anon-reply", 53, commentID),
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
-		RandomID: 54,
-		Message:  replyMessage("to-anon", 53, sentMessageID(anon)),
-	}}); err != nil || len(box.notes) != 0 {
-		t.Fatalf("anon notices %d %v", len(box.notes), err)
+	anonID := sentMessageID(sent)
+	if svc.features(ctx, group.Id).CommentMsgRoot[anonID] == 0 {
+		t.Fatal("anonymous reply was not in the comment index")
+	}
+	stored, err := svc.store.GetMessage(ctx, group.Id, anonID)
+	if err != nil || stored == nil || stored.SenderID != 3 {
+		t.Fatalf("stored sender %#v %v", stored, err)
+	}
+	body, err := unmarshalMessage(stored.Data)
+	if err != nil || body.GetFromId().GetChannelId() != group.Id || body.GetFromId().GetUserId() != 0 {
+		t.Fatalf("from %#v %v", body.GetFromId(), err)
+	}
+	if len(box.notes) != 1 || box.calls != 1 {
+		t.Fatalf("anonymous sender leaked notices %d calls %d", len(box.notes), box.calls)
+	}
+	for _, n := range box.notes {
+		if n.CommentID == anonID {
+			t.Fatalf("stored sender %d became notice comment %d author %d", stored.SenderID, n.CommentID, n.Commenter)
+		}
 	}
 }
 

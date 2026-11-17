@@ -11,11 +11,21 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/biz/user/user"
 )
 
+// repliesUserClient is the block list and notify settings repliesPrivacy reads.
+type repliesUserClient interface {
+	UserIsBlockedByUser(ctx context.Context, in *user.TLUserIsBlockedByUser) (*mtproto.Bool, error)
+	UserGetNotifySettings(ctx context.Context, in *user.TLUserGetNotifySettings) (*mtproto.PeerNotifySettings, error)
+}
+
 // deliverRepliesNotice is the channel hook installed by the msg process,
 // which owns the user inbox. It does not scan channels for an author.
 func deliverRepliesNotice(d *dao.Dao) func(context.Context, channel.RepliesNotice) error {
 	return func(ctx context.Context, n channel.RepliesNotice) error {
-		blocked, settings, err := repliesPrivacy(ctx, d, n)
+		var users repliesUserClient
+		if d != nil && d.UserClient != nil {
+			users = d.UserClient
+		}
+		blocked, settings, err := repliesPrivacy(ctx, users, n)
 		if err != nil {
 			return err
 		}
@@ -27,11 +37,11 @@ func deliverRepliesNotice(d *dao.Dao) func(context.Context, channel.RepliesNotic
 // the notify settings for the discussion group and for @replies. An error
 // is returned so the caller retries and does not deliver on a failed check.
 // A missing user client is not "not blocked".
-func repliesPrivacy(ctx context.Context, d *dao.Dao, n channel.RepliesNotice) (bool, []*mtproto.PeerNotifySettings, error) {
-	if d == nil || d.UserClient == nil || n.Recipient == 0 || n.Commenter == 0 {
+func repliesPrivacy(ctx context.Context, users repliesUserClient, n channel.RepliesNotice) (bool, []*mtproto.PeerNotifySettings, error) {
+	if users == nil || n.Recipient == 0 || n.Commenter == 0 {
 		return false, nil, fmt.Errorf("replies privacy client is missing")
 	}
-	flag, err := d.UserClient.UserIsBlockedByUser(ctx, &user.TLUserIsBlockedByUser{
+	flag, err := users.UserIsBlockedByUser(ctx, &user.TLUserIsBlockedByUser{
 		UserId:     n.Recipient,
 		PeerUserId: n.Commenter,
 	})
@@ -50,7 +60,7 @@ func repliesPrivacy(ctx context.Context, d *dao.Dao, n channel.RepliesNotice) (b
 		if peer.id == 0 {
 			continue
 		}
-		st, err := d.UserClient.UserGetNotifySettings(ctx, &user.TLUserGetNotifySettings{
+		st, err := users.UserGetNotifySettings(ctx, &user.TLUserGetNotifySettings{
 			UserId:   n.Recipient,
 			PeerType: peer.kind,
 			PeerId:   peer.id,

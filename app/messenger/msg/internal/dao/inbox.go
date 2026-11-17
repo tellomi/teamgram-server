@@ -240,6 +240,11 @@ func (d *Dao) sendMessageToInbox(ctx context.Context, fromId int64, peer *mtprot
 		if inserted == 0 {
 			return
 		}
+		// Nil unless a test is holding two inbox transactions on one random id.
+		// Production does not set it.
+		if inboxBeforeRememberRandom != nil {
+			inboxBeforeRememberRandom()
+		}
 		if err := rememberInboxRandom(tx, toUserId, fromId, clientRandomId, inBoxMsgId); err != nil {
 			result.Err = err
 			return

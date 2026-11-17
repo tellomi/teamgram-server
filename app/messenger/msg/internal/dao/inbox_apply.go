@@ -71,6 +71,10 @@ func rememberInboxRandom(tx *sqlx.Tx, userID, senderID, randomID int64, boxID in
 	return fmt.Errorf("inbox random %d already stored as box %d", randomID, row.Box)
 }
 
+// inboxBeforeRememberRandom pauses inside sendMessageToInbox after the
+// message insert and before inbox_random. Production leaves it nil.
+var inboxBeforeRememberRandom func()
+
 func mysqlDup(err error) bool {
 	var me *mysql.MySQLError
 	return errors.As(err, &me) && me.Number == 1062

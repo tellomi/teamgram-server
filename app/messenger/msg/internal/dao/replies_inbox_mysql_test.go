@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/teamgram/marmota/pkg/stores/sqlx"
 	"github.com/teamgram/proto/mtproto"
 	syncpb "github.com/teamgram/teamgram-server/app/messenger/sync/sync"
 	"github.com/teamgram/teamgram-server/app/service/biz/channel"
@@ -155,70 +154,83 @@ func TestDeliverRepliesNoticeConcurrentOneRow(t *testing.T) {
 		t.Setenv("TEAMGRAM_REQUIRE_INBOX_MYSQL", "1")
 	}
 	d := openInboxApplyDB(t)
+	d.IDGenClient2 = idgen_client.NewIDGenClient2Direct(&replySeq{})
 	ctx := context.Background()
-	const (
-		user   int64 = 910442061
-		sender int64 = 910442062
-		random int64 = 910442063
-		first  int32 = 11
-		second int32 = 12
-	)
-	entered := make(chan struct{})
+	const author int64 = 910442061
+	notice := channel.RepliesNotice{
+		Recipient: author,
+		Commenter: 910442062,
+		GroupID:   910442064,
+		CommentID: 9,
+		ParentID:  4,
+		RandomID:  910442063,
+		Message: mtproto.MakeTLMessage(&mtproto.Message{
+			Message: "race-note",
+			Date:    80,
+			FwdFrom: mtproto.MakeTLMessageFwdHeader(&mtproto.MessageFwdHeader{
+				FromId: mtproto.MakePeerUser(910442062),
+				Date:   80,
+			}).To_MessageFwdHeader(),
+		}).To_Message(),
+	}
+	entered := make(chan struct{}, 2)
 	release := make(chan struct{})
-	tx1 := make(chan error, 1)
-	go func() {
-		tx1 <- d.DB.Transact(ctx, func(tx *sqlx.Tx) error {
-			if _, _, err := d.MessagesDAO.InsertOrReturnIdTx(tx, inboxMessageDO(user, sender, first, random, "one")); err != nil {
-				return err
-			}
-			if err := rememberInboxRandom(tx, user, sender, random, first); err != nil {
-				return err
-			}
-			if _, _, err := d.applyInboxInTx(ctx, tx, inboxApplyRow{
-				UserID: user, BoxID: first, PeerType: mtproto.PEER_USER, PeerID: sender,
-				UnreadDelta: 1, Date2: 11,
-			}, textMessage(first, "one")); err != nil {
-				return err
-			}
-			close(entered)
-			<-release
-			return nil
-		})
-	}()
-	<-entered
-	tx2 := make(chan error, 1)
-	go func() {
-		tx2 <- d.DB.Transact(ctx, func(tx *sqlx.Tx) error {
-			if _, _, err := d.MessagesDAO.InsertOrReturnIdTx(tx, inboxMessageDO(user, sender, second, random, "two")); err != nil {
-				return err
-			}
-			return rememberInboxRandom(tx, user, sender, random, second)
-		})
-	}()
-	select {
-	case err := <-tx2:
-		t.Fatalf("second transaction finished before the first committed: %v", err)
-	case <-time.After(400 * time.Millisecond):
+	var releaseOnce sync.Once
+	letGo := func() { releaseOnce.Do(func() { close(release) }) }
+	inboxBeforeRememberRandom = func() {
+		entered <- struct{}{}
+		<-release
 	}
-	close(release)
-	if err := <-tx1; err != nil {
-		t.Fatal(err)
+	t.Cleanup(func() {
+		letGo()
+		inboxBeforeRememberRandom = nil
+	})
+	start := make(chan struct{})
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = d.DeliverRepliesNotice(ctx, notice, false, nil, 100)
+		}(i)
 	}
-	if err := <-tx2; err == nil {
-		t.Fatal("second box committed")
+	close(start)
+	got := 0
+	deadline := time.After(5 * time.Second)
+	for got < 2 {
+		select {
+		case <-entered:
+			got++
+		case <-deadline:
+			letGo()
+			wg.Wait()
+			t.Fatalf("only %d of 2 calls reached rememberInboxRandom inside sendMessageToInbox", got)
+		}
 	}
-	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM messages WHERE user_id=?`, user); n != 1 {
+	letGo()
+	wg.Wait()
+	inboxBeforeRememberRandom = nil
+	okN, errN := 0, 0
+	for _, err := range errs {
+		if err == nil {
+			okN++
+		} else {
+			errN++
+		}
+	}
+	if okN != 1 || errN != 1 {
+		t.Fatalf("want one commit and one rollback, got %#v", errs)
+	}
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM messages WHERE user_id=? AND message=?`, author, "race-note"); n != 1 {
 		t.Fatalf("messages %d", n)
 	}
-	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM inbox_random WHERE user_id=?`, user); n != 1 {
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM inbox_random WHERE user_id=? AND random_id=?`, author, notice.RandomID); n != 1 {
 		t.Fatalf("random rows %d", n)
 	}
-	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM user_pts_updates WHERE user_id=?`, user); n != 1 {
+	if n := countRows(t, d, `SELECT COUNT(*) AS n FROM user_pts_updates WHERE user_id=?`, author); n != 1 {
 		t.Fatalf("pts rows %d", n)
-	}
-	var got string
-	if err := queryMessage(t, d, user, first, &got); err != nil || got != "one" {
-		t.Fatalf("kept %q %v", got, err)
 	}
 }
 
