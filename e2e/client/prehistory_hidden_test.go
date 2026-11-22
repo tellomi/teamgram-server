@@ -409,6 +409,105 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 			}
 			t.Logf("messages.getSearchCounters failed closed with %v", counterErr)
 		})
+
+		t.Run("read_list_feature_failure", func(t *testing.T) {
+			before := prehistoryFault.Fails()
+			prehistoryFault.ArmFeatureRead()
+			obj, err := invokeReadParticipants(owner, ownerPeer, oldID)
+			prehistoryFault.Disarm()
+			if err == nil || containsID(readerIDsOf(obj), newbieID) {
+				t.Fatalf("getMessageReadParticipants returned a list after a failed feature read: %v ids=%v\n%s", err, readerIDsOf(obj), prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() == before {
+				t.Fatalf("getMessageReadParticipants did not read channel_feature\n%s", prehistoryFault.LogText())
+			}
+			ids, _ := readParticipantIDs(t, owner, ctx, ownerPeer, oldID)
+			if containsID(ids, newbieID) {
+				t.Fatalf("feature read failure left the join cursor on the read list: %v", ids)
+			}
+		})
+
+		t.Run("read_list_participant_failure", func(t *testing.T) {
+			before := prehistoryFault.Fails()
+			prehistoryFault.ArmParticipantList()
+			obj, err := invokeReadParticipants(owner, ownerPeer, oldID)
+			prehistoryFault.Disarm()
+			if err == nil || containsID(readerIDsOf(obj), newbieID) {
+				t.Fatalf("getMessageReadParticipants returned a list after a failed participant list: %v ids=%v\n%s", err, readerIDsOf(obj), prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() == before {
+				t.Fatalf("getMessageReadParticipants did not list channel_participants\n%s", prehistoryFault.LogText())
+			}
+			ids, _ := readParticipantIDs(t, owner, ctx, ownerPeer, oldID)
+			if containsID(ids, newbieID) || !containsID(ids, olderID) {
+				t.Fatalf("participant list failure changed the stored read list: %v", ids)
+			}
+		})
+
+		t.Run("dual_persist_failure", func(t *testing.T) {
+			dual, _ := dialPhone(t, ctx, cfg, "9996610915", "PreDual")
+			dualID, dualHash, err := owner.ImportPhone(ctx, "9996610915", "PreDual")
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := prehistoryFault.Fails()
+			prehistoryFault.ArmReadWrite()
+			prehistoryFault.ArmParticipantWrite(1)
+			err = owner.InviteToChannel(ctx, group, inputUser(dualID, dualHash))
+			logText := prehistoryFault.LogText()
+			prehistoryFault.Disarm()
+			if err == nil {
+				t.Fatalf("invite succeeded while the inbox write was failed\n%s", logText)
+			}
+			if prehistoryFault.Fails() == before || !strings.Contains(logText, "inbox down") {
+				t.Fatalf("proxy did not fail the inbox write\n%s", logText)
+			}
+			var state int
+			qerr := db.QueryRow(`SELECT state FROM channel_participants WHERE channel_id=? AND user_id=?`, groupID, dualID).Scan(&state)
+			if qerr != nil && qerr != sql.ErrNoRows {
+				t.Fatal(qerr)
+			}
+			if qerr == nil && state == 0 {
+				var msgDate int32
+				if derr := db.QueryRow(`SELECT date2 FROM channel_messages WHERE channel_id=? AND message_id=?`, groupID, oldID).Scan(&msgDate); derr != nil {
+					t.Fatal(derr)
+				}
+				if _, uerr := db.Exec(`UPDATE channel_participants SET date2=? WHERE channel_id=? AND user_id=?`, msgDate, groupID, dualID); uerr != nil {
+					t.Fatal(uerr)
+				}
+				res, _ := dual.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+					Constructor: mtproto.CRC32_messages_getHistory,
+					Peer:        inputPeerChannel(groupID, groupHash),
+					Limit:       50,
+				})
+				t.Fatalf("incomplete join left StateNormal and history=%v joinTop=%d\n%s", protoTexts(messagesOrEmpty(res)), joinTopOf(t, db, groupID, dualID), logText)
+			}
+			res, _ := dual.Invoke(ctx, &mtproto.TLMessagesGetHistory{
+				Constructor: mtproto.CRC32_messages_getHistory,
+				Peer:        inputPeerChannel(groupID, groupHash),
+				Limit:       50,
+			})
+			if textIn(messagesOrEmpty(res), secret) {
+				t.Fatalf("unfinished join returned the pre-join body: %v", protoTexts(messagesOrEmpty(res)))
+			}
+			if err = owner.InviteToChannel(ctx, group, inputUser(dualID, dualHash)); err != nil {
+				t.Fatal(err)
+			}
+			var joined int
+			if err = db.QueryRow(`SELECT state FROM channel_participants WHERE channel_id=? AND user_id=?`, groupID, dualID).Scan(&joined); err != nil || joined != 0 {
+				t.Fatalf("retry did not finish the join: state=%d %v", joined, err)
+			}
+			if joinTopOf(t, db, groupID, dualID) < oldID {
+				t.Fatal("retry did not record the join top")
+			}
+			how := alignJoinSecond(t, db, groupID, dualID, oldID, freshID)
+			t.Logf("dual-failure retry same-second: %s", how)
+			dualCh := waitChannel(t, ctx, dual, groupID)
+			hist, _ := historyResult(t, dual, ctx, inputPeerChannel(groupID, dualCh.GetAccessHash()))
+			if textIn(hist, secret) {
+				t.Fatalf("retry still returned the pre-join body: %v", protoTexts(hist))
+			}
+		})
 	}
 
 	t.Run("promote_read_list", func(t *testing.T) {
@@ -429,6 +528,23 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 		ids, n = readParticipantIDs(t, owner, ctx, ownerPeer, oldID)
 		if !containsID(ids, newbieID) {
 			t.Fatalf("readHistory after promotion did not list the admin: count=%d ids=%v", n, ids)
+		}
+		if prehistoryFault == nil {
+			return
+		}
+		before := prehistoryFault.Fails()
+		prehistoryFault.ArmFeatureRead()
+		obj, rerr := invokeReadParticipants(owner, ownerPeer, oldID)
+		prehistoryFault.Disarm()
+		if rerr == nil || containsID(readerIDsOf(obj), newbieID) {
+			t.Fatalf("getMessageReadParticipants returned a list after promotion when channel_feature could not be read: %v ids=%v\n%s", rerr, readerIDsOf(obj), prehistoryFault.LogText())
+		}
+		if prehistoryFault.Fails() == before {
+			t.Fatalf("promoted read list did not read channel_feature\n%s", prehistoryFault.LogText())
+		}
+		ids, n = readParticipantIDs(t, owner, ctx, ownerPeer, oldID)
+		if !containsID(ids, newbieID) {
+			t.Fatalf("feature read failure wiped the admin read list: count=%d ids=%v", n, ids)
 		}
 	})
 
@@ -593,15 +709,33 @@ func searchMessages(t *testing.T, c *Client, ctx interface{ Done() <-chan struct
 	return msgs
 }
 
-func readParticipantIDs(t *testing.T, c *Client, ctx interface{ Done() <-chan struct{} }, peer *mtproto.InputPeer, msgID int32) ([]int64, int) {
-	t.Helper()
+func invokeReadParticipants(c *Client, peer *mtproto.InputPeer, msgID int32) (mtproto.TLObject, error) {
 	callCtx, cancel := contextTimeout(20 * time.Second)
 	defer cancel()
-	res, err := c.Invoke(callCtx, &mtproto.TLMessagesGetMessageReadParticipants31C1C44F{
+	return c.Invoke(callCtx, &mtproto.TLMessagesGetMessageReadParticipants31C1C44F{
 		Constructor: mtproto.CRC32_messages_getMessageReadParticipants31C1C44F,
 		Peer:        peer,
 		MsgId:       msgID,
 	})
+}
+
+func readerIDsOf(obj mtproto.TLObject) []int64 {
+	vec, ok := obj.(*tlVector)
+	if !ok || vec == nil {
+		return nil
+	}
+	ids := make([]int64, 0, len(vec.Readers))
+	for _, r := range vec.Readers {
+		if r.GetUserId() != 0 {
+			ids = append(ids, r.GetUserId())
+		}
+	}
+	return ids
+}
+
+func readParticipantIDs(t *testing.T, c *Client, ctx interface{ Done() <-chan struct{} }, peer *mtproto.InputPeer, msgID int32) ([]int64, int) {
+	t.Helper()
+	res, err := invokeReadParticipants(c, peer, msgID)
 	if err != nil {
 		t.Fatal(err)
 	}

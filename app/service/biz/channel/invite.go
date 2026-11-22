@@ -459,7 +459,11 @@ func (s *Service) ImportInvite(ctx context.Context, self, actorAuth int64, hash 
 		return nil, mtproto.ErrUserBannedInChannel
 	}
 	now := time.Now().Unix()
-	need := inv.RequestNeeded || s.features(ctx, ch.ID).JoinRequest
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	need := inv.RequestNeeded || feat.JoinRequest
 	if need {
 		if err := s.store.UpsertImporter(ctx, &StoredImporter{
 			ChannelID: ch.ID,
@@ -480,25 +484,16 @@ func (s *Service) ImportInvite(ctx context.Context, self, actorAuth int64, hash 
 		ChannelID: ch.ID,
 		UserID:    self,
 		Role:      RoleMember,
-		State:     StateNormal,
 		InviterID: inv.AdminID,
 		Date:      int32(now),
 	}
 	if me != nil {
 		np.IsBot = me.IsBot
 	}
-	if err := s.store.PutParticipant(ctx, np); err != nil {
+	if err = s.commitJoin(ctx, ch, np, false); err != nil {
 		return nil, err
 	}
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {
-		return nil, err
-	}
-	if err = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: self, ReadInboxMaxID: ch.TopMessage}); err != nil {
-		s.undoJoin(ctx, ch.ID, self)
-		return nil, err
-	}
-	if err = s.noteJoinBoundary(ctx, ch.ID, self, ch.TopMessage); err != nil {
-		s.undoJoin(ctx, ch.ID, self)
 		return nil, err
 	}
 	if err := s.store.UpsertImporter(ctx, &StoredImporter{

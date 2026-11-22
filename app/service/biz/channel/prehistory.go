@@ -1,6 +1,10 @@
 package channel
 
-import "context"
+import (
+	"context"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 // JoinTop is the channel message id that already existed when this member
 // joined. It is recorded on the three join paths. A missing entry is a
@@ -29,19 +33,48 @@ func (s *Service) noteJoinBoundary(ctx context.Context, channelID, userID int64,
 	return s.saveFeatures(ctx, channelID, f)
 }
 
-// undoJoin drops a membership whose inbox cursor or join top could not be
-// saved. Leaving that row in place would fall back to the date-only cutoff
-// and show a same-second message.
-func (s *Service) undoJoin(ctx context.Context, channelID, userID int64) {
-	if s == nil || s.store == nil || channelID == 0 || userID == 0 {
-		return
+// commitJoin grants StateNormal only after the inbox cursor and the join
+// boundary are stored. A failed read or write returns before that grant, so
+// an undo that itself fails cannot leave a normal member on the date-only
+// cutoff. A nil participant is not a member. That is not a read error.
+// keepOutbox preserves an outbox cursor the user already earned. Join and
+// import start a new inbox row instead, which is what those RPCs stored.
+func (s *Service) commitJoin(ctx context.Context, ch *Channel, np *Participant, keepOutbox bool) error {
+	if s == nil || s.store == nil || ch == nil || np == nil || ch.ID == 0 || np.UserID == 0 {
+		return mtproto.ErrInternalServerError
 	}
-	p, err := s.store.GetParticipant(ctx, channelID, userID)
-	if err != nil || p == nil {
-		return
+	cur, err := s.store.GetParticipant(ctx, ch.ID, np.UserID)
+	if err != nil {
+		return err
 	}
-	p.State = StateLeft
-	_ = s.store.PutParticipant(ctx, p)
+	if cur != nil && cur.State == StateKicked {
+		return mtproto.ErrUserBannedInChannel
+	}
+	if cur != nil && cur.InChannel() {
+		return nil
+	}
+	st, err := s.store.GetRead(ctx, ch.ID, np.UserID)
+	if err != nil {
+		return err
+	}
+	if keepOutbox && st != nil {
+		st.ReadInboxMaxID = ch.TopMessage
+	} else {
+		st = &ReadState{ChannelID: ch.ID, UserID: np.UserID, ReadInboxMaxID: ch.TopMessage}
+	}
+	if st.ChannelID == 0 {
+		st.ChannelID = ch.ID
+	}
+	st.UserID = np.UserID
+	if err = s.store.SaveRead(ctx, st); err != nil {
+		return err
+	}
+	if err = s.noteJoinBoundary(ctx, ch.ID, np.UserID, ch.TopMessage); err != nil {
+		return err
+	}
+	np.ChannelID = ch.ID
+	np.State = StateNormal
+	return s.store.PutParticipant(ctx, np)
 }
 
 // pinnedHidden reports a pin the viewer must not be told about. The id
