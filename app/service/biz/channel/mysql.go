@@ -263,6 +263,9 @@ func (s *mysqlStore) ListByUser(ctx context.Context, userID int64) ([]*Channel, 
 }
 
 func (s *mysqlStore) PutParticipant(ctx context.Context, p *Participant) error {
+	if p == nil {
+		return errParticipantChanged
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -276,16 +279,15 @@ func (s *mysqlStore) PutParticipant(ctx context.Context, p *Participant) error {
 	if err != nil {
 		return err
 	}
+	if !p.hasBase && cur != nil {
+		return errParticipantChanged
+	}
 	if p.hasBase {
 		if cur == nil || cur.State != p.baseState || cur.Date != p.baseDate || cur.rowVersion != p.baseVersion {
 			return errParticipantChanged
 		}
 	}
-	if cur != nil {
-		p.rowVersion = cur.rowVersion + 1
-	} else if p.rowVersion == 0 {
-		p.rowVersion = 1
-	}
+	p.rowVersion = assignRowVersion(cur)
 	if err = upsertParticipant(ctx, tx, p); err != nil {
 		return err
 	}

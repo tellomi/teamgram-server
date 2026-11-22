@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/teamgram/proto/mtproto"
@@ -1495,7 +1496,7 @@ func (s *Service) Migrate(ctx context.Context, in MigrateRequest) (*MigrateResul
 		if m.UserID == 0 || m.UserID == in.CreatorID {
 			continue
 		}
-		_ = s.store.PutParticipant(ctx, &Participant{
+		err := s.store.PutParticipant(ctx, &Participant{
 			ChannelID: ch.ID,
 			UserID:    m.UserID,
 			Role:      RoleMember,
@@ -1504,6 +1505,18 @@ func (s *Service) Migrate(ctx context.Context, in MigrateRequest) (*MigrateResul
 			IsBot:     m.IsBot,
 			Date:      now,
 		})
+		if errors.Is(err, errParticipantChanged) {
+			latest, lerr := s.store.GetParticipant(ctx, ch.ID, m.UserID)
+			if lerr != nil {
+				return nil, lerr
+			}
+			if latest != nil && latest.InChannel() {
+				continue
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	if _, err := s.refreshCount(ctx, ch.ID); err != nil {
 		return nil, err

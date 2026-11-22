@@ -159,8 +159,12 @@ func TestIncompleteJoinDoesNotGrantMembership(t *testing.T) {
 		if ferr != nil {
 			t.Fatal(ferr)
 		}
-		if !feat.HiddenPrehistory {
-			t.Fatal("membership write failure cleared hidden prehistory")
+		if !feat.HiddenPrehistory || feat.JoinTop[failGuest] < g.oldID {
+			t.Fatalf("failed member write lost the committed join top: %+v", feat)
+		}
+		inbox, rerr := svc.store.GetRead(ctx, g.ch.Id, failGuest)
+		if rerr != nil || inbox == nil || inbox.ReadInboxMaxID < g.oldID {
+			t.Fatalf("failed member write lost the committed inbox cursor: %+v %v", inbox, rerr)
 		}
 		if _, err = svc.Invite(ctx, failOwner, 0, g.in, []int64{failGuest}, nil); err != nil {
 			t.Fatal(err)

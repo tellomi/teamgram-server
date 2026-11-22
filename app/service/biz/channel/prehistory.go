@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 
 	"github.com/teamgram/proto/mtproto"
 )
@@ -141,7 +142,24 @@ func (s *Service) commitJoin(ctx context.Context, ch *Channel, np *Participant, 
 	}
 	np.ChannelID = ch.ID
 	np.State = StateNormal
-	return s.store.PutParticipant(ctx, np)
+	if cur != nil {
+		np.hasBase = true
+		np.baseState = cur.baseState
+		np.baseDate = cur.baseDate
+		np.baseVersion = cur.baseVersion
+	}
+	err = s.store.PutParticipant(ctx, np)
+	if !errors.Is(err, errParticipantChanged) {
+		return err
+	}
+	latest, lerr := s.store.GetParticipant(ctx, ch.ID, np.UserID)
+	if lerr != nil {
+		return lerr
+	}
+	if latest != nil && latest.InChannel() {
+		return s.repairJoinBoundary(ctx, ch, latest)
+	}
+	return err
 }
 
 // pinnedHidden reports a pin the viewer must not be told about. The id

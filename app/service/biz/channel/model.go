@@ -96,8 +96,23 @@ type Participant struct {
 	baseVersion int32
 }
 
-// errParticipantChanged means the membership row moved after it was read.
+// errParticipantChanged means the membership row moved after it was read,
+// or a write without a read tried to replace a row that already exists.
 var errParticipantChanged = errors.New("channel participant changed before write")
+
+// assignRowVersion is the version the store records. Callers do not choose
+// it: a new row is 1, and an update is one past the stored row. Memory and
+// MySQL both use this.
+func assignRowVersion(cur *Participant) int32 {
+	if cur == nil || cur.rowVersion <= 0 {
+		return 1
+	}
+	next := cur.rowVersion + 1
+	if next <= 0 {
+		return 1
+	}
+	return next
+}
 
 func (p *Participant) clone() *Participant {
 	if p == nil {
