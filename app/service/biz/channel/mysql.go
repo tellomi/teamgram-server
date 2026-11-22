@@ -831,21 +831,53 @@ func decodeFeaturePayload(data []byte, queryErr error) (*Features, error) {
 func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
 	var data []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=?`, channelID).Scan(&data)
-	return decodeFeaturePayload(data, err)
+	f, err := decodeFeaturePayload(data, err)
+	if err != nil {
+		return nil, err
+	}
+	return stampFeatureBase(f), nil
 }
 
+// SaveFeatures merges f onto the current channel_feature row inside one
+// transaction. The channel row lock is what makes two processes agree:
+// the second commit reads the first commit and keeps both map keys.
 func (s *mysqlStore) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
 	if f != nil && f.loadFailed {
 		return errFeaturePayloadUnread
 	}
-	raw, err := json.Marshal(f)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `
+	defer tx.Rollback()
+	var locked int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM channels WHERE id=? FOR UPDATE`, channelID).Scan(&locked)
+	if err == sql.ErrNoRows {
+		return mtproto.ErrChannelInvalid
+	}
+	if err != nil {
+		return err
+	}
+	var data []byte
+	err = tx.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=? FOR UPDATE`, channelID).Scan(&data)
+	current, err := decodeFeaturePayload(data, err)
+	if err != nil {
+		return err
+	}
+	merged, err := mergeFeatureWrite(current, f)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(merged)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `
 INSERT INTO channel_feature (channel_id, data) VALUES (?,?)
-ON DUPLICATE KEY UPDATE data=VALUES(data)`, channelID, raw)
-	return err
+ON DUPLICATE KEY UPDATE data=VALUES(data)`, channelID, raw); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *mysqlStore) GetPersonalChannel(ctx context.Context, userID int64) (int64, error) {

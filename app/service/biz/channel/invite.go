@@ -453,6 +453,9 @@ func (s *Service) ImportInvite(ctx context.Context, self, actorAuth int64, hash 
 		return nil, err
 	}
 	if me != nil && me.InChannel() {
+		if err = s.repairJoinBoundary(ctx, ch, me); err != nil {
+			return nil, err
+		}
 		return nil, mtproto.ErrUserAlreadyParticipant
 	}
 	if me != nil && me.State == StateKicked {

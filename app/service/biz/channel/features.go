@@ -113,11 +113,19 @@ type Features struct {
 	// the member joined. messages.getMessageReadParticipants does not treat
 	// an admin's ability to read older messages as a read receipt.
 	JoinTop map[int64]int32
+	// Rev is the stored generation. Saves merge onto the current row and
+	// then bump it, so two invites cannot replace each other's JoinTop.
+	Rev int64
 
 	// loadFailed is set only by features() when GetFeatures could not be
 	// read. It is not serialized. saveFeatures refuses the object so a
 	// Scan error, bad JSON, or empty blob is not written back as {}.
 	loadFailed bool
+	// base is the row this copy was read from. It is not serialized.
+	// SaveFeatures applies only the difference from base onto the row that
+	// is stored at write time.
+	base    *Features
+	baseRev int64
 }
 
 // ViewRec is one channel post's view counter.
@@ -232,7 +240,7 @@ func (f *Features) clone() *Features {
 func (s *memoryStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.features[channelID].clone(), nil
+	return stampFeatureBase(s.features[channelID].clone()), nil
 }
 
 func (s *memoryStore) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
@@ -244,7 +252,11 @@ func (s *memoryStore) SaveFeatures(ctx context.Context, channelID int64, f *Feat
 	if s.channels[channelID] == nil {
 		return mtproto.ErrChannelInvalid
 	}
-	s.features[channelID] = f.clone()
+	merged, err := mergeFeatureWrite(s.features[channelID].clone(), f)
+	if err != nil {
+		return err
+	}
+	s.features[channelID] = merged.clone()
 	return nil
 }
 

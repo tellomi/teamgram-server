@@ -548,6 +548,46 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 		}
 	})
 
+	t.Run("concurrent_join", func(t *testing.T) {
+		// Actual MTProto invites against this process. The deterministic
+		// SaveFeatures stall is the in-memory channel test, not this RPC.
+		left, _ := dialPhone(t, ctx, cfg, "9996610916", "PreRaceA")
+		right, _ := dialPhone(t, ctx, cfg, "9996610917", "PreRaceB")
+		leftID, leftHash, err := owner.ImportPhone(ctx, "9996610916", "PreRaceA")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rightID, rightHash, err := owner.ImportPhone(ctx, "9996610917", "PreRaceB")
+		if err != nil {
+			t.Fatal(err)
+		}
+		errCh := make(chan error, 2)
+		go func() {
+			errCh <- owner.InviteToChannel(ctx, group, inputUser(leftID, leftHash))
+		}()
+		go func() {
+			errCh <- owner.InviteToChannel(ctx, group, inputUser(rightID, rightHash))
+		}()
+		for i := 0; i < 2; i++ {
+			if err = <-errCh; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if joinTopOf(t, db, groupID, leftID) < oldID || joinTopOf(t, db, groupID, rightID) < oldID {
+			t.Fatalf("concurrent invites stored join tops %d and %d for secret %d", joinTopOf(t, db, groupID, leftID), joinTopOf(t, db, groupID, rightID), oldID)
+		}
+		alignJoinSecond(t, db, groupID, leftID, oldID, freshID)
+		alignJoinSecond(t, db, groupID, rightID, oldID, freshID)
+		leftCh := waitChannel(t, ctx, left, groupID)
+		rightCh := waitChannel(t, ctx, right, groupID)
+		if textIn(historyMessages(t, left, ctx, inputPeerChannel(groupID, leftCh.GetAccessHash())), secret) {
+			t.Fatal("concurrent join returned the pre-join body to the first member")
+		}
+		if textIn(historyMessages(t, right, ctx, inputPeerChannel(groupID, rightCh.GetAccessHash())), secret) {
+			t.Fatal("concurrent join returned the pre-join body to the second member")
+		}
+	})
+
 }
 
 func openPrehistoryDB(t *testing.T) *sql.DB {

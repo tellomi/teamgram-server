@@ -30,7 +30,66 @@ func (s *Service) noteJoinBoundary(ctx context.Context, channelID, userID int64,
 		f.JoinTop = map[int64]int32{}
 	}
 	f.JoinTop[userID] = top
+	// saveFeatures merges this key onto the row stored at write time.
+	// Two invites therefore keep both users.
 	return s.saveFeatures(ctx, channelID, f)
+}
+
+// repairJoinBoundary fills a missing join top for a member who is already
+// in the channel. It uses the inbox cursor only while that cursor has not
+// moved past the join second. A cursor that already covers a later second
+// is left alone, so a member from before JoinTop existed does not lose
+// messages posted after they joined. A recorded join top is never moved.
+func (s *Service) repairJoinBoundary(ctx context.Context, ch *Channel, member *Participant) error {
+	if s == nil || s.store == nil || ch == nil || member == nil || !member.InChannel() {
+		return nil
+	}
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return err
+	}
+	if f == nil || !f.HiddenPrehistory || joinTop(f, member.UserID) > 0 {
+		return nil
+	}
+	st, err := s.store.GetRead(ctx, ch.ID, member.UserID)
+	if err != nil {
+		return err
+	}
+	inbox := int32(0)
+	if st != nil {
+		inbox = st.ReadInboxMaxID
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return err
+	}
+	top, ok := joinBoundaryCandidate(member, inbox, msgs)
+	if !ok {
+		return nil
+	}
+	if f.JoinTop == nil {
+		f.JoinTop = map[int64]int32{}
+	}
+	f.JoinTop[member.UserID] = top
+	return s.saveFeatures(ctx, ch.ID, f)
+}
+
+// joinBoundaryCandidate is the inbox cursor when every live message it
+// covers is still in the member's join second. A later second means the
+// cursor is not a join snapshot.
+func joinBoundaryCandidate(member *Participant, inbox int32, msgs []*StoredMessage) (int32, bool) {
+	if member == nil || !member.InChannel() || inbox <= 0 {
+		return 0, false
+	}
+	for _, m := range msgs {
+		if m == nil || m.Deleted {
+			continue
+		}
+		if m.ID <= inbox && m.Date > member.Date {
+			return 0, false
+		}
+	}
+	return inbox, true
 }
 
 // commitJoin grants StateNormal only after the inbox cursor and the join
@@ -51,7 +110,7 @@ func (s *Service) commitJoin(ctx context.Context, ch *Channel, np *Participant, 
 		return mtproto.ErrUserBannedInChannel
 	}
 	if cur != nil && cur.InChannel() {
-		return nil
+		return s.repairJoinBoundary(ctx, ch, cur)
 	}
 	st, err := s.store.GetRead(ctx, ch.ID, np.UserID)
 	if err != nil {

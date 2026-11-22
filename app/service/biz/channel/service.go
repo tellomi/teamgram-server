@@ -356,6 +356,9 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 			return nil, err
 		}
 		if cur != nil && cur.InChannel() {
+			if err = s.repairJoinBoundary(ctx, ch, cur); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if cur != nil && cur.State == StateKicked {
@@ -417,6 +420,9 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 		return nil, err
 	}
 	if p != nil && p.InChannel() {
+		if err = s.repairJoinBoundary(ctx, ch, p); err != nil {
+			return nil, err
+		}
 		return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
 	}
 	if p != nil && p.State == StateKicked {
