@@ -353,6 +353,62 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 				t.Logf("history after failed join: %v", herr)
 			}
 		})
+
+		t.Run("feature_read_failure", func(t *testing.T) {
+			// GetFeatures must not be treated as an empty config. The same
+			// SELECT feeds getDiscussionMessage, getReplies, and the search
+			// counter. An error is closed. A body that contains the secret
+			// is not.
+			check := func(name string, call func() (mtproto.TLObject, error)) {
+				t.Helper()
+				before := prehistoryFault.Fails()
+				prehistoryFault.ArmFeatureRead()
+				obj, err := call()
+				prehistoryFault.Disarm()
+				if textIn(discussionOrMessages(obj), secret) {
+					t.Fatalf("%s returned the pre-join body after a failed feature read: %v\n%s", name, err, prehistoryFault.LogText())
+				}
+				if prehistoryFault.Fails() == before {
+					t.Fatalf("%s did not read channel_feature\n%s", name, prehistoryFault.LogText())
+				}
+				if err != nil {
+					t.Logf("%s failed closed with %v", name, err)
+				}
+			}
+			check("messages.getDiscussionMessage", func() (mtproto.TLObject, error) {
+				return newbie.Invoke(ctx, &mtproto.TLMessagesGetDiscussionMessage{
+					Constructor: mtproto.CRC32_messages_getDiscussionMessage,
+					Peer:        newbiePeer,
+					MsgId:       oldID,
+				})
+			})
+			check("messages.getReplies", func() (mtproto.TLObject, error) {
+				return newbie.Invoke(ctx, &mtproto.TLMessagesGetReplies{
+					Constructor: mtproto.CRC32_messages_getReplies,
+					Peer:        newbiePeer,
+					MsgId:       oldID,
+					Limit:       20,
+				})
+			})
+			before := prehistoryFault.Fails()
+			prehistoryFault.ArmFeatureRead()
+			counterObj, counterErr := newbie.Invoke(ctx, &mtproto.TLMessagesGetSearchCounters{
+				Constructor: mtproto.CRC32_messages_getSearchCounters_732eef00,
+				Peer:        newbiePeer,
+				Filters:     []*mtproto.MessagesFilter{mtproto.MakeTLInputMessagesFilterEmpty(nil).To_MessagesFilter()},
+			})
+			prehistoryFault.Disarm()
+			if counterErr == nil && searchCounterTotal(counterObj) > 0 && textIn(messagesOrEmpty(counterObj), secret) {
+				t.Fatalf("messages.getSearchCounters returned the pre-join body\n%s", prehistoryFault.LogText())
+			}
+			if prehistoryFault.Fails() == before {
+				t.Fatalf("messages.getSearchCounters did not read channel_feature\n%s", prehistoryFault.LogText())
+			}
+			if counterErr == nil {
+				t.Fatalf("messages.getSearchCounters returned count=%d with no error while channel_feature could not be read", searchCounterTotal(counterObj))
+			}
+			t.Logf("messages.getSearchCounters failed closed with %v", counterErr)
+		})
 	}
 
 	t.Run("promote_read_list", func(t *testing.T) {
@@ -590,6 +646,33 @@ func differenceMessages(obj mtproto.TLObject) []*mtproto.Message {
 	}
 }
 
+func discussionOrMessages(obj mtproto.TLObject) []*mtproto.Message {
+	switch v := obj.(type) {
+	case *mtproto.TLMessagesDiscussionMessage:
+		if v.GetData2() != nil {
+			return v.GetData2().GetMessages()
+		}
+	case *mtproto.Messages_DiscussionMessage:
+		return v.GetMessages()
+	}
+	return messagesOrEmpty(obj)
+}
+
+func searchCounterTotal(obj mtproto.TLObject) int32 {
+	var n int32
+	switch vec := obj.(type) {
+	case *mtproto.Vector_Messages_SearchCounter:
+		for _, row := range vec.GetDatas() {
+			n += row.GetCount()
+		}
+	case *tlVector:
+		for _, row := range vec.Counters {
+			n += row.GetCount()
+		}
+	}
+	return n
+}
+
 func messagesOrEmpty(obj mtproto.TLObject) []*mtproto.Message {
 	msgs, ok := messagesOf(obj)
 	if !ok {
@@ -621,15 +704,6 @@ func messageEmpty(msgs []*mtproto.Message, id int32) bool {
 	for _, m := range msgs {
 		if m.GetId() == id {
 			return m.GetPredicateName() == mtproto.Predicate_messageEmpty
-		}
-	}
-	return false
-}
-
-func containsID(ids []int64, id int64) bool {
-	for _, v := range ids {
-		if v == id {
-			return true
 		}
 	}
 	return false

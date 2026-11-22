@@ -275,8 +275,13 @@ func (s *Service) repliesReadable(ctx context.Context, group *Channel, recipient
 	if blocked, _ := s.viewBlocked(p); blocked {
 		return false, nil
 	}
-	f := s.features(ctx, group.ID)
-	if prehistoryBlocks(f, p, parent) || prehistoryBlocks(f, p, comment) {
+	f, ferr := s.mutableFeatures(ctx, group.ID)
+	if ferr != nil {
+		// Do not copy the comment into @replies when the cutoff is unknown.
+		// Skip the notice and leave the send itself alone.
+		return false, nil
+	}
+	if prehistoryBlocks(f, p, parent, nil) || prehistoryBlocks(f, p, comment, nil) {
 		return false, nil
 	}
 	return p.InChannel(), nil

@@ -116,19 +116,24 @@ type PrehistoryGate struct {
 	Admin   bool
 	Joined  int32
 	JoinTop int32
-	// Unknown is a failed member-row read. Blocks then hides every message
-	// while prehistory is on.
+	// Unknown is a failed member-row read or a failed feature read. Blocks
+	// then hides every message. A feature error cannot be treated as
+	// "prehistory is off".
 	Unknown bool
 }
 
 // PrehistoryGate loads the viewer's cutoff. A missing channel does not hide
 // anything: searchGlobal still returns the rows the user already has.
+// A failed feature read is unknown: the caller must not return the body.
 func (s *Service) PrehistoryGate(ctx context.Context, user, channelID int64) PrehistoryGate {
 	if s == nil || channelID == 0 {
 		return PrehistoryGate{}
 	}
-	f := s.features(ctx, channelID)
-	if !f.HiddenPrehistory {
+	f, err := s.mutableFeatures(ctx, channelID)
+	if err != nil {
+		return PrehistoryGate{Hidden: true, Unknown: true}
+	}
+	if f == nil || !f.HiddenPrehistory {
 		return PrehistoryGate{}
 	}
 	viewer, err := s.store.GetParticipant(ctx, channelID, user)

@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -801,23 +802,42 @@ func splitInt32(s string) []int32 {
 	return out
 }
 
-func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
-	var data []byte
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=?`, channelID).Scan(&data)
-	if err == sql.ErrNoRows || len(data) == 0 {
+// errEmptyFeaturePayload is a channel_feature row whose blob is empty or JSON
+// null. That is not a stored config: treating it as {} would hide
+// HiddenPrehistory and let a later save overwrite the row.
+var errEmptyFeaturePayload = errors.New("channel feature payload is empty")
+
+// decodeFeaturePayload is mysqlStore.GetFeatures without the driver. NoRows is
+// a channel that has never saved features. A Scan error is returned as-is.
+// An empty blob, JSON null, or broken JSON is an error, not an empty config.
+func decodeFeaturePayload(data []byte, queryErr error) (*Features, error) {
+	if errors.Is(queryErr, sql.ErrNoRows) {
 		return &Features{}, nil
 	}
-	if err != nil {
-		return nil, err
+	if queryErr != nil {
+		return nil, queryErr
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, errEmptyFeaturePayload
 	}
 	f := &Features{}
-	if err := json.Unmarshal(data, f); err != nil {
+	if err := json.Unmarshal(trimmed, f); err != nil {
 		return nil, err
 	}
 	return f, nil
 }
 
+func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
+	var data []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=?`, channelID).Scan(&data)
+	return decodeFeaturePayload(data, err)
+}
+
 func (s *mysqlStore) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
+	if f != nil && f.loadFailed {
+		return errFeaturePayloadUnread
+	}
 	raw, err := json.Marshal(f)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package channel
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -13,10 +14,17 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+// errFeaturePayloadUnread is returned when a caller tries to persist the
+// placeholder features() builds after GetFeatures fails. The stored row stays.
+var errFeaturePayloadUnread = errors.New("channel feature payload was not read")
+
 func (s *Service) features(ctx context.Context, channelID int64) *Features {
 	f, err := s.mutableFeatures(ctx, channelID)
 	if err != nil || f == nil {
-		f = &Features{}
+		// Display callers still see a zero config. The flag stops them from
+		// saving that zero config over HiddenPrehistory, JoinTop, or usernames.
+		// Body reads use mutableFeatures and fail closed instead of this object.
+		f = &Features{loadFailed: true}
 		normalizeFeatures(f)
 	}
 	return f
@@ -75,6 +83,9 @@ func normalizeFeatures(f *Features) {
 }
 
 func (s *Service) saveFeatures(ctx context.Context, channelID int64, f *Features) error {
+	if f != nil && f.loadFailed {
+		return errFeaturePayloadUnread
+	}
 	return s.store.SaveFeatures(ctx, channelID, f)
 }
 
@@ -368,7 +379,10 @@ func (s *Service) TogglePreHistory(ctx context.Context, self, actorAuth int64, i
 	if !p.IsCreator() && !p.adminRights().CanChangeInfo() {
 		return nil, mtproto.ErrChatAdminRequired
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	f.HiddenPrehistory = enabled
 	if err := s.saveFeatures(ctx, ch.ID, f); err != nil {
 		return nil, err
@@ -1935,7 +1949,10 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 	if err != nil {
 		return nil, err
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	targets := []int64{ch.ID}
 	if f.LinkedChatID != 0 {
 		targets = append(targets, f.LinkedChatID)
@@ -1949,7 +1966,10 @@ func (s *Service) Replies(ctx context.Context, self, channelID int64, msgID int3
 		}
 		chats = append(chats, s.ChatFor(ctx, self, peerCh))
 		all, _ := s.store.ListMessages(ctx, id)
-		peerFeat := s.features(ctx, id)
+		peerFeat, peerFeatErr := s.mutableFeatures(ctx, id)
+		if peerFeatErr != nil {
+			return nil, peerFeatErr
+		}
 		peerViewer, peerErr := s.store.GetParticipant(ctx, id, self)
 		topicID := msgID
 		if i, ok := findTopic(f, msgID); ok {
@@ -1996,8 +2016,12 @@ func (s *Service) DiscussionMessage(ctx context.Context, self, channelID int64, 
 	if err != nil || stored == nil || stored.Deleted {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
+	feat, featErr := s.mutableFeatures(ctx, channelID)
+	if featErr != nil {
+		return nil, featErr
+	}
 	viewer, viewerErr := s.store.GetParticipant(ctx, channelID, self)
-	if prehistoryBlocks(s.features(ctx, channelID), viewer, stored, viewerErr) {
+	if prehistoryBlocks(feat, viewer, stored, viewerErr) {
 		return nil, mtproto.ErrMessageIdInvalid
 	}
 	body, err := unmarshalMessage(stored.Data)

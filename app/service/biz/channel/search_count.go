@@ -21,7 +21,10 @@ func (s *Service) CountByFilter(ctx context.Context, self, channelID int64, filt
 	if err != nil {
 		return 0, err
 	}
-	feat := s.features(ctx, ch.ID)
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return 0, err
+	}
 	viewer, viewerErr := s.store.GetParticipant(ctx, ch.ID, self)
 	var n int32
 	for _, stored := range all {

@@ -129,6 +129,17 @@ func TestRepliesNoticeHidesFromUnreadAndRestricted(t *testing.T) {
 	if _, err = svc.TogglePreHistory(ctx, 1, 0, in, true); err != nil {
 		t.Fatal(err)
 	}
+	// Invite recorded JoinTop. This case is the older date cutoff: a member
+	// row from before that field keeps hiding by join date. Leaving the
+	// recorded top in place would treat the later id as post-join.
+	feat, err := svc.mutableFeatures(ctx, group.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(feat.JoinTop, 2)
+	if err = svc.saveFeatures(ctx, group.Id, feat); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = svc.Send(ctx, 3, group.Id, 0, []Outgoing{{
 		RandomID: 22,
 		Message:  replyMessage("after-join", 30, commentID),

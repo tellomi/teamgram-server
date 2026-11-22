@@ -113,6 +113,11 @@ type Features struct {
 	// the member joined. messages.getMessageReadParticipants does not treat
 	// an admin's ability to read older messages as a read receipt.
 	JoinTop map[int64]int32
+
+	// loadFailed is set only by features() when GetFeatures could not be
+	// read. It is not serialized. saveFeatures refuses the object so a
+	// Scan error, bad JSON, or empty blob is not written back as {}.
+	loadFailed bool
 }
 
 // ViewRec is one channel post's view counter.
@@ -220,6 +225,7 @@ func (f *Features) clone() *Features {
 		cp := *f
 		return &cp
 	}
+	out.loadFailed = f.loadFailed
 	return out
 }
 
@@ -230,6 +236,9 @@ func (s *memoryStore) GetFeatures(ctx context.Context, channelID int64) (*Featur
 }
 
 func (s *memoryStore) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
+	if f != nil && f.loadFailed {
+		return errFeaturePayloadUnread
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.channels[channelID] == nil {
