@@ -261,8 +261,8 @@ func TestReinviteRepairsMissingJoinTopOnlyInsideJoinSecond(t *testing.T) {
 		t.Fatalf("reinvite invented JoinTop %d for a cursor past the join second", feat.JoinTop[22])
 	}
 	hist, err = svc.History(ctx, 22, in, HistoryQuery{Limit: 50})
-	if err != nil || !prehistHas(hist.Messages, "after-repair") {
-		t.Fatalf("legacy member lost a later message: %+v %v", prehistTexts(hist.Messages), err)
+	if err != nil || !prehistHas(hist.Messages, "after-repair") || !prehistHas(hist.Messages, "race-secret") {
+		t.Fatalf("unresolved missing JoinTop changed visibility: %+v %v", prehistTexts(hist.Messages), err)
 	}
 }
 

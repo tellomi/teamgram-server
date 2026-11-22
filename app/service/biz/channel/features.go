@@ -234,6 +234,14 @@ func (f *Features) clone() *Features {
 		return &cp
 	}
 	out.loadFailed = f.loadFailed
+	out.baseRev = f.baseRev
+	if f.base != nil {
+		// The read baseline has no baseline of its own. Copying it lets a
+		// clone set a field to zero and still have that counted as a change.
+		out.base = f.base.clone()
+		out.base.base = nil
+		out.base.baseRev = 0
+	}
 	return out
 }
 

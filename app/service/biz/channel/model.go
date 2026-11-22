@@ -6,7 +6,11 @@
 
 package channel
 
-import "github.com/teamgram/proto/mtproto"
+import (
+	"errors"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 const (
 	RoleMember  int32 = 0
@@ -82,7 +86,18 @@ type Participant struct {
 	InviterID    int64
 	IsBot        bool
 	Date         int32
+	// hasBase is set on a row returned by the store. A later write applies
+	// only when state and date still match, so a stale leave cannot undo a
+	// rejoin that committed first.
+	hasBase     bool
+	baseState   int32
+	baseDate    int32
+	rowVersion  int32
+	baseVersion int32
 }
+
+// errParticipantChanged means the membership row moved after it was read.
+var errParticipantChanged = errors.New("channel participant changed before write")
 
 func (p *Participant) clone() *Participant {
 	if p == nil {

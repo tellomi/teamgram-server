@@ -313,6 +313,11 @@ func isFeatureWriteSQL(q string) bool {
 	return strings.Contains(s, "channel_feature") && (strings.Contains(s, "insert") || strings.Contains(s, "update"))
 }
 
+// inboxDownLog is written only when a channel_read_state insert or update
+// is rejected. The MySQL error packet text is "inbox down". Other faults
+// must not use this line.
+const inboxDownLog = "fail read state write: inbox down"
+
 func isReadWriteSQL(q string) bool {
 	s := strings.ToLower(q)
 	return strings.Contains(s, "channel_read_state") && (strings.Contains(s, "insert") || strings.Contains(s, "update"))
@@ -343,7 +348,7 @@ func (p *participantFaultProxy) failQuery(sqlText string) (bool, string) {
 		return true, "channel_feature write failed"
 	case p.failReadWrite && isReadWriteSQL(sqlText):
 		p.fails++
-		p.lines = append(p.lines, "fail read state write")
+		p.lines = append(p.lines, inboxDownLog)
 		return true, "inbox down"
 	case p.failPartWrite && isParticipantWriteSQL(sqlText):
 		if p.partWriteAllow > 0 {
@@ -379,7 +384,7 @@ func (p *participantFaultProxy) failStatement(payload []byte, meta stmtMeta) (bo
 			return true, "channel_feature write failed"
 		case meta.readWrite && p.failReadWrite:
 			p.fails++
-			p.lines = append(p.lines, "fail read state write")
+			p.lines = append(p.lines, inboxDownLog)
 			return true, "inbox down"
 		case meta.partWrite && p.failPartWrite:
 			if p.partWriteAllow > 0 {

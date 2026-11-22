@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"math"
 	"regexp"
 	"strings"
@@ -480,6 +481,15 @@ func (s *Service) Leave(ctx context.Context, user, actorAuth int64, in *mtproto.
 	}
 	p.State = StateLeft
 	if err := s.store.PutParticipant(ctx, p); err != nil {
+		if errors.Is(err, errParticipantChanged) {
+			latest, lerr := s.store.GetParticipant(ctx, ch.ID, user)
+			if lerr != nil {
+				return nil, lerr
+			}
+			if latest != nil && latest.State == StateLeft {
+				return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
+			}
+		}
 		return nil, err
 	}
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {

@@ -233,7 +233,20 @@ func (s *memoryStore) PutParticipant(ctx context.Context, p *Participant) error 
 	if s.parts[p.ChannelID] == nil {
 		s.parts[p.ChannelID] = map[int64]*Participant{}
 	}
-	s.parts[p.ChannelID][p.UserID] = p.clone()
+	cur := s.parts[p.ChannelID][p.UserID]
+	if p.hasBase {
+		if cur == nil || cur.State != p.baseState || cur.Date != p.baseDate || cur.rowVersion != p.baseVersion {
+			return errParticipantChanged
+		}
+	}
+	stored := p.clone()
+	stored.hasBase = false
+	if cur != nil {
+		stored.rowVersion = cur.rowVersion + 1
+	} else {
+		stored.rowVersion = 1
+	}
+	s.parts[p.ChannelID][p.UserID] = stored
 	return nil
 }
 
@@ -243,7 +256,7 @@ func (s *memoryStore) GetParticipant(ctx context.Context, channelID, userID int6
 	if s.parts[channelID] == nil {
 		return nil, nil
 	}
-	return s.parts[channelID][userID].clone(), nil
+	return observeParticipant(s.parts[channelID][userID]), nil
 }
 
 func (s *memoryStore) ListParticipants(ctx context.Context, channelID int64) ([]*Participant, error) {
@@ -251,7 +264,7 @@ func (s *memoryStore) ListParticipants(ctx context.Context, channelID int64) ([]
 	defer s.mu.Unlock()
 	var out []*Participant
 	for _, p := range s.parts[channelID] {
-		out = append(out, p.clone())
+		out = append(out, observeParticipant(p))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Date == out[j].Date {

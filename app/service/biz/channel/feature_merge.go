@@ -178,44 +178,61 @@ func mergeJSONArray(current, base, proposed json.RawMessage) (json.RawMessage, e
 	cb := decodeArray(current)
 	bb := decodeArray(base)
 	pb := decodeArray(proposed)
-	baseSet := map[string]struct{}{}
-	for _, el := range bb {
-		baseSet[canonRaw(el)] = struct{}{}
+	// An unchanged list keeps the stored order, including a reorder another
+	// writer already committed. A changed list uses the caller's order, so
+	// channels.reorderUsernames is not dropped while the channel row is updated.
+	if sameRawSequence(bb, pb) {
+		if jsonKind(current) == '[' {
+			return append(json.RawMessage(nil), bytes.TrimSpace(current)...), nil
+		}
+		if len(cb) == 0 {
+			return []byte("null"), nil
+		}
+		return json.Marshal(cb)
 	}
-	propSet := map[string]struct{}{}
-	for _, el := range pb {
-		propSet[canonRaw(el)] = struct{}{}
-	}
-	var out []json.RawMessage
-	seen := map[string]struct{}{}
+	baseCount := countRaw(bb)
+	propCount := countRaw(pb)
+	out := append([]json.RawMessage{}, pb...)
+	occ := map[string]int{}
 	for _, el := range cb {
 		key := canonRaw(el)
-		if _, inBase := baseSet[key]; inBase {
-			if _, keep := propSet[key]; !keep {
-				continue
-			}
-		}
-		if _, ok := seen[key]; ok {
+		occ[key]++
+		if occ[key] <= baseCount[key] {
 			continue
 		}
-		seen[key] = struct{}{}
-		out = append(out, el)
-	}
-	for _, el := range pb {
-		key := canonRaw(el)
-		if _, ok := seen[key]; ok {
+		callerAdded := propCount[key] - baseCount[key]
+		if callerAdded < 0 {
+			callerAdded = 0
+		}
+		if occ[key]-baseCount[key] <= callerAdded {
 			continue
 		}
-		if _, inBase := baseSet[key]; inBase {
-			continue
-		}
-		seen[key] = struct{}{}
 		out = append(out, el)
 	}
 	if out == nil {
 		out = []json.RawMessage{}
 	}
 	return json.Marshal(out)
+}
+
+func sameRawSequence(a, b []json.RawMessage) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if canonRaw(a[i]) != canonRaw(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func countRaw(list []json.RawMessage) map[string]int {
+	out := map[string]int{}
+	for _, el := range list {
+		out[canonRaw(el)]++
+	}
+	return out
 }
 
 func decodeObject(raw json.RawMessage) map[string]json.RawMessage {

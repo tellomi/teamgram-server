@@ -459,8 +459,8 @@ func TestHiddenPrehistoryProtocol(t *testing.T) {
 			if err == nil {
 				t.Fatalf("invite succeeded while the inbox write was failed\n%s", logText)
 			}
-			if prehistoryFault.Fails() == before || !strings.Contains(logText, "inbox down") {
-				t.Fatalf("proxy did not fail the inbox write\n%s", logText)
+			if prehistoryFault.Fails() == before || !strings.Contains(logText, inboxDownLog) {
+				t.Fatalf("proxy did not fail the channel_read_state write with inbox down\n%s", logText)
 			}
 			var state int
 			qerr := db.QueryRow(`SELECT state FROM channel_participants WHERE channel_id=? AND user_id=?`, groupID, dualID).Scan(&state)

@@ -36,10 +36,18 @@ func (s *Service) noteJoinBoundary(ctx context.Context, channelID, userID int64,
 }
 
 // repairJoinBoundary fills a missing join top for a member who is already
-// in the channel. It uses the inbox cursor only while that cursor has not
-// moved past the join second. A cursor that already covers a later second
-// is left alone, so a member from before JoinTop existed does not lose
-// messages posted after they joined. A recorded join top is never moved.
+// in the channel. It uses the inbox cursor only while every live message
+// that cursor covers is still in the member's join second. That cursor is
+// the top recorded at join and not yet moved.
+//
+// Once the cursor covers a later second, the original join id is gone.
+// member.Date only has second resolution, and the join service message is
+// not a reliable top: messages can commit after the boundary is stored and
+// before that service message gets its id. Inventing a top from either one
+// can hide a message sent after the member joined. This function leaves
+// that member on the date cutoff. A same-second message from before the
+// real join can still be visible. Recovering it needs the top id captured
+// at join, which new joins store in JoinTop and old rows do not have.
 func (s *Service) repairJoinBoundary(ctx context.Context, ch *Channel, member *Participant) error {
 	if s == nil || s.store == nil || ch == nil || member == nil || !member.InChannel() {
 		return nil
