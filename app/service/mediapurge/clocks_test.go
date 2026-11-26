@@ -7,30 +7,30 @@ import (
 	"github.com/teamgram/teamgram-server/app/service/media/retention"
 )
 
-// Orphan GC, media age, and premium grace are three clocks. A file inside
-// the age window is young even if nobody references it. An old file a
-// subscriber still holds is not expired. The purge queue waits its own
+// Orphan GC and media age are separate clocks. A file inside the age
+// window is young even when a subscriber holds it. An old file expires
+// even when a subscriber still holds it. The purge queue waits its own
 // grace and does not read the age window.
 func TestPurgeGraceIsSeparateFromMediaAge(t *testing.T) {
 	if Grace() != 24*time.Hour {
 		t.Fatalf("orphan grace %s", Grace())
 	}
 	cfg := retention.Defaults()
-	if cfg.Retention() != 90*24*time.Hour || cfg.Grace() != 30*24*time.Hour {
+	if cfg.Retention() != 7*24*time.Hour {
 		t.Fatalf("age policy %+v", cfg)
 	}
 	now := time.Unix(1_700_000_000, 0)
+	held := []retention.Subscription{{UserID: 7, Premium: true}}
 	young := retention.Media{Kind: retention.KindDocument, ID: 1, UploadedAt: now.Add(-48 * time.Hour).Unix()}
-	if got := retention.Decide(young, nil, now, cfg); got != retention.ReasonYoung {
+	if got := retention.Decide(young, held, now, cfg); got != retention.ReasonYoung {
 		t.Fatalf("two-day file %s", got)
 	}
 	old := young
-	old.UploadedAt = now.Add(-91 * 24 * time.Hour).Unix()
+	old.UploadedAt = now.Add(-8 * 24 * time.Hour).Unix()
 	if got := retention.Decide(old, nil, now, cfg); got != retention.ReasonUnreferenced {
 		t.Fatalf("old unreferenced %s", got)
 	}
-	held := []retention.Subscription{{UserID: 7, Premium: true}}
-	if got := retention.Decide(old, held, now, cfg); got != retention.ReasonSubscriber {
+	if got := retention.Decide(old, held, now, cfg); got != retention.ReasonExpire {
 		t.Fatalf("subscriber %s", got)
 	}
 	enqueued := now

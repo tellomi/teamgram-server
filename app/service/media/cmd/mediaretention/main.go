@@ -41,8 +41,8 @@ func main() {
 		log.Fatal(err)
 	}
 	sw.Logf = func(format string, args ...any) { log.Printf(format, args...) }
-	log.Printf("media retention one-shot: dry_run=%v days=%d grace_days=%d batch=%d max_per_run=%d enabled_in_env=%v",
-		cfg.DryRun, cfg.Days, cfg.GraceDays, cfg.Batch, cfg.MaxPerRun, cfg.Enabled)
+	log.Printf("media retention one-shot: dry_run=%v days=%d batch=%d max_per_run=%d enabled_in_env=%v",
+		cfg.DryRun, cfg.Days, cfg.Batch, cfg.MaxPerRun, cfg.Enabled)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	rep, err := sw.Run(ctx, time.Now())

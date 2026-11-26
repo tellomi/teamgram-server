@@ -3,7 +3,9 @@ package retention
 import (
 	"context"
 	"errors"
+	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,15 +19,16 @@ func cfg() Config { c := Defaults(); c.Enabled = true; c.DryRun = false; return 
 func TestFromEnv(t *testing.T) {
 	t.Setenv(EnvEnabled, "true")
 	t.Setenv(EnvDays, "30")
-	t.Setenv(EnvGraceDays, "7")
 	t.Setenv(EnvDryRun, "1")
 	t.Setenv(EnvBatch, "10")
 	t.Setenv(EnvMaxPerRun, "0")
+	// A leftover grace setting must not change the policy or fail startup.
+	t.Setenv("TELLOMI_MEDIA_RETENTION_GRACE_DAYS", "30")
 	c, err := FromEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Enabled || !c.DryRun || c.Days != 30 || c.GraceDays != 7 || c.Batch != 10 || c.MaxPerRun != 0 {
+	if !c.Enabled || !c.DryRun || c.Days != 30 || c.Batch != 10 || c.MaxPerRun != 0 {
 		t.Fatalf("got %+v", c)
 	}
 	t.Setenv(EnvDays, "x")
@@ -39,37 +42,35 @@ func TestFromEnv(t *testing.T) {
 }
 
 func TestFromEnvDefaultsOff(t *testing.T) {
-	for _, k := range []string{EnvEnabled, EnvDays, EnvGraceDays, EnvDryRun, EnvBatch, EnvMaxPerRun, EnvRunHour} {
+	for _, k := range []string{EnvEnabled, EnvDays, EnvDryRun, EnvBatch, EnvMaxPerRun, EnvRunHour} {
 		t.Setenv(k, "")
 	}
 	c, err := FromEnv()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Enabled || !c.DryRun || c.Days != 90 || c.GraceDays != 30 {
+	if c.Enabled || !c.DryRun || c.Days != 7 {
 		t.Fatalf("got %+v", c)
 	}
 }
 
-func TestProtects(t *testing.T) {
-	grace := 30 * 24 * time.Hour
-	cases := []struct {
-		name string
-		sub  Subscription
-		want bool
-	}{
-		{"free", Subscription{}, false},
-		{"lifetime premium", Subscription{Premium: true}, true},
-		{"active", Subscription{Premium: true, ExpireDate: daysAgo(-10)}, true},
-		{"lapsed inside grace", Subscription{Premium: true, ExpireDate: daysAgo(29)}, true},
-		{"flag cleared inside grace", Subscription{ExpireDate: daysAgo(5)}, true},
-		{"lapsed past grace", Subscription{Premium: true, ExpireDate: daysAgo(31)}, false},
-		{"flag cleared past grace", Subscription{ExpireDate: daysAgo(40)}, false},
+func TestComposeRetentionSafeDefaults(t *testing.T) {
+	raw, err := os.ReadFile("../../../../docker-compose.yaml")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		if got := c.sub.Protects(now, grace); got != c.want {
-			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+	text := string(raw)
+	for _, line := range []string{
+		"TELLOMI_MEDIA_RETENTION_ENABLED: ${TELLOMI_MEDIA_RETENTION_ENABLED:-false}",
+		"TELLOMI_MEDIA_RETENTION_DAYS: ${TELLOMI_MEDIA_RETENTION_DAYS:-7}",
+		"TELLOMI_MEDIA_RETENTION_DRY_RUN: ${TELLOMI_MEDIA_RETENTION_DRY_RUN:-true}",
+	} {
+		if !strings.Contains(text, line) {
+			t.Fatalf("docker-compose.yaml missing %s", line)
 		}
+	}
+	if strings.Contains(text, "TELLOMI_MEDIA_RETENTION_GRACE_DAYS") {
+		t.Fatal("compose still sets a subscriber grace window")
 	}
 }
 
@@ -88,8 +89,9 @@ func TestADR0083RetentionExemptions(t *testing.T) {
 			t.Errorf("case %d %+v is not exempt", i, m)
 		}
 	}
-	if !(Subscription{Premium: true}).Protects(now, 30*24*time.Hour) {
-		t.Fatal("active subscriber is not protected")
+	old := Media{Kind: KindDocument, ID: 1, UploadedAt: daysAgo(8), MimeType: "video/mp4"}
+	if got := Decide(old, []Subscription{{Premium: true}}, now, Defaults()); got != ReasonExpire {
+		t.Fatalf("subscriber held media %s", got)
 	}
 	t.Setenv(EnvDryRun, "true")
 	t.Setenv(EnvEnabled, "true")
@@ -124,27 +126,38 @@ func TestExempt(t *testing.T) {
 
 func TestDecide(t *testing.T) {
 	c := cfg()
-	old := Media{Kind: KindDocument, ID: 1, UploadedAt: daysAgo(91), MimeType: "video/mp4"}
+	if c.Retention() != 7*24*time.Hour {
+		t.Fatalf("retention %s", c.Retention())
+	}
+	old := Media{Kind: KindDocument, ID: 1, UploadedAt: daysAgo(8), MimeType: "video/mp4"}
+	exact := old
+	exact.UploadedAt = daysAgo(7)
 	young := old
-	young.UploadedAt = daysAgo(89)
+	young.UploadedAt = daysAgo(6)
 	free := []Subscription{{UserID: 1}, {UserID: 2}}
-	mixed := []Subscription{{UserID: 1}, {UserID: 2, Premium: true, ExpireDate: daysAgo(-30)}}
-	grace := []Subscription{{UserID: 1}, {UserID: 2, ExpireDate: daysAgo(10)}}
-	pastGrace := []Subscription{{UserID: 1}, {UserID: 2, ExpireDate: daysAgo(31)}}
-	gif := old
+	// Active, lifetime, and lapsed-inside-the-old-grace subscribers.
+	premium := []Subscription{{UserID: 1}, {UserID: 2, Premium: true, ExpireDate: daysAgo(-30)}}
+	lifetime := []Subscription{{UserID: 2, Premium: true}}
+	grace := []Subscription{{UserID: 1}, {UserID: 2, ExpireDate: daysAgo(1)}}
+	gif := exact
 	gif.MimeType = "image/gif"
+	photo := Media{Kind: KindPhoto, ID: 3, UploadedAt: daysAgo(8), SizeTypes: []string{"s", "m", "x"}}
+	voice := Media{Kind: KindDocument, ID: 4, UploadedAt: daysAgo(8), MimeType: "audio/ogg", Attributes: `[{"predicate_name":"documentAttributeAudio","voice":true}]`}
 	cases := []struct {
 		name    string
 		m       Media
 		holders []Subscription
 		want    Reason
 	}{
-		{"young", young, free, ReasonYoung},
-		{"free chat", old, free, ReasonExpire},
-		{"mixed free/paid chat", old, mixed, ReasonSubscriber},
-		{"grace", old, grace, ReasonSubscriber},
-		{"past grace", old, pastGrace, ReasonExpire},
-		{"exempt gif", gif, free, ReasonExempt},
+		{"six days with premium holder", young, premium, ReasonYoung},
+		{"seven days free", exact, free, ReasonExpire},
+		{"seven days premium", exact, premium, ReasonExpire},
+		{"seven days lifetime premium", exact, lifetime, ReasonExpire},
+		{"seven days former grace", exact, grace, ReasonExpire},
+		{"eight days forwarded to premium", old, append(premium, Subscription{UserID: 9}), ReasonExpire},
+		{"eight days photo with premium", photo, premium, ReasonExpire},
+		{"eight days voice with premium", voice, premium, ReasonExpire},
+		{"exempt gif", gif, premium, ReasonExempt},
 		{"unreferenced", old, nil, ReasonUnreferenced},
 	}
 	for _, tc := range cases {
@@ -196,7 +209,6 @@ type fakeStore struct {
 	chats    map[int64][]int64
 	channels map[int64][]int64          // channel id -> members
 	chMedia  map[Kind]map[int64][]int64 // media -> channel ids
-	users    map[int64]Subscription
 	expired  map[int64]int64
 	failHold map[int64]bool
 }
@@ -233,16 +245,6 @@ func (f *fakeStore) ChannelMedia(context.Context) (map[Kind]map[int64][]int64, e
 	}
 	return f.chMedia, nil
 }
-func (f *fakeStore) Subscriptions(_ context.Context, ids []int64) ([]Subscription, error) {
-	var out []Subscription
-	for _, id := range ids {
-		if s, ok := f.users[id]; ok {
-			s.UserID = id
-			out = append(out, s)
-		}
-	}
-	return out, nil
-}
 func (f *fakeStore) MarkExpired(_ context.Context, _ Kind, id, at int64) error {
 	f.expired[id] = at
 	return nil
@@ -259,23 +261,23 @@ func (d *fakeDeleter) Delete(_ context.Context, class, path string) error {
 	return nil
 }
 
-// world: alice(1) free, bob(2) premium, carol(3) lapsed 10 days ago (grace),
-// dave(4) lapsed 60 days ago.
+// world: alice(1), bob(2), carol(3), dave(4). Bob is the stand-in for a
+// premium holder and carol for the old grace window. Neither keeps media.
 func world() *fakeStore {
-	old := daysAgo(100)
+	old := daysAgo(8)
 	return &fakeStore{
 		media: []Media{
 			{Kind: KindDocument, ID: 10, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // alice<->dave private: expire
-			{Kind: KindDocument, ID: 11, UploadedAt: old, Size: 100, MimeType: "audio/ogg"},          // alice<->bob private: keep
-			{Kind: KindDocument, ID: 12, UploadedAt: old, Size: 100, MimeType: "application/pdf"},    // group alice,dave,bob: keep
+			{Kind: KindDocument, ID: 11, UploadedAt: old, Size: 100, MimeType: "audio/ogg"},          // alice<->bob: expire (premium does not protect)
+			{Kind: KindDocument, ID: 12, UploadedAt: old, Size: 100, MimeType: "application/pdf"},    // group alice,dave,bob: expire
 			{Kind: KindDocument, ID: 13, UploadedAt: old, Size: 100, MimeType: "image/gif"},          // exempt
-			{Kind: KindDocument, ID: 14, UploadedAt: daysAgo(10), Size: 100, MimeType: "video/mp4"},  // young
-			{Kind: KindDocument, ID: 15, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // forwarded from alice<->dave into chat with carol (grace): keep
-			{Kind: KindDocument, ID: 16, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // channel with bob: keep
+			{Kind: KindDocument, ID: 14, UploadedAt: daysAgo(6), Size: 100, MimeType: "video/mp4"},   // young
+			{Kind: KindDocument, ID: 15, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // forwarded into carol's chat: expire
+			{Kind: KindDocument, ID: 16, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // channel with bob: expire
 			{Kind: KindDocument, ID: 17, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // no references: keep
 			{Kind: KindPhoto, ID: 20, UploadedAt: old, Size: 50, SizeTypes: []string{"s", "m", "x"}}, // alice<->dave photo: expire
 			{Kind: KindPhoto, ID: 21, UploadedAt: old, Size: 50, SizeTypes: []string{"a", "b", "c"}}, // avatar: exempt
-			{Kind: KindDocument, ID: 18, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // forwarded old media between free users: expire
+			{Kind: KindDocument, ID: 18, UploadedAt: old, Size: 100, MimeType: "video/mp4"},          // forwarded old media, same upload time: expire
 		},
 		boxes: map[int64][]Holder{
 			10: {{1, peerUser, 4}, {4, peerUser, 1}},
@@ -290,13 +292,7 @@ func world() *fakeStore {
 		chats:    map[int64][]int64{100: {1, 4, 2}},
 		channels: map[int64][]int64{500: {1, 2}},
 		chMedia:  map[Kind]map[int64][]int64{KindDocument: {16: {500}}},
-		users: map[int64]Subscription{
-			1: {},
-			2: {Premium: true, ExpireDate: daysAgo(-100)},
-			3: {ExpireDate: daysAgo(10)},
-			4: {Premium: true, ExpireDate: daysAgo(60)},
-		},
-		expired: map[int64]int64{},
+		expired:  map[int64]int64{},
 	}
 }
 
@@ -311,7 +307,7 @@ func TestSweeperDryRunChangesNothing(t *testing.T) {
 	if len(del.keys) != 0 || len(st.expired) != 0 {
 		t.Fatalf("dry run changed state: %v %v", del.keys, st.expired)
 	}
-	if rep.Expired[KindDocument] != 2 || rep.Expired[KindPhoto] != 1 {
+	if rep.Expired[KindDocument] != 6 || rep.Expired[KindPhoto] != 1 {
 		t.Fatalf("report %s", rep)
 	}
 	if rep.EncryptedOld != 2 {
@@ -333,11 +329,20 @@ func TestSweeperLive(t *testing.T) {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	if len(ids) != 3 || ids[0] != 10 || ids[1] != 18 || ids[2] != 20 {
+	wantIDs := []int64{10, 11, 12, 15, 16, 18, 20}
+	if len(ids) != len(wantIDs) {
 		t.Fatalf("expired %v; report %s", ids, rep)
 	}
+	for i := range wantIDs {
+		if ids[i] != wantIDs[i] {
+			t.Fatalf("expired %v; report %s", ids, rep)
+		}
+	}
 	sort.Strings(del.keys)
-	want := []string{"documents/10.dat", "documents/18.dat", "photos/0/20.dat", "photos/m/20.dat", "photos/w/20.dat", "photos/x/20.dat", "photos/y/20.dat"}
+	want := []string{
+		"documents/10.dat", "documents/11.dat", "documents/12.dat", "documents/15.dat", "documents/16.dat", "documents/18.dat",
+		"photos/0/20.dat", "photos/m/20.dat", "photos/w/20.dat", "photos/x/20.dat", "photos/y/20.dat",
+	}
 	if len(del.keys) != len(want) {
 		t.Fatalf("deleted %v", del.keys)
 	}
@@ -346,10 +351,13 @@ func TestSweeperLive(t *testing.T) {
 			t.Fatalf("deleted %v want %v", del.keys, want)
 		}
 	}
-	if rep.Reasons[ReasonSubscriber] != 4 || rep.Reasons[ReasonExempt] != 2 || rep.Reasons[ReasonUnreferenced] != 1 {
+	if rep.Reasons[ReasonExempt] != 2 || rep.Reasons[ReasonUnreferenced] != 1 || rep.Reasons[ReasonExpire] != 7 {
 		t.Fatalf("reasons %v", rep.Reasons)
 	}
-	if rep.BytesFreed != 250 || rep.ObjectsRemoved != 7 {
+	if _, ok := rep.Reasons[Reason("subscriber")]; ok {
+		t.Fatalf("subscriber still counted: %v", rep.Reasons)
+	}
+	if rep.BytesFreed != 650 || rep.ObjectsRemoved != 11 {
 		t.Fatalf("report %s", rep)
 	}
 	// A second run finds nothing new.
@@ -360,7 +368,8 @@ func TestSweeperLive(t *testing.T) {
 	}
 	// The checker reports expired media.
 	ck := NewChecker(st, time.Minute)
-	if !ck.Expired(context.Background(), KindDocument, 10) || ck.Expired(context.Background(), KindDocument, 11) {
+	// 10 expired. 17 is old but unreferenced, so the sweeper left it.
+	if !ck.Expired(context.Background(), KindDocument, 10) || ck.Expired(context.Background(), KindDocument, 17) {
 		t.Fatal("checker")
 	}
 }

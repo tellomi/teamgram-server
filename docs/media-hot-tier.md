@@ -12,9 +12,10 @@ it would have used before, checks size and sha256, and only then deletes
 the local copy. Existing objects that are already in the bucket are not
 copied back to disk.
 
-The 90-day free-media deleter and the 24-hour unreferenced purge are
-unchanged. Both go through `RemoveClassObject` / `MoveToTrash`, which also
-delete a local copy when one exists.
+Chat-media retention (7 days after upload; a subscriber does not extend
+it) and the 24-hour unreferenced purge are separate from this migrator.
+Both go through `RemoveClassObject` / `MoveToTrash`, which also delete a
+local copy when one exists.
 
 ## 105 must not use the public network
 

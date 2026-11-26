@@ -2,16 +2,17 @@
 //
 // Policy (owner-approved, see docs/media-retention.md):
 //   - Text is kept forever. Only chat media objects are removed.
-//   - Chat media (photos, videos, voice, files) is kept Days (90) after its
-//     original upload. Forwards reuse the same media id, so they do not reset
-//     the clock.
-//   - Media is kept forever while ANY user who still has it in a chat (a
-//     message box owner, a basic-group member or a channel member) is an
-//     active subscriber, or is inside GraceDays (30) after premium_expire_date.
+//   - Chat media (photos, videos, voice, files) is removed Days (7) after
+//     its original upload. Forwards reuse the same media id, so they do not
+//     reset the clock.
+//   - A subscriber does not extend that clock. Premium and the old grace
+//     window after premium_expire_date are not consulted.
 //   - Avatars, stickers, custom emoji, GIFs and wallpapers are exempt, and so
 //     is media that no message references any more.
 //   - Small thumbnails (photo sizes s/i/j, document thumbs) are kept, so the
 //     chat still shows a blurred preview.
+//   - The sweeper stays off unless TELLOMI_MEDIA_RETENTION_ENABLED is set.
+//     Dry-run stays on unless TELLOMI_MEDIA_RETENTION_DRY_RUN is false.
 package retention
 
 import (
@@ -25,7 +26,6 @@ import (
 const (
 	EnvEnabled   = "TELLOMI_MEDIA_RETENTION_ENABLED"
 	EnvDays      = "TELLOMI_MEDIA_RETENTION_DAYS"
-	EnvGraceDays = "TELLOMI_MEDIA_RETENTION_GRACE_DAYS"
 	EnvDryRun    = "TELLOMI_MEDIA_RETENTION_DRY_RUN"
 	EnvBatch     = "TELLOMI_MEDIA_RETENTION_BATCH"
 	EnvMaxPerRun = "TELLOMI_MEDIA_RETENTION_MAX_PER_RUN"
@@ -35,10 +35,9 @@ const (
 // Config controls the sweeper. Zero values are replaced by defaults in
 // Normalize.
 type Config struct {
-	Enabled   bool
-	Days      int
-	GraceDays int
-	DryRun    bool
+	Enabled bool
+	Days    int
+	DryRun  bool
 	// Batch is how many candidate rows are read per query.
 	Batch int
 	// MaxPerRun caps how many media items one run may expire (0 = no cap).
@@ -47,18 +46,16 @@ type Config struct {
 	RunHour int
 }
 
-// Defaults returns the production defaults: 90 days, 30-day grace.
+// Defaults returns the safe defaults: 7 days, dry-run on. Enabled stays
+// false until FromEnv sees TELLOMI_MEDIA_RETENTION_ENABLED.
 func Defaults() Config {
-	return Config{Days: 90, GraceDays: 30, Batch: 500, MaxPerRun: 5000, RunHour: 4, DryRun: true}
+	return Config{Days: 7, Batch: 500, MaxPerRun: 5000, RunHour: 4, DryRun: true}
 }
 
 func (c *Config) Normalize() {
 	d := Defaults()
 	if c.Days <= 0 {
 		c.Days = d.Days
-	}
-	if c.GraceDays < 0 {
-		c.GraceDays = 0
 	}
 	if c.Batch <= 0 {
 		c.Batch = d.Batch
@@ -72,7 +69,6 @@ func (c *Config) Normalize() {
 }
 
 func (c Config) Retention() time.Duration { return time.Duration(c.Days) * 24 * time.Hour }
-func (c Config) Grace() time.Duration     { return time.Duration(c.GraceDays) * 24 * time.Hour }
 
 // FromEnv reads TELLOMI_MEDIA_RETENTION_*. Retention is off unless
 // TELLOMI_MEDIA_RETENTION_ENABLED is true.
@@ -88,7 +84,7 @@ func FromEnv() (Config, error) {
 	for _, f := range []struct {
 		name string
 		dst  *int
-	}{{EnvDays, &c.Days}, {EnvGraceDays, &c.GraceDays}, {EnvBatch, &c.Batch}, {EnvMaxPerRun, &c.MaxPerRun}, {EnvRunHour, &c.RunHour}} {
+	}{{EnvDays, &c.Days}, {EnvBatch, &c.Batch}, {EnvMaxPerRun, &c.MaxPerRun}, {EnvRunHour, &c.RunHour}} {
 		v := strings.TrimSpace(os.Getenv(f.name))
 		if v == "" {
 			continue

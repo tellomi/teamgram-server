@@ -83,7 +83,7 @@ App 内 `account.deleteAccount` 和网页删号走同一段 `PurgeAccount`。用
 | 7 天待删 | `account_deletion_pending` | 立刻删除时 `Cancel`。到期后 reaper 跑同一段清理 | `deletion/pending.go` |
 | 只被已删除私聊引用的照片、文件、加密文件、头像对象 | 队列表 `account_media_gc`，对象在 S3 | 异步。仍被未删除的群消息、频道消息、别人的头像或贴纸引用的留着。默认 dry-run，只打日志。关掉 dry-run 后先复制到同一桶的 `trash/` 前缀并删掉原键，`TELLOMI_ACCOUNT_GC_KEEP_DAYS`（默认 30）天后再删 trash 里的副本 | `wipe.RunGC`、`MinioUtil.MoveToTrash` |
 | 贴纸、emoji、壁纸 | public-media 桶 | **还在。** 清理拒绝这些 class | `trashClass` |
-| 90 天媒体保留 | 另一条任务 | 还在跑，和删号队列互不替代。删号把私聊标成 deleted 之后，不再被引用的聊天媒体才会被那条任务看成可过期 | `docs/media-retention.md` |
+| 7 天聊天媒体保留 | 另一条任务 | 还在跑，和删号队列互不替代。仍被消息引用的聊天照片、视频、语音和文件，在原始上传 7 天后删除对象；订阅者不延长这个时钟。不再被引用的媒体不由这条任务删除 | `docs/media-retention.md` |
 
 数据库更新按批提交（消息每批 200 行，联系人每批 500 行），条件里带 `deleted=0` 或 `state=0`，中途失败再跑同一段不会重复减成员数，也不会把已经删掉的消息再删一遍。大账号不会用一条语句锁住整张消息表。
 
