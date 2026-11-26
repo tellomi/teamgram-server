@@ -1,25 +1,23 @@
 # Chat media retention
 
-Free chats keep photos, videos, voice notes and files for 90 days after
-upload. A chat with an active subscriber keeps them forever. Text is never
-removed.
+Chat photos, videos, voice notes and files are removed 7 days after the
+original upload. Text is never removed. A subscriber in the chat does not
+extend that clock.
 
 ## Policy
 
 | Rule | Behaviour |
 |---|---|
 | Text | Kept forever. The message stays; only the file object goes. |
-| Chat media (photos, videos, voice, files) | Removed `TELLOMI_MEDIA_RETENTION_DAYS` (90) days after the **original upload**. Forwarding reuses the same media id, so it does not reset the clock. |
-| Subscriber in the chat | Kept while **any** user who still has the media in a chat is an active subscriber: a message box owner, a current basic-group member, or a current channel member. |
-| Downgrade | `TELLOMI_MEDIA_RETENTION_GRACE_DAYS` (30) days after `users.premium_expire_date` the user stops protecting media. |
-| Upgrade | Stops future removal only. Removed files do not come back. |
+| Chat media (photos, videos, voice, files) | Removed `TELLOMI_MEDIA_RETENTION_DAYS` (7) days after the **original upload**. Forwarding reuses the same media id, so it does not reset the clock. |
+| Subscribers | Do not keep media. After 7 days the file expires the same way whether or not a holder is premium, or is inside the old grace window after `premium_expire_date`. |
+| Upgrade | Does not restore a file that was already removed. |
 | Exempt | Avatars (photos with a/b/c/d sizes), stickers, custom emoji, GIFs (`documentAttributeAnimated` or `image/gif`), wallpapers/themes, the public-media bucket, and media no message references (link previews, wallpapers). |
 | Thumbnails | Kept. Photos keep sizes `s`, `i` (stripped) and `j`; documents keep their thumbs. The chat still shows a blurred preview. |
 | Secret-chat files | Not removed. Secret chats keep no server-side participant list, so the sweeper cannot tell who holds them. |
 
-A user protects media when `premium = 1` with no expiry, or
-`now < premium_expire_date + grace` (this covers active subscriptions and the
-grace window).
+`TELLOMI_MEDIA_RETENTION_GRACE_DAYS` is no longer read. A deployment that
+still sets it has no effect.
 
 ## What the client sees
 
@@ -36,13 +34,19 @@ encrypted files). Thumbnails still download.
 `upload.getCdnFile` tokens are only issued by `upload.getFile`, which checks
 first, so expired media never reaches the CDN path.
 
+Deleting a file as soon as the recipient has downloaded it is not part of
+this policy.
+
 ## Configuration
+
+The sweeper stays off, and dry-run stays on, unless the environment says
+otherwise. A deployment that already sets these variables keeps its own
+values. Changing the defaults here does not rewrite a live environment.
 
 | Variable | Default | |
 |---|---|---|
 | `TELLOMI_MEDIA_RETENTION_ENABLED` | `false` | Starts the daily sweeper in the media service. |
-| `TELLOMI_MEDIA_RETENTION_DAYS` | `90` | |
-| `TELLOMI_MEDIA_RETENTION_GRACE_DAYS` | `30` | |
+| `TELLOMI_MEDIA_RETENTION_DAYS` | `7` | Days after the original upload. |
 | `TELLOMI_MEDIA_RETENTION_DRY_RUN` | `true` | Log what would expire; delete nothing. Set to `false` to actually delete. |
 | `TELLOMI_MEDIA_RETENTION_BATCH` | `500` | Rows per query. |
 | `TELLOMI_MEDIA_RETENTION_MAX_PER_RUN` | `5000` | Cap on items expired per run (0 = none). |
@@ -58,7 +62,7 @@ docker compose ... exec teamgram /app/bin/mediaretention -f /app/etc2/media.yaml
 The report line looks like:
 
 ```
-media retention DRY_RUN: cutoff=... scanned documents=N photos=N; exempt=N subscriber=N unreferenced=N expire=N ; would_expire documents=N photos=N bytes=N ...
+media retention DRY_RUN: cutoff=... scanned documents=N photos=N; exempt=N unreferenced=N expire=N ; would_expire documents=N photos=N bytes=N ...
 ```
 
 ## How it works
@@ -71,7 +75,8 @@ media retention DRY_RUN: cutoff=... scanned documents=N photos=N; exempt=N subsc
   `media_document_id` and `media_photo_id`
   (`migrate-20261125-media-json-columns.sql`), basic-group members from
   `chat_participants`, and channel members for channels whose
-  `channel_messages` carry the media (decoded once per run).
+  `channel_messages` carry the media (decoded once per run). Holders only
+  answer "does anyone still reference this?". Premium is not loaded.
 - Expiry deletes the objects from the attachments bucket and sets
   `expired_at`. Public-media classes are refused by
   `objectstore.Client.Delete`.

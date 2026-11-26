@@ -14,28 +14,14 @@ const (
 	KindEncrypted Kind = "encrypted"
 )
 
-// Subscription is the premium state stored on users.
+// Subscription is one user who can still see the media. Premium and
+// ExpireDate do not extend retention: a subscriber expires on the same
+// upload clock as a free user. The fields stay so a caller can pass a
+// premium holder and tests can prove Decide ignores it.
 type Subscription struct {
 	UserID     int64
 	Premium    bool
-	ExpireDate int64 // unix seconds; 0 = no expiry recorded
-}
-
-// Protects reports whether this user keeps media alive at now.
-//
-//   - premium with no expiry: lifetime subscriber.
-//   - any recorded expiry: protected until expiry + grace. This covers an
-//     active subscriber (expiry in the future), a lapsed one inside the
-//     grace window, and a flag already cleared by a downgrade job.
-//   - no premium and no expiry: never subscribed.
-func (s Subscription) Protects(now time.Time, grace time.Duration) bool {
-	if s.Premium && s.ExpireDate == 0 {
-		return true
-	}
-	if s.ExpireDate <= 0 {
-		return false
-	}
-	return now.Before(time.Unix(s.ExpireDate, 0).Add(grace))
+	ExpireDate int64 // unix seconds; ignored
 }
 
 // Media is one candidate row.
@@ -56,7 +42,6 @@ const (
 	ReasonYoung        Reason = "young"
 	ReasonExempt       Reason = "exempt"
 	ReasonUnreferenced Reason = "unreferenced"
-	ReasonSubscriber   Reason = "subscriber"
 	ReasonExpire       Reason = "expire"
 )
 
@@ -105,6 +90,7 @@ func Exempt(m Media) bool {
 
 // Decide applies the policy to one media item. holders are the users that
 // can still see it in some chat; nil/empty means nobody references it.
+// Premium on a holder does not change the result.
 func Decide(m Media, holders []Subscription, now time.Time, cfg Config) Reason {
 	if now.Sub(time.Unix(m.UploadedAt, 0)) < cfg.Retention() {
 		return ReasonYoung
@@ -114,11 +100,6 @@ func Decide(m Media, holders []Subscription, now time.Time, cfg Config) Reason {
 	}
 	if len(holders) == 0 {
 		return ReasonUnreferenced
-	}
-	for _, h := range holders {
-		if h.Protects(now, cfg.Grace()) {
-			return ReasonSubscriber
-		}
 	}
 	return ReasonExpire
 }

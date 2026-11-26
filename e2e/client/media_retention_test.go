@@ -18,13 +18,13 @@ import (
 )
 
 // TestMediaRetention runs the retention sweeper inside the teamgram
-// container against media whose upload time is pushed 100 days back, then
-// checks what upload.getFile still serves. It needs docker compose access,
-// like TestReconnectAfterGatewayRestart.
+// container against media whose upload time is pushed past the retention
+// window, then checks what upload.getFile still serves. It needs docker
+// compose access, like TestReconnectAfterGatewayRestart.
 //
-// Users: alice and erin are free, bob is an active subscriber, carol's
-// subscription lapsed 10 days ago (inside the 30-day grace), dave's lapsed
-// 60 days ago.
+// Bob is an active subscriber and carol is inside the old 30-day grace.
+// Neither keeps the file. Dave's subscription lapsed 60 days ago. Alice
+// and erin are free.
 func TestMediaRetention(t *testing.T) {
 	cfg := requireE2E(t)
 	if os.Getenv("TELLOMI_E2E_RESTART") == "" {
@@ -77,9 +77,9 @@ UPDATE users SET premium = 1, premium_expire_date = %d WHERE id = %d;`,
 
 	// Free private chat: expires.
 	freeDoc, _ := sendDoc(t, a, aToDave, "video/x-matroska", nil)
-	// Free user with a subscriber: kept.
+	// Chat with a subscriber: expires on the same clock.
 	paidDoc, _ := sendDoc(t, a, aToBob, "application/pdf", nil)
-	// Basic group alice+dave+bob (mixed free/paid): kept.
+	// Basic group alice+dave+bob (a member is premium): expires.
 	chatID := func() int64 {
 		cx, cancel := ctx()
 		defer cancel()
@@ -93,7 +93,7 @@ UPDATE users SET premium = 1, premium_expire_date = %d WHERE id = %d;`,
 	groupDoc, _ := sendDoc(t, a, inputPeerChat(chatID), "audio/ogg", []*mtproto.DocumentAttribute{
 		mtproto.MakeTLDocumentAttributeAudio(&mtproto.DocumentAttribute{Voice: true, Duration: 2}).To_DocumentAttribute(),
 	})
-	// Forwarded into a chat with carol (grace): kept, because carol still has it.
+	// Forwarded into a chat with carol (old grace window): expires.
 	graceDoc, _ := sendDoc(t, a, aToDave, "video/x-matroska", nil)
 	// Forwarded between free users: the original upload date counts.
 	fwdDoc, _ := sendDoc(t, a, aToDave, "application/zip", nil)
@@ -110,19 +110,19 @@ UPDATE users SET premium = 1, premium_expire_date = %d WHERE id = %d;`,
 	forward(t, d, daveToAlice, graceDoc.GetId(), daveToCarol)
 	forward(t, d, daveToAlice, fwdDoc.GetId(), daveToErin)
 
-	old := time.Now().Add(-100 * 24 * time.Hour).Unix()
+	old := time.Now().Add(-8 * 24 * time.Hour).Unix()
 	ids := []int64{freeDoc.GetId(), paidDoc.GetId(), groupDoc.GetId(), graceDoc.GetId(), fwdDoc.GetId(), gifDoc.GetId()}
 	mustSQL(t, fmt.Sprintf(`UPDATE documents SET date2 = %d WHERE document_id IN (%s);
 UPDATE photos SET date2 = %d WHERE photo_id = %d;`, old, joinIDs(ids), old, photo.GetId()))
 
 	// Dry run: reports, changes nothing.
 	out := sweep(t, true)
-	for _, id := range []int64{freeDoc.GetId(), fwdDoc.GetId(), photo.GetId()} {
+	for _, id := range []int64{freeDoc.GetId(), paidDoc.GetId(), groupDoc.GetId(), graceDoc.GetId(), fwdDoc.GetId(), photo.GetId()} {
 		if !strings.Contains(out, fmt.Sprintf(" %d ", id)) {
 			t.Errorf("dry run does not list %d:\n%s", id, out)
 		}
 	}
-	for _, id := range []int64{paidDoc.GetId(), groupDoc.GetId(), graceDoc.GetId(), gifDoc.GetId(), youngDoc.GetId()} {
+	for _, id := range []int64{gifDoc.GetId(), youngDoc.GetId()} {
 		if strings.Contains(out, fmt.Sprintf(" %d ", id)) {
 			t.Errorf("dry run lists kept media %d:\n%s", id, out)
 		}
@@ -157,9 +157,9 @@ UPDATE photos SET date2 = %d WHERE photo_id = %d;`, old, joinIDs(ids), old, phot
 	expectGone("photo full size", photoLocation(photo, "x"))
 	expectGone("photo medium size", photoLocation(photo, "m"))
 	expectBytes("photo small thumbnail", photoLocation(photo, "s"))
-	expectBytes("chat with a subscriber", docLocation(paidDoc))
-	expectBytes("mixed free/paid group", docLocation(groupDoc))
-	expectBytes("forwarded to a user in grace", docLocation(graceDoc))
+	expectGone("chat with a subscriber", docLocation(paidDoc))
+	expectGone("mixed free/paid group", docLocation(groupDoc))
+	expectGone("forwarded to a user in the old grace window", docLocation(graceDoc))
 	expectBytes("gif", docLocation(gifDoc))
 	expectBytes("young", docLocation(youngDoc))
 

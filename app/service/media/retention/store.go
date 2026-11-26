@@ -44,7 +44,6 @@ type Store interface {
 	ChannelMembers(ctx context.Context, channelID int64) ([]int64, error)
 	// ChannelMedia maps media id -> channel ids for every live channel message.
 	ChannelMedia(ctx context.Context) (map[Kind]map[int64][]int64, error)
-	Subscriptions(ctx context.Context, userIDs []int64) ([]Subscription, error)
 	MarkExpired(ctx context.Context, kind Kind, id, at int64) error
 	ExpiredAt(ctx context.Context, kind Kind, id int64) (int64, error)
 	CountOld(ctx context.Context, kind Kind, cutoff int64) (int64, error)
@@ -236,31 +235,6 @@ func appendUnique(xs []int64, v int64) []int64 {
 		}
 	}
 	return append(xs, v)
-}
-
-func (s *SQLStore) Subscriptions(ctx context.Context, userIDs []int64) ([]Subscription, error) {
-	if len(userIDs) == 0 {
-		return nil, nil
-	}
-	ph := strings.TrimSuffix(strings.Repeat("?,", len(userIDs)), ",")
-	args := make([]any, len(userIDs))
-	for i, id := range userIDs {
-		args[i] = id
-	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT id, premium <> 0, CAST(COALESCE(premium_expire_date, 0) AS SIGNED) FROM users WHERE id IN (`+ph+`)`, args...)
-	if err != nil {
-		return nil, fmt.Errorf("subscriptions: %w", err)
-	}
-	defer rows.Close()
-	var out []Subscription
-	for rows.Next() {
-		var sub Subscription
-		if err := rows.Scan(&sub.UserID, &sub.Premium, &sub.ExpireDate); err != nil {
-			return nil, err
-		}
-		out = append(out, sub)
-	}
-	return out, rows.Err()
 }
 
 func (s *SQLStore) MarkExpired(ctx context.Context, kind Kind, id, at int64) error {

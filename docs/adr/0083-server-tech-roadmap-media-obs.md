@@ -116,7 +116,7 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 1. `upload.getFileHashes` 有路由和 handler，不再返回 `ENTERPRISE_IS_BLOCKED`。分块 SHA-256 与 `upload.getCdnFileHashes` 同一口径。`offset` 有效。
 2. 同一对象仍有别的 `media_blob_refs` 时，保留任务与任何删除路径都不删对象。另一条消息的 `upload.getFile` 仍成功。
 3. 最后一条引用被保留策略放掉之后，对象被删除。`media_blobs` 不留下 `ref_count = 0` 的活行。删除失败时宁可留下孤儿对象，也不留下指向已删对象的活引用。
-4. 删一条消息仍然不立刻删对象。保留天数、订阅豁免、缩略图保留仍按 [media-retention.md](../media-retention.md)。
+4. 删一条消息仍然不立刻删对象。保留天数与缩略图保留仍按 [media-retention.md](../media-retention.md)。订阅状态不延长保留。
 5. e2e 与覆盖文档在同一 PR。`go run ./tools/apicoverage -check` 通过。
 
 ### C — govips、卫生与生命周期
@@ -129,7 +129,7 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 2. hash 命中时不把衍生尺寸再写一份新对象。沿用 `media_photo_paths` 指向第一份的键，除非未决问题 1 另有书面结论。
 3. govips 失败时不写入半截尺寸，不把坏图标成成功。失败行为与现在的错误一致（上传失败或不要预览），并有测试。
 4. 上传中途失败不留下被新行引用的残缺对象。没有引用的孤儿对象可以留到 GC，不能被新的 `access_hash` 指到。
-5. 保留任务在 `TELLOMI_MEDIA_RETENTION_DRY_RUN=true` 下先跑。`ref_count > 0` 的 blob 不出现在真正删除的集合里。订阅用户、头像、贴纸、GIF、壁纸的豁免不变。
+5. 保留任务在 `TELLOMI_MEDIA_RETENTION_DRY_RUN=true` 下先跑。`ref_count > 0` 的 blob 不出现在真正删除的集合里。头像、贴纸、GIF、壁纸仍豁免。订阅用户不再豁免，见 [media-retention.md](../media-retention.md)。
 6. 成都不编译带 govips 的镜像。镜像仍由 GitHub Actions 推到 ACR，成都只 pull（[ci-acr.md](../ci-acr.md)）。
 
 ### D — 上传与去重的 OpenTelemetry
@@ -228,7 +228,7 @@ dfs 与 media 都要连到这块 MySQL（`dfs.yaml` 的 `Mysql`，与 media 同�
 
 1. 本文
 2. [media-dedup.md](../media-dedup.md) — P1 行为与表
-3. [media-retention.md](../media-retention.md) — 90 天、订阅豁免、dry-run
+3. [media-retention.md](../media-retention.md) — 7 天、订阅不豁免、dry-run
 4. [storage.md](../storage.md) — 对象键与 R2 / MinIO
 5. [link-tracking-zh.md](../link-tracking-zh.md) — `TELLOMI_OTEL_ENDPOINT`
 6. [TELLOMI_RULES.md](../TELLOMI_RULES.md) — DC 用 IP:端口、生产 Redis、覆盖文档

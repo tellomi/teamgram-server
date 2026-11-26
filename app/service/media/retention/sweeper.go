@@ -163,9 +163,10 @@ func (s *Sweeper) Run(ctx context.Context, now time.Time) (Report, error) {
 	return rep, nil
 }
 
-// holders returns the subscription state of everyone who can still see m:
-// owners of live message boxes, current basic-group members and current
-// channel members.
+// holders returns everyone who can still see m: owners of live message
+// boxes, current basic-group members and current channel members. Premium
+// is not loaded. An empty result means nothing references m, which the
+// policy keeps (link previews and other unreferenced media).
 func (s *Sweeper) holders(ctx context.Context, m Media, channels map[Kind]map[int64][]int64) ([]Subscription, error) {
 	users := map[int64]bool{}
 	boxes, err := s.Store.MessageHolders(ctx, m.Kind, m.ID)
@@ -201,25 +202,9 @@ func (s *Sweeper) holders(ctx context.Context, m Media, channels map[Kind]map[in
 	if len(users) == 0 {
 		return nil, nil
 	}
-	ids := make([]int64, 0, len(users))
+	subs := make([]Subscription, 0, len(users))
 	for id := range users {
-		if id != 0 {
-			ids = append(ids, id)
-		}
-	}
-	subs, err := s.Store.Subscriptions(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	// Users missing from the users table still count as free holders.
-	seen := map[int64]bool{}
-	for _, sub := range subs {
-		seen[sub.UserID] = true
-	}
-	for id := range users {
-		if !seen[id] {
-			subs = append(subs, Subscription{UserID: id})
-		}
+		subs = append(subs, Subscription{UserID: id})
 	}
 	return subs, nil
 }
@@ -400,7 +385,7 @@ func NextRun(now time.Time, hour int) time.Time {
 func (s *Sweeper) Schedule(ctx context.Context) {
 	for {
 		next := NextRun(time.Now(), s.Cfg.RunHour)
-		s.logf("media retention: next run at %s (dry_run=%v, days=%d, grace_days=%d)", next.Format(time.RFC3339), s.Cfg.DryRun, s.Cfg.Days, s.Cfg.GraceDays)
+		s.logf("media retention: next run at %s (dry_run=%v, days=%d)", next.Format(time.RFC3339), s.Cfg.DryRun, s.Cfg.Days)
 		t := time.NewTimer(time.Until(next))
 		select {
 		case <-ctx.Done():
