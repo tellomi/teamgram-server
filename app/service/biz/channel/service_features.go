@@ -383,7 +383,10 @@ func (s *Service) ToggleSlowMode(ctx context.Context, self, actorAuth int64, in 
 		return nil, mtproto.ErrChatAdminRequired
 	}
 	if !validSlowmode(seconds) {
-		return nil, mtproto.ErrSlowmodeMultiMsgsDisabled
+		// SLOWMODE_MULTI_MSGS_DISABLED is the send-path error for several
+		// messages while slow mode is already on. An illegal duration is
+		// SECONDS_INVALID. 5, 7, 15, 20, and 120 are not official steps.
+		return nil, mtproto.ErrSecondsInvalid
 	}
 	f := s.features(ctx, ch.ID)
 	prev := f.SlowmodeSeconds
@@ -398,6 +401,11 @@ func (s *Service) ToggleSlowMode(ctx context.Context, self, actorAuth int64, in 
 	return s.pack(ctx, self, ch.ID, channelUpdate(ch.ID)), nil
 }
 
+// validSlowmode is the duration set official clients offer for
+// channels.toggleSlowMode: off, 10s, 30s, 1m, 5m, 15m, and 1h.
+// https://core.telegram.org/method/channels.toggleSlowMode
+// A value outside this set is SECONDS_INVALID. 5, 7, 15, 20, and 120
+// are not added to the set.
 func validSlowmode(seconds int32) bool {
 	switch seconds {
 	case 0, 10, 30, 60, 300, 900, 3600:

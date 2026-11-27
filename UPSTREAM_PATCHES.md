@@ -2,6 +2,17 @@
 
 Tellomi changes on top of teamgram. Keep these small and listed here.
 
+## Channel difference and slowmode seconds (ISSUE-S-CHANDIFF-DUP-001, NOTE-S-SLOWMODE-SECONDS-001)
+
+`updates.getChannelDifference` put every new message in both `new_messages` and `other_updates`. `new_messages` kept a message deleted in the same page and the text from before an edit in that page. A message created in the page is now returned once, in `new_messages`, at its latest text. A delete in the same page removes it from `new_messages` and stays in `other_updates` as `updateDeleteChannelMessages`. An edit or a delete of an older message stays in `other_updates`. `updateNewChannelMessage` is not repeated.
+
+`channels.toggleSlowMode` rejected 5, 7, 15, 20, and 120 with `SLOWMODE_MULTI_MSGS_DISABLED`. That error is for a member who forwards several messages while slow mode is on. An unsupported duration is `SECONDS_INVALID`. The accepted durations stay 0, 10, 30, 60, 300, 900, and 3600, the steps official clients offer.
+
+| Piece | File |
+| --- | --- |
+| difference | `app/service/biz/channel/service_ops.go` |
+| seconds | `app/service/biz/channel/service_features.go` |
+
 ## Business profile and automatic replies (ISSUE-S-BIZ-PERSIST-001, ISSUE-S-BIZ-AUTOREPLY-001)
 
 Business hours, location, intro, greeting, away message, and chat links used to live only in the BFF process. `bizprofile.UseDSN` in the BFF startup writes them to `business_profile` when MySQL is configured. `users.getFullUser` still reads the same book.

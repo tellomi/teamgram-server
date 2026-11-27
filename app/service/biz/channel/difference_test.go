@@ -377,6 +377,98 @@ func TestChannelDifferenceLimitBoundaries(t *testing.T) {
 	}
 }
 
+// TestChannelDifferenceSkipsDeletedAndDoesNotRepeatNew is
+// ISSUE-S-CHANDIFF-DUP-001. Five messages, an edit, and a delete land
+// while the client is offline. new_messages keeps the four that still
+// exist, with the edited text. The deleted id is absent. other_updates
+// does not repeat those new messages. An edit of a message from before
+// the cursor stays in other_updates.
+func TestChannelDifferenceSkipsDeletedAndDoesNotRepeatNew(t *testing.T) {
+	svc, ctx := newTest(t)
+	in, channelID := newDiffGroup(t, svc, ctx)
+	older := sendText(t, svc, ctx, 1, channelID, 1, "older")
+	pts := mustChannel(t, svc, ctx, channelID).Pts
+	ids := make([]int32, 0, 5)
+	for i := 0; i < 5; i++ {
+		ids = append(ids, sendText(t, svc, ctx, 1, channelID, int64(i+2), fmt.Sprintf("m-%d", i)))
+	}
+	edited, deleted := ids[2], ids[4]
+	if _, err := svc.Edit(ctx, 1, channelID, 0, older, func(m *mtproto.Message) { m.Message = "older-edited" }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Edit(ctx, 1, channelID, 0, edited, func(m *mtproto.Message) { m.Message = "edited" }); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Delete(ctx, 1, channelID, 0, []int32{deleted}); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := svc.Difference(ctx, 1, in, pts, 100, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := mustChannel(t, svc, ctx, channelID)
+	if diff.GetPredicateName() != mtproto.Predicate_updates_channelDifference || !diff.Final || diff.Pts != ch.Pts {
+		t.Fatalf("difference %s final=%v pts=%d channel=%d", diff.GetPredicateName(), diff.Final, diff.Pts, ch.Pts)
+	}
+	if len(diff.NewMessages) != 4 {
+		t.Fatalf("new messages %d", len(diff.NewMessages))
+	}
+	got := map[int32]string{}
+	for _, m := range diff.NewMessages {
+		got[m.GetId()] = m.GetMessage()
+	}
+	if _, ok := got[deleted]; ok {
+		t.Fatalf("deleted %d still in new_messages", deleted)
+	}
+	if _, ok := got[older]; ok {
+		t.Fatalf("older %d was treated as new", older)
+	}
+	if got[edited] != "edited" {
+		t.Fatalf("edited text %q", got[edited])
+	}
+	for _, id := range []int32{ids[0], ids[1], ids[3]} {
+		if got[id] == "" {
+			t.Fatalf("missing live message %d in %v", id, got)
+		}
+	}
+	var sawOlderEdit, sawDelete bool
+	for _, u := range diff.OtherUpdates {
+		switch u.GetPredicateName() {
+		case mtproto.Predicate_updateNewChannelMessage:
+			t.Fatalf("other_updates repeated message %d", u.GetMessage_MESSAGE().GetId())
+		case mtproto.Predicate_updateEditChannelMessage:
+			id := u.GetMessage_MESSAGE().GetId()
+			if id == edited {
+				t.Fatal("edit of a message born in this page was repeated")
+			}
+			if id == older && u.GetMessage_MESSAGE().GetMessage() == "older-edited" {
+				sawOlderEdit = true
+			}
+		case mtproto.Predicate_updateDeleteChannelMessages:
+			for _, id := range u.GetMessages() {
+				if id == deleted {
+					sawDelete = true
+				}
+			}
+		}
+	}
+	if !sawOlderEdit || !sawDelete {
+		t.Fatalf("older edit=%v delete=%v updates=%d", sawOlderEdit, sawDelete, len(diff.OtherUpdates))
+	}
+}
+
+func sendText(t *testing.T, svc *Service, ctx context.Context, sender, channelID, random int64, text string) int32 {
+	t.Helper()
+	sent, err := svc.Send(ctx, sender, channelID, 0, []Outgoing{{
+		RandomID: random + channelID<<8,
+		Message:  &mtproto.Message{Message: text, Date: 1_700_000_000},
+	}})
+	if err != nil || len(sent.Updates) == 0 || sent.Updates[0].GetMessage_MESSAGE().GetId() == 0 {
+		t.Fatalf("send %q: %v", text, err)
+	}
+	return sent.Updates[0].GetMessage_MESSAGE().GetId()
+}
+
 func newDiffGroup(t *testing.T, svc *Service, ctx context.Context) (*mtproto.InputChannel, int64) {
 	t.Helper()
 	created, err := svc.Create(ctx, CreateRequest{CreatorID: 1, Title: "Diff", Megagroup: true})
@@ -461,19 +553,23 @@ func drainChannelDifference(t *testing.T, svc *Service, ctx context.Context, use
 		}
 		cursor := pts
 		for _, u := range diff.GetOtherUpdates() {
+			// New messages live only in new_messages. Their pts are not
+			// repeated here, so a later edit or delete can sit above
+			// cursor without that gap being a hole. The page pts is the
+			// cursor the client stores.
+			if u.GetPredicateName() == mtproto.Predicate_updateNewChannelMessage {
+				t.Fatal("other_updates repeated a new message")
+			}
 			count := u.GetPtsCount()
 			if count <= 0 {
 				continue
-			}
-			if u.GetPts_INT32()-count > cursor {
-				t.Fatalf("hole cursor=%d pts=%d count=%d", cursor, u.GetPts_INT32(), count)
 			}
 			if u.GetPts_INT32() <= cursor {
 				t.Fatalf("pts did not move cursor=%d update=%d", cursor, u.GetPts_INT32())
 			}
 			cursor = u.GetPts_INT32()
 		}
-		if cursor != diff.Pts {
+		if cursor > diff.Pts {
 			t.Fatalf("page pts %d last update %d", diff.Pts, cursor)
 		}
 		if diff.Pts <= pts {

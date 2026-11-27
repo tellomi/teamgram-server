@@ -1269,8 +1269,18 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 	// caught up. final stays unset so the client asks again and then
 	// receives tooLong only for the missing range.
 	final := !more && endPts >= ch.Pts
-	var newMessages []*mtproto.Message
 	var other []*mtproto.Update
+	// A message created inside this page is returned once, in new_messages,
+	// at the latest text from an edit in the same page. other_updates does
+	// not repeat it as updateNewChannelMessage. Desktop applies new_messages
+	// and then other_updates without a pts check, then sets the channel pts
+	// from this result, so a repeated updateNewChannelMessage shows the
+	// message twice. An edit or a delete of an older message stays in
+	// other_updates. A message created and then deleted in this page is
+	// left out of new_messages. The delete update stays, so a client that
+	// already has that id can drop it.
+	born := map[int32]*channelDiffMessage{}
+	var bornOrder []int32
 	for _, e := range page {
 		endPts = e.Pts
 		switch e.Kind {
@@ -1288,19 +1298,43 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 				continue
 			}
 			view := viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user)
-			newMessages = append(newMessages, view)
-			other = append(other, newMessageUpdate(view, e.Pts, e.PtsCount))
+			id := view.GetId()
+			if born[id] == nil {
+				bornOrder = append(bornOrder, id)
+				born[id] = &channelDiffMessage{}
+			}
+			slot := born[id]
+			slot.msg = view
+			slot.dead = false
 		case KindEdit:
 			body, err := unmarshalMessage(e.Payload)
 			if err != nil {
 				continue
 			}
-			other = append(other, editMessageUpdate(viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user), e.Pts, e.PtsCount))
+			view := viewMessage(body, s.eventSender(ctx, ch.ID, e, body), user)
+			if slot := born[view.GetId()]; slot != nil && !slot.dead {
+				slot.msg = view
+				continue
+			}
+			other = append(other, editMessageUpdate(view, e.Pts, e.PtsCount))
 		case KindDelete:
+			for _, id := range e.MessageIDs {
+				if slot := born[id]; slot != nil {
+					slot.dead = true
+				}
+			}
 			other = append(other, deleteUpdate(ch.ID, e.MessageIDs, e.Pts, e.PtsCount))
 		case KindReact:
 			other = append(other, s.channelReactionUpdate(ctx, user, ch, e.MessageID))
 		}
+	}
+	var newMessages []*mtproto.Message
+	for _, id := range bornOrder {
+		slot := born[id]
+		if slot == nil || slot.dead || slot.msg == nil {
+			continue
+		}
+		newMessages = append(newMessages, slot.msg)
 	}
 	if newMessages == nil {
 		newMessages = []*mtproto.Message{}
@@ -1318,6 +1352,13 @@ func (s *Service) Difference(ctx context.Context, user int64, in *mtproto.InputC
 		Chats:        []*mtproto.Chat{s.ChatFor(ctx, user, ch)},
 		Users:        []*mtproto.User{},
 	}).To_Updates_ChannelDifference(), nil
+}
+
+// channelDiffMessage is one message created inside the current difference
+// page. dead means a delete in the same page removed it.
+type channelDiffMessage struct {
+	msg  *mtproto.Message
+	dead bool
 }
 
 func (s *Service) eventSender(ctx context.Context, channelID int64, e *PtsEvent, body *mtproto.Message) int64 {

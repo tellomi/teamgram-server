@@ -39,8 +39,8 @@ func TestAdminLogStickersSlowModeAndHistory(t *testing.T) {
 	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 10); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 7); err == nil {
-		t.Fatal("invalid slowmode accepted")
+	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 7); status.Convert(err).Message() != "SECONDS_INVALID" {
+		t.Fatalf("invalid slowmode: %v", err)
 	}
 	_, _ = svc.Invite(ctx, 1, 0, in, []int64{2}, nil)
 	if _, err := svc.Send(ctx, 2, ch.Id, 0, []Outgoing{{RandomID: 1, Message: &mtproto.Message{Message: "a", Date: 1}}}); err != nil {
@@ -59,6 +59,47 @@ func TestAdminLogStickersSlowModeAndHistory(t *testing.T) {
 	pts, count, err = svc.DeleteHistory(ctx, 1, 0, in, 0, true)
 	if err != nil || count == 0 {
 		t.Fatalf("everyone history pts=%d count=%d err=%v", pts, count, err)
+	}
+}
+
+// TestToggleSlowModeSeconds is NOTE-S-SLOWMODE-SECONDS-001.
+// Official steps are 0, 10, 30, 60, 300, 900, and 3600. 5, 7, 15, 20,
+// and 120 stay rejected as SECONDS_INVALID and do not change the stored
+// duration. 0 clears slowmode_seconds.
+func TestToggleSlowModeSeconds(t *testing.T) {
+	svc, ctx := newTest(t)
+	ch := megagroup(t, svc, ctx, "Slow")
+	in := inCh(ch)
+	for _, sec := range []int32{5, 7, 15, 20, 120, -1, 1} {
+		if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, sec); status.Convert(err).Message() != "SECONDS_INVALID" {
+			t.Fatalf("seconds %d: %v", sec, err)
+		}
+		if got := mustFull(t, svc, ctx, 1, in).GetSlowmodeSeconds(); got != nil {
+			t.Fatalf("rejected %d stored %v", sec, got)
+		}
+	}
+	for _, sec := range []int32{10, 30, 60, 300, 900, 3600} {
+		if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, sec); err != nil {
+			t.Fatalf("seconds %d: %v", sec, err)
+		}
+		if got := mustFull(t, svc, ctx, 1, in).GetSlowmodeSeconds().GetValue(); got != sec {
+			t.Fatalf("stored %d want %d", got, sec)
+		}
+	}
+	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustFull(t, svc, ctx, 1, in).GetSlowmodeSeconds(); got != nil {
+		t.Fatalf("disabled stored %v", got)
+	}
+	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 10); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ToggleSlowMode(ctx, 1, 0, in, 15); status.Convert(err).Message() != "SECONDS_INVALID" {
+		t.Fatalf("15 after 10: %v", err)
+	}
+	if got := mustFull(t, svc, ctx, 1, in).GetSlowmodeSeconds().GetValue(); got != 10 {
+		t.Fatalf("15 replaced 10 with %d", got)
 	}
 }
 
