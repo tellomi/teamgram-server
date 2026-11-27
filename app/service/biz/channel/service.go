@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"math"
 	"regexp"
 	"strings"
@@ -351,8 +352,14 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 		if id == 0 {
 			continue
 		}
-		cur, _ := s.store.GetParticipant(ctx, ch.ID, id)
+		cur, err := s.store.GetParticipant(ctx, ch.ID, id)
+		if err != nil {
+			return nil, err
+		}
 		if cur != nil && cur.InChannel() {
+			if err = s.repairJoinBoundary(ctx, ch, cur); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if cur != nil && cur.State == StateKicked {
@@ -363,7 +370,6 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 			ChannelID: ch.ID,
 			UserID:    id,
 			Role:      RoleMember,
-			State:     StateNormal,
 			InviterID: actor,
 			IsBot:     bots[id],
 			Date:      now,
@@ -373,29 +379,12 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 			np.AdminRights = cur.AdminRights
 			np.Rank = cur.Rank
 		}
-		if err := s.store.PutParticipant(ctx, np); err != nil {
+		// The inbox cursor and JoinTop are stored before StateNormal.
+		// keepOutbox retains a cursor this user already earned.
+		if err = s.commitJoin(ctx, ch, np, true); err != nil {
 			return nil, err
 		}
 		added = append(added, id)
-		// Joining sees history up to now. Keep any outbox cursor already
-		// earned; do not pretend the current top was read by someone else.
-		st, err := s.store.GetRead(ctx, ch.ID, id)
-		if err != nil {
-			s.undoJoin(ctx, ch.ID, id)
-			return nil, err
-		}
-		if st == nil {
-			st = &ReadState{ChannelID: ch.ID, UserID: id}
-		}
-		st.ReadInboxMaxID = ch.TopMessage
-		if err = s.store.SaveRead(ctx, st); err != nil {
-			s.undoJoin(ctx, ch.ID, id)
-			return nil, err
-		}
-		if err = s.noteJoinBoundary(ctx, ch.ID, id, ch.TopMessage); err != nil {
-			s.undoJoin(ctx, ch.ID, id)
-			return nil, err
-		}
 	}
 	if len(added) > 0 {
 		if _, err = s.refreshCount(ctx, ch.ID); err != nil {
@@ -427,8 +416,14 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	if err != nil {
 		return nil, err
 	}
-	p, _ := s.store.GetParticipant(ctx, ch.ID, user)
+	p, err := s.store.GetParticipant(ctx, ch.ID, user)
+	if err != nil {
+		return nil, err
+	}
 	if p != nil && p.InChannel() {
+		if err = s.repairJoinBoundary(ctx, ch, p); err != nil {
+			return nil, err
+		}
 		return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
 	}
 	if p != nil && p.State == StateKicked {
@@ -437,8 +432,13 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	// A public channel or megagroup with join_request does not add the user.
 	// Official clients send channels.joinChannel after resolving the username
 	// and expect INVITE_REQUEST_SENT plus a pending request an admin can see.
+	// A failed feature read is not "join requests are off".
 	// https://core.telegram.org/method/channels.joinChannel
-	if s.features(ctx, ch.ID).JoinRequest {
+	feat, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	if feat.JoinRequest {
 		if err := s.recordJoinRequest(ctx, ch.ID, user); err != nil {
 			return nil, err
 		}
@@ -452,25 +452,16 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 		ChannelID: ch.ID,
 		UserID:    user,
 		Role:      RoleMember,
-		State:     StateNormal,
 		Date:      now,
 	}
 	if p != nil {
 		np.InviterID = p.InviterID
 		np.IsBot = p.IsBot
 	}
-	if err := s.store.PutParticipant(ctx, np); err != nil {
+	if err = s.commitJoin(ctx, ch, np, false); err != nil {
 		return nil, err
 	}
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {
-		return nil, err
-	}
-	if err = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: user, ReadInboxMaxID: ch.TopMessage}); err != nil {
-		s.undoJoin(ctx, ch.ID, user)
-		return nil, err
-	}
-	if err = s.noteJoinBoundary(ctx, ch.ID, user, ch.TopMessage); err != nil {
-		s.undoJoin(ctx, ch.ID, user)
 		return nil, err
 	}
 	msg := serviceMessage(user, ch.ID, mtproto.MakeMessageActionChatAddUser(user))
@@ -490,6 +481,15 @@ func (s *Service) Leave(ctx context.Context, user, actorAuth int64, in *mtproto.
 	}
 	p.State = StateLeft
 	if err := s.store.PutParticipant(ctx, p); err != nil {
+		if errors.Is(err, errParticipantChanged) {
+			latest, lerr := s.store.GetParticipant(ctx, ch.ID, user)
+			if lerr != nil {
+				return nil, lerr
+			}
+			if latest != nil && latest.State == StateLeft {
+				return s.pack(ctx, user, ch.ID, channelUpdate(ch.ID)), nil
+			}
+		}
 		return nil, err
 	}
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {

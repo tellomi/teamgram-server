@@ -41,13 +41,17 @@ type participantFaultProxy struct {
 	ln       net.Listener
 	done     chan struct{}
 
-	mu            sync.Mutex
-	armedUser     int64
-	allow         int
-	failFeatRead  bool
-	failFeatWrite bool
-	fails         int
-	lines         []string
+	mu             sync.Mutex
+	armedUser      int64
+	allow          int
+	failFeatRead   bool
+	failFeatWrite  bool
+	failReadWrite  bool
+	failPartWrite  bool
+	partWriteAllow int
+	failPartList   bool
+	fails          int
+	lines          []string
 }
 
 func startParticipantFaultProxy(upstream string) (*participantFaultProxy, error) {
@@ -93,6 +97,36 @@ func (p *participantFaultProxy) Disarm() {
 	p.allow = 0
 	p.failFeatRead = false
 	p.failFeatWrite = false
+	p.failReadWrite = false
+	p.failPartWrite = false
+	p.partWriteAllow = 0
+	p.failPartList = false
+	p.mu.Unlock()
+}
+
+// ArmReadWrite fails channel_read_state inserts and updates until Disarm.
+// The MySQL error text is "inbox down", which is the SaveRead failure the
+// join path must not turn into a normal member.
+func (p *participantFaultProxy) ArmReadWrite() {
+	p.mu.Lock()
+	p.failReadWrite = true
+	p.mu.Unlock()
+}
+
+// ArmParticipantWrite fails channel_participants inserts and updates after
+// allow successes. allow 1 is the old grant: the first StateNormal write
+// lands, and the undo write then fails.
+func (p *participantFaultProxy) ArmParticipantWrite(allow int) {
+	p.mu.Lock()
+	p.failPartWrite = true
+	p.partWriteAllow = allow
+	p.mu.Unlock()
+}
+
+// ArmParticipantList fails a SELECT that lists channel_participants.
+func (p *participantFaultProxy) ArmParticipantList() {
+	p.mu.Lock()
+	p.failPartList = true
 	p.mu.Unlock()
 }
 
@@ -183,8 +217,8 @@ func (p *participantFaultProxy) serve(client net.Conn) {
 			}
 		case cmdQuery:
 			sqlText := string(payload[1:])
-			if p.failQuery(sqlText) {
-				if err = writeMySQLPacket(client, seq+1, mysqlErrorPacket(1105, "channel_feature read failed")); err != nil {
+			if fail, msg := p.failQuery(sqlText); fail {
+				if err = writeMySQLPacket(client, seq+1, mysqlErrorPacket(1105, msg)); err != nil {
 					return
 				}
 				continue
@@ -211,10 +245,13 @@ func (p *participantFaultProxy) serve(client net.Conn) {
 				participant:  isParticipantSQL(sqlText),
 				featureRead:  isFeatureReadSQL(sqlText),
 				featureWrite: isFeatureWriteSQL(sqlText),
+				readWrite:    isReadWriteSQL(sqlText),
+				partWrite:    isParticipantWriteSQL(sqlText),
+				partList:     isParticipantListSQL(sqlText),
 			}
 			st[id] = meta
-			if meta.featureRead || meta.featureWrite {
-				p.note("prepare feature stmt=%d read=%v write=%v", id, meta.featureRead, meta.featureWrite)
+			if meta.featureRead || meta.featureWrite || meta.readWrite || meta.partWrite || meta.partList {
+				p.note("prepare stmt=%d featureRead=%v featureWrite=%v readWrite=%v partWrite=%v partList=%v", id, meta.featureRead, meta.featureWrite, meta.readWrite, meta.partWrite, meta.partList)
 			}
 			_ = cols
 		case cmdStmtExecute:
@@ -223,8 +260,8 @@ func (p *participantFaultProxy) serve(client net.Conn) {
 			}
 			id := binary.LittleEndian.Uint32(payload[1:5])
 			meta := st[id]
-			if p.failStatement(payload, meta) {
-				if err = writeMySQLPacket(client, seq+1, mysqlErrorPacket(1105, "participant read failed")); err != nil {
+			if fail, msg := p.failStatement(payload, meta); fail {
+				if err = writeMySQLPacket(client, seq+1, mysqlErrorPacket(1105, msg)); err != nil {
 					return
 				}
 				continue
@@ -253,6 +290,9 @@ type stmtMeta struct {
 	participant  bool
 	featureRead  bool
 	featureWrite bool
+	readWrite    bool
+	partWrite    bool
+	partList     bool
 }
 
 func truncateSQL(q string) string {
@@ -273,44 +313,103 @@ func isFeatureWriteSQL(q string) bool {
 	return strings.Contains(s, "channel_feature") && (strings.Contains(s, "insert") || strings.Contains(s, "update"))
 }
 
-func (p *participantFaultProxy) failQuery(sqlText string) bool {
+// inboxDownLog is written only when a channel_read_state insert or update
+// is rejected. The MySQL error packet text is "inbox down". Other faults
+// must not use this line.
+const inboxDownLog = "fail read state write: inbox down"
+
+func isReadWriteSQL(q string) bool {
+	s := strings.ToLower(q)
+	return strings.Contains(s, "channel_read_state") && (strings.Contains(s, "insert") || strings.Contains(s, "update"))
+}
+
+func isParticipantWriteSQL(q string) bool {
+	s := strings.ToLower(q)
+	return strings.Contains(s, "channel_participants") && (strings.Contains(s, "insert") || strings.Contains(s, "update"))
+}
+
+func isParticipantListSQL(q string) bool {
+	s := strings.ToLower(q)
+	return strings.Contains(s, "from channel_participants") && strings.Contains(s, "order by")
+}
+
+func (p *participantFaultProxy) failQuery(sqlText string) (bool, string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.failFeatRead && isFeatureReadSQL(sqlText) {
+	switch {
+	case p.failFeatRead && isFeatureReadSQL(sqlText):
 		p.fails++
 		p.lines = append(p.lines, "fail channel_feature query")
-		return true
-	}
-	if p.failFeatWrite && isFeatureWriteSQL(sqlText) {
+		return true, "channel_feature read failed"
+	case p.failFeatWrite && isFeatureWriteSQL(sqlText):
 		p.failFeatWrite = false
 		p.fails++
 		p.lines = append(p.lines, "fail channel_feature query write")
-		return true
+		return true, "channel_feature write failed"
+	case p.failReadWrite && isReadWriteSQL(sqlText):
+		p.fails++
+		p.lines = append(p.lines, inboxDownLog)
+		return true, "inbox down"
+	case p.failPartWrite && isParticipantWriteSQL(sqlText):
+		if p.partWriteAllow > 0 {
+			p.partWriteAllow--
+			p.lines = append(p.lines, "allow participant write")
+			return false, ""
+		}
+		p.fails++
+		p.lines = append(p.lines, "fail participant write")
+		return true, "participant write failed"
+	case p.failPartList && isParticipantListSQL(sqlText):
+		p.fails++
+		p.lines = append(p.lines, "fail participant list")
+		return true, "participant list failed"
+	default:
+		return false, ""
 	}
-	return false
 }
 
-func (p *participantFaultProxy) failStatement(payload []byte, meta stmtMeta) bool {
-	if meta.featureRead || meta.featureWrite {
+func (p *participantFaultProxy) failStatement(payload []byte, meta stmtMeta) (bool, string) {
+	if meta.featureRead || meta.featureWrite || meta.readWrite || meta.partWrite || meta.partList {
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if meta.featureRead && p.failFeatRead {
+		switch {
+		case meta.featureRead && p.failFeatRead:
 			p.fails++
 			p.lines = append(p.lines, "fail channel_feature read")
-			return true
-		}
-		if meta.featureWrite && p.failFeatWrite {
+			return true, "channel_feature read failed"
+		case meta.featureWrite && p.failFeatWrite:
 			p.failFeatWrite = false
 			p.fails++
 			p.lines = append(p.lines, "fail channel_feature write")
-			return true
+			return true, "channel_feature write failed"
+		case meta.readWrite && p.failReadWrite:
+			p.fails++
+			p.lines = append(p.lines, inboxDownLog)
+			return true, "inbox down"
+		case meta.partWrite && p.failPartWrite:
+			if p.partWriteAllow > 0 {
+				p.partWriteAllow--
+				p.lines = append(p.lines, "allow participant write")
+				return false, ""
+			}
+			p.fails++
+			p.lines = append(p.lines, "fail participant write")
+			return true, "participant write failed"
+		case meta.partList && p.failPartList:
+			p.fails++
+			p.lines = append(p.lines, "fail participant list")
+			return true, "participant list failed"
+		default:
+			return false, ""
 		}
-		return false
 	}
 	if !meta.participant {
-		return false
+		return false, ""
 	}
-	return p.failThis(payload, meta)
+	if p.failThis(payload, meta) {
+		return true, "participant read failed"
+	}
+	return false, ""
 }
 
 func (p *participantFaultProxy) failThis(payload []byte, meta stmtMeta) bool {

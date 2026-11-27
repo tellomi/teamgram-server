@@ -134,7 +134,12 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 	if err != nil {
 		return nil, err
 	}
-	f := s.features(ctx, ch.ID)
+	// features() would substitute an empty config. That drops JoinTop and
+	// AdminReadMax, and a same-second join cursor is then returned as a read.
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	var out []Reader
 	for _, p := range parts {
 		if p == nil || !p.InChannel() || p.UserID == 0 || p.UserID == self || p.UserID == stored.SenderID {

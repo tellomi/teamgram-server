@@ -70,7 +70,10 @@ func (s *memoryStore) CreateChannel(ctx context.Context, ch *Channel, creator *P
 		s.parts[ch.ID] = map[int64]*Participant{}
 	}
 	creator.ChannelID = ch.ID
-	s.parts[ch.ID][creator.UserID] = creator.clone()
+	stored := creator.clone()
+	stored.hasBase = false
+	stored.rowVersion = assignRowVersion(nil)
+	s.parts[ch.ID][creator.UserID] = stored
 	if s.messages[ch.ID] == nil {
 		s.messages[ch.ID] = map[int32]*StoredMessage{}
 	}
@@ -228,12 +231,27 @@ func (s *memoryStore) ListByUser(ctx context.Context, userID int64) ([]*Channel,
 }
 
 func (s *memoryStore) PutParticipant(ctx context.Context, p *Participant) error {
+	if p == nil {
+		return errParticipantChanged
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.parts[p.ChannelID] == nil {
 		s.parts[p.ChannelID] = map[int64]*Participant{}
 	}
-	s.parts[p.ChannelID][p.UserID] = p.clone()
+	cur := s.parts[p.ChannelID][p.UserID]
+	if !p.hasBase && cur != nil {
+		return errParticipantChanged
+	}
+	if p.hasBase {
+		if cur == nil || cur.State != p.baseState || cur.Date != p.baseDate || cur.rowVersion != p.baseVersion {
+			return errParticipantChanged
+		}
+	}
+	stored := p.clone()
+	stored.hasBase = false
+	stored.rowVersion = assignRowVersion(cur)
+	s.parts[p.ChannelID][p.UserID] = stored
 	return nil
 }
 
@@ -243,7 +261,7 @@ func (s *memoryStore) GetParticipant(ctx context.Context, channelID, userID int6
 	if s.parts[channelID] == nil {
 		return nil, nil
 	}
-	return s.parts[channelID][userID].clone(), nil
+	return observeParticipant(s.parts[channelID][userID]), nil
 }
 
 func (s *memoryStore) ListParticipants(ctx context.Context, channelID int64) ([]*Participant, error) {
@@ -251,7 +269,7 @@ func (s *memoryStore) ListParticipants(ctx context.Context, channelID int64) ([]
 	defer s.mu.Unlock()
 	var out []*Participant
 	for _, p := range s.parts[channelID] {
-		out = append(out, p.clone())
+		out = append(out, observeParticipant(p))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Date == out[j].Date {

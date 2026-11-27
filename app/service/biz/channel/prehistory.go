@@ -1,6 +1,11 @@
 package channel
 
-import "context"
+import (
+	"context"
+	"errors"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 // JoinTop is the channel message id that already existed when this member
 // joined. It is recorded on the three join paths. A missing entry is a
@@ -26,22 +31,135 @@ func (s *Service) noteJoinBoundary(ctx context.Context, channelID, userID int64,
 		f.JoinTop = map[int64]int32{}
 	}
 	f.JoinTop[userID] = top
+	// saveFeatures merges this key onto the row stored at write time.
+	// Two invites therefore keep both users.
 	return s.saveFeatures(ctx, channelID, f)
 }
 
-// undoJoin drops a membership whose inbox cursor or join top could not be
-// saved. Leaving that row in place would fall back to the date-only cutoff
-// and show a same-second message.
-func (s *Service) undoJoin(ctx context.Context, channelID, userID int64) {
-	if s == nil || s.store == nil || channelID == 0 || userID == 0 {
-		return
+// repairJoinBoundary fills a missing join top for a member who is already
+// in the channel. It uses the inbox cursor only while every live message
+// that cursor covers is still in the member's join second. That cursor is
+// the top recorded at join and not yet moved.
+//
+// Once the cursor covers a later second, the original join id is gone.
+// member.Date only has second resolution, and the join service message is
+// not a reliable top: messages can commit after the boundary is stored and
+// before that service message gets its id. Inventing a top from either one
+// can hide a message sent after the member joined. This function leaves
+// that member on the date cutoff. A same-second message from before the
+// real join can still be visible. Recovering it needs the top id captured
+// at join, which new joins store in JoinTop and old rows do not have.
+func (s *Service) repairJoinBoundary(ctx context.Context, ch *Channel, member *Participant) error {
+	if s == nil || s.store == nil || ch == nil || member == nil || !member.InChannel() {
+		return nil
 	}
-	p, err := s.store.GetParticipant(ctx, channelID, userID)
-	if err != nil || p == nil {
-		return
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return err
 	}
-	p.State = StateLeft
-	_ = s.store.PutParticipant(ctx, p)
+	if f == nil || !f.HiddenPrehistory || joinTop(f, member.UserID) > 0 {
+		return nil
+	}
+	st, err := s.store.GetRead(ctx, ch.ID, member.UserID)
+	if err != nil {
+		return err
+	}
+	inbox := int32(0)
+	if st != nil {
+		inbox = st.ReadInboxMaxID
+	}
+	msgs, err := s.store.ListMessages(ctx, ch.ID)
+	if err != nil {
+		return err
+	}
+	top, ok := joinBoundaryCandidate(member, inbox, msgs)
+	if !ok {
+		return nil
+	}
+	if f.JoinTop == nil {
+		f.JoinTop = map[int64]int32{}
+	}
+	f.JoinTop[member.UserID] = top
+	return s.saveFeatures(ctx, ch.ID, f)
+}
+
+// joinBoundaryCandidate is the inbox cursor when every live message it
+// covers is still in the member's join second. A later second means the
+// cursor is not a join snapshot.
+func joinBoundaryCandidate(member *Participant, inbox int32, msgs []*StoredMessage) (int32, bool) {
+	if member == nil || !member.InChannel() || inbox <= 0 {
+		return 0, false
+	}
+	for _, m := range msgs {
+		if m == nil || m.Deleted {
+			continue
+		}
+		if m.ID <= inbox && m.Date > member.Date {
+			return 0, false
+		}
+	}
+	return inbox, true
+}
+
+// commitJoin grants StateNormal only after the inbox cursor and the join
+// boundary are stored. A failed read or write returns before that grant, so
+// an undo that itself fails cannot leave a normal member on the date-only
+// cutoff. A nil participant is not a member. That is not a read error.
+// keepOutbox preserves an outbox cursor the user already earned. Join and
+// import start a new inbox row instead, which is what those RPCs stored.
+func (s *Service) commitJoin(ctx context.Context, ch *Channel, np *Participant, keepOutbox bool) error {
+	if s == nil || s.store == nil || ch == nil || np == nil || ch.ID == 0 || np.UserID == 0 {
+		return mtproto.ErrInternalServerError
+	}
+	cur, err := s.store.GetParticipant(ctx, ch.ID, np.UserID)
+	if err != nil {
+		return err
+	}
+	if cur != nil && cur.State == StateKicked {
+		return mtproto.ErrUserBannedInChannel
+	}
+	if cur != nil && cur.InChannel() {
+		return s.repairJoinBoundary(ctx, ch, cur)
+	}
+	st, err := s.store.GetRead(ctx, ch.ID, np.UserID)
+	if err != nil {
+		return err
+	}
+	if keepOutbox && st != nil {
+		st.ReadInboxMaxID = ch.TopMessage
+	} else {
+		st = &ReadState{ChannelID: ch.ID, UserID: np.UserID, ReadInboxMaxID: ch.TopMessage}
+	}
+	if st.ChannelID == 0 {
+		st.ChannelID = ch.ID
+	}
+	st.UserID = np.UserID
+	if err = s.store.SaveRead(ctx, st); err != nil {
+		return err
+	}
+	if err = s.noteJoinBoundary(ctx, ch.ID, np.UserID, ch.TopMessage); err != nil {
+		return err
+	}
+	np.ChannelID = ch.ID
+	np.State = StateNormal
+	if cur != nil {
+		np.hasBase = true
+		np.baseState = cur.baseState
+		np.baseDate = cur.baseDate
+		np.baseVersion = cur.baseVersion
+	}
+	err = s.store.PutParticipant(ctx, np)
+	if !errors.Is(err, errParticipantChanged) {
+		return err
+	}
+	latest, lerr := s.store.GetParticipant(ctx, ch.ID, np.UserID)
+	if lerr != nil {
+		return lerr
+	}
+	if latest != nil && latest.InChannel() {
+		return s.repairJoinBoundary(ctx, ch, latest)
+	}
+	return err
 }
 
 // pinnedHidden reports a pin the viewer must not be told about. The id

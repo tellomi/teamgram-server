@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS channel_participants (
   inviter_user_id BIGINT NOT NULL DEFAULT 0,
   is_bot TINYINT NOT NULL DEFAULT 0,
   date2 INT NOT NULL DEFAULT 0,
+  row_version INT NOT NULL DEFAULT 0,
   PRIMARY KEY (channel_id, user_id),
   KEY channel_participants_user (user_id, state)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

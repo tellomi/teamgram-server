@@ -41,6 +41,7 @@ func ensureSchema(ctx context.Context, db *sql.DB) error {
 		`ALTER TABLE channel_messages ADD COLUMN ttl_period INT NOT NULL DEFAULT 0`,
 		`ALTER TABLE channel_messages ADD KEY channel_messages_ttl (ttl_period, date2)`,
 		`ALTER TABLE channel_read_state ADD INDEX channel_read_inbox (channel_id, read_inbox_max_id)`,
+		`ALTER TABLE channel_participants ADD COLUMN row_version INT NOT NULL DEFAULT 0`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil && !alreadyColumn(err) {
 			return err
@@ -262,15 +263,35 @@ func (s *mysqlStore) ListByUser(ctx context.Context, userID int64) ([]*Channel, 
 }
 
 func (s *mysqlStore) PutParticipant(ctx context.Context, p *Participant) error {
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO channel_participants (
-  channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2)
-VALUES (?,?,?,?,?,?,?,?,?,?)
-ON DUPLICATE KEY UPDATE role=VALUES(role), state=VALUES(state), admin_rights=VALUES(admin_rights),
-  banned_rights=VALUES(banned_rights), rank_name=VALUES(rank_name), inviter_user_id=VALUES(inviter_user_id),
-  is_bot=VALUES(is_bot), date2=VALUES(date2)`,
-		p.ChannelID, p.UserID, p.Role, p.State, p.AdminRights, p.BannedRights, p.Rank, p.InviterID, boolInt(p.IsBot), p.Date)
-	return err
+	if p == nil {
+		return errParticipantChanged
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	row := tx.QueryRowContext(ctx, participantSelect+` WHERE channel_id=? AND user_id=? FOR UPDATE`, p.ChannelID, p.UserID)
+	cur, err := scanParticipant(row)
+	if err == sql.ErrNoRows {
+		cur, err = nil, nil
+	}
+	if err != nil {
+		return err
+	}
+	if !p.hasBase && cur != nil {
+		return errParticipantChanged
+	}
+	if p.hasBase {
+		if cur == nil || cur.State != p.baseState || cur.Date != p.baseDate || cur.rowVersion != p.baseVersion {
+			return errParticipantChanged
+		}
+	}
+	p.rowVersion = assignRowVersion(cur)
+	if err = upsertParticipant(ctx, tx, p); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *mysqlStore) GetParticipant(ctx context.Context, channelID, userID int64) (*Participant, error) {
@@ -279,7 +300,10 @@ func (s *mysqlStore) GetParticipant(ctx context.Context, channelID, userID int64
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return p, err
+	if err != nil {
+		return nil, err
+	}
+	return observeParticipant(p), nil
 }
 
 func (s *mysqlStore) ListParticipants(ctx context.Context, channelID int64) ([]*Participant, error) {
@@ -294,7 +318,7 @@ func (s *mysqlStore) ListParticipants(ctx context.Context, channelID int64) ([]*
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		out = append(out, observeParticipant(p))
 	}
 	return out, rows.Err()
 }
@@ -676,7 +700,7 @@ func (s *mysqlStore) ListReadMarks(ctx context.Context, ownerUserID, peerDialogI
 
 const channelSelect = `SELECT id, access_hash, creator_user_id, title, about, username, photo_id, broadcast, megagroup, forum, signatures, pts, top_message, participants_count, date2, migrated_from_chat_id, migrated_from_max_id, ttl_period, address, default_banned_rights, deleted, restricted, banned, version FROM channels`
 
-const participantSelect = `SELECT channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2 FROM channel_participants`
+const participantSelect = `SELECT channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2, row_version FROM channel_participants`
 
 const messageSelect = `SELECT channel_id, message_id, sender_user_id, date2, edit_date, random_id, pts, deleted, message_data FROM channel_messages`
 
@@ -722,12 +746,40 @@ func scanChannels(rows *sql.Rows) ([]*Channel, error) {
 func scanParticipant(row scanner) (*Participant, error) {
 	var p Participant
 	var bot int
-	err := row.Scan(&p.ChannelID, &p.UserID, &p.Role, &p.State, &p.AdminRights, &p.BannedRights, &p.Rank, &p.InviterID, &bot, &p.Date)
+	err := row.Scan(&p.ChannelID, &p.UserID, &p.Role, &p.State, &p.AdminRights, &p.BannedRights, &p.Rank, &p.InviterID, &bot, &p.Date, &p.rowVersion)
 	if err != nil {
 		return nil, err
 	}
 	p.IsBot = bot != 0
 	return &p, nil
+}
+
+func observeParticipant(p *Participant) *Participant {
+	if p == nil {
+		return nil
+	}
+	cp := p.clone()
+	cp.hasBase = true
+	cp.baseState = cp.State
+	cp.baseDate = cp.Date
+	cp.baseVersion = cp.rowVersion
+	return cp
+}
+
+type participantExec interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func upsertParticipant(ctx context.Context, db participantExec, p *Participant) error {
+	_, err := db.ExecContext(ctx, `
+INSERT INTO channel_participants (
+  channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2, row_version)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)
+ON DUPLICATE KEY UPDATE role=VALUES(role), state=VALUES(state), admin_rights=VALUES(admin_rights),
+  banned_rights=VALUES(banned_rights), rank_name=VALUES(rank_name), inviter_user_id=VALUES(inviter_user_id),
+  is_bot=VALUES(is_bot), date2=VALUES(date2), row_version=VALUES(row_version)`,
+		p.ChannelID, p.UserID, p.Role, p.State, p.AdminRights, p.BannedRights, p.Rank, p.InviterID, boolInt(p.IsBot), p.Date, p.rowVersion)
+	return err
 }
 
 func scanMessage(row scanner) (*StoredMessage, error) {
@@ -744,10 +796,17 @@ func scanMessage(row scanner) (*StoredMessage, error) {
 func insertParticipant(ctx context.Context, tx *sql.Tx, p *Participant) error {
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO channel_participants (
-  channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2)
-VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		p.ChannelID, p.UserID, p.Role, p.State, p.AdminRights, p.BannedRights, p.Rank, p.InviterID, boolInt(p.IsBot), p.Date)
+  channel_id, user_id, role, state, admin_rights, banned_rights, rank_name, inviter_user_id, is_bot, date2, row_version)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		p.ChannelID, p.UserID, p.Role, p.State, p.AdminRights, p.BannedRights, p.Rank, p.InviterID, boolInt(p.IsBot), p.Date, initialVersion(p))
 	return err
+}
+
+func initialVersion(p *Participant) int32 {
+	if p != nil && p.rowVersion != 0 {
+		return p.rowVersion
+	}
+	return 1
 }
 
 func boolInt(v bool) int {
@@ -831,21 +890,53 @@ func decodeFeaturePayload(data []byte, queryErr error) (*Features, error) {
 func (s *mysqlStore) GetFeatures(ctx context.Context, channelID int64) (*Features, error) {
 	var data []byte
 	err := s.db.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=?`, channelID).Scan(&data)
-	return decodeFeaturePayload(data, err)
+	f, err := decodeFeaturePayload(data, err)
+	if err != nil {
+		return nil, err
+	}
+	return stampFeatureBase(f), nil
 }
 
+// SaveFeatures merges f onto the current channel_feature row inside one
+// transaction. The channel row lock is what makes two processes agree:
+// the second commit reads the first commit and keeps both map keys.
 func (s *mysqlStore) SaveFeatures(ctx context.Context, channelID int64, f *Features) error {
 	if f != nil && f.loadFailed {
 		return errFeaturePayloadUnread
 	}
-	raw, err := json.Marshal(f)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `
+	defer tx.Rollback()
+	var locked int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM channels WHERE id=? FOR UPDATE`, channelID).Scan(&locked)
+	if err == sql.ErrNoRows {
+		return mtproto.ErrChannelInvalid
+	}
+	if err != nil {
+		return err
+	}
+	var data []byte
+	err = tx.QueryRowContext(ctx, `SELECT data FROM channel_feature WHERE channel_id=? FOR UPDATE`, channelID).Scan(&data)
+	current, err := decodeFeaturePayload(data, err)
+	if err != nil {
+		return err
+	}
+	merged, err := mergeFeatureWrite(current, f)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(merged)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `
 INSERT INTO channel_feature (channel_id, data) VALUES (?,?)
-ON DUPLICATE KEY UPDATE data=VALUES(data)`, channelID, raw)
-	return err
+ON DUPLICATE KEY UPDATE data=VALUES(data)`, channelID, raw); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *mysqlStore) GetPersonalChannel(ctx context.Context, userID int64) (int64, error) {

@@ -6,7 +6,11 @@
 
 package channel
 
-import "github.com/teamgram/proto/mtproto"
+import (
+	"errors"
+
+	"github.com/teamgram/proto/mtproto"
+)
 
 const (
 	RoleMember  int32 = 0
@@ -82,6 +86,32 @@ type Participant struct {
 	InviterID    int64
 	IsBot        bool
 	Date         int32
+	// hasBase is set on a row returned by the store. A later write applies
+	// only when state and date still match, so a stale leave cannot undo a
+	// rejoin that committed first.
+	hasBase     bool
+	baseState   int32
+	baseDate    int32
+	rowVersion  int32
+	baseVersion int32
+}
+
+// errParticipantChanged means the membership row moved after it was read,
+// or a write without a read tried to replace a row that already exists.
+var errParticipantChanged = errors.New("channel participant changed before write")
+
+// assignRowVersion is the version the store records. Callers do not choose
+// it: a new row is 1, and an update is one past the stored row. Memory and
+// MySQL both use this.
+func assignRowVersion(cur *Participant) int32 {
+	if cur == nil || cur.rowVersion <= 0 {
+		return 1
+	}
+	next := cur.rowVersion + 1
+	if next <= 0 {
+		return 1
+	}
+	return next
 }
 
 func (p *Participant) clone() *Participant {
