@@ -147,6 +147,17 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 		if st == nil || st.ReadInboxMaxID < msgID {
 			continue
 		}
+		// Joining sets the inbox cursor to the current top so the new
+		// member is not handed the whole backlog as unread. That cursor
+		// is not a read. An admin may open the hidden message later;
+		// being allowed to read it is not the same as having read it.
+		// Only channels.readHistory issued while they are already an
+		// admin covers a pre-join message. A mark from before promotion
+		// stays off this list.
+		adminCovered := f.AdminReadMax[p.UserID] >= msgID
+		if messageBeforeJoin(p, stored, joinTop(f, p.UserID)) && (!p.IsAdmin() || !adminCovered) {
+			continue
+		}
 		date := f.InboxReadAt[p.UserID]
 		if date == 0 {
 			date = stored.Date
@@ -170,7 +181,7 @@ func (s *Service) ReadParticipants(ctx context.Context, self, channelID int64, m
 // messages are not mentions of themselves.
 func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, offsetID, addOffset, limit, maxID, minID int32) (*mtproto.Messages_Messages, error) {
 	in := &mtproto.InputChannel{PredicateName: mtproto.Predicate_inputChannel, ChannelId: channelID}
-	ch, _, err := s.requireView(ctx, self, in)
+	ch, viewer, err := s.requireView(ctx, self, in)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +192,14 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 	if st == nil {
 		st = &ReadState{}
 	}
-	f := s.features(ctx, ch.ID)
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	var viewerErr error
+	if viewer == nil {
+		viewer, viewerErr = s.store.GetParticipant(ctx, ch.ID, self)
+	}
 	floor := f.UserMinID[self]
 	if f.AvailableMinID > floor {
 		floor = f.AvailableMinID
@@ -208,6 +226,9 @@ func (s *Service) UnreadMentions(ctx context.Context, self, channelID int64, off
 			continue
 		}
 		if maxID > 0 && stored.ID >= maxID {
+			continue
+		}
+		if prehistoryBlocks(f, viewer, stored, viewerErr) {
 			continue
 		}
 		body, err := unmarshalMessage(stored.Data)

@@ -379,12 +379,23 @@ func (s *Service) Invite(ctx context.Context, actor, actorAuth int64, in *mtprot
 		added = append(added, id)
 		// Joining sees history up to now. Keep any outbox cursor already
 		// earned; do not pretend the current top was read by someone else.
-		st, _ := s.store.GetRead(ctx, ch.ID, id)
+		st, err := s.store.GetRead(ctx, ch.ID, id)
+		if err != nil {
+			s.undoJoin(ctx, ch.ID, id)
+			return nil, err
+		}
 		if st == nil {
 			st = &ReadState{ChannelID: ch.ID, UserID: id}
 		}
 		st.ReadInboxMaxID = ch.TopMessage
-		_ = s.store.SaveRead(ctx, st)
+		if err = s.store.SaveRead(ctx, st); err != nil {
+			s.undoJoin(ctx, ch.ID, id)
+			return nil, err
+		}
+		if err = s.noteJoinBoundary(ctx, ch.ID, id, ch.TopMessage); err != nil {
+			s.undoJoin(ctx, ch.ID, id)
+			return nil, err
+		}
 	}
 	if len(added) > 0 {
 		if _, err = s.refreshCount(ctx, ch.ID); err != nil {
@@ -454,7 +465,14 @@ func (s *Service) Join(ctx context.Context, user, actorAuth int64, in *mtproto.I
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {
 		return nil, err
 	}
-	_ = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: user, ReadInboxMaxID: ch.TopMessage})
+	if err = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: user, ReadInboxMaxID: ch.TopMessage}); err != nil {
+		s.undoJoin(ctx, ch.ID, user)
+		return nil, err
+	}
+	if err = s.noteJoinBoundary(ctx, ch.ID, user, ch.TopMessage); err != nil {
+		s.undoJoin(ctx, ch.ID, user)
+		return nil, err
+	}
 	msg := serviceMessage(user, ch.ID, mtproto.MakeMessageActionChatAddUser(user))
 	if _, _, err = s.appendMessage(ctx, ch.ID, user, 0, msg); err != nil {
 		return nil, err

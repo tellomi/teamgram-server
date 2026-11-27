@@ -290,7 +290,12 @@ func (s *Service) DeactivateAllUsernames(ctx context.Context, self, actorAuth in
 	if err != nil {
 		return nil, err
 	}
-	f := s.features(ctx, ch.ID)
+	// A failed read must not look like "no collectible names" and must not
+	// be saved as an empty feature blob. That blob also holds HiddenPrehistory.
+	f, err := s.mutableFeatures(ctx, ch.ID)
+	if err != nil {
+		return nil, err
+	}
 	list := append([]UsernameRec(nil), listedUsernames(ch, f)...)
 	prev := activeUsernames(list)
 	changed := false

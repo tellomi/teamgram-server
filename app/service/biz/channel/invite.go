@@ -493,7 +493,14 @@ func (s *Service) ImportInvite(ctx context.Context, self, actorAuth int64, hash 
 	if _, err = s.refreshCount(ctx, ch.ID); err != nil {
 		return nil, err
 	}
-	_ = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: self, ReadInboxMaxID: ch.TopMessage})
+	if err = s.store.SaveRead(ctx, &ReadState{ChannelID: ch.ID, UserID: self, ReadInboxMaxID: ch.TopMessage}); err != nil {
+		s.undoJoin(ctx, ch.ID, self)
+		return nil, err
+	}
+	if err = s.noteJoinBoundary(ctx, ch.ID, self, ch.TopMessage); err != nil {
+		s.undoJoin(ctx, ch.ID, self)
+		return nil, err
+	}
 	if err := s.store.UpsertImporter(ctx, &StoredImporter{
 		ChannelID: ch.ID,
 		Link:      inv.Link,

@@ -49,7 +49,7 @@ func (s *Service) VisibleMessage(ctx context.Context, viewer, channelID int64, m
 	if err != nil {
 		return nil, false, err
 	}
-	if stored == nil || stored.Deleted || len(stored.Data) == 0 {
+	if stored == nil || stored.Deleted || len(stored.Data) == 0 || s.hidesStored(ctx, viewer, stored) {
 		return nil, false, nil
 	}
 	body, err := unmarshalMessage(stored.Data)
